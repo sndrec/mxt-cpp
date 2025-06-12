@@ -66,7 +66,7 @@ namespace CAST_FLAGS {
 	enum FLAGS {
 		WANTS_TRACK = 0x1,
 		WANTS_RAIL = 0x2,
-		WANTS_MESH = 0x4,
+		WANTS_MESH = 0x4, // placeholder, no mesh collision support yet
 		WANTS_BACKFACE = 0x8,
 		WANTS_TERRAIN = 0x10
 	};
