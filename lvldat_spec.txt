@@ -1,0 +1,162 @@
+LEVEL DATA SPECIFICATION (.mxt_track)
+--------------------------------------
+
+HEADER
+------
+Offset      Type            Description
+0           u32             Header size in bytes (includes this field)
+4           string[4]       File version string (e.g. "v0.1")
+8           u32             Number of checkpoints
+12          u32             Number of segments
+16+         -               Start of checkpoint data
+
+
+CHECKPOINT DATA (per checkpoint)
+--------------------------------
+Field                           Type            Notes
+position_start                  Vector3         3 x float
+position_end                    Vector3         3 x float
+orientation_start               Basis           3 x Vector3 (9 x float)
+orientation_end                 Basis           3 x Vector3 (9 x float)
+x_radius_start                  float
+y_radius_start                  float
+x_radius_end                    float
+y_radius_end                    float
+y_start                         float
+y_end                           float
+distance                        float
+road_segment                    u32
+start_plane.normal              Vector3         3 x float
+start_plane.d                   float
+end_plane.normal                Vector3         3 x float
+end_plane.d                     float
+connection_count                u32             1 or 2
+connected_checkpoint_idx[n]     u32 x n         Index of connected checkpoint(s)
+
+
+SEGMENT DATA (per segment)
+--------------------------
+Field                           Type            Notes
+segment_index                   u32
+road_type                       u32             0=Default, 1=Cylinder, 2=CylinderOpen, 3=Pipe, 4=PipeOpen
+openness                        Curve           Only if road_type is 2 or 4
+
+modulation_count                u32
+MODULATION[n]:                 (repeated modulation_count times)
+→ modulation_effect             Curve
+→ modulation_width              Curve
+
+embed_count                     u32
+EMBED[n]:                      (repeated embed_count times)
+→ road_start                    float
+→ road_end                      float
+→ embed_type                    u32
+→ left_boundary                 Curve
+→ right_boundary                Curve
+
+road_curve.position_x           Curve
+road_curve.position_y           Curve
+road_curve.position_z           Curve
+road_curve.rotation_xx          Curve
+road_curve.rotation_xy          Curve
+road_curve.rotation_xz          Curve
+road_curve.rotation_yx          Curve
+road_curve.rotation_yy          Curve
+road_curve.rotation_yz          Curve
+road_curve.rotation_zx          Curve
+road_curve.rotation_zy          Curve
+road_curve.rotation_zz          Curve
+road_curve.scale_x              Curve
+road_curve.scale_y              Curve
+road_curve.scale_z              Curve
+
+
+CURVE FORMAT
+------------
+Field               Type
+point_count         u32
+POINT[n]:          (repeated point_count times)
+→ position.x        float
+→ position.y        float
+→ left_tangent      float
+→ right_tangent     float
+
+
+
+PARSING TABLE (.mxt_track)
+--------------------------
+
+== HEADER ==
+read_u32()                     → header_size
+read_string(4)                 → version_string ("v0.1")
+read_u32()                     → checkpoint_count
+read_u32()                     → segment_count
+
+== CHECKPOINT DATA (repeated checkpoint_count times) ==
+for each checkpoint:
+    read_vector3()            → position_start
+    read_vector3()            → position_end
+    read_basis()              → orientation_start
+    read_basis()              → orientation_end
+    read_float()              → x_radius_start
+    read_float()              → y_radius_start
+    read_float()              → x_radius_end
+    read_float()              → y_radius_end
+    read_float()              → y_start
+    read_float()              → y_end
+    read_float()              → distance
+    read_u32()                → road_segment
+    read_vector3()            → start_plane.normal
+    read_float()              → start_plane.d
+    read_vector3()            → end_plane.normal
+    read_float()              → end_plane.d
+    read_u32()                → connection_count
+    for i in connection_count:
+        read_u32()           → connected_checkpoint_index[i]
+
+== SEGMENT DATA (repeated segment_count times) ==
+for each segment:
+    read_u32()                → segment_index
+    read_u32()                → road_type
+
+    if road_type == 2 or 4:
+        read_curve()         → openness
+
+    read_u32()                → modulation_count
+    for i in modulation_count:
+        read_curve()         → modulation_effect[i]
+        read_curve()         → modulation_width[i]
+
+    read_u32()                → embed_count
+    for i in embed_count:
+        read_float()         → road_start
+        read_float()         → road_end
+        read_u32()           → embed_type
+        read_curve()         → left_boundary
+        read_curve()         → right_boundary
+
+    read_curve()              → road_curve.position_x
+    read_curve()              → road_curve.position_y
+    read_curve()              → road_curve.position_z
+
+    read_curve()              → road_curve.rotation_xx
+    read_curve()              → road_curve.rotation_xy
+    read_curve()              → road_curve.rotation_xz
+    read_curve()              → road_curve.rotation_yx
+    read_curve()              → road_curve.rotation_yy
+    read_curve()              → road_curve.rotation_yz
+    read_curve()              → road_curve.rotation_zx
+    read_curve()              → road_curve.rotation_zy
+    read_curve()              → road_curve.rotation_zz
+
+    read_curve()              → road_curve.scale_x
+    read_curve()              → road_curve.scale_y
+    read_curve()              → road_curve.scale_z
+
+== CURVE FORMAT ==
+read_u32()                    → point_count
+for i in point_count:
+    read_float()             → position.x
+    read_float()             → position.y
+    read_float()             → left_tangent
+    read_float()             → right_tangent
