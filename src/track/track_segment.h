@@ -23,40 +23,40 @@ public:
 	RoadModulation* road_modulations;
 	RoadEmbed* road_embeds;
 	Curve* openness;
-	virtual godot::Vector3 get_position_at_time(const godot::Vector2& in_t) const;
-	virtual godot::Transform3D get_transform_at_time(const godot::Vector2& in_t) const;
-	virtual godot::Vector2 find_t_from_relative_pos(const godot::Vector3& in_pos) const;
-	godot::Transform3D get_oriented_transform_at_time(const godot::Vector2& in_t) const;
+	virtual void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const;
+	virtual void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const;
+	virtual void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const;
+	void get_oriented_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const;
 };
 
 class RoadShapeCylinder : public RoadShape
 {
 public:
-	godot::Vector3 get_position_at_time(const godot::Vector2& in_t) const override;
-	godot::Transform3D get_transform_at_time(const godot::Vector2& in_t) const override;
-	godot::Vector2 find_t_from_relative_pos(const godot::Vector3& in_pos) const override;
+	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+	void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
+	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
 };
 
 class RoadShapePipe : public RoadShape
 {
 public:
-	godot::Vector3 get_position_at_time(const godot::Vector2& in_t) const override;
-	godot::Transform3D get_transform_at_time(const godot::Vector2& in_t) const override;
-	godot::Vector2 find_t_from_relative_pos(const godot::Vector3& in_pos) const override;
+	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+	void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
+	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
 };
 
 class RoadShapeCylinderOpen : public RoadShape
 {
 public:
-	godot::Vector3 get_position_at_time(const godot::Vector2& in_t) const override;
-	godot::Transform3D get_transform_at_time(const godot::Vector2& in_t) const override;
-	godot::Vector2 find_t_from_relative_pos(const godot::Vector3& in_pos) const override;
+	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+	void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
+	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
 };
 
 class RoadShapePipeOpen : public RoadShape
 {
 public:
-	godot::Vector3 get_position_at_time(const godot::Vector2& in_t) const override;
-	godot::Transform3D get_transform_at_time(const godot::Vector2& in_t) const override;
-	godot::Vector2 find_t_from_relative_pos(const godot::Vector3& in_pos) const override;
+	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+	void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
+	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
 };

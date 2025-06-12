@@ -49,23 +49,26 @@ float Curve::sample(float in_t) const
 	return dp_dv;
 };
 
-godot::Transform3D RoadTransformCurve::sample(float in_t) const
+void RoadTransformCurve::sample(godot::Transform3D &out_transform, float in_t) const
 {
 	if (num_keyframes == 0)
 	{
-		return godot::Transform3D(BASIS_IDENTITY, godot::Vector3(0.0f, 0.0f, 0.0f));
+		return;
 	};
 	if (num_keyframes == 1)
 	{
-		return get_keyframe_value(0);
+		get_keyframe_value(out_transform, 0);
+		return;
 	};
 	if (in_t <= keyframes[0].time)
 	{
-		return get_keyframe_value(0);
+		get_keyframe_value(out_transform, 0);
+		return;
 	};
 	if (in_t >= keyframes[num_keyframes - 1].time)
 	{
-		return get_keyframe_value(num_keyframes - 1);
+		get_keyframe_value(out_transform, num_keyframes - 1);
+		return;
 	};
 	int start_key_index = 0;
 	if (num_keyframes >= 2)
@@ -78,7 +81,8 @@ godot::Transform3D RoadTransformCurve::sample(float in_t) const
 	float dist = keyframes[start_key_index + 1].time - keyframes[start_key_index].time;
 	if (dist == 0)
 	{
-		return get_keyframe_value(start_key_index + 1);
+		get_keyframe_value(out_transform, start_key_index + 1);
+		return;
 	};
 
 	in_t = remap_float(in_t, keyframes[start_key_index].time, keyframes[start_key_index + 1].time, 0.0f, 1.0f);
@@ -123,15 +127,11 @@ godot::Transform3D RoadTransformCurve::sample(float in_t) const
 		_mm_storeu_ps(&sampled_curve_values[i * 4], sampled_values[i]);
 	}
 
-	godot::Basis transform_basis = godot::Basis(
-		sampled_curve_values[3], sampled_curve_values[6], sampled_curve_values[9],
+	out_transform.basis.set(sampled_curve_values[3], sampled_curve_values[6], sampled_curve_values[9],
 		sampled_curve_values[4], sampled_curve_values[7], sampled_curve_values[10],
-		sampled_curve_values[5], sampled_curve_values[8], sampled_curve_values[11]
-	);
-	return godot::Transform3D(
-		transform_basis,
-		godot::Vector3(sampled_curve_values[0], sampled_curve_values[1], sampled_curve_values[2])
-	).scaled_local(
-		godot::Vector3(sampled_curve_values[12], sampled_curve_values[13], sampled_curve_values[14])
-	);
+		sampled_curve_values[5], sampled_curve_values[8], sampled_curve_values[11]);
+	out_transform.origin.x = sampled_curve_values[0];
+	out_transform.origin.y = sampled_curve_values[1];
+	out_transform.origin.z = sampled_curve_values[2];
+	out_transform.basis.scale_local(godot::Vector3(sampled_curve_values[12], sampled_curve_values[13], sampled_curve_values[14]));
 }
