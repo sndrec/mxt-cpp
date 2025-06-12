@@ -543,37 +543,43 @@ void PhysicsCar::process_car_road_collision()
 		// so we can check data regarding that segment, like skipping rail checks for pipe/cylinder
 		// also store the converted tx/ty we get from non-standard road shapes
 		// so we can accurately sample modulations from pipe/cylinder and rails from open pipe/cylinder
-		godot::Basis use_basis = closest_roadroot.basis.transposed();
-		godot::Vector3 left_rail_pos = closest_roadroot.origin + use_basis[0];
-		godot::Vector3 right_rail_pos = closest_roadroot.origin - use_basis[0];
-		godot::Vector3 left_rail_plane = -use_basis[0].normalized();
-		godot::Vector3 right_rail_plane = use_basis[0].normalized();
-		godot::Vector3 left_rail_normal = -closest_roadt3d.basis[1].cross(closest_roadt3d.basis[2]);
-		godot::Vector3 right_rail_normal = closest_roadt3d.basis[1].cross(closest_roadt3d.basis[2]);
-		godot::Vector3 closest_rail_position = current_road_t.x >= 0.0f ? left_rail_pos : right_rail_pos;
-		godot::Vector3 closest_rail_normal = current_road_t.x >= 0.0f ? left_rail_normal : right_rail_normal;
-		godot::Vector3 closest_rail_plane = current_road_t.x >= 0.0f ? left_rail_plane : right_rail_plane;
-		if (grounded)
-		{
-			for (int i = 0; i < num_collision_points; i++)
-			{
-				godot::Transform3D use_transform = car_transform;
-				use_transform.origin = position;
-				use_transform.basis.transpose();
-				godot::Vector3 collision_point_origin = use_transform.xform(collision_points[i].origin_point);
-				float signed_dist = (collision_point_origin - closest_rail_position).dot(closest_rail_plane);
-				if (signed_dist < 0.0f)
-				{
-					position += closest_rail_normal * fmaxf(-signed_dist + 0.25f, 0.0f);
-					float old_speed = base_speed;
-					float collision_dot = apparent_velocity.normalized().dot(closest_rail_normal);
-					base_speed *= 1.0f + fminf(0.0f, collision_dot);
-					travel_direction = travel_direction.slide(closest_rail_normal);
-					knockback_velocity += closest_rail_normal * -collision_dot * (old_speed - base_speed);
-					angle_velocity += -orientation[1].cross(closest_rail_normal) * (old_speed - base_speed) * 0.05f;
-				}
-			}
-		}
+                godot::Basis use_basis = closest_roadroot.basis.transposed();
+                godot::Vector3 left_rail_pos = closest_roadroot.origin + use_basis[0];
+                godot::Vector3 right_rail_pos = closest_roadroot.origin - use_basis[0];
+                godot::Vector3 left_rail_plane = -use_basis[0].normalized();
+                godot::Vector3 right_rail_plane = use_basis[0].normalized();
+                godot::Vector3 left_rail_normal = -closest_roadt3d.basis[1].cross(closest_roadt3d.basis[2]);
+                godot::Vector3 right_rail_normal = closest_roadt3d.basis[1].cross(closest_roadt3d.basis[2]);
+                godot::Vector3 closest_rail_position = current_road_t.x >= 0.0f ? left_rail_pos : right_rail_pos;
+                godot::Vector3 closest_rail_normal = current_road_t.x >= 0.0f ? left_rail_normal : right_rail_normal;
+                godot::Vector3 closest_rail_plane = current_road_t.x >= 0.0f ? left_rail_plane : right_rail_plane;
+                TrackSegment* rail_segment = &current_track->segments[current_track_segment];
+                if (grounded)
+                {
+                        for (int i = 0; i < num_collision_points; i++)
+                        {
+                                godot::Transform3D use_transform = car_transform;
+                                use_transform.origin = position;
+                                use_transform.basis.transpose();
+                                godot::Vector3 collision_point_origin = use_transform.xform(collision_points[i].origin_point);
+                                float rail_height = current_road_t.x >= 0.0f ? rail_segment->left_rail_height : rail_segment->right_rail_height;
+                                float vertical_dist = (collision_point_origin - closest_roadt3d.origin).dot(closest_roadt3d.basis[1]);
+                                if (vertical_dist <= rail_height)
+                                {
+                                        float signed_dist = (collision_point_origin - closest_rail_position).dot(closest_rail_plane);
+                                        if (signed_dist < 0.0f)
+                                        {
+                                                position += closest_rail_normal * fmaxf(-signed_dist + 0.25f, 0.0f);
+                                                float old_speed = base_speed;
+                                                float collision_dot = apparent_velocity.normalized().dot(closest_rail_normal);
+                                                base_speed *= 1.0f + fminf(0.0f, collision_dot);
+                                                travel_direction = travel_direction.slide(closest_rail_normal);
+                                                knockback_velocity += closest_rail_normal * -collision_dot * (old_speed - base_speed);
+                                                angle_velocity += -orientation[1].cross(closest_rail_normal) * (old_speed - base_speed) * 0.05f;
+                                        }
+                                }
+                        }
+                }
 	}
 	else
 	{
