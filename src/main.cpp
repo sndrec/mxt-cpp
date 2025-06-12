@@ -256,17 +256,25 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		current_track->segments[seg].curve_matrix->num_keyframes = num_keyframes;
 		current_track->segments[seg].curve_matrix->keyframes = level_data.allocate_array<RoadTransformCurveKeyframe>(num_keyframes);
 
-		for (int n = 0; n < 15; n++)
-		{
-			num_keyframes = (int)lvldat_buf->get_u32();
-			for (int i = 0; i < num_keyframes; i++)
-			{
-				current_track->segments[seg].curve_matrix->keyframes[i].time = lvldat_buf->get_float();
-				current_track->segments[seg].curve_matrix->keyframes[i].value[n] = lvldat_buf->get_float();
-				current_track->segments[seg].curve_matrix->keyframes[i].tangent_in[n] = lvldat_buf->get_float();
-				current_track->segments[seg].curve_matrix->keyframes[i].tangent_out[n] = lvldat_buf->get_float();
-			}
-		}
+                for (int n = 0; n < 15; n++)
+                {
+                        num_keyframes = (int)lvldat_buf->get_u32();
+                        for (int i = 0; i < num_keyframes; i++)
+                        {
+                                current_track->segments[seg].curve_matrix->keyframes[i].time = lvldat_buf->get_float();
+                                current_track->segments[seg].curve_matrix->keyframes[i].value[n] = lvldat_buf->get_float();
+                                current_track->segments[seg].curve_matrix->keyframes[i].tangent_in[n] = lvldat_buf->get_float();
+                                current_track->segments[seg].curve_matrix->keyframes[i].tangent_out[n] = lvldat_buf->get_float();
+                        }
+                }
+
+                if (version_string != "v0.1") {
+                        current_track->segments[seg].left_rail_height = lvldat_buf->get_float();
+                        current_track->segments[seg].right_rail_height = lvldat_buf->get_float();
+                } else {
+                        current_track->segments[seg].left_rail_height = 5.0f;
+                        current_track->segments[seg].right_rail_height = 5.0f;
+                }
 
 		// one extra curve for alignment //
 

@@ -9,9 +9,11 @@ class RoadShape;
 class TrackSegment
 {
 public:
-	float segment_length;
-	RoadShape* road_shape;
-	RoadTransformCurve* curve_matrix;
+        float segment_length;
+        float left_rail_height;
+        float right_rail_height;
+        RoadShape* road_shape;
+        RoadTransformCurve* curve_matrix;
 };
 
 class RoadShape
