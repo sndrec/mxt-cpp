@@ -2,6 +2,7 @@
 #include "car/physics_car.h" // for CollisionData and RoadData
 #include <cfloat>
 #include <algorithm>
+#include "mxt_core/enums.h"
 
 int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations) const
 {

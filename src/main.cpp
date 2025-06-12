@@ -3,6 +3,7 @@
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/curve.h"
+#include "mxt_core/enums.h"
 #include "track/curve_matrix.h"
 #include "track/road_shape_base.h"
 #include "track/road_modulation.h"
@@ -50,7 +51,7 @@ bool GameSim::get_sim_started()
 
 void GameSim::tick_gamesim()
 {
-	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 	std::fesetround(FE_TONEAREST);
 	std::feclearexcept(FE_ALL_EXCEPT);
@@ -79,6 +80,16 @@ void GameSim::tick_gamesim()
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].postprocess_car();
+		if (i == 0){
+			CollisionData collision;
+			godot::Vector3 p0 = cars[i].position + godot::Vector3(0, 5, 3);
+			godot::Vector3 p1 = cars[i].position + godot::Vector3(0, -100, 3);
+			current_track->cast_vs_track(collision, p0, p1, CAST_FLAGS::WANTS_TRACK, cars[i].current_collision_checkpoint);
+			if (collision.collided){
+				dd3d->call("draw_arrow", collision.collision_point, collision.collision_point + collision.collision_normal * 2, godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, _TICK_DELTA);
+			}
+			dd3d->call("draw_arrow", p0, p1, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
+		}
 	}
 
 	auto elapsed = std::chrono::high_resolution_clock::now() - start;
