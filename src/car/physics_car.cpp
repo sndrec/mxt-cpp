@@ -166,7 +166,7 @@ void PhysicsCar::preprocess_car()
 		}
 	}
 
-	if (grounded && current_road_embed == 0)
+	if (grounded && current_road_embed == 0) // todo: compare using terrain enumerator in enums.h
 	{
 		health = fminf(car_properties->max_health, health + car_properties->health_recharge_rate * _TICK_DELTA);
 	}
@@ -496,7 +496,7 @@ void PhysicsCar::process_car_acceleration()
 	{
 		float drag_factor = car_properties->drag;
 
-		if (current_road_embed == 1)
+		if (current_road_embed == 1) // todo: compare using terrain enumerator in enums.h
 		{
 			drag_factor *= 4.0f;
 		}
