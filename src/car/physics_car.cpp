@@ -4,8 +4,33 @@
 #include "godot_cpp/classes/object.hpp"
 #include <cmath>
 
-// --- START: Refactored get_road_data() ---
-void PhysicsCar::get_closest_road_data_at_point(RoadData* out_data, godot::Vector3 in_point, bool strict, uint16_t start_cp)
+int PhysicsCar::find_current_checkpoint_recursive(const godot::Vector3 &use_pos, int cp_index, int iterations)
+{
+	if (iterations > 10)
+	{
+		return -1;
+	}
+	if (!current_track->checkpoints[cp_index].end_plane.is_point_over(use_pos) && current_track->checkpoints[cp_index].start_plane.is_point_over(use_pos))
+	{
+		current_collision_checkpoint = cp_index;
+		return cp_index;
+	}
+	else
+	{
+		for (int i = 0; i < current_track->checkpoints[cp_index].num_neighboring_checkpoints; i++)
+		{
+			int neighbor_index = current_track->checkpoints[cp_index].neighboring_checkpoints[i];
+			int found_checkpoint = find_current_checkpoint_recursive(use_pos, neighbor_index, iterations + 1);
+			if (found_checkpoint)
+			{
+				return found_checkpoint;
+			}
+		}
+	}
+	return -1;
+}
+
+void PhysicsCar::get_closest_road_data_at_point(RoadData &out_data, godot::Vector3 &in_point, bool strict, uint16_t start_cp)
 {
 	std::vector<int> checkpoints_to_test;
 	if (!strict)
@@ -13,15 +38,17 @@ void PhysicsCar::get_closest_road_data_at_point(RoadData* out_data, godot::Vecto
 		checkpoints_to_test = current_track->get_viable_checkpoints(in_point);
 	}
 	else {
-
+		current_collision_checkpoint = find_current_checkpoint_recursive(in_point, current_collision_checkpoint, 0);
+		if (current_collision_checkpoint != -1)
+		{
+			checkpoints_to_test.push_back(current_collision_checkpoint);
+		}
 	}
 
 	if (checkpoints_to_test.size() == 0)
 	{
-		out_data->terrain = 0;
-		out_data->closest_normal = godot::Vector3();
-		out_data->closest_point = godot::Vector3();
-		out_data->cp_idx = -1;
+		out_data.terrain = 0;
+		out_data.cp_idx = -1;
 		return;
 	}
 
@@ -64,29 +91,22 @@ void PhysicsCar::get_closest_road_data_at_point(RoadData* out_data, godot::Vecto
 
 			float tz = remap_float(cp_t, 0.0f, 1.0f, current_point->t_start, current_point->t_end);
 			best_checkpoint_t = godot::Vector3(tx, ty, tz);
-
-			best_road_t = current_track->segments[current_point->road_segment].road_shape->find_t_from_relative_pos(best_checkpoint_t);
+			current_track->segments[current_point->road_segment].road_shape->find_t_from_relative_pos(best_road_t, best_checkpoint_t);
 		}
 	}
 
 	if (best_checkpoint_idx == -1) {
 		return;
 	}
-	out_data->terrain = 0;
-	out_data->closest_normal = godot::Vector3();
-	out_data->closest_point = godot::Vector3();
-	out_data->cp_idx = -1;
-	current_collision_checkpoint = best_checkpoint_idx;
-	current_checkpoint_t = best_checkpoint_t;
-	current_road_t = best_road_t;
+	out_data.terrain = 0; // todo: check embeds for terrain if the mask wants us to
+	out_data.cp_idx = best_checkpoint_idx;
+	out_data.spatial_t = best_checkpoint_t;
+	out_data.road_t = best_road_t;
 
 	const int closest_segment_idx = current_track->checkpoints[best_checkpoint_idx].road_segment;
 	current_track_segment = closest_segment_idx;
-
-	// --- EXPENSIVE CALLS MOVED OUT OF THE LOOP ---
-	// Now we call the heavy functions just once.
-	closest_roadt3d = current_track->segments[closest_segment_idx].road_shape->get_oriented_transform_at_time(current_road_t);
-	closest_roadroot = current_track->segments[closest_segment_idx].curve_matrix->sample(current_road_t.y);
+	current_track->segments[closest_segment_idx].road_shape->get_oriented_transform_at_time(out_data.closest_surface, current_road_t);
+	current_track->segments[closest_segment_idx].curve_matrix->sample(out_data.closest_root, current_road_t.y);
 }
 
 void PhysicsCar::initialize()
@@ -125,6 +145,7 @@ void PhysicsCar::initialize()
 	num_suspension_points = 0;
 	grounded = true;
 }
+
 
 void PhysicsCar::preprocess_car()
 {
@@ -495,10 +516,23 @@ void PhysicsCar::process_car_road_collision()
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 	position = desired_position;
 	orientation = orientation.rotated_local(angle_velocity.normalized(), angle_velocity.length() * _TICK_DELTA);
-	get_road_data();
+	RoadData new_road_data;
+	get_closest_road_data_at_point(new_road_data, position, grounded, current_collision_checkpoint);
 
-	//dd3d->call("draw_line", position, closest_roadt3d.origin, godot::Color(1.0f, 0.5f, 0.5f), _TICK_DELTA);
-	//dd3d->call("draw_arrow", closest_roadt3d.origin, closest_roadt3d.origin + closest_roadt3d.basis[1] * 6, godot::Color(1.0f, 0.5f, 0.5f), 0.25, true, _TICK_DELTA);
+	if (new_road_data.cp_idx == -1){
+		has_road_data = false;
+		current_collision_checkpoint = -1;
+		current_track_segment = current_track->checkpoints[0].road_segment;
+	}else{
+		has_road_data = true;
+		closest_roadt3d = new_road_data.closest_surface;
+		closest_roadroot = new_road_data.closest_root;
+		current_collision_checkpoint = new_road_data.cp_idx;
+		current_checkpoint_t = new_road_data.spatial_t;
+		current_road_t = new_road_data.road_t;
+		current_track_segment = current_track->checkpoints[current_collision_checkpoint].road_segment;
+
+	}
 
 	if (has_road_data)
 	{

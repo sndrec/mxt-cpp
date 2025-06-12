@@ -281,15 +281,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 		int sample_per_kf = 32;
 		float total_distance = 0.0f;
-		godot::Vector3 latest_sample_pos = current_track->segments[seg].curve_matrix->sample(0.0f).origin;
+		godot::Transform3D latest_sample_pos;
+		current_track->segments[seg].curve_matrix->sample(latest_sample_pos, 0.0f);
 		for (int i = 0; i < num_keyframes - 1; i++)
 		{
 			for (int n = 0; n < sample_per_kf; n++)
 			{
 				float use_t = (float)(n + 1) / sample_per_kf;
 				use_t = remap_float(use_t, 0.0f, 1.0f, current_track->segments[seg].curve_matrix->keyframes[i].time, current_track->segments[seg].curve_matrix->keyframes[i + 1].time);
-				godot::Vector3 new_sample_pos = current_track->segments[seg].curve_matrix->sample(use_t).origin;
-				total_distance += latest_sample_pos.distance_to(new_sample_pos);
+				godot::Transform3D new_sample_pos;
+				current_track->segments[seg].curve_matrix->sample(new_sample_pos, use_t);
+				total_distance += latest_sample_pos.origin.distance_to(new_sample_pos.origin);
 				latest_sample_pos = new_sample_pos;
 			}
 		}
