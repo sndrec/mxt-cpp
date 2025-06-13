@@ -5,16 +5,20 @@
 #include "mxt_core/math_utils.h"
 #include <vector>
 
+struct CollisionData;
+
 class RaceTrack
 {
 public:
-	int num_segments;
-	int num_checkpoints;
-	TrackSegment* segments;
-	CollisionCheckpoint* checkpoints;
-	std::vector<int> get_viable_checkpoints(godot::Vector3 in_point)
-	{
-		std::vector<int> return_checkpoints;
+        int num_segments;
+        int num_checkpoints;
+        TrackSegment* segments;
+        CollisionCheckpoint* checkpoints;
+        int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0) const;
+        void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = 0);
+        std::vector<int> get_viable_checkpoints(godot::Vector3 in_point)
+        {
+                std::vector<int> return_checkpoints;
 		return_checkpoints.reserve(16);
 
 		// todo: implement a broad phase that can quickly cut out large amounts of checkpoints
