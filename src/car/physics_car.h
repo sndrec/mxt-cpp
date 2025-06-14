@@ -37,8 +37,8 @@ struct CollisionData {
 class PhysicsCar
 {
 private:
-	MtxStack* mtxa;
 public:
+	MtxStack* mtxa;
 	RaceTrack* current_track = nullptr;
 	PhysicsCarProperties* car_properties = nullptr; // Base properties
 

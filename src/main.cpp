@@ -302,11 +302,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 	gamestate_data.instantiate(1024 * 1024 * 8);
 
-	cars = gamestate_data.create_and_allocate_cars(100);
-	num_cars = 100;
+	cars = gamestate_data.create_and_allocate_cars(1);
+	num_cars = 1;
 	for (int i = 0; i < num_cars; i++)
 	{
+		cars[i].mtxa = &mtxa;
 		cars[i].current_track = current_track;
+		cars[i].initialize_machine();
 		cars[i].position_current = godot::Vector3(0.5f * (i % 16), 200.0f, 0.25f * (i / 16));
 	}
 
