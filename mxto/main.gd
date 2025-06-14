@@ -18,5 +18,8 @@ func _physics_process(delta: float) -> void:
 		game_sim.tick_gamesim()
 		game_sim.render_gamesim()
 		var ct1 = car_node_container.multimesh.get_instance_transform(0)
-		cam.basis = ct1.basis.rotated(ct1.basis.y, deg_to_rad(180))
+		cam.basis = ct1.basis
 		cam.position = ct1.origin + cam.basis.y * 4 + cam.basis.z * 10
+
+func _process(delta: float) -> void:
+	pass

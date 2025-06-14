@@ -357,7 +357,7 @@ void GameSim::render_gamesim() {
 
 	for (int i = 0; i < max_render_cars; i++) {
 		Transform3D car_transform = cars[i].transform_visual;
-		car_transform.basis.transpose();
+		car_transform.basis = car_transform.basis.transposed();
 		multimesh->set_instance_transform(i, car_transform);
 	}
 }
