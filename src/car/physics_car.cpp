@@ -161,7 +161,7 @@ godot::Vector3 PhysicsCar::prepare_machine_frame()
 
 float PhysicsCar::get_current_stage_min_y() const
 {
-	return 0.0f;
+	return -100000.0f;
 };
 
 void PhysicsCar::handle_machine_damage_and_visuals()
@@ -233,7 +233,6 @@ void PhysicsCar::handle_machine_damage_and_visuals()
 
 bool PhysicsCar::find_floor_beneath_machine()
 {
-	return false;
         godot::Vector3 p0_sweep_start_ws =
                 mtxa->transform_point(godot::Vector3(0.0f, 1.0f, 0.0f));
         godot::Vector3 p1_sweep_end_ws =
@@ -590,7 +589,6 @@ void PhysicsCar::handle_linear_velocity()
 
 float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, float abs_local_lateral_speed, float drift_accel_factor)
 {
-	return 0.0f;
         float effective_accel_input = 0.0f;
         float final_thrust_output = 0.0f;
 
@@ -1345,7 +1343,7 @@ void PhysicsCar::reset_machine(int reset_type)
         }
 
         state_2 &= 0xfffffc4fu;
-        level_start_time = 0;
+        level_start_time = 60 * 5;
 
         godot::Transform3D initial_placement_transform(basis_physical.basis, position_current);
 
@@ -1636,24 +1634,22 @@ void PhysicsCar::apply_torque_from_force(const godot::Vector3& p_local_offset, c
         velocity_angular.z += -(p_local_offset.y * lf.x - p_local_offset.x * lf.y);
 };
 
-void PhysicsCar::simulate_machine_motion()
+void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 {
-	PlayerInput current_input = PlayerInput::from_player_input();
-        PlayerInput inputs = PlayerInput::from_player_input();
 
-        input_steer_yaw = -inputs.steer_horizontal * std::abs(inputs.steer_horizontal);
-        input_steer_pitch = inputs.steer_vertical;
+        input_steer_yaw = -in_input.steer_horizontal * std::abs(in_input.steer_horizontal);
+        input_steer_pitch = in_input.steer_vertical;
 
-        float in_strafe_left = std::min(1.0f, inputs.strafe_left * 1.25f);
-        float in_strafe_right = std::min(1.0f, inputs.strafe_right * 1.25f);
+        float in_strafe_left = std::min(1.0f, in_input.strafe_left * 1.25f);
+        float in_strafe_right = std::min(1.0f, in_input.strafe_right * 1.25f);
         input_strafe = (-in_strafe_left + in_strafe_right);
 
-        input_accel = inputs.accelerate;
+        input_accel = in_input.accelerate;
         bool accel_just_pressed = godot::Input::get_singleton()->is_action_just_pressed("Accelerate");
-        input_brake = inputs.brake;
+        input_brake = in_input.brake;
         bool brake_just_pressed = godot::Input::get_singleton()->is_action_just_pressed("Brake");
 
-        float in_spinattack = inputs.spinattack ? 1.0f : 0.0f;
+        float in_spinattack = in_input.spinattack ? 1.0f : 0.0f;
         float in_sideattack = 0.0f; // Placeholder: side attack not mapped
 
         if (in_strafe_left > 0.05f && in_strafe_right > 0.05f) {
@@ -2249,7 +2245,7 @@ void PhysicsCar::tick(uint32_t tick_count)
         g_anim_timer += 1;
         update_machine_stats();
         track_surface_normal_prev = track_surface_normal;
-        simulate_machine_motion();
+        simulate_machine_motion(input);
         mtxa->assign(basis_physical);
         mtxa->cur->origin = position_current;
         position_behind = mtxa->transform_point(godot::Vector3(0.0f, 0.5f, 0.5f));
