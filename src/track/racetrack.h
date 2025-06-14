@@ -15,6 +15,7 @@ public:
         TrackSegment* segments;
         CollisionCheckpoint* checkpoints;
         int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0) const;
+        int find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) const;
         void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = 0);
         std::vector<int> get_viable_checkpoints(godot::Vector3 in_point)
         {

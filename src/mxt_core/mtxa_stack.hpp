@@ -57,12 +57,12 @@ public:
 		*cur = *cur * m;
 	}
 	void rotate_x(float angle_rad) {
-		*cur = cur->rotated_local(godot::Vector3(1, 0, 0), -angle_rad);
+		*cur = cur->rotated_local(godot::Vector3(1, 0, 0), angle_rad);
 	}
 	void rotate_y(float angle_rad) {
 		*cur = cur->rotated_local(godot::Vector3(0, 1, 0), angle_rad);
 	}
 	void rotate_z(float angle_rad) {
-		*cur = cur->rotated_local(godot::Vector3(0, 0, 1), -angle_rad);
+		*cur = cur->rotated_local(godot::Vector3(0, 0, 1), angle_rad);
 	}
 };

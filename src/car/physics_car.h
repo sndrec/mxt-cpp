@@ -19,7 +19,7 @@
 #include "mxt_core/mtxa_stack.hpp"
 
 struct RoadData {
-	uint8_t terrain;
+	uint16_t terrain;
 	int16_t cp_idx;
 	godot::Vector3 spatial_t;
 	godot::Vector2 road_t;

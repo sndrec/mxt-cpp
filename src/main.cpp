@@ -24,7 +24,7 @@ void GameSim::_bind_methods()
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "MultiMeshInstance3D"), "set_car_node_container", "get_car_node_container");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 };
 
 GameSim::GameSim()
@@ -304,8 +304,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 	gamestate_data.instantiate(1024 * 1024 * 8);
 
-	cars = gamestate_data.create_and_allocate_cars(1);
-	num_cars = 1;
+	cars = gamestate_data.create_and_allocate_cars(10);
+	num_cars = 10;
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;
@@ -325,12 +325,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		UtilityFunctions::print("car_node_container is null");
 		return;
 	}
-	Ref<MultiMesh> multimesh = car_node_container->get_multimesh();
-	if (multimesh.is_null()) {
-		UtilityFunctions::print("MultiMesh is null");
+	if (car_node_container == nullptr) {
+		UtilityFunctions::print("container is null");
 		return;
 	}
-	multimesh->set_instance_count(num_cars);
 };
 
 void GameSim::destroy_gamesim()
@@ -348,16 +346,36 @@ void GameSim::render_gamesim() {
 		return;
 	}
 
-	Ref<MultiMesh> multimesh = car_node_container->get_multimesh();
-	if (multimesh.is_null()) {
+	if (car_node_container == nullptr) {
 		return;
 	}
 
-	int max_render_cars = MIN(num_cars, multimesh->get_instance_count());
-
-	for (int i = 0; i < max_render_cars; i++) {
-		Transform3D car_transform = cars[i].transform_visual;
-		car_transform.basis = car_transform.basis.transposed();
-		multimesh->set_instance_transform(i, car_transform);
+	TypedArray<godot::Node> vis_cars = car_node_container->get_children();
+	for (int i = 0; i < vis_cars.size(); i++) {
+		vis_cars[i].set("position_current", cars[i].position_current);
+		vis_cars[i].set("velocity", cars[i].velocity);
+		vis_cars[i].set("velocity_angular", cars[i].velocity_angular);
+		vis_cars[i].set("velocity_local", cars[i].velocity_local);
+		vis_cars[i].set("basis_physical", cars[i].basis_physical);
+		vis_cars[i].set("transform_visual", cars[i].transform_visual);
+		vis_cars[i].set("base_speed", cars[i].base_speed);
+		vis_cars[i].set("boost_turbo", cars[i].boost_turbo);
+		vis_cars[i].set("race_start_charge", cars[i].race_start_charge);
+		vis_cars[i].set("speed_kmh", cars[i].speed_kmh);
+		vis_cars[i].set("air_tilt", cars[i].air_tilt);
+		vis_cars[i].set("energy", cars[i].energy);
+		vis_cars[i].set("lap_progress", cars[i].lap_progress);
+		vis_cars[i].set("checkpoint_fraction", cars[i].checkpoint_fraction);
+		vis_cars[i].set("boost_frames", cars[i].boost_frames);
+		vis_cars[i].set("boost_frames_manual", cars[i].boost_frames_manual);
+		vis_cars[i].set("current_checkpoint", cars[i].current_checkpoint);
+		vis_cars[i].set("lap", cars[i].lap);
+		vis_cars[i].set("air_time", cars[i].air_time);
+		vis_cars[i].set("machine_state", cars[i].machine_state);
+		vis_cars[i].set("frames_since_start_2", cars[i].frames_since_start_2);
+		vis_cars[i].set("tilt_fl_state", cars[i].tilt_fl.state);
+		vis_cars[i].set("tilt_fr_state", cars[i].tilt_fr.state);
+		vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
+		vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
 	}
 }
