@@ -59,38 +59,21 @@ void GameSim::tick_gamesim()
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < num_cars; i++)
 	{
-		cars[i].preprocess_car();
+		cars[i].tick();
 	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].process_car_steering();
-	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].process_car_acceleration();
-	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].process_car_road_collision();
-	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].process_car_car_collision();
-	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].postprocess_car();
-		if (i == 0){
-			CollisionData collision;
-			godot::Vector3 p0 = cars[i].position + godot::Vector3(0, 5, 3);
-			godot::Vector3 p1 = cars[i].position + godot::Vector3(0, -100, 3);
-			current_track->cast_vs_track(collision, p0, p1, CAST_FLAGS::WANTS_TRACK, cars[i].current_collision_checkpoint);
-			if (collision.collided){
-				dd3d->call("draw_arrow", collision.collision_point, collision.collision_point + collision.collision_normal * 2, godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, _TICK_DELTA);
-			}
-			dd3d->call("draw_arrow", p0, p1, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
-		}
-	}
+	//for (int i = 0; i < num_cars; i++)
+	//{
+	//	if (i == 0){
+	//		CollisionData collision;
+	//		godot::Vector3 p0 = cars[i].position + godot::Vector3(0, 5, 3);
+	//		godot::Vector3 p1 = cars[i].position + godot::Vector3(0, -100, 3);
+	//		current_track->cast_vs_track(collision, p0, p1, CAST_FLAGS::WANTS_TRACK, cars[i].current_collision_checkpoint);
+	//		if (collision.collided){
+	//			dd3d->call("draw_arrow", collision.collision_point, collision.collision_point + collision.collision_normal * 2, godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, _TICK_DELTA);
+	//		}
+	//		dd3d->call("draw_arrow", p0, p1, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
+	//	}
+	//}
 
 	auto elapsed = std::chrono::high_resolution_clock::now() - start;
 	long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
@@ -324,7 +307,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].current_track = current_track;
-		cars[i].position = godot::Vector3(0.5f * (i % 16), 200.0f, 0.25f * (i / 16));
+		cars[i].position_current = godot::Vector3(0.5f * (i % 16), 200.0f, 0.25f * (i / 16));
 	}
 
 	sim_started = true;
@@ -369,7 +352,7 @@ void GameSim::render_gamesim() {
 	int max_render_cars = MIN(num_cars, multimesh->get_instance_count());
 
 	for (int i = 0; i < max_render_cars; i++) {
-		Transform3D car_transform = cars[i].car_transform;
+		Transform3D car_transform = cars[i].transform_visual;
 		car_transform.basis.transpose();
 		multimesh->set_instance_transform(i, car_transform);
 	}
