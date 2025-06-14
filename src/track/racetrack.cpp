@@ -3,6 +3,9 @@
 #include <cfloat>
 #include <algorithm>
 #include "mxt_core/enums.h"
+#include <queue>
+#include <vector>
+#include <limits>
 
 int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations) const
 {
@@ -20,30 +23,97 @@ int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index
     return -1;
 }
 
-static void convert_point_to_road(const RaceTrack *track, int cp_idx, const godot::Vector3 &point,
+int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) const {
+    // BFS queue holds (checkpoint index, depth)
+    std::queue<std::pair<int,int>> q;
+    std::vector<bool> visited(num_checkpoints, false);
+
+    q.push({ start_index, 0 });
+    visited[start_index] = true;
+
+    int  best_cp      = -1;
+    float best_dist2  = std::numeric_limits<float>::infinity();
+
+    while (!q.empty()) {
+        auto [idx, depth] = q.front();
+        q.pop();
+
+        const CollisionCheckpoint &cp = checkpoints[idx];
+
+        // between start & end plane?
+        if (!cp.end_plane.is_point_over(pos) && cp.start_plane.is_point_over(pos)) {
+            // project into local checkpoint space
+            godot::Vector3 p1    = cp.start_plane.project(pos);
+            godot::Vector3 p2    = cp.end_plane.project(pos);
+            float           cp_t = get_closest_t_on_segment(pos, p1, p2);
+
+            // interpolate orientation
+            godot::Basis basis;
+            basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t).normalized();
+            basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t).normalized();
+            basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t).normalized();
+
+            godot::Vector3 midpoint = cp.position_start.lerp(cp.position_end, cp_t);
+            godot::Plane    sep_x(basis[0],        midpoint);
+            godot::Plane    sep_y(basis.get_column(1), midpoint);
+
+            float x_r = lerp(cp.x_radius_start_inv, cp.x_radius_end_inv, cp_t);
+            float y_r = lerp(cp.y_radius_start_inv, cp.y_radius_end_inv, cp_t);
+
+            float tx = sep_x.distance_to(pos) * x_r;
+            float ty = sep_y.distance_to(pos) * y_r;
+
+            float dist2 = tx * tx + ty * ty;
+            if (dist2 < best_dist2) {
+                best_dist2 = dist2;
+                best_cp    = idx;
+            }
+        }
+
+        // enqueue neighbors up to depth 9
+        if (depth < 9) {
+            for (int i = 0; i < cp.num_neighboring_checkpoints; ++i) {
+                int nei = cp.neighboring_checkpoints[i];
+                if (!visited[nei]) {
+                    visited[nei] = true;
+                    q.push({ nei, depth + 1 });
+                }
+            }
+        }
+    }
+
+    return best_cp;
+}
+
+static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vector3 &point,
                                   godot::Vector2 &road_t, godot::Vector3 &spatial_t, float *out_cp_t = nullptr)
 {
-    const CollisionCheckpoint &cp = track->checkpoints[cp_idx];
-    godot::Vector3 p1 = cp.start_plane.project(point);
-    godot::Vector3 p2 = cp.end_plane.project(point);
+    const CollisionCheckpoint *cp;
+    if (cp_idx != -1){
+        cp = &track->checkpoints[cp_idx];
+    }else{
+        std::vector<int> return_checkpoints = track->get_viable_checkpoints(point);
+        cp = &track->checkpoints[return_checkpoints[0]];
+    }
+    godot::Vector3 p1 = cp->start_plane.project(point);
+    godot::Vector3 p2 = cp->end_plane.project(point);
     float cp_t = get_closest_t_on_segment(point, p1, p2);
     if (out_cp_t)
         *out_cp_t = cp_t;
-    float cp_t_clamped = fminf(fmaxf(cp_t, 0.0f), 1.0f);
     godot::Basis basis;
-    basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t_clamped).normalized();
-    basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t_clamped).normalized();
-    basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t_clamped).normalized();
-    godot::Vector3 midpoint = cp.position_start.lerp(cp.position_end, cp_t_clamped);
+    basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t).normalized();
+    basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t).normalized();
+    basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t).normalized();
+    godot::Vector3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
     godot::Plane sep_x_plane(basis[0], midpoint);
     godot::Plane sep_y_plane(basis.get_column(1), midpoint);
-    float x_r = lerp(cp.x_radius_start_inv, cp.x_radius_end_inv, cp_t_clamped);
-    float y_r = lerp(cp.y_radius_start_inv, cp.y_radius_end_inv, cp_t_clamped);
+    float x_r = lerp(cp->x_radius_start_inv, cp->x_radius_end_inv, cp_t);
+    float y_r = lerp(cp->y_radius_start_inv, cp->y_radius_end_inv, cp_t);
     float tx = sep_x_plane.distance_to(point) * x_r;
     float ty = sep_y_plane.distance_to(point) * y_r;
-    float tz = remap_float(cp_t_clamped, 0.0f, 1.0f, cp.t_start, cp.t_end);
+    float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
     spatial_t = godot::Vector3(tx, ty, tz);
-    track->segments[cp.road_segment].road_shape->find_t_from_relative_pos(road_t, spatial_t);
+    track->segments[cp->road_segment].road_shape->find_t_from_relative_pos(road_t, spatial_t);
 }
 
 struct CastParams {
@@ -60,7 +130,8 @@ static void cast_segment(const CastParams &params, CollisionData &out_collision,
 
     if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0)
         return;
-
+    godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+    dd3d->call("draw_arrow", p0, p1, godot::Color(1.0f, 1.0f, 1.0f), 0.25, true, _TICK_DELTA);
     RaceTrack *track = params.track;
     std::vector<int> checkpoints_to_test;
     auto add_cp = [&checkpoints_to_test](int idx) {
@@ -145,6 +216,10 @@ static void cast_segment(const CastParams &params, CollisionData &out_collision,
             }
         }
 
+        if (out_collision.collided){
+            dd3d->call("draw_arrow", out_collision.collision_point, out_collision.collision_point + out_collision.collision_normal * 2, godot::Color(0.0f, 0.0f, 1.0f), 0.25, true, _TICK_DELTA);
+        }
+
         if (!(params.mask & CAST_FLAGS::WANTS_RAIL))
             continue;
 
@@ -192,8 +267,11 @@ static void cast_segment(const CastParams &params, CollisionData &out_collision,
                 out_collision.road_data.road_t = road_t_hit_raw;
                 segment.road_shape->get_oriented_transform_at_time(out_collision.road_data.closest_surface, road_t_hit);
                 segment.curve_matrix->sample(out_collision.road_data.closest_root, road_t_hit.y);
-                out_collision.road_data.terrain = 0;
+                out_collision.road_data.terrain = 0x100;
             }
+        }
+        if (out_collision.collided){
+            dd3d->call("draw_arrow", out_collision.collision_point, out_collision.collision_point + out_collision.collision_normal * 2, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
         }
     }
 }
@@ -206,7 +284,7 @@ void RaceTrack::cast_vs_track(CollisionData &out_collision, const godot::Vector3
     if ((mask & CAST_FLAGS::WANTS_TRACK) == 0)
         return;
 
-    const float step_len = 0.5f;
+    const float step_len = 2.0f;
     const float epsilon = 0.05f;
 
     godot::Vector3 ray = p1 - p0;

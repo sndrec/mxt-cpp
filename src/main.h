@@ -30,15 +30,15 @@ namespace godot {
 			int num_cars;
 			PhysicsCar* cars;
 			MtxStack mtxa;
-			godot::MultiMeshInstance3D* car_node_container = nullptr;
+			godot::Node3D* car_node_container = nullptr;
 
 			GameSim();
 			~GameSim();
 
 			void set_sim_started(const bool p_sim_started);
 			bool get_sim_started();
-			void set_car_node_container(godot::MultiMeshInstance3D* p_car_node_container) { car_node_container = p_car_node_container; }
-			godot::MultiMeshInstance3D* get_car_node_container() const { return car_node_container; }
+			void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
+			godot::Node3D* get_car_node_container() const { return car_node_container; }
 			void tick_gamesim();
 			void instantiate_gamesim(StreamPeerBuffer* in_buffer);
 			void destroy_gamesim();

@@ -147,6 +147,14 @@ public:
 			new_car_properties->turn_decel = randf_range(-0.05f, 0.05f);
 			new_car_properties->drag = randf_range(0.006f, 0.01f);
 			new_car_properties->body = randf_range(0.5f, 1.5f);
+			new_car_properties->tilt_corners[0] = godot::Vector3(0.8, 0, -1.5);
+			new_car_properties->tilt_corners[1] = godot::Vector3(-0.8, 0, -1.5);
+			new_car_properties->tilt_corners[2] = godot::Vector3(1.1, 0, 1.7);
+			new_car_properties->tilt_corners[3] = godot::Vector3(-1.1, 0, 1.7);
+			new_car_properties->wall_corners[0] = godot::Vector3(1.0, -0.1, -1.7);
+			new_car_properties->wall_corners[1] = godot::Vector3(-1.0, -0.1, -1.7);
+			new_car_properties->wall_corners[2] = godot::Vector3(1.3, -0.1, 1.9);
+			new_car_properties->wall_corners[3] = godot::Vector3(-1.3, -0.1, 1.9);
 			cars[i].m_accel_setting = randf_range(0.0f, 1.0f);
 
 		}

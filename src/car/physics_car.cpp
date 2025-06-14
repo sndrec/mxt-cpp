@@ -1246,6 +1246,7 @@ void PhysicsCar::update_machine_stats()
 
 void PhysicsCar::reset_machine(int reset_type)
 {
+        level_start_time = frames_since_start + 60 * 5;
         // Clear all velocity and collision vectors
         velocity = godot::Vector3();
         velocity_local_flattened_and_rotated = godot::Vector3();
@@ -1343,7 +1344,6 @@ void PhysicsCar::reset_machine(int reset_type)
         }
 
         state_2 &= 0xfffffc4fu;
-        level_start_time = 60 * 5;
 
         godot::Transform3D initial_placement_transform(basis_physical.basis, position_current);
 
@@ -1637,8 +1637,8 @@ void PhysicsCar::apply_torque_from_force(const godot::Vector3& p_local_offset, c
 void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 {
 
-        input_steer_yaw = -in_input.steer_horizontal * std::abs(in_input.steer_horizontal);
-        input_steer_pitch = in_input.steer_vertical;
+        input_steer_yaw = in_input.steer_horizontal * std::abs(in_input.steer_horizontal);
+        input_steer_pitch = -in_input.steer_vertical;
 
         float in_strafe_left = std::min(1.0f, in_input.strafe_left * 1.25f);
         float in_strafe_right = std::min(1.0f, in_input.strafe_right * 1.25f);
@@ -1744,51 +1744,322 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
         }
 };
 
-int PhysicsCar::update_machine_corners()
-{
-        collision_push_track = godot::Vector3();
-        collision_push_rail = godot::Vector3();
-        collision_push_total = godot::Vector3();
+int PhysicsCar::update_machine_corners() {
+        collision_push_track   = godot::Vector3();
+        collision_push_rail    = godot::Vector3();
+        collision_push_total   = godot::Vector3();
 
-        int collision_flags = 0;
+        int overall_hit_detected_flag = 0;
+        float inv_weight   = 1.0f / stat_weight;
+        godot::Vector3 inv_vel = velocity * inv_weight;
+        bool any_corner_hit = false;
 
+        godot::Vector3 depenetration = godot::Vector3();
+        godot::Vector3 total_depenetration = godot::Vector3();
+
+        // set up transform
         mtxa->push();
         mtxa->assign(basis_physical);
         mtxa->cur->origin = position_current;
 
-        PhysicsCarCollisionPoint* corners[4] = { &wall_fl, &wall_fr, &wall_bl, &wall_br };
-        for (auto* corner : corners) {
-                godot::Vector3 p0 = corner->pos_a;
-                godot::Vector3 p1 = mtxa->transform_point(corner->offset);
-                corner->pos_b = p1;
+        // first sanity pass
+        {
+                godot::Vector3 s0 = position_old + mtxa->cur->basis.get_column(1) * 0.5f;
+                godot::Vector3 s1 = position_current;
+                if (current_track) {
+                        CollisionData hit;
+                        current_track->cast_vs_track(hit, s0, s1,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                current_checkpoint);
+                        if (hit.collided) {
+                                auto normal = hit.collision_normal;
+                                auto hit_pos = hit.collision_point;
+                                for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                        godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+                                        float depth = (p0 - hit_pos).dot(normal);
+                                        if (depth >= 0.0f) continue;
+                                        godot::Vector3 d = normal * (-depth);
+                                        collision_push_total += d;
+                                        overall_hit_detected_flag |= 1;
+                                        any_corner_hit = true;
+                                        depenetration += d;
+                                        if (hit.road_data.terrain & 0x100) {
+                                                overall_hit_detected_flag |= 2;
+                                                collision_push_rail += d;
+                                        } else {
+                                                collision_push_track += d;
+                                        }
+                                }
+                                position_current += depenetration;
+                                mtxa->cur->origin = position_current;
+                                total_depenetration += depenetration;
+                                depenetration = godot::Vector3();
+                        }
+                }
+        }
 
-                if (current_track != nullptr) {
+        // second sanity pass (shifted tip)
+        {
+                godot::Vector3 s0 = position_old + mtxa->cur->basis.get_column(1) * 0.5f;
+                godot::Vector3 s1 = position_current + mtxa->cur->basis.get_column(1) * 0.5f;
+                if (current_track) {
+                        CollisionData hit;
+                        current_track->cast_vs_track(hit, s0, s1,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                current_checkpoint);
+                        if (hit.collided) {
+                                auto normal = hit.collision_normal;
+                                auto hit_pos = hit.collision_point;
+                                for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                        godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+                                        float depth = (p0 - hit_pos).dot(normal);
+                                        if (depth >= 0.0f) continue;
+                                        godot::Vector3 d = normal * (-depth);
+                                        collision_push_total += d;
+                                        overall_hit_detected_flag |= 1;
+                                        any_corner_hit = true;
+                                        depenetration += d;
+                                        if (hit.road_data.terrain & 0x100) {
+                                                overall_hit_detected_flag |= 2;
+                                                collision_push_rail += d;
+                                        } else {
+                                                collision_push_track += d;
+                                        }
+                                }
+                                position_current += depenetration;
+                                mtxa->cur->origin = position_current;
+                                total_depenetration += depenetration;
+                                depenetration = godot::Vector3();
+                        }
+                }
+        }
+
+        // up/down ray
+        {
+                float check_dist = 0.5f;
+                if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
+                        check_dist = 2.0f;
+
+                godot::Vector3 tip = mtxa->transform_point(
+                        godot::Vector3(0,
+                                check_dist + std::max(0.0f, -(inv_vel + total_depenetration).dot(track_surface_normal)),
+                                0));
+                godot::Vector3 target = mtxa->transform_point(godot::Vector3(0, -10, 0));
+
+                if (current_track) {
+                        CollisionData hit;
+                        current_track->cast_vs_track(hit, tip, target,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                current_checkpoint);
+                        if (hit.collided) {
+                                auto normal = hit.collision_normal;
+                                auto hit_pos = hit.collision_point;
+                                for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                        godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+                                        float depth = (p0 - hit_pos).dot(normal);
+                                        if (depth >= 0.0f) continue;
+                                        godot::Vector3 d = normal * (-depth);
+                                        collision_push_total += d;
+                                        overall_hit_detected_flag |= 1;
+                                        any_corner_hit = true;
+                                        depenetration += d;
+                                        if (hit.road_data.terrain & 0x100)
+                                                collision_push_rail += d;
+                                        else
+                                                collision_push_track += d;
+                                }
+                                position_current += depenetration;
+                                mtxa->cur->origin = position_current;
+                                total_depenetration += depenetration;
+                                depenetration = godot::Vector3();
+                        }
+                }
+        }
+
+        // airborne horizontal ray
+        if ((machine_state & MACHINESTATE::AIRBORNE) != 0) {
+                godot::Vector3 p0 = position_current - inv_vel;
+                godot::Vector3 p1 = position_current + inv_vel;
+                if (current_track) {
                         CollisionData hit;
                         current_track->cast_vs_track(hit, p0, p1,
-                                                     CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                                     current_checkpoint);
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                current_checkpoint);
                         if (hit.collided) {
-                                godot::Vector3 penetration = hit.collision_point - p1;
-                                position_current += penetration;
+                                auto normal = hit.collision_normal;
+                                auto hit_pos = hit.collision_point;
+                                for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                        godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+                                        float depth = (p0 - hit_pos).dot(normal);
+                                        if (depth >= 0.0f) continue;
+                                        godot::Vector3 d = normal * (-depth);
+                                        collision_push_total += d;
+                                        overall_hit_detected_flag |= 1;
+                                        any_corner_hit = true;
+                                        depenetration += d;
+                                        if (hit.road_data.terrain & 0x100)
+                                                collision_push_rail += d;
+                                        else
+                                                collision_push_track += d;
+                                }
+                                position_current += depenetration;
                                 mtxa->cur->origin = position_current;
+                                total_depenetration += depenetration;
+                                depenetration = godot::Vector3();
+                        }
+                }
+        }
 
-                                collision_push_total += penetration;
-                                if (std::abs(hit.collision_normal.y) < 0.2f) {
-                                        collision_push_rail += penetration;
-                                        collision_flags |= 2;
-                                } else {
-                                        collision_push_track += penetration;
-                                        collision_flags |= 1;
+        // side and rail feelers
+        for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                // track‐surface tip → corner
+                {
+                        godot::Vector3 p1 = position_old + track_surface_normal * 0.5f;
+                        godot::Vector3 p0 = mtxa->transform_point(wc->offset);
+                        if (current_track) {
+                                CollisionData hit;
+                                current_track->cast_vs_track(hit, p1, p0,
+                                        CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                        current_checkpoint);
+                                if (hit.collided) {
+                                        auto normal = hit.collision_normal;
+                                        auto hit_pos = hit.collision_point;
+                                        for (auto* wc2 : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                                godot::Vector3 p = mtxa->transform_point(wc2->offset) + depenetration;
+                                                float depth = (p - hit_pos).dot(normal);
+                                                if (depth >= 0.0f) continue;
+                                                godot::Vector3 d = normal * (-depth);
+                                                if (hit.road_data.terrain & 0x100)
+                                                        overall_hit_detected_flag |= 2, collision_push_rail += d;
+                                                else
+                                                        collision_push_track += d;
+                                                collision_push_total += d;
+                                                overall_hit_detected_flag |= 1;
+                                                any_corner_hit = true;
+                                                depenetration += d;
+                                        }
+                                        position_current += depenetration;
+                                        mtxa->cur->origin = position_current;
+                                        total_depenetration += depenetration;
+                                        depenetration = godot::Vector3();
                                 }
                         }
                 }
-                corner->pos_a = position_current;
+                // rail feeler
+                {
+                        godot::Vector3 p1 = position_old + track_surface_normal * 0.5f;
+                        godot::Vector3 p2 = mtxa->transform_point(wc->offset.normalized() * 4.0f);
+                        if (current_track) {
+                                CollisionData hit;
+                                current_track->cast_vs_track(hit, p1, p2,
+                                        CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                        current_checkpoint);
+                                if (hit.collided) {
+                                        auto normal = hit.collision_normal;
+                                        auto hit_pos = hit.collision_point;
+                                        for (auto* wc2 : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                                godot::Vector3 p = mtxa->transform_point(wc2->offset) + depenetration;
+                                                float depth = (p - hit_pos).dot(normal);
+                                                if (depth >= 0.0f) continue;
+                                                godot::Vector3 d = normal * (-depth);
+                                                if (hit.road_data.terrain & 0x100)
+                                                        overall_hit_detected_flag |= 2, collision_push_rail += d;
+                                                else
+                                                        collision_push_track += d;
+                                                collision_push_total += d;
+                                                overall_hit_detected_flag |= 1;
+                                                any_corner_hit = true;
+                                                depenetration += d;
+                                        }
+                                        position_current += depenetration;
+                                        mtxa->cur->origin = position_current;
+                                        total_depenetration += depenetration;
+                                        depenetration = godot::Vector3();
+                                }
+                        }
+                }
+        }
+
+        // repeat UD pass
+        {
+                float check_dist = 0.5f;
+                if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
+                        check_dist = 2.0f;
+
+                godot::Vector3 tip = mtxa->transform_point(
+                        godot::Vector3(0,
+                                check_dist + std::max(0.0f, -(inv_vel + total_depenetration).dot(track_surface_normal)),
+                                0));
+                godot::Vector3 target = mtxa->transform_point(godot::Vector3(0, -10, 0));
+
+                if (current_track) {
+                        CollisionData hit;
+                        current_track->cast_vs_track(hit, tip, target,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                current_checkpoint);
+                        if (hit.collided) {
+                                auto normal = hit.collision_normal;
+                                auto hit_pos = hit.collision_point;
+                                for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                        godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+                                        float depth = (p0 - hit_pos).dot(normal);
+                                        if (depth >= 0.0f) continue;
+                                        godot::Vector3 d = normal * (-depth);
+                                        collision_push_total += d;
+                                        overall_hit_detected_flag |= 1;
+                                        any_corner_hit = true;
+                                        depenetration += d;
+                                        if (hit.road_data.terrain & 0x100)
+                                                collision_push_rail += d;
+                                        else
+                                                collision_push_track += d;
+                                }
+                                position_current += depenetration;
+                                mtxa->cur->origin = position_current;
+                                total_depenetration += depenetration;
+                                depenetration = godot::Vector3();
+                        }
+                }
+        }
+
+        // repeat airborne pass
+        if ((machine_state & MACHINESTATE::AIRBORNE) != 0) {
+                godot::Vector3 p0 = position_current - inv_vel;
+                godot::Vector3 p1 = position_current + inv_vel;
+                if (current_track) {
+                        CollisionData hit;
+                        current_track->cast_vs_track(hit, p0, p1,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
+                                current_checkpoint);
+                        if (hit.collided) {
+                                auto normal = hit.collision_normal;
+                                auto hit_pos = hit.collision_point;
+                                for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+                                        godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+                                        float depth = (p0 - hit_pos).dot(normal);
+                                        if (depth >= 0.0f) continue;
+                                        godot::Vector3 d = normal * (-depth);
+                                        collision_push_total += d;
+                                        overall_hit_detected_flag |= 1;
+                                        any_corner_hit = true;
+                                        depenetration += d;
+                                        if (hit.road_data.terrain & 0x100)
+                                                collision_push_rail += d;
+                                        else
+                                                collision_push_track += d;
+                                }
+                                position_current += depenetration;
+                                mtxa->cur->origin = position_current;
+                                total_depenetration += depenetration;
+                                depenetration = godot::Vector3();
+                        }
+                }
         }
 
         mtxa->pop();
+        return overall_hit_detected_flag;
+}
 
-        return collision_flags;
-};
 
 void PhysicsCar::create_machine_visual_transform()
 {

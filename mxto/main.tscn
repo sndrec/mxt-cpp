@@ -1,9 +1,8 @@
-[gd_scene load_steps=9 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=7 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
-[ext_resource type="ArrayMesh" uid="uid://bortgufpfx4s3" path="res://vehicle/bfalcon.obj" id="2_uss65"]
 [ext_resource type="PackedScene" uid="uid://dmp2thprxsqlx" path="res://test/test_track.gltf" id="3_euqgd"]
-[ext_resource type="Material" uid="uid://6d5aw8fd7dy4" path="res://asset/debug_car_mat.tres" id="4_lquwl"]
+[ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c0w6o"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
@@ -17,10 +16,6 @@ background_mode = 2
 sky = SubResource("Sky_7dlep")
 tonemap_mode = 2
 glow_enabled = true
-
-[sub_resource type="MultiMesh" id="MultiMesh_1bvp3"]
-transform_format = 1
-mesh = ExtResource("2_uss65")
 
 [node name="Main" type="Node"]
 script = ExtResource("1_tjhrj")
@@ -54,14 +49,10 @@ shadow_enabled = true
 [node name="WorldEnvironment" type="WorldEnvironment" parent="GameWorld"]
 environment = SubResource("Environment_52gnn")
 
-[node name="Camera3D2" type="Camera3D" parent="GameWorld"]
-transform = Transform3D(-0.0906327, -0.494928, 0.864194, 0, 0.867765, 0.496974, -0.995885, 0.045042, -0.0786479, 355.879, 270.129, -46.205)
-current = true
-
 [node name="RacingScene" parent="GameWorld" instance=ExtResource("3_euqgd")]
 
-[node name="MultiMeshInstance3D" type="MultiMeshInstance3D" parent="GameWorld"]
-material_override = ExtResource("4_lquwl")
-multimesh = SubResource("MultiMesh_1bvp3")
+[node name="CarNodeContainer" type="Node3D" parent="GameWorld"]
+script = ExtResource("3_h2yge")
+metadata/_custom_type_script = "uid://odaiawvcj4yf"
 
 [connection signal="pressed" from="Control/Button" to="." method="_on_button_pressed"]
