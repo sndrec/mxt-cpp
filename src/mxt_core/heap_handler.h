@@ -126,8 +126,6 @@ public:
 		PhysicsCar* cars = allocate_array<PhysicsCar>(num_cars);
 		for (int i = 0; i < num_cars; i++)
 		{
-			cars[i].initialize_machine();
-
 			PhysicsCarProperties* new_car_properties = allocate_object<PhysicsCarProperties>();
 
 			cars[i].car_properties = new_car_properties;

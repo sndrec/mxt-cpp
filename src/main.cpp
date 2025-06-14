@@ -59,7 +59,7 @@ void GameSim::tick_gamesim()
 	auto start = std::chrono::high_resolution_clock::now();
 	for (int i = 0; i < num_cars; i++)
 	{
-		cars[i].tick();
+		cars[i].tick(tick);
 	}
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -80,6 +80,8 @@ void GameSim::tick_gamesim()
 	godot::Object* dd2d = godot::Engine::get_singleton()->get_singleton("DebugDraw2D");
 	dd2d->call("set_text", "frame time us", microseconds);
 
+
+	tick += 1;
 	//dd2d->call("set_text", "pos 1", car_positions[0]);
 	
 	//dd3d->call("draw_points", car_positions, 0, 1.0f, godot::Color(1.f, 0.f, 0.f), 0.0166666);

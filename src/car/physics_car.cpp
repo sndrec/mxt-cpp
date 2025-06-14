@@ -6,6 +6,7 @@
 #include "godot_cpp/core/math.hpp"
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
 
 static inline godot::Vector3 normalized_safe(const godot::Vector3 &v,
                                              const godot::Vector3 &def = godot::Vector3()) {
@@ -2217,7 +2218,7 @@ void PhysicsCar::post_tick()
         handle_machine_damage_and_visuals();
 };
 
-void PhysicsCar::tick()
+void PhysicsCar::tick(uint32_t tick_count)
 {
         calced_max_energy = 100.0f;
 
@@ -2225,10 +2226,10 @@ void PhysicsCar::tick()
 
         PlayerInput input = PlayerInput::from_player_input();
 
-        if (frames_since_start < level_start_time - 180) {
+        if (tick_count < level_start_time - 180) {
                 machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
                 machine_state &= ~MACHINESTATE::ACTIVE;
-        } else if (frames_since_start < level_start_time) {
+        } else if (tick_count < level_start_time) {
                 machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
                 if (input_accel > 0.01f)
                         machine_state |= MACHINESTATE::ACTIVE;
