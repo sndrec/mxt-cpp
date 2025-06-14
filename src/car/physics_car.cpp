@@ -1259,7 +1259,7 @@ void PhysicsCar::reset_machine(int reset_type)
         track_surface_normal = mtxa->rotate_point(godot::Vector3(0, 1, 0));
 
         // Placeholder spawn values until StageOverseer is ported
-        godot::Vector3 spawn_pos = godot::Vector3();
+        godot::Vector3 spawn_pos = godot::Vector3(0.f, 200.f, 0.f);
         float spawn_rot = 0.0f;
 
         position_current = spawn_pos;
@@ -2217,13 +2217,13 @@ void PhysicsCar::post_tick()
         handle_machine_damage_and_visuals();
 };
 
-void PhysicsCar::tick(const PlayerInput& frame_input /* , uint64_t current_game_tick, other game state if needed */)
+void PhysicsCar::tick()
 {
         calced_max_energy = 100.0f;
 
         side_attack_indicator = 0.0f;
 
-        PlayerInput input = frame_input;
+        PlayerInput input = PlayerInput::from_player_input();
 
         if (frames_since_start < level_start_time - 180) {
                 machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;

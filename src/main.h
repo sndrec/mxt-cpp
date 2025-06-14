@@ -8,6 +8,7 @@
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "track/racetrack.h"
 #include "mxt_core/heap_handler.h"
+#include "mxt_core/mtxa_stack.hpp"
 
 namespace godot {
 
@@ -28,6 +29,7 @@ namespace godot {
 			RaceTrack* current_track;
 			int num_cars;
 			PhysicsCar* cars;
+			MtxStack mtxa;
 			godot::MultiMeshInstance3D* car_node_container = nullptr;
 
 			GameSim();
