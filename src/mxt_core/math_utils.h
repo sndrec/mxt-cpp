@@ -5,15 +5,18 @@
 #include "godot_cpp/core/math.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
 
-const float _A = 1738.0f;
+constexpr float _A = 1738.0f;
 
-const float _U_TO_KMH = 6.0f;
-const float _KMH_TO_U = 1.0f / _U_TO_KMH;
-const float _GRAVITY = -120.0f;
-const float _TICKS_PER_SECOND = 60.0f;
-const float _TICK_DELTA = 1.0f / _TICKS_PER_SECOND;
-const float PI = 3.1415926535897932;
-const float ONE_DIV_BY_PI = 1.0 / PI;
+constexpr float _U_TO_KMH = 6.0f;
+constexpr float _KMH_TO_U = 1.0f / _U_TO_KMH;
+constexpr float _GRAVITY = -120.0f;
+constexpr float _TICKS_PER_SECOND = 60.0f;
+constexpr float _TICK_DELTA = 1.0f / _TICKS_PER_SECOND;
+constexpr float PI = 3.1415926535897932;
+constexpr float TAU = 6.2831853071795864;
+constexpr float DEG_TO_RAD = PI / 180.0f;
+constexpr float RAD_TO_DEG = 180.0f / PI;
+constexpr float ONE_DIV_BY_PI = 1.0 / PI;
 const godot::Basis BASIS_IDENTITY = godot::Basis(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
 const godot::Transform3D T3D_IDENTITY = godot::Transform3D(BASIS_IDENTITY, godot::Vector3(0.0f, 0.0f, 0.0f));
 
