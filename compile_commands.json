@@ -5838,6 +5838,12 @@
         "output": "src\\track\\curve_matrix.windows.template_debug.x86_64.obj"
     },
     {
+        "command": "cl /Fosrc\\track\\racetrack.windows.template_debug.x86_64.obj /c src\\track\\racetrack.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
+        "directory": "B:\\programming\\mxt-cpp",
+        "file": "src\\track\\racetrack.cpp",
+        "output": "src\\track\\racetrack.windows.template_debug.x86_64.obj"
+    },
+    {
         "command": "cl /Fosrc\\track\\road_shape_base.windows.template_debug.x86_64.obj /c src\\track\\road_shape_base.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
         "directory": "B:\\programming\\mxt-cpp",
         "file": "src\\track\\road_shape_base.cpp",

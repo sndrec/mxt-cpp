@@ -8,7 +8,8 @@ namespace TERRAIN {
 		DIRT = 0x8,
 		JUMP = 0x10,
 		LAVA = 0x20,
-		BACKSIDE = 0x40
+		ICE = 0x40,
+		BACKSIDE = 0x80
 	};
 }
 
