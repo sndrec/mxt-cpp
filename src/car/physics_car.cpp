@@ -12,6 +12,13 @@ static inline godot::Vector3 normalized_safe(const godot::Vector3 &v,
     return v.length_squared() > 0.000001f ? v.normalized() : def;
 }
 
+static inline godot::Vector3 set_vec3_length(const godot::Vector3 &v, float len) {
+    float l = v.length();
+    if (l > 0.000001f)
+        return v * (len / l);
+    return godot::Vector3();
+}
+
 godot::Vector3 PhysicsCar::prepare_machine_frame()
 {
         // Reset input if we're in the starting countdown
@@ -1620,20 +1627,292 @@ void PhysicsCar::create_machine_visual_transform()
 
 void PhysicsCar::handle_machine_collision_response()
 {
+        int corner_collision_type_flag = update_machine_corners();
 
+        float push_magnitude_rail = collision_push_rail.length();
+        float push_magnitude_track = collision_push_track.length();
+        float current_world_speed = velocity.length();
+
+        float speed_over_weight = 0.0f;
+        if (std::abs(stat_weight) > 0.0001f)
+                speed_over_weight = current_world_speed / stat_weight;
+
+        if (push_magnitude_track > 0.0023148148f) {
+                if (corner_collision_type_flag & 1)
+                        machine_state |= MACHINESTATE::LOWGRIP;
+        }
+
+        if (push_magnitude_rail > 0.0023148148f) {
+                if ((corner_collision_type_flag & 2) && (machine_state & MACHINESTATE::LOWGRIP) == 0)
+                        machine_state |= MACHINESTATE::TOOKDAMAGE;
+        }
+
+        bool is_significant_collision_event =
+                (push_magnitude_rail > 0.0046296296f) && (speed_over_weight > 0.0046296296f);
+
+        bool apply_full_response = false;
+        if (frames_since_start_2 > 0x3c && is_significant_collision_event &&
+            (machine_state & MACHINESTATE::TOOKDAMAGE)) {
+                apply_full_response = true;
+        }
+
+        if (apply_full_response) {
+                collision_response = collision_push_total;
+
+                float dot_push_vel_norm = 0.0f;
+                if (push_magnitude_rail > 0.0001f && current_world_speed > 0.0001f)
+                        dot_push_vel_norm = collision_push_total.normalized().dot(velocity.normalized());
+
+                float clamped_opposing_dot_prod = std::min(dot_push_vel_norm, 0.0f);
+
+                float response_intensity_factor = 0.0f;
+                if (speed_over_weight > 0.02314814814f) {
+                        float dot_push_track_normal = 0.0f;
+                        if (push_magnitude_rail > 0.0001f && track_surface_normal.length_squared() > 0.0001f)
+                                dot_push_track_normal =
+                                        collision_push_total.normalized().dot(track_surface_normal.normalized());
+
+                        if (std::abs(dot_push_track_normal) < 0.7f) {
+                                response_intensity_factor =
+                                        (0.15f + (clamped_opposing_dot_prod * clamped_opposing_dot_prod)) / 1.5f;
+
+                                if ((machine_state & MACHINESTATE::B10) == 0) {
+                                        response_intensity_factor =
+                                                (response_intensity_factor * current_world_speed) / 500.0f;
+                                        if (rail_collision_timer != 0)
+                                                response_intensity_factor *= 0.15f;
+                                } else {
+                                        response_intensity_factor =
+                                                (response_intensity_factor * current_world_speed) / 2000.0f;
+                                }
+                        }
+                }
+
+                if (clamped_opposing_dot_prod < -0.5f) {
+                        machine_state &= ~(MACHINESTATE::JUST_HIT_DASHPLATE |
+                                            MACHINESTATE::BOOSTING_DASHPLATE |
+                                            MACHINESTATE::JUST_PRESSED_BOOST |
+                                            MACHINESTATE::BOOSTING);
+                        machine_state &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
+                        boost_frames = 0;
+                        boost_frames_manual = 0;
+                }
+
+                if (machine_state & MACHINESTATE::TOOKDAMAGE) {
+                        float damage_base = response_intensity_factor * stat_body;
+                        if ((machine_state & MACHINESTATE::B10) == 0 && damage_base > 20.0f)
+                                damage_base = 20.0f;
+
+                        float max_damage_this_hit = 1.01f * calced_max_energy;
+                        float actual_damage_taken = std::min(damage_base, max_damage_this_hit);
+                        damage_from_last_hit = actual_damage_taken;
+                        energy -= actual_damage_taken;
+
+                        if (energy < 0.0f) {
+                                energy = 0.0f;
+                                machine_state |= MACHINESTATE::ZEROHP;
+                                base_speed = 0.0f;
+                        }
+                }
+
+                godot::Vector3 response_impulse_base;
+                if (push_magnitude_rail > 0.0001f)
+                        response_impulse_base = collision_push_total.normalized() *
+                                                (clamped_opposing_dot_prod * current_world_speed);
+                else
+                        response_impulse_base = godot::Vector3();
+
+                if (clamped_opposing_dot_prod < 0.0f) {
+                        float ratio_clamped_dot = clamped_opposing_dot_prod / 0.7f;
+                        float val_inside_sqrt = std::max(0.0f, 1.0f - (ratio_clamped_dot * ratio_clamped_dot));
+                        float sqrt_factor = std::sqrt(val_inside_sqrt);
+
+                        float base_speed_mult;
+                        float boost_turbo_additional_mult;
+
+                        if (rail_collision_timer == 0) {
+                                base_speed_mult = 0.2f + 0.6f * sqrt_factor;
+                                boost_turbo_additional_mult = 0.4f * base_speed_mult;
+                        } else {
+                                base_speed_mult = 0.64f + 0.35f * sqrt_factor;
+                                boost_turbo_additional_mult = 0.6f * base_speed_mult;
+                        }
+                        base_speed *= base_speed_mult;
+                        boost_turbo *= (0.3f + boost_turbo_additional_mult);
+                }
+
+                if (speed_over_weight <= 1.851851851f) {
+                        velocity += response_impulse_base * -1.0f;
+                } else {
+                        float final_impulse_scale_factor;
+                        if (machine_state & MACHINESTATE::ZEROHP) {
+                                final_impulse_scale_factor = 3.4f - 1.7f * std::abs(clamped_opposing_dot_prod);
+                        } else if (rail_collision_timer == 0) {
+                                final_impulse_scale_factor = 3.0f - 1.5f * std::abs(clamped_opposing_dot_prod);
+                        } else {
+                                final_impulse_scale_factor = 2.0f - std::abs(clamped_opposing_dot_prod);
+                        }
+
+                        velocity += response_impulse_base * (-final_impulse_scale_factor);
+
+                        if (rail_collision_timer == 0) {
+                                PhysicsCarSuspensionPoint* tilt_corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
+                                for (auto* corner : tilt_corners)
+                                        corner->state |= TILTSTATE::DRIFT;
+                        }
+                        rail_collision_timer = 20;
+                }
+
+                if (response_impulse_base.length_squared() > 0.000001f) {
+                        godot::Vector3 impulse_local_for_visuals =
+                                mtxa->inverse_rotate_point(response_impulse_base);
+                        visual_rotation.z += impulse_local_for_visuals.x;
+                        visual_rotation.x += impulse_local_for_visuals.z;
+                }
+
+                if (machine_state & MACHINESTATE::ACTIVE) {
+                        PhysicsCarCollisionPoint* wall_corners[4] = { &wall_fl, &wall_fr, &wall_bl, &wall_br };
+                        for (int i = 0; i < 4; ++i) {
+                                (void)wall_corners[i];
+                                apply_torque_from_force(track_surface_normal, response_impulse_base * -0.002f);
+                        }
+                }
+
+                if (frames_since_start_2 > 60)
+                        align_machine_y_with_track_normal_immediate();
+
+        } else if ((machine_state & MACHINESTATE::JUSTLANDED) &&
+                   speed_over_weight >= 0.0462962962962f) {
+                godot::Vector3 vStack_a8 = mtxa->rotate_point(godot::Vector3(0, 1, 0));
+                float dVar8 = normalized_safe(vStack_a8).dot(normalized_safe(track_surface_normal));
+                float dVar7 = normalized_safe(velocity).dot(normalized_safe(track_surface_normal));
+                float fVar11 = velocity.length();
+                float fVar10 = 0.9f;
+                float dVar9 = 2.0f;
+                if (dVar8 < 0.0f)
+                        dVar8 = 0.0f;
+                float dVar6 = 0.5f;
+                fVar11 = fVar11 * dVar7;
+                base_speed = base_speed * dVar8;
+                godot::Vector3 fStack_9c = track_surface_normal * fVar11;
+                float fVar11b = dVar9 * std::abs(dVar6 + dVar7);
+                godot::Vector3 vStack_90 = velocity - fStack_9c;
+                if (fVar11b < fVar10)
+                        vStack_90 = set_vec3_length(vStack_90, fVar10 * (1.0f - 1.11f * fVar11b) * dVar8);
+                velocity -= fStack_9c * dVar8;
+                velocity += vStack_90;
+        }
+
+        if (frames_since_start_2 <= 90)
+                velocity += track_surface_normal * -(velocity.dot(track_surface_normal));
 };
 
 void PhysicsCar::align_machine_y_with_track_normal_immediate()
 {
+        if (track_surface_normal.length_squared() < 0.0001f)
+                return;
 
+        godot::Vector3 safe_track_normal = track_surface_normal.normalized();
+        godot::Vector3 machine_current_world_up = mtxa->rotate_point(godot::Vector3(0, 1, 0));
+
+        if (machine_current_world_up.length_squared() < 0.0001f)
+                return;
+
+        godot::Vector3 safe_machine_world_up = machine_current_world_up.normalized();
+
+        mtxa->push();
+        godot::Quaternion delta_rotation_q = godot::Quaternion(safe_machine_world_up, safe_track_normal);
+        mtxa->from_quat(delta_rotation_q);
+        godot::Transform3D old_physical_basis_as_transform(basis_physical.basis, godot::Vector3());
+        mtxa->multiply(old_physical_basis_as_transform);
+        basis_physical = mtxa->cur->basis;
+        mtxa->pop();
+};
+
+void PhysicsCar::handle_checkpoints()
+{
+        if (!current_track || current_track->num_checkpoints == 0)
+                return;
+
+        uint8_t prev_lap = lap;
+
+        int found = current_track->find_checkpoint_recursive(position_current, current_checkpoint);
+        if (found >= 0 && found != current_checkpoint) {
+                if (found == 0 && current_checkpoint == current_track->num_checkpoints - 1) {
+                        lap += 1;
+                } else if (found == current_track->num_checkpoints - 1 && current_checkpoint == 0) {
+                        if (lap > 0)
+                                lap -= 1;
+                }
+                current_checkpoint = static_cast<uint16_t>(found);
+        }
+
+        const CollisionCheckpoint &cur_cp = current_track->checkpoints[current_checkpoint];
+        godot::Vector3 p1 = cur_cp.start_plane.project(position_current);
+        godot::Vector3 p2 = cur_cp.end_plane.project(position_current);
+        float t = get_closest_t_on_segment(position_current, p1, p2);
+        checkpoint_fraction = t;
+        lap_progress = (static_cast<float>(current_checkpoint) + t) / static_cast<float>(current_track->num_checkpoints);
+
+        if (lap != prev_lap) {
+                machine_state |= MACHINESTATE::CROSSEDLAPLINE_Q;
+        }
 };
 
 void PhysicsCar::post_tick()
 {
-
+        if (state_2 & 0x8u) {
+                mtxa->assign(basis_physical);
+                mtxa->cur->origin = position_current;
+                handle_machine_collision_response();
+        }
+        handle_machine_damage_and_visuals();
 };
 
 void PhysicsCar::tick(const PlayerInput& frame_input /* , uint64_t current_game_tick, other game state if needed */)
 {
+        if (godot::Engine::get_singleton()->is_editor_hint())
+                return;
 
+        // Timing diagnostics placeholder
+        just_ticked = true;
+        calced_max_energy = 100.0f;
+
+        side_attack_indicator = 0.0f;
+
+        PlayerInput input = frame_input;
+
+        if (godot::Engine::get_singleton()->get_iterations_per_second() < level_start_time - 180) {
+                machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
+                machine_state &= ~MACHINESTATE::ACTIVE;
+        } else if (godot::Engine::get_singleton()->get_iterations_per_second() < level_start_time) {
+                machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
+                if (input_accel > 0.01f)
+                        machine_state |= MACHINESTATE::ACTIVE;
+        } else {
+                machine_state &= ~MACHINESTATE::STARTINGCOUNTDOWN;
+        }
+
+        if (input.strafe_left || input.strafe_right) {
+                // side attack pressed check is not mapped so ignore for now
+        }
+
+        if (input.spinattack)
+                machine_state |= MACHINESTATE::SPINATTACKING;
+        if (input.boost && lap > 1)
+                machine_state |= MACHINESTATE::JUST_PRESSED_BOOST;
+
+        g_anim_timer += 1;
+        update_machine_stats();
+        track_surface_normal_prev = track_surface_normal;
+        simulate_machine_motion();
+        mtxa->assign(basis_physical);
+        mtxa->cur->origin = position_current;
+        position_behind = mtxa->transform_point(godot::Vector3(0.0f, 0.5f, 0.5f));
+
+        post_tick();
+        if (frames_since_start_2 == 0)
+                velocity = godot::Vector3();
+
+        handle_checkpoints();
 };
