@@ -1,6 +1,7 @@
 #pragma once
 
-#include "mxt_core/plane.h"
+#include "godot_cpp/variant/vector3.hpp"
+#include "godot_cpp/classes/object.hpp"
 
 class CollisionCheckpoint
 {
@@ -25,4 +26,7 @@ public:
 	int road_segment;
 	int num_neighboring_checkpoints;
 	int* neighboring_checkpoints;
+	bool contains(godot::Vector3 &in_pos){
+		return start_plane.is_point_over(in_pos) && end_plane.is_point_over(in_pos);
+	}
 };
