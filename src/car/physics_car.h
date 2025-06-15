@@ -19,24 +19,25 @@
 #include "mxt_core/mtxa_stack.hpp"
 
 struct RoadData {
-	uint16_t terrain;
-	int16_t cp_idx;
-	godot::Vector3 spatial_t;
-	godot::Vector2 road_t;
-	godot::Transform3D closest_surface;
-	godot::Transform3D closest_root;
+	uint16_t terrain; // terrain of whatever we're sampling
+	int16_t cp_idx; // checkpoint our collision belongs to
+	godot::Vector3 spatial_t; // local coordinate space of the point that is being tested at the road's sampled point
+	godot::Vector2 road_t; // span along the width and length of the road at the sampled point (goes from (-1, 0) to (1, 1))
+	godot::Transform3D closest_surface; // oriented transform representing the road's surface position and orientation at the sampled point
+	godot::Transform3D closest_root; // oriented transform representing the road's overall center and orientation at the sampled length along the road
 };
 
 struct CollisionData {
-	bool collided;
-	godot::Vector3 collision_point;
-	godot::Vector3 collision_normal;
+	bool collided; // did we collide?
+	godot::Vector3 collision_point; // position of collision
+	godot::Vector3 collision_normal; // surface normal at collision
 	RoadData road_data;
 };
 
 class PhysicsCar
 {
 private:
+	float scratch_float[16];
 public:
 	MtxStack* mtxa;
 	RaceTrack* current_track = nullptr;

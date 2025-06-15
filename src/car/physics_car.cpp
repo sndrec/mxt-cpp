@@ -4,9 +4,11 @@
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/object.hpp"
 #include "godot_cpp/core/math.hpp"
+#include "mxt_core/enums.h"
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include "mxt_core/debug.hpp"
 
 static inline godot::Vector3 normalized_safe(const godot::Vector3 &v,
                                              const godot::Vector3 &def = godot::Vector3()) {
@@ -243,11 +245,14 @@ bool PhysicsCar::find_floor_beneath_machine()
         bool sweep_hit_occurred = false;
         CollisionData hit;
         if (current_track != nullptr) {
-                current_track->cast_vs_track(hit, p0_sweep_start_ws,
+                int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
+                DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
+                current_track->cast_vs_track_fast(hit, p0_sweep_start_ws,
                                              position_bottom,
-                                             CAST_FLAGS::WANTS_TRACK,
-                                             current_checkpoint);
+                                             CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
+                                             use_cp);
                 sweep_hit_occurred = hit.collided;
+                DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
         }
 
         float contact_dist_metric = 0.0f;
@@ -1422,11 +1427,14 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
         } else {
                 CollisionData hit;
                 if (current_track != nullptr) {
-                        current_track->cast_vs_track(
+                        int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
+                        DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
+                        current_track->cast_vs_track_fast(
                                 hit, p0_ray_start_ws, p1_ray_end_ws,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN,
-                                current_checkpoint);
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
+                                use_cp);
                         hit_found = hit.collided;
+                        DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
                         if (hit_found) {
                                 in_corner.pos = hit.collision_point;
                                 in_corner.up_vector_2 = hit.collision_normal;
@@ -1441,8 +1449,7 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
                                 }
                                 float actual_len = hit_fraction * total_sweep_length;
                                 float displacement_from_attachment_plane = -actual_len;
-                                compression_metric =
-                                        displacement_from_attachment_plane + dynamic_rest_offset;
+                                compression_metric = displacement_from_attachment_plane + dynamic_rest_offset;
                         }
                 }
 
@@ -1531,9 +1538,10 @@ void PhysicsCar::set_terrain_state_from_track()
         uint32_t terrain_bits = 0;
         if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && current_track != nullptr) {
                 CollisionData hit;
-                current_track->cast_vs_track(hit, position_old, position_current,
-                                             CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN,
-                                             current_checkpoint);
+                int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
+                current_track->cast_vs_track_fast(hit, position_old, position_current,
+                                             CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN || CAST_FLAGS::SAMPLE_FROM_P1,
+                                             use_cp);
                 if (hit.collided) {
                         terrain_bits |= hit.road_data.terrain;
                 }
@@ -1761,16 +1769,16 @@ int PhysicsCar::update_machine_corners() {
         mtxa->push();
         mtxa->assign(basis_physical);
         mtxa->cur->origin = position_current;
-
+        int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
         // first sanity pass
         {
                 godot::Vector3 s0 = position_old + mtxa->cur->basis.get_column(1) * 0.5f;
                 godot::Vector3 s1 = position_current;
                 if (current_track) {
                         CollisionData hit;
-                        current_track->cast_vs_track(hit, s0, s1,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                current_checkpoint);
+                        current_track->cast_vs_track_fast(hit, s0, s1,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
+                                use_cp);
                         if (hit.collided) {
                                 auto normal = hit.collision_normal;
                                 auto hit_pos = hit.collision_point;
@@ -1804,9 +1812,9 @@ int PhysicsCar::update_machine_corners() {
                 godot::Vector3 s1 = position_current + mtxa->cur->basis.get_column(1) * 0.5f;
                 if (current_track) {
                         CollisionData hit;
-                        current_track->cast_vs_track(hit, s0, s1,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                current_checkpoint);
+                        current_track->cast_vs_track_fast(hit, s0, s1,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
+                                use_cp);
                         if (hit.collided) {
                                 auto normal = hit.collision_normal;
                                 auto hit_pos = hit.collision_point;
@@ -1848,9 +1856,9 @@ int PhysicsCar::update_machine_corners() {
 
                 if (current_track) {
                         CollisionData hit;
-                        current_track->cast_vs_track(hit, tip, target,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                current_checkpoint);
+                        current_track->cast_vs_track_fast(hit, tip, target,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P0,
+                                use_cp);
                         if (hit.collided) {
                                 auto normal = hit.collision_normal;
                                 auto hit_pos = hit.collision_point;
@@ -1882,9 +1890,9 @@ int PhysicsCar::update_machine_corners() {
                 godot::Vector3 p1 = position_current + inv_vel;
                 if (current_track) {
                         CollisionData hit;
-                        current_track->cast_vs_track(hit, p0, p1,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                current_checkpoint);
+                        current_track->cast_vs_track_fast(hit, p0, p1,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
+                                use_cp);
                         if (hit.collided) {
                                 auto normal = hit.collision_normal;
                                 auto hit_pos = hit.collision_point;
@@ -1918,9 +1926,9 @@ int PhysicsCar::update_machine_corners() {
                         godot::Vector3 p0 = mtxa->transform_point(wc->offset);
                         if (current_track) {
                                 CollisionData hit;
-                                current_track->cast_vs_track(hit, p1, p0,
-                                        CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                        current_checkpoint);
+                                current_track->cast_vs_track_fast(hit, p1, p0,
+                                        CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
+                                        use_cp);
                                 if (hit.collided) {
                                         auto normal = hit.collision_normal;
                                         auto hit_pos = hit.collision_point;
@@ -1951,9 +1959,9 @@ int PhysicsCar::update_machine_corners() {
                         godot::Vector3 p2 = mtxa->transform_point(wc->offset.normalized() * 4.0f);
                         if (current_track) {
                                 CollisionData hit;
-                                current_track->cast_vs_track(hit, p1, p2,
-                                        CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                        current_checkpoint);
+                                current_track->cast_vs_track_fast(hit, p1, p2,
+                                        CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
+                                        use_cp);
                                 if (hit.collided) {
                                         auto normal = hit.collision_normal;
                                         auto hit_pos = hit.collision_point;
@@ -1994,9 +2002,9 @@ int PhysicsCar::update_machine_corners() {
 
                 if (current_track) {
                         CollisionData hit;
-                        current_track->cast_vs_track(hit, tip, target,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                current_checkpoint);
+                        current_track->cast_vs_track_fast(hit, tip, target,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P0,
+                                use_cp);
                         if (hit.collided) {
                                 auto normal = hit.collision_normal;
                                 auto hit_pos = hit.collision_point;
@@ -2028,9 +2036,9 @@ int PhysicsCar::update_machine_corners() {
                 godot::Vector3 p1 = position_current + inv_vel;
                 if (current_track) {
                         CollisionData hit;
-                        current_track->cast_vs_track(hit, p0, p1,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL,
-                                current_checkpoint);
+                        current_track->cast_vs_track_fast(hit, p0, p1,
+                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
+                                use_cp);
                         if (hit.collided) {
                                 auto normal = hit.collision_normal;
                                 auto hit_pos = hit.collision_point;
@@ -2452,7 +2460,7 @@ void PhysicsCar::handle_checkpoints()
 
         uint8_t prev_lap = lap;
 
-        int found = current_track->find_checkpoint_recursive(position_current, current_checkpoint);
+        int found = current_track->find_checkpoint_bfs(position_current, current_checkpoint);
         if (found >= 0 && found != current_checkpoint) {
                 if (found == 0 && current_checkpoint == current_track->num_checkpoints - 1) {
                         lap += 1;

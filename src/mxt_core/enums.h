@@ -70,6 +70,16 @@ namespace CAST_FLAGS {
 		WANTS_RAIL = 0x2,
 		WANTS_MESH = 0x4, // placeholder, no mesh collision support yet
 		WANTS_BACKFACE = 0x8,
-		WANTS_TERRAIN = 0x10
+		WANTS_TERRAIN = 0x10,
+		SAMPLE_FROM_P0 = 0x20,
+		SAMPLE_FROM_P1 = 0x40,
+		SAMPLE_FROM_MID = 0x80,
+		SAMPLE_FROM_CHECKPOINT_INTERSECT = 0x100
+	};
+}
+
+namespace DIP_SWITCH {
+	enum FLAGS {
+		DIP_DRAW_RAYCASTS = 0x1,
 	};
 }
