@@ -1540,7 +1540,7 @@ void PhysicsCar::set_terrain_state_from_track()
                 CollisionData hit;
                 int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
                 current_track->cast_vs_track_fast(hit, position_old, position_current,
-                                             CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN || CAST_FLAGS::SAMPLE_FROM_P1,
+                                             CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P1,
                                              use_cp);
                 if (hit.collided) {
                         terrain_bits |= hit.road_data.terrain;
