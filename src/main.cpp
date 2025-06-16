@@ -113,8 +113,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
 
-	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
-	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
+	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
+	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
 	// load in collision checkpoints //
 
 	current_track->num_checkpoints = checkpoint_count;
@@ -308,8 +308,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 	gamestate_data.instantiate(1024 * 1024 * 8);
 
-	cars = gamestate_data.create_and_allocate_cars(10);
-	num_cars = 10;
+	cars = gamestate_data.create_and_allocate_cars(100);
+	num_cars = 100;
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;

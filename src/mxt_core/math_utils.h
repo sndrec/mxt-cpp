@@ -1,6 +1,8 @@
 #pragma once
 
 #include "godot_cpp/classes/engine.hpp"
+#include <godot_cpp/core/memory.hpp>
+#include <godot_cpp/classes/random_number_generator.hpp>
 #include "mxt_core/deterministic_fp.hpp"
 #include "godot_cpp/core/math.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
@@ -111,8 +113,13 @@ inline static float lerp(float a, float b, float t)
 }
 
 inline static float randf_range(float min, float max) {
-	auto now = std::chrono::high_resolution_clock::now();
-	auto seed = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-	godot::UtilityFunctions::seed(static_cast<int64_t>(seed));
-	return godot::UtilityFunctions::randf_range(min, max);
+	// allocate via Godot’s memnew
+	godot::RandomNumberGenerator *rng = memnew(godot::RandomNumberGenerator);
+	// seed once from high-res clock
+	rng->randomize();
+	// get your random float
+	float res = rng->randf_range(min, max);
+	// free it
+	memdelete(rng);
+	return res;
 }
