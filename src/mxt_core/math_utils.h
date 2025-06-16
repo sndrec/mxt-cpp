@@ -111,5 +111,8 @@ inline static float lerp(float a, float b, float t)
 }
 
 inline static float randf_range(float min, float max) {
+	auto now = std::chrono::high_resolution_clock::now();
+	auto seed = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+	godot::UtilityFunctions::seed(static_cast<int64_t>(seed));
 	return godot::UtilityFunctions::randf_range(min, max);
 }

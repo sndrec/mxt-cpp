@@ -33,14 +33,6 @@ var pawnID : int = 0
 var matrix_stack : Array[Transform3D] = []
 var matrix_pointer := 0
 
-
-
-
-
-
-
-
-
 var mtxa : Transform3D:
 	get():
 		return matrix_stack[matrix_pointer]
@@ -54,11 +46,6 @@ func mtxa_push() -> void:
 func mtxa_pop() -> void:
 	matrix_pointer -= 1
 
-	
-	
-	
-	
-	
 func copy_mtx_to_mtxa(in_matrix : Transform3D) -> void:
 	matrix_stack[matrix_pointer] = in_matrix
 
@@ -1601,121 +1588,73 @@ func _normalized_safe(vec: Vector3, default_vec := Vector3.ZERO) -> Vector3:
 		return vec.normalized()
 	return default_vec
 
-
-	
-	
-	
-	
-	
-		
-			
-			
-			
-			
-			
-			
-			
-			
-			
-				
-					
-				
-					
-					
-					
-						
-					
-			
-			
-			
-			
-			
-				
-				
-			
-			
-				
-					
-				
-					
-			
-				
-			
-				
-			
-			
-			
-			
-		
-			
-	
-		
-		
-
-func handle_drag_and_glide_forces() -> void:
-	var speed := velocity.length()
-	var speed_weight_ratio := speed / stat_weight
-	var scaled_speed := 216.0 * speed_weight_ratio
-
-	if scaled_speed < 2.0:
-		velocity = Vector3.ZERO
-		visual_shake_mult = 0.0
-		return
-
-	if scaled_speed > 9990.0:
-		velocity = set_vec3_length(velocity, 46.25)
-		return
-
-	# ───────────────────── Basic directional figures ─────────────────────
-	var alignment_with_normal := track_surface_normal.dot(velocity.normalized())
-	var forward_world := mtxa_rotate_point(Vector3(0, 0, -1)).normalized()
-	var forward_normal_alignment := track_surface_normal.dot(forward_world)
-
-	# ───────────────────── Normal component & base drag magnitude ─────────────────────
-	var normal_force := track_surface_normal * (stat_weight * alignment_with_normal * speed_weight_ratio)
-	var base_drag_mag := speed_weight_ratio * speed_weight_ratio * 8.0
-	var drag_vector := velocity - normal_force
-
-	# ───────────────────── Extra handling while airborne ─────────────────────
-	if machine_state & FZ_MS.AIRBORNE:
-		if forward_normal_alignment < 0.0:
-			base_drag_mag *= max(0.0, 1.0 + forward_normal_alignment)
-		forward_normal_alignment += 1.0	# shift into 0 → 2 range
-
-	# Match drag_vector length to the computed magnitude
-	drag_vector = set_vec3_length(drag_vector, base_drag_mag)
-	visual_shake_mult = base_drag_mag
-
-	# ───────────────────── Weight scaling ─────────────────────
-	if stat_weight < 1100.0:
-		var weight_scale := stat_weight / 1100.0
-		alignment_with_normal *= weight_scale * weight_scale
-
-	# ───────────────────── Drag coefficient (boost & airborne modifiers) ─────────────────────
-	var boosting := (machine_state & FZ_MS.BOOSTING) != 0
-	var airborne := (machine_state & FZ_MS.AIRBORNE) != 0
-	var drag_coeff: float
-
-	if boosting:
-		drag_coeff = alignment_with_normal * 0.5
-	elif airborne:
-		if alignment_with_normal >= 0.0 or forward_normal_alignment <= 0.8:
-			drag_coeff = alignment_with_normal * 0.6
+func handle_drag_and_glide_forces() -> void: 
+	var dVar1 : float
+	var fVar2 : float
+	var uVar3 : int
+	var dVar4 : float
+	var dVar5 : float
+	var dVar6 : float
+	var dVar7 : float
+	var fVar8 : float
+	var fVar9 : float
+	var vStack_98 : Vector3
+	var fStack_8c : Vector3
+	var avStack_80 : Vector3
+	fVar9 = velocity.x
+	fVar8 = velocity.y
+	fVar2 = velocity.z
+	fVar8 = velocity.length()
+	fVar9 = 0.0
+	dVar7 = fVar8 / stat_weight
+	if 2 <= 216 * dVar7:
+		if 216 * dVar7 <= 9990:
+			fVar9 = track_surface_normal.dot(velocity.normalized())
+			dVar5 = fVar9
+			vStack_98 = mtxa_rotate_point(Vector3(0, 0, -1))
+			fVar9 = track_surface_normal.dot(vStack_98.normalized())
+			dVar6 = fVar9
+			fVar9 = stat_weight * dVar5 * dVar7
+			fStack_8c = track_surface_normal * fVar9
+			dVar7 = dVar7 * dVar7 * 8
+			avStack_80 = velocity - fStack_8c
+			if (machine_state & FZ_MS.AIRBORNE) != 0:
+				dVar4 = 0
+				if dVar4 <= dVar6:
+					dVar6 = dVar6 + 1.0
+				else:
+					dVar1 = 1.0 + dVar6
+					dVar6 = dVar1
+					if dVar1 < dVar4:
+						dVar6 = dVar4
+					dVar7 = dVar7 * dVar6
+			avStack_80 = set_vec3_length(avStack_80, dVar7)
+			visual_shake_mult = dVar7
+			if stat_weight < 1100:
+				fVar9 = stat_weight / 1100
+				dVar5 = dVar5 * fVar9 * fVar9
+			uVar3 = machine_state & FZ_MS.BOOSTING
+			if uVar3 == 0 and (machine_state & FZ_MS.AIRBORNE) != 0:
+				if 0 <= dVar5 or dVar6 <= 0.8:
+					dVar6 = dVar5 * 0.6
+				else:
+					dVar6 = dVar5 * (0.6 + 4 * (dVar6 - 0.8))
+			elif uVar3 == 0:
+				dVar6 = dVar5 * 0.6
+			else:
+				dVar6 = dVar5 * 0.5
+			fVar9 = dVar7 * dVar6
+			avStack_80 = track_surface_normal * fVar9 + avStack_80
+			if frames_since_death != 0:
+				fVar9 = clampf(0.01 * float(frames_since_death - 4), 0.0, 1.0)
+				fVar8 = maxf(1.0, fVar9)
+				avStack_80 *= fVar8
+			velocity -= avStack_80
 		else:
-			drag_coeff = alignment_with_normal * (0.6 + 4.0 * (forward_normal_alignment - 0.8))
+			velocity = set_vec3_length(velocity, 46.25)
 	else:
-		drag_coeff = alignment_with_normal * 0.6
-
-	# Combine lateral drag with drag along the surface normal
-	drag_vector += track_surface_normal * (base_drag_mag * drag_coeff)
-
-	# ───────────────────── Post‑death damping ─────────────────────
-	if frames_since_death != 0:
-		var death_fade := clampf(0.01 * float(frames_since_death - 4), 0.0, 1.0)
-		drag_vector *= maxf(1.0, death_fade)
-
-	# ───────────────────── Apply final drag ─────────────────────
-	velocity -= drag_vector
+		velocity = Vector3.ZERO
+		visual_shake_mult = 0
 
 
 func rotate_machine_from_angle_velocity() -> void:
@@ -1935,10 +1874,6 @@ func reset_machine(param_2_reset_type: int) -> void:
 	
 	rotate_mtxa_from_diff_btwn_machine_front_and_back() 
 	
-	
-	
-	
-	
 	mtxa_pop()
 	
 	mtxa_push()
@@ -2006,115 +1941,6 @@ func rotate_mtxa_from_diff_btwn_machine_front_and_back() -> void:
 	g_pitch_mtx_0x5e0 = mtxa 
 
 	mtxa_pop()
-	
-
-
-
-	
-	
-		
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-		
-	
-		
-		
-		
-		
-			
-		
-			
-			
-			
-		
-		
-		
-		
-			
-		
-			
-			
-		
-		
-		
-			
-			
-			
-			
-			
-			
-			
-				
-				
-			
-			
-			
-			
-			
-			
-			
-			
-				
-			
-				
-				
-			
-		
-			
-		
-			
-				
-			
-			
-			
-			
-			
-				
-				
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-			
-		
-			
-			
-			
-			
-				
-			
-			
-		
-			
-			
 
 func update_suspension_forces(in_corner : MachineTiltCorner) -> void:
 	var time_based_factor = 0.1 + float(frames_since_start_2) / 90.0
@@ -2659,17 +2485,6 @@ func update_machine_corners() -> int:
 			total_depenetration += depenetration
 			depenetration = Vector3.ZERO
 			
-			
-			
-		
-		
-		
-		
-		
-		
-		
-		
-	
 	p0_ud_tip = mtxa_transform_point(Vector3(0, check_dist + maxf(0.0, -(inv_vel + total_depenetration).dot(track_surface_normal)), 0))
 	p1_ud_target = mtxa_transform_point(Vector3(0, -10, 0))
 	hit = raycast_world(p0_ud_tip, p1_ud_target, 3)
@@ -2768,15 +2583,6 @@ func create_machine_visual_transform() -> void:
 	mtxa_rotate_about_x(deg_to_rad(pitch_angle_deg))
 	g_pitch_mtx_0x5e0 = mtxa
 	mtxa_pop()
-
-	
-	
-		
-	
-		
-	
-		
-	
 
 	if (state_2 & 0x20) == 0:
 		mtxa_push()
@@ -3070,11 +2876,6 @@ func post_tick():
 		handle_machine_collision_response()
 	handle_machine_damage_and_visuals()
 	
-		
-	
-		
-		
-
 func handle_checkpoints():
 	var current_stage := MXGlobal.currentStage
 	var checkpoint_respawns := current_stage.checkpoint_respawns
@@ -3083,9 +2884,6 @@ func handle_checkpoints():
 	var cur_cp := checkpoint_respawns[current_checkpoint]
 	var next_cp_index := wrapi(current_checkpoint + 1, 0, checkpoint_respawns.size())
 	var next_cp := checkpoint_respawns[next_cp_index]
-	
-	
-	
 	
 	var in_front := next_cp.checkpoint_plane.is_point_over(position_current)
 	if in_front:
@@ -3192,11 +2990,5 @@ func tick( player:ROPlayer ) -> void:
 	if frames_since_start_2 == 0:
 		velocity = Vector3.ZERO
 	handle_checkpoints()
-	
-	
-	
-	
-	
-	
 	
 	Debug.record("tick", Time.get_ticks_usec() - debug_time)

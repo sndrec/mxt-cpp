@@ -246,13 +246,11 @@ bool PhysicsCar::find_floor_beneath_machine()
         CollisionData hit;
         if (current_track != nullptr) {
                 int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
-                DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
                 current_track->cast_vs_track_fast(hit, p0_sweep_start_ws,
                                              position_bottom,
                                              CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
                                              use_cp);
-                sweep_hit_occurred = hit.collided;
-                DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
+                sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f;
         }
 
         float contact_dist_metric = 0.0f;
@@ -909,6 +907,9 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
         }
 
         float force_mag = 10.0f * -(0.009f * stat_weight) * base_factor;
+
+        DEBUG::disp_text("force_mag", force_mag);
+
         godot::Vector3 gravity_align_force = track_surface_normal * force_mag;
         velocity += gravity_align_force;
 
@@ -1421,20 +1422,23 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
         float compression_metric = 0.0f;
         bool hit_found = false;
 
-        if ((in_corner.state & TILTSTATE::B6) != 0 ||
-            (height_above_track <= 0.0f && (in_corner.state & TILTSTATE::AIRBORNE))) {
+        if ((in_corner.state & TILTSTATE::B6) != 0 || (height_above_track <= 0.0f && (in_corner.state & TILTSTATE::AIRBORNE))) {
+                //godot::UtilityFunctions::print("disconnected!");
                 in_corner.state |= TILTSTATE::DISCONNECTED;
         } else {
                 CollisionData hit;
                 if (current_track != nullptr) {
+                        //godot::UtilityFunctions::print("looking for hit!");
                         int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
-                        DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
+                        //godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+                        //dd3d->call("draw_arrow", p0_ray_start_ws, p1_ray_end_ws, godot::Color(1.0f, 1.0f, 1.0f), 0.25, true, _TICK_DELTA);
+                        //DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
                         current_track->cast_vs_track_fast(
                                 hit, p0_ray_start_ws, p1_ray_end_ws,
                                 CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
                                 use_cp);
                         hit_found = hit.collided;
-                        DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
+                        //DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
                         if (hit_found) {
                                 in_corner.pos = hit.collision_point;
                                 in_corner.up_vector_2 = hit.collision_normal;
@@ -2428,7 +2432,10 @@ void PhysicsCar::handle_machine_collision_response()
         }
 
         if (frames_since_start_2 <= 90)
+        {
+                DEBUG::disp_text("velocity fix", "yep");
                 velocity += track_surface_normal * -(velocity.dot(track_surface_normal));
+        }
 };
 
 void PhysicsCar::align_machine_y_with_track_normal_immediate()

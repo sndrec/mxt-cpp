@@ -2,6 +2,7 @@
 #include "car/physics_car.h" // for CollisionData and RoadData
 #include <cfloat>
 #include <algorithm>
+#include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/enums.h"
 #include <queue>
 #include <vector>
@@ -560,14 +561,20 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 
     // pick a single checkpoint
     int cp_idx = -1;
-    if (start_idx == -1) {
-        auto cps = get_viable_checkpoints(sample_point);
-        if (cps.empty())
-            return;
-        cp_idx = cps[0];
-    } else {
-        cp_idx = find_checkpoint_recursive(sample_point, start_idx);
+    auto cps = get_viable_checkpoints(sample_point);
+    if (cps.empty()){
+        return;
     }
+    cp_idx = cps[0];
+    //if (start_idx == -1) {
+    //    auto cps = get_viable_checkpoints(sample_point);
+    //    if (cps.empty()){
+    //        return;
+    //    }
+    //    cp_idx = cps[0];
+    //} else {
+    //    cp_idx = find_checkpoint_bfs(sample_point, start_idx);
+    //}
     if (cp_idx == -1)
     {
         return;
