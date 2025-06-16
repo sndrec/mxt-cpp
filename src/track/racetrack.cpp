@@ -8,6 +8,7 @@
 #include <vector>
 #include <limits>
 #include "mxt_core/debug.hpp"
+#include "track/checkpoint_bvh.h"
 
 int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations) const
 {
@@ -641,4 +642,40 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
     // do one raycast against that checkpoint
     CastParams params{ this, mask };
     cast_segment_fast(params, out_collision, p0, p1, cp_idx, sample_point, true);
+}
+
+void RaceTrack::build_checkpoint_bvh()
+{
+    checkpoint_aabbs.resize(num_checkpoints);
+    for (int i = 0; i < num_checkpoints; ++i) {
+        const CollisionCheckpoint &cp = checkpoints[i];
+        godot::AABB box;
+        bool first = true;
+        for (int ty = 0; ty < 8; ++ty) {
+            float ft = (float)ty / 7.f;
+            godot::Basis basis;
+            basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], ft).normalized();
+            basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], ft).normalized();
+            basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], ft).normalized();
+            godot::Vector3 pos = cp.position_start.lerp(cp.position_end, ft);
+            float xr = lerp(cp.x_radius_start, cp.x_radius_end, ft);
+            float yr = lerp(cp.y_radius_start, cp.y_radius_end, ft);
+            for (int tx = 0; tx < 8; ++tx) {
+                float fx = ((float)tx / 7.f) * 2.f - 1.f;
+                for (int sy = 0; sy < 2; ++sy) {
+                    float fy = sy == 0 ? -1.f : 1.f;
+                    godot::Vector3 sample = pos + basis[0] * (fx * xr) + basis[1] * (fy * yr);
+                    godot::AABB pt(sample, godot::Vector3(0,0,0));
+                    if (first) {
+                        box = pt;
+                        first = false;
+                    } else {
+                        box = box.merge(pt);
+                    }
+                }
+            }
+        }
+        checkpoint_aabbs[i] = box;
+    }
+    checkpoint_bvh.build(checkpoint_aabbs);
 }

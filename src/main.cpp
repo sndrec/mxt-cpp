@@ -308,10 +308,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 				latest_sample_pos = new_sample_pos;
 			}
 		}
-		current_track->segments[seg].segment_length = total_distance;
-	}
+        current_track->segments[seg].segment_length = total_distance;
+        }
 
-	gamestate_data.instantiate(1024 * 1024 * 8);
+        current_track->build_checkpoint_bvh();
+
+        gamestate_data.instantiate(1024 * 1024 * 8);
 
 	cars = gamestate_data.create_and_allocate_cars(100);
 	num_cars = 100;
