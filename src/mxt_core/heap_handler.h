@@ -138,11 +138,11 @@ public:
 			new_car_properties->grip_3 = randf_range(0.05f, 0.4f);
 			new_car_properties->turn_tension = randf_range(0.0f, 0.3f);
 			new_car_properties->drift_accel = randf_range(-2.0f, 2.0f);
-			new_car_properties->turn_movement = randf_range(90.0f, 200.0f);
+			new_car_properties->turn_movement = randf_range(40.0f, 200.0f);
 			new_car_properties->strafe_turn = randf_range(0.0f, 60.0f);
 			new_car_properties->strafe = randf_range(20.0f, 50.0f);
-			new_car_properties->turn_reaction = randf_range(0.0f, 20.0f);
-			new_car_properties->boost_strength = randf_range(0.0f, 20.0f);
+			new_car_properties->turn_reaction = randf_range(0.0f, 30.0f);
+			new_car_properties->boost_strength = randf_range(0.0f, 30.0f);
 			new_car_properties->boost_length = randf_range(0.75f, 2.0f);
 			new_car_properties->turn_decel = randf_range(-0.05f, 0.05f);
 			new_car_properties->drag = randf_range(0.006f, 0.01f);
