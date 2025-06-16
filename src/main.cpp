@@ -189,28 +189,33 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 		// what road shape? //
 
-		if (road_type == 0)
-		{
-			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
-		}
-		else if (road_type == 1)
-		{
-			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinder>();
-		}
-		else if (road_type == 2)
-		{
-			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinderOpen>();
-			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-		}
-		else if (road_type == 3)
-		{
-			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
-		}
-		else if (road_type == 4)
-		{
-			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
-			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-		}
+                if (road_type == 0)
+                {
+                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT;
+                }
+                else if (road_type == 1)
+                {
+                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinder>();
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER;
+                }
+                else if (road_type == 2)
+                {
+                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinderOpen>();
+                        current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
+                }
+                else if (road_type == 3)
+                {
+                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE;
+                }
+                else if (road_type == 4)
+                {
+                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
+                        current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+                }
 
 		// road modulations //
 
