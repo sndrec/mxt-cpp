@@ -3,6 +3,7 @@
 #include "mxt_core/curve.h"
 #include "track/road_modulation.h"
 #include "track/road_embed.h"
+#include "mxt_core/enums.h"
 
 class RoadShape;
 
@@ -19,9 +20,10 @@ public:
 class RoadShape
 {
 public:
-	int num_modulations;
-	int num_embeds;
-	TrackSegment* owning_segment;
+        int num_modulations;
+        int num_embeds;
+        int shape_type;
+        TrackSegment* owning_segment;
 	RoadModulation* road_modulations;
 	RoadEmbed* road_embeds;
 	Curve* openness;
