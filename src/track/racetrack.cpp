@@ -85,8 +85,8 @@ int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) c
         basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t).normalized();
 
         godot::Vector3 midpoint = cp.position_start.lerp(cp.position_end, cp_t);
-        godot::Plane    sep_x(basis[0],            midpoint);
-        godot::Plane    sep_y(basis.get_column(1), midpoint);
+        godot::Plane    sep_x(basis[0], midpoint);
+        godot::Plane    sep_y(basis[1], midpoint);
 
         float x_r = lerp(cp.x_radius_start_inv, cp.x_radius_end_inv, cp_t);
         float y_r = lerp(cp.y_radius_start_inv, cp.y_radius_end_inv, cp_t);
@@ -104,16 +104,15 @@ int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) c
     return best_cp;
 }
 
-void RaceTrack::get_road_surface_fast(int cp_idx, const godot::Vector3 &point,
-                                  godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform)
+void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
+                                  godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented)
 {
     CollisionCheckpoint *cp;
-    if (cp_idx != -1){
-        cp = &checkpoints[cp_idx];
-    }else{
-        std::vector<int> return_checkpoints = get_viable_checkpoints(point);
-        cp = &checkpoints[return_checkpoints[0]];
+    int best = get_best_checkpoint(point);
+    if (best == -1){
+        return;
     }
+    cp = &checkpoints[best];
     godot::Vector3 p1 = cp->start_plane.project(point);
     godot::Vector3 p2 = cp->end_plane.project(point);
     float cp_t = get_closest_t_on_segment(point, p1, p2);
@@ -123,47 +122,104 @@ void RaceTrack::get_road_surface_fast(int cp_idx, const godot::Vector3 &point,
     basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t).normalized();
     godot::Vector3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
     godot::Plane sep_x_plane(basis[0], midpoint);
-    godot::Plane sep_y_plane(basis.get_column(1), midpoint);
+    godot::Plane sep_y_plane(basis[1], midpoint);
     float x_r = lerp(cp->x_radius_start_inv, cp->x_radius_end_inv, cp_t);
     float y_r = lerp(cp->y_radius_start_inv, cp->y_radius_end_inv, cp_t);
     float tx = sep_x_plane.distance_to(point) * x_r;
     float ty = sep_y_plane.distance_to(point) * y_r;
     float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
     spatial_t = godot::Vector3(tx, ty, tz);
+    bool y_less_than_x = y_r > x_r;
+    bool is_open = false;
+    bool use_top_half = false;
+
+    // Check for open road shape
+    RoadShape *shape = segments[cp->road_segment].road_shape;
+    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+        is_open = true;
+        use_top_half = true;
+    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+        is_open = true;
+        use_top_half = false;
+    }
+
+    if (is_open && y_less_than_x) {
+        float openness = shape->openness->sample(tz);
+        if (openness <= 0.5f) {
+            float tx_clamped = std::clamp(tx, -1.0f, 1.0f);
+            float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
+            if (!use_top_half)
+                y_val = -y_val;
+            spatial_t.y = y_val;
+        }
+    }
     segments[cp->road_segment].road_shape->find_t_from_relative_pos(road_t, spatial_t);
-    segments[cp->road_segment].road_shape->get_transform_at_time(out_transform, road_t);
+    segments[cp->road_segment].road_shape->get_oriented_transform_at_time(out_transform, road_t);
 }
 
 static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vector3 &point,
                                   godot::Vector2 &road_t, godot::Vector3 &spatial_t, float *out_cp_t = nullptr)
 {
     const CollisionCheckpoint *cp;
-    if (cp_idx != -1){
-        cp = &track->checkpoints[cp_idx];
-    }else{
-        std::vector<int> return_checkpoints = track->get_viable_checkpoints(point);
-        cp = &track->checkpoints[return_checkpoints[0]];
+    int best = track->get_best_checkpoint(point);
+    if (best == -1){
+        return;
     }
+    cp = &track->checkpoints[best];
+
     godot::Vector3 p1 = cp->start_plane.project(point);
     godot::Vector3 p2 = cp->end_plane.project(point);
     float cp_t = get_closest_t_on_segment(point, p1, p2);
     if (out_cp_t)
         *out_cp_t = cp_t;
+
     godot::Basis basis;
     basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t).normalized();
     basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t).normalized();
     basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t).normalized();
+
     godot::Vector3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
     godot::Plane sep_x_plane(basis[0], midpoint);
-    godot::Plane sep_y_plane(basis.get_column(1), midpoint);
+    godot::Plane sep_y_plane(basis[1], midpoint);
+
     float x_r = lerp(cp->x_radius_start_inv, cp->x_radius_end_inv, cp_t);
     float y_r = lerp(cp->y_radius_start_inv, cp->y_radius_end_inv, cp_t);
+
     float tx = sep_x_plane.distance_to(point) * x_r;
     float ty = sep_y_plane.distance_to(point) * y_r;
     float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
+
     spatial_t = godot::Vector3(tx, ty, tz);
-    track->segments[cp->road_segment].road_shape->find_t_from_relative_pos(road_t, spatial_t);
+
+    RoadShape *shape = track->segments[cp->road_segment].road_shape;
+
+    bool y_less_than_x = y_r > x_r;
+    bool is_open = false;
+    bool use_top_half = false;
+
+    // Check for open road shape
+    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+        is_open = true;
+        use_top_half = true;
+    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+        is_open = true;
+        use_top_half = false;
+    }
+
+    if (is_open && y_less_than_x) {
+        float openness = shape->openness->sample(tz);
+        if (openness <= 0.5f) {
+            float tx_clamped = std::clamp(tx, -1.0f, 1.0f);
+            float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
+            if (!use_top_half)
+                y_val = -y_val;
+            spatial_t.y = y_val;
+        }
+    }
+
+    shape->find_t_from_relative_pos(road_t, spatial_t);
 }
+
 
 struct CastParams {
     RaceTrack *track;
@@ -430,6 +486,12 @@ static void cast_segment_fast(const CastParams  &params,
     if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0)
         return;
 
+    if (dynamic_cast<RoadShapeCylinder*>(segment.road_shape) ||
+        dynamic_cast<RoadShapePipe*>(segment.road_shape) ||
+        dynamic_cast<RoadShapeCylinderOpen*>(segment.road_shape) ||
+        dynamic_cast<RoadShapePipeOpen*>(segment.road_shape))
+        return;
+
     godot::Transform3D root_t;
     segment.curve_matrix->sample(root_t, road_t_sample_raw.y);
     const godot::Basis rbasis       = root_t.basis.transposed();
@@ -561,11 +623,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 
     // pick a single checkpoint
     int cp_idx = -1;
-    auto cps = get_viable_checkpoints(sample_point);
-    if (cps.empty()){
-        return;
-    }
-    cp_idx = cps[0];
+    cp_idx = get_best_checkpoint(sample_point);
     //if (start_idx == -1) {
     //    auto cps = get_viable_checkpoints(sample_point);
     //    if (cps.empty()){

@@ -57,7 +57,7 @@ public:
 
 		dd3d->call("draw_arrow", p1, p1 + start_plane.normal * 4, godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, 0.01666666);
 		dd3d->call("draw_arrow", p2, p2 + end_plane.normal * 4, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, 0.01666666);
-		dd3d->call("draw_plane", start_plane, godot::Color(0.f, 1.f, 0.f, 0.05f), p1, 0.016666f);
-		dd3d->call("draw_plane", end_plane, godot::Color(1.f, 0.f, 0.f, 0.05f), p2, 0.016666f);
+		//dd3d->call("draw_plane", start_plane, godot::Color(0.f, 1.f, 0.f, 0.05f), p1, 0.016666f);
+		//dd3d->call("draw_plane", end_plane, godot::Color(1.f, 0.f, 0.f, 0.05f), p2, 0.016666f);
 	}
 };
