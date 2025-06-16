@@ -624,7 +624,8 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 
     // pick a single checkpoint
     int cp_idx = -1;
-    cp_idx = get_best_checkpoint(sample_point);
+    godot::Vector3 other_point = (sample_point == p1) ? p0 : p1;
+    cp_idx = get_best_checkpoint(sample_point, other_point);
     //if (start_idx == -1) {
     //    auto cps = get_viable_checkpoints(sample_point);
     //    if (cps.empty()){

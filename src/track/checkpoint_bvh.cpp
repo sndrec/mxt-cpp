@@ -1,5 +1,6 @@
 #include "track/checkpoint_bvh.h"
 #include <algorithm>
+#include <cmath>
 
 using godot::AABB;
 using godot::Vector3;
