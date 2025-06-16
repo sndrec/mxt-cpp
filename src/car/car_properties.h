@@ -43,7 +43,7 @@ public:
 	};
 
 	PhysicsCarProperties derive_machine_base_stat_values(float g_balance) const {
-		PhysicsCarProperties result;
+		PhysicsCarProperties result = *this;
 
 		float balance_offset = g_balance - 0.5;
 
