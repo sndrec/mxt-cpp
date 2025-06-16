@@ -649,29 +649,21 @@ void RaceTrack::build_checkpoint_bvh()
     checkpoint_aabbs.resize(num_checkpoints);
     for (int i = 0; i < num_checkpoints; ++i) {
         const CollisionCheckpoint &cp = checkpoints[i];
+        TrackSegment &seg = segments[cp.road_segment];
         godot::AABB box;
         bool first = true;
         for (int ty = 0; ty < 8; ++ty) {
-            float ft = (float)ty / 7.f;
-            godot::Basis basis;
-            basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], ft).normalized();
-            basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], ft).normalized();
-            basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], ft).normalized();
-            godot::Vector3 pos = cp.position_start.lerp(cp.position_end, ft);
-            float xr = lerp(cp.x_radius_start, cp.x_radius_end, ft);
-            float yr = lerp(cp.y_radius_start, cp.y_radius_end, ft);
+            float ft = cp.t_start + (cp.t_end - cp.t_start) * ((float)ty / 7.f);
             for (int tx = 0; tx < 8; ++tx) {
-                float fx = ((float)tx / 7.f) * 2.f - 1.f;
-                for (int sy = 0; sy < 2; ++sy) {
-                    float fy = sy == 0 ? -1.f : 1.f;
-                    godot::Vector3 sample = pos + basis[0] * (fx * xr) + basis[1] * (fy * yr);
-                    godot::AABB pt(sample, godot::Vector3(0,0,0));
-                    if (first) {
-                        box = pt;
-                        first = false;
-                    } else {
-                        box = box.merge(pt);
-                    }
+                float fx = -1.0f + 2.0f * ((float)tx / 7.f);
+                godot::Vector3 sample;
+                seg.road_shape->get_position_at_time(sample, godot::Vector2(fx, ft));
+                godot::AABB pt(sample, godot::Vector3(0,0,0));
+                if (first) {
+                    box = pt;
+                    first = false;
+                } else {
+                    box = box.merge(pt);
                 }
             }
         }

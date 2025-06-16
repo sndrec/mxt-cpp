@@ -71,3 +71,49 @@ void CheckpointBVH::query(int node_idx, const Vector3 &point, std::vector<int> &
         query(node.right, point, results);
 }
 
+static bool segment_intersects_aabb(const Vector3 &a, const Vector3 &b, const AABB &box)
+{
+    Vector3 dir = b - a;
+    float tmin = 0.0f;
+    float tmax = 1.0f;
+    for (int axis = 0; axis < 3; ++axis) {
+        float start = a[axis];
+        float end = b[axis];
+        float min_v = box.position[axis];
+        float max_v = box.position[axis] + box.size[axis];
+        float d = dir[axis];
+        if (fabsf(d) < 1e-6f) {
+            if (start < min_v || start > max_v)
+                return false;
+            continue;
+        }
+        float inv_d = 1.0f / d;
+        float t1 = (min_v - start) * inv_d;
+        float t2 = (max_v - start) * inv_d;
+        if (t1 > t2)
+            std::swap(t1, t2);
+        tmin = fmaxf(tmin, t1);
+        tmax = fminf(tmax, t2);
+        if (tmin > tmax)
+            return false;
+    }
+    return true;
+}
+
+void CheckpointBVH::query_segment(int node_idx, const Vector3 &a, const Vector3 &b, std::vector<int> &results) const
+{
+    if (node_idx < 0)
+        return;
+    const CheckpointBVHNode &node = nodes[node_idx];
+    if (!segment_intersects_aabb(a, b, node.bounds))
+        return;
+    if (node.checkpoint_index != -1) {
+        results.push_back(node.checkpoint_index);
+        return;
+    }
+    if (node.left != -1)
+        query_segment(node.left, a, b, results);
+    if (node.right != -1)
+        query_segment(node.right, a, b, results);
+}
+
