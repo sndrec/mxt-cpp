@@ -1,6 +1,6 @@
 class_name CarNodeContainer extends Node3D
 
-var num_cars := 10
+var num_cars := 100
 
 func instantiate_cars():
 	for child in get_children():

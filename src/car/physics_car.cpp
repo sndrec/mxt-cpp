@@ -262,7 +262,7 @@ bool PhysicsCar::find_floor_beneath_machine()
                 contact_dist_metric = 20.0f - dist_p0_to_surface;
         }
 
-        DEBUG::disp_text("contact dist", contact_dist_metric);
+        //DEBUG::disp_text("contact dist", contact_dist_metric);
 
         if (sweep_hit_occurred && contact_dist_metric > 0.0f) {
                 track_surface_normal = hit.collision_normal;
@@ -911,7 +911,7 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 
         float force_mag = 10.0f * -(0.009f * stat_weight) * base_factor;
 
-        DEBUG::disp_text("force_mag", force_mag);
+        //DEBUG::disp_text("force_mag", force_mag);
 
         godot::Vector3 gravity_align_force = track_surface_normal * force_mag;
         velocity += gravity_align_force;
@@ -1454,7 +1454,7 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
                                 godot::Plane surface_plane = godot::Plane(surf.basis.get_column(1).normalized(), surf.origin);
                                 godot::Vector3 intersect;
                                 hit_found = surface_plane.intersects_segment(p0_ray_start_ws, p1_ray_end_ws, &intersect);
-                                DEBUG::disp_text("intersected", hit_found);
+                                //DEBUG::disp_text("intersected", hit_found);
                                 if (hit_found){
                                         in_corner.pos = intersect;
                                         in_corner.up_vector_2 = surface_plane.normal;
@@ -2387,7 +2387,7 @@ void PhysicsCar::handle_machine_collision_response()
 
         if (frames_since_start_2 <= 90)
         {
-                DEBUG::disp_text("velocity fix", "yep");
+                //DEBUG::disp_text("velocity fix", "yep");
                 velocity += track_surface_normal * -(velocity.dot(track_surface_normal));
         }
 };
