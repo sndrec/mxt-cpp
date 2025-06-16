@@ -8,7 +8,7 @@ extends Node
 func _on_button_pressed() -> void:
 	car_node_container.instantiate_cars()
 	var level_buffer := StreamPeerBuffer.new()
-	var test_level := FileAccess.get_file_as_bytes("res://test/test_track.mxt_track")
+	var test_level := FileAccess.get_file_as_bytes("res://test/test_track_2.mxt_track")
 	level_buffer.data_array = test_level
 	game_sim.car_node_container = car_node_container
 	game_sim.instantiate_gamesim(level_buffer)

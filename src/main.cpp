@@ -5,11 +5,12 @@
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
 #include "track/curve_matrix.h"
-#include "track/road_shape_base.h"
+#include "track/racetrack.h"
 #include "track/road_modulation.h"
 #include "track/road_embed.h"
 #include "car/physics_car.h"
 #include <cfenv>
+#include "mxt_core/debug.hpp"
 
 using namespace godot;
 
@@ -111,6 +112,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
+
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
 	// load in collision checkpoints //
 
 	current_track->num_checkpoints = checkpoint_count;
@@ -377,5 +381,53 @@ void GameSim::render_gamesim() {
 		vis_cars[i].set("tilt_fr_state", cars[i].tilt_fr.state);
 		vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
 		vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
+	}
+	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
+	{
+		for (int i = 0; i < current_track->num_checkpoints; i++)
+		{
+			current_track->checkpoints[i].debug_draw();
+		}
+	}
+	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
+	{
+		DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
+		int use_seg_ind = current_track->checkpoints[cars[0].current_checkpoint].road_segment;
+		for (int i = 0; i < current_track->num_segments; i++)
+		{
+			if (i > use_seg_ind + 1 || i < use_seg_ind - 1){
+				continue;
+			}
+			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+
+			const int x_subdiv = 16; // Adjust as needed
+			const int y_subdiv = 32;  // Adjust as needed
+
+			for (int yi = 0; yi <= y_subdiv; yi++)
+			{
+				float y_frac = static_cast<float>(yi) / y_subdiv;
+				float y_val = y_frac; // Y: 0.0 to 1.0
+
+				for (int xi = 0; xi <= x_subdiv; xi++)
+				{
+					float x_frac = static_cast<float>(xi) / x_subdiv;
+					float x_val = -1.0f + 2.0f * x_frac; // X: -1.0 to +1.0
+
+					// Interpolated color: red to blue across X, green from 0 to 1 across Y
+					float r = 1.0f - x_frac;
+					float g = y_frac;
+					float b = x_frac;
+
+					godot::Vector2 shape_pos(x_val, y_val);
+					godot::Transform3D road_transform;
+					current_track->segments[i].road_shape->get_oriented_transform_at_time(road_transform, shape_pos);
+
+					godot::Vector3 start = road_transform.origin;
+					godot::Vector3 end = start + road_transform.basis.transposed().get_column(1) * 2.0; // arrow in local Y/up
+
+					dd3d->call("draw_arrow", start, end, godot::Color(r, g, b), 0.5, true, _TICK_DELTA);
+				}
+			}
+		}
 	}
 }

@@ -1,5 +1,6 @@
 
 #include "physics_car.h"
+#include "godot_cpp/variant/plane.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/object.hpp"
@@ -260,6 +261,8 @@ bool PhysicsCar::find_floor_beneath_machine()
                         mtxa->cur->origin.distance_to(hit.collision_point);
                 contact_dist_metric = 20.0f - dist_p0_to_surface;
         }
+
+        DEBUG::disp_text("contact dist", contact_dist_metric);
 
         if (sweep_hit_occurred && contact_dist_metric > 0.0f) {
                 track_surface_normal = hit.collision_normal;
@@ -1410,9 +1413,7 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
         godot::Vector3 inv_vel = velocity * inv_weight;
         float offset_add = std::max(0.0f, -(inv_vel.dot(track_surface_normal)));
 
-        godot::Vector3 p0_ray_start_ws =
-                mtxa->transform_point(in_corner.offset +
-                                     godot::Vector3(0.0f, 2.0f + offset_add, 0.0f));
+        godot::Vector3 p0_ray_start_ws = mtxa->transform_point(in_corner.offset + godot::Vector3(0.0f, 2.0f + offset_add, 0.0f));
         godot::Vector3 p0 = mtxa->transform_point(in_corner.offset);
 
         godot::Vector3 local_target_for_ray_end(
@@ -1426,34 +1427,57 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
                 //godot::UtilityFunctions::print("disconnected!");
                 in_corner.state |= TILTSTATE::DISCONNECTED;
         } else {
-                CollisionData hit;
+                //CollisionData hit;
                 if (current_track != nullptr) {
                         //godot::UtilityFunctions::print("looking for hit!");
                         int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
-                        //godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+                        godot::Vector2  road_t_sample_raw;  godot::Vector3 spatial_t_sample;
+                        godot::Transform3D surf;
+                        current_track->get_road_surface(use_cp, p0, road_t_sample_raw, spatial_t_sample, surf);
+                        surf.basis.transpose();
                         //dd3d->call("draw_arrow", p0_ray_start_ws, p1_ray_end_ws, godot::Color(1.0f, 1.0f, 1.0f), 0.25, true, _TICK_DELTA);
                         //DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
-                        current_track->cast_vs_track_fast(
-                                hit, p0_ray_start_ws, p1_ray_end_ws,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
-                                use_cp);
-                        hit_found = hit.collided;
+                        //current_track->cast_vs_track_fast(hit, p0_ray_start_ws, p1_ray_end_ws, CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0, use_cp);
+                        //hit_found = hit.collided;
+                        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
+                        {
+                                godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+                                dd3d->call("draw_arrow", p0_ray_start_ws, p1_ray_end_ws, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
+                                //dd3d->call("draw_arrow", hit.collision_point, hit.collision_point + hit.collision_normal * 3.0, godot::Color(0.0f, 0.0f, 1.0f), 0.25, true, _TICK_DELTA);
+                                dd3d->call("draw_arrow", surf.origin, surf.origin + surf.basis.get_column(1).normalized() * 2.0, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
+                                DEBUG::disp_text("road t", road_t_sample_raw);
+                                DEBUG::disp_text("road spatial t", spatial_t_sample);
+                                DEBUG::disp_text("surface basis", surf.basis);
+                        }
                         //DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
-                        if (hit_found) {
-                                in_corner.pos = hit.collision_point;
-                                in_corner.up_vector_2 = hit.collision_normal;
+                        if (surf.basis.get_column(0).length_squared() >= 0.1) {
+                                godot::Plane surface_plane = godot::Plane(surf.basis.get_column(1).normalized(), surf.origin);
+                                godot::Vector3 intersect;
+                                hit_found = surface_plane.intersects_segment(p0_ray_start_ws, p1_ray_end_ws, &intersect);
+                                DEBUG::disp_text("intersected", hit_found);
+                                if (hit_found){
+                                        in_corner.pos = intersect;
+                                        in_corner.up_vector_2 = surface_plane.normal;
 
-                                float total_sweep_length = p0.distance_to(p1_ray_end_ws);
-                                float hit_fraction = 0.0f;
-                                if (total_sweep_length > 0.0001f) {
-                                        hit_fraction =
-                                                p0.distance_to(hit.collision_point) /
-                                                total_sweep_length;
-                                        hit_fraction = std::min(hit_fraction, 1.0f);
+                                        float total_sweep_length = p0.distance_to(p1_ray_end_ws);
+                                        float hit_fraction = 0.0f;
+                                        if (total_sweep_length > 0.0001f) {
+                                                hit_fraction =
+                                                        p0.distance_to(intersect) /
+                                                        total_sweep_length;
+                                                hit_fraction = std::min(hit_fraction, 1.0f);
+                                        }
+                                        float actual_len = hit_fraction * total_sweep_length;
+                                        float displacement_from_attachment_plane = -actual_len;
+                                        compression_metric = displacement_from_attachment_plane + dynamic_rest_offset;
+                                        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
+                                        {
+                                                godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+                                                dd3d->call("draw_arrow", in_corner.pos, in_corner.pos + in_corner.up_vector_2 * 2.0, godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, _TICK_DELTA);
+                                                DEBUG::disp_text("hit_fraction", hit_fraction);
+                                                DEBUG::disp_text("displacement_from_attachment_plane", displacement_from_attachment_plane);
+                                        }
                                 }
-                                float actual_len = hit_fraction * total_sweep_length;
-                                float displacement_from_attachment_plane = -actual_len;
-                                compression_metric = displacement_from_attachment_plane + dynamic_rest_offset;
                         }
                 }
 
@@ -1776,7 +1800,7 @@ int PhysicsCar::update_machine_corners() {
         int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
         // first sanity pass
         {
-                godot::Vector3 s0 = position_old + mtxa->cur->basis.get_column(1) * 0.5f;
+                godot::Vector3 s0 = position_old;
                 godot::Vector3 s1 = position_current;
                 if (current_track) {
                         CollisionData hit;
@@ -1812,7 +1836,7 @@ int PhysicsCar::update_machine_corners() {
 
         // second sanity pass (shifted tip)
         {
-                godot::Vector3 s0 = position_old + mtxa->cur->basis.get_column(1) * 0.5f;
+                godot::Vector3 s0 = position_old;
                 godot::Vector3 s1 = position_current + mtxa->cur->basis.get_column(1) * 0.5f;
                 if (current_track) {
                         CollisionData hit;
@@ -1926,44 +1950,11 @@ int PhysicsCar::update_machine_corners() {
         for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
                 // track‐surface tip → corner
                 {
-                        godot::Vector3 p1 = position_old + track_surface_normal * 0.5f;
+                        godot::Vector3 p1 = position_old;
                         godot::Vector3 p0 = mtxa->transform_point(wc->offset);
                         if (current_track) {
                                 CollisionData hit;
                                 current_track->cast_vs_track_fast(hit, p1, p0,
-                                        CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
-                                        use_cp);
-                                if (hit.collided) {
-                                        auto normal = hit.collision_normal;
-                                        auto hit_pos = hit.collision_point;
-                                        for (auto* wc2 : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-                                                godot::Vector3 p = mtxa->transform_point(wc2->offset) + depenetration;
-                                                float depth = (p - hit_pos).dot(normal);
-                                                if (depth >= 0.0f) continue;
-                                                godot::Vector3 d = normal * (-depth);
-                                                if (hit.road_data.terrain & 0x100)
-                                                        overall_hit_detected_flag |= 2, collision_push_rail += d;
-                                                else
-                                                        collision_push_track += d;
-                                                collision_push_total += d;
-                                                overall_hit_detected_flag |= 1;
-                                                any_corner_hit = true;
-                                                depenetration += d;
-                                        }
-                                        position_current += depenetration;
-                                        mtxa->cur->origin = position_current;
-                                        total_depenetration += depenetration;
-                                        depenetration = godot::Vector3();
-                                }
-                        }
-                }
-                // rail feeler
-                {
-                        godot::Vector3 p1 = position_old + track_surface_normal * 0.5f;
-                        godot::Vector3 p2 = mtxa->transform_point(wc->offset.normalized() * 4.0f);
-                        if (current_track) {
-                                CollisionData hit;
-                                current_track->cast_vs_track_fast(hit, p1, p2,
                                         CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
                                         use_cp);
                                 if (hit.collided) {
@@ -1998,49 +1989,12 @@ int PhysicsCar::update_machine_corners() {
                 if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
                         check_dist = 2.0f;
 
-                godot::Vector3 tip = mtxa->transform_point(
-                        godot::Vector3(0,
-                                check_dist + std::max(0.0f, -(inv_vel + total_depenetration).dot(track_surface_normal)),
-                                0));
-                godot::Vector3 target = mtxa->transform_point(godot::Vector3(0, -10, 0));
+                godot::Vector3 tip = position_old + mtxa->cur->basis.get_column(1) * 0.5f;
+                godot::Vector3 target = mtxa->transform_point(godot::Vector3(0, -1, 0));
 
                 if (current_track) {
                         CollisionData hit;
                         current_track->cast_vs_track_fast(hit, tip, target,
-                                CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P0,
-                                use_cp);
-                        if (hit.collided) {
-                                auto normal = hit.collision_normal;
-                                auto hit_pos = hit.collision_point;
-                                for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-                                        godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-                                        float depth = (p0 - hit_pos).dot(normal);
-                                        if (depth >= 0.0f) continue;
-                                        godot::Vector3 d = normal * (-depth);
-                                        collision_push_total += d;
-                                        overall_hit_detected_flag |= 1;
-                                        any_corner_hit = true;
-                                        depenetration += d;
-                                        if (hit.road_data.terrain & 0x100)
-                                                collision_push_rail += d;
-                                        else
-                                                collision_push_track += d;
-                                }
-                                position_current += depenetration;
-                                mtxa->cur->origin = position_current;
-                                total_depenetration += depenetration;
-                                depenetration = godot::Vector3();
-                        }
-                }
-        }
-
-        // repeat airborne pass
-        if ((machine_state & MACHINESTATE::AIRBORNE) != 0) {
-                godot::Vector3 p0 = position_current - inv_vel;
-                godot::Vector3 p1 = position_current + inv_vel;
-                if (current_track) {
-                        CollisionData hit;
-                        current_track->cast_vs_track_fast(hit, p0, p1,
                                 CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::SAMPLE_FROM_P1,
                                 use_cp);
                         if (hit.collided) {
@@ -2467,7 +2421,8 @@ void PhysicsCar::handle_checkpoints()
 
         uint8_t prev_lap = lap;
 
-        int found = current_track->find_checkpoint_bfs(position_current, current_checkpoint);
+        int found = current_track->get_viable_checkpoints(position_current)[0];
+        current_checkpoint = found;
         if (found >= 0 && found != current_checkpoint) {
                 if (found == 0 && current_checkpoint == current_track->num_checkpoints - 1) {
                         lap += 1;

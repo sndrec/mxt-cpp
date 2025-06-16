@@ -24,6 +24,10 @@ settings/3d/volumetric_defaults/plane_size=90.0
 
 enabled=PackedStringArray()
 
+[filesystem]
+
+import/blender/enabled=false
+
 [input]
 
 StrafeLeft={
@@ -57,22 +61,22 @@ Boost={
 ]
 }
 SteerUp={
-"deadzone": 0.5,
+"deadzone": 0.01,
 "events": [Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"axis":1,"axis_value":-1.0,"script":null)
 ]
 }
 SteerDown={
-"deadzone": 0.5,
+"deadzone": 0.01,
 "events": [Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"axis":1,"axis_value":1.0,"script":null)
 ]
 }
 SteerLeft={
-"deadzone": 0.5,
+"deadzone": 0.01,
 "events": [Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"axis":0,"axis_value":-1.0,"script":null)
 ]
 }
 SteerRight={
-"deadzone": 0.5,
+"deadzone": 0.01,
 "events": [Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"","device":-1,"axis":0,"axis_value":1.0,"script":null)
 ]
 }
