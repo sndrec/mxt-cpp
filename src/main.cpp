@@ -389,15 +389,19 @@ void GameSim::render_gamesim() {
 		vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
 		vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
 	}
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
-	{
-		for (int i = 0; i < current_track->num_checkpoints; i++)
-		{
-			current_track->checkpoints[i].debug_draw();
-		}
-	}
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
-	{
+        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
+        {
+                for (int i = 0; i < current_track->num_checkpoints; i++)
+                {
+                        current_track->checkpoints[i].debug_draw();
+                }
+        }
+        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINT_BVH))
+        {
+                current_track->debug_draw_checkpoint_bvh();
+        }
+        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
+        {
 		DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
 		int use_seg_ind = current_track->checkpoints[cars[0].current_checkpoint].road_segment;
 		for (int i = 0; i < current_track->num_segments; i++)

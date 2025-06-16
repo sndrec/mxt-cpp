@@ -7,6 +7,7 @@
 #include <queue>
 #include <vector>
 #include <limits>
+#include <functional>
 #include "mxt_core/debug.hpp"
 #include "track/checkpoint_bvh.h"
 
@@ -671,4 +672,19 @@ void RaceTrack::build_checkpoint_bvh()
         checkpoint_aabbs[i] = box;
     }
     checkpoint_bvh.build(checkpoint_aabbs);
+}
+
+void RaceTrack::debug_draw_checkpoint_bvh() const
+{
+    if (checkpoint_bvh.nodes.empty())
+        return;
+    godot::Object *dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+    std::function<void(int)> draw_node = [&](int idx){
+        if (idx < 0) return;
+        const CheckpointBVHNode &node = checkpoint_bvh.nodes[idx];
+        dd3d->call("draw_aabb", node.bounds, godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
+        if (node.left != -1) draw_node(node.left);
+        if (node.right != -1) draw_node(node.right);
+    };
+    draw_node(0);
 }
