@@ -2450,8 +2450,7 @@ void PhysicsCar::handle_checkpoints()
 
         uint8_t prev_lap = lap;
 
-        int found = current_track->get_viable_checkpoints(position_current)[0];
-        current_checkpoint = found;
+        int found = current_track->get_best_checkpoint(position_current, position_old, position_current);
         if (found >= 0 && found != current_checkpoint) {
                 if (found == 0 && current_checkpoint == current_track->num_checkpoints - 1) {
                         lap += 1;

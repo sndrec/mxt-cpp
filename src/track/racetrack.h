@@ -94,20 +94,20 @@ public:
                 return best_cp;
         }
 
-        int get_best_checkpoint(godot::Vector3 in_point, godot::Vector3 other)
+        int get_best_checkpoint(godot::Vector3 in_p0, godot::Vector3 in_p1, godot::Vector3 sample_point)
         {
                 std::vector<int> candidates;
                 candidates.reserve(16);
 
                 if (!checkpoint_bvh.nodes.empty()) {
-                        checkpoint_bvh.query_segment(0, in_point, other, candidates);
+                        checkpoint_bvh.query_segment(0, in_p0, in_p1, candidates);
                 } else {
                         for (int i = 0; i < num_checkpoints; i++)
                                 candidates.push_back(i);
                 }
 
                 candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](int idx){
-                        return !checkpoints[idx].start_plane.is_point_over(in_point) || checkpoints[idx].end_plane.is_point_over(in_point);
+                        return !checkpoints[idx].start_plane.is_point_over(sample_point) || checkpoints[idx].end_plane.is_point_over(sample_point);
                 }), candidates.end());
                 int   best_cp     = -1;
                 float best_dist2  = std::numeric_limits<float>::infinity();
@@ -115,9 +115,9 @@ public:
                         const CollisionCheckpoint &cp = checkpoints[idx];
 
                         // project pos onto segment
-                        godot::Vector3 p1    = cp.start_plane.project(in_point);
-                        godot::Vector3 p2    = cp.end_plane.project(in_point);
-                        float           cp_t = get_closest_t_on_segment(in_point, p1, p2);
+                        godot::Vector3 p1    = cp.start_plane.project(sample_point);
+                        godot::Vector3 p2    = cp.end_plane.project(sample_point);
+                        float           cp_t = get_closest_t_on_segment(sample_point, p1, p2);
 
                         godot::Basis basis;
                         basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t).normalized();
@@ -131,8 +131,8 @@ public:
                         float x_r = lerp(cp.x_radius_start_inv, cp.x_radius_end_inv, cp_t);
                         float y_r = lerp(cp.y_radius_start_inv, cp.y_radius_end_inv, cp_t);
 
-                        float tx = sep_x.distance_to(in_point) * x_r;
-                        float ty = sep_y.distance_to(in_point) * x_r;
+                        float tx = sep_x.distance_to(sample_point) * x_r;
+                        float ty = sep_y.distance_to(sample_point) * x_r;
                         float dist2 = tx * tx + ty * ty;
 
                         if (dist2 < best_dist2) {

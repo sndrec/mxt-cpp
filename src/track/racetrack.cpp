@@ -110,8 +110,14 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
                                   godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented)
 {
     CollisionCheckpoint *cp;
-    int best = get_best_checkpoint(point);
-    if (best == -1){
+    int best = -1;
+    if (cp_idx == -1) {
+        best = get_best_checkpoint(point);
+    } else {
+        best = find_checkpoint_bfs(point, cp_idx);
+    }
+    if (cp_idx == -1)
+    {
         return;
     }
     cp = &checkpoints[best];
@@ -137,10 +143,10 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 
     // Check for open road shape
     RoadShape *shape = segments[cp->road_segment].road_shape;
-    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+    if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
         is_open = true;
         use_top_half = true;
-    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+    } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
         is_open = true;
         use_top_half = false;
     }
@@ -200,10 +206,10 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
     bool use_top_half = false;
 
     // Check for open road shape
-    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+    if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
         is_open = true;
         use_top_half = true;
-    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+    } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
         is_open = true;
         use_top_half = false;
     }
@@ -626,16 +632,11 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
     // pick a single checkpoint
     int cp_idx = -1;
     godot::Vector3 other_point = (sample_point == p1) ? p0 : p1;
-    cp_idx = get_best_checkpoint(sample_point, other_point);
-    //if (start_idx == -1) {
-    //    auto cps = get_viable_checkpoints(sample_point);
-    //    if (cps.empty()){
-    //        return;
-    //    }
-    //    cp_idx = cps[0];
-    //} else {
-    //    cp_idx = find_checkpoint_bfs(sample_point, start_idx);
-    //}
+    if (start_idx == -1) {
+        cp_idx = get_best_checkpoint(p0, p1, sample_point);
+    } else {
+        cp_idx = find_checkpoint_bfs(sample_point, start_idx);
+    }
     if (cp_idx == -1)
     {
         return;
