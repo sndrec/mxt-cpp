@@ -4,7 +4,6 @@
 #include <algorithm>
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/enums.h"
-#include <queue>
 #include <vector>
 #include <limits>
 #include <functional>
@@ -28,17 +27,23 @@ int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index
 }
 
 int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) const {
-    // BFS setup
-    std::queue<std::pair<int,int>> q;
-    std::vector<bool> visited(num_checkpoints, false);
-    std::vector<int> candidates;
+    int q_head = 0;
+    int q_tail = 0;
+    int candidate_count = 0;
 
-    q.push({ start_index, 0 });
-    visited[start_index] = true;
+    if ((int)bfs_visited.size() < num_checkpoints)
+        bfs_visited.resize(num_checkpoints);
+    std::fill(bfs_visited.begin(), bfs_visited.begin() + num_checkpoints, 0);
 
-    while (!q.empty()) {
-        auto [idx, depth] = q.front();
-        q.pop();
+    bfs_queue_idx[q_tail]   = start_index;
+    bfs_queue_depth[q_tail] = 0;
+    ++q_tail;
+    bfs_visited[start_index] = 1;
+
+    while (q_head < q_tail) {
+        int idx   = bfs_queue_idx[q_head];
+        int depth = bfs_queue_depth[q_head];
+        ++q_head;
 
         const CollisionCheckpoint &cp = checkpoints[idx];
         bool over_end   = cp.end_plane.is_point_over(pos);
@@ -52,17 +57,22 @@ int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) c
             continue;
         // mark as candidate & prune deeper
         if (!over_end && over_start) {
-            candidates.push_back(idx);
+            if (candidate_count < kMaxCandidates)
+                candidate_indices[candidate_count++] = idx;
             continue;
         }
 
         // enqueue neighbors up to depth 9
         if (depth < 9) {
-            for (int i = 0; i < cp.num_neighboring_checkpoints; ++i) {
+            for (int i = 0; i < cp.num_neighboring_checkpoints && q_tail < kMaxCandidates; ++i) {
                 int nei = cp.neighboring_checkpoints[i];
-                if (!visited[nei]) {
-                    visited[nei] = true;
-                    q.push({ nei, depth + 1 });
+                if (!bfs_visited[nei]) {
+                    bfs_visited[nei] = 1;
+                    bfs_queue_idx[q_tail]   = nei;
+                    bfs_queue_depth[q_tail] = depth + 1;
+                    ++q_tail;
+                    if (q_tail >= kMaxCandidates)
+                        break;
                 }
             }
         }
@@ -72,7 +82,8 @@ int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) c
     int   best_cp     = -1;
     float best_dist2  = std::numeric_limits<float>::infinity();
 
-    for (int idx : candidates) {
+    for (int c = 0; c < candidate_count; ++c) {
+        int idx = candidate_indices[c];
         const CollisionCheckpoint &cp = checkpoints[idx];
 
         // project pos onto segment
@@ -650,6 +661,8 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 void RaceTrack::build_checkpoint_bvh()
 {
     checkpoint_aabbs.resize(num_checkpoints);
+    bfs_visited.resize(num_checkpoints);
+    tmp_query_results.reserve(kMaxCandidates);
     for (int i = 0; i < num_checkpoints; ++i) {
         const CollisionCheckpoint &cp = checkpoints[i];
         TrackSegment &seg = segments[cp.road_segment];
