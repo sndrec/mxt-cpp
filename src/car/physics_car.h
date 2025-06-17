@@ -200,9 +200,10 @@ public:
 	godot::Vector3 get_avg_track_normal_from_tilt_corners();
 	void set_terrain_state_from_track();
 	void handle_attack_states();
-	void apply_torque_from_force(const godot::Vector3& p_local_offset, const godot::Vector3& wf_world_force);
-	void simulate_machine_motion(PlayerInput in_input);
-	int update_machine_corners();
+        void apply_torque_from_force(const godot::Vector3& p_local_offset, const godot::Vector3& wf_world_force);
+        void simulate_machine_motion(PlayerInput in_input);
+        void noclip_motion(PlayerInput in_input);
+        int update_machine_corners();
     void create_machine_visual_transform();
     void handle_machine_collision_response();
     void align_machine_y_with_track_normal_immediate();

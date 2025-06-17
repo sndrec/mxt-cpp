@@ -2026,6 +2026,35 @@ int PhysicsCar::update_machine_corners() {
         return overall_hit_detected_flag;
 }
 
+void PhysicsCar::noclip_motion(PlayerInput in_input)
+{
+    float move_speed = 60.0f;
+    float rot_speed  = 2.0f; // radians per second
+
+    float strafe = (-std::min(1.0f, in_input.strafe_left * 1.25f) +
+                    std::min(1.0f, in_input.strafe_right * 1.25f));
+    float forward = in_input.accelerate - in_input.brake;
+
+    godot::Vector3 local_delta(strafe * move_speed * _TICK_DELTA,
+                               0.0f,
+                               -forward * move_speed * _TICK_DELTA);
+    godot::Vector3 world_delta = basis_physical.basis.xform(local_delta);
+    position_current += world_delta;
+
+    float yaw_delta   = in_input.steer_horizontal * rot_speed * _TICK_DELTA;
+    float pitch_delta = -in_input.steer_vertical * rot_speed * _TICK_DELTA;
+    godot::Basis rot_y(godot::Vector3(0,1,0), yaw_delta);
+    godot::Basis rot_x(godot::Vector3(1,0,0), pitch_delta);
+    basis_physical.basis = rot_y * rot_x * basis_physical.basis;
+    basis_physical = basis_physical.orthonormalized();
+
+    mtxa->assign(basis_physical);
+    mtxa->cur->origin = position_current;
+    transform_visual = *mtxa->cur;
+    velocity = godot::Vector3();
+    velocity_angular = godot::Vector3();
+}
+
 
 void PhysicsCar::create_machine_visual_transform()
 {
@@ -2462,6 +2491,12 @@ void PhysicsCar::tick(uint32_t tick_count)
         side_attack_indicator = 0.0f;
 
         PlayerInput input = PlayerInput::from_player_input();
+
+        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_NOCLIP)) {
+                noclip_motion(input);
+                handle_checkpoints();
+                return;
+        }
 
         if (tick_count < level_start_time - 180) {
                 machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
