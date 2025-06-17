@@ -7,18 +7,18 @@ using godot::Vector3;
 
 static int build_recursive(CheckpointBVH &bvh, const std::vector<AABB> &aabbs, std::vector<int> &indices, int start, int end)
 {
-    int node_idx = (int)bvh.nodes.size();
-    bvh.nodes.push_back(CheckpointBVHNode{});
-    CheckpointBVHNode &node = bvh.nodes.back();
+    // Index of the node we are about to create
+    int node_idx = static_cast<int>(bvh.nodes.size());
+    bvh.nodes.emplace_back();
 
-    // compute bounds
+    // Compute bounds for this node
     AABB bounds = aabbs[indices[start]];
     for (int i = start + 1; i < end; ++i)
         bounds = bounds.merge(aabbs[indices[i]]);
-    node.bounds = bounds;
+    bvh.nodes[node_idx].bounds = bounds;
 
     if (end - start == 1) {
-        node.checkpoint_index = indices[start];
+        bvh.nodes[node_idx].checkpoint_index = indices[start];
         return node_idx;
     }
 
@@ -39,8 +39,11 @@ static int build_recursive(CheckpointBVH &bvh, const std::vector<AABB> &aabbs, s
         return ca < cb;
     });
 
-    node.left = build_recursive(bvh, aabbs, indices, start, mid);
-    node.right = build_recursive(bvh, aabbs, indices, mid, end);
+    int left_child = build_recursive(bvh, aabbs, indices, start, mid);
+    int right_child = build_recursive(bvh, aabbs, indices, mid, end);
+
+    bvh.nodes[node_idx].left = left_child;
+    bvh.nodes[node_idx].right = right_child;
     return node_idx;
 }
 
