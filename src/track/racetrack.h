@@ -13,12 +13,21 @@ struct CollisionData;
 class RaceTrack
 {
 public:
+        static constexpr int kMaxCandidates = 8;
+
         int num_segments;
         int num_checkpoints;
         TrackSegment* segments;
         CollisionCheckpoint* checkpoints;
         std::vector<godot::AABB> checkpoint_aabbs;
         CheckpointBVH checkpoint_bvh;
+
+        // Scratch buffers reused by search helpers to avoid allocations
+        int     bfs_queue_idx[kMaxCandidates] = {};
+        uint8_t bfs_queue_depth[kMaxCandidates] = {};
+        int     candidate_indices[kMaxCandidates] = {};
+        std::vector<int>   tmp_query_results;
+        std::vector<uint8_t> bfs_visited;
         int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0) const;
         int find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) const;
         void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = true);
@@ -46,22 +55,29 @@ public:
         }
         int get_best_checkpoint(godot::Vector3 in_point)
         {
-                std::vector<int> candidates;
-                candidates.reserve(16);
+                int candidate_count = 0;
+
+                tmp_query_results.clear();
+                tmp_query_results.reserve(kMaxCandidates);
 
                 if (!checkpoint_bvh.nodes.empty()) {
-                        checkpoint_bvh.query(0, in_point, candidates);
+                        checkpoint_bvh.query(0, in_point, tmp_query_results);
                 } else {
                         for (int i = 0; i < num_checkpoints; i++)
-                                candidates.push_back(i);
+                                tmp_query_results.push_back(i);
                 }
 
-                candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](int idx){
-                        return !checkpoints[idx].start_plane.is_point_over(in_point) || checkpoints[idx].end_plane.is_point_over(in_point);
-                }), candidates.end());
+                for (int idx : tmp_query_results) {
+                        if (!checkpoints[idx].start_plane.is_point_over(in_point) || checkpoints[idx].end_plane.is_point_over(in_point))
+                                continue;
+                        if (candidate_count < kMaxCandidates)
+                                candidate_indices[candidate_count++] = idx;
+                }
+
                 int   best_cp     = -1;
                 float best_dist2  = std::numeric_limits<float>::infinity();
-                for (int idx : candidates) {
+                for (int i = 0; i < candidate_count; ++i) {
+                        int idx = candidate_indices[i];
                         const CollisionCheckpoint &cp = checkpoints[idx];
 
                         // project pos onto segment
@@ -96,22 +112,29 @@ public:
 
         int get_best_checkpoint(godot::Vector3 in_p0, godot::Vector3 in_p1, godot::Vector3 sample_point)
         {
-                std::vector<int> candidates;
-                candidates.reserve(16);
+                int candidate_count = 0;
+
+                tmp_query_results.clear();
+                tmp_query_results.reserve(kMaxCandidates);
 
                 if (!checkpoint_bvh.nodes.empty()) {
-                        checkpoint_bvh.query_segment(0, in_p0, in_p1, candidates);
+                        checkpoint_bvh.query_segment(0, in_p0, in_p1, tmp_query_results);
                 } else {
                         for (int i = 0; i < num_checkpoints; i++)
-                                candidates.push_back(i);
+                                tmp_query_results.push_back(i);
                 }
 
-                candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](int idx){
-                        return !checkpoints[idx].start_plane.is_point_over(sample_point) || checkpoints[idx].end_plane.is_point_over(sample_point);
-                }), candidates.end());
+                for (int idx : tmp_query_results) {
+                        if (!checkpoints[idx].start_plane.is_point_over(sample_point) || checkpoints[idx].end_plane.is_point_over(sample_point))
+                                continue;
+                        if (candidate_count < kMaxCandidates)
+                                candidate_indices[candidate_count++] = idx;
+                }
+
                 int   best_cp     = -1;
                 float best_dist2  = std::numeric_limits<float>::infinity();
-                for (int idx : candidates) {
+                for (int i = 0; i < candidate_count; ++i) {
+                        int idx = candidate_indices[i];
                         const CollisionCheckpoint &cp = checkpoints[idx];
 
                         // project pos onto segment
