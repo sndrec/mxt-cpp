@@ -669,6 +669,7 @@ void RaceTrack::build_checkpoint_bvh()
                 }
             }
         }
+        box = box.grow(2.0);
         checkpoint_aabbs[i] = box;
     }
     checkpoint_bvh.build(checkpoint_aabbs);
