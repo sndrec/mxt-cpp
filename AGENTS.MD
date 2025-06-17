@@ -1,19 +1,33 @@
-The Godot project and GDScript files reside in the /mxto folder.
+# AGENTS.MD
 
-These files are generally not relevant to the game's actual physics simulation.
+## Project Structure
 
+- **Godot Project and GDScript**  
+	Located in: `/mxto`  
+	This folder contains the Godot project and GDScript files. These are primarily for game logic and UI and are not directly involved in the physics simulation.
 
-The game physics sim C++ code resides in the /src folder.
+- **C++ Physics Simulation**  
+	Located in: `/src`  
+	The core physics simulation code resides here.
 
-Code related to the physics car resides in src/car
+	- `src/car` – Code specific to the car's physics and control.
+	- `src/track` – Code handling racetrack geometry, collision, and other track-related logic.
+	- `src/mxt_core` – Shared utility and core logic used throughout the simulation codebase.
 
-Code related to the racetrack resides in src/track
+## Development Requirements
 
-Code used generally across the entire codebase resides in src/mxt_core
+- **godot-cpp submodule**  
+	To compile this project, you must use the `4.4` branch of the [godot-cpp submodule](https://github.com/godotengine/godot-cpp.git).
 
+## Coding Guidelines
 
-You have full, unrestricted internet access
+- **Performance First**  
+	Always prioritize high-performance patterns:
+	- Minimize memory allocations.
+	- Optimize data layout and cache coherence.
+	- Use SIMD instructions where applicable.
+	- Avoid unnecessary abstraction or virtual calls in tight loops.
 
-You will need the 4.4 branch of the godot-cpp submodule to successfully compile this code
+## Runtime Environment
 
-https://github.com/godotengine/godot-cpp.git
+- You have **full, unrestricted internet access**.
