@@ -113,7 +113,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
 
-	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_CHECKPOINT_BVH);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_NOCLIP);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
 	// load in collision checkpoints //
 

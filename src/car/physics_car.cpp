@@ -2028,7 +2028,7 @@ int PhysicsCar::update_machine_corners() {
 
 void PhysicsCar::noclip_motion(PlayerInput in_input)
 {
-    float move_speed = 60.0f;
+    float move_speed = 120.0f;
     float rot_speed  = 2.0f; // radians per second
 
     float strafe = (-std::min(1.0f, in_input.strafe_left * 1.25f) +
@@ -2041,11 +2041,11 @@ void PhysicsCar::noclip_motion(PlayerInput in_input)
     godot::Vector3 world_delta = basis_physical.basis.xform(local_delta);
     position_current += world_delta;
 
-    float yaw_delta   = in_input.steer_horizontal * rot_speed * _TICK_DELTA;
-    float pitch_delta = -in_input.steer_vertical * rot_speed * _TICK_DELTA;
+    float yaw_delta   = -in_input.steer_horizontal * rot_speed * _TICK_DELTA;
+    float pitch_delta = in_input.steer_vertical * rot_speed * _TICK_DELTA;
     godot::Basis rot_y(godot::Vector3(0,1,0), yaw_delta);
     godot::Basis rot_x(godot::Vector3(1,0,0), pitch_delta);
-    basis_physical.basis = rot_y * rot_x * basis_physical.basis;
+    basis_physical.basis = basis_physical.basis * rot_y * rot_x;
     basis_physical = basis_physical.orthonormalized();
 
     mtxa->assign(basis_physical);
