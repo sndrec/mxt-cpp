@@ -113,7 +113,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
 
-	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_CHECKPOINT_BVH);
+	//DEBUG::enable_dip(DIP_SWITCH::DIP_NOCLIP);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
 	// load in collision checkpoints //
 
@@ -308,10 +309,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 				latest_sample_pos = new_sample_pos;
 			}
 		}
-		current_track->segments[seg].segment_length = total_distance;
-	}
+        current_track->segments[seg].segment_length = total_distance;
+        }
 
-	gamestate_data.instantiate(1024 * 1024 * 8);
+        current_track->build_checkpoint_bvh();
+
+        gamestate_data.instantiate(1024 * 1024 * 8);
 
 	cars = gamestate_data.create_and_allocate_cars(100);
 	num_cars = 100;
@@ -387,15 +390,19 @@ void GameSim::render_gamesim() {
 		vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
 		vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
 	}
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
-	{
-		for (int i = 0; i < current_track->num_checkpoints; i++)
-		{
-			current_track->checkpoints[i].debug_draw();
-		}
-	}
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
-	{
+        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
+        {
+                for (int i = 0; i < current_track->num_checkpoints; i++)
+                {
+                        current_track->checkpoints[i].debug_draw();
+                }
+        }
+        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINT_BVH))
+        {
+                current_track->debug_draw_checkpoint_bvh();
+        }
+        if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
+        {
 		DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
 		int use_seg_ind = current_track->checkpoints[cars[0].current_checkpoint].road_segment;
 		for (int i = 0; i < current_track->num_segments; i++)

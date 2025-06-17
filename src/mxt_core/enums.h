@@ -79,12 +79,14 @@ namespace CAST_FLAGS {
 }
 
 namespace DIP_SWITCH {
-        enum FLAGS {
-                DIP_DRAW_RAYCASTS = 0x1,
-                DIP_DRAW_CHECKPOINTS = 0x2,
-                DIP_DRAW_SEGMENT_SURF = 0x4,
-                DIP_DRAW_TILT_CORNER_DATA = 0x8,
-        };
+enum FLAGS {
+DIP_DRAW_RAYCASTS = 0x1,
+DIP_DRAW_CHECKPOINTS = 0x2,
+DIP_DRAW_SEGMENT_SURF = 0x4,
+DIP_DRAW_TILT_CORNER_DATA = 0x8,
+DIP_DRAW_CHECKPOINT_BVH = 0x10,
+DIP_NOCLIP = 0x20,
+};
 }
 
 namespace ROAD_SHAPE_TYPE {

@@ -4,10 +4,11 @@
 #include <algorithm>
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/enums.h"
-#include <queue>
 #include <vector>
 #include <limits>
+#include <functional>
 #include "mxt_core/debug.hpp"
+#include "track/checkpoint_bvh.h"
 
 int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations) const
 {
@@ -26,17 +27,23 @@ int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index
 }
 
 int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) const {
-    // BFS setup
-    std::queue<std::pair<int,int>> q;
-    std::vector<bool> visited(num_checkpoints, false);
-    std::vector<int> candidates;
+    int q_head = 0;
+    int q_tail = 0;
+    int candidate_count = 0;
 
-    q.push({ start_index, 0 });
-    visited[start_index] = true;
+    if ((int)bfs_visited.size() < num_checkpoints)
+        bfs_visited.resize(num_checkpoints);
+    std::fill(bfs_visited.begin(), bfs_visited.begin() + num_checkpoints, 0);
 
-    while (!q.empty()) {
-        auto [idx, depth] = q.front();
-        q.pop();
+    bfs_queue_idx[q_tail]   = start_index;
+    bfs_queue_depth[q_tail] = 0;
+    ++q_tail;
+    bfs_visited[start_index] = 1;
+
+    while (q_head < q_tail) {
+        int idx   = bfs_queue_idx[q_head];
+        int depth = bfs_queue_depth[q_head];
+        ++q_head;
 
         const CollisionCheckpoint &cp = checkpoints[idx];
         bool over_end   = cp.end_plane.is_point_over(pos);
@@ -50,17 +57,22 @@ int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) c
             continue;
         // mark as candidate & prune deeper
         if (!over_end && over_start) {
-            candidates.push_back(idx);
+            if (candidate_count < kMaxCandidates)
+                candidate_indices[candidate_count++] = idx;
             continue;
         }
 
         // enqueue neighbors up to depth 9
         if (depth < 9) {
-            for (int i = 0; i < cp.num_neighboring_checkpoints; ++i) {
+            for (int i = 0; i < cp.num_neighboring_checkpoints && q_tail < kMaxCandidates; ++i) {
                 int nei = cp.neighboring_checkpoints[i];
-                if (!visited[nei]) {
-                    visited[nei] = true;
-                    q.push({ nei, depth + 1 });
+                if (!bfs_visited[nei]) {
+                    bfs_visited[nei] = 1;
+                    bfs_queue_idx[q_tail]   = nei;
+                    bfs_queue_depth[q_tail] = depth + 1;
+                    ++q_tail;
+                    if (q_tail >= kMaxCandidates)
+                        break;
                 }
             }
         }
@@ -70,7 +82,8 @@ int RaceTrack::find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) c
     int   best_cp     = -1;
     float best_dist2  = std::numeric_limits<float>::infinity();
 
-    for (int idx : candidates) {
+    for (int c = 0; c < candidate_count; ++c) {
+        int idx = candidate_indices[c];
         const CollisionCheckpoint &cp = checkpoints[idx];
 
         // project pos onto segment
@@ -108,8 +121,14 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
                                   godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented)
 {
     CollisionCheckpoint *cp;
-    int best = get_best_checkpoint(point);
-    if (best == -1){
+    int best = -1;
+    if (cp_idx == -1) {
+        best = get_best_checkpoint(point);
+    } else {
+        best = find_checkpoint_bfs(point, cp_idx);
+    }
+    if (cp_idx == -1)
+    {
         return;
     }
     cp = &checkpoints[best];
@@ -135,10 +154,10 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 
     // Check for open road shape
     RoadShape *shape = segments[cp->road_segment].road_shape;
-    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+    if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
         is_open = true;
         use_top_half = true;
-    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+    } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
         is_open = true;
         use_top_half = false;
     }
@@ -198,10 +217,10 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
     bool use_top_half = false;
 
     // Check for open road shape
-    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+    if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
         is_open = true;
         use_top_half = true;
-    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+    } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
         is_open = true;
         use_top_half = false;
     }
@@ -623,16 +642,12 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 
     // pick a single checkpoint
     int cp_idx = -1;
-    cp_idx = get_best_checkpoint(sample_point);
-    //if (start_idx == -1) {
-    //    auto cps = get_viable_checkpoints(sample_point);
-    //    if (cps.empty()){
-    //        return;
-    //    }
-    //    cp_idx = cps[0];
-    //} else {
-    //    cp_idx = find_checkpoint_bfs(sample_point, start_idx);
-    //}
+    godot::Vector3 other_point = (sample_point == p1) ? p0 : p1;
+    if (start_idx == -1) {
+        cp_idx = get_best_checkpoint(p0, p1, sample_point);
+    } else {
+        cp_idx = find_checkpoint_bfs(sample_point, start_idx);
+    }
     if (cp_idx == -1)
     {
         return;
@@ -641,4 +656,50 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
     // do one raycast against that checkpoint
     CastParams params{ this, mask };
     cast_segment_fast(params, out_collision, p0, p1, cp_idx, sample_point, true);
+}
+
+void RaceTrack::build_checkpoint_bvh()
+{
+    checkpoint_aabbs.resize(num_checkpoints);
+    bfs_visited.resize(num_checkpoints);
+    tmp_query_results.reserve(kMaxCandidates);
+    for (int i = 0; i < num_checkpoints; ++i) {
+        const CollisionCheckpoint &cp = checkpoints[i];
+        TrackSegment &seg = segments[cp.road_segment];
+        godot::AABB box;
+        bool first = true;
+        for (int ty = 0; ty < 8; ++ty) {
+            float ft = cp.t_start + (cp.t_end - cp.t_start) * ((float)ty / 7.f);
+            for (int tx = 0; tx < 8; ++tx) {
+                float fx = -1.0f + 2.0f * ((float)tx / 7.f);
+                godot::Vector3 sample;
+                seg.road_shape->get_position_at_time(sample, godot::Vector2(fx, ft));
+                godot::AABB pt(sample, godot::Vector3(0,0,0));
+                if (first) {
+                    box = pt;
+                    first = false;
+                } else {
+                    box = box.merge(pt);
+                }
+            }
+        }
+        box = box.grow(2.0);
+        checkpoint_aabbs[i] = box;
+    }
+    checkpoint_bvh.build(checkpoint_aabbs);
+}
+
+void RaceTrack::debug_draw_checkpoint_bvh() const
+{
+    if (checkpoint_bvh.nodes.empty())
+        return;
+    godot::Object *dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+    std::function<void(int)> draw_node = [&](int idx){
+        if (idx < 0) return;
+        const CheckpointBVHNode &node = checkpoint_bvh.nodes[idx];
+        dd3d->call("draw_aabb", node.bounds, godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
+        if (node.left != -1) draw_node(node.left);
+        if (node.right != -1) draw_node(node.right);
+    };
+    draw_node(0);
 }
