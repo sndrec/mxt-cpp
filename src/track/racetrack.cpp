@@ -135,10 +135,10 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 
     // Check for open road shape
     RoadShape *shape = segments[cp->road_segment].road_shape;
-    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+    if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
         is_open = true;
         use_top_half = true;
-    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+    } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
         is_open = true;
         use_top_half = false;
     }
@@ -198,10 +198,10 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
     bool use_top_half = false;
 
     // Check for open road shape
-    if (RoadShapeCylinderOpen *cyl_open = dynamic_cast<RoadShapeCylinderOpen *>(shape)) {
+    if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
         is_open = true;
         use_top_half = true;
-    } else if (RoadShapePipeOpen *pipe_open = dynamic_cast<RoadShapePipeOpen *>(shape)) {
+    } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
         is_open = true;
         use_top_half = false;
     }
@@ -361,7 +361,7 @@ static void cast_segment(const CastParams &params, CollisionData &out_collision,
             segment.road_shape->get_transform_at_time(surf_hit, road_t_hit);
         }
         float vdist = (hit - surf_hit.origin).dot(surf_hit.basis[1]);
-        if (vdist < 0.0f || vdist > side.height)
+        if (vdist < 0.0f || vdist > side.height * rbasis[1].length())
             continue;
         if ((params.mask & CAST_FLAGS::WANTS_BACKFACE) == 0 && ray.dot(side.rail_n) > 0.0f)
             continue;
@@ -522,7 +522,7 @@ static void cast_segment_fast(const CastParams  &params,
         convert_point_to_road(track, use_idx, hit, road_t_hit_raw, spatial_t_hit);
 
         const float vdist = (hit - surf.origin).dot(surf_n);        // height above track
-        if (vdist < 0.0f || vdist > side.height)
+        if (vdist < 0.0f || vdist > side.height * rbasis[1].length())
             continue;
         if ((params.mask & CAST_FLAGS::WANTS_BACKFACE) == 0 && ray.dot(side.rail_n) > 0.0f)
             continue;
