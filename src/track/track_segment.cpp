@@ -99,20 +99,10 @@ void RoadShapePipe::get_transform_at_time(godot::Transform3D &out_transform, con
 	out_transform = final_transform;
 };
 
-void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
+void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
 {
-	const godot::Vector2 dir = godot::Vector2(in_pos[0], in_pos[1]).normalized();
-	float tx = deterministic_fp::atan2f(dir[0], dir[1]);
-	tx = 0.5f - tx;
-	if (tx < -1.0f)
-	{
-		tx += 2.0f;
-	};
-	if (tx > 1.0f)
-	{
-		tx -= 2.0f;
-	};
-	out_t = godot::Vector2(tx * ONE_DIV_BY_PI, in_pos[2]);
+	const float angle = deterministic_fp::atan2f(p.y, p.x) * ONE_DIV_BY_PI;
+	out_t = godot::Vector2(angle, p.z);
 };
 
 void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -234,19 +224,9 @@ void RoadShapePipeOpen::get_transform_at_time(godot::Transform3D &out_transform,
 void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
 	const godot::Vector2 dir = godot::Vector2(in_pos[0], in_pos[1]).normalized();
-	float tx = deterministic_fp::atan2f(dir[0], dir[1]) * ONE_DIV_BY_PI;
-	tx = 0.5f - tx;
-	if (tx < -1.0f)
-	{
-		tx += 2.0f;
-	};
-	if (tx > 1.0f)
-	{
-		tx -= 2.0f;
-	};
-	tx /= fmaxf(0.001, openness->sample(in_pos[2]));
+	const float tx = (deterministic_fp::atan2f(dir[1], dir[0]) * ONE_DIV_BY_PI) / fmaxf(0.001, openness->sample(in_pos[2]));
 	out_t = godot::Vector2(tx, in_pos[2]);
-}
+};
 
 void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
 {
