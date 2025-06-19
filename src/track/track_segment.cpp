@@ -102,7 +102,7 @@ void RoadShapePipe::get_transform_at_time(godot::Transform3D &out_transform, con
 void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
 	const godot::Vector2 dir = godot::Vector2(in_pos[0], in_pos[1]).normalized();
-	float tx = deterministic_fp::atan2f(dir[0], dir[1]);
+	float tx = deterministic_fp::atan2f(-dir[0], -dir[1]) * ONE_DIV_BY_PI;
 	tx = 0.5f - tx;
 	if (tx < -1.0f)
 	{
@@ -112,7 +112,7 @@ void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const go
 	{
 		tx -= 2.0f;
 	};
-	out_t = godot::Vector2(tx * ONE_DIV_BY_PI, in_pos[2]);
+	out_t = godot::Vector2(-tx, in_pos[2]);
 };
 
 void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -234,7 +234,7 @@ void RoadShapePipeOpen::get_transform_at_time(godot::Transform3D &out_transform,
 void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
 	const godot::Vector2 dir = godot::Vector2(in_pos[0], in_pos[1]).normalized();
-	float tx = deterministic_fp::atan2f(dir[0], dir[1]) * ONE_DIV_BY_PI;
+	float tx = deterministic_fp::atan2f(dir[1], -dir[0]) * ONE_DIV_BY_PI;
 	tx = 0.5f - tx;
 	if (tx < -1.0f)
 	{
@@ -245,7 +245,7 @@ void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, cons
 		tx -= 2.0f;
 	};
 	tx /= fmaxf(0.001, openness->sample(in_pos[2]));
-	out_t = godot::Vector2(tx, in_pos[2]);
+	out_t = godot::Vector2(-tx, in_pos[2]);
 }
 
 void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -263,7 +263,9 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-	const godot::Vector3 pos = godot::Vector3(deterministic_fp::sinf((in_t[0] - 0.5f) * PI), deterministic_fp::cosf((in_t[0] - 0.5f) * PI), 0.0f);
+	float mod_tx = in_t[0] * openness->sample(in_t[1]);
+
+	const godot::Vector3 pos = godot::Vector3(deterministic_fp::sinf(mod_tx * PI), deterministic_fp::cosf(mod_tx * PI), 0.0f);
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
 	godot::Transform3D road_shape_transform = T3D_IDENTITY;
