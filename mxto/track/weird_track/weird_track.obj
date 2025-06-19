@@ -1,6 +1,6 @@
 # Blender 4.4.3
 # www.blender.org
-mtllib track.mtl
+mtllib weird_track.mtl
 o MXTRoadSegment.040_PreviewMesh
 v -45.000000 0.000000 0.000000
 v -22.500000 0.000000 0.000000
