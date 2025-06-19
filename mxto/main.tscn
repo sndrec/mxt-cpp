@@ -31,7 +31,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Button" type="Button" parent="Control"]
+[node name="StartButton" type="Button" parent="Control"]
 layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
@@ -39,7 +39,17 @@ anchor_right = 1.0
 offset_left = -230.0
 offset_bottom = 31.0
 grow_horizontal = 0
-text = "Instantiate Game Simulation"
+text = "Start"
+
+[node name="TrackSelector" type="OptionButton" parent="Control"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -150.0
+offset_right = 150.0
+offset_top = -40.0
+offset_bottom = -10.0
 
 [node name="GameWorld" type="Node3D" parent="."]
 
@@ -64,4 +74,4 @@ transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 
 mesh = ExtResource("4_1bvp3")
 skeleton = NodePath("")
 
-[connection signal="pressed" from="Control/Button" to="." method="_on_button_pressed"]
+[connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
