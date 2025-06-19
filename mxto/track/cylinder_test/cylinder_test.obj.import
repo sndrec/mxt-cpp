@@ -4,14 +4,14 @@ importer="wavefront_obj"
 importer_version=1
 type="Mesh"
 uid="uid://br8xsh80m2vla"
-path="res://.godot/imported/cylinder_test.obj-19a2db68287217b2e63868fa09a6b192.mesh"
+path="res://.godot/imported/cylinder_test.obj-5a2e4942b4c17f50e21ff3e7e48aa7df.mesh"
 
 [deps]
 
-files=["res://.godot/imported/cylinder_test.obj-19a2db68287217b2e63868fa09a6b192.mesh"]
+files=["res://.godot/imported/cylinder_test.obj-5a2e4942b4c17f50e21ff3e7e48aa7df.mesh"]
 
-source_file="res://test/cylinder_test/cylinder_test.obj"
-dest_files=["res://.godot/imported/cylinder_test.obj-19a2db68287217b2e63868fa09a6b192.mesh", "res://.godot/imported/cylinder_test.obj-19a2db68287217b2e63868fa09a6b192.mesh"]
+source_file="res://track/cylinder_test/cylinder_test.obj"
+dest_files=["res://.godot/imported/cylinder_test.obj-5a2e4942b4c17f50e21ff3e7e48aa7df.mesh", "res://.godot/imported/cylinder_test.obj-5a2e4942b4c17f50e21ff3e7e48aa7df.mesh"]
 
 [params]
 
