@@ -145,7 +145,7 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 
     if (is_open && y_less_than_x) {
         float openness = shape->openness->sample(tz);
-        if (openness <= 0.5f) {
+        if (openness <= 0.50001f) {
             float tx_clamped = std::clamp(tx, -1.0f, 1.0f);
             float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
             if (!use_top_half)
@@ -205,17 +205,26 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
         is_open = true;
         use_top_half = false;
     }
+    DEBUG::disp_text("spatial_t_old", spatial_t);
+    DEBUG::disp_text("y_r", y_r);
+    DEBUG::disp_text("x_r", x_r);
+    DEBUG::disp_text("is_open", is_open);
+    DEBUG::disp_text("use_top_half", use_top_half);
 
     if (is_open && y_less_than_x) {
         float openness = shape->openness->sample(tz);
-        if (openness <= 0.5f) {
+        DEBUG::disp_text("openness", openness);
+        if (openness <= 0.50001f) {
             float tx_clamped = std::clamp(tx, -1.0f, 1.0f);
+            DEBUG::disp_text("tx_clamped", tx_clamped);
             float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
+            DEBUG::disp_text("y_val", y_val);
             if (!use_top_half)
                 y_val = -y_val;
             spatial_t.y = y_val;
         }
     }
+    DEBUG::disp_text("spatial_t", spatial_t);
 
     shape->find_t_from_relative_pos(road_t, spatial_t);
 }

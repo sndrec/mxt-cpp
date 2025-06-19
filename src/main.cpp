@@ -113,7 +113,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
 
-	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_CHECKPOINTS);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
 	// load in collision checkpoints //
 
@@ -162,10 +163,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		current_track->checkpoints[i].end_plane.normal[1] = lvldat_buf->get_float();
 		current_track->checkpoints[i].end_plane.normal[2] = lvldat_buf->get_float();
 		current_track->checkpoints[i].end_plane.d = lvldat_buf->get_float();
-		current_track->checkpoints[i].x_radius_start_inv = 1.0f / fmaxf(0.0001f, current_track->checkpoints[i].x_radius_start);
-		current_track->checkpoints[i].y_radius_start_inv = 1.0f / fmaxf(0.0001f, current_track->checkpoints[i].y_radius_start);
-		current_track->checkpoints[i].x_radius_end_inv = 1.0f / fmaxf(0.0001f, current_track->checkpoints[i].x_radius_end);
-		current_track->checkpoints[i].y_radius_end_inv = 1.0f / fmaxf(0.0001f, current_track->checkpoints[i].y_radius_end);
+		current_track->checkpoints[i].x_radius_start_inv = 1.0f / fmaxf(0.001f, current_track->checkpoints[i].x_radius_start);
+		current_track->checkpoints[i].y_radius_start_inv = 1.0f / fmaxf(0.001f, current_track->checkpoints[i].y_radius_start);
+		current_track->checkpoints[i].x_radius_end_inv = 1.0f / fmaxf(0.001f, current_track->checkpoints[i].x_radius_end);
+		current_track->checkpoints[i].y_radius_end_inv = 1.0f / fmaxf(0.001f, current_track->checkpoints[i].y_radius_end);
 		int num_n_cp = (int)lvldat_buf->get_u32();
 
 		current_track->checkpoints[i].num_neighboring_checkpoints = num_n_cp;
@@ -313,8 +314,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 	gamestate_data.instantiate(1024 * 1024 * 8);
 
-	cars = gamestate_data.create_and_allocate_cars(100);
-	num_cars = 100;
+	cars = gamestate_data.create_and_allocate_cars(1);
+	num_cars = 1;
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;
