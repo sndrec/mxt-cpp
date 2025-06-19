@@ -28,6 +28,9 @@
 	- Use SIMD instructions where applicable.
 	- Avoid unnecessary abstraction or virtual calls in tight loops.
 
+- **Indentation**
+	Use a single tab for each indentation level. Do not use spaces for indentation.
+
 ## Runtime Environment
 
 - You have **full, unrestricted internet access**.
