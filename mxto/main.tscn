@@ -1,9 +1,8 @@
-[gd_scene load_steps=8 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=7 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
-[ext_resource type="PackedScene" uid="uid://dmp2thprxsqlx" path="res://test/test_track.gltf" id="3_euqgd"]
 [ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
-[ext_resource type="ArrayMesh" uid="uid://br8xsh80m2vla" path="res://test/cylinder_test/cylinder_test.obj" id="4_1bvp3"]
+[ext_resource type="ArrayMesh" uid="uid://br8xsh80m2vla" path="res://track/cylinder_test/cylinder_test.obj" id="4_1bvp3"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c0w6o"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
@@ -43,13 +42,14 @@ text = "Start"
 
 [node name="TrackSelector" type="OptionButton" parent="Control"]
 layout_mode = 1
-anchors_preset = 1
+anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 offset_left = -150.0
-offset_right = 150.0
 offset_top = -40.0
+offset_right = 150.0
 offset_bottom = -10.0
+grow_horizontal = 0
 
 [node name="GameWorld" type="Node3D" parent="."]
 
@@ -60,17 +60,14 @@ shadow_enabled = true
 [node name="WorldEnvironment" type="WorldEnvironment" parent="GameWorld"]
 environment = SubResource("Environment_52gnn")
 
-[node name="RacingScene" parent="GameWorld" instance=ExtResource("3_euqgd")]
-visible = false
-
 [node name="CarNodeContainer" type="Node3D" parent="GameWorld"]
 script = ExtResource("3_h2yge")
 metadata/_custom_type_script = "uid://odaiawvcj4yf"
 
-[node name="level1_ref" type="Node3D" parent="GameWorld"]
+[node name="DebugTrackMeshContainer" type="Node3D" parent="GameWorld"]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0)
 
-[node name="MXTRoadSegment_143_PreviewMesh" type="MeshInstance3D" parent="GameWorld/level1_ref"]
+[node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
 mesh = ExtResource("4_1bvp3")
 skeleton = NodePath("")
 
