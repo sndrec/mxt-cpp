@@ -42,15 +42,18 @@ func _scan_dir(path: String) -> void:
 			dir.list_dir_end()
 
 func _on_start_button_pressed() -> void:
-			if track_selector.selected < 0 or track_selector.selected >= tracks.size():
-							return
-			var info : Dictionary = tracks[track_selector.selected]
-			car_node_container.instantiate_cars()
-			var level_buffer := StreamPeerBuffer.new()
-			level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-			game_sim.car_node_container = car_node_container
-			game_sim.instantiate_gamesim(level_buffer)
-			$Control.visible = false
+	if track_selector.selected < 0 or track_selector.selected >= tracks.size():
+	return
+	var info : Dictionary = tracks[track_selector.selected]
+	car_node_container.instantiate_cars()
+	var level_buffer := StreamPeerBuffer.new()
+	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+	game_sim.car_node_container = car_node_container
+	game_sim.instantiate_gamesim(level_buffer)
+	var obj_path := info["mxt"].get_basename() + ".obj"
+	if ResourceLoader.exists(obj_path):
+	debug_track_mesh.mesh = load(obj_path)
+	$Control.visible = false
 
 func _physics_process(delta: float) -> void:
 			DebugDraw3D.scoped_config().set_no_depth_test(true)
