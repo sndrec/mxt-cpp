@@ -279,13 +279,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 		// helper to bump heap_allocation up to the next 16-byte boundary
 		auto align16 = [&]() {
-			// how many bytes we’ve already used
-			size_t used = level_data.get_size();
-			// compute padding needed
-			size_t mis = used & 15;
+			uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
+			uintptr_t mis = addr & 15;
 			if (mis) {
-				size_t pad = 16 - mis;
-				level_data.allocate_bytes(pad);
+				level_data.allocate_bytes(16 - mis);
 			}
 		};
 
