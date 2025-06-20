@@ -128,16 +128,16 @@ public:
 			PhysicsCarProperties* new_car_properties = allocate_object<PhysicsCarProperties>();
 
 			new_car_properties->weight_kg = randf_range(1100.0f, 3000.0f);
-			new_car_properties->acceleration = randf_range(0.1f, 0.8f);
+			new_car_properties->acceleration = randf_range(0.3f, 0.8f);
 			new_car_properties->max_speed = randf_range(-0.1f, 0.5f);
-			new_car_properties->grip_1 = randf_range(0.3f, 1.5f);
-			new_car_properties->grip_2 = randf_range(0.3f, 1.0f);
-			new_car_properties->grip_3 = randf_range(0.05f, 0.4f);
+			new_car_properties->grip_1 = randf_range(0.3f, 1.1f);
+			new_car_properties->grip_2 = randf_range(0.3f, 0.6f);
+			new_car_properties->grip_3 = randf_range(0.05f, 0.25f);
 			new_car_properties->turn_tension = randf_range(0.0f, 0.3f);
 			new_car_properties->drift_accel = randf_range(-0.5f, 2.0f);
-			new_car_properties->turn_movement = randf_range(80.0f, 200.0f);
+			new_car_properties->turn_movement = randf_range(110.0f, 200.0f);
 			new_car_properties->strafe_turn = randf_range(0.0f, 100.0f);
-			new_car_properties->strafe = randf_range(20.0f, 50.0f);
+			new_car_properties->strafe = randf_range(20.0f, 60.0f);
 			new_car_properties->turn_reaction = randf_range(0.0f, 30.0f);
 			new_car_properties->boost_strength = randf_range(10.0f, 30.0f);
 			new_car_properties->boost_length = randf_range(0.75f, 2.0f);

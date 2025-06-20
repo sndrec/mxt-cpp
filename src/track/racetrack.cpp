@@ -205,26 +205,26 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
         is_open = true;
         use_top_half = false;
     }
-    DEBUG::disp_text("spatial_t_old", spatial_t);
-    DEBUG::disp_text("y_r", y_r);
-    DEBUG::disp_text("x_r", x_r);
-    DEBUG::disp_text("is_open", is_open);
-    DEBUG::disp_text("use_top_half", use_top_half);
+    //DEBUG::disp_text("spatial_t_old", spatial_t);
+    //DEBUG::disp_text("y_r", y_r);
+    //DEBUG::disp_text("x_r", x_r);
+    //DEBUG::disp_text("is_open", is_open);
+    //DEBUG::disp_text("use_top_half", use_top_half);
 
     if (is_open && y_less_than_x) {
         float openness = shape->openness->sample(tz);
-        DEBUG::disp_text("openness", openness);
+        //DEBUG::disp_text("openness", openness);
         if (openness <= 0.50001f) {
             float tx_clamped = std::clamp(tx, -1.0f, 1.0f);
-            DEBUG::disp_text("tx_clamped", tx_clamped);
+            //DEBUG::disp_text("tx_clamped", tx_clamped);
             float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
-            DEBUG::disp_text("y_val", y_val);
+            //DEBUG::disp_text("y_val", y_val);
             if (!use_top_half)
                 y_val = -y_val;
             spatial_t.y = y_val;
         }
     }
-    DEBUG::disp_text("spatial_t", spatial_t);
+    //DEBUG::disp_text("spatial_t", spatial_t);
 
     shape->find_t_from_relative_pos(road_t, spatial_t);
 }
@@ -452,7 +452,7 @@ static void cast_segment_fast(const CastParams  &params,
             godot::Vector2 road_t_hit_raw;  godot::Vector3 spatial_t_hit;
             convert_point_to_road(track, use_idx, hit_point, road_t_hit_raw, spatial_t_hit);
 
-            if ((params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0 || ray.dot(surf_n) <= 0.0f) {
+            if ((road_t_hit_raw.x <= 1.0f && road_t_hit_raw.x > -1.0f) && ((params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0 || ray.dot(surf_n) <= 0.0f)) {
                 const float dist = t * ray.length();
                 best_t                      = dist;
                 out_collision.collided      = true;

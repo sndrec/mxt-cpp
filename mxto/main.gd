@@ -22,38 +22,42 @@ func _load_tracks() -> void:
 		track_selector.selected = 0
 
 func _scan_dir(path: String) -> void:
-			var dir := DirAccess.open(path)
-			if dir == null:
-							return
-			dir.list_dir_begin()
-			var file := dir.get_next()
-			while file != "":
-							if dir.current_is_dir() and !file.begins_with("."):
-											_scan_dir(path + "/" + file)
-							elif file.get_extension() == "json":
-											var json_path := path + "/" + file
-											var mxt_path := json_path.get_basename() + ".mxt_track"
-											if FileAccess.file_exists(mxt_path):
-															var json_data := FileAccess.get_file_as_string(json_path)
-															var parsed = JSON.parse_string(json_data)
-															if typeof(parsed) == TYPE_DICTIONARY and parsed.has("name"):
-																			tracks.append({"name": parsed["name"], "mxt": mxt_path})
-							file = dir.get_next()
-			dir.list_dir_end()
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return
+	dir.list_dir_begin()
+	var file := dir.get_next()
+	while file != "":
+		if dir.current_is_dir() and !file.begins_with("."):
+			_scan_dir(path + "/" + file)
+		elif file.get_extension() == "json":
+			var json_path := path + "/" + file
+			var mxt_path := json_path.get_basename() + ".mxt_track"
+			if FileAccess.file_exists(mxt_path):
+				var json_data := FileAccess.get_file_as_string(json_path)
+				var parsed = JSON.parse_string(json_data)
+				if typeof(parsed) == TYPE_DICTIONARY and parsed.has("name"):
+					tracks.append({"name": parsed["name"], "mxt": mxt_path})
+		file = dir.get_next()
+	dir.list_dir_end()
 
 func _on_start_button_pressed() -> void:
 	if track_selector.selected < 0 or track_selector.selected >= tracks.size():
-	return
+		return
 	var info : Dictionary = tracks[track_selector.selected]
 	car_node_container.instantiate_cars()
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	game_sim.car_node_container = car_node_container
 	game_sim.instantiate_gamesim(level_buffer)
-	var obj_path := info["mxt"].get_basename() + ".obj"
+	var obj_path = info["mxt"].get_basename() + ".obj"
 	if ResourceLoader.exists(obj_path):
-	debug_track_mesh.mesh = load(obj_path)
-	$Control.visible = false
+		debug_track_mesh.mesh = load(obj_path)
+		$Control.visible = false
+		for i in debug_track_mesh.mesh.get_surface_count():
+			var mat := debug_track_mesh.mesh.surface_get_material(i)
+			if mat.resource_name == "track_surface":
+				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
 
 func _physics_process(delta: float) -> void:
 			DebugDraw3D.scoped_config().set_no_depth_test(true)
