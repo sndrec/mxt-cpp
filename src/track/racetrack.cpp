@@ -129,7 +129,7 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
     float ty = sep_y_plane.distance_to(point) * y_r;
     float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
     spatial_t = godot::Vector3(tx, ty, tz);
-    bool y_less_than_x = y_r > x_r;
+    bool y_less_than_x = y_r > 0.5f;
     bool is_open = false;
     bool use_top_half = false;
 
@@ -193,7 +193,7 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
 
     RoadShape *shape = track->segments[cp->road_segment].road_shape;
 
-    bool y_less_than_x = y_r > x_r;
+    bool y_less_than_x = y_r > 0.5f;
     bool is_open = false;
     bool use_top_half = false;
 
