@@ -19,9 +19,11 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("instantiate_gamesim"), &GameSim::instantiate_gamesim);
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("tick_gamesim"), &GameSim::tick_gamesim);
-	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
-	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
-	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
+ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
+ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
+ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
+ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
+ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -29,15 +31,27 @@ void GameSim::_bind_methods()
 };
 
 GameSim::GameSim()
-{
+	{
 	tick = 0;
 	tick_delta = 1.0f / 60.0f;
 	sim_started = false;
-};
-
-GameSim::~GameSim()
-{
-	destroy_gamesim();
+	for (int i = 0; i < STATE_BUFFER_LEN; i++)
+	{
+	state_buffer[i].data = nullptr;
+	state_buffer[i].size = 0;
+	}
+	};
+		GameSim::~GameSim()
+		{
+		destroy_gamesim();
+		for (int i = 0; i < STATE_BUFFER_LEN; i++)
+		{
+		if (state_buffer[i].data)
+		{
+		free(state_buffer[i].data);
+		state_buffer[i].data = nullptr;
+		}
+		}
 };
 
 void GameSim::set_sim_started(const bool p_sim_started)
@@ -80,13 +94,14 @@ void GameSim::tick_gamesim()
 	long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
 	godot::Object* dd2d = godot::Engine::get_singleton()->get_singleton("DebugDraw2D");
 	dd2d->call("set_text", "frame time us", microseconds);
-
-
+	
+	save_state();
+	
 	tick += 1;
 	//dd2d->call("set_text", "pos 1", car_positions[0]);
 	
 	//dd3d->call("draw_points", car_positions, 0, 1.0f, godot::Color(1.f, 0.f, 0.f), 0.0166666);
-}
+	}
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 {
@@ -311,8 +326,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		}
 		current_track->segments[seg].segment_length = total_distance;
 	}
-
 	gamestate_data.instantiate(1024 * 1024 * 8);
+	int state_capacity = gamestate_data.get_capacity();
+		for (int i = 0; i < STATE_BUFFER_LEN; i++)
+	{
+		state_buffer[i].data = (char*)malloc(state_capacity);
+		state_buffer[i].size = 0;
+	}
+
 
 	cars = gamestate_data.create_and_allocate_cars(1);
 	num_cars = 1;
@@ -342,11 +363,19 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 };
 
 void GameSim::destroy_gamesim()
-{
-	if (sim_started)
-	{
+		{
+		if (sim_started)
+		{
 		level_data.free_heap();
 		gamestate_data.free_heap();
+		for (int i = 0; i < STATE_BUFFER_LEN; i++)
+		{
+		if (state_buffer[i].data)
+		{
+		free(state_buffer[i].data);
+		state_buffer[i].data = nullptr;
+				}
+		}
 		sim_started = false;
 	}
 };
@@ -437,3 +466,25 @@ void GameSim::render_gamesim() {
 		}
 	}
 }
+
+	void GameSim::save_state()
+	{
+	int index = tick % STATE_BUFFER_LEN;
+	int size = gamestate_data.get_size();
+	state_buffer[index].size = size;
+	if (state_buffer[index].data)
+	{
+	memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
+	}
+	}
+	
+	void GameSim::load_state(int target_tick)
+	{
+	int index = target_tick % STATE_BUFFER_LEN;
+	if (!state_buffer[index].data)
+	return;
+	int size = state_buffer[index].size;
+	memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
+	gamestate_data.set_size(size);
+	tick = target_tick;
+	}
