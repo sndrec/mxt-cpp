@@ -10,6 +10,7 @@
 #include "track/road_embed.h"
 #include "car/physics_car.h"
 #include <cfenv>
+#include <cstdlib>
 #include "mxt_core/debug.hpp"
 
 using namespace godot;
@@ -48,7 +49,7 @@ GameSim::GameSim()
 		{
 		if (state_buffer[i].data)
 		{
-		free(state_buffer[i].data);
+               ::free(state_buffer[i].data);
 		state_buffer[i].data = nullptr;
 		}
 		}
@@ -372,7 +373,7 @@ void GameSim::destroy_gamesim()
 		{
 		if (state_buffer[i].data)
 		{
-		free(state_buffer[i].data);
+               ::free(state_buffer[i].data);
 		state_buffer[i].data = nullptr;
 				}
 		}
