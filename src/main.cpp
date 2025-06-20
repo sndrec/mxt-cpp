@@ -270,7 +270,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 		int pos = lvldat_buf->get_position();
 		int num_keyframes = static_cast<int>(lvldat_buf->get_u32());
-		lvldat_buf->seek(pos);
 
       // 1) allocate the SoA object itself on your heap
       {
@@ -308,19 +307,18 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		soa->tangent_out = level_data.allocate_array<float>(num_keyframes * 16);
 
 		// 3) fill your keyframes
-		for (int i = 0; i < num_keyframes; i++) {
-			soa->times[i] = lvldat_buf->get_float();
-			for (int n = 0; n < 15; n++) {
-				int idx = i * 16 + n;
+		for (int n = 0; n < 15; ++n) {
+			int cnt = static_cast<int>(lvldat_buf->get_u32());
+
+			for (int i = 0; i < num_keyframes; ++i) {
+				float t = lvldat_buf->get_float();
+				if (n == 0) soa->times[i] = t;	// write time once
+
+				int idx = i*16 + n;
 				soa->values[idx]      = lvldat_buf->get_float();
 				soa->tangent_in[idx]  = lvldat_buf->get_float();
 				soa->tangent_out[idx] = lvldat_buf->get_float();
 			}
-			// zero‐fill the 16th channel
-			int idx = i * 16 + 15;
-			soa->values[idx]      = 0.0f;
-			soa->tangent_in[idx]  = 0.0f;
-			soa->tangent_out[idx] = 0.0f;
 		}
 
 		// 4) version‐dependent rail heights
