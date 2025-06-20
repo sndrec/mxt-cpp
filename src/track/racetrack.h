@@ -15,7 +15,6 @@ public:
         TrackSegment* segments;
         CollisionCheckpoint* checkpoints;
         int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0) const;
-        int find_checkpoint_bfs(const godot::Vector3 &pos, int start_index) const;
         void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = true);
         void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
         void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
@@ -51,7 +50,7 @@ public:
 		}
 		return return_checkpoints;
 	}
-	int get_best_checkpoint(godot::Vector3 in_point)
+	int get_best_checkpoint(godot::Vector3 in_point) const
         {
                 std::vector<int> candidates;
 		candidates.reserve(16);

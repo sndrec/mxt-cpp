@@ -4,7 +4,6 @@
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
-#include "track/curve_matrix.h"
 #include "track/racetrack.h"
 #include "track/road_modulation.h"
 #include "track/road_embed.h"
@@ -20,11 +19,11 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("instantiate_gamesim"), &GameSim::instantiate_gamesim);
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("tick_gamesim"), &GameSim::tick_gamesim);
-ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
-ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
-ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
-ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
-ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
+	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
+	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
+	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
+	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
+	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -269,43 +268,63 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 		current_track->segments[seg].road_shape->owning_segment = &current_track->segments[seg];
 
-		current_track->segments[seg].curve_matrix = level_data.allocate_object<RoadTransformCurve>();
-
-		// road curve data //
-
 		int pos = lvldat_buf->get_position();
-		int num_keyframes = (int)lvldat_buf->get_u32();
+		int num_keyframes = static_cast<int>(lvldat_buf->get_u32());
 		lvldat_buf->seek(pos);
-		current_track->segments[seg].curve_matrix->num_keyframes = num_keyframes;
-		current_track->segments[seg].curve_matrix->keyframes = level_data.allocate_array<RoadTransformCurveKeyframe>(num_keyframes);
 
-                for (int n = 0; n < 15; n++)
-                {
-                        num_keyframes = (int)lvldat_buf->get_u32();
-                        for (int i = 0; i < num_keyframes; i++)
-                        {
-                                current_track->segments[seg].curve_matrix->keyframes[i].time = lvldat_buf->get_float();
-                                current_track->segments[seg].curve_matrix->keyframes[i].value[n] = lvldat_buf->get_float();
-                                current_track->segments[seg].curve_matrix->keyframes[i].tangent_in[n] = lvldat_buf->get_float();
-                                current_track->segments[seg].curve_matrix->keyframes[i].tangent_out[n] = lvldat_buf->get_float();
-                        }
-                }
+		// 1) allocate the SoA object itself on your heap
+		void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
+		RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
+		current_track->segments[seg].curve_matrix = soa;
 
-                if (version_string != "v0.1") {
-                        current_track->segments[seg].left_rail_height = lvldat_buf->get_float();
-                        current_track->segments[seg].right_rail_height = lvldat_buf->get_float();
-                } else {
-                        current_track->segments[seg].left_rail_height = 5.0f;
-                        current_track->segments[seg].right_rail_height = 5.0f;
-                }
+		// helper to bump heap_allocation up to the next 16-byte boundary
+		auto align16 = [&]() {
+			// how many bytes we’ve already used
+			size_t used = level_data.get_size();
+			// compute padding needed
+			size_t mis = used & 15;
+			if (mis) {
+				size_t pad = 16 - mis;
+				level_data.allocate_bytes(pad);
+			}
+		};
 
-		// one extra curve for alignment //
+		// 2) allocate each float array, after aligning
+		align16();
+		soa->times       = level_data.allocate_array<float>(num_keyframes);
 
-		for (int i = 0; i < num_keyframes; i++)
-		{
-			current_track->segments[seg].curve_matrix->keyframes[i].value[15] = 0.0f;
-			current_track->segments[seg].curve_matrix->keyframes[i].tangent_in[15] = 0.0f;
-			current_track->segments[seg].curve_matrix->keyframes[i].tangent_out[15] = 0.0f;
+		align16();
+		soa->values      = level_data.allocate_array<float>(num_keyframes * 16);
+
+		align16();
+		soa->tangent_in  = level_data.allocate_array<float>(num_keyframes * 16);
+
+		align16();
+		soa->tangent_out = level_data.allocate_array<float>(num_keyframes * 16);
+
+		// 3) fill your keyframes
+		for (int i = 0; i < num_keyframes; i++) {
+			soa->times[i] = lvldat_buf->get_float();
+			for (int n = 0; n < 15; n++) {
+				int idx = i * 16 + n;
+				soa->values[idx]      = lvldat_buf->get_float();
+				soa->tangent_in[idx]  = lvldat_buf->get_float();
+				soa->tangent_out[idx] = lvldat_buf->get_float();
+			}
+			// zero‐fill the 16th channel
+			int idx = i * 16 + 15;
+			soa->values[idx]      = 0.0f;
+			soa->tangent_in[idx]  = 0.0f;
+			soa->tangent_out[idx] = 0.0f;
+		}
+
+		// 4) version‐dependent rail heights
+		if (version_string != "v0.1") {
+			current_track->segments[seg].left_rail_height  = lvldat_buf->get_float();
+			current_track->segments[seg].right_rail_height = lvldat_buf->get_float();
+		} else {
+			current_track->segments[seg].left_rail_height  = 5.0f;
+			current_track->segments[seg].right_rail_height = 5.0f;
 		}
 
 		// calc segment lengths //
@@ -319,7 +338,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 			for (int n = 0; n < sample_per_kf; n++)
 			{
 				float use_t = (float)(n + 1) / sample_per_kf;
-				use_t = remap_float(use_t, 0.0f, 1.0f, current_track->segments[seg].curve_matrix->keyframes[i].time, current_track->segments[seg].curve_matrix->keyframes[i + 1].time);
+				use_t = remap_float(
+					use_t,
+					0.0f,
+					1.0f,
+					soa->times[i],
+					soa->times[i + 1]
+				);
 				godot::Transform3D new_sample_pos;
 				current_track->segments[seg].curve_matrix->sample(new_sample_pos, use_t);
 				total_distance += latest_sample_pos.origin.distance_to(new_sample_pos.origin);

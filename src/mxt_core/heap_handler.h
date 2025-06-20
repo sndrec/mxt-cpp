@@ -5,7 +5,6 @@
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/math_utils.h"
-#include "track/curve_matrix.h"
 #include "track/road_modulation.h"
 #include "car/physics_car.h"
 
@@ -13,11 +12,11 @@ class HeapHandler
 {
 private:
 	void* heap;
-	char* heap_allocation;
 	char* heap_end;
 	bool live;
 public:
 
+	char* heap_allocation;
 	char* heap_start;
 
 	HeapHandler()
