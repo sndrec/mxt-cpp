@@ -53,9 +53,19 @@ public:
 		live = false;
 	};
 
-	int get_size()
+		int get_size()
 	{
 		return (int)(heap_allocation - reinterpret_cast<char*>(heap));
+	}
+
+	int get_capacity()
+	{
+		return (int)(heap_end - reinterpret_cast<char*>(heap));
+	}
+
+	void set_size(int size)
+	{
+		heap_allocation = reinterpret_cast<char*>(heap) + size;
 	}
 
 	void* allocate_bytes(size_t size)
