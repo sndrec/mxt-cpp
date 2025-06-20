@@ -1,8 +1,8 @@
 [gd_scene load_steps=7 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
+[ext_resource type="ArrayMesh" uid="uid://2biir4cy4wk8" path="res://track/weird_track_2/weird_track_2.obj" id="3_1bvp3"]
 [ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
-[ext_resource type="ArrayMesh" uid="uid://br8xsh80m2vla" path="res://track/cylinder_test/cylinder_test.obj" id="4_1bvp3"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c0w6o"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
@@ -32,24 +32,32 @@ grow_vertical = 2
 
 [node name="StartButton" type="Button" parent="Control"]
 layout_mode = 1
-anchors_preset = 1
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -230.0
-offset_bottom = 31.0
-grow_horizontal = 0
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -115.0
+offset_top = -15.5
+offset_right = 115.0
+offset_bottom = 15.5
+grow_horizontal = 2
+grow_vertical = 2
 text = "Start"
 
 [node name="TrackSelector" type="OptionButton" parent="Control"]
 layout_mode = 1
-anchors_preset = 5
+anchors_preset = 8
 anchor_left = 0.5
+anchor_top = 0.5
 anchor_right = 0.5
+anchor_bottom = 0.5
 offset_left = -150.0
-offset_top = -40.0
+offset_top = -74.0
 offset_right = 150.0
-offset_bottom = -10.0
-grow_horizontal = 0
+offset_bottom = -44.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="GameWorld" type="Node3D" parent="."]
 
@@ -68,7 +76,7 @@ metadata/_custom_type_script = "uid://odaiawvcj4yf"
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0)
 
 [node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
-mesh = ExtResource("4_1bvp3")
+mesh = ExtResource("3_1bvp3")
 skeleton = NodePath("")
 
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
