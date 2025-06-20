@@ -20,6 +20,12 @@ namespace godot {
 			float tick_delta;
 			HeapHandler level_data;
 			HeapHandler gamestate_data;
+			static const int STATE_BUFFER_LEN = 15;
+			struct SavedState {
+				char* data;
+				int size;
+			};
+			SavedState state_buffer[STATE_BUFFER_LEN];
 
 		protected:
 			static void _bind_methods();
@@ -43,6 +49,8 @@ namespace godot {
 			void instantiate_gamesim(StreamPeerBuffer* in_buffer);
 			void destroy_gamesim();
 			void render_gamesim();
+			void save_state();
+			void load_state(int target_tick);
 	};
 
 }
