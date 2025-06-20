@@ -187,7 +187,7 @@ void RoadTransformCurve::sample(godot::Transform3D &out, float in_t) const {
 	__m128 t3v     = _mm_set1_ps(t3);
 	__m128 distv   = _mm_set1_ps(dist);
 
-	float sampled[16];
+	alignas(16) float sampled[16];
 
 	for (int chunk = 0; chunk < 4; ++chunk) {
 		int base = chunk * 4;

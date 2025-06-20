@@ -272,10 +272,18 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		int num_keyframes = static_cast<int>(lvldat_buf->get_u32());
 		lvldat_buf->seek(pos);
 
-		// 1) allocate the SoA object itself on your heap
-		void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
-		RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
-		current_track->segments[seg].curve_matrix = soa;
+      // 1) allocate the SoA object itself on your heap
+      {
+              uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
+              uintptr_t mis = addr & 15;
+              if (mis) {
+                      level_data.allocate_bytes(16 - mis);
+              }
+      }
+      void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
+      RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
+      current_track->segments[seg].curve_matrix = soa;
+
 
 		// helper to bump heap_allocation up to the next 16-byte boundary
 		auto align16 = [&]() {
