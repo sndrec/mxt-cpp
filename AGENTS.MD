@@ -29,7 +29,7 @@
 	- Avoid unnecessary abstraction or virtual calls in tight loops.
 
 - **Indentation**
-	Use a single tab for each indentation level. Do not use spaces for indentation.
+	Do not use spaces for indentation. Each level of indentation should only use one additional tab over the previous level.
 
 ## Runtime Environment
 
