@@ -137,9 +137,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	current_track->num_checkpoints = checkpoint_count;
 	current_track->checkpoints = level_data.allocate_array<CollisionCheckpoint>(checkpoint_count);
 
-	for (int i = 0; i < checkpoint_count; i++)
-	{
-		current_track->checkpoints[i].position_start[0] = lvldat_buf->get_float();
+        for (int i = 0; i < checkpoint_count; i++)
+        {
+                current_track->checkpoints[i].position_start[0] = lvldat_buf->get_float();
 		current_track->checkpoints[i].position_start[1] = lvldat_buf->get_float();
 		current_track->checkpoints[i].position_start[2] = lvldat_buf->get_float();
 		current_track->checkpoints[i].position_end[0] = lvldat_buf->get_float();
@@ -190,14 +190,30 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		current_track->checkpoints[i].neighboring_checkpoints = level_data.allocate_array<int>(num_n_cp);
 		for (int n = 0; n < num_n_cp; n++)
 		{
-			current_track->checkpoints[i].neighboring_checkpoints[n] = (int)lvldat_buf->get_u32();
-		}
-	}
+                current_track->checkpoints[i].neighboring_checkpoints[n] = (int)lvldat_buf->get_u32();
+                }
+        }
+
+        std::vector<int> seg_cp_start(segment_count, -1);
+        std::vector<int> seg_cp_count(segment_count, 0);
+        for (int i = 0; i < checkpoint_count; ++i)
+        {
+                int seg = current_track->checkpoints[i].road_segment;
+                if (seg_cp_start[seg] == -1)
+                        seg_cp_start[seg] = i;
+                seg_cp_count[seg]++;
+        }
 
 	// load in track segments //
-
+	
 	current_track->num_segments = segment_count;
 	current_track->segments = level_data.allocate_array<TrackSegment>(segment_count);
+	
+	for (int seg = 0; seg < segment_count; ++seg)
+	{
+	current_track->segments[seg].first_checkpoint = seg_cp_start[seg];
+	current_track->segments[seg].checkpoint_count = seg_cp_count[seg];
+        }
 
 	for (int seg = 0; seg < segment_count; seg++)
 	{
@@ -361,7 +377,25 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 				latest_sample_pos = new_sample_pos;
 			}
 		}
-		current_track->segments[seg].segment_length = total_distance;
+               current_track->segments[seg].segment_length = total_distance;
+
+	const int bx = 16;
+	const int by = 32;
+	for (int x = 0; x < bx; x++)
+	{
+	for (int y = 0; y < by; y++)
+	{
+	godot::Vector2 use_t(float(x) / (bx - 1), float(y) / (by - 1));
+	godot::Vector3 use_pos;
+	current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
+	if (x == 0 && y == 0)
+	{
+	current_track->segments[seg].bounds.position = use_pos;
+	current_track->segments[seg].bounds.size = godot::Vector3();
+	}
+	current_track->segments[seg].bounds.expand_to(use_pos);
+	}
+	}
 	}
 	gamestate_data.instantiate(1024 * 1024);
 	int state_capacity = gamestate_data.get_capacity();
