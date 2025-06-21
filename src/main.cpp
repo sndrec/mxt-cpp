@@ -132,7 +132,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_CHECKPOINTS);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
-	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS);
+	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS);
 	// load in collision checkpoints //
 
 	current_track->num_checkpoints = checkpoint_count;
@@ -406,8 +406,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	}
 
 
-	cars = gamestate_data.create_and_allocate_cars(100);
-	num_cars = 100;
+	cars = gamestate_data.create_and_allocate_cars(1);
+	num_cars = 1;
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;
