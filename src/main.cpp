@@ -113,7 +113,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 	level_data.instantiate(1024 * 1024 * 16);
 
-	current_track = level_data.allocate_object<RaceTrack>();
+        current_track = level_data.allocate_object<RaceTrack>();
+        current_track->num_segments = 0;
+        current_track->num_checkpoints = 0;
+        current_track->segments = nullptr;
+        current_track->checkpoints = nullptr;
+        current_track->bounds = godot::AABB();
+        current_track->checkpoint_grid.cells = nullptr;
+        current_track->checkpoint_grid.dim_x = 0;
+        current_track->checkpoint_grid.dim_y = 0;
+        current_track->checkpoint_grid.dim_z = 0;
+        current_track->checkpoint_grid.voxel_size = 0.0f;
 
 	UtilityFunctions::print("-----");
 	UtilityFunctions::print(lvldat_buf->get_position());
@@ -199,8 +209,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	current_track->num_segments = segment_count;
 	current_track->segments = level_data.allocate_array<TrackSegment>(segment_count);
 
-	for (int seg = 0; seg < segment_count; seg++)
-	{
+        for (int seg = 0; seg < segment_count; seg++)
+        {
 		int segment_index = (int)lvldat_buf->get_u32();
 		int road_type = (int)lvldat_buf->get_u32();
 
@@ -361,9 +371,31 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 				latest_sample_pos = new_sample_pos;
 			}
 		}
-		current_track->segments[seg].segment_length = total_distance;
-	}
-	gamestate_data.instantiate(1024 * 1024);
+                current_track->segments[seg].segment_length = total_distance;
+        }
+
+        for (int seg = 0; seg < segment_count; seg++)
+        {
+                for (int x = 0; x < 16; x++)
+                {
+                        for (int y = 0; y < 32; y++)
+                        {
+                                godot::Vector2 use_t = godot::Vector2(float(x) / 15.0f, float(y) / 31.0f);
+                                godot::Vector3 use_pos;
+                                current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
+                                if (seg == 0 && x == 0 && y == 0)
+                                {
+                                        current_track->bounds.position = use_pos;
+                                        current_track->bounds.size = godot::Vector3();
+                                }
+                                current_track->bounds.expand_to(use_pos);
+                        }
+                }
+        }
+
+        current_track->build_checkpoint_grid(level_data, 100.0f);
+
+        gamestate_data.instantiate(1024 * 1024);
 	int state_capacity = gamestate_data.get_capacity();
 		for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{

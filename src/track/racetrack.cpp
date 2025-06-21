@@ -574,5 +574,67 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 
 	// do one raycast against that checkpoint
 	CastParams params{ this, mask };
-	cast_segment_fast(params, out_collision, p0, p1, cp_idx, sample_point, true);
+cast_segment_fast(params, out_collision, p0, p1, cp_idx, sample_point, true);
+}
+
+void RaceTrack::build_checkpoint_grid(HeapHandler &alloc, float voxel_size)
+{
+checkpoint_grid.voxel_size = voxel_size;
+checkpoint_grid.bounds = bounds;
+checkpoint_grid.bounds.position -= godot::Vector3(100.0f, 100.0f, 100.0f);
+checkpoint_grid.bounds.size += godot::Vector3(200.0f, 200.0f, 200.0f);
+checkpoint_grid.dim_x = static_cast<int>(ceilf(checkpoint_grid.bounds.size.x / voxel_size));
+checkpoint_grid.dim_y = static_cast<int>(ceilf(checkpoint_grid.bounds.size.y / voxel_size));
+checkpoint_grid.dim_z = static_cast<int>(ceilf(checkpoint_grid.bounds.size.z / voxel_size));
+int total = checkpoint_grid.dim_x * checkpoint_grid.dim_y * checkpoint_grid.dim_z;
+checkpoint_grid.cells = alloc.allocate_array<CheckpointVoxelCell>(total);
+for (int i = 0; i < total; ++i) {
+checkpoint_grid.cells[i].count = 0;
+checkpoint_grid.cells[i].indices = nullptr;
+}
+
+for (int z = 0; z < checkpoint_grid.dim_z; ++z) {
+for (int y = 0; y < checkpoint_grid.dim_y; ++y) {
+for (int x = 0; x < checkpoint_grid.dim_x; ++x) {
+godot::Vector3 cpos = checkpoint_grid.bounds.position + godot::Vector3(x, y, z) * voxel_size;
+godot::AABB cell_aabb(cpos, godot::Vector3(voxel_size, voxel_size, voxel_size));
+godot::Vector3 corners[8] = {
+cell_aabb.position,
+cell_aabb.position + godot::Vector3(voxel_size, 0, 0),
+cell_aabb.position + godot::Vector3(0, voxel_size, 0),
+cell_aabb.position + godot::Vector3(0, 0, voxel_size),
+cell_aabb.position + godot::Vector3(voxel_size, voxel_size, 0),
+cell_aabb.position + godot::Vector3(voxel_size, 0, voxel_size),
+cell_aabb.position + godot::Vector3(0, voxel_size, voxel_size),
+cell_aabb.position + godot::Vector3(voxel_size, voxel_size, voxel_size)
+};
+std::vector<int> tmp;
+tmp.reserve(8);
+for (int cp = 0; cp < num_checkpoints; ++cp) {
+bool start0 = checkpoints[cp].start_plane.is_point_over(corners[0]);
+bool end0 = checkpoints[cp].end_plane.is_point_over(corners[0]);
+bool all_inside = start0 && !end0;
+bool start_diff = false;
+bool end_diff = false;
+for (int c = 1; c < 8; ++c) {
+bool s = checkpoints[cp].start_plane.is_point_over(corners[c]);
+bool e = checkpoints[cp].end_plane.is_point_over(corners[c]);
+all_inside &= s && !e;
+if (s != start0) start_diff = true;
+if (e != end0) end_diff = true;
+}
+if (all_inside || start_diff || end_diff) {
+tmp.push_back(cp);
+}
+}
+int idx = x + checkpoint_grid.dim_x * (y + checkpoint_grid.dim_y * z);
+checkpoint_grid.cells[idx].count = tmp.size();
+if (!tmp.empty()) {
+checkpoint_grid.cells[idx].indices = alloc.allocate_array<int>(tmp.size());
+for (size_t n = 0; n < tmp.size(); ++n)
+checkpoint_grid.cells[idx].indices[n] = tmp[n];
+}
+}
+}
+}
 }
