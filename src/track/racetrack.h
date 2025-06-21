@@ -10,72 +10,72 @@
 struct CollisionData;
 
 struct CheckpointVoxelCell {
-int count;
-int *indices;
+	int count;
+	int *indices;
 };
 
 struct CheckpointGrid {
-godot::AABB bounds;
-float voxel_size;
-int dim_x;
-int dim_y;
-int dim_z;
-CheckpointVoxelCell *cells;
+	godot::AABB bounds;
+	float voxel_size;
+	int dim_x;
+	int dim_y;
+	int dim_z;
+	CheckpointVoxelCell *cells;
 };
 
 class RaceTrack
 {
 public:
-int num_segments;
-int num_checkpoints;
-TrackSegment* segments;
-CollisionCheckpoint* checkpoints;
-godot::AABB bounds;
-CheckpointGrid checkpoint_grid;
-void build_checkpoint_grid(HeapHandler &alloc, float voxel_size = 100.0f);
-        int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0) const;
-        void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = true);
-        void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
-        void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
-std::vector<int> get_viable_checkpoints(godot::Vector3 in_point) const
-{
-std::vector<int> return_checkpoints;
-return_checkpoints.reserve(16);
+	int num_segments;
+	int num_checkpoints;
+	TrackSegment* segments;
+	CollisionCheckpoint* checkpoints;
+	godot::AABB bounds;
+	CheckpointGrid checkpoint_grid;
+	void build_checkpoint_grid(HeapHandler &alloc, float voxel_size = 100.0f);
+	int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0) const;
+	void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = true);
+	void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
+	void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
+	std::vector<int> get_viable_checkpoints(godot::Vector3 in_point) const
+	{
+		std::vector<int> return_checkpoints;
+		return_checkpoints.reserve(16);
 
-if (checkpoint_grid.cells) {
-int xi = int((in_point.x - checkpoint_grid.bounds.position.x) / checkpoint_grid.voxel_size);
-int yi = int((in_point.y - checkpoint_grid.bounds.position.y) / checkpoint_grid.voxel_size);
-int zi = int((in_point.z - checkpoint_grid.bounds.position.z) / checkpoint_grid.voxel_size);
-if (xi >= 0 && yi >= 0 && zi >= 0 && xi < checkpoint_grid.dim_x && yi < checkpoint_grid.dim_y && zi < checkpoint_grid.dim_z) {
-int cell_idx = xi + checkpoint_grid.dim_x * (yi + checkpoint_grid.dim_y * zi);
-const CheckpointVoxelCell &cell = checkpoint_grid.cells[cell_idx];
-for (int n = 0; n < cell.count; ++n) {
-int i = cell.indices[n];
-if (!checkpoints[i].start_plane.is_point_over(in_point))
-continue;
-if (checkpoints[i].end_plane.is_point_over(in_point))
-continue;
-return_checkpoints.push_back(i);
-}
-return return_checkpoints;
-}
-}
+		if (checkpoint_grid.cells) {
+			int xi = int((in_point.x - checkpoint_grid.bounds.position.x) / checkpoint_grid.voxel_size);
+			int yi = int((in_point.y - checkpoint_grid.bounds.position.y) / checkpoint_grid.voxel_size);
+			int zi = int((in_point.z - checkpoint_grid.bounds.position.z) / checkpoint_grid.voxel_size);
+			if (xi >= 0 && yi >= 0 && zi >= 0 && xi < checkpoint_grid.dim_x && yi < checkpoint_grid.dim_y && zi < checkpoint_grid.dim_z) {
+				int cell_idx = xi + checkpoint_grid.dim_x * (yi + checkpoint_grid.dim_y * zi);
+				const CheckpointVoxelCell &cell = checkpoint_grid.cells[cell_idx];
+				for (int n = 0; n < cell.count; ++n) {
+					int i = cell.indices[n];
+					if (!checkpoints[i].start_plane.is_point_over(in_point))
+						continue;
+					if (checkpoints[i].end_plane.is_point_over(in_point))
+						continue;
+					return_checkpoints.push_back(i);
+				}
+				return return_checkpoints;
+			}
+		}
 
-for (int i = 0; i < num_checkpoints; i++) {
-if (!checkpoints[i].start_plane.is_point_over(in_point))
-continue;
-if (checkpoints[i].end_plane.is_point_over(in_point))
-continue;
-return_checkpoints.push_back(i);
-}
+		for (int i = 0; i < num_checkpoints; i++) {
+			if (!checkpoints[i].start_plane.is_point_over(in_point))
+				continue;
+			if (checkpoints[i].end_plane.is_point_over(in_point))
+				continue;
+			return_checkpoints.push_back(i);
+		}
 
-return return_checkpoints;
-}
-int get_best_checkpoint(godot::Vector3 in_point) const
-{
-std::vector<int> candidates = get_viable_checkpoints(in_point);
-int   best_cp     = -1;
-float best_dist2  = std::numeric_limits<float>::infinity();
+		return return_checkpoints;
+	}
+	int get_best_checkpoint(godot::Vector3 in_point) const
+	{
+		std::vector<int> candidates = get_viable_checkpoints(in_point);
+		int   best_cp     = -1;
+		float best_dist2  = std::numeric_limits<float>::infinity();
 		for (int idx : candidates) {
 			const CollisionCheckpoint &cp = checkpoints[idx];
 
@@ -102,8 +102,8 @@ float best_dist2  = std::numeric_limits<float>::infinity();
 			float dist2 = tx * tx + ty * ty;
 
 			if (dist2 < best_dist2) {
-			    best_dist2 = dist2;
-			    best_cp    = idx;
+				best_dist2 = dist2;
+				best_cp    = idx;
 			}
 		}
 		return best_cp;

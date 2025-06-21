@@ -203,10 +203,10 @@ public:
 	void apply_torque_from_force(const godot::Vector3& p_local_offset, const godot::Vector3& wf_world_force);
 	void simulate_machine_motion(PlayerInput in_input);
 	int update_machine_corners();
-    void create_machine_visual_transform();
-    void handle_machine_collision_response();
-    void align_machine_y_with_track_normal_immediate();
-    void handle_checkpoints();
-    void post_tick();
-    void tick(uint32_t tick_count);
+	void create_machine_visual_transform();
+	void handle_machine_collision_response();
+	void align_machine_y_with_track_normal_immediate();
+	void handle_checkpoints();
+	void post_tick();
+	void tick(uint32_t tick_count);
 };

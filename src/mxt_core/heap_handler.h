@@ -52,7 +52,7 @@ public:
 		live = false;
 	};
 
-		int get_size()
+	int get_size()
 	{
 		return (int)(heap_allocation - reinterpret_cast<char*>(heap));
 	}

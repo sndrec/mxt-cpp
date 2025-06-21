@@ -49,7 +49,7 @@ GameSim::~GameSim()
 	{
 		if (state_buffer[i].data)
 		{
-       			::free(state_buffer[i].data);
+			::free(state_buffer[i].data);
 			state_buffer[i].data = nullptr;
 		}
 	}
@@ -113,17 +113,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 	level_data.instantiate(1024 * 1024 * 16);
 
-        current_track = level_data.allocate_object<RaceTrack>();
-        current_track->num_segments = 0;
-        current_track->num_checkpoints = 0;
-        current_track->segments = nullptr;
-        current_track->checkpoints = nullptr;
-        current_track->bounds = godot::AABB();
-        current_track->checkpoint_grid.cells = nullptr;
-        current_track->checkpoint_grid.dim_x = 0;
-        current_track->checkpoint_grid.dim_y = 0;
-        current_track->checkpoint_grid.dim_z = 0;
-        current_track->checkpoint_grid.voxel_size = 0.0f;
+	current_track = level_data.allocate_object<RaceTrack>();
+	current_track->num_segments = 0;
+	current_track->num_checkpoints = 0;
+	current_track->segments = nullptr;
+	current_track->checkpoints = nullptr;
+	current_track->bounds = godot::AABB();
+	current_track->checkpoint_grid.cells = nullptr;
+	current_track->checkpoint_grid.dim_x = 0;
+	current_track->checkpoint_grid.dim_y = 0;
+	current_track->checkpoint_grid.dim_z = 0;
+	current_track->checkpoint_grid.voxel_size = 0.0f;
 
 	UtilityFunctions::print("-----");
 	UtilityFunctions::print(lvldat_buf->get_position());
@@ -209,40 +209,40 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	current_track->num_segments = segment_count;
 	current_track->segments = level_data.allocate_array<TrackSegment>(segment_count);
 
-        for (int seg = 0; seg < segment_count; seg++)
-        {
+	for (int seg = 0; seg < segment_count; seg++)
+	{
 		int segment_index = (int)lvldat_buf->get_u32();
 		int road_type = (int)lvldat_buf->get_u32();
 
 		// what road shape? //
 
-                if (road_type == 0)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT;
-                }
-                else if (road_type == 1)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinder>();
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER;
-                }
-                else if (road_type == 2)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinderOpen>();
-                        current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
-                }
-                else if (road_type == 3)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE;
-                }
-                else if (road_type == 4)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
-                        current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
-                }
+		if (road_type == 0)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT;
+		}
+		else if (road_type == 1)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinder>();
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER;
+		}
+		else if (road_type == 2)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinderOpen>();
+			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
+		}
+		else if (road_type == 3)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE;
+		}
+		else if (road_type == 4)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
+			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+		}
 
 		// road modulations //
 
@@ -282,16 +282,16 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		int num_keyframes = static_cast<int>(lvldat_buf->get_u32());
 		lvldat_buf->seek(pos);
       // 1) allocate the SoA object itself on your heap
-      {
-              uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
-              uintptr_t mis = addr & 15;
-              if (mis) {
-                      level_data.allocate_bytes(16 - mis);
-              }
-      }
-      void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
-      RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
-      current_track->segments[seg].curve_matrix = soa;
+		{
+			uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
+			uintptr_t mis = addr & 15;
+			if (mis) {
+				level_data.allocate_bytes(16 - mis);
+			}
+		}
+		void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
+		RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
+		current_track->segments[seg].curve_matrix = soa;
 
 
 		// helper to bump heap_allocation up to the next 16-byte boundary
@@ -364,40 +364,40 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 					1.0f,
 					soa->times[i],
 					soa->times[i + 1]
-				);
+					);
 				godot::Transform3D new_sample_pos;
 				current_track->segments[seg].curve_matrix->sample(new_sample_pos, use_t);
 				total_distance += latest_sample_pos.origin.distance_to(new_sample_pos.origin);
 				latest_sample_pos = new_sample_pos;
 			}
 		}
-                current_track->segments[seg].segment_length = total_distance;
-        }
+		current_track->segments[seg].segment_length = total_distance;
+	}
 
-        for (int seg = 0; seg < segment_count; seg++)
-        {
-                for (int x = 0; x < 16; x++)
-                {
-                        for (int y = 0; y < 32; y++)
-                        {
-                                godot::Vector2 use_t = godot::Vector2(float(x) / 15.0f, float(y) / 31.0f);
-                                godot::Vector3 use_pos;
-                                current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
-                                if (seg == 0 && x == 0 && y == 0)
-                                {
-                                        current_track->bounds.position = use_pos;
-                                        current_track->bounds.size = godot::Vector3();
-                                }
-                                current_track->bounds.expand_to(use_pos);
-                        }
-                }
-        }
+	for (int seg = 0; seg < segment_count; seg++)
+	{
+		for (int x = 0; x < 16; x++)
+		{
+			for (int y = 0; y < 32; y++)
+			{
+				godot::Vector2 use_t = godot::Vector2(float(x) / 15.0f, float(y) / 31.0f);
+				godot::Vector3 use_pos;
+				current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
+				if (seg == 0 && x == 0 && y == 0)
+				{
+					current_track->bounds.position = use_pos;
+					current_track->bounds.size = godot::Vector3();
+				}
+				current_track->bounds.expand_to(use_pos);
+			}
+		}
+	}
 
-        current_track->build_checkpoint_grid(level_data, 100.0f);
+	current_track->build_checkpoint_grid(level_data, 100.0f);
 
-        gamestate_data.instantiate(1024 * 1024);
+	gamestate_data.instantiate(1024 * 1024);
 	int state_capacity = gamestate_data.get_capacity();
-		for (int i = 0; i < STATE_BUFFER_LEN; i++)
+	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
 		state_buffer[i].data = (char*)malloc(state_capacity);
 		state_buffer[i].size = 0;
@@ -441,7 +441,7 @@ void GameSim::destroy_gamesim()
 		{
 			if (state_buffer[i].data)
 			{
-               			::free(state_buffer[i].data);
+				::free(state_buffer[i].data);
 				state_buffer[i].data = nullptr;
 			}
 		}
@@ -546,7 +546,7 @@ void GameSim::save_state()
 		memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
 	}
 }
-	
+
 void GameSim::load_state(int target_tick)
 {
 	int index = target_tick % STATE_BUFFER_LEN;
