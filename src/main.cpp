@@ -361,8 +361,27 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 				latest_sample_pos = new_sample_pos;
 			}
 		}
-		current_track->segments[seg].segment_length = total_distance;
-	}
+                current_track->segments[seg].segment_length = total_distance;
+        }
+
+// calculate track bounds
+bool bounds_set = false;
+for (int seg = 0; seg < current_track->num_segments; ++seg) {
+for (int x = 0; x < 16; x++) {
+for (int y = 0; y < 32; y++) {
+godot::Vector2 use_t(float(x) / 15.0f, float(y) / 31.0f);
+godot::Vector3 use_pos;
+current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
+if (!bounds_set) {
+current_track->bounds.position = use_pos;
+current_track->bounds.size = godot::Vector3();
+bounds_set = true;
+}
+current_track->bounds.expand_to(use_pos);
+}
+}
+}
+current_track->build_voxel_grid();
 	gamestate_data.instantiate(1024 * 1024);
 	int state_capacity = gamestate_data.get_capacity();
 		for (int i = 0; i < STATE_BUFFER_LEN; i++)

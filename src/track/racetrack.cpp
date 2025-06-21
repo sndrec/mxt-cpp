@@ -8,6 +8,7 @@
 #include <vector>
 #include <limits>
 #include "mxt_core/debug.hpp"
+#include <cmath>
 
 int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations) const
 {
@@ -535,10 +536,10 @@ void RaceTrack::cast_vs_track(CollisionData &out_collision, const godot::Vector3
 }
 
 void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
-	godot::Vector3 const &p0,
-	godot::Vector3 const &p1,
-	uint8_t mask,
-	int start_idx, bool oriented)
+        godot::Vector3 const &p0,
+        godot::Vector3 const &p1,
+        uint8_t mask,
+        int start_idx, bool oriented)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -575,4 +576,66 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	// do one raycast against that checkpoint
 	CastParams params{ this, mask };
 	cast_segment_fast(params, out_collision, p0, p1, cp_idx, sample_point, true);
+}
+
+void RaceTrack::build_voxel_grid()
+{
+grid_origin = bounds.position - godot::Vector3(100.0f, 100.0f, 100.0f);
+godot::Vector3 size = bounds.size + godot::Vector3(200.0f, 200.0f, 200.0f);
+grid_dim_x = static_cast<int>(ceil(size.x / voxel_size));
+grid_dim_y = static_cast<int>(ceil(size.y / voxel_size));
+grid_dim_z = static_cast<int>(ceil(size.z / voxel_size));
+voxel_grid.clear();
+voxel_grid.resize(grid_dim_x * grid_dim_y * grid_dim_z);
+for (int i = 0; i < num_checkpoints; ++i) {
+godot::Vector3 minp = checkpoints[i].position_start;
+godot::Vector3 maxp = checkpoints[i].position_end;
+for (int a = 0; a < 3; ++a) {
+if (minp[a] > maxp[a]) {
+float t = minp[a];
+minp[a] = maxp[a];
+maxp[a] = t;
+}
+}
+float r = fmaxf(fmaxf(checkpoints[i].x_radius_start, checkpoints[i].x_radius_end),
+ fmaxf(checkpoints[i].y_radius_start, checkpoints[i].y_radius_end));
+minp -= godot::Vector3(r, r, r);
+maxp += godot::Vector3(r, r, r);
+godot::Vector3 rel_min = minp - grid_origin;
+godot::Vector3 rel_max = maxp - grid_origin;
+int min_x = static_cast<int>(floor(rel_min.x / voxel_size));
+int min_y = static_cast<int>(floor(rel_min.y / voxel_size));
+int min_z = static_cast<int>(floor(rel_min.z / voxel_size));
+int max_x = static_cast<int>(floor(rel_max.x / voxel_size));
+int max_y = static_cast<int>(floor(rel_max.y / voxel_size));
+int max_z = static_cast<int>(floor(rel_max.z / voxel_size));
+min_x = std::max(0, std::min(min_x, grid_dim_x - 1));
+min_y = std::max(0, std::min(min_y, grid_dim_y - 1));
+min_z = std::max(0, std::min(min_z, grid_dim_z - 1));
+max_x = std::max(0, std::min(max_x, grid_dim_x - 1));
+max_y = std::max(0, std::min(max_y, grid_dim_y - 1));
+max_z = std::max(0, std::min(max_z, grid_dim_z - 1));
+for (int z = min_z; z <= max_z; ++z) {
+for (int y = min_y; y <= max_y; ++y) {
+for (int x = min_x; x <= max_x; ++x) {
+godot::Vector3 center = grid_origin + godot::Vector3((float)x + 0.5f, (float)y + 0.5f, (float)z + 0.5f) * voxel_size;
+if (checkpoints[i].start_plane.is_point_over(center) && !checkpoints[i].end_plane.is_point_over(center)) {
+int idx = x + y * grid_dim_x + z * grid_dim_x * grid_dim_y;
+voxel_grid[idx].push_back(i);
+}
+}
+}
+}
+}
+}
+
+int RaceTrack::get_voxel_index(const godot::Vector3 &p) const
+{
+godot::Vector3 rel = p - grid_origin;
+int x = static_cast<int>(floor(rel.x / voxel_size));
+int y = static_cast<int>(floor(rel.y / voxel_size));
+int z = static_cast<int>(floor(rel.z / voxel_size));
+if (x < 0 || y < 0 || z < 0 || x >= grid_dim_x || y >= grid_dim_y || z >= grid_dim_z)
+return -1;
+return x + y * grid_dim_x + z * grid_dim_x * grid_dim_y;
 }
