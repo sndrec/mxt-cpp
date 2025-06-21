@@ -32,16 +32,12 @@ int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index
 void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 								  godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented)
 {
-	CollisionCheckpoint *cp;
-	int best = find_checkpoint_recursive(point, cp_idx);
-	if (best == -1){
-		best = get_best_checkpoint(point);
-	}
+	int best = get_best_checkpoint(point);
 	if (best == -1){
 		road_t.x = -100.0f;
 		return;
 	}
-	cp = &checkpoints[best];
+	CollisionCheckpoint *cp = &checkpoints[best];
 	godot::Vector3 p1 = cp->start_plane.project(point);
 	godot::Vector3 p2 = cp->end_plane.project(point);
 	float cp_t = get_closest_t_on_segment(point, p1, p2);

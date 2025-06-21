@@ -23,13 +23,10 @@
 
 - **Performance First**  
 	Always prioritize high-performance patterns:
-	- Minimize memory allocations.
+	- Minimize memory allocations - allocate once and re-use. Scratchpads are your friend.
 	- Optimize data layout and cache coherence.
 	- Use SIMD instructions where applicable.
 	- Avoid unnecessary abstraction or virtual calls in tight loops.
-
-- **Indentation**
-	Do not use spaces for indentation. Each level of indentation should only use one additional tab over the previous level.
 
 ## Runtime Environment
 
