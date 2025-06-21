@@ -9,7 +9,7 @@
 #include <limits>
 #include "mxt_core/debug.hpp"
 
-int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations) const
+int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations)
 {
 	if (cp_index == -1)
 	{
@@ -36,6 +36,10 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 	int best = find_checkpoint_recursive(point, cp_idx);
 	if (best == -1){
 		best = get_best_checkpoint(point);
+	}
+	if (best == -1){
+		road_t.x = -100.0f;
+		return;
 	}
 	cp = &checkpoints[best];
 	godot::Vector3 p1 = cp->start_plane.project(point);

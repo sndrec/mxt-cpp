@@ -17,7 +17,7 @@ config/icon="res://icon.svg"
 
 [debug_draw_3d]
 
-settings/3d/volumetric_defaults/thickness=0.05
+settings/3d/volumetric_defaults/thickness=0.5
 settings/3d/volumetric_defaults/plane_size=90.0
 
 [editor_plugins]

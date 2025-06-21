@@ -1795,8 +1795,8 @@ int PhysicsCar::update_machine_corners() {
 	mtxa->push();
 	mtxa->assign(basis_physical);
 	mtxa->cur->origin = position_current;
-	int use_cp_old = current_track->find_checkpoint_recursive(position_old, current_checkpoint);
-	int use_cp_new = current_track->find_checkpoint_recursive(position_current, current_checkpoint);
+	int use_cp_old = current_track->get_best_checkpoint(position_old);
+	int use_cp_new = current_track->get_best_checkpoint(position_current);
 	{
 		godot::Vector2 t_old;
 		godot::Vector2 t_new;
@@ -2261,12 +2261,11 @@ void PhysicsCar::handle_checkpoints()
 
 	uint8_t prev_lap = lap;
 
-	int found = current_track->get_viable_checkpoints(position_current)[0];
-	current_checkpoint = found;
-	if (found >= 0 && found != current_checkpoint) {
-		if (found == 0 && current_checkpoint == current_track->num_checkpoints - 1) {
+	int found = current_track->get_best_checkpoint(position_current);
+	if (found >= 0 && found < current_track->num_checkpoints && found != current_checkpoint) {
+		if (found < current_track->num_checkpoints / 8 && current_checkpoint > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
 			lap += 1;
-		} else if (found == current_track->num_checkpoints - 1 && current_checkpoint == 0) {
+		} else if (current_checkpoint < current_track->num_checkpoints / 8 && found > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
 			if (lap > 0)
 				lap -= 1;
 		}
