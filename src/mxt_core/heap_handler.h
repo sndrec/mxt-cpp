@@ -6,7 +6,6 @@
 #include "mxt_core/curve.h"
 #include "mxt_core/math_utils.h"
 #include "track/road_modulation.h"
-#include "car/physics_car.h"
 
 class HeapHandler
 {
@@ -129,59 +128,4 @@ public:
 		return out_curve;
 	}
 
-	PhysicsCar* create_and_allocate_cars(int num_cars)
-	{
-		PhysicsCar* cars = allocate_array<PhysicsCar>(num_cars);
-		for (int i = 0; i < num_cars; i++)
-		{
-			PhysicsCarProperties* new_car_properties = allocate_object<PhysicsCarProperties>();
-
-			new_car_properties->weight_kg = randf_range(1100.0f, 3000.0f);
-			new_car_properties->acceleration = randf_range(0.3f, 0.8f);
-			new_car_properties->max_speed = randf_range(-0.1f, 0.5f);
-			new_car_properties->grip_1 = randf_range(0.3f, 1.1f);
-			new_car_properties->grip_2 = randf_range(0.3f, 0.6f);
-			new_car_properties->grip_3 = randf_range(0.05f, 0.25f);
-			new_car_properties->turn_tension = randf_range(0.0f, 0.3f);
-			new_car_properties->drift_accel = randf_range(-0.5f, 2.0f);
-			new_car_properties->turn_movement = randf_range(110.0f, 200.0f);
-			new_car_properties->strafe_turn = randf_range(0.0f, 100.0f);
-			new_car_properties->strafe = randf_range(20.0f, 60.0f);
-			new_car_properties->turn_reaction = randf_range(0.0f, 30.0f);
-			new_car_properties->boost_strength = randf_range(10.0f, 30.0f);
-			new_car_properties->boost_length = randf_range(0.75f, 2.0f);
-			new_car_properties->turn_decel = randf_range(-0.05f, 0.05f);
-			new_car_properties->drag = randf_range(0.006f, 0.01f);
-			new_car_properties->body = randf_range(0.5f, 1.5f);
-			//new_car_properties->weight_kg = 1260.f;
-			//new_car_properties->acceleration = 0.45f;
-			//new_car_properties->max_speed = 0.1f;
-			//new_car_properties->grip_1 = 0.47f;
-			//new_car_properties->grip_2 = 0.7f;
-			//new_car_properties->grip_3 = 0.2f;
-			//new_car_properties->turn_tension = 0.12f;
-			//new_car_properties->drift_accel = 0.4f;
-			//new_car_properties->turn_movement = 145.f;
-			//new_car_properties->strafe_turn = 20.f;
-			//new_car_properties->strafe = 35.f;
-			//new_car_properties->turn_reaction = 10.f;
-			//new_car_properties->boost_strength = 14.f;
-			//new_car_properties->boost_length = 1.5f;
-			//new_car_properties->turn_decel = 0.02f;
-			//new_car_properties->drag = 0.01f;
-			//new_car_properties->body = 0.85f;
-			new_car_properties->tilt_corners[0] = godot::Vector3(0.8f, 0.f, -1.5f);
-			new_car_properties->tilt_corners[1] = godot::Vector3(-0.8f, 0.f, -1.5f);
-			new_car_properties->tilt_corners[2] = godot::Vector3(1.1f, 0.f, 1.7f);
-			new_car_properties->tilt_corners[3] = godot::Vector3(-1.1f, 0.f, 1.7f);
-			new_car_properties->wall_corners[0] = godot::Vector3(1.0f, -0.1f, -1.7f);
-			new_car_properties->wall_corners[1] = godot::Vector3(-1.0f, -0.1f, -1.7f);
-			new_car_properties->wall_corners[2] = godot::Vector3(1.3f, -0.1f, 1.9f);
-			new_car_properties->wall_corners[3] = godot::Vector3(-1.3f, -0.1f, 1.9f);
-			cars[i].m_accel_setting = 1.0f;
-			cars[i].car_properties = new_car_properties;
-
-		}
-		return cars;
-	}
 };
