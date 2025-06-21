@@ -49,7 +49,7 @@ GameSim::~GameSim()
 	{
 		if (state_buffer[i].data)
 		{
-       			::free(state_buffer[i].data);
+			::free(state_buffer[i].data);
 			state_buffer[i].data = nullptr;
 		}
 	}
@@ -132,6 +132,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_CHECKPOINTS);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS);
 	// load in collision checkpoints //
 
 	current_track->num_checkpoints = checkpoint_count;
@@ -206,33 +207,33 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 
 		// what road shape? //
 
-                if (road_type == 0)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT;
-                }
-                else if (road_type == 1)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinder>();
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER;
-                }
-                else if (road_type == 2)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinderOpen>();
-                        current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
-                }
-                else if (road_type == 3)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE;
-                }
-                else if (road_type == 4)
-                {
-                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
-                        current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
-                }
+		if (road_type == 0)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT;
+		}
+		else if (road_type == 1)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinder>();
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER;
+		}
+		else if (road_type == 2)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapeCylinderOpen>();
+			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
+		}
+		else if (road_type == 3)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE;
+		}
+		else if (road_type == 4)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
+			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+		}
 
 		// road modulations //
 
@@ -272,16 +273,16 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 		int num_keyframes = static_cast<int>(lvldat_buf->get_u32());
 		lvldat_buf->seek(pos);
       // 1) allocate the SoA object itself on your heap
-      {
-              uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
-              uintptr_t mis = addr & 15;
-              if (mis) {
-                      level_data.allocate_bytes(16 - mis);
-              }
-      }
-      void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
-      RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
-      current_track->segments[seg].curve_matrix = soa;
+		{
+			uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
+			uintptr_t mis = addr & 15;
+			if (mis) {
+				level_data.allocate_bytes(16 - mis);
+			}
+		}
+		void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
+		RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
+		current_track->segments[seg].curve_matrix = soa;
 
 
 		// helper to bump heap_allocation up to the next 16-byte boundary
@@ -354,7 +355,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 					1.0f,
 					soa->times[i],
 					soa->times[i + 1]
-				);
+					);
 				godot::Transform3D new_sample_pos;
 				current_track->segments[seg].curve_matrix->sample(new_sample_pos, use_t);
 				total_distance += latest_sample_pos.origin.distance_to(new_sample_pos.origin);
@@ -362,18 +363,51 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 			}
 		}
 		current_track->segments[seg].segment_length = total_distance;
+		const int bx = 16;
+		const int by = 32;
+		for (int x = 0; x < bx; x++)
+		{
+			for (int y = 0; y < by; y++)
+			{
+				godot::Vector2 use_t((float(x) / (bx - 1)) * 2.0f - 1.0f, float(y) / (by - 1));
+				godot::Transform3D use_pos;
+				current_track->segments[seg].road_shape->get_oriented_transform_at_time(use_pos, use_t);
+				//current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
+				if (x == 0 && y == 0)
+				{
+					current_track->segments[seg].bounds.position = use_pos.origin;
+					current_track->segments[seg].bounds.size = godot::Vector3();
+				}
+				current_track->segments[seg].bounds.expand_to(use_pos.origin);
+				current_track->segments[seg].bounds.expand_to(use_pos.origin + use_pos.basis[1] * 25.f);
+			}
+		}
+		current_track->segments[seg].bounds.grow_by(5.f);
+		current_track->segments[seg].checkpoint_start = -1;
+		current_track->segments[seg].checkpoint_run_length = 0;
+		for (int i = 0; i < current_track->num_checkpoints; i++)
+		{
+			if (current_track->checkpoints[i].road_segment == seg)
+			{
+				if (current_track->segments[seg].checkpoint_start == -1)
+				{
+					current_track->segments[seg].checkpoint_start = i;
+				}
+				current_track->segments[seg].checkpoint_run_length++;
+			}
+		}
 	}
 	gamestate_data.instantiate(1024 * 1024);
 	int state_capacity = gamestate_data.get_capacity();
-		for (int i = 0; i < STATE_BUFFER_LEN; i++)
+	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
 		state_buffer[i].data = (char*)malloc(state_capacity);
 		state_buffer[i].size = 0;
 	}
 
 
-	cars = gamestate_data.create_and_allocate_cars(1);
-	num_cars = 1;
+	cars = gamestate_data.create_and_allocate_cars(100);
+	num_cars = 100;
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;
@@ -409,7 +443,7 @@ void GameSim::destroy_gamesim()
 		{
 			if (state_buffer[i].data)
 			{
-               			::free(state_buffer[i].data);
+				::free(state_buffer[i].data);
 				state_buffer[i].data = nullptr;
 			}
 		}
@@ -459,6 +493,19 @@ void GameSim::render_gamesim() {
 		for (int i = 0; i < current_track->num_checkpoints; i++)
 		{
 			current_track->checkpoints[i].debug_draw();
+		}
+	}
+	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS))
+	{
+		godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+		for (int i = 0; i < current_track->num_segments; i++)
+		{
+			dd3d->call("draw_aabb", current_track->segments[i].bounds, godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
+			for (int n = 0; n < current_track->segments[i].checkpoint_run_length; n++)
+			{
+				int cp_index = current_track->segments[i].checkpoint_start + n;
+				current_track->checkpoints[cp_index].debug_draw();
+			}
 		}
 	}
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
@@ -514,7 +561,7 @@ void GameSim::save_state()
 		memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
 	}
 }
-	
+
 void GameSim::load_state(int target_tick)
 {
 	int index = target_tick % STATE_BUFFER_LEN;

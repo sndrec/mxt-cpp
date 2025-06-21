@@ -13,6 +13,9 @@ public:
         float segment_length;
         float left_rail_height;
         float right_rail_height;
+        godot::AABB bounds;
+        int checkpoint_start;
+        int checkpoint_run_length;
         RoadShape* road_shape;
         RoadTransformCurve* curve_matrix;
 };

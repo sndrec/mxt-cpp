@@ -10,24 +10,18 @@ struct CollisionData;
 class RaceTrack
 {
 public:
-        int num_segments;
-        int num_checkpoints;
-        TrackSegment* segments;
-        CollisionCheckpoint* checkpoints;
-        int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0) const;
-        void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = true);
-        void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
-        void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
-        std::vector<int> get_viable_checkpoints(godot::Vector3 in_point)
-        {
-                std::vector<int> return_checkpoints;
-		return_checkpoints.reserve(16);
-
-		// todo: implement a broad phase that can quickly cut out large amounts of checkpoints
-		// which do not need testing; BVH, perhaps? at very minimum we can generate an AABB
-		// for each track segment and compare against those AABBs first, and ignore
-		// checkpoints for segments we can't possibly be interacting with
-
+	int num_segments;
+	int num_checkpoints;
+	int candidate_scratch[8];
+	TrackSegment* segments;
+	CollisionCheckpoint* checkpoints;
+	int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
+	void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = true);
+	void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
+	void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
+	std::vector<int> get_viable_checkpoints(godot::Vector3 in_point)
+	{
+		int num_candidates = 0;
 		for (int i = 0; i < num_checkpoints; i++)
 		{
 			if (!checkpoints[i].start_plane.is_point_over(in_point))
@@ -45,36 +39,62 @@ public:
 			float radius = (checkpoints[i].position_end - checkpoints[i].position_start).length_squared() + max_total_radius * max_total_radius;
 			if (in_point.distance_squared_to(avg_pos) < radius)
 			{
-				return_checkpoints.push_back(i);
+				candidate_scratch[num_candidates] = i;
+				num_candidates++;
 			}
 		}
-		return return_checkpoints;
 	}
-	int get_best_checkpoint(godot::Vector3 in_point) const
-        {
-                std::vector<int> candidates;
-		candidates.reserve(16);
-
-		// todo: implement a broad phase that can quickly cut out large amounts of checkpoints
-		// which do not need testing; BVH, perhaps? at very minimum we can generate an AABB
-		// for each track segment and compare against those AABBs first, and ignore
-		// checkpoints for segments we can't possibly be interacting with
-
-		for (int i = 0; i < num_checkpoints; i++)
+	int get_best_checkpoint(godot::Vector3 in_point)
+	{
+		int num_valid = 0;
+		for (int seg = 0; seg < num_segments; seg++)
 		{
-			if (!checkpoints[i].start_plane.is_point_over(in_point))
+			if (!segments[seg].bounds.has_point(in_point))
 			{
 				continue;
 			}
-			if (checkpoints[i].end_plane.is_point_over(in_point))
+			//godot::UtilityFunctions::print(num_checkpoints);
+			//godot::UtilityFunctions::print(segments[seg].checkpoint_start);
+			//godot::UtilityFunctions::print(segments[seg].checkpoint_start + segments[seg].checkpoint_run_length);
+			//godot::UtilityFunctions::print("---");
+
+			int start = segments[seg].checkpoint_start;
+			int end   = start + segments[seg].checkpoint_run_length;
+			for (int i = start; i < end; i++)
 			{
-				continue;
+				if (!checkpoints[i].start_plane.is_point_over(in_point))
+				{
+					continue;
+				}
+				if (checkpoints[i].end_plane.is_point_over(in_point))
+				{
+					continue;
+				}
+				candidate_scratch[num_valid] = i;
+				num_valid += 1;
 			}
-			candidates.push_back(i);
 		}
+		if (num_valid == 0)
+		{
+			return -1;
+		}
+
+		//for (int i = 0; i < num_checkpoints; i++)
+		//{
+		//	if (!checkpoints[i].start_plane.is_point_over(in_point))
+		//	{
+		//		continue;
+		//	}
+		//	if (checkpoints[i].end_plane.is_point_over(in_point))
+		//	{
+		//		continue;
+		//	}
+		//	candidates.push_back(i);
+		//}
 		int   best_cp     = -1;
 		float best_dist2  = std::numeric_limits<float>::infinity();
-		for (int idx : candidates) {
+		for (int i = 0; i < num_valid; i++) {
+			int idx = candidate_scratch[i];
 			const CollisionCheckpoint &cp = checkpoints[idx];
 
 			// project pos onto segment
@@ -100,8 +120,8 @@ public:
 			float dist2 = tx * tx + ty * ty;
 
 			if (dist2 < best_dist2) {
-			    best_dist2 = dist2;
-			    best_cp    = idx;
+				best_dist2 = dist2;
+				best_cp    = idx;
 			}
 		}
 		return best_cp;
