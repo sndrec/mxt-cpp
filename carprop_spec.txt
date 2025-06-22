@@ -1,0 +1,63 @@
+CAR PROPERTY SPECIFICATION (.mxt_car_props)
+-------------------------------------------
+
+FILE STRUCTURE
+--------------
+Offset      Type            Description
+0           float           weight_kg
+4           float           acceleration
+8           float           max_speed
+12          float           grip_1
+16          float           grip_2
+20          float           grip_3
+24          float           turn_tension
+28          float           drift_accel
+32          float           turn_movement
+36          float           strafe_turn
+40          float           strafe
+44          float           turn_reaction
+48          float           boost_strength
+52          float           boost_length
+56          float           turn_decel
+60          float           drag
+64          float           body
+68          float           camera_reorienting
+72          float           camera_repositioning
+76          float           track_collision
+80          float           obstacle_collision
+84          float           max_energy
+
+88          Vector3[4]      tilt_corners (12 floats total)
+136         Vector3[4]      wall_corners (12 floats total)
+184         u32             unk_byte_0x48
+
+
+PARSING TABLE (.mxt_car_props)
+-----------------------------
+read_float()             → weight_kg
+read_float()             → acceleration
+read_float()             → max_speed
+read_float()             → grip_1
+read_float()             → grip_2
+read_float()             → grip_3
+read_float()             → turn_tension
+read_float()             → drift_accel
+read_float()             → turn_movement
+read_float()             → strafe_turn
+read_float()             → strafe
+read_float()             → turn_reaction
+read_float()             → boost_strength
+read_float()             → boost_length
+read_float()             → turn_decel
+read_float()             → drag
+read_float()             → body
+read_float()             → camera_reorienting
+read_float()             → camera_repositioning
+read_float()             → track_collision
+read_float()             → obstacle_collision
+read_float()             → max_energy
+for i in 4:
+    read_vector3()       → tilt_corners[i]
+for i in 4:
+    read_vector3()       → wall_corners[i]
+read_u32()               → unk_byte_0x48
