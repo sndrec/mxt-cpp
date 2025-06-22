@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://cisbdedwth2jd"
+path="res://.godot/imported/itiger.obj-14c208a4b6466ec3107f99c9f4da70d9.mesh"
+
+[deps]
+
+files=["res://.godot/imported/itiger.obj-14c208a4b6466ec3107f99c9f4da70d9.mesh"]
+
+source_file="res://vehicle/asset/iron_tiger/vehicle/itiger/itiger.obj"
+dest_files=["res://.godot/imported/itiger.obj-14c208a4b6466ec3107f99c9f4da70d9.mesh", "res://.godot/imported/itiger.obj-14c208a4b6466ec3107f99c9f4da70d9.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false
