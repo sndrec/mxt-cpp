@@ -5,6 +5,9 @@ extends Node
 @onready var track_selector: OptionButton = $Control/TrackSelector
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
+@onready var network_manager: NetworkManager = $NetworkManager
+
+const PlayerInputClass = preload("res://player/player_input.gd")
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -87,9 +90,10 @@ func _on_start_button_pressed() -> void:
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	game_sim.car_node_container = car_node_container
-	game_sim.instantiate_gamesim(level_buffer, car_props)
-	var obj_path = info["mxt"].get_basename() + ".obj"
-	if ResourceLoader.exists(obj_path):
+        game_sim.instantiate_gamesim(level_buffer, car_props)
+        network_manager.host()
+        var obj_path = info["mxt"].get_basename() + ".obj"
+        if ResourceLoader.exists(obj_path):
 		debug_track_mesh.mesh = load(obj_path)
 		$Control.visible = false
 		for i in debug_track_mesh.mesh.get_surface_count():
@@ -98,13 +102,15 @@ func _on_start_button_pressed() -> void:
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
 
 func _physics_process(delta: float) -> void:
-			DebugDraw3D.scoped_config().set_no_depth_test(true)
-			if game_sim.sim_started:
-				var inputs : Array = []
-				for p in players:
-					inputs.append(p.get_input().to_dict())
-				game_sim.tick_gamesim(inputs)
-				game_sim.render_gamesim()
+        DebugDraw3D.scoped_config().set_no_depth_test(true)
+        if game_sim.sim_started:
+                var local_input := PlayerInputClass.new().to_dict()
+                if players.size() > 0:
+                        local_input = players[0].get_input().to_dict()
+                network_manager.set_local_input(local_input)
+                var inputs := network_manager.collect_inputs()
+                game_sim.tick_gamesim(inputs)
+                game_sim.render_gamesim()
 
 func _unhandled_input(event: InputEvent) -> void:
 			if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
