@@ -610,27 +610,25 @@ void GameSim::load_state(int target_tick)
 }
 
 godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
-        godot::PackedByteArray arr;
-        int index = target_tick % STATE_BUFFER_LEN;
-        if (!state_buffer[index].data)
-                return arr;
-        int size = state_buffer[index].size;
-        arr.resize(size);
-        if (size > 0) {
-                auto w = arr.write();
-                memcpy(w.ptr(), state_buffer[index].data, size);
-        }
-        return arr;
+	godot::PackedByteArray arr;
+	int index = target_tick % STATE_BUFFER_LEN;
+	if (!state_buffer[index].data)
+		return arr;
+	int size = state_buffer[index].size;
+	arr.resize(size);
+	if (size > 0) {
+		memcpy(arr.ptrw(), state_buffer[index].data, size);
+	}
+	return arr;
 }
 
 void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
-        int index = target_tick % STATE_BUFFER_LEN;
-        if (!state_buffer[index].data)
-                return;
-        int size = std::min(state_buffer[index].size, data.size());
-        if (size > 0) {
-                auto r = data.read();
-                memcpy(state_buffer[index].data, r.ptr(), size);
-                state_buffer[index].size = size;
-        }
+	int index = target_tick % STATE_BUFFER_LEN;
+	if (!state_buffer[index].data)
+		return;
+	int size = std::min<int>(state_buffer[index].size, static_cast<int>(data.size()));
+	if (size > 0) {
+		memcpy(state_buffer[index].data, data.ptr(), size);
+		state_buffer[index].size = size;
+	}
 }
