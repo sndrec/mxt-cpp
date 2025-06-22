@@ -1,23 +1,9 @@
-[gd_scene load_steps=5 format=3 uid="uid://cwuy4ee2yd8sc"]
+[gd_scene load_steps=2 format=3 uid="uid://cwuy4ee2yd8sc"]
 
 [ext_resource type="Script" uid="uid://ce1giyem417b6" path="res://vehicle/visual_car.gd" id="1_7f3vi"]
-[ext_resource type="Shader" uid="uid://du5bco1bxglr3" path="res://asset/debug_car_shader.gdshader" id="2_7f3vi"]
-[ext_resource type="ArrayMesh" uid="uid://bortgufpfx4s3" path="res://vehicle/bfalcon.obj" id="3_ek4m1"]
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_0b8fb"]
-render_priority = 0
-shader = ExtResource("2_7f3vi")
-shader_parameter/albedo = Color(0.1134, 0.22716, 0.54, 1)
-shader_parameter/shininess = 50.0
-shader_parameter/spec_strength = 10.0
 
 [node name="CarRoot" type="Node3D"]
 script = ExtResource("1_7f3vi")
-
-[node name="CarMesh" type="MeshInstance3D" parent="."]
-top_level = true
-material_override = SubResource("ShaderMaterial_0b8fb")
-mesh = ExtResource("3_ek4m1")
 
 [node name="CarCamera" type="Camera3D" parent="."]
 top_level = true

@@ -2,6 +2,7 @@ class_name VisualCar extends Node3D
 
 @onready var car_mesh: MeshInstance3D = $CarMesh
 @onready var car_camera: Camera3D = $CarCamera
+var car_definition : CarDefinition
 
 enum FZ_TERRAIN {
 	NORMAL = 0x1,
@@ -94,6 +95,10 @@ var tilt_fr_state := 0
 var tilt_bl_state := 0
 var tilt_br_state := 0
 
+func _ready() -> void:
+	var car_visual := car_definition.car_scene.instantiate()
+	add_child(car_visual)
+
 func _physics_process(delta: float) -> void:
 	var calced_max_energy := 100.0
 	var energy_ratio : float = minf(1.0, (energy / calced_max_energy) * 4.0)
@@ -110,7 +115,7 @@ func _physics_process(delta: float) -> void:
 	car_camera.fov = lerpf(car_camera.fov, target_fov, delta * 2)
 	var use_forward_z : Vector3 = basis_physical.basis.z
 	use_forward_z = use_forward_z.normalized()
-	if (tilt_fl_state & MachineTiltCorner.FZ_TC.DRIFT) != 0:
+	if (tilt_fl_state & FZ_TC.DRIFT) != 0:
 		use_forward_z = -velocity.slide(basis_physical.basis.y.normalized()).normalized()
 	
 	var target_y := basis_physical.basis.y
