@@ -2386,13 +2386,12 @@ void PhysicsCar::post_tick()
 	handle_machine_damage_and_visuals();
 };
 
-void PhysicsCar::tick(uint32_t tick_count)
+void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
 	calced_max_energy = 100.0f;
 
 	side_attack_indicator = 0.0f;
 
-	PlayerInput input = PlayerInput::from_player_input();
 
 	if (tick_count < level_start_time - 180) {
 		machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;

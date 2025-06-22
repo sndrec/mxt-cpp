@@ -1,7 +1,7 @@
 #pragma once
 
 #include "godot_cpp/classes/input.hpp"
-//B:\programming\raylib - game - template - main\projects\gdextension_mxto_sim\godot - cpp\gen\include\godot_cpp\classes\input.hpp
+#include "godot_cpp/variant/dictionary.hpp"
 
 class PlayerInput 
 {
@@ -21,9 +21,9 @@ public:
 		return new_input;
 	}
 
-	static PlayerInput from_player_input()
-	{
-		PlayerInput new_input{};
+        static PlayerInput from_player_input()
+        {
+                PlayerInput new_input{};
 		char* str1 = "StrafeLeft";
 		char* str2 = "StrafeRight";
 		char* str3 = "SteerUp";
@@ -56,6 +56,28 @@ public:
 		new_input.spinattack = input_singleton->is_action_just_pressed(string_spinattack);
 		new_input.boost = input_singleton->is_action_just_pressed(string_boost);
 
-		return new_input;
-	}
+                return new_input;
+        }
+
+        static PlayerInput from_dict(const godot::Dictionary &dict)
+        {
+                PlayerInput new_input{};
+                if (dict.has("strafe_left"))
+                        new_input.strafe_left = godot::Variant(dict["strafe_left"]).operator float();
+                if (dict.has("strafe_right"))
+                        new_input.strafe_right = godot::Variant(dict["strafe_right"]).operator float();
+                if (dict.has("steer_horizontal"))
+                        new_input.steer_horizontal = godot::Variant(dict["steer_horizontal"]).operator float();
+                if (dict.has("steer_vertical"))
+                        new_input.steer_vertical = godot::Variant(dict["steer_vertical"]).operator float();
+                if (dict.has("accelerate"))
+                        new_input.accelerate = godot::Variant(dict["accelerate"]).operator float();
+                if (dict.has("brake"))
+                        new_input.brake = godot::Variant(dict["brake"]).operator float();
+                if (dict.has("spinattack"))
+                        new_input.spinattack = godot::Variant(dict["spinattack"]).operator bool();
+                if (dict.has("boost"))
+                        new_input.boost = godot::Variant(dict["boost"]).operator bool();
+                return new_input;
+        }
 };
