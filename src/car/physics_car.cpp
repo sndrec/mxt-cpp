@@ -1913,11 +1913,11 @@ int PhysicsCar::update_machine_corners() {
 					};
 
 					for (int i = 0; i < 2; i++) {
-						if (i == 1 && t_new.x < -1.0f)
+						if (i == 1 && t_old.x < -1.0f)
 						{
 							continue;
 						}
-						if (i == 0 && t_new.x > 1.0f)
+						if (i == 0 && t_old.x > 1.0f)
 						{
 							continue;
 						}
