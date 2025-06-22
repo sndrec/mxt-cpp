@@ -11,7 +11,7 @@ var authoritative_inputs := {}
 var last_local_input := NEUTRAL_INPUT.duplicate()
 var server_tick: int = 0
 var local_tick: int = 0
-var input_redundancy := ProjectSettings.get_setting("netfox/rollback/input_redundancy", 5)
+var input_redundancy := ProjectSettings.get_setting("rollback/input_redundancy", 5)
 
 func host(port: int = 3456, max_players: int = 4) -> int:
     var peer := ENetMultiplayerPeer.new()
@@ -49,7 +49,8 @@ func _on_peer_disconnected(id: int) -> void:
         player_ids.erase(id)
         rpc("_update_player_ids", player_ids)
 
-remote func _update_player_ids(ids: Array) -> void:
+@rpc(any_peer)
+func _update_player_ids(ids: Array) -> void:
     player_ids = ids
 
 func set_local_input(input: Dictionary) -> void:
@@ -88,13 +89,15 @@ func collect_inputs() -> Array:
         local_tick += 1
         return frame_inputs
 
-remote func _client_send_input(tick: int, input: Dictionary) -> void:
+@rpc(any_peer, transfer_mode=MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
+func _client_send_input(tick: int, input: Dictionary) -> void:
     if is_server:
         if not pending_inputs.has(tick):
             pending_inputs[tick] = {}
-        pending_inputs[tick][get_tree().get_rpc_sender_id()] = input
+        pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
 
-remote func _server_broadcast(tick: int, inputs: Array, ids: Array) -> void:
+@rpc(any_peer, transfer_mode=MultiplayerPeer.TRANSFER_MODE_UNRELIABLE)
+func _server_broadcast(tick: int, inputs: Array, ids: Array) -> void:
     if not is_server:
         server_tick = max(server_tick, tick + 1)
         player_ids = ids
