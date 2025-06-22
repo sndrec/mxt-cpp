@@ -1,9 +1,9 @@
-[gd_scene load_steps=7 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=8 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="ArrayMesh" uid="uid://2biir4cy4wk8" path="res://track/weird_track_2/weird_track_2.obj" id="3_1bvp3"]
 [ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
-[ext_resource type="Script" uid="uid://e97ep7xo47g" path="res://netplay/network_manager.gd" id="3_netplay"]
+[ext_resource type="Script" uid="uid://cq1kmqnd5qooc" path="res://netplay/network_manager.gd" id="3_netplay"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c0w6o"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
