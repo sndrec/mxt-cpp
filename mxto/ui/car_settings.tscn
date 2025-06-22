@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://d3fgxyahmbbxa"]
+
+[node name="CarSettings" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="SettingContainer" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_right = 502.0
+offset_bottom = 141.0
+
+[node name="MachineSettingName" type="Label" parent="SettingContainer"]
+layout_mode = 2
+text = "Machine Setting"
+
+[node name="MachineSettingPercent" type="Label" parent="SettingContainer"]
+layout_mode = 2
+text = "100%"
+
+[node name="MachineSettingSlider" type="HSlider" parent="SettingContainer"]
+layout_mode = 2
+
+[node name="VehicleSelector" type="ItemList" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 0.159
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -0.0320053
+grow_horizontal = 2
+grow_vertical = 2
+item_count = 4
+max_columns = 8
+same_column_width = true
+fixed_column_width = 128
+item_0/text = "Blue Flacon"
+item_1/text = "Astro Robin"
+item_2/text = "Fat Shark"
+item_3/text = "Green Falcon"
