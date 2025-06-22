@@ -52,10 +52,12 @@ namespace godot {
                         void tick_gamesim(godot::Array player_inputs);
                         void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers);
 			void destroy_gamesim();
-			void render_gamesim();
-			void save_state();
-			void load_state(int target_tick);
-	};
+                       void render_gamesim();
+                       void save_state();
+                       void load_state(int target_tick);
+                       godot::PackedByteArray get_state_data(int target_tick) const;
+                       void set_state_data(int target_tick, godot::PackedByteArray data);
+       };
 
 }
 
