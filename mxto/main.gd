@@ -89,10 +89,10 @@ func _on_start_button_pressed() -> void:
 
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-        game_sim.car_node_container = car_node_container
-        game_sim.instantiate_gamesim(level_buffer, car_props)
-        network_manager.game_sim = game_sim
-        network_manager.host()
+	game_sim.car_node_container = car_node_container
+	game_sim.instantiate_gamesim(level_buffer, car_props)
+	network_manager.game_sim = game_sim
+	network_manager.host()
 	var obj_path = info["mxt"].get_basename() + ".obj"
 	if ResourceLoader.exists(obj_path):
 		debug_track_mesh.mesh = load(obj_path)
@@ -109,10 +109,10 @@ func _physics_process(delta: float) -> void:
 		if players.size() > 0:
 			local_input = players[0].get_input().to_dict()
 		network_manager.set_local_input(local_input)
-                var inputs := network_manager.collect_inputs()
-                game_sim.tick_gamesim(inputs)
-                network_manager.post_tick()
-                game_sim.render_gamesim()
+		var inputs := network_manager.collect_inputs()
+		game_sim.tick_gamesim(inputs)
+		network_manager.post_tick()
+		game_sim.render_gamesim()
 
 func _unhandled_input(event: InputEvent) -> void:
 			if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
