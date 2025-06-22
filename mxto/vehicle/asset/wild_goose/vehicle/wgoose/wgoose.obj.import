@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://cpqc43t1elq3b"
+path="res://.godot/imported/wgoose.obj-0246553996265c62b666b39dbf0884ef.mesh"
+
+[deps]
+
+files=["res://.godot/imported/wgoose.obj-0246553996265c62b666b39dbf0884ef.mesh"]
+
+source_file="res://vehicle/asset/wild_goose/vehicle/wgoose/wgoose.obj"
+dest_files=["res://.godot/imported/wgoose.obj-0246553996265c62b666b39dbf0884ef.mesh", "res://.godot/imported/wgoose.obj-0246553996265c62b666b39dbf0884ef.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false
