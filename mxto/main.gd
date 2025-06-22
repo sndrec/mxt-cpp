@@ -8,6 +8,8 @@ extends Node
 
 var tracks: Array = []
 var car_definitions: Array = []
+var players: Array = []
+var player_scene := preload("res://player/player_controller.tscn")
 
 func _ready() -> void:
 		_load_tracks()
@@ -60,18 +62,27 @@ func _load_car_definitions() -> void:
 		dir.list_dir_end()
 
 func _on_start_button_pressed() -> void:
-	if track_selector.selected < 0 or track_selector.selected >= tracks.size():
-		return
-	var info : Dictionary = tracks[track_selector.selected]
-	var chosen_defs : Array = []
-	for i in car_node_container.num_cars:
-		chosen_defs.append(car_definitions[randi() % car_definitions.size()])
-	car_node_container.instantiate_cars(chosen_defs)
+        if track_selector.selected < 0 or track_selector.selected >= tracks.size():
+                return
+        var info : Dictionary = tracks[track_selector.selected]
+        var chosen_defs : Array = []
+        for i in car_node_container.num_cars:
+                chosen_defs.append(car_definitions[randi() % car_definitions.size()])
+        car_node_container.instantiate_cars(chosen_defs)
 
-	var car_props : Array = []
-	for def in chosen_defs:
-		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-		car_props.append(bytes)
+        for p in players:
+                p.queue_free()
+        players.clear()
+        for i in chosen_defs.size():
+                var pc := player_scene.instantiate()
+                pc.car_definition = chosen_defs[i]
+                add_child(pc)
+                players.append(pc)
+
+        var car_props : Array = []
+        for def in chosen_defs:
+                var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+                car_props.append(bytes)
 
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
@@ -87,20 +98,26 @@ func _on_start_button_pressed() -> void:
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
 
 func _physics_process(delta: float) -> void:
-			DebugDraw3D.scoped_config().set_no_depth_test(true)
-			if game_sim.sim_started:
-							game_sim.tick_gamesim()
-							game_sim.render_gamesim()
+                        DebugDraw3D.scoped_config().set_no_depth_test(true)
+                        if game_sim.sim_started:
+                                var inputs : Array = []
+                                for p in players:
+                                        inputs.append(p.get_input().to_dict())
+                                game_sim.tick_gamesim(inputs)
+                                game_sim.render_gamesim()
 
 func _unhandled_input(event: InputEvent) -> void:
 			if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
 							_return_to_menu()
 
 func _return_to_menu() -> void:
-			game_sim.destroy_gamesim()
-			for child in car_node_container.get_children():
-							child.queue_free()
-			$Control.visible = true
+                        game_sim.destroy_gamesim()
+                        for child in car_node_container.get_children():
+                                                        child.queue_free()
+                        for p in players:
+                                p.queue_free()
+                        players.clear()
+                        $Control.visible = true
 
 func _process(delta: float) -> void:
 	pass

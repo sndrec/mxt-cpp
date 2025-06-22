@@ -208,5 +208,5 @@ public:
     void align_machine_y_with_track_normal_immediate();
     void handle_checkpoints();
     void post_tick();
-    void tick(uint32_t tick_count);
+    void tick(PlayerInput input, uint32_t tick_count);
 };

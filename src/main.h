@@ -10,6 +10,7 @@
 #include "track/racetrack.h"
 #include "mxt_core/heap_handler.h"
 #include "mxt_core/mtxa_stack.hpp"
+#include "mxt_core/player_input.h"
 
 namespace godot {
 
@@ -26,7 +27,9 @@ namespace godot {
 				char* data;
 				int size;
 			};
-			SavedState state_buffer[STATE_BUFFER_LEN];
+                        SavedState state_buffer[STATE_BUFFER_LEN];
+                        static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
+                        PlayerInput* input_buffer = nullptr;
 
 		protected:
 			static void _bind_methods();
@@ -46,7 +49,7 @@ namespace godot {
 			bool get_sim_started();
 			void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 			godot::Node3D* get_car_node_container() const { return car_node_container; }
-			void tick_gamesim();
+                        void tick_gamesim(godot::Array player_inputs);
                         void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers);
 			void destroy_gamesim();
 			void render_gamesim();
