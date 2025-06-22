@@ -415,12 +415,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	{
 		cars[i].mtxa = &mtxa;
 		cars[i].current_track = current_track;
-		if (i < car_prop_buffers.size()) {
-			godot::PackedByteArray arr = car_prop_buffers[i];
-			godot::StreamPeerBuffer pb;
-			pb.set_data_array(arr);
-			*(cars[i].car_properties) = PhysicsCarProperties::deserialize(pb);
-		}
+       if (i < car_prop_buffers.size()) {
+               godot::PackedByteArray arr = car_prop_buffers[i];
+               // StreamPeerBuffer inherits Reference; using Ref ensures
+               // the object is freed when 'pb' goes out of scope.
+               godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
+               pb->set_data_array(arr);
+               *(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
+       }
 		cars[i].initialize_machine();
 		cars[i].position_current = godot::Vector3(0.5f * (i % 16), 200.0f, 0.25f * (i / 16));
 	}
