@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cfenv>
 #include <cstdlib>
+#include <algorithm>
 #include "mxt_core/debug.hpp"
 
 using namespace godot;
@@ -25,8 +26,10 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
 	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
 	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
-	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
-	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
+        ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
+        ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
+        ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
+        ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -597,11 +600,37 @@ void GameSim::save_state()
 
 void GameSim::load_state(int target_tick)
 {
-	int index = target_tick % STATE_BUFFER_LEN;
-	if (!state_buffer[index].data)
-		return;
-	int size = state_buffer[index].size;
-	memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
-	gamestate_data.set_size(size);
-	tick = target_tick;
+        int index = target_tick % STATE_BUFFER_LEN;
+        if (!state_buffer[index].data)
+                return;
+        int size = state_buffer[index].size;
+        memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
+        gamestate_data.set_size(size);
+        tick = target_tick;
+}
+
+godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
+        godot::PackedByteArray arr;
+        int index = target_tick % STATE_BUFFER_LEN;
+        if (!state_buffer[index].data)
+                return arr;
+        int size = state_buffer[index].size;
+        arr.resize(size);
+        if (size > 0) {
+                auto w = arr.write();
+                memcpy(w.ptr(), state_buffer[index].data, size);
+        }
+        return arr;
+}
+
+void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
+        int index = target_tick % STATE_BUFFER_LEN;
+        if (!state_buffer[index].data)
+                return;
+        int size = std::min(state_buffer[index].size, data.size());
+        if (size > 0) {
+                auto r = data.read();
+                memcpy(state_buffer[index].data, r.ptr(), size);
+                state_buffer[index].size = size;
+        }
 }
