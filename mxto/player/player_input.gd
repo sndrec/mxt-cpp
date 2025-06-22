@@ -10,13 +10,13 @@ var spinattack: bool = false
 var boost: bool = false
 
 func to_dict() -> Dictionary:
-    return {
-        "strafe_left": strafe_left,
-        "strafe_right": strafe_right,
-        "steer_horizontal": steer_horizontal,
-        "steer_vertical": steer_vertical,
-        "accelerate": accelerate,
-        "brake": brake,
-        "spinattack": spinattack,
-        "boost": boost,
-    }
+	return {
+	 "strafe_left": strafe_left,
+	 "strafe_right": strafe_right,
+	 "steer_horizontal": steer_horizontal,
+	 "steer_vertical": steer_vertical,
+	 "accelerate": accelerate,
+	 "brake": brake,
+	 "spinattack": spinattack,
+	 "boost": boost,
+	}
