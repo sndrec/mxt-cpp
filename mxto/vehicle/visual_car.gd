@@ -1,6 +1,6 @@
 class_name VisualCar extends Node3D
 
-@onready var car_mesh: MeshInstance3D = $CarMesh
+@onready var car_visual : Node3D
 @onready var car_camera: Camera3D = $CarCamera
 var car_definition : CarDefinition
 
@@ -96,7 +96,7 @@ var tilt_bl_state := 0
 var tilt_br_state := 0
 
 func _ready() -> void:
-	var car_visual := car_definition.car_scene.instantiate()
+	car_visual = car_definition.car_scene.instantiate()
 	add_child(car_visual)
 
 func _physics_process(delta: float) -> void:
@@ -111,7 +111,7 @@ func _physics_process(delta: float) -> void:
 	var target_fov := remap(speed_kmh, 0, 1800, 50, 90)
 	#target_fov += remap(boost_ratio, 0, 1, 0, 50)
 	target_fov = minf(target_fov, 100)
-	car_mesh.transform = transform_visual
+	car_visual.transform = transform_visual
 	car_camera.fov = lerpf(car_camera.fov, target_fov, delta * 2)
 	var use_forward_z : Vector3 = basis_physical.basis.z
 	use_forward_z = use_forward_z.normalized()
