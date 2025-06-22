@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://d0k2ook4b8y57"]
 
-[ext_resource type="ArrayMesh" uid="uid://c04nefumedknk" path="res://vehicle/asset/astro_robin/vehicle/arobin/arobin.obj" id="1_dvkvf"]
+[ext_resource type="ArrayMesh" uid="uid://b5pkdy5vhjgh1" path="res://vehicle/asset/magic_seagull/vehicle/mgull/mgull.obj" id="1_dvkvf"]
 
 [node name="Vehicle" type="MeshInstance3D"]
 mesh = ExtResource("1_dvkvf")
