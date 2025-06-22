@@ -8,6 +8,8 @@
 #include "track/road_modulation.h"
 #include "track/road_embed.h"
 #include "car/physics_car.h"
+#include "godot_cpp/variant/array.hpp"
+#include "godot_cpp/variant/packed_byte_array.hpp"
 #include <cfenv>
 #include <cstdlib>
 #include "mxt_core/debug.hpp"
@@ -16,7 +18,7 @@ using namespace godot;
 
 void GameSim::_bind_methods()
 {
-	ClassDB::bind_method(D_METHOD("instantiate_gamesim"), &GameSim::instantiate_gamesim);
+        ClassDB::bind_method(D_METHOD("instantiate_gamesim", "lvldat_buf", "car_prop_buffers"), &GameSim::instantiate_gamesim);
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("tick_gamesim"), &GameSim::tick_gamesim);
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
@@ -104,7 +106,7 @@ void GameSim::tick_gamesim()
 	//dd3d->call("draw_points", car_positions, 0, 1.0f, godot::Color(1.f, 0.f, 0.f), 0.0166666);
 }
 
-void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
+void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers)
 {
 	if (Engine::get_singleton()->is_editor_hint()) return;
 
@@ -406,15 +408,22 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf)
 	}
 
 
-	cars = gamestate_data.create_and_allocate_cars(1);
-	num_cars = 1;
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].mtxa = &mtxa;
-		cars[i].current_track = current_track;
-		cars[i].initialize_machine();
-		cars[i].position_current = godot::Vector3(0.5f * (i % 16), 200.0f, 0.25f * (i / 16));
-	}
+        int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
+        cars = gamestate_data.create_and_allocate_cars(requested_cars);
+        num_cars = requested_cars;
+        for (int i = 0; i < num_cars; i++)
+        {
+                cars[i].mtxa = &mtxa;
+                cars[i].current_track = current_track;
+                if (i < car_prop_buffers.size()) {
+                        godot::PackedByteArray arr = car_prop_buffers[i];
+                        godot::StreamPeerBuffer pb;
+                        pb.set_data_array(arr);
+                        *(cars[i].car_properties) = PhysicsCarProperties::deserialize(pb);
+                }
+                cars[i].initialize_machine();
+                cars[i].position_current = godot::Vector3(0.5f * (i % 16), 200.0f, 0.25f * (i / 16));
+        }
 
 	sim_started = true;
 	UtilityFunctions::print("finished constructing level!");

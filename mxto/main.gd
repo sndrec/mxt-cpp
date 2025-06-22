@@ -8,12 +8,14 @@ extends Node
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 
 var tracks: Array = []
+var car_definitions: Array = []
 
 func _ready() -> void:
-	_load_tracks()
+        _load_tracks()
+        _load_car_definitions()
 
 func _load_tracks() -> void:
-	tracks.clear()
+        tracks.clear()
 	track_selector.clear()
 	_scan_dir("res://track")
 	for t in tracks:
@@ -39,22 +41,48 @@ func _scan_dir(path: String) -> void:
 				if typeof(parsed) == TYPE_DICTIONARY and parsed.has("name"):
 					tracks.append({"name": parsed["name"], "mxt": mxt_path})
 		file = dir.get_next()
-	dir.list_dir_end()
+        dir.list_dir_end()
+
+func _load_car_definitions() -> void:
+        car_definitions.clear()
+        var dir := DirAccess.open("res://vehicle/asset")
+        if dir == null:
+                return
+        dir.list_dir_begin()
+        var folder := dir.get_next()
+        while folder != "":
+                if dir.current_is_dir() and !folder.begins_with("."):
+                        var def_path := "res://vehicle/asset/%s/definition.tres" % folder
+                        if ResourceLoader.exists(def_path):
+                                var def_res := load(def_path)
+                                if def_res != null:
+                                        car_definitions.append(def_res)
+                folder = dir.get_next()
+        dir.list_dir_end()
 
 func _on_start_button_pressed() -> void:
-	if track_selector.selected < 0 or track_selector.selected >= tracks.size():
-		return
-	var info : Dictionary = tracks[track_selector.selected]
-	car_node_container.instantiate_cars()
-	var level_buffer := StreamPeerBuffer.new()
-	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-	game_sim.car_node_container = car_node_container
-	game_sim.instantiate_gamesim(level_buffer)
-	var obj_path = info["mxt"].get_basename() + ".obj"
-	if ResourceLoader.exists(obj_path):
-		debug_track_mesh.mesh = load(obj_path)
-		$Control.visible = false
-		for i in debug_track_mesh.mesh.get_surface_count():
+        if track_selector.selected < 0 or track_selector.selected >= tracks.size():
+                return
+        var info : Dictionary = tracks[track_selector.selected]
+        var chosen_defs : Array = []
+        for i in car_node_container.num_cars:
+                chosen_defs.append(car_definitions[randi() % car_definitions.size()])
+        car_node_container.instantiate_cars(chosen_defs)
+
+        var car_props : Array = []
+        for def in chosen_defs:
+                var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+                car_props.append(bytes)
+
+        var level_buffer := StreamPeerBuffer.new()
+        level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+        game_sim.car_node_container = car_node_container
+        game_sim.instantiate_gamesim(level_buffer, car_props)
+        var obj_path = info["mxt"].get_basename() + ".obj"
+        if ResourceLoader.exists(obj_path):
+                debug_track_mesh.mesh = load(obj_path)
+                $Control.visible = false
+                for i in debug_track_mesh.mesh.get_surface_count():
 			var mat := debug_track_mesh.mesh.surface_get_material(i)
 			if mat.resource_name == "track_surface":
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
