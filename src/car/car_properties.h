@@ -123,7 +123,6 @@ public:
 		new_properties.track_collision = in_buffer->get_float();
 		new_properties.obstacle_collision = in_buffer->get_float();
 		new_properties.max_energy = in_buffer->get_float();
-		new_properties.unk_byte_0x48 = in_buffer->get_u32();
 		new_properties.tilt_corners[0].x = in_buffer->get_float();
 		new_properties.tilt_corners[0].y = in_buffer->get_float();
 		new_properties.tilt_corners[0].z = in_buffer->get_float();
@@ -148,6 +147,7 @@ public:
 		new_properties.wall_corners[3].x = in_buffer->get_float();
 		new_properties.wall_corners[3].y = in_buffer->get_float();
 		new_properties.wall_corners[3].z = in_buffer->get_float();
+		new_properties.unk_byte_0x48 = in_buffer->get_u32();
 		return new_properties;
 	}
 
