@@ -6,6 +6,7 @@
 #include "godot_cpp/classes/multi_mesh_instance3d.hpp"
 #include "godot_cpp/classes/multi_mesh.hpp"
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
+#include "godot_cpp/variant/array.hpp"
 #include "track/racetrack.h"
 #include "mxt_core/heap_handler.h"
 #include "mxt_core/mtxa_stack.hpp"
@@ -46,7 +47,7 @@ namespace godot {
 			void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 			godot::Node3D* get_car_node_container() const { return car_node_container; }
 			void tick_gamesim();
-			void instantiate_gamesim(StreamPeerBuffer* in_buffer);
+                        void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers);
 			void destroy_gamesim();
 			void render_gamesim();
 			void save_state();
