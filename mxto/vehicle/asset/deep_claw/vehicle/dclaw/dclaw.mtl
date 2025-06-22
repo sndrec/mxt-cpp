@@ -1,0 +1,107 @@
+newmtl MAT_NULL
+
+newmtl gxmat1
+map_Kd 51.png
+
+newmtl gxmat2
+map_Kd 51.png
+
+newmtl gxmat3
+map_Kd 65.png
+
+newmtl gxmat4
+map_Kd 17.png
+
+newmtl gxmat5
+map_Kd 1.png
+
+newmtl gxmat6
+map_Kd 72.png
+
+newmtl gxmat7
+map_Kd 70.png
+
+newmtl gxmat8
+map_Kd 64.png
+
+newmtl gxmat9
+map_Kd 1.png
+
+newmtl gxmat10
+map_Kd 51.png
+
+newmtl gxmat11
+map_Kd 40.png
+
+newmtl gxmat12
+map_Kd 64.png
+
+newmtl gxmat13
+map_Kd 64.png
+
+newmtl gxmat14
+map_Kd 74.png
+
+newmtl gxmat15
+map_Kd 73.png
+
+newmtl gxmat16
+map_Kd 1.png
+
+newmtl gxmat17
+map_Kd 51.png
+
+newmtl gxmat18
+map_Kd 40.png
+
+newmtl gxmat19
+map_Kd 0.png
+
+newmtl gxmat20
+map_Kd 51.png
+
+newmtl gxmat21
+map_Kd 40.png
+
+newmtl gxmat22
+map_Kd 61.png
+
+newmtl gxmat23
+map_Kd 64.png
+
+newmtl gxmat24
+map_Kd 2.png
+
+newmtl gxmat25
+map_Kd 51.png
+
+newmtl gxmat26
+map_Kd 40.png
+
+newmtl gxmat27
+map_Kd 51.png
+
+newmtl gxmat28
+map_Kd 63.png
+
+newmtl gxmat29
+map_Kd 35.png
+
+newmtl gxmat30
+map_Kd 64.png
+
+newmtl gxmat31
+map_Kd 51.png
+
+newmtl gxmat32
+map_Kd 40.png
+
+newmtl gxmat33
+map_Kd 3.png
+
+newmtl gxmat34
+map_Kd 35.png
+
+newmtl gxmat35
+map_Kd 63.png
+

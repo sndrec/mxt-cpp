@@ -1,5 +1,6 @@
 #pragma once
 
+#include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "mxt_core/curve.h"
 
 class PhysicsCarProperties {
@@ -41,6 +42,65 @@ public:
 		godot::Vector3(1.3, -0.1, 1.9),
 		godot::Vector3(-1.3, -0.1, 1.9)
 	};
+
+	godot::StreamPeerBuffer serialize()
+	{
+		godot::StreamPeerBuffer out_buffer;
+		out_buffer.resize(1024);
+		out_buffer.put_float(weight_kg);
+		out_buffer.put_float(acceleration);
+		out_buffer.put_float(max_speed);
+		out_buffer.put_float(grip_1);
+		out_buffer.put_float(grip_2);
+		out_buffer.put_float(grip_3);
+		out_buffer.put_float(turn_tension);
+		out_buffer.put_float(drift_accel);
+		out_buffer.put_float(turn_movement);
+		out_buffer.put_float(strafe_turn);
+		out_buffer.put_float(strafe);
+		out_buffer.put_float(turn_reaction);
+		out_buffer.put_float(boost_strength);
+		out_buffer.put_float(boost_length);
+		out_buffer.put_float(turn_decel);
+		out_buffer.put_float(drag);
+		out_buffer.put_float(body);
+		out_buffer.put_float(camera_reorienting);
+		out_buffer.put_float(camera_repositioning);
+		out_buffer.put_float(track_collision);
+		out_buffer.put_float(obstacle_collision);
+		out_buffer.put_float(max_energy);
+		out_buffer.put_u32(unk_byte_0x48);
+		return out_buffer;
+	}
+
+	static PhysicsCarProperties deserialize(godot::StreamPeerBuffer in_buffer)
+	{
+		PhysicsCarProperties new_properties;
+		new_properties.weight_kg = in_buffer.get_float();
+		new_properties.acceleration = in_buffer.get_float();
+		new_properties.max_speed = in_buffer.get_float();
+		new_properties.grip_1 = in_buffer.get_float();
+		new_properties.grip_2 = in_buffer.get_float();
+		new_properties.grip_3 = in_buffer.get_float();
+		new_properties.turn_tension = in_buffer.get_float();
+		new_properties.drift_accel = in_buffer.get_float();
+		new_properties.turn_movement = in_buffer.get_float();
+		new_properties.strafe_turn = in_buffer.get_float();
+		new_properties.strafe = in_buffer.get_float();
+		new_properties.turn_reaction = in_buffer.get_float();
+		new_properties.boost_strength = in_buffer.get_float();
+		new_properties.boost_length = in_buffer.get_float();
+		new_properties.turn_decel = in_buffer.get_float();
+		new_properties.drag = in_buffer.get_float();
+		new_properties.body = in_buffer.get_float();
+		new_properties.camera_reorienting = in_buffer.get_float();
+		new_properties.camera_repositioning = in_buffer.get_float();
+		new_properties.track_collision = in_buffer.get_float();
+		new_properties.obstacle_collision = in_buffer.get_float();
+		new_properties.max_energy = in_buffer.get_float();
+		new_properties.unk_byte_0x48 = in_buffer.get_u32();
+		return new_properties;
+	}
 
 	PhysicsCarProperties derive_machine_base_stat_values(float g_balance) const {
 		PhysicsCarProperties result = *this;
