@@ -1881,9 +1881,9 @@ int PhysicsCar::update_machine_corners() {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 						float depth = (p0 - side.pos).dot(side.rail_n);
 						if (depth >= 0.0f) continue;
-						godot::UtilityFunctions::print("old depen");
-						godot::UtilityFunctions::print(i);
-						godot::UtilityFunctions::print(t_old.x);
+						//godot::UtilityFunctions::print("old depen");
+						//godot::UtilityFunctions::print(i);
+						//godot::UtilityFunctions::print(t_old.x);
 						godot::Vector3 d = side.rail_n * (-depth);
 						collision_push_total += d;
 						any_corner_hit = true;
@@ -1936,9 +1936,9 @@ int PhysicsCar::update_machine_corners() {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 						float depth = (p0 - side.pos).dot(side.rail_n);
 						if (depth >= 0.0f) continue;
-						godot::UtilityFunctions::print("new depen");
-						godot::UtilityFunctions::print(i);
-						godot::UtilityFunctions::print(t_new.x);
+						//godot::UtilityFunctions::print("new depen");
+						//godot::UtilityFunctions::print(i);
+						//godot::UtilityFunctions::print(t_new.x);
 						godot::Vector3 d = side.rail_n * (-depth);
 						collision_push_total += d;
 						any_corner_hit = true;
