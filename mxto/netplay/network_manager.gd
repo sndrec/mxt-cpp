@@ -96,11 +96,11 @@ func collect_inputs() -> Array:
 										frame_inputs.append(last_local_input)
 								else:
 										frame_inputs.append(NEUTRAL_INPUT)
-                                input_history[local_tick] = frame_inputs
-                                if input_history.has(local_tick - INPUT_HISTORY_SIZE):
-                                                input_history.erase(local_tick - INPUT_HISTORY_SIZE)
-                                local_tick += 1
-                                return frame_inputs
+				input_history[local_tick] = frame_inputs
+				if input_history.has(local_tick - INPUT_HISTORY_SIZE):
+						input_history.erase(local_tick - INPUT_HISTORY_SIZE)
+				local_tick += 1
+				return frame_inputs
 
 @rpc("any_peer", "unreliable", "call_local")
 func _client_send_input(tick: int, input: Dictionary) -> void:
@@ -124,10 +124,10 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 				_handle_state(tick, state)
 
 func post_tick() -> void:
-                if is_server and game_sim != null:
-                                var state = game_sim.get_state_data(server_tick)
-                                _server_broadcast.rpc(server_tick, last_broadcast_inputs, player_ids, last_received_tick, state)
-                                server_tick += 1
+		if is_server and game_sim != null:
+				var state = game_sim.get_state_data(server_tick)
+				_server_broadcast.rpc(server_tick, last_broadcast_inputs, player_ids, last_received_tick, state)
+				server_tick += 1
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 		if game_sim == null:
@@ -138,23 +138,23 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 				game_sim.load_state(tick)
 				var current := tick
 				while current < local_tick:
-                                                if input_history.has(current):
-                                                                game_sim.tick_gamesim(input_history[current])
-                                                current += 1
+						if input_history.has(current):
+								game_sim.tick_gamesim(input_history[current])
+						current += 1
 
-func disconnect() -> void:
-                if multiplayer.multiplayer_peer != null:
-                                multiplayer.multiplayer_peer.close()
-                                multiplayer.multiplayer_peer = null
-                is_server = false
-                player_ids.clear()
-                pending_inputs.clear()
-                authoritative_inputs.clear()
-                input_history.clear()
-                sent_inputs.clear()
-                last_local_input = NEUTRAL_INPUT.duplicate()
-                server_tick = 0
-                local_tick = 0
-                last_received_tick.clear()
-                last_ack_tick = -1
-                last_broadcast_inputs.clear()
+func disconnect_from_server() -> void:
+		if multiplayer.multiplayer_peer != null:
+				multiplayer.multiplayer_peer.close()
+				multiplayer.multiplayer_peer = null
+		is_server = false
+		player_ids.clear()
+		pending_inputs.clear()
+		authoritative_inputs.clear()
+		input_history.clear()
+		sent_inputs.clear()
+		last_local_input = NEUTRAL_INPUT.duplicate()
+		server_tick = 0
+		local_tick = 0
+		last_received_tick.clear()
+		last_ack_tick = -1
+		last_broadcast_inputs.clear()
