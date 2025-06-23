@@ -32,7 +32,7 @@ const SPEED_ADJUST_STEP := 0.005
 var _accum: float = 0.0	# local frame accumulator
 
 func _physics_process(delta: float) -> void:
-	if is_server:
+	if is_server and game_sim != null and game_sim.sim_started:
 		target_tick += 1
 
 func host(port: int = 27016, max_players: int = 4) -> int:
