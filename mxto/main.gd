@@ -150,7 +150,7 @@ func _physics_process(delta: float) -> void:
 		var local_input := PlayerInputClass.new().to_dict()
 		if players.size() > local_player_index:
 			local_input = players[local_player_index].get_input().to_dict()
-			network_manager.set_local_input(local_input)
+		network_manager.set_local_input(local_input)
 		var inputs := network_manager.collect_inputs()
 		game_sim.tick_gamesim(inputs)
 		network_manager.post_tick()
