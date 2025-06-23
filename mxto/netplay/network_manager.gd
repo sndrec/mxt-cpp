@@ -35,7 +35,7 @@ func _physics_process(delta: float) -> void:
 	if is_server and game_sim != null and game_sim.sim_started:
 		target_tick += 1
 
-func host(port: int = 27016, max_players: int = 4) -> int:
+func host(port: int = 27016, max_players: int = 64) -> int:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, max_players)
 	if err != OK:
@@ -192,10 +192,13 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 		game_sim.set_state_data(tick, state)
 		game_sim.load_state(tick)
 		var current := tick
+		var old_time := Time.get_ticks_usec()
 		while current < local_tick:
 			if input_history.has(current):
 				game_sim.tick_gamesim(input_history[current])
 			current += 1
+		var new_time := Time.get_ticks_usec()
+		DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 
 func disconnect_from_server() -> void:
 	if multiplayer.multiplayer_peer != null:
