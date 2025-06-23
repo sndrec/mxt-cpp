@@ -2,6 +2,7 @@
 #include "godot_cpp/core/class_db.hpp"
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
+#include "godot_cpp/core/math.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
 #include "track/racetrack.h"
@@ -434,21 +435,62 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
 	car_properties_array = props_array;
 	num_cars = requested_cars;
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].mtxa = &mtxa;
-		cars[i].current_track = current_track;
-		if (i < car_prop_buffers.size()) {
-			godot::PackedByteArray arr = car_prop_buffers[i];
+        for (int i = 0; i < num_cars; i++)
+        {
+                cars[i].mtxa = &mtxa;
+                cars[i].current_track = current_track;
+                if (i < car_prop_buffers.size()) {
+                        godot::PackedByteArray arr = car_prop_buffers[i];
                // StreamPeerBuffer inherits Reference; using Ref ensures
                // the object is freed when 'pb' goes out of scope.
-			godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
-			pb->set_data_array(arr);
-			*(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
-		}
-		cars[i].initialize_machine();
-		cars[i].position_current = godot::Vector3(0.5f * (i % 16), 200.0f, 0.25f * (i / 16));
-	}
+                        godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
+                        pb->set_data_array(arr);
+                        *(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
+                }
+                cars[i].initialize_machine();
+
+                // Determine spawn transform at the end of the last track segment
+                int seg_idx = current_track->num_segments - 1;
+                const int columns = 6;
+                const float column_width_start = -0.6f;
+                const float column_width_end = 0.6f;
+                const float row_spacing = 20.0f;
+                const float start_offset = 40.0f;
+
+                float distance_back = start_offset + i * 10;
+                while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
+                        distance_back -= current_track->segments[seg_idx].segment_length;
+                        seg_idx -= 1;
+                }
+                if (seg_idx < 0) {
+                        seg_idx = 0;
+                        distance_back = 0.0f;
+                }
+
+                const TrackSegment &spawn_seg = current_track->segments[seg_idx];
+                float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
+                float t_x = remap_float(static_cast<float>(i % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
+
+                godot::Transform3D spawn_transform;
+                spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
+                spawn_transform.basis = spawn_transform.basis.rotated(godot::Vector3(0, 1, 0), Math_PI);
+
+                cars[i].position_current = spawn_transform.origin;
+                cars[i].position_old = spawn_transform.origin;
+                cars[i].position_old_2 = spawn_transform.origin;
+                cars[i].position_old_dupe = spawn_transform.origin;
+                cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+
+                cars[i].mtxa->push();
+                cars[i].mtxa->cur->origin = spawn_transform.origin;
+                cars[i].basis_physical.basis = spawn_transform.basis;
+                cars[i].basis_physical_other.basis = spawn_transform.basis;
+                cars[i].rotate_mtxa_from_diff_btwn_machine_front_and_back();
+                cars[i].mtxa->pop();
+
+                cars[i].transform_visual = spawn_transform;
+                cars[i].track_surface_normal = spawn_transform.basis.get_column(1);
+        }
 
 	input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
 	for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
