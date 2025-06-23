@@ -457,7 +457,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
                 const float row_spacing = 20.0f;
                 const float start_offset = 40.0f;
 
-                float distance_back = start_offset + row_spacing * static_cast<int>(i / columns);
+                float distance_back = start_offset + i * 10;
                 while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
                         distance_back -= current_track->segments[seg_idx].segment_length;
                         seg_idx -= 1;
