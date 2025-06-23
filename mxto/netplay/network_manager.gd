@@ -20,6 +20,19 @@ var game_sim: GameSim
 var last_received_tick := {}
 var last_ack_tick: int = -1
 var last_broadcast_inputs: Array = []
+var target_tick: int = 0
+const MAX_AHEAD_TICKS := 15
+@onready var tick_timer: Timer = Timer.new()
+
+func _ready() -> void:
+	add_child(tick_timer)
+	tick_timer.wait_time = 1.0 / 60.0
+	tick_timer.timeout.connect(_on_tick_timer_timeout)
+	tick_timer.start()
+
+func _on_tick_timer_timeout() -> void:
+	if is_server:
+		target_tick += 1
 
 func host(port: int = 3456, max_players: int = 4) -> int:
 	var peer := ENetMultiplayerPeer.new()
@@ -30,10 +43,12 @@ func host(port: int = 3456, max_players: int = 4) -> int:
 	multiplayer.multiplayer_peer = peer
 	is_server = true
 	server_tick = 0
+	target_tick = 0
 	last_received_tick.clear()
 	player_ids = [multiplayer.get_unique_id()]
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	tick_timer.start()
 	return OK
 
 func join(ip: String, port: int = 3456) -> int:
@@ -45,6 +60,7 @@ func join(ip: String, port: int = 3456) -> int:
 	multiplayer.multiplayer_peer = peer
 	is_server = false
 	local_tick = 0
+	target_tick = 0
 	last_ack_tick = -1
 	input_history.clear()
 	sent_inputs.clear()
@@ -84,17 +100,22 @@ func collect_inputs() -> Array:
 		if not pending_inputs.has(server_tick):
 			pending_inputs[server_tick] = {}
 		pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input
-		var frame_inputs: Array = []
+		last_received_tick[multiplayer.get_unique_id()] = server_tick
+		if server_tick >= target_tick:
+			return []
 		var dict = pending_inputs[server_tick]
 		for id in player_ids:
-			if dict.has(id):
-				frame_inputs.append(dict[id])
-			else:
-				frame_inputs.append(NEUTRAL_INPUT)
+			if not dict.has(id):
+				return []
+		var frame_inputs: Array = []
+		for id in player_ids:
+			frame_inputs.append(dict[id])
 		pending_inputs.erase(server_tick)
 		last_broadcast_inputs = frame_inputs
 		return frame_inputs
 	else:
+		if local_tick >= server_tick + MAX_AHEAD_TICKS:
+			return []
 		sent_inputs[local_tick] = last_local_input
 		for key in sent_inputs.keys():
 			_client_send_input.rpc_id(1, key, sent_inputs[key])
@@ -124,9 +145,10 @@ func _client_send_input(tick: int, input: Dictionary) -> void:
 		last_received_tick[multiplayer.get_remote_sender_id()] = tick
 
 @rpc("any_peer", "unreliable", "call_local")
-func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray) -> void:
+func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int) -> void:
 	if not is_server:
 		server_tick = max(server_tick, tick + 1)
+		target_tick = max(target_tick, tgt)
 		player_ids = ids
 		authoritative_inputs[tick] = inputs
 		if acks.has(multiplayer.get_unique_id()):
@@ -139,7 +161,7 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 func post_tick() -> void:
 	if is_server and game_sim != null:
 		var state = game_sim.get_state_data(server_tick)
-		_server_broadcast.rpc(server_tick, last_broadcast_inputs, player_ids, last_received_tick, state)
+		_server_broadcast.rpc(server_tick, last_broadcast_inputs, player_ids, last_received_tick, state, target_tick)
 		server_tick += 1
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
@@ -160,6 +182,7 @@ func disconnect_from_server() -> void:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
 	is_server = false
+	tick_timer.stop()
 	player_ids.clear()
 	pending_inputs.clear()
 	authoritative_inputs.clear()
@@ -168,6 +191,7 @@ func disconnect_from_server() -> void:
 	last_local_input = NEUTRAL_INPUT.duplicate()
 	server_tick = 0
 	local_tick = 0
+	target_tick = 0
 	last_received_tick.clear()
 	last_ack_tick = -1
 	last_broadcast_inputs.clear()
