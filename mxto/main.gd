@@ -5,6 +5,10 @@ extends Node
 @onready var join_button: Button = $Control/JoinButton
 @onready var ip_field: LineEdit = $Control/IPField
 @onready var track_selector: OptionButton = $Control/TrackSelector
+@onready var lobby_control: Control = $Lobby
+@onready var lobby_track_selector: OptionButton = $Lobby/LobbyTrackSelector
+@onready var start_race_button: Button = $Lobby/StartRaceButton
+@onready var player_list: ItemList = $Lobby/PlayerList
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
@@ -17,17 +21,21 @@ var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
 
 func _ready() -> void:
-		_load_tracks()
-		_load_car_definitions()
+               _load_tracks()
+               _load_car_definitions()
+               network_manager.race_started.connect(_on_network_race_started)
 
 func _load_tracks() -> void:
-	tracks.clear()
-	track_selector.clear()
-	_scan_dir("res://track")
-	for t in tracks:
-		track_selector.add_item(t["name"])
-	if tracks.size() > 0:
-		track_selector.selected = 0
+       tracks.clear()
+       track_selector.clear()
+       lobby_track_selector.clear()
+       _scan_dir("res://track")
+       for t in tracks:
+               track_selector.add_item(t["name"])
+               lobby_track_selector.add_item(t["name"])
+       if tracks.size() > 0:
+               track_selector.selected = 0
+               lobby_track_selector.selected = 0
 
 func _scan_dir(path: String) -> void:
 	var dir := DirAccess.open(path)
@@ -67,87 +75,75 @@ func _load_car_definitions() -> void:
 		dir.list_dir_end()
 
 func _on_start_button_pressed() -> void:
-	if track_selector.selected < 0 or track_selector.selected >= tracks.size():
-		return
-	var info : Dictionary = tracks[track_selector.selected]
-	var chosen_defs : Array = []
-	for i in car_node_container.num_cars:
-		chosen_defs.append(car_definitions[randi() % car_definitions.size()])
-	car_node_container.instantiate_cars(chosen_defs)
-
-	for p in players:
-		p.queue_free()
-	players.clear()
-	for i in chosen_defs.size():
-		var pc := player_scene.instantiate()
-		pc.car_definition = chosen_defs[i]
-		add_child(pc)
-		players.append(pc)
-
-	var car_props : Array = []
-	for def in chosen_defs:
-		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-		car_props.append(bytes)
-
-	var level_buffer := StreamPeerBuffer.new()
-	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-	game_sim.car_node_container = car_node_container
-	game_sim.instantiate_gamesim(level_buffer, car_props)
-	network_manager.game_sim = game_sim
-	network_manager.host()
-	var obj_path = info["mxt"].get_basename() + ".obj"
-	if ResourceLoader.exists(obj_path):
-		debug_track_mesh.mesh = load(obj_path)
-		$Control.visible = false
-		for i in debug_track_mesh.mesh.get_surface_count():
-			var mat := debug_track_mesh.mesh.surface_get_material(i)
-			if mat.resource_name == "track_surface":
-				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+       network_manager.host()
+       start_race_button.disabled = false
+       $Control.visible = false
+       lobby_control.visible = true
 
 func _on_join_button_pressed() -> void:
-	if track_selector.selected < 0 or track_selector.selected >= tracks.size():
-		return
-	var info : Dictionary = tracks[track_selector.selected]
-	var chosen_defs : Array = []
-	for i in car_node_container.num_cars:
-		chosen_defs.append(car_definitions[randi() % car_definitions.size()])
-	car_node_container.instantiate_cars(chosen_defs)
+       network_manager.join(ip_field.text)
+       start_race_button.disabled = true
+       $Control.visible = false
+       lobby_control.visible = true
 
-	for p in players:
-		p.queue_free()
-	players.clear()
-	for i in chosen_defs.size():
-		var pc := player_scene.instantiate()
-		pc.car_definition = chosen_defs[i]
-		add_child(pc)
-		players.append(pc)
+func _start_race(track_index: int) -> void:
+       if track_index < 0 or track_index >= tracks.size():
+               return
+       var info : Dictionary = tracks[track_index]
+       var player_count := network_manager.player_ids.size()
+       var chosen_defs : Array = []
+       for i in player_count:
+               chosen_defs.append(car_definitions[randi() % car_definitions.size()])
+       car_node_container.instantiate_cars(chosen_defs)
 
-	var car_props : Array = []
-	for def in chosen_defs:
-		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-		car_props.append(bytes)
+       for p in players:
+               p.queue_free()
+       players.clear()
+       for i in chosen_defs.size():
+               var pc := player_scene.instantiate()
+               pc.car_definition = chosen_defs[i]
+               add_child(pc)
+               players.append(pc)
 
-	var level_buffer := StreamPeerBuffer.new()
-	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-	game_sim.car_node_container = car_node_container
-	game_sim.instantiate_gamesim(level_buffer, car_props)
-	network_manager.game_sim = game_sim
-	network_manager.join(ip_field.text)
-	var obj_path = info["mxt"].get_basename() + ".obj"
-	if ResourceLoader.exists(obj_path):
-		debug_track_mesh.mesh = load(obj_path)
-		$Control.visible = false
-		for i in debug_track_mesh.mesh.get_surface_count():
-			var mat := debug_track_mesh.mesh.surface_get_material(i)
-			if mat.resource_name == "track_surface":
-				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+       var car_props : Array = []
+       for def in chosen_defs:
+               var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+               car_props.append(bytes)
+
+       var level_buffer := StreamPeerBuffer.new()
+       level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+       game_sim.car_node_container = car_node_container
+       game_sim.instantiate_gamesim(level_buffer, car_props)
+       network_manager.game_sim = game_sim
+       var obj_path = info["mxt"].get_basename() + ".obj"
+       if ResourceLoader.exists(obj_path):
+               debug_track_mesh.mesh = load(obj_path)
+               lobby_control.visible = false
+               for i in debug_track_mesh.mesh.get_surface_count():
+                       var mat := debug_track_mesh.mesh.surface_get_material(i)
+                       if mat.resource_name == "track_surface":
+                               debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+
+func _on_start_race_button_pressed() -> void:
+       if network_manager.is_server:
+               network_manager.send_start_race(lobby_track_selector.selected)
+
+func _on_network_race_started(track_index: int) -> void:
+       _start_race(track_index)
+
+func _update_player_list() -> void:
+       player_list.clear()
+       for id in network_manager.player_ids:
+               player_list.add_item(str(id))
 
 func _physics_process(delta: float) -> void:
-	DebugDraw3D.scoped_config().set_no_depth_test(true)
-	if game_sim.sim_started:
-		var local_input := PlayerInputClass.new().to_dict()
-		if players.size() > 0:
-			local_input = players[0].get_input().to_dict()
+       DebugDraw3D.scoped_config().set_no_depth_test(true)
+       if lobby_control.visible:
+               _update_player_list()
+       if game_sim.sim_started:
+               var local_input := PlayerInputClass.new().to_dict()
+               if players.size() > 0:
+                       local_input = players[0].get_input().to_dict()
 		network_manager.set_local_input(local_input)
 		var inputs := network_manager.collect_inputs()
 		game_sim.tick_gamesim(inputs)
@@ -159,14 +155,15 @@ func _unhandled_input(event: InputEvent) -> void:
 							_return_to_menu()
 
 func _return_to_menu() -> void:
-			network_manager.disconnect_from_server()
-			game_sim.destroy_gamesim()
-			for child in car_node_container.get_children():
-							child.queue_free()
-			for p in players:
-				p.queue_free()
-			players.clear()
-			$Control.visible = true
+                       network_manager.disconnect_from_server()
+                       game_sim.destroy_gamesim()
+                       for child in car_node_container.get_children():
+                                                       child.queue_free()
+                       for p in players:
+                               p.queue_free()
+                       players.clear()
+                       $Control.visible = true
+                       lobby_control.visible = false
 
 func _process(delta: float) -> void:
 	pass
