@@ -88,17 +88,20 @@ func _on_join_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _start_race(track_index: int, car_defs: Array) -> void:
-	if track_index < 0 or track_index >= tracks.size():
-		return
-	var info : Dictionary = tracks[track_index]
-	var chosen_defs : Array = []
-	for path in car_defs:
-		var def_res := load(path)
-		if def_res != null:
-			chosen_defs.append(def_res)
-	local_player_index = network_manager.player_ids.find(multiplayer.get_unique_id())
-	if local_player_index == -1:
-		local_player_index = 0
+        if track_index < 0 or track_index >= tracks.size():
+                return
+        var info : Dictionary = tracks[track_index]
+        var chosen_defs : Array = []
+        for path in car_defs:
+                var def_res := load(path)
+                if def_res != null:
+                        chosen_defs.append(def_res)
+        if game_sim.sim_started:
+                game_sim.destroy_gamesim()
+        network_manager.reset_for_new_race()
+        local_player_index = network_manager.player_ids.find(multiplayer.get_unique_id())
+        if local_player_index == -1:
+                local_player_index = 0
 	car_node_container.instantiate_cars(chosen_defs, local_player_index)
 	for p in players:
 		p.queue_free()

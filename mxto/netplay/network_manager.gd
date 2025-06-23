@@ -20,6 +20,7 @@ var game_sim: GameSim
 var last_received_tick := {}
 var last_ack_tick: int = -1
 var last_broadcast_inputs: Array = []
+var rollback_tick: int = -1
 
 func host(port: int = 3456, max_players: int = 4) -> int:
 	var peer := ENetMultiplayerPeer.new()
@@ -77,24 +78,38 @@ func send_start_race(track_index: int, car_defs: Array) -> void:
 		start_race.rpc_id(1, track_index, car_defs)
 
 func set_local_input(input: Dictionary) -> void:
-	last_local_input = input
+        last_local_input = input
+
+func reset_for_new_race() -> void:
+        pending_inputs.clear()
+        authoritative_inputs.clear()
+        input_history.clear()
+        sent_inputs.clear()
+        last_local_input = NEUTRAL_INPUT.duplicate()
+        server_tick = 0
+        local_tick = 0
+        last_received_tick.clear()
+        last_ack_tick = -1
+        last_broadcast_inputs.clear()
+        rollback_tick = -1
 
 func collect_inputs() -> Array:
-	if is_server:
-		if not pending_inputs.has(server_tick):
-			pending_inputs[server_tick] = {}
-		pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input
-		var frame_inputs: Array = []
-		var dict = pending_inputs[server_tick]
-		for id in player_ids:
-			if dict.has(id):
-				frame_inputs.append(dict[id])
-			else:
-				frame_inputs.append(NEUTRAL_INPUT)
-		pending_inputs.erase(server_tick)
-		last_broadcast_inputs = frame_inputs
-		return frame_inputs
-	else:
+        if is_server:
+                if not pending_inputs.has(server_tick):
+                        pending_inputs[server_tick] = {}
+                pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input
+                var frame_inputs: Array = []
+                var dict = pending_inputs[server_tick]
+                for id in player_ids:
+                        if dict.has(id):
+                                frame_inputs.append(dict[id])
+                        else:
+                                frame_inputs.append(NEUTRAL_INPUT)
+                authoritative_inputs[server_tick] = frame_inputs
+                pending_inputs.erase(server_tick)
+                last_broadcast_inputs = frame_inputs
+                return frame_inputs
+        else:
 		sent_inputs[local_tick] = last_local_input
 		for key in sent_inputs.keys():
 			_client_send_input.rpc_id(1, key, sent_inputs[key])
@@ -117,11 +132,14 @@ func collect_inputs() -> Array:
 
 @rpc("any_peer", "unreliable", "call_local")
 func _client_send_input(tick: int, input: Dictionary) -> void:
-	if is_server:
-		if not pending_inputs.has(tick):
-			pending_inputs[tick] = {}
-		pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
-		last_received_tick[multiplayer.get_remote_sender_id()] = tick
+        if is_server:
+                if not pending_inputs.has(tick):
+                        pending_inputs[tick] = {}
+                pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
+                last_received_tick[multiplayer.get_remote_sender_id()] = tick
+                if tick < server_tick:
+                        if rollback_tick == -1 or tick < rollback_tick:
+                                rollback_tick = tick
 
 @rpc("any_peer", "unreliable", "call_local")
 func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray) -> void:
@@ -137,10 +155,37 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 		_handle_state(tick, state)
 
 func post_tick() -> void:
-	if is_server and game_sim != null:
-		var state = game_sim.get_state_data(server_tick)
-		_server_broadcast.rpc(server_tick, last_broadcast_inputs, player_ids, last_received_tick, state)
-		server_tick += 1
+        if is_server and game_sim != null:
+                var state = game_sim.get_state_data(server_tick)
+                _server_broadcast.rpc(server_tick, last_broadcast_inputs, player_ids, last_received_tick, state)
+                server_tick += 1
+                if rollback_tick != -1 and rollback_tick < server_tick:
+                        game_sim.load_state(rollback_tick)
+                        var current := rollback_tick
+                        while current < server_tick:
+                                var frame_inputs: Array
+                                if authoritative_inputs.has(current):
+                                        frame_inputs = authoritative_inputs[current]
+                                else:
+                                        frame_inputs = []
+                                        var dict = pending_inputs.get(current, {})
+                                        for id in player_ids:
+                                                if dict.has(id):
+                                                        frame_inputs.append(dict[id])
+                                                else:
+                                                        frame_inputs.append(NEUTRAL_INPUT)
+                                        authoritative_inputs[current] = frame_inputs
+                                if pending_inputs.has(current):
+                                        var dict2 = pending_inputs[current]
+                                        for idx in range(player_ids.size()):
+                                                var id = player_ids[idx]
+                                                if dict2.has(id):
+                                                        frame_inputs[idx] = dict2[id]
+                                        authoritative_inputs[current] = frame_inputs
+                                        pending_inputs.erase(current)
+                                game_sim.tick_gamesim(frame_inputs)
+                                current += 1
+                        rollback_tick = -1
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
@@ -171,3 +216,4 @@ func disconnect_from_server() -> void:
 	last_received_tick.clear()
 	last_ack_tick = -1
 	last_broadcast_inputs.clear()
+	rollback_tick = -1
