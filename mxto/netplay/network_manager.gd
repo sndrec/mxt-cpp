@@ -84,7 +84,7 @@ func collect_inputs() -> Array:
 		else:
 				sent_inputs[local_tick] = last_local_input
 				for key in sent_inputs.keys():
-						_client_send_input.rpc_id(1, "_client_send_input", key, sent_inputs[key])
+						_client_send_input.rpc_id(1, key, sent_inputs[key])
 				var frame_inputs: Array
 				if authoritative_inputs.has(local_tick):
 						frame_inputs = authoritative_inputs[local_tick]
