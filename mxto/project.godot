@@ -86,7 +86,7 @@ DPadUp={
 ]
 }
 
-[netfox]
+[netplay]
 
 time/tickrate=60
 time/max_ticks_per_frame=15
