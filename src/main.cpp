@@ -78,7 +78,7 @@ bool GameSim::get_sim_started()
 
 void GameSim::tick_gamesim(godot::Array player_inputs)
 {
-	godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 	std::fesetround(FE_TONEAREST);
 	std::feclearexcept(FE_ALL_EXCEPT);
@@ -110,10 +110,10 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	//}
 	save_state();
 
-	auto elapsed = std::chrono::high_resolution_clock::now() - start;
-	long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-	godot::Object* dd2d = godot::Engine::get_singleton()->get_singleton("DebugDraw2D");
-	dd2d->call("set_text", "frame time us", microseconds);
+	//auto elapsed = std::chrono::high_resolution_clock::now() - start;
+	//long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
+	//godot::Object* dd2d = godot::Engine::get_singleton()->get_singleton("DebugDraw2D");
+	//dd2d->call("set_text", "frame time us", microseconds);
 	
 	
 	tick += 1;
@@ -124,11 +124,11 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers)
 {
-        if (Engine::get_singleton()->is_editor_hint()) return;
+	if (Engine::get_singleton()->is_editor_hint()) return;
 
-        tick = 0;
+	tick = 0;
 
-        int32_t buffer_size = lvldat_buf->get_size();
+	int32_t buffer_size = lvldat_buf->get_size();
 
 	level_data.instantiate(1024 * 1024 * 16);
 
@@ -190,6 +190,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		current_track->checkpoints[i].t_start = lvldat_buf->get_float();
 		current_track->checkpoints[i].t_end = lvldat_buf->get_float();
 		current_track->checkpoints[i].distance = lvldat_buf->get_float();
+		if (i > 0)
+		{
+			current_track->checkpoints[i].distance += current_track->checkpoints[i - 1].distance;
+		}
 		current_track->checkpoints[i].road_segment = (int)lvldat_buf->get_u32();
 		current_track->checkpoints[i].start_plane.normal[0] = lvldat_buf->get_float();
 		current_track->checkpoints[i].start_plane.normal[1] = lvldat_buf->get_float();
@@ -425,11 +429,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 
-       int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
-       PhysicsCarProperties* props_array = nullptr;
-       cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
-       car_properties_array = props_array;
-       num_cars = requested_cars;
+	int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
+	PhysicsCarProperties* props_array = nullptr;
+	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
+	car_properties_array = props_array;
+	num_cars = requested_cars;
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;
@@ -470,10 +474,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 void GameSim::destroy_gamesim()
 {
-        if (sim_started)
-        {
-                level_data.free_heap();
-                gamestate_data.free_heap();
+	if (sim_started)
+	{
+		level_data.free_heap();
+		gamestate_data.free_heap();
 		for (int i = 0; i < STATE_BUFFER_LEN; i++)
 		{
 			if (state_buffer[i].data)
@@ -482,13 +486,13 @@ void GameSim::destroy_gamesim()
 				state_buffer[i].data = nullptr;
 			}
 		}
-                if (input_buffer) {
-                        ::free(input_buffer);
-                        input_buffer = nullptr;
-                }
-                sim_started = false;
-                tick = 0;
-        }
+		if (input_buffer) {
+			::free(input_buffer);
+			input_buffer = nullptr;
+		}
+		sim_started = false;
+		tick = 0;
+	}
 };
 
 void GameSim::render_gamesim() {
@@ -608,10 +612,10 @@ void GameSim::load_state(int target_tick)
 	if (!state_buffer[index].data)
 		return;
 	int size = state_buffer[index].size;
-       memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
-       gamestate_data.set_size(size);
-       tick = target_tick;
-       fix_pointers();
+	memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
+	gamestate_data.set_size(size);
+	tick = target_tick;
+	fix_pointers();
 }
 
 godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
@@ -628,25 +632,25 @@ godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
 }
 
 void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
-        int index = target_tick % STATE_BUFFER_LEN;
-        if (!state_buffer[index].data)
-                return;
-        int size = std::min<int>(state_buffer[index].size, static_cast<int>(data.size()));
-        if (size > 0) {
-                memcpy(state_buffer[index].data, data.ptr(), size);
-                state_buffer[index].size = size;
-        }
+	int index = target_tick % STATE_BUFFER_LEN;
+	if (!state_buffer[index].data)
+		return;
+	int size = std::min<int>(state_buffer[index].size, static_cast<int>(data.size()));
+	if (size > 0) {
+		memcpy(state_buffer[index].data, data.ptr(), size);
+		state_buffer[index].size = size;
+	}
 }
 
 void GameSim::fix_pointers() {
-       if (!sim_started || !cars) {
-               return;
-       }
-       for (int i = 0; i < num_cars; ++i) {
-               cars[i].mtxa = &mtxa;
-               cars[i].current_track = current_track;
-               if (car_properties_array) {
-                       cars[i].car_properties = &car_properties_array[i];
-               }
-       }
+	if (!sim_started || !cars) {
+		return;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		cars[i].mtxa = &mtxa;
+		cars[i].current_track = current_track;
+		if (car_properties_array) {
+			cars[i].car_properties = &car_properties_array[i];
+		}
+	}
 }
