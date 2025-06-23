@@ -11,6 +11,7 @@
 #include "mxt_core/heap_handler.h"
 #include "mxt_core/mtxa_stack.hpp"
 #include "mxt_core/player_input.h"
+#include "car/car_properties.h"
 
 namespace godot {
 
@@ -37,8 +38,9 @@ namespace godot {
 		public:
 			bool sim_started;
 			RaceTrack* current_track;
-			int num_cars;
-			PhysicsCar* cars;
+                       int num_cars;
+                       PhysicsCar* cars;
+                       PhysicsCarProperties* car_properties_array = nullptr;
 			MtxStack mtxa;
 			godot::Node3D* car_node_container = nullptr;
 
@@ -50,12 +52,15 @@ namespace godot {
 			void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 			godot::Node3D* get_car_node_container() const { return car_node_container; }
                         void tick_gamesim(godot::Array player_inputs);
-                        void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers);
-			void destroy_gamesim();
-			void render_gamesim();
-			void save_state();
-			void load_state(int target_tick);
-	};
+                       void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers);
+                       void destroy_gamesim();
+                       void render_gamesim();
+                       void save_state();
+                       void load_state(int target_tick);
+                       godot::PackedByteArray get_state_data(int target_tick) const;
+                       void set_state_data(int target_tick, godot::PackedByteArray data);
+                       void fix_pointers();
+       };
 
 }
 
