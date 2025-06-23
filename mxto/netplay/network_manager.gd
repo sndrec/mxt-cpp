@@ -67,14 +67,14 @@ func _update_player_ids(ids: Array) -> void:
 
 @rpc("any_peer")
 func start_race(track_index: int, car_defs: Array) -> void:
-       emit_signal("race_started", track_index, car_defs)
+	emit_signal("race_started", track_index, car_defs)
 
 func send_start_race(track_index: int, car_defs: Array) -> void:
-       if is_server:
-               start_race.rpc(track_index, car_defs)
-               start_race(track_index, car_defs)
-       else:
-               start_race.rpc_id(1, track_index, car_defs)
+	if is_server:
+		start_race.rpc(track_index, car_defs)
+		start_race(track_index, car_defs)
+	else:
+		start_race.rpc_id(1, track_index, car_defs)
 
 func set_local_input(input: Dictionary) -> void:
 	last_local_input = input

@@ -90,11 +90,11 @@ func _start_race(track_index: int, car_defs: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
 		return
 	var info : Dictionary = tracks[track_index]
-       var chosen_defs : Array = []
-       for path in car_defs:
-               var def_res := load(path)
-               if def_res != null:
-                       chosen_defs.append(def_res)
+	var chosen_defs : Array = []
+	for path in car_defs:
+		var def_res := load(path)
+		if def_res != null:
+			chosen_defs.append(def_res)
 	car_node_container.instantiate_cars(chosen_defs)
 	for p in players:
 		p.queue_free()
@@ -104,10 +104,10 @@ func _start_race(track_index: int, car_defs: Array) -> void:
 		pc.car_definition = chosen_defs[i]
 		add_child(pc)
 		players.append(pc)
-       var car_props : Array = []
-       for def in chosen_defs:
-               var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-               car_props.append(bytes)
+	var car_props : Array = []
+	for def in chosen_defs:
+		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+		car_props.append(bytes)
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	game_sim.car_node_container = car_node_container
@@ -123,15 +123,15 @@ func _start_race(track_index: int, car_defs: Array) -> void:
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
 
 func _on_start_race_button_pressed() -> void:
-       if network_manager.is_server:
-               var player_count := network_manager.player_ids.size()
-               var chosen_defs_paths : Array = []
-               for i in player_count:
-                       chosen_defs_paths.append(car_definitions[randi() % car_definitions.size()].resource_path)
-               network_manager.send_start_race(lobby_track_selector.selected, chosen_defs_paths)
+		if network_manager.is_server:
+						var player_count := network_manager.player_ids.size()
+						var chosen_defs_paths : Array = []
+						for i in player_count:
+										chosen_defs_paths.append(car_definitions[randi() % car_definitions.size()].resource_path)
+						network_manager.send_start_race(lobby_track_selector.selected, chosen_defs_paths)
 
 func _on_network_race_started(track_index: int, car_defs: Array) -> void:
-       _start_race(track_index, car_defs)
+			_start_race(track_index, car_defs)
 
 func _update_player_list() -> void:
 	player_list.clear()
