@@ -63,6 +63,36 @@ offset_bottom = -44.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="IPField" type="LineEdit" parent="Control"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -104.0
+offset_right = 150.0
+offset_bottom = -74.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "127.0.0.1"
+
+[node name="JoinButton" type="Button" parent="Control"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -115.0
+offset_top = 44.0
+offset_right = 115.0
+offset_bottom = 74.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Join"
+
 [node name="GameWorld" type="Node3D" parent="."]
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="GameWorld"]
@@ -84,3 +114,4 @@ mesh = ExtResource("3_1bvp3")
 skeleton = NodePath("")
 
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
+[connection signal="pressed" from="Control/JoinButton" to="." method="_on_join_button_pressed"]
