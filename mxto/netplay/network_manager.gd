@@ -1,7 +1,7 @@
 class_name NetworkManager
 extends Node
 
-signal race_started(track_index)
+signal race_started(track_index, car_defs)
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT = PlayerInputClass.new().to_dict()
@@ -66,15 +66,15 @@ func _update_player_ids(ids: Array) -> void:
 	player_ids = ids
 
 @rpc("any_peer")
-func start_race(track_index: int) -> void:
-	emit_signal("race_started", track_index)
+func start_race(track_index: int, car_defs: Array) -> void:
+       emit_signal("race_started", track_index, car_defs)
 
-func send_start_race(track_index: int) -> void:
-	if is_server:
-		start_race.rpc(track_index)
-		start_race(track_index)
-	else:
-		start_race.rpc_id(1, track_index)
+func send_start_race(track_index: int, car_defs: Array) -> void:
+       if is_server:
+               start_race.rpc(track_index, car_defs)
+               start_race(track_index, car_defs)
+       else:
+               start_race.rpc_id(1, track_index, car_defs)
 
 func set_local_input(input: Dictionary) -> void:
 	last_local_input = input

@@ -129,12 +129,16 @@ public:
 		return out_curve;
 	}
 
-	PhysicsCar* create_and_allocate_cars(int num_cars)
-	{
-		PhysicsCar* cars = allocate_array<PhysicsCar>(num_cars);
-		for (int i = 0; i < num_cars; i++)
-		{
-			PhysicsCarProperties* new_car_properties = allocate_object<PhysicsCarProperties>();
+       PhysicsCar* create_and_allocate_cars(int num_cars, PhysicsCarProperties** out_properties)
+       {
+               PhysicsCar* cars = allocate_array<PhysicsCar>(num_cars);
+               PhysicsCarProperties* properties = allocate_array<PhysicsCarProperties>(num_cars);
+               if (out_properties) {
+                       *out_properties = properties;
+               }
+               for (int i = 0; i < num_cars; i++)
+               {
+                       PhysicsCarProperties* new_car_properties = &properties[i];
 
 			new_car_properties->weight_kg = randf_range(1100.0f, 3000.0f);
 			new_car_properties->acceleration = randf_range(0.3f, 0.8f);

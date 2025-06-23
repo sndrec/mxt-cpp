@@ -424,9 +424,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 
-	int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
-	cars = gamestate_data.create_and_allocate_cars(requested_cars);
-	num_cars = requested_cars;
+       int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
+       PhysicsCarProperties* props_array = nullptr;
+       cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
+       car_properties_array = props_array;
+       num_cars = requested_cars;
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;
@@ -604,9 +606,10 @@ void GameSim::load_state(int target_tick)
 	if (!state_buffer[index].data)
 		return;
 	int size = state_buffer[index].size;
-	memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
-	gamestate_data.set_size(size);
-	tick = target_tick;
+       memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
+       gamestate_data.set_size(size);
+       tick = target_tick;
+       fix_pointers();
 }
 
 godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
@@ -623,12 +626,25 @@ godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
 }
 
 void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
-	int index = target_tick % STATE_BUFFER_LEN;
-	if (!state_buffer[index].data)
-		return;
-	int size = std::min<int>(state_buffer[index].size, static_cast<int>(data.size()));
-	if (size > 0) {
-		memcpy(state_buffer[index].data, data.ptr(), size);
-		state_buffer[index].size = size;
-	}
+        int index = target_tick % STATE_BUFFER_LEN;
+        if (!state_buffer[index].data)
+                return;
+        int size = std::min<int>(state_buffer[index].size, static_cast<int>(data.size()));
+        if (size > 0) {
+                memcpy(state_buffer[index].data, data.ptr(), size);
+                state_buffer[index].size = size;
+        }
+}
+
+void GameSim::fix_pointers() {
+       if (!sim_started || !cars) {
+               return;
+       }
+       for (int i = 0; i < num_cars; ++i) {
+               cars[i].mtxa = &mtxa;
+               cars[i].current_track = current_track;
+               if (car_properties_array) {
+                       cars[i].car_properties = &car_properties_array[i];
+               }
+       }
 }
