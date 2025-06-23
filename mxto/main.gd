@@ -19,6 +19,7 @@ var tracks: Array = []
 var car_definitions: Array = []
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
+var local_player_index: int = 0
 
 func _ready() -> void:
 	_load_tracks()
@@ -87,18 +88,21 @@ func _on_join_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _start_race(track_index: int, car_defs: Array) -> void:
-	if track_index < 0 or track_index >= tracks.size():
-		return
-	var info : Dictionary = tracks[track_index]
-	var chosen_defs : Array = []
-	for path in car_defs:
-		var def_res := load(path)
-		if def_res != null:
-			chosen_defs.append(def_res)
-	car_node_container.instantiate_cars(chosen_defs)
-	for p in players:
-		p.queue_free()
-	players.clear()
+        if track_index < 0 or track_index >= tracks.size():
+                return
+        var info : Dictionary = tracks[track_index]
+        var chosen_defs : Array = []
+        for path in car_defs:
+                var def_res := load(path)
+                if def_res != null:
+                        chosen_defs.append(def_res)
+        local_player_index = network_manager.player_ids.find(multiplayer.get_unique_id())
+        if local_player_index == -1:
+                local_player_index = 0
+        car_node_container.instantiate_cars(chosen_defs, local_player_index)
+        for p in players:
+                p.queue_free()
+        players.clear()
 	for i in chosen_defs.size():
 		var pc := player_scene.instantiate()
 		pc.car_definition = chosen_defs[i]
@@ -142,11 +146,11 @@ func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if lobby_control.visible:
 		_update_player_list()
-	if game_sim.sim_started:
-		var local_input := PlayerInputClass.new().to_dict()
-		if players.size() > 0:
-			local_input = players[0].get_input().to_dict()
-		network_manager.set_local_input(local_input)
+        if game_sim.sim_started:
+                var local_input := PlayerInputClass.new().to_dict()
+                if players.size() > local_player_index:
+                        local_input = players[local_player_index].get_input().to_dict()
+                network_manager.set_local_input(local_input)
 		var inputs := network_manager.collect_inputs()
 		game_sim.tick_gamesim(inputs)
 		network_manager.post_tick()
@@ -157,15 +161,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		_return_to_menu()
 
 func _return_to_menu() -> void:
-	network_manager.disconnect_from_server()
-	game_sim.destroy_gamesim()
-	for child in car_node_container.get_children():
-		child.queue_free()
-	for p in players:
-		p.queue_free()
-	players.clear()
-	$Control.visible = true
-	lobby_control.visible = false
+        network_manager.disconnect_from_server()
+        game_sim.destroy_gamesim()
+        for child in car_node_container.get_children():
+                child.queue_free()
+        for p in players:
+                p.queue_free()
+        players.clear()
+        local_player_index = 0
+        $Control.visible = true
+        lobby_control.visible = false
 
 func _process(delta: float) -> void:
 	pass
