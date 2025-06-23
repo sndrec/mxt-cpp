@@ -19,6 +19,7 @@ var tracks: Array = []
 var car_definitions: Array = []
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
+var local_player_index: int = 0
 
 func _ready() -> void:
 	_load_tracks()
@@ -95,7 +96,10 @@ func _start_race(track_index: int, car_defs: Array) -> void:
 		var def_res := load(path)
 		if def_res != null:
 			chosen_defs.append(def_res)
-	car_node_container.instantiate_cars(chosen_defs)
+	local_player_index = network_manager.player_ids.find(multiplayer.get_unique_id())
+	if local_player_index == -1:
+		local_player_index = 0
+	car_node_container.instantiate_cars(chosen_defs, local_player_index)
 	for p in players:
 		p.queue_free()
 	players.clear()
@@ -144,8 +148,8 @@ func _physics_process(delta: float) -> void:
 		_update_player_list()
 	if game_sim.sim_started:
 		var local_input := PlayerInputClass.new().to_dict()
-		if players.size() > 0:
-			local_input = players[0].get_input().to_dict()
+		if players.size() > local_player_index:
+			local_input = players[local_player_index].get_input().to_dict()
 		network_manager.set_local_input(local_input)
 		var inputs := network_manager.collect_inputs()
 		game_sim.tick_gamesim(inputs)
@@ -164,6 +168,7 @@ func _return_to_menu() -> void:
 	for p in players:
 		p.queue_free()
 	players.clear()
+	local_player_index = 0
 	$Control.visible = true
 	lobby_control.visible = false
 

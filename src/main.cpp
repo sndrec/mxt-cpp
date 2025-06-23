@@ -124,10 +124,11 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers)
 {
-	if (Engine::get_singleton()->is_editor_hint()) return;
+        if (Engine::get_singleton()->is_editor_hint()) return;
 
+        tick = 0;
 
-	int32_t buffer_size = lvldat_buf->get_size();
+        int32_t buffer_size = lvldat_buf->get_size();
 
 	level_data.instantiate(1024 * 1024 * 16);
 
@@ -469,10 +470,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 void GameSim::destroy_gamesim()
 {
-	if (sim_started)
-	{
-		level_data.free_heap();
-		gamestate_data.free_heap();
+        if (sim_started)
+        {
+                level_data.free_heap();
+                gamestate_data.free_heap();
 		for (int i = 0; i < STATE_BUFFER_LEN; i++)
 		{
 			if (state_buffer[i].data)
@@ -481,12 +482,13 @@ void GameSim::destroy_gamesim()
 				state_buffer[i].data = nullptr;
 			}
 		}
-		if (input_buffer) {
-			::free(input_buffer);
-			input_buffer = nullptr;
-		}
-		sim_started = false;
-	}
+                if (input_buffer) {
+                        ::free(input_buffer);
+                        input_buffer = nullptr;
+                }
+                sim_started = false;
+                tick = 0;
+        }
 };
 
 void GameSim::render_gamesim() {
