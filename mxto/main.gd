@@ -2,6 +2,8 @@ extends Node
 
 @onready var game_sim: GameSim = $GameSim
 @onready var start_button: Button = $Control/StartButton
+@onready var join_button: Button = $Control/JoinButton
+@onready var ip_field: LineEdit = $Control/IPField
 @onready var track_selector: OptionButton = $Control/TrackSelector
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
@@ -92,15 +94,53 @@ func _on_start_button_pressed() -> void:
 	game_sim.car_node_container = car_node_container
 	game_sim.instantiate_gamesim(level_buffer, car_props)
 	network_manager.game_sim = game_sim
-	network_manager.host()
-	var obj_path = info["mxt"].get_basename() + ".obj"
+        network_manager.host()
+        var obj_path = info["mxt"].get_basename() + ".obj"
 	if ResourceLoader.exists(obj_path):
 		debug_track_mesh.mesh = load(obj_path)
 		$Control.visible = false
 		for i in debug_track_mesh.mesh.get_surface_count():
 			var mat := debug_track_mesh.mesh.surface_get_material(i)
 			if mat.resource_name == "track_surface":
-				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+                                debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+
+func _on_join_button_pressed() -> void:
+        if track_selector.selected < 0 or track_selector.selected >= tracks.size():
+                return
+        var info : Dictionary = tracks[track_selector.selected]
+        var chosen_defs : Array = []
+        for i in car_node_container.num_cars:
+                chosen_defs.append(car_definitions[randi() % car_definitions.size()])
+        car_node_container.instantiate_cars(chosen_defs)
+
+        for p in players:
+                p.queue_free()
+        players.clear()
+        for i in chosen_defs.size():
+                var pc := player_scene.instantiate()
+                pc.car_definition = chosen_defs[i]
+                add_child(pc)
+                players.append(pc)
+
+        var car_props : Array = []
+        for def in chosen_defs:
+                var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+                car_props.append(bytes)
+
+        var level_buffer := StreamPeerBuffer.new()
+        level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+        game_sim.car_node_container = car_node_container
+        game_sim.instantiate_gamesim(level_buffer, car_props)
+        network_manager.game_sim = game_sim
+        network_manager.join(ip_field.text)
+        var obj_path = info["mxt"].get_basename() + ".obj"
+        if ResourceLoader.exists(obj_path):
+                debug_track_mesh.mesh = load(obj_path)
+                $Control.visible = false
+                for i in debug_track_mesh.mesh.get_surface_count():
+                        var mat := debug_track_mesh.mesh.surface_get_material(i)
+                        if mat.resource_name == "track_surface":
+                                debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
 
 func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
@@ -119,9 +159,10 @@ func _unhandled_input(event: InputEvent) -> void:
 							_return_to_menu()
 
 func _return_to_menu() -> void:
-			game_sim.destroy_gamesim()
-			for child in car_node_container.get_children():
-							child.queue_free()
+                        network_manager.disconnect()
+                        game_sim.destroy_gamesim()
+                        for child in car_node_container.get_children():
+                                                        child.queue_free()
 			for p in players:
 				p.queue_free()
 			players.clear()
