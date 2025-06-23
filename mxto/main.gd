@@ -127,12 +127,12 @@ func _start_race(track_index: int, car_defs: Array) -> void:
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
 
 func _on_start_race_button_pressed() -> void:
-		if network_manager.is_server:
-						var player_count := network_manager.player_ids.size()
-						var chosen_defs_paths : Array = []
-						for i in player_count:
-										chosen_defs_paths.append(car_definitions[randi() % car_definitions.size()].resource_path)
-						network_manager.send_start_race(lobby_track_selector.selected, chosen_defs_paths)
+	if network_manager.is_server:
+		var player_count := network_manager.player_ids.size()
+		var chosen_defs_paths : Array = []
+		for i in player_count:
+			chosen_defs_paths.append(car_definitions[randi() % car_definitions.size()].resource_path)
+		network_manager.send_start_race(lobby_track_selector.selected, chosen_defs_paths)
 
 func _on_network_race_started(track_index: int, car_defs: Array) -> void:
 			_start_race(track_index, car_defs)
@@ -147,15 +147,38 @@ func _physics_process(delta: float) -> void:
 	if lobby_control.visible:
 		_update_player_list()
 	if game_sim.sim_started:
+		# gather local pad/keyboard input once per physics frame
 		var local_input := PlayerInputClass.new().to_dict()
 		if players.size() > local_player_index:
 			local_input = players[local_player_index].get_input().to_dict()
 		network_manager.set_local_input(local_input)
-		var inputs := network_manager.collect_inputs()
-		if !inputs.is_empty():
-			game_sim.tick_gamesim(inputs)
-			network_manager.post_tick()
+		if network_manager.is_server:
+			_simulate_multiple_ticks()   # keep old while-loop
+		else:
+			_simulate_single_tick()      # new, client version
 		game_sim.render_gamesim()
+
+func _simulate_multiple_ticks():
+	var loops := 0
+	const MAX_TICKS_PER_FRAME := 120
+	var local_input := PlayerInputClass.new().to_dict()
+	while loops < MAX_TICKS_PER_FRAME:
+		if players.size() > local_player_index:
+			local_input = players[local_player_index].get_input().to_dict()
+		network_manager.set_local_input(local_input)
+		var frame_inputs := network_manager.collect_inputs()
+		if frame_inputs.is_empty():
+			break
+		game_sim.tick_gamesim(frame_inputs)
+		network_manager.post_tick()
+		loops += 1
+
+func _simulate_single_tick():
+	var frame_inputs := network_manager.collect_inputs()
+	if frame_inputs.is_empty():
+		return											 # wait until server has the data
+	game_sim.tick_gamesim(frame_inputs)
+	network_manager.post_tick()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
