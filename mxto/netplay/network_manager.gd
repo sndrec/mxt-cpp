@@ -94,6 +94,8 @@ func _on_peer_connected(id: int) -> void:
 	if is_server:
 		player_ids.append(id)
 		_update_player_ids.rpc(player_ids)
+		for pid in player_settings.keys():
+			update_player_settings.rpc_id(id, player_settings[pid], pid)
 		_calc_state_offsets()
 
 func _on_peer_disconnected(id: int) -> void:
@@ -120,19 +122,26 @@ func send_start_race(track_index: int, settings: Array) -> void:
 		start_race.rpc_id(1, track_index, settings)
 
 func send_player_settings(settings: Dictionary) -> void:
+	var my_id := multiplayer.get_unique_id()
 	if is_server:
-		update_player_settings(settings)
-		update_player_settings.rpc(settings)
+		update_player_settings(settings, my_id)
+		update_player_settings.rpc(settings, my_id)
 	else:
 		update_player_settings.rpc_id(1, settings)
-		player_settings[multiplayer.get_unique_id()] = settings
+		player_settings[my_id] = settings
 
 @rpc("any_peer")
-func update_player_settings(settings: Dictionary) -> void:
-	var id := multiplayer.get_remote_sender_id()
-	if id == 0:
-		id = multiplayer.get_unique_id()
-	player_settings[id] = settings
+func update_player_settings(settings: Dictionary, id: int = -1) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if id == -1:
+		id = sender_id
+		if id == 0:
+			id = multiplayer.get_unique_id()
+		player_settings[id] = settings
+		if is_server and sender_id != 0:
+			update_player_settings.rpc(settings, id)
+	else:
+		player_settings[id] = settings
 
 func set_local_input(input: Dictionary) -> void:
 	last_local_input = input
