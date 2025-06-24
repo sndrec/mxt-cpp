@@ -31,6 +31,19 @@ const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.005
 var _accum: float = 0.0	# local frame accumulator
 var player_settings := {}
+const STATE_BROADCAST_INTERVAL_TICKS := 60
+var state_send_offsets := {}
+
+func _calc_state_offsets() -> void:
+	if not is_server:
+		return
+	state_send_offsets.clear()
+	var count := player_ids.size()
+	if count == 0:
+		return
+	for i in range(count):
+		var id = player_ids[i]
+		state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
 
 func _physics_process(delta: float) -> void:
 	if is_server and game_sim != null and game_sim.sim_started:
@@ -54,6 +67,7 @@ func host(port: int = 27016, max_players: int = 64) -> int:
 	player_settings.clear()
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	_calc_state_offsets()
 	return OK
 
 func join(ip: String, port: int = 27016) -> int:
@@ -80,15 +94,19 @@ func _on_peer_connected(id: int) -> void:
 	if is_server:
 		player_ids.append(id)
 		_update_player_ids.rpc(player_ids)
+		_calc_state_offsets()
 
 func _on_peer_disconnected(id: int) -> void:
 	if is_server:
 		player_ids.erase(id)
 		_update_player_ids.rpc(player_ids)
+		_calc_state_offsets()
 
 @rpc("any_peer")
 func _update_player_ids(ids: Array) -> void:
 	player_ids = ids
+	if is_server:
+		_calc_state_offsets()
 
 @rpc("any_peer")
 func start_race(track_index: int, settings: Array) -> void:
@@ -177,6 +195,7 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 		target_tick = max(target_tick, tgt)
 		player_ids = ids
 		authoritative_inputs[tick] = inputs
+		_handle_input_update(tick, inputs)
 		if acks.has(multiplayer.get_unique_id()):
 			var ack_tick := int(acks[multiplayer.get_unique_id()])
 			last_ack_tick = max(last_ack_tick, ack_tick)
@@ -194,12 +213,17 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 			for key in sent_input_times.keys():
 				if key <= last_ack_tick:
 					sent_input_times.erase(key)
-		_handle_state(tick, state)
+				if state.size() > 0:
+					_handle_state(tick, state)
 
 func post_tick() -> void:
 	if is_server and game_sim != null:
 		var state = game_sim.get_state_data(server_tick)
-		_server_broadcast.rpc(server_tick, last_broadcast_inputs, player_ids, last_received_tick, state, target_tick)
+		for id in player_ids:
+			var send_state : PackedByteArray = PackedByteArray()
+			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
+				send_state = state
+			_server_broadcast.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, send_state, target_tick)
 		server_tick += 1
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
@@ -217,6 +241,25 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 			current += 1
 		var new_time := Time.get_ticks_usec()
 		DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
+
+func _handle_input_update(tick: int, inputs: Array) -> void:
+	if game_sim == null:
+		return
+	if not input_history.has(tick):
+		return
+	var predicted = input_history[tick]
+	if predicted == inputs:
+		return
+	input_history[tick] = inputs
+	game_sim.load_state(tick)
+	var current := tick
+	var old_time := Time.get_ticks_usec()
+	while current < local_tick:
+		if input_history.has(current):
+			game_sim.tick_gamesim(input_history[current])
+		current += 1
+	var new_time := Time.get_ticks_usec()
+	DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 
 func disconnect_from_server() -> void:
 	if multiplayer.multiplayer_peer != null:
