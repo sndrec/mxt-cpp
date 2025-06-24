@@ -100,10 +100,12 @@ func _process( _delta:float ) -> void:
 	for i in cars.size():
 		if cars[i] == car or cars[i].owning_id == local_id:
 			our_place = i + 1
-		if i < leaderboard_container.get_child_count():
-			var label := leaderboard_container.get_child(i)
-			var name := str(cars[i].owning_id)
-			label.text = str(i + 1) + ". " + name
+			if i < leaderboard_container.get_child_count():
+				var label := leaderboard_container.get_child(i)
+				var use_name := str(cars[i].owning_id)
+				if cars[i].player_settings != null and cars[i].player_settings.has_method("get"):
+					use_name = cars[i].player_settings.username
+					label.text = str(i + 1) + ". " + use_name
 	for i in range(cars.size(), leaderboard_container.get_child_count()):
 		leaderboard_container.get_child(i).text = ""
 

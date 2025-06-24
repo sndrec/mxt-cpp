@@ -12,6 +12,9 @@ class_name GameManager extends Node
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
+@onready var car_settings: Control = $CarSettings
+@onready var car_settings_button: Button = $Control/CarSettingsButton
+@onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 
@@ -25,6 +28,9 @@ func _ready() -> void:
 	_load_tracks()
 	_load_car_definitions()
 	network_manager.race_started.connect(_on_network_race_started)
+	car_settings.hide()
+	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
+	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
 
 func _load_tracks() -> void:
 	tracks.clear()
@@ -77,47 +83,69 @@ func _load_car_definitions() -> void:
 
 func _on_start_button_pressed() -> void:
 	network_manager.host()
+	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
 	start_race_button.disabled = false
 	$Control.visible = false
 	lobby_control.visible = true
 
 func _on_join_button_pressed() -> void:
 	network_manager.join(ip_field.text)
+	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
 	start_race_button.disabled = true
 	$Control.visible = false
 	lobby_control.visible = true
 
-func _start_race(track_index: int, car_defs: Array) -> void:
+func _on_car_settings_button_pressed() -> void:
+				car_settings.call("open_settings")
+
+func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
 		return
 	var info : Dictionary = tracks[track_index]
 	var chosen_defs : Array = []
-	for path in car_defs:
-		var def_res := load(path)
-		if def_res != null:
-			chosen_defs.append(def_res)
+	var parsed_settings : Array = []
+	for d in settings:
+		if typeof(d) == TYPE_DICTIONARY:
+			var ps := PlayerSettings.new()
+			ps.from_dict(d)
+			parsed_settings.append(ps)
+			var def_res := load(ps.car_definition_path)
+			if def_res != null:
+				chosen_defs.append(def_res)
 	local_player_index = network_manager.player_ids.find(multiplayer.get_unique_id())
 	if local_player_index == -1:
 		local_player_index = 0
 	car_node_container.instantiate_cars(chosen_defs, network_manager.player_ids, local_player_index)
+	var idx := 0
 	for car:VisualCar in car_node_container.get_children():
 		car.game_manager = self
+		if idx < parsed_settings.size():
+			car.player_settings = parsed_settings[idx]
+		idx += 1
 	for p in players:
 		p.queue_free()
 	players.clear()
-	for i in chosen_defs.size():
+	for i in parsed_settings.size():
 		var pc := player_scene.instantiate()
 		pc.car_definition = chosen_defs[i]
+		pc.accel_setting = parsed_settings[i].accel_setting
+		pc.player_settings = parsed_settings[i]
 		add_child(pc)
 		players.append(pc)
-	var car_props : Array = []
-	for def in chosen_defs:
-		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-		car_props.append(bytes)
-	var level_buffer := StreamPeerBuffer.new()
-	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-	game_sim.car_node_container = car_node_container
-	game_sim.instantiate_gamesim(level_buffer, car_props)
+		var car_props : Array = []
+		var accel_settings_arr : Array = []
+		for n in chosen_defs.size():
+			var def = chosen_defs[n]
+			var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+			car_props.append(bytes)
+			if n < parsed_settings.size():
+				accel_settings_arr.append(parsed_settings[n].accel_setting)
+			else:
+				accel_settings_arr.append(1.0)
+		var level_buffer := StreamPeerBuffer.new()
+		level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+		game_sim.car_node_container = car_node_container
+		game_sim.instantiate_gamesim(level_buffer, car_props, accel_settings_arr)
 	network_manager.game_sim = game_sim
 	var obj_path = info["mxt"].get_basename() + ".obj"
 	if ResourceLoader.exists(obj_path):
@@ -130,19 +158,27 @@ func _start_race(track_index: int, car_defs: Array) -> void:
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
-		var player_count := network_manager.player_ids.size()
-		var chosen_defs_paths : Array = []
-		for i in player_count:
-			chosen_defs_paths.append(car_definitions[randi() % car_definitions.size()].resource_path)
-		network_manager.send_start_race(lobby_track_selector.selected, chosen_defs_paths)
+		var settings_array : Array = []
+		for id in network_manager.player_ids:
+			var ps = network_manager.player_settings.get(id, null)
+			if ps == null:
+				var def_path = car_definitions[randi() % car_definitions.size()].resource_path
+				ps = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
+			settings_array.append(ps)
+		network_manager.send_start_race(lobby_track_selector.selected, settings_array)
 
-func _on_network_race_started(track_index: int, car_defs: Array) -> void:
-			_start_race(track_index, car_defs)
+func _on_network_race_started(track_index: int, settings: Array) -> void:
+				_start_race(track_index, settings)
 
 func _update_player_list() -> void:
 	player_list.clear()
 	for id in network_manager.player_ids:
-		player_list.add_item(str(id))
+		var name := str(id)
+		if network_manager.player_settings.has(id):
+			var ps = network_manager.player_settings[id]
+			if typeof(ps) == TYPE_DICTIONARY and ps.has("username"):
+				name = ps["username"]
+		player_list.add_item(name)
 
 func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)

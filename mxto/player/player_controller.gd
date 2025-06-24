@@ -3,6 +3,7 @@ extends Node
 
 var car_definition: Resource
 var accel_setting: float = 1.0
+var player_settings: Resource
 
 func get_input() -> PlayerInput:
 	var p := PlayerInput.new()
