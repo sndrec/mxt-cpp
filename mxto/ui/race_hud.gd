@@ -50,8 +50,6 @@ var placement_textures : Array[Texture] = [
 @onready var real_input := $InputViewer/RealInput
 @onready var clamped_input := $InputViewer/ClampedInput
 
-var game_manager : GameManager
-
 func _ready() -> void:
 	pass
 
@@ -63,23 +61,24 @@ func _process( _delta:float ) -> void:
 		#pl = car.get_parent()
 	speedometer.text = str(roundi(car.speed_kmh)) + " km/h"
 	lapcounter.text = "LAP " + str(car.lap) + "/3"
-	var time_elapsed : int = game_manager.network_manager.local_tick - car.levelStartTime
-	if (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_2_Q) != 0:
-		time_elapsed = car.level_win_time - car.levelStartTime
-	var time_elapsed_float : float = float(time_elapsed) / Engine.physics_ticks_per_second
+	var use_tick := car.game_manager.network_manager.local_tick
+	if car.game_manager.network_manager.is_server:
+		use_tick = car.game_manager.network_manager.server_tick
+	var time_elapsed : int = use_tick - 300
+	var time_elapsed_float : float = float(time_elapsed) / 60
 	var seconds : int = int(floor(time_elapsed_float)) % 60
 	var milliseconds : int = int(floor(time_elapsed_float * 1000)) % 1000
 	var minutes : int = floor(time_elapsed_float / 60)
 	racetimer.text = str(minutes) + ":" + str(seconds) + "." + str(milliseconds)
-	healthmeter.scale.x = car.calced_max_energy * 0.01
+	healthmeter.scale.x = 100.0 * 0.01
 	var health_meter_shader := healthmeter.material as ShaderMaterial
 	health_meter_shader.set_shader_parameter("health_amount", car.energy)
-	health_meter_shader.set_shader_parameter("max_health_amount", car.calced_max_energy)
+	health_meter_shader.set_shader_parameter("max_health_amount", 100.0)
 	health_meter_shader.set_shader_parameter("can_boost", car.lap > 1)
 	var boost_health_total_cost : float = 0.0#car.car_definition.boost_health_cost * (1.0 / car.car_definition.boost_length) * MXGlobal.tick_delta * car.boost_time
 	health_meter_shader.set_shader_parameter("health_to_deplete", boost_health_total_cost)
 	
-	var time_until_start : float = float(car.levelStartTime - game_manager.network_manager.local_tick) / 60
+	var time_until_start : float = float(300 - use_tick) / 60
 	countdown_arrow.rotation_degrees = 360 - minf(270, (time_until_start * 90))
 	if time_until_start <= 0 and countdowncontrol.modulate.a > 0:
 		countdowncontrol.scale += Vector2(1, 1) * _delta * 4
@@ -87,7 +86,7 @@ func _process( _delta:float ) -> void:
 	
 	# Determine race placements based on each car's lap and lap progress.
 	var cars : Array[VisualCar] = []
-	for c in game_manager.car_node_container.get_children():
+	for c in car.game_manager.car_node_container.get_children():
 		if c is VisualCar:
 			cars.append(c)
 
@@ -111,7 +110,7 @@ func _process( _delta:float ) -> void:
 	var tex_index := clampi(our_place - 1, 0, placement_textures.size() - 1)
 	place_badge.texture = placement_textures[tex_index]
 	
-	var move_vec := Vector2(Input.get_axis("MoveLeft", "MoveRight"), Input.get_axis("MoveForward", "MoveBack"))
+	var move_vec := Vector2(Input.get_axis("SteerLeft", "SteerRight"), Input.get_axis("SteerUp", "SteerDown"))
 	var clamped_move_vec := move_vec
 	clamped_input.modulate = Color(1, 1, 1)
 	real_input.modulate = Color(1, 1, 1)
@@ -120,6 +119,6 @@ func _process( _delta:float ) -> void:
 		clamped_input.modulate = Color(1, 0, 0)
 	if move_vec.x > 0.999 or move_vec.x < -0.999 or move_vec.y > 0.999 or move_vec.y < -0.999:
 		real_input.modulate = Color(1, 0, 0)
-	real_input.position = Vector2(124, 124) + (move_vec * 72)
-	clamped_input.position = Vector2(124, 124) + (clamped_move_vec * 72)
+	real_input.position = Vector2(112, 112) + (move_vec * 56)
+	clamped_input.position = Vector2(112, 112) + (clamped_move_vec * 56)
 	
