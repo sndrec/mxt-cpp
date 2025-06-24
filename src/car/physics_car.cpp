@@ -2402,6 +2402,7 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
                 .road_shape->get_oriented_transform_at_time(spawn_transform,
                         godot::Vector2(0.0f, t_y));
         spawn_transform.basis.transpose();
+        spawn_transform.basis.orthonormalize();
         spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
         godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.1f;
         position_current = spawn_transform.origin + up_offset;

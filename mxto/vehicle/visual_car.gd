@@ -61,6 +61,7 @@ enum FZ_TC{
 }
 
 var owning_id : int = 0
+var game_manager : GameManager
 @onready var race_hud: RaceHud = $race_hud
 
 var position_current := Vector3.ZERO
