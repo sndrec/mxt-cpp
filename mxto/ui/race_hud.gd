@@ -85,43 +85,41 @@ func _process( _delta:float ) -> void:
 		countdowncontrol.scale += Vector2(1, 1) * _delta * 4
 		countdowncontrol.modulate.a = max(0, countdowncontrol.modulate.a - _delta * 4)
 	
-       # Determine race placements based on each car's lap and lap progress.
-       var cars : Array[VisualCar] = []
-       for c in game_manager.car_node_container.get_children():
-               if c is VisualCar:
-                       cars.append(c)
+	# Determine race placements based on each car's lap and lap progress.
+	var cars : Array[VisualCar] = []
+	for c in game_manager.car_node_container.get_children():
+		if c is VisualCar:
+			cars.append(c)
 
-       cars.sort_custom(func(a:VisualCar, b:VisualCar) -> bool:
-               if a.lap == b.lap:
-                       return a.lap_progress > b.lap_progress
-               return a.lap > b.lap)
+	cars.sort_custom(func(a:VisualCar, b:VisualCar) -> bool:
+		if a.lap == b.lap:
+			return a.lap_progress > b.lap_progress
+		return a.lap > b.lap)
 
-       var our_place := 1
-       var local_id := multiplayer.get_unique_id() if multiplayer else 0
-       for i in cars.size():
-               if cars[i] == car or cars[i].owning_id == local_id:
-                       our_place = i + 1
-               if i < leaderboard_container.get_child_count():
-                       var label := leaderboard_container.get_child(i)
-                       var name := str(cars[i].owning_id)
-                       if Engine.has_singleton("Net") and Net.peer_map.has(cars[i].owning_id):
-                               name = Net.peer_map[cars[i].owning_id].player_settings.username
-                       label.text = str(i + 1) + ". " + name
-       for i in range(cars.size(), leaderboard_container.get_child_count()):
-               leaderboard_container.get_child(i).text = ""
+	var our_place := 1
+	var local_id := multiplayer.get_unique_id() if multiplayer else 0
+	for i in cars.size():
+		if cars[i] == car or cars[i].owning_id == local_id:
+			our_place = i + 1
+		if i < leaderboard_container.get_child_count():
+			var label := leaderboard_container.get_child(i)
+			var name := str(cars[i].owning_id)
+			label.text = str(i + 1) + ". " + name
+	for i in range(cars.size(), leaderboard_container.get_child_count()):
+		leaderboard_container.get_child(i).text = ""
 
-       var tex_index := clamp(our_place - 1, 0, placement_textures.size() - 1)
-       place_badge.texture = placement_textures[tex_index]
+	var tex_index := clampi(our_place - 1, 0, placement_textures.size() - 1)
+	place_badge.texture = placement_textures[tex_index]
 	
-       var move_vec := Vector2(Input.get_axis("MoveLeft", "MoveRight"), Input.get_axis("MoveForward", "MoveBack"))
-       var clamped_move_vec := move_vec
-       clamped_input.modulate = Color(1, 1, 1)
-       real_input.modulate = Color(1, 1, 1)
-       if clamped_move_vec.length() >= 0.999:
-               clamped_move_vec = clamped_move_vec.normalized()
-               clamped_input.modulate = Color(1, 0, 0)
-       if move_vec.x > 0.999 or move_vec.x < -0.999 or move_vec.y > 0.999 or move_vec.y < -0.999:
-               real_input.modulate = Color(1, 0, 0)
-       real_input.position = Vector2(124, 124) + (move_vec * 72)
-       clamped_input.position = Vector2(124, 124) + (clamped_move_vec * 72)
+	var move_vec := Vector2(Input.get_axis("MoveLeft", "MoveRight"), Input.get_axis("MoveForward", "MoveBack"))
+	var clamped_move_vec := move_vec
+	clamped_input.modulate = Color(1, 1, 1)
+	real_input.modulate = Color(1, 1, 1)
+	if clamped_move_vec.length() >= 0.999:
+		clamped_move_vec = clamped_move_vec.normalized()
+		clamped_input.modulate = Color(1, 0, 0)
+	if move_vec.x > 0.999 or move_vec.x < -0.999 or move_vec.y > 0.999 or move_vec.y < -0.999:
+		real_input.modulate = Color(1, 0, 0)
+	real_input.position = Vector2(124, 124) + (move_vec * 72)
+	clamped_input.position = Vector2(124, 124) + (clamped_move_vec * 72)
 	
