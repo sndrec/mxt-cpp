@@ -2,9 +2,9 @@
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="ArrayMesh" uid="uid://2biir4cy4wk8" path="res://track/weird_track_2/weird_track_2.obj" id="3_1bvp3"]
+[ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
 [ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
 [ext_resource type="Script" uid="uid://cq1kmqnd5qooc" path="res://netplay/network_manager.gd" id="3_netplay"]
-[ext_resource type="PackedScene" path="res://ui/car_settings.tscn" id="3_carsettings"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c0w6o"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
@@ -28,7 +28,6 @@ script = ExtResource("1_tjhrj")
 script = ExtResource("3_netplay")
 
 [node name="Control" type="Control" parent="."]
-visible = false
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -111,6 +110,7 @@ grow_vertical = 2
 text = "Car Settings"
 
 [node name="Lobby" type="Control" parent="."]
+visible = false
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -188,9 +188,10 @@ mesh = ExtResource("3_1bvp3")
 skeleton = NodePath("")
 
 [node name="CarSettings" parent="." instance=ExtResource("3_carsettings")]
+visible = false
 
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/JoinButton" to="." method="_on_join_button_pressed"]
 [connection signal="pressed" from="Control/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]
-[connection signal="pressed" from="Lobby/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]
 [connection signal="pressed" from="Lobby/StartRaceButton" to="." method="_on_start_race_button_pressed"]
+[connection signal="pressed" from="Lobby/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]

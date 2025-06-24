@@ -49,10 +49,10 @@ func host(port: int = 27016, max_players: int = 64) -> int:
 	rtt_s = 0.0
 	desired_ahead_ticks = 0.0
 	sent_input_times.clear()
-        last_received_tick.clear()
-        player_ids = [multiplayer.get_unique_id()]
-        player_settings.clear()
-        multiplayer.peer_connected.connect(_on_peer_connected)
+	last_received_tick.clear()
+	player_ids = [multiplayer.get_unique_id()]
+	player_settings.clear()
+	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	return OK
 
@@ -71,10 +71,10 @@ func join(ip: String, port: int = 27016) -> int:
 	desired_ahead_ticks = 2.0
 	sent_input_times.clear()
 	input_history.clear()
-        sent_inputs.clear()
-        player_ids = [multiplayer.get_unique_id()]
-        player_settings.clear()
-        return OK
+	sent_inputs.clear()
+	player_ids = [multiplayer.get_unique_id()]
+	player_settings.clear()
+	return OK
 
 func _on_peer_connected(id: int) -> void:
 	if is_server:
@@ -92,25 +92,25 @@ func _update_player_ids(ids: Array) -> void:
 
 @rpc("any_peer")
 func start_race(track_index: int, settings: Array) -> void:
-        emit_signal("race_started", track_index, settings)
+				emit_signal("race_started", track_index, settings)
 
 func send_start_race(track_index: int, settings: Array) -> void:
-        if is_server:
-                start_race.rpc(track_index, settings)
-                start_race(track_index, settings)
-        else:
-                start_race.rpc_id(1, track_index, settings)
+				if is_server:
+								start_race.rpc(track_index, settings)
+								start_race(track_index, settings)
+				else:
+								start_race.rpc_id(1, track_index, settings)
 
 func send_player_settings(settings: Dictionary) -> void:
-        if is_server:
-                update_player_settings(settings)
-        else:
-                update_player_settings.rpc_id(1, settings)
-                player_settings[multiplayer.get_unique_id()] = settings
+				if is_server:
+								update_player_settings(settings)
+				else:
+								update_player_settings.rpc_id(1, settings)
+								player_settings[multiplayer.get_unique_id()] = settings
 
 @rpc("any_peer")
 func update_player_settings(settings: Dictionary) -> void:
-        player_settings[multiplayer.get_remote_sender_id()] = settings
+				player_settings[multiplayer.get_remote_sender_id()] = settings
 
 func set_local_input(input: Dictionary) -> void:
 	last_local_input = input
@@ -228,10 +228,10 @@ func disconnect_from_server() -> void:
 	server_tick = 0
 	local_tick = 0
 	target_tick = 0
-        last_received_tick.clear()
-        last_ack_tick = -1
-        last_broadcast_inputs.clear()
-        player_settings.clear()
+	last_received_tick.clear()
+	last_ack_tick = -1
+	last_broadcast_inputs.clear()
+	player_settings.clear()
 
 func _update_desired_ahead() -> void:
 	desired_ahead_ticks = ((rtt_s * 0.5) + JITTER_BUFFER) / base_wait_time
