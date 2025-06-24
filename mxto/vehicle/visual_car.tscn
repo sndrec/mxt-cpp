@@ -14,7 +14,7 @@ top_level = true
 [node name="CarTransform" type="Node3D" parent="."]
 
 [node name="AudioStreamPlayer3D" type="AudioStreamPlayer3D" parent="CarTransform"]
-volume_db = 20.0
+volume_db = 40.0
 unit_size = 1.0
 
 [node name="AudioStreamPlayer3D2" type="AudioStreamPlayer3D" parent="CarTransform"]

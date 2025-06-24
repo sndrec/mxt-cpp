@@ -71,6 +71,7 @@ enum FZ_TC{
 @onready var strafe_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D6
 
 var owning_id : int = 0
+var player_settings: Resource
 var game_manager : GameManager
 @onready var race_hud: RaceHud = $race_hud
 @onready var car_transform: Node3D = $CarTransform
