@@ -1,0 +1,400 @@
+[gd_scene load_steps=19 format=3 uid="uid://b6r3b6beasnkv"]
+
+[ext_resource type="Script" uid="uid://brmercp8s533c" path="res://core/ui/menus/MultiMenu.gd" id="1_0avg5"]
+[ext_resource type="Texture2D" uid="uid://15fcij1dd8i8" path="res://content/base/stage/ruby/twist_road/track_11.png" id="2_fkdg8"]
+[ext_resource type="Texture2D" uid="uid://delifuq4b6ivp" path="res://content/base/common/checkerboard.png" id="3_waxf4"]
+
+[sub_resource type="Gradient" id="Gradient_usb5h"]
+offsets = PackedFloat32Array(0, 0.63354, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0.168337, 0.168337, 0.168337, 1, 0.404511, 0.404511, 0.404511, 1)
+
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_ig5nd"]
+frequency = 0.0176
+fractal_type = 2
+domain_warp_type = 2
+domain_warp_amplitude = 12.74
+
+[sub_resource type="NoiseTexture2D" id="NoiseTexture2D_jva7o"]
+height = 128
+color_ramp = SubResource("Gradient_usb5h")
+noise = SubResource("FastNoiseLite_ig5nd")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_g0c1u"]
+bg_color = Color(0.92549, 0.686275, 0.235294, 0.807843)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_d884j"]
+bg_color = Color(1, 0.92549, 0.835294, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_7nxhn"]
+bg_color = Color(0.360784, 0.32549, 0.105882, 0.505882)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_auaum"]
+viewport_path = NodePath("SubViewport")
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_g17k3"]
+sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
+ground_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
+
+[sub_resource type="Sky" id="Sky_cc6ss"]
+sky_material = SubResource("ProceduralSkyMaterial_g17k3")
+
+[sub_resource type="Environment" id="Environment_cgtrx"]
+background_mode = 2
+sky = SubResource("Sky_cc6ss")
+tonemap_mode = 2
+glow_enabled = true
+
+[sub_resource type="Shader" id="Shader_vebrn"]
+code = "// NOTE: Shader automatically converted from Godot Engine 4.2.rc1's StandardMaterial3D.
+
+shader_type spatial;
+render_mode blend_mix,depth_draw_opaque,cull_back,diffuse_burley,specular_schlick_ggx;
+uniform vec4 albedo : source_color;
+uniform sampler2D texture_albedo : source_color,repeat_disable;
+uniform vec3 uv1_scale;
+uniform vec3 uv1_offset;
+uniform vec3 uv2_scale;
+uniform vec3 uv2_offset;
+
+void vertex() {
+	UV=UV*uv1_scale.xy+uv1_offset.xy;
+}
+
+void fragment() {
+	vec2 base_uv = UV;
+	if (int(floor(base_uv.x)) % 2 == 1){
+		base_uv.x = 1.0 - fract(base_uv.x);
+	}
+	if (int(floor(base_uv.y)) % 2 == 1){
+		base_uv.y = 1.0 - fract(base_uv.y);
+	}
+	base_uv = fract(base_uv);
+	vec4 albedo_tex = texture(texture_albedo,base_uv);
+	ALBEDO = albedo.rgb * albedo_tex.rgb;
+	ALPHA = 1.0;
+	DEPTH = 1.0;
+}
+"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_67qih"]
+render_priority = 0
+shader = SubResource("Shader_vebrn")
+shader_parameter/albedo = Color(0.541176, 0.541176, 0.541176, 1)
+shader_parameter/texture_albedo = ExtResource("2_fkdg8")
+shader_parameter/uv1_scale = Vector3(10, 3, 1)
+shader_parameter/uv1_offset = Vector3(0, 0, 0)
+shader_parameter/uv2_scale = Vector3(1, 1, 1)
+shader_parameter/uv2_offset = Vector3(0, 0, 0)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_uvi8c"]
+material = SubResource("ShaderMaterial_67qih")
+size = Vector2(30, 24)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rhfer"]
+albedo_texture = ExtResource("3_waxf4")
+uv1_scale = Vector3(0.5, 6, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_x5hy7"]
+material = SubResource("StandardMaterial3D_rhfer")
+size = Vector2(2.425, 48)
+
+[node name="MultiMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_0avg5")
+
+[node name="LobbyContainer" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Container" type="Control" parent="LobbyContainer"]
+clip_contents = true
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 8.45
+
+[node name="LobbyBG" type="TextureRect" parent="LobbyContainer/Container"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(400, 0)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = SubResource("NoiseTexture2D_jva7o")
+expand_mode = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="LobbyContainer/Container"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="LobbyContainer/Container/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.7
+horizontal_scroll_mode = 0
+
+[node name="PlayerList" type="VBoxContainer" parent="LobbyContainer/Container/HBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.7
+
+[node name="VBoxContainer" type="VBoxContainer" parent="LobbyContainer/Container/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.7
+
+[node name="ScrollContainer" type="ScrollContainer" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="StageListContainer" type="VBoxContainer" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+
+[node name="ScrollContainer2" type="ScrollContainer" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+vertical_scroll_mode = 0
+
+[node name="StagePreviewContainer" type="HBoxContainer" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer/ScrollContainer2"]
+layout_mode = 2
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="LobbyContainer/Container/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.5
+
+[node name="ScrollContainer" type="ScrollContainer" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="LobbyOptionsContainer" type="VBoxContainer" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="GamemodeChoice" type="OptionButton" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer"]
+layout_mode = 2
+selected = 0
+item_count = 2
+popup/item_0/text = "Single Race"
+popup/item_0/id = 0
+popup/item_1/text = "Grand Prix"
+popup/item_1/id = 1
+
+[node name="InputDelay" type="SpinBox" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer"]
+layout_mode = 2
+max_value = 12.0
+value = 2.0
+rounded = true
+prefix = "Input Delay: "
+
+[node name="LapCount" type="SpinBox" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer"]
+layout_mode = 2
+max_value = 12.0
+value = 3.0
+rounded = true
+prefix = "Laps: "
+
+[node name="VehicleRestore" type="CheckBox" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer"]
+layout_mode = 2
+button_pressed = true
+text = " Vehicle Restore"
+
+[node name="RechargeLane" type="CheckBox" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer"]
+layout_mode = 2
+button_pressed = true
+text = " Recharge Lanes"
+
+[node name="Bumpers" type="CheckBox" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer"]
+layout_mode = 2
+text = " Bumpers"
+
+[node name="PlayButton" type="Button" parent="LobbyContainer/Container/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.5
+theme_override_font_sizes/font_size = 48
+theme_override_styles/hover = SubResource("StyleBoxFlat_g0c1u")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_d884j")
+theme_override_styles/normal = SubResource("StyleBoxFlat_7nxhn")
+text = "PLAY!"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="LobbyContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Panel" type="Panel" parent="LobbyContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.37
+
+[node name="MarginContainer" type="MarginContainer" parent="LobbyContainer/HBoxContainer/Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 2
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 2
+theme_override_constants/margin_bottom = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="LobbyContainer/HBoxContainer/Panel/MarginContainer"]
+layout_mode = 2
+
+[node name="Control" type="Control" parent="LobbyContainer/HBoxContainer/Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 8.0
+
+[node name="ChatBox" type="RichTextLabel" parent="LobbyContainer/HBoxContainer/Panel/MarginContainer/VBoxContainer/Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+focus_mode = 2
+theme_override_font_sizes/normal_font_size = 16
+bbcode_enabled = true
+text = "[color=555555]Never tell your password to anyone.[/color]"
+scroll_following = true
+selection_enabled = true
+
+[node name="VSeparator" type="HBoxContainer" parent="LobbyContainer/HBoxContainer/Panel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SayText" type="LineEdit" parent="LobbyContainer/HBoxContainer/Panel/MarginContainer/VBoxContainer/VSeparator"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Say..."
+
+[node name="SayTextSend" type="Button" parent="LobbyContainer/HBoxContainer/Panel/MarginContainer/VBoxContainer/VSeparator"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.1
+text = "Send"
+
+[node name="TextureRect" type="TextureRect" parent="LobbyContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 0
+texture = SubResource("ViewportTexture_auaum")
+expand_mode = 5
+stretch_mode = 4
+
+[node name="ConnectHostBox" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -267.0
+offset_top = -12.5
+offset_right = 267.0
+offset_bottom = 12.5
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+
+[node name="Host" type="Button" parent="ConnectHostBox"]
+layout_mode = 2
+text = "Host
+"
+
+[node name="Connect" type="Button" parent="ConnectHostBox"]
+layout_mode = 2
+text = "Connect
+"
+
+[node name="Address" type="LineEdit" parent="ConnectHostBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(192, 0)
+layout_mode = 2
+text = "127.0.0.1"
+
+[node name="Port" type="LineEdit" parent="ConnectHostBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(192, 0)
+layout_mode = 2
+text = "27018"
+
+[node name="SubViewport" type="SubViewport" parent="."]
+own_world_3d = true
+size = Vector2i(1280, 512)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="SubViewport"]
+environment = SubResource("Environment_cgtrx")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="SubViewport"]
+transform = Transform3D(-0.707107, 0.5, -0.5, 0, 0.707107, 0.707107, 0.707107, 0.5, -0.5, 0, 0, 0)
+light_energy = 0.5
+directional_shadow_mode = 0
+directional_shadow_fade_start = 1.0
+directional_shadow_max_distance = 0.1
+
+[node name="Camera3D" type="Camera3D" parent="SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 124.5, 215.64)
+projection = 1
+size = 12.0
+near = 0.1
+far = 30000.0
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -30, -51.95)
+mesh = SubResource("PlaneMesh_uvi8c")
+skeleton = NodePath("../Camera3D")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="SubViewport"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.11154, 0.016, 0)
+visible = false
+mesh = SubResource("PlaneMesh_x5hy7")
+skeleton = NodePath("../Camera3D")
+
+[connection signal="gui_input" from="LobbyContainer/Container" to="." method="_on_container_gui_input"]
+[connection signal="item_selected" from="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer/GamemodeChoice" to="." method="_on_gamemode_choice_item_selected"]
+[connection signal="value_changed" from="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer/InputDelay" to="." method="_on_input_delay_value_changed"]
+[connection signal="value_changed" from="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer/LapCount" to="." method="_on_lap_count_value_changed"]
+[connection signal="toggled" from="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer/VehicleRestore" to="." method="_on_vehicle_restore_toggled"]
+[connection signal="toggled" from="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer/RechargeLane" to="." method="_on_recharge_lane_toggled"]
+[connection signal="toggled" from="LobbyContainer/Container/HBoxContainer/VBoxContainer2/ScrollContainer/LobbyOptionsContainer/Bumpers" to="." method="_on_bumpers_toggled"]
+[connection signal="pressed" from="LobbyContainer/Container/HBoxContainer/VBoxContainer2/PlayButton" to="." method="_on_play_button_pressed"]
+[connection signal="text_submitted" from="LobbyContainer/HBoxContainer/Panel/MarginContainer/VBoxContainer/VSeparator/SayText" to="." method="_on_say_text_text_submitted"]
+[connection signal="pressed" from="LobbyContainer/HBoxContainer/Panel/MarginContainer/VBoxContainer/VSeparator/SayTextSend" to="." method="_on_say_text_send_pressed"]
+[connection signal="gui_input" from="LobbyContainer/HBoxContainer/TextureRect" to="." method="_on_texture_rect_gui_input"]
+[connection signal="pressed" from="ConnectHostBox/Host" to="." method="_on_host_pressed"]
+[connection signal="pressed" from="ConnectHostBox/Connect" to="." method="_on_connect_pressed"]
+[connection signal="text_submitted" from="ConnectHostBox/Address" to="." method="_on_address_text_submitted"]

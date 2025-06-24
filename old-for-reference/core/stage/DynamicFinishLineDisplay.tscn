@@ -1,0 +1,58 @@
+[gd_scene load_steps=9 format=3 uid="uid://baw56cc1ww0k7"]
+
+[ext_resource type="Script" uid="uid://rcclf5ukammo" path="res://core/stage/dynamic_finish_line_display.gd" id="1_xhqam"]
+[ext_resource type="Shader" uid="uid://dmtdlpg7vjxbd" path="res://content/base/shader/FinishLine.gdshader" id="2_0jf8q"]
+[ext_resource type="Texture2D" uid="uid://cqdj6c1f11nok" path="res://content/base/texture/stagetex/a4.png" id="3_u6wq4"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_jkoux"]
+albedo_color = Color(0.270222, 0.270222, 0.270222, 1)
+metallic = 1.0
+metallic_specular = 1.0
+roughness = 0.5
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_de2f3"]
+material = SubResource("StandardMaterial3D_jkoux")
+top_radius = 0.125
+bottom_radius = 0.125
+height = 4.0
+radial_segments = 16
+rings = 0
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_rxqug"]
+material = SubResource("StandardMaterial3D_jkoux")
+top_radius = 0.125
+bottom_radius = 0.125
+height = 4.0
+radial_segments = 16
+rings = 0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_g8eit"]
+render_priority = 0
+shader = ExtResource("2_0jf8q")
+shader_parameter/color_1 = Color(0.149439, 0.169067, 0.405922, 1)
+shader_parameter/color_2 = Color(0.397991, 0.772979, 1, 1)
+shader_parameter/texture_albedo = ExtResource("3_u6wq4")
+shader_parameter/distance_fade_min = 0.0
+shader_parameter/distance_fade_max = 30.0
+shader_parameter/finishline_size = Vector2(32, 4)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_0j7kx"]
+material = SubResource("ShaderMaterial_g8eit")
+size = Vector2(32, 4)
+orientation = 2
+
+[node name="DynamicFinishLineDisplay" type="Node3D"]
+script = ExtResource("1_xhqam")
+width = 32.0
+height = 4.0
+
+[node name="Corner1" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 16, 0, 0)
+mesh = SubResource("CylinderMesh_de2f3")
+
+[node name="Corner2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16, 0, 0)
+mesh = SubResource("CylinderMesh_rxqug")
+
+[node name="FinishLinePlane" type="MeshInstance3D" parent="."]
+mesh = SubResource("PlaneMesh_0j7kx")

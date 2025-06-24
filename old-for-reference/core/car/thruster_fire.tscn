@@ -1,0 +1,99 @@
+[gd_scene load_steps=15 format=3 uid="uid://ddvk0f7g7r8mx"]
+
+[ext_resource type="Shader" uid="uid://ds1188dsmcbss" path="res://content/base/shader/thruster.gdshader" id="1_0urq5"]
+[ext_resource type="Texture2D" uid="uid://c0qep5q7vr6r6" path="res://content/base/common/spark_sprite.png" id="2_15tc1"]
+[ext_resource type="Texture2D" uid="uid://bxpt4a4cv2s74" path="res://content/base/common/smoke.png" id="3_nxhuu"]
+[ext_resource type="Script" uid="uid://gvh4p3po7k5x" path="res://core/car/thruster_fire.gd" id="3_wbflq"]
+[ext_resource type="Texture2D" uid="uid://dq22hftgmpxb4" path="res://content/base/common/gradientradial.png" id="5_mkjei"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_3pnbk"]
+render_priority = 0
+shader = ExtResource("1_0urq5")
+
+[sub_resource type="Curve" id="Curve_mkeug"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_jeekr"]
+curve = SubResource("Curve_mkeug")
+
+[sub_resource type="Curve" id="Curve_v2que"]
+_data = [Vector2(0, 0.13875), 0.0, 5.02396, 0, 0, Vector2(0.091195, 1), 0.0, 0.0, 0, 0, Vector2(0.220126, 0.504375), 0.0, 0.0, 0, 0, Vector2(1, 0.49625), 0.0, 0.0, 0, 0]
+point_count = 4
+
+[sub_resource type="CurveTexture" id="CurveTexture_mi1nw"]
+curve = SubResource("Curve_v2que")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_qqq4o"]
+lifetime_randomness = 0.25
+emission_shape = 1
+emission_sphere_radius = 0.05
+angle_min = -720.0
+angle_max = 720.0
+direction = Vector3(0, 0, 1)
+spread = 1.0
+initial_velocity_min = 8.0
+initial_velocity_max = 10.0
+gravity = Vector3(0, 0, 0)
+scale_min = 1.5
+scale_max = 2.5
+scale_curve = SubResource("CurveTexture_mi1nw")
+color = Color(0.4, 0.4, 0.4, 0.4)
+alpha_curve = SubResource("CurveTexture_jeekr")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ay2yt"]
+transparency = 1
+blend_mode = 1
+depth_draw_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(3, 3, 3, 1)
+albedo_texture = ExtResource("3_nxhuu")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_pkg5c"]
+material = SubResource("StandardMaterial3D_ay2yt")
+size = Vector2(0.2, 0.2)
+orientation = 2
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_abo0r"]
+render_priority = 0
+shader = ExtResource("1_0urq5")
+
+[node name="Node3D" type="Node3D"]
+script = ExtResource("3_wbflq")
+desired_thrust_power = 1.0
+thrust_enabled = true
+
+[node name="ThrustSprite" type="Sprite3D" parent="."]
+material_override = SubResource("ShaderMaterial_3pnbk")
+instance_shader_parameters/thrust_power = 1.0
+modulate = Color(0.4, 0.4, 0.4, 0.4)
+pixel_size = 0.03
+billboard = 2
+no_depth_test = true
+texture = ExtResource("2_15tc1")
+
+[node name="ThrustParticles" type="GPUParticles3D" parent="."]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
+lifetime = 0.05
+fixed_fps = 240
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_qqq4o")
+draw_pass_1 = SubResource("PlaneMesh_pkg5c")
+
+[node name="Sprite3D" type="Sprite3D" parent="."]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
+visible = false
+material_override = SubResource("ShaderMaterial_abo0r")
+instance_shader_parameters/thrust_power = 0.5
+modulate = Color(1, 1, 1, 1.25e-10)
+pixel_size = 0.09955
+billboard = 1
+transparent = false
+no_depth_test = true
+texture = ExtResource("5_mkjei")

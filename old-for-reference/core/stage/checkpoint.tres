@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="Checkpoint" load_steps=2 format=3 uid="uid://4vrw4lmdqpc4"]
+
+[ext_resource type="Script" uid="uid://ddlhirmibrqwt" path="res://core/stage/checkpoint.gd" id="1_pow33"]
+
+[resource]
+script = ExtResource("1_pow33")

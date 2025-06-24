@@ -1,0 +1,37 @@
+[gd_scene load_steps=6 format=3 uid="uid://bkur7wv18nqfm"]
+
+[ext_resource type="Script" uid="uid://cfoyox3vtqlun" path="res://core/stage/spawn_point.gd" id="1_bah78"]
+[ext_resource type="PackedScene" uid="uid://doppepfbu6mxl" path="res://content/base/common/start.glb" id="2_fkmrk"]
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_rq8ha"]
+top_radius = 0.125
+bottom_radius = 0.125
+height = 0.5
+radial_segments = 8
+
+[sub_resource type="CylinderMesh" id="CylinderMesh_brc4q"]
+top_radius = 0.0
+bottom_radius = 0.3
+height = 0.5
+radial_segments = 8
+
+[sub_resource type="BoxMesh" id="BoxMesh_lpsn2"]
+size = Vector3(0.5, 0.2, 0.75)
+
+[node name="SpawnPoint" type="Node3D" groups=["SpawnPoints"]]
+script = ExtResource("1_bah78")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.5, 0, 0, 0, -2.18557e-08, -0.5, 0, 0.5, -2.18557e-08, 0, 0.217268, 0.480191)
+mesh = SubResource("CylinderMesh_rq8ha")
+
+[node name="MeshInstance3D3" type="MeshInstance3D" parent="."]
+transform = Transform3D(0.5, 0, 0, 0, -2.18557e-08, -0.5, 0, 0.5, -2.18557e-08, 0, 0.217268, 0.721707)
+mesh = SubResource("CylinderMesh_brc4q")
+
+[node name="MeshInstance3D2" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.217268, 0)
+mesh = SubResource("BoxMesh_lpsn2")
+
+[node name="start" parent="." instance=ExtResource("2_fkmrk")]
+transform = Transform3D(-0.388229, 0, 0.315085, 0, 0.5, 0, -0.315085, 0, -0.388229, 0, 0.994182, 0)

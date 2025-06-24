@@ -1,0 +1,60 @@
+[gd_scene load_steps=4 format=3 uid="uid://c6dcew558dwrd"]
+
+[ext_resource type="Script" uid="uid://ba0qjr18b6q4f" path="res://core/ui/menus/PlayerListEntry.gd" id="1_657oc"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_iryn1"]
+font_size = 22
+outline_size = 6
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_p3o1e"]
+font_size = 22
+outline_size = 6
+outline_color = Color(0, 0, 0, 1)
+
+[node name="PlayerListEntry" type="Control"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 3
+anchor_top = 0.478
+anchor_right = 1.0
+anchor_bottom = 0.522
+offset_top = -0.160004
+offset_bottom = 0.160004
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_657oc")
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="NameLabel" type="Label" parent="Panel/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+text = "Playername"
+label_settings = SubResource("LabelSettings_iryn1")
+vertical_alignment = 1
+
+[node name="PingLabel" type="Label" parent="Panel/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 1
+text = "103ms"
+label_settings = SubResource("LabelSettings_p3o1e")
+vertical_alignment = 1

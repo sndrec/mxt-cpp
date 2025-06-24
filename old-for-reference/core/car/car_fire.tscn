@@ -1,0 +1,83 @@
+[gd_scene load_steps=13 format=3 uid="uid://b8x6u47rk7hlh"]
+
+[ext_resource type="Texture2D" uid="uid://dsvrvpqtdswbn" path="res://content/base/common/flame.png" id="2_55g0p"]
+
+[sub_resource type="Curve" id="Curve_0gvfy"]
+_data = [Vector2(0.323899, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_tbekd"]
+curve = SubResource("Curve_0gvfy")
+
+[sub_resource type="Gradient" id="Gradient_8e4od"]
+colors = PackedColorArray(0.53902, 0.371645, 0.507472, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_ptpn0"]
+gradient = SubResource("Gradient_8e4od")
+
+[sub_resource type="Curve" id="Curve_g637e"]
+_limits = [0.0, 12.0, 0.0, 1.0]
+_data = [Vector2(0, 2.1525), 0.0, 0.0, 0, 0, Vector2(1, 6.15), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_4qdof"]
+_limits = [0.0, 40.0, 0.0, 1.0]
+_data = [Vector2(0, 3.6), 0.0, 0.0, 0, 0, Vector2(1, 33.225), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_cqpns"]
+_limits = [0.0, 3.0, 0.0, 1.0]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveXYZTexture" id="CurveXYZTexture_b5fgq"]
+curve_x = SubResource("Curve_g637e")
+curve_y = SubResource("Curve_4qdof")
+curve_z = SubResource("Curve_cqpns")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_spejd"]
+emission_shape = 1
+emission_sphere_radius = 0.3
+direction = Vector3(0, 1, 0)
+spread = 20.0
+initial_velocity_min = 60.0
+initial_velocity_max = 120.0
+scale_min = 0.4
+scale_max = 0.6
+scale_over_velocity_min = 30.0
+scale_over_velocity_max = 200.0
+scale_over_velocity_curve = SubResource("CurveXYZTexture_b5fgq")
+color = Color(1, 0.803922, 0.823529, 1)
+color_initial_ramp = SubResource("GradientTexture1D_ptpn0")
+alpha_curve = SubResource("CurveTexture_tbekd")
+hue_variation_max = 0.05
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_xl5et"]
+transparency = 1
+blend_mode = 1
+cull_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("2_55g0p")
+billboard_keep_scale = true
+proximity_fade_enabled = true
+proximity_fade_distance = 0.25
+distance_fade_mode = 1
+distance_fade_min_distance = 30.0
+distance_fade_max_distance = 0.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_w5ju7"]
+material = SubResource("StandardMaterial3D_xl5et")
+center_offset = Vector3(0, 0.5, 0)
+orientation = 2
+
+[node name="ScreenSpaceParticle" type="GPUParticles3D"]
+transform = Transform3D(0.4, 0, 0, 0, 0.4, 0, 0, 0, 0.4, 0, 0, 0)
+amount = 4
+lifetime = 0.02
+fixed_fps = 60
+visibility_aabb = AABB(-2.79346, -2.14619, -2.75115, 5.38428, 6.4737, 5.47929)
+local_coords = true
+transform_align = 3
+process_material = SubResource("ParticleProcessMaterial_spejd")
+draw_pass_1 = SubResource("PlaneMesh_w5ju7")

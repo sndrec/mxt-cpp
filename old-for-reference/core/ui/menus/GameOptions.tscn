@@ -1,0 +1,205 @@
+[gd_scene load_steps=9 format=3 uid="uid://bwj0k7w2y6l5n"]
+
+[ext_resource type="Shader" uid="uid://bwwp0dli33yu2" path="res://core/ui/menus/UIBox.gdshader" id="1_0jwct"]
+[ext_resource type="Texture2D" uid="uid://btcd4lag51txy" path="res://content/base/texture/stagetex/wiremesh.png" id="2_k8ivi"]
+[ext_resource type="Script" uid="uid://mm0sk8spswbm" path="res://core/ui/ui_box.gd" id="2_pomb1"]
+[ext_resource type="Texture2D" uid="uid://odnuaci5iih" path="res://content/base/texture/stagetex/desolationside2.png" id="3_f2l85"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_qlvld"]
+shader = ExtResource("1_0jwct")
+shader_parameter/box_size = Vector2(800, 600)
+shader_parameter/border_size = 32.0
+shader_parameter/noise = 0.2
+shader_parameter/border_uv_scale = 4.0
+shader_parameter/noise_uv_scale = 1.0
+shader_parameter/bg_random_scroll = false
+shader_parameter/bg_scroll_speed = Vector2(0, 0)
+shader_parameter/border_texture = ExtResource("3_f2l85")
+shader_parameter/bg_texture = ExtResource("2_k8ivi")
+
+[sub_resource type="LabelSettings" id="LabelSettings_aiigi"]
+font_size = 24
+
+[sub_resource type="StyleBoxLine" id="StyleBoxLine_hsuoq"]
+color = Color(0, 0, 0, 0.309804)
+thickness = 24
+vertical = true
+
+[sub_resource type="LabelSettings" id="LabelSettings_c2q8o"]
+font_size = 48
+
+[node name="GameOptions" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="UIBox" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_qlvld")
+layout_mode = 0
+offset_left = 240.0
+offset_top = 60.0
+offset_right = 1040.0
+offset_bottom = 660.0
+script = ExtResource("2_pomb1")
+desired_size = Vector2(800, 600)
+border_uv_scale = 4.0
+border_texture = ExtResource("3_f2l85")
+bg_texture = ExtResource("2_k8ivi")
+
+[node name="MarginContainer" type="MarginContainer" parent="UIBox"]
+clip_contents = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 32
+theme_override_constants/margin_top = 32
+theme_override_constants/margin_right = 32
+theme_override_constants/margin_bottom = 32
+
+[node name="TabContainer" type="TabContainer" parent="UIBox/MarginContainer"]
+layout_mode = 2
+theme_override_constants/side_margin = 0
+theme_override_font_sizes/font_size = 24
+tab_alignment = 1
+current_tab = 1
+
+[node name="Video" type="Control" parent="UIBox/MarginContainer/TabContainer"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 0
+
+[node name="Sound" type="Control" parent="UIBox/MarginContainer/TabContainer"]
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 72
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 32
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+text = "Master"
+label_settings = SubResource("LabelSettings_aiigi")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VSlider" type="VScrollBar" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+size_flags_vertical = 3
+theme_override_styles/scroll = SubResource("StyleBoxLine_hsuoq")
+max_value = 1.0
+step = 0.01
+value = 0.5
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "50%"
+label_settings = SubResource("LabelSettings_c2q8o")
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 32
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+text = "Music"
+label_settings = SubResource("LabelSettings_aiigi")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer2"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VSlider" type="VScrollBar" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer2/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+size_flags_vertical = 3
+theme_override_styles/scroll = SubResource("StyleBoxLine_hsuoq")
+max_value = 1.0
+step = 0.01
+value = 0.5
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer2/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "50%"
+label_settings = SubResource("LabelSettings_c2q8o")
+
+[node name="VBoxContainer3" type="VBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 32
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer3"]
+layout_mode = 2
+text = "Announcer"
+label_settings = SubResource("LabelSettings_aiigi")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer3"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VSlider" type="VScrollBar" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer3/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+size_flags_vertical = 3
+theme_override_styles/scroll = SubResource("StyleBoxLine_hsuoq")
+max_value = 1.0
+step = 0.01
+value = 0.5
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer3/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "50%"
+label_settings = SubResource("LabelSettings_c2q8o")
+
+[node name="VBoxContainer4" type="VBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 32
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer4"]
+layout_mode = 2
+text = "SFX"
+label_settings = SubResource("LabelSettings_aiigi")
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer4"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VSlider" type="VScrollBar" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer4/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+size_flags_vertical = 3
+theme_override_styles/scroll = SubResource("StyleBoxLine_hsuoq")
+max_value = 1.0
+step = 0.01
+value = 0.5
+
+[node name="Label" type="Label" parent="UIBox/MarginContainer/TabContainer/Sound/HBoxContainer/VBoxContainer4/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 6
+text = "50%"
+label_settings = SubResource("LabelSettings_c2q8o")
+
+[node name="Gameplay" type="Control" parent="UIBox/MarginContainer/TabContainer"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 2

@@ -1,0 +1,354 @@
+[gd_scene load_steps=18 format=3 uid="uid://bccs13512h78p"]
+
+[ext_resource type="Script" uid="uid://k76cy66tbbro" path="res://core/ui/menus/MainMenu.gd" id="1_crdgn"]
+[ext_resource type="Texture2D" uid="uid://cbg1o21uis2fh" path="res://content/base/common/logo_mockup.png" id="2_fx6ib"]
+[ext_resource type="Texture2D" uid="uid://dhyndoiesqoi3" path="res://content/base/common/timer_bg.png" id="2_nsxjf"]
+[ext_resource type="Texture2D" uid="uid://t6h5754gdpnj" path="res://content/base/common/singleplayer.png" id="3_ub83e"]
+[ext_resource type="Texture2D" uid="uid://868rpfor3s81" path="res://content/base/common/multiplayer.png" id="4_bl2ka"]
+[ext_resource type="Texture2D" uid="uid://wy5jhlxb76vl" path="res://content/base/common/car_adjust.png" id="6_8k5hy"]
+[ext_resource type="Shader" uid="uid://fk8td8dts2hs" path="res://core/ui/menus/RO_UI_Checker.gdshader" id="6_go8q3"]
+[ext_resource type="Texture2D" uid="uid://by76nt36htu21" path="res://content/base/common/settings.png" id="6_s3sea"]
+[ext_resource type="Texture2D" uid="uid://delifuq4b6ivp" path="res://content/base/common/checkerboard.png" id="7_qdmky"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ffc1u"]
+shader = ExtResource("6_go8q3")
+shader_parameter/checkerRepeat = 6.0
+shader_parameter/checkerRotate = 0.1
+shader_parameter/checkerScrollSpeed = Vector2(0.2, -0.1)
+shader_parameter/outlineColor = Color(0.9, 0.5, 0.4, 1)
+shader_parameter/topGradientCheck1 = Color(1, 0.658824, 0.980392, 1)
+shader_parameter/bottomGradientCheck1 = Color(0.819608, 0, 0.301961, 1)
+shader_parameter/topGradientCheck2 = Color(0.956863, 0.431373, 0.717647, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.4, 0.05, 0.2, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_mbsfh"]
+shader = ExtResource("6_go8q3")
+shader_parameter/checkerRepeat = 6.0
+shader_parameter/checkerRotate = 0.1
+shader_parameter/checkerScrollSpeed = Vector2(0.2, -0.1)
+shader_parameter/outlineColor = Color(0.9, 0.5, 0.4, 1)
+shader_parameter/topGradientCheck1 = Color(1, 0.658824, 0.980392, 1)
+shader_parameter/bottomGradientCheck1 = Color(0.819608, 0, 0.301961, 1)
+shader_parameter/topGradientCheck2 = Color(0.956863, 0.431373, 0.717647, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.4, 0.05, 0.2, 1)
+shader_parameter/checkerTexture = ExtResource("7_qdmky")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qxjku"]
+bg_color = Color(0, 0, 0, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(1, 1, 1, 1)
+
+[sub_resource type="SystemFont" id="SystemFont_3p6w6"]
+font_names = PackedStringArray("Arial")
+font_weight = 999
+
+[sub_resource type="LabelSettings" id="LabelSettings_ccwd0"]
+font = SubResource("SystemFont_3p6w6")
+font_size = 48
+outline_color = Color(0, 0, 0, 1)
+shadow_color = Color(0, 0, 0, 0.443137)
+shadow_offset = Vector2(5, 5)
+
+[sub_resource type="LabelSettings" id="LabelSettings_lwqm3"]
+font_size = 48
+outline_size = 8
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_mu1ra"]
+font_size = 24
+outline_size = 8
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_doe0n"]
+font_size = 48
+font_color = Color(0.980392, 0.290196, 0.427451, 1)
+outline_size = 8
+outline_color = Color(0, 0, 0, 1)
+
+[node name="Node2D" type="Node2D"]
+script = ExtResource("1_crdgn")
+
+[node name="MainMenuControl" type="Control" parent="."]
+unique_name_in_owner = true
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1283.0
+offset_bottom = 723.0
+
+[node name="SubViewportContainer" type="SubViewportContainer" parent="MainMenuControl"]
+z_index = -35
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -22.5
+offset_bottom = 22.5
+grow_horizontal = 2
+grow_vertical = 2
+metadata/_edit_use_anchors_ = true
+
+[node name="MainMenuViewport" type="SubViewport" parent="MainMenuControl/SubViewportContainer"]
+unique_name_in_owner = true
+handle_input_locally = false
+size = Vector2i(1024, 768)
+render_target_update_mode = 4
+
+[node name="MainMenuCamera" type="Camera3D" parent="MainMenuControl/SubViewportContainer/MainMenuViewport"]
+unique_name_in_owner = true
+
+[node name="TextureRect" type="TextureRect" parent="MainMenuControl"]
+modulate = Color(1, 1, 1, 0)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 12010.0
+offset_top = 6806.5
+offset_right = 13650.0
+offset_bottom = 7406.5
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(0.3, 0.3)
+pivot_offset = Vector2(820, 423.5)
+texture = ExtResource("2_fx6ib")
+
+[node name="CheckerBGControl" type="Control" parent="MainMenuControl"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+grow_vertical = 0
+
+[node name="CheckerBG" type="Sprite2D" parent="MainMenuControl/CheckerBGControl"]
+texture_repeat = 2
+material = SubResource("ShaderMaterial_ffc1u")
+position = Vector2(648, 641)
+scale = Vector2(3, 3)
+texture = ExtResource("7_qdmky")
+region_enabled = true
+region_rect = Rect2(0, 0, 512, 512)
+
+[node name="Panel" type="Panel" parent="MainMenuControl/CheckerBGControl/CheckerBG"]
+material = SubResource("ShaderMaterial_mbsfh")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -256.0
+offset_top = -256.0
+offset_right = -256.0
+offset_bottom = -256.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_qxjku")
+
+[node name="OptionText" type="Label" parent="MainMenuControl/CheckerBGControl/CheckerBG"]
+unique_name_in_owner = true
+offset_left = -204.368
+offset_top = -242.75
+offset_right = 118.632
+offset_bottom = -171.75
+scale = Vector2(0.333, 0.333)
+text = "Maximum Throttle, OK?"
+label_settings = SubResource("LabelSettings_ccwd0")
+
+[node name="CarButton" type="Button" parent="MainMenuControl/CheckerBGControl/CheckerBG"]
+unique_name_in_owner = true
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -173.354
+offset_top = -631.672
+offset_right = 18.6459
+offset_bottom = -439.649
+grow_vertical = 2
+scale = Vector2(0.25, 0.25)
+pivot_offset = Vector2(96, 96)
+text = "Car Select"
+icon = ExtResource("2_nsxjf")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="TextureRect" type="TextureRect" parent="MainMenuControl/CheckerBGControl/CheckerBG/CarButton"]
+modulate = Color(0.262745, 0.101961, 0.0196078, 1)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -128.0
+offset_top = -128.0
+offset_right = 128.0
+offset_bottom = 128.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(0.5, 0.5)
+pivot_offset = Vector2(128, 128)
+mouse_filter = 2
+texture = ExtResource("6_8k5hy")
+expand_mode = 2
+
+[node name="SettingsButton" type="Button" parent="MainMenuControl/CheckerBGControl/CheckerBG"]
+unique_name_in_owner = true
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -126.667
+offset_top = -631.667
+offset_right = 65.3332
+offset_bottom = -439.644
+grow_vertical = 2
+scale = Vector2(0.25, 0.25)
+pivot_offset = Vector2(96, 96)
+text = "Settings"
+icon = ExtResource("2_nsxjf")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="TextureRect" type="TextureRect" parent="MainMenuControl/CheckerBGControl/CheckerBG/SettingsButton"]
+modulate = Color(0.262745, 0.101961, 0.0196078, 1)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -128.0
+offset_top = -128.0
+offset_right = 128.0
+offset_bottom = 128.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(0.5, 0.5)
+pivot_offset = Vector2(128, 128)
+mouse_filter = 2
+texture = ExtResource("6_s3sea")
+expand_mode = 2
+
+[node name="MultiplayerButton" type="Button" parent="MainMenuControl/CheckerBGControl/CheckerBG"]
+unique_name_in_owner = true
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -220.057
+offset_top = -631.037
+offset_right = -28.057
+offset_bottom = -439.026
+grow_vertical = 2
+scale = Vector2(0.25, 0.25)
+pivot_offset = Vector2(96, 96)
+text = "Multiplayer"
+icon = ExtResource("2_nsxjf")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="TextureRect" type="TextureRect" parent="MainMenuControl/CheckerBGControl/CheckerBG/MultiplayerButton"]
+modulate = Color(0.262745, 0.101961, 0.0196078, 1)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -127.999
+offset_top = -120.0
+offset_right = 128.001
+offset_bottom = 136.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(0.5, 0.5)
+pivot_offset = Vector2(128, 128)
+mouse_filter = 2
+texture = ExtResource("4_bl2ka")
+expand_mode = 2
+
+[node name="PlayButton" type="Button" parent="MainMenuControl/CheckerBGControl/CheckerBG"]
+unique_name_in_owner = true
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_left = -267.322
+offset_top = -631.335
+offset_right = -75.322
+offset_bottom = -439.348
+grow_vertical = 2
+scale = Vector2(0.25, 0.25)
+pivot_offset = Vector2(96, 96)
+text = "Singleplayer"
+icon = ExtResource("2_nsxjf")
+flat = true
+icon_alignment = 1
+expand_icon = true
+
+[node name="TextureRect2" type="TextureRect" parent="MainMenuControl/CheckerBGControl/CheckerBG/PlayButton"]
+modulate = Color(0.262745, 0.101961, 0.0196078, 1)
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -128.0
+offset_top = -128.0
+offset_right = 128.0
+offset_bottom = 128.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(0.5, 0.5)
+pivot_offset = Vector2(128, 128)
+mouse_filter = 2
+texture = ExtResource("3_ub83e")
+expand_mode = 2
+
+[node name="version" type="Label" parent="."]
+offset_left = 20.0
+offset_top = 17.0
+offset_right = 1002.0
+offset_bottom = 128.0
+text = "Version
+0.2.12"
+label_settings = SubResource("LabelSettings_lwqm3")
+horizontal_alignment = 1
+metadata/_edit_use_anchors_ = true
+
+[node name="guide_text" type="Label" parent="."]
+z_index = -10
+offset_left = 153.0
+offset_top = 286.0
+offset_right = 675.0
+offset_bottom = 543.0
+text = "set car,
+username,
+and stickers
+|
+|
+V"
+label_settings = SubResource("LabelSettings_mu1ra")
+horizontal_alignment = 1
+
+[node name="multi_warn" type="Label" parent="."]
+visible = false
+offset_left = 25.0
+offset_top = 146.0
+offset_right = 1007.0
+offset_bottom = 314.0
+text = "CLOSE YOUR GAME
+BEFORE CONNECTING
+TO A MULTIPLAYER RACE!"
+label_settings = SubResource("LabelSettings_doe0n")
+horizontal_alignment = 1
+
+[connection signal="pressed" from="MainMenuControl/CheckerBGControl/CheckerBG/CarButton" to="." method="_on_car_button_pressed"]
+[connection signal="pressed" from="MainMenuControl/CheckerBGControl/CheckerBG/SettingsButton" to="." method="_on_settings_button_pressed"]
+[connection signal="pressed" from="MainMenuControl/CheckerBGControl/CheckerBG/MultiplayerButton" to="." method="_on_multiplayer_button_pressed"]
+[connection signal="pressed" from="MainMenuControl/CheckerBGControl/CheckerBG/PlayButton" to="." method="_on_play_button_pressed"]

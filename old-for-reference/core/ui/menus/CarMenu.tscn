@@ -1,0 +1,145 @@
+[gd_scene load_steps=5 format=3 uid="uid://cp7uo1h5ggbox"]
+
+[ext_resource type="Script" uid="uid://kig8c1emdn26" path="res://core/ui/menus/CarMenu.gd" id="1_t3hgx"]
+[ext_resource type="Texture2D" uid="uid://b8fh1m8rphyav" path="res://content/base/common/placeholder.png" id="2_vkkc0"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_cxd0e"]
+font_size = 32
+
+[sub_resource type="World3D" id="World3D_wbyk0"]
+
+[node name="CarMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1_t3hgx")
+
+[node name="Container" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -500.0
+offset_top = -300.0
+offset_right = 500.0
+offset_bottom = 300.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="Container"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.0627451, 0.0627451, 0.0627451, 0.466667)
+
+[node name="ScrollContainer" type="ScrollContainer" parent="Container"]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = 0.75
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 5.0
+offset_right = -7.0
+offset_bottom = -9.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="GridContainer" type="GridContainer" parent="Container/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+columns = 8
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Container"]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.126
+anchor_right = 1.0
+anchor_bottom = 0.68
+offset_left = -121.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="carPreviewTexture" type="TextureRect" parent="Container/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+texture = ExtResource("2_vkkc0")
+expand_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Container/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CarName" type="Label" parent="Container/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 6
+size_flags_stretch_ratio = 0.25
+text = "This is a car."
+label_settings = SubResource("LabelSettings_cxd0e")
+horizontal_alignment = 1
+
+[node name="SettingLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+text = "MACHINE SETTING: "
+
+[node name="SettingSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+value = 0.5
+tick_count = 11
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Container/HBoxContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="BaseColor" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(128, 64)
+layout_mode = 2
+
+[node name="SecColor" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(128, 64)
+layout_mode = 2
+
+[node name="TerColor" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/HBoxContainer"]
+custom_minimum_size = Vector2(128, 64)
+layout_mode = 2
+
+[node name="previewViewport" type="SubViewport" parent="Container/HBoxContainer"]
+unique_name_in_owner = true
+own_world_3d = true
+world_3d = SubResource("World3D_wbyk0")
+transparent_bg = true
+msaa_3d = 3
+canvas_cull_mask = 4293918721
+render_target_update_mode = 4
+
+[node name="LineEdit" type="LineEdit" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.112
+anchor_top = 0.653
+anchor_right = 0.498
+anchor_bottom = 0.703
+offset_left = -0.360001
+offset_top = -0.160034
+offset_right = 0.559937
+offset_bottom = -0.160004
+placeholder_text = "Pilot Name"
+max_length = 32
+
+[connection signal="text_changed" from="LineEdit" to="." method="_on_line_edit_text_changed"]
+[connection signal="text_submitted" from="LineEdit" to="." method="_on_line_edit_text_submitted"]

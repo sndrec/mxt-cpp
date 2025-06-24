@@ -1,0 +1,340 @@
+[gd_scene load_steps=45 format=3 uid="uid://dcjt1cb3f8ap8"]
+
+[ext_resource type="Script" uid="uid://bx850a680e4hf" path="res://core/car/car_base.gd" id="1_6sc3m"]
+[ext_resource type="Resource" uid="uid://chcqfcqro5k4r" path="res://content/base/character/ryu/car_ryu_def.tres" id="2_tchbq"]
+[ext_resource type="Shader" uid="uid://cjwyfxgkso5od" path="res://core/ui/menus/RO_Spatial_Checker.gdshader" id="2_x3f3k"]
+[ext_resource type="PackedScene" uid="uid://32t0e0x6ldk1" path="res://core/ui/race_hud.tscn" id="3_idvgy"]
+[ext_resource type="Texture2D" uid="uid://delifuq4b6ivp" path="res://content/base/common/checkerboard.png" id="3_x0e4l"]
+[ext_resource type="Shader" uid="uid://l4xle4867pia" path="res://core/car/car_shader.gdshader" id="4_uk5fg"]
+[ext_resource type="Texture2D" uid="uid://q1y6yasxowl1" path="res://content/base/character/b/Bruiser_ALBEDO_AO_MERGED.png" id="5_754kf"]
+[ext_resource type="Texture2D" uid="uid://cls4u1835f6ql" path="res://content/base/character/b/Bruiser_COLORMAP.png" id="6_goijq"]
+[ext_resource type="ArrayMesh" uid="uid://creeid80lylw7" path="res://content/base/character/b/fatshark.obj" id="7_u6ym0"]
+[ext_resource type="Texture2D" uid="uid://x3pt37batflx" path="res://content/base/texture/ui/placements/mx-1.png" id="9_n7q61"]
+[ext_resource type="Texture2D" uid="uid://d02oibuuhrj7m" path="res://content/base/texture/emote_sticker/SLOW_DOWN.png" id="10_nmyxq"]
+[ext_resource type="Texture2D" uid="uid://dwbiop1ki0433" path="res://content/base/texture/particle/circle_01.png" id="11_aoyse"]
+[ext_resource type="Shader" uid="uid://dgiaf2l2jcaso" path="res://core/car/recharge_particle_process_shader.gdshader" id="11_ki63a"]
+[ext_resource type="Texture2D" uid="uid://bpowg0djknbpg" path="res://content/base/texture/particle/star_05.png" id="13_l2lb3"]
+[ext_resource type="PackedScene" uid="uid://cr0v8k0h0rb8r" path="res://core/car/boost_electricity.tscn" id="15_c23p7"]
+[ext_resource type="Shader" uid="uid://drbv65j5t4m44" path="res://core/car/car_shadow.gdshader" id="15_lb1jc"]
+[ext_resource type="Texture2D" uid="uid://bhjxtdn8npqhp" path="res://content/base/common/shadow.png" id="15_u6ym0"]
+[ext_resource type="PackedScene" uid="uid://boy1og0xhuefn" path="res://content/base/effects/particles/attack_particles.tscn" id="16_0yyls"]
+
+[sub_resource type="SphereShape3D" id="SphereShape3D_u0vgj"]
+margin = 0.25
+radius = 2.5
+
+[sub_resource type="Gradient" id="Gradient_glocs"]
+offsets = PackedFloat32Array(0, 0.271719, 0.304991, 0.500924, 0.524954, 0.669131, 0.685767, 0.866913, 0.887246, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0.025878, 0.025878, 0.025878, 1, 0.0506019, 0.0506019, 0.0506019, 1, 0.03824, 0.03824, 0.03824, 1, 0.356635, 0.356635, 0.356635, 1, 0.387323, 0.387323, 0.387323, 1, 0.703582, 0.703582, 0.703582, 1, 0.743531, 0.743531, 0.743531, 1, 0.964379, 0.964379, 0.964379, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_abaq3"]
+gradient = SubResource("Gradient_glocs")
+
+[sub_resource type="Gradient" id="Gradient_q04cj"]
+offsets = PackedFloat32Array(0.693161, 0.726433, 0.798521, 0.829945, 0.872458)
+colors = PackedColorArray(0.0142752, 0.0142752, 0.0142752, 1, 0.0846899, 0.0846899, 0.0846899, 1, 0.0846899, 0.0846899, 0.0846899, 1, 0.454524, 0.454524, 0.454524, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_8b17e"]
+gradient = SubResource("Gradient_q04cj")
+
+[sub_resource type="Gradient" id="Gradient_3eiq2"]
+offsets = PackedFloat32Array(0.794824, 0.817006, 0.966728, 1)
+colors = PackedColorArray(0, 0, 0, 1, 0.10748, 0.10748, 0.10748, 1, 0.220852, 0.220852, 0.220851, 1, 0.466181, 0.466181, 0.466181, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_nrm4p"]
+gradient = SubResource("Gradient_3eiq2")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_e6o30"]
+render_priority = 0
+shader = ExtResource("4_uk5fg")
+shader_parameter/albedo_texture = ExtResource("5_754kf")
+shader_parameter/color_overlay_texture = ExtResource("6_goijq")
+shader_parameter/specular_ramp = SubResource("GradientTexture1D_nrm4p")
+shader_parameter/fresnel_ramp = SubResource("GradientTexture1D_8b17e")
+shader_parameter/diffuse_ramp = SubResource("GradientTexture1D_abaq3")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ykkck"]
+render_priority = 0
+shader = ExtResource("2_x3f3k")
+shader_parameter/plate_dist = 1.0
+shader_parameter/checkerRepeat = 6.0
+shader_parameter/checkerRotate = 0.1
+shader_parameter/inTransparency = 0.35
+shader_parameter/outlineSize = Vector2(0.965, 0.95)
+shader_parameter/checkerScrollSpeed = Vector2(0.1, -0.05)
+shader_parameter/outlineColor = Color(0.815686, 0.388235, 0.282353, 1)
+shader_parameter/topGradientCheck1 = Color(0.831373, 0.321569, 0.486275, 1)
+shader_parameter/bottomGradientCheck1 = Color(0.419608, 0.0901961, 0.262745, 1)
+shader_parameter/topGradientCheck2 = Color(0.560784, 0.184314, 0.278431, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.14902, 0.027451, 0.0666667, 1)
+shader_parameter/checkerTexture = ExtResource("3_x0e4l")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_lsv4m"]
+render_priority = 0
+shader = ExtResource("2_x3f3k")
+shader_parameter/plate_dist = 2.0
+shader_parameter/checkerRepeat = 8.0
+shader_parameter/checkerRotate = 0.1
+shader_parameter/inTransparency = 1.0
+shader_parameter/outlineSize = Vector2(0.965, 0.95)
+shader_parameter/checkerScrollSpeed = Vector2(0.2, -0.1)
+shader_parameter/outlineColor = Color(0.9, 0.5, 0.4, 1)
+shader_parameter/topGradientCheck1 = Color(0.901961, 0, 0.431373, 1)
+shader_parameter/bottomGradientCheck1 = Color(0.431373, 0, 0.243137, 1)
+shader_parameter/topGradientCheck2 = Color(0.372549, 0.105882, 0.172549, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.215686, 0.0156863, 0.0980392, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_tjhxi"]
+material = SubResource("ShaderMaterial_lsv4m")
+size = Vector2(0.35, 0.1)
+orientation = 2
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_0dhje"]
+render_priority = 0
+shader = ExtResource("2_x3f3k")
+shader_parameter/plate_dist = 2.0
+shader_parameter/checkerRepeat = 8.0
+shader_parameter/checkerRotate = 0.1
+shader_parameter/inTransparency = 1.0
+shader_parameter/outlineSize = Vector2(0, 2)
+shader_parameter/checkerScrollSpeed = Vector2(0.2, -0.1)
+shader_parameter/outlineColor = Color(0.9, 0.5, 0.4, 1)
+shader_parameter/topGradientCheck1 = Color(1, 1, 1, 1)
+shader_parameter/bottomGradientCheck1 = Color(1, 0.15, 0.6, 1)
+shader_parameter/topGradientCheck2 = Color(0.980392, 0.854902, 0.870588, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.807843, 0.580392, 0.0313726, 1)
+
+[sub_resource type="TextMesh" id="TextMesh_bmfed"]
+material = SubResource("ShaderMaterial_0dhje")
+text = "player"
+font_size = 8
+curve_step = 1.0
+depth = 0.0
+width = 5.0
+
+[sub_resource type="Gradient" id="Gradient_2roav"]
+colors = PackedColorArray(1, 0, 0, 1, 1, 0.2, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_1i302"]
+gradient = SubResource("Gradient_2roav")
+
+[sub_resource type="Gradient" id="Gradient_3mx1x"]
+offsets = PackedFloat32Array(0, 0.187192, 0.793103, 1)
+colors = PackedColorArray(0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_3c35n"]
+gradient = SubResource("Gradient_3mx1x")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_d06wo"]
+shader = ExtResource("11_ki63a")
+shader_parameter/direction = Vector3(1, 0, 0)
+shader_parameter/spread = 45.0
+shader_parameter/flatness = 0.0
+shader_parameter/inherit_emitter_velocity_ratio = 0.0
+shader_parameter/initial_linear_velocity_min = 0.0
+shader_parameter/initial_linear_velocity_max = 0.0
+shader_parameter/directional_velocity_min = 1.0
+shader_parameter/directional_velocity_max = 1.0
+shader_parameter/angular_velocity_min = 4.0
+shader_parameter/angular_velocity_max = 4.0
+shader_parameter/orbit_velocity_min = 0.0
+shader_parameter/orbit_velocity_max = 0.0
+shader_parameter/radial_velocity_min = 0.0
+shader_parameter/radial_velocity_max = 0.0
+shader_parameter/linear_accel_min = 0.0
+shader_parameter/linear_accel_max = 0.0
+shader_parameter/radial_accel_min = 0.0
+shader_parameter/radial_accel_max = 0.0
+shader_parameter/tangent_accel_min = 0.0
+shader_parameter/tangent_accel_max = 0.0
+shader_parameter/damping_min = 0.0
+shader_parameter/damping_max = 0.0
+shader_parameter/initial_angle_min = -180.0
+shader_parameter/initial_angle_max = 180.0
+shader_parameter/scale_min = 1.5
+shader_parameter/scale_max = 1.5
+shader_parameter/hue_variation_min = 0.0
+shader_parameter/hue_variation_max = 0.0
+shader_parameter/anim_speed_min = 0.0
+shader_parameter/anim_speed_max = 0.0
+shader_parameter/anim_offset_min = 0.0
+shader_parameter/anim_offset_max = 0.0
+shader_parameter/lifetime_randomness = 0.0
+shader_parameter/emission_shape_offset = Vector3(0, 0, 0)
+shader_parameter/emission_shape_scale = Vector3(1, 1, 1)
+shader_parameter/velocity_pivot = Vector3(0, 0, 0)
+shader_parameter/color_value = Color(1, 1, 1, 1)
+shader_parameter/gravity = Vector3(0, -1e-06, 0)
+shader_parameter/color_ramp = SubResource("GradientTexture1D_3c35n")
+shader_parameter/color_initial_ramp = SubResource("GradientTexture1D_1i302")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2qyk1"]
+transparency = 1
+blend_mode = 1
+cull_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("11_aoyse")
+proximity_fade_enabled = true
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_jpkl1"]
+material = SubResource("StandardMaterial3D_2qyk1")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_dxphf"]
+blend_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(2, 2, 2, 1)
+albedo_texture = ExtResource("13_l2lb3")
+proximity_fade_enabled = true
+proximity_fade_distance = 2.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_u763o"]
+material = SubResource("StandardMaterial3D_dxphf")
+size = Vector2(4, 4)
+
+[sub_resource type="Gradient" id="Gradient_u0vgj"]
+offsets = PackedFloat32Array(0.557604, 1)
+colors = PackedColorArray(0, 0, 0, 0, 0, 0, 0, 0.701961)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_c23p7"]
+gradient = SubResource("Gradient_u0vgj")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_u6ym0"]
+render_priority = 0
+shader = ExtResource("15_lb1jc")
+shader_parameter/car_shadow = ExtResource("15_u6ym0")
+shader_parameter/car_shadow_gradient = SubResource("GradientTexture1D_c23p7")
+shader_parameter/shadow_blur = 0.028
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_u0vgj"]
+material = SubResource("ShaderMaterial_u6ym0")
+size = Vector2(8, 8)
+orientation = 2
+
+[node name="car_base" type="Node3D"]
+script = ExtResource("1_6sc3m")
+car_definition = ExtResource("2_tchbq")
+
+[node name="world_sphere_cast" type="ShapeCast3D" parent="."]
+unique_name_in_owner = true
+enabled = false
+shape = SubResource("SphereShape3D_u0vgj")
+target_position = Vector3(0, -1.5, 0)
+margin = 0.25
+collide_with_areas = true
+
+[node name="world_ray_cast" type="RayCast3D" parent="."]
+unique_name_in_owner = true
+enabled = false
+target_position = Vector3(0, -1.5, 0)
+hit_back_faces = false
+collide_with_areas = true
+
+[node name="car_camera" type="Camera3D" parent="."]
+unique_name_in_owner = true
+transform = Transform3D(-1, 1.21669e-08, -8.6572e-08, 0, 0.990268, 0.139173, 8.74228e-08, 0.139173, -0.990268, 0, 1, -2)
+doppler_tracking = 1
+fov = 37.8493
+far = 30000.0
+
+[node name="race_hud" parent="." instance=ExtResource("3_idvgy")]
+unique_name_in_owner = true
+process_priority = 100
+
+[node name="car_visual" type="Node3D" parent="."]
+unique_name_in_owner = true
+
+[node name="debug_car_mesh" type="MeshInstance3D" parent="car_visual"]
+unique_name_in_owner = true
+transform = Transform3D(1.3, 0, 0, 0, 1.3, 0, 0, 0, 1.3, 0, 0, 0)
+layers = 786432
+material_override = SubResource("ShaderMaterial_e6o30")
+cast_shadow = 0
+instance_shader_parameters/base_color = Color(0.649157, 0.695812, 0.968411, 1)
+instance_shader_parameters/depth_offset = -5000.0
+instance_shader_parameters/overlay_color = Color(0.314316, 0.314316, 0.314316, 1)
+instance_shader_parameters/secondary_color = Color(1, 0.239216, 0.482353, 1)
+instance_shader_parameters/tertiary_color = Color(0.898039, 0.639216, 1, 1)
+mesh = ExtResource("7_u6ym0")
+skeleton = NodePath("")
+
+[node name="NametagBackground" type="MeshInstance3D" parent="car_visual"]
+unique_name_in_owner = true
+process_mode = 4
+transform = Transform3D(2.25, 0, 0, 0, 2.25, 0, 0, 0, 2.25, 0, 0.975, -0.01)
+visible = false
+sorting_offset = -1.0
+material_override = SubResource("ShaderMaterial_ykkck")
+cast_shadow = 0
+mesh = SubResource("PlaneMesh_tjhxi")
+skeleton = NodePath("../..")
+
+[node name="Nametag" type="MeshInstance3D" parent="car_visual/NametagBackground"]
+unique_name_in_owner = true
+sorting_offset = 1.0
+mesh = SubResource("TextMesh_bmfed")
+
+[node name="PlacementSprite" type="Sprite3D" parent="car_visual"]
+process_mode = 4
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.37347, 0)
+visible = false
+offset = Vector2(0, 256)
+pixel_size = 0.0002
+billboard = 1
+fixed_size = true
+alpha_scissor_threshold = 0.0
+texture = ExtResource("9_n7q61")
+
+[node name="Sticker" type="Sprite3D" parent="car_visual"]
+process_mode = 4
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+visible = false
+sorting_offset = 5000.0
+pixel_size = 0.001
+billboard = 1
+double_sided = false
+texture_filter = 5
+render_priority = 127
+texture = ExtResource("10_nmyxq")
+
+[node name="RechargeParticles" type="GPUParticles3D" parent="car_visual"]
+transform = Transform3D(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0)
+emitting = false
+amount = 6
+lifetime = 0.5
+fixed_fps = 60
+interpolate = false
+fract_delta = false
+local_coords = true
+process_material = SubResource("ShaderMaterial_d06wo")
+draw_passes = 2
+draw_pass_1 = SubResource("PlaneMesh_jpkl1")
+draw_pass_2 = SubResource("PlaneMesh_u763o")
+
+[node name="BoostElectricity" parent="car_visual" instance=ExtResource("15_c23p7")]
+process_priority = 10000
+process_physics_priority = 10000
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)
+bounds = AABB(0, 0, 0, 1.8, 0.5, 2.53)
+boosting = false
+
+[node name="AttackParticles" parent="car_visual" instance=ExtResource("16_0yyls")]
+transform = Transform3D(1.4, 0, 0, 0, 1.4, 0, 0, 0, 1.4, 0, 0.4, 0)
+
+[node name="CarShadowViewport" type="SubViewport" parent="."]
+transparent_bg = true
+canvas_cull_mask = 4294443008
+size = Vector2i(256, 256)
+render_target_update_mode = 4
+
+[node name="CarShadowCamera" type="Camera3D" parent="CarShadowViewport"]
+transform = Transform3D(1, 0, 0, 0, 0, 1, 0, -1, 0, 0, 4, 0)
+cull_mask = 524288
+projection = 1
+size = 8.0
+
+[node name="CarShadowMesh" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, -0.5, 0)
+sorting_offset = 10000.0
+mesh = SubResource("PlaneMesh_u0vgj")

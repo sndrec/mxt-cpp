@@ -1,0 +1,88 @@
+[gd_scene load_steps=13 format=3 uid="uid://bqx1e4inmj5a2"]
+
+[sub_resource type="Resource" id="Resource_bbvb5"]
+metadata/__load_path__ = "res://asset/effect/effect.gd"
+
+[sub_resource type="Curve" id="Curve_tlji8"]
+_data = [Vector2(0, 1), 0.0, -2.1897, 0, 0, Vector2(1, 0), -0.12282, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_6wqjm"]
+curve = SubResource("Curve_tlji8")
+
+[sub_resource type="Curve" id="Curve_ryvd0"]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="Curve" id="Curve_ny5eb"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="Curve" id="Curve_3n8lj"]
+_data = [Vector2(0.0591716, 0), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="CurveXYZTexture" id="CurveXYZTexture_p6620"]
+curve_x = SubResource("Curve_ryvd0")
+curve_y = SubResource("Curve_ny5eb")
+curve_z = SubResource("Curve_3n8lj")
+
+[sub_resource type="Curve" id="Curve_bpigu"]
+_data = [Vector2(0, 0.00988364), 0.0, 19.0634, 0, 0, Vector2(0.0972222, 0.954225), 0.798976, 0.798976, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_nkay0"]
+curve = SubResource("Curve_bpigu")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_i0ouw"]
+lifetime_randomness = 0.7
+angle_min = -720.0
+angle_max = 720.0
+direction = Vector3(0, 1, 0)
+spread = 90.0
+initial_velocity_min = 8.0
+initial_velocity_max = 16.0
+angular_velocity_min = -90.0
+angular_velocity_max = 90.0
+directional_velocity_min = 0.05
+directional_velocity_max = 0.15
+directional_velocity_curve = SubResource("CurveXYZTexture_p6620")
+radial_velocity_min = 0.1
+radial_velocity_max = 0.2
+gravity = Vector3(0, 0, 0)
+damping_min = 60.0
+damping_max = 70.0
+attractor_interaction_enabled = false
+scale_min = 4.0
+scale_max = 8.0
+scale_curve = SubResource("CurveTexture_nkay0")
+alpha_curve = SubResource("CurveTexture_6wqjm")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_isxhc"]
+transparency = 1
+shading_mode = 0
+specular_mode = 2
+vertex_color_use_as_albedo = true
+disable_receive_shadows = true
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+
+[sub_resource type="QuadMesh" id="QuadMesh_aeyci"]
+material = SubResource("StandardMaterial3D_isxhc")
+
+[node name="Smoke_Poof" type="Node3D"]
+script = SubResource("Resource_bbvb5")
+
+[node name="Smoke" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 24
+lifetime = 1.5
+one_shot = true
+explosiveness = 1.0
+randomness = 1.0
+fixed_fps = 60
+process_material = SubResource("ParticleProcessMaterial_i0ouw")
+draw_pass_1 = SubResource("QuadMesh_aeyci")

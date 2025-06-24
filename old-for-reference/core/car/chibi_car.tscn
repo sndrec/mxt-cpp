@@ -1,0 +1,67 @@
+[gd_scene load_steps=6 format=3 uid="uid://evyd0uo473d8"]
+
+[ext_resource type="Script" uid="uid://be7fw608mxfsf" path="res://core/car/chibi_car.gd" id="1_0kgfd"]
+[ext_resource type="Resource" uid="uid://chcqfcqro5k4r" path="res://content/base/character/ryu/car_ryu_def.tres" id="2_7d8s3"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_k08d1"]
+bg_color = Color(0, 0, 0, 0.262745)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+
+[sub_resource type="LabelSettings" id="LabelSettings_0nr0f"]
+font_size = 20
+
+[sub_resource type="LabelSettings" id="LabelSettings_knmnn"]
+font_size = 14
+
+[node name="ChibiCar" type="Node3D"]
+script = ExtResource("1_0kgfd")
+car_definition = ExtResource("2_7d8s3")
+
+[node name="CarMesh" type="MeshInstance3D" parent="."]
+
+[node name="NamePlateControl" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="Panel" type="PanelContainer" parent="NamePlateControl"]
+clip_contents = true
+layout_mode = 1
+offset_left = 32.0
+offset_top = -55.0
+offset_right = 62.0
+offset_bottom = -13.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_k08d1")
+
+[node name="MarginContainer" type="MarginContainer" parent="NamePlateControl/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 3
+theme_override_constants/margin_top = 3
+theme_override_constants/margin_right = 3
+theme_override_constants/margin_bottom = 3
+
+[node name="Control" type="VBoxContainer" parent="NamePlateControl/Panel/MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 1
+
+[node name="NamePlateUsername" type="Label" parent="NamePlateControl/Panel/MarginContainer/Control"]
+layout_mode = 2
+text = "Tw"
+label_settings = SubResource("LabelSettings_0nr0f")
+
+[node name="NamePlatePing" type="Label" parent="NamePlateControl/Panel/MarginContainer/Control"]
+layout_mode = 2
+text = "6"
+label_settings = SubResource("LabelSettings_knmnn")
+
+[node name="Panel2" type="Line2D" parent="NamePlateControl"]
+position = Vector2(20, -14)
+points = PackedVector2Array(-19, 13, -5, -1, 12, -1)
+width = 4.0
+default_color = Color(0, 0, 0, 0.262745)
+begin_cap_mode = 2
+round_precision = 4
+antialiased = true

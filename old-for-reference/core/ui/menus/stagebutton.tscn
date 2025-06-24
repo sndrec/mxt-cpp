@@ -1,0 +1,88 @@
+[gd_scene load_steps=7 format=3 uid="uid://dv75txhmotmqk"]
+
+[ext_resource type="Texture2D" uid="uid://b8fh1m8rphyav" path="res://content/base/common/placeholder.png" id="1_da26q"]
+[ext_resource type="Script" uid="uid://dsa15gpt63sj" path="res://core/ui/menus/stagebutton.gd" id="1_ktixk"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_eoiua"]
+bg_color = Color(0.223529, 0.137255, 0.0705882, 0.701961)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(0.54902, 0.282353, 0.231373, 1)
+border_blend = true
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_jl6m8"]
+bg_color = Color(0.882353, 0.882353, 0.882353, 0.717647)
+border_width_left = 12
+border_width_top = 12
+border_width_right = 12
+border_width_bottom = 12
+border_color = Color(1, 1, 1, 1)
+border_blend = true
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_0gjct"]
+
+[sub_resource type="World3D" id="World3D_5itdh"]
+
+[node name="stagebutton" type="Button"]
+clip_contents = true
+anchors_preset = -1
+anchor_left = 0.45
+anchor_top = 0.411
+anchor_right = 0.55
+anchor_bottom = 0.589
+offset_top = 0.0799866
+offset_bottom = -0.0800476
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+theme_override_styles/normal = SubResource("StyleBoxFlat_eoiua")
+theme_override_styles/hover = SubResource("StyleBoxFlat_jl6m8")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_0gjct")
+script = ExtResource("1_ktixk")
+
+[node name="Control" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 4
+size_flags_vertical = 4
+mouse_filter = 2
+
+[node name="stageButtonTexture" type="TextureRect" parent="Control"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("1_da26q")
+expand_mode = 2
+
+[node name="previewViewport" type="SubViewport" parent="Control"]
+unique_name_in_owner = true
+own_world_3d = true
+world_3d = SubResource("World3D_5itdh")
+transparent_bg = true
+msaa_3d = 3
+canvas_cull_mask = 4293918721
+render_target_update_mode = 1
+
+[connection signal="mouse_entered" from="." to="." method="_on_mouse_entered"]
+[connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
+[connection signal="pressed" from="." to="." method="_on_pressed"]
