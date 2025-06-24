@@ -1,0 +1,77 @@
+[gd_scene load_steps=5 format=3 uid="uid://3htms8uskhfm"]
+
+[ext_resource type="Script" uid="uid://dmfvtbtnijn3u" path="res://core/ui/race_placement_hud.gd" id="1_gutqc"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_trnx8"]
+font_size = 52
+
+[sub_resource type="LabelSettings" id="LabelSettings_j1nlp"]
+line_spacing = 2.0
+font_size = 32
+
+[sub_resource type="LabelSettings" id="LabelSettings_sx68c"]
+font_size = 32
+
+[node name="RacePlacementHud" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_gutqc")
+
+[node name="Panel" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -250.0
+offset_top = -320.0
+offset_right = 250.0
+offset_bottom = 320.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="VSplitContainer" type="VSplitContainer" parent="Panel/MarginContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Panel/MarginContainer/VSplitContainer"]
+layout_mode = 2
+text = "PLACEMENTS!!!!!"
+label_settings = SubResource("LabelSettings_trnx8")
+horizontal_alignment = 1
+
+[node name="PlacementContainer" type="VBoxContainer" parent="Panel/MarginContainer/VSplitContainer"]
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="Panel/MarginContainer/VSplitContainer/PlacementContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Panel/MarginContainer/VSplitContainer/PlacementContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Player"
+label_settings = SubResource("LabelSettings_j1nlp")
+horizontal_alignment = 1
+
+[node name="Label2" type="Label" parent="Panel/MarginContainer/VSplitContainer/PlacementContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Points"
+label_settings = SubResource("LabelSettings_sx68c")
+horizontal_alignment = 1

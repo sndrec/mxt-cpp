@@ -1,0 +1,352 @@
+[gd_scene load_steps=14 format=3 uid="uid://32t0e0x6ldk1"]
+
+[ext_resource type="Script" uid="uid://dkjcr66oxndry" path="res://ui/race_hud.gd" id="1_w35b3"]
+[ext_resource type="Shader" path="res://ui/health_meter.gdshader" id="2_2xneg"]
+[ext_resource type="Texture2D" uid="uid://c12nhn05is6ov" path="res://ui/placeholder.png" id="2_ifpia"]
+[ext_resource type="Texture2D" uid="uid://d3xfb8wko2v52" path="res://ui/countdown_back.png" id="3_qb5k8"]
+[ext_resource type="Texture2D" uid="uid://usop48tynaes" path="res://ui/countdown_arrow.png" id="4_prwh0"]
+[ext_resource type="Texture2D" uid="uid://odqnkghs7oic" path="res://ui/placements/mx-21.png" id="6_70m5x"]
+[ext_resource type="Texture2D" uid="uid://ds5wavcy0prbi" path="res://ui/circle_02.png" id="8_2hfuj"]
+[ext_resource type="Texture2D" uid="uid://ba5amhq17pghw" path="res://ui/circle.png" id="9_3icfp"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_4jbru"]
+font_size = 32
+outline_size = 6
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_m7o86"]
+shader = ExtResource("2_2xneg")
+shader_parameter/health_amount = 53.84
+shader_parameter/max_health_amount = 100.0
+shader_parameter/can_boost = false
+shader_parameter/health_to_deplete = 0.0
+
+[sub_resource type="LabelSettings" id="LabelSettings_cix6h"]
+font_size = 24
+outline_size = 4
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_m1icb"]
+font_size = 24
+outline_size = 4
+outline_color = Color(0, 0, 0, 1)
+
+[sub_resource type="World3D" id="World3D_r1orx"]
+
+[node name="race_hud" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_w35b3")
+
+[node name="speedometer" type="Label" parent="."]
+unique_name_in_owner = true
+process_mode = 4
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -222.0
+offset_top = -53.0
+offset_right = -17.0
+offset_bottom = -17.0
+grow_horizontal = 0
+grow_vertical = 0
+text = "4096 km/h"
+label_settings = SubResource("LabelSettings_4jbru")
+
+[node name="lapcounter" type="Label" parent="."]
+unique_name_in_owner = true
+process_mode = 4
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -76.0
+offset_top = 19.0
+offset_right = -18.0
+offset_bottom = 55.0
+grow_horizontal = 0
+text = "1/3
+"
+label_settings = SubResource("LabelSettings_4jbru")
+
+[node name="racetimer" type="Label" parent="."]
+unique_name_in_owner = true
+process_mode = 4
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -77.0
+offset_top = 24.0
+offset_right = 77.0
+offset_bottom = 60.0
+grow_horizontal = 2
+text = "02:34.30"
+label_settings = SubResource("LabelSettings_4jbru")
+
+[node name="healthmeter" type="TextureRect" parent="."]
+unique_name_in_owner = true
+process_mode = 4
+material = SubResource("ShaderMaterial_m7o86")
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.664
+anchor_top = 0.024
+anchor_right = 0.854
+anchor_bottom = 0.081
+offset_left = 0.0799561
+offset_top = -0.280001
+offset_right = -0.119995
+offset_bottom = -0.32
+grow_horizontal = 0
+pivot_offset = Vector2(243, 0)
+mouse_filter = 2
+texture = ExtResource("2_ifpia")
+expand_mode = 2
+
+[node name="TextureRect" type="TextureRect" parent="."]
+process_mode = 4
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 40.0
+mouse_filter = 2
+
+[node name="countdowncontrol" type="Control" parent="."]
+process_mode = 4
+layout_mode = 1
+anchor_left = 0.422
+anchor_top = 0.361
+anchor_right = 0.578
+anchor_bottom = 0.639
+offset_left = -0.160034
+offset_top = 0.0799866
+offset_right = 0.159973
+offset_bottom = -0.0800476
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(100, 100)
+mouse_filter = 2
+
+[node name="countdown_back" type="TextureRect" parent="countdowncontrol"]
+process_mode = 4
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("3_qb5k8")
+expand_mode = 2
+stretch_mode = 4
+
+[node name="countdown_arrow" type="TextureRect" parent="countdowncontrol"]
+process_mode = 4
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.5
+anchor_top = 0.56
+anchor_right = 0.5
+anchor_bottom = 0.56
+offset_left = -41.0
+offset_top = -40.0
+offset_right = 39.0
+offset_bottom = 40.0
+grow_horizontal = 2
+grow_vertical = 2
+rotation = 1.5708
+scale = Vector2(1.5, 1.5)
+pivot_offset = Vector2(40, 40)
+texture = ExtResource("4_prwh0")
+expand_mode = 2
+stretch_mode = 4
+
+[node name="Control" type="Control" parent="."]
+process_mode = 4
+layout_mode = 1
+anchor_left = 0.007
+anchor_top = 0.015
+anchor_right = 0.19
+anchor_bottom = 0.487
+offset_left = 0.04
+offset_top = 0.2
+offset_right = -0.200012
+offset_bottom = 0.359985
+mouse_filter = 2
+
+[node name="leaderboard_container" type="VBoxContainer" parent="Control"]
+process_mode = 4
+layout_mode = 1
+offset_right = 599.0
+offset_bottom = 182.0
+
+[node name="place_1" type="Label" parent="Control/leaderboard_container"]
+process_mode = 4
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 1
+text = "Twilight"
+label_settings = SubResource("LabelSettings_cix6h")
+
+[node name="place_2" type="Label" parent="Control/leaderboard_container"]
+process_mode = 4
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 1
+text = "Twilight"
+label_settings = SubResource("LabelSettings_m1icb")
+
+[node name="place_3" type="Label" parent="Control/leaderboard_container"]
+process_mode = 4
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 1
+text = "Twilight"
+label_settings = SubResource("LabelSettings_m1icb")
+
+[node name="place_4" type="Label" parent="Control/leaderboard_container"]
+process_mode = 4
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 1
+text = "Twilight"
+label_settings = SubResource("LabelSettings_m1icb")
+
+[node name="place_5" type="Label" parent="Control/leaderboard_container"]
+process_mode = 4
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 1
+text = "Twilight"
+label_settings = SubResource("LabelSettings_m1icb")
+
+[node name="place_6" type="Label" parent="Control/leaderboard_container"]
+process_mode = 4
+layout_mode = 2
+size_flags_horizontal = 0
+size_flags_vertical = 1
+text = "Twilight"
+label_settings = SubResource("LabelSettings_m1icb")
+
+[node name="MinimapControl" type="Control" parent="."]
+process_mode = 4
+clip_contents = true
+layout_mode = 1
+anchor_left = 0.702
+anchor_top = 0.544
+anchor_right = 1.0
+anchor_bottom = 0.878
+offset_left = -0.560059
+offset_top = 0.319977
+offset_right = -2.0
+offset_bottom = -0.160034
+mouse_filter = 2
+
+[node name="TextureRect" type="TextureRect" parent="MinimapControl"]
+process_mode = 4
+self_modulate = Color(1, 1, 1, 0.470588)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="SubViewport" type="SubViewport" parent="MinimapControl"]
+process_mode = 1
+own_world_3d = true
+world_3d = SubResource("World3D_r1orx")
+transparent_bg = true
+msaa_3d = 3
+size = Vector2i(380, 240)
+render_target_update_mode = 4
+
+[node name="Camera3D" type="Camera3D" parent="MinimapControl/SubViewport"]
+process_mode = 4
+projection = 1
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="MinimapControl/SubViewport"]
+process_mode = 4
+
+[node name="PlaceBadge" type="TextureRect" parent="."]
+process_mode = 4
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.27
+anchor_top = 0.012
+anchor_right = 0.27
+anchor_bottom = 0.142
+offset_left = 0.399994
+offset_top = 0.36
+offset_right = 182.4
+offset_bottom = -2.24001
+mouse_filter = 2
+texture = ExtResource("6_70m5x")
+expand_mode = 3
+stretch_mode = 4
+
+[node name="InputViewer" type="TextureRect" parent="."]
+process_mode = 4
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.798
+anchor_top = 0.057
+anchor_right = 0.998
+anchor_bottom = 0.412
+offset_left = 0.559937
+offset_top = -0.0400009
+offset_right = 0.559937
+offset_bottom = 0.359985
+texture = ExtResource("8_2hfuj")
+expand_mode = 1
+
+[node name="RealInput" type="TextureRect" parent="InputViewer"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -4.0
+offset_top = -4.0
+offset_right = 4.0
+offset_bottom = 4.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(4, 4)
+texture = ExtResource("9_3icfp")
+stretch_mode = 2
+
+[node name="ClampedInput" type="TextureRect" parent="InputViewer"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -4.0
+offset_top = -4.0
+offset_right = 4.0
+offset_bottom = 4.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(4, 4)
+texture = ExtResource("9_3icfp")
+stretch_mode = 2
+
+[node name="CheckControl" type="Control" parent="."]
+process_mode = 4
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
