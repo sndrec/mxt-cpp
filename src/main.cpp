@@ -220,6 +220,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 	// load in track segments //
+	current_track->minimum_y = 0.0f;
 
 	current_track->num_segments = segment_count;
 	current_track->segments = level_data.allocate_array<TrackSegment>(segment_count);
@@ -396,6 +397,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				godot::Vector2 use_t((float(x) / (bx - 1)) * 2.0f - 1.0f, float(y) / (by - 1));
 				godot::Transform3D use_pos;
 				current_track->segments[seg].road_shape->get_oriented_transform_at_time(use_pos, use_t);
+				if (use_pos.origin.y < current_track->minimum_y)
+				{
+					current_track->minimum_y = use_pos.origin.y;
+				}
 				//current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
 				if (x == 0 && y == 0)
 				{
@@ -421,6 +426,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 		}
 	}
+	
+	current_track->minimum_y -= 250.0f;
 	gamestate_data.instantiate(1024 * 1024);
 	int state_capacity = gamestate_data.get_capacity();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
