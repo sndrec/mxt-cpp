@@ -27,6 +27,7 @@ script = ExtResource("1_tjhrj")
 script = ExtResource("3_netplay")
 
 [node name="Control" type="Control" parent="."]
+visible = false
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -94,7 +95,6 @@ grow_vertical = 2
 text = "Join"
 
 [node name="Lobby" type="Control" parent="."]
-visible = false
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -118,17 +118,8 @@ grow_vertical = 2
 
 [node name="PlayerList" type="ItemList" parent="Lobby"]
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -150.0
-offset_top = -104.0
-offset_right = 150.0
-offset_bottom = -74.0
-grow_horizontal = 2
-grow_vertical = 2
+offset_right = 300.0
+offset_bottom = 647.0
 
 [node name="StartRaceButton" type="Button" parent="Lobby"]
 layout_mode = 1

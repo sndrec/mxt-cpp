@@ -189,14 +189,14 @@ func _physics_process(delta: float) -> void:
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
 	
 	if (machine_state & FZ_MS.AIRBORNE) != 0:
-		var target_db := remap(use_vy, 0, 1, 20, 60)
+		var target_db := remap(use_vy, 0, 1, 0, 20)
 		air_sound.volume_db = lerpf(air_sound.volume_db, target_db, delta * 8)
 		var target_pitch := remap(use_vy, 0, 1, 0.5, 1.5)
 		air_sound.pitch_scale = lerpf(air_sound.pitch_scale, target_pitch, delta * 8)
 	else:
-		air_sound.volume_db = lerpf(air_sound.volume_db, -50, delta * 8)
+		air_sound.volume_db = lerpf(air_sound.volume_db, -20, delta * 8)
 	
-	DebugDraw2D.set_text("vy", velocity.y)
+	#DebugDraw2D.set_text("vy", velocity.y)
 	
 	if (terrain_state_old & FZ_TERRAIN.RECHARGE) == 0 and (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
 		terrain_sound.stream = preload("res://sfx/vehicle/restore.wav")
@@ -210,10 +210,10 @@ func _physics_process(delta: float) -> void:
 	elif terrain_state == 0:
 		terrain_sound.stop()
 	
-	DebugDraw2D.set_text("input_strafe", input_strafe)
+	#DebugDraw2D.set_text("input_strafe", input_strafe)
 	
 	if (absf(input_strafe) > 0.05):
-		strafe_sound.volume_db = lerpf(strafe_sound.volume_db, 0, delta * 12)
+		strafe_sound.volume_db = lerpf(strafe_sound.volume_db, 20, delta * 12)
 		if !strafe_sound.playing:
 			strafe_sound.play(0.0)
 	else:
