@@ -1436,7 +1436,7 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 			godot::Transform3D surf;
 			current_track->get_road_surface(use_cp, p0, road_t_sample_raw, spatial_t_sample, surf);
 			//dd3d->call("draw_arrow", p0_ray_start_ws, p1_ray_end_ws, godot::Color(1.0f, 1.0f, 1.0f), 0.25, true, _TICK_DELTA);
-			//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
+			//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
 			//current_track->cast_vs_track_fast(hit, p0_ray_start_ws, p1_ray_end_ws, CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0, use_cp);
 			//hit_found = hit.collided;
 			if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
@@ -1878,7 +1878,7 @@ int PhysicsCar::update_machine_corners() {
 							continue;
 						}
 						const RailSide &side = sides[i];
-						if (side.height <= 0.f)
+						if (side.height <= 0.f && !was_above)
 						{
 							continue;
 						}
@@ -1933,7 +1933,7 @@ int PhysicsCar::update_machine_corners() {
 							continue;
 						}
 						const RailSide &side = sides[i];
-						if (side.height <= 0.f)
+						if (side.height <= 0.f && !was_above)
 						{
 							continue;
 						}
@@ -2434,6 +2434,26 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 
 	machine_state &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::AIRBORNE | MACHINESTATE::FALLOUT);
 	frames_since_death = 0;
+	PhysicsCarSuspensionPoint* tilt_corners[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
+	PhysicsCarCollisionPoint* wall_corners[4] = {&wall_fl, &wall_fr, &wall_bl, &wall_br};
+
+	for (int i = 0; i < 4; ++i) {
+		auto* tc = tilt_corners[i];
+		auto* wc = wall_corners[i];
+
+		tc->state = 0;
+		tc->force = 0.0f;
+		tc->force_spatial_len = 0.0f;
+		tc->pos_old = mtxa->transform_point(tc->offset);
+		tc->pos = tc->pos_old;
+		tc->force_spatial = godot::Vector3();
+		tc->up_vector_2 = mtxa->rotate_point(godot::Vector3(0,1,0));
+		tc->up_vector = tc->up_vector_2;
+
+		wc->pos_a = mtxa->transform_point(godot::Vector3(0.0f, 0.1f, 0.0f));
+		wc->pos_b = mtxa->transform_point(wc->offset);
+		wc->collision = godot::Vector3();
+	}
 }
 
 void PhysicsCar::check_respawn()
