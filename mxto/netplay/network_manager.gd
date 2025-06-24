@@ -15,7 +15,7 @@ var sent_inputs := {}
 var last_local_input := NEUTRAL_INPUT.duplicate()
 var server_tick: int = 0
 var local_tick: int = 0
-const INPUT_HISTORY_SIZE := 15
+const INPUT_HISTORY_SIZE := 300
 var game_sim: GameSim
 var last_received_tick := {}
 var last_ack_tick: int = -1
