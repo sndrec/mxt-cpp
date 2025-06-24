@@ -177,56 +177,63 @@ func _client_send_input(tick: int, input: Dictionary) -> void:
 		last_received_tick[multiplayer.get_remote_sender_id()] = tick
 
 @rpc("any_peer", "unreliable", "call_local")
-func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int) -> void:
-        if not is_server:
-                server_tick = max(server_tick, tick + 1)
-                target_tick = max(target_tick, tgt)
-                player_ids = ids
-                authoritative_inputs[tick] = inputs
-                var rollback_needed := false
-                if input_history.has(tick):
-                        var predicted : Array = input_history[tick]
-                        if not _inputs_arrays_equal(predicted, inputs):
-                                input_history[tick] = inputs
-                                rollback_needed = true
-                if acks.has(multiplayer.get_unique_id()):
-                        var ack_tick := int(acks[multiplayer.get_unique_id()])
-                        last_ack_tick = max(last_ack_tick, ack_tick)
-                        if sent_input_times.has(ack_tick):
-                                var sample : float = 0.001 * float(Time.get_ticks_msec()) - sent_input_times[ack_tick]
-				if rtt_s == 0.0:
-					rtt_s = sample
-				else:
-					rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
-				sent_input_times.erase(ack_tick)
-				_update_desired_ahead()
-			for key in sent_inputs.keys():
-				if key <= last_ack_tick:
-					sent_inputs.erase(key)
-			for key in sent_input_times.keys():
-                                if key <= last_ack_tick:
-                                        sent_input_times.erase(key)
-                if rollback_needed:
-                        _rollback_from_tick(tick)
-                _handle_state(tick, state)
+func _server_send_inputs(tick: int, inputs: Array, ids: Array, acks: Dictionary, tgt: int) -> void:
+       if not is_server:
+               server_tick = max(server_tick, tick + 1)
+               target_tick = max(target_tick, tgt)
+               player_ids = ids
+               authoritative_inputs[tick] = inputs
+               var rollback_needed := false
+               if input_history.has(tick):
+                       var predicted : Array = input_history[tick]
+                       if not _inputs_arrays_equal(predicted, inputs):
+                               input_history[tick] = inputs
+                               rollback_needed = true
+               if acks.has(multiplayer.get_unique_id()):
+                       var ack_tick := int(acks[multiplayer.get_unique_id()])
+                       last_ack_tick = max(last_ack_tick, ack_tick)
+                       if sent_input_times.has(ack_tick):
+                               var sample : float = 0.001 * float(Time.get_ticks_msec()) - sent_input_times[ack_tick]
+                               if rtt_s == 0.0:
+                                       rtt_s = sample
+                               else:
+                                       rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
+                               sent_input_times.erase(ack_tick)
+                               _update_desired_ahead()
+                       for key in sent_inputs.keys():
+                               if key <= last_ack_tick:
+                                       sent_inputs.erase(key)
+                       for key in sent_input_times.keys():
+                               if key <= last_ack_tick:
+                                       sent_input_times.erase(key)
+               if rollback_needed:
+                       _rollback_from_tick(tick)
+
+@rpc("any_peer", "unreliable", "call_local")
+func _server_send_state(tick: int, state: PackedByteArray) -> void:
+       if not is_server:
+               _handle_state(tick, state)
 
 func post_tick() -> void:
-        if is_server and game_sim != null:
-                var state = game_sim.get_state_data(server_tick)
-                var remote_ids: Array = []
-                for id in player_ids:
-                        if id != multiplayer.get_unique_id():
-                                remote_ids.append(id)
-                var count := remote_ids.size()
-                if count > 0:
-                        _broadcast_accum += base_wait_time
-                        var interval := 1.0 / float(count)
-                        if _broadcast_accum >= interval:
-                                var target_id = remote_ids[_broadcast_index % count]
-                                _server_broadcast.rpc_id(target_id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, state, target_tick)
-                                _broadcast_accum -= interval
-                                _broadcast_index = (_broadcast_index + 1) % count
-                server_tick += 1
+       if is_server and game_sim != null:
+               var remote_ids: Array = []
+               for id in player_ids:
+                       if id != multiplayer.get_unique_id():
+                               remote_ids.append(id)
+               for id in remote_ids:
+                       _server_send_inputs.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, target_tick)
+
+               var count := remote_ids.size()
+               if count > 0:
+                       _broadcast_accum += base_wait_time
+                       var interval := 1.0 / float(count)
+                       if _broadcast_accum >= interval:
+                               var state := game_sim.get_state_data(server_tick)
+                               var target_id = remote_ids[_broadcast_index % count]
+                               _server_send_state.rpc_id(target_id, server_tick, state)
+                               _broadcast_accum -= interval
+                               _broadcast_index = (_broadcast_index + 1) % count
+               server_tick += 1
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
@@ -267,12 +274,12 @@ func _update_desired_ahead() -> void:
         desired_ahead_ticks = ((rtt_s * 0.5) + JITTER_BUFFER) / base_wait_time
 
 func _inputs_arrays_equal(a: Array, b: Array) -> bool:
-        if a.size() != b.size():
-                return false
-        for i in a.size():
-                if hash(a[i]) != hash(b[i]):
-                        return false
-        return true
+       if a.size() != b.size():
+               return false
+       for i in range(a.size()):
+               if hash(a[i]) != hash(b[i]):
+                       return false
+       return true
 
 func _rollback_from_tick(tick: int) -> void:
         if game_sim == null:
