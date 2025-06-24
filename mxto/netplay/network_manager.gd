@@ -209,7 +209,7 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if hash(local_state) != hash(state):
 		game_sim.set_state_data(tick, state)
 		game_sim.load_state(tick)
-		var current := tick
+		var current := tick + 1
 		var old_time := Time.get_ticks_usec()
 		while current < local_tick:
 			if input_history.has(current):

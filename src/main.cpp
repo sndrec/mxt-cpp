@@ -690,7 +690,7 @@ void GameSim::load_state(int target_tick)
 	int size = state_buffer[index].size;
 	memcpy(gamestate_data.heap_start, state_buffer[index].data, size);
 	gamestate_data.set_size(size);
-	tick = target_tick;
+	tick = target_tick + 1;
 	fix_pointers();
 }
 
