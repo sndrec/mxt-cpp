@@ -252,7 +252,7 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 		return
 	input_history[tick] = inputs
 	game_sim.load_state(tick)
-	var current := tick
+	var current := tick + 1
 	var old_time := Time.get_ticks_usec()
 	while current < local_tick:
 		if input_history.has(current):
