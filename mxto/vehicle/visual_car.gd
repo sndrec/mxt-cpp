@@ -60,6 +60,10 @@ enum FZ_TC{
 	B8 = 0x80
 }
 
+var owning_id : int = 0
+var game_manager : GameManager
+@onready var race_hud: RaceHud = $race_hud
+
 var position_current := Vector3.ZERO
 var velocity := Vector3.ZERO
 var velocity_angular := Vector3.ZERO
