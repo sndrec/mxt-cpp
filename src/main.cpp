@@ -21,7 +21,7 @@ using namespace godot;
 
 void GameSim::_bind_methods()
 {
-	ClassDB::bind_method(D_METHOD("instantiate_gamesim", "lvldat_buf", "car_prop_buffers"), &GameSim::instantiate_gamesim);
+        ClassDB::bind_method(D_METHOD("instantiate_gamesim", "lvldat_buf", "car_prop_buffers", "accel_settings"), &GameSim::instantiate_gamesim);
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("tick_gamesim", "player_inputs"), &GameSim::tick_gamesim);
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
@@ -123,7 +123,7 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	//dd3d->call("draw_points", car_positions, 0, 1.0f, godot::Color(1.f, 0.f, 0.f), 0.0166666);
 }
 
-void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers)
+void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers, godot::Array accel_settings)
 {
 	if (Engine::get_singleton()->is_editor_hint()) return;
 
@@ -456,11 +456,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 
-	int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
-	PhysicsCarProperties* props_array = nullptr;
-	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
-	car_properties_array = props_array;
-	num_cars = requested_cars;
+        int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
+        PhysicsCarProperties* props_array = nullptr;
+        cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
+        car_properties_array = props_array;
+        num_cars = requested_cars;
         for (int i = 0; i < num_cars; i++)
         {
                 cars[i].mtxa = &mtxa;
@@ -472,6 +472,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
                         godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
                         pb->set_data_array(arr);
                         *(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
+                }
+                if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
+                        cars[i].m_accel_setting = accel_settings[i];
                 }
                 cars[i].initialize_machine();
 
