@@ -395,11 +395,13 @@ static void cast_segment_fast(const CastParams  &params,
 					for (int i = 0; i < segment.road_shape->num_embeds; ++i) {
 						RoadEmbed *embed = &segment.road_shape->road_embeds[i];
 						if (road_t_hit_raw.y > embed->start_offset && road_t_hit_raw.y < embed->end_offset) {
-							const float et = (road_t_hit_raw.y - embed->start_offset) /
-											 (embed->end_offset - embed->start_offset);
-							const float l   = embed->left_border->sample(et);
-							const float r   = embed->right_border->sample(et);
-							if (road_t_hit_raw.x < l && road_t_hit_raw.x > r) {
+							const float l   = embed->left_border->sample(road_t_hit_raw.y);
+							const float r   = embed->right_border->sample(road_t_hit_raw.y);
+							//DEBUG::disp_text("embed_l", l);
+							//DEBUG::disp_text("embed_r", r);
+							//DEBUG::disp_text("road_t_x", road_t_hit_raw.x);
+							if (road_t_hit_raw.x > l && road_t_hit_raw.x < r) {
+								//DEBUG::disp_text("terrain", out_collision.road_data.terrain);
 								out_collision.road_data.terrain = embed->embed_type;
 								break;
 							}

@@ -1,5 +1,15 @@
 #pragma once
 
+namespace EMBED_TYPE_TO_TERRAIN {
+	enum FLAGS {
+		RECHARGE = 0x0,
+		DIRT = 0x1,
+		ICE = 0x2,
+		LAVA = 0x3,
+		HOLE = 0x4
+	};
+}
+
 namespace TERRAIN {
 	enum FLAGS {
 		NORMAL = 0x1,
@@ -10,7 +20,8 @@ namespace TERRAIN {
 		LAVA = 0x20,
 		ICE = 0x40,
 		BACKSIDE = 0x80,
-		RAIL = 0x100
+		RAIL = 0x100,
+		HOLE = 0x200
 	};
 }
 

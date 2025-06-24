@@ -286,7 +286,26 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			{
 				current_track->segments[seg].road_shape->road_embeds[embed].start_offset = lvldat_buf->get_float();
 				current_track->segments[seg].road_shape->road_embeds[embed].end_offset = lvldat_buf->get_float();
-				current_track->segments[seg].road_shape->road_embeds[embed].embed_type = (int)lvldat_buf->get_u32();
+				int desired_embed = (int)lvldat_buf->get_u32();
+				UtilityFunctions::print("----");
+				UtilityFunctions::print(desired_embed);
+				if (desired_embed == EMBED_TYPE_TO_TERRAIN::RECHARGE){
+					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::RECHARGE;
+				}
+				if (desired_embed == EMBED_TYPE_TO_TERRAIN::DIRT){
+					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::DIRT;
+				}
+				if (desired_embed == EMBED_TYPE_TO_TERRAIN::ICE){
+					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::ICE;
+				}
+				if (desired_embed == EMBED_TYPE_TO_TERRAIN::LAVA){
+					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::LAVA;
+				}
+				if (desired_embed == EMBED_TYPE_TO_TERRAIN::HOLE){
+					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::HOLE;
+				}
+				UtilityFunctions::print(current_track->segments[seg].road_shape->road_embeds[embed].embed_type);
+				
 				current_track->segments[seg].road_shape->road_embeds[embed].left_border = level_data.allocate_curve_from_buffer(lvldat_buf);
 				current_track->segments[seg].road_shape->road_embeds[embed].right_border = level_data.allocate_curve_from_buffer(lvldat_buf);
 			}
@@ -578,11 +597,13 @@ void GameSim::render_gamesim() {
 		vis_cars[i].set("lap", cars[i].lap);
 		vis_cars[i].set("air_time", cars[i].air_time);
 		vis_cars[i].set("machine_state", cars[i].machine_state);
+		vis_cars[i].set("terrain_state", cars[i].terrain_state);
 		vis_cars[i].set("frames_since_start_2", cars[i].frames_since_start_2);
 		vis_cars[i].set("tilt_fl_state", cars[i].tilt_fl.state);
 		vis_cars[i].set("tilt_fr_state", cars[i].tilt_fr.state);
 		vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
 		vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
+		vis_cars[i].set("input_strafe", cars[i].input_strafe);
 	}
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 	{

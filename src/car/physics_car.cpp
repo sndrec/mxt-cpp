@@ -1567,7 +1567,7 @@ void PhysicsCar::set_terrain_state_from_track()
 	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && current_track != nullptr) {
 		CollisionData hit;
 		int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
-		current_track->cast_vs_track_fast(hit, position_old, position_current,
+		current_track->cast_vs_track_fast(hit, position_current, position_current + track_surface_normal * -3,
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P1,
 			use_cp);
 		if (hit.collided) {
@@ -2373,6 +2373,10 @@ void PhysicsCar::handle_checkpoints()
 				lap -= 1;
 		}
 		current_checkpoint = static_cast<uint16_t>(found);
+	}
+
+	if (lap > 3){
+		machine_state |= MACHINESTATE::COMPLETEDRACE_1_Q;
 	}
 
 	const CollisionCheckpoint &cur_cp = current_track->checkpoints[current_checkpoint];
