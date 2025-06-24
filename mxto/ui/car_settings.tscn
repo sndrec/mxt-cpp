@@ -1,4 +1,10 @@
-[gd_scene format=3 uid="uid://d3fgxyahmbbxa"]
+[gd_scene load_steps=2 format=3 uid="uid://d3fgxyahmbbxa"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_msh7t"]
+bg_color = Color(0, 0, 0, 1)
+border_width_left = 4
+border_width_top = 32
+border_color = Color(0, 0, 0, 0.47451)
 
 [node name="CarSettings" type="Control"]
 layout_mode = 3
@@ -11,7 +17,7 @@ grow_vertical = 2
 [node name="SettingContainer" type="VBoxContainer" parent="."]
 layout_mode = 0
 offset_right = 502.0
-offset_bottom = 141.0
+offset_bottom = 100.0
 
 [node name="MachineSettingName" type="Label" parent="SettingContainer"]
 layout_mode = 2
@@ -23,6 +29,9 @@ text = "100%"
 
 [node name="MachineSettingSlider" type="HSlider" parent="SettingContainer"]
 layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/center_grabber = 1
+theme_override_styles/slider = SubResource("StyleBoxFlat_msh7t")
 
 [node name="VehicleSelector" type="ItemList" parent="."]
 layout_mode = 1
@@ -41,3 +50,29 @@ item_0/text = "Blue Flacon"
 item_1/text = "Astro Robin"
 item_2/text = "Fat Shark"
 item_3/text = "Green Falcon"
+
+[node name="CloseSettings" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -246.0
+offset_bottom = 100.0
+grow_horizontal = 0
+text = "Close"
+
+[node name="PilotNameLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 518.0
+offset_top = 17.0
+offset_right = 604.0
+offset_bottom = 40.0
+text = "Pilot Name"
+
+[node name="PilotNameInput" type="LineEdit" parent="."]
+layout_mode = 0
+offset_left = 507.0
+offset_top = 59.0
+offset_right = 900.0
+offset_bottom = 98.0
+placeholder_text = "Your name here..."
