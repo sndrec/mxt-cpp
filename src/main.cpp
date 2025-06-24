@@ -711,6 +711,8 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 	int index = target_tick % STATE_BUFFER_LEN;
 	if (!state_buffer[index].data)
 		return;
+	// game state never changes in size after instantiation
+	// and should always be the same size between the server and all clients
 	int size = std::min<int>(state_buffer[index].size, static_cast<int>(data.size()));
 	if (size > 0) {
 		memcpy(state_buffer[index].data, data.ptr(), size);
