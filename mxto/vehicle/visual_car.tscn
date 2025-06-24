@@ -1,9 +1,12 @@
-[gd_scene load_steps=2 format=3 uid="uid://cwuy4ee2yd8sc"]
+[gd_scene load_steps=3 format=3 uid="uid://cwuy4ee2yd8sc"]
 
 [ext_resource type="Script" uid="uid://ce1giyem417b6" path="res://vehicle/visual_car.gd" id="1_7f3vi"]
+[ext_resource type="PackedScene" uid="uid://32t0e0x6ldk1" path="res://ui/race_hud.tscn" id="2_trwkr"]
 
 [node name="CarRoot" type="Node3D"]
 script = ExtResource("1_7f3vi")
 
 [node name="CarCamera" type="Camera3D" parent="."]
 top_level = true
+
+[node name="race_hud" parent="." instance=ExtResource("2_trwkr")]
