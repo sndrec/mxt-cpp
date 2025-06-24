@@ -132,20 +132,20 @@ func _start_race(track_index: int, settings: Array) -> void:
 		pc.player_settings = parsed_settings[i]
 		add_child(pc)
 		players.append(pc)
-        var car_props : Array = []
-        var accel_settings_arr : Array = []
-        for idx in chosen_defs.size():
-                var def = chosen_defs[idx]
-                var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-                car_props.append(bytes)
-                if idx < parsed_settings.size():
-                        accel_settings_arr.append(parsed_settings[idx].accel_setting)
-                else:
-                        accel_settings_arr.append(1.0)
-        var level_buffer := StreamPeerBuffer.new()
-        level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-        game_sim.car_node_container = car_node_container
-        game_sim.instantiate_gamesim(level_buffer, car_props, accel_settings_arr)
+		var car_props : Array = []
+		var accel_settings_arr : Array = []
+		for n in chosen_defs.size():
+			var def = chosen_defs[n]
+			var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+			car_props.append(bytes)
+			if n < parsed_settings.size():
+				accel_settings_arr.append(parsed_settings[n].accel_setting)
+			else:
+				accel_settings_arr.append(1.0)
+		var level_buffer := StreamPeerBuffer.new()
+		level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+		game_sim.car_node_container = car_node_container
+		game_sim.instantiate_gamesim(level_buffer, car_props, accel_settings_arr)
 	network_manager.game_sim = game_sim
 	var obj_path = info["mxt"].get_basename() + ".obj"
 	if ResourceLoader.exists(obj_path):
@@ -157,15 +157,15 @@ func _start_race(track_index: int, settings: Array) -> void:
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
 
 func _on_start_race_button_pressed() -> void:
-				if network_manager.is_server:
-								var settings_array : Array = []
-								for id in network_manager.player_ids:
-												var ps = network_manager.player_settings.get(id, null)
-												if ps == null:
-																var def_path = car_definitions[randi() % car_definitions.size()].resource_path
-																ps = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
-												settings_array.append(ps)
-								network_manager.send_start_race(lobby_track_selector.selected, settings_array)
+	if network_manager.is_server:
+		var settings_array : Array = []
+		for id in network_manager.player_ids:
+			var ps = network_manager.player_settings.get(id, null)
+			if ps == null:
+				var def_path = car_definitions[randi() % car_definitions.size()].resource_path
+				ps = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
+			settings_array.append(ps)
+		network_manager.send_start_race(lobby_track_selector.selected, settings_array)
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
 				_start_race(track_index, settings)
