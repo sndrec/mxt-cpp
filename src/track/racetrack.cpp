@@ -34,13 +34,19 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 {
 	int best = get_best_checkpoint(point);
 	if (best == -1){
-		road_t.x = -100.0f;
-		return;
+		if (cp_idx == -1)
+		{
+			road_t.x = -100.0f;
+			return;
+		}else{
+			best = cp_idx;
+		}
 	}
 	CollisionCheckpoint *cp = &checkpoints[best];
 	godot::Vector3 p1 = cp->start_plane.project(point);
 	godot::Vector3 p2 = cp->end_plane.project(point);
 	float cp_t = get_closest_t_on_segment(point, p1, p2);
+	cp_t = std::clamp(cp_t, 0.0f, 1.0f);
 	godot::Basis basis;
 	basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t).normalized();
 	basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t).normalized();
