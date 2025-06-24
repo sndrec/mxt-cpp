@@ -1,4 +1,6 @@
-[gd_scene load_steps=2 format=3 uid="uid://d3fgxyahmbbxa"]
+[gd_scene load_steps=3 format=3 uid="uid://d3fgxyahmbbxa"]
+
+[ext_resource type="Script" uid="uid://cow6mqit4ansg" path="res://ui/car_settings.gd" id="1_c1ygr"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_msh7t"]
 bg_color = Color(0, 0, 0, 1)
@@ -13,6 +15,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("1_c1ygr")
 
 [node name="SettingContainer" type="VBoxContainer" parent="."]
 layout_mode = 0
