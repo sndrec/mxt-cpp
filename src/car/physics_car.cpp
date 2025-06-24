@@ -2371,10 +2371,66 @@ void PhysicsCar::handle_checkpoints()
 	checkpoint_fraction = t;
 	lap_progress = (static_cast<float>(current_checkpoint) + t) / static_cast<float>(current_track->num_checkpoints);
 
-	if (lap != prev_lap) {
-		machine_state |= MACHINESTATE::CROSSEDLAPLINE_Q;
-	}
+        if (lap != prev_lap) {
+                machine_state |= MACHINESTATE::CROSSEDLAPLINE_Q;
+        }
 };
+
+void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
+{
+        if (!current_track || cp_idx >= current_track->num_checkpoints)
+                return;
+
+        const CollisionCheckpoint &cp = current_track->checkpoints[cp_idx];
+        float t_y = cp.t_start + 0.05f;
+        if (t_y > cp.t_end)
+                t_y = cp.t_end;
+
+        godot::Transform3D spawn_transform;
+        current_track->segments[cp.road_segment]
+                .road_shape->get_oriented_transform_at_time(spawn_transform,
+                        godot::Vector2(0.0f, t_y));
+        spawn_transform.basis =
+                spawn_transform.basis.rotated(godot::Vector3(0, 1, 0), Math_PI);
+
+        position_current = spawn_transform.origin;
+        position_old = spawn_transform.origin;
+        position_old_2 = spawn_transform.origin;
+        position_old_dupe = spawn_transform.origin;
+        position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+
+        mtxa->push();
+        mtxa->cur->origin = spawn_transform.origin;
+        basis_physical.basis = spawn_transform.basis;
+        basis_physical_other.basis = spawn_transform.basis;
+        rotate_mtxa_from_diff_btwn_machine_front_and_back();
+        mtxa->pop();
+
+        transform_visual = spawn_transform;
+        track_surface_normal = spawn_transform.basis.get_column(1);
+
+        velocity = godot::Vector3();
+        velocity_local = godot::Vector3();
+        velocity_local_flattened_and_rotated = godot::Vector3();
+        velocity_angular = godot::Vector3();
+        base_speed = 0.0f;
+        boost_turbo = 0.0f;
+
+        machine_state &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::AIRBORNE | MACHINESTATE::FALLOUT);
+        frames_since_death = 0;
+}
+
+void PhysicsCar::check_respawn()
+{
+        if (!current_track)
+                return;
+
+        if (position_current.y < current_track->minimum_y || energy <= 0.0f) {
+                respawn_at_checkpoint(last_ground_checkpoint);
+                if (energy < calced_max_energy * 0.5f)
+                        energy = calced_max_energy * 0.5f;
+        }
+}
 
 void PhysicsCar::post_tick()
 {
@@ -2425,5 +2481,8 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 	if (frames_since_start_2 == 0)
 		velocity = godot::Vector3();
 
-	handle_checkpoints();
+        handle_checkpoints();
+        if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
+                last_ground_checkpoint = current_checkpoint;
+        check_respawn();
 };

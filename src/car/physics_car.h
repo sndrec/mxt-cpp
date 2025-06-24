@@ -112,8 +112,9 @@ public:
 	godot::Vector3 track_surface_pos = godot::Vector3();
 	float height_above_track = 0.0f;
 
-	uint16_t current_checkpoint = 0;
-	float checkpoint_fraction = 0.0f;
+        uint16_t current_checkpoint = 0;
+        uint16_t last_ground_checkpoint = 0;
+        float checkpoint_fraction = 0.0f;
 	uint8_t lap = 1; // Initialized to 1 as in MXRacer reset
 	float lap_progress = 0.0f;
 
@@ -207,6 +208,8 @@ public:
     void handle_machine_collision_response();
     void align_machine_y_with_track_normal_immediate();
     void handle_checkpoints();
+    void respawn_at_checkpoint(uint16_t cp_idx);
+    void check_respawn();
     void post_tick();
     void tick(PlayerInput input, uint32_t tick_count);
 };
