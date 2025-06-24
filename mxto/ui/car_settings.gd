@@ -11,21 +11,23 @@ var player_settings: PlayerSettings = PlayerSettings.new()
 var car_defs: Array = []
 
 func _ready() -> void:
-		game_manager = get_parent() as GameManager
-		_load_car_defs()
-		_load_settings()
-		_update_controls()
-		machine_setting_slider.value_changed.connect(_on_slider_changed)
-		vehicle_selector.item_selected.connect(_on_vehicle_selected)
-		pilot_name_input.text_changed.connect(_on_name_changed)
-		close_settings.pressed.connect(_on_close_pressed)
+                game_manager = get_parent() as GameManager
+                _load_settings()
+                _load_car_defs()
+                _update_controls()
+                machine_setting_slider.value_changed.connect(_on_slider_changed)
+                vehicle_selector.item_selected.connect(_on_vehicle_selected)
+                pilot_name_input.text_changed.connect(_on_name_changed)
+                close_settings.pressed.connect(_on_close_pressed)
 
 func _load_car_defs() -> void:
-		if game_manager != null:
-				car_defs = game_manager.car_definitions
-		vehicle_selector.clear()
-		for def in car_defs:
-				vehicle_selector.add_item(def.name)
+                if game_manager != null:
+                                car_defs = game_manager.car_definitions
+                else:
+                                car_defs = []
+                vehicle_selector.clear()
+                for def in car_defs:
+                                vehicle_selector.add_item(def.name)
 
 func _load_settings() -> void:
 		var path := "user://player_settings.json"
@@ -46,13 +48,14 @@ func _update_controls() -> void:
 		machine_setting_slider.value = player_settings.accel_setting * 100.0
 		machine_setting_percent.text = str(roundi(machine_setting_slider.value)) + "%"
 		pilot_name_input.text = player_settings.username
-		var idx := 0
-		for i in car_defs.size():
-				if car_defs[i].resource_path == player_settings.car_definition_path:
-						idx = i
-						break
-		if car_defs.size() > 0:
-				vehicle_selector.select(idx)
+                var idx := 0
+                for i in car_defs.size():
+                                if car_defs[i].resource_path == player_settings.car_definition_path:
+                                                idx = i
+                                                break
+                if car_defs.size() > 0:
+                                vehicle_selector.select(idx)
+                                player_settings.car_definition_path = car_defs[idx].resource_path
 
 func _on_slider_changed(value: float) -> void:
 		machine_setting_percent.text = str(roundi(value)) + "%"
@@ -70,6 +73,11 @@ func _on_close_pressed() -> void:
 		hide()
 
 func open_settings() -> void:
-		_load_settings()
-		_update_controls()
-		show()
+                _load_settings()
+                _load_car_defs()
+                _update_controls()
+                show()
+
+func get_player_settings() -> PlayerSettings:
+                return player_settings
+
