@@ -45,14 +45,9 @@ anchor_bottom = 1.0
 offset_top = -0.0320053
 grow_horizontal = 2
 grow_vertical = 2
-item_count = 4
 max_columns = 8
 same_column_width = true
 fixed_column_width = 128
-item_0/text = "Blue Flacon"
-item_1/text = "Astro Robin"
-item_2/text = "Fat Shark"
-item_3/text = "Green Falcon"
 
 [node name="CloseSettings" type="Button" parent="."]
 layout_mode = 1
