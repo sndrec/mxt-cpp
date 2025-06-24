@@ -1,4 +1,4 @@
-extends Node
+class_name GameManager extends Node
 
 @onready var game_sim: GameSim = $GameSim
 @onready var start_button: Button = $Control/StartButton
@@ -99,7 +99,9 @@ func _start_race(track_index: int, car_defs: Array) -> void:
 	local_player_index = network_manager.player_ids.find(multiplayer.get_unique_id())
 	if local_player_index == -1:
 		local_player_index = 0
-	car_node_container.instantiate_cars(chosen_defs, local_player_index)
+	car_node_container.instantiate_cars(chosen_defs, network_manager.player_ids, local_player_index)
+	for car:VisualCar in car_node_container.get_children():
+		car.game_manager = self
 	for p in players:
 		p.queue_free()
 	players.clear()

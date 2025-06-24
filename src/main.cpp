@@ -426,7 +426,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 		}
 	}
-	
+
 	current_track->minimum_y -= 250.0f;
 	gamestate_data.instantiate(1024 * 1024);
 	int state_capacity = gamestate_data.get_capacity();
@@ -480,16 +480,19 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
                 godot::Transform3D spawn_transform;
                 spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
-                spawn_transform.basis = spawn_transform.basis.rotated(godot::Vector3(0, 1, 0), Math_PI);
+                spawn_transform.basis.transpose();
+                spawn_transform.basis.orthonormalize();
+                spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
+        		godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.1f;
 
-                cars[i].position_current = spawn_transform.origin;
-                cars[i].position_old = spawn_transform.origin;
-                cars[i].position_old_2 = spawn_transform.origin;
-                cars[i].position_old_dupe = spawn_transform.origin;
+                cars[i].position_current = spawn_transform.origin + up_offset;
+                cars[i].position_old = spawn_transform.origin + up_offset;
+                cars[i].position_old_2 = spawn_transform.origin + up_offset;
+                cars[i].position_old_dupe = spawn_transform.origin + up_offset;
                 cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
 
                 cars[i].mtxa->push();
-                cars[i].mtxa->cur->origin = spawn_transform.origin;
+                cars[i].mtxa->cur->origin = spawn_transform.origin + up_offset;
                 cars[i].basis_physical.basis = spawn_transform.basis;
                 cars[i].basis_physical_other.basis = spawn_transform.basis;
                 cars[i].rotate_mtxa_from_diff_btwn_machine_front_and_back();
