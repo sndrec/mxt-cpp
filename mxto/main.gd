@@ -25,12 +25,12 @@ var player_scene := preload("res://player/player_controller.tscn")
 var local_player_index: int = 0
 
 func _ready() -> void:
-				_load_tracks()
-				_load_car_definitions()
-				network_manager.race_started.connect(_on_network_race_started)
-				car_settings.hide()
-				car_settings_button.pressed.connect(_on_car_settings_button_pressed)
-				car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
+	_load_tracks()
+	_load_car_definitions()
+	network_manager.race_started.connect(_on_network_race_started)
+	car_settings.hide()
+	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
+	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
 
 func _load_tracks() -> void:
 	tracks.clear()
@@ -171,14 +171,14 @@ func _on_network_race_started(track_index: int, settings: Array) -> void:
 				_start_race(track_index, settings)
 
 func _update_player_list() -> void:
-				player_list.clear()
-				for id in network_manager.player_ids:
-								var name := str(id)
-								if network_manager.player_settings.has(id):
-												var ps = network_manager.player_settings[id]
-												if typeof(ps) == TYPE_DICTIONARY and ps.has("username"):
-																name = ps["username"]
-								player_list.add_item(name)
+	player_list.clear()
+	for id in network_manager.player_ids:
+		var name := str(id)
+		if network_manager.player_settings.has(id):
+			var ps = network_manager.player_settings[id]
+			if typeof(ps) == TYPE_DICTIONARY and ps.has("username"):
+				name = ps["username"]
+		player_list.add_item(name)
 
 func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)

@@ -95,22 +95,26 @@ func start_race(track_index: int, settings: Array) -> void:
 				emit_signal("race_started", track_index, settings)
 
 func send_start_race(track_index: int, settings: Array) -> void:
-				if is_server:
-								start_race.rpc(track_index, settings)
-								start_race(track_index, settings)
-				else:
-								start_race.rpc_id(1, track_index, settings)
+	if is_server:
+		start_race.rpc(track_index, settings)
+		start_race(track_index, settings)
+	else:
+		start_race.rpc_id(1, track_index, settings)
 
 func send_player_settings(settings: Dictionary) -> void:
-				if is_server:
-								update_player_settings(settings)
-				else:
-								update_player_settings.rpc_id(1, settings)
-								player_settings[multiplayer.get_unique_id()] = settings
+	if is_server:
+		update_player_settings(settings)
+		update_player_settings.rpc(settings)
+	else:
+		update_player_settings.rpc_id(1, settings)
+		player_settings[multiplayer.get_unique_id()] = settings
 
 @rpc("any_peer")
 func update_player_settings(settings: Dictionary) -> void:
-				player_settings[multiplayer.get_remote_sender_id()] = settings
+	var id := multiplayer.get_remote_sender_id()
+	if id == 0:
+		id = multiplayer.get_unique_id()
+	player_settings[id] = settings
 
 func set_local_input(input: Dictionary) -> void:
 	last_local_input = input
