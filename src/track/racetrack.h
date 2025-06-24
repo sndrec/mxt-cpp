@@ -13,6 +13,7 @@ public:
 	int num_segments;
 	int num_checkpoints;
 	int candidate_scratch[8];
+	float minimum_y;
 	TrackSegment* segments;
 	CollisionCheckpoint* checkpoints;
 	int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
