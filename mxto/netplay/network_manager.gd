@@ -213,8 +213,8 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 			for key in sent_input_times.keys():
 				if key <= last_ack_tick:
 					sent_input_times.erase(key)
-				if state.size() > 0:
-					_handle_state(tick, state)
+		if state.size() > 0:
+			_handle_state(tick, state)
 
 func post_tick() -> void:
 	if is_server and game_sim != null:
