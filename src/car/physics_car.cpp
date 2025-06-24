@@ -946,8 +946,8 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 		basis_physical.basis = mtxa->cur->basis;
 	} else {
 		float tilt_rad = DEG_TO_RAD * air_tilt;
-		float c = std::cos(tilt_rad);
-		float s = std::sin(tilt_rad);
+		float c = deterministic_fp::cosf(tilt_rad);
+		float s = deterministic_fp::sinf(tilt_rad);
 		godot::Vector3 local_tilted_up(0.0f, c, s);
 		godot::Vector3 world_tilted_up = mtxa->rotate_point(local_tilted_up);
 		godot::Vector3 safe_world_up = normalized_safe(world_tilted_up, godot::Vector3(0, 1, 0));
@@ -1984,7 +1984,7 @@ void PhysicsCar::create_machine_visual_transform()
 	float dVar11_current_unk_stat = unk_stat_0x5d4;
 
 	float sin_val2_scaled_angle = static_cast<float>(g_anim_timer * 0x1a3);
-	float sin_val2 = std::sin(sin_val2_scaled_angle);
+	float sin_val2 = deterministic_fp::sinf(sin_val2_scaled_angle);
 
 	float y_offset_base = 0.006f * (dVar11_current_unk_stat * sin_val2);
 
@@ -2057,7 +2057,7 @@ void PhysicsCar::create_machine_visual_transform()
 
 		float iVar1_from_block2_approx_deg =
 		0.5f * (dVar11_current_unk_stat *
-			std::sin(static_cast<float>(g_anim_timer * 0x109) *
+			deterministic_fp::sinf(static_cast<float>(g_anim_timer * 0x109) *
 				(TAU / 65536.0f)));
 		int additional_roll_from_sin_fz_units =
 		static_cast<int>(182.04445f * iVar1_from_block2_approx_deg);
