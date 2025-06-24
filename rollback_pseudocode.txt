@@ -1,0 +1,76 @@
+Readme: In the following pseudo code, [] indicates a subroutine.
+Sometimes I choose to write the subroutine inline under the [] in order to maintain context.
+This code is for a two-way p2p rollback implementation.
+
+
+==Constants==
+MAX_ROLLBACK_FRAMES     := Any Positive Integer         # Specifies the maximum number of frames that can be resimulated
+FRAME_ADVANTAGE_LIMIT   := Any Positive Integer         # Specifies the number of frames the local client can progress ahead of the remote client before time synchronizing. 
+INITAL_FRAME            := Any Integer                  # Specifies the initial frame the game starts in. Cannot rollback before this frame.
+
+[Initialize Variables]
+    local_frame   := INITAL_FRAME                       # Tracks the latest updates frame. 
+    remote_frame  := INITAL_FRAME                       # Tracks the latest frame received from the remote client
+    sync_frame    := INITAL_FRAME                       # Tracks the last frame where we synchronized the game state with the remote client. Never rollback before this frame.
+    remote_frame_advantage := 0                         # Latest frame advantage received from the remote client.
+
+[Store Game State]
+    Stores the game state for the current frame 
+    
+[Restore Game State]
+    Restores the game state to the frame set in sync_frame
+
+[Update Input]
+    Predict the remote player's input if not available yet.
+    Setup the local player and remote player's input for use in [Update Game] 
+                
+[Rollback Condition]
+    local_frame > sync_frame AND remote_frame > sync_frame      # No need to rollback if we don't have a frame after the previous sync frame to synchronize to.
+
+[Time Synced]
+    Let local_frame_advantage = local_frame - remote_frame                                   # How far the client is ahead of the last reported frame by the remote client
+    Let frame_advantage_difference = local_frame_advantage - remote_frame_advantage          # How different is the frame advantage reported by the remote client and this one.
+    local_frame_advantage < MAX_ROLLBACK_FRAMES AND frame_advantage_difference <= FRAME_ADVANTAGE_LIMIT     # Only allow the local client to get so far ahead of remote.
+
+Start Program:
+    [Initialize Variables]
+
+    loop:
+
+    [Update Network]
+        Let remote_frame = latest frame received from the remote client
+        Let remote_frame_advantage = (local_frame - remote_frame) sent from the remote client
+
+    [Update Synchronization]
+        [Determine the sync_frame]
+            Let final_frame = remote_frame                                          # We will only check inputs until the remote_frame, since we don't have inputs after.
+            if remote_frame > local_frame then final_frame = local_frame           # Incase the remote client is ahead of local, don't check past the local frame.
+            select frames from (sync_frame + 1) through final_frame and find the first frame where predicted and remote inputs don't match
+                if found then
+                    sync_frame = found frame - 1        # The found frame is the first frame where inputs don't match, so assume the previous frame is synchronized.
+                else
+                    sync_frame = final_frame            # All remote inputs matched the predicted inputs since the last synchronized frame.
+
+        if [Rollback Condition] then
+            [Execute Rollbacks]
+                [Restore Game State]
+                select inputs from (sync_frame + 1) through local_frame     # Use all the inputs since the last sync frame until the current frame to simulate
+                    [Rollback Update]
+                        [Update Input]
+                        [Update Game]
+                        [Store Game State]
+                                            
+    if [Time Synced] then
+        [Normal Update]
+            Increment local_frame
+            [Get Local Player Input]
+                Read the joystick/pad/keyboard for the local player and store it, associating it with local_frame
+            [Send input to remote client]
+                Send the input and the local_frame to the remote client so it arrives asap.
+                
+            [Update Input]
+            [Update Game]
+            [Store Game State]
+    goto loop
+
+End Program
