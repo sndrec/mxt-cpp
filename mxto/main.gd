@@ -132,14 +132,20 @@ func _start_race(track_index: int, settings: Array) -> void:
 		pc.player_settings = parsed_settings[i]
 		add_child(pc)
 		players.append(pc)
-	var car_props : Array = []
-	for def in chosen_defs:
-		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-		car_props.append(bytes)
-	var level_buffer := StreamPeerBuffer.new()
-	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-	game_sim.car_node_container = car_node_container
-	game_sim.instantiate_gamesim(level_buffer, car_props)
+        var car_props : Array = []
+        var accel_settings_arr : Array = []
+        for idx in chosen_defs.size():
+                var def = chosen_defs[idx]
+                var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+                car_props.append(bytes)
+                if idx < parsed_settings.size():
+                        accel_settings_arr.append(parsed_settings[idx].accel_setting)
+                else:
+                        accel_settings_arr.append(1.0)
+        var level_buffer := StreamPeerBuffer.new()
+        level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+        game_sim.car_node_container = car_node_container
+        game_sim.instantiate_gamesim(level_buffer, car_props, accel_settings_arr)
 	network_manager.game_sim = game_sim
 	var obj_path = info["mxt"].get_basename() + ".obj"
 	if ResourceLoader.exists(obj_path):
