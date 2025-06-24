@@ -1680,10 +1680,12 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 	float in_strafe_right = std::min(1.0f, in_input.strafe_right * 1.25f);
 	input_strafe = (-in_strafe_left + in_strafe_right);
 
+	float old_accel = input_accel;
 	input_accel = in_input.accelerate;
-	bool accel_just_pressed = godot::Input::get_singleton()->is_action_just_pressed("Accelerate");
+	bool accel_just_pressed = input_accel > 0.5f && old_accel <= 0.5f;
+	float old_brake = input_brake;
 	input_brake = in_input.brake;
-	bool brake_just_pressed = godot::Input::get_singleton()->is_action_just_pressed("Brake");
+	bool brake_just_pressed = input_brake > 0.5f && old_brake <= 0.5f;
 
 	float in_spinattack = in_input.spinattack ? 1.0f : 0.0f;
 	float in_sideattack = 0.0f; // Placeholder: side attack not mapped
@@ -1697,11 +1699,6 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 	}
 
 	state_2 |= 8u;
-
-	if (godot::Input::get_singleton()->is_action_just_pressed("DPadUp")) {
-		reset_machine(1);
-		level_start_time -= 270;
-	}
 
 	godot::Vector3 ground_normal = prepare_machine_frame();
 	bool has_floor = find_floor_beneath_machine();

@@ -180,7 +180,7 @@ func collect_inputs() -> Array:
 		_adjust_time_scale()
 		return frame_inputs
 
-@rpc("any_peer", "unreliable", "call_local")
+@rpc("any_peer", "unreliable", "call_remote")
 func _client_send_input(tick: int, input: Dictionary) -> void:
 	if is_server:
 		if not pending_inputs.has(tick):
