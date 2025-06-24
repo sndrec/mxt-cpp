@@ -1,0 +1,23 @@
+[gd_scene load_steps=5 format=3 uid="uid://cr0v8k0h0rb8r"]
+
+[ext_resource type="Script" uid="uid://d1a6k6tar8us3" path="res://core/car/boost_electricity.gd" id="1_2mgd6"]
+[ext_resource type="Shader" uid="uid://bmwgns61viq5b" path="res://core/car/boost_electricity.gdshader" id="2_7t4v6"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_nxlb5"]
+render_priority = 0
+shader = ExtResource("2_7t4v6")
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_2mgd6"]
+
+[node name="root" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.80811, -1.4211)
+script = ExtResource("1_2mgd6")
+bounds = AABB(0, 0, 0, 1, 0.5, 1)
+boosting = true
+electricity_color = Color(0.568177, 0.948777, 0.997399, 1)
+electricity_width = 0.1
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+top_level = true
+material_override = SubResource("ShaderMaterial_nxlb5")
+mesh = SubResource("ArrayMesh_2mgd6")

@@ -1,0 +1,117 @@
+[gd_scene load_steps=21 format=3 uid="uid://cjlkx3lgj84lr"]
+
+[ext_resource type="Script" uid="uid://nj3jyqo2cyvf" path="res://core/effect/effect_basic.gd" id="2_2dswp"]
+[ext_resource type="Shader" uid="uid://plalxq11xhq1" path="res://core/car/boost_displacement.gdshader" id="2_hwv3r"]
+[ext_resource type="Texture2D" uid="uid://ctv302vycpa28" path="res://content/base/texture/particle/light_02.png" id="3_eiwcv"]
+[ext_resource type="Texture2D" uid="uid://co8yuujwrv2hk" path="res://content/base/texture/particle/ring_01.png" id="4_purl6"]
+
+[sub_resource type="Curve" id="Curve_41m6k"]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.0534591, 0.179375), 0.0, 0.0, 0, 0, Vector2(0.512579, 0.065625), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 4
+
+[sub_resource type="CurveTexture" id="CurveTexture_c0ouw"]
+curve = SubResource("Curve_41m6k")
+
+[sub_resource type="Curve" id="Curve_m4gip"]
+_data = [Vector2(0, 0), 0.0, 1.5951, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_nw3jg"]
+curve = SubResource("Curve_m4gip")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_txff8"]
+lifetime_randomness = 0.6
+angle_min = -360.0
+angle_max = 360.0
+direction = Vector3(0, 0, 1)
+spread = 5.0
+initial_velocity_min = 6.0
+initial_velocity_max = 8.0
+angular_velocity_min = -90.0
+angular_velocity_max = 90.0
+gravity = Vector3(0, 0, 0)
+scale_min = 5.0
+scale_max = 5.0
+scale_curve = SubResource("CurveTexture_nw3jg")
+color = Color(0.721569, 0.854902, 1, 1)
+alpha_curve = SubResource("CurveTexture_c0ouw")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_m7ubg"]
+transparency = 1
+blend_mode = 1
+no_depth_test = true
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("3_eiwcv")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+proximity_fade_enabled = true
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_287rt"]
+material = SubResource("StandardMaterial3D_m7ubg")
+orientation = 2
+
+[sub_resource type="Curve" id="Curve_fcgbm"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.77673, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_wluar"]
+curve = SubResource("Curve_fcgbm")
+
+[sub_resource type="Gradient" id="Gradient_bfaoa"]
+colors = PackedColorArray(1, 1, 1, 1, 0, 0, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_6j8rb"]
+gradient = SubResource("Gradient_bfaoa")
+
+[sub_resource type="Curve" id="Curve_derd5"]
+_data = [Vector2(0.00314465, 0.0331249), 0.0, 0.452156, 0, 0, Vector2(0.522013, 0.390625), 0.959679, 0.959679, 0, 0, Vector2(1, 1), 1.56591, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_s3o1s"]
+curve = SubResource("Curve_derd5")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_7gc8i"]
+gravity = Vector3(0, 0, 0)
+scale_min = 32.0
+scale_max = 32.0
+scale_curve = SubResource("CurveTexture_s3o1s")
+color_ramp = SubResource("GradientTexture1D_6j8rb")
+alpha_curve = SubResource("CurveTexture_wluar")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_1hgro"]
+render_priority = 0
+shader = ExtResource("2_hwv3r")
+shader_parameter/albedo = Color(0, 0, 0, 1)
+shader_parameter/texture_albedo = ExtResource("4_purl6")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_gstr6"]
+material = SubResource("ShaderMaterial_1hgro")
+size = Vector2(1, 1)
+orientation = 2
+
+[node name="BoostEffect" type="GPUParticles3D"]
+emitting = false
+amount = 1
+lifetime = 0.4
+one_shot = true
+explosiveness = 1.0
+fixed_fps = 120
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_txff8")
+draw_pass_1 = SubResource("PlaneMesh_287rt")
+script = ExtResource("2_2dswp")
+
+[node name="GPUParticles3D2" type="GPUParticles3D" parent="."]
+emitting = false
+amount = 1
+lifetime = 0.5
+one_shot = true
+explosiveness = 1.0
+fixed_fps = 120
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_7gc8i")
+draw_pass_1 = SubResource("PlaneMesh_gstr6")

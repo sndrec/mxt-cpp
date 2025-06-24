@@ -1,0 +1,194 @@
+[gd_scene load_steps=12 format=3 uid="uid://djxgd3uhpp5wl"]
+
+[ext_resource type="Script" uid="uid://c0eb3r3du0juq" path="res://core/ui/menus/PauseMenu.gd" id="1_ltnsn"]
+[ext_resource type="Shader" uid="uid://bwwp0dli33yu2" path="res://core/ui/menus/UIBox.gdshader" id="2_vfxiv"]
+[ext_resource type="Texture2D" uid="uid://c28yijux4n4dt" path="res://content/base/common/booster_displacement_noise.png" id="3_4s8b1"]
+[ext_resource type="Texture2D" uid="uid://d1o7hbpfdl5gm" path="res://content/base/stage/ruby/multiplex/track_14.png" id="3_ivwfg"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ejqcc"]
+shader = ExtResource("2_vfxiv")
+shader_parameter/box_size = Vector2(300, 200)
+shader_parameter/border_size = 12.0
+shader_parameter/noise = 0.1
+shader_parameter/border_uv_scale = 1.0
+shader_parameter/noise_uv_scale = 1.0
+shader_parameter/bg_random_scroll = false
+shader_parameter/bg_scroll_speed = Vector2(0, 0)
+shader_parameter/border_texture = ExtResource("3_ivwfg")
+shader_parameter/bg_texture = ExtResource("3_4s8b1")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_283bd"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_j5w22"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_sq5g7"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_wd7q1"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_0xols"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_e0ca8"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
+
+[node name="PauseMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(250, 250)
+script = ExtResource("1_ltnsn")
+
+[node name="ColorRect2" type="ColorRect" parent="."]
+modulate = Color(0, 0, 0, 0.2)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ColorRect" type="ColorRect" parent="."]
+z_index = 5
+material = SubResource("ShaderMaterial_ejqcc")
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -100.0
+offset_right = 150.0
+offset_bottom = 100.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MarginContainer" type="MarginContainer" parent="ColorRect"]
+z_as_relative = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="Control" type="Control" parent="ColorRect/MarginContainer"]
+clip_contents = true
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ColorRect/MarginContainer/Control"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+alignment = 1
+
+[node name="ResumeButton" type="Button" parent="ColorRect/MarginContainer/Control/VBoxContainer"]
+layout_mode = 2
+focus_neighbor_top = NodePath("../DisconnectButton")
+focus_neighbor_bottom = NodePath("../RetryButton")
+focus_next = NodePath("../RetryButton")
+focus_previous = NodePath("../DisconnectButton")
+theme_override_colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.254902)
+theme_override_colors/font_color = Color(0.494118, 0.494118, 0.494118, 0.505882)
+theme_override_colors/font_focus_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 3
+theme_override_styles/focus = SubResource("StyleBoxFlat_283bd")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_j5w22")
+theme_override_styles/hover = SubResource("StyleBoxFlat_sq5g7")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_wd7q1")
+theme_override_styles/normal = SubResource("StyleBoxFlat_0xols")
+text = "Resume"
+
+[node name="RetryButton" type="Button" parent="ColorRect/MarginContainer/Control/VBoxContainer"]
+layout_mode = 2
+focus_neighbor_top = NodePath("../ResumeButton")
+focus_neighbor_bottom = NodePath("../OptionsButton")
+theme_override_colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.254902)
+theme_override_colors/font_color = Color(0.494118, 0.494118, 0.494118, 0.505882)
+theme_override_colors/font_focus_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 3
+theme_override_styles/focus = SubResource("StyleBoxFlat_283bd")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_j5w22")
+theme_override_styles/hover = SubResource("StyleBoxFlat_sq5g7")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_wd7q1")
+theme_override_styles/normal = SubResource("StyleBoxFlat_0xols")
+text = "Retry"
+
+[node name="OptionsButton" type="Button" parent="ColorRect/MarginContainer/Control/VBoxContainer"]
+layout_mode = 2
+focus_neighbor_top = NodePath("../RetryButton")
+focus_neighbor_bottom = NodePath("../GiveUpButton")
+theme_override_colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.254902)
+theme_override_colors/font_color = Color(0.494118, 0.494118, 0.494118, 0.505882)
+theme_override_colors/font_focus_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 3
+theme_override_styles/focus = SubResource("StyleBoxFlat_283bd")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_j5w22")
+theme_override_styles/hover = SubResource("StyleBoxFlat_sq5g7")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_wd7q1")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e0ca8")
+text = "Options"
+
+[node name="GiveUpButton" type="Button" parent="ColorRect/MarginContainer/Control/VBoxContainer"]
+layout_mode = 2
+focus_neighbor_top = NodePath("../OptionsButton")
+focus_neighbor_bottom = NodePath("../DisconnectButton")
+theme_override_colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.254902)
+theme_override_colors/font_color = Color(0.494118, 0.494118, 0.494118, 0.505882)
+theme_override_colors/font_focus_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 3
+theme_override_styles/focus = SubResource("StyleBoxFlat_283bd")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_j5w22")
+theme_override_styles/hover = SubResource("StyleBoxFlat_sq5g7")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_wd7q1")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e0ca8")
+text = "Give Up"
+
+[node name="DisconnectButton" type="Button" parent="ColorRect/MarginContainer/Control/VBoxContainer"]
+layout_mode = 2
+focus_neighbor_top = NodePath("../GiveUpButton")
+focus_neighbor_bottom = NodePath("../ResumeButton")
+theme_override_colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+theme_override_colors/font_hover_color = Color(1, 1, 1, 1)
+theme_override_colors/font_outline_color = Color(0, 0, 0, 0.254902)
+theme_override_colors/font_color = Color(0.494118, 0.494118, 0.494118, 0.505882)
+theme_override_colors/font_focus_color = Color(1, 1, 1, 1)
+theme_override_colors/font_pressed_color = Color(1, 1, 1, 1)
+theme_override_constants/outline_size = 3
+theme_override_styles/focus = SubResource("StyleBoxFlat_283bd")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_j5w22")
+theme_override_styles/hover = SubResource("StyleBoxFlat_sq5g7")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_wd7q1")
+theme_override_styles/normal = SubResource("StyleBoxFlat_e0ca8")
+text = "Disconnect"
+
+[connection signal="pressed" from="ColorRect/MarginContainer/Control/VBoxContainer/ResumeButton" to="." method="_on_resume_button_pressed"]
+[connection signal="pressed" from="ColorRect/MarginContainer/Control/VBoxContainer/RetryButton" to="." method="_on_retry_button_pressed"]
+[connection signal="pressed" from="ColorRect/MarginContainer/Control/VBoxContainer/OptionsButton" to="." method="_on_options_button_pressed"]
+[connection signal="pressed" from="ColorRect/MarginContainer/Control/VBoxContainer/GiveUpButton" to="." method="_on_give_up_button_pressed"]
+[connection signal="pressed" from="ColorRect/MarginContainer/Control/VBoxContainer/DisconnectButton" to="." method="_on_disconnect_button_pressed"]

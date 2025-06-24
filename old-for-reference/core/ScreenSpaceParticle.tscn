@@ -1,0 +1,32 @@
+[gd_scene load_steps=6 format=3 uid="uid://b7b52snhressp"]
+
+[ext_resource type="Shader" uid="uid://bkoj81rruiou7" path="res://content/base/shader/ScreenSpaceParticle.gdshader" id="1_3gmev"]
+[ext_resource type="Script" uid="uid://d4c488o00jsa6" path="res://core/ScreenSpaceParticle.gd" id="1_wg837"]
+[ext_resource type="Texture2D" uid="uid://c0qep5q7vr6r6" path="res://content/base/common/spark_sprite.png" id="2_tvesn"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_av6yt"]
+render_priority = 0
+shader = ExtResource("1_3gmev")
+shader_parameter/spriteTexture = ExtResource("2_tvesn")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_rnu7v"]
+material = SubResource("ShaderMaterial_av6yt")
+size = Vector2(1, 1)
+orientation = 2
+
+[node name="ScreenSpaceParticle" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.904164, -0.905925, -0.99922)
+script = ExtResource("1_wg837")
+particleTexture = ExtResource("2_tvesn")
+particleColor = Vector3(4, 4, 4)
+particleSize = 0.1
+persistence = 0.05
+
+[node name="ParticleMesh" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+extra_cull_margin = 1.0
+instance_shader_parameters/currentScreenPos = Vector3(0.581733, -0.549507, -4.13023)
+instance_shader_parameters/oldScreenPos = Vector3(0.824925, 0.039691, -4.02465)
+instance_shader_parameters/particleModulate = Vector3(0.634525, 0.634525, 0.634525)
+instance_shader_parameters/spriteSize = 0.1
+mesh = SubResource("PlaneMesh_rnu7v")

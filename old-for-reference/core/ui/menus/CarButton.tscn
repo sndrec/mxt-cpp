@@ -1,0 +1,43 @@
+[gd_scene load_steps=4 format=3 uid="uid://08748vtk3jvo"]
+
+[ext_resource type="Script" uid="uid://bgnpg7e63w1k2" path="res://core/ui/menus/CarButton.gd" id="1_sclhj"]
+[ext_resource type="Texture2D" uid="uid://b8fh1m8rphyav" path="res://content/base/common/placeholder.png" id="2_3dmrj"]
+
+[sub_resource type="World3D" id="World3D_emal5"]
+
+[node name="CarButton" type="Button"]
+custom_minimum_size = Vector2(32, 32)
+anchors_preset = -1
+anchor_left = 0.475
+anchor_top = 0.456
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_top = -0.320007
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_sclhj")
+
+[node name="carButtonTexture" type="TextureRect" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_3dmrj")
+expand_mode = 4
+
+[node name="previewViewport" type="SubViewport" parent="."]
+unique_name_in_owner = true
+own_world_3d = true
+world_3d = SubResource("World3D_emal5")
+transparent_bg = true
+msaa_3d = 3
+canvas_cull_mask = 4293918721
+render_target_update_mode = 1
+
+[connection signal="mouse_entered" from="." to="." method="_on_mouse_entered"]
+[connection signal="mouse_exited" from="." to="." method="_on_mouse_exited"]
+[connection signal="pressed" from="." to="." method="_on_pressed"]

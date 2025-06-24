@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://bdsjcy0it1ccm"]
+
+[ext_resource type="Script" uid="uid://dhbemwgemryt0" path="res://core/stage/stage_object.gd" id="1_dlvpy"]
+
+[node name="StageObject" type="StaticBody3D" groups=["Gamestate"]]
+script = ExtResource("1_dlvpy")
+
+[node name="ObjMesh" type="MeshInstance3D" parent="."]
+
+[node name="ObjCol" type="CollisionShape3D" parent="."]

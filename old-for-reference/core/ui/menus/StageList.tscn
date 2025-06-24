@@ -1,0 +1,322 @@
+[gd_scene load_steps=19 format=3 uid="uid://f22011u2vach"]
+
+[ext_resource type="Script" uid="uid://bcq4mlvoi02o2" path="res://core/ui/menus/StageList.gd" id="1_64nbs"]
+[ext_resource type="Shader" uid="uid://fk8td8dts2hs" path="res://core/ui/menus/RO_UI_Checker.gdshader" id="2_ewy8e"]
+[ext_resource type="Texture2D" uid="uid://c15xfhuvar74q" path="res://content/base/common/checker_standard_play.png" id="3_ws44v"]
+[ext_resource type="Texture2D" uid="uid://bkqoa4x4232et" path="res://content/base/common/checker_stagejunk.png" id="4_i8hq4"]
+[ext_resource type="FontFile" uid="uid://ojfjh237m26w" path="res://content/base/common/KillJoy.ttf" id="4_ju727"]
+[ext_resource type="Theme" uid="uid://1yci87hkq7o0" path="res://default_theme.tres" id="6_8hr35"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_p4x8c"]
+shader = ExtResource("2_ewy8e")
+shader_parameter/checkerRepeat = 6.315
+shader_parameter/checkerRotate = -0.135
+shader_parameter/checkerScrollSpeed = Vector2(0.04, 0.08)
+shader_parameter/outlineColor = Color(0.517647, 0.298039, 0.137255, 1)
+shader_parameter/topGradientCheck1 = Color(0.886275, 0.623529, 0.384314, 1)
+shader_parameter/bottomGradientCheck1 = Color(0.521569, 0.356863, 0.109804, 1)
+shader_parameter/topGradientCheck2 = Color(0.807843, 0.486275, 0.266667, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.376471, 0.188235, 0.188235, 1)
+shader_parameter/checkerTexture = ExtResource("3_ws44v")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_rfbpu"]
+bg_color = Color(0, 0, 0, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(1, 1, 1, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_gyprl"]
+shader = ExtResource("2_ewy8e")
+shader_parameter/checkerRepeat = 5.0
+shader_parameter/checkerRotate = 1.465
+shader_parameter/checkerScrollSpeed = Vector2(-0.05, -0.1)
+shader_parameter/outlineColor = Color(0.494118, 0.203922, 0.133333, 1)
+shader_parameter/topGradientCheck1 = Color(0.760784, 0.415686, 0.2, 1)
+shader_parameter/bottomGradientCheck1 = Color(0.482353, 0.270588, 0.129412, 1)
+shader_parameter/topGradientCheck2 = Color(0.580392, 0.27451, 0.113725, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.254902, 0.0823529, 0.0235294, 1)
+shader_parameter/checkerTexture = ExtResource("4_i8hq4")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_861q7"]
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+border_color = Color(1, 1, 1, 1)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_cqxxp"]
+bg_color = Color(0.247059, 0.113725, 0.0352941, 0.509804)
+border_width_left = 5
+border_width_top = 5
+border_width_right = 5
+border_width_bottom = 5
+border_color = Color(0.492188, 0.203125, 0.132813, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_5nala"]
+font = ExtResource("4_ju727")
+font_size = 24
+font_color = Color(0.945098, 0.52549, 0.560784, 1)
+outline_size = 8
+outline_color = Color(0.462745, 0.196078, 0.188235, 1)
+shadow_size = 3
+shadow_color = Color(0, 0, 0, 0.313726)
+shadow_offset = Vector2(2, 3)
+
+[sub_resource type="LabelSettings" id="LabelSettings_k6w5j"]
+line_spacing = 1.0
+font = ExtResource("4_ju727")
+font_size = 14
+font_color = Color(0.243137, 0.141176, 0.0901961, 1)
+outline_size = 5
+outline_color = Color(0.756863, 0.658824, 0.537255, 1)
+shadow_size = 5
+shadow_color = Color(0, 0, 0, 0.290196)
+shadow_offset = Vector2(2, 2)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_aw2f3"]
+shader = ExtResource("2_ewy8e")
+shader_parameter/checkerRepeat = 8.0
+shader_parameter/checkerRotate = 0.1
+shader_parameter/checkerScrollSpeed = Vector2(0.2, -0.1)
+shader_parameter/outlineColor = Color(0.517647, 0.298039, 0.137255, 1)
+shader_parameter/topGradientCheck1 = Color(1, 0.6, 0.701961, 1)
+shader_parameter/bottomGradientCheck1 = Color(1, 0.14902, 0.6, 1)
+shader_parameter/topGradientCheck2 = Color(0.886275, 0.623529, 0.384314, 1)
+shader_parameter/bottomGradientCheck2 = Color(0.521569, 0.356863, 0.109804, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_s8a07"]
+bg_color = Color(0, 0, 0, 1)
+border_width_left = 4
+border_width_top = 4
+border_width_right = 4
+border_width_bottom = 4
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="LabelSettings" id="LabelSettings_ycl5a"]
+font = ExtResource("4_ju727")
+font_size = 14
+font_color = Color(0.745098, 0.219608, 0.266667, 1)
+outline_size = 6
+outline_color = Color(0.345098, 0.117647, 0.321569, 1)
+
+[sub_resource type="Animation" id="Animation_7at6c"]
+resource_name = "created"
+length = 0.666668
+step = 0.0166667
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:modulate")
+tracks/0/interp = 2
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0.366667, 0.666667),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [Color(1, 1, 1, 0), Color(1, 1, 1, 1)]
+}
+tracks/1/type = "value"
+tracks/1/imported = false
+tracks/1/enabled = true
+tracks/1/path = NodePath(".:scale")
+tracks/1/interp = 2
+tracks/1/loop_wrap = true
+tracks/1/keys = {
+"times": PackedFloat32Array(0.366667, 0.433333, 0.666667),
+"transitions": PackedFloat32Array(1, 1, 1),
+"update": 0,
+"values": [Vector2(1.2, 1.2), Vector2(1.1166, 1.1166), Vector2(1, 1)]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_nfkrx"]
+_data = {
+&"created": SubResource("Animation_7at6c")
+}
+
+[node name="StageList" type="Node2D"]
+script = ExtResource("1_64nbs")
+
+[node name="StageListRootControl" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 0
+offset_right = 1280.0
+offset_bottom = 720.0
+pivot_offset = Vector2(640, 360)
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 2
+
+[node name="Control" type="Control" parent="StageListRootControl"]
+layout_mode = 1
+anchor_left = 0.184
+anchor_top = 0.145
+anchor_right = 0.809
+anchor_bottom = 0.839
+offset_left = -0.588135
+offset_top = -0.282578
+offset_right = -0.588135
+offset_bottom = 0.0374146
+grow_horizontal = 2
+grow_vertical = 2
+pivot_offset = Vector2(400, 250)
+
+[node name="StageListPanel" type="Panel" parent="StageListRootControl/Control"]
+texture_filter = 6
+texture_repeat = 2
+material = SubResource("ShaderMaterial_p4x8c")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_rfbpu")
+
+[node name="StageListContainer" type="HBoxContainer" parent="StageListRootControl/Control/StageListPanel"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.02
+anchor_top = 0.124
+anchor_right = 0.981
+anchor_bottom = 0.972
+offset_right = 0.199951
+offset_bottom = -3.05176e-05
+grow_horizontal = 2
+grow_vertical = 0
+alignment = 1
+
+[node name="StageButtonsPanel" type="Panel" parent="StageListRootControl/Control/StageListPanel/StageListContainer"]
+material = SubResource("ShaderMaterial_gyprl")
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_styles/panel = SubResource("StyleBoxFlat_861q7")
+
+[node name="Control" type="ScrollContainer" parent="StageListRootControl/Control/StageListPanel/StageListContainer/StageButtonsPanel"]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.01
+anchor_top = 0.012
+anchor_right = 0.99
+anchor_bottom = 0.988
+offset_left = -0.1
+offset_top = -0.0879998
+offset_right = 0.0999756
+offset_bottom = 0.0879822
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+follow_focus = true
+horizontal_scroll_mode = 0
+vertical_scroll_mode = 2
+
+[node name="GridContainer" type="GridContainer" parent="StageListRootControl/Control/StageListPanel/StageListContainer/StageButtonsPanel/Control"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/h_separation = 8
+theme_override_constants/v_separation = 8
+columns = 3
+
+[node name="StageDetailsPanel" type="Panel" parent="StageListRootControl/Control/StageListPanel/StageListContainer"]
+unique_name_in_owner = true
+clip_contents = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 0
+size_flags_stretch_ratio = 0.5
+theme_override_styles/panel = SubResource("StyleBoxFlat_cqxxp")
+
+[node name="Control2" type="VBoxContainer" parent="StageListRootControl/Control/StageListPanel/StageListContainer/StageDetailsPanel"]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.027
+anchor_top = 0.017
+anchor_right = 0.973
+anchor_bottom = 0.983
+offset_left = 0.115
+offset_top = 4.84309
+offset_right = -0.11499
+offset_bottom = 144.563
+grow_horizontal = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.5
+alignment = 1
+
+[node name="StageNameLabel" type="Label" parent="StageListRootControl/Control/StageListPanel/StageListContainer/StageDetailsPanel/Control2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.33
+text = "Your colourful, awesome stage!"
+label_settings = SubResource("LabelSettings_5nala")
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 3
+
+[node name="StageDescLabel" type="Label" parent="StageListRootControl/Control/StageListPanel/StageListContainer/StageDetailsPanel/Control2"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "This is a description for your stage.
+
+It'll describe everything going on in your stage, for the unlucky sap who's about to play it!
+
+...or not."
+label_settings = SubResource("LabelSettings_k6w5j")
+autowrap_mode = 3
+justification_flags = 0
+
+[node name="BackButton" type="Button" parent="StageListRootControl"]
+material = SubResource("ShaderMaterial_aw2f3")
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.191
+anchor_top = 0.853
+anchor_right = 0.252
+anchor_bottom = 0.91
+offset_left = 0.519989
+offset_top = -0.160034
+offset_right = 0.440002
+offset_bottom = -0.200012
+theme = ExtResource("6_8hr35")
+theme_override_styles/normal = SubResource("StyleBoxFlat_s8a07")
+icon_alignment = 1
+expand_icon = true
+
+[node name="Label" type="Label" parent="StageListRootControl/BackButton"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Back..."
+label_settings = SubResource("LabelSettings_ycl5a")
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="StageListRootControl"]
+unique_name_in_owner = true
+libraries = {
+"": SubResource("AnimationLibrary_nfkrx")
+}
+
+[connection signal="pressed" from="StageListRootControl/BackButton" to="." method="_on_back_button_pressed"]

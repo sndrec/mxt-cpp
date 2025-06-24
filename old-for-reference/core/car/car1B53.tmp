@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3 uid="uid://dcjt1cb3f8ap8"]
+
+[ext_resource type="Script" path="res://core/car/car_base.gd" id="1_6sc3m"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_71dy8"]
+size = Vector3(0.5, 0.25, 1)
+
+[node name="car_base" type="Node3D"]
+script = ExtResource("1_6sc3m")
+wall_colliders = Array[Vector3]([Vector3(-0.2, 0, 0.45), Vector3(-0.2, 0, -0.45), Vector3(0.2, 0, 0.45), Vector3(0.2, 0, -0.45)])
+
+[node name="car_mesh" type="MeshInstance3D" parent="."]
+mesh = SubResource("BoxMesh_71dy8")
+
+[node name="grav_point_cast" type="RayCast3D" parent="."]
+enabled = false
+target_position = Vector3(0, -1.5, 0)
+collision_mask = 0
+
+[node name="car_camera" type="Camera3D" parent="."]
+transform = Transform3D(-1, 1.21669e-08, -8.6572e-08, 0, 0.990268, 0.139173, 8.74228e-08, 0.139173, -0.990268, 0, 1, -2)
+doppler_tracking = 2

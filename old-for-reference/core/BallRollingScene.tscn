@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dpu6miqowe84k"]
+
+[ext_resource type="Script" uid="uid://u2jmpjpodqd0" path="res://core/ball_rolling_scene.gd" id="1_7x4pb"]
+
+[node name="BallRollingScene" type="Node"]
+script = ExtResource("1_7x4pb")

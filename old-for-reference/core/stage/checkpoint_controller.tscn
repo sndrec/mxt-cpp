@@ -1,0 +1,18 @@
+[gd_scene load_steps=2 format=3 uid="uid://bed41ll37tkm2"]
+
+[ext_resource type="Script" uid="uid://dhfuh78505qij" path="res://core/stage/checkpoint_controller.gd" id="1_cc4ms"]
+
+[node name="CheckpointController" type="Node3D"]
+script = ExtResource("1_cc4ms")
+
+[node name="OriginHandle" type="Marker3D" parent="."]
+unique_name_in_owner = true
+
+[node name="OrientationHandle" type="Marker3D" parent="."]
+unique_name_in_owner = true
+
+[node name="RadiusHandle" type="Marker3D" parent="."]
+unique_name_in_owner = true
+
+[node name="RespawnHandle" type="Marker3D" parent="."]
+unique_name_in_owner = true
