@@ -1,4 +1,4 @@
-extends Node
+class_name GameManager extends Node
 
 @onready var game_sim: GameSim = $GameSim
 @onready var start_button: Button = $Control/StartButton

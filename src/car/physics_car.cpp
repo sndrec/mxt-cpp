@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include "mxt_core/debug.hpp"
+#include "track/track_segment.h"
 
 static inline godot::Vector3 normalized_safe(const godot::Vector3 &v,
 	const godot::Vector3 &def = godot::Vector3()) {
@@ -1838,7 +1839,17 @@ int PhysicsCar::update_machine_corners() {
 					collision_push_track += d;
 				}
 			}
-			if (t_old.y > 0.0f && t_old.y < 1.0f && was_above) {
+			TrackSegment *old_seg = &current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
+			TrackSegment *new_seg = &current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
+			bool should_rail_old = (old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+				old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+				old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+				old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
+			bool should_rail_new = (new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+				new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+				new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+				new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
+			if (!should_rail_old && t_old.y > 0.0f && t_old.y < 1.0f && was_above) {
 				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 					godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 					godot::Transform3D root_t;
@@ -1893,7 +1904,7 @@ int PhysicsCar::update_machine_corners() {
 					}
 				}
 			}
-			if (t_new.y > 0.0f && t_new.y < 1.0f && was_above) {
+			if (!should_rail_new && t_new.y > 0.0f && t_new.y < 1.0f && was_above) {
 				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 					godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 					godot::Transform3D root_t;
@@ -2390,17 +2401,17 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
         current_track->segments[cp.road_segment]
                 .road_shape->get_oriented_transform_at_time(spawn_transform,
                         godot::Vector2(0.0f, t_y));
-        spawn_transform.basis =
-                spawn_transform.basis.rotated(godot::Vector3(0, 1, 0), Math_PI);
-
-        position_current = spawn_transform.origin;
-        position_old = spawn_transform.origin;
-        position_old_2 = spawn_transform.origin;
-        position_old_dupe = spawn_transform.origin;
+        spawn_transform.basis.transpose();
+        spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
+        godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.1f;
+        position_current = spawn_transform.origin + up_offset;
+        position_old = spawn_transform.origin + up_offset;
+        position_old_2 = spawn_transform.origin + up_offset;
+        position_old_dupe = spawn_transform.origin + up_offset;
         position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
 
         mtxa->push();
-        mtxa->cur->origin = spawn_transform.origin;
+        mtxa->cur->origin = spawn_transform.origin + up_offset;
         basis_physical.basis = spawn_transform.basis;
         basis_physical_other.basis = spawn_transform.basis;
         rotate_mtxa_from_diff_btwn_machine_front_and_back();
