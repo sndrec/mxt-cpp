@@ -1,7 +1,7 @@
 [gd_scene load_steps=14 format=3 uid="uid://32t0e0x6ldk1"]
 
 [ext_resource type="Script" uid="uid://dkjcr66oxndry" path="res://ui/race_hud.gd" id="1_w35b3"]
-[ext_resource type="Shader" path="res://ui/health_meter.gdshader" id="2_2xneg"]
+[ext_resource type="Shader" uid="uid://c3ld4bxnm18d0" path="res://ui/health_meter.gdshader" id="2_2xneg"]
 [ext_resource type="Texture2D" uid="uid://c12nhn05is6ov" path="res://ui/placeholder.png" id="2_ifpia"]
 [ext_resource type="Texture2D" uid="uid://d3xfb8wko2v52" path="res://ui/countdown_back.png" id="3_qb5k8"]
 [ext_resource type="Texture2D" uid="uid://usop48tynaes" path="res://ui/countdown_arrow.png" id="4_prwh0"]

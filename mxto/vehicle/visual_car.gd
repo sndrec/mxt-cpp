@@ -6,12 +6,15 @@ var car_definition : CarDefinition
 
 enum FZ_TERRAIN {
 	NORMAL = 0x1,
-	DASHPLATE = 0x2,
+	DASH = 0x2,
 	RECHARGE = 0x4,
 	DIRT = 0x8,
-	ICE = 0x10,
-	JUMP = 0x20,
-	LAVA = 0x40
+	JUMP = 0x10,
+	LAVA = 0x20,
+	ICE = 0x40,
+	BACKSIDE = 0x80,
+	RAIL = 0x100,
+	HOLE = 0x200
 }
 
 enum FZ_MS {
@@ -60,9 +63,17 @@ enum FZ_TC{
 	B8 = 0x80
 }
 
+@onready var terrain_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D
+@onready var thrust_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D2
+@onready var engine_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D3
+@onready var boost_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D4
+@onready var air_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D5
+@onready var strafe_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D6
+
 var owning_id : int = 0
 var game_manager : GameManager
 @onready var race_hud: RaceHud = $race_hud
+@onready var car_transform: Node3D = $CarTransform
 
 var position_current := Vector3.ZERO
 var velocity := Vector3.ZERO
@@ -78,13 +89,17 @@ var air_tilt := 0.0
 var energy := 0.0
 var lap_progress := 0.0
 var checkpoint_fraction := 0.0
+var input_strafe := 0.0
 var boost_frames := 0
 var boost_frames_manual := 0
 var current_checkpoint := 0
 var lap := 1
 var air_time := 0
 var machine_state := 0
+var terrain_state := 0
+var terrain_state_old := 0
 var frames_since_start_2 := 0
+
 
 var track_normal_vis := Vector3.UP
 var track_normal_old_vis := Vector3.UP
@@ -101,7 +116,19 @@ var tilt_br_state := 0
 
 func _ready() -> void:
 	car_visual = car_definition.car_scene.instantiate()
-	add_child(car_visual)
+	car_transform.add_child(car_visual)
+	air_sound.stream = preload("res://sfx/vehicle/air_1.wav")
+	air_sound.play()
+	thrust_sound.stream = preload("res://sfx/vehicle/thrust_on.wav")
+	thrust_sound.stop()
+	engine_sound.stream = preload("res://sfx/vehicle/engine.wav")
+	engine_sound.play()
+	boost_sound.stream = preload("res://sfx/vehicle/boost/PACK1-110.wav")
+	boost_sound.stop()
+	terrain_sound.stream = preload("res://sfx/vehicle/restore.wav")
+	terrain_sound.play()
+	strafe_sound.stream = preload("res://sfx/vehicle/strafe.wav")
+	strafe_sound.play()
 
 func _physics_process(delta: float) -> void:
 	var calced_max_energy := 100.0
@@ -115,7 +142,7 @@ func _physics_process(delta: float) -> void:
 	var target_fov := remap(speed_kmh, 0, 1800, 50, 90)
 	#target_fov += remap(boost_ratio, 0, 1, 0, 50)
 	target_fov = minf(target_fov, 100)
-	car_visual.transform = transform_visual
+	car_transform.transform = transform_visual
 	car_camera.fov = lerpf(car_camera.fov, target_fov, delta * 2)
 	var use_forward_z : Vector3 = basis_physical.basis.z
 	use_forward_z = use_forward_z.normalized()
@@ -158,3 +185,49 @@ func _physics_process(delta: float) -> void:
 				use_basis = use_basis.rotated(sideways, lerped_curvature * -2000)
 	car_camera.position = position_current + final_y * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
 	car_camera.basis = use_basis.rotated(use_basis.x, deg_to_rad(-15))
+	
+	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
+	
+	if (machine_state & FZ_MS.AIRBORNE) != 0:
+		var target_db := remap(use_vy, 0, 1, 20, 60)
+		air_sound.volume_db = lerpf(air_sound.volume_db, target_db, delta * 8)
+		var target_pitch := remap(use_vy, 0, 1, 0.5, 1.5)
+		air_sound.pitch_scale = lerpf(air_sound.pitch_scale, target_pitch, delta * 8)
+	else:
+		air_sound.volume_db = lerpf(air_sound.volume_db, -50, delta * 8)
+	
+	DebugDraw2D.set_text("vy", velocity.y)
+	
+	if (terrain_state_old & FZ_TERRAIN.RECHARGE) == 0 and (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
+		terrain_sound.stream = preload("res://sfx/vehicle/restore.wav")
+		terrain_sound.play(0.0)
+	elif (terrain_state_old & FZ_TERRAIN.DIRT) == 0 and (terrain_state & FZ_TERRAIN.DIRT) != 0:
+		terrain_sound.stream = preload("res://sfx/vehicle/terrain_dirt.wav")
+		terrain_sound.play(0.0)
+	elif (terrain_state_old & FZ_TERRAIN.LAVA) == 0 and (terrain_state & FZ_TERRAIN.LAVA) != 0:
+		terrain_sound.stream = preload("res://sfx/vehicle/terrain_lava.wav")
+		terrain_sound.play(0.0)
+	elif terrain_state == 0:
+		terrain_sound.stop()
+	
+	DebugDraw2D.set_text("input_strafe", input_strafe)
+	
+	if (absf(input_strafe) > 0.05):
+		strafe_sound.volume_db = lerpf(strafe_sound.volume_db, 0, delta * 12)
+		if !strafe_sound.playing:
+			strafe_sound.play(0.0)
+	else:
+		strafe_sound.volume_db = lerpf(strafe_sound.volume_db, -20, delta * 12)
+		if strafe_sound.volume_db <= -10:
+			strafe_sound.stop()
+	
+	if (Input.is_action_just_pressed("Accelerate")):
+		thrust_sound.stop()
+		thrust_sound.play(0.0)
+	if (machine_state & FZ_MS.JUST_PRESSED_BOOST):
+		boost_sound.stop()
+		boost_sound.play(0.0)
+	if (machine_state & FZ_MS.JUST_HIT_DASHPLATE):
+		boost_sound.stop()
+		boost_sound.play(0.0)
+	terrain_state_old = terrain_state
