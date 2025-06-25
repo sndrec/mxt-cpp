@@ -2372,7 +2372,7 @@ void PhysicsCar::handle_checkpoints()
 		current_checkpoint = static_cast<uint16_t>(found);
 	}
 
-	if (lap > 0){
+	if (lap > 3){
 		machine_state |= MACHINESTATE::COMPLETEDRACE_1_Q;
 	}
 
