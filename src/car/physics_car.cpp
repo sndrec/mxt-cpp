@@ -2374,6 +2374,7 @@ void PhysicsCar::handle_checkpoints()
 
 	if (lap > 3){
 		machine_state |= MACHINESTATE::COMPLETEDRACE_1_Q;
+		// yay
 	}
 
 	const CollisionCheckpoint &cur_cp = current_track->checkpoints[current_checkpoint];
