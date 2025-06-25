@@ -253,6 +253,7 @@ func _return_to_lobby() -> void:
 	local_player_index = 0
 	lobby_control.visible = true
 	network_manager.flush_waiting_peers()
+	network_manager.reset_race_state()
 
 func _check_race_finished() -> void:
 	if !network_manager.is_server:

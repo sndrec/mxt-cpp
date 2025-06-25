@@ -36,6 +36,22 @@ var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
 
+func reset_race_state() -> void:
+	pending_inputs.clear()
+	authoritative_inputs.clear()
+	input_history.clear()
+	sent_inputs.clear()
+	sent_input_times.clear()
+	last_local_input = NEUTRAL_INPUT.duplicate()
+	server_tick = 0
+	local_tick = 0
+	target_tick = 0
+	last_received_tick.clear()
+	last_ack_tick = -1
+	last_broadcast_inputs.clear()
+	rtt_s = 0.0
+	desired_ahead_ticks = 0.0 if is_server else 2.0
+
 func _calc_state_offsets() -> void:
 	if not is_server:
 		return
