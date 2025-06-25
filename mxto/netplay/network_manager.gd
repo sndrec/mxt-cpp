@@ -338,15 +338,15 @@ func _server_broadcast(tick: int, inputs: Dictionary, ids: Array, acks: Dictiona
 					rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
 				sent_input_times.erase(ack_tick)
 				_update_desired_ahead()
-		for key in sent_inputs.keys():
-			if key <= last_ack_tick:
-				sent_inputs.erase(key)
-		for key in sent_input_times.keys():
-			if key <= last_ack_tick:
-				sent_input_times.erase(key)
-		if state.size() > 0:
-			_handle_state(tick, state)
-		_client_ack_authoritative.rpc_id(1, tick)
+			for key in sent_inputs.keys():
+				if key <= last_ack_tick:
+					sent_inputs.erase(key)
+			for key in sent_input_times.keys():
+				if key <= last_ack_tick:
+					sent_input_times.erase(key)
+				if state.size() > 0:
+					_handle_state(tick, state)
+				_client_ack_authoritative.rpc_id(1, tick)
 
 func post_tick() -> void:
 	if is_server and game_sim != null:
