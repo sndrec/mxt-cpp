@@ -2,12 +2,14 @@ class_name NetworkManager
 extends Node
 
 signal race_started(track_index, player_settings)
+signal race_finished
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT = PlayerInputClass.new().to_dict()
 
 var is_server: bool = false
 var player_ids: Array = []
+var waiting_peers: Array = []
 var pending_inputs := {}
 var authoritative_inputs := {}
 var input_history := {}
@@ -91,18 +93,44 @@ func join(ip: String, port: int = 27016) -> int:
 	return OK
 
 func _on_peer_connected(id: int) -> void:
-	if is_server:
-		player_ids.append(id)
-		_update_player_ids.rpc(player_ids)
-		for pid in player_settings.keys():
-			update_player_settings.rpc_id(id, player_settings[pid], pid)
-		_calc_state_offsets()
+        if is_server:
+                if game_sim != null and game_sim.sim_started:
+                        waiting_peers.append(id)
+                        _update_player_ids.rpc_id(id, player_ids)
+                        for pid in player_settings.keys():
+                                update_player_settings.rpc_id(id, player_settings[pid], pid)
+                        return
+                player_ids.append(id)
+                _update_player_ids.rpc(player_ids)
+                for pid in player_settings.keys():
+                        update_player_settings.rpc_id(id, player_settings[pid], pid)
+                _calc_state_offsets()
 
 func _on_peer_disconnected(id: int) -> void:
-	if is_server:
-		player_ids.erase(id)
-		_update_player_ids.rpc(player_ids)
-		_calc_state_offsets()
+        if is_server:
+                if waiting_peers.has(id):
+                        waiting_peers.erase(id)
+                        return
+                player_ids.erase(id)
+                _update_player_ids.rpc(player_ids)
+                _calc_state_offsets()
+
+func flush_waiting_peers() -> void:
+        if not is_server:
+                return
+        var new_ids: Array = []
+        for id in waiting_peers:
+                if not player_ids.has(id):
+                        player_ids.append(id)
+                        new_ids.append(id)
+                        for pid in player_settings.keys():
+                                update_player_settings.rpc_id(id, player_settings[pid], pid)
+        waiting_peers.clear()
+        _update_player_ids.rpc(player_ids)
+        _calc_state_offsets()
+        for id in new_ids:
+                if player_settings.has(id):
+                        update_player_settings.rpc(player_settings[id], id)
 
 @rpc("any_peer")
 func _update_player_ids(ids: Array) -> void:
@@ -115,11 +143,20 @@ func start_race(track_index: int, settings: Array) -> void:
 				emit_signal("race_started", track_index, settings)
 
 func send_start_race(track_index: int, settings: Array) -> void:
-	if is_server:
-		start_race.rpc(track_index, settings)
-		start_race(track_index, settings)
-	else:
-		start_race.rpc_id(1, track_index, settings)
+        if is_server:
+                start_race.rpc(track_index, settings)
+                start_race(track_index, settings)
+        else:
+                start_race.rpc_id(1, track_index, settings)
+
+@rpc("any_peer")
+func end_race() -> void:
+        emit_signal("race_finished")
+
+func send_end_race() -> void:
+        if is_server:
+                end_race.rpc()
+                end_race()
 
 func send_player_settings(settings: Dictionary) -> void:
 	var my_id := multiplayer.get_unique_id()
