@@ -287,8 +287,9 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 		server_tick = max(server_tick, tick + 1)
 		target_tick = max(target_tick, tgt)
 		player_ids = ids
-		authoritative_inputs[tick] = inputs
-		_handle_input_update(tick, inputs)
+		if inputs.size() > 0:
+			authoritative_inputs[tick] = inputs
+			_handle_input_update(tick, inputs)
 		if acks.has(multiplayer.get_unique_id()):
 			var ack_tick := int(acks[multiplayer.get_unique_id()])
 			last_ack_tick = max(last_ack_tick, ack_tick)
@@ -324,10 +325,15 @@ func _idle_broadcast() -> void:
 		return
 	var state = game_sim.get_state_data(server_tick)
 	for id in player_ids:
-		var send_state : PackedByteArray = PackedByteArray()
-		if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
-			send_state = state
-		_server_broadcast.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, send_state, target_tick)
+		_server_broadcast.rpc_id(
+			id,
+			server_tick,
+			[],						# empty list means “no inputs yet”
+			player_ids,
+			last_received_tick,
+			PackedByteArray(),
+			target_tick
+		)
 
 func _check_client_stalls() -> void:
 	if not is_server or game_sim == null or not game_sim.sim_started:
