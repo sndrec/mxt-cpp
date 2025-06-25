@@ -27,6 +27,8 @@ script = ExtResource("1_tjhrj")
 
 [node name="GameSim" type="GameSim" parent="."]
 
+[node name="ServerGameSim" type="GameSim" parent="."]
+
 [node name="NetworkManager" type="Node" parent="."]
 script = ExtResource("3_netplay")
 
