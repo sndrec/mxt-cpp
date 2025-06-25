@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=10 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="ArrayMesh" uid="uid://2biir4cy4wk8" path="res://track/weird_track_2/weird_track_2.obj" id="3_1bvp3"]
@@ -18,6 +18,9 @@ background_mode = 2
 sky = SubResource("Sky_7dlep")
 tonemap_mode = 2
 glow_enabled = true
+
+[sub_resource type="LabelSettings" id="LabelSettings_lquwl"]
+font_size = 72
 
 [node name="Main" type="Node"]
 script = ExtResource("1_tjhrj")
@@ -189,6 +192,19 @@ skeleton = NodePath("")
 
 [node name="CarSettings" parent="." instance=ExtResource("3_carsettings")]
 visible = false
+
+[node name="RaceFinishLabel" type="Label" parent="."]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "RACE FINISHED
+YAY"
+label_settings = SubResource("LabelSettings_lquwl")
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/JoinButton" to="." method="_on_join_button_pressed"]

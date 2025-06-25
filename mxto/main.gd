@@ -15,6 +15,7 @@ class_name GameManager extends Node
 @onready var car_settings: Control = $CarSettings
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
+@onready var race_finish_label: Label = $RaceFinishLabel
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 
@@ -267,7 +268,12 @@ func _check_race_finished() -> void:
 				all_done = false
 				break
 	if all_done:
-		network_manager.send_end_race()
+		if network_manager.net_race_finish_time == -1:
+			network_manager.net_race_finish_time = Time.get_ticks_msec()
+			race_finish_label.visible = true
+		if Time.get_ticks_msec() > network_manager.net_race_finish_time + 5000:
+			network_manager.send_end_race()
+			race_finish_label.visible = false
 
 func _process(delta: float) -> void:
 	pass
