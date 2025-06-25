@@ -4,6 +4,15 @@ extends Node
 signal race_started(track_index, player_settings)
 signal race_finished
 
+@rpc("any_peer")
+func set_race_finish_time(time: int) -> void:
+	net_race_finish_time = time
+
+func send_race_finish_time(time: int) -> void:
+	if is_server:
+		set_race_finish_time.rpc(time)
+		set_race_finish_time(time)
+
 const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT = PlayerInputClass.new().to_dict()
 
