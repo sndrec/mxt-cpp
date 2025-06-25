@@ -25,11 +25,11 @@ var player_scene := preload("res://player/player_controller.tscn")
 var local_player_index: int = 0
 
 func _ready() -> void:
-        _load_tracks()
-        _load_car_definitions()
-        network_manager.race_started.connect(_on_network_race_started)
-        network_manager.race_finished.connect(_on_network_race_finished)
-        car_settings.hide()
+	_load_tracks()
+	_load_car_definitions()
+	network_manager.race_started.connect(_on_network_race_started)
+	network_manager.race_finished.connect(_on_network_race_finished)
+	car_settings.hide()
 	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
 	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
 
@@ -173,10 +173,10 @@ func _on_start_race_button_pressed() -> void:
 		network_manager.send_start_race(lobby_track_selector.selected, settings_array)
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
-                                _start_race(track_index, settings)
+	_start_race(track_index, settings)
 
 func _on_network_race_finished() -> void:
-        _return_to_lobby()
+	_return_to_lobby()
 
 func _update_player_list() -> void:
 	player_list.clear()
@@ -200,10 +200,10 @@ func _physics_process(delta: float) -> void:
 		network_manager.set_local_input(local_input)
 		if network_manager.is_server:
 			_simulate_multiple_ticks()   # keep old while-loop
-                else:
-                        _simulate_single_tick()      # new, client version
-                game_sim.render_gamesim()
-                _check_race_finished()
+		else:
+			_simulate_single_tick()      # new, client version
+		game_sim.render_gamesim()
+		_check_race_finished()
 
 func _simulate_multiple_ticks():
 	var loops := 0
@@ -232,41 +232,41 @@ func _unhandled_input(event: InputEvent) -> void:
 		_return_to_menu()
 
 func _return_to_menu() -> void:
-        network_manager.disconnect_from_server()
-        game_sim.destroy_gamesim()
-        for child in car_node_container.get_children():
-                child.queue_free()
-        for p in players:
-                p.queue_free()
-        players.clear()
-        local_player_index = 0
-        $Control.visible = true
-        lobby_control.visible = false
+	network_manager.disconnect_from_server()
+	game_sim.destroy_gamesim()
+	for child in car_node_container.get_children():
+		child.queue_free()
+	for p in players:
+		p.queue_free()
+	players.clear()
+	local_player_index = 0
+	$Control.visible = true
+	lobby_control.visible = false
 
 func _return_to_lobby() -> void:
-        game_sim.destroy_gamesim()
-        for child in car_node_container.get_children():
-                child.queue_free()
-        for p in players:
-                p.queue_free()
-        players.clear()
-        local_player_index = 0
-        lobby_control.visible = true
-        network_manager.flush_waiting_peers()
+	game_sim.destroy_gamesim()
+	for child in car_node_container.get_children():
+		child.queue_free()
+	for p in players:
+		p.queue_free()
+	players.clear()
+	local_player_index = 0
+	lobby_control.visible = true
+	network_manager.flush_waiting_peers()
 
 func _check_race_finished() -> void:
-        if !network_manager.is_server:
-                return
-        if !game_sim.sim_started:
-                return
-        var all_done := true
-        for car in car_node_container.get_children():
-                if car is VisualCar:
-                        if (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) == 0:
-                                all_done = false
-                                break
-        if all_done:
-                network_manager.send_end_race()
+	if !network_manager.is_server:
+		return
+	if !game_sim.sim_started:
+		return
+	var all_done := true
+	for car in car_node_container.get_children():
+		if car is VisualCar:
+			if (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) == 0:
+				all_done = false
+				break
+	if all_done:
+		network_manager.send_end_race()
 
 func _process(delta: float) -> void:
 	pass
