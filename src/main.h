@@ -23,7 +23,7 @@ namespace godot {
 			float tick_delta;
 			HeapHandler level_data;
 			HeapHandler gamestate_data;
-			static const int STATE_BUFFER_LEN = 30;
+			static const int STATE_BUFFER_LEN = 45;
 			struct SavedState {
 				char* data;
 				int size;
