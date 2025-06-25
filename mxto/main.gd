@@ -177,6 +177,7 @@ func _on_network_race_started(track_index: int, settings: Array) -> void:
 	_start_race(track_index, settings)
 
 func _on_network_race_finished() -> void:
+	race_finish_label.visible = false
 	_return_to_lobby()
 
 func _update_player_list() -> void:
@@ -257,8 +258,6 @@ func _return_to_lobby() -> void:
 	network_manager.reset_race_state()
 
 func _check_race_finished() -> void:
-	if !network_manager.is_server:
-		return
 	if !game_sim.sim_started:
 		return
 	var all_done := true
@@ -267,13 +266,18 @@ func _check_race_finished() -> void:
 			if (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) == 0:
 				all_done = false
 				break
-	if all_done:
-		if network_manager.net_race_finish_time == -1:
-			network_manager.net_race_finish_time = Time.get_ticks_msec()
+	if network_manager.is_server:
+		if all_done:
+			if network_manager.net_race_finish_time == -1:
+				network_manager.net_race_finish_time = Time.get_ticks_msec()
+				race_finish_label.visible = true
+				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
+			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 5000:
+				network_manager.send_end_race()
+				race_finish_label.visible = false
+	else:
+		if network_manager.net_race_finish_time != -1:
 			race_finish_label.visible = true
-		if Time.get_ticks_msec() > network_manager.net_race_finish_time + 5000:
-			network_manager.send_end_race()
-			race_finish_label.visible = false
 
 func _process(delta: float) -> void:
 	pass

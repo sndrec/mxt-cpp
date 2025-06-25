@@ -12,7 +12,7 @@ class_name RaceHud extends Control
 @onready var sub_viewport := $MinimapControl/SubViewport
 @onready var minimap_cam := $MinimapControl/SubViewport/Camera3D
 @onready var minimap_mesh := $MinimapControl/SubViewport/MeshInstance3D
-@onready var race_placement_hud := $RacePlacementHud
+#@onready var race_placement_hud := $RacePlacementHud
 @onready var check_control: Control = $CheckControl
 
 var placement_textures : Array[Texture] = [
