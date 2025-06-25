@@ -17,6 +17,7 @@ const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT = PlayerInputClass.new().to_dict()
 
 var is_server: bool = false
+var listen_host: bool = false
 var player_ids: Array = []
 var waiting_peers: Array = []
 var pending_inputs := {}
@@ -67,7 +68,7 @@ func reset_race_state() -> void:
 	net_race_finish_time = -1
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
-	desired_ahead_ticks = 0.0 if is_server else 2.0
+        desired_ahead_ticks = 0.0 if is_server and not listen_host else 2.0
 
 func _calc_state_offsets() -> void:
 	if not is_server:
@@ -98,20 +99,21 @@ func _physics_process(delta: float) -> void:
 		_check_client_stalls()
 
 
-func host(port: int = 27016, max_players: int = 64) -> int:
+func host(port: int = 27016, max_players: int = 64, listen: bool = true) -> int:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, max_players)
 	if err != OK:
 		push_error("Failed to host: %s" % err)
 		return err
 	multiplayer.multiplayer_peer = peer
-	is_server = true
+        is_server = true
+        listen_host = listen
 	server_tick = 0
 	target_tick = 0
 	rtt_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
-	desired_ahead_ticks = 0.0
+        desired_ahead_ticks = 0.0 if not listen_host else 2.0
 	sent_input_times.clear()
 	last_input_time.clear()
 	last_received_tick.clear()
@@ -249,10 +251,39 @@ func set_local_input(input: Dictionary) -> void:
 	last_local_input = input
 
 func collect_inputs() -> Array:
-	if is_server:
-		if not pending_inputs.has(server_tick):
-			pending_inputs[server_tick] = {}
-		pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input
+        if is_server and listen_host:
+                if local_tick >= target_tick + MAX_AHEAD_TICKS:
+                        return []
+                sent_inputs[local_tick] = last_local_input
+                sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
+                if not pending_inputs.has(local_tick):
+                        pending_inputs[local_tick] = {}
+                pending_inputs[local_tick][multiplayer.get_unique_id()] = last_local_input
+                last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
+                last_received_tick[multiplayer.get_unique_id()] = local_tick
+                var frame_inputs: Array
+                if authoritative_inputs.has(local_tick):
+                        frame_inputs = authoritative_inputs[local_tick]
+                        authoritative_inputs.erase(local_tick)
+                else:
+                        frame_inputs = []
+                        for id in player_ids:
+                                if pending_inputs.has(local_tick) and pending_inputs[local_tick].has(id):
+                                        frame_inputs.append(pending_inputs[local_tick][id])
+                                elif id == multiplayer.get_unique_id():
+                                        frame_inputs.append(last_local_input)
+                                else:
+                                        frame_inputs.append(NEUTRAL_INPUT)
+                input_history[local_tick] = frame_inputs
+                if input_history.has(local_tick - INPUT_HISTORY_SIZE):
+                        input_history.erase(local_tick - INPUT_HISTORY_SIZE)
+                local_tick += 1
+                _adjust_time_scale()
+                return frame_inputs
+        elif is_server:
+                if not pending_inputs.has(server_tick):
+                        pending_inputs[server_tick] = {}
+                pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[multiplayer.get_unique_id()] = server_tick
 		if server_tick > target_tick:
@@ -304,11 +335,11 @@ func _client_send_input(tick: int, input: Dictionary, ahead: float) -> void:
 
 @rpc("any_peer", "unreliable", "call_local")
 func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
-	if not is_server:
-		server_tick = max(server_tick, tick + 1)
-		target_tick = max(target_tick, tgt)
-		max_ahead_from_server = max_ahead
-		player_ids = ids
+        if not is_server or listen_host:
+                server_tick = max(server_tick, tick + 1)
+                target_tick = max(target_tick, tgt)
+                max_ahead_from_server = max_ahead
+                player_ids = ids
 		if inputs.size() > 0:
 			authoritative_inputs[tick] = inputs
 			_handle_input_update(tick, inputs)
@@ -333,16 +364,37 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 			_handle_state(tick, state)
 
 func post_tick() -> void:
-	if is_server and game_sim != null:
-		var state = game_sim.get_state_data(server_tick)
-		var max_ahead := _calc_max_ahead()
-		max_ahead_from_server = max_ahead
-		for id in player_ids:
-			var send_state : PackedByteArray = PackedByteArray()
-			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
-				send_state = state
-			_server_broadcast.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, send_state, target_tick, max_ahead)
-		server_tick += 1
+        if is_server and game_sim != null:
+                if listen_host:
+                        if not pending_inputs.has(server_tick):
+                                return
+                        var dict = pending_inputs[server_tick]
+                        for id in player_ids:
+                                if not dict.has(id):
+                                        return
+                        last_broadcast_inputs = []
+                        for id in player_ids:
+                                last_broadcast_inputs.append(dict[id])
+                        pending_inputs.erase(server_tick)
+                        var state = game_sim.get_state_data(server_tick)
+                        var max_ahead := _calc_max_ahead()
+                        max_ahead_from_server = max_ahead
+                        for id in player_ids:
+                                var send_state : PackedByteArray = PackedByteArray()
+                                if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
+                                        send_state = state
+                                _server_broadcast.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, send_state, target_tick, max_ahead)
+                        server_tick += 1
+                else:
+                        var state = game_sim.get_state_data(server_tick)
+                        var max_ahead := _calc_max_ahead()
+                        max_ahead_from_server = max_ahead
+                        for id in player_ids:
+                                var send_state : PackedByteArray = PackedByteArray()
+                                if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
+                                        send_state = state
+                                _server_broadcast.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, send_state, target_tick, max_ahead)
+                        server_tick += 1
 
 func _idle_broadcast() -> void:
 	if game_sim == null:
@@ -443,8 +495,8 @@ func _update_desired_ahead() -> void:
 var use_physics_ticks := 1.0
 
 func _adjust_time_scale() -> void:
-	if is_server:
-		return
+        if is_server and not listen_host:
+                return
 	var current_ahead_ticks = local_tick - target_tick
 	var target_ahead_ticks = (desired_ahead_ticks + max_ahead_from_server) * 0.5
 	var diff = target_ahead_ticks - current_ahead_ticks

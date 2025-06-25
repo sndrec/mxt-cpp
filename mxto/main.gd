@@ -200,10 +200,10 @@ func _physics_process(delta: float) -> void:
 		if players.size() > local_player_index:
 			local_input = players[local_player_index].get_input().to_dict()
 		network_manager.set_local_input(local_input)
-		if network_manager.is_server:
-			_simulate_multiple_ticks()   # keep old while-loop
-		else:
-			_simulate_single_tick()      # new, client version
+                if network_manager.is_server and !network_manager.listen_host:
+                        _simulate_multiple_ticks()   # keep old while-loop
+                else:
+                        _simulate_single_tick()      # new, client or listen server version
 		game_sim.render_gamesim()
 		_check_race_finished()
 
