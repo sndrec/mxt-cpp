@@ -132,6 +132,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	for p in players:
 		p.queue_free()
 	players.clear()
+	var car_props : Array = []
+	var accel_settings_arr : Array = []
 	for i in parsed_settings.size():
 		var pc := player_scene.instantiate()
 		pc.car_definition = chosen_defs[i]
@@ -139,27 +141,25 @@ func _start_race(track_index: int, settings: Array) -> void:
 		pc.player_settings = parsed_settings[i]
 		add_child(pc)
 		players.append(pc)
-		var car_props : Array = []
-		var accel_settings_arr : Array = []
-		for n in chosen_defs.size():
-			var def = chosen_defs[n]
-			var bytes := FileAccess.get_file_as_bytes(def.car_definition)
-			car_props.append(bytes)
-			if n < parsed_settings.size():
-				accel_settings_arr.append(parsed_settings[n].accel_setting)
-			else:
-				accel_settings_arr.append(1.0)
-                var level_buffer := StreamPeerBuffer.new()
-                level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-                game_sim.car_node_container = car_node_container
-                game_sim.instantiate_gamesim(level_buffer, car_props, accel_settings_arr)
-                if network_manager.is_server:
-                        server_game_sim.car_node_container = car_node_container
-                        server_game_sim.instantiate_gamesim(level_buffer, car_props, accel_settings_arr)
-        network_manager.game_sim = game_sim
-        if network_manager.is_server:
-                network_manager.server_game_sim = server_game_sim
-        var obj_path = info["mxt"].get_basename() + ".obj"
+	for n in chosen_defs.size():
+		var def = chosen_defs[n]
+		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+		car_props.append(bytes)
+		if n < parsed_settings.size():
+			accel_settings_arr.append(parsed_settings[n].accel_setting)
+		else:
+			accel_settings_arr.append(1.0)
+	var level_buffer := StreamPeerBuffer.new()
+	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
+	game_sim.car_node_container = car_node_container
+	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
+	if network_manager.is_server:
+		server_game_sim.car_node_container = car_node_container
+		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
+	network_manager.game_sim = game_sim
+	if network_manager.is_server:
+		network_manager.server_game_sim = server_game_sim
+	var obj_path = info["mxt"].get_basename() + ".obj"
 	if ResourceLoader.exists(obj_path):
 		debug_track_mesh.mesh = load(obj_path)
 		lobby_control.visible = false
@@ -197,66 +197,64 @@ func _update_player_list() -> void:
 		player_list.add_item(name)
 
 func _physics_process(delta: float) -> void:
-        DebugDraw3D.scoped_config().set_no_depth_test(true)
-        if lobby_control.visible:
-                _update_player_list()
-        if game_sim.sim_started:
-                # gather local pad/keyboard input once per physics frame
-                var local_input := PlayerInputClass.new().to_dict()
-                if players.size() > local_player_index:
-                        local_input = players[local_player_index].get_input().to_dict()
-                network_manager.set_local_input(local_input)
-                if network_manager.is_server:
-                        _simulate_host_frame()
-                else:
-                        _simulate_single_tick()      # new, client version
-                game_sim.render_gamesim()
-                _check_race_finished()
+	DebugDraw3D.scoped_config().set_no_depth_test(true)
+	if lobby_control.visible:
+		_update_player_list()
+	if game_sim.sim_started:
+		var local_input := PlayerInputClass.new().to_dict()
+		if players.size() > local_player_index:
+			local_input = players[local_player_index].get_input().to_dict()
+		network_manager.set_local_input(local_input)
+		if network_manager.is_server:
+			_simulate_host_frame()
+		else:
+			_simulate_single_tick()
+		game_sim.render_gamesim()
+		_check_race_finished()
 
 func _simulate_host_frame():
-        var loops := 0
-        const MAX_TICKS_PER_FRAME := 120
-        var local_input := PlayerInputClass.new().to_dict()
-        while loops < MAX_TICKS_PER_FRAME:
-                if players.size() > local_player_index:
-                        local_input = players[local_player_index].get_input().to_dict()
-                network_manager.set_local_input(local_input)
-                var server_inputs := network_manager.collect_server_inputs()
-                if server_inputs.is_empty():
-                        break
-                server_game_sim.tick_gamesim(server_inputs)
-                network_manager.post_tick()
-                loops += 1
-        var client_inputs := network_manager.collect_client_inputs()
-        if !client_inputs.is_empty():
-                game_sim.tick_gamesim(client_inputs)
+	var loops := 0
+	const MAX_TICKS_PER_FRAME := 120
+	var local_input := PlayerInputClass.new().to_dict()
+	while loops < MAX_TICKS_PER_FRAME:
+		if players.size() > local_player_index:
+			local_input = players[local_player_index].get_input().to_dict()
+		network_manager.set_local_input(local_input)
+		var server_inputs := network_manager.collect_server_inputs()
+		if server_inputs.is_empty():
+			break
+		server_game_sim.tick_gamesim(server_inputs)
+		network_manager.post_tick()
+		loops += 1
+	var client_inputs := network_manager.collect_client_inputs()
+	if !client_inputs.is_empty():
+		game_sim.tick_gamesim(client_inputs)
 
 func _simulate_single_tick():
-        var frame_inputs := network_manager.collect_client_inputs()
-        if frame_inputs.is_empty():
-                return
-# wait until server has the data
-        game_sim.tick_gamesim(frame_inputs)
-        if network_manager.is_server:
-                var server_inputs := network_manager.collect_server_inputs()
-                if !server_inputs.is_empty():
-                        server_game_sim.tick_gamesim(server_inputs)
-                        network_manager.post_tick()
-        else:
-                network_manager.post_tick()
+	var frame_inputs := network_manager.collect_client_inputs()
+	if frame_inputs.is_empty():
+		return
+	game_sim.tick_gamesim(frame_inputs)
+	if network_manager.is_server:
+		var server_inputs := network_manager.collect_server_inputs()
+		if !server_inputs.is_empty():
+			server_game_sim.tick_gamesim(server_inputs)
+			network_manager.post_tick()
+	else:
+		network_manager.post_tick()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
 		_return_to_menu()
 
 func _return_to_menu() -> void:
-        network_manager.disconnect_from_server()
-        game_sim.destroy_gamesim()
-        if network_manager.is_server:
-                server_game_sim.destroy_gamesim()
-                network_manager.server_game_sim = null
-        for child in car_node_container.get_children():
-                child.queue_free()
+	network_manager.disconnect_from_server()
+	game_sim.destroy_gamesim()
+	if network_manager.is_server:
+		server_game_sim.destroy_gamesim()
+		network_manager.server_game_sim = null
+	for child in car_node_container.get_children():
+		child.queue_free()
 	for p in players:
 		p.queue_free()
 	players.clear()
@@ -265,12 +263,12 @@ func _return_to_menu() -> void:
 	lobby_control.visible = false
 
 func _return_to_lobby() -> void:
-        game_sim.destroy_gamesim()
-        if network_manager.is_server:
-                server_game_sim.destroy_gamesim()
-                network_manager.server_game_sim = null
-        for child in car_node_container.get_children():
-                child.queue_free()
+	game_sim.destroy_gamesim()
+	if network_manager.is_server:
+		server_game_sim.destroy_gamesim()
+		network_manager.server_game_sim = null
+	for child in car_node_container.get_children():
+		child.queue_free()
 	for p in players:
 		p.queue_free()
 	players.clear()
