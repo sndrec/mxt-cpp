@@ -35,6 +35,7 @@ var _accum: float = 0.0	# local frame accumulator
 var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
+var net_race_finish_time := -1
 
 func reset_race_state() -> void:
 	pending_inputs.clear()
@@ -50,6 +51,7 @@ func reset_race_state() -> void:
 	last_ack_tick = -1
 	last_broadcast_inputs.clear()
 	rtt_s = 0.0
+	net_race_finish_time = -1
 	desired_ahead_ticks = 0.0 if is_server else 2.0
 
 func _calc_state_offsets() -> void:
