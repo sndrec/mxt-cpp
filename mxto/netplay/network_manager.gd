@@ -51,6 +51,10 @@ var net_race_finish_time := -1
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
 
+var clients_server_tick = 0
+var clients_target_tick = 0
+var clients_max_ahead_from_server = 2.0
+
 func reset_race_state() -> void:
 	pending_inputs.clear()
 	authoritative_inputs.clear()
@@ -69,6 +73,9 @@ func reset_race_state() -> void:
 	net_race_finish_time = -1
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
+	clients_server_tick = 0
+	clients_target_tick = 0
+	clients_max_ahead_from_server = 2.0
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
 
 func _calc_state_offsets() -> void:
@@ -131,6 +138,9 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	sent_inputs.clear()
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
+	clients_server_tick = 0
+	clients_target_tick = 0
+	clients_max_ahead_from_server = 2.0
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	_calc_state_offsets()
@@ -156,6 +166,9 @@ func join(ip: String, port: int = 27016) -> int:
 	last_input_time.clear()
 	input_history.clear()
 	sent_inputs.clear()
+	clients_server_tick = 0
+	clients_target_tick = 0
+	clients_max_ahead_from_server = 2.0
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
 	return OK
@@ -285,7 +298,7 @@ func collect_server_inputs() -> Array:
 				return frame_inputs
 
 func collect_client_inputs() -> Array:
-				if local_tick >= target_tick + MAX_AHEAD_TICKS:
+				if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 								return []
 				sent_inputs[local_tick] = last_local_input
 				sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
@@ -329,9 +342,9 @@ func _client_send_input(tick: int, input: Dictionary, ahead: float) -> void:
 @rpc("any_peer", "unreliable", "call_local")
 func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
 		if not is_server or listen_server:
-			server_tick = max(server_tick, tick + 1)
-			target_tick = max(target_tick, tgt)
-			max_ahead_from_server = max_ahead
+			clients_server_tick = max(clients_server_tick, tick + 1)
+			clients_target_tick = max(clients_target_tick, tgt)
+			clients_max_ahead_from_server = max_ahead
 			player_ids = ids
 		if inputs.size() > 0:
 			authoritative_inputs[tick] = inputs
@@ -470,14 +483,14 @@ var use_physics_ticks := 1.0
 func _adjust_time_scale() -> void:
 	if is_server and !listen_server:
 		return
-	var current_ahead_ticks = local_tick - target_tick
-	var target_ahead_ticks = (desired_ahead_ticks + max_ahead_from_server) * 0.5
+	var current_ahead_ticks = local_tick - clients_target_tick
+	var target_ahead_ticks = (desired_ahead_ticks + clients_max_ahead_from_server) * 0.5
 	var diff = target_ahead_ticks - current_ahead_ticks
 	DebugDraw2D.set_text("local_tick", local_tick)
-	DebugDraw2D.set_text("server_tick", server_tick)
-	DebugDraw2D.set_text("target_tick", target_tick)
+	DebugDraw2D.set_text("clients_server_tick", clients_server_tick)
+	DebugDraw2D.set_text("clients_target_tick", clients_target_tick)
 	DebugDraw2D.set_text("desired_ahead_ticks", desired_ahead_ticks)
-	DebugDraw2D.set_text("server_max_ahead", max_ahead_from_server)
+	DebugDraw2D.set_text("server_max_ahead", clients_max_ahead_from_server)
 	DebugDraw2D.set_text("target_ahead_ticks", target_ahead_ticks)
 	DebugDraw2D.set_text("current_ahead_ticks", current_ahead_ticks)
 	DebugDraw2D.set_text("diff", diff)
