@@ -94,21 +94,21 @@ func _process( _delta:float ) -> void:
 		if a.lap == b.lap:
 			return a.lap_progress > b.lap_progress
 		return a.lap > b.lap)
-
+		
 	var our_place := 1
 	var local_id := multiplayer.get_unique_id() if multiplayer else 0
 	for i in cars.size():
+		if i < leaderboard_container.get_child_count():
+			var label := leaderboard_container.get_child(i)
+			var use_name := str(cars[i].owning_id)
+			if cars[i].player_settings != null and cars[i].player_settings.has_method("get"):
+				use_name = cars[i].player_settings.username
+			label.text = str(i + 1) + ". " + use_name
 		if cars[i] == car or cars[i].owning_id == local_id:
 			our_place = i + 1
-			if i < leaderboard_container.get_child_count():
-				var label := leaderboard_container.get_child(i)
-				var use_name := str(cars[i].owning_id)
-				if cars[i].player_settings != null and cars[i].player_settings.has_method("get"):
-					use_name = cars[i].player_settings.username
-					label.text = str(i + 1) + ". " + use_name
 	for i in range(cars.size(), leaderboard_container.get_child_count()):
 		leaderboard_container.get_child(i).text = ""
-
+	
 	var tex_index := clampi(our_place - 1, 0, placement_textures.size() - 1)
 	place_badge.texture = placement_textures[tex_index]
 	
