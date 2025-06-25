@@ -46,6 +46,7 @@ var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
 var net_race_finish_time := -1
+var max_ahead_from_server: float = 0.0
 
 func reset_race_state() -> void:
 	pending_inputs.clear()
@@ -62,8 +63,9 @@ func reset_race_state() -> void:
 	last_ack_tick = -1
 	last_broadcast_inputs.clear()
 	rtt_s = 0.0
-	net_race_finish_time = -1
-	desired_ahead_ticks = 0.0 if is_server else 2.0
+        net_race_finish_time = -1
+        max_ahead_from_server = 0.0
+        desired_ahead_ticks = 0.0 if is_server else 2.0
 
 func _calc_state_offsets() -> void:
 	if not is_server:
@@ -74,7 +76,16 @@ func _calc_state_offsets() -> void:
 		return
 	for i in range(count):
 		var id = player_ids[i]
-		state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
+                state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
+
+func _calc_max_ahead() -> float:
+        var max_ahead : float = 0.0
+        for id in player_ids:
+                if last_received_tick.has(id):
+                        var ahead := float(server_tick - int(last_received_tick[id]))
+                        if ahead > max_ahead:
+                                max_ahead = ahead
+        return max_ahead
 
 func _physics_process(delta: float) -> void:
 	if is_server and game_sim != null and game_sim.sim_started:
@@ -94,10 +105,11 @@ func host(port: int = 27016, max_players: int = 64) -> int:
 		return err
 	multiplayer.multiplayer_peer = peer
 	is_server = true
-	server_tick = 0
-	target_tick = 0
-	rtt_s = 0.0
-	desired_ahead_ticks = 0.0
+        server_tick = 0
+        target_tick = 0
+        rtt_s = 0.0
+        max_ahead_from_server = 0.0
+        desired_ahead_ticks = 0.0
 	sent_input_times.clear()
 	last_input_time.clear()
 	last_received_tick.clear()
@@ -116,11 +128,12 @@ func join(ip: String, port: int = 27016) -> int:
 		return err
 	multiplayer.multiplayer_peer = peer
 	is_server = false
-	local_tick = 0
-	target_tick = 0
-	last_ack_tick = -1
-	rtt_s = 0.0
-	desired_ahead_ticks = 2.0
+        local_tick = 0
+        target_tick = 0
+        last_ack_tick = -1
+        rtt_s = 0.0
+        max_ahead_from_server = 0.0
+        desired_ahead_ticks = 2.0
 	sent_input_times.clear()
 	last_input_time.clear()
 	input_history.clear()
@@ -282,11 +295,12 @@ func _client_send_input(tick: int, input: Dictionary) -> void:
 		last_received_tick[multiplayer.get_remote_sender_id()] = tick
 
 @rpc("any_peer", "unreliable", "call_local")
-func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int) -> void:
-	if not is_server:
-		server_tick = max(server_tick, tick + 1)
-		target_tick = max(target_tick, tgt)
-		player_ids = ids
+func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
+        if not is_server:
+                server_tick = max(server_tick, tick + 1)
+                target_tick = max(target_tick, tgt)
+                max_ahead_from_server = max_ahead
+                player_ids = ids
 		if inputs.size() > 0:
 			authoritative_inputs[tick] = inputs
 			_handle_input_update(tick, inputs)
@@ -311,29 +325,32 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 			_handle_state(tick, state)
 
 func post_tick() -> void:
-	if is_server and game_sim != null:
-		var state = game_sim.get_state_data(server_tick)
-		for id in player_ids:
-			var send_state : PackedByteArray = PackedByteArray()
-			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
-				send_state = state
-			_server_broadcast.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, send_state, target_tick)
-		server_tick += 1
+        if is_server and game_sim != null:
+                var state = game_sim.get_state_data(server_tick)
+                var max_ahead := _calc_max_ahead()
+                for id in player_ids:
+                        var send_state : PackedByteArray = PackedByteArray()
+                        if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
+                                send_state = state
+                        _server_broadcast.rpc_id(id, server_tick, last_broadcast_inputs, player_ids, last_received_tick, send_state, target_tick, max_ahead)
+                server_tick += 1
 
 func _idle_broadcast() -> void:
 	if game_sim == null:
 		return
-	var state = game_sim.get_state_data(server_tick)
-	for id in player_ids:
-		_server_broadcast.rpc_id(
-			id,
-			server_tick,
-			[],						# empty list means “no inputs yet”
-			player_ids,
-			last_received_tick,
-			PackedByteArray(),
-			target_tick
-		)
+        var state = game_sim.get_state_data(server_tick)
+        var max_ahead := _calc_max_ahead()
+        for id in player_ids:
+                _server_broadcast.rpc_id(
+                        id,
+                        server_tick,
+                        [],                                             # empty list means “no inputs yet”
+                        player_ids,
+                        last_received_tick,
+                        PackedByteArray(),
+                        target_tick,
+                        max_ahead
+                )
 
 func _check_client_stalls() -> void:
 	if not is_server or game_sim == null or not game_sim.sim_started:
@@ -405,8 +422,9 @@ func disconnect_from_server() -> void:
 	target_tick = 0
 	last_received_tick.clear()
 	last_ack_tick = -1
-	last_broadcast_inputs.clear()
-	player_settings.clear()
+        last_broadcast_inputs.clear()
+        player_settings.clear()
+        max_ahead_from_server = 0.0
 
 func _update_desired_ahead() -> void:
 	desired_ahead_ticks = ((rtt_s * 0.5) + JITTER_BUFFER) / base_wait_time
@@ -414,16 +432,19 @@ func _update_desired_ahead() -> void:
 var use_physics_ticks := 1.0
 
 func _adjust_time_scale() -> void:
-	if is_server:
-		return
-	var current_ahead_ticks = local_tick - target_tick
-	var diff = desired_ahead_ticks - current_ahead_ticks
-	DebugDraw2D.set_text("local_tick", local_tick)
-	DebugDraw2D.set_text("server_tick", server_tick)
-	DebugDraw2D.set_text("target_tick", target_tick)
-	DebugDraw2D.set_text("desired_ahead_ticks", desired_ahead_ticks)
-	DebugDraw2D.set_text("current_ahead_ticks", current_ahead_ticks)
-	DebugDraw2D.set_text("diff", diff)
+        if is_server:
+                return
+        var current_ahead_ticks = local_tick - target_tick
+        var target_ahead_ticks = (desired_ahead_ticks + max_ahead_from_server) * 0.5
+        var diff = target_ahead_ticks - current_ahead_ticks
+        DebugDraw2D.set_text("local_tick", local_tick)
+        DebugDraw2D.set_text("server_tick", server_tick)
+        DebugDraw2D.set_text("target_tick", target_tick)
+        DebugDraw2D.set_text("desired_ahead_ticks", desired_ahead_ticks)
+        DebugDraw2D.set_text("server_max_ahead", max_ahead_from_server)
+        DebugDraw2D.set_text("target_ahead_ticks", target_ahead_ticks)
+        DebugDraw2D.set_text("current_ahead_ticks", current_ahead_ticks)
+        DebugDraw2D.set_text("diff", diff)
 	DebugDraw2D.set_text("Engine.physics_ticks_per_second", Engine.physics_ticks_per_second)
 	if abs(diff) <= 1:
 		use_physics_ticks = lerp(use_physics_ticks, 1.0, RTT_SMOOTHING)
