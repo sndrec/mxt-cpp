@@ -4,6 +4,9 @@ extends Node
 signal race_started(track_index, player_settings)
 signal race_finished
 
+func _ready() -> void:
+	set_physics_process(true)
+
 @rpc("any_peer")
 func set_race_finish_time(time: int) -> void:
 	net_race_finish_time = time
