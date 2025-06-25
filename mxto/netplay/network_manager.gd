@@ -80,8 +80,9 @@ func _calc_state_offsets() -> void:
 		state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
 
 func _physics_process(delta: float) -> void:
-	if is_server and game_sim != null and game_sim.sim_started:
-		target_tick += 1
+        if is_server and game_sim != null and game_sim.sim_started:
+                target_tick = min(server_tick + MAX_AHEAD_TICKS, target_tick + 1)
+                _broadcast_tick_data()
 
 func host(port: int = 27016, max_players: int = 64) -> int:
 	var peer := ENetMultiplayerPeer.new()
@@ -314,26 +315,30 @@ func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, s
 			for key in sent_input_times.keys():
 				if key <= last_ack_tick:
 					sent_input_times.erase(key)
-	        if state.size() > 0:
-	                _handle_state(tick, state)
-	        _client_ack_broadcast.rpc_id(1, tick)
+                if state.size() > 0:
+                        _handle_state(tick, state)
+                _client_ack_broadcast.rpc_id(1, tick)
+
+func _broadcast_tick_data() -> void:
+       if is_server and game_sim != null:
+               var state = game_sim.get_state_data(server_tick)
+               for id in player_ids:
+                       var send_state : PackedByteArray = PackedByteArray()
+                       if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
+                               send_state = state
+                       var send_tick := server_tick
+                       var send_inputs := last_broadcast_inputs
+                       if authoritative_ack.has(id):
+                               var next_tick := int(authoritative_ack[id]) + 1
+                               if next_tick < server_tick and authoritative_history.has(next_tick):
+                                       send_tick = next_tick
+                                       send_inputs = authoritative_history[next_tick]
+                       _server_broadcast.rpc_id(id, send_tick, send_inputs, player_ids, last_received_tick, send_state, target_tick)
 
 func post_tick() -> void:
-	if is_server and game_sim != null:
-	        var state = game_sim.get_state_data(server_tick)
-	        for id in player_ids:
-	                var send_state : PackedByteArray = PackedByteArray()
-	                if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
-	                        send_state = state
-	                var send_tick := server_tick
-	                var send_inputs := last_broadcast_inputs
-	                if authoritative_ack.has(id):
-	                        var next_tick := int(authoritative_ack[id]) + 1
-	                        if next_tick < server_tick and authoritative_history.has(next_tick):
-	                                send_tick = next_tick
-	                                send_inputs = authoritative_history[next_tick]
-	                _server_broadcast.rpc_id(id, send_tick, send_inputs, player_ids, last_received_tick, send_state, target_tick)
-	        server_tick += 1
+        if is_server and game_sim != null:
+                _broadcast_tick_data()
+                server_tick += 1
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
