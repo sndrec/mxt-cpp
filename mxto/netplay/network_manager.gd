@@ -17,6 +17,7 @@ const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT = PlayerInputClass.new().to_dict()
 
 var is_server: bool = false
+var listen_server: bool = false
 var player_ids: Array = []
 var waiting_peers: Array = []
 var pending_inputs := {}
@@ -68,7 +69,7 @@ func reset_race_state() -> void:
 	net_race_finish_time = -1
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
-	desired_ahead_ticks = 0.0 if is_server else 2.0
+	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
 
 func _calc_state_offsets() -> void:
 	if not is_server:
@@ -89,7 +90,14 @@ func _calc_max_ahead() -> float:
 			max_ahead = ahead
 	return max_ahead
 
-func _physics_process(delta: float) -> void:
+func _ready() -> void:
+	var server_process_timer = Timer.new()
+	server_process_timer.ignore_time_scale = true
+	add_child(server_process_timer)
+	server_process_timer.timeout.connect(server_process)
+	server_process_timer.start(1.0 / 60.0)
+
+func server_process() -> void:
 	if is_server and server_game_sim != null and server_game_sim.sim_started:
 		target_tick += 1
 		if target_tick > server_tick + MAX_AHEAD_TICKS:
@@ -99,7 +107,7 @@ func _physics_process(delta: float) -> void:
 		_check_client_stalls()
 
 
-func host(port: int = 27016, max_players: int = 64) -> int:
+func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> int:
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, max_players)
 	if err != OK:
@@ -107,6 +115,7 @@ func host(port: int = 27016, max_players: int = 64) -> int:
 		return err
 	multiplayer.multiplayer_peer = peer
 	is_server = true
+	listen_server = !dedicated
 	server_tick = 0
 	local_tick = 0
 	target_tick = 0
@@ -114,7 +123,7 @@ func host(port: int = 27016, max_players: int = 64) -> int:
 	rtt_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
-	desired_ahead_ticks = 2.0
+	desired_ahead_ticks = 2.0 if listen_server else 0.0
 	sent_input_times.clear()
 	last_input_time.clear()
 	last_received_tick.clear()
@@ -135,6 +144,7 @@ func join(ip: String, port: int = 27016) -> int:
 		return err
 	multiplayer.multiplayer_peer = peer
 	is_server = false
+	listen_server = false
 	local_tick = 0
 	target_tick = 0
 	last_ack_tick = -1
@@ -318,11 +328,11 @@ func _client_send_input(tick: int, input: Dictionary, ahead: float) -> void:
 
 @rpc("any_peer", "unreliable", "call_local")
 func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
-	if not is_server:
-		server_tick = max(server_tick, tick + 1)
-		target_tick = max(target_tick, tgt)
-		max_ahead_from_server = max_ahead
-		player_ids = ids
+		if not is_server or listen_server:
+			server_tick = max(server_tick, tick + 1)
+			target_tick = max(target_tick, tgt)
+			max_ahead_from_server = max_ahead
+			player_ids = ids
 		if inputs.size() > 0:
 			authoritative_inputs[tick] = inputs
 			_handle_input_update(tick, inputs)
@@ -434,6 +444,7 @@ func disconnect_from_server() -> void:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
 	is_server = false
+	listen_server = false
 	player_ids.clear()
 	pending_inputs.clear()
 	authoritative_inputs.clear()
@@ -457,7 +468,7 @@ func _update_desired_ahead() -> void:
 var use_physics_ticks := 1.0
 
 func _adjust_time_scale() -> void:
-	if is_server:
+	if is_server and !listen_server:
 		return
 	var current_ahead_ticks = local_tick - target_tick
 	var target_ahead_ticks = (desired_ahead_ticks + max_ahead_from_server) * 0.5
