@@ -32,17 +32,12 @@ int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index
 void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 								  godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented)
 {
-	int best = get_best_checkpoint(point);
-	if (best == -1){
-		if (cp_idx == -1)
-		{
-			road_t.x = -100.0f;
-			return;
-		}else{
-			best = cp_idx;
-		}
+	if (cp_idx == -1)
+	{
+		road_t.x = -1000.0f;
+		return;
 	}
-	CollisionCheckpoint *cp = &checkpoints[best];
+	CollisionCheckpoint *cp = &checkpoints[cp_idx];
 	godot::Vector3 p1 = cp->start_plane.project(point);
 	godot::Vector3 p2 = cp->end_plane.project(point);
 	float cp_t = get_closest_t_on_segment(point, p1, p2);
@@ -91,12 +86,11 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vector3 &point,
 								  godot::Vector2 &road_t, godot::Vector3 &spatial_t, float *out_cp_t = nullptr)
 {
-	const CollisionCheckpoint *cp;
-	int best = track->get_best_checkpoint(point);
-	if (best == -1){
+	if (cp_idx == -1)
+	{
 		return;
 	}
-	cp = &track->checkpoints[best];
+	const CollisionCheckpoint *cp = &track->checkpoints[cp_idx];
 
 	godot::Vector3 p1 = cp->start_plane.project(point);
 	godot::Vector3 p2 = cp->end_plane.project(point);
@@ -554,6 +548,11 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	if ((mask & CAST_FLAGS::WANTS_TRACK) == 0)
 		return;
 
+	if (start_idx == -1)
+	{
+		return;
+	}
+
 	// choose sample point
 	godot::Vector3 sample_point;
 	if (mask & CAST_FLAGS::SAMPLE_FROM_P0)
@@ -562,25 +561,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 		sample_point = (p0 + p1) * 0.5f;
 	else
 		sample_point = p1;
-
-	// pick a single checkpoint
-	int cp_idx = -1;
-	cp_idx = get_best_checkpoint(sample_point);
-	//if (start_idx == -1) {
-	//    auto cps = get_viable_checkpoints(sample_point);
-	//    if (cps.empty()){
-	//        return;
-	//    }
-	//    cp_idx = cps[0];
-	//} else {
-	//    cp_idx = find_checkpoint_bfs(sample_point, start_idx);
-	//}
-	if (cp_idx == -1)
-	{
-		return;
-	}
-
-	// do one raycast against that checkpoint
+	
 	CastParams params{ this, mask };
-	cast_segment_fast(params, out_collision, p0, p1, cp_idx, sample_point, true);
+	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
 }

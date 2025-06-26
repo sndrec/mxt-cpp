@@ -115,52 +115,56 @@ godot::Vector3 PhysicsCar::prepare_machine_frame()
 	visual_rotation.z *= 0.8f;
 	visual_rotation.x *= 0.9f;
 
-	if (machine_state & MACHINESTATE::ACTIVE) {
+	if (machine_state & MACHINESTATE::ACTIVE)
+	{
 		if (frames_since_start_2 != 0)
 			frames_since_start_2 = std::min(255u, frames_since_start_2 + 1);
 	}
 
 	if ((machine_state & MACHINESTATE::COMPLETEDRACE_1_Q) != 0 ||
-		(terrain_state & TERRAIN::RECHARGE) != 0) {
+		(terrain_state & TERRAIN::RECHARGE) != 0)
+	{
 		energy += 1.111111f;
-	if (energy > calced_max_energy)
-		energy = calced_max_energy;
-}
+		if (energy > calced_max_energy)
+		{
+			energy = calced_max_energy;
+		}
+	}
 
-float vel_mag = velocity.length();
-speed_kmh = 216.0f * (vel_mag / std::max(stat_weight, 0.001f));
+	float vel_mag = velocity.length();
+	speed_kmh = 216.0f * (vel_mag / std::max(stat_weight, 0.001f));
 
-if ((machine_state & MACHINESTATE::RETIRED) != 0 &&
-	(machine_state & MACHINESTATE::AIRBORNE) == 0) {
-	if (speed_kmh >= 10.0f)
-		velocity *= 0.9f;
-	else
-		velocity = godot::Vector3();
-}
+	if ((machine_state & MACHINESTATE::RETIRED) != 0 &&
+		(machine_state & MACHINESTATE::AIRBORNE) == 0) {
+		if (speed_kmh >= 10.0f)
+			velocity *= 0.9f;
+		else
+			velocity = godot::Vector3();
+	}
 
-handle_attack_states();
+	handle_attack_states();
 
-if (car_hit_invincibility == 0) {
-	if (machine_state & MACHINESTATE::JUSTHITVEHICLE_Q)
-		car_hit_invincibility = 6;
-} else {
-	car_hit_invincibility -= 1;
-}
+	if (car_hit_invincibility == 0) {
+		if (machine_state & MACHINESTATE::JUSTHITVEHICLE_Q)
+			car_hit_invincibility = 6;
+	} else {
+		car_hit_invincibility -= 1;
+	}
 
-velocity_local = mtxa->inverse_rotate_point(velocity);
-mtxa->push();
-float steer = -(input_steer_yaw * stat_turn_reaction + input_strafe * stat_strafe);
-steer = std::clamp(steer, -45.0f, 45.0f);
-mtxa->rotate_y(DEG_TO_RAD * steer);
-velocity_local_flattened_and_rotated = mtxa->inverse_rotate_point(velocity);
-velocity_local_flattened_and_rotated.y = 0.0f;
-mtxa->pop();
+	velocity_local = mtxa->inverse_rotate_point(velocity);
+	mtxa->push();
+	float steer = -(input_steer_yaw * stat_turn_reaction + input_strafe * stat_strafe);
+	steer = std::clamp(steer, -45.0f, 45.0f);
+	mtxa->rotate_y(DEG_TO_RAD * steer);
+	velocity_local_flattened_and_rotated = mtxa->inverse_rotate_point(velocity);
+	velocity_local_flattened_and_rotated.y = 0.0f;
+	mtxa->pop();
 
-position_old_2 = position_current;
+	position_old_2 = position_current;
 
-frames_since_start += 1;
+	frames_since_start += 1;
 
-return ground_normal;
+	return ground_normal;
 };
 
 float PhysicsCar::get_current_stage_min_y() const
@@ -247,11 +251,10 @@ bool PhysicsCar::find_floor_beneath_machine()
 	bool sweep_hit_occurred = false;
 	CollisionData hit;
 	if (current_track != nullptr) {
-		int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
 		current_track->cast_vs_track_fast(hit, p0_sweep_start_ws,
 			position_bottom,
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
-			use_cp);
+			current_checkpoint);
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f;
 	}
 
@@ -1430,15 +1433,10 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 	} else {
 		//CollisionData hit;
 		if (current_track != nullptr) {
-			//godot::UtilityFunctions::print("looking for hit!");
 			int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
 			godot::Vector2  road_t_sample_raw;  godot::Vector3 spatial_t_sample;
 			godot::Transform3D surf;
 			current_track->get_road_surface(use_cp, p0, road_t_sample_raw, spatial_t_sample, surf);
-			//dd3d->call("draw_arrow", p0_ray_start_ws, p1_ray_end_ws, godot::Color(1.0f, 1.0f, 1.0f), 0.25, true, _TICK_DELTA);
-			//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
-			//current_track->cast_vs_track_fast(hit, p0_ray_start_ws, p1_ray_end_ws, CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0, use_cp);
-			//hit_found = hit.collided;
 			if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
 			{
 				godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
@@ -1566,10 +1564,9 @@ void PhysicsCar::set_terrain_state_from_track()
 	uint32_t terrain_bits = 0;
 	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && current_track != nullptr) {
 		CollisionData hit;
-		int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
 		current_track->cast_vs_track_fast(hit, position_current, position_current + track_surface_normal * -3,
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P1,
-			use_cp);
+			current_checkpoint);
 		if (hit.collided) {
 			terrain_bits |= hit.road_data.terrain;
 		}
@@ -1793,7 +1790,7 @@ int PhysicsCar::update_machine_corners() {
 	mtxa->push();
 	mtxa->assign(basis_physical);
 	mtxa->cur->origin = position_current;
-	int use_cp_old = current_track->get_best_checkpoint(position_old);
+	int use_cp_old = current_track->get_best_checkpoint(position_old, current_checkpoint);
 	{
 		godot::Vector2 t_old;
 		godot::Vector2 t_new;
@@ -1804,7 +1801,7 @@ int PhysicsCar::update_machine_corners() {
 		if (current_track) {
 			current_track->get_road_surface(use_cp_old, position_old, t_old, spatial_t_old, transform_old);
 			bool was_above = (position_old - transform_old.origin).dot(transform_old.basis[1]) >= 0.0f;
-			if (t_old.x > -1.0f && t_old.x < 1.0f && was_above) {
+			if (t_old.x > -1.0f && t_old.x < 1.0f && t_old.y > 0.0f && t_old.y < 1.0f && was_above) {
 				auto normal = transform_old.basis[1];
 				auto plane_pos = transform_old.origin;
 				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
@@ -1819,9 +1816,9 @@ int PhysicsCar::update_machine_corners() {
 					collision_push_track += d;
 				}
 			}
-			int use_cp_new = current_track->get_best_checkpoint(position_current + depenetration);
+			int use_cp_new = current_track->get_best_checkpoint(position_current + depenetration, current_checkpoint);
 			current_track->get_road_surface(use_cp_new, position_current + depenetration, t_new, spatial_t_new, transform_new);
-			if (t_new.x > -1.0f && t_new.x < 1.0f && was_above) {
+			if (t_new.x > -1.0f && t_new.x < 1.0f && t_new.y > 0.0f && t_new.y < 1.0f && was_above) {
 				auto normal = transform_new.basis[1];
 				auto plane_pos = transform_new.origin;
 				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
@@ -2478,7 +2475,7 @@ void PhysicsCar::post_tick()
 void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
 	calced_max_energy = 100.0f;
-
+	godot::Vector3 initial_pos = position_current;
 	side_attack_indicator = 0.0f;
 
 
@@ -2513,7 +2510,10 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 
 	post_tick();
 	if (frames_since_start_2 == 0)
+	{
 		velocity = godot::Vector3();
+		position_current = initial_pos;
+	}
 
 	handle_checkpoints();
 	if ((machine_state & MACHINESTATE::AIRBORNE) == 0)

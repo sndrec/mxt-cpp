@@ -277,25 +277,26 @@ func set_local_input(input: Dictionary) -> void:
 	last_local_input = input
 
 func collect_server_inputs() -> Array:
-				if not is_server:
-								return []
-				if not pending_inputs.has(server_tick):
-								pending_inputs[server_tick] = {}
-				pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input
-				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-				last_received_tick[multiplayer.get_unique_id()] = server_tick
-				if server_tick > target_tick:
-								return []
-				var dict = pending_inputs[server_tick]
-				for id in player_ids:
-								if not dict.has(id):
-												return []
-				var frame_inputs: Array = []
-				for id in player_ids:
-								frame_inputs.append(dict[id])
-				pending_inputs.erase(server_tick)
-				last_broadcast_inputs = frame_inputs
-				return frame_inputs
+	if not is_server:
+		return []
+	if not pending_inputs.has(server_tick):
+		pending_inputs[server_tick] = {}
+	if not pending_inputs[server_tick].has(multiplayer.get_unique_id()):
+		pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input
+		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
+		last_received_tick[multiplayer.get_unique_id()] = server_tick
+	if server_tick > target_tick:
+		return []
+	var dict = pending_inputs[server_tick]
+	for id in player_ids:
+		if not dict.has(id):
+			return []
+	var frame_inputs: Array = []
+	for id in player_ids:
+		frame_inputs.append(dict[id])
+	pending_inputs.erase(server_tick)
+	last_broadcast_inputs = frame_inputs
+	return frame_inputs
 
 func collect_client_inputs() -> Array:
 				if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
@@ -417,6 +418,8 @@ func _check_client_stalls() -> void:
 				push_error("Client %s stalled, disconnecting" % str(id))
 				multiplayer.multiplayer_peer.disconnect_peer(id)
 
+var rollback_frametime_us = 0
+
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
 		return
@@ -432,6 +435,7 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 			current += 1
 		var new_time := Time.get_ticks_usec()
 		DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
+		rollback_frametime_us = new_time - old_time
 
 func _handle_input_update(tick: int, inputs: Array) -> void:
 	if game_sim == null:
@@ -451,6 +455,7 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 		current += 1
 	var new_time := Time.get_ticks_usec()
 	DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
+	rollback_frametime_us = new_time - old_time
 
 func disconnect_from_server() -> void:
 	if multiplayer.multiplayer_peer != null:
