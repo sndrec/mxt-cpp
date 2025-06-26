@@ -17,6 +17,7 @@ class_name GameManager extends Node
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
 @onready var race_finish_label: Label = $RaceFinishLabel
+@onready var frame_time_label: Label = $FrameTimeLabel
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 
@@ -301,4 +302,4 @@ func _check_race_finished() -> void:
 			race_finish_label.visible = true
 
 func _process(delta: float) -> void:
-	pass
+	frame_time_label.text = str(network_manager.rollback_frametime_us)
