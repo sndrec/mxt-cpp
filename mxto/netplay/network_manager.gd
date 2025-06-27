@@ -45,7 +45,7 @@ const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.005
 var _accum: float = 0.0	# local frame accumulator
 var player_settings := {}
-const STATE_BROADCAST_INTERVAL_TICKS := 60
+const STATE_BROADCAST_INTERVAL_TICKS := 600
 var state_send_offsets := {}
 var net_race_finish_time := -1
 var max_ahead_from_server: float = 0.0
@@ -386,7 +386,7 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 		_prune_authoritative_history()
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
-func _server_broadcast(last_tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
+func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
 	if not is_server or listen_server:
 		clients_server_tick = max(clients_server_tick, last_tick + 1)
 		clients_target_tick = max(clients_target_tick, tgt)
@@ -400,8 +400,8 @@ func _server_broadcast(last_tick: int, inputs: Array, ids: Array, acks: Dictiona
 			authoritative_inputs[tick] = frame
 			_handle_input_update(tick, frame)
 		last_server_input_tick = max(last_server_input_tick, last_tick)
-	if acks.has(multiplayer.get_unique_id()):
-		var ack_tick := int(acks[multiplayer.get_unique_id()])
+	if this_ack:
+		var ack_tick := this_ack
 		last_ack_tick = max(last_ack_tick, ack_tick)
 		if sent_input_times.has(ack_tick):
 			var sample : float = 0.001 * float(Time.get_ticks_msec()) - sent_input_times[ack_tick]
@@ -440,7 +440,7 @@ func post_tick() -> void:
 						start = k
 					arr.append(authoritative_history[k])
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick, send_state, target_tick, max_ahead)
+			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick[id], send_state, target_tick, max_ahead)
 		server_tick += 1
 
 func _idle_broadcast() -> void:
@@ -466,7 +466,7 @@ func _idle_broadcast() -> void:
 			last_tick,
 			arr,
 			player_ids,
-			last_received_tick,
+			last_received_tick[id],
 			PackedByteArray(),
 			target_tick,
 			max_ahead
