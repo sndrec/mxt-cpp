@@ -67,61 +67,61 @@ var _inputs_arr : Array = []
 var _arr : Array = []
 
 func _init_buffers() -> void:
-       input_history.resize(INPUT_HISTORY_SIZE)
-       input_history_ticks.resize(INPUT_HISTORY_SIZE)
-       for i in range(INPUT_HISTORY_SIZE):
-               input_history_ticks[i] = -1
-               input_history[i] = null
-       authoritative_history.resize(HISTORY_BUFFER_SIZE)
-       authoritative_history_ticks.resize(HISTORY_BUFFER_SIZE)
-       for i in range(HISTORY_BUFFER_SIZE):
-               authoritative_history_ticks[i] = -1
-               authoritative_history[i] = null
-       authoritative_inputs.resize(HISTORY_BUFFER_SIZE)
-       authoritative_inputs_ticks.resize(HISTORY_BUFFER_SIZE)
-       for i in range(HISTORY_BUFFER_SIZE):
-               authoritative_inputs_ticks[i] = -1
-               authoritative_inputs[i] = null
-       sent_inputs_bytes.resize(HISTORY_BUFFER_SIZE)
-       sent_inputs_ticks.resize(HISTORY_BUFFER_SIZE)
-       for i in range(HISTORY_BUFFER_SIZE):
-               sent_inputs_ticks[i] = -1
-               sent_inputs_bytes[i] = null
-       sent_input_times.resize(HISTORY_BUFFER_SIZE)
-       sent_input_times_ticks.resize(HISTORY_BUFFER_SIZE)
-       for i in range(HISTORY_BUFFER_SIZE):
-               sent_input_times_ticks[i] = -1
-               sent_input_times[i] = 0.0
+	input_history.resize(INPUT_HISTORY_SIZE)
+	input_history_ticks.resize(INPUT_HISTORY_SIZE)
+	for i in range(INPUT_HISTORY_SIZE):
+		input_history_ticks[i] = -1
+		input_history[i] = null
+	authoritative_history.resize(HISTORY_BUFFER_SIZE)
+	authoritative_history_ticks.resize(HISTORY_BUFFER_SIZE)
+	for i in range(HISTORY_BUFFER_SIZE):
+		authoritative_history_ticks[i] = -1
+		authoritative_history[i] = null
+	authoritative_inputs.resize(HISTORY_BUFFER_SIZE)
+	authoritative_inputs_ticks.resize(HISTORY_BUFFER_SIZE)
+	for i in range(HISTORY_BUFFER_SIZE):
+		authoritative_inputs_ticks[i] = -1
+		authoritative_inputs[i] = null
+	sent_inputs_bytes.resize(HISTORY_BUFFER_SIZE)
+	sent_inputs_ticks.resize(HISTORY_BUFFER_SIZE)
+	for i in range(HISTORY_BUFFER_SIZE):
+		sent_inputs_ticks[i] = -1
+		sent_inputs_bytes[i] = null
+	sent_input_times.resize(HISTORY_BUFFER_SIZE)
+	sent_input_times_ticks.resize(HISTORY_BUFFER_SIZE)
+	for i in range(HISTORY_BUFFER_SIZE):
+		sent_input_times_ticks[i] = -1
+		sent_input_times[i] = 0.0
 
 func _ring_set(buf: Array, ticks: Array, size: int, tick: int, val) -> void:
-       var idx := tick % size
-       ticks[idx] = tick
-       buf[idx] = val
+	var idx := tick % size
+	ticks[idx] = tick
+	buf[idx] = val
 
 func _ring_get(buf: Array, ticks: Array, size: int, tick: int):
-       var idx := tick % size
-       if ticks[idx] == tick:
-               return buf[idx]
-       return null
+	var idx := tick % size
+	if ticks[idx] == tick:
+		return buf[idx]
+	return null
 
 func _ring_has(ticks: Array, size: int, tick: int) -> bool:
-       return ticks[tick % size] == tick
+	return ticks[tick % size] == tick
 
 func _ring_erase(buf: Array, ticks: Array, size: int, tick: int) -> void:
-       var idx := tick % size
-       if ticks[idx] == tick:
-               ticks[idx] = -1
-               buf[idx] = null
+	var idx := tick % size
+	if ticks[idx] == tick:
+		ticks[idx] = -1
+		buf[idx] = null
 
 func reset_race_state() -> void:
-       _init_buffers()
-       pending_inputs.clear()
-       last_input_time.clear()
+	_init_buffers()
+	pending_inputs.clear()
+	last_input_time.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
-       _init_buffers()
-       server_tick = 0
-       local_tick = 0
-       target_tick = 0
+	_init_buffers()
+	server_tick = 0
+	local_tick = 0
+	target_tick = 0
 	last_received_tick.clear()
 	last_ack_tick = -1
 	last_broadcast_inputs_bytes.clear()
@@ -132,9 +132,9 @@ func reset_race_state() -> void:
 	clients_server_tick = 0
 	clients_target_tick = 0
 	clients_max_ahead_from_server = 2.0
-       authoritative_history_ticks.fill(-1)
-       authoritative_history.fill(null)
-       authoritative_acks.clear()
+	authoritative_history_ticks.fill(-1)
+	authoritative_history.fill(null)
+	authoritative_acks.clear()
 	last_server_input_tick = -1
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
 
@@ -158,8 +158,8 @@ func _calc_max_ahead() -> float:
 	return max_ahead
 
 func _ready() -> void:
-       _init_buffers()
-       var server_process_timer = Timer.new()
+	_init_buffers()
+	var server_process_timer = Timer.new()
 	server_process_timer.ignore_time_scale = true
 	add_child(server_process_timer)
 	server_process_timer.timeout.connect(server_process)
@@ -180,8 +180,8 @@ func server_process() -> void:
 
 
 func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> int:
-       var peer := ENetMultiplayerPeer.new()
-       var err := peer.create_server(port, max_players)
+	var peer := ENetMultiplayerPeer.new()
+	var err := peer.create_server(port, max_players)
 	if err != OK:
 		push_error("Failed to host: %s" % err)
 		return err
@@ -197,25 +197,25 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	desired_ahead_ticks = 2.0 if listen_server else 0.0
-       last_input_time.clear()
-       last_received_tick.clear()
-       last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
-       last_broadcast_inputs_bytes.clear()
-       player_ids = [multiplayer.get_unique_id()]
-       player_settings.clear()
+	last_input_time.clear()
+	last_received_tick.clear()
+	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
+	last_broadcast_inputs_bytes.clear()
+	player_ids = [multiplayer.get_unique_id()]
+	player_settings.clear()
 	clients_server_tick = 0
 	clients_target_tick = 0
 	clients_max_ahead_from_server = 2.0
-       authoritative_acks.clear()
-       last_server_input_tick = -1
+	authoritative_acks.clear()
+	last_server_input_tick = -1
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	_calc_state_offsets()
 	return OK
 
 func join(ip: String, port: int = 27016) -> int:
-       var peer := ENetMultiplayerPeer.new()
-       var err := peer.create_client(ip, port)
+	var peer := ENetMultiplayerPeer.new()
+	var err := peer.create_client(ip, port)
 	if err != OK:
 		push_error("Failed to join server: %s" % err)
 		return err
@@ -223,22 +223,22 @@ func join(ip: String, port: int = 27016) -> int:
 	multiplayer.multiplayer_peer = peer
 	is_server = false
 	listen_server = false
-       _init_buffers()
-       local_tick = 0
-       target_tick = 0
+	_init_buffers()
+	local_tick = 0
+	target_tick = 0
 	last_ack_tick = -1
 	rtt_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	desired_ahead_ticks = 2.0
-       last_input_time.clear()
-       last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
-       last_broadcast_inputs_bytes.clear()
-       clients_server_tick = 0
-       clients_target_tick = 0
-       clients_max_ahead_from_server = 2.0
-       authoritative_acks.clear()
-       last_server_input_tick = -1
+	last_input_time.clear()
+	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
+	last_broadcast_inputs_bytes.clear()
+	clients_server_tick = 0
+	clients_target_tick = 0
+	clients_max_ahead_from_server = 2.0
+	authoritative_acks.clear()
+	last_server_input_tick = -1
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
 	return OK
@@ -361,61 +361,61 @@ func collect_server_inputs() -> Array:
 	for id in player_ids:
 		if not dict.has(id):
 			return []
-       var frame_inputs_bytes: Array = []
-       for id in player_ids:
-               frame_inputs_bytes.append(dict[id])
-       _ring_set(authoritative_history, authoritative_history_ticks, HISTORY_BUFFER_SIZE, server_tick, frame_inputs_bytes)
-       pending_inputs.erase(server_tick)
+	var frame_inputs_bytes: Array = []
+	for id in player_ids:
+		frame_inputs_bytes.append(dict[id])
+	_ring_set(authoritative_history, authoritative_history_ticks, HISTORY_BUFFER_SIZE, server_tick, frame_inputs_bytes)
+	pending_inputs.erase(server_tick)
 	last_broadcast_inputs_bytes = frame_inputs_bytes
 	return frame_inputs_bytes
 
 func collect_client_inputs() -> Array:
-       if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
-               if !is_server:
-                       var start := last_ack_tick + 1
-                       if start <= local_tick:
-                               _inputs_arr.clear()
-                               for t in range(start, local_tick + 1):
-                                       var d = _ring_get(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, t)
-                                       if d != null:
-                                               _inputs_arr.append(d)
-                               if _inputs_arr.size() > 0:
-                                       _client_send_input.rpc_id(1, start, _inputs_arr, desired_ahead_ticks, last_server_input_tick)
-                                       last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-               return []
-       _ring_set(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick, last_local_input_bytes)
-       _ring_set(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, local_tick, 0.001 * float(Time.get_ticks_msec()))
-       if is_server:
-               if not pending_inputs.has(local_tick):
-                       pending_inputs[local_tick] = {}
-               pending_inputs[local_tick][multiplayer.get_unique_id()] = last_local_input_bytes
-               last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-               last_received_tick[multiplayer.get_unique_id()] = local_tick
-       if !is_server:
-               var first_tick := last_ack_tick + 1
-               if first_tick <= local_tick:
-                       _inputs_arr.clear()
-                       for t in range(first_tick, local_tick + 1):
-                               var d = _ring_get(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, t)
-                               if d != null:
-                                       _inputs_arr.append(d)
-                       if _inputs_arr.size() > 0:
-                               _client_send_input.rpc_id(1, first_tick, _inputs_arr, desired_ahead_ticks, last_server_input_tick)
-                               last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-
-       var frame_inputs: Array
-       if _ring_has(authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick):
-               frame_inputs = _ring_get(authoritative_inputs, authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick)
-               _ring_erase(authoritative_inputs, authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick)
-       else:
-               frame_inputs = []
-               for id in player_ids:
-                       if id == multiplayer.get_unique_id():
-                               frame_inputs.append(last_local_input_bytes)
-                       else:
-                               frame_inputs.append(NEUTRAL_INPUT_BYTES)
-       _ring_set(input_history, input_history_ticks, INPUT_HISTORY_SIZE, local_tick, frame_inputs)
-       _ring_erase(input_history, input_history_ticks, INPUT_HISTORY_SIZE, local_tick - INPUT_HISTORY_SIZE)
+	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
+		if !is_server:
+			var start := last_ack_tick + 1
+			if start <= local_tick:
+				_inputs_arr.clear()
+				for t in range(start, local_tick + 1):
+					var d = _ring_get(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, t)
+					if d != null:
+						_inputs_arr.append(d)
+				if _inputs_arr.size() > 0:
+					_client_send_input.rpc_id(1, start, _inputs_arr, desired_ahead_ticks, last_server_input_tick)
+					last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
+		return []
+	_ring_set(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick, last_local_input_bytes)
+	_ring_set(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, local_tick, 0.001 * float(Time.get_ticks_msec()))
+	if is_server:
+		if not pending_inputs.has(local_tick):
+			pending_inputs[local_tick] = {}
+		pending_inputs[local_tick][multiplayer.get_unique_id()] = last_local_input_bytes
+		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
+		last_received_tick[multiplayer.get_unique_id()] = local_tick
+	if !is_server:
+		var first_tick := last_ack_tick + 1
+		if first_tick <= local_tick:
+			_inputs_arr.clear()
+			for t in range(first_tick, local_tick + 1):
+				var d = _ring_get(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, t)
+				if d != null:
+					_inputs_arr.append(d)
+			if _inputs_arr.size() > 0:
+				_client_send_input.rpc_id(1, first_tick, _inputs_arr, desired_ahead_ticks, last_server_input_tick)
+				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
+	
+	var frame_inputs: Array
+	if _ring_has(authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick):
+		frame_inputs = _ring_get(authoritative_inputs, authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick)
+		_ring_erase(authoritative_inputs, authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, local_tick)
+	else:
+		frame_inputs = []
+		for id in player_ids:
+			if id == multiplayer.get_unique_id():
+				frame_inputs.append(last_local_input_bytes)
+			else:
+				frame_inputs.append(NEUTRAL_INPUT_BYTES)
+	_ring_set(input_history, input_history_ticks, INPUT_HISTORY_SIZE, local_tick, frame_inputs)
+	_ring_erase(input_history, input_history_ticks, INPUT_HISTORY_SIZE, local_tick - INPUT_HISTORY_SIZE)
 	local_tick += 1
 	_adjust_time_scale()
 	return frame_inputs
@@ -442,28 +442,28 @@ func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int,
 		clients_target_tick = max(clients_target_tick, tgt)
 		clients_max_ahead_from_server = max_ahead
 		player_ids = ids
-        if inputs.size() > 0:
-               var start_tick := last_tick - inputs.size() + 1
-               for i in range(inputs.size()):
-                       var tick := start_tick + i
-                       var frame = inputs[i]
-                       _ring_set(authoritative_inputs, authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, tick, frame)
-                       _handle_input_update(tick, frame)
+		if inputs.size() > 0:
+			var start_tick := last_tick - inputs.size() + 1
+			for i in range(inputs.size()):
+				var tick := start_tick + i
+				var frame = inputs[i]
+				_ring_set(authoritative_inputs, authoritative_inputs_ticks, HISTORY_BUFFER_SIZE, tick, frame)
+				_handle_input_update(tick, frame)
 		last_server_input_tick = max(last_server_input_tick, last_tick)
 	if this_ack:
 		var ack_tick := this_ack
 		last_ack_tick = max(last_ack_tick, ack_tick)
-               if _ring_has(sent_input_times_ticks, HISTORY_BUFFER_SIZE, ack_tick):
-                       var sample : float = 0.001 * float(Time.get_ticks_msec()) - _ring_get(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, ack_tick)
-                       if rtt_s == 0.0:
-                               rtt_s = sample
-                       else:
-                               rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
-                       _ring_erase(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, ack_tick)
-                       _update_desired_ahead()
-               for t in range(max(0, last_ack_tick - HISTORY_BUFFER_SIZE), last_ack_tick + 1):
-                       _ring_erase(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, t)
-                       _ring_erase(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, t)
+		if _ring_has(sent_input_times_ticks, HISTORY_BUFFER_SIZE, ack_tick):
+			var sample : float = 0.001 * float(Time.get_ticks_msec()) - _ring_get(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, ack_tick)
+			if rtt_s == 0.0:
+				rtt_s = sample
+			else:
+				rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
+			_ring_erase(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, ack_tick)
+			_update_desired_ahead()
+		for t in range(max(0, last_ack_tick - HISTORY_BUFFER_SIZE), last_ack_tick + 1):
+			_ring_erase(sent_inputs_bytes, sent_inputs_ticks, HISTORY_BUFFER_SIZE, t)
+			_ring_erase(sent_input_times, sent_input_times_ticks, HISTORY_BUFFER_SIZE, t)
 	if state.size() > 0:
 		_handle_state(last_tick, state)
 
@@ -476,16 +476,16 @@ func post_tick() -> void:
 			var send_state : PackedByteArray = PackedByteArray()
 			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
 				send_state = state
-                       var ack = authoritative_acks.get(id, -1)
-                       var start := ack + 1
-                       _arr.clear()
-                       for t in range(start, server_tick + 1):
-                               var frame = _ring_get(authoritative_history, authoritative_history_ticks, HISTORY_BUFFER_SIZE, t)
-                               if frame != null:
-                                       _arr.append(frame)
-                       var last_tick = start + _arr.size() - 1 if _arr.size() > 0 else ack
-                       _server_broadcast.rpc_id(id, last_tick, _arr, player_ids, last_received_tick[id], send_state, target_tick, max_ahead)
-               server_tick += 1
+			var ack : int = authoritative_acks.get(id, -1)
+			var start := ack + 1
+			_arr.clear()
+			for t in range(start, server_tick + 1):
+				var frame = _ring_get(authoritative_history, authoritative_history_ticks, HISTORY_BUFFER_SIZE, t)
+				if frame != null:
+					_arr.append(frame)
+			var last_tick = start + _arr.size() - 1 if _arr.size() > 0 else ack
+			_server_broadcast.rpc_id(id, last_tick, _arr, player_ids, last_received_tick.get(id, null), send_state, target_tick, max_ahead)
+		server_tick += 1
 
 func _idle_broadcast() -> void:
 	if server_game_sim == null:
@@ -494,24 +494,24 @@ func _idle_broadcast() -> void:
 	var max_ahead := _calc_max_ahead()
 	max_ahead_from_server = max_ahead
 	for id in player_ids:
-               var ack = authoritative_acks.get(id, -1)
-               var start := ack + 1
-               _arr.clear()
-               for t in range(start, server_tick):
-                       var frame = _ring_get(authoritative_history, authoritative_history_ticks, HISTORY_BUFFER_SIZE, t)
-                       if frame != null:
-                               _arr.append(frame)
-               var last_tick = start + _arr.size() - 1 if _arr.size() > 0 else ack
-               _server_broadcast.rpc_id(
-                       id,
-                       last_tick,
-                       _arr,
-                       player_ids,
-                       last_received_tick[id],
-                       PackedByteArray(),
-                       target_tick,
-                       max_ahead
-               )
+		var ack = authoritative_acks.get(id, -1)
+		var start : int = ack + 1
+		_arr.clear()
+		for t in range(start, server_tick):
+			var frame = _ring_get(authoritative_history, authoritative_history_ticks, HISTORY_BUFFER_SIZE, t)
+			if frame != null:
+				_arr.append(frame)
+		var last_tick = start + _arr.size() - 1 if _arr.size() > 0 else ack
+		_server_broadcast.rpc_id(
+			id,
+			last_tick,
+			_arr,
+			player_ids,
+			last_received_tick.get(id, null),
+			PackedByteArray(),
+			target_tick,
+			max_ahead
+		)
 
 func _check_client_stalls() -> void:
 	if not is_server or server_game_sim == null or not server_game_sim.sim_started:
@@ -541,52 +541,52 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	game_sim.load_state(tick)
 	var current := tick + 1
 	var old_time := Time.get_ticks_usec()
-       while current < local_tick:
-               if _ring_has(input_history_ticks, INPUT_HISTORY_SIZE, current):
-                       game_sim.tick_gamesim(_ring_get(input_history, input_history_ticks, INPUT_HISTORY_SIZE, current))
-               current += 1
+	while current < local_tick:
+		if _ring_has(input_history_ticks, INPUT_HISTORY_SIZE, current):
+			game_sim.tick_gamesim(_ring_get(input_history, input_history_ticks, INPUT_HISTORY_SIZE, current))
+		current += 1
 	var new_time := Time.get_ticks_usec()
 	DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
 
 func _handle_input_update(tick: int, inputs: Array) -> void:
-       if game_sim == null:
-               return
-       if not _ring_has(input_history_ticks, INPUT_HISTORY_SIZE, tick):
-               return
-       var predicted = _ring_get(input_history, input_history_ticks, INPUT_HISTORY_SIZE, tick)
+	if game_sim == null:
+		return
+	if not _ring_has(input_history_ticks, INPUT_HISTORY_SIZE, tick):
+		return
+	var predicted = _ring_get(input_history, input_history_ticks, INPUT_HISTORY_SIZE, tick)
 	# we should honestly just always be rolling back for now
 	# we can figure out matching later
 	#if predicted == inputs:
 	#	return
-       _ring_set(input_history, input_history_ticks, INPUT_HISTORY_SIZE, tick, inputs)
-       game_sim.load_state(max(0, tick - 1))
-       var current := tick
-       var old_time := Time.get_ticks_usec()
-       while current < local_tick:
-               if _ring_has(input_history_ticks, INPUT_HISTORY_SIZE, current):
-                       game_sim.tick_gamesim(_ring_get(input_history, input_history_ticks, INPUT_HISTORY_SIZE, current))
-               current += 1
+	_ring_set(input_history, input_history_ticks, INPUT_HISTORY_SIZE, tick, inputs)
+	game_sim.load_state(max(0, tick - 1))
+	var current := tick
+	var old_time := Time.get_ticks_usec()
+	while current < local_tick:
+		if _ring_has(input_history_ticks, INPUT_HISTORY_SIZE, current):
+			game_sim.tick_gamesim(_ring_get(input_history, input_history_ticks, INPUT_HISTORY_SIZE, current))
+		current += 1
 	var new_time := Time.get_ticks_usec()
 	DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
 
 func disconnect_from_server() -> void:
-       if multiplayer.multiplayer_peer != null:
-               multiplayer.multiplayer_peer.close()
-               multiplayer.multiplayer_peer = null
-       is_server = false
-       listen_server = false
-       _init_buffers()
-       player_ids.clear()
-       pending_inputs.clear()
-       authoritative_inputs_ticks.fill(-1)
-       authoritative_inputs.fill(null)
-       input_history_ticks.fill(-1)
-       input_history.fill(null)
-       sent_inputs_ticks.fill(-1)
-       sent_inputs_bytes.fill(null)
-       last_input_time.clear()
+	if multiplayer.multiplayer_peer != null:
+		multiplayer.multiplayer_peer.close()
+		multiplayer.multiplayer_peer = null
+	is_server = false
+	listen_server = false
+	_init_buffers()
+	player_ids.clear()
+	pending_inputs.clear()
+	authoritative_inputs_ticks.fill(-1)
+	authoritative_inputs.fill(null)
+	input_history_ticks.fill(-1)
+	input_history.fill(null)
+	sent_inputs_ticks.fill(-1)
+	sent_inputs_bytes.fill(null)
+	last_input_time.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
 	server_tick = 0
 	local_tick = 0
@@ -594,28 +594,28 @@ func disconnect_from_server() -> void:
 	last_received_tick.clear()
 	last_ack_tick = -1
 	last_broadcast_inputs_bytes.clear()
-       player_settings.clear()
-       max_ahead_from_server = 0.0
-       peer_desired_ahead.clear()
-       authoritative_history_ticks.fill(-1)
-       authoritative_history.fill(null)
-       authoritative_acks.clear()
-       last_server_input_tick = -1
+	player_settings.clear()
+	max_ahead_from_server = 0.0
+	peer_desired_ahead.clear()
+	authoritative_history_ticks.fill(-1)
+	authoritative_history.fill(null)
+	authoritative_acks.clear()
+	last_server_input_tick = -1
 
 func _prune_authoritative_history() -> void:
-       var min_ack := -1
-       for id in player_ids:
-               var ack = authoritative_acks.get(id, -1)
-               if min_ack == -1 or ack < min_ack:
-                       min_ack = ack
-       if min_ack == -1:
-               return
-       var start := max(0, min_ack - HISTORY_BUFFER_SIZE)
-       for t in range(start, min_ack + 1):
-               var idx := t % HISTORY_BUFFER_SIZE
-               if authoritative_history_ticks[idx] == t:
-                       authoritative_history_ticks[idx] = -1
-                       authoritative_history[idx] = null
+	var min_ack := -1
+	for id in player_ids:
+		var ack = authoritative_acks.get(id, -1)
+		if min_ack == -1 or ack < min_ack:
+			min_ack = ack
+	if min_ack == -1:
+		return
+	var start := maxi(0, min_ack - HISTORY_BUFFER_SIZE)
+	for t in range(start, min_ack + 1):
+		var idx := t % HISTORY_BUFFER_SIZE
+		if authoritative_history_ticks[idx] == t:
+			authoritative_history_ticks[idx] = -1
+			authoritative_history[idx] = null
 
 func _update_desired_ahead() -> void:
 	desired_ahead_ticks = ((rtt_s) + JITTER_BUFFER) / base_wait_time
