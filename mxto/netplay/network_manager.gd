@@ -436,18 +436,17 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
 		return
 	var local_state: PackedByteArray = game_sim.get_state_data(tick)
-	if hash(local_state) != hash(state):
-		game_sim.set_state_data(tick, state)
-		game_sim.load_state(tick)
-		var current := tick + 1
-		var old_time := Time.get_ticks_usec()
-		while current < local_tick:
-			if input_history.has(current):
-				game_sim.tick_gamesim(input_history[current])
-			current += 1
-		var new_time := Time.get_ticks_usec()
-		DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
-		rollback_frametime_us = new_time - old_time
+	game_sim.set_state_data(tick, state)
+	game_sim.load_state(tick)
+	var current := tick + 1
+	var old_time := Time.get_ticks_usec()
+	while current < local_tick:
+		if input_history.has(current):
+			game_sim.tick_gamesim(input_history[current])
+		current += 1
+	var new_time := Time.get_ticks_usec()
+	DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
+	rollback_frametime_us = new_time - old_time
 
 func _handle_input_update(tick: int, inputs: Array) -> void:
 	if game_sim == null:
@@ -455,8 +454,10 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	if not input_history.has(tick):
 		return
 	var predicted = input_history[tick]
-	if predicted == inputs:
-		return
+	# we should honestly just always be rolling back for now
+	# we can figure out matching later
+	#if predicted == inputs:
+	#	return
 	input_history[tick] = inputs
 	game_sim.load_state(max(0, tick - 1))
 	var current := tick
