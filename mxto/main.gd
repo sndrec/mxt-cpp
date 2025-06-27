@@ -202,10 +202,11 @@ func _physics_process(delta: float) -> void:
 	if lobby_control.visible:
 		_update_player_list()
 	if game_sim.sim_started:
-		var local_input := PlayerInputClass.new().to_dict()
+		var local_pi := PlayerInputClass.new()
 		if players.size() > local_player_index:
-			local_input = players[local_player_index].get_input().to_dict()
-		network_manager.set_local_input(local_input)
+			local_pi = players[local_player_index].get_input()
+		var input_bytes := local_pi.serialize()
+		network_manager.set_local_input(input_bytes)
 		if network_manager.is_server:
 			_simulate_host_frame()
 		else:
@@ -216,11 +217,12 @@ func _physics_process(delta: float) -> void:
 func _simulate_host_frame():
 	var loops := 0
 	const MAX_TICKS_PER_FRAME := 120
-	var local_input := PlayerInputClass.new().to_dict()
+	var local_pi := PlayerInputClass.new()
 	while loops < MAX_TICKS_PER_FRAME:
 		if players.size() > local_player_index:
-			local_input = players[local_player_index].get_input().to_dict()
-		network_manager.set_local_input(local_input)
+			local_pi = players[local_player_index].get_input()
+		var input_bytes := local_pi.serialize()
+		network_manager.set_local_input(input_bytes)
 		var server_inputs := network_manager.collect_server_inputs()
 		if server_inputs.is_empty():
 			break

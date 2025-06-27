@@ -15,4 +15,5 @@ func get_input() -> PlayerInput:
 	p.brake = Input.get_action_strength("Brake")
 	p.spinattack = Input.is_action_just_pressed("SpinAttack")
 	p.boost = Input.is_action_just_pressed("Boost")
+	p.apply_quantization()
 	return p

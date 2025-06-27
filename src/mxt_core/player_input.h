@@ -2,10 +2,14 @@
 
 #include "godot_cpp/classes/input.hpp"
 #include "godot_cpp/variant/dictionary.hpp"
+#include "godot_cpp/variant/packed_byte_array.hpp"
 
-class PlayerInput 
+class PlayerInput
 {
 public:
+        static constexpr uint8_t RAW_BIT_PRECISION = 254;
+        static constexpr uint8_t AXIS_NEUTRAL = RAW_BIT_PRECISION / 2;
+        static constexpr uint8_t TRIGGER_NEUTRAL = 0;
 	float strafe_left = 0.0f;
 	float strafe_right = 0.0f;
 	float steer_horizontal = 0.0f;
@@ -20,44 +24,6 @@ public:
 		PlayerInput new_input{};
 		return new_input;
 	}
-
-        static PlayerInput from_player_input()
-        {
-                PlayerInput new_input{};
-		char* str1 = "StrafeLeft";
-		char* str2 = "StrafeRight";
-		char* str3 = "SteerUp";
-		char* str4 = "SteerDown";
-		char* str5 = "SteerLeft";
-		char* str6 = "SteerRight";
-		char* str7 = "Accelerate";
-		char* str8 = "Brake";
-		char* str9 = "SpinAttack";
-		char* str10 = "Boost";
-		godot::StringName string_strafe_left = godot::StringName(str1);
-		godot::StringName string_strafe_right = godot::StringName(str2);
-		godot::StringName string_steer_up = godot::StringName(str3);
-		godot::StringName string_steer_dn = godot::StringName(str4);
-		godot::StringName string_steer_lt = godot::StringName(str5);
-		godot::StringName string_steer_rt = godot::StringName(str6);
-		godot::StringName string_accel = godot::StringName(str7);
-		godot::StringName string_brake = godot::StringName(str8);
-		godot::StringName string_spinattack = godot::StringName(str9);
-		godot::StringName string_boost = godot::StringName(str10);
-
-		godot::Input* input_singleton = godot::Input::get_singleton();
-
-		new_input.strafe_left = input_singleton->get_action_strength(string_strafe_left);
-		new_input.strafe_right = input_singleton->get_action_strength(string_strafe_right);
-		new_input.steer_horizontal = input_singleton->get_axis(string_steer_lt, string_steer_rt);
-		new_input.steer_vertical = input_singleton->get_axis(string_steer_up, string_steer_dn);
-		new_input.accelerate = input_singleton->get_action_strength(string_accel);
-		new_input.brake = input_singleton->get_action_strength(string_brake);
-		new_input.spinattack = input_singleton->is_action_just_pressed(string_spinattack);
-		new_input.boost = input_singleton->is_action_just_pressed(string_boost);
-
-                return new_input;
-        }
 
         static PlayerInput from_dict(const godot::Dictionary &dict)
         {
@@ -79,5 +45,27 @@ public:
                 if (dict.has("boost"))
                         new_input.boost = godot::Variant(dict["boost"]).operator bool();
                 return new_input;
+        }
+
+        static PlayerInput from_bytes(const godot::PackedByteArray &arr)
+        {
+                PlayerInput out{};
+                const uint8_t *data = arr.ptr();
+                int idx = 0;
+                if (arr.size() == 0)
+                        return out;
+                uint8_t bitmask = data[idx++];
+                if (bitmask & (1 << 0)) out.strafe_left = float(data[idx++]) / float(RAW_BIT_PRECISION);
+                if (bitmask & (1 << 1)) out.strafe_right = float(data[idx++]) / float(RAW_BIT_PRECISION);
+                if (bitmask & (1 << 2)) out.steer_horizontal = (float(data[idx++]) / float(RAW_BIT_PRECISION)) * 2.0f - 1.0f;
+                if (bitmask & (1 << 3)) out.steer_vertical = (float(data[idx++]) / float(RAW_BIT_PRECISION)) * 2.0f - 1.0f;
+                if (bitmask & (1 << 4)) out.accelerate = float(data[idx++]) / float(RAW_BIT_PRECISION);
+                if (bitmask & (1 << 5)) out.brake = float(data[idx++]) / float(RAW_BIT_PRECISION);
+                if (bitmask & (1 << 6)) {
+                        uint8_t buttons = data[idx++];
+                        out.spinattack = (buttons & 1) != 0;
+                        out.boost = (buttons & 2) != 0;
+                }
+                return out;
         }
 };
