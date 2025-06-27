@@ -4,7 +4,7 @@ extends Node
 signal race_started(track_index, player_settings)
 signal race_finished
 
-@rpc("any_peer")
+@rpc("any_peer", "reliable")
 func set_race_finish_time(time: int) -> void:
 	net_race_finish_time = time
 
@@ -124,6 +124,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	if err != OK:
 		push_error("Failed to host: %s" % err)
 		return err
+	push_error("Host!")
 	multiplayer.multiplayer_peer = peer
 	is_server = true
 	listen_server = !dedicated
@@ -158,6 +159,7 @@ func join(ip: String, port: int = 27016) -> int:
 	if err != OK:
 		push_error("Failed to join server: %s" % err)
 		return err
+	push_error("Client!")
 	multiplayer.multiplayer_peer = peer
 	is_server = false
 	listen_server = false
@@ -229,17 +231,17 @@ func flush_waiting_peers() -> void:
 		if player_settings.has(id):
 			update_player_settings.rpc(player_settings[id], id)
 
-@rpc("any_peer")
+@rpc("any_peer", "reliable")
 func _update_player_ids(ids: Array) -> void:
 	player_ids = ids
 	if is_server:
 		_calc_state_offsets()
 
-@rpc("any_peer")
+@rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array) -> void:
 	emit_signal("race_started", track_index, settings)
 	if is_server:
-		var now := Time.get_ticks_msec() * 0.001
+		var now := 0.001 * float(Time.get_ticks_msec())
 		for id in player_ids:
 			last_input_time[id] = now
 
@@ -250,7 +252,7 @@ func send_start_race(track_index: int, settings: Array) -> void:
 	else:
 		start_race.rpc_id(1, track_index, settings)
 
-@rpc("any_peer")
+@rpc("any_peer", "reliable")
 func end_race() -> void:
 	emit_signal("race_finished")
 
@@ -268,7 +270,7 @@ func send_player_settings(settings: Dictionary) -> void:
 		update_player_settings.rpc_id(1, settings)
 		player_settings[my_id] = settings
 
-@rpc("any_peer")
+@rpc("any_peer", "reliable")
 func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 	var sender_id := multiplayer.get_remote_sender_id()
 	if id == -1:
@@ -342,7 +344,7 @@ func collect_client_inputs() -> Array:
 	_adjust_time_scale()
 	return frame_inputs
 
-@rpc("any_peer", "unreliable", "call_remote")
+@rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_send_input(tick: int, input: PackedByteArray, ahead: float) -> void:
 	if is_server:
 		if not pending_inputs.has(tick):
@@ -352,7 +354,7 @@ func _client_send_input(tick: int, input: PackedByteArray, ahead: float) -> void
 		last_received_tick[multiplayer.get_remote_sender_id()] = tick
 		peer_desired_ahead[multiplayer.get_remote_sender_id()] = ahead
 
-@rpc("any_peer", "unreliable", "call_local")
+@rpc("any_peer", "unreliable_ordered", "call_local", 2)
 func _server_broadcast(tick: int, inputs: Array, ids: Array, acks: Dictionary, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
 	if not is_server or listen_server:
 		clients_server_tick = max(clients_server_tick, tick + 1)
@@ -421,14 +423,14 @@ func _check_client_stalls() -> void:
 	if server_tick >= target_tick:
 		return
 	var waiting = pending_inputs.get(server_tick, {})
-	var now := Time.get_ticks_msec() * 0.001
+	var now := 0.001 * float(Time.get_ticks_msec())
 	for id in player_ids:
 		if not waiting.has(id):
 			if not last_input_time.has(id):
 				continue	# haven’t ever received a packet from this guy yet
-			if now - float(last_input_time[id]) > 3.0:	# give them 3 s grace
+			if now - float(last_input_time[id]) > 10.0:	# give them 10 s grace
 				push_error("Client %s stalled, disconnecting" % str(id))
-				multiplayer.multiplayer_peer.disconnect_peer(id)
+				multiplayer.disconnect_peer(id)
 
 var rollback_frametime_us = 0
 
@@ -494,15 +496,19 @@ func disconnect_from_server() -> void:
 	peer_desired_ahead.clear()
 
 func _update_desired_ahead() -> void:
-	desired_ahead_ticks = ((rtt_s * 0.5) + JITTER_BUFFER) / base_wait_time
+	desired_ahead_ticks = ((rtt_s) + JITTER_BUFFER) / base_wait_time
 
 var use_physics_ticks := 1.0
 
 func _adjust_time_scale() -> void:
+	DebugDraw2D.set_text("rtt", rtt_s)
+	if is_server:
+		DebugDraw2D.set_text("server_tick", server_tick)
+		DebugDraw2D.set_text("target_tick", target_tick)
 	if is_server and !listen_server:
 		return
 	var current_ahead_ticks = local_tick - clients_target_tick
-	var target_ahead_ticks = (desired_ahead_ticks + clients_max_ahead_from_server) * 0.5
+	var target_ahead_ticks = lerpf(desired_ahead_ticks, clients_max_ahead_from_server, 0.75)
 	var diff = target_ahead_ticks - current_ahead_ticks
 	DebugDraw2D.set_text("local_tick", local_tick)
 	DebugDraw2D.set_text("clients_server_tick", clients_server_tick)
