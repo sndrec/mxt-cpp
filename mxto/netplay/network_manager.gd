@@ -309,11 +309,17 @@ func collect_server_inputs() -> Array:
 	return frame_inputs_bytes
 
 func collect_client_inputs() -> Array:
-	if !is_server:
-		for key in sent_inputs_bytes.keys():
-			_client_send_input.rpc_id(1, key, sent_inputs_bytes[key], desired_ahead_ticks)
-			last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
+		if !is_server:
+			var old_keys := sent_inputs_bytes.keys()
+			if old_keys.size() > 0:
+				old_keys.sort()
+				var start := int(old_keys[0])
+				var data : Array = []
+				for k in old_keys:
+					data.append(sent_inputs_bytes[k])
+				_client_send_input.rpc_id(1, start, data, desired_ahead_ticks)
+				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		return []
 	sent_inputs_bytes[local_tick] = last_local_input_bytes
 	sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
@@ -323,8 +329,15 @@ func collect_client_inputs() -> Array:
 		pending_inputs[local_tick][multiplayer.get_unique_id()] = last_local_input_bytes
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[multiplayer.get_unique_id()] = local_tick
-	else:
-		_client_send_input.rpc_id(1, local_tick, last_local_input_bytes, desired_ahead_ticks)
+	var all_keys := sent_inputs_bytes.keys()
+	if !is_server and all_keys.size() > 0:
+		all_keys.sort()
+		var first_tick := int(all_keys[0])
+		var inputs_arr : Array = []
+		for k in all_keys:
+			inputs_arr.append(sent_inputs_bytes[k])
+		_client_send_input.rpc_id(1, first_tick, inputs_arr, desired_ahead_ticks)
+		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 
 	var frame_inputs: Array
 	if authoritative_inputs.has(local_tick):
@@ -345,13 +358,16 @@ func collect_client_inputs() -> Array:
 	return frame_inputs
 
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
-func _client_send_input(tick: int, input: PackedByteArray, ahead: float) -> void:
+func _client_send_input(start_tick: int, inputs: Array, ahead: float) -> void:
 	if is_server:
-		if not pending_inputs.has(tick):
-			pending_inputs[tick] = {}
-		pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
-		last_input_time[multiplayer.get_remote_sender_id()] = 0.001 * float(Time.get_ticks_msec())
-		last_received_tick[multiplayer.get_remote_sender_id()] = tick
+		for i in range(inputs.size()):
+			var tick := start_tick + i
+			var input = inputs[i]
+			if not pending_inputs.has(tick):
+				pending_inputs[tick] = {}
+			pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
+			last_input_time[multiplayer.get_remote_sender_id()] = 0.001 * float(Time.get_ticks_msec())
+			last_received_tick[multiplayer.get_remote_sender_id()] = tick
 		peer_desired_ahead[multiplayer.get_remote_sender_id()] = ahead
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
