@@ -87,15 +87,20 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	auto start = std::chrono::high_resolution_clock::now();
 	int buf_index = tick % INPUT_BUFFER_LEN;
 	PlayerInput* slot = input_buffer + buf_index * num_cars;
-	for (int i = 0; i < num_cars; i++)
-	{
-		PlayerInput inp = PlayerInput::from_neutral();
-		if (i < player_inputs.size() && player_inputs[i].get_type() == godot::Variant::DICTIONARY) {
-			inp = PlayerInput::from_dict(player_inputs[i]);
-		}
-		slot[i] = inp;
-		cars[i].tick(inp, tick);
-	}
+        for (int i = 0; i < num_cars; i++)
+        {
+                PlayerInput inp = PlayerInput::from_neutral();
+                if (i < player_inputs.size()) {
+                        Variant::Type t = player_inputs[i].get_type();
+                        if (t == godot::Variant::PACKED_BYTE_ARRAY) {
+                                inp = PlayerInput::from_bytes(player_inputs[i]);
+                        } else if (t == godot::Variant::DICTIONARY) {
+                                inp = PlayerInput::from_dict(player_inputs[i]);
+                        }
+                }
+                slot[i] = inp;
+                cars[i].tick(inp, tick);
+        }
 	//for (int i = 0; i < num_cars; i++)
 	//{
 	//	if (i == 0){
