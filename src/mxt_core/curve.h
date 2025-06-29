@@ -61,6 +61,12 @@ struct RoadTransformCurveKeyframe
 struct alignas(16) RoadTransformCurve {
     int num_keyframes;
     float *times, *values, *tangent_in, *tangent_out;
+    // precomputed coefficients per segment for cubic Hermite sampling
+    float *inv_dt;    // 1/(t1-t0) for each segment
+    float *coef_a;    // cubic coefficients a for each component
+    float *coef_b;    // cubic coefficients b
+    float *coef_c;    // cubic coefficients c
+    float *coef_d;    // cubic coefficients d
     RoadTransformCurve(int count): num_keyframes(count) {}
 
 	// fetch raw keyframe into a Transform3D
@@ -79,5 +85,6 @@ struct alignas(16) RoadTransformCurve {
 		);
 	}
 
-	void sample(godot::Transform3D &out, float in_t) const;
+        void sample(godot::Transform3D &out, float in_t) const;
+        void precompute();
 };
