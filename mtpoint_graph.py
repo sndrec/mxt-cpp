@@ -81,7 +81,7 @@ class CarSimApp:
 		threshold = final_speed * 0.99
 		reach_time = next((t for t, s in zip(times, base_speeds) if s >= threshold), times[-1])
 
-		thresh = self.find_slope_threshold(props)
+		thresh = self.find_mt_threshold(props)
 		self.result_label.config(
 			text=f"Top Speed: {final_speed:.3f}  "
 			     f"Time to Reach: {reach_time:.2f}s  "
@@ -173,6 +173,8 @@ class CarSimApp:
 			base_speed = target_speed_component - final_accel_term
 			base_speed = max(base_speed - props["drag"], 0.0)
 			final_thrust_output = 1000.0 * speed_difference
+			if final_thrust_output < 0.0 or normalized_fwd_speed < 0.0:
+				final_thrust_output *= 0.25
 			speed += final_thrust_output
 			speed_weight_ratio = speed / props["weight_kg"]
 			scaled_speed = 216.0 * speed_weight_ratio
@@ -208,6 +210,51 @@ class CarSimApp:
 			else:				# throttle now hurts
 				v_hi = v_mid
 		return v_hi			# ≈ threshold speed
+
+	def _segment(self, props, start_speed, input_accel, frames, dt):
+		if frames == 0:
+			return start_speed, 0.0
+		_, speeds = self.simulate(
+			props, start_speed, input_accel,
+			duration=frames * dt, dt=dt
+		)
+		distance = sum(s * dt for s in speeds)		# integrate speed
+		return speeds[-1], distance				# final speed, distance
+
+	def find_mt_threshold(self, props,
+			starting_speed=3000.0, duration=15.0, dt=1/60.0):
+		steps = int(duration / dt)
+
+		def total_distance(switch_frame):
+			switch = int(switch_frame)
+			speed_after, dist1 = self._segment(props, starting_speed, 0.0, switch, dt)
+			_, dist2 = self._segment(props, speed_after, 1.0, steps - switch, dt)
+			return dist1 + dist2, speed_after
+
+		lo = 0
+		hi = steps
+		best_speed = 0.0
+		best_dist = -1.0
+
+		while hi - lo > 3:
+			m1 = lo + (hi - lo) // 3
+			m2 = hi - (hi - lo) // 3
+
+			d1, _ = total_distance(m1)
+			d2, _ = total_distance(m2)
+
+			if d1 < d2:
+				lo = m1
+			else:
+				hi = m2
+
+		for switch in range(lo, hi + 1):
+			d, speed = total_distance(switch)
+			if d > best_dist:
+				best_dist = d
+				best_speed = speed
+
+		return best_speed
 
 if __name__ == "__main__":
 	root = tk.Tk()
