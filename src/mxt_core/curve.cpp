@@ -239,14 +239,14 @@ void RoadTransformCurve::sample(godot::Transform3D &out, float in_t) const {
 		in_t = times[num_keyframes - 1];
 	}
 
-        // find segment via binary search
-        const float *seg_end = times + num_keyframes - 1;
-        int k1 = int(std::upper_bound(times, seg_end, in_t) - times);
-        int k = k1 - 1;
+    // find segment via binary search
+    float *seg_end = times + num_keyframes - 1;
+    int k1 = int(std::upper_bound(times, seg_end, in_t) - times);
+    int k = k1 - 1;
 
-        float u = (in_t - times[k]) * inv_dt[k];
-        float u2 = u * u;
-        float u3 = u2 * u;
+    float u = (in_t - times[k]) * inv_dt[k];
+    float u2 = u * u;
+    float u3 = u2 * u;
 
 #ifdef __AVX2__
         alignas(32) float sampled[16];
