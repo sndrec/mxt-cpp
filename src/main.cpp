@@ -355,8 +355,21 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		align16();
 		soa->tangent_in  = level_data.allocate_array<float>(num_keyframes * 16);
 
-		align16();
-		soa->tangent_out = level_data.allocate_array<float>(num_keyframes * 16);
+                align16();
+                soa->tangent_out = level_data.allocate_array<float>(num_keyframes * 16);
+
+                int seg_count = num_keyframes > 0 ? num_keyframes - 1 : 0;
+
+                align16();
+                soa->inv_dt  = level_data.allocate_array<float>(seg_count);
+                align16();
+                soa->coef_a  = level_data.allocate_array<float>(seg_count * 16);
+                align16();
+                soa->coef_b  = level_data.allocate_array<float>(seg_count * 16);
+                align16();
+                soa->coef_c  = level_data.allocate_array<float>(seg_count * 16);
+                align16();
+                soa->coef_d  = level_data.allocate_array<float>(seg_count * 16);
 
 		// 3) fill your keyframes
 		for (int n = 0; n < 15; ++n) {
@@ -373,12 +386,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 		}
 
-		for (int i = 0; i < num_keyframes; ++i) {
-			int idx = i*16 + 15;
-			soa->values[idx]      = 0.0f;
-			soa->tangent_in[idx]  = 0.0f;
-			soa->tangent_out[idx] = 0.0f;
-		}
+                for (int i = 0; i < num_keyframes; ++i) {
+                        int idx = i*16 + 15;
+                        soa->values[idx]      = 0.0f;
+                        soa->tangent_in[idx]  = 0.0f;
+                        soa->tangent_out[idx] = 0.0f;
+                }
+
+                soa->precompute();
 
 		// 4) version‐dependent rail heights
 		if (version_string != "v0.1") {
