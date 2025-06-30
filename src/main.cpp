@@ -162,7 +162,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	current_track->num_checkpoints = checkpoint_count;
 	current_track->checkpoint_stack = level_data.allocate_array<int>(checkpoint_count);
-	current_track->visited_checkpoints = level_data.allocate_array<bool>(checkpoint_count);
+	current_track->visit_gen = 1;
+	current_track->visit_stamp = level_data.allocate_array<uint32_t>(checkpoint_count);
 	current_track->checkpoints = level_data.allocate_array<CollisionCheckpoint>(checkpoint_count);
 
 	for (int i = 0; i < checkpoint_count; i++)

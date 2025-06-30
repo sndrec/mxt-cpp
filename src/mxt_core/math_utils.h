@@ -123,3 +123,14 @@ inline static float randf_range(float min, float max) {
 	memdelete(rng);
 	return res;
 }
+
+inline static const float dist_to_plane(godot::Vector3 &p_norm, float &p_dist, godot::Vector3 &in_point)
+{
+	return (p_norm.dot(in_point) - p_dist);
+}
+
+inline static const godot::Vector3 project_to_plane(const godot::Vector3 &p_norm, const float &p_dist, const godot::Vector3 &in_point)
+{
+	float dist = (p_norm.dot(in_point) - p_dist);
+	return in_point - p_norm * dist;
+}

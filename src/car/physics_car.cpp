@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include "mxt_core/debug.hpp"
+#include "mxt_core/math_utils.h"
 #include "track/track_segment.h"
 
 static inline godot::Vector3 normalized_safe(const godot::Vector3 &v,
@@ -1882,7 +1883,7 @@ int PhysicsCar::update_machine_corners() {
 							continue;
 						}
 
-						const godot::Vector3 hit = godot::Plane(side.rail_n, side.pos).project(p0);
+						const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
 
 						if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
 						{
@@ -1937,7 +1938,7 @@ int PhysicsCar::update_machine_corners() {
 							continue;
 						}
 
-						const godot::Vector3 hit = godot::Plane(side.rail_n, side.pos).project(p0);
+						const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
 
 						if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
 						{
