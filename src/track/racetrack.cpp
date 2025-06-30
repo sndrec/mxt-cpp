@@ -42,10 +42,10 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 	godot::Vector3 p2 = cp->end_plane.project(point);
 	float cp_t = get_closest_t_on_segment(point, p1, p2);
 	cp_t = std::clamp(cp_t, 0.0f, 1.0f);
-	godot::Basis basis;
-	basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t).normalized();
-	basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t).normalized();
-	basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t).normalized();
+       godot::Basis basis;
+       basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
+       basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
+       basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
 	godot::Vector3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
 	godot::Plane sep_x_plane(basis[0], midpoint);
 	godot::Plane sep_y_plane(basis[1], midpoint);
@@ -98,10 +98,10 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
 	if (out_cp_t)
 		*out_cp_t = cp_t;
 
-	godot::Basis basis;
-	basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t).normalized();
-	basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t).normalized();
-	basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t).normalized();
+       godot::Basis basis;
+       basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
+       basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
+       basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
 
 	godot::Vector3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
 	godot::Plane sep_x_plane(basis[0], midpoint);
