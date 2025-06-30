@@ -90,9 +90,9 @@ public:
 
 			// interpolate orientation
 			godot::Basis basis;
-			basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t).normalized();
-			basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t).normalized();
-			basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t).normalized();
+			basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t);
+			basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t);
+			basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t);
 
 			godot::Vector3 midpoint = cp.position_start.lerp(cp.position_end, cp_t);
 			godot::Plane    sep_x(basis[0], midpoint);
@@ -175,9 +175,9 @@ public:
 			float cp_t = get_closest_t_on_segment(in_point, p1, p2);
 
 			godot::Basis basis;
-			basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t).normalized();
-			basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t).normalized();
-			basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t).normalized();
+			basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t);
+			basis[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t);
+			basis[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t);
 
 			godot::Vector3 midpoint = cp.position_start.lerp(cp.position_end, cp_t);
 			godot::Plane sep_x(basis[0], midpoint);

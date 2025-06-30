@@ -21,7 +21,7 @@ using namespace godot;
 
 void GameSim::_bind_methods()
 {
-        ClassDB::bind_method(D_METHOD("instantiate_gamesim", "lvldat_buf", "car_prop_buffers", "accel_settings"), &GameSim::instantiate_gamesim);
+	ClassDB::bind_method(D_METHOD("instantiate_gamesim", "lvldat_buf", "car_prop_buffers", "accel_settings"), &GameSim::instantiate_gamesim);
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("tick_gamesim", "player_inputs"), &GameSim::tick_gamesim);
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
@@ -87,20 +87,20 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	auto start = std::chrono::high_resolution_clock::now();
 	int buf_index = tick % INPUT_BUFFER_LEN;
 	PlayerInput* slot = input_buffer + buf_index * num_cars;
-        for (int i = 0; i < num_cars; i++)
-        {
-                PlayerInput inp = PlayerInput::from_neutral();
-                if (i < player_inputs.size()) {
-                        Variant::Type t = player_inputs[i].get_type();
-                        if (t == godot::Variant::PACKED_BYTE_ARRAY) {
-                                inp = PlayerInput::from_bytes(player_inputs[i]);
-                        } else if (t == godot::Variant::DICTIONARY) {
-                                inp = PlayerInput::from_dict(player_inputs[i]);
-                        }
-                }
-                slot[i] = inp;
-                cars[i].tick(inp, tick);
-        }
+	for (int i = 0; i < num_cars; i++)
+	{
+		PlayerInput inp = PlayerInput::from_neutral();
+		if (i < player_inputs.size()) {
+			Variant::Type t = player_inputs[i].get_type();
+			if (t == godot::Variant::PACKED_BYTE_ARRAY) {
+				inp = PlayerInput::from_bytes(player_inputs[i]);
+			} else if (t == godot::Variant::DICTIONARY) {
+				inp = PlayerInput::from_dict(player_inputs[i]);
+			}
+		}
+		slot[i] = inp;
+		cars[i].tick(inp, tick);
+	}
 	//for (int i = 0; i < num_cars; i++)
 	//{
 	//	if (i == 0){
@@ -191,6 +191,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		current_track->checkpoints[i].orientation_end[2][0] = lvldat_buf->get_float();
 		current_track->checkpoints[i].orientation_end[2][1] = lvldat_buf->get_float();
 		current_track->checkpoints[i].orientation_end[2][2] = lvldat_buf->get_float();
+		current_track->checkpoints[i].orientation_start.orthonormalize();
+		current_track->checkpoints[i].orientation_end.orthonormalize();
 		current_track->checkpoints[i].x_radius_start = lvldat_buf->get_float();
 		current_track->checkpoints[i].y_radius_start = lvldat_buf->get_float();
 		current_track->checkpoints[i].x_radius_end = lvldat_buf->get_float();
@@ -355,21 +357,21 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		align16();
 		soa->tangent_in  = level_data.allocate_array<float>(num_keyframes * 16);
 
-                align16();
-                soa->tangent_out = level_data.allocate_array<float>(num_keyframes * 16);
+		align16();
+		soa->tangent_out = level_data.allocate_array<float>(num_keyframes * 16);
 
-                int seg_count = num_keyframes > 0 ? num_keyframes - 1 : 0;
+		int seg_count = num_keyframes > 0 ? num_keyframes - 1 : 0;
 
-                align16();
-                soa->inv_dt  = level_data.allocate_array<float>(seg_count);
-                align16();
-                soa->coef_a  = level_data.allocate_array<float>(seg_count * 16);
-                align16();
-                soa->coef_b  = level_data.allocate_array<float>(seg_count * 16);
-                align16();
-                soa->coef_c  = level_data.allocate_array<float>(seg_count * 16);
-                align16();
-                soa->coef_d  = level_data.allocate_array<float>(seg_count * 16);
+		align16();
+		soa->inv_dt  = level_data.allocate_array<float>(seg_count);
+		align16();
+		soa->coef_a  = level_data.allocate_array<float>(seg_count * 16);
+		align16();
+		soa->coef_b  = level_data.allocate_array<float>(seg_count * 16);
+		align16();
+		soa->coef_c  = level_data.allocate_array<float>(seg_count * 16);
+		align16();
+		soa->coef_d  = level_data.allocate_array<float>(seg_count * 16);
 
 		// 3) fill your keyframes
 		for (int n = 0; n < 15; ++n) {
@@ -386,14 +388,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 		}
 
-                for (int i = 0; i < num_keyframes; ++i) {
-                        int idx = i*16 + 15;
-                        soa->values[idx]      = 0.0f;
-                        soa->tangent_in[idx]  = 0.0f;
-                        soa->tangent_out[idx] = 0.0f;
-                }
+		for (int i = 0; i < num_keyframes; ++i) {
+			int idx = i*16 + 15;
+			soa->values[idx]      = 0.0f;
+			soa->tangent_in[idx]  = 0.0f;
+			soa->tangent_out[idx] = 0.0f;
+		}
 
-                soa->precompute();
+		soa->precompute();
 
 		// 4) version‐dependent rail heights
 		if (version_string != "v0.1") {
@@ -478,73 +480,73 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 
-        int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
-        PhysicsCarProperties* props_array = nullptr;
-        cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
-        car_properties_array = props_array;
-        num_cars = requested_cars;
-        for (int i = 0; i < num_cars; i++)
-        {
-                cars[i].mtxa = &mtxa;
-                cars[i].current_track = current_track;
-                if (i < car_prop_buffers.size()) {
-                        godot::PackedByteArray arr = car_prop_buffers[i];
+	int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
+	PhysicsCarProperties* props_array = nullptr;
+	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
+	car_properties_array = props_array;
+	num_cars = requested_cars;
+	for (int i = 0; i < num_cars; i++)
+	{
+		cars[i].mtxa = &mtxa;
+		cars[i].current_track = current_track;
+		if (i < car_prop_buffers.size()) {
+			godot::PackedByteArray arr = car_prop_buffers[i];
                // StreamPeerBuffer inherits Reference; using Ref ensures
                // the object is freed when 'pb' goes out of scope.
-                        godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
-                        pb->set_data_array(arr);
-                        *(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
-                }
-                if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
-                        cars[i].m_accel_setting = accel_settings[i];
-                }
-                cars[i].initialize_machine();
+			godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
+			pb->set_data_array(arr);
+			*(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
+		}
+		if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
+			cars[i].m_accel_setting = accel_settings[i];
+		}
+		cars[i].initialize_machine();
 
                 // Determine spawn transform at the end of the last track segment
-                int seg_idx = current_track->num_segments - 1;
-                const int columns = 6;
-                const float column_width_start = -0.6f;
-                const float column_width_end = 0.6f;
-                const float row_spacing = 20.0f;
-                const float start_offset = 40.0f;
+		int seg_idx = current_track->num_segments - 1;
+		const int columns = 6;
+		const float column_width_start = -0.6f;
+		const float column_width_end = 0.6f;
+		const float row_spacing = 20.0f;
+		const float start_offset = 40.0f;
 
-                float distance_back = start_offset + i * 10;
-                while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
-                        distance_back -= current_track->segments[seg_idx].segment_length;
-                        seg_idx -= 1;
-                }
-                if (seg_idx < 0) {
-                        seg_idx = 0;
-                        distance_back = 0.0f;
-                }
+		float distance_back = start_offset + i * 10;
+		while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
+			distance_back -= current_track->segments[seg_idx].segment_length;
+			seg_idx -= 1;
+		}
+		if (seg_idx < 0) {
+			seg_idx = 0;
+			distance_back = 0.0f;
+		}
 
-                const TrackSegment &spawn_seg = current_track->segments[seg_idx];
-                float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
-                float t_x = remap_float(static_cast<float>(i % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
+		const TrackSegment &spawn_seg = current_track->segments[seg_idx];
+		float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
+		float t_x = remap_float(static_cast<float>(i % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
 
-                godot::Transform3D spawn_transform;
-                spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
-                spawn_transform.basis.transpose();
-                spawn_transform.basis.orthonormalize();
-                spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
-        		godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.1f;
+		godot::Transform3D spawn_transform;
+		spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
+		spawn_transform.basis.transpose();
+		spawn_transform.basis.orthonormalize();
+		spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
+		godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.1f;
 
-                cars[i].position_current = spawn_transform.origin + up_offset;
-                cars[i].position_old = spawn_transform.origin + up_offset;
-                cars[i].position_old_2 = spawn_transform.origin + up_offset;
-                cars[i].position_old_dupe = spawn_transform.origin + up_offset;
-                cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+		cars[i].position_current = spawn_transform.origin + up_offset;
+		cars[i].position_old = spawn_transform.origin + up_offset;
+		cars[i].position_old_2 = spawn_transform.origin + up_offset;
+		cars[i].position_old_dupe = spawn_transform.origin + up_offset;
+		cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
 
-                cars[i].mtxa->push();
-                cars[i].mtxa->cur->origin = spawn_transform.origin + up_offset;
-                cars[i].basis_physical.basis = spawn_transform.basis;
-                cars[i].basis_physical_other.basis = spawn_transform.basis;
-                cars[i].rotate_mtxa_from_diff_btwn_machine_front_and_back();
-                cars[i].mtxa->pop();
+		cars[i].mtxa->push();
+		cars[i].mtxa->cur->origin = spawn_transform.origin + up_offset;
+		cars[i].basis_physical.basis = spawn_transform.basis;
+		cars[i].basis_physical_other.basis = spawn_transform.basis;
+		cars[i].rotate_mtxa_from_diff_btwn_machine_front_and_back();
+		cars[i].mtxa->pop();
 
-                cars[i].transform_visual = spawn_transform;
-                cars[i].track_surface_normal = spawn_transform.basis.get_column(1);
-        }
+		cars[i].transform_visual = spawn_transform;
+		cars[i].track_surface_normal = spawn_transform.basis.get_column(1);
+	}
 
 	input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
 	for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
