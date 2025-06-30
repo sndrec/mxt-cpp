@@ -16,38 +16,14 @@ public:
 	TrackSegment* segments;
 	int candidate_scratch[8];
 	int candidate_use;
-	bool* visited_checkpoints;
+	uint32_t visit_gen;
+	uint32_t* visit_stamp;
 	int* checkpoint_stack;
 	CollisionCheckpoint* checkpoints;
 	int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
 	void cast_vs_track(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = true);
 	void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
 	void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
-	std::vector<int> get_viable_checkpoints(godot::Vector3 in_point)
-	{
-		int num_candidates = 0;
-		for (int i = 0; i < num_checkpoints; i++)
-		{
-			if (!checkpoints[i].start_plane.is_point_over(in_point))
-			{
-				continue;
-			}
-			if (checkpoints[i].end_plane.is_point_over(in_point))
-			{
-				continue;
-			}
-			godot::Vector3 avg_pos = (checkpoints[i].position_start + checkpoints[i].position_end) * 0.5f;
-			float max_x_radius = fmaxf(checkpoints[i].x_radius_start, checkpoints[i].x_radius_end);
-			float max_y_radius = fmaxf(checkpoints[i].y_radius_start, checkpoints[i].y_radius_end);
-			float max_total_radius = fmaxf(max_x_radius, max_y_radius);
-			float radius = (checkpoints[i].position_end - checkpoints[i].position_start).length_squared() + max_total_radius * max_total_radius;
-			if (in_point.distance_squared_to(avg_pos) < radius)
-			{
-				candidate_scratch[num_candidates] = i;
-				num_candidates++;
-			}
-		}
-	}
 	int get_best_checkpoint(godot::Vector3 in_point)
 	{
 		int num_valid = 0;
@@ -71,6 +47,10 @@ public:
 				}
 				candidate_scratch[num_valid] = i;
 				num_valid += 1;
+				if (num_valid == 8)
+				{
+					break;
+				}
 			}
 		}
 		if (num_valid == 0)
@@ -82,6 +62,11 @@ public:
 		for (int i = 0; i < num_valid; i++) {
 			int idx = candidate_scratch[i];
 			const CollisionCheckpoint &cp = checkpoints[idx];
+
+			if (num_valid > 1)
+			{
+				checkpoints[idx].debug_draw(2.0f);
+			}
 
 			// project pos onto segment
 			godot::Vector3 p1    = cp.start_plane.project(in_point);
@@ -110,6 +95,10 @@ public:
 				best_cp    = idx;
 			}
 		}
+		if (num_valid > 1)
+		{
+			checkpoints[best_cp].debug_draw(5.0f);
+		}
 		return best_cp;
 	}
 	int get_best_checkpoint(godot::Vector3 in_point, int start_idx)
@@ -117,8 +106,7 @@ public:
 		if (start_idx < 0 || start_idx >= num_checkpoints)
 			return get_best_checkpoint(in_point);
 
-		for (int i = 0; i < num_checkpoints; i++)
-			visited_checkpoints[i] = false;
+		visit_gen += 1;
 
 		int stack_top = 0;
 		int num_valid = 0;
@@ -127,9 +115,9 @@ public:
 
 		while (stack_top > 0) {
 			int idx = checkpoint_stack[--stack_top];
-			if (visited_checkpoints[idx])
+			if (visit_stamp[idx] == visit_gen)
 				continue;
-			visited_checkpoints[idx] = true;
+			visit_stamp[idx] = visit_gen;
 
 			CollisionCheckpoint &cp = checkpoints[idx];
 			bool passed_start = cp.start_plane.is_point_over(in_point);
@@ -139,12 +127,16 @@ public:
 			if (passed_start && !passed_end) {
 				candidate_scratch[num_valid++] = idx;
 			}
+			if (num_valid == 8)
+			{
+				break;
+			}
 
 			for (int i = 0; i < cp.num_neighboring_checkpoints; i++) {
 				int neighbor = cp.neighboring_checkpoints[i];
 				if (neighbor < 0 || neighbor >= num_checkpoints)
 					continue;
-				if (visited_checkpoints[neighbor])
+				if (visit_stamp[neighbor] == visit_gen)
 					continue;
 
 				// Prune based on checkpoint ordering and spatial relation
@@ -187,7 +179,7 @@ public:
 			float y_r = lerp(cp.y_radius_start_inv, cp.y_radius_end_inv, cp_t);
 
 			float tx = sep_x.distance_to(in_point) * x_r;
-			float ty = sep_y.distance_to(in_point) * y_r;
+			float ty = sep_y.distance_to(in_point) * x_r;
 			float dist2 = tx * tx + ty * ty;
 
 			if (dist2 < best_dist2) {

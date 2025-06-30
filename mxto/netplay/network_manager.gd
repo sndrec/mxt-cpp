@@ -398,7 +398,10 @@ func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int,
 			var tick := start_tick + i
 			var frame = inputs[i]
 			authoritative_inputs[tick] = frame
-			_handle_input_update(tick, frame)
+			input_history[tick] = frame	# apply immediately to history as well
+
+		# rollback once from the first updated tick
+		_handle_input_update(start_tick, authoritative_inputs[start_tick])
 		last_server_input_tick = max(last_server_input_tick, last_tick)
 	if this_ack:
 		var ack_tick := this_ack
