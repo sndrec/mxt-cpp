@@ -158,11 +158,13 @@ class CarSimApp:
 		t = 0.0
 		steps = int(duration / dt)
 
+		dt_scale = 60 * dt
+
 		for _ in range(steps):
 			accel_stat_scaled = 40.0 * props["acceleration"]
 			target_speed_component = (input_accel * accel_stat_scaled) / 348.0 + base_speed
 			normalized_fwd_speed = speed / props["weight_kg"]
-			speed_difference = target_speed_component - normalized_fwd_speed
+			speed_difference = (target_speed_component - normalized_fwd_speed)
 			speed_factor_denom = 36.0 + 40.0 * props["max_speed"] + boost_turbo * 2.0
 			speed_factor = target_speed_component / speed_factor_denom if abs(speed_factor_denom) > 1e-4 else 0.0
 			speed_factor = max(speed_factor, 0.0)
@@ -170,19 +172,21 @@ class CarSimApp:
 			final_accel_term = speed_difference * current_accel_magnitude + (abs_local_lateral_speed * props["acceleration"] / props["weight_kg"]) * props["turn_decel"]
 			if input_accel < 1.0:
 				final_accel_term *= (0.05 + 0.95 * input_accel)
-			base_speed = target_speed_component - final_accel_term
-			base_speed = max(base_speed - props["drag"], 0.0)
+			new_base_speed = target_speed_component - final_accel_term
+			new_base_speed = max(new_base_speed - props["drag"], 0.0)
+			base_speed_add = new_base_speed - base_speed
+			base_speed += base_speed_add * dt_scale
 			final_thrust_output = 1000.0 * speed_difference
 			if final_thrust_output < 0.0 or normalized_fwd_speed < 0.0:
 				final_thrust_output *= 0.25
-			speed += final_thrust_output
+			speed += final_thrust_output * dt_scale
 			speed_weight_ratio = speed / props["weight_kg"]
 			scaled_speed = 216.0 * speed_weight_ratio
 			if scaled_speed < 2.0:
 				speed = 0.0
 			else:
 				base_drag_mag = speed_weight_ratio * speed_weight_ratio * 8.0
-				speed = max(speed - base_drag_mag, 0.0)
+				speed = max(speed - base_drag_mag * dt_scale, 0.0)
 			times.append(t)
 			base_speeds.append((speed / props["weight_kg"]) * 216)
 			t += dt
