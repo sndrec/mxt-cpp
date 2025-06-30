@@ -216,21 +216,19 @@ void RoadTransformCurve::sample(godot::Transform3D &out, float in_t) const {
 	if (num_keyframes == 0) {
 		return;
 	}
-	if (num_keyframes == 1) {
-		const float *v0 = values;
-		out.basis.set(
-			v0[3],  v0[6],  v0[9],
-			v0[4],  v0[7], v0[10],
-			v0[5],  v0[8], v0[11]
-		);
-		out.origin.x = v0[0];
-		out.origin.y = v0[1];
-		out.origin.z = v0[2];
-		out.basis.scale_local(
-			godot::Vector3(v0[12], v0[13], v0[14])
-		);
-		return;
-	}
+       if (num_keyframes == 1) {
+               const float *v0 = values;
+               const godot::Vector3 scale(v0[12], v0[13], v0[14]);
+               out.basis.set(
+                       v0[3] * scale.x,  v0[6] * scale.y,  v0[9] * scale.z,
+                       v0[4] * scale.x,  v0[7] * scale.y,  v0[10] * scale.z,
+                       v0[5] * scale.x,  v0[8] * scale.y,  v0[11] * scale.z
+               );
+               out.origin.x = v0[0];
+               out.origin.y = v0[1];
+               out.origin.z = v0[2];
+               return;
+       }
 
 	// clamp
 	if (in_t <= times[0]) {
@@ -294,15 +292,13 @@ void RoadTransformCurve::sample(godot::Transform3D &out, float in_t) const {
         }
 #endif
 
-	out.basis.set(
-		sampled[3],  sampled[6],  sampled[9],
-		sampled[4],  sampled[7], sampled[10],
-		sampled[5],  sampled[8], sampled[11]
-	);
-	out.origin.x = sampled[0];
-	out.origin.y = sampled[1];
-	out.origin.z = sampled[2];
-	out.basis.scale_local(
-		godot::Vector3(sampled[12], sampled[13], sampled[14])
-	);
+       const godot::Vector3 scale(sampled[12], sampled[13], sampled[14]);
+       out.basis.set(
+               sampled[3] * scale.x,  sampled[6] * scale.y,  sampled[9] * scale.z,
+               sampled[4] * scale.x,  sampled[7] * scale.y, sampled[10] * scale.z,
+               sampled[5] * scale.x,  sampled[8] * scale.y, sampled[11] * scale.z
+       );
+       out.origin.x = sampled[0];
+       out.origin.y = sampled[1];
+       out.origin.z = sampled[2];
 }

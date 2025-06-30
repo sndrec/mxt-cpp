@@ -1448,14 +1448,21 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 				DEBUG::disp_text("surface basis", surf.basis);
 			}
 			//DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
-			if (surf.basis[0].length_squared() >= 0.1) {
-				godot::Plane surface_plane = godot::Plane(surf.basis[1].normalized(), surf.origin);
-				godot::Vector3 intersect;
-				hit_found = surface_plane.intersects_segment(p0_ray_start_ws, p1_ray_end_ws, &intersect);
-				//DEBUG::disp_text("intersected", hit_found);
-				if (hit_found){
-					in_corner.pos = intersect;
-					in_corner.up_vector_2 = surface_plane.normal;
+                       if (surf.basis[0].length_squared() >= 0.1) {
+                               const godot::Vector3 plane_n = surf.basis[1];
+                               const godot::Vector3 plane_p = surf.origin;
+                               const godot::Vector3 ray_dir = p1_ray_end_ws - p0_ray_start_ws;
+                               const float denom = ray_dir.dot(plane_n);
+                               float t = 0.0f;
+                               if (std::abs(denom) > 0.000001f) {
+                                       t = (plane_p - p0_ray_start_ws).dot(plane_n) / denom;
+                               }
+                               hit_found = t >= 0.0f && t <= 1.0f;
+                               godot::Vector3 intersect = p0_ray_start_ws + ray_dir * t;
+                                //DEBUG::disp_text("intersected", hit_found);
+                                if (hit_found){
+                                        in_corner.pos = intersect;
+                                        in_corner.up_vector_2 = plane_n.normalized();
 
 					float total_sweep_length = p0.distance_to(p1_ray_end_ws);
 					float hit_fraction = 0.0f;
@@ -1538,25 +1545,23 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 
 godot::Vector3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
 {
-	PhysicsCarSuspensionPoint* corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
-	std::vector<int> valid_indices;
-	for (int i = 0; i < 4; ++i) {
-		PhysicsCarSuspensionPoint* current_corner = corners[i];
-		update_suspension_forces(*current_corner);
-		bool corner_valid = (current_corner->state & TILTSTATE::AIRBORNE) == 0;
-		if (corner_valid)
-			valid_indices.push_back(i);
-	}
+       PhysicsCarSuspensionPoint* corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
+       godot::Vector3 normal_sum(0, 0, 0);
+       int valid_count = 0;
+       for (int i = 0; i < 4; ++i) {
+               PhysicsCarSuspensionPoint* current_corner = corners[i];
+               update_suspension_forces(*current_corner);
+               if ((current_corner->state & TILTSTATE::AIRBORNE) == 0) {
+                       normal_sum += current_corner->up_vector;
+                       ++valid_count;
+               }
+       }
 
-	if (!valid_indices.empty()) {
-		godot::Vector3 calculated_normal(0, 0, 0);
-		for (int idx : valid_indices) {
-			calculated_normal += corners[idx]->up_vector;
-		}
-		return calculated_normal.normalized();
-	}
+       if (valid_count > 0) {
+               return normal_sum.normalized();
+       }
 
-	return godot::Vector3();
+       return godot::Vector3();
 };
 
 void PhysicsCar::set_terrain_state_from_track()
