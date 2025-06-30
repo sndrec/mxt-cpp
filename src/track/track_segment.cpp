@@ -322,12 +322,17 @@ void RoadShape::get_oriented_transform_at_time(godot::Transform3D &out_transform
 	pos_forward -= base_pos;
 
 	const float normal_sign = -(sign_x * sign_y);
-       const godot::Vector3 normal = normal_sign * pos_right.cross(pos_forward);
+	godot::Vector3 normal = normal_sign * pos_right.cross(pos_forward);
 
-       godot::Basis basis;
-       basis[0] = sign_x * pos_right;
-       basis[1] = normal;
-       basis[2] = sign_y * pos_forward;
+	pos_right.normalize();
+	normal.normalize();
+	pos_forward.normalize();
 
-	out_transform = godot::Transform3D(basis, base_pos);
+	godot::Basis basis;
+	basis[0] = sign_x * pos_right;
+	basis[1] = normal;
+	basis[2] = sign_y * pos_forward;
+
+	out_transform.basis = basis;
+	out_transform.origin = base_pos;
 }

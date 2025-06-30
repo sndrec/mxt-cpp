@@ -440,7 +440,7 @@ func post_tick() -> void:
 						start = k
 					arr.append(authoritative_history[k])
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick[id], send_state, target_tick, max_ahead)
+			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, null), send_state, target_tick, max_ahead)
 		server_tick += 1
 
 func _idle_broadcast() -> void:
@@ -466,7 +466,7 @@ func _idle_broadcast() -> void:
 			last_tick,
 			arr,
 			player_ids,
-			last_received_tick[id],
+			last_received_tick.get(id, null),
 			PackedByteArray(),
 			target_tick,
 			max_ahead
