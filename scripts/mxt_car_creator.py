@@ -246,10 +246,10 @@ class CarSimFrame:
                 balance = self.balance_slider.get() / 100.0
                 input_accel = self.input_accel_slider.get()
                 props = self.derive_stats(self.car_props.copy(), balance)
-                times, base_speeds = self.simulate(props, starting_speed, input_accel)
+                times, speeds = self.simulate(props, starting_speed, input_accel)
 
                 self.ax.clear()
-                self.ax.plot(times, base_speeds)
+                self.ax.plot(times, speeds)
                 self.ax.set_ylim(bottom=0)
                 self.ax.set_xlabel("Time (s)")
                 self.ax.set_ylabel("Base Speed")
@@ -257,11 +257,18 @@ class CarSimFrame:
                 self.ax.grid(True)
                 self.canvas.draw()
 
-                final_speed = base_speeds[-1]
-                threshold = final_speed * 0.99
-                reach_time = next((t for t, s in zip(times, base_speeds) if s >= threshold), times[-1])
+                final_speed = speeds[-1]
+                threshold = final_speed * 0.999
+                reach_time = next((t for t, s in zip(times, speeds) if s >= threshold), times[-1])
 
-                thresh = self.find_mt_threshold(props)
+                thresh = 0.0
+
+
+                for i in range(20):
+                    thresh += self.find_mt_threshold(props, starting_speed=2500.0+i*50)
+
+                thresh *= 0.05
+
                 self.result_label.config(
                         text=f"Top Speed: {final_speed:.3f}  "
                              f"Time to Reach: {reach_time:.2f}s  "
@@ -334,7 +341,7 @@ class CarSimFrame:
                 abs_local_lateral_speed = 0.0
 
                 times = []
-                base_speeds = []
+                speeds = []
                 t = 0.0
                 steps = int(duration / dt)
 
@@ -368,10 +375,10 @@ class CarSimFrame:
                                 base_drag_mag = speed_weight_ratio * speed_weight_ratio * 8.0
                                 speed = max(speed - base_drag_mag * dt_scale, 0.0)
                         times.append(t)
-                        base_speeds.append((speed / props["weight_kg"]) * 216)
+                        speeds.append((speed / props["weight_kg"]) * 216)
                         t += dt
 
-                return times, base_speeds
+                return times, speeds
 
         # ---- helpers to measure post-warm-up slope and locate threshold --------
         def _slope_after(self, props, start_speed, input_accel,
