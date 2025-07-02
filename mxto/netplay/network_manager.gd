@@ -445,6 +445,9 @@ func post_tick() -> void:
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
 			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, null), send_state, target_tick, max_ahead)
 		server_tick += 1
+		if listen_server:
+			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
+			_prune_authoritative_history()
 
 func _idle_broadcast() -> void:
 	if server_game_sim == null:
