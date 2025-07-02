@@ -23,7 +23,7 @@ settings/3d/volumetric_defaults/plane_size=90.0
 [display]
 
 window/size/viewport_width=640
-window/size/viewport_height=480
+window/size/viewport_height=360
 
 [editor_plugins]
 
