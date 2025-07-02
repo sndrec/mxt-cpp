@@ -230,6 +230,13 @@ class CarSimFrame:
                 self.result_label = tk.Label(master, text="")
                 self.result_label.pack()
 
+                self.precise_button = tk.Button(
+                        master,
+                        text="Calculate Precise MT Threshold",
+                        command=self.calculate_precise_mt_threshold,
+                )
+                self.precise_button.pack(pady=5)
+
         def set_car_props(self, props):
                 self.car_props = props
                 self.update_graph(None)
@@ -246,7 +253,7 @@ class CarSimFrame:
                 balance = self.balance_slider.get() / 100.0
                 input_accel = self.input_accel_slider.get()
                 props = self.derive_stats(self.car_props.copy(), balance)
-                times, speeds, _ = self.simulate(props, starting_speed, input_accel)
+                times, speeds, _ = self.simulate(props, starting_speed, input_accel, duration = 30)
 
                 self.ax.clear()
                 self.ax.plot(times, speeds)
@@ -260,19 +267,33 @@ class CarSimFrame:
                 final_speed = speeds[-1]
                 threshold = final_speed * 0.999
                 reach_time = next((t for t, s in zip(times, speeds) if s >= threshold), times[-1])
+                self.ax.set_xlim(right=reach_time)
 
-                thresh = 0.0
-
-
-                for i in range(20):
-                    thresh += self.find_mt_threshold(props, starting_speed=2500.0+i*50)
-
-                thresh *= 0.05
+                thresh = self.find_mt_threshold(props, starting_speed=3000.0)
 
                 self.result_label.config(
                         text=f"Top Speed: {final_speed:.3f}  "
                              f"Time to Reach: {reach_time:.2f}s  "
                              f"MT Threshold ≈ {thresh:.2f}"
+                )
+        def calculate_precise_mt_threshold(self):
+                if not self.car_props:
+                        return
+
+                balance = self.balance_slider.get() / 100.0
+                input_accel = self.input_accel_slider.get()
+                props = self.derive_stats(self.car_props.copy(), balance)
+
+                total = 0.0
+                count = 0
+                for speed in range(2500, 3501, 25):
+                        total += self.find_mt_threshold(props, starting_speed=float(speed))
+                        count += 1
+
+                avg_thresh = total / count if count else 0.0
+                messagebox.showinfo(
+                        "Precise MT Threshold",
+                        f"Average threshold from 2500-3500: {avg_thresh:.2f}\nSamples taken: {count}"
                 )
 
         def derive_stats(self, result, g_balance):
