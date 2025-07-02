@@ -381,20 +381,16 @@ func collect_client_inputs() -> Array:
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) -> void:
 	if is_server:
-		var id := multiplayer.get_remote_sender_id()
-		var last_ack = last_received_tick.get(id, -1)
 		for i in range(inputs.size()):
 			var tick := start_tick + i
-			if tick <= last_ack:
-				continue
 			var input = inputs[i]
 			if not pending_inputs.has(tick):
 				pending_inputs[tick] = {}
-			pending_inputs[tick][id] = input
-			last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
-			last_received_tick[id] = tick
-		peer_desired_ahead[id] = ahead
-		authoritative_acks[id] = max(ack, authoritative_acks.get(id, -1))
+			pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
+			last_input_time[multiplayer.get_remote_sender_id()] = 0.001 * float(Time.get_ticks_msec())
+			last_received_tick[multiplayer.get_remote_sender_id()] = tick
+		peer_desired_ahead[multiplayer.get_remote_sender_id()] = ahead
+		authoritative_acks[multiplayer.get_remote_sender_id()] = max(ack, authoritative_acks.get(multiplayer.get_remote_sender_id(), -1))
 		_prune_authoritative_history()
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
@@ -515,7 +511,6 @@ func _check_client_stalls() -> void:
 				if prev.size() == player_ids.size():
 					inp = prev[i]
 				waiting[pid] = inp
-				last_received_tick[pid] = server_tick
 		pending_inputs[server_tick] = waiting
 
 var rollback_frametime_us = 0
