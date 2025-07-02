@@ -246,7 +246,7 @@ class CarSimFrame:
                 balance = self.balance_slider.get() / 100.0
                 input_accel = self.input_accel_slider.get()
                 props = self.derive_stats(self.car_props.copy(), balance)
-                times, speeds = self.simulate(props, starting_speed, input_accel)
+                times, speeds, _ = self.simulate(props, starting_speed, input_accel)
 
                 self.ax.clear()
                 self.ax.plot(times, speeds)
@@ -334,9 +334,12 @@ class CarSimFrame:
 
                 return result
 
-        def simulate(self, props, starting_speed, input_accel, duration=15.0, dt=1/60.0):
+        def simulate(self, props, starting_speed, input_accel, duration=15.0, dt=1/60.0, starting_base_speed=None):
                 speed = (starting_speed * props["weight_kg"]) / 216
-                base_speed = speed / props["weight_kg"]
+                if starting_base_speed is None:
+                        base_speed = speed / props["weight_kg"]
+                else:
+                        base_speed = starting_base_speed
                 boost_turbo = 0.0
                 abs_local_lateral_speed = 0.0
 
@@ -378,13 +381,13 @@ class CarSimFrame:
                         speeds.append((speed / props["weight_kg"]) * 216)
                         t += dt
 
-                return times, speeds
+                return times, speeds, base_speed
 
         # ---- helpers to measure post-warm-up slope and locate threshold --------
         def _slope_after(self, props, start_speed, input_accel,
                         warmup_steps=60, dt=1/60.0):
                 total_steps = warmup_steps + 2                          # need two more frames
-                _, bs = self.simulate(props, start_speed, input_accel,
+                _, bs, _ = self.simulate(props, start_speed, input_accel,
                         duration=total_steps * dt, dt=dt)
                 k = warmup_steps                                               # first frame after warm-up
                 return (bs[k+1] - bs[k-1]) / (2 * dt)           # central diff
@@ -402,15 +405,16 @@ class CarSimFrame:
                                 v_hi = v_mid
                 return v_hi                     # ≈ threshold speed
 
-        def _segment(self, props, start_speed, input_accel, frames, dt):
+        def _segment(self, props, start_speed, start_base_speed, input_accel, frames, dt):
                 if frames == 0:
-                        return start_speed, 0.0
-                _, speeds = self.simulate(
+                        return start_speed, start_base_speed, 0.0
+                _, speeds, base_speed = self.simulate(
                         props, start_speed, input_accel,
-                        duration=frames * dt, dt=dt
+                        duration=frames * dt, dt=dt,
+                        starting_base_speed=start_base_speed
                 )
                 distance = sum(s * dt for s in speeds)          # integrate speed
-                return speeds[-1], distance                             # final speed, distance
+                return speeds[-1], base_speed, distance          # final speed, base speed, distance
 
         def find_mt_threshold(self, props,
                         starting_speed=3000.0, duration=15.0, dt=1/60.0):
@@ -418,8 +422,10 @@ class CarSimFrame:
 
                 def total_distance(switch_frame):
                         switch = int(switch_frame)
-                        speed_after, dist1 = self._segment(props, starting_speed, 0.0, switch, dt)
-                        _, dist2 = self._segment(props, speed_after, 1.0, steps - switch, dt)
+                        speed_after, base_after, dist1 = self._segment(
+                                props, starting_speed, None, 0.0, switch, dt)
+                        _, _, dist2 = self._segment(
+                                props, speed_after, base_after, 1.0, steps - switch, dt)
                         return dist1 + dist2, speed_after
 
                 lo = 0
