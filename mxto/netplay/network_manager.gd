@@ -220,6 +220,7 @@ func join(ip: String, port: int = 27016) -> int:
 	player_settings.clear()
 	for packet_peer:ENetPacketPeer in peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 	return OK
 
 func _on_peer_connected(id: int) -> void:
@@ -239,6 +240,7 @@ func _on_peer_connected(id: int) -> void:
 		_calc_state_offsets()
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 
 func _on_peer_disconnected(id: int) -> void:
 	if is_server:
@@ -254,6 +256,7 @@ func _on_peer_disconnected(id: int) -> void:
 			_calc_state_offsets()
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 
 func flush_waiting_peers() -> void:
 	if not is_server:
@@ -275,6 +278,7 @@ func flush_waiting_peers() -> void:
 			update_player_settings.rpc(player_settings[id], id)
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 
 @rpc("any_peer", "reliable")
 func _update_player_ids(ids: Array) -> void:
@@ -283,6 +287,7 @@ func _update_player_ids(ids: Array) -> void:
 		_calc_state_offsets()
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 
 @rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array) -> void:
@@ -293,6 +298,7 @@ func start_race(track_index: int, settings: Array) -> void:
 			last_input_time[id] = now
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 
 func send_start_race(track_index: int, settings: Array) -> void:
 	if is_server:
@@ -306,6 +312,7 @@ func end_race() -> void:
 	emit_signal("race_finished")
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 
 func send_end_race() -> void:
 	if is_server:
@@ -335,6 +342,7 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 		player_settings[id] = settings
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
+		packet_peer.ping_interval(100)
 
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input
