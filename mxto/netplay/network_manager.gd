@@ -29,8 +29,6 @@ var sent_inputs_bytes := {}
 var server_tick: int = 0
 var local_tick: int = 0
 const INPUT_HISTORY_SIZE := 300
-const AUTHORITATIVE_HISTORY_SIZE := 600
-const SENT_HISTORY_SIZE := 600
 var game_sim: GameSim
 var server_game_sim: GameSim
 var last_received_tick := {}
@@ -45,6 +43,7 @@ var base_wait_time: float = 1.0 / 60.0
 const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.005
+var _accum: float = 0.0	# local frame accumulator
 var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
@@ -142,7 +141,6 @@ func server_process() -> void:
 		if server_tick < target_tick:
 			_idle_broadcast()
 		_check_client_stalls()
-		_prune_authoritative_history()
 	elif !is_server and game_sim != null and game_sim.sim_started:
 		clients_target_tick += 1
 		if clients_target_tick > clients_server_tick + MAX_AHEAD_TICKS:
@@ -222,7 +220,6 @@ func join(ip: String, port: int = 27016) -> int:
 	player_settings.clear()
 	for packet_peer:ENetPacketPeer in peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 	return OK
 
 func _on_peer_connected(id: int) -> void:
@@ -242,7 +239,6 @@ func _on_peer_connected(id: int) -> void:
 		_calc_state_offsets()
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 
 func _on_peer_disconnected(id: int) -> void:
 	if is_server:
@@ -254,11 +250,10 @@ func _on_peer_disconnected(id: int) -> void:
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
 			peer_desired_ahead.erase(id)
-		_update_player_ids.rpc(player_ids)
-		_calc_state_offsets()
+			_update_player_ids.rpc(player_ids)
+			_calc_state_offsets()
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 
 func flush_waiting_peers() -> void:
 	if not is_server:
@@ -280,7 +275,6 @@ func flush_waiting_peers() -> void:
 			update_player_settings.rpc(player_settings[id], id)
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 
 @rpc("any_peer", "reliable")
 func _update_player_ids(ids: Array) -> void:
@@ -289,7 +283,6 @@ func _update_player_ids(ids: Array) -> void:
 		_calc_state_offsets()
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 
 @rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array) -> void:
@@ -300,7 +293,6 @@ func start_race(track_index: int, settings: Array) -> void:
 			last_input_time[id] = now
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 
 func send_start_race(track_index: int, settings: Array) -> void:
 	if is_server:
@@ -314,7 +306,6 @@ func end_race() -> void:
 	emit_signal("race_finished")
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 
 func send_end_race() -> void:
 	if is_server:
@@ -344,7 +335,6 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 		player_settings[id] = settings
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
-		packet_peer.ping_interval(100)
 
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input
@@ -424,7 +414,6 @@ func collect_client_inputs() -> Array:
 	if input_history.has(local_tick - INPUT_HISTORY_SIZE):
 		input_history.erase(local_tick - INPUT_HISTORY_SIZE)
 	local_tick += 1
-	_prune_sent_history()
 	_adjust_time_scale()
 	return frame_inputs
 
@@ -503,9 +492,6 @@ func post_tick() -> void:
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
 			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, null), send_state, target_tick, max_ahead)
 		server_tick += 1
-		if listen_server:
-			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
-			_prune_authoritative_history()
 
 func _idle_broadcast() -> void:
 	if server_game_sim == null:
@@ -559,6 +545,7 @@ var rollback_frametime_us = 0
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
 		return
+	var local_state: PackedByteArray = game_sim.get_state_data(tick)
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
 	var current := tick + 1
@@ -626,21 +613,11 @@ func _prune_authoritative_history() -> void:
 		var ack = authoritative_acks.get(id, -1)
 		if min_ack == -1 or ack < min_ack:
 			min_ack = ack
-	var cutoff := server_tick - AUTHORITATIVE_HISTORY_SIZE
-	if min_ack == -1 or cutoff < min_ack:
-		min_ack = max(min_ack, cutoff)
+	if min_ack == -1:
+		return
 	for key in authoritative_history.keys():
 		if key <= min_ack:
 			authoritative_history.erase(key)
-
-func _prune_sent_history() -> void:
-	var cutoff := local_tick - SENT_HISTORY_SIZE
-	for key in sent_inputs_bytes.keys():
-		if key <= cutoff:
-			sent_inputs_bytes.erase(key)
-	for key in sent_input_times.keys():
-		if key <= cutoff:
-			sent_input_times.erase(key)
 
 func _update_desired_ahead() -> void:
 	desired_ahead_ticks = ((rtt_s) + JITTER_BUFFER) / base_wait_time
