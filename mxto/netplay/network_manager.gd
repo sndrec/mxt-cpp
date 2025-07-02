@@ -41,7 +41,7 @@ var desired_ahead_ticks: float = 2.0
 var base_wait_time: float = 1.0 / 60.0
 const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
-const SPEED_ADJUST_STEP := 0.001
+const SPEED_ADJUST_STEP := 0.0003
 var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
@@ -620,7 +620,7 @@ func _adjust_time_scale() -> void:
 		Engine.physics_ticks_per_second = roundi(use_physics_ticks * 60.0);
 		return
 	if diff > 0:
-		use_physics_ticks = clamp(use_physics_ticks + SPEED_ADJUST_STEP, 0.5, 1.5)
+		use_physics_ticks = clamp(use_physics_ticks + SPEED_ADJUST_STEP * absf(diff), 1.0, 2.0)
 	else:
-		use_physics_ticks = clamp(use_physics_ticks - SPEED_ADJUST_STEP, 0.5, 1.5)
+		use_physics_ticks = clamp(use_physics_ticks - SPEED_ADJUST_STEP * absf(diff), 0.5, 1.0)
 	Engine.physics_ticks_per_second = roundi(use_physics_ticks * 60.0);
