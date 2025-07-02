@@ -41,7 +41,7 @@ var desired_ahead_ticks: float = 2.0
 var base_wait_time: float = 1.0 / 60.0
 const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
-const SPEED_ADJUST_STEP := 0.005
+const SPEED_ADJUST_STEP := 0.001
 var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
@@ -448,8 +448,9 @@ func post_tick() -> void:
 						start = k
 					arr.append(authoritative_history[k])
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
+			_server_broadcast.rpc_id(id, max(0, last_tick), arr, player_ids, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
 		server_tick += 1
+		_prune_authoritative_history()
 
 func _idle_broadcast() -> void:
 	if server_game_sim == null:
@@ -471,7 +472,7 @@ func _idle_broadcast() -> void:
 		var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
 		_server_broadcast.rpc_id(
 			id,
-			last_tick,
+			max(last_tick, 0),
 			arr,
 			player_ids,
 			last_received_tick.get(id, -1),
@@ -502,6 +503,8 @@ var rollback_frametime_us = 0
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
+		return
+	if tick == -1:
 		return
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
