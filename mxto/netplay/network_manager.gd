@@ -43,7 +43,6 @@ var base_wait_time: float = 1.0 / 60.0
 const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.005
-var _accum: float = 0.0	# local frame accumulator
 var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
@@ -252,8 +251,8 @@ func _on_peer_disconnected(id: int) -> void:
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
 			peer_desired_ahead.erase(id)
-			_update_player_ids.rpc(player_ids)
-			_calc_state_offsets()
+		_update_player_ids.rpc(player_ids)
+		_calc_state_offsets()
 	for packet_peer:ENetPacketPeer in multiplayer.multiplayer_peer.host.get_peers():
 		packet_peer.set_timeout(15000, 15000, 20000)
 		packet_peer.ping_interval(100)
@@ -556,7 +555,6 @@ var rollback_frametime_us = 0
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
 		return
-	var local_state: PackedByteArray = game_sim.get_state_data(tick)
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
 	var current := tick + 1
