@@ -494,14 +494,24 @@ func _check_client_stalls() -> void:
 		return
 	var waiting = pending_inputs.get(server_tick, {})
 	var now := 0.001 * float(Time.get_ticks_msec())
+	var missing := []
 	for id in player_ids:
 		if not waiting.has(id):
-			if not last_input_time.has(id):
-				continue	# haven’t ever received a packet from this guy yet
-			if now - float(last_input_time[id]) > 10.0:	# give them 10 s grace
+			missing.append(id)
+			if last_input_time.has(id) and now - float(last_input_time[id]) > 10.0:
 				push_error("Client %s stalled, disconnecting" % str(id))
 				multiplayer.disconnect_peer(id)
 				_on_peer_disconnected(id)
+	if target_tick - server_tick > 5 and missing.size() > 0:
+		var prev = authoritative_history.get(server_tick - 1, [])
+		for i in range(player_ids.size()):
+			var pid = player_ids[i]
+			if missing.has(pid):
+				var inp : PackedByteArray = NEUTRAL_INPUT_BYTES
+				if prev.size() == player_ids.size():
+					inp = prev[i]
+				waiting[pid] = inp
+		pending_inputs[server_tick] = waiting
 
 var rollback_frametime_us = 0
 
