@@ -20,6 +20,11 @@ config/icon="res://icon.svg"
 settings/3d/volumetric_defaults/thickness=0.5
 settings/3d/volumetric_defaults/plane_size=90.0
 
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=480
+
 [editor_plugins]
 
 enabled=PackedStringArray()
