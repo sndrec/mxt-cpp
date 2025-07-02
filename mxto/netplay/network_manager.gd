@@ -139,11 +139,11 @@ func server_process() -> void:
 		target_tick += 1
 		if target_tick > server_tick + MAX_AHEAD_TICKS:
 			target_tick = server_tick + MAX_AHEAD_TICKS
-               if server_tick < target_tick:
-                       _idle_broadcast()
-               _check_client_stalls()
-               _prune_authoritative_history()
-        elif !is_server and game_sim != null and game_sim.sim_started:
+		if server_tick < target_tick:
+			_idle_broadcast()
+		_check_client_stalls()
+		_prune_authoritative_history()
+	elif !is_server and game_sim != null and game_sim.sim_started:
 		clients_target_tick += 1
 		if clients_target_tick > clients_server_tick + MAX_AHEAD_TICKS:
 			clients_target_tick = clients_server_tick + MAX_AHEAD_TICKS
@@ -420,13 +420,13 @@ func collect_client_inputs() -> Array:
 				frame_inputs.append(last_local_input_bytes)
 			else:
 				frame_inputs.append(NEUTRAL_INPUT_BYTES)
-       input_history[local_tick] = frame_inputs
-       if input_history.has(local_tick - INPUT_HISTORY_SIZE):
-               input_history.erase(local_tick - INPUT_HISTORY_SIZE)
-       local_tick += 1
-       _prune_sent_history()
-       _adjust_time_scale()
-       return frame_inputs
+	input_history[local_tick] = frame_inputs
+	if input_history.has(local_tick - INPUT_HISTORY_SIZE):
+		input_history.erase(local_tick - INPUT_HISTORY_SIZE)
+	local_tick += 1
+	_prune_sent_history()
+	_adjust_time_scale()
+	return frame_inputs
 
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) -> void:
@@ -621,26 +621,26 @@ func disconnect_from_server() -> void:
 	last_authoritative_input_bytes.clear()
 
 func _prune_authoritative_history() -> void:
-       var min_ack := -1
-       for id in player_ids:
-               var ack = authoritative_acks.get(id, -1)
-               if min_ack == -1 or ack < min_ack:
-                       min_ack = ack
-       var cutoff := server_tick - AUTHORITATIVE_HISTORY_SIZE
-       if min_ack == -1 or cutoff < min_ack:
-               min_ack = max(min_ack, cutoff)
-       for key in authoritative_history.keys():
-               if key <= min_ack:
-                       authoritative_history.erase(key)
+	var min_ack := -1
+	for id in player_ids:
+		var ack = authoritative_acks.get(id, -1)
+		if min_ack == -1 or ack < min_ack:
+			min_ack = ack
+	var cutoff := server_tick - AUTHORITATIVE_HISTORY_SIZE
+	if min_ack == -1 or cutoff < min_ack:
+		min_ack = max(min_ack, cutoff)
+	for key in authoritative_history.keys():
+		if key <= min_ack:
+			authoritative_history.erase(key)
 
 func _prune_sent_history() -> void:
-       var cutoff := local_tick - SENT_HISTORY_SIZE
-       for key in sent_inputs_bytes.keys():
-               if key <= cutoff:
-                       sent_inputs_bytes.erase(key)
-       for key in sent_input_times.keys():
-               if key <= cutoff:
-                       sent_input_times.erase(key)
+	var cutoff := local_tick - SENT_HISTORY_SIZE
+	for key in sent_inputs_bytes.keys():
+		if key <= cutoff:
+			sent_inputs_bytes.erase(key)
+	for key in sent_input_times.keys():
+		if key <= cutoff:
+			sent_input_times.erase(key)
 
 func _update_desired_ahead() -> void:
 	desired_ahead_ticks = ((rtt_s) + JITTER_BUFFER) / base_wait_time
