@@ -646,16 +646,11 @@ void GameSim::render_gamesim() {
 		for (int i = 0; i < current_track->num_segments; i++)
 		{
 			dd3d->call("draw_aabb", current_track->segments[i].bounds, godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
-			for (int n = 0; n < current_track->segments[i].checkpoint_run_length; n++)
-			{
-				int cp_index = current_track->segments[i].checkpoint_start + n;
-				current_track->checkpoints[cp_index].debug_draw();
-			}
 		}
 	}
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
 	{
-		DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
+		//DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
 		int use_seg_ind = current_track->checkpoints[cars[0].current_checkpoint].road_segment;
 		for (int i = 0; i < current_track->num_segments; i++)
 		{

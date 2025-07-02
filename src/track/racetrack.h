@@ -63,11 +63,6 @@ public:
 			int idx = candidate_scratch[i];
 			const CollisionCheckpoint &cp = checkpoints[idx];
 
-			if (num_valid > 1)
-			{
-				checkpoints[idx].debug_draw(2.0f);
-			}
-
 			// project pos onto segment
 			godot::Vector3 p1    = cp.start_plane.project(in_point);
 			godot::Vector3 p2    = cp.end_plane.project(in_point);
@@ -87,17 +82,13 @@ public:
 			float y_r = lerp(cp.y_radius_start_inv, cp.y_radius_end_inv, cp_t);
 
 			float tx = sep_x.distance_to(in_point) * x_r;
-			float ty = sep_y.distance_to(in_point) * x_r;
+			float ty = sep_y.distance_to(in_point) * x_r; // not a bug, we use x_r on purpose and for good reason - trust.
 			float dist2 = tx * tx + ty * ty;
 
 			if (dist2 < best_dist2) {
 				best_dist2 = dist2;
 				best_cp    = idx;
 			}
-		}
-		if (num_valid > 1)
-		{
-			checkpoints[best_cp].debug_draw(5.0f);
 		}
 		return best_cp;
 	}
@@ -140,9 +131,9 @@ public:
 					continue;
 
 				// Prune based on checkpoint ordering and spatial relation
-				if (idx < neighbor && !passed_start)
+				if (idx < neighbor && !passed_end)
 					continue;
-				if (idx > neighbor && passed_end)
+				if (idx > neighbor && passed_start)
 					continue;
 
 				checkpoint_stack[stack_top++] = neighbor;
@@ -179,7 +170,7 @@ public:
 			float y_r = lerp(cp.y_radius_start_inv, cp.y_radius_end_inv, cp_t);
 
 			float tx = sep_x.distance_to(in_point) * x_r;
-			float ty = sep_y.distance_to(in_point) * x_r;
+			float ty = sep_y.distance_to(in_point) * x_r; // not a bug, we use x_r on purpose and for good reason - trust.
 			float dist2 = tx * tx + ty * ty;
 
 			if (dist2 < best_dist2) {

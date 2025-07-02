@@ -1,6 +1,7 @@
 
 #include "physics_car.h"
 #include "godot_cpp/variant/plane.hpp"
+#include "godot_cpp/variant/string.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/object.hpp"
@@ -1448,22 +1449,25 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 				DEBUG::disp_text("road spatial t", spatial_t_sample);
 				DEBUG::disp_text("surface basis", surf.basis);
 			}
-			//DEBUG::disable_dip(DIP_SWITCH::DIP_DRAW_RAYCASTS);
-                       if (surf.basis[0].length_squared() >= 0.1) {
-                               const godot::Vector3 plane_n = surf.basis[1];
-                               const godot::Vector3 plane_p = surf.origin;
-                               const godot::Vector3 ray_dir = p1_ray_end_ws - p0_ray_start_ws;
-                               const float denom = ray_dir.dot(plane_n);
-                               float t = 0.0f;
-                               if (std::abs(denom) > 0.000001f) {
-                                       t = (plane_p - p0_ray_start_ws).dot(plane_n) / denom;
-                               }
-                               hit_found = t >= 0.0f && t <= 1.0f;
-                               godot::Vector3 intersect = p0_ray_start_ws + ray_dir * t;
-                                //DEBUG::disp_text("intersected", hit_found);
-                                if (hit_found){
-                                        in_corner.pos = intersect;
-                                        in_corner.up_vector_2 = plane_n.normalized();
+			if (road_t_sample_raw.x == -1000.0f)
+			{
+				in_corner.state |= TILTSTATE::DISCONNECTED;
+				compression_metric = 0.0f;
+			}
+			else if (surf.basis[0].length_squared() >= 0.1) {
+				const godot::Vector3 plane_n = surf.basis[1];
+				const godot::Vector3 plane_p = surf.origin;
+				const godot::Vector3 ray_dir = p1_ray_end_ws - p0_ray_start_ws;
+				const float denom = ray_dir.dot(plane_n);
+				float t = 0.0f;
+				if (std::abs(denom) > 0.000001f) {
+					t = (plane_p - p0_ray_start_ws).dot(plane_n) / denom;
+				}
+				hit_found = t >= 0.0f && t <= 1.0f;
+				godot::Vector3 intersect = p0_ray_start_ws + ray_dir * t;
+				if (hit_found){
+					in_corner.pos = intersect;
+					in_corner.up_vector_2 = plane_n.normalized();
 
 					float total_sweep_length = p0.distance_to(p1_ray_end_ws);
 					float hit_fraction = 0.0f;
@@ -1546,23 +1550,23 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 
 godot::Vector3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
 {
-       PhysicsCarSuspensionPoint* corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
-       godot::Vector3 normal_sum(0, 0, 0);
-       int valid_count = 0;
-       for (int i = 0; i < 4; ++i) {
-               PhysicsCarSuspensionPoint* current_corner = corners[i];
-               update_suspension_forces(*current_corner);
-               if ((current_corner->state & TILTSTATE::AIRBORNE) == 0) {
-                       normal_sum += current_corner->up_vector;
-                       ++valid_count;
-               }
-       }
+	PhysicsCarSuspensionPoint* corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
+	godot::Vector3 normal_sum(0, 0, 0);
+	int valid_count = 0;
+	for (int i = 0; i < 4; ++i) {
+		PhysicsCarSuspensionPoint* current_corner = corners[i];
+		update_suspension_forces(*current_corner);
+		if ((current_corner->state & TILTSTATE::AIRBORNE) == 0) {
+			normal_sum += current_corner->up_vector;
+			++valid_count;
+		}
+	}
 
-       if (valid_count > 0) {
-               return normal_sum.normalized();
-       }
+	if (valid_count > 0) {
+		return normal_sum.normalized();
+	}
 
-       return godot::Vector3();
+	return godot::Vector3();
 };
 
 void PhysicsCar::set_terrain_state_from_track()
@@ -1797,165 +1801,171 @@ int PhysicsCar::update_machine_corners() {
 	mtxa->assign(basis_physical);
 	mtxa->cur->origin = position_current;
 	int use_cp_old = current_track->get_best_checkpoint(position_old, current_checkpoint);
+	bool old_valid = use_cp_old != -1;
 	{
-		godot::Vector2 t_old;
-		godot::Vector2 t_new;
-		godot::Vector3 spatial_t_old;
-		godot::Vector3 spatial_t_new;
-		godot::Transform3D transform_old;
-		godot::Transform3D transform_new;
+		godot::Vector2 use_t;
+		godot::Vector3 use_spatial_t;
+		godot::Transform3D use_transform;
+		bool was_above = false;
 		if (current_track) {
-			current_track->get_road_surface(use_cp_old, position_old, t_old, spatial_t_old, transform_old);
-			bool was_above = (position_old - transform_old.origin).dot(transform_old.basis[1]) >= 0.0f;
-			if (t_old.x > -1.0f && t_old.x < 1.0f && t_old.y > 0.0f && t_old.y < 1.0f && was_above) {
-				auto normal = transform_old.basis[1];
-				auto plane_pos = transform_old.origin;
-				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-					godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-					float depth = (p0 - plane_pos).dot(normal);
-					if (depth >= 0.0f) continue;
-					godot::Vector3 d = normal * (-depth);
-					collision_push_total += d;
-					overall_hit_detected_flag |= 1;
-					any_corner_hit = true;
-					depenetration += d;
-					collision_push_track += d;
-				}
-			}
-			int use_cp_new = current_track->get_best_checkpoint(position_current + depenetration, current_checkpoint);
-			current_track->get_road_surface(use_cp_new, position_current + depenetration, t_new, spatial_t_new, transform_new);
-			if (t_new.x > -1.0f && t_new.x < 1.0f && t_new.y > 0.0f && t_new.y < 1.0f && was_above) {
-				auto normal = transform_new.basis[1];
-				auto plane_pos = transform_new.origin;
-				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-					godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-					float depth = (p0 - plane_pos).dot(normal);
-					if (depth >= 0.0f) continue;
-					godot::Vector3 d = normal * (-depth);
-					collision_push_total += d;
-					overall_hit_detected_flag |= 1;
-					any_corner_hit = true;
-					depenetration += d;
-					collision_push_track += d;
-				}
-			}
-			TrackSegment *old_seg = &current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
-			TrackSegment *new_seg = &current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
-			bool should_rail_old = (old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-				old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-				old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-				old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
-			bool should_rail_new = (new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-				new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-				new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-				new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
-			if (!should_rail_old && t_old.y > 0.0f && t_old.y < 1.0f && was_above) {
-				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-					godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-					godot::Transform3D root_t;
-					const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
-					segment.curve_matrix->sample(root_t, t_old.y);
-					const godot::Basis rbasis       = root_t.basis.transposed();
-					const godot::Vector3 up_normal = rbasis[1].normalized();
-					const godot::Vector3 left_pos   = root_t.origin + rbasis[0] + up_normal * up_normal.dot(transform_old.origin - root_t.origin + rbasis[0]);
-					const godot::Vector3 right_pos  = root_t.origin - rbasis[0] + up_normal * up_normal.dot(transform_old.origin - root_t.origin + rbasis[0]);
-					const godot::Vector3 left_plane_n   = -rbasis[0].normalized();
-					const godot::Vector3 right_plane_n  =  rbasis[0].normalized();
-
-					struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
-					const RailSide sides[2] = {
-						{ left_pos,  left_plane_n,  -transform_old.basis[1].cross(transform_old.basis[2]),    segment.left_rail_height    },
-						{ right_pos, right_plane_n,  transform_old.basis[1].cross(transform_old.basis[2]),    segment.right_rail_height   }
-					};
-
-					for (int i = 0; i < 2; i++) {
-						if (i == 1 && t_old.x < -1.0f)
-						{
-							continue;
-						}
-						if (i == 0 && t_old.x > 1.0f)
-						{
-							continue;
-						}
-						const RailSide &side = sides[i];
-						if (side.height <= 0.f && !was_above)
-						{
-							continue;
-						}
-
-						const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
-
-						if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
-						{
-							continue;
-						}
+			if (old_valid)
+			{
+				current_track->get_road_surface(use_cp_old, position_old, use_t, use_spatial_t, use_transform);
+				was_above = (position_old - use_transform.origin).dot(use_transform.basis[1]) >= 0.0f;
+				if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+					auto normal = use_transform.basis[1];
+					auto plane_pos = use_transform.origin;
+					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-						float depth = (p0 - side.pos).dot(side.rail_n);
+						float depth = (p0 - plane_pos).dot(normal);
 						if (depth >= 0.0f) continue;
-						//godot::UtilityFunctions::print("old depen");
-						//godot::UtilityFunctions::print(i);
-						//godot::UtilityFunctions::print(t_old.x);
-						godot::Vector3 d = side.rail_n * (-depth);
+						godot::Vector3 d = normal * (-depth);
 						collision_push_total += d;
+						overall_hit_detected_flag |= 1;
 						any_corner_hit = true;
 						depenetration += d;
-						overall_hit_detected_flag |= 2;
-						collision_push_rail += d;
+						collision_push_track += d;
+					}
+				}
+				TrackSegment *old_seg = &current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
+				bool should_rail_old = (old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
+				if (!should_rail_old && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+						godot::Transform3D root_t;
+						const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
+						segment.curve_matrix->sample(root_t, use_t.y);
+						const godot::Basis rbasis       = root_t.basis.transposed();
+						const godot::Vector3 up_normal = rbasis[1].normalized();
+						const godot::Vector3 left_pos   = root_t.origin + rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
+						const godot::Vector3 right_pos  = root_t.origin - rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
+						const godot::Vector3 left_plane_n   = -rbasis[0].normalized();
+						const godot::Vector3 right_plane_n  =  rbasis[0].normalized();
+
+						struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
+						const RailSide sides[2] = {
+							{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
+							{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
+						};
+
+						for (int i = 0; i < 2; i++) {
+							if (i == 1 && use_t.x < -1.0f)
+							{
+								continue;
+							}
+							if (i == 0 && use_t.x > 1.0f)
+							{
+								continue;
+							}
+							const RailSide &side = sides[i];
+							if (side.height <= 0.f && !was_above)
+							{
+								continue;
+							}
+
+							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
+
+							if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
+							{
+								continue;
+							}
+							godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+							float depth = (p0 - side.pos).dot(side.rail_n);
+							if (depth >= 0.0f) continue;
+							//godot::UtilityFunctions::print("old depen");
+							//godot::UtilityFunctions::print(i);
+							//godot::UtilityFunctions::print(use_t.x);
+							godot::Vector3 d = side.rail_n * (-depth);
+							collision_push_total += d;
+							any_corner_hit = true;
+							depenetration += d;
+							overall_hit_detected_flag |= 2;
+							collision_push_rail += d;
+						}
 					}
 				}
 			}
-			if (!should_rail_new && t_new.y > 0.0f && t_new.y < 1.0f && was_above) {
-				for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-					godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-					godot::Transform3D root_t;
-					const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
-					segment.curve_matrix->sample(root_t, t_new.y);
-					const godot::Basis rbasis       = root_t.basis.transposed();
-					const godot::Vector3 up_normal = rbasis[1].normalized();
-					const godot::Vector3 left_pos   = root_t.origin + rbasis[0] + up_normal * up_normal.dot(transform_new.origin - root_t.origin + rbasis[0]);
-					const godot::Vector3 right_pos  = root_t.origin - rbasis[0] + up_normal * up_normal.dot(transform_new.origin - root_t.origin + rbasis[0]);
-					const godot::Vector3 left_plane_n   = -rbasis[0].normalized();
-					const godot::Vector3 right_plane_n  =  rbasis[0].normalized();
-
-					struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
-					const RailSide sides[2] = {
-						{ left_pos,  left_plane_n,  -transform_new.basis[1].cross(transform_new.basis[2]),    segment.left_rail_height    },
-						{ right_pos, right_plane_n,  transform_new.basis[1].cross(transform_new.basis[2]),    segment.right_rail_height   }
-					};
-
-					for (int i = 0; i < 2; i++) {
-						if (i == 1 && t_old.x < -1.0f)
-						{
-							continue;
-						}
-						if (i == 0 && t_old.x > 1.0f)
-						{
-							continue;
-						}
-						const RailSide &side = sides[i];
-						if (side.height <= 0.f && !was_above)
-						{
-							continue;
-						}
-
-						const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
-
-						if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
-						{
-							continue;
-						}
+			int use_cp_new = current_track->get_best_checkpoint(position_current + depenetration, current_checkpoint);
+			bool new_valid = use_cp_new != -1;
+			if (new_valid)
+			{
+				current_track->get_road_surface(use_cp_new, position_current + depenetration, use_t, use_spatial_t, use_transform);
+				if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+					auto normal = use_transform.basis[1];
+					auto plane_pos = use_transform.origin;
+					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-						float depth = (p0 - side.pos).dot(side.rail_n);
+						float depth = (p0 - plane_pos).dot(normal);
 						if (depth >= 0.0f) continue;
-						//godot::UtilityFunctions::print("new depen");
-						//godot::UtilityFunctions::print(i);
-						//godot::UtilityFunctions::print(t_new.x);
-						godot::Vector3 d = side.rail_n * (-depth);
+						godot::Vector3 d = normal * (-depth);
 						collision_push_total += d;
+						overall_hit_detected_flag |= 1;
 						any_corner_hit = true;
 						depenetration += d;
-						overall_hit_detected_flag |= 2;
-						collision_push_rail += d;
+						collision_push_track += d;
+					}
+				}
+				TrackSegment *new_seg = &current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
+				bool should_rail_new = (new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
+				if (!should_rail_new && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
+						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+						godot::Transform3D root_t;
+						const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
+						segment.curve_matrix->sample(root_t, use_t.y);
+						const godot::Basis rbasis       = root_t.basis.transposed();
+						const godot::Vector3 up_normal = rbasis[1].normalized();
+						const godot::Vector3 left_pos   = root_t.origin + rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
+						const godot::Vector3 right_pos  = root_t.origin - rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
+						const godot::Vector3 left_plane_n   = -rbasis[0].normalized();
+						const godot::Vector3 right_plane_n  =  rbasis[0].normalized();
+
+						struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
+						const RailSide sides[2] = {
+							{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
+							{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
+						};
+
+						for (int i = 0; i < 2; i++) {
+							if (i == 1 && use_t.x < -1.0f)
+							{
+								continue;
+							}
+							if (i == 0 && use_t.x > 1.0f)
+							{
+								continue;
+							}
+							const RailSide &side = sides[i];
+							if (side.height <= 0.f && !was_above)
+							{
+								continue;
+							}
+
+							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
+
+							if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
+							{
+								continue;
+							}
+							godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+							float depth = (p0 - side.pos).dot(side.rail_n);
+							if (depth >= 0.0f) continue;
+							//godot::UtilityFunctions::print("new depen");
+							//godot::UtilityFunctions::print(i);
+							//godot::UtilityFunctions::print(use_t.x);
+							godot::Vector3 d = side.rail_n * (-depth);
+							collision_push_total += d;
+							any_corner_hit = true;
+							depenetration += d;
+							overall_hit_detected_flag |= 2;
+							collision_push_rail += d;
+						}
 					}
 				}
 			}
@@ -2365,6 +2375,13 @@ void PhysicsCar::handle_checkpoints()
 	uint8_t prev_lap = lap;
 
 	int found = current_track->get_best_checkpoint(position_current);
+	//DEBUG::disp_text("current checkpoint", found);
+	//for (int i = 0; i < current_track->checkpoints[found].num_neighboring_checkpoints; i++)
+	//{
+	//	const char i_char = '0' + i;
+	//	godot::String char_string = godot::String("cp " + godot::String::num_int64(found) + "neighbour " + godot::String::num_int64(i));
+	//	DEBUG::disp_text(char_string, current_track->checkpoints[found].neighboring_checkpoints[i]);
+	//}
 	if (found >= 0 && found < current_track->num_checkpoints && found != current_checkpoint) {
 		if (found < current_track->num_checkpoints / 8 && current_checkpoint > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
 			lap += 1;
