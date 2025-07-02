@@ -43,7 +43,6 @@ var base_wait_time: float = 1.0 / 60.0
 const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.005
-var _accum: float = 0.0	# local frame accumulator
 var player_settings := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
@@ -221,8 +220,8 @@ func _on_peer_disconnected(id: int) -> void:
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
 			peer_desired_ahead.erase(id)
-			_update_player_ids.rpc(player_ids)
-			_calc_state_offsets()
+		_update_player_ids.rpc(player_ids)
+		_calc_state_offsets()
 
 func flush_waiting_peers() -> void:
 	if not is_server:
@@ -403,7 +402,7 @@ func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int,
 		# rollback once from the first updated tick
 		_handle_input_update(start_tick, authoritative_inputs[start_tick])
 		last_server_input_tick = max(last_server_input_tick, last_tick)
-	if this_ack:
+	if this_ack != -1:
 		var ack_tick := this_ack
 		last_ack_tick = max(last_ack_tick, ack_tick)
 		if sent_input_times.has(ack_tick):
@@ -443,7 +442,7 @@ func post_tick() -> void:
 						start = k
 					arr.append(authoritative_history[k])
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, null), send_state, target_tick, max_ahead)
+			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
 		server_tick += 1
 
 func _idle_broadcast() -> void:
@@ -469,7 +468,7 @@ func _idle_broadcast() -> void:
 			last_tick,
 			arr,
 			player_ids,
-			last_received_tick.get(id, null),
+			last_received_tick.get(id, -1),
 			PackedByteArray(),
 			target_tick,
 			max_ahead
@@ -498,7 +497,6 @@ var rollback_frametime_us = 0
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if game_sim == null:
 		return
-	var local_state: PackedByteArray = game_sim.get_state_data(tick)
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
 	var current := tick + 1
@@ -516,7 +514,7 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 		return
 	if not input_history.has(tick):
 		return
-	var predicted = input_history[tick]
+	#var predicted = input_history[tick]
 	# we should honestly just always be rolling back for now
 	# we can figure out matching later
 	#if predicted == inputs:
