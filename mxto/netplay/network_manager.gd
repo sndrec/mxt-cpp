@@ -624,3 +624,6 @@ func _adjust_time_scale() -> void:
 	else:
 		use_physics_ticks = clamp(use_physics_ticks - SPEED_ADJUST_STEP * absf(diff), 0.5, 1.0)
 	Engine.physics_ticks_per_second = roundi(use_physics_ticks * 60.0);
+	# game simulation uses a fixed delta time
+	# this just changes the rate at which we simulate the game locally
+	# to catch up or slow down to try and match the server
