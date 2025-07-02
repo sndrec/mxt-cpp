@@ -261,6 +261,7 @@ func _return_to_menu() -> void:
 	for p in players:
 		p.queue_free()
 	players.clear()
+	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	$Control.visible = true
 	lobby_control.visible = false
@@ -275,6 +276,7 @@ func _return_to_lobby() -> void:
 	for p in players:
 		p.queue_free()
 	players.clear()
+	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	lobby_control.visible = true
 	network_manager.flush_waiting_peers()

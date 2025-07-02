@@ -33,7 +33,6 @@ var game_sim: GameSim
 var server_game_sim: GameSim
 var last_received_tick := {}
 var last_ack_tick: int = -1
-var last_broadcast_inputs_bytes: Array = []
 var target_tick: int = 0
 const MAX_AHEAD_TICKS := 30
 var sent_input_times := {}
@@ -70,7 +69,6 @@ func reset_race_state() -> void:
 	target_tick = 0
 	last_received_tick.clear()
 	last_ack_tick = -1
-	last_broadcast_inputs_bytes.clear()
 	rtt_s = 0.0
 	net_race_finish_time = -1
 	max_ahead_from_server = 0.0
@@ -147,7 +145,6 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	input_history.clear()
 	sent_inputs_bytes.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
-	last_broadcast_inputs_bytes.clear()
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
 	clients_server_tick = 0
@@ -156,8 +153,10 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	authoritative_history.clear()
 	authoritative_acks.clear()
 	last_server_input_tick = -1
-	multiplayer.peer_connected.connect(_on_peer_connected)
-	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
+	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
+		multiplayer.peer_connected.connect(_on_peer_connected)
+	if !multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
+		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	_calc_state_offsets()
 	return OK
 
@@ -183,7 +182,6 @@ func join(ip: String, port: int = 27016) -> int:
 	input_history.clear()
 	sent_inputs_bytes.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
-	last_broadcast_inputs_bytes.clear()
 	clients_server_tick = 0
 	clients_target_tick = 0
 	clients_max_ahead_from_server = 2.0
@@ -220,6 +218,15 @@ func _on_peer_disconnected(id: int) -> void:
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
 			peer_desired_ahead.erase(id)
+		if player_settings.has(id):
+			player_settings.erase(id)
+		if authoritative_acks.has(id):
+			authoritative_acks.erase(id)
+		if last_received_tick.has(id):
+			last_received_tick.erase(id)
+		for key in pending_inputs:
+			if pending_inputs[key].has(id):
+				pending_inputs[key].erase(id)
 		_update_player_ids.rpc(player_ids)
 		_calc_state_offsets()
 
@@ -317,7 +324,6 @@ func collect_server_inputs() -> Array:
 		frame_inputs_bytes.append(dict[id])
 	authoritative_history[server_tick] = frame_inputs_bytes
 	pending_inputs.erase(server_tick)
-	last_broadcast_inputs_bytes = frame_inputs_bytes
 	return frame_inputs_bytes
 
 func collect_client_inputs() -> Array:
@@ -549,7 +555,6 @@ func disconnect_from_server() -> void:
 	target_tick = 0
 	last_received_tick.clear()
 	last_ack_tick = -1
-	last_broadcast_inputs_bytes.clear()
 	player_settings.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
