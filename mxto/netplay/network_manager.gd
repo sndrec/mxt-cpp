@@ -110,6 +110,7 @@ func _ready() -> void:
 
 func on_disconnect() -> void:
 	DebugDraw2D.set_text("DISCONNECTED!", null, 10, Color.RED, 10)
+	disconnect_from_server()
 
 func server_process() -> void:
 	if is_server and server_game_sim != null and server_game_sim.sim_started:
@@ -212,6 +213,8 @@ func _on_peer_disconnected(id: int) -> void:
 	if is_server:
 		if waiting_peers.has(id):
 			waiting_peers.erase(id)
+			return
+		if not player_ids.has(id):
 			return
 		player_ids.erase(id)
 		if last_input_time.has(id):
@@ -498,6 +501,7 @@ func _check_client_stalls() -> void:
 			if now - float(last_input_time[id]) > 10.0:	# give them 10 s grace
 				push_error("Client %s stalled, disconnecting" % str(id))
 				multiplayer.disconnect_peer(id)
+				_on_peer_disconnected(id)
 
 var rollback_frametime_us = 0
 
