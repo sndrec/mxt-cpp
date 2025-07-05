@@ -534,6 +534,7 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
 	latest_state_tick = tick
+	local_tick = max(local_tick, tick + 1)
 	var current := tick + 1
 	var old_time := Time.get_ticks_usec()
 	while current < local_tick:
@@ -554,8 +555,10 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	# we can figure out matching later
 	#if predicted == inputs:
 	#	return
+	if tick == 0 or latest_state_tick == -1:
+		return
 	input_history[tick] = inputs
-	game_sim.load_state(max(latest_state_tick, tick - 1))
+	game_sim.load_state(maxi(latest_state_tick, tick - 1))
 	var current := maxi(latest_state_tick + 1, tick)
 	var old_time := Time.get_ticks_usec()
 	while current < local_tick:
