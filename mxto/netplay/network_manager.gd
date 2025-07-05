@@ -28,7 +28,7 @@ var last_local_input_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES.duplicate()
 var sent_inputs_bytes := {}
 var server_tick: int = 0
 var local_tick: int = 0
-const INPUT_HISTORY_SIZE := 300
+const INPUT_HISTORY_SIZE := 30
 var game_sim: GameSim
 var server_game_sim: GameSim
 var last_received_tick := {}
@@ -55,6 +55,7 @@ var clients_max_ahead_from_server = 2.0
 var authoritative_history := {}
 var authoritative_acks := {}
 var last_server_input_tick := -1
+var latest_state_tick := -1
 
 func reset_race_state() -> void:
 	pending_inputs.clear()
@@ -79,6 +80,7 @@ func reset_race_state() -> void:
 	authoritative_history.clear()
 	authoritative_acks.clear()
 	last_server_input_tick = -1
+	latest_state_tick = -1
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
 
 func _calc_state_offsets() -> void:
@@ -154,6 +156,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	authoritative_history.clear()
 	authoritative_acks.clear()
 	last_server_input_tick = -1
+	latest_state_tick = -1
 	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
 		multiplayer.peer_connected.connect(_on_peer_connected)
 	if !multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
@@ -189,6 +192,7 @@ func join(ip: String, port: int = 27016) -> int:
 	authoritative_history.clear()
 	authoritative_acks.clear()
 	last_server_input_tick = -1
+	latest_state_tick = -1
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
 	return OK
@@ -359,7 +363,6 @@ func collect_client_inputs() -> Array:
 			inputs_arr.append(sent_inputs_bytes[k])
 		_client_send_input.rpc_id(1, first_tick, inputs_arr, desired_ahead_ticks, last_server_input_tick)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-
 	var frame_inputs: Array
 	if authoritative_inputs.has(local_tick):
 		frame_inputs = authoritative_inputs[local_tick]
@@ -495,8 +498,6 @@ func _check_client_stalls() -> void:
 	if not is_server or server_game_sim == null or not server_game_sim.sim_started:
 		return
 	# don’t test while still waiting for the very first full frame
-	if server_tick == 0:
-		return
 	if server_tick >= target_tick:
 		return
 	var waiting = pending_inputs.get(server_tick, {})
@@ -506,9 +507,10 @@ func _check_client_stalls() -> void:
 		if not waiting.has(id):
 			missing.append(id)
 			if last_input_time.has(id) and now - float(last_input_time[id]) > 10.0:
-				push_error("Client %s stalled, disconnecting" % str(id))
-				multiplayer.disconnect_peer(id)
-				_on_peer_disconnected(id)
+				if server_tick != 0:
+					push_error("Client %s stalled, disconnecting" % str(id))
+					multiplayer.disconnect_peer(id)
+					_on_peer_disconnected(id)
 	if target_tick - server_tick > 5 and missing.size() > 0:
 		var prev = authoritative_history.get(server_tick - 1, [])
 		for i in range(player_ids.size()):
@@ -531,6 +533,7 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 		return
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
+	latest_state_tick = tick
 	var current := tick + 1
 	var old_time := Time.get_ticks_usec()
 	while current < local_tick:
@@ -552,8 +555,8 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	#if predicted == inputs:
 	#	return
 	input_history[tick] = inputs
-	game_sim.load_state(max(0, tick - 1))
-	var current := tick
+	game_sim.load_state(max(latest_state_tick, tick - 1))
+	var current := maxi(latest_state_tick + 1, tick)
 	var old_time := Time.get_ticks_usec()
 	while current < local_tick:
 		if input_history.has(current):
@@ -587,6 +590,7 @@ func disconnect_from_server() -> void:
 	authoritative_history.clear()
 	authoritative_acks.clear()
 	last_server_input_tick = -1
+	latest_state_tick = -1
 
 func _prune_authoritative_history() -> void:
 	var min_ack := -1
