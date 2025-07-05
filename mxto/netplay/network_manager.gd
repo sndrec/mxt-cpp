@@ -381,16 +381,22 @@ func collect_client_inputs() -> Array:
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) -> void:
 	if is_server:
+		var reject_before := target_tick - 5
 		for i in range(inputs.size()):
 			var tick := start_tick + i
+			if tick < reject_before:
+				continue
 			var input = inputs[i]
-			if not pending_inputs.has(tick):
+			if !pending_inputs.has(tick):
 				pending_inputs[tick] = {}
 			pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
 			last_input_time[multiplayer.get_remote_sender_id()] = 0.001 * float(Time.get_ticks_msec())
 			last_received_tick[multiplayer.get_remote_sender_id()] = tick
 		peer_desired_ahead[multiplayer.get_remote_sender_id()] = ahead
-		authoritative_acks[multiplayer.get_remote_sender_id()] = max(ack, authoritative_acks.get(multiplayer.get_remote_sender_id(), -1))
+		authoritative_acks[multiplayer.get_remote_sender_id()] = max(
+			ack,
+			authoritative_acks.get(multiplayer.get_remote_sender_id(), -1)
+		)
 		_prune_authoritative_history()
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
@@ -451,14 +457,15 @@ func post_tick() -> void:
 						start = k
 					arr.append(authoritative_history[k])
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			_server_broadcast.rpc_id(id, max(0, last_tick), arr, player_ids, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
+			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, null), send_state, target_tick, max_ahead)
 		server_tick += 1
-		_prune_authoritative_history()
+		if listen_server:
+			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
+			_prune_authoritative_history()
 
 func _idle_broadcast() -> void:
 	if server_game_sim == null:
 		return
-	var state = server_game_sim.get_state_data(server_tick)
 	var max_ahead := _calc_max_ahead()
 	max_ahead_from_server = max_ahead
 	for id in player_ids:
@@ -511,6 +518,8 @@ func _check_client_stalls() -> void:
 				if prev.size() == player_ids.size():
 					inp = prev[i]
 				waiting[pid] = inp
+				last_received_tick[pid] = server_tick
+				authoritative_acks[pid] = server_tick
 		pending_inputs[server_tick] = waiting
 
 var rollback_frametime_us = 0
