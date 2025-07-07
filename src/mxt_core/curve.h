@@ -13,6 +13,13 @@ struct CurveKeyframe
 	float tangent_out;
 };
 
+
+struct RoadTransform
+{
+    godot::Transform3D t3d;
+    godot::Vector3 scale;
+};
+
 class Curve
 {
 public:
@@ -67,22 +74,25 @@ struct alignas(16) RoadTransformCurve {
     float *coef_b;    // cubic coefficients b
     float *coef_c;    // cubic coefficients c
     float *coef_d;    // cubic coefficients d
+	int last_k;
     RoadTransformCurve(int count): num_keyframes(count) {}
 
 	// fetch raw keyframe into a Transform3D
-	void get_keyframe_value(godot::Transform3D &out, int idx) const {
+	void get_keyframe_value(RoadTransform &out, int idx) const {
 		const float *v = values + idx * 16;
-               const godot::Vector3 scale(v[12], v[13], v[14]);
-               out.basis.set(
-                       v[3] * scale.x,  v[6] * scale.y,  v[9] * scale.z,
-                       v[4] * scale.x,  v[7] * scale.y,  v[10] * scale.z,
-                       v[5] * scale.x,  v[8] * scale.y,  v[11] * scale.z
+               out.t3d.basis.set(
+                       v[3],  v[6],  v[9],
+                       v[4],  v[7],  v[10],
+                       v[5],  v[8],  v[11]
                );
-               out.origin.x = v[0];
-               out.origin.y = v[1];
-               out.origin.z = v[2];
+               out.t3d.origin.x = v[0];
+               out.t3d.origin.y = v[1];
+               out.t3d.origin.z = v[2];
+               out.scale.x = v[12];
+               out.scale.y = v[13];
+               out.scale.z = v[14];
 	}
 
-        void sample(godot::Transform3D &out, float in_t) const;
+        void sample(RoadTransform &out, float in_t);
         void precompute();
 };

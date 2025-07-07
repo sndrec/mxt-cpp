@@ -6,6 +6,7 @@
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/object.hpp"
 #include "godot_cpp/core/math.hpp"
+#include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
 #include <cmath>
 #include <algorithm>
@@ -222,7 +223,7 @@ void PhysicsCar::handle_machine_damage_and_visuals()
 		velocity = godot::Vector3();
 	}
 
-	create_machine_visual_transform();
+	//create_machine_visual_transform();
 
 	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
 		float world_speed = velocity.length();
@@ -1834,15 +1835,17 @@ int PhysicsCar::update_machine_corners() {
 				if (!should_rail_old && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-						godot::Transform3D root_t;
+						RoadTransform root_t;
 						const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
 						segment.curve_matrix->sample(root_t, use_t.y);
-						const godot::Basis rbasis       = root_t.basis.transposed();
-						const godot::Vector3 up_normal = rbasis[1].normalized();
-						const godot::Vector3 left_pos   = root_t.origin + rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
-						const godot::Vector3 right_pos  = root_t.origin - rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
-						const godot::Vector3 left_plane_n   = -rbasis[0].normalized();
-						const godot::Vector3 right_plane_n  =  rbasis[0].normalized();
+						const godot::Basis rbasis       = root_t.t3d.basis;
+						const godot::Vector3 up_normal = rbasis.get_column(1);
+						const godot::Vector3 side_dir = rbasis.get_column(0);
+						const godot::Vector3 side_scaled = side_dir * root_t.scale.x;
+						const godot::Vector3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+						const godot::Vector3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+						const godot::Vector3 left_plane_n   = -side_dir;
+						const godot::Vector3 right_plane_n  =  side_dir;
 
 						struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
 						const RailSide sides[2] = {
@@ -1867,7 +1870,7 @@ int PhysicsCar::update_machine_corners() {
 
 							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
 
-							if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
+							if ((hit - side.pos).dot(up_normal) > side.height * root_t.scale.y)
 							{
 								continue;
 							}
@@ -1915,15 +1918,17 @@ int PhysicsCar::update_machine_corners() {
 				if (!should_rail_new && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-						godot::Transform3D root_t;
+						RoadTransform root_t;
 						const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
 						segment.curve_matrix->sample(root_t, use_t.y);
-						const godot::Basis rbasis       = root_t.basis.transposed();
-						const godot::Vector3 up_normal = rbasis[1].normalized();
-						const godot::Vector3 left_pos   = root_t.origin + rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
-						const godot::Vector3 right_pos  = root_t.origin - rbasis[0] + up_normal * up_normal.dot(use_transform.origin - root_t.origin + rbasis[0]);
-						const godot::Vector3 left_plane_n   = -rbasis[0].normalized();
-						const godot::Vector3 right_plane_n  =  rbasis[0].normalized();
+						const godot::Basis rbasis       = root_t.t3d.basis;
+						const godot::Vector3 up_normal = rbasis.get_column(1);
+						const godot::Vector3 side_dir = rbasis.get_column(0);
+						const godot::Vector3 side_scaled = side_dir * root_t.scale.x;
+						const godot::Vector3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+						const godot::Vector3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+						const godot::Vector3 left_plane_n   = -side_dir;
+						const godot::Vector3 right_plane_n  =  side_dir;
 
 						struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
 						const RailSide sides[2] = {
@@ -1948,7 +1953,7 @@ int PhysicsCar::update_machine_corners() {
 
 							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
 
-							if ((hit - side.pos).dot(up_normal) > side.height * rbasis[1].length())
+							if ((hit - side.pos).dot(up_normal) > side.height * root_t.scale.y)
 							{
 								continue;
 							}
@@ -1979,182 +1984,191 @@ int PhysicsCar::update_machine_corners() {
 }
 
 
-void PhysicsCar::create_machine_visual_transform()
-{
-	float fVar12_initial_factor = 0.0f;
-	if (base_speed <= 2.0f)
-		fVar12_initial_factor = (2.0f - base_speed) * 0.5f;
-
-	if (frames_since_start_2 < 90)
-		fVar12_initial_factor *= static_cast<float>(frames_since_start_2) / 90.0f;
-
-	unk_stat_0x5d4 += 0.05f * (fVar12_initial_factor - unk_stat_0x5d4);
-
-	float dVar11_current_unk_stat = unk_stat_0x5d4;
-
-	float sin_val2_scaled_angle = static_cast<float>(g_anim_timer * 0x1a3);
-	float sin_val2 = deterministic_fp::sinf(sin_val2_scaled_angle);
-
-	float y_offset_base = 0.006f * (dVar11_current_unk_stat * sin_val2);
-
-	godot::Vector3 visual_y_offset_world =
-	mtxa->rotate_point(godot::Vector3(0.0f,
-		y_offset_base - (0.2f * dVar11_current_unk_stat),
-		0.0f));
-	godot::Vector3 target_visual_world_position = position_current + visual_y_offset_world;
-
-	mtxa->assign(basis_physical);
-
-	mtxa->push();
-	float fr_offset_z = tilt_fl.offset.z;
-	float br_offset_z = tilt_bl.offset.z;
-	float stagger_factor = 0.0f;
-	if (std::abs(fr_offset_z) > 0.0001f)
-		stagger_factor = (br_offset_z / -fr_offset_z) - 1.0f;
-	float clamped_stagger = std::clamp(stagger_factor, -0.2f, 0.2f);
-	float pitch_angle_deg = 30.0f * clamped_stagger;
-	mtxa->rotate_x(DEG_TO_RAD * pitch_angle_deg);
-	g_pitch_mtx_0x5e0 = *mtxa->cur;
-	mtxa->pop();
-
-	if ((state_2 & 0x20u) == 0) {
-		mtxa->push();
-		mtxa->identity();
-		if (machine_state & MACHINESTATE::ACTIVE) {
-			turn_reaction_effect += 0.05f * (turn_reaction_input - turn_reaction_effect);
-			float yaw_reaction_rad = DEG_TO_RAD * turn_reaction_effect;
-			mtxa->rotate_y(yaw_reaction_rad);
-		}
-
-		float world_vel_mag = velocity.length();
-		float speed_factor_for_roll_pitch = 0.0f;
-		if (std::abs(stat_weight) > 0.0001f)
-			speed_factor_for_roll_pitch = (world_vel_mag / stat_weight) / 4.629629629f;
-
-		strafe_visual_roll = static_cast<int>(182.04445f * (stat_strafe / 15.0f) * -5.0f *
-			input_strafe_1_6 * speed_factor_for_roll_pitch);
-
-		float banking_roll_angle_val_rad = 0.0f;
-		if (std::abs(weight_derived_2) > 0.0001f)
-			banking_roll_angle_val_rad =
-		speed_factor_for_roll_pitch * 4.5f * (velocity_angular.y / weight_derived_2);
-		int banking_roll_angle_fz_units = static_cast<int>(10430.378f * banking_roll_angle_val_rad);
-
-		int total_roll_fz_units = banking_roll_angle_fz_units + strafe_visual_roll;
-
-		float abs_total_roll_float = std::abs(static_cast<float>(total_roll_fz_units));
-
-		float roll_damping_factor = 1.0f - abs_total_roll_float / 3640.0f;
-		roll_damping_factor = std::max(roll_damping_factor, 0.0f);
-
-		float current_visual_pitch_rad = 0.0f;
-		if (std::abs(weight_derived_1) > 0.0001f)
-			current_visual_pitch_rad = visual_rotation.x / weight_derived_1;
-		float pitch_visual_factor = roll_damping_factor * 0.7f * current_visual_pitch_rad;
-		pitch_visual_factor = std::clamp(pitch_visual_factor, -0.3f, 0.3f);
-
-		float current_visual_roll_rad = 0.0f;
-		if (std::abs(weight_derived_3) > 0.0001f)
-			current_visual_roll_rad = visual_rotation.z / weight_derived_3;
-		float roll_visual_factor = 2.5f * current_visual_roll_rad;
-		roll_visual_factor = std::clamp(roll_visual_factor, -0.5f, 0.5f);
-
-		mtxa->rotate_x(pitch_visual_factor);
-
-		float iVar1_from_block2_approx_deg =
-		0.5f * (dVar11_current_unk_stat *
-			deterministic_fp::sinf(static_cast<float>(g_anim_timer * 0x109) *
-				(TAU / 65536.0f)));
-		int additional_roll_from_sin_fz_units =
-		static_cast<int>(182.04445f * iVar1_from_block2_approx_deg);
-
-		total_roll_fz_units += static_cast<int>(10430.378f * -roll_visual_factor);
-		total_roll_fz_units = std::clamp(total_roll_fz_units, -0x238e, 0x238e);
-
-		int final_roll_fz_units_for_z_rot = total_roll_fz_units + additional_roll_from_sin_fz_units;
-		float final_roll_rad_for_z_rot =
-		static_cast<float>(final_roll_fz_units_for_z_rot) * (TAU / 65536.0f);
-		mtxa->rotate_z(final_roll_rad_for_z_rot);
-
-		godot::Quaternion visual_delta_q = mtxa->cur->basis.get_rotation_quaternion();
-
-		unk_quat_0x5c4 = unk_quat_0x5c4.slerp(visual_delta_q, 0.2f);
-		mtxa->from_quat(unk_quat_0x5c4);
-
-		godot::Transform3D slerped_visual_rotation_transform = *mtxa->cur;
-		mtxa->pop();
-
-		mtxa->multiply(slerped_visual_rotation_transform);
-
-		if (spinattack_angle != 0.0f) {
-			if (spinattack_direction == 0)
-				mtxa->rotate_y(spinattack_angle);
-			else
-				mtxa->rotate_y(-spinattack_angle);
-		}
-	} else {
-		mtxa->assign(transform_visual);
-	}
-
-	mtxa->cur->origin = target_visual_world_position;
-
-	uint32_t uVar8_shake_seed = static_cast<uint32_t>(velocity.z * 4000000.0f) ^
-	static_cast<uint32_t>(velocity.x * 4000000.0f) ^
-	static_cast<uint32_t>(velocity.y * 4000000.0f);
-
-	float shake_rand_norm1 =
-	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.x * 4000000.0f)) &
-		0xffff) /
-	65535.0f;
-	float shake_rand_norm2 =
-	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.y * 4000000.0f)) &
-		0xffff) /
-	65535.0f;
-
-	float shake_magnitude = 0.00006f * visual_shake_mult;
-	float x_shake_rad = shake_magnitude * shake_rand_norm1;
-	float z_shake_rad = shake_magnitude * shake_rand_norm2;
-	mtxa->rotate_z(z_shake_rad);
-	mtxa->rotate_x(x_shake_rad);
-
-	if ((machine_state & MACHINESTATE::BOOSTING) == 0) {
-		height_adjust_from_boost -= 0.05f * height_adjust_from_boost;
-	} else {
-		float effective_pitch_for_boost_lift = std::max(0.0f, visual_rotation.x);
-		float target_height_adj = 0.0f;
-		if (std::abs(weight_derived_1) > 0.0001f)
-			target_height_adj = 4.5f * (effective_pitch_for_boost_lift / weight_derived_1);
-
-		height_adjust_from_boost += 0.2f * (target_height_adj - height_adjust_from_boost);
-		height_adjust_from_boost = std::min(height_adjust_from_boost, 0.3f);
-	}
-
-	mtxa->cur->origin += mtxa->cur->basis.get_column(1) * height_adjust_from_boost;
-
-	if (terrain_state & TERRAIN::DIRT) {
-		float jitter_scale_factor = 0.1f + speed_kmh / 900.0f;
-		jitter_scale_factor = std::min(jitter_scale_factor, 1.0f);
-
-		float rand_x_norm =
-		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.y * 4000000.0f)) &
-			0xffff) /
-		65535.0f -
-		0.5f;
-		float rand_z_norm =
-		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.z * 4000000.0f)) &
-			0xffff) /
-		65535.0f -
-		0.5f;
-
-		godot::Vector3 local_jitter_offset(rand_x_norm, 0.0f, rand_z_norm);
-		godot::Vector3 world_jitter_offset = mtxa->rotate_point(local_jitter_offset);
-
-		godot::Vector3 scaled_world_jitter = world_jitter_offset * (0.15f * jitter_scale_factor);
-		mtxa->cur->origin += scaled_world_jitter;
-	}
-
-	transform_visual = *mtxa->cur;
-};
+//void PhysicsCar::create_machine_visual_transform()
+//{
+//	float fVar12_initial_factor = 0.0f;
+//	if (base_speed <= 2.0f)
+//		fVar12_initial_factor = (2.0f - base_speed) * 0.5f;
+//
+//	if (frames_since_start_2 < 90)
+//		fVar12_initial_factor *= static_cast<float>(frames_since_start_2) / 90.0f;
+//
+//	unk_stat_0x5d4 += 0.05f * (fVar12_initial_factor - unk_stat_0x5d4);
+//
+//	float dVar11_current_unk_stat = unk_stat_0x5d4;
+//
+//	float sin_val2_scaled_angle = static_cast<float>(g_anim_timer * 0x1a3);
+//	float sin_val2 = deterministic_fp::sinf(sin_val2_scaled_angle);
+//
+//	float y_offset_base = 0.006f * (dVar11_current_unk_stat * sin_val2);
+//
+//	godot::Vector3 visual_y_offset_world =
+//	mtxa->rotate_point(godot::Vector3(0.0f,
+//		y_offset_base - (0.2f * dVar11_current_unk_stat),
+//		0.0f));
+//	godot::Vector3 target_visual_world_position = position_current + visual_y_offset_world;
+//
+//	mtxa->assign(basis_physical);
+//
+//	mtxa->push();
+//	float fr_offset_z = tilt_fl.offset.z;
+//	float br_offset_z = tilt_bl.offset.z;
+//	float stagger_factor = 0.0f;
+//	if (std::abs(fr_offset_z) > 0.0001f)
+//		stagger_factor = (br_offset_z / -fr_offset_z) - 1.0f;
+//	float clamped_stagger = std::clamp(stagger_factor, -0.2f, 0.2f);
+//	float pitch_angle_deg = 30.0f * clamped_stagger;
+//	mtxa->rotate_x(DEG_TO_RAD * pitch_angle_deg);
+//	g_pitch_mtx_0x5e0 = *mtxa->cur;
+//	mtxa->pop();
+//
+//	if ((state_2 & 0x20u) == 0) {
+//		mtxa->push();
+//		mtxa->identity();
+//		if (machine_state & MACHINESTATE::ACTIVE) {
+//			turn_reaction_effect += 0.05f * (turn_reaction_input - turn_reaction_effect);
+//			float yaw_reaction_rad = DEG_TO_RAD * turn_reaction_effect;
+//			mtxa->rotate_y(yaw_reaction_rad);
+//		}
+//
+//		float world_vel_mag = velocity.length();
+//		float speed_factor_for_roll_pitch = 0.0f;
+//		if (std::abs(stat_weight) > 0.0001f)
+//			speed_factor_for_roll_pitch = (world_vel_mag / stat_weight) / 4.629629629f;
+//
+//		strafe_visual_roll = static_cast<int>(182.04445f * (stat_strafe / 15.0f) * -5.0f *
+//			input_strafe_1_6 * speed_factor_for_roll_pitch);
+//
+//		float banking_roll_angle_val_rad = 0.0f;
+//		if (std::abs(weight_derived_2) > 0.0001f)
+//			banking_roll_angle_val_rad =
+//		speed_factor_for_roll_pitch * 4.5f * (velocity_angular.y / weight_derived_2);
+//		int banking_roll_angle_fz_units = static_cast<int>(10430.378f * banking_roll_angle_val_rad);
+//
+//		int total_roll_fz_units = banking_roll_angle_fz_units + strafe_visual_roll;
+//
+//		float abs_total_roll_float = std::abs(static_cast<float>(total_roll_fz_units));
+//
+//		float roll_damping_factor = 1.0f - abs_total_roll_float / 3640.0f;
+//		roll_damping_factor = std::max(roll_damping_factor, 0.0f);
+//
+//		float current_visual_pitch_rad = 0.0f;
+//		if (std::abs(weight_derived_1) > 0.0001f)
+//			current_visual_pitch_rad = visual_rotation.x / weight_derived_1;
+//		float pitch_visual_factor = roll_damping_factor * 0.7f * current_visual_pitch_rad;
+//		pitch_visual_factor = std::clamp(pitch_visual_factor, -0.3f, 0.3f);
+//
+//		float current_visual_roll_rad = 0.0f;
+//		if (std::abs(weight_derived_3) > 0.0001f)
+//			current_visual_roll_rad = visual_rotation.z / weight_derived_3;
+//		float roll_visual_factor = 2.5f * current_visual_roll_rad;
+//		roll_visual_factor = std::clamp(roll_visual_factor, -0.5f, 0.5f);
+//
+//		mtxa->rotate_x(pitch_visual_factor);
+//
+//		float iVar1_from_block2_approx_deg =
+//		0.5f * (dVar11_current_unk_stat *
+//			deterministic_fp::sinf(static_cast<float>(g_anim_timer * 0x109) *
+//				(TAU / 65536.0f)));
+//		int additional_roll_from_sin_fz_units =
+//		static_cast<int>(182.04445f * iVar1_from_block2_approx_deg);
+//
+//		total_roll_fz_units += static_cast<int>(10430.378f * -roll_visual_factor);
+//		total_roll_fz_units = std::clamp(total_roll_fz_units, -0x238e, 0x238e);
+//
+//		int final_roll_fz_units_for_z_rot = total_roll_fz_units + additional_roll_from_sin_fz_units;
+//		float final_roll_rad_for_z_rot =
+//		static_cast<float>(final_roll_fz_units_for_z_rot) * (TAU / 65536.0f);
+//		mtxa->rotate_z(final_roll_rad_for_z_rot);
+//
+//		godot::Quaternion visual_delta_q = mtxa->cur->basis.get_rotation_quaternion();
+//
+//		unk_quat_0x5c4 = unk_quat_0x5c4.slerp(visual_delta_q, 0.2f);
+//		mtxa->from_quat(unk_quat_0x5c4);
+//
+//		godot::Transform3D slerped_visual_rotation_transform = *mtxa->cur;
+//		mtxa->pop();
+//
+//		mtxa->multiply(slerped_visual_rotation_transform);
+//
+//		if (spinattack_angle != 0.0f) {
+//			float use_angle = spinattack_angle;
+//			while (use_angle > PI)
+//			{
+//				use_angle -= PI;
+//			}
+//			while (use_angle < -PI)
+//			{
+//				use_angle += PI;
+//			}
+//			if (spinattack_direction == 0)
+//				mtxa->rotate_y(use_angle);
+//			else
+//				mtxa->rotate_y(-use_angle);
+//		}
+//	} else {
+//		mtxa->assign(transform_visual);
+//	}
+//
+//	mtxa->cur->origin = target_visual_world_position;
+//
+//	uint32_t uVar8_shake_seed = static_cast<uint32_t>(velocity.z * 4000000.0f) ^
+//	static_cast<uint32_t>(velocity.x * 4000000.0f) ^
+//	static_cast<uint32_t>(velocity.y * 4000000.0f);
+//
+//	float shake_rand_norm1 =
+//	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.x * 4000000.0f)) &
+//		0xffff) /
+//	65535.0f;
+//	float shake_rand_norm2 =
+//	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.y * 4000000.0f)) &
+//		0xffff) /
+//	65535.0f;
+//
+//	float shake_magnitude = 0.00006f * visual_shake_mult;
+//	float x_shake_rad = shake_magnitude * shake_rand_norm1;
+//	float z_shake_rad = shake_magnitude * shake_rand_norm2;
+//	mtxa->rotate_z(z_shake_rad);
+//	mtxa->rotate_x(x_shake_rad);
+//
+//	if ((machine_state & MACHINESTATE::BOOSTING) == 0) {
+//		height_adjust_from_boost -= 0.05f * height_adjust_from_boost;
+//	} else {
+//		float effective_pitch_for_boost_lift = std::max(0.0f, visual_rotation.x);
+//		float target_height_adj = 0.0f;
+//		if (std::abs(weight_derived_1) > 0.0001f)
+//			target_height_adj = 4.5f * (effective_pitch_for_boost_lift / weight_derived_1);
+//
+//		height_adjust_from_boost += 0.2f * (target_height_adj - height_adjust_from_boost);
+//		height_adjust_from_boost = std::min(height_adjust_from_boost, 0.3f);
+//	}
+//
+//	mtxa->cur->origin += mtxa->cur->basis.get_column(1) * height_adjust_from_boost;
+//
+//	if (terrain_state & TERRAIN::DIRT) {
+//		float jitter_scale_factor = 0.1f + speed_kmh / 900.0f;
+//		jitter_scale_factor = std::min(jitter_scale_factor, 1.0f);
+//
+//		float rand_x_norm =
+//		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.y * 4000000.0f)) &
+//			0xffff) /
+//		65535.0f -
+//		0.5f;
+//		float rand_z_norm =
+//		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.z * 4000000.0f)) &
+//			0xffff) /
+//		65535.0f -
+//		0.5f;
+//
+//		godot::Vector3 local_jitter_offset(rand_x_norm, 0.0f, rand_z_norm);
+//		godot::Vector3 world_jitter_offset = mtxa->rotate_point(local_jitter_offset);
+//
+//		godot::Vector3 scaled_world_jitter = world_jitter_offset * (0.15f * jitter_scale_factor);
+//		mtxa->cur->origin += scaled_world_jitter;
+//	}
+//
+//	transform_visual = *mtxa->cur;
+//};
 
 void PhysicsCar::handle_machine_collision_response()
 {
