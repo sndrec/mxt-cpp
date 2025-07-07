@@ -29,39 +29,39 @@ var local_player_index: int = 0
 var headless_mode: bool = false
 
 func _ready() -> void:
-       randomize()
-       _load_tracks()
-       _load_car_definitions()
-        network_manager.race_started.connect(_on_network_race_started)
-        network_manager.race_finished.connect(_on_network_race_finished)
-        car_settings.hide()
-        car_settings_button.pressed.connect(_on_car_settings_button_pressed)
-        car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
-       headless_mode = DisplayServer.get_name() == "headless"
-       var args := OS.get_cmdline_args()
-       if args.has("--host"):
-               call_deferred("_auto_host")
-       if headless_mode:
-               var def_path := ""
-               if car_definitions.size() > 0:
-                       def_path = car_definitions[0].resource_path
-               var settings_dict = {
-                       "username": "Headless",
-                       "car_definition_path": def_path,
-                       "accel_setting": 1.0,
-               }
-               network_manager.multiplayer.connected_to_server.connect(
-                       func():
-                               network_manager.send_player_settings(settings_dict),
-                       Object.CONNECT_ONE_SHOT)
-               var join_timer := Timer.new()
-               join_timer.one_shot = true
-               join_timer.wait_time = 3.0
-               add_child(join_timer)
-               join_timer.timeout.connect(func(): network_manager.join("127.0.0.1"))
-               join_timer.start()
-               $Control.visible = false
-               lobby_control.visible = true
+	randomize()
+	_load_tracks()
+	_load_car_definitions()
+	network_manager.race_started.connect(_on_network_race_started)
+	network_manager.race_finished.connect(_on_network_race_finished)
+	car_settings.hide()
+	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
+	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
+	headless_mode = DisplayServer.get_name() == "headless"
+	var args := OS.get_cmdline_args()
+	if args.has("--host"):
+		call_deferred("_auto_host")
+	if headless_mode:
+		var def_path := ""
+		if car_definitions.size() > 0:
+			def_path = car_definitions[0].resource_path
+		var settings_dict = {
+			"username": "Headless",
+			"car_definition_path": def_path,
+			"accel_setting": 1.0,
+		}
+		network_manager.multiplayer.connected_to_server.connect(
+			func():
+				network_manager.send_player_settings(settings_dict),
+			Object.CONNECT_ONE_SHOT)
+		var join_timer := Timer.new()
+		join_timer.one_shot = true
+		join_timer.wait_time = 3.0
+		add_child(join_timer)
+		join_timer.timeout.connect(func(): network_manager.join("127.0.0.1"))
+		join_timer.start()
+		$Control.visible = false
+		lobby_control.visible = true
 
 func _load_tracks() -> void:
 	tracks.clear()
@@ -120,34 +120,34 @@ func _on_start_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _on_join_button_pressed() -> void:
-        var settings_dict = car_settings.get_player_settings().to_dict()
-        network_manager.multiplayer.connected_to_server.connect(
-                func():
-                        network_manager.send_player_settings(settings_dict),
-                Object.CONNECT_ONE_SHOT)
-        network_manager.join(ip_field.text)
-        start_race_button.disabled = true
-        $Control.visible = false
-        lobby_control.visible = true
+	var settings_dict = car_settings.get_player_settings().to_dict()
+	network_manager.multiplayer.connected_to_server.connect(
+		func():
+			network_manager.send_player_settings(settings_dict),
+		Object.CONNECT_ONE_SHOT)
+	network_manager.join(ip_field.text)
+	start_race_button.disabled = true
+	$Control.visible = false
+	lobby_control.visible = true
 
 func _auto_host() -> void:
-       _on_start_button_pressed()
+	_on_start_button_pressed()
 
 func _on_car_settings_button_pressed() -> void:
-                                car_settings.call("open_settings")
+	car_settings.call("open_settings")
 
 func _generate_random_input() -> PlayerInput:
-        var p := PlayerInputClass.new()
-        p.strafe_left = randf()
-        p.strafe_right = randf()
-        p.steer_horizontal = randf_range(-1.0, 1.0)
-        p.steer_vertical = randf_range(-1.0, 1.0)
-        p.accelerate = randf()
-        p.brake = randf()
-        p.spinattack = randi() % 2 == 0
-        p.boost = randi() % 2 == 0
-        p.apply_quantization()
-        return p
+	var p := PlayerInputClass.new()
+	p.strafe_left = randf()
+	p.strafe_right = randf()
+	p.steer_horizontal = randf_range(-1.0, 1.0)
+	p.steer_vertical = randf_range(-1.0, 1.0)
+	p.accelerate = randf()
+	p.brake = randf()
+	p.spinattack = randi() % 2 == 0
+	p.boost = randi() % 2 == 0
+	p.apply_quantization()
+	return p
 
 func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
@@ -224,15 +224,15 @@ func _on_start_race_button_pressed() -> void:
 		network_manager.send_start_race(lobby_track_selector.selected, settings_array)
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
-        if headless_mode:
-                return
-        _start_race(track_index, settings)
+	if headless_mode:
+		return
+	_start_race(track_index, settings)
 
 func _on_network_race_finished() -> void:
-        if headless_mode:
-                return
-        race_finish_label.visible = false
-        _return_to_lobby()
+	if headless_mode:
+		return
+	race_finish_label.visible = false
+	_return_to_lobby()
 
 func _update_player_list() -> void:
 	player_list.clear()
@@ -245,19 +245,19 @@ func _update_player_list() -> void:
 		player_list.add_item(name)
 
 func _physics_process(delta: float) -> void:
-        DebugDraw3D.scoped_config().set_no_depth_test(true)
-        if headless_mode:
-                if multiplayer.has_multiplayer_peer():
-                        var pi := _generate_random_input()
-                        network_manager.set_local_input(pi.serialize())
-                        network_manager.collect_client_inputs()
-                        network_manager.post_tick()
-                return
-        if lobby_control.visible:
-                _update_player_list()
-        if game_sim.sim_started:
-                var local_pi := PlayerInputClass.new()
-                if players.size() > local_player_index:
+	DebugDraw3D.scoped_config().set_no_depth_test(true)
+	if headless_mode:
+		if multiplayer.has_multiplayer_peer():
+			var pi := _generate_random_input()
+			network_manager.set_local_input(pi.serialize())
+			network_manager.collect_client_inputs()
+			network_manager.post_tick()
+		return
+	if lobby_control.visible:
+		_update_player_list()
+	if game_sim.sim_started:
+		var local_pi := PlayerInputClass.new()
+		if players.size() > local_player_index:
 			local_pi = players[local_player_index].get_input()
 		var input_bytes := local_pi.serialize()
 		network_manager.set_local_input(input_bytes)
