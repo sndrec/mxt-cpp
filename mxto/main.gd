@@ -29,30 +29,39 @@ var local_player_index: int = 0
 var headless_mode: bool = false
 
 func _ready() -> void:
-        _load_tracks()
-        _load_car_definitions()
+       randomize()
+       _load_tracks()
+       _load_car_definitions()
         network_manager.race_started.connect(_on_network_race_started)
         network_manager.race_finished.connect(_on_network_race_finished)
         car_settings.hide()
         car_settings_button.pressed.connect(_on_car_settings_button_pressed)
         car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
-        headless_mode = DisplayServer.get_name() == "headless"
-        if headless_mode:
-                var def_path := ""
-                if car_definitions.size() > 0:
-                        def_path = car_definitions[0].resource_path
-                var settings_dict = {
-                        "username": "Headless",
-                        "car_definition_path": def_path,
-                        "accel_setting": 1.0,
-                }
-                network_manager.multiplayer.connected_to_server.connect(
-                        func():
-                                network_manager.send_player_settings(settings_dict),
-                        Object.CONNECT_ONE_SHOT)
-                network_manager.join("127.0.0.1")
-                $Control.visible = false
-                lobby_control.visible = true
+       headless_mode = DisplayServer.get_name() == "headless"
+       var args := OS.get_cmdline_args()
+       if args.has("--host"):
+               call_deferred("_auto_host")
+       if headless_mode:
+               var def_path := ""
+               if car_definitions.size() > 0:
+                       def_path = car_definitions[0].resource_path
+               var settings_dict = {
+                       "username": "Headless",
+                       "car_definition_path": def_path,
+                       "accel_setting": 1.0,
+               }
+               network_manager.multiplayer.connected_to_server.connect(
+                       func():
+                               network_manager.send_player_settings(settings_dict),
+                       Object.CONNECT_ONE_SHOT)
+               var join_timer := Timer.new()
+               join_timer.one_shot = true
+               join_timer.wait_time = 3.0
+               add_child(join_timer)
+               join_timer.timeout.connect(func(): network_manager.join("127.0.0.1"))
+               join_timer.start()
+               $Control.visible = false
+               lobby_control.visible = true
 
 func _load_tracks() -> void:
 	tracks.clear()
@@ -111,15 +120,18 @@ func _on_start_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _on_join_button_pressed() -> void:
-	var settings_dict = car_settings.get_player_settings().to_dict()
-	network_manager.multiplayer.connected_to_server.connect(
-		func():
-			network_manager.send_player_settings(settings_dict),
-		Object.CONNECT_ONE_SHOT)
-	network_manager.join(ip_field.text)
-	start_race_button.disabled = true
-	$Control.visible = false
-	lobby_control.visible = true
+        var settings_dict = car_settings.get_player_settings().to_dict()
+        network_manager.multiplayer.connected_to_server.connect(
+                func():
+                        network_manager.send_player_settings(settings_dict),
+                Object.CONNECT_ONE_SHOT)
+        network_manager.join(ip_field.text)
+        start_race_button.disabled = true
+        $Control.visible = false
+        lobby_control.visible = true
+
+func _auto_host() -> void:
+       _on_start_button_pressed()
 
 func _on_car_settings_button_pressed() -> void:
                                 car_settings.call("open_settings")
