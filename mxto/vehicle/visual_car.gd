@@ -141,6 +141,12 @@ var spinattack_angle := 0.0
 var spinattack_direction := 0
 var visual_shake_mult := 0.0
 
+var rollback_offset_error := Vector3.ZERO
+var old_pos := Vector3.ZERO
+
+var rollback_rot_error := Basis.IDENTITY
+var old_rot := Basis.IDENTITY
+
 func _ready() -> void:
 	car_visual = car_definition.car_scene.instantiate()
 	car_transform.add_child(car_visual)
@@ -302,6 +308,18 @@ func create_machine_visual_transform():
 
 	transform_visual = mtxa
 
+
+func store_old_pos() -> void:
+	old_pos = position_current
+	old_rot = basis_physical.basis
+
+func calculate_error() -> void:
+	var position_error := position_current - old_pos
+	rollback_offset_error -= position_error
+	
+	var rotation_error := basis_physical.basis * old_rot.inverse()
+	rollback_rot_error = rollback_rot_error * rotation_error.inverse()
+
 func _physics_process(delta: float) -> void:
 	create_machine_visual_transform()
 	var calced_max_energy := 100.0
@@ -316,6 +334,11 @@ func _physics_process(delta: float) -> void:
 	#target_fov += remap(boost_ratio, 0, 1, 0, 50)
 	target_fov = minf(target_fov, 100)
 	car_transform.transform = transform_visual
+	rollback_offset_error = rollback_offset_error.lerp(Vector3.ZERO, 0.2)
+	rollback_rot_error = rollback_rot_error.slerp(Basis.IDENTITY, 0.2)
+	#DebugDraw2D.set_text("rollback offset error", rollback_offset_error)
+	car_transform.transform.origin += rollback_offset_error
+	car_transform.transform.basis = car_transform.transform.basis * rollback_rot_error
 	car_camera.fov = lerpf(car_camera.fov, target_fov, delta * 2)
 	var use_forward_z : Vector3 = basis_physical.basis.z
 	use_forward_z = use_forward_z.normalized()
@@ -356,7 +379,7 @@ func _physics_process(delta: float) -> void:
 				lerped_curvature = lerpf(lerped_curvature, road_angle_change / arc_length if !is_zero_approx(arc_length) else 0.0, 0.125)
 				final_y = final_y.rotated(sideways, lerped_curvature * -2000)
 				use_basis = use_basis.rotated(sideways, lerped_curvature * -2000)
-	car_camera.position = position_current + final_y * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
+	car_camera.position = (position_current + rollback_offset_error) + final_y * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
 	car_camera.basis = use_basis.rotated(use_basis.x, deg_to_rad(-15))
 	
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)

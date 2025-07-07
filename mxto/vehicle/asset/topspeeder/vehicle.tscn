@@ -3,5 +3,5 @@
 [ext_resource type="ArrayMesh" uid="uid://dqg4eeoeyhdd" path="res://vehicle/asset/topspeeder/mesh.obj" id="1_irypj"]
 
 [node name="Vehicle" type="MeshInstance3D"]
-transform = Transform3D(-5.46392e-08, 0, -1.25, 0, 1.25, 0, 1.25, 0, -5.46392e-08, 0, 0, 0)
+transform = Transform3D(-5.46392e-08, 0, -1.25, 0, 1.25, 0, 1.25, 0, -5.46392e-08, 0, 0.0827746, 0)
 mesh = ExtResource("1_irypj")
