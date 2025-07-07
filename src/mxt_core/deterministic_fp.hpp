@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <cmath>
 #include <cstdint>	// uint32_t
 
 namespace deterministic_fp {
@@ -10,7 +11,6 @@ namespace deterministic_fp {
 	constexpr float PI_OVER_2 = 1.57079632679489661923f;
 	constexpr float PI_OVER_4 = 0.78539816339744830962f;
 
-	/* branch‑free fabsf without <bit> */
 	inline float absf(float x) {
 		union {
 			float		f;
@@ -20,24 +20,28 @@ namespace deterministic_fp {
 		return u.f;
 	}
 
-	/* wrap to (‑π, π] exactly */
 	inline float wrap_minus_pi_to_pi(float x) {
-		int32_t k = static_cast<int32_t>(x * INV_TWO_PI + (x >= 0.0f ? 0.5f : -0.5f));
-		return x - static_cast<float>(k) * TWO_PI;
+		// round-to-nearest, ties away-from-zero (same rule your cast+0.5 used)
+		float k = std::roundf(x * INV_TWO_PI);
+		return x - k * TWO_PI;
 	}
 
 	inline float poly_sin(float r) {
 		float r2 = r * r;
-		return r + r * r2 * (-0.1666666669f		// -r³/6
-			+ r2 * (0.0083333310f				// +r⁵/120
-				+ r2 * -0.000198412698f));		// -r⁷/5040
+		return r * (1.0f
+			+ r2 * (-1.666665710e-1f
+			+ r2 * (8.332996250e-3f
+			+ r2 * (-1.951529589e-4f
+			+ r2 * 2.592075552e-6f))));
 	}
 
 	inline float poly_cos(float r) {
 		float r2 = r * r;
-		return 1.0f + r2 * (-0.5f				// -r²/2
-			+ r2 * (0.0416666664f				// +r⁴/24
-				+ r2 * -0.00138888889f));		// -r⁶/720
+		return 1.0f
+			+ r2 * (-0.5f
+			+ r2 * (4.166664568e-2f
+			+ r2 * (-1.388731625e-3f
+			+ r2 * 2.443315711e-5f)));
 	}
 
 	inline float sinf(float x) {
@@ -48,7 +52,6 @@ namespace deterministic_fp {
 		return poly_cos(x);
 	}
 
-	/* fast deterministic atan2f (~4 ulp worst‑case) */
 	inline float atan2f(float y, float x) {
 		if (x == 0.0f) {
 			if (y > 0.0f)	return PI_OVER_2;
@@ -71,4 +74,4 @@ namespace deterministic_fp {
 		return y < 0.0f ? -angle : angle;
 	}
 
-} // namespace deterministic_fp
+}
