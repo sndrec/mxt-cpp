@@ -2,6 +2,7 @@
 #include <godot_cpp/variant/transform3d.hpp>
 #include <godot_cpp/variant/vector3.hpp>
 #include <godot_cpp/variant/quaternion.hpp>
+#include <mxt_core/deterministic_fp.hpp>
 #include <cstring>
 
 class MtxStack {
@@ -57,12 +58,35 @@ public:
 		*cur = *cur * m;
 	}
 	void rotate_x(float angle_rad) {
-		*cur = cur->rotated_local(godot::Vector3(1, 0, 0), angle_rad);
+		float c = deterministic_fp::cosf(angle_rad);
+		float s = deterministic_fp::sinf(angle_rad);
+
+		godot::Vector3 y = cur->basis.get_column(1);
+		godot::Vector3 z = cur->basis.get_column(2);
+
+		cur->basis.set_column(1, y * c + z * s);		// new Y
+		cur->basis.set_column(2, z * c - y * s);		// new Z
 	}
+
 	void rotate_y(float angle_rad) {
-		*cur = cur->rotated_local(godot::Vector3(0, 1, 0), angle_rad);
+		float c = deterministic_fp::cosf(angle_rad);
+		float s = deterministic_fp::sinf(angle_rad);
+
+		godot::Vector3 x = cur->basis.get_column(0);
+		godot::Vector3 z = cur->basis.get_column(2);
+
+		cur->basis.set_column(0, x * c - z * s);		// new X
+		cur->basis.set_column(2, x * s + z * c);		// new Z
 	}
+
 	void rotate_z(float angle_rad) {
-		*cur = cur->rotated_local(godot::Vector3(0, 0, 1), angle_rad);
+		float c = deterministic_fp::cosf(angle_rad);
+		float s = deterministic_fp::sinf(angle_rad);
+
+		godot::Vector3 x = cur->basis.get_column(0);
+		godot::Vector3 y = cur->basis.get_column(1);
+
+		cur->basis.set_column(0, x * c + y * s);		// new X
+		cur->basis.set_column(1, y * c - x * s);		// new Y
 	}
 };

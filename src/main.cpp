@@ -329,49 +329,47 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
       // 1) allocate the SoA object itself on your heap
 		{
 			uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
-			uintptr_t mis = addr & 15;
+			uintptr_t mis = addr & 31;
 			if (mis) {
-				level_data.allocate_bytes(16 - mis);
+				level_data.allocate_bytes(32 - mis);
 			}
 		}
 		void *raw = level_data.allocate_bytes(sizeof(RoadTransformCurve));
 		RoadTransformCurve *soa = new (raw) RoadTransformCurve(num_keyframes);
 		current_track->segments[seg].curve_matrix = soa;
 
-
-		// helper to bump heap_allocation up to the next 16-byte boundary
-		auto align16 = [&]() {
+		auto align32 = [&]() {
 			uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
-			uintptr_t mis = addr & 15;
+			uintptr_t mis = addr & 31;
 			if (mis) {
-				level_data.allocate_bytes(16 - mis);
+				level_data.allocate_bytes(32 - mis);
 			}
 		};
 
 		// 2) allocate each float array, after aligning
-		align16();
+		align32();
 		soa->times       = level_data.allocate_array<float>(num_keyframes);
 
-		align16();
+		align32();
 		soa->values      = level_data.allocate_array<float>(num_keyframes * 16);
 
-		align16();
+		align32();
 		soa->tangent_in  = level_data.allocate_array<float>(num_keyframes * 16);
 
-		align16();
+		align32();
 		soa->tangent_out = level_data.allocate_array<float>(num_keyframes * 16);
 
 		int seg_count = num_keyframes > 0 ? num_keyframes - 1 : 0;
 
-		align16();
+		align32();
 		soa->inv_dt  = level_data.allocate_array<float>(seg_count);
-		align16();
+		align32();
 		soa->coef_a  = level_data.allocate_array<float>(seg_count * 16);
-		align16();
+		align32();
 		soa->coef_b  = level_data.allocate_array<float>(seg_count * 16);
-		align16();
+		align32();
 		soa->coef_c  = level_data.allocate_array<float>(seg_count * 16);
-		align16();
+		align32();
 		soa->coef_d  = level_data.allocate_array<float>(seg_count * 16);
 
 		// 3) fill your keyframes
@@ -396,6 +394,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			soa->tangent_out[idx] = 0.0f;
 		}
 
+		soa->last_k = 0;
 		soa->precompute();
 
 		// 4) version‐dependent rail heights
@@ -411,7 +410,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 		int sample_per_kf = 32;
 		float total_distance = 0.0f;
-		godot::Transform3D latest_sample_pos;
+		RoadTransform latest_sample_pos;
 		current_track->segments[seg].curve_matrix->sample(latest_sample_pos, 0.0f);
 		for (int i = 0; i < num_keyframes - 1; i++)
 		{
@@ -425,9 +424,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 					soa->times[i],
 					soa->times[i + 1]
 					);
-				godot::Transform3D new_sample_pos;
+				RoadTransform new_sample_pos;
 				current_track->segments[seg].curve_matrix->sample(new_sample_pos, use_t);
-				total_distance += latest_sample_pos.origin.distance_to(new_sample_pos.origin);
+				total_distance += latest_sample_pos.t3d.origin.distance_to(new_sample_pos.t3d.origin);
 				latest_sample_pos = new_sample_pos;
 			}
 		}
@@ -604,13 +603,17 @@ void GameSim::render_gamesim() {
 	}
 
 	TypedArray<godot::Node> vis_cars = car_node_container->get_children();
+	//mtxa.push();
 	for (int i = 0; i < vis_cars.size(); i++) {
+		//mtxa.assign(cars[i].basis_physical);
+		//mtxa.cur->origin = cars[i].position_current;
+		//cars[i].create_machine_visual_transform();
 		vis_cars[i].set("position_current", cars[i].position_current);
 		vis_cars[i].set("velocity", cars[i].velocity);
 		vis_cars[i].set("velocity_angular", cars[i].velocity_angular);
 		vis_cars[i].set("velocity_local", cars[i].velocity_local);
 		vis_cars[i].set("basis_physical", cars[i].basis_physical);
-		vis_cars[i].set("transform_visual", cars[i].transform_visual);
+		//vis_cars[i].set("transform_visual", cars[i].transform_visual);
 		vis_cars[i].set("base_speed", cars[i].base_speed);
 		vis_cars[i].set("boost_turbo", cars[i].boost_turbo);
 		vis_cars[i].set("race_start_charge", cars[i].race_start_charge);
@@ -632,7 +635,23 @@ void GameSim::render_gamesim() {
 		vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
 		vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
 		vis_cars[i].set("input_strafe", cars[i].input_strafe);
+		vis_cars[i].set("turn_reaction_input", cars[i].turn_reaction_input);
+		vis_cars[i].set("g_anim_timer", cars[i].g_anim_timer);
+		vis_cars[i].set("state_2", cars[i].state_2);
+		vis_cars[i].set("tilt_fl_offset", cars[i].tilt_fl.offset);
+		vis_cars[i].set("tilt_bl_offset", cars[i].tilt_bl.offset);
+		vis_cars[i].set("stat_weight", cars[i].stat_weight);
+		vis_cars[i].set("stat_strafe", cars[i].stat_strafe);
+		vis_cars[i].set("input_strafe_1_6", cars[i].input_strafe_1_6);
+		vis_cars[i].set("weight_derived_1", cars[i].weight_derived_1);
+		vis_cars[i].set("weight_derived_2", cars[i].weight_derived_2);
+		vis_cars[i].set("weight_derived_3", cars[i].weight_derived_3);
+		vis_cars[i].set("visual_rotation", cars[i].visual_rotation);
+		vis_cars[i].set("spinattack_angle", cars[i].spinattack_angle);
+		vis_cars[i].set("spinattack_direction", cars[i].spinattack_direction);
+		vis_cars[i].set("visual_shake_mult", cars[i].visual_shake_mult);
 	}
+	//mtxa.pop();
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 	{
 		for (int i = 0; i < current_track->num_checkpoints; i++)

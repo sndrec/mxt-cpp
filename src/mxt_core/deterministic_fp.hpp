@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include <cstdint>	// uint32_t
-#include <cstring>	// std::memcpy
 
 namespace deterministic_fp {
 
@@ -27,37 +26,26 @@ namespace deterministic_fp {
 		return x - static_cast<float>(k) * TWO_PI;
 	}
 
-	/* Horner 13‑term minimax polynomials (~1 ulp) */
 	inline float poly_sin(float r) {
 		float r2 = r * r;
-		return r + r * r2 * (-1.6666667163e-1f
-			+ r2 * (8.3333337680e-3f
-				+ r2 * (-1.9841270114e-4f
-					+ r2 * (2.7557314297e-6f
-						+ r2 * (-2.5050759689e-8f
-							+ r2 * 1.5896910177e-10f)))));
+		return r + r * r2 * (-0.1666666669f		// -r³/6
+			+ r2 * (0.0083333310f				// +r⁵/120
+				+ r2 * -0.000198412698f));		// -r⁷/5040
 	}
 
 	inline float poly_cos(float r) {
 		float r2 = r * r;
-		return 1.0f + r2 * (-0.5f
-			+ r2 * (4.1666667908e-2f
-				+ r2 * (-1.3888889225e-3f
-					+ r2 * (2.4801587642e-5f
-						+ r2 * (-2.7557314297e-7f
-							+ r2 * 2.0875723372e-9f)))));
+		return 1.0f + r2 * (-0.5f				// -r²/2
+			+ r2 * (0.0416666664f				// +r⁴/24
+				+ r2 * -0.00138888889f));		// -r⁶/720
 	}
 
-	/* Public API */
-
 	inline float sinf(float x) {
-		float r = wrap_minus_pi_to_pi(x);
-		return poly_sin(r);
+		return poly_sin(x);
 	}
 
 	inline float cosf(float x) {
-		float r = wrap_minus_pi_to_pi(x);
-		return poly_cos(r);
+		return poly_cos(x);
 	}
 
 	/* fast deterministic atan2f (~4 ulp worst‑case) */
