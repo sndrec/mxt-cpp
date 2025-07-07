@@ -16,6 +16,8 @@ func send_race_finish_time(time: int) -> void:
 const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
+@onready var game_manager: GameManager = $".."
+
 var is_server: bool = false
 var listen_server: bool = false
 var player_ids: Array = []
@@ -531,6 +533,8 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 		return
 	if tick == -1:
 		return
+	for car:VisualCar in game_manager.car_node_container.get_children():
+		car.store_old_pos()
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
 	latest_state_tick = tick
@@ -541,6 +545,9 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 		if input_history.has(current):
 			game_sim.tick_gamesim(input_history[current])
 		current += 1
+	game_sim.render_gamesim()
+	for car:VisualCar in game_manager.car_node_container.get_children():
+		car.calculate_error()
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
@@ -557,6 +564,8 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	#	return
 	if tick == 0 or latest_state_tick == -1:
 		return
+	for car:VisualCar in game_manager.car_node_container.get_children():
+		car.store_old_pos()
 	input_history[tick] = inputs
 	game_sim.load_state(maxi(latest_state_tick, tick - 1))
 	var current := maxi(latest_state_tick + 1, tick)
@@ -565,6 +574,9 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 		if input_history.has(current):
 			game_sim.tick_gamesim(input_history[current])
 		current += 1
+	game_sim.render_gamesim()
+	for car:VisualCar in game_manager.car_node_container.get_children():
+		car.calculate_error()
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
