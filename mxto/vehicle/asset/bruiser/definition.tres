@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="CarDefinition" load_steps=3 format=3 uid="uid://c2r7h23iaegka"]
+
+[ext_resource type="PackedScene" uid="uid://ddxs0gwo3cdsc" path="res://vehicle/asset/bruiser/vehicle.tscn" id="1_pptv1"]
+[ext_resource type="Script" uid="uid://b1wgg7ehpe0d1" path="res://vehicle/car_definition.gd" id="2_bnt6y"]
+
+[resource]
+script = ExtResource("2_bnt6y")
+name = "Bruiser"
+car_definition = "res://vehicle/asset/bruiser/wild_goose.mxt_car_props"
+car_scene = ExtResource("1_pptv1")
+metadata/_custom_type_script = "uid://b1wgg7ehpe0d1"

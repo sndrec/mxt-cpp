@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://b5pehi3u38pwv"]
-
-[ext_resource type="ArrayMesh" uid="uid://rf8pmkvfktco" path="res://vehicle/asset/cosmic_dolphin/vehicle/scarp/scarp.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

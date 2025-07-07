@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://c7vwflf5bp8p5"]
-
-[ext_resource type="ArrayMesh" uid="uid://ygi35aggmqso" path="res://vehicle/asset/crazy_bear/vehicle/cbear/cbear.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

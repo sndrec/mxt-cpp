@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://6f8qpefxnguu"]
-
-[ext_resource type="ArrayMesh" uid="uid://cnrb4q2h026me" path="res://vehicle/asset/rainbow_phoenix/vehicle/rainp/rainp.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

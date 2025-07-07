@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://bqgeavky8ijwr"]
-
-[ext_resource type="ArrayMesh" uid="uid://dirkgmfe7sfl5" path="res://vehicle/asset/great_star/vehicle/gstar/gstar.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

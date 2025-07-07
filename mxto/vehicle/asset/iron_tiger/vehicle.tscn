@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://d6g847saefy6"]
-
-[ext_resource type="ArrayMesh" uid="uid://cisbdedwth2jd" path="res://vehicle/asset/iron_tiger/vehicle/itiger/itiger.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

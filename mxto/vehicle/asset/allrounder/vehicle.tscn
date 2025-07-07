@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://c5c5dg0c1f63j"]
+
+[ext_resource type="ArrayMesh" uid="uid://domr266scooed" path="res://vehicle/asset/allrounder/mesh.obj" id="1_fag7k"]
+
+[node name="MeshInstance3D" type="MeshInstance3D"]
+transform = Transform3D(-7, 0, -1.05697e-06, 0, 7, 0, 1.05697e-06, 0, -7, 0, 0.412828, 0)
+mesh = ExtResource("1_fag7k")

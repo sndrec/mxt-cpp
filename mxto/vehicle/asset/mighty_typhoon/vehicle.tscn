@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://dsv7mtqn580w7"]
-
-[ext_resource type="ArrayMesh" uid="uid://uh4es2xroq3t" path="res://vehicle/asset/mighty_typhoon/vehicle/mty/mty.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://b7b4mtmxe8kl6"]
-
-[ext_resource type="ArrayMesh" uid="uid://cvdvwaarexprm" path="res://vehicle/asset/night_thunder/vehicle/nthun/nthun.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

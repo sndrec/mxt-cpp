@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://diaug2gk66hrw"]
-
-[ext_resource type="ArrayMesh" uid="uid://cii40fjuqw1dq" path="res://vehicle/asset/fat_shark/vehicle/fats/fats.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

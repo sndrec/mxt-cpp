@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://bwvktl2kkbsvk"]
-
-[ext_resource type="ArrayMesh" uid="uid://5a2gcvgu0o0x" path="res://vehicle/asset/death_anchor/vehicle/danc/danc.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

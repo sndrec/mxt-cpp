@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://c5vrf7bbbcx48"]
-
-[ext_resource type="ArrayMesh" uid="uid://cj3cbwf01awi4" path="res://vehicle/asset/green_panther/vehicle/gpan/gpan.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

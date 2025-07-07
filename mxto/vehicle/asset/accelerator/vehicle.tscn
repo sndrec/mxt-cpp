@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://h2ihlxm5glfj"]
+
+[ext_resource type="ArrayMesh" uid="uid://bmkxc332thrb6" path="res://vehicle/asset/accelerator/mesh.obj" id="1_rggl3"]
+
+[node name="Vehicle" type="MeshInstance3D"]
+mesh = ExtResource("1_rggl3")

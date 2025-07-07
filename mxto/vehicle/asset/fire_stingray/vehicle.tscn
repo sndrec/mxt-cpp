@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://djx62co8herii"]
-
-[ext_resource type="ArrayMesh" uid="uid://c2vjx0k1gydp1" path="res://vehicle/asset/fire_stingray/vehicle/fsting/fsting.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")
