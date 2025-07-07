@@ -1,0 +1,20 @@
+godot::Vector3 p0_ray_start_ws = mtxa->transform_point(in_corner.offset + godot::Vector3(0.0f, 2.0f + offset_add, 0.0f)); <- slow? might just be because our current mtxa funcs are wildly inefficient, idk.
+
+ANY call to .normalized() or .length() we should see if any sqrt/reciprocal can be precalculated, so we can just do a simple multiplication w/ a magic number instead
+
+make a replacement for Transform3D::rotated_local that mutates the original transform
+honestly we might want to just completely forego use of godot's native t3d functions in mtxa and operate on the t3d components directly!
+a lot of godot's native t3d functions construct and return a new t3d, so there's lots of costly stack memory allocation that we just don't need.
+
+
+SLOW??? in RoadTransformCurve::sample
+int k1 = int(std::upper_bound(times, seg_end, in_t) - times); <- why is this so slow???? it's using half of our time in this function!
+it might just be faster to iterate the keys one at a time since we have so few of them?
+
+also,        out.basis.set(
+               sampled[3] * scale.x,  sampled[6] * scale.y,  sampled[9] * scale.z,
+               sampled[4] * scale.x,  sampled[7] * scale.y, sampled[10] * scale.z,
+               sampled[5] * scale.x,  sampled[8] * scale.y, sampled[11] * scale.z
+       );
+it might be better/faster to create a RoadTransform struct that contains the scales separately!
+we would no longer need to normalize the vectors or calculate their lengths when using the results of this func.
