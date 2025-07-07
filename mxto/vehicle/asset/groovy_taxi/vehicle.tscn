@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://mb2hs64vp7ww"]
-
-[ext_resource type="ArrayMesh" uid="uid://bggr2lxqqxjfq" path="res://vehicle/asset/groovy_taxi/vehicle/gtaxi/gtaxi.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

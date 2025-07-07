@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://btlylc10ujujg"]
-
-[ext_resource type="ArrayMesh" uid="uid://it6ulca321lx" path="res://vehicle/asset/spark_moon/vehicle/smoon/smoon.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

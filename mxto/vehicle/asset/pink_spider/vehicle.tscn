@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://c5wobchknema7"]
-
-[ext_resource type="ArrayMesh" uid="uid://0vd82s08x6qn" path="res://vehicle/asset/pink_spider/vehicle/pinks/pinks.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

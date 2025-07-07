@@ -671,7 +671,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 					machine_state &= ~(MACHINESTATE::BOOSTING_DASHPLATE |
 						MACHINESTATE::JUST_PRESSED_BOOST |
 						MACHINESTATE::BOOSTING);
-					boost_turbo -= (4.0f + 0.5f * boost_turbo) / 60.0f;
+					boost_turbo -= (4.0f + 0.1f * boost_turbo) / 60.0f;
 				} else {
 					float boost_strength_factor = 1.0f - boost_turbo / (9.0f * stat_boost_strength);
 					float min_boost_strength_factor = 0.2f;
@@ -704,10 +704,10 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		}
 
 		if ((machine_state & MACHINESTATE::SPINATTACKING) == 0) {
-			boost_turbo -= (2.0f + 0.5f * boost_turbo) / 60.0f;
+			boost_turbo -= (2.0f + 0.1f * boost_turbo) / 60.0f;
 		} else {
 			effective_accel_input *= 0.8f;
-			boost_turbo -= (3.0f + 0.5f * boost_turbo) / 60.0f;
+			boost_turbo -= (3.0f + 0.1f * boost_turbo) / 60.0f;
 		}
 		boost_turbo = std::max(boost_turbo, 0.0f);
 
@@ -1221,7 +1221,7 @@ void PhysicsCar::initialize_machine()
 	}
 
 	stat_obstacle_collision += 0.1f;
-	calced_max_energy = 100.0f;
+	calced_max_energy = car_properties->max_energy;
 
 	mtxa->push();
 	mtxa->identity();
@@ -1328,7 +1328,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	car_hit_invincibility = 0;
 	turn_reaction_input = 0.0f;
 	turn_reaction_effect = 0.0f;
-	boost_energy_use_mult = 1.0f;
+	boost_energy_use_mult = 0.8f;
 
 	// Orient the machine at the spawn position
 	mtxa->push();
@@ -2497,7 +2497,9 @@ void PhysicsCar::post_tick()
 
 void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
-	calced_max_energy = 100.0f;
+	calced_max_energy = car_properties->max_energy;
+	DEBUG::disp_text("max energy", calced_max_energy);
+	DEBUG::disp_text("energy", energy);
 	godot::Vector3 initial_pos = position_current;
 	side_attack_indicator = 0.0f;
 

@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3 uid="uid://ddxs0gwo3cdsc"]
+
+[ext_resource type="ArrayMesh" uid="uid://p2s7s0jn58eb" path="res://vehicle/asset/bruiser/mesh.obj" id="1_42fyx"]
+
+[node name="Vehicle" type="MeshInstance3D"]
+transform = Transform3D(-4, 0, -3.49691e-07, 0, 4, 0, 3.49691e-07, 0, -4, 0, 0, 0)
+mesh = ExtResource("1_42fyx")

@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://cq6j2rnin7vix"]
-
-[ext_resource type="ArrayMesh" uid="uid://bqo3qyg810sr0" path="res://vehicle/asset/king_meteor/vehicle/kmete/kmete.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

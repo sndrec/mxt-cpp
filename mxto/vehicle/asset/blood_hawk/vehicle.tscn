@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://c1oacb8jqn5ev"]
-
-[ext_resource type="ArrayMesh" uid="uid://dyc4g328y0gct" path="res://vehicle/asset/blood_hawk/vehicle/hhawk/hhawk.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")

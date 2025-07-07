@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="CarDefinition" load_steps=3 format=3 uid="uid://cafyssfiado5l"]
+
+[ext_resource type="PackedScene" uid="uid://c5c5dg0c1f63j" path="res://vehicle/asset/allrounder/vehicle.tscn" id="1_p4l7w"]
+[ext_resource type="Script" uid="uid://b1wgg7ehpe0d1" path="res://vehicle/car_definition.gd" id="2_7k7id"]
+
+[resource]
+script = ExtResource("2_7k7id")
+name = "All Rounder"
+car_definition = "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+car_scene = ExtResource("1_p4l7w")
+metadata/_custom_type_script = "uid://b1wgg7ehpe0d1"

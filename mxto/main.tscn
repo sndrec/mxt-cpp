@@ -217,6 +217,16 @@ offset_right = 40.0
 grow_vertical = 0
 text = "400us"
 
+[node name="Label" type="Label" parent="."]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 72.0
+offset_top = -23.0
+offset_right = 263.0
+grow_vertical = 0
+text = "MaxX Throttle C++ v0.0.2"
+
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/JoinButton" to="." method="_on_join_button_pressed"]
 [connection signal="pressed" from="Control/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]

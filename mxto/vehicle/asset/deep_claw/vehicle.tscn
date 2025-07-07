@@ -1,6 +1,0 @@
-[gd_scene load_steps=2 format=3 uid="uid://6xoejmq2tf5o"]
-
-[ext_resource type="ArrayMesh" uid="uid://bldfxuqf64kn4" path="res://vehicle/asset/deep_claw/vehicle/dclaw/dclaw.obj" id="1_dvkvf"]
-
-[node name="Vehicle" type="MeshInstance3D"]
-mesh = ExtResource("1_dvkvf")
