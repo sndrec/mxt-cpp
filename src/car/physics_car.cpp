@@ -922,7 +922,6 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 	godot::Vector3 gravity_align_force = track_surface_normal * force_mag;
 	velocity += gravity_align_force;
 
-	basis_physical.basis = basis_physical.basis.orthonormalized();
 	mtxa->assign(basis_physical);
 
 	if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
@@ -1778,7 +1777,7 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 		MACHINESTATE::TOOKDAMAGE | MACHINESTATE::B14 |
 		MACHINESTATE::MANUAL_DRIFT);
 
-	basis_physical = basis_physical.orthonormalized();
+	basis_physical.orthonormalize();
 	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
 		position_bottom += position_current - position_old;
 	}
@@ -2004,9 +2003,6 @@ void PhysicsCar::create_machine_visual_transform()
 		0.0f));
 	godot::Vector3 target_visual_world_position = position_current + visual_y_offset_world;
 
-	mtxa->cur->basis = mtxa->cur->basis.orthonormalized();
-	mtxa->cur->origin = godot::Vector3();
-	basis_physical = basis_physical.orthonormalized();
 	mtxa->assign(basis_physical);
 
 	mtxa->push();
@@ -2498,8 +2494,6 @@ void PhysicsCar::post_tick()
 void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
 	calced_max_energy = car_properties->max_energy;
-	DEBUG::disp_text("max energy", calced_max_energy);
-	DEBUG::disp_text("energy", energy);
 	godot::Vector3 initial_pos = position_current;
 	side_attack_indicator = 0.0f;
 
