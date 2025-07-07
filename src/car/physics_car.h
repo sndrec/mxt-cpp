@@ -2,6 +2,7 @@
 
 #include "car/car_points.h"
 #include "car/car_properties.h"
+#include "mxt_core/curve.h"
 #include "mxt_core/player_input.h"
 #include "track/racetrack.h"
 #include "mxt_core/math_utils.h"
@@ -24,7 +25,7 @@ struct RoadData {
 	godot::Vector3 spatial_t; // local coordinate space of the point that is being tested at the road's sampled point
 	godot::Vector2 road_t; // span along the width and length of the road at the sampled point (goes from (-1, 0) to (1, 1))
 	godot::Transform3D closest_surface; // oriented transform representing the road's surface position and orientation at the sampled point
-	godot::Transform3D closest_root; // oriented transform representing the road's overall center and orientation at the sampled length along the road
+	RoadTransform closest_root; // oriented transform representing the road's overall center and orientation at the sampled length along the road
 };
 
 struct CollisionData {
@@ -204,7 +205,7 @@ public:
 	void apply_torque_from_force(const godot::Vector3& p_local_offset, const godot::Vector3& wf_world_force);
 	void simulate_machine_motion(PlayerInput in_input);
 	int update_machine_corners();
-    void create_machine_visual_transform();
+    //void create_machine_visual_transform();
     void handle_machine_collision_response();
     void align_machine_y_with_track_normal_immediate();
     void handle_checkpoints();

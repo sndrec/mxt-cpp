@@ -9,7 +9,7 @@ void RoadShape::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vec
 
 void RoadShape::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
 {
-	godot::Transform3D road_root;
+	RoadTransform road_root;
 	owning_segment->curve_matrix->sample(road_root, in_t.y);
 	const float mod_t = 0.5f * (1.0f - in_t.x);
 	float vertical_offset = 0.0f;
@@ -21,28 +21,29 @@ void RoadShape::get_position_at_time(godot::Vector3 &out_pos, const godot::Vecto
 
 		vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * affector;
 	}
-	const godot::Vector3 local_pos(in_t.x, vertical_offset, 0.0f);
-	out_pos = road_root.xform(local_pos);
+	const godot::Vector3 local_pos(in_t.x * road_root.scale.x, vertical_offset * road_root.scale.y, 0.0f);
+	out_pos = road_root.t3d.xform(local_pos);
 }
 
-void RoadShape::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
-{
-	godot::Transform3D root;
-	owning_segment->curve_matrix->sample(root, in_t.y);
-	const float mod_t = 0.5f * (1.0f - in_t.x);
-
-	float y_offset = 0.0f;
-	for (int i = 0; i < num_modulations; ++i)
-	{
-		const float aff = road_modulations[i].modulation_effect->sample(in_t.y);
-		if (aff == 0.0f)
-			continue;
-
-		y_offset += road_modulations[i].modulation_height->sample(mod_t) * aff;
-	}
-	const godot::Vector3 local(in_t.x, y_offset, 0.0f);
-	out_transform = godot::Transform3D(root.basis, root.xform(local));
-}
+//void RoadShape::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
+//{
+//	RoadTransform root;
+//	owning_segment->curve_matrix->sample(root, in_t.y);
+//	const float mod_t = 0.5f * (1.0f - in_t.x);
+//
+//	float y_offset = 0.0f;
+//	for (int i = 0; i < num_modulations; ++i)
+//	{
+//		const float aff = road_modulations[i].modulation_effect->sample(in_t.y);
+//		if (aff == 0.0f)
+//			continue;
+//
+//		y_offset += road_modulations[i].modulation_height->sample(mod_t) * aff;
+//	}
+//	const godot::Vector3 local(in_t.x, y_offset, 0.0f);
+//	out_transform.basis = root.t3d.basis;
+//	out_transform.origin = root.t3d.xform(local);
+//}
 
 void RoadShapePipe::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
 {
@@ -52,7 +53,7 @@ void RoadShapePipe::find_t_from_relative_pos(godot::Vector2 &out_t, const godot:
 
 void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
 {
-	godot::Transform3D road_root_transform;
+	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
 	const float mod_t = (in_t[0] + 1.0f) * 0.5f;
@@ -68,36 +69,36 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 	const godot::Vector3 pos = godot::Vector3(deterministic_fp::cosf((in_t[0] - 0.5f) * PI), deterministic_fp::sinf((in_t[0] - 0.5f) * PI), 0.0f);
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
-	const godot::Transform3D road_shape_transform = godot::Transform3D(BASIS_IDENTITY, road_point);
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+	const godot::Transform3D road_shape_transform = godot::Transform3D(BASIS_IDENTITY, road_point * road_root_transform.scale);
+	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
 
 	out_pos = final_transform.origin;
 };
 
-void RoadShapePipe::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
-{
-	godot::Transform3D road_root_transform;
-	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
-
-	const float mod_t = (in_t[0] + 1.0f) * 0.5f;
-
-	float mod_vertical_offset = 0.0f;
-
-	for (int i = 0; i < num_modulations; i++)
-	{
-		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
-		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
-	}
-
-	const godot::Vector3 pos = godot::Vector3(deterministic_fp::cosf((in_t[0] - 0.5f) * PI), deterministic_fp::sinf((in_t[0] - 0.5f) * PI), 0.0f);
-	const godot::Vector3 dir = pos.normalized(); // direction from center of road segment to surface point
-	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
-	const godot::Vector3 left = -godot::Vector3(dir.y, -dir.x, 0.0f); // inside of pipe, so normal should be -dir
-	const godot::Transform3D road_shape_transform = godot::Transform3D(godot::Basis(left, -dir, godot::Vector3(.0f, .0f, 1.0f)), road_point);
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
-
-	out_transform = final_transform;
-};
+//void RoadShapePipe::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
+//{
+//	godot::Transform3D road_root_transform;
+//	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
+//
+//	const float mod_t = (in_t[0] + 1.0f) * 0.5f;
+//
+//	float mod_vertical_offset = 0.0f;
+//
+//	for (int i = 0; i < num_modulations; i++)
+//	{
+//		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
+//		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
+//	}
+//
+//	const godot::Vector3 pos = godot::Vector3(deterministic_fp::cosf((in_t[0] - 0.5f) * PI), deterministic_fp::sinf((in_t[0] - 0.5f) * PI), 0.0f);
+//	const godot::Vector3 dir = pos.normalized(); // direction from center of road segment to surface point
+//	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
+//	const godot::Vector3 left = -godot::Vector3(dir.y, -dir.x, 0.0f); // inside of pipe, so normal should be -dir
+//	const godot::Transform3D road_shape_transform = godot::Transform3D(godot::Basis(left, -dir, godot::Vector3(.0f, .0f, 1.0f)), road_point);
+//	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+//
+//	out_transform = final_transform;
+//};
 
 void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
@@ -117,7 +118,7 @@ void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const go
 
 void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
 {
-	godot::Transform3D road_root_transform;
+	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
 	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
@@ -134,38 +135,38 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
 	godot::Transform3D road_shape_transform = T3D_IDENTITY;
-	road_shape_transform.origin = road_point;
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+	road_shape_transform.origin = road_point * road_root_transform.scale;
+	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
 
 	out_pos = final_transform.origin;
 };
 
-void RoadShapeCylinder::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
-{
-	godot::Transform3D road_root_transform;
-	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
-
-	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
-
-	float mod_vertical_offset = 0.0f;
-
-	for (int i = 0; i < num_modulations; i++)
-	{
-		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
-		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
-	}
-
-	const godot::Vector3 pos = godot::Vector3(deterministic_fp::sinf((in_t.x - 0.5f) * PI), deterministic_fp::cosf((in_t.x - 0.5f) * PI), 0.0f);
-	const godot::Vector3 dir = pos.normalized();
-	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
-	godot::Transform3D road_shape_transform = T3D_IDENTITY;
-	road_shape_transform.origin = road_point;
-	const godot::Vector3 left = godot::Vector3(dir.x, -dir.y, .0f);
-	road_shape_transform.basis = godot::Basis(left, dir, godot::Vector3(.0f, .0f, 1.0f));
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
-
-	out_transform = final_transform;
-};
+//void RoadShapeCylinder::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
+//{
+//	godot::Transform3D road_root_transform;
+//	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
+//
+//	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
+//
+//	float mod_vertical_offset = 0.0f;
+//
+//	for (int i = 0; i < num_modulations; i++)
+//	{
+//		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
+//		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
+//	}
+//
+//	const godot::Vector3 pos = godot::Vector3(deterministic_fp::sinf((in_t.x - 0.5f) * PI), deterministic_fp::cosf((in_t.x - 0.5f) * PI), 0.0f);
+//	const godot::Vector3 dir = pos.normalized();
+//	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
+//	godot::Transform3D road_shape_transform = T3D_IDENTITY;
+//	road_shape_transform.origin = road_point;
+//	const godot::Vector3 left = godot::Vector3(dir.x, -dir.y, .0f);
+//	road_shape_transform.basis = godot::Basis(left, dir, godot::Vector3(.0f, .0f, 1.0f));
+//	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+//
+//	out_transform = final_transform;
+//};
 
 void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
@@ -176,7 +177,7 @@ void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const go
 
 void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
 {
-	godot::Transform3D road_root_transform;
+	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
 	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
@@ -195,40 +196,40 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
 	godot::Transform3D road_shape_transform = T3D_IDENTITY;
-	road_shape_transform.origin = road_point;
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+	road_shape_transform.origin = road_point * road_root_transform.scale;
+	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
 
 	out_pos = final_transform.origin;
 };
 
-void RoadShapePipeOpen::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
-{
-	godot::Transform3D road_root_transform;
-	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
-
-	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
-
-	float mod_vertical_offset = 0.0f;
-
-	for (int i = 0; i < num_modulations; i++)
-	{
-		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
-		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
-	}
-
-	const float mod_tx = in_t[0] * openness->sample(in_t[1]);
-
-	const godot::Vector3 pos = godot::Vector3(deterministic_fp::cosf((mod_tx - 0.5f) * PI), deterministic_fp::sinf((mod_tx - 0.5f) * PI), 0.0f);
-	const godot::Vector3 dir = pos.normalized();
-	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
-	godot::Transform3D road_shape_transform = T3D_IDENTITY;
-	road_shape_transform.origin = road_point;
-	const godot::Vector3 left = godot::Vector3(-dir.x, dir.y, .0f);
-	road_shape_transform.basis = godot::Basis(left, -dir, godot::Vector3(.0f, .0f, 1.0f));
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
-
-	out_transform = final_transform;
-};
+//void RoadShapePipeOpen::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
+//{
+//	godot::Transform3D road_root_transform;
+//	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
+//
+//	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
+//
+//	float mod_vertical_offset = 0.0f;
+//
+//	for (int i = 0; i < num_modulations; i++)
+//	{
+//		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
+//		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
+//	}
+//
+//	const float mod_tx = in_t[0] * openness->sample(in_t[1]);
+//
+//	const godot::Vector3 pos = godot::Vector3(deterministic_fp::cosf((mod_tx - 0.5f) * PI), deterministic_fp::sinf((mod_tx - 0.5f) * PI), 0.0f);
+//	const godot::Vector3 dir = pos.normalized();
+//	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
+//	godot::Transform3D road_shape_transform = T3D_IDENTITY;
+//	road_shape_transform.origin = road_point;
+//	const godot::Vector3 left = godot::Vector3(-dir.x, dir.y, .0f);
+//	road_shape_transform.basis = godot::Basis(left, -dir, godot::Vector3(.0f, .0f, 1.0f));
+//	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+//
+//	out_transform = final_transform;
+//};
 
 
 void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
@@ -250,7 +251,7 @@ void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, cons
 
 void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
 {
-	godot::Transform3D road_root_transform;
+	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
 	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
@@ -269,38 +270,38 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
 	godot::Transform3D road_shape_transform = T3D_IDENTITY;
-	road_shape_transform.origin = road_point;
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+	road_shape_transform.origin = road_point * road_root_transform.scale;
+	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
 
 	out_pos = final_transform.origin;
 };
 
-void RoadShapeCylinderOpen::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
-{
-	godot::Transform3D road_root_transform;
-	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
-
-	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
-
-	float mod_vertical_offset = 0.0f;
-
-	for (int i = 0; i < num_modulations; i++)
-	{
-		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
-		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
-	}
-
-	const godot::Vector3 pos = godot::Vector3(deterministic_fp::sinf((in_t[0] - 0.5f) * PI), deterministic_fp::cosf((in_t[0] - 0.5f) * PI), 0.0f);
-	const godot::Vector3 dir = pos.normalized();
-	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
-	godot::Transform3D road_shape_transform = T3D_IDENTITY;
-	road_shape_transform.origin = road_point;
-	const godot::Vector3 left = godot::Vector3(dir.x, -dir.y, .0f);
-	road_shape_transform.basis = godot::Basis(left, dir, godot::Vector3(.0f, .0f, 1.0f));
-	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
-
-	out_transform = final_transform;
-};
+//void RoadShapeCylinderOpen::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
+//{
+//	godot::Transform3D road_root_transform;
+//	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
+//
+//	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
+//
+//	float mod_vertical_offset = 0.0f;
+//
+//	for (int i = 0; i < num_modulations; i++)
+//	{
+//		const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
+//		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
+//	}
+//
+//	const godot::Vector3 pos = godot::Vector3(deterministic_fp::sinf((in_t[0] - 0.5f) * PI), deterministic_fp::cosf((in_t[0] - 0.5f) * PI), 0.0f);
+//	const godot::Vector3 dir = pos.normalized();
+//	const godot::Vector3 road_point = pos + dir * mod_vertical_offset;
+//	godot::Transform3D road_shape_transform = T3D_IDENTITY;
+//	road_shape_transform.origin = road_point;
+//	const godot::Vector3 left = godot::Vector3(dir.x, -dir.y, .0f);
+//	road_shape_transform.basis = godot::Basis(left, dir, godot::Vector3(.0f, .0f, 1.0f));
+//	const godot::Transform3D final_transform = road_root_transform * road_shape_transform;
+//
+//	out_transform = final_transform;
+//};
 
 const float transform_epsilon = 0.002f;
 
