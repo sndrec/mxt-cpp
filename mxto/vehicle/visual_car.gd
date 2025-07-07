@@ -115,6 +115,32 @@ var tilt_fr_state := 0
 var tilt_bl_state := 0
 var tilt_br_state := 0
 
+
+
+var unk_stat_0x5d4 := 0.0
+var g_pitch_mtx_0x5e0 := Transform3D.IDENTITY
+var turn_reaction_effect := 0.0
+var strafe_visual_roll : float = 0.0 
+var unk_quat_0x5c4 : Quaternion = Quaternion.IDENTITY
+var height_adjust_from_boost := 0.0
+
+
+var turn_reaction_input := 0.0
+var g_anim_timer : int = 0
+var state_2 : int = 0
+var tilt_fl_offset : Vector3 = Vector3.ZERO
+var tilt_bl_offset : Vector3 = Vector3.ZERO
+var stat_weight : float = 0.0
+var stat_strafe : float = 0.0
+var input_strafe_1_6 : float = 0.0
+var weight_derived_1 := 0.0
+var weight_derived_2 := 0.0
+var weight_derived_3 := 0.0
+var visual_rotation := Vector3.ZERO
+var spinattack_angle := 0.0
+var spinattack_direction := 0
+var visual_shake_mult := 0.0
+
 func _ready() -> void:
 	car_visual = car_definition.car_scene.instantiate()
 	car_transform.add_child(car_visual)
@@ -131,7 +157,153 @@ func _ready() -> void:
 	strafe_sound.stream = preload("res://sfx/vehicle/strafe.wav")
 	strafe_sound.play()
 
+func create_machine_visual_transform():
+	var fVar12_initial_factor := 0.0
+	var mtxa := Transform3D(basis_physical.basis, position_current)
+	if (base_speed <= 2.0):
+		fVar12_initial_factor = (2.0 - base_speed) * 0.5
+
+	if (frames_since_start_2 < 90):
+		fVar12_initial_factor *= float(frames_since_start_2) / 90.0
+
+	unk_stat_0x5d4 += 0.05 * (fVar12_initial_factor - unk_stat_0x5d4)
+
+	var dVar11_current_unk_stat := unk_stat_0x5d4
+
+	var sin_val2_scaled_angle := float(g_anim_timer * 0x1a3);
+	var sin_val2 := sin(sin_val2_scaled_angle);
+
+	var y_offset_base := 0.006 * (dVar11_current_unk_stat * sin_val2);
+
+	var visual_y_offset_world := mtxa.basis * (Vector3(0.0, y_offset_base - (0.2 * dVar11_current_unk_stat), 0.0))
+	var target_visual_world_position := position_current + visual_y_offset_world
+
+	mtxa.origin = Vector3.ZERO
+	
+	var car_rot := basis_physical
+	var fr_offset_z := tilt_fl_offset.z
+	var br_offset_z := tilt_bl_offset.z
+	var stagger_factor := 0.0
+	if (absf(fr_offset_z) > 0.0001):
+		stagger_factor = (br_offset_z / -fr_offset_z) - 1.0
+	var clamped_stagger := clampf(stagger_factor, -0.2, 0.2)
+	var pitch_angle_deg := 30.0 * clamped_stagger
+	car_rot = car_rot.rotated_local(Vector3.RIGHT, deg_to_rad(pitch_angle_deg))
+	g_pitch_mtx_0x5e0 = car_rot
+	
+	var accum_transform : Transform3D = Transform3D.IDENTITY
+	if ((state_2 & 0x20) == 0):
+		if (machine_state & FZ_MS.ACTIVE) != 0:
+			turn_reaction_effect += 0.05 * (turn_reaction_input - turn_reaction_effect)
+			var yaw_reaction_rad := deg_to_rad(turn_reaction_effect);
+			accum_transform = accum_transform.rotated(Vector3.UP, yaw_reaction_rad)
+			#mtxa->rotate_y(yaw_reaction_rad);
+
+		var world_vel_mag := velocity.length();
+		var speed_factor_for_roll_pitch := 0.0;
+		if (absf(stat_weight) > 0.0001):
+			speed_factor_for_roll_pitch = (world_vel_mag / stat_weight) / 4.629629629;
+
+		strafe_visual_roll = int(182.04445 * (stat_strafe / 15.0) * -5.0 * input_strafe_1_6 * speed_factor_for_roll_pitch);
+
+		var banking_roll_angle_val_rad := 0.0;
+		if (absf(weight_derived_2) > 0.0001):
+			banking_roll_angle_val_rad = speed_factor_for_roll_pitch * 4.5 * (velocity_angular.y / weight_derived_2);
+		var banking_roll_angle_fz_units := int(10430.378 * banking_roll_angle_val_rad);
+
+		var total_roll_fz_units := banking_roll_angle_fz_units + strafe_visual_roll;
+
+		var abs_total_roll_float := absf(float(total_roll_fz_units));
+
+		var roll_damping_factor := 1.0 - abs_total_roll_float / 3640.0;
+		roll_damping_factor = maxf(roll_damping_factor, 0.0);
+
+		var current_visual_pitch_rad := 0.0;
+		if (absf(weight_derived_1) > 0.0001):
+			current_visual_pitch_rad = visual_rotation.x / weight_derived_1;
+		var pitch_visual_factor := roll_damping_factor * 0.7 * current_visual_pitch_rad;
+		pitch_visual_factor = clampf(pitch_visual_factor, -0.3, 0.3);
+
+		var current_visual_roll_rad := 0.0;
+		if (absf(weight_derived_3) > 0.0001):
+			current_visual_roll_rad = visual_rotation.z / weight_derived_3;
+		var roll_visual_factor := 2.5 * current_visual_roll_rad;
+		roll_visual_factor = clampf(roll_visual_factor, -0.5, 0.5);
+		
+		accum_transform = accum_transform.rotated_local(Vector3.RIGHT, pitch_visual_factor)
+		#accum_transform->rotate_x(pitch_visual_factor);
+
+		var iVar1_from_block2_approx_deg := 0.5 * (dVar11_current_unk_stat * sin(float(g_anim_timer * 0x109) * (TAU / 65536.0)));
+		var additional_roll_from_sin_fz_units := int(182.04445 * iVar1_from_block2_approx_deg);
+
+		total_roll_fz_units += int(10430.378 * -roll_visual_factor);
+		total_roll_fz_units = clampi(total_roll_fz_units, -0x238e, 0x238e);
+
+		var final_roll_fz_units_for_z_rot := total_roll_fz_units + additional_roll_from_sin_fz_units;
+		var final_roll_rad_for_z_rot = float(final_roll_fz_units_for_z_rot) * (TAU / 65536.0);
+		accum_transform = accum_transform.rotated_local(-Vector3.FORWARD, final_roll_rad_for_z_rot)
+		#accum_transform->rotate_z(final_roll_rad_for_z_rot);
+
+		var visual_delta_q := Quaternion(accum_transform.basis);
+
+		unk_quat_0x5c4 = unk_quat_0x5c4.slerp(visual_delta_q, 0.2);
+		accum_transform.basis = Basis(unk_quat_0x5c4)
+
+		var slerped_visual_rotation_transform := accum_transform
+
+		mtxa = mtxa * slerped_visual_rotation_transform
+
+		if (spinattack_angle != 0.0):
+			if (spinattack_direction == 0):
+				mtxa = mtxa.rotated_local(Vector3.UP, spinattack_angle);
+			else:
+				mtxa = mtxa.rotated_local(Vector3.UP, -spinattack_angle);
+	else:
+		mtxa = transform_visual
+
+	mtxa.origin = target_visual_world_position;
+
+	var uVar8_shake_seed := randi()
+
+	var shake_rand_norm1 := float((uVar8_shake_seed ^ int(velocity_angular.x * 4000000.0)) & 0xffff) / 65535.0;
+	var shake_rand_norm2 := float((uVar8_shake_seed ^ int(velocity_angular.y * 4000000.0)) & 0xffff) / 65535.0;
+
+	var shake_magnitude := 0.00006 * visual_shake_mult;
+	var x_shake_rad := shake_magnitude * shake_rand_norm1;
+	var z_shake_rad := shake_magnitude * shake_rand_norm2;
+	mtxa = mtxa.rotated_local(-Vector3.FORWARD, z_shake_rad);
+	mtxa = mtxa.rotated_local(Vector3.RIGHT, x_shake_rad);
+
+	if ((machine_state & FZ_MS.BOOSTING) == 0):
+		height_adjust_from_boost -= 0.05 * height_adjust_from_boost;
+	else:
+		var effective_pitch_for_boost_lift = maxf(0.0, visual_rotation.x);
+		var target_height_adj = 0.0;
+		if (absf(weight_derived_1) > 0.0001):
+			target_height_adj = 4.5 * (effective_pitch_for_boost_lift / weight_derived_1);
+
+		height_adjust_from_boost += 0.2 * (target_height_adj - height_adjust_from_boost);
+		height_adjust_from_boost = minf(height_adjust_from_boost, 0.3);
+
+	mtxa.origin += mtxa.basis.y * height_adjust_from_boost;
+
+	if (terrain_state & FZ_TERRAIN.DIRT) != 0:
+		var jitter_scale_factor := 0.1 + speed_kmh / 900.0;
+		jitter_scale_factor = minf(jitter_scale_factor, 1.0);
+
+		var rand_x_norm := float((uVar8_shake_seed ^ int(velocity_angular.y * 4000000.0)) & 0xffff) / 65535.0 - 0.5;
+		var rand_z_norm := float((uVar8_shake_seed ^ int(velocity_angular.z * 4000000.0)) & 0xffff) / 65535.0 - 0.5;
+
+		var local_jitter_offset := Vector3(rand_x_norm, 0.0, rand_z_norm);
+		var world_jitter_offset := local_jitter_offset * mtxa.basis;
+
+		var scaled_world_jitter := world_jitter_offset * (0.15 * jitter_scale_factor);
+		mtxa.origin += scaled_world_jitter;
+
+	transform_visual = mtxa
+
 func _physics_process(delta: float) -> void:
+	create_machine_visual_transform()
 	var calced_max_energy := 100.0
 	var energy_ratio : float = minf(1.0, (energy / calced_max_energy) * 4.0)
 	#var manual_boost_visual := float(boost_frames_manual) / (car_definition.boost_length * Engine.physics_ticks_per_second)
