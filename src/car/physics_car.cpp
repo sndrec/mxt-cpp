@@ -247,18 +247,29 @@ bool PhysicsCar::find_floor_beneath_machine()
 	godot::Vector3 p0_sweep_start_ws =
 	mtxa->transform_point(godot::Vector3(0.0f, 1.0f, 0.0f));
 	godot::Vector3 p1_sweep_end_ws =
-	mtxa->transform_point(godot::Vector3(0.0f, -200.0f, 0.0f));
+	mtxa->transform_point(godot::Vector3(0.0f, -2000.0f, 0.0f));
 
 	position_bottom = p1_sweep_end_ws;
 
 	bool sweep_hit_occurred = false;
 	CollisionData hit;
+	bool stay_on = false;
+	bool cylinder = false;
+	bool pipe = false;
 	if (current_track != nullptr) {
 		current_track->cast_vs_track_fast(hit, p0_sweep_start_ws,
 			position_bottom,
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
 			current_checkpoint);
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f;
+	}
+
+	if (hit.road_data.cp_idx != -1)
+	{
+		TrackSegment *floor_seg = &current_track->segments[current_track->checkpoints[hit.road_data.cp_idx].road_segment];
+		cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
+		pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+		stay_on = pipe || cylinder;
 	}
 
 	float contact_dist_metric = 0.0f;
@@ -268,11 +279,27 @@ bool PhysicsCar::find_floor_beneath_machine()
 		mtxa->cur->origin.distance_to(hit.collision_point);
 		contact_dist_metric = 20.0f - dist_p0_to_surface;
 	}
+	if (stay_on && contact_dist_metric < 1.0f)
+	{
+		contact_dist_metric = 1.0f;
+	}
 
 	//DEBUG::disp_text("contact dist", contact_dist_metric);
 
-	if (sweep_hit_occurred && contact_dist_metric > 0.0f) {
-		track_surface_normal = hit.collision_normal;
+	if ((sweep_hit_occurred || stay_on) && contact_dist_metric > 0.0f) {
+		if (!stay_on)
+		{
+			track_surface_normal = hit.collision_normal;
+		}else
+		{
+			if (cylinder)
+			{
+				track_surface_normal = (mtxa->cur->origin - hit.road_data.closest_root.t3d.origin).normalized();
+			}else
+			{
+				track_surface_normal = (hit.road_data.closest_root.t3d.origin - mtxa->cur->origin).normalized();
+			}
+		}
 		height_above_track = contact_dist_metric;
 		return true;
 	} else {
@@ -920,6 +947,9 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 
 	//DEBUG::disp_text("force_mag", force_mag);
 
+	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	//dd3d->call("draw_arrow", position_current, position_current + track_surface_normal * 3.0, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
+
 	godot::Vector3 gravity_align_force = track_surface_normal * force_mag;
 	velocity += gravity_align_force;
 
@@ -1423,7 +1453,7 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 	godot::Vector3 p0 = mtxa->transform_point(in_corner.offset);
 
 	godot::Vector3 local_target_for_ray_end(
-		in_corner.offset.x, in_corner.offset.y - 200.0f, in_corner.offset.z);
+		in_corner.offset.x, in_corner.offset.y - 2000.0f, in_corner.offset.z);
 	godot::Vector3 p1_ray_end_ws = mtxa->transform_point(local_target_for_ray_end);
 
 	float compression_metric = 0.0f;
@@ -1709,7 +1739,7 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 
 	godot::Vector3 ground_normal = prepare_machine_frame();
 	bool has_floor = find_floor_beneath_machine();
-	if (has_floor) {
+	if (has_floor && (machine_state & MACHINESTATE::AIRBORNE) == 0) {
 		track_surface_normal = ground_normal;
 	} else {
 		PhysicsCarSuspensionPoint* tcs[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
