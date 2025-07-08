@@ -45,6 +45,7 @@ const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.0003
 var player_settings := {}
+var ready_players : Array[int] = []
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
 var net_race_finish_time := -1
@@ -53,6 +54,7 @@ var peer_desired_ahead := {}
 
 var clients_server_tick = 0
 var clients_target_tick = 0
+var last_target_tick_update = 0
 var clients_max_ahead_from_server = 2.0
 var authoritative_history := {}
 var authoritative_acks := {}
@@ -124,6 +126,10 @@ func server_process() -> void:
 		if server_tick < target_tick:
 			_idle_broadcast()
 		_check_client_stalls()
+	if !is_server and !listen_server and Time.get_ticks_msec() > last_target_tick_update + 17 and game_sim != null and game_sim.sim_started:
+		clients_target_tick += 1
+		if clients_target_tick > clients_server_tick + MAX_AHEAD_TICKS:
+			clients_target_tick = clients_server_tick + MAX_AHEAD_TICKS
 
 
 func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> int:
@@ -274,8 +280,13 @@ func start_race(track_index: int, settings: Array) -> void:
 
 func send_start_race(track_index: int, settings: Array) -> void:
 	if is_server:
+		ready_players.clear()
 		start_race.rpc(track_index, settings)
 		start_race(track_index, settings)
+		if game_sim != null:
+			game_sim.set_sim_started(false)
+		if server_game_sim != null:
+			server_game_sim.set_sim_started(false)
 	else:
 		start_race.rpc_id(1, track_index, settings)
 
@@ -287,6 +298,27 @@ func send_end_race() -> void:
 	if is_server:
 		end_race.rpc()
 		end_race()
+
+@rpc("any_peer", "reliable")
+func client_ready() -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if id == 0:
+		id = multiplayer.get_unique_id()
+	if is_server:
+		if !ready_players.has(id):
+			ready_players.append(id)
+			if ready_players.size() == player_ids.size():
+				begin_simulation.rpc()
+				begin_simulation()
+
+@rpc("any_peer", "reliable")
+func begin_simulation() -> void:
+	if game_sim != null:
+		game_sim.set_sim_started(true)
+		local_tick = 0
+	if is_server and server_game_sim != null:
+		server_game_sim.set_sim_started(true)
+		target_tick = 0
 
 func send_player_settings(settings: Dictionary) -> void:
 	var my_id := multiplayer.get_unique_id()
@@ -316,6 +348,8 @@ func set_local_input(input: PackedByteArray) -> void:
 func collect_server_inputs() -> Array:
 	if not is_server:
 		return []
+	if server_game_sim == null or !server_game_sim.sim_started:
+		return []
 	if not pending_inputs.has(server_tick):
 		pending_inputs[server_tick] = {}
 	if not pending_inputs[server_tick].has(multiplayer.get_unique_id()):
@@ -336,6 +370,8 @@ func collect_server_inputs() -> Array:
 	return frame_inputs_bytes
 
 func collect_client_inputs() -> Array:
+	if game_sim == null or !game_sim.sim_started:
+		return []
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 		if !is_server:
 			var old_keys := sent_inputs_bytes.keys()
@@ -409,6 +445,7 @@ func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int,
 	if not is_server or listen_server:
 		clients_server_tick = max(clients_server_tick, last_tick + 1)
 		clients_target_tick = max(clients_target_tick, tgt)
+		last_target_tick_update = Time.get_ticks_msec()
 		clients_max_ahead_from_server = max_ahead
 		player_ids = ids
 	if inputs.size() > 0:

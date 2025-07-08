@@ -211,6 +211,11 @@ func _start_race(track_index: int, settings: Array) -> void:
 			var mat := debug_track_mesh.mesh.surface_get_material(i)
 			if mat.resource_name == "track_surface":
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+	if network_manager.is_server:
+		network_manager.client_ready()
+	else:
+		await get_tree().create_timer(1.0).timeout
+		network_manager.client_ready.rpc_id(1)
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
@@ -227,6 +232,9 @@ func _on_network_race_started(track_index: int, settings: Array) -> void:
 	if headless_mode:
 		return
 	_start_race(track_index, settings)
+	game_sim.set_sim_started(false)
+	if network_manager.is_server:
+		server_game_sim.set_sim_started(false)
 
 func _on_network_race_finished() -> void:
 	if headless_mode:
