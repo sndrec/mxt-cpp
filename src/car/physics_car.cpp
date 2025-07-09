@@ -2535,6 +2535,33 @@ void PhysicsCar::post_tick()
 	handle_machine_damage_and_visuals();
 };
 
+void PhysicsCar::test_collision_with_other_car(PhysicsCar &other_car)
+{
+	constexpr float fixed_radius = 2.0f;
+	constexpr float r_sum_sq = (fixed_radius * 2.0f) * (fixed_radius * 2.0f);
+	if (position_current.distance_squared_to(other_car.position_current) > r_sum_sq)
+		return;
+	godot::Vector3 relative_velocity = velocity - other_car.velocity;
+	godot::Vector3 dir = other_car.position_current - position_current;
+	//if (dir.dot(relative_velocity) <= 0.0f)
+	//{
+	//	return;
+	//}
+	godot::Vector3 normal = dir.normalized();
+	float impulse_strength = relative_velocity.dot(normal);
+	godot::Vector3 impulse = normal * impulse_strength;
+	velocity -= impulse * other_car.stat_weight * 0.001;
+	other_car.velocity += impulse * stat_weight * 0.001;
+
+	float proj = (other_car.position_current - position_current).dot(normal);
+	float overlap = fixed_radius - proj;
+	if (overlap <= 0.0f)	return;			// already separated
+	// move each centre to opposite sides of the midpoint plane
+	float shift = 0.5f * overlap;			// half for each car
+	position_current      -= normal * shift;
+	other_car.position_current += normal * shift;
+};
+
 void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
 	calced_max_energy = car_properties->max_energy;
@@ -2563,7 +2590,6 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 		machine_state |= MACHINESTATE::JUST_PRESSED_BOOST;
 
 	g_anim_timer += 1;
-	update_machine_stats();
 	track_surface_normal_prev = track_surface_normal;
 	check_respawn();
 	simulate_machine_motion(input);
