@@ -19,6 +19,8 @@ public:
     godot::Transform3D transform;
     godot::Vector3 half_extents;
     godot::Transform3D inv_transform;
+    int segment_index = -1;
+    int checkpoint_index = -1;
 
     virtual ~TriggerCollider() = default;
     virtual void start_touch(PhysicsCar* car);

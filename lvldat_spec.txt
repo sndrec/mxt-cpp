@@ -5,10 +5,11 @@ HEADER
 ------
 Offset      Type            Description
 0           u32             Header size in bytes (includes this field)
-4           string[4]       File version string (e.g. "v0.2")
+4           string[4]       File version string (e.g. "v0.3")
 8           u32             Number of checkpoints
 12          u32             Number of segments
-16+         -               Start of checkpoint data
+16          u32             Number of trigger colliders
+20+         -               Start of checkpoint data
 
 
 CHECKPOINT DATA (per checkpoint)
@@ -74,6 +75,15 @@ right_rail_height               float
                                 (these fields default to 5 when loading v0.1 files)
 
 
+TRIGGER COLLIDER DATA (per object)
+---------------------------------
+Field                           Type            Notes
+object_type                     u32             See TRIGGER_TYPE enum
+segment_index                   u32             Road segment the object belongs to
+checkpoint_index                u32             Checkpoint for broad phase
+inverse_transform               Transform3D     3 x Vector3 + Vector3 (12 floats)
+aabb_half_extents               Vector3         3 x float
+
 CURVE FORMAT
 ------------
 Field               Type
@@ -91,9 +101,11 @@ PARSING TABLE (.mxt_track)
 
 == HEADER ==
 read_u32()                     → header_size
-read_string(4)                 → version_string ("v0.2")
+read_string(4)                 → version_string ("v0.3")
 read_u32()                     → checkpoint_count
 read_u32()                     → segment_count
+if version_string != "v0.1" and version_string != "v0.2":
+    read_u32()                 → trigger_count
 
 == CHECKPOINT DATA (repeated checkpoint_count times) ==
 for each checkpoint:
@@ -158,6 +170,15 @@ for each segment:
     read_float()             → left_rail_height
     read_float()             → right_rail_height
                             (defaults to 5 if version_string is "v0.1")
+
+== TRIGGER COLLIDER DATA (repeated trigger_count times) ==
+if version_string != "v0.1" and version_string != "v0.2":
+    for each trigger:
+        read_u32()           → object_type
+        read_u32()           → segment_index
+        read_u32()           → checkpoint_index
+        read_transform()     → inverse_transform
+        read_vector3()       → aabb_half_extents
 
 == CURVE FORMAT ==
 read_u32()                    → point_count
