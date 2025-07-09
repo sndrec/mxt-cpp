@@ -6,6 +6,7 @@
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
 #include "track/racetrack.h"
+#include "track/trigger_collider.h"
 #include "track/road_modulation.h"
 #include "track/road_embed.h"
 #include "car/physics_car.h"
@@ -156,10 +157,15 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	UtilityFunctions::print(lvldat_buf->get_position());
 	String version_string = lvldat_buf->get_string(4);
 	UtilityFunctions::print(lvldat_buf->get_position());
-	uint32_t checkpoint_count = lvldat_buf->get_u32();
-	UtilityFunctions::print(lvldat_buf->get_position());
-	uint32_t segment_count = lvldat_buf->get_u32();
-	UtilityFunctions::print(lvldat_buf->get_position());
+        uint32_t checkpoint_count = lvldat_buf->get_u32();
+        UtilityFunctions::print(lvldat_buf->get_position());
+        uint32_t segment_count = lvldat_buf->get_u32();
+        UtilityFunctions::print(lvldat_buf->get_position());
+        uint32_t trigger_count = 0;
+        if (version_string != "v0.1" && version_string != "v0.2") {
+                trigger_count = lvldat_buf->get_u32();
+                UtilityFunctions::print(lvldat_buf->get_position());
+        }
 
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
@@ -480,9 +486,64 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		}
 	}
 
-	current_track->minimum_y -= 250.0f;
-	gamestate_data.instantiate(1024 * 1024);
-	int state_capacity = gamestate_data.get_capacity();
+        current_track->minimum_y -= 250.0f;
+
+        if (trigger_count > 0) {
+                current_track->num_trigger_colliders = trigger_count;
+                current_track->trigger_colliders = level_data.allocate_array<TriggerCollider*>(trigger_count);
+                for (uint32_t t = 0; t < trigger_count; ++t) {
+                        uint32_t type_val = lvldat_buf->get_u32();
+                        uint32_t seg_idx  = lvldat_buf->get_u32();
+                        uint32_t cp_idx   = lvldat_buf->get_u32();
+
+                        godot::Basis b;
+                        b[0][0] = lvldat_buf->get_float();
+                        b[0][1] = lvldat_buf->get_float();
+                        b[0][2] = lvldat_buf->get_float();
+                        b[1][0] = lvldat_buf->get_float();
+                        b[1][1] = lvldat_buf->get_float();
+                        b[1][2] = lvldat_buf->get_float();
+                        b[2][0] = lvldat_buf->get_float();
+                        b[2][1] = lvldat_buf->get_float();
+                        b[2][2] = lvldat_buf->get_float();
+                        godot::Vector3 origin;
+                        origin.x = lvldat_buf->get_float();
+                        origin.y = lvldat_buf->get_float();
+                        origin.z = lvldat_buf->get_float();
+                        godot::Transform3D inv_t(b, origin);
+
+                        godot::Vector3 ext;
+                        ext.x = lvldat_buf->get_float();
+                        ext.y = lvldat_buf->get_float();
+                        ext.z = lvldat_buf->get_float();
+
+                        TriggerCollider* trig = nullptr;
+                        switch (type_val) {
+                        case TRIGGER_TYPE::DASHPLATE:
+                                trig = new (gamestate_data.allocate_bytes(sizeof(Dashplate))) Dashplate();
+                                break;
+                        case TRIGGER_TYPE::JUMPPLATE:
+                                trig = new (gamestate_data.allocate_bytes(sizeof(Jumpplate))) Jumpplate();
+                                break;
+                        case TRIGGER_TYPE::MINE:
+                                trig = new (gamestate_data.allocate_bytes(sizeof(Mine))) Mine();
+                                break;
+                        default:
+                                trig = new (gamestate_data.allocate_bytes(sizeof(TriggerCollider))) TriggerCollider();
+                                trig->type = static_cast<TRIGGER_TYPE::TYPE>(type_val);
+                                break;
+                        }
+                        trig->segment_index = seg_idx;
+                        trig->checkpoint_index = cp_idx;
+                        trig->inv_transform = inv_t;
+                        trig->transform = inv_t.affine_inverse();
+                        trig->half_extents = ext;
+                        current_track->trigger_colliders[t] = trig;
+                }
+        }
+
+        gamestate_data.instantiate(1024 * 1024);
+        int state_capacity = gamestate_data.get_capacity();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
 		state_buffer[i].data = (char*)malloc(state_capacity);
