@@ -146,7 +146,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	level_data.instantiate(1024 * 1024 * 16);
 
-	current_track = level_data.allocate_object<RaceTrack>();
+        current_track = level_data.allocate_object<RaceTrack>();
+        current_track->num_trigger_colliders = 0;
+        current_track->trigger_colliders = nullptr;
 
 	UtilityFunctions::print("-----");
 	UtilityFunctions::print(lvldat_buf->get_position());
@@ -580,10 +582,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 void GameSim::destroy_gamesim()
 {
-	if (sim_started)
-	{
-		level_data.free_heap();
-		gamestate_data.free_heap();
+        if (sim_started)
+        {
+                if (current_track) {
+                        current_track->num_trigger_colliders = 0;
+                        current_track->trigger_colliders = nullptr;
+                }
+                level_data.free_heap();
+                gamestate_data.free_heap();
 		for (int i = 0; i < STATE_BUFFER_LEN; i++)
 		{
 			if (state_buffer[i].data)
@@ -592,13 +598,14 @@ void GameSim::destroy_gamesim()
 				state_buffer[i].data = nullptr;
 			}
 		}
-		if (input_buffer) {
-			::free(input_buffer);
-			input_buffer = nullptr;
-		}
-		sim_started = false;
-		tick = 0;
-	}
+                if (input_buffer) {
+                        ::free(input_buffer);
+                        input_buffer = nullptr;
+                }
+                sim_started = false;
+                tick = 0;
+                current_track = nullptr;
+        }
 };
 
 void GameSim::render_gamesim() {
