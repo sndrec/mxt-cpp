@@ -206,6 +206,7 @@ public:
 	void simulate_machine_motion(PlayerInput in_input);
 	int update_machine_corners();
     //void create_machine_visual_transform();
+    void test_collision_with_other_car(PhysicsCar &other_car);
     void handle_machine_collision_response();
     void align_machine_y_with_track_normal_immediate();
     void handle_checkpoints();

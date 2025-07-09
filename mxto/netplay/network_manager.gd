@@ -407,11 +407,24 @@ func collect_client_inputs() -> Array:
 		authoritative_inputs.erase(local_tick)
 	else:
 		frame_inputs = []
-		for id in player_ids:
+		var prev_frame = input_history.get(local_tick - 1, [])
+		for i in range(player_ids.size()):
+			var id = player_ids[i]
 			if id == multiplayer.get_unique_id():
 				frame_inputs.append(last_local_input_bytes)
 			else:
-				frame_inputs.append(NEUTRAL_INPUT_BYTES)
+				var prev_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES
+				if prev_frame.size() == player_ids.size():
+					prev_bytes = prev_frame[i]
+				var inp_dict := PlayerInputClass.bytes_to_dict(prev_bytes)
+				inp_dict.strafe_left = lerp(inp_dict.strafe_left, 0.0, 0.25)
+				inp_dict.strafe_right = lerp(inp_dict.strafe_right, 0.0, 0.25)
+				inp_dict.steer_horizontal = lerp(inp_dict.steer_horizontal, 0.0, 0.25)
+				inp_dict.steer_vertical = lerp(inp_dict.steer_vertical, 0.0, 0.25)
+				inp_dict.accelerate = inp_dict.accelerate
+				inp_dict.brake = inp_dict.brake
+				var new_bytes : PackedByteArray = PlayerInputClass.dict_to_bytes(inp_dict)
+				frame_inputs.append(new_bytes)
 	input_history[local_tick] = frame_inputs
 	if input_history.has(local_tick - INPUT_HISTORY_SIZE):
 		input_history.erase(local_tick - INPUT_HISTORY_SIZE)
