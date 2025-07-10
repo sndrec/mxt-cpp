@@ -805,7 +805,9 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 	if (input_accel < 1.0f)
 		final_accel_term *= (0.05f + 0.95f * input_accel);
 
-	base_speed = target_speed_component - final_accel_term;
+	float new_base_speed = target_speed_component - final_accel_term;
+	float base_speed_diff = new_base_speed - base_speed;
+	base_speed += fmax(0.0f, base_speed_diff);
 
 	if (input_brake <= 0.0001f)
 		brake_timer = 0;
@@ -1612,6 +1614,32 @@ void PhysicsCar::set_terrain_state_from_track()
 		}
 	} else {
 		terrain_bits = 0;
+	}
+
+	for (int i = 0; i < current_track->num_trigger_colliders; i++)
+	{
+		uint8_t collision = current_track->trigger_colliders[i]->intersect_segment(current_checkpoint, position_old, position_current);
+		//DEBUG::disp_text(("trigger " + std::to_string(i)).c_str(), collision);
+		if ((collision & 0x1) != 0)
+		{
+			//DEBUG::disp_text(("trigger " + std::to_string(i) + " collision!").c_str(), "yay!");
+			switch (current_track->trigger_colliders[i]->type)
+			{
+			case TRIGGER_TYPE::DASHPLATE:
+				machine_state |= MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::BOOSTING_DASHPLATE;
+				terrain_state |= TERRAIN::DASH;
+				//DEBUG::disp_text(("dashplate " + std::to_string(i) + " hit!").c_str(), collision);
+				break;
+			case TRIGGER_TYPE::JUMPPLATE:
+				terrain_state |= TERRAIN::JUMP;
+				//DEBUG::disp_text(("jumpplate " + std::to_string(i) + " hit!").c_str(), collision);
+				break;
+			case TRIGGER_TYPE::MINE:
+				break;
+			default:
+				break;
+			}
+		}
 	}
 
 	if (terrain_bits & TERRAIN::DASH) {

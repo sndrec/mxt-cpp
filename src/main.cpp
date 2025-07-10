@@ -518,7 +518,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			origin.x = lvldat_buf->get_float();
 			origin.y = lvldat_buf->get_float();
 			origin.z = lvldat_buf->get_float();
-			godot::Transform3D inv_t(b, origin);
+			godot::Transform3D inv_t(b.transposed(), origin);
 
 			godot::Vector3 ext;
 			ext.x = lvldat_buf->get_float();
@@ -545,6 +545,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			trig->inv_transform = inv_t;
 			trig->transform = inv_t.affine_inverse();
 			trig->half_extents = ext;
+			trig->current_track = current_track;
 			current_track->trigger_colliders[t] = trig;
 		}
 	}

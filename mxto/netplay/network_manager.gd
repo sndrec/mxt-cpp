@@ -283,10 +283,13 @@ func send_start_race(track_index: int, settings: Array) -> void:
 		ready_players.clear()
 		start_race.rpc(track_index, settings)
 		start_race(track_index, settings)
-		if game_sim != null:
-			game_sim.set_sim_started(false)
-		if server_game_sim != null:
-			server_game_sim.set_sim_started(false)
+		if player_ids.size() > 1:
+			if game_sim != null:
+					game_sim.set_sim_started(false)
+			if server_game_sim != null:
+					server_game_sim.set_sim_started(false)
+		else:
+			begin_simulation()
 	else:
 		start_race.rpc_id(1, track_index, settings)
 
@@ -675,25 +678,25 @@ func _update_desired_ahead() -> void:
 var use_physics_ticks := 1.0
 
 func _adjust_time_scale() -> void:
-	DebugDraw2D.set_text("playercount", player_ids.size())
-	DebugDraw2D.set_text("rtt", rtt_s)
-	if is_server:
-		DebugDraw2D.set_text("server_tick", server_tick)
-		DebugDraw2D.set_text("target_tick", target_tick)
+	#DebugDraw2D.set_text("playercount", player_ids.size())
+	#DebugDraw2D.set_text("rtt", rtt_s)
+	#if is_server:
+		#DebugDraw2D.set_text("server_tick", server_tick)
+		#DebugDraw2D.set_text("target_tick", target_tick)
 	if is_server and !listen_server:
 		return
 	var current_ahead_ticks = local_tick - clients_target_tick
 	var target_ahead_ticks = lerpf(desired_ahead_ticks, clients_max_ahead_from_server, 0.75)
 	var diff = target_ahead_ticks - current_ahead_ticks
-	DebugDraw2D.set_text("local_tick", local_tick)
-	DebugDraw2D.set_text("clients_server_tick", clients_server_tick)
-	DebugDraw2D.set_text("clients_target_tick", clients_target_tick)
-	DebugDraw2D.set_text("desired_ahead_ticks", desired_ahead_ticks)
-	DebugDraw2D.set_text("server_max_ahead", clients_max_ahead_from_server)
-	DebugDraw2D.set_text("target_ahead_ticks", target_ahead_ticks)
-	DebugDraw2D.set_text("current_ahead_ticks", current_ahead_ticks)
-	DebugDraw2D.set_text("diff", diff)
-	DebugDraw2D.set_text("Engine.physics_ticks_per_second", Engine.physics_ticks_per_second)
+	#DebugDraw2D.set_text("local_tick", local_tick)
+	#DebugDraw2D.set_text("clients_server_tick", clients_server_tick)
+	#DebugDraw2D.set_text("clients_target_tick", clients_target_tick)
+	#DebugDraw2D.set_text("desired_ahead_ticks", desired_ahead_ticks)
+	#DebugDraw2D.set_text("server_max_ahead", clients_max_ahead_from_server)
+	#DebugDraw2D.set_text("target_ahead_ticks", target_ahead_ticks)
+	#DebugDraw2D.set_text("current_ahead_ticks", current_ahead_ticks)
+	#DebugDraw2D.set_text("diff", diff)
+	#DebugDraw2D.set_text("Engine.physics_ticks_per_second", Engine.physics_ticks_per_second)
 	if abs(diff) <= 1:
 		use_physics_ticks = lerp(use_physics_ticks, 1.0, RTT_SMOOTHING)
 		Engine.physics_ticks_per_second = roundi(use_physics_ticks * 60.0);
