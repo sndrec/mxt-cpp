@@ -11,6 +11,7 @@ class_name GameManager extends Node
 @onready var start_race_button: Button = $Lobby/StartRaceButton
 @onready var player_list: ItemList = $Lobby/PlayerList
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
+@onready var obj_container: Node3D = $GameWorld/ObjContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var car_settings: Control = $CarSettings
