@@ -4,6 +4,7 @@
 #include "godot_cpp/variant/vector3.hpp"
 
 class PhysicsCar;
+class RaceTrack;
 
 namespace TRIGGER_TYPE {
     enum TYPE {
@@ -21,6 +22,7 @@ public:
     godot::Transform3D inv_transform;
     int segment_index = -1;
     int checkpoint_index = -1;
+    RaceTrack* current_track = nullptr;
 
     uint8_t intersect_segment(int cp_idx, const godot::Vector3 &p0, const godot::Vector3 &p1) const;
     virtual ~TriggerCollider() = default;
