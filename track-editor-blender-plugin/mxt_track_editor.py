@@ -2024,9 +2024,9 @@ def mxt_draw_callback():
     ts = bpy.context.scene.mxt_track_settings
     if ts:
         ext_map = {
-            'DASHPLATE': Vector((1.0,0.1,1.0)),
-            'JUMPPLATE': Vector((1.0,0.1,1.0)),
-            'MINE': Vector((0.5,0.5,0.5)),
+            'DASHPLATE': Vector((4.0,2.0,8.0)),
+            'JUMPPLATE': Vector((12.0,2.0,2.0)),
+            'MINE': Vector((2.0,3.0,2.0)),
         }
         for trig in ts.trigger_objects:
             h = trig.helper
