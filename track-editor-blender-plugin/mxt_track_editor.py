@@ -506,8 +506,9 @@ class MXT_OT_AddTrigger(Operator):
         ts = context.scene.mxt_track_settings
         if not ts:
             return {'CANCELLED'}
+        seg = get_active_mxt_road_segment_parent(context)
 
-        bpy.ops.object.empty_add(type='PLAIN_AXES', radius=1.0, location=context.scene.cursor.location)
+        bpy.ops.object.empty_add(type='PLAIN_AXES', radius=4.0, location=context.scene.cursor.location)
         helper = context.active_object
         _disallow_deletion(helper)
         helper.name = f"Trigger_{len(ts.trigger_objects):02d}"
@@ -515,7 +516,7 @@ class MXT_OT_AddTrigger(Operator):
         trig = ts.trigger_objects.add()
         trig.label = helper.name
         trig.helper = helper
-        trig.segment = ts.first_segment
+        trig.segment = seg
 
         mesh_name = f"MESH_{trig.obj_type}"
         mesh = bpy.data.meshes.get(mesh_name)
@@ -1350,12 +1351,13 @@ def _update_trigger_helper(trig):
         return
     right = (pr - base).normalized()
     forward = (pf - base).normalized()
-    normal = right.cross(forward).normalized()
-    B = Matrix((right, -normal, forward)).transposed()
+    normal = (right.cross(forward)).normalized()
+    right = forward.cross(normal).normalized()
+    B = (Matrix((right, -normal, forward))).transposed()
     mat = Matrix.Translation(base) @ B.to_4x4()
     mat = mat @ Matrix.Rotation(math.radians(trig.yaw_deg), 4, 'Y')
-    #S = Matrix.Diagonal((*trig.scale, 1.0))
-    helper.matrix_world = mat# @ S
+    S = Matrix.Diagonal((*trig.scale, 1.0))
+    helper.matrix_world = mat @ S
 
 class MXT_OT_set_handle_length(bpy.types.Operator):
     bl_idname = "mxt.set_handle_length"
@@ -2024,8 +2026,8 @@ def mxt_draw_callback():
     ts = bpy.context.scene.mxt_track_settings
     if ts:
         ext_map = {
-            'DASHPLATE': Vector((4.0,2.0,8.0)),
-            'JUMPPLATE': Vector((12.0,2.0,2.0)),
+            'DASHPLATE': Vector((6.0,4.0,12.0)),
+            'JUMPPLATE': Vector((12.0,4.0,4.0)),
             'MINE': Vector((2.0,3.0,2.0)),
         }
         for trig in ts.trigger_objects:
@@ -3725,8 +3727,8 @@ def _export_stage(context, filepath):
         trig_count = 0
         type_map_trig = {'DASHPLATE':0,'JUMPPLATE':1,'MINE':2}
         ext_map = {
-            'DASHPLATE': Vector((4.0,2.0,8.0)),
-            'JUMPPLATE': Vector((12.0,2.0,2.0)),
+            'DASHPLATE': Vector((6.0,4.0,12.0)),
+            'JUMPPLATE': Vector((12.0,4.0,2.0)),
             'MINE': Vector((2.0,3.0,2.0)),
         }
         for trig in ts.trigger_objects:
