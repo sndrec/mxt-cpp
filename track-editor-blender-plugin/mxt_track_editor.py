@@ -1351,11 +1351,11 @@ def _update_trigger_helper(trig):
     right = (pr - base).normalized()
     forward = (pf - base).normalized()
     normal = right.cross(forward).normalized()
-    B = Matrix((right, normal, forward)).transposed()
+    B = Matrix((right, -normal, forward)).transposed()
     mat = Matrix.Translation(base) @ B.to_4x4()
     mat = mat @ Matrix.Rotation(math.radians(trig.yaw_deg), 4, 'Y')
-    S = Matrix.Diagonal((*trig.scale, 1.0))
-    helper.matrix_world = mat @ S
+    #S = Matrix.Diagonal((*trig.scale, 1.0))
+    helper.matrix_world = mat# @ S
 
 class MXT_OT_set_handle_length(bpy.types.Operator):
     bl_idname = "mxt.set_handle_length"
@@ -3725,9 +3725,9 @@ def _export_stage(context, filepath):
         trig_count = 0
         type_map_trig = {'DASHPLATE':0,'JUMPPLATE':1,'MINE':2}
         ext_map = {
-            'DASHPLATE': Vector((1.0,0.1,1.0)),
-            'JUMPPLATE': Vector((1.0,0.1,1.0)),
-            'MINE': Vector((0.5,0.5,0.5)),
+            'DASHPLATE': Vector((4.0,2.0,8.0)),
+            'JUMPPLATE': Vector((12.0,2.0,2.0)),
+            'MINE': Vector((2.0,3.0,2.0)),
         }
         for trig in ts.trigger_objects:
             seg = trig.segment
@@ -3830,6 +3830,7 @@ class MXTRoad_OT_ExportTrack(Operator):
         return {'FINISHED'}
 classes_to_register = (
     MXTSegmentRef,
+    MXTTriggerObject,
     MXTTrackSettings,
     MXT_UL_SegmentRefs,
     MXTRoad_OT_AddPrevSegment,
@@ -3841,7 +3842,6 @@ classes_to_register = (
     MXT_UL_Embeds,
     MXTRoad_OT_AddEmbed,
     MXTRoad_OT_RemoveEmbed,
-    MXTTriggerObject,
     MXT_UL_TriggerObjects,
     MXT_OT_AddTrigger,
     MXT_OT_RemoveTrigger,
