@@ -22,6 +22,7 @@ public:
     int segment_index = -1;
     int checkpoint_index = -1;
 
+    uint8_t intersect_segment(int cp_idx, const godot::Vector3 &p0, const godot::Vector3 &p1) const;
     virtual ~TriggerCollider() = default;
     virtual void start_touch(PhysicsCar* car);
     virtual void touch(PhysicsCar* car);
