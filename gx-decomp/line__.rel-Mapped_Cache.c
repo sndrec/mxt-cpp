@@ -124910,125 +124910,40 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
   bool bVar6;
   bool bVar7;
   uint uVar8;
-  double in_f17;
-  double in_f18;
   double dVar9;
   double dVar10;
-  double in_f19;
   double dVar11;
   double dVar12;
-  double in_f20;
-  double in_f21;
-  double in_f22;
-  double in_f23;
-  double in_f24;
   double dVar13;
-  double in_f25;
   double dVar14;
-  double in_f26;
-  double in_f27;
-  double in_f28;
-  double in_f29;
-  double in_f30;
-  double in_f31;
-  double in_ps17_1;
-  double in_ps18_1;
-  double in_ps19_1;
-  double in_ps20_1;
-  double in_ps21_1;
-  double in_ps22_1;
-  double in_ps23_1;
-  double in_ps24_1;
-  double in_ps25_1;
-  double in_ps26_1;
-  double in_ps27_1;
-  double in_ps28_1;
-  double in_ps29_1;
-  double in_ps30_1;
-  double in_ps31_1;
   float fVar15;
-  uint local_238;
-  float hit_t;
-  vec3 local_230;
-  vec3 vStack_224;
+  uint started_intersecting;
+  float collision_time;
+  vec3 tmp_vec;
+  vec3 tmp_rot;
   float local_218;
   float local_214;
   float local_210;
-  vec3 local_20c;
-  vec3 vStack_200;
-  vec3 local_1f4;
-  vec3 local_1e8;
-  vec3 vStack_1dc;
-  vec3 local_1d0;
-  vec3 local_1c4;
-  vec3 sweep_p0_b;
-  vec3 sweep_p0_a;
-  vec3 local_1a0;
-  vec3 local_194;
-  unk_collision_struct uStack_188;
-  unk_collision_struct uStack_150;
-  float fStack_e8;
-  float fStack_e4;
-  float fStack_d8;
-  float fStack_d4;
-  float fStack_c8;
-  float fStack_c4;
-  float fStack_b8;
-  float fStack_b4;
-  float fStack_a8;
-  float fStack_a4;
-  float fStack_98;
-  float fStack_94;
-  float fStack_88;
-  float fStack_84;
-  float fStack_78;
-  float fStack_74;
-  float fStack_68;
-  float fStack_64;
-  float fStack_58;
-  float fStack_54;
-  float fStack_48;
-  float fStack_44;
-  float fStack_38;
-  float fStack_34;
-  float fStack_28;
-  float fStack_24;
-  float fStack_18;
-  float fStack_14;
-  float fStack_8;
-  float fStack_4;
-  
-  fStack_8 = (float)in_f31;
-  fStack_4 = (float)in_ps31_1;
-  fStack_18 = (float)in_f30;
-  fStack_14 = (float)in_ps30_1;
-  fStack_28 = (float)in_f29;
-  fStack_24 = (float)in_ps29_1;
-  fStack_38 = (float)in_f28;
-  fStack_34 = (float)in_ps28_1;
-  fStack_48 = (float)in_f27;
-  fStack_44 = (float)in_ps27_1;
-  fStack_58 = (float)in_f26;
-  fStack_54 = (float)in_ps26_1;
-  fStack_68 = (float)in_f25;
-  fStack_64 = (float)in_ps25_1;
-  fStack_78 = (float)in_f24;
-  fStack_74 = (float)in_ps24_1;
-  fStack_88 = (float)in_f23;
-  fStack_84 = (float)in_ps23_1;
-  fStack_98 = (float)in_f22;
-  fStack_94 = (float)in_ps22_1;
-  fStack_a8 = (float)in_f21;
-  fStack_a4 = (float)in_ps21_1;
-  fStack_b8 = (float)in_f20;
-  fStack_b4 = (float)in_ps20_1;
-  fStack_c8 = (float)in_f19;
-  fStack_c4 = (float)in_ps19_1;
-  fStack_d8 = (float)in_f18;
-  fStack_d4 = (float)in_ps18_1;
-  fStack_e8 = (float)in_f17;
-  fStack_e4 = (float)in_ps17_1;
+  vec3 impact_dir;
+  vec3 impact_midpoint;
+  vec3 impulse_b;
+  vec3 impulse_a;
+  vec3 collision_dir;
+  vec3 vel_b_scaled;
+  vec3 vel_a_scaled;
+  vec3 sweep_start_b;
+  vec3 sweep_start_a;
+  vec3 hit_pos_b;
+  vec3 hit_pos_a;
+  unk_collision_struct impact_info_b;
+  unk_collision_struct impact_info_a;
+
+  // The following routine performs a swept-sphere test between both machines,
+  // resolves penetration, applies impulse responses and handles damage and
+  // rumble/visual feedback.
+
   _savegpr_24();
+  // Early out if either machine is temporarily ignoring collisions.
   if (((machine_1->state_2 | machine_2->state_2) & 0x10) == 0) {
     if ((machine_1->machine_state & FZ_MS_B30) == 0) {
                     // const_float_2.0 is never set to any value but 2.0?
@@ -125075,56 +124990,56 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
       fVar2 = (machine_1->position_old_dupe).z - (machine_1->position_current).z;
       fVar15 = math_sqrt(fVar2 * fVar2 + fVar1 * fVar1 + fVar15 * fVar15);
       if ((double)fVar15 <= DOUBLE_13_888888) {
-        sweep_p0_a.x = (machine_1->position_old_dupe).x;
-        sweep_p0_a.y = (machine_1->position_old_dupe).y;
-        sweep_p0_a.z = (machine_1->position_old_dupe).z;
-        local_1c4.x = (machine_1->velocity).x;
-        local_1c4.y = (machine_1->velocity).y;
-        local_1c4.z = (machine_1->velocity).z;
+        sweep_start_a.x = (machine_1->position_old_dupe).x;
+        sweep_start_a.y = (machine_1->position_old_dupe).y;
+        sweep_start_a.z = (machine_1->position_old_dupe).z;
+        vel_a_scaled.x = (machine_1->velocity).x;
+        vel_a_scaled.y = (machine_1->velocity).y;
+        vel_a_scaled.z = (machine_1->velocity).z;
       }
       else {
-        sweep_p0_a.x = (machine_1->position_current).x - (machine_1->position_old_dupe).x;
-        sweep_p0_a.y = (machine_1->position_current).y - (machine_1->position_old_dupe).y;
-        sweep_p0_a.z = (machine_1->position_current).z - (machine_1->position_old_dupe).z;
-        vec3_set_length((double)FLOAT_13_88888,&sweep_p0_a,&sweep_p0_a);
-        sweep_p0_a.x = (machine_1->position_current).x + sweep_p0_a.x;
-        sweep_p0_a.y = (machine_1->position_current).y + sweep_p0_a.y;
-        sweep_p0_a.z = (machine_1->position_current).z + sweep_p0_a.z;
-        vec3_set_length((double)(float)(DOUBLE_13_888888 * dVar14),&machine_1->velocity,&local_1c4);
+        sweep_start_a.x = (machine_1->position_current).x - (machine_1->position_old_dupe).x;
+        sweep_start_a.y = (machine_1->position_current).y - (machine_1->position_old_dupe).y;
+        sweep_start_a.z = (machine_1->position_current).z - (machine_1->position_old_dupe).z;
+        vec3_set_length((double)FLOAT_13_88888,&sweep_start_a,&sweep_start_a);
+        sweep_start_a.x = (machine_1->position_current).x + sweep_start_a.x;
+        sweep_start_a.y = (machine_1->position_current).y + sweep_start_a.y;
+        sweep_start_a.z = (machine_1->position_current).z + sweep_start_a.z;
+        vec3_set_length((double)(float)(DOUBLE_13_888888 * dVar14),&machine_1->velocity,&vel_a_scaled);
       }
       fVar15 = (machine_2->position_old_dupe).x - (machine_2->position_current).x;
       fVar1 = (machine_2->position_old_dupe).y - (machine_2->position_current).y;
       fVar2 = (machine_2->position_old_dupe).z - (machine_2->position_current).z;
       fVar15 = math_sqrt(fVar2 * fVar2 + fVar1 * fVar1 + fVar15 * fVar15);
       if ((double)fVar15 <= DOUBLE_13_888888) {
-        sweep_p0_b.x = (machine_2->position_old_dupe).x;
-        sweep_p0_b.y = (machine_2->position_old_dupe).y;
-        sweep_p0_b.z = (machine_2->position_old_dupe).z;
-        local_1d0.x = (machine_2->velocity).x;
-        local_1d0.y = (machine_2->velocity).y;
-        local_1d0.z = (machine_2->velocity).z;
+        sweep_start_b.x = (machine_2->position_old_dupe).x;
+        sweep_start_b.y = (machine_2->position_old_dupe).y;
+        sweep_start_b.z = (machine_2->position_old_dupe).z;
+        vel_b_scaled.x = (machine_2->velocity).x;
+        vel_b_scaled.y = (machine_2->velocity).y;
+        vel_b_scaled.z = (machine_2->velocity).z;
       }
       else {
-        sweep_p0_b.x = (machine_2->position_current).x - (machine_2->position_old_dupe).x;
-        sweep_p0_b.y = (machine_2->position_current).y - (machine_2->position_old_dupe).y;
-        sweep_p0_b.z = (machine_2->position_current).z - (machine_2->position_old_dupe).z;
-        vec3_set_length((double)FLOAT_13_88888,&sweep_p0_b,&sweep_p0_b);
-        sweep_p0_b.x = (machine_2->position_current).x + sweep_p0_b.x;
-        sweep_p0_b.y = (machine_2->position_current).y + sweep_p0_b.y;
-        sweep_p0_b.z = (machine_2->position_current).z + sweep_p0_b.z;
-        vec3_set_length((double)(float)(DOUBLE_13_888888 * dVar13),&machine_2->velocity,&local_1d0);
+        sweep_start_b.x = (machine_2->position_current).x - (machine_2->position_old_dupe).x;
+        sweep_start_b.y = (machine_2->position_current).y - (machine_2->position_old_dupe).y;
+        sweep_start_b.z = (machine_2->position_current).z - (machine_2->position_old_dupe).z;
+        vec3_set_length((double)FLOAT_13_88888,&sweep_start_b,&sweep_start_b);
+        sweep_start_b.x = (machine_2->position_current).x + sweep_start_b.x;
+        sweep_start_b.y = (machine_2->position_current).y + sweep_start_b.y;
+        sweep_start_b.z = (machine_2->position_current).z + sweep_start_b.z;
+        vec3_set_length((double)(float)(DOUBLE_13_888888 * dVar13),&machine_2->velocity,&vel_b_scaled);
       }
-      bVar5 = swept_sphere_vs_swept_sphere
-                        (dVar9,dVar11,&sweep_p0_a,&machine_1->position_current,&sweep_p0_b,
-                         &machine_2->position_current,&hit_t,&local_238);
-      if (bVar5) {
-        dVar10 = (double)(float)(dVar9 + dVar11);
-        hit_t = FLOAT_1 - hit_t;
-        ray_scale(hit_t,&sweep_p0_a,&machine_1->position_current,&local_194);
-        ray_scale(hit_t,&sweep_p0_b,&machine_2->position_current,&local_1a0);
-        fVar15 = math_sqrt((local_194.z - local_1a0.z) * (local_194.z - local_1a0.z) +
-                           (local_194.y - local_1a0.y) * (local_194.y - local_1a0.y) +
-                           (local_194.x - local_1a0.x) * (local_194.x - local_1a0.x));
+        bVar5 = swept_sphere_vs_swept_sphere
+                        (dVar9,dVar11,&sweep_start_a,&machine_1->position_current,&sweep_start_b,
+                         &machine_2->position_current,&collision_time,&started_intersecting);
+        if (bVar5) {
+          dVar10 = (double)(float)(dVar9 + dVar11);
+          collision_time = FLOAT_1 - collision_time;
+          ray_scale(collision_time,&sweep_start_a,&machine_1->position_current,&hit_pos_a);
+          ray_scale(collision_time,&sweep_start_b,&machine_2->position_current,&hit_pos_b);
+          fVar15 = math_sqrt((hit_pos_a.z - hit_pos_b.z) * (hit_pos_a.z - hit_pos_b.z) +
+                             (hit_pos_a.y - hit_pos_b.y) * (hit_pos_a.y - hit_pos_b.y) +
+                             (hit_pos_a.x - hit_pos_b.x) * (hit_pos_a.x - hit_pos_b.x));
         dVar9 = (double)fVar15;
         bVar5 = false;
         if ((dVar9 < dVar10) && ((double)FLOAT_EPSILON < dVar9)) {
@@ -125147,62 +125062,62 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
                machine_2->unk_random_0x514 & ~(0x80000000U >> (int)machine_1->entrant_id);
         }
         if (bVar5) {
-          vStack_1dc.x = local_1a0.x - local_194.x;
-          vStack_1dc.y = local_1a0.y - local_194.y;
-          vStack_1dc.z = local_1a0.z - local_194.z;
-          get_length_and_normalize(&vStack_1dc);
-          vStack_200.z = FLOAT_0_5;
+          collision_dir.x = hit_pos_b.x - hit_pos_a.x;
+          collision_dir.y = hit_pos_b.y - hit_pos_a.y;
+          collision_dir.z = hit_pos_b.z - hit_pos_a.z;
+          get_length_and_normalize(&collision_dir);
+          impact_midpoint.z = FLOAT_0_5;
           fVar15 = FLOAT_0_5 * (float)((double)(float)((double)FLOAT_0_01 + dVar10) - dVar9);
           fVar1 = -fVar15;
-          (machine_1->position_current).x = vStack_1dc.x * fVar1 + local_194.x;
-          (machine_1->position_current).y = vStack_1dc.y * fVar1 + local_194.y;
-          (machine_1->position_current).z = vStack_1dc.z * fVar1 + local_194.z;
-          (machine_2->position_current).x = vStack_1dc.x * fVar15 + local_1a0.x;
-          (machine_2->position_current).y = vStack_1dc.y * fVar15 + local_1a0.y;
-          (machine_2->position_current).z = vStack_1dc.z * fVar15 + local_1a0.z;
-          vStack_200.x = ((machine_1->position_current).x + (machine_2->position_current).x) *
-                         vStack_200.z;
-          vStack_200.y = ((machine_1->position_current).y + (machine_2->position_current).y) *
-                         vStack_200.z;
-          vStack_200.z = ((machine_1->position_current).z + (machine_2->position_current).z) *
-                         vStack_200.z;
-          dVar9 = prepare_impact_direction_info(machine_1,&uStack_150,&vStack_200);
-          dVar10 = prepare_impact_direction_info(machine_2,&uStack_188,&vStack_200);
+          (machine_1->position_current).x = collision_dir.x * fVar1 + hit_pos_a.x;
+          (machine_1->position_current).y = collision_dir.y * fVar1 + hit_pos_a.y;
+          (machine_1->position_current).z = collision_dir.z * fVar1 + hit_pos_a.z;
+          (machine_2->position_current).x = collision_dir.x * fVar15 + hit_pos_b.x;
+          (machine_2->position_current).y = collision_dir.y * fVar15 + hit_pos_b.y;
+          (machine_2->position_current).z = collision_dir.z * fVar15 + hit_pos_b.z;
+          impact_midpoint.x = ((machine_1->position_current).x + (machine_2->position_current).x) *
+                             impact_midpoint.z;
+          impact_midpoint.y = ((machine_1->position_current).y + (machine_2->position_current).y) *
+                             impact_midpoint.z;
+          impact_midpoint.z = ((machine_1->position_current).z + (machine_2->position_current).z) *
+                             impact_midpoint.z;
+          dVar9 = prepare_impact_direction_info(machine_1,&impact_info_a,&impact_midpoint);
+          dVar10 = prepare_impact_direction_info(machine_2,&impact_info_b,&impact_midpoint);
           if (dVar9 <= dVar10) {
-            local_20c.x = -uStack_188.relative_dir_world.x;
-            local_20c.y = -uStack_188.relative_dir_world.y;
-            local_20c.z = -uStack_188.relative_dir_world.z;
+            impact_dir.x = -impact_info_b.relative_dir_world.x;
+            impact_dir.y = -impact_info_b.relative_dir_world.y;
+            impact_dir.z = -impact_info_b.relative_dir_world.z;
           }
           else {
-            local_20c.x = uStack_150.relative_dir_world.x;
-            local_20c.y = uStack_150.relative_dir_world.y;
-            local_20c.z = uStack_150.relative_dir_world.z;
+            impact_dir.x = impact_info_a.relative_dir_world.x;
+            impact_dir.y = impact_info_a.relative_dir_world.y;
+            impact_dir.z = impact_info_a.relative_dir_world.z;
           }
-          fVar15 = math_sqrt(local_1c4.z * local_1c4.z +
-                             local_1c4.y * local_1c4.y + local_1c4.x * local_1c4.x);
+          fVar15 = math_sqrt(vel_a_scaled.z * vel_a_scaled.z +
+                             vel_a_scaled.y * vel_a_scaled.y + vel_a_scaled.x * vel_a_scaled.x);
           dVar9 = (double)fVar15;
           fVar15 = FLOAT_0;
           if ((double)FLOAT_EPSILON < dVar9) {
-            fVar15 = vec3_normalized_dot_product(&local_20c,&local_1c4);
+            fVar15 = vec3_normalized_dot_product(&impact_dir,&vel_a_scaled);
             fVar15 = (float)(dVar9 * (double)(float)((double)fVar15 / dVar14));
           }
           dVar10 = (double)fVar15;
-          fVar15 = math_sqrt(local_1d0.z * local_1d0.z +
-                             local_1d0.y * local_1d0.y + local_1d0.x * local_1d0.x);
+          fVar15 = math_sqrt(vel_b_scaled.z * vel_b_scaled.z +
+                             vel_b_scaled.y * vel_b_scaled.y + vel_b_scaled.x * vel_b_scaled.x);
           dVar9 = (double)fVar15;
           fVar15 = FLOAT_0;
           if ((double)FLOAT_EPSILON < dVar9) {
-            fVar15 = vec3_normalized_dot_product(&local_20c,&local_1d0);
+            fVar15 = vec3_normalized_dot_product(&impact_dir,&vel_b_scaled);
             fVar15 = (float)(dVar9 * (double)(float)((double)fVar15 / dVar13));
           }
           fVar2 = FLOAT_800;
           fVar1 = FLOAT_0;
           dVar9 = (double)((FLOAT_2 * (float)(dVar10 - (double)fVar15)) / (float)(dVar14 + dVar13));
           machine_1->base_speed =
-               machine_1->base_speed + FLOAT_800 * (float)((double)uStack_150.impact_axis_z * dVar9)
+               machine_1->base_speed + FLOAT_800 * (float)((double)impact_info_a.impact_axis_z * dVar9)
           ;
           machine_2->base_speed =
-               machine_2->base_speed + fVar2 * (float)((double)uStack_188.impact_axis_z * dVar9);
+               machine_2->base_speed + fVar2 * (float)((double)impact_info_b.impact_axis_z * dVar9);
           if (machine_1->base_speed < fVar1) {
             machine_1->base_speed = fVar1;
           }
@@ -125225,24 +125140,24 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
           }
           fVar15 = (float)(dVar10 * (double)(float)(dVar12 * dVar14));
           fVar1 = (float)(dVar9 * (double)(float)(dVar11 * dVar13));
-          local_1e8.z = vStack_1dc.z * fVar15 -
-                        FLOAT_0_95 * vStack_1dc.z * fVar15 * (machine_1->track_surface_normal).z;
-          local_1e8.x = vStack_1dc.x * fVar15 -
-                        FLOAT_0_95 * vStack_1dc.x * fVar15 * (machine_1->track_surface_normal).x;
-          local_1e8.y = vStack_1dc.y * fVar15 -
-                        FLOAT_0_95 * vStack_1dc.y * fVar15 * (machine_1->track_surface_normal).y;
-          local_1f4.z = vStack_1dc.z * fVar1 -
-                        FLOAT_0_95 * vStack_1dc.z * fVar1 * (machine_2->track_surface_normal).z;
-          local_1f4.x = vStack_1dc.x * fVar1 -
-                        FLOAT_0_95 * vStack_1dc.x * fVar1 * (machine_2->track_surface_normal).x;
-          local_1f4.y = vStack_1dc.y * fVar1 -
-                        FLOAT_0_95 * vStack_1dc.y * fVar1 * (machine_2->track_surface_normal).y;
-          (machine_1->collision_response).x = local_1e8.x;
-          (machine_1->collision_response).y = local_1e8.y;
-          (machine_1->collision_response).z = local_1e8.z;
-          (machine_2->collision_response).x = local_1f4.x;
-          (machine_2->collision_response).y = local_1f4.y;
-          (machine_2->collision_response).z = local_1f4.z;
+          impulse_a.z = collision_dir.z * fVar15 -
+                        FLOAT_0_95 * collision_dir.z * fVar15 * (machine_1->track_surface_normal).z;
+          impulse_a.x = collision_dir.x * fVar15 -
+                        FLOAT_0_95 * collision_dir.x * fVar15 * (machine_1->track_surface_normal).x;
+          impulse_a.y = collision_dir.y * fVar15 -
+                        FLOAT_0_95 * collision_dir.y * fVar15 * (machine_1->track_surface_normal).y;
+          impulse_b.z = collision_dir.z * fVar1 -
+                        FLOAT_0_95 * collision_dir.z * fVar1 * (machine_2->track_surface_normal).z;
+          impulse_b.x = collision_dir.x * fVar1 -
+                        FLOAT_0_95 * collision_dir.x * fVar1 * (machine_2->track_surface_normal).x;
+          impulse_b.y = collision_dir.y * fVar1 -
+                        FLOAT_0_95 * collision_dir.y * fVar1 * (machine_2->track_surface_normal).y;
+          (machine_1->collision_response).x = impulse_a.x;
+          (machine_1->collision_response).y = impulse_a.y;
+          (machine_1->collision_response).z = impulse_a.z;
+          (machine_2->collision_response).x = impulse_b.x;
+          (machine_2->collision_response).y = impulse_b.y;
+          (machine_2->collision_response).z = impulse_b.z;
           fVar15 = FLOAT_2_2;
           if (((machine_1->machine_state | machine_2->machine_state) &
               (FZ_MS_SIDEATTACKING|FZ_MS_SPINATTACKING)) != 0) {
@@ -125259,15 +125174,15 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
           fVar15 = (machine_1->velocity).x;
           fVar1 = (machine_1->velocity).y;
           fVar2 = (machine_1->velocity).z;
-          local_210 = (float)((double)local_1e8.z * dVar14);
-          local_218 = (float)((double)local_1e8.x * dVar14);
-          local_214 = (float)((double)local_1e8.y * dVar14);
+          local_210 = (float)((double)impulse_a.z * dVar14);
+          local_218 = (float)((double)impulse_a.x * dVar14);
+          local_214 = (float)((double)impulse_a.y * dVar14);
           fVar15 = math_sqrt(fVar2 * fVar2 + fVar1 * fVar1 + fVar15 * fVar15);
           if ((FLOAT_0_1 < fVar15) &&
-             (fVar15 = math_sqrt(local_1e8.z * local_1e8.z +
-                                 local_1e8.y * local_1e8.y + local_1e8.x * local_1e8.x),
+             (fVar15 = math_sqrt(impulse_a.z * impulse_a.z +
+                                 impulse_a.y * impulse_a.y + impulse_a.x * impulse_a.x),
              FLOAT_0_1 < fVar15)) {
-            fVar15 = vec3_normalized_dot_product(&machine_1->velocity,&local_1e8);
+            fVar15 = vec3_normalized_dot_product(&machine_1->velocity,&impulse_a);
             if (FLOAT_0 < fVar15) {
               fVar15 = FLOAT_0;
             }
@@ -125276,21 +125191,21 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
             local_214 = local_214 * fVar15;
             local_210 = local_210 * fVar15;
           }
-          (machine_1->velocity).x = local_218 + local_1c4.x;
-          (machine_1->velocity).y = local_214 + local_1c4.y;
-          (machine_1->velocity).z = local_210 + local_1c4.z;
+          (machine_1->velocity).x = local_218 + vel_a_scaled.x;
+          (machine_1->velocity).y = local_214 + vel_a_scaled.y;
+          (machine_1->velocity).z = local_210 + vel_a_scaled.z;
           fVar15 = (machine_2->velocity).x;
           fVar1 = (machine_2->velocity).y;
           fVar2 = (machine_2->velocity).z;
-          local_210 = (float)((double)local_1f4.z * dVar11);
-          local_218 = (float)((double)local_1f4.x * dVar11);
-          local_214 = (float)((double)local_1f4.y * dVar11);
+          local_210 = (float)((double)impulse_b.z * dVar11);
+          local_218 = (float)((double)impulse_b.x * dVar11);
+          local_214 = (float)((double)impulse_b.y * dVar11);
           fVar15 = math_sqrt(fVar2 * fVar2 + fVar1 * fVar1 + fVar15 * fVar15);
           if ((FLOAT_0_1 < fVar15) &&
-             (fVar15 = math_sqrt(local_1f4.z * local_1f4.z +
-                                 local_1f4.y * local_1f4.y + local_1f4.x * local_1f4.x),
+             (fVar15 = math_sqrt(impulse_b.z * impulse_b.z +
+                                 impulse_b.y * impulse_b.y + impulse_b.x * impulse_b.x),
              FLOAT_0_1 < fVar15)) {
-            fVar15 = vec3_normalized_dot_product(&machine_2->velocity,&local_1f4);
+            fVar15 = vec3_normalized_dot_product(&machine_2->velocity,&impulse_b);
             if (FLOAT_0 < fVar15) {
               fVar15 = FLOAT_0;
             }
@@ -125299,9 +125214,9 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
             local_214 = local_214 * fVar15;
             local_210 = local_210 * fVar15;
           }
-          (machine_2->velocity).x = local_218 + local_1d0.x;
-          (machine_2->velocity).y = local_214 + local_1d0.y;
-          (machine_2->velocity).z = local_210 + local_1d0.z;
+          (machine_2->velocity).x = local_218 + vel_b_scaled.x;
+          (machine_2->velocity).y = local_214 + vel_b_scaled.y;
+          (machine_2->velocity).z = local_210 + vel_b_scaled.z;
           mtxa_push();
           uVar8 = machine_1->machine_state;
           bVar5 = false;
@@ -125327,15 +125242,15 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
             bVar3 = false;
           }
           copy_mtx_to_mtxa(&machine_1->basis_physical);
-          vStack_224.x = vStack_1dc.x * FLOAT_NEG_0_5;
-          vStack_224.y = vStack_1dc.y * FLOAT_NEG_0_5;
-          vStack_224.z = vStack_1dc.z * FLOAT_NEG_0_5;
-          mtxa_inverse_rotate_vec3(&vStack_224,&vStack_224);
-          mtxa_inverse_rotate_vec3(&local_1e8,&local_230);
-          machine_1->visual_roll = machine_1->visual_roll + local_230.x;
-          machine_1->visual_pitch = machine_1->visual_pitch + local_230.z;
-          fVar15 = math_sqrt(local_1e8.z * local_1e8.z +
-                             local_1e8.y * local_1e8.y + local_1e8.x * local_1e8.x);
+          tmp_rot.x = collision_dir.x * FLOAT_NEG_0_5;
+          tmp_rot.y = collision_dir.y * FLOAT_NEG_0_5;
+          tmp_rot.z = collision_dir.z * FLOAT_NEG_0_5;
+          mtxa_inverse_rotate_vec3(&tmp_rot,&tmp_rot);
+          mtxa_inverse_rotate_vec3(&impulse_a,&tmp_vec);
+          machine_1->visual_roll = machine_1->visual_roll + tmp_vec.x;
+          machine_1->visual_pitch = machine_1->visual_pitch + tmp_vec.z;
+          fVar15 = math_sqrt(impulse_a.z * impulse_a.z +
+                             impulse_a.y * impulse_a.y + impulse_a.x * impulse_a.x);
           dVar14 = (double)(float)((double)(float)(dVar10 * (double)(FLOAT_0_002 * fVar15)) / dVar9)
           ;
           if (bVar7) {
@@ -125350,15 +125265,15 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
           }
           fz::g_unk_rumble_start(machine_1->unk_input_related_0x474,4,0xc);
           copy_mtx_to_mtxa(&machine_2->basis_physical);
-          vStack_224.x = vStack_1dc.x * FLOAT_0_5;
-          vStack_224.y = vStack_1dc.y * FLOAT_0_5;
-          vStack_224.z = vStack_1dc.z * FLOAT_0_5;
-          mtxa_inverse_rotate_vec3(&vStack_224,&vStack_224);
-          mtxa_inverse_rotate_vec3(&local_1f4,&local_230);
-          machine_2->visual_roll = machine_2->visual_roll + local_230.x;
-          machine_2->visual_pitch = machine_2->visual_pitch + local_230.z;
-          fVar15 = math_sqrt(local_1f4.z * local_1f4.z +
-                             local_1f4.y * local_1f4.y + local_1f4.x * local_1f4.x);
+          tmp_rot.x = collision_dir.x * FLOAT_0_5;
+          tmp_rot.y = collision_dir.y * FLOAT_0_5;
+          tmp_rot.z = collision_dir.z * FLOAT_0_5;
+          mtxa_inverse_rotate_vec3(&tmp_rot,&tmp_rot);
+          mtxa_inverse_rotate_vec3(&impulse_b,&tmp_vec);
+          machine_2->visual_roll = machine_2->visual_roll + tmp_vec.x;
+          machine_2->visual_pitch = machine_2->visual_pitch + tmp_vec.z;
+          fVar15 = math_sqrt(impulse_b.z * impulse_b.z +
+                             impulse_b.y * impulse_b.y + impulse_b.x * impulse_b.x);
           dVar9 = (double)(float)((double)(float)(dVar9 * (double)(FLOAT_0_002 * fVar15)) / dVar10);
           if (bVar7) {
             dVar9 = (double)(float)(dVar9 * (double)FLOAT_0_001);
@@ -125408,8 +125323,8 @@ undefined4 g_handle_machine_v_machine_collision(fz__machine *machine_1,fz__machi
           g_ret_collided = 0;
         }
       }
-      else {
-        if (local_238 == 0) {
+        else {
+          if (started_intersecting == 0) {
           machine_1->unk_random_0x514 =
                machine_1->unk_random_0x514 & ~(0x80000000U >> (int)machine_2->entrant_id);
           machine_2->unk_random_0x514 =
