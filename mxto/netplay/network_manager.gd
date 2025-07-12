@@ -373,7 +373,7 @@ func collect_server_inputs() -> Array:
 	return frame_inputs_bytes
 
 func collect_client_inputs() -> Array:
-	if game_sim == null or !game_sim.sim_started:
+	if game_sim != null and !game_sim.sim_started:
 		return []
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 		if !is_server:

@@ -185,7 +185,7 @@ inline static const bool swept_sphere_vs_swept_sphere(float radiusA,
     /* ------------------------------------------------------------------ */
     /* Solve quadratic for time-of-impact                                  */
     const float discriminant = b * b - a * c;
-    if (discriminant < 0.0f)
+    if (discriminant < -kEpsilon)
     {
         return false;                  // no real roots – paths miss
     }
