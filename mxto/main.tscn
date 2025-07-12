@@ -192,6 +192,8 @@ transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 
 mesh = ExtResource("3_1bvp3")
 skeleton = NodePath("")
 
+[node name="ObjContainer" type="Node3D" parent="GameWorld"]
+
 [node name="CarSettings" parent="." instance=ExtResource("3_carsettings")]
 visible = false
 

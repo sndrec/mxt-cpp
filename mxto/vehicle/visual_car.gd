@@ -284,6 +284,7 @@ func calculate_error() -> void:
 
 func _physics_process(delta: float) -> void:
 	create_machine_visual_transform()
+	DebugDraw2D.set_text("turbo", boost_turbo)
 	var calced_max_energy := 100.0
 	var energy_ratio : float = minf(1.0, (energy / calced_max_energy) * 4.0)
 	#var manual_boost_visual := float(boost_frames_manual) / (car_definition.boost_length * Engine.physics_ticks_per_second)
@@ -329,7 +330,7 @@ func _physics_process(delta: float) -> void:
 		var rot_angle_1 := flat_up_y.signed_angle_to(flat_basis_y, use_basis.x)
 		var rot_angle_2 := use_basis.y.signed_angle_to(flat_basis_y, use_basis.x)
 		slerped_up_y = slerped_up_y.rotated(use_basis.x, rot_angle_1 * 0.75)
-		use_basis = use_basis.rotated(use_basis.x, rot_angle_2 * 0.75)
+		use_basis = use_basis.rotated(use_basis.x, rot_angle_2 * 0.5)
 		final_y = slerped_up_y
 		if (machine_state & FZ_MS.AIRBORNE) == 0:
 			if speed_kmh > 1:

@@ -2,6 +2,7 @@
 
 #include "track/track_segment.h"
 #include "track/collision_checkpoint.h"
+#include "track/trigger_collider.h"
 #include "mxt_core/math_utils.h"
 #include <vector>
 
@@ -18,9 +19,11 @@ public:
 	int candidate_use;
 	uint32_t visit_gen;
 	uint32_t* visit_stamp;
-	int* checkpoint_stack;
-	CollisionCheckpoint* checkpoints;
-	int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
+        int* checkpoint_stack;
+        CollisionCheckpoint* checkpoints;
+        int num_trigger_colliders;
+        TriggerCollider** trigger_colliders;
+        int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
 	void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
 	void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
 	int get_best_checkpoint(godot::Vector3 in_point)

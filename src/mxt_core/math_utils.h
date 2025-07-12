@@ -134,3 +134,70 @@ inline static const godot::Vector3 project_to_plane(const godot::Vector3 &p_norm
 	float dist = (p_norm.dot(in_point) - p_dist);
 	return in_point - p_norm * dist;
 }
+
+inline static void ray_scale(const float scale, const godot::Vector3 &start, const godot::Vector3 &end, godot::Vector3 &out)
+{
+	out = start + scale * (end - start);
+}
+
+inline static const bool swept_sphere_vs_swept_sphere(float radiusA,
+                              float radiusB,
+                              const godot::Vector3 &p0A, const godot::Vector3 &p1A,
+                              const godot::Vector3 &p0B, const godot::Vector3 &p1B,
+                              float &outTOI,
+                              uint32_t &startedIntersecting)
+{
+    constexpr float kEpsilon = 1.1920929e-7f;   // ~= FLT_EPSILON
+
+    /* ------------------------------------------------------------------ */
+    outTOI              = 100.0f;  // “infinite” time – never collides
+    startedIntersecting = 0;
+    /* ------------------------------------------------------------------ */
+
+    /* Relative motion set-up                                             */
+    godot::Vector3 r0 = p0A - p0B;
+
+    godot::Vector3 r1 = p1A - p1B;
+
+    godot::Vector3 v = r1 - r0;
+
+    const float a = v.dot(v);        // |v|²
+    const float b = r0.dot(v);        // r0·v
+    const float radiusSum = radiusA + radiusB;
+    const float c = r0.dot(r0) - radiusSum * radiusSum;
+
+    /* ------------------------------------------------------------------ */
+    /* Already intersecting?                                              */
+    if (c <= 0.0f)
+    {
+        startedIntersecting = 1;
+        outTOI = 0.0f;
+        return false;                  // no *new* collision
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* No relative motion → can’t collide if not already intersecting     */
+    if (a < kEpsilon)
+    {
+        return false;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Solve quadratic for time-of-impact                                  */
+    const float discriminant = b * b - a * c;
+    if (discriminant < 0.0f)
+    {
+        return false;                  // no real roots – paths miss
+    }
+
+    const float sqrtDisc = sqrtf(discriminant);
+    const float t = (-b - sqrtDisc) / a;   // earliest contact time
+
+    if (t < 0.0f || t > 1.0f)
+    {
+        return false;                  // contact occurs outside sweep
+    }
+
+    outTOI = t;
+    return true;
+}

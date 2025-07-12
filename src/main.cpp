@@ -6,6 +6,7 @@
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
 #include "track/racetrack.h"
+#include "track/trigger_collider.h"
 #include "track/road_modulation.h"
 #include "track/road_embed.h"
 #include "car/physics_car.h"
@@ -100,14 +101,11 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 		}
 		slot[i] = inp;
 		cars[i].tick(inp, tick);
-	}
-	// Test collisions between each unique pair of cars
-	for (int i = 0; i < num_cars; i++)
-	{
 		for (int j = i + 1; j < num_cars; j++)
 		{
-			cars[i].test_collision_with_other_car(cars[j]);
+			cars[i].handle_machine_v_machine_collision(cars[j]);
 		}
+		cars[i].post_tick();
 	}
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -146,7 +144,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	level_data.instantiate(1024 * 1024 * 16);
 
+	gamestate_data.instantiate(1024 * 1024);
+	int state_capacity = gamestate_data.get_capacity();
+	for (int i = 0; i < STATE_BUFFER_LEN; i++)
+	{
+		state_buffer[i].data = (char*)malloc(state_capacity);
+		state_buffer[i].size = 0;
+	}
+
 	current_track = level_data.allocate_object<RaceTrack>();
+	current_track->num_trigger_colliders = 0;
+	current_track->trigger_colliders = nullptr;
 
 	UtilityFunctions::print("-----");
 	UtilityFunctions::print(lvldat_buf->get_position());
@@ -158,6 +166,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	UtilityFunctions::print(lvldat_buf->get_position());
 	uint32_t segment_count = lvldat_buf->get_u32();
 	UtilityFunctions::print(lvldat_buf->get_position());
+	uint32_t trigger_count = 0;
+	if (version_string != "v0.1" && version_string != "v0.2") {
+		trigger_count = lvldat_buf->get_u32();
+		UtilityFunctions::print(lvldat_buf->get_position());
+	}
 
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
@@ -479,12 +492,59 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 	current_track->minimum_y -= 250.0f;
-	gamestate_data.instantiate(1024 * 1024);
-	int state_capacity = gamestate_data.get_capacity();
-	for (int i = 0; i < STATE_BUFFER_LEN; i++)
-	{
-		state_buffer[i].data = (char*)malloc(state_capacity);
-		state_buffer[i].size = 0;
+
+	if (trigger_count > 0) {
+		current_track->num_trigger_colliders = trigger_count;
+		current_track->trigger_colliders = level_data.allocate_array<TriggerCollider*>(trigger_count);
+		for (uint32_t t = 0; t < trigger_count; ++t) {
+			uint32_t type_val = lvldat_buf->get_u32();
+			uint32_t seg_idx  = lvldat_buf->get_u32();
+			uint32_t cp_idx   = lvldat_buf->get_u32();
+
+			godot::Basis b;
+			b[0][0] = lvldat_buf->get_float();
+			b[0][1] = lvldat_buf->get_float();
+			b[0][2] = lvldat_buf->get_float();
+			b[1][0] = lvldat_buf->get_float();
+			b[1][1] = lvldat_buf->get_float();
+			b[1][2] = lvldat_buf->get_float();
+			b[2][0] = lvldat_buf->get_float();
+			b[2][1] = lvldat_buf->get_float();
+			b[2][2] = lvldat_buf->get_float();
+			godot::Vector3 origin;
+			origin.x = lvldat_buf->get_float();
+			origin.y = lvldat_buf->get_float();
+			origin.z = lvldat_buf->get_float();
+			godot::Transform3D inv_t(b.transposed(), origin);
+
+			godot::Vector3 ext;
+			ext.x = lvldat_buf->get_float();
+			ext.y = lvldat_buf->get_float();
+			ext.z = lvldat_buf->get_float();
+
+			TriggerCollider* trig = nullptr;
+			switch (type_val) {
+			case TRIGGER_TYPE::DASHPLATE:
+				trig = level_data.allocate_class<Dashplate>();
+				break;
+			case TRIGGER_TYPE::JUMPPLATE:
+				trig = level_data.allocate_class<Jumpplate>();
+				break;
+			case TRIGGER_TYPE::MINE:
+				trig = level_data.allocate_class<Mine>();
+				break;
+			default:
+				// TODO: assert that we never reach here!
+				break;
+			}
+			trig->segment_index = seg_idx;
+			trig->checkpoint_index = cp_idx;
+			trig->inv_transform = inv_t;
+			trig->transform = inv_t.affine_inverse();
+			trig->half_extents = ext;
+			trig->current_track = current_track;
+			current_track->trigger_colliders[t] = trig;
+		}
 	}
 
 
@@ -567,6 +627,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	UtilityFunctions::print(level_data.get_size());
 	UtilityFunctions::print("gamestate size:");
 	UtilityFunctions::print(gamestate_data.get_size());
+	UtilityFunctions::print("trigger objects:");
+	UtilityFunctions::print(trigger_count);
 
 	if (!car_node_container) {
 		UtilityFunctions::print("car_node_container is null");
@@ -580,10 +642,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 void GameSim::destroy_gamesim()
 {
-	if (sim_started)
-	{
-		level_data.free_heap();
-		gamestate_data.free_heap();
+        if (sim_started)
+        {
+                if (current_track) {
+                        current_track->num_trigger_colliders = 0;
+                        current_track->trigger_colliders = nullptr;
+                }
+                level_data.free_heap();
+                gamestate_data.free_heap();
 		for (int i = 0; i < STATE_BUFFER_LEN; i++)
 		{
 			if (state_buffer[i].data)
@@ -592,13 +658,14 @@ void GameSim::destroy_gamesim()
 				state_buffer[i].data = nullptr;
 			}
 		}
-		if (input_buffer) {
-			::free(input_buffer);
-			input_buffer = nullptr;
-		}
-		sim_started = false;
-		tick = 0;
-	}
+                if (input_buffer) {
+                        ::free(input_buffer);
+                        input_buffer = nullptr;
+                }
+                sim_started = false;
+                tick = 0;
+                current_track = nullptr;
+        }
 };
 
 void GameSim::render_gamesim() {
