@@ -2764,14 +2764,13 @@ void PhysicsCar::buildSweepForMachine(float cappedSpeedMps, godot::Vector3 &swee
 
     float travelled = delta.length();
 
-    if (travelled <= 13.88888f)          // <= 50 km/h   (m/s)
+    if (travelled <= 13.88888f)
     {
         sweepStartOut     = position_old_dupe;    // use previous position as start
         cappedVelocityOut = velocity;
     }
     else
     {
-        // Clamp sweep length to 50 km/h
         delta = set_vec3_length(-delta, 13.88888f);
 
         sweepStartOut = position_current + delta;
