@@ -161,6 +161,7 @@ func deserialize(data: PackedByteArray) -> PlayerInput:
 	else:
 		spinattack = false
 		boost = false
+		sideattack = false
 
 	return self
 
