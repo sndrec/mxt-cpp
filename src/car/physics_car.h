@@ -35,6 +35,13 @@ struct CollisionData {
 	RoadData road_data;
 };
 
+struct ImpactData {
+	godot::Vector3 relative_dir_local;
+	godot::Vector3 relative_dir_world;
+	float impact_axis_z;
+	float speed_per_mass;
+};
+
 class PhysicsCar
 {
 private:
@@ -212,6 +219,11 @@ public:
     void handle_checkpoints();
     void respawn_at_checkpoint(uint16_t cp_idx);
     void check_respawn();
+    bool apply_damage(float impact_strength);
+    float scale_collision_impulse_and_damage(bool other_machine_b10_flag);
+    float prepare_impact_direction_info(ImpactData &impact, const godot::Vector3 &impactDirWorld);
+    void buildSweepForMachine(float cappedSpeedMps, godot::Vector3 &sweepStartOut, godot::Vector3 &cappedVelocityOut);
+    bool handle_machine_v_machine_collision(PhysicsCar &other_machine);
     void post_tick();
     void tick(PlayerInput input, uint32_t tick_count);
 };

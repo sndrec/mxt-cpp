@@ -101,14 +101,11 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 		}
 		slot[i] = inp;
 		cars[i].tick(inp, tick);
-	}
-	// Test collisions between each unique pair of cars
-	for (int i = 0; i < num_cars; i++)
-	{
 		for (int j = i + 1; j < num_cars; j++)
 		{
-			cars[i].test_collision_with_other_car(cars[j]);
+			cars[i].handle_machine_v_machine_collision(cars[j]);
 		}
+		cars[i].post_tick();
 	}
 	//for (int i = 0; i < num_cars; i++)
 	//{
