@@ -2884,18 +2884,18 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
             : impactInfo1.relative_dir_world;
 
     //  Calculate pre-impact relative velocity along normal
-    const float velLen1 = velocity.length();
+    const float velLen1 = cappedVel1.length();
 
     float relSpeed1 = 0.0f;
     if (velLen1 > 0.00000011920929f)
-        //relSpeed1 = vec3_normalized_dot_product(&worldImpactAxis, &velocity) * velLen1 / stat_weight;
-        relSpeed1 = worldImpactAxis.normalized().dot(velocity.normalized()) * velLen1 / stat_weight;
+        //relSpeed1 = vec3_normalized_dot_product(&worldImpactAxis, &cappedVel1) * velLen1 / stat_weight;
+        relSpeed1 = worldImpactAxis.normalized().dot(cappedVel1.normalized()) * velLen1 / stat_weight;
 
-    const float velLen2 = other_machine.velocity.length();
+    const float velLen2 = cappedVel2.length();
 
     float relSpeed2 = 0.0f;
     if (velLen2 > 0.00000011920929f)
-        relSpeed2 = worldImpactAxis.normalized().dot(other_machine.velocity.normalized()) * velLen2 / other_machine.stat_weight;
+        relSpeed2 = worldImpactAxis.normalized().dot(cappedVel2.normalized()) * velLen2 / other_machine.stat_weight;
 
     const float impulseNumerator = 2.0f * (relSpeed1 - relSpeed2);
     const float impulseDenominator = stat_weight + other_machine.stat_weight;
@@ -2949,7 +2949,7 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     {
         float lenV    = cappedVel.length();
 
-        godot::Vector3 newResp(resp * scale);
+        godot::Vector3 newResp  = { resp.x * scale, resp.y * scale, resp.z * scale };
 
         if (lenV > 0.1f)
         {
@@ -2959,15 +2959,19 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
                 float dot = mach.velocity.normalized().dot(resp.normalized()); //vec3_normalized_dot_product(&mach->velocity, &resp);
                 if (dot > 0.0f) dot = 0.0f;
                 const float adjust = 1.0f + 0.7f * dot;
-                newResp *= adjust;
+                newResp.x *= adjust;
+                newResp.y *= adjust;
+                newResp.z *= adjust;
             }
         }
 
-        mach.velocity = newResp + cappedVel;
+        mach.velocity.x = newResp.x + cappedVel.x;
+        mach.velocity.y = newResp.y + cappedVel.y;
+        mach.velocity.z = newResp.z + cappedVel.z;
     };
 
-    applyResponse(*this, velocity, response1, velScale1);
-    applyResponse(other_machine, other_machine.velocity, response2, velScale2);
+    applyResponse(*this, cappedVel1, response1, velScale1);
+    applyResponse(other_machine, cappedVel2, response2, velScale2);
 
     // #########################################################
     //  Matrix-space feedback, damage and rumble logic
