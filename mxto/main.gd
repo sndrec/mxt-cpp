@@ -11,6 +11,7 @@ class_name GameManager extends Node
 @onready var start_race_button: Button = $Lobby/StartRaceButton
 @onready var player_list: ItemList = $Lobby/PlayerList
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
+@onready var obj_container: Node3D = $GameWorld/ObjContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var car_settings: Control = $CarSettings
@@ -27,6 +28,12 @@ var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
 var local_player_index: int = 0
 var headless_mode: bool = false
+var trigger_objects: Array = []
+const TRIGGER_SCENES = {
+			 0: preload("res://asset/obj_dashplate.tscn"),
+			 1: preload("res://asset/obj_jumpplate.tscn"),
+			 2: preload("res://asset/obj_mine.tscn"),
+}
 
 func _ready() -> void:
 	randomize()
@@ -133,6 +140,90 @@ func _on_join_button_pressed() -> void:
 func _auto_host() -> void:
 	_on_start_button_pressed()
 
+func _parse_level_triggers(bytes: PackedByteArray) -> Array:
+	var pb := StreamPeerBuffer.new()
+	pb.data_array = bytes
+	pb.big_endian = false
+	var header_size := pb.get_u32()
+	var version := pb.get_string(4)
+	var cp_count := pb.get_u32()
+	var seg_count := pb.get_u32()
+	var trig_count := 0
+	if version != "v0.1" and version != "v0.2":
+		trig_count = pb.get_u32()
+
+	for i in range(cp_count):
+		pb.get_float() # pos start x
+		pb.get_float(); pb.get_float()
+		pb.get_float(); pb.get_float(); pb.get_float() # pos end
+		for j in range(9):
+			pb.get_float()
+		for j in range(9):
+			pb.get_float()
+		for j in range(7):
+			pb.get_float()
+		pb.get_u32()
+		for j in range(3):
+			pb.get_float()
+		pb.get_float()
+		for j in range(3):
+			pb.get_float()
+		pb.get_float()
+		var conn := pb.get_u32()
+		for j in range(conn):
+			pb.get_u32()
+
+	var _skip_curve = func():
+		var point_count := pb.get_u32()
+		pb.seek(pb.get_position() + point_count * 16)
+
+	for i in range(seg_count):
+		pb.get_u32()
+		var road_type := pb.get_u32()
+		if road_type == 2 or road_type == 4:
+			_skip_curve.call()
+		var mod_count := pb.get_u32()
+		for m in range(mod_count):
+			_skip_curve.call(); _skip_curve.call()
+		var embed_count := pb.get_u32()
+		for e in range(embed_count):
+			pb.get_float(); pb.get_float(); pb.get_u32(); _skip_curve.call(); _skip_curve.call()
+		for j in range(3):
+			_skip_curve.call()
+		for j in range(9):
+			_skip_curve.call()
+		for j in range(3):
+			_skip_curve.call()
+		pb.get_float(); pb.get_float()
+
+	var out := []
+	for i in range(trig_count):
+		var t_type := pb.get_u32()
+		pb.get_u32()
+		pb.get_u32()
+		var b := Basis()
+		b.x.x = pb.get_float()
+		b.x.y = pb.get_float()
+		b.x.z = pb.get_float()
+		b.y.x = pb.get_float()
+		b.y.y = pb.get_float()
+		b.y.z = pb.get_float()
+		b.z.x = pb.get_float()
+		b.z.y = pb.get_float()
+		b.z.z = pb.get_float()
+		var origin := Vector3.ZERO
+		origin.x = pb.get_float()
+		origin.y = pb.get_float()
+		origin.z = pb.get_float()
+		var inv_t := Transform3D(b, origin)
+		var tform := inv_t.affine_inverse()
+		var ext := Vector3.ZERO
+		ext.x = pb.get_float()
+		ext.y = pb.get_float()
+		ext.z = pb.get_float()
+		out.append({"type": t_type, "transform": tform, "extents": ext})
+	return out
+
 func _on_car_settings_button_pressed() -> void:
 	car_settings.call("open_settings")
 
@@ -211,6 +302,14 @@ func _start_race(track_index: int, settings: Array) -> void:
 			var mat := debug_track_mesh.mesh.surface_get_material(i)
 			if mat.resource_name == "track_surface":
 				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+	trigger_objects.clear()
+	for trig in _parse_level_triggers(level_buffer.data_array):
+		var scene = TRIGGER_SCENES.get(trig["type"], null)
+		if scene:
+			var inst:Node3D = scene.instantiate()
+			inst.transform = trig["transform"]
+			obj_container.add_child(inst)
+			trigger_objects.append(inst)
 	if network_manager.is_server:
 		network_manager.client_ready()
 	else:
@@ -320,6 +419,9 @@ func _return_to_menu() -> void:
 		network_manager.server_game_sim = null
 	for child in car_node_container.get_children():
 		child.queue_free()
+	for obj in trigger_objects:
+		obj.queue_free()
+	trigger_objects.clear()
 	for p in players:
 		p.queue_free()
 	players.clear()
@@ -335,6 +437,9 @@ func _return_to_lobby() -> void:
 		network_manager.server_game_sim = null
 	for child in car_node_container.get_children():
 		child.queue_free()
+	for obj in trigger_objects:
+		obj.queue_free()
+	trigger_objects.clear()
 	for p in players:
 		p.queue_free()
 	players.clear()

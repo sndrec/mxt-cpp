@@ -86,9 +86,43 @@ class MXTCheckpoint(bpy.types.PropertyGroup):
 class MXTModulation(PropertyGroup):
     label: StringProperty(name="Name", default="Modulation")
     helper: PointerProperty(type=bpy.types.Object)
+
+class MXTTriggerObject(PropertyGroup):
+    label: StringProperty(name="Label", default="Trigger")
+    helper: PointerProperty(type=bpy.types.Object)
+    preview_mesh: PointerProperty(type=bpy.types.Object)
+    obj_type: EnumProperty(
+        name="Type",
+        items=[('DASHPLATE',"Dashplate",""),
+               ('JUMPPLATE',"Jumpplate",""),
+               ('MINE',"Mine","")],
+        default='DASHPLATE')
+    segment: PointerProperty(
+        name="Segment",
+        type=bpy.types.Object,
+        poll=lambda self,obj: (obj and getattr(obj, "mxt_road_overall_props", None) \
+            and obj.mxt_road_overall_props.is_mxt_road_segment_parent),
+        update=lambda self,ctx:_update_trigger_helper(self)
+    )
+    tx: FloatProperty(name="t_x", default=0.0, min=-1.0, max=1.0,
+                      update=lambda self,ctx:_update_trigger_helper(self))
+    ty: FloatProperty(name="t_y", default=0.0, min=0.0, max=1.0,
+                      update=lambda self,ctx:_update_trigger_helper(self))
+    scale: FloatVectorProperty(name="Scale", size=3, default=(1.0,1.0,1.0),
+                               update=lambda self,ctx:_update_trigger_helper(self))
+    yaw_deg: FloatProperty(name="Add Yaw", default=0.0,
+                           update=lambda self,ctx:_update_trigger_helper(self))
+    checkpoint_index: IntProperty(name="Checkpoint", default=0, min=0)
+
 class MXT_UL_Modulations(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         layout.prop(item, "label", text="", emboss=False, icon='FCURVE')
+
+class MXT_UL_TriggerObjects(bpy.types.UIList):
+    def draw_item(self, ctx, layout, data, item, icon, active_data, active_propname, index):
+        row = layout.row(align=True)
+        row.prop(item, "label", text="", emboss=False, icon='EMPTY_AXIS')
+        row.prop(item, "obj_type", text="", emboss=False, icon='DOT')
 mxt_roads_pending_visual_update = set()
 mxt_timer_is_active = False
 _build_in_progress  = False     
@@ -197,6 +231,9 @@ class MXTTrackSettings(PropertyGroup):
         min=1,
         max=10
     )
+
+    trigger_objects: CollectionProperty(type=MXTTriggerObject)
+    active_trigger_obj_idx: IntProperty(default=0)
 
 
 def mxt_segment_type_update(self, context):
@@ -458,6 +495,58 @@ class MXTRoad_OT_RemoveEmbed(Operator):
             bpy.data.objects.remove(emb.helper, do_unlink=True)
         props.embeds.remove(idx)
         props.active_embed_idx = min(max(0, idx-1), len(props.embeds)-1)
+        return {'FINISHED'}
+
+class MXT_OT_AddTrigger(Operator):
+    bl_idname = "mxt_track.add_trigger"
+    bl_label = "Add Trigger Object"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ts = context.scene.mxt_track_settings
+        if not ts:
+            return {'CANCELLED'}
+        seg = get_active_mxt_road_segment_parent(context)
+
+        bpy.ops.object.empty_add(type='PLAIN_AXES', radius=4.0, location=context.scene.cursor.location)
+        helper = context.active_object
+        _disallow_deletion(helper)
+        helper.name = f"Trigger_{len(ts.trigger_objects):02d}"
+
+        trig = ts.trigger_objects.add()
+        trig.label = helper.name
+        trig.helper = helper
+        trig.segment = seg
+
+        mesh_name = f"MESH_{trig.obj_type}"
+        mesh = bpy.data.meshes.get(mesh_name)
+        if mesh:
+            mobj = bpy.data.objects.new(f"{helper.name}_Preview", mesh)
+            context.collection.objects.link(mobj)
+            mobj.parent = helper
+            trig.preview_mesh = mobj
+
+        ts.active_trigger_obj_idx = len(ts.trigger_objects) - 1
+        _update_trigger_helper(trig)
+        return {'FINISHED'}
+
+class MXT_OT_RemoveTrigger(Operator):
+    bl_idname = "mxt_track.remove_trigger"
+    bl_label = "Remove Trigger Object"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        ts = context.scene.mxt_track_settings
+        idx = ts.active_trigger_obj_idx
+        if idx < 0 or idx >= len(ts.trigger_objects):
+            return {'CANCELLED'}
+        trig = ts.trigger_objects[idx]
+        if trig.preview_mesh and bpy.data.objects.get(trig.preview_mesh.name):
+            bpy.data.objects.remove(trig.preview_mesh, do_unlink=True)
+        if trig.helper and bpy.data.objects.get(trig.helper.name):
+            bpy.data.objects.remove(trig.helper, do_unlink=True)
+        ts.trigger_objects.remove(idx)
+        ts.active_trigger_obj_idx = min(max(0, idx-1), len(ts.trigger_objects)-1)
         return {'FINISHED'}
 
 class MXT_UL_SegmentRefs(bpy.types.UIList):
@@ -1234,6 +1323,42 @@ def _create_cp_empty(context, parent_obj, name, location_in_parent_space, time_v
     context.view_layer.objects.active = parent_obj
     return cp_empty
 
+def _update_trigger_helper(trig):
+    helper = trig.helper
+    seg = trig.segment
+    if not helper or not seg:
+        return
+    props = seg.mxt_road_overall_props
+    helper.parent = seg
+    helper.matrix_parent_inverse = seg.matrix_world.inverted()
+    cm_helper = props.curve_matrix_helper_empty
+    if not (cm_helper and cm_helper.animation_data):
+        return
+    shape = {
+        'FLAT': RoadShapeFlat(),
+        'CYLINDER': RoadShapeCylinder(),
+        'PIPE': RoadShapePipe(),
+        'CYLINDER_OPEN': RoadShapeCylinderOpen(),
+        'PIPE_OPEN': RoadShapePipeOpen(),
+    }[props.road_shape_type]
+    base = shape.get_pos(cm_helper, Vector((trig.tx, trig.ty)))
+    if base is None:
+        return
+    eps = 0.002
+    pr = shape.get_pos(cm_helper, Vector((trig.tx + eps, trig.ty)))
+    pf = shape.get_pos(cm_helper, Vector((trig.tx, min(trig.ty + eps, 1.0))))
+    if pr is None or pf is None:
+        return
+    right = (pr - base).normalized()
+    forward = (pf - base).normalized()
+    normal = (right.cross(forward)).normalized()
+    right = forward.cross(normal).normalized()
+    B = (Matrix((right, -normal, forward))).transposed()
+    mat = Matrix.Translation(base) @ B.to_4x4()
+    mat = mat @ Matrix.Rotation(math.radians(trig.yaw_deg), 4, 'Y')
+    S = Matrix.Diagonal((*trig.scale, 1.0))
+    helper.matrix_world = mat @ S
+
 class MXT_OT_set_handle_length(bpy.types.Operator):
     bl_idname = "mxt.set_handle_length"
     bl_label = "Set CP Handle Length"
@@ -1861,7 +1986,7 @@ def mxt_draw_callback():
         for mod in props.modulations:
             helper_mod = mod.helper
             if not (helper_mod and helper_mod.select_get()):
-                continue  
+                continue
 
             act = helper_mod.animation_data.action if helper_mod.animation_data else None
             if not act:
@@ -1897,6 +2022,28 @@ def mxt_draw_callback():
                     batch = batch_for_shader(shader, 'LINE_STRIP',
                                              {"pos": verts})
                     batch.draw(shader)
+
+    ts = bpy.context.scene.mxt_track_settings
+    if ts:
+        ext_map = {
+            'DASHPLATE': Vector((6.0,4.0,12.0)),
+            'JUMPPLATE': Vector((12.0,4.0,4.0)),
+            'MINE': Vector((2.0,3.0,2.0)),
+        }
+        for trig in ts.trigger_objects:
+            h = trig.helper
+            if not (h and h.select_get()):
+                continue
+            ext = ext_map.get(trig.obj_type, Vector((1,1,1)))
+            corners = [Vector((sx*ext.x, sy*ext.y, sz*ext.z))
+                       for sx in (-1,1) for sy in (-1,1) for sz in (-1,1)]
+            world = [h.matrix_world @ c for c in corners]
+            edges = [(0,1),(0,2),(0,4),(3,1),(3,2),(3,7),(5,1),(5,4),(5,7),(6,2),(6,4),(6,7)]
+            shader.bind()
+            shader.uniform_float("color", (1.0,1.0,0.0,1.0))
+            for a,b in edges:
+                batch = batch_for_shader(shader, 'LINES', {"pos": [world[a], world[b]]})
+                batch.draw(shader)
         
     
     gpu.state.line_width_set(1.0)
@@ -1931,6 +2078,23 @@ class MXTRoad_PT_MainPanel(Panel):
             layout.prop(ts, "track_name")
             layout.prop(ts, "track_description")
             layout.prop(ts, "track_difficulty")
+            trig_box = layout.box()
+            trig_box.label(text="Trigger Objects")
+            row = trig_box.row()
+            row.template_list("MXT_UL_TriggerObjects", "", ts, "trigger_objects", ts, "active_trigger_obj_idx", rows=3)
+            col = row.column(align=True)
+            col.operator("mxt_track.add_trigger", icon='ADD', text="")
+            col.operator("mxt_track.remove_trigger", icon='REMOVE', text="")
+            if ts.trigger_objects and 0 <= ts.active_trigger_obj_idx < len(ts.trigger_objects):
+                trig = ts.trigger_objects[ts.active_trigger_obj_idx]
+                box = trig_box.box()
+                box.prop(trig, "obj_type")
+                box.prop(trig, "segment")
+                box.prop(trig, "tx")
+                box.prop(trig, "ty")
+                box.prop(trig, "scale")
+                box.prop(trig, "yaw_deg")
+                box.prop(trig, "checkpoint_index")
         layout.separator()
 
         active_road_parent = get_active_mxt_road_segment_parent(context)
@@ -3559,11 +3723,42 @@ def _export_stage(context, filepath):
             seg_data += struct.pack('<f', getattr(props, "rail_height_left", 5.0))
             seg_data += struct.pack('<f', getattr(props, "rail_height_right", 5.0))
 
-        header = struct.pack('<I4sII', 0, b'v0.2', len(cp_list), len(seg_order))
+        trigger_data = bytearray()
+        trig_count = 0
+        type_map_trig = {'DASHPLATE':0,'JUMPPLATE':1,'MINE':2}
+        ext_map = {
+            'DASHPLATE': Vector((6.0,4.0,12.0)),
+            'JUMPPLATE': Vector((12.0,4.0,2.0)),
+            'MINE': Vector((2.0,3.0,2.0)),
+        }
+        for trig in ts.trigger_objects:
+            seg = trig.segment
+            if not seg or seg not in seg_index:
+                continue
+            seg_idx = seg_index[seg]
+            cp_start = seg_cp_start[seg]
+            cp_count = max(1, cp_counts[seg])
+            cp_idx = cp_start + min(int(trig.ty * cp_count), cp_count-1)
+            mat = trig.helper.matrix_world
+            inv = mat.inverted()
+            trigger_data += struct.pack('<I', type_map_trig.get(trig.obj_type,0))
+            trigger_data += struct.pack('<I', seg_idx)
+            trigger_data += struct.pack('<I', cp_idx)
+            for c in range(3):
+                col = inv.col[c]
+                trigger_data += struct.pack('<3f', col[0], col[1], col[2])
+            origin = inv.translation
+            trigger_data += struct.pack('<3f', origin.x, origin.y, origin.z)
+            ext = ext_map.get(trig.obj_type, Vector((1,1,1)))
+            trigger_data += struct.pack('<3f', ext.x, ext.y, ext.z)
+            trig_count += 1
+
+        header = struct.pack('<I4sIII', 0, b'v0.3', len(cp_list), len(seg_order), trig_count)
         header = struct.pack('<I', len(header)) + header[4:]
         f.write(header)
         f.write(data)
         f.write(seg_data)
+        f.write(trigger_data)
 
     # Export preview meshes as OBJ
     obj_path = base_path + ".obj"
@@ -3637,6 +3832,7 @@ class MXTRoad_OT_ExportTrack(Operator):
         return {'FINISHED'}
 classes_to_register = (
     MXTSegmentRef,
+    MXTTriggerObject,
     MXTTrackSettings,
     MXT_UL_SegmentRefs,
     MXTRoad_OT_AddPrevSegment,
@@ -3648,6 +3844,9 @@ classes_to_register = (
     MXT_UL_Embeds,
     MXTRoad_OT_AddEmbed,
     MXTRoad_OT_RemoveEmbed,
+    MXT_UL_TriggerObjects,
+    MXT_OT_AddTrigger,
+    MXT_OT_RemoveTrigger,
     MXTCheckpoint,
     MXTRoad_LineHandleData,
     MXTRoad_ControlPointData,
