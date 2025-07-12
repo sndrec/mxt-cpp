@@ -2617,7 +2617,7 @@ float PhysicsCar::prepare_impact_direction_info(ImpactData &impact, const godot:
 
     mtxa->cur->origin = position_current;
 
-    impact.relative_dir_local = mtxa->inverse_rotate_point(impactDirWorld);
+    impact.relative_dir_local = mtxa->inverse_transform_point(impactDirWorld);
 
     /* Subtract the (locally expressed) track-surface normal so that the
        direction truly represents the *relative* approach vector. */
