@@ -172,7 +172,7 @@ func create_machine_visual_transform():
 		fVar12_initial_factor *= float(frames_since_start_2) / 90.0
 	unk_stat_0x5d4 += 0.05 * (fVar12_initial_factor - unk_stat_0x5d4)
 	var dVar11_current_unk_stat := unk_stat_0x5d4
-	var sin_val2_scaled_angle := float(g_anim_timer * 0x1a3);
+	var sin_val2_scaled_angle := float(g_anim_timer * 0x1a3) * (TAU / 65536.0);
 	var sin_val2 := sin(sin_val2_scaled_angle);
 	var y_offset_base := 0.006 * (dVar11_current_unk_stat * sin_val2);
 	var visual_y_offset_world := mtxa.basis * (Vector3(0.0, y_offset_base - (0.2 * dVar11_current_unk_stat), 0.0))

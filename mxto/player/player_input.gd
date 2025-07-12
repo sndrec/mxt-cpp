@@ -12,6 +12,7 @@ var steer_vertical: float = 0.0
 var accelerate: float = 0.0
 var brake: float = 0.0
 var spinattack: bool = false
+var sideattack: bool = false
 var boost: bool = false
 
 static func _quantize_axis(v: float) -> int:
@@ -43,6 +44,7 @@ func to_dict() -> Dictionary:
 		"accelerate": accelerate,
 		"brake": brake,
 		"spinattack": spinattack,
+		"sideattack": sideattack,
 		"boost": boost,
 	}
 
@@ -61,6 +63,8 @@ func from_dict(data: Dictionary) -> void:
 		brake = float(data["brake"])
 	if data.has("spinattack"):
 		spinattack = bool(data["spinattack"])
+	if data.has("sideattack"):
+		sideattack = bool(data["sideattack"])
 	if data.has("boost"):
 		boost = bool(data["boost"])
 
@@ -104,6 +108,8 @@ func serialize() -> PackedByteArray:
 		buttons |= 1
 	if boost:
 		buttons |= 2
+	if sideattack:
+		buttons |= 4
 	if buttons != 0:
 		bitmask |= 1 << 6
 		buffer.put_u8(buttons)
@@ -151,6 +157,7 @@ func deserialize(data: PackedByteArray) -> PlayerInput:
 		var buttons := buffer.get_u8()
 		spinattack = (buttons & 1) != 0
 		boost = (buttons & 2) != 0
+		sideattack = (buttons & 4) != 0
 	else:
 		spinattack = false
 		boost = false

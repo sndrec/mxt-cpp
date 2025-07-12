@@ -2564,7 +2564,7 @@ void PhysicsCar::post_tick()
 	if (frames_since_start_2 == 0)
 	{
 		velocity = godot::Vector3();
-		//position_current = initial_pos;
+		position_current = initial_pos;
 	}
 
 	handle_checkpoints();
@@ -3090,7 +3090,7 @@ void PhysicsCar::test_collision_with_other_car(PhysicsCar &other_car)
 void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
 	calced_max_energy = car_properties->max_energy;
-	//godot::Vector3 initial_pos = position_current;
+	initial_pos = position_current;
 	side_attack_indicator = 0.0f;
 
 
@@ -3108,7 +3108,8 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 	if (input.strafe_left || input.strafe_right) {
 		// side attack pressed check is not mapped so ignore for now
 	}
-
+	if (input.sideattack)
+		machine_state |= MACHINESTATE::SIDEATTACKING;
 	if (input.spinattack)
 		machine_state |= MACHINESTATE::SPINATTACKING;
 	if (input.boost && lap > 1)
