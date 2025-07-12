@@ -1,0 +1,820 @@
+bool applyDamage(float impactStrength, Machine& m)
+{
+    // Already invulnerable or in breakdown? No damage is processed.
+    if (m.framesUntilRestored != 0 || m.breakdownFrameCounter != 0)
+        return false;
+
+    float rawDamage = impactStrength * m.statBody;
+
+    // Hard cap of 20 for human players
+    if ((m.state & FZ_MS_B10) == 0u)
+        rawDamage = std::min(rawDamage, 20.0f);
+
+    // Never exceed 101 % of maxEnergy
+    const float maxAllowedDamage = 1.01f * m.maxEnergy;
+    rawDamage = std::min(rawDamage, maxAllowedDamage);
+
+    m.damageLastHit = rawDamage;
+    m.energy -= rawDamage;
+
+    if (m.energy >= 0.0f)
+        return false;  // Machine survives the hit
+
+    // Energy fell below zero → breakdown/KO handling
+    m.energy      = 0.0f;
+    m.baseSpeed   = 0.0f;
+    m.state      |= FZ_MS_0HP;
+
+    // Start countdown only if race not finished and KO flag wasn’t already set
+    const bool canStartBreakdown =
+        (m.state & (FZ_MS_COMPLETED_RACE_1Q | FZ_MS_0HP)) == 0;
+
+    if (canStartBreakdown)
+        m.breakdownFrameCounter = 60;
+
+    return canStartBreakdown;
+}
+
+void update_machine_approach_vector(float        distanceThreshold,
+                                    fz__machine* self,
+                                    fz__machine* target)
+{
+    constexpr float kForwardZLimit = -0.1f;   // Small negative value → “forward”
+
+    // First-frame logic --------------------------------------------------------
+    if (self->machine_approach_frame_counter == 0)
+    {
+        // Current length of the approach vector
+        const vec3& currentDir = self->approach_dir;
+        const float currentLength =
+            math_sqrt(currentDir.x * currentDir.x +
+                      currentDir.y * currentDir.y +
+                      currentDir.z * currentDir.z);
+
+        // Only bother updating if caller says we are too far away
+        if (distanceThreshold < currentLength)
+        {
+            mtxa_push();
+            copy_mtx_to_mtxa(&self->basis_physical);
+
+            // Treat self's current position as the origin of the working matrix
+            mtxa.origin_x = self->position_current.x;
+            mtxa.origin_y = self->position_current.y;
+            mtxa.origin_z = self->position_current.z;
+
+            // Transform target's world position into self-local space
+            vec3 dirLocal {};
+            mtxa_world_to_local(&target->position_current, &dirLocal);
+
+            // Normalise and examine the *z* component
+            get_length_and_normalize(&dirLocal);
+
+            if (dirLocal.z < kForwardZLimit)
+            {
+                // Accept the new approach direction
+                self->approach_dir = dirLocal;
+                self->last_machine_approached =
+                    static_cast<uint8_t>(target->entrant_id);
+
+                // Ensure the stored vector is unit length
+                get_length_and_normalize(&self->approach_dir);
+            }
+
+            mtxa_pop();
+        }
+        return;
+    }
+
+    // Subsequent-frame logic ---------------------------------------------------
+    if (static_cast<uint16_t>(self->last_machine_approached) != target->entrant_id)
+    {
+        return;     // Different target this frame – keep existing approach_dir
+    }
+
+    mtxa_push();
+    copy_mtx_to_mtxa(&self->basis_physical);
+
+    mtxa.origin_x = self->position_current.x;
+    mtxa.origin_y = self->position_current.y;
+    mtxa.origin_z = self->position_current.z;
+
+    // Compute fresh direction vector directly into self->approach_dir
+    mtxa_world_to_local(&target->position_current, &self->approach_dir);
+    get_length_and_normalize(&self->approach_dir);
+
+    // Prevent the vector from becoming non-forward
+    if (self->approach_dir.z > kForwardZLimit)
+    {
+        self->approach_dir.z = kForwardZLimit;
+    }
+
+    mtxa_pop();
+}
+
+float prepare_impact_direction_info(fz__machine         *machine,
+                                    unk_collision_struct *impact,
+                                    const vec3           *impactDirWorld)
+{
+    // 1)  Transform impact direction into the machine’s local space
+    mtxa_push();
+    copy_mtx_to_mtxa(&machine->basis_physical);
+
+    mtxa.origin_x = machine->position_current.x;
+    mtxa.origin_y = machine->position_current.y;
+    mtxa.origin_z = machine->position_current.z;
+
+    mtxa_world_to_local(impactDirWorld, &impact->relative_dir_local);
+
+    /* Subtract the (locally expressed) track-surface normal so that the
+       direction truly represents the *relative* approach vector. */
+    vec3 localTrackNormal;
+    mtxa_inverse_rotate_vec3(&machine->track_surface_normal, &localTrackNormal);
+
+    impact->relative_dir_local.x -= localTrackNormal.x;
+    impact->relative_dir_local.y -= localTrackNormal.y;
+    impact->relative_dir_local.z -= localTrackNormal.z;
+
+    /* ---------------------------------------------------------------------
+     * 2)  Normalise or default to forward if the vector is degenerate
+     * ------------------------------------------------------------------ */
+    float len = sqrtf( impact->relative_dir_local.x * impact->relative_dir_local.x +
+                       impact->relative_dir_local.y * impact->relative_dir_local.y +
+                       impact->relative_dir_local.z * impact->relative_dir_local.z );
+
+    if (len <= kEpsilon) {
+        impact->relative_dir_local.x = 0.0f;
+        impact->relative_dir_local.y = 0.0f;
+        impact->relative_dir_local.z = -1.0f;     // fall-back: forwards
+    } else {
+        get_length_and_normalize(&impact->relative_dir_local);   // keeps len == 1
+    }
+
+    /* ---------------------------------------------------------------------
+     * 3)  Pick the canonical collision axis (X, Y, or Z)
+     *
+     *     A small “dead zone” (5 % of |Y|) biases hits away from the Y-axis
+     *     unless it really is dominant.
+     * ------------------------------------------------------------------ */
+    const float absX = fabsf(impact->relative_dir_local.x);
+    const float absY = fabsf(impact->relative_dir_local.y);
+    const float absZ = fabsf(impact->relative_dir_local.z);
+    const float yThreshold = 0.05f * absY;
+
+    impact->impact_axis_z = 0.0f;  // cleared unless a Z hit is selected
+    float dominant = 0.0f;         // magnitude of dominant component (return value)
+
+    if (absX <= yThreshold) {
+        /* X is negligible compared with 5 % of Y */
+        if (yThreshold <= absZ) {          /* Z dominates */
+            impact->relative_dir_world = { 0.0f, 0.0f, impact->relative_dir_local.z };
+            impact->impact_axis_z      =  impact->relative_dir_local.z;
+            dominant                   =  absZ;
+        } else {                           /* Y dominates */
+            impact->relative_dir_world = { 0.0f, impact->relative_dir_local.y, 0.0f };
+            dominant                   =  yThreshold;   // matches original behaviour
+        }
+    } else if (absX <= absZ) {             /* Z dominates (X was bigger than 5 %Y but <= Z) */
+        impact->relative_dir_world = { 0.0f, 0.0f, impact->relative_dir_local.z };
+        impact->impact_axis_z      =  impact->relative_dir_local.z;
+        dominant                   =  absZ;
+    } else {                               /* X dominates */
+        impact->relative_dir_world = { impact->relative_dir_local.x, 0.0f, 0.0f };
+        dominant                   =  absX;
+    }
+
+    /* Ensure the chosen axis vector is unit length before we rotate it out. */
+    get_length_and_normalize(&impact->relative_dir_world);
+
+    /* ---------------------------------------------------------------------
+     * 4)  Compute scalar speed per unit mass, sanitising NaN/Inf values
+     * ------------------------------------------------------------------ */
+    if (!isfinite(machine->velocity.x) ||
+        !isfinite(machine->velocity.y) ||
+        !isfinite(machine->velocity.z))
+    {
+        impact->speed_per_mass = 0.0f;
+    } else {
+        const float speed = sqrtf(machine->velocity.x * machine->velocity.x +
+                                  machine->velocity.y * machine->velocity.y +
+                                  machine->velocity.z * machine->velocity.z);
+        impact->speed_per_mass = speed / machine->stat_weight;
+    }
+
+    /* ---------------------------------------------------------------------
+     * 5)  Rotate the canonical direction back to world space and clean up
+     * ------------------------------------------------------------------ */
+    mtxa_rotate_vec3(&impact->relative_dir_world, &impact->relative_dir_world);
+    mtxa_pop();
+
+    return fabsf(dominant);
+}
+
+float scale_collision_impulse_and_damage(fz__machine* machine,
+                                         int         other_machine_b10_flag)
+{
+    // Interpret flags once for readability
+    const bool isSpinAttacking = (machine->machine_state & FZ_MS_SPINATTACKING) != FZ_MS_NONE;
+    const bool isSideAttacking = (machine->machine_state & FZ_MS_SIDEATTACKING) != FZ_MS_NONE;
+    const bool isB10           = (machine->machine_state & FZ_MS_B10)           != FZ_MS_NONE;
+    const bool otherIsB10      = other_machine_b10_flag != 0;
+
+    float scale = 1.0f;
+
+    /* ---------------------------------------------------------------------
+       Case 1: neither spin-attack nor side-attack
+       ------------------------------------------------------------------ */
+    if (!isSpinAttacking && !isSideAttacking)
+    {
+        if (isB10)
+        {
+            scale *= 0.8f;            // Slightly reduced impulse for B10 state
+        }
+        return scale;                 // Nothing else affects this path
+    }
+
+    /* ---------------------------------------------------------------------
+       Case 2: currently in a spin- or side-attack
+       ------------------------------------------------------------------ */
+
+    // Spin intensity factor ∈ [0.5 , 1.0]; safe for side-attack (unused then)
+    const float spinIntensity =
+        0.5f + 0.5f *
+        static_cast<float>(machine->spinattack_angle_decrement) * (1.0f / 4096.0f);
+
+    if (!isB10)   // Machine is *not* in B10 state while attacking
+    {
+        if (!otherIsB10)
+        {
+            // Attacker !B10 vs victim !B10
+            scale *= isSpinAttacking ? (3.0f * spinIntensity) : 2.0f;
+        }
+        else
+        {
+            // Attacker !B10 vs victim  B10
+            scale *= isSpinAttacking ? (5.0f * spinIntensity) : 6.0f;
+        }
+    }
+    else          // Machine *is* in B10 state while attacking
+    {
+        // Side-attack <→ Spin-attack multipliers differ
+        scale *= isSpinAttacking ? 3.5f : 4.0f;
+    }
+
+    return scale;
+}
+
+// Swept–sphere vs. swept–sphere intersection test.
+// Returns true if the spheres first touch during the sweep [0,1].
+// `outTOI`  – earliest time-of-impact (0 ≤ t ≤ 1) when a new collision occurs
+// `startedIntersecting` – set to 1 if spheres overlap at t = 0
+//
+// Author: refactored from decompiled source.
+#include <math.h>
+#include <stdint.h>
+
+typedef struct { float x, y, z; } vec3;
+
+/* -------------------------------------------------------------------------- */
+
+static inline float dot(const vec3 a, const vec3 b)
+{
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+/* -------------------------------------------------------------------------- */
+
+bool sweptSphereVsSweptSphere(float radiusA,
+                              float radiusB,
+                              const vec3 *p0A, const vec3 *p1A,
+                              const vec3 *p0B, const vec3 *p1B,
+                              float *outTOI,
+                              uint32_t *startedIntersecting)
+{
+    if (!outTOI || !startedIntersecting ||
+        !p0A || !p1A || !p0B || !p1B)
+    {
+        return false;   // invalid input pointers
+    }
+
+    constexpr float kEpsilon = 1.1920929e-7f;   // ~= FLT_EPSILON
+
+    /* ------------------------------------------------------------------ */
+    /* Defaults (match original behaviour)                                */
+    *outTOI              = 100.0f;  // “infinite” time – never collides
+    *startedIntersecting = 0;
+
+    /* ------------------------------------------------------------------ */
+    /* Relative motion set-up                                             */
+    vec3 r0 = {                        // relative start position
+        p0A->x - p0B->x,
+        p0A->y - p0B->y,
+        p0A->z - p0B->z
+    };
+
+    vec3 r1 = {                        // relative end position
+        p1A->x - p1B->x,
+        p1A->y - p1B->y,
+        p1A->z - p1B->z
+    };
+
+    vec3 v  = {                        // relative displacement (velocity)
+        r1.x - r0.x,
+        r1.y - r0.y,
+        r1.z - r0.z
+    };
+
+    const float a = dot(v,  v);        // |v|²
+    const float b = dot(r0, v);        // r0·v
+    const float radiusSum = radiusA + radiusB;
+    const float c = dot(r0, r0) - radiusSum * radiusSum;
+
+    /* ------------------------------------------------------------------ */
+    /* Already intersecting?                                              */
+    if (c <= 0.0f)
+    {
+        *startedIntersecting = 1;
+        *outTOI = 0.0f;
+        return false;                  // no *new* collision
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* No relative motion → can’t collide if not already intersecting     */
+    if (a < kEpsilon)
+    {
+        return false;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Solve quadratic for time-of-impact                                  */
+    const float discriminant = b * b - a * c;
+    if (discriminant < 0.0f)
+    {
+        return false;                  // no real roots – paths miss
+    }
+
+    const float sqrtDisc = sqrtf(discriminant);
+    const float t = (-b - sqrtDisc) / a;   // earliest contact time
+
+    if (t < 0.0f || t > 1.0f)
+    {
+        return false;                  // contact occurs outside sweep
+    }
+
+    *outTOI = t;
+    return true;
+}
+
+static float calcCollisionRadius(const fz__machine* m)
+{
+    /* Weight-based radius scaling used by original physics. */
+    if (!(m->machine_state & FZ_MS_B30))
+    {
+        return 2.0f;
+    }
+
+    float base = 1.0f;
+    if (m->machine_id < 2)          // “light” machines (id 0/1) enlarge attack hit-box
+        base = (m->machine_id == 0) ? 2.0f : 1.5f;
+
+    /* Original:  radius = weight * (0.8 * 2 * base)  */
+    return 0.8f * 2.0f * base;
+}
+
+static void buildSweepForMachine(const fz__machine*     m,
+                                 float                   cappedSpeedMps,
+                                 vec3*                   sweepStartOut,
+                                 vec3*                   cappedVelocityOut)
+{
+    const vec3& posNow  = m->position_current;
+    const vec3& posPrev = m->position_old_dupe;
+
+    // Distance travelled during last frame
+    vec3 delta   = { posPrev.x - posNow.x,
+                     posPrev.y - posNow.y,
+                     posPrev.z - posNow.z };
+
+    float travelled = math_sqrt(delta.x * delta.x +
+                                delta.y * delta.y +
+                                delta.z * delta.z);
+
+    if (travelled <= 13.88888f)          // <= 50 km/h   (m/s)
+    {
+        *sweepStartOut     = posPrev;    // use previous position as start
+        *cappedVelocityOut = m->velocity;
+    }
+    else
+    {
+        // Clamp sweep length to 50 km/h
+        delta.x =  posNow.x - posPrev.x;
+        delta.y =  posNow.y - posPrev.y;
+        delta.z =  posNow.z - posPrev.z;
+        vec3_set_length(13.88888f, &delta, &delta);
+
+        sweepStartOut->x = posNow.x + delta.x;
+        sweepStartOut->y = posNow.y + delta.y;
+        sweepStartOut->z = posNow.z + delta.z;
+
+        vec3_set_length(cappedSpeedMps, &m->velocity, cappedVelocityOut);
+    }
+}
+
+/*-------------------------------------------------------------*/
+bool g_handle_machine_v_machine_collision(fz__machine* m1,
+                                          fz__machine* m2)
+{
+    // #########################################################
+    //  Very early outs
+    // #########################################################
+    if (((m1->state_2 | m2->state_2) & 0x10) != 0)   // machines excluded from physics
+        return false;
+
+    // #########################################################
+    //  Compute “collision radius” for each machine
+    // #########################################################
+    const float radius1 = calcCollisionRadius(m1);
+    const float radius2 = calcCollisionRadius(m2);
+
+    // #########################################################
+    //  Quick broad-phase distance test (current positions)
+    // #########################################################
+    const vec3& p1 = m1->position_current;
+    const vec3& p2 = m2->position_current;
+
+    vec3 diff = { p1.x - p2.x, p1.y - p2.y, p1.z - p2.z };
+    const float relativeDistance =
+        math_sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+
+    const float speedPadding =
+        m1->speed_kmh / 216.0f + m2->speed_kmh / 216.0f;    // copied literal from original
+
+    if (relativeDistance > (radius1 + radius2 + speedPadding))
+    {
+        // Too far apart – no chance of touching this frame
+        m1->unk_random_0x514 &=
+            ~(0x80000000U >> static_cast<int>(m2->entrant_id));
+        m2->unk_random_0x514 &=
+            ~(0x80000000U >> static_cast<int>(m1->entrant_id));
+        return false;
+    }
+
+    update_machine_approach_vector(relativeDistance, m1, m2);
+    update_machine_approach_vector(relativeDistance, m2, m1);
+
+    // #########################################################
+    //  Build swept-sphere volumes for a more precise test
+    // #########################################################
+    vec3 sweepStart1, sweepStart2;
+    vec3 cappedVel1,  cappedVel2;
+
+    buildSweepForMachine(m1, 13.88888f * m1->stat_weight, &sweepStart1, &cappedVel1);
+    buildSweepForMachine(m2, 13.88888f * m2->stat_weight, &sweepStart2, &cappedVel2);
+
+    float      hitTime            = 0.0f;   // returned by helper (0…1)
+    uint32_t   contactSideBitmask = 0;      // ditto
+    const bool sweptHit = swept_sphere_vs_swept_sphere(
+                              radius1,  radius2,
+                              &sweepStart1, &p1,
+                              &sweepStart2, &p2,
+                              &hitTime,    &contactSideBitmask);
+
+    if (!sweptHit)
+    {
+        // If spheres were close but *missed*, clear “no-collide for 1 frame” mask
+        if (contactSideBitmask == 0)
+        {
+            m1->unk_random_0x514 &=
+                ~(0x80000000U >> static_cast<int>(m2->entrant_id));
+            m2->unk_random_0x514 &=
+                ~(0x80000000U >> static_cast<int>(m1->entrant_id));
+        }
+        return false;
+    }
+
+    // #########################################################
+    //  Narrow-phase: check actual separation at impact time
+    // #########################################################
+    const float combinedRadius = radius1 + radius2;
+    const float reverseTime    = 1.0f - hitTime; // helper returns “time until”, we need “at impact”
+
+    vec3 posAtImpact1, posAtImpact2;
+    ray_scale(reverseTime, &sweepStart1, &p1, &posAtImpact1);
+    ray_scale(reverseTime, &sweepStart2, &p2, &posAtImpact2);
+
+    vec3 deltaImpact = { posAtImpact2.x - posAtImpact1.x,
+                         posAtImpact2.y - posAtImpact1.y,
+                         posAtImpact2.z - posAtImpact1.z };
+
+    const float separation =
+        math_sqrt(deltaImpact.x * deltaImpact.x +
+                  deltaImpact.y * deltaImpact.y +
+                  deltaImpact.z * deltaImpact.z);
+
+    if (!(separation < combinedRadius && separation > 0.00000011920929f))
+    {
+        // No actual overlap
+        m1->unk_random_0x514 &=
+            ~(0x80000000U >> static_cast<int>(m2->entrant_id));
+        m2->unk_random_0x514 &=
+            ~(0x80000000U >> static_cast<int>(m1->entrant_id));
+        return false;
+    }
+
+    // #########################################################
+    //  “Don’t collide twice in two frames” randomised mask
+    // #########################################################
+    const uint32_t maskIdx2 =
+        (static_cast<uint32_t>(m2->entrant_id) + 1U) & 0x1F;
+    const bool     skipByMask1 =
+        ((m1->unk_random_0x514 << maskIdx2) |
+         (m1->unk_random_0x514 >> (32 - maskIdx2))) & 1;
+
+    const uint32_t maskIdx1 =
+        (static_cast<uint32_t>(m1->entrant_id) + 1U) & 0x1F;
+    const bool     skipByMask2 =
+        ((m2->unk_random_0x514 << maskIdx1) |
+         (m2->unk_random_0x514 >> (32 - maskIdx1))) & 1;
+
+    if (skipByMask1 || skipByMask2)
+    {
+        // Mask says “skip just this frame”
+        return false;
+    }
+
+    //  Push the machines apart so that they *just* touch
+    vec3 collisionNormal = deltaImpact;
+    get_length_and_normalize(&collisionNormal);
+
+    const float pushBack = 0.5f * ((0.01f + combinedRadius) - separation);
+
+    // Move positions
+    m1->position_current.x = posAtImpact1.x - collisionNormal.x * pushBack;
+    m1->position_current.y = posAtImpact1.y - collisionNormal.y * pushBack;
+    m1->position_current.z = posAtImpact1.z - collisionNormal.z * pushBack;
+
+    m2->position_current.x = posAtImpact2.x + collisionNormal.x * pushBack;
+    m2->position_current.y = posAtImpact2.y + collisionNormal.y * pushBack;
+    m2->position_current.z = posAtImpact2.z + collisionNormal.z * pushBack;
+
+    // Mid-point of the impact for later normal computations
+    vec3 impactMid =
+    {
+        0.5f * (m1->position_current.x + m2->position_current.x),
+        0.5f * (m1->position_current.y + m2->position_current.y),
+        0.5f * (m1->position_current.z + m2->position_current.z)
+    };
+
+    //  Prepare impact axis info in world-space
+    unk_collision_struct impactInfo1;
+    unk_collision_struct impactInfo2;
+
+    float impulseScale1 = prepare_impact_direction_info(m1, &impactInfo1, &impactMid);
+    float impulseScale2 = prepare_impact_direction_info(m2, &impactInfo2, &impactMid);
+
+    vec3 worldImpactAxis =
+        (impulseScale1 <= impulseScale2)
+            ? vec3{ -impactInfo2.relative_dir_world.x,
+                    -impactInfo2.relative_dir_world.y,
+                    -impactInfo2.relative_dir_world.z }
+            : vec3{  impactInfo1.relative_dir_world.x,
+                     impactInfo1.relative_dir_world.y,
+                     impactInfo1.relative_dir_world.z };
+
+    //  Calculate pre-impact relative velocity along normal
+    const float velLen1 = math_sqrt(cappedVel1.x * cappedVel1.x +
+                                    cappedVel1.y * cappedVel1.y +
+                                    cappedVel1.z * cappedVel1.z);
+    float relSpeed1 = 0.0f;
+    if (velLen1 > 0.00000011920929f)
+        relSpeed1 = vec3_normalized_dot_product(&worldImpactAxis, &cappedVel1) * velLen1 / m1->stat_weight;
+
+    const float velLen2 = math_sqrt(cappedVel2.x * cappedVel2.x +
+                                    cappedVel2.y * cappedVel2.y +
+                                    cappedVel2.z * cappedVel2.z);
+    float relSpeed2 = 0.0f;
+    if (velLen2 > 0.00000011920929f)
+        relSpeed2 = vec3_normalized_dot_product(&worldImpactAxis, &cappedVel2) * velLen2 / m2->stat_weight;
+
+    const float impulseNumerator = 2.0f * (relSpeed1 - relSpeed2);
+    const float impulseDenominator = m1->stat_weight + m2->stat_weight;
+    const float normalImpulse = impulseNumerator / impulseDenominator;
+
+    //  Apply base-speed knock-back
+    const float BASE_SPEED_SCALE = 800.0f;
+    m1->base_speed += BASE_SPEED_SCALE *  impactInfo1.impact_axis_z * normalImpulse;
+    m2->base_speed += BASE_SPEED_SCALE *  impactInfo2.impact_axis_z * normalImpulse;
+
+    if (m1->base_speed < 0.0f) m1->base_speed = 0.0f;
+    if (m2->base_speed < 0.0f) m2->base_speed = 0.0f;
+
+    //  Collision response vectors (damped by surface normal)
+    const float impulse1     =  m1->stat_weight *  normalImpulse;
+    const float impulse2     = -m2->stat_weight *  normalImpulse;
+    const float impulseScale = scale_collision_impulse_and_damage(m1, m2->machine_state & FZ_MS_B10);
+    const float impulseScale2= scale_collision_impulse_and_damage(m2, m1->machine_state & FZ_MS_B10);
+
+    float scaledImpulse1 = impulseScale;
+    float scaledImpulse2 = impulseScale2;
+
+    if (m1->machine_state & FZ_MS_0HP)
+    {
+        scaledImpulse1 *= 1.5f;
+        scaledImpulse2 *= 1.2f;
+    }
+    if (m2->machine_state & FZ_MS_0HP)
+    {
+        scaledImpulse2 *= 1.5f;
+        scaledImpulse1 *= 1.2f;
+    }
+
+    vec3 response1 =
+    {
+        collisionNormal.x *  scaledImpulse2 * impulse2 -
+        0.95f * collisionNormal.x * scaledImpulse2 * impulse2 * m1->track_surface_normal.x,
+
+        collisionNormal.y *  scaledImpulse2 * impulse2 -
+        0.95f * collisionNormal.y * scaledImpulse2 * impulse2 * m1->track_surface_normal.y,
+
+        collisionNormal.z *  scaledImpulse2 * impulse2 -
+        0.95f * collisionNormal.z * scaledImpulse2 * impulse2 * m1->track_surface_normal.z
+    };
+
+    vec3 response2 =
+    {
+        collisionNormal.x *  scaledImpulse1 * impulse1 -
+        0.95f * collisionNormal.x * scaledImpulse1 * impulse1 * m2->track_surface_normal.x,
+
+        collisionNormal.y *  scaledImpulse1 * impulse1 -
+        0.95f * collisionNormal.y * scaledImpulse1 * impulse1 * m2->track_surface_normal.y,
+
+        collisionNormal.z *  scaledImpulse1 * impulse1 -
+        0.95f * collisionNormal.z * scaledImpulse1 * impulse1 * m2->track_surface_normal.z
+    };
+
+    m1->collision_response = response1;
+    m2->collision_response = response2;
+
+    const bool anySideAttack =
+        (m1->machine_state | m2->machine_state) &
+        (FZ_MS_SIDEATTACKING | FZ_MS_SPINATTACKING);
+
+    float velScale1 = anySideAttack ? 1.5f : 2.2f;
+    float velScale2 = velScale1;
+
+    if (m1->machine_state & FZ_MS_B30) velScale1 = 1.0f;
+    if (m2->machine_state & FZ_MS_B30) velScale2 = 1.0f;
+
+    auto applyResponse =
+        [](fz__machine* mach, const vec3& cappedVel,
+           const vec3& resp, float scale)
+    {
+        float lenV    = math_sqrt(cappedVel.x*cappedVel.x +
+                                  cappedVel.y*cappedVel.y +
+                                  cappedVel.z*cappedVel.z);
+
+        vec3 newResp  = { resp.x * scale, resp.y * scale, resp.z * scale };
+
+        if (lenV > 0.1f)
+        {
+            float lenResp = math_sqrt(resp.x*resp.x + resp.y*resp.y + resp.z*resp.z);
+            if (lenResp > 0.1f)
+            {
+                float dot = vec3_normalized_dot_product(&mach->velocity, &resp);
+                if (dot > 0.0f) dot = 0.0f;
+                const float adjust = 1.0f + 0.7f * dot;
+                newResp.x *= adjust;
+                newResp.y *= adjust;
+                newResp.z *= adjust;
+            }
+        }
+
+        mach->velocity.x = newResp.x + cappedVel.x;
+        mach->velocity.y = newResp.y + cappedVel.y;
+        mach->velocity.z = newResp.z + cappedVel.z;
+    };
+
+    applyResponse(m1, cappedVel1, response1, velScale1);
+    applyResponse(m2, cappedVel2, response2, velScale2);
+
+    // #########################################################
+    //  Matrix-space feedback, damage and rumble logic
+    // #########################################################
+    mtxa_push();
+
+    const bool bothHaveBlades   = (m1->machine_state & FZ_MS_B10) &&
+                                  (m2->machine_state & FZ_MS_B10);
+
+    bool canDamageM1 = true, canDamageM2 = true;
+
+    if (!(m1->machine_state & FZ_MS_B10))
+    {
+        if ((m2->machine_state & FZ_MS_B10) &&
+            (m1->machine_state & (FZ_MS_SIDEATTACKING | FZ_MS_SPINATTACKING)) &&
+            !(m2->machine_state & (FZ_MS_SIDEATTACKING | FZ_MS_SPINATTACKING)))
+            canDamageM1 = false;
+    }
+    else
+    {
+        if (!(m2->machine_state & FZ_MS_B10) &&
+            (m2->machine_state & (FZ_MS_SIDEATTACKING | FZ_MS_SPINATTACKING)) &&
+            !(m1->machine_state & (FZ_MS_SIDEATTACKING | FZ_MS_SPINATTACKING)))
+            canDamageM2 = false;
+    }
+
+    // -----  Machine-1 matrix feedback  -----
+    copy_mtx_to_mtxa(&m1->basis_physical);
+
+    vec3 halfNormalM1 = { -collisionNormal.x * 0.5f,
+                          -collisionNormal.y * 0.5f,
+                          -collisionNormal.z * 0.5f };
+    mtxa_inverse_rotate_vec3(&halfNormalM1, &halfNormalM1);
+
+    vec3 localResp1;
+    mtxa_inverse_rotate_vec3(&response1, &localResp1);
+
+    m1->visual_roll  += localResp1.x;
+    m1->visual_pitch += localResp1.z;
+
+    float respLen1 = math_sqrt(response1.x*response1.x +
+                               response1.y*response1.y +
+                               response1.z*response1.z);
+
+    float dmg1 = (impulseScale2 * (0.002f * respLen1)) / impulseScale1;
+    if (bothHaveBlades) dmg1 *= 0.001f;
+    if (m2->machine_state & FZ_MS_0HP) dmg1 *= 0.3f;
+
+    const bool killM1 =
+        canDamageM1 &&
+        m1->car_hit_invincibility == 0 &&
+        damage_machine(dmg1, m1);
+
+    fz::g_unk_rumble_start(m1->unk_input_related_0x474, 4, 0xC);
+
+    // -----  Machine-2 matrix feedback  -----
+    copy_mtx_to_mtxa(&m2->basis_physical);
+
+    vec3 halfNormalM2 = { collisionNormal.x * 0.5f,
+                          collisionNormal.y * 0.5f,
+                          collisionNormal.z * 0.5f };
+    mtxa_inverse_rotate_vec3(&halfNormalM2, &halfNormalM2);
+
+    vec3 localResp2;
+    mtxa_inverse_rotate_vec3(&response2, &localResp2);
+
+    m2->visual_roll  += localResp2.x;
+    m2->visual_pitch += localResp2.z;
+
+    float respLen2 = math_sqrt(response2.x*response2.x +
+                               response2.y*response2.y +
+                               response2.z*response2.z);
+
+    float dmg2 = (impulseScale1 * (0.002f * respLen2)) / impulseScale2;
+    if (bothHaveBlades) dmg2 *= 0.001f;
+    if (m1->machine_state & FZ_MS_0HP) dmg2 *= 0.3f;
+
+    const bool killM2 =
+        canDamageM2 &&
+        m2->car_hit_invincibility == 0 &&
+        damage_machine(dmg2, m2);
+
+    fz::g_unk_rumble_start(m2->unk_input_related_0x474, 4, 0xC);
+
+    // -----  KO sound cues & rumble intensity  -----
+    if (killM1 &&
+        m1->unk_input_related_0x475 != 0xFF &&
+        !(m1->machine_state & (FZ_MS_COMPLETEDRACE_2_Q | FZ_MS_B10)))
+    {
+        unk_probably_play_ko_sound(0xA9092100);
+    }
+
+    if (killM2 &&
+        m2->unk_input_related_0x475 != 0xFF &&
+        !(m2->machine_state & (FZ_MS_COMPLETEDRACE_2_Q | FZ_MS_B10)))
+    {
+        unk_probably_play_ko_sound(0xA9092100);
+    }
+
+    const float combinedDamage = dmg1 + dmg2;
+    if (combinedDamage > 0.4f)
+    {
+        fz::g_unk_rumble_start(m1->unk_input_related_0x474, 2, 9);
+        fz::g_unk_rumble_start(m2->unk_input_related_0x474, 2, 9);
+    }
+    else if (combinedDamage > 0.1f)
+    {
+        fz::g_unk_rumble_start(m1->unk_input_related_0x474, 3, 9);
+        fz::g_unk_rumble_start(m2->unk_input_related_0x474, 3, 9);
+    }
+
+    if (m1->machine_state & FZ_MS_0HP) m1->energy = 0.0f;
+    if (m2->machine_state & FZ_MS_0HP) m2->energy = 0.0f;
+
+    mtxa_pop();
+
+    // #########################################################
+    //  Set “just hit” flags so other subsystems can react
+    // #########################################################
+    m1->machine_state |= (FZ_MS_JUSTHITVEHICLE_Q | FZ_MS_ACTIVE);
+    m2->machine_state |= (FZ_MS_JUSTHITVEHICLE_Q | FZ_MS_ACTIVE);
+
+    return true;     // collision handled
+}
