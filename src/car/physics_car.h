@@ -83,6 +83,7 @@ public:
 	godot::Vector3 position_old_dupe = godot::Vector3();
 	godot::Vector3 position_bottom = godot::Vector3();
 	godot::Vector3 position_behind = godot::Vector3();
+	godot::Vector3 initial_pos = godot::Vector3();
 
 	godot::Vector3 velocity = godot::Vector3();
 	godot::Vector3 velocity_angular = godot::Vector3();

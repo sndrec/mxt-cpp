@@ -17,6 +17,7 @@ public:
 	float accelerate = 0.0f;
 	float brake = 0.0f;
 	bool spinattack = false;
+        bool sideattack = false;
 	bool boost = false;
 
 	static PlayerInput from_neutral()
@@ -42,6 +43,8 @@ public:
                         new_input.brake = godot::Variant(dict["brake"]).operator float();
                 if (dict.has("spinattack"))
                         new_input.spinattack = godot::Variant(dict["spinattack"]).operator bool();
+                if (dict.has("sideattack"))
+                        new_input.sideattack = godot::Variant(dict["sideattack"]).operator bool();
                 if (dict.has("boost"))
                         new_input.boost = godot::Variant(dict["boost"]).operator bool();
                 return new_input;
@@ -65,6 +68,7 @@ public:
                         uint8_t buttons = data[idx++];
                         out.spinattack = (buttons & 1) != 0;
                         out.boost = (buttons & 2) != 0;
+                        out.sideattack = (buttons & 4) != 0;
                 }
                 return out;
         }

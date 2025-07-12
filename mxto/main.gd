@@ -236,6 +236,7 @@ func _generate_random_input() -> PlayerInput:
 	p.accelerate = randf()
 	p.brake = randf()
 	p.spinattack = randi() % 2 == 0
+	p.sideattack = randi() % 2 == 0
 	p.boost = randi() % 2 == 0
 	p.apply_quantization()
 	return p
@@ -329,6 +330,7 @@ func _on_start_race_button_pressed() -> void:
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
 	if headless_mode:
+		network_manager.client_ready.rpc_id(1)
 		return
 	_start_race(track_index, settings)
 	game_sim.set_sim_started(false)
