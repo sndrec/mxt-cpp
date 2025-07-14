@@ -2925,9 +2925,11 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
         scaledImpulse1 *= 1.2f;
     }
 
-    godot::Vector3 response1(collisionNormal *  scaledImpulse2 * impulse2 - 0.95f * collisionNormal * scaledImpulse2 * impulse2 * track_surface_normal);
+    const float responseScale1 = scaledImpulse2 * impulse2 * stat_weight;
+    const float responseScale2 = scaledImpulse1 * impulse1 * other_machine.stat_weight;
 
-    godot::Vector3 response2(collisionNormal *  scaledImpulse1 * impulse1 - 0.95f * collisionNormal * scaledImpulse1 * impulse1 * other_machine.track_surface_normal);
+    godot::Vector3 response1 = collisionNormal * responseScale1 - 0.95f * collisionNormal * responseScale1 * track_surface_normal;
+    godot::Vector3 response2 = collisionNormal * responseScale2 - 0.95f * collisionNormal * responseScale2 * other_machine.track_surface_normal;
 
     collision_response = response1;
     other_machine.collision_response = response2;
@@ -2946,7 +2948,7 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
         [](PhysicsCar &mach, const godot::Vector3 cappedVel,
            const godot::Vector3 resp, float scale)
     {
-        float lenV    = cappedVel.length();
+        float lenV    = mach.velocity.length();
 
         godot::Vector3 newResp  = { resp.x * scale, resp.y * scale, resp.z * scale };
 
