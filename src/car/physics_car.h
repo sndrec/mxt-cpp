@@ -218,6 +218,7 @@ public:
     void handle_machine_collision_response();
     void align_machine_y_with_track_normal_immediate();
     void handle_checkpoints();
+    void collide_with_landmine(Mine* in_mine);
     void respawn_at_checkpoint(uint16_t cp_idx);
     void check_respawn();
     bool apply_damage(float impact_strength);

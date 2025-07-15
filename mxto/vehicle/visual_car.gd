@@ -149,6 +149,8 @@ var old_rot := Basis.IDENTITY
 
 var car_old_transform := Transform3D.IDENTITY
 var car_desired_transform := Transform3D.IDENTITY
+var car_old_basis_physical := Transform3D.IDENTITY
+var car_desired_basis_physical := Transform3D.IDENTITY
 var car_old_pc := Vector3.ZERO
 var car_desired_pc := Vector3.ZERO
 
@@ -289,6 +291,17 @@ func calculate_error() -> void:
 
 var frame_accumulation := 0.0
 
+func damp(a : float, b : float, lambda : float, dt : float) -> float:
+	return lerp(a, b, 1.0 - exp(-lambda * dt))
+func damp_vec3(a : Vector3, b : Vector3, lambda : float, dt : float) -> Vector3:
+	return a.lerp(b, 1.0 - exp(-lambda * dt))
+func damp_vec3_slerp(a : Vector3, b : Vector3, lambda : float, dt : float) -> Vector3:
+	return a.slerp(b, 1.0 - exp(-lambda * dt))
+func damp_basis(a : Basis, b : Basis, lambda : float, dt : float) -> Basis:
+	return a.slerp(b, 1.0 - exp(-lambda * dt))
+func damp_t3d(a : Transform3D, b : Transform3D, lambda : float, dt : float) -> Transform3D:
+	return a.interpolate_with(b, 1.0 - exp(-lambda * dt))
+
 func _physics_process(delta: float) -> void:
 	create_machine_visual_transform()
 	DebugDraw2D.set_text("turbo", boost_turbo)
@@ -297,6 +310,8 @@ func _physics_process(delta: float) -> void:
 	car_desired_pc = position_current
 	car_old_transform = car_desired_transform
 	car_desired_transform = transform_visual
+	car_old_basis_physical = car_desired_basis_physical
+	car_desired_basis_physical = basis_physical
 	
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
 	
@@ -350,8 +365,9 @@ func _process(delta: float) -> void:
 	var ratio := frame_accumulation * 60
 	car_transform.global_transform = car_old_transform.interpolate_with(car_desired_transform, ratio)
 	var use_car_pos := car_old_pc.lerp(car_desired_pc, ratio) + rollback_offset_error
-	rollback_offset_error = rollback_offset_error.lerp(Vector3.ZERO, 20 * delta)
-	rollback_rot_error = rollback_rot_error.slerp(Basis.IDENTITY, 20 * delta)
+	var use_basis_physical := car_old_basis_physical.interpolate_with(car_desired_basis_physical, ratio)
+	rollback_offset_error = damp_vec3(rollback_offset_error, Vector3.ZERO, 20, delta)
+	rollback_rot_error = damp_basis(rollback_rot_error, Basis.IDENTITY, 20, delta)
 	#DebugDraw2D.set_text("rollback offset error", rollback_offset_error)
 	car_transform.global_transform.origin += rollback_offset_error
 	car_transform.global_transform.basis = car_transform.global_transform.basis * rollback_rot_error
@@ -366,47 +382,62 @@ func _process(delta: float) -> void:
 	var target_fov := remap(speed_kmh, 0, 1800, 50, 90)
 	#target_fov += remap(boost_ratio, 0, 1, 0, 50)
 	target_fov = minf(target_fov, 100)
-	car_camera.fov = lerpf(car_camera.fov, target_fov, delta * 2)
-	var use_forward_z : Vector3 = basis_physical.basis.z
+	car_camera.fov = damp(car_camera.fov, target_fov, 2, delta)
+	var use_forward_z : Vector3 = use_basis_physical.basis.z
 	use_forward_z = use_forward_z.normalized()
 	if (tilt_fl_state & FZ_TC.DRIFT) != 0:
-		use_forward_z = -velocity.slide(basis_physical.basis.y.normalized()).normalized()
+		use_forward_z = -velocity.slide(use_basis_physical.basis.y.normalized()).normalized()
 	
-	var target_y := basis_physical.basis.y
+	var target_y := use_basis_physical.basis.y
 	
 	var starting_frames_past := frames_since_start_2 > 90
 	
 	if !slerped_up_y.is_equal_approx(target_y):
-		slerped_up_y = slerped_up_y.slerp(target_y, 20 * delta).normalized()
-	slerped_forward_z = slerped_forward_z.slerp(use_forward_z, 20 * delta).normalized()
+		slerped_up_y = damp_vec3_slerp(slerped_up_y, target_y, 60, delta).normalized()
+	slerped_forward_z = damp_vec3_slerp(slerped_forward_z, use_forward_z, 20, delta).normalized()
 	
-	var use_slerpto = Basis(Quaternion(basis_physical.basis.z, slerped_forward_z)) * basis_physical.basis
-	use_slerpto = Basis(Quaternion(basis_physical.basis.y, slerped_up_y)) * use_slerpto
-	camera_basis = camera_basis.slerp(use_slerpto, 30 * delta).orthonormalized()
-	camera_basis_smoothed = camera_basis_smoothed.slerp(camera_basis, 30 * delta).orthonormalized()
-	var use_basis := camera_basis_smoothed
+	var use_slerpto = Basis(Quaternion(use_basis_physical.basis.z, slerped_forward_z)) * use_basis_physical.basis
+	use_slerpto = Basis(Quaternion(use_basis_physical.basis.y, slerped_up_y)) * use_slerpto
+	camera_basis = damp_basis(camera_basis, use_slerpto, 30, delta).orthonormalized()
+	camera_basis_smoothed = damp_basis(camera_basis_smoothed, camera_basis, 30, delta).orthonormalized()
 	
 	
-	var final_y := slerped_up_y
-	if starting_frames_past:
+	#var final_y := slerped_up_y
+	
+	
+	var flat_up_y := camera_basis_smoothed.y
+	var flat_use_up_y := use_basis_physical.basis.y.slide(camera_basis_smoothed.z).normalized()
+	var up_y_rot := flat_up_y.signed_angle_to(flat_use_up_y, camera_basis_smoothed.z)
+	var use_up_y_for_offset := flat_up_y.rotated(camera_basis_smoothed.z, up_y_rot)
+	
+	
+	flat_up_y = use_up_y_for_offset.slide(camera_basis_smoothed.x).normalized()
+	flat_use_up_y = use_basis_physical.basis.y.slide(camera_basis_smoothed.x).normalized()
+	up_y_rot = flat_up_y.signed_angle_to(flat_use_up_y, camera_basis_smoothed.x)
+	use_up_y_for_offset = use_up_y_for_offset.rotated(camera_basis_smoothed.x, up_y_rot * delta * 20)
+	camera_basis_smoothed = camera_basis_smoothed.rotated(camera_basis_smoothed.x, up_y_rot * delta * 20)
+	
+	var use_cam_basis := camera_basis_smoothed
+	
+	#if starting_frames_past:
 		#print("ah")
-		var flat_up_y := slerped_up_y.slide(use_basis.x).normalized()
-		var flat_basis_y := basis_physical.basis.y.slide(use_basis.x).normalized()
-		var rot_angle_1 := flat_up_y.signed_angle_to(flat_basis_y, use_basis.x)
-		var rot_angle_2 := use_basis.y.signed_angle_to(flat_basis_y, use_basis.x)
-		#slerped_up_y = slerped_up_y.rotated(use_basis.x, rot_angle_1 * 80 * delta)
-		#use_basis = use_basis.rotated(use_basis.x, rot_angle_2 * 60 * delta)
-		final_y = slerped_up_y
-		if (machine_state & FZ_MS.AIRBORNE) == 0:
-			if speed_kmh > 1:
-				var sideways := velocity.normalized().cross(track_normal_vis).normalized()
-				var flattened := track_normal_vis.slide(sideways).normalized()
-				var flattened_prev := track_normal_old_vis.slide(sideways).normalized()
-				var road_angle_change := flattened.signed_angle_to(flattened_prev, sideways)
-				var arc_length := speed_kmh * 100
-				lerped_curvature = lerpf(lerped_curvature, road_angle_change / arc_length if !is_zero_approx(arc_length) else 0.0, 7.5 * delta)
-				DebugDraw2D.set_text("curvature", lerped_curvature)
-				final_y = final_y.rotated(sideways, lerped_curvature * -8000)
-				use_basis = use_basis.rotated(sideways, lerped_curvature * -8000)
-	car_camera.position = (use_car_pos + rollback_offset_error) + final_y * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
-	car_camera.basis = use_basis.rotated(use_basis.x, deg_to_rad(-15))
+		#var flat_up_y := slerped_up_y.slide(use_basis.x).normalized()
+		#var flat_basis_y := use_basis_physical.basis.y.slide(use_basis.x).normalized()
+		#var rot_angle_1 := flat_up_y.signed_angle_to(flat_basis_y, use_basis.x)
+		#var rot_angle_2 := use_basis.y.signed_angle_to(flat_basis_y, use_basis.x)
+		#slerped_up_y = slerped_up_y.rotated(use_basis.x, rot_angle_1 * (1.0 - exp(-120 * delta)))
+		#use_basis = use_basis.rotated(use_basis.x, rot_angle_2)# * (1.0 - exp(-150 * delta)))
+		#final_y = slerped_up_y
+		#if (machine_state & FZ_MS.AIRBORNE) == 0:
+			#if speed_kmh > 1:
+				#var sideways := velocity.normalized().cross(track_normal_vis).normalized()
+				#var flattened := track_normal_vis.slide(sideways).normalized()
+				#var flattened_prev := track_normal_old_vis.slide(sideways).normalized()
+				#var road_angle_change := flattened.signed_angle_to(flattened_prev, sideways)
+				#var arc_length := speed_kmh * 100
+				#lerped_curvature = lerpf(lerped_curvature, road_angle_change / arc_length if !is_zero_approx(arc_length) else 0.0, 7.5 * delta)
+				#DebugDraw2D.set_text("curvature", lerped_curvature)
+				#final_y = final_y.rotated(sideways, lerped_curvature * -8000)
+				#use_basis = use_basis.rotated(sideways, lerped_curvature * -8000)
+	car_camera.position = (use_car_pos + rollback_offset_error) + use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
+	car_camera.basis = use_cam_basis.rotated(use_cam_basis.x, deg_to_rad(-10))

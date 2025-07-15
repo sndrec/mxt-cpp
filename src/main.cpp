@@ -531,13 +531,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			TriggerCollider* trig = nullptr;
 			switch (type_val) {
 			case TRIGGER_TYPE::DASHPLATE:
-				trig = level_data.allocate_class<Dashplate>();
+				trig = gamestate_data.allocate_class<Dashplate>();
 				break;
 			case TRIGGER_TYPE::JUMPPLATE:
-				trig = level_data.allocate_class<Jumpplate>();
+				trig = gamestate_data.allocate_class<Jumpplate>();
 				break;
 			case TRIGGER_TYPE::MINE:
-				trig = level_data.allocate_class<Mine>();
+				trig = gamestate_data.allocate_class<Mine>();
 				break;
 			default:
 				// TODO: assert that we never reach here!

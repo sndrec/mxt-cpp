@@ -50,6 +50,7 @@ public:
 class Mine : public TriggerCollider {
 public:
     Mine();
+    bool exploded;
     void start_touch(PhysicsCar* car) override;
     void touch(PhysicsCar* car) override;
     void end_touch(PhysicsCar* car) override;
