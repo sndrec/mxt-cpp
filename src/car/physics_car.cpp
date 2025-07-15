@@ -14,6 +14,7 @@
 #include "mxt_core/debug.hpp"
 #include "mxt_core/math_utils.h"
 #include "track/track_segment.h"
+#include "track/trigger_collider.h"
 
 static inline godot::Vector3 normalized_safe(const godot::Vector3 &v,
 	const godot::Vector3 &def = godot::Vector3()) {
@@ -1635,9 +1636,19 @@ void PhysicsCar::set_terrain_state_from_track()
 				//DEBUG::disp_text(("jumpplate " + std::to_string(i) + " hit!").c_str(), collision);
 				break;
 			case TRIGGER_TYPE::MINE:
+				collide_with_landmine(static_cast<Mine*>(current_track->trigger_colliders[i]));
 				break;
 			default:
 				break;
+			}
+			if ((collision & 0x2) != 0)
+			{
+				current_track->trigger_colliders[i]->start_touch(this);
+			}
+			current_track->trigger_colliders[i]->touch(this);
+			if ((collision & 0x4) != 0)
+			{
+				current_track->trigger_colliders[i]->end_touch(this);
 			}
 		}
 	}
@@ -2475,6 +2486,127 @@ void PhysicsCar::handle_checkpoints()
 		machine_state |= MACHINESTATE::CROSSEDLAPLINE_Q;
 	}
 };
+
+void PhysicsCar::collide_with_landmine(Mine* in_mine)
+{	
+	if (in_mine->exploded)
+	{
+		return;
+	}
+	mtxa->push();
+
+	godot::Vector3 mine_pos = in_mine->transform.origin;// + in_mine->transform.basis.get_column(1);
+
+	godot::Vector3 travel_vec = position_current - position_old;
+
+	godot::Vector3 prev_to_mine = mine_pos - position_old;
+
+	float travel_len = travel_vec.length();
+
+	float t = travel_vec.dot(prev_to_mine) / (travel_len * travel_len);
+
+	godot::Vector3 closest_on_path = travel_vec * t + position_old;
+
+	float speed_dir_sign = (speed_kmh > 600.0f) ? 1.0f : -1.0f;
+
+	godot::Vector3 mine_to_path = closest_on_path - mine_pos;
+
+	float mine_to_path_len = mine_to_path.length();
+
+	float normal_dot = track_surface_normal.dot(mine_to_path.normalized());
+
+	float normal_proj_len = mine_to_path_len * normal_dot;
+
+	godot::Vector3 point_on_track_plane = track_surface_normal * normal_proj_len + mine_pos;
+
+	godot::Vector3 planar_component = closest_on_path - point_on_track_plane;
+
+	float planar_length = planar_component.length();
+	
+	// TODO: replace sqrt with a deterministic_fp variant
+	float cosTheta = sqrt(1.0 - planar_length * 0.25 * planar_length * 0.25);
+	float signedCosThetaD = speed_dir_sign * cosTheta;
+	float sinTheta = sqrt(1.0 - (signedCosThetaD * signedCosThetaD));
+
+	godot::Vector3 normalDir = {0,0,0};
+	if(sinTheta > 0.0000001)
+		normalDir = set_vec3_length(planar_component, sinTheta);
+
+	godot::Vector3 travelDirScaled = {0,0,0};
+	if(signedCosThetaD > (0.0000001))
+		travelDirScaled = set_vec3_length(travel_vec, signedCosThetaD);
+
+	godot::Vector3 kickDir = normalDir + travelDirScaled;
+
+	kickDir = set_vec3_length(kickDir, 4.0);
+
+	//------------------------------------------------------------------
+	// 4) Apply the kick – update world position
+	//------------------------------------------------------------------
+
+	position_current = kickDir + point_on_track_plane;
+
+	//------------------------------------------------------------------
+	// 5) Convert displacement to local machine space for visual & physics
+	//------------------------------------------------------------------
+
+	godot::Vector3 displacementWorld = position_current - mine_pos;
+
+	mtxa->assign(basis_physical);
+	displacementWorld = mtxa->inverse_rotate_point(displacementWorld);	// → local
+
+	float displacementLen = displacementWorld.length();
+
+	//------------------------------------------------------------------
+	// 7) Turn displacement into a velocity impulse
+	//------------------------------------------------------------------
+
+	displacementWorld = set_vec3_length(displacementWorld, 5.555555 * stat_weight);
+
+	visual_rotation.z  += 6.0f * displacementWorld.x;
+	visual_rotation.x += 2.0f * displacementWorld.z;
+
+	displacementWorld = mtxa->rotate_point(displacementWorld);
+
+	velocity.x += displacementWorld.x;
+	velocity.y += displacementWorld.y;
+	velocity.z += displacementWorld.z;
+
+	//------------------------------------------------------------------
+	// 8) Damage & state flags (unchanged logic)
+	//------------------------------------------------------------------
+
+	terrain_state |= 0x40000000;			// “hit mine” flag
+
+	//if(frames_until_restored == 0 &&
+	//   breakdown_frame_counter == 0)
+	//{
+		float damage = 20.0f * stat_body;
+
+		if((machine_state & MACHINESTATE::B10) == 0 && damage > 20.0f)
+			damage = 20.0f;
+
+		float maxFrameDamage = 1.01f * calced_max_energy;
+
+		if(damage > maxFrameDamage) damage = maxFrameDamage;
+
+		damage_from_last_hit = damage;
+		energy -= damage;
+
+		if(energy < 0.0f)
+		{
+			//if((machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0)
+			//	breakdown_frame_counter = 60;
+
+			machine_state |= MACHINESTATE::ZEROHP;
+			energy	  = 0.0f;
+			base_speed = 0.0f;
+		}
+	//}
+
+	mtxa->pop();
+}
+
 
 void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 {

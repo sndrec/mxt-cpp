@@ -117,8 +117,15 @@ void Jumpplate::start_touch(PhysicsCar* car) {}
 void Jumpplate::touch(PhysicsCar* car) {}
 void Jumpplate::end_touch(PhysicsCar* car) {}
 
-Mine::Mine() { type = TRIGGER_TYPE::MINE; }
-void Mine::start_touch(PhysicsCar* car) {}
+Mine::Mine()
+{
+	type = TRIGGER_TYPE::MINE;
+	exploded = false;
+}
+void Mine::start_touch(PhysicsCar* car)
+{
+	exploded = true;
+}
 void Mine::touch(PhysicsCar* car) {}
 void Mine::end_touch(PhysicsCar* car) {}
 
