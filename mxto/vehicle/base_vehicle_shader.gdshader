@@ -5,6 +5,7 @@ render_mode ambient_light_disabled;//, skip_vertex_transform;
 uniform sampler2D in_lightwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
+uniform vec3 in_overlay_colour : source_color;
 
 void vertex() {
 	TANGENT = vec3(1.0, 0.0, 0.0);
@@ -48,6 +49,7 @@ void fragment() {
 	vec3 final_colour = hsv2rgb(hsv_colour);
 	ALBEDO = final_colour;// * fres;
 	//DEPTH = VERTEX.z;
+	EMISSION = in_overlay_colour;
 }
 
 void light() {

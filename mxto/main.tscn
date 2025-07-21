@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=21 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
@@ -9,8 +9,6 @@
 [ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
 [ext_resource type="Texture2D" uid="uid://bujpv7r4q1y5p" path="res://asset/debug/sky_tex.png" id="7_4c57u"]
 [ext_resource type="Material" uid="uid://bfxpum1jau64" path="res://asset/debug_track_mat.tres" id="8_5vw27"]
-[ext_resource type="Texture2D" uid="uid://cwt1ro2uibfw5" path="res://asset/debug/hellinheavns.gif" id="10_4c57u"]
-[ext_resource type="Texture2D" uid="uid://c1ykkwsjbxoa0" path="res://asset/debug/twerking-butt.gif" id="11_efxa6"]
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
 viewport_path = NodePath("GameWorld/OutlineViewport")
@@ -248,28 +246,12 @@ transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 
 mesh = SubResource("PlaneMesh_5vw27")
 skeleton = NodePath("")
 
-[node name="Sprite3D" type="Sprite3D" parent="GameWorld/DebugTrackMeshContainer"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16090, -9174.33, -15259.3)
-pixel_size = 0.0006
-billboard = 1
-fixed_size = true
-texture = ExtResource("10_4c57u")
-
-[node name="Sprite3D2" type="Sprite3D" parent="GameWorld/DebugTrackMeshContainer"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15143.9, 270.478, 22145.8)
-pixel_size = 0.001
-billboard = 1
-fixed_size = true
-texture = ExtResource("11_efxa6")
-
 [node name="ObjContainer" type="Node3D" parent="GameWorld"]
 
 [node name="ObjViewport" type="SubViewport" parent="GameWorld"]
 transparent_bg = true
 handle_input_locally = false
 scaling_3d_scale = 2.0
-texture_mipmap_bias = -1.0
-anisotropic_filtering_level = 4
 gui_disable_input = true
 canvas_cull_mask = 2147483647
 size = Vector2i(1920, 1080)
@@ -283,7 +265,6 @@ transparent_bg = true
 handle_input_locally = false
 screen_space_aa = 1
 scaling_3d_scale = 0.5
-texture_mipmap_bias = -1.0
 anisotropic_filtering_level = 0
 canvas_item_default_texture_filter = 2
 canvas_item_default_texture_repeat = 1
