@@ -23,7 +23,7 @@ func adjust_thruster(in_thrust : float, in_velocity : Vector3):
 
 
 func _process(delta: float) -> void:
-	target_thrust = clampf(target_thrust, 0.0, 1.0)
+	target_thrust = maxf(target_thrust, 0.0)
 	delta = minf(delta, 1.0)
 	current_thrust = lerpf(current_thrust, target_thrust, delta * 24.0)
 	current_velocity = current_velocity.lerp(target_velocity, delta * 24.0)

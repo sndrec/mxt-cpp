@@ -30,6 +30,7 @@ shader = ExtResource("1_g3l6s")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_gog44")
 shader_parameter/in_normal = ExtResource("2_g3l6s")
 shader_parameter/in_albedo = SubResource("GradientTexture1D_qmnnx")
+shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_o0ykv"]
 render_priority = 0
@@ -41,6 +42,7 @@ shader = ExtResource("5_aiq2p")
 shader_parameter/in_velocity = Vector3(0, 0, 3.09)
 shader_parameter/base_outline_width = 0.0
 shader_parameter/trail_colour = Color(0.00559999, 0.0833467, 0.28, 1)
+shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_00g30"]
 render_priority = -1

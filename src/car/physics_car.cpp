@@ -1619,7 +1619,7 @@ void PhysicsCar::set_terrain_state_from_track()
 
 	for (int i = 0; i < current_track->num_trigger_colliders; i++)
 	{
-		uint8_t collision = current_track->trigger_colliders[i]->intersect_segment(current_checkpoint, position_old, position_current);
+		uint8_t collision = current_track->trigger_colliders[i]->intersect_segment(current_checkpoint, current_track, position_old, position_current);
 		//DEBUG::disp_text(("trigger " + std::to_string(i)).c_str(), collision);
 		if ((collision & 0x1) != 0)
 		{

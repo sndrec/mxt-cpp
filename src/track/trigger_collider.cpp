@@ -4,7 +4,7 @@
 #include <algorithm>
 #include "mxt_core/debug.hpp"
 
-uint8_t TriggerCollider::intersect_segment(int cp_idx, const godot::Vector3 &p0, const godot::Vector3 &p1) const
+uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, const godot::Vector3 &p0, const godot::Vector3 &p1) const
 {
 	bool should_continue = false;
     if (cp_idx == checkpoint_index)
@@ -12,9 +12,9 @@ uint8_t TriggerCollider::intersect_segment(int cp_idx, const godot::Vector3 &p0,
 
    	if (!should_continue)
    	{
-   		for (int i = 0; i < current_track->checkpoints[checkpoint_index].num_neighboring_checkpoints; i++)
+   		for (int i = 0; i < in_racetrack->checkpoints[checkpoint_index].num_neighboring_checkpoints; i++)
    		{
-   			if (current_track->checkpoints[checkpoint_index].neighboring_checkpoints[i] == cp_idx)
+   			if (in_racetrack->checkpoints[checkpoint_index].neighboring_checkpoints[i] == cp_idx)
    			{
    				should_continue = true;
    				break;
