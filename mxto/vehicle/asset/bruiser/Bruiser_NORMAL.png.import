@@ -2,19 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c6stokuu0e464"
-path="res://.godot/imported/test_track_2_border_tex.png-c7dc9c66f90ee4e1875c7af89ac95746.ctex"
+uid="uid://y7115mvn4m70"
+path="res://.godot/imported/Bruiser_NORMAL.png-4df7ca2348fbe737f884356347c48b3e.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "6314417d58205dbc1aea725c9ca1d968"
 }
 
 [deps]
 
-source_file="res://asset/test_track_2_border_tex.png"
-dest_files=["res://.godot/imported/test_track_2_border_tex.png-c7dc9c66f90ee4e1875c7af89ac95746.ctex"]
+source_file="res://vehicle/asset/bruiser/Bruiser_NORMAL.png"
+dest_files=["res://.godot/imported/Bruiser_NORMAL.png-4df7ca2348fbe737f884356347c48b3e.ctex"]
 
 [params]
 
@@ -22,7 +19,7 @@ compress/mode=0
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/hdr_compression=1
-compress/normal_map=0
+compress/normal_map=1
 compress/channel_pack=0
 mipmaps/generate=true
 mipmaps/limit=-1

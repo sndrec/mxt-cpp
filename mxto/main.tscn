@@ -1,10 +1,30 @@
-[gd_scene load_steps=10 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=18 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
-[ext_resource type="ArrayMesh" uid="uid://2biir4cy4wk8" path="res://track/weird_track_2/weird_track_2.obj" id="3_1bvp3"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
 [ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
 [ext_resource type="Script" uid="uid://cq1kmqnd5qooc" path="res://netplay/network_manager.gd" id="3_netplay"]
+[ext_resource type="Shader" uid="uid://dnikyw812iu2p" path="res://screen_outline.gdshader" id="4_7mycd"]
+[ext_resource type="Texture2D" uid="uid://cejh11h8frbgl" path="res://asset/test_track_2_simple_grid.png" id="5_272bh"]
+[ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
+[ext_resource type="Material" uid="uid://bfxpum1jau64" path="res://asset/debug_track_mat.tres" id="8_5vw27"]
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
+viewport_path = NodePath("GameWorld/OutlineViewport")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_272bh"]
+resource_local_to_scene = true
+shader = ExtResource("4_7mycd")
+shader_parameter/in_outline_screen_tex = SubResource("ViewportTexture_272bh")
+shader_parameter/in_outline_mapped_tex = ExtResource("5_272bh")
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_5vw27"]
+viewport_path = NodePath("GameWorld/ObjViewport")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_kek77"]
+resource_local_to_scene = true
+shader = ExtResource("6_5vw27")
+shader_parameter/in_outline_screen_tex = SubResource("ViewportTexture_5vw27")
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c0w6o"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
@@ -19,10 +39,15 @@ sky = SubResource("Sky_7dlep")
 tonemap_mode = 2
 glow_enabled = true
 
+[sub_resource type="PlaneMesh" id="PlaneMesh_5vw27"]
+material = ExtResource("8_5vw27")
+size = Vector2(32, 16)
+
 [sub_resource type="LabelSettings" id="LabelSettings_lquwl"]
 font_size = 72
 
 [node name="Main" type="Node"]
+process_priority = 10
 script = ExtResource("1_tjhrj")
 
 [node name="GameSim" type="GameSim" parent="."]
@@ -172,11 +197,37 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Car Settings"
 
+[node name="CarSettings" parent="." instance=ExtResource("3_carsettings")]
+visible = false
+
 [node name="GameWorld" type="Node3D" parent="."]
+
+[node name="OutlineViewportTexture" type="ColorRect" parent="GameWorld"]
+material = SubResource("ShaderMaterial_272bh")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="ObjViewportTexture" type="ColorRect" parent="GameWorld"]
+material = SubResource("ShaderMaterial_kek77")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="GameWorld"]
 transform = Transform3D(-0.866023, -0.433016, 0.250001, 0, 0.499998, 0.866027, -0.500003, 0.749999, -0.43301, 0, 0, 0)
-shadow_enabled = true
+layers = 2147483647
+shadow_bias = 1.0
+shadow_normal_bias = 3.0
+shadow_blur = 0.0
+directional_shadow_mode = 0
+directional_shadow_max_distance = 2000.0
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="GameWorld"]
 environment = SubResource("Environment_52gnn")
@@ -189,13 +240,37 @@ metadata/_custom_type_script = "uid://odaiawvcj4yf"
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0)
 
 [node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
-mesh = ExtResource("3_1bvp3")
+mesh = SubResource("PlaneMesh_5vw27")
 skeleton = NodePath("")
 
 [node name="ObjContainer" type="Node3D" parent="GameWorld"]
 
-[node name="CarSettings" parent="." instance=ExtResource("3_carsettings")]
-visible = false
+[node name="ObjViewport" type="SubViewport" parent="GameWorld"]
+transparent_bg = true
+handle_input_locally = false
+scaling_3d_scale = 2.0
+anisotropic_filtering_level = 4
+gui_disable_input = true
+canvas_cull_mask = 2147483647
+size = Vector2i(1920, 1080)
+
+[node name="ObjCamera" type="Camera3D" parent="GameWorld/ObjViewport"]
+cull_mask = 2
+
+[node name="OutlineViewport" type="SubViewport" parent="GameWorld"]
+transparent_bg = true
+handle_input_locally = false
+screen_space_aa = 1
+scaling_3d_scale = 0.5
+anisotropic_filtering_level = 0
+canvas_item_default_texture_filter = 2
+canvas_item_default_texture_repeat = 1
+gui_disable_input = true
+canvas_cull_mask = 2147483647
+size = Vector2i(1920, 1080)
+
+[node name="OutlineCamera" type="Camera3D" parent="GameWorld/OutlineViewport"]
+cull_mask = 4
 
 [node name="RaceFinishLabel" type="Label" parent="."]
 visible = false

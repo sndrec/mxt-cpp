@@ -690,6 +690,9 @@ void GameSim::render_gamesim() {
 		//mtxa.cur->origin = cars[i].position_current;
 		//cars[i].create_machine_visual_transform();
 		vis_cars[i].set("position_current", cars[i].position_current);
+		vis_cars[i].set("position_old", cars[i].position_old);
+		vis_cars[i].set("track_surface_normal", cars[i].track_surface_normal);
+		vis_cars[i].set("height_above_track", cars[i].height_above_track);
 		vis_cars[i].set("velocity", cars[i].velocity);
 		vis_cars[i].set("velocity_angular", cars[i].velocity_angular);
 		vis_cars[i].set("velocity_local", cars[i].velocity_local);

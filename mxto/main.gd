@@ -20,6 +20,11 @@ class_name GameManager extends Node
 @onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
 
+@onready var obj_viewport: SubViewport = $GameWorld/ObjViewport
+@onready var outline_viewport: SubViewport = $GameWorld/OutlineViewport
+@onready var obj_viewport_texture: ColorRect = $GameWorld/ObjViewportTexture
+@onready var outline_viewport_texture: ColorRect = $GameWorld/OutlineViewportTexture
+
 const PlayerInputClass = preload("res://player/player_input.gd")
 
 var tracks: Array = []
@@ -36,6 +41,8 @@ const TRIGGER_SCENES = {
 }
 
 func _ready() -> void:
+	#obj_viewport_texture.texture = obj_viewport.get_texture()
+	#outline_viewport_texture.texture = outline_viewport.get_texture()
 	randomize()
 	_load_tracks()
 	_load_car_definitions()
@@ -474,5 +481,14 @@ func _check_race_finished() -> void:
 		if network_manager.net_race_finish_time != -1:
 			race_finish_label.visible = true
 
+@onready var obj_camera: Camera3D = $GameWorld/ObjViewport/ObjCamera
+@onready var outline_camera: Camera3D = $GameWorld/OutlineViewport/OutlineCamera
+
 func _process(delta: float) -> void:
 	frame_time_label.text = str(network_manager.rollback_frametime_us)
+	var active_camera := get_viewport().get_camera_3d()
+	if game_sim.sim_started and is_instance_valid(active_camera):
+		obj_camera.global_transform = active_camera.global_transform
+		outline_camera.global_transform = active_camera.global_transform
+		obj_camera.fov = active_camera.fov
+		outline_camera.fov = active_camera.fov
