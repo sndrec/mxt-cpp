@@ -98,6 +98,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="IPField" type="LineEdit" parent="Control"]
+visible = false
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -306,7 +307,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle C++ v0.0.6"
+text = "MaxX Throttle vSocksFest"
 
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/JoinButton" to="." method="_on_join_button_pressed"]

@@ -70,6 +70,7 @@ skeleton = NodePath("")
 
 [node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
 transform = Transform3D(-7, 0, -6.11959e-07, 0, 7, 0, 6.11959e-07, 0, -7, 0, 0.413, 0)
+layers = 4
 material_override = SubResource("ShaderMaterial_gv8nt")
 cast_shadow = 0
 mesh = ExtResource("1_fag7k")
