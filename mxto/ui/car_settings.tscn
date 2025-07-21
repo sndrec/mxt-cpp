@@ -74,3 +74,11 @@ offset_top = 59.0
 offset_right = 900.0
 offset_bottom = 98.0
 placeholder_text = "Your name here..."
+
+[node name="SpectatorToggle" type="CheckBox" parent="."]
+layout_mode = 0
+offset_left = 518.0
+offset_top = 108.0
+offset_right = 850.0
+offset_bottom = 138.0
+text = "Spectator"

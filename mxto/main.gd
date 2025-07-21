@@ -31,9 +31,11 @@ var tracks: Array = []
 var car_definitions: Array = []
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
+var spectator_scene := preload("res://player/spectator.tscn")
 var local_player_index: int = 0
 var headless_mode: bool = false
 var trigger_objects: Array = []
+var spectator_node: Node3D
 const TRIGGER_SCENES = {
 			 0: preload("res://asset/obj_dashplate.tscn"),
 			 1: preload("res://asset/obj_jumpplate.tscn"),
@@ -254,42 +256,57 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var info : Dictionary = tracks[track_index]
 	var chosen_defs : Array = []
 	var parsed_settings : Array = []
-	for d in settings:
+	var racer_settings : Array = []
+	var racer_ids : Array = []
+	for i in range(settings.size()):
+		var d = settings[i]
 		if typeof(d) == TYPE_DICTIONARY:
 			var ps := PlayerSettings.new()
 			ps.from_dict(d)
 			parsed_settings.append(ps)
-			var def_res := load(ps.car_definition_path)
-			if def_res != null:
-				chosen_defs.append(def_res)
-	local_player_index = network_manager.player_ids.find(multiplayer.get_unique_id())
-	if local_player_index == -1:
-		local_player_index = 0
-	car_node_container.instantiate_cars(chosen_defs, network_manager.player_ids, local_player_index)
+			if !ps.spectator:
+				racer_settings.append(ps)
+				var def_res := load(ps.car_definition_path)
+				if def_res != null:
+					chosen_defs.append(def_res)
+				if i < network_manager.player_ids.size():
+					racer_ids.append(network_manager.player_ids[i])
+	local_player_index = racer_ids.find(multiplayer.get_unique_id())
+	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_player_index)
 	var idx := 0
 	for car:VisualCar in car_node_container.get_children():
 		car.game_manager = self
-		if idx < parsed_settings.size():
-			car.player_settings = parsed_settings[idx]
+		if idx < racer_settings.size():
+			car.player_settings = racer_settings[idx]
+			car.name_label.text = racer_settings[idx].username
 		idx += 1
 	for p in players:
 		p.queue_free()
 	players.clear()
+	if spectator_node:
+		spectator_node.queue_free()
+		spectator_node = null
 	var car_props : Array = []
 	var accel_settings_arr : Array = []
-	for i in parsed_settings.size():
+	for i in racer_settings.size():
 		var pc := player_scene.instantiate()
 		pc.car_definition = chosen_defs[i]
-		pc.accel_setting = parsed_settings[i].accel_setting
-		pc.player_settings = parsed_settings[i]
+		pc.accel_setting = racer_settings[i].accel_setting
+		pc.player_settings = racer_settings[i]
 		add_child(pc)
 		players.append(pc)
+	if local_player_index == -1:
+		spectator_node = spectator_scene.instantiate()
+		add_child(spectator_node)
+	else:
+		for car:VisualCar in car_node_container.get_children():
+			car.name_label.queue_free()
 	for n in chosen_defs.size():
 		var def = chosen_defs[n]
 		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
 		car_props.append(bytes)
-		if n < parsed_settings.size():
-			accel_settings_arr.append(parsed_settings[n].accel_setting)
+		if n < racer_settings.size():
+			accel_settings_arr.append(racer_settings[n].accel_setting)
 		else:
 			accel_settings_arr.append(1.0)
 	var level_buffer := StreamPeerBuffer.new()
@@ -436,6 +453,9 @@ func _return_to_menu() -> void:
 	for p in players:
 		p.queue_free()
 	players.clear()
+	if spectator_node:
+		spectator_node.queue_free()
+		spectator_node = null
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	$Control.visible = true
@@ -454,6 +474,9 @@ func _return_to_lobby() -> void:
 	for p in players:
 		p.queue_free()
 	players.clear()
+	if spectator_node:
+		spectator_node.queue_free()
+		spectator_node = null
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	lobby_control.visible = true

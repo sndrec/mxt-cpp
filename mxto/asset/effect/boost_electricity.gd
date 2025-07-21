@@ -23,6 +23,7 @@ var electricity_material: ShaderMaterial
 func _ready() -> void:
 	tendrils.resize(64)
 	tendril_start_times.resize(64)
+	mesh_instance.mesh = mesh_instance.mesh.duplicate(true)
 	array_mesh = mesh_instance.mesh
 	electricity_material = mesh_instance.material_override
 
@@ -33,16 +34,15 @@ func _process(delta: float) -> void:
 func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 	var cur_time := 0.001 * Time.get_ticks_msec()
 
-	# Update material color if changed in editor
-	if is_instance_valid(electricity_material):
-		pass
+	var all_dead := true
+	for i in tendrils.size():
+		if tendrils[i] != null and tendrils[i].size() > 0 and cur_time - tendril_start_times[i] < tendril_lifetime:
+			all_dead = false
+			break
 	
-	if Engine.is_editor_hint():
-		var mins := bounds.position - bounds.size
-		var maxs := bounds.position + bounds.size
-		DebugDraw3D.scoped_config().set_thickness(0.1)
-		DebugDraw3D.draw_aabb_ab(global_transform * mins, global_transform * maxs, Color.RED, delta)
-
+	if all_dead and !boosting:
+		return
+	
 	var difference := in_tr.origin - old_transform.origin
 	
 	for n in tendrils.size():

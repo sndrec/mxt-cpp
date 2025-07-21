@@ -4,6 +4,7 @@ class_name VisualCar extends Node3D
 @onready var car_camera: Camera3D = $CarCamera
 var car_definition : CarDefinition
 @onready var recharge_particles: GPUParticles3D = $CarTransform/RechargeParticles
+@onready var name_label: Label3D = $CarTransform/NameLabel
 
 enum FZ_TERRAIN {
 	NORMAL = 0x1,
@@ -147,9 +148,11 @@ var spinattack_direction := 0
 var visual_shake_mult := 0.0
 
 var rollback_offset_error := Vector3.ZERO
+var rollback_offset_error_prev := Vector3.ZERO
 var old_pos := Vector3.ZERO
 
 var rollback_rot_error := Basis.IDENTITY
+var rollback_rot_error_prev := Basis.IDENTITY
 var old_rot := Basis.IDENTITY
 
 var car_old_transform := Transform3D.IDENTITY
@@ -175,6 +178,7 @@ func _ready() -> void:
 	car_transform.add_child(car_visual)
 	if car_visual.has_node("VEHICLE_MAIN"):
 		var main_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_MAIN")
+		main_mesh.material_override = main_mesh.material_override.duplicate()
 		car_material = main_mesh.material_override
 		var outline_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_OUTLINE")
 		outline_mesh.material_override = outline_mesh.material_override.duplicate()
@@ -333,7 +337,14 @@ func damp_t3d(a : Transform3D, b : Transform3D, lambda : float, dt : float) -> T
 @onready var landing_particles: GPUParticles3D = $CarTransform/LandingParticles
 @onready var boost_electricity: BoostElectricity = $BoostElectricity
 
-func _physics_process(delta: float) -> void:
+func _physics_process(delta):
+	rollback_offset_error_prev = rollback_offset_error
+	rollback_rot_error_prev    = rollback_rot_error
+
+	rollback_offset_error = damp_vec3(
+		rollback_offset_error, Vector3.ZERO, 20, delta)
+	rollback_rot_error    = damp_basis(
+		rollback_rot_error, Basis.IDENTITY, 20, delta)
 	create_machine_visual_transform()
 	DebugDraw2D.set_text("turbo", boost_turbo)
 	frame_accumulation = 0.0
@@ -345,6 +356,8 @@ func _physics_process(delta: float) -> void:
 	car_desired_vel = velocity
 	car_old_transform = car_desired_transform
 	car_desired_transform = transform_visual
+	car_desired_transform.basis *= rollback_rot_error
+	car_desired_transform.origin += rollback_offset_error
 	car_old_basis_physical = car_desired_basis_physical
 	car_desired_basis_physical = basis_physical
 	
@@ -440,15 +453,13 @@ func _process(delta: float) -> void:
 	#print(delta)
 	#print(frame_accumulation)
 	car_transform.global_transform = car_old_transform.interpolate_with(car_desired_transform, ratio)
-	var use_car_pos := car_old_pc.lerp(car_desired_pc, ratio) + rollback_offset_error
-	var use_car_pos_old := car_old_po.lerp(car_desired_po, ratio) + rollback_offset_error
+	var use_car_pos := car_old_pc.lerp(car_desired_pc, ratio)
+	var use_car_pos_old := car_old_po.lerp(car_desired_po, ratio)
 	var use_basis_physical := car_old_basis_physical.interpolate_with(car_desired_basis_physical, ratio)
 	var use_car_vel := car_old_vel.lerp(car_desired_vel, ratio)
-	rollback_offset_error = damp_vec3(rollback_offset_error, Vector3.ZERO, 40, delta)
-	rollback_rot_error = damp_basis(rollback_rot_error, Basis.IDENTITY, 40, delta)
-	#DebugDraw2D.set_text("rollback offset error", rollback_offset_error)
-	car_transform.global_transform.origin += rollback_offset_error
-	car_transform.global_transform.basis = car_transform.global_transform.basis * rollback_rot_error
+	#DebugDraw2D.set_text("rollback offset error", interp_err)
+	#car_transform.global_transform.origin += interp_err
+	#car_transform.global_transform.basis = car_transform.global_transform.basis * interp_rerr
 	var calced_max_energy := 100.0
 	var energy_ratio : float = minf(1.0, (energy / calced_max_energy) * 4.0)
 	#var manual_boost_visual := float(boost_frames_manual) / (car_definition.boost_length * Engine.physics_ticks_per_second)
@@ -517,7 +528,7 @@ func _process(delta: float) -> void:
 				#DebugDraw2D.set_text("curvature", lerped_curvature)
 				#final_y = final_y.rotated(sideways, lerped_curvature * -8000)
 				#use_basis = use_basis.rotated(sideways, lerped_curvature * -8000)
-	car_camera.position = (use_car_pos + rollback_offset_error) + use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
+	car_camera.position = use_car_pos + use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
 	car_camera.basis = use_cam_basis.rotated(use_cam_basis.x, deg_to_rad(-10))
 	car_camera.near = 0.25
 	car_camera.far = 40000.0
