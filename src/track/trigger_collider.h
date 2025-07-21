@@ -22,9 +22,8 @@ public:
     godot::Transform3D inv_transform;
     int segment_index = -1;
     int checkpoint_index = -1;
-    RaceTrack* current_track = nullptr;
 
-    uint8_t intersect_segment(int cp_idx, const godot::Vector3 &p0, const godot::Vector3 &p1) const;
+    uint8_t intersect_segment(int cp_idx, RaceTrack *in_racetrack, const godot::Vector3 &p0, const godot::Vector3 &p1) const;
     virtual ~TriggerCollider() = default;
     virtual void start_touch(PhysicsCar* car);
     virtual void touch(PhysicsCar* car);
