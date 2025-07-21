@@ -2397,24 +2397,20 @@ if (apply_full_response) {
 
 } else if ((machine_state & MACHINESTATE::JUSTLANDED) &&
 	speed_over_weight >= 0.0462962962962f) {
-	godot::Vector3 vStack_a8 = mtxa->rotate_point(godot::Vector3(0, 1, 0));
-	float dVar8 = normalized_safe(vStack_a8).dot(normalized_safe(track_surface_normal));
-	float dVar7 = normalized_safe(velocity).dot(normalized_safe(track_surface_normal));
-	float fVar11 = velocity.length();
-	float fVar10 = 0.9f;
-	float dVar9 = 2.0f;
-	if (dVar8 < 0.0f)
-		dVar8 = 0.0f;
-	float dVar6 = 0.5f;
-	fVar11 = fVar11 * dVar7;
-	base_speed = base_speed * dVar8;
-	godot::Vector3 fStack_9c = track_surface_normal * fVar11;
-	float fVar11b = dVar9 * std::abs(dVar6 + dVar7);
-	godot::Vector3 vStack_90 = velocity - fStack_9c;
-	if (fVar11b < fVar10)
-		vStack_90 = set_vec3_length(vStack_90, fVar10 * (1.0f - 1.11f * fVar11b) * dVar8);
-	velocity -= fStack_9c * dVar8;
-	velocity += vStack_90;
+	godot::Vector3 up_dir = mtxa->rotate_point(godot::Vector3(0, 1, 0)); // get the vehicle's local up direction normal vector
+	float up_dot_track = normalized_safe(up_dir).dot(normalized_safe(track_surface_normal));
+	float vel_dot_track = normalized_safe(velocity).dot(normalized_safe(track_surface_normal));
+	if (up_dot_track < 0.0f)
+		up_dot_track = 0.0f;
+	float vel_along_track = velocity.length() * vel_dot_track;
+	base_speed = base_speed * up_dot_track;
+	godot::Vector3 normal_vel = track_surface_normal * vel_along_track;
+	float vel_align_factor = 2.0f * std::abs(0.5f + vel_dot_track);
+	godot::Vector3 vel_add = velocity - normal_vel;
+	if (vel_align_factor < 0.9f)
+		vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);
+	velocity -= normal_vel * up_dot_track;
+	velocity += vel_add;
 }
 
 if (frames_since_start_2 <= 90)
@@ -2540,15 +2536,7 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 
 	kickDir = set_vec3_length(kickDir, 4.0);
 
-	//------------------------------------------------------------------
-	// 4) Apply the kick – update world position
-	//------------------------------------------------------------------
-
 	position_current = kickDir + point_on_track_plane;
-
-	//------------------------------------------------------------------
-	// 5) Convert displacement to local machine space for visual & physics
-	//------------------------------------------------------------------
 
 	godot::Vector3 displacementWorld = position_current - mine_pos;
 
@@ -2556,10 +2544,6 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 	displacementWorld = mtxa->inverse_rotate_point(displacementWorld);	// → local
 
 	float displacementLen = displacementWorld.length();
-
-	//------------------------------------------------------------------
-	// 7) Turn displacement into a velocity impulse
-	//------------------------------------------------------------------
 
 	displacementWorld = set_vec3_length(displacementWorld, 5.555555 * stat_weight);
 
@@ -2577,6 +2561,8 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 	//------------------------------------------------------------------
 
 	terrain_state |= 0x40000000;			// “hit mine” flag
+
+	// breakdown not implemented yet
 
 	//if(frames_until_restored == 0 &&
 	//   breakdown_frame_counter == 0)

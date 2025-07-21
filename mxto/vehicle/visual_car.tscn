@@ -4,10 +4,13 @@
 [ext_resource type="PackedScene" uid="uid://32t0e0x6ldk1" path="res://ui/race_hud.tscn" id="2_trwkr"]
 
 [node name="CarRoot" type="Node3D"]
+process_priority = 1
+process_physics_priority = 1
 script = ExtResource("1_7f3vi")
 
 [node name="CarCamera" type="Camera3D" parent="."]
 top_level = true
+cull_mask = 1
 
 [node name="race_hud" parent="." instance=ExtResource("2_trwkr")]
 

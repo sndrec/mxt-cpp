@@ -35,6 +35,7 @@ settings/addon_root_folder="res://addons/debug_draw_3d"
 
 window/size/viewport_width=640
 window/size/viewport_height=360
+window/vsync/vsync_mode=0
 
 [editor_plugins]
 
@@ -120,3 +121,13 @@ limits/debugger/max_chars_per_second=262144
 limits/debugger/max_queued_messages=8192
 limits/debugger/max_errors_per_second=800
 limits/debugger/max_warnings_per_second=800
+
+[rendering]
+
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
+lights_and_shadows/directional_shadow/16_bits=false
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=0
+lights_and_shadows/positional_shadow/atlas_16_bits=false
+textures/default_filters/anisotropic_filtering_level=4
+anti_aliasing/quality/msaa_3d=3
+anti_aliasing/quality/use_debanding=true

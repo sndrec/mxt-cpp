@@ -1,7 +1,75 @@
-[gd_scene load_steps=2 format=3 uid="uid://ddxs0gwo3cdsc"]
+[gd_scene load_steps=14 format=3 uid="uid://ddxs0gwo3cdsc"]
 
+[ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_2dwnx"]
 [ext_resource type="ArrayMesh" uid="uid://p2s7s0jn58eb" path="res://vehicle/asset/bruiser/mesh.obj" id="1_42fyx"]
+[ext_resource type="Shader" uid="uid://bqqsd22cdmtdp" path="res://vehicle/vehicle_outline.gdshader" id="1_gisdj"]
+[ext_resource type="Texture2D" uid="uid://dxg8okrlvyls1" path="res://vehicle/asset/bruiser/bruiser_colour.png" id="2_faj4t"]
+[ext_resource type="Texture2D" uid="uid://y7115mvn4m70" path="res://vehicle/asset/bruiser/Bruiser_NORMAL.png" id="2_q1c51"]
+[ext_resource type="Shader" uid="uid://dvkl5w0v8t8mq" path="res://vehicle/vehicle_shadow.gdshader" id="4_6e66t"]
+[ext_resource type="Shader" uid="uid://b71ubm0xei1sp" path="res://vehicle/vehicle_outline_main.gdshader" id="4_gisdj"]
 
-[node name="Vehicle" type="MeshInstance3D"]
-transform = Transform3D(-4, 0, -3.49691e-07, 0, 4, 0, 3.49691e-07, 0, -4, 0, 0, 0)
+[sub_resource type="Gradient" id="Gradient_2dwnx"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0, 0.03, 0.176259, 0.566667, 0.830935, 0.983333)
+colors = PackedColorArray(0.55, 0.55, 0.55, 1, 0.22, 0.22, 0.22, 1, 0, 0, 0, 1, 0.13, 0.13, 0.13, 1, 0.35, 0.35, 0.35, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_q1c51"]
+gradient = SubResource("Gradient_2dwnx")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_q1c51"]
+render_priority = 1
+shader = ExtResource("1_2dwnx")
+shader_parameter/in_lightwarp = SubResource("GradientTexture1D_q1c51")
+shader_parameter/in_normal = ExtResource("2_q1c51")
+shader_parameter/in_albedo = ExtResource("2_faj4t")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_faj4t"]
+render_priority = 0
+shader = ExtResource("4_6e66t")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_6e66t"]
+render_priority = -1
+shader = ExtResource("1_gisdj")
+shader_parameter/in_velocity = Vector3(0, 0, 0.09)
+shader_parameter/base_outline_width = 0.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_4psuq"]
+render_priority = -1
+shader = ExtResource("4_gisdj")
+shader_parameter/in_velocity = Vector3(0, 0, -0.03)
+shader_parameter/base_outline_width = 0.3
+shader_parameter/outline_color = Color(0, 0, 0, 1)
+
+[node name="Node3D" type="Node3D"]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
+
+[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
+layers = 2
+material_override = SubResource("ShaderMaterial_q1c51")
+cast_shadow = 0
+mesh = ExtResource("1_42fyx")
+
+[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="."]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
+visible = false
+layers = 2
+material_override = SubResource("ShaderMaterial_faj4t")
+cast_shadow = 0
+mesh = ExtResource("1_42fyx")
+
+[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
+visible = false
+layers = 4
+material_override = SubResource("ShaderMaterial_6e66t")
+cast_shadow = 0
+mesh = ExtResource("1_42fyx")
+
+[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
+visible = false
+layers = 2
+material_override = SubResource("ShaderMaterial_4psuq")
+cast_shadow = 0
 mesh = ExtResource("1_42fyx")

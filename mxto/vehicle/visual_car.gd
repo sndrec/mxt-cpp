@@ -77,6 +77,9 @@ var game_manager : GameManager
 @onready var car_transform: Node3D = $CarTransform
 
 var position_current := Vector3.ZERO
+var position_old := Vector3.ZERO
+var track_surface_normal := Vector3.ZERO
+var height_above_track := 0.0
 var velocity := Vector3.ZERO
 var velocity_angular := Vector3.ZERO
 var velocity_local := Vector3.ZERO
@@ -153,10 +156,26 @@ var car_old_basis_physical := Transform3D.IDENTITY
 var car_desired_basis_physical := Transform3D.IDENTITY
 var car_old_pc := Vector3.ZERO
 var car_desired_pc := Vector3.ZERO
+var car_old_po := Vector3.ZERO
+var car_desired_po := Vector3.ZERO
+var car_old_vel := Vector3.ZERO
+var car_desired_vel := Vector3.ZERO
+
+var car_material : ShaderMaterial
+var car_outline_material : ShaderMaterial
+var vehicle_main : MeshInstance3D
+var vehicle_shadow : MeshInstance3D
 
 func _ready() -> void:
 	car_visual = car_definition.car_scene.instantiate()
 	car_transform.add_child(car_visual)
+	if car_visual.has_node("VEHICLE_MAIN"):
+		var main_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_MAIN")
+		car_material = main_mesh.material_override
+		var outline_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_OUTLINE")
+		car_outline_material = outline_mesh.material_override
+		vehicle_shadow = car_visual.get_node("VEHICLE_SHADOW")
+		vehicle_main = car_visual.get_node("VEHICLE_MAIN")
 	air_sound.stream = preload("res://sfx/vehicle/air_1.wav")
 	air_sound.play()
 	thrust_sound.stream = preload("res://sfx/vehicle/thrust_on.wav")
@@ -308,6 +327,10 @@ func _physics_process(delta: float) -> void:
 	frame_accumulation = 0.0
 	car_old_pc = car_desired_pc
 	car_desired_pc = position_current
+	car_old_po = car_desired_po
+	car_desired_po = position_old
+	car_old_vel = car_desired_vel
+	car_desired_vel = velocity
 	car_old_transform = car_desired_transform
 	car_desired_transform = transform_visual
 	car_old_basis_physical = car_desired_basis_physical
@@ -362,12 +385,19 @@ func _physics_process(delta: float) -> void:
 func _process(delta: float) -> void:
 	frame_accumulation += delta
 	delta = minf(1.0, delta)
-	var ratio := frame_accumulation * 60
+	var ratio := frame_accumulation * Engine.physics_ticks_per_second
+	ratio = minf(1.0, ratio)
+	#print(ratio)
+	#print("----")
+	#print(delta)
+	#print(frame_accumulation)
 	car_transform.global_transform = car_old_transform.interpolate_with(car_desired_transform, ratio)
 	var use_car_pos := car_old_pc.lerp(car_desired_pc, ratio) + rollback_offset_error
+	var use_car_pos_old := car_old_po.lerp(car_desired_po, ratio) + rollback_offset_error
 	var use_basis_physical := car_old_basis_physical.interpolate_with(car_desired_basis_physical, ratio)
-	rollback_offset_error = damp_vec3(rollback_offset_error, Vector3.ZERO, 20, delta)
-	rollback_rot_error = damp_basis(rollback_rot_error, Basis.IDENTITY, 20, delta)
+	var use_car_vel := car_old_vel.lerp(car_desired_vel, ratio)
+	rollback_offset_error = damp_vec3(rollback_offset_error, Vector3.ZERO, 40, delta)
+	rollback_rot_error = damp_basis(rollback_rot_error, Basis.IDENTITY, 40, delta)
 	#DebugDraw2D.set_text("rollback offset error", rollback_offset_error)
 	car_transform.global_transform.origin += rollback_offset_error
 	car_transform.global_transform.basis = car_transform.global_transform.basis * rollback_rot_error
@@ -386,7 +416,7 @@ func _process(delta: float) -> void:
 	var use_forward_z : Vector3 = use_basis_physical.basis.z
 	use_forward_z = use_forward_z.normalized()
 	if (tilt_fl_state & FZ_TC.DRIFT) != 0:
-		use_forward_z = -velocity.slide(use_basis_physical.basis.y.normalized()).normalized()
+		use_forward_z = -use_car_vel.slide(use_basis_physical.basis.y.normalized()).normalized()
 	
 	var target_y := use_basis_physical.basis.y
 	
@@ -441,3 +471,20 @@ func _process(delta: float) -> void:
 				#use_basis = use_basis.rotated(sideways, lerped_curvature * -8000)
 	car_camera.position = (use_car_pos + rollback_offset_error) + use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
 	car_camera.basis = use_cam_basis.rotated(use_cam_basis.x, deg_to_rad(-10))
+	if (car_outline_material and is_instance_valid(car_outline_material)):
+		var use_vel := (use_car_pos_old - use_car_pos)
+		var use_vel_dir := use_vel.normalized()
+		var use_vel_mag := use_vel.length()
+		var final_vel := use_vel_dir * move_toward(use_vel_mag, 0.0, 4) * 0.5
+		car_outline_material.set_shader_parameter("in_velocity", final_vel + use_basis_physical.basis.z * 0.01)
+		if height_above_track > 0.01:
+			vehicle_shadow.visible = true
+			var use_transform := vehicle_main.global_transform
+			use_transform.origin += -track_surface_normal * (20.0 - height_above_track)
+			use_transform.basis.x = use_transform.basis.x.slide(track_surface_normal)
+			use_transform.basis.y = use_transform.basis.y.slide(track_surface_normal)
+			use_transform.basis.z = use_transform.basis.z.slide(track_surface_normal)
+			vehicle_shadow.global_transform = use_transform
+		else:
+			vehicle_shadow.visible = false
+		
