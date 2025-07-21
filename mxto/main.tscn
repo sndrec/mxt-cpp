@@ -249,7 +249,6 @@ skeleton = NodePath("")
 transparent_bg = true
 handle_input_locally = false
 scaling_3d_scale = 2.0
-anisotropic_filtering_level = 4
 gui_disable_input = true
 canvas_cull_mask = 2147483647
 size = Vector2i(1920, 1080)
