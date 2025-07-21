@@ -36,12 +36,12 @@ vec3 hsv2rgb(vec3 c)
 }
 
 void fragment() {
-	vec3 normal_1 = texture(in_normal, UV + vec2(0.001, 0.002)).rgb * 2.0 - 1.0;
-	vec3 normal_2 = texture(in_normal, UV + vec2(-0.002, 0.001)).rgb * 2.0 - 1.0;
-	vec3 normal_3 = texture(in_normal, UV + vec2(0.002, -0.001)).rgb * 2.0 - 1.0;
-	vec3 normal_4 = texture(in_normal, UV + vec2(-0.001, -0.002)).rgb * 2.0 - 1.0;
-	vec3 normal_combined = normal_1 + normal_2 + normal_3 + normal_4;
-	NORMAL = normalize(TANGENT * normal_combined.x + BINORMAL * normal_combined.y + NORMAL * normal_combined.z);
+	vec3 normal_1 = texture(in_normal, UV).rgb * 2.0 - 1.0;
+	//vec3 normal_2 = texture(in_normal, UV + vec2(-0.002, 0.001)).rgb * 2.0 - 1.0;
+	//vec3 normal_3 = texture(in_normal, UV + vec2(0.002, -0.001)).rgb * 2.0 - 1.0;
+	//vec3 normal_4 = texture(in_normal, UV + vec2(-0.001, -0.002)).rgb * 2.0 - 1.0;
+	//vec3 normal_combined = normal_1 + normal_2 + normal_3 + normal_4;
+	NORMAL = normalize(TANGENT * normal_1.x + BINORMAL * normal_1.y + NORMAL * normal_1.z);
 	vec3 in_colour = texture(in_albedo, UV).rgb;
 	vec3 hsv_colour = rgb2hsv(in_colour);
 	hsv_colour.y *= 1.3;
@@ -54,12 +54,12 @@ void light() {
 	float light_val = (dot(NORMAL, LIGHT) * ATTENUATION) * 0.5 + 0.5;
 	float fres = 1.0 - fresnel(1.0, NORMAL, VIEW);
 	float fres_outline = fresnel(16.0, NORMAL, VIEW);
-	light_val = clamp(light_val - fres * 0.1, 0.0, 1.0);
-	light_val = clamp(light_val + fres_outline * 2.0, 0.0, 1.0);
+	//light_val = clamp(light_val - fres * 0.1, 0.0, 1.0);
+	//light_val = clamp(light_val + fres_outline * 2.0, 0.0, 1.0);
 	vec3  H		= normalize(LIGHT + VIEW);		// half-vector
 	float ndoth	= max(dot(NORMAL, H), 0.0);
 	float spec	= pow(ndoth, 8.0) * ATTENUATION;
-	light_val = clamp(light_val + spec * 0.1, 0.0, 1.0);
+	//light_val = clamp(light_val + spec * 0.1, 0.0, 1.0);
 	vec3 final_light_val = texture(in_lightwarp, vec2(light_val, 0.0f)).rgb;
 	DIFFUSE_LIGHT += final_light_val * LIGHT_COLOR * 0.333;// * 0.3;
 	//SPECULAR_LIGHT = vec3(0.0);

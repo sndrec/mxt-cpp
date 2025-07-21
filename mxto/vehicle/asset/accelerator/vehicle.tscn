@@ -1,6 +1,89 @@
-[gd_scene load_steps=2 format=3 uid="uid://h2ihlxm5glfj"]
+[gd_scene load_steps=16 format=3 uid="uid://h2ihlxm5glfj"]
 
+[ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_b6mle"]
 [ext_resource type="ArrayMesh" uid="uid://bmkxc332thrb6" path="res://vehicle/asset/accelerator/mesh.obj" id="1_rggl3"]
+[ext_resource type="Texture2D" uid="uid://8meq4emvycja" path="res://vehicle/asset/accelerator/Accelerator_NORMAL.png" id="2_qmnnx"]
+[ext_resource type="Shader" uid="uid://dvkl5w0v8t8mq" path="res://vehicle/vehicle_shadow.gdshader" id="4_up21o"]
+[ext_resource type="Shader" uid="uid://bqqsd22cdmtdp" path="res://vehicle/vehicle_outline.gdshader" id="5_o2b3b"]
+[ext_resource type="Shader" uid="uid://b71ubm0xei1sp" path="res://vehicle/vehicle_outline_main.gdshader" id="6_4nwwe"]
+[ext_resource type="PackedScene" uid="uid://cn4wo1jqle0j3" path="res://vehicle/particle/thruster.tscn" id="7_7mhr5"]
 
-[node name="Vehicle" type="MeshInstance3D"]
+[sub_resource type="Gradient" id="Gradient_b6mle"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0.196154, 0.619231)
+colors = PackedColorArray(0.986097, 0.369004, 0, 1, 0.947094, 0.754091, 0, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_up21o"]
+gradient = SubResource("Gradient_b6mle")
+
+[sub_resource type="Gradient" id="Gradient_jlnq1"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0.0846154, 0.461538, 0.869231, 0.969231)
+colors = PackedColorArray(0, 0, 0, 1, 0.13, 0.13, 0.13, 1, 0.35, 0.35, 0.35, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_o2b3b"]
+gradient = SubResource("Gradient_jlnq1")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_up21o"]
+render_priority = 1
+shader = ExtResource("1_b6mle")
+shader_parameter/in_lightwarp = SubResource("GradientTexture1D_o2b3b")
+shader_parameter/in_normal = ExtResource("2_qmnnx")
+shader_parameter/in_albedo = SubResource("GradientTexture1D_up21o")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_faj4t"]
+render_priority = 0
+shader = ExtResource("4_up21o")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_6e66t"]
+render_priority = -1
+shader = ExtResource("5_o2b3b")
+shader_parameter/in_velocity = Vector3(0, 0, 3)
+shader_parameter/base_outline_width = 0.0
+shader_parameter/trail_colour = Color(0.41, 0.1763, 0.0205, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_4psuq"]
+render_priority = -1
+shader = ExtResource("6_4nwwe")
+shader_parameter/in_velocity = Vector3(0, 0, -0.03)
+shader_parameter/base_outline_width = 0.3
+shader_parameter/outline_color = Color(0, 0, 0, 1)
+
+[node name="Node3D" type="Node3D"]
+
+[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
+layers = 2
+material_override = SubResource("ShaderMaterial_up21o")
+cast_shadow = 0
 mesh = ExtResource("1_rggl3")
+
+[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.01, 0, 0, 0, 1, 0, 0, 0)
+layers = 2
+material_override = SubResource("ShaderMaterial_faj4t")
+cast_shadow = 0
+mesh = ExtResource("1_rggl3")
+skeleton = NodePath("")
+
+[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
+layers = 4
+material_override = SubResource("ShaderMaterial_6e66t")
+cast_shadow = 0
+mesh = ExtResource("1_rggl3")
+skeleton = NodePath("")
+
+[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
+layers = 2
+material_override = SubResource("ShaderMaterial_4psuq")
+cast_shadow = 0
+mesh = ExtResource("1_rggl3")
+skeleton = NodePath("")
+
+[node name="THRUSTERS" type="Node3D" parent="."]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
+
+[node name="Thruster2" parent="THRUSTERS" instance=ExtResource("7_7mhr5")]
+transform = Transform3D(-1, 0, 8.74228e-08, 0, 1, 0, -8.74228e-08, 0, -1, -0.7, 0.28, -1.7)
+
+[node name="Thruster" parent="THRUSTERS" instance=ExtResource("7_7mhr5")]
+transform = Transform3D(-1, 0, 8.74228e-08, 0, 1, 0, -8.74228e-08, 0, -1, 0.7, 0.28, -1.7)

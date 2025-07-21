@@ -1,7 +1,90 @@
-[gd_scene load_steps=2 format=3 uid="uid://djx62co8herii"]
+[gd_scene load_steps=16 format=3 uid="uid://djx62co8herii"]
 
+[ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_d7waw"]
 [ext_resource type="ArrayMesh" uid="uid://dqg4eeoeyhdd" path="res://vehicle/asset/topspeeder/mesh.obj" id="1_irypj"]
+[ext_resource type="Texture2D" uid="uid://ctuvn5iuy8qhe" path="res://vehicle/asset/topspeeder/topspeeder_normal.png" id="2_d7waw"]
+[ext_resource type="Shader" uid="uid://dvkl5w0v8t8mq" path="res://vehicle/vehicle_shadow.gdshader" id="4_s2vxg"]
+[ext_resource type="Shader" uid="uid://bqqsd22cdmtdp" path="res://vehicle/vehicle_outline.gdshader" id="5_iugap"]
+[ext_resource type="Shader" uid="uid://b71ubm0xei1sp" path="res://vehicle/vehicle_outline_main.gdshader" id="6_u18fp"]
+[ext_resource type="PackedScene" uid="uid://cn4wo1jqle0j3" path="res://vehicle/particle/thruster.tscn" id="7_rcx0i"]
 
-[node name="Vehicle" type="MeshInstance3D"]
-transform = Transform3D(-5.46392e-08, 0, -1.25, 0, 1.25, 0, 1.25, 0, -5.46392e-08, 0, 0.0827746, 0)
+[sub_resource type="Gradient" id="Gradient_lvudq"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0.196154, 0.631579)
+colors = PackedColorArray(0, 0.276223, 0.335641, 1, 0.38429, 0.781598, 0.336495, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_d7waw"]
+gradient = SubResource("Gradient_lvudq")
+
+[sub_resource type="Gradient" id="Gradient_6b1aw"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0.333333, 0.581871, 0.774854, 0.903509)
+colors = PackedColorArray(0, 0, 0, 1, 0.099986, 0.099986, 0.099986, 1, 0.521141, 0.521141, 0.521141, 1, 1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_w655a"]
+gradient = SubResource("Gradient_6b1aw")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_d7waw"]
+render_priority = 1
+shader = ExtResource("1_d7waw")
+shader_parameter/in_lightwarp = SubResource("GradientTexture1D_w655a")
+shader_parameter/in_normal = ExtResource("2_d7waw")
+shader_parameter/in_albedo = SubResource("GradientTexture1D_d7waw")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_65sw4"]
+render_priority = 0
+shader = ExtResource("4_s2vxg")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_0emb5"]
+render_priority = -1
+shader = ExtResource("5_iugap")
+shader_parameter/in_velocity = Vector3(0, 0, 5)
+shader_parameter/base_outline_width = 0.0
+shader_parameter/trail_colour = Color(0.17584, 0.32, 0.1504, 1)
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_u34nr"]
+render_priority = -1
+shader = ExtResource("6_u18fp")
+shader_parameter/in_velocity = Vector3(0, 0, -0.03)
+shader_parameter/base_outline_width = 0.3
+shader_parameter/outline_color = Color(0, 0, 0, 1)
+
+[node name="Vehicle" type="Node3D"]
+transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, 0, 0.0827746, 0)
+
+[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.25, 0, 0, 0, 1.25, 0, 0, 0, 1.25, 0, 0, 0)
+layers = 2
+material_override = SubResource("ShaderMaterial_d7waw")
+cast_shadow = 0
 mesh = ExtResource("1_irypj")
+
+[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.25, 0, 0, 0, 1.25, 0, 0, 0, 1.25, 0, 0, 0)
+layers = 2
+material_override = SubResource("ShaderMaterial_65sw4")
+cast_shadow = 0
+mesh = ExtResource("1_irypj")
+skeleton = NodePath("")
+
+[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.25, 0, 0, 0, 1.25, 0, 0, 0, 1.25, 0, 0, 0)
+layers = 4
+material_override = SubResource("ShaderMaterial_0emb5")
+cast_shadow = 0
+mesh = ExtResource("1_irypj")
+skeleton = NodePath("")
+
+[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
+transform = Transform3D(1.25, 0, 0, 0, 1.25, 0, 0, 0, 1.25, 0, 0, 0)
+layers = 2
+material_override = SubResource("ShaderMaterial_u34nr")
+cast_shadow = 0
+mesh = ExtResource("1_irypj")
+skeleton = NodePath("")
+
+[node name="THRUSTERS" type="Node3D" parent="."]
+transform = Transform3D(-1.25, 0, -1.88745e-07, 0, 1.25, 0, 1.88745e-07, 0, -1.25, 0, 0, 0)
+
+[node name="Thruster2" parent="THRUSTERS" instance=ExtResource("7_rcx0i")]
+transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, -1.69514, 0.32477, -7.40971e-08)
