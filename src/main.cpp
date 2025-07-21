@@ -548,7 +548,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			trig->inv_transform = inv_t;
 			trig->transform = inv_t.affine_inverse();
 			trig->half_extents = ext;
-			trig->current_track = current_track;
 			current_track->trigger_colliders[t] = trig;
 		}
 	}

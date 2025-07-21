@@ -166,6 +166,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	get_window().title = "Host"
 	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
 		multiplayer.peer_connected.connect(_on_peer_connected)
 	if !multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
@@ -204,6 +205,7 @@ func join(ip: String, port: int = 27016) -> int:
 	latest_state_tick = -1
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
+	get_window().title = "Client " + str(multiplayer.get_unique_id())
 	return OK
 
 func _on_peer_connected(id: int) -> void:

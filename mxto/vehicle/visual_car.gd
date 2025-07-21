@@ -70,6 +70,7 @@ enum FZ_TC{
 @onready var boost_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D4
 @onready var air_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D5
 @onready var strafe_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D6
+@onready var landing_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D7
 
 var owning_id : int = 0
 var player_settings: Resource
@@ -162,6 +163,7 @@ var car_desired_po := Vector3.ZERO
 var car_old_vel := Vector3.ZERO
 var car_desired_vel := Vector3.ZERO
 
+var car_overlay_colour := Color.BLACK
 var car_material : ShaderMaterial
 var car_outline_material : ShaderMaterial
 var vehicle_main : MeshInstance3D
@@ -192,6 +194,8 @@ func _ready() -> void:
 	terrain_sound.play()
 	strafe_sound.stream = preload("res://sfx/vehicle/strafe.wav")
 	strafe_sound.play()
+	landing_sound.stream = preload("res://sfx/vehicle/landing.wav")
+	landing_sound.stop()
 
 func create_machine_visual_transform():
 	var fVar12_initial_factor := 0.0
@@ -353,7 +357,10 @@ func _physics_process(delta: float) -> void:
 		air_sound.pitch_scale = lerpf(air_sound.pitch_scale, target_pitch, delta * 8)
 	else:
 		air_sound.volume_db = lerpf(air_sound.volume_db, -20, delta * 8)
-	
+	var target_engine_pitch := clampf(remap(base_speed, 2, 10, 0.9, 1.3), 0.9, 1.3)
+	var target_engine_volume := clampf(remap(base_speed, 2, 10, 15, 20), 15, 20)
+	engine_sound.pitch_scale = lerpf(engine_sound.pitch_scale, target_engine_pitch, delta * 8)
+	engine_sound.volume_db = lerpf(engine_sound.volume_db, target_engine_volume, delta * 8)
 	#DebugDraw2D.set_text("vy", velocity.y)
 	
 	if (terrain_state_old & FZ_TERRAIN.RECHARGE) == 0 and (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
@@ -407,7 +414,17 @@ var is_predicted = true
 
 func just_rendered() -> void:
 	is_predicted = false
-	#if (machine_state & FZ_MS.JUST_PRESSED_BOOST) != 0 or (machine_state & FZ_MS.JUST_HIT_DASHPLATE) != 0:
+	if (machine_state & FZ_MS.JUSTLANDED) != 0:
+		landing_sound.stop()
+		landing_sound.play(0.0)
+		
+	if (machine_state & FZ_MS.JUST_PRESSED_BOOST) != 0 or (machine_state & FZ_MS.JUST_HIT_DASHPLATE) != 0:
+		car_overlay_colour += Color.SKY_BLUE * 0.75
+	if (machine_state & FZ_MS.SPINATTACKING) != 0 or (machine_state & FZ_MS.SIDEATTACKING) != 0:
+		car_overlay_colour = car_overlay_colour.lerp(Color.YELLOW * 0.5, 0.5)
+	if (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
+		car_overlay_colour += Color.MAGENTA * 0.018
+	car_overlay_colour = car_overlay_colour.lerp(Color.BLACK, 0.03)
 		#var new_boost_effect := preload("res://asset/effect/boost_effect.tscn").instantiate()
 		#new_boost_effect.position = Vector3(0, 0, -5)
 		#new_boost_effect.life_time = 1000
@@ -510,6 +527,8 @@ func _process(delta: float) -> void:
 		var use_vel_mag := use_vel.length()
 		var final_vel := use_vel_dir * move_toward(use_vel_mag, 0.0, 4) * 0.5
 		car_outline_material.set_shader_parameter("in_velocity", final_vel + use_basis_physical.basis.z * 0.01)
+		car_outline_material.set_shader_parameter("overlay_colour", Color(0.5, 0.7, 1.0) * boost_frames * 0.005)
+		car_material.set_shader_parameter("in_overlay_colour", car_overlay_colour)
 		if height_above_track > 0.01:
 			vehicle_shadow.visible = true
 			var use_transform := vehicle_main.global_transform
@@ -521,7 +540,7 @@ func _process(delta: float) -> void:
 		else:
 			vehicle_shadow.visible = false
 		for node:VehicleThruster in vehicle_thrusters.get_children():
-			node.adjust_thruster(input_accel, velocity)
+			node.adjust_thruster(input_accel + sqrt(boost_turbo) * 0.25, velocity)
 
 	if (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
 		boost_electricity.boosting = true
