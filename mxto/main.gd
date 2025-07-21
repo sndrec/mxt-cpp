@@ -278,6 +278,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		car.game_manager = self
 		if idx < racer_settings.size():
 			car.player_settings = racer_settings[idx]
+			car.name_label.text = racer_settings[idx].username
 		idx += 1
 	for p in players:
 		p.queue_free()
@@ -297,6 +298,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if local_player_index == -1:
 		spectator_node = spectator_scene.instantiate()
 		add_child(spectator_node)
+	else:
+		for car:VisualCar in car_node_container.get_children():
+			car.name_label.queue_free()
 	for n in chosen_defs.size():
 		var def = chosen_defs[n]
 		var bytes := FileAccess.get_file_as_bytes(def.car_definition)

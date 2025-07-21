@@ -130,4 +130,12 @@ transform = Transform3D(-3, 2.76542e-08, -4.52142e-07, 0, 2.9944, 0.183146, 4.52
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 emitting = false
 
+[node name="NameLabel" type="Label3D" parent="CarTransform"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6, 0)
+pixel_size = 0.0015
+billboard = 1
+no_depth_test = true
+fixed_size = true
+text = "ROBBYDUDE"
+
 [node name="BoostElectricity" parent="." instance=ExtResource("5_ek4m1")]

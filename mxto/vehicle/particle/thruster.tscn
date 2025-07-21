@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cishjumsew5h3" path="res://vehicle/particle/thruster.gd" id="1_brhvl"]
 [ext_resource type="Texture2D" uid="uid://25lwsbao0jyg" path="res://asset/beautifulstar.png" id="1_q4p32"]
-[ext_resource type="Material" uid="uid://2n56o61827p1" path="res://vehicle/particle/thruster_particle_pass_2.tres" id="2_73f3u"]
+[ext_resource type="Material" uid="uid://cl5x8e7iljmdr" path="res://vehicle/particle/thruster_particle_pass_2.tres" id="2_73f3u"]
 
 [sub_resource type="Curve" id="Curve_brhvl"]
 _data = [Vector2(0, 0.708707), 0.0, 2.53412, 0, 0, Vector2(1, 0.34251), -1.35172, 0.0, 0, 0]
@@ -11,7 +11,7 @@ point_count = 2
 [sub_resource type="CurveTexture" id="CurveTexture_ryscc"]
 curve = SubResource("Curve_brhvl")
 
-[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_6k8wf"]
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_73f3u"]
 direction = Vector3(0, 0, 1)
 spread = 20.0
 initial_velocity_min = 10.0
@@ -141,7 +141,7 @@ amount = 32
 lifetime = 0.12
 fixed_fps = 60
 local_coords = true
-process_material = SubResource("ParticleProcessMaterial_6k8wf")
+process_material = SubResource("ParticleProcessMaterial_73f3u")
 draw_pass_1 = SubResource("SphereMesh_mlb58")
 
 [node name="Sprite3D" type="Sprite3D" parent="."]
@@ -158,11 +158,11 @@ texture = ExtResource("1_q4p32")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.852505)
 layers = 2
 light_color = Color(0.553758, 0.856327, 0.999059, 1)
-light_energy = 4.68457
+light_energy = 5.24282
 light_indirect_energy = 0.0
 light_volumetric_fog_energy = 0.0
 light_specular = 0.0
 light_bake_mode = 0
 light_cull_mask = 2
 omni_range = 64.0
-omni_attenuation = 1.68457
+omni_attenuation = 2.24282
