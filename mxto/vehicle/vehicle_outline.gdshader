@@ -4,6 +4,7 @@ render_mode unshaded, skip_vertex_transform, cull_back, depth_draw_always, world
 
 uniform vec3 in_velocity;
 uniform float base_outline_width;
+uniform vec3 trail_colour : source_color;
 varying flat vec2	v_line_o;			// screen-space origin  (0-1)
 varying flat vec2	v_line_d;			// screen-space direction tail-o
 varying float use_outline_width;
@@ -77,6 +78,6 @@ void fragment() {
 		vec2 uv			= vec2(x, t);
 		float alpha_scale = min(0.0, length(in_velocity) * 0.01);
 		//ALPHA = min(1.0, alpha_scale + pow(1.0 - t * 0.7, 4.0));
-		ALBEDO = vec3(pow(clamp(uv.y, 0.0, 1.0), 3.0));
+		ALBEDO = trail_colour;
 	}
 }

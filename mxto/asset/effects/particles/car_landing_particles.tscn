@@ -1,0 +1,66 @@
+[gd_scene load_steps=11 format=3 uid="uid://7vqcg6kfw0ki"]
+
+[ext_resource type="Texture2D" uid="uid://c4kqjfdcchipy" path="res://asset/flame_double.png" id="2_sacva"]
+
+[sub_resource type="Curve" id="Curve_pw8jw"]
+_data = [Vector2(0.166667, 0), 0.0, 0.0, 0, 0, Vector2(0.242063, 0.661345), 1.30402, 1.30402, 0, 0, Vector2(0.75, 1), 0.0, 0.0, 0, 0, Vector2(1, 0), -6.11471, 0.0, 0, 0]
+point_count = 4
+
+[sub_resource type="CurveTexture" id="CurveTexture_qq51t"]
+curve = SubResource("Curve_pw8jw")
+
+[sub_resource type="Curve" id="Curve_834sy"]
+_data = [Vector2(0.484127, 0.497479), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="Curve" id="Curve_g7e27"]
+_limits = [0.0, 2.0, 0.0, 1.0]
+_data = [Vector2(0, 1.00464), 0.0, -3.69971, 0, 0]
+point_count = 1
+
+[sub_resource type="Curve" id="Curve_xypjl"]
+_data = [Vector2(1, 0.984919), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="CurveXYZTexture" id="CurveXYZTexture_xg7o1"]
+curve_x = SubResource("Curve_834sy")
+curve_y = SubResource("Curve_g7e27")
+curve_z = SubResource("Curve_xypjl")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_6pp46"]
+emission_shape = 3
+emission_box_extents = Vector3(0.05, 0.05, 0)
+direction = Vector3(0, 0.25, -1)
+spread = 0.0
+initial_velocity_min = 30.0
+initial_velocity_max = 30.0
+gravity = Vector3(0, 0, -350)
+damping_min = 400.0
+damping_max = 400.0
+scale_curve = SubResource("CurveXYZTexture_xg7o1")
+alpha_curve = SubResource("CurveTexture_qq51t")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_pw8jw"]
+transparency = 2
+alpha_scissor_threshold = 0.598
+alpha_antialiasing_mode = 0
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("2_sacva")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_0yyls"]
+material = SubResource("StandardMaterial3D_pw8jw")
+size = Vector2(4, 8)
+
+[node name="LandingParticles" type="GPUParticles3D"]
+layers = 2
+emitting = false
+amount = 45
+lifetime = 0.35
+interp_to_end = 0.05
+one_shot = true
+randomness = 1.0
+fixed_fps = 60
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_6pp46")
+draw_pass_1 = SubResource("PlaneMesh_0yyls")

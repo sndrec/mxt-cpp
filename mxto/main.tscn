@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=23 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
@@ -7,7 +7,10 @@
 [ext_resource type="Shader" uid="uid://dnikyw812iu2p" path="res://screen_outline.gdshader" id="4_7mycd"]
 [ext_resource type="Texture2D" uid="uid://cejh11h8frbgl" path="res://asset/test_track_2_simple_grid.png" id="5_272bh"]
 [ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
+[ext_resource type="Texture2D" uid="uid://bujpv7r4q1y5p" path="res://asset/debug/sky_tex.png" id="7_4c57u"]
 [ext_resource type="Material" uid="uid://bfxpum1jau64" path="res://asset/debug_track_mat.tres" id="8_5vw27"]
+[ext_resource type="Texture2D" uid="uid://cwt1ro2uibfw5" path="res://asset/debug/hellinheavns.gif" id="10_4c57u"]
+[ext_resource type="Texture2D" uid="uid://c1ykkwsjbxoa0" path="res://asset/debug/twerking-butt.gif" id="11_efxa6"]
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
 viewport_path = NodePath("GameWorld/OutlineViewport")
@@ -26,22 +29,24 @@ resource_local_to_scene = true
 shader = ExtResource("6_5vw27")
 shader_parameter/in_outline_screen_tex = SubResource("ViewportTexture_5vw27")
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_c0w6o"]
-sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
-ground_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
+[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_efxa6"]
+panorama = ExtResource("7_4c57u")
 
 [sub_resource type="Sky" id="Sky_7dlep"]
-sky_material = SubResource("ProceduralSkyMaterial_c0w6o")
+sky_material = SubResource("PanoramaSkyMaterial_efxa6")
 
 [sub_resource type="Environment" id="Environment_52gnn"]
 background_mode = 2
 sky = SubResource("Sky_7dlep")
 tonemap_mode = 2
-glow_enabled = true
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_5vw27"]
 material = ExtResource("8_5vw27")
 size = Vector2(32, 16)
+
+[sub_resource type="Environment" id="Environment_5vw27"]
+
+[sub_resource type="Environment" id="Environment_kek77"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_lquwl"]
 font_size = 72
@@ -243,24 +248,42 @@ transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 
 mesh = SubResource("PlaneMesh_5vw27")
 skeleton = NodePath("")
 
+[node name="Sprite3D" type="Sprite3D" parent="GameWorld/DebugTrackMeshContainer"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -16090, -9174.33, -15259.3)
+pixel_size = 0.0006
+billboard = 1
+fixed_size = true
+texture = ExtResource("10_4c57u")
+
+[node name="Sprite3D2" type="Sprite3D" parent="GameWorld/DebugTrackMeshContainer"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 15143.9, 270.478, 22145.8)
+pixel_size = 0.001
+billboard = 1
+fixed_size = true
+texture = ExtResource("11_efxa6")
+
 [node name="ObjContainer" type="Node3D" parent="GameWorld"]
 
 [node name="ObjViewport" type="SubViewport" parent="GameWorld"]
 transparent_bg = true
 handle_input_locally = false
 scaling_3d_scale = 2.0
+texture_mipmap_bias = -1.0
+anisotropic_filtering_level = 4
 gui_disable_input = true
 canvas_cull_mask = 2147483647
 size = Vector2i(1920, 1080)
 
 [node name="ObjCamera" type="Camera3D" parent="GameWorld/ObjViewport"]
 cull_mask = 2
+environment = SubResource("Environment_5vw27")
 
 [node name="OutlineViewport" type="SubViewport" parent="GameWorld"]
 transparent_bg = true
 handle_input_locally = false
 screen_space_aa = 1
 scaling_3d_scale = 0.5
+texture_mipmap_bias = -1.0
 anisotropic_filtering_level = 0
 canvas_item_default_texture_filter = 2
 canvas_item_default_texture_repeat = 1
@@ -270,6 +293,7 @@ size = Vector2i(1920, 1080)
 
 [node name="OutlineCamera" type="Camera3D" parent="GameWorld/OutlineViewport"]
 cull_mask = 4
+environment = SubResource("Environment_kek77")
 
 [node name="RaceFinishLabel" type="Label" parent="."]
 visible = false
