@@ -21,6 +21,7 @@ var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 var is_server: bool = false
 var listen_server: bool = false
 var player_ids: Array = []
+var spectator_ids: Array = []
 var waiting_peers: Array = []
 var pending_inputs := {}
 var authoritative_inputs := {}
@@ -228,9 +229,10 @@ func _on_peer_disconnected(id: int) -> void:
 		if waiting_peers.has(id):
 			waiting_peers.erase(id)
 			return
-		if not player_ids.has(id):
-			return
-		player_ids.erase(id)
+		if player_ids.has(id):
+			player_ids.erase(id)
+		if spectator_ids.has(id):
+			spectator_ids.erase(id)
 		if last_input_time.has(id):
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
@@ -277,7 +279,7 @@ func start_race(track_index: int, settings: Array) -> void:
 	emit_signal("race_started", track_index, settings)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
-		for id in player_ids:
+		for id in player_ids + spectator_ids:
 			last_input_time[id] = now
 
 func send_start_race(track_index: int, settings: Array) -> void:
@@ -346,6 +348,26 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 			update_player_settings.rpc(settings, id)
 	else:
 		player_settings[id] = settings
+	if id == multiplayer.get_unique_id():
+		if settings.get("spectator", false):
+			desired_ahead_ticks = -5.0
+		else:
+			desired_ahead_ticks = 2.0 if !is_server else (2.0 if listen_server else 0.0)
+	if is_server:
+		var spec = settings.get("spectator", false)
+		if spec:
+			if player_ids.has(id):
+				player_ids.erase(id)
+				spectator_ids.append(id)
+				_update_player_ids.rpc(player_ids)
+				_calc_state_offsets()
+		else:
+			if spectator_ids.has(id):
+				spectator_ids.erase(id)
+			if !player_ids.has(id):
+				player_ids.append(id)
+				_update_player_ids.rpc(player_ids)
+				_calc_state_offsets()
 
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input
@@ -376,6 +398,19 @@ func collect_server_inputs() -> Array:
 
 func collect_client_inputs() -> Array:
 	if game_sim != null and !game_sim.sim_started:
+		return []
+	var my_settings = player_settings.get(multiplayer.get_unique_id(), {})
+	var is_spec = typeof(my_settings) == TYPE_DICTIONARY and my_settings.get("spectator", false)
+	if is_spec:
+		if authoritative_inputs.has(local_tick):
+			var frame = authoritative_inputs[local_tick]
+			authoritative_inputs.erase(local_tick)
+			input_history[local_tick] = frame
+			if input_history.has(local_tick - INPUT_HISTORY_SIZE):
+				input_history.erase(local_tick - INPUT_HISTORY_SIZE)
+			local_tick += 1
+			_adjust_time_scale()
+			return frame
 		return []
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 		if !is_server:
@@ -502,7 +537,7 @@ func post_tick() -> void:
 		var state = server_game_sim.get_state_data(server_tick)
 		var max_ahead := _calc_max_ahead()
 		max_ahead_from_server = max_ahead
-		for id in player_ids:
+		for id in player_ids + spectator_ids:
 			var send_state : PackedByteArray = PackedByteArray()
 			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
 				send_state = state
@@ -517,7 +552,7 @@ func post_tick() -> void:
 						start = k
 					arr.append(authoritative_history[k])
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, null), send_state, target_tick, max_ahead)
+			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
 		server_tick += 1
 		if listen_server:
 			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
@@ -528,7 +563,7 @@ func _idle_broadcast() -> void:
 		return
 	var max_ahead := _calc_max_ahead()
 	max_ahead_from_server = max_ahead
-	for id in player_ids:
+	for id in player_ids + spectator_ids:
 		var ack = authoritative_acks.get(id, -1)
 		var keys := authoritative_history.keys()
 		keys.sort()
@@ -623,6 +658,9 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	for car:VisualCar in game_manager.car_node_container.get_children():
 		car.store_old_pos()
 	input_history[tick] = inputs
+	if authoritative_inputs.has(tick):
+		authoritative_inputs.erase(tick)
+	_recalculate_future_predictions(tick + 1)
 	game_sim.load_state(maxi(latest_state_tick, tick - 1))
 	var current := maxi(latest_state_tick + 1, tick)
 	var old_time := Time.get_ticks_usec()
@@ -637,6 +675,40 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
+
+func _recalculate_future_predictions(start_tick: int) -> void:
+	var tick := start_tick
+	while tick < local_tick:
+		if authoritative_inputs.has(tick):
+			input_history[tick] = authoritative_inputs[tick]
+			authoritative_inputs.erase(tick)
+			tick += 1
+			continue
+		var prev_frame = input_history.get(tick - 1, [])
+		var existing = input_history.get(tick, [])
+		var frame_inputs : Array = []
+		for i in range(player_ids.size()):
+			var pid = player_ids[i]
+			if pid == multiplayer.get_unique_id():
+				var local_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES
+				if existing.size() == player_ids.size():
+					local_bytes = existing[i]
+				frame_inputs.append(local_bytes)
+			else:
+				var prev_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES
+				if prev_frame.size() == player_ids.size():
+					prev_bytes = prev_frame[i]
+				var inp_dict := PlayerInputClass.bytes_to_dict(prev_bytes)
+				inp_dict.strafe_left = lerp(inp_dict.strafe_left, 0.0, 0.25)
+				inp_dict.strafe_right = lerp(inp_dict.strafe_right, 0.0, 0.25)
+				inp_dict.steer_horizontal = lerp(inp_dict.steer_horizontal, 0.0, 0.25)
+				inp_dict.steer_vertical = lerp(inp_dict.steer_vertical, 0.0, 0.25)
+				inp_dict.accelerate = inp_dict.accelerate
+				inp_dict.brake = inp_dict.brake
+				var new_bytes : PackedByteArray = PlayerInputClass.dict_to_bytes(inp_dict)
+				frame_inputs.append(new_bytes)
+		input_history[tick] = frame_inputs
+		tick += 1
 
 func disconnect_from_server() -> void:
 	if multiplayer.multiplayer_peer != null:

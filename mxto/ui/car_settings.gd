@@ -5,6 +5,7 @@ extends Control
 @onready var vehicle_selector: ItemList = $VehicleSelector
 @onready var close_settings: Button = $CloseSettings
 @onready var pilot_name_input: LineEdit = $PilotNameInput
+@onready var spectator_toggle: CheckBox = $SpectatorToggle
 
 var game_manager: GameManager
 var player_settings: PlayerSettings = PlayerSettings.new()
@@ -19,6 +20,7 @@ func _ready() -> void:
 	vehicle_selector.item_selected.connect(_on_vehicle_selected)
 	pilot_name_input.text_changed.connect(_on_name_changed)
 	close_settings.pressed.connect(_on_close_pressed)
+	spectator_toggle.toggled.connect(_on_spectator_toggled)
 
 func _load_car_defs() -> void:
 	if game_manager != null:
@@ -48,6 +50,7 @@ func _update_controls() -> void:
 	machine_setting_slider.value = player_settings.accel_setting * 100.0
 	machine_setting_percent.text = str(roundi(machine_setting_slider.value)) + "%"
 	pilot_name_input.text = player_settings.username
+	spectator_toggle.button_pressed = player_settings.spectator
 	var idx := 0
 	for i in car_defs.size():
 		if car_defs[i].resource_path == player_settings.car_definition_path:
@@ -67,6 +70,9 @@ func _on_vehicle_selected(index: int) -> void:
 
 func _on_name_changed(new_text: String) -> void:
 	player_settings.username = new_text
+
+func _on_spectator_toggled(toggled: bool) -> void:
+	player_settings.spectator = toggled
 
 func _on_close_pressed() -> void:
 	_save_settings()
