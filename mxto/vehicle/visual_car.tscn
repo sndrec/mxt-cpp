@@ -1,7 +1,73 @@
-[gd_scene load_steps=3 format=3 uid="uid://cwuy4ee2yd8sc"]
+[gd_scene load_steps=16 format=3 uid="uid://cwuy4ee2yd8sc"]
 
 [ext_resource type="Script" uid="uid://ce1giyem417b6" path="res://vehicle/visual_car.gd" id="1_7f3vi"]
 [ext_resource type="PackedScene" uid="uid://32t0e0x6ldk1" path="res://ui/race_hud.tscn" id="2_trwkr"]
+[ext_resource type="PackedScene" uid="uid://7vqcg6kfw0ki" path="res://asset/effects/particles/car_landing_particles.tscn" id="3_7f3vi"]
+[ext_resource type="PackedScene" uid="uid://boy1og0xhuefn" path="res://asset/effects/particles/attack_particles.tscn" id="4_0b8fb"]
+[ext_resource type="PackedScene" uid="uid://cr0v8k0h0rb8r" path="res://asset/effect/boost_electricity.tscn" id="5_ek4m1"]
+
+[sub_resource type="Curve" id="Curve_trwkr"]
+_data = [Vector2(0, 0), 0.0, 4.53242, 0, 0, Vector2(1, 0), -3.20433, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_7f3vi"]
+curve = SubResource("Curve_trwkr")
+
+[sub_resource type="Curve" id="Curve_0b8fb"]
+_limits = [0.0, 3.0, 0.0, 1.0]
+_data = [Vector2(0, 0.523455), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="Curve" id="Curve_ek4m1"]
+_limits = [0.0, 5.0, 0.0, 1.0]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(1, 1.6905), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="Curve" id="Curve_hjm5e"]
+_limits = [0.0, 3.0, 0.0, 1.0]
+_data = [Vector2(0, 0.523455), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="CurveXYZTexture" id="CurveXYZTexture_lbgkt"]
+curve_x = SubResource("Curve_0b8fb")
+curve_y = SubResource("Curve_ek4m1")
+curve_z = SubResource("Curve_hjm5e")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_cnuke"]
+particle_flag_align_y = true
+emission_shape = 2
+emission_sphere_radius = 2.0
+orbit_velocity_min = 9.49949e-08
+orbit_velocity_max = 9.49949e-08
+gravity = Vector3(0, 0, 0)
+radial_accel_min = -30.0
+radial_accel_max = -30.0
+tangential_accel_min = -2.23517e-06
+tangential_accel_max = -2.23517e-06
+scale_min = 0.15
+scale_max = 0.25
+scale_curve = SubResource("CurveTexture_7f3vi")
+scale_over_velocity_max = 10.0
+scale_over_velocity_curve = SubResource("CurveXYZTexture_lbgkt")
+color = Color(0.914864, 0, 0.399951, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_trwkr"]
+cull_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(0.43134, 0.43134, 0.43134, 1)
+grow = true
+grow_amount = 0.5
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_asvyg"]
+next_pass = SubResource("StandardMaterial3D_trwkr")
+shading_mode = 0
+vertex_color_use_as_albedo = true
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_4g6c5"]
+material = SubResource("StandardMaterial3D_asvyg")
+radial_segments = 8
+rings = 4
 
 [node name="CarRoot" type="Node3D"]
 process_priority = 1
@@ -40,3 +106,23 @@ unit_size = 1.0
 [node name="AudioStreamPlayer3D6" type="AudioStreamPlayer3D" parent="CarTransform"]
 volume_db = 20.0
 unit_size = 1.0
+
+[node name="RechargeParticles" type="GPUParticles3D" parent="CarTransform"]
+transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)
+layers = 2
+emitting = false
+amount = 32
+lifetime = 0.25
+fixed_fps = 60
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_cnuke")
+draw_pass_1 = SubResource("CapsuleMesh_4g6c5")
+
+[node name="LandingParticles" parent="CarTransform" instance=ExtResource("3_7f3vi")]
+transform = Transform3D(-3, 2.76542e-08, -4.52142e-07, 0, 2.9944, 0.183146, 4.52987e-07, 0.183146, -2.9944, 0, -0.878162, 1.58687)
+
+[node name="AttackParticles" parent="CarTransform" instance=ExtResource("4_0b8fb")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
+emitting = false
+
+[node name="BoostElectricity" parent="." instance=ExtResource("5_ek4m1")]

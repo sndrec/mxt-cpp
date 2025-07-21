@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://by63bk6cuj0rn"]
+
+[ext_resource type="Script" uid="uid://1lyi6gomp4q3" path="res://content/base/effects/collision/DefaultCollision.gd" id="1_isdqm"]
+
+[node name="DefaultCollision" type="Node"]
+script = ExtResource("1_isdqm")

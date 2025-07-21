@@ -3,6 +3,7 @@ class_name VisualCar extends Node3D
 @onready var car_visual : Node3D
 @onready var car_camera: Camera3D = $CarCamera
 var car_definition : CarDefinition
+@onready var recharge_particles: GPUParticles3D = $CarTransform/RechargeParticles
 
 enum FZ_TERRAIN {
 	NORMAL = 0x1,
@@ -103,7 +104,7 @@ var machine_state := 0
 var terrain_state := 0
 var terrain_state_old := 0
 var frames_since_start_2 := 0
-
+var input_accel := 0.0
 
 var track_normal_vis := Vector3.UP
 var track_normal_old_vis := Vector3.UP
@@ -165,6 +166,7 @@ var car_material : ShaderMaterial
 var car_outline_material : ShaderMaterial
 var vehicle_main : MeshInstance3D
 var vehicle_shadow : MeshInstance3D
+var vehicle_thrusters : Node3D
 
 func _ready() -> void:
 	car_visual = car_definition.car_scene.instantiate()
@@ -173,9 +175,11 @@ func _ready() -> void:
 		var main_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_MAIN")
 		car_material = main_mesh.material_override
 		var outline_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_OUTLINE")
+		outline_mesh.material_override = outline_mesh.material_override.duplicate()
 		car_outline_material = outline_mesh.material_override
 		vehicle_shadow = car_visual.get_node("VEHICLE_SHADOW")
 		vehicle_main = car_visual.get_node("VEHICLE_MAIN")
+		vehicle_thrusters = car_visual.get_node("THRUSTERS")
 	air_sound.stream = preload("res://sfx/vehicle/air_1.wav")
 	air_sound.play()
 	thrust_sound.stream = preload("res://sfx/vehicle/thrust_on.wav")
@@ -321,6 +325,10 @@ func damp_basis(a : Basis, b : Basis, lambda : float, dt : float) -> Basis:
 func damp_t3d(a : Transform3D, b : Transform3D, lambda : float, dt : float) -> Transform3D:
 	return a.interpolate_with(b, 1.0 - exp(-lambda * dt))
 
+@onready var attack_particles: GPUParticles3D = $CarTransform/AttackParticles
+@onready var landing_particles: GPUParticles3D = $CarTransform/LandingParticles
+@onready var boost_electricity: BoostElectricity = $BoostElectricity
+
 func _physics_process(delta: float) -> void:
 	create_machine_visual_transform()
 	DebugDraw2D.set_text("turbo", boost_turbo)
@@ -360,6 +368,19 @@ func _physics_process(delta: float) -> void:
 	elif terrain_state == 0:
 		terrain_sound.stop()
 	
+	if (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
+		recharge_particles.emitting = true
+	else:
+		recharge_particles.emitting = false
+	
+	if (machine_state & FZ_MS.SIDEATTACKING) != 0 or (machine_state & FZ_MS.SPINATTACKING) != 0:
+		attack_particles.emitting = true
+	else:
+		attack_particles.emitting = false
+	
+	if (machine_state & FZ_MS.JUSTLANDED) != 0:
+		landing_particles.restart()
+		landing_particles.emitting = true
 	#DebugDraw2D.set_text("input_strafe", input_strafe)
 	
 	if (absf(input_strafe) > 0.05):
@@ -381,6 +402,16 @@ func _physics_process(delta: float) -> void:
 		boost_sound.stop()
 		boost_sound.play(0.0)
 	terrain_state_old = terrain_state
+
+var is_predicted = true
+
+func just_rendered() -> void:
+	is_predicted = false
+	#if (machine_state & FZ_MS.JUST_PRESSED_BOOST) != 0 or (machine_state & FZ_MS.JUST_HIT_DASHPLATE) != 0:
+		#var new_boost_effect := preload("res://asset/effect/boost_effect.tscn").instantiate()
+		#new_boost_effect.position = Vector3(0, 0, -5)
+		#new_boost_effect.life_time = 1000
+		#car_camera.add_child(new_boost_effect)
 
 func _process(delta: float) -> void:
 	frame_accumulation += delta
@@ -471,6 +502,8 @@ func _process(delta: float) -> void:
 				#use_basis = use_basis.rotated(sideways, lerped_curvature * -8000)
 	car_camera.position = (use_car_pos + rollback_offset_error) + use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
 	car_camera.basis = use_cam_basis.rotated(use_cam_basis.x, deg_to_rad(-10))
+	car_camera.near = 0.25
+	car_camera.far = 40000.0
 	if (car_outline_material and is_instance_valid(car_outline_material)):
 		var use_vel := (use_car_pos_old - use_car_pos)
 		var use_vel_dir := use_vel.normalized()
@@ -487,4 +520,14 @@ func _process(delta: float) -> void:
 			vehicle_shadow.global_transform = use_transform
 		else:
 			vehicle_shadow.visible = false
-		
+		for node:VehicleThruster in vehicle_thrusters.get_children():
+			node.adjust_thruster(input_accel, velocity)
+
+	if (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
+		boost_electricity.boosting = true
+		boost_electricity.ground = Plane(track_surface_normal, vehicle_shadow.global_position)
+	else:
+		boost_electricity.boosting = false
+	boost_electricity.tendril_lifetime = remap(speed_kmh, 0, 3000, 0.3, 0.1)
+	boost_electricity.calculate_electricity(delta, car_transform.global_transform)
+	is_predicted = true
