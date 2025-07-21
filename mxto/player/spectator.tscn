@@ -1,8 +1,8 @@
-[gd_scene load_steps=2 format=3]
-[ext_resource path="res://player/spectator.gd" type="Script" id=1]
+[gd_scene load_steps=2 format=3 uid="uid://1yalqersrf1y"]
+
+[ext_resource type="Script" uid="uid://bw25jw61yapeh" path="res://player/spectator.gd" id="1"]
 
 [node name="SpectatorPlayer" type="Node3D"]
-script = ExtResource(1)
+script = ExtResource("1")
 
 [node name="Camera3D" type="Camera3D" parent="."]
-
