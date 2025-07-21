@@ -1,0 +1,37 @@
+[gd_scene load_steps=6 format=3 uid="uid://bo1sdcpvcw8qb"]
+
+[ext_resource type="Script" uid="uid://c7xikfbk0cjej" path="res://content/base/effects/particles/BallSpark.gd" id="1_1t4yl"]
+[ext_resource type="Texture2D" uid="uid://lvlqu7uy3yrb" path="res://content/base/common/sparktex.png" id="2_2wxgn"]
+[ext_resource type="Shader" uid="uid://bkoj81rruiou7" path="res://content/base/shader/ScreenSpaceParticle.gdshader" id="3_ukwum"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vp1gs"]
+render_priority = 0
+shader = ExtResource("3_ukwum")
+shader_parameter/spriteTexture = ExtResource("2_2wxgn")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_3ydeb"]
+material = SubResource("ShaderMaterial_vp1gs")
+size = Vector2(1, 1)
+orientation = 2
+
+[node name="BallSpark" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.391503, -0.901519, 0.395511)
+script = ExtResource("1_1t4yl")
+particleTexture = ExtResource("2_2wxgn")
+particleColor = Vector3(10, 3, 1)
+particleSize = 0.1
+persistence = 0.04
+
+[node name="ParticleMesh" type="MeshInstance3D" parent="."]
+unique_name_in_owner = true
+extra_cull_margin = 1.0
+instance_shader_parameters/currentScreenPos = Vector3(0.391503, -0.901519, -4.60449)
+instance_shader_parameters/oldScreenPos = Vector3(0.730821, -0.937046, -4.21125)
+instance_shader_parameters/particleModulate = Vector3(2.56827, 0.770481, 0.256827)
+instance_shader_parameters/spriteSize = 0.1
+mesh = SubResource("PlaneMesh_3ydeb")
+
+[node name="SparkCast" type="RayCast3D" parent="."]
+unique_name_in_owner = true
+enabled = false
+collision_mask = 3

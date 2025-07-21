@@ -636,6 +636,7 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	game_sim.render_gamesim()
 	for car:VisualCar in game_manager.car_node_container.get_children():
 		car.calculate_error()
+		car.just_rendered()
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
@@ -665,6 +666,7 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	game_sim.render_gamesim()
 	for car:VisualCar in game_manager.car_node_container.get_children():
 		car.calculate_error()
+		car.just_rendered()
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time

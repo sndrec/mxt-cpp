@@ -395,6 +395,8 @@ func _physics_process(delta: float) -> void:
 		else:
 			_simulate_single_tick()
 		game_sim.render_gamesim()
+		for car:VisualCar in car_node_container.get_children():
+			car.just_rendered()
 		_check_race_finished()
 
 func _simulate_host_frame():

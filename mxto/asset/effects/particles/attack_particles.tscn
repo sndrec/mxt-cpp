@@ -1,0 +1,52 @@
+[gd_scene load_steps=5 format=3 uid="uid://boy1og0xhuefn"]
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_0de4f"]
+particle_flag_align_y = true
+particle_flag_damping_as_friction = true
+emission_shape = 2
+emission_sphere_radius = 2.0
+spread = 0.0
+gravity = Vector3(0, 0, 0)
+radial_accel_min = -400.0
+radial_accel_max = -400.0
+tangential_accel_min = 2500.0
+tangential_accel_max = 2500.0
+damping_min = 30.0
+damping_max = 30.0
+hue_variation_min = -2.23517e-08
+hue_variation_max = -2.23517e-08
+turbulence_enabled = true
+turbulence_noise_strength = 5.0
+turbulence_noise_scale = 0.5
+turbulence_noise_speed_random = 4.0
+turbulence_initial_displacement_min = 0.200001
+turbulence_initial_displacement_max = 0.200001
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8a5j7"]
+cull_mode = 1
+shading_mode = 0
+albedo_color = Color(1, 0.419764, 0.19044, 1)
+grow = true
+grow_amount = 0.033
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_nq4t6"]
+next_pass = SubResource("StandardMaterial3D_8a5j7")
+cull_mode = 2
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(1, 0.847, 0.49, 1)
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_nq4t6"]
+material = SubResource("StandardMaterial3D_nq4t6")
+radius = 0.063
+height = 0.5
+
+[node name="GPUParticles3D" type="GPUParticles3D"]
+layers = 2
+cast_shadow = 0
+amount = 32
+lifetime = 0.25
+fixed_fps = 120
+local_coords = true
+process_material = SubResource("ParticleProcessMaterial_0de4f")
+draw_pass_1 = SubResource("CapsuleMesh_nq4t6")
