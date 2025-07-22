@@ -845,14 +845,57 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 }
 
 void GameSim::fix_pointers() {
-	if (!sim_started || !cars) {
-		return;
-	}
-	for (int i = 0; i < num_cars; ++i) {
-		cars[i].mtxa = &mtxa;
-		cars[i].current_track = current_track;
-		if (car_properties_array) {
-			cars[i].car_properties = &car_properties_array[i];
-		}
-	}
+        if (!sim_started || !cars) {
+                return;
+        }
+        for (int i = 0; i < num_cars; ++i) {
+                cars[i].mtxa = &mtxa;
+                cars[i].current_track = current_track;
+                if (car_properties_array) {
+                        cars[i].car_properties = &car_properties_array[i];
+                }
+        }
+
+        if (current_track && current_track->trigger_colliders) {
+                for (int i = 0; i < current_track->num_trigger_colliders; ++i) {
+                        TriggerCollider* trig = current_track->trigger_colliders[i];
+
+                        TRIGGER_TYPE::TYPE type = trig->type;
+                        godot::Transform3D transform = trig->transform;
+                        godot::Vector3 half_extents = trig->half_extents;
+                        godot::Transform3D inv_transform = trig->inv_transform;
+                        int seg_idx = trig->segment_index;
+                        int cp_idx = trig->checkpoint_index;
+                        bool exploded = false;
+                        if (type == TRIGGER_TYPE::MINE) {
+                                exploded = static_cast<Mine*>(trig)->exploded;
+                        }
+
+                        switch (type) {
+                        case TRIGGER_TYPE::DASHPLATE:
+                                new (trig) Dashplate();
+                                break;
+                        case TRIGGER_TYPE::JUMPPLATE:
+                                new (trig) Jumpplate();
+                                break;
+                        case TRIGGER_TYPE::MINE:
+                                new (trig) Mine();
+                                break;
+                        default:
+                                new (trig) TriggerCollider();
+                                break;
+                        }
+
+                        trig->transform = transform;
+                        trig->half_extents = half_extents;
+                        trig->inv_transform = inv_transform;
+                        trig->segment_index = seg_idx;
+                        trig->checkpoint_index = cp_idx;
+                        if (type == TRIGGER_TYPE::MINE) {
+                                static_cast<Mine*>(trig)->exploded = exploded;
+                        }
+
+                        current_track->trigger_colliders[i] = trig;
+                }
+        }
 }

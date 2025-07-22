@@ -186,6 +186,7 @@ func _ready() -> void:
 		vehicle_shadow = car_visual.get_node("VEHICLE_SHADOW")
 		vehicle_main = car_visual.get_node("VEHICLE_MAIN")
 		vehicle_thrusters = car_visual.get_node("THRUSTERS")
+	await get_tree().create_timer(2.0).timeout
 	air_sound.stream = preload("res://sfx/vehicle/air_1.wav")
 	air_sound.play()
 	thrust_sound.stream = preload("res://sfx/vehicle/thrust_on.wav")

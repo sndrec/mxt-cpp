@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=20 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
@@ -8,7 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://cejh11h8frbgl" path="res://asset/test_track_2_simple_grid.png" id="5_272bh"]
 [ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
 [ext_resource type="Texture2D" uid="uid://bujpv7r4q1y5p" path="res://asset/debug/sky_tex.png" id="7_4c57u"]
-[ext_resource type="Material" uid="uid://bfxpum1jau64" path="res://asset/debug_track_mat.tres" id="8_5vw27"]
+[ext_resource type="ArrayMesh" uid="uid://cpxafy37lhrin" path="res://track/beepers_track/track.obj" id="9_kek77"]
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
 viewport_path = NodePath("GameWorld/OutlineViewport")
@@ -37,10 +37,6 @@ sky_material = SubResource("PanoramaSkyMaterial_efxa6")
 background_mode = 2
 sky = SubResource("Sky_7dlep")
 tonemap_mode = 2
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_5vw27"]
-material = ExtResource("8_5vw27")
-size = Vector2(32, 16)
 
 [sub_resource type="Environment" id="Environment_5vw27"]
 
@@ -111,7 +107,7 @@ offset_right = 150.0
 offset_bottom = -74.0
 grow_horizontal = 2
 grow_vertical = 2
-text = "127.0.0.1"
+text = "99.248.53.136"
 
 [node name="JoinButton" type="Button" parent="Control"]
 layout_mode = 1
@@ -244,7 +240,7 @@ metadata/_custom_type_script = "uid://odaiawvcj4yf"
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0)
 
 [node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
-mesh = SubResource("PlaneMesh_5vw27")
+mesh = ExtResource("9_kek77")
 skeleton = NodePath("")
 
 [node name="ObjContainer" type="Node3D" parent="GameWorld"]

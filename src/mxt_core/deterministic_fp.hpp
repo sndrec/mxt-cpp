@@ -32,7 +32,8 @@ namespace deterministic_fp {
 			+ r2 * (-1.666665710e-1f
 			+ r2 * (8.332996250e-3f
 			+ r2 * (-1.951529589e-4f
-			+ r2 * 2.592075552e-6f))));
+			+ r2 * (2.592075552e-6f
+			+ r2 * -2.392093030e-8f)))));
 	}
 
 	inline float poly_cos(float r) {
@@ -41,7 +42,8 @@ namespace deterministic_fp {
 			+ r2 * (-0.5f
 			+ r2 * (4.166664568e-2f
 			+ r2 * (-1.388731625e-3f
-			+ r2 * 2.443315711e-5f)));
+			+ r2 * (2.443315711e-5f
+			+ r2 * -3.087317748e-7f))));
 	}
 
 	inline float sinf(float x) {
