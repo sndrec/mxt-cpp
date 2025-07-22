@@ -14,5 +14,6 @@ func instantiate_cars(definitions: Array, peer_ids: Array, local_index: int = 0)
 		add_child(new_car)
 		if i == local_index:
 			new_car.car_camera.make_current()
+			new_car.name_label.queue_free()
 		else:
 			new_car.race_hud.queue_free()
