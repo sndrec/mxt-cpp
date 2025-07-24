@@ -1,4 +1,4 @@
-[gd_scene load_steps=20 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=19 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
@@ -7,7 +7,6 @@
 [ext_resource type="Shader" uid="uid://dnikyw812iu2p" path="res://screen_outline.gdshader" id="4_7mycd"]
 [ext_resource type="Texture2D" uid="uid://cejh11h8frbgl" path="res://asset/test_track_2_simple_grid.png" id="5_272bh"]
 [ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
-[ext_resource type="Texture2D" uid="uid://bujpv7r4q1y5p" path="res://asset/debug/sky_tex.png" id="7_4c57u"]
 [ext_resource type="ArrayMesh" uid="uid://cpxafy37lhrin" path="res://track/beepers_track/track.obj" id="9_kek77"]
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
@@ -27,11 +26,18 @@ resource_local_to_scene = true
 shader = ExtResource("6_5vw27")
 shader_parameter/in_outline_screen_tex = SubResource("ViewportTexture_5vw27")
 
-[sub_resource type="PanoramaSkyMaterial" id="PanoramaSkyMaterial_efxa6"]
-panorama = ExtResource("7_4c57u")
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
+sky_top_color = Color(0.8, 0.8, 0.8, 1)
+sky_horizon_color = Color(0.500225, 0.510306, 0.526221, 1)
+sky_curve = 0.487351
+ground_bottom_color = Color(0.12, 0.12, 0.12, 1)
+ground_horizon_color = Color(0.501961, 0.509804, 0.52549, 1)
+ground_curve = 0.251068
+sun_angle_max = 0.0
+sun_curve = 0.0230838
 
 [sub_resource type="Sky" id="Sky_7dlep"]
-sky_material = SubResource("PanoramaSkyMaterial_efxa6")
+sky_material = SubResource("ProceduralSkyMaterial_5vw27")
 
 [sub_resource type="Environment" id="Environment_52gnn"]
 background_mode = 2
@@ -261,7 +267,6 @@ environment = SubResource("Environment_5vw27")
 transparent_bg = true
 handle_input_locally = false
 screen_space_aa = 1
-scaling_3d_scale = 0.5
 anisotropic_filtering_level = 0
 canvas_item_default_texture_filter = 2
 canvas_item_default_texture_repeat = 1

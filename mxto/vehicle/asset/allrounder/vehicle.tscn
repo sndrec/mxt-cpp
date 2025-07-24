@@ -40,7 +40,7 @@ shader = ExtResource("4_ysk1q")
 render_priority = -1
 shader = ExtResource("5_aiq2p")
 shader_parameter/in_velocity = Vector3(0, 0, 3.09)
-shader_parameter/base_outline_width = 0.0
+shader_parameter/base_outline_width = 1.0
 shader_parameter/trail_colour = Color(0.00559999, 0.0833467, 0.28, 1)
 shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 
@@ -48,8 +48,8 @@ shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 render_priority = -1
 shader = ExtResource("6_m83ry")
 shader_parameter/in_velocity = Vector3(0, 0, -0.03)
-shader_parameter/base_outline_width = 0.3
-shader_parameter/outline_color = Color(0, 0, 0, 1)
+shader_parameter/base_outline_width = 1.0
+shader_parameter/outline_color = Color(0.00559999, 0.0833467, 0.28, 1)
 
 [node name="MeshInstance3D" type="Node3D"]
 

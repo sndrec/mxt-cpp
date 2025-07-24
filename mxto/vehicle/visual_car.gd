@@ -552,7 +552,7 @@ func _process(delta: float) -> void:
 		else:
 			vehicle_shadow.visible = false
 		for node:VehicleThruster in vehicle_thrusters.get_children():
-			node.adjust_thruster(input_accel + sqrt(boost_turbo) * 0.25, velocity)
+			node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
 
 	if (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
 		boost_electricity.boosting = true
@@ -562,3 +562,4 @@ func _process(delta: float) -> void:
 	boost_electricity.tendril_lifetime = remap(speed_kmh, 0, 3000, 0.3, 0.1)
 	boost_electricity.calculate_electricity(delta, car_transform.global_transform)
 	is_predicted = true
+	DebugDraw2D.set_text("current_checkpoint", current_checkpoint)

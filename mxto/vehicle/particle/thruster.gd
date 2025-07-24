@@ -34,4 +34,16 @@ func _process(delta: float) -> void:
 	var light_factor = remap(sin(Time.get_ticks_msec() * 0.001 * 120), -PI, PI, 0.0, 1.0)
 	light.light_energy = remap(light_factor, 0, 1, 4.0, 6.0) * current_thrust
 	light.omni_attenuation = remap(light_factor, 0, 1, 1.0, 3.0) * current_thrust
-	#print(current_thrust)
+	var thrust_extra = maxf(0.0, current_thrust - 1.0)
+	process_mat.scale_max = 0.8 + thrust_extra * 2.5
+	process_mat.scale_min = 0.6 + thrust_extra
+	process_mat.spread = minf(10.0 + thrust_extra * 60, 50)
+	process_mat.initial_velocity_min = minf(10.0 + thrust_extra * 5.0, 40)
+	process_mat.initial_velocity_max = minf(20.0 + thrust_extra * 10.0, 80)
+	process_mat.damping_min = maxf(500 - thrust_extra * 1000, 200)
+	process_mat.damping_max = maxf(500 - thrust_extra * 1000, 200)
+	process_mat.radial_accel_min = maxf(300 - thrust_extra * 500, 50)
+	process_mat.radial_accel_max = maxf(300 - thrust_extra * 500, 50)
+	process_mat.gravity = Vector3(0, 0, maxf(0.0, 200 - thrust_extra * 100))
+	#if thrust_extra > 0.0:
+		#print(thrust_extra)

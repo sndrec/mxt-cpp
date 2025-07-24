@@ -52,10 +52,10 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 	godot::Vector3 p2 = cp->end_plane.project(point);
 	float cp_t = get_closest_t_on_segment(point, p1, p2);
 	cp_t = std::clamp(cp_t, 0.0f, 1.0f);
-       godot::Basis basis;
-       basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
-       basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
-       basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
+	godot::Basis basis;
+	basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
+	basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
+	basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
 	godot::Vector3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
 	godot::Plane sep_x_plane(basis[0], midpoint);
 	godot::Plane sep_y_plane(basis[1], midpoint);
@@ -65,9 +65,19 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 	float ty = sep_y_plane.distance_to(point) * y_r;
 	float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
 	spatial_t = godot::Vector3(tx, ty, tz);
-	bool y_less_than_x = y_r > 0.5f;
+
+	bool y_less_than_x = y_r > 0.2f;
 	bool is_open = false;
 	bool use_top_half = false;
+
+	DEBUG::disp_text("x_r", x_r);
+	DEBUG::disp_text("y_r", y_r);
+	DEBUG::disp_text("tx", tx);
+	DEBUG::disp_text("ty", ty);
+	DEBUG::disp_text("tz", tz);
+	DEBUG::disp_text("y_less_than_x", y_less_than_x);
+	DEBUG::disp_text("is_open", is_open);
+	DEBUG::disp_text("use_top_half", use_top_half);
 
 	// Check for open road shape
 	RoadShape *shape = segments[cp->road_segment].road_shape;
@@ -78,17 +88,26 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 		is_open = true;
 		use_top_half = false;
 	}
-
 	if (is_open && y_less_than_x) {
-		float openness = shape->openness->sample(tz);
-		if (openness <= 0.50001f) {
-			float tx_clamped = std::clamp(tx, -1.0f, 1.0f);
-			float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
-			if (!use_top_half)
-				y_val = -y_val;
-			spatial_t.y = y_val;
+		if (tx > -1.0001 && tx < 1.0001)
+		{
+			float openness = shape->openness->sample(tz);
+			if (openness <= 0.50001f) {
+				float tx_clamped = std::clamp(tx, -0.99f, 0.99f);
+				float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
+				if (!use_top_half)
+					y_val = -y_val;
+				spatial_t.y = y_val;
+			}
+		}
+		else
+		{
+			road_t.x = -1000.0;
+			return;
 		}
 	}
+	DEBUG::disp_text("tx", tx);
+	DEBUG::disp_text("spatial_t.y", spatial_t.y);
 	segments[cp->road_segment].road_shape->find_t_from_relative_pos(road_t, spatial_t);
 	segments[cp->road_segment].road_shape->get_oriented_transform_at_time(out_transform, road_t);
 }
@@ -128,11 +147,10 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
 
 	RoadShape *shape = track->segments[cp->road_segment].road_shape;
 
-	bool y_less_than_x = y_r > 0.5f;
+	bool y_less_than_x = y_r > 0.2f;
 	bool is_open = false;
 	bool use_top_half = false;
 
-	// Check for open road shape
 	if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
 		is_open = true;
 		use_top_half = true;
@@ -140,26 +158,24 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
 		is_open = true;
 		use_top_half = false;
 	}
-	//DEBUG::disp_text("spatial_t_old", spatial_t);
-	//DEBUG::disp_text("y_r", y_r);
-	//DEBUG::disp_text("x_r", x_r);
-	//DEBUG::disp_text("is_open", is_open);
-	//DEBUG::disp_text("use_top_half", use_top_half);
-
 	if (is_open && y_less_than_x) {
-		float openness = shape->openness->sample(tz);
-		//DEBUG::disp_text("openness", openness);
-		if (openness <= 0.50001f) {
-			float tx_clamped = std::clamp(tx, -1.0f, 1.0f);
-			//DEBUG::disp_text("tx_clamped", tx_clamped);
-			float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
-			//DEBUG::disp_text("y_val", y_val);
-			if (!use_top_half)
-				y_val = -y_val;
-			spatial_t.y = y_val;
+		if (tx > -1.0001 && tx < 1.0001)
+		{
+			float openness = shape->openness->sample(tz);
+			if (openness <= 0.50001f) {
+				float tx_clamped = std::clamp(tx, -0.99f, 0.99f);
+				float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
+				if (!use_top_half)
+					y_val = -y_val;
+				spatial_t.y = y_val;
+			}
+		}
+		else
+		{
+			road_t.x = -1000.0;
+			return;
 		}
 	}
-	//DEBUG::disp_text("spatial_t", spatial_t);
 
 	shape->find_t_from_relative_pos(road_t, spatial_t);
 }
@@ -203,6 +219,10 @@ static void cast_segment_fast(const CastParams  &params,
 
 	godot::Vector2  road_t_sample_raw;  godot::Vector3 spatial_t_sample;
 	convert_point_to_road(track, use_idx, sample_pt, road_t_sample_raw, spatial_t_sample);
+	if (road_t_sample_raw.x == -1000.0)
+	{
+		return;
+	}
 
 	godot::Transform3D surf;        // THE ONLY SURFACE FETCH
 	//if (oriented)
@@ -227,6 +247,10 @@ static void cast_segment_fast(const CastParams  &params,
 
 			godot::Vector2 road_t_hit_raw;  godot::Vector3 spatial_t_hit;
 			convert_point_to_road(track, use_idx, hit_point, road_t_hit_raw, spatial_t_hit);
+			if (road_t_hit_raw.x == -1000.0)
+			{
+				return;
+			}
 
 			if ((road_t_hit_raw.x <= 1.0f && road_t_hit_raw.x > -1.0f) && ((params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0 || ray.dot(surf_n) <= 0.0f)) {
 				const float dist = t * ray.length();
@@ -310,6 +334,10 @@ static void cast_segment_fast(const CastParams  &params,
 
 		godot::Vector2 road_t_hit_raw;  godot::Vector3 spatial_t_hit;
 		convert_point_to_road(track, use_idx, hit, road_t_hit_raw, spatial_t_hit);
+		if (road_t_hit_raw.x == -1000.0)
+		{
+			continue;
+		}
 
 		const float vdist = (hit - surf.origin).dot(surf_n);        // height above track
 		if (vdist < 0.0f || vdist > side.height * root_t.scale.y)

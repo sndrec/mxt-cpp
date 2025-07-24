@@ -106,11 +106,17 @@ public:
 
 		checkpoint_stack[stack_top++] = start_idx;
 
+		int check_count = 0;
+
 		while (stack_top > 0) {
 			int idx = checkpoint_stack[--stack_top];
 			if (visit_stamp[idx] == visit_gen)
 				continue;
 			visit_stamp[idx] = visit_gen;
+
+			check_count++;
+			if (check_count > 16)
+				break;
 
 			CollisionCheckpoint &cp = checkpoints[idx];
 			bool passed_start = cp.start_plane.is_point_over(in_point);
@@ -121,9 +127,7 @@ public:
 				candidate_scratch[num_valid++] = idx;
 			}
 			if (num_valid == 8)
-			{
 				break;
-			}
 
 			for (int i = 0; i < cp.num_neighboring_checkpoints; i++) {
 				int neighbor = cp.neighboring_checkpoints[i];
