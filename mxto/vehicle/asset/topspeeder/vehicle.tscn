@@ -30,6 +30,7 @@ shader = ExtResource("1_d7waw")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_w655a")
 shader_parameter/in_normal = ExtResource("2_d7waw")
 shader_parameter/in_albedo = SubResource("GradientTexture1D_d7waw")
+shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_65sw4"]
 render_priority = 0
@@ -39,15 +40,16 @@ shader = ExtResource("4_s2vxg")
 render_priority = -1
 shader = ExtResource("5_iugap")
 shader_parameter/in_velocity = Vector3(0, 0, 5)
-shader_parameter/base_outline_width = 0.0
+shader_parameter/base_outline_width = 1.0
 shader_parameter/trail_colour = Color(0.17584, 0.32, 0.1504, 1)
+shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_u34nr"]
 render_priority = -1
 shader = ExtResource("6_u18fp")
 shader_parameter/in_velocity = Vector3(0, 0, -0.03)
-shader_parameter/base_outline_width = 0.3
-shader_parameter/outline_color = Color(0, 0, 0, 1)
+shader_parameter/base_outline_width = 1.0
+shader_parameter/outline_color = Color(0.17584, 0.32, 0.1504, 1)
 
 [node name="Vehicle" type="Node3D"]
 transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, 0, 0.0827746, 0)

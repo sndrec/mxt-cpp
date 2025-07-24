@@ -21,8 +21,8 @@ var array_mesh: ArrayMesh
 var electricity_material: ShaderMaterial
 
 func _ready() -> void:
-	tendrils.resize(64)
-	tendril_start_times.resize(64)
+	tendrils.resize(32)
+	tendril_start_times.resize(32)
 	mesh_instance.mesh = mesh_instance.mesh.duplicate(true)
 	array_mesh = mesh_instance.mesh
 	electricity_material = mesh_instance.material_override
@@ -62,7 +62,7 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 	# --- Tendril generation logic (UNCHANGED) ---
 	if boosting:
 		var num_tendrils_to_spawn := maxf(1.0, remap(tendril_lifetime, 0.25, 0.05, 1.0, 3.0))
-		queued_tendrils += num_tendrils_to_spawn * delta * 60.0
+		queued_tendrils += num_tendrils_to_spawn * delta * 30.0
 		for n in floori(queued_tendrils):
 			queued_tendrils -= 1.0
 			last_tendril = cur_time
@@ -80,7 +80,7 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 					new_tendril[i] += Vector3(randf_range(-0.333, 0.333), randf_range(-0.333, 0.333), randf_range(-0.333, 0.333))
 			tendrils[tendril_index] = new_tendril
 			tendril_start_times[tendril_index] = cur_time
-			tendril_index = (tendril_index + 1) % 63
+			tendril_index = (tendril_index + 1) % 31
 	
 	# --- Mesh Generation ---
 	var vertices = PackedVector3Array()

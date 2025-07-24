@@ -1869,7 +1869,7 @@ int PhysicsCar::update_machine_corners() {
 	mtxa->push();
 	mtxa->assign(basis_physical);
 	mtxa->cur->origin = position_current;
-	int use_cp_old = current_track->get_best_checkpoint(position_old, current_checkpoint);
+	int use_cp_old = current_track->get_best_checkpoint(position_old, current_collision_checkpoint);
 	bool old_valid = use_cp_old != -1;
 	{
 		godot::Vector2 use_t;
@@ -1894,6 +1894,7 @@ int PhysicsCar::update_machine_corners() {
 						any_corner_hit = true;
 						depenetration += d;
 						collision_push_track += d;
+						current_checkpoint = use_cp_old;
 					}
 				}
 				TrackSegment *old_seg = &current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
@@ -1959,7 +1960,7 @@ int PhysicsCar::update_machine_corners() {
 					}
 				}
 			}
-			int use_cp_new = current_track->get_best_checkpoint(position_current + depenetration, current_checkpoint);
+			int use_cp_new = current_track->get_best_checkpoint(position_current + depenetration, current_collision_checkpoint);
 			bool new_valid = use_cp_new != -1;
 			if (new_valid)
 			{
@@ -1977,6 +1978,7 @@ int PhysicsCar::update_machine_corners() {
 						any_corner_hit = true;
 						depenetration += d;
 						collision_push_track += d;
+						current_checkpoint = use_cp_new;
 					}
 				}
 				TrackSegment *new_seg = &current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
@@ -2449,7 +2451,13 @@ void PhysicsCar::handle_checkpoints()
 
 	uint8_t prev_lap = lap;
 
-	int found = current_track->get_best_checkpoint(position_current);
+	int found;
+	found = current_track->get_best_checkpoint(position_current, current_checkpoint);
+	current_collision_checkpoint = current_track->get_best_checkpoint(position_current);
+	if (found == -1)
+	{
+		found = current_collision_checkpoint;
+	}
 	//DEBUG::disp_text("current checkpoint", found);
 	//for (int i = 0; i < current_track->checkpoints[found].num_neighboring_checkpoints; i++)
 	//{
