@@ -154,6 +154,9 @@ godot::Vector3 PhysicsCar::prepare_machine_frame()
 	} else {
 		car_hit_invincibility -= 1;
 	}
+	if (breakdown_frame_counter > 0){
+		breakdown_frame_counter -= 1;
+	}
 
 	velocity_local = mtxa->inverse_rotate_point(velocity);
 	mtxa->push();
@@ -197,7 +200,7 @@ void PhysicsCar::broken_down_fling_physics()
 	float damping_factor = std::clamp((speed_kmh * 0.0015 - 1.0), 0.0, 1.0);
 	float force = damping_factor * (450.0 / 216.0) * stat_weight;
 
-	godot::Vector3 impulse = mtxa->rotate_point(godot::Vector3(-rand_x, 0.5f, rand_z));
+	godot::Vector3 impulse = mtxa->rotate_point(godot::Vector3(-rand_x, 0.5f, -rand_z));
 	impulse *= force;
 
 	state_2 |= 2;
@@ -251,7 +254,7 @@ void PhysicsCar::broken_down_fling_physics()
 
 void PhysicsCar::breakdown_physics()
 {
-	if ((machine_state & MACHINESTATE::ZEROHP) == 0) {
+	if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
 		broken_down_fling_physics();
 	}
 
@@ -264,11 +267,15 @@ void PhysicsCar::breakdown_physics()
 	some_breakdown_int++;
 
 	if (some_breakdown_int > 0xef) {
-		if ((machine_state & MACHINESTATE::ZEROHP) == 0) {
+		if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
 			velocity.x = 0.0f;
 			velocity.y = 0.0f;
 			velocity.z = 0.0f;
 			position_current = position_old;
+			if ((state_2 & 0x90) == 0) {
+		        state_2 = state_2 | 0x80;
+		        state_2 = state_2 | 0x100;
+		    }
 		}
 		some_breakdown_int = 0xf0;
 	}
@@ -1521,7 +1528,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	lap = 1;
 	visual_rotation = godot::Vector3();
 
-	energy = calced_max_energy;
+	energy = 1.0f;
 	boost_frames_manual = 0;
 	air_tilt = 0.0f;
 	boost_frames = 0;
@@ -1552,6 +1559,8 @@ void PhysicsCar::reset_machine(int reset_type)
 	turn_reaction_input = 0.0f;
 	turn_reaction_effect = 0.0f;
 	boost_energy_use_mult = 0.8f;
+	breakdown_frame_counter = 0;
+	some_breakdown_int = 0;
 
 	// Orient the machine at the spawn position
 	mtxa->push();
@@ -2504,7 +2513,7 @@ if (apply_full_response) {
 		boost_frames_manual = 0;
 	}
 
-	if (machine_state & MACHINESTATE::TOOKDAMAGE) {
+	if ((machine_state & MACHINESTATE::TOOKDAMAGE) && breakdown_frame_counter == 0) {
 		float damage_base = response_intensity_factor * stat_body;
 		if ((machine_state & MACHINESTATE::B10) == 0 && damage_base > 20.0f)
 			damage_base = 20.0f;
@@ -2515,6 +2524,9 @@ if (apply_full_response) {
 		energy -= actual_damage_taken;
 
 		if (energy < 0.0f) {
+			if ((machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q|MACHINESTATE::ZEROHP)) == 0) {
+            	breakdown_frame_counter = 0x3c;
+          	}
 			energy = 0.0f;
 			machine_state |= MACHINESTATE::ZEROHP;
 			base_speed = 0.0f;
@@ -2763,11 +2775,8 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 
 	terrain_state |= 0x40000000;			// “hit mine” flag
 
-	// breakdown not implemented yet
-
-	//if(frames_until_restored == 0 &&
-	//   breakdown_frame_counter == 0)
-	//{
+	if(breakdown_frame_counter == 0)
+	{
 		float damage = 20.0f * stat_body;
 
 		if((machine_state & MACHINESTATE::B10) == 0 && damage > 20.0f)
@@ -2782,14 +2791,14 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 
 		if(energy < 0.0f)
 		{
-			//if((machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0)
-			//	breakdown_frame_counter = 60;
+			if((machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0)
+				breakdown_frame_counter = 60;
 
 			machine_state |= MACHINESTATE::ZEROHP;
 			energy	  = 0.0f;
 			base_speed = 0.0f;
 		}
-	//}
+	}
 
 	mtxa->pop();
 }
@@ -2894,8 +2903,8 @@ void PhysicsCar::post_tick()
 bool PhysicsCar::apply_damage(float impactStrength)
 {
     // Already invulnerable or in breakdown? No damage is processed.
-    //if (frames_until_restored != 0 || breakdown_frame_counter != 0)
-    //    return false;
+    if (breakdown_frame_counter != 0)
+        return false;
 
     float rawDamage = impactStrength * stat_body;
 
@@ -2922,8 +2931,8 @@ bool PhysicsCar::apply_damage(float impactStrength)
     const bool canStartBreakdown =
         (machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0;
 
-    //if (canStartBreakdown)
-    //    breakdownFrameCounter = 60;
+    if (canStartBreakdown)
+        breakdown_frame_counter = 60;
 
     return canStartBreakdown;
 }

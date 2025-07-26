@@ -174,6 +174,7 @@ public:
 	uint64_t level_start_time = 0;
 
 	int some_breakdown_int = 0;
+	int breakdown_frame_counter = 0;
 	godot::Vector3 unk_vec3_0x4e4;
 	godot::Vector3 unk_vec3_0x4f0;
 
