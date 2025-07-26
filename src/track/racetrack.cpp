@@ -70,15 +70,6 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 	bool is_open = false;
 	bool use_top_half = false;
 
-	DEBUG::disp_text("x_r", x_r);
-	DEBUG::disp_text("y_r", y_r);
-	DEBUG::disp_text("tx", tx);
-	DEBUG::disp_text("ty", ty);
-	DEBUG::disp_text("tz", tz);
-	DEBUG::disp_text("y_less_than_x", y_less_than_x);
-	DEBUG::disp_text("is_open", is_open);
-	DEBUG::disp_text("use_top_half", use_top_half);
-
 	// Check for open road shape
 	RoadShape *shape = segments[cp->road_segment].road_shape;
 	if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
@@ -106,8 +97,6 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 			return;
 		}
 	}
-	DEBUG::disp_text("tx", tx);
-	DEBUG::disp_text("spatial_t.y", spatial_t.y);
 	segments[cp->road_segment].road_shape->find_t_from_relative_pos(road_t, spatial_t);
 	segments[cp->road_segment].road_shape->get_oriented_transform_at_time(out_transform, road_t);
 }
@@ -181,6 +170,73 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
 }
 
 
+void RaceTrack::convert_point_to_road(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, float *out_cp_t)
+{
+	if (cp_idx == -1)
+	{
+		return;
+	}
+	const CollisionCheckpoint *cp = &checkpoints[cp_idx];
+
+	godot::Vector3 p1 = cp->start_plane.project(point);
+	godot::Vector3 p2 = cp->end_plane.project(point);
+	float cp_t = get_closest_t_on_segment(point, p1, p2);
+	if (out_cp_t)
+		*out_cp_t = cp_t;
+
+       godot::Basis basis;
+       basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
+       basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
+       basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
+
+	godot::Vector3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
+	godot::Plane sep_x_plane(basis[0], midpoint);
+	godot::Plane sep_y_plane(basis[1], midpoint);
+
+	float x_r = lerp(cp->x_radius_start_inv, cp->x_radius_end_inv, cp_t);
+	float y_r = lerp(cp->y_radius_start_inv, cp->y_radius_end_inv, cp_t);
+
+	float tx = sep_x_plane.distance_to(point) * x_r;
+	float ty = sep_y_plane.distance_to(point) * y_r;
+	float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
+
+	spatial_t = godot::Vector3(tx, ty, tz);
+
+	RoadShape *shape = segments[cp->road_segment].road_shape;
+
+	bool y_less_than_x = y_r > 0.2f;
+	bool is_open = false;
+	bool use_top_half = false;
+
+	if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
+		is_open = true;
+		use_top_half = true;
+	} else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
+		is_open = true;
+		use_top_half = false;
+	}
+	if (is_open && y_less_than_x) {
+		if (tx > -1.0001 && tx < 1.0001)
+		{
+			float openness = shape->openness->sample(tz);
+			if (openness <= 0.50001f) {
+				float tx_clamped = std::clamp(tx, -0.99f, 0.99f);
+				float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
+				if (!use_top_half)
+					y_val = -y_val;
+				spatial_t.y = y_val;
+			}
+		}
+		else
+		{
+			road_t.x = -1000.0;
+			return;
+		}
+	}
+
+	shape->find_t_from_relative_pos(road_t, spatial_t);
+}
+
 struct CastParams {
 	RaceTrack *track;
 	uint8_t mask;
@@ -211,9 +267,8 @@ static void cast_segment_fast(const CastParams  &params,
 	RaceTrack *track                = params.track;
 	const TrackSegment &segment     = track->segments[track->checkpoints[use_idx].road_segment];
 
-	godot::Object* dd3d;
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS)){
-		dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+		godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 		dd3d->call("draw_arrow", p0, p1, godot::Color(1.0f, 1.0f, 1.0f), 0.25, true, _TICK_DELTA);
 	}
 
@@ -289,6 +344,7 @@ static void cast_segment_fast(const CastParams  &params,
 
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS)){
 		if (out_collision.collided){
+			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 			dd3d->call("draw_arrow", out_collision.collision_point, out_collision.collision_point + out_collision.collision_normal * 2, godot::Color(0.0f, 0.0f, 1.0f), 0.25, true, _TICK_DELTA);
 		}
 	}
@@ -363,6 +419,7 @@ static void cast_segment_fast(const CastParams  &params,
 
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS)){
 		if (out_collision.collided && out_collision.road_data.terrain == 0x100){
+			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 			dd3d->call("draw_arrow", out_collision.collision_point, out_collision.collision_point + out_collision.collision_normal * 2, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
 		}
 	}
