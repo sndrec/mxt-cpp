@@ -19,13 +19,14 @@ public:
 	int candidate_use;
 	uint32_t visit_gen;
 	uint32_t* visit_stamp;
-        int* checkpoint_stack;
-        CollisionCheckpoint* checkpoints;
-        int num_trigger_colliders;
-        TriggerCollider** trigger_colliders;
-        int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
+		int* checkpoint_stack;
+		CollisionCheckpoint* checkpoints;
+		int num_trigger_colliders;
+		TriggerCollider** trigger_colliders;
+		int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
 	void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
 	void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);
+	void convert_point_to_road(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, float *out_cp_t = nullptr);
 	int get_best_checkpoint(godot::Vector3 in_point)
 	{
 		int num_valid = 0;
@@ -137,10 +138,12 @@ public:
 					continue;
 
 				// Prune based on checkpoint ordering and spatial relation
-				if (idx < neighbor && !passed_end)
-					continue;
-				if (idx > neighbor && passed_start)
-					continue;
+				bool wraps_forward  = (idx == num_checkpoints - 1 && neighbor == 0);
+				bool wraps_backward = (idx == 0 && neighbor == num_checkpoints - 1);
+				if (idx < neighbor && !passed_end && !wraps_forward)
+						continue;
+				if (idx > neighbor && passed_start && !wraps_backward)
+						continue;
 
 				checkpoint_stack[stack_top++] = neighbor;
 			}

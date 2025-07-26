@@ -173,6 +173,10 @@ public:
 	float m_accel_setting = 0.5f; // Balance setting (0.0 to 1.0), corresponds to g_balance. Default to 0.5 (neutral).
 	uint64_t level_start_time = 0;
 
+	int some_breakdown_int = 0;
+	godot::Vector3 unk_vec3_0x4e4;
+	godot::Vector3 unk_vec3_0x4f0;
+
 	PhysicsCarSuspensionPoint tilt_fl;
 	PhysicsCarSuspensionPoint tilt_fr;
 	PhysicsCarSuspensionPoint tilt_bl;
@@ -222,7 +226,10 @@ public:
     void collide_with_landmine(Mine* in_mine);
     void respawn_at_checkpoint(uint16_t cp_idx);
     void check_respawn();
+    void breakdown_physics();
+    void broken_down_fling_physics();
     bool apply_damage(float impact_strength);
+    bool handle_machine_crash(int unk_int);
     float scale_collision_impulse_and_damage(bool other_machine_b10_flag);
     float prepare_impact_direction_info(ImpactData &impact, const godot::Vector3 &impactDirWorld);
     void buildSweepForMachine(float cappedSpeedMps, godot::Vector3 &sweepStartOut, godot::Vector3 &cappedVelocityOut);

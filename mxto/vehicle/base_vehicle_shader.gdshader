@@ -3,6 +3,7 @@ shader_type spatial;
 render_mode ambient_light_disabled;//, skip_vertex_transform;
 
 uniform sampler2D in_lightwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
+uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform vec3 in_overlay_colour : source_color;
@@ -54,15 +55,16 @@ void fragment() {
 
 void light() {
 	float light_val = (dot(NORMAL, LIGHT) * ATTENUATION) * 0.5 + 0.5;
-	float fres = 1.0 - fresnel(1.0, NORMAL, VIEW);
-	float fres_outline = fresnel(16.0, NORMAL, VIEW);
-	//light_val = clamp(light_val - fres * 0.1, 0.0, 1.0);
-	//light_val = clamp(light_val + fres_outline * 2.0, 0.0, 1.0);
-	vec3  H		= normalize(LIGHT + VIEW);		// half-vector
+	vec3  H		= normalize(LIGHT * 2.0 + VIEW);		// half-vector
 	float ndoth	= max(dot(NORMAL, H), 0.0);
 	float spec	= pow(ndoth, 8.0) * ATTENUATION;
+	spec = (spec + light_val) * 0.5;
+	float fres = 1.0 - fresnel(1.0, NORMAL, VIEW);
+	float fres_outline = fresnel(16.0, NORMAL, VIEW);
+	light_val = clamp(light_val - fres * 0.1, 0.0, 1.0);
+	light_val = clamp(light_val + fres_outline * 2.0, 0.0, 1.0);
 	//light_val = clamp(light_val + spec * 0.1, 0.0, 1.0);
 	vec3 final_light_val = texture(in_lightwarp, vec2(light_val, 0.0f)).rgb;
 	DIFFUSE_LIGHT += final_light_val * LIGHT_COLOR * 0.333;// * 0.3;
-	//SPECULAR_LIGHT = vec3(0.0);
+	SPECULAR_LIGHT += texture(in_specwarp, vec2(spec, 0.0f)).rgb;
 }

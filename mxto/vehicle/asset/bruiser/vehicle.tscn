@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://ddxs0gwo3cdsc"]
+[gd_scene load_steps=17 format=3 uid="uid://ddxs0gwo3cdsc"]
 
 [ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_2dwnx"]
 [ext_resource type="ArrayMesh" uid="uid://p2s7s0jn58eb" path="res://vehicle/asset/bruiser/mesh.obj" id="1_42fyx"]
@@ -11,16 +11,25 @@
 
 [sub_resource type="Gradient" id="Gradient_2dwnx"]
 interpolation_mode = 1
-offsets = PackedFloat32Array(0, 0.03, 0.176259, 0.566667, 0.830935, 0.983333)
-colors = PackedColorArray(0.55, 0.55, 0.55, 1, 0.22, 0.22, 0.22, 1, 0, 0, 0, 1, 0.13, 0.13, 0.13, 1, 0.35, 0.35, 0.35, 1, 1, 1, 1, 1)
+offsets = PackedFloat32Array(0, 0.176259, 0.719424, 0.983213)
+colors = PackedColorArray(0.22, 0.22, 0.22, 1, 0, 0, 0, 1, 0.47, 0.47, 0.47, 1, 1, 1, 1, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_q1c51"]
 gradient = SubResource("Gradient_2dwnx")
+
+[sub_resource type="Gradient" id="Gradient_8mun4"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0, 0.959259)
+colors = PackedColorArray(0, 0, 0, 1, 1, 0.3175, 0.09, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_o587m"]
+gradient = SubResource("Gradient_8mun4")
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_q1c51"]
 render_priority = 1
 shader = ExtResource("1_2dwnx")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_q1c51")
+shader_parameter/in_specwarp = SubResource("GradientTexture1D_o587m")
 shader_parameter/in_normal = ExtResource("2_q1c51")
 shader_parameter/in_albedo = ExtResource("2_faj4t")
 shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
@@ -33,7 +42,7 @@ shader = ExtResource("4_6e66t")
 render_priority = -1
 shader = ExtResource("1_gisdj")
 shader_parameter/in_velocity = Vector3(0, 0, 3.96)
-shader_parameter/base_outline_width = 1.0
+shader_parameter/base_outline_width = 0.5
 shader_parameter/trail_colour = Color(0.38, 0.131607, 0.0988, 1)
 shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 
@@ -41,8 +50,8 @@ shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 render_priority = -1
 shader = ExtResource("4_gisdj")
 shader_parameter/in_velocity = Vector3(0, 0, -0.03)
-shader_parameter/base_outline_width = 1.0
-shader_parameter/outline_color = Color(0.38, 0.131607, 0.0988, 1)
+shader_parameter/base_outline_width = 0.5
+shader_parameter/outline_color = Color(0, 0, 0, 1)
 
 [node name="Node3D" type="Node3D"]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
@@ -70,7 +79,6 @@ mesh = ExtResource("1_42fyx")
 
 [node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
 transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
-visible = false
 layers = 2
 material_override = SubResource("ShaderMaterial_4psuq")
 cast_shadow = 0

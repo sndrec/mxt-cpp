@@ -8,7 +8,7 @@ valid=false
 
 [deps]
 
-source_file="res://track/test_track/test_track.gltf"
+source_file="res://track_unused/test_track/test_track.gltf"
 
 [params]
 

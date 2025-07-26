@@ -176,6 +176,141 @@ float PhysicsCar::get_current_stage_min_y() const
 	return -100000.0f;
 };
 
+
+void PhysicsCar::broken_down_fling_physics()
+{
+	uint32_t hash = ((uint32_t)position_current.x ^
+				 (uint32_t)position_current.y ^
+				 (uint32_t)position_current.z ^
+				 (uint32_t)velocity_angular.x) & 0xffff;
+	uint32_t hash2 = ((uint32_t)position_current.x ^
+				  (uint32_t)position_current.y ^
+				  (uint32_t)position_current.z ^
+				  (uint32_t)velocity_angular.y) & 0xffff;
+
+	float rand_x = 2.0f * ((float)hash / 65536.0f) - 1.0f;
+	float rand_z = 2.0f * ((float)hash2 / 65536.0f) - 1.0f;
+
+	rand_x += (rand_x <= 0.0f) ? -0.5f : 0.5f;
+	rand_z += (rand_z <= 0.0f) ? -0.5f : 0.5f;
+
+	float damping_factor = std::clamp((speed_kmh * 0.0015 - 1.0), 0.0, 1.0);
+	float force = damping_factor * (450.0 / 216.0) * stat_weight;
+
+	godot::Vector3 impulse = mtxa->rotate_point(godot::Vector3(-rand_x, 0.5f, rand_z));
+	impulse *= force;
+
+	state_2 |= 2;
+
+	godot::Vector3 rotated_impulse = mtxa->inverse_rotate_point(impulse);
+	rotated_impulse *= 0.5f;
+
+	godot::Vector3 torque = {
+		-(rand_z * rotated_impulse.y),
+		-(rand_x * rotated_impulse.z - rand_z * rotated_impulse.x),
+		-(-rand_x * rotated_impulse.y)
+	};
+
+	unk_vec3_0x4f0.x = velocity_angular.x + torque.x;
+	unk_vec3_0x4f0.y = velocity_angular.y + torque.y;
+	unk_vec3_0x4f0.z = velocity_angular.z + torque.z;
+
+	godot::Vector3 boost_vec;
+	boost_vec = set_vec3_length(track_surface_normal, force * 0.2);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
+	velocity += boost_vec;
+
+	if (frames_since_death > 30) {
+		state_2 |= 0x20;
+
+	//	mtxa->push();
+	//	mtxa->assign(transform_visual);
+	//	godot::Vector3 up = mtxa->rotate_point(godot::Vector3(0.0f, 1.0f, 0.0f));
+	//	if (up.dot(track_surface_normal) < 0.99f) {
+	//		godot::Vector3 axis = vec3_cross(-up, track_surface_normal);
+	//		float axis_len = axis.length();
+	//		if (axis_len > 0.1f) {
+	//			float dot = up.dot(track_surface_normal);
+	//			int angle = (int)(1365.0f * (1.0f - dot * dot));
+	//			godot::Quaternion q = MtxStack::make_axis_angle_quat(axis, angle);
+	//			
+	//			//make_axis_angle_quat(&q, &axis, (short)angle);
+	//			mtxa->from_quat(q);
+	//			mtxa_multiply_mtx(&transform_visual);
+	//			copy_mtxa_to_mtx(&transform_visual);
+	//		}
+	//	}
+	//	mtxa->pop();
+	}
+
+	if (frames_since_death < 2) {
+		frames_since_death = 2;
+	} else if (++frames_since_death > 0xef) {
+		frames_since_death = 0xf0;
+	}
+};
+
+void PhysicsCar::breakdown_physics()
+{
+	if ((machine_state & MACHINESTATE::ZEROHP) == 0) {
+		broken_down_fling_physics();
+	}
+
+	if (frames_since_death < 0x3c) {
+		unk_vec3_0x4e4.x += unk_vec3_0x4f0.x;
+		unk_vec3_0x4e4.y += unk_vec3_0x4f0.y;
+		unk_vec3_0x4e4.z += unk_vec3_0x4f0.z;
+	}
+
+	some_breakdown_int++;
+
+	if (some_breakdown_int > 0xef) {
+		if ((machine_state & MACHINESTATE::ZEROHP) == 0) {
+			velocity.x = 0.0f;
+			velocity.y = 0.0f;
+			velocity.z = 0.0f;
+			position_current = position_old;
+		}
+		some_breakdown_int = 0xf0;
+	}
+}
+
+bool PhysicsCar::handle_machine_crash(int unk_int) {
+	uint32_t state = machine_state;
+	bool result = false;
+
+	if (!(state & MACHINESTATE::FALLOUT)) {
+		if (state & MACHINESTATE::ZEROHP) {
+			if (!machine_crashed && !(state & MACHINESTATE::COMPLETEDRACE_1_Q)) {
+				machine_crashed = true;
+			}
+		}
+
+		if ((state & MACHINESTATE::B1) &&
+			(state & MACHINESTATE::ZEROHP) &&
+			((state & 0x2810000) || unk_int)) {
+			result = true;
+		}
+
+	} else {
+		if ((state & MACHINESTATE::B1) || (state & MACHINESTATE::COMPLETEDRACE_1_Q)) {
+			result = true;
+		}
+
+		if (!(state & MACHINESTATE::COMPLETEDRACE_1_Q) && !machine_crashed) {
+			machine_crashed = true;
+		}
+	}
+
+	if ((state & MACHINESTATE::DIEDTHISFRAMEOOB_Q) && (state & MACHINESTATE::B1)) {
+		result = true;
+	}
+
+	if (state & MACHINESTATE::B29) {
+		result = false;
+	}
+	return result;
+}
+
 void PhysicsCar::handle_machine_damage_and_visuals()
 {
 	if ((state_2 & 0x8u) == 0)
@@ -183,6 +318,11 @@ void PhysicsCar::handle_machine_damage_and_visuals()
 
 	mtxa->assign(basis_physical);
 	mtxa->cur->origin = position_current;
+
+	if (frames_since_death != 0)
+	{
+		breakdown_physics();
+	}
 
 	if (terrain_state & TERRAIN::LAVA) {
 		// Lava damage handling is not yet implemented
@@ -241,74 +381,124 @@ void PhysicsCar::handle_machine_damage_and_visuals()
 		(void)current_speed_for_max_check;
 		(void)no_bad_state_flags;
 	}
+	bool crashed = handle_machine_crash(1);
+	if (crashed == false) {
+		if ((machine_state & (MACHINESTATE::RETIRED|MACHINESTATE::B10|MACHINESTATE::B1)) == 0) {
+			if (((machine_state & MACHINESTATE::ZEROHP) != 0) && (frames_since_death == 0)) {
+				broken_down_fling_physics();
+			}
+		}
+		else {
+			if ((machine_state & (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) == (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) {
+				if (10.0f <= speed_kmh) {
+					if (100.0f <= speed_kmh) {
+						if (speed_kmh < 400.0f) {
+							velocity *= 0.99f;
+						}
+					}
+					else {
+						velocity *= 0.95f;
+					}
+				}
+				else {
+					velocity.x = 0.0f;
+					velocity.y = 0.0f;
+					velocity.z = 0.0f;
+					position_current = position_old;
+					machine_state = machine_state | MACHINESTATE::RETIRED;
+					if ((state_2 & 0x80) == 0) {
+						state_2 = state_2 | 0x100;
+					}
+					state_2 = state_2 | 0x80;
+				}
+			}
+		}
+	}
 };
 
 bool PhysicsCar::find_floor_beneath_machine()
 {
-	godot::Vector3 p0_sweep_start_ws =
-	mtxa->transform_point(godot::Vector3(0.0f, 1.0f, 0.0f));
-	godot::Vector3 p1_sweep_end_ws =
-	mtxa->transform_point(godot::Vector3(0.0f, -2000.0f, 0.0f));
-
-	position_bottom = p1_sweep_end_ws;
-
-	bool sweep_hit_occurred = false;
-	CollisionData hit;
 	bool stay_on = false;
 	bool cylinder = false;
 	bool pipe = false;
-	if (current_track != nullptr) {
+	TrackSegment *floor_seg = &current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
+	cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
+	pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+	stay_on = pipe || cylinder;
+
+	if (!stay_on)
+	{
+		bool sweep_hit_occurred = false;
+		CollisionData hit;
+		godot::Vector3 p0_sweep_start_ws = mtxa->transform_point(godot::Vector3(0.0f, 1.0f, 0.0f));
+		godot::Vector3 p1_sweep_end_ws = mtxa->transform_point(godot::Vector3(0.0f, -2000.0f, 0.0f));
+		position_bottom = p1_sweep_end_ws;
 		current_track->cast_vs_track_fast(hit, p0_sweep_start_ws,
 			position_bottom,
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
 			current_checkpoint);
-		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f;
-	}
-
-	if (hit.road_data.cp_idx != -1)
-	{
-		TrackSegment *floor_seg = &current_track->segments[current_track->checkpoints[hit.road_data.cp_idx].road_segment];
-		cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
-		pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
-		stay_on = pipe || cylinder;
-	}
-
-	float contact_dist_metric = 0.0f;
-	if (sweep_hit_occurred) {
-		track_surface_pos = hit.collision_point;
-		float dist_p0_to_surface =
-		mtxa->cur->origin.distance_to(hit.collision_point);
-		contact_dist_metric = 20.0f - dist_p0_to_surface;
-	}
-	if (stay_on && contact_dist_metric < 1.0f)
-	{
-		contact_dist_metric = 1.0f;
-	}
-
-	//DEBUG::disp_text("contact dist", contact_dist_metric);
-
-	if ((sweep_hit_occurred || stay_on) && contact_dist_metric > 0.0f) {
-		if (!stay_on)
-		{
-			track_surface_normal = hit.collision_normal;
-		}else
-		{
-			if (cylinder)
-			{
-				track_surface_normal = (mtxa->cur->origin - hit.road_data.closest_root.t3d.origin).normalized();
-			}else
-			{
-				track_surface_normal = (hit.road_data.closest_root.t3d.origin - mtxa->cur->origin).normalized();
-			}
+		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
+		float contact_dist_metric = 0.0f;
+		if (sweep_hit_occurred) {
+			track_surface_pos = hit.collision_point;
+			float dist_p0_to_surface =
+			mtxa->cur->origin.distance_to(hit.collision_point);
+			contact_dist_metric = 20.0f - dist_p0_to_surface;
 		}
-		height_above_track = contact_dist_metric;
-		return true;
-	} else {
+		if (sweep_hit_occurred && contact_dist_metric > 0.0f) {
+			track_surface_normal = hit.collision_normal;
+			height_above_track = contact_dist_metric;
+			return true;
+		} else {
+			track_surface_normal = godot::Vector3(0, 1, 0);
+			position_bottom = p1_sweep_end_ws;
+			height_above_track = 0.0f;
+			return false;
+		}
+	}
+
+	godot::Vector2 road_t_sample_raw;
+	godot::Vector3 spatial_t_sample;
+	current_track->convert_point_to_road(current_checkpoint, position_current, road_t_sample_raw, spatial_t_sample);
+	if (road_t_sample_raw.x == -1000.0)
+	{
+		height_above_track = 0.0f;
 		track_surface_normal = godot::Vector3(0, 1, 0);
-		position_bottom = p1_sweep_end_ws;
+		return false;
+	}
+
+	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || road_t_sample_raw.y > 1.001f || road_t_sample_raw.y < -0.001f)
+	{
+		height_above_track = 0.0f;
+		track_surface_normal = godot::Vector3(0, 1, 0);
+		return false;
+	}
+
+	RoadTransform root;
+	const TrackSegment &segment     = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
+	segment.curve_matrix->sample(root, road_t_sample_raw.y);
+	godot::Transform3D surf;
+	segment.road_shape->get_oriented_transform_at_time(surf, road_t_sample_raw);
+
+	//DEBUG::disp_text("road_t", hit.collision_point);
+	//DEBUG::disp_text("road_t", hit.collision_normal);
+	//DEBUG::disp_text("road_t", hit.road_data.road_t);
+	//DEBUG::disp_text("road_t", hit.road_data.road_t);
+
+	if (cylinder)
+	{
+		track_surface_normal = (mtxa->cur->origin - root.t3d.origin).normalized();
+	}else
+	{
+		track_surface_normal = (root.t3d.origin - mtxa->cur->origin).normalized();
+	}
+	height_above_track = fmaxf(0.0f, 20.0f - (position_current - surf.origin).dot(track_surface_normal));
+	if (height_above_track > 20.0f)
+	{
 		height_above_track = 0.0f;
 		return false;
 	}
+	return true;
 };
 
 void PhysicsCar::handle_steering()
@@ -2451,13 +2641,16 @@ void PhysicsCar::handle_checkpoints()
 
 	uint8_t prev_lap = lap;
 
-	int found;
-	found = current_track->get_best_checkpoint(position_current, current_checkpoint);
-	current_collision_checkpoint = current_track->get_best_checkpoint(position_current);
-	if (found == -1)
+	int found = current_track->get_best_checkpoint(position_current, current_checkpoint);
+	int collision = current_track->get_best_checkpoint(position_current);;
+	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && found == -1)
 	{
-		found = current_collision_checkpoint;
+		if (found == -1)
+		{
+			found = collision;
+		}
 	}
+	current_collision_checkpoint = collision;
 	//DEBUG::disp_text("current checkpoint", found);
 	//for (int i = 0; i < current_track->checkpoints[found].num_neighboring_checkpoints; i++)
 	//{
@@ -3244,7 +3437,7 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 
 	g_anim_timer += 1;
 	track_surface_normal_prev = track_surface_normal;
-	check_respawn();
+	//check_respawn();
 	simulate_machine_motion(input);
 	mtxa->assign(basis_physical);
 	mtxa->cur->origin = position_current;
