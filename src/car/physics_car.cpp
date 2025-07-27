@@ -222,7 +222,7 @@ void PhysicsCar::broken_down_fling_physics()
 	unk_vec3_0x4f0.z = velocity_angular.z + torque.z;
 
 	godot::Vector3 boost_vec;
-	boost_vec = set_vec3_length(track_surface_normal, force * 0.5);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
+	boost_vec = set_vec3_length(track_surface_normal, force * 0.25);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
 	velocity += boost_vec;
 
 	if (frames_since_death > 30) {
@@ -1309,9 +1309,8 @@ void PhysicsCar::handle_drag_and_glide_forces()
 
 	if (frames_since_death != 0) {
 		float death_fade =
-		std::clamp(0.01f * static_cast<float>(frames_since_death - 4),
-			0.0f, 1.0f);
-		drag_vector *= std::max(1.0f, death_fade);
+		std::clamp(0.01f * static_cast<float>(frames_since_death) - 4.0f, 0.0f, 1.0f);
+		drag_vector *= death_fade;
 	}
 
 	velocity -= drag_vector;
@@ -1531,7 +1530,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	lap = 1;
 	visual_rotation = godot::Vector3();
 
-	energy = 5.0f;
+	energy = calced_max_energy * 0.05f;
 	boost_frames_manual = 0;
 	air_tilt = 0.0f;
 	boost_frames = 0;
