@@ -13,6 +13,7 @@
 #include <cstdint>
 #include "mxt_core/debug.hpp"
 #include "mxt_core/math_utils.h"
+#include "mxt_core/player_input.h"
 #include "track/track_segment.h"
 #include "track/trigger_collider.h"
 
@@ -191,6 +192,8 @@ void PhysicsCar::broken_down_fling_physics()
 				  (uint32_t)position_current.z ^
 				  (uint32_t)velocity_angular.y) & 0xffff;
 
+
+	DEBUG::disp_text("FLINGING", "yep");
 	float rand_x = 2.0f * ((float)hash / 65536.0f) - 1.0f;
 	float rand_z = 2.0f * ((float)hash2 / 65536.0f) - 1.0f;
 
@@ -219,7 +222,7 @@ void PhysicsCar::broken_down_fling_physics()
 	unk_vec3_0x4f0.z = velocity_angular.z + torque.z;
 
 	godot::Vector3 boost_vec;
-	boost_vec = set_vec3_length(track_surface_normal, force * 0.2);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
+	boost_vec = set_vec3_length(track_surface_normal, force * 0.5);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
 	velocity += boost_vec;
 
 	if (frames_since_death > 30) {
@@ -1528,7 +1531,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	lap = 1;
 	visual_rotation = godot::Vector3();
 
-	energy = 1.0f;
+	energy = 5.0f;
 	boost_frames_manual = 0;
 	air_tilt = 0.0f;
 	boost_frames = 0;
@@ -3434,9 +3437,10 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 		machine_state &= ~MACHINESTATE::STARTINGCOUNTDOWN;
 	}
 
-	if (input.strafe_left || input.strafe_right) {
-		// side attack pressed check is not mapped so ignore for now
+	if (machine_state & MACHINESTATE::ZEROHP) {
+		input = PlayerInput::from_neutral();
 	}
+
 	if (input.sideattack)
 		machine_state |= MACHINESTATE::SIDEATTACKING;
 	if (input.spinattack)
