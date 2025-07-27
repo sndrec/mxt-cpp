@@ -735,6 +735,11 @@ void GameSim::render_gamesim() {
 		vis_cars[i].set("spinattack_direction", cars[i].spinattack_direction);
 		vis_cars[i].set("visual_shake_mult", cars[i].visual_shake_mult);
 		vis_cars[i].set("input_accel", cars[i].input_accel);
+		vis_cars[i].set("restore_state", cars[i].restore_state);
+    	vis_cars[i].set("restore_wait_frames", cars[i].restore_wait_frames);
+    	vis_cars[i].set("restore_move_frames", cars[i].restore_move_frames);
+		vis_cars[i].set("restore_start_transform", cars[i].restore_start_transform);
+		vis_cars[i].set("restore_target_transform", cars[i].restore_target_transform);
 	}
 	//mtxa.pop();
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))

@@ -140,10 +140,10 @@ public:
 				// Prune based on checkpoint ordering and spatial relation
 				bool wraps_forward  = (idx == num_checkpoints - 1 && neighbor == 0);
 				bool wraps_backward = (idx == 0 && neighbor == num_checkpoints - 1);
-				if (idx < neighbor && !passed_end && !wraps_forward)
+				if (idx < neighbor && !passed_end && !wraps_backward && !wraps_forward)
 						continue;
-				if (idx > neighbor && passed_start && !wraps_backward)
-						continue;
+				if (idx > neighbor && passed_start && !wraps_backward && !wraps_forward)
+					continue;
 
 				checkpoint_stack[stack_top++] = neighbor;
 			}
