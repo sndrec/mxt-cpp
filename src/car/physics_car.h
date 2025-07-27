@@ -178,6 +178,12 @@ public:
 	godot::Vector3 unk_vec3_0x4e4;
 	godot::Vector3 unk_vec3_0x4f0;
 
+    uint8_t       restore_state = 0;     // 0 = none, 1 = waiting, 2 = moving
+    uint32_t      restore_wait_frames = 0;
+    uint32_t      restore_move_frames = 0;
+    godot::Transform3D restore_start_transform;
+    godot::Transform3D restore_target_transform;
+
 	PhysicsCarSuspensionPoint tilt_fl;
 	PhysicsCarSuspensionPoint tilt_fr;
 	PhysicsCarSuspensionPoint tilt_bl;
@@ -226,6 +232,8 @@ public:
     void handle_checkpoints();
     void collide_with_landmine(Mine* in_mine);
     void respawn_at_checkpoint(uint16_t cp_idx);
+    godot::Transform3D calculate_respawn_transform(uint16_t cp_idx) const;
+    void update_restore(float accel_input);
     void check_respawn();
     void breakdown_physics();
     void broken_down_fling_physics();

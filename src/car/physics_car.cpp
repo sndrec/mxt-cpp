@@ -222,7 +222,7 @@ void PhysicsCar::broken_down_fling_physics()
 	unk_vec3_0x4f0.z = velocity_angular.z + torque.z;
 
 	godot::Vector3 boost_vec;
-	boost_vec = set_vec3_length(track_surface_normal, force * 0.25);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
+	boost_vec = set_vec3_length(track_surface_normal, force * 0.2);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
 	velocity += boost_vec;
 
 	if (frames_since_death > 30) {
@@ -497,17 +497,19 @@ bool PhysicsCar::find_floor_beneath_machine()
 
 	if (cylinder)
 	{
-		track_surface_normal = (mtxa->cur->origin - root.t3d.origin).normalized();
+		track_surface_normal = surf.basis[1].normalized();
 	}else
 	{
-		track_surface_normal = (root.t3d.origin - mtxa->cur->origin).normalized();
+		track_surface_normal = surf.basis[1].normalized();
 	}
 	height_above_track = fmaxf(0.0f, 20.0f - (position_current - surf.origin).dot(track_surface_normal));
 	if (height_above_track > 20.0f)
 	{
+		track_surface_normal = godot::Vector3(0, 1, 0);
 		height_above_track = 0.0f;
 		return false;
 	}
+	//DEBUG::disp_text("height_above_track", height_above_track);
 	return true;
 };
 
@@ -1530,7 +1532,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	lap = 1;
 	visual_rotation = godot::Vector3();
 
-	energy = calced_max_energy * 0.05f;
+	energy = calced_max_energy * 0.025f;
 	boost_frames_manual = 0;
 	air_tilt = 0.0f;
 	boost_frames = 0;
@@ -2871,6 +2873,98 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	}
 }
 
+godot::Transform3D PhysicsCar::calculate_respawn_transform(uint16_t cp_idx) const
+{
+        godot::Transform3D spawn_transform;
+        if (!current_track || cp_idx >= current_track->num_checkpoints)
+                return spawn_transform;
+
+        const CollisionCheckpoint &cp = current_track->checkpoints[cp_idx];
+        float t_y = cp.t_start + 0.05f;
+        if (t_y > cp.t_end)
+                t_y = cp.t_end;
+
+        current_track->segments[cp.road_segment]
+                .road_shape->get_oriented_transform_at_time(spawn_transform,
+                        godot::Vector2(0.0f, t_y));
+        spawn_transform.basis.transpose();
+        spawn_transform.basis.orthonormalize();
+        spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
+        spawn_transform.origin += spawn_transform.basis.get_column(1) * 0.1f;
+        return spawn_transform;
+}
+
+void PhysicsCar::update_restore(float accel_input)
+{
+        if (!current_track)
+                return;
+
+        //DEBUG::disp_text("crashed accel", accel_input);
+
+        bool crashed = position_current.y < current_track->minimum_y || energy <= 0.0f;
+
+        //DEBUG::disp_text("crashed state", crashed);
+
+        //DEBUG::disp_text("restore state", restore_state);
+        //DEBUG::disp_text("restore_wait_frames", restore_wait_frames);
+        //DEBUG::disp_text("restore_move_frames", restore_move_frames);
+        if (restore_state == 0 && crashed) {
+                restore_state = 1;
+                restore_wait_frames = 0;
+                if (position_current.y < current_track->minimum_y)
+                        machine_state |= MACHINESTATE::FALLOUT;
+                if (energy <= 0.0f)
+                        machine_state |= MACHINESTATE::ZEROHP;
+        }
+
+        if (restore_state == 1) {
+                restore_wait_frames++;
+                if ((restore_wait_frames >= 60 && accel_input > 0.1f) || (machine_state & MACHINESTATE::FALLOUT) != 0) {
+                        restore_state = 2;
+                        restore_move_frames = 0;
+                        restore_start_transform.origin = position_current;
+                        restore_start_transform.basis = basis_physical.basis;
+                        restore_target_transform = calculate_respawn_transform(last_ground_checkpoint);
+                        velocity = godot::Vector3();
+                        velocity_local = godot::Vector3();
+                        velocity_local_flattened_and_rotated = godot::Vector3();
+                        velocity_angular = godot::Vector3();
+                        base_speed = 0.0f;
+                        boost_turbo = 0.0f;
+                        state_2 &= ~0x20;
+                }
+        } else if (restore_state == 2) {
+                restore_move_frames++;
+                float t = std::min(1.0f, static_cast<float>(restore_move_frames) / 180.0f);
+                t = (t < 0.5f) ? (2.0f * t * t) : (-1.0f + (4.0f - 2.0f * t) * t);
+                state_2 &= ~0x20;
+                godot::Vector3 pos = restore_start_transform.origin.lerp(restore_target_transform.origin, t);
+                godot::Quaternion qs = restore_start_transform.basis.get_rotation_quaternion();
+                godot::Quaternion qe = restore_target_transform.basis.get_rotation_quaternion();
+                godot::Quaternion qi = qs.slerp(qe, t);
+
+                basis_physical.basis = godot::Basis(qi);
+                basis_physical_other.basis = basis_physical.basis;
+                transform_visual.basis = basis_physical.basis;
+
+                position_current = pos;
+                position_old = pos;
+                position_old_2 = pos;
+                position_old_dupe = pos;
+                position_bottom = basis_physical.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+
+                if (restore_move_frames >= 180) {
+                		state_2 &= ~0x20;
+                        respawn_at_checkpoint(last_ground_checkpoint);
+                        energy = std::max(energy, calced_max_energy * 0.5f);
+                        machine_state |= MACHINESTATE::ACTIVE;
+                        restore_state = 0;
+                        restore_wait_frames = 0;
+                        restore_move_frames = 0;
+                }
+        }
+}
+
 void PhysicsCar::check_respawn()
 {
 	if (!current_track)
@@ -2897,9 +2991,9 @@ void PhysicsCar::post_tick()
 		position_current = initial_pos;
 	}
 
-	handle_checkpoints();
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
-		last_ground_checkpoint = current_checkpoint;
+    handle_checkpoints();
+    if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && (machine_state & MACHINESTATE::ZEROHP) == 0)
+            last_ground_checkpoint = current_checkpoint;
 };
 
 bool PhysicsCar::apply_damage(float impactStrength)
@@ -3420,24 +3514,31 @@ void PhysicsCar::test_collision_with_other_car(PhysicsCar &other_car)
 
 void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
-	calced_max_energy = car_properties->max_energy;
-	initial_pos = position_current;
-	side_attack_indicator = 0.0f;
+    float accel_raw = input.accelerate;
+    update_restore(accel_raw);
 
+    calced_max_energy = car_properties->max_energy;
+    initial_pos = position_current;
+    side_attack_indicator = 0.0f;
 
-	if (tick_count < level_start_time - 180) {
-		machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
-		machine_state &= ~MACHINESTATE::ACTIVE;
-	} else if (tick_count < level_start_time) {
-		machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
-		if (input_accel > 0.01f)
-			machine_state |= MACHINESTATE::ACTIVE;
-	} else {
-		machine_state &= ~MACHINESTATE::STARTINGCOUNTDOWN;
-	}
+    if (tick_count < level_start_time - 180) {
+            machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
+            machine_state &= ~MACHINESTATE::ACTIVE;
+    } else if (tick_count < level_start_time) {
+            machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
+            if (input_accel > 0.01f)
+                    machine_state |= MACHINESTATE::ACTIVE;
+    } else {
+            machine_state &= ~MACHINESTATE::STARTINGCOUNTDOWN;
+    }
 
 	if (machine_state & MACHINESTATE::ZEROHP) {
-		input = PlayerInput::from_neutral();
+		input.steer_horizontal = 0.0f;
+		input.steer_vertical = 0.0f;
+		input.boost = false;
+		input.brake = 0.0f;
+		input.strafe_left = 0.0f;
+		input.strafe_right = 0.0f;
 	}
 
 	if (input.sideattack)
@@ -3449,9 +3550,10 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 
 	g_anim_timer += 1;
 	track_surface_normal_prev = track_surface_normal;
-	//check_respawn();
-	simulate_machine_motion(input);
-	mtxa->assign(basis_physical);
-	mtxa->cur->origin = position_current;
-	position_behind = mtxa->transform_point(godot::Vector3(0.0f, 0.5f, 0.5f));
+    if (restore_state != 2)
+        simulate_machine_motion(input);
+
+    mtxa->assign(basis_physical);
+    mtxa->cur->origin = position_current;
+    position_behind = mtxa->transform_point(godot::Vector3(0.0f, 0.5f, 0.5f));
 };
