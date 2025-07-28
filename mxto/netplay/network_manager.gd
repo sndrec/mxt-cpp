@@ -1,20 +1,24 @@
 class_name NetworkManager
 extends Node
 
-signal race_started(track_index, player_settings)
+signal race_started(track_index, player_settings, race_id)
 signal race_finished
 
 @rpc("any_peer", "reliable")
-func set_race_finish_time(time: int) -> void:
-	net_race_finish_time = time
+func set_race_finish_time(race: int, time: int) -> void:
+        if race != race_id:
+                return
+        net_race_finish_time = time
 
 func send_race_finish_time(time: int) -> void:
-	if is_server:
-		set_race_finish_time.rpc(time)
-		set_race_finish_time(time)
+        if is_server:
+                set_race_finish_time.rpc(race_id, time)
+                set_race_finish_time(race_id, time)
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
+
+var race_id: int = 0
 
 @onready var game_manager: GameManager = $".."
 
@@ -277,36 +281,40 @@ func _update_player_ids(ids: Array) -> void:
 		_calc_state_offsets()
 
 @rpc("any_peer", "reliable")
-func start_race(track_index: int, settings: Array) -> void:
-	emit_signal("race_started", track_index, settings)
-	if is_server:
-		var now := 0.001 * float(Time.get_ticks_msec())
-		for id in player_ids + spectator_ids:
-			last_input_time[id] = now
+func start_race(track_index: int, settings: Array, race: int) -> void:
+        race_id = race
+        emit_signal("race_started", track_index, settings, race)
+        if is_server:
+                var now := 0.001 * float(Time.get_ticks_msec())
+                for id in player_ids + spectator_ids:
+                        last_input_time[id] = now
 
 func send_start_race(track_index: int, settings: Array) -> void:
-	if is_server:
-		ready_players.clear()
-		start_race.rpc(track_index, settings)
-		start_race(track_index, settings)
-		if player_ids.size() > 1:
-			if game_sim != null:
-					game_sim.set_sim_started(false)
-			if server_game_sim != null:
-					server_game_sim.set_sim_started(false)
-		else:
-			begin_simulation()
-	else:
-		start_race.rpc_id(1, track_index, settings)
+        if is_server:
+                race_id += 1
+                ready_players.clear()
+                start_race.rpc(track_index, settings, race_id)
+                start_race(track_index, settings, race_id)
+                if player_ids.size() > 1:
+                        if game_sim != null:
+                                        game_sim.set_sim_started(false)
+                        if server_game_sim != null:
+                                        server_game_sim.set_sim_started(false)
+                else:
+                        begin_simulation()
+        else:
+                start_race.rpc_id(1, track_index, settings, race_id)
 
 @rpc("any_peer", "reliable")
-func end_race() -> void:
-	emit_signal("race_finished")
+func end_race(race: int) -> void:
+        if race != race_id:
+                return
+        emit_signal("race_finished")
 
 func send_end_race() -> void:
-	if is_server:
-		end_race.rpc()
-		end_race()
+        if is_server:
+                end_race.rpc(race_id)
+                end_race(race_id)
 
 @rpc("any_peer", "reliable")
 func client_ready() -> void:
@@ -423,7 +431,7 @@ func collect_client_inputs() -> Array:
 				var data : Array = []
 				for k in old_keys:
 					data.append(sent_inputs_bytes[k])
-				_client_send_input.rpc_id(1, start, data, desired_ahead_ticks, last_server_input_tick)
+                                _client_send_input.rpc_id(1, race_id, start, data, desired_ahead_ticks, last_server_input_tick)
 				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		return []
 	sent_inputs_bytes[local_tick] = last_local_input_bytes
@@ -441,7 +449,7 @@ func collect_client_inputs() -> Array:
 		var inputs_arr : Array = []
 		for k in all_keys:
 			inputs_arr.append(sent_inputs_bytes[k])
-		_client_send_input.rpc_id(1, first_tick, inputs_arr, desired_ahead_ticks, last_server_input_tick)
+                _client_send_input.rpc_id(1, race_id, first_tick, inputs_arr, desired_ahead_ticks, last_server_input_tick)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 	var frame_inputs: Array
 	if authoritative_inputs.has(local_tick):
@@ -475,10 +483,12 @@ func collect_client_inputs() -> Array:
 	return frame_inputs
 
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
-func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) -> void:
-	if is_server:
-		var reject_before := target_tick - 5
-		for i in range(inputs.size()):
+func _client_send_input(race: int, start_tick: int, inputs: Array, ahead: float, ack: int) -> void:
+        if race != race_id:
+                return
+        if is_server:
+                var reject_before := target_tick - 5
+                for i in range(inputs.size()):
 			var tick := start_tick + i
 			if tick < reject_before:
 				continue
@@ -496,10 +506,12 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 		_prune_authoritative_history()
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
-func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
-	if not is_server or listen_server:
-		clients_server_tick = max(clients_server_tick, last_tick + 1)
-		clients_target_tick = max(clients_target_tick, tgt)
+func _server_broadcast(race: int, last_tick: int, inputs: Array, ids: Array, this_ack: int, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
+        if race != race_id:
+                return
+        if not is_server or listen_server:
+                clients_server_tick = max(clients_server_tick, last_tick + 1)
+                clients_target_tick = max(clients_target_tick, tgt)
 		last_target_tick_update = Time.get_ticks_msec()
 		clients_max_ahead_from_server = max_ahead
 		player_ids = ids
@@ -554,7 +566,7 @@ func post_tick() -> void:
 						start = k
 					arr.append(authoritative_history[k])
 			var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			_server_broadcast.rpc_id(id, last_tick, arr, player_ids, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
+                        _server_broadcast.rpc_id(id, race_id, last_tick, arr, player_ids, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
 		server_tick += 1
 		if listen_server:
 			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
@@ -577,16 +589,17 @@ func _idle_broadcast() -> void:
 					start = k
 				arr.append(authoritative_history[k])
 		var last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-		_server_broadcast.rpc_id(
-			id,
-			max(last_tick, 0),
-			arr,
-			player_ids,
-			last_received_tick.get(id, -1),
-			PackedByteArray(),
-			target_tick,
-			max_ahead
-		)
+                _server_broadcast.rpc_id(
+                        id,
+                        race_id,
+                        max(last_tick, 0),
+                        arr,
+                        player_ids,
+                        last_received_tick.get(id, -1),
+                        PackedByteArray(),
+                        target_tick,
+                        max_ahead
+                )
 
 func _check_client_stalls() -> void:
 	if not is_server or server_game_sim == null or not server_game_sim.sim_started:

@@ -48,7 +48,7 @@ func _ready() -> void:
 	randomize()
 	_load_tracks()
 	_load_car_definitions()
-	network_manager.race_started.connect(_on_network_race_started)
+        network_manager.race_started.connect(_on_network_race_started)
 	network_manager.race_finished.connect(_on_network_race_finished)
 	car_settings.hide()
 	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
@@ -351,10 +351,10 @@ func _on_start_race_button_pressed() -> void:
 			settings_array.append(ps)
 		network_manager.send_start_race(lobby_track_selector.selected, settings_array)
 
-func _on_network_race_started(track_index: int, settings: Array) -> void:
-	if headless_mode:
-		network_manager.client_ready.rpc_id(1)
-		return
+func _on_network_race_started(track_index: int, settings: Array, race: int) -> void:
+        if headless_mode:
+                network_manager.client_ready.rpc_id(1)
+                return
 	_start_race(track_index, settings)
 	game_sim.set_sim_started(false)
 	if network_manager.is_server:
