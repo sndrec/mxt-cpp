@@ -86,6 +86,8 @@ func reset_race_state() -> void:
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	use_physics_ticks = 1.0
+	last_target_tick_update = Time.get_ticks_msec()
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
 
 func _calc_state_offsets() -> void:
