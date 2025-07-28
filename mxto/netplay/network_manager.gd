@@ -6,6 +6,8 @@ signal race_finished
 
 @rpc("any_peer", "reliable")
 func set_race_finish_time(time: int) -> void:
+	if !race_active:
+		return
 	net_race_finish_time = time
 
 func send_race_finish_time(time: int) -> void:
@@ -61,8 +63,10 @@ var authoritative_history := {}
 var authoritative_acks := {}
 var last_server_input_tick := -1
 var latest_state_tick := -1
+var race_active: bool = false
 
 func reset_race_state() -> void:
+	race_active = false
 	pending_inputs.clear()
 	authoritative_inputs.clear()
 	input_history.clear()
@@ -122,6 +126,8 @@ func on_disconnect() -> void:
 	disconnect_from_server()
 
 func server_process() -> void:
+	if !race_active:
+		return
 	if is_server and server_game_sim != null and server_game_sim.sim_started:
 		target_tick += 1
 		if target_tick > server_tick + MAX_AHEAD_TICKS:
@@ -278,6 +284,7 @@ func _update_player_ids(ids: Array) -> void:
 
 @rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array) -> void:
+	race_active = true
 	emit_signal("race_started", track_index, settings)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
@@ -301,6 +308,7 @@ func send_start_race(track_index: int, settings: Array) -> void:
 
 @rpc("any_peer", "reliable")
 func end_race() -> void:
+	race_active = false
 	emit_signal("race_finished")
 
 func send_end_race() -> void:
@@ -310,6 +318,8 @@ func send_end_race() -> void:
 
 @rpc("any_peer", "reliable")
 func client_ready() -> void:
+	if !race_active:
+		return
 	var id := multiplayer.get_remote_sender_id()
 	if id == 0:
 		id = multiplayer.get_unique_id()
@@ -322,6 +332,8 @@ func client_ready() -> void:
 
 @rpc("any_peer", "reliable")
 func begin_simulation() -> void:
+	if !race_active:
+		return
 	if game_sim != null:
 		game_sim.set_sim_started(true)
 		local_tick = 0
@@ -476,6 +488,8 @@ func collect_client_inputs() -> Array:
 
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) -> void:
+	if !race_active:
+		return
 	if is_server:
 		var reject_before := target_tick - 5
 		for i in range(inputs.size()):
@@ -497,6 +511,8 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
 func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
+	if !race_active:
+		return
 	if not is_server or listen_server:
 		clients_server_tick = max(clients_server_tick, last_tick + 1)
 		clients_target_tick = max(clients_target_tick, tgt)
@@ -535,6 +551,8 @@ func _server_broadcast(last_tick: int, inputs: Array, ids: Array, this_ack: int,
 		_handle_state(last_tick, state)
 
 func post_tick() -> void:
+	if !race_active:
+		return
 	if is_server and server_game_sim != null:
 		var state = server_game_sim.get_state_data(server_tick)
 		var max_ahead := _calc_max_ahead()
@@ -561,6 +579,8 @@ func post_tick() -> void:
 			_prune_authoritative_history()
 
 func _idle_broadcast() -> void:
+	if !race_active:
+		return
 	if server_game_sim == null:
 		return
 	var max_ahead := _calc_max_ahead()
@@ -589,6 +609,8 @@ func _idle_broadcast() -> void:
 		)
 
 func _check_client_stalls() -> void:
+	if !race_active:
+		return
 	if not is_server or server_game_sim == null or not server_game_sim.sim_started:
 		return
 	# don’t test while still waiting for the very first full frame
@@ -621,6 +643,8 @@ func _check_client_stalls() -> void:
 var rollback_frametime_us = 0
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
+	if !race_active:
+		return
 	if game_sim == null:
 		return
 	if tick == -1:
@@ -646,6 +670,8 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	rollback_frametime_us = new_time - old_time
 
 func _handle_input_update(tick: int, inputs: Array) -> void:
+	if !race_active:
+		return
 	if game_sim == null:
 		return
 	if not input_history.has(tick):
@@ -679,6 +705,8 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	rollback_frametime_us = new_time - old_time
 
 func _recalculate_future_predictions(start_tick: int) -> void:
+	if !race_active:
+		return
 	var tick := start_tick
 	while tick < local_tick:
 		if authoritative_inputs.has(tick):
@@ -713,6 +741,7 @@ func _recalculate_future_predictions(start_tick: int) -> void:
 		tick += 1
 
 func disconnect_from_server() -> void:
+	race_active = false
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
