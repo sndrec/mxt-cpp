@@ -338,7 +338,6 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if network_manager.is_server:
 		network_manager.client_ready()
 	else:
-		await get_tree().create_timer(1.0).timeout
 		network_manager.client_ready.rpc_id(1)
 
 func _on_start_race_button_pressed() -> void:
