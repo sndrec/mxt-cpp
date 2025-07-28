@@ -1532,7 +1532,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	lap = 1;
 	visual_rotation = godot::Vector3();
 
-	energy = calced_max_energy * 0.025f;
+	energy = calced_max_energy;
 	boost_frames_manual = 0;
 	air_tilt = 0.0f;
 	boost_frames = 0;
