@@ -15,6 +15,8 @@ class_name RaceHud extends Control
 #@onready var race_placement_hud := $RacePlacementHud
 @onready var check_control: Control = $CheckControl
 
+var car_max_energy: float = 100.0
+
 var placement_textures : Array[Texture] = [
 	preload("res://ui/placements/mx-1.png"),
 	preload("res://ui/placements/mx-2.png"),
@@ -51,7 +53,15 @@ var placement_textures : Array[Texture] = [
 @onready var clamped_input := $InputViewer/ClampedInput
 
 func _ready() -> void:
-	pass
+	if get_parent() is VisualCar:
+		var car: VisualCar = get_parent()
+		var path: String = car.car_definition.car_definition
+		if path != "" and FileAccess.file_exists(path):
+			var f := FileAccess.open(path, FileAccess.READ)
+			if f:
+				f.seek(84)
+				car_max_energy = f.get_float()
+				f.close()
 
 func _process( _delta:float ) -> void:
 	var car : VisualCar
@@ -61,19 +71,21 @@ func _process( _delta:float ) -> void:
 		#pl = car.get_parent()
 	speedometer.text = str(roundi(car.speed_kmh)) + " km/h"
 	lapcounter.text = "LAP " + str(car.lap) + "/3"
-	var use_tick := car.game_manager.network_manager.local_tick
-	if car.game_manager.network_manager.is_server:
-		use_tick = car.game_manager.network_manager.server_tick
+	var nm := car.game_manager.network_manager
+	var use_tick := nm.get_race_tick()
+	var local_id := multiplayer.get_unique_id() if multiplayer else 0
+	if nm.player_finish_times.has(local_id):
+		use_tick = nm.player_finish_times[local_id]
 	var time_elapsed : int = use_tick - 300
 	var time_elapsed_float : float = float(time_elapsed) / 60
 	var seconds : int = int(floor(time_elapsed_float)) % 60
 	var milliseconds : int = int(floor(time_elapsed_float * 1000)) % 1000
 	var minutes : int = floor(time_elapsed_float / 60)
 	racetimer.text = str(minutes) + ":" + str(seconds) + "." + str(milliseconds)
-	healthmeter.scale.x = 100.0 * 0.01
+	healthmeter.scale.x = car_max_energy * 0.01
 	var health_meter_shader := healthmeter.material as ShaderMaterial
 	health_meter_shader.set_shader_parameter("health_amount", car.energy)
-	health_meter_shader.set_shader_parameter("max_health_amount", 100.0)
+	health_meter_shader.set_shader_parameter("max_health_amount", car_max_energy)
 	health_meter_shader.set_shader_parameter("can_boost", car.lap > 1)
 	var boost_health_total_cost : float = 0.0#car.car_definition.boost_health_cost * (1.0 / car.car_definition.boost_length) * MXGlobal.tick_delta * car.boost_time
 	health_meter_shader.set_shader_parameter("health_to_deplete", boost_health_total_cost)
@@ -91,12 +103,19 @@ func _process( _delta:float ) -> void:
 			cars.append(c)
 
 	cars.sort_custom(func(a:VisualCar, b:VisualCar) -> bool:
+		var af := nm.player_finish_placements.has(a.owning_id)
+		var bf := nm.player_finish_placements.has(b.owning_id)
+		if af and bf:
+			return nm.player_finish_placements[a.owning_id] < nm.player_finish_placements[b.owning_id]
+		elif af:
+			return true
+		elif bf:
+			return false
 		if a.lap == b.lap:
 			return a.lap_progress > b.lap_progress
 		return a.lap > b.lap)
-		
+
 	var our_place := 1
-	var local_id := multiplayer.get_unique_id() if multiplayer else 0
 	for i in cars.size():
 		if i < leaderboard_container.get_child_count():
 			var label := leaderboard_container.get_child(i)
@@ -108,6 +127,9 @@ func _process( _delta:float ) -> void:
 			our_place = i + 1
 	for i in range(cars.size(), leaderboard_container.get_child_count()):
 		leaderboard_container.get_child(i).text = ""
+
+	if nm.player_finish_placements.has(local_id):
+		our_place = nm.player_finish_placements[local_id]
 	
 	var tex_index := clampi(our_place - 1, 0, placement_textures.size() - 1)
 	place_badge.texture = placement_textures[tex_index]

@@ -294,6 +294,7 @@ stretch_mode = 4
 
 [node name="InputViewer" type="TextureRect" parent="."]
 process_mode = 4
+visible = false
 layout_mode = 1
 anchors_preset = -1
 anchor_left = 0.798

@@ -52,6 +52,9 @@ var ready_players : Array[int] = []
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 var state_send_offsets := {}
 var net_race_finish_time := -1
+var player_finish_times := {}
+var player_finish_placements := {}
+var finish_order : Array = []
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
 
@@ -81,6 +84,9 @@ func reset_race_state() -> void:
 	last_ack_tick = -1
 	rtt_s = 0.0
 	net_race_finish_time = -1
+	player_finish_times.clear()
+	player_finish_placements.clear()
+	finish_order.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	clients_server_tick = 0
@@ -816,3 +822,22 @@ func _adjust_time_scale() -> void:
 	# game simulation uses a fixed delta time
 	# this just changes the rate at which we simulate the game locally
 	# to catch up or slow down to try and match the server
+
+func get_race_tick() -> int:
+	return server_tick if is_server else clients_server_tick
+
+@rpc("any_peer", "reliable")
+func set_player_finished(id: int, tick: int, place: int) -> void:
+	player_finish_times[id] = tick
+	player_finish_placements[id] = place
+	if finish_order.size() < place:
+		finish_order.resize(place)
+	finish_order[place - 1] = id
+
+func send_player_finished(id: int, tick: int) -> void:
+	if player_finish_times.has(id):
+		return
+	var place := finish_order.size() + 1
+	if is_server:
+		set_player_finished.rpc(id, tick, place)
+		set_player_finished(id, tick, place)
