@@ -489,9 +489,12 @@ func _check_race_finished() -> void:
 	for car in car_node_container.get_children():
 		if car is VisualCar:
 			if network_manager.player_ids.has(car.owning_id):
-				if (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) == 0:
+				var finished = (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0
+				if finished:
+					if network_manager.is_server and !network_manager.player_finish_times.has(car.owning_id):
+						network_manager.send_player_finished(car.owning_id, network_manager.server_tick)
+				else:
 					all_done = false
-					break
 	if network_manager.is_server:
 		if all_done:
 			if network_manager.net_race_finish_time == -1:

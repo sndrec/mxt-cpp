@@ -170,6 +170,8 @@ var car_old_po := Vector3.ZERO
 var car_desired_po := Vector3.ZERO
 var car_old_vel := Vector3.ZERO
 var car_desired_vel := Vector3.ZERO
+var old_ts_normal := Vector3.ZERO
+var desired_ts_normal := Vector3.ZERO
 
 var car_overlay_colour := Color.BLACK
 var car_material : ShaderMaterial
@@ -366,6 +368,8 @@ func _physics_process(delta):
 	car_desired_transform.origin += rollback_offset_error
 	car_old_basis_physical = car_desired_basis_physical
 	car_desired_basis_physical = basis_physical
+	old_ts_normal = desired_ts_normal
+	desired_ts_normal = track_surface_normal
 	
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
 	
@@ -449,6 +453,8 @@ func just_rendered() -> void:
 		#new_boost_effect.life_time = 1000
 		#car_camera.add_child(new_boost_effect)
 
+var track_surface_smoothed := Vector3.UP
+
 func _process(delta: float) -> void:
 	frame_accumulation += delta
 	delta = minf(1.0, delta)
@@ -463,6 +469,8 @@ func _process(delta: float) -> void:
 	var use_car_pos_old := car_old_po.lerp(car_desired_po, ratio)
 	var use_basis_physical := car_old_basis_physical.interpolate_with(car_desired_basis_physical, ratio)
 	var use_car_vel := car_old_vel.lerp(car_desired_vel, ratio)
+	var use_ts_normal := old_ts_normal.lerp(desired_ts_normal, ratio)
+	track_surface_smoothed = damp_vec3(track_surface_smoothed, use_ts_normal, 30, delta)
 	#DebugDraw2D.set_text("rollback offset error", interp_err)
 	#car_transform.global_transform.origin += interp_err
 	#car_transform.global_transform.basis = car_transform.global_transform.basis * interp_rerr
@@ -484,8 +492,11 @@ func _process(delta: float) -> void:
 		if (tilt_fl_state & FZ_TC.DRIFT) != 0:
 			use_forward_z = -use_car_vel.slide(use_basis_physical.basis.y.normalized()).normalized()
 		
-		var target_y := use_basis_physical.basis.y
-		
+		var target_y := track_surface_smoothed
+		if (machine_state & FZ_MS.AIRBORNE) != 0:
+			target_y = target_y.rotated(car_camera.basis.x, target_y.slide(car_camera.basis.x).normalized().signed_angle_to(use_basis_physical.basis.y.slide(car_camera.basis.x).normalized(), car_camera.basis.x))
+		var stability := 0.5
+		target_y = target_y.rotated(car_camera.basis.z, (1.0 - stability) * target_y.slide(car_camera.basis.z).normalized().signed_angle_to(use_basis_physical.basis.y.slide(car_camera.basis.z).normalized(), car_camera.basis.z))
 		var starting_frames_past := frames_since_start_2 > 90
 		
 		if !slerped_up_y.is_equal_approx(target_y):
@@ -535,6 +546,9 @@ func _process(delta: float) -> void:
 					#DebugDraw2D.set_text("curvature", lerped_curvature)
 					#final_y = final_y.rotated(sideways, lerped_curvature * -8000)
 					#use_basis = use_basis.rotated(sideways, lerped_curvature * -8000)
+		
+		use_up_y_for_offset = use_up_y_for_offset.rotated(use_cam_basis.z, stability * use_up_y_for_offset.slide(use_cam_basis.z).normalized().signed_angle_to(track_surface_smoothed.slide(use_cam_basis.z).normalized(), use_cam_basis.z))
+		
 		car_camera.position = use_car_pos + \
 		use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + \
 		use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
