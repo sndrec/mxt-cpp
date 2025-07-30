@@ -183,6 +183,7 @@ float PhysicsCar::get_current_stage_min_y() const
 
 void PhysicsCar::broken_down_fling_physics()
 {
+	// semi-random numbers by hashing positions and angular velocity
 	uint32_t hash = ((uint32_t)position_current.x ^
 				 (uint32_t)position_current.y ^
 				 (uint32_t)position_current.z ^
@@ -192,8 +193,6 @@ void PhysicsCar::broken_down_fling_physics()
 				  (uint32_t)position_current.z ^
 				  (uint32_t)velocity_angular.y) & 0xffff;
 
-
-	DEBUG::disp_text("FLINGING", "yep");
 	float rand_x = 2.0f * ((float)hash / 65536.0f) - 1.0f;
 	float rand_z = 2.0f * ((float)hash2 / 65536.0f) - 1.0f;
 
@@ -203,30 +202,37 @@ void PhysicsCar::broken_down_fling_physics()
 	float damping_factor = std::clamp((speed_kmh * 0.0015 - 1.0), 0.0, 1.0);
 	float force = damping_factor * (450.0 / 216.0) * stat_weight;
 
-	godot::Vector3 impulse = mtxa->rotate_point(godot::Vector3(-rand_x, 0.5f, -rand_z));
-	impulse *= force;
+	// put impulse in world space
+	godot::Vector3 torque_impulse = mtxa->rotate_point(godot::Vector3(-rand_x, 0.5f, -rand_z));
+	torque_impulse *= force;
 
 	state_2 |= 2;
 
-	godot::Vector3 rotated_impulse = mtxa->inverse_rotate_point(impulse);
-	rotated_impulse *= 0.5f;
+	// back into local space
+	godot::Vector3 rotated_torque_impulse = mtxa->inverse_rotate_point(torque_impulse);
+	rotated_torque_impulse *= 0.5f;
 
 	godot::Vector3 torque = {
-		-(rand_z * rotated_impulse.y),
-		-(rand_x * rotated_impulse.z - rand_z * rotated_impulse.x),
-		-(-rand_x * rotated_impulse.y)
+		-(rand_z * rotated_torque_impulse.y),
+		-(rand_x * rotated_torque_impulse.z - rand_z * rotated_torque_impulse.x),
+		-(-rand_x * rotated_torque_impulse.y)
 	};
 
+	// used for random visual rotation of the vehicle when bouncing
 	unk_vec3_0x4f0.x = velocity_angular.x + torque.x;
 	unk_vec3_0x4f0.y = velocity_angular.y + torque.y;
 	unk_vec3_0x4f0.z = velocity_angular.z + torque.z;
 
+	// use previously calculated force for actual bounce
 	godot::Vector3 boost_vec;
-	boost_vec = set_vec3_length(track_surface_normal, force * 0.2);// vec3_set_length(force * 0.2, &track_surface_normal, &boost_vec);
+	boost_vec = set_vec3_length(track_surface_normal, force * 0.2);
 	velocity += boost_vec;
 
 	if (frames_since_death > 30) {
 		state_2 |= 0x20;
+
+	// visually orient vehicle back to track once it settles on the road and stops bouncing
+	// disabled here because we do this in GDScript instead
 
 	//	mtxa->push();
 	//	mtxa->assign(transform_visual);
@@ -250,8 +256,8 @@ void PhysicsCar::broken_down_fling_physics()
 
 	if (frames_since_death < 2) {
 		frames_since_death = 2;
-	} else if (++frames_since_death > 0xef) {
-		frames_since_death = 0xf0;
+	} else if (++frames_since_death > 239) {
+		frames_since_death = 240;
 	}
 };
 
@@ -2848,6 +2854,7 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	velocity_angular = godot::Vector3();
 	base_speed = 0.0f;
 	boost_turbo = 0.0f;
+	some_breakdown_int = 0;
 
 	machine_state &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::AIRBORNE | MACHINESTATE::FALLOUT);
 	frames_since_death = 0;
