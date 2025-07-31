@@ -756,6 +756,7 @@ void PhysicsCar::handle_linear_velocity()
 
 	float drift_factor = 1.0f - (norm_z_vel_flat_rot * norm_z_vel_flat_rot);
 	drift_accel_component = drift_factor * stat_drift_accel;
+	// snaking nerf
 	float strafe_factor = (1.0f - std::abs(input_strafe));
 	drift_accel_component = drift_accel_component * strafe_factor * strafe_factor;
 }
