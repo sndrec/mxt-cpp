@@ -463,24 +463,6 @@ bool PhysicsCar::find_floor_beneath_machine()
 			track_surface_normal = godot::Vector3(0, 1, 0);
 			position_bottom = p1_sweep_end_ws;
 			height_above_track = 0.0f;
-			
-			// TODO: why doesnt this work?
-			// this should make it so that the vehicle rolls when it exits a regular road off the left or right edges...
-
-			//if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
-			//{
-			//	mtxa->push();
-			//	mtxa->assign(basis_physical);
-			//	if (hit.road_data.road_t.x >= 1.0f)
-			//	{
-			//		velocity_angular += mtxa->inverse_rotate_point(hit.road_data.closest_root.t3d.basis.get_column(2)) * 1000.0f;
-			//	}
-			//	else if (hit.road_data.road_t.x < -1.0f)
-			//	{
-			//		velocity_angular -= mtxa->inverse_rotate_point(hit.road_data.closest_root.t3d.basis.get_column(2)) * 1000.0f;
-			//	}
-			//	mtxa->pop();
-			//}
 			return false;
 		}
 	}
