@@ -39,15 +39,15 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 		return;
 	}
 	CollisionCheckpoint *cp = &checkpoints[cp_idx];
-	if (cp->end_plane.is_point_over(point) || !cp->start_plane.is_point_over(point))
-	{
-		int new_idx = get_best_checkpoint(point, cp_idx);
-		if (new_idx != -1)
-		{
-			cp_idx = new_idx;
-			cp = &checkpoints[cp_idx];
-		}
-	}
+	//if (cp->end_plane.is_point_over(point) || !cp->start_plane.is_point_over(point))
+	//{
+	//	int new_idx = get_best_checkpoint(point, cp_idx);
+	//	if (new_idx != -1)
+	//	{
+	//		cp_idx = new_idx;
+	//		cp = &checkpoints[cp_idx];
+	//	}
+	//}
 	godot::Vector3 p1 = cp->start_plane.project(point);
 	godot::Vector3 p2 = cp->end_plane.project(point);
 	float cp_t = get_closest_t_on_segment(point, p1, p2);

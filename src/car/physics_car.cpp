@@ -447,6 +447,7 @@ bool PhysicsCar::find_floor_beneath_machine()
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
 			current_checkpoint);
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
+
 		float contact_dist_metric = 0.0f;
 		if (sweep_hit_occurred) {
 			track_surface_pos = hit.collision_point;
@@ -462,6 +463,24 @@ bool PhysicsCar::find_floor_beneath_machine()
 			track_surface_normal = godot::Vector3(0, 1, 0);
 			position_bottom = p1_sweep_end_ws;
 			height_above_track = 0.0f;
+			
+			// TODO: why doesnt this work?
+			// this should make it so that the vehicle rolls when it exits a regular road off the left or right edges...
+
+			//if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
+			//{
+			//	mtxa->push();
+			//	mtxa->assign(basis_physical);
+			//	if (hit.road_data.road_t.x >= 1.0f)
+			//	{
+			//		velocity_angular += mtxa->inverse_rotate_point(hit.road_data.closest_root.t3d.basis.get_column(2)) * 1000.0f;
+			//	}
+			//	else if (hit.road_data.road_t.x < -1.0f)
+			//	{
+			//		velocity_angular -= mtxa->inverse_rotate_point(hit.road_data.closest_root.t3d.basis.get_column(2)) * 1000.0f;
+			//	}
+			//	mtxa->pop();
+			//}
 			return false;
 		}
 	}
@@ -489,11 +508,6 @@ bool PhysicsCar::find_floor_beneath_machine()
 	godot::Transform3D surf;
 	segment.road_shape->get_oriented_transform_at_time(surf, road_t_sample_raw);
 
-	//DEBUG::disp_text("road_t", hit.collision_point);
-	//DEBUG::disp_text("road_t", hit.collision_normal);
-	//DEBUG::disp_text("road_t", hit.road_data.road_t);
-	//DEBUG::disp_text("road_t", hit.road_data.road_t);
-
 	if (cylinder)
 	{
 		track_surface_normal = surf.basis[1].normalized();
@@ -508,7 +522,6 @@ bool PhysicsCar::find_floor_beneath_machine()
 		height_above_track = 0.0f;
 		return false;
 	}
-	//DEBUG::disp_text("height_above_track", height_above_track);
 	return true;
 };
 
@@ -585,10 +598,12 @@ void PhysicsCar::handle_suspension_states()
 			} else {
 				remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 				grip_frames_from_accel_press = stat_accel_press_grip_frames;
+				drift_ramp = 0.0f;
 			}
 		}
 	} else {
 		remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		drift_ramp = 0.0f;
 	}
 
 	if ((machine_state & MACHINESTATE::STRAFING) != 0 && std::abs(input_steer_yaw) < 0.1f) {
@@ -643,6 +658,7 @@ void PhysicsCar::handle_machine_turn_and_strafe(PhysicsCarSuspensionPoint& tilt_
 	}
 
 	if (std::abs(corner_delta.x) < stat_grip_3) {
+		drift_ramp = 0.0f;
 		tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
 	}
 
@@ -658,6 +674,7 @@ void PhysicsCar::handle_machine_turn_and_strafe(PhysicsCarSuspensionPoint& tilt_
 		if (std::abs(lateral_delta) < 1.1920929e-7f) {
 			drift_delta = 0.0f;
 		}
+		drift_ramp = 0.0f;
 		tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
 	} else {
 		tilt_corner.state |= TILTSTATE::DRIFT;
@@ -758,7 +775,20 @@ void PhysicsCar::handle_linear_velocity()
 	drift_accel_component = drift_factor * stat_drift_accel;
 	// snaking nerf
 	float strafe_factor = (1.0f - std::abs(input_strafe));
-	drift_accel_component = drift_accel_component * strafe_factor * strafe_factor;
+	if (velocity_local.x > 0.0f && drift_sign == -1)
+	{
+		drift_sign = 1;
+		drift_ramp = 0.0f;
+	}else if (velocity_local.x < 0.0f && drift_sign == 1)
+	{
+		drift_sign = -1;
+		drift_ramp = 0.0f;
+	}
+	if ((velocity_local.x > 0.0f && drift_sign == 1) || (velocity_local.x < 0.0f && drift_sign == -1))
+	{
+		drift_ramp = std::min(1.0f, drift_ramp + (0.025f - drift_ramp * 0.025f) * (1.0f + boost_turbo * 0.03f));
+	}
+	drift_accel_component = drift_accel_component * drift_ramp * strafe_factor;
 }
 
 float net_fwd_accel = handle_machine_accel_and_boost(
@@ -1158,11 +1188,6 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 	}
 
 	float force_mag = 10.0f * -(0.009f * stat_weight) * base_factor;
-
-	//DEBUG::disp_text("force_mag", force_mag);
-
-	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
-	//dd3d->call("draw_arrow", position_current, position_current + track_surface_normal * 3.0, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
 
 	godot::Vector3 gravity_align_force = track_surface_normal * force_mag;
 	velocity += gravity_align_force;
@@ -1567,6 +1592,8 @@ void PhysicsCar::reset_machine(int reset_type)
 	boost_energy_use_mult = 0.8f;
 	breakdown_frame_counter = 0;
 	some_breakdown_int = 0;
+	drift_sign = 1;
+	drift_ramp = 0.0;
 
 	// Orient the machine at the spawn position
 	mtxa->push();
@@ -1661,7 +1688,7 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 	godot::Vector3 p0 = mtxa->transform_point(in_corner.offset);
 
 	godot::Vector3 local_target_for_ray_end(
-		in_corner.offset.x, in_corner.offset.y - 2000.0f, in_corner.offset.z);
+		in_corner.offset.x, in_corner.offset.y - 4.0f, in_corner.offset.z);
 	godot::Vector3 p1_ray_end_ws = mtxa->transform_point(local_target_for_ray_end);
 
 	float compression_metric = 0.0f;
@@ -1825,20 +1852,16 @@ void PhysicsCar::set_terrain_state_from_track()
 	for (int i = 0; i < current_track->num_trigger_colliders; i++)
 	{
 		uint8_t collision = current_track->trigger_colliders[i]->intersect_segment(current_checkpoint, current_track, position_old, position_current);
-		//DEBUG::disp_text(("trigger " + std::to_string(i)).c_str(), collision);
 		if ((collision & 0x1) != 0)
 		{
-			//DEBUG::disp_text(("trigger " + std::to_string(i) + " collision!").c_str(), "yay!");
 			switch (current_track->trigger_colliders[i]->type)
 			{
 			case TRIGGER_TYPE::DASHPLATE:
 				machine_state |= MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::BOOSTING_DASHPLATE;
 				terrain_state |= TERRAIN::DASH;
-				//DEBUG::disp_text(("dashplate " + std::to_string(i) + " hit!").c_str(), collision);
 				break;
 			case TRIGGER_TYPE::JUMPPLATE:
 				terrain_state |= TERRAIN::JUMP;
-				//DEBUG::disp_text(("jumpplate " + std::to_string(i) + " hit!").c_str(), collision);
 				break;
 			case TRIGGER_TYPE::MINE:
 				collide_with_landmine(static_cast<Mine*>(current_track->trigger_colliders[i]));
@@ -2590,7 +2613,6 @@ if (apply_full_response) {
 			}
 			rail_collision_timer = 20;
 		}
-		DEBUG::disp_text("COLLIDED ON FRAME", frames_since_start);
 
 		if (response_impulse_base.length_squared() > 0.000001f) {
 			godot::Vector3 impulse_local_for_visuals =
@@ -2627,12 +2649,10 @@ if (apply_full_response) {
 		vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);
 	velocity -= normal_vel * up_dot_track;
 	velocity += vel_add;
-	DEBUG::disp_text("LANDED ON FRAME", frames_since_start);
 }
 
 if (frames_since_start_2 <= 90)
 {
-		//DEBUG::disp_text("velocity fix", "yep");
 	velocity += track_surface_normal * -(velocity.dot(track_surface_normal));
 }
 };
@@ -2676,13 +2696,6 @@ void PhysicsCar::handle_checkpoints()
 		}
 	}
 	current_collision_checkpoint = collision;
-	//DEBUG::disp_text("current checkpoint", found);
-	//for (int i = 0; i < current_track->checkpoints[found].num_neighboring_checkpoints; i++)
-	//{
-	//	const char i_char = '0' + i;
-	//	godot::String char_string = godot::String("cp " + godot::String::num_int64(found) + "neighbour " + godot::String::num_int64(i));
-	//	DEBUG::disp_text(char_string, current_track->checkpoints[found].neighboring_checkpoints[i]);
-	//}
 	if (found >= 0 && found < current_track->num_checkpoints && found != current_checkpoint) {
 		if (found < current_track->num_checkpoints / 8 && current_checkpoint > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
 			lap += 1;
@@ -2909,15 +2922,8 @@ void PhysicsCar::update_restore(float accel_input)
 	if (!current_track)
 		return;
 
-        //DEBUG::disp_text("crashed accel", accel_input);
-
 	bool crashed = position_current.y < current_track->minimum_y || energy <= 0.0f;
 
-        //DEBUG::disp_text("crashed state", crashed);
-
-        //DEBUG::disp_text("restore state", restore_state);
-        //DEBUG::disp_text("restore_wait_frames", restore_wait_frames);
-        //DEBUG::disp_text("restore_move_frames", restore_move_frames);
 	if (restore_state == 0 && crashed) {
 		restore_state = 1;
 		restore_wait_frames = 0;

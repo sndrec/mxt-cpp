@@ -9,6 +9,7 @@
 #include "mxt_core/enums.h"
 
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "godot_cpp/variant/string.hpp"
@@ -159,6 +160,8 @@ public:
 	uint32_t terrain_state_2 = 0;
 	uint32_t suspension_reset_flag = 0;
 	float turning_related = 0.0f;
+	int8_t drift_sign = 0;
+	float drift_ramp = 0.0;
 
 	float stat_obstacle_collision = 0.0f;
 	float stat_track_collision = 0.0f;
