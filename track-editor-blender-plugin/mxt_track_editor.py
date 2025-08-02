@@ -435,19 +435,22 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
         name="Width Helper",
         description="Empty with X-Location F-Curve controlling flat width",
         type=bpy.types.Object,
-        poll=lambda self, object: object.type == 'EMPTY'
+        poll=lambda self, object: object.type == 'EMPTY',
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
     )
     height_helper: PointerProperty(
         name="Height Helper",
         description="Empty with X-Location F-Curve controlling flat height",
         type=bpy.types.Object,
-        poll=lambda self, object: object.type == 'EMPTY'
+        poll=lambda self, object: object.type == 'EMPTY',
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
     )
     radius_helper: PointerProperty(
         name="Radius Helper",
         description="Empty with X-Location F-Curve controlling corner radius",
         type=bpy.types.Object,
-        poll=lambda self, object: object.type == 'EMPTY'
+        poll=lambda self, object: object.type == 'EMPTY',
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
     )
     preview_mesh_exists: BoolProperty(
         name="Preview Mesh Exists",
@@ -1281,7 +1284,7 @@ def mxt_on_depsgraph_update(scene, depsgraph):
             is_secondary_control = True
         elif any(emb.helper == obj for emb in props.embeds):
             is_secondary_control = True
-        elif props.openness_helper == obj: 
+        elif props.openness_helper == obj or obj in (props.width_helper, props.height_helper, props.radius_helper):
             is_secondary_control = True
         
         if is_secondary_control:
@@ -2337,8 +2340,22 @@ class MXTRoad_PT_MainPanel(Panel):
         if road_props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
             sq_box = common_box.box()
             sq_box.prop(road_props, "width_helper")
+            width_row = sq_box.row()
+            op = width_row.operator("mxt_road.select_helper", text="Edit Width Curve", icon='GRAPH')
+            op.helper_name = road_props.width_helper.name if road_props.width_helper else ""
+            width_row.enabled = bool(road_props.width_helper)
+
             sq_box.prop(road_props, "height_helper")
+            height_row = sq_box.row()
+            op = height_row.operator("mxt_road.select_helper", text="Edit Height Curve", icon='GRAPH')
+            op.helper_name = road_props.height_helper.name if road_props.height_helper else ""
+            height_row.enabled = bool(road_props.height_helper)
+
             sq_box.prop(road_props, "radius_helper")
+            radius_row = sq_box.row()
+            op = radius_row.operator("mxt_road.select_helper", text="Edit Radius Curve", icon='GRAPH')
+            op.helper_name = road_props.radius_helper.name if road_props.radius_helper else ""
+            radius_row.enabled = bool(road_props.radius_helper)
 
         common_box.prop(road_props, "horiz_subdivs")
         common_box.prop(road_props, "road_uv_multiplier")

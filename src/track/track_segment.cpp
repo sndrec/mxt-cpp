@@ -431,8 +431,13 @@ void RoadShape::get_oriented_transform_at_time(godot::Transform3D &out_transform
 	get_position_at_time(pos_forward, in_t + godot::Vector2(0.0f, fwd_off));
 	pos_forward -= base_pos;
 
-	const float normal_sign = -(sign_x * sign_y);
-	godot::Vector3 normal = normal_sign * pos_right.cross(pos_forward);
+        float normal_sign = -(sign_x * sign_y);
+        if (shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
+            shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN)
+        {
+                normal_sign = sign_x * sign_y;
+        }
+        godot::Vector3 normal = normal_sign * pos_right.cross(pos_forward);
 
 	pos_right.normalize();
 	normal.normalize();
