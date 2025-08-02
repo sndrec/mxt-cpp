@@ -1434,7 +1434,10 @@ def _update_trigger_helper(trig):
         return
     right = (pr - base).normalized()
     forward = (pf - base).normalized()
-    normal = (right.cross(forward)).normalized()
+    normal = right.cross(forward)
+    if props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+        normal = -normal
+    normal.normalize()
     right = forward.cross(normal).normalized()
     B = (Matrix((right, -normal, forward))).transposed()
     mat = Matrix.Translation(base) @ B.to_4x4()
@@ -2882,8 +2885,12 @@ def _surface(helper, tx, ty, seg_len, shape):
 
     pl = shape.get_pos(helper, base + Vector((eps, 0)))
     pb = shape.get_pos(helper, base + Vector((0, step_y)))
-    normal1 = -(pr - p0).cross(pf - p0).normalized()
-    normal2 = -(pl - p0).cross(pb - p0).normalized()
+    props = seg_parent.mxt_road_overall_props
+    flip = 1.0
+    if props.road_shape_type not in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+        flip = -1.0
+    normal1 = ((pr - p0).cross(pf - p0) * flip).normalized()
+    normal2 = ((pl - p0).cross(pb - p0) * flip).normalized()
     return p0, ((normal1 + normal2) * 0.5)
 
 def _cubic(p0, p1, p2, p3, t: float):
@@ -3303,7 +3310,10 @@ class MXTRoad_OT_GenerateMesh(Operator):
         PF = _calculate_vertex_positions_numpy(props, cl_pos_f, cl_quat_f, cl_scl_f, tx_grid, ty_grid + epsilon)
         PR = _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, centerline_scl, tx_grid + epsilon, ty_grid)
         cl_rot_mats = quaternions_to_rotation_matrices_numpy(centerline_quat)
-        N_main = np.cross(PF - P0, PR - P0); norms = np.linalg.norm(N_main, axis=2, keepdims=True); norms[norms==0]=1.0; N_main /= norms
+        N_main = np.cross(PF - P0, PR - P0)
+        if props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+            N_main = -N_main
+        norms = np.linalg.norm(N_main, axis=2, keepdims=True); norms[norms==0]=1.0; N_main /= norms
         main_road_vertex_normals = N_main.reshape(-1, 3)
         for face in main_road_faces:
             for v_idx in face: all_loop_normals.append(main_road_vertex_normals[v_idx])
@@ -3406,11 +3416,13 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 
                 
                 if embed.embed_type == 'HOLE':
-                    
+
                     EXTRUDE_DEPTH, TOP_OFFSET = -4.0, -2.0
                     P_grid = P_footprint.copy()
                     d_ty, d_tx = np.gradient(P_grid, axis=0), np.gradient(P_grid, axis=1)
                     N_grid = np.cross(d_ty, d_tx)
+                    if props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+                        N_grid = -N_grid
                     n_len = np.linalg.norm(N_grid, axis=2, keepdims=True); n_len[n_len == 0.0] = 1.0; N_grid /= n_len
                     base_verts, n_flat = P_grid.reshape(-1, 3), N_grid.reshape(-1, 3)
                     cutter_mesh = bpy.data.meshes.new(f"{embed.label}_cutter"); cutter_obj = bpy.data.objects.new(f"{embed.label}_cutter", cutter_mesh)
