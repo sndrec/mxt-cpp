@@ -47,8 +47,16 @@ void RoadShape::get_position_at_time(godot::Vector3 &out_pos, const godot::Vecto
 
 void RoadShapePipe::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
 {
-	const float angle = deterministic_fp::atan2f(p.x, -p.y) * ONE_DIV_BY_PI;
-	out_t = godot::Vector2(angle, p.z);
+        float phi = deterministic_fp::atan2f(p.y, p.x) * ONE_DIV_BY_PI + 0.5f;
+        if (phi < -1.0f)
+        {
+                phi += 2.0f;
+        }
+        if (phi > 1.0f)
+        {
+                phi -= 2.0f;
+        }
+        out_t = godot::Vector2(phi, p.z);
 }
 
 void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -56,7 +64,7 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-	const float mod_t = (in_t[0] + 1.0f) * 0.5f;
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
 
 	float mod_vertical_offset = 1.0f;
 
@@ -66,10 +74,11 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-	const godot::Vector3 pos = godot::Vector3(
-		deterministic_fp::cosf(deterministic_fp::wrap_minus_pi_to_pi((in_t[0] - 0.5f) * PI)),
-		deterministic_fp::sinf(deterministic_fp::wrap_minus_pi_to_pi((in_t[0] - 0.5f) * PI)),
-		0.0f);
+        const float tx_angle = deterministic_fp::wrap_minus_pi_to_pi((in_t[0] - 0.5f) * PI);
+        const godot::Vector3 pos = godot::Vector3(
+                deterministic_fp::cosf(tx_angle),
+                deterministic_fp::sinf(tx_angle),
+                0.0f);
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = dir * mod_vertical_offset;
 	const godot::Transform3D road_shape_transform = godot::Transform3D(BASIS_IDENTITY, road_point * road_root_transform.scale);
@@ -105,18 +114,8 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 
 void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
-	const godot::Vector2 dir = godot::Vector2(in_pos[0], in_pos[1]).normalized();
-	float tx = deterministic_fp::atan2f(-dir[0], -dir[1]) * ONE_DIV_BY_PI;
-	tx = 0.5f - tx;
-	if (tx < -1.0f)
-	{
-		tx += 2.0f;
-	};
-	if (tx > 1.0f)
-	{
-		tx -= 2.0f;
-	};
-	out_t = godot::Vector2(-tx, in_pos[2]);
+        const float theta = deterministic_fp::atan2f(in_pos.x, in_pos.y);
+        out_t = godot::Vector2(theta * ONE_DIV_PI, in_pos.z);
 };
 
 void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -124,7 +123,7 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
 
 	float mod_vertical_offset = 1.0f;
 
@@ -134,10 +133,11 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-	const godot::Vector3 pos = godot::Vector3(
-		deterministic_fp::sinf(deterministic_fp::wrap_minus_pi_to_pi((in_t.x - 0.5f) * PI)), 
-		deterministic_fp::cosf(deterministic_fp::wrap_minus_pi_to_pi((in_t.x - 0.5f) * PI)), 
-		0.0f);
+        const float theta = deterministic_fp::wrap_minus_pi_to_pi(in_t.x * PI);
+        const godot::Vector3 pos = godot::Vector3(
+                deterministic_fp::sinf(theta),
+                deterministic_fp::cosf(theta),
+                0.0f);
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = dir * mod_vertical_offset;
 	godot::Transform3D road_shape_transform = T3D_IDENTITY;
@@ -176,9 +176,17 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 
 void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
-	const godot::Vector2 dir = godot::Vector2(in_pos[0], in_pos[1]).normalized();
-	const float tx = (deterministic_fp::atan2f(dir[0], -dir[1]) * ONE_DIV_BY_PI) / fmaxf(0.001, openness->sample(in_pos[2]));
-	out_t = godot::Vector2(tx, in_pos[2]);
+        float phi = deterministic_fp::atan2f(in_pos.y, in_pos.x) * ONE_DIV_PI + 0.5f;
+        phi /= fmaxf(0.001f, openness->sample(in_pos[2]));
+        if (phi < -1.0f)
+        {
+                phi += 2.0f;
+        }
+        if (phi > 1.0f)
+        {
+                phi -= 2.0f;
+        }
+        out_t = godot::Vector2(phi, in_pos[2]);
 };
 
 void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -186,7 +194,8 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
+        float mod_tx = in_t[0] * openness->sample(in_t[1]);
+        const float mod_t = 0.5f * (1.0f - mod_tx);
 
 	float mod_vertical_offset = 1.0f;
 
@@ -196,12 +205,11 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-	float mod_tx = in_t[0] * openness->sample(in_t[1]);
-
-	const godot::Vector3 pos = godot::Vector3(
-		deterministic_fp::cosf(deterministic_fp::wrap_minus_pi_to_pi((mod_tx - 0.5f) * PI)), 
-		deterministic_fp::sinf(deterministic_fp::wrap_minus_pi_to_pi((mod_tx - 0.5f) * PI)), 
-		0.0f);
+        const float tx_angle = deterministic_fp::wrap_minus_pi_to_pi((mod_tx - 0.5f) * PI);
+        const godot::Vector3 pos = godot::Vector3(
+                deterministic_fp::cosf(tx_angle),
+                deterministic_fp::sinf(tx_angle),
+                0.0f);
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = dir * mod_vertical_offset;
 	godot::Transform3D road_shape_transform = T3D_IDENTITY;
@@ -243,19 +251,9 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 
 void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
-	const godot::Vector2 dir = godot::Vector2(in_pos[0], in_pos[1]).normalized();
-	float tx = deterministic_fp::atan2f(dir[1], -dir[0]) * ONE_DIV_BY_PI;
-	tx = 0.5f - tx;
-	if (tx < -1.0f)
-	{
-		tx += 2.0f;
-	};
-	if (tx > 1.0f)
-	{
-		tx -= 2.0f;
-	};
-	tx /= fmaxf(0.001, openness->sample(in_pos[2]));
-	out_t = godot::Vector2(-tx, in_pos[2]);
+        float tx = deterministic_fp::atan2f(in_pos.x, in_pos.y) * ONE_DIV_PI;
+        tx /= fmaxf(0.001f, openness->sample(in_pos[2]));
+        out_t = godot::Vector2(tx, in_pos[2]);
 }
 
 void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -263,7 +261,8 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-	const float mod_t = 1.0f - (in_t[0] + 1.0f) * 0.5f;
+        float mod_tx = in_t[0] * openness->sample(in_t[1]);
+        const float mod_t = 0.5f * (1.0f - mod_tx);
 
 	float mod_vertical_offset = 1.0f;
 
@@ -273,12 +272,11 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-	float mod_tx = in_t[0] * openness->sample(in_t[1]);
-
-	const godot::Vector3 pos = godot::Vector3(
-		deterministic_fp::sinf(deterministic_fp::wrap_minus_pi_to_pi(mod_tx * PI)), 
-		deterministic_fp::cosf(deterministic_fp::wrap_minus_pi_to_pi(mod_tx * PI)), 
-		0.0f);
+        const float theta = deterministic_fp::wrap_minus_pi_to_pi(mod_tx * PI);
+        const godot::Vector3 pos = godot::Vector3(
+                deterministic_fp::sinf(theta),
+                deterministic_fp::cosf(theta),
+                0.0f);
 	const godot::Vector3 dir = pos.normalized();
 	const godot::Vector3 road_point = dir * mod_vertical_offset;
 	godot::Transform3D road_shape_transform = T3D_IDENTITY;
@@ -290,7 +288,20 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 
 void RoadShapeRoundedSquare::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
 {
-        float tx = deterministic_fp::atan2f(p.x, p.y) * ONE_DIV_BY_PI;
+        float theta = deterministic_fp::atan2f(p.x, p.y);
+        if (theta < 0.0f)
+        {
+                theta += PI * 2.0f;
+        }
+        float tx = 1.0f - theta * ONE_DIV_PI;
+        if (tx > 1.0f)
+        {
+                tx -= 2.0f;
+        }
+        if (tx < -1.0f)
+        {
+                tx += 2.0f;
+        }
         out_t = godot::Vector2(tx, p.z);
 };
 
@@ -318,7 +329,7 @@ void RoadShapeRoundedSquare::get_position_at_time(godot::Vector3 &out_pos, const
         RoadTransform road_root_transform;
         owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-        const float mod_t = 0.5f * (1.0f - in_t[0]);
+        const float mod_t = 0.5f * in_t[0];
 
         float mod_vertical_offset = 1.0f;
         for (int i = 0; i < num_modulations; i++)
@@ -331,7 +342,7 @@ void RoadShapeRoundedSquare::get_position_at_time(godot::Vector3 &out_pos, const
         const float h = height->sample(in_t[1]);
         const float r = radius->sample(in_t[1]);
 
-        const float theta = deterministic_fp::wrap_minus_pi_to_pi(in_t[0] * PI);
+        const float theta = deterministic_fp::wrap_minus_pi_to_pi((1.0f - in_t[0]) * PI);
         const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
 
         float length = _rounded_square_length(dir, w, h, r);
@@ -347,8 +358,21 @@ void RoadShapeRoundedSquare::get_position_at_time(godot::Vector3 &out_pos, const
 
 void RoadShapeRoundedSquareOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
 {
-        float tx = deterministic_fp::atan2f(p.x, p.y) * ONE_DIV_BY_PI;
+        float theta = deterministic_fp::atan2f(p.x, p.y);
+        if (theta < 0.0f)
+        {
+                theta += PI * 2.0f;
+        }
+        float tx = 1.0f - theta * ONE_DIV_PI;
         tx /= fmaxf(0.001f, openness->sample(p.z));
+        if (tx > 1.0f)
+        {
+                tx -= 2.0f;
+        }
+        if (tx < -1.0f)
+        {
+                tx += 2.0f;
+        }
         out_t = godot::Vector2(tx, p.z);
 };
 
@@ -357,7 +381,8 @@ void RoadShapeRoundedSquareOpen::get_position_at_time(godot::Vector3 &out_pos, c
         RoadTransform road_root_transform;
         owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-        const float mod_t = 0.5f * (1.0f - in_t[0]);
+        float mod_tx = in_t[0] * openness->sample(in_t[1]);
+        const float mod_t = 0.5f * mod_tx;
 
         float mod_vertical_offset = 1.0f;
         for (int i = 0; i < num_modulations; i++)
@@ -370,8 +395,7 @@ void RoadShapeRoundedSquareOpen::get_position_at_time(godot::Vector3 &out_pos, c
         const float h = height->sample(in_t[1]);
         const float r = radius->sample(in_t[1]);
 
-        float tx = in_t[0] * openness->sample(in_t[1]);
-        const float theta = deterministic_fp::wrap_minus_pi_to_pi(tx * PI);
+        const float theta = deterministic_fp::wrap_minus_pi_to_pi((1.0f - mod_tx) * PI);
         const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
 
         float length = _rounded_square_length(dir, w, h, r);
