@@ -1114,6 +1114,7 @@ _openness_helper_to_create = set()
 _openness_helper_to_destroy = set()
 _square_helpers_to_create = set()
 _square_helpers_to_destroy = set()
+_square_helper_inherit_vals = {}
 _timer_live   = False
 
 def _ensure_timer():
@@ -1192,10 +1193,11 @@ def _process_live_updates():
             parent = bpy.data.objects.get(name)
             if parent:
                 props = parent.mxt_road_overall_props
+                defaults = _square_helper_inherit_vals.pop(name, (1.0, 1.0, 0.0))
                 helper_info = [
-                    ('Width',  'width_helper',  1.0),
-                    ('Height', 'height_helper', 1.0),
-                    ('Radius', 'radius_helper', 0.0),
+                    ('Width',  'width_helper',  defaults[0]),
+                    ('Height', 'height_helper', defaults[1]),
+                    ('Radius', 'radius_helper', defaults[2]),
                 ]
                 for suffix, attr, default in helper_info:
                     if getattr(props, attr):
@@ -1547,6 +1549,7 @@ class MXTRoad_OT_CreateRoadSegment(Operator):
 
     def execute(self, context):
         prev_seg = get_active_mxt_road_segment_parent(context)
+        global _square_helper_inherit_vals
 
         
         bpy.ops.object.empty_add(type='PLAIN_AXES', radius=1.0,
@@ -1583,7 +1586,7 @@ class MXTRoad_OT_CreateRoadSegment(Operator):
         props.rail_height_left = 0.15
         props.rail_height_right = 0.15
 
-        
+
         if prev_seg:
             prev_props = prev_seg.mxt_road_overall_props
             prev_helper = prev_props.curve_matrix_helper_empty
@@ -1599,7 +1602,7 @@ class MXTRoad_OT_CreateRoadSegment(Operator):
                 cp1.rotation_euler = eul
                 cp1.scale = scale
 
-            
+
             for attr in ("road_shape_type", "horiz_subdivs",
                          "road_uv_multiplier", "mesh_subdivision_length",
                          "mesh_subdivision_angle_deg",
@@ -1607,6 +1610,18 @@ class MXTRoad_OT_CreateRoadSegment(Operator):
                          "rail_height_left", "rail_height_right",
                          "rotation_mode"):
                 setattr(props, attr, getattr(prev_props, attr))
+
+            if props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+                def _eval(helper_obj, default):
+                    if helper_obj and helper_obj.animation_data and helper_obj.animation_data.action:
+                        fcu = helper_obj.animation_data.action.fcurves.find("location", index=0)
+                        if fcu:
+                            return fcu.evaluate(100.0)
+                    return default
+                w_end = _eval(prev_props.width_helper, 1.0)
+                h_end = _eval(prev_props.height_helper, 1.0)
+                r_end = _eval(prev_props.radius_helper, 0.0)
+                _square_helper_inherit_vals[seg_par.name] = (w_end, h_end, r_end)
                 
             
             for mod_prev in prev_props.modulations:
