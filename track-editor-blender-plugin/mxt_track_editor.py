@@ -112,7 +112,6 @@ class MXTTriggerObject(PropertyGroup):
                                update=lambda self,ctx:_update_trigger_helper(self))
     yaw_deg: FloatProperty(name="Add Yaw", default=0.0,
                            update=lambda self,ctx:_update_trigger_helper(self))
-    checkpoint_index: IntProperty(name="Checkpoint", default=0, min=0)
 
 class MXT_UL_Modulations(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -508,7 +507,7 @@ class MXT_OT_AddTrigger(Operator):
             return {'CANCELLED'}
         seg = get_active_mxt_road_segment_parent(context)
 
-        bpy.ops.object.empty_add(type='PLAIN_AXES', radius=4.0, location=context.scene.cursor.location)
+        bpy.ops.object.empty_add(type='PLAIN_AXES', radius=6.0, location=context.scene.cursor.location)
         helper = context.active_object
         _disallow_deletion(helper)
         helper.name = f"Trigger_{len(ts.trigger_objects):02d}"
@@ -2094,7 +2093,6 @@ class MXTRoad_PT_MainPanel(Panel):
                 box.prop(trig, "ty")
                 box.prop(trig, "scale")
                 box.prop(trig, "yaw_deg")
-                box.prop(trig, "checkpoint_index")
         layout.separator()
 
         active_road_parent = get_active_mxt_road_segment_parent(context)
@@ -2304,7 +2302,7 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         if not helper:
             if report_fn: report_fn({'ERROR'}, "CurveMatrix helper empty not set")
             return False
-        subdiv = 16
+        subdiv = 64
         t_samples = []
         t_samples.append(0.0)
         t_samples.append(0.0002)
@@ -2601,7 +2599,7 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             m = Matrix.Translation(m.translation) @ basis.to_4x4()
             return m
 
-        subdiv = 16
+        subdiv = 64
         ts = [0.0, 0.0002] + [i / subdiv for i in range(1, subdiv)] + [0.9998, 1.0]
 
         raw_transforms = []
@@ -3363,6 +3361,28 @@ class MXTRoad_OT_GenerateMesh(Operator):
         ok = MXTRoad_OT_GenerateMesh.build_for_parent(parent, context, report_fn=self.report)
         return {'FINISHED'} if ok else {'CANCELLED'}
 
+def _fix_basis_columns(mat):
+    # Normalize X and Z
+    if mat.col[0].length > 0.0:
+        mat.col[0].normalize()
+    else:
+        mat.col[0] = Vector((1, 0, 0))  # fallback
+
+    if mat.col[2].length > 0.0:
+        mat.col[2].normalize()
+    else:
+        mat.col[2] = Vector((0, 0, 1))  # fallback
+
+    # Recalculate Y if degenerate, otherwise normalize it
+    if mat.col[1].length < 1e-5:
+        mat.col[1] = mat.col[2].cross(mat.col[0])
+        if mat.col[1].length == 0.0:
+            mat.col[1] = Vector((0, 1, 0))  # fallback if cross fails
+        else:
+            mat.col[1].normalize()
+    else:
+        mat.col[1].normalize()
+
 class MXTRoad_OT_GenerateCheckpoints(Operator):
     bl_idname  = "mxt_road.generate_checkpoints"
     bl_label   = "Generate Checkpoints"
@@ -3392,8 +3412,11 @@ class MXTRoad_OT_GenerateCheckpoints(Operator):
             b1, p1, _ = _sample_curve_matrix(helper, min(t1, 1.0))
 
             
-            B0 = b0.copy();  B0.col[0].normalize(); B0.col[1].normalize(); B0.col[2].normalize()
-            B1 = b1.copy();  B1.col[0].normalize(); B1.col[1].normalize(); B1.col[2].normalize()
+            B0 = b0.copy()
+            _fix_basis_columns(B0)
+
+            B1 = b1.copy()
+            _fix_basis_columns(B1)
 
             cp = props.checkpoints.add()
             cp.start_t  = t0
@@ -3576,6 +3599,7 @@ def _export_stage(context, filepath):
         if seg not in seen:
             seg_order.append(seg)
 
+
     # Build preview meshes so they can be exported
     for seg in seg_order:
         try:
@@ -3601,6 +3625,10 @@ def _export_stage(context, filepath):
         cp_indices[(seg, cp)] = idx
 
     neighbours = [[] for _ in cp_list]
+
+    # todo: neighbours arent set properly for the segment
+    # if it only has one checkpoint
+
     for seg in seg_order:
         props = seg.mxt_road_overall_props
         cps = props.checkpoints
@@ -3611,8 +3639,7 @@ def _export_stage(context, filepath):
                     ps = prev.segment
                     if ps and ps in seg_cp_start:
                         last_idx = seg_cp_start[ps] + cp_counts[ps] - 1
-                        if last_idx < gidx or ps == first:
-                            neighbours[gidx].append(last_idx)
+                        neighbours[gidx].append(last_idx)
                 if len(cps) > 1:
                     neighbours[gidx].append(gidx + 1)
             elif i == len(cps) - 1:
@@ -3622,10 +3649,12 @@ def _export_stage(context, filepath):
                     ns = nxt.segment
                     if ns and ns in seg_cp_start:
                         nidx = seg_cp_start[ns]
-                        if nidx > gidx or ns == first:
-                            neighbours[gidx].append(nidx)
+                        neighbours[gidx].append(nidx)
             else:
                 neighbours[gidx].extend([gidx - 1, gidx + 1])
+
+    for neighbour in neighbours:
+        print(neighbour)
 
     with open(filepath, 'wb') as f:
         data = bytearray()

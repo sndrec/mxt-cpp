@@ -338,6 +338,11 @@ static void cast_segment_fast(const CastParams  &params,
 						}
 					}
 				}
+			}else{
+				out_collision.road_data.cp_idx          = use_idx;
+				out_collision.road_data.spatial_t       = spatial_t_hit;
+				out_collision.road_data.road_t          = road_t_hit_raw;
+				out_collision.road_data.closest_surface = surf;     // reuse single transform
 			}
 		}
 	}

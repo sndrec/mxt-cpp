@@ -460,6 +460,21 @@ bool PhysicsCar::find_floor_beneath_machine()
 			height_above_track = contact_dist_metric;
 			return true;
 		} else {
+            const TrackSegment &segment = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
+            DEBUG::disp_text("offroad flat horizontal", "yep");
+            if ((hit.road_data.road_t.x < -1.0f || hit.road_data.road_t.x > 1.0f) && (machine_state & MACHINESTATE::AIRBORNE) == 0)
+            {
+                    RoadTransform root_t;
+                    segment.curve_matrix->sample(root_t, std::clamp(hit.road_data.road_t.y, 0.0f, 1.0f));
+                    float sign = (hit.road_data.road_t.x > 0.0f) ? -1.0f : 1.0f;
+                    godot::Vector3 impulse_world = root_t.t3d.basis.get_column(2).normalized() * (320.0f * sign);
+                    godot::Vector3 impulse_local = mtxa->inverse_rotate_point(impulse_world);
+                    velocity_angular += impulse_local;
+                    DEBUG::disp_text("sign", sign);
+                    DEBUG::disp_text("root_t", root_t.t3d);
+                    DEBUG::disp_text("impulse_world", impulse_world);
+                    DEBUG::disp_text("impulse_local", impulse_local);
+            }
 			track_surface_normal = godot::Vector3(0, 1, 0);
 			position_bottom = p1_sweep_end_ws;
 			height_above_track = 0.0f;
@@ -477,12 +492,23 @@ bool PhysicsCar::find_floor_beneath_machine()
 		return false;
 	}
 
-	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || road_t_sample_raw.y > 1.001f || road_t_sample_raw.y < -0.001f)
-	{
-		height_above_track = 0.0f;
-		track_surface_normal = godot::Vector3(0, 1, 0);
-		return false;
-	}
+    if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || road_t_sample_raw.y > 1.001f || road_t_sample_raw.y < -0.001f)
+    {
+            //const TrackSegment &segment = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
+            //if (segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT)
+            //{
+            //        RoadTransform root_t;
+            //        segment.curve_matrix->sample(root_t, std::clamp(road_t_sample_raw.y, 0.0f, 1.0f));
+            //        float sign = (road_t_sample_raw.x > 0.0f) ? 1.0f : -1.0f;
+            //        godot::Vector3 impulse_world = root_t.t3d.basis.get_column(2).normalized() * (1.2f * sign);
+            //        godot::Vector3 impulse_local = mtxa->inverse_rotate_point(impulse_world);
+            //        velocity_angular += impulse_local;
+            //}
+
+            height_above_track = 0.0f;
+            track_surface_normal = godot::Vector3(0, 1, 0);
+            return false;
+    }
 
 	RoadTransform root;
 	const TrackSegment &segment     = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
