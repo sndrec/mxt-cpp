@@ -285,7 +285,104 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 	road_shape_transform.origin = road_point * road_root_transform.scale;
 	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
 
-	out_pos = final_transform.origin;
+        out_pos = final_transform.origin;
+};
+
+void RoadShapeRoundedSquare::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
+{
+        float tx = deterministic_fp::atan2f(p.x, p.y) * ONE_DIV_BY_PI;
+        out_t = godot::Vector2(tx, p.z);
+};
+
+static inline float _rounded_square_length(const godot::Vector2 &dir, float w, float h, float r)
+{
+        const float w2 = 0.5f * w;
+        const float h2 = 0.5f * h;
+        const float rect_w = w2 + r;
+        const float rect_h = h2 + r;
+        const float abs_dx = fabsf(dir.x);
+        const float abs_dy = fabsf(dir.y);
+        const float t = fminf(rect_w / fmaxf(abs_dx, 0.0001f), rect_h / fmaxf(abs_dy, 0.0001f));
+        godot::Vector2 p = dir * t;
+        if (fabsf(p.x) > w2 && fabsf(p.y) > h2)
+        {
+                const godot::Vector2 corner((dir.x > 0.0f ? w2 : -w2), (dir.y > 0.0f ? h2 : -h2));
+                godot::Vector2 diff = (p - corner).normalized() * r;
+                p = corner + diff;
+        }
+        return p.length();
+}
+
+void RoadShapeRoundedSquare::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+{
+        RoadTransform road_root_transform;
+        owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
+
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
+
+        float mod_vertical_offset = 1.0f;
+        for (int i = 0; i < num_modulations; i++)
+        {
+                const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
+                mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
+        }
+
+        const float w = width->sample(in_t[1]);
+        const float h = height->sample(in_t[1]);
+        const float r = radius->sample(in_t[1]);
+
+        const float theta = deterministic_fp::wrap_minus_pi_to_pi(in_t[0] * PI);
+        const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
+
+        float length = _rounded_square_length(dir, w, h, r);
+        length *= mod_vertical_offset;
+        const godot::Vector2 final = dir * length;
+
+        godot::Transform3D road_shape_transform = T3D_IDENTITY;
+        road_shape_transform.origin = godot::Vector3(final.x, final.y, 0.0f) * road_root_transform.scale;
+        const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+
+        out_pos = final_transform.origin;
+};
+
+void RoadShapeRoundedSquareOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
+{
+        float tx = deterministic_fp::atan2f(p.x, p.y) * ONE_DIV_BY_PI;
+        tx /= fmaxf(0.001f, openness->sample(p.z));
+        out_t = godot::Vector2(tx, p.z);
+};
+
+void RoadShapeRoundedSquareOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+{
+        RoadTransform road_root_transform;
+        owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
+
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
+
+        float mod_vertical_offset = 1.0f;
+        for (int i = 0; i < num_modulations; i++)
+        {
+                const float mod_affector = road_modulations[i].modulation_effect->sample(in_t.y);
+                mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
+        }
+
+        const float w = width->sample(in_t[1]);
+        const float h = height->sample(in_t[1]);
+        const float r = radius->sample(in_t[1]);
+
+        float tx = in_t[0] * openness->sample(in_t[1]);
+        const float theta = deterministic_fp::wrap_minus_pi_to_pi(tx * PI);
+        const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
+
+        float length = _rounded_square_length(dir, w, h, r);
+        length *= mod_vertical_offset;
+        const godot::Vector2 final = dir * length;
+
+        godot::Transform3D road_shape_transform = T3D_IDENTITY;
+        road_shape_transform.origin = godot::Vector3(final.x, final.y, 0.0f) * road_root_transform.scale;
+        const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+
+        out_pos = final_transform.origin;
 };
 
 //void RoadShapeCylinderOpen::get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const

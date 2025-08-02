@@ -63,7 +63,24 @@ public:
 class RoadShapePipeOpen : public RoadShape
 {
 public:
-	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
-	//void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
-	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+        void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+        //void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
+        void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+};
+
+class RoadShapeRoundedSquare : public RoadShape
+{
+public:
+        Curve* width;
+        Curve* height;
+        Curve* radius;
+        void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+        void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+};
+
+class RoadShapeRoundedSquareOpen : public RoadShapeRoundedSquare
+{
+public:
+        void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+        void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
 };
