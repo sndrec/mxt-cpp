@@ -290,16 +290,23 @@ def mxt_road_shape_type_update(self, context):
 
     
     if self.road_shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
-        
+
         if parent.name in _openness_helper_to_destroy:
              _openness_helper_to_destroy.remove(parent.name)
         _openness_helper_to_create.add(parent.name)
-    
+
     else:
-        
+
         if parent.name in _openness_helper_to_create:
             _openness_helper_to_create.remove(parent.name)
         _openness_helper_to_destroy.add(parent.name)
+
+    if self.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+        _square_helpers_to_destroy.discard(parent.name)
+        _square_helpers_to_create.add(parent.name)
+    else:
+        _square_helpers_to_create.discard(parent.name)
+        _square_helpers_to_destroy.add(parent.name)
     
     
     schedule_mesh_build(parent)
@@ -1100,8 +1107,10 @@ def _process_pending_visual_updates():
     mxt_timer_is_active = False; return None
 _cm_pending   = set()
 _mesh_pending = set()
-_openness_helper_to_create = set() 
-_openness_helper_to_destroy = set() 
+_openness_helper_to_create = set()
+_openness_helper_to_destroy = set()
+_square_helpers_to_create = set()
+_square_helpers_to_destroy = set()
 _timer_live   = False
 
 def _ensure_timer():
@@ -1149,11 +1158,11 @@ def _process_live_updates():
                 helper_data.empty_display_type, helper_data.empty_display_size = 'SPHERE', 0
                 parent.users_collection[0].objects.link(helper_data)
                 helper_data.parent, helper_data.location = parent, parent.location
-                
+
                 helper_data.animation_data_create()
                 action = bpy.data.actions.new(f"{helper_data.name}_OpennessCurve")
                 helper_data.animation_data.action = action
-                helper_data.location[0] = 1.0 
+                helper_data.location[0] = 1.0
                 helper_data.keyframe_insert(data_path="location", index=0, frame=0.0)
                 helper_data.keyframe_insert(data_path="location", index=0, frame=100.0)
                 fcu = action.fcurves.find("location", index=0)
@@ -1161,6 +1170,50 @@ def _process_live_updates():
                     fcu.keyframe_points[0].interpolation = fcu.keyframe_points[1].interpolation = 'CONSTANT'
                     _linearize_fcurve_handles_smooth(fcu)
                 parent.mxt_road_overall_props.openness_helper = helper_data
+
+        while _square_helpers_to_destroy:
+            name = _square_helpers_to_destroy.pop()
+            parent = bpy.data.objects.get(name)
+            if parent:
+                props = parent.mxt_road_overall_props
+                for attr in ('width_helper', 'height_helper', 'radius_helper'):
+                    helper = getattr(props, attr)
+                    if helper:
+                        if helper.animation_data and helper.animation_data.action and helper.animation_data.action.users <= 1:
+                            bpy.data.actions.remove(helper.animation_data.action)
+                        bpy.data.objects.remove(helper, do_unlink=True)
+                        setattr(props, attr, None)
+
+        while _square_helpers_to_create:
+            name = _square_helpers_to_create.pop()
+            parent = bpy.data.objects.get(name)
+            if parent:
+                props = parent.mxt_road_overall_props
+                helper_info = [
+                    ('Width',  'width_helper',  1.0),
+                    ('Height', 'height_helper', 1.0),
+                    ('Radius', 'radius_helper', 0.0),
+                ]
+                for suffix, attr, default in helper_info:
+                    if getattr(props, attr):
+                        continue
+                    helper_data = bpy.data.objects.new(f"{parent.name}_{suffix}Helper", None)
+                    _disallow_deletion(helper_data)
+                    helper_data.empty_display_type, helper_data.empty_display_size = 'SPHERE', 0
+                    parent.users_collection[0].objects.link(helper_data)
+                    helper_data.parent, helper_data.location = parent, parent.location
+
+                    helper_data.animation_data_create()
+                    action = bpy.data.actions.new(f"{helper_data.name}_{suffix}Curve")
+                    helper_data.animation_data.action = action
+                    helper_data.location[0] = default
+                    helper_data.keyframe_insert(data_path="location", index=0, frame=0.0)
+                    helper_data.keyframe_insert(data_path="location", index=0, frame=100.0)
+                    fcu = action.fcurves.find("location", index=0)
+                    if fcu:
+                        fcu.keyframe_points[0].interpolation = fcu.keyframe_points[1].interpolation = 'CONSTANT'
+                        _linearize_fcurve_handles_smooth(fcu)
+                    setattr(props, attr, helper_data)
         
         while _cm_pending:
             name = _cm_pending.pop()
@@ -1179,7 +1232,10 @@ def _process_live_updates():
     finally:
         _ignore_updates, _build_in_progress = False, False
 
-    _timer_live = bool(_cm_pending or _mesh_pending or _openness_helper_to_create or _openness_helper_to_destroy)
+    _timer_live = bool(
+        _cm_pending or _mesh_pending or _openness_helper_to_create or _openness_helper_to_destroy
+        or _square_helpers_to_create or _square_helpers_to_destroy
+    )
     return 0.05 if _timer_live else None
 @persistent
 def mxt_on_depsgraph_update(scene, depsgraph):
@@ -1476,6 +1532,8 @@ def _delete_road_segment(parent_obj):
     _mesh_pending.discard(parent_obj.name)
     _openness_helper_to_create.discard(parent_obj.name)
     _openness_helper_to_destroy.discard(parent_obj.name)
+    _square_helpers_to_create.discard(parent_obj.name)
+    _square_helpers_to_destroy.discard(parent_obj.name)
     mxt_roads_pending_visual_update.discard(parent_obj.name)
 
     bpy.data.objects.remove(parent_obj, do_unlink=True)
