@@ -1434,10 +1434,7 @@ def _update_trigger_helper(trig):
         return
     right = (pr - base).normalized()
     forward = (pf - base).normalized()
-    normal = right.cross(forward)
-    if props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
-        normal = -normal
-    normal.normalize()
+    normal = (right.cross(forward)).normalized()
     right = forward.cross(normal).normalized()
     B = (Matrix((right, -normal, forward))).transposed()
     mat = Matrix.Translation(base) @ B.to_4x4()
@@ -1936,6 +1933,7 @@ class RoadShapeRoundedSquare(RoadShape):
     def get_pos(self, helper, t):
         basis, pos = _root(helper, t.y)
         seg_parent = helper.parent
+        t = Vector((1.0 - t.x, t.y))
 
         mod_t = 0.5 * (1.0 - t.x)
         r_off = _vertical_offset(seg_parent, mod_t, t.y)
@@ -2886,11 +2884,8 @@ def _surface(helper, tx, ty, seg_len, shape):
     pl = shape.get_pos(helper, base + Vector((eps, 0)))
     pb = shape.get_pos(helper, base + Vector((0, step_y)))
     props = seg_parent.mxt_road_overall_props
-    flip = 1.0
-    if props.road_shape_type not in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
-        flip = -1.0
-    normal1 = ((pr - p0).cross(pf - p0) * flip).normalized()
-    normal2 = ((pl - p0).cross(pb - p0) * flip).normalized()
+    normal1 = ((pr - p0).cross(pf - p0)).normalized()
+    normal2 = ((pl - p0).cross(pb - p0)).normalized()
     return p0, ((normal1 + normal2) * 0.5)
 
 def _cubic(p0, p1, p2, p3, t: float):
@@ -3057,8 +3052,8 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
             local_space_offsets[..., 0] = radial_x * radius
             local_space_offsets[..., 1] = radial_y * radius
         elif shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
-            angle = angle_tx_grid * np.pi
-            dir_x, dir_y = np.sin(angle), np.cos(angle)
+            angle = (2.0 - angle_tx_grid) * np.pi
+            dir_x, dir_y = -np.sin(angle), -np.cos(angle)
             w2 = width_grid * 0.5
             h2 = height_grid * 0.5
             rect_w = w2 + radius_grid
@@ -3311,8 +3306,6 @@ class MXTRoad_OT_GenerateMesh(Operator):
         PR = _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, centerline_scl, tx_grid + epsilon, ty_grid)
         cl_rot_mats = quaternions_to_rotation_matrices_numpy(centerline_quat)
         N_main = np.cross(PF - P0, PR - P0)
-        if props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
-            N_main = -N_main
         norms = np.linalg.norm(N_main, axis=2, keepdims=True); norms[norms==0]=1.0; N_main /= norms
         main_road_vertex_normals = N_main.reshape(-1, 3)
         for face in main_road_faces:
@@ -3421,8 +3414,6 @@ class MXTRoad_OT_GenerateMesh(Operator):
                     P_grid = P_footprint.copy()
                     d_ty, d_tx = np.gradient(P_grid, axis=0), np.gradient(P_grid, axis=1)
                     N_grid = np.cross(d_ty, d_tx)
-                    if props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
-                        N_grid = -N_grid
                     n_len = np.linalg.norm(N_grid, axis=2, keepdims=True); n_len[n_len == 0.0] = 1.0; N_grid /= n_len
                     base_verts, n_flat = P_grid.reshape(-1, 3), N_grid.reshape(-1, 3)
                     cutter_mesh = bpy.data.meshes.new(f"{embed.label}_cutter"); cutter_obj = bpy.data.objects.new(f"{embed.label}_cutter", cutter_mesh)
