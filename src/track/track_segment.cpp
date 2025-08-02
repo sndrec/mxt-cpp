@@ -307,21 +307,61 @@ void RoadShapeRoundedSquare::find_t_from_relative_pos(godot::Vector2 &out_t, con
 
 static inline float _rounded_square_length(const godot::Vector2 &dir, float w, float h, float r)
 {
-        const float w2 = 0.5f * w;
-        const float h2 = 0.5f * h;
-        const float rect_w = w2 + r;
-        const float rect_h = h2 + r;
-        const float abs_dx = fabsf(dir.x);
-        const float abs_dy = fabsf(dir.y);
-        const float t = fminf(rect_w / fmaxf(abs_dx, 0.0001f), rect_h / fmaxf(abs_dy, 0.0001f));
-        godot::Vector2 p = dir * t;
-        if (fabsf(p.x) > w2 && fabsf(p.y) > h2)
-        {
-                const godot::Vector2 corner((dir.x > 0.0f ? w2 : -w2), (dir.y > 0.0f ? h2 : -h2));
-                godot::Vector2 diff = (p - corner).normalized() * r;
-                p = corner + diff;
-        }
-        return p.length();
+	const float w2 = 0.5f * w;
+	const float h2 = 0.5f * h;
+	const float radius = fminf(fmaxf(r, 0.0f), fminf(w2, h2));
+
+	const float abs_dx = fabsf(dir.x);
+	const float abs_dy = fabsf(dir.y);
+
+	float min_t = FLT_MAX;
+
+	// try vertical side (x = ±w2)
+	if (abs_dx > 1.0e-6f) {
+		const float t_v = w2 / abs_dx;
+		if (t_v * abs_dy <= h2 - radius + 1.0e-6f)
+			min_t = t_v;
+	}
+
+	// try horizontal side (y = ±h2)
+	if (abs_dy > 1.0e-6f) {
+		const float t_h = h2 / abs_dy;
+		if (t_h * abs_dx <= w2 - radius + 1.0e-6f)
+			min_t = fminf(min_t, t_h);
+	}
+
+	// try corner radius
+	if (radius > 1.0e-6f) {
+		const float w_in = fmaxf(w2 - radius, 0.0f);
+		const float h_in = fmaxf(h2 - radius, 0.0f);
+
+		const float b = -2.0f * (abs_dx * w_in + abs_dy * h_in);
+		const float c = w_in * w_in + h_in * h_in - radius * radius;
+		const float disc = b * b - 4.0f * c;
+
+		if (disc >= 0.0f) {
+			const float sqrt_d = sqrtf(disc);
+			const float root1 = 0.5f * (-b - sqrt_d);
+			const float root2 = 0.5f * (-b + sqrt_d);
+
+			if (root1 > 0.0f &&
+				root1 * abs_dx >= w_in - 1.0e-6f &&
+				root1 * abs_dy >= h_in - 1.0e-6f)
+				min_t = fminf(min_t, root1);
+
+			if (root2 > 0.0f &&
+				root2 * abs_dx >= w_in - 1.0e-6f &&
+				root2 * abs_dy >= h_in - 1.0e-6f)
+				min_t = fminf(min_t, root2);
+		}
+	}
+
+	// fallback: degenerate case (e.g., extreme aspect ratio)
+	if (min_t == FLT_MAX)
+		min_t = fminf(w2, h2);
+
+	godot::Vector2 p = dir * min_t;
+	return p.length();
 }
 
 void RoadShapeRoundedSquare::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -455,13 +495,8 @@ void RoadShape::get_oriented_transform_at_time(godot::Transform3D &out_transform
 	get_position_at_time(pos_forward, in_t + godot::Vector2(0.0f, fwd_off));
 	pos_forward -= base_pos;
 
-        float normal_sign = -(sign_x * sign_y);
-        if (shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
-            shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN)
-        {
-                normal_sign = sign_x * sign_y;
-        }
-        godot::Vector3 normal = normal_sign * pos_right.cross(pos_forward);
+    float normal_sign = -(sign_x * sign_y);
+    godot::Vector3 normal = normal_sign * pos_right.cross(pos_forward);
 
 	pos_right.normalize();
 	normal.normalize();
