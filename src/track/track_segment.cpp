@@ -115,7 +115,7 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
         const float theta = deterministic_fp::atan2f(in_pos.x, in_pos.y);
-        out_t = godot::Vector2(theta * ONE_DIV_PI, in_pos.z);
+        out_t = godot::Vector2(theta * ONE_DIV_BY_PI, in_pos.z);
 };
 
 void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
@@ -176,7 +176,7 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 
 void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
-        float phi = deterministic_fp::atan2f(in_pos.y, in_pos.x) * ONE_DIV_PI + 0.5f;
+        float phi = deterministic_fp::atan2f(in_pos.y, in_pos.x) * ONE_DIV_BY_PI + 0.5f;
         phi /= fmaxf(0.001f, openness->sample(in_pos[2]));
         if (phi < -1.0f)
         {
@@ -251,7 +251,7 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 
 void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
-        float tx = deterministic_fp::atan2f(in_pos.x, in_pos.y) * ONE_DIV_PI;
+        float tx = deterministic_fp::atan2f(in_pos.x, in_pos.y) * ONE_DIV_BY_PI;
         tx /= fmaxf(0.001f, openness->sample(in_pos[2]));
         out_t = godot::Vector2(tx, in_pos[2]);
 }
@@ -293,7 +293,7 @@ void RoadShapeRoundedSquare::find_t_from_relative_pos(godot::Vector2 &out_t, con
         {
                 theta += PI * 2.0f;
         }
-        float tx = 1.0f - theta * ONE_DIV_PI;
+        float tx = 1.0f - theta * ONE_DIV_BY_PI;
         if (tx > 1.0f)
         {
                 tx -= 2.0f;
@@ -363,7 +363,7 @@ void RoadShapeRoundedSquareOpen::find_t_from_relative_pos(godot::Vector2 &out_t,
         {
                 theta += PI * 2.0f;
         }
-        float tx = 1.0f - theta * ONE_DIV_PI;
+        float tx = 1.0f - theta * ONE_DIV_BY_PI;
         tx /= fmaxf(0.001f, openness->sample(p.z));
         if (tx > 1.0f)
         {
