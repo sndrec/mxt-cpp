@@ -290,12 +290,31 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
 			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE;
 		}
-		else if (road_type == 4)
-		{
-			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
-			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
-		}
+                else if (road_type == 4)
+                {
+                        current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
+                        current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+                }
+                else if (road_type == 5)
+                {
+                        auto* rs = level_data.allocate_class<RoadShapeRoundedSquare>();
+                        rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        current_track->segments[seg].road_shape = rs;
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE;
+                }
+                else if (road_type == 6)
+                {
+                        auto* rs = level_data.allocate_class<RoadShapeRoundedSquareOpen>();
+                        rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        rs->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+                        current_track->segments[seg].road_shape = rs;
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN;
+                }
 
 		// road modulations //
 

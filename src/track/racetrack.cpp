@@ -71,14 +71,15 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 	bool use_top_half = false;
 
 	// Check for open road shape
-	RoadShape *shape = segments[cp->road_segment].road_shape;
-	if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
-		is_open = true;
-		use_top_half = true;
-	} else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
-		is_open = true;
-		use_top_half = false;
-	}
+        RoadShape *shape = segments[cp->road_segment].road_shape;
+        if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN) {
+                is_open = true;
+                use_top_half = true;
+        } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
+                is_open = true;
+                use_top_half = false;
+        }
 	if (is_open && y_less_than_x) {
 		if (tx > -1.0001 && tx < 1.0001)
 		{
@@ -134,19 +135,20 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
 
 	spatial_t = godot::Vector3(tx, ty, tz);
 
-	RoadShape *shape = track->segments[cp->road_segment].road_shape;
+        RoadShape *shape = track->segments[cp->road_segment].road_shape;
 
-	bool y_less_than_x = y_r > 0.2f;
-	bool is_open = false;
-	bool use_top_half = false;
+        bool y_less_than_x = y_r > 0.2f;
+        bool is_open = false;
+        bool use_top_half = false;
 
-	if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
-		is_open = true;
-		use_top_half = true;
-	} else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
-		is_open = true;
-		use_top_half = false;
-	}
+        if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN) {
+                is_open = true;
+                use_top_half = true;
+        } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
+                is_open = true;
+                use_top_half = false;
+        }
 	if (is_open && y_less_than_x) {
 		if (tx > -1.0001 && tx < 1.0001)
 		{
@@ -208,13 +210,14 @@ void RaceTrack::convert_point_to_road(int cp_idx, const godot::Vector3 &point, g
 	bool is_open = false;
 	bool use_top_half = false;
 
-	if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN) {
-		is_open = true;
-		use_top_half = true;
-	} else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
-		is_open = true;
-		use_top_half = false;
-	}
+        if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN) {
+                is_open = true;
+                use_top_half = true;
+        } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
+                is_open = true;
+                use_top_half = false;
+        }
 	if (is_open && y_less_than_x) {
 		if (tx > -1.0001 && tx < 1.0001)
 		{
@@ -353,11 +356,13 @@ static void cast_segment_fast(const CastParams  &params,
 	if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0)
 		return;
 
-	if (segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-		segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-		segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-		segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN)
-		return;
+        if (segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
+                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN)
+                return;
 
 	RoadTransform root_t;
 	segment.curve_matrix->sample(root_t, road_t_sample_raw.y);

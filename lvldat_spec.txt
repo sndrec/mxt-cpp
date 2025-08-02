@@ -39,8 +39,11 @@ SEGMENT DATA (per segment)
 --------------------------
 Field                           Type            Notes
 segment_index                   u32
-road_type                       u32             0=Default, 1=Cylinder, 2=CylinderOpen, 3=Pipe, 4=PipeOpen
-openness                        Curve           Only if road_type is 2 or 4
+road_type                       u32             0=Default, 1=Cylinder, 2=CylinderOpen, 3=Pipe, 4=PipeOpen, 5=RoundedSquare, 6=RoundedSquareOpen
+width                           Curve           Only if road_type is 5 or 6
+height                          Curve           Only if road_type is 5 or 6
+radius                          Curve           Only if road_type is 5 or 6
+openness                        Curve           Only if road_type is 2, 4 or 6
 
 modulation_count                u32
 MODULATION[n]:                 (repeated modulation_count times)
@@ -134,7 +137,12 @@ for each segment:
     read_u32()                → segment_index
     read_u32()                → road_type
 
-    if road_type == 2 or 4:
+    if road_type == 5 or road_type == 6:
+        read_curve()         → width
+        read_curve()         → height
+        read_curve()         → radius
+
+    if road_type == 2 or road_type == 4 or road_type == 6:
         read_curve()         → openness
 
     read_u32()                → modulation_count

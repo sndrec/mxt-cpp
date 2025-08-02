@@ -57,6 +57,8 @@ ROAD_SHAPE_TYPE_ITEMS = [
     ('PIPE', "Pipe", "Pipe Shape (interior)"),
     ('CYLINDER_OPEN', "Open Cylinder", "Open Cylindrical Shape"),
     ('PIPE_OPEN', "Open Pipe", "Open Pipe Shape (interior)"),
+    ('ROUNDED_SQUARE', "Rounded Square", "Rounded square cross-section"),
+    ('ROUNDED_SQUARE_OPEN', "Open Rounded Square", "Rounded square with gap"),
 ]
 
 class MXTEmbed(bpy.types.PropertyGroup):
@@ -287,7 +289,7 @@ def mxt_road_shape_type_update(self, context):
     parent = self.id_data 
 
     
-    if self.road_shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN'):
+    if self.road_shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
         
         if parent.name in _openness_helper_to_destroy:
              _openness_helper_to_destroy.remove(parent.name)
@@ -419,6 +421,24 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
     openness_helper: PointerProperty(
         name="Openness Helper",
         description="Empty containing an F-Curve on its X-Location to control the gap size (0-1)",
+        type=bpy.types.Object,
+        poll=lambda self, object: object.type == 'EMPTY'
+    )
+    width_helper: PointerProperty(
+        name="Width Helper",
+        description="Empty with X-Location F-Curve controlling flat width",
+        type=bpy.types.Object,
+        poll=lambda self, object: object.type == 'EMPTY'
+    )
+    height_helper: PointerProperty(
+        name="Height Helper",
+        description="Empty with X-Location F-Curve controlling flat height",
+        type=bpy.types.Object,
+        poll=lambda self, object: object.type == 'EMPTY'
+    )
+    radius_helper: PointerProperty(
+        name="Radius Helper",
+        description="Empty with X-Location F-Curve controlling corner radius",
         type=bpy.types.Object,
         poll=lambda self, object: object.type == 'EMPTY'
     )
@@ -790,7 +810,7 @@ class MXTRoad_OT_ConvertSegmentType(Operator):
             if helper.animation_data and helper.animation_data.action and helper.animation_data.action.users <= 1:
                 bpy.data.actions.remove(helper.animation_data.action)
             bpy.data.objects.remove(helper, do_unlink=True)
-        props.line_start_point, props.line_end_point, props.spiral_helper, props.spiral_axis_helper, props.openness_helper = None, None, None, None, None
+        props.line_start_point, props.line_end_point, props.spiral_helper, props.spiral_axis_helper, props.openness_helper, props.width_helper, props.height_helper, props.radius_helper = None, None, None, None, None, None, None, None
         
         context.view_layer.objects.active = parent
 
@@ -1340,6 +1360,8 @@ def _update_trigger_helper(trig):
         'PIPE': RoadShapePipe(),
         'CYLINDER_OPEN': RoadShapeCylinderOpen(),
         'PIPE_OPEN': RoadShapePipeOpen(),
+        'ROUNDED_SQUARE': RoadShapeRoundedSquare(),
+        'ROUNDED_SQUARE_OPEN': RoadShapeRoundedSquareOpen(),
     }[props.road_shape_type]
     base = shape.get_pos(cm_helper, Vector((trig.tx, trig.ty)))
     if base is None:
@@ -1831,6 +1853,49 @@ class RoadShapePipeOpen(RoadShapePipe):
         t_open = t.copy();  t_open.x *= self.open_val
         return super().get_pos(helper, t_open)
 
+class RoadShapeRoundedSquare(RoadShape):
+    def get_pos(self, helper, t):
+        basis, pos = _root(helper, t.y)
+        seg_parent = helper.parent
+
+        mod_t = 0.5 * (1.0 - t.x)
+        r_off = _vertical_offset(seg_parent, mod_t, t.y)
+
+        props = seg_parent.mxt_road_overall_props
+
+        def _sample(helper_obj, default):
+            if helper_obj and helper_obj.animation_data and helper_obj.animation_data.action:
+                fcu = helper_obj.animation_data.action.fcurves.find("location", index=0)
+                if fcu:
+                    return fcu.evaluate(t.y * 100.0)
+            return default
+
+        width = _sample(props.width_helper, 1.0)
+        height = _sample(props.height_helper, 1.0)
+        radius = _sample(props.radius_helper, 0.0)
+
+        theta = t.x * math.pi
+        dir = Vector((math.sin(theta), math.cos(theta)))
+
+        w2, h2 = width * 0.5, height * 0.5
+        rect_w, rect_h = w2 + radius, h2 + radius
+        abs_dx, abs_dy = abs(dir.x), abs(dir.y)
+        length = min(rect_w / max(abs_dx, 1e-6), rect_h / max(abs_dy, 1e-6))
+        p = dir * length
+        if abs(p.x) > w2 and abs(p.y) > h2:
+            corner = Vector((w2 if p.x > 0 else -w2, h2 if p.y > 0 else -h2))
+            diff = (p - corner).normalized() * radius
+            p = corner + diff
+        p *= (1.0 + r_off)
+        local = Vector((p.x, p.y, 0.0))
+        return pos + basis @ local
+
+class RoadShapeRoundedSquareOpen(RoadShapeRoundedSquare):
+    def __init__(self): self.open_val = 0.5
+    def get_pos(self, helper, t):
+        t_open = t.copy();  t_open.x *= self.open_val
+        return super().get_pos(helper, t_open)
+
 def _sample_curve_matrix(helper_obj, t: float):
     act = helper_obj.animation_data.action
     fc_loc = [act.fcurves.find("location", index=i) for i in range(3)]
@@ -1950,6 +2015,8 @@ def mxt_draw_callback():
             'PIPE': RoadShapePipe(),
             'CYLINDER_OPEN': RoadShapeCylinderOpen(),
             'PIPE_OPEN': RoadShapePipeOpen(),
+            'ROUNDED_SQUARE': RoadShapeRoundedSquare(),
+            'ROUNDED_SQUARE_OPEN': RoadShapeRoundedSquareOpen(),
         }
         shape = shape_map[props.road_shape_type]
         for emb in props.embeds:
@@ -2001,6 +2068,8 @@ def mxt_draw_callback():
                 'PIPE': RoadShapePipe(),
                 'CYLINDER_OPEN': RoadShapeCylinderOpen(),
                 'PIPE_OPEN': RoadShapePipeOpen(),
+                'ROUNDED_SQUARE': RoadShapeRoundedSquare(),
+                'ROUNDED_SQUARE_OPEN': RoadShapeRoundedSquareOpen(),
             }[props.road_shape_type]
 
             
@@ -2197,7 +2266,7 @@ class MXTRoad_PT_MainPanel(Panel):
         common_box.label(text="Shape and Mesh")
         common_box.prop(road_props, "road_shape_type")
         
-        if road_props.road_shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN'):
+        if road_props.road_shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
             open_box = common_box.box()
             open_box.prop(road_props, "openness_helper")
             
@@ -2207,6 +2276,12 @@ class MXTRoad_PT_MainPanel(Panel):
             op.helper_name = road_props.openness_helper.name if road_props.openness_helper else ""
             select_row.enabled = bool(road_props.openness_helper)
             
+        if road_props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+            sq_box = common_box.box()
+            sq_box.prop(road_props, "width_helper")
+            sq_box.prop(road_props, "height_helper")
+            sq_box.prop(road_props, "radius_helper")
+
         common_box.prop(road_props, "horiz_subdivs")
         common_box.prop(road_props, "road_uv_multiplier")
         mesh_gen_box = common_box.box(); mesh_gen_box.label(text="Adaptive Mesh Settings:")
@@ -2846,7 +2921,7 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
     shape_type = props.road_shape_type
     angle_tx_grid = tx_grid
 
-    if shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN'):
+    if shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
         open_vals_1d = np.ones(num_y, dtype=np.float64)
         helper = props.openness_helper
         if helper and helper.animation_data and helper.animation_data.action:
@@ -2856,22 +2931,66 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
                 open_vals_1d = np.array([fcu.evaluate(f) for f in frames], dtype=np.float64)
         angle_tx_grid = tx_grid * open_vals_1d.reshape(num_y, 1)
 
+    if shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+        width_vals_1d = np.ones(num_y, dtype=np.float64)
+        height_vals_1d = np.ones(num_y, dtype=np.float64)
+        radius_vals_1d = np.zeros(num_y, dtype=np.float64)
+        helpers = [props.width_helper, props.height_helper, props.radius_helper]
+        arrays = [width_vals_1d, height_vals_1d, radius_vals_1d]
+        for arr, helper in zip(arrays, helpers):
+            if helper and helper.animation_data and helper.animation_data.action:
+                fcu = helper.animation_data.action.fcurves.find("location", index=0)
+                if fcu:
+                    frames = ty_1d * 100.0
+                    arr[:] = np.array([fcu.evaluate(f) for f in frames], dtype=np.float64)
+        width_grid = width_vals_1d.reshape(num_y,1)
+        height_grid = height_vals_1d.reshape(num_y,1)
+        radius_grid = radius_vals_1d.reshape(num_y,1)
+
     
     if shape_type == 'FLAT':
         local_space_offsets[..., 0] = tx_grid 
         local_space_offsets[..., 1] = total_mod_offset_grid
     
-    else: 
+    else:
         if shape_type in ('CYLINDER', 'CYLINDER_OPEN'):
             angle = angle_tx_grid * np.pi
             radial_x, radial_y = np.sin(angle), np.cos(angle)
-        else: 
+            radius = 1.0 + total_mod_offset_grid
+            local_space_offsets[..., 0] = radial_x * radius
+            local_space_offsets[..., 1] = radial_y * radius
+        elif shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+            angle = angle_tx_grid * np.pi
+            dir_x, dir_y = np.sin(angle), np.cos(angle)
+            w2 = width_grid * 0.5
+            h2 = height_grid * 0.5
+            rect_w = w2 + radius_grid
+            rect_h = h2 + radius_grid
+            abs_dx = np.abs(dir_x)
+            abs_dy = np.abs(dir_y)
+            t = np.minimum(rect_w / np.maximum(abs_dx, 1e-6), rect_h / np.maximum(abs_dy, 1e-6))
+            p_x = dir_x * t
+            p_y = dir_y * t
+            mask = (np.abs(p_x) > w2) & (np.abs(p_y) > h2)
+            corner_x = np.where(p_x >= 0, w2, -w2)
+            corner_y = np.where(p_y >= 0, h2, -h2)
+            diff_x = p_x - corner_x
+            diff_y = p_y - corner_y
+            norm = np.sqrt(diff_x ** 2 + diff_y ** 2)
+            diff_x = diff_x / np.maximum(norm, 1e-6) * radius_grid
+            diff_y = diff_y / np.maximum(norm, 1e-6) * radius_grid
+            p_x = np.where(mask, corner_x + diff_x, p_x)
+            p_y = np.where(mask, corner_y + diff_y, p_y)
+            length = np.sqrt(p_x ** 2 + p_y ** 2)
+            scale = 1.0 + total_mod_offset_grid
+            local_space_offsets[..., 0] = dir_x * length * scale
+            local_space_offsets[..., 1] = dir_y * length * scale
+        else:
             angle = (angle_tx_grid - 0.5) * np.pi
             radial_x, radial_y = np.cos(angle), np.sin(angle)
-
-        radius = 1.0 + total_mod_offset_grid
-        local_space_offsets[..., 0] = radial_x * radius
-        local_space_offsets[..., 1] = radial_y * radius
+            radius = 1.0 + total_mod_offset_grid
+            local_space_offsets[..., 0] = radial_x * radius
+            local_space_offsets[..., 1] = radial_y * radius
 
     
     cl_pos = centerline_pos[:, np.newaxis, :]
@@ -3667,13 +3786,20 @@ def _export_stage(context, filepath):
 
         # segment data
         seg_data = bytearray()
-        type_map = {'FLAT':0, 'CYLINDER':1, 'CYLINDER_OPEN':2, 'PIPE':3, 'PIPE_OPEN':4}
+        type_map = {'FLAT':0, 'CYLINDER':1, 'CYLINDER_OPEN':2, 'PIPE':3, 'PIPE_OPEN':4, 'ROUNDED_SQUARE':5, 'ROUNDED_SQUARE_OPEN':6}
         for seg in seg_order:
             props = seg.mxt_road_overall_props
             seg_data += struct.pack('<I', seg_index[seg])
             road_type = type_map.get(props.road_shape_type, 0)
             seg_data += struct.pack('<I', road_type)
-            if road_type in (2,4):
+            if road_type in (5,6):
+                helpers = [props.width_helper, props.height_helper, props.radius_helper]
+                for helper in helpers:
+                    fcu = None
+                    if helper and helper.animation_data and helper.animation_data.action:
+                        fcu = helper.animation_data.action.fcurves.find('location', index=0)
+                    seg_data += _pack_curve(_fcurve_to_points(fcu))
+            if road_type in (2,4,6):
                 helper = props.openness_helper
                 fcu = None
                 if helper and helper.animation_data and helper.animation_data.action:

@@ -431,8 +431,11 @@ bool PhysicsCar::find_floor_beneath_machine()
 	bool cylinder = false;
 	bool pipe = false;
 	TrackSegment *floor_seg = &current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
-	cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
-	pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+        cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
+                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN;
+        pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
 	stay_on = pipe || cylinder;
 
 	if (!stay_on)
@@ -2108,10 +2111,12 @@ int PhysicsCar::update_machine_corners() {
 					}
 				}
 				TrackSegment *old_seg = &current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
-				bool should_rail_old = (old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
+                                bool should_rail_old = (old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
+                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN);
 				if (!should_rail_old && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
@@ -2192,10 +2197,12 @@ int PhysicsCar::update_machine_corners() {
 					}
 				}
 				TrackSegment *new_seg = &current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
-				bool should_rail_new = (new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
+                                bool should_rail_new = (new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
+                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
+                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN);
 				if (!should_rail_new && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
