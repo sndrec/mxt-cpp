@@ -1886,22 +1886,24 @@ class RoadShapeFlat(RoadShape):
 
 
 class RoadShapeCylinder(RoadShape):
+    # t.x spans [-1,1]; theta = t.x * pi to align with C++ winding
     def get_pos(self, helper, t):
         basis, pos = _root(helper, t.y)
         seg_parent = helper.parent
 
-        theta   = t.x * math.pi                  
+        theta   = t.x * math.pi
         radial  = Vector((math.sin(theta), math.cos(theta), 0.0)).normalized()
 
         mod_t   = 0.5 * (1.0 - t.x)
         r_off   = _vertical_offset(seg_parent, mod_t, t.y)
 
-        local   = radial + radial * r_off        
+        local   = radial + radial * r_off
         return pos + basis @ local
 
 
 class RoadShapePipe(RoadShape):
     def __init__(self): self.inner = 0.8
+    # t.x spans [-1,1]; angle uses (t.x - 0.5) * pi like the C++ runtime
     def get_pos(self, helper, t):
         basis, pos = _root(helper, t.y)
         seg_parent = helper.parent
@@ -1930,6 +1932,7 @@ class RoadShapePipeOpen(RoadShapePipe):
         return super().get_pos(helper, t_open)
 
 class RoadShapeRoundedSquare(RoadShape):
+    # t.x is inverted so the winding matches C++; mod_t uses the original t.x
     def get_pos(self, helper, t):
         basis, pos = _root(helper, t.y)
         seg_parent = helper.parent
