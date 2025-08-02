@@ -188,11 +188,11 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 
 	for i in range(seg_count):
 		pb.get_u32()
-                var road_type := pb.get_u32()
-                if road_type == 5 or road_type == 6:
-                        _skip_curve.call(); _skip_curve.call(); _skip_curve.call()
-                if road_type == 2 or road_type == 4 or road_type == 6:
-                        _skip_curve.call()
+		var road_type := pb.get_u32()
+		if road_type == 5 or road_type == 6:
+			_skip_curve.call(); _skip_curve.call(); _skip_curve.call()
+		if road_type == 2 or road_type == 4 or road_type == 6:
+			_skip_curve.call()
 		var mod_count := pb.get_u32()
 		for m in range(mod_count):
 			_skip_curve.call(); _skip_curve.call()
