@@ -433,8 +433,8 @@ bool PhysicsCar::find_floor_beneath_machine()
 	TrackSegment *floor_seg = &current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
         cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
                 floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
-                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN;
+                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT ||
+                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
         pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
 	stay_on = pipe || cylinder;
 
@@ -1669,7 +1669,7 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 	godot::Vector3 inv_vel = velocity * inv_weight;
 	float offset_add = std::max(0.0f, -(inv_vel.dot(track_surface_normal)));
 
-	godot::Vector3 p0_ray_start_ws = mtxa->transform_point(in_corner.offset + godot::Vector3(0.0f, 2.0f + offset_add, 0.0f));
+	godot::Vector3 p0_ray_start_ws = mtxa->transform_point(in_corner.offset + godot::Vector3(0.0f, 0.01f + offset_add, 0.0f));
 	godot::Vector3 p0 = mtxa->transform_point(in_corner.offset);
 
 	godot::Vector3 local_target_for_ray_end(
@@ -2115,8 +2115,8 @@ int PhysicsCar::update_machine_corners() {
                                         old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
                                         old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
                                         old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
-                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN);
+                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT ||
+                                        old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN);
 				if (!should_rail_old && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
@@ -2201,8 +2201,8 @@ int PhysicsCar::update_machine_corners() {
                                         new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
                                         new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
                                         new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
-                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN);
+                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT ||
+                                        new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN);
 				if (!should_rail_new && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
 						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
