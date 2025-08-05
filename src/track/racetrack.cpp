@@ -73,7 +73,7 @@ void RaceTrack::get_road_surface(int cp_idx, const godot::Vector3 &point,
 	// Check for open road shape
         RoadShape *shape = segments[cp->road_segment].road_shape;
         if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN) {
+                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN) {
                 is_open = true;
                 use_top_half = true;
         } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
@@ -142,7 +142,7 @@ static void convert_point_to_road(RaceTrack *track, int cp_idx, const godot::Vec
         bool use_top_half = false;
 
         if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN) {
+                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN) {
                 is_open = true;
                 use_top_half = true;
         } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
@@ -211,7 +211,7 @@ void RaceTrack::convert_point_to_road(int cp_idx, const godot::Vector3 &point, g
 	bool use_top_half = false;
 
         if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN) {
+                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN) {
                 is_open = true;
                 use_top_half = true;
         } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
@@ -360,8 +360,8 @@ static void cast_segment_fast(const CastParams  &params,
                 segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
                 segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
                 segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE ||
-                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN)
+                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT ||
+                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN)
                 return;
 
 	RoadTransform root_t;

@@ -183,7 +183,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_CHECKPOINTS);
-	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
+	DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA);
 	//DEBUG::enable_dip(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS);
 	// load in collision checkpoints //
 
@@ -298,22 +298,22 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
                 }
                 else if (road_type == 5)
                 {
-                        auto* rs = level_data.allocate_class<RoadShapeRoundedSquare>();
+                        auto* rs = level_data.allocate_class<RoadShapeRoundedRect>();
                         rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
                         rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
                         rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
                         current_track->segments[seg].road_shape = rs;
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE;
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT;
                 }
                 else if (road_type == 6)
                 {
-                        auto* rs = level_data.allocate_class<RoadShapeRoundedSquareOpen>();
+                        auto* rs = level_data.allocate_class<RoadShapeRoundedRectOpen>();
                         rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
                         rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
                         rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
                         rs->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
                         current_track->segments[seg].road_shape = rs;
-                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_SQUARE_OPEN;
+                        current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
                 }
 
 		// road modulations //
