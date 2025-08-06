@@ -74,7 +74,7 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-        const float tx_angle = deterministic_fp::wrap_minus_pi_to_pi((in_t[0] - 0.5f) * PI);
+        const float tx_angle = (in_t[0] - 0.5f) * PI;
         const godot::Vector3 pos = godot::Vector3(
                 deterministic_fp::cosf(tx_angle),
                 deterministic_fp::sinf(tx_angle),
@@ -133,7 +133,7 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-        const float theta = deterministic_fp::wrap_minus_pi_to_pi(in_t.x * PI);
+        const float theta = in_t.x * PI;
         const godot::Vector3 pos = godot::Vector3(
                 deterministic_fp::sinf(theta),
                 deterministic_fp::cosf(theta),
@@ -205,7 +205,7 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-        const float tx_angle = deterministic_fp::wrap_minus_pi_to_pi((mod_tx - 0.5f) * PI);
+        const float tx_angle = (mod_tx - 0.5f) * PI;
         const godot::Vector3 pos = godot::Vector3(
                 deterministic_fp::cosf(tx_angle),
                 deterministic_fp::sinf(tx_angle),
@@ -272,7 +272,7 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 		mod_vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * mod_affector;
 	}
 
-        const float theta = deterministic_fp::wrap_minus_pi_to_pi(mod_tx * PI);
+        const float theta = mod_tx * PI;
         const godot::Vector3 pos = godot::Vector3(
                 deterministic_fp::sinf(theta),
                 deterministic_fp::cosf(theta),
@@ -286,9 +286,60 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
         out_pos = final_transform.origin;
 };
 
+static inline godot::Vector2 _closest_point_on_rounded_rect(const godot::Vector2 &p, float w, float h, float r)
+{
+        const float w2 = 0.5f * w;
+        const float h2 = 0.5f * h;
+        const float radius = fminf(fmaxf(r, 0.0f), fminf(w2, h2));
+        const float inner_x = w2 - radius;
+        const float inner_y = h2 - radius;
+
+        godot::Vector2 pp(fabsf(p.x), fabsf(p.y));
+        godot::Vector2 result;
+
+        if (pp.x > inner_x && pp.y > inner_y)
+        {
+                godot::Vector2 corner_center(inner_x, inner_y);
+                godot::Vector2 off = pp - corner_center;
+                const float len = off.length();
+                if (len > 1.0e-6f)
+                        off *= radius / len;
+                else
+                        off = godot::Vector2(radius, 0.0f);
+                result = corner_center + off;
+        }
+        else if (pp.x > inner_x)
+        {
+                result = godot::Vector2(w2, pp.y);
+        }
+        else if (pp.y > inner_y)
+        {
+                result = godot::Vector2(pp.x, h2);
+        }
+        else
+        {
+                const float dx = w2 - pp.x;
+                const float dy = h2 - pp.y;
+                if (dx < dy)
+                        result = godot::Vector2(w2, pp.y);
+                else
+                        result = godot::Vector2(pp.x, h2);
+        }
+
+        result.x = copysignf(result.x, p.x);
+        result.y = copysignf(result.y, p.y);
+        return result;
+}
+
 void RoadShapeRoundedRect::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
 {
-        float theta = deterministic_fp::atan2f(p.x, p.y);
+        const float w = width->sample(p.z);
+        const float h = height->sample(p.z);
+        const float r = radius->sample(p.z);
+
+        const godot::Vector2 closest = _closest_point_on_rounded_rect(godot::Vector2(p.x, p.y), w, h, r);
+
+        float theta = deterministic_fp::atan2f(closest.x, closest.y);
         if (theta < 0.0f)
         {
                 theta += PI * 2.0f;
@@ -382,7 +433,7 @@ void RoadShapeRoundedRect::get_position_at_time(godot::Vector3 &out_pos, const g
         const float h = height->sample(in_t[1]);
         const float r = radius->sample(in_t[1]);
 
-        const float theta = deterministic_fp::wrap_minus_pi_to_pi((1.0f - in_t[0]) * PI);
+        const float theta = (1.0f - in_t[0]) * PI;
         const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
 
         float length = _rounded_rect_length(dir, w, h, r);
@@ -398,21 +449,20 @@ void RoadShapeRoundedRect::get_position_at_time(godot::Vector3 &out_pos, const g
 
 void RoadShapeRoundedRectOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
 {
-        float theta = deterministic_fp::atan2f(p.x, p.y);
+        const float w = width->sample(p.z);
+        const float h = height->sample(p.z);
+        const float r = radius->sample(p.z);
+
+        const godot::Vector2 closest = _closest_point_on_rounded_rect(godot::Vector2(p.x, p.y), w, h, r);
+
+        float theta = deterministic_fp::atan2f(closest.x, closest.y);
         if (theta < 0.0f)
         {
                 theta += PI * 2.0f;
         }
-        float tx = 1.0f - theta * ONE_DIV_BY_PI;
-        tx /= fmaxf(0.001f, openness->sample(p.z));
-        if (tx > 1.0f)
-        {
-                tx -= 2.0f;
-        }
-        if (tx < -1.0f)
-        {
-                tx += 2.0f;
-        }
+        float mod_tx = 1.0f - theta * ONE_DIV_BY_PI;
+        float openness_v = fmaxf(0.001f, openness->sample(p.z));
+        float tx = mod_tx / openness_v;
         out_t = godot::Vector2(tx, p.z);
 };
 
@@ -435,7 +485,7 @@ void RoadShapeRoundedRectOpen::get_position_at_time(godot::Vector3 &out_pos, con
         const float h = height->sample(in_t[1]);
         const float r = radius->sample(in_t[1]);
 
-        const float theta = deterministic_fp::wrap_minus_pi_to_pi((1.0f - mod_tx) * PI);
+        const float theta = (1.0f - mod_tx) * PI;
         const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
 
         float length = _rounded_rect_length(dir, w, h, r);
