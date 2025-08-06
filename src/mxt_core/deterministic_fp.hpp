@@ -51,14 +51,15 @@ namespace deterministic_fp {
 	}
 
 	inline float sinf(float x) {
-		return poly_sin(x);
+		return std::sinf(x);
 	}
 
 	inline float cosf(float x) {
-		return poly_cos(x);
+		return std::cosf(x);
 	}
 
 	inline float atan2f(float y, float x) {
+		return std::atan2f(y, x);
 		if (x == 0.0f) {
 			if (y > 0.0f)	return PI_OVER_2;
 			if (y < 0.0f)	return -PI_OVER_2;
