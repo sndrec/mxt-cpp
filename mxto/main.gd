@@ -321,22 +321,23 @@ func _start_race(track_index: int, settings: Array) -> void:
 	network_manager.game_sim = game_sim
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim
-	var obj_path = info["mxt"].get_basename() + ".obj"
-	if ResourceLoader.exists(obj_path):
-		debug_track_mesh.mesh = load(obj_path)
-		lobby_control.visible = false
-		for i in debug_track_mesh.mesh.get_surface_count():
-			var mat := debug_track_mesh.mesh.surface_get_material(i)
-			if mat.resource_name == "track_surface":
-				debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
-	trigger_objects.clear()
-	for trig in _parse_level_triggers(level_buffer.data_array):
-		var scene = TRIGGER_SCENES.get(trig["type"], null)
-		if scene:
-			var inst:Node3D = scene.instantiate()
-			inst.transform = trig["transform"]
-			obj_container.add_child(inst)
-			trigger_objects.append(inst)
+	if !headless_mode:
+		var obj_path = info["mxt"].get_basename() + ".obj"
+		if ResourceLoader.exists(obj_path):
+			debug_track_mesh.mesh = load(obj_path)
+			lobby_control.visible = false
+			for i in debug_track_mesh.mesh.get_surface_count():
+				var mat := debug_track_mesh.mesh.surface_get_material(i)
+				if mat.resource_name == "track_surface":
+					debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+		trigger_objects.clear()
+		for trig in _parse_level_triggers(level_buffer.data_array):
+			var scene = TRIGGER_SCENES.get(trig["type"], null)
+			if scene:
+				var inst:Node3D = scene.instantiate()
+				inst.transform = trig["transform"]
+				obj_container.add_child(inst)
+				trigger_objects.append(inst)
 	if network_manager.is_server:
 		network_manager.client_ready()
 	else:
@@ -355,6 +356,7 @@ func _on_start_race_button_pressed() -> void:
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
 	if headless_mode:
+		_start_race(track_index, settings)
 		network_manager.client_ready.rpc_id(1)
 		return
 	_start_race(track_index, settings)
@@ -385,7 +387,6 @@ func _physics_process(delta: float) -> void:
 			var pi := _generate_random_input()
 			network_manager.set_local_input(pi.serialize())
 			network_manager.collect_client_inputs()
-			network_manager.post_tick()
 		return
 	if lobby_control.visible:
 		_update_player_list()

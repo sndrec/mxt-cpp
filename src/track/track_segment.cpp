@@ -177,7 +177,6 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
 {
         float phi = deterministic_fp::atan2f(in_pos.y, in_pos.x) * ONE_DIV_BY_PI + 0.5f;
-        phi /= fmaxf(0.001f, openness->sample(in_pos[2]));
         if (phi < -1.0f)
         {
                 phi += 2.0f;
@@ -186,6 +185,7 @@ void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const go
         {
                 phi -= 2.0f;
         }
+        phi /= fmaxf(0.001f, openness->sample(in_pos[2]));
         out_t = godot::Vector2(phi, in_pos[2]);
 };
 
