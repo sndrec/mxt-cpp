@@ -354,7 +354,7 @@ func _physics_process(delta):
 	rollback_rot_error    = damp_basis(
 		rollback_rot_error, Basis.IDENTITY, 20, delta)
 	create_machine_visual_transform()
-	#DebugDraw2D.set_text("turbo", boost_turbo)
+	DebugDraw2D.set_text("turbo", boost_turbo)
 	frame_accumulation = 0.0
 	car_old_pc = car_desired_pc
 	car_desired_pc = position_current
@@ -460,6 +460,7 @@ func _process(delta: float) -> void:
 	delta = minf(1.0, delta)
 	var ratio := frame_accumulation * Engine.physics_ticks_per_second
 	ratio = minf(1.0, ratio)
+	#ratio = 1.0
 	#print(ratio)
 	#print("----")
 	#print(delta)

@@ -916,13 +916,13 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		current_machine_state = machine_state;
 		if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
 			if (boost_frames == 0) {
-				bool can_manual_boost = (current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) &&
+				bool do_manual_boost = (current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) &&
 				energy > 1.0f && effective_accel_input > 0.0f;
-				if (!can_manual_boost) {
+				if (!do_manual_boost) {
 					machine_state &= ~(MACHINESTATE::BOOSTING_DASHPLATE |
 						MACHINESTATE::JUST_PRESSED_BOOST |
 						MACHINESTATE::BOOSTING);
-					boost_turbo -= (4.0f + 0.1f * boost_turbo) / 60.0f;
+					// boost_turbo -= (2.0f + 0.01f * boost_turbo) / 60.0f * stat_acceleration;
 				} else {
 					float boost_strength_factor = 1.0f - boost_turbo / (9.0f * stat_boost_strength);
 					float min_boost_strength_factor = 0.2f;
@@ -954,11 +954,12 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 			boost_turbo += (2.0f * stat_boost_strength) * boost_strength_factor;
 		}
 
-		if ((machine_state & MACHINESTATE::SPINATTACKING) == 0) {
-			boost_turbo -= (2.0f + 0.5f * boost_turbo) / 60.0f;
-		} else {
-			effective_accel_input *= 0.8f;
-			boost_turbo -= (3.0f + 0.5f * boost_turbo) / 60.0f;
+		if (boost_frames > 0 || boost_frames_manual > 0)
+		{
+			boost_turbo -= ((3.0f + 0.03f * boost_turbo) * stat_acceleration * stat_boost_strength * 0.5f) / 60.0f;
+		}else
+		{
+			boost_turbo -= ((6.0f + 0.05f * boost_turbo) * stat_acceleration * stat_boost_strength * 0.5f) / 60.0f;
 		}
 		boost_turbo = std::max(boost_turbo, 0.0f);
 
@@ -997,10 +998,15 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		}
 
 		float accel_stat_scaled = 40.0f * stat_acceleration;
-		float target_speed_component = (effective_accel_input * accel_stat_scaled) / 348.0f + base_speed;
+		float target_speed_component = (effective_accel_input * accel_stat_scaled) / 348.0f;
+		if (boost_frames > 0 || boost_frames_manual > 0)
+		{
+			target_speed_component *= 1.0f + stat_boost_strength * stat_acceleration * 0.038f;
+		}
+		target_speed_component += base_speed;
 		float speed_difference = target_speed_component - normalized_fwd_speed;
 
-		float speed_factor_denom = 36.0f + 40.0f * stat_max_speed + boost_turbo * 2.0f;
+		float speed_factor_denom = 36.0f + 40.0f * stat_max_speed + boost_turbo * 3.0f;
 		float speed_factor = 0.0f;
 		if (std::abs(speed_factor_denom) > 0.0001f)
 			speed_factor = target_speed_component / speed_factor_denom;
