@@ -27,7 +27,7 @@ gdscript/warnings/return_value_discarded=1
 
 [debug_draw_3d]
 
-settings/3d/volumetric_defaults/thickness=0.5
+settings/3d/volumetric_defaults/thickness=0.125
 settings/3d/volumetric_defaults/plane_size=90.0
 settings/addon_root_folder="res://addons/debug_draw_3d"
 

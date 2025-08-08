@@ -1,6 +1,7 @@
 #include "register_types.h"
 
 #include "main.h"
+#include "mxt_core/netcode_core.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -14,6 +15,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	}
 
 	GDREGISTER_CLASS(GameSim);
+	GDREGISTER_CLASS(NetcodeCore);
 }
 
 void uninitialize_gamesim_module(ModuleInitializationLevel p_level) {
