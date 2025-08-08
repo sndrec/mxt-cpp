@@ -24,6 +24,12 @@ public:
                                 Array prev_frame,
                                 PackedByteArray neutral_bytes );
 
+    
+
+    
+
+
+
 
     // Apply a server broadcast on the client: merge inputs, apply state (if present),
     // recalc predictions and replay GameSim from the correct baseline. Returns a dictionary with
@@ -51,9 +57,6 @@ public:
                                    Dictionary input_history,
                                    Dictionary authoritative_inputs,
                                    PackedByteArray neutral_bytes );
-
-
-    
 
 
 };
