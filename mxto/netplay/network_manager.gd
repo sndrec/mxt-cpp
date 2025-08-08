@@ -19,6 +19,7 @@ const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
+var netcode_core := NetcodeCore.new()
 
 var is_server: bool = false
 var listen_server: bool = false
@@ -84,6 +85,17 @@ var log_sim_cpu_us_interval := 0
 var log_rollback_us_sum := 0
 var log_rollback_us_count := 0
 var log_rollback_us_max := 0
+var prof_collect_server_inputs_us_interval := 0
+var prof_idle_broadcast_us_interval := 0
+var prof_check_client_stalls_us_interval := 0
+var prof_client_send_input_us_interval := 0
+var prof_server_broadcast_recv_us_interval := 0
+var prof_handle_state_us_interval := 0
+var prof_handle_input_update_us_interval := 0
+var prof_recalc_pred_us_interval := 0
+var prof_adjust_time_scale_us_interval := 0
+var prof_car_store_old_pos_us_interval := 0
+var prof_car_post_render_us_interval := 0
 var _log_sent_counts := {}
 var _log_timer: Timer
 
@@ -97,7 +109,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,late_drops,replacements,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,late_drops,replacements,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -116,7 +128,19 @@ func _flush_log() -> void:
 	var rollback_max_ms := float(log_rollback_us_max) / 1000.0
 	var net_cpu_ms := float(log_net_cpu_us_interval) / 1000.0
 	var sim_cpu_ms := float(log_sim_cpu_us_interval) / 1000.0
-	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(max_ahead_from_server) + "," + str(physics_tps) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(net_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms)
+	var collect_inputs_ms := float(prof_collect_server_inputs_us_interval) / 1000.0
+	var idle_broadcast_ms := float(prof_idle_broadcast_us_interval) / 1000.0
+	var check_client_stalls_ms := float(prof_check_client_stalls_us_interval) / 1000.0
+	var client_send_input_ms := float(prof_client_send_input_us_interval) / 1000.0
+	var server_broadcast_recv_ms := float(prof_server_broadcast_recv_us_interval) / 1000.0
+	var handle_state_ms := float(prof_handle_state_us_interval) / 1000.0
+	var handle_input_update_ms := float(prof_handle_input_update_us_interval) / 1000.0
+	var recalc_pred_ms := float(prof_recalc_pred_us_interval) / 1000.0
+	var adjust_time_scale_ms := float(prof_adjust_time_scale_us_interval) / 1000.0
+	var car_store_old_pos_ms := float(prof_car_store_old_pos_us_interval) / 1000.0
+	var car_post_render_ms := float(prof_car_post_render_us_interval) / 1000.0
+
+	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(max_ahead_from_server) + "," + str(physics_tps) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
@@ -127,6 +151,17 @@ func _flush_log() -> void:
 	log_rollback_us_max = 0
 	log_inputs_retransmitted = 0
 	log_sim_cpu_us_interval = 0
+	prof_collect_server_inputs_us_interval = 0
+	prof_idle_broadcast_us_interval = 0
+	prof_check_client_stalls_us_interval = 0
+	prof_client_send_input_us_interval = 0
+	prof_server_broadcast_recv_us_interval = 0
+	prof_handle_state_us_interval = 0
+	prof_handle_input_update_us_interval = 0
+	prof_recalc_pred_us_interval = 0
+	prof_adjust_time_scale_us_interval = 0
+	prof_car_store_old_pos_us_interval = 0
+	prof_car_post_render_us_interval = 0
 
 func _acc_log_out(bytes: int) -> void:
 	log_bytes_out_interval += bytes
@@ -223,7 +258,10 @@ func server_process() -> void:
 		var loops := 0
 		const MAX_SERVER_TICKS_PER_PROCESS := 8
 		while server_tick < target_tick and loops < MAX_SERVER_TICKS_PER_PROCESS:
+			var _collect_t0 := Time.get_ticks_usec()
 			var server_inputs := collect_server_inputs()
+			var _collect_t1 := Time.get_ticks_usec()
+			prof_collect_server_inputs_us_interval += _collect_t1 - _collect_t0
 			if server_inputs.is_empty():
 				break
 			var _sim_t0 := Time.get_ticks_usec()
@@ -240,7 +278,11 @@ func server_process() -> void:
 			_idle_broadcast()
 			var _idle_t1 := Time.get_ticks_usec()
 			log_net_cpu_us_interval += _idle_t1 - _idle_t0
+			prof_idle_broadcast_us_interval += _idle_t1 - _idle_t0
+			var _stall_t0 := Time.get_ticks_usec()
 			_check_client_stalls()
+			var _stall_t1 := Time.get_ticks_usec()
+			prof_check_client_stalls_us_interval += _stall_t1 - _stall_t0
 	if !is_server and !listen_server and Time.get_ticks_msec() > last_target_tick_update + 17 and game_sim != null and game_sim.sim_started:
 		clients_target_tick += 1
 		if clients_target_tick > clients_server_tick + MAX_AHEAD_TICKS:
@@ -448,7 +490,6 @@ func begin_simulation() -> void:
 		game_sim.set_sim_started(true)
 		local_tick = 0
 	if is_server and server_game_sim != null:
-		var _t0 := Time.get_ticks_usec()
 		server_game_sim.set_sim_started(true)
 		target_tick = 0
 
@@ -475,7 +516,7 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 		player_settings[id] = settings
 	if id == multiplayer.get_unique_id():
 		if settings.get("spectator", false):
-			desired_ahead_ticks = -5.0
+			desired_ahead_ticks = 1.0
 		else:
 			desired_ahead_ticks = 2.0 if !is_server else (2.0 if listen_server else 0.0)
 	if is_server:
@@ -589,25 +630,13 @@ func collect_client_inputs() -> Array:
 		frame_inputs = authoritative_inputs[local_tick]
 		authoritative_inputs.erase(local_tick)
 	else:
-		frame_inputs = []
 		var prev_frame = input_history.get(local_tick - 1, [])
+		var existing := []
+		existing.resize(player_ids.size())
 		for i in range(player_ids.size()):
-			var id = player_ids[i]
-			if id == multiplayer.get_unique_id():
-				frame_inputs.append(last_local_input_bytes)
-			else:
-				var prev_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES
-				if prev_frame.size() == player_ids.size():
-					prev_bytes = prev_frame[i]
-				var inp_dict := PlayerInputClass.bytes_to_dict(prev_bytes)
-				inp_dict.strafe_left = lerp(inp_dict.strafe_left, 0.0, 0.25)
-				inp_dict.strafe_right = lerp(inp_dict.strafe_right, 0.0, 0.25)
-				inp_dict.steer_horizontal = lerp(inp_dict.steer_horizontal, 0.0, 0.25)
-				inp_dict.steer_vertical = lerp(inp_dict.steer_vertical, 0.0, 0.25)
-				inp_dict.accelerate = inp_dict.accelerate
-				inp_dict.brake = inp_dict.brake
-				var new_bytes : PackedByteArray = PlayerInputClass.dict_to_bytes(inp_dict)
-				frame_inputs.append(new_bytes)
+			if player_ids[i] == multiplayer.get_unique_id():
+				existing[i] = last_local_input_bytes
+		frame_inputs = netcode_core.build_predicted_frame(player_ids, multiplayer.get_unique_id(), existing, prev_frame, NEUTRAL_INPUT_BYTES)
 	input_history[local_tick] = frame_inputs
 	if input_history.has(local_tick - INPUT_HISTORY_SIZE):
 		input_history.erase(local_tick - INPUT_HISTORY_SIZE)
@@ -619,6 +648,7 @@ func collect_client_inputs() -> Array:
 func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) -> void:
 	if !race_active:
 		return
+	var __prof_t0 := Time.get_ticks_usec()
 	if is_server:
 		var reject_before := target_tick - 5
 		for i in range(inputs.size()):
@@ -643,11 +673,14 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 				_est += (e as PackedByteArray).size()
 		_acc_log_in(_est)
 		_prune_authoritative_history()
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
 func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
 	if !race_active:
 		return
+	var __prof_t0 := Time.get_ticks_usec()
 	if not is_server or listen_server:
 		clients_server_tick = max(clients_server_tick, last_tick + 1)
 		clients_target_tick = max(clients_target_tick, tgt)
@@ -691,6 +724,8 @@ func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: Pack
 		_handle_state(last_tick, state)
 	var _est := 4 + _estimate_nested_inputs_size(inputs) + state.size() + 4 + 4 + 4
 	_acc_log_in(_est)
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
 
 func post_tick() -> void:
 	if !race_active:
@@ -818,8 +853,12 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 		return
 	if tick == -1:
 		return
+	var __prof_t0 := Time.get_ticks_usec()
+	var _car1_t0 := Time.get_ticks_usec()
 	for car:VisualCar in game_manager.car_node_container.get_children():
 		car.store_old_pos()
+	var _car1_t1 := Time.get_ticks_usec()
+	prof_car_store_old_pos_us_interval += _car1_t1 - _car1_t0
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
 	latest_state_tick = tick
@@ -831,9 +870,12 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 			game_sim.tick_gamesim(input_history[current])
 		current += 1
 	game_sim.render_gamesim()
+	var _car2_t0 := Time.get_ticks_usec()
 	for car:VisualCar in game_manager.car_node_container.get_children():
 		car.calculate_error()
 		car.just_rendered()
+	var _car2_t1 := Time.get_ticks_usec()
+	prof_car_post_render_us_interval += _car2_t1 - _car2_t0
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
@@ -841,10 +883,8 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	log_rollback_us_count += 1
 	if rollback_frametime_us > log_rollback_us_max:
 		log_rollback_us_max = rollback_frametime_us
-	log_rollback_us_sum += rollback_frametime_us
-	log_rollback_us_count += 1
-	if rollback_frametime_us > log_rollback_us_max:
-		log_rollback_us_max = rollback_frametime_us
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_handle_state_us_interval += __prof_t1 - __prof_t0
 
 func _handle_input_update(tick: int, inputs: Array) -> void:
 	if !race_active:
@@ -853,6 +893,7 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 		return
 	if not input_history.has(tick):
 		return
+	var __prof_t0 := Time.get_ticks_usec()
 	#var predicted = input_history[tick]
 	# we should honestly just always be rolling back for now
 	# we can figure out matching later
@@ -860,8 +901,11 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	#	return
 	if tick == 0 or latest_state_tick == -1:
 		return
+	var _car1_t0 := Time.get_ticks_usec()
 	for car:VisualCar in game_manager.car_node_container.get_children():
 		car.store_old_pos()
+	var _car1_t1 := Time.get_ticks_usec()
+	prof_car_store_old_pos_us_interval += _car1_t1 - _car1_t0
 	input_history[tick] = inputs
 	if authoritative_inputs.has(tick):
 		authoritative_inputs.erase(tick)
@@ -874,48 +918,22 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 			game_sim.tick_gamesim(input_history[current])
 		current += 1
 	game_sim.render_gamesim()
+	var _car2_t0 := Time.get_ticks_usec()
 	for car:VisualCar in game_manager.car_node_container.get_children():
 		car.calculate_error()
 		car.just_rendered()
+	var _car2_t1 := Time.get_ticks_usec()
+	prof_car_post_render_us_interval += _car2_t1 - _car2_t0
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_handle_input_update_us_interval += __prof_t1 - __prof_t0
 
 func _recalculate_future_predictions(start_tick: int) -> void:
 	if !race_active:
 		return
-	var tick := start_tick
-	while tick < local_tick:
-		if authoritative_inputs.has(tick):
-			input_history[tick] = authoritative_inputs[tick]
-			authoritative_inputs.erase(tick)
-			tick += 1
-			continue
-		var prev_frame = input_history.get(tick - 1, [])
-		var existing = input_history.get(tick, [])
-		var frame_inputs : Array = []
-		for i in range(player_ids.size()):
-			var pid = player_ids[i]
-			if pid == multiplayer.get_unique_id():
-				var local_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES
-				if existing.size() == player_ids.size():
-					local_bytes = existing[i]
-				frame_inputs.append(local_bytes)
-			else:
-				var prev_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES
-				if prev_frame.size() == player_ids.size():
-					prev_bytes = prev_frame[i]
-				var inp_dict := PlayerInputClass.bytes_to_dict(prev_bytes)
-				inp_dict.strafe_left = lerp(inp_dict.strafe_left, 0.0, 0.25)
-				inp_dict.strafe_right = lerp(inp_dict.strafe_right, 0.0, 0.25)
-				inp_dict.steer_horizontal = lerp(inp_dict.steer_horizontal, 0.0, 0.25)
-				inp_dict.steer_vertical = lerp(inp_dict.steer_vertical, 0.0, 0.25)
-				inp_dict.accelerate = inp_dict.accelerate
-				inp_dict.brake = inp_dict.brake
-				var new_bytes : PackedByteArray = PlayerInputClass.dict_to_bytes(inp_dict)
-				frame_inputs.append(new_bytes)
-		input_history[tick] = frame_inputs
-		tick += 1
+	netcode_core.recalc_future_predictions(start_tick, local_tick, player_ids, multiplayer.get_unique_id(), input_history, authoritative_inputs, NEUTRAL_INPUT_BYTES)
 
 func disconnect_from_server() -> void:
 	race_active = false
@@ -962,6 +980,7 @@ func _update_desired_ahead() -> void:
 var use_physics_ticks := 1.0
 
 func _adjust_time_scale() -> void:
+	var __prof_t0 := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("playercount", player_ids.size())
 	#DebugDraw2D.set_text("rtt", rtt_s)
 	#if is_server:
@@ -990,6 +1009,8 @@ func _adjust_time_scale() -> void:
 	else:
 		use_physics_ticks = clamp(use_physics_ticks - SPEED_ADJUST_STEP * absf(diff), 0.5, 1.0)
 	Engine.physics_ticks_per_second = roundi(use_physics_ticks * 60.0);
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_adjust_time_scale_us_interval += __prof_t1 - __prof_t0
 	# game simulation uses a fixed delta time
 	# this just changes the rate at which we simulate the game locally
 	# to catch up or slow down to try and match the server
