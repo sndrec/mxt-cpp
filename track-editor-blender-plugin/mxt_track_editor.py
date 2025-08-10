@@ -1886,24 +1886,22 @@ class RoadShapeFlat(RoadShape):
 
 
 class RoadShapeCylinder(RoadShape):
-    # t.x spans [-1,1]; theta = t.x * pi to align with C++ winding
     def get_pos(self, helper, t):
         basis, pos = _root(helper, t.y)
         seg_parent = helper.parent
 
-        theta   = t.x * math.pi
+        theta   = t.x * math.pi                  
         radial  = Vector((math.sin(theta), math.cos(theta), 0.0)).normalized()
 
         mod_t   = 0.5 * (1.0 - t.x)
         r_off   = _vertical_offset(seg_parent, mod_t, t.y)
 
-        local   = radial + radial * r_off
+        local   = radial + radial * r_off        
         return pos + basis @ local
 
 
 class RoadShapePipe(RoadShape):
     def __init__(self): self.inner = 0.8
-    # t.x spans [-1,1]; angle uses (t.x - 0.5) * pi like the C++ runtime
     def get_pos(self, helper, t):
         basis, pos = _root(helper, t.y)
         seg_parent = helper.parent
@@ -1919,26 +1917,63 @@ class RoadShapePipe(RoadShape):
 
 
 class RoadShapeCylinderOpen(RoadShapeCylinder):
-    def __init__(self): self.open_val = 0.5
-    def get_pos(self, helper, t):
-        t_open = t.copy();  t_open.x *= self.open_val
-        return super().get_pos(helper, t_open)
-
-
-class RoadShapePipeOpen(RoadShapePipe):
-    def __init__(self): self.open_val = 0.5
-    def get_pos(self, helper, t):
-        t_open = t.copy();  t_open.x *= self.open_val
-        return super().get_pos(helper, t_open)
-
-class RoadShapeRoundedSquare(RoadShape):
-    # t.x is inverted so the winding matches C++; mod_t uses the original t.x
     def get_pos(self, helper, t):
         basis, pos = _root(helper, t.y)
         seg_parent = helper.parent
-        t = Vector((1.0 - t.x, t.y))
+        props = seg_parent.mxt_road_overall_props
 
-        mod_t = 0.5 * (1.0 - t.x)
+        open_val = 1.0
+        helper_open = getattr(props, 'openness_helper', None)
+        if helper_open and helper_open.animation_data and helper_open.animation_data.action:
+            fcu = helper_open.animation_data.action.fcurves.find("location", index=0)
+            if fcu:
+                open_val = fcu.evaluate(t.y * 100.0)
+
+        mod_tx = t.x * open_val
+        theta = mod_tx * math.pi
+        radial = Vector((math.sin(theta), math.cos(theta), 0.0)).normalized()
+
+        mod_t = 0.5 * (1.0 - t.x)  # modulation uses original tx
+        r_off = _vertical_offset(seg_parent, mod_t, t.y)
+
+        local = radial + radial * r_off
+        return pos + basis @ local
+
+
+class RoadShapePipeOpen(RoadShapePipe):
+    def get_pos(self, helper, t):
+        basis, pos = _root(helper, t.y)
+        seg_parent = helper.parent
+        props = seg_parent.mxt_road_overall_props
+
+        open_val = 1.0
+        helper_open = getattr(props, 'openness_helper', None)
+        if helper_open and helper_open.animation_data and helper_open.animation_data.action:
+            fcu = helper_open.animation_data.action.fcurves.find("location", index=0)
+            if fcu:
+                open_val = fcu.evaluate(t.y * 100.0)
+
+        mod_tx = t.x * open_val
+        tx_angle = (mod_tx - 0.5) * math.pi
+        radial = Vector((math.cos(tx_angle), math.sin(tx_angle), 0.0)).normalized()
+
+        mod_t = 0.5 * (1.0 - t.x)  # modulation uses original tx
+        r_off = _vertical_offset(seg_parent, mod_t, t.y)
+
+        local = radial + radial * r_off
+        return pos + basis @ local
+
+class RoadShapeRoundedSquare(RoadShape):
+    def get_pos(self, helper, t):
+        basis, pos = _root(helper, t.y)
+        seg_parent = helper.parent
+        # Save original tx for modulation mapping
+        tx_orig = t.x
+        # Invert for geometry winding to match C++
+        t = Vector((1.0 - tx_orig, t.y))
+
+        # Modulation uses the original tx, not the inverted
+        mod_t = 0.5 * (1.0 - tx_orig)
         r_off = _vertical_offset(seg_parent, mod_t, t.y)
 
         props = seg_parent.mxt_road_overall_props
@@ -1950,31 +1985,131 @@ class RoadShapeRoundedSquare(RoadShape):
                     return fcu.evaluate(t.y * 100.0)
             return default
 
-        width = _sample(props.width_helper, 1.0)
+        width  = _sample(props.width_helper,  1.0)
         height = _sample(props.height_helper, 1.0)
         radius = _sample(props.radius_helper, 0.0)
 
-        theta = t.x * math.pi
-        dir = Vector((math.sin(theta), math.cos(theta)))
-
+        # ---------- exact rounded-rectangle tracing ----------
         w2, h2 = width * 0.5, height * 0.5
-        rect_w, rect_h = w2 + radius, h2 + radius
+        radius = max(0.0, min(radius, min(w2, h2)))  # clamp
+
+        theta   = t.x * math.pi
+        dir     = Vector((math.sin(theta), math.cos(theta)))
         abs_dx, abs_dy = abs(dir.x), abs(dir.y)
-        length = min(rect_w / max(abs_dx, 1e-6), rect_h / max(abs_dy, 1e-6))
-        p = dir * length
-        if abs(p.x) > w2 and abs(p.y) > h2:
-            corner = Vector((w2 if p.x > 0 else -w2, h2 if p.y > 0 else -h2))
-            diff = (p - corner).normalized() * radius
-            p = corner + diff
+
+        candidates = []
+
+        # vertical sides (x = ±w2)
+        if abs_dx > 1.0e-9:
+            t_v = w2 / abs_dx
+            if t_v * abs_dy <= h2 - radius + 1.0e-9:
+                candidates.append(t_v)
+
+        # horizontal sides (y = ±h2)
+        if abs_dy > 1.0e-9:
+            t_h = h2 / abs_dy
+            if t_h * abs_dx <= w2 - radius + 1.0e-9:
+                candidates.append(t_h)
+
+        # corner circle |(x,y) – corner| = r
+        if radius > 1.0e-9:
+            w_in, h_in = w2 - radius, h2 - radius
+            w_in = max(w_in, 0.0)
+            h_in = max(h_in, 0.0)
+
+            a = 1.0  # dir is unit length
+            b = -2.0 * (abs_dx * w_in + abs_dy * h_in)
+            c = w_in ** 2 + h_in ** 2 - radius ** 2
+            disc = b * b - 4.0 * a * c
+            if disc >= 0.0:
+                sqrt_disc = math.sqrt(disc)
+                for root in ((-b - sqrt_disc) * 0.5, (-b + sqrt_disc) * 0.5):
+                    if root > 0.0 and \
+                       root * abs_dx >= w_in - 1.0e-9 and \
+                       root * abs_dy >= h_in - 1.0e-9:
+                        candidates.append(root)
+
+        if not candidates:
+            # degenerate (e.g. r > min(w2,h2)); treat as circle
+            t_len = min(w2, h2)
+        else:
+            t_len = min(candidates)
+
+        p = dir * t_len
         p *= (1.0 + r_off)
-        local = Vector((p.x, p.y, 0.0))
-        return pos + basis @ local
+
+        return pos + basis @ Vector((p.x, p.y, 0.0))
 
 class RoadShapeRoundedSquareOpen(RoadShapeRoundedSquare):
-    def __init__(self): self.open_val = 0.5
     def get_pos(self, helper, t):
-        t_open = t.copy();  t_open.x *= self.open_val
-        return super().get_pos(helper, t_open)
+        basis, pos = _root(helper, t.y)
+        seg_parent = helper.parent
+        props = seg_parent.mxt_road_overall_props
+
+        # Sample openness at this ty
+        open_val = 1.0
+        helper_open = getattr(props, 'openness_helper', None)
+        if helper_open and helper_open.animation_data and helper_open.animation_data.action:
+            fcu = helper_open.animation_data.action.fcurves.find("location", index=0)
+            if fcu:
+                open_val = fcu.evaluate(t.y * 100.0)
+
+        tx_orig = t.x
+        mod_tx = tx_orig * open_val
+
+        # Geometry uses inverted mod_tx for winding
+        t_geom_x = 1.0 - mod_tx
+
+        # Modulation uses original tx
+        mod_t = 0.5 * (1.0 - tx_orig)
+        r_off = _vertical_offset(seg_parent, mod_t, t.y)
+
+        # ---------- exact rounded-rectangle tracing (same as base, but with t_geom_x) ----------
+        props = seg_parent.mxt_road_overall_props
+
+        def _sample(helper_obj, default):
+            if helper_obj and helper_obj.animation_data and helper_obj.animation_data.action:
+                fcu = helper_obj.animation_data.action.fcurves.find("location", index=0)
+                if fcu:
+                    return fcu.evaluate(t.y * 100.0)
+            return default
+
+        width  = _sample(props.width_helper,  1.0)
+        height = _sample(props.height_helper, 1.0)
+        radius = _sample(props.radius_helper, 0.0)
+
+        w2, h2 = width * 0.5, height * 0.5
+        radius = max(0.0, min(radius, min(w2, h2)))
+
+        theta   = t_geom_x * math.pi
+        dir2    = Vector((math.sin(theta), math.cos(theta)))
+        abs_dx, abs_dy = abs(dir2.x), abs(dir2.y)
+
+        candidates = []
+        if abs_dx > 1.0e-9:
+            t_v = w2 / abs_dx
+            if t_v * abs_dy <= h2 - radius + 1.0e-9:
+                candidates.append(t_v)
+        if abs_dy > 1.0e-9:
+            t_h = h2 / abs_dy
+            if t_h * abs_dx <= w2 - radius + 1.0e-9:
+                candidates.append(t_h)
+        if radius > 1.0e-9:
+            w_in, h_in = max(w2 - radius, 0.0), max(h2 - radius, 0.0)
+            a = 1.0
+            b = -2.0 * (abs_dx * w_in + abs_dy * h_in)
+            c = w_in ** 2 + h_in ** 2 - radius ** 2
+            disc = b * b - 4.0 * a * c
+            if disc >= 0.0:
+                sqrt_disc = math.sqrt(disc)
+                for root in ((-b - sqrt_disc) * 0.5, (-b + sqrt_disc) * 0.5):
+                    if root > 0.0 and root * abs_dx >= w_in - 1.0e-9 and root * abs_dy >= h_in - 1.0e-9:
+                        candidates.append(root)
+        t_len = min(candidates) if candidates else min(w2, h2)
+        p = dir2 * t_len
+        p *= (1.0 + r_off)
+
+        return pos + basis @ Vector((p.x, p.y, 0.0))
 
 def _sample_curve_matrix(helper_obj, t: float):
     act = helper_obj.animation_data.action
@@ -3056,30 +3191,58 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
             local_space_offsets[..., 1] = radial_y * radius
         elif shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
             angle = (2.0 - angle_tx_grid) * np.pi
-            dir_x, dir_y = -np.sin(angle), -np.cos(angle)
-            w2 = width_grid * 0.5
-            h2 = height_grid * 0.5
-            rect_w = w2 + radius_grid
-            rect_h = h2 + radius_grid
+            dir_x = -np.sin(angle)
+            dir_y = -np.cos(angle)
+
+            w2        = width_grid * 0.5
+            h2        = height_grid * 0.5
+            radius_cl = np.clip(radius_grid, 0.0, np.minimum(w2, h2))
+
+            # Ensure w2, h2, radius_cl match shape of angle
+            w2 = np.broadcast_to(w2, angle.shape)
+            h2 = np.broadcast_to(h2, angle.shape)
+            radius_cl = np.broadcast_to(radius_cl, angle.shape)
+
             abs_dx = np.abs(dir_x)
             abs_dy = np.abs(dir_y)
-            t = np.minimum(rect_w / np.maximum(abs_dx, 1e-6), rect_h / np.maximum(abs_dy, 1e-6))
-            p_x = dir_x * t
-            p_y = dir_y * t
-            mask = (np.abs(p_x) > w2) & (np.abs(p_y) > h2)
-            corner_x = np.where(p_x >= 0, w2, -w2)
-            corner_y = np.where(p_y >= 0, h2, -h2)
-            diff_x = p_x - corner_x
-            diff_y = p_y - corner_y
-            norm = np.sqrt(diff_x ** 2 + diff_y ** 2)
-            diff_x = diff_x / np.maximum(norm, 1e-6) * radius_grid
-            diff_y = diff_y / np.maximum(norm, 1e-6) * radius_grid
-            p_x = np.where(mask, corner_x + diff_x, p_x)
-            p_y = np.where(mask, corner_y + diff_y, p_y)
-            length = np.sqrt(p_x ** 2 + p_y ** 2)
+
+            # --- vertical side candidates ------------------------------------------------
+            t_v = np.divide(w2, abs_dx, out=np.full_like(w2, np.inf), where=abs_dx > 1.0e-9)
+            y_v = t_v * abs_dy
+            vert_ok = y_v <= (h2 - radius_cl)
+
+            # --- horizontal side candidates ---------------------------------------------
+            t_h = np.divide(h2, abs_dy, out=np.full_like(h2, np.inf), where=abs_dy > 1.0e-9)
+            x_h = t_h * abs_dx
+            horiz_ok = x_h <= (w2 - radius_cl)
+
+            t_side = np.where(vert_ok & (t_v <= t_h), t_v,
+                     np.where(horiz_ok,                      t_h, np.inf))
+
+            # --- corner circle candidates ------------------------------------------------
+            w_in = np.maximum(w2 - radius_cl, 0.0)
+            h_in = np.maximum(h2 - radius_cl, 0.0)
+
+            b      = -2.0 * (abs_dx * w_in + abs_dy * h_in)
+            c      = w_in ** 2 + h_in ** 2 - radius_cl ** 2
+            disc   = b ** 2 - 4.0 * c
+            sqrt_d = np.where(disc >= 0.0, np.sqrt(disc), 0.0)
+
+            root1  = (-b - sqrt_d) * 0.5
+            root2  = (-b + sqrt_d) * 0.5
+            root   = np.where((root1 > 0.0) & (root1 * abs_dx >= w_in) & (root1 * abs_dy >= h_in),
+                              root1, np.inf)
+            root   = np.where((root2 > 0.0) & (root2 * abs_dx >= w_in) & (root2 * abs_dy >= h_in) &
+                              (root2 < root), root2, root)
+
+            t_final = np.minimum(t_side, root)
+            t_final = np.where(np.isfinite(t_final), t_final, np.minimum(w2, h2))
+
             scale = 1.0 + total_mod_offset_grid
-            local_space_offsets[..., 0] = dir_x * length * scale
-            local_space_offsets[..., 1] = dir_y * length * scale
+
+            # ---- assign to final local space offsets ----
+            local_space_offsets[..., 0] = dir_x * t_final * scale
+            local_space_offsets[..., 1] = dir_y * t_final * scale
         else:
             angle = (angle_tx_grid - 0.5) * np.pi
             radial_x, radial_y = np.cos(angle), np.sin(angle)

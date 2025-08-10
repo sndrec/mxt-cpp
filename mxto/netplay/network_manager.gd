@@ -69,6 +69,8 @@ var last_server_input_tick := -1
 var latest_state_tick := -1
 var race_active: bool = false
 
+var use_state_compression := true
+
 var log_enabled := true
 var log_file: FileAccess
 var log_bytes_out_total := 0
@@ -677,7 +679,7 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
-func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: PackedByteArray, tgt: int, max_ahead: float) -> void:
+func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: PackedByteArray, state_uncompressed_size: int, tgt: int, max_ahead: float) -> void:
 	if !race_active:
 		return
 	var __prof_t0 := Time.get_ticks_usec()
@@ -721,8 +723,12 @@ func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: Pack
 			if key <= last_ack_tick:
 				sent_input_times.erase(key)
 	if state.size() > 0:
-		_handle_state(last_tick, state)
-	var _est := 4 + _estimate_nested_inputs_size(inputs) + state.size() + 4 + 4 + 4
+		var _state_to_use := state
+		if state_uncompressed_size > 0:
+			# Compressed payload; decompress before handling.
+			_state_to_use = state.decompress(state_uncompressed_size, FileAccess.COMPRESSION_ZSTD)
+		_handle_state(last_tick, _state_to_use)
+	var _est := 4 + _estimate_nested_inputs_size(inputs) + state.size() + 4 + 4 + 4 + 4
 	_acc_log_in(_est)
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
@@ -738,10 +744,24 @@ func post_tick() -> void:
 		var keys := authoritative_history.keys()
 		keys.sort()
 		var ack_cache := {}
+		# Prepare compressed snapshot lazily and reuse for all recipients this tick
+		var compressed_ready := false
+		var compressed_state : PackedByteArray = PackedByteArray()
+		var uncompressed_size := 0
 		for id in player_ids + spectator_ids:
 			var send_state : PackedByteArray = PackedByteArray()
+			var send_state_uncomp_size := 0
 			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
-				send_state = state
+				if not compressed_ready:
+					if state.size() > 0 and use_state_compression:
+						compressed_state = state.compress(FileAccess.COMPRESSION_ZSTD)
+						uncompressed_size = state.size()
+					else:
+						compressed_state = state
+						uncompressed_size = -1
+					compressed_ready = true
+				send_state = compressed_state
+				send_state_uncomp_size = uncompressed_size
 			var ack = authoritative_acks.get(id, -1)
 			var pack = ack_cache.get(ack)
 			var start := -1
@@ -758,9 +778,9 @@ func post_tick() -> void:
 			else:
 				arr = pack["arr"]
 				last_tick_local = int(pack["last"])
-			var _bytes := 4 + _estimate_nested_inputs_size(arr) + send_state.size() + 4 + 4 + 4
+			var _bytes := 4 + _estimate_nested_inputs_size(arr) + send_state.size() + 4 + 4 + 4 + 4
 			_acc_log_out(_bytes)
-			_server_broadcast.rpc_id(id, last_tick_local, arr, last_received_tick.get(id, -1), send_state, target_tick, max_ahead)
+			_server_broadcast.rpc_id(id, last_tick_local, arr, last_received_tick.get(id, -1), send_state, send_state_uncomp_size, target_tick, max_ahead)
 		server_tick += 1
 		if listen_server:
 			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
@@ -797,7 +817,7 @@ func _idle_broadcast() -> void:
 		else:
 			arr = pack["arr"]
 			last_tick = int(pack["last"])
-		var _bytes := 4 + _estimate_nested_inputs_size(arr) + 0 + 4 + 4 + 4
+		var _bytes := 4 + _estimate_nested_inputs_size(arr) + 0 + 4 + 4 + 4 + 4
 		_acc_log_out(_bytes)
 		_server_broadcast.rpc_id(
 			id,
@@ -805,6 +825,7 @@ func _idle_broadcast() -> void:
 			arr,
 			last_received_tick.get(id, -1),
 			PackedByteArray(),
+			0,
 			target_tick,
 			max_ahead
 		)
