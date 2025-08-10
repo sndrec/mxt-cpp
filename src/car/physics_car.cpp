@@ -1547,7 +1547,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	height_above_track = 0.0f;
 	current_checkpoint = 0;
 	checkpoint_fraction = 0.0f;
-	lap = 1;
+	lap = 0;
 	visual_rotation = godot::Vector3();
 
 	energy = calced_max_energy;
@@ -2076,7 +2076,7 @@ int PhysicsCar::update_machine_corners() {
 	collision_push_track   = godot::Vector3();
 	collision_push_rail    = godot::Vector3();
 	collision_push_total   = godot::Vector3();
-	godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 	int overall_hit_detected_flag = 0;
 	float inv_weight   = 1.0f / stat_weight;
@@ -2103,10 +2103,10 @@ int PhysicsCar::update_machine_corners() {
 				current_track->get_road_surface(use_cp_old, position_old, use_t, use_spatial_t, use_transform);
 				was_above = (position_old - use_transform.origin).dot(use_transform.basis[1]) >= 0.0f;
 				was_inside = use_t.x > -1.0f && use_t.x < 1.0f;
-				DEBUG::disp_text("current_collision_checkpoint", current_collision_checkpoint);
-				DEBUG::disp_text("vehicle was_above", was_above);
-				DEBUG::disp_text("vehicle use_cp_old", use_cp_old);
-				DEBUG::disp_text("vehicle use_t", use_t);
+				//DEBUG::disp_text("current_collision_checkpoint", current_collision_checkpoint);
+				//DEBUG::disp_text("vehicle was_above", was_above);
+				//DEBUG::disp_text("vehicle use_cp_old", use_cp_old);
+				//DEBUG::disp_text("vehicle use_t", use_t);
 				if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					auto normal = use_transform.basis[1];
 					auto plane_pos = use_transform.origin;
@@ -2165,7 +2165,7 @@ int PhysicsCar::update_machine_corners() {
 							}
 
 							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
-							dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.25f, 0.0f), 0.25, true, 10.0);
+							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.25f, 0.0f), 0.25, true, 10.0);
 							godot::Vector2 use_hit_t;
 							godot::Vector3 use_hit_spatial_t;
 							current_track->convert_point_to_road(use_cp_old, hit, use_hit_t, use_hit_spatial_t);
@@ -2180,11 +2180,11 @@ int PhysicsCar::update_machine_corners() {
 							godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 							float depth = (p0 - side.pos).dot(side.rail_n);
 							if (depth >= 0.0f) continue;
-							dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.5f, 0.0f), 0.25, true, 10.0);
+							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.5f, 0.0f), 0.25, true, 10.0);
 							//godot::UtilityFunctions::print("old depen");
 							//godot::UtilityFunctions::print(i);
 							//godot::UtilityFunctions::print(use_t.x);
-							DEBUG::disp_text("use_hit_t old", use_hit_t);
+							//DEBUG::disp_text("use_hit_t old", use_hit_t);
 							godot::Vector3 d = side.rail_n * (-depth);
 							collision_push_total += d;
 							any_corner_hit = true;
@@ -2258,7 +2258,7 @@ int PhysicsCar::update_machine_corners() {
 							}
 
 							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
-							dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.0f, 0.25f), 0.25, true, 10.0);
+							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.0f, 0.25f), 0.25, true, 10.0);
 							godot::Vector2 use_hit_t;
 							godot::Vector3 use_hit_spatial_t;
 							current_track->convert_point_to_road(use_cp_new, hit, use_hit_t, use_hit_spatial_t);
@@ -2273,8 +2273,8 @@ int PhysicsCar::update_machine_corners() {
 							godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 							float depth = (p0 - side.pos).dot(side.rail_n);
 							if (depth >= 0.0f) continue;
-							dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.0f, 0.5f), 0.25, true, 10.0);
-							DEBUG::disp_text("use_hit_t new", use_hit_t);
+							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.0f, 0.5f), 0.25, true, 10.0);
+							//DEBUG::disp_text("use_hit_t new", use_hit_t);
 							//godot::UtilityFunctions::print("new depen");
 							//godot::UtilityFunctions::print(i);
 							//godot::UtilityFunctions::print(use_t.x);
@@ -2703,21 +2703,25 @@ void PhysicsCar::handle_checkpoints()
 	uint8_t prev_lap = lap;
 
 	int found = current_track->get_best_checkpoint(position_current, current_checkpoint);
-	int collision = current_track->get_best_checkpoint(position_current);;
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && found == -1)
+	int collision = found;
+	if ((machine_state & MACHINESTATE::AIRBORNE) != 0 || found == -1)
 	{
-		if (found == -1)
-		{
-			found = collision;
-		}
+		collision = current_track->get_best_checkpoint(position_current);
 	}
+	//if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && found == -1)
+	//{
+	//	found = collision;
+	//}
 	current_collision_checkpoint = collision;
 	if (found >= 0 && found < current_track->num_checkpoints && found != current_checkpoint) {
-		if (found < current_track->num_checkpoints / 8 && current_checkpoint > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
-			lap += 1;
-		} else if (current_checkpoint < current_track->num_checkpoints / 8 && found > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
-			if (lap > 0)
-				lap -= 1;
+		if ((machine_state & MACHINESTATE::ACTIVE) != 0 & (machine_state & MACHINESTATE::COMPLETEDRACE_1_Q) == 0)
+		{
+			if (found < current_track->num_checkpoints / 8 && current_checkpoint > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
+				lap += 1;
+			} else if (current_checkpoint < current_track->num_checkpoints / 8 && found > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
+				if (lap > 0)
+					lap -= 1;
+			}
 		}
 		current_checkpoint = static_cast<uint16_t>(found);
 	}
