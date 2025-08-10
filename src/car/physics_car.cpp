@@ -2159,7 +2159,28 @@ int PhysicsCar::update_machine_corners() {
 								continue;
 							}
 
-							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
+							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);
+
+							godot::Vector2 hit_road_t; godot::Vector3 hit_spatial_t;
+							current_track->convert_point_to_road(use_cp_old, hit, hit_road_t, hit_spatial_t);
+							bool ty_ok = false;
+							if (hit_road_t.x != -1000.0f) {
+								if (hit_road_t.y > 0.0f && hit_road_t.y < 1.0f) ty_ok = true;
+							}
+							if (!ty_ok) {
+								int adj_cp = current_track->get_best_checkpoint(hit, current_collision_checkpoint);
+								if (adj_cp != -1 && adj_cp != use_cp_old) {
+									godot::Vector2 r2; godot::Vector3 s2;
+									current_track->convert_point_to_road(adj_cp, hit, r2, s2);
+									if (r2.x != -1000.0f && r2.y > 0.0f && r2.y < 1.0f) ty_ok = true;
+								}
+							}
+							if (!ty_ok)
+							{
+								continue;
+							}
+
+
 
 							if ((hit - side.pos).dot(up_normal) > side.height * root_t.scale.y)
 							{
@@ -2245,7 +2266,29 @@ int PhysicsCar::update_machine_corners() {
 								continue;
 							}
 
-							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
+							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);
+
+							godot::Vector2 hit_road_t; godot::Vector3 hit_spatial_t;
+							current_track->convert_point_to_road(use_cp_new, hit, hit_road_t, hit_spatial_t);
+							bool ty_ok2 = false;
+							const float ty_margin2 = 0.01f;
+							if (hit_road_t.x != -1000.0f) {
+								if (hit_road_t.y > -ty_margin2 && hit_road_t.y < 1.0f + ty_margin2) ty_ok2 = true;
+							}
+							if (!ty_ok2) {
+								int adj_cp2 = current_track->get_best_checkpoint(hit, current_collision_checkpoint);
+								if (adj_cp2 != -1 && adj_cp2 != use_cp_new) {
+									godot::Vector2 r2; godot::Vector3 s2;
+									current_track->convert_point_to_road(adj_cp2, hit, r2, s2);
+									if (r2.x != -1000.0f && r2.y > -ty_margin2 && r2.y < 1.0f + ty_margin2) ty_ok2 = true;
+								}
+							}
+							if (!ty_ok2)
+							{
+								continue;
+							}
+
+
 
 							if ((hit - side.pos).dot(up_normal) > side.height * root_t.scale.y)
 							{

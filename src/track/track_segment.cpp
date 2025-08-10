@@ -64,7 +64,7 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-        const float mod_t = 0.5f * (1.0f - in_t[0]);
+    const float mod_t = 0.5f * (1.0f - in_t[0]);
 
 	float mod_vertical_offset = 1.0f;
 
@@ -195,7 +195,7 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
         float mod_tx = in_t[0] * openness->sample(in_t[1]);
-        const float mod_t = 0.5f * (1.0f - mod_tx);
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
 
 	float mod_vertical_offset = 1.0f;
 
@@ -262,7 +262,7 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
         float mod_tx = in_t[0] * openness->sample(in_t[1]);
-        const float mod_t = 0.5f * (1.0f - mod_tx);
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
 
 	float mod_vertical_offset = 1.0f;
 
@@ -420,7 +420,7 @@ void RoadShapeRoundedRect::get_position_at_time(godot::Vector3 &out_pos, const g
         RoadTransform road_root_transform;
         owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
-        const float mod_t = 0.5f * in_t[0];
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
 
         float mod_vertical_offset = 1.0f;
         for (int i = 0; i < num_modulations; i++)
@@ -472,7 +472,7 @@ void RoadShapeRoundedRectOpen::get_position_at_time(godot::Vector3 &out_pos, con
         owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
         float mod_tx = in_t[0] * openness->sample(in_t[1]);
-        const float mod_t = 0.5f * mod_tx;
+        const float mod_t = 0.5f * (1.0f - in_t[0]);
 
         float mod_vertical_offset = 1.0f;
         for (int i = 0; i < num_modulations; i++)
