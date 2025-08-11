@@ -31,3 +31,13 @@
 ## Runtime Environment
 
 - You have **full, unrestricted internet access**.
+
+
+## Build Instructions (for agents and humans)
+
+- Preferred build command (fast incremental):
+  scons target=template_debug debug_symbols=yes -j4
+
+- Notes:
+  - This is the command the project typically uses; please default to it in automation and when testing locally.
+  - The default `scons` without arguments can take significantly longer due to full library rebuilds.
