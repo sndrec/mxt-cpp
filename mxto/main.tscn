@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=20 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
@@ -7,6 +7,7 @@
 [ext_resource type="Shader" uid="uid://dnikyw812iu2p" path="res://screen_outline.gdshader" id="4_7mycd"]
 [ext_resource type="Texture2D" uid="uid://cejh11h8frbgl" path="res://asset/test_track_2_simple_grid.png" id="5_272bh"]
 [ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
+[ext_resource type="Script" uid="uid://308b7bvekyv7" path="res://rl/rl_server.gd" id="7_rl"]
 [ext_resource type="ArrayMesh" uid="uid://cpxafy37lhrin" path="res://track/beepers_track/track.obj" id="9_kek77"]
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
@@ -58,6 +59,12 @@ script = ExtResource("1_tjhrj")
 [node name="GameSim" type="GameSim" parent="."]
 
 [node name="ServerGameSim" type="GameSim" parent="."]
+
+[node name="RLServer" type="Node" parent="."]
+script = ExtResource("7_rl")
+gamesim_path = NodePath("../GameSim")
+car_container_path = NodePath("../GameWorld/CarNodeContainer")
+debug_mesh_path = NodePath("../GameWorld/DebugTrackMeshContainer/DebugTrackMesh")
 
 [node name="NetworkManager" type="Node" parent="."]
 script = ExtResource("3_netplay")

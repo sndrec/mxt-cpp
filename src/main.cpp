@@ -12,6 +12,8 @@
 #include "car/physics_car.h"
 #include "godot_cpp/variant/array.hpp"
 #include "godot_cpp/variant/packed_byte_array.hpp"
+#include "ai/observation.h"
+#include "ai/rl_bot.h"
 #include <chrono>
 #include <cfenv>
 #include <cstdlib>
@@ -26,6 +28,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("tick_gamesim", "player_inputs"), &GameSim::tick_gamesim);
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
+	ClassDB::bind_method(D_METHOD("update_observations"), &GameSim::update_observations);
 	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
 	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
@@ -36,6 +39,14 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
+
+	// RL helpers
+	ClassDB::bind_method(D_METHOD("get_observation_for_car", "car_index"), &GameSim::get_observation_for_car);
+	ClassDB::bind_method(D_METHOD("set_bot_model", "car_index", "layer_sizes", "weights"), &GameSim::set_bot_model);
+	ClassDB::bind_method(D_METHOD("clear_bot", "car_index"), &GameSim::clear_bot);
+	ClassDB::bind_method(D_METHOD("clear_all_bots"), &GameSim::clear_all_bots);
+	ClassDB::bind_method(D_METHOD("set_car_retired", "car_index", "retired"), &GameSim::set_car_retired);
+	ClassDB::bind_method(D_METHOD("get_training_info"), &GameSim::get_training_info);
 };
 
 GameSim::GameSim()
@@ -675,6 +686,12 @@ void GameSim::destroy_gamesim()
                 }
                 level_data.free_heap();
                 gamestate_data.free_heap();
+			if (ai_data.get_capacity() > 0) {
+				ai_data.free_heap();
+			}
+		if (ai_data.get_capacity() > 0) {
+			ai_data.free_heap();
+		}
 		for (int i = 0; i < STATE_BUFFER_LEN; i++)
 		{
 			if (state_buffer[i].data)
@@ -922,4 +939,101 @@ void GameSim::fix_pointers() {
                         current_track->trigger_colliders[i] = trig;
                 }
         }
+}
+// RL glue and observation cache implementations
+#include "ai/observation.h"
+#include "ai/rl_bot.h"
+
+ godot::PackedFloat32Array GameSim::get_observation_for_car(int car_index) const {
+    godot::PackedFloat32Array arr;
+    if (!sim_started || car_index < 0 || car_index >= num_cars || current_track == nullptr)
+        return arr;
+    const AgentObservation *src = nullptr;
+    AgentObservation tmp;
+    if (ai_obs_valid && ai_observations) {
+        src = &ai_observations[car_index];
+    } else {
+        build_observation(cars[car_index], *current_track, tmp);
+        src = &tmp;
+    }
+    arr.resize(AgentObservation::kSize);
+    for (int i = 0; i < AgentObservation::kSize; ++i)
+        arr.set(i, src->data[i]);
+    return arr;
+}
+
+bool GameSim::set_bot_model(int car_index, godot::PackedInt32Array layer_sizes, godot::PackedFloat32Array weights) {
+    if (!sim_started || car_index < 0 || car_index >= num_cars) return false;
+    if (!bot_slots) {
+        bot_slots = reinterpret_cast<void **>(gamestate_data.allocate_array<void*>(num_cars));
+        for (int i = 0; i < num_cars; ++i) bot_slots[i] = nullptr;
+    }
+    std::vector<int> ls; ls.reserve(layer_sizes.size());
+    for (int i = 0; i < layer_sizes.size(); ++i) ls.push_back(int(layer_sizes[i]));
+    std::vector<float> ws; ws.reserve(weights.size());
+    for (int i = 0; i < weights.size(); ++i) ws.push_back(weights[i]);
+    void *mem = gamestate_data.allocate_bytes(sizeof(RLBot));
+    RLBot *bot = new (mem) RLBot();
+    if (!bot->configure(ls, ws)) {
+        return false;
+    }
+    bot_slots[car_index] = bot;
+    return true;
+}
+
+void GameSim::clear_bot(int car_index) {
+    if (!bot_slots || car_index < 0 || car_index >= num_cars) return;
+    bot_slots[car_index] = nullptr;
+}
+
+void GameSim::clear_all_bots() {
+    if (!bot_slots) return;
+    for (int i = 0; i < num_cars; ++i) bot_slots[i] = nullptr;
+}
+
+void GameSim::update_observations() {
+    if (!sim_started || current_track == nullptr || num_cars <= 0) return;
+    if (!ai_observations) {
+        ai_data.instantiate(sizeof(AgentObservation) * num_cars + 1024);
+        ai_observations = ai_data.allocate_array<AgentObservation>(num_cars);
+    }
+    for (int i = 0; i < num_cars; ++i) {
+        build_observation(cars[i], *current_track, ai_observations[i]);
+    }
+    ai_obs_valid = true;
+}
+
+void GameSim::set_car_retired(int car_index, bool retired) {
+    if (!sim_started || car_index < 0 || car_index >= num_cars) return;
+    if (retired) {
+        cars[car_index].machine_state |= MACHINESTATE::RETIRED;
+    } else {
+        cars[car_index].machine_state &= ~MACHINESTATE::RETIRED;
+    }
+}
+
+
+
+godot::Dictionary GameSim::get_training_info() const {
+    godot::Dictionary d;
+    if (!sim_started || num_cars <= 0) return d;
+    godot::PackedInt32Array restore;
+    godot::PackedInt32Array laps;
+    godot::PackedFloat32Array lap_prog;
+    godot::PackedInt32Array retired;
+    restore.resize(num_cars);
+    laps.resize(num_cars);
+    lap_prog.resize(num_cars);
+    retired.resize(num_cars);
+    for (int i = 0; i < num_cars; ++i) {
+        restore.set(i, int(cars[i].restore_state));
+        laps.set(i, int(cars[i].lap));
+        lap_prog.set(i, cars[i].lap_progress);
+        retired.set(i, (cars[i].machine_state & MACHINESTATE::RETIRED) ? 1 : 0);
+    }
+    d["restore_state"] = restore;
+    d["lap"] = laps;
+    d["lap_progress"] = lap_prog;
+    d["retired"] = retired;
+    return d;
 }

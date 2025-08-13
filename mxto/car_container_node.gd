@@ -13,7 +13,12 @@ func instantiate_cars(definitions: Array, peer_ids: Array, local_index: int = 0)
 			new_car.owning_id = peer_ids[i]
 		add_child(new_car)
 		if i == local_index:
-			new_car.car_camera.make_current()
-			new_car.name_label.queue_free()
-		else:
-			new_car.race_hud.queue_free()
+			var cam := new_car.get_node_or_null("CarCamera")
+			if cam != null and cam.has_method("make_current"):
+				cam.make_current()
+			var name_label := new_car.get_node_or_null("CarTransform/NameLabel")
+			if name_label:
+				name_label.queue_free()
+		var hud := new_car.get_node_or_null("race_hud")
+		if hud:
+			hud.queue_free()

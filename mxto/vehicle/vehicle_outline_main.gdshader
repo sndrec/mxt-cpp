@@ -25,14 +25,14 @@ void vertex() {
 
 		v_line_o	= clip_to_uv(clip_o);
 		v_line_d	= clip_to_uv(clip_t) - v_line_o;
-		
+
 		v_line_o *= VIEWPORT_SIZE;
 		v_line_d *= VIEWPORT_SIZE;
 		VERTEX = (MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		NORMAL = normalize((MODELVIEW_MATRIX * vec4(NORMAL, 0.0)).xyz);
 		BINORMAL = normalize((MODELVIEW_MATRIX * vec4(BINORMAL, 0.0)).xyz);
 		TANGENT = normalize((MODELVIEW_MATRIX * vec4(TANGENT, 0.0)).xyz);
-		
+
 		use_outline_width = length(world_o - CAMERA_POSITION_WORLD) * base_outline_width * 0.1;
 		VERTEX += NORMAL * use_outline_width * 0.1;
 		vec3 use_velocity = (VIEW_MATRIX * vec4(in_velocity, 0.0)).xyz;
@@ -64,7 +64,7 @@ void fragment() {
 		/* signed distance from the pixel to the outline spine */
 		float dist		= dot(scaled_suv - v_line_o, perp_n);
 
-		/* outline half-width in screen UV units. 
+		/* outline half-width in screen UV units.
 		   If you want it fully automatic, use the derivative of dist.
 		   For stable results tie it to your use_outline_width:            */
 		float half_w	= abs(dist) +               // a seed

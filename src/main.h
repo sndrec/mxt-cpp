@@ -12,6 +12,7 @@
 #include "mxt_core/mtxa_stack.hpp"
 #include "mxt_core/player_input.h"
 #include "car/car_properties.h"
+#include "ai/observation.h"
 
 namespace godot {
 
@@ -23,6 +24,7 @@ namespace godot {
 		float tick_delta;
 		HeapHandler level_data;
 		HeapHandler gamestate_data;
+		HeapHandler ai_data; // AI-only heap (not part of save/load state)
 		static const int STATE_BUFFER_LEN = 45;
 		struct SavedState {
 			char* data;
@@ -31,6 +33,10 @@ namespace godot {
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
+
+		// Cached observations per car, validated once per tick (pre-tick)
+		AgentObservation* ai_observations = nullptr;
+		bool ai_obs_valid = false;
 
 	protected:
 		static void _bind_methods();
@@ -44,6 +50,9 @@ namespace godot {
 		MtxStack mtxa;
 		godot::Node3D* car_node_container = nullptr;
 
+		// Bot controllers per car (optional)
+		void **bot_slots = nullptr; // opaque to avoid header deps
+
 		GameSim();
 		~GameSim();
 
@@ -55,11 +64,20 @@ namespace godot {
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
 		void render_gamesim();
+		void update_observations();
 		void save_state();
 		void load_state(int target_tick);
 		godot::PackedByteArray get_state_data(int target_tick) const;
 		void set_state_data(int target_tick, godot::PackedByteArray data);
 		void fix_pointers();
+		// RL helpers
+		godot::PackedFloat32Array get_observation_for_car(int car_index) const;
+		bool set_bot_model(int car_index, godot::PackedInt32Array layer_sizes, godot::PackedFloat32Array weights);
+		void clear_bot(int car_index);
+		void clear_all_bots();
+		void set_car_retired(int car_index, bool retired);
+		godot::Dictionary get_training_info() const;
+
 	};
 
 }

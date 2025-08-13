@@ -398,6 +398,9 @@ func _update_player_list() -> void:
 		player_list.add_item(name)
 
 func _physics_process(delta: float) -> void:
+	# If RL server is active, avoid double-stepping/network spam during training
+	if has_node("RLServer"):
+		return
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if headless_mode:
 		if multiplayer.has_multiplayer_peer():
