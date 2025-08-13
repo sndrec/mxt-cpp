@@ -3289,15 +3289,13 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	const godot::Vector3 p1 = position_current;
 	const godot::Vector3 p2 = other_machine.position_current;
 
-	godot::Vector3 diff = p1 - p2;
-	const float relativeDistance = diff.length();
+	const float relativeDistance = (p1 - p2).length_squared();
 
 	const float speedPadding =
         speed_kmh / 216.0f + other_machine.speed_kmh / 216.0f;    // copied literal from original
 
-        if (relativeDistance > (radius1 + radius2 + speedPadding))
+        if (relativeDistance > (radius1 * radius1 + radius2 * radius2 + speedPadding * speedPadding))
         {
-    	//godot::UtilityFunctions::print("bad distance!");
         	return false;
         }
 

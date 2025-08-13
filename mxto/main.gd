@@ -43,6 +43,8 @@ const TRIGGER_SCENES = {
 			 2: preload("res://asset/obj_mine.tscn"),
 }
 
+var _auto_bots_count: int = -1
+
 func _ready() -> void:
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -56,8 +58,20 @@ func _ready() -> void:
 	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
+	# parse optional --bots <num>
+	for i in range(args.size()):
+		if str(args[i]) == "--bots" and i + 1 < args.size():
+			var v := int(args[i + 1])
+			_auto_bots_count = max(0, v)
+			break
 	if args.has("--host"):
 		call_deferred("_auto_host")
+	# Optional lobby spinner to control bots if present
+	var bot_spinner := lobby_control.get_node_or_null("BotSpinner")
+	if bot_spinner != null and bot_spinner is SpinBox:
+		bot_spinner.value_changed.connect(func(v):
+			if network_manager.is_server:
+				network_manager.set_bot_count(int(v)))
 	if headless_mode:
 		var def_path := ""
 		if car_definitions.size() > 0:
@@ -132,6 +146,8 @@ func _load_car_definitions() -> void:
 func _on_start_button_pressed() -> void:
 	network_manager.host()
 	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
+	if _auto_bots_count >= 0:
+		network_manager.set_bot_count(_auto_bots_count)
 	start_race_button.disabled = false
 	$Control.visible = false
 	lobby_control.visible = true

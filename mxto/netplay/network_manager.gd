@@ -26,6 +26,7 @@ var listen_server: bool = false
 var player_ids: Array = []
 var spectator_ids: Array = []
 var waiting_peers: Array = []
+var bot_ids: Array = []
 var pending_inputs := {}
 var authoritative_inputs := {}
 var input_history := {}
@@ -246,6 +247,18 @@ func _ready() -> void:
 	server_process_timer.start(1.0 / 60.0)
 	multiplayer.server_disconnected.connect(on_disconnect)
 
+func _is_network_recipient(id: int) -> bool:
+	if id == multiplayer.get_unique_id():
+		return true
+	var peers := multiplayer.get_peers()
+	return typeof(peers) == TYPE_PACKED_INT32_ARRAY and peers.has(id)
+
+func _bot_input_bytes() -> PackedByteArray:
+	if game_manager != null:
+		var pi = game_manager._generate_random_input()
+		return pi.serialize()
+	return NEUTRAL_INPUT_BYTES
+
 func on_disconnect() -> void:
 	DebugDraw2D.set_text("DISCONNECTED!", null, 10, Color.RED, 10)
 	disconnect_from_server()
@@ -317,6 +330,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
+	bot_ids.clear()
 	clients_server_tick = 0
 	clients_target_tick = 0
 	clients_max_ahead_from_server = 2.0
@@ -365,6 +379,7 @@ func join(ip: String, port: int = 27016) -> int:
 	latest_state_tick = -1
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
+	bot_ids.clear()
 	get_window().title = "Client " + str(multiplayer.get_unique_id())
 	if log_file == null:
 		_init_logger()
@@ -401,6 +416,8 @@ func _on_peer_disconnected(id: int) -> void:
 			peer_desired_ahead.erase(id)
 		if player_settings.has(id):
 			player_settings.erase(id)
+		if bot_ids.has(id):
+			bot_ids.erase(id)
 		if authoritative_acks.has(id):
 			authoritative_acks.erase(id)
 		if last_received_tick.has(id):
@@ -430,6 +447,53 @@ func flush_waiting_peers() -> void:
 		if player_settings.has(id):
 			update_player_settings.rpc(player_settings[id], id)
 
+func _rand_bot_settings(name_suffix: int) -> Dictionary:
+	var car_path := ""
+	if game_manager != null and game_manager.car_definitions.size() > 0:
+		var idx := randi() % game_manager.car_definitions.size()
+		var def_res = game_manager.car_definitions[idx]
+		if def_res != null and typeof(def_res) == TYPE_OBJECT and def_res.has_method("get"):
+			car_path = def_res.resource_path
+	var accel := randf_range(0.5, 1.0)
+	return {
+		"username": "Bot %d" % name_suffix,
+		"car_definition_path": car_path,
+		"accel_setting": accel,
+	}
+
+func set_bot_count(count: int) -> void:
+	if !is_server:
+		return
+	count = maxi(count, 0)
+	while bot_ids.size() > count:
+		var bid = bot_ids.pop_back()
+		if player_ids.has(bid):
+			player_ids.erase(bid)
+		if player_settings.has(bid):
+			player_settings.erase(bid)
+		if last_input_time.has(bid):
+			last_input_time.erase(bid)
+		if peer_desired_ahead.has(bid):
+			peer_desired_ahead.erase(bid)
+		if last_received_tick.has(bid):
+			last_received_tick.erase(bid)
+		for key in pending_inputs.keys():
+			if pending_inputs[key].has(bid):
+				pending_inputs[key].erase(bid)
+	while bot_ids.size() < count:
+		var new_id := 1000000 + bot_ids.size()
+		while player_ids.has(new_id) or spectator_ids.has(new_id) or bot_ids.has(new_id):
+			new_id += 1
+		bot_ids.append(new_id)
+		var bot_idx := bot_ids.size()
+		var settings := _rand_bot_settings(bot_idx)
+		update_player_settings(settings, new_id)
+		last_input_time[new_id] = 0.001 * float(Time.get_ticks_msec())
+		peer_desired_ahead[new_id] = 0.0
+		last_received_tick[new_id] = -1
+	_update_player_ids.rpc(player_ids)
+	_calc_state_offsets()
+
 @rpc("any_peer", "reliable")
 func _update_player_ids(ids: Array) -> void:
 	player_ids = ids
@@ -448,6 +512,9 @@ func start_race(track_index: int, settings: Array) -> void:
 func send_start_race(track_index: int, settings: Array) -> void:
 	if is_server:
 		ready_players.clear()
+		for bid in bot_ids:
+			if !ready_players.has(bid):
+				ready_players.append(bid)
 		start_race.rpc(track_index, settings)
 		start_race(track_index, settings)
 		if player_ids.size() > 1:
@@ -551,6 +618,11 @@ func collect_server_inputs() -> Array:
 		pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input_bytes
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[multiplayer.get_unique_id()] = server_tick
+	for bid in bot_ids:
+		if not pending_inputs[server_tick].has(bid):
+			pending_inputs[server_tick][bid] = _bot_input_bytes()
+			last_input_time[bid] = 0.001 * float(Time.get_ticks_msec())
+			last_received_tick[bid] = server_tick
 	if server_tick > target_tick:
 		return []
 	var dict = pending_inputs[server_tick]
@@ -749,6 +821,8 @@ func post_tick() -> void:
 		var compressed_state : PackedByteArray = PackedByteArray()
 		var uncompressed_size := 0
 		for id in player_ids + spectator_ids:
+			if !_is_network_recipient(id):
+				continue
 			var send_state : PackedByteArray = PackedByteArray()
 			var send_state_uncomp_size := 0
 			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
@@ -801,6 +875,8 @@ func _idle_broadcast() -> void:
 	keys.sort()
 	var ack_cache := {}
 	for id in player_ids + spectator_ids:
+		if !_is_network_recipient(id):
+			continue
 		var ack = authoritative_acks.get(id, -1)
 		var pack = ack_cache.get(ack)
 		var start := -1
@@ -845,12 +921,19 @@ func _check_client_stalls() -> void:
 	var missing := []
 	for id in player_ids:
 		if not waiting.has(id):
-			missing.append(id)
-			if last_input_time.has(id) and now - float(last_input_time[id]) > 10.0:
-				if server_tick != 0:
-					push_error("Client %s stalled, disconnecting" % str(id))
-					multiplayer.disconnect_peer(id)
-					_on_peer_disconnected(id)
+			if bot_ids.has(id):
+				var inp : PackedByteArray = _bot_input_bytes()
+				waiting[id] = inp
+				last_received_tick[id] = server_tick
+				authoritative_acks[id] = server_tick
+				last_input_time[id] = now
+			else:
+				missing.append(id)
+				if last_input_time.has(id) and now - float(last_input_time[id]) > 10.0:
+					if server_tick != 0:
+						push_error("Client %s stalled, disconnecting" % str(id))
+						multiplayer.disconnect_peer(id)
+						_on_peer_disconnected(id)
 	if target_tick - server_tick > 5 and missing.size() > 0:
 		var prev = authoritative_history.get(server_tick - 1, [])
 		for i in range(player_ids.size()):
@@ -964,6 +1047,7 @@ func disconnect_from_server() -> void:
 	is_server = false
 	listen_server = false
 	player_ids.clear()
+	bot_ids.clear()
 	pending_inputs.clear()
 	authoritative_inputs.clear()
 	input_history.clear()
