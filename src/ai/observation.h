@@ -4,7 +4,7 @@
 #include <vector>
 
 struct AgentObservation {
-    static constexpr int kSize = 25;
+    static constexpr int kSize = 27;
     float data[kSize];
 };
 
@@ -49,16 +49,80 @@ inline void build_observation(const PhysicsCar &car, const RaceTrack &track, Age
     obs.data[w++] = v_right * vel_scale;
     obs.data[w++] = v_up * vel_scale;
 
-    // 7-9: orientation alignment: forward dot/side dot/up dot
+    // 7-10: lookahead alignment towards future points along the track
     godot::Basis cb = car.basis_physical.basis;
     godot::Vector3 cf = cb.get_column(2);
-    godot::Vector3 cu = cb.get_column(1);
     godot::Vector3 tf = tb[2];
     godot::Vector3 tu = tb[1];
     godot::Vector3 tx = tb[0];
-    obs.data[w++] = cf.dot(tf); // forward alignment
-    obs.data[w++] = cf.dot(tx); // how much pointing to the right
-    obs.data[w++] = cu.dot(tu); // up alignment
+
+    // Compute four approximately equidistant future targets using checkpoint distances.
+    // Use current checkpoint cumulative distance plus fraction to estimate current track distance.
+    float cur_cp_prev_dist = 0.0f;
+    if (car.current_checkpoint > 0 && car.current_checkpoint < track.num_checkpoints) {
+        cur_cp_prev_dist = track.checkpoints[car.current_checkpoint - 1].distance;
+    }
+    float cur_cp_dist = 0.0f;
+    if (car.current_checkpoint >= 0 && car.current_checkpoint < track.num_checkpoints) {
+        cur_cp_dist = track.checkpoints[car.current_checkpoint].distance;
+    }
+    float cur_total_dist = cur_cp_prev_dist + (cur_cp_dist - cur_cp_prev_dist) * std::max(0.0f, std::min(1.0f, car.checkpoint_fraction));
+
+    const float lookahead_step = 150.0f; // meters between lookahead points
+    const float center_lerp = 0.5f;      // how much to bias tx towards center (0..1)
+    float t_x_target = std::max(-1.0f, std::min(1.0f, road_t.x * (1.0f - center_lerp)));
+
+    for (int k = 1; k <= 4; ++k) {
+        float target_dist = cur_total_dist + lookahead_step * float(k);
+        int it = car.current_checkpoint;
+        int guard = 0;
+        float prev_d = cur_cp_prev_dist;
+        float this_d = cur_cp_dist;
+        if (it < 0 || it >= track.num_checkpoints) {
+            obs.data[w++] = 0.0f;
+            continue;
+        }
+        while (this_d < target_dist && guard < track.num_checkpoints) {
+            // Choose neighbor: lowest index among neighbors with index > it; fallback to overall lowest.
+            int best = -1;
+            int lowest = -1;
+            int ncount = track.checkpoints[it].num_neighboring_checkpoints;
+            for (int ni = 0; ni < ncount; ++ni) {
+                int nb = track.checkpoints[it].neighboring_checkpoints[ni];
+                if (lowest == -1 || nb < lowest) lowest = nb;
+                if (nb > it) {
+                    if (best == -1 || nb < best) best = nb;
+                }
+            }
+            if (best == -1) best = lowest;
+            if (best == -1 || best == it) break;
+            it = best;
+            prev_d = (it > 0) ? track.checkpoints[it - 1].distance : 0.0f;
+            this_d = track.checkpoints[it].distance;
+            ++guard;
+        }
+
+        float alpha = 0.0f;
+        if (this_d > prev_d) {
+            alpha = (target_dist - prev_d) / (this_d - prev_d);
+            if (alpha < 0.0f) alpha = 0.0f; else if (alpha > 1.0f) alpha = 1.0f;
+        }
+
+        int seg_idx = track.checkpoints[it].road_segment;
+        godot::Transform3D tgt;
+        float t_start = track.checkpoints[it].t_start;
+        float t_end = track.checkpoints[it].t_end;
+        float t_y = t_start + (t_end - t_start) * alpha;
+        track.segments[seg_idx].road_shape->get_oriented_transform_at_time(tgt, godot::Vector2(t_x_target, t_y));
+        godot::Vector3 to_tgt = tgt.origin - car.position_current;
+        float len = to_tgt.length();
+        float align = 0.0f;
+        if (len > 1e-6f) {
+            align = cf.dot(to_tgt / len);
+        }
+        obs.data[w++] = align; // [-1,1], higher is better
+    }
+
 
     // 10-11: input history (smoothed) that car stores
     obs.data[w++] = std::max(-1.0f, std::min(1.0f, car.input_steer_yaw));
@@ -74,22 +138,11 @@ inline void build_observation(const PhysicsCar &car, const RaceTrack &track, Age
     // 15: is_airborne flag
     obs.data[w++] = (car.machine_state & MACHINESTATE::AIRBORNE) ? 1.0f : 0.0f;
 
-    // 16-18: upcoming curvature estimate: compare forward at small delta along track
-    float dy = 0.02f;
-    godot::Transform3D surf_next;
-    if (have_track) {
-        godot::Vector2 t2(road_t.x, std::min(1.0f, road_t.y + dy));
-        track.segments[ track.checkpoints[cp_idx].road_segment ].road_shape->get_oriented_transform_at_time(surf_next, t2);
-    } else {
-        surf_next = surf;
-    }
-    godot::Vector3 tf2 = surf_next.basis[2];
-    float yaw_curv = tf.cross(tf2).dot(tu); // signed yaw change
-    float pitch_curv = tf.cross(tf2).dot(tx);
-    float roll_curv = tu.cross(surf_next.basis[1]).dot(tf);
-    obs.data[w++] = yaw_curv;
-    obs.data[w++] = pitch_curv;
-    obs.data[w++] = roll_curv;
+    // 16-18 (previously curvature): zeros to keep size stable
+    obs.data[w++] = 0.0f;
+    obs.data[w++] = 0.0f;
+    obs.data[w++] = 0.0f;
+
 
     // 19-21: local velocities used in car
     obs.data[w++] = car.velocity_local.x * vel_scale; // right
@@ -105,6 +158,11 @@ inline void build_observation(const PhysicsCar &car, const RaceTrack &track, Age
     float maxe = car.calced_max_energy > 0.0f ? car.calced_max_energy : 1.0f;
     float dmg_norm = std::max(0.0f, std::min(1.0f, dmg / maxe));
     obs.data[w++] = dmg_norm;
+
+        // 25-26 (previously direction to next segment): not used; keep zeros
+    obs.data[w++] = 0.0f;
+    obs.data[w++] = 0.0f;
+
 
     // Ensure w equals kSize in dev; in release this will be optimized away.
     (void)w;

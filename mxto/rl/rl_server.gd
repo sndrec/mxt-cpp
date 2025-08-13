@@ -2,12 +2,13 @@ extends Node
 
 @export var listen_port: int = 5566
 @export var gamesim_path: NodePath
-@export var num_bots: int = 8
+@export var num_bots: int = 32
 @export var car_container_path: NodePath
 @export var follow_car_index: int = 0
 @export var debug_mesh_path: NodePath
 @export var warmup_steps: int = 300
 @export var damage_penalty_scale: float = 1.0
+@export var align_bonus_scale: float = 0.2
 @export var step_max_hz: int = 60
 @export var show_obs: bool = false
 @export var obs_car_index: int = 0
@@ -163,9 +164,9 @@ func _handle_cmd(json_line: String) -> void:
 				var ci = clamp(obs_car_index, 0, max(0, obs.size()-1))
 				if obs.size() > 0 and ci < obs.size():
 					var ob = obs[ci]
-					if typeof(ob) == TYPE_PACKED_FLOAT32_ARRAY:
-						for i in range(ob.size()):
-							DebugDraw2D.set_text("obs[%d]" % i, ob[i])
+					#if typeof(ob) == TYPE_PACKED_FLOAT32_ARRAY:
+						#for i in range(ob.size()):
+							#DebugDraw2D.set_text("obs[%d]" % i, ob[i])
 
 			var status := gs.get_training_info()
 			var cur_prog: PackedFloat32Array = status.get("lap_progress", PackedFloat32Array())
@@ -178,11 +179,34 @@ func _handle_cmd(json_line: String) -> void:
 				var r := 0.0
 				if i < obs.size():
 					var ob = obs[i]
-					if typeof(ob) == TYPE_PACKED_FLOAT32_ARRAY and ob.size() >= 5:
-						r = float(ob[4] * 0.001)
-						r = r - float(ob[24] * 10.0)
+					if typeof(ob) == TYPE_PACKED_FLOAT32_ARRAY:
+						var v_fwd := 0.0
+						var v_right := 0.0
+						var dmg := 0.0
+						var center_w := 1.0
+						if ob.size() > 0:
+							center_w = 1.0 - absf(float(ob[0]))
+							center_w = clamp(center_w, 0.0, 1.0)
+						if ob.size() > 4:
+							v_fwd = float(ob[4])
+						if ob.size() > 5:
+							v_right = float(ob[5])
+						if ob.size() > 24:
+							dmg = float(ob[24])
+						var look_align := 0.0
+						if ob.size() > 10:
+							look_align = 0.25 * (maxf(ob[7], 0.0) + maxf(ob[8], 0.0) + maxf(ob[9], 0.0) + maxf(ob[10], 0.0))
+						look_align = clamp(look_align, 0.0, 1.0)
+						var speed_reward := v_fwd * 0.001 * center_w
+						var damage_penalty := damage_penalty_scale * dmg
+						var align_reward := align_bonus_scale * look_align * v_fwd * 0.001 * center_w
+						if i == obs_car_index:
+							DebugDraw2D.set_text("speed_reward", speed_reward)
+							DebugDraw2D.set_text("damage_penalty", damage_penalty)
+							DebugDraw2D.set_text("align_reward", align_reward)
+						r = speed_reward + align_reward - damage_penalty
 						if r < 0:
-							r *= 3
+							r *= 1.5
 				rew.append(r)
 				if _rew_total.size() <= i:
 					_rew_total.resize(i+1)
@@ -314,11 +338,13 @@ func _new_random_race() -> void:
 		return
 	var car_props : Array = []
 	var accel : Array = []
+	var car_defs_for_bots : Array = []
 	for i in num_bots:
 		var def_res = car_defs[randi() % car_defs.size()]
 		var bytes := FileAccess.get_file_as_bytes(def_res.car_definition)
 		car_props.append(bytes)
 		accel.append(randf())
+		car_defs_for_bots.append(def_res)
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	# Instantiate visuals if available
@@ -329,7 +355,7 @@ func _new_random_race() -> void:
 			for i in num_bots:
 				ids.append(i + 1)
 			var cam_index = clamp(follow_car_index, 0, max(0, num_bots-1))
-			cont.instantiate_cars(car_defs.slice(0, num_bots), ids, cam_index)
+			cont.instantiate_cars(car_defs_for_bots, ids, cam_index)
 			for child in cont.get_children():
 				if child.has_node("race_hud"):
 					child.get_node("race_hud").queue_free()

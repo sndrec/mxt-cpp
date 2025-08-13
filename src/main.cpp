@@ -113,13 +113,14 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 		slot[i] = inp;
 		cars[i].tick(inp, tick);
 	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		for (int j = i + 1; j < num_cars; j++)
-		{
-			cars[i].handle_machine_v_machine_collision(cars[j]);
-		}
-	}
+	// temporarily disabled for RL training
+	//for (int i = 0; i < num_cars; i++)
+	//{
+	//	for (int j = i + 1; j < num_cars; j++)
+	//	{
+	//		cars[i].handle_machine_v_machine_collision(cars[j]);
+	//	}
+	//}
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].post_tick();
@@ -1001,6 +1002,9 @@ void GameSim::update_observations() {
         build_observation(cars[i], *current_track, ai_observations[i]);
     }
     ai_obs_valid = true;
+    for (int i = 0; i < num_cars; ++i) {
+        cars[i].damage_from_last_hit = 0.0f;
+    }
 }
 
 void GameSim::set_car_retired(int car_index, bool retired) {

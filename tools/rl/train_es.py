@@ -5,7 +5,7 @@ import numpy as np
 from rl_client import RLClient
 from policy_io import save_weights_json
 
-OBS_SIZE = 25
+OBS_SIZE = 27
 ACT_SIZE = 7
 
 # Simple MLP forward pass using ReLU hidden, linear output
@@ -201,7 +201,7 @@ if __name__ == '__main__':
     ap.add_argument('--project', default='mxto', help='Path to Godot project folder')
     ap.add_argument('--godot', default=None, help='Path to godot4 executable (or set GODOT_BIN)')
     ap.add_argument('--port', type=int, default=5566)
-    ap.add_argument('--bots', type=int, default=8)
+    ap.add_argument('--bots', type=int, default=32)
     ap.add_argument('--hidden', type=int, nargs='+', default=[64,64])
     ap.add_argument('--sigma', type=float, default=0.1)
     ap.add_argument('--alpha', type=float, default=0.02)

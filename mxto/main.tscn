@@ -65,6 +65,9 @@ script = ExtResource("7_rl")
 gamesim_path = NodePath("../GameSim")
 car_container_path = NodePath("../GameWorld/CarNodeContainer")
 debug_mesh_path = NodePath("../GameWorld/DebugTrackMeshContainer/DebugTrackMesh")
+damage_penalty_scale = 25.0
+align_bonus_scale = 0.02
+step_max_hz = 0
 show_obs = true
 
 [node name="NetworkManager" type="Node" parent="."]
