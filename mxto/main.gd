@@ -19,6 +19,7 @@ class_name GameManager extends Node
 @onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
 @onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
+@onready var rtt_label: Label = $RTTLabel
 
 @onready var obj_viewport: SubViewport = $GameWorld/ObjViewport
 @onready var outline_viewport: SubViewport = $GameWorld/OutlineViewport
@@ -515,7 +516,8 @@ func _check_race_finished() -> void:
 @onready var outline_camera: Camera3D = $GameWorld/OutlineViewport/OutlineCamera
 
 func _process(delta: float) -> void:
-	frame_time_label.text = str(network_manager.rollback_frametime_us)
+	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
+	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
 	var active_camera := get_viewport().get_camera_3d()
 	if game_sim.sim_started and is_instance_valid(active_camera):
 		obj_camera.global_transform = active_camera.global_transform
