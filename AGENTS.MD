@@ -41,3 +41,30 @@
 - Notes:
   - This is the command the project typically uses; please default to it in automation and when testing locally.
   - The default `scons` without arguments can take significantly longer due to full library rebuilds.
+
+## Local patch tool (apply_patch shim)
+
+- A helper script is available at `scripts/apply_patch.sh` to apply patch blocks the same way our agent uses them in this repo.
+- It works best inside the Codex CLI environment where the native `apply_patch` command is available. The script forwards the patch block to that command.
+- If the native tool is unavailable, and the input is a standard unified diff, it falls back to `git apply`. Otherwise it will stop with a helpful error.
+
+Usage examples
+- Apply a Codex-style patch block via here-doc:
+
+  scripts/apply_patch.sh << 'PATCH'
+  *** Begin Patch
+  *** Update File: path/to/file.ext
+  @@
+  -old line
+  +new line
+  *** End Patch
+  PATCH
+
+- Apply a standard unified diff:
+
+  git diff > /tmp/changes.diff
+  scripts/apply_patch.sh < /tmp/changes.diff
+
+Notes
+- This shim does not itself implement a patch engine; it delegates to the Codex CLI `apply_patch` when present, or to `git apply` for standard diffs.
+- For complex or large edits, continue to prefer small, focused patches and let the agent or `git` manage conflicts.
