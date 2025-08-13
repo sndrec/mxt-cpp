@@ -432,11 +432,10 @@ bool PhysicsCar::find_floor_beneath_machine()
 	bool pipe = false;
 	TrackSegment *floor_seg = &current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
         cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT ||
-                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
+                floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
+        bool rect = (floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN);
         pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
-	stay_on = pipe || cylinder;
+	stay_on = pipe || cylinder || rect;
 
 	if (!stay_on)
 	{
@@ -473,6 +472,44 @@ bool PhysicsCar::find_floor_beneath_machine()
 	godot::Vector2 road_t_sample_raw;
 	godot::Vector3 spatial_t_sample;
 	current_track->convert_point_to_road(current_checkpoint, position_current, road_t_sample_raw, spatial_t_sample);
+
+	RoadTransform root;
+	const TrackSegment &segment     = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
+	segment.curve_matrix->sample(root, road_t_sample_raw.y);
+	godot::Transform3D surf;
+
+	//if (cylinder || pipe)
+	//{
+	//}
+	if ((machine_state & MACHINESTATE::AIRBORNE) != 0)
+	{	
+		if(rect)// && ((road_t_sample_raw.x > -0.25f && road_t_sample_raw.x < 0.25f) || (road_t_sample_raw.x > 0.75f || road_t_sample_raw.x < -0.75f)))
+		{
+			DEBUG::disp_text("road_t_sample_raw", road_t_sample_raw);
+			//godot::Vector3 use_dir = (position_current - root.t3d.origin);
+			godot::Vector3 flat_up = (basis_physical.basis.get_column(1)).slide(root.t3d.basis.get_column(2)).normalized();
+			//if (use_dir.dot(flat_up) > 0.0f)
+			//{
+			//	use_dir *= -1.0f;
+			//}
+			current_track->convert_point_to_road(current_checkpoint, root.t3d.origin - flat_up.normalized() * 2000.0f, road_t_sample_raw, spatial_t_sample);
+			segment.curve_matrix->sample(root, road_t_sample_raw.y);
+		}
+		if(pipe)
+		{
+			DEBUG::disp_text("Spatial dist", spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y);
+			if (spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y > 1.01f)
+			{	
+				DEBUG::disp_text("Outside pipe/rect!", spatial_t_sample);
+				height_above_track = 0.0f;
+				track_surface_normal = godot::Vector3(0, 1, 0);
+				return false;
+			}
+			godot::Vector3 flat_up = ((basis_physical.basis.get_column(1)).slide(root.t3d.basis.get_column(2))).normalized();
+			current_track->convert_point_to_road(current_checkpoint, root.t3d.origin - flat_up * 45.0f, road_t_sample_raw, spatial_t_sample);
+			segment.curve_matrix->sample(root, road_t_sample_raw.y);
+		}
+	}
 	if (road_t_sample_raw.x == -1000.0)
 	{
 		height_above_track = 0.0f;
@@ -486,22 +523,15 @@ bool PhysicsCar::find_floor_beneath_machine()
 		track_surface_normal = godot::Vector3(0, 1, 0);
 		return false;
 	}
-
-	RoadTransform root;
-	const TrackSegment &segment     = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
-	segment.curve_matrix->sample(root, road_t_sample_raw.y);
-	godot::Transform3D surf;
 	segment.road_shape->get_oriented_transform_at_time(surf, road_t_sample_raw);
+	track_surface_normal = surf.basis[1];
+	height_above_track = fmaxf(1.0f, 20.0f - (position_current - surf.origin).dot(track_surface_normal));
 
-	if (cylinder)
-	{
-		track_surface_normal = surf.basis[1].normalized();
-	}else
-	{
-		track_surface_normal = surf.basis[1].normalized();
-	}
-	height_above_track = fmaxf(0.0f, 20.0f - (position_current - surf.origin).dot(track_surface_normal));
-	if (height_above_track > 20.0f)
+	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	//dd3d->call("draw_arrow", surf.origin, surf.origin + track_surface_normal * 40.0f, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
+	//DEBUG::disp_text("height_above_track", height_above_track);
+
+	if (height_above_track > 20.1f)
 	{
 		track_surface_normal = godot::Vector3(0, 1, 0);
 		height_above_track = 0.0f;
