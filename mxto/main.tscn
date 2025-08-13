@@ -65,11 +65,13 @@ script = ExtResource("7_rl")
 gamesim_path = NodePath("../GameSim")
 car_container_path = NodePath("../GameWorld/CarNodeContainer")
 debug_mesh_path = NodePath("../GameWorld/DebugTrackMeshContainer/DebugTrackMesh")
+show_obs = true
 
 [node name="NetworkManager" type="Node" parent="."]
 script = ExtResource("3_netplay")
 
 [node name="Control" type="Control" parent="."]
+visible = false
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0

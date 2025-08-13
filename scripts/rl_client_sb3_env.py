@@ -22,10 +22,10 @@ class RLEnvClient(gym.Env if gym else object):
         self.multi_agent = multi_agent
         self.sock = None
         if not self.multi_agent:
-            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(24,), dtype=float)
+            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(25,), dtype=float)
             self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(7,), dtype=float)
         else:
-            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(24*self.num_cars,), dtype=float)
+            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(25*self.num_cars,), dtype=float)
             self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(7*self.num_cars,), dtype=float)
 
     def _connect(self):

@@ -4,7 +4,7 @@
 #include <vector>
 
 struct AgentObservation {
-    static constexpr int kSize = 24;
+    static constexpr int kSize = 25;
     float data[kSize];
 };
 
@@ -41,9 +41,9 @@ inline void build_observation(const PhysicsCar &car, const RaceTrack &track, Age
     // 4-6: velocity in local track frame (fwd/right/up), scaled
     godot::Basis tb = surf.basis;
     godot::Vector3 v = car.velocity;
-    float v_fwd = v.dot(tb.get_column(2));
-    float v_right = v.dot(tb.get_column(0));
-    float v_up = v.dot(tb.get_column(1));
+    float v_fwd = v.dot(tb[2]);
+    float v_right = v.dot(tb[0]);
+    float v_up = v.dot(tb[1]);
     const float vel_scale = 1.0f / 100.0f; // ~100 m/s scale
     obs.data[w++] = v_fwd * vel_scale;
     obs.data[w++] = v_right * vel_scale;
@@ -53,9 +53,9 @@ inline void build_observation(const PhysicsCar &car, const RaceTrack &track, Age
     godot::Basis cb = car.basis_physical.basis;
     godot::Vector3 cf = cb.get_column(2);
     godot::Vector3 cu = cb.get_column(1);
-    godot::Vector3 tf = tb.get_column(2);
-    godot::Vector3 tu = tb.get_column(1);
-    godot::Vector3 tx = tb.get_column(0);
+    godot::Vector3 tf = tb[2];
+    godot::Vector3 tu = tb[1];
+    godot::Vector3 tx = tb[0];
     obs.data[w++] = cf.dot(tf); // forward alignment
     obs.data[w++] = cf.dot(tx); // how much pointing to the right
     obs.data[w++] = cu.dot(tu); // up alignment
@@ -83,10 +83,10 @@ inline void build_observation(const PhysicsCar &car, const RaceTrack &track, Age
     } else {
         surf_next = surf;
     }
-    godot::Vector3 tf2 = surf_next.basis.get_column(2);
+    godot::Vector3 tf2 = surf_next.basis[2];
     float yaw_curv = tf.cross(tf2).dot(tu); // signed yaw change
     float pitch_curv = tf.cross(tf2).dot(tx);
-    float roll_curv = tu.cross(surf_next.basis.get_column(1)).dot(tf);
+    float roll_curv = tu.cross(surf_next.basis[1]).dot(tf);
     obs.data[w++] = yaw_curv;
     obs.data[w++] = pitch_curv;
     obs.data[w++] = roll_curv;
@@ -99,6 +99,12 @@ inline void build_observation(const PhysicsCar &car, const RaceTrack &track, Age
     // 22-23: normalized lateral position from spatial_t.x,y (already normalized)
     obs.data[w++] = std::max(-1.0f, std::min(1.0f, spatial_t.x));
     obs.data[w++] = std::max(-1.0f, std::min(1.0f, spatial_t.y));
+
+    // 24: damage taken this step, normalized by max energy and clamped to [0,1]
+    float dmg = car.damage_from_last_hit;
+    float maxe = car.calced_max_energy > 0.0f ? car.calced_max_energy : 1.0f;
+    float dmg_norm = std::max(0.0f, std::min(1.0f, dmg / maxe));
+    obs.data[w++] = dmg_norm;
 
     // Ensure w equals kSize in dev; in release this will be optimized away.
     (void)w;

@@ -5,7 +5,7 @@ import numpy as np
 from rl_client import RLClient
 from policy_io import save_weights_json
 
-OBS_SIZE = 24
+OBS_SIZE = 25
 ACT_SIZE = 7
 
 # Simple MLP forward pass using ReLU hidden, linear output

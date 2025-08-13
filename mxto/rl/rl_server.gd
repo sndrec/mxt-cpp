@@ -6,16 +6,24 @@ extends Node
 @export var car_container_path: NodePath
 @export var follow_car_index: int = 0
 @export var debug_mesh_path: NodePath
+@export var warmup_steps: int = 300
+@export var damage_penalty_scale: float = 1.0
+@export var step_max_hz: int = 60
+@export var show_obs: bool = false
+@export var obs_car_index: int = 0
 
 var _server := TCPServer.new()
 var _peer: StreamPeerTCP
+var _last_step_ms := 0
 var _buf_str := ""
 var _prev_lap_progress: Array = []
 var _done_mask := PackedByteArray()
+var _warmup_left := 0
 var _episode_idx := 0
 var _step_idx := 0
 var _rew_total := []
 var _rew_last := []
+var _no_pos_rew_steps := 0
 
 func _ready() -> void:
 	set_process(true)
@@ -81,6 +89,9 @@ func _handle_cmd(json_line: String) -> void:
 			_episode_idx += 1
 			_step_idx = 0
 			_rew_total.clear(); _rew_last.clear()
+			_warmup_left = warmup_steps
+			_no_pos_rew_steps = 0
+			_last_step_ms = Time.get_ticks_msec()
 			_send_json({"ok": true, "obs": _get_obs()})
 		"get_obs":
 			_update_obs()
@@ -103,7 +114,6 @@ func _handle_cmd(json_line: String) -> void:
 					if typeof(a) == TYPE_ARRAY and a.size() >= 7:
 						var sh = _tanh(a[0])
 						var sv = _tanh(a[1])
-						# to avoid pressing both at 0.5 when inputs are near zero.
 						var accel = clamp(max(0.0, float(a[2])), 0.0, 1.0)
 						var brake = clamp(max(0.0, float(a[3])), 0.0, 1.0)
 						if accel > 0.0 and brake > 0.0:
@@ -131,10 +141,32 @@ func _handle_cmd(json_line: String) -> void:
 							child.get_node("race_hud").queue_free()
 					gs.set_car_node_container(cont)
 			# Advance sim one tick with inputs
+			var in_warmup := _warmup_left > 0
+			if in_warmup:
+				for i in range(inputs.size()):
+										inputs[i] = {"steer_horizontal": 0.0, "steer_vertical": 0.0, "accelerate": 1.0, "brake": 0.0, "boost": false, "sideattack": false, "spinattack": false}
+			var __min_ms := int(1000.0 / float(step_max_hz)) if step_max_hz > 0 else 0
+			if __min_ms > 0:
+				var __now := Time.get_ticks_msec()
+				if _last_step_ms > 0:
+					var __dt := __now - _last_step_ms
+					if __dt < __min_ms:
+						OS.delay_msec(__min_ms - __dt)
+						__now = Time.get_ticks_msec()
+				_last_step_ms = __now
 			gs.tick_gamesim(inputs)
 			gs.render_gamesim()
 			# Build next observation and training signals
 			var obs := _update_obs()
+			# Optional: display observation floats for chosen car index
+			if show_obs and Engine.has_singleton("DebugDraw2D"):
+				var ci = clamp(obs_car_index, 0, max(0, obs.size()-1))
+				if obs.size() > 0 and ci < obs.size():
+					var ob = obs[ci]
+					if typeof(ob) == TYPE_PACKED_FLOAT32_ARRAY:
+						for i in range(ob.size()):
+							DebugDraw2D.set_text("obs[%d]" % i, ob[i])
+
 			var status := gs.get_training_info()
 			var cur_prog: PackedFloat32Array = status.get("lap_progress", PackedFloat32Array())
 			var laps: PackedInt32Array = status.get("lap", PackedInt32Array())
@@ -143,15 +175,24 @@ func _handle_cmd(json_line: String) -> void:
 			var done: Array = []
 			var all_done := true
 			for i in range(cur_prog.size()):
-				var prev := float(_prev_lap_progress[i]) if (i < _prev_lap_progress.size()) else 0.0
-				var r := float(cur_prog[i]) - prev
+				var r := 0.0
+				if i < obs.size():
+					var ob = obs[i]
+					if typeof(ob) == TYPE_PACKED_FLOAT32_ARRAY and ob.size() >= 5:
+						r = float(ob[4] * 0.001)
+						r = r - float(ob[24] * 10.0)
+						if r < 0:
+							r *= 3
 				rew.append(r)
 				if _rew_total.size() <= i:
 					_rew_total.resize(i+1)
 					_rew_last.resize(i+1)
 					_rew_total[i] = 0.0
-				_rew_total[i] = _rew_total[i] + r
-				_rew_last[i] = r
+				if _warmup_left <= 0:
+					_rew_total[i] = _rew_total[i] + r
+					_rew_last[i] = r
+				else:
+					_rew_last[i] = 0.0
 				var d := false
 				if restore[i] != 0:
 					d = true
@@ -164,7 +205,26 @@ func _handle_cmd(json_line: String) -> void:
 				if not d:
 					all_done = false
 			_prev_lap_progress = cur_prog
-						var retired_arr: PackedInt32Array = status.get("retired", PackedInt32Array())
+			var in_warmup2 := _warmup_left > 0
+			if in_warmup2:
+				for i in range(rew.size()):
+					rew[i] = 0.0
+				for i in range(done.size()):
+					done[i] = false
+				_warmup_left -= 1
+				_no_pos_rew_steps = 0
+			else:
+				var any_pos := false
+				for i in range(rew.size()):
+					if rew[i] > 0.0:
+						any_pos = true
+						break
+				if any_pos:
+					_no_pos_rew_steps = 0
+				else:
+					_no_pos_rew_steps += 1
+
+			var retired_arr: PackedInt32Array = status.get("retired", PackedInt32Array())
 			var all_retired := false
 			if retired_arr.size() > 0:
 				all_retired = true
@@ -173,20 +233,26 @@ func _handle_cmd(json_line: String) -> void:
 						all_retired = false
 						break
 			var episode_end := false
-			if all_done or all_retired:
+			if (all_done or all_retired) and _warmup_left <= 0:
 				# Do NOT auto-reset here. Signal episode end and wait for explicit reset from client.
 				episode_end = true
 				# Ensure done flags are set so clients relying on them can terminate properly.
 				for i in range(done.size()):
 					done[i] = true
-			_send_json({"ok": true, "obs": obs, "rew": rew, "done": done, "episode_end": episode_end})
+			elif _no_pos_rew_steps > 120 and _warmup_left <= 0:
+				episode_end = true
+				for i in range(done.size()):
+					done[i] = true
+			_send_json({"ok": true, "obs": obs, "rew": rew, "done": done, "episode_end": episode_end, "warmup": (_warmup_left > 0)})
 			_step_idx += 1
+			if episode_end:
+				_rew_total.clear()
+				_rew_last.clear()
 			if Engine.has_singleton("DebugDraw2D"):
 				DebugDraw2D.set_text("RL ep", _episode_idx)
 				DebugDraw2D.set_text("RL step", _step_idx)
-				for i in range(_rew_total.size()):
-					DebugDraw2D.set_text("RL car %d r" % i, _rew_last[i])
-					DebugDraw2D.set_text("RL car %d R" % i, _rew_total[i])
+				DebugDraw2D.set_text("RL car last reward", _rew_last[obs_car_index])
+				DebugDraw2D.set_text("RL car total reward", _rew_total[obs_car_index])
 		_:
 			_send_json({"ok": false, "err": "unknown_cmd"})
 
