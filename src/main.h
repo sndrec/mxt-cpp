@@ -53,6 +53,10 @@ namespace godot {
 		// Bot controllers per car (optional)
 		void **bot_slots = nullptr; // opaque to avoid header deps
 
+		// Freeze cars at spawn for a few ticks to prevent sliding off sloped surfaces
+		int freeze_ticks_left = 0;
+		godot::Transform3D* spawn_transforms = nullptr; // length = num_cars; cached at instantiate
+
 		GameSim();
 		~GameSim();
 

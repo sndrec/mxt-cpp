@@ -12,6 +12,11 @@ extends Node
 @export var step_max_hz: int = 60
 @export var show_obs: bool = false
 @export var obs_car_index: int = 0
+@export var render_during_training: bool = false
+@export var render_visible_cars: int = 4
+@export var render_skip: int = 3
+@export var retire_neg_streak: int = 90 # per-car early-out if consecutive non-positive rewards exceed this (0 disables)
+@export var early_end_retired_frac: float = 0.95 # end episode if this fraction of cars are retired (post-warmup)
 
 var _server := TCPServer.new()
 var _peer: StreamPeerTCP
@@ -25,6 +30,10 @@ var _step_idx := 0
 var _rew_total := []
 var _rew_last := []
 var _no_pos_rew_steps := 0
+var _input_cache: Array = []
+var _input_cache_size := 0
+var _render_frame_i := 0
+var _neg_streak := PackedInt32Array()
 
 func _ready() -> void:
 	set_process(true)
@@ -91,8 +100,11 @@ func _handle_cmd(json_line: String) -> void:
 			_step_idx = 0
 			_rew_total.clear(); _rew_last.clear()
 			_warmup_left = warmup_steps
+			_input_cache.clear()
+			_input_cache_size = 0
 			_no_pos_rew_steps = 0
 			_last_step_ms = Time.get_ticks_msec()
+			_render_frame_i = 0
 			_send_json({"ok": true, "obs": _get_obs()})
 		"get_obs":
 			_update_obs()
@@ -112,7 +124,7 @@ func _handle_cmd(json_line: String) -> void:
 			for i in expected_n:
 				if i < actions.size():
 					var a = actions[i]
-					if typeof(a) == TYPE_ARRAY and a.size() >= 7:
+					if typeof(a) == TYPE_ARRAY and a.size() >= 5:
 						var sh = _tanh(a[0])
 						var sv = _tanh(a[1])
 						var accel = clamp(max(0.0, float(a[2])), 0.0, 1.0)
@@ -123,8 +135,8 @@ func _handle_cmd(json_line: String) -> void:
 							else:
 								accel = 0.0
 						var boost = a[4] > 0.0
-						var sideattack = a[5] > 0.0
-						var spinattack = a[6] > 0.0
+						var sideattack = false
+						var spinattack = false
 						inputs.append({"steer_horizontal": sh, "steer_vertical": sv, "accelerate": accel, "brake": brake, "boost": boost, "sideattack": sideattack, "spinattack": spinattack})
 					else:
 						inputs.append({})
@@ -132,20 +144,18 @@ func _handle_cmd(json_line: String) -> void:
 					inputs.append({})
 			# Pre-tick obs cache
 			_update_obs()
-			#var gs: GameSim = get_node(gamesim_path)
-			# Ensure visuals are connected
-			if car_container_path != NodePath():
-				var cont := get_node_or_null(car_container_path)
-				if cont != null:
-					for child in cont.get_children():
-						if child.has_node("race_hud"):
-							child.get_node("race_hud").queue_free()
-					gs.set_car_node_container(cont)
+			# Avoid per-step visual/node churn; visuals are set up in _new_random_race()
 			# Advance sim one tick with inputs
 			var in_warmup := _warmup_left > 0
 			if in_warmup:
+				if _input_cache_size != inputs.size():
+					_input_cache.clear()
+					_input_cache.resize(inputs.size())
+					for i in range(inputs.size()):
+						_input_cache[i] = {"steer_horizontal": 0.0, "steer_vertical": 0.0, "accelerate": 1.0, "brake": 0.0, "boost": false, "sideattack": false, "spinattack": false}
+					_input_cache_size = inputs.size()
 				for i in range(inputs.size()):
-										inputs[i] = {"steer_horizontal": 0.0, "steer_vertical": 0.0, "accelerate": 1.0, "brake": 0.0, "boost": false, "sideattack": false, "spinattack": false}
+					inputs[i] = _input_cache[i]
 			var __min_ms := int(1000.0 / float(step_max_hz)) if step_max_hz > 0 else 0
 			if __min_ms > 0:
 				var __now := Time.get_ticks_msec()
@@ -156,7 +166,11 @@ func _handle_cmd(json_line: String) -> void:
 						__now = Time.get_ticks_msec()
 				_last_step_ms = __now
 			gs.tick_gamesim(inputs)
-			gs.render_gamesim()
+			if render_during_training:
+				var skip = max(render_skip, 1)
+				if (_render_frame_i % skip) == 0:
+					gs.render_gamesim()
+				_render_frame_i += 1
 			# Build next observation and training signals
 			var obs := _update_obs()
 			# Optional: display observation floats for chosen car index
@@ -177,36 +191,49 @@ func _handle_cmd(json_line: String) -> void:
 			var all_done := true
 			for i in range(cur_prog.size()):
 				var r := 0.0
+				# If this car was already marked done/retired, don't accrue more reward
+				if _done_mask.size() > i and _done_mask[i] == 1:
+					rew.append(0.0)
+					done.append(true)
+					continue
 				if i < obs.size():
 					var ob = obs[i]
 					if typeof(ob) == TYPE_PACKED_FLOAT32_ARRAY:
-						var v_fwd := 0.0
-						var v_right := 0.0
-						var dmg := 0.0
-						var center_w := 1.0
-						if ob.size() > 0:
-							center_w = 1.0 - absf(float(ob[0]))
-							center_w = clamp(center_w, 0.0, 1.0)
-						if ob.size() > 4:
-							v_fwd = float(ob[4])
-						if ob.size() > 5:
-							v_right = float(ob[5])
-						if ob.size() > 24:
-							dmg = float(ob[24])
-						var look_align := 0.0
-						if ob.size() > 10:
-							look_align = 0.25 * (maxf(ob[7], 0.0) + maxf(ob[8], 0.0) + maxf(ob[9], 0.0) + maxf(ob[10], 0.0))
-						look_align = clamp(look_align, 0.0, 1.0)
-						var speed_reward := v_fwd * 0.001 * center_w
+						var vel := Vector3(float(ob[5]), float(ob[6]), float(ob[4]))
+						var dmg := float(ob[21])
+						var tx := float(ob[0])
+						tx = move_toward(tx, 0, 0.25)
+						tx = absf(tx)
+						tx = remap(tx, 0, 0.75, 1.0, -0.25)
+						tx = maxf(tx, 0.01)
+						var speed_reward : float = vel.length() * 0.005 * tx * ob[7]
+						if speed_reward > 0 and signf(vel.z) < 0:
+							speed_reward *= -1
+						if speed_reward < 0:
+							speed_reward *= 1.25
 						var damage_penalty := damage_penalty_scale * dmg
-						var align_reward := align_bonus_scale * look_align * v_fwd * 0.001 * center_w
+						if damage_penalty > 0:
+							speed_reward *= 0.1
+						var align_reward : float = ob[11] * ob[3]
+						var zero_penalty = 0.0025 if vel.length() <= 0.01 else 0.0
 						if i == obs_car_index:
+							DebugDraw2D.set_text("align 1", ob[7])
+							DebugDraw2D.set_text("align 2", ob[8])
+							DebugDraw2D.set_text("align 3", ob[9])
+							DebugDraw2D.set_text("align 4", ob[10])
+							DebugDraw2D.set_text("side align 1", ob[11])
+							DebugDraw2D.set_text("side align 2", ob[12])
+							DebugDraw2D.set_text("side align 3", ob[13])
+							DebugDraw2D.set_text("side align 4", ob[14])
+							DebugDraw2D.set_text("angle vel y", ob[3])
+							DebugDraw2D.set_text("align_reward", align_reward)
+							DebugDraw2D.set_text("tx", tx)
 							DebugDraw2D.set_text("speed_reward", speed_reward)
 							DebugDraw2D.set_text("damage_penalty", damage_penalty)
-							DebugDraw2D.set_text("align_reward", align_reward)
-						r = speed_reward + align_reward - damage_penalty
+							#DebugDraw2D.set_text("align_reward", align_reward)
+						r = speed_reward + align_reward - damage_penalty - zero_penalty
 						if r < 0:
-							r *= 1.5
+							r *= 1.25
 				rew.append(r)
 				if _rew_total.size() <= i:
 					_rew_total.resize(i+1)
@@ -222,6 +249,18 @@ func _handle_cmd(json_line: String) -> void:
 					d = true
 				elif int(laps[i]) >= 4:
 					d = true
+				# Per-car early-out: retire if too many consecutive non-positive rewards
+				if not d and _warmup_left <= 0 and retire_neg_streak > 0:
+					if r > 0.0:
+						if _neg_streak.size() > i:
+							_neg_streak[i] = 0
+					else:
+						if _neg_streak.size() <= i:
+							_neg_streak.resize(i+1)
+							_neg_streak[i] = 0
+						_neg_streak[i] = _neg_streak[i] + 1
+						if _neg_streak[i] >= retire_neg_streak:
+							d = true
 				done.append(d)
 				if d and _done_mask.size() > i and _done_mask[i] == 0:
 					gs.set_car_retired(i, true)
@@ -250,14 +289,25 @@ func _handle_cmd(json_line: String) -> void:
 
 			var retired_arr: PackedInt32Array = status.get("retired", PackedInt32Array())
 			var all_retired := false
+			var retired_frac := 0.0
 			if retired_arr.size() > 0:
+				var retired_count := 0
 				all_retired = true
 				for i in range(retired_arr.size()):
 					if retired_arr[i] == 0:
 						all_retired = false
+					else:
+						retired_count += 1
+				retired_frac = float(retired_count) / float(retired_arr.size())
+			var all_done_mask := true
+			if _done_mask.size() > 0:
+				for i in range(_done_mask.size()):
+					if _done_mask[i] == 0:
+						all_done_mask = false
 						break
 			var episode_end := false
-			if (all_done or all_retired) and _warmup_left <= 0:
+			var hit_retired_frac := (retired_frac >= early_end_retired_frac) and (_warmup_left <= 0)
+			if ((all_done or all_retired or all_done_mask) and _warmup_left <= 0) or hit_retired_frac:
 				# Do NOT auto-reset here. Signal episode end and wait for explicit reset from client.
 				episode_end = true
 				# Ensure done flags are set so clients relying on them can terminate properly.
@@ -306,6 +356,9 @@ static func _sigmoid(x: float) -> float:
 
 func _new_random_race() -> void:
 	var gs: GameSim = get_node(gamesim_path)
+	# Fully reset GameSim if a session is already running
+	if gs.get_sim_started():
+		gs.destroy_gamesim()
 	# Hook up visuals so we can watch
 	if car_container_path != NodePath():
 		var cont := get_node_or_null(car_container_path)
@@ -355,7 +408,9 @@ func _new_random_race() -> void:
 			for i in num_bots:
 				ids.append(i + 1)
 			var cam_index = clamp(follow_car_index, 0, max(0, num_bots-1))
-			cont.instantiate_cars(car_defs_for_bots, ids, cam_index)
+			var vis_n = clamp(render_visible_cars, 0, num_bots)
+			if vis_n > 0:
+				cont.instantiate_cars(car_defs_for_bots.slice(0, vis_n), ids.slice(0, vis_n), clamp(cam_index, 0, max(0, vis_n-1)))
 			for child in cont.get_children():
 				if child.has_node("race_hud"):
 					child.get_node("race_hud").queue_free()
@@ -364,8 +419,11 @@ func _new_random_race() -> void:
 	_prev_lap_progress = []
 	_done_mask = PackedByteArray()
 	_done_mask.resize(num_bots)
+	_neg_streak = PackedInt32Array()
+	_neg_streak.resize(num_bots)
 	for i in num_bots:
 		_done_mask[i] = 0
+		_neg_streak[i] = 0
 	_update_obs()
 
 func _scan_tracks() -> Array:

@@ -5832,10 +5832,16 @@
         "output": "src\\mxt_core\\curve.windows.template_debug.x86_64.obj"
     },
     {
-        "command": "cl /Fosrc\\track\\curve_matrix.windows.template_debug.x86_64.obj /c src\\track\\curve_matrix.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
+        "command": "cl /Fosrc\\mxt_core\\debug.windows.template_debug.x86_64.obj /c src\\mxt_core\\debug.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
         "directory": "B:\\programming\\mxt-cpp",
-        "file": "src\\track\\curve_matrix.cpp",
-        "output": "src\\track\\curve_matrix.windows.template_debug.x86_64.obj"
+        "file": "src\\mxt_core\\debug.cpp",
+        "output": "src\\mxt_core\\debug.windows.template_debug.x86_64.obj"
+    },
+    {
+        "command": "cl /Fosrc\\mxt_core\\netcode_core.windows.template_debug.x86_64.obj /c src\\mxt_core\\netcode_core.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
+        "directory": "B:\\programming\\mxt-cpp",
+        "file": "src\\mxt_core\\netcode_core.cpp",
+        "output": "src\\mxt_core\\netcode_core.windows.template_debug.x86_64.obj"
     },
     {
         "command": "cl /Fosrc\\track\\racetrack.windows.template_debug.x86_64.obj /c src\\track\\racetrack.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
@@ -5844,21 +5850,27 @@
         "output": "src\\track\\racetrack.windows.template_debug.x86_64.obj"
     },
     {
-        "command": "cl /Fosrc\\track\\road_shape_base.windows.template_debug.x86_64.obj /c src\\track\\road_shape_base.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
-        "directory": "B:\\programming\\mxt-cpp",
-        "file": "src\\track\\road_shape_base.cpp",
-        "output": "src\\track\\road_shape_base.windows.template_debug.x86_64.obj"
-    },
-    {
         "command": "cl /Fosrc\\track\\track_segment.windows.template_debug.x86_64.obj /c src\\track\\track_segment.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
         "directory": "B:\\programming\\mxt-cpp",
         "file": "src\\track\\track_segment.cpp",
         "output": "src\\track\\track_segment.windows.template_debug.x86_64.obj"
     },
     {
+        "command": "cl /Fosrc\\track\\trigger_collider.windows.template_debug.x86_64.obj /c src\\track\\trigger_collider.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
+        "directory": "B:\\programming\\mxt-cpp",
+        "file": "src\\track\\trigger_collider.cpp",
+        "output": "src\\track\\trigger_collider.windows.template_debug.x86_64.obj"
+    },
+    {
         "command": "cl /Fosrc\\car\\physics_car.windows.template_debug.x86_64.obj /c src\\car\\physics_car.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
         "directory": "B:\\programming\\mxt-cpp",
         "file": "src\\car\\physics_car.cpp",
         "output": "src\\car\\physics_car.windows.template_debug.x86_64.obj"
+    },
+    {
+        "command": "cl /Fosrc\\ai\\simple_mlp.windows.template_debug.x86_64.obj /c src\\ai\\simple_mlp.cpp /TP /std:c++17 /fp:precise /nologo /utf-8 /MT /Zi /FS /O2 /DTYPED_METHOD_BIND /DNOMINMAX /DWINDOWS_ENABLED /D_HAS_EXCEPTIONS=0 /DTHREADS_ENABLED /DHOT_RELOAD_ENABLED /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /DNDEBUG /DGDEXTENSION /DDEBUG_ENABLED /DDEBUG_METHODS_ENABLED /Igodot-cpp\\gdextension /Igodot-cpp\\include /Igodot-cpp\\gen\\include /Isrc /Isrc\\mathfu\\include /Z7",
+        "directory": "B:\\programming\\mxt-cpp",
+        "file": "src\\ai\\simple_mlp.cpp",
+        "output": "src\\ai\\simple_mlp.windows.template_debug.x86_64.obj"
     }
 ]

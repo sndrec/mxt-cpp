@@ -5,6 +5,7 @@
 #include "godot_cpp/core/math.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
+#include "mxt_core/math_utils.h"
 #include "track/racetrack.h"
 #include "track/trigger_collider.h"
 #include "track/road_modulation.h"
@@ -54,6 +55,8 @@ GameSim::GameSim()
 	tick = 0;
 	tick_delta = 1.0f / 60.0f;
 	sim_started = false;
+	freeze_ticks_left = 0;
+	spawn_transforms = nullptr;
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
 		state_buffer[i].data = nullptr;
@@ -99,19 +102,39 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	auto start = std::chrono::high_resolution_clock::now();
 	int buf_index = tick % INPUT_BUFFER_LEN;
 	PlayerInput* slot = input_buffer + buf_index * num_cars;
+	const bool frozen = (freeze_ticks_left > 0);
 	for (int i = 0; i < num_cars; i++)
 	{
 		PlayerInput inp = PlayerInput::from_neutral();
-		if (i < player_inputs.size()) {
-			Variant::Type t = player_inputs[i].get_type();
-			if (t == godot::Variant::PACKED_BYTE_ARRAY) {
-				inp = PlayerInput::from_bytes(player_inputs[i]);
-			} else if (t == godot::Variant::DICTIONARY) {
-				inp = PlayerInput::from_dict(player_inputs[i]);
+		if (!frozen) {
+			if (i < player_inputs.size()) {
+				Variant::Type t = player_inputs[i].get_type();
+				if (t == godot::Variant::PACKED_BYTE_ARRAY) {
+					inp = PlayerInput::from_bytes(player_inputs[i]);
+				} else if (t == godot::Variant::DICTIONARY) {
+					inp = PlayerInput::from_dict(player_inputs[i]);
+				}
 			}
 		}
 		slot[i] = inp;
-		cars[i].tick(inp, tick);
+
+		if (frozen) {
+			const godot::Transform3D &sp = spawn_transforms ? spawn_transforms[i] : cars[i].transform_visual;
+			cars[i].velocity = godot::Vector3();
+			cars[i].velocity_angular = godot::Vector3();
+			cars[i].position_current = sp.origin;
+			cars[i].position_old = sp.origin;
+			cars[i].position_old_2 = sp.origin;
+			cars[i].position_old_dupe = sp.origin;
+			cars[i].position_bottom = sp.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+			cars[i].basis_physical.basis = sp.basis;
+			cars[i].basis_physical_other.basis = sp.basis;
+			cars[i].transform_visual = sp;
+			cars[i].track_surface_normal = sp.basis.get_column(1);
+			// Do not run physics update
+		} else {
+			cars[i].tick(inp, tick);
+		}
 	}
 	// temporarily disabled for RL training
 	//for (int i = 0; i < num_cars; i++)
@@ -121,9 +144,11 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	//		cars[i].handle_machine_v_machine_collision(cars[j]);
 	//	}
 	//}
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].post_tick();
+	if (!frozen) {
+		for (int i = 0; i < num_cars; i++)
+		{
+			cars[i].post_tick();
+		}
 	}
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -139,6 +164,10 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	//	}
 	//}
 	save_state();
+
+	if (freeze_ticks_left > 0) {
+		freeze_ticks_left -= 1;
+	}
 
 	//auto elapsed = std::chrono::high_resolution_clock::now() - start;
 	//long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
@@ -239,10 +268,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		current_track->checkpoints[i].y_radius_end = lvldat_buf->get_float();
 		current_track->checkpoints[i].t_start = lvldat_buf->get_float();
 		current_track->checkpoints[i].t_end = lvldat_buf->get_float();
-		current_track->checkpoints[i].distance = lvldat_buf->get_float();
-		if (i > 0)
+		current_track->checkpoints[i].length = lvldat_buf->get_float();
+		if (i == 0)
 		{
-			current_track->checkpoints[i].distance += current_track->checkpoints[i - 1].distance;
+			current_track->checkpoints[i].distance = current_track->checkpoints[i].length;
+		}
+		else
+		{
+			current_track->checkpoints[i].distance = current_track->checkpoints[i].length + current_track->checkpoints[i - 1].distance;
 		}
 		current_track->checkpoints[i].road_segment = (int)lvldat_buf->get_u32();
 		current_track->checkpoints[i].start_plane.normal[0] = lvldat_buf->get_float();
@@ -606,33 +639,20 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		}
 		cars[i].initialize_machine();
 
-                // Determine spawn transform at the end of the last track segment
-		int seg_idx = current_track->num_segments - 1;
-		const int columns = 6;
-		const float column_width_start = -0.6f;
-		const float column_width_end = 0.6f;
-		const float row_spacing = 20.0f;
-		const float start_offset = 40.0f;
-
-		float distance_back = start_offset + i * 10;
-		while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
-			distance_back -= current_track->segments[seg_idx].segment_length;
-			seg_idx -= 1;
-		}
-		if (seg_idx < 0) {
-			seg_idx = 0;
-			distance_back = 0.0f;
-		}
-
+		int seg_idx = (current_track->num_segments > 0)
+			? static_cast<int>(floorf(randf_range(0.0f, float(current_track->num_segments))))
+			: 0;
+		seg_idx = std::clamp(seg_idx, 0, std::max(0, current_track->num_segments - 1));
 		const TrackSegment &spawn_seg = current_track->segments[seg_idx];
-		float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
-		float t_x = remap_float(static_cast<float>(i % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
-
+		float t_y = randf_range(0.0f, 1.0f);
+		float t_x = randf_range(-1.0f, 1.0f);
 		godot::Transform3D spawn_transform;
 		spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
 		spawn_transform.basis.transpose();
 		spawn_transform.basis.orthonormalize();
 		spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
+		float yaw = randf_range(0.0f, TAU);
+		spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), yaw);
 		godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.5f;
 		spawn_transform.origin += up_offset;
 
@@ -641,6 +661,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		cars[i].position_old_2 = spawn_transform.origin;
 		cars[i].position_old_dupe = spawn_transform.origin;
 		cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+
+		int best_cp = current_track->get_best_checkpoint(spawn_transform.origin);
+		if (best_cp >= 0) {
+			cars[i].current_checkpoint = static_cast<uint16_t>(best_cp);
+			cars[i].current_collision_checkpoint = static_cast<uint16_t>(best_cp);
+			cars[i].last_ground_checkpoint = static_cast<uint16_t>(best_cp);
+		}
 
 		cars[i].mtxa->push();
 		cars[i].mtxa->cur->origin = spawn_transform.origin;
@@ -651,7 +678,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 		cars[i].transform_visual = spawn_transform;
 		cars[i].track_surface_normal = spawn_transform.basis.get_column(1);
+
+		if (!spawn_transforms) {
+			spawn_transforms = gamestate_data.allocate_array<godot::Transform3D>(num_cars);
+		}
+		spawn_transforms[i] = spawn_transform;
 	}
+	freeze_ticks_left = 180;
 
 	input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
 	for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
@@ -773,8 +806,8 @@ void GameSim::render_gamesim() {
 		vis_cars[i].set("visual_shake_mult", cars[i].visual_shake_mult);
 		vis_cars[i].set("input_accel", cars[i].input_accel);
 		vis_cars[i].set("restore_state", cars[i].restore_state);
-    	vis_cars[i].set("restore_wait_frames", cars[i].restore_wait_frames);
-    	vis_cars[i].set("restore_move_frames", cars[i].restore_move_frames);
+	    	vis_cars[i].set("restore_wait_frames", cars[i].restore_wait_frames);
+	    	vis_cars[i].set("restore_move_frames", cars[i].restore_move_frames);
 		vis_cars[i].set("restore_start_transform", cars[i].restore_start_transform);
 		vis_cars[i].set("restore_target_transform", cars[i].restore_target_transform);
 	}
@@ -949,6 +982,12 @@ void GameSim::fix_pointers() {
     godot::PackedFloat32Array arr;
     if (!sim_started || car_index < 0 || car_index >= num_cars || current_track == nullptr)
         return arr;
+    // If the car is retired, return a zero observation of the correct size
+    if (cars[car_index].machine_state & MACHINESTATE::RETIRED) {
+        arr.resize(AgentObservation::kSize);
+        for (int i = 0; i < AgentObservation::kSize; ++i) arr.set(i, 0.0f);
+        return arr;
+    }
     const AgentObservation *src = nullptr;
     AgentObservation tmp;
     if (ai_obs_valid && ai_observations) {
@@ -999,7 +1038,11 @@ void GameSim::update_observations() {
         ai_observations = ai_data.allocate_array<AgentObservation>(num_cars);
     }
     for (int i = 0; i < num_cars; ++i) {
-        build_observation(cars[i], *current_track, ai_observations[i]);
+        if (cars[i].machine_state & MACHINESTATE::RETIRED) {
+            for (int k = 0; k < AgentObservation::kSize; ++k) ai_observations[i].data[k] = 0.0f;
+        } else {
+            build_observation(cars[i], *current_track, ai_observations[i]);
+        }
     }
     ai_obs_valid = true;
     for (int i = 0; i < num_cars; ++i) {

@@ -5,7 +5,7 @@ import numpy as np
 from rl_client import RLClient
 from policy_io import save_weights_json
 
-OBS_SIZE = 27
+OBS_SIZE = 22
 ACT_SIZE = 7
 
 # Simple MLP forward pass using ReLU hidden, linear output
@@ -68,11 +68,17 @@ def to_action(raw: np.ndarray) -> np.ndarray:
     return out
 
 
-def launch_godot(godot_bin: str, project_path: str, port: int, bots: int, show: bool) -> subprocess.Popen:
+def launch_godot(godot_bin: str, project_path: str, port: int, bots: int, show: bool, render: bool = False, render_skip: int = 0, render_cars: int = 0) -> subprocess.Popen:
     cmd = [godot_bin]
     if not show:
         cmd.append('--headless')
     cmd += ['--path', project_path, '--', '--rl-port', str(port), '--rl-bots', str(bots)]
+    if render:
+        cmd += ['--rl-render']
+    if render_skip and render_skip > 1:
+        cmd += ['--rl-render-skip', str(render_skip)]
+    if render_cars and render_cars > 0:
+        cmd += ['--rl-render-cars', str(render_cars)]
     print('Launching Godot:', ' '.join(cmd))
     if show:
         proc = subprocess.Popen(cmd)
@@ -91,7 +97,7 @@ def train_es(args):
     print(f'Param dim: {dim}')
 
     godot_bin = args.godot or os.environ.get('GODOT_BIN') or 'godot4'
-    gd = launch_godot(godot_bin, str(Path(args.project).resolve()), args.port, bots, args.show)
+    gd = launch_godot(godot_bin, str(Path(args.project).resolve()), args.port, bots, args.show, render=args.render, render_skip=args.render_skip, render_cars=args.render_cars)
 
     client = RLClient(port=args.port)
     client.connect()
@@ -211,5 +217,8 @@ if __name__ == '__main__':
     ap.add_argument('--seed', type=int, default=123)
     ap.add_argument('--outdir', default='export-bin/rl_weights')
     ap.add_argument('--show', action='store_true', help='Run Godot with UI (not headless) to watch training')
+    ap.add_argument('--render', action='store_true', help='Render during training (server-side toggle)')
+    ap.add_argument('--render-skip', dest='render_skip', type=int, default=3, help='Render every N frames (server-side)')
+    ap.add_argument('--render-cars', dest='render_cars', type=int, default=4, help='Number of cars to instantiate visually (server-side)')
     args = ap.parse_args()
     train_es(args)

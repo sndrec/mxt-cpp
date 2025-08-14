@@ -10,8 +10,12 @@ except Exception:
     gym = None
 
 
+OBS_SIZE = 22
+ACT_SIZE = 5  # [steer_h, steer_v, accel, brake, boost]
+
+
 class RLEnvClient(gym.Env if gym else object):
-    metadata = {"render.modes": []}
+    metadata = {"render_modes": []}
 
     def __init__(self, host: str = "127.0.0.1", port: int = 5566, num_cars: int = 1, multi_agent: bool = False):
         assert gym is not None, "Install gymnasium to use this client"
@@ -22,11 +26,11 @@ class RLEnvClient(gym.Env if gym else object):
         self.multi_agent = multi_agent
         self.sock = None
         if not self.multi_agent:
-            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(27,), dtype=float)
-            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(7,), dtype=float)
+            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(OBS_SIZE,), dtype=float)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(ACT_SIZE,), dtype=float)
         else:
-            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(27*self.num_cars,), dtype=float)
-            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(7*self.num_cars,), dtype=float)
+            self.observation_space = spaces.Box(low=-float("inf"), high=float("inf"), shape=(OBS_SIZE*self.num_cars,), dtype=float)
+            self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(ACT_SIZE*self.num_cars,), dtype=float)
 
     def _connect(self):
         if self.sock is not None:
@@ -37,8 +41,7 @@ class RLEnvClient(gym.Env if gym else object):
         self.sock = s
 
     def _send(self, obj):
-        line = json.dumps(obj) + "
-"
+        line = json.dumps(obj) + "\n"
         self.sock.sendall(line.encode("utf-8"))
 
     def _recv(self):
@@ -48,10 +51,8 @@ class RLEnvClient(gym.Env if gym else object):
             if not b:
                 raise ConnectionError("server disconnected")
             buf += b
-            if b"
-" in buf:
-                line, rest = buf.split(b"
-", 1)
+            if b"\n" in buf:
+                line, rest = buf.split(b"\n", 1)
                 return json.loads(line.decode("utf-8"))
 
     def reset(self, *, seed=None, options=None):
@@ -69,23 +70,44 @@ class RLEnvClient(gym.Env if gym else object):
                 flat.extend(obs_all[i])
             return flat, {}
 
+    @staticmethod
+    def _map_action_per_car(a: List[float]) -> List[float]:
+        # Input a: 5 floats in [-1,1] → [steer_h, steer_v, accel, brake, boost]
+        def _tanh(x: float) -> float:
+            import math
+            e2x = math.exp(2.0 * max(min(x, 20.0), -20.0))
+            return (e2x - 1.0) / (e2x + 1.0)
+        sh = _tanh(a[0])
+        sv = _tanh(a[1])
+        accel = max(0.0, min(1.0, (a[2] + 1.0) * 0.5))
+        brake = max(0.0, min(1.0, (a[3] + 1.0) * 0.5))
+        boost = 1.0 if a[4] > 0.0 else 0.0
+        if accel > 0.0 and brake > 0.0:
+            if accel >= brake:
+                brake = 0.0
+            else:
+                accel = 0.0
+        return [sh, sv, accel, brake, boost]
+
     def step(self, action):
         if not self.multi_agent:
-            acts = [list(map(float, action))]
+            a = list(map(float, action))
+            assert len(a) == ACT_SIZE
+            acts = [self._map_action_per_car(a)]
         else:
             a = list(map(float, action))
-            assert len(a) == 7*self.num_cars
+            assert len(a) == ACT_SIZE*self.num_cars
             acts = []
             for i in range(self.num_cars):
-                start = 7*i
-                acts.append(a[start:start+7])
+                start = ACT_SIZE * i
+                acts.append(self._map_action_per_car(a[start:start+ACT_SIZE]))
         self._send({"cmd": "step", "actions": acts})
         resp = self._recv()
         assert resp.get("ok"), f"step failed: {resp}"
         obs_all = resp.get("obs", [])
         rew_all = resp.get("rew", [])
         done_all = resp.get("done", [])
-                episode_end = bool(resp.get("episode_end", False))
+        episode_end = bool(resp.get("episode_end", False))
         if not self.multi_agent:
             obs = obs_all[0]
             rew = float(rew_all[0]) if rew_all else 0.0
@@ -97,7 +119,7 @@ class RLEnvClient(gym.Env if gym else object):
             obs = flat
             rew = float(sum(rew_all)) / max(1, len(rew_all))
             done = all(bool(x) for x in done_all)
-                if episode_end:
+        if episode_end:
             done = True
         info = {"episode_end": episode_end}
         return obs, rew, done, False, info
