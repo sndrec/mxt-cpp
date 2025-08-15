@@ -15,8 +15,11 @@ class_name GameManager extends Node
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var car_settings: Control = $CarSettings
+@onready var controller_settings: Control = $ControllerSettings
 @onready var car_settings_button: Button = $Control/CarSettingsButton
+@onready var controller_settings_button: Button = $Control/ControllerSettingsButton
 @onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
+@onready var controller_settings_button_lobby: Button = $Lobby/ControllerSettingsButton
 @onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
 @onready var rtt_label: Label = $RTTLabel
@@ -54,6 +57,8 @@ func _ready() -> void:
 	car_settings.hide()
 	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
 	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
+	controller_settings_button.pressed.connect(_on_controller_settings_button_pressed)
+	controller_settings_button_lobby.pressed.connect(_on_controller_settings_button_pressed)
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
 	if args.has("--host"):
@@ -238,6 +243,9 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 
 func _on_car_settings_button_pressed() -> void:
 	car_settings.call("open_settings")
+
+func _on_controller_settings_button_pressed() -> void:
+	controller_settings.call("open_settings")
 
 func _generate_random_input() -> PlayerInput:
 	var p := PlayerInputClass.new()

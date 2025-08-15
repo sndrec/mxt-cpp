@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=20 format=3 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
@@ -8,6 +8,7 @@
 [ext_resource type="Texture2D" uid="uid://cejh11h8frbgl" path="res://asset/test_track_2_simple_grid.png" id="5_272bh"]
 [ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
 [ext_resource type="ArrayMesh" uid="uid://cpxafy37lhrin" path="res://track/beepers_track/track.obj" id="9_kek77"]
+[ext_resource type="PackedScene" uid="uid://u8cuqg2ggiw8" path="res://ui/controller_settings.tscn" id="10_ctrlset"]
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
 viewport_path = NodePath("GameWorld/OutlineViewport")
@@ -122,9 +123,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -115.0
-offset_top = 44.0
+offset_top = 22.0
 offset_right = 115.0
-offset_bottom = 74.0
+offset_bottom = 53.0
 grow_horizontal = 2
 grow_vertical = 2
 text = "Join"
@@ -137,12 +138,27 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -115.0
-offset_top = 104.0
+offset_top = 57.0
 offset_right = 115.0
-offset_bottom = 134.0
+offset_bottom = 88.0
 grow_horizontal = 2
 grow_vertical = 2
 text = "Car Settings"
+
+[node name="ControllerSettingsButton" type="Button" parent="Control"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -115.0
+offset_top = 92.0
+offset_right = 115.0
+offset_bottom = 123.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Controller Settings"
 
 [node name="Lobby" type="Control" parent="."]
 visible = false
@@ -202,7 +218,25 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Car Settings"
 
+[node name="ControllerSettingsButton" type="Button" parent="Lobby"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -115.0
+offset_top = 104.0
+offset_right = 115.0
+offset_bottom = 134.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Controller Settings"
+
 [node name="CarSettings" parent="." instance=ExtResource("3_carsettings")]
+visible = false
+
+[node name="ControllerSettings" parent="." instance=ExtResource("10_ctrlset")]
 visible = false
 
 [node name="GameWorld" type="Node3D" parent="."]
@@ -322,5 +356,7 @@ text = "MaxX Throttle v0.1.4"
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/JoinButton" to="." method="_on_join_button_pressed"]
 [connection signal="pressed" from="Control/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]
+[connection signal="pressed" from="Control/ControllerSettingsButton" to="." method="_on_controller_settings_button_pressed"]
 [connection signal="pressed" from="Lobby/StartRaceButton" to="." method="_on_start_race_button_pressed"]
 [connection signal="pressed" from="Lobby/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]
+[connection signal="pressed" from="Lobby/ControllerSettingsButton" to="." method="_on_controller_settings_button_pressed"]

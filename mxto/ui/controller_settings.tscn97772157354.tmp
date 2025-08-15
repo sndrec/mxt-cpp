@@ -2,7 +2,7 @@
 
 [ext_resource type="Texture2D" uid="uid://ba5amhq17pghw" path="res://ui/circle.png" id="1_tjsn8"]
 [ext_resource type="Texture2D" uid="uid://ds5wavcy0prbi" path="res://ui/circle_02.png" id="2_68tii"]
-[ext_resource type="Script" uid="uid://demarkn2b30g7" path="res://ui/controller_settings.gd" id="3_b8ycc"]
+[ext_resource type="Script" path="res://ui/controller_settings.gd" id="3_b8ycc"]
 
 [node name="ControllerSettings" type="Control"]
 layout_mode = 3
@@ -12,15 +12,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("3_b8ycc")
-
-[node name="ColorRect" type="ColorRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0, 0, 0, 0.772549)
 
 [node name="ControllerInputRealZone" type="Control" parent="."]
 layout_mode = 2
