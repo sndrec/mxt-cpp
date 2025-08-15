@@ -485,7 +485,7 @@ bool PhysicsCar::find_floor_beneath_machine()
 	{	
 		if(rect)// && ((road_t_sample_raw.x > -0.25f && road_t_sample_raw.x < 0.25f) || (road_t_sample_raw.x > 0.75f || road_t_sample_raw.x < -0.75f)))
 		{
-			DEBUG::disp_text("road_t_sample_raw", road_t_sample_raw);
+			//DEBUG::disp_text("road_t_sample_raw", road_t_sample_raw);
 			//godot::Vector3 use_dir = (position_current - root.t3d.origin);
 			godot::Vector3 flat_up = (basis_physical.basis.get_column(1)).slide(root.t3d.basis.get_column(2)).normalized();
 			//if (use_dir.dot(flat_up) > 0.0f)
@@ -497,10 +497,10 @@ bool PhysicsCar::find_floor_beneath_machine()
 		}
 		if(pipe)
 		{
-			DEBUG::disp_text("Spatial dist", spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y);
+			//DEBUG::disp_text("Spatial dist", spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y);
 			if (spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y > 1.01f)
 			{	
-				DEBUG::disp_text("Outside pipe/rect!", spatial_t_sample);
+				//DEBUG::disp_text("Outside pipe/rect!", spatial_t_sample);
 				height_above_track = 0.0f;
 				track_surface_normal = godot::Vector3(0, 1, 0);
 				return false;
@@ -3611,7 +3611,7 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 		machine_state |= MACHINESTATE::SIDEATTACKING;
 	if (input.spinattack)
 		machine_state |= MACHINESTATE::SPINATTACKING;
-	if (input.boost && lap > 0)
+	if (input.boost && lap > 1)
 		machine_state |= MACHINESTATE::JUST_PRESSED_BOOST;
 
 	g_anim_timer += 1;

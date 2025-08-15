@@ -19,7 +19,7 @@ script = ExtResource("1_c1ygr")
 
 [node name="SettingContainer" type="VBoxContainer" parent="."]
 layout_mode = 0
-offset_right = 502.0
+offset_right = 324.0
 offset_bottom = 100.0
 
 [node name="MachineSettingName" type="Label" parent="SettingContainer"]
@@ -54,25 +54,25 @@ layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
-offset_left = -246.0
-offset_bottom = 100.0
+offset_left = -113.0
+offset_bottom = 40.0
 grow_horizontal = 0
 text = "Close"
 
 [node name="PilotNameLabel" type="Label" parent="."]
 layout_mode = 0
-offset_left = 518.0
-offset_top = 17.0
-offset_right = 604.0
-offset_bottom = 40.0
+offset_left = 329.0
+offset_top = 27.0
+offset_right = 415.0
+offset_bottom = 50.0
 text = "Pilot Name"
 
 [node name="PilotNameInput" type="LineEdit" parent="."]
 layout_mode = 0
-offset_left = 507.0
-offset_top = 59.0
-offset_right = 900.0
-offset_bottom = 98.0
+offset_left = 327.0
+offset_top = 57.0
+offset_right = 635.0
+offset_bottom = 96.0
 placeholder_text = "Your name here..."
 
 [node name="SpectatorToggle" type="CheckBox" parent="."]
