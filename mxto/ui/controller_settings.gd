@@ -159,6 +159,7 @@ func _clear_action_events(actions: Array) -> void:
 func _set_button_binding(actions: Array, button_index: int) -> void:
 		var ev := InputEventJoypadButton.new()
 		ev.button_index = button_index
+		ev.device = -1
 		_clear_action_events(actions)
 		for a in actions:
 				InputMap.action_add_event(a, ev)
@@ -169,6 +170,7 @@ func _set_axis_binding_single(action: String, axis: int, value: float) -> void:
 		var ev := InputEventJoypadMotion.new()
 		ev.axis = axis
 		ev.axis_value = 1.0 if value >= 0.0 else -1.0
+		ev.device = -1
 		_clear_action_events([action])
 		InputMap.action_add_event(action, ev)
 		_finish_wait()
@@ -178,9 +180,11 @@ func _set_axis_binding_pair(actions: Array, axis: int) -> void:
 		var ev_neg := InputEventJoypadMotion.new()
 		ev_neg.axis = axis
 		ev_neg.axis_value = -1.0
+		ev_neg.device = -1
 		var ev_pos := InputEventJoypadMotion.new()
 		ev_pos.axis = axis
 		ev_pos.axis_value = 1.0
+		ev_pos.device = -1
 		_clear_action_events(actions)
 		InputMap.action_add_event(actions[0], ev_neg)
 		InputMap.action_add_event(actions[1], ev_pos)
@@ -306,15 +310,17 @@ func _apply_binding_dict(data: Dictionary) -> void:
 								continue
 						var t := str(entry.get("type", ""))
 						if t == "joy_button":
-								var iev := InputEventJoypadButton.new()
-								iev.button_index = int(entry.get("button", 0))
-								InputMap.action_add_event(a, iev)
+							var iev := InputEventJoypadButton.new()
+							iev.button_index = int(entry.get("button", 0))
+							iev.device = -1
+							InputMap.action_add_event(a, iev)
 						elif t == "joy_axis":
-								var iev2 := InputEventJoypadMotion.new()
-								iev2.axis = int(entry.get("axis", 0))
-								var v := float(entry.get("value", 1.0))
-								iev2.axis_value = 1.0 if v >= 0.0 else -1.0
-								InputMap.action_add_event(a, iev2)
+							var iev2 := InputEventJoypadMotion.new()
+							iev2.axis = int(entry.get("axis", 0))
+							var v := float(entry.get("value", 1.0))
+							iev2.axis_value = 1.0 if v >= 0.0 else -1.0
+							iev2.device = -1
+							InputMap.action_add_event(a, iev2)
 		if data.has("steer_deadzone"):
 				var dz2 := float(data["steer_deadzone"])
 				for a2 in ["SteerLeft", "SteerRight", "SteerUp", "SteerDown"]:
