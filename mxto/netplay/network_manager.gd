@@ -35,6 +35,7 @@ var last_local_input_bytes : PackedByteArray = NEUTRAL_INPUT_BYTES.duplicate()
 var sent_inputs_bytes := {}
 var server_tick: int = 0
 var local_tick: int = 0
+var spawn_seed: int = 0
 const INPUT_HISTORY_SIZE := 30
 var game_sim: GameSim
 var server_game_sim: GameSim
@@ -449,6 +450,11 @@ func start_race(track_index: int, settings: Array) -> void:
 func send_start_race(track_index: int, settings: Array) -> void:
 	if is_server:
 		ready_players.clear()
+		# Generate and distribute a shared spawn seed before starting the race.
+		# This lets all peers randomize starting grid slots deterministically.
+		var seed := randi()
+		set_spawn_seed.rpc(seed)
+		set_spawn_seed(seed)
 		start_race.rpc(track_index, settings)
 		start_race(track_index, settings)
 		if player_ids.size() > 1:
@@ -470,6 +476,14 @@ func send_end_race() -> void:
 	if is_server:
 		end_race.rpc()
 		end_race()
+
+@rpc("any_peer", "reliable")
+func set_spawn_seed(seed: int) -> void:
+	spawn_seed = seed
+	if game_sim != null:
+		game_sim.set_spawn_seed(seed)
+	if is_server and server_game_sim != null:
+		server_game_sim.set_spawn_seed(seed)
 
 @rpc("any_peer", "reliable")
 func client_ready() -> void:

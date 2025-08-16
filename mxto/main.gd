@@ -324,9 +324,12 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	game_sim.car_node_container = car_node_container
+	# Ensure the C++ sim sees the shared spawn seed before instantiation
+	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
+		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	network_manager.game_sim = game_sim
 	if network_manager.is_server:
