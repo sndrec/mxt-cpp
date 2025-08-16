@@ -43,12 +43,14 @@ namespace godot {
 		PhysicsCarProperties* car_properties_array = nullptr;
 		MtxStack mtxa;
 		godot::Node3D* car_node_container = nullptr;
+		int spawn_seed = 0;
 
 		GameSim();
 		~GameSim();
 
 		void set_sim_started(const bool p_sim_started);
 		bool get_sim_started();
+		void set_spawn_seed(int p_seed) { spawn_seed = p_seed; }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
 		void tick_gamesim(godot::Array player_inputs);

@@ -26,6 +26,7 @@ var listen_server: bool = false
 var player_ids: Array = []
 var spectator_ids: Array = []
 var waiting_peers: Array = []
+var race_player_ids: Array = []
 var pending_inputs := {}
 var authoritative_inputs := {}
 var input_history := {}
@@ -71,7 +72,7 @@ var race_active: bool = false
 
 var use_state_compression := true
 
-var log_enabled := true
+var log_enabled := false
 var log_file: FileAccess
 var log_bytes_out_total := 0
 var log_bytes_in_total := 0

@@ -28,6 +28,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
 	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
 	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
+	ClassDB::bind_method(D_METHOD("set_spawn_seed", "seed"), &GameSim::set_spawn_seed);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
@@ -443,7 +444,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		soa->last_k = 0;
 		soa->precompute();
 
-		// 4) versionâ€dependent rail heights
+		// 4) versionâ€dependent rail heights
 		if (version_string != "v0.1") {
 			current_track->segments[seg].left_rail_height  = lvldat_buf->get_float();
 			current_track->segments[seg].right_rail_height = lvldat_buf->get_float();
@@ -577,7 +578,24 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
 	car_properties_array = props_array;
 	num_cars = requested_cars;
-	for (int i = 0; i < num_cars; i++)
+	// Build randomized spawn order using shared seed from server, if provided.
+	// This affects only grid slots, not which car index belongs to which player.
+	std::vector<int> spawn_order;
+	spawn_order.resize(num_cars);
+	for (int i = 0; i < num_cars; ++i) spawn_order[i] = i;
+	if (spawn_seed != 0 && num_cars > 1) {
+		uint32_t seed = static_cast<uint32_t>(spawn_seed);
+		auto next_rand = [&seed]() {
+			seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed;
+		};
+		for (int i = num_cars - 1; i > 0; --i) {
+			uint32_t r = next_rand();
+			int j = static_cast<int>(r % (i + 1));
+			std::swap(spawn_order[i], spawn_order[j]);
+		}
+	}
+
+for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].mtxa = &mtxa;
 		cars[i].current_track = current_track;
@@ -602,7 +620,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		const float row_spacing = 20.0f;
 		const float start_offset = 40.0f;
 
-		float distance_back = start_offset + i * 10;
+		int slot = spawn_order[i];
+		float distance_back = start_offset + slot * 10;
 		while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
 			distance_back -= current_track->segments[seg_idx].segment_length;
 			seg_idx -= 1;
@@ -614,7 +633,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 		const TrackSegment &spawn_seg = current_track->segments[seg_idx];
 		float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
-		float t_x = remap_float(static_cast<float>(i % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
+		float t_x = remap_float(static_cast<float>(slot % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
 
 		godot::Transform3D spawn_transform;
 		spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));

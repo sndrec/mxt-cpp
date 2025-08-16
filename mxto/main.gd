@@ -280,8 +280,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 				var def_res := load(ps.car_definition_path)
 				if def_res != null:
 					chosen_defs.append(def_res)
-				if i < network_manager.player_ids.size():
-					racer_ids.append(network_manager.player_ids[i])
+				var roster = network_manager.race_player_ids if network_manager.race_player_ids.size() > 0 else network_manager.player_ids
+				if i < roster.size():
+					racer_ids.append(roster[i])
 	local_player_index = racer_ids.find(multiplayer.get_unique_id())
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_player_index)
 	var idx := 0
