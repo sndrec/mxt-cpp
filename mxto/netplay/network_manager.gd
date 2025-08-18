@@ -27,6 +27,7 @@ var player_ids: Array = []
 var spectator_ids: Array = []
 var waiting_peers: Array = []
 var race_player_ids: Array = []
+var _disconnected_during_race := {}
 var pending_inputs := {}
 var authoritative_inputs := {}
 var input_history := {}
@@ -43,6 +44,7 @@ var last_received_tick := {}
 var last_ack_tick: int = -1
 var target_tick: int = 0
 const MAX_AHEAD_TICKS := 30
+const MAX_HISTORY_TICKS := 60
 var sent_input_times := {}
 var rtt_s: float = 0.0
 var desired_ahead_ticks: float = 2.0
@@ -102,6 +104,11 @@ var prof_car_store_old_pos_us_interval := 0
 var prof_car_post_render_us_interval := 0
 var _log_sent_counts := {}
 var _log_timer: Timer
+var rollback_frametime_us := 0
+
+var version_string: String = ""
+var _unverified_peers: Array = []
+var _version_request_time := {}
 
 func _init_logger() -> void:
 	if !log_enabled:
@@ -191,6 +198,8 @@ static func _estimate_nested_inputs_size(inputs: Array) -> int:
 
 func reset_race_state() -> void:
 	race_active = false
+	race_player_ids.clear()
+	_disconnected_during_race.clear()
 	pending_inputs.clear()
 	authoritative_inputs.clear()
 	input_history.clear()
@@ -241,6 +250,11 @@ func _calc_max_ahead() -> float:
 	return max_ahead
 
 func _ready() -> void:
+	var lbl: Label = get_node_or_null("../VersionLabel")
+	if lbl != null:
+		version_string = str(lbl.text)
+	else:
+		version_string = ""
 	var server_process_timer = Timer.new()
 	server_process_timer.ignore_time_scale = true
 	add_child(server_process_timer)
@@ -374,27 +388,23 @@ func join(ip: String, port: int = 27016) -> int:
 
 func _on_peer_connected(id: int) -> void:
 	if is_server:
-		if server_game_sim != null and server_game_sim.sim_started:
-			waiting_peers.append(id)
-			_update_player_ids.rpc_id(id, player_ids)
-			for pid in player_settings.keys():
-				update_player_settings.rpc_id(id, player_settings[pid], pid)
-			return
-		player_ids.append(id)
-		last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
-		peer_desired_ahead[id] = 0.0
-		_update_player_ids.rpc(player_ids)
-		for pid in player_settings.keys():
-			update_player_settings.rpc_id(id, player_settings[pid], pid)
-		_calc_state_offsets()
-
+		if !_unverified_peers.has(id):
+			_unverified_peers.append(id)
+		_version_request_time[id] = 0.001 * float(Time.get_ticks_msec())
+		_request_client_version.rpc_id(id, version_string)
 func _on_peer_disconnected(id: int) -> void:
 	if is_server:
+		if _unverified_peers.has(id):
+			_unverified_peers.erase(id)
+		if _version_request_time.has(id):
+			_version_request_time.erase(id)
 		if waiting_peers.has(id):
 			waiting_peers.erase(id)
 			return
 		if player_ids.has(id):
 			player_ids.erase(id)
+			if race_active:
+				_disconnected_during_race[id] = true
 		if spectator_ids.has(id):
 			spectator_ids.erase(id)
 		if last_input_time.has(id):
@@ -410,9 +420,52 @@ func _on_peer_disconnected(id: int) -> void:
 		for key in pending_inputs:
 			if pending_inputs[key].has(id):
 				pending_inputs[key].erase(id)
-		_update_player_ids.rpc(player_ids)
+		if !race_active:
+			_update_player_ids.rpc(player_ids)
 		_calc_state_offsets()
 
+
+func _accept_peer(id: int) -> void:
+	if _unverified_peers.has(id):
+		_unverified_peers.erase(id)
+	if _version_request_time.has(id):
+		_version_request_time.erase(id)
+	if server_game_sim != null and server_game_sim.sim_started:
+		waiting_peers.append(id)
+		_update_player_ids.rpc_id(id, player_ids)
+		for pid in player_settings.keys():
+			update_player_settings.rpc_id(id, player_settings[pid], pid)
+		return
+	if !player_ids.has(id):
+		player_ids.append(id)
+	last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
+	peer_desired_ahead[id] = 0.0
+	if !race_active:
+		_update_player_ids.rpc(player_ids)
+	for pid in player_settings.keys():
+		update_player_settings.rpc_id(id, player_settings[pid], pid)
+	_calc_state_offsets()
+
+@rpc("any_peer", "reliable")
+func _request_client_version(server_version: String) -> void:
+	_report_client_version.rpc_id(1, version_string)
+
+@rpc("any_peer", "reliable")
+func _report_client_version(client_version: String) -> void:
+	if !is_server:
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if client_version != version_string:
+		push_error("Rejecting client %s due to version mismatch. Server=%s Client=%s" % [str(sender_id), version_string, client_version])
+		_version_rejected.rpc_id(sender_id, version_string)
+		multiplayer.disconnect_peer(sender_id)
+		_on_peer_disconnected(sender_id)
+		return
+	_accept_peer(sender_id)
+
+@rpc("any_peer", "reliable")
+func _version_rejected(server_version: String) -> void:
+	DebugDraw2D.set_text("Version mismatch. Server: " + server_version, null, 10, Color.RED, 10)
 func flush_waiting_peers() -> void:
 	if not is_server:
 		return
@@ -441,6 +494,7 @@ func _update_player_ids(ids: Array) -> void:
 @rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array) -> void:
 	race_active = true
+	race_player_ids = player_ids.duplicate(true)
 	emit_signal("race_started", track_index, settings)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
@@ -542,14 +596,16 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 			if player_ids.has(id):
 				player_ids.erase(id)
 				spectator_ids.append(id)
-				_update_player_ids.rpc(player_ids)
+				if !race_active:
+					_update_player_ids.rpc(player_ids)
 				_calc_state_offsets()
 		else:
 			if spectator_ids.has(id):
 				spectator_ids.erase(id)
 			if !player_ids.has(id):
 				player_ids.append(id)
-				_update_player_ids.rpc(player_ids)
+				if !race_active:
+					_update_player_ids.rpc(player_ids)
 				_calc_state_offsets()
 
 func set_local_input(input: PackedByteArray) -> void:
@@ -569,11 +625,20 @@ func collect_server_inputs() -> Array:
 	if server_tick > target_tick:
 		return []
 	var dict = pending_inputs[server_tick]
-	for id in player_ids:
-		if not dict.has(id):
-			return []
+	var roster : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
+	var prev = authoritative_history.get(server_tick - 1, [])
+	for i in range(roster.size()):
+		var pid = roster[i]
+		if not dict.has(pid):
+			if _disconnected_during_race.has(pid):
+				var synth : PackedByteArray = NEUTRAL_INPUT_BYTES
+				if prev.size() == roster.size():
+					synth = prev[i]
+				dict[pid] = synth
+			else:
+				return []
 	var frame_inputs_bytes: Array = []
-	for id in player_ids:
+	for id in roster:
 		frame_inputs_bytes.append(dict[id])
 	authoritative_history[server_tick] = frame_inputs_bytes
 	pending_inputs.erase(server_tick)
@@ -648,12 +713,13 @@ func collect_client_inputs() -> Array:
 		authoritative_inputs.erase(local_tick)
 	else:
 		var prev_frame = input_history.get(local_tick - 1, [])
+		var roster : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
 		var existing := []
-		existing.resize(player_ids.size())
-		for i in range(player_ids.size()):
-			if player_ids[i] == multiplayer.get_unique_id():
+		existing.resize(roster.size())
+		for i in range(roster.size()):
+			if roster[i] == multiplayer.get_unique_id():
 				existing[i] = last_local_input_bytes
-		frame_inputs = netcode_core.build_predicted_frame(player_ids, multiplayer.get_unique_id(), existing, prev_frame, NEUTRAL_INPUT_BYTES)
+		frame_inputs = netcode_core.build_predicted_frame(roster, multiplayer.get_unique_id(), existing, prev_frame, NEUTRAL_INPUT_BYTES)
 	input_history[local_tick] = frame_inputs
 	if input_history.has(local_tick - INPUT_HISTORY_SIZE):
 		input_history.erase(local_tick - INPUT_HISTORY_SIZE)
@@ -852,13 +918,14 @@ func _check_client_stalls() -> void:
 		return
 	if not is_server or server_game_sim == null or not server_game_sim.sim_started:
 		return
-	# don’t test while still waiting for the very first full frame
+	# don't test while still waiting for the very first full frame
 	if server_tick >= target_tick:
 		return
 	var waiting = pending_inputs.get(server_tick, {})
 	var now := 0.001 * float(Time.get_ticks_msec())
 	var missing := []
-	for id in player_ids:
+	var roster_chk : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
+	for id in roster_chk:
 		if not waiting.has(id):
 			missing.append(id)
 			if last_input_time.has(id) and now - float(last_input_time[id]) > 10.0:
@@ -866,21 +933,19 @@ func _check_client_stalls() -> void:
 					push_error("Client %s stalled, disconnecting" % str(id))
 					multiplayer.disconnect_peer(id)
 					_on_peer_disconnected(id)
+					if !race_active:
+						_update_player_ids.rpc(player_ids)
 	if target_tick - server_tick > 5 and missing.size() > 0:
 		var prev = authoritative_history.get(server_tick - 1, [])
-		for i in range(player_ids.size()):
-			var pid = player_ids[i]
+		for i in range(roster_chk.size()):
+			var pid = roster_chk[i]
 			if missing.has(pid):
 				var inp : PackedByteArray = NEUTRAL_INPUT_BYTES
-				if prev.size() == player_ids.size():
+				if prev.size() == roster_chk.size():
 					inp = prev[i]
 				waiting[pid] = inp
-				last_received_tick[pid] = server_tick
-				authoritative_acks[pid] = server_tick
 		log_server_replacements += missing.size()
-		pending_inputs[server_tick] = waiting
-
-var rollback_frametime_us = 0
+	pending_inputs[server_tick] = waiting
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if !race_active:
@@ -969,7 +1034,8 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 func _recalculate_future_predictions(start_tick: int) -> void:
 	if !race_active:
 		return
-	netcode_core.recalc_future_predictions(start_tick, local_tick, player_ids, multiplayer.get_unique_id(), input_history, authoritative_inputs, NEUTRAL_INPUT_BYTES)
+	var roster : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
+	netcode_core.recalc_future_predictions(start_tick, local_tick, roster, multiplayer.get_unique_id(), input_history, authoritative_inputs, NEUTRAL_INPUT_BYTES)
 
 func disconnect_from_server() -> void:
 	race_active = false
@@ -1004,10 +1070,15 @@ func _prune_authoritative_history() -> void:
 		var ack = authoritative_acks.get(id, -1)
 		if min_ack == -1 or ack < min_ack:
 			min_ack = ack
-	if min_ack == -1:
+	# Always enforce a sliding window to bound memory, even if some acks stall.
+	var cutoff := min_ack
+	var window_cutoff := server_tick - MAX_HISTORY_TICKS
+	if cutoff == -1 or window_cutoff > cutoff:
+		cutoff = window_cutoff
+	if cutoff == -1:
 		return
 	for key in authoritative_history.keys():
-		if key <= min_ack:
+		if key <= cutoff:
 			authoritative_history.erase(key)
 
 func _update_desired_ahead() -> void:

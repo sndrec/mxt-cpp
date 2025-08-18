@@ -71,6 +71,21 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
+[node name="SingleplayerButton" type="Button" parent="Control"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -115.0
+offset_top = -17.0
+offset_right = 115.0
+offset_bottom = 14.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Time Attack"
+
 [node name="StartButton" type="Button" parent="Control"]
 layout_mode = 1
 anchors_preset = 8
@@ -79,12 +94,12 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -115.0
-offset_top = -15.5
+offset_top = 17.5
 offset_right = 115.0
-offset_bottom = 15.5
+offset_bottom = 48.5
 grow_horizontal = 2
 grow_vertical = 2
-text = "Start"
+text = "Host Multiplayer Lobby"
 
 [node name="TrackSelector" type="OptionButton" parent="Control"]
 layout_mode = 1
@@ -123,12 +138,12 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -115.0
-offset_top = 22.0
+offset_top = 53.0
 offset_right = 115.0
-offset_bottom = 53.0
+offset_bottom = 84.0
 grow_horizontal = 2
 grow_vertical = 2
-text = "Join"
+text = "Join Multiplayer Lobby"
 
 [node name="CarSettingsButton" type="Button" parent="Control"]
 layout_mode = 1
@@ -138,9 +153,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -115.0
-offset_top = 57.0
+offset_top = 88.0
 offset_right = 115.0
-offset_bottom = 88.0
+offset_bottom = 119.0
 grow_horizontal = 2
 grow_vertical = 2
 text = "Car Settings"
@@ -153,9 +168,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -115.0
-offset_top = 92.0
+offset_top = 123.0
 offset_right = 115.0
-offset_bottom = 123.0
+offset_bottom = 154.0
 grow_horizontal = 2
 grow_vertical = 2
 text = "Controller Settings"
@@ -351,8 +366,9 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.5"
+text = "MaxX Throttle v0.1.6"
 
+[connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/JoinButton" to="." method="_on_join_button_pressed"]
 [connection signal="pressed" from="Control/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]

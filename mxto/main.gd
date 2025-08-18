@@ -17,6 +17,7 @@ class_name GameManager extends Node
 @onready var car_settings: Control = $CarSettings
 @onready var controller_settings: Control = $ControllerSettings
 @onready var car_settings_button: Button = $Control/CarSettingsButton
+@onready var singleplayer_button: Button = $Control/SingleplayerButton
 @onready var controller_settings_button: Button = $Control/ControllerSettingsButton
 @onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
 @onready var controller_settings_button_lobby: Button = $Lobby/ControllerSettingsButton

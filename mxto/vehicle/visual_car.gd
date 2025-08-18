@@ -322,6 +322,8 @@ func store_old_pos() -> void:
 	old_rot = basis_physical.basis
 
 func calculate_error() -> void:
+	if owning_id == multiplayer.get_unique_id():
+		return
 	var position_error := position_current - old_pos
 	rollback_offset_error -= position_error
 	
