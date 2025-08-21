@@ -72,6 +72,8 @@ const ROAD_MATS = {
 # Singleplayer state
 var singleplayer_mode: bool = false
 var _singleplayer_tick: int = 0
+var current_track_meta: Dictionary = {}
+var current_track_ground_image: Image
 
 func _ready() -> void:
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
@@ -311,10 +313,46 @@ func _generate_random_input() -> PlayerInput:
 	p.apply_quantization()
 	return p
 
+@onready var world_environment: WorldEnvironment = $GameWorld/WorldEnvironment
+@onready var track_floor: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackFloor
+@onready var track_clouds: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackClouds
+
 func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
 		return
 	var info : Dictionary = tracks[track_index]
+	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
+	current_track_meta = {}
+	current_track_ground_image = null
+	var json_path = info["mxt"].get_basename() + ".json"
+	if FileAccess.file_exists(json_path):
+		var json_text := FileAccess.get_file_as_string(json_path)
+		var parsed = JSON.parse_string(json_text)
+		if typeof(parsed) == TYPE_DICTIONARY:
+			current_track_meta = parsed
+			RenderingServer.global_shader_parameter_set("fog_dist", current_track_meta.fog_distance)
+			var floor_mat : ShaderMaterial = track_floor.get_active_material(0)
+			var cloud_mat : ShaderMaterial = track_clouds.get_active_material(0)
+			floor_mat.set_shader_parameter("albedo", current_track_meta.ground_color)
+			cloud_mat.set_shader_parameter("albedo", current_track_meta.cloud_color)
+			track_floor.position.z = -current_track_meta.ground_height
+			track_clouds.position.z = -current_track_meta.cloud_height
+			var sky_mat : ProceduralSkyMaterial = world_environment.environment.sky.sky_material
+			sky_mat.sky_top_color = Color(current_track_meta.sky_top_color[0], current_track_meta.sky_top_color[1], current_track_meta.sky_top_color[2])
+			sky_mat.sky_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
+			sky_mat.ground_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
+			sky_mat.ground_bottom_color = Color(current_track_meta.sky_ground_color[0], current_track_meta.sky_ground_color[1], current_track_meta.sky_ground_color[2])
+			var track_dir = json_path.get_base_dir()
+			var ground_path = track_dir.path_join("ground.png")
+			if FileAccess.file_exists(ground_path):
+				var bytes := FileAccess.get_file_as_bytes(ground_path)
+				if bytes.size() > 0:
+					var img := Image.new()
+					var err := img.load_png_from_buffer(bytes)
+					if err == OK:
+						current_track_ground_image = img
+						floor_mat.set_shader_parameter("texture_albedo", current_track_ground_image)
+					
 	var chosen_defs : Array = []
 	var parsed_settings : Array = []
 	var racer_settings : Array = []

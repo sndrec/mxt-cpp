@@ -29,7 +29,7 @@ void fragment() {
 	{
 		use_color = vec3(0.1, 0.0, 0.0);
 	}
-	ALBEDO = albedo.rgb * albedo_tex.rgb + use_color;
+	ALBEDO = albedo.rgb * albedo_tex.rgb * COLOR.rgb + use_color;
 
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
@@ -72,7 +72,7 @@ gradient = SubResource("Gradient_uybpi")
 resource_name = "track_surface"
 render_priority = 0
 shader = SubResource("Shader_8yl70")
-shader_parameter/albedo = Color(1, 0.403678, 0.441715, 1)
+shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("1_7fqbe")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
 shader_parameter/uv1_scale = Vector3(1, 16, 1)

@@ -2104,7 +2104,6 @@ render_mode blend_mix, world_vertex_coords, depth_draw_always, cull_back, unshad
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform vec3 uv1_scale;
-uniform vec3 fog_color : source_color;
 global uniform float fog_dist;
 varying vec3 WORLD_VERTEX;
 
@@ -2129,10 +2128,9 @@ void fragment() {
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_074og"]
 render_priority = 0
 shader = SubResource("Shader_yaehf")
-shader_parameter/albedo = Color(0.88, 0.6512, 0.6512, 1)
+shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("16_yaehf")
 shader_parameter/uv1_scale = Vector3(16, 16, 8)
-shader_parameter/fog_color = Color(0.526928, 0.270222, 0.244732, 1)
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_074og"]
 material = SubResource("ShaderMaterial_074og")

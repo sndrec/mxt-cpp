@@ -234,6 +234,74 @@ class MXTTrackSettings(PropertyGroup):
         max=10
     )
 
+    # Global track parameters for export (JSON)
+    fog_distance: FloatProperty(
+        name="Fog Distance",
+        description="Distance at which fog fully obscures the scene",
+        default=2000.0,
+        min=0.0,
+        soft_max=10000.0,
+    )
+    sky_top_color: FloatVectorProperty(
+        name="Sky Top Color",
+        description="Sky color at zenith",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.0, 0.1, 0.25)
+    )
+    sky_horizon_color: FloatVectorProperty(
+        name="Sky Horizon Color",
+        description="Sky color at the horizon",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.2, 0.25, 0.3)
+    )
+    sky_ground_color: FloatVectorProperty(
+        name="Sky Ground Color",
+        description="Sky gradient color at the ground",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.02, 0.02, 0.02)
+    )
+    ground_color_global: FloatVectorProperty(
+        name="Ground Color",
+        description="Base ground color (global)",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.08, 0.08, 0.08)
+    )
+    ground_height: FloatProperty(
+        name="Ground Height",
+        description="World height of the ground plane relative to track origin",
+        default=0.0,
+        soft_min=-1000.0,
+        soft_max=1000.0,
+    )
+    cloud_color: FloatVectorProperty(
+        name="Cloud Color",
+        description="Cloud tint color",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 1.0, 1.0)
+    )
+    cloud_height: FloatProperty(
+        name="Cloud Height",
+        description="Approximate cloud layer height",
+        default=800.0,
+        min=0.0,
+        soft_max=10000.0,
+    )
+
     trigger_objects: CollectionProperty(type=MXTTriggerObject)
     active_trigger_obj_idx: IntProperty(default=0)
 
@@ -346,6 +414,27 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
         description="Height of the right rail above the road surface",
         default=0.15,
         min=0.0,
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
+    )
+    # Appearance per-segment
+    ground_color: FloatVectorProperty(
+        name="Ground Color",
+        description="Color for main road surface (vertex color)",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.5, 0.5, 0.5),
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
+    )
+    rail_color: FloatVectorProperty(
+        name="Rail Color",
+        description="Color for rail surfaces (vertex color)",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.8, 0.8, 0.8),
         update=lambda self, ctx: schedule_mesh_build(self.id_data)
     )
     modulations: CollectionProperty(type=MXTModulation)
@@ -2309,6 +2398,55 @@ def mxt_draw_callback():
 
     ts = bpy.context.scene.mxt_track_settings
     if ts:
+        # Draw global preview planes for Ground and Cloud heights (approx. 1000 units diameter)
+        try:
+            # Determine an oriented frame: use active segment's parent up/right as reference
+            up_dir = None
+            right_dir = None
+            origin = None
+            if parent:
+                mw = parent.matrix_world.to_3x3()
+                up_dir = Vector(mw.col[1]).normalized()  # local Y is "up" in this tool
+                right_dir = Vector(mw.col[0]).normalized()
+                origin = parent.matrix_world.translation
+            else:
+                up_dir = Vector((0.0, 0.0, 1.0))
+                right_dir = Vector((1.0, 0.0, 0.0))
+                origin = Vector((0.0, 0.0, 0.0))
+
+            # Make an orthonormal basis in the preview plane
+            u = (right_dir - up_dir * right_dir.dot(up_dir)).normalized()
+            v = up_dir.cross(u).normalized()
+            half = 500.0  # 1000 units diameter
+
+            def draw_plane_at(height: float, color_rgb: tuple[float, float, float], alpha: float):
+                c = origin + up_dir * float(height)
+                corners = [
+                    c + u * (-half) + v * (-half),
+                    c + u * ( half) + v * (-half),
+                    c + u * ( half) + v * ( half),
+                    c + u * (-half) + v * ( half),
+                ]
+                shader.bind()
+                shader.uniform_float("color", (color_rgb[0], color_rgb[1], color_rgb[2], alpha))
+                # Outline
+                batch = batch_for_shader(shader, 'LINES', {"pos": [
+                    corners[0], corners[1],
+                    corners[1], corners[2],
+                    corners[2], corners[3],
+                    corners[3], corners[0],
+                ]})
+                batch.draw(shader)
+
+            # Ground plane
+            gc = getattr(ts, 'ground_color_global', (0.2, 0.2, 0.2))
+            draw_plane_at(getattr(ts, 'ground_height', 0.0), gc, 0.7)
+            # Cloud plane
+            cc = getattr(ts, 'cloud_color', (1.0, 1.0, 1.0))
+            draw_plane_at(getattr(ts, 'cloud_height', 800.0), cc, 0.5)
+        except Exception as _e:
+            pass
+
         ext_map = {
             'DASHPLATE': Vector((6.0,4.0,12.0)),
             'JUMPPLATE': Vector((12.0,4.0,4.0)),
@@ -2362,6 +2500,17 @@ class MXTRoad_PT_MainPanel(Panel):
             layout.prop(ts, "track_name")
             layout.prop(ts, "track_description")
             layout.prop(ts, "track_difficulty")
+            # Global track parameters
+            global_box = layout.box()
+            global_box.label(text="Global Track Params")
+            global_box.prop(ts, "fog_distance")
+            global_box.prop(ts, "sky_top_color")
+            global_box.prop(ts, "sky_horizon_color")
+            global_box.prop(ts, "sky_ground_color")
+            global_box.prop(ts, "ground_color_global")
+            global_box.prop(ts, "ground_height")
+            global_box.prop(ts, "cloud_color")
+            global_box.prop(ts, "cloud_height")
             trig_box = layout.box()
             trig_box.label(text="Trigger Objects")
             row = trig_box.row()
@@ -2520,6 +2669,12 @@ class MXTRoad_PT_MainPanel(Panel):
         rails_box.label(text="Rails:")
         rails_box.prop(road_props, "rail_height_left")
         rails_box.prop(road_props, "rail_height_right")
+
+        # Per-segment appearance
+        color_box = common_box.box()
+        color_box.label(text="Colors (Vertex Colors)")
+        color_box.prop(road_props, "ground_color")
+        color_box.prop(road_props, "rail_color")
 
         
         mods_box = layout.box(); mods_box.label(text="Vertical Modulations & Embeds")
@@ -3750,6 +3905,54 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 obj.select_set(obj in orig_selected)
             context.view_layer.objects.active = orig_active
 
+        # Apply per-segment vertex colors (ground vs rail) based on material assignment
+        try:
+            rail_mat_idx = None
+            # Prefer local material map if available
+            try:
+                rail_mat_idx = material_map.get('track_rail', None)
+            except Exception:
+                rail_mat_idx = None
+            # Determine colors (RGBA) from props
+            gc = tuple(float(c) for c in getattr(props, 'ground_color', (0.5, 0.5, 0.5)))
+            rc = tuple(float(c) for c in getattr(props, 'rail_color', (0.8, 0.8, 0.8)))
+            ground_rgba = (gc[0], gc[1], gc[2], 1.0)
+            rail_rgba   = (rc[0], rc[1], rc[2], 1.0)
+            # Ensure color layer exists
+            color_layer = None
+            if hasattr(mesh, 'color_attributes'):
+                color_layer = mesh.color_attributes.get('Col')
+                if color_layer is None:
+                    color_layer = mesh.color_attributes.new(name='Col', domain='CORNER', type='FLOAT_COLOR')
+            else:
+                # Fallback for older Blender versions
+                if not mesh.vertex_colors:
+                    mesh.vertex_colors.new(name='Col')
+                color_layer = mesh.vertex_colors['Col']
+            # Fill per-loop colors
+            if hasattr(mesh, 'color_attributes'):
+                total_loops = len(mesh.loops)
+                colors = [0.0] * (total_loops * 4)
+                for poly in mesh.polygons:
+                    use_rgba = rail_rgba if (rail_mat_idx is not None and poly.material_index == rail_mat_idx) else ground_rgba
+                    for li in poly.loop_indices:
+                        base = li * 4
+                        colors[base + 0] = use_rgba[0]
+                        colors[base + 1] = use_rgba[1]
+                        colors[base + 2] = use_rgba[2]
+                        colors[base + 3] = use_rgba[3]
+                color_layer.data.foreach_set('color', colors)
+            else:
+                # vertex_colors API
+                data = color_layer.data
+                for poly in mesh.polygons:
+                    use_rgba = rail_rgba if (rail_mat_idx is not None and poly.material_index == rail_mat_idx) else ground_rgba
+                    for li in poly.loop_indices:
+                        data[li].color = use_rgba
+        except Exception as e:
+            if report_fn:
+                report_fn({'WARNING'}, f"Failed to assign vertex colors: {e}")
+
         if report_fn:
             report_fn({'INFO'}, f"NumPy+Bmesh build complete. Verts: {len(mesh.vertices)}, Faces: {len(mesh.polygons)}")
         return True
@@ -3923,6 +4126,15 @@ def _export_stage(context, filepath):
         "name": ts.track_name,
         "description": ts.track_description,
         "difficulty": ts.track_difficulty,
+        # Global track params
+        "fog_distance": ts.fog_distance,
+        "sky_top_color": list(ts.sky_top_color),
+        "sky_horizon_color": list(ts.sky_horizon_color),
+        "sky_ground_color": list(ts.sky_ground_color),
+        "ground_color": list(ts.ground_color_global),
+        "ground_height": ts.ground_height,
+        "cloud_color": list(ts.cloud_color),
+        "cloud_height": ts.cloud_height,
     }
 
     # gather all reachable segments
@@ -3983,6 +4195,18 @@ def _export_stage(context, filepath):
             pass
 
     seg_index = {s: i for i, s in enumerate(seg_order)}
+
+    # Per-segment color metadata
+    segment_meta = []
+    for s in seg_order:
+        props = s.mxt_road_overall_props
+        segment_meta.append({
+            "seg_index": seg_index[s],
+            "name": s.name,
+            "ground_color": list(getattr(props, 'ground_color', (0.5, 0.5, 0.5))),
+            "rail_color": list(getattr(props, 'rail_color', (0.8, 0.8, 0.8))),
+        })
+    metadata["segments"] = segment_meta
 
     cp_list = []
     seg_cp_start = {}
