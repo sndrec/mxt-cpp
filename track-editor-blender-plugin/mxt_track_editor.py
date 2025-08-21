@@ -282,8 +282,8 @@ class MXTTrackSettings(PropertyGroup):
         name="Ground Height",
         description="World height of the ground plane relative to track origin",
         default=0.0,
-        soft_min=-1000.0,
-        soft_max=1000.0,
+        soft_min=-5000.0,
+        soft_max=5000.0,
     )
     cloud_color: FloatVectorProperty(
         name="Cloud Color",
@@ -298,7 +298,7 @@ class MXTTrackSettings(PropertyGroup):
         name="Cloud Height",
         description="Approximate cloud layer height",
         default=800.0,
-        min=0.0,
+        min=-10000.0,
         soft_max=10000.0,
     )
 
@@ -3638,20 +3638,29 @@ class MXTRoad_OT_GenerateMesh(Operator):
         if getattr(props, "rail_height_left", 0.0) > 0.0:
             h = props.rail_height_left
             top_indices = []
+            bottom_dup_indices = []
             offset = num_x - 1
             for row in range(num_y):
                 base_idx = row * num_x + offset
                 base_vert = verts_co[base_idx]
+                # Duplicate the base vertex for the rail so it doesn't share with the road surface
+                all_verts.append(base_vert.tolist())
+                base_uv = uvs_per_vert[base_idx]
+                # For rail UVs, base U=0.0; V from base UV
+                all_uvs_per_vert.append([0.0, base_uv[1]])
+                new_bottom_idx = len(all_verts) - 1
+                bottom_dup_indices.append(new_bottom_idx)
+
+                # Create top vertex for the rail side
                 up_vec = cl_rot_mats[row] @ np.array([0.0, h * centerline_scl[row,1], 0.0])
                 all_verts.append((base_vert + up_vec).tolist())
-                base_uv = uvs_per_vert[base_idx]
-                all_uvs_per_vert.append([0.0, base_uv[1]])
+                all_uvs_per_vert.append([1.0, base_uv[1]])
                 new_top_idx = len(all_verts) - 1
                 top_indices.append(new_top_idx)
                 rail_top_vert_indices.add(new_top_idx)
             for row in range(num_y-1):
-                b0 = row * num_x + offset
-                b1 = (row + 1) * num_x + offset
+                b0 = bottom_dup_indices[row]
+                b1 = bottom_dup_indices[row+1]
                 face = [b0, b1, top_indices[row+1], top_indices[row]]
                 all_faces.append(face)
                 rail_faces.append(face)
@@ -3661,20 +3670,28 @@ class MXTRoad_OT_GenerateMesh(Operator):
         if getattr(props, "rail_height_right", 0.0) > 0.0:
             h = props.rail_height_right
             top_indices = []
+            bottom_dup_indices = []
             offset = 0
             for row in range(num_y):
                 base_idx = row * num_x + offset
                 base_vert = verts_co[base_idx]
+                # Duplicate bottom base vertex for rail side
+                all_verts.append(base_vert.tolist())
+                base_uv = uvs_per_vert[base_idx]
+                # For right rail, we maintain U mapping: base U=1.0, V from base
+                all_uvs_per_vert.append([1.0, base_uv[1]])
+                new_bottom_idx = len(all_verts) - 1
+                bottom_dup_indices.append(new_bottom_idx)
+
                 up_vec = cl_rot_mats[row] @ np.array([0.0, h * centerline_scl[row,1], 0.0])
                 all_verts.append((base_vert + up_vec).tolist())
-                base_uv = uvs_per_vert[base_idx]
-                all_uvs_per_vert.append([1.0, base_uv[1]])
+                all_uvs_per_vert.append([0.0, base_uv[1]])
                 new_top_idx = len(all_verts) - 1
                 top_indices.append(new_top_idx)
                 rail_top_vert_indices.add(new_top_idx)
             for row in range(num_y-1):
-                b0 = row * num_x + offset
-                b1 = (row + 1) * num_x + offset
+                b0 = bottom_dup_indices[row]
+                b1 = bottom_dup_indices[row+1]
                 face = [b0, b1, top_indices[row+1], top_indices[row]]
                 face = list(reversed(face))  # Flip winding so faces point inward
                 all_faces.append(face)
@@ -3945,6 +3962,33 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 # Make sure this layer is active for exporters that rely on the active color attribute
                 try:
                     mesh.color_attributes.active_color = color_layer
+                except Exception:
+                    pass
+
+                # Additionally, create a POINT-domain color layer for exporters that only emit per-vertex colors
+                try:
+                    point_layer = mesh.color_attributes.get('ColV')
+                    if point_layer is None or point_layer.domain != 'POINT':
+                        point_layer = mesh.color_attributes.new(name='ColV', domain='POINT', type='FLOAT_COLOR')
+                    # Default all verts to ground
+                    vcol = [0.0] * (len(mesh.vertices) * 4)
+                    # Build a set of verts that belong to rail faces
+                    rail_verts = set()
+                    if rail_mat_idx is not None:
+                        for poly in mesh.polygons:
+                            if poly.material_index == rail_mat_idx:
+                                for vi in poly.vertices:
+                                    rail_verts.add(int(vi))
+                    for vi in range(len(mesh.vertices)):
+                        base = vi * 4
+                        use = rail_rgba if vi in rail_verts else ground_rgba
+                        vcol[base + 0] = use[0]
+                        vcol[base + 1] = use[1]
+                        vcol[base + 2] = use[2]
+                        vcol[base + 3] = use[3]
+                    point_layer.data.foreach_set('color', vcol)
+                    # Prefer the vertex color layer as active for OBJ export
+                    mesh.color_attributes.active_color = point_layer
                 except Exception:
                     pass
             else:

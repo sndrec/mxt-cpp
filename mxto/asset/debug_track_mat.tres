@@ -26,7 +26,7 @@ void fragment() {
 	{
 		use_color = vec3(0.1, 0.0, 0.0);
 	}
-	ALBEDO = COLOR.rgb + use_color;
+	ALBEDO = albedo.rgb * albedo_tex.rgb * COLOR.rgb + use_color;
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
 	ROUGHNESS = 1.0;

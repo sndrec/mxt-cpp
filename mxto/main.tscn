@@ -2099,7 +2099,7 @@ shadow_mesh = SubResource("ArrayMesh_q81vo")
 code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
 
 shader_type spatial;
-render_mode blend_mix, world_vertex_coords, depth_draw_always, cull_back, unshaded, ambient_light_disabled, fog_disabled;
+render_mode blend_mix, world_vertex_coords, depth_draw_never, cull_back, unshaded, ambient_light_disabled, fog_disabled;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
@@ -2142,6 +2142,7 @@ code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's St
 shader_type spatial;
 render_mode blend_mix, cull_disabled, depth_draw_never, unshaded, fog_disabled;
 
+uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 
 uniform vec3 uv1_scale;
@@ -2156,7 +2157,7 @@ void fragment() {
 	vec2 base_uv = UV;
 	base_uv += vec2(TIME * 0.025, TIME * 0.0125);
 	vec4 albedo_tex = texture(texture_albedo, base_uv);
-	ALBEDO = albedo_tex.rgb;
+	ALBEDO = albedo_tex.rgb * albedo.rgb;
 	ALPHA = min(1.0, length(VERTEX) * 0.0006) * 0.6;
 	float fog_mix = (length(VERTEX) - 500.0) / (fog_dist * 3.0);
 	fog_mix = clamp(fog_mix, 0.0, 1.0);
@@ -2168,6 +2169,7 @@ void fragment() {
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_cegan"]
 render_priority = 0
 shader = SubResource("Shader_074og")
+shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("17_yaehf")
 shader_parameter/uv1_scale = Vector3(16, 16, 8)
 shader_parameter/uv1_offset = Vector3(0, 0, 0)
