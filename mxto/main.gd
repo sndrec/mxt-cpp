@@ -347,11 +347,11 @@ func _start_race(track_index: int, settings: Array) -> void:
 			if FileAccess.file_exists(ground_path):
 				var bytes := FileAccess.get_file_as_bytes(ground_path)
 				if bytes.size() > 0:
-					var img := Image.new()
-					var err := img.load_png_from_buffer(bytes)
-					if err == OK:
-						current_track_ground_image = img
-						floor_mat.set_shader_parameter("texture_albedo", current_track_ground_image)
+					var img := Image.load_from_file(ground_path)
+					current_track_ground_image = img
+					var floor_tex := ImageTexture.new()
+					floor_tex.set_image(img)
+					floor_mat.set_shader_parameter("texture_albedo", floor_tex)
 					
 	var chosen_defs : Array = []
 	var parsed_settings : Array = []

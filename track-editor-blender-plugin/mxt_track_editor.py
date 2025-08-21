@@ -3942,6 +3942,11 @@ class MXTRoad_OT_GenerateMesh(Operator):
                         colors[base + 2] = use_rgba[2]
                         colors[base + 3] = use_rgba[3]
                 color_layer.data.foreach_set('color', colors)
+                # Make sure this layer is active for exporters that rely on the active color attribute
+                try:
+                    mesh.color_attributes.active_color = color_layer
+                except Exception:
+                    pass
             else:
                 # vertex_colors API
                 data = color_layer.data
@@ -3949,6 +3954,10 @@ class MXTRoad_OT_GenerateMesh(Operator):
                     use_rgba = rail_rgba if (rail_mat_idx is not None and poly.material_index == rail_mat_idx) else ground_rgba
                     for li in poly.loop_indices:
                         data[li].color = use_rgba
+                try:
+                    mesh.vertex_colors.active = color_layer
+                except Exception:
+                    pass
         except Exception as e:
             if report_fn:
                 report_fn({'WARNING'}, f"Failed to assign vertex colors: {e}")
@@ -4413,9 +4422,40 @@ def _export_stage(context, filepath):
         bpy.context.view_layer.objects.active = preview_meshes[0]
         # Blender 4.0 renamed the OBJ export operator. Try the new name first
         if hasattr(bpy.ops.wm, "obj_export"):
-            bpy.ops.wm.obj_export(filepath=obj_path, export_selected_objects=True)
+            # Attempt to include vertex colors, UVs and normals
+            try:
+                bpy.ops.wm.obj_export(filepath=obj_path,
+                                       export_selected_objects=True,
+                                       export_uv=True,
+                                       export_normals=True,
+                                       export_colors=True)
+            except TypeError:
+                bpy.ops.wm.obj_export(filepath=obj_path, export_selected_objects=True)
         elif hasattr(bpy.ops.export_scene, "obj"):
-            bpy.ops.export_scene.obj(filepath=obj_path, use_selection=True, use_mesh_modifiers=True)
+            # Legacy exporter; try vertex-color flag name if available
+            ok = False
+            try:
+                bpy.ops.export_scene.obj(filepath=obj_path,
+                                         use_selection=True,
+                                         use_mesh_modifiers=True,
+                                         use_uvs=True,
+                                         use_normals=True,
+                                         export_vertex_colors=True)
+                ok = True
+            except TypeError:
+                pass
+            if not ok:
+                try:
+                    bpy.ops.export_scene.obj(filepath=obj_path,
+                                             use_selection=True,
+                                             use_mesh_modifiers=True,
+                                             use_uvs=True,
+                                             use_normals=True)
+                    ok = True
+                except TypeError:
+                    pass
+            if not ok:
+                raise RuntimeError("OBJ export failed: unsupported parameters")
         else:
             raise RuntimeError("OBJ export operator not found")
         bpy.ops.object.select_all(action='DESELECT')
