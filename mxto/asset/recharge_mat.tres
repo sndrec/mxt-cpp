@@ -1,0 +1,81 @@
+[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://i8momx14lmfb"]
+
+[ext_resource type="Texture2D" uid="uid://donkwt1u14ol3" path="res://asset/tex/pitstop.png" id="1_5w2l0"]
+
+[sub_resource type="Shader" id="Shader_8yl70"]
+code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
+
+shader_type spatial;
+render_mode blend_mix, unshaded, depth_draw_always, fog_disabled, cull_disabled, ambient_light_disabled;
+
+uniform vec4 albedo_1 : source_color;
+uniform vec4 albedo_2 : source_color;
+uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
+uniform vec3 uv1_scale;
+global uniform float fog_dist;
+
+void vertex() {
+	UV = UV * uv1_scale.xy;
+}
+
+void fragment() {
+	vec2 base_uv = abs(fract(UV * 0.5) * 2.0 - 1.0);
+	vec4 albedo_tex = texture(texture_albedo, base_uv, -1.0);
+	vec3 use_color = vec3(0.0, 0.0, 0.0);
+	if (!FRONT_FACING)
+	{
+		use_color = vec3(0.1, 0.0, 0.0);
+	}
+	float mix_factor = min(1.0, length(VERTEX) * 0.002);
+	mix_factor = pow(mix_factor, 0.3);
+	vec3 use_albedo = mix(albedo_1.rgb, albedo_2.rgb, mix_factor);
+	albedo_tex *= sin(UV.y * 2.0 + TIME * -4.0) / PI + 1.0;
+	ALBEDO = use_albedo * albedo_tex.rgb + use_color;
+
+	METALLIC = 0.0;
+	SPECULAR = 0.0;
+	ROUGHNESS = 1.0;
+	float fog_mix = max(0.0, (length(VERTEX) - 500.0) / fog_dist);
+	fog_mix = clamp(pow(fog_mix, 2.0), 0.0, 1.0);
+	fog_mix = sin(fog_mix * PI * 0.5);
+	ALPHA = 1.0 - fog_mix;
+}
+
+float fresnel(float amount, vec3 normal, vec3 view)
+{
+	return pow((1.0 - clamp(dot(normalize(normal), normalize(view)), 0.0, 1.0 )), amount);
+}
+
+void light() {
+	float light_val = (dot(NORMAL, LIGHT) * ATTENUATION) * 0.5 + 0.5;
+	//float fres = 1.0 - fresnel(1.0, NORMAL, VIEW);
+	//float fres_outline = fresnel(16.0, NORMAL, VIEW);
+	//light_val = max(light_val - fres * 0.05, 0.0);
+	//light_val = max(light_val + fres_outline * 0.15, 0.0);
+	vec3  H		= normalize(LIGHT + VIEW);		// half-vector
+	float ndoth	= max(dot(NORMAL, H), 0.0);
+	float spec	= pow(ndoth, 8.0) * ATTENUATION;
+	//light_val = max(light_val + spec * 1.0, 0.0);
+	vec3 final_light_val = texture(in_lightwarp, vec2(light_val, 0.0f)).rgb;
+	DIFFUSE_LIGHT += final_light_val * LIGHT_COLOR * 1.0;// * 0.3;
+	//SPECULAR_LIGHT = vec3(0.0);
+}"
+
+[sub_resource type="Gradient" id="Gradient_uybpi"]
+interpolation_mode = 1
+offsets = PackedFloat32Array(0.210526, 0.457237, 0.805921)
+colors = PackedColorArray(0.0430392, 0.0430392, 0.0430392, 1, 0.176419, 0.176419, 0.176419, 1, 0.435192, 0.435192, 0.435192, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_8yl70"]
+gradient = SubResource("Gradient_uybpi")
+
+[resource]
+resource_name = "track_surface"
+render_priority = 0
+shader = SubResource("Shader_8yl70")
+shader_parameter/albedo_1 = Color(0.820702, 1.2514e-06, 0.479554, 1)
+shader_parameter/albedo_2 = Color(0.339734, 0.00816769, 0.404365, 1)
+shader_parameter/texture_albedo = ExtResource("1_5w2l0")
+shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
+shader_parameter/uv1_scale = Vector3(1, 1, 1)

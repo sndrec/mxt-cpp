@@ -47,6 +47,32 @@ const TRIGGER_SCENES = {
 			 2: preload("res://asset/obj_mine.tscn"),
 }
 
+const ROAD_MATS = {
+	0: preload("res://asset/tex/track/tracktex (1).png"),
+	1: preload("res://asset/tex/track/tracktex (2).png"),
+	2: preload("res://asset/tex/track/tracktex (3).png"),
+	3: preload("res://asset/tex/track/tracktex (4).png"),
+	4: preload("res://asset/tex/track/tracktex (5).png"),
+	5: preload("res://asset/tex/track/tracktex (6).png"),
+	6: preload("res://asset/tex/track/tracktex (7).png"),
+	7: preload("res://asset/tex/track/tracktex (8).png"),
+	8: preload("res://asset/tex/track/tracktex (9).png"),
+	9: preload("res://asset/tex/track/tracktex (10).png"),
+	10: preload("res://asset/tex/track/tracktex (11).png"),
+	11: preload("res://asset/tex/track/tracktex (12).png"),
+	12: preload("res://asset/tex/track/tracktex (13).png"),
+	13: preload("res://asset/tex/track/tracktex (14).png"),
+	14: preload("res://asset/tex/track/tracktex (15).png"),
+	15: preload("res://asset/tex/track/tracktex (16).png"),
+	16: preload("res://asset/tex/track/tracktex (17).png"),
+	17: preload("res://asset/tex/track/tracktex (18).png"),
+	18: preload("res://asset/tex/track/tracktex (19).png"),
+}
+
+# Singleplayer state
+var singleplayer_mode: bool = false
+var _singleplayer_tick: int = 0
+
 func _ready() -> void:
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -60,6 +86,10 @@ func _ready() -> void:
 	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
 	controller_settings_button.pressed.connect(_on_controller_settings_button_pressed)
 	controller_settings_button_lobby.pressed.connect(_on_controller_settings_button_pressed)
+	# Rewire the Singleplayer button to its own handler, not the multiplayer host flow
+	if singleplayer_button.pressed.is_connected(_on_start_button_pressed):
+		singleplayer_button.pressed.disconnect(_on_start_button_pressed)
+	singleplayer_button.pressed.connect(_on_singleplayer_button_pressed)
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
 	if args.has("--host"):
@@ -141,6 +171,25 @@ func _on_start_button_pressed() -> void:
 	start_race_button.disabled = false
 	$Control.visible = false
 	lobby_control.visible = true
+
+func _on_singleplayer_button_pressed() -> void:
+	# Start a local, singleplayer race that does not touch networking at all.
+	# Prepare a minimal settings array using the current local player settings.
+	singleplayer_mode = true
+	_singleplayer_tick = 0
+	var ps = car_settings.get_player_settings()
+	# Ensure we have a sensible car selection; fall back if needed
+	if ps.car_definition_path == "" and car_definitions.size() > 0:
+		ps.car_definition_path = car_definitions[0].resource_path
+	# Do not force spectator in singleplayer
+	ps.spectator = false
+	# Provide a local-only roster to satisfy parts of the UI and car ownership logic
+	network_manager.player_ids = [multiplayer.get_unique_id()]
+	# Invoke the normal race startup, but driven entirely by local state
+	_start_race(track_selector.selected, [ps.to_dict()])
+	# Hide menus
+	$Control.visible = false
+	lobby_control.visible = false
 
 func _on_join_button_pressed() -> void:
 	var settings_dict = car_settings.get_player_settings().to_dict()
@@ -343,7 +392,26 @@ func _start_race(track_index: int, settings: Array) -> void:
 			for i in debug_track_mesh.mesh.get_surface_count():
 				var mat := debug_track_mesh.mesh.surface_get_material(i)
 				if mat.resource_name == "track_surface":
-					debug_track_mesh.mesh.surface_set_material(i, preload("res://asset/debug_track_mat.tres"))
+					var new_road : ShaderMaterial = preload("res://asset/debug_track_mat.tres")
+					debug_track_mesh.mesh.surface_set_material(i, new_road)
+				if mat.resource_name == "track_rail":
+					var new_road : ShaderMaterial = preload("res://asset/debug_rail_mat.tres")
+					debug_track_mesh.mesh.surface_set_material(i, new_road)
+				if mat.resource_name == "embed_dirt":
+					var new_road : ShaderMaterial = preload("res://asset/dirt_mat.tres")
+					debug_track_mesh.mesh.surface_set_material(i, new_road)
+				if mat.resource_name == "embed_recharge":
+					var new_road : ShaderMaterial = preload("res://asset/recharge_mat.tres")
+					debug_track_mesh.mesh.surface_set_material(i, new_road)
+				if mat.resource_name == "embed_ice":
+					var new_road : ShaderMaterial = preload("res://asset/ice_mat.tres")
+					debug_track_mesh.mesh.surface_set_material(i, new_road)
+				#elif mat.resource_name.find("track_surface") != -1:
+					#var index := mat.resource_name.substr(14, -1).to_int()
+					#var new_road : ShaderMaterial = preload("res://asset/debug_track_mat.tres")
+					#new_road = new_road.duplicate()
+					#new_road.set_shader_parameter("texture_albedo", ROAD_MATS.get(index - 1))
+					#debug_track_mesh.mesh.surface_set_material(i, new_road)
 		trigger_objects.clear()
 		for trig in _parse_level_triggers(level_buffer.data_array):
 			var scene = TRIGGER_SCENES.get(trig["type"], null)
@@ -352,10 +420,11 @@ func _start_race(track_index: int, settings: Array) -> void:
 				inst.transform = trig["transform"]
 				obj_container.add_child(inst)
 				trigger_objects.append(inst)
-	if network_manager.is_server:
-		network_manager.client_ready()
-	else:
-		network_manager.client_ready.rpc_id(1)
+	if !singleplayer_mode:
+		if network_manager.is_server:
+			network_manager.client_ready()
+		else:
+			network_manager.client_ready.rpc_id(1)
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
@@ -409,15 +478,34 @@ func _physics_process(delta: float) -> void:
 		if players.size() > local_player_index:
 			local_pi = players[local_player_index].get_input()
 		var input_bytes := local_pi.serialize()
-		network_manager.set_local_input(input_bytes)
-		if network_manager.is_server:
-			_simulate_host_frame()
+		if singleplayer_mode:
+			_simulate_singleplayer_tick()
 		else:
-			_simulate_single_tick()
+			network_manager.set_local_input(input_bytes)
+			if network_manager.is_server:
+				_simulate_host_frame()
+			else:
+				_simulate_single_tick()
 		game_sim.render_gamesim()
 		for car:VisualCar in car_node_container.get_children():
 			car.just_rendered()
 		_check_race_finished()
+
+func _simulate_singleplayer_tick():
+	# Build one frame of inputs locally for every racer and advance the single GameSim.
+	var start_time := Time.get_ticks_usec()
+	var frame_inputs : Array = []
+	for i in range(players.size()):
+		var pi : PlayerInput = PlayerInputClass.new()
+		if i < players.size():
+			pi = players[i].get_input()
+		frame_inputs.append(pi.serialize())
+	game_sim.tick_gamesim(frame_inputs)
+	_singleplayer_tick += 1
+	# Update HUD timing using the same field clients use
+	network_manager.clients_server_tick = _singleplayer_tick
+	var end_time := Time.get_ticks_usec()
+	network_manager.rollback_frametime_us = end_time - start_time
 
 func _simulate_host_frame():
 	var loops := 0
@@ -474,6 +562,8 @@ func _return_to_menu() -> void:
 		spectator_node = null
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
+	singleplayer_mode = false
+	_singleplayer_tick = 0
 	$Control.visible = true
 	lobby_control.visible = false
 
@@ -498,6 +588,8 @@ func _return_to_lobby() -> void:
 	lobby_control.visible = true
 	network_manager.flush_waiting_peers()
 	network_manager.reset_race_state()
+	singleplayer_mode = false
+	_singleplayer_tick = 0
 
 func _check_race_finished() -> void:
 	if !game_sim.sim_started:

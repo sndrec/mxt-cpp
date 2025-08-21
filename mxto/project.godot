@@ -178,3 +178,11 @@ vehicle_outline_screen_tex={
 "type": "sampler2D",
 "value": ""
 }
+fog_dist={
+"type": "float",
+"value": 1000.0
+}
+fog_color={
+"type": "color",
+"value": Color(0, 0, 0, 1)
+}

@@ -3462,6 +3462,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
         all_faces = main_road_faces.tolist()
         all_uvs_per_vert = list(uvs_per_vert)
         rail_face_indices = set()
+        rail_top_vert_indices = set()
         all_loop_normals = []
         all_material_indices = [get_mat_idx('track_surface')] * len(main_road_faces)
 
@@ -3489,8 +3490,10 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 up_vec = cl_rot_mats[row] @ np.array([0.0, h * centerline_scl[row,1], 0.0])
                 all_verts.append((base_vert + up_vec).tolist())
                 base_uv = uvs_per_vert[base_idx]
-                all_uvs_per_vert.append([1.0, base_uv[1]])
-                top_indices.append(len(all_verts) - 1)
+                all_uvs_per_vert.append([0.0, base_uv[1]])
+                new_top_idx = len(all_verts) - 1
+                top_indices.append(new_top_idx)
+                rail_top_vert_indices.add(new_top_idx)
             for row in range(num_y-1):
                 b0 = row * num_x + offset
                 b1 = (row + 1) * num_x + offset
@@ -3511,7 +3514,9 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 all_verts.append((base_vert + up_vec).tolist())
                 base_uv = uvs_per_vert[base_idx]
                 all_uvs_per_vert.append([1.0, base_uv[1]])
-                top_indices.append(len(all_verts) - 1)
+                new_top_idx = len(all_verts) - 1
+                top_indices.append(new_top_idx)
+                rail_top_vert_indices.add(new_top_idx)
             for row in range(num_y-1):
                 b0 = row * num_x + offset
                 b1 = (row + 1) * num_x + offset
@@ -3650,9 +3655,25 @@ class MXTRoad_OT_GenerateMesh(Operator):
         loop_uvs = []
         for face_idx, face in enumerate(final_faces_as_indices):
             if face_idx in rail_face_indices:
-                b0, b1, t1, t0 = face
-                y0 = final_uvs_per_vert[b0][1]; y1 = final_uvs_per_vert[b1][1]
-                loop_uvs.extend([[0.0, y0], [0.0, y1], [1.0, y1], [1.0, y0]])
+                base_vs = [v for v in face if v not in rail_top_vert_indices]
+                # Map UVs per loop in face order, ensuring U=0 for base edge and U=1 for top edge.
+                for v in face:
+                    if v in rail_top_vert_indices:
+                        # Match this top vertex to nearest base vertex to get consistent V (y) value.
+                        vx, vy, vz = final_verts_co[3*v:3*v+3]
+                        best_b = None
+                        best_d2 = 1e30
+                        for b in base_vs:
+                            bx, by, bz = final_verts_co[3*b:3*b+3]
+                            d2 = (vx-bx)*(vx-bx) + (vy-by)*(vy-by) + (vz-bz)*(vz-bz)
+                            if d2 < best_d2:
+                                best_d2 = d2
+                                best_b = b
+                        y_val = final_uvs_per_vert[best_b][1] if best_b is not None else final_uvs_per_vert[v][1]
+                        loop_uvs.append([1.0, y_val])
+                    else:
+                        y_val = final_uvs_per_vert[v][1]
+                        loop_uvs.append([0.0, y_val])
             else:
                 for v_idx in face:
                     loop_uvs.append(final_uvs_per_vert[v_idx])

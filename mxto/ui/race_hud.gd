@@ -73,7 +73,7 @@ func _process( _delta:float ) -> void:
 	lapcounter.text = "LAP " + str(car.lap) + "/3"
 	var nm := car.game_manager.network_manager
 	var use_tick := nm.get_race_tick()
-	var local_id := multiplayer.get_unique_id() if multiplayer else 0
+	var local_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 0
 	if nm.player_finish_times.has(local_id):
 		use_tick = nm.player_finish_times[local_id]
 	var time_elapsed : int = use_tick - 300

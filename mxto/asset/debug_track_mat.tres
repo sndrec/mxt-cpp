@@ -1,17 +1,18 @@
 [gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://bfxpum1jau64"]
 
-[ext_resource type="Texture2D" uid="uid://c6stokuu0e464" path="res://asset/test_track_2_border_tex.png" id="1_uybpi"]
+[ext_resource type="Texture2D" uid="uid://c7dk0u778rjsw" path="res://asset/tex/road.png" id="1_uybpi"]
 
 [sub_resource type="Shader" id="Shader_8yl70"]
 code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
 
 shader_type spatial;
-render_mode blend_mix, depth_draw_opaque, cull_disabled, ambient_light_disabled;
+render_mode blend_mix, depth_draw_always, cull_disabled, fog_disabled;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
 uniform vec3 uv1_scale;
+global uniform float fog_dist;
 
 void vertex() {
 	UV = UV * uv1_scale.xy;
@@ -19,18 +20,20 @@ void vertex() {
 
 void fragment() {
 	vec2 base_uv = UV;
-
-	vec4 albedo_tex = texture(texture_albedo, base_uv, -1.0);
+	vec4 albedo_tex = texture(texture_albedo, base_uv);
 	vec3 use_color = vec3(0.0, 0.0, 0.0);
 	if (!FRONT_FACING)
 	{
 		use_color = vec3(0.1, 0.0, 0.0);
 	}
 	ALBEDO = albedo.rgb * albedo_tex.rgb + use_color;
-
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
 	ROUGHNESS = 1.0;
+	float fog_mix = max(0.0, (length(VERTEX) - 500.0) / fog_dist);
+	fog_mix = clamp(pow(fog_mix, 2.0), 0.0, 1.0);
+	fog_mix = sin(fog_mix * PI * 0.5);
+	ALPHA = 1.0 - fog_mix;
 }
 
 float fresnel(float amount, vec3 normal, vec3 view)
@@ -65,7 +68,7 @@ gradient = SubResource("Gradient_uybpi")
 resource_name = "track_surface"
 render_priority = 0
 shader = SubResource("Shader_8yl70")
-shader_parameter/albedo = Color(1, 1, 1, 1)
+shader_parameter/albedo = Color(0.8, 0.386667, 0.304, 1)
 shader_parameter/texture_albedo = ExtResource("1_uybpi")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
 shader_parameter/uv1_scale = Vector3(1, 1, 1)
