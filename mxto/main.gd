@@ -645,6 +645,9 @@ func _check_race_finished() -> void:
 				if finished:
 					if network_manager.is_server and !network_manager.player_finish_times.has(car.owning_id):
 						network_manager.send_player_finished(car.owning_id, network_manager.server_tick)
+					elif singleplayer_mode and !network_manager.player_finish_times.has(car.owning_id):
+						network_manager.player_finish_times[car.owning_id] = network_manager.clients_server_tick
+						network_manager.player_finish_placements[car.owning_id] = 1
 				else:
 					all_done = false
 	if network_manager.is_server:
@@ -657,7 +660,11 @@ func _check_race_finished() -> void:
 				network_manager.send_end_race()
 				race_finish_label.visible = false
 	else:
-		if network_manager.net_race_finish_time != -1:
+		if singleplayer_mode and all_done:
+			if network_manager.net_race_finish_time == -1:
+				network_manager.net_race_finish_time = Time.get_ticks_msec()
+				race_finish_label.visible = true
+		elif network_manager.net_race_finish_time != -1:
 			race_finish_label.visible = true
 
 @onready var obj_camera: Camera3D = $GameWorld/ObjViewport/ObjCamera

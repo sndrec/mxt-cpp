@@ -76,6 +76,8 @@ func _process( _delta:float ) -> void:
 	var local_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 0
 	if nm.player_finish_times.has(local_id):
 		use_tick = nm.player_finish_times[local_id]
+	elif nm.player_finish_times.has(car.owning_id):
+		use_tick = nm.player_finish_times[car.owning_id]
 	var time_elapsed : int = use_tick - 300
 	var time_elapsed_float : float = float(time_elapsed) / 60
 	var seconds : int = int(floor(time_elapsed_float)) % 60

@@ -30,7 +30,8 @@ void fragment() {
 	float mix_factor = min(1.0, length(VERTEX) * 0.002);
 	mix_factor = pow(mix_factor, 0.3);
 	vec3 use_albedo = mix(albedo_1.rgb, albedo_2.rgb, mix_factor);
-	albedo_tex *= sin(UV.y * 2.0 + TIME * -4.0) / PI + 1.0;
+	float glow_mult = sin(UV.y * 2.0 + TIME * -4.0) / PI + 1.0;
+	albedo_tex += glow_mult;
 	ALBEDO = use_albedo * albedo_tex.rgb + use_color;
 
 	METALLIC = 0.0;
