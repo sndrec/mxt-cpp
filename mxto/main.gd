@@ -316,6 +316,7 @@ func _generate_random_input() -> PlayerInput:
 @onready var world_environment: WorldEnvironment = $GameWorld/WorldEnvironment
 @onready var track_floor: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackFloor
 @onready var track_clouds: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackClouds
+@onready var directional_light_3d: DirectionalLight3D = $GameWorld/DirectionalLight3D
 
 func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
@@ -342,6 +343,10 @@ func _start_race(track_index: int, settings: Array) -> void:
 			sky_mat.sky_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
 			sky_mat.ground_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
 			sky_mat.ground_bottom_color = Color(current_track_meta.sky_ground_color[0], current_track_meta.sky_ground_color[1], current_track_meta.sky_ground_color[2])
+			directional_light_3d.light_color = Color(current_track_meta.light_color[0], current_track_meta.light_color[1], current_track_meta.light_color[2])
+			directional_light_3d.light_energy = current_track_meta.light_intensity
+			world_environment.environment.ambient_light_color = Color(current_track_meta.ambient_color[0], current_track_meta.ambient_color[1], current_track_meta.ambient_color[2])
+			world_environment.environment.ambient_light_energy = current_track_meta.ambient_intensity
 			var track_dir = json_path.get_base_dir()
 			var ground_path = track_dir.path_join("ground.png")
 			if FileAccess.file_exists(ground_path):

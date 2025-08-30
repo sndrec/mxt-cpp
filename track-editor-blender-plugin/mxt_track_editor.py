@@ -1,7 +1,7 @@
 bl_info = {
     "name": "MXT Racetrack Road Creator",
     "author": "Twilight",
-    "version": (0, 1, 0),
+    "version": (0, 1, 1),
     "blender": (4, 0, 0),
     "location": "3D View > Sidebar (N-Panel) > MXT Road Creator",
     "description": "Design a racetrack for Maxx Throttle!",
@@ -300,6 +300,48 @@ class MXTTrackSettings(PropertyGroup):
         default=800.0,
         min=-10000.0,
         soft_max=10000.0,
+    )
+
+    light_color: FloatVectorProperty(
+        name="Light Color",
+        description="Directional light color",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(1.0, 0.95, 0.9)
+    )
+    light_intensity: FloatProperty(
+        name="Light Intensity",
+        description="Directional light intensity (arbitrary units)",
+        default=1.0,
+        min=0.0,
+        soft_max=10.0,
+    )
+    ambient_intensity: FloatProperty(
+        name="Ambient Intensity",
+        description="Ambient light intensity",
+        default=0.1,
+        min=0.0,
+        soft_max=5.0,
+    )
+    ambient_color: FloatVectorProperty(
+        name="Ambient Color",
+        description="Ambient light color",
+        subtype='COLOR',
+        size=3,
+        min=0.0,
+        max=1.0,
+        default=(0.15, 0.15, 0.18)
+    )
+    light_direction: FloatVectorProperty(
+        name="Light Direction",
+        description="World-space direction the light points from (not auto-normalized)",
+        size=3,
+        subtype='DIRECTION',
+        default=(0.3, -1.0, 0.4),
+        soft_min=-1.0,
+        soft_max=1.0,
     )
 
     trigger_objects: CollectionProperty(type=MXTTriggerObject)
@@ -2511,6 +2553,16 @@ class MXTRoad_PT_MainPanel(Panel):
             global_box.prop(ts, "ground_height")
             global_box.prop(ts, "cloud_color")
             global_box.prop(ts, "cloud_height")
+            global_box.separator()
+            global_box.label(text="Lighting")
+            if hasattr(ts, "light_color") and hasattr(ts, "light_intensity") and hasattr(ts, "ambient_intensity") and hasattr(ts, "ambient_color") and hasattr(ts, "light_direction"):
+                global_box.prop(ts, "light_color")
+                global_box.prop(ts, "light_intensity")
+                global_box.prop(ts, "ambient_intensity")
+                global_box.prop(ts, "ambient_color")
+                global_box.prop(ts, "light_direction")
+            else:
+                global_box.label(text="(Reload the MXT add-on or restart Blender to see lighting params)")
             trig_box = layout.box()
             trig_box.label(text="Trigger Objects")
             row = trig_box.row()
@@ -2703,6 +2755,7 @@ class MXTRoad_PT_MainPanel(Panel):
         data_box.operator("mxt_road.generate_mesh", text="Generate/Update Mesh", icon='MESH_PLANE')
         data_box.operator("mxt_road.generate_checkpoints", text="Generate Checkpoints", icon='OUTLINER_OB_EMPTY')
         data_box.operator("mxt_road.export_track", text="Export Track", icon='EXPORT')
+
 
 def _add_key(fcu, frame, value):
     kp = fcu.keyframe_points.insert(frame, value, options={'FAST'})
@@ -4188,6 +4241,12 @@ def _export_stage(context, filepath):
         "ground_height": ts.ground_height,
         "cloud_color": list(ts.cloud_color),
         "cloud_height": ts.cloud_height,
+        # Lighting
+        "light_color": list(ts.light_color),
+        "light_intensity": ts.light_intensity,
+        "ambient_intensity": ts.ambient_intensity,
+        "ambient_color": list(ts.ambient_color),
+        "light_direction": list(ts.light_direction),
     }
 
     # gather all reachable segments
