@@ -1,6 +1,7 @@
-[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://i8momx14lmfb"]
+[gd_resource type="ShaderMaterial" load_steps=6 format=3 uid="uid://i8momx14lmfb"]
 
 [ext_resource type="Texture2D" uid="uid://donkwt1u14ol3" path="res://asset/tex/pitstop.png" id="1_5w2l0"]
+[ext_resource type="Texture2D" uid="uid://b3ejtupgpp6h7" path="res://asset/tex/pitstop_dither.png" id="2_tejqh"]
 
 [sub_resource type="Shader" id="Shader_8yl70"]
 code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
@@ -10,7 +11,10 @@ render_mode blend_mix, unshaded, depth_draw_always, fog_disabled, cull_disabled,
 
 uniform vec4 albedo_1 : source_color;
 uniform vec4 albedo_2 : source_color;
+uniform vec4 albedo_1_glow : source_color;
+uniform vec4 albedo_2_glow : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D texture_dither : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
 uniform vec3 uv1_scale;
 global uniform float fog_dist;
@@ -20,19 +24,27 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 base_uv = abs(fract(UV * 0.5) * 2.0 - 1.0);
-	vec4 albedo_tex = texture(texture_albedo, base_uv, -1.0);
+	vec2 base_uv = UV;
+	float albedo_tex = texture(texture_albedo, base_uv).r;
 	vec3 use_color = vec3(0.0, 0.0, 0.0);
 	if (!FRONT_FACING)
 	{
 		use_color = vec3(0.1, 0.0, 0.0);
 	}
 	float mix_factor = min(1.0, length(VERTEX) * 0.002);
-	mix_factor = pow(mix_factor, 0.3);
-	vec3 use_albedo = mix(albedo_1.rgb, albedo_2.rgb, mix_factor);
+	mix_factor = pow(mix_factor, 0.2);
 	float glow_mult = sin(UV.y * 2.0 + TIME * -4.0) / PI + 1.0;
-	albedo_tex += glow_mult;
-	ALBEDO = use_albedo * albedo_tex.rgb + use_color;
+	glow_mult *= 0.5;
+	glow_mult = glow_mult + texture(texture_dither, base_uv, 1.0).r;
+	glow_mult = floor(glow_mult * 5.0) / 5.0;
+	glow_mult *= 0.4;
+	glow_mult += 0.1;
+	vec3 use_albedo = mix(mix(albedo_1.rgb, albedo_1_glow.rgb, glow_mult), mix(albedo_2.rgb, albedo_2_glow.rgb, glow_mult), mix_factor);
+	albedo_tex = albedo_tex + texture(texture_dither, base_uv, 1.0).r;
+	albedo_tex = floor(albedo_tex * 4.0) / 4.0;
+	albedo_tex *= 0.4;
+	albedo_tex += 0.1;
+	ALBEDO = use_albedo * albedo_tex + use_color;
 
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
@@ -75,8 +87,11 @@ gradient = SubResource("Gradient_uybpi")
 resource_name = "track_surface"
 render_priority = 0
 shader = SubResource("Shader_8yl70")
-shader_parameter/albedo_1 = Color(0.820702, 1.2514e-06, 0.479554, 1)
-shader_parameter/albedo_2 = Color(0.339734, 0.00816769, 0.404365, 1)
+shader_parameter/albedo_1 = Color(0.724333, 0, 0.82, 1)
+shader_parameter/albedo_2 = Color(0.346667, 0, 0.4, 1)
+shader_parameter/albedo_1_glow = Color(3, 0.3, 1, 1)
+shader_parameter/albedo_2_glow = Color(0, 0, 0, 1)
 shader_parameter/texture_albedo = ExtResource("1_5w2l0")
+shader_parameter/texture_dither = ExtResource("2_tejqh")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
 shader_parameter/uv1_scale = Vector3(1, 1, 1)

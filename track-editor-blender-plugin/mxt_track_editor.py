@@ -2816,16 +2816,14 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         if not helper:
             if report_fn: report_fn({'ERROR'}, "CurveMatrix helper empty not set")
             return False
-        subdiv = 16
+        subdiv = 64
         t_samples = []
         t_samples.append(0.0)
-        t_samples.append(0.0002)
         for i in range(len(cps) - 1):
             t0, t1 = cps[i].mxt_cp_data.time, cps[i+1].mxt_cp_data.time
             step = (t1 - t0) / subdiv
             for n in range(subdiv):
                 t_samples.append(t0 + n * step)
-        t_samples.append(0.9998)
         t_samples.append(1.0)
         if not helper.animation_data:
             helper.animation_data_create()
@@ -2976,7 +2974,7 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         start_quat, end_quat = start_point.rotation_quaternion.copy(), end_point.rotation_quaternion.copy()
         start_scl, end_scl = start_point.scale.copy(), end_point.scale.copy()
         
-        subdiv = 32 
+        subdiv = 64 
         t_samples = [i/subdiv for i in range(subdiv + 1)]
         MXTRoad_OT_GenerateCurveMatrix._auto_calc_line_easing(start_point, start_quat, end_quat, start_scl, end_scl)
         for t in t_samples:
@@ -3113,8 +3111,8 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             m = Matrix.Translation(m.translation) @ basis.to_4x4()
             return m
 
-        subdiv = 16
-        ts = [0.0, 0.0002] + [i / subdiv for i in range(1, subdiv)] + [0.9998, 1.0]
+        subdiv = 64
+        ts = [0.0] + [i / subdiv for i in range(1, subdiv)] + [1.0]
 
         raw_transforms = []
         raw_s = []
