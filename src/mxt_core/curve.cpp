@@ -125,16 +125,46 @@ void RoadTransformCurve::precompute() {
 }
 
 void RoadTransformCurve::sample(RoadTransform &out, float in_t) {
+	if (num_keyframes == 0) {
+		return;
+	}
+	if (num_keyframes == 1) {
+		const float *v0 = values;
+		out.t3d.basis.set(
+			v0[3],  v0[6],  v0[9],
+			v0[4],  v0[7],  v0[10],
+			v0[5],  v0[8],  v0[11]
+			);
+		out.t3d.origin.x = v0[0];
+		out.t3d.origin.y = v0[1];
+		out.t3d.origin.z = v0[2];
+		out.scale.x = v0[12];
+		out.scale.y = v0[13];
+		out.scale.z = v0[14];
+		return;
+	}
+
+	// clamp
 	if (in_t <= times[0]) {
 		in_t = times[0];
 	} else if (in_t >= times[num_keyframes - 1]) {
 		in_t = times[num_keyframes - 1];
 	}
 
-	float step = 1.0f / (num_keyframes - 1);
-	int k = (int)((in_t - times[0]) / step);
-	if(k < 0) k = 0;
-	if(k > num_keyframes - 2) k = num_keyframes - 2;
+	int k = 0;
+
+	if(last_k >= num_keyframes - 1)
+		last_k = num_keyframes - 2;
+
+	if(in_t >= times[last_k]) {
+		while(last_k + 1 < num_keyframes - 1 && in_t >= times[last_k + 1])
+			++last_k;
+	} else {
+		while(last_k > 0 && in_t < times[last_k])
+			--last_k;
+	}
+
+	k = last_k;
 
 	float u = (in_t - times[k]) * inv_dt[k];
 	float u2 = u * u;
