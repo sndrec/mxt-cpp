@@ -461,6 +461,11 @@ void RoadShapeRoundedRectOpen::find_t_from_relative_pos(godot::Vector2 &out_t, c
                 theta += PI * 2.0f;
         }
         float mod_tx = 1.0f - theta * ONE_DIV_BY_PI;
+        const float rot = (open_rotation) ? open_rotation->sample(p.z) : 0.0f;
+        mod_tx -= rot;
+        // wrap into [-1,1]
+        if (mod_tx < -1.0f) mod_tx += 2.0f;
+        if (mod_tx > 1.0f) mod_tx -= 2.0f;
         float openness_v = fmaxf(0.001f, openness->sample(p.z));
         float tx = mod_tx / openness_v;
         out_t = godot::Vector2(tx, p.z);
@@ -472,6 +477,10 @@ void RoadShapeRoundedRectOpen::get_position_at_time(godot::Vector3 &out_pos, con
         owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
 
         float mod_tx = in_t[0] * openness->sample(in_t[1]);
+        const float rot = (open_rotation) ? open_rotation->sample(in_t[1]) : 0.0f;
+        mod_tx += rot;
+        if (mod_tx < -1.0f) mod_tx += 2.0f;
+        if (mod_tx > 1.0f) mod_tx -= 2.0f;
         const float mod_t = 0.5f * (1.0f - in_t[0]);
 
         float mod_vertical_offset = 1.0f;

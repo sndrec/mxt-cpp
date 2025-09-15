@@ -313,6 +313,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
                 rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
                 rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
                 rs->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+                if (version_string == String("v0.4")) {
+                        rs->open_rotation = level_data.allocate_curve_from_buffer(lvldat_buf);
+                } else {
+                        rs->open_rotation = nullptr;
+                }
                 current_track->segments[seg].road_shape = rs;
                 current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
         }
@@ -444,7 +449,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		soa->last_k = 0;
 		soa->precompute();
 
-		// 4) versionâ€dependent rail heights
+		// 4) versionï¿½dependent rail heights
 		if (version_string != "v0.1") {
 			current_track->segments[seg].left_rail_height  = lvldat_buf->get_float();
 			current_track->segments[seg].right_rail_height = lvldat_buf->get_float();

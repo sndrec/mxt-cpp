@@ -5,7 +5,7 @@ HEADER
 ------
 Offset      Type            Description
 0           u32             Header size in bytes (includes this field)
-4           string[4]       File version string (e.g. "v0.3")
+4           string[4]       File version string (e.g. "v0.4")
 8           u32             Number of checkpoints
 12          u32             Number of segments
 16          u32             Number of trigger colliders
@@ -44,6 +44,7 @@ width                           Curve           Only if road_type is 5 or 6
 height                          Curve           Only if road_type is 5 or 6
 radius                          Curve           Only if road_type is 5 or 6
 openness                        Curve           Only if road_type is 2, 4 or 6
+open_rotation                   Curve           Only if road_type is 6 and version >= v0.4
 
 modulation_count                u32
 MODULATION[n]:                 (repeated modulation_count times)
@@ -104,7 +105,7 @@ PARSING TABLE (.mxt_track)
 
 == HEADER ==
 read_u32()                     → header_size
-read_string(4)                 → version_string ("v0.3")
+read_string(4)                 → version_string ("v0.4")
 read_u32()                     → checkpoint_count
 read_u32()                     → segment_count
 if version_string != "v0.1" and version_string != "v0.2":
@@ -144,6 +145,8 @@ for each segment:
 
     if road_type == 2 or road_type == 4 or road_type == 6:
         read_curve()         → openness
+    if road_type == 6 and version_string >= "v0.4":
+        read_curve()         → open_rotation
 
     read_u32()                → modulation_count
     for i in modulation_count:

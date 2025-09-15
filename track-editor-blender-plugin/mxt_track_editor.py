@@ -1300,10 +1300,18 @@ def _process_live_updates():
                 helper_data.location[0] = 1.0
                 helper_data.keyframe_insert(data_path="location", index=0, frame=0.0)
                 helper_data.keyframe_insert(data_path="location", index=0, frame=100.0)
+                # Initialize rotation curve (Y) to 0 across segment
+                helper_data.location[1] = 0.0
+                helper_data.keyframe_insert(data_path="location", index=1, frame=0.0)
+                helper_data.keyframe_insert(data_path="location", index=1, frame=100.0)
                 fcu = action.fcurves.find("location", index=0)
                 if fcu:
                     fcu.keyframe_points[0].interpolation = fcu.keyframe_points[1].interpolation = 'CONSTANT'
                     _linearize_fcurve_handles_smooth(fcu)
+                fcur = action.fcurves.find("location", index=1)
+                if fcur:
+                    fcur.keyframe_points[0].interpolation = fcur.keyframe_points[1].interpolation = 'CONSTANT'
+                    _linearize_fcurve_handles_smooth(fcur)
                 parent.mxt_road_overall_props.openness_helper = helper_data
 
         while _square_helpers_to_destroy:
@@ -2059,7 +2067,6 @@ class RoadShapeCylinderOpen(RoadShapeCylinder):
             fcu = helper_open.animation_data.action.fcurves.find("location", index=0)
             if fcu:
                 open_val = fcu.evaluate(t.y * 100.0)
-
         mod_tx = t.x * open_val
         theta = mod_tx * math.pi
         radial = Vector((math.sin(theta), math.cos(theta), 0.0)).normalized()
@@ -2083,7 +2090,6 @@ class RoadShapePipeOpen(RoadShapePipe):
             fcu = helper_open.animation_data.action.fcurves.find("location", index=0)
             if fcu:
                 open_val = fcu.evaluate(t.y * 100.0)
-
         mod_tx = t.x * open_val
         tx_angle = (mod_tx - 0.5) * math.pi
         radial = Vector((math.cos(tx_angle), math.sin(tx_angle), 0.0)).normalized()
@@ -2185,8 +2191,19 @@ class RoadShapeRoundedSquareOpen(RoadShapeRoundedSquare):
             if fcu:
                 open_val = fcu.evaluate(t.y * 100.0)
 
+        # Sample rotation (seam offset) in same domain as t.x for this shape ([-1,1])
+        rot = 0.0
+        if helper_open and helper_open.animation_data and helper_open.animation_data.action:
+            fcur = helper_open.animation_data.action.fcurves.find("location", index=1)
+            if fcur:
+                rot = fcur.evaluate(t.y * 100.0)
+
         tx_orig = t.x
-        mod_tx = tx_orig * open_val
+        mod_tx = tx_orig * open_val + rot
+        if mod_tx < -1.0:
+            mod_tx += 2.0
+        if mod_tx > 1.0:
+            mod_tx -= 2.0
 
         # Geometry uses inverted mod_tx for winding
         t_geom_x = 1.0 - mod_tx
@@ -2691,6 +2708,11 @@ class MXTRoad_PT_MainPanel(Panel):
             op = select_row.operator("mxt_road.select_helper", text="Edit Openness Curve", icon='GRAPH')
             op.helper_name = road_props.openness_helper.name if road_props.openness_helper else ""
             select_row.enabled = bool(road_props.openness_helper)
+            if road_props.road_shape_type == 'ROUNDED_SQUARE_OPEN':
+                select_row = open_box.row()
+                op = select_row.operator("mxt_road.select_helper", text="Edit Seam Rotation Curve", icon='GRAPH')
+                op.helper_name = road_props.openness_helper.name if road_props.openness_helper else ""
+                select_row.enabled = bool(road_props.openness_helper)
             
         if road_props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
             sq_box = common_box.box()
@@ -3366,6 +3388,15 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
                 frames = ty_1d * 100.0
                 open_vals_1d = np.array([fcu.evaluate(f) for f in frames], dtype=np.float64)
         angle_tx_grid = tx_grid * open_vals_1d.reshape(num_y, 1)
+        # For Open Rounded Square only, apply seam rotation from Y-location fcurve
+        if shape_type == 'ROUNDED_SQUARE_OPEN' and helper and helper.animation_data and helper.animation_data.action:
+            fcur = helper.animation_data.action.fcurves.find("location", index=1)
+            if fcur:
+                rot_vals_1d = np.array([fcur.evaluate(f) for f in frames], dtype=np.float64)
+                angle_tx_grid = angle_tx_grid + rot_vals_1d.reshape(num_y, 1)
+                # wrap to [-1, 1]
+                angle_tx_grid = np.where(angle_tx_grid > 1.0, angle_tx_grid - 2.0, angle_tx_grid)
+                angle_tx_grid = np.where(angle_tx_grid < -1.0, angle_tx_grid + 2.0, angle_tx_grid)
 
     if shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
         width_vals_1d = np.ones(num_y, dtype=np.float64)
@@ -4419,6 +4450,13 @@ def _export_stage(context, filepath):
                 if helper and helper.animation_data and helper.animation_data.action:
                     fcu = helper.animation_data.action.fcurves.find('location', index=0)
                 seg_data += _pack_curve(_fcurve_to_points(fcu))
+            # For Open Rounded Square, export seam rotation curve (Y axis of openness helper)
+            if road_type == 6:
+                helper = props.openness_helper
+                fcur = None
+                if helper and helper.animation_data and helper.animation_data.action:
+                    fcur = helper.animation_data.action.fcurves.find('location', index=1)
+                seg_data += _pack_curve(_fcurve_to_points(fcur))
 
             seg_data += struct.pack('<I', len(props.modulations))
             for mod in props.modulations:
@@ -4493,7 +4531,7 @@ def _export_stage(context, filepath):
             trigger_data += struct.pack('<3f', ext.x, ext.y, ext.z)
             trig_count += 1
 
-        header = struct.pack('<I4sIII', 0, b'v0.3', len(cp_list), len(seg_order), trig_count)
+        header = struct.pack('<I4sIII', 0, b'v0.4', len(cp_list), len(seg_order), trig_count)
         header = struct.pack('<I', len(header)) + header[4:]
         f.write(header)
         f.write(data)

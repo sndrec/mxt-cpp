@@ -81,6 +81,9 @@ public:
 class RoadShapeRoundedRectOpen : public RoadShapeRoundedRect
 {
 public:
+        // Seam rotation curve specific to open rounded rect; interpreted in [-1,1] domain
+        Curve* open_rotation;
         void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
         void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
 };
+
