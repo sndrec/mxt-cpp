@@ -251,6 +251,9 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 			_skip_curve.call(); _skip_curve.call(); _skip_curve.call()
 		if road_type == 2 or road_type == 4 or road_type == 6:
 			_skip_curve.call()
+		# v0.4+: Open Rounded Square has an extra seam-rotation curve after openness
+		if road_type == 6 and version != "v0.1" and version != "v0.2" and version != "v0.3":
+			_skip_curve.call()
 		var mod_count := pb.get_u32()
 		for m in range(mod_count):
 			_skip_curve.call(); _skip_curve.call()

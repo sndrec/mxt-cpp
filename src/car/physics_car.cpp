@@ -111,7 +111,6 @@ godot::Vector3 PhysicsCar::prepare_machine_frame()
 	} else {
 		if (air_time != 0)
 			machine_state |= MACHINESTATE::JUSTLANDED;
-		air_time = 0;
 		machine_state &= ~MACHINESTATE::AIRBORNEMORE0_2S_Q;
 		state_2 &= ~2u;
 	}
@@ -636,135 +635,152 @@ void PhysicsCar::handle_suspension_states()
 	set_flag_on_all_tilt_corners(TILTSTATE::STRAFING);
 };
 
-void PhysicsCar::handle_machine_turn_and_strafe(PhysicsCarSuspensionPoint& tilt_corner, float in_angle_vel)
-{
-	// ───────────── Corner movement & steering matrix ─────────────
-	godot::Vector3 corner_delta = tilt_corner.pos_old - tilt_corner.pos;
+void PhysicsCar::handle_machine_turn_and_strafe(
+    PhysicsCarSuspensionPoint &tilt_corner, float in_angle_vel) {
+    // ───────────── Corner movement & steering matrix ─────────────
+    godot::Vector3 corner_delta = tilt_corner.pos_old - tilt_corner.pos;
 
-	bool is_drifting = (tilt_corner.state & TILTSTATE::DRIFT) != 0;
-	bool is_strafing = (tilt_corner.state & TILTSTATE::STRAFING) != 0;
+    bool is_drifting = (tilt_corner.state & TILTSTATE::DRIFT) != 0;
+    bool is_strafing = (tilt_corner.state & TILTSTATE::STRAFING) != 0;
 
-	mtxa->push();
+    mtxa->push();
 
-	float steer_deg = -(input_steer_yaw * stat_turn_reaction + input_strafe * stat_strafe);
-	steer_deg = std::clamp(steer_deg, -45.0f, 45.0f);
-	mtxa->rotate_y(DEG_TO_RAD * steer_deg * 0.5f);
+    float steer_deg =
+        -(input_steer_yaw * stat_turn_reaction + input_strafe * stat_strafe);
+    steer_deg = std::clamp(steer_deg, -45.0f, 45.0f);
+    mtxa->rotate_y(DEG_TO_RAD * steer_deg * 0.5f);
 
-	corner_delta = mtxa->inverse_rotate_point(corner_delta);
-	float corner_dist = corner_delta.length();
-	float speed_factor = (216.0f * corner_dist) / 1000.0f;
+    corner_delta = mtxa->inverse_rotate_point(corner_delta);
+    float corner_dist = corner_delta.length();
+    float speed_factor = (216.0f * corner_dist) / 1000.0f;
 
-	// ───────────── Grip / drift threshold ─────────────
-	float grip_threshold = 0.0f;
-	if ((!is_drifting && is_strafing) || grip_frames_from_accel_press != 0) {
-		grip_threshold = 20.0f;
-	} else {
-		float base_grip = stat_grip_1;
-		grip_threshold = base_grip;
-		if ((state_2 & 4u) == 0) {
-			if (is_drifting && brake_timer == 0) {
-				grip_threshold = stat_grip_3;
-			}
-		} else {
-			if (is_drifting && brake_timer < 30) {
-				grip_threshold = (base_grip >= stat_grip_3) ? stat_grip_3 : base_grip;
-			}
-		}
-	}
+    // ───────────── Grip / drift threshold ─────────────
+    float grip_threshold = 0.0f;
+    if ((!is_drifting && is_strafing) || grip_frames_from_accel_press != 0) {
+        grip_threshold = 20.0f;
+    } else {
+        float base_grip = stat_grip_1;
+        grip_threshold = base_grip;
+        if ((state_2 & 4u) == 0) {
+            if (is_drifting && brake_timer == 0) {
+                grip_threshold = stat_grip_3;
+            }
+        } else {
+            if (is_drifting && brake_timer < 30) {
+                grip_threshold =
+                    (base_grip >= stat_grip_3) ? stat_grip_3 : base_grip;
+            }
+        }
+    }
 
-	if (std::abs(corner_delta.x) < stat_grip_3) {
-		drift_ramp = 0.0f;
-		tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
-	}
+    if (std::abs(corner_delta.x) < stat_grip_3) {
+        drift_ramp = 0.0f;
+        tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
+    }
 
-	bool drift_allowed = true;
-	if (!is_drifting && std::abs(input_steer_yaw) <= 0.7f) {
-		drift_allowed = false;
-	}
+    bool drift_allowed = true;
+    if (!is_drifting && std::abs(input_steer_yaw) <= 0.7f) {
+        drift_allowed = false;
+    }
 
-	float lateral_delta = corner_delta.x;
-	float drift_delta = lateral_delta;
+    float lateral_delta = corner_delta.x;
+    float drift_delta = lateral_delta;
 
-	if (std::abs(lateral_delta) <= grip_threshold || !drift_allowed) {
-		if (std::abs(lateral_delta) < 1.1920929e-7f) {
-			drift_delta = 0.0f;
-		}
-		drift_ramp = 0.0f;
-		tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
-	} else {
-		tilt_corner.state |= TILTSTATE::DRIFT;
-		drift_delta = (lateral_delta < 0.0f) ? -grip_threshold : grip_threshold;
-	}
+    if (std::abs(lateral_delta) <= grip_threshold || !drift_allowed) {
+        if (std::abs(lateral_delta) < 1.1920929e-7f) {
+            drift_delta = 0.0f;
+        }
+        drift_ramp = 0.0f;
+        tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
+    } else {
+        tilt_corner.state |= TILTSTATE::DRIFT;
+        drift_delta = (lateral_delta < 0.0f) ? -grip_threshold : grip_threshold;
+    }
 
-	// ───────────── Global state modifiers ─────────────
-	if (machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
-		MACHINESTATE::TOOKDAMAGE | MACHINESTATE::SIDEATTACKING)) {
-		drift_delta = 0.0f;
-}
+    // ───────────── Global state modifiers ─────────────
+    if (machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::SIDEATTACKING))
+    {
+        drift_delta = 0.0f;
+    }
 
-if (machine_state & MACHINESTATE::RETIRED) {
-	drift_delta *= 0.2f;
-} else if (machine_state & MACHINESTATE::ZEROHP) {
-	float fade = std::clamp(0.01f * (static_cast<float>(frames_since_death) - 4.0f), 0.0f, 0.05f);
-	drift_delta *= fade;
-}
+    if (machine_state & MACHINESTATE::LOWGRIP)
+    {
+        velocity_angular.x *= 0.975f;
+        velocity_angular.z *= 0.975f;
+        //align_machine_y_with_track_normal_immediate();
+    }
+    else if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
+    {
+        velocity_angular.z *= 0.99f;
+    }
 
-	// ───────────── Force computation ─────────────
-if (drift_delta != 0.0f) {
-	if (machine_state & MACHINESTATE::ZEROHP)
-	{
-		drift_delta *= 0.1;
-	}
-	float turn_tension = stat_turn_tension;
-	float weighted_delta = drift_delta * stat_weight;
-	float applied_force = 0.0f;
+    if (machine_state & MACHINESTATE::RETIRED)
+    {
+        drift_delta *= 0.2f;
+    } else if (machine_state & MACHINESTATE::ZEROHP) {
+        float fade =
+            std::clamp(0.01f * (static_cast<float>(frames_since_death) - 4.0f),
+                       0.0f, 0.05f);
+        drift_delta *= fade;
+    }
 
-	if (turn_tension >= 0.1f || grip_frames_from_accel_press != 0) {
-		applied_force = weighted_delta * turn_tension;
-	} else if ((tilt_corner.state & TILTSTATE::AIRBORNE) == 0 &&
-		(machine_state & MACHINESTATE::JUST_PRESSED_BOOST) == 0) {
-		float rail_timer = static_cast<float>(rail_collision_timer);
-		float speed_lerp = std::clamp(speed_factor, 0.2f, 0.8f);
-		float steer_scale = 0.0f;
-		if ((tilt_corner.state & TILTSTATE::STRAFING) == 0) {
-			steer_scale = ((speed_lerp - 0.2f) / 0.6f) * (turn_tension - 0.1f) *
-			(0.3f + 0.7f * std::abs(input_steer_yaw));
-		}
-		applied_force = weighted_delta * (0.1f + steer_scale * (1.0f - rail_timer / 20.0f));
-	} else {
-		applied_force = weighted_delta * 0.1f;
-	}
+    // ───────────── Force computation ─────────────
+    if (drift_delta != 0.0f) {
+        if (machine_state & MACHINESTATE::ZEROHP) {
+            drift_delta *= 0.1;
+        }
+        float turn_tension = stat_turn_tension;
+        float weighted_delta = drift_delta * stat_weight;
+        float applied_force = 0.0f;
 
-	if (terrain_state & TERRAIN::ICE) {
-		applied_force *= 0.003f;
-	} else if (terrain_state & TERRAIN::DIRT) {
-		applied_force *= 2.0f;
-	}
+        if (turn_tension >= 0.1f || grip_frames_from_accel_press != 0) {
+            applied_force = weighted_delta * turn_tension;
+        } else if ((tilt_corner.state & TILTSTATE::AIRBORNE) == 0 &&
+                   (machine_state & MACHINESTATE::JUST_PRESSED_BOOST) == 0) {
+            float rail_timer = static_cast<float>(rail_collision_timer);
+            float speed_lerp = std::clamp(speed_factor, 0.2f, 0.8f);
+            float steer_scale = 0.0f;
+            if ((tilt_corner.state & TILTSTATE::STRAFING) == 0) {
+                steer_scale = ((speed_lerp - 0.2f) / 0.6f) *
+                              (turn_tension - 0.1f) *
+                              (0.3f + 0.7f * std::abs(input_steer_yaw));
+            }
+            applied_force = weighted_delta *
+                            (0.1f + steer_scale * (1.0f - rail_timer / 20.0f));
+        } else {
+            applied_force = weighted_delta * 0.1f;
+        }
 
-	godot::Vector3 local_force(applied_force, 0.0f, 0.0f);
-	godot::Vector3 world_force = mtxa->rotate_point(local_force);
-	tilt_corner.force_spatial += world_force;
+        if (terrain_state & TERRAIN::ICE) {
+            applied_force *= 0.003f;
+        } else if (terrain_state & TERRAIN::DIRT) {
+            applied_force *= 2.0f;
+        }
 
-	if (tilt_corner.state & TILTSTATE::STRAFING) {
-		applied_force *= 0.6f;
-	}
-	turning_related += applied_force;
-}
+        godot::Vector3 local_force(applied_force, 0.0f, 0.0f);
+        godot::Vector3 world_force = mtxa->rotate_point(local_force);
+        tilt_corner.force_spatial += world_force;
 
-	// ───────────── Apply forces & torque ─────────────
-mtxa->pop();
+        if (tilt_corner.state & TILTSTATE::STRAFING) {
+            applied_force *= 0.6f;
+        }
+        turning_related += applied_force;
+    }
 
-velocity += tilt_corner.force_spatial;
+    // ───────────── Apply forces & torque ─────────────
+    mtxa->pop();
 
-if (rail_collision_timer < 6) {
-	apply_torque_from_force(tilt_corner.offset, tilt_corner.force_spatial);
-}
+    velocity += tilt_corner.force_spatial;
 
-if (is_drifting && (machine_state & MACHINESTATE::JUSTHITVEHICLE_Q) == 0) {
-	in_angle_vel *= stat_grip_2;
-}
+    if (rail_collision_timer < 6) {
+        apply_torque_from_force(tilt_corner.offset, tilt_corner.force_spatial);
+    }
 
-velocity_angular.y -= 0.125f * in_angle_vel;
+    if (is_drifting && (machine_state & MACHINESTATE::JUSTHITVEHICLE_Q) == 0) {
+        in_angle_vel *= stat_grip_2;
+    }
+
+    velocity_angular.y -= 0.125f * in_angle_vel;
 };
 
 void PhysicsCar::handle_linear_velocity()
@@ -779,35 +795,34 @@ void PhysicsCar::handle_linear_velocity()
 	float mag_vel_flat_rot = velocity_local_flattened_and_rotated.length();
 
 	float drift_accel_component = 0.0f;
-	if ((machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
-		MACHINESTATE::TOOKDAMAGE)) == 0 &&
-		mag_vel_flat_rot > (10.0f * stat_weight) / 216.0f) {
+	if ((machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE)) == 0 && mag_vel_flat_rot > (10.0f * stat_weight) / 216.0f)
+	{
 		float norm_z_vel_flat_rot = 0.0f;
-	if (mag_vel_flat_rot > 0.0001f)
-		norm_z_vel_flat_rot = vel_flat_rot_z / mag_vel_flat_rot;
+		if (mag_vel_flat_rot > 0.0001f)
+			norm_z_vel_flat_rot = vel_flat_rot_z / mag_vel_flat_rot;
 
-	float drift_factor = 1.0f - (norm_z_vel_flat_rot * norm_z_vel_flat_rot);
-	drift_accel_component = drift_factor * stat_drift_accel;
-	// snaking nerf
-	float strafe_factor = (1.0f - std::abs(input_strafe));
-	if (velocity_local.x > 0.0f && drift_sign == -1)
-	{
-		drift_sign = 1;
-		drift_ramp = 0.0f;
-	}else if (velocity_local.x < 0.0f && drift_sign == 1)
-	{
-		drift_sign = -1;
-		drift_ramp = 0.0f;
-	}
-	if ((velocity_local.x > 0.0f && drift_sign == 1) || (velocity_local.x < 0.0f && drift_sign == -1))
-	{
-		drift_ramp = std::min(1.0f, drift_ramp + (0.025f - drift_ramp * 0.025f) * (1.0f + boost_turbo * 0.03f));
-	}
-	drift_accel_component = drift_accel_component * drift_ramp * strafe_factor;
-}
+		float drift_factor = 1.0f - (norm_z_vel_flat_rot * norm_z_vel_flat_rot);
+		drift_accel_component = drift_factor * stat_drift_accel;
 
-float net_fwd_accel = handle_machine_accel_and_boost(
-	neg_local_fwd_speed, abs_local_lat_speed, drift_accel_component);
+		float strafe_factor = (1.0f - std::abs(input_strafe));
+		if (velocity_local.x > 0.0f && drift_sign == -1)
+		{
+			drift_sign = 1;
+			drift_ramp = 0.0f;
+		}else if (velocity_local.x < 0.0f && drift_sign == 1)
+		{
+			drift_sign = -1;
+			drift_ramp = 0.0f;
+		}
+		if ((velocity_local.x > 0.0f && drift_sign == 1) || (velocity_local.x < 0.0f && drift_sign == -1))
+		{
+			drift_ramp = std::min(1.0f, drift_ramp + (0.025f - drift_ramp * 0.025f) * (1.0f + boost_turbo * 0.03f));
+		}
+		drift_accel_component = drift_accel_component * drift_ramp * strafe_factor;
+	}
+
+	float net_fwd_accel = handle_machine_accel_and_boost(
+		neg_local_fwd_speed, abs_local_lat_speed, drift_accel_component);
 
 	float broken_factor = 1.0f; // Unused placeholder for future behavior
 	float overall_damping = 0.6f + 0.55f;
@@ -2131,7 +2146,7 @@ int PhysicsCar::update_machine_corners() {
 			if (old_valid)
 			{
 				current_track->get_road_surface(use_cp_old, position_old, use_t, use_spatial_t, use_transform);
-				was_above = (position_old - use_transform.origin).dot(use_transform.basis[1]) >= 0.0f;
+				was_above = (position_old - use_transform.origin).dot(use_transform.basis[1]) >= -5.0f;
 				was_inside = use_t.x > -1.0f && use_t.x < 1.0f;
 				//DEBUG::disp_text("current_collision_checkpoint", current_collision_checkpoint);
 				//DEBUG::disp_text("vehicle was_above", was_above);
@@ -2529,7 +2544,9 @@ void PhysicsCar::handle_machine_collision_response()
 
 	if (push_magnitude_track > 0.0023148148f) {
 		if (corner_collision_type_flag & 1)
+		{
 			machine_state |= MACHINESTATE::LOWGRIP;
+		}
 	}
 
 	if (push_magnitude_rail > 0.0023148148f) {
@@ -2691,10 +2708,17 @@ if (apply_full_response) {
 	godot::Vector3 normal_vel = track_surface_normal * vel_along_track;
 	float vel_align_factor = 2.0f * std::abs(0.5f + vel_dot_track);
 	godot::Vector3 vel_add = velocity - normal_vel;
-	if (vel_align_factor < 0.9f)
+	if (air_time < 10 && energy > 0.001f)
+	{
+		velocity *= 1.4f;
+		base_speed += 1.6f;
+	}else
+	{
 		vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);
-	velocity -= normal_vel * up_dot_track;
-	velocity += vel_add;
+		velocity -= normal_vel * up_dot_track;
+		velocity += vel_add;
+	}
+	air_time = 0;
 }
 
 if (frames_since_start_2 <= 90)

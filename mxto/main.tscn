@@ -2182,7 +2182,7 @@ size = Vector2(32768, 32768)
 [sub_resource type="Environment" id="Environment_kek77"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_lquwl"]
-font_size = 72
+font_size = 24
 
 [node name="Main" type="Node"]
 process_priority = 10
@@ -2471,6 +2471,8 @@ visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_top = 36.0
+offset_bottom = -244.0
 grow_horizontal = 2
 grow_vertical = 2
 text = "RACE FINISHED
@@ -2506,7 +2508,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.8"
+text = "MaxX Throttle v0.1.9"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]

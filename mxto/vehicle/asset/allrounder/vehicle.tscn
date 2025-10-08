@@ -63,14 +63,14 @@ shader_parameter/outline_color = Color(0.00559999, 0.0833467, 0.28, 1)
 [node name="MeshInstance3D" type="Node3D"]
 
 [node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
-transform = Transform3D(-7, 0, -6.11959e-07, 0, 7, 0, 6.11959e-07, 0, -7, 0, 0.413, 0)
+transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_ayfej")
 cast_shadow = 0
 mesh = ExtResource("1_fag7k")
 
 [node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="."]
-transform = Transform3D(-7, 0, -6.11959e-07, 0, 7, 0, 6.11959e-07, 0, -7, 0, 0.413, 0)
+transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_o0ykv")
 cast_shadow = 0
@@ -78,7 +78,7 @@ mesh = ExtResource("1_fag7k")
 skeleton = NodePath("")
 
 [node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
-transform = Transform3D(-7, 0, -6.11959e-07, 0, 7, 0, 6.11959e-07, 0, -7, 0, 0.413, 0)
+transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 layers = 4
 material_override = SubResource("ShaderMaterial_gv8nt")
 cast_shadow = 0
@@ -86,7 +86,7 @@ mesh = ExtResource("1_fag7k")
 skeleton = NodePath("")
 
 [node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
-transform = Transform3D(-7, 0, -6.11959e-07, 0, 7, 0, 6.11959e-07, 0, -7, 0, 0.413, 0)
+transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_00g30")
 cast_shadow = 0

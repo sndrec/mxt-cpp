@@ -291,36 +291,37 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipe>();
 			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE;
 		}
-        else if (road_type == 4)
-        {
-                current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
-                current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-                current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
-        }
-        else if (road_type == 5)
-        {
-                auto* rs = level_data.allocate_class<RoadShapeRoundedRect>();
-                rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
-                rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
-                rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
-                current_track->segments[seg].road_shape = rs;
-                current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT;
-        }
-        else if (road_type == 6)
-        {
-                auto* rs = level_data.allocate_class<RoadShapeRoundedRectOpen>();
-                rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
-                rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
-                rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
-                rs->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-                if (version_string == String("v0.4")) {
-                        rs->open_rotation = level_data.allocate_curve_from_buffer(lvldat_buf);
-                } else {
-                        rs->open_rotation = nullptr;
-                }
-                current_track->segments[seg].road_shape = rs;
-                current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
-        }
+		else if (road_type == 4)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShapePipeOpen>();
+			current_track->segments[seg].road_shape->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+		}
+		else if (road_type == 5)
+		{
+			auto* rs = level_data.allocate_class<RoadShapeRoundedRect>();
+			rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
+			rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
+			rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
+			current_track->segments[seg].road_shape = rs;
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT;
+		}
+		else if (road_type == 6)
+		{
+			auto* rs = level_data.allocate_class<RoadShapeRoundedRectOpen>();
+			rs->width = level_data.allocate_curve_from_buffer(lvldat_buf);
+			rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
+			rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
+			rs->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
+                // Seam rotation curve added starting in v0.4
+			if (version_string != String("v0.1") && version_string != String("v0.2") && version_string != String("v0.3")) {
+				rs->open_rotation = level_data.allocate_curve_from_buffer(lvldat_buf);
+			} else {
+				rs->open_rotation = nullptr;
+			}
+			current_track->segments[seg].road_shape = rs;
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
+		}
 
 		// road modulations //
 
@@ -588,228 +589,228 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	std::vector<int> spawn_order;
 	spawn_order.resize(num_cars);
 	for (int i = 0; i < num_cars; ++i) spawn_order[i] = i;
-	if (spawn_seed != 0 && num_cars > 1) {
-		uint32_t seed = static_cast<uint32_t>(spawn_seed);
-		auto next_rand = [&seed]() {
-			seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed;
-		};
-		for (int i = num_cars - 1; i > 0; --i) {
-			uint32_t r = next_rand();
-			int j = static_cast<int>(r % (i + 1));
-			std::swap(spawn_order[i], spawn_order[j]);
-		}
-	}
-
-for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].mtxa = &mtxa;
-		cars[i].current_track = current_track;
-		if (i < car_prop_buffers.size()) {
-			godot::PackedByteArray arr = car_prop_buffers[i];
-               // StreamPeerBuffer inherits Reference; using Ref ensures
-               // the object is freed when 'pb' goes out of scope.
-			godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
-			pb->set_data_array(arr);
-			*(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
-		}
-		if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
-			cars[i].m_accel_setting = accel_settings[i];
-		}
-		cars[i].initialize_machine();
-
-                // Determine spawn transform at the end of the last track segment
-		int seg_idx = current_track->num_segments - 1;
-		const int columns = 6;
-		const float column_width_start = -0.6f;
-		const float column_width_end = 0.6f;
-		const float row_spacing = 20.0f;
-		const float start_offset = 40.0f;
-
-		int slot = spawn_order[i];
-		float distance_back = start_offset + slot * 10;
-		while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
-			distance_back -= current_track->segments[seg_idx].segment_length;
-			seg_idx -= 1;
-		}
-		if (seg_idx < 0) {
-			seg_idx = 0;
-			distance_back = 0.0f;
-		}
-
-		const TrackSegment &spawn_seg = current_track->segments[seg_idx];
-		float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
-		float t_x = remap_float(static_cast<float>(slot % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
-
-		godot::Transform3D spawn_transform;
-		spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
-		spawn_transform.basis.transpose();
-		spawn_transform.basis.orthonormalize();
-		spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
-		godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.5f;
-		spawn_transform.origin += up_offset;
-
-		cars[i].position_current = spawn_transform.origin;
-		cars[i].position_old = spawn_transform.origin;
-		cars[i].position_old_2 = spawn_transform.origin;
-		cars[i].position_old_dupe = spawn_transform.origin;
-		cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
-
-		cars[i].mtxa->push();
-		cars[i].mtxa->cur->origin = spawn_transform.origin;
-		cars[i].basis_physical.basis = spawn_transform.basis;
-		cars[i].basis_physical_other.basis = spawn_transform.basis;
-		cars[i].rotate_mtxa_from_diff_btwn_machine_front_and_back();
-		cars[i].mtxa->pop();
-
-		cars[i].transform_visual = spawn_transform;
-		cars[i].track_surface_normal = spawn_transform.basis.get_column(1);
-	}
-
-	input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
-	for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
-		input_buffer[i] = PlayerInput::from_neutral();
-	}
-
-	sim_started = true;
-	UtilityFunctions::print("finished constructing level!");
-	UtilityFunctions::print("level data size:");
-	UtilityFunctions::print(level_data.get_size());
-	UtilityFunctions::print("gamestate size:");
-	UtilityFunctions::print(gamestate_data.get_size());
-	UtilityFunctions::print("trigger objects:");
-	UtilityFunctions::print(trigger_count);
-
-	if (!car_node_container) {
-		UtilityFunctions::print("car_node_container is null");
-		return;
-	}
-	if (car_node_container == nullptr) {
-		UtilityFunctions::print("container is null");
-		return;
-	}
-};
-
-void GameSim::destroy_gamesim()
-{
-        if (sim_started)
-        {
-                if (current_track) {
-                        current_track->num_trigger_colliders = 0;
-                        current_track->trigger_colliders = nullptr;
-                }
-                level_data.free_heap();
-                gamestate_data.free_heap();
-		for (int i = 0; i < STATE_BUFFER_LEN; i++)
-		{
-			if (state_buffer[i].data)
-			{
-				::free(state_buffer[i].data);
-				state_buffer[i].data = nullptr;
+		if (spawn_seed != 0 && num_cars > 1) {
+			uint32_t seed = static_cast<uint32_t>(spawn_seed);
+			auto next_rand = [&seed]() {
+				seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed;
+			};
+			for (int i = num_cars - 1; i > 0; --i) {
+				uint32_t r = next_rand();
+				int j = static_cast<int>(r % (i + 1));
+				std::swap(spawn_order[i], spawn_order[j]);
 			}
 		}
-                if (input_buffer) {
-                        ::free(input_buffer);
-                        input_buffer = nullptr;
-                }
-                sim_started = false;
-                tick = 0;
-                current_track = nullptr;
-        }
-};
 
-void GameSim::render_gamesim() {
-	if (!sim_started || !car_node_container || !cars) {
-		return;
-	}
+		for (int i = 0; i < num_cars; i++)
+		{
+			cars[i].mtxa = &mtxa;
+			cars[i].current_track = current_track;
+			if (i < car_prop_buffers.size()) {
+				godot::PackedByteArray arr = car_prop_buffers[i];
+               // StreamPeerBuffer inherits Reference; using Ref ensures
+               // the object is freed when 'pb' goes out of scope.
+				godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
+				pb->set_data_array(arr);
+				*(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
+			}
+			if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
+				cars[i].m_accel_setting = accel_settings[i];
+			}
+			cars[i].initialize_machine();
 
-	if (car_node_container == nullptr) {
-		return;
-	}
+                // Determine spawn transform at the end of the last track segment
+			int seg_idx = current_track->num_segments - 1;
+			const int columns = 6;
+			const float column_width_start = -0.6f;
+			const float column_width_end = 0.6f;
+			const float row_spacing = 20.0f;
+			const float start_offset = 40.0f;
 
-	TypedArray<godot::Node> vis_cars = car_node_container->get_children();
+			int slot = spawn_order[i];
+			float distance_back = start_offset + slot * 10;
+			while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
+				distance_back -= current_track->segments[seg_idx].segment_length;
+				seg_idx -= 1;
+			}
+			if (seg_idx < 0) {
+				seg_idx = 0;
+				distance_back = 0.0f;
+			}
+
+			const TrackSegment &spawn_seg = current_track->segments[seg_idx];
+			float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
+			float t_x = remap_float(static_cast<float>(slot % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
+
+			godot::Transform3D spawn_transform;
+			spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
+			spawn_transform.basis.transpose();
+			spawn_transform.basis.orthonormalize();
+			spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
+			godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.5f;
+			spawn_transform.origin += up_offset;
+
+			cars[i].position_current = spawn_transform.origin;
+			cars[i].position_old = spawn_transform.origin;
+			cars[i].position_old_2 = spawn_transform.origin;
+			cars[i].position_old_dupe = spawn_transform.origin;
+			cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+
+			cars[i].mtxa->push();
+			cars[i].mtxa->cur->origin = spawn_transform.origin;
+			cars[i].basis_physical.basis = spawn_transform.basis;
+			cars[i].basis_physical_other.basis = spawn_transform.basis;
+			cars[i].rotate_mtxa_from_diff_btwn_machine_front_and_back();
+			cars[i].mtxa->pop();
+
+			cars[i].transform_visual = spawn_transform;
+			cars[i].track_surface_normal = spawn_transform.basis.get_column(1);
+		}
+
+		input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
+		for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
+			input_buffer[i] = PlayerInput::from_neutral();
+		}
+
+		sim_started = true;
+		UtilityFunctions::print("finished constructing level!");
+		UtilityFunctions::print("level data size:");
+		UtilityFunctions::print(level_data.get_size());
+		UtilityFunctions::print("gamestate size:");
+		UtilityFunctions::print(gamestate_data.get_size());
+		UtilityFunctions::print("trigger objects:");
+		UtilityFunctions::print(trigger_count);
+
+		if (!car_node_container) {
+			UtilityFunctions::print("car_node_container is null");
+			return;
+		}
+		if (car_node_container == nullptr) {
+			UtilityFunctions::print("container is null");
+			return;
+		}
+	};
+
+	void GameSim::destroy_gamesim()
+	{
+		if (sim_started)
+		{
+			if (current_track) {
+				current_track->num_trigger_colliders = 0;
+				current_track->trigger_colliders = nullptr;
+			}
+			level_data.free_heap();
+			gamestate_data.free_heap();
+			for (int i = 0; i < STATE_BUFFER_LEN; i++)
+			{
+				if (state_buffer[i].data)
+				{
+					::free(state_buffer[i].data);
+					state_buffer[i].data = nullptr;
+				}
+			}
+			if (input_buffer) {
+				::free(input_buffer);
+				input_buffer = nullptr;
+			}
+			sim_started = false;
+			tick = 0;
+			current_track = nullptr;
+		}
+	};
+
+	void GameSim::render_gamesim() {
+		if (!sim_started || !car_node_container || !cars) {
+			return;
+		}
+
+		if (car_node_container == nullptr) {
+			return;
+		}
+
+		TypedArray<godot::Node> vis_cars = car_node_container->get_children();
 	//mtxa.push();
-	for (int i = 0; i < vis_cars.size(); i++) {
+		for (int i = 0; i < vis_cars.size(); i++) {
 		//mtxa.assign(cars[i].basis_physical);
 		//mtxa.cur->origin = cars[i].position_current;
 		//cars[i].create_machine_visual_transform();
-		vis_cars[i].set("position_current", cars[i].position_current);
-		vis_cars[i].set("position_old", cars[i].position_old);
-		vis_cars[i].set("track_surface_normal", cars[i].track_surface_normal);
-		vis_cars[i].set("height_above_track", cars[i].height_above_track);
-		vis_cars[i].set("velocity", cars[i].velocity);
-		vis_cars[i].set("velocity_angular", cars[i].velocity_angular);
-		vis_cars[i].set("velocity_local", cars[i].velocity_local);
-		vis_cars[i].set("basis_physical", cars[i].basis_physical);
+			vis_cars[i].set("position_current", cars[i].position_current);
+			vis_cars[i].set("position_old", cars[i].position_old);
+			vis_cars[i].set("track_surface_normal", cars[i].track_surface_normal);
+			vis_cars[i].set("height_above_track", cars[i].height_above_track);
+			vis_cars[i].set("velocity", cars[i].velocity);
+			vis_cars[i].set("velocity_angular", cars[i].velocity_angular);
+			vis_cars[i].set("velocity_local", cars[i].velocity_local);
+			vis_cars[i].set("basis_physical", cars[i].basis_physical);
 		//vis_cars[i].set("transform_visual", cars[i].transform_visual);
-		vis_cars[i].set("base_speed", cars[i].base_speed);
-		vis_cars[i].set("boost_turbo", cars[i].boost_turbo);
-		vis_cars[i].set("race_start_charge", cars[i].race_start_charge);
-		vis_cars[i].set("speed_kmh", cars[i].speed_kmh);
-		vis_cars[i].set("air_tilt", cars[i].air_tilt);
-		vis_cars[i].set("energy", cars[i].energy);
-		vis_cars[i].set("lap_progress", cars[i].lap_progress);
-		vis_cars[i].set("checkpoint_fraction", cars[i].checkpoint_fraction);
-		vis_cars[i].set("boost_frames", cars[i].boost_frames);
-		vis_cars[i].set("boost_frames_manual", cars[i].boost_frames_manual);
-		vis_cars[i].set("current_checkpoint", cars[i].current_checkpoint);
-		vis_cars[i].set("lap", cars[i].lap);
-		vis_cars[i].set("air_time", cars[i].air_time);
-		vis_cars[i].set("machine_state", cars[i].machine_state);
-		vis_cars[i].set("terrain_state", cars[i].terrain_state);
-		vis_cars[i].set("frames_since_start_2", cars[i].frames_since_start_2);
-		vis_cars[i].set("tilt_fl_state", cars[i].tilt_fl.state);
-		vis_cars[i].set("tilt_fr_state", cars[i].tilt_fr.state);
-		vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
-		vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
-		vis_cars[i].set("input_strafe", cars[i].input_strafe);
-		vis_cars[i].set("turn_reaction_input", cars[i].turn_reaction_input);
-		vis_cars[i].set("g_anim_timer", cars[i].g_anim_timer);
-		vis_cars[i].set("state_2", cars[i].state_2);
-		vis_cars[i].set("tilt_fl_offset", cars[i].tilt_fl.offset);
-		vis_cars[i].set("tilt_bl_offset", cars[i].tilt_bl.offset);
-		vis_cars[i].set("stat_weight", cars[i].stat_weight);
-		vis_cars[i].set("stat_strafe", cars[i].stat_strafe);
-		vis_cars[i].set("input_strafe_1_6", cars[i].input_strafe_1_6);
-		vis_cars[i].set("weight_derived_1", cars[i].weight_derived_1);
-		vis_cars[i].set("weight_derived_2", cars[i].weight_derived_2);
-		vis_cars[i].set("weight_derived_3", cars[i].weight_derived_3);
-		vis_cars[i].set("visual_rotation", cars[i].visual_rotation);
-		vis_cars[i].set("spinattack_angle", cars[i].spinattack_angle);
-		vis_cars[i].set("spinattack_direction", cars[i].spinattack_direction);
-		vis_cars[i].set("visual_shake_mult", cars[i].visual_shake_mult);
-		vis_cars[i].set("input_accel", cars[i].input_accel);
-		vis_cars[i].set("restore_state", cars[i].restore_state);
-    	vis_cars[i].set("restore_wait_frames", cars[i].restore_wait_frames);
-    	vis_cars[i].set("restore_move_frames", cars[i].restore_move_frames);
-		vis_cars[i].set("restore_start_transform", cars[i].restore_start_transform);
-		vis_cars[i].set("restore_target_transform", cars[i].restore_target_transform);
-	}
+			vis_cars[i].set("base_speed", cars[i].base_speed);
+			vis_cars[i].set("boost_turbo", cars[i].boost_turbo);
+			vis_cars[i].set("race_start_charge", cars[i].race_start_charge);
+			vis_cars[i].set("speed_kmh", cars[i].speed_kmh);
+			vis_cars[i].set("air_tilt", cars[i].air_tilt);
+			vis_cars[i].set("energy", cars[i].energy);
+			vis_cars[i].set("lap_progress", cars[i].lap_progress);
+			vis_cars[i].set("checkpoint_fraction", cars[i].checkpoint_fraction);
+			vis_cars[i].set("boost_frames", cars[i].boost_frames);
+			vis_cars[i].set("boost_frames_manual", cars[i].boost_frames_manual);
+			vis_cars[i].set("current_checkpoint", cars[i].current_checkpoint);
+			vis_cars[i].set("lap", cars[i].lap);
+			vis_cars[i].set("air_time", cars[i].air_time);
+			vis_cars[i].set("machine_state", cars[i].machine_state);
+			vis_cars[i].set("terrain_state", cars[i].terrain_state);
+			vis_cars[i].set("frames_since_start_2", cars[i].frames_since_start_2);
+			vis_cars[i].set("tilt_fl_state", cars[i].tilt_fl.state);
+			vis_cars[i].set("tilt_fr_state", cars[i].tilt_fr.state);
+			vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
+			vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
+			vis_cars[i].set("input_strafe", cars[i].input_strafe);
+			vis_cars[i].set("turn_reaction_input", cars[i].turn_reaction_input);
+			vis_cars[i].set("g_anim_timer", cars[i].g_anim_timer);
+			vis_cars[i].set("state_2", cars[i].state_2);
+			vis_cars[i].set("tilt_fl_offset", cars[i].tilt_fl.offset);
+			vis_cars[i].set("tilt_bl_offset", cars[i].tilt_bl.offset);
+			vis_cars[i].set("stat_weight", cars[i].stat_weight);
+			vis_cars[i].set("stat_strafe", cars[i].stat_strafe);
+			vis_cars[i].set("input_strafe_1_6", cars[i].input_strafe_1_6);
+			vis_cars[i].set("weight_derived_1", cars[i].weight_derived_1);
+			vis_cars[i].set("weight_derived_2", cars[i].weight_derived_2);
+			vis_cars[i].set("weight_derived_3", cars[i].weight_derived_3);
+			vis_cars[i].set("visual_rotation", cars[i].visual_rotation);
+			vis_cars[i].set("spinattack_angle", cars[i].spinattack_angle);
+			vis_cars[i].set("spinattack_direction", cars[i].spinattack_direction);
+			vis_cars[i].set("visual_shake_mult", cars[i].visual_shake_mult);
+			vis_cars[i].set("input_accel", cars[i].input_accel);
+			vis_cars[i].set("restore_state", cars[i].restore_state);
+			vis_cars[i].set("restore_wait_frames", cars[i].restore_wait_frames);
+			vis_cars[i].set("restore_move_frames", cars[i].restore_move_frames);
+			vis_cars[i].set("restore_start_transform", cars[i].restore_start_transform);
+			vis_cars[i].set("restore_target_transform", cars[i].restore_target_transform);
+		}
 	//mtxa.pop();
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
-	{
-		for (int i = 0; i < current_track->num_checkpoints; i++)
+		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 		{
-			current_track->checkpoints[i].debug_draw();
-		}
-	}
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS))
-	{
-		godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
-		for (int i = 0; i < current_track->num_segments; i++)
-		{
-			dd3d->call("draw_aabb", current_track->segments[i].bounds, godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
-		}
-	}
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
-	{
-		//DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
-		int use_seg_ind = current_track->checkpoints[cars[0].current_checkpoint].road_segment;
-		for (int i = 0; i < current_track->num_segments; i++)
-		{
-			if (i > use_seg_ind + 1 || i < use_seg_ind - 1){
-				continue;
+			for (int i = 0; i < current_track->num_checkpoints; i++)
+			{
+				current_track->checkpoints[i].debug_draw();
 			}
+		}
+		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS))
+		{
 			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+			for (int i = 0; i < current_track->num_segments; i++)
+			{
+				dd3d->call("draw_aabb", current_track->segments[i].bounds, godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
+			}
+		}
+		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
+		{
+		//DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
+			int use_seg_ind = current_track->checkpoints[cars[0].current_checkpoint].road_segment;
+			for (int i = 0; i < current_track->num_segments; i++)
+			{
+				if (i > use_seg_ind + 1 || i < use_seg_ind - 1){
+					continue;
+				}
+				godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 			const int x_subdiv = 16; // Adjust as needed
 			const int y_subdiv = 32;  // Adjust as needed
@@ -887,63 +888,63 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 	// and should always be the same size between the server and all clients
 	int size = static_cast<int>(data.size());
 	if (size > 0) {
-	    memcpy(state_buffer[index].data, data.ptr(), size);
-	    state_buffer[index].size = size;
+		memcpy(state_buffer[index].data, data.ptr(), size);
+		state_buffer[index].size = size;
 	}
 }
 
 void GameSim::fix_pointers() {
-        if (!sim_started || !cars) {
-                return;
-        }
-        for (int i = 0; i < num_cars; ++i) {
-                cars[i].mtxa = &mtxa;
-                cars[i].current_track = current_track;
-                if (car_properties_array) {
-                        cars[i].car_properties = &car_properties_array[i];
-                }
-        }
+	if (!sim_started || !cars) {
+		return;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		cars[i].mtxa = &mtxa;
+		cars[i].current_track = current_track;
+		if (car_properties_array) {
+			cars[i].car_properties = &car_properties_array[i];
+		}
+	}
 
-        if (current_track && current_track->trigger_colliders) {
-                for (int i = 0; i < current_track->num_trigger_colliders; ++i) {
-                        TriggerCollider* trig = current_track->trigger_colliders[i];
+	if (current_track && current_track->trigger_colliders) {
+		for (int i = 0; i < current_track->num_trigger_colliders; ++i) {
+			TriggerCollider* trig = current_track->trigger_colliders[i];
 
-                        TRIGGER_TYPE::TYPE type = trig->type;
-                        godot::Transform3D transform = trig->transform;
-                        godot::Vector3 half_extents = trig->half_extents;
-                        godot::Transform3D inv_transform = trig->inv_transform;
-                        int seg_idx = trig->segment_index;
-                        int cp_idx = trig->checkpoint_index;
-                        bool exploded = false;
-                        if (type == TRIGGER_TYPE::MINE) {
-                                exploded = static_cast<Mine*>(trig)->exploded;
-                        }
+			TRIGGER_TYPE::TYPE type = trig->type;
+			godot::Transform3D transform = trig->transform;
+			godot::Vector3 half_extents = trig->half_extents;
+			godot::Transform3D inv_transform = trig->inv_transform;
+			int seg_idx = trig->segment_index;
+			int cp_idx = trig->checkpoint_index;
+			bool exploded = false;
+			if (type == TRIGGER_TYPE::MINE) {
+				exploded = static_cast<Mine*>(trig)->exploded;
+			}
 
-                        switch (type) {
-                        case TRIGGER_TYPE::DASHPLATE:
-                                new (trig) Dashplate();
-                                break;
-                        case TRIGGER_TYPE::JUMPPLATE:
-                                new (trig) Jumpplate();
-                                break;
-                        case TRIGGER_TYPE::MINE:
-                                new (trig) Mine();
-                                break;
-                        default:
-                                new (trig) TriggerCollider();
-                                break;
-                        }
+			switch (type) {
+			case TRIGGER_TYPE::DASHPLATE:
+				new (trig) Dashplate();
+				break;
+			case TRIGGER_TYPE::JUMPPLATE:
+				new (trig) Jumpplate();
+				break;
+			case TRIGGER_TYPE::MINE:
+				new (trig) Mine();
+				break;
+			default:
+				new (trig) TriggerCollider();
+				break;
+			}
 
-                        trig->transform = transform;
-                        trig->half_extents = half_extents;
-                        trig->inv_transform = inv_transform;
-                        trig->segment_index = seg_idx;
-                        trig->checkpoint_index = cp_idx;
-                        if (type == TRIGGER_TYPE::MINE) {
-                                static_cast<Mine*>(trig)->exploded = exploded;
-                        }
+			trig->transform = transform;
+			trig->half_extents = half_extents;
+			trig->inv_transform = inv_transform;
+			trig->segment_index = seg_idx;
+			trig->checkpoint_index = cp_idx;
+			if (type == TRIGGER_TYPE::MINE) {
+				static_cast<Mine*>(trig)->exploded = exploded;
+			}
 
-                        current_track->trigger_colliders[i] = trig;
-                }
-        }
+			current_track->trigger_colliders[i] = trig;
+		}
+	}
 }

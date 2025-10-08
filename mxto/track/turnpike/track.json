@@ -344,7 +344,7 @@
     },
     {
       "seg_index": 21,
-      "name": "MXTRoadSegment.089",
+      "name": "MXTRoadSegment.189",
       "ground_color": [
         0.0711740031838417,
         0.04096800088882446,
@@ -596,7 +596,7 @@
     },
     {
       "seg_index": 39,
-      "name": "MXTRoadSegment.171",
+      "name": "MXTRoadSegment.191",
       "ground_color": [
         0.5,
         0.5,
