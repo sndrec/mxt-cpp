@@ -7,21 +7,23 @@ const WINDOW_TITLE := "GameSim DIP Switches"
 var _game_sim: GameSim
 var _menu_open := false
 var _dip_entries: Array = []
+var _imgui_connected := false
 
 func _ready() -> void:
 	_resolve_game_sim()
 	set_process_input(true)
-	set_process(true)
+	_connect_imgui()
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == Key.KEY_F2:
 		_menu_open = not _menu_open
 		if not _menu_open:
 			return
+		_connect_imgui()
 		if _game_sim == null:
 			_resolve_game_sim()
 
-func _process(_delta: float) -> void:
+func _on_imgui_layout() -> void:
 	if not _menu_open:
 		return
 	if _game_sim == null:
@@ -49,7 +51,9 @@ func _render_menu_contents() -> void:
 	for entry in _dip_entries:
 		var value_container: Array = entry["value"]
 		var previous_value: bool = value_container[0]
-		ImGui.Checkbox(entry["label"], value_container)
+		var display_label: String = entry["label"]
+		var checkbox_label := "%s##dip_%d" % [display_label, entry["flag"]]
+		ImGui.Checkbox(checkbox_label, value_container)
 		var new_value: bool = value_container[0]
 		if new_value != previous_value:
 			_game_sim.set_dip_switch_enabled(entry["flag"], new_value)
@@ -99,3 +103,12 @@ func _resolve_game_sim() -> void:
 		_game_sim = node
 	else:
 		_game_sim = null
+
+func _connect_imgui() -> void:
+	if _imgui_connected:
+		return
+	if not Engine.has_singleton("ImGuiGD"):
+		call_deferred("_connect_imgui")
+		return
+	ImGuiGD.Connect(Callable(self, "_on_imgui_layout"))
+	_imgui_connected = true
