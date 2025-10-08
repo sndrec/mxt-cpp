@@ -62,6 +62,9 @@ namespace godot {
 		godot::PackedByteArray get_state_data(int target_tick) const;
 		void set_state_data(int target_tick, godot::PackedByteArray data);
 		void fix_pointers();
+		godot::Array get_dip_switches() const;
+		bool is_dip_switch_enabled(int flag) const;
+		void set_dip_switch_enabled(int flag, bool enabled);
 	};
 
 }

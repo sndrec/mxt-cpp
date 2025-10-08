@@ -12,6 +12,8 @@
 #include "car/physics_car.h"
 #include "godot_cpp/variant/array.hpp"
 #include "godot_cpp/variant/packed_byte_array.hpp"
+#include "godot_cpp/variant/dictionary.hpp"
+#include "godot_cpp/variant/string.hpp"
 #include <chrono>
 #include <cfenv>
 #include <cstdlib>
@@ -19,6 +21,22 @@
 #include "mxt_core/debug.hpp"
 
 using namespace godot;
+
+namespace {
+	struct DipSwitchDefinition {
+		const char* key;
+		const char* label;
+		int flag;
+	};
+
+	const DipSwitchDefinition DIP_SWITCH_DEFINITIONS[] = {
+		{"DIP_DRAW_RAYCASTS", "Draw Raycasts", DIP_SWITCH::DIP_DRAW_RAYCASTS},
+		{"DIP_DRAW_CHECKPOINTS", "Draw Checkpoints", DIP_SWITCH::DIP_DRAW_CHECKPOINTS},
+		{"DIP_DRAW_SEGMENT_SURF", "Draw Segment Surface", DIP_SWITCH::DIP_DRAW_SEGMENT_SURF},
+		{"DIP_DRAW_TILT_CORNER_DATA", "Draw Tilt Corner Data", DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA},
+		{"DIP_DRAW_SEG_BOUNDS", "Draw Segment Bounds", DIP_SWITCH::DIP_DRAW_SEG_BOUNDS},
+	};
+}
 
 void GameSim::_bind_methods()
 {
@@ -33,6 +51,9 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
 	ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
+	ClassDB::bind_method(D_METHOD("get_dip_switches"), &GameSim::get_dip_switches);
+	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
+	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -139,6 +160,34 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	//dd2d->call("set_text", "pos 1", car_positions[0]);
 	
 	//dd3d->call("draw_points", car_positions, 0, 1.0f, godot::Color(1.f, 0.f, 0.f), 0.0166666);
+}
+
+Array GameSim::get_dip_switches() const
+{
+	Array switches;
+	for (const auto& def : DIP_SWITCH_DEFINITIONS) {
+		Dictionary entry;
+		entry["key"] = String(def.key);
+		entry["label"] = String(def.label);
+		entry["flag"] = def.flag;
+		entry["enabled"] = DEBUG::dip_enabled(def.flag);
+		switches.push_back(entry);
+	}
+	return switches;
+}
+
+bool GameSim::is_dip_switch_enabled(int flag) const
+{
+	return DEBUG::dip_enabled(flag);
+}
+
+void GameSim::set_dip_switch_enabled(int flag, bool enabled)
+{
+	if (enabled) {
+		DEBUG::enable_dip(flag);
+	} else {
+		DEBUG::disable_dip(flag);
+	}
 }
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers, godot::Array accel_settings)
