@@ -5,6 +5,7 @@
 #include "track/trigger_collider.h"
 #include "mxt_core/math_utils.h"
 #include <vector>
+#include <cstdint>
 
 struct CollisionData;
 
@@ -24,7 +25,19 @@ public:
 		int num_trigger_colliders;
 		TriggerCollider** trigger_colliders;
 		float lap_length;
+		int canonical_start_index;
+		std::vector<uint8_t> canonical_flags;
+		std::vector<int> canonical_next;
+		std::vector<int> canonical_prev;
+		struct BranchInfo {
+			int entry;
+			int exit;
+			std::vector<int> checkpoints;
+		};
+		std::vector<BranchInfo> branch_infos;
+		std::vector<int> checkpoint_branch_id;
 		void compute_checkpoint_distances();
+		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations = 0);
 	void cast_vs_track_fast(CollisionData &out_collision, const godot::Vector3 &p0, const godot::Vector3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
 	void get_road_surface(int cp_idx, const godot::Vector3 &point, godot::Vector2 &road_t, godot::Vector3 &spatial_t, godot::Transform3D &out_transform, bool oriented = true);

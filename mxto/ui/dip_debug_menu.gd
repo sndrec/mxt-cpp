@@ -3,6 +3,7 @@ extends Node
 @export var game_sim_path: NodePath
 
 const WINDOW_TITLE := "GameSim DIP Switches"
+const DIP_BRANCH_CENTERLINE := 0x20
 
 var _game_sim: GameSim
 var _menu_open := false
@@ -24,6 +25,7 @@ func _input(event: InputEvent) -> void:
 			_resolve_game_sim()
 
 func _on_imgui_layout() -> void:
+	_render_lap_distance_window()
 	if not _menu_open:
 		return
 	if _game_sim == null:
@@ -36,6 +38,21 @@ func _on_imgui_layout() -> void:
 		_menu_open = open_state[0]
 	if window_visible:
 		_render_menu_contents()
+	ImGui.End()
+
+func _render_lap_distance_window() -> void:
+	if _game_sim == null:
+		_resolve_game_sim()
+	if _game_sim == null:
+		return
+	if not _game_sim.is_dip_switch_enabled(DIP_BRANCH_CENTERLINE):
+		return
+
+	ImGui.SetNextWindowSize(Vector2(220, 0), ImGui.Cond_Once)
+	var window_open := ImGui.Begin("Lap Distance")
+	if window_open:
+		var lap_distance := _game_sim.get_first_lap_distance()
+		ImGui.Text("First player lap distance: %.2f m" % lap_distance)
 	ImGui.End()
 
 func _render_menu_contents() -> void:

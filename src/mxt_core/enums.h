@@ -96,6 +96,7 @@ namespace DIP_SWITCH {
                 DIP_DRAW_SEGMENT_SURF = 0x4,
                 DIP_DRAW_TILT_CORNER_DATA = 0x8,
                 DIP_DRAW_SEG_BOUNDS = 0x10,
+                DIP_DRAW_BRANCH_CENTERLINE = 0x20,
         };
 }
 

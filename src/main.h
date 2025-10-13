@@ -65,6 +65,7 @@ namespace godot {
 		godot::Array get_dip_switches() const;
 		bool is_dip_switch_enabled(int flag) const;
 		void set_dip_switch_enabled(int flag, bool enabled);
+		double get_first_lap_distance() const;
 	};
 
 }

@@ -15,8 +15,21 @@ void RaceTrack::compute_checkpoint_distances()
 	lap_length = 0.0f;
 	if (num_checkpoints <= 0)
 	{
+		canonical_flags.clear();
+		canonical_next.clear();
+		canonical_prev.clear();
+		branch_infos.clear();
+		checkpoint_branch_id.clear();
+		canonical_start_index = -1;
 		return;
 	}
+
+	canonical_start_index = 0;
+	canonical_flags.assign(num_checkpoints, 0);
+	canonical_next.assign(num_checkpoints, -1);
+	canonical_prev.assign(num_checkpoints, -1);
+	branch_infos.clear();
+	checkpoint_branch_id.assign(num_checkpoints, -1);
 
 	struct Node
 	{
@@ -85,6 +98,12 @@ void RaceTrack::compute_checkpoint_distances()
 
 	if (lap_end == -1)
 	{
+		canonical_flags.clear();
+		canonical_next.clear();
+		canonical_prev.clear();
+		branch_infos.clear();
+		checkpoint_branch_id.clear();
+		canonical_start_index = -1;
 		accumulate_linear();
 		return;
 	}
@@ -104,8 +123,6 @@ void RaceTrack::compute_checkpoint_distances()
 	}
 	std::reverse(canonical_path.begin(), canonical_path.end());
 
-	std::vector<int> canonical_next(num_checkpoints, -1);
-	std::vector<int> canonical_prev(num_checkpoints, -1);
 	std::vector<char> is_canonical(num_checkpoints, 0);
 	std::vector<char> assigned(num_checkpoints, 0);
 
@@ -161,12 +178,12 @@ void RaceTrack::compute_checkpoint_distances()
 				continue;
 			}
 
-			std::vector<int> branch_nodes;
-			float branch_total = 0.0f;
-			int exit_node = -1;
-			int current = neighbor;
-			int previous = idx;
-			std::vector<char> branch_seen(num_checkpoints, 0);
+		std::vector<int> branch_nodes;
+		float branch_total = 0.0f;
+		int exit_node = -1;
+		int current = neighbor;
+		int previous = idx;
+		std::vector<char> branch_seen(num_checkpoints, 0);
 
 			while (true)
 			{
@@ -210,16 +227,16 @@ void RaceTrack::compute_checkpoint_distances()
 				current = next;
 			}
 
-			float entry_progress = checkpoints[idx].distance;
-			float exit_progress = entry_progress + branch_total;
-			if (exit_node >= 0)
+		float entry_progress = checkpoints[idx].distance - checkpoints[idx].local_distance;
+		float exit_progress = entry_progress + branch_total;
+		if (exit_node >= 0)
+		{
+			float interval = canonical_interval(idx, exit_node);
+			if (interval >= 0.0f)
 			{
-				float interval = canonical_interval(idx, exit_node);
-				if (interval >= 0.0f)
-				{
-					exit_progress = entry_progress + interval;
-				}
+				exit_progress = entry_progress + interval;
 			}
+		}
 
 			float cumulative_branch = 0.0f;
 			for (int branch_idx : branch_nodes)
@@ -238,6 +255,19 @@ void RaceTrack::compute_checkpoint_distances()
 				checkpoints[branch_idx].distance = mapped;
 				assigned[branch_idx] = 1;
 			}
+		if (!branch_nodes.empty())
+		{
+			BranchInfo info;
+			info.entry = idx;
+			info.exit = exit_node;
+			info.checkpoints = branch_nodes;
+			int branch_index = static_cast<int>(branch_infos.size());
+			branch_infos.push_back(info);
+			for (int branch_idx : branch_nodes)
+			{
+				checkpoint_branch_id[branch_idx] = branch_index;
+			}
+		}
 		}
 	}
 
@@ -248,6 +278,101 @@ void RaceTrack::compute_checkpoint_distances()
 			checkpoints[i].distance = best_distance[i];
 		}
 	}
+}
+
+void RaceTrack::collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const
+{
+    out_indices.clear();
+    if (cp_idx < 0 || cp_idx >= num_checkpoints)
+        return;
+
+    if (num_checkpoints == 0)
+        return;
+
+    const float eps = 1e-4f;
+    const float full = lap_length > 0.0f ? lap_length : 0.0f;
+
+    auto delta_forward = [&](int a, int b) -> float {
+        float d = checkpoints[b].distance - checkpoints[a].distance;
+        if (full > 0.0f) {
+            if (d > 0.5f * full) d -= full;
+            else if (d < -0.5f * full) d += full;
+        }
+        return d;
+    };
+
+    auto count_dir = [&](int idx, bool forward) -> int {
+        const CollisionCheckpoint &cp = checkpoints[idx];
+        int c = 0;
+        for (int i = 0; i < cp.num_neighboring_checkpoints; ++i) {
+            int nb = cp.neighboring_checkpoints[i];
+            if (nb < 0 || nb >= num_checkpoints) continue;
+            float d = delta_forward(idx, nb);
+            if (forward) {
+                if (d > eps) c++;
+            } else {
+                if (d < -eps) c++;
+            }
+        }
+        return c;
+    };
+
+    auto step_dir = [&](int idx, bool forward) -> int {
+        const CollisionCheckpoint &cp = checkpoints[idx];
+        int next = -1;
+        for (int i = 0; i < cp.num_neighboring_checkpoints; ++i) {
+            int nb = cp.neighboring_checkpoints[i];
+            if (nb < 0 || nb >= num_checkpoints) continue;
+            float d = delta_forward(idx, nb);
+            if (forward) {
+                if (d > eps) {
+                    if (next == -1) next = nb; else return -2; // junction (>=2)
+                }
+            } else {
+                if (d < -eps) {
+                    if (next == -1) next = nb; else return -2; // junction (>=2)
+                }
+            }
+        }
+        return next;
+    };
+
+    std::vector<int> back_seq;
+    {
+        int cur = cp_idx;
+        int guard = 0;
+        while (guard++ < num_checkpoints) {
+            int nxt = step_dir(cur, false);
+            if (nxt == -2) break;
+            if (nxt < 0) break;
+            back_seq.push_back(nxt);
+            cur = nxt;
+        }
+    }
+
+    std::vector<int> fwd_seq;
+    {
+        int cur = cp_idx;
+        int guard = 0;
+        while (guard++ < num_checkpoints) {
+            int nxt = step_dir(cur, true);
+            if (nxt == -2) break;
+            if (nxt < 0) break;
+            fwd_seq.push_back(nxt);
+            cur = nxt;
+        }
+    }
+
+    for (int i = static_cast<int>(back_seq.size()) - 1; i >= 0; --i)
+        out_indices.push_back(back_seq[i]);
+    out_indices.push_back(cp_idx);
+    for (int idx : fwd_seq)
+        out_indices.push_back(idx);
+
+    if (out_indices.empty()) {
+        for (int i = 0; i < num_checkpoints; ++i)
+            out_indices.push_back(i);
+    }
 }
 
 int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations)
@@ -699,3 +824,4 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	CastParams params{ this, mask };
 	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
 }
+

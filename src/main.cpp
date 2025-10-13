@@ -18,6 +18,7 @@
 #include <cfenv>
 #include <cstdlib>
 #include <algorithm>
+#include <vector>
 #include "mxt_core/debug.hpp"
 
 using namespace godot;
@@ -35,6 +36,7 @@ namespace {
 		{"DIP_DRAW_SEGMENT_SURF", "Draw Segment Surface", DIP_SWITCH::DIP_DRAW_SEGMENT_SURF},
 		{"DIP_DRAW_TILT_CORNER_DATA", "Draw Tilt Corner Data", DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA},
 		{"DIP_DRAW_SEG_BOUNDS", "Draw Segment Bounds", DIP_SWITCH::DIP_DRAW_SEG_BOUNDS},
+		{"DIP_DRAW_BRANCH_CENTERLINE", "Draw Branch Centerline", DIP_SWITCH::DIP_DRAW_BRANCH_CENTERLINE},
 	};
 }
 
@@ -54,6 +56,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_dip_switches"), &GameSim::get_dip_switches);
 	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
+	ClassDB::bind_method(D_METHOD("get_first_lap_distance"), &GameSim::get_first_lap_distance);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -188,6 +191,38 @@ void GameSim::set_dip_switch_enabled(int flag, bool enabled)
 	} else {
 		DEBUG::disable_dip(flag);
 	}
+}
+
+double GameSim::get_first_lap_distance() const
+{
+	if (!sim_started || !cars || num_cars <= 0 || !current_track)
+	{
+		return 0.0;
+	}
+
+	const PhysicsCar &car = cars[0];
+	float lap_length = current_track->lap_length;
+	if (lap_length <= 0.0f && current_track->num_checkpoints > 0)
+	{
+		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+	}
+
+	float lap_progress = 0.0f;
+	int cp_idx = car.current_checkpoint;
+	if (cp_idx >= 0 && cp_idx < current_track->num_checkpoints)
+	{
+		const CollisionCheckpoint &cp = current_track->checkpoints[cp_idx];
+		float entry_distance = cp.distance - cp.local_distance;
+		if (entry_distance < 0.0f)
+		{
+			entry_distance = 0.0f;
+		}
+		float fraction = std::clamp(car.checkpoint_fraction, 0.0f, 1.0f);
+		lap_progress = entry_distance + cp.local_distance * fraction;
+	}
+
+	float lap_total = lap_progress + lap_length * fmaxf(static_cast<float>(car.lap), 0.0f);
+	return static_cast<double>(lap_total);
 }
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers, godot::Array accel_settings)
@@ -840,6 +875,41 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			for (int i = 0; i < current_track->num_checkpoints; i++)
 			{
 				current_track->checkpoints[i].debug_draw();
+			}
+		}
+		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_BRANCH_CENTERLINE))
+		{
+			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+			if (dd3d && num_cars > 0)
+			{
+				int cp_idx = cars[0].current_checkpoint;
+				if (cp_idx >= 0 && cp_idx < current_track->num_checkpoints)
+				{
+					std::vector<int> branch_indices;
+					current_track->collect_branch_sequence(cp_idx, branch_indices);
+					if (!branch_indices.empty())
+					{
+						for (size_t b = 0; b < branch_indices.size(); ++b)
+						{
+							int idx = branch_indices[b];
+							if (idx < 0 || idx >= current_track->num_checkpoints)
+							{
+								continue;
+							}
+							const CollisionCheckpoint &cp = current_track->checkpoints[idx];
+							dd3d->call("draw_line", cp.position_start, cp.position_end, godot::Color(1.0f, 0.9f, 0.1f), _TICK_DELTA);
+							if (b + 1 < branch_indices.size())
+							{
+								int next_idx = branch_indices[b + 1];
+								if (next_idx >= 0 && next_idx < current_track->num_checkpoints)
+								{
+									const CollisionCheckpoint &next_cp = current_track->checkpoints[next_idx];
+									dd3d->call("draw_line", cp.position_end, next_cp.position_start, godot::Color(0.6f, 0.8f, 0.2f), _TICK_DELTA);
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEG_BOUNDS))
