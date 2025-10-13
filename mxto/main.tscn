@@ -2424,7 +2424,6 @@ metadata/_custom_type_script = "uid://odaiawvcj4yf"
 
 [node name="DebugTrackMeshContainer" type="Node3D" parent="GameWorld"]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0)
-visible = false
 
 [node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
 visible = false
@@ -2433,10 +2432,12 @@ skeleton = NodePath("")
 
 [node name="TrackFloor" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, -4.30435e-05, 2015.28)
+visible = false
 mesh = SubResource("PlaneMesh_074og")
 
 [node name="TrackClouds" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
 transform = Transform3D(0.915438, -3.55271e-15, -0.402459, 0.402459, -4.37114e-08, 0.915438, -1.75921e-08, -1, -4.00151e-08, 0, -0.000146866, -359.904)
+visible = false
 mesh = SubResource("PlaneMesh_82xsv")
 
 [node name="ObjContainer" type="Node3D" parent="GameWorld"]
