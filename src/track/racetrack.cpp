@@ -238,7 +238,7 @@ void RaceTrack::compute_checkpoint_distances()
 				current = next;
 			}
 
-		float entry_progress = checkpoints[idx].distance - checkpoints[idx].local_distance;
+		float entry_progress = checkpoints[idx].distance;
 		float exit_progress = entry_progress + branch_total;
 		if (exit_node >= 0)
 		{
@@ -265,6 +265,10 @@ void RaceTrack::compute_checkpoint_distances()
 				}
 				checkpoints[branch_idx].distance = mapped;
 				assigned[branch_idx] = 1;
+			}
+			if (!branch_nodes.empty())
+			{
+				checkpoints[branch_nodes.back()].distance = exit_progress;
 			}
 		if (!branch_nodes.empty())
 		{
