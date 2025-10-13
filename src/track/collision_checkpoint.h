@@ -23,6 +23,7 @@ public:
 	float t_end;
 	godot::Plane start_plane;
 	godot::Plane end_plane;
+	float local_distance;
 	float distance;
 	int road_segment;
 	int num_neighboring_checkpoints;

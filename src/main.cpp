@@ -211,6 +211,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track = level_data.allocate_object<RaceTrack>();
 	current_track->num_trigger_colliders = 0;
 	current_track->trigger_colliders = nullptr;
+	current_track->lap_length = 0.0f;
 
 	UtilityFunctions::print("-----");
 	UtilityFunctions::print(lvldat_buf->get_position());
@@ -277,11 +278,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		current_track->checkpoints[i].y_radius_end = lvldat_buf->get_float();
 		current_track->checkpoints[i].t_start = lvldat_buf->get_float();
 		current_track->checkpoints[i].t_end = lvldat_buf->get_float();
-		current_track->checkpoints[i].distance = lvldat_buf->get_float();
-		if (i > 0)
-		{
-			current_track->checkpoints[i].distance += current_track->checkpoints[i - 1].distance;
-		}
+		current_track->checkpoints[i].local_distance = lvldat_buf->get_float();
+		current_track->checkpoints[i].distance = 0.0f;
 		current_track->checkpoints[i].road_segment = (int)lvldat_buf->get_u32();
 		current_track->checkpoints[i].start_plane.normal[0] = lvldat_buf->get_float();
 		current_track->checkpoints[i].start_plane.normal[1] = lvldat_buf->get_float();
@@ -305,6 +303,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			current_track->checkpoints[i].neighboring_checkpoints[n] = (int)lvldat_buf->get_u32();
 		}
 	}
+
+	current_track->compute_checkpoint_distances();
 
 	// load in track segments //
 	current_track->minimum_y = 0.0f;

@@ -10,6 +10,246 @@
 #include <limits>
 #include "mxt_core/debug.hpp"
 
+void RaceTrack::compute_checkpoint_distances()
+{
+	lap_length = 0.0f;
+	if (num_checkpoints <= 0)
+	{
+		return;
+	}
+
+	struct Node
+	{
+		float distance;
+		int index;
+	};
+
+	auto cmp = [](const Node &a, const Node &b) {
+		return a.distance > b.distance;
+	};
+
+	std::priority_queue<Node, std::vector<Node>, decltype(cmp)> queue(cmp);
+	const int start_index = 0;
+	std::vector<float> best_distance(num_checkpoints, std::numeric_limits<float>::infinity());
+	std::vector<int> predecessor(num_checkpoints, -1);
+	for (int i = 0; i < num_checkpoints; ++i)
+	{
+		checkpoints[i].distance = 0.0f;
+	}
+	best_distance[start_index] = 0.0f;
+	queue.push({0.0f, start_index});
+
+	float best_lap = std::numeric_limits<float>::infinity();
+	int lap_end = -1;
+
+	while (!queue.empty())
+	{
+		Node node = queue.top();
+		queue.pop();
+		if (node.distance > best_distance[node.index])
+		{
+			continue;
+		}
+		const CollisionCheckpoint &cp = checkpoints[node.index];
+		float base_distance = node.distance + cp.local_distance;
+		for (int i = 0; i < cp.num_neighboring_checkpoints; ++i)
+		{
+			int neighbor = cp.neighboring_checkpoints[i];
+			if (neighbor < 0 || neighbor >= num_checkpoints)
+			{
+				continue;
+			}
+			if (neighbor == start_index && base_distance > 0.0f && base_distance < best_lap)
+			{
+				best_lap = base_distance;
+				lap_end = node.index;
+			}
+			if (base_distance + 1e-5f < best_distance[neighbor])
+			{
+				best_distance[neighbor] = base_distance;
+				predecessor[neighbor] = node.index;
+				queue.push({base_distance, neighbor});
+			}
+		}
+	}
+
+	auto accumulate_linear = [&]() {
+		float accum = 0.0f;
+		for (int i = 0; i < num_checkpoints; ++i)
+		{
+			accum += checkpoints[i].local_distance;
+			checkpoints[i].distance = accum;
+		}
+		lap_length = accum;
+	};
+
+	if (lap_end == -1)
+	{
+		accumulate_linear();
+		return;
+	}
+
+	std::vector<int> canonical_path;
+	canonical_path.push_back(lap_end);
+	int cursor = lap_end;
+	while (cursor != start_index)
+	{
+		cursor = predecessor[cursor];
+		if (cursor == -1)
+		{
+			accumulate_linear();
+			return;
+		}
+		canonical_path.push_back(cursor);
+	}
+	std::reverse(canonical_path.begin(), canonical_path.end());
+
+	std::vector<int> canonical_next(num_checkpoints, -1);
+	std::vector<int> canonical_prev(num_checkpoints, -1);
+	std::vector<char> is_canonical(num_checkpoints, 0);
+	std::vector<char> assigned(num_checkpoints, 0);
+
+	float cumulative = 0.0f;
+	for (size_t i = 0; i < canonical_path.size(); ++i)
+	{
+		int idx = canonical_path[i];
+		is_canonical[idx] = 1;
+		assigned[idx] = 1;
+		cumulative += checkpoints[idx].local_distance;
+		checkpoints[idx].distance = cumulative;
+		int next = (i + 1 < canonical_path.size()) ? canonical_path[i + 1] : start_index;
+		canonical_next[idx] = next;
+		canonical_prev[next] = idx;
+	}
+	lap_length = cumulative;
+
+	auto canonical_interval = [&](int entry, int exit) {
+		float acc = 0.0f;
+		int walker = entry;
+		while (true)
+		{
+			walker = canonical_next[walker];
+			if (walker == -1 || walker == entry)
+			{
+				return -1.0f;
+			}
+			if (walker == exit)
+			{
+				return acc;
+			}
+			acc += checkpoints[walker].local_distance;
+		}
+	};
+
+	for (int idx : canonical_path)
+	{
+		int prev = canonical_prev[idx];
+		const CollisionCheckpoint &cp = checkpoints[idx];
+		for (int i = 0; i < cp.num_neighboring_checkpoints; ++i)
+		{
+			int neighbor = cp.neighboring_checkpoints[i];
+			if (neighbor < 0 || neighbor >= num_checkpoints)
+			{
+				continue;
+			}
+			if (neighbor == canonical_next[idx] || neighbor == prev)
+			{
+				continue;
+			}
+			if (assigned[neighbor])
+			{
+				continue;
+			}
+
+			std::vector<int> branch_nodes;
+			float branch_total = 0.0f;
+			int exit_node = -1;
+			int current = neighbor;
+			int previous = idx;
+			std::vector<char> branch_seen(num_checkpoints, 0);
+
+			while (true)
+			{
+				if (current < 0 || current >= num_checkpoints)
+				{
+					exit_node = -1;
+					break;
+				}
+				if (branch_seen[current])
+				{
+					exit_node = -1;
+					break;
+				}
+				branch_seen[current] = 1;
+				if (is_canonical[current])
+				{
+					exit_node = current;
+					break;
+				}
+				branch_nodes.push_back(current);
+				branch_total += checkpoints[current].local_distance;
+
+				const CollisionCheckpoint &branch_cp = checkpoints[current];
+				int next = -1;
+				for (int j = 0; j < branch_cp.num_neighboring_checkpoints; ++j)
+				{
+					int nb = branch_cp.neighboring_checkpoints[j];
+					if (nb == previous)
+					{
+						continue;
+					}
+					next = nb;
+					break;
+				}
+				if (next == -1)
+				{
+					exit_node = -1;
+					break;
+				}
+				previous = current;
+				current = next;
+			}
+
+			float entry_progress = checkpoints[idx].distance;
+			float exit_progress = entry_progress + branch_total;
+			if (exit_node >= 0)
+			{
+				float interval = canonical_interval(idx, exit_node);
+				if (interval >= 0.0f)
+				{
+					exit_progress = entry_progress + interval;
+				}
+			}
+
+			float cumulative_branch = 0.0f;
+			for (int branch_idx : branch_nodes)
+			{
+				cumulative_branch += checkpoints[branch_idx].local_distance;
+				float mapped;
+				if (branch_total > 0.0f)
+				{
+					float t = cumulative_branch / branch_total;
+					mapped = entry_progress + (exit_progress - entry_progress) * t;
+				}
+				else
+				{
+					mapped = exit_progress;
+				}
+				checkpoints[branch_idx].distance = mapped;
+				assigned[branch_idx] = 1;
+			}
+		}
+	}
+
+	for (int i = 0; i < num_checkpoints; ++i)
+	{
+		if (!assigned[i])
+		{
+			checkpoints[i].distance = best_distance[i];
+		}
+	}
+}
+
 int RaceTrack::find_checkpoint_recursive(const godot::Vector3 &pos, int cp_index, int iterations)
 {
 	if (cp_index == -1)
