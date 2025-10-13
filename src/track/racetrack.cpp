@@ -43,6 +43,7 @@ void RaceTrack::compute_checkpoint_distances()
 
 	std::priority_queue<Node, std::vector<Node>, decltype(cmp)> queue(cmp);
 	const int start_index = 0;
+	const int final_index = num_checkpoints - 1;
 	std::vector<float> best_distance(num_checkpoints, std::numeric_limits<float>::infinity());
 	std::vector<int> predecessor(num_checkpoints, -1);
 	for (int i = 0; i < num_checkpoints; ++i)
@@ -52,9 +53,6 @@ void RaceTrack::compute_checkpoint_distances()
 	best_distance[start_index] = 0.0f;
 	queue.push({0.0f, start_index});
 
-	float best_lap = std::numeric_limits<float>::infinity();
-	int lap_end = -1;
-
 	while (!queue.empty())
 	{
 		Node node = queue.top();
@@ -62,6 +60,10 @@ void RaceTrack::compute_checkpoint_distances()
 		if (node.distance > best_distance[node.index])
 		{
 			continue;
+		}
+		if (node.index == final_index)
+		{
+			break;
 		}
 		const CollisionCheckpoint &cp = checkpoints[node.index];
 		float base_distance = node.distance + cp.local_distance;
@@ -72,10 +74,9 @@ void RaceTrack::compute_checkpoint_distances()
 			{
 				continue;
 			}
-			if (neighbor == start_index && base_distance > 0.0f && base_distance < best_lap)
+			if (neighbor <= node.index)
 			{
-				best_lap = base_distance;
-				lap_end = node.index;
+				continue;
 			}
 			if (base_distance + 1e-5f < best_distance[neighbor])
 			{
@@ -96,7 +97,7 @@ void RaceTrack::compute_checkpoint_distances()
 		lap_length = accum;
 	};
 
-	if (lap_end == -1)
+	if (best_distance[final_index] == std::numeric_limits<float>::infinity())
 	{
 		canonical_flags.clear();
 		canonical_next.clear();
@@ -109,8 +110,8 @@ void RaceTrack::compute_checkpoint_distances()
 	}
 
 	std::vector<int> canonical_path;
-	canonical_path.push_back(lap_end);
-	int cursor = lap_end;
+	canonical_path.push_back(final_index);
+	int cursor = final_index;
 	while (cursor != start_index)
 	{
 		cursor = predecessor[cursor];
@@ -169,7 +170,7 @@ void RaceTrack::compute_checkpoint_distances()
 			{
 				continue;
 			}
-			if (neighbor == canonical_next[idx] || neighbor == prev)
+			if (neighbor == canonical_next[idx] || neighbor == prev || neighbor <= idx)
 			{
 				continue;
 			}
@@ -215,8 +216,18 @@ void RaceTrack::compute_checkpoint_distances()
 					{
 						continue;
 					}
-					next = nb;
-					break;
+					if (nb > current)
+					{
+						if (next == -1)
+						{
+							next = nb;
+						}
+						else
+						{
+							next = -1;
+							break;
+						}
+					}
 				}
 				if (next == -1)
 				{
@@ -275,7 +286,8 @@ void RaceTrack::compute_checkpoint_distances()
 	{
 		if (!assigned[i])
 		{
-			checkpoints[i].distance = best_distance[i];
+			float bd = best_distance[i];
+			checkpoints[i].distance = (bd == std::numeric_limits<float>::infinity()) ? 0.0f : bd;
 		}
 	}
 }
@@ -824,4 +836,5 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	CastParams params{ this, mask };
 	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
 }
+
 
