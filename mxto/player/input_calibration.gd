@@ -28,6 +28,13 @@ static func apply_vec(v: Vector2, radii: Array) -> Vector2:
 		return v
 	if radii.is_empty():
 		return v
+	var any_positive := false
+	for rtest in radii:
+		if float(rtest) > 0.0:
+			any_positive = true
+			break
+	if !any_positive:
+		return v
 	var phi := fposmod(atan2(v.y, v.x), TAU)
 	var step := TAU / 8.0
 	var i := int(floor(phi / step))
@@ -35,9 +42,12 @@ static func apply_vec(v: Vector2, radii: Array) -> Vector2:
 	var t := (phi - float(i) * step) / step
 	var r1 := float(radii[i])
 	var r2 := float(radii[i2])
-	var r = lerp(r1, r2, t)
-	var denom = max(r, 0.0001)
-	return v / denom
+	var r_meas = lerp(r1, r2, t)
+	var denom = max(r_meas, 0.0001)
+	var c = abs(cos(phi))
+	var s = abs(sin(phi))
+	var r_square = 1.0 / max(c, s)
+	return v * (r_square / denom)
 
 func apply(v: Vector2) -> Vector2:
 	return apply_vec(v, radii)

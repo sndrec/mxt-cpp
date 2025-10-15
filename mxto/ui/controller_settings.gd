@@ -383,10 +383,19 @@ func _load_saved_bindings() -> void:
 						_apply_binding_dict(data)
 
 # Calibration: persistence and logic
+# Calibration: persistence and logic
+func _has_valid_calibration() -> bool:
+		if calib_radii.is_empty():
+				return false
+		for v in calib_radii:
+				if float(v) > 0.0:
+						return true
+		return false
+
 func _default_calib_radii() -> Array:
 		var a := []
 		for i in range(8):
-				a.append(1.0)
+				a.append(0.0)
 		return a
 
 func _save_calibration() -> void:
@@ -431,20 +440,26 @@ func _update_calibration_with_sample(v: Vector2) -> void:
 						calib_radii[i] = r
 
 func _apply_calibration(v: Vector2) -> Vector2:
-		if v == Vector2.ZERO:
-				return v
-		if calib_radii.is_empty():
-				return v
-		var phi := fposmod(atan2(v.y, v.x), TAU)
-		var step := TAU / 8.0
-		var i := int(floor(phi / step))
-		var i2 := (i + 1) % 8
-		var t := (phi - float(i) * step) / step
-		var r1 := float(calib_radii[i])
-		var r2 := float(calib_radii[i2])
-		var r = lerp(r1, r2, t)
-		var denom = max(r, 0.0001)
-		return v / denom
+	if v == Vector2.ZERO:
+			return v
+	if !_has_valid_calibration():
+			return v
+	var phi := fposmod(atan2(v.y, v.x), TAU)
+	var step := TAU / 8.0
+	var i := int(floor(phi / step))
+	var i2 := (i + 1) % 8
+	var t := (phi - float(i) * step) / step
+	var r1 := float(calib_radii[i])
+	var r2 := float(calib_radii[i2])
+	var r_meas = lerp(r1, r2, t)
+	var denom = max(r_meas, 0.0001)
+	var c = abs(cos(phi))
+	var s = abs(sin(phi))
+	var r_square = 1.0 / max(c, s)
+	var final = v * (r_square / denom) * 1.15
+	final.x = clampf(final.x, -1.0, 1.0)
+	final.y = clampf(final.y, -1.0, 1.0)
+	return final
 
 func _update_octagon_visual() -> void:
 		if calib_radii.is_empty():
