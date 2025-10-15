@@ -1,0 +1,43 @@
+class_name InputCalibration
+extends Resource
+
+const CAL_PATH := "user://controller_calibration.json"
+
+var radii: Array = []
+
+static func default_radii() -> Array:
+	var a := []
+	for i in range(8):
+		a.append(1.0)
+	return a
+
+static func load_from_disk() -> InputCalibration:
+	var ic := InputCalibration.new()
+	ic.radii = default_radii()
+	if FileAccess.file_exists(CAL_PATH):
+		var txt := FileAccess.get_file_as_string(CAL_PATH)
+		var data = JSON.parse_string(txt)
+		if typeof(data) == TYPE_DICTIONARY and data.has("radii"):
+			var arr: Array = data["radii"]
+			if arr.size() == 8:
+				ic.radii = arr.duplicate(true)
+	return ic
+
+static func apply_vec(v: Vector2, radii: Array) -> Vector2:
+	if v == Vector2.ZERO:
+		return v
+	if radii.is_empty():
+		return v
+	var phi := fposmod(atan2(v.y, v.x), TAU)
+	var step := TAU / 8.0
+	var i := int(floor(phi / step))
+	var i2 := (i + 1) % 8
+	var t := (phi - float(i) * step) / step
+	var r1 := float(radii[i])
+	var r2 := float(radii[i2])
+	var r = lerp(r1, r2, t)
+	var denom = max(r, 0.0001)
+	return v / denom
+
+func apply(v: Vector2) -> Vector2:
+	return apply_vec(v, radii)

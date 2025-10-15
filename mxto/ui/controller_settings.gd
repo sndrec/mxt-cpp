@@ -3,7 +3,10 @@ extends Control
 @onready var close_button: Button = $HBoxContainer/Control/Button
 @onready var input_square: ColorRect = $HBoxContainer/Control/SteerAndPitchInputSquare
 @onready var input_dot: TextureRect = $HBoxContainer/Control/SteerAndPitchInputSquare/ControllerInputDot
+@onready var input_dot_calibrated: TextureRect = $HBoxContainer/Control/SteerAndPitchInputSquare/ControllerInputDotCalibrated
 @onready var input_area: TextureRect = $HBoxContainer/Control/SteerAndPitchInputSquare/ControllerInputArea
+@onready var octagon_line: Line2D = $HBoxContainer/Control/SteerAndPitchInputSquare/Line2D
+@onready var calibrate_button: Button = $HBoxContainer/Control/CalibrateButton
 @onready var deadzone_label: Label = $HBoxContainer/Control/Label
 @onready var deadzone_slider: HSlider = $HBoxContainer/Control/HBoxContainer/HSlider
 @onready var deadzone_field: LineEdit = $HBoxContainer/Control/HBoxContainer/LineEdit
@@ -21,6 +24,21 @@ extends Control
 var waiting_index: int = -1
 var waiting_old_text: String = ""
 var axis_baseline := {}
+
+# Calibration state
+var calibrating: bool = false
+var calib_radii: Array = [] # 8 floats for E, NE, N, NW, W, SW, S, SE
+var CAL_DIRS := [
+		Vector2(1, 0).normalized(),
+		Vector2(1, 1).normalized(),
+		Vector2(0, 1).normalized(),
+		Vector2(-1, 1).normalized(),
+		Vector2(-1, 0).normalized(),
+		Vector2(-1, -1).normalized(),
+		Vector2(0, -1).normalized(),
+		Vector2(1, -1).normalized(),
+]
+const CAL_VERSION := 1
 
 var bindings := [
 		{"button": Callable(self, "_get_btn_accel"), "type": "any", "actions": ["Accelerate"]},
@@ -51,9 +69,12 @@ func _ready() -> void:
 				b.pressed.connect(_on_binding_pressed.bind(i))
 		deadzone_slider.value_changed.connect(_on_deadzone_changed)
 		deadzone_field.text_submitted.connect(_on_deadzone_text)
+		calibrate_button.pressed.connect(_on_calibrate_pressed)
 		_load_saved_bindings()
 		_update_binding_labels()
 		_update_deadzone_ui()
+		_load_calibration()
+		_update_octagon_visual()
 		set_process(true)
 
 func open_settings() -> void:
@@ -204,20 +225,30 @@ func _finish_wait(cancel: bool=false) -> void:
 		waiting_old_text = ""
 		axis_baseline.clear()
 
+
 func _input(event: InputEvent) -> void:
-		if waiting_index == -1:
-				return
-		if event is InputEventKey and event.pressed:
-				if event.is_action_pressed("ui_cancel"):
-						_finish_wait(true)
-						accept_event()
-						return
-				if event.keycode == KEY_BACKSPACE:
-						_clear_action_events(bindings[waiting_index]["actions"])
-						_finish_wait()
-						accept_event()
-						_save_bindings()
-						return
+	if calibrating and event is InputEventJoypadButton and event.pressed:
+		var bi := (event as InputEventJoypadButton).button_index
+		if bi >= 0 and bi <= 3:
+			calibrating = false
+			calibrate_button.text = "Calibrate"
+			_save_calibration()
+			_update_octagon_visual()
+			accept_event()
+			return
+	if waiting_index == -1:
+		return
+	if event is InputEventKey and event.pressed:
+		if event.is_action_pressed("ui_cancel"):
+			_finish_wait(true)
+			accept_event()
+			return
+		if event.keycode == KEY_BACKSPACE:
+			_clear_action_events(bindings[waiting_index]["actions"])
+			_finish_wait()
+			accept_event()
+			_save_bindings()
+			return
 		if event is InputEventJoypadButton and event.pressed:
 				var info = bindings[waiting_index]
 				if info["type"] == "axis_pair":
@@ -265,12 +296,21 @@ func _process(delta: float) -> void:
 				_poll_axes_for_binding()
 		var steer_x := Input.get_axis("SteerLeft", "SteerRight")
 		var steer_y := Input.get_axis("SteerUp", "SteerDown")
+		var raw := Vector2(steer_x, steer_y)
+		if calibrating:
+				_update_calibration_with_sample(raw)
+				_update_octagon_visual()
 		var rect := input_square.get_rect()
 		var center := rect.size * 0.5
-		var pos = center + Vector2(steer_x, steer_y) * (min(rect.size.x, rect.size.y) * 0.5 - 4.0)
-		input_dot.position = pos - input_dot.pivot_offset
+		var range = min(rect.size.x, rect.size.y) * 0.5 - 4.0
+		var pos_raw = center + raw * range
+		input_dot.position = pos_raw - input_dot.pivot_offset
+		var cal := _apply_calibration(raw)
+		var pos_cal = center + cal * range
+		input_dot_calibrated.position = pos_cal - input_dot_calibrated.pivot_offset
 
 const SAVE_PATH := "user://controller_settings.json"
+const CAL_PATH := "user://controller_calibration.json"
 
 func _collect_bindings() -> Dictionary:
 		var actions := [
@@ -341,3 +381,80 @@ func _load_saved_bindings() -> void:
 				var data = JSON.parse_string(txt)
 				if typeof(data) == TYPE_DICTIONARY:
 						_apply_binding_dict(data)
+
+# Calibration: persistence and logic
+func _default_calib_radii() -> Array:
+		var a := []
+		for i in range(8):
+				a.append(1.0)
+		return a
+
+func _save_calibration() -> void:
+		var data := {
+				"version": CAL_VERSION,
+				"radii": calib_radii,
+		}
+		var f := FileAccess.open(CAL_PATH, FileAccess.WRITE)
+		if f:
+				f.store_string(JSON.stringify(data))
+				f.close()
+
+func _load_calibration() -> void:
+		calib_radii = _default_calib_radii()
+		if FileAccess.file_exists(CAL_PATH):
+				var txt := FileAccess.get_file_as_string(CAL_PATH)
+				var data = JSON.parse_string(txt)
+				if typeof(data) == TYPE_DICTIONARY and data.has("radii"):
+						var arr: Array = data["radii"]
+						if arr.size() == 8:
+								calib_radii = arr.duplicate(true)
+
+func _on_calibrate_pressed() -> void:
+		if !calibrating:
+				calibrating = true
+				calib_radii = _default_calib_radii()
+				calibrate_button.text = "Calibrating... Press A/B/X/Y to finish"
+		else:
+				calibrating = false
+				calibrate_button.text = "Calibrate"
+				_save_calibration()
+				_update_octagon_visual()
+
+func _update_calibration_with_sample(v: Vector2) -> void:
+		var mag := v.length()
+		if mag <= 0.0001:
+				return
+		var dir := v.normalized()
+		for i in range(8):
+				var r = max(0.0, dir.dot(CAL_DIRS[i]) * mag)
+				if r > calib_radii[i]:
+						calib_radii[i] = r
+
+func _apply_calibration(v: Vector2) -> Vector2:
+		if v == Vector2.ZERO:
+				return v
+		if calib_radii.is_empty():
+				return v
+		var phi := fposmod(atan2(v.y, v.x), TAU)
+		var step := TAU / 8.0
+		var i := int(floor(phi / step))
+		var i2 := (i + 1) % 8
+		var t := (phi - float(i) * step) / step
+		var r1 := float(calib_radii[i])
+		var r2 := float(calib_radii[i2])
+		var r = lerp(r1, r2, t)
+		var denom = max(r, 0.0001)
+		return v / denom
+
+func _update_octagon_visual() -> void:
+		if calib_radii.is_empty():
+				octagon_line.points = PackedVector2Array()
+				return
+		var rect := input_square.get_rect()
+		var center := rect.size * 0.5
+		var range = min(rect.size.x, rect.size.y) * 0.5 - 4.0
+		var pts := PackedVector2Array()
+		for i in range(8):
+				var p = center + CAL_DIRS[i] * float(calib_radii[i]) * range
+				pts.append(p)
+		octagon_line.points = pts

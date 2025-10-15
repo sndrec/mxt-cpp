@@ -208,8 +208,18 @@ expand_mode = 5
 points = PackedVector2Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 closed = true
 width = 2.0
+default_color = Color(0.309804, 0.756863, 0.286275, 0.87451)
 joint_mode = 2
 antialiased = true
+
+[node name="ControllerInputDotCalibrated" type="TextureRect" parent="HBoxContainer/Control/SteerAndPitchInputSquare"]
+modulate = Color(0.333333, 0.886275, 0.321569, 1)
+layout_mode = 0
+offset_right = 4.0
+offset_bottom = 4.0
+pivot_offset = Vector2(2, 2)
+texture = ExtResource("1_tjsn8")
+expand_mode = 5
 
 [node name="Label" type="Label" parent="HBoxContainer/Control"]
 layout_mode = 2
@@ -230,6 +240,5 @@ layout_mode = 2
 text = "5%"
 
 [node name="CalibrateButton" type="Button" parent="HBoxContainer/Control"]
-visible = false
 layout_mode = 2
 text = "Calibrate"
