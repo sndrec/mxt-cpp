@@ -179,6 +179,7 @@ func _on_singleplayer_button_pressed() -> void:
 	# Prepare a minimal settings array using the current local player settings.
 	singleplayer_mode = true
 	_singleplayer_tick = 0
+	network_manager.reset_race_state()
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.car_definition_path == "" and car_definitions.size() > 0:
@@ -433,25 +434,31 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if !headless_mode:
 		var obj_path = info["mxt"].get_basename() + ".obj"
 		if ResourceLoader.exists(obj_path):
-			debug_track_mesh.mesh = load(obj_path)
-			lobby_control.visible = false
-			for i in debug_track_mesh.mesh.get_surface_count():
-				var mat := debug_track_mesh.mesh.surface_get_material(i)
-				if mat.resource_name == "track_surface":
-					var new_road : ShaderMaterial = preload("res://asset/debug_track_mat.tres")
-					debug_track_mesh.mesh.surface_set_material(i, new_road)
-				if mat.resource_name == "track_rail":
-					var new_road : ShaderMaterial = preload("res://asset/debug_rail_mat.tres")
-					debug_track_mesh.mesh.surface_set_material(i, new_road)
-				if mat.resource_name == "embed_dirt":
-					var new_road : ShaderMaterial = preload("res://asset/dirt_mat.tres")
-					debug_track_mesh.mesh.surface_set_material(i, new_road)
-				if mat.resource_name == "embed_recharge":
-					var new_road : ShaderMaterial = preload("res://asset/recharge_mat.tres")
-					debug_track_mesh.mesh.surface_set_material(i, new_road)
-				if mat.resource_name == "embed_ice":
-					var new_road : ShaderMaterial = preload("res://asset/ice_mat.tres")
-					debug_track_mesh.mesh.surface_set_material(i, new_road)
+			var loaded_mesh: Mesh = load(obj_path)
+			if loaded_mesh != null:
+				var runtime_mesh: Mesh = loaded_mesh.duplicate(true)
+				debug_track_mesh.mesh = runtime_mesh
+				lobby_control.visible = false
+				for i in runtime_mesh.get_surface_count():
+					var mat := runtime_mesh.surface_get_material(i)
+					if mat == null:
+						continue
+					var mat_name := mat.resource_name
+					if mat_name == "track_surface":
+						var new_road : ShaderMaterial = preload("res://asset/debug_track_mat.tres")
+						runtime_mesh.surface_set_material(i, new_road)
+					if mat_name == "track_rail":
+						var new_road : ShaderMaterial = preload("res://asset/debug_rail_mat.tres")
+						runtime_mesh.surface_set_material(i, new_road)
+					if mat_name == "embed_dirt":
+						var new_road : ShaderMaterial = preload("res://asset/dirt_mat.tres")
+						runtime_mesh.surface_set_material(i, new_road)
+					if mat_name == "embed_recharge":
+						var new_road : ShaderMaterial = preload("res://asset/recharge_mat.tres")
+						runtime_mesh.surface_set_material(i, new_road)
+					if mat_name == "embed_ice":
+						var new_road : ShaderMaterial = preload("res://asset/ice_mat.tres")
+						runtime_mesh.surface_set_material(i, new_road)
 				#elif mat.resource_name.find("track_surface") != -1:
 					#var index := mat.resource_name.substr(14, -1).to_int()
 					#var new_road : ShaderMaterial = preload("res://asset/debug_track_mat.tres")
@@ -590,6 +597,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_return_to_menu()
 
 func _return_to_menu() -> void:
+	race_finish_label.visible = false
 	network_manager.disconnect_from_server()
 	game_sim.destroy_gamesim()
 	if network_manager.is_server:
@@ -615,6 +623,7 @@ func _return_to_menu() -> void:
 
 func _return_to_lobby() -> void:
 	game_sim.destroy_gamesim()
+	race_finish_label.visible = false
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
