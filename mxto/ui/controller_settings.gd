@@ -27,18 +27,18 @@ var axis_baseline := {}
 
 # Calibration state
 var calibrating: bool = false
-var calib_radii: Array = [] # 8 floats for E, NE, N, NW, W, SW, S, SE
-var CAL_DIRS := [
-		Vector2(1, 0).normalized(),
-		Vector2(1, 1).normalized(),
-		Vector2(0, 1).normalized(),
-		Vector2(-1, 1).normalized(),
-		Vector2(-1, 0).normalized(),
-		Vector2(-1, -1).normalized(),
-		Vector2(0, -1).normalized(),
-		Vector2(1, -1).normalized(),
-]
-const CAL_VERSION := 1
+var calib_radii: Array = [] # Sampled radii along the calibration circle
+const CAL_POINT_COUNT := 64
+const CAL_VERSION := 2
+var CAL_DIRS: Array = _build_cal_dirs()
+
+static func _build_cal_dirs() -> Array:
+		var dirs: Array = []
+		dirs.resize(CAL_POINT_COUNT)
+		for i in range(CAL_POINT_COUNT):
+				var angle := TAU * float(i) / float(CAL_POINT_COUNT)
+				dirs[i] = Vector2(cos(angle), sin(angle))
+		return dirs
 
 var bindings := [
 		{"button": Callable(self, "_get_btn_accel"), "type": "any", "actions": ["Accelerate"]},
@@ -394,9 +394,24 @@ func _has_valid_calibration() -> bool:
 
 func _default_calib_radii() -> Array:
 		var a := []
-		for i in range(8):
+		for i in range(CAL_POINT_COUNT):
 				a.append(0.0)
 		return a
+
+func _legacy_radii_to_circle(legacy: Array) -> Array:
+		var expanded := _default_calib_radii()
+		if legacy.size() != 8:
+				return expanded
+		var legacy_step := TAU / 8.0
+		for i in range(CAL_POINT_COUNT):
+				var phi := TAU * float(i) / float(CAL_POINT_COUNT)
+				var idx := int(floor(phi / legacy_step)) % 8
+				var idx2 := (idx + 1) % 8
+				var t := (phi - float(idx) * legacy_step) / legacy_step
+				var r1 := float(legacy[idx])
+				var r2 := float(legacy[idx2])
+				expanded[i] = lerp(r1, r2, t)
+		return expanded
 
 func _save_calibration() -> void:
 		var data := {
@@ -415,8 +430,10 @@ func _load_calibration() -> void:
 				var data = JSON.parse_string(txt)
 				if typeof(data) == TYPE_DICTIONARY and data.has("radii"):
 						var arr: Array = data["radii"]
-						if arr.size() == 8:
+						if arr.size() == CAL_POINT_COUNT:
 								calib_radii = arr.duplicate(true)
+						elif arr.size() == 8:
+								calib_radii = _legacy_radii_to_circle(arr)
 
 func _on_calibrate_pressed() -> void:
 		if !calibrating:
@@ -433,11 +450,18 @@ func _update_calibration_with_sample(v: Vector2) -> void:
 		var mag := v.length()
 		if mag <= 0.0001:
 				return
-		var dir := v.normalized()
-		for i in range(8):
-				var r = max(0.0, dir.dot(CAL_DIRS[i]) * mag)
-				if r > calib_radii[i]:
-						calib_radii[i] = r
+		var phi := fposmod(atan2(v.y, v.x), TAU)
+		var step := TAU / float(CAL_POINT_COUNT)
+		var i := int(floor(phi / step)) % CAL_POINT_COUNT
+		var i2 := (i + 1) % CAL_POINT_COUNT
+		var base_angle := float(i) * step
+		var delta := phi - base_angle
+		var contrib1 = max(0.0, mag * cos(delta))
+		var contrib2 = max(0.0, mag * cos(step - delta))
+		if contrib1 > calib_radii[i]:
+				calib_radii[i] = contrib1
+		if contrib2 > calib_radii[i2]:
+				calib_radii[i2] = contrib2
 
 func _apply_calibration(v: Vector2) -> Vector2:
 	if v == Vector2.ZERO:
@@ -445,9 +469,9 @@ func _apply_calibration(v: Vector2) -> Vector2:
 	if !_has_valid_calibration():
 			return v
 	var phi := fposmod(atan2(v.y, v.x), TAU)
-	var step := TAU / 8.0
-	var i := int(floor(phi / step))
-	var i2 := (i + 1) % 8
+	var step := TAU / float(CAL_POINT_COUNT)
+	var i := int(floor(phi / step)) % CAL_POINT_COUNT
+	var i2 := (i + 1) % CAL_POINT_COUNT
 	var t := (phi - float(i) * step) / step
 	var r1 := float(calib_radii[i])
 	var r2 := float(calib_radii[i2])
@@ -456,7 +480,7 @@ func _apply_calibration(v: Vector2) -> Vector2:
 	var c = abs(cos(phi))
 	var s = abs(sin(phi))
 	var r_square = 1.0 / max(c, s)
-	var final = v * (r_square / denom) * 1.15
+	var final = v * (r_square / denom) * 1.1
 	final.x = clampf(final.x, -1.0, 1.0)
 	final.y = clampf(final.y, -1.0, 1.0)
 	return final
@@ -469,7 +493,7 @@ func _update_octagon_visual() -> void:
 		var center := rect.size * 0.5
 		var range = min(rect.size.x, rect.size.y) * 0.5 - 4.0
 		var pts := PackedVector2Array()
-		for i in range(8):
+		for i in range(CAL_POINT_COUNT):
 				var p = center + CAL_DIRS[i] * float(calib_radii[i]) * range
 				pts.append(p)
 		octagon_line.points = pts
