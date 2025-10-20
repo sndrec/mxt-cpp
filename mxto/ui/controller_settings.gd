@@ -70,11 +70,13 @@ func _ready() -> void:
 		deadzone_slider.value_changed.connect(_on_deadzone_changed)
 		deadzone_field.text_submitted.connect(_on_deadzone_text)
 		calibrate_button.pressed.connect(_on_calibrate_pressed)
+		input_square.resized.connect(_update_octagon_visual)
 		_load_saved_bindings()
 		_update_binding_labels()
 		_update_deadzone_ui()
 		_load_calibration()
 		_update_octagon_visual()
+		call_deferred("_update_octagon_visual")
 		set_process(true)
 
 func open_settings() -> void:
@@ -489,11 +491,23 @@ func _update_octagon_visual() -> void:
 		if calib_radii.is_empty():
 				octagon_line.points = PackedVector2Array()
 				return
-		var rect := input_square.get_rect()
-		var center := rect.size * 0.5
-		var range = min(rect.size.x, rect.size.y) * 0.5 - 4.0
+		var radii_to_use := calib_radii
+		if !_has_valid_calibration():
+				var fallback := []
+				fallback.resize(CAL_POINT_COUNT)
+				for i in range(CAL_POINT_COUNT):
+						fallback[i] = 1.0
+				radii_to_use = fallback
+		var size := input_square.size
+		if size.x <= 0.0 or size.y <= 0.0:
+				octagon_line.points = PackedVector2Array()
+				return
+		var center := size * 0.5
+		var range = min(size.x, size.y) * 0.5 - 4.0
+		if range <= 0.0:
+				range = 0.0
 		var pts := PackedVector2Array()
 		for i in range(CAL_POINT_COUNT):
-				var p = center + CAL_DIRS[i] * float(calib_radii[i]) * range
+				var p = center + CAL_DIRS[i] * float(radii_to_use[i]) * range
 				pts.append(p)
 		octagon_line.points = pts
