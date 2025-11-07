@@ -4,7 +4,7 @@ class_name VisualCar extends Node3D
 @onready var car_camera: Camera3D = $CarCamera
 var car_definition : CarDefinition
 @onready var recharge_particles: GPUParticles3D = $CarTransform/RechargeParticles
-@onready var name_label: Label3D = $CarTransform/NameLabel
+@onready var name_label: Label = $NameLabel
 
 enum FZ_TERRAIN {
 	NORMAL = 0x1,
@@ -602,4 +602,11 @@ func _process(delta: float) -> void:
 	boost_electricity.tendril_lifetime = remap(speed_kmh, 0, 3000, 0.3, 0.1)
 	boost_electricity.calculate_electricity(delta, car_transform.global_transform)
 	is_predicted = true
+	if is_instance_valid(name_label):
+		var active_cam = get_viewport().get_camera_3d()
+		if active_cam.global_position.distance_squared_to(use_car_pos) > 3000:
+			name_label.modulate.a = lerpf(name_label.modulate.a, 0, delta * 20)
+		else:
+			name_label.modulate.a = lerpf(name_label.modulate.a, 1, delta * 20)
+		name_label.position = active_cam.unproject_position(use_car_pos) + Vector2(100, -100)
 	#DebugDraw2D.set_text("current_checkpoint", current_checkpoint)

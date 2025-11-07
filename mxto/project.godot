@@ -41,11 +41,6 @@ settings/addon_root_folder="res://addons/debug_draw_3d"
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/vsync/vsync_mode=0
-window/max_fps=0
-window/fps=120
-window/mjpeg_quality=1.0
-window/disable_vsync=true
-window/movie_file="B:/programming/mxt-cpp/movie/movie.avi"
 
 [editor]
 

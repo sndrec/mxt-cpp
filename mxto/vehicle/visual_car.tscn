@@ -1,10 +1,11 @@
-[gd_scene load_steps=16 format=3 uid="uid://cwuy4ee2yd8sc"]
+[gd_scene load_steps=18 format=3 uid="uid://cwuy4ee2yd8sc"]
 
 [ext_resource type="Script" uid="uid://ce1giyem417b6" path="res://vehicle/visual_car.gd" id="1_7f3vi"]
 [ext_resource type="PackedScene" uid="uid://32t0e0x6ldk1" path="res://ui/race_hud.tscn" id="2_trwkr"]
 [ext_resource type="PackedScene" uid="uid://7vqcg6kfw0ki" path="res://asset/effects/particles/car_landing_particles.tscn" id="3_7f3vi"]
 [ext_resource type="PackedScene" uid="uid://boy1og0xhuefn" path="res://asset/effects/particles/attack_particles.tscn" id="4_0b8fb"]
 [ext_resource type="PackedScene" uid="uid://cr0v8k0h0rb8r" path="res://asset/effect/boost_electricity.tscn" id="5_ek4m1"]
+[ext_resource type="FontFile" uid="uid://b0lon6q7rlaay" path="res://asset/font/Roboto-Condensed.ttf" id="6_hjm5e"]
 
 [sub_resource type="Curve" id="Curve_trwkr"]
 _data = [Vector2(0, 0), 0.0, 4.53242, 0, 0, Vector2(1, 0), -3.20433, 0.0, 0, 0]
@@ -69,6 +70,10 @@ material = SubResource("StandardMaterial3D_asvyg")
 radial_segments = 8
 rings = 4
 
+[sub_resource type="LabelSettings" id="LabelSettings_hjm5e"]
+font = ExtResource("6_hjm5e")
+font_size = 24
+
 [node name="CarRoot" type="Node3D"]
 process_priority = 1
 process_physics_priority = 1
@@ -130,12 +135,40 @@ transform = Transform3D(-3, 2.76542e-08, -4.52142e-07, 0, 2.9944, 0.183146, 4.52
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 emitting = false
 
-[node name="NameLabel" type="Label3D" parent="CarTransform"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 6, 0)
-pixel_size = 0.0015
-billboard = 1
-no_depth_test = true
-fixed_size = true
-text = "ROBBYDUDE"
-
 [node name="BoostElectricity" parent="." instance=ExtResource("5_ek4m1")]
+
+[node name="NameLabel" type="Label" parent="."]
+z_index = -1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -241.0
+offset_top = -91.0
+offset_right = -186.0
+offset_bottom = -58.0
+grow_horizontal = 2
+grow_vertical = 2
+text = " well hello there you little thing "
+label_settings = SubResource("LabelSettings_hjm5e")
+
+[node name="NameLabelBG" type="ColorRect" parent="NameLabel"]
+z_index = -2
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.54902)
+
+[node name="Line2D" type="Line2D" parent="NameLabel"]
+points = PackedVector2Array(0, 0, 0, 33)
+width = 2.0
+antialiased = true
+
+[node name="Line2D2" type="Line2D" parent="NameLabel"]
+points = PackedVector2Array(0, 16.5, -64, 80.5)
+width = 2.0
+antialiased = true
