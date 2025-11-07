@@ -29,6 +29,11 @@ static inline godot::Vector3 set_vec3_length(const godot::Vector3 &v, float len)
 	return godot::Vector3();
 }
 
+namespace {
+constexpr float kRespawnForwardDistance = 100.0f;
+constexpr float kMinCheckpointDistance = 0.01f;
+}
+
 godot::Vector3 PhysicsCar::prepare_machine_frame()
 {
 	// Reset input if we're in the starting countdown
@@ -2799,6 +2804,19 @@ void PhysicsCar::handle_checkpoints()
 	checkpoint_fraction = t;
 	lap_progress = (static_cast<float>(current_checkpoint) + t) / static_cast<float>(current_track->num_checkpoints);
 
+	float cp_length = cur_cp.local_distance;
+	float cp_start_distance = cur_cp.distance - cur_cp.local_distance;
+	float ground_distance = cp_start_distance + cp_length * std::clamp(checkpoint_fraction, 0.0f, 1.0f);
+	float lap_length = current_track->lap_length;
+	if (lap_length <= 0.0f && current_track->num_checkpoints > 0)
+		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+	if (lap_length > 0.0f) {
+		ground_distance = std::fmod(ground_distance, lap_length);
+		if (ground_distance < 0.0f)
+			ground_distance += lap_length;
+	}
+	checkpoint_track_distance = ground_distance;
+
 	if (lap != prev_lap) {
 		machine_state |= MACHINESTATE::CROSSEDLAPLINE_Q;
 	}
@@ -2912,32 +2930,123 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 }
 
 
+bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, godot::Transform3D &out_transform, float &out_distance) const
+{
+	out_transform = godot::Transform3D();
+	out_distance = last_ground_distance;
+
+	if (!current_track || current_track->num_checkpoints == 0 || cp_idx >= current_track->num_checkpoints)
+		return false;
+
+	const int num_checkpoints = current_track->num_checkpoints;
+	const CollisionCheckpoint &start_cp = current_track->checkpoints[cp_idx];
+
+	float lap_length = current_track->lap_length;
+	if (lap_length <= 0.0f && num_checkpoints > 0) {
+		lap_length = current_track->checkpoints[num_checkpoints - 1].distance;
+	}
+	const bool has_lap_length = lap_length > 0.0f;
+
+	auto normalize_distance = [&](float dist) -> float {
+		if (!has_lap_length)
+			return dist;
+		float normalized = std::fmod(dist, lap_length);
+		if (normalized < 0.0f)
+			normalized += lap_length;
+		return normalized;
+	};
+
+	const float start_cp_length = std::max(start_cp.local_distance, kMinCheckpointDistance);
+	const float cp_start_distance = start_cp.distance - start_cp.local_distance;
+	const float normalized_ground = normalize_distance(last_ground_distance);
+	const float normalized_cp_start = normalize_distance(cp_start_distance);
+
+	float distance_into_cp = normalized_ground - normalized_cp_start;
+	if (distance_into_cp < 0.0f && has_lap_length)
+		distance_into_cp += lap_length;
+	distance_into_cp = std::clamp(distance_into_cp, 0.0f, start_cp_length);
+
+	float remaining = kRespawnForwardDistance;
+	if (has_lap_length) {
+		remaining = std::fmod(kRespawnForwardDistance, lap_length);
+		if (remaining < 0.0f)
+			remaining += lap_length;
+		if (remaining == 0.0f)
+			remaining = lap_length;
+	}
+
+	int target_cp_idx = cp_idx;
+	float target_fraction = 0.0f;
+
+	const float distance_to_cp_end = std::max(start_cp_length - distance_into_cp, 0.0f);
+	if (remaining <= distance_to_cp_end || num_checkpoints == 1) {
+		float along = distance_into_cp + remaining;
+		float denom = std::max(start_cp_length, kMinCheckpointDistance);
+		target_fraction = std::clamp(along / denom, 0.0f, 1.0f);
+	} else {
+		remaining -= distance_to_cp_end;
+		int idx = (cp_idx + 1) % num_checkpoints;
+		int last_idx = idx;
+		for (int step = 0; step < num_checkpoints; ++step) {
+			last_idx = idx;
+			const CollisionCheckpoint &candidate = current_track->checkpoints[idx];
+			float candidate_length = std::max(candidate.local_distance, kMinCheckpointDistance);
+			if (remaining <= candidate_length) {
+				target_cp_idx = idx;
+				target_fraction = std::clamp(remaining / candidate_length, 0.0f, 1.0f);
+				remaining = 0.0f;
+				break;
+			}
+			remaining -= candidate_length;
+			idx = (idx + 1) % num_checkpoints;
+		}
+		if (remaining > 0.0f) {
+			target_cp_idx = last_idx;
+			target_fraction = 1.0f;
+		}
+	}
+
+	const CollisionCheckpoint &target_cp = current_track->checkpoints[target_cp_idx];
+	float t_y = target_cp.t_start + (target_cp.t_end - target_cp.t_start) * target_fraction;
+	t_y = std::clamp(t_y, std::min(target_cp.t_start, target_cp.t_end), std::max(target_cp.t_start, target_cp.t_end));
+
+	current_track->segments[target_cp.road_segment]
+	.road_shape->get_oriented_transform_at_time(out_transform, godot::Vector2(0.0f, t_y));
+	out_transform.basis.transpose();
+	out_transform.basis.orthonormalize();
+	out_transform.basis = out_transform.basis.rotated(out_transform.basis.get_column(1), Math_PI);
+	out_transform.origin += out_transform.basis.get_column(1) * 0.1f;
+
+	float new_distance = last_ground_distance + kRespawnForwardDistance;
+	if (has_lap_length) {
+		new_distance = std::fmod(new_distance, lap_length);
+		if (new_distance < 0.0f)
+			new_distance += lap_length;
+	}
+	out_distance = new_distance;
+
+	return true;
+}
+
 void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 {
 	if (!current_track || cp_idx >= current_track->num_checkpoints)
 		return;
 
-	const CollisionCheckpoint &cp = current_track->checkpoints[cp_idx];
-	float t_y = cp.t_start + 0.05f;
-	if (t_y > cp.t_end)
-		t_y = cp.t_end;
-
 	godot::Transform3D spawn_transform;
-	current_track->segments[cp.road_segment]
-	.road_shape->get_oriented_transform_at_time(spawn_transform,
-		godot::Vector2(0.0f, t_y));
-	spawn_transform.basis.transpose();
-	spawn_transform.basis.orthonormalize();
-	spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
-	godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.1f;
-	position_current = spawn_transform.origin + up_offset;
-	position_old = spawn_transform.origin + up_offset;
-	position_old_2 = spawn_transform.origin + up_offset;
-	position_old_dupe = spawn_transform.origin + up_offset;
+	float respawn_distance = last_ground_distance;
+	if (!compute_respawn_target(cp_idx, spawn_transform, respawn_distance))
+		return;
+
+	last_ground_distance = respawn_distance;
+	position_current = spawn_transform.origin;
+	position_old = spawn_transform.origin;
+	position_old_2 = spawn_transform.origin;
+	position_old_dupe = spawn_transform.origin;
 	position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
 
 	mtxa->push();
-	mtxa->cur->origin = spawn_transform.origin + up_offset;
+	mtxa->cur->origin = spawn_transform.origin;
 	basis_physical.basis = spawn_transform.basis;
 	basis_physical_other.basis = spawn_transform.basis;
 	rotate_mtxa_from_diff_btwn_machine_front_and_back();
@@ -2981,21 +3090,9 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 godot::Transform3D PhysicsCar::calculate_respawn_transform(uint16_t cp_idx) const
 {
 	godot::Transform3D spawn_transform;
-	if (!current_track || cp_idx >= current_track->num_checkpoints)
-		return spawn_transform;
-
-	const CollisionCheckpoint &cp = current_track->checkpoints[cp_idx];
-	float t_y = cp.t_start + 0.05f;
-	if (t_y > cp.t_end)
-		t_y = cp.t_end;
-
-	current_track->segments[cp.road_segment]
-	.road_shape->get_oriented_transform_at_time(spawn_transform,
-		godot::Vector2(0.0f, t_y));
-	spawn_transform.basis.transpose();
-	spawn_transform.basis.orthonormalize();
-	spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
-	spawn_transform.origin += spawn_transform.basis.get_column(1) * 0.1f;
+	float dummy_distance = last_ground_distance;
+	if (!compute_respawn_target(cp_idx, spawn_transform, dummy_distance))
+		return godot::Transform3D();
 	return spawn_transform;
 }
 
@@ -3090,8 +3187,10 @@ void PhysicsCar::post_tick()
 	}
 
 	handle_checkpoints();
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && (machine_state & MACHINESTATE::ZEROHP) == 0)
+	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && (machine_state & MACHINESTATE::ZEROHP) == 0) {
+		last_ground_distance = checkpoint_track_distance;
 		last_ground_checkpoint = current_checkpoint;
+	}
 };
 
 bool PhysicsCar::apply_damage(float impactStrength)

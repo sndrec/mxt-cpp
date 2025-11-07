@@ -47,6 +47,7 @@ class PhysicsCar
 {
 private:
 	float scratch_float[16];
+	bool compute_respawn_target(uint16_t cp_idx, godot::Transform3D &out_transform, float &out_distance) const;
 public:
 	MtxStack* mtxa;
 	RaceTrack* current_track = nullptr;
@@ -125,7 +126,9 @@ public:
     uint16_t current_checkpoint = 0;
     uint16_t current_collision_checkpoint = 0;
     uint16_t last_ground_checkpoint = 0;
+	float last_ground_distance = 0.0f;
     float checkpoint_fraction = 0.0f;
+	float checkpoint_track_distance = 0.0f;
 	uint8_t lap = 1; // Initialized to 1 as in MXRacer reset
 	float lap_progress = 0.0f;
 
