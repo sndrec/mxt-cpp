@@ -210,6 +210,7 @@ public:
 	void handle_suspension_states();
 	void handle_machine_turn_and_strafe(PhysicsCarSuspensionPoint& tilt_corner, float in_angle_vel);
 	void handle_linear_velocity();
+	void apply_initial_accel_activation(float effective_accel_input);
 	float handle_machine_accel_and_boost(float neg_local_fwd_speed, float abs_local_lateral_speed, float drift_accel_factor);
 	void handle_angle_velocity();
 	void handle_airborne_controls();

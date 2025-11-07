@@ -604,9 +604,9 @@ func _process(delta: float) -> void:
 	is_predicted = true
 	if is_instance_valid(name_label):
 		var active_cam = get_viewport().get_camera_3d()
-		if active_cam.global_position.distance_squared_to(use_car_pos) > 3000:
+		if active_cam.global_position.distance_squared_to(use_car_pos) > 12000 or active_cam.global_basis.z.dot(use_car_pos - active_cam.global_position) > 0:
 			name_label.modulate.a = lerpf(name_label.modulate.a, 0, delta * 20)
 		else:
 			name_label.modulate.a = lerpf(name_label.modulate.a, 1, delta * 20)
-		name_label.position = active_cam.unproject_position(use_car_pos) + Vector2(100, -100)
+		name_label.position = active_cam.unproject_position(use_car_pos + active_cam.global_basis.x * 1.5 + active_cam.global_basis.y * 1.5) + Vector2(72, -90)
 	#DebugDraw2D.set_text("current_checkpoint", current_checkpoint)

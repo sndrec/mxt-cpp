@@ -895,6 +895,27 @@ input_strafe_1_6 = input_strafe_32 / 20.0f;
 input_strafe_32 += (8.0f * input_strafe - 5.0f * input_strafe_1_6);
 };
 
+void PhysicsCar::apply_initial_accel_activation(float effective_accel_input)
+{
+	if ((machine_state & MACHINESTATE::ACTIVE) == 0) {
+		machine_state |= MACHINESTATE::ACTIVE;
+	}
+
+	if (frames_since_start_2 == 0) {
+		frames_since_start_2 = 1;
+	}
+
+	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+		if (race_start_charge > 0.0f) {
+			base_speed = 1.0f;
+			machine_state |= MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL;
+			race_start_charge = 0.0f;
+		}
+	} else {
+		race_start_charge += effective_accel_input;
+	}
+}
+
 float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, float abs_local_lateral_speed, float drift_accel_factor)
 {
 	float effective_accel_input = 0.0f;
@@ -926,20 +947,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 				base_speed = 0.0f;
 		}
 	} else {
-		if ((machine_state & MACHINESTATE::ACTIVE) == 0) {
-			machine_state |= MACHINESTATE::ACTIVE;
-			frames_since_start_2 = 1;
-		}
-
-		if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
-			if (race_start_charge > 0.0f) {
-				base_speed = 1.0f;
-				machine_state |= MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL;
-				race_start_charge = 0.0f;
-			}
-		} else {
-			race_start_charge += effective_accel_input;
-		}
+		apply_initial_accel_activation(effective_accel_input);
 	}
 
 	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
@@ -3572,6 +3580,13 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     // #########################################################
     machine_state |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
     other_machine.machine_state |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
+
+	if (frames_since_start_2 == 0) {
+		apply_initial_accel_activation(0.0f);
+	}
+	if (other_machine.frames_since_start_2 == 0) {
+		other_machine.apply_initial_accel_activation(0.0f);
+	}
 
     return true;     // collision handled
 }
