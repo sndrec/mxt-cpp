@@ -25,10 +25,10 @@ sources.append(Glob("src/car/*.cpp"))
 
 env['PDB'] = 'symbols.pdb'
 
-#if env["target"] == "debug":
-env.Append(CPPDEFINES=["DEBUG_ENABLED", "DEBUG_METHODS_ENABLED"])
-#else:
-#    env.Append(CCFLAGS=["/O2"])
+if env["target"] == "debug":
+    env.Append(CPPDEFINES=["DEBUG_ENABLED", "DEBUG_METHODS_ENABLED"])
+else:
+    env.Append(CCFLAGS=["/O2"])
 
 #if env["platform"] == "macos":
 #    library = env.SharedLibrary(

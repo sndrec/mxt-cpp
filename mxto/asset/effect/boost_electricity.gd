@@ -46,20 +46,19 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 	var difference := in_tr.origin - old_transform.origin
 	
 	for n in tendrils.size():
-		# Check if tendril data exists and is not older than 0.25s for this specific logic part
-		if tendrils[n] != null and tendrils[n].size() > 0 and cur_time - tendril_start_times[n] < tendril_lifetime: # Ensure tendril is active for this update
-			var tendril_path := tendrils[n] # Use a clearer name
+		
+		if tendrils[n] != null and tendrils[n].size() > 0 and cur_time - tendril_start_times[n] < tendril_lifetime: 
+			var tendril_path := tendrils[n] 
 			for i in tendril_path.size():
 				var ratio := float(i) / (tendril_path.size() - 1)
-				var inv_ratio := 1.0 - ratio # Corrected inv_ratio
+				var inv_ratio := 1.0 - ratio 
 				var diff_interped := difference * (inv_ratio * 0.333 + 0.666)
-				# var sloped_ratio := minf(ratio, inv_ratio) * 2.0 # This was in original, ensure it's used if intended for point update
+				
 				tendril_path[i] = tendril_path[i] + diff_interped
 				if i > 0 and i < tendril_path.size() - 1:
-					var sloped_ratio := minf(ratio, inv_ratio) * 2.0 # Apply sloped_ratio here for jitter
+					var sloped_ratio := minf(ratio, inv_ratio) * 2.0 
 					tendril_path[i] += in_tr.basis * Vector3(randf_range(-2.0, 2.0), randf_range(-0.2, 1.5), randf_range(-2.0, 2.0)) * delta * 16 * sloped_ratio
 	
-	# --- Tendril generation logic (UNCHANGED) ---
 	if boosting:
 		var num_tendrils_to_spawn := maxf(1.0, remap(tendril_lifetime, 0.25, 0.05, 1.0, 3.0))
 		queued_tendrils += num_tendrils_to_spawn * delta * 30.0
@@ -73,8 +72,8 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 			var random_end := ground.project((gbx * signf(random_start.x)).normalized() * randf_range(2.0, 4.0) + in_tr.origin + in_tr.basis.z * random_start.z * 2.0)
 			for i in new_tendril.size():
 				var ratio := float(i) / (new_tendril.size() - 1)
-				var inv_ratio := 1.0 - ratio # Corrected inv_ratio
-				var sloped_ratio := minf(ratio, inv_ratio) * 2.0 # Apply sloped_ratio here for jitter
+				var inv_ratio := 1.0 - ratio 
+				var sloped_ratio := minf(ratio, inv_ratio) * 2.0 
 				new_tendril[i] = (in_tr * random_start).lerp(random_end, ratio) + ground.normal * sloped_ratio * 3.0
 				if i > 0 and i < new_tendril.size() - 1:
 					new_tendril[i] += Vector3(randf_range(-0.333, 0.333), randf_range(-0.333, 0.333), randf_range(-0.333, 0.333))
@@ -82,7 +81,6 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 			tendril_start_times[tendril_index] = cur_time
 			tendril_index = (tendril_index + 1) % 31
 	
-	# --- Mesh Generation ---
 	var vertices = PackedVector3Array()
 	var uvs = PackedVector2Array()
 	var uvs2 = PackedVector2Array()
@@ -90,49 +88,48 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 	var indices = PackedInt32Array()
 	var current_vertex_index = 0
 
-	var camera: Camera3D = get_viewport().get_camera_3d()# if !Engine.is_editor_hint() else EditorInterface.get_editor_viewport_3d(0).get_camera_3d()
+	var camera: Camera3D = get_viewport().get_camera_3d()
 	var camera_global_origin = Vector3.ZERO 
-	if is_instance_valid(camera): # Check if camera is valid
+	if is_instance_valid(camera): 
 		camera_global_origin = camera.global_transform.origin
-	else: # Fallback if no camera
-		if Engine.is_editor_hint(): # In editor, try to use a simulated view
-			camera_global_origin = in_tr.origin + Vector3.UP * 2.0 - in_tr.basis.z * 5.0 # Arbitrary view
-		# else runtime, could use a fixed offset or a warning
-
+	else: 
+		if Engine.is_editor_hint(): 
+			camera_global_origin = in_tr.origin + Vector3.UP * 2.0 - in_tr.basis.z * 5.0 
+		
 	for i in tendrils.size():
 		var age = cur_time - tendril_start_times[i]
-		# Use 0.5s for the full lifetime of the visual mesh tendril
+		
 		if age < tendril_lifetime: 
 			var life_ratio := clampf(remap(age, 0.0, tendril_lifetime, 1.0, 0.0), 0.0, 1.0)
-			if life_ratio <= 0.001: # Skip if effectively invisible
+			if life_ratio <= 0.001: 
 				continue
 
 			var tendril_points: PackedVector3Array = tendrils[i]
 			if tendril_points == null or tendril_points.size() < 2:
 				continue
 			var current_tendril_color = electricity_color
-			current_tendril_color.a = life_ratio # Fade alpha with life_ratio
-			# Width can also diminish with age for a sparking effect
+			current_tendril_color.a = life_ratio 
+			
 			var current_segment_width = electricity_width * life_ratio 
 			for p_idx in range(tendril_points.size() - 1):
 				var p_start = tendril_points[p_idx]
 				var p_end = tendril_points[p_idx+1]
 				var segment_vector = p_end - p_start
-				if segment_vector.length_squared() < 0.00001: # Skip zero-length segments
+				if segment_vector.length_squared() < 0.00001: 
 					continue
 				
 				var segment_direction = segment_vector.normalized()
 				var segment_midpoint = (p_start + p_end) * 0.5
 				
 				var to_camera_vector = camera_global_origin - segment_midpoint
-				if to_camera_vector.length_squared() < 0.00001: # Camera is at midpoint or vector is zero
+				if to_camera_vector.length_squared() < 0.00001: 
 					if is_instance_valid(camera):
-						to_camera_vector = -camera.global_transform.basis.z # Use camera's forward direction
-					else: # Further fallback
+						to_camera_vector = -camera.global_transform.basis.z 
+					else: 
 						to_camera_vector = -(in_tr.origin - segment_midpoint).normalized()
 				var ribbon_right_vector = segment_direction.cross(to_camera_vector).normalized()
-				# Handle case where segment_direction is (anti-)parallel to to_camera_vector
-				if ribbon_right_vector.length_squared() < 0.1: # Cross product result is near zero vector
+				
+				if ribbon_right_vector.length_squared() < 0.1: 
 					var fallback_dir = Vector3.UP
 					if abs(segment_direction.dot(fallback_dir)) > 0.99:
 						fallback_dir = Vector3.RIGHT
@@ -140,26 +137,23 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 							fallback_dir = Vector3.FORWARD
 					ribbon_right_vector = segment_direction.cross(fallback_dir).normalized()
 				
-				# Define the four vertices of the quad for this segment
 				var v_s_left = p_start - ribbon_right_vector * current_segment_width * 0.5
 				var v_s_right = p_start + ribbon_right_vector * current_segment_width * 0.5
 				var v_e_left = p_end - ribbon_right_vector * current_segment_width * 0.5
 				var v_e_right = p_end + ribbon_right_vector * current_segment_width * 0.5
 				
-				vertices.append(v_s_left)    # Index + 0
-				vertices.append(v_s_right)   # Index + 1
-				vertices.append(v_e_left)    # Index + 2
-				vertices.append(v_e_right)   # Index + 3
+				vertices.append(v_s_left)    
+				vertices.append(v_s_right)   
+				vertices.append(v_e_left)    
+				vertices.append(v_e_right)   
 				
-				# UVs: U goes across the ribbon, V goes along the tendril's length
 				var v_coord_start = float(p_idx) / (tendril_points.size() - 1.0)
 				var v_coord_end = float(p_idx + 1) / (tendril_points.size() - 1.0)
 				
-				
-				uvs.append(Vector2(0, v_coord_start)) # For v_s_left
-				uvs.append(Vector2(1, v_coord_start)) # For v_s_right
-				uvs.append(Vector2(0, v_coord_end))   # For v_e_left
-				uvs.append(Vector2(1, v_coord_end))   # For v_e_right
+				uvs.append(Vector2(0, v_coord_start)) 
+				uvs.append(Vector2(1, v_coord_start)) 
+				uvs.append(Vector2(0, v_coord_end))   
+				uvs.append(Vector2(1, v_coord_end))   
 				
 				uvs2.append(Vector2(age, 0.0))
 				uvs2.append(Vector2(age, 0.0))
@@ -171,11 +165,10 @@ func calculate_electricity(delta: float, in_tr : Transform3D) -> void:
 				colors.append(current_tendril_color)
 				colors.append(current_tendril_color)
 				
-				# Triangle 1: (v_s_left, v_s_right, v_e_left)
 				indices.append(current_vertex_index + 0)
 				indices.append(current_vertex_index + 1)
 				indices.append(current_vertex_index + 2)
-				# Triangle 2: (v_e_left, v_s_right, v_e_right)
+				
 				indices.append(current_vertex_index + 2)
 				indices.append(current_vertex_index + 1)
 				indices.append(current_vertex_index + 3)
