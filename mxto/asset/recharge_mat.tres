@@ -1,10 +1,12 @@
-[gd_resource type="ShaderMaterial" load_steps=6 format=3 uid="uid://i8momx14lmfb"]
+[gd_resource type="ShaderMaterial" load_steps=7 format=3 uid="uid://i8momx14lmfb"]
 
 [ext_resource type="Texture2D" uid="uid://donkwt1u14ol3" path="res://asset/tex/pitstop.png" id="1_5w2l0"]
+[ext_resource type="Texture2D" uid="uid://braqowcagu8r4" path="res://asset/tex/random_noise.png" id="1_uk7yi"]
 [ext_resource type="Texture2D" uid="uid://b3ejtupgpp6h7" path="res://asset/tex/pitstop_dither.png" id="2_tejqh"]
 
 [sub_resource type="Shader" id="Shader_8yl70"]
 code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
+// Modified to use per-frame dithered binary transparency (discard) driven by an alpha-probability.
 
 shader_type spatial;
 render_mode blend_mix, unshaded, depth_draw_always, fog_disabled, cull_disabled, ambient_light_disabled;
@@ -15,12 +17,21 @@ uniform vec4 albedo_1_glow : source_color;
 uniform vec4 albedo_2_glow : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D texture_dither : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D alpha_dither : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
 uniform vec3 uv1_scale;
 global uniform float fog_dist;
 
+// Controls how often the dither pattern updates (set to your display refresh if you like)
+uniform float dither_fps = 360.0;
+
 void vertex() {
 	UV = UV * uv1_scale.xy;
+}
+
+// cheap hash to produce a pseudo-random value that changes each 'frame' (based on dither_fps)
+float _rand (vec2 st) {
+    return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
 }
 
 void fragment() {
@@ -49,10 +60,21 @@ void fragment() {
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
 	ROUGHNESS = 1.0;
+
+	// compute fog-based alpha target (probability that a pixel is kept)
 	float fog_mix = max(0.0, (length(VERTEX) - 500.0) / fog_dist);
 	fog_mix = clamp(pow(fog_mix, 2.0), 0.0, 1.0);
 	fog_mix = sin(fog_mix * PI * 0.5);
-	ALPHA = 1.0 - fog_mix;
+	float alpha_prob = 1.0 - fog_mix; // this is the chance to KEEP the pixel
+
+	float rnd = texture(alpha_dither, SCREEN_UV + (vec2(fract(TIME) * 490.421834)) * 8.0).r;
+
+	if (rnd > alpha_prob) {
+		discard;
+	}
+
+	// If not discarded, make fully opaque so blending is not used per-pixel.
+	ALPHA = 1.0;
 }
 
 float fresnel(float amount, vec3 normal, vec3 view)
@@ -62,18 +84,13 @@ float fresnel(float amount, vec3 normal, vec3 view)
 
 void light() {
 	float light_val = (dot(NORMAL, LIGHT) * ATTENUATION) * 0.5 + 0.5;
-	//float fres = 1.0 - fresnel(1.0, NORMAL, VIEW);
-	//float fres_outline = fresnel(16.0, NORMAL, VIEW);
-	//light_val = max(light_val - fres * 0.05, 0.0);
-	//light_val = max(light_val + fres_outline * 0.15, 0.0);
-	vec3  H		= normalize(LIGHT + VIEW);		// half-vector
+	vec3  H		= normalize(LIGHT + VIEW);
 	float ndoth	= max(dot(NORMAL, H), 0.0);
 	float spec	= pow(ndoth, 8.0) * ATTENUATION;
-	//light_val = max(light_val + spec * 1.0, 0.0);
 	vec3 final_light_val = texture(in_lightwarp, vec2(light_val, 0.0f)).rgb;
-	DIFFUSE_LIGHT += final_light_val * LIGHT_COLOR * 1.0;// * 0.3;
-	//SPECULAR_LIGHT = vec3(0.0);
-}"
+	DIFFUSE_LIGHT += final_light_val * LIGHT_COLOR * 1.0;
+}
+"
 
 [sub_resource type="Gradient" id="Gradient_uybpi"]
 interpolation_mode = 1
@@ -93,5 +110,7 @@ shader_parameter/albedo_1_glow = Color(3, 0.3, 1, 1)
 shader_parameter/albedo_2_glow = Color(0, 0, 0, 1)
 shader_parameter/texture_albedo = ExtResource("1_5w2l0")
 shader_parameter/texture_dither = ExtResource("2_tejqh")
+shader_parameter/alpha_dither = ExtResource("1_uk7yi")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
 shader_parameter/uv1_scale = Vector3(1, 1, 1)
+shader_parameter/dither_fps = 144.0

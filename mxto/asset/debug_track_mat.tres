@@ -1,5 +1,6 @@
-[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://bfxpum1jau64"]
+[gd_resource type="ShaderMaterial" load_steps=6 format=3 uid="uid://bfxpum1jau64"]
 
+[ext_resource type="Texture2D" uid="uid://braqowcagu8r4" path="res://asset/tex/random_noise.png" id="1_8yl70"]
 [ext_resource type="Texture2D" uid="uid://c7dk0u778rjsw" path="res://asset/tex/road.png" id="1_uybpi"]
 
 [sub_resource type="Shader" id="Shader_8yl70"]
@@ -11,6 +12,7 @@ render_mode blend_mix, depth_draw_always, cull_disabled, fog_disabled;
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D in_lightwarp : repeat_disable, filter_nearest;
+uniform sampler2D alpha_dither : source_color, filter_linear_mipmap, repeat_enable;
 uniform vec3 uv1_scale;
 global uniform float fog_dist;
 
@@ -30,10 +32,20 @@ void fragment() {
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
 	ROUGHNESS = 1.0;
+	// compute fog-based alpha target (probability that a pixel is kept)
 	float fog_mix = max(0.0, (length(VERTEX) - 500.0) / fog_dist);
 	fog_mix = clamp(pow(fog_mix, 2.0), 0.0, 1.0);
 	fog_mix = sin(fog_mix * PI * 0.5);
-	ALPHA = 1.0 - fog_mix;
+	float alpha_prob = 1.0 - fog_mix; // this is the chance to KEEP the pixel
+
+	float rnd = texture(alpha_dither, SCREEN_UV + (vec2(fract(TIME) * 490.421834)) * 8.0).r;
+
+	if (rnd > alpha_prob) {
+		discard;
+	}
+
+	// If not discarded, make fully opaque so blending is not used per-pixel.
+	ALPHA = 1.0;
 }
 
 float fresnel(float amount, vec3 normal, vec3 view)
@@ -71,4 +83,5 @@ shader = SubResource("Shader_8yl70")
 shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("1_uybpi")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_8yl70")
+shader_parameter/alpha_dither = ExtResource("1_8yl70")
 shader_parameter/uv1_scale = Vector3(1, 1, 1)

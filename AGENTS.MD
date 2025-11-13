@@ -4,7 +4,7 @@
 
 - **Godot Project and GDScript**  
 	Located in: `/mxto`  
-	This folder contains the Godot project and GDScript files. These are primarily for game logic and UI and are not directly involved in the physics simulation.
+	This folder contains the Godot project and GDScript files. These are primarily for game logic, rendering, and UI. GDScript is responsible for passing player data into C++ such as car stats, player info, etc... but they are not directly involved in the physics simulation.
 
 - **C++ Physics Simulation**  
 	Located in: `/src`  
@@ -27,6 +27,9 @@
 	- Optimize data layout and cache coherence.
 	- Use SIMD instructions where applicable.
 	- Avoid unnecessary abstraction or virtual calls in tight loops.
+- **Code like you're writing C!**
+  - Avoid doing anything that isn't possible to do in plain C unless it is absolutely strictly necessary.
+  - If you are going to code something that is only possible in C++, you must justify it.
 
 ## Runtime Environment
 

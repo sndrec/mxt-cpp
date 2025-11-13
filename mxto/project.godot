@@ -13,6 +13,7 @@ config_version=5
 config/name="Maxx Throttle C++"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.4", "Forward Plus")
+run/max_fps=360
 config/icon="res://icon.svg"
 
 [autoload]
@@ -40,7 +41,6 @@ settings/addon_root_folder="res://addons/debug_draw_3d"
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
-window/vsync/vsync_mode=0
 
 [editor]
 
@@ -166,7 +166,6 @@ textures/default_filters/texture_mipmap_bias=-1.0
 environment/glow/upscale_mode=0
 anti_aliasing/quality/screen_space_aa=1
 anti_aliasing/quality/use_debanding=true
-scaling_3d/vsync/vsync_mode=0
 
 [shader_globals]
 
