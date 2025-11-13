@@ -60,6 +60,7 @@ godot::Vector3 PhysicsCar::prepare_machine_frame()
 
 	state_2 &= 0xfffffcff;
 	terrain_state = 0;
+	dashplate_heat_multiplier = 1.0f;
 
 	if ((machine_state & MACHINESTATE::B29) == 0) {
 		set_terrain_state_from_track();
@@ -1009,7 +1010,11 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 			machine_state |= MACHINESTATE::BOOSTING;
 
 			boost_strength_factor = std::max(boost_strength_factor, min_boost_strength_factor);
-			boost_turbo += (2.0f * stat_boost_strength) * boost_strength_factor;
+			float dashplate_multiplier = dashplate_heat_multiplier;
+			if (dashplate_multiplier < 1.0f)
+				dashplate_multiplier = 1.0f;
+			boost_turbo += dashplate_multiplier * (2.0f * stat_boost_strength) * boost_strength_factor;
+			dashplate_heat_multiplier = 1.0f;
 		}
 
 		if (boost_frames > 0 || boost_frames_manual > 0)
@@ -3720,6 +3725,7 @@ void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
 	float accel_raw = input.accelerate;
 	update_restore(accel_raw);
+	simulation_tick = tick_count;
 
 	calced_max_energy = car_properties->max_energy;
 	initial_pos = position_current;

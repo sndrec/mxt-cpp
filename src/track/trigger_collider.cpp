@@ -3,6 +3,46 @@
 #include <cmath>
 #include <algorithm>
 #include "mxt_core/debug.hpp"
+#include "godot_cpp/variant/utility_functions.hpp"
+
+namespace {
+struct DashplateHeatPoint {
+	float time;
+	float delta;
+};
+
+constexpr DashplateHeatPoint kDashplateHeatPoints[] = {
+	{0.0f, 0.0f},
+	{1.0f, 1.0f},
+	{2.0f, 1.0f},
+	{42.0f, -20.0f}
+};
+
+constexpr int kDashplateHeatPointCount = static_cast<int>(sizeof(kDashplateHeatPoints) / sizeof(kDashplateHeatPoints[0]));
+constexpr float kDashplateSecondsPerTick = 1.0f / 60.0f;
+
+static float sample_dashplate_heat_delta(float elapsed_seconds)
+{
+	if (elapsed_seconds <= kDashplateHeatPoints[0].time)
+		return kDashplateHeatPoints[0].delta;
+
+	for (int i = 1; i < kDashplateHeatPointCount; ++i) {
+		if (elapsed_seconds <= kDashplateHeatPoints[i].time) {
+			float t0 = kDashplateHeatPoints[i - 1].time;
+			float t1 = kDashplateHeatPoints[i].time;
+			float v0 = kDashplateHeatPoints[i - 1].delta;
+			float v1 = kDashplateHeatPoints[i].delta;
+			float denom = t1 - t0;
+			if (fabsf(denom) < 1e-6f)
+				return v1;
+			float alpha = (elapsed_seconds - t0) / denom;
+			return v0 + alpha * (v1 - v0);
+		}
+	}
+
+	return kDashplateHeatPoints[kDashplateHeatPointCount - 1].delta;
+}
+}
 
 uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, const godot::Vector3 &p0, const godot::Vector3 &p1) const
 {
@@ -107,8 +147,45 @@ void TriggerCollider::start_touch(PhysicsCar* car) {}
 void TriggerCollider::touch(PhysicsCar* car) {}
 void TriggerCollider::end_touch(PhysicsCar* car) {}
 
-Dashplate::Dashplate() { type = TRIGGER_TYPE::DASHPLATE; }
-void Dashplate::start_touch(PhysicsCar* car) {}
+Dashplate::Dashplate()
+{
+	type = TRIGGER_TYPE::DASHPLATE;
+	heat = 0.0f;
+	last_activation_tick = 0;
+	has_last_activation = false;
+}
+
+void Dashplate::start_touch(PhysicsCar* car)
+{
+	if (!car)
+		return;
+
+	uint32_t current_tick = car->simulation_tick;
+	float elapsed_seconds = 0.0f;
+	if (has_last_activation) {
+		if (current_tick >= last_activation_tick) {
+			uint32_t tick_delta = current_tick - last_activation_tick;
+			elapsed_seconds = static_cast<float>(tick_delta) * kDashplateSecondsPerTick;
+		}
+	} else {
+		has_last_activation = true;
+	}
+
+	float delta_heat = has_last_activation ? sample_dashplate_heat_delta(elapsed_seconds) : 0.0f;
+	heat += delta_heat;
+	if (heat < kHeatMin)
+		heat = kHeatMin;
+	if (heat > kHeatMax)
+		heat = kHeatMax;
+
+	last_activation_tick = current_tick;
+
+	float turbo_multiplier = 1.0f + heat * kHeatTurboMultiplier;
+	car->dashplate_heat_multiplier = turbo_multiplier;
+
+	godot::UtilityFunctions::print("Dashplate heat:", heat);
+}
+
 void Dashplate::touch(PhysicsCar* car) {}
 void Dashplate::end_touch(PhysicsCar* car) {}
 

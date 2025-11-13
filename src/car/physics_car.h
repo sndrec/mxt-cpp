@@ -98,6 +98,7 @@ public:
 
 	float base_speed = 0.0f;
 	float boost_turbo = 0.0f;
+	float dashplate_heat_multiplier = 1.0f;
 	float weight_derived_1 = 0.0f;
 	float weight_derived_2 = 0.0f;
 	float weight_derived_3 = 0.0f;
@@ -108,6 +109,7 @@ public:
 	float energy = 0.0f;
 	uint32_t boost_frames = 0;
 	uint32_t boost_frames_manual = 0;
+	uint32_t simulation_tick = 0;
 	float height_adjust_from_boost = 0.0f;
 	uint32_t spinattack_direction = 0;
 	float spinattack_angle = 0.0f;

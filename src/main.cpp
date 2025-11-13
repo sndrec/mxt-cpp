@@ -1035,8 +1035,17 @@ void GameSim::fix_pointers() {
 			int seg_idx = trig->segment_index;
 			int cp_idx = trig->checkpoint_index;
 			bool exploded = false;
+			float dashplate_heat = 0.0f;
+			uint32_t dashplate_last_tick = 0;
+			bool dashplate_has_last_activation = false;
 			if (type == TRIGGER_TYPE::MINE) {
 				exploded = static_cast<Mine*>(trig)->exploded;
+			}
+			if (type == TRIGGER_TYPE::DASHPLATE) {
+				Dashplate* dash = static_cast<Dashplate*>(trig);
+				dashplate_heat = dash->heat;
+				dashplate_last_tick = dash->last_activation_tick;
+				dashplate_has_last_activation = dash->has_last_activation;
 			}
 
 			switch (type) {
@@ -1061,6 +1070,12 @@ void GameSim::fix_pointers() {
 			trig->checkpoint_index = cp_idx;
 			if (type == TRIGGER_TYPE::MINE) {
 				static_cast<Mine*>(trig)->exploded = exploded;
+			}
+			if (type == TRIGGER_TYPE::DASHPLATE) {
+				Dashplate* dash = static_cast<Dashplate*>(trig);
+				dash->heat = dashplate_heat;
+				dash->last_activation_tick = dashplate_last_tick;
+				dash->has_last_activation = dashplate_has_last_activation;
 			}
 
 			current_track->trigger_colliders[i] = trig;
