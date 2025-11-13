@@ -184,6 +184,11 @@ void Dashplate::start_touch(PhysicsCar* car)
 	car->dashplate_heat_multiplier = turbo_multiplier;
 
 	godot::UtilityFunctions::print("Dashplate heat:", heat);
+	int spark_count = static_cast<int>(std::round(heat));
+	spark_count = std::clamp(spark_count, 0, 10);
+	if (spark_count > 0) {
+		car->queue_super_sparks(spark_count);
+	}
 }
 
 void Dashplate::touch(PhysicsCar* car) {}
@@ -202,7 +207,9 @@ Mine::Mine()
 void Mine::start_touch(PhysicsCar* car)
 {
 	exploded = true;
+	if (car) {
+		car->queue_super_sparks(12);
+	}
 }
 void Mine::touch(PhysicsCar* car) {}
 void Mine::end_touch(PhysicsCar* car) {}
-

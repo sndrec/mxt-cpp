@@ -11,6 +11,7 @@ class_name GameManager extends Node
 @onready var start_race_button: Button = $Lobby/StartRaceButton
 @onready var player_list: ItemList = $Lobby/PlayerList
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
+@onready var spark_node_container: SuperSparkContainer = $GameWorld/SuperSparkContainer
 @onready var obj_container: Node3D = $GameWorld/ObjContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
@@ -422,11 +423,13 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var level_buffer := StreamPeerBuffer.new()
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	game_sim.car_node_container = car_node_container
+	game_sim.spark_node_container = spark_node_container
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
+		server_game_sim.spark_node_container = spark_node_container
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	network_manager.game_sim = game_sim

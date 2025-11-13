@@ -94,6 +94,10 @@ var race_start_charge := 0.0
 var speed_kmh := 0.0
 var air_tilt := 0.0
 var energy := 0.0
+var s_boost_charge := 0
+var s_boost_charge_max := 50
+var s_boost_active := false
+var s_boost_ready := false
 var lap_progress := 0.0
 var checkpoint_fraction := 0.0
 var input_strafe := 0.0
@@ -447,6 +451,8 @@ func just_rendered() -> void:
 		car_overlay_colour += Color.SKY_BLUE * 0.75
 	if (machine_state & FZ_MS.SPINATTACKING) != 0 or (machine_state & FZ_MS.SIDEATTACKING) != 0:
 		car_overlay_colour = car_overlay_colour.lerp(Color.YELLOW * 0.5, 0.5)
+	if s_boost_active:
+		car_overlay_colour = car_overlay_colour.lerp(Color(1.0, 0.9, 0.3), 0.6)
 	if (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
 		car_overlay_colour += Color.MAGENTA * 0.018
 	car_overlay_colour = car_overlay_colour.lerp(Color.BLACK, 0.03)

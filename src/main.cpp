@@ -14,10 +14,12 @@
 #include "godot_cpp/variant/packed_byte_array.hpp"
 #include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/string.hpp"
+#include "mxt_core/math_utils.h"
 #include <chrono>
 #include <cfenv>
 #include <cstdlib>
 #include <algorithm>
+#include <numeric>
 #include <vector>
 #include "mxt_core/debug.hpp"
 
@@ -60,7 +62,10 @@ void GameSim::_bind_methods()
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
+	ClassDB::bind_method(D_METHOD("get_spark_node_container"), &GameSim::get_spark_node_container);
+	ClassDB::bind_method(D_METHOD("set_spark_node_container", "p_spark_node_container"), &GameSim::set_spark_node_container);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
 };
 
 GameSim::GameSim()
@@ -68,6 +73,12 @@ GameSim::GameSim()
 	tick = 0;
 	tick_delta = 1.0f / 60.0f;
 	sim_started = false;
+	car_node_container = nullptr;
+	spark_node_container = nullptr;
+	super_spark_cursor = 0;
+	super_spark_rng_state = 1;
+	placement_spark_timer = 0;
+	reset_super_sparks();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
 		state_buffer[i].data = nullptr;
@@ -113,6 +124,23 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	auto start = std::chrono::high_resolution_clock::now();
 	int buf_index = tick % INPUT_BUFFER_LEN;
 	PlayerInput* slot = input_buffer + buf_index * num_cars;
+	if (num_cars <= 0 || !cars)
+	{
+		save_state();
+		tick += 1;
+		return;
+	}
+
+	std::vector<float> pre_distances;
+	pre_distances.resize(num_cars, 0.0f);
+	float lead_distance = 0.0f;
+	for (int i = 0; i < num_cars; ++i) {
+		pre_distances[i] = compute_car_distance_along_track(cars[i]);
+		if (pre_distances[i] > lead_distance) {
+			lead_distance = pre_distances[i];
+		}
+	}
+
 	for (int i = 0; i < num_cars; i++)
 	{
 		PlayerInput inp = PlayerInput::from_neutral();
@@ -124,6 +152,15 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 				inp = PlayerInput::from_dict(player_inputs[i]);
 			}
 		}
+		if (cars[i].can_start_s_boost() && inp.boost) {
+			float gap = lead_distance - pre_distances[i];
+			if (gap < 0.0f) {
+				gap = 0.0f;
+			}
+			uint32_t duration_frames = compute_s_boost_duration_frames(gap);
+			cars[i].start_s_boost(duration_frames);
+			inp.boost = false;
+		}
 		slot[i] = inp;
 		cars[i].tick(inp, tick);
 	}
@@ -131,13 +168,65 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	{
 		for (int j = i + 1; j < num_cars; j++)
 		{
-			cars[i].handle_machine_v_machine_collision(cars[j]);
+			bool collided = cars[i].handle_machine_v_machine_collision(cars[j]);
+			if (collided) {
+				const bool a_attacking = (cars[i].machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+				const bool b_attacking = (cars[j].machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+				int sparks_a = 3;
+				int sparks_b = 3;
+				if (a_attacking && b_attacking) {
+					sparks_a = 6;
+					sparks_b = 6;
+				} else if (a_attacking && !b_attacking) {
+					sparks_b = 8;
+				} else if (!a_attacking && b_attacking) {
+					sparks_a = 8;
+				}
+				if (sparks_a > 0) {
+					emit_super_sparks_from_car(cars[i], sparks_a);
+				}
+				if (sparks_b > 0) {
+					emit_super_sparks_from_car(cars[j], sparks_b);
+				}
+			}
 		}
 	}
 	for (int i = 0; i < num_cars; i++)
 	{
 		cars[i].post_tick();
+		uint8_t pending = cars[i].consume_pending_s_boost_sparks();
+		if (pending > 0) {
+			emit_super_sparks_from_car(cars[i], pending);
+		}
 	}
+
+	std::vector<float> placement_distances;
+	placement_distances.resize(num_cars, 0.0f);
+	std::vector<int> placement_indices(num_cars);
+	for (int i = 0; i < num_cars; ++i) {
+		placement_distances[i] = compute_car_distance_along_track(cars[i]);
+		placement_indices[i] = i;
+	}
+	std::sort(placement_indices.begin(), placement_indices.end(), [&](int a, int b) {
+		return placement_distances[a] > placement_distances[b];
+	});
+
+	placement_spark_timer += 1;
+	while (placement_spark_timer >= 120) {
+		if (!placement_indices.empty()) {
+			emit_super_sparks_from_car(cars[placement_indices[0]], 4);
+		}
+		if (placement_indices.size() > 1) {
+			emit_super_sparks_from_car(cars[placement_indices[1]], 3);
+		}
+		if (placement_indices.size() > 2) {
+			emit_super_sparks_from_car(cars[placement_indices[2]], 2);
+		}
+		placement_spark_timer -= 120;
+	}
+
+	update_super_sparks();
+
 	//for (int i = 0; i < num_cars; i++)
 	//{
 	//	if (i == 0){
@@ -199,30 +288,7 @@ double GameSim::get_first_lap_distance() const
 	{
 		return 0.0;
 	}
-
-	const PhysicsCar &car = cars[0];
-	float lap_length = current_track->lap_length;
-	if (lap_length <= 0.0f && current_track->num_checkpoints > 0)
-	{
-		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
-	}
-
-	float lap_progress = 0.0f;
-	int cp_idx = car.current_checkpoint;
-	if (cp_idx >= 0 && cp_idx < current_track->num_checkpoints)
-	{
-		const CollisionCheckpoint &cp = current_track->checkpoints[cp_idx];
-		float entry_distance = cp.distance - cp.local_distance;
-		if (entry_distance < 0.0f)
-		{
-			entry_distance = 0.0f;
-		}
-		float fraction = std::clamp(car.checkpoint_fraction, 0.0f, 1.0f);
-		lap_progress = entry_distance + cp.local_distance * fraction;
-	}
-
-	float lap_total = lap_progress + lap_length * fmaxf(static_cast<float>(car.lap), 0.0f);
-	return static_cast<double>(lap_total);
+	return static_cast<double>(compute_car_distance_along_track(cars[0]));
 }
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers, godot::Array accel_settings)
@@ -230,6 +296,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (Engine::get_singleton()->is_editor_hint()) return;
 
 	tick = 0;
+	reset_super_sparks();
+	super_spark_cursor = 0;
+	placement_spark_timer = 0;
+	super_spark_rng_state = static_cast<uint32_t>(spawn_seed) ^ 0xA511E9B1u;
+	if (super_spark_rng_state == 0)
+		super_spark_rng_state = 1;
 
 	int32_t buffer_size = lvldat_buf->get_size();
 
@@ -689,6 +761,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		{
 			cars[i].mtxa = &mtxa;
 			cars[i].current_track = current_track;
+			cars[i].owning_sim = this;
 			if (i < car_prop_buffers.size()) {
 				godot::PackedByteArray arr = car_prop_buffers[i];
                // StreamPeerBuffer inherits Reference; using Ref ensures
@@ -799,8 +872,179 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			sim_started = false;
 			tick = 0;
 			current_track = nullptr;
+			reset_super_sparks();
+			super_spark_cursor = 0;
+			placement_spark_timer = 0;
 		}
 	};
+
+void GameSim::reset_super_sparks()
+{
+	for (int i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
+		super_sparks[i].active = 0;
+		super_sparks[i].grounded = 0;
+		super_sparks[i].checkpoint = 0;
+		super_sparks[i].position = godot::Vector3();
+		super_sparks[i].velocity = godot::Vector3();
+		super_sparks[i].plane_normal = godot::Vector3(0.0f, 1.0f, 0.0f);
+		super_sparks[i].plane_d = 0.0f;
+	}
+}
+
+uint32_t GameSim::compute_s_boost_duration_frames(float gap_distance) const
+{
+	float seconds = 3.0f;
+	if (gap_distance <= 1000.0f) {
+		seconds = 3.0f;
+	} else if (gap_distance >= 10000.0f) {
+		seconds = 8.0f;
+	} else {
+		float t = (gap_distance - 1000.0f) / 9000.0f;
+		seconds = 3.0f + t * 5.0f;
+	}
+	uint32_t frames = static_cast<uint32_t>(seconds * 60.0f + 0.5f);
+	if (frames < 180u)
+		frames = 180u;
+	return frames;
+}
+
+float GameSim::compute_car_distance_along_track(const PhysicsCar& car) const
+{
+	if (!current_track)
+		return 0.0f;
+
+	float lap_length = current_track->lap_length;
+	if (lap_length <= 0.0f && current_track->num_checkpoints > 0) {
+		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+	}
+
+	float lap_progress = 0.0f;
+	int cp_idx = car.current_checkpoint;
+	if (cp_idx >= 0 && cp_idx < current_track->num_checkpoints) {
+		const CollisionCheckpoint& cp = current_track->checkpoints[cp_idx];
+		float entry_distance = cp.distance - cp.local_distance;
+		if (entry_distance < 0.0f) {
+			entry_distance = 0.0f;
+		}
+		float fraction = std::clamp(car.checkpoint_fraction, 0.0f, 1.0f);
+		lap_progress = entry_distance + cp.local_distance * fraction;
+	}
+
+	float lap_total = lap_progress + lap_length * std::max(static_cast<float>(car.lap), 0.0f);
+	return lap_total;
+}
+
+void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
+{
+	if (count <= 0)
+		return;
+	if (!sim_started)
+		return;
+
+	const godot::Vector3 normal_in = car.track_surface_normal.length_squared() > 0.0001f ? car.track_surface_normal.normalized() : godot::Vector3(0.0f, 1.0f, 0.0f);
+	const godot::Vector3 surface_point = car.track_surface_pos.length_squared() > 0.0f ? car.track_surface_pos : car.position_current;
+
+	auto next_rand = [&]() -> float {
+		super_spark_rng_state = super_spark_rng_state * 1664525u + 1013904223u;
+		return static_cast<float>(super_spark_rng_state & 0x00FFFFFFu) / 16777215.0f;
+	};
+	auto rand_range = [&](float min_v, float max_v) -> float {
+		return min_v + (max_v - min_v) * next_rand();
+	};
+
+	godot::Vector3 tangent_a = normal_in.cross(godot::Vector3(0.0f, 0.0f, 1.0f));
+	if (tangent_a.length_squared() < 0.0001f) {
+		tangent_a = normal_in.cross(godot::Vector3(1.0f, 0.0f, 0.0f));
+	}
+	tangent_a = tangent_a.normalized();
+	godot::Vector3 tangent_b = normal_in.cross(tangent_a).normalized();
+
+	UtilityFunctions::print("Emitting ", count, " super sparks!!");
+
+	for (int n = 0; n < count; ++n) {
+		SuperSpark& spark = super_sparks[super_spark_cursor];
+		super_spark_cursor = static_cast<uint16_t>((super_spark_cursor + 1) % SUPER_SPARK_CAPACITY);
+
+		spark.active = 1;
+		spark.grounded = 0;
+		spark.checkpoint = car.current_checkpoint;
+		spark.plane_normal = normal_in;
+		spark.plane_d = spark.plane_normal.dot(surface_point) + 1.0f;
+		spark.position = car.position_current + spark.plane_normal * 0.25f;
+
+		const float up_speed = rand_range(25.0f, 40.0f);
+		const float lateral_a = rand_range(-30.0f, 30.0f);
+		const float lateral_b = rand_range(-30.0f, 30.0f);
+
+		spark.velocity = spark.plane_normal * up_speed +
+			tangent_a * lateral_a +
+			tangent_b * lateral_b;
+	}
+}
+
+void GameSim::update_super_sparks()
+{
+	if (!sim_started || !cars)
+		return;
+
+	const float gravity_strength = 150.0f;
+	const float collect_radius_sq = SUPER_SPARK_COLLECT_RADIUS * SUPER_SPARK_COLLECT_RADIUS;
+
+	for (int i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
+		SuperSpark& spark = super_sparks[i];
+		if (!spark.active)
+			continue;
+
+		if (!spark.grounded) {
+			spark.velocity -= spark.plane_normal * (gravity_strength * _TICK_DELTA);
+			spark.position += spark.velocity * _TICK_DELTA;
+
+			float plane_distance = spark.plane_normal.dot(spark.position) - spark.plane_d;
+			if (plane_distance <= 0.0f) {
+				spark.position -= spark.plane_normal * plane_distance;
+				spark.velocity = godot::Vector3();
+				spark.grounded = 1;
+			}
+		}
+
+		for (int car_idx = 0; car_idx < num_cars; ++car_idx) {
+			PhysicsCar& car = cars[car_idx];
+			if (!car.can_collect_super_spark())
+				continue;
+			if (spark.velocity.length_squared() >= 0.001)
+				continue;
+			godot::Vector3 closest = get_closest_point_to_segment(spark.position, car.position_old, car.position_current);
+			float dist_sq = spark.position.distance_squared_to(closest);
+			if (dist_sq <= collect_radius_sq) {
+				car.add_super_spark_charge(1);
+				car.base_speed += 0.02f;
+				spark.active = 0;
+				spark.grounded = 0;
+				break;
+			}
+		}
+	}
+}
+
+void GameSim::update_super_spark_visuals()
+{
+	if (!spark_node_container)
+		return;
+
+	TypedArray<godot::Node> spark_nodes = spark_node_container->get_children();
+	int child_count = spark_nodes.size();
+	int limit = std::min(SUPER_SPARK_CAPACITY, child_count);
+	for (int i = 0; i < limit; ++i) {
+		bool active = super_sparks[i].active != 0;
+		spark_nodes[i].set("visible", active);
+		if (active) {
+			spark_nodes[i].set("position", super_sparks[i].position);
+		}
+	}
+	for (int i = limit; i < child_count; ++i) {
+		spark_nodes[i].set("visible", false);
+	}
+}
 
 	void GameSim::render_gamesim() {
 		if (!sim_started || !car_node_container || !cars) {
@@ -868,8 +1112,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			vis_cars[i].set("restore_move_frames", cars[i].restore_move_frames);
 			vis_cars[i].set("restore_start_transform", cars[i].restore_start_transform);
 			vis_cars[i].set("restore_target_transform", cars[i].restore_target_transform);
+			vis_cars[i].set("s_boost_charge", static_cast<int>(cars[i].get_s_boost_charge()));
+			vis_cars[i].set("s_boost_charge_max", static_cast<int>(cars[i].get_s_boost_max_charge()));
+			vis_cars[i].set("s_boost_active", cars[i].is_s_boost_active());
+			vis_cars[i].set("s_boost_ready", cars[i].is_s_boost_ready());
 		}
 	//mtxa.pop();
+		update_super_spark_visuals();
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 		{
 			for (int i = 0; i < current_track->num_checkpoints; i++)
@@ -1019,6 +1268,7 @@ void GameSim::fix_pointers() {
 	for (int i = 0; i < num_cars; ++i) {
 		cars[i].mtxa = &mtxa;
 		cars[i].current_track = current_track;
+		cars[i].owning_sim = this;
 		if (car_properties_array) {
 			cars[i].car_properties = &car_properties_array[i];
 		}

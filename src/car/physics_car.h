@@ -20,6 +20,10 @@
 
 #include "mxt_core/mtxa_stack.hpp"
 
+namespace godot {
+	class GameSim;
+}
+
 struct RoadData {
 	uint16_t terrain; // terrain of whatever we're sampling
 	int16_t cp_idx; // checkpoint our collision belongs to
@@ -52,6 +56,7 @@ public:
 	MtxStack* mtxa;
 	RaceTrack* current_track = nullptr;
 	PhysicsCarProperties* car_properties = nullptr; // Base properties
+	godot::GameSim* owning_sim = nullptr;
 
 	// Stats derived from car_properties and m_accel_setting, matching MXRacer members
 	float calced_max_energy = 100.0f; // Based on MXRacer's direct initialization
@@ -192,6 +197,13 @@ public:
     godot::Transform3D restore_start_transform;
     godot::Transform3D restore_target_transform;
 
+	uint16_t s_boost_charge = 0;
+	uint16_t s_boost_charge_max = 50;
+	uint32_t s_boost_frames_remaining = 0;
+	uint16_t s_boost_emit_frame_accumulator = 0;
+	uint8_t s_boost_pending_spark_spawns = 0;
+	bool s_boost_active = false;
+
 	PhysicsCarSuspensionPoint tilt_fl;
 	PhysicsCarSuspensionPoint tilt_fr;
 	PhysicsCarSuspensionPoint tilt_bl;
@@ -254,4 +266,16 @@ public:
     bool handle_machine_v_machine_collision(PhysicsCar &other_machine);
     void post_tick();
     void tick(PlayerInput input, uint32_t tick_count);
+	bool can_collect_super_spark() const;
+	void add_super_spark_charge(uint32_t amount);
+	bool can_start_s_boost() const;
+	void start_s_boost(uint32_t duration_frames);
+	void stop_s_boost();
+	void update_s_boost_state();
+	uint8_t consume_pending_s_boost_sparks();
+	bool is_s_boost_active() const { return s_boost_active; }
+	bool is_s_boost_ready() const { return !s_boost_active && s_boost_charge >= s_boost_charge_max; }
+	uint16_t get_s_boost_charge() const { return s_boost_charge; }
+	uint16_t get_s_boost_max_charge() const { return s_boost_charge_max; }
+	void queue_super_sparks(int count);
 };

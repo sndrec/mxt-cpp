@@ -1,5 +1,6 @@
 
 #include "physics_car.h"
+#include "main.h"
 #include "godot_cpp/variant/plane.hpp"
 #include "godot_cpp/variant/string.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
@@ -957,6 +958,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 	}
 
 	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+		const bool sboostActive = s_boost_active;
 		uint32_t current_machine_state = machine_state;
 		float normalized_fwd_speed = neg_local_fwd_speed / stat_weight;
 
@@ -973,7 +975,12 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		}
 
 		current_machine_state = machine_state;
-		if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
+		if (sboostActive) {
+			machine_state &= ~(MACHINESTATE::JUST_PRESSED_BOOST | MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
+			boost_frames = 0;
+			boost_frames_manual = 0;
+			dashplate_heat_multiplier = 1.0f;
+		} else if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
 			if (boost_frames == 0) {
 				bool do_manual_boost = (current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) &&
 				energy > 1.0f && effective_accel_input > 0.0f;
@@ -1026,7 +1033,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		}
 		boost_turbo = std::max(boost_turbo, 0.0f);
 
-		if (machine_state & MACHINESTATE::BOOSTING) {
+		if ((machine_state & MACHINESTATE::BOOSTING) && !sboostActive) {
 			if (boost_frames_manual > 0) {
 				energy -= 0.1666666667f * boost_energy_use_mult;
 				boost_frames_manual -= 1;
@@ -1062,7 +1069,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 
 		float accel_stat_scaled = 40.0f * stat_acceleration;
 		float target_speed_component = (effective_accel_input * accel_stat_scaled) / 348.0f;
-		if (boost_frames > 0 || boost_frames_manual > 0)
+		if (boost_frames > 0 || boost_frames_manual > 0 || sboostActive)
 		{
 			target_speed_component *= 1.0f + stat_boost_strength * stat_acceleration * 0.038f;
 		}
@@ -1078,7 +1085,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		float current_accel_magnitude = speed_factor * 4.0f * (stat_acceleration * (0.6f + stat_acceleration));
 
 		if ((machine_state & (MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::JUST_PRESSED_BOOST)) == 0) {
-			if (machine_state & MACHINESTATE::BOOSTING) {
+			if ((machine_state & MACHINESTATE::BOOSTING) || sboostActive) {
 				current_accel_magnitude *= (stat_weight <= 1000.0f) ? 0.3f : 0.5f;
 			}
 		} else {
@@ -1964,6 +1971,13 @@ void PhysicsCar::set_terrain_state_from_track()
 
 void PhysicsCar::handle_attack_states()
 {
+	if (s_boost_active) {
+		machine_state &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
+		side_attack_delay = 0;
+		spinattack_angle = 0.0f;
+		spinattack_decrement = 0.0f;
+		return;
+	}
 	if (speed_kmh < 300.0f) {
 		if (spinattack_angle == 0.0f)
 			machine_state &= ~MACHINESTATE::SPINATTACKING;
@@ -2669,7 +2683,9 @@ if (apply_full_response) {
 				base_speed_mult = 0.64f + 0.35f * sqrt_factor;
 				boost_turbo_additional_mult = 0.6f * base_speed_mult;
 			}
-			base_speed *= base_speed_mult;
+			if (!s_boost_active){
+				base_speed *= base_speed_mult;
+			}
 			boost_turbo *= (0.3f + boost_turbo_additional_mult);
 		}
 
@@ -2906,7 +2922,7 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 
 	terrain_state |= 0x40000000;			// “hit mine” flag
 
-	if(breakdown_frame_counter == 0)
+	if(!s_boost_active && breakdown_frame_counter == 0)
 	{
 		float damage = 20.0f * stat_body;
 
@@ -3106,6 +3122,9 @@ void PhysicsCar::update_restore(float accel_input)
 	if (!current_track)
 		return;
 
+	if (s_boost_active)
+		return;
+
 	bool crashed = position_current.y < current_track->minimum_y || energy <= 0.0f;
 
 	if (restore_state == 0 && crashed) {
@@ -3170,6 +3189,9 @@ void PhysicsCar::check_respawn()
 	if (!current_track)
 		return;
 
+	if (s_boost_active)
+		return;
+
 	if (position_current.y < current_track->minimum_y || energy <= 0.0f) {
 		respawn_at_checkpoint(last_ground_checkpoint);
 		if (energy < calced_max_energy * 0.5f)
@@ -3198,9 +3220,106 @@ void PhysicsCar::post_tick()
 	}
 };
 
+bool PhysicsCar::can_collect_super_spark() const
+{
+	return !s_boost_active && (machine_state & MACHINESTATE::ZEROHP) == 0;
+}
+
+void PhysicsCar::add_super_spark_charge(uint32_t amount)
+{
+	if (s_boost_active || amount == 0)
+		return;
+
+	uint32_t new_charge = static_cast<uint32_t>(s_boost_charge) + amount;
+	if (new_charge > static_cast<uint32_t>(s_boost_charge_max))
+		new_charge = s_boost_charge_max;
+	s_boost_charge = static_cast<uint16_t>(new_charge);
+}
+
+bool PhysicsCar::can_start_s_boost() const
+{
+	return !s_boost_active && s_boost_charge >= s_boost_charge_max;
+}
+
+void PhysicsCar::start_s_boost(uint32_t duration_frames)
+{
+	if (duration_frames == 0)
+		duration_frames = 1;
+
+	s_boost_active = true;
+	s_boost_frames_remaining = duration_frames;
+	s_boost_charge = 0;
+	s_boost_emit_frame_accumulator = 0;
+	s_boost_pending_spark_spawns = 0;
+	boost_frames = 0;
+	boost_frames_manual = 0;
+	boost_turbo = 0.0f;
+	dashplate_heat_multiplier = 1.0f;
+	boost_delay_frame_counter = 0;
+	car_hit_invincibility = 0;
+	machine_state &= ~(MACHINESTATE::JUST_PRESSED_BOOST |
+		MACHINESTATE::BOOSTING |
+		MACHINESTATE::BOOSTING_DASHPLATE |
+		MACHINESTATE::SIDEATTACKING |
+		MACHINESTATE::SPINATTACKING |
+		MACHINESTATE::TOOKDAMAGE |
+		MACHINESTATE::LOWGRIP);
+}
+
+void PhysicsCar::stop_s_boost()
+{
+	s_boost_active = false;
+	s_boost_frames_remaining = 0;
+	s_boost_emit_frame_accumulator = 0;
+	s_boost_pending_spark_spawns = 0;
+}
+
+void PhysicsCar::update_s_boost_state()
+{
+	if (!s_boost_active) {
+		s_boost_frames_remaining = 0;
+		s_boost_emit_frame_accumulator = 0;
+		s_boost_pending_spark_spawns = 0;
+		return;
+	}
+
+	if (s_boost_frames_remaining > 0)
+		s_boost_frames_remaining -= 1;
+
+	machine_state &= ~(MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
+
+	s_boost_emit_frame_accumulator += 1;
+	while (s_boost_emit_frame_accumulator >= 30) {
+		s_boost_emit_frame_accumulator -= 30;
+		if (s_boost_pending_spark_spawns < 255)
+			s_boost_pending_spark_spawns += 1;
+	}
+
+	if (s_boost_frames_remaining == 0) {
+		stop_s_boost();
+	}
+}
+
+uint8_t PhysicsCar::consume_pending_s_boost_sparks()
+{
+	uint8_t pending = s_boost_pending_spark_spawns;
+	s_boost_pending_spark_spawns = 0;
+	return pending;
+}
+
+void PhysicsCar::queue_super_sparks(int count)
+{
+	if (count <= 0 || owning_sim == nullptr)
+		return;
+	owning_sim->emit_super_sparks_from_car(*this, count);
+}
+
 bool PhysicsCar::apply_damage(float impactStrength)
 {
     // Already invulnerable or in breakdown? No damage is processed.
+	if (s_boost_active)
+		return false;
+
 	if (breakdown_frame_counter != 0)
 		return false;
 
@@ -3410,6 +3529,9 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     // #########################################################
     //  Very early outs
     // #########################################################
+	if (s_boost_active || other_machine.s_boost_active) {
+		return false;
+	}
     //if (((state_2 | other_machine.state_2) & 0x10) != 0)   // machines excluded from physics
     //    return false;
 
@@ -3724,8 +3846,9 @@ void PhysicsCar::test_collision_with_other_car(PhysicsCar &other_car)
 void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
 {
 	float accel_raw = input.accelerate;
-	update_restore(accel_raw);
 	simulation_tick = tick_count;
+	update_s_boost_state();
+	update_restore(accel_raw);
 
 	calced_max_energy = car_properties->max_energy;
 	initial_pos = position_current;

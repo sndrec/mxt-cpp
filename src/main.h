@@ -31,6 +31,26 @@ namespace godot {
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
+		static const int SUPER_SPARK_CAPACITY = 256;
+		static constexpr float SUPER_SPARK_COLLECT_RADIUS = 4.0f;
+		struct SuperSpark {
+			uint8_t active = 0;
+			uint8_t grounded = 0;
+			uint16_t checkpoint = 0;
+			godot::Vector3 position;
+			godot::Vector3 velocity;
+			godot::Vector3 plane_normal;
+			float plane_d = 0.0f;
+		};
+		SuperSpark super_sparks[SUPER_SPARK_CAPACITY];
+		uint16_t super_spark_cursor = 0;
+		uint32_t super_spark_rng_state = 0;
+		uint32_t placement_spark_timer = 0;
+		void reset_super_sparks();
+		void update_super_sparks();
+		void update_super_spark_visuals();
+		float compute_car_distance_along_track(const PhysicsCar& car) const;
+		uint32_t compute_s_boost_duration_frames(float gap_distance) const;
 
 	protected:
 		static void _bind_methods();
@@ -43,6 +63,7 @@ namespace godot {
 		PhysicsCarProperties* car_properties_array = nullptr;
 		MtxStack mtxa;
 		godot::Node3D* car_node_container = nullptr;
+		godot::Node3D* spark_node_container = nullptr;
 		int spawn_seed = 0;
 
 		GameSim();
@@ -53,6 +74,8 @@ namespace godot {
 		void set_spawn_seed(int p_seed) { spawn_seed = p_seed; }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
+		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }
+		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
 		void tick_gamesim(godot::Array player_inputs);
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
@@ -66,6 +89,7 @@ namespace godot {
 		bool is_dip_switch_enabled(int flag) const;
 		void set_dip_switch_enabled(int flag, bool enabled);
 		double get_first_lap_distance() const;
+		void emit_super_sparks_from_car(const PhysicsCar& car, int count);
 	};
 
 }

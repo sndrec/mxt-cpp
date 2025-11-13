@@ -14,8 +14,11 @@ class_name RaceHud extends Control
 @onready var minimap_mesh := $MinimapControl/SubViewport/MeshInstance3D
 #@onready var race_placement_hud := $RacePlacementHud
 @onready var check_control: Control = $CheckControl
+@onready var sboost_meter_bg: ColorRect = %sboost_meter_bg
+@onready var sboost_meter_fill: ColorRect = %sboost_meter_fill
 
 var car_max_energy: float = 100.0
+var _sboost_full_width: float = 0.0
 
 var placement_textures : Array[Texture] = [
 	preload("res://ui/placements/mx-1.png"),
@@ -62,6 +65,8 @@ func _ready() -> void:
 				f.seek(84)
 				car_max_energy = f.get_float()
 				f.close()
+	if sboost_meter_bg:
+		_sboost_full_width = sboost_meter_bg.size.x
 
 func _process( _delta:float ) -> void:
 	var car : VisualCar
@@ -147,4 +152,19 @@ func _process( _delta:float ) -> void:
 		real_input.modulate = Color(1, 0, 0)
 	real_input.position = Vector2(112, 112) + (move_vec * 56)
 	clamped_input.position = Vector2(112, 112) + (clamped_move_vec * 56)
+
+	if sboost_meter_bg and sboost_meter_fill:
+		var ratio := 0.0
+		if car.s_boost_charge_max > 0:
+			ratio = float(car.s_boost_charge) / float(car.s_boost_charge_max)
+		ratio = clampf(ratio, 0.0, 1.0)
+		sboost_meter_bg.visible = car.s_boost_active or ratio > 0.0
+		var width := _sboost_full_width * ratio
+		sboost_meter_fill.size.x = width
+		if car.s_boost_active:
+			sboost_meter_fill.color = Color(1.0, 0.96, 0.45, 1.0)
+		elif car.s_boost_ready:
+			sboost_meter_fill.color = Color(1.0, 0.82, 0.3, 1.0)
+		else:
+			sboost_meter_fill.color = Color(0.75, 0.65, 0.25, 1.0)
 	

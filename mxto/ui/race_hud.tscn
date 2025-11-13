@@ -112,6 +112,31 @@ mouse_filter = 2
 texture = ExtResource("2_ifpia")
 expand_mode = 2
 
+[node name="sboost_meter_bg" type="ColorRect" parent="."]
+unique_name_in_owner = true
+process_mode = 4
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.664
+anchor_top = 0.09
+anchor_right = 0.854
+anchor_bottom = 0.094
+offset_left = 0.0800171
+offset_top = 0.199997
+offset_right = -0.119995
+offset_bottom = 17.32
+mouse_filter = 2
+color = Color(0.09, 0.07, 0.02, 0.6)
+
+[node name="sboost_meter_fill" type="ColorRect" parent="sboost_meter_bg"]
+unique_name_in_owner = true
+process_mode = 4
+layout_mode = 1
+anchors_preset = -1
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(1, 0.8, 0.3, 0.9)
+
 [node name="TextureRect" type="TextureRect" parent="."]
 process_mode = 4
 layout_mode = 0

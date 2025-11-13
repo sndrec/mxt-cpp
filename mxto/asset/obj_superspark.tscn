@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3 uid="uid://dyt61on0g5qxq"]
+
+[ext_resource type="Texture2D" uid="uid://b4w6c6h47hg14" path="res://asset/gradientradial.png" id="1_nrr51"]
+
+[node name="ObjSuperspark" type="Node3D"]
+process_mode = 4
+
+[node name="Sprite3D" type="Sprite3D" parent="."]
+process_mode = 4
+modulate = Color(1, 0.85098, 0, 1)
+pixel_size = 0.005
+billboard = 1
+texture = ExtResource("1_nrr51")
