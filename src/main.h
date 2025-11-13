@@ -50,7 +50,7 @@ namespace godot {
 		void update_super_sparks();
 		void update_super_spark_visuals();
 		float compute_car_distance_along_track(const PhysicsCar& car) const;
-		uint32_t compute_s_boost_duration_frames(float gap_distance) const;
+		uint16_t compute_s_boost_duration_frames(float gap_distance) const;
 
 	protected:
 		static void _bind_methods();

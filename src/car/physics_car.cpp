@@ -1509,6 +1509,7 @@ void PhysicsCar::initialize_machine()
 
 	boost_turbo = 0.0f;
 
+	s_boost_charge_max = 50;
 	PhysicsCarSuspensionPoint* tilt_corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl,
 	&tilt_br };
 	PhysicsCarCollisionPoint* wall_corners[4] = { &wall_fl, &wall_fr, &wall_bl,
@@ -3225,15 +3226,15 @@ bool PhysicsCar::can_collect_super_spark() const
 	return !s_boost_active && (machine_state & MACHINESTATE::ZEROHP) == 0;
 }
 
-void PhysicsCar::add_super_spark_charge(uint32_t amount)
+void PhysicsCar::add_super_spark_charge(uint16_t amount)
 {
 	if (s_boost_active || amount == 0)
 		return;
 
-	uint32_t new_charge = static_cast<uint32_t>(s_boost_charge) + amount;
-	if (new_charge > static_cast<uint32_t>(s_boost_charge_max))
+	uint16_t new_charge = s_boost_charge + amount;
+	if (new_charge > s_boost_charge_max)
 		new_charge = s_boost_charge_max;
-	s_boost_charge = static_cast<uint16_t>(new_charge);
+	s_boost_charge = new_charge;
 }
 
 bool PhysicsCar::can_start_s_boost() const
@@ -3241,7 +3242,7 @@ bool PhysicsCar::can_start_s_boost() const
 	return !s_boost_active && s_boost_charge >= s_boost_charge_max;
 }
 
-void PhysicsCar::start_s_boost(uint32_t duration_frames)
+void PhysicsCar::start_s_boost(uint16_t duration_frames)
 {
 	if (duration_frames == 0)
 		duration_frames = 1;

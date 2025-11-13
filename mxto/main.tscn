@@ -17,7 +17,7 @@
 [ext_resource type="Material" uid="uid://i8momx14lmfb" path="res://asset/recharge_mat.tres" id="13_2cqfq"]
 [ext_resource type="Texture2D" uid="uid://y5bsae4e4hkl" path="res://asset/tex/cityscape.png" id="16_yaehf"]
 [ext_resource type="Texture2D" uid="uid://tv10kddv5k24" path="res://asset/tex/clouds2.png" id="17_yaehf"]
-[ext_resource type="Script" path="res://super_spark_container.gd" id="18_spark"]
+[ext_resource type="Script" uid="uid://dy134idknaa2x" path="res://super_spark_container.gd" id="18_spark"]
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
 viewport_path = NodePath("GameWorld/OutlineViewport")

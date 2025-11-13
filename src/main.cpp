@@ -157,7 +157,7 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 			if (gap < 0.0f) {
 				gap = 0.0f;
 			}
-			uint32_t duration_frames = compute_s_boost_duration_frames(gap);
+			uint16_t duration_frames = compute_s_boost_duration_frames(gap);
 			cars[i].start_s_boost(duration_frames);
 			inp.boost = false;
 		}
@@ -891,7 +891,7 @@ void GameSim::reset_super_sparks()
 	}
 }
 
-uint32_t GameSim::compute_s_boost_duration_frames(float gap_distance) const
+uint16_t GameSim::compute_s_boost_duration_frames(float gap_distance) const
 {
 	float seconds = 3.0f;
 	if (gap_distance <= 1000.0f) {
@@ -902,7 +902,7 @@ uint32_t GameSim::compute_s_boost_duration_frames(float gap_distance) const
 		float t = (gap_distance - 1000.0f) / 9000.0f;
 		seconds = 3.0f + t * 5.0f;
 	}
-	uint32_t frames = static_cast<uint32_t>(seconds * 60.0f + 0.5f);
+	uint16_t frames = static_cast<uint16_t>(seconds * 60.0f + 0.5f);
 	if (frames < 180u)
 		frames = 180u;
 	return frames;
@@ -970,7 +970,7 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 		spark.checkpoint = car.current_checkpoint;
 		spark.plane_normal = normal_in;
 		spark.plane_d = spark.plane_normal.dot(surface_point) + 1.0f;
-		spark.position = car.position_current + spark.plane_normal * 0.25f;
+		spark.position = car.position_current + spark.plane_normal * 1.5f;
 
 		const float up_speed = rand_range(25.0f, 40.0f);
 		const float lateral_a = rand_range(-30.0f, 30.0f);
@@ -1011,7 +1011,7 @@ void GameSim::update_super_sparks()
 			PhysicsCar& car = cars[car_idx];
 			if (!car.can_collect_super_spark())
 				continue;
-			if (spark.velocity.length_squared() >= 0.001)
+			if (spark.grounded == false)
 				continue;
 			godot::Vector3 closest = get_closest_point_to_segment(spark.position, car.position_old, car.position_current);
 			float dist_sq = spark.position.distance_squared_to(closest);

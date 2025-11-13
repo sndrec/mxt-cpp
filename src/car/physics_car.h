@@ -199,7 +199,7 @@ public:
 
 	uint16_t s_boost_charge = 0;
 	uint16_t s_boost_charge_max = 50;
-	uint32_t s_boost_frames_remaining = 0;
+	uint16_t s_boost_frames_remaining = 0;
 	uint16_t s_boost_emit_frame_accumulator = 0;
 	uint8_t s_boost_pending_spark_spawns = 0;
 	bool s_boost_active = false;
@@ -267,9 +267,9 @@ public:
     void post_tick();
     void tick(PlayerInput input, uint32_t tick_count);
 	bool can_collect_super_spark() const;
-	void add_super_spark_charge(uint32_t amount);
+	void add_super_spark_charge(uint16_t amount);
 	bool can_start_s_boost() const;
-	void start_s_boost(uint32_t duration_frames);
+	void start_s_boost(uint16_t duration_frames);
 	void stop_s_boost();
 	void update_s_boost_state();
 	uint8_t consume_pending_s_boost_sparks();
