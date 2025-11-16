@@ -63,6 +63,13 @@ var finish_order : Array = []
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
 
+const CPU_ID_MIN := 1
+const CPU_ID_MAX := 999
+var cpu_player_ids: Array = []
+var race_cpu_player_ids: Array = []
+var cpu_player_settings := {}
+var cpu_driver_manager: CpuDriverManager
+
 var clients_server_tick = 0
 var clients_target_tick = 0
 var last_target_tick_update = 0
@@ -128,6 +135,148 @@ func _init_logger() -> void:
 	add_child(_log_timer)
 	_log_timer.start()
 
+func set_cpu_driver_manager(manager: CpuDriverManager) -> void:
+	cpu_driver_manager = manager
+	if cpu_driver_manager != null:
+		cpu_driver_manager.configure_drivers(cpu_player_ids)
+
+func _allocate_cpu_id() -> int:
+	for id in range(CPU_ID_MIN, CPU_ID_MAX + 1):
+		if cpu_player_ids.has(id):
+			continue
+		if player_ids.has(id):
+			continue
+		if spectator_ids.has(id):
+			continue
+		return id
+	return -1
+
+func set_cpu_driver_count(count: int) -> void:
+	count = clamp(count, 0, CPU_ID_MAX - CPU_ID_MIN + 1)
+	while cpu_player_ids.size() < count:
+		_add_cpu_driver_internal()
+	while cpu_player_ids.size() > count:
+		_remove_cpu_driver_internal()
+	_sync_cpu_manager()
+	_broadcast_cpu_roster()
+
+func set_singleplayer_cpu_count(count: int) -> void:
+	set_cpu_driver_count(count)
+
+func add_cpu_driver() -> void:
+	set_cpu_driver_count(cpu_player_ids.size() + 1)
+
+func remove_cpu_driver() -> void:
+	if cpu_player_ids.size() == 0:
+		return
+	set_cpu_driver_count(cpu_player_ids.size() - 1)
+
+func _add_cpu_driver_internal() -> void:
+	var new_id := _allocate_cpu_id()
+	if new_id == -1:
+		return
+	cpu_player_ids.append(new_id)
+	var index := cpu_player_ids.size() - 1
+	var settings := game_manager.build_cpu_player_settings(index)
+	cpu_player_settings[new_id] = settings
+	player_settings[new_id] = settings
+
+func _remove_cpu_driver_internal() -> void:
+	if cpu_player_ids.is_empty():
+		return
+	var removed_id = cpu_player_ids.pop_back()
+	cpu_player_settings.erase(removed_id)
+	player_settings.erase(removed_id)
+	if race_cpu_player_ids.has(removed_id):
+		race_cpu_player_ids.erase(removed_id)
+	if pending_inputs.has(server_tick):
+		pending_inputs[server_tick].erase(removed_id)
+	for key in pending_inputs.keys():
+		pending_inputs[key].erase(removed_id)
+
+func _collect_cpu_settings_array() -> Array:
+	var arr: Array = []
+	for id in cpu_player_ids:
+		arr.append(cpu_player_settings.get(id, {}))
+	return arr
+
+@rpc("any_peer", "reliable")
+func sync_cpu_roster(ids: Array, settings_array: Array) -> void:
+	_apply_cpu_roster(ids, settings_array)
+
+func _apply_cpu_roster(ids: Array, settings_array: Array) -> void:
+	var previous := cpu_player_ids.duplicate(true)
+	cpu_player_ids = ids.duplicate(true)
+	cpu_player_settings.clear()
+	for old_id in previous:
+		if !cpu_player_ids.has(old_id):
+			player_settings.erase(old_id)
+	for i in range(ids.size()):
+		var id = ids[i]
+		var settings = {}
+		if i < settings_array.size():
+			settings = settings_array[i]
+		cpu_player_settings[id] = settings
+		player_settings[id] = settings
+	_sync_cpu_manager()
+
+func _broadcast_cpu_roster() -> void:
+	if !is_server:
+		return
+	var settings_array := _collect_cpu_settings_array()
+	_apply_cpu_roster(cpu_player_ids, settings_array)
+	if cpu_player_ids.size() == 0:
+		sync_cpu_roster.rpc([], [])
+	else:
+		sync_cpu_roster.rpc(cpu_player_ids, settings_array)
+
+func _sync_cpu_manager() -> void:
+	if cpu_driver_manager != null and (is_server or !multiplayer.has_multiplayer_peer()):
+		var roster := _get_cpu_roster()
+		cpu_driver_manager.configure_drivers(roster)
+
+func get_cpu_roster() -> Array:
+	return _get_cpu_roster()
+
+func _get_cpu_roster() -> Array:
+	return race_cpu_player_ids.duplicate(true) if race_cpu_player_ids.size() > 0 else cpu_player_ids.duplicate(true)
+
+func _get_human_roster() -> Array:
+	return race_player_ids.duplicate(true) if race_player_ids.size() > 0 else player_ids.duplicate(true)
+
+func get_simulation_roster() -> Array:
+	var roster := _get_human_roster()
+	roster.append_array(_get_cpu_roster())
+	return roster
+
+func _is_cpu_id(id: int) -> bool:
+	return cpu_player_ids.has(id) or race_cpu_player_ids.has(id)
+
+func _ensure_cpu_inputs_for_tick(tick: int) -> void:
+	if cpu_driver_manager == null:
+		return
+	var roster := _get_cpu_roster()
+	if roster.is_empty():
+		return
+	if !pending_inputs.has(tick):
+		pending_inputs[tick] = {}
+	var frame: Dictionary = pending_inputs[tick]
+	var now := 0.001 * float(Time.get_ticks_msec())
+	for id in roster:
+		if frame.has(id):
+			continue
+		var input_bytes := cpu_driver_manager.fetch_input_for_tick(id, tick)
+		frame[id] = input_bytes
+		last_input_time[id] = now
+		last_received_tick[id] = tick
+	pending_inputs[tick] = frame
+
+func get_cpu_input_for_tick(id: int, tick: int) -> PackedByteArray:
+	if cpu_driver_manager == null:
+		return NEUTRAL_INPUT_BYTES.duplicate()
+	if !_is_cpu_id(id):
+		return NEUTRAL_INPUT_BYTES.duplicate()
+	return cpu_driver_manager.fetch_input_for_tick(id, tick)
 func _flush_log() -> void:
 	if !log_enabled or log_file == null:
 		return
@@ -229,6 +378,11 @@ func reset_race_state() -> void:
 	use_physics_ticks = 1.0
 	last_target_tick_update = Time.get_ticks_msec()
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
+	player_settings.clear()
+	for id in cpu_player_ids:
+		var settings = cpu_player_settings.get(id, {})
+		player_settings[id] = settings
+	_sync_cpu_manager()
 
 func _calc_state_offsets() -> void:
 	if not is_server:
@@ -284,6 +438,7 @@ func server_process() -> void:
 				break
 			var _sim_t0 := Time.get_ticks_usec()
 			server_game_sim.tick_gamesim(server_inputs)
+			server_game_sim.render_gamesim()
 			var _sim_t1 := Time.get_ticks_usec()
 			log_sim_cpu_us_interval += _sim_t1 - _sim_t0
 			var _net_t0 := Time.get_ticks_usec()
@@ -333,6 +488,9 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
+	for id in cpu_player_ids:
+		var settings = cpu_player_settings.get(id, {})
+		player_settings[id] = settings
 	clients_server_tick = 0
 	clients_target_tick = 0
 	clients_max_ahead_from_server = 2.0
@@ -340,12 +498,15 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	race_cpu_player_ids.clear()
 	get_window().title = "Host"
 	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
 		multiplayer.peer_connected.connect(_on_peer_connected)
 	if !multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	_calc_state_offsets()
+	_sync_cpu_manager()
+	_broadcast_cpu_roster()
 	if log_file == null:
 		_init_logger()
 	return OK
@@ -381,6 +542,12 @@ func join(ip: String, port: int = 27016) -> int:
 	latest_state_tick = -1
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
+	for id in cpu_player_ids:
+		var settings = cpu_player_settings.get(id, {})
+		player_settings[id] = settings
+	cpu_player_ids.clear()
+	cpu_player_settings.clear()
+	race_cpu_player_ids.clear()
 	get_window().title = "Client " + str(multiplayer.get_unique_id())
 	if log_file == null:
 		_init_logger()
@@ -495,6 +662,8 @@ func _update_player_ids(ids: Array) -> void:
 func start_race(track_index: int, settings: Array) -> void:
 	race_active = true
 	race_player_ids = player_ids.duplicate(true)
+	race_cpu_player_ids = cpu_player_ids.duplicate(true)
+	_sync_cpu_manager()
 	emit_signal("race_started", track_index, settings)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
@@ -622,10 +791,11 @@ func collect_server_inputs() -> Array:
 		pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input_bytes
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[multiplayer.get_unique_id()] = server_tick
+	_ensure_cpu_inputs_for_tick(server_tick)
 	if server_tick > target_tick:
 		return []
 	var dict = pending_inputs[server_tick]
-	var roster : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
+	var roster : Array = get_simulation_roster()
 	var prev = authoritative_history.get(server_tick - 1, [])
 	for i in range(roster.size()):
 		var pid = roster[i]
@@ -713,7 +883,7 @@ func collect_client_inputs() -> Array:
 		authoritative_inputs.erase(local_tick)
 	else:
 		var prev_frame = input_history.get(local_tick - 1, [])
-		var roster : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
+		var roster : Array = get_simulation_roster()
 		var existing := []
 		existing.resize(roster.size())
 		for i in range(roster.size()):
@@ -924,7 +1094,7 @@ func _check_client_stalls() -> void:
 	var waiting = pending_inputs.get(server_tick, {})
 	var now := 0.001 * float(Time.get_ticks_msec())
 	var missing := []
-	var roster_chk : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
+	var roster_chk : Array = _get_human_roster()
 	for id in roster_chk:
 		if not waiting.has(id):
 			missing.append(id)
@@ -1034,7 +1204,7 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 func _recalculate_future_predictions(start_tick: int) -> void:
 	if !race_active:
 		return
-	var roster : Array = race_player_ids if race_player_ids.size() > 0 else player_ids
+	var roster : Array = get_simulation_roster()
 	netcode_core.recalc_future_predictions(start_tick, local_tick, roster, multiplayer.get_unique_id(), input_history, authoritative_inputs, NEUTRAL_INPUT_BYTES)
 
 func disconnect_from_server() -> void:

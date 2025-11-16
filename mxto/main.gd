@@ -15,6 +15,7 @@ class_name GameManager extends Node
 @onready var obj_container: Node3D = $GameWorld/ObjContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
+@onready var cpu_driver_manager: CpuDriverManager = $CpuDriverManager
 @onready var car_settings: Control = $CarSettings
 @onready var controller_settings: Control = $ControllerSettings
 @onready var car_settings_button: Button = $Control/CarSettingsButton
@@ -25,6 +26,10 @@ class_name GameManager extends Node
 @onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
 @onready var rtt_label: Label = $RTTLabel
+@onready var cpu_slider: HSlider = $Control/CpuSlider
+@onready var cpu_slider_label: Label = $Control/CpuSliderLabel
+@onready var add_cpu_button: Button = $Lobby/AddCpuButton
+@onready var remove_cpu_button: Button = $Lobby/RemoveCpuButton
 
 @onready var obj_viewport: SubViewport = $GameWorld/ObjViewport
 @onready var outline_viewport: SubViewport = $GameWorld/OutlineViewport
@@ -73,6 +78,7 @@ const ROAD_MATS = {
 # Singleplayer state
 var singleplayer_mode: bool = false
 var _singleplayer_tick: int = 0
+var singleplayer_cpu_count: int = 0
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
 
@@ -93,8 +99,22 @@ func _ready() -> void:
 	if singleplayer_button.pressed.is_connected(_on_start_button_pressed):
 		singleplayer_button.pressed.disconnect(_on_start_button_pressed)
 	singleplayer_button.pressed.connect(_on_singleplayer_button_pressed)
+	cpu_slider.value_changed.connect(_on_singleplayer_cpu_slider_changed)
+	add_cpu_button.pressed.connect(_on_add_cpu_button_pressed)
+	remove_cpu_button.pressed.connect(_on_remove_cpu_button_pressed)
+	singleplayer_cpu_count = int(cpu_slider.value)
+	_update_cpu_slider_label()
+	network_manager.set_cpu_driver_manager(cpu_driver_manager)
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
+	var cpu_idx := args.find("-cpu-drivers")
+	if cpu_idx != -1 and cpu_idx + 1 < args.size():
+		var cpu_count := int(clamp(float(args[cpu_idx + 1]), 0.0, 100.0))
+		singleplayer_cpu_count = cpu_count
+		if cpu_slider != null:
+			cpu_slider.value = singleplayer_cpu_count
+		_update_cpu_slider_label()
+		network_manager.set_cpu_driver_count(cpu_count)
 	if args.has("--host"):
 		call_deferred("_auto_host")
 	if headless_mode:
@@ -131,6 +151,30 @@ func _load_tracks() -> void:
 		track_selector.selected = 0
 		lobby_track_selector.selected = 0
 
+func get_cpu_driver_manager() -> CpuDriverManager:
+	return cpu_driver_manager
+
+func get_car_definition_paths() -> Array:
+	var paths: Array = []
+	for def in car_definitions:
+		if def is Resource:
+			var path = def.resource_path
+			if path != "":
+				paths.append(path)
+	return paths
+
+func build_cpu_player_settings(index: int) -> Dictionary:
+	var ps := PlayerSettings.new()
+	ps.username = "CPU %03d" % (index + 1)
+	var defs := get_car_definition_paths()
+	if defs.size() > 0:
+		ps.car_definition_path = defs[index % defs.size()]
+	else:
+		ps.car_definition_path = ""
+	ps.accel_setting = 1.0
+	ps.spectator = false
+	return ps.to_dict()
+
 func _scan_dir(path: String) -> void:
 	var dir := DirAccess.open(path)
 	if dir == null:
@@ -153,7 +197,7 @@ func _scan_dir(path: String) -> void:
 
 func _load_car_definitions() -> void:
 	car_definitions.clear()
-	var dir := DirAccess.open("res://vehicle/asset")
+	var dir = DirAccess.open("res://vehicle/asset")
 	if dir == null:
 		return
 	dir.list_dir_begin()
@@ -181,6 +225,7 @@ func _on_singleplayer_button_pressed() -> void:
 	singleplayer_mode = true
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
+	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.car_definition_path == "" and car_definitions.size() > 0:
@@ -190,7 +235,13 @@ func _on_singleplayer_button_pressed() -> void:
 	# Provide a local-only roster to satisfy parts of the UI and car ownership logic
 	network_manager.player_ids = [multiplayer.get_unique_id()]
 	# Invoke the normal race startup, but driven entirely by local state
-	_start_race(track_selector.selected, [ps.to_dict()])
+	var settings_array: Array = [ps.to_dict()]
+	var cpu_ids := network_manager.get_cpu_roster()
+	for i in range(cpu_ids.size()):
+		var cpu_id = cpu_ids[i]
+		var cpu_settings = network_manager.player_settings.get(cpu_id, build_cpu_player_settings(i))
+		settings_array.append(cpu_settings)
+	_start_race(track_selector.selected, settings_array)
 	# Hide menus
 	$Control.visible = false
 	lobby_control.visible = false
@@ -208,6 +259,24 @@ func _on_join_button_pressed() -> void:
 
 func _auto_host() -> void:
 	_on_start_button_pressed()
+
+func _on_singleplayer_cpu_slider_changed(value: float) -> void:
+	singleplayer_cpu_count = int(round(value))
+	_update_cpu_slider_label()
+
+func _update_cpu_slider_label() -> void:
+	if cpu_slider_label:
+		cpu_slider_label.text = "CPU Racers: %d" % singleplayer_cpu_count
+
+func _on_add_cpu_button_pressed() -> void:
+	if !network_manager.is_server:
+		return
+	network_manager.add_cpu_driver()
+
+func _on_remove_cpu_button_pressed() -> void:
+	if !network_manager.is_server:
+		return
+	network_manager.remove_cpu_driver()
 
 func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 	var pb := StreamPeerBuffer.new()
@@ -367,6 +436,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var parsed_settings : Array = []
 	var racer_settings : Array = []
 	var racer_ids : Array = []
+	var racer_cpu_flags : Array = []
+	var roster := network_manager.get_simulation_roster()
+	var cpu_ids := network_manager.get_cpu_roster()
 	for i in range(settings.size()):
 		var d = settings[i]
 		if typeof(d) == TYPE_DICTIONARY:
@@ -378,9 +450,10 @@ func _start_race(track_index: int, settings: Array) -> void:
 				var def_res := load(ps.car_definition_path)
 				if def_res != null:
 					chosen_defs.append(def_res)
-				var roster = network_manager.race_player_ids if network_manager.race_player_ids.size() > 0 else network_manager.player_ids
 				if i < roster.size():
-					racer_ids.append(roster[i])
+					var pid = roster[i]
+					racer_ids.append(pid)
+					racer_cpu_flags.append(cpu_ids.has(pid))
 	local_player_index = racer_ids.find(multiplayer.get_unique_id())
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_player_index)
 	var idx := 0
@@ -391,7 +464,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 			car.name_label.text = " " + racer_settings[idx].username + " "
 		idx += 1
 	for p in players:
-		p.queue_free()
+		if p != null:
+			p.queue_free()
 	players.clear()
 	if spectator_node:
 		spectator_node.queue_free()
@@ -399,6 +473,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var car_props : Array = []
 	var accel_settings_arr : Array = []
 	for i in racer_settings.size():
+		if racer_cpu_flags[i]:
+			players.append(null)
+			continue
 		var pc := player_scene.instantiate()
 		pc.car_definition = chosen_defs[i]
 		pc.accel_setting = racer_settings[i].accel_setting
@@ -427,11 +504,23 @@ func _start_race(track_index: int, settings: Array) -> void:
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
+	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
 		server_game_sim.spark_node_container = spark_node_container
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
+		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
+	if singleplayer_mode:
+		game_sim.set_cpu_driver_manager(cpu_driver_manager)
+		if network_manager.is_server:
+			server_game_sim.set_cpu_driver_manager(cpu_driver_manager)
+	elif network_manager.is_server:
+		game_sim.set_cpu_driver_manager(null)
+		server_game_sim.set_cpu_driver_manager(cpu_driver_manager)
+	else:
+		game_sim.set_cpu_driver_manager(null)
+		server_game_sim.set_cpu_driver_manager(null)
 	network_manager.game_sim = game_sim
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim
@@ -486,7 +575,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
 		var settings_array : Array = []
-		for id in network_manager.player_ids:
+		var roster := network_manager.get_simulation_roster()
+		for id in roster:
 			var ps = network_manager.player_settings.get(id, null)
 			if ps == null:
 				var def_path = car_definitions[randi() % car_definitions.size()].resource_path
@@ -512,12 +602,16 @@ func _on_network_race_finished() -> void:
 
 func _update_player_list() -> void:
 	player_list.clear()
-	for id in network_manager.player_ids:
+	var roster := network_manager.get_simulation_roster()
+	var cpu_ids := network_manager.get_cpu_roster()
+	for id in roster:
 		var name := str(id)
 		if network_manager.player_settings.has(id):
 			var ps = network_manager.player_settings[id]
 			if typeof(ps) == TYPE_DICTIONARY and ps.has("username"):
 				name = ps["username"]
+		if cpu_ids.has(id):
+			name = "[CPU] " + name
 		player_list.add_item(name)
 
 func _physics_process(delta: float) -> void:
@@ -530,6 +624,9 @@ func _physics_process(delta: float) -> void:
 		return
 	if lobby_control.visible:
 		_update_player_list()
+		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
+		add_cpu_button.disabled = !can_edit_cpu
+		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
 	if game_sim.sim_started:
 		var local_pi := PlayerInputClass.new()
 		if players.size() > local_player_index:
@@ -552,11 +649,23 @@ func _simulate_singleplayer_tick():
 	# Build one frame of inputs locally for every racer and advance the single GameSim.
 	var start_time := Time.get_ticks_usec()
 	var frame_inputs : Array = []
-	for i in range(players.size()):
-		var pi : PlayerInput = PlayerInputClass.new()
+	var roster := network_manager.get_simulation_roster()
+	var cpu_ids := network_manager.get_cpu_roster()
+	var neutral_input := PlayerInputClass.new().serialize()
+	for i in range(roster.size()):
+		var controller = null
 		if i < players.size():
-			pi = players[i].get_input()
-		frame_inputs.append(pi.serialize())
+			controller = players[i]
+		var input_bytes : PackedByteArray
+		if controller != null:
+			var pi : PlayerInput = controller.get_input()
+			input_bytes = pi.serialize()
+		else:
+			if cpu_ids.has(roster[i]):
+				input_bytes = network_manager.get_cpu_input_for_tick(roster[i], _singleplayer_tick)
+			else:
+				input_bytes = neutral_input.duplicate()
+		frame_inputs.append(input_bytes)
 	game_sim.tick_gamesim(frame_inputs)
 	_singleplayer_tick += 1
 	# Update HUD timing using the same field clients use
@@ -577,6 +686,7 @@ func _simulate_host_frame():
 		if server_inputs.is_empty():
 			break
 		server_game_sim.tick_gamesim(server_inputs)
+		server_game_sim.render_gamesim()
 		network_manager.post_tick()
 		loops += 1
 	var client_inputs := network_manager.collect_client_inputs()

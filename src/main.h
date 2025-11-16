@@ -50,11 +50,15 @@ namespace godot {
 		};
 		SuperSparkState* super_spark_state = nullptr;
 		SuperSpark* super_sparks = nullptr;
+		godot::Object* cpu_driver_manager = nullptr;
+		int32_t* car_player_ids = nullptr;
+		uint8_t* car_is_cpu = nullptr;
 		void reset_super_sparks();
 		void update_super_sparks();
 		void update_super_spark_visuals();
 		float compute_car_distance_along_track(const PhysicsCar& car) const;
 		uint16_t compute_s_boost_duration_frames(float gap_distance) const;
+		godot::PackedByteArray build_cpu_observation(const PhysicsCar& car) const;
 
 	protected:
 		static void _bind_methods();
@@ -84,6 +88,9 @@ namespace godot {
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
 		void render_gamesim();
+		void set_cpu_driver_manager(godot::Object* manager);
+		godot::Object* get_cpu_driver_manager() const { return cpu_driver_manager; }
+		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);
 		void save_state();
 		void load_state(int target_tick);
 		godot::PackedByteArray get_state_data(int target_tick) const;

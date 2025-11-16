@@ -14,6 +14,7 @@
 #include "godot_cpp/variant/packed_byte_array.hpp"
 #include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/string.hpp"
+#include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "mxt_core/math_utils.h"
 #include <chrono>
 #include <cfenv>
@@ -59,6 +60,9 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("get_first_lap_distance"), &GameSim::get_first_lap_distance);
+	ClassDB::bind_method(D_METHOD("set_cpu_driver_manager", "manager"), &GameSim::set_cpu_driver_manager);
+	ClassDB::bind_method(D_METHOD("get_cpu_driver_manager"), &GameSim::get_cpu_driver_manager);
+	ClassDB::bind_method(D_METHOD("set_player_metadata", "player_ids", "cpu_flags"), &GameSim::set_player_metadata);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -836,6 +840,18 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
 			input_buffer[i] = PlayerInput::from_neutral();
 		}
+		if (car_player_ids) {
+			::free(car_player_ids);
+		}
+		if (car_is_cpu) {
+			::free(car_is_cpu);
+		}
+		car_player_ids = static_cast<int32_t*>(malloc(sizeof(int32_t) * num_cars));
+		car_is_cpu = static_cast<uint8_t*>(malloc(sizeof(uint8_t) * num_cars));
+		for (int i = 0; i < num_cars; ++i) {
+			car_player_ids[i] = -1;
+			car_is_cpu[i] = 0;
+		}
 
 		sim_started = true;
 		UtilityFunctions::print("finished constructing level!");
@@ -884,7 +900,84 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			tick = 0;
 			current_track = nullptr;
 		}
+		if (car_player_ids) {
+			::free(car_player_ids);
+			car_player_ids = nullptr;
+		}
+		if (car_is_cpu) {
+			::free(car_is_cpu);
+			car_is_cpu = nullptr;
+		}
+		cpu_driver_manager = nullptr;
 	};
+
+void GameSim::set_cpu_driver_manager(godot::Object* manager)
+{
+	cpu_driver_manager = manager;
+}
+
+void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flags)
+{
+	if (!car_player_ids || !car_is_cpu) {
+		return;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		car_player_ids[i] = -1;
+		car_is_cpu[i] = 0;
+	}
+	const int limit = std::min(num_cars, static_cast<int>(player_ids.size()));
+	for (int i = 0; i < limit; ++i) {
+		godot::Variant id_var = player_ids[i];
+		int32_t pid = -1;
+		if (id_var.get_type() == godot::Variant::INT) {
+			pid = static_cast<int32_t>(id_var.operator int64_t());
+		} else if (id_var.get_type() == godot::Variant::FLOAT) {
+			pid = static_cast<int32_t>(id_var.operator double());
+		}
+		car_player_ids[i] = pid;
+		bool is_cpu = false;
+		if (i < cpu_flags.size()) {
+			godot::Variant flag_var = cpu_flags[i];
+			if (flag_var.get_type() == godot::Variant::BOOL) {
+				is_cpu = static_cast<bool>(flag_var);
+			} else if (flag_var.get_type() == godot::Variant::INT) {
+				is_cpu = flag_var.operator int64_t() != 0;
+			}
+		}
+		car_is_cpu[i] = is_cpu ? 1 : 0;
+	}
+}
+
+godot::PackedByteArray GameSim::build_cpu_observation(const PhysicsCar& car) const
+{
+	godot::Ref<godot::StreamPeerBuffer> buffer;
+	buffer.instantiate();
+	buffer->seek(0);
+	auto write_vec3 = [&](const godot::Vector3& v) {
+		buffer->put_float(v.x);
+		buffer->put_float(v.y);
+		buffer->put_float(v.z);
+	};
+	write_vec3(car.road_sample.spatial_t);
+	buffer->put_float(car.road_sample.road_t.x);
+	buffer->put_float(car.road_sample.road_t.y);
+	write_vec3(car.position_current);
+	write_vec3(car.velocity);
+	write_vec3(car.velocity_angular);
+	const godot::Basis basis = car.basis_physical.basis;
+	for (int col = 0; col < 3; ++col) {
+		write_vec3(basis.get_column(col));
+	}
+	write_vec3(car.basis_physical.origin);
+	buffer->put_float(car.base_speed);
+	buffer->put_float(car.energy);
+	buffer->put_float(car.checkpoint_fraction);
+	buffer->put_u16(car.current_checkpoint);
+	buffer->put_u32(car.terrain_state);
+	buffer->put_u32(car.machine_state);
+	buffer->put_u8(car.restore_state);
+	return buffer->get_data_array();
+}
 
 void GameSim::reset_super_sparks()
 {
@@ -1131,6 +1224,18 @@ void GameSim::update_super_spark_visuals()
 			vis_cars[i].set("s_boost_charge_max", static_cast<int>(cars[i].get_s_boost_max_charge()));
 			vis_cars[i].set("s_boost_active", cars[i].is_s_boost_active());
 			vis_cars[i].set("s_boost_ready", cars[i].is_s_boost_ready());
+			if (cpu_driver_manager && car_player_ids && car_is_cpu && car_is_cpu[i]) {
+				int32_t pid = car_player_ids[i];
+				if (pid != -1) {
+					godot::PackedByteArray obs = build_cpu_observation(cars[i]);
+					godot::Array args;
+					args.resize(3);
+					args[0] = pid;
+					args[1] = tick;
+					args[2] = obs;
+					cpu_driver_manager->callv("submit_observation", args);
+				}
+			}
 		}
 	//mtxa.pop();
 		update_super_spark_visuals();

@@ -57,6 +57,7 @@ public:
 	RaceTrack* current_track = nullptr;
 	PhysicsCarProperties* car_properties = nullptr; // Base properties
 	godot::GameSim* owning_sim = nullptr;
+	RoadData road_sample{};
 
 	// Stats derived from car_properties and m_accel_setting, matching MXRacer members
 	float calced_max_energy = 100.0f; // Based on MXRacer's direct initialization

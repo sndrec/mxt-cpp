@@ -433,6 +433,11 @@ void PhysicsCar::handle_machine_damage_and_visuals()
 
 bool PhysicsCar::find_floor_beneath_machine()
 {
+	road_sample.terrain = 0;
+	road_sample.road_t = godot::Vector2();
+	road_sample.spatial_t = godot::Vector3();
+	road_sample.closest_surface = godot::Transform3D();
+	road_sample.closest_root = RoadTransform();
 	bool stay_on = false;
 	bool cylinder = false;
 	bool pipe = false;
@@ -482,6 +487,7 @@ bool PhysicsCar::find_floor_beneath_machine()
 	RoadTransform root;
 	const TrackSegment &segment     = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
 	segment.curve_matrix->sample(root, road_t_sample_raw.y);
+	road_sample.closest_root = root;
 	godot::Transform3D surf;
 
 	//if (cylinder || pipe)
@@ -532,6 +538,9 @@ bool PhysicsCar::find_floor_beneath_machine()
 	segment.road_shape->get_oriented_transform_at_time(surf, road_t_sample_raw);
 	track_surface_normal = surf.basis[1];
 	height_above_track = fmaxf(1.0f, 20.0f - (position_current - surf.origin).dot(track_surface_normal));
+	road_sample.road_t = road_t_sample_raw;
+	road_sample.spatial_t = spatial_t_sample;
+	road_sample.closest_surface = surf;
 
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 	//dd3d->call("draw_arrow", surf.origin, surf.origin + track_surface_normal * 40.0f, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
