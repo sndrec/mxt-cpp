@@ -630,7 +630,9 @@ func _physics_process(delta: float) -> void:
 	if game_sim.sim_started:
 		var local_pi := PlayerInputClass.new()
 		if players.size() > local_player_index:
-			local_pi = players[local_player_index].get_input()
+			var controller = players[local_player_index]
+			if controller != null:
+				local_pi = controller.get_input()
 		var input_bytes := local_pi.serialize()
 		if singleplayer_mode:
 			_simulate_singleplayer_tick()
@@ -723,7 +725,8 @@ func _return_to_menu() -> void:
 		obj.queue_free()
 	trigger_objects.clear()
 	for p in players:
-		p.queue_free()
+		if p != null:
+			p.queue_free()
 	players.clear()
 	if spectator_node:
 		spectator_node.queue_free()
