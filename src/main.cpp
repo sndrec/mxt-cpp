@@ -75,9 +75,8 @@ GameSim::GameSim()
 	sim_started = false;
 	car_node_container = nullptr;
 	spark_node_container = nullptr;
-	super_spark_cursor = 0;
-	super_spark_rng_state = 1;
-	placement_spark_timer = 0;
+	super_spark_state = nullptr;
+	super_sparks = nullptr;
 	reset_super_sparks();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
@@ -211,18 +210,20 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 		return placement_distances[a] > placement_distances[b];
 	});
 
-	placement_spark_timer += 1;
-	while (placement_spark_timer >= 120) {
-		if (!placement_indices.empty()) {
-			emit_super_sparks_from_car(cars[placement_indices[0]], 4);
+	if (super_spark_state) {
+		super_spark_state->placement_timer += 1;
+		while (super_spark_state->placement_timer >= 120) {
+			if (!placement_indices.empty()) {
+				emit_super_sparks_from_car(cars[placement_indices[0]], 4);
+			}
+			if (placement_indices.size() > 1) {
+				emit_super_sparks_from_car(cars[placement_indices[1]], 3);
+			}
+			if (placement_indices.size() > 2) {
+				emit_super_sparks_from_car(cars[placement_indices[2]], 2);
+			}
+			super_spark_state->placement_timer -= 120;
 		}
-		if (placement_indices.size() > 1) {
-			emit_super_sparks_from_car(cars[placement_indices[1]], 3);
-		}
-		if (placement_indices.size() > 2) {
-			emit_super_sparks_from_car(cars[placement_indices[2]], 2);
-		}
-		placement_spark_timer -= 120;
 	}
 
 	update_super_sparks();
@@ -296,18 +297,26 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (Engine::get_singleton()->is_editor_hint()) return;
 
 	tick = 0;
-	reset_super_sparks();
-	super_spark_cursor = 0;
-	placement_spark_timer = 0;
-	super_spark_rng_state = static_cast<uint32_t>(spawn_seed) ^ 0xA511E9B1u;
-	if (super_spark_rng_state == 0)
-		super_spark_rng_state = 1;
 
 	int32_t buffer_size = lvldat_buf->get_size();
 
 	level_data.instantiate(1024 * 1024 * 16);
 
 	gamestate_data.instantiate(1024 * 1024);
+	super_spark_state = gamestate_data.allocate_object<SuperSparkState>();
+	if (super_spark_state) {
+		super_spark_state->cursor = 0;
+		super_spark_state->placement_timer = 0;
+		super_spark_state->rng_state = 1;
+		super_sparks = super_spark_state->sparks;
+		reset_super_sparks();
+		super_spark_state->rng_state = static_cast<uint32_t>(spawn_seed) ^ 0xA511E9B1u;
+		if (super_spark_state->rng_state == 0) {
+			super_spark_state->rng_state = 1;
+		}
+	} else {
+		super_sparks = nullptr;
+	}
 	int state_capacity = gamestate_data.get_capacity();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
@@ -857,6 +866,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 			level_data.free_heap();
 			gamestate_data.free_heap();
+			super_spark_state = nullptr;
+			super_sparks = nullptr;
 			for (int i = 0; i < STATE_BUFFER_LEN; i++)
 			{
 				if (state_buffer[i].data)
@@ -872,14 +883,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			sim_started = false;
 			tick = 0;
 			current_track = nullptr;
-			reset_super_sparks();
-			super_spark_cursor = 0;
-			placement_spark_timer = 0;
 		}
 	};
 
 void GameSim::reset_super_sparks()
 {
+	if (!super_spark_state || !super_sparks) {
+		return;
+	}
+	super_spark_state->cursor = 0;
+	super_spark_state->placement_timer = 0;
+	super_spark_state->rng_state = 1;
 	for (int i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
 		super_sparks[i].active = 0;
 		super_sparks[i].grounded = 0;
@@ -938,15 +952,15 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 {
 	if (count <= 0)
 		return;
-	if (!sim_started)
+	if (!sim_started || !super_spark_state || !super_sparks)
 		return;
 
 	const godot::Vector3 normal_in = car.track_surface_normal.length_squared() > 0.0001f ? car.track_surface_normal.normalized() : godot::Vector3(0.0f, 1.0f, 0.0f);
 	const godot::Vector3 surface_point = car.track_surface_pos.length_squared() > 0.0f ? car.track_surface_pos : car.position_current;
 
 	auto next_rand = [&]() -> float {
-		super_spark_rng_state = super_spark_rng_state * 1664525u + 1013904223u;
-		return static_cast<float>(super_spark_rng_state & 0x00FFFFFFu) / 16777215.0f;
+		super_spark_state->rng_state = super_spark_state->rng_state * 1664525u + 1013904223u;
+		return static_cast<float>(super_spark_state->rng_state & 0x00FFFFFFu) / 16777215.0f;
 	};
 	auto rand_range = [&](float min_v, float max_v) -> float {
 		return min_v + (max_v - min_v) * next_rand();
@@ -962,8 +976,9 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 	UtilityFunctions::print("Emitting ", count, " super sparks!!");
 
 	for (int n = 0; n < count; ++n) {
-		SuperSpark& spark = super_sparks[super_spark_cursor];
-		super_spark_cursor = static_cast<uint16_t>((super_spark_cursor + 1) % SUPER_SPARK_CAPACITY);
+		const uint16_t cursor = super_spark_state->cursor;
+		SuperSpark& spark = super_sparks[cursor];
+		super_spark_state->cursor = static_cast<uint16_t>((cursor + 1) % SUPER_SPARK_CAPACITY);
 
 		spark.active = 1;
 		spark.grounded = 0;
@@ -984,7 +999,7 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 
 void GameSim::update_super_sparks()
 {
-	if (!sim_started || !cars)
+	if (!sim_started || !cars || !super_spark_state || !super_sparks)
 		return;
 
 	const float gravity_strength = 150.0f;
@@ -1028,7 +1043,7 @@ void GameSim::update_super_sparks()
 
 void GameSim::update_super_spark_visuals()
 {
-	if (!spark_node_container)
+	if (!spark_node_container || !super_sparks)
 		return;
 
 	TypedArray<godot::Node> spark_nodes = spark_node_container->get_children();
@@ -1262,6 +1277,11 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 }
 
 void GameSim::fix_pointers() {
+	if (super_spark_state) {
+		super_sparks = super_spark_state->sparks;
+	} else {
+		super_sparks = nullptr;
+	}
 	if (!sim_started || !cars) {
 		return;
 	}

@@ -1112,11 +1112,6 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 
 	base_speed = new_base_speed;
 
-	if (sboostActive)
-	{
-		base_speed += 0.05f;
-	}
-
 	if (input_brake <= 0.0001f)
 		brake_timer = 0;
 	else if (brake_timer < 0x1e)
@@ -1132,6 +1127,11 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 	base_speed = std::max(base_speed - brake_effect, 0.0f);
 
 	base_speed = std::max(base_speed - stat_drag, 0.0f);
+
+	if (sboostActive)
+	{
+		base_speed += 0.025f;
+	}
 
 	float final_output_thrust_factor = speed_difference;
 	if (brake_effect <= 0.0f) {

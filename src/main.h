@@ -42,10 +42,14 @@ namespace godot {
 			godot::Vector3 plane_normal;
 			float plane_d = 0.0f;
 		};
-		SuperSpark super_sparks[SUPER_SPARK_CAPACITY];
-		uint16_t super_spark_cursor = 0;
-		uint32_t super_spark_rng_state = 0;
-		uint32_t placement_spark_timer = 0;
+		struct SuperSparkState {
+			SuperSpark sparks[SUPER_SPARK_CAPACITY];
+			uint16_t cursor;
+			uint32_t rng_state;
+			uint32_t placement_timer;
+		};
+		SuperSparkState* super_spark_state = nullptr;
+		SuperSpark* super_sparks = nullptr;
 		void reset_super_sparks();
 		void update_super_sparks();
 		void update_super_spark_visuals();
