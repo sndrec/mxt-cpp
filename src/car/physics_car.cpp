@@ -460,7 +460,9 @@ bool PhysicsCar::find_floor_beneath_machine()
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
 			current_checkpoint);
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
-
+		road_sample.road_t = hit.road_data.road_t;
+		road_sample.spatial_t = hit.road_data.spatial_t;
+		road_sample.closest_surface = hit.road_data.closest_surface;
 		float contact_dist_metric = 0.0f;
 		if (sweep_hit_occurred) {
 			track_surface_pos = hit.collision_point;
@@ -488,6 +490,8 @@ bool PhysicsCar::find_floor_beneath_machine()
 	const TrackSegment &segment     = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
 	segment.curve_matrix->sample(root, road_t_sample_raw.y);
 	road_sample.closest_root = root;
+	road_sample.road_t = road_t_sample_raw;
+	road_sample.spatial_t = spatial_t_sample;
 	godot::Transform3D surf;
 
 	//if (cylinder || pipe)

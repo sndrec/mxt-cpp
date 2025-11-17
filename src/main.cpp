@@ -969,6 +969,9 @@ godot::PackedByteArray GameSim::build_cpu_observation(const PhysicsCar& car) con
 		write_vec3(basis.get_column(col));
 	}
 	write_vec3(car.basis_physical.origin);
+	for (int col = 0; col < 3; ++col) {
+		write_vec3(car.road_sample.closest_surface.basis.get_column(col));
+	}
 	buffer->put_float(car.base_speed);
 	buffer->put_float(car.energy);
 	buffer->put_float(car.checkpoint_fraction);
@@ -976,6 +979,7 @@ godot::PackedByteArray GameSim::build_cpu_observation(const PhysicsCar& car) con
 	buffer->put_u32(car.terrain_state);
 	buffer->put_u32(car.machine_state);
 	buffer->put_u8(car.restore_state);
+	buffer->put_u32(car.tilt_fr.state);
 	return buffer->get_data_array();
 }
 
