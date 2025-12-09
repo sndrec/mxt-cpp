@@ -577,6 +577,15 @@ func _process(delta: float) -> void:
 		camera_basis_smoothed.y * remap(car_camera.fov, 50, 100, 6.0, 5.5) + \
 		camera_basis_smoothed.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
 		car_camera.basis = camera_basis_smoothed.rotated(basis_physical.basis.x, deg_to_rad(-10))
+	
+	#var flat_use_z := car_transform.global_basis.z.slide(use_ts_normal).normalized()
+	#var flat_use_y := car_transform.global_basis.y.slide(flat_use_z).normalized()
+	#car_camera.global_position = car_transform.global_transform.origin
+	#car_camera.global_position += car_transform.global_basis.y * 1.2
+	#car_camera.global_position += car_transform.global_basis.z * -1.0
+	#car_camera.global_basis = car_camera.global_basis.slerp(car_transform.global_basis, 0.25)
+	#car_camera.fov = 90
+	
 	car_camera.near = 0.25
 	car_camera.far = 40000.0
 	if (car_outline_material and is_instance_valid(car_outline_material)):

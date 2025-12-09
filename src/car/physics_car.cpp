@@ -1648,6 +1648,8 @@ void PhysicsCar::reset_machine(int reset_type)
 	frames_since_start_2 = 0;
 	speed_kmh = 0.0f;
 	race_start_charge = 0.0f;
+	last_hit_tick = 0;
+	has_last_hit_tick = false;
 
 	height_adjust_from_boost = 0.0f;
 	grip_frames_from_accel_press = 0;

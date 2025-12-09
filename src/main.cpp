@@ -18,6 +18,7 @@
 #include "mxt_core/math_utils.h"
 #include <chrono>
 #include <cfenv>
+#include <cstdint>
 #include <cstdlib>
 #include <algorithm>
 #include <numeric>
@@ -173,6 +174,15 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 		{
 			bool collided = cars[i].handle_machine_v_machine_collision(cars[j]);
 			if (collided) {
+				const uint32_t current_tick = static_cast<uint32_t>(cars[i].simulation_tick);
+				constexpr uint32_t kCollisionSparkCooldownFrames = 30;
+				auto is_recent_hit = [&](const PhysicsCar& car) -> bool {
+					if (!car.has_last_hit_tick)
+						return false;
+					uint32_t delta = current_tick - car.last_hit_tick;
+					return delta < kCollisionSparkCooldownFrames;
+				};
+				const bool recently_hit = is_recent_hit(cars[i]) || is_recent_hit(cars[j]);
 				const bool a_attacking = (cars[i].machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
 				const bool b_attacking = (cars[j].machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
 				int sparks_a = 3;
@@ -185,12 +195,18 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 				} else if (!a_attacking && b_attacking) {
 					sparks_a = 8;
 				}
-				if (sparks_a > 0) {
-					emit_super_sparks_from_car(cars[i], sparks_a);
+				if (!recently_hit) {
+					if (sparks_a > 0) {
+						emit_super_sparks_from_car(cars[i], sparks_a);
+					}
+					if (sparks_b > 0) {
+						emit_super_sparks_from_car(cars[j], sparks_b);
+					}
 				}
-				if (sparks_b > 0) {
-					emit_super_sparks_from_car(cars[j], sparks_b);
-				}
+				cars[i].last_hit_tick = current_tick;
+				cars[j].last_hit_tick = current_tick;
+				cars[i].has_last_hit_tick = true;
+				cars[j].has_last_hit_tick = true;
 			}
 		}
 	}
@@ -1050,6 +1066,14 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 	if (count <= 0)
 		return;
 	if (!sim_started || !super_spark_state || !super_sparks)
+		return;
+	if ((car.machine_state & MACHINESTATE::STARTINGCOUNTDOWN) != 0)
+		return;
+
+	constexpr uint64_t kPostCountdownBlockFrames = 180;
+	const uint64_t current_frame = static_cast<uint64_t>(car.simulation_tick);
+	const uint64_t safe_frame = static_cast<uint64_t>(car.level_start_time) + kPostCountdownBlockFrames;
+	if (current_frame < safe_frame)
 		return;
 
 	const godot::Vector3 normal_in = car.track_surface_normal.length_squared() > 0.0001f ? car.track_surface_normal.normalized() : godot::Vector3(0.0f, 1.0f, 0.0f);
