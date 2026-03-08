@@ -82,6 +82,7 @@ GameSim::GameSim()
 	spark_node_container = nullptr;
 	super_spark_state = nullptr;
 	super_sparks = nullptr;
+	spark_multimesh_instance = nullptr;
 	reset_super_sparks();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
@@ -323,6 +324,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	level_data.instantiate(1024 * 1024 * 16);
 
 	gamestate_data.instantiate(1024 * 1024);
+	spark_multimesh_instance = nullptr;
 	super_spark_state = gamestate_data.allocate_object<SuperSparkState>();
 	if (super_spark_state) {
 		super_spark_state->cursor = 0;
@@ -336,6 +338,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		}
 	} else {
 		super_sparks = nullptr;
+		spark_multimesh_instance = nullptr;
 	}
 	int state_capacity = gamestate_data.get_capacity();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
@@ -900,6 +903,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			gamestate_data.free_heap();
 			super_spark_state = nullptr;
 			super_sparks = nullptr;
+			spark_multimesh_instance = nullptr;
 			for (int i = 0; i < STATE_BUFFER_LEN; i++)
 			{
 				if (state_buffer[i].data)
@@ -1164,20 +1168,28 @@ void GameSim::update_super_spark_visuals()
 {
 	if (!spark_node_container || !super_sparks)
 		return;
-
-	TypedArray<godot::Node> spark_nodes = spark_node_container->get_children();
-	int child_count = spark_nodes.size();
-	int limit = std::min(SUPER_SPARK_CAPACITY, child_count);
-	for (int i = 0; i < limit; ++i) {
-		bool active = super_sparks[i].active != 0;
-		spark_nodes[i].set("visible", active);
-		if (active) {
-			spark_nodes[i].set("position", super_sparks[i].position);
+	if (!spark_multimesh_instance) {
+		Node *spark_node = spark_node_container->get_node_or_null(NodePath("SparkMultiMesh"));
+		spark_multimesh_instance = Object::cast_to<godot::MultiMeshInstance3D>(spark_node);
+		if (!spark_multimesh_instance) {
+			return;
 		}
 	}
-	for (int i = limit; i < child_count; ++i) {
-		spark_nodes[i].set("visible", false);
+	Ref<godot::MultiMesh> spark_multimesh = spark_multimesh_instance->get_multimesh();
+	if (spark_multimesh.is_null()) {
+		return;
 	}
+	int active_count = 0;
+	for (int i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
+		if (super_sparks[i].active == 0) {
+			continue;
+		}
+		godot::Transform3D spark_transform;
+		spark_transform.origin = super_sparks[i].position;
+		spark_multimesh->set_instance_transform(active_count, spark_transform);
+		active_count += 1;
+	}
+	spark_multimesh->set_visible_instance_count(active_count);
 }
 
 	void GameSim::render_gamesim() {
@@ -1190,66 +1202,63 @@ void GameSim::update_super_spark_visuals()
 		}
 
 		TypedArray<godot::Node> vis_cars = car_node_container->get_children();
+		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
+		godot::Array visual_args;
+		visual_args.resize(44);
 	//mtxa.push();
-		for (int i = 0; i < vis_cars.size(); i++) {
+		for (int i = 0; i < vis_car_count; i++) {
 		//mtxa.assign(cars[i].basis_physical);
 		//mtxa.cur->origin = cars[i].position_current;
 		//cars[i].create_machine_visual_transform();
-			vis_cars[i].set("position_current", cars[i].position_current);
-			vis_cars[i].set("position_old", cars[i].position_old);
-			vis_cars[i].set("track_surface_normal", cars[i].track_surface_normal);
-			vis_cars[i].set("height_above_track", cars[i].height_above_track);
-			vis_cars[i].set("velocity", cars[i].velocity);
-			vis_cars[i].set("velocity_angular", cars[i].velocity_angular);
-			vis_cars[i].set("velocity_local", cars[i].velocity_local);
-			vis_cars[i].set("basis_physical", cars[i].basis_physical);
-		//vis_cars[i].set("transform_visual", cars[i].transform_visual);
-			vis_cars[i].set("base_speed", cars[i].base_speed);
-			vis_cars[i].set("boost_turbo", cars[i].boost_turbo);
-			vis_cars[i].set("race_start_charge", cars[i].race_start_charge);
-			vis_cars[i].set("speed_kmh", cars[i].speed_kmh);
-			vis_cars[i].set("air_tilt", cars[i].air_tilt);
-			vis_cars[i].set("energy", cars[i].energy);
-			vis_cars[i].set("lap_progress", cars[i].lap_progress);
-			vis_cars[i].set("checkpoint_fraction", cars[i].checkpoint_fraction);
-			vis_cars[i].set("boost_frames", cars[i].boost_frames);
-			vis_cars[i].set("boost_frames_manual", cars[i].boost_frames_manual);
-			vis_cars[i].set("current_checkpoint", cars[i].current_checkpoint);
-			vis_cars[i].set("lap", cars[i].lap);
-			vis_cars[i].set("air_time", cars[i].air_time);
-			vis_cars[i].set("machine_state", cars[i].machine_state);
-			vis_cars[i].set("terrain_state", cars[i].terrain_state);
-			vis_cars[i].set("frames_since_start_2", cars[i].frames_since_start_2);
-			vis_cars[i].set("tilt_fl_state", cars[i].tilt_fl.state);
-			vis_cars[i].set("tilt_fr_state", cars[i].tilt_fr.state);
-			vis_cars[i].set("tilt_bl_state", cars[i].tilt_bl.state);
-			vis_cars[i].set("tilt_br_state", cars[i].tilt_br.state);
-			vis_cars[i].set("input_strafe", cars[i].input_strafe);
-			vis_cars[i].set("turn_reaction_input", cars[i].turn_reaction_input);
-			vis_cars[i].set("g_anim_timer", cars[i].g_anim_timer);
-			vis_cars[i].set("state_2", cars[i].state_2);
-			vis_cars[i].set("tilt_fl_offset", cars[i].tilt_fl.offset);
-			vis_cars[i].set("tilt_bl_offset", cars[i].tilt_bl.offset);
-			vis_cars[i].set("stat_weight", cars[i].stat_weight);
-			vis_cars[i].set("stat_strafe", cars[i].stat_strafe);
-			vis_cars[i].set("input_strafe_1_6", cars[i].input_strafe_1_6);
-			vis_cars[i].set("weight_derived_1", cars[i].weight_derived_1);
-			vis_cars[i].set("weight_derived_2", cars[i].weight_derived_2);
-			vis_cars[i].set("weight_derived_3", cars[i].weight_derived_3);
-			vis_cars[i].set("visual_rotation", cars[i].visual_rotation);
-			vis_cars[i].set("spinattack_angle", cars[i].spinattack_angle);
-			vis_cars[i].set("spinattack_direction", cars[i].spinattack_direction);
-			vis_cars[i].set("visual_shake_mult", cars[i].visual_shake_mult);
-			vis_cars[i].set("input_accel", cars[i].input_accel);
-			vis_cars[i].set("restore_state", cars[i].restore_state);
-			vis_cars[i].set("restore_wait_frames", cars[i].restore_wait_frames);
-			vis_cars[i].set("restore_move_frames", cars[i].restore_move_frames);
-			vis_cars[i].set("restore_start_transform", cars[i].restore_start_transform);
-			vis_cars[i].set("restore_target_transform", cars[i].restore_target_transform);
-			vis_cars[i].set("s_boost_charge", static_cast<int>(cars[i].get_s_boost_charge()));
-			vis_cars[i].set("s_boost_charge_max", static_cast<int>(cars[i].get_s_boost_max_charge()));
-			vis_cars[i].set("s_boost_active", cars[i].is_s_boost_active());
-			vis_cars[i].set("s_boost_ready", cars[i].is_s_boost_ready());
+			visual_args[0] = cars[i].position_current;
+			visual_args[1] = cars[i].position_old;
+			visual_args[2] = cars[i].track_surface_normal;
+			visual_args[3] = cars[i].height_above_track;
+			visual_args[4] = cars[i].velocity;
+			visual_args[5] = cars[i].velocity_angular;
+			visual_args[6] = cars[i].basis_physical;
+			visual_args[7] = cars[i].base_speed;
+			visual_args[8] = cars[i].boost_turbo;
+			visual_args[9] = cars[i].speed_kmh;
+			visual_args[10] = cars[i].energy;
+			visual_args[11] = cars[i].lap_progress;
+			visual_args[12] = cars[i].boost_frames;
+			visual_args[13] = cars[i].boost_frames_manual;
+			visual_args[14] = cars[i].lap;
+			visual_args[15] = cars[i].machine_state;
+			visual_args[16] = cars[i].terrain_state;
+			visual_args[17] = cars[i].frames_since_start_2;
+			visual_args[18] = cars[i].tilt_fl.state;
+			visual_args[19] = cars[i].input_strafe;
+			visual_args[20] = cars[i].turn_reaction_input;
+			visual_args[21] = cars[i].g_anim_timer;
+			visual_args[22] = cars[i].state_2;
+			visual_args[23] = cars[i].tilt_fl.offset;
+			visual_args[24] = cars[i].tilt_bl.offset;
+			visual_args[25] = cars[i].stat_weight;
+			visual_args[26] = cars[i].stat_strafe;
+			visual_args[27] = cars[i].input_strafe_1_6;
+			visual_args[28] = cars[i].weight_derived_1;
+			visual_args[29] = cars[i].weight_derived_2;
+			visual_args[30] = cars[i].weight_derived_3;
+			visual_args[31] = cars[i].visual_rotation;
+			visual_args[32] = cars[i].spinattack_angle;
+			visual_args[33] = cars[i].spinattack_direction;
+			visual_args[34] = cars[i].visual_shake_mult;
+			visual_args[35] = cars[i].input_accel;
+			visual_args[36] = cars[i].restore_state;
+			visual_args[37] = cars[i].restore_move_frames;
+			visual_args[38] = cars[i].restore_start_transform;
+			visual_args[39] = cars[i].restore_target_transform;
+			visual_args[40] = static_cast<int>(cars[i].get_s_boost_charge());
+			visual_args[41] = static_cast<int>(cars[i].get_s_boost_max_charge());
+			visual_args[42] = cars[i].is_s_boost_active();
+			visual_args[43] = cars[i].is_s_boost_ready();
+			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
+			if (!vis_car) {
+				continue;
+			}
+			vis_car->callv("apply_sim_state", visual_args);
 			if (cpu_driver_manager && car_player_ids && car_is_cpu && car_is_cpu[i]) {
 				int32_t pid = car_player_ids[i];
 				if (pid != -1) {

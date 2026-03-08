@@ -50,6 +50,7 @@ namespace godot {
 		};
 		SuperSparkState* super_spark_state = nullptr;
 		SuperSpark* super_sparks = nullptr;
+		godot::MultiMeshInstance3D* spark_multimesh_instance = nullptr;
 		godot::Object* cpu_driver_manager = nullptr;
 		int32_t* car_player_ids = nullptr;
 		uint8_t* car_is_cpu = nullptr;
