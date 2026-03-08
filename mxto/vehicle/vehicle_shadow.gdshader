@@ -1,6 +1,7 @@
 shader_type spatial;
 
-render_mode unshaded;
+render_mode unshaded, blend_mix, depth_test_disabled, depth_draw_never, cull_disabled;
+stencil_mode read, compare_not_equal, 1;
 
 void vertex() {
 	// Called for every vertex the material is visible on.
@@ -9,7 +10,6 @@ void vertex() {
 void fragment() {
 	ALBEDO = vec3(0.0);
 	ALPHA = 1.0;
-	DEPTH = FRAGCOORD.z * 0.1;
 }
 
 //void light() {

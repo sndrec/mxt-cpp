@@ -206,8 +206,10 @@ func _ready() -> void:
 		vehicle_shadow.name = "LocalVehicleShadow"
 		vehicle_shadow.mesh = shadow_mesh.mesh
 		vehicle_shadow.material_override = shadow_mesh.material_override.duplicate()
-		vehicle_shadow.layers = shadow_mesh.layers
+		vehicle_shadow.material_override.render_priority = 96
+		vehicle_shadow.layers = 1
 		vehicle_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		vehicle_shadow.extra_cull_margin = 100000.0
 		vehicle_shadow.visible = true
 		add_child(vehicle_shadow)
 	template.free()

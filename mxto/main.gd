@@ -834,8 +834,4 @@ func _process(delta: float) -> void:
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
 	var active_camera := get_viewport().get_camera_3d()
 	if game_sim.sim_started and is_instance_valid(active_camera):
-		obj_camera.global_transform = active_camera.global_transform
-		outline_camera.global_transform = active_camera.global_transform
-		obj_camera.fov = active_camera.fov
-		outline_camera.fov = active_camera.fov
 		_update_car_effect_tiers(active_camera)

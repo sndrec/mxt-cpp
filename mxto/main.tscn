@@ -1,12 +1,9 @@
-[gd_scene load_steps=46 format=4 uid="uid://brrsssxopnp7c"]
+[gd_scene load_steps=37 format=4 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
 [ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
 [ext_resource type="Script" uid="uid://cq1kmqnd5qooc" path="res://netplay/network_manager.gd" id="3_netplay"]
-[ext_resource type="Shader" uid="uid://dnikyw812iu2p" path="res://screen_outline.gdshader" id="4_7mycd"]
-[ext_resource type="Texture2D" uid="uid://cejh11h8frbgl" path="res://asset/test_track_2_simple_grid.png" id="5_272bh"]
-[ext_resource type="Shader" uid="uid://bo06dkbjacpkp" path="res://screen_car.gdshader" id="6_5vw27"]
 [ext_resource type="Material" uid="uid://bfxpum1jau64" path="res://asset/debug_track_mat.tres" id="9_efxa6"]
 [ext_resource type="PackedScene" uid="uid://u8cuqg2ggiw8" path="res://ui/controller_settings.tscn" id="10_ctrlset"]
 [ext_resource type="Texture2D" uid="uid://mggdo6abxbcl" path="res://track/beepers_track/REF_SHEET_WITH_BACKGROUND_2.1.1.png" id="10_dg77c"]
@@ -19,23 +16,6 @@
 [ext_resource type="Texture2D" uid="uid://tv10kddv5k24" path="res://asset/tex/clouds2.png" id="17_yaehf"]
 [ext_resource type="Script" uid="uid://dy134idknaa2x" path="res://super_spark_container.gd" id="18_spark"]
 [ext_resource type="Script" uid="uid://77we1ngt1kj5" path="res://cpu/cpu_driver_manager.gd" id="19_cpu_manager"]
-
-[sub_resource type="ViewportTexture" id="ViewportTexture_272bh"]
-viewport_path = NodePath("GameWorld/OutlineViewport")
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_272bh"]
-resource_local_to_scene = true
-shader = ExtResource("4_7mycd")
-shader_parameter/in_outline_screen_tex = SubResource("ViewportTexture_272bh")
-shader_parameter/in_outline_mapped_tex = ExtResource("5_272bh")
-
-[sub_resource type="ViewportTexture" id="ViewportTexture_5vw27"]
-viewport_path = NodePath("GameWorld/ObjViewport")
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_kek77"]
-resource_local_to_scene = true
-shader = ExtResource("6_5vw27")
-shader_parameter/in_outline_screen_tex = SubResource("ViewportTexture_5vw27")
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -2179,10 +2159,6 @@ shader_parameter/uv1_offset = Vector3(0, 0, 0)
 material = SubResource("ShaderMaterial_cegan")
 size = Vector2(32768, 32768)
 
-[sub_resource type="Environment" id="Environment_5vw27"]
-
-[sub_resource type="Environment" id="Environment_kek77"]
-
 [sub_resource type="LabelSettings" id="LabelSettings_lquwl"]
 font_size = 24
 
@@ -2453,24 +2429,6 @@ visible = false
 
 [node name="GameWorld" type="Node3D" parent="."]
 
-[node name="OutlineViewportTexture" type="ColorRect" parent="GameWorld"]
-material = SubResource("ShaderMaterial_272bh")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
-[node name="ObjViewportTexture" type="ColorRect" parent="GameWorld"]
-material = SubResource("ShaderMaterial_kek77")
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-mouse_filter = 2
-
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="GameWorld"]
 transform = Transform3D(-0.866023, -0.433016, 0.250001, 0, 0.499998, 0.866027, -0.500003, 0.749999, -0.43301, 0, 0, 0)
 layers = 2147483647
@@ -2506,33 +2464,6 @@ transform = Transform3D(0.915438, -3.55271e-15, -0.402459, 0.402459, -4.37114e-0
 mesh = SubResource("PlaneMesh_82xsv")
 
 [node name="ObjContainer" type="Node3D" parent="GameWorld"]
-
-[node name="ObjViewport" type="SubViewport" parent="GameWorld"]
-transparent_bg = true
-handle_input_locally = false
-scaling_3d_scale = 2.0
-gui_disable_input = true
-canvas_cull_mask = 2147483647
-size = Vector2i(1920, 1080)
-
-[node name="ObjCamera" type="Camera3D" parent="GameWorld/ObjViewport"]
-cull_mask = 2
-environment = SubResource("Environment_5vw27")
-
-[node name="OutlineViewport" type="SubViewport" parent="GameWorld"]
-transparent_bg = true
-handle_input_locally = false
-screen_space_aa = 1
-anisotropic_filtering_level = 0
-canvas_item_default_texture_filter = 2
-canvas_item_default_texture_repeat = 1
-gui_disable_input = true
-canvas_cull_mask = 2147483647
-size = Vector2i(1920, 1080)
-
-[node name="OutlineCamera" type="Camera3D" parent="GameWorld/OutlineViewport"]
-cull_mask = 4
-environment = SubResource("Environment_kek77")
 
 [node name="RaceFinishLabel" type="Label" parent="."]
 visible = false

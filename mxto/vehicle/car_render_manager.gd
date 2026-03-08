@@ -92,14 +92,14 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 	var archetype := {
 		"indices": [],
 		"count": 0,
-		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, main_mesh.layers, root_transform * main_mesh.transform),
-		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, outline_mesh.layers, root_transform * outline_mesh.transform),
-		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, outline_main_mesh.layers, root_transform * outline_main_mesh.transform),
+		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0),
+		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 1, 64),
+		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 1, 64),
 	}
 	template.free()
 	return archetype
 
-func _create_pass(pass_name: String, mesh: Mesh, material: Material, layers: int, local_transform: Transform3D) -> Dictionary:
+func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_transform: Transform3D, layers: int, render_priority: int) -> Dictionary:
 	var node := MultiMeshInstance3D.new()
 	node.name = pass_name
 	node.layers = layers
@@ -113,6 +113,7 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, layers: int
 	node.multimesh = multimesh
 	if material != null:
 		node.material_override = material.duplicate()
+		node.material_override.render_priority = render_priority
 	add_child(node)
 	return {
 		"local_transform": local_transform,

@@ -1,6 +1,7 @@
 shader_type spatial;
 
 render_mode ambient_light_disabled;//, skip_vertex_transform;
+stencil_mode write, compare_always, 1;
 
 uniform sampler2D in_lightwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
@@ -49,7 +50,6 @@ void fragment() {
 	hsv_colour.y *= 1.3;
 	vec3 final_colour = hsv2rgb(hsv_colour);
 	ALBEDO = final_colour;// * fres;
-	//DEPTH = VERTEX.z;
 	EMISSION = in_overlay_colour + COLOR.rgb;
 }
 

@@ -43,9 +43,6 @@ void fragment() {
 	if (rnd > alpha_prob) {
 		discard;
 	}
-
-	// If not discarded, make fully opaque so blending is not used per-pixel.
-	ALPHA = 1.0;
 }
 
 float fresnel(float amount, vec3 normal, vec3 view)

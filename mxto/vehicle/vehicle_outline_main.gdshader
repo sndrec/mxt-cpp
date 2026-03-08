@@ -1,6 +1,7 @@
 shader_type spatial;
 
-render_mode unshaded, skip_vertex_transform, cull_back, depth_draw_always, world_vertex_coords;
+render_mode unshaded, blend_mix, skip_vertex_transform, cull_back, depth_draw_never, world_vertex_coords;
+stencil_mode read, compare_not_equal, 1;
 
 uniform float base_outline_width;
 uniform vec3 outline_color : source_color;
@@ -56,6 +57,7 @@ void fragment() {
 	if (length(in_velocity) < 0.001)
 	{
 		ALBEDO = vec3(0.0);
+		ALPHA = 0.0;
 	}else{
 		vec2 scaled_suv = SCREEN_UV * VIEWPORT_SIZE;
 		float len2	= max(dot(v_line_d, v_line_d), 1e-8);
@@ -82,6 +84,6 @@ void fragment() {
 		float alpha_scale = min(0.0, length(in_velocity) * 0.01);
 		//ALPHA = min(1.0, alpha_scale + pow(1.0 - t * 0.7, 4.0));
 		ALBEDO = outline_color;
-		DEPTH = FRAGCOORD.z * 0.0001;
+		ALPHA = 1.0;
 	}
 }
