@@ -7,6 +7,8 @@ class_name VehicleThruster extends Node3D
 
 var current_thrust := 0.0
 var current_velocity := Vector3.ZERO
+var full_visuals_enabled := true
+var smooth_updates_enabled := true
 
 @export var target_thrust := 0.0
 @export var target_velocity := Vector3.ZERO
@@ -20,17 +22,38 @@ func _ready() -> void:
 func adjust_thruster(in_thrust : float, in_velocity : Vector3):
 	target_thrust = in_thrust
 	target_velocity = in_velocity
+	if !smooth_updates_enabled:
+		current_thrust = maxf(target_thrust, 0.0)
+		current_velocity = target_velocity
+		sprite.pixel_size = current_thrust * 0.0012
 
+func set_visual_mode(enable_full_visuals: bool, enable_smooth_updates: bool = true) -> void:
+	full_visuals_enabled = enable_full_visuals
+	smooth_updates_enabled = enable_smooth_updates
+	set_process(enable_smooth_updates)
+	if !full_visuals_enabled:
+		particles.emitting = false
+		particles.amount_ratio = 0.0
+		light.visible = false
+	else:
+		light.visible = true
+	if !smooth_updates_enabled:
+		current_thrust = maxf(target_thrust, 0.0)
+		current_velocity = target_velocity
+		sprite.pixel_size = current_thrust * 0.0012
 
 func _process(delta: float) -> void:
 	target_thrust = maxf(target_thrust, 0.0)
 	delta = minf(delta, 1.0)
 	current_thrust = lerpf(current_thrust, target_thrust, delta * 24.0)
 	current_velocity = current_velocity.lerp(target_velocity, delta * 24.0)
+	sprite.pixel_size = current_thrust * 0.0012
+	if !full_visuals_enabled:
+		return
+
 	process_mat.initial_velocity_max = pow(current_thrust, 0.5) * 30
 	process_mat.initial_velocity_min = pow(current_thrust, 0.5) * 10
 	particles.amount_ratio = current_thrust
-	sprite.pixel_size = current_thrust * 0.0012
 	var light_factor = remap(sin(Time.get_ticks_msec() * 0.001 * 120), -PI, PI, 0.0, 1.0)
 	light.light_energy = remap(light_factor, 0, 1, 4.0, 6.0) * current_thrust
 	light.omni_attenuation = remap(light_factor, 0, 1, 1.0, 3.0) * current_thrust

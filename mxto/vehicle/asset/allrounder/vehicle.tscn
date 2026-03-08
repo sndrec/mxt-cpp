@@ -48,15 +48,12 @@ shader = ExtResource("4_ysk1q")
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_gv8nt"]
 render_priority = -1
 shader = ExtResource("5_aiq2p")
-shader_parameter/in_velocity = Vector3(0, 0, 3.09)
 shader_parameter/base_outline_width = 1.0
 shader_parameter/trail_colour = Color(0.00559999, 0.0833467, 0.28, 1)
-shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_00g30"]
 render_priority = -1
 shader = ExtResource("6_m83ry")
-shader_parameter/in_velocity = Vector3(0, 0, -0.03)
 shader_parameter/base_outline_width = 1.0
 shader_parameter/outline_color = Color(0.00559999, 0.0833467, 0.28, 1)
 
@@ -64,6 +61,7 @@ shader_parameter/outline_color = Color(0.00559999, 0.0833467, 0.28, 1)
 
 [node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
 transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
+visible = false
 layers = 2
 material_override = SubResource("ShaderMaterial_ayfej")
 cast_shadow = 0

@@ -2,18 +2,20 @@ shader_type spatial;
 
 render_mode unshaded, skip_vertex_transform, cull_back, depth_draw_always, world_vertex_coords;
 
-uniform vec3 in_velocity;
 uniform float base_outline_width;
 uniform vec3 outline_color : source_color;
 varying flat vec2	v_line_o;			// screen-space origin  (0-1)
 varying flat vec2	v_line_d;			// screen-space direction tail-o
 varying float use_outline_width;
+varying flat vec3 v_instance_velocity;
 
 vec2 clip_to_uv(vec4 clip){				// clip -> (0-1) UV
 	return clip.xy / clip.w * 0.5 + vec2(0.5);
 }
 
 void vertex() {
+	vec3 in_velocity = INSTANCE_CUSTOM.xyz;
+	v_instance_velocity = in_velocity;
 	/* ---- screenspace line pre-compute --------------------------- */
 	if (length(in_velocity) > 0.001)
 	{
@@ -49,6 +51,7 @@ void vertex() {
 }
 
 void fragment() {
+	vec3 in_velocity = v_instance_velocity;
 	// param along the projected line, 0 at origin, 1 at tail
 	if (length(in_velocity) < 0.001)
 	{

@@ -2,29 +2,37 @@ class_name SuperSparkContainer
 extends Node3D
 
 const SPARK_COUNT := 256
-var _sparks: Array[Node3D] = []
-var spark_scene := preload("res://asset/obj_superspark.tscn")
+const SPARK_NODE_NAME := "SparkMultiMesh"
+
+var spark_texture := preload("res://asset/tex/superspark.png")
 
 func _ready() -> void:
-	_sparks.clear()
-	if spark_scene == null:
+	var spark_multimesh := get_node_or_null(SPARK_NODE_NAME) as MultiMeshInstance3D
+	if spark_multimesh != null:
+		return
+	if spark_texture == null:
 		return
 
-	# Ensure we have a predictable number of children in a stable order.
-	for child in get_children():
-		if child is Node3D:
-			child.visible = false
-			_sparks.append(child)
+	var quad_mesh := QuadMesh.new()
+	var tex_size := spark_texture.get_size()
+	quad_mesh.size = Vector2(maxf(0.25, tex_size.x * 0.01), maxf(0.25, tex_size.y * 0.01))
 
-	while _sparks.size() < SPARK_COUNT:
-		var spark := spark_scene.instantiate()
-		if spark is Node3D:
-			spark.visible = false
-			add_child(spark)
-			_sparks.append(spark)
-		else:
-			spark.queue_free()
-			break
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.albedo_texture = spark_texture
 
-func get_spark_nodes() -> Array[Node3D]:
-	return _sparks.duplicate()
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.instance_count = SPARK_COUNT
+	multimesh.visible_instance_count = 0
+	multimesh.mesh = quad_mesh
+
+	spark_multimesh = MultiMeshInstance3D.new()
+	spark_multimesh.name = SPARK_NODE_NAME
+	spark_multimesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	spark_multimesh.material_override = material
+	spark_multimesh.multimesh = multimesh
+	add_child(spark_multimesh)

@@ -37,6 +37,7 @@ class_name GameManager extends Node
 @onready var outline_viewport_texture: ColorRect = $GameWorld/OutlineViewportTexture
 
 const PlayerInputClass = preload("res://player/player_input.gd")
+const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -81,10 +82,14 @@ var _singleplayer_tick: int = 0
 var singleplayer_cpu_count: int = 0
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
+var car_render_manager: CarRenderManager
 
 func _ready() -> void:
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
+	car_render_manager = CarRenderManagerClass.new()
+	car_render_manager.name = "CarRenderManager"
+	$GameWorld.add_child(car_render_manager)
 	randomize()
 	_load_tracks()
 	_load_car_definitions()
@@ -109,7 +114,7 @@ func _ready() -> void:
 	var args := OS.get_cmdline_args()
 	var cpu_idx := args.find("-cpu-drivers")
 	if cpu_idx != -1 and cpu_idx + 1 < args.size():
-		var cpu_count := int(clamp(float(args[cpu_idx + 1]), 0.0, 100.0))
+		var cpu_count := int(clamp(float(args[cpu_idx + 1]), 0.0, 999.0))
 		singleplayer_cpu_count = cpu_count
 		if cpu_slider != null:
 			cpu_slider.value = singleplayer_cpu_count
@@ -463,6 +468,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 			car.player_settings = racer_settings[idx]
 			car.name_label.text = " " + racer_settings[idx].username + " "
 		idx += 1
+	car_render_manager.configure(chosen_defs, car_node_container.get_children())
 	for p in players:
 		if p != null:
 			p.queue_free()
@@ -798,6 +804,30 @@ func _check_race_finished() -> void:
 
 @onready var obj_camera: Camera3D = $GameWorld/ObjViewport/ObjCamera
 @onready var outline_camera: Camera3D = $GameWorld/OutlineViewport/OutlineCamera
+const FULL_EFFECT_CAR_BUDGET := 10
+
+func _update_car_effect_tiers(active_camera: Camera3D) -> void:
+	var ranked_cars: Array = []
+	for car: VisualCar in car_node_container.get_children():
+		if car == null:
+			continue
+		var dist_sq := active_camera.global_position.distance_squared_to(car.car_transform.global_position)
+		ranked_cars.append([dist_sq, car])
+
+	ranked_cars.sort_custom(func(a, b): return a[0] < b[0])
+
+	var full_budget_remaining := FULL_EFFECT_CAR_BUDGET
+	for ranked in ranked_cars:
+		var car: VisualCar = ranked[1]
+		if car.local_visual_enabled:
+			car.set_effect_tier(VisualCar.EffectTier.FULL)
+			full_budget_remaining -= 1
+			continue
+		if full_budget_remaining > 0:
+			car.set_effect_tier(VisualCar.EffectTier.FULL)
+			full_budget_remaining -= 1
+		else:
+			car.set_effect_tier(VisualCar.EffectTier.THRUSTER_ONLY)
 
 func _process(delta: float) -> void:
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
@@ -808,3 +838,4 @@ func _process(delta: float) -> void:
 		outline_camera.global_transform = active_camera.global_transform
 		obj_camera.fov = active_camera.fov
 		outline_camera.fov = active_camera.fov
+		_update_car_effect_tiers(active_camera)

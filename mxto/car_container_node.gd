@@ -9,6 +9,7 @@ func instantiate_cars(definitions: Array, peer_ids: Array, local_index: int = 0)
 	for i in num_cars:
 		var new_car := preload("res://vehicle/visual_car.tscn").instantiate()
 		new_car.car_definition = definitions[i]
+		new_car.local_visual_enabled = i == local_index
 		if i < peer_ids.size():
 			new_car.owning_id = peer_ids[i]
 		add_child(new_car)

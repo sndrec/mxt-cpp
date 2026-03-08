@@ -1,5 +1,10 @@
 class_name VisualCar extends Node3D
 
+enum EffectTier {
+	FULL,
+	THRUSTER_ONLY,
+}
+
 @onready var car_visual : Node3D
 @onready var car_camera: Camera3D = $CarCamera
 var car_definition : CarDefinition
@@ -78,6 +83,8 @@ var player_settings: Resource
 var game_manager : GameManager
 @onready var race_hud: RaceHud = $race_hud
 @onready var car_transform: Node3D = $CarTransform
+var local_visual_enabled := false
+var effect_tier := EffectTier.FULL
 
 var position_current := Vector3.ZERO
 var position_old := Vector3.ZERO
@@ -183,20 +190,38 @@ var car_outline_material : ShaderMaterial
 var vehicle_main : MeshInstance3D
 var vehicle_shadow : MeshInstance3D
 var vehicle_thrusters : Node3D
+var vehicle_main_local_transform := Transform3D.IDENTITY
+var vehicle_shadow_local_transform := Transform3D.IDENTITY
+var _needs_process_reset := false
 
 func _ready() -> void:
-	car_visual = car_definition.car_scene.instantiate()
+	var template: Node3D = car_definition.car_scene.instantiate()
+	var root_transform := template.transform
+	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
+	var shadow_mesh: MeshInstance3D = template.get_node("VEHICLE_SHADOW")
+	vehicle_main_local_transform = root_transform * main_mesh.transform
+	vehicle_shadow_local_transform = root_transform * shadow_mesh.transform
+	if local_visual_enabled:
+		vehicle_shadow = MeshInstance3D.new()
+		vehicle_shadow.name = "LocalVehicleShadow"
+		vehicle_shadow.mesh = shadow_mesh.mesh
+		vehicle_shadow.material_override = shadow_mesh.material_override.duplicate()
+		vehicle_shadow.layers = shadow_mesh.layers
+		vehicle_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		vehicle_shadow.visible = true
+		add_child(vehicle_shadow)
+	template.free()
+	car_visual = Node3D.new()
+	car_visual.name = "CarVisualProxy"
 	car_transform.add_child(car_visual)
-	if car_visual.has_node("VEHICLE_MAIN"):
-		var main_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_MAIN")
-		main_mesh.material_override = main_mesh.material_override.duplicate()
-		car_material = main_mesh.material_override
-		var outline_mesh : MeshInstance3D = car_visual.get_node("VEHICLE_OUTLINE")
-		outline_mesh.material_override = outline_mesh.material_override.duplicate()
-		car_outline_material = outline_mesh.material_override
-		vehicle_shadow = car_visual.get_node("VEHICLE_SHADOW")
-		vehicle_main = car_visual.get_node("VEHICLE_MAIN")
-		vehicle_thrusters = car_visual.get_node("THRUSTERS")
+	vehicle_thrusters = Node3D.new()
+	vehicle_thrusters.name = "VehicleThrustersProxy"
+	add_child(vehicle_thrusters)
+	if local_visual_enabled:
+		car_camera.make_current()
+	_apply_effect_tier_state()
+	if !local_visual_enabled:
+		return
 	await get_tree().create_timer(2.0).timeout
 	air_sound.stream = preload("res://sfx/vehicle/air_1.wav")
 	air_sound.play()
@@ -212,6 +237,163 @@ func _ready() -> void:
 	strafe_sound.play()
 	landing_sound.stream = preload("res://sfx/vehicle/landing.wav")
 	landing_sound.stop()
+
+func set_effect_tier(in_tier: int) -> void:
+	if effect_tier == in_tier:
+		return
+	effect_tier = in_tier
+	_needs_process_reset = true
+	_apply_effect_tier_state()
+
+func _reset_interpolation_state() -> void:
+	transform_visual = Transform3D(basis_physical.basis, position_current)
+	car_old_transform = transform_visual
+	car_desired_transform = transform_visual
+	car_old_basis_physical = basis_physical
+	car_desired_basis_physical = basis_physical
+	car_old_pc = position_current
+	car_desired_pc = position_current
+	car_old_po = position_old
+	car_desired_po = position_old
+	car_old_vel = velocity
+	car_desired_vel = velocity
+	old_ts_normal = track_surface_normal
+	desired_ts_normal = track_surface_normal
+	track_surface_smoothed = track_surface_normal
+	rollback_offset_error = Vector3.ZERO
+	rollback_offset_error_prev = Vector3.ZERO
+	rollback_rot_error = Basis.IDENTITY
+	rollback_rot_error_prev = Basis.IDENTITY
+	frame_accumulation = 0.0
+
+func _apply_low_cost_visual_state() -> void:
+	var use_transform := Transform3D(basis_physical.basis, position_current)
+	car_transform.global_transform = use_transform
+	transform_visual = use_transform
+	car_overlay_colour = car_overlay_colour.lerp(Color.BLACK, 0.2)
+	if car_outline_material and is_instance_valid(car_outline_material):
+		car_outline_material.set_shader_parameter("overlay_colour", Color.BLACK)
+		car_outline_material.set_shader_parameter("in_velocity", Vector3.ZERO)
+	if car_material and is_instance_valid(car_material):
+		car_material.set_shader_parameter("in_overlay_colour", Color.BLACK)
+	for node: VehicleThruster in vehicle_thrusters.get_children():
+		node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
+
+func _apply_effect_tier_state() -> void:
+	var full_effects_enabled := effect_tier == EffectTier.FULL
+	var use_frame_processing := local_visual_enabled or full_effects_enabled
+	set_physics_process(use_frame_processing)
+	set_process(use_frame_processing)
+	recharge_particles.emitting = false
+	attack_particles.emitting = false
+	landing_particles.emitting = false
+	boost_electricity.boosting = false
+	boost_electricity.visible = full_effects_enabled
+	if is_instance_valid(name_label):
+		name_label.visible = full_effects_enabled
+	for node: VehicleThruster in vehicle_thrusters.get_children():
+		node.set_visual_mode(full_effects_enabled, use_frame_processing)
+	if !local_visual_enabled:
+		for player in [terrain_sound, thrust_sound, engine_sound, boost_sound, air_sound, strafe_sound, landing_sound]:
+			player.stop()
+	if _needs_process_reset:
+		_reset_interpolation_state()
+		if !use_frame_processing:
+			_apply_low_cost_visual_state()
+		_needs_process_reset = false
+
+func apply_sim_state(
+	in_position_current: Vector3,
+	in_position_old: Vector3,
+	in_track_surface_normal: Vector3,
+	in_height_above_track: float,
+	in_velocity: Vector3,
+	in_velocity_angular: Vector3,
+	in_basis_physical: Transform3D,
+	in_base_speed: float,
+	in_boost_turbo: float,
+	in_speed_kmh: float,
+	in_energy: float,
+	in_lap_progress: float,
+	in_boost_frames: int,
+	in_boost_frames_manual: int,
+	in_lap: int,
+	in_machine_state: int,
+	in_terrain_state: int,
+	in_frames_since_start_2: int,
+	in_tilt_fl_state: int,
+	in_input_strafe: float,
+	in_turn_reaction_input: float,
+	in_g_anim_timer: int,
+	in_state_2: int,
+	in_tilt_fl_offset: Vector3,
+	in_tilt_bl_offset: Vector3,
+	in_stat_weight: float,
+	in_stat_strafe: float,
+	in_input_strafe_1_6: float,
+	in_weight_derived_1: float,
+	in_weight_derived_2: float,
+	in_weight_derived_3: float,
+	in_visual_rotation: Vector3,
+	in_spinattack_angle: float,
+	in_spinattack_direction: int,
+	in_visual_shake_mult: float,
+	in_input_accel: float,
+	in_restore_state: int,
+	in_restore_move_frames: int,
+	in_restore_start_transform: Transform3D,
+	in_restore_target_transform: Transform3D,
+	in_s_boost_charge: int,
+	in_s_boost_charge_max: int,
+	in_s_boost_active: bool,
+	in_s_boost_ready: bool
+) -> void:
+	position_current = in_position_current
+	position_old = in_position_old
+	track_surface_normal = in_track_surface_normal
+	height_above_track = in_height_above_track
+	velocity = in_velocity
+	velocity_angular = in_velocity_angular
+	basis_physical = in_basis_physical
+	base_speed = in_base_speed
+	boost_turbo = in_boost_turbo
+	speed_kmh = in_speed_kmh
+	energy = in_energy
+	lap_progress = in_lap_progress
+	boost_frames = in_boost_frames
+	boost_frames_manual = in_boost_frames_manual
+	lap = in_lap
+	machine_state = in_machine_state
+	terrain_state = in_terrain_state
+	frames_since_start_2 = in_frames_since_start_2
+	tilt_fl_state = in_tilt_fl_state
+	input_strafe = in_input_strafe
+	turn_reaction_input = in_turn_reaction_input
+	g_anim_timer = in_g_anim_timer
+	state_2 = in_state_2
+	tilt_fl_offset = in_tilt_fl_offset
+	tilt_bl_offset = in_tilt_bl_offset
+	stat_weight = in_stat_weight
+	stat_strafe = in_stat_strafe
+	input_strafe_1_6 = in_input_strafe_1_6
+	weight_derived_1 = in_weight_derived_1
+	weight_derived_2 = in_weight_derived_2
+	weight_derived_3 = in_weight_derived_3
+	visual_rotation = in_visual_rotation
+	spinattack_angle = in_spinattack_angle
+	spinattack_direction = in_spinattack_direction
+	visual_shake_mult = in_visual_shake_mult
+	input_accel = in_input_accel
+	restore_state = in_restore_state
+	restore_move_frames = in_restore_move_frames
+	restore_start_transform = in_restore_start_transform
+	restore_target_transform = in_restore_target_transform
+	s_boost_charge = in_s_boost_charge
+	s_boost_charge_max = in_s_boost_charge_max
+	s_boost_active = in_s_boost_active
+	s_boost_ready = in_s_boost_ready
+	if !is_processing():
+		_apply_low_cost_visual_state()
 
 func create_machine_visual_transform():
 	var fVar12_initial_factor := 0.0
@@ -378,72 +560,63 @@ func _physics_process(delta):
 	desired_ts_normal = track_surface_normal
 	
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
-	
-	if (machine_state & FZ_MS.AIRBORNE) != 0:
-		var target_db := remap(use_vy, 0, 1, 0, 20)
-		air_sound.volume_db = lerpf(air_sound.volume_db, target_db, delta * 8)
-		var target_pitch := remap(use_vy, 0, 1, 0.5, 1.5)
-		air_sound.pitch_scale = lerpf(air_sound.pitch_scale, target_pitch, delta * 8)
-	else:
-		air_sound.volume_db = lerpf(air_sound.volume_db, -20, delta * 8)
-	var target_engine_pitch := clampf(remap(base_speed, 2, 10, 0.9, 1.3), 0.9, 1.3)
-	var target_engine_volume := clampf(remap(base_speed, 2, 10, 15, 20), 15, 20)
-	engine_sound.pitch_scale = lerpf(engine_sound.pitch_scale, target_engine_pitch, delta * 8)
-	engine_sound.volume_db = lerpf(engine_sound.volume_db, target_engine_volume, delta * 8)
-	#DebugDraw2D.set_text("vy", velocity.y)
-	
-	if (terrain_state_old & FZ_TERRAIN.RECHARGE) == 0 and (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
-		terrain_sound.stream = preload("res://sfx/vehicle/restore.wav")
-		terrain_sound.play(0.0)
-	elif (terrain_state_old & FZ_TERRAIN.DIRT) == 0 and (terrain_state & FZ_TERRAIN.DIRT) != 0:
-		terrain_sound.stream = preload("res://sfx/vehicle/terrain_dirt.wav")
-		terrain_sound.play(0.0)
-	elif (terrain_state_old & FZ_TERRAIN.LAVA) == 0 and (terrain_state & FZ_TERRAIN.LAVA) != 0:
-		terrain_sound.stream = preload("res://sfx/vehicle/terrain_lava.wav")
-		terrain_sound.play(0.0)
-	elif terrain_state == 0:
-		terrain_sound.stop()
-	
-	if (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
-		recharge_particles.emitting = true
+	if local_visual_enabled:
+		if (machine_state & FZ_MS.AIRBORNE) != 0:
+			var target_db := remap(use_vy, 0, 1, 0, 20)
+			air_sound.volume_db = lerpf(air_sound.volume_db, target_db, delta * 8)
+			var target_pitch := remap(use_vy, 0, 1, 0.5, 1.5)
+			air_sound.pitch_scale = lerpf(air_sound.pitch_scale, target_pitch, delta * 8)
+		else:
+			air_sound.volume_db = lerpf(air_sound.volume_db, -20, delta * 8)
+		var target_engine_pitch := clampf(remap(base_speed, 2, 10, 0.9, 1.3), 0.9, 1.3)
+		var target_engine_volume := clampf(remap(base_speed, 2, 10, 15, 20), 15, 20)
+		engine_sound.pitch_scale = lerpf(engine_sound.pitch_scale, target_engine_pitch, delta * 8)
+		engine_sound.volume_db = lerpf(engine_sound.volume_db, target_engine_volume, delta * 8)
+		if (terrain_state_old & FZ_TERRAIN.RECHARGE) == 0 and (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
+			terrain_sound.stream = preload("res://sfx/vehicle/restore.wav")
+			terrain_sound.play(0.0)
+		elif (terrain_state_old & FZ_TERRAIN.DIRT) == 0 and (terrain_state & FZ_TERRAIN.DIRT) != 0:
+			terrain_sound.stream = preload("res://sfx/vehicle/terrain_dirt.wav")
+			terrain_sound.play(0.0)
+		elif (terrain_state_old & FZ_TERRAIN.LAVA) == 0 and (terrain_state & FZ_TERRAIN.LAVA) != 0:
+			terrain_sound.stream = preload("res://sfx/vehicle/terrain_lava.wav")
+			terrain_sound.play(0.0)
+		elif terrain_state == 0:
+			terrain_sound.stop()
+		if (absf(input_strafe) > 0.05):
+			strafe_sound.volume_db = lerpf(strafe_sound.volume_db, 20, delta * 12)
+			if !strafe_sound.playing:
+				strafe_sound.play(0.0)
+		else:
+			strafe_sound.volume_db = lerpf(strafe_sound.volume_db, -20, delta * 12)
+			if strafe_sound.volume_db <= -10:
+				strafe_sound.stop()
+		if (Input.is_action_just_pressed("Accelerate")):
+			thrust_sound.stop()
+			thrust_sound.play(0.0)
+		if (machine_state & FZ_MS.JUST_PRESSED_BOOST):
+			boost_sound.stop()
+			boost_sound.play(0.0)
+		if (machine_state & FZ_MS.JUST_HIT_DASHPLATE):
+			boost_sound.stop()
+			boost_sound.play(0.0)
+	if effect_tier == EffectTier.FULL:
+		recharge_particles.emitting = (terrain_state & FZ_TERRAIN.RECHARGE) != 0
+		attack_particles.emitting = (machine_state & FZ_MS.SIDEATTACKING) != 0 or (machine_state & FZ_MS.SPINATTACKING) != 0
+		if (machine_state & FZ_MS.JUSTLANDED) != 0:
+			landing_particles.restart()
+			landing_particles.emitting = true
 	else:
 		recharge_particles.emitting = false
-	
-	if (machine_state & FZ_MS.SIDEATTACKING) != 0 or (machine_state & FZ_MS.SPINATTACKING) != 0:
-		attack_particles.emitting = true
-	else:
 		attack_particles.emitting = false
-	
-	if (machine_state & FZ_MS.JUSTLANDED) != 0:
-		landing_particles.restart()
-		landing_particles.emitting = true
-	#DebugDraw2D.set_text("input_strafe", input_strafe)
-	
-	if (absf(input_strafe) > 0.05):
-		strafe_sound.volume_db = lerpf(strafe_sound.volume_db, 20, delta * 12)
-		if !strafe_sound.playing:
-			strafe_sound.play(0.0)
-	else:
-		strafe_sound.volume_db = lerpf(strafe_sound.volume_db, -20, delta * 12)
-		if strafe_sound.volume_db <= -10:
-			strafe_sound.stop()
-	
-	if (Input.is_action_just_pressed("Accelerate")):
-		thrust_sound.stop()
-		thrust_sound.play(0.0)
-	if (machine_state & FZ_MS.JUST_PRESSED_BOOST):
-		boost_sound.stop()
-		boost_sound.play(0.0)
-	if (machine_state & FZ_MS.JUST_HIT_DASHPLATE):
-		boost_sound.stop()
-		boost_sound.play(0.0)
+		landing_particles.emitting = false
 	terrain_state_old = terrain_state
 
 var is_predicted = true
 
 func just_rendered() -> void:
 	is_predicted = false
-	if (machine_state & FZ_MS.JUSTLANDED) != 0:
+	if local_visual_enabled and (machine_state & FZ_MS.JUSTLANDED) != 0:
 		landing_sound.stop()
 		landing_sound.play(0.0)
 		
@@ -491,11 +664,11 @@ func _process(delta: float) -> void:
 	var energy_flash := Color(0.04, -0.01, -0.01) * (sin(0.015 * Time.get_ticks_msec()) * 0.5 + 0.5) * (1.0 - energy_ratio)
 	#var boost_flash := Color(0, 0.03, 0.075) * (boost_ratio)
 	#var final_overlay := energy_flash + boost_flash + Color(1, 1, 1) * damage * 0.1
-	var target_fov := remap(speed_kmh, 0, 1800, 50, 90)
-	#target_fov += remap(boost_ratio, 0, 1, 0, 50)
-	target_fov = minf(target_fov, 100)
-	car_camera.fov = damp(car_camera.fov, target_fov, 2, delta)
-	if restore_state != 2:
+	if local_visual_enabled:
+		var target_fov := remap(speed_kmh, 0, 1800, 50, 90)
+		target_fov = minf(target_fov, 100)
+		car_camera.fov = damp(car_camera.fov, target_fov, 2, delta)
+	if local_visual_enabled and restore_state != 2:
 		var use_forward_z : Vector3 = use_basis_physical.basis.z
 		use_forward_z = use_forward_z.normalized()
 		if (tilt_fl_state & FZ_TC.DRIFT) != 0:
@@ -562,7 +735,7 @@ func _process(delta: float) -> void:
 		use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + \
 		use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
 		car_camera.basis = use_cam_basis.rotated(use_cam_basis.x, deg_to_rad(-10))
-	else:
+	elif local_visual_enabled:
 		var forward := (restore_target_transform.origin - restore_start_transform.origin).normalized()
 		var temp_up := restore_target_transform.basis.y.normalized()
 
@@ -586,38 +759,30 @@ func _process(delta: float) -> void:
 	#car_camera.global_basis = car_camera.global_basis.slerp(car_transform.global_basis, 0.25)
 	#car_camera.fov = 90
 	
-	car_camera.near = 0.25
-	car_camera.far = 40000.0
-	if (car_outline_material and is_instance_valid(car_outline_material)):
-		var use_vel := (use_car_pos_old - use_car_pos)
-		var use_vel_dir := use_vel.normalized()
-		var use_vel_mag := use_vel.length()
-		var final_vel := use_vel_dir * move_toward(use_vel_mag, 0.0, 4) * 0.5
-		car_outline_material.set_shader_parameter("in_velocity", final_vel + use_basis_physical.basis.z * 0.01)
-		car_outline_material.set_shader_parameter("overlay_colour", Color(0.5, 0.7, 1.0) * boost_frames * 0.005)
-		car_material.set_shader_parameter("in_overlay_colour", car_overlay_colour)
-		if height_above_track > 0.01:
-			vehicle_shadow.visible = true
-			var use_transform := vehicle_main.global_transform
-			use_transform.origin += -track_surface_normal * (20.0 - height_above_track)
-			use_transform.basis.x = use_transform.basis.x.slide(track_surface_normal)
-			use_transform.basis.y = use_transform.basis.y.slide(track_surface_normal)
-			use_transform.basis.z = use_transform.basis.z.slide(track_surface_normal)
-			vehicle_shadow.global_transform = use_transform
-		else:
-			vehicle_shadow.visible = false
-		for node:VehicleThruster in vehicle_thrusters.get_children():
-			node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
+	if local_visual_enabled:
+		car_camera.near = 0.25
+		car_camera.far = 40000.0
+	for node:VehicleThruster in vehicle_thrusters.get_children():
+		node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
+	if local_visual_enabled and is_instance_valid(vehicle_shadow):
+		var use_transform := car_transform.global_transform * vehicle_main_local_transform
+		use_transform.origin += -track_surface_normal * (20.0 - height_above_track)
+		use_transform.basis.x = use_transform.basis.x.slide(track_surface_normal)
+		use_transform.basis.y = use_transform.basis.y.slide(track_surface_normal)
+		use_transform.basis.z = use_transform.basis.z.slide(track_surface_normal)
+		vehicle_shadow.global_transform = use_transform
 
-	if (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
+	if effect_tier == EffectTier.FULL and (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
 		boost_electricity.boosting = true
-		boost_electricity.ground = Plane(track_surface_normal, vehicle_shadow.global_position)
+		if is_instance_valid(vehicle_shadow):
+			boost_electricity.ground = Plane(track_surface_normal, vehicle_shadow.global_position)
 	else:
 		boost_electricity.boosting = false
-	boost_electricity.tendril_lifetime = remap(speed_kmh, 0, 3000, 0.3, 0.1)
-	boost_electricity.calculate_electricity(delta, car_transform.global_transform)
+	if effect_tier == EffectTier.FULL:
+		boost_electricity.tendril_lifetime = remap(speed_kmh, 0, 3000, 0.3, 0.1)
+		boost_electricity.calculate_electricity(delta, car_transform.global_transform)
 	is_predicted = true
-	if is_instance_valid(name_label):
+	if effect_tier == EffectTier.FULL and is_instance_valid(name_label):
 		var active_cam = get_viewport().get_camera_3d()
 		if active_cam.global_position.distance_squared_to(use_car_pos) > 12000 or active_cam.global_basis.z.dot(use_car_pos - active_cam.global_position) > 0:
 			name_label.modulate.a = lerpf(name_label.modulate.a, 0, delta * 20)

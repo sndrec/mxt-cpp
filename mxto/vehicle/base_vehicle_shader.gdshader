@@ -50,7 +50,7 @@ void fragment() {
 	vec3 final_colour = hsv2rgb(hsv_colour);
 	ALBEDO = final_colour;// * fres;
 	//DEPTH = VERTEX.z;
-	EMISSION = in_overlay_colour;
+	EMISSION = in_overlay_colour + COLOR.rgb;
 }
 
 void light() {
