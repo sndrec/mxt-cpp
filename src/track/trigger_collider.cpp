@@ -177,13 +177,14 @@ void Dashplate::start_touch(PhysicsCar* car)
 		heat = kHeatMin;
 	if (heat > kHeatMax)
 		heat = kHeatMax;
+	int spark_gain = static_cast<int>(floorf(heat * 2.5f));
+	if (spark_gain > 0)
+		car->add_super_spark_charge(static_cast<uint16_t>(spark_gain));
 
 	last_activation_tick = current_tick;
 
 	float turbo_multiplier = 1.0f + heat * kHeatTurboMultiplier;
 	car->dashplate_heat_multiplier = turbo_multiplier;
-
-	godot::UtilityFunctions::print("Dashplate heat:", heat);
 }
 
 void Dashplate::touch(PhysicsCar* car) {}

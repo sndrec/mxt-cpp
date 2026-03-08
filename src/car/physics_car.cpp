@@ -1527,7 +1527,7 @@ void PhysicsCar::initialize_machine()
 
 	boost_turbo = 0.0f;
 
-	s_boost_charge_max = 50;
+	s_boost_charge_max = 30;
 	PhysicsCarSuspensionPoint* tilt_corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl,
 	&tilt_br };
 	PhysicsCarCollisionPoint* wall_corners[4] = { &wall_fl, &wall_fr, &wall_bl,

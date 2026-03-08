@@ -84,7 +84,7 @@ func process_observation(_tick: int, _observation: PackedByteArray) -> void:
 	desired_strafe_right = maxf(road_tx + desired_lane, 0.0) * 4
 	desired_strafe_left = clampf(desired_strafe_left, 0, 1)
 	desired_strafe_right = clampf(desired_strafe_right, 0, 1)
-	DebugDraw3D.draw_arrow(position, position + physical_basis.x * desired_steer * 16, Color.RED, 0.25, true, 0.01666)
+	#DebugDraw3D.draw_arrow(position, position + physical_basis.x * desired_steer * 16, Color.RED, 0.25, true, 0.01666)
 	#DebugDraw3D.draw_arrow(position, position + physical_basis.x * -desired_strafe_left * 16, Color.BLUE, 0.25, true, 0.01666)
 	
 	var drifting := (tilt_state & 0x4) != 0
@@ -101,7 +101,7 @@ func process_observation(_tick: int, _observation: PackedByteArray) -> void:
 	if wants_drift:
 		desired_strafe_left = 1.0
 		desired_strafe_right = 1.0
-		DebugDraw3D.draw_sphere(position, 1.5, Color.YELLOW, 5)
+		#DebugDraw3D.draw_sphere(position, 1.5, Color.YELLOW, 5)
 	var wants_to_want_boost = true if energy > 10.0 else false
 	wants_boost = true if (wants_to_want_boost and time_since_last_boost > 10) else false
 	if wants_boost:

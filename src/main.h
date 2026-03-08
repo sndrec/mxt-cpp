@@ -32,7 +32,7 @@ namespace godot {
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
 		static const int SUPER_SPARK_CAPACITY = 256;
-		static constexpr float SUPER_SPARK_COLLECT_RADIUS = 4.0f;
+		static constexpr float SUPER_SPARK_COLLECT_RADIUS = 8.0f;
 		struct SuperSpark {
 			uint8_t active = 0;
 			uint8_t grounded = 0;

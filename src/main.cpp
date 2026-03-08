@@ -1094,8 +1094,6 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 	tangent_a = tangent_a.normalized();
 	godot::Vector3 tangent_b = normal_in.cross(tangent_a).normalized();
 
-	UtilityFunctions::print("Emitting ", count, " super sparks!!");
-
 	for (int n = 0; n < count; ++n) {
 		const uint16_t cursor = super_spark_state->cursor;
 		SuperSpark& spark = super_sparks[cursor];
@@ -1105,7 +1103,7 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 		spark.grounded = 0;
 		spark.checkpoint = car.current_checkpoint;
 		spark.plane_normal = normal_in;
-		spark.plane_d = spark.plane_normal.dot(surface_point) + 1.0f;
+		spark.plane_d = spark.plane_normal.dot(surface_point) + 2.5f;
 		spark.position = car.position_current + spark.plane_normal * 1.5f;
 
 		const float up_speed = rand_range(25.0f, 40.0f);
@@ -1153,7 +1151,7 @@ void GameSim::update_super_sparks()
 			float dist_sq = spark.position.distance_squared_to(closest);
 			if (dist_sq <= collect_radius_sq) {
 				car.add_super_spark_charge(1);
-				car.base_speed += 0.02f;
+				car.base_speed += 0.05f;
 				spark.active = 0;
 				spark.grounded = 0;
 				break;
