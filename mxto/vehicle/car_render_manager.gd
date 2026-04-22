@@ -73,8 +73,8 @@ func _process(_delta: float) -> void:
 			var body_overlay := Color(car.car_overlay_colour.r, car.car_overlay_colour.g, car.car_overlay_colour.b, 1.0)
 			var outline_overlay := Color(0.5, 0.7, 1.0, 1.0) * float(car.boost_frames) * 0.005
 			_set_pass_instance(archetype[PASS_MAIN], slot, body_transform * archetype[PASS_MAIN]["local_transform"], zero_custom, body_overlay)
-			_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay)
-			_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK)
+			#_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay)
+			#_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK)
 
 func _definition_key(definition: CarDefinition) -> String:
 	if definition == null:
@@ -93,8 +93,6 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 		"indices": [],
 		"count": 0,
 		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0),
-		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 1, 64),
-		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 1, 64),
 	}
 	template.free()
 	return archetype
@@ -122,7 +120,7 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	}
 
 func _resize_passes(archetype: Dictionary, count: int) -> void:
-	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN]:
+	for pass_name in [PASS_MAIN]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
 		if multimesh.instance_count != count:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=37 format=4 uid="uid://brrsssxopnp7c"]
+[gd_scene format=4 uid="uid://brrsssxopnp7c"]
 
 [ext_resource type="Script" uid="uid://dfdmwafou3th7" path="res://main.gd" id="1_tjhrj"]
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
@@ -2162,21 +2162,21 @@ size = Vector2(32768, 32768)
 [sub_resource type="LabelSettings" id="LabelSettings_lquwl"]
 font_size = 24
 
-[node name="Main" type="Node"]
+[node name="Main" type="Node" unique_id=1088908591]
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="GameSim" type="GameSim" parent="."]
+[node name="GameSim" type="GameSim" parent="." unique_id=614228088]
 
-[node name="ServerGameSim" type="GameSim" parent="."]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=514302190]
 
-[node name="NetworkManager" type="Node" parent="."]
+[node name="NetworkManager" type="Node" parent="." unique_id=925113707]
 script = ExtResource("3_netplay")
 
-[node name="CpuDriverManager" type="Node" parent="."]
+[node name="CpuDriverManager" type="Node" parent="." unique_id=2002486661]
 script = ExtResource("19_cpu_manager")
 
-[node name="Control" type="Control" parent="."]
+[node name="Control" type="Control" parent="." unique_id=825262462]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -2184,7 +2184,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="SingleplayerButton" type="Button" parent="Control"]
+[node name="SingleplayerButton" type="Button" parent="Control" unique_id=1666668673]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2199,7 +2199,22 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Time Attack"
 
-[node name="CpuSliderLabel" type="Label" parent="Control"]
+[node name="SpectatorRaceButton" type="Button" parent="Control" unique_id=1039689286]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = 120.0
+offset_top = 18.0
+offset_right = 280.0
+offset_bottom = 49.0
+grow_horizontal = 2
+grow_vertical = 2
+text = "Start CPU Race"
+
+[node name="CpuSliderLabel" type="Label" parent="Control" unique_id=1708824296]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2214,7 +2229,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "CPU Racers: 0"
 
-[node name="CpuSlider" type="HSlider" parent="Control"]
+[node name="CpuSlider" type="HSlider" parent="Control" unique_id=199076509]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2229,7 +2244,7 @@ grow_horizontal = 2
 grow_vertical = 2
 max_value = 999.0
 
-[node name="StartButton" type="Button" parent="Control"]
+[node name="StartButton" type="Button" parent="Control" unique_id=501035796]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2244,7 +2259,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Host Multiplayer Lobby"
 
-[node name="TrackSelector" type="OptionButton" parent="Control"]
+[node name="TrackSelector" type="OptionButton" parent="Control" unique_id=1197651610]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2258,7 +2273,7 @@ offset_bottom = -44.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="IPField" type="LineEdit" parent="Control"]
+[node name="IPField" type="LineEdit" parent="Control" unique_id=279591352]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2273,7 +2288,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "127.0.0.1"
 
-[node name="JoinButton" type="Button" parent="Control"]
+[node name="JoinButton" type="Button" parent="Control" unique_id=1521249555]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2288,7 +2303,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Join Multiplayer Lobby"
 
-[node name="CarSettingsButton" type="Button" parent="Control"]
+[node name="CarSettingsButton" type="Button" parent="Control" unique_id=1479095433]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2303,7 +2318,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Car Settings"
 
-[node name="ControllerSettingsButton" type="Button" parent="Control"]
+[node name="ControllerSettingsButton" type="Button" parent="Control" unique_id=1789114676]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2318,7 +2333,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Controller Settings"
 
-[node name="Lobby" type="Control" parent="."]
+[node name="Lobby" type="Control" parent="." unique_id=794618976]
 visible = false
 layout_mode = 3
 anchors_preset = 15
@@ -2327,7 +2342,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="LobbyTrackSelector" type="OptionButton" parent="Lobby"]
+[node name="LobbyTrackSelector" type="OptionButton" parent="Lobby" unique_id=562261124]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2341,12 +2356,12 @@ offset_bottom = -44.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="PlayerList" type="ItemList" parent="Lobby"]
+[node name="PlayerList" type="ItemList" parent="Lobby" unique_id=950518910]
 layout_mode = 1
 offset_right = 300.0
 offset_bottom = 647.0
 
-[node name="StartRaceButton" type="Button" parent="Lobby"]
+[node name="StartRaceButton" type="Button" parent="Lobby" unique_id=252745000]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2361,7 +2376,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Start Race"
 
-[node name="AddCpuButton" type="Button" parent="Lobby"]
+[node name="AddCpuButton" type="Button" parent="Lobby" unique_id=66707038]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2376,7 +2391,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Add CPU Racer"
 
-[node name="RemoveCpuButton" type="Button" parent="Lobby"]
+[node name="RemoveCpuButton" type="Button" parent="Lobby" unique_id=256690200]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2391,7 +2406,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Remove CPU Racer"
 
-[node name="CarSettingsButton" type="Button" parent="Lobby"]
+[node name="CarSettingsButton" type="Button" parent="Lobby" unique_id=1561832191]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2406,7 +2421,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Car Settings"
 
-[node name="ControllerSettingsButton" type="Button" parent="Lobby"]
+[node name="ControllerSettingsButton" type="Button" parent="Lobby" unique_id=1110371015]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -2421,15 +2436,15 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Controller Settings"
 
-[node name="CarSettings" parent="." instance=ExtResource("3_carsettings")]
+[node name="CarSettings" parent="." unique_id=774432447 instance=ExtResource("3_carsettings")]
 visible = false
 
-[node name="ControllerSettings" parent="." instance=ExtResource("10_ctrlset")]
+[node name="ControllerSettings" parent="." unique_id=721364932 instance=ExtResource("10_ctrlset")]
 visible = false
 
-[node name="GameWorld" type="Node3D" parent="."]
+[node name="GameWorld" type="Node3D" parent="." unique_id=1562385561]
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="GameWorld"]
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="GameWorld" unique_id=1671305165]
 transform = Transform3D(-0.866023, -0.433016, 0.250001, 0, 0.499998, 0.866027, -0.500003, 0.749999, -0.43301, 0, 0, 0)
 layers = 2147483647
 shadow_bias = 1.0
@@ -2438,34 +2453,35 @@ shadow_blur = 0.0
 directional_shadow_mode = 0
 directional_shadow_max_distance = 2000.0
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="GameWorld"]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="GameWorld" unique_id=856478634]
 environment = SubResource("Environment_52gnn")
 
-[node name="CarNodeContainer" type="Node3D" parent="GameWorld"]
+[node name="CarNodeContainer" type="Node3D" parent="GameWorld" unique_id=1330933583]
 script = ExtResource("3_h2yge")
 metadata/_custom_type_script = "uid://odaiawvcj4yf"
 
-[node name="SuperSparkContainer" type="Node3D" parent="GameWorld"]
+[node name="SuperSparkContainer" type="Node3D" parent="GameWorld" unique_id=1358909711]
+visible = false
 script = ExtResource("18_spark")
 
-[node name="DebugTrackMeshContainer" type="Node3D" parent="GameWorld"]
+[node name="DebugTrackMeshContainer" type="Node3D" parent="GameWorld" unique_id=86658115]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0)
 
-[node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
+[node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer" unique_id=1098176152]
 mesh = SubResource("ArrayMesh_w48qg")
 skeleton = NodePath("")
 
-[node name="TrackFloor" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
+[node name="TrackFloor" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer" unique_id=741915091]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, 1, 0, -1, -4.37114e-08, 0, -4.30435e-05, 2015.28)
 mesh = SubResource("PlaneMesh_074og")
 
-[node name="TrackClouds" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer"]
+[node name="TrackClouds" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer" unique_id=2071955249]
 transform = Transform3D(0.915438, -3.55271e-15, -0.402459, 0.402459, -4.37114e-08, 0.915438, -1.75921e-08, -1, -4.00151e-08, 0, -0.000146866, -359.904)
 mesh = SubResource("PlaneMesh_82xsv")
 
-[node name="ObjContainer" type="Node3D" parent="GameWorld"]
+[node name="ObjContainer" type="Node3D" parent="GameWorld" unique_id=1598362801]
 
-[node name="RaceFinishLabel" type="Label" parent="."]
+[node name="RaceFinishLabel" type="Label" parent="." unique_id=1096806024]
 visible = false
 anchors_preset = 15
 anchor_right = 1.0
@@ -2480,7 +2496,7 @@ label_settings = SubResource("LabelSettings_lquwl")
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="FrameTimeLabel" type="Label" parent="."]
+[node name="FrameTimeLabel" type="Label" parent="." unique_id=19847892]
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
@@ -2489,7 +2505,7 @@ offset_right = 40.0
 grow_vertical = 0
 text = "400us"
 
-[node name="RTTLabel" type="Label" parent="."]
+[node name="RTTLabel" type="Label" parent="." unique_id=655268986]
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
@@ -2499,7 +2515,7 @@ offset_bottom = -19.0
 grow_vertical = 0
 text = "230ms"
 
-[node name="VersionLabel" type="Label" parent="."]
+[node name="VersionLabel" type="Label" parent="." unique_id=119759867]
 anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0

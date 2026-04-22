@@ -32,6 +32,8 @@ public:
 	}
 
 	float sample(float in_t) const;
+	float sample_derivative(float in_t) const;
+	void sample_with_derivative(float in_t, float *value_out, float *derivative_out) const;
 };
 
 struct RoadTransformCurveKeyframe
@@ -71,5 +73,6 @@ struct alignas(16) RoadTransformCurve {
 	}
 
         void sample(RoadTransform &out, float in_t);
+        void sample_with_derivative(RoadTransform &out, RoadTransform &derivative_out, float in_t);
         void precompute();
 };

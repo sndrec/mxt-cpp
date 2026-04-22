@@ -1,4 +1,4 @@
-[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://cy2sp4u0j5fnw"]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://cy2sp4u0j5fnw"]
 
 [ext_resource type="Texture2D" uid="uid://c5wcu4e5wwnhy" path="res://asset/tex/simple_grid.png" id="1_144m1"]
 

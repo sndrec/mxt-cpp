@@ -20,6 +20,7 @@ class_name GameManager extends Node
 @onready var controller_settings: Control = $ControllerSettings
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
+@onready var spectator_race_button: Button = $Control/SpectatorRaceButton
 @onready var controller_settings_button: Button = $Control/ControllerSettingsButton
 @onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
 @onready var controller_settings_button_lobby: Button = $Lobby/ControllerSettingsButton
@@ -104,6 +105,7 @@ func _ready() -> void:
 	if singleplayer_button.pressed.is_connected(_on_start_button_pressed):
 		singleplayer_button.pressed.disconnect(_on_start_button_pressed)
 	singleplayer_button.pressed.connect(_on_singleplayer_button_pressed)
+	spectator_race_button.pressed.connect(_on_spectator_race_button_pressed)
 	cpu_slider.value_changed.connect(_on_singleplayer_cpu_slider_changed)
 	add_cpu_button.pressed.connect(_on_add_cpu_button_pressed)
 	remove_cpu_button.pressed.connect(_on_remove_cpu_button_pressed)
@@ -225,6 +227,12 @@ func _on_start_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _on_singleplayer_button_pressed() -> void:
+	_start_singleplayer_race(false)
+
+func _on_spectator_race_button_pressed() -> void:
+	_start_singleplayer_race(true)
+
+func _start_singleplayer_race(as_spectator: bool) -> void:
 	# Start a local, singleplayer race that does not touch networking at all.
 	# Prepare a minimal settings array using the current local player settings.
 	singleplayer_mode = true
@@ -235,10 +243,15 @@ func _on_singleplayer_button_pressed() -> void:
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.car_definition_path == "" and car_definitions.size() > 0:
 		ps.car_definition_path = car_definitions[0].resource_path
-	# Do not force spectator in singleplayer
-	ps.spectator = false
-	# Provide a local-only roster to satisfy parts of the UI and car ownership logic
-	network_manager.player_ids = [multiplayer.get_unique_id()]
+	ps.spectator = as_spectator
+	var my_id := multiplayer.get_unique_id()
+	network_manager.player_settings[my_id] = ps.to_dict()
+	if as_spectator:
+		network_manager.player_ids = []
+		network_manager.spectator_ids = [my_id]
+	else:
+		network_manager.player_ids = [my_id]
+		network_manager.spectator_ids = []
 	# Invoke the normal race startup, but driven entirely by local state
 	var settings_array: Array = [ps.to_dict()]
 	var cpu_ids := network_manager.get_cpu_roster()
@@ -444,6 +457,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var racer_cpu_flags : Array = []
 	var roster := network_manager.get_simulation_roster()
 	var cpu_ids := network_manager.get_cpu_roster()
+	var racer_roster_index := 0
 	for i in range(settings.size()):
 		var d = settings[i]
 		if typeof(d) == TYPE_DICTIONARY:
@@ -455,10 +469,11 @@ func _start_race(track_index: int, settings: Array) -> void:
 				var def_res := load(ps.car_definition_path)
 				if def_res != null:
 					chosen_defs.append(def_res)
-				if i < roster.size():
-					var pid = roster[i]
+				if racer_roster_index < roster.size():
+					var pid = roster[racer_roster_index]
 					racer_ids.append(pid)
 					racer_cpu_flags.append(cpu_ids.has(pid))
+				racer_roster_index += 1
 	local_player_index = racer_ids.find(multiplayer.get_unique_id())
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_player_index)
 	var idx := 0
@@ -479,7 +494,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var car_props : Array = []
 	var accel_settings_arr : Array = []
 	for i in racer_settings.size():
-		if racer_cpu_flags[i]:
+		var is_cpu_racer = i < racer_cpu_flags.size() and racer_cpu_flags[i]
+		if is_cpu_racer:
 			players.append(null)
 			continue
 		var pc := player_scene.instantiate()

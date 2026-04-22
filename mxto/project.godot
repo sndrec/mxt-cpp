@@ -8,18 +8,22 @@
 
 config_version=5
 
+[animation]
+
+compatibility/default_parent_skeleton_in_mesh_instance_3d=true
+
 [application]
 
 config/name="Maxx Throttle C++"
 run/main_scene="res://main.tscn"
-config/features=PackedStringArray("4.5", "Forward Plus")
+config/features=PackedStringArray("4.6", "Forward Plus")
 run/max_fps=360
 config/icon="res://icon.svg"
 
 [autoload]
 
 DipDebugMenu="*res://ui/dip_debug_menu.gd"
-ImGuiRoot="*res://addons/imgui-godot/data/ImGuiRoot.tscn"
+ImGuiRoot="*uid://dugmpnsxaagba"
 
 [debug]
 
@@ -162,10 +166,10 @@ lights_and_shadows/positional_shadow/soft_shadow_filter_quality=5
 lights_and_shadows/positional_shadow/atlas_16_bits=false
 textures/default_filters/anisotropic_filtering_level=4
 anti_aliasing/quality/msaa_3d=3
+anti_aliasing/quality/use_debanding=true
 textures/default_filters/texture_mipmap_bias=-1.0
 environment/glow/upscale_mode=0
 anti_aliasing/quality/screen_space_aa=1
-anti_aliasing/quality/use_debanding=true
 
 [shader_globals]
 

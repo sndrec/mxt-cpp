@@ -6,21 +6,55 @@
 
 float Curve::sample(float in_t) const
 {
+	float value = 0.0f;
+	sample_with_derivative(in_t, &value, nullptr);
+	return value;
+};
+
+float Curve::sample_derivative(float in_t) const
+{
+	float derivative = 0.0f;
+	sample_with_derivative(in_t, nullptr, &derivative);
+	return derivative;
+};
+
+void Curve::sample_with_derivative(float in_t, float *value_out, float *derivative_out) const
+{
+	if (value_out)
+	{
+		*value_out = 0.0f;
+	}
+	if (derivative_out)
+	{
+		*derivative_out = 0.0f;
+	}
 	if (num_keyframes == 0)
 	{
-		return 0.0;
+		return;
 	};
 	if (num_keyframes == 1)
 	{
-		return keyframes[0].value;
+		if (value_out)
+		{
+			*value_out = keyframes[0].value;
+		}
+		return;
 	};
 	if (in_t <= keyframes[0].time)
 	{
-		return keyframes[0].value;
+		if (value_out)
+		{
+			*value_out = keyframes[0].value;
+		}
+		return;
 	};
 	if (in_t >= keyframes[num_keyframes - 1].time)
 	{
-		return keyframes[num_keyframes - 1].value;
+		if (value_out)
+		{
+			*value_out = keyframes[num_keyframes - 1].value;
+		}
+		return;
 	};
 	int start_key_index = 0;
 	if (num_keyframes >= 2)
@@ -35,7 +69,11 @@ float Curve::sample(float in_t) const
 	float dist = keyframes[start_key_index + 1].time - keyframes[start_key_index].time;
 	if (dist == 0)
 	{
-		return p2;
+		if (value_out)
+		{
+			*value_out = p2;
+		}
+		return;
 	};
 	in_t = remap_float(in_t, keyframes[start_key_index].time, keyframes[start_key_index + 1].time, 0.0f, 1.0f);
 	dist *= 0.33333333f;
@@ -47,7 +85,18 @@ float Curve::sample(float in_t) const
 	float t2 = in_t * in_t;
 	float t3 = t2 * in_t;
 	float dp_dv = p1 * omt3 + p1_handle * omt2 * in_t * 3.0f + p2_handle * omt * t2 * 3.0f + p2 * t3;
-	return dp_dv;
+	if (value_out)
+	{
+		*value_out = dp_dv;
+	}
+	if (derivative_out)
+	{
+		const float deriv_u =
+			3.0f * ((p1_handle - p1) * omt2 +
+				2.0f * (p2_handle - p1_handle) * omt * in_t +
+				(p2 - p2_handle) * t2);
+		*derivative_out = deriv_u / (dist * 3.0f);
+	}
 };
 
 void RoadTransformCurve::precompute() {
@@ -124,23 +173,48 @@ void RoadTransformCurve::precompute() {
 	}
 }
 
+static inline void _set_road_transform_from_values(RoadTransform &out, const float *values)
+{
+	out.t3d.basis.set(
+		values[3],  values[6],  values[9],
+		values[4],  values[7], values[10],
+		values[5],  values[8], values[11]
+		);
+	out.t3d.origin.x = values[0];
+	out.t3d.origin.y = values[1];
+	out.t3d.origin.z = values[2];
+	out.scale.x = values[12];
+	out.scale.y = values[13];
+	out.scale.z = values[14];
+}
+
+static inline void _set_road_transform_zero(RoadTransform &out)
+{
+	out.t3d.basis.set(
+		0.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f,
+		0.0f, 0.0f, 0.0f
+		);
+	out.t3d.origin = godot::Vector3(0.0f, 0.0f, 0.0f);
+	out.scale = godot::Vector3(0.0f, 0.0f, 0.0f);
+}
+
 void RoadTransformCurve::sample(RoadTransform &out, float in_t) {
+	RoadTransform derivative;
+	sample_with_derivative(out, derivative, in_t);
+}
+
+void RoadTransformCurve::sample_with_derivative(
+	RoadTransform &out,
+	RoadTransform &derivative_out,
+	float in_t) {
 	if (num_keyframes == 0) {
+		_set_road_transform_zero(derivative_out);
 		return;
 	}
 	if (num_keyframes == 1) {
-		const float *v0 = values;
-		out.t3d.basis.set(
-			v0[3],  v0[6],  v0[9],
-			v0[4],  v0[7],  v0[10],
-			v0[5],  v0[8],  v0[11]
-			);
-		out.t3d.origin.x = v0[0];
-		out.t3d.origin.y = v0[1];
-		out.t3d.origin.z = v0[2];
-		out.scale.x = v0[12];
-		out.scale.y = v0[13];
-		out.scale.z = v0[14];
+		_set_road_transform_from_values(out, values);
+		_set_road_transform_zero(derivative_out);
 		return;
 	}
 
@@ -172,9 +246,11 @@ void RoadTransformCurve::sample(RoadTransform &out, float in_t) {
 
 #ifdef __AVX2__
 	alignas(32) float sampled[16];
+	alignas(32) float sampled_derivative[16];
 	__m256 uv  = _mm256_set1_ps(u);
 	__m256 u2v = _mm256_set1_ps(u2);
 	__m256 u3v = _mm256_set1_ps(u3);
+	__m256 deriv_scale = _mm256_set1_ps(inv_dt[k]);
 	for (int chunk = 0; chunk < 2; ++chunk) {
 		int base = k * 16 + chunk * 8;
 		__m256 a = _mm256_load_ps(coef_a + base);
@@ -191,12 +267,26 @@ void RoadTransformCurve::sample(RoadTransform &out, float in_t) {
 				_mm256_add_ps(_mm256_mul_ps(c, uv), d)));
 #endif
 		_mm256_store_ps(sampled + chunk * 8, r);
+
+#if defined(__FMA__)
+		__m256 deriv = _mm256_fmadd_ps(
+			_mm256_set1_ps(3.0f), _mm256_mul_ps(a, u2v),
+			_mm256_fmadd_ps(_mm256_set1_ps(2.0f), _mm256_mul_ps(b, uv), c));
+#else
+		__m256 deriv = _mm256_add_ps(
+			_mm256_mul_ps(_mm256_set1_ps(3.0f), _mm256_mul_ps(a, u2v)),
+			_mm256_add_ps(_mm256_mul_ps(_mm256_set1_ps(2.0f), _mm256_mul_ps(b, uv)), c));
+#endif
+		deriv = _mm256_mul_ps(deriv, deriv_scale);
+		_mm256_store_ps(sampled_derivative + chunk * 8, deriv);
 	}
 #else
 	alignas(16) float sampled[16];
+	alignas(16) float sampled_derivative[16];
 	__m128 uv  = _mm_set1_ps(u);
 	__m128 u2v = _mm_set1_ps(u2);
 	__m128 u3v = _mm_set1_ps(u3);
+	__m128 deriv_scale = _mm_set1_ps(inv_dt[k]);
 	for (int chunk = 0; chunk < 4; ++chunk) {
 		int base = k * 16 + chunk * 4;
 		__m128 a = _mm_load_ps(coef_a + base);
@@ -213,18 +303,21 @@ void RoadTransformCurve::sample(RoadTransform &out, float in_t) {
 				_mm_add_ps(_mm_mul_ps(c, uv), d)));
 #endif
 		_mm_store_ps(sampled + chunk * 4, r);
+
+#if defined(__FMA__)
+		__m128 deriv = _mm_fmadd_ps(
+			_mm_set1_ps(3.0f), _mm_mul_ps(a, u2v),
+			_mm_fmadd_ps(_mm_set1_ps(2.0f), _mm_mul_ps(b, uv), c));
+#else
+		__m128 deriv = _mm_add_ps(
+			_mm_mul_ps(_mm_set1_ps(3.0f), _mm_mul_ps(a, u2v)),
+			_mm_add_ps(_mm_mul_ps(_mm_set1_ps(2.0f), _mm_mul_ps(b, uv)), c));
+#endif
+		deriv = _mm_mul_ps(deriv, deriv_scale);
+		_mm_store_ps(sampled_derivative + chunk * 4, deriv);
 	}
 #endif
 
-	out.t3d.basis.set(
-		sampled[3],  sampled[6],  sampled[9],
-		sampled[4],  sampled[7], sampled[10],
-		sampled[5],  sampled[8], sampled[11]
-		);
-	out.t3d.origin.x = sampled[0];
-	out.t3d.origin.y = sampled[1];
-	out.t3d.origin.z = sampled[2];
-	out.scale.x = sampled[12];
-	out.scale.y = sampled[13];
-	out.scale.z = sampled[14];
+	_set_road_transform_from_values(out, sampled);
+	_set_road_transform_from_values(derivative_out, sampled_derivative);
 }

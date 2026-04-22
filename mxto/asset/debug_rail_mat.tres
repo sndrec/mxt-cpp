@@ -1,4 +1,4 @@
-[gd_resource type="ShaderMaterial" load_steps=5 format=3 uid="uid://l22tdrky4brb"]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://l22tdrky4brb"]
 
 [ext_resource type="Texture2D" uid="uid://qe85gydbwmso" path="res://asset/tex/rail.png" id="1_7fqbe"]
 

@@ -1,4 +1,4 @@
-[gd_resource type="ShaderMaterial" load_steps=7 format=3 uid="uid://i8momx14lmfb"]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://i8momx14lmfb"]
 
 [ext_resource type="Texture2D" uid="uid://donkwt1u14ol3" path="res://asset/tex/pitstop.png" id="1_5w2l0"]
 [ext_resource type="Texture2D" uid="uid://braqowcagu8r4" path="res://asset/tex/random_noise.png" id="1_uk7yi"]
