@@ -18,16 +18,21 @@
 #include "track/track_segment.h"
 #include "track/trigger_collider.h"
 
-static inline godot::Vector3 normalized_safe(const godot::Vector3 &v,
-	const godot::Vector3 &def = godot::Vector3()) {
+static inline SimVec3 normalized_safe(const SimVec3 &v,
+	const SimVec3 &def = SimVec3()) {
 	return v.length_squared() > 0.000001f ? v.normalized() : def;
 }
 
-static inline godot::Vector3 set_vec3_length(const godot::Vector3 &v, float len) {
+static inline SimVec3 set_vec3_length(const SimVec3 &v, float len) {
 	float l = v.length();
 	if (l > 0.000001f)
 		return v * (len / l);
-	return godot::Vector3();
+	return SimVec3();
+}
+
+static inline godot::Vector3 debug_gd_vec3(const SimVec3& v)
+{
+	return godot::Vector3(v.x, v.y, v.z);
 }
 
 namespace {
@@ -35,22 +40,157 @@ constexpr float kRespawnForwardDistance = 100.0f;
 constexpr float kMinCheckpointDistance = 0.01f;
 }
 
-godot::Vector3 PhysicsCar::prepare_machine_frame()
+#define LOAD_CAR_VEC3(car, name) SimVec3((car).soa->name##_x[(car).soa_index], (car).soa->name##_y[(car).soa_index], (car).soa->name##_z[(car).soa_index])
+#define STORE_CAR_VEC3(car, name, value) do { const SimVec3 mxt_v3_tmp = (value); (car).soa->name##_x[(car).soa_index] = mxt_v3_tmp.x; (car).soa->name##_y[(car).soa_index] = mxt_v3_tmp.y; (car).soa->name##_z[(car).soa_index] = mxt_v3_tmp.z; } while (0)
+#define LOAD_VEC3(name) SimVec3(soa->name##_x[soa_index], soa->name##_y[soa_index], soa->name##_z[soa_index])
+#define STORE_VEC3(name, value) do { const SimVec3 mxt_v3_tmp = (value); soa->name##_x[soa_index] = mxt_v3_tmp.x; soa->name##_y[soa_index] = mxt_v3_tmp.y; soa->name##_z[soa_index] = mxt_v3_tmp.z; } while (0)
+#define ADD_VEC3(name, value) STORE_VEC3(name, LOAD_VEC3(name) + (value))
+#define SUB_VEC3(name, value) STORE_VEC3(name, LOAD_VEC3(name) - (value))
+#define LOAD_TRANSFORM(name) MXT_LOAD_TRANSFORM(*soa, name, soa_index)
+#define STORE_TRANSFORM(name, value) MXT_STORE_TRANSFORM(*soa, name, soa_index, value)
+#define LOAD_CAR_TRANSFORM(car, name) MXT_LOAD_TRANSFORM(*(car).soa, name, (car).soa_index)
+#define POINT_INDEX(lane) (soa_index * 4 + (lane))
+#define LOAD_TILT_VEC3(name, point_index) SimVec3(soa->tilt_##name##_x[(point_index)], soa->tilt_##name##_y[(point_index)], soa->tilt_##name##_z[(point_index)])
+#define STORE_TILT_VEC3(name, point_index, value) do { const SimVec3 mxt_v3_tmp = (value); soa->tilt_##name##_x[(point_index)] = mxt_v3_tmp.x; soa->tilt_##name##_y[(point_index)] = mxt_v3_tmp.y; soa->tilt_##name##_z[(point_index)] = mxt_v3_tmp.z; } while (0)
+#define LOAD_WALL_VEC3(name, point_index) SimVec3(soa->wall_##name##_x[(point_index)], soa->wall_##name##_y[(point_index)], soa->wall_##name##_z[(point_index)])
+#define STORE_WALL_VEC3(name, point_index, value) do { const SimVec3 mxt_v3_tmp = (value); soa->wall_##name##_x[(point_index)] = mxt_v3_tmp.x; soa->wall_##name##_y[(point_index)] = mxt_v3_tmp.y; soa->wall_##name##_z[(point_index)] = mxt_v3_tmp.z; } while (0)
+
+static inline SimVec3 mxt_basis_rotate(const SimTransform& basis_transform, const SimVec3& p)
+{
+	return basis_transform.basis.xform(p);
+}
+
+static inline SimVec3 mxt_basis_inverse_rotate(const SimTransform& basis_transform, const SimVec3& p)
+{
+	return basis_transform.basis.xform_inv(p);
+}
+
+static inline SimVec3 mxt_transform_point(const SimTransform& basis_transform, const SimVec3& origin, const SimVec3& p)
+{
+	return basis_transform.basis.xform(p) + origin;
+}
+
+static inline SimVec3x4 mxt_transform_points4(
+	const SimTransform& basis_transform,
+	const SimVec3& origin,
+	SimFloat4 lx,
+	SimFloat4 ly,
+	SimFloat4 lz)
+{
+	const SimBasis& b = basis_transform.basis;
+	return SimVec3x4(
+		SimFloat4(origin.x) + SimFloat4(b[0].x) * lx + SimFloat4(b[1].x) * ly + SimFloat4(b[2].x) * lz,
+		SimFloat4(origin.y) + SimFloat4(b[0].y) * lx + SimFloat4(b[1].y) * ly + SimFloat4(b[2].y) * lz,
+		SimFloat4(origin.z) + SimFloat4(b[0].z) * lx + SimFloat4(b[1].z) * ly + SimFloat4(b[2].z) * lz);
+}
+
+static inline SimVec3x4 mxt_transform_points4(
+	const SimTransform& basis_transform,
+	const SimVec3& origin,
+	const SimVec3& p0,
+	const SimVec3& p1,
+	const SimVec3& p2,
+	const SimVec3& p3)
+{
+	return mxt_transform_points4(
+		basis_transform,
+		origin,
+		SimFloat4(p0.x, p1.x, p2.x, p3.x),
+		SimFloat4(p0.y, p1.y, p2.y, p3.y),
+		SimFloat4(p0.z, p1.z, p2.z, p3.z));
+}
+
+static inline void mxt_store_points4(SimVec3 out[4], const SimVec3x4& points)
+{
+	float x[4];
+	float y[4];
+	float z[4];
+	sim_store4(x, points.x);
+	sim_store4(y, points.y);
+	sim_store4(z, points.z);
+	for (int i = 0; i < 4; ++i) {
+		out[i] = SimVec3(x[i], y[i], z[i]);
+	}
+}
+
+static inline SimVec3 mxt_inverse_transform_point(const SimTransform& basis_transform, const SimVec3& origin, const SimVec3& p)
+{
+	return basis_transform.basis.xform_inv(p - origin);
+}
+
+static inline float checkpoint_longitudinal_t(const RaceTrack& track, int cp_idx, const SimVec3& point)
+{
+	const CollisionCheckpoint& cp = track.checkpoints[cp_idx];
+	const SimVec3 p1 = cp.start_plane.project(point);
+	const SimVec3 p2 = cp.end_plane.project(point);
+	const float cp_t = get_closest_t_on_segment(point, p1, p2);
+	return remap_float(cp_t, 0.0f, 1.0f, cp.t_start, cp.t_end);
+}
+
+static inline void mxt_rotate_basis_x(SimTransform& t, float angle_rad)
+{
+	const float c = deterministic_fp::cosf(angle_rad);
+	const float s = deterministic_fp::sinf(angle_rad);
+	const SimVec3 y = t.basis.get_column(1);
+	const SimVec3 z = t.basis.get_column(2);
+	t.basis.set_column(1, y * c + z * s);
+	t.basis.set_column(2, z * c - y * s);
+}
+
+static inline void mxt_rotate_basis_y(SimTransform& t, float angle_rad)
+{
+	const float c = deterministic_fp::cosf(angle_rad);
+	const float s = deterministic_fp::sinf(angle_rad);
+	const SimVec3 x = t.basis.get_column(0);
+	const SimVec3 z = t.basis.get_column(2);
+	t.basis.set_column(0, x * c - z * s);
+	t.basis.set_column(2, x * s + z * c);
+}
+
+PhysicsCar::PhysicsCar(PhysicsCarSoA* p_soa, int p_index)
+	: soa(p_soa),
+	  soa_index(p_index)
+{
+#define RESET_PHYSICS_CAR_SOA_VALUE(type, name, default_value) soa->name[soa_index] = default_value;
+	PHYSICS_CAR_SCALAR_FIELDS(RESET_PHYSICS_CAR_SOA_VALUE)
+#undef RESET_PHYSICS_CAR_SOA_VALUE
+#define RESET_PHYSICS_CAR_SOA_VEC3(name, default_value) { SimVec3 v = default_value; soa->name##_x[soa_index] = v.x; soa->name##_y[soa_index] = v.y; soa->name##_z[soa_index] = v.z; }
+	PHYSICS_CAR_VEC3_FIELDS(RESET_PHYSICS_CAR_SOA_VEC3)
+#undef RESET_PHYSICS_CAR_SOA_VEC3
+#define RESET_PHYSICS_CAR_SOA_TRANSFORM(name, default_value) STORE_TRANSFORM(name, default_value);
+	PHYSICS_CAR_TRANSFORM_FIELDS(RESET_PHYSICS_CAR_SOA_TRANSFORM)
+#undef RESET_PHYSICS_CAR_SOA_TRANSFORM
+	for (int lane = 0; lane < 4; ++lane) {
+		const int p = POINT_INDEX(lane);
+#define RESET_PHYSICS_CAR_TILT_SOA_VALUE(type, name, default_value) soa->tilt_##name[p] = default_value;
+		PHYSICS_CAR_TILT_SCALAR_FIELDS(RESET_PHYSICS_CAR_TILT_SOA_VALUE)
+#undef RESET_PHYSICS_CAR_TILT_SOA_VALUE
+#define RESET_PHYSICS_CAR_TILT_SOA_VEC3(name, default_value) { SimVec3 v = default_value; soa->tilt_##name##_x[p] = v.x; soa->tilt_##name##_y[p] = v.y; soa->tilt_##name##_z[p] = v.z; }
+		PHYSICS_CAR_TILT_VEC3_FIELDS(RESET_PHYSICS_CAR_TILT_SOA_VEC3)
+#undef RESET_PHYSICS_CAR_TILT_SOA_VEC3
+#define RESET_PHYSICS_CAR_WALL_SOA_VEC3(name, default_value) { SimVec3 v = default_value; soa->wall_##name##_x[p] = v.x; soa->wall_##name##_y[p] = v.y; soa->wall_##name##_z[p] = v.z; }
+		PHYSICS_CAR_WALL_VEC3_FIELDS(RESET_PHYSICS_CAR_WALL_SOA_VEC3)
+#undef RESET_PHYSICS_CAR_WALL_SOA_VEC3
+	}
+}
+
+
+SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 {
 	// Reset input if we're in the starting countdown
-	if (machine_state & MACHINESTATE::STARTINGCOUNTDOWN) {
-		input_steer_yaw = 0.0f;
-		input_steer_pitch = 0.0f;
-		input_brake = 0.0f;
-		input_strafe = 0.0f;
-		machine_state &= ~(MACHINESTATE::SIDEATTACKING |
+	if (soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) {
+		soa->input_steer_yaw[soa_index] = 0.0f;
+		soa->input_steer_pitch[soa_index] = 0.0f;
+		soa->input_brake[soa_index] = 0.0f;
+		soa->input_strafe[soa_index] = 0.0f;
+		soa->machine_state[soa_index] &= ~(MACHINESTATE::SIDEATTACKING |
 			MACHINESTATE::JUST_PRESSED_BOOST |
 			MACHINESTATE::SPINATTACKING);
 	}
 
-	uint32_t old_terrain_state = terrain_state;
+	uint32_t old_terrain_state = soa->terrain_state[soa_index];
 
-	machine_state &= ~(MACHINESTATE::DIEDTHISFRAMEOOB_Q |
+	soa->machine_state[soa_index] &= ~(MACHINESTATE::DIEDTHISFRAMEOOB_Q |
 		MACHINESTATE::JUST_HIT_DASHPLATE |
 		MACHINESTATE::RACEJUSTBEGAN_Q |
 		MACHINESTATE::JUSTTAPPEDACCEL |
@@ -59,124 +199,122 @@ godot::Vector3 PhysicsCar::prepare_machine_frame()
 		MACHINESTATE::AIRBORNEMORE0_2S_Q |
 		MACHINESTATE::AIRBORNE);
 
-	state_2 &= 0xfffffcff;
-	terrain_state = 0;
-	dashplate_heat_multiplier = 1.0f;
+	soa->state_2[soa_index] &= 0xfffffcff;
+	soa->terrain_state[soa_index] = 0;
+	soa->dashplate_heat_multiplier[soa_index] = 1.0f;
 
-	if ((machine_state & MACHINESTATE::B29) == 0) {
-		set_terrain_state_from_track();
+	if ((soa->machine_state[soa_index] & MACHINESTATE::B29) == 0) {
+		set_terrain_state_from_track(scratch);
 	}
 
 	if (old_terrain_state & TERRAIN::DASH) {
-		machine_state &= ~MACHINESTATE::JUST_HIT_DASHPLATE;
+		soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_HIT_DASHPLATE;
 	}
 
-	mtxa->assign(basis_physical_other);
-	mtxa->cur->origin = position_old;
 
-	basis_physical_other = basis_physical;
-	position_old_dupe = position_current;
-	position_old = position_old_dupe;
+	const SimTransform previous_physical = LOAD_TRANSFORM(basis_physical_other);
+	const SimVec3 previous_position = LOAD_VEC3(position_old);
+	STORE_TRANSFORM(basis_physical_other, LOAD_TRANSFORM(basis_physical));
+	STORE_VEC3(position_old_dupe, LOAD_VEC3(position_current));
+	STORE_VEC3(position_old, LOAD_VEC3(position_old_dupe));
 
-	PhysicsCarSuspensionPoint* tilt_corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
-	PhysicsCarCollisionPoint* wall_corners[4] = { &wall_fl, &wall_fr, &wall_bl, &wall_br };
-
+	const int point_base = soa_index * 4;
+	bool any_drift = false;
 	for (int i = 0; i < 4; ++i) {
-		auto* tc = tilt_corners[i];
-		godot::Vector3 new_pos = tc->offset;
-		new_pos.y += tc->force;
-		new_pos.y -= tc->rest_length;
-		tc->pos_old = mtxa->transform_point(new_pos);
-		if (tc->state & TILTSTATE::DRIFT) {
-			for (auto* c : tilt_corners) {
-				c->state |= TILTSTATE::DRIFT;
-			}
+		if (soa->tilt_state[point_base + i] & TILTSTATE::DRIFT) {
+			any_drift = true;
+		}
+	}
+	const SimVec3x4 tilt_pos_old = mxt_transform_points4(
+		previous_physical,
+		previous_position,
+		sim_load4(soa->tilt_offset_x + point_base),
+		sim_load4(soa->tilt_offset_y + point_base) + sim_load4(soa->tilt_force + point_base) - sim_load4(soa->tilt_rest_length + point_base),
+		sim_load4(soa->tilt_offset_z + point_base));
+	sim_store4(soa->tilt_pos_old_x + point_base, tilt_pos_old.x);
+	sim_store4(soa->tilt_pos_old_y + point_base, tilt_pos_old.y);
+	sim_store4(soa->tilt_pos_old_z + point_base, tilt_pos_old.z);
+	for (int i = 0; i < 4; ++i) {
+		const int p = point_base + i;
+		if (any_drift) {
+			soa->tilt_state[p] |= TILTSTATE::DRIFT;
 		}
 	}
 
-	mtxa->assign(basis_physical);
-	mtxa->cur->origin = position_current;
 
-	godot::Vector3 ground_normal = godot::Vector3(0, 1, 0);
-	if (machine_state & MACHINESTATE::ACTIVE) {
+	SimVec3 ground_normal = SimVec3(0, 1, 0);
+	if (soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) {
 		ground_normal = get_avg_track_normal_from_tilt_corners();
 	}
 
 	bool all_airborne = true;
+	const SimVec3 current_position = LOAD_VEC3(position_current);
 	for (int i = 0; i < 4; ++i) {
-		if ((tilt_corners[i]->state & TILTSTATE::AIRBORNE) == 0) {
+		const int p = POINT_INDEX(i);
+		if ((soa->tilt_state[p] & TILTSTATE::AIRBORNE) == 0) {
 			all_airborne = false;
 		}
-		wall_corners[i]->pos_a = position_current;
+		STORE_WALL_VEC3(pos_a, p, current_position);
 	}
 
 	if (all_airborne) {
-		machine_state |= MACHINESTATE::AIRBORNE;
-		air_time += 1;
-		if (air_time > 10)
-			machine_state |= MACHINESTATE::AIRBORNEMORE0_2S_Q;
+		soa->machine_state[soa_index] |= MACHINESTATE::AIRBORNE;
+		soa->air_time[soa_index] += 1;
+		if (soa->air_time[soa_index] > 10)
+			soa->machine_state[soa_index] |= MACHINESTATE::AIRBORNEMORE0_2S_Q;
 	} else {
-		if (air_time != 0)
-			machine_state |= MACHINESTATE::JUSTLANDED;
-		machine_state &= ~MACHINESTATE::AIRBORNEMORE0_2S_Q;
-		state_2 &= ~2u;
+		if (soa->air_time[soa_index] != 0)
+			soa->machine_state[soa_index] |= MACHINESTATE::JUSTLANDED;
+		soa->machine_state[soa_index] &= ~MACHINESTATE::AIRBORNEMORE0_2S_Q;
+		soa->state_2[soa_index] &= ~2u;
 	}
 
-	turning_related = 0.0f;
-	visual_rotation.z *= 0.8f;
-	visual_rotation.x *= 0.9f;
+	soa->turning_related[soa_index] = 0.0f;
+	soa->visual_rotation_z[soa_index] *= 0.8f;
+	soa->visual_rotation_x[soa_index] *= 0.9f;
 
-	if (machine_state & MACHINESTATE::ACTIVE)
+	if (soa->machine_state[soa_index] & MACHINESTATE::ACTIVE)
 	{
-		if (frames_since_start_2 != 0)
-			frames_since_start_2 = std::min(255u, frames_since_start_2 + 1);
+		if (soa->frames_since_start_2[soa_index] != 0)
+			soa->frames_since_start_2[soa_index] = std::min(255u, soa->frames_since_start_2[soa_index] + 1);
 	}
 
-	if ((machine_state & MACHINESTATE::COMPLETEDRACE_1_Q) != 0 ||
-		(terrain_state & TERRAIN::RECHARGE) != 0)
+	if ((soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0 ||
+		(soa->terrain_state[soa_index] & TERRAIN::RECHARGE) != 0)
 	{
-		energy += 1.111111f;
-		if (energy > calced_max_energy)
+		soa->energy[soa_index] += 1.111111f;
+		if (soa->energy[soa_index] > soa->calced_max_energy[soa_index])
 		{
-			energy = calced_max_energy;
+			soa->energy[soa_index] = soa->calced_max_energy[soa_index];
 		}
 	}
 
-	float vel_mag = velocity.length();
-	speed_kmh = 216.0f * (vel_mag / std::max(stat_weight, 0.001f));
+	float vel_mag = LOAD_VEC3(velocity).length();
+	soa->speed_kmh[soa_index] = 216.0f * (vel_mag / std::max(soa->stat_weight[soa_index], 0.001f));
 
-	if ((machine_state & MACHINESTATE::RETIRED) != 0 &&
-		(machine_state & MACHINESTATE::AIRBORNE) == 0) {
-		if (speed_kmh >= 10.0f)
-			velocity *= 0.9f;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::RETIRED) != 0 &&
+		(soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+		if (soa->speed_kmh[soa_index] >= 10.0f)
+			STORE_VEC3(velocity, LOAD_VEC3(velocity) * 0.9f);
 		else
-			velocity = godot::Vector3();
+			STORE_VEC3(velocity, SimVec3());
 	}
 
 	handle_attack_states();
 
-	if (car_hit_invincibility == 0) {
-		if (machine_state & MACHINESTATE::JUSTHITVEHICLE_Q)
-			car_hit_invincibility = 6;
+	if (soa->car_hit_invincibility[soa_index] == 0) {
+		if (soa->machine_state[soa_index] & MACHINESTATE::JUSTHITVEHICLE_Q)
+			soa->car_hit_invincibility[soa_index] = 6;
 	} else {
-		car_hit_invincibility -= 1;
+		soa->car_hit_invincibility[soa_index] -= 1;
 	}
-	if (breakdown_frame_counter > 0){
-		breakdown_frame_counter -= 1;
+	if (soa->breakdown_frame_counter[soa_index] > 0){
+		soa->breakdown_frame_counter[soa_index] -= 1;
 	}
 
-	velocity_local = mtxa->inverse_rotate_point(velocity);
-	mtxa->push();
-	float steer = -(input_steer_yaw * stat_turn_reaction + input_strafe * stat_strafe);
-	steer = std::clamp(steer, -45.0f, 45.0f);
-	mtxa->rotate_y(DEG_TO_RAD * steer);
-	velocity_local_flattened_and_rotated = mtxa->inverse_rotate_point(velocity);
-	velocity_local_flattened_and_rotated.y = 0.0f;
-	mtxa->pop();
+	STORE_VEC3(position_old_2, LOAD_VEC3(position_current));
 
-	position_old_2 = position_current;
-
-	frames_since_start += 1;
+	soa->frames_since_start[soa_index] += 1;
 
 	return ground_normal;
 };
@@ -189,15 +327,15 @@ float PhysicsCar::get_current_stage_min_y() const
 
 void PhysicsCar::broken_down_fling_physics()
 {
-	// semi-random numbers by hashing positions and angular velocity
-	uint32_t hash = ((uint32_t)position_current.x ^
-		(uint32_t)position_current.y ^
-		(uint32_t)position_current.z ^
-		(uint32_t)velocity_angular.x) & 0xffff;
-	uint32_t hash2 = ((uint32_t)position_current.x ^
-		(uint32_t)position_current.y ^
-		(uint32_t)position_current.z ^
-		(uint32_t)velocity_angular.y) & 0xffff;
+	// semi-random numbers by hashing positions and angular LOAD_VEC3(velocity)
+	uint32_t hash = ((uint32_t)soa->position_current_x[soa_index] ^
+		(uint32_t)soa->position_current_y[soa_index] ^
+		(uint32_t)soa->position_current_z[soa_index] ^
+		(uint32_t)soa->velocity_angular_x[soa_index]) & 0xffff;
+	uint32_t hash2 = ((uint32_t)soa->position_current_x[soa_index] ^
+		(uint32_t)soa->position_current_y[soa_index] ^
+		(uint32_t)soa->position_current_z[soa_index] ^
+		(uint32_t)soa->velocity_angular_y[soa_index]) & 0xffff;
 
 	float rand_x = 2.0f * ((float)hash / 65536.0f) - 1.0f;
 	float rand_z = 2.0f * ((float)hash2 / 65536.0f) - 1.0f;
@@ -205,105 +343,98 @@ void PhysicsCar::broken_down_fling_physics()
 	rand_x += (rand_x <= 0.0f) ? -0.5f : 0.5f;
 	rand_z += (rand_z <= 0.0f) ? -0.5f : 0.5f;
 
-	float damping_factor = std::clamp((speed_kmh * 0.0015 - 1.0), 0.0, 1.0);
-	float force = damping_factor * (450.0 / 216.0) * stat_weight;
+	float damping_factor = std::clamp((soa->speed_kmh[soa_index] * 0.0015 - 1.0), 0.0, 1.0);
+	float force = damping_factor * (450.0 / 216.0) * soa->stat_weight[soa_index];
 
 	// put impulse in world space
-	godot::Vector3 torque_impulse = mtxa->rotate_point(godot::Vector3(-rand_x, 0.5f, -rand_z));
+	SimVec3 torque_impulse = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(-rand_x, 0.5f, -rand_z));
 	torque_impulse *= force;
 
-	state_2 |= 2;
+	soa->state_2[soa_index] |= 2;
 
 	// back into local space
-	godot::Vector3 rotated_torque_impulse = mtxa->inverse_rotate_point(torque_impulse);
+	SimVec3 rotated_torque_impulse = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), torque_impulse);
 	rotated_torque_impulse *= 0.5f;
 
-	godot::Vector3 torque = {
+	SimVec3 torque = {
 		-(rand_z * rotated_torque_impulse.y),
 		-(rand_x * rotated_torque_impulse.z - rand_z * rotated_torque_impulse.x),
 		-(-rand_x * rotated_torque_impulse.y)
 	};
 
 	// used for random visual rotation of the vehicle when bouncing
-	unk_vec3_0x4f0.x = velocity_angular.x + torque.x;
-	unk_vec3_0x4f0.y = velocity_angular.y + torque.y;
-	unk_vec3_0x4f0.z = velocity_angular.z + torque.z;
+	soa->unk_vec3_0x4f0_x[soa_index] = soa->velocity_angular_x[soa_index] + torque.x;
+	soa->unk_vec3_0x4f0_y[soa_index] = soa->velocity_angular_y[soa_index] + torque.y;
+	soa->unk_vec3_0x4f0_z[soa_index] = soa->velocity_angular_z[soa_index] + torque.z;
 
 	// use previously calculated force for actual bounce
-	godot::Vector3 boost_vec;
-	boost_vec = set_vec3_length(track_surface_normal, force * 0.2);
-	velocity += boost_vec;
+	SimVec3 boost_vec;
+	boost_vec = set_vec3_length(LOAD_VEC3(track_surface_normal), force * 0.2);
+	ADD_VEC3(velocity, boost_vec);
 
-	if (frames_since_death > 30) {
-		state_2 |= 0x20;
+	if (soa->frames_since_death[soa_index] > 30) {
+		soa->state_2[soa_index] |= 0x20;
 
 	// visually orient vehicle back to track once it settles on the road and stops bouncing
 	// disabled here because we do this in GDScript instead
 
-	//	mtxa->push();
-	//	mtxa->assign(transform_visual);
-	//	godot::Vector3 up = mtxa->rotate_point(godot::Vector3(0.0f, 1.0f, 0.0f));
-	//	if (up.dot(track_surface_normal) < 0.99f) {
-	//		godot::Vector3 axis = vec3_cross(-up, track_surface_normal);
+	//	SimVec3 up = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f));
+	//	if (up.dot(LOAD_VEC3(track_surface_normal)) < 0.99f) {
+	//		SimVec3 axis = vec3_cross(-up, LOAD_VEC3(track_surface_normal));
 	//		float axis_len = axis.length();
 	//		if (axis_len > 0.1f) {
-	//			float dot = up.dot(track_surface_normal);
+	//			float dot = up.dot(LOAD_VEC3(track_surface_normal));
 	//			int angle = (int)(1365.0f * (1.0f - dot * dot));
-	//			godot::Quaternion q = MtxStack::make_axis_angle_quat(axis, angle);
 	//			
 	//			//make_axis_angle_quat(&q, &axis, (short)angle);
-	//			mtxa->from_quat(q);
-	//			mtxa_multiply_mtx(&transform_visual);
-	//			copy_mtxa_to_mtx(&transform_visual);
 	//		}
 	//	}
-	//	mtxa->pop();
 	}
 
-	if (frames_since_death < 2) {
-		frames_since_death = 2;
-	} else if (++frames_since_death > 239) {
-		frames_since_death = 240;
+	if (soa->frames_since_death[soa_index] < 2) {
+		soa->frames_since_death[soa_index] = 2;
+	} else if (++soa->frames_since_death[soa_index] > 239) {
+		soa->frames_since_death[soa_index] = 240;
 	}
 };
 
 void PhysicsCar::breakdown_physics()
 {
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
 		broken_down_fling_physics();
 	}
 
-	if (frames_since_death < 0x3c) {
-		unk_vec3_0x4e4.x += unk_vec3_0x4f0.x;
-		unk_vec3_0x4e4.y += unk_vec3_0x4f0.y;
-		unk_vec3_0x4e4.z += unk_vec3_0x4f0.z;
+	if (soa->frames_since_death[soa_index] < 0x3c) {
+		soa->unk_vec3_0x4e4_x[soa_index] += soa->unk_vec3_0x4f0_x[soa_index];
+		soa->unk_vec3_0x4e4_y[soa_index] += soa->unk_vec3_0x4f0_y[soa_index];
+		soa->unk_vec3_0x4e4_z[soa_index] += soa->unk_vec3_0x4f0_z[soa_index];
 	}
 
-	some_breakdown_int++;
+	soa->some_breakdown_int[soa_index]++;
 
-	if (some_breakdown_int > 0xef) {
-		if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
-			velocity.x = 0.0f;
-			velocity.y = 0.0f;
-			velocity.z = 0.0f;
-			position_current = position_old;
-			if ((state_2 & 0x90) == 0) {
-				state_2 = state_2 | 0x80;
-				state_2 = state_2 | 0x100;
+	if (soa->some_breakdown_int[soa_index] > 0xef) {
+		if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+			soa->velocity_x[soa_index] = 0.0f;
+			soa->velocity_y[soa_index] = 0.0f;
+			soa->velocity_z[soa_index] = 0.0f;
+			STORE_VEC3(position_current, LOAD_VEC3(position_old));
+			if ((soa->state_2[soa_index] & 0x90) == 0) {
+				soa->state_2[soa_index] = soa->state_2[soa_index] | 0x80;
+				soa->state_2[soa_index] = soa->state_2[soa_index] | 0x100;
 			}
 		}
-		some_breakdown_int = 0xf0;
+		soa->some_breakdown_int[soa_index] = 0xf0;
 	}
 }
 
 bool PhysicsCar::handle_machine_crash(int unk_int) {
-	uint32_t state = machine_state;
+	uint32_t state = soa->machine_state[soa_index];
 	bool result = false;
 
 	if (!(state & MACHINESTATE::FALLOUT)) {
 		if (state & MACHINESTATE::ZEROHP) {
-			if (!machine_crashed && !(state & MACHINESTATE::COMPLETEDRACE_1_Q)) {
-				machine_crashed = true;
+			if (!soa->machine_crashed[soa_index] && !(state & MACHINESTATE::COMPLETEDRACE_1_Q)) {
+				soa->machine_crashed[soa_index] = true;
 			}
 		}
 
@@ -318,8 +449,8 @@ bool PhysicsCar::handle_machine_crash(int unk_int) {
 		result = true;
 	}
 
-	if (!(state & MACHINESTATE::COMPLETEDRACE_1_Q) && !machine_crashed) {
-		machine_crashed = true;
+	if (!(state & MACHINESTATE::COMPLETEDRACE_1_Q) && !soa->machine_crashed[soa_index]) {
+		soa->machine_crashed[soa_index] = true;
 	}
 }
 
@@ -335,69 +466,73 @@ return result;
 
 void PhysicsCar::handle_machine_damage_and_visuals()
 {
-	if ((state_2 & 0x8u) == 0)
+	if ((soa->state_2[soa_index] & 0x8u) == 0)
 		return;
 
-	mtxa->assign(basis_physical);
-	mtxa->cur->origin = position_current;
 
-	if (frames_since_death != 0)
+	if (soa->frames_since_death[soa_index] != 0)
 	{
 		breakdown_physics();
 	}
 
-	if (terrain_state & TERRAIN::LAVA) {
+	if (soa->terrain_state[soa_index] & TERRAIN::LAVA) {
 		// Lava damage handling is not yet implemented
-		if ((state_2 & 0x200u) && (machine_state & MACHINESTATE::ZEROHP)) {
+		if ((soa->state_2[soa_index] & 0x200u) && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP)) {
 			return;
 		}
 	}
 
-	mtxa->assign(basis_physical);
-	mtxa->cur->origin = position_current;
+	const int point_base = soa_index * 4;
+	sim_store4(soa->tilt_pos_old_x + point_base, sim_load4(soa->tilt_pos_x + point_base));
+	sim_store4(soa->tilt_pos_old_y + point_base, sim_load4(soa->tilt_pos_y + point_base));
+	sim_store4(soa->tilt_pos_old_z + point_base, sim_load4(soa->tilt_pos_z + point_base));
+	const SimVec3x4 tilt_pos = mxt_transform_points4(
+		LOAD_TRANSFORM(basis_physical),
+		LOAD_VEC3(position_current),
+		sim_load4(soa->tilt_offset_x + point_base),
+		sim_load4(soa->tilt_offset_y + point_base) + sim_load4(soa->tilt_force + point_base) - sim_load4(soa->tilt_rest_length + point_base),
+		sim_load4(soa->tilt_offset_z + point_base));
+	sim_store4(soa->tilt_pos_x + point_base, tilt_pos.x);
+	sim_store4(soa->tilt_pos_y + point_base, tilt_pos.y);
+	sim_store4(soa->tilt_pos_z + point_base, tilt_pos.z);
+	sim_store4(soa->wall_pos_a_x + point_base, sim_load4(soa->wall_pos_b_x + point_base));
+	sim_store4(soa->wall_pos_a_y + point_base, sim_load4(soa->wall_pos_b_y + point_base));
+	sim_store4(soa->wall_pos_a_z + point_base, sim_load4(soa->wall_pos_b_z + point_base));
+	const SimVec3x4 wall_pos = mxt_transform_points4(
+		LOAD_TRANSFORM(basis_physical),
+		LOAD_VEC3(position_current),
+		sim_load4(soa->wall_offset_x + point_base),
+		sim_load4(soa->wall_offset_y + point_base),
+		sim_load4(soa->wall_offset_z + point_base));
+	sim_store4(soa->wall_pos_b_x + point_base, wall_pos.x);
+	sim_store4(soa->wall_pos_b_y + point_base, wall_pos.y);
+	sim_store4(soa->wall_pos_b_z + point_base, wall_pos.z);
 
-	PhysicsCarSuspensionPoint* tilt_corners[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-	PhysicsCarCollisionPoint* wall_corners[4] = {&wall_fl, &wall_fr, &wall_bl, &wall_br};
-
-	for (int i = 0; i < 4; ++i) {
-		auto* tc = tilt_corners[i];
-		auto* wc = wall_corners[i];
-
-		tc->pos_old = tc->pos;
-
-		float local_y_offset_suspended = tc->offset.y + tc->force - tc->rest_length;
-		godot::Vector3 local_pos(tc->offset.x, local_y_offset_suspended, tc->offset.z);
-		tc->pos = mtxa->transform_point(local_pos);
-
-		wc->pos_a = wc->pos_b;
-		wc->pos_b = mtxa->transform_point(wc->offset);
-	}
-
-	if ((state_2 & 0x10u) == 0) {
-		float y_pos = position_current.y;
+	if ((soa->state_2[soa_index] & 0x10u) == 0) {
+		float y_pos = soa->position_current_y[soa_index];
 		float track_min_y = -1000000.0f; // Placeholder until track data is available
 		if (y_pos < -5000.0f || y_pos < (track_min_y - 900.0f)) {
 			return;
 		}
 	}
 
-	if (position_current.y < -10000.0f) {
-		position_current.y = -10000.0f;
-		velocity = godot::Vector3();
+	if (soa->position_current_y[soa_index] < -10000.0f) {
+		soa->position_current_y[soa_index] = -10000.0f;
+		STORE_VEC3(velocity, SimVec3());
 	}
 
 	//create_machine_visual_transform();
 
-	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
-		float world_speed = velocity.length();
-		if (std::abs(stat_weight) > 0.0001f)
-			speed_kmh = 216.0f * (world_speed / stat_weight);
+	if ((soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+		float world_speed = LOAD_VEC3(velocity).length();
+		if (std::abs(soa->stat_weight[soa_index]) > 0.0001f)
+			soa->speed_kmh[soa_index] = 216.0f * (world_speed / soa->stat_weight[soa_index]);
 		else
-			speed_kmh = 0.0f;
+			soa->speed_kmh[soa_index] = 0.0f;
 
-		float current_speed_for_max_check = speed_kmh;
+		float current_speed_for_max_check = soa->speed_kmh[soa_index];
 		bool no_bad_state_flags =
-		(machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
+		(soa->machine_state[soa_index] & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
 			MACHINESTATE::TOOKDAMAGE)) == 0;
 
 		(void)current_speed_for_max_check;
@@ -405,43 +540,100 @@ void PhysicsCar::handle_machine_damage_and_visuals()
 	}
 	bool crashed = handle_machine_crash(1);
 	if (crashed == false) {
-		if ((machine_state & (MACHINESTATE::RETIRED|MACHINESTATE::B10|MACHINESTATE::B1)) == 0) {
-			if (((machine_state & MACHINESTATE::ZEROHP) != 0) && (frames_since_death == 0)) {
+		if ((soa->machine_state[soa_index] & (MACHINESTATE::RETIRED|MACHINESTATE::B10|MACHINESTATE::B1)) == 0) {
+			if (((soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) != 0) && (soa->frames_since_death[soa_index] == 0)) {
 				broken_down_fling_physics();
 			}
 		}
 		else {
-			if ((machine_state & (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) == (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) {
-				if (10.0f <= speed_kmh)
+			if ((soa->machine_state[soa_index] & (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) == (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) {
+				if (10.0f <= soa->speed_kmh[soa_index])
 				{
-					velocity *= 0.95f;
+					STORE_VEC3(velocity, LOAD_VEC3(velocity) * 0.95f);
 				}else{
-					velocity.x = 0.0f;
-					velocity.y = 0.0f;
-					velocity.z = 0.0f;
-					position_current = position_old;
-					machine_state = machine_state | MACHINESTATE::RETIRED;
-					if ((state_2 & 0x80) == 0) {
-						state_2 = state_2 | 0x100;
+					soa->velocity_x[soa_index] = 0.0f;
+					soa->velocity_y[soa_index] = 0.0f;
+					soa->velocity_z[soa_index] = 0.0f;
+					STORE_VEC3(position_current, LOAD_VEC3(position_old));
+					soa->machine_state[soa_index] = soa->machine_state[soa_index] | MACHINESTATE::RETIRED;
+					if ((soa->state_2[soa_index] & 0x80) == 0) {
+						soa->state_2[soa_index] = soa->state_2[soa_index] | 0x100;
 					}
-					state_2 = state_2 | 0x80;
+					soa->state_2[soa_index] = soa->state_2[soa_index] | 0x80;
 				}
 			}
 		}
 	}
 };
 
+void PhysicsCar::handle_machine_damage_and_visuals_tail()
+{
+	if ((soa->state_2[soa_index] & 0x8u) == 0)
+		return;
+
+	if (soa->frames_since_death[soa_index] != 0)
+	{
+		breakdown_physics();
+	}
+
+	if (soa->terrain_state[soa_index] & TERRAIN::LAVA) {
+		if ((soa->state_2[soa_index] & 0x200u) && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP)) {
+			return;
+		}
+	}
+
+	if ((soa->state_2[soa_index] & 0x10u) == 0) {
+		float y_pos = soa->position_current_y[soa_index];
+		float track_min_y = -1000000.0f;
+		if (y_pos < -5000.0f || y_pos < (track_min_y - 900.0f)) {
+			return;
+		}
+	}
+
+	if (soa->position_current_y[soa_index] < -10000.0f) {
+		soa->position_current_y[soa_index] = -10000.0f;
+		STORE_VEC3(velocity, SimVec3());
+	}
+
+	bool crashed = handle_machine_crash(1);
+	if (crashed == false) {
+		if ((soa->machine_state[soa_index] & (MACHINESTATE::RETIRED|MACHINESTATE::B10|MACHINESTATE::B1)) == 0) {
+			if (((soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) != 0) && (soa->frames_since_death[soa_index] == 0)) {
+				broken_down_fling_physics();
+			}
+		}
+		else {
+			if ((soa->machine_state[soa_index] & (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) == (MACHINESTATE::B10|MACHINESTATE::ZEROHP)) {
+				if (10.0f <= soa->speed_kmh[soa_index])
+				{
+					STORE_VEC3(velocity, LOAD_VEC3(velocity) * 0.95f);
+				}else{
+					soa->velocity_x[soa_index] = 0.0f;
+					soa->velocity_y[soa_index] = 0.0f;
+					soa->velocity_z[soa_index] = 0.0f;
+					STORE_VEC3(position_current, LOAD_VEC3(position_old));
+					soa->machine_state[soa_index] = soa->machine_state[soa_index] | MACHINESTATE::RETIRED;
+					if ((soa->state_2[soa_index] & 0x80) == 0) {
+						soa->state_2[soa_index] = soa->state_2[soa_index] | 0x100;
+					}
+					soa->state_2[soa_index] = soa->state_2[soa_index] | 0x80;
+				}
+			}
+		}
+	}
+}
+
 bool PhysicsCar::find_floor_beneath_machine()
 {
-	road_sample.terrain = 0;
-	road_sample.road_t = godot::Vector2();
-	road_sample.spatial_t = godot::Vector3();
-	road_sample.closest_surface = godot::Transform3D();
-	road_sample.closest_root = RoadTransform();
+	soa->road_sample[soa_index].terrain = 0;
+	soa->road_sample[soa_index].road_t = SimVec2();
+	soa->road_sample[soa_index].spatial_t = SimVec3();
+	soa->road_sample[soa_index].closest_surface = SimTransform();
+	soa->road_sample[soa_index].closest_root = RoadTransform();
 	bool stay_on = false;
 	bool cylinder = false;
 	bool pipe = false;
-	TrackSegment *floor_seg = &current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
+	TrackSegment *floor_seg = &soa->current_track[soa_index]->segments[soa->current_track[soa_index]->checkpoints[soa->current_checkpoint[soa_index]].road_segment];
         cylinder = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
                 floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN;
         bool rect = (floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN);
@@ -452,64 +644,71 @@ bool PhysicsCar::find_floor_beneath_machine()
 	{
 		bool sweep_hit_occurred = false;
 		CollisionData hit;
-		godot::Vector3 p0_sweep_start_ws = mtxa->transform_point(godot::Vector3(0.0f, 1.0f, 0.0f));
-		godot::Vector3 p1_sweep_end_ws = mtxa->transform_point(godot::Vector3(0.0f, -2000.0f, 0.0f));
-		position_bottom = p1_sweep_end_ws;
-		current_track->cast_vs_track_fast(hit, p0_sweep_start_ws,
-			position_bottom,
+		SimVec3 p0_sweep_start_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, 1.0f, 0.0f));
+		SimVec3 p1_sweep_end_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, -2000.0f, 0.0f));
+		STORE_VEC3(position_bottom, p1_sweep_end_ws);
+		soa->current_track[soa_index]->cast_vs_track_fast(hit, p0_sweep_start_ws,
+			LOAD_VEC3(position_bottom),
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::SAMPLE_FROM_P0,
-			current_checkpoint);
+			soa->current_checkpoint[soa_index]);
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
-		road_sample.road_t = hit.road_data.road_t;
-		road_sample.spatial_t = hit.road_data.spatial_t;
-		road_sample.closest_surface = hit.road_data.closest_surface;
+		soa->road_sample[soa_index].road_t = hit.road_data.road_t;
+		soa->road_sample[soa_index].spatial_t = hit.road_data.spatial_t;
+		soa->road_sample[soa_index].closest_surface = hit.road_data.closest_surface;
 		float contact_dist_metric = 0.0f;
 		if (sweep_hit_occurred) {
-			track_surface_pos = hit.collision_point;
+			STORE_VEC3(track_surface_pos, hit.collision_point);
 			float dist_p0_to_surface =
-			mtxa->cur->origin.distance_to(hit.collision_point);
+			LOAD_VEC3(position_current).distance_to(hit.collision_point);
 			contact_dist_metric = 20.0f - dist_p0_to_surface;
 		}
 		if (sweep_hit_occurred && contact_dist_metric > 0.0f) {
-			track_surface_normal = hit.collision_normal;
-			height_above_track = contact_dist_metric;
+			STORE_VEC3(track_surface_normal, hit.collision_normal);
+			soa->height_above_track[soa_index] = contact_dist_metric;
 			return true;
 		} else {
-			track_surface_normal = godot::Vector3(0, 1, 0);
-			position_bottom = p1_sweep_end_ws;
-			height_above_track = 0.0f;
+			STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+			STORE_VEC3(position_bottom, p1_sweep_end_ws);
+			soa->height_above_track[soa_index] = 0.0f;
 			return false;
 		}
 	}
 
-	godot::Vector2 road_t_sample_raw;
-	godot::Vector3 spatial_t_sample;
-	current_track->convert_point_to_road(current_checkpoint, position_current, road_t_sample_raw, spatial_t_sample);
+	SimVec2 road_t_sample_raw;
+	SimVec3 spatial_t_sample;
+	soa->current_track[soa_index]->convert_point_to_road(soa->current_checkpoint[soa_index], LOAD_VEC3(position_current), road_t_sample_raw, spatial_t_sample);
 
 	RoadTransform root;
-	const TrackSegment &segment     = current_track->segments[current_track->checkpoints[current_checkpoint].road_segment];
-	segment.curve_matrix->sample(root, road_t_sample_raw.y);
-	road_sample.closest_root = root;
-	road_sample.road_t = road_t_sample_raw;
-	road_sample.spatial_t = spatial_t_sample;
-	godot::Transform3D surf;
+	const TrackSegment &segment     = soa->current_track[soa_index]->segments[soa->current_track[soa_index]->checkpoints[soa->current_checkpoint[soa_index]].road_segment];
+	soa->road_sample[soa_index].road_t = road_t_sample_raw;
+	soa->road_sample[soa_index].spatial_t = spatial_t_sample;
+	SimTransform surf;
+	bool root_sampled = false;
+	auto sample_root = [&]() {
+		if (!root_sampled) {
+			segment.curve_matrix->sample(root, road_t_sample_raw.y);
+			root_sampled = true;
+		}
+	};
 
 	//if (cylinder || pipe)
 	//{
 	//}
-	if ((machine_state & MACHINESTATE::AIRBORNE) != 0)
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0)
 	{	
 		if(rect)// && ((road_t_sample_raw.x > -0.25f && road_t_sample_raw.x < 0.25f) || (road_t_sample_raw.x > 0.75f || road_t_sample_raw.x < -0.75f)))
 		{
 			//DEBUG::disp_text("road_t_sample_raw", road_t_sample_raw);
-			//godot::Vector3 use_dir = (position_current - root.t3d.origin);
-			godot::Vector3 flat_up = (basis_physical.basis.get_column(1)).slide(root.t3d.basis.get_column(2)).normalized();
+			//SimVec3 use_dir = (LOAD_VEC3(position_current) - root.t3d.origin);
+			sample_root();
+			SimVec3 flat_up = (LOAD_TRANSFORM(basis_physical).basis.get_column(1)).slide(root.t3d.basis.get_column(2)).normalized();
 			//if (use_dir.dot(flat_up) > 0.0f)
 			//{
 			//	use_dir *= -1.0f;
 			//}
-			current_track->convert_point_to_road(current_checkpoint, root.t3d.origin - flat_up.normalized() * 2000.0f, road_t_sample_raw, spatial_t_sample);
+			soa->current_track[soa_index]->convert_point_to_road(soa->current_checkpoint[soa_index], root.t3d.origin - flat_up.normalized() * 2000.0f, road_t_sample_raw, spatial_t_sample);
 			segment.curve_matrix->sample(root, road_t_sample_raw.y);
+			root_sampled = true;
 		}
 		if(pipe)
 		{
@@ -517,43 +716,48 @@ bool PhysicsCar::find_floor_beneath_machine()
 			if (spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y > 1.01f)
 			{	
 				//DEBUG::disp_text("Outside pipe/rect!", spatial_t_sample);
-				height_above_track = 0.0f;
-				track_surface_normal = godot::Vector3(0, 1, 0);
+				soa->height_above_track[soa_index] = 0.0f;
+				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 				return false;
 			}
-			godot::Vector3 flat_up = ((basis_physical.basis.get_column(1)).slide(root.t3d.basis.get_column(2))).normalized();
-			current_track->convert_point_to_road(current_checkpoint, root.t3d.origin - flat_up * 45.0f, road_t_sample_raw, spatial_t_sample);
+			sample_root();
+			SimVec3 flat_up = ((LOAD_TRANSFORM(basis_physical).basis.get_column(1)).slide(root.t3d.basis.get_column(2))).normalized();
+			soa->current_track[soa_index]->convert_point_to_road(soa->current_checkpoint[soa_index], root.t3d.origin - flat_up * 45.0f, road_t_sample_raw, spatial_t_sample);
 			segment.curve_matrix->sample(root, road_t_sample_raw.y);
+			root_sampled = true;
 		}
+	}
+	if (root_sampled) {
+		soa->road_sample[soa_index].closest_root = root;
 	}
 	if (road_t_sample_raw.x == -1000.0)
 	{
-		height_above_track = 0.0f;
-		track_surface_normal = godot::Vector3(0, 1, 0);
+		soa->height_above_track[soa_index] = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		return false;
 	}
 
 	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || road_t_sample_raw.y > 1.001f || road_t_sample_raw.y < -0.001f)
 	{
-		height_above_track = 0.0f;
-		track_surface_normal = godot::Vector3(0, 1, 0);
+		soa->height_above_track[soa_index] = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		return false;
 	}
 	segment.road_shape->get_oriented_transform_at_time(surf, road_t_sample_raw);
-	track_surface_normal = surf.basis[1];
-	height_above_track = fmaxf(1.0f, 20.0f - (position_current - surf.origin).dot(track_surface_normal));
-	road_sample.road_t = road_t_sample_raw;
-	road_sample.spatial_t = spatial_t_sample;
-	road_sample.closest_surface = surf;
+	STORE_VEC3(track_surface_normal, surf.basis[1]);
+	soa->height_above_track[soa_index] = fmaxf(1.0f, 20.0f - (LOAD_VEC3(position_current) - surf.origin).dot(LOAD_VEC3(track_surface_normal)));
+	soa->road_sample[soa_index].road_t = road_t_sample_raw;
+	soa->road_sample[soa_index].spatial_t = spatial_t_sample;
+	soa->road_sample[soa_index].closest_surface = surf;
 
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
-	//dd3d->call("draw_arrow", surf.origin, surf.origin + track_surface_normal * 40.0f, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
-	//DEBUG::disp_text("height_above_track", height_above_track);
+	//dd3d->call("draw_arrow", surf.origin, surf.origin + LOAD_VEC3(track_surface_normal) * 40.0f, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
+	//DEBUG::disp_text("soa->height_above_track[soa_index]", soa->height_above_track[soa_index]);
 
-	if (height_above_track > 20.1f)
+	if (soa->height_above_track[soa_index] > 20.1f)
 	{
-		track_surface_normal = godot::Vector3(0, 1, 0);
-		height_above_track = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		soa->height_above_track[soa_index] = 0.0f;
 		return false;
 	}
 	return true;
@@ -561,69 +765,64 @@ bool PhysicsCar::find_floor_beneath_machine()
 
 void PhysicsCar::handle_steering()
 {
-	if ((machine_state & MACHINESTATE::ACTIVE) == 0) {
+	if ((soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) == 0) {
 		return;
 	}
 
 	float strafe_turn_mod = 1.0f;
-	PhysicsCarSuspensionPoint* corners[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-	for (auto* corner : corners) {
-		if (corner->state & TILTSTATE::DRIFT) {
+	for (int i = 0; i < 4; ++i) {
+		if (soa->tilt_state[POINT_INDEX(i)] & TILTSTATE::DRIFT) {
 			strafe_turn_mod -= 0.25f;
 		}
 	}
 
 	float steer_strength =
-	(stat_turn_movement + strafe_turn_mod * stat_strafe_turn * input_strafe *
-		input_steer_yaw) *
-	-input_steer_yaw;
-	if (machine_state & MACHINESTATE::SIDEATTACKING) {
+	(soa->stat_turn_movement[soa_index] + strafe_turn_mod * soa->stat_strafe_turn[soa_index] * soa->input_strafe[soa_index] *
+		soa->input_steer_yaw[soa_index]) *
+	-soa->input_steer_yaw[soa_index];
+	if (soa->machine_state[soa_index] & MACHINESTATE::SIDEATTACKING) {
 		steer_strength *= 0.3f;
 	}
 
-	velocity_angular.y += 1.5f * steer_strength;
+	soa->velocity_angular_y[soa_index] += 1.5f * steer_strength;
 
-	if (std::abs(velocity_angular.y) < 1.0f) {
-		velocity_angular.y = 0.0f;
+	if (std::abs(soa->velocity_angular_y[soa_index]) < 1.0f) {
+		soa->velocity_angular_y[soa_index] = 0.0f;
 	}
 
-	input_yaw_dupe = input_steer_yaw;
+	soa->input_yaw_dupe[soa_index] = soa->input_steer_yaw[soa_index];
 };
 
 void PhysicsCar::set_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag)
 {
-
-	PhysicsCarSuspensionPoint* corners[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-	for (auto* corner : corners) {
-		corner->state |= in_flag;
+	for (int i = 0; i < 4; ++i) {
+		soa->tilt_state[POINT_INDEX(i)] |= in_flag;
 	}
 };
 
 void PhysicsCar::remove_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag)
 {
-
-	PhysicsCarSuspensionPoint* corners[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-	for (auto* corner : corners) {
-		corner->state &= ~static_cast<uint32_t>(in_flag);
+	for (int i = 0; i < 4; ++i) {
+		soa->tilt_state[POINT_INDEX(i)] &= ~static_cast<uint32_t>(in_flag);
 	}
 };
 
 void PhysicsCar::handle_suspension_states()
 {
-	if (grip_frames_from_accel_press != 0) {
-		grip_frames_from_accel_press -= 1;
+	if (soa->grip_frames_from_accel_press[soa_index] != 0) {
+		soa->grip_frames_from_accel_press[soa_index] -= 1;
 	}
 
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
-		if (base_speed > 0.1f) {
-			if ((machine_state & MACHINESTATE::B14) == 0) {
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+		if (soa->base_speed[soa_index] > 0.1f) {
+			if ((soa->machine_state[soa_index] & MACHINESTATE::B14) == 0) {
 				bool should_drift = false;
-				if (machine_state & MACHINESTATE::MANUAL_DRIFT) {
-					if (std::abs(input_steer_yaw) > 0.1f) {
+				if (soa->machine_state[soa_index] & MACHINESTATE::MANUAL_DRIFT) {
+					if (std::abs(soa->input_steer_yaw[soa_index]) > 0.1f) {
 						should_drift = true;
 					}
 				}
-				if (machine_state & MACHINESTATE::SPINATTACKING) {
+				if (soa->machine_state[soa_index] & MACHINESTATE::SPINATTACKING) {
 					should_drift = true;
 				}
 				if (should_drift) {
@@ -631,75 +830,96 @@ void PhysicsCar::handle_suspension_states()
 				}
 			} else {
 				remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
-				grip_frames_from_accel_press = stat_accel_press_grip_frames;
-				drift_ramp = 0.0f;
+				soa->grip_frames_from_accel_press[soa_index] = soa->stat_accel_press_grip_frames[soa_index];
+				soa->drift_ramp[soa_index] = 0.0f;
 			}
 		}
 	} else {
 		remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
-		drift_ramp = 0.0f;
+		soa->drift_ramp[soa_index] = 0.0f;
 	}
 
-	if ((machine_state & MACHINESTATE::STRAFING) != 0 && std::abs(input_steer_yaw) < 0.1f) {
-		machine_state &= ~MACHINESTATE::STRAFING;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::STRAFING) != 0 && std::abs(soa->input_steer_yaw[soa_index]) < 0.1f) {
+		soa->machine_state[soa_index] &= ~MACHINESTATE::STRAFING;
 	}
 
-	if (std::abs(input_strafe) > 0.3f) {
-		machine_state |= MACHINESTATE::STRAFING;
+	if (std::abs(soa->input_strafe[soa_index]) > 0.3f) {
+		soa->machine_state[soa_index] |= MACHINESTATE::STRAFING;
 	}
 
-	if ((machine_state & MACHINESTATE::STRAFING) == 0) {
+	if ((soa->machine_state[soa_index] & MACHINESTATE::STRAFING) == 0) {
 		return;
 	}
 
 	set_flag_on_all_tilt_corners(TILTSTATE::STRAFING);
 };
 
+void PhysicsCar::handle_machine_turn_and_strafe_points4(float in_angle_vel)
+{
+	const int point_base = soa_index * 4;
+	float steer_deg =
+		-(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index] + soa->input_strafe[soa_index] * soa->stat_strafe[soa_index]);
+	steer_deg = std::clamp(steer_deg, -45.0f, 45.0f);
+	SimTransform steer_basis = LOAD_TRANSFORM(basis_physical);
+	mxt_rotate_basis_y(steer_basis, DEG_TO_RAD * steer_deg * 0.5f);
+
+	const SimFloat4 dx = sim_load4(soa->tilt_pos_old_x + point_base) - sim_load4(soa->tilt_pos_x + point_base);
+	const SimFloat4 dy = sim_load4(soa->tilt_pos_old_y + point_base) - sim_load4(soa->tilt_pos_y + point_base);
+	const SimFloat4 dz = sim_load4(soa->tilt_pos_old_z + point_base) - sim_load4(soa->tilt_pos_z + point_base);
+	const SimBasis& b = steer_basis.basis;
+	const SimFloat4 lx = SimFloat4(b[0].x) * dx + SimFloat4(b[0].y) * dy + SimFloat4(b[0].z) * dz;
+	const SimFloat4 ly = SimFloat4(b[1].x) * dx + SimFloat4(b[1].y) * dy + SimFloat4(b[1].z) * dz;
+	const SimFloat4 lz = SimFloat4(b[2].x) * dx + SimFloat4(b[2].y) * dy + SimFloat4(b[2].z) * dz;
+	const SimFloat4 speed = sim_sqrt4(lx * lx + ly * ly + lz * lz) * SimFloat4(216.0f / 1000.0f);
+
+	float local_x[4];
+	float local_y[4];
+	float local_z[4];
+	float speed_factor[4];
+	sim_store4(local_x, lx);
+	sim_store4(local_y, ly);
+	sim_store4(local_z, lz);
+	sim_store4(speed_factor, speed);
+	for (int lane = 0; lane < 4; ++lane) {
+		handle_machine_turn_and_strafe(lane, in_angle_vel, SimVec3(local_x[lane], local_y[lane], local_z[lane]), speed_factor[lane], steer_basis);
+	}
+}
+
 void PhysicsCar::handle_machine_turn_and_strafe(
-    PhysicsCarSuspensionPoint &tilt_corner, float in_angle_vel) {
+    int point_lane, float in_angle_vel, const SimVec3& corner_delta_local, float speed_factor, const SimTransform& steer_basis) {
+	const int p = POINT_INDEX(point_lane);
     // ───────────── Corner movement & steering matrix ─────────────
-    godot::Vector3 corner_delta = tilt_corner.pos_old - tilt_corner.pos;
+    SimVec3 corner_delta = corner_delta_local;
 
-    bool is_drifting = (tilt_corner.state & TILTSTATE::DRIFT) != 0;
-    bool is_strafing = (tilt_corner.state & TILTSTATE::STRAFING) != 0;
-
-    mtxa->push();
-
-    float steer_deg =
-        -(input_steer_yaw * stat_turn_reaction + input_strafe * stat_strafe);
-    steer_deg = std::clamp(steer_deg, -45.0f, 45.0f);
-    mtxa->rotate_y(DEG_TO_RAD * steer_deg * 0.5f);
-
-    corner_delta = mtxa->inverse_rotate_point(corner_delta);
-    float corner_dist = corner_delta.length();
-    float speed_factor = (216.0f * corner_dist) / 1000.0f;
+    bool is_drifting = (soa->tilt_state[p] & TILTSTATE::DRIFT) != 0;
+    bool is_strafing = (soa->tilt_state[p] & TILTSTATE::STRAFING) != 0;
 
     // ───────────── Grip / drift threshold ─────────────
     float grip_threshold = 0.0f;
-    if ((!is_drifting && is_strafing) || grip_frames_from_accel_press != 0) {
+    if ((!is_drifting && is_strafing) || soa->grip_frames_from_accel_press[soa_index] != 0) {
         grip_threshold = 20.0f;
     } else {
-        float base_grip = stat_grip_1;
+        float base_grip = soa->stat_grip_1[soa_index];
         grip_threshold = base_grip;
-        if ((state_2 & 4u) == 0) {
-            if (is_drifting && brake_timer == 0) {
-                grip_threshold = stat_grip_3;
+        if ((soa->state_2[soa_index] & 4u) == 0) {
+            if (is_drifting && soa->brake_timer[soa_index] == 0) {
+                grip_threshold = soa->stat_grip_3[soa_index];
             }
         } else {
-            if (is_drifting && brake_timer < 30) {
+            if (is_drifting && soa->brake_timer[soa_index] < 30) {
                 grip_threshold =
-                    (base_grip >= stat_grip_3) ? stat_grip_3 : base_grip;
+                    (base_grip >= soa->stat_grip_3[soa_index]) ? soa->stat_grip_3[soa_index] : base_grip;
             }
         }
     }
 
-    if (std::abs(corner_delta.x) < stat_grip_3) {
-        drift_ramp = 0.0f;
-        tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
+    if (std::abs(corner_delta.x) < soa->stat_grip_3[soa_index]) {
+        soa->drift_ramp[soa_index] = 0.0f;
+        soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
     }
 
     bool drift_allowed = true;
-    if (!is_drifting && std::abs(input_steer_yaw) <= 0.7f) {
+    if (!is_drifting && std::abs(soa->input_steer_yaw[soa_index]) <= 0.7f) {
         drift_allowed = false;
     }
 
@@ -710,60 +930,60 @@ void PhysicsCar::handle_machine_turn_and_strafe(
         if (std::abs(lateral_delta) < 1.1920929e-7f) {
             drift_delta = 0.0f;
         }
-        drift_ramp = 0.0f;
-        tilt_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
+        soa->drift_ramp[soa_index] = 0.0f;
+        soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
     } else {
-        tilt_corner.state |= TILTSTATE::DRIFT;
+        soa->tilt_state[p] |= TILTSTATE::DRIFT;
         drift_delta = (lateral_delta < 0.0f) ? -grip_threshold : grip_threshold;
     }
 
     // ───────────── Global state modifiers ─────────────
-    if (machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::SIDEATTACKING))
+    if (soa->machine_state[soa_index] & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::SIDEATTACKING))
     {
         drift_delta = 0.0f;
     }
 
-    if (machine_state & MACHINESTATE::LOWGRIP)
+    if (soa->machine_state[soa_index] & MACHINESTATE::LOWGRIP)
     {
-        velocity_angular.x *= 0.975f;
-        velocity_angular.z *= 0.975f;
+        soa->velocity_angular_x[soa_index] *= 0.975f;
+        soa->velocity_angular_z[soa_index] *= 0.975f;
         //align_machine_y_with_track_normal_immediate();
     }
-    else if ((machine_state & MACHINESTATE::AIRBORNE) == 0)
+    else if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0)
     {
-        velocity_angular.z *= 0.99f;
+        soa->velocity_angular_z[soa_index] *= 0.99f;
     }
 
-    if (machine_state & MACHINESTATE::RETIRED)
+    if (soa->machine_state[soa_index] & MACHINESTATE::RETIRED)
     {
         drift_delta *= 0.2f;
-    } else if (machine_state & MACHINESTATE::ZEROHP) {
+    } else if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) {
         float fade =
-            std::clamp(0.01f * (static_cast<float>(frames_since_death) - 4.0f),
+            std::clamp(0.01f * (static_cast<float>(soa->frames_since_death[soa_index]) - 4.0f),
                        0.0f, 0.05f);
         drift_delta *= fade;
     }
 
     // ───────────── Force computation ─────────────
     if (drift_delta != 0.0f) {
-        if (machine_state & MACHINESTATE::ZEROHP) {
+        if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) {
             drift_delta *= 0.1;
         }
-        float turn_tension = stat_turn_tension;
-        float weighted_delta = drift_delta * stat_weight;
+        float turn_tension = soa->stat_turn_tension[soa_index];
+        float weighted_delta = drift_delta * soa->stat_weight[soa_index];
         float applied_force = 0.0f;
 
-        if (turn_tension >= 0.1f || grip_frames_from_accel_press != 0) {
+        if (turn_tension >= 0.1f || soa->grip_frames_from_accel_press[soa_index] != 0) {
             applied_force = weighted_delta * turn_tension;
-        } else if ((tilt_corner.state & TILTSTATE::AIRBORNE) == 0 &&
-                   (machine_state & MACHINESTATE::JUST_PRESSED_BOOST) == 0) {
-            float rail_timer = static_cast<float>(rail_collision_timer);
+        } else if ((soa->tilt_state[p] & TILTSTATE::AIRBORNE) == 0 &&
+                   (soa->machine_state[soa_index] & MACHINESTATE::JUST_PRESSED_BOOST) == 0) {
+            float rail_timer = static_cast<float>(soa->rail_collision_timer[soa_index]);
             float speed_lerp = std::clamp(speed_factor, 0.2f, 0.8f);
             float steer_scale = 0.0f;
-            if ((tilt_corner.state & TILTSTATE::STRAFING) == 0) {
+            if ((soa->tilt_state[p] & TILTSTATE::STRAFING) == 0) {
                 steer_scale = ((speed_lerp - 0.2f) / 0.6f) *
                               (turn_tension - 0.1f) *
-                              (0.3f + 0.7f * std::abs(input_steer_yaw));
+                              (0.3f + 0.7f * std::abs(soa->input_steer_yaw[soa_index]));
             }
             applied_force = weighted_delta *
                             (0.1f + steer_scale * (1.0f - rail_timer / 20.0f));
@@ -771,74 +991,84 @@ void PhysicsCar::handle_machine_turn_and_strafe(
             applied_force = weighted_delta * 0.1f;
         }
 
-        if (terrain_state & TERRAIN::ICE) {
+        if (soa->terrain_state[soa_index] & TERRAIN::ICE) {
             applied_force *= 0.003f;
-        } else if (terrain_state & TERRAIN::DIRT) {
+        } else if (soa->terrain_state[soa_index] & TERRAIN::DIRT) {
             applied_force *= 2.0f;
         }
 
-        godot::Vector3 local_force(applied_force, 0.0f, 0.0f);
-        godot::Vector3 world_force = mtxa->rotate_point(local_force);
-        tilt_corner.force_spatial += world_force;
+        SimVec3 local_force(applied_force, 0.0f, 0.0f);
+        SimVec3 world_force = mxt_basis_rotate(steer_basis, local_force);
+        STORE_TILT_VEC3(force_spatial, p, LOAD_TILT_VEC3(force_spatial, p) + world_force);
 
-        if (tilt_corner.state & TILTSTATE::STRAFING) {
+        if (soa->tilt_state[p] & TILTSTATE::STRAFING) {
             applied_force *= 0.6f;
         }
-        turning_related += applied_force;
+        soa->turning_related[soa_index] += applied_force;
     }
 
     // ───────────── Apply forces & torque ─────────────
-    mtxa->pop();
 
-    velocity += tilt_corner.force_spatial;
+    ADD_VEC3(velocity, LOAD_TILT_VEC3(force_spatial, p));
 
-    if (rail_collision_timer < 6) {
-        apply_torque_from_force(tilt_corner.offset, tilt_corner.force_spatial);
+    if (soa->rail_collision_timer[soa_index] < 6) {
+        apply_torque_from_force(LOAD_TILT_VEC3(offset, p), LOAD_TILT_VEC3(force_spatial, p));
     }
 
-    if (is_drifting && (machine_state & MACHINESTATE::JUSTHITVEHICLE_Q) == 0) {
-        in_angle_vel *= stat_grip_2;
+    if (is_drifting && (soa->machine_state[soa_index] & MACHINESTATE::JUSTHITVEHICLE_Q) == 0) {
+        in_angle_vel *= soa->stat_grip_2[soa_index];
     }
 
-    velocity_angular.y -= 0.125f * in_angle_vel;
+	soa->velocity_angular_y[soa_index] -= 0.125f * in_angle_vel;
 };
+
+void PhysicsCar::project_velocity_to_local_frame()
+{
+	STORE_VEC3(velocity_local, mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(velocity)));
+	float steer = -(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index] + soa->input_strafe[soa_index] * soa->stat_strafe[soa_index]);
+	steer = std::clamp(steer, -45.0f, 45.0f);
+	SimTransform steer_basis = LOAD_TRANSFORM(basis_physical);
+	mxt_rotate_basis_y(steer_basis, DEG_TO_RAD * steer);
+	STORE_VEC3(velocity_local_flattened_and_rotated, mxt_basis_inverse_rotate(steer_basis, LOAD_VEC3(velocity)));
+	soa->velocity_local_flattened_and_rotated_y[soa_index] = 0.0f;
+}
 
 void PhysicsCar::handle_linear_velocity()
 {
-	float vel_flat_rot_x = velocity_local_flattened_and_rotated.x;
-	float vel_flat_rot_y = velocity_local_flattened_and_rotated.y;
-	float vel_flat_rot_z = velocity_local_flattened_and_rotated.z;
+	float vel_flat_rot_x = soa->velocity_local_flattened_and_rotated_x[soa_index];
+	float vel_flat_rot_y = soa->velocity_local_flattened_and_rotated_y[soa_index];
+	float vel_flat_rot_z = soa->velocity_local_flattened_and_rotated_z[soa_index];
 
-	float neg_local_fwd_speed = -velocity_local.z;
-	float abs_local_lat_speed = std::abs(velocity_local.x);
+	float neg_local_fwd_speed = -soa->velocity_local_z[soa_index];
+	float abs_local_lat_speed = std::abs(soa->velocity_local_x[soa_index]);
 
-	float mag_vel_flat_rot = velocity_local_flattened_and_rotated.length();
+	float mag_vel_flat_rot = LOAD_VEC3(velocity_local_flattened_and_rotated).length();
 
 	float drift_accel_component = 0.0f;
-	if ((machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE)) == 0 && mag_vel_flat_rot > (10.0f * stat_weight) / 216.0f)
+	if ((soa->machine_state[soa_index] & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE)) == 0 && mag_vel_flat_rot > (10.0f * soa->stat_weight[soa_index]) / 216.0f)
 	{
 		float norm_z_vel_flat_rot = 0.0f;
 		if (mag_vel_flat_rot > 0.0001f)
 			norm_z_vel_flat_rot = vel_flat_rot_z / mag_vel_flat_rot;
 
 		float drift_factor = 1.0f - (norm_z_vel_flat_rot * norm_z_vel_flat_rot);
-		drift_accel_component = drift_factor * stat_drift_accel;
+		drift_accel_component = drift_factor * soa->stat_drift_accel[soa_index];
 
-		float strafe_factor = (1.0f - std::abs(input_strafe));
-		if (velocity_local.x > 0.0f && drift_sign == -1)
+		float strafe_factor = (1.0f - std::abs(soa->input_strafe[soa_index]));
+		if (soa->velocity_local_x[soa_index] > 0.0f && soa->drift_sign[soa_index] == -1)
 		{
-			drift_sign = 1;
-			drift_ramp = 0.0f;
-		}else if (velocity_local.x < 0.0f && drift_sign == 1)
+			soa->drift_sign[soa_index] = 1;
+			soa->drift_ramp[soa_index] = 0.0f;
+		}else if (soa->velocity_local_x[soa_index] < 0.0f && soa->drift_sign[soa_index] == 1)
 		{
-			drift_sign = -1;
-			drift_ramp = 0.0f;
+			soa->drift_sign[soa_index] = -1;
+			soa->drift_ramp[soa_index] = 0.0f;
 		}
-		if ((velocity_local.x > 0.0f && drift_sign == 1) || (velocity_local.x < 0.0f && drift_sign == -1))
+		if ((soa->velocity_local_x[soa_index] > 0.0f && soa->drift_sign[soa_index] == 1) || (soa->velocity_local_x[soa_index] < 0.0f && soa->drift_sign[soa_index] == -1))
 		{
-			drift_ramp = std::min(1.0f, drift_ramp + (0.025f - drift_ramp * 0.025f) * (1.0f + boost_turbo * 0.03f));
+			soa->drift_ramp[soa_index] = std::min(1.0f, soa->drift_ramp[soa_index] + (0.025f - soa->drift_ramp[soa_index] * 0.025f) * (1.0f + soa->boost_turbo[soa_index] * 0.03f));
 		}
-		drift_accel_component = drift_accel_component * drift_ramp * strafe_factor;
+		drift_accel_component = drift_accel_component * soa->drift_ramp[soa_index] * strafe_factor;
 	}
 
 	float net_fwd_accel = handle_machine_accel_and_boost(
@@ -849,90 +1079,88 @@ void PhysicsCar::handle_linear_velocity()
 	overall_damping = std::min(overall_damping, 1.0f);
 
 	net_fwd_accel *= overall_damping;
-	velocity *= overall_damping;
+	STORE_VEC3(velocity, LOAD_VEC3(velocity) * overall_damping);
 
-	if ((machine_state & MACHINESTATE::BOOSTING) == 0) {
-		visual_rotation.x += 0.25f * net_fwd_accel;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) == 0) {
+		soa->visual_rotation_x[soa_index] += 0.25f * net_fwd_accel;
 	} else {
-		visual_rotation.x += 0.05f * net_fwd_accel;
+		soa->visual_rotation_x[soa_index] += 0.05f * net_fwd_accel;
 	}
 
 	float airborne_factor = 1.0f;
-	if (machine_state & MACHINESTATE::AIRBORNE) {
-		godot::Vector3 machine_up_vector_ws = mtxa->cur->basis.get_column(2);
+	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) {
+		SimVec3 machine_up_vector_ws = LOAD_TRANSFORM(basis_physical).basis.get_column(2);
 		float dot_prod_up_with_track_normal =
-		machine_up_vector_ws.dot(track_surface_normal);
+		machine_up_vector_ws.dot(LOAD_VEC3(track_surface_normal));
 
 		float alignment_factor = 3.4f * (0.3f + dot_prod_up_with_track_normal);
 		alignment_factor = std::clamp(alignment_factor, 0.0f, 1.0f);
 		airborne_factor = alignment_factor * alignment_factor;
 	}
 
-	mtxa->push();
 
 	float effective_steer_degrees =
-	-(input_steer_yaw * stat_turn_reaction + input_strafe * stat_strafe);
-	if (machine_state & MACHINESTATE::SIDEATTACKING)
+	-(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index] + soa->input_strafe[soa_index] * soa->stat_strafe[soa_index]);
+	if (soa->machine_state[soa_index] & MACHINESTATE::SIDEATTACKING)
 		effective_steer_degrees = 0.0f;
 	effective_steer_degrees = std::clamp(effective_steer_degrees, -45.0f, 45.0f);
 
-	turn_reaction_input = 0.75f * -(input_steer_yaw * stat_turn_reaction);
-	mtxa->rotate_y(DEG_TO_RAD * effective_steer_degrees);
+	soa->turn_reaction_input[soa_index] = 0.75f * -(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index]);
+	SimVec3 local_thrust_vector(0.0f, 0.0f, -(net_fwd_accel * airborne_factor));
+	SimTransform thrust_basis = LOAD_TRANSFORM(basis_physical);
+	mxt_rotate_basis_y(thrust_basis, DEG_TO_RAD * effective_steer_degrees);
+	SimVec3 world_thrust_vector = mxt_basis_rotate(thrust_basis, local_thrust_vector);
+	ADD_VEC3(velocity, world_thrust_vector);
 
-	godot::Vector3 local_thrust_vector(0.0f, 0.0f, -(net_fwd_accel * airborne_factor));
-	godot::Vector3 world_thrust_vector = mtxa->rotate_point(local_thrust_vector);
-	velocity += world_thrust_vector;
 
-	mtxa->pop();
+	float current_world_speed = LOAD_VEC3(velocity).length();
 
-	float current_world_speed = velocity.length();
-
-	if (std::abs(stat_weight) > 0.0001f &&
-		current_world_speed / stat_weight > (1.0f / 1.08f)) {
-		if (side_attack_delay == 6) {
-			float speed_cap_for_dash = (50.0f / 9.0f) * stat_weight;
+	if (std::abs(soa->stat_weight[soa_index]) > 0.0001f &&
+		current_world_speed / soa->stat_weight[soa_index] > (1.0f / 1.08f)) {
+		if (soa->side_attack_delay[soa_index] == 6) {
+			float speed_cap_for_dash = (50.0f / 9.0f) * soa->stat_weight[soa_index];
 			float clamped_speed_for_dash = std::min(current_world_speed, speed_cap_for_dash);
 
-			godot::Vector3 local_dash_vector(side_attack_indicator * clamped_speed_for_dash,
+			SimVec3 local_dash_vector(soa->side_attack_indicator[soa_index] * clamped_speed_for_dash,
 				0.0f, 0.0f);
-			godot::Vector3 world_dash_vector = mtxa->rotate_point(local_dash_vector);
-			velocity += world_dash_vector;
+			SimVec3 world_dash_vector = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), local_dash_vector);
+			ADD_VEC3(velocity, world_dash_vector);
 		}
 
-		if ((terrain_state & TERRAIN::JUMP) != 0 &&
-			(machine_state & MACHINESTATE::AIRBORNE) == 0) {
-			godot::Vector3 local_jump_boost(0.0f, 1.13f * current_world_speed, 0.0f);
-		godot::Vector3 world_jump_boost = mtxa->rotate_point(local_jump_boost);
+		if ((soa->terrain_state[soa_index] & TERRAIN::JUMP) != 0 &&
+			(soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+			SimVec3 local_jump_boost(0.0f, 1.13f * current_world_speed, 0.0f);
+		SimVec3 world_jump_boost = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), local_jump_boost);
 
-		velocity += world_jump_boost;
-		state_2 |= 2u;
-		velocity_angular.x = 0.0f;
-		velocity_angular.z = 0.0f;
+		ADD_VEC3(velocity, world_jump_boost);
+		soa->state_2[soa_index] |= 2u;
+		soa->velocity_angular_x[soa_index] = 0.0f;
+		soa->velocity_angular_z[soa_index] = 0.0f;
 	}
 }
 
-input_strafe_1_6 = input_strafe_32 / 20.0f;
-input_strafe_32 += (8.0f * input_strafe - 5.0f * input_strafe_1_6);
+soa->input_strafe_1_6[soa_index] = soa->input_strafe_32[soa_index] / 20.0f;
+soa->input_strafe_32[soa_index] += (8.0f * soa->input_strafe[soa_index] - 5.0f * soa->input_strafe_1_6[soa_index]);
 };
 
 void PhysicsCar::apply_initial_accel_activation(float effective_accel_input)
 {
-	if ((machine_state & MACHINESTATE::ACTIVE) == 0) {
-		machine_state |= MACHINESTATE::ACTIVE;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) == 0) {
+		soa->machine_state[soa_index] |= MACHINESTATE::ACTIVE;
 	}
 
-	if (frames_since_start_2 == 0) {
-		frames_since_start_2 = 1;
+	if (soa->frames_since_start_2[soa_index] == 0) {
+		soa->frames_since_start_2[soa_index] = 1;
 	}
 
-	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
-		if (race_start_charge > 0.0f) {
-			base_speed = 1.0f;
-			machine_state |= MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL;
-			race_start_charge = 0.0f;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+		if (soa->race_start_charge[soa_index] > 0.0f) {
+			soa->base_speed[soa_index] = 1.0f;
+			soa->machine_state[soa_index] |= MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL;
+			soa->race_start_charge[soa_index] = 0.0f;
 		}
 	} else {
-		race_start_charge += effective_accel_input;
+		soa->race_start_charge[soa_index] += effective_accel_input;
 	}
 }
 
@@ -941,244 +1169,244 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 	float effective_accel_input = 0.0f;
 	float final_thrust_output = 0.0f;
 
-	if (!((machine_state & MACHINESTATE::ZEROHP) && frames_since_death <= 0x77)) {
-		effective_accel_input = input_accel;
+	if (!((soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) && soa->frames_since_death[soa_index] <= 0x77)) {
+		effective_accel_input = soa->input_accel[soa_index];
 
-		if ((state_2 & 4u) == 0) {
-			if (effective_accel_input < 0.0f || input_brake > 0.0f)
+		if ((soa->state_2[soa_index] & 4u) == 0) {
+			if (effective_accel_input < 0.0f || soa->input_brake[soa_index] > 0.0f)
 				effective_accel_input = 0.0f;
-		} else if (effective_accel_input < 0.0f || brake_timer > 0x1d) {
+		} else if (effective_accel_input < 0.0f || soa->brake_timer[soa_index] > 0x1d) {
 			effective_accel_input = 0.0f;
 		}
 
-		if ((machine_state & MACHINESTATE::ACTIVE) == 0 && effective_accel_input < 0.3f)
+		if ((soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) == 0 && effective_accel_input < 0.3f)
 			effective_accel_input = 0.0f;
 	}
 
 	if (effective_accel_input <= 0.0001f) {
-		if (race_start_charge <= 0.0f) {
-			if (machine_state & MACHINESTATE::STARTINGCOUNTDOWN)
-				base_speed = 0.0f;
+		if (soa->race_start_charge[soa_index] <= 0.0f) {
+			if (soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN)
+				soa->base_speed[soa_index] = 0.0f;
 		} else {
-			race_start_charge -= 2.0f;
-			if (race_start_charge < 0.0f)
-				race_start_charge = 0.0f;
-			if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0)
-				base_speed = 0.0f;
+			soa->race_start_charge[soa_index] -= 2.0f;
+			if (soa->race_start_charge[soa_index] < 0.0f)
+				soa->race_start_charge[soa_index] = 0.0f;
+			if ((soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) == 0)
+				soa->base_speed[soa_index] = 0.0f;
 		}
 	} else {
 		apply_initial_accel_activation(effective_accel_input);
 	}
 
-	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
-		const bool sboostActive = s_boost_active;
-		uint32_t current_machine_state = machine_state;
-		float normalized_fwd_speed = neg_local_fwd_speed / stat_weight;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+		const bool sboostActive = soa->s_boost_active[soa_index];
+		uint32_t current_machine_state = soa->machine_state[soa_index];
+		float normalized_fwd_speed = neg_local_fwd_speed / soa->stat_weight[soa_index];
 
-		if (boost_delay_frame_counter != 0) {
-			machine_state &= ~MACHINESTATE::JUST_PRESSED_BOOST;
-			boost_delay_frame_counter -= 1;
+		if (soa->boost_delay_frame_counter[soa_index] != 0) {
+			soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
+			soa->boost_delay_frame_counter[soa_index] -= 1;
 		}
 
 		if (current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) {
-			if (boost_delay_frame_counter == 0)
-				boost_delay_frame_counter = 6;
+			if (soa->boost_delay_frame_counter[soa_index] == 0)
+				soa->boost_delay_frame_counter[soa_index] = 6;
 			else
-				boost_delay_frame_counter += 1;
+				soa->boost_delay_frame_counter[soa_index] += 1;
 		}
 
-		current_machine_state = machine_state;
+		current_machine_state = soa->machine_state[soa_index];
 		if (sboostActive) {
-			machine_state &= ~(MACHINESTATE::JUST_PRESSED_BOOST | MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
-			boost_frames = 0;
-			boost_frames_manual = 0;
-			dashplate_heat_multiplier = 1.0f;
+			soa->machine_state[soa_index] &= ~(MACHINESTATE::JUST_PRESSED_BOOST | MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
+			soa->boost_frames[soa_index] = 0;
+			soa->boost_frames_manual[soa_index] = 0;
+			soa->dashplate_heat_multiplier[soa_index] = 1.0f;
 		} else if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
-			if (boost_frames == 0) {
+			if (soa->boost_frames[soa_index] == 0) {
 				bool do_manual_boost = (current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) &&
-				energy > 1.0f && effective_accel_input > 0.0f;
+				soa->energy[soa_index] > 1.0f && effective_accel_input > 0.0f;
 				if (!do_manual_boost) {
-					machine_state &= ~(MACHINESTATE::BOOSTING_DASHPLATE |
+					soa->machine_state[soa_index] &= ~(MACHINESTATE::BOOSTING_DASHPLATE |
 						MACHINESTATE::JUST_PRESSED_BOOST |
 						MACHINESTATE::BOOSTING);
-					// boost_turbo -= (2.0f + 0.01f * boost_turbo) / 60.0f * stat_acceleration;
+					// soa->boost_turbo[soa_index] -= (2.0f + 0.01f * soa->boost_turbo[soa_index]) / 60.0f * soa->stat_acceleration[soa_index];
 				} else {
-					float boost_strength_factor = 1.0f - boost_turbo / (9.0f * stat_boost_strength);
+					float boost_strength_factor = 1.0f - soa->boost_turbo[soa_index] / (9.0f * soa->stat_boost_strength[soa_index]);
 					float min_boost_strength_factor = 0.2f;
-					int boost_duration_frames = static_cast<int>(60.0f * stat_boost_length);
-					boost_frames = boost_duration_frames;
-					boost_frames_manual = boost_duration_frames;
-					machine_state |= MACHINESTATE::BOOSTING;
-					machine_state &= ~MACHINESTATE::BOOSTING_DASHPLATE;
+					int boost_duration_frames = static_cast<int>(60.0f * soa->stat_boost_length[soa_index]);
+					soa->boost_frames[soa_index] = boost_duration_frames;
+					soa->boost_frames_manual[soa_index] = boost_duration_frames;
+					soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING;
+					soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING_DASHPLATE;
 
 					boost_strength_factor = std::max(boost_strength_factor, min_boost_strength_factor);
-					boost_turbo += stat_boost_strength * boost_strength_factor;
+					soa->boost_turbo[soa_index] += soa->stat_boost_strength[soa_index] * boost_strength_factor;
 				}
 			} else {
-				machine_state &= ~MACHINESTATE::JUST_PRESSED_BOOST;
-				machine_state |= MACHINESTATE::BOOSTING;
+				soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
+				soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING;
 			}
 		} else {
-			float boost_strength_factor = 1.0f - boost_turbo / (9.0f * stat_boost_strength);
-			int target_dash_boost_frames = static_cast<int>(0.5f * 60.0f * stat_boost_length);
+			float boost_strength_factor = 1.0f - soa->boost_turbo[soa_index] / (9.0f * soa->stat_boost_strength[soa_index]);
+			int target_dash_boost_frames = static_cast<int>(0.5f * 60.0f * soa->stat_boost_length[soa_index]);
 
-			if (boost_frames < static_cast<uint32_t>(target_dash_boost_frames))
-				boost_frames = target_dash_boost_frames;
+			if (soa->boost_frames[soa_index] < static_cast<uint32_t>(target_dash_boost_frames))
+				soa->boost_frames[soa_index] = target_dash_boost_frames;
 
 			float min_boost_strength_factor = 0.2f;
-			machine_state &= ~MACHINESTATE::JUST_PRESSED_BOOST;
-			machine_state |= MACHINESTATE::BOOSTING;
+			soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
+			soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING;
 
 			boost_strength_factor = std::max(boost_strength_factor, min_boost_strength_factor);
-			float dashplate_multiplier = dashplate_heat_multiplier;
+			float dashplate_multiplier = soa->dashplate_heat_multiplier[soa_index];
 			if (dashplate_multiplier < 1.0f)
 				dashplate_multiplier = 1.0f;
-			boost_turbo += dashplate_multiplier * (2.0f * stat_boost_strength) * boost_strength_factor;
-			dashplate_heat_multiplier = 1.0f;
+			soa->boost_turbo[soa_index] += dashplate_multiplier * (2.0f * soa->stat_boost_strength[soa_index]) * boost_strength_factor;
+			soa->dashplate_heat_multiplier[soa_index] = 1.0f;
 		}
 
-		if (boost_frames > 0 || boost_frames_manual > 0)
+		if (soa->boost_frames[soa_index] > 0 || soa->boost_frames_manual[soa_index] > 0)
 		{
-			boost_turbo -= ((3.0f + 0.03f * boost_turbo) * stat_acceleration * stat_boost_strength * 0.5f) / 60.0f;
+			soa->boost_turbo[soa_index] -= ((3.0f + 0.03f * soa->boost_turbo[soa_index]) * soa->stat_acceleration[soa_index] * soa->stat_boost_strength[soa_index] * 0.5f) / 60.0f;
 		}else
 		{
-			boost_turbo -= ((6.0f + 0.05f * boost_turbo) * stat_acceleration * stat_boost_strength * 0.5f) / 60.0f;
+			soa->boost_turbo[soa_index] -= ((6.0f + 0.05f * soa->boost_turbo[soa_index]) * soa->stat_acceleration[soa_index] * soa->stat_boost_strength[soa_index] * 0.5f) / 60.0f;
 		}
-		boost_turbo = std::max(boost_turbo, 0.0f);
+		soa->boost_turbo[soa_index] = std::max(soa->boost_turbo[soa_index], 0.0f);
 
-		if ((machine_state & MACHINESTATE::BOOSTING) && !sboostActive) {
-			if (boost_frames_manual > 0) {
-				energy -= 0.1666666667f * boost_energy_use_mult;
-				boost_frames_manual -= 1;
+		if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) && !sboostActive) {
+			if (soa->boost_frames_manual[soa_index] > 0) {
+				soa->energy[soa_index] -= 0.1666666667f * soa->boost_energy_use_mult[soa_index];
+				soa->boost_frames_manual[soa_index] -= 1;
 			}
 
-			if (boost_frames > 0)
-				boost_frames -= 1;
+			if (soa->boost_frames[soa_index] > 0)
+				soa->boost_frames[soa_index] -= 1;
 
-			if (boost_frames == 0 && speed_kmh > 1200.0f) {
-				float cooldown_duration = (speed_kmh - 1200.0f) / 60.0f;
+			if (soa->boost_frames[soa_index] == 0 && soa->speed_kmh[soa_index] > 1200.0f) {
+				float cooldown_duration = (soa->speed_kmh[soa_index] - 1200.0f) / 60.0f;
 				cooldown_duration = std::min(cooldown_duration, 10.0f);
-				if (static_cast<float>(boost_delay_frame_counter) < cooldown_duration)
-					boost_delay_frame_counter = static_cast<uint8_t>(cooldown_duration);
+				if (static_cast<float>(soa->boost_delay_frame_counter[soa_index]) < cooldown_duration)
+					soa->boost_delay_frame_counter[soa_index] = static_cast<uint8_t>(cooldown_duration);
 			}
 
-			if (energy < 0.01f) {
-				energy = 0.01f;
-				boost_frames_manual = 0;
-				if ((machine_state & MACHINESTATE::BOOSTING_DASHPLATE) == 0) {
-					boost_frames = 0;
+			if (soa->energy[soa_index] < 0.01f) {
+				soa->energy[soa_index] = 0.01f;
+				soa->boost_frames_manual[soa_index] = 0;
+				if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING_DASHPLATE) == 0) {
+					soa->boost_frames[soa_index] = 0;
 				} else {
-					int half_dash_boost_frames = static_cast<int>(0.5f * 60.0f * stat_boost_length);
-					if (half_dash_boost_frames < static_cast<int>(boost_frames))
-						boost_frames = half_dash_boost_frames;
+					int half_dash_boost_frames = static_cast<int>(0.5f * 60.0f * soa->stat_boost_length[soa_index]);
+					if (half_dash_boost_frames < static_cast<int>(soa->boost_frames[soa_index]))
+						soa->boost_frames[soa_index] = half_dash_boost_frames;
 				}
 			}
 
-			if (boost_frames <= 0) {
-				boost_frames = 0;
-				machine_state &= ~MACHINESTATE::BOOSTING;
+			if (soa->boost_frames[soa_index] <= 0) {
+				soa->boost_frames[soa_index] = 0;
+				soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING;
 			}
 		}
 
-		float accel_stat_scaled = 40.0f * stat_acceleration;
+		float accel_stat_scaled = 40.0f * soa->stat_acceleration[soa_index];
 		float target_speed_component = (effective_accel_input * accel_stat_scaled) / 348.0f;
-		if (boost_frames > 0 || boost_frames_manual > 0 || sboostActive)
+		if (soa->boost_frames[soa_index] > 0 || soa->boost_frames_manual[soa_index] > 0 || sboostActive)
 		{
-			target_speed_component *= 1.0f + stat_boost_strength * stat_acceleration * 0.038f;
+			target_speed_component *= 1.0f + soa->stat_boost_strength[soa_index] * soa->stat_acceleration[soa_index] * 0.038f;
 		}
-		target_speed_component += base_speed;
+		target_speed_component += soa->base_speed[soa_index];
 		float speed_difference = target_speed_component - normalized_fwd_speed;
 
-		float speed_factor_denom = 36.0f + 40.0f * stat_max_speed + boost_turbo * 3.0f;
+		float speed_factor_denom = 36.0f + 40.0f * soa->stat_max_speed[soa_index] + soa->boost_turbo[soa_index] * 3.0f;
 		float speed_factor = 0.0f;
 		if (std::abs(speed_factor_denom) > 0.0001f)
 			speed_factor = target_speed_component / speed_factor_denom;
 		speed_factor = std::max(speed_factor, 0.0f);
 
-		float current_accel_magnitude = speed_factor * 4.0f * (stat_acceleration * (0.6f + stat_acceleration));
+		float current_accel_magnitude = speed_factor * 4.0f * (soa->stat_acceleration[soa_index] * (0.6f + soa->stat_acceleration[soa_index]));
 
-		if ((machine_state & (MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::JUST_PRESSED_BOOST)) == 0) {
-			if ((machine_state & MACHINESTATE::BOOSTING) || sboostActive) {
-				current_accel_magnitude *= (stat_weight <= 1000.0f) ? 0.3f : 0.5f;
+		if ((soa->machine_state[soa_index] & (MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::JUST_PRESSED_BOOST)) == 0) {
+			if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) || sboostActive) {
+				current_accel_magnitude *= (soa->stat_weight[soa_index] <= 1000.0f) ? 0.3f : 0.5f;
 			}
 		} else {
 			current_accel_magnitude = 0.0f;
 		}
 
 		if (speed_difference > 0.0f &&
-			(normalized_fwd_speed < 0.0f || (terrain_state & TERRAIN::DIRT))) {
+			(normalized_fwd_speed < 0.0f || (soa->terrain_state[soa_index] & TERRAIN::DIRT))) {
 			current_accel_magnitude *= 5.0f;
 	}
 
 	float final_accel_term = (1.0f - drift_accel_factor) *
 	((speed_difference * current_accel_magnitude) +
-		((abs_local_lateral_speed * stat_acceleration) / stat_weight) * stat_turn_decel);
+		((abs_local_lateral_speed * soa->stat_acceleration[soa_index]) / soa->stat_weight[soa_index]) * soa->stat_turn_decel[soa_index]);
 
 	float new_base_speed = target_speed_component - final_accel_term;
-	float base_speed_diff = new_base_speed - base_speed;
+	float base_speed_diff = new_base_speed - soa->base_speed[soa_index];
 
 	if (base_speed_diff < 0.0f)
 	{
-		new_base_speed = base_speed - final_accel_term * 0.1f;
-		//base_speed_diff = new_base_speed - base_speed;
+		new_base_speed = soa->base_speed[soa_index] - final_accel_term * 0.1f;
+		//base_speed_diff = new_base_speed - soa->base_speed[soa_index];
 	}
 
-	base_speed = new_base_speed;
+	soa->base_speed[soa_index] = new_base_speed;
 
-	if (input_brake <= 0.0001f)
-		brake_timer = 0;
-	else if (brake_timer < 0x1e)
-		brake_timer += 1;
+	if (soa->input_brake[soa_index] <= 0.0001f)
+		soa->brake_timer[soa_index] = 0;
+	else if (soa->brake_timer[soa_index] < 0x1e)
+		soa->brake_timer[soa_index] += 1;
 
 	float brake_effect = 0.0f;
-	if ((state_2 & 4u) == 0)
-		brake_effect = input_brake * (0.5f * current_accel_magnitude);
-	else if (brake_timer > 0xe)
-		brake_effect = input_brake * (0.5f * current_accel_magnitude);
+	if ((soa->state_2[soa_index] & 4u) == 0)
+		brake_effect = soa->input_brake[soa_index] * (0.5f * current_accel_magnitude);
+	else if (soa->brake_timer[soa_index] > 0xe)
+		brake_effect = soa->input_brake[soa_index] * (0.5f * current_accel_magnitude);
 
 	brake_effect = std::min(brake_effect, 0.12f);
-	base_speed = std::max(base_speed - brake_effect, 0.0f);
+	soa->base_speed[soa_index] = std::max(soa->base_speed[soa_index] - brake_effect, 0.0f);
 
-	base_speed = std::max(base_speed - stat_drag, 0.0f);
+	soa->base_speed[soa_index] = std::max(soa->base_speed[soa_index] - soa->stat_drag[soa_index], 0.0f);
 
 	if (sboostActive)
 	{
-		base_speed += 0.025f;
+		soa->base_speed[soa_index] += 0.025f;
 	}
 
 	float final_output_thrust_factor = speed_difference;
 	if (brake_effect <= 0.0f) {
 		float modifier = 0.3f;
-		if (machine_state & MACHINESTATE::B14)
+		if (soa->machine_state[soa_index] & MACHINESTATE::B14)
 			modifier = 1.0f;
 
 		if (normalized_fwd_speed < 0.0f || final_output_thrust_factor < 0.0f)
 			final_output_thrust_factor *= (0.5f * modifier);
 	}
 
-	if (machine_state & MACHINESTATE::ZEROHP) {
-		float speed_ratio_for_0hp = std::min(speed_kmh / 100.0f, 1.0f);
+	if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) {
+		float speed_ratio_for_0hp = std::min(soa->speed_kmh[soa_index] / 100.0f, 1.0f);
 		final_output_thrust_factor *= (0.2f - 0.15f * speed_ratio_for_0hp);
 	}
 
-	if ((machine_state & (MACHINESTATE::BOOSTING_DASHPLATE | MACHINESTATE::BOOSTING)) == 0) {
+	if ((soa->machine_state[soa_index] & (MACHINESTATE::BOOSTING_DASHPLATE | MACHINESTATE::BOOSTING)) == 0) {
 		final_thrust_output = 1000.0f * final_output_thrust_factor;
-	} else if (stat_weight <= 1000.0f) {
+	} else if (soa->stat_weight[soa_index] <= 1000.0f) {
 		final_thrust_output = 1200.0f * final_output_thrust_factor;
 	} else {
 		final_thrust_output = 1600.0f * final_output_thrust_factor;
 	}
 } else {
 	final_thrust_output = -neg_local_fwd_speed;
-	base_speed = 0.014f * race_start_charge;
+	soa->base_speed[soa_index] = 0.014f * soa->race_start_charge[soa_index];
 }
 
-if ((machine_state & MACHINESTATE::ZEROHP) && frames_since_death <= 0x77) {
-	if (brake_timer < 0x3d) {
-		brake_timer += 1;
+if ((soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) && soa->frames_since_death[soa_index] <= 0x77) {
+	if (soa->brake_timer[soa_index] < 0x3d) {
+		soa->brake_timer[soa_index] += 1;
 	} else {
-		input_accel = 0.0f;
-		input_brake = 0.0001f;
+		soa->input_accel[soa_index] = 0.0f;
+		soa->input_brake[soa_index] = 0.0001f;
 	}
 	final_thrust_output = 0.0f;
 }
@@ -1190,19 +1418,19 @@ void PhysicsCar::handle_angle_velocity()
 {
 	float weight_val = 0.99f;
 
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
-		if ((machine_state & MACHINESTATE::JUSTLANDED) == 0) {
-			weight_val = 0.05f * weight_derived_2;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+		if ((soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) == 0) {
+			weight_val = 0.05f * soa->weight_derived_2[soa_index];
 		} else {
-			weight_val = 0.2f * weight_derived_2;
+			weight_val = 0.2f * soa->weight_derived_2[soa_index];
 		}
 	} else {
-		velocity_angular.x *= 0.9f;
-		velocity_angular.z *= weight_val;
-		weight_val = weight_derived_2;
+		soa->velocity_angular_x[soa_index] *= 0.9f;
+		soa->velocity_angular_z[soa_index] *= weight_val;
+		weight_val = soa->weight_derived_2[soa_index];
 	}
 
-	velocity_angular.y = std::clamp(velocity_angular.y, -weight_val, weight_val);
+	soa->velocity_angular_y[soa_index] = std::clamp(soa->velocity_angular_y[soa_index], -weight_val, weight_val);
 };
 
 void PhysicsCar::handle_airborne_controls()
@@ -1211,28 +1439,28 @@ void PhysicsCar::handle_airborne_controls()
 	float max_air_tilt = 60.0f;
 	bool airborne_controls_active = false;
 
-	if (frames_since_start_2 > 60 && (machine_state & MACHINESTATE::AIRBORNE))
+	if (soa->frames_since_start_2[soa_index] > 60 && (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE))
 		airborne_controls_active = true;
 
 	if (airborne_controls_active) {
-		float tilt_effect_base = 2.0f * std::abs(input_steer_yaw);
+		float tilt_effect_base = 2.0f * std::abs(soa->input_steer_yaw[soa_index]);
 
-		if (state_2 & 0x2u)
+		if (soa->state_2[soa_index] & 0x2u)
 			tilt_effect_base = 0.0f;
 
 		float current_tilt_increment = 0.0f;
 		if (tilt_effect_base >= 0.1f) {
 			current_tilt_increment = tilt_effect_base +
-			2.0f * input_steer_pitch * std::abs(2.0f - tilt_effect_base);
-			if ((machine_state & MACHINESTATE::BOOSTING) &&
-				!(machine_state & MACHINESTATE::BOOSTING_DASHPLATE))
+			2.0f * soa->input_steer_pitch[soa_index] * std::abs(2.0f - tilt_effect_base);
+			if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) &&
+				!(soa->machine_state[soa_index] & MACHINESTATE::BOOSTING_DASHPLATE))
 				current_tilt_increment *= 2.0f;
 		} else {
-			current_tilt_increment = tilt_effect_base + 4.0f * input_steer_pitch;
+			current_tilt_increment = tilt_effect_base + 4.0f * soa->input_steer_pitch[soa_index];
 		}
 
-		if (air_time > 60) {
-			float air_time_factor = static_cast<float>(air_time - 60) / 120.0f;
+		if (soa->air_time[soa_index] > 60) {
+			float air_time_factor = static_cast<float>(soa->air_time[soa_index] - 60) / 120.0f;
 			air_time_factor = std::min(air_time_factor, 1.0f);
 
 			current_tilt_increment =
@@ -1240,16 +1468,16 @@ void PhysicsCar::handle_airborne_controls()
 			(0.3f * air_time_factor);
 		}
 
-		air_tilt += current_tilt_increment;
-		air_tilt = std::clamp(air_tilt, min_air_tilt, max_air_tilt);
+		soa->air_tilt[soa_index] += current_tilt_increment;
+		soa->air_tilt[soa_index] = std::clamp(soa->air_tilt[soa_index], min_air_tilt, max_air_tilt);
 	} else {
-		air_tilt = 0.0f;
+		soa->air_tilt[soa_index] = 0.0f;
 	}
 };
 
 void PhysicsCar::orient_vehicle_from_gravity_or_road()
 {
-	float factor = 1.5f + stat_weight / 4000.0f;
+	float factor = 1.5f + soa->stat_weight[soa_index] / 4000.0f;
 	if (factor >= 1.8f) {
 		factor = std::min(factor, 2.0f);
 	} else {
@@ -1257,26 +1485,25 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 	}
 
 	float base_factor = 0.0f;
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
 		base_factor = factor * 1.3f;
-	} else if (height_above_track <= 0.0f) {
+	} else if (soa->height_above_track[soa_index] <= 0.0f) {
 		base_factor = factor * 0.6f;
 	} else {
-		base_factor = (machine_state & MACHINESTATE::B10) ? factor * 1.8f
+		base_factor = (soa->machine_state[soa_index] & MACHINESTATE::B10) ? factor * 1.8f
 		: factor * 1.3f;
 	}
 
-	float force_mag = 10.0f * -(0.009f * stat_weight) * base_factor;
+	float force_mag = 10.0f * -(0.009f * soa->stat_weight[soa_index]) * base_factor;
 
-	godot::Vector3 gravity_align_force = track_surface_normal * force_mag;
-	velocity += gravity_align_force;
+	SimVec3 gravity_align_force = LOAD_VEC3(track_surface_normal) * force_mag;
+	ADD_VEC3(velocity, gravity_align_force);
 
-	mtxa->assign(basis_physical);
 
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0) {
-		godot::Vector3 machine_world_up = mtxa->cur->basis.get_column(1);
-		godot::Vector3 safe_track_normal =
-		normalized_safe(track_surface_normal, godot::Vector3(0, 1, 0));
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+		SimVec3 machine_world_up = LOAD_TRANSFORM(basis_physical).basis.get_column(1);
+		SimVec3 safe_track_normal =
+		normalized_safe(LOAD_VEC3(track_surface_normal), SimVec3(0, 1, 0));
 		float dot = 0.0f;
 		if (machine_world_up.length_squared() > 0.0001f)
 			dot = machine_world_up.dot(safe_track_normal);
@@ -1287,43 +1514,41 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 				align_factor = dot / 0.7f;
 			float rot_deg = 40.0f * (1.0f - align_factor);
 			float rot_rad = DEG_TO_RAD * rot_deg;
-			godot::Vector3 axis = machine_world_up.cross(safe_track_normal);
+			SimVec3 axis = machine_world_up.cross(safe_track_normal);
 			if (axis.length_squared() > 0.0001f) {
-				godot::Quaternion q(axis.normalized(), rot_rad);
-				godot::Transform3D old_basis = *mtxa->cur;
-				mtxa->from_quat(q);
-				mtxa->multiply(godot::Transform3D(old_basis.basis,
-					godot::Vector3()));
+				SimQuat q(axis.normalized(), rot_rad);
+					SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical);
+					mxt_tmp.basis = SimBasis(q) * mxt_tmp.basis;
+					STORE_TRANSFORM(basis_physical, mxt_tmp);
+				}
 			}
-		}
-		basis_physical.basis = mtxa->cur->basis;
-	} else {
-		float tilt_rad = DEG_TO_RAD * air_tilt;
+		} else {
+		float tilt_rad = DEG_TO_RAD * soa->air_tilt[soa_index];
 		float c = deterministic_fp::cosf(tilt_rad);
 		float s = deterministic_fp::sinf(tilt_rad);
-		godot::Vector3 local_tilted_up(0.0f, c, s);
-		godot::Vector3 world_tilted_up = mtxa->rotate_point(local_tilted_up);
-		godot::Vector3 safe_world_up = normalized_safe(world_tilted_up, godot::Vector3(0, 1, 0));
-		godot::Vector3 safe_track_normal =
-		normalized_safe(track_surface_normal, godot::Vector3(0, 1, 0));
+		SimVec3 local_tilted_up(0.0f, c, s);
+		SimVec3 world_tilted_up = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), local_tilted_up);
+		SimVec3 safe_world_up = normalized_safe(world_tilted_up, SimVec3(0, 1, 0));
+		SimVec3 safe_track_normal =
+		normalized_safe(LOAD_VEC3(track_surface_normal), SimVec3(0, 1, 0));
 		float dot = safe_world_up.dot(safe_track_normal);
 
 		if (dot < 0.992f) {
 			float adjusted_dot = dot + 0.008f;
 			float base_rot_deg = 15.0f;
-			godot::Vector3 axis = safe_world_up.cross(safe_track_normal);
+			SimVec3 axis = safe_world_up.cross(safe_track_normal);
 			float axis_thresh = 0.1f * 0.1f;
 			if (axis.length_squared() < axis_thresh || adjusted_dot < 0.008f) {
-				godot::Vector3 cur_up =
-				normalized_safe(mtxa->cur->basis.get_column(1),
-					godot::Vector3(0, 1, 0));
+				SimVec3 cur_up =
+				normalized_safe(LOAD_TRANSFORM(basis_physical).basis.get_column(1),
+					SimVec3(0, 1, 0));
 				float dot_up = cur_up.dot(safe_track_normal);
 
 				if (dot_up <= 0.0f) {
-					godot::Vector3 machine_x =
-					normalized_safe(mtxa->cur->basis.get_column(0),
-						godot::Vector3(1, 0, 0));
-					axis = mtxa->cur->basis.get_column(2);
+					SimVec3 machine_x =
+					normalized_safe(LOAD_TRANSFORM(basis_physical).basis.get_column(0),
+						SimVec3(1, 0, 0));
+					axis = LOAD_TRANSFORM(basis_physical).basis.get_column(2);
 					float dot_track_vs_x = safe_track_normal.dot(machine_x);
 					if (dot_track_vs_x > 0.0f)
 						axis = -axis;
@@ -1331,52 +1556,50 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 			}
 
 			if (axis.length_squared() > 0.0001f) {
-				godot::Vector3 norm_axis = axis.normalized();
+				SimVec3 norm_axis = axis.normalized();
 				float sq_dot = std::max(0.0f, adjusted_dot * adjusted_dot);
 				float rot_deg = base_rot_deg * (1.0f - sq_dot);
 				float rot_rad = DEG_TO_RAD * rot_deg;
-				godot::Quaternion q(norm_axis, rot_rad);
-				godot::Transform3D old_basis = *mtxa->cur;
-				mtxa->from_quat(q);
-				mtxa->multiply(godot::Transform3D(old_basis.basis,
-					godot::Vector3()));
+				SimQuat q(norm_axis, rot_rad);
+					SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical);
+					mxt_tmp.basis = SimBasis(q) * mxt_tmp.basis;
+					STORE_TRANSFORM(basis_physical, mxt_tmp);
+				}
 			}
 		}
-		basis_physical.basis = mtxa->cur->basis;
-	}
 };
 
 void PhysicsCar::handle_drag_and_glide_forces()
 {
-	float speed = velocity.length();
+	float speed = LOAD_VEC3(velocity).length();
 	float speed_weight_ratio = 0.0f;
-	if (std::abs(stat_weight) > 0.0001f)
-		speed_weight_ratio = speed / stat_weight;
+	if (std::abs(soa->stat_weight[soa_index]) > 0.0001f)
+		speed_weight_ratio = speed / soa->stat_weight[soa_index];
 
 	float scaled_speed = 216.0f * speed_weight_ratio;
 
 	if (scaled_speed < 2.0f) {
-		velocity = godot::Vector3();
-		visual_shake_mult = 0.0f;
+		STORE_VEC3(velocity, SimVec3());
+		soa->visual_shake_mult[soa_index] = 0.0f;
 		return;
 	}
 
-	godot::Vector3 vel_norm = normalized_safe(velocity, godot::Vector3());
-	float alignment_with_normal = track_surface_normal.dot(vel_norm);
+	SimVec3 vel_norm = normalized_safe(LOAD_VEC3(velocity), SimVec3());
+	float alignment_with_normal = LOAD_VEC3(track_surface_normal).dot(vel_norm);
 
-	godot::Vector3 forward_world =
-	normalized_safe(mtxa->rotate_point(godot::Vector3(0, 0, -1)),
-		godot::Vector3(0, 0, -1));
+	SimVec3 forward_world =
+	normalized_safe(mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0, 0, -1)),
+		SimVec3(0, 0, -1));
 	float forward_normal_alignment =
-	track_surface_normal.dot(forward_world);
+	LOAD_VEC3(track_surface_normal).dot(forward_world);
 
-	godot::Vector3 normal_force =
-	track_surface_normal *
-	(stat_weight * alignment_with_normal * speed_weight_ratio);
+	SimVec3 normal_force =
+	LOAD_VEC3(track_surface_normal) *
+	(soa->stat_weight[soa_index] * alignment_with_normal * speed_weight_ratio);
 	float base_drag_mag = speed_weight_ratio * speed_weight_ratio * 8.0f;
-	godot::Vector3 drag_vector = velocity - normal_force;
+	SimVec3 drag_vector = LOAD_VEC3(velocity) - normal_force;
 
-	if (machine_state & MACHINESTATE::AIRBORNE) {
+	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) {
 		if (forward_normal_alignment < 0.0f)
 			base_drag_mag *= std::max(0.0f, 1.0f + forward_normal_alignment);
 		forward_normal_alignment += 1.0f; // shift to 0 -> 2 range
@@ -1386,17 +1609,17 @@ void PhysicsCar::handle_drag_and_glide_forces()
 	if (drag_len > 0.0001f)
 		drag_vector *= base_drag_mag / drag_len;
 	else
-		drag_vector = godot::Vector3();
+		drag_vector = SimVec3();
 
-	visual_shake_mult = base_drag_mag;
+	soa->visual_shake_mult[soa_index] = base_drag_mag;
 
-	if (stat_weight < 1100.0f) {
-		float weight_scale = stat_weight / 1100.0f;
+	if (soa->stat_weight[soa_index] < 1100.0f) {
+		float weight_scale = soa->stat_weight[soa_index] / 1100.0f;
 		alignment_with_normal *= weight_scale * weight_scale;
 	}
 
-	bool boosting = (machine_state & MACHINESTATE::BOOSTING) != 0;
-	bool airborne = (machine_state & MACHINESTATE::AIRBORNE) != 0;
+	bool boosting = (soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) != 0;
+	bool airborne = (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0;
 	float drag_coeff = 0.0f;
 
 	if (boosting) {
@@ -1413,63 +1636,60 @@ void PhysicsCar::handle_drag_and_glide_forces()
 		drag_coeff = alignment_with_normal * 0.6f;
 	}
 
-	drag_vector += track_surface_normal * (base_drag_mag * drag_coeff);
+	drag_vector += LOAD_VEC3(track_surface_normal) * (base_drag_mag * drag_coeff);
 
-	if (frames_since_death != 0) {
+	if (soa->frames_since_death[soa_index] != 0) {
 		float death_fade =
-		std::clamp(0.01f * static_cast<float>(frames_since_death) - 4.0f, 0.0f, 1.0f);
+		std::clamp(0.01f * static_cast<float>(soa->frames_since_death[soa_index]) - 4.0f, 0.0f, 1.0f);
 		drag_vector *= death_fade;
 	}
 
-	velocity -= drag_vector;
+	SUB_VEC3(velocity, drag_vector);
 };
 
 void PhysicsCar::rotate_machine_from_angle_velocity()
 {
-	godot::Vector3 processed_ang_vel;
+	SimVec3 processed_ang_vel;
 
 	const float deadzone_threshold = 3.0f;
 
-	float val_x = velocity_angular.x;
+	float val_x = soa->velocity_angular_x[soa_index];
 	if (std::abs(val_x) <= deadzone_threshold)
 		processed_ang_vel.x = 0.0f;
 	else
 		processed_ang_vel.x = val_x - ((val_x > 0.0f) - (val_x < 0.0f)) * deadzone_threshold;
 
-	float val_z = velocity_angular.z;
+	float val_z = soa->velocity_angular_z[soa_index];
 	if (std::abs(val_z) <= deadzone_threshold)
 		processed_ang_vel.z = 0.0f;
 	else
 		processed_ang_vel.z = val_z - ((val_z > 0.0f) - (val_z < 0.0f)) * deadzone_threshold;
 
-	processed_ang_vel.y = velocity_angular.y;
+	processed_ang_vel.y = soa->velocity_angular_y[soa_index];
 
-	if (std::abs(weight_derived_1) > 0.0001f)
-		processed_ang_vel.x /= weight_derived_1;
+	if (std::abs(soa->weight_derived_1[soa_index]) > 0.0001f)
+		processed_ang_vel.x /= soa->weight_derived_1[soa_index];
 	else
 		processed_ang_vel.x = 0.0f;
 
-	if (std::abs(weight_derived_2) > 0.0001f)
-		processed_ang_vel.y /= weight_derived_2;
+	if (std::abs(soa->weight_derived_2[soa_index]) > 0.0001f)
+		processed_ang_vel.y /= soa->weight_derived_2[soa_index];
 	else
 		processed_ang_vel.y = 0.0f;
 
-	if (std::abs(weight_derived_3) > 0.0001f)
-		processed_ang_vel.z /= weight_derived_3;
+	if (std::abs(soa->weight_derived_3[soa_index]) > 0.0001f)
+		processed_ang_vel.z /= soa->weight_derived_3[soa_index];
 	else
 		processed_ang_vel.z = 0.0f;
 
 	float rotation_angle_rad = processed_ang_vel.length();
 	if (rotation_angle_rad > 0.0001f) {
-		godot::Vector3 rotation_axis = processed_ang_vel.normalized();
-		godot::Quaternion delta_q(rotation_axis, rotation_angle_rad);
+		SimVec3 rotation_axis = processed_ang_vel.normalized();
+		SimQuat delta_q(rotation_axis, rotation_angle_rad);
 
-		mtxa->push();
-		mtxa->from_quat(delta_q);
-		godot::Transform3D delta_transform = *mtxa->cur;
-		mtxa->pop();
-
-		mtxa->multiply(delta_transform);
+		SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical);
+		mxt_tmp.basis = mxt_tmp.basis * SimBasis(delta_q);
+		STORE_TRANSFORM(basis_physical, mxt_tmp);
 	}
 };
 
@@ -1477,19 +1697,19 @@ void PhysicsCar::handle_startup_wobble()
 {
 	float f_val3_for_cross_prod_y = 0.0f;
 
-	int seed_uVar4 = static_cast<int>(position_current.z) ^
-	static_cast<int>(position_current.x) ^
-	static_cast<int>(position_current.y) ^
-	static_cast<int>(base_speed);
+	int seed_uVar4 = static_cast<int>(soa->position_current_z[soa_index]) ^
+	static_cast<int>(soa->position_current_x[soa_index]) ^
+	static_cast<int>(soa->position_current_y[soa_index]) ^
+	static_cast<int>(soa->base_speed[soa_index]);
 
 	int intermediate_uint_f1 =
-	(seed_uVar4 ^ static_cast<int>(velocity_angular.x * 4000000.0f)) &
+	(seed_uVar4 ^ static_cast<int>(soa->velocity_angular_x[soa_index] * 4000000.0f)) &
 	0xffff;
 	float normalized_f1 = static_cast<float>(intermediate_uint_f1) / 65535.0f;
 	float fVar1_wobble_x = 2.0f * normalized_f1 - 1.0f;
 
 	int intermediate_uint_f2 =
-	(seed_uVar4 ^ static_cast<int>(velocity_angular.y * 4000000.0f)) &
+	(seed_uVar4 ^ static_cast<int>(soa->velocity_angular_y[soa_index] * 4000000.0f)) &
 	0xffff;
 	float normalized_f2 = static_cast<float>(intermediate_uint_f2) / 65535.0f;
 	float fVar2_wobble_y_comp = 0.5f + 1.5f * normalized_f2;
@@ -1499,246 +1719,251 @@ void PhysicsCar::handle_startup_wobble()
 	else
 		fVar1_wobble_x += 0.5f;
 
-	godot::Vector3 local_vec_y_scaled(0.0f, 0.0162037037037f * stat_weight,
+	SimVec3 local_vec_y_scaled(0.0f, 0.0162037037037f * soa->stat_weight[soa_index],
 		0.0f);
 
-	godot::Vector3 local_48_rotated_vec =
-	mtxa->inverse_rotate_point(local_vec_y_scaled);
+	SimVec3 local_48_rotated_vec =
+	mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), local_vec_y_scaled);
 
-	godot::Vector3 wobble_pseudo_force_local(fVar1_wobble_x,
+	SimVec3 wobble_pseudo_force_local(fVar1_wobble_x,
 		f_val3_for_cross_prod_y,
 		fVar2_wobble_y_comp);
 
-	godot::Vector3 torque_to_add =
+	SimVec3 torque_to_add =
 	local_48_rotated_vec.cross(wobble_pseudo_force_local);
-	velocity_angular += torque_to_add;
+	ADD_VEC3(velocity_angular, torque_to_add);
 };
 
 void PhysicsCar::initialize_machine()
 {
-	machine_state = 0;
-	machine_name = "Blue Falcon";
+	soa->machine_state[soa_index] = 0;
+	soa->machine_name[soa_index] = "Blue Falcon";
 
 	update_machine_stats();
 
-	weight_derived_1 = 52.0f * stat_weight * 0.0625f;
-	weight_derived_2 = 45.0f * stat_weight * 0.0625f;
-	weight_derived_3 = 52.0f * stat_weight * 0.0625f;
+	soa->weight_derived_1[soa_index] = 52.0f * soa->stat_weight[soa_index] * 0.0625f;
+	soa->weight_derived_2[soa_index] = 45.0f * soa->stat_weight[soa_index] * 0.0625f;
+	soa->weight_derived_3[soa_index] = 52.0f * soa->stat_weight[soa_index] * 0.0625f;
 
-	boost_turbo = 0.0f;
+	soa->boost_turbo[soa_index] = 0.0f;
 
-	s_boost_charge_max = 30;
-	PhysicsCarSuspensionPoint* tilt_corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl,
-	&tilt_br };
-	PhysicsCarCollisionPoint* wall_corners[4] = { &wall_fl, &wall_fr, &wall_bl,
-	&wall_br };
+	soa->s_boost_charge_max[soa_index] = 30;
 
-	if (car_properties != nullptr) {
+	if (soa->car_properties[soa_index] != nullptr) {
 		for (int i = 0; i < 4; ++i) {
-			auto* corner = tilt_corners[i];
-			corner->force = 0.0f;
-			corner->offset = car_properties->tilt_corners[i];
-			corner->pos_old = godot::Vector3();
-			corner->state = 0;
-			corner->rest_length = 1.7f;
+			const int p = POINT_INDEX(i);
+			soa->tilt_force[p] = 0.0f;
+			STORE_TILT_VEC3(offset, p, soa->car_properties[soa_index]->tilt_corners[i]);
+			STORE_TILT_VEC3(pos_old, p, SimVec3());
+			soa->tilt_state[p] = 0;
+			soa->tilt_rest_length[p] = 1.7f;
 		}
 
-		stat_obstacle_collision = 0.0f;
-		stat_track_collision = 1.0f;
+		soa->stat_obstacle_collision[soa_index] = 0.0f;
+		soa->stat_track_collision[soa_index] = 1.0f;
 
 		for (int i = 0; i < 4; ++i) {
-			auto* wall_corner = wall_corners[i];
-			wall_corner->offset = car_properties->wall_corners[i];
-			wall_corner->collision = godot::Vector3();
+			const int p = POINT_INDEX(i);
+			const SimVec3 wall_offset = soa->car_properties[soa_index]->wall_corners[i];
+			STORE_WALL_VEC3(offset, p, wall_offset);
+			STORE_WALL_VEC3(collision, p, SimVec3());
 
-			float offset_len = wall_corner->offset.length();
-			if (stat_obstacle_collision < offset_len)
-				stat_obstacle_collision = offset_len;
+			float offset_len = wall_offset.length();
+			if (soa->stat_obstacle_collision[soa_index] < offset_len)
+				soa->stat_obstacle_collision[soa_index] = offset_len;
 
-			float abs_offset_x = std::abs(wall_corner->offset.x);
-			if (stat_track_collision < abs_offset_x)
-				stat_track_collision = abs_offset_x;
+			float abs_offset_x = std::abs(wall_offset.x);
+			if (soa->stat_track_collision[soa_index] < abs_offset_x)
+				soa->stat_track_collision[soa_index] = abs_offset_x;
 		}
 	}
 
-	stat_obstacle_collision += 0.1f;
-	calced_max_energy = car_properties->max_energy;
+	soa->stat_obstacle_collision[soa_index] += 0.1f;
+	soa->calced_max_energy[soa_index] = soa->car_properties[soa_index]->max_energy;
 
-	mtxa->push();
-	mtxa->identity();
 	reset_machine(1);
-	mtxa->pop();
 };
 
 void PhysicsCar::update_machine_stats()
 {
-	if (car_properties == nullptr)
+	if (soa->car_properties[soa_index] == nullptr)
 		return;
 
 	PhysicsCarProperties def_stats =
-	car_properties->derive_machine_base_stat_values(m_accel_setting);
+	soa->car_properties[soa_index]->derive_machine_base_stat_values(soa->m_accel_setting[soa_index]);
 
-	stat_weight = def_stats.weight_kg;
-	stat_grip_1 = def_stats.grip_1;
-	stat_grip_3 = def_stats.grip_3;
-	stat_turn_movement = def_stats.turn_movement;
-	stat_strafe = def_stats.strafe;
-	stat_turn_reaction = def_stats.turn_reaction;
-	stat_grip_2 = def_stats.grip_2;
-	stat_body = def_stats.body;
-	stat_turn_tension = def_stats.turn_tension;
-	stat_drift_accel = def_stats.drift_accel;
-	stat_accel_press_grip_frames = def_stats.unk_byte_0x48;
-	camera_reorienting = def_stats.camera_reorienting;
-	camera_repositioning = def_stats.camera_repositioning;
-	stat_strafe_turn = def_stats.strafe_turn;
-	stat_acceleration = def_stats.acceleration;
-	stat_max_speed = def_stats.max_speed;
-	stat_boost_strength = 0.57f * def_stats.boost_strength;
-	stat_boost_length = def_stats.boost_length;
-	stat_turn_decel = def_stats.turn_decel;
-	stat_drag = def_stats.drag;
+	soa->stat_weight[soa_index] = def_stats.weight_kg;
+	soa->stat_grip_1[soa_index] = def_stats.grip_1;
+	soa->stat_grip_3[soa_index] = def_stats.grip_3;
+	soa->stat_turn_movement[soa_index] = def_stats.turn_movement;
+	soa->stat_strafe[soa_index] = def_stats.strafe;
+	soa->stat_turn_reaction[soa_index] = def_stats.turn_reaction;
+	soa->stat_grip_2[soa_index] = def_stats.grip_2;
+	soa->stat_body[soa_index] = def_stats.body;
+	soa->stat_turn_tension[soa_index] = def_stats.turn_tension;
+	soa->stat_drift_accel[soa_index] = def_stats.drift_accel;
+	soa->stat_accel_press_grip_frames[soa_index] = def_stats.unk_byte_0x48;
+	soa->camera_reorienting[soa_index] = def_stats.camera_reorienting;
+	soa->camera_repositioning[soa_index] = def_stats.camera_repositioning;
+	soa->stat_strafe_turn[soa_index] = def_stats.strafe_turn;
+	soa->stat_acceleration[soa_index] = def_stats.acceleration;
+	soa->stat_max_speed[soa_index] = def_stats.max_speed;
+	soa->stat_boost_strength[soa_index] = 0.57f * def_stats.boost_strength;
+	soa->stat_boost_length[soa_index] = def_stats.boost_length;
+	soa->stat_turn_decel[soa_index] = def_stats.turn_decel;
+	soa->stat_drag[soa_index] = def_stats.drag;
 };
 
 void PhysicsCar::reset_machine(int reset_type)
 {
-	level_start_time = frames_since_start + 60 * 5;
-	// Clear all velocity and collision vectors
-	velocity = godot::Vector3();
-	velocity_local_flattened_and_rotated = godot::Vector3();
-	velocity_local = godot::Vector3();
-	velocity_angular = godot::Vector3();
-	collision_push_total = godot::Vector3();
-	collision_push_rail = godot::Vector3();
-	collision_push_track = godot::Vector3();
+	soa->level_start_time[soa_index] = soa->frames_since_start[soa_index] + 60 * 5;
+	// Clear all LOAD_VEC3(velocity) and collision vectors
+	STORE_VEC3(velocity, SimVec3());
+	STORE_VEC3(velocity_local_flattened_and_rotated, SimVec3());
+	STORE_VEC3(velocity_local, SimVec3());
+	STORE_VEC3(velocity_angular, SimVec3());
+	STORE_VEC3(collision_push_total, SimVec3());
+	STORE_VEC3(collision_push_rail, SimVec3());
+	STORE_VEC3(collision_push_track, SimVec3());
 
-	track_surface_normal = mtxa->rotate_point(godot::Vector3(0, 1, 0));
+	STORE_VEC3(track_surface_normal, mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0, 1, 0)));
 
 	// Placeholder spawn values until StageOverseer is ported
-	godot::Vector3 spawn_pos = godot::Vector3(0.f, 200.f, 0.f);
+	SimVec3 spawn_pos = SimVec3(0.f, 200.f, 0.f);
 	float spawn_rot = 0.0f;
 
-	position_current = spawn_pos;
-	position_old = spawn_pos;
-	position_old_2 = spawn_pos;
-	position_old_dupe = spawn_pos;
+	STORE_VEC3(position_current, spawn_pos);
+	STORE_VEC3(position_old, spawn_pos);
+	STORE_VEC3(position_old_2, spawn_pos);
+	STORE_VEC3(position_old_dupe, spawn_pos);
 
-	position_bottom = mtxa->transform_point(godot::Vector3(0.0f, -0.1f, 0.0f));
+	STORE_VEC3(position_bottom, mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, -0.1f, 0.0f)));
 
-	position_old_2 = godot::Vector3(0, 5, 0);
-	input_steer_yaw = 0.0f;
-	input_yaw_dupe = 0.0f;
-	visual_shake_mult = 0.0f;
-	input_accel = 0.0f;
-	input_brake = 0.0f;
-	input_strafe = 0.0f;
-	input_steer_pitch = 0.0f;
-	height_above_track = 0.0f;
-	current_checkpoint = 0;
-	checkpoint_fraction = 0.0f;
-	lap = 0;
-	visual_rotation = godot::Vector3();
+	STORE_VEC3(position_old_2, SimVec3(0, 5, 0));
+	soa->input_steer_yaw[soa_index] = 0.0f;
+	soa->input_yaw_dupe[soa_index] = 0.0f;
+	soa->visual_shake_mult[soa_index] = 0.0f;
+	soa->input_accel[soa_index] = 0.0f;
+	soa->input_brake[soa_index] = 0.0f;
+	soa->input_strafe[soa_index] = 0.0f;
+	soa->input_steer_pitch[soa_index] = 0.0f;
+	soa->height_above_track[soa_index] = 0.0f;
+	soa->current_checkpoint[soa_index] = 0;
+	soa->checkpoint_fraction[soa_index] = 0.0f;
+	soa->lap[soa_index] = 0;
+	STORE_VEC3(visual_rotation, SimVec3());
 
-	energy = calced_max_energy;
-	boost_frames_manual = 0;
-	air_tilt = 0.0f;
-	boost_frames = 0;
-	input_strafe_32 = 0.0f;
-	input_strafe_1_6 = 0.0f;
-	frames_since_start_2 = 0;
-	speed_kmh = 0.0f;
-	race_start_charge = 0.0f;
-	last_hit_tick = 0;
-	has_last_hit_tick = false;
+	soa->energy[soa_index] = soa->calced_max_energy[soa_index];
+	soa->boost_frames_manual[soa_index] = 0;
+	soa->air_tilt[soa_index] = 0.0f;
+	soa->boost_frames[soa_index] = 0;
+	soa->input_strafe_32[soa_index] = 0.0f;
+	soa->input_strafe_1_6[soa_index] = 0.0f;
+	soa->frames_since_start_2[soa_index] = 0;
+	soa->speed_kmh[soa_index] = 0.0f;
+	soa->race_start_charge[soa_index] = 0.0f;
+	soa->last_hit_tick[soa_index] = 0;
+	soa->has_last_hit_tick[soa_index] = false;
 
-	height_adjust_from_boost = 0.0f;
-	grip_frames_from_accel_press = 0;
-	air_time = 0;
-	spinattack_angle = 0.0f;
-	spinattack_decrement = 0.0f;
-	spinattack_direction = 0;
-	damage_from_last_hit = 0.0f;
-	frames_since_start = 0;
-	side_attack_delay = 0;
-	brake_timer = 0;
-	rail_collision_timer = 0;
-	terrain_state = 0;
-	machine_collision_frame_counter = 0;
-	frames_since_death = 0;
-	turning_related = 0.0f;
-	machine_crashed = false;
-	boost_delay_frame_counter = 0;
-	car_hit_invincibility = 0;
-	turn_reaction_input = 0.0f;
-	turn_reaction_effect = 0.0f;
-	boost_energy_use_mult = 0.8f;
-	breakdown_frame_counter = 0;
-	some_breakdown_int = 0;
-	drift_sign = 1;
-	drift_ramp = 0.0;
+	soa->height_adjust_from_boost[soa_index] = 0.0f;
+	soa->grip_frames_from_accel_press[soa_index] = 0;
+	soa->air_time[soa_index] = 0;
+	soa->spinattack_angle[soa_index] = 0.0f;
+	soa->spinattack_decrement[soa_index] = 0.0f;
+	soa->spinattack_direction[soa_index] = 0;
+	soa->damage_from_last_hit[soa_index] = 0.0f;
+	soa->frames_since_start[soa_index] = 0;
+	soa->side_attack_delay[soa_index] = 0;
+	soa->brake_timer[soa_index] = 0;
+	soa->rail_collision_timer[soa_index] = 0;
+	soa->terrain_state[soa_index] = 0;
+	soa->machine_collision_frame_counter[soa_index] = 0;
+	soa->frames_since_death[soa_index] = 0;
+	soa->turning_related[soa_index] = 0.0f;
+	soa->machine_crashed[soa_index] = false;
+	soa->boost_delay_frame_counter[soa_index] = 0;
+	soa->car_hit_invincibility[soa_index] = 0;
+	soa->turn_reaction_input[soa_index] = 0.0f;
+	soa->turn_reaction_effect[soa_index] = 0.0f;
+	soa->boost_energy_use_mult[soa_index] = 0.8f;
+	soa->breakdown_frame_counter[soa_index] = 0;
+	soa->some_breakdown_int[soa_index] = 0;
+	soa->drift_sign[soa_index] = 1;
+	soa->drift_ramp[soa_index] = 0.0;
 
 	// Orient the machine at the spawn position
-	mtxa->push();
-	mtxa->cur->origin = spawn_pos;
-	basis_physical.basis = godot::Basis().rotated(godot::Vector3(0, 1, 0), spawn_rot + PI);
-	basis_physical_other.basis = godot::Basis().rotated(godot::Vector3(0, 1, 0), spawn_rot + PI);
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical); mxt_tmp.basis = SimBasis().rotated(SimVec3(0, 1, 0), spawn_rot + PI); STORE_TRANSFORM(basis_physical, mxt_tmp); }
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical_other); mxt_tmp.basis = SimBasis().rotated(SimVec3(0, 1, 0), spawn_rot + PI); STORE_TRANSFORM(basis_physical_other, mxt_tmp); }
 
-	rotate_mtxa_from_diff_btwn_machine_front_and_back();
-	mtxa->pop();
+	update_pitch_transform_from_machine_front_back();
 
 	// Visual transform matches physical orientation at reset
-	mtxa->push();
-	transform_visual = *mtxa->cur;
-	mtxa->pop();
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical); mxt_tmp.origin = LOAD_VEC3(position_current); STORE_TRANSFORM(transform_visual, mxt_tmp); }
 
-	base_speed = 0.0f;
-	boost_turbo = 0.0f;
-	position_behind = godot::Vector3();
+	soa->base_speed[soa_index] = 0.0f;
+	soa->boost_turbo[soa_index] = 0.0f;
+	STORE_VEC3(position_behind, SimVec3());
 
 	uint32_t state_mask_common = MACHINESTATE::B30 | MACHINESTATE::COMPLETEDRACE_2_Q |
 	MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::B10 |
 	MACHINESTATE::B9;
 	if (reset_type == 0) {
-		machine_state &= state_mask_common;
-		state_2 &= 1u;
+		soa->machine_state[soa_index] &= state_mask_common;
+		soa->state_2[soa_index] &= 1u;
 	} else {
-		machine_state &= state_mask_common;
+		soa->machine_state[soa_index] &= state_mask_common;
 	}
 
-	state_2 &= 0xfffffc4fu;
+	soa->state_2[soa_index] &= 0xfffffc4fu;
 
-	godot::Transform3D initial_placement_transform(basis_physical.basis, position_current);
+	SimTransform initial_placement_transform(LOAD_TRANSFORM(basis_physical).basis, LOAD_VEC3(position_current));
 
-	PhysicsCarSuspensionPoint* tilt_corners[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-	PhysicsCarCollisionPoint* wall_corners[4] = {&wall_fl, &wall_fr, &wall_bl, &wall_br};
-
+	const int point_base = soa_index * 4;
+	const SimTransform reset_transform = LOAD_TRANSFORM(basis_physical);
+	const SimVec3 reset_position = LOAD_VEC3(position_current);
+	const SimVec3x4 reset_tilt_pos = mxt_transform_points4(
+		reset_transform,
+		reset_position,
+		sim_load4(soa->tilt_offset_x + point_base),
+		sim_load4(soa->tilt_offset_y + point_base),
+		sim_load4(soa->tilt_offset_z + point_base));
+	const SimVec3x4 reset_wall_pos = mxt_transform_points4(
+		reset_transform,
+		reset_position,
+		sim_load4(soa->wall_offset_x + point_base),
+		sim_load4(soa->wall_offset_y + point_base),
+		sim_load4(soa->wall_offset_z + point_base));
+	const SimVec3 reset_up = mxt_basis_rotate(reset_transform, SimVec3(0, 1, 0));
+	const SimVec3 wall_pos_a = mxt_transform_point(reset_transform, reset_position, SimVec3(0.0f, 0.1f, 0.0f));
 	for (int i = 0; i < 4; ++i) {
-		auto* tc = tilt_corners[i];
-		auto* wc = wall_corners[i];
+		const int p = point_base + i;
+		soa->tilt_state[p] = 0;
+		soa->tilt_force[p] = 0.0f;
+		soa->tilt_force_spatial_len[p] = 0.0f;
 
-		tc->state = 0;
-		tc->force = 0.0f;
-		tc->force_spatial_len = 0.0f;
+		STORE_TILT_VEC3(force_spatial, p, SimVec3());
+		STORE_TILT_VEC3(up_vector_2, p, reset_up);
+		STORE_TILT_VEC3(up_vector, p, reset_up);
 
-		tc->pos_old = mtxa->transform_point(tc->offset);
-		tc->pos = tc->pos_old;
-
-		tc->force_spatial = godot::Vector3();
-		tc->up_vector_2 = mtxa->rotate_point(godot::Vector3(0, 1, 0));
-		tc->up_vector = tc->up_vector_2;
-
-		wc->pos_a = mtxa->transform_point(godot::Vector3(0.0f, 0.1f, 0.0f));
-		wc->pos_b = mtxa->transform_point(wc->offset);
-		wc->collision = godot::Vector3();
+		STORE_WALL_VEC3(pos_a, p, wall_pos_a);
+		STORE_WALL_VEC3(collision, p, SimVec3());
 	}
+	sim_store4(soa->tilt_pos_old_x + point_base, reset_tilt_pos.x);
+	sim_store4(soa->tilt_pos_old_y + point_base, reset_tilt_pos.y);
+	sim_store4(soa->tilt_pos_old_z + point_base, reset_tilt_pos.z);
+	sim_store4(soa->tilt_pos_x + point_base, reset_tilt_pos.x);
+	sim_store4(soa->tilt_pos_y + point_base, reset_tilt_pos.y);
+	sim_store4(soa->tilt_pos_z + point_base, reset_tilt_pos.z);
+	sim_store4(soa->wall_pos_b_x + point_base, reset_wall_pos.x);
+	sim_store4(soa->wall_pos_b_y + point_base, reset_wall_pos.y);
+	sim_store4(soa->wall_pos_b_z + point_base, reset_wall_pos.z);
 };
 
-void PhysicsCar::rotate_mtxa_from_diff_btwn_machine_front_and_back()
+void PhysicsCar::update_pitch_transform_from_machine_front_back()
 {
-	mtxa->push();
 
-	float fr_offset_z = tilt_fl.offset.z;
-	float br_offset_z = tilt_bl.offset.z;
+	float fr_offset_z = soa->tilt_offset_z[POINT_INDEX(1)];
+	float br_offset_z = soa->tilt_offset_z[POINT_INDEX(2)];
 
 	float rotation_factor = 0.0f;
 	if (std::abs(fr_offset_z) > 0.0001f)
@@ -1747,101 +1972,91 @@ void PhysicsCar::rotate_mtxa_from_diff_btwn_machine_front_and_back()
 	float clamped_rotation = std::clamp(rotation_factor, -0.2f, 0.2f);
 	float angle_rad = DEG_TO_RAD * (30.0f * clamped_rotation);
 
-	mtxa->rotate_x(angle_rad);
+	SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical);
+	mxt_rotate_basis_x(mxt_tmp, angle_rad);
+	STORE_TRANSFORM(g_pitch_mtx_0x5e0, mxt_tmp);
 
-	g_pitch_mtx_0x5e0 = *mtxa->cur;
-
-	mtxa->pop();
 };
 
-void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
+void PhysicsCar::update_suspension_forces(
+	int point_lane,
+	const SimVec3& p0_ray_start_ws,
+	const SimVec3& p0,
+	const SimVec3& p1_ray_end_ws,
+	const SimVec2& road_t_sample_raw,
+	const SimTransform& surf,
+	float stat_weight)
 {
-	float time_based_factor = 0.1f + static_cast<float>(frames_since_start_2) / 90.0f;
+	const int p = POINT_INDEX(point_lane);
+
+	float time_based_factor = 0.1f + static_cast<float>(soa->frames_since_start_2[soa_index]) / 90.0f;
 	if (time_based_factor > 0.5f)
 		time_based_factor = 0.5f;
 
-	float dynamic_rest_offset = time_based_factor * 2.0f * in_corner.rest_length;
-
-	float inv_weight = 1.0f / std::max(stat_weight, 0.0001f);
-	godot::Vector3 inv_vel = velocity * inv_weight;
-	float offset_add = std::max(0.0f, -(inv_vel.dot(track_surface_normal)));
-
-	godot::Vector3 p0_ray_start_ws = mtxa->transform_point(in_corner.offset + godot::Vector3(0.0f, 0.01f + offset_add, 0.0f));
-	godot::Vector3 p0 = mtxa->transform_point(in_corner.offset);
-
-	godot::Vector3 local_target_for_ray_end(
-		in_corner.offset.x, in_corner.offset.y - 4.0f, in_corner.offset.z);
-	godot::Vector3 p1_ray_end_ws = mtxa->transform_point(local_target_for_ray_end);
+	float dynamic_rest_offset = time_based_factor * 2.0f * soa->tilt_rest_length[p];
 
 	float compression_metric = 0.0f;
 	bool hit_found = false;
 
-	if ((in_corner.state & TILTSTATE::B6) != 0 || (height_above_track <= 0.0f && (in_corner.state & TILTSTATE::AIRBORNE))) {
+	if ((soa->tilt_state[p] & TILTSTATE::B6) != 0 || (soa->height_above_track[soa_index] <= 0.0f && (soa->tilt_state[p] & TILTSTATE::AIRBORNE))) {
 		//godot::UtilityFunctions::print("disconnected!");
-		in_corner.state |= TILTSTATE::DISCONNECTED;
+		soa->tilt_state[p] |= TILTSTATE::DISCONNECTED;
 	} else {
-		//CollisionData hit;
-		if (current_track != nullptr) {
-			int use_cp = ((machine_state & MACHINESTATE::AIRBORNE) == 0) ? current_checkpoint : -1;
-			godot::Vector2  road_t_sample_raw;  godot::Vector3 spatial_t_sample;
-			godot::Transform3D surf;
-			current_track->get_road_surface(use_cp, p0, road_t_sample_raw, spatial_t_sample, surf);
-			if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
-			{
-				godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
-				dd3d->call("draw_arrow", p0_ray_start_ws, p1_ray_end_ws, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
-				//dd3d->call("draw_arrow", hit.collision_point, hit.collision_point + hit.collision_normal * 3.0, godot::Color(0.0f, 0.0f, 1.0f), 0.25, true, _TICK_DELTA);
-				dd3d->call("draw_arrow", surf.origin, surf.origin + surf.basis[1].normalized() * 2.0, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
-				DEBUG::disp_text("road t", road_t_sample_raw);
-				DEBUG::disp_text("road spatial t", spatial_t_sample);
-				DEBUG::disp_text("surface basis", surf.basis);
+		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
+		{
+			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+			dd3d->call("draw_arrow", debug_gd_vec3(p0_ray_start_ws), debug_gd_vec3(p1_ray_end_ws), godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
+			dd3d->call("draw_arrow", debug_gd_vec3(surf.origin), debug_gd_vec3(surf.origin + surf.basis[1].normalized() * 2.0f), godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
+			DEBUG::disp_text("road t x", road_t_sample_raw.x);
+			DEBUG::disp_text("road t y", road_t_sample_raw.y);
+		}
+		if (road_t_sample_raw.x == -1000.0f)
+		{
+			soa->tilt_state[p] |= TILTSTATE::DISCONNECTED;
+			compression_metric = 0.0f;
+		}
+		else if (surf.basis[0].length_squared() >= 0.1) {
+			const SimVec3 plane_n = surf.basis[1];
+			const SimVec3 plane_p = surf.origin;
+			const SimVec3 ray_dir = p1_ray_end_ws - p0_ray_start_ws;
+			const float denom = ray_dir.dot(plane_n);
+			float t = 0.0f;
+			if (std::abs(denom) > 0.000001f) {
+				t = (plane_p - p0_ray_start_ws).dot(plane_n) / denom;
 			}
-			if (road_t_sample_raw.x == -1000.0f)
-			{
-				in_corner.state |= TILTSTATE::DISCONNECTED;
-				compression_metric = 0.0f;
-			}
-			else if (surf.basis[0].length_squared() >= 0.1) {
-				const godot::Vector3 plane_n = surf.basis[1];
-				const godot::Vector3 plane_p = surf.origin;
-				const godot::Vector3 ray_dir = p1_ray_end_ws - p0_ray_start_ws;
-				const float denom = ray_dir.dot(plane_n);
-				float t = 0.0f;
-				if (std::abs(denom) > 0.000001f) {
-					t = (plane_p - p0_ray_start_ws).dot(plane_n) / denom;
-				}
-				hit_found = t >= 0.0f && t <= 1.0f;
-				godot::Vector3 intersect = p0_ray_start_ws + ray_dir * t;
-				if (hit_found){
-					in_corner.pos = intersect;
-					in_corner.up_vector_2 = plane_n.normalized();
+			hit_found = t >= 0.0f && t <= 1.0f;
+			SimVec3 intersect = p0_ray_start_ws + ray_dir * t;
+			if (hit_found){
+				STORE_TILT_VEC3(pos, p, intersect);
+				STORE_TILT_VEC3(up_vector_2, p, plane_n.normalized());
 
-					float total_sweep_length = p0.distance_to(p1_ray_end_ws);
-					float hit_fraction = 0.0f;
-					if (total_sweep_length > 0.0001f) {
-						hit_fraction =
-						p0.distance_to(intersect) /
-						total_sweep_length;
-						hit_fraction = std::min(hit_fraction, 1.0f);
-					}
-					float actual_len = hit_fraction * total_sweep_length;
-					float displacement_from_attachment_plane = -actual_len;
-					compression_metric = displacement_from_attachment_plane + dynamic_rest_offset;
-					if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
-					{
-						godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
-						dd3d->call("draw_arrow", in_corner.pos, in_corner.pos + in_corner.up_vector_2 * 2.0, godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, _TICK_DELTA);
-						DEBUG::disp_text("hit_fraction", hit_fraction);
-						DEBUG::disp_text("displacement_from_attachment_plane", displacement_from_attachment_plane);
-					}
+				float total_sweep_length = p0.distance_to(p1_ray_end_ws);
+				float hit_fraction = 0.0f;
+				if (total_sweep_length > 0.0001f) {
+					hit_fraction =
+					p0.distance_to(intersect) /
+					total_sweep_length;
+					hit_fraction = std::min(hit_fraction, 1.0f);
+				}
+				float actual_len = hit_fraction * total_sweep_length;
+				float displacement_from_attachment_plane = -actual_len;
+				compression_metric = displacement_from_attachment_plane + dynamic_rest_offset;
+				if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
+				{
+					godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+					const SimVec3 corner_pos = LOAD_TILT_VEC3(pos, p);
+					const SimVec3 corner_up = LOAD_TILT_VEC3(up_vector_2, p);
+					dd3d->call("draw_arrow", debug_gd_vec3(corner_pos), debug_gd_vec3(corner_pos + corner_up * 2.0f), godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, _TICK_DELTA);
+					DEBUG::disp_text("hit_fraction", hit_fraction);
+					DEBUG::disp_text("displacement_from_attachment_plane", displacement_from_attachment_plane);
 				}
 			}
 		}
 
 		if (hit_found) {
-			in_corner.state &= ~static_cast<uint32_t>(TILTSTATE::DISCONNECTED);
+			soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::DISCONNECTED);
 		} else {
-			in_corner.state |= TILTSTATE::DISCONNECTED;
+			soa->tilt_state[p] |= TILTSTATE::DISCONNECTED;
 			compression_metric = 0.0f;
 		}
 	}
@@ -1849,26 +2064,26 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 	float calculated_force_magnitude = 0.0f;
 
 	if (compression_metric > 0.0f) {
-		in_corner.state &= ~static_cast<uint32_t>(TILTSTATE::AIRBORNE);
+		soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::AIRBORNE);
 
 		float current_compression = compression_metric;
 		float damping1_force_component = 0.0f;
 
 		if (dynamic_rest_offset < compression_metric) {
 			damping1_force_component =
-			0.5f * (compression_metric - in_corner.force) * stat_weight;
+			0.5f * (compression_metric - soa->tilt_force[p]) * stat_weight;
 			current_compression = dynamic_rest_offset;
 		}
 
-		float prev_frame_compression_metric = in_corner.force;
-		in_corner.force = current_compression;
+		float prev_frame_compression_metric = soa->tilt_force[p];
+		soa->tilt_force[p] = current_compression;
 
 		float mass_fraction = stat_weight / 1200.0f;
 		float stiffness_k1 = 9000.0f;
 		float damping_coeff_shared = 0.009f;
 		float stiffness_k2_for_damping = 10000.0f;
 
-		in_corner.up_vector = in_corner.up_vector_2;
+		STORE_TILT_VEC3(up_vector, p, LOAD_TILT_VEC3(up_vector_2, p));
 
 		float spring_force_comp =
 		damping_coeff_shared * (stiffness_k1 * current_compression) *
@@ -1882,29 +2097,79 @@ void PhysicsCar::update_suspension_forces(PhysicsCarSuspensionPoint& in_corner)
 		calculated_force_magnitude =
 		damping1_force_component + spring_force_comp - damping2_force_comp;
 	} else {
-		in_corner.state |= TILTSTATE::AIRBORNE;
-		in_corner.force = 0.0f;
-		in_corner.up_vector = godot::Vector3(0, 1, 0);
-		if (in_corner.state & TILTSTATE::DISCONNECTED)
-			in_corner.up_vector_2 = godot::Vector3(0, 1, 0);
+		soa->tilt_state[p] |= TILTSTATE::AIRBORNE;
+		soa->tilt_force[p] = 0.0f;
+		STORE_TILT_VEC3(up_vector, p, SimVec3(0, 1, 0));
+		if (soa->tilt_state[p] & TILTSTATE::DISCONNECTED)
+			STORE_TILT_VEC3(up_vector_2, p, SimVec3(0, 1, 0));
 
 		calculated_force_magnitude = 0.0f;
 	}
 
-	in_corner.force_spatial_len = calculated_force_magnitude;
-	in_corner.force_spatial = in_corner.up_vector * calculated_force_magnitude;
+	soa->tilt_force_spatial_len[p] = calculated_force_magnitude;
+	STORE_TILT_VEC3(force_spatial, p, LOAD_TILT_VEC3(up_vector, p) * calculated_force_magnitude);
 };
 
-godot::Vector3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
+SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
 {
-	PhysicsCarSuspensionPoint* corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
-	godot::Vector3 normal_sum(0, 0, 0);
+	const int point_base = soa_index * 4;
+	const SimTransform machine_transform = LOAD_TRANSFORM(basis_physical);
+	const SimVec3 machine_position = LOAD_VEC3(position_current);
+	const SimVec3 track_normal = LOAD_VEC3(track_surface_normal);
+	const SimVec3 velocity_ws = LOAD_VEC3(velocity);
+	const float stat_weight = soa->stat_weight[soa_index];
+	const float inv_weight = 1.0f / std::max(stat_weight, 0.0001f);
+	const float offset_add = std::max(0.0f, -((velocity_ws * inv_weight).dot(track_normal)));
+	RaceTrack* track = soa->current_track[soa_index];
+	const int use_cp = ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) ? soa->current_checkpoint[soa_index] : -1;
+
+	SimVec3 p0_ray_start_ws[4];
+	SimVec3 p0_ws[4];
+	SimVec3 p1_ray_end_ws[4];
+	SimVec2 road_t[4];
+	SimVec3 spatial_t[4];
+	SimTransform surf[4];
+	mxt_store_points4(
+		p0_ray_start_ws,
+		mxt_transform_points4(
+			machine_transform,
+			machine_position,
+			sim_load4(soa->tilt_offset_x + point_base),
+			sim_load4(soa->tilt_offset_y + point_base) + SimFloat4(0.01f + offset_add),
+			sim_load4(soa->tilt_offset_z + point_base)));
+	mxt_store_points4(
+		p0_ws,
+		mxt_transform_points4(
+			machine_transform,
+			machine_position,
+			sim_load4(soa->tilt_offset_x + point_base),
+			sim_load4(soa->tilt_offset_y + point_base),
+			sim_load4(soa->tilt_offset_z + point_base)));
+	mxt_store_points4(
+		p1_ray_end_ws,
+		mxt_transform_points4(
+			machine_transform,
+			machine_position,
+			sim_load4(soa->tilt_offset_x + point_base),
+			sim_load4(soa->tilt_offset_y + point_base) - SimFloat4(4.0f),
+			sim_load4(soa->tilt_offset_z + point_base)));
+	if (track) {
+		track->get_road_surface4_same_checkpoint(use_cp, p0_ws, road_t, spatial_t, surf);
+	} else {
+		for (int lane = 0; lane < 4; ++lane) {
+			road_t[lane].x = -1000.0f;
+			spatial_t[lane] = SimVec3();
+			surf[lane] = SimTransform();
+		}
+	}
+
+	SimVec3 normal_sum(0, 0, 0);
 	int valid_count = 0;
 	for (int i = 0; i < 4; ++i) {
-		PhysicsCarSuspensionPoint* current_corner = corners[i];
-		update_suspension_forces(*current_corner);
-		if ((current_corner->state & TILTSTATE::AIRBORNE) == 0) {
-			normal_sum += current_corner->up_vector;
+		const int p = point_base + i;
+		update_suspension_forces(i, p0_ray_start_ws[i], p0_ws[i], p1_ray_end_ws[i], road_t[i], surf[i], stat_weight);
+		if ((soa->tilt_state[p] & TILTSTATE::AIRBORNE) == 0) {
+			normal_sum += LOAD_TILT_VEC3(up_vector, p);
 			++valid_count;
 		}
 	}
@@ -1913,17 +2178,18 @@ godot::Vector3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
 		return normal_sum.normalized();
 	}
 
-	return godot::Vector3();
+	return SimVec3();
 };
 
-void PhysicsCar::set_terrain_state_from_track()
+void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 {
 	uint32_t terrain_bits = 0;
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && current_track != nullptr) {
+	RaceTrack* track = soa->current_track[soa_index];
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0 && track != nullptr) {
 		CollisionData hit;
-		current_track->cast_vs_track_fast(hit, position_current, position_current + track_surface_normal * -3,
+		track->cast_vs_track_fast(hit, LOAD_VEC3(position_current), LOAD_VEC3(position_current) + LOAD_VEC3(track_surface_normal) * -3,
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P1,
-			current_checkpoint);
+			soa->current_checkpoint[soa_index]);
 		if (hit.collided) {
 			terrain_bits |= hit.road_data.terrain;
 		}
@@ -1931,322 +2197,355 @@ void PhysicsCar::set_terrain_state_from_track()
 		terrain_bits = 0;
 	}
 
-	for (int i = 0; i < current_track->num_trigger_colliders; i++)
+	if (track != nullptr) for (int i = 0; i < track->num_trigger_colliders; i++)
 	{
-		uint8_t collision = current_track->trigger_colliders[i]->intersect_segment(current_checkpoint, current_track, position_old, position_current);
+		TriggerCollider* trigger = track->trigger_colliders[i];
+		uint8_t collision = trigger->intersect_segment(soa->current_checkpoint[soa_index], track, LOAD_VEC3(position_old), LOAD_VEC3(position_current));
 		if ((collision & 0x1) != 0)
 		{
-			switch (current_track->trigger_colliders[i]->type)
+			switch (trigger->type)
 			{
 			case TRIGGER_TYPE::DASHPLATE:
-				machine_state |= MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::BOOSTING_DASHPLATE;
-				terrain_state |= TERRAIN::DASH;
+				soa->machine_state[soa_index] |= MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::BOOSTING_DASHPLATE;
+				soa->terrain_state[soa_index] |= TERRAIN::DASH;
+				scratch.push_trigger_event(soa_index, i, collision, static_cast<uint8_t>(trigger->type));
 				break;
 			case TRIGGER_TYPE::JUMPPLATE:
-				terrain_state |= TERRAIN::JUMP;
+				soa->terrain_state[soa_index] |= TERRAIN::JUMP;
 				break;
 			case TRIGGER_TYPE::MINE:
-				collide_with_landmine(static_cast<Mine*>(current_track->trigger_colliders[i]));
+				collide_with_landmine(static_cast<Mine*>(trigger));
+				scratch.push_trigger_event(soa_index, i, collision, static_cast<uint8_t>(trigger->type));
 				break;
 			default:
 				break;
-			}
-			if ((collision & 0x2) != 0)
-			{
-				current_track->trigger_colliders[i]->start_touch(this);
-			}
-			current_track->trigger_colliders[i]->touch(this);
-			if ((collision & 0x4) != 0)
-			{
-				current_track->trigger_colliders[i]->end_touch(this);
 			}
 		}
 	}
 
 	if (terrain_bits & TERRAIN::DASH) {
-		machine_state |= MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::BOOSTING_DASHPLATE;
-		terrain_state |= TERRAIN::DASH;
+		soa->machine_state[soa_index] |= MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::BOOSTING_DASHPLATE;
+		soa->terrain_state[soa_index] |= TERRAIN::DASH;
 	}
 
-	if ((terrain_bits & TERRAIN::RECHARGE) && (machine_state & MACHINESTATE::ZEROHP) == 0) {
-		state_2 |= 1;
-		terrain_state |= TERRAIN::RECHARGE;
+	if ((terrain_bits & TERRAIN::RECHARGE) && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0) {
+		soa->state_2[soa_index] |= 1;
+		soa->terrain_state[soa_index] |= TERRAIN::RECHARGE;
 	}
 
-	if ((machine_state & MACHINESTATE::BOOSTING) == 0 && (terrain_bits & TERRAIN::DIRT)) {
-		terrain_state |= TERRAIN::DIRT;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) == 0 && (terrain_bits & TERRAIN::DIRT)) {
+		soa->terrain_state[soa_index] |= TERRAIN::DIRT;
 	}
 
 	if (terrain_bits & TERRAIN::ICE) {
-		terrain_state |= TERRAIN::ICE;
+		soa->terrain_state[soa_index] |= TERRAIN::ICE;
 	}
 
 	if (terrain_bits & TERRAIN::JUMP) {
-		terrain_state |= TERRAIN::JUMP;
+		soa->terrain_state[soa_index] |= TERRAIN::JUMP;
 	}
 
 	if (terrain_bits & TERRAIN::LAVA) {
-		terrain_state |= TERRAIN::LAVA;
+		soa->terrain_state[soa_index] |= TERRAIN::LAVA;
 	}
 };
 
 void PhysicsCar::handle_attack_states()
 {
-	if (s_boost_active) {
-		machine_state &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
-		side_attack_delay = 0;
-		spinattack_angle = 0.0f;
-		spinattack_decrement = 0.0f;
+	if (soa->s_boost_active[soa_index]) {
+		soa->machine_state[soa_index] &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
+		soa->side_attack_delay[soa_index] = 0;
+		soa->spinattack_angle[soa_index] = 0.0f;
+		soa->spinattack_decrement[soa_index] = 0.0f;
 		return;
 	}
-	if (speed_kmh < 300.0f) {
-		if (spinattack_angle == 0.0f)
-			machine_state &= ~MACHINESTATE::SPINATTACKING;
-		machine_state &= ~MACHINESTATE::SIDEATTACKING;
+	if (soa->speed_kmh[soa_index] < 300.0f) {
+		if (soa->spinattack_angle[soa_index] == 0.0f)
+			soa->machine_state[soa_index] &= ~MACHINESTATE::SPINATTACKING;
+		soa->machine_state[soa_index] &= ~MACHINESTATE::SIDEATTACKING;
 	}
 
-	if (side_attack_delay != 0)
-		machine_state &= ~MACHINESTATE::SPINATTACKING;
+	if (soa->side_attack_delay[soa_index] != 0)
+		soa->machine_state[soa_index] &= ~MACHINESTATE::SPINATTACKING;
 
-	if ((machine_state & MACHINESTATE::SPINATTACKING) == 0) {
-		spinattack_angle = 0.0f;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::SPINATTACKING) == 0) {
+		soa->spinattack_angle[soa_index] = 0.0f;
 	} else {
-		float cur_angle = spinattack_angle;
+		float cur_angle = soa->spinattack_angle[soa_index];
 		if (cur_angle == 0.0f) {
-			spinattack_angle = Math_PI * 8.0f;
-			spinattack_decrement = Math_PI * 0.125f;
-			spinattack_direction = (input_steer_yaw <= 0.0f) ? 1 : 0;
-		} else if (spinattack_decrement < cur_angle) {
-			spinattack_angle = cur_angle - spinattack_decrement;
-			if (spinattack_angle < Math_PI * 4.0f) {
-				spinattack_decrement -= Math_PI * 130.0f / 65536.0f;
-				if (spinattack_decrement < Math_PI * 160.0f / 65536.0f)
-					spinattack_decrement = Math_PI * 160.0f / 65536.0f;
+			soa->spinattack_angle[soa_index] = Math_PI * 8.0f;
+			soa->spinattack_decrement[soa_index] = Math_PI * 0.125f;
+			soa->spinattack_direction[soa_index] = (soa->input_steer_yaw[soa_index] <= 0.0f) ? 1 : 0;
+		} else if (soa->spinattack_decrement[soa_index] < cur_angle) {
+			soa->spinattack_angle[soa_index] = cur_angle - soa->spinattack_decrement[soa_index];
+			if (soa->spinattack_angle[soa_index] < Math_PI * 4.0f) {
+				soa->spinattack_decrement[soa_index] -= Math_PI * 130.0f / 65536.0f;
+				if (soa->spinattack_decrement[soa_index] < Math_PI * 160.0f / 65536.0f)
+					soa->spinattack_decrement[soa_index] = Math_PI * 160.0f / 65536.0f;
 			}
 		} else {
-			spinattack_angle = 0.0f;
-			spinattack_decrement = 0.0f;
-			machine_state &= ~MACHINESTATE::SPINATTACKING;
+			soa->spinattack_angle[soa_index] = 0.0f;
+			soa->spinattack_decrement[soa_index] = 0.0f;
+			soa->machine_state[soa_index] &= ~MACHINESTATE::SPINATTACKING;
 		}
-		machine_state &= ~MACHINESTATE::SIDEATTACKING;
+		soa->machine_state[soa_index] &= ~MACHINESTATE::SIDEATTACKING;
 	}
 
-	if ((machine_state & MACHINESTATE::SIDEATTACKING) == 0) {
-		side_attack_delay = 0;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::SIDEATTACKING) == 0) {
+		soa->side_attack_delay[soa_index] = 0;
 	} else {
-		uint8_t cur_delay = side_attack_delay;
+		uint8_t cur_delay = soa->side_attack_delay[soa_index];
 		if (cur_delay == 0) {
-			side_attack_delay = 6;
-			side_attack_indicator = 0.4f * input_steer_yaw;
+			soa->side_attack_delay[soa_index] = 6;
+			soa->side_attack_indicator[soa_index] = 0.4f * soa->input_steer_yaw[soa_index];
 		} else if (cur_delay == 1) {
-			machine_state &= ~MACHINESTATE::SIDEATTACKING;
+			soa->machine_state[soa_index] &= ~MACHINESTATE::SIDEATTACKING;
 		} else {
-			side_attack_delay = cur_delay - 1;
+			soa->side_attack_delay[soa_index] = cur_delay - 1;
 		}
 
-		if ((machine_state & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::TOOKDAMAGE)) != 0 ||
-			input_accel < 0.5f) {
-			machine_state &= ~MACHINESTATE::SIDEATTACKING;
-		side_attack_delay = 1;
+		if ((soa->machine_state[soa_index] & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::TOOKDAMAGE)) != 0 ||
+			soa->input_accel[soa_index] < 0.5f) {
+			soa->machine_state[soa_index] &= ~MACHINESTATE::SIDEATTACKING;
+		soa->side_attack_delay[soa_index] = 1;
 	}
 }
 
-if (machine_collision_frame_counter > 0)
-	machine_collision_frame_counter -= 1;
+if (soa->machine_collision_frame_counter[soa_index] > 0)
+	soa->machine_collision_frame_counter[soa_index] -= 1;
 };
 
-void PhysicsCar::apply_torque_from_force(const godot::Vector3& p_local_offset, const godot::Vector3& wf_world_force)
+void PhysicsCar::apply_torque_from_force(const SimVec3& p_local_offset, const SimVec3& wf_world_force)
 {
-	godot::Vector3 lf = mtxa->inverse_rotate_point(wf_world_force);
-	velocity_angular.x += -(p_local_offset.z * lf.y - p_local_offset.y * lf.z);
-	velocity_angular.y += -(p_local_offset.x * lf.z - p_local_offset.z * lf.x);
-	velocity_angular.z += -(p_local_offset.y * lf.x - p_local_offset.x * lf.y);
+	SimVec3 lf = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), wf_world_force);
+	soa->velocity_angular_x[soa_index] += -(p_local_offset.z * lf.y - p_local_offset.y * lf.z);
+	soa->velocity_angular_y[soa_index] += -(p_local_offset.x * lf.z - p_local_offset.z * lf.x);
+	soa->velocity_angular_z[soa_index] += -(p_local_offset.y * lf.x - p_local_offset.x * lf.y);
 };
 
 void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 {
 
-	input_steer_yaw = in_input.steer_horizontal * std::abs(in_input.steer_horizontal);
-	input_steer_pitch = -in_input.steer_vertical;
+	soa->input_steer_yaw[soa_index] = in_input.steer_horizontal * std::abs(in_input.steer_horizontal);
+	soa->input_steer_pitch[soa_index] = -in_input.steer_vertical;
 
 	float in_strafe_left = std::min(1.0f, in_input.strafe_left * 1.25f);
 	float in_strafe_right = std::min(1.0f, in_input.strafe_right * 1.25f);
-	input_strafe = (-in_strafe_left + in_strafe_right);
+	soa->input_strafe[soa_index] = (-in_strafe_left + in_strafe_right);
 
-	float old_accel = input_accel;
-	input_accel = in_input.accelerate;
-	bool accel_just_pressed = input_accel > 0.5f && old_accel <= 0.5f;
-	float old_brake = input_brake;
-	input_brake = in_input.brake;
-	bool brake_just_pressed = input_brake > 0.5f && old_brake <= 0.5f;
+	float old_accel = soa->input_accel[soa_index];
+	soa->input_accel[soa_index] = in_input.accelerate;
+	bool accel_just_pressed = soa->input_accel[soa_index] > 0.5f && old_accel <= 0.5f;
+	float old_brake = soa->input_brake[soa_index];
+	soa->input_brake[soa_index] = in_input.brake;
+	bool brake_just_pressed = soa->input_brake[soa_index] > 0.5f && old_brake <= 0.5f;
 
 	float in_spinattack = in_input.spinattack ? 1.0f : 0.0f;
 	float in_sideattack = 0.0f; // Placeholder: side attack not mapped
 
 	if (in_strafe_left > 0.05f && in_strafe_right > 0.05f) {
-		machine_state |= MACHINESTATE::MANUAL_DRIFT;
+		soa->machine_state[soa_index] |= MACHINESTATE::MANUAL_DRIFT;
 	}
 
 	if (accel_just_pressed) {
-		machine_state |= MACHINESTATE::JUSTTAPPEDACCEL | MACHINESTATE::B14;
+		soa->machine_state[soa_index] |= MACHINESTATE::JUSTTAPPEDACCEL | MACHINESTATE::B14;
 	}
 
-	state_2 |= 8u;
+	soa->state_2[soa_index] |= 8u;
 
-	godot::Vector3 ground_normal = prepare_machine_frame();
+	TrackQueryScratch scratch;
+	SimVec3 ground_normal = prepare_machine_frame(scratch);
 	bool has_floor = find_floor_beneath_machine();
-	if (has_floor && (machine_state & MACHINESTATE::AIRBORNE) == 0) {
-		track_surface_normal = ground_normal;
+	if (has_floor && (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+		STORE_VEC3(track_surface_normal, ground_normal);
 	} else {
-		PhysicsCarSuspensionPoint* tcs[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-		for (auto* tc : tcs) {
-			tc->force = 0.0f;
-			tc->force_spatial = godot::Vector3();
-			tc->force_spatial_len = 0.0f;
-			tc->state |= TILTSTATE::DISCONNECTED | TILTSTATE::AIRBORNE;
+		const int point_base = soa_index * 4;
+		for (int lane = 0; lane < 4; ++lane) {
+			const int p = point_base + lane;
+			soa->tilt_force[p] = 0.0f;
+			STORE_TILT_VEC3(force_spatial, p, SimVec3());
+			soa->tilt_force_spatial_len[p] = 0.0f;
+			soa->tilt_state[p] |= TILTSTATE::DISCONNECTED | TILTSTATE::AIRBORNE;
 		}
 	}
 
+	project_velocity_to_local_frame();
 	handle_steering();
 	handle_suspension_states();
 
-	float initial_angle_vel_y = velocity_angular.y;
-	if (frames_since_start_2 > 0) {
-		PhysicsCarSuspensionPoint* tcs[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-		for (auto* tc : tcs) {
-			handle_machine_turn_and_strafe(*tc, initial_angle_vel_y);
-		}
+	float initial_angle_vel_y = soa->velocity_angular_y[soa_index];
+	if (soa->frames_since_start_2[soa_index] > 0) {
+		handle_machine_turn_and_strafe_points4(initial_angle_vel_y);
 	}
 
-	if (machine_state & MACHINESTATE::AIRBORNEMORE0_2S_Q) {
-		turning_related *= 0.02f;
+	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNEMORE0_2S_Q) {
+		soa->turning_related[soa_index] *= 0.02f;
 	}
-	if (std::abs(input_strafe) > 0.01f) {
-		turning_related *= 0.04f;
+	if (std::abs(soa->input_strafe[soa_index]) > 0.01f) {
+		soa->turning_related[soa_index] *= 0.04f;
 	}
 
 	handle_linear_velocity();
 	handle_angle_velocity();
 
-	mtxa->assign(basis_physical);
 	handle_airborne_controls();
 	orient_vehicle_from_gravity_or_road();
 	handle_drag_and_glide_forces();
 
-	float inv_weight = 1.0f / std::max(stat_weight, 0.001f);
-	position_current += velocity * inv_weight;
+	float inv_weight = 1.0f / std::max(soa->stat_weight[soa_index], 0.001f);
+	ADD_VEC3(position_current, LOAD_VEC3(velocity) * inv_weight);
 
-	mtxa->cur->origin = position_current;
 	rotate_machine_from_angle_velocity();
-	mtxa->clear_translation();
-	basis_physical = *mtxa->cur;
 
-	if (machine_state & MACHINESTATE::STARTINGCOUNTDOWN) {
-		machine_state &= ~(MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL);
+	if (soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) {
+		soa->machine_state[soa_index] &= ~(MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL);
 	}
 
-	if (machine_state & MACHINESTATE::ACTIVE) {
-		uint32_t cd = frames_since_start_2;
+	if (soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) {
+		uint32_t cd = soa->frames_since_start_2[soa_index];
 		if (cd < 30) {
 			if (cd % 6 == 0) {
 				handle_startup_wobble();
 			}
 		} else if (cd < 90) {
-			velocity_angular = godot::Vector3();
+			STORE_VEC3(velocity_angular, SimVec3());
 		}
 	}
 
-	if (rail_collision_timer > 0) {
-		rail_collision_timer -= 1;
+	if (soa->rail_collision_timer[soa_index] > 0) {
+		soa->rail_collision_timer[soa_index] -= 1;
 	}
 
-	machine_state &= ~(MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
+	soa->machine_state[soa_index] &= ~(MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
 		MACHINESTATE::TOOKDAMAGE | MACHINESTATE::B14 |
 		MACHINESTATE::MANUAL_DRIFT);
 
-	basis_physical.orthonormalize();
-	if ((machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
-		position_bottom += position_current - position_old;
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical); mxt_tmp.orthonormalize(); STORE_TRANSFORM(basis_physical, mxt_tmp); }
+	if ((soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+		ADD_VEC3(position_bottom, LOAD_VEC3(position_current) - LOAD_VEC3(position_old));
 	}
 };
 
-int PhysicsCar::update_machine_corners() {
-	collision_push_track   = godot::Vector3();
-	collision_push_rail    = godot::Vector3();
-	collision_push_total   = godot::Vector3();
+void PhysicsCar::sample_old_corner_collision_surface(TrackQueryScratch &scratch)
+{
+	soa->collision_old_cp[soa_index] = -1;
+	soa->collision_old_valid[soa_index] = false;
+	soa->collision_old_was_above[soa_index] = false;
+	soa->collision_old_was_inside[soa_index] = false;
+	soa->collision_old_road_t[soa_index] = SimVec2();
+	soa->collision_old_spatial_t[soa_index] = SimVec3();
+	soa->collision_old_surface[soa_index] = SimTransform();
+
+	if (!soa->current_track[soa_index]) {
+		return;
+	}
+
+	const int use_cp_old = soa->current_track[soa_index]->get_best_checkpoint(LOAD_VEC3(position_old), soa->current_collision_checkpoint[soa_index], scratch);
+	soa->collision_old_cp[soa_index] = use_cp_old;
+	if (use_cp_old == -1) {
+		return;
+	}
+
+	SimVec2 use_t;
+	SimVec3 use_spatial_t;
+	SimTransform use_transform;
+	soa->current_track[soa_index]->get_road_surface(use_cp_old, LOAD_VEC3(position_old), use_t, use_spatial_t, use_transform);
+	soa->collision_old_valid[soa_index] = true;
+	soa->collision_old_road_t[soa_index] = use_t;
+	soa->collision_old_spatial_t[soa_index] = use_spatial_t;
+	soa->collision_old_surface[soa_index] = use_transform;
+	soa->collision_old_was_above[soa_index] = (LOAD_VEC3(position_old) - use_transform.origin).dot(use_transform.basis[1]) >= -5.0f;
+	soa->collision_old_was_inside[soa_index] = use_t.x > -1.0f && use_t.x < 1.0f;
+}
+
+int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
+	STORE_VEC3(collision_push_track, SimVec3());
+	STORE_VEC3(collision_push_rail, SimVec3());
+	STORE_VEC3(collision_push_total, SimVec3());
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 	int overall_hit_detected_flag = 0;
-	float inv_weight   = 1.0f / stat_weight;
-	godot::Vector3 inv_vel = velocity * inv_weight;
+	float inv_weight   = 1.0f / soa->stat_weight[soa_index];
+	SimVec3 inv_vel = LOAD_VEC3(velocity) * inv_weight;
 	bool any_corner_hit = false;
 
-	godot::Vector3 depenetration = godot::Vector3();
-	godot::Vector3 total_depenetration = godot::Vector3();
+	SimVec3 depenetration = SimVec3();
+	SimVec3 total_depenetration = SimVec3();
+	const int point_base = soa_index * 4;
+	const SimTransform machine_transform = LOAD_TRANSFORM(basis_physical);
+	const SimVec3 machine_position = LOAD_VEC3(position_current);
+	SimVec3 wall_corner_world[4];
+	mxt_store_points4(
+		wall_corner_world,
+		mxt_transform_points4(
+			machine_transform,
+			machine_position,
+			sim_load4(soa->wall_offset_x + point_base),
+			sim_load4(soa->wall_offset_y + point_base),
+			sim_load4(soa->wall_offset_z + point_base)));
 
-	mtxa->push();
-	mtxa->assign(basis_physical);
-	mtxa->cur->origin = position_current;
-	int use_cp_old = current_track->get_best_checkpoint(position_old, current_collision_checkpoint);
-	bool old_valid = use_cp_old != -1;
+	RaceTrack* track = soa->current_track[soa_index];
+	const int use_cp_old = soa->collision_old_cp[soa_index];
+	const bool old_valid = soa->collision_old_valid[soa_index];
 	{
-		godot::Vector2 use_t;
-		godot::Vector3 use_spatial_t;
-		godot::Transform3D use_transform;
+		SimVec2 use_t;
+		SimVec3 use_spatial_t;
+		SimTransform use_transform;
 		bool was_above = false;
 		bool was_inside = false;
-		if (current_track) {
+		if (track) {
 			if (old_valid)
 			{
-				current_track->get_road_surface(use_cp_old, position_old, use_t, use_spatial_t, use_transform);
-				was_above = (position_old - use_transform.origin).dot(use_transform.basis[1]) >= -5.0f;
-				was_inside = use_t.x > -1.0f && use_t.x < 1.0f;
-				//DEBUG::disp_text("current_collision_checkpoint", current_collision_checkpoint);
+				use_t = soa->collision_old_road_t[soa_index];
+				use_spatial_t = soa->collision_old_spatial_t[soa_index];
+				use_transform = soa->collision_old_surface[soa_index];
+				was_above = soa->collision_old_was_above[soa_index];
+				was_inside = soa->collision_old_was_inside[soa_index];
+				//DEBUG::disp_text("soa->current_collision_checkpoint[soa_index]", soa->current_collision_checkpoint[soa_index]);
 				//DEBUG::disp_text("vehicle was_above", was_above);
 				//DEBUG::disp_text("vehicle use_cp_old", use_cp_old);
 				//DEBUG::disp_text("vehicle use_t", use_t);
 				if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					auto normal = use_transform.basis[1];
 					auto plane_pos = use_transform.origin;
-					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 						float depth = (p0 - plane_pos).dot(normal);
 						if (depth >= 0.0f) continue;
-						godot::Vector3 d = normal * (-depth);
-						collision_push_total += d;
+						SimVec3 d = normal * (-depth);
+						ADD_VEC3(collision_push_total, d);
 						overall_hit_detected_flag |= 1;
 						any_corner_hit = true;
 						depenetration += d;
-						collision_push_track += d;
-						current_checkpoint = use_cp_old;
+						ADD_VEC3(collision_push_track, d);
+						soa->current_checkpoint[soa_index] = use_cp_old;
 					}
 				}
-				TrackSegment *old_seg = &current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
+				TrackSegment *old_seg = &track->segments[track->checkpoints[use_cp_old].road_segment];
 				bool should_rail_old = (old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
 					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
 					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
 					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
 				if (!should_rail_old && was_inside && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
-					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-						RoadTransform root_t;
-						const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_old].road_segment];
-						segment.curve_matrix->sample(root_t, use_t.y);
-						const godot::Basis rbasis       = root_t.t3d.basis;
-						const godot::Vector3 up_normal = rbasis.get_column(1);
-						const godot::Vector3 side_dir = rbasis.get_column(0);
-						const godot::Vector3 side_scaled = side_dir * root_t.scale.x;
-						const godot::Vector3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-						const godot::Vector3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-						const godot::Vector3 left_plane_n   = -side_dir;
-						const godot::Vector3 right_plane_n  =  side_dir;
+					RoadTransform root_t;
+					const TrackSegment &segment     = track->segments[track->checkpoints[use_cp_old].road_segment];
+					segment.curve_matrix->sample(root_t, use_t.y);
+					const SimBasis rbasis       = root_t.t3d.basis;
+					const SimVec3 up_normal = rbasis.get_column(1);
+					const SimVec3 side_dir = rbasis.get_column(0);
+					const SimVec3 side_scaled = side_dir * root_t.scale.x;
+					const SimVec3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+					const SimVec3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+					const SimVec3 left_plane_n   = -side_dir;
+					const SimVec3 right_plane_n  =  side_dir;
 
-						struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
-						const RailSide sides[2] = {
-							{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
-							{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
-						};
-
+					struct RailSide { SimVec3 pos, plane_n, rail_n; float height; };
+					const RailSide sides[2] = {
+						{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
+						{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
+					};
+					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 						for (int i = 0; i < 2; i++) {
 							//if (i == 1 && use_t.x < -1.0f)
 							//{
@@ -2262,12 +2561,10 @@ int PhysicsCar::update_machine_corners() {
 								continue;
 							}
 
-							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
+							const SimVec3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//SimPlane(side.rail_n, side.pos).project(p0);
 							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.25f, 0.0f), 0.25, true, 10.0);
-							godot::Vector2 use_hit_t;
-							godot::Vector3 use_hit_spatial_t;
-							current_track->convert_point_to_road(use_cp_old, hit, use_hit_t, use_hit_spatial_t);
-							if (use_hit_t.y < 0.0f || use_hit_t.y > 1.0f)
+							const float hit_t = checkpoint_longitudinal_t(*track, use_cp_old, hit);
+							if (hit_t < 0.0f || hit_t > 1.0f)
 							{
 								continue;
 							}
@@ -2275,7 +2572,6 @@ int PhysicsCar::update_machine_corners() {
 							{
 								continue;
 							}
-							godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 							float depth = (p0 - side.pos).dot(side.rail_n);
 							if (depth >= 0.0f) continue;
 							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.5f, 0.0f), 0.25, true, 10.0);
@@ -2283,62 +2579,62 @@ int PhysicsCar::update_machine_corners() {
 							//godot::UtilityFunctions::print(i);
 							//godot::UtilityFunctions::print(use_t.x);
 							//DEBUG::disp_text("use_hit_t old", use_hit_t);
-							godot::Vector3 d = side.rail_n * (-depth);
-							collision_push_total += d;
+							SimVec3 d = side.rail_n * (-depth);
+							ADD_VEC3(collision_push_total, d);
 							any_corner_hit = true;
 							depenetration += d;
 							overall_hit_detected_flag |= 2;
-							collision_push_rail += d;
+							ADD_VEC3(collision_push_rail, d);
 						}
 					}
 				}
 			}
-			int use_cp_new = current_track->get_best_checkpoint(position_current + depenetration, current_collision_checkpoint);
+			int use_cp_new = track->get_best_checkpoint(LOAD_VEC3(position_current) + depenetration, soa->current_collision_checkpoint[soa_index], scratch);
 			bool new_valid = use_cp_new != -1;
 			if (new_valid)
 			{
-				current_track->get_road_surface(use_cp_new, position_current + depenetration, use_t, use_spatial_t, use_transform);
+				track->get_road_surface(use_cp_new, LOAD_VEC3(position_current) + depenetration, use_t, use_spatial_t, use_transform);
 				if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					auto normal = use_transform.basis[1];
 					auto plane_pos = use_transform.origin;
-					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
+					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 						float depth = (p0 - plane_pos).dot(normal);
 						if (depth >= 0.0f) continue;
-						godot::Vector3 d = normal * (-depth);
-						collision_push_total += d;
+						SimVec3 d = normal * (-depth);
+						ADD_VEC3(collision_push_total, d);
 						overall_hit_detected_flag |= 1;
 						any_corner_hit = true;
 						depenetration += d;
-						collision_push_track += d;
-						current_checkpoint = use_cp_new;
+						ADD_VEC3(collision_push_track, d);
+						soa->current_checkpoint[soa_index] = use_cp_new;
 					}
 				}
-				TrackSegment *new_seg = &current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
+				TrackSegment *new_seg = &track->segments[track->checkpoints[use_cp_new].road_segment];
 				bool should_rail_new = (new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
 					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
 					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
 					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
 				if (!should_rail_new && was_inside && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
-					for (auto* wc : { &wall_fl, &wall_fr, &wall_bl, &wall_br }) {
-						godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
-						RoadTransform root_t;
-						const TrackSegment &segment     = current_track->segments[current_track->checkpoints[use_cp_new].road_segment];
-						segment.curve_matrix->sample(root_t, use_t.y);
-						const godot::Basis rbasis       = root_t.t3d.basis;
-						const godot::Vector3 up_normal = rbasis.get_column(1);
-						const godot::Vector3 side_dir = rbasis.get_column(0);
-						const godot::Vector3 side_scaled = side_dir * root_t.scale.x;
-						const godot::Vector3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-						const godot::Vector3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-						const godot::Vector3 left_plane_n   = -side_dir;
-						const godot::Vector3 right_plane_n  =  side_dir;
+					RoadTransform root_t;
+					const TrackSegment &segment     = track->segments[track->checkpoints[use_cp_new].road_segment];
+					segment.curve_matrix->sample(root_t, use_t.y);
+					const SimBasis rbasis       = root_t.t3d.basis;
+					const SimVec3 up_normal = rbasis.get_column(1);
+					const SimVec3 side_dir = rbasis.get_column(0);
+					const SimVec3 side_scaled = side_dir * root_t.scale.x;
+					const SimVec3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+					const SimVec3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
+					const SimVec3 left_plane_n   = -side_dir;
+					const SimVec3 right_plane_n  =  side_dir;
 
-						struct RailSide { godot::Vector3 pos, plane_n, rail_n; float height; };
-						const RailSide sides[2] = {
-							{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
-							{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
-						};
+					struct RailSide { SimVec3 pos, plane_n, rail_n; float height; };
+					const RailSide sides[2] = {
+						{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
+						{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
+					};
+					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 
 						for (int i = 0; i < 2; i++) {
 							//if (i == 1 && use_t.x < -1.0f)
@@ -2355,12 +2651,10 @@ int PhysicsCar::update_machine_corners() {
 								continue;
 							}
 
-							const godot::Vector3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//godot::Plane(side.rail_n, side.pos).project(p0);
+							const SimVec3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//SimPlane(side.rail_n, side.pos).project(p0);
 							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.0f, 0.25f), 0.25, true, 10.0);
-							godot::Vector2 use_hit_t;
-							godot::Vector3 use_hit_spatial_t;
-							current_track->convert_point_to_road(use_cp_new, hit, use_hit_t, use_hit_spatial_t);
-							if (use_hit_t.y < 0.0f || use_hit_t.y > 1.0f)
+							const float hit_t = checkpoint_longitudinal_t(*track, use_cp_new, hit);
+							if (hit_t < 0.0f || hit_t > 1.0f)
 							{
 								continue;
 							}
@@ -2368,7 +2662,6 @@ int PhysicsCar::update_machine_corners() {
 							{
 								continue;
 							}
-							godot::Vector3 p0 = mtxa->transform_point(wc->offset) + depenetration;
 							float depth = (p0 - side.pos).dot(side.rail_n);
 							if (depth >= 0.0f) continue;
 							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.0f, 0.5f), 0.25, true, 10.0);
@@ -2376,23 +2669,21 @@ int PhysicsCar::update_machine_corners() {
 							//godot::UtilityFunctions::print("new depen");
 							//godot::UtilityFunctions::print(i);
 							//godot::UtilityFunctions::print(use_t.x);
-							godot::Vector3 d = side.rail_n * (-depth);
-							collision_push_total += d;
+							SimVec3 d = side.rail_n * (-depth);
+							ADD_VEC3(collision_push_total, d);
 							any_corner_hit = true;
 							depenetration += d;
 							overall_hit_detected_flag |= 2;
-							collision_push_rail += d;
+							ADD_VEC3(collision_push_rail, d);
 						}
 					}
 				}
 			}
-			position_current += depenetration;
-			mtxa->cur->origin = position_current;
-			total_depenetration += depenetration;
-			depenetration = godot::Vector3();
-		}
-		mtxa->pop();
-		return overall_hit_detected_flag;
+			ADD_VEC3(position_current, depenetration);
+				total_depenetration += depenetration;
+				depenetration = SimVec3();
+			}
+			return overall_hit_detected_flag;
 	}
 }
 
@@ -2400,65 +2691,57 @@ int PhysicsCar::update_machine_corners() {
 //void PhysicsCar::create_machine_visual_transform()
 //{
 //	float fVar12_initial_factor = 0.0f;
-//	if (base_speed <= 2.0f)
-//		fVar12_initial_factor = (2.0f - base_speed) * 0.5f;
+//	if (soa->base_speed[soa_index] <= 2.0f)
+//		fVar12_initial_factor = (2.0f - soa->base_speed[soa_index]) * 0.5f;
 //
-//	if (frames_since_start_2 < 90)
-//		fVar12_initial_factor *= static_cast<float>(frames_since_start_2) / 90.0f;
+//	if (soa->frames_since_start_2[soa_index] < 90)
+//		fVar12_initial_factor *= static_cast<float>(soa->frames_since_start_2[soa_index]) / 90.0f;
 //
-//	unk_stat_0x5d4 += 0.05f * (fVar12_initial_factor - unk_stat_0x5d4);
+//	soa->unk_stat_0x5d4[soa_index] += 0.05f * (fVar12_initial_factor - soa->unk_stat_0x5d4[soa_index]);
 //
-//	float dVar11_current_unk_stat = unk_stat_0x5d4;
+//	float dVar11_current_unk_stat = soa->unk_stat_0x5d4[soa_index];
 //
-//	float sin_val2_scaled_angle = static_cast<float>(g_anim_timer * 0x1a3);
+//	float sin_val2_scaled_angle = static_cast<float>(soa->g_anim_timer[soa_index] * 0x1a3);
 //	float sin_val2 = deterministic_fp::sinf(sin_val2_scaled_angle);
 //
 //	float y_offset_base = 0.006f * (dVar11_current_unk_stat * sin_val2);
 //
-//	godot::Vector3 visual_y_offset_world =
-//	mtxa->rotate_point(godot::Vector3(0.0f,
+//	SimVec3 visual_y_offset_world =
+//	mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f,
 //		y_offset_base - (0.2f * dVar11_current_unk_stat),
 //		0.0f));
-//	godot::Vector3 target_visual_world_position = position_current + visual_y_offset_world;
+//	SimVec3 target_visual_world_position = LOAD_VEC3(position_current) + visual_y_offset_world;
 //
-//	mtxa->assign(basis_physical);
 //
-//	mtxa->push();
-//	float fr_offset_z = tilt_fl.offset.z;
-//	float br_offset_z = tilt_bl.offset.z;
+//	float fr_offset_z = soa->tilt_fl[soa_index].offset.z;
+//	float br_offset_z = soa->tilt_bl[soa_index].offset.z;
 //	float stagger_factor = 0.0f;
 //	if (std::abs(fr_offset_z) > 0.0001f)
 //		stagger_factor = (br_offset_z / -fr_offset_z) - 1.0f;
 //	float clamped_stagger = std::clamp(stagger_factor, -0.2f, 0.2f);
 //	float pitch_angle_deg = 30.0f * clamped_stagger;
-//	mtxa->rotate_x(DEG_TO_RAD * pitch_angle_deg);
-//	g_pitch_mtx_0x5e0 = *mtxa->cur;
-//	mtxa->pop();
 //
-//	if ((state_2 & 0x20u) == 0) {
-//		mtxa->push();
-//		mtxa->identity();
-//		if (machine_state & MACHINESTATE::ACTIVE) {
-//			turn_reaction_effect += 0.05f * (turn_reaction_input - turn_reaction_effect);
-//			float yaw_reaction_rad = DEG_TO_RAD * turn_reaction_effect;
-//			mtxa->rotate_y(yaw_reaction_rad);
+//	if ((soa->state_2[soa_index] & 0x20u) == 0) {
+//		if (soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) {
+//			soa->turn_reaction_effect[soa_index] += 0.05f * (soa->turn_reaction_input[soa_index] - soa->turn_reaction_effect[soa_index]);
+//			float yaw_reaction_rad = DEG_TO_RAD * soa->turn_reaction_effect[soa_index];
 //		}
 //
-//		float world_vel_mag = velocity.length();
+//		float world_vel_mag = LOAD_VEC3(velocity).length();
 //		float speed_factor_for_roll_pitch = 0.0f;
-//		if (std::abs(stat_weight) > 0.0001f)
-//			speed_factor_for_roll_pitch = (world_vel_mag / stat_weight) / 4.629629629f;
+//		if (std::abs(soa->stat_weight[soa_index]) > 0.0001f)
+//			speed_factor_for_roll_pitch = (world_vel_mag / soa->stat_weight[soa_index]) / 4.629629629f;
 //
-//		strafe_visual_roll = static_cast<int>(182.04445f * (stat_strafe / 15.0f) * -5.0f *
-//			input_strafe_1_6 * speed_factor_for_roll_pitch);
+//		soa->strafe_visual_roll[soa_index] = static_cast<int>(182.04445f * (soa->stat_strafe[soa_index] / 15.0f) * -5.0f *
+//			soa->input_strafe_1_6[soa_index] * speed_factor_for_roll_pitch);
 //
 //		float banking_roll_angle_val_rad = 0.0f;
-//		if (std::abs(weight_derived_2) > 0.0001f)
+//		if (std::abs(soa->weight_derived_2[soa_index]) > 0.0001f)
 //			banking_roll_angle_val_rad =
-//		speed_factor_for_roll_pitch * 4.5f * (velocity_angular.y / weight_derived_2);
+//		speed_factor_for_roll_pitch * 4.5f * (soa->velocity_angular_y[soa_index] / soa->weight_derived_2[soa_index]);
 //		int banking_roll_angle_fz_units = static_cast<int>(10430.378f * banking_roll_angle_val_rad);
 //
-//		int total_roll_fz_units = banking_roll_angle_fz_units + strafe_visual_roll;
+//		int total_roll_fz_units = banking_roll_angle_fz_units + soa->strafe_visual_roll[soa_index];
 //
 //		float abs_total_roll_float = std::abs(static_cast<float>(total_roll_fz_units));
 //
@@ -2466,22 +2749,21 @@ int PhysicsCar::update_machine_corners() {
 //		roll_damping_factor = std::max(roll_damping_factor, 0.0f);
 //
 //		float current_visual_pitch_rad = 0.0f;
-//		if (std::abs(weight_derived_1) > 0.0001f)
-//			current_visual_pitch_rad = visual_rotation.x / weight_derived_1;
+//		if (std::abs(soa->weight_derived_1[soa_index]) > 0.0001f)
+//			current_visual_pitch_rad = soa->visual_rotation_x[soa_index] / soa->weight_derived_1[soa_index];
 //		float pitch_visual_factor = roll_damping_factor * 0.7f * current_visual_pitch_rad;
 //		pitch_visual_factor = std::clamp(pitch_visual_factor, -0.3f, 0.3f);
 //
 //		float current_visual_roll_rad = 0.0f;
-//		if (std::abs(weight_derived_3) > 0.0001f)
-//			current_visual_roll_rad = visual_rotation.z / weight_derived_3;
+//		if (std::abs(soa->weight_derived_3[soa_index]) > 0.0001f)
+//			current_visual_roll_rad = soa->visual_rotation_z[soa_index] / soa->weight_derived_3[soa_index];
 //		float roll_visual_factor = 2.5f * current_visual_roll_rad;
 //		roll_visual_factor = std::clamp(roll_visual_factor, -0.5f, 0.5f);
 //
-//		mtxa->rotate_x(pitch_visual_factor);
 //
 //		float iVar1_from_block2_approx_deg =
 //		0.5f * (dVar11_current_unk_stat *
-//			deterministic_fp::sinf(static_cast<float>(g_anim_timer * 0x109) *
+//			deterministic_fp::sinf(static_cast<float>(soa->g_anim_timer[soa_index] * 0x109) *
 //				(TAU / 65536.0f)));
 //		int additional_roll_from_sin_fz_units =
 //		static_cast<int>(182.04445f * iVar1_from_block2_approx_deg);
@@ -2492,20 +2774,14 @@ int PhysicsCar::update_machine_corners() {
 //		int final_roll_fz_units_for_z_rot = total_roll_fz_units + additional_roll_from_sin_fz_units;
 //		float final_roll_rad_for_z_rot =
 //		static_cast<float>(final_roll_fz_units_for_z_rot) * (TAU / 65536.0f);
-//		mtxa->rotate_z(final_roll_rad_for_z_rot);
 //
-//		godot::Quaternion visual_delta_q = mtxa->cur->basis.get_rotation_quaternion();
 //
-//		unk_quat_0x5c4 = unk_quat_0x5c4.slerp(visual_delta_q, 0.2f);
-//		mtxa->from_quat(unk_quat_0x5c4);
+//		soa->unk_quat_0x5c4[soa_index] = soa->unk_quat_0x5c4[soa_index].slerp(visual_delta_q, 0.2f);
 //
-//		godot::Transform3D slerped_visual_rotation_transform = *mtxa->cur;
-//		mtxa->pop();
 //
-//		mtxa->multiply(slerped_visual_rotation_transform);
 //
-//		if (spinattack_angle != 0.0f) {
-//			float use_angle = spinattack_angle;
+//		if (soa->spinattack_angle[soa_index] != 0.0f) {
+//			float use_angle = soa->spinattack_angle[soa_index];
 //			while (use_angle > PI)
 //			{
 //				use_angle -= PI;
@@ -2514,136 +2790,136 @@ int PhysicsCar::update_machine_corners() {
 //			{
 //				use_angle += PI;
 //			}
-//			if (spinattack_direction == 0)
-//				mtxa->rotate_y(use_angle);
+//			if (soa->spinattack_direction[soa_index] == 0)
 //			else
-//				mtxa->rotate_y(-use_angle);
 //		}
 //	} else {
-//		mtxa->assign(transform_visual);
 //	}
 //
-//	mtxa->cur->origin = target_visual_world_position;
 //
-//	uint32_t uVar8_shake_seed = static_cast<uint32_t>(velocity.z * 4000000.0f) ^
-//	static_cast<uint32_t>(velocity.x * 4000000.0f) ^
-//	static_cast<uint32_t>(velocity.y * 4000000.0f);
+//	uint32_t uVar8_shake_seed = static_cast<uint32_t>(soa->velocity_z[soa_index] * 4000000.0f) ^
+//	static_cast<uint32_t>(soa->velocity_x[soa_index] * 4000000.0f) ^
+//	static_cast<uint32_t>(soa->velocity_y[soa_index] * 4000000.0f);
 //
 //	float shake_rand_norm1 =
-//	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.x * 4000000.0f)) &
+//	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(soa->velocity_angular_x[soa_index] * 4000000.0f)) &
 //		0xffff) /
 //	65535.0f;
 //	float shake_rand_norm2 =
-//	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.y * 4000000.0f)) &
+//	static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(soa->velocity_angular_y[soa_index] * 4000000.0f)) &
 //		0xffff) /
 //	65535.0f;
 //
-//	float shake_magnitude = 0.00006f * visual_shake_mult;
+//	float shake_magnitude = 0.00006f * soa->visual_shake_mult[soa_index];
 //	float x_shake_rad = shake_magnitude * shake_rand_norm1;
 //	float z_shake_rad = shake_magnitude * shake_rand_norm2;
-//	mtxa->rotate_z(z_shake_rad);
-//	mtxa->rotate_x(x_shake_rad);
 //
-//	if ((machine_state & MACHINESTATE::BOOSTING) == 0) {
-//		height_adjust_from_boost -= 0.05f * height_adjust_from_boost;
+//	if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) == 0) {
+//		soa->height_adjust_from_boost[soa_index] -= 0.05f * soa->height_adjust_from_boost[soa_index];
 //	} else {
-//		float effective_pitch_for_boost_lift = std::max(0.0f, visual_rotation.x);
+//		float effective_pitch_for_boost_lift = std::max(0.0f, soa->visual_rotation_x[soa_index]);
 //		float target_height_adj = 0.0f;
-//		if (std::abs(weight_derived_1) > 0.0001f)
-//			target_height_adj = 4.5f * (effective_pitch_for_boost_lift / weight_derived_1);
+//		if (std::abs(soa->weight_derived_1[soa_index]) > 0.0001f)
+//			target_height_adj = 4.5f * (effective_pitch_for_boost_lift / soa->weight_derived_1[soa_index]);
 //
-//		height_adjust_from_boost += 0.2f * (target_height_adj - height_adjust_from_boost);
-//		height_adjust_from_boost = std::min(height_adjust_from_boost, 0.3f);
+//		soa->height_adjust_from_boost[soa_index] += 0.2f * (target_height_adj - soa->height_adjust_from_boost[soa_index]);
+//		soa->height_adjust_from_boost[soa_index] = std::min(soa->height_adjust_from_boost[soa_index], 0.3f);
 //	}
 //
-//	mtxa->cur->origin += mtxa->cur->basis.get_column(1) * height_adjust_from_boost;
 //
-//	if (terrain_state & TERRAIN::DIRT) {
-//		float jitter_scale_factor = 0.1f + speed_kmh / 900.0f;
+//	if (soa->terrain_state[soa_index] & TERRAIN::DIRT) {
+//		float jitter_scale_factor = 0.1f + soa->speed_kmh[soa_index] / 900.0f;
 //		jitter_scale_factor = std::min(jitter_scale_factor, 1.0f);
 //
 //		float rand_x_norm =
-//		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.y * 4000000.0f)) &
+//		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(soa->velocity_angular_y[soa_index] * 4000000.0f)) &
 //			0xffff) /
 //		65535.0f -
 //		0.5f;
 //		float rand_z_norm =
-//		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(velocity_angular.z * 4000000.0f)) &
+//		static_cast<float>((uVar8_shake_seed ^ static_cast<uint32_t>(soa->velocity_angular_z[soa_index] * 4000000.0f)) &
 //			0xffff) /
 //		65535.0f -
 //		0.5f;
 //
-//		godot::Vector3 local_jitter_offset(rand_x_norm, 0.0f, rand_z_norm);
-//		godot::Vector3 world_jitter_offset = mtxa->rotate_point(local_jitter_offset);
+//		SimVec3 local_jitter_offset(rand_x_norm, 0.0f, rand_z_norm);
+//		SimVec3 world_jitter_offset = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), local_jitter_offset);
 //
-//		godot::Vector3 scaled_world_jitter = world_jitter_offset * (0.15f * jitter_scale_factor);
-//		mtxa->cur->origin += scaled_world_jitter;
+//		SimVec3 scaled_world_jitter = world_jitter_offset * (0.15f * jitter_scale_factor);
 //	}
 //
-//	transform_visual = *mtxa->cur;
 //};
 
 void PhysicsCar::handle_machine_collision_response()
 {
-	int corner_collision_type_flag = update_machine_corners();
+	TrackQueryScratch scratch;
+	int corner_collision_type_flag = update_machine_corners(scratch);
 
-	float push_magnitude_rail = collision_push_rail.length();
-	float push_magnitude_track = collision_push_track.length();
-	float current_world_speed = velocity.length();
+	float push_magnitude_rail = LOAD_VEC3(collision_push_rail).length();
+	float push_magnitude_track = LOAD_VEC3(collision_push_track).length();
+	float current_world_speed = LOAD_VEC3(velocity).length();
 
 	float speed_over_weight = 0.0f;
-	if (std::abs(stat_weight) > 0.0001f)
-		speed_over_weight = current_world_speed / stat_weight;
+	if (std::abs(soa->stat_weight[soa_index]) > 0.0001f)
+		speed_over_weight = current_world_speed / soa->stat_weight[soa_index];
 
+	apply_machine_collision_response_from_corners(corner_collision_type_flag,
+		push_magnitude_rail, push_magnitude_track, current_world_speed, speed_over_weight, true);
+};
+
+void PhysicsCar::apply_machine_collision_response_from_corners(int corner_collision_type_flag,
+	float push_magnitude_rail, float push_magnitude_track, float current_world_speed,
+	float speed_over_weight, bool include_start_projection)
+{
 	if (push_magnitude_track > 0.0023148148f) {
 		if (corner_collision_type_flag & 1)
 		{
-			machine_state |= MACHINESTATE::LOWGRIP;
+			soa->machine_state[soa_index] |= MACHINESTATE::LOWGRIP;
 		}
 	}
 
 	if (push_magnitude_rail > 0.0023148148f) {
-		if ((corner_collision_type_flag & 2) && (machine_state & MACHINESTATE::LOWGRIP) == 0)
-			machine_state |= MACHINESTATE::TOOKDAMAGE;
+		if ((corner_collision_type_flag & 2) && (soa->machine_state[soa_index] & MACHINESTATE::LOWGRIP) == 0)
+			soa->machine_state[soa_index] |= MACHINESTATE::TOOKDAMAGE;
 	}
 
 	bool is_significant_collision_event =
 	(push_magnitude_rail > 0.0046296296f) && (speed_over_weight > 0.0046296296f);
 
 	bool apply_full_response = false;
-	if (frames_since_start_2 > 0x3c && is_significant_collision_event &&
-		(machine_state & MACHINESTATE::TOOKDAMAGE)) {
+	if (soa->frames_since_start_2[soa_index] > 0x3c && is_significant_collision_event &&
+		(soa->machine_state[soa_index] & MACHINESTATE::TOOKDAMAGE)) {
 		apply_full_response = true;
 }
 
 if (apply_full_response) {
-	collision_response = collision_push_total;
+	STORE_VEC3(collision_response, LOAD_VEC3(collision_push_total));
 
-	if (machine_state & MACHINESTATE::ZEROHP)
+	if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP)
 	{
-		velocity = velocity + velocity.dot(collision_response.normalized()) * -collision_response.normalized() * 1.05f;
+		STORE_VEC3(velocity, LOAD_VEC3(velocity) + LOAD_VEC3(velocity).dot(LOAD_VEC3(collision_response).normalized()) * -LOAD_VEC3(collision_response).normalized() * 1.05f);
 	}else{
 		float dot_push_vel_norm = 0.0f;
 		if (push_magnitude_rail > 0.0001f && current_world_speed > 0.0001f)
-			dot_push_vel_norm = collision_push_total.normalized().dot(velocity.normalized());
+			dot_push_vel_norm = LOAD_VEC3(collision_push_total).normalized().dot(LOAD_VEC3(velocity).normalized());
 
 		float clamped_opposing_dot_prod = std::min(dot_push_vel_norm, 0.0f);
 
 		float response_intensity_factor = 0.0f;
 		if (speed_over_weight > 0.02314814814f) {
 			float dot_push_track_normal = 0.0f;
-			if (push_magnitude_rail > 0.0001f && track_surface_normal.length_squared() > 0.0001f)
+			if (push_magnitude_rail > 0.0001f && LOAD_VEC3(track_surface_normal).length_squared() > 0.0001f)
 				dot_push_track_normal =
-			collision_push_total.normalized().dot(track_surface_normal.normalized());
+			LOAD_VEC3(collision_push_total).normalized().dot(LOAD_VEC3(track_surface_normal).normalized());
 
 			if (std::abs(dot_push_track_normal) < 0.7f) {
 				response_intensity_factor =
 				(0.15f + (clamped_opposing_dot_prod * clamped_opposing_dot_prod)) / 1.5f;
 
-				if ((machine_state & MACHINESTATE::B10) == 0) {
+				if ((soa->machine_state[soa_index] & MACHINESTATE::B10) == 0) {
 					response_intensity_factor =
 					(response_intensity_factor * current_world_speed) / 500.0f;
-					if (rail_collision_timer != 0)
+					if (soa->rail_collision_timer[soa_index] != 0)
 						response_intensity_factor *= 0.15f;
 				} else {
 					response_intensity_factor =
@@ -2653,41 +2929,41 @@ if (apply_full_response) {
 		}
 
 		if (clamped_opposing_dot_prod < -0.5f) {
-			machine_state &= ~(MACHINESTATE::JUST_HIT_DASHPLATE |
+			soa->machine_state[soa_index] &= ~(MACHINESTATE::JUST_HIT_DASHPLATE |
 				MACHINESTATE::BOOSTING_DASHPLATE |
 				MACHINESTATE::JUST_PRESSED_BOOST |
 				MACHINESTATE::BOOSTING);
-			machine_state &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
-			boost_frames = 0;
-			boost_frames_manual = 0;
+			soa->machine_state[soa_index] &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
+			soa->boost_frames[soa_index] = 0;
+			soa->boost_frames_manual[soa_index] = 0;
 		}
 
-		if ((machine_state & MACHINESTATE::TOOKDAMAGE) && breakdown_frame_counter == 0) {
-			float damage_base = response_intensity_factor * stat_body;
-			if ((machine_state & MACHINESTATE::B10) == 0 && damage_base > 20.0f)
+		if ((soa->machine_state[soa_index] & MACHINESTATE::TOOKDAMAGE) && soa->breakdown_frame_counter[soa_index] == 0) {
+			float damage_base = response_intensity_factor * soa->stat_body[soa_index];
+			if ((soa->machine_state[soa_index] & MACHINESTATE::B10) == 0 && damage_base > 20.0f)
 				damage_base = 20.0f;
 
-			float max_damage_this_hit = 1.01f * calced_max_energy;
+			float max_damage_this_hit = 1.01f * soa->calced_max_energy[soa_index];
 			float actual_damage_taken = std::min(damage_base, max_damage_this_hit);
-			damage_from_last_hit = actual_damage_taken;
-			energy -= actual_damage_taken;
+			soa->damage_from_last_hit[soa_index] = actual_damage_taken;
+			soa->energy[soa_index] -= actual_damage_taken;
 
-			if (energy < 0.0f) {
-				if ((machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q|MACHINESTATE::ZEROHP)) == 0) {
-					breakdown_frame_counter = 0x3c;
+			if (soa->energy[soa_index] < 0.0f) {
+				if ((soa->machine_state[soa_index] & (MACHINESTATE::COMPLETEDRACE_1_Q|MACHINESTATE::ZEROHP)) == 0) {
+					soa->breakdown_frame_counter[soa_index] = 0x3c;
 				}
-				energy = 0.0f;
-				machine_state |= MACHINESTATE::ZEROHP;
-				base_speed = 0.0f;
+				soa->energy[soa_index] = 0.0f;
+				soa->machine_state[soa_index] |= MACHINESTATE::ZEROHP;
+				soa->base_speed[soa_index] = 0.0f;
 			}
 		}
 
-		godot::Vector3 response_impulse_base;
+		SimVec3 response_impulse_base;
 		if (push_magnitude_rail > 0.0001f)
-			response_impulse_base = collision_push_total.normalized() *
+			response_impulse_base = LOAD_VEC3(collision_push_total).normalized() *
 		(clamped_opposing_dot_prod * current_world_speed);
 		else
-			response_impulse_base = godot::Vector3();
+			response_impulse_base = SimVec3();
 
 		if (clamped_opposing_dot_prod < 0.0f) {
 			float ratio_clamped_dot = clamped_opposing_dot_prod / 0.7f;
@@ -2697,170 +2973,161 @@ if (apply_full_response) {
 			float base_speed_mult;
 			float boost_turbo_additional_mult;
 
-			if (rail_collision_timer == 0) {
+			if (soa->rail_collision_timer[soa_index] == 0) {
 				base_speed_mult = 0.2f + 0.6f * sqrt_factor;
 				boost_turbo_additional_mult = 0.4f * base_speed_mult;
 			} else {
 				base_speed_mult = 0.64f + 0.35f * sqrt_factor;
 				boost_turbo_additional_mult = 0.6f * base_speed_mult;
 			}
-			if (!s_boost_active){
-				base_speed *= base_speed_mult;
+			if (!soa->s_boost_active[soa_index]){
+				soa->base_speed[soa_index] *= base_speed_mult;
 			}
-			boost_turbo *= (0.3f + boost_turbo_additional_mult);
+			soa->boost_turbo[soa_index] *= (0.3f + boost_turbo_additional_mult);
 		}
 
 		if (speed_over_weight <= 1.851851851f) {
-			velocity += response_impulse_base * -1.0f;
+			ADD_VEC3(velocity, response_impulse_base * -1.0f);
 		} else {
 			float final_impulse_scale_factor;
-			if (machine_state & MACHINESTATE::ZEROHP) {
+			if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) {
 				final_impulse_scale_factor = 3.4f - 1.7f * std::abs(clamped_opposing_dot_prod);
-			} else if (rail_collision_timer == 0) {
+			} else if (soa->rail_collision_timer[soa_index] == 0) {
 				final_impulse_scale_factor = 3.0f - 1.5f * std::abs(clamped_opposing_dot_prod);
 			} else {
 				final_impulse_scale_factor = 2.0f - std::abs(clamped_opposing_dot_prod);
 			}
 
-			velocity += response_impulse_base * (-final_impulse_scale_factor);
+			ADD_VEC3(velocity, response_impulse_base * (-final_impulse_scale_factor));
 
-			if (rail_collision_timer == 0) {
-				PhysicsCarSuspensionPoint* tilt_corners[4] = { &tilt_fl, &tilt_fr, &tilt_bl, &tilt_br };
-				for (auto* corner : tilt_corners)
-					corner->state |= TILTSTATE::DRIFT;
+			if (soa->rail_collision_timer[soa_index] == 0) {
+				set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 			}
-			rail_collision_timer = 20;
+			soa->rail_collision_timer[soa_index] = 20;
 		}
 
 		if (response_impulse_base.length_squared() > 0.000001f) {
-			godot::Vector3 impulse_local_for_visuals =
-			mtxa->inverse_rotate_point(response_impulse_base);
-			visual_rotation.z += impulse_local_for_visuals.x;
-			visual_rotation.x += impulse_local_for_visuals.z;
+			SimVec3 impulse_local_for_visuals =
+			mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), response_impulse_base);
+			soa->visual_rotation_z[soa_index] += impulse_local_for_visuals.x;
+			soa->visual_rotation_x[soa_index] += impulse_local_for_visuals.z;
 		}
 
-		if (machine_state & MACHINESTATE::ACTIVE) {
-			PhysicsCarCollisionPoint* wall_corners[4] = { &wall_fl, &wall_fr, &wall_bl, &wall_br };
+		if (soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) {
 			for (int i = 0; i < 4; ++i) {
-				(void)wall_corners[i];
-				apply_torque_from_force(track_surface_normal, response_impulse_base * -0.002f);
+				apply_torque_from_force(LOAD_VEC3(track_surface_normal), response_impulse_base * -0.002f);
 			}
 		}
 
-		if (frames_since_start_2 > 60)
+		if (soa->frames_since_start_2[soa_index] > 60)
 			align_machine_y_with_track_normal_immediate();
 	}
 
-} else if ((machine_state & MACHINESTATE::JUSTLANDED) &&
+} else if ((soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) &&
 	speed_over_weight >= 0.0462962962962f) {
-	godot::Vector3 up_dir = mtxa->rotate_point(godot::Vector3(0, 1, 0)); // get the vehicle's local up direction normal vector
-	float up_dot_track = normalized_safe(up_dir).dot(normalized_safe(track_surface_normal));
-	float vel_dot_track = normalized_safe(velocity).dot(normalized_safe(track_surface_normal));
+	SimVec3 up_dir = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0, 1, 0)); // get the vehicle's local up direction normal vector
+	float up_dot_track = normalized_safe(up_dir).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
+	float vel_dot_track = normalized_safe(LOAD_VEC3(velocity)).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
 	if (up_dot_track < 0.0f)
 		up_dot_track = 0.0f;
-	float vel_along_track = velocity.length() * vel_dot_track;
-	base_speed = base_speed * up_dot_track;
-	godot::Vector3 normal_vel = track_surface_normal * vel_along_track;
+	float vel_along_track = LOAD_VEC3(velocity).length() * vel_dot_track;
+	soa->base_speed[soa_index] = soa->base_speed[soa_index] * up_dot_track;
+	SimVec3 normal_vel = LOAD_VEC3(track_surface_normal) * vel_along_track;
 	float vel_align_factor = 2.0f * std::abs(0.5f + vel_dot_track);
-	godot::Vector3 vel_add = velocity - normal_vel;
-	if (air_time < 10 && energy > 0.001f)
+	SimVec3 vel_add = LOAD_VEC3(velocity) - normal_vel;
+	if (soa->air_time[soa_index] < 10 && soa->energy[soa_index] > 0.001f)
 	{
-		velocity *= 1.4f;
-		base_speed += 1.6f;
+		STORE_VEC3(velocity, LOAD_VEC3(velocity) * 1.4f);
+		soa->base_speed[soa_index] += 1.6f;
 	}else
 	{
 		vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);
-		velocity -= normal_vel * up_dot_track;
-		velocity += vel_add;
+		SUB_VEC3(velocity, normal_vel * up_dot_track);
+		ADD_VEC3(velocity, vel_add);
 	}
-	air_time = 0;
+	soa->air_time[soa_index] = 0;
 }
 
-if (frames_since_start_2 <= 90)
-{
-	velocity += track_surface_normal * -(velocity.dot(track_surface_normal));
-}
+	if (include_start_projection && soa->frames_since_start_2[soa_index] <= 90)
+	{
+		ADD_VEC3(velocity, LOAD_VEC3(track_surface_normal) * -(LOAD_VEC3(velocity).dot(LOAD_VEC3(track_surface_normal))));
+	}
 };
 
 void PhysicsCar::align_machine_y_with_track_normal_immediate()
 {
-	if (track_surface_normal.length_squared() < 0.0001f)
+	if (LOAD_VEC3(track_surface_normal).length_squared() < 0.0001f)
 		return;
 
-	godot::Vector3 safe_track_normal = track_surface_normal.normalized();
-	godot::Vector3 machine_current_world_up = mtxa->rotate_point(godot::Vector3(0, 1, 0));
+	SimVec3 safe_track_normal = LOAD_VEC3(track_surface_normal).normalized();
+	SimVec3 machine_current_world_up = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0, 1, 0));
 
 	if (machine_current_world_up.length_squared() < 0.0001f)
 		return;
 
-	godot::Vector3 safe_machine_world_up = machine_current_world_up.normalized();
+	SimVec3 safe_machine_world_up = machine_current_world_up.normalized();
 
-	mtxa->push();
-	godot::Quaternion delta_rotation_q = godot::Quaternion(safe_machine_world_up, safe_track_normal);
-	mtxa->from_quat(delta_rotation_q);
-	godot::Transform3D old_physical_basis_as_transform(basis_physical.basis, godot::Vector3());
-	mtxa->multiply(old_physical_basis_as_transform);
-	basis_physical = mtxa->cur->basis;
-	mtxa->pop();
+	SimQuat delta_rotation_q = SimQuat(safe_machine_world_up, safe_track_normal);
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical); mxt_tmp.basis = SimBasis(delta_rotation_q) * mxt_tmp.basis; STORE_TRANSFORM(basis_physical, mxt_tmp); }
 };
 
-void PhysicsCar::handle_checkpoints()
+void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 {
-	if (!current_track || current_track->num_checkpoints == 0)
+	if (!soa->current_track[soa_index] || soa->current_track[soa_index]->num_checkpoints == 0)
 		return;
 
-	uint8_t prev_lap = lap;
+	uint8_t prev_lap = soa->lap[soa_index];
 
-	int found = current_track->get_best_checkpoint(position_current, current_checkpoint);
+	int found = soa->current_track[soa_index]->get_best_checkpoint(LOAD_VEC3(position_current), soa->current_checkpoint[soa_index], scratch);
 	int collision = found;
-	if ((machine_state & MACHINESTATE::AIRBORNE) != 0 || found == -1)
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0 || found == -1)
 	{
-		collision = current_track->get_best_checkpoint(position_current);
+		collision = soa->current_track[soa_index]->get_best_checkpoint(LOAD_VEC3(position_current), scratch);
 	}
-	//if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && found == -1)
+	//if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0 && found == -1)
 	//{
 	//	found = collision;
 	//}
-	current_collision_checkpoint = collision;
-	if (found >= 0 && found < current_track->num_checkpoints && found != current_checkpoint) {
-		if ((machine_state & MACHINESTATE::ACTIVE) != 0 & (machine_state & MACHINESTATE::COMPLETEDRACE_1_Q) == 0)
+	soa->current_collision_checkpoint[soa_index] = collision;
+	if (found >= 0 && found < soa->current_track[soa_index]->num_checkpoints && found != soa->current_checkpoint[soa_index]) {
+		if ((soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) != 0 & (soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0)
 		{
-			if (found < current_track->num_checkpoints / 8 && current_checkpoint > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
-				lap += 1;
-			} else if (current_checkpoint < current_track->num_checkpoints / 8 && found > current_track->num_checkpoints - current_track->num_checkpoints / 8) {
-				if (lap > 0)
-					lap -= 1;
+			if (found < soa->current_track[soa_index]->num_checkpoints / 8 && soa->current_checkpoint[soa_index] > soa->current_track[soa_index]->num_checkpoints - soa->current_track[soa_index]->num_checkpoints / 8) {
+				soa->lap[soa_index] += 1;
+			} else if (soa->current_checkpoint[soa_index] < soa->current_track[soa_index]->num_checkpoints / 8 && found > soa->current_track[soa_index]->num_checkpoints - soa->current_track[soa_index]->num_checkpoints / 8) {
+				if (soa->lap[soa_index] > 0)
+					soa->lap[soa_index] -= 1;
 			}
 		}
-		current_checkpoint = static_cast<uint16_t>(found);
+		soa->current_checkpoint[soa_index] = static_cast<uint16_t>(found);
 	}
 
-	if (lap > 3){
-		machine_state |= MACHINESTATE::COMPLETEDRACE_1_Q;
+	if (soa->lap[soa_index] > 3){
+		soa->machine_state[soa_index] |= MACHINESTATE::COMPLETEDRACE_1_Q;
 	}
 
-	const CollisionCheckpoint &cur_cp = current_track->checkpoints[current_checkpoint];
-	godot::Vector3 p1 = cur_cp.start_plane.project(position_current);
-	godot::Vector3 p2 = cur_cp.end_plane.project(position_current);
-	float t = get_closest_t_on_segment(position_current, p1, p2);
-	checkpoint_fraction = t;
-	lap_progress = (static_cast<float>(current_checkpoint) + t) / static_cast<float>(current_track->num_checkpoints);
+	const CollisionCheckpoint &cur_cp = soa->current_track[soa_index]->checkpoints[soa->current_checkpoint[soa_index]];
+	SimVec3 p1 = cur_cp.start_plane.project(LOAD_VEC3(position_current));
+	SimVec3 p2 = cur_cp.end_plane.project(LOAD_VEC3(position_current));
+	float t = get_closest_t_on_segment(LOAD_VEC3(position_current), p1, p2);
+	soa->checkpoint_fraction[soa_index] = t;
+	soa->lap_progress[soa_index] = (static_cast<float>(soa->current_checkpoint[soa_index]) + t) / static_cast<float>(soa->current_track[soa_index]->num_checkpoints);
 
 	float cp_length = cur_cp.local_distance;
 	float cp_start_distance = cur_cp.distance - cur_cp.local_distance;
-	float ground_distance = cp_start_distance + cp_length * std::clamp(checkpoint_fraction, 0.0f, 1.0f);
-	float lap_length = current_track->lap_length;
-	if (lap_length <= 0.0f && current_track->num_checkpoints > 0)
-		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+	float ground_distance = cp_start_distance + cp_length * std::clamp(soa->checkpoint_fraction[soa_index], 0.0f, 1.0f);
+	float lap_length = soa->current_track[soa_index]->lap_length;
+	if (lap_length <= 0.0f && soa->current_track[soa_index]->num_checkpoints > 0)
+		lap_length = soa->current_track[soa_index]->checkpoints[soa->current_track[soa_index]->num_checkpoints - 1].distance;
 	if (lap_length > 0.0f) {
 		ground_distance = std::fmod(ground_distance, lap_length);
 		if (ground_distance < 0.0f)
 			ground_distance += lap_length;
 	}
-	checkpoint_track_distance = ground_distance;
+	soa->checkpoint_track_distance[soa_index] = ground_distance;
 
-	if (lap != prev_lap) {
-		machine_state |= MACHINESTATE::CROSSEDLAPLINE_Q;
+	if (soa->lap[soa_index] != prev_lap) {
+		soa->machine_state[soa_index] |= MACHINESTATE::CROSSEDLAPLINE_Q;
 	}
 };
 
@@ -2870,33 +3137,32 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 	{
 		return;
 	}
-	mtxa->push();
 
-	godot::Vector3 mine_pos = in_mine->transform.origin;// + in_mine->transform.basis.get_column(1);
+	SimVec3 mine_pos = in_mine->transform.origin;// + in_mine->transform.basis.get_column(1);
 
-	godot::Vector3 travel_vec = position_current - position_old;
+	SimVec3 travel_vec = LOAD_VEC3(position_current) - LOAD_VEC3(position_old);
 
-	godot::Vector3 prev_to_mine = mine_pos - position_old;
+	SimVec3 prev_to_mine = mine_pos - LOAD_VEC3(position_old);
 
 	float travel_len = travel_vec.length();
 
 	float t = travel_vec.dot(prev_to_mine) / (travel_len * travel_len);
 
-	godot::Vector3 closest_on_path = travel_vec * t + position_old;
+	SimVec3 closest_on_path = travel_vec * t + LOAD_VEC3(position_old);
 
-	float speed_dir_sign = (speed_kmh > 600.0f) ? 1.0f : -1.0f;
+	float speed_dir_sign = (soa->speed_kmh[soa_index] > 600.0f) ? 1.0f : -1.0f;
 
-	godot::Vector3 mine_to_path = closest_on_path - mine_pos;
+	SimVec3 mine_to_path = closest_on_path - mine_pos;
 
 	float mine_to_path_len = mine_to_path.length();
 
-	float normal_dot = track_surface_normal.dot(mine_to_path.normalized());
+	float normal_dot = LOAD_VEC3(track_surface_normal).dot(mine_to_path.normalized());
 
 	float normal_proj_len = mine_to_path_len * normal_dot;
 
-	godot::Vector3 point_on_track_plane = track_surface_normal * normal_proj_len + mine_pos;
+	SimVec3 point_on_track_plane = LOAD_VEC3(track_surface_normal) * normal_proj_len + mine_pos;
 
-	godot::Vector3 planar_component = closest_on_path - point_on_track_plane;
+	SimVec3 planar_component = closest_on_path - point_on_track_plane;
 
 	float planar_length = planar_component.length();
 	
@@ -2905,87 +3171,85 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 	float signedCosThetaD = speed_dir_sign * cosTheta;
 	float sinTheta = sqrt(1.0 - (signedCosThetaD * signedCosThetaD));
 
-	godot::Vector3 normalDir = {0,0,0};
+	SimVec3 normalDir = {0,0,0};
 	if(sinTheta > 0.0000001)
 		normalDir = set_vec3_length(planar_component, sinTheta);
 
-	godot::Vector3 travelDirScaled = {0,0,0};
+	SimVec3 travelDirScaled = {0,0,0};
 	if(signedCosThetaD > (0.0000001))
 		travelDirScaled = set_vec3_length(travel_vec, signedCosThetaD);
 
-	godot::Vector3 kickDir = normalDir + travelDirScaled;
+	SimVec3 kickDir = normalDir + travelDirScaled;
 
 	kickDir = set_vec3_length(kickDir, 4.0);
 
-	position_current = kickDir + point_on_track_plane;
+	STORE_VEC3(position_current, kickDir + point_on_track_plane);
 
-	godot::Vector3 displacementWorld = position_current - mine_pos;
+	SimVec3 displacementWorld = LOAD_VEC3(position_current) - mine_pos;
 
-	mtxa->assign(basis_physical);
-	displacementWorld = mtxa->inverse_rotate_point(displacementWorld);	// → local
+	displacementWorld = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), displacementWorld);	// → local
 
 	float displacementLen = displacementWorld.length();
 
-	displacementWorld = set_vec3_length(displacementWorld, 5.555555 * stat_weight);
+	displacementWorld = set_vec3_length(displacementWorld, 5.555555 * soa->stat_weight[soa_index]);
 
-	visual_rotation.z  += 6.0f * displacementWorld.x;
-	visual_rotation.x += 2.0f * displacementWorld.z;
+	soa->visual_rotation_z[soa_index]  += 6.0f * displacementWorld.x;
+	soa->visual_rotation_x[soa_index] += 2.0f * displacementWorld.z;
 
-	displacementWorld = mtxa->rotate_point(displacementWorld);
+	displacementWorld = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), displacementWorld);
 
-	velocity.x += displacementWorld.x;
-	velocity.y += displacementWorld.y;
-	velocity.z += displacementWorld.z;
+	soa->velocity_x[soa_index] += displacementWorld.x;
+	soa->velocity_y[soa_index] += displacementWorld.y;
+	soa->velocity_z[soa_index] += displacementWorld.z;
 
 	//------------------------------------------------------------------
 	// 8) Damage & state flags (unchanged logic)
 	//------------------------------------------------------------------
 
-	terrain_state |= 0x40000000;			// “hit mine” flag
+	soa->terrain_state[soa_index] |= 0x40000000;			// “hit mine” flag
 
-	if(!s_boost_active && breakdown_frame_counter == 0)
+	if(!soa->s_boost_active[soa_index] && soa->breakdown_frame_counter[soa_index] == 0)
 	{
-		float damage = 20.0f * stat_body;
+		float damage = 20.0f * soa->stat_body[soa_index];
 
-		if((machine_state & MACHINESTATE::B10) == 0 && damage > 20.0f)
+		if((soa->machine_state[soa_index] & MACHINESTATE::B10) == 0 && damage > 20.0f)
 			damage = 20.0f;
 
-		float maxFrameDamage = 1.01f * calced_max_energy;
+		float maxFrameDamage = 1.01f * soa->calced_max_energy[soa_index];
 
 		if(damage > maxFrameDamage) damage = maxFrameDamage;
 
-		damage_from_last_hit = damage;
-		energy -= damage;
+		soa->damage_from_last_hit[soa_index] = damage;
+		soa->energy[soa_index] -= damage;
 
-		if(energy < 0.0f)
+		if(soa->energy[soa_index] < 0.0f)
 		{
-			if((machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0)
-				breakdown_frame_counter = 60;
+			if((soa->machine_state[soa_index] & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0)
+				soa->breakdown_frame_counter[soa_index] = 60;
 
-			machine_state |= MACHINESTATE::ZEROHP;
-			energy	  = 0.0f;
-			base_speed = 0.0f;
+			soa->machine_state[soa_index] |= MACHINESTATE::ZEROHP;
+			soa->energy[soa_index]	  = 0.0f;
+			soa->base_speed[soa_index] = 0.0f;
 		}
 	}
 
-	mtxa->pop();
 }
 
 
-bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, godot::Transform3D &out_transform, float &out_distance) const
+bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance) const
 {
-	out_transform = godot::Transform3D();
-	out_distance = last_ground_distance;
+	out_transform = SimTransform();
+	out_distance = soa->last_ground_distance[soa_index];
 
-	if (!current_track || current_track->num_checkpoints == 0 || cp_idx >= current_track->num_checkpoints)
+	if (!soa->current_track[soa_index] || soa->current_track[soa_index]->num_checkpoints == 0 || cp_idx >= soa->current_track[soa_index]->num_checkpoints)
 		return false;
 
-	const int num_checkpoints = current_track->num_checkpoints;
-	const CollisionCheckpoint &start_cp = current_track->checkpoints[cp_idx];
+	const int num_checkpoints = soa->current_track[soa_index]->num_checkpoints;
+	const CollisionCheckpoint &start_cp = soa->current_track[soa_index]->checkpoints[cp_idx];
 
-	float lap_length = current_track->lap_length;
+	float lap_length = soa->current_track[soa_index]->lap_length;
 	if (lap_length <= 0.0f && num_checkpoints > 0) {
-		lap_length = current_track->checkpoints[num_checkpoints - 1].distance;
+		lap_length = soa->current_track[soa_index]->checkpoints[num_checkpoints - 1].distance;
 	}
 	const bool has_lap_length = lap_length > 0.0f;
 
@@ -3000,7 +3264,7 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, godot::Transform3D &out
 
 	const float start_cp_length = std::max(start_cp.local_distance, kMinCheckpointDistance);
 	const float cp_start_distance = start_cp.distance - start_cp.local_distance;
-	const float normalized_ground = normalize_distance(last_ground_distance);
+	const float normalized_ground = normalize_distance(soa->last_ground_distance[soa_index]);
 	const float normalized_cp_start = normalize_distance(cp_start_distance);
 
 	float distance_into_cp = normalized_ground - normalized_cp_start;
@@ -3031,7 +3295,7 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, godot::Transform3D &out
 		int last_idx = idx;
 		for (int step = 0; step < num_checkpoints; ++step) {
 			last_idx = idx;
-			const CollisionCheckpoint &candidate = current_track->checkpoints[idx];
+			const CollisionCheckpoint &candidate = soa->current_track[soa_index]->checkpoints[idx];
 			float candidate_length = std::max(candidate.local_distance, kMinCheckpointDistance);
 			if (remaining <= candidate_length) {
 				target_cp_idx = idx;
@@ -3048,18 +3312,18 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, godot::Transform3D &out
 		}
 	}
 
-	const CollisionCheckpoint &target_cp = current_track->checkpoints[target_cp_idx];
+	const CollisionCheckpoint &target_cp = soa->current_track[soa_index]->checkpoints[target_cp_idx];
 	float t_y = target_cp.t_start + (target_cp.t_end - target_cp.t_start) * target_fraction;
 	t_y = std::clamp(t_y, std::min(target_cp.t_start, target_cp.t_end), std::max(target_cp.t_start, target_cp.t_end));
 
-	current_track->segments[target_cp.road_segment]
-	.road_shape->get_oriented_transform_at_time(out_transform, godot::Vector2(0.0f, t_y));
+	soa->current_track[soa_index]->segments[target_cp.road_segment]
+	.road_shape->get_oriented_transform_at_time(out_transform, SimVec2(0.0f, t_y));
 	out_transform.basis.transpose();
 	out_transform.basis.orthonormalize();
 	out_transform.basis = out_transform.basis.rotated(out_transform.basis.get_column(1), Math_PI);
 	out_transform.origin += out_transform.basis.get_column(1) * 0.1f;
 
-	float new_distance = last_ground_distance + kRespawnForwardDistance;
+	float new_distance = soa->last_ground_distance[soa_index] + kRespawnForwardDistance;
 	if (has_lap_length) {
 		new_distance = std::fmod(new_distance, lap_length);
 		if (new_distance < 0.0f)
@@ -3072,194 +3336,206 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, godot::Transform3D &out
 
 void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 {
-	if (!current_track || cp_idx >= current_track->num_checkpoints)
+	if (!soa->current_track[soa_index] || cp_idx >= soa->current_track[soa_index]->num_checkpoints)
 		return;
 
-	godot::Transform3D spawn_transform;
-	float respawn_distance = last_ground_distance;
+	SimTransform spawn_transform;
+	float respawn_distance = soa->last_ground_distance[soa_index];
 	if (!compute_respawn_target(cp_idx, spawn_transform, respawn_distance))
 		return;
 
-	last_ground_distance = respawn_distance;
-	position_current = spawn_transform.origin;
-	position_old = spawn_transform.origin;
-	position_old_2 = spawn_transform.origin;
-	position_old_dupe = spawn_transform.origin;
-	position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+	soa->last_ground_distance[soa_index] = respawn_distance;
+	STORE_VEC3(position_current, spawn_transform.origin);
+	STORE_VEC3(position_old, spawn_transform.origin);
+	STORE_VEC3(position_old_2, spawn_transform.origin);
+	STORE_VEC3(position_old_dupe, spawn_transform.origin);
+	STORE_VEC3(position_bottom, spawn_transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
 
-	mtxa->push();
-	mtxa->cur->origin = spawn_transform.origin;
-	basis_physical.basis = spawn_transform.basis;
-	basis_physical_other.basis = spawn_transform.basis;
-	rotate_mtxa_from_diff_btwn_machine_front_and_back();
-	mtxa->pop();
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical); mxt_tmp.basis = spawn_transform.basis; STORE_TRANSFORM(basis_physical, mxt_tmp); }
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical_other); mxt_tmp.basis = spawn_transform.basis; STORE_TRANSFORM(basis_physical_other, mxt_tmp); }
+	update_pitch_transform_from_machine_front_back();
 
-	transform_visual = spawn_transform;
-	track_surface_normal = spawn_transform.basis.get_column(1);
+	STORE_TRANSFORM(transform_visual, spawn_transform);
+	STORE_VEC3(track_surface_normal, spawn_transform.basis.get_column(1));
 
-	velocity = godot::Vector3();
-	velocity_local = godot::Vector3();
-	velocity_local_flattened_and_rotated = godot::Vector3();
-	velocity_angular = godot::Vector3();
-	base_speed = 0.0f;
-	boost_turbo = 0.0f;
-	some_breakdown_int = 0;
+	STORE_VEC3(velocity, SimVec3());
+	STORE_VEC3(velocity_local, SimVec3());
+	STORE_VEC3(velocity_local_flattened_and_rotated, SimVec3());
+	STORE_VEC3(velocity_angular, SimVec3());
+	soa->base_speed[soa_index] = 0.0f;
+	soa->boost_turbo[soa_index] = 0.0f;
+	soa->some_breakdown_int[soa_index] = 0;
 
-	machine_state &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::AIRBORNE | MACHINESTATE::FALLOUT);
-	frames_since_death = 0;
-	PhysicsCarSuspensionPoint* tilt_corners[4] = {&tilt_fl, &tilt_fr, &tilt_bl, &tilt_br};
-	PhysicsCarCollisionPoint* wall_corners[4] = {&wall_fl, &wall_fr, &wall_bl, &wall_br};
-
-	for (int i = 0; i < 4; ++i) {
-		auto* tc = tilt_corners[i];
-		auto* wc = wall_corners[i];
-
-		tc->state = 0;
-		tc->force = 0.0f;
-		tc->force_spatial_len = 0.0f;
-		tc->pos_old = mtxa->transform_point(tc->offset);
-		tc->pos = tc->pos_old;
-		tc->force_spatial = godot::Vector3();
-		tc->up_vector_2 = mtxa->rotate_point(godot::Vector3(0,1,0));
-		tc->up_vector = tc->up_vector_2;
-
-		wc->pos_a = mtxa->transform_point(godot::Vector3(0.0f, 0.1f, 0.0f));
-		wc->pos_b = mtxa->transform_point(wc->offset);
-		wc->collision = godot::Vector3();
+	soa->machine_state[soa_index] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::AIRBORNE | MACHINESTATE::FALLOUT);
+	soa->frames_since_death[soa_index] = 0;
+	const int point_base = soa_index * 4;
+	const SimTransform restore_transform = LOAD_TRANSFORM(basis_physical);
+	const SimVec3 restore_position = LOAD_VEC3(position_current);
+	const SimVec3x4 tilt_pos = mxt_transform_points4(
+		restore_transform,
+		restore_position,
+		sim_load4(soa->tilt_offset_x + point_base),
+		sim_load4(soa->tilt_offset_y + point_base),
+		sim_load4(soa->tilt_offset_z + point_base));
+	const SimVec3x4 wall_pos = mxt_transform_points4(
+		restore_transform,
+		restore_position,
+		sim_load4(soa->wall_offset_x + point_base),
+		sim_load4(soa->wall_offset_y + point_base),
+		sim_load4(soa->wall_offset_z + point_base));
+	const SimVec3 wall_pos_a = mxt_transform_point(restore_transform, restore_position, SimVec3(0.0f, 0.1f, 0.0f));
+	const SimVec3 up = mxt_basis_rotate(restore_transform, SimVec3(0, 1, 0));
+	for (int lane = 0; lane < 4; ++lane) {
+		const int p = point_base + lane;
+		soa->tilt_state[p] = 0;
+		soa->tilt_force[p] = 0.0f;
+		soa->tilt_force_spatial_len[p] = 0.0f;
+		STORE_TILT_VEC3(force_spatial, p, SimVec3());
+		STORE_TILT_VEC3(up_vector_2, p, up);
+		STORE_TILT_VEC3(up_vector, p, up);
+		STORE_WALL_VEC3(pos_a, p, wall_pos_a);
+		STORE_WALL_VEC3(collision, p, SimVec3());
 	}
+	sim_store4(soa->tilt_pos_old_x + point_base, tilt_pos.x);
+	sim_store4(soa->tilt_pos_old_y + point_base, tilt_pos.y);
+	sim_store4(soa->tilt_pos_old_z + point_base, tilt_pos.z);
+	sim_store4(soa->tilt_pos_x + point_base, tilt_pos.x);
+	sim_store4(soa->tilt_pos_y + point_base, tilt_pos.y);
+	sim_store4(soa->tilt_pos_z + point_base, tilt_pos.z);
+	sim_store4(soa->wall_pos_b_x + point_base, wall_pos.x);
+	sim_store4(soa->wall_pos_b_y + point_base, wall_pos.y);
+	sim_store4(soa->wall_pos_b_z + point_base, wall_pos.z);
 }
 
-godot::Transform3D PhysicsCar::calculate_respawn_transform(uint16_t cp_idx) const
+SimTransform PhysicsCar::calculate_respawn_transform(uint16_t cp_idx) const
 {
-	godot::Transform3D spawn_transform;
-	float dummy_distance = last_ground_distance;
+	SimTransform spawn_transform;
+	float dummy_distance = soa->last_ground_distance[soa_index];
 	if (!compute_respawn_target(cp_idx, spawn_transform, dummy_distance))
-		return godot::Transform3D();
+		return SimTransform();
 	return spawn_transform;
 }
 
 void PhysicsCar::update_restore(float accel_input)
 {
-	if (!current_track)
+	if (!soa->current_track[soa_index])
 		return;
 
-	if (s_boost_active)
+	if (soa->s_boost_active[soa_index])
 		return;
 
-	bool crashed = position_current.y < current_track->minimum_y || energy <= 0.0f;
+	bool crashed = soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y || soa->energy[soa_index] <= 0.0f;
 
-	if (restore_state == 0 && crashed) {
-		restore_state = 1;
-		restore_wait_frames = 0;
-		if (position_current.y < current_track->minimum_y)
-			machine_state |= MACHINESTATE::FALLOUT;
-		if (energy <= 0.0f)
-			machine_state |= MACHINESTATE::ZEROHP;
+	if (soa->restore_state[soa_index] == 0 && crashed) {
+		soa->restore_state[soa_index] = 1;
+		soa->restore_wait_frames[soa_index] = 0;
+		if (soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y)
+			soa->machine_state[soa_index] |= MACHINESTATE::FALLOUT;
+		if (soa->energy[soa_index] <= 0.0f)
+			soa->machine_state[soa_index] |= MACHINESTATE::ZEROHP;
 	}
 
-	if (restore_state == 1) {
-		restore_wait_frames++;
-		if ((restore_wait_frames >= 60 && accel_input > 0.1f) || (machine_state & MACHINESTATE::FALLOUT) != 0) {
-			restore_state = 2;
-			restore_move_frames = 0;
-			restore_start_transform.origin = position_current;
-			restore_start_transform.basis = basis_physical.basis;
-			restore_target_transform = calculate_respawn_transform(last_ground_checkpoint);
-			velocity = godot::Vector3();
-			velocity_local = godot::Vector3();
-			velocity_local_flattened_and_rotated = godot::Vector3();
-			velocity_angular = godot::Vector3();
-			base_speed = 0.0f;
-			boost_turbo = 0.0f;
-			state_2 &= ~0x20;
+	if (soa->restore_state[soa_index] == 1) {
+		soa->restore_wait_frames[soa_index]++;
+		if ((soa->restore_wait_frames[soa_index] >= 60 && accel_input > 0.1f) || (soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) != 0) {
+			soa->restore_state[soa_index] = 2;
+			soa->restore_move_frames[soa_index] = 0;
+			{ SimTransform mxt_tmp = LOAD_TRANSFORM(restore_start_transform); mxt_tmp.origin = LOAD_VEC3(position_current); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(restore_start_transform, mxt_tmp); }
+			STORE_TRANSFORM(restore_target_transform, calculate_respawn_transform(soa->last_ground_checkpoint[soa_index]));
+			STORE_VEC3(velocity, SimVec3());
+			STORE_VEC3(velocity_local, SimVec3());
+			STORE_VEC3(velocity_local_flattened_and_rotated, SimVec3());
+			STORE_VEC3(velocity_angular, SimVec3());
+			soa->base_speed[soa_index] = 0.0f;
+			soa->boost_turbo[soa_index] = 0.0f;
+			soa->state_2[soa_index] &= ~0x20;
 		}
-	} else if (restore_state == 2) {
-		restore_move_frames++;
-		float t = std::min(1.0f, static_cast<float>(restore_move_frames) / 180.0f);
+	} else if (soa->restore_state[soa_index] == 2) {
+		soa->restore_move_frames[soa_index]++;
+		float t = std::min(1.0f, static_cast<float>(soa->restore_move_frames[soa_index]) / 180.0f);
 		t = (t < 0.5f) ? (2.0f * t * t) : (-1.0f + (4.0f - 2.0f * t) * t);
-		state_2 &= ~0x20;
-		godot::Vector3 pos = restore_start_transform.origin.lerp(restore_target_transform.origin, t);
-		godot::Quaternion qs = restore_start_transform.basis.get_rotation_quaternion();
-		godot::Quaternion qe = restore_target_transform.basis.get_rotation_quaternion();
-		godot::Quaternion qi = qs.slerp(qe, t);
+		soa->state_2[soa_index] &= ~0x20;
+		SimVec3 pos = LOAD_TRANSFORM(restore_start_transform).origin.lerp(LOAD_TRANSFORM(restore_target_transform).origin, t);
+		SimQuat qs = LOAD_TRANSFORM(restore_start_transform).basis.get_rotation_quaternion();
+		SimQuat qe = LOAD_TRANSFORM(restore_target_transform).basis.get_rotation_quaternion();
+		SimQuat qi = qs.slerp(qe, t);
 
-		basis_physical.basis = godot::Basis(qi);
-		basis_physical_other.basis = basis_physical.basis;
-		transform_visual.basis = basis_physical.basis;
+		{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical); mxt_tmp.basis = SimBasis(qi); STORE_TRANSFORM(basis_physical, mxt_tmp); }
+		{ SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical_other); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(basis_physical_other, mxt_tmp); }
+		{ SimTransform mxt_tmp = LOAD_TRANSFORM(transform_visual); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(transform_visual, mxt_tmp); }
 
-		position_current = pos;
-		position_old = pos;
-		position_old_2 = pos;
-		position_old_dupe = pos;
-		position_bottom = basis_physical.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+		STORE_VEC3(position_current, pos);
+		STORE_VEC3(position_old, pos);
+		STORE_VEC3(position_old_2, pos);
+		STORE_VEC3(position_old_dupe, pos);
+		STORE_VEC3(position_bottom, LOAD_TRANSFORM(basis_physical).xform(SimVec3(0.0f, -0.1f, 0.0f)));
 
-		if (restore_move_frames >= 180) {
-			state_2 &= ~0x20;
-			respawn_at_checkpoint(last_ground_checkpoint);
-			energy = std::max(energy, calced_max_energy * 0.5f);
-			machine_state |= MACHINESTATE::ACTIVE;
-			restore_state = 0;
-			restore_wait_frames = 0;
-			restore_move_frames = 0;
+		if (soa->restore_move_frames[soa_index] >= 180) {
+			soa->state_2[soa_index] &= ~0x20;
+			respawn_at_checkpoint(soa->last_ground_checkpoint[soa_index]);
+			soa->energy[soa_index] = std::max(soa->energy[soa_index], soa->calced_max_energy[soa_index] * 0.5f);
+			soa->machine_state[soa_index] |= MACHINESTATE::ACTIVE;
+			soa->restore_state[soa_index] = 0;
+			soa->restore_wait_frames[soa_index] = 0;
+			soa->restore_move_frames[soa_index] = 0;
 		}
 	}
 }
 
 void PhysicsCar::check_respawn()
 {
-	if (!current_track)
+	if (!soa->current_track[soa_index])
 		return;
 
-	if (s_boost_active)
+	if (soa->s_boost_active[soa_index])
 		return;
 
-	if (position_current.y < current_track->minimum_y || energy <= 0.0f) {
-		respawn_at_checkpoint(last_ground_checkpoint);
-		if (energy < calced_max_energy * 0.5f)
-			energy = calced_max_energy * 0.5f;
+	if (soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y || soa->energy[soa_index] <= 0.0f) {
+		respawn_at_checkpoint(soa->last_ground_checkpoint[soa_index]);
+		if (soa->energy[soa_index] < soa->calced_max_energy[soa_index] * 0.5f)
+			soa->energy[soa_index] = soa->calced_max_energy[soa_index] * 0.5f;
 	}
 }
 
 void PhysicsCar::post_tick()
 {
-	if (state_2 & 0x8u) {
-		mtxa->assign(basis_physical);
-		mtxa->cur->origin = position_current;
+	TrackQueryScratch scratch;
+	if (soa->state_2[soa_index] & 0x8u) {
 		handle_machine_collision_response();
 	}
 	handle_machine_damage_and_visuals();
-	if (frames_since_start_2 == 0)
+	if (soa->frames_since_start_2[soa_index] == 0)
 	{
-		velocity = godot::Vector3();
-		position_current = initial_pos;
+		STORE_VEC3(velocity, SimVec3());
+		STORE_VEC3(position_current, LOAD_VEC3(initial_pos));
 	}
 
-	handle_checkpoints();
-	if ((machine_state & MACHINESTATE::AIRBORNE) == 0 && (machine_state & MACHINESTATE::ZEROHP) == 0) {
-		last_ground_distance = checkpoint_track_distance;
-		last_ground_checkpoint = current_checkpoint;
+	handle_checkpoints(scratch);
+	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0 && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0) {
+		soa->last_ground_distance[soa_index] = soa->checkpoint_track_distance[soa_index];
+		soa->last_ground_checkpoint[soa_index] = soa->current_checkpoint[soa_index];
 	}
 };
 
 bool PhysicsCar::can_collect_super_spark() const
 {
-	return !s_boost_active && (machine_state & MACHINESTATE::ZEROHP) == 0;
+	return !soa->s_boost_active[soa_index] && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0;
 }
 
 void PhysicsCar::add_super_spark_charge(uint16_t amount)
 {
-	if (s_boost_active || amount == 0)
+	if (soa->s_boost_active[soa_index] || amount == 0)
 		return;
 
-	uint16_t new_charge = s_boost_charge + amount;
-	if (new_charge > s_boost_charge_max)
-		new_charge = s_boost_charge_max;
-	s_boost_charge = new_charge;
+	uint16_t new_charge = soa->s_boost_charge[soa_index] + amount;
+	if (new_charge > soa->s_boost_charge_max[soa_index])
+		new_charge = soa->s_boost_charge_max[soa_index];
+	soa->s_boost_charge[soa_index] = new_charge;
 }
 
 bool PhysicsCar::can_start_s_boost() const
 {
-	return !s_boost_active && s_boost_charge >= s_boost_charge_max;
+	return !soa->s_boost_active[soa_index] && soa->s_boost_charge[soa_index] >= soa->s_boost_charge_max[soa_index];
 }
 
 void PhysicsCar::start_s_boost(uint16_t duration_frames)
@@ -3267,18 +3543,18 @@ void PhysicsCar::start_s_boost(uint16_t duration_frames)
 	if (duration_frames == 0)
 		duration_frames = 1;
 
-	s_boost_active = true;
-	s_boost_frames_remaining = duration_frames;
-	s_boost_charge = 0;
-	s_boost_emit_frame_accumulator = 0;
-	s_boost_pending_spark_spawns = 0;
-	boost_frames = 0;
-	boost_frames_manual = 0;
-	boost_turbo = 0.0f;
-	dashplate_heat_multiplier = 1.0f;
-	boost_delay_frame_counter = 0;
-	car_hit_invincibility = 0;
-	machine_state &= ~(MACHINESTATE::JUST_PRESSED_BOOST |
+	soa->s_boost_active[soa_index] = true;
+	soa->s_boost_frames_remaining[soa_index] = duration_frames;
+	soa->s_boost_charge[soa_index] = 0;
+	soa->s_boost_emit_frame_accumulator[soa_index] = 0;
+	soa->s_boost_pending_spark_spawns[soa_index] = 0;
+	soa->boost_frames[soa_index] = 0;
+	soa->boost_frames_manual[soa_index] = 0;
+	soa->boost_turbo[soa_index] = 0.0f;
+	soa->dashplate_heat_multiplier[soa_index] = 1.0f;
+	soa->boost_delay_frame_counter[soa_index] = 0;
+	soa->car_hit_invincibility[soa_index] = 0;
+	soa->machine_state[soa_index] &= ~(MACHINESTATE::JUST_PRESSED_BOOST |
 		MACHINESTATE::BOOSTING |
 		MACHINESTATE::BOOSTING_DASHPLATE |
 		MACHINESTATE::SIDEATTACKING |
@@ -3289,105 +3565,103 @@ void PhysicsCar::start_s_boost(uint16_t duration_frames)
 
 void PhysicsCar::stop_s_boost()
 {
-	s_boost_active = false;
-	s_boost_frames_remaining = 0;
-	s_boost_emit_frame_accumulator = 0;
-	s_boost_pending_spark_spawns = 0;
+	soa->s_boost_active[soa_index] = false;
+	soa->s_boost_frames_remaining[soa_index] = 0;
+	soa->s_boost_emit_frame_accumulator[soa_index] = 0;
+	soa->s_boost_pending_spark_spawns[soa_index] = 0;
 }
 
 void PhysicsCar::update_s_boost_state()
 {
-	if (!s_boost_active) {
-		s_boost_frames_remaining = 0;
-		s_boost_emit_frame_accumulator = 0;
-		s_boost_pending_spark_spawns = 0;
+	if (!soa->s_boost_active[soa_index]) {
+		soa->s_boost_frames_remaining[soa_index] = 0;
+		soa->s_boost_emit_frame_accumulator[soa_index] = 0;
+		soa->s_boost_pending_spark_spawns[soa_index] = 0;
 		return;
 	}
 
-	if (s_boost_frames_remaining > 0)
-		s_boost_frames_remaining -= 1;
+	if (soa->s_boost_frames_remaining[soa_index] > 0)
+		soa->s_boost_frames_remaining[soa_index] -= 1;
 
-	machine_state &= ~(MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
+	soa->machine_state[soa_index] &= ~(MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
 
-	s_boost_emit_frame_accumulator += 1;
-	while (s_boost_emit_frame_accumulator >= 30) {
-		s_boost_emit_frame_accumulator -= 30;
-		if (s_boost_pending_spark_spawns < 255)
-			s_boost_pending_spark_spawns += 1;
+	soa->s_boost_emit_frame_accumulator[soa_index] += 1;
+	while (soa->s_boost_emit_frame_accumulator[soa_index] >= 30) {
+		soa->s_boost_emit_frame_accumulator[soa_index] -= 30;
+		if (soa->s_boost_pending_spark_spawns[soa_index] < 255)
+			soa->s_boost_pending_spark_spawns[soa_index] += 1;
 	}
 
-	if (s_boost_frames_remaining == 0) {
+	if (soa->s_boost_frames_remaining[soa_index] == 0) {
 		stop_s_boost();
 	}
 }
 
 uint8_t PhysicsCar::consume_pending_s_boost_sparks()
 {
-	uint8_t pending = s_boost_pending_spark_spawns;
-	s_boost_pending_spark_spawns = 0;
+	uint8_t pending = soa->s_boost_pending_spark_spawns[soa_index];
+	soa->s_boost_pending_spark_spawns[soa_index] = 0;
 	return pending;
 }
 
 void PhysicsCar::queue_super_sparks(int count)
 {
-	if (count <= 0 || owning_sim == nullptr)
+	if (count <= 0)
 		return;
-	owning_sim->emit_super_sparks_from_car(*this, count);
+	const int pending = static_cast<int>(soa->pending_super_sparks[soa_index]) + count;
+	soa->pending_super_sparks[soa_index] = static_cast<uint8_t>(pending > 255 ? 255 : pending);
 }
 
 bool PhysicsCar::apply_damage(float impactStrength)
 {
     // Already invulnerable or in breakdown? No damage is processed.
-	if (s_boost_active)
+	if (soa->s_boost_active[soa_index])
 		return false;
 
-	if (breakdown_frame_counter != 0)
+	if (soa->breakdown_frame_counter[soa_index] != 0)
 		return false;
 
-	float rawDamage = impactStrength * stat_body;
+	float rawDamage = impactStrength * soa->stat_body[soa_index];
 
     // Hard cap of 20 for human players
-	if ((machine_state & MACHINESTATE::B10) == 0u)
+	if ((soa->machine_state[soa_index] & MACHINESTATE::B10) == 0u)
 		rawDamage = std::min(rawDamage, 20.0f);
 
     // Never exceed 101 % of maxEnergy
-	const float maxAllowedDamage = 1.01f * calced_max_energy;
+	const float maxAllowedDamage = 1.01f * soa->calced_max_energy[soa_index];
 	rawDamage = std::min(rawDamage, maxAllowedDamage);
 
-	damage_from_last_hit = rawDamage;
-	energy -= rawDamage;
+	soa->damage_from_last_hit[soa_index] = rawDamage;
+	soa->energy[soa_index] -= rawDamage;
 
-	if (energy >= 0.0f)
+	if (soa->energy[soa_index] >= 0.0f)
         return false;  // Machine survives the hit
 
     // Energy fell below zero → breakdown/KO handling
-    energy      = 0.0f;
-    base_speed   = 0.0f;
-    machine_state      |= MACHINESTATE::ZEROHP;
+    soa->energy[soa_index]      = 0.0f;
+    soa->base_speed[soa_index]   = 0.0f;
+    soa->machine_state[soa_index]      |= MACHINESTATE::ZEROHP;
 
     // Start countdown only if race not finished and KO flag wasn’t already set
     const bool canStartBreakdown =
-    (machine_state & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0;
+    (soa->machine_state[soa_index] & (MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::ZEROHP)) == 0;
 
     if (canStartBreakdown)
-    	breakdown_frame_counter = 60;
+    	soa->breakdown_frame_counter[soa_index] = 60;
 
     return canStartBreakdown;
 }
 
-float PhysicsCar::prepare_impact_direction_info(ImpactData &impact, const godot::Vector3 &impactDirWorld)
+float PhysicsCar::prepare_impact_direction_info(ImpactData &impact, const SimVec3 &impactDirWorld)
 {
     // 1)  Transform impact direction into the machine’s local space
-	mtxa->push();
-	mtxa->assign(basis_physical);
 
-	mtxa->cur->origin = position_current;
 
-	impact.relative_dir_local = mtxa->inverse_transform_point(impactDirWorld);
+	impact.relative_dir_local = mxt_inverse_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), impactDirWorld);
 
     /* Subtract the (locally expressed) track-surface normal so that the
        direction truly represents the *relative* approach vector. */
-	godot::Vector3 localTrackNormal = mtxa->inverse_rotate_point(track_surface_normal);
+	SimVec3 localTrackNormal = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(track_surface_normal));
 
 
 	impact.relative_dir_local.x -= localTrackNormal.x;
@@ -3450,23 +3724,22 @@ float PhysicsCar::prepare_impact_direction_info(ImpactData &impact, const godot:
     /* ---------------------------------------------------------------------
      * 4)  Compute scalar speed per unit mass, sanitising NaN/Inf values
      * ------------------------------------------------------------------ */
-    if (!isfinite(velocity.x) ||
-    	!isfinite(velocity.y) ||
-    	!isfinite(velocity.z))
+    if (!std::isfinite(soa->velocity_x[soa_index]) ||
+    	!std::isfinite(soa->velocity_y[soa_index]) ||
+    	!std::isfinite(soa->velocity_z[soa_index]))
     {
     	impact.speed_per_mass = 0.0f;
     } else {
-    	const float speed = sqrtf(velocity.x * velocity.x +
-    		velocity.y * velocity.y +
-    		velocity.z * velocity.z);
-    	impact.speed_per_mass = speed / stat_weight;
+    	const float speed = sqrtf(soa->velocity_x[soa_index] * soa->velocity_x[soa_index] +
+    		soa->velocity_y[soa_index] * soa->velocity_y[soa_index] +
+    		soa->velocity_z[soa_index] * soa->velocity_z[soa_index]);
+    	impact.speed_per_mass = speed / soa->stat_weight[soa_index];
     }
 
     /* ---------------------------------------------------------------------
      * 5)  Rotate the canonical direction back to world space and clean up
      * ------------------------------------------------------------------ */
-    impact.relative_dir_world = mtxa->rotate_point(impact.relative_dir_world);
-    mtxa->pop();
+    impact.relative_dir_world = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), impact.relative_dir_world);
 
     return fabsf(dominant);
 }
@@ -3474,9 +3747,9 @@ float PhysicsCar::prepare_impact_direction_info(ImpactData &impact, const godot:
 float PhysicsCar::scale_collision_impulse_and_damage(bool other_machine_b10_flag)
 {
 	    // Interpret flags once for readability
-	const bool isSpinAttacking = (machine_state & MACHINESTATE::SPINATTACKING) != 0;
-	const bool isSideAttacking = (machine_state & MACHINESTATE::SIDEATTACKING) != 0;
-	const bool isB10           = (machine_state & MACHINESTATE::B10)           != 0;
+	const bool isSpinAttacking = (soa->machine_state[soa_index] & MACHINESTATE::SPINATTACKING) != 0;
+	const bool isSideAttacking = (soa->machine_state[soa_index] & MACHINESTATE::SIDEATTACKING) != 0;
+	const bool isB10           = (soa->machine_state[soa_index] & MACHINESTATE::B10)           != 0;
 	const bool otherIsB10      = other_machine_b10_flag != 0;
 
 	float scale = 1.0f;
@@ -3499,7 +3772,7 @@ float PhysicsCar::scale_collision_impulse_and_damage(bool other_machine_b10_flag
 
     // Spin intensity factor ∈ [0.5 , 1.0]; safe for side-attack (unused then)
     const float spinIntensity =
-    0.5f + 0.5f * spinattack_decrement;
+    0.5f + 0.5f * soa->spinattack_decrement[soa_index];
 
     if (!isB10)   // Machine is *not* in B10 state while attacking
     {
@@ -3523,25 +3796,25 @@ float PhysicsCar::scale_collision_impulse_and_damage(bool other_machine_b10_flag
     return scale;
 }
 
-void PhysicsCar::buildSweepForMachine(float cappedSpeedMps, godot::Vector3 &sweepStartOut, godot::Vector3 &cappedVelocityOut)
+void PhysicsCar::buildSweepForMachine(float cappedSpeedMps, SimVec3 &sweepStartOut, SimVec3 &cappedVelocityOut)
 {
     // Distance travelled during last frame
-	godot::Vector3 delta = position_old_dupe - position_current;
+	SimVec3 delta = LOAD_VEC3(position_old_dupe) - LOAD_VEC3(position_current);
 
 	float travelled = delta.length();
 
 	if (travelled <= 13.88888f)
 	{
-        sweepStartOut     = position_old_dupe;    // use previous position as start
-        cappedVelocityOut = velocity;
+        sweepStartOut     = LOAD_VEC3(position_old_dupe);    // use previous position as start
+        cappedVelocityOut = LOAD_VEC3(velocity);
     }
     else
     {
     	delta = set_vec3_length(-delta, 13.88888f);
 
-    	sweepStartOut = position_current + delta;
+    	sweepStartOut = LOAD_VEC3(position_current) + delta;
 
-    	cappedVelocityOut = set_vec3_length(velocity, cappedSpeedMps);
+    	cappedVelocityOut = set_vec3_length(LOAD_VEC3(velocity), cappedSpeedMps);
     }
 }
 
@@ -3550,10 +3823,10 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     // #########################################################
     //  Very early outs
     // #########################################################
-	if (s_boost_active || other_machine.s_boost_active) {
+	if (soa->s_boost_active[soa_index] || other_machine.soa->s_boost_active[other_machine.soa_index]) {
 		return false;
 	}
-    //if (((state_2 | other_machine.state_2) & 0x10) != 0)   // machines excluded from physics
+    //if (((soa->state_2[soa_index] | other_machine.soa->state_2[other_machine.soa_index]) & 0x10) != 0)   // machines excluded from physics
     //    return false;
 
     // #########################################################
@@ -3565,14 +3838,14 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     // #########################################################
     //  Quick broad-phase distance test (current positions)
     // #########################################################
-	const godot::Vector3 p1 = position_current;
-	const godot::Vector3 p2 = other_machine.position_current;
+	const SimVec3 p1 = LOAD_VEC3(position_current);
+	const SimVec3 p2 = LOAD_CAR_VEC3(other_machine, position_current);
 
-	godot::Vector3 diff = p1 - p2;
+	SimVec3 diff = p1 - p2;
 	const float relativeDistance = diff.length_squared();
 
 	const float speedPadding =
-        speed_kmh / 216.0f + other_machine.speed_kmh / 216.0f;    // copied literal from original
+        soa->speed_kmh[soa_index] / 216.0f + other_machine.soa->speed_kmh[other_machine.soa_index] / 216.0f;    // copied literal from original
         const float dist_term = radius1 + radius2 + speedPadding;
         if (relativeDistance > dist_term * dist_term)
         {
@@ -3583,11 +3856,11 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     // #########################################################
     //  Build swept-sphere volumes for a more precise test
     // #########################################################
-        godot::Vector3 sweepStart1, sweepStart2;
-        godot::Vector3 cappedVel1,  cappedVel2;
+        SimVec3 sweepStart1, sweepStart2;
+        SimVec3 cappedVel1,  cappedVel2;
 
-        buildSweepForMachine(13.88888f * stat_weight, sweepStart1, cappedVel1);
-        other_machine.buildSweepForMachine(13.88888f * other_machine.stat_weight, sweepStart2, cappedVel2);
+        buildSweepForMachine(13.88888f * soa->stat_weight[soa_index], sweepStart1, cappedVel1);
+        other_machine.buildSweepForMachine(13.88888f * other_machine.soa->stat_weight[other_machine.soa_index], sweepStart2, cappedVel2);
 
     float      hitTime            = 0.0f;   // returned by helper (0…1)
     uint32_t   already_intersecting = 0;      // ditto
@@ -3609,11 +3882,11 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     const float combinedRadius = radius1 + radius2;
     const float reverseTime    = 1.0f - hitTime; // helper returns “time until”, we need “at impact”
 
-    godot::Vector3 posAtImpact1, posAtImpact2;
+    SimVec3 posAtImpact1, posAtImpact2;
     ray_scale(reverseTime, sweepStart1, p1, posAtImpact1);
     ray_scale(reverseTime, sweepStart2, p2, posAtImpact2);
 
-    godot::Vector3 deltaImpact = posAtImpact2 - posAtImpact1;
+    SimVec3 deltaImpact = posAtImpact2 - posAtImpact1;
 
     const float separation = deltaImpact.length();
 
@@ -3628,17 +3901,17 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     // #########################################################
 
     //  Push the machines apart so that they *just* touch
-    godot::Vector3 collisionNormal = deltaImpact.normalized();
+    SimVec3 collisionNormal = deltaImpact.normalized();
 
     const float pushBack = 0.5f * ((0.01f + combinedRadius) - separation);
 
     // Move positions
-    position_current = posAtImpact1 - collisionNormal * pushBack;
+    STORE_VEC3(position_current, posAtImpact1 - collisionNormal * pushBack);
 
-    other_machine.position_current = posAtImpact2 + collisionNormal * pushBack;
+    STORE_CAR_VEC3(other_machine, position_current, posAtImpact2 + collisionNormal * pushBack);
 
     // Mid-point of the impact for later normal computations
-    godot::Vector3 impactMid = 0.5f * (position_current + other_machine.position_current);
+    SimVec3 impactMid = 0.5f * (LOAD_VEC3(position_current) + LOAD_CAR_VEC3(other_machine, position_current));
 
     //  Prepare impact axis info in world-space
     ImpactData impactInfo1;
@@ -3647,86 +3920,86 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     float impulseScale1 = prepare_impact_direction_info(impactInfo1, impactMid);
     float impulseScale2 = other_machine.prepare_impact_direction_info(impactInfo2, impactMid);
 
-    godot::Vector3 worldImpactAxis = (impulseScale1 <= impulseScale2)
+    SimVec3 worldImpactAxis = (impulseScale1 <= impulseScale2)
     ? -impactInfo2.relative_dir_world
     : impactInfo1.relative_dir_world;
 
-    //  Calculate pre-impact relative velocity along normal
+    //  Calculate pre-impact relative LOAD_VEC3(velocity) along normal
     const float velLen1 = cappedVel1.length();
 
     float relSpeed1 = 0.0f;
     if (velLen1 > 0.00000011920929f)
-        //relSpeed1 = vec3_normalized_dot_product(&worldImpactAxis, &cappedVel1) * velLen1 / stat_weight;
-    	relSpeed1 = worldImpactAxis.normalized().dot(cappedVel1.normalized()) * velLen1 / stat_weight;
+        //relSpeed1 = vec3_normalized_dot_product(&worldImpactAxis, &cappedVel1) * velLen1 / soa->stat_weight[soa_index];
+    	relSpeed1 = worldImpactAxis.normalized().dot(cappedVel1.normalized()) * velLen1 / soa->stat_weight[soa_index];
 
     const float velLen2 = cappedVel2.length();
 
     float relSpeed2 = 0.0f;
     if (velLen2 > 0.00000011920929f)
-    	relSpeed2 = worldImpactAxis.normalized().dot(cappedVel2.normalized()) * velLen2 / other_machine.stat_weight;
+    	relSpeed2 = worldImpactAxis.normalized().dot(cappedVel2.normalized()) * velLen2 / other_machine.soa->stat_weight[other_machine.soa_index];
 
     const float impulseNumerator = 2.0f * (relSpeed1 - relSpeed2);
-    const float impulseDenominator = stat_weight + other_machine.stat_weight;
+    const float impulseDenominator = soa->stat_weight[soa_index] + other_machine.soa->stat_weight[other_machine.soa_index];
     const float normalImpulse = impulseNumerator / impulseDenominator;
 
     //  Apply base-speed knock-back
     const float BASE_SPEED_SCALE = 800.0f;
-    base_speed += BASE_SPEED_SCALE *  impactInfo1.impact_axis_z * normalImpulse;
-    other_machine.base_speed += BASE_SPEED_SCALE *  impactInfo2.impact_axis_z * normalImpulse;
+    soa->base_speed[soa_index] += BASE_SPEED_SCALE *  impactInfo1.impact_axis_z * normalImpulse;
+    other_machine.soa->base_speed[other_machine.soa_index] += BASE_SPEED_SCALE *  impactInfo2.impact_axis_z * normalImpulse;
 
-    if (base_speed < 0.0f) base_speed = 0.0f;
-    if (other_machine.base_speed < 0.0f) other_machine.base_speed = 0.0f;
+    if (soa->base_speed[soa_index] < 0.0f) soa->base_speed[soa_index] = 0.0f;
+    if (other_machine.soa->base_speed[other_machine.soa_index] < 0.0f) other_machine.soa->base_speed[other_machine.soa_index] = 0.0f;
 
     //  Collision response vectors (damped by surface normal)
-    const float impulse1      =  stat_weight *  normalImpulse;
-    const float impulse2      = -other_machine.stat_weight *  normalImpulse;
-    float scaledImpulse1  = scale_collision_impulse_and_damage(other_machine.machine_state & MACHINESTATE::B10);
-    float scaledImpulse2 = other_machine.scale_collision_impulse_and_damage(machine_state & MACHINESTATE::B10);
+    const float impulse1      =  soa->stat_weight[soa_index] *  normalImpulse;
+    const float impulse2      = -other_machine.soa->stat_weight[other_machine.soa_index] *  normalImpulse;
+    float scaledImpulse1  = scale_collision_impulse_and_damage(other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10);
+    float scaledImpulse2 = other_machine.scale_collision_impulse_and_damage(soa->machine_state[soa_index] & MACHINESTATE::B10);
 
-    if (machine_state & MACHINESTATE::ZEROHP)
+    if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP)
     {
     	scaledImpulse1 *= 1.5f;
     	scaledImpulse2 *= 1.2f;
     }
-    if (other_machine.machine_state & MACHINESTATE::ZEROHP)
+    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP)
     {
     	scaledImpulse2 *= 1.5f;
     	scaledImpulse1 *= 1.2f;
     }
 
-    const float responseScale1 = scaledImpulse2 * impulse2 * stat_weight;
-    const float responseScale2 = scaledImpulse1 * impulse1 * other_machine.stat_weight;
+    const float responseScale1 = scaledImpulse2 * impulse2 * soa->stat_weight[soa_index];
+    const float responseScale2 = scaledImpulse1 * impulse1 * other_machine.soa->stat_weight[other_machine.soa_index];
 
-    godot::Vector3 response1 = collisionNormal * responseScale1 - 0.95f * collisionNormal * responseScale1 * track_surface_normal;
-    godot::Vector3 response2 = collisionNormal * responseScale2 - 0.95f * collisionNormal * responseScale2 * other_machine.track_surface_normal;
+    SimVec3 response1 = collisionNormal * responseScale1 - 0.95f * collisionNormal * responseScale1 * LOAD_VEC3(track_surface_normal);
+    SimVec3 response2 = collisionNormal * responseScale2 - 0.95f * collisionNormal * responseScale2 * LOAD_CAR_VEC3(other_machine, track_surface_normal);
 
-    collision_response = response1;
-    other_machine.collision_response = response2;
+    STORE_VEC3(collision_response, response1);
+    STORE_CAR_VEC3(other_machine, collision_response, response2);
 
     const bool anySideAttack =
-    (machine_state | other_machine.machine_state) &
+    (soa->machine_state[soa_index] | other_machine.soa->machine_state[other_machine.soa_index]) &
     (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
 
     float velScale1 = anySideAttack ? 1.5f : 2.2f;
     float velScale2 = velScale1;
 
-    if (machine_state & MACHINESTATE::B30) velScale1 = 1.0f;
-    if (other_machine.machine_state & MACHINESTATE::B30) velScale2 = 1.0f;
+    if (soa->machine_state[soa_index] & MACHINESTATE::B30) velScale1 = 1.0f;
+    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B30) velScale2 = 1.0f;
 
     auto applyResponse =
-    [](PhysicsCar &mach, const godot::Vector3 cappedVel,
-    	const godot::Vector3 resp, float scale)
+    [](PhysicsCar &mach, const SimVec3 cappedVel,
+    	const SimVec3 resp, float scale)
     {
-    	float lenV    = mach.velocity.length();
+    	float lenV    = LOAD_CAR_VEC3(mach, velocity).length();
 
-    	godot::Vector3 newResp  = { resp.x * scale, resp.y * scale, resp.z * scale };
+    	SimVec3 newResp  = { resp.x * scale, resp.y * scale, resp.z * scale };
 
     	if (lenV > 0.1f)
     	{
     		float lenResp = resp.length();
     		if (lenResp > 0.1f)
     		{
-                float dot = mach.velocity.normalized().dot(resp.normalized()); //vec3_normalized_dot_product(&mach->velocity, &resp);
+                float dot = LOAD_CAR_VEC3(mach, velocity).normalized().dot(resp.normalized()); //vec3_normalized_dot_product(&mach->soa->velocity[mach->soa_index], &resp);
                 if (dot > 0.0f) dot = 0.0f;
                 const float adjust = 1.0f + 0.7f * dot;
                 newResp.x *= adjust;
@@ -3735,9 +4008,9 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
             }
         }
 
-        mach.velocity.x = newResp.x + cappedVel.x;
-        mach.velocity.y = newResp.y + cappedVel.y;
-        mach.velocity.z = newResp.z + cappedVel.z;
+        mach.soa->velocity_x[mach.soa_index] = newResp.x + cappedVel.x;
+        mach.soa->velocity_y[mach.soa_index] = newResp.y + cappedVel.y;
+        mach.soa->velocity_z[mach.soa_index] = newResp.z + cappedVel.z;
     };
 
     applyResponse(*this, cappedVel1, response1, velScale1);
@@ -3746,92 +4019,86 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
     // #########################################################
     //  Matrix-space feedback, damage and rumble logic
     // #########################################################
-    mtxa->push();
 
-    const bool bothHaveBlades   = (machine_state & MACHINESTATE::B10) &&
-    (other_machine.machine_state & MACHINESTATE::B10);
+    const bool bothHaveBlades   = (soa->machine_state[soa_index] & MACHINESTATE::B10) &&
+    (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10);
 
     bool canDamageM1 = true, canDamageM2 = true;
 
-    if (!(machine_state & MACHINESTATE::B10))
+    if (!(soa->machine_state[soa_index] & MACHINESTATE::B10))
     {
-    	if ((other_machine.machine_state & MACHINESTATE::B10) &&
-    		(machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) &&
-    		!(other_machine.machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)))
+    	if ((other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10) &&
+    		(soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) &&
+    		!(other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)))
     		canDamageM1 = false;
     }
     else
     {
-    	if (!(other_machine.machine_state & MACHINESTATE::B10) &&
-    		(other_machine.machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) &&
-    		!(machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)))
+    	if (!(other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10) &&
+    		(other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) &&
+    		!(soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)))
     		canDamageM2 = false;
     }
 
     // -----  Machine-1 matrix feedback  -----
-    mtxa->assign(basis_physical);
 
-    godot::Vector3 halfNormalM1(-collisionNormal * 0.5f);
-    halfNormalM1 = mtxa->inverse_rotate_point(halfNormalM1);
+    SimVec3 halfNormalM1(-collisionNormal * 0.5f);
+    halfNormalM1 = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), halfNormalM1);
 
-    godot::Vector3 localResp1;
-    localResp1 = mtxa->inverse_rotate_point(response1);
+    SimVec3 localResp1;
+    localResp1 = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), response1);
 
-    visual_rotation.z  += localResp1.x;
-    visual_rotation.x += localResp1.z;
+    soa->visual_rotation_z[soa_index]  += localResp1.x;
+    soa->visual_rotation_x[soa_index] += localResp1.z;
 
     float respLen1 = response1.length();
 
     float dmg1 = (impulseScale2 * (0.002f * respLen1)) / impulseScale1;
     if (bothHaveBlades) dmg1 *= 0.001f;
-    if (other_machine.machine_state & MACHINESTATE::ZEROHP) dmg1 *= 0.3f;
+    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) dmg1 *= 0.3f;
 
     const bool killM1 =
     canDamageM1 &&
-    car_hit_invincibility == 0 &&
+    soa->car_hit_invincibility[soa_index] == 0 &&
     apply_damage(dmg1);
 
-    // -----  Machine-2 matrix feedback  -----
-    mtxa->assign(other_machine.basis_physical);
+    SimVec3 halfNormalM2(collisionNormal * 0.5f);
 
-    godot::Vector3 halfNormalM2(collisionNormal * 0.5f);
+    halfNormalM2 = mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), halfNormalM2);
 
-    halfNormalM2 = mtxa->inverse_rotate_point(halfNormalM2);
+    SimVec3 localResp2;
+    localResp2 = mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), response2);
 
-    godot::Vector3 localResp2;
-    localResp2 = mtxa->inverse_rotate_point(response2);
-
-    other_machine.visual_rotation.z += localResp2.x;
-    other_machine.visual_rotation.x += localResp2.z;
+    other_machine.soa->visual_rotation_z[other_machine.soa_index] += localResp2.x;
+    other_machine.soa->visual_rotation_x[other_machine.soa_index] += localResp2.z;
 
     float respLen2 = response2.length();
 
     float dmg2 = (impulseScale1 * (0.002f * respLen2)) / impulseScale2;
     if (bothHaveBlades) dmg2 *= 0.001f;
-    if (machine_state & MACHINESTATE::ZEROHP) dmg2 *= 0.3f;
+    if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) dmg2 *= 0.3f;
 
     const bool killM2 =
     canDamageM2 &&
-    other_machine.car_hit_invincibility == 0 &&
+    other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0 &&
     other_machine.apply_damage(dmg2);
 
     const float combinedDamage = dmg1 + dmg2;
 
-    if (machine_state & MACHINESTATE::ZEROHP) energy = 0.0f;
-    if (other_machine.machine_state & MACHINESTATE::ZEROHP) other_machine.energy = 0.0f;
+    if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) soa->energy[soa_index] = 0.0f;
+    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) other_machine.soa->energy[other_machine.soa_index] = 0.0f;
 
-    mtxa->pop();
 
     // #########################################################
     //  Set “just hit” flags so other subsystems can react
     // #########################################################
-    machine_state |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
-    other_machine.machine_state |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
+    soa->machine_state[soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
+    other_machine.soa->machine_state[other_machine.soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
 
-	if (frames_since_start_2 == 0) {
+	if (soa->frames_since_start_2[soa_index] == 0) {
 		apply_initial_accel_activation(0.0f);
 	}
-	if (other_machine.frames_since_start_2 == 0) {
+	if (other_machine.soa->frames_since_start_2[other_machine.soa_index] == 0) {
 		other_machine.apply_initial_accel_activation(0.0f);
 	}
 
@@ -3842,72 +4109,30 @@ void PhysicsCar::test_collision_with_other_car(PhysicsCar &other_car)
 {
 	constexpr float fixed_radius = 2.0f;
 	constexpr float r_sum_sq = (fixed_radius * 2.0f) * (fixed_radius * 2.0f);
-	if (position_current.distance_squared_to(other_car.position_current) > r_sum_sq)
+	if (LOAD_VEC3(position_current).distance_squared_to(LOAD_CAR_VEC3(other_car, position_current)) > r_sum_sq)
 		return;
-	godot::Vector3 relative_velocity = velocity - other_car.velocity;
-	godot::Vector3 dir = other_car.position_current - position_current;
+	SimVec3 relative_velocity = LOAD_VEC3(velocity) - LOAD_CAR_VEC3(other_car, velocity);
+	SimVec3 dir = LOAD_CAR_VEC3(other_car, position_current) - LOAD_VEC3(position_current);
 	//if (dir.dot(relative_velocity) <= 0.0f)
 	//{
 	//	return;
 	//}
-	godot::Vector3 normal = dir.normalized();
-	float proj = (other_car.position_current - position_current).dot(normal);
+	SimVec3 normal = dir.normalized();
+	float proj = (LOAD_CAR_VEC3(other_car, position_current) - LOAD_VEC3(position_current)).dot(normal);
 	float overlap = fixed_radius - proj;
 	if (overlap <= 0.0f)	return;			// already separated
 	// move each centre to opposite sides of the midpoint plane
 	float shift = 0.5f * overlap;			// half for each car
-	position_current      -= normal * shift;
-	other_car.position_current += normal * shift;
+	SUB_VEC3(position_current, normal * shift);
+	STORE_CAR_VEC3(other_car, position_current, LOAD_CAR_VEC3(other_car, position_current) + (normal * shift));
 	float impulse_strength = relative_velocity.dot(normal);
-	godot::Vector3 impulse = normal * impulse_strength;
-	velocity -= impulse * other_car.stat_weight * 0.001;
-	other_car.velocity += impulse * stat_weight * 0.001;
+	SimVec3 impulse = normal * impulse_strength;
+	SUB_VEC3(velocity, impulse * other_car.soa->stat_weight[other_car.soa_index] * 0.001);
+	STORE_CAR_VEC3(other_car, velocity, LOAD_CAR_VEC3(other_car, velocity) + (impulse * soa->stat_weight[soa_index] * 0.001));
 };
 
-void PhysicsCar::tick(PlayerInput input, uint32_t tick_count)
+void PhysicsCar::motion_tick(PlayerInput input)
 {
-	float accel_raw = input.accelerate;
-	simulation_tick = tick_count;
-	update_s_boost_state();
-	update_restore(accel_raw);
-
-	calced_max_energy = car_properties->max_energy;
-	initial_pos = position_current;
-	side_attack_indicator = 0.0f;
-
-	if (tick_count < level_start_time - 180) {
-		machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
-		machine_state &= ~MACHINESTATE::ACTIVE;
-	} else if (tick_count < level_start_time) {
-		machine_state |= MACHINESTATE::STARTINGCOUNTDOWN;
-		if (input_accel > 0.01f)
-			machine_state |= MACHINESTATE::ACTIVE;
-	} else {
-		machine_state &= ~MACHINESTATE::STARTINGCOUNTDOWN;
-	}
-
-	if (machine_state & MACHINESTATE::ZEROHP) {
-		input.steer_horizontal = 0.0f;
-		input.steer_vertical = 0.0f;
-		input.boost = false;
-		input.brake = 0.0f;
-		input.strafe_left = 0.0f;
-		input.strafe_right = 0.0f;
-	}
-
-	if (input.sideattack)
-		machine_state |= MACHINESTATE::SIDEATTACKING;
-	if (input.spinattack)
-		machine_state |= MACHINESTATE::SPINATTACKING;
-	if (input.boost && lap > 1)
-		machine_state |= MACHINESTATE::JUST_PRESSED_BOOST;
-
-	g_anim_timer += 1;
-	track_surface_normal_prev = track_surface_normal;
-	if (restore_state != 2)
+	if (soa->restore_state[soa_index] != 2)
 		simulate_machine_motion(input);
-
-	mtxa->assign(basis_physical);
-	mtxa->cur->origin = position_current;
-	position_behind = mtxa->transform_point(godot::Vector3(0.0f, 0.5f, 0.5f));
-};
+}

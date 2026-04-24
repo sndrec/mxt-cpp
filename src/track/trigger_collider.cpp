@@ -44,42 +44,42 @@ static float sample_dashplate_heat_delta(float elapsed_seconds)
 }
 }
 
-uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, const godot::Vector3 &p0, const godot::Vector3 &p1) const
+uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, const SimVec3 &p0, const SimVec3 &p1) const
 {
 	bool should_continue = false;
-    if (cp_idx == checkpoint_index)
-        should_continue = true;
+	if (cp_idx == checkpoint_index)
+		should_continue = true;
 
-   	if (!should_continue)
-   	{
-   		for (int i = 0; i < in_racetrack->checkpoints[checkpoint_index].num_neighboring_checkpoints; i++)
-   		{
-   			if (in_racetrack->checkpoints[checkpoint_index].neighboring_checkpoints[i] == cp_idx)
-   			{
-   				should_continue = true;
-   				break;
-   			}
-   		}
-   	}
-   	if (!should_continue)
-   	{
-   		return 0;
-   	}
+	if (!should_continue)
+	{
+		for (int i = 0; i < in_racetrack->checkpoints[checkpoint_index].num_neighboring_checkpoints; i++)
+		{
+			if (in_racetrack->checkpoints[checkpoint_index].neighboring_checkpoints[i] == cp_idx)
+			{
+				should_continue = true;
+				break;
+			}
+		}
+	}
+	if (!should_continue)
+	{
+		return 0;
+	}
    	//DEBUG::disp_text("real test", cp_idx);
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
-	//godot::Transform3D use_transform;
+	//SimTransform use_transform;
 	//use_transform = transform.scaled_local(half_extents * 2.0);
 	//dd3d->call("draw_box_xf", use_transform, godot::Color(1.0f, 1.0f, 1.0f, 1.0f), true, 0.1f);
    	//DEBUG::disp_text("trigger origin", use_transform.origin);
    	//DEBUG::disp_text("trigger basis", use_transform.basis);
 
-    const godot::Vector3 p0_local = inv_transform.xform(p0);
-    const godot::Vector3 p1_local = inv_transform.xform(p1);
+    const SimVec3 p0_local = inv_transform.xform(p0);
+    const SimVec3 p1_local = inv_transform.xform(p1);
 
-    const godot::Vector3 min = -half_extents;
-    const godot::Vector3 max = half_extents;
+    const SimVec3 min = -half_extents;
+    const SimVec3 max = half_extents;
 
-    auto point_inside = [&](const godot::Vector3 &p) -> bool {
+    auto point_inside = [&](const SimVec3 &p) -> bool {
         return (p.x >= min.x && p.x <= max.x &&
                 p.y >= min.y && p.y <= max.y &&
                 p.z >= min.z && p.z <= max.z);
@@ -97,7 +97,7 @@ uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, 
 
     float tmin = 0.0f;
     float tmax = 1.0f;
-    const godot::Vector3 d = p1_local - p0_local;
+    const SimVec3 d = p1_local - p0_local;
 
     for (int axis = 0; axis < 3; ++axis) {
         const float start = p0_local[axis];
@@ -160,7 +160,7 @@ void Dashplate::start_touch(PhysicsCar* car)
 	if (!car)
 		return;
 
-	uint32_t current_tick = car->simulation_tick;
+	uint32_t current_tick = car->soa->simulation_tick[car->soa_index];
 	float elapsed_seconds = 0.0f;
 	if (has_last_activation) {
 		if (current_tick >= last_activation_tick) {
@@ -184,7 +184,7 @@ void Dashplate::start_touch(PhysicsCar* car)
 	last_activation_tick = current_tick;
 
 	float turbo_multiplier = 1.0f + heat * kHeatTurboMultiplier;
-	car->dashplate_heat_multiplier = turbo_multiplier;
+	car->soa->dashplate_heat_multiplier[car->soa_index] = turbo_multiplier;
 }
 
 void Dashplate::touch(PhysicsCar* car) {}

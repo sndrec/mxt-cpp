@@ -20,14 +20,86 @@
 #include <cfenv>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <algorithm>
 #include <numeric>
+#include <new>
 #include <vector>
+#if defined(_MSC_VER)
+#include <malloc.h>
+#endif
+#if defined(__SSE__)
+#include <xmmintrin.h>
+#endif
 #include "mxt_core/debug.hpp"
 
 using namespace godot;
 
+#define LOAD_INDEXED_VEC3(storage, name, index) SimVec3((storage).name##_x[(index)], (storage).name##_y[(index)], (storage).name##_z[(index)])
+#define STORE_INDEXED_VEC3(storage, name, index, value) do { const SimVec3 mxt_v3_tmp = (value); (storage).name##_x[(index)] = mxt_v3_tmp.x; (storage).name##_y[(index)] = mxt_v3_tmp.y; (storage).name##_z[(index)] = mxt_v3_tmp.z; } while (0)
+
 namespace {
+	static inline godot::Vector3 gd_vec3(const SimVec3& v)
+	{
+		return godot::Vector3(v.x, v.y, v.z);
+	}
+
+	static inline godot::Basis gd_basis(const SimBasis& b)
+	{
+		godot::Basis out;
+		out.set_column(0, gd_vec3(b.c0));
+		out.set_column(1, gd_vec3(b.c1));
+		out.set_column(2, gd_vec3(b.c2));
+		return out;
+	}
+
+	static inline godot::Transform3D gd_transform(const SimTransform& t)
+	{
+		return godot::Transform3D(gd_basis(t.basis), gd_vec3(t.origin));
+	}
+
+	static inline godot::AABB gd_aabb(const SimAABB& b)
+	{
+		return godot::AABB(gd_vec3(b.position), gd_vec3(b.size));
+	}
+
+	static void* alloc_cache_aligned(size_t size)
+	{
+#if defined(_MSC_VER)
+		return _aligned_malloc(size, 64);
+#else
+		void* ptr = nullptr;
+		if (posix_memalign(&ptr, 64, size) != 0) {
+			return nullptr;
+		}
+		return ptr;
+#endif
+	}
+
+	static void free_cache_aligned(void* ptr)
+	{
+#if defined(_MSC_VER)
+		_aligned_free(ptr);
+#else
+		::free(ptr);
+#endif
+	}
+
+	static inline SimVec3 sim_vec3(const godot::Vector3& v)
+	{
+		return SimVec3(v.x, v.y, v.z);
+	}
+
+	static inline SimBasis sim_basis(const godot::Basis& b)
+	{
+		return SimBasis(b[0].x, b[0].y, b[0].z, b[1].x, b[1].y, b[1].z, b[2].x, b[2].y, b[2].z);
+	}
+
+	static inline SimTransform sim_transform(const godot::Transform3D& t)
+	{
+		return SimTransform(sim_basis(t.basis), sim_vec3(t.origin));
+	}
+
 	struct DipSwitchDefinition {
 		const char* key;
 		const char* label;
@@ -42,6 +114,764 @@ namespace {
 		{"DIP_DRAW_SEG_BOUNDS", "Draw Segment Bounds", DIP_SWITCH::DIP_DRAW_SEG_BOUNDS},
 		{"DIP_DRAW_BRANCH_CENTERLINE", "Draw Branch Centerline", DIP_SWITCH::DIP_DRAW_BRANCH_CENTERLINE},
 	};
+
+	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			PlayerInput& input = inputs[i];
+			const float accel_raw = input.accelerate;
+			c.simulation_tick[i] = tick_count;
+
+			if (!c.s_boost_active[i]) {
+				c.s_boost_frames_remaining[i] = 0;
+				c.s_boost_emit_frame_accumulator[i] = 0;
+				c.s_boost_pending_spark_spawns[i] = 0;
+			} else {
+				if (c.s_boost_frames_remaining[i] > 0)
+					c.s_boost_frames_remaining[i] -= 1;
+
+				c.machine_state[i] &= ~(MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
+
+				c.s_boost_emit_frame_accumulator[i] += 1;
+				while (c.s_boost_emit_frame_accumulator[i] >= 30) {
+					c.s_boost_emit_frame_accumulator[i] -= 30;
+					if (c.s_boost_pending_spark_spawns[i] < 255)
+						c.s_boost_pending_spark_spawns[i] += 1;
+				}
+
+				if (c.s_boost_frames_remaining[i] == 0) {
+					c.s_boost_active[i] = false;
+					c.s_boost_emit_frame_accumulator[i] = 0;
+					c.s_boost_pending_spark_spawns[i] = 0;
+				}
+			}
+
+			const bool needs_restore =
+				c.current_track[i] &&
+				!c.s_boost_active[i] &&
+				(c.restore_state[i] != 0 ||
+				 c.position_current_y[i] < c.current_track[i]->minimum_y ||
+				 c.energy[i] <= 0.0f);
+			if (needs_restore) {
+				car_views[i].update_restore(accel_raw);
+			}
+
+			c.calced_max_energy[i] = c.car_properties[i]->max_energy;
+			STORE_INDEXED_VEC3(c, initial_pos, i, LOAD_INDEXED_VEC3(c, position_current, i));
+			c.side_attack_indicator[i] = 0.0f;
+
+			if (tick_count < c.level_start_time[i] - 180) {
+				c.machine_state[i] |= MACHINESTATE::STARTINGCOUNTDOWN;
+				c.machine_state[i] &= ~MACHINESTATE::ACTIVE;
+			} else if (tick_count < c.level_start_time[i]) {
+				c.machine_state[i] |= MACHINESTATE::STARTINGCOUNTDOWN;
+				if (c.input_accel[i] > 0.01f)
+					c.machine_state[i] |= MACHINESTATE::ACTIVE;
+			} else {
+				c.machine_state[i] &= ~MACHINESTATE::STARTINGCOUNTDOWN;
+			}
+
+			if (c.machine_state[i] & MACHINESTATE::ZEROHP) {
+				input.steer_horizontal = 0.0f;
+				input.steer_vertical = 0.0f;
+				input.boost = false;
+				input.brake = 0.0f;
+				input.strafe_left = 0.0f;
+				input.strafe_right = 0.0f;
+			}
+
+			if (input.sideattack)
+				c.machine_state[i] |= MACHINESTATE::SIDEATTACKING;
+			if (input.spinattack)
+				c.machine_state[i] |= MACHINESTATE::SPINATTACKING;
+			if (input.boost && c.lap[i] > 1)
+				c.machine_state[i] |= MACHINESTATE::JUST_PRESSED_BOOST;
+
+			c.g_anim_timer[i] += 1;
+			STORE_INDEXED_VEC3(c, track_surface_normal_prev, i, LOAD_INDEXED_VEC3(c, track_surface_normal, i));
+		}
+	}
+
+	static void finish_vehicle_tick_soa(PhysicsCarSoA& c, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			SimTransform basis = MXT_LOAD_TRANSFORM(c, basis_physical, i);
+			const SimVec3 pos(c.position_current_x[i], c.position_current_y[i], c.position_current_z[i]);
+			const SimVec3 behind = basis.basis.xform(SimVec3(0.0f, 0.5f, 0.5f)) + pos;
+			c.position_behind_x[i] = behind.x;
+			c.position_behind_y[i] = behind.y;
+			c.position_behind_z[i] = behind.z;
+		}
+	}
+
+	static inline uint32_t elapsed_us(std::chrono::high_resolution_clock::time_point start,
+		std::chrono::high_resolution_clock::time_point end)
+	{
+		return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
+	}
+
+	static void update_damage_visual_geometry_soa(PhysicsCarSoA& c, int count);
+	static void project_startup_velocity_and_speed_soa(PhysicsCarSoA& c, int count);
+
+	static void post_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, uint8_t* pending_s_boost_sparks, int count,
+		TrackQueryScratch &scratch,
+		uint32_t& response_us, uint32_t& checkpoints_us, uint32_t& sparks_us,
+		uint32_t& sample_old_us, uint32_t& corners_us, uint32_t& apply_response_us,
+		uint32_t& project_speed_us, uint32_t& visual_geom_us, uint32_t& damage_tail_us)
+	{
+		auto phase_start = std::chrono::high_resolution_clock::now();
+		for (int i = 0; i < count; ++i) {
+			if (c.state_2[i] & 0x8u) {
+				car_views[i].sample_old_corner_collision_surface(scratch);
+			}
+		}
+		auto now = std::chrono::high_resolution_clock::now();
+		sample_old_us = elapsed_us(phase_start, now);
+
+		phase_start = now;
+		uint32_t apply_response_accum_us = 0;
+		for (int i = 0; i < count; ++i) {
+			if (c.state_2[i] & 0x8u) {
+				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch);
+				const SimVec3 rail_push = LOAD_INDEXED_VEC3(c, collision_push_rail, i);
+				const SimVec3 track_push = LOAD_INDEXED_VEC3(c, collision_push_track, i);
+				const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
+				const float push_magnitude_rail = rail_push.length();
+				const float push_magnitude_track = track_push.length();
+				const float current_world_speed = velocity.length();
+				float speed_over_weight = 0.0f;
+				if (std::abs(c.stat_weight[i]) > 0.0001f) {
+					speed_over_weight = current_world_speed / c.stat_weight[i];
+				}
+				const bool significant_collision =
+					push_magnitude_rail > 0.0046296296f && speed_over_weight > 0.0046296296f;
+				const bool full_response =
+					c.frames_since_start_2[i] > 0x3c && significant_collision &&
+					(corner_collision_type_flag & 2) &&
+					(c.machine_state[i] & MACHINESTATE::LOWGRIP) == 0;
+				const bool landing_response =
+					(c.machine_state[i] & MACHINESTATE::JUSTLANDED) &&
+					speed_over_weight >= 0.0462962962962f;
+				if (push_magnitude_track > 0.0023148148f || push_magnitude_rail > 0.0023148148f ||
+					full_response || landing_response) {
+					auto apply_start = std::chrono::high_resolution_clock::now();
+					car_views[i].apply_machine_collision_response_from_corners(corner_collision_type_flag,
+						push_magnitude_rail, push_magnitude_track, current_world_speed, speed_over_weight, false);
+					auto apply_end = std::chrono::high_resolution_clock::now();
+					apply_response_accum_us += elapsed_us(apply_start, apply_end);
+				}
+			}
+		}
+		now = std::chrono::high_resolution_clock::now();
+		apply_response_us = apply_response_accum_us;
+		const uint32_t corner_and_apply_us = elapsed_us(phase_start, now);
+		corners_us = corner_and_apply_us > apply_response_us ? corner_and_apply_us - apply_response_us : 0;
+
+		phase_start = now;
+		project_startup_velocity_and_speed_soa(c, count);
+		now = std::chrono::high_resolution_clock::now();
+		project_speed_us = elapsed_us(phase_start, now);
+
+		phase_start = now;
+		update_damage_visual_geometry_soa(c, count);
+		now = std::chrono::high_resolution_clock::now();
+		visual_geom_us = elapsed_us(phase_start, now);
+
+		phase_start = now;
+		for (int i = 0; i < count; ++i) {
+			car_views[i].handle_machine_damage_and_visuals_tail();
+			if (c.frames_since_start_2[i] == 0) {
+				STORE_INDEXED_VEC3(c, velocity, i, SimVec3());
+				STORE_INDEXED_VEC3(c, position_current, i, LOAD_INDEXED_VEC3(c, initial_pos, i));
+			}
+		}
+		now = std::chrono::high_resolution_clock::now();
+		damage_tail_us = elapsed_us(phase_start, now);
+		response_us = sample_old_us + corners_us + apply_response_us + project_speed_us + visual_geom_us + damage_tail_us;
+
+		phase_start = now;
+		for (int i = 0; i < count; ++i) {
+			car_views[i].handle_checkpoints(scratch);
+			if ((c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0 && (c.machine_state[i] & MACHINESTATE::ZEROHP) == 0) {
+				c.last_ground_distance[i] = c.checkpoint_track_distance[i];
+				c.last_ground_checkpoint[i] = c.current_checkpoint[i];
+			}
+		}
+		now = std::chrono::high_resolution_clock::now();
+		checkpoints_us = elapsed_us(phase_start, now);
+
+		phase_start = now;
+		for (int i = 0; i < count; ++i) {
+			uint16_t pending = static_cast<uint16_t>(c.s_boost_pending_spark_spawns[i]) + c.pending_super_sparks[i];
+			pending_s_boost_sparks[i] = static_cast<uint8_t>(pending > 255 ? 255 : pending);
+			c.s_boost_pending_spark_spawns[i] = 0;
+			c.pending_super_sparks[i] = 0;
+		}
+		now = std::chrono::high_resolution_clock::now();
+		sparks_us = elapsed_us(phase_start, now);
+	}
+
+	static inline bool vehicle_motion_active(const PhysicsCarSoA& c, int i)
+	{
+		return c.restore_state[i] != 2;
+	}
+
+	static void apply_vehicle_motion_inputs_soa(PhysicsCarSoA& c, PlayerInput* inputs, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			if (!vehicle_motion_active(c, i)) {
+				continue;
+			}
+
+			const PlayerInput& in = inputs[i];
+			c.input_steer_yaw[i] = in.steer_horizontal * std::abs(in.steer_horizontal);
+			c.input_steer_pitch[i] = -in.steer_vertical;
+
+			const float strafe_left = std::min(1.0f, in.strafe_left * 1.25f);
+			const float strafe_right = std::min(1.0f, in.strafe_right * 1.25f);
+			c.input_strafe[i] = -strafe_left + strafe_right;
+
+			const float old_accel = c.input_accel[i];
+			c.input_accel[i] = in.accelerate;
+			const bool accel_just_pressed = c.input_accel[i] > 0.5f && old_accel <= 0.5f;
+			c.input_brake[i] = in.brake;
+
+			if (strafe_left > 0.05f && strafe_right > 0.05f) {
+				c.machine_state[i] |= MACHINESTATE::MANUAL_DRIFT;
+			}
+			if (accel_just_pressed) {
+				c.machine_state[i] |= MACHINESTATE::JUSTTAPPEDACCEL | MACHINESTATE::B14;
+			}
+			c.state_2[i] |= 8u;
+		}
+	}
+
+	static void prepare_vehicle_floor_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count, TrackQueryScratch &scratch)
+	{
+		scratch.reset_trigger_events();
+		for (int i = 0; i < count; ++i) {
+			if (!vehicle_motion_active(c, i)) {
+				continue;
+			}
+
+			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch);
+			const bool has_floor = car_views[i].find_floor_beneath_machine();
+			if (has_floor && (c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0) {
+				STORE_INDEXED_VEC3(c, track_surface_normal, i, ground_normal);
+			} else {
+				const int base = i * 4;
+				for (int lane = 0; lane < 4; ++lane) {
+					const int p = base + lane;
+					c.tilt_force[p] = 0.0f;
+					c.tilt_force_spatial_x[p] = 0.0f;
+					c.tilt_force_spatial_y[p] = 0.0f;
+					c.tilt_force_spatial_z[p] = 0.0f;
+					c.tilt_force_spatial_len[p] = 0.0f;
+					c.tilt_state[p] |= TILTSTATE::DISCONNECTED | TILTSTATE::AIRBORNE;
+				}
+			}
+		}
+	}
+
+	static void commit_vehicle_trigger_events(PhysicsCarSoA* car_shards, PhysicsCar* cars, int shard_count, TrackQueryScratch* lane_scratch)
+	{
+		for (int shard = 0; shard < shard_count; ++shard) {
+			PhysicsCarSoA& c = car_shards[shard];
+			TrackQueryScratch& scratch = lane_scratch[shard];
+			for (int e = 0; e < scratch.trigger_event_count; ++e) {
+				const TrackQueryScratch::TriggerEvent& event = scratch.trigger_events[e];
+				if (event.car_index < 0 || event.car_index >= c.count) {
+					continue;
+				}
+				RaceTrack* track = c.current_track[event.car_index];
+				if (!track || event.trigger_index < 0 || event.trigger_index >= track->num_trigger_colliders) {
+					continue;
+				}
+				TriggerCollider* trigger = track->trigger_colliders[event.trigger_index];
+				if (!trigger) {
+					continue;
+				}
+				PhysicsCar* car = cars + c.global_start + event.car_index;
+				if ((event.collision_flags & 0x2) != 0) {
+					trigger->start_touch(car);
+				}
+				trigger->touch(car);
+				if ((event.collision_flags & 0x4) != 0) {
+					trigger->end_touch(car);
+				}
+			}
+			scratch.reset_trigger_events();
+		}
+	}
+
+	static void project_vehicle_velocity_phase(PhysicsCarSoA& c, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			if (!vehicle_motion_active(c, i)) {
+				continue;
+			}
+
+			const float vx = c.velocity_x[i];
+			const float vy = c.velocity_y[i];
+			const float vz = c.velocity_z[i];
+			const float c0x = c.basis_physical_c0x[i];
+			const float c0y = c.basis_physical_c0y[i];
+			const float c0z = c.basis_physical_c0z[i];
+			const float c1x = c.basis_physical_c1x[i];
+			const float c1y = c.basis_physical_c1y[i];
+			const float c1z = c.basis_physical_c1z[i];
+			const float c2x = c.basis_physical_c2x[i];
+			const float c2y = c.basis_physical_c2y[i];
+			const float c2z = c.basis_physical_c2z[i];
+
+			c.velocity_local_x[i] = c0x * vx + c0y * vy + c0z * vz;
+			c.velocity_local_y[i] = c1x * vx + c1y * vy + c1z * vz;
+			c.velocity_local_z[i] = c2x * vx + c2y * vy + c2z * vz;
+
+			float steer = -(c.input_steer_yaw[i] * c.stat_turn_reaction[i] + c.input_strafe[i] * c.stat_strafe[i]);
+			steer = std::clamp(steer, -45.0f, 45.0f);
+			const float angle = DEG_TO_RAD * steer;
+			const float cs = deterministic_fp::cosf(angle);
+			const float sn = deterministic_fp::sinf(angle);
+
+			const float sx = c0x * cs - c2x * sn;
+			const float sy = c0y * cs - c2y * sn;
+			const float sz = c0z * cs - c2z * sn;
+			const float fz_x = c0x * sn + c2x * cs;
+			const float fz_y = c0y * sn + c2y * cs;
+			const float fz_z = c0z * sn + c2z * cs;
+
+			c.velocity_local_flattened_and_rotated_x[i] = sx * vx + sy * vy + sz * vz;
+			c.velocity_local_flattened_and_rotated_y[i] = 0.0f;
+			c.velocity_local_flattened_and_rotated_z[i] = fz_x * vx + fz_y * vy + fz_z * vz;
+		}
+	}
+
+	static void steering_and_suspension_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			if (!vehicle_motion_active(c, i) || (c.machine_state[i] & MACHINESTATE::ACTIVE) == 0) {
+				continue;
+			}
+
+			float strafe_turn_mod = 1.0f;
+			const int base = i * 4;
+			if (c.tilt_state[base + 0] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+			if (c.tilt_state[base + 1] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+			if (c.tilt_state[base + 2] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+			if (c.tilt_state[base + 3] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+
+			float steer_strength =
+				(c.stat_turn_movement[i] + strafe_turn_mod * c.stat_strafe_turn[i] * c.input_strafe[i] *
+					c.input_steer_yaw[i]) *
+				-c.input_steer_yaw[i];
+			if (c.machine_state[i] & MACHINESTATE::SIDEATTACKING) {
+				steer_strength *= 0.3f;
+			}
+			c.velocity_angular_y[i] += 1.5f * steer_strength;
+			if (std::abs(c.velocity_angular_y[i]) < 1.0f) {
+				c.velocity_angular_y[i] = 0.0f;
+			}
+			c.input_yaw_dupe[i] = c.input_steer_yaw[i];
+		}
+
+		for (int i = 0; i < count; ++i) {
+			if (vehicle_motion_active(c, i)) {
+				car_views[i].handle_suspension_states();
+			}
+		}
+
+		for (int i = 0; i < count; ++i) {
+			if (!vehicle_motion_active(c, i) || c.frames_since_start_2[i] == 0) {
+				continue;
+			}
+			const float initial_angle_vel_y = c.velocity_angular_y[i];
+			car_views[i].handle_machine_turn_and_strafe_points4(initial_angle_vel_y);
+		}
+
+		for (int i = 0; i < count; ++i) {
+			if (!vehicle_motion_active(c, i)) {
+				continue;
+			}
+			if (c.machine_state[i] & MACHINESTATE::AIRBORNEMORE0_2S_Q) {
+				c.turning_related[i] *= 0.02f;
+			}
+			if (std::abs(c.input_strafe[i]) > 0.01f) {
+				c.turning_related[i] *= 0.04f;
+			}
+		}
+	}
+
+	static void linear_orientation_drag_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			if (vehicle_motion_active(c, i)) {
+				car_views[i].handle_linear_velocity();
+			}
+		}
+		for (int i = 0; i < count; ++i) {
+			if (vehicle_motion_active(c, i)) {
+				car_views[i].handle_angle_velocity();
+			}
+		}
+		for (int i = 0; i < count; ++i) {
+			if (vehicle_motion_active(c, i)) {
+				car_views[i].handle_airborne_controls();
+			}
+		}
+		for (int i = 0; i < count; ++i) {
+			if (vehicle_motion_active(c, i)) {
+				car_views[i].orient_vehicle_from_gravity_or_road();
+			}
+		}
+		for (int i = 0; i < count; ++i) {
+			if (vehicle_motion_active(c, i)) {
+				car_views[i].handle_drag_and_glide_forces();
+			}
+		}
+	}
+
+	static inline bool four_vehicle_motion_active(const PhysicsCarSoA& c, int i)
+	{
+		return vehicle_motion_active(c, i) && vehicle_motion_active(c, i + 1) &&
+			vehicle_motion_active(c, i + 2) && vehicle_motion_active(c, i + 3);
+	}
+
+	static void integrate_vehicle_positions_phase(PhysicsCarSoA& c, int count)
+	{
+		int i = 0;
+		for (; i + 3 < count; i += 4) {
+			if (!four_vehicle_motion_active(c, i)) {
+				for (int lane = i; lane < i + 4; ++lane) {
+					if (!vehicle_motion_active(c, lane)) {
+						continue;
+					}
+					const float inv_weight = 1.0f / std::max(c.stat_weight[lane], 0.001f);
+					c.position_current_x[lane] += c.velocity_x[lane] * inv_weight;
+					c.position_current_y[lane] += c.velocity_y[lane] * inv_weight;
+					c.position_current_z[lane] += c.velocity_z[lane] * inv_weight;
+				}
+				continue;
+			}
+
+			const SimFloat4 inv_weight = SimFloat4(1.0f) / sim_max4(sim_load4(c.stat_weight + i), SimFloat4(0.001f));
+			sim_store4(c.position_current_x + i, sim_load4(c.position_current_x + i) + sim_load4(c.velocity_x + i) * inv_weight);
+			sim_store4(c.position_current_y + i, sim_load4(c.position_current_y + i) + sim_load4(c.velocity_y + i) * inv_weight);
+			sim_store4(c.position_current_z + i, sim_load4(c.position_current_z + i) + sim_load4(c.velocity_z + i) * inv_weight);
+		}
+		for (; i < count; ++i) {
+			if (!vehicle_motion_active(c, i)) {
+				continue;
+			}
+			const float inv_weight = 1.0f / std::max(c.stat_weight[i], 0.001f);
+			c.position_current_x[i] += c.velocity_x[i] * inv_weight;
+			c.position_current_y[i] += c.velocity_y[i] * inv_weight;
+			c.position_current_z[i] += c.velocity_z[i] * inv_weight;
+		}
+	}
+
+	static void rotate_and_finish_motion_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			if (vehicle_motion_active(c, i)) {
+				car_views[i].rotate_machine_from_angle_velocity();
+			}
+		}
+
+		for (int i = 0; i < count; ++i) {
+			if (!vehicle_motion_active(c, i)) {
+				continue;
+			}
+
+			if (c.machine_state[i] & MACHINESTATE::STARTINGCOUNTDOWN) {
+				c.machine_state[i] &= ~(MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL);
+			}
+			if (c.machine_state[i] & MACHINESTATE::ACTIVE) {
+				const uint32_t cd = c.frames_since_start_2[i];
+				if (cd < 30) {
+					if (cd % 6 == 0) {
+						car_views[i].handle_startup_wobble();
+					}
+				} else if (cd < 90) {
+					STORE_INDEXED_VEC3(c, velocity_angular, i, SimVec3());
+				}
+			}
+			if (c.rail_collision_timer[i] > 0) {
+				c.rail_collision_timer[i] -= 1;
+			}
+			c.machine_state[i] &= ~(MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP |
+				MACHINESTATE::TOOKDAMAGE | MACHINESTATE::B14 |
+				MACHINESTATE::MANUAL_DRIFT);
+
+			SimTransform basis = MXT_LOAD_TRANSFORM(c, basis_physical, i);
+			basis.orthonormalize();
+			MXT_STORE_TRANSFORM(c, basis_physical, i, basis);
+
+			if ((c.machine_state[i] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+				c.position_bottom_x[i] += c.position_current_x[i] - c.position_old_x[i];
+				c.position_bottom_y[i] += c.position_current_y[i] - c.position_old_y[i];
+				c.position_bottom_z[i] += c.position_current_z[i] - c.position_old_z[i];
+			}
+		}
+	}
+
+	static void begin_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs,
+		int count, TrackQueryScratch &scratch, uint32_t& prepare_floor_us)
+	{
+		apply_vehicle_motion_inputs_soa(c, inputs, count);
+
+		auto phase_start = std::chrono::high_resolution_clock::now();
+		prepare_vehicle_floor_phase(c, car_views, count, scratch);
+		auto now = std::chrono::high_resolution_clock::now();
+		prepare_floor_us = elapsed_us(phase_start, now);
+	}
+
+	static void finish_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count,
+		uint32_t& project_us, uint32_t& steer_susp_us, uint32_t& linear_us, uint32_t& integrate_us)
+	{
+		auto phase_start = std::chrono::high_resolution_clock::now();
+		project_vehicle_velocity_phase(c, count);
+		auto now = std::chrono::high_resolution_clock::now();
+		project_us = elapsed_us(phase_start, now);
+
+		phase_start = now;
+		steering_and_suspension_phase(c, car_views, count);
+		now = std::chrono::high_resolution_clock::now();
+		steer_susp_us = elapsed_us(phase_start, now);
+
+		phase_start = now;
+		linear_orientation_drag_phase(c, car_views, count);
+		now = std::chrono::high_resolution_clock::now();
+		linear_us = elapsed_us(phase_start, now);
+
+		phase_start = now;
+		integrate_vehicle_positions_phase(c, count);
+		rotate_and_finish_motion_phase(c, car_views, count);
+		now = std::chrono::high_resolution_clock::now();
+		integrate_us = elapsed_us(phase_start, now);
+	}
+
+	static inline bool intervals_overlap(float min_a, float max_a, float min_b, float max_b)
+	{
+		return min_a <= max_b && min_b <= max_a;
+	}
+
+	static inline SimVec3 transform_point_components(
+		float c0x, float c0y, float c0z,
+		float c1x, float c1y, float c1z,
+		float c2x, float c2y, float c2z,
+		float ox, float oy, float oz,
+		const SimVec3& p)
+	{
+		return SimVec3(
+			c0x * p.x + c1x * p.y + c2x * p.z + ox,
+			c0y * p.x + c1y * p.y + c2y * p.z + oy,
+			c0z * p.x + c1z * p.y + c2z * p.z + oz);
+	}
+
+	static inline SimVec3x4 transform_points_components4(
+		float c0x, float c0y, float c0z,
+		float c1x, float c1y, float c1z,
+		float c2x, float c2y, float c2z,
+		float ox, float oy, float oz,
+		SimFloat4 px, SimFloat4 py, SimFloat4 pz)
+	{
+		return SimVec3x4(
+			SimFloat4(c0x) * px + SimFloat4(c1x) * py + SimFloat4(c2x) * pz + SimFloat4(ox),
+			SimFloat4(c0y) * px + SimFloat4(c1y) * py + SimFloat4(c2y) * pz + SimFloat4(oy),
+			SimFloat4(c0z) * px + SimFloat4(c1z) * py + SimFloat4(c2z) * pz + SimFloat4(oz));
+	}
+
+	static void update_damage_visual_geometry_soa(PhysicsCarSoA& c, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			if ((c.state_2[i] & 0x8u) == 0) {
+				continue;
+			}
+
+			const float c0x = c.basis_physical_c0x[i];
+			const float c0y = c.basis_physical_c0y[i];
+			const float c0z = c.basis_physical_c0z[i];
+			const float c1x = c.basis_physical_c1x[i];
+			const float c1y = c.basis_physical_c1y[i];
+			const float c1z = c.basis_physical_c1z[i];
+			const float c2x = c.basis_physical_c2x[i];
+			const float c2y = c.basis_physical_c2y[i];
+			const float c2z = c.basis_physical_c2z[i];
+			const float ox = c.position_current_x[i];
+			const float oy = c.position_current_y[i];
+			const float oz = c.position_current_z[i];
+
+			const int p = i * 4;
+			sim_store4(c.tilt_pos_old_x + p, sim_load4(c.tilt_pos_x + p));
+			sim_store4(c.tilt_pos_old_y + p, sim_load4(c.tilt_pos_y + p));
+			sim_store4(c.tilt_pos_old_z + p, sim_load4(c.tilt_pos_z + p));
+			const SimVec3x4 tilt_pos = transform_points_components4(
+				c0x, c0y, c0z, c1x, c1y, c1z, c2x, c2y, c2z, ox, oy, oz,
+				sim_load4(c.tilt_offset_x + p),
+				sim_load4(c.tilt_offset_y + p) + sim_load4(c.tilt_force + p) - sim_load4(c.tilt_rest_length + p),
+				sim_load4(c.tilt_offset_z + p));
+			sim_store4(c.tilt_pos_x + p, tilt_pos.x);
+			sim_store4(c.tilt_pos_y + p, tilt_pos.y);
+			sim_store4(c.tilt_pos_z + p, tilt_pos.z);
+
+			sim_store4(c.wall_pos_a_x + p, sim_load4(c.wall_pos_b_x + p));
+			sim_store4(c.wall_pos_a_y + p, sim_load4(c.wall_pos_b_y + p));
+			sim_store4(c.wall_pos_a_z + p, sim_load4(c.wall_pos_b_z + p));
+			const SimVec3x4 wall_pos = transform_points_components4(
+				c0x, c0y, c0z, c1x, c1y, c1z, c2x, c2y, c2z, ox, oy, oz,
+				sim_load4(c.wall_offset_x + p),
+				sim_load4(c.wall_offset_y + p),
+				sim_load4(c.wall_offset_z + p));
+			sim_store4(c.wall_pos_b_x + p, wall_pos.x);
+			sim_store4(c.wall_pos_b_y + p, wall_pos.y);
+			sim_store4(c.wall_pos_b_z + p, wall_pos.z);
+		}
+	}
+
+	static void project_startup_velocity_and_speed_soa(PhysicsCarSoA& c, int count)
+	{
+		int i = 0;
+		for (; i + 3 < count; i += 4) {
+			const SimFloat4 vx = sim_load4(c.velocity_x + i);
+			const SimFloat4 vy = sim_load4(c.velocity_y + i);
+			const SimFloat4 vz = sim_load4(c.velocity_z + i);
+			const SimFloat4 nx = sim_load4(c.track_surface_normal_x + i);
+			const SimFloat4 ny = sim_load4(c.track_surface_normal_y + i);
+			const SimFloat4 nz = sim_load4(c.track_surface_normal_z + i);
+			const SimFloat4 startup_mask(
+				c.frames_since_start_2[i + 0] <= 90 ? 1.0f : 0.0f,
+				c.frames_since_start_2[i + 1] <= 90 ? 1.0f : 0.0f,
+				c.frames_since_start_2[i + 2] <= 90 ? 1.0f : 0.0f,
+				c.frames_since_start_2[i + 3] <= 90 ? 1.0f : 0.0f);
+			const SimFloat4 dot = (vx * nx + vy * ny + vz * nz) * startup_mask;
+			const SimFloat4 out_x = vx - nx * dot;
+			const SimFloat4 out_y = vy - ny * dot;
+			const SimFloat4 out_z = vz - nz * dot;
+			sim_store4(c.velocity_x + i, out_x);
+			sim_store4(c.velocity_y + i, out_y);
+			sim_store4(c.velocity_z + i, out_z);
+
+			const SimFloat4 speed = sim_sqrt4(out_x * out_x + out_y * out_y + out_z * out_z);
+			const SimFloat4 inv_weight(
+				std::abs(c.stat_weight[i + 0]) > 0.0001f ? 1.0f / c.stat_weight[i + 0] : 0.0f,
+				std::abs(c.stat_weight[i + 1]) > 0.0001f ? 1.0f / c.stat_weight[i + 1] : 0.0f,
+				std::abs(c.stat_weight[i + 2]) > 0.0001f ? 1.0f / c.stat_weight[i + 2] : 0.0f,
+				std::abs(c.stat_weight[i + 3]) > 0.0001f ? 1.0f / c.stat_weight[i + 3] : 0.0f);
+			const SimFloat4 countdown_mask(
+				(c.machine_state[i + 0] & MACHINESTATE::STARTINGCOUNTDOWN) == 0 ? 1.0f : 0.0f,
+				(c.machine_state[i + 1] & MACHINESTATE::STARTINGCOUNTDOWN) == 0 ? 1.0f : 0.0f,
+				(c.machine_state[i + 2] & MACHINESTATE::STARTINGCOUNTDOWN) == 0 ? 1.0f : 0.0f,
+				(c.machine_state[i + 3] & MACHINESTATE::STARTINGCOUNTDOWN) == 0 ? 1.0f : 0.0f);
+			const SimFloat4 old_speed = sim_load4(c.speed_kmh + i);
+			const SimFloat4 new_speed = speed * inv_weight * SimFloat4(216.0f);
+			sim_store4(c.speed_kmh + i, old_speed + (new_speed - old_speed) * countdown_mask);
+		}
+
+		for (; i < count; ++i) {
+			const float startup_mask = c.frames_since_start_2[i] <= 90 ? 1.0f : 0.0f;
+			const float dot =
+				(c.velocity_x[i] * c.track_surface_normal_x[i] +
+				 c.velocity_y[i] * c.track_surface_normal_y[i] +
+				 c.velocity_z[i] * c.track_surface_normal_z[i]) * startup_mask;
+			c.velocity_x[i] -= c.track_surface_normal_x[i] * dot;
+			c.velocity_y[i] -= c.track_surface_normal_y[i] * dot;
+			c.velocity_z[i] -= c.track_surface_normal_z[i] * dot;
+			if ((c.machine_state[i] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
+				const float speed_sq =
+					c.velocity_x[i] * c.velocity_x[i] +
+					c.velocity_y[i] * c.velocity_y[i] +
+					c.velocity_z[i] * c.velocity_z[i];
+				const float inv_weight = std::abs(c.stat_weight[i]) > 0.0001f ? 1.0f / c.stat_weight[i] : 0.0f;
+				c.speed_kmh[i] = 216.0f * std::sqrt(speed_sq) * inv_weight;
+			}
+		}
+	}
+
+	static void handle_vehicle_collision_result(GameSim& sim, PhysicsCar* car_views, int i, int j)
+	{
+		PhysicsCarSoA& car_a = *car_views[i].soa;
+		PhysicsCarSoA& car_b = *car_views[j].soa;
+		const int lane_a = car_views[i].soa_index;
+		const int lane_b = car_views[j].soa_index;
+		const uint32_t current_tick = static_cast<uint32_t>(car_a.simulation_tick[lane_a]);
+		constexpr uint32_t kCollisionSparkCooldownFrames = 30;
+		auto is_recent_hit = [&](PhysicsCarSoA& c, int lane) -> bool {
+			if (!c.has_last_hit_tick[lane]) {
+				return false;
+			}
+			const uint32_t delta = current_tick - c.last_hit_tick[lane];
+			return delta < kCollisionSparkCooldownFrames;
+		};
+
+		const bool recently_hit = is_recent_hit(car_a, lane_a) || is_recent_hit(car_b, lane_b);
+		const bool a_attacking = (car_a.machine_state[lane_a] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+		const bool b_attacking = (car_b.machine_state[lane_b] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+		int sparks_a = 3;
+		int sparks_b = 3;
+		if (a_attacking && b_attacking) {
+			sparks_a = 6;
+			sparks_b = 6;
+		} else if (a_attacking && !b_attacking) {
+			sparks_b = 8;
+		} else if (!a_attacking && b_attacking) {
+			sparks_a = 8;
+		}
+		if (!recently_hit) {
+			if (sparks_a > 0) {
+				sim.emit_super_sparks_from_car(car_views[i], sparks_a);
+			}
+			if (sparks_b > 0) {
+				sim.emit_super_sparks_from_car(car_views[j], sparks_b);
+			}
+		}
+		car_a.last_hit_tick[lane_a] = current_tick;
+		car_b.last_hit_tick[lane_b] = current_tick;
+		car_a.has_last_hit_tick[lane_a] = true;
+		car_b.has_last_hit_tick[lane_b] = true;
+	}
+
+	static void collide_vehicles_broadphase(GameSim& sim, PhysicsCar* car_views, int count,
+		int* indices, float* min_x, float* max_x, float* min_y, float* max_y, float* min_z, float* max_z)
+	{
+		constexpr float kMachineCollisionRadius = 2.0f;
+		constexpr float kMutationSlop = 8.0f;
+
+		for (int i = 0; i < count; ++i) {
+			PhysicsCarSoA& c = *car_views[i].soa;
+			const int lane = car_views[i].soa_index;
+			const float extent = kMachineCollisionRadius + c.speed_kmh[lane] / 216.0f + kMutationSlop;
+			indices[i] = i;
+			min_x[i] = c.position_current_x[lane] - extent;
+			max_x[i] = c.position_current_x[lane] + extent;
+			min_y[i] = c.position_current_y[lane] - extent;
+			max_y[i] = c.position_current_y[lane] + extent;
+			min_z[i] = c.position_current_z[lane] - extent;
+			max_z[i] = c.position_current_z[lane] + extent;
+		}
+
+		std::sort(indices, indices + count, [&](int a, int b) {
+			return min_x[a] < min_x[b];
+		});
+
+		for (int sorted_i = 0; sorted_i < count; ++sorted_i) {
+			const int i = indices[sorted_i];
+			const float max_i_x = max_x[i];
+			for (int sorted_j = sorted_i + 1; sorted_j < count; ++sorted_j) {
+				const int j = indices[sorted_j];
+				if (min_x[j] > max_i_x) {
+					break;
+				}
+				if (!intervals_overlap(min_y[i], max_y[i], min_y[j], max_y[j]) ||
+					!intervals_overlap(min_z[i], max_z[i], min_z[j], max_z[j])) {
+					continue;
+				}
+				if (car_views[i].handle_machine_v_machine_collision(car_views[j])) {
+					handle_vehicle_collision_result(sim, car_views, i, j);
+				}
+			}
+		}
+	}
 }
 
 void GameSim::_bind_methods()
@@ -64,6 +894,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_cpu_driver_manager", "manager"), &GameSim::set_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("get_cpu_driver_manager"), &GameSim::get_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("set_player_metadata", "player_ids", "cpu_flags"), &GameSim::set_player_metadata);
+	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -83,6 +914,9 @@ GameSim::GameSim()
 	super_spark_state = nullptr;
 	super_sparks = nullptr;
 	spark_multimesh_instance = nullptr;
+	num_cars = 0;
+	cars = nullptr;
+	car_properties_array = nullptr;
 	reset_super_sparks();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
@@ -94,7 +928,9 @@ GameSim::GameSim()
 
 GameSim::~GameSim()
 {
+	stop_vehicle_lane_workers();
 	destroy_gamesim();
+	free_vehicle_tick_soa();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
 		if (state_buffer[i].data)
@@ -109,6 +945,219 @@ GameSim::~GameSim()
 	}
 };
 
+void GameSim::VehicleLaneGroup::reset(int p_count)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	count = p_count;
+	waiting = 0;
+	generation = 0;
+}
+
+void GameSim::VehicleLaneGroup::sync()
+{
+	if (count <= 1) {
+		return;
+	}
+	std::unique_lock<std::mutex> lock(mutex);
+	const uint32_t local_generation = generation;
+	waiting += 1;
+	if (waiting == count) {
+		waiting = 0;
+		generation += 1;
+		cv.notify_all();
+		return;
+	}
+	cv.wait(lock, [&]() {
+		return generation != local_generation;
+	});
+}
+
+void GameSim::ensure_vehicle_lane_workers()
+{
+	if (vehicle_lane_workers_started) {
+		return;
+	}
+	vehicle_lane_stop = false;
+	for (int i = 0; i < VEHICLE_WORKER_COUNT - 1; ++i) {
+		const int lane = i + 1;
+		vehicle_lane_workers[i] = std::thread([this, lane]() {
+			uint32_t seen_generation = 0;
+			for (;;) {
+				std::unique_lock<std::mutex> lock(vehicle_lane_mutex);
+				vehicle_lane_cv.wait(lock, [&]() {
+					return vehicle_lane_stop || vehicle_lane_generation != seen_generation;
+				});
+				if (vehicle_lane_stop) {
+					return;
+				}
+				seen_generation = vehicle_lane_generation;
+				const bool should_run = lane < vehicle_lane_active_count;
+				auto fn = vehicle_lane_fn;
+				lock.unlock();
+
+				if (should_run) {
+					fn(lane, vehicle_lane_group);
+				}
+
+				if (should_run) {
+					lock.lock();
+					vehicle_lane_pending -= 1;
+					if (vehicle_lane_pending == 0) {
+						vehicle_lane_done_cv.notify_one();
+					}
+				}
+			}
+		});
+	}
+	vehicle_lane_workers_started = true;
+}
+
+void GameSim::stop_vehicle_lane_workers()
+{
+	if (!vehicle_lane_workers_started) {
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lock(vehicle_lane_mutex);
+		vehicle_lane_stop = true;
+		vehicle_lane_generation += 1;
+	}
+	vehicle_lane_cv.notify_all();
+	for (int i = 0; i < VEHICLE_WORKER_COUNT - 1; ++i) {
+		if (vehicle_lane_workers[i].joinable()) {
+			vehicle_lane_workers[i].join();
+		}
+	}
+	vehicle_lane_fn = nullptr;
+	vehicle_lane_active_count = 0;
+	vehicle_lane_pending = 0;
+	vehicle_lane_workers_started = false;
+	vehicle_lane_stop = false;
+}
+
+void GameSim::run_vehicle_lanes(int lane_count, bool parallel, const std::function<void(int, VehicleLaneGroup&)>& fn)
+{
+	if (!parallel || lane_count <= 1) {
+		VehicleLaneGroup group;
+		group.reset(1);
+		for (int lane = 0; lane < lane_count; ++lane) {
+			fn(lane, group);
+		}
+		return;
+	}
+
+	const int active_lanes = std::min(lane_count, VEHICLE_WORKER_COUNT);
+	ensure_vehicle_lane_workers();
+	vehicle_lane_group.reset(active_lanes);
+	{
+		std::lock_guard<std::mutex> lock(vehicle_lane_mutex);
+		vehicle_lane_fn = fn;
+		vehicle_lane_active_count = active_lanes;
+		vehicle_lane_pending = active_lanes - 1;
+		vehicle_lane_generation += 1;
+	}
+	vehicle_lane_cv.notify_all();
+
+	fn(0, vehicle_lane_group);
+
+	if (active_lanes > 1) {
+		std::unique_lock<std::mutex> lock(vehicle_lane_mutex);
+		vehicle_lane_done_cv.wait(lock, [&]() {
+			return vehicle_lane_pending == 0;
+		});
+		vehicle_lane_fn = nullptr;
+		vehicle_lane_active_count = 0;
+	} else {
+		std::lock_guard<std::mutex> lock(vehicle_lane_mutex);
+		vehicle_lane_fn = nullptr;
+		vehicle_lane_active_count = 0;
+	}
+}
+
+void GameSim::free_vehicle_tick_soa()
+{
+	if (vehicle_tick_soa.inputs) {
+		free_cache_aligned(vehicle_tick_soa.inputs);
+		vehicle_tick_soa.inputs = nullptr;
+	}
+	if (vehicle_tick_soa.pre_distances) {
+		free_cache_aligned(vehicle_tick_soa.pre_distances);
+		vehicle_tick_soa.pre_distances = nullptr;
+	}
+	if (vehicle_tick_soa.placement_distances) {
+		free_cache_aligned(vehicle_tick_soa.placement_distances);
+		vehicle_tick_soa.placement_distances = nullptr;
+	}
+	if (vehicle_tick_soa.placement_indices) {
+		free_cache_aligned(vehicle_tick_soa.placement_indices);
+		vehicle_tick_soa.placement_indices = nullptr;
+	}
+	if (vehicle_tick_soa.pending_s_boost_sparks) {
+		free_cache_aligned(vehicle_tick_soa.pending_s_boost_sparks);
+		vehicle_tick_soa.pending_s_boost_sparks = nullptr;
+	}
+	if (vehicle_tick_soa.collision_indices) {
+		free_cache_aligned(vehicle_tick_soa.collision_indices);
+		vehicle_tick_soa.collision_indices = nullptr;
+	}
+	if (vehicle_tick_soa.collision_min_x) {
+		free_cache_aligned(vehicle_tick_soa.collision_min_x);
+		vehicle_tick_soa.collision_min_x = nullptr;
+	}
+	if (vehicle_tick_soa.collision_max_x) {
+		free_cache_aligned(vehicle_tick_soa.collision_max_x);
+		vehicle_tick_soa.collision_max_x = nullptr;
+	}
+	if (vehicle_tick_soa.collision_min_y) {
+		free_cache_aligned(vehicle_tick_soa.collision_min_y);
+		vehicle_tick_soa.collision_min_y = nullptr;
+	}
+	if (vehicle_tick_soa.collision_max_y) {
+		free_cache_aligned(vehicle_tick_soa.collision_max_y);
+		vehicle_tick_soa.collision_max_y = nullptr;
+	}
+	if (vehicle_tick_soa.collision_min_z) {
+		free_cache_aligned(vehicle_tick_soa.collision_min_z);
+		vehicle_tick_soa.collision_min_z = nullptr;
+	}
+	if (vehicle_tick_soa.collision_max_z) {
+		free_cache_aligned(vehicle_tick_soa.collision_max_z);
+		vehicle_tick_soa.collision_max_z = nullptr;
+	}
+	vehicle_tick_soa.capacity = 0;
+}
+
+void GameSim::ensure_vehicle_tick_soa_capacity(int capacity)
+{
+	if (capacity <= vehicle_tick_soa.capacity) {
+		return;
+	}
+
+	free_vehicle_tick_soa();
+	vehicle_tick_soa.inputs = static_cast<PlayerInput*>(alloc_cache_aligned(sizeof(PlayerInput) * capacity));
+	vehicle_tick_soa.pre_distances = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	vehicle_tick_soa.placement_distances = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	vehicle_tick_soa.placement_indices = static_cast<int*>(alloc_cache_aligned(sizeof(int) * capacity));
+	vehicle_tick_soa.pending_s_boost_sparks = static_cast<uint8_t*>(alloc_cache_aligned(sizeof(uint8_t) * capacity));
+	vehicle_tick_soa.collision_indices = static_cast<int*>(alloc_cache_aligned(sizeof(int) * capacity));
+	vehicle_tick_soa.collision_min_x = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	vehicle_tick_soa.collision_max_x = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	vehicle_tick_soa.collision_min_y = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	vehicle_tick_soa.collision_max_y = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	vehicle_tick_soa.collision_min_z = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	vehicle_tick_soa.collision_max_z = static_cast<float*>(alloc_cache_aligned(sizeof(float) * capacity));
+	if (!vehicle_tick_soa.inputs || !vehicle_tick_soa.pre_distances ||
+		!vehicle_tick_soa.placement_distances || !vehicle_tick_soa.placement_indices ||
+		!vehicle_tick_soa.pending_s_boost_sparks || !vehicle_tick_soa.collision_indices ||
+		!vehicle_tick_soa.collision_min_x || !vehicle_tick_soa.collision_max_x ||
+		!vehicle_tick_soa.collision_min_y || !vehicle_tick_soa.collision_max_y ||
+		!vehicle_tick_soa.collision_min_z || !vehicle_tick_soa.collision_max_z) {
+		free_vehicle_tick_soa();
+		std::abort();
+	}
+	vehicle_tick_soa.capacity = capacity;
+}
+
 void GameSim::set_sim_started(const bool p_sim_started)
 {
 	sim_started = p_sim_started;
@@ -119,6 +1168,78 @@ bool GameSim::get_sim_started()
 	return sim_started;
 }
 
+void GameSim::record_phase_profile_sample()
+{
+	VehicleTickSoA& soa = vehicle_tick_soa;
+	uint32_t sample[PROFILE_FIELD_COUNT] = {
+		soa.prof_total_us,
+		soa.prof_input_us,
+		soa.prof_begin_us,
+		soa.prof_prepare_floor_us,
+		soa.prof_project_us,
+		soa.prof_steer_susp_us,
+		soa.prof_linear_us,
+		soa.prof_integrate_us,
+		soa.prof_collision_us,
+		soa.prof_post_us,
+		soa.prof_post_response_us,
+		soa.prof_post_sample_old_us,
+		soa.prof_post_corners_us,
+		soa.prof_post_apply_response_us,
+		soa.prof_post_project_speed_us,
+		soa.prof_post_visual_geom_us,
+		soa.prof_post_damage_tail_us,
+		soa.prof_misc_us,
+		soa.prof_lane_group_us,
+		soa.prof_lanes,
+	};
+
+	if (profile_count == PROFILE_WINDOW_TICKS) {
+		for (int i = 0; i < PROFILE_FIELD_COUNT; ++i) {
+			profile_sums[i] -= profile_samples[profile_cursor][i];
+		}
+	} else {
+		profile_count += 1;
+	}
+
+	for (int i = 0; i < PROFILE_FIELD_COUNT; ++i) {
+		profile_samples[profile_cursor][i] = sample[i];
+		profile_sums[i] += sample[i];
+	}
+	profile_cursor = (profile_cursor + 1) % PROFILE_WINDOW_TICKS;
+}
+
+String GameSim::get_phase_profile_string() const
+{
+	const int count = profile_count > 0 ? profile_count : 1;
+	auto avg = [&](int field) -> int64_t {
+		return static_cast<int64_t>(profile_sums[field] / static_cast<uint64_t>(count));
+	};
+
+	String out = "MXT_PHASE_AVG_US frames=" + String::num_int64(profile_count);
+	out += " total=" + String::num_int64(avg(PROFILE_TOTAL));
+	out += " input=" + String::num_int64(avg(PROFILE_INPUT));
+	out += " begin=" + String::num_int64(avg(PROFILE_BEGIN));
+	out += " prepare_floor=" + String::num_int64(avg(PROFILE_PREPARE_FLOOR));
+	out += " project=" + String::num_int64(avg(PROFILE_PROJECT));
+	out += " steer_susp=" + String::num_int64(avg(PROFILE_STEER_SUSP));
+	out += " linear=" + String::num_int64(avg(PROFILE_LINEAR));
+	out += " integrate=" + String::num_int64(avg(PROFILE_INTEGRATE));
+	out += " collision=" + String::num_int64(avg(PROFILE_COLLISION));
+	out += " post=" + String::num_int64(avg(PROFILE_POST));
+	out += " post_response=" + String::num_int64(avg(PROFILE_POST_RESPONSE));
+	out += " post_sample_old=" + String::num_int64(avg(PROFILE_POST_SAMPLE_OLD));
+	out += " post_corners=" + String::num_int64(avg(PROFILE_POST_CORNERS));
+	out += " post_apply_response=" + String::num_int64(avg(PROFILE_POST_APPLY_RESPONSE));
+	out += " post_project_speed=" + String::num_int64(avg(PROFILE_POST_PROJECT_SPEED));
+	out += " post_visual_geom=" + String::num_int64(avg(PROFILE_POST_VISUAL_GEOM));
+	out += " post_damage_tail=" + String::num_int64(avg(PROFILE_POST_DAMAGE_TAIL));
+	out += " misc=" + String::num_int64(avg(PROFILE_MISC));
+	out += " lane_group=" + String::num_int64(avg(PROFILE_LANE_GROUP));
+	out += " lanes=" + String::num_int64(avg(PROFILE_LANES));
+	return out;
+}
+
 void GameSim::tick_gamesim(godot::Array player_inputs)
 {
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
@@ -126,9 +1247,6 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	std::fesetround(FE_TONEAREST);
 	std::feclearexcept(FE_ALL_EXCEPT);
 
-	auto start = std::chrono::high_resolution_clock::now();
-	int buf_index = tick % INPUT_BUFFER_LEN;
-	PlayerInput* slot = input_buffer + buf_index * num_cars;
 	if (num_cars <= 0 || !cars)
 	{
 		save_state();
@@ -136,20 +1254,35 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 		return;
 	}
 
-	std::vector<float> pre_distances;
-	pre_distances.resize(num_cars, 0.0f);
+	auto start = std::chrono::high_resolution_clock::now();
+	VehicleTickSoA& soa = vehicle_tick_soa;
+	PhysicsCarSoA& first_shard = *cars[0].soa;
+	PhysicsCarSoA* car_shards = first_shard.shards ? first_shard.shards : &first_shard;
+	const int car_shard_count = first_shard.shards ? first_shard.shard_count : 1;
+	const int sim_lane_count = first_shard.total_lane_count > 0 ? first_shard.total_lane_count : first_shard.lane_count;
+	const bool parallel_vehicle_shards = num_cars >= 16 && car_shard_count == VEHICLE_WORKER_COUNT;
+	const int active_vehicle_lanes = parallel_vehicle_shards ? std::min(car_shard_count, VEHICLE_WORKER_COUNT) : 1;
+	ensure_vehicle_tick_soa_capacity(sim_lane_count);
+	int buf_index = tick % INPUT_BUFFER_LEN;
+	PlayerInput* slot = input_buffer + buf_index * num_cars;
+	auto phase_start = std::chrono::high_resolution_clock::now();
+
 	float lead_distance = 0.0f;
 	for (int i = 0; i < num_cars; ++i) {
-		pre_distances[i] = compute_car_distance_along_track(cars[i]);
-		if (pre_distances[i] > lead_distance) {
-			lead_distance = pre_distances[i];
+		PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const float distance = compute_vehicle_distance_along_track(
+			car_soa.current_checkpoint[lane], car_soa.checkpoint_fraction[lane], car_soa.lap[lane]);
+		soa.pre_distances[i] = distance;
+		if (distance > lead_distance) {
+			lead_distance = distance;
 		}
 	}
 
-	for (int i = 0; i < num_cars; i++)
-	{
+	const int player_input_count = static_cast<int>(player_inputs.size());
+	for (int i = 0; i < num_cars; i++) {
 		PlayerInput inp = PlayerInput::from_neutral();
-		if (i < player_inputs.size()) {
+		if (i < player_input_count) {
 			Variant::Type t = player_inputs[i].get_type();
 			if (t == godot::Variant::PACKED_BYTE_ARRAY) {
 				inp = PlayerInput::from_bytes(player_inputs[i]);
@@ -157,97 +1290,215 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 				inp = PlayerInput::from_dict(player_inputs[i]);
 			}
 		}
-		if (cars[i].can_start_s_boost() && inp.boost) {
-			float gap = lead_distance - pre_distances[i];
+		PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		if (!car_soa.s_boost_active[lane] && car_soa.s_boost_charge[lane] >= car_soa.s_boost_charge_max[lane] && inp.boost) {
+			float gap = lead_distance - soa.pre_distances[i];
 			if (gap < 0.0f) {
 				gap = 0.0f;
 			}
 			uint16_t duration_frames = compute_s_boost_duration_frames(gap);
-			cars[i].start_s_boost(duration_frames);
+			if (duration_frames == 0)
+				duration_frames = 1;
+			car_soa.s_boost_active[lane] = true;
+			car_soa.s_boost_frames_remaining[lane] = duration_frames;
+			car_soa.s_boost_charge[lane] = 0;
+			car_soa.s_boost_emit_frame_accumulator[lane] = 0;
+			car_soa.s_boost_pending_spark_spawns[lane] = 0;
+			car_soa.boost_frames[lane] = 0;
+			car_soa.boost_frames_manual[lane] = 0;
+			car_soa.boost_turbo[lane] = 0.0f;
+			car_soa.dashplate_heat_multiplier[lane] = 1.0f;
+			car_soa.boost_delay_frame_counter[lane] = 0;
+			car_soa.car_hit_invincibility[lane] = 0;
+			car_soa.machine_state[lane] &= ~(MACHINESTATE::JUST_PRESSED_BOOST |
+				MACHINESTATE::BOOSTING |
+				MACHINESTATE::BOOSTING_DASHPLATE |
+				MACHINESTATE::SIDEATTACKING |
+				MACHINESTATE::SPINATTACKING |
+				MACHINESTATE::TOOKDAMAGE |
+				MACHINESTATE::LOWGRIP);
 			inp.boost = false;
 		}
+		soa.inputs[i] = inp;
 		slot[i] = inp;
-		cars[i].tick(inp, tick);
 	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		for (int j = i + 1; j < num_cars; j++)
-		{
-			bool collided = cars[i].handle_machine_v_machine_collision(cars[j]);
-			if (collided) {
-				const uint32_t current_tick = static_cast<uint32_t>(cars[i].simulation_tick);
-				constexpr uint32_t kCollisionSparkCooldownFrames = 30;
-				auto is_recent_hit = [&](const PhysicsCar& car) -> bool {
-					if (!car.has_last_hit_tick)
-						return false;
-					uint32_t delta = current_tick - car.last_hit_tick;
-					return delta < kCollisionSparkCooldownFrames;
-				};
-				const bool recently_hit = is_recent_hit(cars[i]) || is_recent_hit(cars[j]);
-				const bool a_attacking = (cars[i].machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
-				const bool b_attacking = (cars[j].machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
-				int sparks_a = 3;
-				int sparks_b = 3;
-				if (a_attacking && b_attacking) {
-					sparks_a = 6;
-					sparks_b = 6;
-				} else if (a_attacking && !b_attacking) {
-					sparks_b = 8;
-				} else if (!a_attacking && b_attacking) {
-					sparks_a = 8;
-				}
-				if (!recently_hit) {
-					if (sparks_a > 0) {
-						emit_super_sparks_from_car(cars[i], sparks_a);
-					}
-					if (sparks_b > 0) {
-						emit_super_sparks_from_car(cars[j], sparks_b);
-					}
-				}
-				cars[i].last_hit_tick = current_tick;
-				cars[j].last_hit_tick = current_tick;
-				cars[i].has_last_hit_tick = true;
-				cars[j].has_last_hit_tick = true;
-			}
+	for (int i = num_cars; i < sim_lane_count; ++i) {
+		soa.inputs[i] = PlayerInput::from_neutral();
+		soa.pending_s_boost_sparks[i] = 0;
+	}
+	auto now = std::chrono::high_resolution_clock::now();
+	soa.prof_input_us = elapsed_us(phase_start, now);
+
+	soa.prof_prepare_floor_us = 0;
+	soa.prof_project_us = 0;
+	soa.prof_steer_susp_us = 0;
+	soa.prof_linear_us = 0;
+	soa.prof_integrate_us = 0;
+	uint32_t lane_prepare_floor_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t lane_project_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t lane_steer_susp_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t lane_linear_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t lane_integrate_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t lane_collision_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_response_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_checkpoints_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_sparks_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_sample_old_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_corners_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_apply_response_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_project_speed_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_visual_geom_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_damage_tail_us[VEHICLE_WORKER_COUNT] = {};
+	uint32_t post_total_us[VEHICLE_WORKER_COUNT] = {};
+
+	auto lane_group_start = std::chrono::high_resolution_clock::now();
+	run_vehicle_lanes(car_shard_count, parallel_vehicle_shards, [&](int lane, VehicleLaneGroup& group) {
+		PhysicsCarSoA& car_soa = car_shards[lane];
+		const int global_start = car_soa.global_start;
+		TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
+
+		begin_vehicle_tick_soa(car_soa, cars + global_start,
+			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count);
+		group.sync();
+
+		uint32_t prepare_floor_us = 0;
+		uint32_t project_us = 0;
+		uint32_t steer_susp_us = 0;
+		uint32_t linear_us = 0;
+		uint32_t integrate_us = 0;
+		begin_vehicle_motion_phased_soa(car_soa, cars + global_start,
+			soa.inputs + global_start, car_soa.count, track_scratch, prepare_floor_us);
+		lane_prepare_floor_us[lane] = prepare_floor_us;
+		group.sync();
+
+		if (lane == 0) {
+			commit_vehicle_trigger_events(car_shards, cars, car_shard_count, vehicle_lane_track_scratch);
 		}
+		group.sync();
+
+		finish_vehicle_motion_phased_soa(car_soa, cars + global_start, car_soa.count,
+			project_us, steer_susp_us, linear_us, integrate_us);
+		lane_project_us[lane] = project_us;
+		lane_steer_susp_us[lane] = steer_susp_us;
+		lane_linear_us[lane] = linear_us;
+		lane_integrate_us[lane] = integrate_us;
+		group.sync();
+
+		finish_vehicle_tick_soa(car_soa, car_soa.count);
+		group.sync();
+
+		if (lane == 0) {
+			auto collision_start = std::chrono::high_resolution_clock::now();
+			collide_vehicles_broadphase(*this, cars, num_cars,
+				soa.collision_indices,
+				soa.collision_min_x, soa.collision_max_x,
+				soa.collision_min_y, soa.collision_max_y,
+				soa.collision_min_z, soa.collision_max_z);
+			auto collision_end = std::chrono::high_resolution_clock::now();
+			lane_collision_us[lane] = elapsed_us(collision_start, collision_end);
+		}
+		group.sync();
+
+		uint32_t response_us = 0;
+		uint32_t checkpoints_us = 0;
+		uint32_t sparks_us = 0;
+		uint32_t sample_old_us = 0;
+		uint32_t corners_us = 0;
+		uint32_t apply_response_us = 0;
+		uint32_t project_speed_us = 0;
+		uint32_t visual_geom_us = 0;
+		uint32_t damage_tail_us = 0;
+		post_vehicle_tick_soa(car_soa, cars + global_start,
+			soa.pending_s_boost_sparks + global_start, car_soa.count, track_scratch,
+			response_us, checkpoints_us, sparks_us,
+			sample_old_us, corners_us, apply_response_us,
+			project_speed_us, visual_geom_us, damage_tail_us);
+		post_response_us[lane] = response_us;
+		post_checkpoints_us[lane] = checkpoints_us;
+		post_sparks_us[lane] = sparks_us;
+		post_sample_old_us[lane] = sample_old_us;
+		post_corners_us[lane] = corners_us;
+		post_apply_response_us[lane] = apply_response_us;
+		post_project_speed_us[lane] = project_speed_us;
+		post_visual_geom_us[lane] = visual_geom_us;
+		post_damage_tail_us[lane] = damage_tail_us;
+		post_total_us[lane] = response_us + checkpoints_us + sparks_us;
+	});
+	now = std::chrono::high_resolution_clock::now();
+	const uint32_t lane_group_us = elapsed_us(lane_group_start, now);
+	soa.prof_lane_group_us = lane_group_us;
+	soa.prof_lanes = static_cast<uint32_t>(active_vehicle_lanes);
+
+	soa.prof_begin_us = 0;
+	for (int lane = 0; lane < car_shard_count; ++lane) {
+		soa.prof_prepare_floor_us = std::max(soa.prof_prepare_floor_us, lane_prepare_floor_us[lane]);
+		soa.prof_project_us = std::max(soa.prof_project_us, lane_project_us[lane]);
+		soa.prof_steer_susp_us = std::max(soa.prof_steer_susp_us, lane_steer_susp_us[lane]);
+		soa.prof_linear_us = std::max(soa.prof_linear_us, lane_linear_us[lane]);
+		soa.prof_integrate_us = std::max(soa.prof_integrate_us, lane_integrate_us[lane]);
 	}
-	for (int i = 0; i < num_cars; i++)
-	{
-		cars[i].post_tick();
-		uint8_t pending = cars[i].consume_pending_s_boost_sparks();
-		if (pending > 0) {
-			emit_super_sparks_from_car(cars[i], pending);
+
+	soa.prof_collision_us = lane_collision_us[0];
+	soa.prof_post_us = 0;
+	soa.prof_post_response_us = 0;
+	soa.prof_post_checkpoints_us = 0;
+	soa.prof_post_sparks_us = 0;
+	soa.prof_post_sample_old_us = 0;
+	soa.prof_post_corners_us = 0;
+	soa.prof_post_apply_response_us = 0;
+	soa.prof_post_project_speed_us = 0;
+	soa.prof_post_visual_geom_us = 0;
+	soa.prof_post_damage_tail_us = 0;
+	for (int shard = 0; shard < car_shard_count; ++shard) {
+		soa.prof_post_us = std::max(soa.prof_post_us, post_total_us[shard]);
+		soa.prof_post_response_us = std::max(soa.prof_post_response_us, post_response_us[shard]);
+		soa.prof_post_checkpoints_us = std::max(soa.prof_post_checkpoints_us, post_checkpoints_us[shard]);
+		soa.prof_post_sparks_us = std::max(soa.prof_post_sparks_us, post_sparks_us[shard]);
+		soa.prof_post_sample_old_us = std::max(soa.prof_post_sample_old_us, post_sample_old_us[shard]);
+		soa.prof_post_corners_us = std::max(soa.prof_post_corners_us, post_corners_us[shard]);
+		soa.prof_post_apply_response_us = std::max(soa.prof_post_apply_response_us, post_apply_response_us[shard]);
+		soa.prof_post_project_speed_us = std::max(soa.prof_post_project_speed_us, post_project_speed_us[shard]);
+		soa.prof_post_visual_geom_us = std::max(soa.prof_post_visual_geom_us, post_visual_geom_us[shard]);
+		soa.prof_post_damage_tail_us = std::max(soa.prof_post_damage_tail_us, post_damage_tail_us[shard]);
+	}
+	for (int i = 0; i < num_cars; i++) {
+		if (soa.pending_s_boost_sparks[i] > 0) {
+			emit_super_sparks_from_car(cars[i], soa.pending_s_boost_sparks[i]);
 		}
 	}
 
-	std::vector<float> placement_distances;
-	placement_distances.resize(num_cars, 0.0f);
-	std::vector<int> placement_indices(num_cars);
+	phase_start = now;
 	for (int i = 0; i < num_cars; ++i) {
-		placement_distances[i] = compute_car_distance_along_track(cars[i]);
-		placement_indices[i] = i;
+		PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		soa.placement_distances[i] = compute_vehicle_distance_along_track(
+			car_soa.current_checkpoint[lane], car_soa.checkpoint_fraction[lane], car_soa.lap[lane]);
+		soa.placement_indices[i] = i;
 	}
-	std::sort(placement_indices.begin(), placement_indices.end(), [&](int a, int b) {
-		return placement_distances[a] > placement_distances[b];
+	std::sort(soa.placement_indices, soa.placement_indices + num_cars, [&](int a, int b) {
+		return soa.placement_distances[a] > soa.placement_distances[b];
 	});
 
 	if (super_spark_state) {
 		super_spark_state->placement_timer += 1;
 		while (super_spark_state->placement_timer >= 120) {
-			if (!placement_indices.empty()) {
-				emit_super_sparks_from_car(cars[placement_indices[0]], 4);
+			if (num_cars > 0) {
+				emit_super_sparks_from_car(cars[soa.placement_indices[0]], 4);
 			}
-			if (placement_indices.size() > 1) {
-				emit_super_sparks_from_car(cars[placement_indices[1]], 3);
+			if (num_cars > 1) {
+				emit_super_sparks_from_car(cars[soa.placement_indices[1]], 3);
 			}
-			if (placement_indices.size() > 2) {
-				emit_super_sparks_from_car(cars[placement_indices[2]], 2);
+			if (num_cars > 2) {
+				emit_super_sparks_from_car(cars[soa.placement_indices[2]], 2);
 			}
 			super_spark_state->placement_timer -= 120;
 		}
 	}
 
 	update_super_sparks();
+	now = std::chrono::high_resolution_clock::now();
+	soa.prof_misc_us = elapsed_us(phase_start, now);
 
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -255,7 +1506,7 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	//		CollisionData collision;
 	//		godot::Vector3 p0 = cars[i].position + godot::Vector3(0, 5, 3);
 	//		godot::Vector3 p1 = cars[i].position + godot::Vector3(0, -100, 3);
-	//		current_track->cast_vs_track(collision, p0, p1, CAST_FLAGS::WANTS_TRACK, cars[i].current_collision_checkpoint);
+	//		current_track->cast_vs_track(collision, p0, p1, CAST_FLAGS::WANTS_TRACK, cars[i].soa->current_collision_checkpoint[cars[i].soa_index]);
 	//		if (collision.collided){
 	//			dd3d->call("draw_arrow", collision.collision_point, collision.collision_point + collision.collision_normal * 2, godot::Color(0.0f, 1.0f, 0.0f), 0.25, true, _TICK_DELTA);
 	//		}
@@ -263,6 +1514,33 @@ void GameSim::tick_gamesim(godot::Array player_inputs)
 	//	}
 	//}
 	save_state();
+	auto end = std::chrono::high_resolution_clock::now();
+	soa.prof_total_us = elapsed_us(start, end);
+	record_phase_profile_sample();
+	if ((tick % 120) == 0) {
+		UtilityFunctions::print("MXT_PHASE_US total=", static_cast<int64_t>(soa.prof_total_us),
+			" input=", static_cast<int64_t>(soa.prof_input_us),
+			" begin=", static_cast<int64_t>(soa.prof_begin_us),
+			" prepare_floor=", static_cast<int64_t>(soa.prof_prepare_floor_us),
+			" project=", static_cast<int64_t>(soa.prof_project_us),
+			" steer_susp=", static_cast<int64_t>(soa.prof_steer_susp_us),
+			" linear=", static_cast<int64_t>(soa.prof_linear_us),
+			" integrate=", static_cast<int64_t>(soa.prof_integrate_us),
+			" collision=", static_cast<int64_t>(soa.prof_collision_us),
+			" post=", static_cast<int64_t>(soa.prof_post_us),
+			" post_response=", static_cast<int64_t>(soa.prof_post_response_us),
+			" post_checkpoints=", static_cast<int64_t>(soa.prof_post_checkpoints_us),
+			" post_sparks=", static_cast<int64_t>(soa.prof_post_sparks_us),
+			" post_sample_old=", static_cast<int64_t>(soa.prof_post_sample_old_us),
+			" post_corners=", static_cast<int64_t>(soa.prof_post_corners_us),
+			" post_apply_response=", static_cast<int64_t>(soa.prof_post_apply_response_us),
+			" post_project_speed=", static_cast<int64_t>(soa.prof_post_project_speed_us),
+			" post_visual_geom=", static_cast<int64_t>(soa.prof_post_visual_geom_us),
+			" post_damage_tail=", static_cast<int64_t>(soa.prof_post_damage_tail_us),
+			" misc=", static_cast<int64_t>(soa.prof_misc_us),
+			" lane_group=", static_cast<int64_t>(soa.prof_lane_group_us),
+			" lanes=", static_cast<int64_t>(soa.prof_lanes));
+	}
 
 	//auto elapsed = std::chrono::high_resolution_clock::now() - start;
 	//long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
@@ -318,12 +1596,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (Engine::get_singleton()->is_editor_hint()) return;
 
 	tick = 0;
+	std::memset(profile_samples, 0, sizeof(profile_samples));
+	std::memset(profile_sums, 0, sizeof(profile_sums));
+	profile_cursor = 0;
+	profile_count = 0;
 
 	int32_t buffer_size = lvldat_buf->get_size();
+	const int requested_cars_hint = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
 
 	level_data.instantiate(1024 * 1024 * 16);
 
-	gamestate_data.instantiate(1024 * 1024);
+	gamestate_data.instantiate(1024 * 1024 + static_cast<size_t>(requested_cars_hint) * 8192u);
 	spark_multimesh_instance = nullptr;
 	super_spark_state = gamestate_data.allocate_object<SuperSparkState>();
 	if (super_spark_state) {
@@ -347,7 +1630,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		state_buffer[i].size = 0;
 	}
 
-	current_track = level_data.allocate_object<RaceTrack>();
+	current_track = level_data.allocate_class<RaceTrack>();
 	current_track->num_trigger_colliders = 0;
 	current_track->trigger_colliders = nullptr;
 	current_track->lap_length = 0.0f;
@@ -378,9 +1661,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	// load in collision checkpoints //
 
 	current_track->num_checkpoints = checkpoint_count;
-	current_track->checkpoint_stack = level_data.allocate_array<int>(checkpoint_count);
-	current_track->visit_gen = 1;
-	current_track->visit_stamp = level_data.allocate_array<uint32_t>(checkpoint_count);
 	current_track->checkpoints = level_data.allocate_array<CollisionCheckpoint>(checkpoint_count);
 
 	for (int i = 0; i < checkpoint_count; i++)
@@ -676,23 +1956,28 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		const int by = 32;
 		for (int x = 0; x < bx; x++)
 		{
-			for (int y = 0; y < by; y++)
+			for (int y = 0; y < by; y += 4)
 			{
-				godot::Vector2 use_t((float(x) / (bx - 1)) * 2.0f - 1.0f, float(y) / (by - 1));
-				godot::Transform3D use_pos;
-				current_track->segments[seg].road_shape->get_oriented_transform_at_time(use_pos, use_t);
-				if (use_pos.origin.y < current_track->minimum_y)
-				{
-					current_track->minimum_y = use_pos.origin.y;
+				SimVec2 use_t[4];
+				SimTransform use_pos[4];
+				const float tx = (float(x) / (bx - 1)) * 2.0f - 1.0f;
+				for (int lane = 0; lane < 4; ++lane) {
+					use_t[lane] = SimVec2(tx, float(y + lane) / (by - 1));
 				}
-				//current_track->segments[seg].road_shape->get_position_at_time(use_pos, use_t);
-				if (x == 0 && y == 0)
-				{
-					current_track->segments[seg].bounds.position = use_pos.origin;
-					current_track->segments[seg].bounds.size = godot::Vector3();
+				current_track->segments[seg].road_shape->get_oriented_transform_at_time4(use_pos, use_t);
+				for (int lane = 0; lane < 4; ++lane) {
+					if (use_pos[lane].origin.y < current_track->minimum_y)
+					{
+						current_track->minimum_y = use_pos[lane].origin.y;
+					}
+					if (x == 0 && y == 0 && lane == 0)
+					{
+						current_track->segments[seg].bounds.position = use_pos[lane].origin;
+						current_track->segments[seg].bounds.size = SimVec3();
+					}
+					current_track->segments[seg].bounds.expand_to(use_pos[lane].origin);
+					current_track->segments[seg].bounds.expand_to(use_pos[lane].origin + use_pos[lane].basis[1] * 25.f);
 				}
-				current_track->segments[seg].bounds.expand_to(use_pos.origin);
-				current_track->segments[seg].bounds.expand_to(use_pos.origin + use_pos.basis[1] * 25.f);
 			}
 		}
 		current_track->segments[seg].bounds.grow_by(5.f);
@@ -721,7 +2006,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			uint32_t seg_idx  = lvldat_buf->get_u32();
 			uint32_t cp_idx   = lvldat_buf->get_u32();
 
-			godot::Basis b;
+			SimBasis b;
 			b[0][0] = lvldat_buf->get_float();
 			b[0][1] = lvldat_buf->get_float();
 			b[0][2] = lvldat_buf->get_float();
@@ -731,13 +2016,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			b[2][0] = lvldat_buf->get_float();
 			b[2][1] = lvldat_buf->get_float();
 			b[2][2] = lvldat_buf->get_float();
-			godot::Vector3 origin;
+			SimVec3 origin;
 			origin.x = lvldat_buf->get_float();
 			origin.y = lvldat_buf->get_float();
 			origin.z = lvldat_buf->get_float();
-			godot::Transform3D inv_t(b.transposed(), origin);
+			SimTransform inv_t(b, origin);
 
-			godot::Vector3 ext;
+			SimVec3 ext;
 			ext.x = lvldat_buf->get_float();
 			ext.y = lvldat_buf->get_float();
 			ext.z = lvldat_buf->get_float();
@@ -767,7 +2052,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 
-	int requested_cars = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
+	int requested_cars = requested_cars_hint;
 	PhysicsCarProperties* props_array = nullptr;
 	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
 	car_properties_array = props_array;
@@ -791,19 +2076,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 		for (int i = 0; i < num_cars; i++)
 		{
-			cars[i].mtxa = &mtxa;
-			cars[i].current_track = current_track;
-			cars[i].owning_sim = this;
+			cars[i].soa->current_track[cars[i].soa_index] = current_track;
 			if (i < car_prop_buffers.size()) {
 				godot::PackedByteArray arr = car_prop_buffers[i];
                // StreamPeerBuffer inherits Reference; using Ref ensures
                // the object is freed when 'pb' goes out of scope.
 				godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
 				pb->set_data_array(arr);
-				*(cars[i].car_properties) = PhysicsCarProperties::deserialize(*pb);
+				*(cars[i].soa->car_properties[cars[i].soa_index]) = PhysicsCarProperties::deserialize(*pb);
 			}
 			if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
-				cars[i].m_accel_setting = accel_settings[i];
+				cars[i].soa->m_accel_setting[cars[i].soa_index] = accel_settings[i];
 			}
 			cars[i].initialize_machine();
 
@@ -830,35 +2113,33 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			float t_y = remap_float(distance_back, 0.0f, spawn_seg.segment_length, 1.0f, 0.0f);
 			float t_x = remap_float(static_cast<float>(slot % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
 
-			godot::Transform3D spawn_transform;
-			spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, godot::Vector2(t_x, t_y));
+			SimTransform spawn_transform;
+			spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, SimVec2(t_x, t_y));
 			spawn_transform.basis.transpose();
 			spawn_transform.basis.orthonormalize();
 			spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
-			godot::Vector3 up_offset = spawn_transform.basis.get_column(1) * 0.5f;
+			SimVec3 up_offset = spawn_transform.basis.get_column(1) * 0.5f;
 			spawn_transform.origin += up_offset;
 
-			cars[i].position_current = spawn_transform.origin;
-			cars[i].position_old = spawn_transform.origin;
-			cars[i].position_old_2 = spawn_transform.origin;
-			cars[i].position_old_dupe = spawn_transform.origin;
-			cars[i].position_bottom = spawn_transform.xform(godot::Vector3(0.0f, -0.1f, 0.0f));
+			STORE_INDEXED_VEC3(*cars[i].soa, position_current, cars[i].soa_index, spawn_transform.origin);
+			STORE_INDEXED_VEC3(*cars[i].soa, position_old, cars[i].soa_index, spawn_transform.origin);
+			STORE_INDEXED_VEC3(*cars[i].soa, position_old_2, cars[i].soa_index, spawn_transform.origin);
+			STORE_INDEXED_VEC3(*cars[i].soa, position_old_dupe, cars[i].soa_index, spawn_transform.origin);
+			STORE_INDEXED_VEC3(*cars[i].soa, position_bottom, cars[i].soa_index, spawn_transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
 
-			cars[i].mtxa->push();
-			cars[i].mtxa->cur->origin = spawn_transform.origin;
-			cars[i].basis_physical.basis = spawn_transform.basis;
-			cars[i].basis_physical_other.basis = spawn_transform.basis;
-			cars[i].rotate_mtxa_from_diff_btwn_machine_front_and_back();
-			cars[i].mtxa->pop();
+			{ SimTransform mxt_tmp = MXT_LOAD_TRANSFORM(*cars[i].soa, basis_physical, cars[i].soa_index); mxt_tmp.basis = spawn_transform.basis; MXT_STORE_TRANSFORM(*cars[i].soa, basis_physical, cars[i].soa_index, mxt_tmp); }
+			{ SimTransform mxt_tmp = MXT_LOAD_TRANSFORM(*cars[i].soa, basis_physical_other, cars[i].soa_index); mxt_tmp.basis = spawn_transform.basis; MXT_STORE_TRANSFORM(*cars[i].soa, basis_physical_other, cars[i].soa_index, mxt_tmp); }
+			cars[i].update_pitch_transform_from_machine_front_back();
 
-			cars[i].transform_visual = spawn_transform;
-			cars[i].track_surface_normal = spawn_transform.basis.get_column(1);
+			MXT_STORE_TRANSFORM(*cars[i].soa, transform_visual, cars[i].soa_index, spawn_transform);
+			STORE_INDEXED_VEC3(*cars[i].soa, track_surface_normal, cars[i].soa_index, spawn_transform.basis.get_column(1));
 		}
 
 		input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
 		for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
 			input_buffer[i] = PlayerInput::from_neutral();
 		}
+		ensure_vehicle_tick_soa_capacity(num_cars);
 		if (car_player_ids) {
 			::free(car_player_ids);
 		}
@@ -899,8 +2180,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				current_track->num_trigger_colliders = 0;
 				current_track->trigger_colliders = nullptr;
 			}
+			if (cars) {
+				::free(cars);
+				cars = nullptr;
+			}
 			level_data.free_heap();
 			gamestate_data.free_heap();
+			car_properties_array = nullptr;
 			super_spark_state = nullptr;
 			super_sparks = nullptr;
 			spark_multimesh_instance = nullptr;
@@ -916,9 +2202,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				::free(input_buffer);
 				input_buffer = nullptr;
 			}
+			free_vehicle_tick_soa();
 			sim_started = false;
 			tick = 0;
 			current_track = nullptr;
+		}
+		if (cars) {
+			::free(cars);
+			cars = nullptr;
 		}
 		if (car_player_ids) {
 			::free(car_player_ids);
@@ -973,33 +2264,33 @@ godot::PackedByteArray GameSim::build_cpu_observation(const PhysicsCar& car) con
 	godot::Ref<godot::StreamPeerBuffer> buffer;
 	buffer.instantiate();
 	buffer->seek(0);
-	auto write_vec3 = [&](const godot::Vector3& v) {
+	auto write_vec3 = [&](const SimVec3& v) {
 		buffer->put_float(v.x);
 		buffer->put_float(v.y);
 		buffer->put_float(v.z);
 	};
-	write_vec3(car.road_sample.spatial_t);
-	buffer->put_float(car.road_sample.road_t.x);
-	buffer->put_float(car.road_sample.road_t.y);
-	write_vec3(car.position_current);
-	write_vec3(car.velocity);
-	write_vec3(car.velocity_angular);
-	const godot::Basis basis = car.basis_physical.basis;
+	write_vec3(car.soa->road_sample[car.soa_index].spatial_t);
+	buffer->put_float(car.soa->road_sample[car.soa_index].road_t.x);
+	buffer->put_float(car.soa->road_sample[car.soa_index].road_t.y);
+	write_vec3(LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index));
+	write_vec3(LOAD_INDEXED_VEC3(*car.soa, velocity, car.soa_index));
+	write_vec3(LOAD_INDEXED_VEC3(*car.soa, velocity_angular, car.soa_index));
+	const SimBasis basis = MXT_LOAD_TRANSFORM(*car.soa, basis_physical, car.soa_index).basis;
 	for (int col = 0; col < 3; ++col) {
 		write_vec3(basis.get_column(col));
 	}
-	write_vec3(car.basis_physical.origin);
+	write_vec3(MXT_LOAD_TRANSFORM(*car.soa, basis_physical, car.soa_index).origin);
 	for (int col = 0; col < 3; ++col) {
-		write_vec3(car.road_sample.closest_surface.basis.get_column(col));
+		write_vec3(car.soa->road_sample[car.soa_index].closest_surface.basis.get_column(col));
 	}
-	buffer->put_float(car.base_speed);
-	buffer->put_float(car.energy);
-	buffer->put_float(car.checkpoint_fraction);
-	buffer->put_u16(car.current_checkpoint);
-	buffer->put_u32(car.terrain_state);
-	buffer->put_u32(car.machine_state);
-	buffer->put_u8(car.restore_state);
-	buffer->put_u32(car.tilt_fr.state);
+	buffer->put_float(car.soa->base_speed[car.soa_index]);
+	buffer->put_float(car.soa->energy[car.soa_index]);
+	buffer->put_float(car.soa->checkpoint_fraction[car.soa_index]);
+	buffer->put_u16(car.soa->current_checkpoint[car.soa_index]);
+	buffer->put_u32(car.soa->terrain_state[car.soa_index]);
+	buffer->put_u32(car.soa->machine_state[car.soa_index]);
+	buffer->put_u8(car.soa->restore_state[car.soa_index]);
+	buffer->put_u32(car.soa->tilt_state[car.soa_index * 4 + 1]);
 	return buffer->get_data_array();
 }
 
@@ -1015,9 +2306,9 @@ void GameSim::reset_super_sparks()
 		super_sparks[i].active = 0;
 		super_sparks[i].grounded = 0;
 		super_sparks[i].checkpoint = 0;
-		super_sparks[i].position = godot::Vector3();
-		super_sparks[i].velocity = godot::Vector3();
-		super_sparks[i].plane_normal = godot::Vector3(0.0f, 1.0f, 0.0f);
+		super_sparks[i].position = SimVec3();
+		super_sparks[i].velocity = SimVec3();
+		super_sparks[i].plane_normal = SimVec3(0.0f, 1.0f, 0.0f);
 		super_sparks[i].plane_d = 0.0f;
 	}
 }
@@ -1041,6 +2332,11 @@ uint16_t GameSim::compute_s_boost_duration_frames(float gap_distance) const
 
 float GameSim::compute_car_distance_along_track(const PhysicsCar& car) const
 {
+	return compute_vehicle_distance_along_track(car.soa->current_checkpoint[car.soa_index], car.soa->checkpoint_fraction[car.soa_index], car.soa->lap[car.soa_index]);
+}
+
+float GameSim::compute_vehicle_distance_along_track(uint16_t current_checkpoint, float checkpoint_fraction, uint8_t lap) const
+{
 	if (!current_track)
 		return 0.0f;
 
@@ -1050,18 +2346,18 @@ float GameSim::compute_car_distance_along_track(const PhysicsCar& car) const
 	}
 
 	float lap_progress = 0.0f;
-	int cp_idx = car.current_checkpoint;
+	int cp_idx = current_checkpoint;
 	if (cp_idx >= 0 && cp_idx < current_track->num_checkpoints) {
 		const CollisionCheckpoint& cp = current_track->checkpoints[cp_idx];
 		float entry_distance = cp.distance - cp.local_distance;
 		if (entry_distance < 0.0f) {
 			entry_distance = 0.0f;
 		}
-		float fraction = std::clamp(car.checkpoint_fraction, 0.0f, 1.0f);
+		float fraction = std::clamp(checkpoint_fraction, 0.0f, 1.0f);
 		lap_progress = entry_distance + cp.local_distance * fraction;
 	}
 
-	float lap_total = lap_progress + lap_length * std::max(static_cast<float>(car.lap), 0.0f);
+	float lap_total = lap_progress + lap_length * std::max(static_cast<float>(lap), 0.0f);
 	return lap_total;
 }
 
@@ -1071,17 +2367,17 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 		return;
 	if (!sim_started || !super_spark_state || !super_sparks)
 		return;
-	if ((car.machine_state & MACHINESTATE::STARTINGCOUNTDOWN) != 0)
+	if ((car.soa->machine_state[car.soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) != 0)
 		return;
 
 	constexpr uint64_t kPostCountdownBlockFrames = 180;
-	const uint64_t current_frame = static_cast<uint64_t>(car.simulation_tick);
-	const uint64_t safe_frame = static_cast<uint64_t>(car.level_start_time) + kPostCountdownBlockFrames;
+	const uint64_t current_frame = static_cast<uint64_t>(car.soa->simulation_tick[car.soa_index]);
+	const uint64_t safe_frame = static_cast<uint64_t>(car.soa->level_start_time[car.soa_index]) + kPostCountdownBlockFrames;
 	if (current_frame < safe_frame)
 		return;
 
-	const godot::Vector3 normal_in = car.track_surface_normal.length_squared() > 0.0001f ? car.track_surface_normal.normalized() : godot::Vector3(0.0f, 1.0f, 0.0f);
-	const godot::Vector3 surface_point = car.track_surface_pos.length_squared() > 0.0f ? car.track_surface_pos : car.position_current;
+	const SimVec3 normal_in = LOAD_INDEXED_VEC3(*car.soa, track_surface_normal, car.soa_index).length_squared() > 0.0001f ? LOAD_INDEXED_VEC3(*car.soa, track_surface_normal, car.soa_index).normalized() : SimVec3(0.0f, 1.0f, 0.0f);
+	const SimVec3 surface_point = LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index).length_squared() > 0.0f ? LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index) : LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index);
 
 	auto next_rand = [&]() -> float {
 		super_spark_state->rng_state = super_spark_state->rng_state * 1664525u + 1013904223u;
@@ -1091,12 +2387,12 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 		return min_v + (max_v - min_v) * next_rand();
 	};
 
-	godot::Vector3 tangent_a = normal_in.cross(godot::Vector3(0.0f, 0.0f, 1.0f));
+	SimVec3 tangent_a = normal_in.cross(SimVec3(0.0f, 0.0f, 1.0f));
 	if (tangent_a.length_squared() < 0.0001f) {
-		tangent_a = normal_in.cross(godot::Vector3(1.0f, 0.0f, 0.0f));
+		tangent_a = normal_in.cross(SimVec3(1.0f, 0.0f, 0.0f));
 	}
 	tangent_a = tangent_a.normalized();
-	godot::Vector3 tangent_b = normal_in.cross(tangent_a).normalized();
+	SimVec3 tangent_b = normal_in.cross(tangent_a).normalized();
 
 	for (int n = 0; n < count; ++n) {
 		const uint16_t cursor = super_spark_state->cursor;
@@ -1105,10 +2401,10 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 
 		spark.active = 1;
 		spark.grounded = 0;
-		spark.checkpoint = car.current_checkpoint;
+		spark.checkpoint = car.soa->current_checkpoint[car.soa_index];
 		spark.plane_normal = normal_in;
 		spark.plane_d = spark.plane_normal.dot(surface_point) + 2.5f;
-		spark.position = car.position_current + spark.plane_normal * 1.5f;
+		spark.position = LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index) + spark.plane_normal * 1.5f;
 
 		const float up_speed = rand_range(25.0f, 40.0f);
 		const float lateral_a = rand_range(-30.0f, 30.0f);
@@ -1140,22 +2436,26 @@ void GameSim::update_super_sparks()
 			float plane_distance = spark.plane_normal.dot(spark.position) - spark.plane_d;
 			if (plane_distance <= 0.0f) {
 				spark.position -= spark.plane_normal * plane_distance;
-				spark.velocity = godot::Vector3();
+				spark.velocity = SimVec3();
 				spark.grounded = 1;
 			}
 		}
 
 		for (int car_idx = 0; car_idx < num_cars; ++car_idx) {
-			PhysicsCar& car = cars[car_idx];
-			if (!car.can_collect_super_spark())
+			PhysicsCarSoA& car_soa = *cars[car_idx].soa;
+			const int lane = cars[car_idx].soa_index;
+			if (car_soa.s_boost_active[lane] || (car_soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0)
 				continue;
 			if (spark.grounded == false)
 				continue;
-			godot::Vector3 closest = get_closest_point_to_segment(spark.position, car.position_old, car.position_current);
+			SimVec3 closest = get_closest_point_to_segment(
+				spark.position, LOAD_INDEXED_VEC3(car_soa, position_old, lane), LOAD_INDEXED_VEC3(car_soa, position_current, lane));
 			float dist_sq = spark.position.distance_squared_to(closest);
 			if (dist_sq <= collect_radius_sq) {
-				car.add_super_spark_charge(1);
-				car.base_speed += 0.05f;
+				if (car_soa.s_boost_charge[lane] < car_soa.s_boost_charge_max[lane]) {
+					car_soa.s_boost_charge[lane] += 1;
+				}
+				car_soa.base_speed[lane] += 0.05f;
 				spark.active = 0;
 				spark.grounded = 0;
 				break;
@@ -1185,7 +2485,7 @@ void GameSim::update_super_spark_visuals()
 			continue;
 		}
 		godot::Transform3D spark_transform;
-		spark_transform.origin = super_sparks[i].position;
+		spark_transform.origin = gd_vec3(super_sparks[i].position);
 		spark_multimesh->set_instance_transform(active_count, spark_transform);
 		active_count += 1;
 	}
@@ -1205,51 +2505,48 @@ void GameSim::update_super_spark_visuals()
 		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
 		godot::Array visual_args;
 		visual_args.resize(44);
-	//mtxa.push();
 		for (int i = 0; i < vis_car_count; i++) {
-		//mtxa.assign(cars[i].basis_physical);
-		//mtxa.cur->origin = cars[i].position_current;
 		//cars[i].create_machine_visual_transform();
-			visual_args[0] = cars[i].position_current;
-			visual_args[1] = cars[i].position_old;
-			visual_args[2] = cars[i].track_surface_normal;
-			visual_args[3] = cars[i].height_above_track;
-			visual_args[4] = cars[i].velocity;
-			visual_args[5] = cars[i].velocity_angular;
-			visual_args[6] = cars[i].basis_physical;
-			visual_args[7] = cars[i].base_speed;
-			visual_args[8] = cars[i].boost_turbo;
-			visual_args[9] = cars[i].speed_kmh;
-			visual_args[10] = cars[i].energy;
-			visual_args[11] = cars[i].lap_progress;
-			visual_args[12] = cars[i].boost_frames;
-			visual_args[13] = cars[i].boost_frames_manual;
-			visual_args[14] = cars[i].lap;
-			visual_args[15] = cars[i].machine_state;
-			visual_args[16] = cars[i].terrain_state;
-			visual_args[17] = cars[i].frames_since_start_2;
-			visual_args[18] = cars[i].tilt_fl.state;
-			visual_args[19] = cars[i].input_strafe;
-			visual_args[20] = cars[i].turn_reaction_input;
-			visual_args[21] = cars[i].g_anim_timer;
-			visual_args[22] = cars[i].state_2;
-			visual_args[23] = cars[i].tilt_fl.offset;
-			visual_args[24] = cars[i].tilt_bl.offset;
-			visual_args[25] = cars[i].stat_weight;
-			visual_args[26] = cars[i].stat_strafe;
-			visual_args[27] = cars[i].input_strafe_1_6;
-			visual_args[28] = cars[i].weight_derived_1;
-			visual_args[29] = cars[i].weight_derived_2;
-			visual_args[30] = cars[i].weight_derived_3;
-			visual_args[31] = cars[i].visual_rotation;
-			visual_args[32] = cars[i].spinattack_angle;
-			visual_args[33] = cars[i].spinattack_direction;
-			visual_args[34] = cars[i].visual_shake_mult;
-			visual_args[35] = cars[i].input_accel;
-			visual_args[36] = cars[i].restore_state;
-			visual_args[37] = cars[i].restore_move_frames;
-			visual_args[38] = cars[i].restore_start_transform;
-			visual_args[39] = cars[i].restore_target_transform;
+			visual_args[0] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, position_current, cars[i].soa_index));
+			visual_args[1] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, position_old, cars[i].soa_index));
+			visual_args[2] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, track_surface_normal, cars[i].soa_index));
+			visual_args[3] = cars[i].soa->height_above_track[cars[i].soa_index];
+			visual_args[4] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, velocity, cars[i].soa_index));
+			visual_args[5] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, velocity_angular, cars[i].soa_index));
+			visual_args[6] = gd_transform(MXT_LOAD_TRANSFORM(*cars[i].soa, basis_physical, cars[i].soa_index));
+			visual_args[7] = cars[i].soa->base_speed[cars[i].soa_index];
+			visual_args[8] = cars[i].soa->boost_turbo[cars[i].soa_index];
+			visual_args[9] = cars[i].soa->speed_kmh[cars[i].soa_index];
+			visual_args[10] = cars[i].soa->energy[cars[i].soa_index];
+			visual_args[11] = cars[i].soa->lap_progress[cars[i].soa_index];
+			visual_args[12] = cars[i].soa->boost_frames[cars[i].soa_index];
+			visual_args[13] = cars[i].soa->boost_frames_manual[cars[i].soa_index];
+			visual_args[14] = cars[i].soa->lap[cars[i].soa_index];
+			visual_args[15] = cars[i].soa->machine_state[cars[i].soa_index];
+			visual_args[16] = cars[i].soa->terrain_state[cars[i].soa_index];
+			visual_args[17] = cars[i].soa->frames_since_start_2[cars[i].soa_index];
+			visual_args[18] = cars[i].soa->tilt_state[cars[i].soa_index * 4];
+			visual_args[19] = cars[i].soa->input_strafe[cars[i].soa_index];
+			visual_args[20] = cars[i].soa->turn_reaction_input[cars[i].soa_index];
+			visual_args[21] = cars[i].soa->g_anim_timer[cars[i].soa_index];
+			visual_args[22] = cars[i].soa->state_2[cars[i].soa_index];
+			visual_args[23] = gd_vec3(SimVec3(cars[i].soa->tilt_offset_x[cars[i].soa_index * 4], cars[i].soa->tilt_offset_y[cars[i].soa_index * 4], cars[i].soa->tilt_offset_z[cars[i].soa_index * 4]));
+			visual_args[24] = gd_vec3(SimVec3(cars[i].soa->tilt_offset_x[cars[i].soa_index * 4 + 2], cars[i].soa->tilt_offset_y[cars[i].soa_index * 4 + 2], cars[i].soa->tilt_offset_z[cars[i].soa_index * 4 + 2]));
+			visual_args[25] = cars[i].soa->stat_weight[cars[i].soa_index];
+			visual_args[26] = cars[i].soa->stat_strafe[cars[i].soa_index];
+			visual_args[27] = cars[i].soa->input_strafe_1_6[cars[i].soa_index];
+			visual_args[28] = cars[i].soa->weight_derived_1[cars[i].soa_index];
+			visual_args[29] = cars[i].soa->weight_derived_2[cars[i].soa_index];
+			visual_args[30] = cars[i].soa->weight_derived_3[cars[i].soa_index];
+			visual_args[31] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, visual_rotation, cars[i].soa_index));
+			visual_args[32] = cars[i].soa->spinattack_angle[cars[i].soa_index];
+			visual_args[33] = cars[i].soa->spinattack_direction[cars[i].soa_index];
+			visual_args[34] = cars[i].soa->visual_shake_mult[cars[i].soa_index];
+			visual_args[35] = cars[i].soa->input_accel[cars[i].soa_index];
+			visual_args[36] = cars[i].soa->restore_state[cars[i].soa_index];
+			visual_args[37] = cars[i].soa->restore_move_frames[cars[i].soa_index];
+			visual_args[38] = gd_transform(MXT_LOAD_TRANSFORM(*cars[i].soa, restore_start_transform, cars[i].soa_index));
+			visual_args[39] = gd_transform(MXT_LOAD_TRANSFORM(*cars[i].soa, restore_target_transform, cars[i].soa_index));
 			visual_args[40] = static_cast<int>(cars[i].get_s_boost_charge());
 			visual_args[41] = static_cast<int>(cars[i].get_s_boost_max_charge());
 			visual_args[42] = cars[i].is_s_boost_active();
@@ -1272,7 +2569,6 @@ void GameSim::update_super_spark_visuals()
 				}
 			}
 		}
-	//mtxa.pop();
 		update_super_spark_visuals();
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 		{
@@ -1286,7 +2582,7 @@ void GameSim::update_super_spark_visuals()
 			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 			if (dd3d && num_cars > 0)
 			{
-				int cp_idx = cars[0].current_checkpoint;
+				int cp_idx = cars[0].soa->current_checkpoint[cars[0].soa_index];
 				if (cp_idx >= 0 && cp_idx < current_track->num_checkpoints)
 				{
 					std::vector<int> branch_indices;
@@ -1301,14 +2597,14 @@ void GameSim::update_super_spark_visuals()
 								continue;
 							}
 							const CollisionCheckpoint &cp = current_track->checkpoints[idx];
-							dd3d->call("draw_line", cp.position_start, cp.position_end, godot::Color(1.0f, 0.9f, 0.1f), _TICK_DELTA);
+							dd3d->call("draw_line", gd_vec3(cp.position_start), gd_vec3(cp.position_end), godot::Color(1.0f, 0.9f, 0.1f), _TICK_DELTA);
 							if (b + 1 < branch_indices.size())
 							{
 								int next_idx = branch_indices[b + 1];
 								if (next_idx >= 0 && next_idx < current_track->num_checkpoints)
 								{
 									const CollisionCheckpoint &next_cp = current_track->checkpoints[next_idx];
-									dd3d->call("draw_line", cp.position_end, next_cp.position_start, godot::Color(0.6f, 0.8f, 0.2f), _TICK_DELTA);
+									dd3d->call("draw_line", gd_vec3(cp.position_end), gd_vec3(next_cp.position_start), godot::Color(0.6f, 0.8f, 0.2f), _TICK_DELTA);
 								}
 							}
 						}
@@ -1321,13 +2617,13 @@ void GameSim::update_super_spark_visuals()
 			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 			for (int i = 0; i < current_track->num_segments; i++)
 			{
-				dd3d->call("draw_aabb", current_track->segments[i].bounds, godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
+				dd3d->call("draw_aabb", gd_aabb(current_track->segments[i].bounds), godot::Color(1.0f, 0.0f, 1.0f, 0.1f), _TICK_DELTA);
 			}
 		}
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_SEGMENT_SURF))
 		{
-		//DEBUG::disp_text("current checkpoint", cars[0].current_checkpoint);
-			int use_seg_ind = current_track->checkpoints[cars[0].current_checkpoint].road_segment;
+		//DEBUG::disp_text("current checkpoint", cars[0].soa->current_checkpoint[cars[0].soa_index]);
+			int use_seg_ind = current_track->checkpoints[cars[0].soa->current_checkpoint[cars[0].soa_index]].road_segment;
 			for (int i = 0; i < current_track->num_segments; i++)
 			{
 				if (i > use_seg_ind + 1 || i < use_seg_ind - 1){
@@ -1353,14 +2649,14 @@ void GameSim::update_super_spark_visuals()
 					float g = y_frac;
 					float b = x_frac;
 
-					godot::Vector2 shape_pos(x_val, y_val);
-					godot::Transform3D road_transform;
+					SimVec2 shape_pos(x_val, y_val);
+					SimTransform road_transform;
 					current_track->segments[i].road_shape->get_oriented_transform_at_time(road_transform, shape_pos);
 
-					godot::Vector3 start = road_transform.origin;
-					godot::Vector3 end = start + road_transform.basis.transposed().get_column(1) * 2.0; // arrow in local Y/up
+					SimVec3 start = road_transform.origin;
+					SimVec3 end = start + road_transform.basis.transposed().get_column(1) * 2.0f; // arrow in local Y/up
 
-					dd3d->call("draw_arrow", start, end, godot::Color(r, g, b), 0.5, true, _TICK_DELTA);
+					dd3d->call("draw_arrow", gd_vec3(start), gd_vec3(end), godot::Color(r, g, b), 0.5, true, _TICK_DELTA);
 				}
 			}
 		}
@@ -1426,11 +2722,9 @@ void GameSim::fix_pointers() {
 		return;
 	}
 	for (int i = 0; i < num_cars; ++i) {
-		cars[i].mtxa = &mtxa;
-		cars[i].current_track = current_track;
-		cars[i].owning_sim = this;
+		cars[i].soa->current_track[cars[i].soa_index] = current_track;
 		if (car_properties_array) {
-			cars[i].car_properties = &car_properties_array[i];
+			cars[i].soa->car_properties[cars[i].soa_index] = &car_properties_array[i];
 		}
 	}
 
@@ -1439,9 +2733,9 @@ void GameSim::fix_pointers() {
 			TriggerCollider* trig = current_track->trigger_colliders[i];
 
 			TRIGGER_TYPE::TYPE type = trig->type;
-			godot::Transform3D transform = trig->transform;
-			godot::Vector3 half_extents = trig->half_extents;
-			godot::Transform3D inv_transform = trig->inv_transform;
+			SimTransform transform = trig->transform;
+			SimVec3 half_extents = trig->half_extents;
+			SimTransform inv_transform = trig->inv_transform;
 			int seg_idx = trig->segment_index;
 			int cp_idx = trig->checkpoint_index;
 			bool exploded = false;

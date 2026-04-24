@@ -22,7 +22,7 @@ namespace deterministic_fp {
 
 	inline float wrap_minus_pi_to_pi(float x) {
 		// round-to-nearest, ties away-from-zero (same rule your cast+0.5 used)
-		float k = std::roundf(x * INV_TWO_PI);
+		float k = std::round(x * INV_TWO_PI);
 		return x - k * TWO_PI;
 	}
 
@@ -51,15 +51,15 @@ namespace deterministic_fp {
 	}
 
 	inline float sinf(float x) {
-		return std::sinf(x);
+		return std::sin(x);
 	}
 
 	inline float cosf(float x) {
-		return std::cosf(x);
+		return std::cos(x);
 	}
 
 	inline float atan2f(float y, float x) {
-		return std::atan2f(y, x);
+		return std::atan2(y, x);
 		if (x == 0.0f) {
 			if (y > 0.0f)	return PI_OVER_2;
 			if (y < 0.0f)	return -PI_OVER_2;

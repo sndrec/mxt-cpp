@@ -1,6 +1,5 @@
 #include "mxt_core/curve.h"
 #include "mxt_core/math_utils.h"
-#include "godot_cpp/variant/utility_functions.hpp"
 #include <immintrin.h>
 #include <algorithm>
 
@@ -175,28 +174,46 @@ void RoadTransformCurve::precompute() {
 
 static inline void _set_road_transform_from_values(RoadTransform &out, const float *values)
 {
-	out.t3d.basis.set(
-		values[3],  values[6],  values[9],
-		values[4],  values[7], values[10],
-		values[5],  values[8], values[11]
-		);
-	out.t3d.origin.x = values[0];
-	out.t3d.origin.y = values[1];
-	out.t3d.origin.z = values[2];
-	out.scale.x = values[12];
-	out.scale.y = values[13];
-	out.scale.z = values[14];
+	out.t3d.basis = SimBasis(
+		values[3], values[4], values[5],
+		values[6], values[7], values[8],
+		values[9], values[10], values[11]);
+	out.t3d.origin = SimVec3(values[0], values[1], values[2]);
+	out.scale = SimVec3(values[12], values[13], values[14]);
 }
 
 static inline void _set_road_transform_zero(RoadTransform &out)
 {
-	out.t3d.basis.set(
+	out.t3d.basis = SimBasis(
 		0.0f, 0.0f, 0.0f,
 		0.0f, 0.0f, 0.0f,
-		0.0f, 0.0f, 0.0f
-		);
-	out.t3d.origin = godot::Vector3(0.0f, 0.0f, 0.0f);
-	out.scale = godot::Vector3(0.0f, 0.0f, 0.0f);
+		0.0f, 0.0f, 0.0f);
+	out.t3d.origin = SimVec3();
+	out.scale = SimVec3();
+}
+
+static inline int _road_curve_segment_for_t(const RoadTransformCurve &curve, float &in_t)
+{
+	if (in_t <= curve.times[0]) {
+		in_t = curve.times[0];
+		return 0;
+	}
+	if (in_t >= curve.times[curve.num_keyframes - 1]) {
+		in_t = curve.times[curve.num_keyframes - 1];
+		return curve.num_keyframes - 2;
+	}
+
+	int lo = 0;
+	int hi = curve.num_keyframes - 1;
+	while (lo + 1 < hi) {
+		const int mid = (lo + hi) >> 1;
+		if (in_t >= curve.times[mid]) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+	return lo;
 }
 
 void RoadTransformCurve::sample(RoadTransform &out, float in_t) {
@@ -218,27 +235,7 @@ void RoadTransformCurve::sample_with_derivative(
 		return;
 	}
 
-	// clamp
-	if (in_t <= times[0]) {
-		in_t = times[0];
-	} else if (in_t >= times[num_keyframes - 1]) {
-		in_t = times[num_keyframes - 1];
-	}
-
-	int k = 0;
-
-	if(last_k >= num_keyframes - 1)
-		last_k = num_keyframes - 2;
-
-	if(in_t >= times[last_k]) {
-		while(last_k + 1 < num_keyframes - 1 && in_t >= times[last_k + 1])
-			++last_k;
-	} else {
-		while(last_k > 0 && in_t < times[last_k])
-			--last_k;
-	}
-
-	k = last_k;
+	const int k = _road_curve_segment_for_t(*this, in_t);
 
 	float u = (in_t - times[k]) * inv_dt[k];
 	float u2 = u * u;
@@ -320,4 +317,98 @@ void RoadTransformCurve::sample_with_derivative(
 
 	_set_road_transform_from_values(out, sampled);
 	_set_road_transform_from_values(derivative_out, sampled_derivative);
+}
+
+void RoadTransformCurve::sample4(RoadTransform out[4], const float in_t[4])
+{
+	RoadTransform derivative[4];
+	sample4_with_derivative(out, derivative, in_t);
+}
+
+void RoadTransformCurve::sample4_with_derivative(
+	RoadTransform out[4],
+	RoadTransform derivative_out[4],
+	const float in_t[4])
+{
+	if (num_keyframes == 0) {
+		for (int lane = 0; lane < 4; ++lane) {
+			_set_road_transform_zero(out[lane]);
+			_set_road_transform_zero(derivative_out[lane]);
+		}
+		return;
+	}
+	if (num_keyframes == 1) {
+		for (int lane = 0; lane < 4; ++lane) {
+			_set_road_transform_from_values(out[lane], values);
+			_set_road_transform_zero(derivative_out[lane]);
+		}
+		return;
+	}
+
+	float t[4] = { in_t[0], in_t[1], in_t[2], in_t[3] };
+	int k[4];
+	for (int lane = 0; lane < 4; ++lane) {
+		k[lane] = _road_curve_segment_for_t(*this, t[lane]);
+	}
+
+	const __m128 u = _mm_set_ps(
+		(t[3] - times[k[3]]) * inv_dt[k[3]],
+		(t[2] - times[k[2]]) * inv_dt[k[2]],
+		(t[1] - times[k[1]]) * inv_dt[k[1]],
+		(t[0] - times[k[0]]) * inv_dt[k[0]]);
+	const __m128 u2 = _mm_mul_ps(u, u);
+	const __m128 u3 = _mm_mul_ps(u2, u);
+	const __m128 deriv_scale = _mm_set_ps(inv_dt[k[3]], inv_dt[k[2]], inv_dt[k[1]], inv_dt[k[0]]);
+
+	alignas(16) float sampled[4][16];
+	alignas(16) float sampled_derivative[4][16];
+	for (int c = 0; c < 16; ++c) {
+		const __m128 a = _mm_set_ps(
+			coef_a[k[3] * 16 + c],
+			coef_a[k[2] * 16 + c],
+			coef_a[k[1] * 16 + c],
+			coef_a[k[0] * 16 + c]);
+		const __m128 b = _mm_set_ps(
+			coef_b[k[3] * 16 + c],
+			coef_b[k[2] * 16 + c],
+			coef_b[k[1] * 16 + c],
+			coef_b[k[0] * 16 + c]);
+		const __m128 cc = _mm_set_ps(
+			coef_c[k[3] * 16 + c],
+			coef_c[k[2] * 16 + c],
+			coef_c[k[1] * 16 + c],
+			coef_c[k[0] * 16 + c]);
+		const __m128 d = _mm_set_ps(
+			coef_d[k[3] * 16 + c],
+			coef_d[k[2] * 16 + c],
+			coef_d[k[1] * 16 + c],
+			coef_d[k[0] * 16 + c]);
+
+#if defined(__FMA__)
+		const __m128 r = _mm_fmadd_ps(a, u3, _mm_fmadd_ps(b, u2, _mm_fmadd_ps(cc, u, d)));
+		__m128 deriv = _mm_fmadd_ps(
+			_mm_set1_ps(3.0f), _mm_mul_ps(a, u2),
+			_mm_fmadd_ps(_mm_set1_ps(2.0f), _mm_mul_ps(b, u), cc));
+#else
+		const __m128 r = _mm_add_ps(_mm_mul_ps(a, u3),
+			_mm_add_ps(_mm_mul_ps(b, u2), _mm_add_ps(_mm_mul_ps(cc, u), d)));
+		__m128 deriv = _mm_add_ps(
+			_mm_mul_ps(_mm_set1_ps(3.0f), _mm_mul_ps(a, u2)),
+			_mm_add_ps(_mm_mul_ps(_mm_set1_ps(2.0f), _mm_mul_ps(b, u)), cc));
+#endif
+		deriv = _mm_mul_ps(deriv, deriv_scale);
+		alignas(16) float lanes[4];
+		alignas(16) float deriv_lanes[4];
+		_mm_store_ps(lanes, r);
+		_mm_store_ps(deriv_lanes, deriv);
+		for (int lane = 0; lane < 4; ++lane) {
+			sampled[lane][c] = lanes[lane];
+			sampled_derivative[lane][c] = deriv_lanes[lane];
+		}
+	}
+
+	for (int lane = 0; lane < 4; ++lane) {
+		_set_road_transform_from_values(out[lane], sampled[lane]);
+		_set_road_transform_from_values(derivative_out[lane], sampled_derivative[lane]);
+	}
 }

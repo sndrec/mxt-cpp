@@ -13,7 +13,7 @@ public:
         float segment_length;
         float left_rail_height;
         float right_rail_height;
-        godot::AABB bounds;
+        SimAABB bounds;
         int checkpoint_start;
         int checkpoint_run_length;
         RoadShape* road_shape;
@@ -30,67 +30,68 @@ public:
 	RoadModulation* road_modulations;
 	RoadEmbed* road_embeds;
 	Curve* openness;
-	virtual void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const;
+	virtual void get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const;
 	virtual void get_local_surface_at_time(
-		godot::Vector3 &out_pos,
-		godot::Vector3 &out_dpos_dx,
-		godot::Vector3 &out_dpos_dy,
-		const godot::Vector2& in_t) const;
-	//virtual void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const;
-	virtual void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const;
-	void get_oriented_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const;
+		SimVec3 &out_pos,
+		SimVec3 &out_dpos_dx,
+		SimVec3 &out_dpos_dy,
+		const SimVec2& in_t) const;
+	//virtual void get_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const;
+	virtual void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const;
+	void get_oriented_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const;
+	void get_oriented_transform_at_time4(SimTransform out_transform[4], const SimVec2 in_t[4]) const;
 };
 
 class RoadShapeCylinder : public RoadShape
 {
 public:
-	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+	void get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const override;
 	void get_local_surface_at_time(
-		godot::Vector3 &out_pos,
-		godot::Vector3 &out_dpos_dx,
-		godot::Vector3 &out_dpos_dy,
-		const godot::Vector2& in_t) const override;
-	//void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
-	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+		SimVec3 &out_pos,
+		SimVec3 &out_dpos_dx,
+		SimVec3 &out_dpos_dy,
+		const SimVec2& in_t) const override;
+	//void get_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const override;
+	void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const override;
 };
 
 class RoadShapePipe : public RoadShape
 {
 public:
-	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+	void get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const override;
 	void get_local_surface_at_time(
-		godot::Vector3 &out_pos,
-		godot::Vector3 &out_dpos_dx,
-		godot::Vector3 &out_dpos_dy,
-		const godot::Vector2& in_t) const override;
-	//void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
-	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+		SimVec3 &out_pos,
+		SimVec3 &out_dpos_dx,
+		SimVec3 &out_dpos_dy,
+		const SimVec2& in_t) const override;
+	//void get_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const override;
+	void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const override;
 };
 
 class RoadShapeCylinderOpen : public RoadShape
 {
 public:
-	void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+	void get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const override;
 	void get_local_surface_at_time(
-		godot::Vector3 &out_pos,
-		godot::Vector3 &out_dpos_dx,
-		godot::Vector3 &out_dpos_dy,
-		const godot::Vector2& in_t) const override;
-	//void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
-	void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+		SimVec3 &out_pos,
+		SimVec3 &out_dpos_dx,
+		SimVec3 &out_dpos_dy,
+		const SimVec2& in_t) const override;
+	//void get_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const override;
+	void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const override;
 };
 
 class RoadShapePipeOpen : public RoadShape
 {
 public:
-        void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+        void get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const override;
         void get_local_surface_at_time(
-		godot::Vector3 &out_pos,
-		godot::Vector3 &out_dpos_dx,
-		godot::Vector3 &out_dpos_dy,
-		const godot::Vector2& in_t) const override;
-        //void get_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const override;
-        void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+		SimVec3 &out_pos,
+		SimVec3 &out_dpos_dx,
+		SimVec3 &out_dpos_dy,
+		const SimVec2& in_t) const override;
+        //void get_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const override;
+        void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const override;
 };
 
 class RoadShapeRoundedRect : public RoadShape
@@ -99,13 +100,13 @@ public:
         Curve* width;
         Curve* height;
         Curve* radius;
-        void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+        void get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const override;
         void get_local_surface_at_time(
-		godot::Vector3 &out_pos,
-		godot::Vector3 &out_dpos_dx,
-		godot::Vector3 &out_dpos_dy,
-		const godot::Vector2& in_t) const override;
-        void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+		SimVec3 &out_pos,
+		SimVec3 &out_dpos_dx,
+		SimVec3 &out_dpos_dy,
+		const SimVec2& in_t) const override;
+        void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const override;
 };
 
 class RoadShapeRoundedRectOpen : public RoadShapeRoundedRect
@@ -113,12 +114,12 @@ class RoadShapeRoundedRectOpen : public RoadShapeRoundedRect
 public:
         // Seam rotation curve specific to open rounded rect; interpreted in [-1,1] domain
         Curve* open_rotation;
-        void get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const override;
+        void get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const override;
         void get_local_surface_at_time(
-		godot::Vector3 &out_pos,
-		godot::Vector3 &out_dpos_dx,
-		godot::Vector3 &out_dpos_dy,
-		const godot::Vector2& in_t) const override;
-        void find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const override;
+		SimVec3 &out_pos,
+		SimVec3 &out_dpos_dx,
+		SimVec3 &out_dpos_dy,
+		const SimVec2& in_t) const override;
+        void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const override;
 };
 

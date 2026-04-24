@@ -2,6 +2,7 @@
 
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "mxt_core/curve.h"
+#include "mxt_core/sim_math.h"
 
 class PhysicsCarProperties {
 public:
@@ -29,18 +30,18 @@ public:
 	int32_t unk_byte_0x48 = 1;
 	float max_energy = 100.0;
 
-	godot::Vector3 tilt_corners[4] = {
-		godot::Vector3(0.8, 0, -1.5),
-		godot::Vector3(-0.8, 0, -1.5),
-		godot::Vector3(1.1, 0, 1.7),
-		godot::Vector3(-1.1, 0, 1.7)
+	SimVec3 tilt_corners[4] = {
+		SimVec3(0.8f, 0.0f, -1.5f),
+		SimVec3(-0.8f, 0.0f, -1.5f),
+		SimVec3(1.1f, 0.0f, 1.7f),
+		SimVec3(-1.1f, 0.0f, 1.7f)
 	};
 
-	godot::Vector3 wall_corners[4] = {
-		godot::Vector3(1.0, -0.1, -1.7),
-		godot::Vector3(-1.0, -0.1, -1.7),
-		godot::Vector3(1.3, -0.1, 1.9),
-		godot::Vector3(-1.3, -0.1, 1.9)
+	SimVec3 wall_corners[4] = {
+		SimVec3(1.0f, -0.1f, -1.7f),
+		SimVec3(-1.0f, -0.1f, -1.7f),
+		SimVec3(1.3f, -0.1f, 1.9f),
+		SimVec3(-1.3f, -0.1f, 1.9f)
 	};
 
 	godot::StreamPeerBuffer serialize()

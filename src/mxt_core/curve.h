@@ -1,6 +1,6 @@
 #pragma once
 
-#include "godot_cpp/classes/engine.hpp"
+#include "mxt_core/sim_math.h"
 #include <cstddef>
 #include <new>
 #include <immintrin.h>
@@ -16,8 +16,8 @@ struct CurveKeyframe
 
 struct RoadTransform
 {
-    godot::Transform3D t3d;
-    godot::Vector3 scale;
+    SimTransform t3d;
+    SimVec3 scale;
 };
 
 class Curve
@@ -56,23 +56,20 @@ struct alignas(16) RoadTransformCurve {
 	int last_k;
     RoadTransformCurve(int count): num_keyframes(count) {}
 
-	// fetch raw keyframe into a Transform3D
+	// fetch raw keyframe into a sim transform
 	void get_keyframe_value(RoadTransform &out, int idx) const {
 		const float *v = values + idx * 16;
-               out.t3d.basis.set(
-                       v[3],  v[6],  v[9],
-                       v[4],  v[7],  v[10],
-                       v[5],  v[8],  v[11]
-               );
-               out.t3d.origin.x = v[0];
-               out.t3d.origin.y = v[1];
-               out.t3d.origin.z = v[2];
-               out.scale.x = v[12];
-               out.scale.y = v[13];
-               out.scale.z = v[14];
+		out.t3d.basis = SimBasis(
+			v[3], v[4], v[5],
+			v[6], v[7], v[8],
+			v[9], v[10], v[11]);
+		out.t3d.origin = SimVec3(v[0], v[1], v[2]);
+		out.scale = SimVec3(v[12], v[13], v[14]);
 	}
 
         void sample(RoadTransform &out, float in_t);
         void sample_with_derivative(RoadTransform &out, RoadTransform &derivative_out, float in_t);
+        void sample4(RoadTransform out[4], const float in_t[4]);
+        void sample4_with_derivative(RoadTransform out[4], RoadTransform derivative_out[4], const float in_t[4]);
         void precompute();
 };

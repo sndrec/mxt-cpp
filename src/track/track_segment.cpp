@@ -5,18 +5,18 @@
 
 struct RoundedRectBoundaryDerivatives
 {
-	godot::Vector2 pos;
-	godot::Vector2 d_theta;
-	godot::Vector2 d_w;
-	godot::Vector2 d_h;
-	godot::Vector2 d_r;
+	SimVec2 pos;
+	SimVec2 d_theta;
+	SimVec2 d_w;
+	SimVec2 d_h;
+	SimVec2 d_r;
 };
 
-static inline godot::Vector3 _mul_components(
-	const godot::Vector3 &a,
-	const godot::Vector3 &b)
+static inline SimVec3 _mul_components(
+	const SimVec3 &a,
+	const SimVec3 &b)
 {
-	return godot::Vector3(a.x * b.x, a.y * b.y, a.z * b.z);
+	return SimVec3(a.x * b.x, a.y * b.y, a.z * b.z);
 }
 
 static inline float _sign_no_zero(float value)
@@ -42,7 +42,7 @@ static inline void _sample_curve_pair(
 
 static inline void _sample_modulation_terms(
 	const RoadShape *shape,
-	const godot::Vector2 &in_t,
+	const SimVec2 &in_t,
 	float base_value,
 	float *value_out,
 	float *dx_out,
@@ -80,10 +80,10 @@ static inline void _sample_modulation_terms(
 }
 
 static inline void _sample_pipe_surface(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2 &in_t,
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2 &in_t,
 	const RoadShape *shape,
 	float angle,
 	float angle_dx,
@@ -96,26 +96,26 @@ static inline void _sample_pipe_surface(
 
 	_sample_modulation_terms(shape, in_t, 1.0f, &radius, &radius_dx, &radius_dy);
 
-	godot::Vector3 dir;
-	godot::Vector3 dir_dangle;
+	SimVec3 dir;
+	SimVec3 dir_dangle;
 	if (cylinder_axes)
 	{
-		dir = godot::Vector3(
+		dir = SimVec3(
 			deterministic_fp::sinf(angle),
 			deterministic_fp::cosf(angle),
 			0.0f);
-		dir_dangle = godot::Vector3(
+		dir_dangle = SimVec3(
 			deterministic_fp::cosf(angle),
 			-deterministic_fp::sinf(angle),
 			0.0f);
 	}
 	else
 	{
-		dir = godot::Vector3(
+		dir = SimVec3(
 			deterministic_fp::cosf(angle),
 			deterministic_fp::sinf(angle),
 			0.0f);
-		dir_dangle = godot::Vector3(
+		dir_dangle = SimVec3(
 			-deterministic_fp::sinf(angle),
 			deterministic_fp::cosf(angle),
 			0.0f);
@@ -358,8 +358,8 @@ static inline void _sample_rounded_rect_boundary(
 		dt_dr = dm_dr + root_sign * (0.5f * ddisc_dr / sqrt_safe);
 	}
 
-	const godot::Vector2 dir(dir_x, dir_y);
-	const godot::Vector2 dir_dtheta(dir_dx, dir_dy);
+	const SimVec2 dir(dir_x, dir_y);
+	const SimVec2 dir_dtheta(dir_dx, dir_dy);
 
 	out.pos = dir * best_t;
 	out.d_theta = dir_dtheta * best_t + dir * dt_dtheta;
@@ -368,12 +368,12 @@ static inline void _sample_rounded_rect_boundary(
 	out.d_r = dir * dt_dr;
 }
 
-void RoadShape::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
+void RoadShape::find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const
 {
-	out_t = godot::Vector2(in_pos[0], in_pos[2]);
+	out_t = SimVec2(in_pos[0], in_pos[2]);
 };
 
-void RoadShape::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+void RoadShape::get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const
 {
 	RoadTransform road_root;
 	owning_segment->curve_matrix->sample(road_root, in_t.y);
@@ -387,15 +387,15 @@ void RoadShape::get_position_at_time(godot::Vector3 &out_pos, const godot::Vecto
 
 		vertical_offset += road_modulations[i].modulation_height->sample(mod_t) * affector;
 	}
-	const godot::Vector3 local_pos(in_t.x * road_root.scale.x, vertical_offset * road_root.scale.y, 0.0f);
+	const SimVec3 local_pos(in_t.x * road_root.scale.x, vertical_offset * road_root.scale.y, 0.0f);
 	out_pos = road_root.t3d.xform(local_pos);
 }
 
 void RoadShape::get_local_surface_at_time(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2& in_t) const
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2& in_t) const
 {
 	float vertical_offset = 0.0f;
 	float vertical_offset_dx = 0.0f;
@@ -409,12 +409,12 @@ void RoadShape::get_local_surface_at_time(
 		&vertical_offset_dx,
 		&vertical_offset_dy);
 
-	out_pos = godot::Vector3(in_t.x, vertical_offset, 0.0f);
-	out_dpos_dx = godot::Vector3(1.0f, vertical_offset_dx, 0.0f);
-	out_dpos_dy = godot::Vector3(0.0f, vertical_offset_dy, 0.0f);
+	out_pos = SimVec3(in_t.x, vertical_offset, 0.0f);
+	out_dpos_dx = SimVec3(1.0f, vertical_offset_dx, 0.0f);
+	out_dpos_dy = SimVec3(0.0f, vertical_offset_dy, 0.0f);
 }
 
-void RoadShapePipe::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
+void RoadShapePipe::find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& p) const
 {
         float phi = deterministic_fp::atan2f(p.y, p.x) * ONE_DIV_BY_PI + 0.5f;
         if (phi < -1.0f)
@@ -425,10 +425,10 @@ void RoadShapePipe::find_t_from_relative_pos(godot::Vector2 &out_t, const godot:
         {
                 phi -= 2.0f;
         }
-        out_t = godot::Vector2(phi, p.z);
+        out_t = SimVec2(phi, p.z);
 }
 
-void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+void RoadShapePipe::get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const
 {
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
@@ -444,23 +444,23 @@ void RoadShapePipe::get_position_at_time(godot::Vector3 &out_pos, const godot::V
 	}
 
         const float tx_angle = (in_t[0] - 0.5f) * PI;
-        const godot::Vector3 pos = godot::Vector3(
+        const SimVec3 pos = SimVec3(
                 deterministic_fp::cosf(tx_angle),
                 deterministic_fp::sinf(tx_angle),
                 0.0f);
-	const godot::Vector3 dir = pos.normalized();
-	const godot::Vector3 road_point = dir * mod_vertical_offset;
-	const godot::Transform3D road_shape_transform = godot::Transform3D(BASIS_IDENTITY, road_point * road_root_transform.scale);
-	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+	const SimVec3 dir = pos.normalized();
+	const SimVec3 road_point = dir * mod_vertical_offset;
+	const SimTransform road_shape_transform = SimTransform(SimBasis(), road_point * road_root_transform.scale);
+	const SimTransform final_transform = road_root_transform.t3d * road_shape_transform;
 
 	out_pos = final_transform.origin;
 };
 
 void RoadShapePipe::get_local_surface_at_time(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2& in_t) const
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2& in_t) const
 {
 	_sample_pipe_surface(
 		out_pos,
@@ -474,13 +474,13 @@ void RoadShapePipe::get_local_surface_at_time(
 		false);
 }
 
-void RoadShapeCylinder::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
+void RoadShapeCylinder::find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const
 {
         const float theta = deterministic_fp::atan2f(in_pos.x, in_pos.y);
-        out_t = godot::Vector2(theta * ONE_DIV_BY_PI, in_pos.z);
+        out_t = SimVec2(theta * ONE_DIV_BY_PI, in_pos.z);
 };
 
-void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+void RoadShapeCylinder::get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const
 {
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
@@ -496,24 +496,24 @@ void RoadShapeCylinder::get_position_at_time(godot::Vector3 &out_pos, const godo
 	}
 
         const float theta = in_t.x * PI;
-        const godot::Vector3 pos = godot::Vector3(
+        const SimVec3 pos = SimVec3(
                 deterministic_fp::sinf(theta),
                 deterministic_fp::cosf(theta),
                 0.0f);
-	const godot::Vector3 dir = pos.normalized();
-	const godot::Vector3 road_point = dir * mod_vertical_offset;
-	godot::Transform3D road_shape_transform = T3D_IDENTITY;
+	const SimVec3 dir = pos.normalized();
+	const SimVec3 road_point = dir * mod_vertical_offset;
+	SimTransform road_shape_transform = SimTransform();
 	road_shape_transform.origin = road_point * road_root_transform.scale;
-	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+	const SimTransform final_transform = road_root_transform.t3d * road_shape_transform;
 
 	out_pos = final_transform.origin;
 };
 
 void RoadShapeCylinder::get_local_surface_at_time(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2& in_t) const
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2& in_t) const
 {
 	_sample_pipe_surface(
 		out_pos,
@@ -527,7 +527,7 @@ void RoadShapeCylinder::get_local_surface_at_time(
 		true);
 }
 
-void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
+void RoadShapePipeOpen::find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const
 {
         float phi = deterministic_fp::atan2f(in_pos.y, in_pos.x) * ONE_DIV_BY_PI + 0.5f;
         if (phi < -1.0f)
@@ -539,10 +539,10 @@ void RoadShapePipeOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const go
                 phi -= 2.0f;
         }
         phi /= fmaxf(0.001f, openness->sample(in_pos[2]));
-        out_t = godot::Vector2(phi, in_pos[2]);
+        out_t = SimVec2(phi, in_pos[2]);
 };
 
-void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+void RoadShapePipeOpen::get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const
 {
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
@@ -559,24 +559,24 @@ void RoadShapePipeOpen::get_position_at_time(godot::Vector3 &out_pos, const godo
 	}
 
         const float tx_angle = (mod_tx - 0.5f) * PI;
-        const godot::Vector3 pos = godot::Vector3(
+        const SimVec3 pos = SimVec3(
                 deterministic_fp::cosf(tx_angle),
                 deterministic_fp::sinf(tx_angle),
                 0.0f);
-	const godot::Vector3 dir = pos.normalized();
-	const godot::Vector3 road_point = dir * mod_vertical_offset;
-	godot::Transform3D road_shape_transform = T3D_IDENTITY;
+	const SimVec3 dir = pos.normalized();
+	const SimVec3 road_point = dir * mod_vertical_offset;
+	SimTransform road_shape_transform = SimTransform();
 	road_shape_transform.origin = road_point * road_root_transform.scale;
-	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+	const SimTransform final_transform = road_root_transform.t3d * road_shape_transform;
 
 	out_pos = final_transform.origin;
 };
 
 void RoadShapePipeOpen::get_local_surface_at_time(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2& in_t) const
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2& in_t) const
 {
 	float open_value = 1.0f;
 	float open_derivative = 0.0f;
@@ -594,14 +594,14 @@ void RoadShapePipeOpen::get_local_surface_at_time(
 		false);
 }
 
-void RoadShapeCylinderOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& in_pos) const
+void RoadShapeCylinderOpen::find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const
 {
         float tx = deterministic_fp::atan2f(in_pos.x, in_pos.y) * ONE_DIV_BY_PI;
         tx /= fmaxf(0.001f, openness->sample(in_pos[2]));
-        out_t = godot::Vector2(tx, in_pos[2]);
+        out_t = SimVec2(tx, in_pos[2]);
 }
 
-void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+void RoadShapeCylinderOpen::get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const
 {
 	RoadTransform road_root_transform;
 	owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
@@ -618,24 +618,24 @@ void RoadShapeCylinderOpen::get_position_at_time(godot::Vector3 &out_pos, const 
 	}
 
         const float theta = mod_tx * PI;
-        const godot::Vector3 pos = godot::Vector3(
+        const SimVec3 pos = SimVec3(
                 deterministic_fp::sinf(theta),
                 deterministic_fp::cosf(theta),
                 0.0f);
-	const godot::Vector3 dir = pos.normalized();
-	const godot::Vector3 road_point = dir * mod_vertical_offset;
-	godot::Transform3D road_shape_transform = T3D_IDENTITY;
+	const SimVec3 dir = pos.normalized();
+	const SimVec3 road_point = dir * mod_vertical_offset;
+	SimTransform road_shape_transform = SimTransform();
 	road_shape_transform.origin = road_point * road_root_transform.scale;
-	const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+	const SimTransform final_transform = road_root_transform.t3d * road_shape_transform;
 
         out_pos = final_transform.origin;
 };
 
 void RoadShapeCylinderOpen::get_local_surface_at_time(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2& in_t) const
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2& in_t) const
 {
 	float open_value = 1.0f;
 	float open_derivative = 0.0f;
@@ -653,7 +653,7 @@ void RoadShapeCylinderOpen::get_local_surface_at_time(
 		true);
 }
 
-static inline godot::Vector2 _closest_point_on_rounded_rect(const godot::Vector2 &p, float w, float h, float r)
+static inline SimVec2 _closest_point_on_rounded_rect(const SimVec2 &p, float w, float h, float r)
 {
         const float w2 = 0.5f * w;
         const float h2 = 0.5f * h;
@@ -661,36 +661,36 @@ static inline godot::Vector2 _closest_point_on_rounded_rect(const godot::Vector2
         const float inner_x = w2 - radius;
         const float inner_y = h2 - radius;
 
-        godot::Vector2 pp(fabsf(p.x), fabsf(p.y));
-        godot::Vector2 result;
+        SimVec2 pp(fabsf(p.x), fabsf(p.y));
+        SimVec2 result;
 
         if (pp.x > inner_x && pp.y > inner_y)
         {
-                godot::Vector2 corner_center(inner_x, inner_y);
-                godot::Vector2 off = pp - corner_center;
+                SimVec2 corner_center(inner_x, inner_y);
+                SimVec2 off = pp - corner_center;
                 const float len = off.length();
                 if (len > 1.0e-6f)
                         off *= radius / len;
                 else
-                        off = godot::Vector2(radius, 0.0f);
+                        off = SimVec2(radius, 0.0f);
                 result = corner_center + off;
         }
         else if (pp.x > inner_x)
         {
-                result = godot::Vector2(w2, pp.y);
+                result = SimVec2(w2, pp.y);
         }
         else if (pp.y > inner_y)
         {
-                result = godot::Vector2(pp.x, h2);
+                result = SimVec2(pp.x, h2);
         }
         else
         {
                 const float dx = w2 - pp.x;
                 const float dy = h2 - pp.y;
                 if (dx < dy)
-                        result = godot::Vector2(w2, pp.y);
+                        result = SimVec2(w2, pp.y);
                 else
-                        result = godot::Vector2(pp.x, h2);
+                        result = SimVec2(pp.x, h2);
         }
 
         result.x = copysignf(result.x, p.x);
@@ -698,13 +698,13 @@ static inline godot::Vector2 _closest_point_on_rounded_rect(const godot::Vector2
         return result;
 }
 
-void RoadShapeRoundedRect::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
+void RoadShapeRoundedRect::find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& p) const
 {
         const float w = width->sample(p.z);
         const float h = height->sample(p.z);
         const float r = radius->sample(p.z);
 
-        const godot::Vector2 closest = _closest_point_on_rounded_rect(godot::Vector2(p.x, p.y), w, h, r);
+        const SimVec2 closest = _closest_point_on_rounded_rect(SimVec2(p.x, p.y), w, h, r);
 
         float theta = deterministic_fp::atan2f(closest.x, closest.y);
         if (theta < 0.0f)
@@ -720,10 +720,10 @@ void RoadShapeRoundedRect::find_t_from_relative_pos(godot::Vector2 &out_t, const
         {
                 tx += 2.0f;
         }
-        out_t = godot::Vector2(tx, p.z);
+        out_t = SimVec2(tx, p.z);
 };
 
-static inline float _rounded_rect_length(const godot::Vector2 &dir, float w, float h, float r)
+static inline float _rounded_rect_length(const SimVec2 &dir, float w, float h, float r)
 {
 	const float w2 = 0.5f * w;
 	const float h2 = 0.5f * h;
@@ -774,11 +774,11 @@ static inline float _rounded_rect_length(const godot::Vector2 &dir, float w, flo
 	if (min_t == FLT_MAX)
 		min_t = fminf(w2, h2);
 
-	godot::Vector2 p = dir * min_t;
+	SimVec2 p = dir * min_t;
 	return p.length();
 }
 
-void RoadShapeRoundedRect::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+void RoadShapeRoundedRect::get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const
 {
         RoadTransform road_root_transform;
         owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
@@ -797,24 +797,24 @@ void RoadShapeRoundedRect::get_position_at_time(godot::Vector3 &out_pos, const g
         const float r = radius->sample(in_t[1]);
 
         const float theta = (1.0f - in_t[0]) * PI;
-        const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
+        const SimVec2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
 
         float length = _rounded_rect_length(dir, w, h, r);
         length *= mod_vertical_offset;
-        const godot::Vector2 final = dir * length;
+        const SimVec2 final = dir * length;
 
-        godot::Transform3D road_shape_transform = T3D_IDENTITY;
-        road_shape_transform.origin = godot::Vector3(final.x, final.y, 0.0f) * road_root_transform.scale;
-        const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+        SimTransform road_shape_transform = SimTransform();
+        road_shape_transform.origin = SimVec3(final.x, final.y, 0.0f) * road_root_transform.scale;
+        const SimTransform final_transform = road_root_transform.t3d * road_shape_transform;
 
         out_pos = final_transform.origin;
 };
 
 void RoadShapeRoundedRect::get_local_surface_at_time(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2& in_t) const
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2& in_t) const
 {
 	float radial_scale = 0.0f;
 	float radial_scale_dx = 0.0f;
@@ -841,28 +841,28 @@ void RoadShapeRoundedRect::get_local_surface_at_time(
 	radius->sample_with_derivative(in_t.y, &radius_value, &radius_derivative);
 	_sample_rounded_rect_boundary(boundary, theta, width_value, height_value, radius_value);
 
-	const godot::Vector2 local_pos_2d = boundary.pos * radial_scale;
-	const godot::Vector2 local_dx_2d =
+	const SimVec2 local_pos_2d = boundary.pos * radial_scale;
+	const SimVec2 local_dx_2d =
 		boundary.d_theta * (theta_dx * radial_scale) +
 		boundary.pos * radial_scale_dx;
-	const godot::Vector2 local_dy_2d =
+	const SimVec2 local_dy_2d =
 		(boundary.d_w * width_derivative +
 		 boundary.d_h * height_derivative +
 		 boundary.d_r * radius_derivative) * radial_scale +
 		boundary.pos * radial_scale_dy;
 
-	out_pos = godot::Vector3(local_pos_2d.x, local_pos_2d.y, 0.0f);
-	out_dpos_dx = godot::Vector3(local_dx_2d.x, local_dx_2d.y, 0.0f);
-	out_dpos_dy = godot::Vector3(local_dy_2d.x, local_dy_2d.y, 0.0f);
+	out_pos = SimVec3(local_pos_2d.x, local_pos_2d.y, 0.0f);
+	out_dpos_dx = SimVec3(local_dx_2d.x, local_dx_2d.y, 0.0f);
+	out_dpos_dy = SimVec3(local_dy_2d.x, local_dy_2d.y, 0.0f);
 }
 
-void RoadShapeRoundedRectOpen::find_t_from_relative_pos(godot::Vector2 &out_t, const godot::Vector3& p) const
+void RoadShapeRoundedRectOpen::find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& p) const
 {
         const float w = width->sample(p.z);
         const float h = height->sample(p.z);
         const float r = radius->sample(p.z);
 
-        const godot::Vector2 closest = _closest_point_on_rounded_rect(godot::Vector2(p.x, p.y), w, h, r);
+        const SimVec2 closest = _closest_point_on_rounded_rect(SimVec2(p.x, p.y), w, h, r);
 
         float theta = deterministic_fp::atan2f(closest.x, closest.y);
         if (theta < 0.0f)
@@ -876,10 +876,10 @@ void RoadShapeRoundedRectOpen::find_t_from_relative_pos(godot::Vector2 &out_t, c
         if (mod_tx > 1.0f) mod_tx -= 2.0f;
         float openness_v = fmaxf(0.001f, openness->sample(p.z));
         float tx = mod_tx / openness_v;
-        out_t = godot::Vector2(tx, p.z);
+        out_t = SimVec2(tx, p.z);
 };
 
-void RoadShapeRoundedRectOpen::get_position_at_time(godot::Vector3 &out_pos, const godot::Vector2& in_t) const
+void RoadShapeRoundedRectOpen::get_position_at_time(SimVec3 &out_pos, const SimVec2& in_t) const
 {
         RoadTransform road_root_transform;
         owning_segment->curve_matrix->sample(road_root_transform, in_t[1]);
@@ -903,24 +903,24 @@ void RoadShapeRoundedRectOpen::get_position_at_time(godot::Vector3 &out_pos, con
         const float r = radius->sample(in_t[1]);
 
         const float theta = (1.0f - mod_tx) * PI;
-        const godot::Vector2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
+        const SimVec2 dir(deterministic_fp::sinf(theta), deterministic_fp::cosf(theta));
 
         float length = _rounded_rect_length(dir, w, h, r);
         length *= mod_vertical_offset;
-        const godot::Vector2 final = dir * length;
+        const SimVec2 final = dir * length;
 
-        godot::Transform3D road_shape_transform = T3D_IDENTITY;
-        road_shape_transform.origin = godot::Vector3(final.x, final.y, 0.0f) * road_root_transform.scale;
-        const godot::Transform3D final_transform = road_root_transform.t3d * road_shape_transform;
+        SimTransform road_shape_transform = SimTransform();
+        road_shape_transform.origin = SimVec3(final.x, final.y, 0.0f) * road_root_transform.scale;
+        const SimTransform final_transform = road_root_transform.t3d * road_shape_transform;
 
         out_pos = final_transform.origin;
 };
 
 void RoadShapeRoundedRectOpen::get_local_surface_at_time(
-	godot::Vector3 &out_pos,
-	godot::Vector3 &out_dpos_dx,
-	godot::Vector3 &out_dpos_dy,
-	const godot::Vector2& in_t) const
+	SimVec3 &out_pos,
+	SimVec3 &out_dpos_dx,
+	SimVec3 &out_dpos_dy,
+	const SimVec2& in_t) const
 {
 	float radial_scale = 0.0f;
 	float radial_scale_dx = 0.0f;
@@ -967,37 +967,37 @@ void RoadShapeRoundedRectOpen::get_local_surface_at_time(
 
 	_sample_rounded_rect_boundary(boundary, theta, width_value, height_value, radius_value);
 
-	const godot::Vector2 local_pos_2d = boundary.pos * radial_scale;
-	const godot::Vector2 local_dx_2d =
+	const SimVec2 local_pos_2d = boundary.pos * radial_scale;
+	const SimVec2 local_dx_2d =
 		boundary.d_theta * (theta_dx * radial_scale) +
 		boundary.pos * radial_scale_dx;
-	const godot::Vector2 local_dy_2d =
+	const SimVec2 local_dy_2d =
 		(boundary.d_theta * theta_dy +
 		 boundary.d_w * width_derivative +
 		 boundary.d_h * height_derivative +
 		 boundary.d_r * radius_derivative) * radial_scale +
 		boundary.pos * radial_scale_dy;
 
-	out_pos = godot::Vector3(local_pos_2d.x, local_pos_2d.y, 0.0f);
-	out_dpos_dx = godot::Vector3(local_dx_2d.x, local_dx_2d.y, 0.0f);
-	out_dpos_dy = godot::Vector3(local_dy_2d.x, local_dy_2d.y, 0.0f);
+	out_pos = SimVec3(local_pos_2d.x, local_pos_2d.y, 0.0f);
+	out_dpos_dx = SimVec3(local_dx_2d.x, local_dx_2d.y, 0.0f);
+	out_dpos_dy = SimVec3(local_dy_2d.x, local_dy_2d.y, 0.0f);
 }
 
-void RoadShape::get_oriented_transform_at_time(godot::Transform3D &out_transform, const godot::Vector2& in_t) const
+void RoadShape::get_oriented_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const
 {
 	RoadTransform root;
 	RoadTransform root_derivative;
-	godot::Vector3 local_pos;
-	godot::Vector3 local_dx;
-	godot::Vector3 local_dy;
-	godot::Vector3 scaled_pos;
-	godot::Vector3 scaled_dx;
-	godot::Vector3 scaled_dy;
-	godot::Vector3 tangent_x;
-	godot::Vector3 tangent_y;
-	godot::Vector3 right;
-	godot::Vector3 normal;
-	godot::Vector3 forward;
+	SimVec3 local_pos;
+	SimVec3 local_dx;
+	SimVec3 local_dy;
+	SimVec3 scaled_pos;
+	SimVec3 scaled_dx;
+	SimVec3 scaled_dy;
+	SimVec3 tangent_x;
+	SimVec3 tangent_y;
+	SimVec3 right;
+	SimVec3 normal;
+	SimVec3 forward;
 
 	owning_segment->curve_matrix->sample_with_derivative(root, root_derivative, in_t.y);
 	get_local_surface_at_time(local_pos, local_dx, local_dy, in_t);
@@ -1020,4 +1020,40 @@ void RoadShape::get_oriented_transform_at_time(godot::Transform3D &out_transform
 	out_transform.basis[0] = right;
 	out_transform.basis[1] = normal;
 	out_transform.basis[2] = forward;
+}
+
+void RoadShape::get_oriented_transform_at_time4(SimTransform out_transform[4], const SimVec2 in_t[4]) const
+{
+	RoadTransform root[4];
+	RoadTransform root_derivative[4];
+	float ty[4] = { in_t[0].y, in_t[1].y, in_t[2].y, in_t[3].y };
+	owning_segment->curve_matrix->sample4_with_derivative(root, root_derivative, ty);
+
+	for (int lane = 0; lane < 4; ++lane) {
+		SimVec3 local_pos;
+		SimVec3 local_dx;
+		SimVec3 local_dy;
+		get_local_surface_at_time(local_pos, local_dx, local_dy, in_t[lane]);
+
+		const SimVec3 scaled_pos = _mul_components(local_pos, root[lane].scale);
+		const SimVec3 scaled_dx = _mul_components(local_dx, root[lane].scale);
+		const SimVec3 scaled_dy =
+			_mul_components(local_dy, root[lane].scale) +
+			_mul_components(local_pos, root_derivative[lane].scale);
+
+		out_transform[lane].origin = root[lane].t3d.xform(scaled_pos);
+		const SimVec3 tangent_x = root[lane].t3d.basis.xform(scaled_dx);
+		const SimVec3 tangent_y =
+			root_derivative[lane].t3d.origin +
+			root_derivative[lane].t3d.basis.xform(scaled_pos) +
+			root[lane].t3d.basis.xform(scaled_dy);
+
+		const SimVec3 right = tangent_x.normalized();
+		const SimVec3 normal = tangent_y.cross(tangent_x).normalized();
+		const SimVec3 forward = right.cross(normal).normalized();
+
+		out_transform[lane].basis[0] = right;
+		out_transform[lane].basis[1] = normal;
+		out_transform[lane].basis[2] = forward;
+	}
 }

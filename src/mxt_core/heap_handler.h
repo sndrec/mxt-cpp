@@ -7,6 +7,9 @@
 #include "mxt_core/math_utils.h"
 #include "track/road_modulation.h"
 #include "car/physics_car.h"
+#include <algorithm>
+#include <cstdlib>
+#include <new>
 
 class HeapHandler
 {
@@ -27,6 +30,9 @@ public:
 	HeapHandler(size_t size)
 	{
 		heap = malloc(size);
+		if (!heap) {
+			std::abort();
+		}
 		heap_allocation = reinterpret_cast<char*>(heap);
 		heap_start = heap_allocation;
 		heap_end = heap_allocation + size;
@@ -36,6 +42,9 @@ public:
 	void instantiate(size_t size)
 	{
 		heap = malloc(size);
+		if (!heap) {
+			std::abort();
+		}
 		heap_allocation = reinterpret_cast<char*>(heap);
 		heap_start = heap_allocation;
 		heap_end = heap_allocation + size;
@@ -69,12 +78,25 @@ public:
 
 	void* allocate_bytes(size_t size)
 	{
-		if (heap_allocation >= heap_end)
+		if (heap_allocation + size > heap_end)
 		{
-			throw std::bad_alloc();
+			std::abort();
 		}
 		char* out = heap_allocation;
 		heap_allocation += size;
+		return out;
+	}
+
+	void* allocate_aligned_bytes(size_t size, size_t alignment)
+	{
+		uintptr_t cur = reinterpret_cast<uintptr_t>(heap_allocation);
+		uintptr_t aligned = (cur + alignment - 1u) & ~(alignment - 1u);
+		char* out = reinterpret_cast<char*>(aligned);
+		if (out + size > heap_end)
+		{
+			std::abort();
+		}
+		heap_allocation = out + size;
 		return out;
 	}
 
@@ -95,7 +117,12 @@ public:
 	template <typename T>
 	T* allocate_array(size_t size)
 	{
-		T* new_array = reinterpret_cast<T*>(allocate_bytes(sizeof(T) * size));
+		size_t alignment = alignof(T);
+		if (alignment < 64)
+		{
+			alignment = 64;
+		}
+		T* new_array = reinterpret_cast<T*>(allocate_aligned_bytes(sizeof(T) * size, alignment));
 		return new_array;
 	}
 
@@ -129,10 +156,83 @@ public:
 		return out_curve;
 	}
 
+       void allocate_physics_car_soa_arrays(PhysicsCarSoA* soa, int lane_count)
+       {
+               soa->lane_count = lane_count;
+               soa->point_count = lane_count * 4;
+#define ALLOCATE_PHYSICS_CAR_SOA_ARRAY(type, name, default_value) soa->name = allocate_array<type>(lane_count);
+               PHYSICS_CAR_SCALAR_FIELDS(ALLOCATE_PHYSICS_CAR_SOA_ARRAY)
+#undef ALLOCATE_PHYSICS_CAR_SOA_ARRAY
+#define ALLOCATE_PHYSICS_CAR_SOA_VEC3(name, default_value) soa->name##_x = allocate_array<float>(lane_count); soa->name##_y = allocate_array<float>(lane_count); soa->name##_z = allocate_array<float>(lane_count);
+               PHYSICS_CAR_VEC3_FIELDS(ALLOCATE_PHYSICS_CAR_SOA_VEC3)
+#undef ALLOCATE_PHYSICS_CAR_SOA_VEC3
+#define ALLOCATE_PHYSICS_CAR_SOA_TRANSFORM(name, default_value) soa->name##_c0x = allocate_array<float>(lane_count); soa->name##_c0y = allocate_array<float>(lane_count); soa->name##_c0z = allocate_array<float>(lane_count); soa->name##_c1x = allocate_array<float>(lane_count); soa->name##_c1y = allocate_array<float>(lane_count); soa->name##_c1z = allocate_array<float>(lane_count); soa->name##_c2x = allocate_array<float>(lane_count); soa->name##_c2y = allocate_array<float>(lane_count); soa->name##_c2z = allocate_array<float>(lane_count); soa->name##_ox = allocate_array<float>(lane_count); soa->name##_oy = allocate_array<float>(lane_count); soa->name##_oz = allocate_array<float>(lane_count);
+               PHYSICS_CAR_TRANSFORM_FIELDS(ALLOCATE_PHYSICS_CAR_SOA_TRANSFORM)
+#undef ALLOCATE_PHYSICS_CAR_SOA_TRANSFORM
+#define ALLOCATE_PHYSICS_CAR_TILT_SOA_ARRAY(type, name, default_value) soa->tilt_##name = allocate_array<type>(soa->point_count);
+               PHYSICS_CAR_TILT_SCALAR_FIELDS(ALLOCATE_PHYSICS_CAR_TILT_SOA_ARRAY)
+#undef ALLOCATE_PHYSICS_CAR_TILT_SOA_ARRAY
+#define ALLOCATE_PHYSICS_CAR_TILT_SOA_VEC3(name, default_value) soa->tilt_##name##_x = allocate_array<float>(soa->point_count); soa->tilt_##name##_y = allocate_array<float>(soa->point_count); soa->tilt_##name##_z = allocate_array<float>(soa->point_count);
+               PHYSICS_CAR_TILT_VEC3_FIELDS(ALLOCATE_PHYSICS_CAR_TILT_SOA_VEC3)
+#undef ALLOCATE_PHYSICS_CAR_TILT_SOA_VEC3
+#define ALLOCATE_PHYSICS_CAR_WALL_SOA_VEC3(name, default_value) soa->wall_##name##_x = allocate_array<float>(soa->point_count); soa->wall_##name##_y = allocate_array<float>(soa->point_count); soa->wall_##name##_z = allocate_array<float>(soa->point_count);
+               PHYSICS_CAR_WALL_VEC3_FIELDS(ALLOCATE_PHYSICS_CAR_WALL_SOA_VEC3)
+#undef ALLOCATE_PHYSICS_CAR_WALL_SOA_VEC3
+
+               for (int i = 0; i < lane_count; ++i) {
+#define CONSTRUCT_PHYSICS_CAR_SOA_ELEMENT(type, name, default_value) new (&soa->name[i]) type();
+                       PHYSICS_CAR_SCALAR_FIELDS(CONSTRUCT_PHYSICS_CAR_SOA_ELEMENT)
+#undef CONSTRUCT_PHYSICS_CAR_SOA_ELEMENT
+               }
+               for (int i = 0; i < soa->point_count; ++i) {
+#define CONSTRUCT_PHYSICS_CAR_TILT_SOA_ELEMENT(type, name, default_value) new (&soa->tilt_##name[i]) type();
+                       PHYSICS_CAR_TILT_SCALAR_FIELDS(CONSTRUCT_PHYSICS_CAR_TILT_SOA_ELEMENT)
+#undef CONSTRUCT_PHYSICS_CAR_TILT_SOA_ELEMENT
+               }
+       }
+
        PhysicsCar* create_and_allocate_cars(int num_cars, PhysicsCarProperties** out_properties)
        {
-               PhysicsCar* cars = allocate_array<PhysicsCar>(num_cars);
-               PhysicsCarProperties* properties = allocate_array<PhysicsCarProperties>(num_cars);
+               constexpr int kVehicleShardCount = 4;
+               const int total_lane_count = (num_cars + 3) & ~3;
+               PhysicsCarSoA* shards = allocate_array<PhysicsCarSoA>(kVehicleShardCount);
+               const int shard_lane_base = ((total_lane_count / kVehicleShardCount) + 3) & ~3;
+               int remaining_lanes = total_lane_count;
+               int global_start = 0;
+               for (int shard = 0; shard < kVehicleShardCount; ++shard) {
+                       new (&shards[shard]) PhysicsCarSoA();
+                       int lane_count = shard_lane_base;
+                       const int shards_left = kVehicleShardCount - shard;
+                       if (lane_count * shards_left > remaining_lanes) {
+                               lane_count = (remaining_lanes + shards_left - 1) / shards_left;
+                               lane_count = (lane_count + 3) & ~3;
+                       }
+                       if (shard == kVehicleShardCount - 1) {
+                               lane_count = remaining_lanes;
+                       }
+                       shards[shard].global_start = global_start;
+                       shards[shard].shard_index = shard;
+                       shards[shard].shard_count = kVehicleShardCount;
+                       shards[shard].total_count = num_cars;
+                       shards[shard].total_lane_count = total_lane_count;
+                       shards[shard].shards = shards;
+                       shards[shard].count = std::max(0, std::min(num_cars - global_start, lane_count));
+                       allocate_physics_car_soa_arrays(&shards[shard], lane_count);
+                       global_start += lane_count;
+                       remaining_lanes -= lane_count;
+               }
+
+               PhysicsCar* cars = static_cast<PhysicsCar*>(::malloc(sizeof(PhysicsCar) * total_lane_count));
+               if (!cars) {
+                       std::abort();
+               }
+               for (int shard = 0; shard < kVehicleShardCount; ++shard) {
+                       PhysicsCarSoA* soa = &shards[shard];
+                       for (int lane = 0; lane < soa->lane_count; ++lane) {
+                               new (&cars[soa->global_start + lane]) PhysicsCar(soa, lane);
+                       }
+               }
+               PhysicsCarProperties* properties = allocate_array<PhysicsCarProperties>(total_lane_count);
                if (out_properties) {
                        *out_properties = properties;
                }
@@ -174,18 +274,26 @@ public:
 			//new_car_properties->turn_decel = 0.02f;
 			//new_car_properties->drag = 0.01f;
 			//new_car_properties->body = 0.85f;
-			new_car_properties->tilt_corners[0] = godot::Vector3(0.8f, 0.f, -1.5f);
-			new_car_properties->tilt_corners[1] = godot::Vector3(-0.8f, 0.f, -1.5f);
-			new_car_properties->tilt_corners[2] = godot::Vector3(1.1f, 0.f, 1.7f);
-			new_car_properties->tilt_corners[3] = godot::Vector3(-1.1f, 0.f, 1.7f);
-			new_car_properties->wall_corners[0] = godot::Vector3(1.0f, -0.1f, -1.7f);
-			new_car_properties->wall_corners[1] = godot::Vector3(-1.0f, -0.1f, -1.7f);
-			new_car_properties->wall_corners[2] = godot::Vector3(1.3f, -0.1f, 1.9f);
-			new_car_properties->wall_corners[3] = godot::Vector3(-1.3f, -0.1f, 1.9f);
-			cars[i].m_accel_setting = 1.0f;
-			cars[i].car_properties = new_car_properties;
+			new_car_properties->tilt_corners[0] = SimVec3(0.8f, 0.f, -1.5f);
+			new_car_properties->tilt_corners[1] = SimVec3(-0.8f, 0.f, -1.5f);
+			new_car_properties->tilt_corners[2] = SimVec3(1.1f, 0.f, 1.7f);
+			new_car_properties->tilt_corners[3] = SimVec3(-1.1f, 0.f, 1.7f);
+			new_car_properties->wall_corners[0] = SimVec3(1.0f, -0.1f, -1.7f);
+			new_car_properties->wall_corners[1] = SimVec3(-1.0f, -0.1f, -1.7f);
+			new_car_properties->wall_corners[2] = SimVec3(1.3f, -0.1f, 1.9f);
+			new_car_properties->wall_corners[3] = SimVec3(-1.3f, -0.1f, 1.9f);
+			cars[i].soa->m_accel_setting[cars[i].soa_index] = 1.0f;
+			cars[i].soa->car_properties[cars[i].soa_index] = new_car_properties;
 
 		}
+               for (int i = num_cars; i < total_lane_count; ++i)
+               {
+                       PhysicsCarProperties* inert_car_properties = &properties[i];
+                       cars[i].soa->m_accel_setting[cars[i].soa_index] = 1.0f;
+                       cars[i].soa->car_properties[cars[i].soa_index] = inert_car_properties;
+                       cars[i].soa->machine_state[cars[i].soa_index] = 0;
+                       cars[i].soa->stat_weight[cars[i].soa_index] = 1.0f;
+               }
 		return cars;
 	}
 };
