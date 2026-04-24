@@ -126,6 +126,27 @@ public:
 		return new_array;
 	}
 
+	static char* align_existing_allocation(char* cursor, size_t alignment)
+	{
+		uintptr_t cur = reinterpret_cast<uintptr_t>(cursor);
+		uintptr_t aligned = (cur + alignment - 1u) & ~(alignment - 1u);
+		return reinterpret_cast<char*>(aligned);
+	}
+
+	template <typename T>
+	static T* bind_existing_array(char*& cursor, size_t size)
+	{
+		size_t alignment = alignof(T);
+		if (alignment < 64)
+		{
+			alignment = 64;
+		}
+		cursor = align_existing_allocation(cursor, alignment);
+		T* array = reinterpret_cast<T*>(cursor);
+		cursor += sizeof(T) * size;
+		return array;
+	}
+
 	Curve* allocate_curve_from_buffer(godot::StreamPeerBuffer* in_buffer)
 	{
 		Curve* out_curve = allocate_object<Curve>();
@@ -188,6 +209,80 @@ public:
 #define CONSTRUCT_PHYSICS_CAR_TILT_SOA_ELEMENT(type, name, default_value) new (&soa->tilt_##name[i]) type();
                        PHYSICS_CAR_TILT_SCALAR_FIELDS(CONSTRUCT_PHYSICS_CAR_TILT_SOA_ELEMENT)
 #undef CONSTRUCT_PHYSICS_CAR_TILT_SOA_ELEMENT
+               }
+       }
+
+       static void bind_physics_car_soa_arrays(PhysicsCarSoA* soa, int lane_count, char*& cursor)
+       {
+               soa->lane_count = lane_count;
+               soa->point_count = lane_count * 4;
+#define BIND_PHYSICS_CAR_SOA_ARRAY(type, name, default_value) soa->name = bind_existing_array<type>(cursor, lane_count);
+               PHYSICS_CAR_SCALAR_FIELDS(BIND_PHYSICS_CAR_SOA_ARRAY)
+#undef BIND_PHYSICS_CAR_SOA_ARRAY
+#define BIND_PHYSICS_CAR_SOA_VEC3(name, default_value) soa->name##_x = bind_existing_array<float>(cursor, lane_count); soa->name##_y = bind_existing_array<float>(cursor, lane_count); soa->name##_z = bind_existing_array<float>(cursor, lane_count);
+               PHYSICS_CAR_VEC3_FIELDS(BIND_PHYSICS_CAR_SOA_VEC3)
+#undef BIND_PHYSICS_CAR_SOA_VEC3
+#define BIND_PHYSICS_CAR_SOA_TRANSFORM(name, default_value) soa->name##_c0x = bind_existing_array<float>(cursor, lane_count); soa->name##_c0y = bind_existing_array<float>(cursor, lane_count); soa->name##_c0z = bind_existing_array<float>(cursor, lane_count); soa->name##_c1x = bind_existing_array<float>(cursor, lane_count); soa->name##_c1y = bind_existing_array<float>(cursor, lane_count); soa->name##_c1z = bind_existing_array<float>(cursor, lane_count); soa->name##_c2x = bind_existing_array<float>(cursor, lane_count); soa->name##_c2y = bind_existing_array<float>(cursor, lane_count); soa->name##_c2z = bind_existing_array<float>(cursor, lane_count); soa->name##_ox = bind_existing_array<float>(cursor, lane_count); soa->name##_oy = bind_existing_array<float>(cursor, lane_count); soa->name##_oz = bind_existing_array<float>(cursor, lane_count);
+               PHYSICS_CAR_TRANSFORM_FIELDS(BIND_PHYSICS_CAR_SOA_TRANSFORM)
+#undef BIND_PHYSICS_CAR_SOA_TRANSFORM
+#define BIND_PHYSICS_CAR_TILT_SOA_ARRAY(type, name, default_value) soa->tilt_##name = bind_existing_array<type>(cursor, soa->point_count);
+               PHYSICS_CAR_TILT_SCALAR_FIELDS(BIND_PHYSICS_CAR_TILT_SOA_ARRAY)
+#undef BIND_PHYSICS_CAR_TILT_SOA_ARRAY
+#define BIND_PHYSICS_CAR_TILT_SOA_VEC3(name, default_value) soa->tilt_##name##_x = bind_existing_array<float>(cursor, soa->point_count); soa->tilt_##name##_y = bind_existing_array<float>(cursor, soa->point_count); soa->tilt_##name##_z = bind_existing_array<float>(cursor, soa->point_count);
+               PHYSICS_CAR_TILT_VEC3_FIELDS(BIND_PHYSICS_CAR_TILT_SOA_VEC3)
+#undef BIND_PHYSICS_CAR_TILT_SOA_VEC3
+#define BIND_PHYSICS_CAR_WALL_SOA_VEC3(name, default_value) soa->wall_##name##_x = bind_existing_array<float>(cursor, soa->point_count); soa->wall_##name##_y = bind_existing_array<float>(cursor, soa->point_count); soa->wall_##name##_z = bind_existing_array<float>(cursor, soa->point_count);
+               PHYSICS_CAR_WALL_VEC3_FIELDS(BIND_PHYSICS_CAR_WALL_SOA_VEC3)
+#undef BIND_PHYSICS_CAR_WALL_SOA_VEC3
+       }
+
+       void repair_allocated_cars(PhysicsCar* cars, int num_cars, PhysicsCarProperties** out_properties)
+       {
+               if (!cars || num_cars <= 0) {
+                       return;
+               }
+               constexpr int kVehicleShardCount = 4;
+               const int total_lane_count = (num_cars + 3) & ~3;
+               PhysicsCarSoA* shards = cars[0].soa;
+               if (!shards) {
+                       return;
+               }
+
+               char* cursor = reinterpret_cast<char*>(shards + kVehicleShardCount);
+               const int shard_lane_base = ((total_lane_count / kVehicleShardCount) + 3) & ~3;
+               int remaining_lanes = total_lane_count;
+               int global_start = 0;
+               for (int shard = 0; shard < kVehicleShardCount; ++shard) {
+                       int lane_count = shard_lane_base;
+                       const int shards_left = kVehicleShardCount - shard;
+                       if (lane_count * shards_left > remaining_lanes) {
+                               lane_count = (remaining_lanes + shards_left - 1) / shards_left;
+                               lane_count = (lane_count + 3) & ~3;
+                       }
+                       if (shard == kVehicleShardCount - 1) {
+                               lane_count = remaining_lanes;
+                       }
+
+                       PhysicsCarSoA* soa = &shards[shard];
+                       soa->global_start = global_start;
+                       soa->shard_index = shard;
+                       soa->shard_count = kVehicleShardCount;
+                       soa->total_count = num_cars;
+                       soa->total_lane_count = total_lane_count;
+                       soa->shards = shards;
+                       soa->count = std::max(0, std::min(num_cars - global_start, lane_count));
+                       bind_physics_car_soa_arrays(soa, lane_count, cursor);
+                       for (int lane = 0; lane < lane_count; ++lane) {
+                               cars[global_start + lane].soa = soa;
+                               cars[global_start + lane].soa_index = lane;
+                       }
+                       global_start += lane_count;
+                       remaining_lanes -= lane_count;
+               }
+
+               PhysicsCarProperties* properties = bind_existing_array<PhysicsCarProperties>(cursor, total_lane_count);
+               if (out_properties) {
+                       *out_properties = properties;
                }
        }
 

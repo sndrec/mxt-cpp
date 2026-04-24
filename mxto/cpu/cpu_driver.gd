@@ -63,7 +63,6 @@ func process_observation(_tick: int, _observation: PackedByteArray) -> void:
 	surface.z.x = buffer.get_float()
 	surface.z.y = buffer.get_float()
 	surface.z.z = buffer.get_float()
-	surface = surface.transposed()
 	var base_speed := buffer.get_float()
 	var energy := buffer.get_float()
 	var checkpoint_fraction := buffer.get_float()

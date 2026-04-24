@@ -3318,7 +3318,6 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, SimTransform &out_trans
 
 	soa->current_track[soa_index]->segments[target_cp.road_segment]
 	.road_shape->get_oriented_transform_at_time(out_transform, SimVec2(0.0f, t_y));
-	out_transform.basis.transpose();
 	out_transform.basis.orthonormalize();
 	out_transform.basis = out_transform.basis.rotated(out_transform.basis.get_column(1), Math_PI);
 	out_transform.origin += out_transform.basis.get_column(1) * 0.1f;
@@ -3468,7 +3467,7 @@ void PhysicsCar::update_restore(float accel_input)
 		STORE_VEC3(position_old, pos);
 		STORE_VEC3(position_old_2, pos);
 		STORE_VEC3(position_old_dupe, pos);
-		STORE_VEC3(position_bottom, LOAD_TRANSFORM(basis_physical).xform(SimVec3(0.0f, -0.1f, 0.0f)));
+		STORE_VEC3(position_bottom, mxt_transform_point(LOAD_TRANSFORM(basis_physical), pos, SimVec3(0.0f, -0.1f, 0.0f)));
 
 		if (soa->restore_move_frames[soa_index] >= 180) {
 			soa->state_2[soa_index] &= ~0x20;

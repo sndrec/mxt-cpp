@@ -1,11 +1,11 @@
-[gd_scene load_steps=2 format=3 uid="uid://dyt61on0g5qxq"]
+[gd_scene format=3 uid="uid://dyt61on0g5qxq"]
 
 [ext_resource type="Texture2D" uid="uid://dgcij2ho2w6u4" path="res://asset/tex/superspark.png" id="1_nrr51"]
 
-[node name="ObjSuperspark" type="Node3D"]
+[node name="ObjSuperspark" type="Node3D" unique_id=1246069479]
 process_mode = 4
 
-[node name="Sprite3D" type="Sprite3D" parent="."]
+[node name="Sprite3D" type="Sprite3D" parent="." unique_id=431737854]
 process_mode = 4
 billboard = 1
 texture = ExtResource("1_nrr51")

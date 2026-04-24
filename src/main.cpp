@@ -221,7 +221,7 @@ namespace {
 	{
 		auto phase_start = std::chrono::high_resolution_clock::now();
 		for (int i = 0; i < count; ++i) {
-			if (c.state_2[i] & 0x8u) {
+			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
 				car_views[i].sample_old_corner_collision_surface(scratch);
 			}
 		}
@@ -231,7 +231,7 @@ namespace {
 		phase_start = now;
 		uint32_t apply_response_accum_us = 0;
 		for (int i = 0; i < count; ++i) {
-			if (c.state_2[i] & 0x8u) {
+			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
 				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch);
 				const SimVec3 rail_push = LOAD_INDEXED_VEC3(c, collision_push_rail, i);
 				const SimVec3 track_push = LOAD_INDEXED_VEC3(c, collision_push_track, i);
@@ -279,6 +279,9 @@ namespace {
 
 		phase_start = now;
 		for (int i = 0; i < count; ++i) {
+			if (c.restore_state[i] == 2) {
+				continue;
+			}
 			car_views[i].handle_machine_damage_and_visuals_tail();
 			if (c.frames_since_start_2[i] == 0) {
 				STORE_INDEXED_VEC3(c, velocity, i, SimVec3());
@@ -291,6 +294,9 @@ namespace {
 
 		phase_start = now;
 		for (int i = 0; i < count; ++i) {
+			if (c.restore_state[i] == 2) {
+				continue;
+			}
 			car_views[i].handle_checkpoints(scratch);
 			if ((c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0 && (c.machine_state[i] & MACHINESTATE::ZEROHP) == 0) {
 				c.last_ground_distance[i] = c.checkpoint_track_distance[i];
@@ -2115,7 +2121,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 			SimTransform spawn_transform;
 			spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, SimVec2(t_x, t_y));
-			spawn_transform.basis.transpose();
 			spawn_transform.basis.orthonormalize();
 			spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
 			SimVec3 up_offset = spawn_transform.basis.get_column(1) * 0.5f;
@@ -2556,17 +2561,23 @@ void GameSim::update_super_spark_visuals()
 				continue;
 			}
 			vis_car->callv("apply_sim_state", visual_args);
-			if (cpu_driver_manager && car_player_ids && car_is_cpu && car_is_cpu[i]) {
-				int32_t pid = car_player_ids[i];
-				if (pid != -1) {
-					godot::PackedByteArray obs = build_cpu_observation(cars[i]);
-					godot::Array args;
-					args.resize(3);
-					args[0] = pid;
-					args[1] = tick;
-					args[2] = obs;
-					cpu_driver_manager->callv("submit_observation", args);
+		}
+		if (cpu_driver_manager && car_player_ids && car_is_cpu) {
+			for (int i = 0; i < num_cars; ++i) {
+				if (!car_is_cpu[i]) {
+					continue;
 				}
+				int32_t pid = car_player_ids[i];
+				if (pid == -1) {
+					continue;
+				}
+				godot::PackedByteArray obs = build_cpu_observation(cars[i]);
+				godot::Array args;
+				args.resize(3);
+				args[0] = pid;
+				args[1] = tick;
+				args[2] = obs;
+				cpu_driver_manager->callv("submit_observation", args);
 			}
 		}
 		update_super_spark_visuals();
@@ -2721,8 +2732,14 @@ void GameSim::fix_pointers() {
 	if (!sim_started || !cars) {
 		return;
 	}
-	for (int i = 0; i < num_cars; ++i) {
+
+	gamestate_data.repair_allocated_cars(cars, num_cars, &car_properties_array);
+
+	const int total_lane_count = (num_cars + 3) & ~3;
+	for (int i = 0; i < total_lane_count; ++i) {
 		cars[i].soa->current_track[cars[i].soa_index] = current_track;
+		// TODO: machine_name is static metadata, not gamestate. Move it out of serialized SoA state.
+		cars[i].soa->machine_name[cars[i].soa_index] = "Blue Falcon";
 		if (car_properties_array) {
 			cars[i].soa->car_properties[cars[i].soa_index] = &car_properties_array[i];
 		}

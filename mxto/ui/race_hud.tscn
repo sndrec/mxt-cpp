@@ -1,11 +1,10 @@
-[gd_scene load_steps=14 format=3 uid="uid://32t0e0x6ldk1"]
+[gd_scene format=3 uid="uid://32t0e0x6ldk1"]
 
 [ext_resource type="Script" uid="uid://dkjcr66oxndry" path="res://ui/race_hud.gd" id="1_w35b3"]
 [ext_resource type="Shader" uid="uid://c3ld4bxnm18d0" path="res://ui/health_meter.gdshader" id="2_2xneg"]
 [ext_resource type="Texture2D" uid="uid://c12nhn05is6ov" path="res://ui/placeholder.png" id="2_ifpia"]
 [ext_resource type="Texture2D" uid="uid://d3xfb8wko2v52" path="res://ui/countdown_back.png" id="3_qb5k8"]
 [ext_resource type="Texture2D" uid="uid://usop48tynaes" path="res://ui/countdown_arrow.png" id="4_prwh0"]
-[ext_resource type="Texture2D" uid="uid://odqnkghs7oic" path="res://ui/placements/mx-21.png" id="6_70m5x"]
 [ext_resource type="Texture2D" uid="uid://ds5wavcy0prbi" path="res://ui/circle_02.png" id="8_2hfuj"]
 [ext_resource type="Texture2D" uid="uid://ba5amhq17pghw" path="res://ui/circle.png" id="9_3icfp"]
 
@@ -33,7 +32,7 @@ outline_color = Color(0, 0, 0, 1)
 
 [sub_resource type="World3D" id="World3D_r1orx"]
 
-[node name="race_hud" type="Control"]
+[node name="race_hud" type="Control" unique_id=1274342650]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -43,7 +42,7 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_w35b3")
 
-[node name="speedometer" type="Label" parent="."]
+[node name="speedometer" type="Label" parent="." unique_id=1680414145]
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
@@ -61,7 +60,7 @@ grow_vertical = 0
 text = "4096 km/h"
 label_settings = SubResource("LabelSettings_4jbru")
 
-[node name="lapcounter" type="Label" parent="."]
+[node name="lapcounter" type="Label" parent="." unique_id=605127610]
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
@@ -77,7 +76,7 @@ text = "1/3
 "
 label_settings = SubResource("LabelSettings_4jbru")
 
-[node name="racetimer" type="Label" parent="."]
+[node name="racetimer" type="Label" parent="." unique_id=1507212016]
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
@@ -92,7 +91,7 @@ grow_horizontal = 2
 text = "02:34.30"
 label_settings = SubResource("LabelSettings_4jbru")
 
-[node name="healthmeter" type="TextureRect" parent="."]
+[node name="healthmeter" type="TextureRect" parent="." unique_id=1823787846]
 unique_name_in_owner = true
 process_mode = 4
 material = SubResource("ShaderMaterial_m7o86")
@@ -112,7 +111,7 @@ mouse_filter = 2
 texture = ExtResource("2_ifpia")
 expand_mode = 2
 
-[node name="sboost_meter_bg" type="ColorRect" parent="."]
+[node name="sboost_meter_bg" type="ColorRect" parent="." unique_id=1572680462]
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
@@ -128,7 +127,7 @@ offset_bottom = 17.32
 mouse_filter = 2
 color = Color(0.09, 0.07, 0.02, 0.6)
 
-[node name="sboost_meter_fill" type="ColorRect" parent="sboost_meter_bg"]
+[node name="sboost_meter_fill" type="ColorRect" parent="sboost_meter_bg" unique_id=1194234502]
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
@@ -137,14 +136,14 @@ anchor_bottom = 1.0
 mouse_filter = 2
 color = Color(1, 0.8, 0.3, 0.9)
 
-[node name="TextureRect" type="TextureRect" parent="."]
+[node name="TextureRect" type="TextureRect" parent="." unique_id=2074347031]
 process_mode = 4
 layout_mode = 0
 offset_right = 40.0
 offset_bottom = 40.0
 mouse_filter = 2
 
-[node name="countdowncontrol" type="Control" parent="."]
+[node name="countdowncontrol" type="Control" parent="." unique_id=336588603]
 process_mode = 4
 layout_mode = 1
 anchor_left = 0.422
@@ -160,7 +159,7 @@ grow_vertical = 2
 pivot_offset = Vector2(100, 100)
 mouse_filter = 2
 
-[node name="countdown_back" type="TextureRect" parent="countdowncontrol"]
+[node name="countdown_back" type="TextureRect" parent="countdowncontrol" unique_id=512448836]
 process_mode = 4
 layout_mode = 1
 anchors_preset = 15
@@ -172,7 +171,7 @@ texture = ExtResource("3_qb5k8")
 expand_mode = 2
 stretch_mode = 4
 
-[node name="countdown_arrow" type="TextureRect" parent="countdowncontrol"]
+[node name="countdown_arrow" type="TextureRect" parent="countdowncontrol" unique_id=1357761650]
 process_mode = 4
 layout_mode = 1
 anchors_preset = -1
@@ -193,7 +192,7 @@ texture = ExtResource("4_prwh0")
 expand_mode = 2
 stretch_mode = 4
 
-[node name="Control" type="Control" parent="."]
+[node name="Control" type="Control" parent="." unique_id=1888240196]
 process_mode = 4
 layout_mode = 1
 anchor_left = 0.007
@@ -206,13 +205,13 @@ offset_right = -0.200012
 offset_bottom = 0.359985
 mouse_filter = 2
 
-[node name="leaderboard_container" type="VBoxContainer" parent="Control"]
+[node name="leaderboard_container" type="VBoxContainer" parent="Control" unique_id=27522672]
 process_mode = 4
 layout_mode = 1
 offset_right = 599.0
 offset_bottom = 182.0
 
-[node name="place_1" type="Label" parent="Control/leaderboard_container"]
+[node name="place_1" type="Label" parent="Control/leaderboard_container" unique_id=170435566]
 process_mode = 4
 layout_mode = 2
 size_flags_horizontal = 0
@@ -220,7 +219,7 @@ size_flags_vertical = 1
 text = "Twilight"
 label_settings = SubResource("LabelSettings_cix6h")
 
-[node name="place_2" type="Label" parent="Control/leaderboard_container"]
+[node name="place_2" type="Label" parent="Control/leaderboard_container" unique_id=1327058592]
 process_mode = 4
 layout_mode = 2
 size_flags_horizontal = 0
@@ -228,7 +227,7 @@ size_flags_vertical = 1
 text = "Twilight"
 label_settings = SubResource("LabelSettings_m1icb")
 
-[node name="place_3" type="Label" parent="Control/leaderboard_container"]
+[node name="place_3" type="Label" parent="Control/leaderboard_container" unique_id=348646300]
 process_mode = 4
 layout_mode = 2
 size_flags_horizontal = 0
@@ -236,7 +235,7 @@ size_flags_vertical = 1
 text = "Twilight"
 label_settings = SubResource("LabelSettings_m1icb")
 
-[node name="place_4" type="Label" parent="Control/leaderboard_container"]
+[node name="place_4" type="Label" parent="Control/leaderboard_container" unique_id=1618931124]
 process_mode = 4
 layout_mode = 2
 size_flags_horizontal = 0
@@ -244,7 +243,7 @@ size_flags_vertical = 1
 text = "Twilight"
 label_settings = SubResource("LabelSettings_m1icb")
 
-[node name="place_5" type="Label" parent="Control/leaderboard_container"]
+[node name="place_5" type="Label" parent="Control/leaderboard_container" unique_id=2008966780]
 process_mode = 4
 layout_mode = 2
 size_flags_horizontal = 0
@@ -252,7 +251,7 @@ size_flags_vertical = 1
 text = "Twilight"
 label_settings = SubResource("LabelSettings_m1icb")
 
-[node name="place_6" type="Label" parent="Control/leaderboard_container"]
+[node name="place_6" type="Label" parent="Control/leaderboard_container" unique_id=1189635180]
 process_mode = 4
 layout_mode = 2
 size_flags_horizontal = 0
@@ -260,7 +259,7 @@ size_flags_vertical = 1
 text = "Twilight"
 label_settings = SubResource("LabelSettings_m1icb")
 
-[node name="MinimapControl" type="Control" parent="."]
+[node name="MinimapControl" type="Control" parent="." unique_id=1519719537]
 process_mode = 4
 clip_contents = true
 layout_mode = 1
@@ -274,7 +273,7 @@ offset_right = -2.0
 offset_bottom = -0.160034
 mouse_filter = 2
 
-[node name="TextureRect" type="TextureRect" parent="MinimapControl"]
+[node name="TextureRect" type="TextureRect" parent="MinimapControl" unique_id=1968697482]
 process_mode = 4
 self_modulate = Color(1, 1, 1, 0.470588)
 layout_mode = 1
@@ -284,7 +283,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="SubViewport" type="SubViewport" parent="MinimapControl"]
+[node name="SubViewport" type="SubViewport" parent="MinimapControl" unique_id=567123458]
 process_mode = 1
 own_world_3d = true
 world_3d = SubResource("World3D_r1orx")
@@ -293,17 +292,16 @@ msaa_3d = 3
 size = Vector2i(380, 240)
 render_target_update_mode = 4
 
-[node name="Camera3D" type="Camera3D" parent="MinimapControl/SubViewport"]
+[node name="Camera3D" type="Camera3D" parent="MinimapControl/SubViewport" unique_id=659047086]
 process_mode = 4
 projection = 1
 
-[node name="MeshInstance3D" type="MeshInstance3D" parent="MinimapControl/SubViewport"]
+[node name="MeshInstance3D" type="MeshInstance3D" parent="MinimapControl/SubViewport" unique_id=1754005255]
 process_mode = 4
 
-[node name="PlaceBadge" type="TextureRect" parent="."]
+[node name="PlaceBadge" type="Control" parent="." unique_id=1756174211]
 process_mode = 4
 layout_mode = 1
-anchors_preset = -1
 anchor_left = 0.27
 anchor_top = 0.012
 anchor_right = 0.27
@@ -313,11 +311,8 @@ offset_top = 0.36
 offset_right = 182.4
 offset_bottom = -2.24001
 mouse_filter = 2
-texture = ExtResource("6_70m5x")
-expand_mode = 3
-stretch_mode = 4
 
-[node name="InputViewer" type="TextureRect" parent="."]
+[node name="InputViewer" type="TextureRect" parent="." unique_id=1674395224]
 process_mode = 4
 visible = false
 layout_mode = 1
@@ -333,7 +328,7 @@ offset_bottom = 0.359985
 texture = ExtResource("8_2hfuj")
 expand_mode = 1
 
-[node name="RealInput" type="TextureRect" parent="InputViewer"]
+[node name="RealInput" type="TextureRect" parent="InputViewer" unique_id=202530193]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -350,7 +345,7 @@ pivot_offset = Vector2(4, 4)
 texture = ExtResource("9_3icfp")
 stretch_mode = 2
 
-[node name="ClampedInput" type="TextureRect" parent="InputViewer"]
+[node name="ClampedInput" type="TextureRect" parent="InputViewer" unique_id=313658009]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -367,7 +362,7 @@ pivot_offset = Vector2(4, 4)
 texture = ExtResource("9_3icfp")
 stretch_mode = 2
 
-[node name="CheckControl" type="Control" parent="."]
+[node name="CheckControl" type="Control" parent="." unique_id=118644265]
 process_mode = 4
 visible = false
 layout_mode = 1
