@@ -81,6 +81,8 @@ const ROAD_MATS = {
 var singleplayer_mode: bool = false
 var _singleplayer_tick: int = 0
 var singleplayer_cpu_count: int = 0
+var auto_singleplayer_mode: bool = false
+var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
 var car_render_manager: CarRenderManager
@@ -124,7 +126,13 @@ func _ready() -> void:
 		network_manager.set_cpu_driver_count(cpu_count)
 	if args.has("--host"):
 		call_deferred("_auto_host")
-	if headless_mode:
+	auto_singleplayer_mode = args.has("--auto-singleplayer")
+	var quit_idx := args.find("--quit-after-frames")
+	if quit_idx != -1 and quit_idx + 1 < args.size():
+		auto_quit_after_frames = max(0, int(args[quit_idx + 1]))
+	if auto_singleplayer_mode:
+		call_deferred("_on_singleplayer_button_pressed")
+	if headless_mode and !auto_singleplayer_mode:
 		var def_path := ""
 		if car_definitions.size() > 0:
 			def_path = car_definitions[0].resource_path
@@ -639,6 +647,11 @@ func _update_player_list() -> void:
 func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if headless_mode:
+		if singleplayer_mode and game_sim.sim_started:
+			_simulate_singleplayer_tick()
+			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
+				get_tree().quit()
+			return
 		if multiplayer.has_multiplayer_peer():
 			var pi := _generate_random_input()
 			network_manager.set_local_input(pi.serialize())
@@ -731,6 +744,10 @@ func _simulate_single_tick():
 		network_manager.post_tick()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F3:
+		var profile = game_sim.get_phase_profile_string()
+		DisplayServer.clipboard_set(profile)
+		print(profile)
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
 		_return_to_menu()
 
