@@ -89,6 +89,7 @@ var effect_tier := EffectTier.FULL
 var position_current := Vector3.ZERO
 var position_old := Vector3.ZERO
 var track_surface_normal := Vector3.ZERO
+var track_surface_pos := Vector3.ZERO
 var height_above_track := 0.0
 var velocity := Vector3.ZERO
 var velocity_angular := Vector3.ZERO
@@ -122,15 +123,14 @@ var input_accel := 0.0
 var track_normal_vis := Vector3.UP
 var track_normal_old_vis := Vector3.UP
 var lerped_curvature := 0.0
-var slerped_up_y := Vector3.UP
-var slerped_forward_z := Vector3.ZERO
-var camera_basis : Basis = Basis.IDENTITY
-var camera_basis_smoothed : Basis = Basis.IDENTITY
+var gameplay_camera := FzgxGameplayCamera.new()
 
 var tilt_fl_state := 0
 var tilt_fr_state := 0
 var tilt_bl_state := 0
 var tilt_br_state := 0
+var camera_reorienting := 1.0
+var camera_repositioning := 1.0
 
 var restore_state := 0
 var restore_wait_frames := 0
@@ -262,6 +262,8 @@ func _reset_interpolation_state() -> void:
 	old_ts_normal = track_surface_normal
 	desired_ts_normal = track_surface_normal
 	track_surface_smoothed = track_surface_normal
+	if gameplay_camera:
+		gameplay_camera.reset()
 	rollback_offset_error = Vector3.ZERO
 	rollback_offset_error_prev = Vector3.ZERO
 	rollback_rot_error = Basis.IDENTITY
@@ -348,7 +350,13 @@ func apply_sim_state(
 	in_s_boost_charge: int,
 	in_s_boost_charge_max: int,
 	in_s_boost_active: bool,
-	in_s_boost_ready: bool
+	in_s_boost_ready: bool,
+	in_tilt_fr_state: int,
+	in_tilt_bl_state: int,
+	in_tilt_br_state: int,
+	in_camera_reorienting: float,
+	in_camera_repositioning: float,
+	in_track_surface_pos: Vector3
 ) -> void:
 	position_current = in_position_current
 	position_old = in_position_old
@@ -369,6 +377,9 @@ func apply_sim_state(
 	terrain_state = in_terrain_state
 	frames_since_start_2 = in_frames_since_start_2
 	tilt_fl_state = in_tilt_fl_state
+	tilt_fr_state = in_tilt_fr_state
+	tilt_bl_state = in_tilt_bl_state
+	tilt_br_state = in_tilt_br_state
 	input_strafe = in_input_strafe
 	turn_reaction_input = in_turn_reaction_input
 	g_anim_timer = in_g_anim_timer
@@ -394,6 +405,9 @@ func apply_sim_state(
 	s_boost_charge_max = in_s_boost_charge_max
 	s_boost_active = in_s_boost_active
 	s_boost_ready = in_s_boost_ready
+	camera_reorienting = in_camera_reorienting
+	camera_repositioning = in_camera_repositioning
+	track_surface_pos = in_track_surface_pos
 	if !is_processing():
 		_apply_low_cost_visual_state()
 
@@ -531,6 +545,55 @@ func damp_basis(a : Basis, b : Basis, lambda : float, dt : float) -> Basis:
 func damp_t3d(a : Transform3D, b : Transform3D, lambda : float, dt : float) -> Transform3D:
 	return a.interpolate_with(b, 1.0 - exp(-lambda * dt))
 
+func _camera_aspect_ratio() -> float:
+	var viewport_size := get_viewport().get_visible_rect().size
+	if viewport_size.y <= 0.0:
+		return 4.0 / 3.0
+	return viewport_size.x / viewport_size.y
+
+func _safe_track_normal() -> Vector3:
+	if track_surface_normal.length_squared() > 0.0001:
+		return track_surface_normal.normalized()
+	if basis_physical.basis.y.length_squared() > 0.0001:
+		return basis_physical.basis.y.normalized()
+	return Vector3.UP
+
+func _step_gameplay_camera() -> void:
+	if !local_visual_enabled or !gameplay_camera:
+		return
+	var view_up_pressed := Input.is_action_just_pressed("CameraUp") or Input.is_action_just_pressed("DPadUp")
+	var view_down_pressed := Input.is_action_just_pressed("CameraDown") or Input.is_action_just_pressed("DPadDown")
+	gameplay_camera.step(
+		position_current,
+		position_old,
+		basis_physical,
+		_safe_track_normal(),
+		track_surface_pos,
+		height_above_track,
+		speed_kmh,
+		camera_reorienting,
+		camera_repositioning,
+		turn_reaction_effect,
+		machine_state,
+		state_2,
+		tilt_fl_state,
+		tilt_fr_state,
+		tilt_bl_state,
+		tilt_br_state,
+		restore_state,
+		restore_move_frames,
+		_camera_aspect_ratio(),
+		view_up_pressed,
+		view_down_pressed)
+
+func _apply_gameplay_camera(ratio: float) -> void:
+	if !local_visual_enabled or !gameplay_camera:
+		return
+	car_camera.global_transform = gameplay_camera.get_render_transform(ratio)
+	car_camera.fov = gameplay_camera.get_render_fov(ratio)
+	car_camera.near = 0.25
+	car_camera.far = 40000.0
+
 @onready var attack_particles: GPUParticles3D = $CarTransform/AttackParticles
 @onready var landing_particles: GPUParticles3D = $CarTransform/LandingParticles
 @onready var boost_electricity: BoostElectricity = $BoostElectricity
@@ -560,6 +623,7 @@ func _physics_process(delta):
 	car_desired_basis_physical = basis_physical
 	old_ts_normal = desired_ts_normal
 	desired_ts_normal = track_surface_normal
+	_step_gameplay_camera()
 	
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
 	if local_visual_enabled:
@@ -666,92 +730,7 @@ func _process(delta: float) -> void:
 	var energy_flash := Color(0.04, -0.01, -0.01) * (sin(0.015 * Time.get_ticks_msec()) * 0.5 + 0.5) * (1.0 - energy_ratio)
 	#var boost_flash := Color(0, 0.03, 0.075) * (boost_ratio)
 	#var final_overlay := energy_flash + boost_flash + Color(1, 1, 1) * damage * 0.1
-	if local_visual_enabled:
-		var target_fov := remap(speed_kmh, 0, 1800, 50, 90)
-		target_fov = minf(target_fov, 100)
-		car_camera.fov = damp(car_camera.fov, target_fov, 2, delta)
-	if local_visual_enabled and restore_state != 2:
-		var use_forward_z : Vector3 = use_basis_physical.basis.z
-		use_forward_z = use_forward_z.normalized()
-		if (tilt_fl_state & FZ_TC.DRIFT) != 0:
-			use_forward_z = -use_car_vel.slide(use_basis_physical.basis.y.normalized()).normalized()
-		
-		var target_y := track_surface_smoothed
-		if (machine_state & FZ_MS.AIRBORNE) != 0:
-			target_y = target_y.rotated(car_camera.basis.x, target_y.slide(car_camera.basis.x).normalized().signed_angle_to(use_basis_physical.basis.y.slide(car_camera.basis.x).normalized(), car_camera.basis.x))
-		var stability := 0.5
-		target_y = target_y.rotated(car_camera.basis.z, (1.0 - stability) * target_y.slide(car_camera.basis.z).normalized().signed_angle_to(use_basis_physical.basis.y.slide(car_camera.basis.z).normalized(), car_camera.basis.z))
-		var starting_frames_past := frames_since_start_2 > 90
-		
-		if !slerped_up_y.is_equal_approx(target_y):
-			slerped_up_y = damp_vec3_slerp(slerped_up_y, target_y, 60, delta).normalized()
-		slerped_forward_z = damp_vec3_slerp(slerped_forward_z, use_forward_z, 20, delta).normalized()
-		
-		var use_slerpto = Basis(Quaternion(use_basis_physical.basis.z, slerped_forward_z)) * use_basis_physical.basis
-		use_slerpto = Basis(Quaternion(use_basis_physical.basis.y, slerped_up_y)) * use_slerpto
-		camera_basis = damp_basis(camera_basis, use_slerpto, 30, delta).orthonormalized()
-		camera_basis_smoothed = damp_basis(camera_basis_smoothed, camera_basis, 30, delta).orthonormalized()
-		
-		
-		#var final_y := slerped_up_y
-		
-		
-		var flat_up_y := camera_basis_smoothed.y
-		var flat_use_up_y := use_basis_physical.basis.y.slide(camera_basis_smoothed.z).normalized()
-		var up_y_rot := flat_up_y.signed_angle_to(flat_use_up_y, camera_basis_smoothed.z)
-		var use_up_y_for_offset := flat_up_y.rotated(camera_basis_smoothed.z, up_y_rot)
-		
-		
-		flat_up_y = use_up_y_for_offset.slide(camera_basis_smoothed.x).normalized()
-		flat_use_up_y = use_basis_physical.basis.y.slide(camera_basis_smoothed.x).normalized()
-		up_y_rot = flat_up_y.signed_angle_to(flat_use_up_y, camera_basis_smoothed.x)
-		use_up_y_for_offset = use_up_y_for_offset.rotated(camera_basis_smoothed.x, up_y_rot * delta * 20)
-		camera_basis_smoothed = camera_basis_smoothed.rotated(camera_basis_smoothed.x, up_y_rot * delta * 20)
-		
-		var use_cam_basis := camera_basis_smoothed
-		
-		#if starting_frames_past:
-			#print("ah")
-			#var flat_up_y := slerped_up_y.slide(use_basis.x).normalized()
-			#var flat_basis_y := use_basis_physical.basis.y.slide(use_basis.x).normalized()
-			#var rot_angle_1 := flat_up_y.signed_angle_to(flat_basis_y, use_basis.x)
-			#var rot_angle_2 := use_basis.y.signed_angle_to(flat_basis_y, use_basis.x)
-			#slerped_up_y = slerped_up_y.rotated(use_basis.x, rot_angle_1 * (1.0 - exp(-120 * delta)))
-			#use_basis = use_basis.rotated(use_basis.x, rot_angle_2)# * (1.0 - exp(-150 * delta)))
-			#final_y = slerped_up_y
-			#if (machine_state & FZ_MS.AIRBORNE) == 0:
-				#if speed_kmh > 1:
-					#var sideways := velocity.normalized().cross(track_normal_vis).normalized()
-					#var flattened := track_normal_vis.slide(sideways).normalized()
-					#var flattened_prev := track_normal_old_vis.slide(sideways).normalized()
-					#var road_angle_change := flattened.signed_angle_to(flattened_prev, sideways)
-					#var arc_length := speed_kmh * 100
-					#lerped_curvature = lerpf(lerped_curvature, road_angle_change / arc_length if !is_zero_approx(arc_length) else 0.0, 7.5 * delta)
-					#DebugDraw2D.set_text("curvature", lerped_curvature)
-					#final_y = final_y.rotated(sideways, lerped_curvature * -8000)
-					#use_basis = use_basis.rotated(sideways, lerped_curvature * -8000)
-		
-		use_up_y_for_offset = use_up_y_for_offset.rotated(use_cam_basis.z, stability * use_up_y_for_offset.slide(use_cam_basis.z).normalized().signed_angle_to(track_surface_smoothed.slide(use_cam_basis.z).normalized(), use_cam_basis.z))
-		
-		car_camera.position = use_car_pos + \
-		use_up_y_for_offset * remap(car_camera.fov, 50, 100, 6.0, 5.5) + \
-		use_cam_basis.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
-		car_camera.basis = use_cam_basis.rotated(use_cam_basis.x, deg_to_rad(-10))
-	elif local_visual_enabled:
-		var forward := (restore_target_transform.origin - restore_start_transform.origin).normalized()
-		var temp_up := restore_target_transform.basis.y.normalized()
-
-		var right := forward.cross(temp_up).normalized()
-		var up := right.cross(forward).normalized()
-
-		var use_slerpto := Basis(right, up, -forward).orthonormalized()
-		var target_basis := use_slerpto.slerp(basis_physical.basis, float(restore_move_frames) / 180)
-		camera_basis = damp_basis(camera_basis, target_basis, 8, delta).orthonormalized()
-		camera_basis_smoothed = damp_basis(camera_basis_smoothed, camera_basis, 8, delta).orthonormalized()
-		car_camera.position = use_car_pos + \
-		camera_basis_smoothed.y * remap(car_camera.fov, 50, 100, 6.0, 5.5) + \
-		camera_basis_smoothed.z * remap(car_camera.fov, 50, 100, 12.0, 6.0)
-		car_camera.basis = camera_basis_smoothed.rotated(basis_physical.basis.x, deg_to_rad(-10))
+	_apply_gameplay_camera(ratio)
 	
 	#var flat_use_z := car_transform.global_basis.z.slide(use_ts_normal).normalized()
 	#var flat_use_y := car_transform.global_basis.y.slide(flat_use_z).normalized()
@@ -761,23 +740,21 @@ func _process(delta: float) -> void:
 	#car_camera.global_basis = car_camera.global_basis.slerp(car_transform.global_basis, 0.25)
 	#car_camera.fov = 90
 	
-	if local_visual_enabled:
-		car_camera.near = 0.25
-		car_camera.far = 40000.0
 	for node:VehicleThruster in vehicle_thrusters.get_children():
 		node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
 	if local_visual_enabled and is_instance_valid(vehicle_shadow):
+		var shadow_normal := _safe_track_normal()
 		var use_transform := car_transform.global_transform * vehicle_main_local_transform
-		use_transform.origin += -track_surface_normal * (20.0 - height_above_track)
-		use_transform.basis.x = use_transform.basis.x.slide(track_surface_normal)
-		use_transform.basis.y = use_transform.basis.y.slide(track_surface_normal)
-		use_transform.basis.z = use_transform.basis.z.slide(track_surface_normal)
+		use_transform.origin += -shadow_normal * (20.0 - height_above_track)
+		use_transform.basis.x = use_transform.basis.x.slide(shadow_normal)
+		use_transform.basis.y = use_transform.basis.y.slide(shadow_normal)
+		use_transform.basis.z = use_transform.basis.z.slide(shadow_normal)
 		vehicle_shadow.global_transform = use_transform
 
 	if effect_tier == EffectTier.FULL and (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
 		boost_electricity.boosting = true
 		if is_instance_valid(vehicle_shadow):
-			boost_electricity.ground = Plane(track_surface_normal, vehicle_shadow.global_position)
+			boost_electricity.ground = Plane(_safe_track_normal(), vehicle_shadow.global_position)
 	else:
 		boost_electricity.boosting = false
 	if effect_tier == EffectTier.FULL:

@@ -1,7 +1,5 @@
 #include "fzgx/camera.h"
 
-#include "../../catalog/sine_lut_14b.inc"
-
 #include <float.h>
 #include <math.h>
 #include <stddef.h>
@@ -219,25 +217,10 @@ static bool fzgx_mat43_is_finite_exact(const fzgx_mat43 *transform) {
 }
 
 static fzgx_sincos_result fzgx_math_sincos_14b(uint16_t angle) {
-  uint32_t index = (uint32_t)angle & 0x3fffu;
-  uint8_t high_byte = (uint8_t)(angle >> 8);
-  float sin_value;
-  float cos_value;
   fzgx_sincos_result result;
-
-  if (((high_byte >> 6) & 1u) != 0u) {
-    index = 0x4000u - index;
-  }
-  sin_value = fzgx_sine_lut_14b[index];
-  cos_value = fzgx_sine_lut_14b[0x4000u - index];
-  if ((high_byte >> 7) != 0u) {
-    sin_value = -sin_value;
-  }
-  if ((((high_byte >> 6) & 1u) ^ (high_byte >> 7)) != 0u) {
-    cos_value = -cos_value;
-  }
-  result.sin_value = sin_value;
-  result.cos_value = cos_value;
+  float radians = ((float)angle) * (6.28318530717958647692f / 65536.0f);
+  result.sin_value = sinf(radians);
+  result.cos_value = cosf(radians);
   return result;
 }
 

@@ -259,12 +259,14 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 
 	if (all_airborne) {
 		soa->machine_state[soa_index] |= MACHINESTATE::AIRBORNE;
-		soa->air_time[soa_index] += 1;
+		if (soa->air_time[soa_index] < 180)
+			soa->air_time[soa_index] += 1;
 		if (soa->air_time[soa_index] > 10)
 			soa->machine_state[soa_index] |= MACHINESTATE::AIRBORNEMORE0_2S_Q;
 	} else {
 		if (soa->air_time[soa_index] != 0)
 			soa->machine_state[soa_index] |= MACHINESTATE::JUSTLANDED;
+		soa->air_time[soa_index] = 0;
 		soa->machine_state[soa_index] &= ~MACHINESTATE::AIRBORNEMORE0_2S_Q;
 		soa->state_2[soa_index] &= ~2u;
 	}
@@ -1812,6 +1814,16 @@ void PhysicsCar::update_machine_stats()
 	soa->stat_boost_length[soa_index] = def_stats.boost_length;
 	soa->stat_turn_decel[soa_index] = def_stats.turn_decel;
 	soa->stat_drag[soa_index] = def_stats.drag;
+	if ((def_stats.state_flags & 1u) == 0u) {
+		soa->machine_state[soa_index] &= ~MACHINESTATE::B9;
+	} else {
+		soa->machine_state[soa_index] |= MACHINESTATE::B9;
+	}
+	if ((def_stats.state_flags & 2u) != 0u) {
+		soa->machine_state[soa_index] |= MACHINESTATE::VEHICLEACTIVE_Q;
+	} else {
+		soa->machine_state[soa_index] &= ~MACHINESTATE::B1;
+	}
 };
 
 void PhysicsCar::reset_machine(int reset_type)
@@ -1885,7 +1897,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->car_hit_invincibility[soa_index] = 0;
 	soa->turn_reaction_input[soa_index] = 0.0f;
 	soa->turn_reaction_effect[soa_index] = 0.0f;
-	soa->boost_energy_use_mult[soa_index] = 0.8f;
+	soa->boost_energy_use_mult[soa_index] = 1.0f;
 	soa->breakdown_frame_counter[soa_index] = 0;
 	soa->some_breakdown_int[soa_index] = 0;
 	soa->drift_sign[soa_index] = 1;
@@ -3355,7 +3367,10 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	update_pitch_transform_from_machine_front_back();
 
 	STORE_TRANSFORM(transform_visual, spawn_transform);
-	STORE_VEC3(track_surface_normal, spawn_transform.basis.get_column(1));
+	const SimVec3 spawn_up = spawn_transform.basis.get_column(1);
+	STORE_VEC3(track_surface_normal, spawn_up);
+	STORE_VEC3(track_surface_pos, spawn_transform.origin - spawn_up * 0.1f);
+	soa->height_above_track[soa_index] = 19.9f;
 
 	STORE_VEC3(velocity, SimVec3());
 	STORE_VEC3(velocity_local, SimVec3());
@@ -3364,8 +3379,21 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	soa->base_speed[soa_index] = 0.0f;
 	soa->boost_turbo[soa_index] = 0.0f;
 	soa->some_breakdown_int[soa_index] = 0;
+	soa->air_time[soa_index] = 0;
+	soa->grip_frames_from_accel_press[soa_index] = 0;
+	soa->boost_frames[soa_index] = 0;
+	soa->boost_frames_manual[soa_index] = 0;
+	soa->height_adjust_from_boost[soa_index] = 0.0f;
 
-	soa->machine_state[soa_index] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::AIRBORNE | MACHINESTATE::FALLOUT);
+	soa->machine_state[soa_index] &= ~(MACHINESTATE::ZEROHP |
+		MACHINESTATE::AIRBORNE |
+		MACHINESTATE::AIRBORNEMORE0_2S_Q |
+		MACHINESTATE::FALLOUT |
+		MACHINESTATE::TOOKDAMAGE |
+		MACHINESTATE::LOWGRIP |
+		MACHINESTATE::SIDEATTACKING |
+		MACHINESTATE::SPINATTACKING |
+		MACHINESTATE::JUSTHITVEHICLE_Q);
 	soa->frames_since_death[soa_index] = 0;
 	const int point_base = soa_index * 4;
 	const SimTransform restore_transform = LOAD_TRANSFORM(basis_physical);
@@ -3454,6 +3482,9 @@ void PhysicsCar::update_restore(float accel_input)
 		float t = std::min(1.0f, static_cast<float>(soa->restore_move_frames[soa_index]) / 180.0f);
 		t = (t < 0.5f) ? (2.0f * t * t) : (-1.0f + (4.0f - 2.0f * t) * t);
 		soa->state_2[soa_index] &= ~0x20;
+		if (soa->restore_move_frames[soa_index] >= 160) {
+			soa->machine_state[soa_index] |= MACHINESTATE::STARTINGCOUNTDOWN;
+		}
 		SimVec3 pos = LOAD_TRANSFORM(restore_start_transform).origin.lerp(LOAD_TRANSFORM(restore_target_transform).origin, t);
 		SimQuat qs = LOAD_TRANSFORM(restore_start_transform).basis.get_rotation_quaternion();
 		SimQuat qe = LOAD_TRANSFORM(restore_target_transform).basis.get_rotation_quaternion();
@@ -3474,6 +3505,8 @@ void PhysicsCar::update_restore(float accel_input)
 			respawn_at_checkpoint(soa->last_ground_checkpoint[soa_index]);
 			soa->energy[soa_index] = std::max(soa->energy[soa_index], soa->calced_max_energy[soa_index] * 0.5f);
 			soa->machine_state[soa_index] |= MACHINESTATE::ACTIVE;
+			soa->machine_state[soa_index] &= ~MACHINESTATE::STARTINGCOUNTDOWN;
+			soa->frames_since_start_2[soa_index] = 60;
 			soa->restore_state[soa_index] = 0;
 			soa->restore_wait_frames[soa_index] = 0;
 			soa->restore_move_frames[soa_index] = 0;

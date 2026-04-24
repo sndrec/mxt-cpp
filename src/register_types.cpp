@@ -1,6 +1,7 @@
 #include "register_types.h"
 
 #include "main.h"
+#include "fzgx_gameplay_camera.h"
 #include "mxt_core/netcode_core.h"
 
 #include <gdextension_interface.h>
@@ -15,6 +16,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	}
 
 	GDREGISTER_CLASS(GameSim);
+	GDREGISTER_CLASS(FzgxGameplayCamera);
 	GDREGISTER_CLASS(NetcodeCore);
 }
 

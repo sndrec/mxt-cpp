@@ -2123,7 +2123,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, SimVec2(t_x, t_y));
 			spawn_transform.basis.orthonormalize();
 			spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
-			SimVec3 up_offset = spawn_transform.basis.get_column(1) * 0.5f;
+			const SimVec3 spawn_up = spawn_transform.basis.get_column(1);
+			const SimVec3 track_surface_pos = spawn_transform.origin;
+			SimVec3 up_offset = spawn_up * 0.5f;
 			spawn_transform.origin += up_offset;
 
 			STORE_INDEXED_VEC3(*cars[i].soa, position_current, cars[i].soa_index, spawn_transform.origin);
@@ -2137,7 +2139,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			cars[i].update_pitch_transform_from_machine_front_back();
 
 			MXT_STORE_TRANSFORM(*cars[i].soa, transform_visual, cars[i].soa_index, spawn_transform);
-			STORE_INDEXED_VEC3(*cars[i].soa, track_surface_normal, cars[i].soa_index, spawn_transform.basis.get_column(1));
+			STORE_INDEXED_VEC3(*cars[i].soa, track_surface_normal, cars[i].soa_index, spawn_up);
+			STORE_INDEXED_VEC3(*cars[i].soa, track_surface_pos, cars[i].soa_index, track_surface_pos);
+			cars[i].soa->height_above_track[cars[i].soa_index] = 19.5f;
 		}
 
 		input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
@@ -2509,7 +2513,7 @@ void GameSim::update_super_spark_visuals()
 		TypedArray<godot::Node> vis_cars = car_node_container->get_children();
 		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
 		godot::Array visual_args;
-		visual_args.resize(44);
+		visual_args.resize(50);
 		for (int i = 0; i < vis_car_count; i++) {
 		//cars[i].create_machine_visual_transform();
 			visual_args[0] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, position_current, cars[i].soa_index));
@@ -2556,6 +2560,12 @@ void GameSim::update_super_spark_visuals()
 			visual_args[41] = static_cast<int>(cars[i].get_s_boost_max_charge());
 			visual_args[42] = cars[i].is_s_boost_active();
 			visual_args[43] = cars[i].is_s_boost_ready();
+			visual_args[44] = cars[i].soa->tilt_state[cars[i].soa_index * 4 + 1];
+			visual_args[45] = cars[i].soa->tilt_state[cars[i].soa_index * 4 + 2];
+			visual_args[46] = cars[i].soa->tilt_state[cars[i].soa_index * 4 + 3];
+			visual_args[47] = cars[i].soa->camera_reorienting[cars[i].soa_index];
+			visual_args[48] = cars[i].soa->camera_repositioning[cars[i].soa_index];
+			visual_args[49] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, track_surface_pos, cars[i].soa_index));
 			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
 			if (!vis_car) {
 				continue;

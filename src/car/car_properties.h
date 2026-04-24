@@ -28,6 +28,7 @@ public:
 	float track_collision = 1.3;
 	float obstacle_collision = 2.4;
 	int32_t unk_byte_0x48 = 1;
+	uint32_t state_flags = 0;
 	float max_energy = 100.0;
 
 	SimVec3 tilt_corners[4] = {
@@ -95,6 +96,7 @@ public:
 		out_buffer.put_float(wall_corners[3].y);
 		out_buffer.put_float(wall_corners[3].z);
 		out_buffer.put_u32(unk_byte_0x48);
+		out_buffer.put_u32(state_flags);
 		out_buffer.resize(out_buffer.get_position());
 		return out_buffer;
 	}
@@ -149,6 +151,9 @@ public:
 		new_properties.wall_corners[3].y = in_buffer->get_float();
 		new_properties.wall_corners[3].z = in_buffer->get_float();
 		new_properties.unk_byte_0x48 = in_buffer->get_u32();
+		if (in_buffer->get_size() - in_buffer->get_position() >= 4) {
+			new_properties.state_flags = in_buffer->get_u32();
+		}
 		return new_properties;
 	}
 

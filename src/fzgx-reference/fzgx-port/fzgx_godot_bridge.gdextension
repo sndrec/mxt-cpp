@@ -1,0 +1,11 @@
+[configuration]
+
+entry_symbol = "fzgx_godot_bridge_library_init"
+compatibility_minimum = "4.1"
+
+[libraries]
+
+linux.debug.x86_64 = "res://bin/libfzgx_godot_bridge.so"
+linux.release.x86_64 = "res://bin/libfzgx_godot_bridge.so"
+windows.debug.x86_64 = "res://bin/libfzgx_godot_bridge.dll"
+windows.release.x86_64 = "res://bin/libfzgx_godot_bridge.dll"

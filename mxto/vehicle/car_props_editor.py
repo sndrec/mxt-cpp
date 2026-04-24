@@ -24,7 +24,7 @@ class CarPropsEditor:
 				for axis in ["x", "y", "z"]:
 					self.full_fields.append(f"{group}_corner_{i}_{axis}")
 
-		self.u32_field = "unk_byte_0x48"
+		self.u32_fields = ["unk_byte_0x48", "state_flags"]
 		self.entries = {}
 
 		notebook = ttk.Notebook(master)
@@ -75,12 +75,13 @@ class CarPropsEditor:
 			entry.grid(row=i, column=1)
 			self.entries[field] = entry
 
-		# Final u32 field
-		u32_label = tk.Label(meta_tab, text=self.u32_field)
-		u32_label.pack()
-		u32_entry = tk.Entry(meta_tab)
-		u32_entry.pack()
-		self.entries[self.u32_field] = u32_entry
+		# Final u32 fields
+		for field in self.u32_fields:
+			u32_label = tk.Label(meta_tab, text=field)
+			u32_label.pack()
+			u32_entry = tk.Entry(meta_tab)
+			u32_entry.pack()
+			self.entries[field] = u32_entry
 
 		# Buttons
 		btn_frame = tk.Frame(master)
@@ -101,12 +102,15 @@ class CarPropsEditor:
 				data = f.read()
 				floats = struct.unpack('<46f', data[:184])
 				u32 = struct.unpack('<I', data[184:188])[0]
+				state_flags = struct.unpack('<I', data[188:192])[0] if len(data) >= 192 else 0
 				all_keys = self.fields_general + self.full_fields
 				for i, key in enumerate(all_keys):
 					self.entries[key].delete(0, tk.END)
 					self.entries[key].insert(0, str(floats[i]))
-				self.entries[self.u32_field].delete(0, tk.END)
-				self.entries[self.u32_field].insert(0, str(u32))
+				self.entries["unk_byte_0x48"].delete(0, tk.END)
+				self.entries["unk_byte_0x48"].insert(0, str(u32))
+				self.entries["state_flags"].delete(0, tk.END)
+				self.entries["state_flags"].insert(0, str(state_flags))
 				self.update_summaries_from_full()
 		except Exception as e:
 			messagebox.showerror("Error", f"Failed to load file: {e}")
@@ -119,10 +123,10 @@ class CarPropsEditor:
 			return
 		try:
 			float_values = [float(self.entries[key].get()) for key in self.fields_general + self.full_fields]
-			u32_value = int(self.entries[self.u32_field].get()) & 0xFFFFFFFF
+			u32_values = [int(self.entries[key].get()) & 0xFFFFFFFF for key in self.u32_fields]
 			with open(path, "wb") as f:
 				f.write(struct.pack('<46f', *float_values))
-				f.write(struct.pack('<I', u32_value))
+				f.write(struct.pack('<' + 'I' * len(u32_values), *u32_values))
 		except Exception as e:
 			messagebox.showerror("Error", f"Failed to save file: {e}")
 
