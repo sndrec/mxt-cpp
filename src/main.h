@@ -134,6 +134,7 @@ namespace godot {
 			uint16_t animation_frame = 0;
 			uint16_t checkpoint = 0;
 			SimVec3 position;
+			SimVec3 prev_position;
 			SimVec3 start_position;
 			SimVec3 final_position;
 			SimVec3 plane_normal;
@@ -225,6 +226,8 @@ namespace godot {
 		std::vector<int> render_car_slots;
 		std::vector<SimTransform> render_visual_prev_transforms;
 		std::vector<SimTransform> render_visual_current_transforms;
+		std::vector<float> render_visual_prev_ground_distances;
+		std::vector<float> render_visual_current_ground_distances;
 		std::vector<uint8_t> render_visual_initialized;
 		godot::Camera3D* gameplay_camera_node = nullptr;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;

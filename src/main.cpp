@@ -2677,6 +2677,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_car_slots.clear();
 		render_visual_prev_transforms.clear();
 		render_visual_current_transforms.clear();
+		render_visual_prev_ground_distances.clear();
+		render_visual_current_ground_distances.clear();
 		render_visual_initialized.clear();
 		native_cpu_drivers.clear();
 		cpu_driver_manager = nullptr;
@@ -2693,6 +2695,8 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_car_slots.clear();
 	render_visual_prev_transforms.clear();
 	render_visual_current_transforms.clear();
+	render_visual_prev_ground_distances.clear();
+	render_visual_current_ground_distances.clear();
 	render_visual_initialized.clear();
 	if (!car_render_manager) {
 		return;
@@ -2884,18 +2888,35 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 	if (static_cast<int>(render_visual_prev_transforms.size()) != visual_count) {
 		render_visual_prev_transforms.resize(visual_count);
 		render_visual_current_transforms.resize(visual_count);
+		render_visual_prev_ground_distances.resize(visual_count);
+		render_visual_current_ground_distances.resize(visual_count);
 		render_visual_initialized.assign(visual_count, 0);
 	}
 	for (int i = 0; i < visual_count; ++i) {
 		update_machine_visual_transform_for_render(*cars[i].soa, cars[i].soa_index);
-		const SimTransform current = MXT_LOAD_TRANSFORM(*cars[i].soa, transform_visual, cars[i].soa_index);
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const SimTransform current = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
+		SimVec3 track_normal = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+		if (track_normal.length_squared() <= 0.0001f) {
+			track_normal = current.basis.get_column(1);
+		}
+		track_normal = track_normal.normalized();
+		const SimVec3 track_surface_pos = LOAD_INDEXED_VEC3(soa, track_surface_pos, lane);
+		float current_ground_distance = (LOAD_INDEXED_VEC3(soa, position_current, lane) - track_surface_pos).dot(track_normal);
+		if (current_ground_distance < 0.0f) {
+			current_ground_distance = 0.0f;
+		}
 		if (render_visual_initialized[i]) {
 			render_visual_prev_transforms[i] = render_visual_current_transforms[i];
+			render_visual_prev_ground_distances[i] = render_visual_current_ground_distances[i];
 		} else {
 			render_visual_prev_transforms[i] = current;
+			render_visual_prev_ground_distances[i] = current_ground_distance;
 			render_visual_initialized[i] = 1;
 		}
 		render_visual_current_transforms[i] = current;
+		render_visual_current_ground_distances[i] = current_ground_distance;
 	}
 }
 
@@ -2924,6 +2945,9 @@ void GameSim::apply_render_multimeshes(float alpha)
 		if (archetype < static_cast<int>(render_shadow_multimeshes.size()) &&
 				archetype < static_cast<int>(render_shadow_local_transforms.size()) &&
 				render_shadow_multimeshes[archetype].is_valid()) {
+			const float prev_ground_distance = i < static_cast<int>(render_visual_prev_ground_distances.size()) ? render_visual_prev_ground_distances[i] : 20.0f;
+			const float current_ground_distance = i < static_cast<int>(render_visual_current_ground_distances.size()) ? render_visual_current_ground_distances[i] : prev_ground_distance;
+			const float ground_distance = prev_ground_distance + (current_ground_distance - prev_ground_distance) * alpha;
 			PhysicsCarSoA& soa = *cars[i].soa;
 			const int lane = cars[i].soa_index;
 			SimVec3 shadow_normal = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
@@ -2932,10 +2956,16 @@ void GameSim::apply_render_multimeshes(float alpha)
 			}
 			shadow_normal = shadow_normal.normalized();
 			SimTransform shadow_transform = visual_transform * render_shadow_local_transforms[archetype];
-			shadow_transform.origin += -shadow_normal * (20.0f - soa.height_above_track[lane]);
-			shadow_transform.basis.c0 = shadow_transform.basis.c0.slide(shadow_normal);
-			shadow_transform.basis.c1 = shadow_transform.basis.c1.slide(shadow_normal);
-			shadow_transform.basis.c2 = shadow_transform.basis.c2.slide(shadow_normal);
+			if (ground_distance >= 20.0f) {
+				shadow_transform.basis.c0 = SimVec3();
+				shadow_transform.basis.c1 = SimVec3();
+				shadow_transform.basis.c2 = SimVec3();
+			} else {
+				shadow_transform.origin += -shadow_normal * ground_distance;
+				shadow_transform.basis.c0 = shadow_transform.basis.c0.slide(shadow_normal);
+				shadow_transform.basis.c1 = shadow_transform.basis.c1.slide(shadow_normal);
+				shadow_transform.basis.c2 = shadow_transform.basis.c2.slide(shadow_normal);
+			}
 			render_shadow_multimeshes[archetype]->set_instance_transform(slot, gd_transform(shadow_transform));
 		}
 	}
@@ -3098,6 +3128,7 @@ void GameSim::reset_super_sparks()
 		super_sparks[i].animation_frame = 0;
 		super_sparks[i].checkpoint = 0;
 		super_sparks[i].position = SimVec3();
+		super_sparks[i].prev_position = SimVec3();
 		super_sparks[i].start_position = SimVec3();
 		super_sparks[i].final_position = SimVec3();
 		super_sparks[i].plane_normal = SimVec3(0.0f, 1.0f, 0.0f);
@@ -3227,6 +3258,7 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 		spark.start_position = car_position;
 		spark.final_position = final_position;
 		spark.position = car_position;
+		spark.prev_position = car_position;
 	}
 }
 
@@ -3235,8 +3267,8 @@ void GameSim::update_super_sparks()
 	if (!sim_started || !cars || !super_spark_state || !super_sparks)
 		return;
 
-	constexpr uint16_t kSparkAnimationFrames = 12;
-	constexpr float kSparkArcHeight = 14.0f;
+	constexpr uint16_t kSparkAnimationFrames = 30;
+	constexpr float kSparkArcHeight = 8.4f;
 	const float collect_radius_sq = SUPER_SPARK_COLLECT_RADIUS * SUPER_SPARK_COLLECT_RADIUS;
 	auto checkpoint_matches = [&](uint16_t spark_checkpoint, uint16_t car_checkpoint) -> bool {
 		if (!current_track || car_checkpoint >= static_cast<uint16_t>(current_track->num_checkpoints))
@@ -3256,6 +3288,7 @@ void GameSim::update_super_sparks()
 		SuperSpark& spark = super_sparks[i];
 		if (!spark.active)
 			continue;
+		spark.prev_position = spark.position;
 
 		if (!spark.collectable) {
 			const float t = std::min(static_cast<float>(spark.animation_frame) / static_cast<float>(kSparkAnimationFrames), 1.0f);
@@ -3308,13 +3341,16 @@ void GameSim::update_super_spark_visuals()
 	if (spark_multimesh.is_null()) {
 		return;
 	}
+	Engine* engine = Engine::get_singleton();
+	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 	int active_count = 0;
 	for (int i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
 		if (super_sparks[i].active == 0) {
 			continue;
 		}
 		godot::Transform3D spark_transform;
-		spark_transform.origin = gd_vec3(super_sparks[i].position);
+		const SimVec3 render_position = super_sparks[i].prev_position.lerp(super_sparks[i].position, alpha);
+		spark_transform.origin = gd_vec3(render_position);
 		spark_multimesh->set_instance_transform(active_count, spark_transform);
 		active_count += 1;
 	}
