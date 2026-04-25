@@ -147,6 +147,16 @@ namespace godot {
 		godot::Object* cpu_driver_manager = nullptr;
 		int32_t* car_player_ids = nullptr;
 		uint8_t* car_is_cpu = nullptr;
+		struct NativeCpuDriverState {
+			int32_t player_id = -1;
+			uint8_t active = 0;
+			int32_t last_generated_tick = -1;
+			float desired_lane = 0.0f;
+			float time_since_last_boost = 0.0f;
+			uint32_t rng_state = 1;
+			godot::PackedByteArray pending_input;
+		};
+		std::vector<NativeCpuDriverState> native_cpu_drivers;
 		void reset_super_sparks();
 		void update_super_sparks();
 		void update_super_spark_visuals();
@@ -154,6 +164,10 @@ namespace godot {
 		float compute_vehicle_distance_along_track(uint16_t current_checkpoint, float checkpoint_fraction, uint8_t lap) const;
 		uint16_t compute_s_boost_duration_frames(float gap_distance) const;
 		godot::PackedByteArray build_cpu_observation(const PhysicsCar& car) const;
+		void configure_native_cpu_drivers();
+		void update_native_cpu_drivers();
+		void update_native_cpu_driver(int car_index);
+		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
 		void ensure_vehicle_tick_soa_capacity(int capacity);
 		void free_vehicle_tick_soa();
 		void record_phase_profile_sample();
@@ -215,6 +229,7 @@ namespace godot {
 		void render_gamesim();
 		void set_cpu_driver_manager(godot::Object* manager);
 		godot::Object* get_cpu_driver_manager() const { return cpu_driver_manager; }
+		godot::PackedByteArray get_native_cpu_input_for_tick(int player_id, int expected_tick);
 		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);
 		void save_state();
 		void load_state(int target_tick);

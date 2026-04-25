@@ -600,9 +600,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	if singleplayer_mode:
-		game_sim.set_cpu_driver_manager(cpu_driver_manager)
+		game_sim.set_cpu_driver_manager(null)
 		if network_manager.is_server:
-			server_game_sim.set_cpu_driver_manager(cpu_driver_manager)
+			server_game_sim.set_cpu_driver_manager(null)
 	elif network_manager.is_server:
 		game_sim.set_cpu_driver_manager(null)
 		server_game_sim.set_cpu_driver_manager(cpu_driver_manager)
@@ -793,7 +793,7 @@ func _simulate_singleplayer_tick():
 			input_bytes = pi.serialize()
 		else:
 			if cpu_ids.has(roster[i]):
-				input_bytes = network_manager.get_cpu_input_for_tick(roster[i], _singleplayer_tick)
+				input_bytes = game_sim.get_native_cpu_input_for_tick(roster[i], _singleplayer_tick)
 			else:
 				input_bytes = neutral_input.duplicate()
 		frame_inputs.append(input_bytes)

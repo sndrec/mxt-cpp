@@ -918,6 +918,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_first_lap_distance"), &GameSim::get_first_lap_distance);
 	ClassDB::bind_method(D_METHOD("set_cpu_driver_manager", "manager"), &GameSim::set_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("get_cpu_driver_manager"), &GameSim::get_cpu_driver_manager);
+	ClassDB::bind_method(D_METHOD("get_native_cpu_input_for_tick", "player_id", "expected_tick"), &GameSim::get_native_cpu_input_for_tick);
 	ClassDB::bind_method(D_METHOD("set_player_metadata", "player_ids", "cpu_flags"), &GameSim::set_player_metadata);
 	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
 	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
@@ -2353,20 +2354,131 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			::free(cars);
 			cars = nullptr;
 		}
-		if (car_player_ids) {
-			::free(car_player_ids);
-			car_player_ids = nullptr;
-		}
-		if (car_is_cpu) {
-			::free(car_is_cpu);
-			car_is_cpu = nullptr;
-		}
-		cpu_driver_manager = nullptr;
+	if (car_player_ids) {
+		::free(car_player_ids);
+		car_player_ids = nullptr;
+	}
+	if (car_is_cpu) {
+		::free(car_is_cpu);
+		car_is_cpu = nullptr;
+	}
+	native_cpu_drivers.clear();
+	cpu_driver_manager = nullptr;
 	};
 
 void GameSim::set_cpu_driver_manager(godot::Object* manager)
 {
 	cpu_driver_manager = manager;
+}
+
+GameSim::NativeCpuDriverState* GameSim::find_native_cpu_driver(int32_t player_id)
+{
+	for (NativeCpuDriverState& driver : native_cpu_drivers) {
+		if (driver.active && driver.player_id == player_id) {
+			return &driver;
+		}
+	}
+	return nullptr;
+}
+
+void GameSim::configure_native_cpu_drivers()
+{
+	native_cpu_drivers.clear();
+	native_cpu_drivers.resize(std::max(0, num_cars));
+	const godot::PackedByteArray neutral = PlayerInput::to_bytes(PlayerInput::from_neutral());
+	for (int i = 0; i < num_cars; ++i) {
+		NativeCpuDriverState& driver = native_cpu_drivers[i];
+		driver.player_id = car_player_ids ? car_player_ids[i] : -1;
+		driver.active = (car_is_cpu && car_is_cpu[i] && driver.player_id != -1) ? 1 : 0;
+		driver.last_generated_tick = -1;
+		driver.desired_lane = 0.0f;
+		driver.time_since_last_boost = 0.0f;
+		driver.rng_state = 0x9E3779B9u ^ static_cast<uint32_t>(i * 747796405u) ^ static_cast<uint32_t>(spawn_seed);
+		driver.pending_input = neutral;
+	}
+}
+
+static inline float native_cpu_rand_signed(uint32_t& state)
+{
+	state = state * 1664525u + 1013904223u;
+	const float unit = static_cast<float>((state >> 8) & 0x00FFFFFFu) * (1.0f / 16777215.0f);
+	return unit * 2.0f - 1.0f;
+}
+
+void GameSim::update_native_cpu_driver(int car_index)
+{
+	if (car_index < 0 || car_index >= num_cars || car_index >= static_cast<int>(native_cpu_drivers.size())) {
+		return;
+	}
+	NativeCpuDriverState& driver = native_cpu_drivers[car_index];
+	if (!driver.active) {
+		return;
+	}
+
+	const PhysicsCar& car = cars[car_index];
+	PhysicsCarSoA& soa = *car.soa;
+	const int i = car.soa_index;
+	const SimBasis physical_basis = MXT_LOAD_TRANSFORM(soa, basis_physical, i).basis;
+	const SimBasis& surface = soa.road_sample[i].closest_surface.basis;
+	const float road_tx = soa.road_sample[i].road_t.x;
+	const float energy = soa.energy[i];
+	const uint32_t tilt_state = soa.tilt_state[i * 4 + 1];
+
+	PlayerInput input = PlayerInput::from_neutral();
+	input.accelerate = 1.0f;
+
+	float desired_steer = (physical_basis.c0 + surface.c0).dot(surface.c2);
+	driver.desired_lane += native_cpu_rand_signed(driver.rng_state) * 0.01f;
+	driver.desired_lane = std::max(-0.75f, std::min(0.75f, driver.desired_lane));
+
+	const float lane_offset = road_tx + driver.desired_lane;
+	input.strafe_left = std::max(0.0f, std::min(1.0f, std::abs(std::min(lane_offset, 0.0f)) * 4.0f));
+	input.strafe_right = std::max(0.0f, std::min(1.0f, std::max(lane_offset, 0.0f) * 4.0f));
+
+	const bool drifting = (tilt_state & 0x4u) != 0;
+	const bool wants_drift = std::abs(desired_steer) >= 0.4f && !drifting;
+	if (drifting) {
+		desired_steer *= 5.0f;
+	}
+	input.steer_horizontal = std::max(-1.0f, std::min(1.0f, desired_steer * 30.0f));
+	if (wants_drift) {
+		input.strafe_left = 1.0f;
+		input.strafe_right = 1.0f;
+	}
+
+	const bool wants_boost = energy > 10.0f && driver.time_since_last_boost > 10.0f;
+	input.boost = wants_boost;
+	if (wants_boost) {
+		driver.time_since_last_boost = 0.0f;
+	} else {
+		driver.time_since_last_boost += 1.0f;
+	}
+
+	driver.pending_input = PlayerInput::to_bytes(input);
+	driver.last_generated_tick = tick;
+}
+
+void GameSim::update_native_cpu_drivers()
+{
+	if (!cars || native_cpu_drivers.empty()) {
+		return;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		update_native_cpu_driver(i);
+	}
+}
+
+godot::PackedByteArray GameSim::get_native_cpu_input_for_tick(int player_id, int expected_tick)
+{
+	NativeCpuDriverState* driver = find_native_cpu_driver(static_cast<int32_t>(player_id));
+	if (!driver) {
+		return PlayerInput::to_bytes(PlayerInput::from_neutral());
+	}
+	if (driver->pending_input.is_empty()) {
+		driver->pending_input = PlayerInput::to_bytes(PlayerInput::from_neutral());
+	}
+	(void)expected_tick;
+	return driver->pending_input;
 }
 
 void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flags)
@@ -2399,6 +2511,7 @@ void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flag
 		}
 		car_is_cpu[i] = is_cpu ? 1 : 0;
 	}
+	configure_native_cpu_drivers();
 }
 
 godot::PackedByteArray GameSim::build_cpu_observation(const PhysicsCar& car) const
@@ -2722,30 +2835,12 @@ void GameSim::update_super_spark_visuals()
 		}
 		phase_end = std::chrono::high_resolution_clock::now();
 		render_visual_apply_us = elapsed_us(phase_start, phase_end);
-		if (cpu_driver_manager && car_player_ids && car_is_cpu) {
+		if (car_player_ids && car_is_cpu) {
 			auto cpu_start = std::chrono::high_resolution_clock::now();
-			for (int i = 0; i < num_cars; ++i) {
-				if (!car_is_cpu[i]) {
-					continue;
-				}
-				int32_t pid = car_player_ids[i];
-				if (pid == -1) {
-					continue;
-				}
-				auto cpu_build_start = std::chrono::high_resolution_clock::now();
-				godot::PackedByteArray obs = build_cpu_observation(cars[i]);
-				auto cpu_build_end = std::chrono::high_resolution_clock::now();
-				render_cpu_build_obs_us += elapsed_us(cpu_build_start, cpu_build_end);
-				godot::Array args;
-				args.resize(3);
-				args[0] = pid;
-				args[1] = tick;
-				args[2] = obs;
-				auto cpu_submit_start = std::chrono::high_resolution_clock::now();
-				cpu_driver_manager->callv("submit_observation", args);
-				auto cpu_submit_end = std::chrono::high_resolution_clock::now();
-				render_cpu_submit_us += elapsed_us(cpu_submit_start, cpu_submit_end);
-			}
+			auto cpu_build_start = std::chrono::high_resolution_clock::now();
+			update_native_cpu_drivers();
+			auto cpu_build_end = std::chrono::high_resolution_clock::now();
+			render_cpu_build_obs_us = elapsed_us(cpu_build_start, cpu_build_end);
 			auto cpu_end = std::chrono::high_resolution_clock::now();
 			render_cpu_total_us = elapsed_us(cpu_start, cpu_end);
 		}

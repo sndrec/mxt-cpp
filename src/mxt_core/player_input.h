@@ -3,6 +3,8 @@
 #include "godot_cpp/classes/input.hpp"
 #include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/packed_byte_array.hpp"
+#include <algorithm>
+#include <cmath>
 
 class PlayerInput
 {
@@ -69,6 +71,78 @@ public:
                         out.spinattack = (buttons & 1) != 0;
                         out.boost = (buttons & 2) != 0;
                         out.sideattack = (buttons & 4) != 0;
+                }
+                return out;
+        }
+
+        static uint8_t quantize_axis(float v)
+        {
+                v = std::max(-1.0f, std::min(1.0f, v));
+                return static_cast<uint8_t>(std::lround(((v + 1.0f) * 0.5f) * float(RAW_BIT_PRECISION)));
+        }
+
+        static uint8_t quantize_trigger(float v)
+        {
+                v = std::max(0.0f, std::min(1.0f, v));
+                return static_cast<uint8_t>(std::lround(v * float(RAW_BIT_PRECISION)));
+        }
+
+        static godot::PackedByteArray to_bytes(const PlayerInput &input)
+        {
+                uint8_t data[8] = {};
+                int idx = 1;
+                uint8_t bitmask = 0;
+
+                uint8_t q = quantize_trigger(input.strafe_left);
+                if (q != TRIGGER_NEUTRAL) {
+                        bitmask |= 1 << 0;
+                        data[idx++] = q;
+                }
+
+                q = quantize_trigger(input.strafe_right);
+                if (q != TRIGGER_NEUTRAL) {
+                        bitmask |= 1 << 1;
+                        data[idx++] = q;
+                }
+
+                q = quantize_axis(input.steer_horizontal);
+                if (q != AXIS_NEUTRAL) {
+                        bitmask |= 1 << 2;
+                        data[idx++] = q;
+                }
+
+                q = quantize_axis(input.steer_vertical);
+                if (q != AXIS_NEUTRAL) {
+                        bitmask |= 1 << 3;
+                        data[idx++] = q;
+                }
+
+                q = quantize_trigger(input.accelerate);
+                if (q != TRIGGER_NEUTRAL) {
+                        bitmask |= 1 << 4;
+                        data[idx++] = q;
+                }
+
+                q = quantize_trigger(input.brake);
+                if (q != TRIGGER_NEUTRAL) {
+                        bitmask |= 1 << 5;
+                        data[idx++] = q;
+                }
+
+                uint8_t buttons = 0;
+                if (input.spinattack) buttons |= 1;
+                if (input.boost) buttons |= 2;
+                if (input.sideattack) buttons |= 4;
+                if (buttons != 0) {
+                        bitmask |= 1 << 6;
+                        data[idx++] = buttons;
+                }
+
+                data[0] = bitmask;
+                godot::PackedByteArray out;
+                out.resize(idx);
+                for (int i = 0; i < idx; ++i) {
+                        out.set(i, data[i]);
                 }
                 return out;
         }
