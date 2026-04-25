@@ -19,7 +19,6 @@ const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
-var netcode_core := NetcodeCore.new()
 
 var is_server: bool = false
 var listen_server: bool = false
@@ -343,6 +342,10 @@ static func _estimate_nested_inputs_size(inputs: Array) -> int:
 	for frame in inputs:
 		if typeof(frame) == TYPE_ARRAY:
 			total += _estimate_pba_array_size(frame)
+		elif typeof(frame) == TYPE_DICTIONARY:
+			for v in (frame as Dictionary).values():
+				if typeof(v) == TYPE_PACKED_BYTE_ARRAY:
+					total += (v as PackedByteArray).size()
 	return total
 
 func reset_race_state() -> void:
@@ -437,7 +440,7 @@ func server_process() -> void:
 			if server_inputs.is_empty():
 				break
 			var _sim_t0 := Time.get_ticks_usec()
-			server_game_sim.tick_gamesim(server_inputs)
+			server_game_sim.tick_gamesim_input_records(server_inputs)
 			server_game_sim.render_gamesim()
 			var _sim_t1 := Time.get_ticks_usec()
 			log_sim_cpu_us_interval += _sim_t1 - _sim_t0
@@ -780,11 +783,34 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input
 
-func collect_server_inputs() -> Array:
+func _input_frame_value(frame, player_id: int, fallback: PackedByteArray) -> PackedByteArray:
+	if typeof(frame) == TYPE_DICTIONARY:
+		var dict := frame as Dictionary
+		if dict.has(player_id):
+			return dict[player_id]
+	elif typeof(frame) == TYPE_ARRAY:
+		var roster := get_simulation_roster()
+		var index := roster.find(player_id)
+		if index >= 0 and index < (frame as Array).size():
+			return (frame as Array)[index]
+	return fallback
+
+func _build_predicted_input_frame(tick: int) -> Dictionary:
+	var frame := {}
+	var roster : Array = get_simulation_roster()
+	var prev_frame = input_history.get(tick - 1, {})
+	for pid in roster:
+		if pid == multiplayer.get_unique_id():
+			frame[pid] = sent_inputs_bytes.get(tick, last_local_input_bytes)
+		else:
+			frame[pid] = _input_frame_value(prev_frame, int(pid), NEUTRAL_INPUT_BYTES)
+	return frame
+
+func collect_server_inputs() -> Dictionary:
 	if not is_server:
-		return []
+		return {}
 	if server_game_sim == null or !server_game_sim.sim_started:
-		return []
+		return {}
 	if not pending_inputs.has(server_tick):
 		pending_inputs[server_tick] = {}
 	if listen_server and not pending_inputs[server_tick].has(multiplayer.get_unique_id()):
@@ -793,35 +819,32 @@ func collect_server_inputs() -> Array:
 		last_received_tick[multiplayer.get_unique_id()] = server_tick
 	_ensure_cpu_inputs_for_tick(server_tick)
 	if server_tick > target_tick:
-		return []
+		return {}
 	var dict = pending_inputs[server_tick]
 	var roster : Array = get_simulation_roster()
-	var prev = authoritative_history.get(server_tick - 1, [])
+	var prev = authoritative_history.get(server_tick - 1, {})
 	for i in range(roster.size()):
 		var pid = roster[i]
 		if not dict.has(pid):
 			if _disconnected_during_race.has(pid):
-				var synth : PackedByteArray = NEUTRAL_INPUT_BYTES
-				if prev.size() == roster.size():
-					synth = prev[i]
-				dict[pid] = synth
+				dict[pid] = _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
 			else:
-				return []
-	var frame_inputs_bytes: Array = []
+				return {}
+	var frame_inputs := {}
 	for id in roster:
-		frame_inputs_bytes.append(dict[id])
-	authoritative_history[server_tick] = frame_inputs_bytes
+		frame_inputs[id] = dict[id]
+	authoritative_history[server_tick] = frame_inputs
 	pending_inputs.erase(server_tick)
-	return frame_inputs_bytes
+	return frame_inputs
 
-func collect_client_inputs() -> Array:
+func collect_client_inputs() -> Dictionary:
 	if game_sim != null and !game_sim.sim_started:
-		return []
+		return {}
 	var my_settings = player_settings.get(multiplayer.get_unique_id(), {})
 	var is_spec = typeof(my_settings) == TYPE_DICTIONARY and my_settings.get("spectator", false)
 	if is_spec:
 		if authoritative_inputs.has(local_tick):
-			var frame = authoritative_inputs[local_tick]
+			var frame: Dictionary = authoritative_inputs[local_tick]
 			authoritative_inputs.erase(local_tick)
 			input_history[local_tick] = frame
 			if input_history.has(local_tick - INPUT_HISTORY_SIZE):
@@ -829,7 +852,7 @@ func collect_client_inputs() -> Array:
 			local_tick += 1
 			_adjust_time_scale()
 			return frame
-		return []
+		return {}
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 		if !is_server:
 			var old_keys := sent_inputs_bytes.keys()
@@ -846,7 +869,7 @@ func collect_client_inputs() -> Array:
 					data.append(sent_inputs_bytes[k])
 				_client_send_input.rpc_id(1, start, data, desired_ahead_ticks, last_server_input_tick)
 				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-		return []
+		return {}
 	sent_inputs_bytes[local_tick] = last_local_input_bytes
 	sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
 	if is_server:
@@ -877,19 +900,12 @@ func collect_client_inputs() -> Array:
 			log_inputs_sent += 1
 		_client_send_input.rpc_id(1, first_tick, inputs_arr, desired_ahead_ticks, last_server_input_tick)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-	var frame_inputs: Array
+	var frame_inputs: Dictionary
 	if authoritative_inputs.has(local_tick):
 		frame_inputs = authoritative_inputs[local_tick]
 		authoritative_inputs.erase(local_tick)
 	else:
-		var prev_frame = input_history.get(local_tick - 1, [])
-		var roster : Array = get_simulation_roster()
-		var existing := []
-		existing.resize(roster.size())
-		for i in range(roster.size()):
-			if roster[i] == multiplayer.get_unique_id():
-				existing[i] = last_local_input_bytes
-		frame_inputs = netcode_core.build_predicted_frame(roster, multiplayer.get_unique_id(), existing, prev_frame, NEUTRAL_INPUT_BYTES)
+		frame_inputs = _build_predicted_input_frame(local_tick)
 	input_history[local_tick] = frame_inputs
 	if input_history.has(local_tick - INPUT_HISTORY_SIZE):
 		input_history.erase(local_tick - INPUT_HISTORY_SIZE)
@@ -1106,14 +1122,11 @@ func _check_client_stalls() -> void:
 					if !race_active:
 						_update_player_ids.rpc(player_ids)
 	if target_tick - server_tick > 5 and missing.size() > 0:
-		var prev = authoritative_history.get(server_tick - 1, [])
+		var prev = authoritative_history.get(server_tick - 1, {})
 		for i in range(roster_chk.size()):
 			var pid = roster_chk[i]
 			if missing.has(pid):
-				var inp : PackedByteArray = NEUTRAL_INPUT_BYTES
-				if prev.size() == roster_chk.size():
-					inp = prev[i]
-				waiting[pid] = inp
+				waiting[pid] = _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
 		log_server_replacements += missing.size()
 	pending_inputs[server_tick] = waiting
 
@@ -1138,7 +1151,7 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	var old_time := Time.get_ticks_usec()
 	while current < local_tick:
 		if input_history.has(current):
-			game_sim.tick_gamesim(input_history[current])
+			game_sim.tick_gamesim_input_records(input_history[current])
 		current += 1
 	game_sim.render_gamesim()
 	var _car2_t0 := Time.get_ticks_usec()
@@ -1157,7 +1170,7 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_handle_state_us_interval += __prof_t1 - __prof_t0
 
-func _handle_input_update(tick: int, inputs: Array) -> void:
+func _handle_input_update(tick: int, inputs: Dictionary) -> void:
 	if !race_active:
 		return
 	if game_sim == null:
@@ -1186,7 +1199,7 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 	var old_time := Time.get_ticks_usec()
 	while current < local_tick:
 		if input_history.has(current):
-			game_sim.tick_gamesim(input_history[current])
+			game_sim.tick_gamesim_input_records(input_history[current])
 		current += 1
 	game_sim.render_gamesim()
 	var _car2_t0 := Time.get_ticks_usec()
@@ -1204,8 +1217,11 @@ func _handle_input_update(tick: int, inputs: Array) -> void:
 func _recalculate_future_predictions(start_tick: int) -> void:
 	if !race_active:
 		return
-	var roster : Array = get_simulation_roster()
-	netcode_core.recalc_future_predictions(start_tick, local_tick, roster, multiplayer.get_unique_id(), input_history, authoritative_inputs, NEUTRAL_INPUT_BYTES)
+	for tick in range(start_tick, local_tick):
+		if authoritative_inputs.has(tick):
+			input_history[tick] = authoritative_inputs[tick]
+		else:
+			input_history[tick] = _build_predicted_input_frame(tick)
 
 func disconnect_from_server() -> void:
 	race_active = false

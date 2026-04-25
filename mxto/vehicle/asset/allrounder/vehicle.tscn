@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://c5c5dg0c1f63j"]
+[gd_scene format=3 uid="uid://c5c5dg0c1f63j"]
 
 [ext_resource type="ArrayMesh" uid="uid://domr266scooed" path="res://vehicle/asset/allrounder/mesh.obj" id="1_fag7k"]
 [ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_g3l6s"]
@@ -57,9 +57,9 @@ shader = ExtResource("6_m83ry")
 shader_parameter/base_outline_width = 1.0
 shader_parameter/outline_color = Color(0.00559999, 0.0833467, 0.28, 1)
 
-[node name="MeshInstance3D" type="Node3D"]
+[node name="MeshInstance3D" type="Node3D" unique_id=1727539518]
 
-[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
+[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="." unique_id=877167948]
 transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 visible = false
 layers = 2
@@ -67,7 +67,7 @@ material_override = SubResource("ShaderMaterial_ayfej")
 cast_shadow = 0
 mesh = ExtResource("1_fag7k")
 
-[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="."]
+[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="." unique_id=1827365765]
 transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_o0ykv")
@@ -75,7 +75,7 @@ cast_shadow = 0
 mesh = ExtResource("1_fag7k")
 skeleton = NodePath("")
 
-[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
+[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="." unique_id=1956672371]
 transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 layers = 4
 material_override = SubResource("ShaderMaterial_gv8nt")
@@ -83,7 +83,7 @@ cast_shadow = 0
 mesh = ExtResource("1_fag7k")
 skeleton = NodePath("")
 
-[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
+[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="." unique_id=191543301]
 transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_00g30")
@@ -91,11 +91,11 @@ cast_shadow = 0
 mesh = ExtResource("1_fag7k")
 skeleton = NodePath("")
 
-[node name="THRUSTERS" type="Node3D" parent="."]
+[node name="THRUSTERS" type="Node3D" parent="." unique_id=573502685]
 transform = Transform3D(7, 0, 0, 0, 7, 0, 0, 0, 7, 0, 0.413, 0)
 
-[node name="Thruster2" parent="THRUSTERS" instance=ExtResource("7_r07ix")]
+[node name="Thruster2" parent="THRUSTERS" unique_id=516009094 instance=ExtResource("7_r07ix")]
 transform = Transform3D(0.143, 0, 2.13163e-14, 0, 0.143, 0, -2.13163e-14, 0, 0.143, 0.100029, -0.0135933, 0.290263)
 
-[node name="Thruster3" parent="THRUSTERS" instance=ExtResource("7_r07ix")]
+[node name="Thruster3" parent="THRUSTERS" unique_id=1919878593 instance=ExtResource("7_r07ix")]
 transform = Transform3D(0.143, 0, 2.13163e-14, 0, 0.143, 0, -2.13163e-14, 0, 0.143, -0.1, -0.014, 0.29)

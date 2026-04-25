@@ -750,11 +750,11 @@ func _physics_process(delta: float) -> void:
 		local_input_us = Time.get_ticks_usec() - local_input_start
 		var simulate_start := Time.get_ticks_usec()
 		if singleplayer_mode:
-			_simulate_singleplayer_tick()
+			_simulate_singleplayer_tick(input_bytes, local_input_us)
 		else:
 			network_manager.set_local_input(input_bytes)
 			if network_manager.is_server:
-				_simulate_host_frame()
+				_simulate_host_frame(input_bytes)
 			else:
 				_simulate_single_tick()
 		_last_simulate_call_us = Time.get_ticks_usec() - simulate_start
@@ -784,32 +784,21 @@ func _physics_process(delta: float) -> void:
 			"process_effect_tiers": _last_process_effect_tiers_us,
 		})
 
-func _simulate_singleplayer_tick():
-	# Build one frame of inputs locally for every racer and advance the single GameSim.
+func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(), build_inputs_us: int = 0):
 	var start_time := Time.get_ticks_usec()
 	var build_inputs_start := start_time
-	var frame_inputs : Array = []
-	var roster := network_manager.get_simulation_roster()
-	var cpu_ids := network_manager.get_cpu_roster()
-	var neutral_input := PlayerInputClass.new().serialize()
-	var accepts_input := _window_accepts_input()
-	for i in range(roster.size()):
-		var controller = null
-		if i < players.size():
-			controller = players[i]
-		var input_bytes : PackedByteArray
-		if accepts_input and controller != null:
-			var pi : PlayerInput = controller.get_input()
-			input_bytes = pi.serialize()
-		else:
-			if cpu_ids.has(roster[i]):
-				input_bytes = game_sim.get_native_cpu_input_for_tick(roster[i], _singleplayer_tick)
-			else:
-				input_bytes = neutral_input.duplicate()
-		frame_inputs.append(input_bytes)
-	_last_sp_build_inputs_us = Time.get_ticks_usec() - build_inputs_start
+	if input_bytes.is_empty():
+		var local_pi := PlayerInputClass.new()
+		var accepts_input := _window_accepts_input()
+		if accepts_input and players.size() > local_player_index:
+			var controller = players[local_player_index]
+			if controller != null:
+				local_pi = controller.get_input()
+		input_bytes = local_pi.serialize()
+		build_inputs_us = Time.get_ticks_usec() - build_inputs_start
+	_last_sp_build_inputs_us = build_inputs_us
 	var tick_gamesim_start := Time.get_ticks_usec()
-	game_sim.tick_gamesim(frame_inputs)
+	game_sim.tick_singleplayer(multiplayer.get_unique_id(), input_bytes)
 	_last_sp_tick_gamesim_us = Time.get_ticks_usec() - tick_gamesim_start
 	_singleplayer_tick += 1
 	# Update HUD timing using the same field clients use
@@ -817,36 +806,31 @@ func _simulate_singleplayer_tick():
 	var end_time := Time.get_ticks_usec()
 	network_manager.rollback_frametime_us = end_time - start_time
 
-func _simulate_host_frame():
+func _simulate_host_frame(local_input_bytes: PackedByteArray):
 	var loops := 0
 	const MAX_TICKS_PER_FRAME := 120
-	var local_pi := PlayerInputClass.new()
-	var accepts_input := _window_accepts_input()
 	while loops < MAX_TICKS_PER_FRAME:
-		if accepts_input and players.size() > local_player_index:
-			local_pi = players[local_player_index].get_input()
-		var input_bytes := local_pi.serialize()
-		network_manager.set_local_input(input_bytes)
+		network_manager.set_local_input(local_input_bytes)
 		var server_inputs := network_manager.collect_server_inputs()
 		if server_inputs.is_empty():
 			break
-		server_game_sim.tick_gamesim(server_inputs)
+		server_game_sim.tick_gamesim_input_records(server_inputs)
 		server_game_sim.render_gamesim()
 		network_manager.post_tick()
 		loops += 1
 	var client_inputs := network_manager.collect_client_inputs()
 	if !client_inputs.is_empty():
-		game_sim.tick_gamesim(client_inputs)
+		game_sim.tick_gamesim_input_records(client_inputs)
 
 func _simulate_single_tick():
 	var frame_inputs := network_manager.collect_client_inputs()
 	if frame_inputs.is_empty():
 		return
-	game_sim.tick_gamesim(frame_inputs)
+	game_sim.tick_gamesim_input_records(frame_inputs)
 	if network_manager.is_server:
 		var server_inputs := network_manager.collect_server_inputs()
 		if !server_inputs.is_empty():
-			server_game_sim.tick_gamesim(server_inputs)
+			server_game_sim.tick_gamesim_input_records(server_inputs)
 			network_manager.post_tick()
 	else:
 		network_manager.post_tick()

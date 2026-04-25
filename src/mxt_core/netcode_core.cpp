@@ -155,7 +155,7 @@ godot::Dictionary NetcodeCore::client_broadcast_apply(
         int start = int(last_tick) - inputs.size() + 1;
         for (int i = 0; i < inputs.size(); ++i) {
             int tick = start + i;
-            Array frame = inputs[i];
+            Dictionary frame = inputs[i];
             authoritative_inputs[Variant(tick)] = frame;
             input_history[Variant(tick)] = frame;
         }
@@ -186,8 +186,8 @@ godot::Dictionary NetcodeCore::client_broadcast_apply(
         for (int cur = (int)base_start_tick; cur < local_tick; ++cur) {
             Variant k = Variant(cur);
             if (input_history.has(k)) {
-                Array frame = input_history[k];
-                sim->tick_gamesim(frame);
+            Dictionary frame = input_history[k];
+            sim->tick_gamesim_input_records(frame);
             }
         }
         sim->render_gamesim();

@@ -131,7 +131,7 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	node.extra_cull_margin = 1000000.0
 	node.visibility_range_end = 0.0
 	node.visibility_range_end_margin = 0.0
-	node.lod_bias = 0.0
+	node.lod_bias = 1000000.0
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true

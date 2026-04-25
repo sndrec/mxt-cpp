@@ -16,7 +16,7 @@ dest_files=["res://.godot/imported/mesh.obj-019eb930b70c3be77edf64f77e1f9bb8.mes
 [params]
 
 generate_tangents=true
-generate_lods=true
+generate_lods=false
 generate_shadow_mesh=true
 generate_lightmap_uv2=false
 generate_lightmap_uv2_texel_size=0.2

@@ -242,7 +242,8 @@ namespace godot {
 		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
 		void set_car_render_manager(godot::Object* p_car_render_manager);
 		void set_gameplay_camera(godot::Camera3D* p_camera, int player_id);
-		void tick_gamesim(godot::Array player_inputs);
+		void tick_gamesim_input_records(godot::Dictionary input_records);
+		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;
 		int get_player_race_place(int player_id) const;
