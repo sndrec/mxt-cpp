@@ -165,6 +165,15 @@ func _load_tracks() -> void:
 	if tracks.size() > 0:
 		track_selector.selected = 0
 		lobby_track_selector.selected = 0
+	var args := OS.get_cmdline_args()
+	var track_name_idx := args.find("--track-name")
+	if track_name_idx != -1 and track_name_idx + 1 < args.size():
+		var desired_track := String(args[track_name_idx + 1]).to_lower()
+		for i in range(tracks.size()):
+			if String(tracks[i].get("name", "")).to_lower() == desired_track:
+				track_selector.selected = i
+				lobby_track_selector.selected = i
+				break
 
 func get_cpu_driver_manager() -> CpuDriverManager:
 	return cpu_driver_manager
@@ -644,6 +653,10 @@ func _update_player_list() -> void:
 			name = "[CPU] " + name
 		player_list.add_item(name)
 
+func _window_accepts_input() -> bool:
+	var window := get_window()
+	return window == null or window.has_focus()
+
 func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if headless_mode:
@@ -664,7 +677,7 @@ func _physics_process(delta: float) -> void:
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
 	if game_sim.sim_started:
 		var local_pi := PlayerInputClass.new()
-		if players.size() > local_player_index:
+		if _window_accepts_input() and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
@@ -689,12 +702,13 @@ func _simulate_singleplayer_tick():
 	var roster := network_manager.get_simulation_roster()
 	var cpu_ids := network_manager.get_cpu_roster()
 	var neutral_input := PlayerInputClass.new().serialize()
+	var accepts_input := _window_accepts_input()
 	for i in range(roster.size()):
 		var controller = null
 		if i < players.size():
 			controller = players[i]
 		var input_bytes : PackedByteArray
-		if controller != null:
+		if accepts_input and controller != null:
 			var pi : PlayerInput = controller.get_input()
 			input_bytes = pi.serialize()
 		else:
@@ -714,8 +728,9 @@ func _simulate_host_frame():
 	var loops := 0
 	const MAX_TICKS_PER_FRAME := 120
 	var local_pi := PlayerInputClass.new()
+	var accepts_input := _window_accepts_input()
 	while loops < MAX_TICKS_PER_FRAME:
-		if players.size() > local_player_index:
+		if accepts_input and players.size() > local_player_index:
 			local_pi = players[local_player_index].get_input()
 		var input_bytes := local_pi.serialize()
 		network_manager.set_local_input(input_bytes)
@@ -745,7 +760,7 @@ func _simulate_single_tick():
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F3:
-		var profile = game_sim.get_phase_profile_string()
+		var profile := game_sim.get_phase_profile_string()
 		DisplayServer.clipboard_set(profile)
 		print(profile)
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):

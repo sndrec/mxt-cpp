@@ -556,26 +556,39 @@ namespace {
 						continue;
 					}
 					const float inv_weight = 1.0f / std::max(c.stat_weight[lane], 0.001f);
-					c.position_current_x[lane] += c.velocity_x[lane] * inv_weight;
-					c.position_current_y[lane] += c.velocity_y[lane] * inv_weight;
-					c.position_current_z[lane] += c.velocity_z[lane] * inv_weight;
+					c.position_current_x[lane] += c.velocity_x[lane] * inv_weight + c.knockback_velocity_x[lane];
+					c.position_current_y[lane] += c.velocity_y[lane] * inv_weight + c.knockback_velocity_y[lane];
+					c.position_current_z[lane] += c.velocity_z[lane] * inv_weight + c.knockback_velocity_z[lane];
+					c.knockback_velocity_x[lane] *= 0.93333334f;
+					c.knockback_velocity_y[lane] *= 0.93333334f;
+					c.knockback_velocity_z[lane] *= 0.93333334f;
 				}
 				continue;
 			}
 
 			const SimFloat4 inv_weight = SimFloat4(1.0f) / sim_max4(sim_load4(c.stat_weight + i), SimFloat4(0.001f));
-			sim_store4(c.position_current_x + i, sim_load4(c.position_current_x + i) + sim_load4(c.velocity_x + i) * inv_weight);
-			sim_store4(c.position_current_y + i, sim_load4(c.position_current_y + i) + sim_load4(c.velocity_y + i) * inv_weight);
-			sim_store4(c.position_current_z + i, sim_load4(c.position_current_z + i) + sim_load4(c.velocity_z + i) * inv_weight);
+			const SimFloat4 knockback_x = sim_load4(c.knockback_velocity_x + i);
+			const SimFloat4 knockback_y = sim_load4(c.knockback_velocity_y + i);
+			const SimFloat4 knockback_z = sim_load4(c.knockback_velocity_z + i);
+			sim_store4(c.position_current_x + i, sim_load4(c.position_current_x + i) + sim_load4(c.velocity_x + i) * inv_weight + knockback_x);
+			sim_store4(c.position_current_y + i, sim_load4(c.position_current_y + i) + sim_load4(c.velocity_y + i) * inv_weight + knockback_y);
+			sim_store4(c.position_current_z + i, sim_load4(c.position_current_z + i) + sim_load4(c.velocity_z + i) * inv_weight + knockback_z);
+			const SimFloat4 knockback_decay(0.93333334f);
+			sim_store4(c.knockback_velocity_x + i, knockback_x * knockback_decay);
+			sim_store4(c.knockback_velocity_y + i, knockback_y * knockback_decay);
+			sim_store4(c.knockback_velocity_z + i, knockback_z * knockback_decay);
 		}
 		for (; i < count; ++i) {
 			if (!vehicle_motion_active(c, i)) {
 				continue;
 			}
 			const float inv_weight = 1.0f / std::max(c.stat_weight[i], 0.001f);
-			c.position_current_x[i] += c.velocity_x[i] * inv_weight;
-			c.position_current_y[i] += c.velocity_y[i] * inv_weight;
-			c.position_current_z[i] += c.velocity_z[i] * inv_weight;
+			c.position_current_x[i] += c.velocity_x[i] * inv_weight + c.knockback_velocity_x[i];
+			c.position_current_y[i] += c.velocity_y[i] * inv_weight + c.knockback_velocity_y[i];
+			c.position_current_z[i] += c.velocity_z[i] * inv_weight + c.knockback_velocity_z[i];
+			c.knockback_velocity_x[i] *= 0.93333334f;
+			c.knockback_velocity_y[i] *= 0.93333334f;
+			c.knockback_velocity_z[i] *= 0.93333334f;
 		}
 	}
 
@@ -849,6 +862,9 @@ namespace {
 		for (int i = 0; i < count; ++i) {
 			PhysicsCarSoA& c = *car_views[i].soa;
 			const int lane = car_views[i].soa_index;
+			c.position_collision_snapshot_x[lane] = c.position_current_x[lane];
+			c.position_collision_snapshot_y[lane] = c.position_current_y[lane];
+			c.position_collision_snapshot_z[lane] = c.position_current_z[lane];
 			const float extent = kMachineCollisionRadius + c.speed_kmh[lane] / 216.0f + kMutationSlop;
 			indices[i] = i;
 			min_x[i] = c.position_current_x[lane] - extent;

@@ -166,10 +166,12 @@ struct ImpactData {
 	X(position_old, SimVec3()) \
 	X(position_old_2, SimVec3()) \
 	X(position_old_dupe, SimVec3()) \
+	X(position_collision_snapshot, SimVec3()) \
 	X(position_bottom, SimVec3()) \
 	X(position_behind, SimVec3()) \
 	X(initial_pos, SimVec3()) \
 	X(velocity, SimVec3()) \
+	X(knockback_velocity, SimVec3()) \
 	X(velocity_angular, SimVec3()) \
 	X(velocity_local, SimVec3()) \
 	X(velocity_local_flattened_and_rotated, SimVec3()) \

@@ -12,6 +12,7 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
+#include <atomic>
 #include "mxt_core/debug.hpp"
 #include "mxt_core/math_utils.h"
 #include "mxt_core/player_input.h"
@@ -38,6 +39,74 @@ static inline godot::Vector3 debug_gd_vec3(const SimVec3& v)
 namespace {
 constexpr float kRespawnForwardDistance = 100.0f;
 constexpr float kMinCheckpointDistance = 0.01f;
+
+void print_car_collision_debug(
+	const char* reason,
+	const PhysicsCar& a,
+	const PhysicsCar& b,
+	const SimVec3& p1_old,
+	const SimVec3& p1,
+	const SimVec3& p2_old,
+	const SimVec3& p2,
+	const SimVec3& normal,
+	const SimVec3& relative_motion,
+	float dist_sq,
+	float closing_speed,
+	float impulse_strength,
+	const SimVec3& impulse1,
+	const SimVec3& impulse2,
+	bool a_attacking,
+	bool b_attacking)
+{
+	static std::atomic<int> printed{0};
+	const int slot = printed.fetch_add(1, std::memory_order_relaxed);
+	if (slot >= 128) {
+		return;
+	}
+	const int ai = a.soa->global_start + a.soa_index;
+	const int bi = b.soa->global_start + b.soa_index;
+	const SimVec3 a_delta = p1 - p1_old;
+	const SimVec3 b_delta = p2 - p2_old;
+	auto f = [](float v) -> godot::String { return godot::String::num(v, 4); };
+	auto i = [](int64_t v) -> godot::String { return godot::String::num_int64(v); };
+	auto vec = [&](const SimVec3& v) -> godot::String {
+		return "(" + f(v.x) + "," + f(v.y) + "," + f(v.z) + ")";
+	};
+	const godot::String line =
+		"MXT_CAR_COLLISION_DBG reason=" + godot::String(reason) +
+		" slot=" + i(slot) +
+		" a=" + i(ai) +
+		" b=" + i(bi) +
+		" tick=" + i(static_cast<int64_t>(a.soa->simulation_tick[a.soa_index])) + "/" + i(static_cast<int64_t>(b.soa->simulation_tick[b.soa_index])) +
+		" lane=" + i(a.soa_index) + "/" + i(b.soa_index) +
+		" shard=" + i(a.soa->shard_index) + "/" + i(b.soa->shard_index) +
+		" dist_sq=" + f(dist_sq) +
+		" closing=" + f(closing_speed) +
+		" impulse_strength=" + f(impulse_strength) +
+		" a_attack=" + i(a_attacking ? 1 : 0) +
+		" b_attack=" + i(b_attacking ? 1 : 0) +
+		" a_state=" + i(static_cast<int64_t>(a.soa->machine_state[a.soa_index])) +
+		" b_state=" + i(static_cast<int64_t>(b.soa->machine_state[b.soa_index])) +
+		" a_pos=" + vec(p1) +
+		" a_old=" + vec(p1_old) +
+		" a_delta=" + vec(a_delta) +
+		" a_delta_len=" + f(a_delta.length()) +
+		" b_pos=" + vec(p2) +
+		" b_old=" + vec(p2_old) +
+		" b_delta=" + vec(b_delta) +
+		" b_delta_len=" + f(b_delta.length()) +
+		" normal=" + vec(normal) +
+		" rel=" + vec(relative_motion) +
+		" rel_len=" + f(relative_motion.length()) +
+		" impulse1=" + vec(impulse1) +
+		" impulse1_len=" + f(impulse1.length()) +
+		" impulse2=" + vec(impulse2) +
+		" impulse2_len=" + f(impulse2.length()) +
+		" speed_kmh=" + f(a.soa->speed_kmh[a.soa_index]) + "/" + f(b.soa->speed_kmh[b.soa_index]) +
+		" weight=" + f(a.soa->stat_weight[a.soa_index]) + "/" + f(b.soa->stat_weight[b.soa_index]) +
+		" hit_inv=" + i(static_cast<int64_t>(a.soa->car_hit_invincibility[a.soa_index])) + "/" + i(static_cast<int64_t>(b.soa->car_hit_invincibility[b.soa_index]));
+	godot::UtilityFunctions::print(line);
+}
 }
 
 #define LOAD_CAR_VEC3(car, name) SimVec3((car).soa->name##_x[(car).soa_index], (car).soa->name##_y[(car).soa_index], (car).soa->name##_z[(car).soa_index])
@@ -1832,6 +1901,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->level_start_time[soa_index] = soa->frames_since_start[soa_index] + 60 * 5;
 	// Clear all LOAD_VEC3(velocity) and collision vectors
 	STORE_VEC3(velocity, SimVec3());
+	STORE_VEC3(knockback_velocity, SimVec3());
 	STORE_VEC3(velocity_local_flattened_and_rotated, SimVec3());
 	STORE_VEC3(velocity_local, SimVec3());
 	STORE_VEC3(velocity_angular, SimVec3());
@@ -2407,7 +2477,8 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 	handle_drag_and_glide_forces();
 
 	float inv_weight = 1.0f / std::max(soa->stat_weight[soa_index], 0.001f);
-	ADD_VEC3(position_current, LOAD_VEC3(velocity) * inv_weight);
+	ADD_VEC3(position_current, LOAD_VEC3(velocity) * inv_weight + LOAD_VEC3(knockback_velocity));
+	STORE_VEC3(knockback_velocity, LOAD_VEC3(knockback_velocity) * 0.93333334f);
 
 	rotate_machine_from_angle_velocity();
 
@@ -3378,6 +3449,7 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	soa->height_above_track[soa_index] = 19.9f;
 
 	STORE_VEC3(velocity, SimVec3());
+	STORE_VEC3(knockback_velocity, SimVec3());
 	STORE_VEC3(velocity_local, SimVec3());
 	STORE_VEC3(velocity_local_flattened_and_rotated, SimVec3());
 	STORE_VEC3(velocity_angular, SimVec3());
@@ -3475,6 +3547,7 @@ void PhysicsCar::update_restore(float accel_input)
 			{ SimTransform mxt_tmp = LOAD_TRANSFORM(restore_start_transform); mxt_tmp.origin = LOAD_VEC3(position_current); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(restore_start_transform, mxt_tmp); }
 			STORE_TRANSFORM(restore_target_transform, calculate_respawn_transform(soa->last_ground_checkpoint[soa_index]));
 			STORE_VEC3(velocity, SimVec3());
+			STORE_VEC3(knockback_velocity, SimVec3());
 			STORE_VEC3(velocity_local, SimVec3());
 			STORE_VEC3(velocity_local_flattened_and_rotated, SimVec3());
 			STORE_VEC3(velocity_angular, SimVec3());
@@ -3544,6 +3617,7 @@ void PhysicsCar::post_tick()
 	if (soa->frames_since_start_2[soa_index] == 0)
 	{
 		STORE_VEC3(velocity, SimVec3());
+		STORE_VEC3(knockback_velocity, SimVec3());
 		STORE_VEC3(position_current, LOAD_VEC3(initial_pos));
 	}
 
@@ -3852,285 +3926,194 @@ void PhysicsCar::buildSweepForMachine(float cappedSpeedMps, SimVec3 &sweepStartO
     	sweepStartOut = LOAD_VEC3(position_current) + delta;
 
     	cappedVelocityOut = set_vec3_length(LOAD_VEC3(velocity), cappedSpeedMps);
-    }
+	}
+}
+
+static float closest_points_between_segments(
+	const SimVec3& p1, const SimVec3& q1,
+	const SimVec3& p2, const SimVec3& q2,
+	SimVec3& c1, SimVec3& c2)
+{
+	constexpr float kEpsilon = 0.000001f;
+	const SimVec3 d1 = q1 - p1;
+	const SimVec3 d2 = q2 - p2;
+	const SimVec3 r = p1 - p2;
+	const float a = d1.dot(d1);
+	const float e = d2.dot(d2);
+	const float f = d2.dot(r);
+	float s = 0.0f;
+	float t = 0.0f;
+
+	if (a <= kEpsilon && e <= kEpsilon) {
+		c1 = p1;
+		c2 = p2;
+		return c1.distance_squared_to(c2);
+	}
+	if (a <= kEpsilon) {
+		t = std::clamp(f / e, 0.0f, 1.0f);
+	} else {
+		const float c = d1.dot(r);
+		if (e <= kEpsilon) {
+			s = std::clamp(-c / a, 0.0f, 1.0f);
+		} else {
+			const float b = d1.dot(d2);
+			const float denom = a * e - b * b;
+			if (denom != 0.0f) {
+				s = std::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+			}
+			t = (b * s + f) / e;
+			if (t < 0.0f) {
+				t = 0.0f;
+				s = std::clamp(-c / a, 0.0f, 1.0f);
+			} else if (t > 1.0f) {
+				t = 1.0f;
+				s = std::clamp((b - c) / a, 0.0f, 1.0f);
+			}
+		}
+	}
+
+	c1 = p1 + d1 * s;
+	c2 = p2 + d2 * t;
+	return c1.distance_squared_to(c2);
+}
+
+static void move_to_plane_side(PhysicsCar& car, const SimVec3& plane_point, const SimVec3& normal, float desired_signed_distance)
+{
+	const SimVec3 pos = LOAD_CAR_VEC3(car, position_current);
+	const float signed_distance = (pos - plane_point).dot(normal);
+	if (desired_signed_distance < 0.0f) {
+		if (signed_distance <= desired_signed_distance) {
+			return;
+		}
+	} else if (signed_distance >= desired_signed_distance) {
+		return;
+	}
+	const float correction = desired_signed_distance - signed_distance;
+	if (std::abs(correction) > 0.000001f) {
+		STORE_CAR_VEC3(car, position_current, pos + normal * correction);
+	}
+}
+
+static void apply_car_collision_knockback(PhysicsCar& car, const SimVec3& impulse)
+{
+	STORE_CAR_VEC3(car, collision_response, impulse);
+	const float weight = car.soa->stat_weight[car.soa_index];
+	STORE_CAR_VEC3(car, velocity, LOAD_CAR_VEC3(car, velocity) + impulse * weight);
 }
 
 bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 {
-    // #########################################################
-    //  Very early outs
-    // #########################################################
 	if (soa->s_boost_active[soa_index] || other_machine.soa->s_boost_active[other_machine.soa_index]) {
 		return false;
 	}
-    //if (((soa->state_2[soa_index] | other_machine.soa->state_2[other_machine.soa_index]) & 0x10) != 0)   // machines excluded from physics
-    //    return false;
-
-    // #########################################################
-    //  Compute “collision radius” for each machine
-    // #########################################################
-	const float radius1 = 2.0f;
-	const float radius2 = 2.0f;
-
-    // #########################################################
-    //  Quick broad-phase distance test (current positions)
-    // #########################################################
-	const SimVec3 p1 = LOAD_VEC3(position_current);
-	const SimVec3 p2 = LOAD_CAR_VEC3(other_machine, position_current);
-
-	SimVec3 diff = p1 - p2;
-	const float relativeDistance = diff.length_squared();
-
-	const float speedPadding =
-        soa->speed_kmh[soa_index] / 216.0f + other_machine.soa->speed_kmh[other_machine.soa_index] / 216.0f;    // copied literal from original
-        const float dist_term = radius1 + radius2 + speedPadding;
-        if (relativeDistance > dist_term * dist_term)
-        {
-    	//godot::UtilityFunctions::print("bad distance!");
-        	return false;
-        }
-
-    // #########################################################
-    //  Build swept-sphere volumes for a more precise test
-    // #########################################################
-        SimVec3 sweepStart1, sweepStart2;
-        SimVec3 cappedVel1,  cappedVel2;
-
-        buildSweepForMachine(13.88888f * soa->stat_weight[soa_index], sweepStart1, cappedVel1);
-        other_machine.buildSweepForMachine(13.88888f * other_machine.soa->stat_weight[other_machine.soa_index], sweepStart2, cappedVel2);
-
-    float      hitTime            = 0.0f;   // returned by helper (0…1)
-    uint32_t   already_intersecting = 0;      // ditto
-    const bool sweptHit = swept_sphere_vs_swept_sphere(
-    	radius1,  radius2,
-    	sweepStart1, p1,
-    	sweepStart2, p2,
-    	hitTime,    already_intersecting);
-
-    if (!sweptHit && already_intersecting == 0)
-    {
-    	//godot::UtilityFunctions::print("no sweep hit!");
-    	return false;
-    }
-
-    // #########################################################
-    //  Narrow-phase: check actual separation at impact time
-    // #########################################################
-    const float combinedRadius = radius1 + radius2;
-    const float reverseTime    = 1.0f - hitTime; // helper returns “time until”, we need “at impact”
-
-    SimVec3 posAtImpact1, posAtImpact2;
-    ray_scale(reverseTime, sweepStart1, p1, posAtImpact1);
-    ray_scale(reverseTime, sweepStart2, p2, posAtImpact2);
-
-    SimVec3 deltaImpact = posAtImpact2 - posAtImpact1;
-
-    const float separation = deltaImpact.length();
-
-    if (!(separation < combinedRadius && separation > 0.00000011920929f))
-    {
-    	//godot::UtilityFunctions::print("bad separation!");
-    	return false;
-    }
-
-    // #########################################################
-    //  “Don’t collide twice in two frames” randomised mask
-    // #########################################################
-
-    //  Push the machines apart so that they *just* touch
-    SimVec3 collisionNormal = deltaImpact.normalized();
-
-    const float pushBack = 0.5f * ((0.01f + combinedRadius) - separation);
-
-    // Move positions
-    STORE_VEC3(position_current, posAtImpact1 - collisionNormal * pushBack);
-
-    STORE_CAR_VEC3(other_machine, position_current, posAtImpact2 + collisionNormal * pushBack);
-
-    // Mid-point of the impact for later normal computations
-    SimVec3 impactMid = 0.5f * (LOAD_VEC3(position_current) + LOAD_CAR_VEC3(other_machine, position_current));
-
-    //  Prepare impact axis info in world-space
-    ImpactData impactInfo1;
-    ImpactData impactInfo2;
-
-    float impulseScale1 = prepare_impact_direction_info(impactInfo1, impactMid);
-    float impulseScale2 = other_machine.prepare_impact_direction_info(impactInfo2, impactMid);
-
-    SimVec3 worldImpactAxis = (impulseScale1 <= impulseScale2)
-    ? -impactInfo2.relative_dir_world
-    : impactInfo1.relative_dir_world;
-
-    //  Calculate pre-impact relative LOAD_VEC3(velocity) along normal
-    const float velLen1 = cappedVel1.length();
-
-    float relSpeed1 = 0.0f;
-    if (velLen1 > 0.00000011920929f)
-        //relSpeed1 = vec3_normalized_dot_product(&worldImpactAxis, &cappedVel1) * velLen1 / soa->stat_weight[soa_index];
-    	relSpeed1 = worldImpactAxis.normalized().dot(cappedVel1.normalized()) * velLen1 / soa->stat_weight[soa_index];
-
-    const float velLen2 = cappedVel2.length();
-
-    float relSpeed2 = 0.0f;
-    if (velLen2 > 0.00000011920929f)
-    	relSpeed2 = worldImpactAxis.normalized().dot(cappedVel2.normalized()) * velLen2 / other_machine.soa->stat_weight[other_machine.soa_index];
-
-    const float impulseNumerator = 2.0f * (relSpeed1 - relSpeed2);
-    const float impulseDenominator = soa->stat_weight[soa_index] + other_machine.soa->stat_weight[other_machine.soa_index];
-    const float normalImpulse = impulseNumerator / impulseDenominator;
-
-    //  Apply base-speed knock-back
-    const float BASE_SPEED_SCALE = 800.0f;
-    soa->base_speed[soa_index] += BASE_SPEED_SCALE *  impactInfo1.impact_axis_z * normalImpulse;
-    other_machine.soa->base_speed[other_machine.soa_index] += BASE_SPEED_SCALE *  impactInfo2.impact_axis_z * normalImpulse;
-
-    if (soa->base_speed[soa_index] < 0.0f) soa->base_speed[soa_index] = 0.0f;
-    if (other_machine.soa->base_speed[other_machine.soa_index] < 0.0f) other_machine.soa->base_speed[other_machine.soa_index] = 0.0f;
-
-    //  Collision response vectors (damped by surface normal)
-    const float impulse1      =  soa->stat_weight[soa_index] *  normalImpulse;
-    const float impulse2      = -other_machine.soa->stat_weight[other_machine.soa_index] *  normalImpulse;
-    float scaledImpulse1  = scale_collision_impulse_and_damage(other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10);
-    float scaledImpulse2 = other_machine.scale_collision_impulse_and_damage(soa->machine_state[soa_index] & MACHINESTATE::B10);
-
-    if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP)
-    {
-    	scaledImpulse1 *= 1.5f;
-    	scaledImpulse2 *= 1.2f;
-    }
-    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP)
-    {
-    	scaledImpulse2 *= 1.5f;
-    	scaledImpulse1 *= 1.2f;
-    }
-
-    const float responseScale1 = scaledImpulse2 * impulse2 * soa->stat_weight[soa_index];
-    const float responseScale2 = scaledImpulse1 * impulse1 * other_machine.soa->stat_weight[other_machine.soa_index];
-
-    SimVec3 response1 = collisionNormal * responseScale1 - 0.95f * collisionNormal * responseScale1 * LOAD_VEC3(track_surface_normal);
-    SimVec3 response2 = collisionNormal * responseScale2 - 0.95f * collisionNormal * responseScale2 * LOAD_CAR_VEC3(other_machine, track_surface_normal);
-
-    STORE_VEC3(collision_response, response1);
-    STORE_CAR_VEC3(other_machine, collision_response, response2);
-
-    const bool anySideAttack =
-    (soa->machine_state[soa_index] | other_machine.soa->machine_state[other_machine.soa_index]) &
-    (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
-
-    float velScale1 = anySideAttack ? 1.5f : 2.2f;
-    float velScale2 = velScale1;
-
-    if (soa->machine_state[soa_index] & MACHINESTATE::B30) velScale1 = 1.0f;
-    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B30) velScale2 = 1.0f;
-
-    auto applyResponse =
-    [](PhysicsCar &mach, const SimVec3 cappedVel,
-    	const SimVec3 resp, float scale)
-    {
-    	float lenV    = LOAD_CAR_VEC3(mach, velocity).length();
-
-    	SimVec3 newResp  = { resp.x * scale, resp.y * scale, resp.z * scale };
-
-    	if (lenV > 0.1f)
-    	{
-    		float lenResp = resp.length();
-    		if (lenResp > 0.1f)
-    		{
-                float dot = LOAD_CAR_VEC3(mach, velocity).normalized().dot(resp.normalized()); //vec3_normalized_dot_product(&mach->soa->velocity[mach->soa_index], &resp);
-                if (dot > 0.0f) dot = 0.0f;
-                const float adjust = 1.0f + 0.7f * dot;
-                newResp.x *= adjust;
-                newResp.y *= adjust;
-                newResp.z *= adjust;
-            }
-        }
-
-        mach.soa->velocity_x[mach.soa_index] = newResp.x + cappedVel.x;
-        mach.soa->velocity_y[mach.soa_index] = newResp.y + cappedVel.y;
-        mach.soa->velocity_z[mach.soa_index] = newResp.z + cappedVel.z;
-    };
-
-    applyResponse(*this, cappedVel1, response1, velScale1);
-    applyResponse(other_machine, cappedVel2, response2, velScale2);
-
-    // #########################################################
-    //  Matrix-space feedback, damage and rumble logic
-    // #########################################################
-
-    const bool bothHaveBlades   = (soa->machine_state[soa_index] & MACHINESTATE::B10) &&
-    (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10);
-
-    bool canDamageM1 = true, canDamageM2 = true;
-
-    if (!(soa->machine_state[soa_index] & MACHINESTATE::B10))
-    {
-    	if ((other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10) &&
-    		(soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) &&
-    		!(other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)))
-    		canDamageM1 = false;
-    }
-    else
-    {
-    	if (!(other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10) &&
-    		(other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) &&
-    		!(soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)))
-    		canDamageM2 = false;
-    }
-
-    // -----  Machine-1 matrix feedback  -----
-
-    SimVec3 halfNormalM1(-collisionNormal * 0.5f);
-    halfNormalM1 = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), halfNormalM1);
-
-    SimVec3 localResp1;
-    localResp1 = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), response1);
-
-    soa->visual_rotation_z[soa_index]  += localResp1.x;
-    soa->visual_rotation_x[soa_index] += localResp1.z;
-
-    float respLen1 = response1.length();
-
-    float dmg1 = (impulseScale2 * (0.002f * respLen1)) / impulseScale1;
-    if (bothHaveBlades) dmg1 *= 0.001f;
-    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) dmg1 *= 0.3f;
-
-    const bool killM1 =
-    canDamageM1 &&
-    soa->car_hit_invincibility[soa_index] == 0 &&
-    apply_damage(dmg1);
-
-    SimVec3 halfNormalM2(collisionNormal * 0.5f);
-
-    halfNormalM2 = mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), halfNormalM2);
-
-    SimVec3 localResp2;
-    localResp2 = mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), response2);
-
-    other_machine.soa->visual_rotation_z[other_machine.soa_index] += localResp2.x;
-    other_machine.soa->visual_rotation_x[other_machine.soa_index] += localResp2.z;
-
-    float respLen2 = response2.length();
-
-    float dmg2 = (impulseScale1 * (0.002f * respLen2)) / impulseScale2;
-    if (bothHaveBlades) dmg2 *= 0.001f;
-    if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) dmg2 *= 0.3f;
-
-    const bool killM2 =
-    canDamageM2 &&
-    other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0 &&
-    other_machine.apply_damage(dmg2);
-
-    const float combinedDamage = dmg1 + dmg2;
-
-    if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) soa->energy[soa_index] = 0.0f;
-    if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) other_machine.soa->energy[other_machine.soa_index] = 0.0f;
-
-
-    // #########################################################
-    //  Set “just hit” flags so other subsystems can react
-    // #########################################################
-    soa->machine_state[soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
-    other_machine.soa->machine_state[other_machine.soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
+	if (((soa->state_2[soa_index] | other_machine.soa->state_2[other_machine.soa_index]) & 0x10u) != 0) {
+		return false;
+	}
+
+	constexpr float radius1 = 2.0f;
+	constexpr float radius2 = 2.0f;
+	const float combined_radius = radius1 + radius2;
+	const SimVec3 p1_old = LOAD_VEC3(position_old_dupe);
+	const SimVec3 p1 = LOAD_VEC3(position_collision_snapshot);
+	const SimVec3 p2_old = LOAD_CAR_VEC3(other_machine, position_old_dupe);
+	const SimVec3 p2 = LOAD_CAR_VEC3(other_machine, position_collision_snapshot);
+
+	SimVec3 closest1;
+	SimVec3 closest2;
+	const float dist_sq = closest_points_between_segments(p1_old, p1, p2_old, p2, closest1, closest2);
+	if (dist_sq >= combined_radius * combined_radius) {
+		return false;
+	}
+
+	SimVec3 collision_normal = p2_old - p1_old;
+	if (collision_normal.length_squared() <= 0.000001f) {
+		collision_normal = p2 - p1;
+	}
+	if (collision_normal.length_squared() <= 0.000001f) {
+		collision_normal = (p1 - p1_old) - (p2 - p2_old);
+	}
+	if (collision_normal.length_squared() <= 0.000001f) {
+		collision_normal = LOAD_TRANSFORM(basis_physical).basis.get_column(0);
+	}
+	collision_normal.normalize();
+
+	const SimVec3 relative_motion = (p1 - p1_old) - (p2 - p2_old);
+	const float closing_speed = relative_motion.dot(collision_normal);
+	if (closing_speed <= 0.0f) {
+		return false;
+	}
+
+	const bool this_attacking = (soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+	const bool other_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+
+	const SimVec3 plane_point = (p1 + p2) * 0.5f;
+	constexpr float depenetration_overcorrection = 1.01f;
+	move_to_plane_side(*this, plane_point, collision_normal, -radius1 * depenetration_overcorrection);
+	move_to_plane_side(other_machine, plane_point, collision_normal, radius2 * depenetration_overcorrection);
+
+	SimVec3 impulse = collision_normal * (-1.2f * closing_speed);
+	float impulse_strength = impulse.length();
+
+	float damage1 = impulse_strength * 0.05f;
+	float damage2 = impulse_strength * 0.05f;
+	SimVec3 impulse1 = impulse;
+	SimVec3 impulse2 = -impulse;
+	if (this_attacking && !other_attacking) {
+		impulse_strength += 2.0f;
+		impulse1 = impulse;
+		impulse2 = collision_normal * (2.0f * impulse_strength);
+		damage1 = 0.0f;
+		damage2 = impulse_strength * 0.75f;
+	} else if (!this_attacking && other_attacking) {
+		impulse_strength += 2.0f;
+		impulse1 = collision_normal * (-2.0f * impulse_strength);
+		impulse2 = -impulse;
+		damage1 = impulse_strength * 0.75f;
+		damage2 = 0.0f;
+	} else if (this_attacking && other_attacking) {
+		impulse1 = impulse * 0.2f;
+		impulse2 = impulse * -0.2f;
+		damage1 = 0.0f;
+		damage2 = 0.0f;
+	}
+
+	if (impulse1.length_squared() > 1.0f ||
+		impulse2.length_squared() > 1.0f ||
+		(p1 - p1_old).length_squared() > 100.0f ||
+		(p2 - p2_old).length_squared() > 100.0f) {
+		print_car_collision_debug("suspicious",
+			*this, other_machine, p1_old, p1, p2_old, p2, collision_normal,
+			relative_motion, dist_sq, closing_speed, impulse_strength,
+			impulse1, impulse2, this_attacking, other_attacking);
+	}
+
+	apply_car_collision_knockback(*this, impulse1);
+	apply_car_collision_knockback(other_machine, impulse2);
+	soa->visual_rotation_z[soa_index] += mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), impulse1).x;
+	soa->visual_rotation_x[soa_index] += mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), impulse1).z;
+	other_machine.soa->visual_rotation_z[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).x;
+	other_machine.soa->visual_rotation_x[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).z;
+	if (impulse_strength > 0.5f) {
+		remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		other_machine.remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		soa->drift_ramp[soa_index] = 0.0f;
+		other_machine.soa->drift_ramp[other_machine.soa_index] = 0.0f;
+	}
+	if (damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
+		apply_damage(damage1);
+	}
+	if (damage2 > 0.0f && other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0) {
+		other_machine.apply_damage(damage2);
+	}
+	if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) {
+		soa->energy[soa_index] = 0.0f;
+	}
+	if (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) {
+		other_machine.soa->energy[other_machine.soa_index] = 0.0f;
+	}
+
+	soa->machine_state[soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
+	other_machine.soa->machine_state[other_machine.soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
 
 	if (soa->frames_since_start_2[soa_index] == 0) {
 		apply_initial_accel_activation(0.0f);
