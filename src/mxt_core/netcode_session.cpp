@@ -159,11 +159,20 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick)
 	if (!sim || !server_has_full_input_frame(tick)) {
 		return false;
 	}
+	sim->update_native_cpu_drivers();
 	InputFrame& pending = frame_for(pending_inputs, tick);
 	InputFrame& authoritative = frame_for(authoritative_history, tick);
 	clear_frame(authoritative, tick);
 	for (int i = 0; i < racer_count; ++i) {
-		if (!cpu_flags[i] && pending.present[i]) {
+		if (cpu_flags[i]) {
+			const GameSim::NativeCpuDriverState* cpu_driver = sim->find_native_cpu_driver(player_ids[i]);
+			if (cpu_driver && !cpu_driver->pending_input.is_empty()) {
+				authoritative.inputs[i] = PlayerInput::from_bytes(cpu_driver->pending_input);
+			} else {
+				authoritative.inputs[i] = neutral_input;
+			}
+			authoritative.present[i] = 1;
+		} else if (pending.present[i]) {
 			authoritative.inputs[i] = pending.inputs[i];
 			authoritative.present[i] = 1;
 		}
@@ -192,25 +201,32 @@ bool NetcodeSession::tick_client_predicted_frame(godot::Object* game_sim_obj, in
 void NetcodeSession::recalculate_predictions(int start_tick, int end_tick)
 {
 	for (int tick = start_tick; tick < end_tick; ++tick) {
-	InputFrame& frame = frame_for(input_history, tick);
-	clear_frame(frame, tick);
-	const InputFrame* authoritative = find_frame(authoritative_history, tick);
-	const InputFrame* previous = find_frame(input_history, tick - 1);
-	for (int i = 0; i < racer_count; ++i) {
-		if (cpu_flags[i]) {
-			continue;
+		InputFrame& frame = frame_for(input_history, tick);
+		clear_frame(frame, tick);
+		const InputFrame* authoritative = find_frame(authoritative_history, tick);
+		const InputFrame* previous = find_frame(input_history, tick - 1);
+		for (int i = 0; i < racer_count; ++i) {
+			if (cpu_flags[i]) {
+				if (authoritative && authoritative->present[i]) {
+					frame.inputs[i] = authoritative->inputs[i];
+					frame.present[i] = 1;
+				} else if (previous && previous->present[i]) {
+					frame.inputs[i] = previous->inputs[i];
+					frame.present[i] = 1;
+				}
+				continue;
+			}
+			if (authoritative && authoritative->present[i]) {
+				frame.inputs[i] = authoritative->inputs[i];
+				frame.present[i] = 1;
+			} else if (player_ids[i] == local_player_id) {
+				frame.inputs[i] = last_local_input;
+				frame.present[i] = 1;
+			} else if (previous && previous->present[i]) {
+				frame.inputs[i] = decay_predicted_input(previous->inputs[i]);
+				frame.present[i] = 1;
+			}
 		}
-		if (authoritative && authoritative->present[i]) {
-			frame.inputs[i] = authoritative->inputs[i];
-			frame.present[i] = 1;
-		} else if (player_ids[i] == local_player_id) {
-			frame.inputs[i] = last_local_input;
-			frame.present[i] = 1;
-		} else if (previous && previous->present[i]) {
-			frame.inputs[i] = decay_predicted_input(previous->inputs[i]);
-			frame.present[i] = 1;
-		}
-	}
 	}
 }
 

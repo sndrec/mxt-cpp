@@ -415,10 +415,6 @@ func server_process() -> void:
 			prof_collect_server_inputs_us_interval += _collect_t1 - _collect_t0
 			if server_inputs.is_empty():
 				break
-			var _sim_t0 := Time.get_ticks_usec()
-			server_game_sim.render_gamesim()
-			var _sim_t1 := Time.get_ticks_usec()
-			log_sim_cpu_us_interval += _sim_t1 - _sim_t0
 			var _net_t0 := Time.get_ticks_usec()
 			post_tick()
 			var _net_t1 := Time.get_ticks_usec()
@@ -1120,24 +1116,12 @@ func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if tick == -1:
 		return
 	var __prof_t0 := Time.get_ticks_usec()
-	var _car1_t0 := Time.get_ticks_usec()
-	for car:VisualCar in game_manager.car_node_container.get_children():
-		car.store_old_pos()
-	var _car1_t1 := Time.get_ticks_usec()
-	prof_car_store_old_pos_us_interval += _car1_t1 - _car1_t0
 	game_sim.set_state_data(tick, state)
 	game_sim.load_state(tick)
 	latest_state_tick = tick
 	local_tick = max(local_tick, tick + 1)
 	var old_time := Time.get_ticks_usec()
 	netcode_session.replay_history(game_sim, tick + 1, local_tick)
-	game_sim.render_gamesim()
-	var _car2_t0 := Time.get_ticks_usec()
-	for car:VisualCar in game_manager.car_node_container.get_children():
-		car.calculate_error()
-		car.just_rendered()
-	var _car2_t1 := Time.get_ticks_usec()
-	prof_car_post_render_us_interval += _car2_t1 - _car2_t0
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time
@@ -1163,27 +1147,15 @@ func _handle_input_update(tick: int, inputs: Dictionary) -> void:
 	#	return
 	if tick == 0 or latest_state_tick == -1:
 		return
-	var _car1_t0 := Time.get_ticks_usec()
-	for car:VisualCar in game_manager.car_node_container.get_children():
-		car.store_old_pos()
-	var _car1_t1 := Time.get_ticks_usec()
-	prof_car_store_old_pos_us_interval += _car1_t1 - _car1_t0
 	input_history[tick] = inputs
 	for pid in inputs.keys():
 		netcode_session.store_authoritative_input(tick, int(pid), inputs[pid])
 	if authoritative_inputs.has(tick):
 		authoritative_inputs.erase(tick)
-	_recalculate_future_predictions(tick + 1)
+	_recalculate_future_predictions(tick)
 	game_sim.load_state(maxi(latest_state_tick, tick - 1))
 	var old_time := Time.get_ticks_usec()
 	netcode_session.replay_history(game_sim, maxi(latest_state_tick + 1, tick), local_tick)
-	game_sim.render_gamesim()
-	var _car2_t0 := Time.get_ticks_usec()
-	for car:VisualCar in game_manager.car_node_container.get_children():
-		car.calculate_error()
-		car.just_rendered()
-	var _car2_t1 := Time.get_ticks_usec()
-	prof_car_post_render_us_interval += _car2_t1 - _car2_t0
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
 	rollback_frametime_us = new_time - old_time

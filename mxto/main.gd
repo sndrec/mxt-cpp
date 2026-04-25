@@ -820,7 +820,6 @@ func _simulate_host_frame(local_input_bytes: PackedByteArray):
 		var server_inputs := network_manager.collect_server_inputs()
 		if server_inputs.is_empty():
 			break
-		server_game_sim.render_gamesim()
 		network_manager.post_tick()
 		loops += 1
 	network_manager.collect_client_inputs()
