@@ -3094,12 +3094,13 @@ void GameSim::reset_super_sparks()
 	super_spark_state->rng_state = 1;
 	for (int i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
 		super_sparks[i].active = 0;
-		super_sparks[i].grounded = 0;
+		super_sparks[i].collectable = 0;
+		super_sparks[i].animation_frame = 0;
 		super_sparks[i].checkpoint = 0;
 		super_sparks[i].position = SimVec3();
-		super_sparks[i].velocity = SimVec3();
+		super_sparks[i].start_position = SimVec3();
+		super_sparks[i].final_position = SimVec3();
 		super_sparks[i].plane_normal = SimVec3(0.0f, 1.0f, 0.0f);
-		super_sparks[i].plane_d = 0.0f;
 	}
 }
 
@@ -3155,9 +3156,13 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 {
 	if (count <= 0)
 		return;
-	if (!sim_started || !super_spark_state || !super_sparks)
+	if (!sim_started || !super_spark_state || !super_sparks || !current_track)
 		return;
 	if ((car.soa->machine_state[car.soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) != 0)
+		return;
+	if ((car.soa->machine_state[car.soa_index] & (MACHINESTATE::AIRBORNE | MACHINESTATE::ZEROHP)) != 0)
+		return;
+	if (car.soa->restore_state[car.soa_index] == 2)
 		return;
 
 	constexpr uint64_t kPostCountdownBlockFrames = 180;
@@ -3166,8 +3171,25 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 	if (current_frame < safe_frame)
 		return;
 
-	const SimVec3 normal_in = LOAD_INDEXED_VEC3(*car.soa, track_surface_normal, car.soa_index).length_squared() > 0.0001f ? LOAD_INDEXED_VEC3(*car.soa, track_surface_normal, car.soa_index).normalized() : SimVec3(0.0f, 1.0f, 0.0f);
-	const SimVec3 surface_point = LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index).length_squared() > 0.0f ? LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index) : LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index);
+	const uint16_t checkpoint = car.soa->current_checkpoint[car.soa_index];
+	if (checkpoint >= static_cast<uint16_t>(current_track->num_checkpoints))
+		return;
+	const SimVec3 car_position = LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index);
+	SimVec3 normal_in = LOAD_INDEXED_VEC3(*car.soa, track_surface_normal, car.soa_index);
+	if (normal_in.length_squared() <= 0.0001f) {
+		normal_in = SimVec3(0.0f, 1.0f, 0.0f);
+	} else {
+		normal_in = normal_in.normalized();
+	}
+	SimVec3 tangent_a = car.soa->road_sample[car.soa_index].closest_surface.basis.get_column(0);
+	if (tangent_a.length_squared() < 0.0001f) {
+		tangent_a = normal_in.cross(SimVec3(0.0f, 0.0f, 1.0f));
+	}
+	if (tangent_a.length_squared() < 0.0001f) {
+		tangent_a = normal_in.cross(SimVec3(1.0f, 0.0f, 0.0f));
+	}
+	tangent_a = tangent_a.slide(normal_in).normalized();
+	SimVec3 tangent_b = normal_in.cross(tangent_a).normalized();
 
 	auto next_rand = [&]() -> float {
 		super_spark_state->rng_state = super_spark_state->rng_state * 1664525u + 1013904223u;
@@ -3177,32 +3199,34 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 		return min_v + (max_v - min_v) * next_rand();
 	};
 
-	SimVec3 tangent_a = normal_in.cross(SimVec3(0.0f, 0.0f, 1.0f));
-	if (tangent_a.length_squared() < 0.0001f) {
-		tangent_a = normal_in.cross(SimVec3(1.0f, 0.0f, 0.0f));
-	}
-	tangent_a = tangent_a.normalized();
-	SimVec3 tangent_b = normal_in.cross(tangent_a).normalized();
-
 	for (int n = 0; n < count; ++n) {
 		const uint16_t cursor = super_spark_state->cursor;
 		SuperSpark& spark = super_sparks[cursor];
 		super_spark_state->cursor = static_cast<uint16_t>((cursor + 1) % SUPER_SPARK_CAPACITY);
 
+		const float lateral_a = rand_range(-18.0f, 18.0f);
+		const float lateral_b = rand_range(-10.0f, 10.0f);
+		const SimVec3 sample_point = car_position + tangent_a * lateral_a + tangent_b * lateral_b;
+		SimVec2 road_t;
+		SimVec3 spatial_t;
+		SimTransform surface;
+		current_track->get_road_surface(checkpoint, sample_point, road_t, spatial_t, surface, true);
+		SimVec3 surface_normal = surface.basis.get_column(1);
+		if (surface_normal.length_squared() <= 0.0001f) {
+			surface_normal = normal_in;
+		} else {
+			surface_normal = surface_normal.normalized();
+		}
+		const SimVec3 final_position = surface.origin + surface_normal * 1.0f;
+
 		spark.active = 1;
-		spark.grounded = 0;
-		spark.checkpoint = car.soa->current_checkpoint[car.soa_index];
-		spark.plane_normal = normal_in;
-		spark.plane_d = spark.plane_normal.dot(surface_point) + 2.5f;
-		spark.position = LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index) + spark.plane_normal * 1.5f;
-
-		const float up_speed = rand_range(25.0f, 40.0f);
-		const float lateral_a = rand_range(-30.0f, 30.0f);
-		const float lateral_b = rand_range(-30.0f, 30.0f);
-
-		spark.velocity = spark.plane_normal * up_speed +
-			tangent_a * lateral_a +
-			tangent_b * lateral_b;
+		spark.collectable = 0;
+		spark.animation_frame = 0;
+		spark.checkpoint = checkpoint;
+		spark.plane_normal = surface_normal;
+		spark.start_position = car_position;
+		spark.final_position = final_position;
+		spark.position = car_position;
 	}
 }
 
@@ -3211,23 +3235,38 @@ void GameSim::update_super_sparks()
 	if (!sim_started || !cars || !super_spark_state || !super_sparks)
 		return;
 
-	const float gravity_strength = 150.0f;
+	constexpr uint16_t kSparkAnimationFrames = 12;
+	constexpr float kSparkArcHeight = 14.0f;
 	const float collect_radius_sq = SUPER_SPARK_COLLECT_RADIUS * SUPER_SPARK_COLLECT_RADIUS;
+	auto checkpoint_matches = [&](uint16_t spark_checkpoint, uint16_t car_checkpoint) -> bool {
+		if (!current_track || car_checkpoint >= static_cast<uint16_t>(current_track->num_checkpoints))
+			return false;
+		if (spark_checkpoint == car_checkpoint)
+			return true;
+		const CollisionCheckpoint& cp = current_track->checkpoints[car_checkpoint];
+		for (int n = 0; n < cp.num_neighboring_checkpoints; ++n) {
+			if (cp.neighboring_checkpoints && cp.neighboring_checkpoints[n] == spark_checkpoint) {
+				return true;
+			}
+		}
+		return false;
+	};
 
 	for (int i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
 		SuperSpark& spark = super_sparks[i];
 		if (!spark.active)
 			continue;
 
-		if (!spark.grounded) {
-			spark.velocity -= spark.plane_normal * (gravity_strength * _TICK_DELTA);
-			spark.position += spark.velocity * _TICK_DELTA;
-
-			float plane_distance = spark.plane_normal.dot(spark.position) - spark.plane_d;
-			if (plane_distance <= 0.0f) {
-				spark.position -= spark.plane_normal * plane_distance;
-				spark.velocity = SimVec3();
-				spark.grounded = 1;
+		if (!spark.collectable) {
+			const float t = std::min(static_cast<float>(spark.animation_frame) / static_cast<float>(kSparkAnimationFrames), 1.0f);
+			const float arc = 4.0f * t * (1.0f - t);
+			spark.position = spark.start_position.lerp(spark.final_position, t) + spark.plane_normal * (kSparkArcHeight * arc);
+			if (spark.animation_frame >= kSparkAnimationFrames) {
+				spark.position = spark.final_position;
+				spark.collectable = 1;
+			} else {
+				spark.animation_frame += 1;
+				continue;
 			}
 		}
 
@@ -3236,7 +3275,7 @@ void GameSim::update_super_sparks()
 			const int lane = cars[car_idx].soa_index;
 			if (car_soa.s_boost_active[lane] || (car_soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0)
 				continue;
-			if (spark.grounded == false)
+			if (!checkpoint_matches(spark.checkpoint, car_soa.current_checkpoint[lane]))
 				continue;
 			SimVec3 closest = get_closest_point_to_segment(
 				spark.position, LOAD_INDEXED_VEC3(car_soa, position_old, lane), LOAD_INDEXED_VEC3(car_soa, position_current, lane));
@@ -3247,7 +3286,7 @@ void GameSim::update_super_sparks()
 				}
 				car_soa.base_speed[lane] += 0.05f;
 				spark.active = 0;
-				spark.grounded = 0;
+				spark.collectable = 0;
 				break;
 			}
 		}

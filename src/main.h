@@ -130,12 +130,13 @@ namespace godot {
 		static constexpr float SUPER_SPARK_COLLECT_RADIUS = 8.0f;
 		struct SuperSpark {
 			uint8_t active = 0;
-			uint8_t grounded = 0;
+			uint8_t collectable = 0;
+			uint16_t animation_frame = 0;
 			uint16_t checkpoint = 0;
 			SimVec3 position;
-			SimVec3 velocity;
+			SimVec3 start_position;
+			SimVec3 final_position;
 			SimVec3 plane_normal;
-			float plane_d = 0.0f;
 		};
 		struct SuperSparkState {
 			SuperSpark sparks[SUPER_SPARK_CAPACITY];

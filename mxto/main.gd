@@ -312,7 +312,7 @@ func _start_singleplayer_race(as_spectator: bool) -> void:
 	if ps.car_definition_path == "" and car_definitions.size() > 0:
 		ps.car_definition_path = car_definitions[0].resource_path
 	ps.spectator = as_spectator
-	var my_id := multiplayer.get_unique_id()
+	var my_id := _local_player_id()
 	network_manager.player_settings[my_id] = ps.to_dict()
 	if as_spectator:
 		network_manager.player_ids = []
@@ -363,6 +363,9 @@ func _on_remove_cpu_button_pressed() -> void:
 	if !network_manager.is_server:
 		return
 	network_manager.remove_cpu_driver()
+
+func _local_player_id() -> int:
+	return multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
 
 func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 	var pb := StreamPeerBuffer.new()
@@ -542,7 +545,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 					racer_ids.append(pid)
 					racer_cpu_flags.append(cpu_ids.has(pid))
 				racer_roster_index += 1
-	local_player_index = racer_ids.find(multiplayer.get_unique_id())
+	var local_id := _local_player_id()
+	local_player_index = racer_ids.find(local_id)
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_player_index)
 	var idx := 0
 	for car:VisualCar in car_node_container.get_children():
@@ -577,7 +581,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		add_child(spectator_node)
 	else:
 		for car:VisualCar in car_node_container.get_children():
-			if car.owning_id == multiplayer.get_unique_id():
+			if car.owning_id == local_id:
 				car.name_label.queue_free()
 	for n in chosen_defs.size():
 		var def = chosen_defs[n]
@@ -798,7 +802,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		build_inputs_us = Time.get_ticks_usec() - build_inputs_start
 	_last_sp_build_inputs_us = build_inputs_us
 	var tick_gamesim_start := Time.get_ticks_usec()
-	game_sim.tick_singleplayer(multiplayer.get_unique_id(), input_bytes)
+	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
 	_last_sp_tick_gamesim_us = Time.get_ticks_usec() - tick_gamesim_start
 	_singleplayer_tick += 1
 	# Update HUD timing using the same field clients use
