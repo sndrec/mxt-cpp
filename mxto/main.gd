@@ -99,6 +99,7 @@ const OUTER_PROFILE_FIELDS := [
 	"race_finish",
 	"process_total",
 	"process_labels",
+	"process_native_visual",
 	"process_effect_tiers",
 ]
 var outer_profile_samples: Array = []
@@ -110,6 +111,7 @@ var _last_sp_tick_gamesim_us := 0
 var _last_simulate_call_us := 0
 var _last_process_total_us := 0
 var _last_process_labels_us := 0
+var _last_process_native_visual_us := 0
 var _last_process_effect_tiers_us := 0
 
 func _record_outer_profile(sample: Dictionary) -> void:
@@ -589,6 +591,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	game_sim.car_node_container = car_node_container
 	game_sim.spark_node_container = spark_node_container
+	game_sim.set_car_render_manager(car_render_manager)
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
@@ -596,6 +599,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
 		server_game_sim.spark_node_container = spark_node_container
+		server_game_sim.set_car_render_manager(car_render_manager)
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
@@ -755,7 +759,8 @@ func _physics_process(delta: float) -> void:
 		render_us = Time.get_ticks_usec() - render_start
 		var visual_start := Time.get_ticks_usec()
 		for car:VisualCar in car_node_container.get_children():
-			car.just_rendered()
+			if car.local_visual_enabled:
+				car.just_rendered()
 		visual_us = Time.get_ticks_usec() - visual_start
 		var race_finish_start := Time.get_ticks_usec()
 		_check_race_finished()
@@ -771,6 +776,7 @@ func _physics_process(delta: float) -> void:
 			"race_finish": race_finish_us,
 			"process_total": _last_process_total_us,
 			"process_labels": _last_process_labels_us,
+			"process_native_visual": _last_process_native_visual_us,
 			"process_effect_tiers": _last_process_effect_tiers_us,
 		})
 
@@ -970,13 +976,17 @@ func _process(delta: float) -> void:
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
 	var label_us := Time.get_ticks_usec() - label_start
+	var native_visual_us := 0
+	if game_sim.sim_started:
+		var native_visual_start := Time.get_ticks_usec()
+		game_sim.render_gamesim_visuals_only()
+		native_visual_us = Time.get_ticks_usec() - native_visual_start
 	var effect_us := 0
 	var active_camera := get_viewport().get_camera_3d()
 	if game_sim.sim_started and is_instance_valid(active_camera):
-		var effect_start := Time.get_ticks_usec()
-		_update_car_effect_tiers(active_camera)
-		effect_us = Time.get_ticks_usec() - effect_start
+		effect_us = 0
 	if game_sim.sim_started:
 		_last_process_total_us = Time.get_ticks_usec() - process_start
 		_last_process_labels_us = label_us
+		_last_process_native_visual_us = native_visual_us
 		_last_process_effect_tiers_us = effect_us

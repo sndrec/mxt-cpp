@@ -302,8 +302,6 @@ func _apply_effect_tier_state() -> void:
 			player.stop()
 	if _needs_process_reset:
 		_reset_interpolation_state()
-		if !use_frame_processing:
-			_apply_low_cost_visual_state()
 		_needs_process_reset = false
 
 func apply_sim_state(

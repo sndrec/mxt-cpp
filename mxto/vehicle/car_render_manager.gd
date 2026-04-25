@@ -11,6 +11,7 @@ var car_slots: PackedInt32Array = PackedInt32Array()
 
 func _ready() -> void:
 	process_priority = 2
+	set_process(false)
 
 func _exit_tree() -> void:
 	cars.clear()
@@ -28,6 +29,7 @@ func clear_renderer() -> void:
 
 func configure(definitions: Array, car_nodes: Array) -> void:
 	clear_renderer()
+	set_process(false)
 	cars = car_nodes.duplicate()
 	car_archetype_indices.resize(cars.size())
 	car_slots.resize(cars.size())
@@ -50,6 +52,20 @@ func configure(definitions: Array, car_nodes: Array) -> void:
 		archetype["count"] = count + 1
 		_resize_passes(archetype, archetype["count"])
 		archetypes[archetype_index] = archetype
+
+func get_native_render_bindings() -> Dictionary:
+	var multimeshes: Array = []
+	var local_transforms: Array = []
+	for archetype in archetypes:
+		var pass_data: Dictionary = archetype[PASS_MAIN]
+		multimeshes.append(pass_data["multimesh"])
+		local_transforms.append(pass_data["local_transform"])
+	return {
+		"multimeshes": multimeshes,
+		"local_transforms": local_transforms,
+		"archetype_indices": car_archetype_indices,
+		"slots": car_slots,
+	}
 
 func _process(_delta: float) -> void:
 	if archetypes.is_empty():

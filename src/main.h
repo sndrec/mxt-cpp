@@ -168,6 +168,8 @@ namespace godot {
 		void update_native_cpu_drivers();
 		void update_native_cpu_driver(int car_index);
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
+		void update_render_visual_snapshots(int visual_count);
+		void apply_render_multimeshes(float alpha);
 		void ensure_vehicle_tick_soa_capacity(int capacity);
 		void free_vehicle_tick_soa();
 		void record_phase_profile_sample();
@@ -209,6 +211,15 @@ namespace godot {
 		PhysicsCarProperties* car_properties_array = nullptr;
 		godot::Node3D* car_node_container = nullptr;
 		godot::Node3D* spark_node_container = nullptr;
+		godot::Object* car_render_manager = nullptr;
+		std::vector<godot::Node3D*> render_car_transform_nodes;
+		std::vector<godot::Ref<godot::MultiMesh>> render_car_multimeshes;
+		std::vector<SimTransform> render_car_local_transforms;
+		std::vector<int> render_car_archetype_indices;
+		std::vector<int> render_car_slots;
+		std::vector<SimTransform> render_visual_prev_transforms;
+		std::vector<SimTransform> render_visual_current_transforms;
+		std::vector<uint8_t> render_visual_initialized;
 		int spawn_seed = 0;
 
 		GameSim();
@@ -221,12 +232,14 @@ namespace godot {
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
 		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }
 		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
+		void set_car_render_manager(godot::Object* p_car_render_manager);
 		void tick_gamesim(godot::Array player_inputs);
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
 		void render_gamesim();
+		void render_gamesim_visuals_only();
 		void set_cpu_driver_manager(godot::Object* manager);
 		godot::Object* get_cpu_driver_manager() const { return cpu_driver_manager; }
 		godot::PackedByteArray get_native_cpu_input_for_tick(int player_id, int expected_tick);

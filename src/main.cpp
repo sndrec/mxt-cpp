@@ -58,6 +58,226 @@ namespace {
 		return godot::Transform3D(gd_basis(t.basis), gd_vec3(t.origin));
 	}
 
+	static void populate_visual_car_args(godot::Array& visual_args, const PhysicsCar& car)
+	{
+		visual_args[0] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index));
+		visual_args[1] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, position_old, car.soa_index));
+		visual_args[2] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, track_surface_normal, car.soa_index));
+		visual_args[3] = car.soa->height_above_track[car.soa_index];
+		visual_args[4] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, velocity, car.soa_index));
+		visual_args[5] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, velocity_angular, car.soa_index));
+		visual_args[6] = gd_transform(MXT_LOAD_TRANSFORM(*car.soa, basis_physical, car.soa_index));
+		visual_args[7] = car.soa->base_speed[car.soa_index];
+		visual_args[8] = car.soa->boost_turbo[car.soa_index];
+		visual_args[9] = car.soa->speed_kmh[car.soa_index];
+		visual_args[10] = car.soa->energy[car.soa_index];
+		visual_args[11] = car.soa->lap_progress[car.soa_index];
+		visual_args[12] = car.soa->boost_frames[car.soa_index];
+		visual_args[13] = car.soa->boost_frames_manual[car.soa_index];
+		visual_args[14] = car.soa->lap[car.soa_index];
+		visual_args[15] = car.soa->machine_state[car.soa_index];
+		visual_args[16] = car.soa->terrain_state[car.soa_index];
+		visual_args[17] = car.soa->frames_since_start_2[car.soa_index];
+		visual_args[18] = car.soa->tilt_state[car.soa_index * 4];
+		visual_args[19] = car.soa->input_strafe[car.soa_index];
+		visual_args[20] = car.soa->turn_reaction_input[car.soa_index];
+		visual_args[21] = car.soa->g_anim_timer[car.soa_index];
+		visual_args[22] = car.soa->state_2[car.soa_index];
+		visual_args[23] = gd_vec3(SimVec3(car.soa->tilt_offset_x[car.soa_index * 4], car.soa->tilt_offset_y[car.soa_index * 4], car.soa->tilt_offset_z[car.soa_index * 4]));
+		visual_args[24] = gd_vec3(SimVec3(car.soa->tilt_offset_x[car.soa_index * 4 + 2], car.soa->tilt_offset_y[car.soa_index * 4 + 2], car.soa->tilt_offset_z[car.soa_index * 4 + 2]));
+		visual_args[25] = car.soa->stat_weight[car.soa_index];
+		visual_args[26] = car.soa->stat_strafe[car.soa_index];
+		visual_args[27] = car.soa->input_strafe_1_6[car.soa_index];
+		visual_args[28] = car.soa->weight_derived_1[car.soa_index];
+		visual_args[29] = car.soa->weight_derived_2[car.soa_index];
+		visual_args[30] = car.soa->weight_derived_3[car.soa_index];
+		visual_args[31] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, visual_rotation, car.soa_index));
+		visual_args[32] = car.soa->spinattack_angle[car.soa_index];
+		visual_args[33] = car.soa->spinattack_direction[car.soa_index];
+		visual_args[34] = car.soa->visual_shake_mult[car.soa_index];
+		visual_args[35] = car.soa->input_accel[car.soa_index];
+		visual_args[36] = car.soa->restore_state[car.soa_index];
+		visual_args[37] = car.soa->restore_move_frames[car.soa_index];
+		visual_args[38] = gd_transform(MXT_LOAD_TRANSFORM(*car.soa, restore_start_transform, car.soa_index));
+		visual_args[39] = gd_transform(MXT_LOAD_TRANSFORM(*car.soa, restore_target_transform, car.soa_index));
+		visual_args[40] = static_cast<int>(car.get_s_boost_charge());
+		visual_args[41] = static_cast<int>(car.get_s_boost_max_charge());
+		visual_args[42] = car.is_s_boost_active();
+		visual_args[43] = car.is_s_boost_ready();
+		visual_args[44] = car.soa->tilt_state[car.soa_index * 4 + 1];
+		visual_args[45] = car.soa->tilt_state[car.soa_index * 4 + 2];
+		visual_args[46] = car.soa->tilt_state[car.soa_index * 4 + 3];
+		visual_args[47] = car.soa->camera_reorienting[car.soa_index];
+		visual_args[48] = car.soa->camera_repositioning[car.soa_index];
+		visual_args[49] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index));
+	}
+
+	static inline float fzgx_angle_units_to_rad(float units)
+	{
+		return units * (TAU / 65536.0f);
+	}
+
+	static inline float fzgx_sin_u16(uint32_t units)
+	{
+		return sinf(fzgx_angle_units_to_rad(static_cast<float>(static_cast<uint16_t>(units))));
+	}
+
+	static inline uint32_t float_bits_exact(float value)
+	{
+		uint32_t bits = 0;
+		std::memcpy(&bits, &value, sizeof(bits));
+		return bits;
+	}
+
+	static inline float safe_visual_div(float numerator, float denominator)
+	{
+		return std::abs(denominator) > 0.0001f ? numerator / denominator : 0.0f;
+	}
+
+	static inline void rotate_about_x_right(SimTransform& transform, float angle_units)
+	{
+		transform.basis = transform.basis * SimBasis(SimQuat(SimVec3(1.0f, 0.0f, 0.0f), fzgx_angle_units_to_rad(angle_units)));
+	}
+
+	static inline void rotate_about_y_right(SimTransform& transform, float angle_units)
+	{
+		transform.basis = transform.basis * SimBasis(SimQuat(SimVec3(0.0f, 1.0f, 0.0f), fzgx_angle_units_to_rad(angle_units)));
+	}
+
+	static inline void rotate_about_z_right(SimTransform& transform, float angle_units)
+	{
+		transform.basis = transform.basis * SimBasis(SimQuat(SimVec3(0.0f, 0.0f, 1.0f), fzgx_angle_units_to_rad(angle_units)));
+	}
+
+	static void update_machine_visual_transform_for_render(PhysicsCarSoA& c, int i)
+	{
+		SimTransform current_transform = MXT_LOAD_TRANSFORM(c, basis_physical, i);
+		const SimVec3 position = LOAD_INDEXED_VEC3(c, position_current, i);
+		current_transform.origin = position;
+
+		float startup_wobble = 0.0f;
+		if (c.base_speed[i] <= 2.0f) {
+			startup_wobble = (2.0f - c.base_speed[i]) * 0.5f;
+		}
+		if (c.frames_since_start_2[i] < 90u) {
+			startup_wobble *= static_cast<float>(c.frames_since_start_2[i]) / 90.0f;
+		}
+		c.unk_stat_0x5d4[i] += 0.05f * (startup_wobble - c.unk_stat_0x5d4[i]);
+		const float startup_roll_offset = static_cast<float>(static_cast<int16_t>(static_cast<int>(
+			182.04445f * 0.5f * (c.unk_stat_0x5d4[i] * fzgx_sin_u16(c.g_anim_timer[i] * 0x109u)))));
+
+		float vertical_offset = 0.006f * (c.unk_stat_0x5d4[i] * fzgx_sin_u16(c.g_anim_timer[i] * 0x1a3u));
+		const SimVec3 visual_origin = position + current_transform.basis.xform(
+			SimVec3(0.0f, vertical_offset - 0.2f * c.unk_stat_0x5d4[i], 0.0f));
+
+		current_transform.orthonormalize();
+		current_transform.origin = SimVec3();
+
+		{
+			const int point_base = i * 4;
+			const float front_z = c.tilt_offset_z[point_base + 0];
+			const float back_z = c.tilt_offset_z[point_base + 2];
+			float suspension_pitch = 0.0f;
+			if (std::abs(front_z) > 0.0001f) {
+				suspension_pitch = back_z / -front_z - 1.0f;
+			}
+			suspension_pitch = std::max(-0.2f, std::min(0.2f, suspension_pitch));
+			SimTransform pitch_transform = current_transform;
+			rotate_about_x_right(pitch_transform, static_cast<float>(static_cast<int>(182.04445f * 30.0f * suspension_pitch)));
+			MXT_STORE_TRANSFORM(c, g_pitch_mtx_0x5e0, i, pitch_transform);
+		}
+
+		const SimVec3 broken_down_angle = LOAD_INDEXED_VEC3(c, unk_vec3_0x4e4, i);
+		rotate_about_z_right(current_transform, static_cast<float>(static_cast<int>(10430.378f * safe_visual_div(broken_down_angle.z, c.weight_derived_3[i]))));
+		rotate_about_y_right(current_transform, static_cast<float>(static_cast<int>(10430.378f * safe_visual_div(broken_down_angle.y, c.weight_derived_2[i]))));
+		rotate_about_x_right(current_transform, static_cast<float>(static_cast<int>(10430.378f * safe_visual_div(broken_down_angle.x, c.weight_derived_1[i]))));
+
+		if ((c.state_2[i] & 0x20u) == 0u) {
+			SimTransform local_visual;
+			if ((c.machine_state[i] & MACHINESTATE::ACTIVE) != 0u) {
+				c.turn_reaction_effect[i] += 0.05f * (c.turn_reaction_input[i] - c.turn_reaction_effect[i]);
+				rotate_about_y_right(local_visual, static_cast<float>(static_cast<int>(182.04445f * c.turn_reaction_effect[i])));
+			}
+
+			const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
+			const float speed_mag = velocity.length();
+			const float speed_norm = safe_visual_div(speed_mag, c.stat_weight[i]) / 4.629629629f;
+			const int16_t angular_roll_angle = static_cast<int16_t>(static_cast<int>(
+				10430.378f * speed_norm * 4.5f * safe_visual_div(c.velocity_angular_y[i], c.weight_derived_2[i])));
+			c.strafe_visual_roll[i] = static_cast<int>(static_cast<int16_t>(static_cast<int>(
+				182.04445f * (c.stat_strafe[i] / 15.0f) * -5.0f * c.input_strafe_1_6[i] * speed_norm)));
+			int combined_roll = static_cast<int>(angular_roll_angle) + c.strafe_visual_roll[i];
+
+			float visual_pitch_effect = 1.0f - static_cast<float>(std::abs(combined_roll)) / 3640.0f;
+			visual_pitch_effect = std::max(visual_pitch_effect, 0.0f);
+			visual_pitch_effect *= 0.7f * safe_visual_div(c.visual_rotation_x[i], c.weight_derived_1[i]);
+			visual_pitch_effect = std::max(-0.3f, std::min(0.3f, visual_pitch_effect));
+			float visual_roll_effect = 2.5f * safe_visual_div(c.visual_rotation_z[i], c.weight_derived_3[i]);
+			visual_roll_effect = std::max(-0.5f, std::min(0.5f, visual_roll_effect));
+
+			rotate_about_x_right(local_visual, static_cast<float>(static_cast<int>(10430.378f * visual_pitch_effect)));
+			combined_roll += static_cast<int>(static_cast<int16_t>(static_cast<int>(10430.378f * -visual_roll_effect)));
+			combined_roll = std::max(-0x238e, std::min(0x238e, combined_roll));
+			rotate_about_z_right(local_visual, static_cast<float>(static_cast<int>(static_cast<float>(static_cast<int16_t>(combined_roll)) + startup_roll_offset)));
+
+			SimQuat target_quat = local_visual.basis.get_rotation_quaternion();
+			c.unk_quat_0x5c4[i] = c.unk_quat_0x5c4[i].slerp(target_quat, 0.2f);
+			local_visual.basis = SimBasis(c.unk_quat_0x5c4[i]);
+			current_transform = current_transform * local_visual;
+
+			if (c.spinattack_angle[i] != 0.0f) {
+				const float spin_units = c.spinattack_angle[i] * (65536.0f / TAU);
+				rotate_about_y_right(current_transform, c.spinattack_direction[i] == 0 ? spin_units : -spin_units);
+			}
+		} else {
+			current_transform = MXT_LOAD_TRANSFORM(c, transform_visual, i);
+		}
+
+		current_transform.origin = visual_origin;
+
+		const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
+		const SimVec3 angular_velocity = LOAD_INDEXED_VEC3(c, velocity_angular, i);
+		const uint32_t velocity_hash = float_bits_exact(velocity.z) ^ float_bits_exact(velocity.x) ^ float_bits_exact(velocity.y);
+		const float shake_scale = 0.00006f * c.visual_shake_mult[i];
+		rotate_about_z_right(current_transform, static_cast<float>(static_cast<int>(
+			10430.378f * shake_scale * (static_cast<float>((velocity_hash ^ float_bits_exact(angular_velocity.y)) & 0xffffu) / 65536.0f))));
+		rotate_about_x_right(current_transform, static_cast<float>(static_cast<int>(
+			10430.378f * shake_scale * (static_cast<float>((velocity_hash ^ float_bits_exact(angular_velocity.x)) & 0xffffu) / 65536.0f))));
+
+		if ((c.machine_state[i] & MACHINESTATE::BOOSTING) == 0u) {
+			c.height_adjust_from_boost[i] -= 0.05f * c.height_adjust_from_boost[i];
+		} else {
+			const float pitch_adjust = std::max(0.0f, c.visual_rotation_x[i]);
+			c.height_adjust_from_boost[i] += 0.2f * (4.5f * safe_visual_div(pitch_adjust, c.weight_derived_1[i]) - c.height_adjust_from_boost[i]);
+			c.height_adjust_from_boost[i] = std::min(c.height_adjust_from_boost[i], 0.3f);
+		}
+		current_transform.origin += current_transform.basis.get_column(1) * c.height_adjust_from_boost[i];
+
+		if ((c.terrain_state[i] & TERRAIN::DIRT) != 0u) {
+			float dirt_scale = 0.1f + c.speed_kmh[i] / 900.0f;
+			dirt_scale = std::min(dirt_scale, 1.0f);
+			SimVec3 dirt_jitter(
+				static_cast<float>((velocity_hash ^ float_bits_exact(angular_velocity.y)) & 0xffffu) / 65536.0f - 0.5f,
+				0.0f,
+				static_cast<float>((velocity_hash ^ float_bits_exact(angular_velocity.z)) & 0xffffu) / 65536.0f - 0.5f);
+			dirt_jitter = current_transform.basis.xform(dirt_jitter) * (0.15f * dirt_scale);
+			current_transform.origin += dirt_jitter;
+		}
+
+		MXT_STORE_TRANSFORM(c, transform_visual, i, current_transform);
+	}
+
+	static SimTransform interpolate_sim_transform(const SimTransform& a, const SimTransform& b, float alpha)
+	{
+		alpha = std::max(0.0f, std::min(1.0f, alpha));
+		SimTransform out;
+		out.origin = a.origin.lerp(b.origin, alpha);
+		const SimQuat qa = a.basis.get_rotation_quaternion();
+		const SimQuat qb = b.basis.get_rotation_quaternion();
+		out.basis = SimBasis(qa.slerp(qb, alpha));
+		return out;
+	}
+
 	static inline godot::AABB gd_aabb(const SimAABB& b)
 	{
 		return godot::AABB(gd_vec3(b.position), gd_vec3(b.size));
@@ -912,6 +1132,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
 	ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
+	ClassDB::bind_method(D_METHOD("render_gamesim_visuals_only"), &GameSim::render_gamesim_visuals_only);
 	ClassDB::bind_method(D_METHOD("get_dip_switches"), &GameSim::get_dip_switches);
 	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
@@ -927,6 +1148,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
 	ClassDB::bind_method(D_METHOD("get_spark_node_container"), &GameSim::get_spark_node_container);
 	ClassDB::bind_method(D_METHOD("set_spark_node_container", "p_spark_node_container"), &GameSim::set_spark_node_container);
+	ClassDB::bind_method(D_METHOD("set_car_render_manager", "p_car_render_manager"), &GameSim::set_car_render_manager);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
 };
@@ -2358,13 +2580,68 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		::free(car_player_ids);
 		car_player_ids = nullptr;
 	}
-	if (car_is_cpu) {
-		::free(car_is_cpu);
-		car_is_cpu = nullptr;
-	}
-	native_cpu_drivers.clear();
-	cpu_driver_manager = nullptr;
+		if (car_is_cpu) {
+			::free(car_is_cpu);
+			car_is_cpu = nullptr;
+		}
+		car_render_manager = nullptr;
+		render_car_transform_nodes.clear();
+		render_car_multimeshes.clear();
+		render_car_local_transforms.clear();
+		render_car_archetype_indices.clear();
+		render_car_slots.clear();
+		render_visual_prev_transforms.clear();
+		render_visual_current_transforms.clear();
+		render_visual_initialized.clear();
+		native_cpu_drivers.clear();
+		cpu_driver_manager = nullptr;
 	};
+
+void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
+{
+	car_render_manager = p_car_render_manager;
+	render_car_multimeshes.clear();
+	render_car_local_transforms.clear();
+	render_car_archetype_indices.clear();
+	render_car_slots.clear();
+	render_visual_prev_transforms.clear();
+	render_visual_current_transforms.clear();
+	render_visual_initialized.clear();
+	if (!car_render_manager) {
+		return;
+	}
+
+	godot::Variant bindings_var = car_render_manager->call("get_native_render_bindings");
+	if (bindings_var.get_type() != godot::Variant::DICTIONARY) {
+		return;
+	}
+	godot::Dictionary bindings = bindings_var;
+	godot::Array multimeshes = bindings.get("multimeshes", godot::Array());
+	godot::Array local_transforms = bindings.get("local_transforms", godot::Array());
+	godot::PackedInt32Array archetype_indices = bindings.get("archetype_indices", godot::PackedInt32Array());
+	godot::PackedInt32Array slots = bindings.get("slots", godot::PackedInt32Array());
+
+	render_car_multimeshes.reserve(multimeshes.size());
+	render_car_local_transforms.reserve(local_transforms.size());
+	for (int i = 0; i < multimeshes.size(); ++i) {
+		godot::Ref<godot::MultiMesh> multimesh = multimeshes[i];
+		render_car_multimeshes.push_back(multimesh);
+		if (i < local_transforms.size() && local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
+			render_car_local_transforms.push_back(sim_transform(local_transforms[i]));
+		} else {
+			render_car_local_transforms.push_back(SimTransform());
+		}
+	}
+
+	render_car_archetype_indices.resize(archetype_indices.size());
+	for (int i = 0; i < archetype_indices.size(); ++i) {
+		render_car_archetype_indices[i] = archetype_indices[i];
+	}
+	render_car_slots.resize(slots.size());
+	for (int i = 0; i < slots.size(); ++i) {
+		render_car_slots[i] = slots[i];
+	}
+}
 
 void GameSim::set_cpu_driver_manager(godot::Object* manager)
 {
@@ -2479,6 +2756,62 @@ godot::PackedByteArray GameSim::get_native_cpu_input_for_tick(int player_id, int
 	}
 	(void)expected_tick;
 	return driver->pending_input;
+}
+
+void GameSim::update_render_visual_snapshots(int visual_count)
+{
+	if (visual_count <= 0 || !cars) {
+		return;
+	}
+	if (static_cast<int>(render_visual_prev_transforms.size()) != visual_count) {
+		render_visual_prev_transforms.resize(visual_count);
+		render_visual_current_transforms.resize(visual_count);
+		render_visual_initialized.assign(visual_count, 0);
+	}
+	for (int i = 0; i < visual_count; ++i) {
+		update_machine_visual_transform_for_render(*cars[i].soa, cars[i].soa_index);
+		const SimTransform current = MXT_LOAD_TRANSFORM(*cars[i].soa, transform_visual, cars[i].soa_index);
+		if (render_visual_initialized[i]) {
+			render_visual_prev_transforms[i] = render_visual_current_transforms[i];
+		} else {
+			render_visual_prev_transforms[i] = current;
+			render_visual_initialized[i] = 1;
+		}
+		render_visual_current_transforms[i] = current;
+	}
+}
+
+void GameSim::apply_render_multimeshes(float alpha)
+{
+	const int visual_count = std::min(num_cars, static_cast<int>(render_visual_current_transforms.size()));
+	for (int i = 0; i < visual_count; ++i) {
+		if (i >= static_cast<int>(render_car_archetype_indices.size()) || i >= static_cast<int>(render_car_slots.size())) {
+			continue;
+		}
+		const int archetype = render_car_archetype_indices[i];
+		const int slot = render_car_slots[i];
+		if (archetype < 0 || archetype >= static_cast<int>(render_car_multimeshes.size()) ||
+				archetype >= static_cast<int>(render_car_local_transforms.size()) ||
+				render_car_multimeshes[archetype].is_null() || slot < 0) {
+			continue;
+		}
+		const SimTransform visual_transform = interpolate_sim_transform(
+			render_visual_prev_transforms[i],
+			render_visual_current_transforms[i],
+			alpha);
+		const SimTransform instance_transform = visual_transform * render_car_local_transforms[archetype];
+		render_car_multimeshes[archetype]->set_instance_transform(slot, gd_transform(instance_transform));
+	}
+}
+
+void GameSim::render_gamesim_visuals_only()
+{
+	if (!sim_started || !cars) {
+		return;
+	}
+	Engine* engine = Engine::get_singleton();
+	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+	apply_render_multimeshes(alpha);
 }
 
 void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flags)
@@ -2772,66 +3105,19 @@ void GameSim::update_super_spark_visuals()
 		render_get_children_us = elapsed_us(phase_start, phase_end);
 		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
 		render_vis_car_count = vis_car_count;
-		godot::Array visual_args;
-		visual_args.resize(50);
 		phase_start = std::chrono::high_resolution_clock::now();
+		update_render_visual_snapshots(vis_car_count);
+		Engine* engine = Engine::get_singleton();
+		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+		apply_render_multimeshes(alpha);
+		godot::Array local_visual_args;
+		local_visual_args.resize(50);
 		for (int i = 0; i < vis_car_count; i++) {
-		//cars[i].create_machine_visual_transform();
-			visual_args[0] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, position_current, cars[i].soa_index));
-			visual_args[1] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, position_old, cars[i].soa_index));
-			visual_args[2] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, track_surface_normal, cars[i].soa_index));
-			visual_args[3] = cars[i].soa->height_above_track[cars[i].soa_index];
-			visual_args[4] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, velocity, cars[i].soa_index));
-			visual_args[5] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, velocity_angular, cars[i].soa_index));
-			visual_args[6] = gd_transform(MXT_LOAD_TRANSFORM(*cars[i].soa, basis_physical, cars[i].soa_index));
-			visual_args[7] = cars[i].soa->base_speed[cars[i].soa_index];
-			visual_args[8] = cars[i].soa->boost_turbo[cars[i].soa_index];
-			visual_args[9] = cars[i].soa->speed_kmh[cars[i].soa_index];
-			visual_args[10] = cars[i].soa->energy[cars[i].soa_index];
-			visual_args[11] = cars[i].soa->lap_progress[cars[i].soa_index];
-			visual_args[12] = cars[i].soa->boost_frames[cars[i].soa_index];
-			visual_args[13] = cars[i].soa->boost_frames_manual[cars[i].soa_index];
-			visual_args[14] = cars[i].soa->lap[cars[i].soa_index];
-			visual_args[15] = cars[i].soa->machine_state[cars[i].soa_index];
-			visual_args[16] = cars[i].soa->terrain_state[cars[i].soa_index];
-			visual_args[17] = cars[i].soa->frames_since_start_2[cars[i].soa_index];
-			visual_args[18] = cars[i].soa->tilt_state[cars[i].soa_index * 4];
-			visual_args[19] = cars[i].soa->input_strafe[cars[i].soa_index];
-			visual_args[20] = cars[i].soa->turn_reaction_input[cars[i].soa_index];
-			visual_args[21] = cars[i].soa->g_anim_timer[cars[i].soa_index];
-			visual_args[22] = cars[i].soa->state_2[cars[i].soa_index];
-			visual_args[23] = gd_vec3(SimVec3(cars[i].soa->tilt_offset_x[cars[i].soa_index * 4], cars[i].soa->tilt_offset_y[cars[i].soa_index * 4], cars[i].soa->tilt_offset_z[cars[i].soa_index * 4]));
-			visual_args[24] = gd_vec3(SimVec3(cars[i].soa->tilt_offset_x[cars[i].soa_index * 4 + 2], cars[i].soa->tilt_offset_y[cars[i].soa_index * 4 + 2], cars[i].soa->tilt_offset_z[cars[i].soa_index * 4 + 2]));
-			visual_args[25] = cars[i].soa->stat_weight[cars[i].soa_index];
-			visual_args[26] = cars[i].soa->stat_strafe[cars[i].soa_index];
-			visual_args[27] = cars[i].soa->input_strafe_1_6[cars[i].soa_index];
-			visual_args[28] = cars[i].soa->weight_derived_1[cars[i].soa_index];
-			visual_args[29] = cars[i].soa->weight_derived_2[cars[i].soa_index];
-			visual_args[30] = cars[i].soa->weight_derived_3[cars[i].soa_index];
-			visual_args[31] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, visual_rotation, cars[i].soa_index));
-			visual_args[32] = cars[i].soa->spinattack_angle[cars[i].soa_index];
-			visual_args[33] = cars[i].soa->spinattack_direction[cars[i].soa_index];
-			visual_args[34] = cars[i].soa->visual_shake_mult[cars[i].soa_index];
-			visual_args[35] = cars[i].soa->input_accel[cars[i].soa_index];
-			visual_args[36] = cars[i].soa->restore_state[cars[i].soa_index];
-			visual_args[37] = cars[i].soa->restore_move_frames[cars[i].soa_index];
-			visual_args[38] = gd_transform(MXT_LOAD_TRANSFORM(*cars[i].soa, restore_start_transform, cars[i].soa_index));
-			visual_args[39] = gd_transform(MXT_LOAD_TRANSFORM(*cars[i].soa, restore_target_transform, cars[i].soa_index));
-			visual_args[40] = static_cast<int>(cars[i].get_s_boost_charge());
-			visual_args[41] = static_cast<int>(cars[i].get_s_boost_max_charge());
-			visual_args[42] = cars[i].is_s_boost_active();
-			visual_args[43] = cars[i].is_s_boost_ready();
-			visual_args[44] = cars[i].soa->tilt_state[cars[i].soa_index * 4 + 1];
-			visual_args[45] = cars[i].soa->tilt_state[cars[i].soa_index * 4 + 2];
-			visual_args[46] = cars[i].soa->tilt_state[cars[i].soa_index * 4 + 3];
-			visual_args[47] = cars[i].soa->camera_reorienting[cars[i].soa_index];
-			visual_args[48] = cars[i].soa->camera_repositioning[cars[i].soa_index];
-			visual_args[49] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, track_surface_pos, cars[i].soa_index));
 			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
-			if (!vis_car) {
-				continue;
+			if (vis_car && static_cast<bool>(vis_car->get("local_visual_enabled"))) {
+				populate_visual_car_args(local_visual_args, cars[i]);
+				vis_car->callv("apply_sim_state", local_visual_args);
 			}
-			vis_car->callv("apply_sim_state", visual_args);
 		}
 		phase_end = std::chrono::high_resolution_clock::now();
 		render_visual_apply_us = elapsed_us(phase_start, phase_end);
