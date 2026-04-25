@@ -30,6 +30,8 @@ public:
 	int32_t unk_byte_0x48 = 1;
 	uint32_t state_flags = 0;
 	float max_energy = 100.0;
+	float boost_energy_use_rate = 1.0f;
+	float energy_recharge_rate = 1.0f;
 
 	SimVec3 tilt_corners[4] = {
 		SimVec3(0.8f, 0.0f, -1.5f),
@@ -97,6 +99,8 @@ public:
 		out_buffer.put_float(wall_corners[3].z);
 		out_buffer.put_u32(unk_byte_0x48);
 		out_buffer.put_u32(state_flags);
+		out_buffer.put_float(boost_energy_use_rate);
+		out_buffer.put_float(energy_recharge_rate);
 		out_buffer.resize(out_buffer.get_position());
 		return out_buffer;
 	}
@@ -153,6 +157,12 @@ public:
 		new_properties.unk_byte_0x48 = in_buffer->get_u32();
 		if (in_buffer->get_size() - in_buffer->get_position() >= 4) {
 			new_properties.state_flags = in_buffer->get_u32();
+		}
+		if (in_buffer->get_size() - in_buffer->get_position() >= 4) {
+			new_properties.boost_energy_use_rate = in_buffer->get_float();
+		}
+		if (in_buffer->get_size() - in_buffer->get_position() >= 4) {
+			new_properties.energy_recharge_rate = in_buffer->get_float();
 		}
 		return new_properties;
 	}

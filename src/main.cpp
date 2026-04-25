@@ -260,6 +260,9 @@ namespace {
 					auto apply_end = std::chrono::high_resolution_clock::now();
 					apply_response_accum_us += elapsed_us(apply_start, apply_end);
 				}
+				if (c.machine_state[i] & MACHINESTATE::JUSTLANDED) {
+					c.air_time[i] = 0;
+				}
 			}
 		}
 		now = std::chrono::high_resolution_clock::now();
@@ -2080,6 +2083,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 		}
 
+		TrackQueryScratch spawn_scratch;
 		for (int i = 0; i < num_cars; i++)
 		{
 			cars[i].soa->current_track[cars[i].soa_index] = current_track;
@@ -2142,6 +2146,81 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			STORE_INDEXED_VEC3(*cars[i].soa, track_surface_normal, cars[i].soa_index, spawn_up);
 			STORE_INDEXED_VEC3(*cars[i].soa, track_surface_pos, cars[i].soa_index, track_surface_pos);
 			cars[i].soa->height_above_track[cars[i].soa_index] = 19.5f;
+
+			PhysicsCarSoA *car_soa = cars[i].soa;
+			const int car_idx = cars[i].soa_index;
+			int spawn_checkpoint = current_track->get_best_checkpoint(spawn_transform.origin, spawn_scratch);
+			if (spawn_checkpoint < 0) {
+				spawn_checkpoint = current_track->get_best_checkpoint(track_surface_pos, spawn_scratch);
+			}
+			if (spawn_checkpoint >= 0 && spawn_checkpoint < current_track->num_checkpoints) {
+				const CollisionCheckpoint &cur_cp = current_track->checkpoints[spawn_checkpoint];
+				const SimVec3 p1 = cur_cp.start_plane.project(spawn_transform.origin);
+				const SimVec3 p2 = cur_cp.end_plane.project(spawn_transform.origin);
+				const float checkpoint_fraction = get_closest_t_on_segment(spawn_transform.origin, p1, p2);
+				const float cp_length = cur_cp.local_distance;
+				const float cp_start_distance = cur_cp.distance - cur_cp.local_distance;
+				float ground_distance = cp_start_distance + cp_length * std::clamp(checkpoint_fraction, 0.0f, 1.0f);
+				float lap_length = current_track->lap_length;
+				if (lap_length <= 0.0f && current_track->num_checkpoints > 0) {
+					lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+				}
+				if (lap_length > 0.0f) {
+					ground_distance = std::fmod(ground_distance, lap_length);
+					if (ground_distance < 0.0f) {
+						ground_distance += lap_length;
+					}
+				}
+				car_soa->current_checkpoint[car_idx] = static_cast<uint16_t>(spawn_checkpoint);
+				car_soa->current_collision_checkpoint[car_idx] = static_cast<uint16_t>(spawn_checkpoint);
+				car_soa->last_ground_checkpoint[car_idx] = static_cast<uint16_t>(spawn_checkpoint);
+				car_soa->checkpoint_fraction[car_idx] = checkpoint_fraction;
+				car_soa->lap_progress[car_idx] = (static_cast<float>(spawn_checkpoint) + checkpoint_fraction) / static_cast<float>(current_track->num_checkpoints);
+				car_soa->checkpoint_track_distance[car_idx] = ground_distance;
+				car_soa->last_ground_distance[car_idx] = ground_distance;
+			}
+			const int point_base = car_idx * 4;
+			const SimVec3 reset_position = spawn_transform.origin;
+			const SimBasis& reset_basis = spawn_transform.basis;
+			const SimVec3x4 tilt_pos = transform_points_components4(
+				reset_basis.c0.x, reset_basis.c0.y, reset_basis.c0.z,
+				reset_basis.c1.x, reset_basis.c1.y, reset_basis.c1.z,
+				reset_basis.c2.x, reset_basis.c2.y, reset_basis.c2.z,
+				reset_position.x, reset_position.y, reset_position.z,
+				sim_load4(car_soa->tilt_offset_x + point_base),
+				sim_load4(car_soa->tilt_offset_y + point_base),
+				sim_load4(car_soa->tilt_offset_z + point_base));
+			const SimVec3x4 wall_pos = transform_points_components4(
+				reset_basis.c0.x, reset_basis.c0.y, reset_basis.c0.z,
+				reset_basis.c1.x, reset_basis.c1.y, reset_basis.c1.z,
+				reset_basis.c2.x, reset_basis.c2.y, reset_basis.c2.z,
+				reset_position.x, reset_position.y, reset_position.z,
+				sim_load4(car_soa->wall_offset_x + point_base),
+				sim_load4(car_soa->wall_offset_y + point_base),
+				sim_load4(car_soa->wall_offset_z + point_base));
+			const SimVec3 wall_sweep_origin = spawn_transform.xform(SimVec3(0.0f, 0.1f, 0.0f));
+			for (int point = 0; point < 4; ++point) {
+				const int p = point_base + point;
+				car_soa->tilt_state[p] = 0;
+				car_soa->tilt_force[p] = 0.0f;
+				car_soa->tilt_force_spatial_len[p] = 0.0f;
+				STORE_INDEXED_VEC3(*car_soa, tilt_force_spatial, p, SimVec3());
+				STORE_INDEXED_VEC3(*car_soa, tilt_up_vector_2, p, spawn_up);
+				STORE_INDEXED_VEC3(*car_soa, tilt_up_vector, p, spawn_up);
+				STORE_INDEXED_VEC3(*car_soa, wall_pos_a, p, wall_sweep_origin);
+				STORE_INDEXED_VEC3(*car_soa, wall_collision, p, SimVec3());
+			}
+			sim_store4(car_soa->tilt_pos_old_x + point_base, tilt_pos.x);
+			sim_store4(car_soa->tilt_pos_old_y + point_base, tilt_pos.y);
+			sim_store4(car_soa->tilt_pos_old_z + point_base, tilt_pos.z);
+			sim_store4(car_soa->tilt_pos_x + point_base, tilt_pos.x);
+			sim_store4(car_soa->tilt_pos_y + point_base, tilt_pos.y);
+			sim_store4(car_soa->tilt_pos_z + point_base, tilt_pos.z);
+			sim_store4(car_soa->wall_pos_b_x + point_base, wall_pos.x);
+			sim_store4(car_soa->wall_pos_b_y + point_base, wall_pos.y);
+			sim_store4(car_soa->wall_pos_b_z + point_base, wall_pos.z);
+			car_soa->machine_state[car_idx] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q | MACHINESTATE::JUSTLANDED);
+			car_soa->air_time[car_idx] = 0;
 		}
 
 		input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));

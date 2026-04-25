@@ -18,10 +18,11 @@ class_name RaceHud extends Control
 @onready var sboost_meter_fill: ColorRect = %sboost_meter_fill
 
 var car_max_energy: float = 100.0
+var boost_energy_use_rate: float = 1.0
 var _sboost_full_width: float = 0.0
 
 @export var placement_digit_size := Vector2(96.0, 96.0)
-@export var placement_digit_kerning := -42.0
+@export var placement_digit_kerning := -24.0
 
 var placement_digit_textures: Array[Texture2D] = [
 	preload("res://ui/placements/mxt-0.png"),
@@ -48,6 +49,9 @@ func _ready() -> void:
 			if f:
 				f.seek(84)
 				car_max_energy = f.get_float()
+				if f.get_length() >= 196:
+					f.seek(192)
+					boost_energy_use_rate = f.get_float()
 				f.close()
 	if sboost_meter_bg:
 		_sboost_full_width = sboost_meter_bg.size.x
@@ -112,7 +116,7 @@ func _process( _delta:float ) -> void:
 	health_meter_shader.set_shader_parameter("health_amount", car.energy)
 	health_meter_shader.set_shader_parameter("max_health_amount", car_max_energy)
 	health_meter_shader.set_shader_parameter("can_boost", car.lap > 1)
-	var boost_health_total_cost : float = 0.0#car.car_definition.boost_health_cost * (1.0 / car.car_definition.boost_length) * MXGlobal.tick_delta * car.boost_time
+	var boost_health_total_cost : float = float(car.boost_frames_manual) * 0.1666666667 * boost_energy_use_rate
 	health_meter_shader.set_shader_parameter("health_to_deplete", boost_health_total_cost)
 	
 	var time_until_start : float = float(300 - use_tick) / 60

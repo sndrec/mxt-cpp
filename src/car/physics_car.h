@@ -124,6 +124,7 @@ struct ImpactData {
 	X(float, turn_reaction_input, 0.0f) \
 	X(float, turn_reaction_effect, 0.0f) \
 	X(float, boost_energy_use_mult, 1.0f) \
+	X(float, energy_recharge_mult, 1.0f) \
 	X(uint32_t, frames_since_death, 0) \
 	X(uint32_t, terrain_state_2, 0) \
 	X(uint32_t, suspension_reset_flag, 0) \

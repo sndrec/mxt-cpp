@@ -266,7 +266,6 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 	} else {
 		if (soa->air_time[soa_index] != 0)
 			soa->machine_state[soa_index] |= MACHINESTATE::JUSTLANDED;
-		soa->air_time[soa_index] = 0;
 		soa->machine_state[soa_index] &= ~MACHINESTATE::AIRBORNEMORE0_2S_Q;
 		soa->state_2[soa_index] &= ~2u;
 	}
@@ -284,7 +283,7 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 	if ((soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0 ||
 		(soa->terrain_state[soa_index] & TERRAIN::RECHARGE) != 0)
 	{
-		soa->energy[soa_index] += 1.111111f;
+		soa->energy[soa_index] += 1.111111f * soa->energy_recharge_mult[soa_index];
 		if (soa->energy[soa_index] > soa->calced_max_energy[soa_index])
 		{
 			soa->energy[soa_index] = soa->calced_max_energy[soa_index];
@@ -1814,6 +1813,8 @@ void PhysicsCar::update_machine_stats()
 	soa->stat_boost_length[soa_index] = def_stats.boost_length;
 	soa->stat_turn_decel[soa_index] = def_stats.turn_decel;
 	soa->stat_drag[soa_index] = def_stats.drag;
+	soa->boost_energy_use_mult[soa_index] = def_stats.boost_energy_use_rate;
+	soa->energy_recharge_mult[soa_index] = def_stats.energy_recharge_rate;
 	if ((def_stats.state_flags & 1u) == 0u) {
 		soa->machine_state[soa_index] &= ~MACHINESTATE::B9;
 	} else {
@@ -1897,7 +1898,8 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->car_hit_invincibility[soa_index] = 0;
 	soa->turn_reaction_input[soa_index] = 0.0f;
 	soa->turn_reaction_effect[soa_index] = 0.0f;
-	soa->boost_energy_use_mult[soa_index] = 1.0f;
+	soa->boost_energy_use_mult[soa_index] = soa->car_properties[soa_index] ? soa->car_properties[soa_index]->boost_energy_use_rate : 1.0f;
+	soa->energy_recharge_mult[soa_index] = soa->car_properties[soa_index] ? soa->car_properties[soa_index]->energy_recharge_rate : 1.0f;
 	soa->breakdown_frame_counter[soa_index] = 0;
 	soa->some_breakdown_int[soa_index] = 0;
 	soa->drift_sign[soa_index] = 1;
@@ -3063,6 +3065,9 @@ if (apply_full_response) {
 	if (include_start_projection && soa->frames_since_start_2[soa_index] <= 90)
 	{
 		ADD_VEC3(velocity, LOAD_VEC3(track_surface_normal) * -(LOAD_VEC3(velocity).dot(LOAD_VEC3(track_surface_normal))));
+	}
+	if (soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) {
+		soa->air_time[soa_index] = 0;
 	}
 };
 

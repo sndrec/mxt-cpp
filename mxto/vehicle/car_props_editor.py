@@ -14,6 +14,7 @@ class CarPropsEditor:
 			"body", "camera_reorienting", "camera_repositioning", "track_collision",
 			"obstacle_collision", "max_energy"
 		]
+		self.fields_tuning = ["boost_energy_use_rate", "energy_recharge_rate"]
 
 		self.tilt_summary_fields = ["front_width", "front_length", "back_width", "back_length"]
 		self.wall_summary_fields = ["wall_front_width", "wall_front_length", "wall_back_width", "wall_back_length"]
@@ -42,7 +43,7 @@ class CarPropsEditor:
 		notebook.add(meta_tab, text='Metadata')
 
 		# General fields
-		for i, field in enumerate(self.fields_general):
+		for i, field in enumerate(self.fields_general + self.fields_tuning):
 			label = tk.Label(general_tab, text=field)
 			label.grid(row=i, column=0, sticky='e')
 			entry = tk.Entry(general_tab)
@@ -103,6 +104,8 @@ class CarPropsEditor:
 				floats = struct.unpack('<46f', data[:184])
 				u32 = struct.unpack('<I', data[184:188])[0]
 				state_flags = struct.unpack('<I', data[188:192])[0] if len(data) >= 192 else 0
+				boost_energy_use_rate = struct.unpack('<f', data[192:196])[0] if len(data) >= 196 else 1.0
+				energy_recharge_rate = struct.unpack('<f', data[196:200])[0] if len(data) >= 200 else 1.0
 				all_keys = self.fields_general + self.full_fields
 				for i, key in enumerate(all_keys):
 					self.entries[key].delete(0, tk.END)
@@ -111,6 +114,10 @@ class CarPropsEditor:
 				self.entries["unk_byte_0x48"].insert(0, str(u32))
 				self.entries["state_flags"].delete(0, tk.END)
 				self.entries["state_flags"].insert(0, str(state_flags))
+				self.entries["boost_energy_use_rate"].delete(0, tk.END)
+				self.entries["boost_energy_use_rate"].insert(0, str(boost_energy_use_rate))
+				self.entries["energy_recharge_rate"].delete(0, tk.END)
+				self.entries["energy_recharge_rate"].insert(0, str(energy_recharge_rate))
 				self.update_summaries_from_full()
 		except Exception as e:
 			messagebox.showerror("Error", f"Failed to load file: {e}")
@@ -124,9 +131,11 @@ class CarPropsEditor:
 		try:
 			float_values = [float(self.entries[key].get()) for key in self.fields_general + self.full_fields]
 			u32_values = [int(self.entries[key].get()) & 0xFFFFFFFF for key in self.u32_fields]
+			tuning_values = [float(self.entries[key].get()) for key in self.fields_tuning]
 			with open(path, "wb") as f:
 				f.write(struct.pack('<46f', *float_values))
 				f.write(struct.pack('<' + 'I' * len(u32_values), *u32_values))
+				f.write(struct.pack('<' + 'f' * len(tuning_values), *tuning_values))
 		except Exception as e:
 			messagebox.showerror("Error", f"Failed to save file: {e}")
 
