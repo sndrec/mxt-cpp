@@ -2,7 +2,7 @@
 
 #include "main.h"
 #include "fzgx_gameplay_camera.h"
-#include "mxt_core/netcode_core.h"
+#include "mxt_core/netcode_session.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -17,7 +17,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 
 	GDREGISTER_CLASS(GameSim);
 	GDREGISTER_CLASS(FzgxGameplayCamera);
-	GDREGISTER_CLASS(NetcodeCore);
+	GDREGISTER_CLASS(NetcodeSession);
 }
 
 void uninitialize_gamesim_module(ModuleInitializationLevel p_level) {

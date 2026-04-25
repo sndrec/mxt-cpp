@@ -20,8 +20,11 @@
 
 namespace godot {
 
+	class NetcodeSession;
+
 	class GameSim : public Node {
 		GDCLASS(GameSim, Node)
+		friend class NetcodeSession;
 
 	private:
 		int tick;
@@ -175,6 +178,16 @@ namespace godot {
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
 		void update_native_gameplay_camera(bool step_camera);
+		enum class InputFrameMode : uint8_t {
+			SingleLocal,
+			DecodedCarArray,
+		};
+		void tick_gamesim_internal(InputFrameMode mode,
+			int local_player_id,
+			const PlayerInput* local_input,
+			const PlayerInput* decoded_car_inputs,
+			const uint8_t* decoded_car_input_present,
+			int decoded_car_input_count);
 		void ensure_vehicle_tick_soa_capacity(int capacity);
 		void free_vehicle_tick_soa();
 		void record_phase_profile_sample();
@@ -246,7 +259,6 @@ namespace godot {
 		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
 		void set_car_render_manager(godot::Object* p_car_render_manager);
 		void set_gameplay_camera(godot::Camera3D* p_camera, int player_id);
-		void tick_gamesim_input_records(godot::Dictionary input_records);
 		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;

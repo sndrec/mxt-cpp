@@ -600,6 +600,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
+	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
 	if local_player_index >= 0 and local_player_index < car_node_container.get_child_count():
 		var local_car := car_node_container.get_child(local_player_index) as VisualCar
 		if local_car != null:
@@ -611,6 +612,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
+		network_manager.server_netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
 	if singleplayer_mode:
 		game_sim.set_cpu_driver_manager(null)
 		if network_manager.is_server:
@@ -818,23 +820,18 @@ func _simulate_host_frame(local_input_bytes: PackedByteArray):
 		var server_inputs := network_manager.collect_server_inputs()
 		if server_inputs.is_empty():
 			break
-		server_game_sim.tick_gamesim_input_records(server_inputs)
 		server_game_sim.render_gamesim()
 		network_manager.post_tick()
 		loops += 1
-	var client_inputs := network_manager.collect_client_inputs()
-	if !client_inputs.is_empty():
-		game_sim.tick_gamesim_input_records(client_inputs)
+	network_manager.collect_client_inputs()
 
 func _simulate_single_tick():
 	var frame_inputs := network_manager.collect_client_inputs()
 	if frame_inputs.is_empty():
 		return
-	game_sim.tick_gamesim_input_records(frame_inputs)
 	if network_manager.is_server:
 		var server_inputs := network_manager.collect_server_inputs()
 		if !server_inputs.is_empty():
-			server_game_sim.tick_gamesim_input_records(server_inputs)
 			network_manager.post_tick()
 	else:
 		network_manager.post_tick()

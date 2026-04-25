@@ -1157,7 +1157,6 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_spark_node_container", "p_spark_node_container"), &GameSim::set_spark_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_render_manager", "p_car_render_manager"), &GameSim::set_car_render_manager);
 	ClassDB::bind_method(D_METHOD("set_gameplay_camera", "p_camera", "player_id"), &GameSim::set_gameplay_camera);
-	ClassDB::bind_method(D_METHOD("tick_gamesim_input_records", "input_records"), &GameSim::tick_gamesim_input_records);
 	ClassDB::bind_method(D_METHOD("tick_singleplayer", "local_player_id", "local_input"), &GameSim::tick_singleplayer);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
@@ -1595,12 +1594,16 @@ godot::Transform3D GameSim::get_player_render_transform(int player_id) const
 
 void GameSim::tick_singleplayer(int local_player_id, godot::PackedByteArray local_input)
 {
-	godot::Dictionary records;
-	records[local_player_id] = local_input;
-	tick_gamesim_input_records(records);
+	const PlayerInput decoded_local_input = PlayerInput::from_bytes(local_input);
+	tick_gamesim_internal(InputFrameMode::SingleLocal, local_player_id, &decoded_local_input, nullptr, nullptr, 0);
 }
 
-void GameSim::tick_gamesim_input_records(godot::Dictionary input_records)
+void GameSim::tick_gamesim_internal(InputFrameMode mode,
+	int local_player_id,
+	const PlayerInput* local_input,
+	const PlayerInput* decoded_car_inputs,
+	const uint8_t* decoded_car_input_present,
+	int decoded_car_input_count)
 {
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
@@ -1642,14 +1645,11 @@ void GameSim::tick_gamesim_input_records(godot::Dictionary input_records)
 	for (int i = 0; i < num_cars; i++) {
 		PlayerInput inp = PlayerInput::from_neutral();
 		const int32_t player_id = car_player_ids ? car_player_ids[i] : -1;
-		if (player_id != -1 && input_records.has(player_id)) {
-			const godot::Variant input_value = input_records[player_id];
-			Variant::Type t = input_value.get_type();
-			if (t == godot::Variant::PACKED_BYTE_ARRAY) {
-				inp = PlayerInput::from_bytes(input_value);
-			} else if (t == godot::Variant::DICTIONARY) {
-				inp = PlayerInput::from_dict(input_value);
-			}
+		if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
+			inp = *local_input;
+		} else if (mode == InputFrameMode::DecodedCarArray && i < decoded_car_input_count && decoded_car_inputs &&
+				(!decoded_car_input_present || decoded_car_input_present[i])) {
+			inp = decoded_car_inputs[i];
 		} else if (car_is_cpu && car_is_cpu[i]) {
 			NativeCpuDriverState* cpu_driver = find_native_cpu_driver(player_id);
 			if (cpu_driver && !cpu_driver->pending_input.is_empty()) {
