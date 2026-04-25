@@ -36,6 +36,7 @@ namespace godot {
 		PlayerInput* input_buffer = nullptr;
 		static const int PROFILE_WINDOW_TICKS = 360;
 		static const int PROFILE_FIELD_COUNT = 20;
+		static const int RENDER_PROFILE_FIELD_COUNT = 9;
 		enum ProfileField {
 			PROFILE_TOTAL,
 			PROFILE_INPUT,
@@ -58,10 +59,25 @@ namespace godot {
 			PROFILE_LANE_GROUP,
 			PROFILE_LANES,
 		};
+		enum RenderProfileField {
+			RENDER_PROFILE_TOTAL,
+			RENDER_PROFILE_GET_CHILDREN,
+			RENDER_PROFILE_VISUAL_APPLY,
+			RENDER_PROFILE_CPU_TOTAL,
+			RENDER_PROFILE_CPU_BUILD_OBS,
+			RENDER_PROFILE_CPU_SUBMIT,
+			RENDER_PROFILE_SPARKS,
+			RENDER_PROFILE_DEBUG_DRAW,
+			RENDER_PROFILE_VIS_CARS,
+		};
 		uint32_t profile_samples[PROFILE_WINDOW_TICKS][PROFILE_FIELD_COUNT] = {};
 		uint64_t profile_sums[PROFILE_FIELD_COUNT] = {};
 		int profile_cursor = 0;
 		int profile_count = 0;
+		uint32_t render_profile_samples[PROFILE_WINDOW_TICKS][RENDER_PROFILE_FIELD_COUNT] = {};
+		uint64_t render_profile_sums[RENDER_PROFILE_FIELD_COUNT] = {};
+		int render_profile_cursor = 0;
+		int render_profile_count = 0;
 		struct VehicleTickSoA {
 			int capacity = 0;
 			PlayerInput* inputs = nullptr;
@@ -141,6 +157,7 @@ namespace godot {
 		void ensure_vehicle_tick_soa_capacity(int capacity);
 		void free_vehicle_tick_soa();
 		void record_phase_profile_sample();
+		void record_render_profile_sample(const uint32_t sample[RENDER_PROFILE_FIELD_COUNT]);
 		static constexpr int VEHICLE_WORKER_COUNT = 4;
 		struct VehicleLaneGroup {
 			int count = 1;
@@ -192,6 +209,7 @@ namespace godot {
 		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
 		void tick_gamesim(godot::Array player_inputs);
 		godot::String get_phase_profile_string() const;
+		godot::String get_render_profile_string() const;
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
 		void render_gamesim();

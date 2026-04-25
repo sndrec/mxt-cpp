@@ -2461,7 +2461,6 @@ script = ExtResource("3_h2yge")
 metadata/_custom_type_script = "uid://odaiawvcj4yf"
 
 [node name="SuperSparkContainer" type="Node3D" parent="GameWorld" unique_id=1358909711]
-visible = false
 script = ExtResource("18_spark")
 
 [node name="DebugTrackMeshContainer" type="Node3D" parent="GameWorld" unique_id=86658115]

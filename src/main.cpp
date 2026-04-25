@@ -920,6 +920,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_cpu_driver_manager"), &GameSim::get_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("set_player_metadata", "player_ids", "cpu_flags"), &GameSim::set_player_metadata);
 	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
+	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -1262,6 +1263,43 @@ String GameSim::get_phase_profile_string() const
 	out += " misc=" + String::num_int64(avg(PROFILE_MISC));
 	out += " lane_group=" + String::num_int64(avg(PROFILE_LANE_GROUP));
 	out += " lanes=" + String::num_int64(avg(PROFILE_LANES));
+	return out;
+}
+
+void GameSim::record_render_profile_sample(const uint32_t sample[RENDER_PROFILE_FIELD_COUNT])
+{
+	if (render_profile_count == PROFILE_WINDOW_TICKS) {
+		for (int i = 0; i < RENDER_PROFILE_FIELD_COUNT; ++i) {
+			render_profile_sums[i] -= render_profile_samples[render_profile_cursor][i];
+		}
+	} else {
+		render_profile_count += 1;
+	}
+
+	for (int i = 0; i < RENDER_PROFILE_FIELD_COUNT; ++i) {
+		render_profile_samples[render_profile_cursor][i] = sample[i];
+		render_profile_sums[i] += sample[i];
+	}
+	render_profile_cursor = (render_profile_cursor + 1) % PROFILE_WINDOW_TICKS;
+}
+
+String GameSim::get_render_profile_string() const
+{
+	const int count = render_profile_count > 0 ? render_profile_count : 1;
+	auto avg = [&](int field) -> int64_t {
+		return static_cast<int64_t>(render_profile_sums[field] / static_cast<uint64_t>(count));
+	};
+
+	String out = "MXT_RENDER_AVG_US frames=" + String::num_int64(render_profile_count);
+	out += " total=" + String::num_int64(avg(RENDER_PROFILE_TOTAL));
+	out += " get_children=" + String::num_int64(avg(RENDER_PROFILE_GET_CHILDREN));
+	out += " visual_apply=" + String::num_int64(avg(RENDER_PROFILE_VISUAL_APPLY));
+	out += " cpu_total=" + String::num_int64(avg(RENDER_PROFILE_CPU_TOTAL));
+	out += " cpu_build_obs=" + String::num_int64(avg(RENDER_PROFILE_CPU_BUILD_OBS));
+	out += " cpu_submit=" + String::num_int64(avg(RENDER_PROFILE_CPU_SUBMIT));
+	out += " sparks=" + String::num_int64(avg(RENDER_PROFILE_SPARKS));
+	out += " debug_draw=" + String::num_int64(avg(RENDER_PROFILE_DEBUG_DRAW));
+	out += " vis_cars=" + String::num_int64(avg(RENDER_PROFILE_VIS_CARS));
 	return out;
 }
 
@@ -2597,6 +2635,16 @@ void GameSim::update_super_spark_visuals()
 }
 
 	void GameSim::render_gamesim() {
+		auto render_start = std::chrono::high_resolution_clock::now();
+		uint32_t render_get_children_us = 0;
+		uint32_t render_visual_apply_us = 0;
+		uint32_t render_cpu_total_us = 0;
+		uint32_t render_cpu_build_obs_us = 0;
+		uint32_t render_cpu_submit_us = 0;
+		uint32_t render_sparks_us = 0;
+		uint32_t render_debug_draw_us = 0;
+		int render_vis_car_count = 0;
+
 		if (!sim_started || !car_node_container || !cars) {
 			return;
 		}
@@ -2605,10 +2653,15 @@ void GameSim::update_super_spark_visuals()
 			return;
 		}
 
+		auto phase_start = std::chrono::high_resolution_clock::now();
 		TypedArray<godot::Node> vis_cars = car_node_container->get_children();
+		auto phase_end = std::chrono::high_resolution_clock::now();
+		render_get_children_us = elapsed_us(phase_start, phase_end);
 		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
+		render_vis_car_count = vis_car_count;
 		godot::Array visual_args;
 		visual_args.resize(50);
+		phase_start = std::chrono::high_resolution_clock::now();
 		for (int i = 0; i < vis_car_count; i++) {
 		//cars[i].create_machine_visual_transform();
 			visual_args[0] = gd_vec3(LOAD_INDEXED_VEC3(*cars[i].soa, position_current, cars[i].soa_index));
@@ -2667,7 +2720,10 @@ void GameSim::update_super_spark_visuals()
 			}
 			vis_car->callv("apply_sim_state", visual_args);
 		}
+		phase_end = std::chrono::high_resolution_clock::now();
+		render_visual_apply_us = elapsed_us(phase_start, phase_end);
 		if (cpu_driver_manager && car_player_ids && car_is_cpu) {
+			auto cpu_start = std::chrono::high_resolution_clock::now();
 			for (int i = 0; i < num_cars; ++i) {
 				if (!car_is_cpu[i]) {
 					continue;
@@ -2676,16 +2732,28 @@ void GameSim::update_super_spark_visuals()
 				if (pid == -1) {
 					continue;
 				}
+				auto cpu_build_start = std::chrono::high_resolution_clock::now();
 				godot::PackedByteArray obs = build_cpu_observation(cars[i]);
+				auto cpu_build_end = std::chrono::high_resolution_clock::now();
+				render_cpu_build_obs_us += elapsed_us(cpu_build_start, cpu_build_end);
 				godot::Array args;
 				args.resize(3);
 				args[0] = pid;
 				args[1] = tick;
 				args[2] = obs;
+				auto cpu_submit_start = std::chrono::high_resolution_clock::now();
 				cpu_driver_manager->callv("submit_observation", args);
+				auto cpu_submit_end = std::chrono::high_resolution_clock::now();
+				render_cpu_submit_us += elapsed_us(cpu_submit_start, cpu_submit_end);
 			}
+			auto cpu_end = std::chrono::high_resolution_clock::now();
+			render_cpu_total_us = elapsed_us(cpu_start, cpu_end);
 		}
+		phase_start = std::chrono::high_resolution_clock::now();
 		update_super_spark_visuals();
+		phase_end = std::chrono::high_resolution_clock::now();
+		render_sparks_us = elapsed_us(phase_start, phase_end);
+		phase_start = std::chrono::high_resolution_clock::now();
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 		{
 			for (int i = 0; i < current_track->num_checkpoints; i++)
@@ -2777,6 +2845,21 @@ void GameSim::update_super_spark_visuals()
 			}
 		}
 	}
+		phase_end = std::chrono::high_resolution_clock::now();
+		render_debug_draw_us = elapsed_us(phase_start, phase_end);
+		auto render_end = std::chrono::high_resolution_clock::now();
+		uint32_t sample[RENDER_PROFILE_FIELD_COUNT] = {
+			elapsed_us(render_start, render_end),
+			render_get_children_us,
+			render_visual_apply_us,
+			render_cpu_total_us,
+			render_cpu_build_obs_us,
+			render_cpu_submit_us,
+			render_sparks_us,
+			render_debug_draw_us,
+			static_cast<uint32_t>(render_vis_car_count),
+		};
+		record_render_profile_sample(sample);
 }
 
 void GameSim::save_state()
