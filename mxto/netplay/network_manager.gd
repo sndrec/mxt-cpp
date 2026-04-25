@@ -1008,7 +1008,11 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 		return
 	var __prof_t0 := Time.get_ticks_usec()
 	if is_server:
+		var sender_id := multiplayer.get_remote_sender_id()
+		var sender_seen_before := last_received_tick.has(sender_id)
 		var reject_before := target_tick - 5
+		if !sender_seen_before:
+			reject_before = server_tick
 		var accepted := 0
 		var dropped := 0
 		for i in range(inputs.size()):
@@ -1018,11 +1022,12 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 				dropped += 1
 				if net_input_debug_prints < 120:
 					print("MXT_NET_INPUT_DEBUG server_drop_late",
-						" sender=", multiplayer.get_remote_sender_id(),
+						" sender=", sender_id,
 						" tick=", tick,
 						" reject_before=", reject_before,
 						" server_tick=", server_tick,
 						" target_tick=", target_tick,
+						" first_input=", !sender_seen_before,
 						" start_tick=", start_tick,
 						" inputs=", inputs.size(),
 						" player_ids=", player_ids,
@@ -1034,14 +1039,14 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 			var input = inputs[i]
 			if !pending_inputs.has(tick):
 				pending_inputs[tick] = {}
-			pending_inputs[tick][multiplayer.get_remote_sender_id()] = input
-			server_netcode_session.store_pending_input(tick, multiplayer.get_remote_sender_id(), input)
-			last_input_time[multiplayer.get_remote_sender_id()] = 0.001 * float(Time.get_ticks_msec())
-			last_received_tick[multiplayer.get_remote_sender_id()] = tick
+			pending_inputs[tick][sender_id] = input
+			server_netcode_session.store_pending_input(tick, sender_id, input)
+			last_input_time[sender_id] = 0.001 * float(Time.get_ticks_msec())
+			last_received_tick[sender_id] = tick
 			accepted += 1
 		if net_input_debug_prints < 120:
 			print("MXT_NET_INPUT_DEBUG server_recv",
-				" sender=", multiplayer.get_remote_sender_id(),
+				" sender=", sender_id,
 				" start_tick=", start_tick,
 				" inputs=", inputs.size(),
 				" accepted=", accepted,
@@ -1049,18 +1054,19 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 				" reject_before=", reject_before,
 				" server_tick=", server_tick,
 				" target_tick=", target_tick,
+				" first_input=", !sender_seen_before,
 				" ahead=", ahead,
 				" ack=", ack,
-				" last_received=", last_received_tick.get(multiplayer.get_remote_sender_id(), -1),
+				" last_received=", last_received_tick.get(sender_id, -1),
 				" player_ids=", player_ids,
 				" cpu_ids=", cpu_player_ids,
 				" race_player_ids=", race_player_ids,
 				" race_cpu_ids=", race_cpu_player_ids)
 			net_input_debug_prints += 1
-		peer_desired_ahead[multiplayer.get_remote_sender_id()] = ahead
-		authoritative_acks[multiplayer.get_remote_sender_id()] = max(
+		peer_desired_ahead[sender_id] = ahead
+		authoritative_acks[sender_id] = max(
 			ack,
-			authoritative_acks.get(multiplayer.get_remote_sender_id(), -1)
+			authoritative_acks.get(sender_id, -1)
 		)
 		var _est := 12
 		for e in inputs:
@@ -1270,9 +1276,11 @@ func _check_client_stalls() -> void:
 		for i in range(roster_chk.size()):
 			var pid = roster_chk[i]
 			if missing.has(pid):
+				if !last_received_tick.has(pid):
+					continue
 				waiting[pid] = _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
 				server_netcode_session.store_pending_input(server_tick, int(pid), waiting[pid])
-		log_server_replacements += missing.size()
+				log_server_replacements += 1
 	pending_inputs[server_tick] = waiting
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
