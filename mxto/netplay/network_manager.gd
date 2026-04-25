@@ -113,6 +113,7 @@ var prof_car_post_render_us_interval := 0
 var _log_sent_counts := {}
 var _log_timer: Timer
 var rollback_frametime_us := 0
+var net_input_debug_prints := 0
 
 var version_string: String = ""
 var _unverified_peers: Array = []
@@ -151,6 +152,71 @@ func _allocate_cpu_id() -> int:
 			continue
 		return id
 	return -1
+
+func _remap_cpu_id(old_id: int, reason: String) -> int:
+	if !cpu_player_ids.has(old_id):
+		return old_id
+	var settings = cpu_player_settings.get(old_id, player_settings.get(old_id, {}))
+	cpu_player_ids.erase(old_id)
+	cpu_player_settings.erase(old_id)
+	player_settings.erase(old_id)
+	var new_id := _allocate_cpu_id()
+	if new_id == -1:
+		return -1
+	cpu_player_ids.append(new_id)
+	cpu_player_settings[new_id] = settings
+	player_settings[new_id] = settings
+	if race_cpu_player_ids.has(old_id):
+		race_cpu_player_ids.erase(old_id)
+		race_cpu_player_ids.append(new_id)
+	print("MXT_NET_ROSTER_DEBUG cpu_id_remap",
+		" reason=", reason,
+		" old_id=", old_id,
+		" new_id=", new_id,
+		" player_ids=", player_ids,
+		" spectator_ids=", spectator_ids,
+		" cpu_ids=", cpu_player_ids)
+	return new_id
+
+func _ensure_cpu_ids_do_not_overlap_humans(reason: String) -> bool:
+	var changed := false
+	var reserved := player_ids.duplicate(true)
+	reserved.append_array(spectator_ids)
+	for id in reserved:
+		if cpu_player_ids.has(id):
+			_remap_cpu_id(id, reason)
+			changed = true
+	if changed:
+		_sync_cpu_manager()
+	return changed
+
+func _cpu_human_overlaps() -> Array:
+	var overlaps: Array = []
+	var reserved := player_ids.duplicate(true)
+	reserved.append_array(spectator_ids)
+	for id in reserved:
+		if cpu_player_ids.has(id):
+			overlaps.append(id)
+	return overlaps
+
+func prepare_race_roster(reason: String) -> void:
+	var changed := false
+	if is_server or !multiplayer.has_multiplayer_peer():
+		changed = _ensure_cpu_ids_do_not_overlap_humans(reason)
+	if changed and is_server and !race_active:
+		_broadcast_cpu_roster()
+	print("MXT_NET_ROSTER_DEBUG roster_snapshot",
+		" reason=", reason,
+		" uid=", multiplayer.get_unique_id(),
+		" is_server=", is_server,
+		" listen=", listen_server,
+		" player_ids=", player_ids,
+		" spectator_ids=", spectator_ids,
+		" cpu_ids=", cpu_player_ids,
+		" race_player_ids=", race_player_ids,
+		" race_cpu_ids=", race_cpu_player_ids,
+		" sim_roster=", get_simulation_roster(),
+		" overlaps=", _cpu_human_overlaps())
 
 func set_cpu_driver_count(count: int) -> void:
 	count = clamp(count, 0, CPU_ID_MAX - CPU_ID_MIN + 1)
@@ -325,6 +391,7 @@ static func _estimate_nested_inputs_size(inputs: Array) -> int:
 func reset_race_state() -> void:
 	race_active = false
 	race_player_ids.clear()
+	race_cpu_player_ids.clear()
 	_disconnected_during_race.clear()
 	pending_inputs.clear()
 	authoritative_inputs.clear()
@@ -355,6 +422,7 @@ func reset_race_state() -> void:
 	use_physics_ticks = 1.0
 	last_target_tick_update = Time.get_ticks_msec()
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
+	net_input_debug_prints = 0
 	player_settings.clear()
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
@@ -461,6 +529,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	sent_inputs_bytes.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
 	player_ids = [multiplayer.get_unique_id()]
+	_ensure_cpu_ids_do_not_overlap_humans("host")
 	player_settings.clear()
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
@@ -472,6 +541,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	net_input_debug_prints = 0
 	race_cpu_player_ids.clear()
 	get_window().title = "Host"
 	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
@@ -514,6 +584,7 @@ func join(ip: String, port: int = 27016) -> int:
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	net_input_debug_prints = 0
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
 	for id in cpu_player_ids:
@@ -579,10 +650,13 @@ func _accept_peer(id: int) -> void:
 		return
 	if !player_ids.has(id):
 		player_ids.append(id)
+	var cpu_ids_changed := _ensure_cpu_ids_do_not_overlap_humans("peer_accept")
 	last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
 	peer_desired_ahead[id] = 0.0
 	if !race_active:
 		_update_player_ids.rpc(player_ids)
+		if cpu_ids_changed:
+			_broadcast_cpu_roster()
 	for pid in player_settings.keys():
 		update_player_settings.rpc_id(id, player_settings[pid], pid)
 	_calc_state_offsets()
@@ -634,10 +708,20 @@ func _update_player_ids(ids: Array) -> void:
 
 @rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array) -> void:
+	prepare_race_roster("start_race")
 	race_active = true
 	race_player_ids = player_ids.duplicate(true)
 	race_cpu_player_ids = cpu_player_ids.duplicate(true)
 	_sync_cpu_manager()
+	print("MXT_NET_ROSTER_DEBUG race_snapshot",
+		" uid=", multiplayer.get_unique_id(),
+		" is_server=", is_server,
+		" player_ids=", player_ids,
+		" cpu_ids=", cpu_player_ids,
+		" race_player_ids=", race_player_ids,
+		" race_cpu_ids=", race_cpu_player_ids,
+		" sim_roster=", get_simulation_roster(),
+		" settings_count=", settings.size())
 	emit_signal("race_started", track_index, settings)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
@@ -739,16 +823,22 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 			if player_ids.has(id):
 				player_ids.erase(id)
 				spectator_ids.append(id)
+				var cpu_ids_changed := _ensure_cpu_ids_do_not_overlap_humans("settings_spectator")
 				if !race_active:
 					_update_player_ids.rpc(player_ids)
+					if cpu_ids_changed:
+						_broadcast_cpu_roster()
 				_calc_state_offsets()
 		else:
 			if spectator_ids.has(id):
 				spectator_ids.erase(id)
 			if !player_ids.has(id):
 				player_ids.append(id)
+				var cpu_ids_changed := _ensure_cpu_ids_do_not_overlap_humans("settings_player")
 				if !race_active:
 					_update_player_ids.rpc(player_ids)
+					if cpu_ids_changed:
+						_broadcast_cpu_roster()
 				_calc_state_offsets()
 
 func set_local_input(input: PackedByteArray) -> void:
@@ -788,6 +878,16 @@ func collect_server_inputs() -> Dictionary:
 	for i in range(roster.size()):
 		var pid = roster[i]
 		if not dict.has(pid):
+			if net_input_debug_prints < 120:
+				print("MXT_NET_INPUT_DEBUG server_waiting",
+					" server_tick=", server_tick,
+					" target_tick=", target_tick,
+					" missing_pid=", pid,
+					" roster=", roster,
+					" cpu_roster=", _get_cpu_roster(),
+					" pending_keys=", dict.keys(),
+					" last_received=", last_received_tick)
+				net_input_debug_prints += 1
 			if _disconnected_during_race.has(pid):
 				dict[pid] = _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
 			else:
@@ -868,6 +968,21 @@ func collect_client_inputs() -> Dictionary:
 			if prev > 0:
 				log_inputs_retransmitted += 1
 			log_inputs_sent += 1
+		if net_input_debug_prints < 120:
+			print("MXT_NET_INPUT_DEBUG client_send",
+				" uid=", multiplayer.get_unique_id(),
+				" first_tick=", first_tick,
+				" count=", inputs_arr.size(),
+				" local_tick=", local_tick,
+				" clients_server_tick=", clients_server_tick,
+				" clients_target_tick=", clients_target_tick,
+				" desired_ahead=", desired_ahead_ticks,
+				" last_server_input_tick=", last_server_input_tick,
+				" player_ids=", player_ids,
+				" cpu_ids=", cpu_player_ids,
+				" race_player_ids=", race_player_ids,
+				" race_cpu_ids=", race_cpu_player_ids)
+			net_input_debug_prints += 1
 		_client_send_input.rpc_id(1, first_tick, inputs_arr, desired_ahead_ticks, last_server_input_tick)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 	var frame_inputs: Dictionary
@@ -894,10 +1009,27 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 	var __prof_t0 := Time.get_ticks_usec()
 	if is_server:
 		var reject_before := target_tick - 5
+		var accepted := 0
+		var dropped := 0
 		for i in range(inputs.size()):
 			var tick := start_tick + i
 			if tick < reject_before:
 				log_server_late_drops += 1
+				dropped += 1
+				if net_input_debug_prints < 120:
+					print("MXT_NET_INPUT_DEBUG server_drop_late",
+						" sender=", multiplayer.get_remote_sender_id(),
+						" tick=", tick,
+						" reject_before=", reject_before,
+						" server_tick=", server_tick,
+						" target_tick=", target_tick,
+						" start_tick=", start_tick,
+						" inputs=", inputs.size(),
+						" player_ids=", player_ids,
+						" cpu_ids=", cpu_player_ids,
+						" race_player_ids=", race_player_ids,
+						" race_cpu_ids=", race_cpu_player_ids)
+					net_input_debug_prints += 1
 				continue
 			var input = inputs[i]
 			if !pending_inputs.has(tick):
@@ -906,6 +1038,25 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 			server_netcode_session.store_pending_input(tick, multiplayer.get_remote_sender_id(), input)
 			last_input_time[multiplayer.get_remote_sender_id()] = 0.001 * float(Time.get_ticks_msec())
 			last_received_tick[multiplayer.get_remote_sender_id()] = tick
+			accepted += 1
+		if net_input_debug_prints < 120:
+			print("MXT_NET_INPUT_DEBUG server_recv",
+				" sender=", multiplayer.get_remote_sender_id(),
+				" start_tick=", start_tick,
+				" inputs=", inputs.size(),
+				" accepted=", accepted,
+				" dropped=", dropped,
+				" reject_before=", reject_before,
+				" server_tick=", server_tick,
+				" target_tick=", target_tick,
+				" ahead=", ahead,
+				" ack=", ack,
+				" last_received=", last_received_tick.get(multiplayer.get_remote_sender_id(), -1),
+				" player_ids=", player_ids,
+				" cpu_ids=", cpu_player_ids,
+				" race_player_ids=", race_player_ids,
+				" race_cpu_ids=", race_cpu_player_ids)
+			net_input_debug_prints += 1
 		peer_desired_ahead[multiplayer.get_remote_sender_id()] = ahead
 		authoritative_acks[multiplayer.get_remote_sender_id()] = max(
 			ack,
@@ -919,6 +1070,41 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 		_prune_authoritative_history()
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
+
+func _apply_server_input_ack(ack_tick: int) -> void:
+	if ack_tick == -1:
+		return
+	var old_ack := last_ack_tick
+	last_ack_tick = max(last_ack_tick, ack_tick)
+	var newly = max(0, last_ack_tick - max(old_ack, -1))
+	log_inputs_acked += newly
+	for key in _log_sent_counts.keys():
+		if int(key) <= last_ack_tick:
+			_log_sent_counts.erase(key)
+	if sent_input_times.has(ack_tick):
+		var sample : float = 0.001 * float(Time.get_ticks_msec()) - sent_input_times[ack_tick]
+		if rtt_s == 0.0:
+			rtt_s = sample
+		else:
+			rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
+		sent_input_times.erase(ack_tick)
+		_update_desired_ahead()
+	for key in sent_inputs_bytes.keys():
+		if key <= last_ack_tick:
+			sent_inputs_bytes.erase(key)
+	for key in sent_input_times.keys():
+		if key <= last_ack_tick:
+			sent_input_times.erase(key)
+
+@rpc("any_peer", "unreliable", "call_local", 3)
+func _server_timing_update(this_ack: int, tgt: int, max_ahead: float) -> void:
+	if !race_active:
+		return
+	if not is_server or listen_server:
+		clients_target_tick = max(clients_target_tick, tgt)
+		last_target_tick_update = Time.get_ticks_msec()
+		clients_max_ahead_from_server = max_ahead
+	_apply_server_input_ack(this_ack)
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
 func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: PackedByteArray, state_uncompressed_size: int, tgt: int, max_ahead: float) -> void:
@@ -944,29 +1130,7 @@ func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: Pack
 		# rollback once from the first updated tick
 		_handle_input_update(start_tick, authoritative_inputs[start_tick])
 		last_server_input_tick = max(last_server_input_tick, last_tick)
-	if this_ack != -1:
-		var ack_tick := this_ack
-		var old_ack := last_ack_tick
-		last_ack_tick = max(last_ack_tick, ack_tick)
-		var newly = max(0, last_ack_tick - max(old_ack, -1))
-		log_inputs_acked += newly
-		for key in _log_sent_counts.keys():
-			if int(key) <= last_ack_tick:
-				_log_sent_counts.erase(key)
-		if sent_input_times.has(ack_tick):
-			var sample : float = 0.001 * float(Time.get_ticks_msec()) - sent_input_times[ack_tick]
-			if rtt_s == 0.0:
-				rtt_s = sample
-			else:
-				rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
-			sent_input_times.erase(ack_tick)
-			_update_desired_ahead()
-		for key in sent_inputs_bytes.keys():
-			if key <= last_ack_tick:
-				sent_inputs_bytes.erase(key)
-		for key in sent_input_times.keys():
-			if key <= last_ack_tick:
-				sent_input_times.erase(key)
+	_apply_server_input_ack(this_ack)
 	if state.size() > 0:
 		var _state_to_use := state
 		if state_uncompressed_size > 0:
@@ -1025,6 +1189,7 @@ func post_tick() -> void:
 				last_tick_local = int(pack["last"])
 			var _bytes := 4 + _estimate_nested_inputs_size(arr) + send_state.size() + 4 + 4 + 4 + 4
 			_acc_log_out(_bytes)
+			_server_timing_update.rpc_id(id, last_received_tick.get(id, -1), target_tick, max_ahead)
 			_server_broadcast.rpc_id(id, last_tick_local, arr, last_received_tick.get(id, -1), send_state, send_state_uncomp_size, target_tick, max_ahead)
 		server_tick += 1
 		if listen_server:
@@ -1064,6 +1229,7 @@ func _idle_broadcast() -> void:
 			last_tick = int(pack["last"])
 		var _bytes := 4 + _estimate_nested_inputs_size(arr) + 0 + 4 + 4 + 4 + 4
 		_acc_log_out(_bytes)
+		_server_timing_update.rpc_id(id, last_received_tick.get(id, -1), target_tick, max_ahead)
 		_server_broadcast.rpc_id(
 			id,
 			max(last_tick, 0),

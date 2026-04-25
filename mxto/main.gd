@@ -306,20 +306,20 @@ func _start_singleplayer_race(as_spectator: bool) -> void:
 	singleplayer_mode = true
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
-	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
-	var ps = car_settings.get_player_settings()
-	# Ensure we have a sensible car selection; fall back if needed
-	if ps.car_definition_path == "" and car_definitions.size() > 0:
-		ps.car_definition_path = car_definitions[0].resource_path
-	ps.spectator = as_spectator
 	var my_id := _local_player_id()
-	network_manager.player_settings[my_id] = ps.to_dict()
 	if as_spectator:
 		network_manager.player_ids = []
 		network_manager.spectator_ids = [my_id]
 	else:
 		network_manager.player_ids = [my_id]
 		network_manager.spectator_ids = []
+	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
+	var ps = car_settings.get_player_settings()
+	# Ensure we have a sensible car selection; fall back if needed
+	if ps.car_definition_path == "" and car_definitions.size() > 0:
+		ps.car_definition_path = car_definitions[0].resource_path
+	ps.spectator = as_spectator
+	network_manager.player_settings[my_id] = ps.to_dict()
 	# Invoke the normal race startup, but driven entirely by local state
 	var settings_array: Array = [ps.to_dict()]
 	var cpu_ids := network_manager.get_cpu_roster()
@@ -365,6 +365,8 @@ func _on_remove_cpu_button_pressed() -> void:
 	network_manager.remove_cpu_driver()
 
 func _local_player_id() -> int:
+	if singleplayer_mode:
+		return 0
 	return multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
 
 func _parse_level_triggers(bytes: PackedByteArray) -> Array:
@@ -676,6 +678,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
+		network_manager.prepare_race_roster("start_button")
 		var settings_array : Array = []
 		var roster := network_manager.get_simulation_roster()
 		for id in roster:
