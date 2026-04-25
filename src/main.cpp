@@ -1651,10 +1651,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 				(!decoded_car_input_present || decoded_car_input_present[i])) {
 			inp = decoded_car_inputs[i];
 		} else if (car_is_cpu && car_is_cpu[i]) {
-			NativeCpuDriverState* cpu_driver = find_native_cpu_driver(player_id);
-			if (cpu_driver && !cpu_driver->pending_input.is_empty()) {
-				inp = PlayerInput::from_bytes(cpu_driver->pending_input);
-			}
+			inp = PlayerInput::from_bytes(generate_native_cpu_input_for_tick(player_id, tick));
 		}
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
@@ -2792,31 +2789,38 @@ void GameSim::configure_native_cpu_drivers()
 		driver.player_id = car_player_ids ? car_player_ids[i] : -1;
 		driver.active = (car_is_cpu && car_is_cpu[i] && driver.player_id != -1) ? 1 : 0;
 		driver.last_generated_tick = -1;
-		driver.desired_lane = 0.0f;
-		driver.time_since_last_boost = 0.0f;
-		driver.rng_state = 0x9E3779B9u ^ static_cast<uint32_t>(i * 747796405u) ^ static_cast<uint32_t>(spawn_seed);
 		driver.pending_input = neutral;
 	}
 }
 
-static inline float native_cpu_rand_signed(uint32_t& state)
+static inline uint32_t native_cpu_hash_u32(uint32_t x)
 {
-	state = state * 1664525u + 1013904223u;
-	const float unit = static_cast<float>((state >> 8) & 0x00FFFFFFu) * (1.0f / 16777215.0f);
-	return unit * 2.0f - 1.0f;
+	x ^= x >> 16;
+	x *= 0x7feb352du;
+	x ^= x >> 15;
+	x *= 0x846ca68bu;
+	x ^= x >> 16;
+	return x;
 }
 
-void GameSim::update_native_cpu_driver(int car_index)
+static inline float native_cpu_rand01_from_seed(uint32_t seed)
 {
-	if (car_index < 0 || car_index >= num_cars || car_index >= static_cast<int>(native_cpu_drivers.size())) {
-		return;
-	}
-	NativeCpuDriverState& driver = native_cpu_drivers[car_index];
-	if (!driver.active) {
-		return;
-	}
+	return static_cast<float>(native_cpu_hash_u32(seed) & 0x00FFFFFFu) * (1.0f / 16777215.0f);
+}
 
-	const PhysicsCar& car = cars[car_index];
+static inline float native_cpu_smooth_noise_signed(uint32_t seed_base, int expected_tick, int period_ticks)
+{
+	const int t0 = expected_tick / period_ticks;
+	const int t1 = t0 + 1;
+	const float frac = static_cast<float>(expected_tick - t0 * period_ticks) / static_cast<float>(period_ticks);
+	const float smooth = frac * frac * (3.0f - 2.0f * frac);
+	const float a = native_cpu_rand01_from_seed(seed_base ^ (static_cast<uint32_t>(t0) * 0x27D4EB2Du)) * 2.0f - 1.0f;
+	const float b = native_cpu_rand01_from_seed(seed_base ^ (static_cast<uint32_t>(t1) * 0x27D4EB2Du)) * 2.0f - 1.0f;
+	return a + (b - a) * smooth;
+}
+
+static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed)
+{
 	PhysicsCarSoA& soa = *car.soa;
 	const int i = car.soa_index;
 	const SimBasis physical_basis = MXT_LOAD_TRANSFORM(soa, basis_physical, i).basis;
@@ -2824,15 +2828,22 @@ void GameSim::update_native_cpu_driver(int car_index)
 	const float road_tx = soa.road_sample[i].road_t.x;
 	const float energy = soa.energy[i];
 	const uint32_t tilt_state = soa.tilt_state[i * 4 + 1];
+	const uint32_t seed_base =
+		static_cast<uint32_t>(player_id) * 0x9E3779B9u ^
+		static_cast<uint32_t>(expected_tick) * 0x85EBCA6Bu ^
+		static_cast<uint32_t>(spawn_seed) * 0xC2B2AE35u;
+	const uint32_t lane_seed =
+		static_cast<uint32_t>(player_id) * 0x9E3779B9u ^
+		static_cast<uint32_t>(spawn_seed) * 0xC2B2AE35u ^
+		0xA341316Cu;
 
 	PlayerInput input = PlayerInput::from_neutral();
 	input.accelerate = 1.0f;
 
 	float desired_steer = (physical_basis.c0 + surface.c0).dot(surface.c2);
-	driver.desired_lane += native_cpu_rand_signed(driver.rng_state) * 0.01f;
-	driver.desired_lane = std::max(-0.75f, std::min(0.75f, driver.desired_lane));
+	const float desired_lane = native_cpu_smooth_noise_signed(lane_seed, expected_tick, 480) * 0.45f;
 
-	const float lane_offset = road_tx + driver.desired_lane;
+	const float lane_offset = road_tx + desired_lane;
 	input.strafe_left = std::max(0.0f, std::min(1.0f, std::abs(std::min(lane_offset, 0.0f)) * 4.0f));
 	input.strafe_right = std::max(0.0f, std::min(1.0f, std::max(lane_offset, 0.0f) * 4.0f));
 
@@ -2847,14 +2858,24 @@ void GameSim::update_native_cpu_driver(int car_index)
 		input.strafe_right = 1.0f;
 	}
 
-	const bool wants_boost = energy > 10.0f && driver.time_since_last_boost > 10.0f;
+	const uint32_t boost_phase = native_cpu_hash_u32(seed_base ^ 0xB5297A4Du) % 720u;
+	const bool wants_boost = energy > 10.0f && boost_phase == 0u;
 	input.boost = wants_boost;
-	if (wants_boost) {
-		driver.time_since_last_boost = 0.0f;
-	} else {
-		driver.time_since_last_boost += 1.0f;
+
+	return input;
+}
+
+void GameSim::update_native_cpu_driver(int car_index)
+{
+	if (car_index < 0 || car_index >= num_cars || car_index >= static_cast<int>(native_cpu_drivers.size())) {
+		return;
+	}
+	NativeCpuDriverState& driver = native_cpu_drivers[car_index];
+	if (!driver.active) {
+		return;
 	}
 
+	PlayerInput input = native_cpu_generate_input_for_car(cars[car_index], driver.player_id, tick, spawn_seed);
 	driver.pending_input = PlayerInput::to_bytes(input);
 	driver.last_generated_tick = tick;
 }
@@ -2871,15 +2892,24 @@ void GameSim::update_native_cpu_drivers()
 
 godot::PackedByteArray GameSim::get_native_cpu_input_for_tick(int player_id, int expected_tick)
 {
+	return generate_native_cpu_input_for_tick(player_id, expected_tick);
+}
+
+godot::PackedByteArray GameSim::generate_native_cpu_input_for_tick(int player_id, int expected_tick)
+{
 	NativeCpuDriverState* driver = find_native_cpu_driver(static_cast<int32_t>(player_id));
 	if (!driver) {
 		return PlayerInput::to_bytes(PlayerInput::from_neutral());
 	}
-	if (driver->pending_input.is_empty()) {
-		driver->pending_input = PlayerInput::to_bytes(PlayerInput::from_neutral());
+	for (int car_index = 0; car_index < num_cars; ++car_index) {
+		if (car_player_ids && car_player_ids[car_index] == player_id) {
+			PlayerInput input = native_cpu_generate_input_for_car(cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed);
+			driver->pending_input = PlayerInput::to_bytes(input);
+			driver->last_generated_tick = expected_tick;
+			return driver->pending_input;
+		}
 	}
-	(void)expected_tick;
-	return driver->pending_input;
+	return PlayerInput::to_bytes(PlayerInput::from_neutral());
 }
 
 void GameSim::update_render_visual_snapshots(int visual_count)

@@ -35,6 +35,7 @@ class NetcodeSession : public Object {
 	InputFrame pending_inputs[HISTORY_LEN];
 
 	static PlayerInput decay_predicted_input(const PlayerInput& prev);
+	void recalculate_predictions_internal(GameSim* sim, int start_tick, int end_tick);
 	InputFrame& frame_for(InputFrame* frames, int32_t tick);
 	const InputFrame* find_frame(const InputFrame* frames, int32_t tick) const;
 	int find_racer_index(int32_t player_id) const;

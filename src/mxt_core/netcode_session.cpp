@@ -174,18 +174,13 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick)
 	if (!sim || !server_has_full_input_frame(tick)) {
 		return false;
 	}
-	sim->update_native_cpu_drivers();
 	InputFrame& pending = frame_for(pending_inputs, tick);
 	InputFrame& authoritative = frame_for(authoritative_history, tick);
 	clear_frame(authoritative, tick);
 	for (int i = 0; i < racer_count; ++i) {
 		if (cpu_flags[i]) {
-			const GameSim::NativeCpuDriverState* cpu_driver = sim->find_native_cpu_driver(player_ids[i]);
-			if (cpu_driver && !cpu_driver->pending_input.is_empty()) {
-				authoritative.inputs[i] = PlayerInput::from_bytes(cpu_driver->pending_input);
-			} else {
-				authoritative.inputs[i] = neutral_input;
-			}
+			godot::PackedByteArray cpu_bytes = sim->generate_native_cpu_input_for_tick(player_ids[i], tick);
+			authoritative.inputs[i] = PlayerInput::from_bytes(cpu_bytes);
 			authoritative.present[i] = 1;
 		} else if (pending.present[i]) {
 			authoritative.inputs[i] = pending.inputs[i];
@@ -203,7 +198,7 @@ bool NetcodeSession::tick_client_predicted_frame(godot::Object* game_sim_obj, in
 	if (!sim) {
 		return false;
 	}
-	recalculate_predictions(tick, tick + 1);
+	recalculate_predictions_internal(sim, tick, tick + 1);
 	const InputFrame* frame = find_frame(input_history, tick);
 	if (!frame) {
 		return false;
@@ -215,6 +210,11 @@ bool NetcodeSession::tick_client_predicted_frame(godot::Object* game_sim_obj, in
 
 void NetcodeSession::recalculate_predictions(int start_tick, int end_tick)
 {
+	recalculate_predictions_internal(nullptr, start_tick, end_tick);
+}
+
+void NetcodeSession::recalculate_predictions_internal(GameSim* sim, int start_tick, int end_tick)
+{
 	for (int tick = start_tick; tick < end_tick; ++tick) {
 		InputFrame& frame = frame_for(input_history, tick);
 		clear_frame(frame, tick);
@@ -224,6 +224,10 @@ void NetcodeSession::recalculate_predictions(int start_tick, int end_tick)
 			if (cpu_flags[i]) {
 				if (authoritative && authoritative->present[i]) {
 					frame.inputs[i] = authoritative->inputs[i];
+					frame.present[i] = 1;
+				} else if (sim) {
+					godot::PackedByteArray cpu_bytes = sim->generate_native_cpu_input_for_tick(player_ids[i], tick);
+					frame.inputs[i] = PlayerInput::from_bytes(cpu_bytes);
 					frame.present[i] = 1;
 				} else if (previous && previous->present[i]) {
 					frame.inputs[i] = previous->inputs[i];
@@ -253,6 +257,7 @@ bool NetcodeSession::replay_history(godot::Object* game_sim_obj, int start_tick,
 		return false;
 	}
 	for (int tick = start_tick; tick < end_tick; ++tick) {
+		recalculate_predictions_internal(sim, tick, tick + 1);
 		const InputFrame* frame = find_frame(input_history, tick);
 		if (!frame) {
 			return false;

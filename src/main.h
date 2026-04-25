@@ -158,9 +158,6 @@ namespace godot {
 			int32_t player_id = -1;
 			uint8_t active = 0;
 			int32_t last_generated_tick = -1;
-			float desired_lane = 0.0f;
-			float time_since_last_boost = 0.0f;
-			uint32_t rng_state = 1;
 			godot::PackedByteArray pending_input;
 		};
 		std::vector<NativeCpuDriverState> native_cpu_drivers;
@@ -174,6 +171,7 @@ namespace godot {
 		void configure_native_cpu_drivers();
 		void update_native_cpu_drivers();
 		void update_native_cpu_driver(int car_index);
+		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
