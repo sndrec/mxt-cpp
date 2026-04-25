@@ -1948,7 +1948,6 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->last_hit_tick[soa_index] = 0;
 	soa->has_last_hit_tick[soa_index] = false;
 
-	soa->height_adjust_from_boost[soa_index] = 0.0f;
 	soa->grip_frames_from_accel_press[soa_index] = 0;
 	soa->air_time[soa_index] = 0;
 	soa->spinattack_angle[soa_index] = 0.0f;
@@ -1967,7 +1966,6 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->boost_delay_frame_counter[soa_index] = 0;
 	soa->car_hit_invincibility[soa_index] = 0;
 	soa->turn_reaction_input[soa_index] = 0.0f;
-	soa->turn_reaction_effect[soa_index] = 0.0f;
 	soa->boost_energy_use_mult[soa_index] = soa->car_properties[soa_index] ? soa->car_properties[soa_index]->boost_energy_use_rate : 1.0f;
 	soa->energy_recharge_mult[soa_index] = soa->car_properties[soa_index] ? soa->car_properties[soa_index]->energy_recharge_rate : 1.0f;
 	soa->breakdown_frame_counter[soa_index] = 0;
@@ -3460,7 +3458,6 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	soa->grip_frames_from_accel_press[soa_index] = 0;
 	soa->boost_frames[soa_index] = 0;
 	soa->boost_frames_manual[soa_index] = 0;
-	soa->height_adjust_from_boost[soa_index] = 0.0f;
 
 	soa->machine_state[soa_index] &= ~(MACHINESTATE::ZEROHP |
 		MACHINESTATE::AIRBORNE |
@@ -4047,11 +4044,11 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	const bool other_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
 
 	const SimVec3 plane_point = (p1 + p2) * 0.5f;
-	constexpr float depenetration_overcorrection = 1.01f;
+	constexpr float depenetration_overcorrection = 1.1f;
 	move_to_plane_side(*this, plane_point, collision_normal, -radius1 * depenetration_overcorrection);
 	move_to_plane_side(other_machine, plane_point, collision_normal, radius2 * depenetration_overcorrection);
 
-	SimVec3 impulse = collision_normal * (-1.2f * closing_speed);
+	SimVec3 impulse = collision_normal * (-0.8f * closing_speed);
 	float impulse_strength = impulse.length();
 
 	float damage1 = impulse_strength * 0.05f;

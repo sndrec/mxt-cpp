@@ -85,7 +85,6 @@ struct ImpactData {
 	X(uint32_t, simulation_tick, 0) \
 	X(uint32_t, last_hit_tick, 0) \
 	X(bool, has_last_hit_tick, false) \
-	X(float, height_adjust_from_boost, 0.0f) \
 	X(uint32_t, spinattack_direction, 0) \
 	X(float, spinattack_angle, 0.0f) \
 	X(float, spinattack_decrement, 0.0f) \
@@ -122,7 +121,6 @@ struct ImpactData {
 	X(uint8_t, car_hit_invincibility, 0) \
 	X(uint8_t, boost_delay_frame_counter, 0) \
 	X(float, turn_reaction_input, 0.0f) \
-	X(float, turn_reaction_effect, 0.0f) \
 	X(float, boost_energy_use_mult, 1.0f) \
 	X(float, energy_recharge_mult, 1.0f) \
 	X(uint32_t, frames_since_death, 0) \
@@ -135,10 +133,7 @@ struct ImpactData {
 	X(float, stat_track_collision, 0.0f) \
 	X(uint32_t, state_2, 0) \
 	X(float, side_attack_indicator, 0.0f) \
-	X(float, unk_stat_0x5d4, 0.0f) \
 	X(uint32_t, g_anim_timer, 0) \
-	X(int, strafe_visual_roll, 0) \
-	X(SimQuat, unk_quat_0x5c4, SimQuat()) \
 	X(float, m_accel_setting, 0.5f) \
 	X(uint64_t, level_start_time, 0) \
 	X(int, some_breakdown_int, 0) \

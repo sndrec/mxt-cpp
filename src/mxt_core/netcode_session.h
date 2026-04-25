@@ -29,6 +29,7 @@ class NetcodeSession : public Object {
 	uint8_t cpu_flags[MAX_RACERS] = {};
 	PlayerInput neutral_input = PlayerInput::from_neutral();
 	PlayerInput last_local_input = PlayerInput::from_neutral();
+	InputFrame local_input_history[HISTORY_LEN];
 	InputFrame input_history[HISTORY_LEN];
 	InputFrame authoritative_history[HISTORY_LEN];
 	InputFrame pending_inputs[HISTORY_LEN];
@@ -49,6 +50,7 @@ public:
 	void reset();
 	void configure(godot::Array p_player_ids, godot::Array p_cpu_flags, int p_local_player_id);
 	void set_local_input(godot::PackedByteArray input_bytes);
+	void store_local_input(int tick, godot::PackedByteArray input_bytes);
 	void store_authoritative_input(int tick, int player_id, godot::PackedByteArray input_bytes);
 	void store_pending_input(int tick, int player_id, godot::PackedByteArray input_bytes);
 	bool server_has_full_input_frame(int tick) const;

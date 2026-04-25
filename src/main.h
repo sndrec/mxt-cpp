@@ -238,11 +238,19 @@ namespace godot {
 		std::vector<int> render_car_archetype_indices;
 		std::vector<int> render_car_slots;
 		std::vector<SimTransform> render_visual_prev_transforms;
-		std::vector<SimTransform> render_visual_current_transforms;
-		std::vector<float> render_visual_prev_ground_distances;
-		std::vector<float> render_visual_current_ground_distances;
-		std::vector<uint8_t> render_visual_initialized;
-		godot::Camera3D* gameplay_camera_node = nullptr;
+			std::vector<SimTransform> render_visual_current_transforms;
+			std::vector<float> render_visual_prev_ground_distances;
+			std::vector<float> render_visual_current_ground_distances;
+			std::vector<uint8_t> render_visual_initialized;
+			struct RenderVehicleVisualState {
+				float startup_wobble = 0.0f;
+				float turn_reaction_effect = 0.0f;
+				float height_adjust_from_boost = 0.0f;
+				int strafe_visual_roll = 0;
+				SimQuat visual_quat;
+			};
+			std::vector<RenderVehicleVisualState> render_vehicle_visual_state;
+			godot::Camera3D* gameplay_camera_node = nullptr;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;
 		int spawn_seed = 0;

@@ -12,6 +12,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("reset"), &NetcodeSession::reset);
 	ClassDB::bind_method(D_METHOD("configure", "player_ids", "cpu_flags", "local_player_id"), &NetcodeSession::configure);
 	ClassDB::bind_method(D_METHOD("set_local_input", "input_bytes"), &NetcodeSession::set_local_input);
+	ClassDB::bind_method(D_METHOD("store_local_input", "tick", "input_bytes"), &NetcodeSession::store_local_input);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
 	ClassDB::bind_method(D_METHOD("server_has_full_input_frame", "tick"), &NetcodeSession::server_has_full_input_frame);
@@ -87,6 +88,7 @@ void NetcodeSession::reset()
 		cpu_flags[i] = 0;
 	}
 	for (int i = 0; i < HISTORY_LEN; ++i) {
+		clear_frame(local_input_history[i], -1);
 		clear_frame(input_history[i], -1);
 		clear_frame(authoritative_history[i], -1);
 		clear_frame(pending_inputs[i], -1);
@@ -106,6 +108,7 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 		cpu_flags[i] = 0;
 	}
 	for (int i = 0; i < HISTORY_LEN; ++i) {
+		clear_frame(local_input_history[i], -1);
 		clear_frame(input_history[i], -1);
 		clear_frame(authoritative_history[i], -1);
 		clear_frame(pending_inputs[i], -1);
@@ -115,6 +118,18 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 void NetcodeSession::set_local_input(godot::PackedByteArray input_bytes)
 {
 	last_local_input = PlayerInput::from_bytes(input_bytes);
+}
+
+void NetcodeSession::store_local_input(int tick, godot::PackedByteArray input_bytes)
+{
+	const int index = find_racer_index(local_player_id);
+	if (index < 0) {
+		return;
+	}
+	InputFrame& frame = frame_for(local_input_history, tick);
+	frame.inputs[index] = PlayerInput::from_bytes(input_bytes);
+	frame.present[index] = 1;
+	last_local_input = frame.inputs[index];
 }
 
 void NetcodeSession::store_authoritative_input(int tick, int player_id, godot::PackedByteArray input_bytes)
@@ -220,7 +235,8 @@ void NetcodeSession::recalculate_predictions(int start_tick, int end_tick)
 				frame.inputs[i] = authoritative->inputs[i];
 				frame.present[i] = 1;
 			} else if (player_ids[i] == local_player_id) {
-				frame.inputs[i] = last_local_input;
+				const InputFrame* local = find_frame(local_input_history, tick);
+				frame.inputs[i] = (local && local->present[i]) ? local->inputs[i] : last_local_input;
 				frame.present[i] = 1;
 			} else if (previous && previous->present[i]) {
 				frame.inputs[i] = decay_predicted_input(previous->inputs[i]);

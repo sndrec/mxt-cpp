@@ -841,6 +841,7 @@ func collect_client_inputs() -> Dictionary:
 		return {}
 	sent_inputs_bytes[local_tick] = last_local_input_bytes
 	sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
+	netcode_session.store_local_input(local_tick, last_local_input_bytes)
 	if is_server:
 		if not pending_inputs.has(local_tick):
 			pending_inputs[local_tick] = {}
