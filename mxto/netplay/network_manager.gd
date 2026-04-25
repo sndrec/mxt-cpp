@@ -53,6 +53,9 @@ var base_wait_time: float = 1.0 / 60.0
 const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.0003
+const START_SYNC_SAMPLE_COUNT := 4
+const START_SYNC_PING_INTERVAL_MS := 50
+const START_SYNC_START_DELAY_MS := 750
 var player_settings := {}
 var ready_players : Array[int] = []
 const STATE_BROADCAST_INTERVAL_TICKS := 60
@@ -80,6 +83,19 @@ var authoritative_acks := {}
 var last_server_input_tick := -1
 var latest_state_tick := -1
 var race_active: bool = false
+var start_sync_active := false
+var start_sync_scheduled := false
+var start_sync_server_start_msec := 0
+var start_sync_local_start_msec := 0
+var start_sync_authoritative_started := false
+var start_sync_client_started := false
+var start_sync_last_ping_msec := 0
+var start_sync_seq := 0
+var start_sync_client_sample_count := 0
+var start_sync_server_offset_msec := 0.0
+var start_sync_sample_counts := {}
+var start_sync_peer_ahead := {}
+var start_sync_initial_max_ahead := 2.0
 
 var use_state_compression := true
 
@@ -217,6 +233,21 @@ func prepare_race_roster(reason: String) -> void:
 		" race_cpu_ids=", race_cpu_player_ids,
 		" sim_roster=", get_simulation_roster(),
 		" overlaps=", _cpu_human_overlaps())
+
+func _reset_start_sync_state() -> void:
+	start_sync_active = false
+	start_sync_scheduled = false
+	start_sync_server_start_msec = 0
+	start_sync_local_start_msec = 0
+	start_sync_authoritative_started = false
+	start_sync_client_started = false
+	start_sync_last_ping_msec = 0
+	start_sync_seq = 0
+	start_sync_client_sample_count = 0
+	start_sync_server_offset_msec = 0.0
+	start_sync_sample_counts.clear()
+	start_sync_peer_ahead.clear()
+	start_sync_initial_max_ahead = 2.0
 
 func set_cpu_driver_count(count: int) -> void:
 	count = clamp(count, 0, CPU_ID_MAX - CPU_ID_MIN + 1)
@@ -423,6 +454,7 @@ func reset_race_state() -> void:
 	last_target_tick_update = Time.get_ticks_msec()
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
 	net_input_debug_prints = 0
+	_reset_start_sync_state()
 	player_settings.clear()
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
@@ -470,6 +502,7 @@ func on_disconnect() -> void:
 func server_process() -> void:
 	if !race_active:
 		return
+	_process_start_sync()
 	if is_server and server_game_sim != null and server_game_sim.sim_started:
 		target_tick += 1
 		if target_tick > server_tick + MAX_AHEAD_TICKS:
@@ -503,6 +536,62 @@ func server_process() -> void:
 		if clients_target_tick > clients_server_tick + MAX_AHEAD_TICKS:
 			clients_target_tick = clients_server_tick + MAX_AHEAD_TICKS
 
+func _process_start_sync() -> void:
+	if !race_active:
+		return
+	var now := Time.get_ticks_msec()
+	if !is_server and !listen_server and game_sim != null and !game_sim.sim_started:
+		if now >= start_sync_last_ping_msec + START_SYNC_PING_INTERVAL_MS and !start_sync_scheduled:
+			start_sync_last_ping_msec = now
+			start_sync_seq += 1
+			_start_sync_ping.rpc_id(1, now, start_sync_seq)
+	if start_sync_scheduled:
+		if !start_sync_client_started and game_sim != null and !game_sim.sim_started and now >= start_sync_local_start_msec:
+			var initial_target := int(ceil(clamp(desired_ahead_ticks, 0.0, float(MAX_AHEAD_TICKS))))
+			_begin_client_simulation_now(initial_target)
+		if is_server and !start_sync_authoritative_started and server_game_sim != null and !server_game_sim.sim_started and now >= start_sync_server_start_msec:
+			_begin_authoritative_simulation_now()
+
+@rpc("any_peer", "unreliable")
+func _start_sync_ping(client_send_msec: int, seq: int) -> void:
+	if !race_active or !is_server or start_sync_scheduled:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if !player_ids.has(sender):
+		return
+	_start_sync_pong.rpc_id(sender, client_send_msec, Time.get_ticks_msec(), seq)
+
+@rpc("any_peer", "unreliable")
+func _start_sync_pong(client_send_msec: int, server_recv_msec: int, seq: int) -> void:
+	if !race_active or is_server:
+		return
+	var now := Time.get_ticks_msec()
+	var sample_rtt_s: float = max(0.0, 0.001 * float(now - client_send_msec))
+	if rtt_s == 0.0:
+		rtt_s = sample_rtt_s
+	else:
+		rtt_s = lerp(rtt_s, sample_rtt_s, RTT_SMOOTHING)
+	var midpoint := 0.5 * float(client_send_msec + now)
+	var sample_offset := float(server_recv_msec) - midpoint
+	if start_sync_client_sample_count == 0:
+		start_sync_server_offset_msec = sample_offset
+	else:
+		start_sync_server_offset_msec = lerp(start_sync_server_offset_msec, sample_offset, 0.35)
+	start_sync_client_sample_count += 1
+	_update_desired_ahead()
+	_client_start_sync_sample.rpc_id(1, seq, rtt_s, desired_ahead_ticks)
+
+@rpc("any_peer", "unreliable")
+func _client_start_sync_sample(seq: int, client_rtt_s: float, client_ahead: float) -> void:
+	if !race_active or !is_server or start_sync_scheduled:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if !player_ids.has(sender):
+		return
+	start_sync_sample_counts[sender] = int(start_sync_sample_counts.get(sender, 0)) + 1
+	start_sync_peer_ahead[sender] = clamp(client_ahead, 0.0, float(MAX_AHEAD_TICKS))
+	peer_desired_ahead[sender] = start_sync_peer_ahead[sender]
+	_try_schedule_synced_start()
 
 func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> int:
 	var peer := ENetMultiplayerPeer.new()
@@ -542,6 +631,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	last_server_input_tick = -1
 	latest_state_tick = -1
 	net_input_debug_prints = 0
+	_reset_start_sync_state()
 	race_cpu_player_ids.clear()
 	get_window().title = "Host"
 	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
@@ -585,6 +675,7 @@ func join(ip: String, port: int = 27016) -> int:
 	last_server_input_tick = -1
 	latest_state_tick = -1
 	net_input_debug_prints = 0
+	_reset_start_sync_state()
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
 	for id in cpu_player_ids:
@@ -709,6 +800,7 @@ func _update_player_ids(ids: Array) -> void:
 @rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array) -> void:
 	prepare_race_roster("start_race")
+	_reset_start_sync_state()
 	race_active = true
 	race_player_ids = player_ids.duplicate(true)
 	race_cpu_player_ids = cpu_player_ids.duplicate(true)
@@ -727,6 +819,10 @@ func start_race(track_index: int, settings: Array) -> void:
 		var now := 0.001 * float(Time.get_ticks_msec())
 		for id in player_ids + spectator_ids:
 			last_input_time[id] = now
+		if listen_server:
+			var local_id := multiplayer.get_unique_id()
+			start_sync_sample_counts[local_id] = START_SYNC_SAMPLE_COUNT
+			start_sync_peer_ahead[local_id] = desired_ahead_ticks
 
 func send_start_race(track_index: int, settings: Array) -> void:
 	if is_server:
@@ -777,19 +873,101 @@ func client_ready() -> void:
 		if !ready_players.has(id):
 			ready_players.append(id)
 			if ready_players.size() == player_ids.size():
-				begin_simulation.rpc()
-				begin_simulation()
+				_begin_start_sync()
 
 @rpc("any_peer", "reliable")
 func begin_simulation() -> void:
 	if !race_active:
 		return
-	if game_sim != null:
-		game_sim.set_sim_started(true)
-		local_tick = 0
-	if is_server and server_game_sim != null:
-		server_game_sim.set_sim_started(true)
-		target_tick = 0
+	_begin_client_simulation_now(0)
+	_begin_authoritative_simulation_now()
+
+func _begin_start_sync() -> void:
+	if !is_server or start_sync_active or start_sync_scheduled:
+		return
+	start_sync_active = true
+	start_sync_sample_counts.clear()
+	start_sync_peer_ahead.clear()
+	if listen_server:
+		var local_id := multiplayer.get_unique_id()
+		start_sync_sample_counts[local_id] = START_SYNC_SAMPLE_COUNT
+		start_sync_peer_ahead[local_id] = desired_ahead_ticks
+	_try_schedule_synced_start()
+
+func _all_start_sync_samples_ready() -> bool:
+	for id in player_ids:
+		if is_server and listen_server and id == multiplayer.get_unique_id():
+			continue
+		if int(start_sync_sample_counts.get(id, 0)) < START_SYNC_SAMPLE_COUNT:
+			return false
+	return true
+
+func _try_schedule_synced_start() -> void:
+	if !is_server or !start_sync_active or start_sync_scheduled:
+		return
+	if ready_players.size() < player_ids.size():
+		return
+	if !_all_start_sync_samples_ready():
+		return
+	var max_ahead := desired_ahead_ticks if listen_server else 0.0
+	for id in player_ids:
+		max_ahead = max(max_ahead, float(start_sync_peer_ahead.get(id, 0.0)))
+	start_sync_initial_max_ahead = clamp(max_ahead, 0.0, float(MAX_AHEAD_TICKS))
+	var lead_msec := int(ceil(start_sync_initial_max_ahead * 1000.0 / 60.0))
+	var start_delay_msec: int = max(START_SYNC_START_DELAY_MS, lead_msec + 250)
+	start_sync_server_start_msec = Time.get_ticks_msec() + start_delay_msec
+	start_sync_scheduled = true
+	print("MXT_NET_START_SYNC scheduled",
+		" server_start_msec=", start_sync_server_start_msec,
+		" delay_msec=", start_delay_msec,
+		" max_ahead=", start_sync_initial_max_ahead,
+		" peer_ahead=", start_sync_peer_ahead,
+		" samples=", start_sync_sample_counts)
+	begin_simulation_at.rpc(start_sync_server_start_msec, start_sync_initial_max_ahead)
+	begin_simulation_at(start_sync_server_start_msec, start_sync_initial_max_ahead)
+
+@rpc("any_peer", "reliable")
+func begin_simulation_at(server_start_msec: int, initial_max_ahead: float) -> void:
+	if !race_active:
+		return
+	start_sync_active = true
+	start_sync_scheduled = true
+	start_sync_server_start_msec = server_start_msec
+	start_sync_initial_max_ahead = initial_max_ahead
+	clients_max_ahead_from_server = initial_max_ahead
+	clients_server_tick = 0
+	last_target_tick_update = Time.get_ticks_msec()
+	var client_lead_msec := int(ceil(clamp(desired_ahead_ticks, 0.0, float(MAX_AHEAD_TICKS)) * 1000.0 / 60.0))
+	if is_server:
+		start_sync_local_start_msec = server_start_msec - client_lead_msec
+	else:
+		start_sync_local_start_msec = int(round(float(server_start_msec) - start_sync_server_offset_msec)) - client_lead_msec
+	print("MXT_NET_START_SYNC received",
+		" uid=", multiplayer.get_unique_id(),
+		" is_server=", is_server,
+		" server_start_msec=", server_start_msec,
+		" local_start_msec=", start_sync_local_start_msec,
+		" desired_ahead=", desired_ahead_ticks,
+		" offset=", start_sync_server_offset_msec,
+		" max_ahead=", initial_max_ahead)
+
+func _begin_client_simulation_now(initial_target_tick: int) -> void:
+	if game_sim == null or game_sim.sim_started:
+		return
+	game_sim.set_sim_started(true)
+	local_tick = 0
+	clients_server_tick = 0
+	clients_target_tick = clamp(initial_target_tick, 0, MAX_AHEAD_TICKS)
+	last_target_tick_update = Time.get_ticks_msec()
+	start_sync_client_started = true
+
+func _begin_authoritative_simulation_now() -> void:
+	if !is_server or server_game_sim == null or server_game_sim.sim_started:
+		return
+	server_tick = 0
+	target_tick = 0
+	server_game_sim.set_sim_started(true)
+	start_sync_authoritative_started = true
 
 func send_player_settings(settings: Dictionary) -> void:
 	var my_id := multiplayer.get_unique_id()
@@ -1368,6 +1546,7 @@ func disconnect_from_server() -> void:
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	_reset_start_sync_state()
 
 func _prune_authoritative_history() -> void:
 	var min_ack := -1

@@ -828,15 +828,21 @@ func _simulate_host_frame(local_input_bytes: PackedByteArray):
 	network_manager.collect_client_inputs()
 
 func _simulate_single_tick():
-	var frame_inputs := network_manager.collect_client_inputs()
-	if frame_inputs.is_empty():
-		return
-	if network_manager.is_server:
-		var server_inputs := network_manager.collect_server_inputs()
-		if !server_inputs.is_empty():
+	var loops := 0
+	const MAX_TICKS_PER_FRAME := 120
+	while loops < MAX_TICKS_PER_FRAME:
+		var frame_inputs := network_manager.collect_client_inputs()
+		if frame_inputs.is_empty():
+			return
+		if network_manager.is_server:
+			var server_inputs := network_manager.collect_server_inputs()
+			if !server_inputs.is_empty():
+				network_manager.post_tick()
+		else:
 			network_manager.post_tick()
-	else:
-		network_manager.post_tick()
+		loops += 1
+		if network_manager.is_server or network_manager.local_tick >= network_manager.clients_target_tick:
+			return
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F3:
