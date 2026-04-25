@@ -5,8 +5,10 @@
 #include "godot_cpp/classes/node3d.hpp"
 #include "godot_cpp/classes/multi_mesh_instance3d.hpp"
 #include "godot_cpp/classes/multi_mesh.hpp"
+#include "godot_cpp/classes/camera3d.hpp"
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "godot_cpp/variant/array.hpp"
+#include "fzgx_gameplay_camera.h"
 #include "track/racetrack.h"
 #include "mxt_core/heap_handler.h"
 #include "mxt_core/player_input.h"
@@ -170,6 +172,7 @@ namespace godot {
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
+		void update_native_gameplay_camera(bool step_camera);
 		void ensure_vehicle_tick_soa_capacity(int capacity);
 		void free_vehicle_tick_soa();
 		void record_phase_profile_sample();
@@ -214,12 +217,17 @@ namespace godot {
 		godot::Object* car_render_manager = nullptr;
 		std::vector<godot::Node3D*> render_car_transform_nodes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_car_multimeshes;
+		std::vector<godot::Ref<godot::MultiMesh>> render_shadow_multimeshes;
 		std::vector<SimTransform> render_car_local_transforms;
+		std::vector<SimTransform> render_shadow_local_transforms;
 		std::vector<int> render_car_archetype_indices;
 		std::vector<int> render_car_slots;
 		std::vector<SimTransform> render_visual_prev_transforms;
 		std::vector<SimTransform> render_visual_current_transforms;
 		std::vector<uint8_t> render_visual_initialized;
+		godot::Camera3D* gameplay_camera_node = nullptr;
+		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
+		int gameplay_camera_player_id = -1;
 		int spawn_seed = 0;
 
 		GameSim();
@@ -233,9 +241,12 @@ namespace godot {
 		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }
 		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
 		void set_car_render_manager(godot::Object* p_car_render_manager);
+		void set_gameplay_camera(godot::Camera3D* p_camera, int player_id);
 		void tick_gamesim(godot::Array player_inputs);
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;
+		int get_player_race_place(int player_id) const;
+		godot::Transform3D get_player_render_transform(int player_id) const;
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
 		void render_gamesim();

@@ -596,6 +596,10 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
+	if local_player_index >= 0 and local_player_index < car_node_container.get_child_count():
+		var local_car := car_node_container.get_child(local_player_index) as VisualCar
+		if local_car != null:
+			game_sim.set_gameplay_camera(local_car.car_camera, local_car.owning_id)
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
 		server_game_sim.spark_node_container = spark_node_container

@@ -125,37 +125,7 @@ func _process( _delta:float ) -> void:
 		countdowncontrol.scale += Vector2(1, 1) * _delta * 4
 		countdowncontrol.modulate.a = max(0, countdowncontrol.modulate.a - _delta * 4)
 	
-	# Determine race placements based on each car's lap and lap progress.
-	var cars : Array[VisualCar] = []
-	for c in car.game_manager.car_node_container.get_children():
-		if c is VisualCar:
-			cars.append(c)
-
-	cars.sort_custom(func(a:VisualCar, b:VisualCar) -> bool:
-		var af := nm.player_finish_placements.has(a.owning_id)
-		var bf := nm.player_finish_placements.has(b.owning_id)
-		if af and bf:
-			return nm.player_finish_placements[a.owning_id] < nm.player_finish_placements[b.owning_id]
-		elif af:
-			return true
-		elif bf:
-			return false
-		if a.lap == b.lap:
-			return a.lap_progress > b.lap_progress
-		return a.lap > b.lap)
-
-	var our_place := 1
-	for i in cars.size():
-		if i < leaderboard_container.get_child_count():
-			var label := leaderboard_container.get_child(i)
-			var use_name := str(cars[i].owning_id)
-			if cars[i].player_settings != null and cars[i].player_settings.has_method("get"):
-				use_name = cars[i].player_settings.username
-			label.text = str(i + 1) + ". " + use_name
-		if cars[i] == car or cars[i].owning_id == local_id:
-			our_place = i + 1
-	for i in range(cars.size(), leaderboard_container.get_child_count()):
-		leaderboard_container.get_child(i).text = ""
+	var our_place := car.game_manager.game_sim.get_player_race_place(local_id)
 
 	if nm.player_finish_placements.has(local_id):
 		our_place = nm.player_finish_placements[local_id]

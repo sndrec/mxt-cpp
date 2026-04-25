@@ -1,7 +1,10 @@
 #include "main.h"
 #include "godot_cpp/core/class_db.hpp"
 #include "godot_cpp/classes/engine.hpp"
+#include "godot_cpp/classes/input.hpp"
+#include "godot_cpp/classes/viewport.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
+#include "godot_cpp/variant/string_name.hpp"
 #include "godot_cpp/core/math.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
@@ -1143,12 +1146,15 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_player_metadata", "player_ids", "cpu_flags"), &GameSim::set_player_metadata);
 	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
 	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
+	ClassDB::bind_method(D_METHOD("get_player_race_place", "player_id"), &GameSim::get_player_race_place);
+	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
 	ClassDB::bind_method(D_METHOD("get_spark_node_container"), &GameSim::get_spark_node_container);
 	ClassDB::bind_method(D_METHOD("set_spark_node_container", "p_spark_node_container"), &GameSim::set_spark_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_render_manager", "p_car_render_manager"), &GameSim::set_car_render_manager);
+	ClassDB::bind_method(D_METHOD("set_gameplay_camera", "p_camera", "player_id"), &GameSim::set_gameplay_camera);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
 };
@@ -1524,6 +1530,63 @@ String GameSim::get_render_profile_string() const
 	out += " debug_draw=" + String::num_int64(avg(RENDER_PROFILE_DEBUG_DRAW));
 	out += " vis_cars=" + String::num_int64(avg(RENDER_PROFILE_VIS_CARS));
 	return out;
+}
+
+int GameSim::get_player_race_place(int player_id) const
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return 1;
+	}
+
+	int target_index = -1;
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] == player_id) {
+			target_index = i;
+			break;
+		}
+	}
+	if (target_index < 0) {
+		return 1;
+	}
+
+	PhysicsCarSoA& target_soa = *cars[target_index].soa;
+	const int target_lane = cars[target_index].soa_index;
+	const int target_lap = target_soa.lap[target_lane];
+	const float target_progress = target_soa.lap_progress[target_lane];
+
+	int place = 1;
+	for (int i = 0; i < num_cars; ++i) {
+		if (i == target_index) {
+			continue;
+		}
+		PhysicsCarSoA& other_soa = *cars[i].soa;
+		const int other_lane = cars[i].soa_index;
+		const int other_lap = other_soa.lap[other_lane];
+		const float other_progress = other_soa.lap_progress[other_lane];
+		if (other_lap > target_lap || (other_lap == target_lap && other_progress > target_progress)) {
+			place += 1;
+		}
+	}
+	return place;
+}
+
+godot::Transform3D GameSim::get_player_render_transform(int player_id) const
+{
+	if (!car_player_ids || render_visual_current_transforms.empty()) {
+		return godot::Transform3D();
+	}
+	for (int i = 0; i < num_cars && i < static_cast<int>(render_visual_current_transforms.size()); ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		Engine* engine = Engine::get_singleton();
+		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+		return gd_transform(interpolate_sim_transform(
+			render_visual_prev_transforms[i],
+			render_visual_current_transforms[i],
+			alpha));
+	}
+	return godot::Transform3D();
 }
 
 void GameSim::tick_gamesim(godot::Array player_inputs)
@@ -2585,9 +2648,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			car_is_cpu = nullptr;
 		}
 		car_render_manager = nullptr;
+		gameplay_camera_node = nullptr;
+		gameplay_camera.unref();
+		gameplay_camera_player_id = -1;
 		render_car_transform_nodes.clear();
 		render_car_multimeshes.clear();
+		render_shadow_multimeshes.clear();
 		render_car_local_transforms.clear();
+		render_shadow_local_transforms.clear();
 		render_car_archetype_indices.clear();
 		render_car_slots.clear();
 		render_visual_prev_transforms.clear();
@@ -2601,7 +2669,9 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 {
 	car_render_manager = p_car_render_manager;
 	render_car_multimeshes.clear();
+	render_shadow_multimeshes.clear();
 	render_car_local_transforms.clear();
+	render_shadow_local_transforms.clear();
 	render_car_archetype_indices.clear();
 	render_car_slots.clear();
 	render_visual_prev_transforms.clear();
@@ -2617,19 +2687,33 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	}
 	godot::Dictionary bindings = bindings_var;
 	godot::Array multimeshes = bindings.get("multimeshes", godot::Array());
+	godot::Array shadow_multimeshes = bindings.get("shadow_multimeshes", godot::Array());
 	godot::Array local_transforms = bindings.get("local_transforms", godot::Array());
+	godot::Array shadow_local_transforms = bindings.get("shadow_local_transforms", godot::Array());
 	godot::PackedInt32Array archetype_indices = bindings.get("archetype_indices", godot::PackedInt32Array());
 	godot::PackedInt32Array slots = bindings.get("slots", godot::PackedInt32Array());
 
 	render_car_multimeshes.reserve(multimeshes.size());
+	render_shadow_multimeshes.reserve(shadow_multimeshes.size());
 	render_car_local_transforms.reserve(local_transforms.size());
+	render_shadow_local_transforms.reserve(shadow_local_transforms.size());
 	for (int i = 0; i < multimeshes.size(); ++i) {
 		godot::Ref<godot::MultiMesh> multimesh = multimeshes[i];
 		render_car_multimeshes.push_back(multimesh);
+		godot::Ref<godot::MultiMesh> shadow_multimesh;
+		if (i < shadow_multimeshes.size()) {
+			shadow_multimesh = shadow_multimeshes[i];
+		}
+		render_shadow_multimeshes.push_back(shadow_multimesh);
 		if (i < local_transforms.size() && local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
 			render_car_local_transforms.push_back(sim_transform(local_transforms[i]));
 		} else {
 			render_car_local_transforms.push_back(SimTransform());
+		}
+		if (i < shadow_local_transforms.size() && shadow_local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
+			render_shadow_local_transforms.push_back(sim_transform(shadow_local_transforms[i]));
+		} else {
+			render_shadow_local_transforms.push_back(SimTransform());
 		}
 	}
 
@@ -2640,6 +2724,23 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_car_slots.resize(slots.size());
 	for (int i = 0; i < slots.size(); ++i) {
 		render_car_slots[i] = slots[i];
+	}
+}
+
+void GameSim::set_gameplay_camera(godot::Camera3D* p_camera, int player_id)
+{
+	gameplay_camera_node = p_camera;
+	gameplay_camera_player_id = player_id;
+	if (gameplay_camera.is_null()) {
+		gameplay_camera.instantiate();
+	}
+	if (gameplay_camera.is_valid()) {
+		gameplay_camera->reset();
+	}
+	if (gameplay_camera_node) {
+		gameplay_camera_node->make_current();
+		gameplay_camera_node->set_near(0.25f);
+		gameplay_camera_node->set_far(40000.0f);
 	}
 }
 
@@ -2799,9 +2900,92 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_visual_prev_transforms[i],
 			render_visual_current_transforms[i],
 			alpha);
-		const SimTransform instance_transform = visual_transform * render_car_local_transforms[archetype];
-		render_car_multimeshes[archetype]->set_instance_transform(slot, gd_transform(instance_transform));
+		if (render_car_multimeshes[archetype].is_valid()) {
+			const SimTransform instance_transform = visual_transform * render_car_local_transforms[archetype];
+			render_car_multimeshes[archetype]->set_instance_transform(slot, gd_transform(instance_transform));
+		}
+		if (archetype < static_cast<int>(render_shadow_multimeshes.size()) &&
+				archetype < static_cast<int>(render_shadow_local_transforms.size()) &&
+				render_shadow_multimeshes[archetype].is_valid()) {
+			PhysicsCarSoA& soa = *cars[i].soa;
+			const int lane = cars[i].soa_index;
+			SimVec3 shadow_normal = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+			if (shadow_normal.length_squared() <= 0.0001f) {
+				shadow_normal = visual_transform.basis.get_column(1);
+			}
+			shadow_normal = shadow_normal.normalized();
+			SimTransform shadow_transform = visual_transform * render_shadow_local_transforms[archetype];
+			shadow_transform.origin += -shadow_normal * (20.0f - soa.height_above_track[lane]);
+			shadow_transform.basis.c0 = shadow_transform.basis.c0.slide(shadow_normal);
+			shadow_transform.basis.c1 = shadow_transform.basis.c1.slide(shadow_normal);
+			shadow_transform.basis.c2 = shadow_transform.basis.c2.slide(shadow_normal);
+			render_shadow_multimeshes[archetype]->set_instance_transform(slot, gd_transform(shadow_transform));
+		}
 	}
+}
+
+void GameSim::update_native_gameplay_camera(bool step_camera)
+{
+	if (!gameplay_camera_node || gameplay_camera.is_null() || !cars || !car_player_ids) {
+		return;
+	}
+	int car_index = -1;
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] == gameplay_camera_player_id) {
+			car_index = i;
+			break;
+		}
+	}
+	if (car_index < 0) {
+		return;
+	}
+	PhysicsCarSoA& soa = *cars[car_index].soa;
+	const int lane = cars[car_index].soa_index;
+	if (step_camera) {
+		float aspect_ratio = 4.0f / 3.0f;
+		if (godot::Viewport* viewport = gameplay_camera_node->get_viewport()) {
+			const godot::Vector2 size = viewport->get_visible_rect().size;
+			if (size.y > 0.0f) {
+				aspect_ratio = static_cast<float>(size.x / size.y);
+			}
+		}
+		SimVec3 track_up = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+		if (track_up.length_squared() <= 0.0001f) {
+			track_up = MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis.get_column(1);
+		}
+		track_up = track_up.normalized();
+		godot::Input* input = godot::Input::get_singleton();
+		const bool view_up_pressed = input && (input->is_action_just_pressed(godot::StringName("CameraUp")) || input->is_action_just_pressed(godot::StringName("DPadUp")));
+		const bool view_down_pressed = input && (input->is_action_just_pressed(godot::StringName("CameraDown")) || input->is_action_just_pressed(godot::StringName("DPadDown")));
+		gameplay_camera->step(
+			gd_vec3(LOAD_INDEXED_VEC3(soa, position_current, lane)),
+			gd_vec3(LOAD_INDEXED_VEC3(soa, position_old, lane)),
+			gd_transform(MXT_LOAD_TRANSFORM(soa, basis_physical, lane)),
+			gd_vec3(track_up),
+			gd_vec3(LOAD_INDEXED_VEC3(soa, track_surface_pos, lane)),
+			soa.height_above_track[lane],
+			soa.speed_kmh[lane],
+			soa.camera_reorienting[lane],
+			soa.camera_repositioning[lane],
+			soa.turn_reaction_effect[lane],
+			static_cast<int>(soa.machine_state[lane]),
+			static_cast<int>(soa.state_2[lane]),
+			static_cast<int>(soa.tilt_state[lane * 4 + 0]),
+			static_cast<int>(soa.tilt_state[lane * 4 + 1]),
+			static_cast<int>(soa.tilt_state[lane * 4 + 2]),
+			static_cast<int>(soa.tilt_state[lane * 4 + 3]),
+			static_cast<int>(soa.restore_state[lane]),
+			static_cast<int>(soa.restore_move_frames[lane]),
+			aspect_ratio,
+			view_up_pressed,
+			view_down_pressed);
+	}
+	Engine* engine = Engine::get_singleton();
+	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+	gameplay_camera_node->set_global_transform(gameplay_camera->get_render_transform(alpha));
+	gameplay_camera_node->set_fov(gameplay_camera->get_render_fov(alpha));
+	gameplay_camera_node->set_near(0.25);
+	gameplay_camera_node->set_far(40000.0);
 }
 
 void GameSim::render_gamesim_visuals_only()
@@ -2812,6 +2996,7 @@ void GameSim::render_gamesim_visuals_only()
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 	apply_render_multimeshes(alpha);
+	update_native_gameplay_camera(false);
 }
 
 void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flags)
@@ -3110,6 +3295,7 @@ void GameSim::update_super_spark_visuals()
 		Engine* engine = Engine::get_singleton();
 		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 		apply_render_multimeshes(alpha);
+		update_native_gameplay_camera(true);
 		godot::Array local_visual_args;
 		local_visual_args.resize(50);
 		for (int i = 0; i < vis_car_count; i++) {

@@ -55,14 +55,21 @@ func configure(definitions: Array, car_nodes: Array) -> void:
 
 func get_native_render_bindings() -> Dictionary:
 	var multimeshes: Array = []
+	var shadow_multimeshes: Array = []
 	var local_transforms: Array = []
+	var shadow_local_transforms: Array = []
 	for archetype in archetypes:
 		var pass_data: Dictionary = archetype[PASS_MAIN]
 		multimeshes.append(pass_data["multimesh"])
 		local_transforms.append(pass_data["local_transform"])
+		var shadow_pass_data: Dictionary = archetype["shadow"]
+		shadow_multimeshes.append(shadow_pass_data["multimesh"])
+		shadow_local_transforms.append(shadow_pass_data["local_transform"])
 	return {
 		"multimeshes": multimeshes,
+		"shadow_multimeshes": shadow_multimeshes,
 		"local_transforms": local_transforms,
+		"shadow_local_transforms": shadow_local_transforms,
 		"archetype_indices": car_archetype_indices,
 		"slots": car_slots,
 	}
@@ -103,12 +110,14 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 	var template: Node3D = definition.car_scene.instantiate()
 	var root_transform := template.transform
 	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
+	var shadow_mesh: MeshInstance3D = template.get_node("VEHICLE_SHADOW")
 	var outline_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE")
 	var outline_main_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE_MAIN")
 	var archetype := {
 		"indices": [],
 		"count": 0,
 		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0),
+		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), shadow_mesh.mesh, shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
 	}
 	template.free()
 	return archetype
@@ -118,6 +127,11 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	node.name = pass_name
 	node.layers = layers
 	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.ignore_occlusion_culling = true
+	node.extra_cull_margin = 1000000.0
+	node.visibility_range_end = 0.0
+	node.visibility_range_end_margin = 0.0
+	node.lod_bias = 0.0
 	var multimesh := MultiMesh.new()
 	multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	multimesh.use_colors = true
@@ -136,7 +150,7 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	}
 
 func _resize_passes(archetype: Dictionary, count: int) -> void:
-	for pass_name in [PASS_MAIN]:
+	for pass_name in [PASS_MAIN, "shadow"]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
 		if multimesh.instance_count != count:

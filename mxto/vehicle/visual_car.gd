@@ -201,7 +201,7 @@ func _ready() -> void:
 	var shadow_mesh: MeshInstance3D = template.get_node("VEHICLE_SHADOW")
 	vehicle_main_local_transform = root_transform * main_mesh.transform
 	vehicle_shadow_local_transform = root_transform * shadow_mesh.transform
-	if local_visual_enabled:
+	if false and local_visual_enabled:
 		vehicle_shadow = MeshInstance3D.new()
 		vehicle_shadow.name = "LocalVehicleShadow"
 		vehicle_shadow.mesh = shadow_mesh.mesh
@@ -621,7 +621,6 @@ func _physics_process(delta):
 	car_desired_basis_physical = basis_physical
 	old_ts_normal = desired_ts_normal
 	desired_ts_normal = track_surface_normal
-	_step_gameplay_camera()
 	
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
 	if local_visual_enabled:
@@ -710,12 +709,17 @@ func _process(delta: float) -> void:
 	#print("----")
 	#print(delta)
 	#print(frame_accumulation)
-	car_transform.global_transform = car_old_transform.interpolate_with(car_desired_transform, ratio)
 	var use_car_pos := car_old_pc.lerp(car_desired_pc, ratio)
 	var use_car_pos_old := car_old_po.lerp(car_desired_po, ratio)
 	var use_basis_physical := car_old_basis_physical.interpolate_with(car_desired_basis_physical, ratio)
 	var use_car_vel := car_old_vel.lerp(car_desired_vel, ratio)
 	var use_ts_normal := old_ts_normal.lerp(desired_ts_normal, ratio)
+	if game_manager != null and game_manager.game_sim != null:
+		var native_render_transform := game_manager.game_sim.get_player_render_transform(owning_id)
+		car_transform.global_transform = native_render_transform
+		use_car_pos = native_render_transform.origin
+	else:
+		car_transform.global_transform = car_old_transform.interpolate_with(car_desired_transform, ratio)
 	track_surface_smoothed = damp_vec3(track_surface_smoothed, use_ts_normal, 30, delta)
 	#DebugDraw2D.set_text("rollback offset error", interp_err)
 	#car_transform.global_transform.origin += interp_err
@@ -728,7 +732,6 @@ func _process(delta: float) -> void:
 	var energy_flash := Color(0.04, -0.01, -0.01) * (sin(0.015 * Time.get_ticks_msec()) * 0.5 + 0.5) * (1.0 - energy_ratio)
 	#var boost_flash := Color(0, 0.03, 0.075) * (boost_ratio)
 	#var final_overlay := energy_flash + boost_flash + Color(1, 1, 1) * damage * 0.1
-	_apply_gameplay_camera(ratio)
 	
 	#var flat_use_z := car_transform.global_basis.z.slide(use_ts_normal).normalized()
 	#var flat_use_y := car_transform.global_basis.y.slide(flat_use_z).normalized()
@@ -740,15 +743,6 @@ func _process(delta: float) -> void:
 	
 	for node:VehicleThruster in vehicle_thrusters.get_children():
 		node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
-	if local_visual_enabled and is_instance_valid(vehicle_shadow):
-		var shadow_normal := _safe_track_normal()
-		var use_transform := car_transform.global_transform * vehicle_main_local_transform
-		use_transform.origin += -shadow_normal * (20.0 - height_above_track)
-		use_transform.basis.x = use_transform.basis.x.slide(shadow_normal)
-		use_transform.basis.y = use_transform.basis.y.slide(shadow_normal)
-		use_transform.basis.z = use_transform.basis.z.slide(shadow_normal)
-		vehicle_shadow.global_transform = use_transform
-
 	if effect_tier == EffectTier.FULL and (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
 		boost_electricity.boosting = true
 		if is_instance_valid(vehicle_shadow):
