@@ -48,6 +48,7 @@ const MAX_AHEAD_TICKS := 30
 const MAX_HISTORY_TICKS := 60
 const INPUT_RETRANSMIT_RECENT_TICKS := 5
 const INPUT_RETRANSMIT_STARTUP_TICKS := 64
+const STARTUP_LIGHT_NET_TICKS := 120
 var sent_input_times := {}
 var rtt_s: float = 0.0
 var desired_ahead_ticks: float = 2.0
@@ -143,6 +144,13 @@ var _log_sent_counts := {}
 var _log_timer: Timer
 var rollback_frametime_us := 0
 var net_input_debug_prints := 0
+
+func _startup_light_net_active(tick: int) -> bool:
+	return tick >= 0 and tick < STARTUP_LIGHT_NET_TICKS
+
+func _store_neutral_authoritative_frame_for_all_racers(tick: int) -> void:
+	for id in get_simulation_roster():
+		netcode_session.store_authoritative_input(tick, int(id), NEUTRAL_INPUT_BYTES)
 
 var version_string: String = ""
 var _unverified_peers: Array = []
@@ -1123,7 +1131,12 @@ func collect_server_inputs() -> Dictionary:
 		return {}
 	if not pending_inputs.has(server_tick):
 		pending_inputs[server_tick] = {}
-	if listen_server:
+	if _startup_light_net_active(server_tick):
+		var roster_chk : Array = _get_human_roster()
+		for id in roster_chk:
+			pending_inputs[server_tick][id] = NEUTRAL_INPUT_BYTES
+			server_netcode_session.store_pending_input(server_tick, int(id), NEUTRAL_INPUT_BYTES)
+	elif listen_server:
 		var local_id := multiplayer.get_unique_id()
 		var host_input: PackedByteArray = pending_inputs[server_tick].get(local_id, last_local_input_bytes)
 		pending_inputs[server_tick][local_id] = host_input
@@ -1170,6 +1183,28 @@ func collect_client_inputs() -> Dictionary:
 			_adjust_time_scale()
 			return frame
 		return {}
+	if _startup_light_net_active(local_tick):
+		_store_neutral_authoritative_frame_for_all_racers(local_tick)
+		netcode_session.store_local_input(local_tick, NEUTRAL_INPUT_BYTES)
+		if !is_server:
+			_client_startup_sync.rpc_id(1, desired_ahead_ticks, last_server_input_tick, local_tick)
+			_acc_log_out(12)
+		var frame_inputs: Dictionary
+		if authoritative_inputs.has(local_tick):
+			frame_inputs = authoritative_inputs[local_tick]
+			authoritative_inputs.erase(local_tick)
+			for pid in frame_inputs.keys():
+				netcode_session.store_authoritative_input(local_tick, int(pid), frame_inputs[pid])
+		else:
+			frame_inputs = {}
+		netcode_session.tick_client_predicted_frame(game_sim, local_tick)
+		frame_inputs = netcode_session.get_frame_as_dictionary(local_tick)
+		input_history[local_tick] = frame_inputs
+		if input_history.has(local_tick - INPUT_HISTORY_SIZE):
+			input_history.erase(local_tick - INPUT_HISTORY_SIZE)
+		local_tick += 1
+		_adjust_time_scale()
+		return frame_inputs
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 		if !is_server:
 			var old_keys := sent_inputs_bytes.keys()
@@ -1320,6 +1355,26 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
 
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
+func _client_startup_sync(ahead: float, ack: int, client_tick: int) -> void:
+	if !race_active:
+		return
+	if !is_server:
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if !player_ids.has(sender_id):
+		return
+	var now_sec := 0.001 * float(Time.get_ticks_msec())
+	peer_desired_ahead[sender_id] = ahead
+	server_netcode_session.set_peer_desired_ahead(sender_id, ahead)
+	authoritative_acks[sender_id] = max(ack, authoritative_acks.get(sender_id, -1))
+	server_netcode_session.set_peer_authoritative_ack(sender_id, ack)
+	last_input_time[sender_id] = now_sec
+	last_received_tick[sender_id] = max(int(last_received_tick.get(sender_id, -1)), min(client_tick, STARTUP_LIGHT_NET_TICKS - 1))
+	server_netcode_session.set_peer_last_received(sender_id, int(last_received_tick[sender_id]), now_sec)
+	_acc_log_in(12)
+	_prune_authoritative_history()
+
+@rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_send_input_flat(packet: PackedByteArray, ahead: float, ack: int) -> void:
 	if !race_active:
 		return
@@ -1403,6 +1458,18 @@ func _server_timing_update(this_ack: int, tgt: int, max_ahead: float) -> void:
 		clients_target_tick = max(clients_target_tick, tgt)
 		last_target_tick_update = Time.get_ticks_msec()
 		clients_max_ahead_from_server = max_ahead
+	_apply_server_input_ack(this_ack)
+
+@rpc("any_peer", "unreliable", "call_local", 3)
+func _server_startup_sync(server_tick_value: int, this_ack: int, tgt: int, max_ahead: float) -> void:
+	if !race_active:
+		return
+	if not is_server or listen_server:
+		clients_server_tick = max(clients_server_tick, server_tick_value + 1)
+		clients_target_tick = max(clients_target_tick, tgt)
+		last_target_tick_update = Time.get_ticks_msec()
+		clients_max_ahead_from_server = max_ahead
+		last_server_input_tick = max(last_server_input_tick, server_tick_value)
 	_apply_server_input_ack(this_ack)
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
@@ -1501,6 +1568,11 @@ func post_tick() -> void:
 		var compressed_state : PackedByteArray = PackedByteArray()
 		var uncompressed_size := 0
 		for id in player_ids + spectator_ids:
+			if _startup_light_net_active(server_tick):
+				var startup_ack: int = server_netcode_session.get_peer_last_received(id)
+				_acc_log_out(12)
+				_server_startup_sync.rpc_id(id, server_tick, startup_ack, target_tick, max_ahead)
+				continue
 			var send_state : PackedByteArray = PackedByteArray()
 			var send_state_uncomp_size := 0
 			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
@@ -1516,6 +1588,10 @@ func post_tick() -> void:
 				send_state_uncomp_size = uncompressed_size
 			var ack = authoritative_acks.get(id, -1)
 			ack = server_netcode_session.get_peer_authoritative_ack(id)
+			if server_tick >= STARTUP_LIGHT_NET_TICKS and ack < STARTUP_LIGHT_NET_TICKS - 1:
+				ack = STARTUP_LIGHT_NET_TICKS - 1
+				authoritative_acks[id] = ack
+				server_netcode_session.set_peer_authoritative_ack(id, ack)
 			var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(ack)
 			var _bytes := 20 + input_packet.size() + send_state.size()
 			log_flat_server_payload_out += input_packet.size()
@@ -1541,6 +1617,10 @@ func _idle_broadcast() -> void:
 	for id in player_ids + spectator_ids:
 		var ack = authoritative_acks.get(id, -1)
 		ack = server_netcode_session.get_peer_authoritative_ack(id)
+		if server_tick >= STARTUP_LIGHT_NET_TICKS and ack < STARTUP_LIGHT_NET_TICKS - 1:
+			ack = STARTUP_LIGHT_NET_TICKS - 1
+			authoritative_acks[id] = ack
+			server_netcode_session.set_peer_authoritative_ack(id, ack)
 		var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(ack)
 		var _bytes := 20 + input_packet.size()
 		log_flat_server_payload_out += input_packet.size()
