@@ -98,6 +98,13 @@ var start_sync_server_offset_msec := 0.0
 var start_sync_sample_counts := {}
 var start_sync_peer_ahead := {}
 var start_sync_initial_max_ahead := 2.0
+var start_sync_actual_client_start_msec := -1
+var start_sync_actual_server_start_msec := -1
+var start_sync_first_authoritative_input_msec := -1
+var start_sync_first_authoritative_first_tick := -1
+var start_sync_first_authoritative_last_tick := -1
+var start_sync_first_authoritative_count := 0
+var start_sync_debug_prints := 0
 
 var use_state_compression := true
 
@@ -151,7 +158,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,auth_packets,auth_frames,auth_baseline_inputs,auth_delta_frames,auth_delta_changed_inputs,auth_delta_unchanged_inputs,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,auth_packets,auth_frames,auth_baseline_inputs,auth_delta_frames,auth_delta_changed_inputs,auth_delta_unchanged_inputs,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -254,6 +261,13 @@ func _reset_start_sync_state() -> void:
 	start_sync_sample_counts.clear()
 	start_sync_peer_ahead.clear()
 	start_sync_initial_max_ahead = 2.0
+	start_sync_actual_client_start_msec = -1
+	start_sync_actual_server_start_msec = -1
+	start_sync_first_authoritative_input_msec = -1
+	start_sync_first_authoritative_first_tick = -1
+	start_sync_first_authoritative_last_tick = -1
+	start_sync_first_authoritative_count = 0
+	start_sync_debug_prints = 0
 
 func set_cpu_driver_count(count: int) -> void:
 	count = clamp(count, 0, CPU_ID_MAX - CPU_ID_MIN + 1)
@@ -383,7 +397,8 @@ func _flush_log() -> void:
 	var auth_delta_changed_inputs := int(auth_stats.get("auth_delta_changed_inputs", 0))
 	var auth_delta_unchanged_inputs := int(auth_stats.get("auth_delta_unchanged_inputs", 0))
 
-	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(max_ahead_from_server) + "," + str(physics_tps) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(auth_packets) + "," + str(auth_frames) + "," + str(auth_baseline_inputs) + "," + str(auth_delta_frames) + "," + str(auth_delta_changed_inputs) + "," + str(auth_delta_unchanged_inputs) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
+	var logged_max_ahead: float = max_ahead_from_server if is_server else clients_max_ahead_from_server
+	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(auth_packets) + "," + str(auth_frames) + "," + str(auth_baseline_inputs) + "," + str(auth_delta_frames) + "," + str(auth_delta_changed_inputs) + "," + str(auth_delta_unchanged_inputs) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
@@ -964,7 +979,7 @@ func begin_simulation_at(server_start_msec: int, initial_max_ahead: float) -> vo
 	if is_server:
 		start_sync_local_start_msec = server_start_msec - client_lead_msec
 	else:
-		start_sync_local_start_msec = int(round(float(server_start_msec) - start_sync_server_offset_msec)) - client_lead_msec
+		start_sync_local_start_msec = int(round(float(server_start_msec) - start_sync_server_offset_msec))
 	print("MXT_NET_START_SYNC received",
 		" uid=", multiplayer.get_unique_id(),
 		" is_server=", is_server,
@@ -977,20 +992,38 @@ func begin_simulation_at(server_start_msec: int, initial_max_ahead: float) -> vo
 func _begin_client_simulation_now(initial_target_tick: int) -> void:
 	if game_sim == null or game_sim.sim_started:
 		return
+	start_sync_actual_client_start_msec = Time.get_ticks_msec()
 	game_sim.set_sim_started(true)
 	local_tick = 0
 	clients_server_tick = 0
 	clients_target_tick = clamp(initial_target_tick, 0, MAX_AHEAD_TICKS)
 	last_target_tick_update = Time.get_ticks_msec()
 	start_sync_client_started = true
+	print("MXT_NET_START_SYNC client_begin",
+		" uid=", multiplayer.get_unique_id(),
+		" now=", start_sync_actual_client_start_msec,
+		" scheduled_local=", start_sync_local_start_msec,
+		" scheduled_server=", start_sync_server_start_msec,
+		" initial_target=", initial_target_tick,
+		" clients_target=", clients_target_tick,
+		" desired_ahead=", desired_ahead_ticks,
+		" max_ahead=", clients_max_ahead_from_server)
 
 func _begin_authoritative_simulation_now() -> void:
 	if !is_server or server_game_sim == null or server_game_sim.sim_started:
 		return
+	start_sync_actual_server_start_msec = Time.get_ticks_msec()
 	server_tick = 0
 	target_tick = 0
 	server_game_sim.set_sim_started(true)
 	start_sync_authoritative_started = true
+	print("MXT_NET_START_SYNC server_begin",
+		" uid=", multiplayer.get_unique_id(),
+		" now=", start_sync_actual_server_start_msec,
+		" scheduled_server=", start_sync_server_start_msec,
+		" target_tick=", target_tick,
+		" server_tick=", server_tick,
+		" max_ahead=", start_sync_initial_max_ahead)
 
 func send_player_settings(settings: Dictionary) -> void:
 	var my_id := multiplayer.get_unique_id()
@@ -1420,6 +1453,24 @@ func _server_broadcast_flat(server_state_tick: int, input_packet: PackedByteArra
 			if count > 0:
 				var first_tick := int(stats.get("first_tick", -1))
 				var last_tick := int(stats.get("last_tick", -1))
+				if start_sync_first_authoritative_input_msec < 0:
+					start_sync_first_authoritative_input_msec = Time.get_ticks_msec()
+					start_sync_first_authoritative_first_tick = first_tick
+					start_sync_first_authoritative_last_tick = last_tick
+					start_sync_first_authoritative_count = count
+					print("MXT_NET_START_SYNC first_auth_input",
+						" uid=", multiplayer.get_unique_id(),
+						" now=", start_sync_first_authoritative_input_msec,
+						" actual_client_start=", start_sync_actual_client_start_msec,
+						" scheduled_local=", start_sync_local_start_msec,
+						" scheduled_server=", start_sync_server_start_msec,
+						" first_tick=", first_tick,
+						" last_tick=", last_tick,
+						" count=", count,
+						" clients_target=", clients_target_tick,
+						" local_tick=", local_tick,
+						" payload=", input_packet.size(),
+						" max_ahead=", max_ahead)
 				clients_server_tick = max(clients_server_tick, last_tick + 1)
 				_handle_input_update_flat(first_tick)
 				last_server_input_tick = max(last_server_input_tick, last_tick)
@@ -1677,6 +1728,12 @@ func _adjust_time_scale() -> void:
 		#DebugDraw2D.set_text("server_tick", server_tick)
 		#DebugDraw2D.set_text("target_tick", target_tick)
 	if is_server and !listen_server:
+		return
+	if !is_server and start_sync_first_authoritative_input_msec < 0:
+		use_physics_ticks = 1.0
+		Engine.physics_ticks_per_second = 60
+		var __prof_t1_no_auth := Time.get_ticks_usec()
+		prof_adjust_time_scale_us_interval += __prof_t1_no_auth - __prof_t0
 		return
 	var current_ahead_ticks = local_tick - clients_target_tick
 	var target_ahead_ticks = lerpf(desired_ahead_ticks, clients_max_ahead_from_server, 0.75)
