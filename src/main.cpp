@@ -3748,23 +3748,522 @@ void GameSim::finish_render_rollback_correction_capture()
 	render_rollback_capture_transforms.clear();
 }
 
+namespace {
+constexpr uint32_t MXT_NET_STATE_MAGIC = 0x5354584du; // "MXTS", little-endian.
+constexpr uint16_t MXT_NET_STATE_VERSION = 1;
+
+struct NetStateWriter {
+	std::vector<uint8_t> data;
+
+	template <typename T>
+	void write_pod(const T& value) {
+		const uint8_t* src = reinterpret_cast<const uint8_t*>(&value);
+		data.insert(data.end(), src, src + sizeof(T));
+	}
+
+	void write_bytes(const void* src, size_t size) {
+		if (!src || size == 0) {
+			return;
+		}
+		const uint8_t* bytes = reinterpret_cast<const uint8_t*>(src);
+		data.insert(data.end(), bytes, bytes + size);
+	}
+
+	void write_vec3(const SimVec3& v) {
+		write_pod(v.x);
+		write_pod(v.y);
+		write_pod(v.z);
+	}
+
+	void write_vec2(const SimVec2& v) {
+		write_pod(v.x);
+		write_pod(v.y);
+	}
+
+	void write_transform(const SimTransform& t) {
+		for (int col = 0; col < 3; ++col) {
+			write_vec3(t.basis.get_column(col));
+		}
+		write_vec3(t.origin);
+	}
+
+	godot::PackedByteArray to_packed_byte_array() const {
+		godot::PackedByteArray out;
+		out.resize(static_cast<int>(data.size()));
+		if (!data.empty()) {
+			std::memcpy(out.ptrw(), data.data(), data.size());
+		}
+		return out;
+	}
+};
+
+struct NetStateReader {
+	const uint8_t* data = nullptr;
+	int size = 0;
+	int pos = 0;
+
+	explicit NetStateReader(const godot::PackedByteArray& bytes) {
+		data = bytes.ptr();
+		size = bytes.size();
+	}
+
+	template <typename T>
+	bool read_pod(T& out) {
+		if (pos < 0 || pos + static_cast<int>(sizeof(T)) > size) {
+			return false;
+		}
+		std::memcpy(&out, data + pos, sizeof(T));
+		pos += static_cast<int>(sizeof(T));
+		return true;
+	}
+
+	bool read_bytes(void* dst, size_t byte_count) {
+		if (byte_count == 0) {
+			return true;
+		}
+		if (!dst || pos < 0 || pos + static_cast<int>(byte_count) > size) {
+			return false;
+		}
+		std::memcpy(dst, data + pos, byte_count);
+		pos += static_cast<int>(byte_count);
+		return true;
+	}
+
+	bool read_vec3(SimVec3& out) {
+		return read_pod(out.x) && read_pod(out.y) && read_pod(out.z);
+	}
+
+	bool read_vec2(SimVec2& out) {
+		return read_pod(out.x) && read_pod(out.y);
+	}
+
+	bool read_transform(SimTransform& out) {
+		SimVec3 c0, c1, c2;
+		if (!read_vec3(c0) || !read_vec3(c1) || !read_vec3(c2) || !read_vec3(out.origin)) {
+			return false;
+		}
+		out.basis.set_column(0, c0);
+		out.basis.set_column(1, c1);
+		out.basis.set_column(2, c2);
+		return true;
+	}
+};
+}
+
+#define MXT_NET_CAR_SCALAR_FIELDS(X) \
+	X(uint32_t, machine_state) \
+	X(float, base_speed) \
+	X(float, boost_turbo) \
+	X(float, dashplate_heat_multiplier) \
+	X(float, race_start_charge) \
+	X(float, speed_kmh) \
+	X(float, air_tilt) \
+	X(float, energy) \
+	X(uint32_t, boost_frames) \
+	X(uint32_t, boost_frames_manual) \
+	X(uint32_t, simulation_tick) \
+	X(uint32_t, last_hit_tick) \
+	X(bool, has_last_hit_tick) \
+	X(uint32_t, spinattack_direction) \
+	X(float, spinattack_angle) \
+	X(float, spinattack_decrement) \
+	X(uint32_t, brake_timer) \
+	X(float, height_above_track) \
+	X(uint16_t, current_checkpoint) \
+	X(uint16_t, current_collision_checkpoint) \
+	X(uint16_t, last_ground_checkpoint) \
+	X(float, last_ground_distance) \
+	X(float, checkpoint_fraction) \
+	X(float, checkpoint_track_distance) \
+	X(uint8_t, lap) \
+	X(float, lap_progress) \
+	X(float, input_strafe_32) \
+	X(float, input_strafe_1_6) \
+	X(float, input_steer_pitch) \
+	X(float, input_strafe) \
+	X(float, input_steer_yaw) \
+	X(float, input_accel) \
+	X(float, input_brake) \
+	X(float, input_yaw_dupe) \
+	X(uint8_t, rail_collision_timer) \
+	X(uint32_t, terrain_state) \
+	X(uint8_t, grip_frames_from_accel_press) \
+	X(uint32_t, frames_since_start) \
+	X(uint32_t, frames_since_start_2) \
+	X(uint8_t, side_attack_delay) \
+	X(uint32_t, air_time) \
+	X(float, damage_from_last_hit) \
+	X(uint32_t, strafe_effect) \
+	X(bool, machine_crashed) \
+	X(uint8_t, machine_collision_frame_counter) \
+	X(uint8_t, car_hit_invincibility) \
+	X(uint8_t, boost_delay_frame_counter) \
+	X(float, turn_reaction_input) \
+	X(uint32_t, frames_since_death) \
+	X(uint32_t, terrain_state_2) \
+	X(uint32_t, suspension_reset_flag) \
+	X(float, turning_related) \
+	X(int8_t, drift_sign) \
+	X(float, drift_ramp) \
+	X(uint32_t, state_2) \
+	X(float, side_attack_indicator) \
+	X(uint32_t, g_anim_timer) \
+	X(uint64_t, level_start_time) \
+	X(int, some_breakdown_int) \
+	X(int, breakdown_frame_counter) \
+	X(uint8_t, restore_state) \
+	X(uint32_t, restore_wait_frames) \
+	X(uint32_t, restore_move_frames) \
+	X(uint16_t, s_boost_charge) \
+	X(uint16_t, s_boost_charge_max) \
+	X(uint16_t, s_boost_frames_remaining) \
+	X(uint16_t, s_boost_emit_frame_accumulator) \
+	X(uint8_t, s_boost_pending_spark_spawns) \
+	X(uint8_t, pending_super_sparks) \
+	X(bool, s_boost_active) \
+	X(int, collision_old_cp) \
+	X(bool, collision_old_valid) \
+	X(bool, collision_old_was_above) \
+	X(bool, collision_old_was_inside) \
+	X(SimVec2, collision_old_road_t) \
+	X(SimVec3, collision_old_spatial_t) \
+	X(SimTransform, collision_old_surface)
+
+#define MXT_NET_CAR_VEC3_FIELDS(X) \
+	X(position_current) \
+	X(position_old) \
+	X(position_old_2) \
+	X(position_old_dupe) \
+	X(position_collision_snapshot) \
+	X(position_bottom) \
+	X(position_behind) \
+	X(velocity) \
+	X(knockback_velocity) \
+	X(velocity_angular) \
+	X(velocity_local) \
+	X(velocity_local_flattened_and_rotated) \
+	X(collision_push_track) \
+	X(collision_push_rail) \
+	X(collision_push_total) \
+	X(collision_response) \
+	X(track_surface_normal) \
+	X(track_surface_normal_prev) \
+	X(track_surface_pos) \
+	X(unk_vec3_0x4e4) \
+	X(unk_vec3_0x4f0)
+
+#define MXT_NET_CAR_TRANSFORM_FIELDS(X) \
+	X(basis_physical) \
+	X(basis_physical_other) \
+	X(restore_start_transform) \
+	X(restore_target_transform)
+
+#define MXT_NET_TILT_SCALAR_FIELDS(X) \
+	X(float, force_at_point) \
+	X(float, force) \
+	X(float, force_spatial_len) \
+	X(uint32_t, state)
+
+#define MXT_NET_TILT_VEC3_FIELDS(X) \
+	X(pos_old) \
+	X(pos) \
+	X(up_vector) \
+	X(up_vector_2) \
+	X(target_dir) \
+	X(force_spatial)
+
+#define MXT_NET_WALL_VEC3_FIELDS(X) \
+	X(pos_a) \
+	X(pos_b) \
+	X(collision)
+
+godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
+	NetStateWriter writer;
+	writer.write_pod(MXT_NET_STATE_MAGIC);
+	writer.write_pod(MXT_NET_STATE_VERSION);
+	writer.write_pod(static_cast<uint16_t>(0));
+	writer.write_pod(static_cast<int32_t>(target_tick));
+	writer.write_pod(static_cast<int32_t>(num_cars));
+
+	const int trigger_count = current_track ? current_track->num_trigger_colliders : 0;
+	writer.write_pod(static_cast<int32_t>(trigger_count));
+	uint16_t active_spark_count = 0;
+	if (super_spark_state) {
+		for (uint16_t i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
+			if (super_spark_state->sparks[i].active) {
+				++active_spark_count;
+			}
+		}
+		writer.write_pod(super_spark_state->cursor);
+		writer.write_pod(super_spark_state->rng_state);
+		writer.write_pod(super_spark_state->placement_timer);
+		writer.write_pod(active_spark_count);
+		for (uint16_t i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
+			const SuperSpark& spark = super_spark_state->sparks[i];
+			if (!spark.active) {
+				continue;
+			}
+			writer.write_pod(i);
+			writer.write_pod(spark.active);
+			writer.write_pod(spark.collectable);
+			writer.write_pod(spark.animation_frame);
+			writer.write_pod(spark.checkpoint);
+			writer.write_vec3(spark.position);
+			writer.write_vec3(spark.prev_position);
+			writer.write_vec3(spark.start_position);
+			writer.write_vec3(spark.final_position);
+			writer.write_vec3(spark.plane_normal);
+		}
+	} else {
+		uint16_t cursor = 0;
+		uint32_t rng_state = 0;
+		uint32_t placement_timer = 0;
+		writer.write_pod(cursor);
+		writer.write_pod(rng_state);
+		writer.write_pod(placement_timer);
+		writer.write_pod(active_spark_count);
+	}
+
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+#define WRITE_NET_SCALAR(type, name) writer.write_pod(soa.name[lane]);
+		MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_SCALAR)
+#undef WRITE_NET_SCALAR
+#define WRITE_NET_VEC3(name) writer.write_vec3(LOAD_INDEXED_VEC3(soa, name, lane));
+		MXT_NET_CAR_VEC3_FIELDS(WRITE_NET_VEC3)
+#undef WRITE_NET_VEC3
+#define WRITE_NET_TRANSFORM(name) writer.write_transform(MXT_LOAD_TRANSFORM(soa, name, lane));
+		MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_TRANSFORM)
+#undef WRITE_NET_TRANSFORM
+
+		const RoadData& road = soa.road_sample[lane];
+		writer.write_vec2(road.road_t);
+		writer.write_vec3(road.spatial_t);
+		writer.write_transform(road.closest_surface);
+
+		const int point_base = lane * 4;
+		for (int point = 0; point < 4; ++point) {
+			const int p = point_base + point;
+#define WRITE_NET_TILT_SCALAR(type, name) writer.write_pod(soa.tilt_##name[p]);
+			MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_TILT_SCALAR)
+#undef WRITE_NET_TILT_SCALAR
+#define WRITE_NET_TILT_VEC3(name) writer.write_vec3(SimVec3(soa.tilt_##name##_x[p], soa.tilt_##name##_y[p], soa.tilt_##name##_z[p]));
+			MXT_NET_TILT_VEC3_FIELDS(WRITE_NET_TILT_VEC3)
+#undef WRITE_NET_TILT_VEC3
+#define WRITE_NET_WALL_VEC3(name) writer.write_vec3(SimVec3(soa.wall_##name##_x[p], soa.wall_##name##_y[p], soa.wall_##name##_z[p]));
+			MXT_NET_WALL_VEC3_FIELDS(WRITE_NET_WALL_VEC3)
+#undef WRITE_NET_WALL_VEC3
+		}
+	}
+
+	for (int i = 0; i < trigger_count; ++i) {
+		TriggerCollider* trigger = current_track->trigger_colliders[i];
+		uint8_t exploded = 0;
+		float heat = 0.0f;
+		uint32_t last_activation_tick = 0;
+		uint8_t has_last_activation = 0;
+		if (trigger && trigger->type == TRIGGER_TYPE::MINE) {
+			exploded = static_cast<Mine*>(trigger)->exploded ? 1 : 0;
+		} else if (trigger && trigger->type == TRIGGER_TYPE::DASHPLATE) {
+			Dashplate* dash = static_cast<Dashplate*>(trigger);
+			heat = dash->heat;
+			last_activation_tick = dash->last_activation_tick;
+			has_last_activation = dash->has_last_activation ? 1 : 0;
+		}
+		writer.write_pod(exploded);
+		writer.write_pod(heat);
+		writer.write_pod(last_activation_tick);
+		writer.write_pod(has_last_activation);
+	}
+
+	return writer.to_packed_byte_array();
+}
+
+bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByteArray& data) {
+	NetStateReader reader(data);
+	uint32_t magic = 0;
+	uint16_t version = 0;
+	uint16_t flags = 0;
+	int32_t snapshot_tick = 0;
+	int32_t snapshot_cars = 0;
+	int32_t trigger_count = 0;
+	if (!reader.read_pod(magic) || magic != MXT_NET_STATE_MAGIC ||
+		!reader.read_pod(version) || version != MXT_NET_STATE_VERSION ||
+		!reader.read_pod(flags) ||
+		!reader.read_pod(snapshot_tick) ||
+		!reader.read_pod(snapshot_cars) ||
+		!reader.read_pod(trigger_count)) {
+		return false;
+	}
+	(void)flags;
+	(void)snapshot_tick;
+	if (snapshot_cars != num_cars || trigger_count < 0) {
+		return false;
+	}
+	if (!super_spark_state) {
+		return false;
+	}
+	uint16_t spark_cursor = 0;
+	uint32_t spark_rng_state = 0;
+	uint32_t spark_placement_timer = 0;
+	uint16_t active_spark_count = 0;
+	if (!reader.read_pod(spark_cursor) ||
+		!reader.read_pod(spark_rng_state) ||
+		!reader.read_pod(spark_placement_timer) ||
+		!reader.read_pod(active_spark_count)) {
+		return false;
+	}
+	super_spark_state->cursor = spark_cursor;
+	super_spark_state->rng_state = spark_rng_state;
+	super_spark_state->placement_timer = spark_placement_timer;
+	for (uint16_t i = 0; i < SUPER_SPARK_CAPACITY; ++i) {
+		super_spark_state->sparks[i] = SuperSpark();
+	}
+	for (uint16_t n = 0; n < active_spark_count; ++n) {
+		uint16_t spark_index = 0;
+		if (!reader.read_pod(spark_index) || spark_index >= SUPER_SPARK_CAPACITY) {
+			return false;
+		}
+		SuperSpark& spark = super_spark_state->sparks[spark_index];
+		if (!reader.read_pod(spark.active) ||
+			!reader.read_pod(spark.collectable) ||
+			!reader.read_pod(spark.animation_frame) ||
+			!reader.read_pod(spark.checkpoint) ||
+			!reader.read_vec3(spark.position) ||
+			!reader.read_vec3(spark.prev_position) ||
+			!reader.read_vec3(spark.start_position) ||
+			!reader.read_vec3(spark.final_position) ||
+			!reader.read_vec3(spark.plane_normal)) {
+			return false;
+		}
+	}
+	super_sparks = super_spark_state->sparks;
+
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+#define READ_NET_SCALAR(type, name) if (!reader.read_pod(soa.name[lane])) return false;
+		MXT_NET_CAR_SCALAR_FIELDS(READ_NET_SCALAR)
+#undef READ_NET_SCALAR
+#define READ_NET_VEC3(name) do { SimVec3 v; if (!reader.read_vec3(v)) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
+		MXT_NET_CAR_VEC3_FIELDS(READ_NET_VEC3)
+#undef READ_NET_VEC3
+#define READ_NET_TRANSFORM(name) do { SimTransform t; if (!reader.read_transform(t)) return false; MXT_STORE_TRANSFORM(soa, name, lane, t); } while (0);
+		MXT_NET_CAR_TRANSFORM_FIELDS(READ_NET_TRANSFORM)
+#undef READ_NET_TRANSFORM
+
+		RoadData& road = soa.road_sample[lane];
+		if (!reader.read_vec2(road.road_t) ||
+			!reader.read_vec3(road.spatial_t) ||
+			!reader.read_transform(road.closest_surface)) {
+			return false;
+		}
+		road.terrain = 0;
+		road.cp_idx = static_cast<int16_t>(soa.current_checkpoint[lane]);
+		road.closest_root = RoadTransform();
+
+		const int point_base = lane * 4;
+		for (int point = 0; point < 4; ++point) {
+			const int p = point_base + point;
+#define READ_NET_TILT_SCALAR(type, name) if (!reader.read_pod(soa.tilt_##name[p])) return false;
+			MXT_NET_TILT_SCALAR_FIELDS(READ_NET_TILT_SCALAR)
+#undef READ_NET_TILT_SCALAR
+#define READ_NET_TILT_VEC3(name) do { SimVec3 v; if (!reader.read_vec3(v)) return false; soa.tilt_##name##_x[p] = v.x; soa.tilt_##name##_y[p] = v.y; soa.tilt_##name##_z[p] = v.z; } while (0);
+			MXT_NET_TILT_VEC3_FIELDS(READ_NET_TILT_VEC3)
+#undef READ_NET_TILT_VEC3
+#define READ_NET_WALL_VEC3(name) do { SimVec3 v; if (!reader.read_vec3(v)) return false; soa.wall_##name##_x[p] = v.x; soa.wall_##name##_y[p] = v.y; soa.wall_##name##_z[p] = v.z; } while (0);
+			MXT_NET_WALL_VEC3_FIELDS(READ_NET_WALL_VEC3)
+#undef READ_NET_WALL_VEC3
+		}
+	}
+
+	const int local_trigger_count = current_track ? current_track->num_trigger_colliders : 0;
+	if (trigger_count != local_trigger_count) {
+		return false;
+	}
+	for (int i = 0; i < trigger_count; ++i) {
+		uint8_t exploded = 0;
+		float heat = 0.0f;
+		uint32_t last_activation_tick = 0;
+		uint8_t has_last_activation = 0;
+		if (!reader.read_pod(exploded) ||
+			!reader.read_pod(heat) ||
+			!reader.read_pod(last_activation_tick) ||
+			!reader.read_pod(has_last_activation)) {
+			return false;
+		}
+		TriggerCollider* trigger = current_track->trigger_colliders[i];
+		if (!trigger) {
+			continue;
+		}
+		if (trigger->type == TRIGGER_TYPE::MINE) {
+			static_cast<Mine*>(trigger)->exploded = exploded != 0;
+		} else if (trigger->type == TRIGGER_TYPE::DASHPLATE) {
+			Dashplate* dash = static_cast<Dashplate*>(trigger);
+			dash->heat = heat;
+			dash->last_activation_tick = last_activation_tick;
+			dash->has_last_activation = has_last_activation != 0;
+		}
+	}
+
+	rebuild_static_state_after_network_load();
+	const int index = target_tick % STATE_BUFFER_LEN;
+	const int size = gamestate_data.get_size();
+	if (state_buffer[index].data && size > 0) {
+		std::memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
+		state_buffer[index].size = size;
+	}
+	return true;
+}
+
+void GameSim::rebuild_static_state_after_network_load() {
+	fix_pointers();
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCar& car = cars[i];
+		PhysicsCarSoA& soa = *car.soa;
+		const int lane = car.soa_index;
+		car.update_machine_stats();
+		if (soa.car_properties[lane]) {
+			soa.calced_max_energy[lane] = soa.car_properties[lane]->max_energy;
+		}
+		soa.weight_derived_1[lane] = 52.0f * soa.stat_weight[lane] * 0.0625f;
+		soa.weight_derived_2[lane] = 45.0f * soa.stat_weight[lane] * 0.0625f;
+		soa.weight_derived_3[lane] = 52.0f * soa.stat_weight[lane] * 0.0625f;
+	}
+}
+
 godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
-	godot::PackedByteArray arr;
 	int index = target_tick % STATE_BUFFER_LEN;
 	if (!state_buffer[index].data)
-		return arr;
-	int size = state_buffer[index].size;
-	arr.resize(size);
-	if (size > 0) {
-		memcpy(arr.ptrw(), state_buffer[index].data, size);
-	}
-	return arr;
+		return godot::PackedByteArray();
+	return serialize_network_state(target_tick);
 }
 
 void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 	int index = target_tick % STATE_BUFFER_LEN;
 	if (!state_buffer[index].data)
 		return;
+	if (data.size() >= static_cast<int>(sizeof(uint32_t))) {
+		uint32_t magic = 0;
+		std::memcpy(&magic, data.ptr(), sizeof(uint32_t));
+		if (magic == MXT_NET_STATE_MAGIC) {
+			const int live_size = gamestate_data.get_size();
+			if (live_size > 0) {
+				if (static_cast<int>(network_state_live_backup.size()) < live_size) {
+					network_state_live_backup.resize(static_cast<size_t>(live_size));
+				}
+				std::memcpy(network_state_live_backup.data(), gamestate_data.heap_start, static_cast<size_t>(live_size));
+			}
+			deserialize_network_state(target_tick, data);
+			if (live_size > 0 && static_cast<int>(network_state_live_backup.size()) >= live_size) {
+				std::memcpy(gamestate_data.heap_start, network_state_live_backup.data(), static_cast<size_t>(live_size));
+				gamestate_data.set_size(live_size);
+				fix_pointers();
+			}
+			return;
+		}
+	}
 	// game state never changes in size after instantiation
 	// and should always be the same size between the server and all clients
 	int size = static_cast<int>(data.size());
@@ -3773,6 +4272,13 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 		state_buffer[index].size = size;
 	}
 }
+
+#undef MXT_NET_CAR_SCALAR_FIELDS
+#undef MXT_NET_CAR_VEC3_FIELDS
+#undef MXT_NET_CAR_TRANSFORM_FIELDS
+#undef MXT_NET_TILT_SCALAR_FIELDS
+#undef MXT_NET_TILT_VEC3_FIELDS
+#undef MXT_NET_WALL_VEC3_FIELDS
 
 void GameSim::fix_pointers() {
 	if (super_spark_state) {

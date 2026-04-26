@@ -37,6 +37,7 @@ namespace godot {
 			int size;
 		};
 		SavedState state_buffer[STATE_BUFFER_LEN];
+		std::vector<char> network_state_live_backup;
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
 		static const int PROFILE_WINDOW_TICKS = 360;
@@ -190,6 +191,9 @@ namespace godot {
 		void free_vehicle_tick_soa();
 		void record_phase_profile_sample();
 		void record_render_profile_sample(const uint32_t sample[RENDER_PROFILE_FIELD_COUNT]);
+		godot::PackedByteArray serialize_network_state(int target_tick) const;
+		bool deserialize_network_state(int target_tick, const godot::PackedByteArray& data);
+		void rebuild_static_state_after_network_load();
 		static constexpr int VEHICLE_WORKER_COUNT = 4;
 		struct VehicleLaneGroup {
 			int count = 1;
