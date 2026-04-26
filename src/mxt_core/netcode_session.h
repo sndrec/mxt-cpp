@@ -59,6 +59,7 @@ public:
 	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet);
 	godot::PackedByteArray build_authoritative_input_packet(int ack_tick) const;
 	godot::Dictionary store_authoritative_input_packet(godot::PackedByteArray packet);
+	godot::Dictionary get_input_frame_debug(int tick) const;
 	bool server_has_full_input_frame(int tick) const;
 	bool tick_server_frame(godot::Object* game_sim_obj, int tick);
 	bool tick_client_predicted_frame(godot::Object* game_sim_obj, int tick);

@@ -13,6 +13,7 @@ constexpr uint8_t MXT_NET_PACKET_VERSION = 1;
 constexpr uint8_t MXT_NET_PACKET_CLIENT_INPUTS = 1;
 constexpr uint8_t MXT_NET_PACKET_AUTHORITATIVE_INPUTS = 2;
 constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
+constexpr int MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET = 255;
 
 struct PacketWriter {
 	uint8_t data[65536] = {};
@@ -119,6 +120,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet"), &NetcodeSession::store_pending_input_packet);
 	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "ack_tick"), &NetcodeSession::build_authoritative_input_packet);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet"), &NetcodeSession::store_authoritative_input_packet);
+	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
 	ClassDB::bind_method(D_METHOD("server_has_full_input_frame", "tick"), &NetcodeSession::server_has_full_input_frame);
 	ClassDB::bind_method(D_METHOD("tick_server_frame", "game_sim", "tick"), &NetcodeSession::tick_server_frame);
 	ClassDB::bind_method(D_METHOD("tick_client_predicted_frame", "game_sim", "tick"), &NetcodeSession::tick_client_predicted_frame);
@@ -346,7 +348,8 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 	PacketWriter writer;
 	const int first_tick = ack_tick + 1;
 	int count = 0;
-	while (count < 255 && find_frame(authoritative_history, first_tick + count)) {
+	while (count < MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET &&
+		find_frame(authoritative_history, first_tick + count)) {
 		++count;
 	}
 	if (!writer.write_u8(MXT_NET_PACKET_AUTHORITATIVE_INPUTS) ||
@@ -445,6 +448,42 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		stats["last_tick"] = tick;
 	}
 	return stats;
+}
+
+godot::Dictionary NetcodeSession::get_input_frame_debug(int tick) const
+{
+	Dictionary out;
+	const InputFrame* frame = find_frame(pending_inputs, tick);
+	out["tick"] = tick;
+	out["frame_found"] = frame != nullptr;
+	out["racer_count"] = racer_count;
+	int human_count = 0;
+	int cpu_count = 0;
+	int present_humans = 0;
+	int first_missing_slot = -1;
+	int first_missing_player_id = 0;
+	bool first_missing_cpu = false;
+	for (int i = 0; i < racer_count; ++i) {
+		if (cpu_flags[i]) {
+			++cpu_count;
+			continue;
+		}
+		++human_count;
+		if (frame && frame->present[i]) {
+			++present_humans;
+		} else if (first_missing_slot < 0) {
+			first_missing_slot = i;
+			first_missing_player_id = player_ids[i];
+			first_missing_cpu = cpu_flags[i] != 0;
+		}
+	}
+	out["human_count"] = human_count;
+	out["cpu_count"] = cpu_count;
+	out["present_humans"] = present_humans;
+	out["first_missing_slot"] = first_missing_slot;
+	out["first_missing_player_id"] = first_missing_player_id;
+	out["first_missing_cpu"] = first_missing_cpu;
+	return out;
 }
 
 bool NetcodeSession::server_has_full_input_frame(int tick) const

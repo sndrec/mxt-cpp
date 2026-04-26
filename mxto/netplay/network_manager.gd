@@ -46,6 +46,8 @@ var last_ack_tick: int = -1
 var target_tick: int = 0
 const MAX_AHEAD_TICKS := 30
 const MAX_HISTORY_TICKS := 60
+const INPUT_RETRANSMIT_RECENT_TICKS := 5
+const INPUT_RETRANSMIT_STARTUP_TICKS := 64
 var sent_input_times := {}
 var rtt_s: float = 0.0
 var desired_ahead_ticks: float = 2.0
@@ -1044,6 +1046,30 @@ func _input_frame_value(frame, player_id: int, fallback: PackedByteArray) -> Pac
 			return (frame as Array)[index]
 	return fallback
 
+func _recent_unacked_input_keys(keys: Array) -> Array:
+	var out: Array = []
+	if keys.is_empty():
+		return out
+	keys.sort()
+	var first_unacked := last_ack_tick + 1
+	var max_count := INPUT_RETRANSMIT_RECENT_TICKS
+	if last_ack_tick < 0:
+		first_unacked = int(keys[0])
+		max_count = INPUT_RETRANSMIT_STARTUP_TICKS
+	var start_index := keys.size()
+	for i in range(keys.size()):
+		if int(keys[i]) >= first_unacked:
+			start_index = i
+			break
+	if start_index >= keys.size():
+		start_index = max(keys.size() - INPUT_RETRANSMIT_RECENT_TICKS, 0)
+	var end_index = keys.size()
+	if end_index - start_index > max_count:
+		start_index = end_index - max_count
+	for i in range(start_index, end_index):
+		out.append(keys[i])
+	return out
+
 func collect_server_inputs() -> Dictionary:
 	if not is_server:
 		return {}
@@ -1051,11 +1077,13 @@ func collect_server_inputs() -> Dictionary:
 		return {}
 	if not pending_inputs.has(server_tick):
 		pending_inputs[server_tick] = {}
-	if listen_server and not pending_inputs[server_tick].has(multiplayer.get_unique_id()):
-		pending_inputs[server_tick][multiplayer.get_unique_id()] = last_local_input_bytes
-		server_netcode_session.store_pending_input(server_tick, multiplayer.get_unique_id(), last_local_input_bytes)
-		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-		last_received_tick[multiplayer.get_unique_id()] = server_tick
+	if listen_server:
+		var local_id := multiplayer.get_unique_id()
+		var host_input: PackedByteArray = pending_inputs[server_tick].get(local_id, last_local_input_bytes)
+		pending_inputs[server_tick][local_id] = host_input
+		server_netcode_session.store_pending_input(server_tick, local_id, host_input)
+		last_input_time[local_id] = 0.001 * float(Time.get_ticks_msec())
+		last_received_tick[local_id] = server_tick
 	if server_tick > target_tick:
 		return {}
 	if !server_netcode_session.server_has_full_input_frame(server_tick):
@@ -1065,6 +1093,7 @@ func collect_server_inputs() -> Dictionary:
 				" target_tick=", target_tick,
 				" human_roster=", _get_human_roster(),
 				" cpu_roster=", _get_cpu_roster(),
+				" native_debug=", server_netcode_session.get_input_frame_debug(server_tick),
 				" last_received=", last_received_tick)
 			net_input_debug_prints += 1
 		return {}
@@ -1098,12 +1127,7 @@ func collect_client_inputs() -> Dictionary:
 		if !is_server:
 			var old_keys := sent_inputs_bytes.keys()
 			if old_keys.size() > 0:
-				old_keys.sort()
-				
-				var start_index = max(old_keys.size() - 5, 0)
-				var recent_keys : Array = []
-				for i in range(start_index, old_keys.size()):
-					recent_keys.append(old_keys[i])
+				var recent_keys := _recent_unacked_input_keys(old_keys)
 				var start := int(recent_keys[0])
 				var packet: PackedByteArray = netcode_session.build_local_input_packet(start, recent_keys.size())
 				log_flat_client_payload_out += packet.size()
@@ -1118,16 +1142,12 @@ func collect_client_inputs() -> Dictionary:
 		if not pending_inputs.has(local_tick):
 			pending_inputs[local_tick] = {}
 		pending_inputs[local_tick][multiplayer.get_unique_id()] = last_local_input_bytes
+		server_netcode_session.store_pending_input(local_tick, multiplayer.get_unique_id(), last_local_input_bytes)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[multiplayer.get_unique_id()] = local_tick
 	var all_keys := sent_inputs_bytes.keys()
 	if !is_server and all_keys.size() > 0:
-		all_keys.sort()
-		
-		var start_index = max(all_keys.size() - 5, 0)
-		var recent_keys : Array = []
-		for i in range(start_index, all_keys.size()):
-			recent_keys.append(all_keys[i])
+		var recent_keys := _recent_unacked_input_keys(all_keys)
 		var first_tick := int(recent_keys[0])
 		var input_packet: PackedByteArray = netcode_session.build_local_input_packet(first_tick, recent_keys.size())
 		log_flat_client_payload_out += input_packet.size()
