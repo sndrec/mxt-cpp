@@ -309,25 +309,6 @@ namespace {
 		return transform;
 	}
 
-	static SimTransform interpolated_render_correction(
-			const std::vector<SimTransform>& prev_corrections,
-			const std::vector<SimTransform>& corrections,
-			const std::vector<uint8_t>& active,
-			int index,
-			float alpha)
-	{
-		if (index >= 0 &&
-				index < static_cast<int>(active.size()) &&
-				active[index] &&
-				index < static_cast<int>(corrections.size())) {
-			if (index < static_cast<int>(prev_corrections.size())) {
-				return interpolate_sim_transform(prev_corrections[index], corrections[index], alpha);
-			}
-			return corrections[index];
-		}
-		return SimTransform();
-	}
-
 	static SimTransform apply_render_correction(const SimTransform& transform, const SimTransform& correction)
 	{
 		SimTransform out = transform;
@@ -1630,26 +1611,19 @@ int GameSim::get_player_race_place(int player_id) const
 
 godot::Transform3D GameSim::get_player_render_transform(int player_id) const
 {
-	if (!car_player_ids || render_visual_current_transforms.empty()) {
+	if (!car_player_ids || render_final_current_transforms.empty()) {
 		return godot::Transform3D();
 	}
-	for (int i = 0; i < num_cars && i < static_cast<int>(render_visual_current_transforms.size()); ++i) {
+	for (int i = 0; i < num_cars && i < static_cast<int>(render_final_current_transforms.size()); ++i) {
 		if (car_player_ids[i] != player_id) {
 			continue;
 		}
 		Engine* engine = Engine::get_singleton();
 		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 		SimTransform render_transform = interpolate_sim_transform(
-			render_visual_prev_transforms[i],
-			render_visual_current_transforms[i],
+			render_final_prev_transforms[i],
+			render_final_current_transforms[i],
 			alpha);
-		const SimTransform correction = interpolated_render_correction(
-			render_rollback_prev_corrections,
-			render_rollback_corrections,
-			render_rollback_correction_active,
-			i,
-			alpha);
-		render_transform = apply_render_correction(render_transform, correction);
 		return gd_transform(render_transform);
 	}
 	return godot::Transform3D();
@@ -2737,11 +2711,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_car_slots.clear();
 		render_visual_prev_transforms.clear();
 		render_visual_current_transforms.clear();
+		render_final_prev_transforms.clear();
+		render_final_current_transforms.clear();
 		render_visual_prev_ground_distances.clear();
 		render_visual_current_ground_distances.clear();
 		render_visual_initialized.clear();
 		render_rollback_corrections.clear();
-		render_rollback_prev_corrections.clear();
 		render_rollback_correction_active.clear();
 		render_rollback_capture_transforms.clear();
 		render_rollback_capture_pending = false;
@@ -2761,11 +2736,12 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_car_slots.clear();
 	render_visual_prev_transforms.clear();
 	render_visual_current_transforms.clear();
+	render_final_prev_transforms.clear();
+	render_final_current_transforms.clear();
 	render_visual_prev_ground_distances.clear();
 	render_visual_current_ground_distances.clear();
 	render_visual_initialized.clear();
 	render_rollback_corrections.clear();
-	render_rollback_prev_corrections.clear();
 	render_rollback_correction_active.clear();
 	render_rollback_capture_transforms.clear();
 	render_rollback_capture_pending = false;
@@ -2993,11 +2969,12 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 	if (static_cast<int>(render_visual_prev_transforms.size()) != visual_count) {
 		render_visual_prev_transforms.resize(visual_count);
 		render_visual_current_transforms.resize(visual_count);
+		render_final_prev_transforms.resize(visual_count);
+		render_final_current_transforms.resize(visual_count);
 		render_visual_prev_ground_distances.resize(visual_count);
 		render_visual_current_ground_distances.resize(visual_count);
 		render_visual_initialized.assign(visual_count, 0);
 		render_rollback_corrections.assign(visual_count, SimTransform());
-		render_rollback_prev_corrections.assign(visual_count, SimTransform());
 		render_rollback_correction_active.assign(visual_count, 0);
 		render_vehicle_visual_state.assign(visual_count, RenderVehicleVisualState());
 		render_rollback_capture_transforms.clear();
@@ -3005,10 +2982,6 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 	}
 	const bool completing_rollback_capture = render_rollback_capture_pending && !render_rollback_capture_transforms.empty();
 	for (int i = 0; i < visual_count; ++i) {
-		if (i < static_cast<int>(render_rollback_prev_corrections.size()) &&
-				i < static_cast<int>(render_rollback_corrections.size())) {
-			render_rollback_prev_corrections[i] = render_rollback_corrections[i];
-		}
 		update_machine_visual_transform_for_render(*cars[i].soa, cars[i].soa_index, render_vehicle_visual_state[i]);
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
@@ -3028,16 +3001,21 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 			correction.origin = render_rollback_capture_transforms[i].origin - current.origin;
 			correction.basis = current.basis.transposed() * render_rollback_capture_transforms[i].basis;
 			render_rollback_corrections[i] = correction;
-			if (i < static_cast<int>(render_rollback_prev_corrections.size())) {
-				render_rollback_prev_corrections[i] = correction;
-			}
 			render_rollback_correction_active[i] = render_correction_is_small(correction) ? 0 : 1;
 		}
-		if (render_visual_initialized[i]) {
+		const bool was_initialized = render_visual_initialized[i] != 0;
+		if (was_initialized) {
 			render_visual_prev_transforms[i] = render_visual_current_transforms[i];
+			if (i < static_cast<int>(render_final_prev_transforms.size()) &&
+					i < static_cast<int>(render_final_current_transforms.size())) {
+				render_final_prev_transforms[i] = render_final_current_transforms[i];
+			}
 			render_visual_prev_ground_distances[i] = render_visual_current_ground_distances[i];
 		} else {
 			render_visual_prev_transforms[i] = current;
+			if (i < static_cast<int>(render_final_prev_transforms.size())) {
+				render_final_prev_transforms[i] = current;
+			}
 			render_visual_prev_ground_distances[i] = current_ground_distance;
 			render_visual_initialized[i] = 1;
 		}
@@ -3050,6 +3028,18 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 				render_rollback_correction_active[i] = 0;
 			}
 		}
+		SimTransform final_transform = current;
+		if (i < static_cast<int>(render_rollback_correction_active.size()) &&
+				render_rollback_correction_active[i] &&
+				i < static_cast<int>(render_rollback_corrections.size())) {
+			final_transform = apply_render_correction(current, render_rollback_corrections[i]);
+		}
+		if (i < static_cast<int>(render_final_current_transforms.size())) {
+			render_final_current_transforms[i] = final_transform;
+			if (!was_initialized && i < static_cast<int>(render_final_prev_transforms.size())) {
+				render_final_prev_transforms[i] = final_transform;
+			}
+		}
 	}
 	if (completing_rollback_capture) {
 		render_rollback_capture_transforms.clear();
@@ -3059,7 +3049,7 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 
 void GameSim::apply_render_multimeshes(float alpha)
 {
-	const int visual_count = std::min(num_cars, static_cast<int>(render_visual_current_transforms.size()));
+	const int visual_count = std::min(num_cars, static_cast<int>(render_final_current_transforms.size()));
 	for (int i = 0; i < visual_count; ++i) {
 		if (i >= static_cast<int>(render_car_archetype_indices.size()) || i >= static_cast<int>(render_car_slots.size())) {
 			continue;
@@ -3072,16 +3062,9 @@ void GameSim::apply_render_multimeshes(float alpha)
 			continue;
 		}
 		SimTransform visual_transform = interpolate_sim_transform(
-			render_visual_prev_transforms[i],
-			render_visual_current_transforms[i],
+			render_final_prev_transforms[i],
+			render_final_current_transforms[i],
 			alpha);
-		const SimTransform correction = interpolated_render_correction(
-			render_rollback_prev_corrections,
-			render_rollback_corrections,
-			render_rollback_correction_active,
-			i,
-			alpha);
-		visual_transform = apply_render_correction(visual_transform, correction);
 		if (render_car_multimeshes[archetype].is_valid()) {
 			const SimTransform instance_transform = visual_transform * render_car_local_transforms[archetype];
 			render_car_multimeshes[archetype]->set_instance_transform(slot, gd_transform(instance_transform));

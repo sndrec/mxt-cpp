@@ -235,13 +235,14 @@ namespace godot {
 		std::vector<SimTransform> render_shadow_local_transforms;
 		std::vector<int> render_car_archetype_indices;
 		std::vector<int> render_car_slots;
-		std::vector<SimTransform> render_visual_prev_transforms;
+			std::vector<SimTransform> render_visual_prev_transforms;
 			std::vector<SimTransform> render_visual_current_transforms;
+			std::vector<SimTransform> render_final_prev_transforms;
+			std::vector<SimTransform> render_final_current_transforms;
 			std::vector<float> render_visual_prev_ground_distances;
 			std::vector<float> render_visual_current_ground_distances;
 			std::vector<uint8_t> render_visual_initialized;
 			std::vector<SimTransform> render_rollback_corrections;
-			std::vector<SimTransform> render_rollback_prev_corrections;
 			std::vector<uint8_t> render_rollback_correction_active;
 			std::vector<SimTransform> render_rollback_capture_transforms;
 			bool render_rollback_capture_pending = false;
