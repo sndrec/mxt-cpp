@@ -4,8 +4,108 @@
 #include "godot_cpp/core/class_db.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 using namespace godot;
+
+namespace {
+constexpr uint8_t MXT_NET_PACKET_VERSION = 1;
+constexpr uint8_t MXT_NET_PACKET_CLIENT_INPUTS = 1;
+constexpr uint8_t MXT_NET_PACKET_AUTHORITATIVE_INPUTS = 2;
+constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
+
+struct PacketWriter {
+	uint8_t data[65536] = {};
+	int pos = 0;
+
+	bool write_u8(uint8_t v)
+	{
+		if (pos + 1 > static_cast<int>(sizeof(data))) return false;
+		data[pos++] = v;
+		return true;
+	}
+
+	bool write_u16(uint16_t v)
+	{
+		return write_u8(static_cast<uint8_t>(v & 0xff)) &&
+			write_u8(static_cast<uint8_t>((v >> 8) & 0xff));
+	}
+
+	bool write_i32(int32_t v)
+	{
+		uint32_t u = static_cast<uint32_t>(v);
+		return write_u8(static_cast<uint8_t>(u & 0xff)) &&
+			write_u8(static_cast<uint8_t>((u >> 8) & 0xff)) &&
+			write_u8(static_cast<uint8_t>((u >> 16) & 0xff)) &&
+			write_u8(static_cast<uint8_t>((u >> 24) & 0xff));
+	}
+
+	bool write_bytes(const uint8_t* src, int len)
+	{
+		if (!src || len < 0 || pos + len > static_cast<int>(sizeof(data))) return false;
+		std::memcpy(data + pos, src, static_cast<size_t>(len));
+		pos += len;
+		return true;
+	}
+
+	PackedByteArray to_pba() const
+	{
+		PackedByteArray out;
+		out.resize(pos);
+		for (int i = 0; i < pos; ++i) {
+			out.set(i, data[i]);
+		}
+		return out;
+	}
+};
+
+struct PacketReader {
+	const uint8_t* data = nullptr;
+	int size = 0;
+	int pos = 0;
+
+	explicit PacketReader(const PackedByteArray& p_packet)
+	{
+		data = p_packet.ptr();
+		size = p_packet.size();
+	}
+
+	bool read_u8(uint8_t& out)
+	{
+		if (pos + 1 > size) return false;
+		out = data[pos++];
+		return true;
+	}
+
+	bool read_u16(uint16_t& out)
+	{
+		uint8_t a = 0, b = 0;
+		if (!read_u8(a) || !read_u8(b)) return false;
+		out = static_cast<uint16_t>(a) | (static_cast<uint16_t>(b) << 8);
+		return true;
+	}
+
+	bool read_i32(int32_t& out)
+	{
+		uint8_t a = 0, b = 0, c = 0, d = 0;
+		if (!read_u8(a) || !read_u8(b) || !read_u8(c) || !read_u8(d)) return false;
+		uint32_t u = static_cast<uint32_t>(a) |
+			(static_cast<uint32_t>(b) << 8) |
+			(static_cast<uint32_t>(c) << 16) |
+			(static_cast<uint32_t>(d) << 24);
+		out = static_cast<int32_t>(u);
+		return true;
+	}
+
+	bool read_bytes(const uint8_t*& out, int len)
+	{
+		if (len < 0 || pos + len > size) return false;
+		out = data + pos;
+		pos += len;
+		return true;
+	}
+};
+}
 
 void NetcodeSession::_bind_methods()
 {
@@ -15,6 +115,10 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_local_input", "tick", "input_bytes"), &NetcodeSession::store_local_input);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
+	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count"), &NetcodeSession::build_local_input_packet);
+	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet"), &NetcodeSession::store_pending_input_packet);
+	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "ack_tick"), &NetcodeSession::build_authoritative_input_packet);
+	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet"), &NetcodeSession::store_authoritative_input_packet);
 	ClassDB::bind_method(D_METHOD("server_has_full_input_frame", "tick"), &NetcodeSession::server_has_full_input_frame);
 	ClassDB::bind_method(D_METHOD("tick_server_frame", "game_sim", "tick"), &NetcodeSession::tick_server_frame);
 	ClassDB::bind_method(D_METHOD("tick_client_predicted_frame", "game_sim", "tick"), &NetcodeSession::tick_client_predicted_frame);
@@ -82,6 +186,7 @@ void NetcodeSession::reset()
 {
 	racer_count = 0;
 	local_player_id = -1;
+	latest_authoritative_tick = -1;
 	last_local_input = neutral_input;
 	for (int i = 0; i < MAX_RACERS; ++i) {
 		player_ids[i] = 0;
@@ -99,6 +204,7 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 {
 	racer_count = std::min(static_cast<int>(p_player_ids.size()), MAX_RACERS);
 	local_player_id = p_local_player_id;
+	latest_authoritative_tick = -1;
 	for (int i = 0; i < racer_count; ++i) {
 		player_ids[i] = static_cast<int32_t>(static_cast<int64_t>(p_player_ids[i]));
 		cpu_flags[i] = (i < p_cpu_flags.size() && static_cast<bool>(p_cpu_flags[i])) ? 1 : 0;
@@ -141,6 +247,7 @@ void NetcodeSession::store_authoritative_input(int tick, int player_id, godot::P
 	InputFrame& frame = frame_for(authoritative_history, tick);
 	frame.inputs[index] = PlayerInput::from_bytes(input_bytes);
 	frame.present[index] = 1;
+	latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 }
 
 void NetcodeSession::store_pending_input(int tick, int player_id, godot::PackedByteArray input_bytes)
@@ -152,6 +259,192 @@ void NetcodeSession::store_pending_input(int tick, int player_id, godot::PackedB
 	InputFrame& frame = frame_for(pending_inputs, tick);
 	frame.inputs[index] = PlayerInput::from_bytes(input_bytes);
 	frame.present[index] = 1;
+}
+
+godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, int count) const
+{
+	PacketWriter writer;
+	const int index = find_racer_index(local_player_id);
+	if (index < 0 || count <= 0) {
+		return writer.to_pba();
+	}
+	count = std::min(count, 255);
+	if (!writer.write_u8(MXT_NET_PACKET_CLIENT_INPUTS) ||
+		!writer.write_u8(MXT_NET_PACKET_VERSION) ||
+		!writer.write_i32(first_tick) ||
+		!writer.write_u8(static_cast<uint8_t>(count))) {
+		return PackedByteArray();
+	}
+	for (int i = 0; i < count; ++i) {
+		const int tick = first_tick + i;
+		const InputFrame* frame = find_frame(local_input_history, tick);
+		const PlayerInput& input = (frame && frame->present[index]) ? frame->inputs[index] : last_local_input;
+		uint8_t encoded[MXT_NET_MAX_INPUT_BYTES] = {};
+		const int encoded_len = PlayerInput::encode_to_raw(input, encoded, MXT_NET_MAX_INPUT_BYTES);
+		if (!writer.write_u8(static_cast<uint8_t>(encoded_len)) || !writer.write_bytes(encoded, encoded_len)) {
+			return PackedByteArray();
+		}
+	}
+	return writer.to_pba();
+}
+
+godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet)
+{
+	Dictionary stats;
+	stats["start_tick"] = -1;
+	stats["count"] = 0;
+	stats["accepted"] = 0;
+	stats["dropped"] = 0;
+	stats["last_tick"] = -1;
+	stats["valid"] = false;
+
+	const int index = find_racer_index(static_cast<int32_t>(player_id));
+	if (index < 0) {
+		return stats;
+	}
+	PacketReader reader(packet);
+	uint8_t type = 0, version = 0, count = 0;
+	int32_t start_tick = -1;
+	if (!reader.read_u8(type) || !reader.read_u8(version) ||
+		type != MXT_NET_PACKET_CLIENT_INPUTS || version != MXT_NET_PACKET_VERSION ||
+		!reader.read_i32(start_tick) || !reader.read_u8(count)) {
+		return stats;
+	}
+	stats["start_tick"] = start_tick;
+	stats["count"] = static_cast<int>(count);
+	stats["valid"] = true;
+
+	int accepted = 0;
+	int dropped = 0;
+	int last_tick = -1;
+	for (int i = 0; i < static_cast<int>(count); ++i) {
+		uint8_t len = 0;
+		const uint8_t* bytes = nullptr;
+		if (!reader.read_u8(len) || len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
+			stats["valid"] = false;
+			break;
+		}
+		const int tick = start_tick + i;
+		if (tick < reject_before_tick) {
+			++dropped;
+			continue;
+		}
+		InputFrame& frame = frame_for(pending_inputs, tick);
+		frame.inputs[index] = PlayerInput::from_raw(bytes, len);
+		frame.present[index] = 1;
+		++accepted;
+		last_tick = tick;
+	}
+	stats["accepted"] = accepted;
+	stats["dropped"] = dropped;
+	stats["last_tick"] = last_tick;
+	return stats;
+}
+
+godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_tick) const
+{
+	PacketWriter writer;
+	const int first_tick = ack_tick + 1;
+	int count = 0;
+	while (count < 255 && find_frame(authoritative_history, first_tick + count)) {
+		++count;
+	}
+	if (!writer.write_u8(MXT_NET_PACKET_AUTHORITATIVE_INPUTS) ||
+		!writer.write_u8(MXT_NET_PACKET_VERSION) ||
+		!writer.write_i32(first_tick) ||
+		!writer.write_u8(static_cast<uint8_t>(count)) ||
+		!writer.write_u16(static_cast<uint16_t>(racer_count))) {
+		return PackedByteArray();
+	}
+	const int bitset_bytes = (racer_count + 7) >> 3;
+	for (int f = 0; f < count; ++f) {
+		const InputFrame* frame = find_frame(authoritative_history, first_tick + f);
+		if (!frame) {
+			return PackedByteArray();
+		}
+		uint8_t present_bits[128] = {};
+		for (int i = 0; i < racer_count; ++i) {
+			if (frame->present[i]) {
+				present_bits[i >> 3] |= static_cast<uint8_t>(1u << (i & 7));
+			}
+		}
+		if (!writer.write_bytes(present_bits, bitset_bytes)) {
+			return PackedByteArray();
+		}
+		for (int i = 0; i < racer_count; ++i) {
+			if (!frame->present[i]) {
+				continue;
+			}
+			uint8_t encoded[MXT_NET_MAX_INPUT_BYTES] = {};
+			const int encoded_len = PlayerInput::encode_to_raw(frame->inputs[i], encoded, MXT_NET_MAX_INPUT_BYTES);
+			if (!writer.write_u8(static_cast<uint8_t>(encoded_len)) || !writer.write_bytes(encoded, encoded_len)) {
+				return PackedByteArray();
+			}
+		}
+	}
+	return writer.to_pba();
+}
+
+godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray packet)
+{
+	Dictionary stats;
+	stats["first_tick"] = -1;
+	stats["last_tick"] = -1;
+	stats["count"] = 0;
+	stats["valid"] = false;
+
+	PacketReader reader(packet);
+	uint8_t type = 0, version = 0, count = 0;
+	uint16_t packet_racer_count = 0;
+	int32_t first_tick = -1;
+	if (!reader.read_u8(type) || !reader.read_u8(version) ||
+		type != MXT_NET_PACKET_AUTHORITATIVE_INPUTS || version != MXT_NET_PACKET_VERSION ||
+		!reader.read_i32(first_tick) || !reader.read_u8(count) || !reader.read_u16(packet_racer_count)) {
+		return stats;
+	}
+	if (packet_racer_count != static_cast<uint16_t>(racer_count)) {
+		return stats;
+	}
+	stats["first_tick"] = first_tick;
+	stats["count"] = static_cast<int>(count);
+	stats["valid"] = true;
+	bool valid = true;
+
+	const int bitset_bytes = (racer_count + 7) >> 3;
+	uint8_t present_bits[128] = {};
+	for (int f = 0; f < static_cast<int>(count); ++f) {
+		std::memset(present_bits, 0, sizeof(present_bits));
+		const uint8_t* bit_bytes = nullptr;
+		if (!reader.read_bytes(bit_bytes, bitset_bytes)) {
+			valid = false;
+			stats["valid"] = false;
+			break;
+		}
+		std::memcpy(present_bits, bit_bytes, static_cast<size_t>(bitset_bytes));
+		const int tick = first_tick + f;
+		InputFrame& frame = frame_for(authoritative_history, tick);
+		clear_frame(frame, tick);
+		for (int i = 0; i < racer_count; ++i) {
+			if ((present_bits[i >> 3] & static_cast<uint8_t>(1u << (i & 7))) == 0) {
+				continue;
+			}
+			uint8_t len = 0;
+			const uint8_t* bytes = nullptr;
+			if (!reader.read_u8(len) || len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
+				valid = false;
+				stats["valid"] = false;
+				break;
+			}
+			frame.inputs[i] = PlayerInput::from_raw(bytes, len);
+			frame.present[i] = 1;
+		}
+		if (!valid) {
+			break;
+		}
+		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
+		stats["last_tick"] = tick;
+	}
+	return stats;
 }
 
 bool NetcodeSession::server_has_full_input_frame(int tick) const
@@ -189,6 +482,7 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick)
 	}
 	sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedCarArray,
 		-1, nullptr, authoritative.inputs, authoritative.present, racer_count);
+	latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 	return true;
 }
 

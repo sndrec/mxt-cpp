@@ -99,7 +99,7 @@ var start_sync_initial_max_ahead := 2.0
 
 var use_state_compression := true
 
-var log_enabled := false
+var log_enabled := true
 var log_file: FileAccess
 var log_bytes_out_total := 0
 var log_bytes_in_total := 0
@@ -108,6 +108,10 @@ var log_bytes_in_interval := 0
 var log_inputs_sent := 0
 var log_inputs_retransmitted := 0
 var log_inputs_acked := 0
+var log_flat_client_payload_out := 0
+var log_flat_client_payload_in := 0
+var log_flat_server_payload_out := 0
+var log_flat_server_payload_in := 0
 var log_server_late_drops := 0
 var log_server_replacements := 0
 var log_net_cpu_us_interval := 0
@@ -145,7 +149,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,late_drops,replacements,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -370,7 +374,7 @@ func _flush_log() -> void:
 	var car_store_old_pos_ms := float(prof_car_store_old_pos_us_interval) / 1000.0
 	var car_post_render_ms := float(prof_car_post_render_us_interval) / 1000.0
 
-	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(max_ahead_from_server) + "," + str(physics_tps) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
+	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(max_ahead_from_server) + "," + str(physics_tps) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
@@ -380,6 +384,10 @@ func _flush_log() -> void:
 	log_rollback_us_count = 0
 	log_rollback_us_max = 0
 	log_inputs_retransmitted = 0
+	log_flat_client_payload_out = 0
+	log_flat_client_payload_in = 0
+	log_flat_server_payload_out = 0
+	log_flat_server_payload_in = 0
 	log_sim_cpu_us_interval = 0
 	prof_collect_server_inputs_us_interval = 0
 	prof_idle_broadcast_us_interval = 0
@@ -1050,33 +1058,19 @@ func collect_server_inputs() -> Dictionary:
 		last_received_tick[multiplayer.get_unique_id()] = server_tick
 	if server_tick > target_tick:
 		return {}
-	var dict = pending_inputs[server_tick]
-	var roster : Array = _get_human_roster()
-	var prev = authoritative_history.get(server_tick - 1, {})
-	for i in range(roster.size()):
-		var pid = roster[i]
-		if not dict.has(pid):
-			if net_input_debug_prints < 120:
-				print("MXT_NET_INPUT_DEBUG server_waiting",
-					" server_tick=", server_tick,
-					" target_tick=", target_tick,
-					" missing_pid=", pid,
-					" roster=", roster,
-					" cpu_roster=", _get_cpu_roster(),
-					" pending_keys=", dict.keys(),
-					" last_received=", last_received_tick)
-				net_input_debug_prints += 1
-			if _disconnected_during_race.has(pid):
-				dict[pid] = _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
-			else:
-				return {}
-	var frame_inputs := {}
-	for id in roster:
-		frame_inputs[id] = dict[id]
-		server_netcode_session.store_pending_input(server_tick, int(id), dict[id])
+	if !server_netcode_session.server_has_full_input_frame(server_tick):
+		if net_input_debug_prints < 120:
+			print("MXT_NET_INPUT_DEBUG server_waiting_flat",
+				" server_tick=", server_tick,
+				" target_tick=", target_tick,
+				" human_roster=", _get_human_roster(),
+				" cpu_roster=", _get_cpu_roster(),
+				" last_received=", last_received_tick)
+			net_input_debug_prints += 1
+		return {}
 	if !server_netcode_session.tick_server_frame(server_game_sim, server_tick):
 		return {}
-	frame_inputs = server_netcode_session.get_frame_as_dictionary(server_tick)
+	var frame_inputs: Dictionary = server_netcode_session.get_frame_as_dictionary(server_tick)
 	authoritative_history[server_tick] = frame_inputs
 	pending_inputs.erase(server_tick)
 	return frame_inputs
@@ -1111,10 +1105,10 @@ func collect_client_inputs() -> Dictionary:
 				for i in range(start_index, old_keys.size()):
 					recent_keys.append(old_keys[i])
 				var start := int(recent_keys[0])
-				var data : Array = []
-				for k in recent_keys:
-					data.append(sent_inputs_bytes[k])
-				_client_send_input.rpc_id(1, start, data, desired_ahead_ticks, last_server_input_tick)
+				var packet: PackedByteArray = netcode_session.build_local_input_packet(start, recent_keys.size())
+				log_flat_client_payload_out += packet.size()
+				_acc_log_out(12 + packet.size())
+				_client_send_input_flat.rpc_id(1, packet, desired_ahead_ticks, last_server_input_tick)
 				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		return {}
 	sent_inputs_bytes[local_tick] = last_local_input_bytes
@@ -1135,11 +1129,9 @@ func collect_client_inputs() -> Dictionary:
 		for i in range(start_index, all_keys.size()):
 			recent_keys.append(all_keys[i])
 		var first_tick := int(recent_keys[0])
-		var inputs_arr : Array = []
-		for k in recent_keys:
-			inputs_arr.append(sent_inputs_bytes[k])
-		var _est2 := 12 + _estimate_pba_array_size(inputs_arr)
-		_acc_log_out(_est2)
+		var input_packet: PackedByteArray = netcode_session.build_local_input_packet(first_tick, recent_keys.size())
+		log_flat_client_payload_out += input_packet.size()
+		_acc_log_out(12 + input_packet.size())
 		for k in recent_keys:
 			var prev := int(_log_sent_counts.get(k, 0))
 			_log_sent_counts[k] = prev + 1
@@ -1150,7 +1142,8 @@ func collect_client_inputs() -> Dictionary:
 			print("MXT_NET_INPUT_DEBUG client_send",
 				" uid=", multiplayer.get_unique_id(),
 				" first_tick=", first_tick,
-				" count=", inputs_arr.size(),
+				" count=", recent_keys.size(),
+				" payload_bytes=", input_packet.size(),
 				" local_tick=", local_tick,
 				" clients_server_tick=", clients_server_tick,
 				" clients_target_tick=", clients_target_tick,
@@ -1161,7 +1154,7 @@ func collect_client_inputs() -> Dictionary:
 				" race_player_ids=", race_player_ids,
 				" race_cpu_ids=", race_cpu_player_ids)
 			net_input_debug_prints += 1
-		_client_send_input.rpc_id(1, first_tick, inputs_arr, desired_ahead_ticks, last_server_input_tick)
+		_client_send_input_flat.rpc_id(1, input_packet, desired_ahead_ticks, last_server_input_tick)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 	var frame_inputs: Dictionary
 	if authoritative_inputs.has(local_tick):
@@ -1255,6 +1248,59 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
 
+@rpc("any_peer", "unreliable_ordered", "call_remote", 1)
+func _client_send_input_flat(packet: PackedByteArray, ahead: float, ack: int) -> void:
+	if !race_active:
+		return
+	var __prof_t0 := Time.get_ticks_usec()
+	if is_server:
+		var sender_id := multiplayer.get_remote_sender_id()
+		var sender_seen_before := last_received_tick.has(sender_id)
+		var reject_before := target_tick - 5
+		if !sender_seen_before:
+			reject_before = server_tick
+		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet)
+		if !bool(stats.get("valid", false)):
+			return
+		var accepted := int(stats.get("accepted", 0))
+		var dropped := int(stats.get("dropped", 0))
+		var last_tick := int(stats.get("last_tick", -1))
+		if dropped > 0:
+			log_server_late_drops += dropped
+		if accepted > 0:
+			last_input_time[sender_id] = 0.001 * float(Time.get_ticks_msec())
+			last_received_tick[sender_id] = last_tick
+		if net_input_debug_prints < 120:
+			print("MXT_NET_INPUT_DEBUG server_recv_flat",
+				" sender=", sender_id,
+				" start_tick=", int(stats.get("start_tick", -1)),
+				" inputs=", int(stats.get("count", 0)),
+				" accepted=", accepted,
+				" dropped=", dropped,
+				" reject_before=", reject_before,
+				" server_tick=", server_tick,
+				" target_tick=", target_tick,
+				" first_input=", !sender_seen_before,
+				" ahead=", ahead,
+				" ack=", ack,
+				" payload_bytes=", packet.size(),
+				" last_received=", last_received_tick.get(sender_id, -1),
+				" player_ids=", player_ids,
+				" cpu_ids=", cpu_player_ids,
+				" race_player_ids=", race_player_ids,
+				" race_cpu_ids=", race_cpu_player_ids)
+			net_input_debug_prints += 1
+		peer_desired_ahead[sender_id] = ahead
+		authoritative_acks[sender_id] = max(
+			ack,
+			authoritative_acks.get(sender_id, -1)
+		)
+		log_flat_client_payload_in += packet.size()
+		_acc_log_in(12 + packet.size())
+		_prune_authoritative_history()
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
+
 func _apply_server_input_ack(ack_tick: int) -> void:
 	if ack_tick == -1:
 		return
@@ -1326,6 +1372,35 @@ func _server_broadcast(last_tick: int, inputs: Array, this_ack: int, state: Pack
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
 
+@rpc("any_peer", "unreliable_ordered", "call_local", 2)
+func _server_broadcast_flat(server_state_tick: int, input_packet: PackedByteArray, this_ack: int, state: PackedByteArray, state_uncompressed_size: int, tgt: int, max_ahead: float) -> void:
+	if !race_active:
+		return
+	var __prof_t0 := Time.get_ticks_usec()
+	if not is_server or listen_server:
+		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet)
+		if bool(stats.get("valid", false)):
+			var count := int(stats.get("count", 0))
+			if count > 0:
+				var first_tick := int(stats.get("first_tick", -1))
+				var last_tick := int(stats.get("last_tick", -1))
+				clients_server_tick = max(clients_server_tick, last_tick + 1)
+				_handle_input_update_flat(first_tick)
+				last_server_input_tick = max(last_server_input_tick, last_tick)
+		clients_target_tick = max(clients_target_tick, tgt)
+		last_target_tick_update = Time.get_ticks_msec()
+		clients_max_ahead_from_server = max_ahead
+		log_flat_server_payload_in += input_packet.size()
+	_apply_server_input_ack(this_ack)
+	if state.size() > 0:
+		var _state_to_use := state
+		if state_uncompressed_size > 0:
+			_state_to_use = state.decompress(state_uncompressed_size, FileAccess.COMPRESSION_ZSTD)
+		_handle_state(server_state_tick, _state_to_use)
+	_acc_log_in(20 + input_packet.size() + state.size())
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
+
 func post_tick() -> void:
 	if !race_active:
 		return
@@ -1334,9 +1409,6 @@ func post_tick() -> void:
 		var state = server_game_sim.get_state_data(server_tick)
 		var max_ahead := _calc_max_ahead()
 		max_ahead_from_server = max_ahead
-		var keys := authoritative_history.keys()
-		keys.sort()
-		var ack_cache := {}
 		# Prepare compressed snapshot lazily and reuse for all recipients this tick
 		var compressed_ready := false
 		var compressed_state : PackedByteArray = PackedByteArray()
@@ -1356,25 +1428,11 @@ func post_tick() -> void:
 				send_state = compressed_state
 				send_state_uncomp_size = uncompressed_size
 			var ack = authoritative_acks.get(id, -1)
-			var pack = ack_cache.get(ack)
-			var start := -1
-			var arr : Array = []
-			var last_tick_local = ack
-			if pack == null:
-				for k in keys:
-					if k > ack:
-						if start == -1:
-							start = k
-						arr.append(authoritative_history[k])
-				last_tick_local = start + arr.size() - 1 if arr.size() > 0 else ack
-				ack_cache[ack] = {"arr": arr, "last": last_tick_local}
-			else:
-				arr = pack["arr"]
-				last_tick_local = int(pack["last"])
-			var _bytes := 4 + _estimate_nested_inputs_size(arr) + send_state.size() + 4 + 4 + 4 + 4
+			var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(ack)
+			var _bytes := 20 + input_packet.size() + send_state.size()
+			log_flat_server_payload_out += input_packet.size()
 			_acc_log_out(_bytes)
-			_server_timing_update.rpc_id(id, last_received_tick.get(id, -1), target_tick, max_ahead)
-			_server_broadcast.rpc_id(id, last_tick_local, arr, last_received_tick.get(id, -1), send_state, send_state_uncomp_size, target_tick, max_ahead)
+			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, last_received_tick.get(id, -1), send_state, send_state_uncomp_size, target_tick, max_ahead)
 		server_tick += 1
 		if listen_server:
 			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
@@ -1391,33 +1449,16 @@ func _idle_broadcast() -> void:
 	var _t0 := Time.get_ticks_usec()
 	var max_ahead := _calc_max_ahead()
 	max_ahead_from_server = max_ahead
-	var keys := authoritative_history.keys()
-	keys.sort()
-	var ack_cache := {}
 	for id in player_ids + spectator_ids:
 		var ack = authoritative_acks.get(id, -1)
-		var pack = ack_cache.get(ack)
-		var start := -1
-		var arr : Array = []
-		var last_tick = ack
-		if pack == null:
-			for k in keys:
-				if k > ack:
-					if start == -1:
-						start = k
-					arr.append(authoritative_history[k])
-			last_tick = start + arr.size() - 1 if arr.size() > 0 else ack
-			ack_cache[ack] = {"arr": arr, "last": last_tick}
-		else:
-			arr = pack["arr"]
-			last_tick = int(pack["last"])
-		var _bytes := 4 + _estimate_nested_inputs_size(arr) + 0 + 4 + 4 + 4 + 4
+		var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(ack)
+		var _bytes := 20 + input_packet.size()
+		log_flat_server_payload_out += input_packet.size()
 		_acc_log_out(_bytes)
-		_server_timing_update.rpc_id(id, last_received_tick.get(id, -1), target_tick, max_ahead)
-		_server_broadcast.rpc_id(
+		_server_broadcast_flat.rpc_id(
 			id,
-			max(last_tick, 0),
-			arr,
+			max(server_tick - 1, 0),
+			input_packet,
 			last_received_tick.get(id, -1),
 			PackedByteArray(),
 			0,
@@ -1511,6 +1552,27 @@ func _handle_input_update(tick: int, inputs: Dictionary) -> void:
 	netcode_session.replay_history(game_sim, maxi(latest_state_tick + 1, tick), local_tick)
 	var new_time := Time.get_ticks_usec()
 	#DebugDraw2D.set_text("rollback frametime microseconds", new_time - old_time)
+	rollback_frametime_us = new_time - old_time
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_handle_input_update_us_interval += __prof_t1 - __prof_t0
+
+func _handle_input_update_flat(tick: int) -> void:
+	if !race_active:
+		return
+	if game_sim == null:
+		return
+	if tick < 0:
+		return
+	var __prof_t0 := Time.get_ticks_usec()
+	if tick == 0 or latest_state_tick == -1:
+		return
+	if tick >= local_tick:
+		return
+	_recalculate_future_predictions(tick)
+	game_sim.load_state(maxi(latest_state_tick, tick - 1))
+	var old_time := Time.get_ticks_usec()
+	netcode_session.replay_history(game_sim, maxi(latest_state_tick + 1, tick), local_tick)
+	var new_time := Time.get_ticks_usec()
 	rollback_frametime_us = new_time - old_time
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_handle_input_update_us_interval += __prof_t1 - __prof_t0
