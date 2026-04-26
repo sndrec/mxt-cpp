@@ -62,7 +62,10 @@ const START_SYNC_START_DELAY_MS := 750
 var player_settings := {}
 var ready_players : Array[int] = []
 const STATE_BROADCAST_INTERVAL_TICKS := 60
+const STATE_CHUNK_PAYLOAD_BYTES := 1000
+const STATE_CHUNK_SEND_COPIES := 2
 var state_send_offsets := {}
+var pending_state_chunks := {}
 var net_race_finish_time := -1
 var player_finish_times := {}
 var player_finish_placements := {}
@@ -193,6 +196,14 @@ func _log_state_received(raw_size: int, payload_size: int) -> void:
 	log_state_payload_in += payload_size
 	log_state_raw_in += max(raw_size, 0)
 	log_state_recv_count += 1
+
+func _clear_state_chunk_buffers() -> void:
+	pending_state_chunks.clear()
+
+func _prune_state_chunk_buffers() -> void:
+	for tick in pending_state_chunks.keys():
+		if int(tick) <= latest_state_tick:
+			pending_state_chunks.erase(tick)
 
 var version_string: String = ""
 var _unverified_peers: Array = []
@@ -523,6 +534,7 @@ func reset_race_state() -> void:
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	_clear_state_chunk_buffers()
 	use_physics_ticks = 1.0
 	last_target_tick_update = Time.get_ticks_msec()
 	desired_ahead_ticks = 0.0 if is_server and !listen_server else 2.0
@@ -703,6 +715,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	server_netcode_session.clear_peer_state()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	_clear_state_chunk_buffers()
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	race_cpu_player_ids.clear()
@@ -747,6 +760,7 @@ func join(ip: String, port: int = 27016) -> int:
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	_clear_state_chunk_buffers()
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	player_ids = [multiplayer.get_unique_id()]
@@ -1455,21 +1469,69 @@ func _server_broadcast_flat(server_state_tick: int, input_packet: PackedByteArra
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
 
 @rpc("any_peer", "unreliable", "call_local", 4)
-func _server_state_sync(state_tick: int, state: PackedByteArray, state_uncompressed_size: int) -> void:
+func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_payload_size: int, chunk_index: int, chunk_count: int, chunk: PackedByteArray) -> void:
 	if !race_active:
 		return
-	if state.size() <= 0:
+	if chunk.size() <= 0:
 		return
 	if state_tick <= latest_state_tick:
 		return
+	if state_payload_size <= 0 or chunk_count <= 0 or chunk_index < 0 or chunk_index >= chunk_count:
+		return
 	var __prof_t0 := Time.get_ticks_usec()
-	var raw_state_size := state_uncompressed_size if state_uncompressed_size > 0 else state.size()
-	_log_state_received(raw_state_size, state.size())
-	var _state_to_use := state
+	_acc_log_in(20 + chunk.size())
+	var record = pending_state_chunks.get(state_tick)
+	if typeof(record) != TYPE_DICTIONARY:
+		var chunks := []
+		var received := []
+		chunks.resize(chunk_count)
+		received.resize(chunk_count)
+		for i in range(chunk_count):
+			received[i] = false
+		record = {
+			"raw_size": state_uncompressed_size,
+			"payload_size": state_payload_size,
+			"chunk_count": chunk_count,
+			"chunks": chunks,
+			"received": received,
+			"received_count": 0,
+		}
+		pending_state_chunks[state_tick] = record
+	else:
+		if int(record.get("payload_size", -1)) != state_payload_size or int(record.get("chunk_count", -1)) != chunk_count:
+			pending_state_chunks.erase(state_tick)
+			var __prof_t_bad := Time.get_ticks_usec()
+			prof_server_broadcast_recv_us_interval += __prof_t_bad - __prof_t0
+			return
+	var received_arr: Array = record["received"]
+	if bool(received_arr[chunk_index]):
+		var __prof_t_dup := Time.get_ticks_usec()
+		prof_server_broadcast_recv_us_interval += __prof_t_dup - __prof_t0
+		return
+	received_arr[chunk_index] = true
+	var chunks_arr: Array = record["chunks"]
+	chunks_arr[chunk_index] = chunk
+	record["received_count"] = int(record["received_count"]) + 1
+	if int(record["received_count"]) < chunk_count:
+		var __prof_t_wait := Time.get_ticks_usec()
+		prof_server_broadcast_recv_us_interval += __prof_t_wait - __prof_t0
+		return
+	var state := PackedByteArray()
+	state.resize(state_payload_size)
+	var offset := 0
+	for i in range(chunk_count):
+		var part: PackedByteArray = chunks_arr[i]
+		for j in range(part.size()):
+			state[offset + j] = part[j]
+		offset += part.size()
+	pending_state_chunks.erase(state_tick)
+	var raw_state_size := state_uncompressed_size if state_uncompressed_size > 0 else state_payload_size
+	_log_state_received(raw_state_size, state_payload_size)
+	var state_to_use := state
 	if state_uncompressed_size > 0:
-		_state_to_use = state.decompress(state_uncompressed_size, FileAccess.COMPRESSION_ZSTD)
-	_handle_state(state_tick, _state_to_use)
-	_acc_log_in(8 + state.size())
+		state_to_use = state.decompress(state_uncompressed_size, FileAccess.COMPRESSION_ZSTD)
+	_handle_state(state_tick, state_to_use)
+	_prune_state_chunk_buffers()
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
 
@@ -1516,8 +1578,18 @@ func post_tick() -> void:
 			_acc_log_out(20 + input_packet.size())
 			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, server_netcode_session.get_peer_last_received(id), PackedByteArray(), 0, target_tick, max_ahead)
 			if send_state.size() > 0:
-				_acc_log_out(8 + send_state.size())
-				_server_state_sync.rpc_id(id, server_tick, send_state, send_state_uncomp_size)
+				var chunk_count := int(ceil(float(send_state.size()) / float(STATE_CHUNK_PAYLOAD_BYTES)))
+				var state_chunks := []
+				state_chunks.resize(chunk_count)
+				for chunk_index in range(chunk_count):
+					var chunk_start := chunk_index * STATE_CHUNK_PAYLOAD_BYTES
+					var chunk_end = mini(chunk_start + STATE_CHUNK_PAYLOAD_BYTES, send_state.size())
+					state_chunks[chunk_index] = send_state.slice(chunk_start, chunk_end)
+				for copy_index in range(STATE_CHUNK_SEND_COPIES):
+					for chunk_index in range(chunk_count):
+						var chunk: PackedByteArray = state_chunks[chunk_index]
+						_acc_log_out(20 + chunk.size())
+						_server_state_chunk.rpc_id(id, server_tick, send_state_uncomp_size, send_state.size(), chunk_index, chunk_count, chunk)
 		server_tick += 1
 		if listen_server:
 			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
@@ -1700,6 +1772,7 @@ func disconnect_from_server() -> void:
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	_clear_state_chunk_buffers()
 	server_netcode_session.clear_peer_state()
 	_reset_start_sync_state()
 
