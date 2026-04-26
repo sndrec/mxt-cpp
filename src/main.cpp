@@ -3801,6 +3801,12 @@ struct NetStateWriter {
 		write_pod(q.w);
 	}
 
+	void write_basis(const SimBasis& b) {
+		for (int col = 0; col < 3; ++col) {
+			write_vec3(b.get_column(col));
+		}
+	}
+
 	void write_transform(const SimTransform& t) {
 		for (int col = 0; col < 3; ++col) {
 			write_vec3(t.basis.get_column(col));
@@ -3860,6 +3866,17 @@ struct NetStateReader {
 
 	bool read_quat(SimQuat& out) {
 		return read_pod(out.x) && read_pod(out.y) && read_pod(out.z) && read_pod(out.w);
+	}
+
+	bool read_basis(SimBasis& out) {
+		SimVec3 c0, c1, c2;
+		if (!read_vec3(c0) || !read_vec3(c1) || !read_vec3(c2)) {
+			return false;
+		}
+		out.set_column(0, c0);
+		out.set_column(1, c1);
+		out.set_column(2, c2);
+		return true;
 	}
 
 	bool read_transform(SimTransform& out) {
@@ -4025,7 +4042,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 #define WRITE_NET_TRANSFORM(name) writer.write_transform(MXT_LOAD_TRANSFORM(soa, name, lane));
 		MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_TRANSFORM)
 #undef WRITE_NET_TRANSFORM
-		writer.write_quat(MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis.get_rotation_quaternion());
+		writer.write_basis(MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis);
 		if (soa.collision_old_valid[lane]) {
 			writer.write_vec2(soa.collision_old_road_t[lane]);
 			writer.write_vec3(soa.collision_old_spatial_t[lane]);
@@ -4146,12 +4163,11 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 #define READ_NET_TRANSFORM(name) do { SimTransform t; if (!reader.read_transform(t)) return false; MXT_STORE_TRANSFORM(soa, name, lane, t); } while (0);
 		MXT_NET_CAR_TRANSFORM_FIELDS(READ_NET_TRANSFORM)
 #undef READ_NET_TRANSFORM
-		SimQuat basis_quat;
-		if (!reader.read_quat(basis_quat)) {
+		SimBasis basis_physical;
+		if (!reader.read_basis(basis_physical)) {
 			return false;
 		}
-		basis_quat.normalize();
-		MXT_STORE_TRANSFORM(soa, basis_physical, lane, SimTransform(SimBasis(basis_quat), SimVec3()));
+		MXT_STORE_TRANSFORM(soa, basis_physical, lane, SimTransform(basis_physical, SimVec3()));
 		if (soa.collision_old_valid[lane]) {
 			if (!reader.read_vec2(soa.collision_old_road_t[lane]) ||
 				!reader.read_vec3(soa.collision_old_spatial_t[lane]) ||
