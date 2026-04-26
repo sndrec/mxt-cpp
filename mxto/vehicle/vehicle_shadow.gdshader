@@ -10,7 +10,7 @@ void vertex() {
 void fragment() {
 	ALBEDO = vec3(0.0);
 	ALPHA = 1.0;
-	DEPTH = max(0.0, FRAGCOORD.z - 0.0002);
+	DEPTH = max(0.0, FRAGCOORD.z + 0.002);
 }
 
 //void light() {
