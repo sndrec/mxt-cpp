@@ -57,13 +57,31 @@ public:
                 return from_raw(arr.ptr(), arr.size());
         }
 
-        static PlayerInput from_raw(const uint8_t *data, int size)
+        static int encoded_raw_size_from_mask(uint8_t bitmask)
+        {
+                int size = 1;
+                if (bitmask & (1 << 0)) ++size;
+                if (bitmask & (1 << 1)) ++size;
+                if (bitmask & (1 << 2)) ++size;
+                if (bitmask & (1 << 3)) ++size;
+                if (bitmask & (1 << 4)) ++size;
+                if (bitmask & (1 << 5)) ++size;
+                if (bitmask & (1 << 6)) ++size;
+                return size;
+        }
+
+        static PlayerInput from_raw_consumed(const uint8_t *data, int size, int *consumed)
         {
                 PlayerInput out{};
                 int idx = 0;
+                if (consumed)
+                        *consumed = 0;
                 if (!data || size <= 0)
                         return out;
                 uint8_t bitmask = data[idx++];
+                const int expected_size = encoded_raw_size_from_mask(bitmask);
+                if (size < expected_size)
+                        return out;
                 if ((bitmask & (1 << 0)) && idx < size) out.strafe_left = float(data[idx++]) / float(RAW_BIT_PRECISION);
                 if ((bitmask & (1 << 1)) && idx < size) out.strafe_right = float(data[idx++]) / float(RAW_BIT_PRECISION);
                 if ((bitmask & (1 << 2)) && idx < size) out.steer_horizontal = (float(data[idx++]) / float(RAW_BIT_PRECISION)) * 2.0f - 1.0f;
@@ -78,7 +96,14 @@ public:
                         out.boost = (buttons & 2) != 0;
                         out.sideattack = (buttons & 4) != 0;
                 }
+                if (consumed)
+                        *consumed = idx;
                 return out;
+        }
+
+        static PlayerInput from_raw(const uint8_t *data, int size)
+        {
+                return from_raw_consumed(data, size, nullptr);
         }
 
         static uint8_t quantize_axis(float v)

@@ -9,7 +9,6 @@
 using namespace godot;
 
 namespace {
-constexpr uint8_t MXT_NET_PACKET_VERSION = 1;
 constexpr uint8_t MXT_NET_PACKET_CLIENT_INPUTS = 1;
 constexpr uint8_t MXT_NET_PACKET_AUTHORITATIVE_INPUTS = 2;
 constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
@@ -311,7 +310,6 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 	}
 	count = std::min(count, 255);
 	if (!writer.write_u8(MXT_NET_PACKET_CLIENT_INPUTS) ||
-		!writer.write_u8(MXT_NET_PACKET_VERSION) ||
 		!writer.write_i32(first_tick) ||
 		!writer.write_u8(static_cast<uint8_t>(count))) {
 		return PackedByteArray();
@@ -322,7 +320,7 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 		const PlayerInput& input = (frame && frame->present[index]) ? frame->inputs[index] : last_local_input;
 		uint8_t encoded[MXT_NET_MAX_INPUT_BYTES] = {};
 		const int encoded_len = PlayerInput::encode_to_raw(input, encoded, MXT_NET_MAX_INPUT_BYTES);
-		if (!writer.write_u8(static_cast<uint8_t>(encoded_len)) || !writer.write_bytes(encoded, encoded_len)) {
+		if (!writer.write_bytes(encoded, encoded_len)) {
 			return PackedByteArray();
 		}
 	}
@@ -352,10 +350,10 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 		peer_states[peer_index].authoritative_ack = std::max(peer_states[peer_index].authoritative_ack, static_cast<int32_t>(ack_tick));
 	}
 	PacketReader reader(packet);
-	uint8_t type = 0, version = 0, count = 0;
+	uint8_t type = 0, count = 0;
 	int32_t start_tick = -1;
-	if (!reader.read_u8(type) || !reader.read_u8(version) ||
-		type != MXT_NET_PACKET_CLIENT_INPUTS || version != MXT_NET_PACKET_VERSION ||
+	if (!reader.read_u8(type) ||
+		type != MXT_NET_PACKET_CLIENT_INPUTS ||
 		!reader.read_i32(start_tick) || !reader.read_u8(count)) {
 		return stats;
 	}
@@ -367,9 +365,14 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	int dropped = 0;
 	int last_tick = -1;
 	for (int i = 0; i < static_cast<int>(count); ++i) {
-		uint8_t len = 0;
 		const uint8_t* bytes = nullptr;
-		if (!reader.read_u8(len) || len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
+		if (!reader.read_bytes(bytes, 1)) {
+			stats["valid"] = false;
+			break;
+		}
+		const int len = PlayerInput::encoded_raw_size_from_mask(bytes[0]);
+		reader.pos -= 1;
+		if (len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
 			stats["valid"] = false;
 			break;
 		}
@@ -404,34 +407,21 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 		++count;
 	}
 	if (!writer.write_u8(MXT_NET_PACKET_AUTHORITATIVE_INPUTS) ||
-		!writer.write_u8(MXT_NET_PACKET_VERSION) ||
 		!writer.write_i32(first_tick) ||
 		!writer.write_u8(static_cast<uint8_t>(count)) ||
 		!writer.write_u16(static_cast<uint16_t>(racer_count))) {
 		return PackedByteArray();
 	}
-	const int bitset_bytes = (racer_count + 7) >> 3;
 	for (int f = 0; f < count; ++f) {
 		const InputFrame* frame = find_frame(authoritative_history, first_tick + f);
 		if (!frame) {
 			return PackedByteArray();
 		}
-		uint8_t present_bits[128] = {};
 		for (int i = 0; i < racer_count; ++i) {
-			if (frame->present[i]) {
-				present_bits[i >> 3] |= static_cast<uint8_t>(1u << (i & 7));
-			}
-		}
-		if (!writer.write_bytes(present_bits, bitset_bytes)) {
-			return PackedByteArray();
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			if (!frame->present[i]) {
-				continue;
-			}
+			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
 			uint8_t encoded[MXT_NET_MAX_INPUT_BYTES] = {};
-			const int encoded_len = PlayerInput::encode_to_raw(frame->inputs[i], encoded, MXT_NET_MAX_INPUT_BYTES);
-			if (!writer.write_u8(static_cast<uint8_t>(encoded_len)) || !writer.write_bytes(encoded, encoded_len)) {
+			const int encoded_len = PlayerInput::encode_to_raw(input, encoded, MXT_NET_MAX_INPUT_BYTES);
+			if (!writer.write_bytes(encoded, encoded_len)) {
 				return PackedByteArray();
 			}
 		}
@@ -448,11 +438,11 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	stats["valid"] = false;
 
 	PacketReader reader(packet);
-	uint8_t type = 0, version = 0, count = 0;
+	uint8_t type = 0, count = 0;
 	uint16_t packet_racer_count = 0;
 	int32_t first_tick = -1;
-	if (!reader.read_u8(type) || !reader.read_u8(version) ||
-		type != MXT_NET_PACKET_AUTHORITATIVE_INPUTS || version != MXT_NET_PACKET_VERSION ||
+	if (!reader.read_u8(type) ||
+		type != MXT_NET_PACKET_AUTHORITATIVE_INPUTS ||
 		!reader.read_i32(first_tick) || !reader.read_u8(count) || !reader.read_u16(packet_racer_count)) {
 		return stats;
 	}
@@ -464,27 +454,20 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	stats["valid"] = true;
 	bool valid = true;
 
-	const int bitset_bytes = (racer_count + 7) >> 3;
-	uint8_t present_bits[128] = {};
 	for (int f = 0; f < static_cast<int>(count); ++f) {
-		std::memset(present_bits, 0, sizeof(present_bits));
-		const uint8_t* bit_bytes = nullptr;
-		if (!reader.read_bytes(bit_bytes, bitset_bytes)) {
-			valid = false;
-			stats["valid"] = false;
-			break;
-		}
-		std::memcpy(present_bits, bit_bytes, static_cast<size_t>(bitset_bytes));
 		const int tick = first_tick + f;
 		InputFrame& frame = frame_for(authoritative_history, tick);
 		clear_frame(frame, tick);
 		for (int i = 0; i < racer_count; ++i) {
-			if ((present_bits[i >> 3] & static_cast<uint8_t>(1u << (i & 7))) == 0) {
-				continue;
-			}
-			uint8_t len = 0;
 			const uint8_t* bytes = nullptr;
-			if (!reader.read_u8(len) || len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
+			if (!reader.read_bytes(bytes, 1)) {
+				valid = false;
+				stats["valid"] = false;
+				break;
+			}
+			const int len = PlayerInput::encoded_raw_size_from_mask(bytes[0]);
+			reader.pos -= 1;
+			if (len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
 				valid = false;
 				stats["valid"] = false;
 				break;
