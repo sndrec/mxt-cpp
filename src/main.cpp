@@ -2727,8 +2727,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		gameplay_camera_player_id = -1;
 		render_car_transform_nodes.clear();
 		render_car_multimeshes.clear();
+		render_outline_multimeshes.clear();
+		render_outline_main_multimeshes.clear();
 		render_shadow_multimeshes.clear();
 		render_car_local_transforms.clear();
+		render_outline_local_transforms.clear();
+		render_outline_main_local_transforms.clear();
 		render_shadow_local_transforms.clear();
 		render_car_archetype_indices.clear();
 		render_car_slots.clear();
@@ -2744,6 +2748,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_rollback_capture_transforms.clear();
 		render_rollback_capture_pending = false;
 		render_vehicle_visual_state.clear();
+		render_vehicle_effect_refs.clear();
 		native_cpu_drivers.clear();
 		cpu_driver_manager = nullptr;
 	};
@@ -2752,8 +2757,12 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 {
 	car_render_manager = p_car_render_manager;
 	render_car_multimeshes.clear();
+	render_outline_multimeshes.clear();
+	render_outline_main_multimeshes.clear();
 	render_shadow_multimeshes.clear();
 	render_car_local_transforms.clear();
+	render_outline_local_transforms.clear();
+	render_outline_main_local_transforms.clear();
 	render_shadow_local_transforms.clear();
 	render_car_archetype_indices.clear();
 	render_car_slots.clear();
@@ -2769,6 +2778,7 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_rollback_capture_transforms.clear();
 	render_rollback_capture_pending = false;
 	render_vehicle_visual_state.clear();
+	render_vehicle_effect_refs.clear();
 	if (!car_render_manager) {
 		return;
 	}
@@ -2779,19 +2789,37 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	}
 	godot::Dictionary bindings = bindings_var;
 	godot::Array multimeshes = bindings.get("multimeshes", godot::Array());
+	godot::Array outline_multimeshes = bindings.get("outline_multimeshes", godot::Array());
+	godot::Array outline_main_multimeshes = bindings.get("outline_main_multimeshes", godot::Array());
 	godot::Array shadow_multimeshes = bindings.get("shadow_multimeshes", godot::Array());
 	godot::Array local_transforms = bindings.get("local_transforms", godot::Array());
+	godot::Array outline_local_transforms = bindings.get("outline_local_transforms", godot::Array());
+	godot::Array outline_main_local_transforms = bindings.get("outline_main_local_transforms", godot::Array());
 	godot::Array shadow_local_transforms = bindings.get("shadow_local_transforms", godot::Array());
 	godot::PackedInt32Array archetype_indices = bindings.get("archetype_indices", godot::PackedInt32Array());
 	godot::PackedInt32Array slots = bindings.get("slots", godot::PackedInt32Array());
 
 	render_car_multimeshes.reserve(multimeshes.size());
+	render_outline_multimeshes.reserve(multimeshes.size());
+	render_outline_main_multimeshes.reserve(multimeshes.size());
 	render_shadow_multimeshes.reserve(shadow_multimeshes.size());
 	render_car_local_transforms.reserve(local_transforms.size());
+	render_outline_local_transforms.reserve(local_transforms.size());
+	render_outline_main_local_transforms.reserve(local_transforms.size());
 	render_shadow_local_transforms.reserve(shadow_local_transforms.size());
 	for (int i = 0; i < multimeshes.size(); ++i) {
 		godot::Ref<godot::MultiMesh> multimesh = multimeshes[i];
 		render_car_multimeshes.push_back(multimesh);
+		godot::Ref<godot::MultiMesh> outline_multimesh;
+		if (i < outline_multimeshes.size()) {
+			outline_multimesh = outline_multimeshes[i];
+		}
+		render_outline_multimeshes.push_back(outline_multimesh);
+		godot::Ref<godot::MultiMesh> outline_main_multimesh;
+		if (i < outline_main_multimeshes.size()) {
+			outline_main_multimesh = outline_main_multimeshes[i];
+		}
+		render_outline_main_multimeshes.push_back(outline_main_multimesh);
 		godot::Ref<godot::MultiMesh> shadow_multimesh;
 		if (i < shadow_multimeshes.size()) {
 			shadow_multimesh = shadow_multimeshes[i];
@@ -2801,6 +2829,16 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 			render_car_local_transforms.push_back(sim_transform(local_transforms[i]));
 		} else {
 			render_car_local_transforms.push_back(SimTransform());
+		}
+		if (i < outline_local_transforms.size() && outline_local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
+			render_outline_local_transforms.push_back(sim_transform(outline_local_transforms[i]));
+		} else {
+			render_outline_local_transforms.push_back(SimTransform());
+		}
+		if (i < outline_main_local_transforms.size() && outline_main_local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
+			render_outline_main_local_transforms.push_back(sim_transform(outline_main_local_transforms[i]));
+		} else {
+			render_outline_main_local_transforms.push_back(SimTransform());
 		}
 		if (i < shadow_local_transforms.size() && shadow_local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
 			render_shadow_local_transforms.push_back(sim_transform(shadow_local_transforms[i]));
@@ -2816,6 +2854,72 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_car_slots.resize(slots.size());
 	for (int i = 0; i < slots.size(); ++i) {
 		render_car_slots[i] = slots[i];
+	}
+	cache_native_visual_effect_nodes();
+}
+
+void GameSim::cache_native_visual_effect_nodes()
+{
+	render_vehicle_effect_refs.clear();
+	if (!car_node_container) {
+		return;
+	}
+	TypedArray<godot::Node> vis_cars = car_node_container->get_children();
+	render_vehicle_effect_refs.resize(vis_cars.size());
+	for (int i = 0; i < vis_cars.size(); ++i) {
+		Node* car_node = Object::cast_to<Node>(vis_cars[i]);
+		if (!car_node) {
+			continue;
+		}
+		car_node->set_process(false);
+		car_node->set_physics_process(false);
+		RenderVehicleEffectRefs& refs = render_vehicle_effect_refs[i];
+		refs.car_transform = Object::cast_to<Node3D>(car_node->get_node_or_null(NodePath("CarTransform")));
+		if (refs.car_transform) {
+			refs.recharge_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("RechargeParticles")));
+			refs.attack_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("AttackParticles")));
+			refs.landing_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("LandingParticles")));
+			Node* thruster_root = refs.car_transform->get_node_or_null(NodePath("VehicleThrustersProxy"));
+			if (thruster_root) {
+				TypedArray<Node> thruster_nodes = thruster_root->get_children();
+				refs.thrusters.reserve(thruster_nodes.size());
+				for (int t = 0; t < thruster_nodes.size(); ++t) {
+					Node3D* thruster_node = Object::cast_to<Node3D>(thruster_nodes[t]);
+					if (!thruster_node) {
+						continue;
+					}
+					thruster_node->set_process(false);
+					thruster_node->set_physics_process(false);
+					RenderThrusterVisualRefs thruster;
+					thruster.root = thruster_node;
+					thruster.particles = Object::cast_to<GPUParticles3D>(thruster_node->get_node_or_null(NodePath("GPUParticles3D")));
+					thruster.sprite = Object::cast_to<Sprite3D>(thruster_node->get_node_or_null(NodePath("Sprite3D")));
+					thruster.light = Object::cast_to<Light3D>(thruster_node->get_node_or_null(NodePath("OmniLight3D")));
+					if (thruster.particles) {
+						thruster.particles->set_emitting(false);
+						thruster.particles->set_amount_ratio(0.0);
+					}
+					if (thruster.light) {
+						thruster.light->set_visible(false);
+					}
+					refs.thrusters.push_back(thruster);
+				}
+			}
+		}
+		refs.boost_electricity = Object::cast_to<Object>(car_node->get_node_or_null(NodePath("BoostElectricity")));
+		if (refs.recharge_particles) {
+			refs.recharge_particles->set_emitting(false);
+		}
+		if (refs.attack_particles) {
+			refs.attack_particles->set_emitting(false);
+		}
+		if (refs.landing_particles) {
+			refs.landing_particles->set_emitting(false);
+		}
+		if (refs.boost_electricity) {
+			refs.boost_electricity->set("boosting", false);
+			refs.boost_electricity->set("visible", false);
+		}
 	}
 }
 
@@ -3090,9 +3194,43 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_final_prev_transforms[i],
 			render_final_current_transforms[i],
 			alpha);
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		godot::Color body_overlay(0, 0, 0, 1);
+		if (i < static_cast<int>(render_vehicle_effect_refs.size())) {
+			body_overlay = render_vehicle_effect_refs[i].overlay;
+			body_overlay.a = 1.0f;
+		}
+		SimVec3 outline_velocity = LOAD_INDEXED_VEC3(soa, position_old, lane) - LOAD_INDEXED_VEC3(soa, position_current, lane);
+		const float outline_speed = outline_velocity.length();
+		if (outline_speed <= 0.0001f) {
+			outline_velocity = MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis.get_column(2) * 0.01f;
+		} else {
+			outline_velocity = outline_velocity * ((std::max(outline_speed - 4.0f, 0.0f) * 0.5f) / outline_speed) +
+				MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis.get_column(2) * 0.01f;
+		}
 		if (render_car_multimeshes[archetype].is_valid()) {
 			const SimTransform instance_transform = visual_transform * render_car_local_transforms[archetype];
 			render_car_multimeshes[archetype]->set_instance_transform(slot, gd_transform(instance_transform));
+			render_car_multimeshes[archetype]->set_instance_color(slot, body_overlay);
+			render_car_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(0, 0, 0, 1));
+		}
+		if (archetype < static_cast<int>(render_outline_multimeshes.size()) &&
+				archetype < static_cast<int>(render_outline_local_transforms.size()) &&
+				render_outline_multimeshes[archetype].is_valid()) {
+			const SimTransform outline_transform = visual_transform * render_outline_local_transforms[archetype];
+			const float boost_outline = std::max(0.0f, std::min(1.0f, soa.boost_frames[lane] * 0.005f));
+			render_outline_multimeshes[archetype]->set_instance_transform(slot, gd_transform(outline_transform));
+			render_outline_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
+			render_outline_multimeshes[archetype]->set_instance_color(slot, godot::Color(0.5f * boost_outline, 0.7f * boost_outline, 1.0f * boost_outline, 1.0f));
+		}
+		if (archetype < static_cast<int>(render_outline_main_multimeshes.size()) &&
+				archetype < static_cast<int>(render_outline_main_local_transforms.size()) &&
+				render_outline_main_multimeshes[archetype].is_valid()) {
+			const SimTransform outline_transform = visual_transform * render_outline_main_local_transforms[archetype];
+			render_outline_main_multimeshes[archetype]->set_instance_transform(slot, gd_transform(outline_transform));
+			render_outline_main_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
+			render_outline_main_multimeshes[archetype]->set_instance_color(slot, godot::Color(0, 0, 0, 1));
 		}
 		if (archetype < static_cast<int>(render_shadow_multimeshes.size()) &&
 				archetype < static_cast<int>(render_shadow_local_transforms.size()) &&
@@ -3100,8 +3238,6 @@ void GameSim::apply_render_multimeshes(float alpha)
 			const float prev_ground_distance = i < static_cast<int>(render_visual_prev_ground_distances.size()) ? render_visual_prev_ground_distances[i] : 20.0f;
 			const float current_ground_distance = i < static_cast<int>(render_visual_current_ground_distances.size()) ? render_visual_current_ground_distances[i] : prev_ground_distance;
 			const float ground_distance = prev_ground_distance + (current_ground_distance - prev_ground_distance) * alpha;
-			PhysicsCarSoA& soa = *cars[i].soa;
-			const int lane = cars[i].soa_index;
 			SimVec3 shadow_normal = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 			if (shadow_normal.length_squared() <= 0.0001f) {
 				shadow_normal = visual_transform.basis.get_column(1);
@@ -3120,6 +3256,138 @@ void GameSim::apply_render_multimeshes(float alpha)
 			}
 			render_shadow_multimeshes[archetype]->set_instance_transform(slot, gd_transform(shadow_transform));
 		}
+	}
+}
+
+void GameSim::update_native_visual_effects(int visual_count, float alpha)
+{
+	if (!cars || render_vehicle_effect_refs.empty()) {
+		return;
+	}
+	const int count = std::min(visual_count, static_cast<int>(render_vehicle_effect_refs.size()));
+	int local_car_index = -1;
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids && car_player_ids[i] == gameplay_camera_player_id) {
+			local_car_index = i;
+			break;
+		}
+	}
+	std::vector<std::pair<float, int>> nearest;
+	nearest.reserve(count);
+	SimVec3 camera_origin;
+	bool has_camera = false;
+	if (gameplay_camera_node) {
+		camera_origin = sim_vec3(gameplay_camera_node->get_global_transform().origin);
+		has_camera = true;
+	}
+	for (int i = 0; i < count; ++i) {
+		const SimTransform visual_transform = interpolate_sim_transform(
+			render_final_prev_transforms[i],
+			render_final_current_transforms[i],
+			alpha);
+		const float dist_sq = has_camera ? (visual_transform.origin - camera_origin).length_squared() : 0.0f;
+		nearest.push_back({dist_sq, i});
+	}
+	std::sort(nearest.begin(), nearest.end(), [](const auto& a, const auto& b) {
+		return a.first < b.first;
+	});
+
+	std::vector<uint8_t> full_effects(count, 0);
+	const int full_budget = std::min(count, 10);
+	for (int n = 0; n < full_budget; ++n) {
+		full_effects[nearest[n].second] = 1;
+	}
+	if (local_car_index >= 0 && local_car_index < count) {
+		full_effects[local_car_index] = 1;
+	}
+
+	for (int i = 0; i < count; ++i) {
+		RenderVehicleEffectRefs& refs = render_vehicle_effect_refs[i];
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const uint32_t machine_state = soa.machine_state[lane];
+		const uint32_t terrain_state = soa.terrain_state[lane];
+		SimTransform visual_transform = interpolate_sim_transform(
+			render_final_prev_transforms[i],
+			render_final_current_transforms[i],
+			alpha);
+		if (refs.car_transform) {
+			refs.car_transform->set_global_transform(gd_transform(visual_transform));
+		}
+
+		if ((machine_state & (MACHINESTATE::JUST_PRESSED_BOOST | MACHINESTATE::JUST_HIT_DASHPLATE)) != 0u) {
+			refs.overlay.r += 0.293f * 0.75f;
+			refs.overlay.g += 0.560f * 0.75f;
+			refs.overlay.b += 0.886f * 0.75f;
+		}
+		if ((machine_state & (MACHINESTATE::SPINATTACKING | MACHINESTATE::SIDEATTACKING)) != 0u) {
+			refs.overlay.r += (0.5f - refs.overlay.r) * 0.5f;
+			refs.overlay.g += (0.5f - refs.overlay.g) * 0.5f;
+			refs.overlay.b += (0.0f - refs.overlay.b) * 0.5f;
+		}
+		if (soa.s_boost_active[lane]) {
+			refs.overlay.r += (1.0f - refs.overlay.r) * 0.6f;
+			refs.overlay.g += (0.9f - refs.overlay.g) * 0.6f;
+			refs.overlay.b += (0.3f - refs.overlay.b) * 0.6f;
+		}
+		if ((terrain_state & TERRAIN::RECHARGE) != 0u) {
+			refs.overlay.r += 0.018f;
+			refs.overlay.b += 0.018f;
+		}
+		refs.overlay.r += (0.0f - refs.overlay.r) * 0.03f;
+		refs.overlay.g += (0.0f - refs.overlay.g) * 0.03f;
+		refs.overlay.b += (0.0f - refs.overlay.b) * 0.03f;
+
+		const bool full = full_effects[i] != 0;
+		if (refs.recharge_particles) {
+			refs.recharge_particles->set_emitting(full && ((terrain_state & TERRAIN::RECHARGE) != 0u));
+		}
+		if (refs.attack_particles) {
+			refs.attack_particles->set_emitting(full && ((machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0u));
+		}
+		if (refs.landing_particles) {
+			if (full && (machine_state & MACHINESTATE::JUSTLANDED) != 0u && (refs.machine_state_old & MACHINESTATE::JUSTLANDED) == 0u) {
+				refs.landing_particles->restart();
+				refs.landing_particles->set_emitting(true);
+			} else if (!full) {
+				refs.landing_particles->set_emitting(false);
+			}
+		}
+
+		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);
+		const float thrust = std::max(0.0f, (soa.input_accel[lane] + std::sqrt(std::max(0.0f, soa.boost_turbo[lane])) * 0.1f) * soa.input_accel[lane]);
+		for (RenderThrusterVisualRefs& thruster : refs.thrusters) {
+			thruster.current_thrust += (thrust - thruster.current_thrust) * 0.4f;
+			if (thruster.sprite) {
+				thruster.sprite->set_pixel_size(thruster.current_thrust * 0.0012);
+			}
+			if (thruster.particles) {
+				thruster.particles->set_emitting(full && thruster.current_thrust > 0.01f);
+				thruster.particles->set_amount_ratio(full ? std::min(1.0f, thruster.current_thrust) : 0.0f);
+			}
+			if (thruster.light) {
+				thruster.light->set_visible(full && thruster.current_thrust > 0.01f);
+				thruster.light->set_param(Light3D::PARAM_ENERGY, 5.0 * thruster.current_thrust);
+				thruster.light->set_param(Light3D::PARAM_ATTENUATION, 2.0 * thruster.current_thrust);
+			}
+		}
+
+		if (refs.boost_electricity) {
+			const bool boosting =
+				full &&
+				((soa.boost_frames[lane] > 0u || soa.boost_frames_manual[lane] > 0u) &&
+					(machine_state & MACHINESTATE::AIRBORNE) == 0u);
+			refs.boost_electricity->set("boosting", boosting);
+			refs.boost_electricity->set("visible", full);
+			if (full) {
+				refs.boost_electricity->set("tendril_lifetime", std::max(0.1f, std::min(0.3f, 0.3f - soa.speed_kmh[lane] * (0.2f / 3000.0f))));
+				refs.boost_electricity->call("calculate_electricity", 1.0f / 60.0f, gd_transform(visual_transform));
+			}
+		}
+
+		refs.terrain_state_old = terrain_state;
+		refs.machine_state_old = machine_state;
+		(void)velocity;
 	}
 }
 
@@ -3202,6 +3470,7 @@ void GameSim::render_gamesim_visuals_only()
 	}
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+	update_native_visual_effects(std::min(num_cars, static_cast<int>(render_final_current_transforms.size())), alpha);
 	apply_render_multimeshes(alpha);
 	update_native_gameplay_camera(false);
 }
@@ -3542,10 +3811,14 @@ void GameSim::update_super_spark_visuals()
 		render_get_children_us = elapsed_us(phase_start, phase_end);
 		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
 		render_vis_car_count = vis_car_count;
+		if (static_cast<int>(render_vehicle_effect_refs.size()) != vis_car_count) {
+			cache_native_visual_effect_nodes();
+		}
 		phase_start = std::chrono::high_resolution_clock::now();
 		update_render_visual_snapshots(vis_car_count);
 		Engine* engine = Engine::get_singleton();
 		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+		update_native_visual_effects(vis_car_count, alpha);
 		apply_render_multimeshes(alpha);
 		update_native_gameplay_camera(true);
 		godot::Array local_visual_args;

@@ -55,20 +55,34 @@ func configure(definitions: Array, car_nodes: Array) -> void:
 
 func get_native_render_bindings() -> Dictionary:
 	var multimeshes: Array = []
+	var outline_multimeshes: Array = []
+	var outline_main_multimeshes: Array = []
 	var shadow_multimeshes: Array = []
 	var local_transforms: Array = []
+	var outline_local_transforms: Array = []
+	var outline_main_local_transforms: Array = []
 	var shadow_local_transforms: Array = []
 	for archetype in archetypes:
 		var pass_data: Dictionary = archetype[PASS_MAIN]
 		multimeshes.append(pass_data["multimesh"])
 		local_transforms.append(pass_data["local_transform"])
+		var outline_pass_data: Dictionary = archetype[PASS_OUTLINE]
+		outline_multimeshes.append(outline_pass_data["multimesh"])
+		outline_local_transforms.append(outline_pass_data["local_transform"])
+		var outline_main_pass_data: Dictionary = archetype[PASS_OUTLINE_MAIN]
+		outline_main_multimeshes.append(outline_main_pass_data["multimesh"])
+		outline_main_local_transforms.append(outline_main_pass_data["local_transform"])
 		var shadow_pass_data: Dictionary = archetype["shadow"]
 		shadow_multimeshes.append(shadow_pass_data["multimesh"])
 		shadow_local_transforms.append(shadow_pass_data["local_transform"])
 	return {
 		"multimeshes": multimeshes,
+		"outline_multimeshes": outline_multimeshes,
+		"outline_main_multimeshes": outline_main_multimeshes,
 		"shadow_multimeshes": shadow_multimeshes,
 		"local_transforms": local_transforms,
+		"outline_local_transforms": outline_local_transforms,
+		"outline_main_local_transforms": outline_main_local_transforms,
 		"shadow_local_transforms": shadow_local_transforms,
 		"archetype_indices": car_archetype_indices,
 		"slots": car_slots,
@@ -117,6 +131,8 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 		"indices": [],
 		"count": 0,
 		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0),
+		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
+		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -1),
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), shadow_mesh.mesh, shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
 	}
 	template.free()
@@ -150,7 +166,7 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	}
 
 func _resize_passes(archetype: Dictionary, count: int) -> void:
-	for pass_name in [PASS_MAIN, "shadow"]:
+	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow"]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
 		if multimesh.instance_count != count:

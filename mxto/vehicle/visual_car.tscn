@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3 uid="uid://cwuy4ee2yd8sc"]
+[gd_scene format=3 uid="uid://cwuy4ee2yd8sc"]
 
 [ext_resource type="Script" uid="uid://ce1giyem417b6" path="res://vehicle/visual_car.gd" id="1_7f3vi"]
 [ext_resource type="PackedScene" uid="uid://32t0e0x6ldk1" path="res://ui/race_hud.tscn" id="2_trwkr"]
@@ -74,50 +74,50 @@ rings = 4
 font = ExtResource("6_hjm5e")
 font_size = 24
 
-[node name="CarRoot" type="Node3D"]
+[node name="CarRoot" type="Node3D" unique_id=1292392400]
 process_priority = 1
 process_physics_priority = 1
 script = ExtResource("1_7f3vi")
 
-[node name="CarCamera" type="Camera3D" parent="."]
+[node name="CarCamera" type="Camera3D" parent="." unique_id=1279919878]
 top_level = true
-cull_mask = 1
+cull_mask = 7
 
-[node name="race_hud" parent="." instance=ExtResource("2_trwkr")]
+[node name="race_hud" parent="." unique_id=20541092 instance=ExtResource("2_trwkr")]
 
-[node name="CarTransform" type="Node3D" parent="."]
+[node name="CarTransform" type="Node3D" parent="." unique_id=1352159418]
 
-[node name="AudioStreamPlayer3D" type="AudioStreamPlayer3D" parent="CarTransform"]
+[node name="AudioStreamPlayer3D" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=1054674554]
 volume_db = 40.0
 unit_size = 1.0
 
-[node name="AudioStreamPlayer3D2" type="AudioStreamPlayer3D" parent="CarTransform"]
+[node name="AudioStreamPlayer3D2" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=1923768595]
 volume_db = 20.0
 unit_size = 1.0
 max_polyphony = 8
 
-[node name="AudioStreamPlayer3D3" type="AudioStreamPlayer3D" parent="CarTransform"]
+[node name="AudioStreamPlayer3D3" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=358860571]
 volume_db = 20.0
 unit_size = 1.0
 
-[node name="AudioStreamPlayer3D4" type="AudioStreamPlayer3D" parent="CarTransform"]
+[node name="AudioStreamPlayer3D4" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=981625408]
 volume_db = 20.0
 unit_size = 1.0
 
-[node name="AudioStreamPlayer3D5" type="AudioStreamPlayer3D" parent="CarTransform"]
+[node name="AudioStreamPlayer3D5" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=873710999]
 volume_db = 20.0
 unit_size = 1.0
 
-[node name="AudioStreamPlayer3D6" type="AudioStreamPlayer3D" parent="CarTransform"]
+[node name="AudioStreamPlayer3D6" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=1203856330]
 volume_db = 20.0
 unit_size = 1.0
 
-[node name="AudioStreamPlayer3D7" type="AudioStreamPlayer3D" parent="CarTransform"]
+[node name="AudioStreamPlayer3D7" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=364651277]
 volume_db = 25.0
 unit_size = 1.0
 attenuation_filter_cutoff_hz = 20500.0
 
-[node name="RechargeParticles" type="GPUParticles3D" parent="CarTransform"]
+[node name="RechargeParticles" type="GPUParticles3D" parent="CarTransform" unique_id=1581423236]
 transform = Transform3D(1.5, 0, 0, 0, 1.5, 0, 0, 0, 1.5, 0, 0, 0)
 layers = 2
 emitting = false
@@ -128,16 +128,16 @@ local_coords = true
 process_material = SubResource("ParticleProcessMaterial_cnuke")
 draw_pass_1 = SubResource("CapsuleMesh_4g6c5")
 
-[node name="LandingParticles" parent="CarTransform" instance=ExtResource("3_7f3vi")]
+[node name="LandingParticles" parent="CarTransform" unique_id=756864989 instance=ExtResource("3_7f3vi")]
 transform = Transform3D(-3, 2.76542e-08, -4.52142e-07, 0, 2.9944, 0.183146, 4.52987e-07, 0.183146, -2.9944, 0, -0.878162, 1.58687)
 
-[node name="AttackParticles" parent="CarTransform" instance=ExtResource("4_0b8fb")]
+[node name="AttackParticles" parent="CarTransform" unique_id=956209026 instance=ExtResource("4_0b8fb")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 emitting = false
 
-[node name="BoostElectricity" parent="." instance=ExtResource("5_ek4m1")]
+[node name="BoostElectricity" parent="." unique_id=1646994162 instance=ExtResource("5_ek4m1")]
 
-[node name="NameLabel" type="Label" parent="."]
+[node name="NameLabel" type="Label" parent="." unique_id=570984143]
 z_index = -1
 anchors_preset = 8
 anchor_left = 0.5
@@ -154,7 +154,7 @@ pivot_offset = Vector2(-64, 80)
 text = " well hello there you little thing "
 label_settings = SubResource("LabelSettings_hjm5e")
 
-[node name="NameLabelBG" type="ColorRect" parent="NameLabel"]
+[node name="NameLabelBG" type="ColorRect" parent="NameLabel" unique_id=1805122729]
 z_index = -2
 layout_mode = 1
 anchors_preset = 15
@@ -164,12 +164,12 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0, 0, 0, 0.54902)
 
-[node name="Line2D" type="Line2D" parent="NameLabel"]
+[node name="Line2D" type="Line2D" parent="NameLabel" unique_id=2013501545]
 points = PackedVector2Array(0, 0, 0, 33)
 width = 2.0
 antialiased = true
 
-[node name="Line2D2" type="Line2D" parent="NameLabel"]
+[node name="Line2D2" type="Line2D" parent="NameLabel" unique_id=783202368]
 points = PackedVector2Array(0, 16.5, -64, 80.5)
 width = 2.0
 antialiased = true

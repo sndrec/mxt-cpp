@@ -6,6 +6,9 @@
 #include "godot_cpp/classes/multi_mesh_instance3d.hpp"
 #include "godot_cpp/classes/multi_mesh.hpp"
 #include "godot_cpp/classes/camera3d.hpp"
+#include "godot_cpp/classes/gpu_particles3d.hpp"
+#include "godot_cpp/classes/light3d.hpp"
+#include "godot_cpp/classes/sprite3d.hpp"
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "godot_cpp/variant/array.hpp"
 #include "fzgx_gameplay_camera.h"
@@ -234,8 +237,12 @@ namespace godot {
 		godot::Object* car_render_manager = nullptr;
 		std::vector<godot::Node3D*> render_car_transform_nodes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_car_multimeshes;
+		std::vector<godot::Ref<godot::MultiMesh>> render_outline_multimeshes;
+		std::vector<godot::Ref<godot::MultiMesh>> render_outline_main_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_shadow_multimeshes;
 		std::vector<SimTransform> render_car_local_transforms;
+		std::vector<SimTransform> render_outline_local_transforms;
+		std::vector<SimTransform> render_outline_main_local_transforms;
 		std::vector<SimTransform> render_shadow_local_transforms;
 		std::vector<int> render_car_archetype_indices;
 		std::vector<int> render_car_slots;
@@ -258,6 +265,27 @@ namespace godot {
 				SimQuat visual_quat;
 			};
 			std::vector<RenderVehicleVisualState> render_vehicle_visual_state;
+			struct RenderThrusterVisualRefs {
+				godot::Node3D* root = nullptr;
+				godot::GPUParticles3D* particles = nullptr;
+				godot::Sprite3D* sprite = nullptr;
+				godot::Light3D* light = nullptr;
+				float current_thrust = 0.0f;
+			};
+			struct RenderVehicleEffectRefs {
+				godot::Node3D* car_transform = nullptr;
+				godot::GPUParticles3D* recharge_particles = nullptr;
+				godot::GPUParticles3D* attack_particles = nullptr;
+				godot::GPUParticles3D* landing_particles = nullptr;
+				godot::Object* boost_electricity = nullptr;
+				std::vector<RenderThrusterVisualRefs> thrusters;
+				uint32_t terrain_state_old = 0;
+				uint32_t machine_state_old = 0;
+				godot::Color overlay = godot::Color(0, 0, 0, 1);
+			};
+			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
+			void cache_native_visual_effect_nodes();
+			void update_native_visual_effects(int visual_count, float alpha);
 			godot::Camera3D* gameplay_camera_node = nullptr;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;

@@ -212,13 +212,19 @@ func _ready() -> void:
 		vehicle_shadow.extra_cull_margin = 100000.0
 		vehicle_shadow.visible = true
 		add_child(vehicle_shadow)
+	var template_thrusters := template.get_node_or_null("THRUSTERS")
+	if template_thrusters != null:
+		vehicle_thrusters = template_thrusters.duplicate()
+		vehicle_thrusters.name = "VehicleThrustersProxy"
+		vehicle_thrusters.transform = root_transform * template_thrusters.transform
+	else:
+		vehicle_thrusters = Node3D.new()
+		vehicle_thrusters.name = "VehicleThrustersProxy"
 	template.free()
 	car_visual = Node3D.new()
 	car_visual.name = "CarVisualProxy"
 	car_transform.add_child(car_visual)
-	vehicle_thrusters = Node3D.new()
-	vehicle_thrusters.name = "VehicleThrustersProxy"
-	add_child(vehicle_thrusters)
+	car_transform.add_child(vehicle_thrusters)
 	if local_visual_enabled:
 		car_camera.make_current()
 	_apply_effect_tier_state()
