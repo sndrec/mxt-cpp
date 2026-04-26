@@ -14,6 +14,23 @@ constexpr uint8_t MXT_NET_PACKET_AUTHORITATIVE_INPUTS = 2;
 constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
 constexpr int MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET = 255;
 
+struct EncodedInput {
+	uint8_t bytes[MXT_NET_MAX_INPUT_BYTES] = {};
+	int len = 0;
+};
+
+EncodedInput encode_input_for_packet(const PlayerInput& input)
+{
+	EncodedInput out;
+	out.len = PlayerInput::encode_to_raw(input, out.bytes, MXT_NET_MAX_INPUT_BYTES);
+	return out;
+}
+
+bool encoded_inputs_equal(const EncodedInput& a, const EncodedInput& b)
+{
+	return a.len == b.len && std::memcmp(a.bytes, b.bytes, static_cast<size_t>(a.len)) == 0;
+}
+
 struct PacketWriter {
 	uint8_t data[65536] = {};
 	int pos = 0;
@@ -105,6 +122,21 @@ struct PacketReader {
 		return true;
 	}
 };
+
+bool read_packet_input(PacketReader& reader, PlayerInput& out)
+{
+	const uint8_t* bytes = nullptr;
+	if (!reader.read_bytes(bytes, 1)) {
+		return false;
+	}
+	const int len = PlayerInput::encoded_raw_size_from_mask(bytes[0]);
+	reader.pos -= 1;
+	if (len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
+		return false;
+	}
+	out = PlayerInput::from_raw(bytes, len);
+	return true;
+}
 }
 
 void NetcodeSession::_bind_methods()
@@ -412,18 +444,35 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 		!writer.write_u16(static_cast<uint16_t>(racer_count))) {
 		return PackedByteArray();
 	}
+	EncodedInput previous[MAX_RACERS];
+	const int bitset_bytes = (racer_count + 7) >> 3;
 	for (int f = 0; f < count; ++f) {
 		const InputFrame* frame = find_frame(authoritative_history, first_tick + f);
 		if (!frame) {
 			return PackedByteArray();
 		}
+		EncodedInput current[MAX_RACERS];
+		uint8_t changed_bits[128] = {};
 		for (int i = 0; i < racer_count; ++i) {
 			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			uint8_t encoded[MXT_NET_MAX_INPUT_BYTES] = {};
-			const int encoded_len = PlayerInput::encode_to_raw(input, encoded, MXT_NET_MAX_INPUT_BYTES);
-			if (!writer.write_bytes(encoded, encoded_len)) {
+			current[i] = encode_input_for_packet(input);
+			if (f == 0 || !encoded_inputs_equal(current[i], previous[i])) {
+				changed_bits[i >> 3] |= static_cast<uint8_t>(1u << (i & 7));
+			}
+		}
+		if (f > 0 && !writer.write_bytes(changed_bits, bitset_bytes)) {
+			return PackedByteArray();
+		}
+		for (int i = 0; i < racer_count; ++i) {
+			if (f > 0 && (changed_bits[i >> 3] & static_cast<uint8_t>(1u << (i & 7))) == 0) {
+				continue;
+			}
+			if (!writer.write_bytes(current[i].bytes, current[i].len)) {
 				return PackedByteArray();
 			}
+		}
+		for (int i = 0; i < racer_count; ++i) {
+			previous[i] = current[i];
 		}
 	}
 	return writer.to_pba();
@@ -454,29 +503,39 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	stats["valid"] = true;
 	bool valid = true;
 
+	const int bitset_bytes = (racer_count + 7) >> 3;
+	PlayerInput previous[MAX_RACERS];
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		const int tick = first_tick + f;
 		InputFrame& frame = frame_for(authoritative_history, tick);
 		clear_frame(frame, tick);
+		uint8_t changed_bits[128] = {};
+		if (f > 0) {
+			const uint8_t* bit_bytes = nullptr;
+			if (!reader.read_bytes(bit_bytes, bitset_bytes)) {
+				valid = false;
+				stats["valid"] = false;
+				break;
+			}
+			std::memcpy(changed_bits, bit_bytes, static_cast<size_t>(bitset_bytes));
+		}
 		for (int i = 0; i < racer_count; ++i) {
-			const uint8_t* bytes = nullptr;
-			if (!reader.read_bytes(bytes, 1)) {
-				valid = false;
-				stats["valid"] = false;
-				break;
+			if (f > 0 && (changed_bits[i >> 3] & static_cast<uint8_t>(1u << (i & 7))) == 0) {
+				frame.inputs[i] = previous[i];
+			} else {
+				if (!read_packet_input(reader, frame.inputs[i])) {
+					valid = false;
+					stats["valid"] = false;
+					break;
+				}
 			}
-			const int len = PlayerInput::encoded_raw_size_from_mask(bytes[0]);
-			reader.pos -= 1;
-			if (len > MXT_NET_MAX_INPUT_BYTES || !reader.read_bytes(bytes, len)) {
-				valid = false;
-				stats["valid"] = false;
-				break;
-			}
-			frame.inputs[i] = PlayerInput::from_raw(bytes, len);
 			frame.present[i] = 1;
 		}
 		if (!valid) {
 			break;
+		}
+		for (int i = 0; i < racer_count; ++i) {
+			previous[i] = frame.inputs[i];
 		}
 		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 		stats["last_tick"] = tick;
