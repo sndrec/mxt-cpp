@@ -2935,6 +2935,7 @@ void GameSim::set_gameplay_camera(godot::Camera3D* p_camera, int player_id)
 	}
 	if (gameplay_camera_node) {
 		gameplay_camera_node->make_current();
+		gameplay_camera_node->set_cull_mask(0x7FFFFFFFu);
 		gameplay_camera_node->set_near(0.25f);
 		gameplay_camera_node->set_far(40000.0f);
 	}
@@ -3249,7 +3250,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 				shadow_transform.basis.c1 = SimVec3();
 				shadow_transform.basis.c2 = SimVec3();
 			} else {
-				shadow_transform.origin += -shadow_normal * ground_distance;
+				shadow_transform.origin += -shadow_normal * ground_distance + shadow_normal * 0.05f;
 				shadow_transform.basis.c0 = shadow_transform.basis.c0.slide(shadow_normal);
 				shadow_transform.basis.c1 = shadow_transform.basis.c1.slide(shadow_normal);
 				shadow_transform.basis.c2 = shadow_transform.basis.c2.slide(shadow_normal);
@@ -3373,6 +3374,12 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha)
 		}
 
 		if (refs.boost_electricity) {
+			SimVec3 track_up = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+			if (track_up.length_squared() <= 0.0001f) {
+				track_up = visual_transform.basis.get_column(1);
+			}
+			track_up = track_up.normalized();
+			const SimVec3 track_surface_pos = LOAD_INDEXED_VEC3(soa, track_surface_pos, lane);
 			const bool boosting =
 				full &&
 				((soa.boost_frames[lane] > 0u || soa.boost_frames_manual[lane] > 0u) &&
@@ -3380,6 +3387,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha)
 			refs.boost_electricity->set("boosting", boosting);
 			refs.boost_electricity->set("visible", full);
 			if (full) {
+				refs.boost_electricity->set("ground", godot::Plane(gd_vec3(track_up), gd_vec3(track_surface_pos)));
 				refs.boost_electricity->set("tendril_lifetime", std::max(0.1f, std::min(0.3f, 0.3f - soa.speed_kmh[lane] * (0.2f / 3000.0f))));
 				refs.boost_electricity->call("calculate_electricity", 1.0f / 60.0f, gd_transform(visual_transform));
 			}
@@ -3459,6 +3467,7 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 	gameplay_camera_node->set_global_transform(gameplay_camera->get_render_transform(alpha));
 	gameplay_camera_node->set_fov(gameplay_camera->get_render_fov(alpha));
+	gameplay_camera_node->set_cull_mask(0x7FFFFFFFu);
 	gameplay_camera_node->set_near(0.25);
 	gameplay_camera_node->set_far(40000.0);
 }
