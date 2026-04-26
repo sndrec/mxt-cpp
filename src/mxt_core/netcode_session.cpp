@@ -117,10 +117,21 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
 	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count"), &NetcodeSession::build_local_input_packet);
-	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet"), &NetcodeSession::store_pending_input_packet);
+	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ack_tick", "ahead", "now_sec"), &NetcodeSession::store_pending_input_packet);
 	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "ack_tick"), &NetcodeSession::build_authoritative_input_packet);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet"), &NetcodeSession::store_authoritative_input_packet);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
+	ClassDB::bind_method(D_METHOD("clear_peer_state"), &NetcodeSession::clear_peer_state);
+	ClassDB::bind_method(D_METHOD("remove_peer", "peer_id"), &NetcodeSession::remove_peer);
+	ClassDB::bind_method(D_METHOD("set_peer_last_received", "peer_id", "tick", "now_sec"), &NetcodeSession::set_peer_last_received);
+	ClassDB::bind_method(D_METHOD("get_peer_last_received", "peer_id"), &NetcodeSession::get_peer_last_received);
+	ClassDB::bind_method(D_METHOD("peer_has_received", "peer_id"), &NetcodeSession::peer_has_received);
+	ClassDB::bind_method(D_METHOD("set_peer_authoritative_ack", "peer_id", "ack_tick"), &NetcodeSession::set_peer_authoritative_ack);
+	ClassDB::bind_method(D_METHOD("get_peer_authoritative_ack", "peer_id"), &NetcodeSession::get_peer_authoritative_ack);
+	ClassDB::bind_method(D_METHOD("get_min_peer_authoritative_ack", "peer_ids"), &NetcodeSession::get_min_peer_authoritative_ack);
+	ClassDB::bind_method(D_METHOD("set_peer_desired_ahead", "peer_id", "ahead"), &NetcodeSession::set_peer_desired_ahead);
+	ClassDB::bind_method(D_METHOD("get_max_peer_desired_ahead", "peer_ids", "fallback"), &NetcodeSession::get_max_peer_desired_ahead);
+	ClassDB::bind_method(D_METHOD("get_peer_last_input_time", "peer_id"), &NetcodeSession::get_peer_last_input_time);
 	ClassDB::bind_method(D_METHOD("server_has_full_input_frame", "tick"), &NetcodeSession::server_has_full_input_frame);
 	ClassDB::bind_method(D_METHOD("tick_server_frame", "game_sim", "tick"), &NetcodeSession::tick_server_frame);
 	ClassDB::bind_method(D_METHOD("tick_client_predicted_frame", "game_sim", "tick"), &NetcodeSession::tick_client_predicted_frame);
@@ -184,6 +195,33 @@ int NetcodeSession::find_racer_index(int32_t player_id) const
 	return -1;
 }
 
+int NetcodeSession::find_peer_index(int32_t peer_id) const
+{
+	for (int i = 0; i < MAX_PEERS; ++i) {
+		if (peer_states[i].active && peer_states[i].id == peer_id) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+int NetcodeSession::ensure_peer_index(int32_t peer_id)
+{
+	const int existing = find_peer_index(peer_id);
+	if (existing >= 0) {
+		return existing;
+	}
+	for (int i = 0; i < MAX_PEERS; ++i) {
+		if (!peer_states[i].active) {
+			peer_states[i] = PeerState();
+			peer_states[i].id = peer_id;
+			peer_states[i].active = 1;
+			return i;
+		}
+	}
+	return -1;
+}
+
 void NetcodeSession::reset()
 {
 	racer_count = 0;
@@ -194,6 +232,7 @@ void NetcodeSession::reset()
 		player_ids[i] = 0;
 		cpu_flags[i] = 0;
 	}
+	clear_peer_state();
 	for (int i = 0; i < HISTORY_LEN; ++i) {
 		clear_frame(local_input_history[i], -1);
 		clear_frame(input_history[i], -1);
@@ -290,7 +329,7 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 	return writer.to_pba();
 }
 
-godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet)
+godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, int ack_tick, double ahead, double now_sec)
 {
 	Dictionary stats;
 	stats["start_tick"] = -1;
@@ -299,10 +338,18 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	stats["dropped"] = 0;
 	stats["last_tick"] = -1;
 	stats["valid"] = false;
+	stats["seen_before"] = false;
 
 	const int index = find_racer_index(static_cast<int32_t>(player_id));
 	if (index < 0) {
 		return stats;
+	}
+	const int peer_index = ensure_peer_index(static_cast<int32_t>(player_id));
+	const bool seen_before = peer_index >= 0 && peer_states[peer_index].last_received_tick >= 0;
+	stats["seen_before"] = seen_before;
+	if (peer_index >= 0) {
+		peer_states[peer_index].desired_ahead = static_cast<float>(ahead);
+		peer_states[peer_index].authoritative_ack = std::max(peer_states[peer_index].authoritative_ack, static_cast<int32_t>(ack_tick));
 	}
 	PacketReader reader(packet);
 	uint8_t type = 0, version = 0, count = 0;
@@ -340,6 +387,10 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	stats["accepted"] = accepted;
 	stats["dropped"] = dropped;
 	stats["last_tick"] = last_tick;
+	if (accepted > 0 && peer_index >= 0) {
+		peer_states[peer_index].last_received_tick = last_tick;
+		peer_states[peer_index].last_input_time = now_sec;
+	}
 	return stats;
 }
 
@@ -484,6 +535,98 @@ godot::Dictionary NetcodeSession::get_input_frame_debug(int tick) const
 	out["first_missing_player_id"] = first_missing_player_id;
 	out["first_missing_cpu"] = first_missing_cpu;
 	return out;
+}
+
+void NetcodeSession::clear_peer_state()
+{
+	for (int i = 0; i < MAX_PEERS; ++i) {
+		peer_states[i] = PeerState();
+	}
+}
+
+void NetcodeSession::remove_peer(int peer_id)
+{
+	const int index = find_peer_index(static_cast<int32_t>(peer_id));
+	if (index >= 0) {
+		peer_states[index] = PeerState();
+	}
+}
+
+void NetcodeSession::set_peer_last_received(int peer_id, int tick, double now_sec)
+{
+	const int index = ensure_peer_index(static_cast<int32_t>(peer_id));
+	if (index < 0) {
+		return;
+	}
+	peer_states[index].last_received_tick = static_cast<int32_t>(tick);
+	peer_states[index].last_input_time = now_sec;
+}
+
+int NetcodeSession::get_peer_last_received(int peer_id) const
+{
+	const int index = find_peer_index(static_cast<int32_t>(peer_id));
+	return index >= 0 ? peer_states[index].last_received_tick : -1;
+}
+
+bool NetcodeSession::peer_has_received(int peer_id) const
+{
+	return get_peer_last_received(peer_id) >= 0;
+}
+
+void NetcodeSession::set_peer_authoritative_ack(int peer_id, int ack_tick)
+{
+	const int index = ensure_peer_index(static_cast<int32_t>(peer_id));
+	if (index < 0) {
+		return;
+	}
+	peer_states[index].authoritative_ack = std::max(peer_states[index].authoritative_ack, static_cast<int32_t>(ack_tick));
+}
+
+int NetcodeSession::get_peer_authoritative_ack(int peer_id) const
+{
+	const int index = find_peer_index(static_cast<int32_t>(peer_id));
+	return index >= 0 ? peer_states[index].authoritative_ack : -1;
+}
+
+int NetcodeSession::get_min_peer_authoritative_ack(godot::Array p_peer_ids) const
+{
+	int min_ack = -1;
+	for (int i = 0; i < p_peer_ids.size(); ++i) {
+		const int peer_id = static_cast<int32_t>(static_cast<int64_t>(p_peer_ids[i]));
+		const int ack = get_peer_authoritative_ack(peer_id);
+		if (min_ack == -1 || ack < min_ack) {
+			min_ack = ack;
+		}
+	}
+	return min_ack;
+}
+
+void NetcodeSession::set_peer_desired_ahead(int peer_id, double ahead)
+{
+	const int index = ensure_peer_index(static_cast<int32_t>(peer_id));
+	if (index < 0) {
+		return;
+	}
+	peer_states[index].desired_ahead = static_cast<float>(ahead);
+}
+
+double NetcodeSession::get_max_peer_desired_ahead(godot::Array p_peer_ids, double fallback) const
+{
+	double max_ahead = fallback;
+	for (int i = 0; i < p_peer_ids.size(); ++i) {
+		const int peer_id = static_cast<int32_t>(static_cast<int64_t>(p_peer_ids[i]));
+		const int index = find_peer_index(peer_id);
+		if (index >= 0 && peer_states[index].desired_ahead > max_ahead) {
+			max_ahead = peer_states[index].desired_ahead;
+		}
+	}
+	return max_ahead;
+}
+
+double NetcodeSession::get_peer_last_input_time(int peer_id) const
+{
+	const int index = find_peer_index(static_cast<int32_t>(peer_id));
+	return index >= 0 ? peer_states[index].last_input_time : 0.0;
 }
 
 bool NetcodeSession::server_has_full_input_frame(int tick) const

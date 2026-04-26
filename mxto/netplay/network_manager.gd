@@ -471,6 +471,7 @@ func reset_race_state() -> void:
 		player_settings[id] = settings
 	netcode_session.reset()
 	server_netcode_session.reset()
+	server_netcode_session.clear_peer_state()
 	_sync_cpu_manager()
 
 func _calc_state_offsets() -> void:
@@ -485,12 +486,7 @@ func _calc_state_offsets() -> void:
 		state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
 
 func _calc_max_ahead() -> float:
-	var max_ahead : float = desired_ahead_ticks
-	for id in peer_desired_ahead.keys():
-		var ahead := float(peer_desired_ahead[id])
-		if ahead > max_ahead:
-			max_ahead = ahead
-	return max_ahead
+	return float(server_netcode_session.get_max_peer_desired_ahead(player_ids, desired_ahead_ticks))
 
 func _ready() -> void:
 	var lbl: Label = get_node_or_null("../VersionLabel")
@@ -601,6 +597,7 @@ func _client_start_sync_sample(seq: int, client_rtt_s: float, client_ahead: floa
 	start_sync_sample_counts[sender] = int(start_sync_sample_counts.get(sender, 0)) + 1
 	start_sync_peer_ahead[sender] = clamp(client_ahead, 0.0, float(MAX_AHEAD_TICKS))
 	peer_desired_ahead[sender] = start_sync_peer_ahead[sender]
+	server_netcode_session.set_peer_desired_ahead(sender, start_sync_peer_ahead[sender])
 	_try_schedule_synced_start()
 
 func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> int:
@@ -620,10 +617,12 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	rtt_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
+	server_netcode_session.clear_peer_state()
 	desired_ahead_ticks = 2.0 if listen_server else 0.0
 	sent_input_times.clear()
 	last_input_time.clear()
 	last_received_tick.clear()
+	server_netcode_session.clear_peer_state()
 	input_history.clear()
 	sent_inputs_bytes.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
@@ -638,6 +637,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	clients_max_ahead_from_server = 2.0
 	authoritative_history.clear()
 	authoritative_acks.clear()
+	server_netcode_session.clear_peer_state()
 	last_server_input_tick = -1
 	latest_state_tick = -1
 	net_input_debug_prints = 0
@@ -730,6 +730,7 @@ func _on_peer_disconnected(id: int) -> void:
 			authoritative_acks.erase(id)
 		if last_received_tick.has(id):
 			last_received_tick.erase(id)
+		server_netcode_session.remove_peer(id)
 		for key in pending_inputs:
 			if pending_inputs[key].has(id):
 				pending_inputs[key].erase(id)
@@ -754,6 +755,8 @@ func _accept_peer(id: int) -> void:
 	var cpu_ids_changed := _ensure_cpu_ids_do_not_overlap_humans("peer_accept")
 	last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
 	peer_desired_ahead[id] = 0.0
+	server_netcode_session.set_peer_last_received(id, -1, last_input_time[id])
+	server_netcode_session.set_peer_desired_ahead(id, 0.0)
 	if !race_active:
 		_update_player_ids.rpc(player_ids)
 		if cpu_ids_changed:
@@ -791,6 +794,8 @@ func flush_waiting_peers() -> void:
 			player_ids.append(id)
 			last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
 			peer_desired_ahead[id] = 0.0
+			server_netcode_session.set_peer_last_received(id, -1, last_input_time[id])
+			server_netcode_session.set_peer_desired_ahead(id, 0.0)
 			new_ids.append(id)
 			for pid in player_settings.keys():
 				update_player_settings.rpc_id(id, player_settings[pid], pid)
@@ -829,6 +834,7 @@ func start_race(track_index: int, settings: Array) -> void:
 		var now := 0.001 * float(Time.get_ticks_msec())
 		for id in player_ids + spectator_ids:
 			last_input_time[id] = now
+			server_netcode_session.set_peer_last_received(id, -1, now)
 		if listen_server:
 			var local_id := multiplayer.get_unique_id()
 			start_sync_sample_counts[local_id] = START_SYNC_SAMPLE_COUNT
@@ -1084,6 +1090,7 @@ func collect_server_inputs() -> Dictionary:
 		server_netcode_session.store_pending_input(server_tick, local_id, host_input)
 		last_input_time[local_id] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[local_id] = server_tick
+		server_netcode_session.set_peer_last_received(local_id, server_tick, last_input_time[local_id])
 	if server_tick > target_tick:
 		return {}
 	if !server_netcode_session.server_has_full_input_frame(server_tick):
@@ -1145,6 +1152,7 @@ func collect_client_inputs() -> Dictionary:
 		server_netcode_session.store_pending_input(local_tick, multiplayer.get_unique_id(), last_local_input_bytes)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[multiplayer.get_unique_id()] = local_tick
+		server_netcode_session.set_peer_last_received(multiplayer.get_unique_id(), local_tick, last_input_time[multiplayer.get_unique_id()])
 	var all_keys := sent_inputs_bytes.keys()
 	if !is_server and all_keys.size() > 0:
 		var recent_keys := _recent_unacked_input_keys(all_keys)
@@ -1200,7 +1208,7 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 	var __prof_t0 := Time.get_ticks_usec()
 	if is_server:
 		var sender_id := multiplayer.get_remote_sender_id()
-		var sender_seen_before := last_received_tick.has(sender_id)
+		var sender_seen_before: bool = server_netcode_session.peer_has_received(sender_id)
 		var reject_before := target_tick - 5
 		if !sender_seen_before:
 			reject_before = server_tick
@@ -1234,6 +1242,7 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 			server_netcode_session.store_pending_input(tick, sender_id, input)
 			last_input_time[sender_id] = 0.001 * float(Time.get_ticks_msec())
 			last_received_tick[sender_id] = tick
+			server_netcode_session.set_peer_last_received(sender_id, tick, last_input_time[sender_id])
 			accepted += 1
 		if net_input_debug_prints < 120:
 			print("MXT_NET_INPUT_DEBUG server_recv",
@@ -1255,10 +1264,12 @@ func _client_send_input(start_tick: int, inputs: Array, ahead: float, ack: int) 
 				" race_cpu_ids=", race_cpu_player_ids)
 			net_input_debug_prints += 1
 		peer_desired_ahead[sender_id] = ahead
+		server_netcode_session.set_peer_desired_ahead(sender_id, ahead)
 		authoritative_acks[sender_id] = max(
 			ack,
 			authoritative_acks.get(sender_id, -1)
 		)
+		server_netcode_session.set_peer_authoritative_ack(sender_id, ack)
 		var _est := 12
 		for e in inputs:
 			if typeof(e) == TYPE_PACKED_BYTE_ARRAY:
@@ -1275,11 +1286,12 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, ack: int) ->
 	var __prof_t0 := Time.get_ticks_usec()
 	if is_server:
 		var sender_id := multiplayer.get_remote_sender_id()
-		var sender_seen_before := last_received_tick.has(sender_id)
+		var now_sec := 0.001 * float(Time.get_ticks_msec())
+		var sender_seen_before: bool = server_netcode_session.peer_has_received(sender_id)
 		var reject_before := target_tick - 5
 		if !sender_seen_before:
 			reject_before = server_tick
-		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet)
+		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet, ack, ahead, now_sec)
 		if !bool(stats.get("valid", false)):
 			return
 		var accepted := int(stats.get("accepted", 0))
@@ -1288,7 +1300,7 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, ack: int) ->
 		if dropped > 0:
 			log_server_late_drops += dropped
 		if accepted > 0:
-			last_input_time[sender_id] = 0.001 * float(Time.get_ticks_msec())
+			last_input_time[sender_id] = now_sec
 			last_received_tick[sender_id] = last_tick
 		if net_input_debug_prints < 120:
 			print("MXT_NET_INPUT_DEBUG server_recv_flat",
@@ -1311,10 +1323,7 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, ack: int) ->
 				" race_cpu_ids=", race_cpu_player_ids)
 			net_input_debug_prints += 1
 		peer_desired_ahead[sender_id] = ahead
-		authoritative_acks[sender_id] = max(
-			ack,
-			authoritative_acks.get(sender_id, -1)
-		)
+		authoritative_acks[sender_id] = server_netcode_session.get_peer_authoritative_ack(sender_id)
 		log_flat_client_payload_in += packet.size()
 		_acc_log_in(12 + packet.size())
 		_prune_authoritative_history()
@@ -1448,14 +1457,16 @@ func post_tick() -> void:
 				send_state = compressed_state
 				send_state_uncomp_size = uncompressed_size
 			var ack = authoritative_acks.get(id, -1)
+			ack = server_netcode_session.get_peer_authoritative_ack(id)
 			var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(ack)
 			var _bytes := 20 + input_packet.size() + send_state.size()
 			log_flat_server_payload_out += input_packet.size()
 			_acc_log_out(_bytes)
-			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, last_received_tick.get(id, -1), send_state, send_state_uncomp_size, target_tick, max_ahead)
+			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, server_netcode_session.get_peer_last_received(id), send_state, send_state_uncomp_size, target_tick, max_ahead)
 		server_tick += 1
 		if listen_server:
 			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
+			server_netcode_session.set_peer_authoritative_ack(multiplayer.get_unique_id(), server_tick - 1)
 			_prune_authoritative_history()
 		var _t1 := Time.get_ticks_usec()
 		log_net_cpu_us_interval += _t1 - _t0
@@ -1471,6 +1482,7 @@ func _idle_broadcast() -> void:
 	max_ahead_from_server = max_ahead
 	for id in player_ids + spectator_ids:
 		var ack = authoritative_acks.get(id, -1)
+		ack = server_netcode_session.get_peer_authoritative_ack(id)
 		var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(ack)
 		var _bytes := 20 + input_packet.size()
 		log_flat_server_payload_out += input_packet.size()
@@ -1479,7 +1491,7 @@ func _idle_broadcast() -> void:
 			id,
 			max(server_tick - 1, 0),
 			input_packet,
-			last_received_tick.get(id, -1),
+			server_netcode_session.get_peer_last_received(id),
 			PackedByteArray(),
 			0,
 			target_tick,
@@ -1503,7 +1515,8 @@ func _check_client_stalls() -> void:
 	for id in roster_chk:
 		if not waiting.has(id):
 			missing.append(id)
-			if last_input_time.has(id) and now - float(last_input_time[id]) > 10.0:
+			var native_last_input: float = server_netcode_session.get_peer_last_input_time(id)
+			if native_last_input > 0.0 and now - float(native_last_input) > 10.0:
 				if server_tick != 0:
 					push_error("Client %s stalled, disconnecting" % str(id))
 					multiplayer.disconnect_peer(id)
@@ -1515,7 +1528,7 @@ func _check_client_stalls() -> void:
 		for i in range(roster_chk.size()):
 			var pid = roster_chk[i]
 			if missing.has(pid):
-				if !last_received_tick.has(pid):
+				if !server_netcode_session.peer_has_received(pid):
 					continue
 				waiting[pid] = _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
 				server_netcode_session.store_pending_input(server_tick, int(pid), waiting[pid])
@@ -1628,16 +1641,13 @@ func disconnect_from_server() -> void:
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
+	server_netcode_session.clear_peer_state()
 	_reset_start_sync_state()
 
 func _prune_authoritative_history() -> void:
-	var min_ack := -1
-	for id in player_ids:
-		var ack = authoritative_acks.get(id, -1)
-		if min_ack == -1 or ack < min_ack:
-			min_ack = ack
+	var min_ack: int = server_netcode_session.get_min_peer_authoritative_ack(player_ids)
 	# Always enforce a sliding window to bound memory, even if some acks stall.
-	var cutoff := min_ack
+	var cutoff: int = min_ack
 	var window_cutoff := server_tick - MAX_HISTORY_TICKS
 	if cutoff == -1 or window_cutoff > cutoff:
 		cutoff = window_cutoff
