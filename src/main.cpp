@@ -2896,8 +2896,22 @@ static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& ca
 	PhysicsCarSoA& soa = *car.soa;
 	const int i = car.soa_index;
 	const SimBasis physical_basis = MXT_LOAD_TRANSFORM(soa, basis_physical, i).basis;
-	const SimBasis& surface = soa.road_sample[i].closest_surface.basis;
-	const float road_tx = soa.road_sample[i].road_t.x;
+	SimBasis surface = soa.road_sample[i].closest_surface.basis;
+	float road_tx = soa.road_sample[i].road_t.x;
+	if (soa.current_track[i]) {
+		int sample_cp = soa.current_collision_checkpoint[i];
+		if (sample_cp < 0 || sample_cp >= soa.current_track[i]->num_checkpoints) {
+			sample_cp = soa.current_checkpoint[i];
+		}
+		if (sample_cp >= 0 && sample_cp < soa.current_track[i]->num_checkpoints) {
+			SimVec2 road_t;
+			SimVec3 spatial_t;
+			SimTransform road_surface;
+			soa.current_track[i]->get_road_surface(sample_cp, LOAD_INDEXED_VEC3(soa, position_current, i), road_t, spatial_t, road_surface);
+			surface = road_surface.basis;
+			road_tx = road_t.x;
+		}
+	}
 	const float energy = soa.energy[i];
 	const uint32_t tilt_state = soa.tilt_state[i * 4 + 1];
 	const uint32_t seed_base =
@@ -3780,6 +3794,13 @@ struct NetStateWriter {
 		write_pod(v.y);
 	}
 
+	void write_quat(const SimQuat& q) {
+		write_pod(q.x);
+		write_pod(q.y);
+		write_pod(q.z);
+		write_pod(q.w);
+	}
+
 	void write_transform(const SimTransform& t) {
 		for (int col = 0; col < 3; ++col) {
 			write_vec3(t.basis.get_column(col));
@@ -3837,6 +3858,10 @@ struct NetStateReader {
 		return read_pod(out.x) && read_pod(out.y);
 	}
 
+	bool read_quat(SimQuat& out) {
+		return read_pod(out.x) && read_pod(out.y) && read_pod(out.z) && read_pod(out.w);
+	}
+
 	bool read_transform(SimTransform& out) {
 		SimVec3 c0, c1, c2;
 		if (!read_vec3(c0) || !read_vec3(c1) || !read_vec3(c2) || !read_vec3(out.origin)) {
@@ -3852,82 +3877,71 @@ struct NetStateReader {
 
 #define MXT_NET_CAR_SCALAR_FIELDS(X) \
 	X(uint32_t, machine_state) \
-	X(float, base_speed) \
-	X(float, boost_turbo) \
-	X(float, dashplate_heat_multiplier) \
-	X(float, race_start_charge) \
-	X(float, speed_kmh) \
-	X(float, air_tilt) \
-	X(float, energy) \
 	X(uint32_t, boost_frames) \
 	X(uint32_t, boost_frames_manual) \
 	X(uint32_t, simulation_tick) \
 	X(uint32_t, last_hit_tick) \
-	X(bool, has_last_hit_tick) \
 	X(uint32_t, spinattack_direction) \
-	X(float, spinattack_angle) \
-	X(float, spinattack_decrement) \
 	X(uint32_t, brake_timer) \
-	X(float, height_above_track) \
-	X(uint16_t, current_checkpoint) \
-	X(uint16_t, current_collision_checkpoint) \
-	X(uint16_t, last_ground_checkpoint) \
-	X(float, last_ground_distance) \
-	X(float, checkpoint_fraction) \
-	X(float, checkpoint_track_distance) \
-	X(uint8_t, lap) \
-	X(float, lap_progress) \
-	X(float, input_strafe_32) \
-	X(float, input_strafe_1_6) \
-	X(float, input_steer_pitch) \
-	X(float, input_strafe) \
-	X(float, input_steer_yaw) \
-	X(float, input_accel) \
-	X(float, input_brake) \
-	X(float, input_yaw_dupe) \
-	X(uint8_t, rail_collision_timer) \
 	X(uint32_t, terrain_state) \
-	X(uint8_t, grip_frames_from_accel_press) \
 	X(uint32_t, frames_since_start) \
 	X(uint32_t, frames_since_start_2) \
-	X(uint8_t, side_attack_delay) \
 	X(uint32_t, air_time) \
-	X(float, damage_from_last_hit) \
 	X(uint32_t, strafe_effect) \
-	X(bool, machine_crashed) \
-	X(uint8_t, machine_collision_frame_counter) \
-	X(uint8_t, car_hit_invincibility) \
-	X(uint8_t, boost_delay_frame_counter) \
-	X(float, turn_reaction_input) \
 	X(uint32_t, frames_since_death) \
 	X(uint32_t, terrain_state_2) \
 	X(uint32_t, suspension_reset_flag) \
-	X(float, turning_related) \
-	X(int8_t, drift_sign) \
-	X(float, drift_ramp) \
 	X(uint32_t, state_2) \
-	X(float, side_attack_indicator) \
 	X(uint32_t, g_anim_timer) \
 	X(uint64_t, level_start_time) \
 	X(int, some_breakdown_int) \
 	X(int, breakdown_frame_counter) \
-	X(uint8_t, restore_state) \
 	X(uint32_t, restore_wait_frames) \
 	X(uint32_t, restore_move_frames) \
+	X(int, collision_old_cp) \
+	X(uint16_t, current_checkpoint) \
+	X(uint16_t, current_collision_checkpoint) \
+	X(uint16_t, last_ground_checkpoint) \
+	X(uint8_t, lap) \
+	X(uint8_t, rail_collision_timer) \
+	X(uint8_t, grip_frames_from_accel_press) \
+	X(uint8_t, side_attack_delay) \
+	X(uint8_t, machine_collision_frame_counter) \
+	X(uint8_t, car_hit_invincibility) \
+	X(uint8_t, boost_delay_frame_counter) \
+	X(int8_t, drift_sign) \
+	X(uint8_t, restore_state) \
 	X(uint16_t, s_boost_charge) \
 	X(uint16_t, s_boost_charge_max) \
 	X(uint16_t, s_boost_frames_remaining) \
 	X(uint16_t, s_boost_emit_frame_accumulator) \
 	X(uint8_t, s_boost_pending_spark_spawns) \
 	X(uint8_t, pending_super_sparks) \
+	X(bool, has_last_hit_tick) \
+	X(bool, machine_crashed) \
 	X(bool, s_boost_active) \
-	X(int, collision_old_cp) \
 	X(bool, collision_old_valid) \
 	X(bool, collision_old_was_above) \
 	X(bool, collision_old_was_inside) \
-	X(SimVec2, collision_old_road_t) \
-	X(SimVec3, collision_old_spatial_t) \
-	X(SimTransform, collision_old_surface)
+	X(float, base_speed) \
+	X(float, boost_turbo) \
+	X(float, dashplate_heat_multiplier) \
+	X(float, race_start_charge) \
+	X(float, air_tilt) \
+	X(float, energy) \
+	X(float, spinattack_angle) \
+	X(float, spinattack_decrement) \
+	X(float, height_above_track) \
+	X(float, last_ground_distance) \
+	X(float, checkpoint_fraction) \
+	X(float, input_strafe_32) \
+	X(float, input_strafe_1_6) \
+	X(float, input_accel) \
+	X(float, damage_from_last_hit) \
+	X(float, turn_reaction_input) \
+	X(float, turning_related) \
+	X(float, drift_ramp) \
+	X(float, side_attack_indicator)
 
 #define MXT_NET_CAR_VEC3_FIELDS(X) \
 	X(position_current) \
@@ -3937,27 +3951,18 @@ struct NetStateReader {
 	X(velocity) \
 	X(knockback_velocity) \
 	X(velocity_angular) \
-	X(collision_push_track) \
-	X(collision_push_rail) \
-	X(collision_push_total) \
-	X(collision_response) \
 	X(track_surface_normal) \
 	X(track_surface_pos) \
 	X(unk_vec3_0x4e4) \
 	X(unk_vec3_0x4f0)
 
-#define MXT_NET_CAR_TRANSFORM_FIELDS(X) \
-	X(basis_physical) \
-	X(restore_start_transform) \
-	X(restore_target_transform)
+#define MXT_NET_CAR_TRANSFORM_FIELDS(X)
 
 #define MXT_NET_TILT_SCALAR_FIELDS(X) \
 	X(float, force) \
 	X(uint32_t, state)
 
-#define MXT_NET_TILT_VEC3_FIELDS(X) \
-	X(up_vector) \
-	X(up_vector_2)
+#define MXT_NET_TILT_VEC3_FIELDS(X)
 
 #define MXT_NET_WALL_VEC3_FIELDS(X)
 
@@ -4020,11 +4025,16 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 #define WRITE_NET_TRANSFORM(name) writer.write_transform(MXT_LOAD_TRANSFORM(soa, name, lane));
 		MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_TRANSFORM)
 #undef WRITE_NET_TRANSFORM
-
-		const RoadData& road = soa.road_sample[lane];
-		writer.write_vec2(road.road_t);
-		writer.write_vec3(road.spatial_t);
-		writer.write_transform(road.closest_surface);
+		writer.write_quat(MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis.get_rotation_quaternion());
+		if (soa.collision_old_valid[lane]) {
+			writer.write_vec2(soa.collision_old_road_t[lane]);
+			writer.write_vec3(soa.collision_old_spatial_t[lane]);
+			writer.write_transform(soa.collision_old_surface[lane]);
+		}
+		if (soa.restore_state[lane] != 0) {
+			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_start_transform, lane));
+			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_target_transform, lane));
+		}
 
 		const int point_base = lane * 4;
 		for (int point = 0; point < 4; ++point) {
@@ -4136,16 +4146,37 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 #define READ_NET_TRANSFORM(name) do { SimTransform t; if (!reader.read_transform(t)) return false; MXT_STORE_TRANSFORM(soa, name, lane, t); } while (0);
 		MXT_NET_CAR_TRANSFORM_FIELDS(READ_NET_TRANSFORM)
 #undef READ_NET_TRANSFORM
-
-		RoadData& road = soa.road_sample[lane];
-		if (!reader.read_vec2(road.road_t) ||
-			!reader.read_vec3(road.spatial_t) ||
-			!reader.read_transform(road.closest_surface)) {
+		SimQuat basis_quat;
+		if (!reader.read_quat(basis_quat)) {
 			return false;
 		}
-		road.terrain = 0;
-		road.cp_idx = static_cast<int16_t>(soa.current_checkpoint[lane]);
-		road.closest_root = RoadTransform();
+		basis_quat.normalize();
+		MXT_STORE_TRANSFORM(soa, basis_physical, lane, SimTransform(SimBasis(basis_quat), SimVec3()));
+		if (soa.collision_old_valid[lane]) {
+			if (!reader.read_vec2(soa.collision_old_road_t[lane]) ||
+				!reader.read_vec3(soa.collision_old_spatial_t[lane]) ||
+				!reader.read_transform(soa.collision_old_surface[lane])) {
+				return false;
+			}
+		} else {
+			soa.collision_old_road_t[lane] = SimVec2();
+			soa.collision_old_spatial_t[lane] = SimVec3();
+			soa.collision_old_surface[lane] = SimTransform();
+		}
+		if (soa.restore_state[lane] != 0) {
+			SimTransform restore_start;
+			SimTransform restore_target;
+			if (!reader.read_transform(restore_start) ||
+				!reader.read_transform(restore_target)) {
+				return false;
+			}
+			MXT_STORE_TRANSFORM(soa, restore_start_transform, lane, restore_start);
+			MXT_STORE_TRANSFORM(soa, restore_target_transform, lane, restore_target);
+		} else {
+			const SimTransform basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+			MXT_STORE_TRANSFORM(soa, restore_start_transform, lane, basis);
+			MXT_STORE_TRANSFORM(soa, restore_target_transform, lane, basis);
+		}
 
 		const int point_base = lane * 4;
 		for (int point = 0; point < 4; ++point) {
@@ -4224,6 +4255,58 @@ void GameSim::rebuild_static_state_after_network_load() {
 		STORE_INDEXED_VEC3(soa, track_surface_normal_prev, lane, LOAD_INDEXED_VEC3(soa, track_surface_normal, lane));
 		STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3());
 		STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3());
+		STORE_INDEXED_VEC3(soa, collision_push_track, lane, SimVec3());
+		STORE_INDEXED_VEC3(soa, collision_push_rail, lane, SimVec3());
+		STORE_INDEXED_VEC3(soa, collision_push_total, lane, SimVec3());
+		STORE_INDEXED_VEC3(soa, collision_response, lane, SimVec3());
+		soa.input_steer_pitch[lane] = 0.0f;
+		soa.input_strafe[lane] = 0.0f;
+		soa.input_steer_yaw[lane] = 0.0f;
+		soa.input_brake[lane] = 0.0f;
+		soa.input_yaw_dupe[lane] = 0.0f;
+
+		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);
+		if (std::abs(soa.stat_weight[lane]) > 0.0001f) {
+			soa.speed_kmh[lane] = 216.0f * (velocity.length() / soa.stat_weight[lane]);
+		} else {
+			soa.speed_kmh[lane] = 0.0f;
+		}
+
+		soa.lap_progress[lane] = 0.0f;
+		soa.checkpoint_track_distance[lane] = 0.0f;
+		RaceTrack* track = soa.current_track[lane] ? soa.current_track[lane] : current_track;
+		if (track &&
+			soa.current_checkpoint[lane] >= 0 &&
+			soa.current_checkpoint[lane] < track->num_checkpoints) {
+			const CollisionCheckpoint& cp = track->checkpoints[soa.current_checkpoint[lane]];
+			const float fraction = std::clamp(soa.checkpoint_fraction[lane], 0.0f, 1.0f);
+			soa.lap_progress[lane] =
+				(static_cast<float>(soa.current_checkpoint[lane]) + fraction) / static_cast<float>(track->num_checkpoints);
+			float ground_distance = cp.distance - cp.local_distance + cp.local_distance * fraction;
+			float lap_length = track->lap_length;
+			if (lap_length <= 0.0f && track->num_checkpoints > 0) {
+				lap_length = track->checkpoints[track->num_checkpoints - 1].distance;
+			}
+			if (lap_length > 0.0f) {
+				ground_distance = std::fmod(ground_distance, lap_length);
+				if (ground_distance < 0.0f) {
+					ground_distance += lap_length;
+				}
+			}
+			soa.checkpoint_track_distance[lane] = ground_distance;
+		}
+
+		RoadData& road = soa.road_sample[lane];
+		road = RoadData();
+		road.cp_idx = static_cast<int16_t>(soa.current_checkpoint[lane]);
+		if (track &&
+			soa.current_checkpoint[lane] >= 0 &&
+			soa.current_checkpoint[lane] < track->num_checkpoints) {
+			track->get_road_surface(soa.current_checkpoint[lane], position, road.road_t, road.spatial_t, road.closest_surface);
+		} else {
+			road.closest_surface = basis;
+			road.closest_surface.origin = LOAD_INDEXED_VEC3(soa, track_surface_pos, lane);
+		}
 
 		const int point_base = lane * 4;
 		const SimVec3x4 tilt_pos = transform_points_components4(
@@ -4262,6 +4345,16 @@ void GameSim::rebuild_static_state_after_network_load() {
 			soa.tilt_force_spatial_len[p] = 0.0f;
 			STORE_INDEXED_VEC3(soa, tilt_target_dir, p, SimVec3());
 			STORE_INDEXED_VEC3(soa, tilt_force_spatial, p, SimVec3());
+			SimVec3 tilt_up = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+			if (tilt_up.length_squared() <= 0.0001f) {
+				tilt_up = basis.basis.get_column(1);
+			}
+			if (tilt_up.length_squared() <= 0.0001f) {
+				tilt_up = SimVec3(0.0f, 1.0f, 0.0f);
+			}
+			tilt_up.normalize();
+			STORE_INDEXED_VEC3(soa, tilt_up_vector, p, tilt_up);
+			STORE_INDEXED_VEC3(soa, tilt_up_vector_2, p, tilt_up);
 			STORE_INDEXED_VEC3(soa, wall_collision, p, SimVec3());
 		}
 	}
