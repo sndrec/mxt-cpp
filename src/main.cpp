@@ -152,7 +152,7 @@ namespace {
 		transform.basis = transform.basis * SimBasis(SimQuat(SimVec3(0.0f, 0.0f, 1.0f), fzgx_angle_units_to_rad(angle_units)));
 	}
 
-	static void update_machine_visual_transform_for_render(PhysicsCarSoA& c, int i, GameSim::RenderVehicleVisualState& render_state)
+	static SimTransform compose_machine_visual_transform_for_render(PhysicsCarSoA& c, int i, GameSim::RenderVehicleVisualState& render_state, bool advance_state, bool store_side_effects)
 	{
 		SimTransform current_transform = MXT_LOAD_TRANSFORM(c, basis_physical, i);
 		const SimVec3 position = LOAD_INDEXED_VEC3(c, position_current, i);
@@ -165,13 +165,17 @@ namespace {
 		if (c.frames_since_start_2[i] < 90u) {
 			startup_wobble *= static_cast<float>(c.frames_since_start_2[i]) / 90.0f;
 		}
-		render_state.startup_wobble += 0.05f * (startup_wobble - render_state.startup_wobble);
+		float use_startup_wobble = render_state.startup_wobble;
+		if (advance_state) {
+			render_state.startup_wobble += 0.05f * (startup_wobble - render_state.startup_wobble);
+			use_startup_wobble = render_state.startup_wobble;
+		}
 		const float startup_roll_offset = static_cast<float>(static_cast<int16_t>(static_cast<int>(
-			182.04445f * 0.5f * (render_state.startup_wobble * fzgx_sin_u16(c.g_anim_timer[i] * 0x109u)))));
+			182.04445f * 0.5f * (use_startup_wobble * fzgx_sin_u16(c.g_anim_timer[i] * 0x109u)))));
 
-		float vertical_offset = 0.006f * (render_state.startup_wobble * fzgx_sin_u16(c.g_anim_timer[i] * 0x1a3u));
+		float vertical_offset = 0.006f * (use_startup_wobble * fzgx_sin_u16(c.g_anim_timer[i] * 0x1a3u));
 		const SimVec3 visual_origin = position + current_transform.basis.xform(
-			SimVec3(0.0f, vertical_offset - 0.2f * render_state.startup_wobble, 0.0f));
+			SimVec3(0.0f, vertical_offset - 0.2f * use_startup_wobble, 0.0f));
 
 		current_transform.orthonormalize();
 		current_transform.origin = SimVec3();
@@ -187,7 +191,9 @@ namespace {
 			suspension_pitch = std::max(-0.2f, std::min(0.2f, suspension_pitch));
 			SimTransform pitch_transform = current_transform;
 			rotate_about_x_right(pitch_transform, static_cast<float>(static_cast<int>(182.04445f * 30.0f * suspension_pitch)));
-			MXT_STORE_TRANSFORM(c, g_pitch_mtx_0x5e0, i, pitch_transform);
+			if (store_side_effects) {
+				MXT_STORE_TRANSFORM(c, g_pitch_mtx_0x5e0, i, pitch_transform);
+			}
 		}
 
 		const SimVec3 broken_down_angle = LOAD_INDEXED_VEC3(c, unk_vec3_0x4e4, i);
@@ -198,8 +204,12 @@ namespace {
 		if ((c.state_2[i] & 0x20u) == 0u) {
 			SimTransform local_visual;
 			if ((c.machine_state[i] & MACHINESTATE::ACTIVE) != 0u) {
-				render_state.turn_reaction_effect += 0.05f * (c.turn_reaction_input[i] - render_state.turn_reaction_effect);
-				rotate_about_y_right(local_visual, static_cast<float>(static_cast<int>(182.04445f * render_state.turn_reaction_effect)));
+				float use_turn_reaction = render_state.turn_reaction_effect;
+				if (advance_state) {
+					render_state.turn_reaction_effect += 0.05f * (c.turn_reaction_input[i] - render_state.turn_reaction_effect);
+					use_turn_reaction = render_state.turn_reaction_effect;
+				}
+				rotate_about_y_right(local_visual, static_cast<float>(static_cast<int>(182.04445f * use_turn_reaction)));
 			}
 
 			const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
@@ -207,9 +217,12 @@ namespace {
 			const float speed_norm = safe_visual_div(speed_mag, c.stat_weight[i]) / 4.629629629f;
 			const int16_t angular_roll_angle = static_cast<int16_t>(static_cast<int>(
 				10430.378f * speed_norm * 4.5f * safe_visual_div(c.velocity_angular_y[i], c.weight_derived_2[i])));
-			render_state.strafe_visual_roll = static_cast<int>(static_cast<int16_t>(static_cast<int>(
+			const int strafe_visual_roll = static_cast<int>(static_cast<int16_t>(static_cast<int>(
 				182.04445f * (c.stat_strafe[i] / 15.0f) * -5.0f * c.input_strafe_1_6[i] * speed_norm)));
-			int combined_roll = static_cast<int>(angular_roll_angle) + render_state.strafe_visual_roll;
+			if (advance_state) {
+				render_state.strafe_visual_roll = strafe_visual_roll;
+			}
+			int combined_roll = static_cast<int>(angular_roll_angle) + strafe_visual_roll;
 
 			float visual_pitch_effect = 1.0f - static_cast<float>(std::abs(combined_roll)) / 3640.0f;
 			visual_pitch_effect = std::max(visual_pitch_effect, 0.0f);
@@ -224,8 +237,12 @@ namespace {
 			rotate_about_z_right(local_visual, static_cast<float>(static_cast<int>(static_cast<float>(static_cast<int16_t>(combined_roll)) + startup_roll_offset)));
 
 			SimQuat target_quat = local_visual.basis.get_rotation_quaternion();
-			render_state.visual_quat = render_state.visual_quat.slerp(target_quat, 0.2f);
-			local_visual.basis = SimBasis(render_state.visual_quat);
+			SimQuat use_visual_quat = render_state.visual_quat;
+			if (advance_state) {
+				render_state.visual_quat = render_state.visual_quat.slerp(target_quat, 0.2f);
+				use_visual_quat = render_state.visual_quat;
+			}
+			local_visual.basis = SimBasis(use_visual_quat);
 			current_transform = current_transform * local_visual;
 
 			if (c.spinattack_angle[i] != 0.0f) {
@@ -247,14 +264,18 @@ namespace {
 		rotate_about_x_right(current_transform, static_cast<float>(static_cast<int>(
 			10430.378f * shake_scale * (static_cast<float>((velocity_hash ^ float_bits_exact(angular_velocity.x)) & 0xffffu) / 65536.0f))));
 
-		if ((c.machine_state[i] & MACHINESTATE::BOOSTING) == 0u) {
-			render_state.height_adjust_from_boost -= 0.05f * render_state.height_adjust_from_boost;
-		} else {
-			const float pitch_adjust = std::max(0.0f, c.visual_rotation_x[i]);
-			render_state.height_adjust_from_boost += 0.2f * (4.5f * safe_visual_div(pitch_adjust, c.weight_derived_1[i]) - render_state.height_adjust_from_boost);
-			render_state.height_adjust_from_boost = std::min(render_state.height_adjust_from_boost, 0.3f);
+		float use_height_adjust = render_state.height_adjust_from_boost;
+		if (advance_state) {
+			if ((c.machine_state[i] & MACHINESTATE::BOOSTING) == 0u) {
+				render_state.height_adjust_from_boost -= 0.05f * render_state.height_adjust_from_boost;
+			} else {
+				const float pitch_adjust = std::max(0.0f, c.visual_rotation_x[i]);
+				render_state.height_adjust_from_boost += 0.2f * (4.5f * safe_visual_div(pitch_adjust, c.weight_derived_1[i]) - render_state.height_adjust_from_boost);
+				render_state.height_adjust_from_boost = std::min(render_state.height_adjust_from_boost, 0.3f);
+			}
+			use_height_adjust = render_state.height_adjust_from_boost;
 		}
-		current_transform.origin += current_transform.basis.get_column(1) * render_state.height_adjust_from_boost;
+		current_transform.origin += current_transform.basis.get_column(1) * use_height_adjust;
 
 		if ((c.terrain_state[i] & TERRAIN::DIRT) != 0u) {
 			float dirt_scale = 0.1f + c.speed_kmh[i] / 900.0f;
@@ -267,7 +288,15 @@ namespace {
 			current_transform.origin += dirt_jitter;
 		}
 
-		MXT_STORE_TRANSFORM(c, transform_visual, i, current_transform);
+		if (store_side_effects) {
+			MXT_STORE_TRANSFORM(c, transform_visual, i, current_transform);
+		}
+		return current_transform;
+	}
+
+	static void update_machine_visual_transform_for_render(PhysicsCarSoA& c, int i, GameSim::RenderVehicleVisualState& render_state)
+	{
+		compose_machine_visual_transform_for_render(c, i, render_state, true, true);
 	}
 
 	static SimTransform interpolate_sim_transform(const SimTransform& a, const SimTransform& b, float alpha)
@@ -2980,7 +3009,6 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 		render_rollback_capture_transforms.clear();
 		render_rollback_capture_pending = false;
 	}
-	const bool completing_rollback_capture = render_rollback_capture_pending && !render_rollback_capture_transforms.empty();
 	for (int i = 0; i < visual_count; ++i) {
 		update_machine_visual_transform_for_render(*cars[i].soa, cars[i].soa_index, render_vehicle_visual_state[i]);
 		PhysicsCarSoA& soa = *cars[i].soa;
@@ -2995,13 +3023,6 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 		float current_ground_distance = (LOAD_INDEXED_VEC3(soa, position_current, lane) - track_surface_pos).dot(track_normal);
 		if (current_ground_distance < 0.0f) {
 			current_ground_distance = 0.0f;
-		}
-		if (completing_rollback_capture && i < static_cast<int>(render_rollback_capture_transforms.size())) {
-			SimTransform correction;
-			correction.origin = render_rollback_capture_transforms[i].origin - current.origin;
-			correction.basis = current.basis.transposed() * render_rollback_capture_transforms[i].basis;
-			render_rollback_corrections[i] = correction;
-			render_rollback_correction_active[i] = render_correction_is_small(correction) ? 0 : 1;
 		}
 		const bool was_initialized = render_visual_initialized[i] != 0;
 		if (was_initialized) {
@@ -3040,10 +3061,6 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 				render_final_prev_transforms[i] = final_transform;
 			}
 		}
-	}
-	if (completing_rollback_capture) {
-		render_rollback_capture_transforms.clear();
-		render_rollback_capture_pending = false;
 	}
 }
 
@@ -3670,22 +3687,21 @@ void GameSim::load_state(int target_tick)
 	if (correction_count > 0 && cars) {
 		render_rollback_capture_transforms.resize(correction_count);
 		for (int i = 0; i < correction_count; ++i) {
-			SimTransform predicted_transform;
-			if (i < static_cast<int>(render_visual_current_transforms.size()) &&
-					i < static_cast<int>(render_visual_initialized.size()) &&
-					render_visual_initialized[i]) {
-				predicted_transform = corrected_render_transform(
-					render_rollback_corrections,
-					render_rollback_correction_active,
-					i,
-					render_visual_current_transforms[i]);
-			} else {
-				predicted_transform = corrected_render_transform(
-					render_rollback_corrections,
-					render_rollback_correction_active,
-					i,
-					MXT_LOAD_TRANSFORM(*cars[i].soa, transform_visual, cars[i].soa_index));
+			SimTransform current_visual = MXT_LOAD_TRANSFORM(*cars[i].soa, transform_visual, cars[i].soa_index);
+			if (i < static_cast<int>(render_vehicle_visual_state.size())) {
+				GameSim::RenderVehicleVisualState capture_visual_state = render_vehicle_visual_state[i];
+				current_visual = compose_machine_visual_transform_for_render(
+					*cars[i].soa,
+					cars[i].soa_index,
+					capture_visual_state,
+					true,
+					false);
 			}
+			const SimTransform predicted_transform = corrected_render_transform(
+				render_rollback_corrections,
+				render_rollback_correction_active,
+				i,
+				current_visual);
 			render_rollback_capture_transforms[i] = predicted_transform;
 		}
 		render_rollback_capture_pending = true;
@@ -3699,6 +3715,35 @@ void GameSim::load_state(int target_tick)
 
 void GameSim::finish_render_rollback_correction_capture()
 {
+	if (!render_rollback_capture_pending) {
+		return;
+	}
+	render_rollback_capture_pending = false;
+	const int correction_count = std::min(num_cars, static_cast<int>(render_rollback_capture_transforms.size()));
+	if (correction_count > 0 && cars) {
+		if (static_cast<int>(render_rollback_corrections.size()) < correction_count) {
+			render_rollback_corrections.resize(correction_count);
+			render_rollback_correction_active.resize(correction_count);
+		}
+		for (int i = 0; i < correction_count; ++i) {
+			SimTransform current_visual = MXT_LOAD_TRANSFORM(*cars[i].soa, transform_visual, cars[i].soa_index);
+			if (i < static_cast<int>(render_vehicle_visual_state.size())) {
+				GameSim::RenderVehicleVisualState capture_visual_state = render_vehicle_visual_state[i];
+				current_visual = compose_machine_visual_transform_for_render(
+					*cars[i].soa,
+					cars[i].soa_index,
+					capture_visual_state,
+					true,
+					false);
+			}
+			SimTransform correction;
+			correction.origin = render_rollback_capture_transforms[i].origin - current_visual.origin;
+			correction.basis = current_visual.basis.transposed() * render_rollback_capture_transforms[i].basis;
+			render_rollback_corrections[i] = correction;
+			render_rollback_correction_active[i] = render_correction_is_small(correction) ? 0 : 1;
+		}
+	}
+	render_rollback_capture_transforms.clear();
 }
 
 godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
