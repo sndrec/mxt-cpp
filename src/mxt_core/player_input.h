@@ -64,8 +64,6 @@ public:
                 if (bitmask & (1 << 1)) ++size;
                 if (bitmask & (1 << 2)) ++size;
                 if (bitmask & (1 << 3)) ++size;
-                if (bitmask & (1 << 4)) ++size;
-                if (bitmask & (1 << 5)) ++size;
                 if (bitmask & (1 << 6)) ++size;
                 return size;
         }
@@ -86,8 +84,8 @@ public:
                 if ((bitmask & (1 << 1)) && idx < size) out.strafe_right = float(data[idx++]) / float(RAW_BIT_PRECISION);
                 if ((bitmask & (1 << 2)) && idx < size) out.steer_horizontal = (float(data[idx++]) / float(RAW_BIT_PRECISION)) * 2.0f - 1.0f;
                 if ((bitmask & (1 << 3)) && idx < size) out.steer_vertical = (float(data[idx++]) / float(RAW_BIT_PRECISION)) * 2.0f - 1.0f;
-                if ((bitmask & (1 << 4)) && idx < size) out.accelerate = float(data[idx++]) / float(RAW_BIT_PRECISION);
-                if ((bitmask & (1 << 5)) && idx < size) out.brake = float(data[idx++]) / float(RAW_BIT_PRECISION);
+                out.accelerate = (bitmask & (1 << 4)) ? 1.0f : 0.0f;
+                out.brake = (bitmask & (1 << 5)) ? 1.0f : 0.0f;
                 if (bitmask & (1 << 6)) {
                         if (idx >= size)
                                 return out;
@@ -161,16 +159,12 @@ public:
                         data[idx++] = q;
                 }
 
-                q = quantize_trigger(input.accelerate);
-                if (q != TRIGGER_NEUTRAL && idx < capacity) {
+                if (input.accelerate > 0.0f) {
                         bitmask |= 1 << 4;
-                        data[idx++] = q;
                 }
 
-                q = quantize_trigger(input.brake);
-                if (q != TRIGGER_NEUTRAL && idx < capacity) {
+                if (input.brake > 0.0f) {
                         bitmask |= 1 << 5;
-                        data[idx++] = q;
                 }
 
                 uint8_t buttons = 0;

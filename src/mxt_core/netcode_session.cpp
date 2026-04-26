@@ -149,6 +149,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ack_tick", "ahead", "now_sec"), &NetcodeSession::store_pending_input_packet);
 	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "ack_tick"), &NetcodeSession::build_authoritative_input_packet);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet"), &NetcodeSession::store_authoritative_input_packet);
+	ClassDB::bind_method(D_METHOD("consume_authoritative_packet_stats"), &NetcodeSession::consume_authoritative_packet_stats);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
 	ClassDB::bind_method(D_METHOD("clear_peer_state"), &NetcodeSession::clear_peer_state);
 	ClassDB::bind_method(D_METHOD("remove_peer", "peer_id"), &NetcodeSession::remove_peer);
@@ -256,6 +257,12 @@ void NetcodeSession::reset()
 	racer_count = 0;
 	local_player_id = -1;
 	latest_authoritative_tick = -1;
+	stat_auth_packets = 0;
+	stat_auth_frames = 0;
+	stat_auth_baseline_inputs = 0;
+	stat_auth_delta_frames = 0;
+	stat_auth_delta_changed_inputs = 0;
+	stat_auth_delta_unchanged_inputs = 0;
 	last_local_input = neutral_input;
 	for (int i = 0; i < MAX_RACERS; ++i) {
 		player_ids[i] = 0;
@@ -275,6 +282,12 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 	racer_count = std::min(static_cast<int>(p_player_ids.size()), MAX_RACERS);
 	local_player_id = p_local_player_id;
 	latest_authoritative_tick = -1;
+	stat_auth_packets = 0;
+	stat_auth_frames = 0;
+	stat_auth_baseline_inputs = 0;
+	stat_auth_delta_frames = 0;
+	stat_auth_delta_changed_inputs = 0;
+	stat_auth_delta_unchanged_inputs = 0;
 	for (int i = 0; i < racer_count; ++i) {
 		player_ids[i] = static_cast<int32_t>(static_cast<int64_t>(p_player_ids[i]));
 		cpu_flags[i] = (i < p_cpu_flags.size() && static_cast<bool>(p_cpu_flags[i])) ? 1 : 0;
@@ -437,6 +450,11 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 		!writer.write_u8(static_cast<uint8_t>(count))) {
 		return PackedByteArray();
 	}
+	++stat_auth_packets;
+	stat_auth_frames += static_cast<uint64_t>(count);
+	if (count > 0) {
+		stat_auth_baseline_inputs += static_cast<uint64_t>(racer_count);
+	}
 	EncodedInput previous[MAX_RACERS];
 	const int bitset_bytes = (racer_count + 7) >> 3;
 	for (int f = 0; f < count; ++f) {
@@ -446,12 +464,19 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 		}
 		EncodedInput current[MAX_RACERS];
 		uint8_t changed_bits[128] = {};
+		int changed_count = 0;
 		for (int i = 0; i < racer_count; ++i) {
 			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
 			current[i] = encode_input_for_packet(input);
 			if (f == 0 || !encoded_inputs_equal(current[i], previous[i])) {
 				changed_bits[i >> 3] |= static_cast<uint8_t>(1u << (i & 7));
+				++changed_count;
 			}
+		}
+		if (f > 0) {
+			++stat_auth_delta_frames;
+			stat_auth_delta_changed_inputs += static_cast<uint64_t>(changed_count);
+			stat_auth_delta_unchanged_inputs += static_cast<uint64_t>(racer_count - changed_count);
 		}
 		if (f > 0 && !writer.write_bytes(changed_bits, bitset_bytes)) {
 			return PackedByteArray();
@@ -527,6 +552,24 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 		stats["last_tick"] = tick;
 	}
+	return stats;
+}
+
+godot::Dictionary NetcodeSession::consume_authoritative_packet_stats()
+{
+	Dictionary stats;
+	stats["auth_packets"] = static_cast<int64_t>(stat_auth_packets);
+	stats["auth_frames"] = static_cast<int64_t>(stat_auth_frames);
+	stats["auth_baseline_inputs"] = static_cast<int64_t>(stat_auth_baseline_inputs);
+	stats["auth_delta_frames"] = static_cast<int64_t>(stat_auth_delta_frames);
+	stats["auth_delta_changed_inputs"] = static_cast<int64_t>(stat_auth_delta_changed_inputs);
+	stats["auth_delta_unchanged_inputs"] = static_cast<int64_t>(stat_auth_delta_unchanged_inputs);
+	stat_auth_packets = 0;
+	stat_auth_frames = 0;
+	stat_auth_baseline_inputs = 0;
+	stat_auth_delta_frames = 0;
+	stat_auth_delta_changed_inputs = 0;
+	stat_auth_delta_unchanged_inputs = 0;
 	return stats;
 }
 

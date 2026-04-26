@@ -96,12 +96,10 @@ func serialize() -> PackedByteArray:
 	q = _quantize_trigger(accelerate)
 	if q != TRIGGER_NEUTRAL:
 		bitmask |= 1 << 4
-		buffer.put_u8(q)
 
 	q = _quantize_trigger(brake)
 	if q != TRIGGER_NEUTRAL:
 		bitmask |= 1 << 5
-		buffer.put_u8(q)
 
 	var buttons := 0
 	if spinattack:
@@ -144,12 +142,12 @@ func deserialize(data: PackedByteArray) -> PlayerInput:
 		steer_vertical = 0.0
 
 	if bitmask & (1 << 4):
-		accelerate = _dequantize_trigger(buffer.get_u8())
+		accelerate = 1.0
 	else:
 		accelerate = 0.0
 
 	if bitmask & (1 << 5):
-		brake = _dequantize_trigger(buffer.get_u8())
+		brake = 1.0
 	else:
 		brake = 0.0
 
