@@ -4043,6 +4043,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_TRANSFORM)
 #undef WRITE_NET_TRANSFORM
 		writer.write_basis(MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis);
+		writer.write_basis(MXT_LOAD_TRANSFORM(soa, basis_physical_other, lane).basis);
 		if (soa.collision_old_valid[lane]) {
 			writer.write_vec2(soa.collision_old_road_t[lane]);
 			writer.write_vec3(soa.collision_old_spatial_t[lane]);
@@ -4168,6 +4169,11 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			return false;
 		}
 		MXT_STORE_TRANSFORM(soa, basis_physical, lane, SimTransform(basis_physical, SimVec3()));
+		SimBasis basis_physical_other;
+		if (!reader.read_basis(basis_physical_other)) {
+			return false;
+		}
+		MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, SimTransform(basis_physical_other, SimVec3()));
 		if (soa.collision_old_valid[lane]) {
 			if (!reader.read_vec2(soa.collision_old_road_t[lane]) ||
 				!reader.read_vec3(soa.collision_old_spatial_t[lane]) ||
@@ -4263,7 +4269,6 @@ void GameSim::rebuild_static_state_after_network_load() {
 		soa.weight_derived_3[lane] = 52.0f * soa.stat_weight[lane] * 0.0625f;
 
 		const SimTransform basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
-		MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, basis);
 		const SimVec3 position = LOAD_INDEXED_VEC3(soa, position_current, lane);
 		STORE_INDEXED_VEC3(soa, position_collision_snapshot, lane, position);
 		STORE_INDEXED_VEC3(soa, position_bottom, lane, basis.basis.xform(SimVec3(0.0f, -0.1f, 0.0f)) + position);
