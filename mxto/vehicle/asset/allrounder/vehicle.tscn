@@ -61,7 +61,6 @@ shader_parameter/outline_color = Color(0.00559999, 0.0833467, 0.28, 1)
 
 [node name="VEHICLE_MAIN" type="MeshInstance3D" parent="." unique_id=877167948]
 transform = Transform3D(-6, 0, -1.05697e-06, 0, 7, 0, 9.05975e-07, 0, -7, 0, 0.413, 0)
-visible = false
 layers = 2
 material_override = SubResource("ShaderMaterial_ayfej")
 cast_shadow = 0

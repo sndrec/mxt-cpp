@@ -285,7 +285,7 @@ namespace godot {
 			};
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
 			void cache_native_visual_effect_nodes();
-			void update_native_visual_effects(int visual_count, float alpha);
+			void update_native_visual_effects(int visual_count, float alpha, bool step_effects, float effect_delta, bool step_electricity);
 			godot::Camera3D* gameplay_camera_node = nullptr;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;
@@ -311,7 +311,7 @@ namespace godot {
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
 		void render_gamesim();
-		void render_gamesim_visuals_only();
+		void render_gamesim_visuals_only(double process_delta);
 		void set_cpu_driver_manager(godot::Object* manager);
 		godot::Object* get_cpu_driver_manager() const { return cpu_driver_manager; }
 		godot::PackedByteArray get_native_cpu_input_for_tick(int player_id, int expected_tick);

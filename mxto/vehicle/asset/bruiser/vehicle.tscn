@@ -1,4 +1,4 @@
-[gd_scene load_steps=17 format=3 uid="uid://ddxs0gwo3cdsc"]
+[gd_scene format=3 uid="uid://ddxs0gwo3cdsc"]
 
 [ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_2dwnx"]
 [ext_resource type="ArrayMesh" uid="uid://p2s7s0jn58eb" path="res://vehicle/asset/bruiser/mesh.obj" id="1_42fyx"]
@@ -41,53 +41,50 @@ shader = ExtResource("4_6e66t")
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_6e66t"]
 render_priority = -1
 shader = ExtResource("1_gisdj")
-shader_parameter/in_velocity = Vector3(0, 0, 3.96)
 shader_parameter/base_outline_width = 0.5
 shader_parameter/trail_colour = Color(0.38, 0.131607, 0.0988, 1)
-shader_parameter/overlay_colour = Color(0, 0, 0, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_4psuq"]
 render_priority = -1
 shader = ExtResource("4_gisdj")
-shader_parameter/in_velocity = Vector3(0, 0, -0.03)
 shader_parameter/base_outline_width = 0.5
 shader_parameter/outline_color = Color(0, 0, 0, 1)
 
-[node name="Node3D" type="Node3D"]
+[node name="Node3D" type="Node3D" unique_id=1885743347]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
-[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
+[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="." unique_id=488342183]
 transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_q1c51")
 cast_shadow = 0
 mesh = ExtResource("1_42fyx")
 
-[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="."]
-transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, -0.762696, 0)
+[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="." unique_id=181234758]
+transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_faj4t")
 cast_shadow = 0
 mesh = ExtResource("1_42fyx")
 
-[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
+[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="." unique_id=1240955013]
 transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
 layers = 4
 material_override = SubResource("ShaderMaterial_6e66t")
 cast_shadow = 0
 mesh = ExtResource("1_42fyx")
 
-[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
+[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="." unique_id=656451215]
 transform = Transform3D(4, 0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0)
 layers = 2
 material_override = SubResource("ShaderMaterial_4psuq")
 cast_shadow = 0
 mesh = ExtResource("1_42fyx")
 
-[node name="THRUSTERS" type="Node3D" parent="."]
+[node name="THRUSTERS" type="Node3D" parent="." unique_id=103177406]
 
-[node name="Thruster2" parent="THRUSTERS" instance=ExtResource("8_8mun4")]
+[node name="Thruster2" parent="THRUSTERS" unique_id=1493037689 instance=ExtResource("8_8mun4")]
 transform = Transform3D(-1, 0, 8.74228e-08, 0, 1, 0, -8.74228e-08, 0, -1, -0.300234, 0.368345, -1.93167)
 
-[node name="Thruster" parent="THRUSTERS" instance=ExtResource("8_8mun4")]
+[node name="Thruster" parent="THRUSTERS" unique_id=1481847321 instance=ExtResource("8_8mun4")]
 transform = Transform3D(-1, 0, 8.74228e-08, 0, 1, 0, -8.74228e-08, 0, -1, 0.328852, 0.368345, -1.93167)

@@ -1202,7 +1202,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
 	ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
-	ClassDB::bind_method(D_METHOD("render_gamesim_visuals_only"), &GameSim::render_gamesim_visuals_only);
+	ClassDB::bind_method(D_METHOD("render_gamesim_visuals_only", "process_delta"), &GameSim::render_gamesim_visuals_only);
 	ClassDB::bind_method(D_METHOD("get_dip_switches"), &GameSim::get_dip_switches);
 	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
@@ -2935,7 +2935,6 @@ void GameSim::set_gameplay_camera(godot::Camera3D* p_camera, int player_id)
 	}
 	if (gameplay_camera_node) {
 		gameplay_camera_node->make_current();
-		gameplay_camera_node->set_cull_mask(0x7FFFFFFFu);
 		gameplay_camera_node->set_near(0.25f);
 		gameplay_camera_node->set_far(40000.0f);
 	}
@@ -3127,15 +3126,12 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		const SimTransform current = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
-		SimVec3 track_normal = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
-		if (track_normal.length_squared() <= 0.0001f) {
-			track_normal = current.basis.get_column(1);
-		}
-		track_normal = track_normal.normalized();
-		const SimVec3 track_surface_pos = LOAD_INDEXED_VEC3(soa, track_surface_pos, lane);
-		float current_ground_distance = (LOAD_INDEXED_VEC3(soa, position_current, lane) - track_surface_pos).dot(track_normal);
+		float current_ground_distance = 20.0f - soa.height_above_track[lane];
 		if (current_ground_distance < 0.0f) {
 			current_ground_distance = 0.0f;
+		}
+		if (current_ground_distance > 20.0f) {
+			current_ground_distance = 20.0f;
 		}
 		const bool was_initialized = render_visual_initialized[i] != 0;
 		if (was_initialized) {
@@ -3250,7 +3246,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 				shadow_transform.basis.c1 = SimVec3();
 				shadow_transform.basis.c2 = SimVec3();
 			} else {
-				shadow_transform.origin += -shadow_normal * ground_distance + shadow_normal * 0.05f;
+				shadow_transform.origin += -shadow_normal * ground_distance;
 				shadow_transform.basis.c0 = shadow_transform.basis.c0.slide(shadow_normal);
 				shadow_transform.basis.c1 = shadow_transform.basis.c1.slide(shadow_normal);
 				shadow_transform.basis.c2 = shadow_transform.basis.c2.slide(shadow_normal);
@@ -3260,7 +3256,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 	}
 }
 
-void GameSim::update_native_visual_effects(int visual_count, float alpha)
+void GameSim::update_native_visual_effects(int visual_count, float alpha, bool step_effects, float effect_delta, bool step_electricity)
 {
 	if (!cars || render_vehicle_effect_refs.empty()) {
 		return;
@@ -3316,28 +3312,30 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha)
 			refs.car_transform->set_global_transform(gd_transform(visual_transform));
 		}
 
-		if ((machine_state & (MACHINESTATE::JUST_PRESSED_BOOST | MACHINESTATE::JUST_HIT_DASHPLATE)) != 0u) {
+		if (step_effects && (machine_state & (MACHINESTATE::JUST_PRESSED_BOOST | MACHINESTATE::JUST_HIT_DASHPLATE)) != 0u) {
 			refs.overlay.r += 0.293f * 0.75f;
 			refs.overlay.g += 0.560f * 0.75f;
 			refs.overlay.b += 0.886f * 0.75f;
 		}
-		if ((machine_state & (MACHINESTATE::SPINATTACKING | MACHINESTATE::SIDEATTACKING)) != 0u) {
+		if (step_effects && (machine_state & (MACHINESTATE::SPINATTACKING | MACHINESTATE::SIDEATTACKING)) != 0u) {
 			refs.overlay.r += (0.5f - refs.overlay.r) * 0.5f;
 			refs.overlay.g += (0.5f - refs.overlay.g) * 0.5f;
 			refs.overlay.b += (0.0f - refs.overlay.b) * 0.5f;
 		}
-		if (soa.s_boost_active[lane]) {
+		if (step_effects && soa.s_boost_active[lane]) {
 			refs.overlay.r += (1.0f - refs.overlay.r) * 0.6f;
 			refs.overlay.g += (0.9f - refs.overlay.g) * 0.6f;
 			refs.overlay.b += (0.3f - refs.overlay.b) * 0.6f;
 		}
-		if ((terrain_state & TERRAIN::RECHARGE) != 0u) {
+		if (step_effects && (terrain_state & TERRAIN::RECHARGE) != 0u) {
 			refs.overlay.r += 0.018f;
 			refs.overlay.b += 0.018f;
 		}
-		refs.overlay.r += (0.0f - refs.overlay.r) * 0.03f;
-		refs.overlay.g += (0.0f - refs.overlay.g) * 0.03f;
-		refs.overlay.b += (0.0f - refs.overlay.b) * 0.03f;
+		if (step_effects) {
+			refs.overlay.r += (0.0f - refs.overlay.r) * 0.03f;
+			refs.overlay.g += (0.0f - refs.overlay.g) * 0.03f;
+			refs.overlay.b += (0.0f - refs.overlay.b) * 0.03f;
+		}
 
 		const bool full = full_effects[i] != 0;
 		if (refs.recharge_particles) {
@@ -3346,7 +3344,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha)
 		if (refs.attack_particles) {
 			refs.attack_particles->set_emitting(full && ((machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0u));
 		}
-		if (refs.landing_particles) {
+		if (step_effects && refs.landing_particles) {
 			if (full && (machine_state & MACHINESTATE::JUSTLANDED) != 0u && (refs.machine_state_old & MACHINESTATE::JUSTLANDED) == 0u) {
 				refs.landing_particles->restart();
 				refs.landing_particles->set_emitting(true);
@@ -3358,7 +3356,9 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha)
 		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);
 		const float thrust = std::max(0.0f, (soa.input_accel[lane] + std::sqrt(std::max(0.0f, soa.boost_turbo[lane])) * 0.1f) * soa.input_accel[lane]);
 		for (RenderThrusterVisualRefs& thruster : refs.thrusters) {
-			thruster.current_thrust += (thrust - thruster.current_thrust) * 0.4f;
+			if (step_effects) {
+				thruster.current_thrust += (thrust - thruster.current_thrust) * 0.4f;
+			}
 			if (thruster.sprite) {
 				thruster.sprite->set_pixel_size(thruster.current_thrust * 0.0012);
 			}
@@ -3379,22 +3379,31 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha)
 				track_up = visual_transform.basis.get_column(1);
 			}
 			track_up = track_up.normalized();
-			const SimVec3 track_surface_pos = LOAD_INDEXED_VEC3(soa, track_surface_pos, lane);
+			float ground_distance = 20.0f - soa.height_above_track[lane];
+			if (ground_distance < 0.0f) {
+				ground_distance = 0.0f;
+			}
+			if (ground_distance > 20.0f) {
+				ground_distance = 20.0f;
+			}
+			const SimVec3 track_surface_pos = LOAD_INDEXED_VEC3(soa, position_current, lane) - track_up * ground_distance;
 			const bool boosting =
 				full &&
 				((soa.boost_frames[lane] > 0u || soa.boost_frames_manual[lane] > 0u) &&
 					(machine_state & MACHINESTATE::AIRBORNE) == 0u);
 			refs.boost_electricity->set("boosting", boosting);
 			refs.boost_electricity->set("visible", full);
-			if (full) {
+			if (full && step_electricity) {
 				refs.boost_electricity->set("ground", godot::Plane(gd_vec3(track_up), gd_vec3(track_surface_pos)));
 				refs.boost_electricity->set("tendril_lifetime", std::max(0.1f, std::min(0.3f, 0.3f - soa.speed_kmh[lane] * (0.2f / 3000.0f))));
-				refs.boost_electricity->call("calculate_electricity", 1.0f / 60.0f, gd_transform(visual_transform));
+				refs.boost_electricity->call("calculate_electricity", static_cast<double>(effect_delta), gd_transform(visual_transform));
 			}
 		}
 
-		refs.terrain_state_old = terrain_state;
-		refs.machine_state_old = machine_state;
+		if (step_effects) {
+			refs.terrain_state_old = terrain_state;
+			refs.machine_state_old = machine_state;
+		}
 		(void)velocity;
 	}
 }
@@ -3467,19 +3476,19 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 	gameplay_camera_node->set_global_transform(gameplay_camera->get_render_transform(alpha));
 	gameplay_camera_node->set_fov(gameplay_camera->get_render_fov(alpha));
-	gameplay_camera_node->set_cull_mask(0x7FFFFFFFu);
 	gameplay_camera_node->set_near(0.25);
 	gameplay_camera_node->set_far(40000.0);
 }
 
-void GameSim::render_gamesim_visuals_only()
+void GameSim::render_gamesim_visuals_only(double process_delta)
 {
 	if (!sim_started || !cars) {
 		return;
 	}
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
-	update_native_visual_effects(std::min(num_cars, static_cast<int>(render_final_current_transforms.size())), alpha);
+	const float effect_delta = std::max(0.0f, std::min(0.1f, static_cast<float>(process_delta)));
+	update_native_visual_effects(std::min(num_cars, static_cast<int>(render_final_current_transforms.size())), alpha, false, effect_delta, true);
 	apply_render_multimeshes(alpha);
 	update_native_gameplay_camera(false);
 }
@@ -3827,7 +3836,7 @@ void GameSim::update_super_spark_visuals()
 		update_render_visual_snapshots(vis_car_count);
 		Engine* engine = Engine::get_singleton();
 		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
-		update_native_visual_effects(vis_car_count, alpha);
+		update_native_visual_effects(vis_car_count, alpha, true, 1.0f / 60.0f, false);
 		apply_render_multimeshes(alpha);
 		update_native_gameplay_camera(true);
 		godot::Array local_visual_args;

@@ -973,7 +973,7 @@ func _process(delta: float) -> void:
 	var native_visual_us := 0
 	if game_sim.sim_started:
 		var native_visual_start := Time.get_ticks_usec()
-		game_sim.render_gamesim_visuals_only()
+		game_sim.render_gamesim_visuals_only(delta)
 		native_visual_us = Time.get_ticks_usec() - native_visual_start
 	var effect_us := 0
 	var active_camera := get_viewport().get_camera_3d()
