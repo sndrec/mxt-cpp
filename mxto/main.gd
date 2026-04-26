@@ -850,9 +850,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		var render_profile := game_sim.get_render_profile_string()
 		var outer_profile := get_outer_profile_string()
 		DisplayServer.clipboard_set(profile + "\n" + render_profile + "\n" + outer_profile)
-		print(profile)
-		print(render_profile)
-		print(outer_profile)
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
 		_return_to_menu()
 

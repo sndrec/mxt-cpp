@@ -1946,6 +1946,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	auto end = std::chrono::high_resolution_clock::now();
 	soa.prof_total_us = elapsed_us(start, end);
 	record_phase_profile_sample();
+#if 0
 	if ((tick % 120) == 0) {
 		UtilityFunctions::print("MXT_PHASE_US total=", static_cast<int64_t>(soa.prof_total_us),
 			" input=", static_cast<int64_t>(soa.prof_input_us),
@@ -1970,6 +1971,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			" lane_group=", static_cast<int64_t>(soa.prof_lane_group_us),
 			" lanes=", static_cast<int64_t>(soa.prof_lanes));
 	}
+#endif
 
 	//auto elapsed = std::chrono::high_resolution_clock::now() - start;
 	//long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
@@ -2064,20 +2066,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->trigger_colliders = nullptr;
 	current_track->lap_length = 0.0f;
 
-	UtilityFunctions::print("-----");
-	UtilityFunctions::print(lvldat_buf->get_position());
 	uint32_t header_size = lvldat_buf->get_u32();
-	UtilityFunctions::print(lvldat_buf->get_position());
 	String version_string = lvldat_buf->get_string(4);
-	UtilityFunctions::print(lvldat_buf->get_position());
 	uint32_t checkpoint_count = lvldat_buf->get_u32();
-	UtilityFunctions::print(lvldat_buf->get_position());
 	uint32_t segment_count = lvldat_buf->get_u32();
-	UtilityFunctions::print(lvldat_buf->get_position());
 	uint32_t trigger_count = 0;
 	if (version_string != "v0.1" && version_string != "v0.2") {
 		trigger_count = lvldat_buf->get_u32();
-		UtilityFunctions::print(lvldat_buf->get_position());
 	}
 
 	std::vector<uint32_t> neighboring_checkpoint_indices;
@@ -2247,8 +2242,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				current_track->segments[seg].road_shape->road_embeds[embed].start_offset = lvldat_buf->get_float();
 				current_track->segments[seg].road_shape->road_embeds[embed].end_offset = lvldat_buf->get_float();
 				int desired_embed = (int)lvldat_buf->get_u32();
-				UtilityFunctions::print("----");
-				UtilityFunctions::print(desired_embed);
 				if (desired_embed == EMBED_TYPE_TO_TERRAIN::RECHARGE){
 					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::RECHARGE;
 				}
@@ -2264,7 +2257,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				if (desired_embed == EMBED_TYPE_TO_TERRAIN::HOLE){
 					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::HOLE;
 				}
-				UtilityFunctions::print(current_track->segments[seg].road_shape->road_embeds[embed].embed_type);
 				
 				current_track->segments[seg].road_shape->road_embeds[embed].left_border = level_data.allocate_curve_from_buffer(lvldat_buf);
 				current_track->segments[seg].road_shape->road_embeds[embed].right_border = level_data.allocate_curve_from_buffer(lvldat_buf);
@@ -2662,6 +2654,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		}
 
 		sim_started = true;
+#if 0
 		UtilityFunctions::print("finished constructing level!");
 		UtilityFunctions::print("level data size:");
 		UtilityFunctions::print(level_data.get_size());
@@ -2669,6 +2662,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		UtilityFunctions::print(gamestate_data.get_size());
 		UtilityFunctions::print("trigger objects:");
 		UtilityFunctions::print(trigger_count);
+#endif
 
 		if (!car_node_container) {
 			UtilityFunctions::print("car_node_container is null");

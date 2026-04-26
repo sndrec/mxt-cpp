@@ -58,6 +58,7 @@ void print_car_collision_debug(
 	bool a_attacking,
 	bool b_attacking)
 {
+#if 0
 	static std::atomic<int> printed{0};
 	const int slot = printed.fetch_add(1, std::memory_order_relaxed);
 	if (slot >= 128) {
@@ -106,6 +107,7 @@ void print_car_collision_debug(
 		" weight=" + f(a.soa->stat_weight[a.soa_index]) + "/" + f(b.soa->stat_weight[b.soa_index]) +
 		" hit_inv=" + i(static_cast<int64_t>(a.soa->car_hit_invincibility[a.soa_index])) + "/" + i(static_cast<int64_t>(b.soa->car_hit_invincibility[b.soa_index]));
 	godot::UtilityFunctions::print(line);
+#endif
 }
 }
 
