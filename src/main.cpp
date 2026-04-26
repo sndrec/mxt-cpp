@@ -3934,48 +3934,32 @@ struct NetStateReader {
 	X(position_old) \
 	X(position_old_2) \
 	X(position_old_dupe) \
-	X(position_collision_snapshot) \
-	X(position_bottom) \
-	X(position_behind) \
 	X(velocity) \
 	X(knockback_velocity) \
 	X(velocity_angular) \
-	X(velocity_local) \
-	X(velocity_local_flattened_and_rotated) \
 	X(collision_push_track) \
 	X(collision_push_rail) \
 	X(collision_push_total) \
 	X(collision_response) \
 	X(track_surface_normal) \
-	X(track_surface_normal_prev) \
 	X(track_surface_pos) \
 	X(unk_vec3_0x4e4) \
 	X(unk_vec3_0x4f0)
 
 #define MXT_NET_CAR_TRANSFORM_FIELDS(X) \
 	X(basis_physical) \
-	X(basis_physical_other) \
 	X(restore_start_transform) \
 	X(restore_target_transform)
 
 #define MXT_NET_TILT_SCALAR_FIELDS(X) \
-	X(float, force_at_point) \
 	X(float, force) \
-	X(float, force_spatial_len) \
 	X(uint32_t, state)
 
 #define MXT_NET_TILT_VEC3_FIELDS(X) \
-	X(pos_old) \
-	X(pos) \
 	X(up_vector) \
-	X(up_vector_2) \
-	X(target_dir) \
-	X(force_spatial)
+	X(up_vector_2)
 
-#define MXT_NET_WALL_VEC3_FIELDS(X) \
-	X(pos_a) \
-	X(pos_b) \
-	X(collision)
+#define MXT_NET_WALL_VEC3_FIELDS(X)
 
 godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	NetStateWriter writer;
@@ -4230,6 +4214,56 @@ void GameSim::rebuild_static_state_after_network_load() {
 		soa.weight_derived_1[lane] = 52.0f * soa.stat_weight[lane] * 0.0625f;
 		soa.weight_derived_2[lane] = 45.0f * soa.stat_weight[lane] * 0.0625f;
 		soa.weight_derived_3[lane] = 52.0f * soa.stat_weight[lane] * 0.0625f;
+
+		const SimTransform basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+		MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, basis);
+		const SimVec3 position = LOAD_INDEXED_VEC3(soa, position_current, lane);
+		STORE_INDEXED_VEC3(soa, position_collision_snapshot, lane, position);
+		STORE_INDEXED_VEC3(soa, position_bottom, lane, basis.basis.xform(SimVec3(0.0f, -0.1f, 0.0f)) + position);
+		STORE_INDEXED_VEC3(soa, position_behind, lane, basis.basis.xform(SimVec3(0.0f, 0.5f, 0.5f)) + position);
+		STORE_INDEXED_VEC3(soa, track_surface_normal_prev, lane, LOAD_INDEXED_VEC3(soa, track_surface_normal, lane));
+		STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3());
+		STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3());
+
+		const int point_base = lane * 4;
+		const SimVec3x4 tilt_pos = transform_points_components4(
+			basis.basis.c0.x, basis.basis.c0.y, basis.basis.c0.z,
+			basis.basis.c1.x, basis.basis.c1.y, basis.basis.c1.z,
+			basis.basis.c2.x, basis.basis.c2.y, basis.basis.c2.z,
+			position.x, position.y, position.z,
+			sim_load4(soa.tilt_offset_x + point_base),
+			sim_load4(soa.tilt_offset_y + point_base) + sim_load4(soa.tilt_force + point_base) - sim_load4(soa.tilt_rest_length + point_base),
+			sim_load4(soa.tilt_offset_z + point_base));
+		sim_store4(soa.tilt_pos_old_x + point_base, tilt_pos.x);
+		sim_store4(soa.tilt_pos_old_y + point_base, tilt_pos.y);
+		sim_store4(soa.tilt_pos_old_z + point_base, tilt_pos.z);
+		sim_store4(soa.tilt_pos_x + point_base, tilt_pos.x);
+		sim_store4(soa.tilt_pos_y + point_base, tilt_pos.y);
+		sim_store4(soa.tilt_pos_z + point_base, tilt_pos.z);
+
+		const SimVec3x4 wall_pos = transform_points_components4(
+			basis.basis.c0.x, basis.basis.c0.y, basis.basis.c0.z,
+			basis.basis.c1.x, basis.basis.c1.y, basis.basis.c1.z,
+			basis.basis.c2.x, basis.basis.c2.y, basis.basis.c2.z,
+			position.x, position.y, position.z,
+			sim_load4(soa.wall_offset_x + point_base),
+			sim_load4(soa.wall_offset_y + point_base),
+			sim_load4(soa.wall_offset_z + point_base));
+		sim_store4(soa.wall_pos_a_x + point_base, wall_pos.x);
+		sim_store4(soa.wall_pos_a_y + point_base, wall_pos.y);
+		sim_store4(soa.wall_pos_a_z + point_base, wall_pos.z);
+		sim_store4(soa.wall_pos_b_x + point_base, wall_pos.x);
+		sim_store4(soa.wall_pos_b_y + point_base, wall_pos.y);
+		sim_store4(soa.wall_pos_b_z + point_base, wall_pos.z);
+
+		for (int point = 0; point < 4; ++point) {
+			const int p = point_base + point;
+			soa.tilt_force_at_point[p] = 0.0f;
+			soa.tilt_force_spatial_len[p] = 0.0f;
+			STORE_INDEXED_VEC3(soa, tilt_target_dir, p, SimVec3());
+			STORE_INDEXED_VEC3(soa, tilt_force_spatial, p, SimVec3());
+			STORE_INDEXED_VEC3(soa, wall_collision, p, SimVec3());
+		}
 	}
 }
 
