@@ -240,6 +240,11 @@ namespace godot {
 			std::vector<float> render_visual_prev_ground_distances;
 			std::vector<float> render_visual_current_ground_distances;
 			std::vector<uint8_t> render_visual_initialized;
+			std::vector<SimTransform> render_rollback_corrections;
+			std::vector<SimTransform> render_rollback_prev_corrections;
+			std::vector<uint8_t> render_rollback_correction_active;
+			std::vector<SimTransform> render_rollback_capture_transforms;
+			bool render_rollback_capture_pending = false;
 			struct RenderVehicleVisualState {
 				float startup_wobble = 0.0f;
 				float turn_reaction_effect = 0.0f;
@@ -280,6 +285,7 @@ namespace godot {
 		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);
 		void save_state();
 		void load_state(int target_tick);
+		void finish_render_rollback_correction_capture();
 		godot::PackedByteArray get_state_data(int target_tick) const;
 		void set_state_data(int target_tick, godot::PackedByteArray data);
 		void fix_pointers();

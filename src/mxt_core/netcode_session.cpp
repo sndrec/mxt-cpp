@@ -260,11 +260,13 @@ bool NetcodeSession::replay_history(godot::Object* game_sim_obj, int start_tick,
 		recalculate_predictions_internal(sim, tick, tick + 1);
 		const InputFrame* frame = find_frame(input_history, tick);
 		if (!frame) {
+			sim->finish_render_rollback_correction_capture();
 			return false;
 		}
 		sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedCarArray,
 			-1, nullptr, frame->inputs, frame->present, racer_count);
 	}
+	sim->finish_render_rollback_correction_capture();
 	return true;
 }
 
