@@ -3043,7 +3043,7 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 		render_visual_current_transforms[i] = current;
 		render_visual_current_ground_distances[i] = current_ground_distance;
 		if (i < static_cast<int>(render_rollback_correction_active.size()) && render_rollback_correction_active[i]) {
-			render_rollback_corrections[i] = interpolate_sim_transform(render_rollback_corrections[i], SimTransform(), 0.18f);
+			render_rollback_corrections[i] = interpolate_sim_transform(render_rollback_corrections[i], SimTransform(), 0.3f);
 			if (render_correction_is_small(render_rollback_corrections[i])) {
 				render_rollback_corrections[i] = SimTransform();
 				render_rollback_correction_active[i] = 0;
@@ -3132,6 +3132,14 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	}
 	PhysicsCarSoA& soa = *cars[car_index].soa;
 	const int lane = cars[car_index].soa_index;
+	SimVec3 camera_position_correction;
+	const bool has_camera_render_correction =
+		car_index < static_cast<int>(render_rollback_correction_active.size()) &&
+		render_rollback_correction_active[car_index] &&
+		car_index < static_cast<int>(render_rollback_corrections.size());
+	if (has_camera_render_correction) {
+		camera_position_correction = render_rollback_corrections[car_index].origin;
+	}
 	if (step_camera) {
 		float aspect_ratio = 4.0f / 3.0f;
 		if (godot::Viewport* viewport = gameplay_camera_node->get_viewport()) {
@@ -3149,8 +3157,8 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 		const bool view_up_pressed = input && (input->is_action_just_pressed(godot::StringName("CameraUp")) || input->is_action_just_pressed(godot::StringName("DPadUp")));
 		const bool view_down_pressed = input && (input->is_action_just_pressed(godot::StringName("CameraDown")) || input->is_action_just_pressed(godot::StringName("DPadDown")));
 			gameplay_camera->step(
-			gd_vec3(LOAD_INDEXED_VEC3(soa, position_current, lane)),
-			gd_vec3(LOAD_INDEXED_VEC3(soa, position_old, lane)),
+			gd_vec3(LOAD_INDEXED_VEC3(soa, position_current, lane) + camera_position_correction),
+			gd_vec3(LOAD_INDEXED_VEC3(soa, position_old, lane) + camera_position_correction),
 			gd_transform(MXT_LOAD_TRANSFORM(soa, basis_physical, lane)),
 			gd_vec3(track_up),
 			gd_vec3(LOAD_INDEXED_VEC3(soa, track_surface_pos, lane)),
