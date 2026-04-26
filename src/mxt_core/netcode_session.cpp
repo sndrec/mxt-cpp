@@ -9,8 +9,6 @@
 using namespace godot;
 
 namespace {
-constexpr uint8_t MXT_NET_PACKET_CLIENT_INPUTS = 1;
-constexpr uint8_t MXT_NET_PACKET_AUTHORITATIVE_INPUTS = 2;
 constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
 constexpr int MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET = 255;
 
@@ -341,8 +339,7 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 		return writer.to_pba();
 	}
 	count = std::min(count, 255);
-	if (!writer.write_u8(MXT_NET_PACKET_CLIENT_INPUTS) ||
-		!writer.write_i32(first_tick) ||
+	if (!writer.write_i32(first_tick) ||
 		!writer.write_u8(static_cast<uint8_t>(count))) {
 		return PackedByteArray();
 	}
@@ -382,11 +379,9 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 		peer_states[peer_index].authoritative_ack = std::max(peer_states[peer_index].authoritative_ack, static_cast<int32_t>(ack_tick));
 	}
 	PacketReader reader(packet);
-	uint8_t type = 0, count = 0;
+	uint8_t count = 0;
 	int32_t start_tick = -1;
-	if (!reader.read_u8(type) ||
-		type != MXT_NET_PACKET_CLIENT_INPUTS ||
-		!reader.read_i32(start_tick) || !reader.read_u8(count)) {
+	if (!reader.read_i32(start_tick) || !reader.read_u8(count)) {
 		return stats;
 	}
 	stats["start_tick"] = start_tick;
@@ -438,10 +433,8 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 		find_frame(authoritative_history, first_tick + count)) {
 		++count;
 	}
-	if (!writer.write_u8(MXT_NET_PACKET_AUTHORITATIVE_INPUTS) ||
-		!writer.write_i32(first_tick) ||
-		!writer.write_u8(static_cast<uint8_t>(count)) ||
-		!writer.write_u16(static_cast<uint16_t>(racer_count))) {
+	if (!writer.write_i32(first_tick) ||
+		!writer.write_u8(static_cast<uint8_t>(count))) {
 		return PackedByteArray();
 	}
 	EncodedInput previous[MAX_RACERS];
@@ -487,15 +480,9 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	stats["valid"] = false;
 
 	PacketReader reader(packet);
-	uint8_t type = 0, count = 0;
-	uint16_t packet_racer_count = 0;
+	uint8_t count = 0;
 	int32_t first_tick = -1;
-	if (!reader.read_u8(type) ||
-		type != MXT_NET_PACKET_AUTHORITATIVE_INPUTS ||
-		!reader.read_i32(first_tick) || !reader.read_u8(count) || !reader.read_u16(packet_racer_count)) {
-		return stats;
-	}
-	if (packet_racer_count != static_cast<uint16_t>(racer_count)) {
+	if (!reader.read_i32(first_tick) || !reader.read_u8(count)) {
 		return stats;
 	}
 	stats["first_tick"] = first_tick;
