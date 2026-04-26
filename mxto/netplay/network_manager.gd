@@ -1450,14 +1450,26 @@ func _server_broadcast_flat(server_state_tick: int, input_packet: PackedByteArra
 		clients_max_ahead_from_server = max_ahead
 		log_flat_server_payload_in += input_packet.size()
 	_apply_server_input_ack(this_ack)
-	if state.size() > 0:
-		var raw_state_size := state_uncompressed_size if state_uncompressed_size > 0 else state.size()
-		_log_state_received(raw_state_size, state.size())
-		var _state_to_use := state
-		if state_uncompressed_size > 0:
-			_state_to_use = state.decompress(state_uncompressed_size, FileAccess.COMPRESSION_ZSTD)
-		_handle_state(server_state_tick, _state_to_use)
-	_acc_log_in(20 + input_packet.size() + state.size())
+	_acc_log_in(20 + input_packet.size())
+	var __prof_t1 := Time.get_ticks_usec()
+	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
+
+@rpc("any_peer", "unreliable", "call_local", 4)
+func _server_state_sync(state_tick: int, state: PackedByteArray, state_uncompressed_size: int) -> void:
+	if !race_active:
+		return
+	if state.size() <= 0:
+		return
+	if state_tick <= latest_state_tick:
+		return
+	var __prof_t0 := Time.get_ticks_usec()
+	var raw_state_size := state_uncompressed_size if state_uncompressed_size > 0 else state.size()
+	_log_state_received(raw_state_size, state.size())
+	var _state_to_use := state
+	if state_uncompressed_size > 0:
+		_state_to_use = state.decompress(state_uncompressed_size, FileAccess.COMPRESSION_ZSTD)
+	_handle_state(state_tick, _state_to_use)
+	_acc_log_in(8 + state.size())
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
 
@@ -1500,10 +1512,12 @@ func post_tick() -> void:
 				authoritative_acks[id] = ack
 				server_netcode_session.set_peer_authoritative_ack(id, ack)
 			var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(ack)
-			var _bytes := 20 + input_packet.size() + send_state.size()
 			log_flat_server_payload_out += input_packet.size()
-			_acc_log_out(_bytes)
-			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, server_netcode_session.get_peer_last_received(id), send_state, send_state_uncomp_size, target_tick, max_ahead)
+			_acc_log_out(20 + input_packet.size())
+			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, server_netcode_session.get_peer_last_received(id), PackedByteArray(), 0, target_tick, max_ahead)
+			if send_state.size() > 0:
+				_acc_log_out(8 + send_state.size())
+				_server_state_sync.rpc_id(id, server_tick, send_state, send_state_uncomp_size)
 		server_tick += 1
 		if listen_server:
 			authoritative_acks[multiplayer.get_unique_id()] = server_tick - 1
