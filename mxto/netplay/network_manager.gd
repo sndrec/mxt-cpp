@@ -390,6 +390,11 @@ func _broadcast_cpu_roster() -> void:
 	else:
 		sync_cpu_roster.rpc(cpu_player_ids, settings_array)
 
+func _send_cpu_roster_to_peer(id: int) -> void:
+	if !is_server:
+		return
+	sync_cpu_roster.rpc_id(id, cpu_player_ids, _collect_cpu_settings_array())
+
 func _sync_cpu_manager() -> void:
 	if cpu_driver_manager != null and (is_server or !multiplayer.has_multiplayer_peer()):
 		var roster := _get_cpu_roster()
@@ -826,6 +831,7 @@ func _accept_peer(id: int) -> void:
 	if server_game_sim != null and server_game_sim.sim_started:
 		waiting_peers.append(id)
 		_update_player_ids.rpc_id(id, player_ids)
+		_send_cpu_roster_to_peer(id)
 		for pid in player_settings.keys():
 			update_player_settings.rpc_id(id, player_settings[pid], pid)
 		return
@@ -840,6 +846,7 @@ func _accept_peer(id: int) -> void:
 		_update_player_ids.rpc(player_ids)
 		if cpu_ids_changed:
 			_broadcast_cpu_roster()
+		_send_cpu_roster_to_peer(id)
 	for pid in player_settings.keys():
 		update_player_settings.rpc_id(id, player_settings[pid], pid)
 	_calc_state_offsets()
@@ -882,6 +889,7 @@ func flush_waiting_peers() -> void:
 	_update_player_ids.rpc(player_ids)
 	_calc_state_offsets()
 	for id in new_ids:
+		_send_cpu_roster_to_peer(id)
 		if player_settings.has(id):
 			update_player_settings.rpc(player_settings[id], id)
 

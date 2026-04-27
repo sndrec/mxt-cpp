@@ -251,28 +251,28 @@ func _input(event: InputEvent) -> void:
 			accept_event()
 			_save_bindings()
 			return
-		if event is InputEventJoypadButton and event.pressed:
-				var info = bindings[waiting_index]
-				if info["type"] == "axis_pair":
-						return
-				_set_button_binding(info["actions"], event.button_index)
-				accept_event()
-				return
-		if event is InputEventJoypadMotion:
-				var dev := event.device
-				var axis = event.axis
-				var val = event.axis_value
-				var base := 0.0
-				if axis_baseline.has(dev) and axis_baseline[dev].has(axis):
-						base = axis_baseline[dev][axis]
-				var delta = abs(val - base)
-				if delta >= 0.5:
-						var info2 = bindings[waiting_index]
-						if info2["type"] == "axis_pair":
-								_set_axis_binding_pair(info2["actions"], axis)
-						else:
-								_set_axis_binding_single(info2["actions"][0], axis, val)
-						accept_event()
+	if event is InputEventJoypadButton and event.pressed:
+		var info = bindings[waiting_index]
+		if info["type"] == "axis_pair":
+			return
+		_set_button_binding(info["actions"], event.button_index)
+		accept_event()
+		return
+	if event is InputEventJoypadMotion:
+		var dev := event.device
+		var axis = event.axis
+		var val = event.axis_value
+		var base := 0.0
+		if axis_baseline.has(dev) and axis_baseline[dev].has(axis):
+			base = axis_baseline[dev][axis]
+		var delta = abs(val - base)
+		if delta >= 0.5:
+			var info2 = bindings[waiting_index]
+			if info2["type"] == "axis_pair":
+				_set_axis_binding_pair(info2["actions"], axis)
+			else:
+				_set_axis_binding_single(info2["actions"][0], axis, val)
+			accept_event()
 
 func _poll_axes_for_binding() -> void:
 		if waiting_index == -1:
