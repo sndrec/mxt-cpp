@@ -1214,6 +1214,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
 	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
 	ClassDB::bind_method(D_METHOD("get_player_race_place", "player_id"), &GameSim::get_player_race_place);
+	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
 	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
@@ -1619,8 +1620,10 @@ int GameSim::get_player_race_place(int player_id) const
 
 	PhysicsCarSoA& target_soa = *cars[target_index].soa;
 	const int target_lane = cars[target_index].soa_index;
-	const int target_lap = target_soa.lap[target_lane];
-	const float target_progress = target_soa.lap_progress[target_lane];
+	const float target_distance = compute_vehicle_distance_along_track(
+		target_soa.current_checkpoint[target_lane],
+		target_soa.checkpoint_fraction[target_lane],
+		target_soa.lap[target_lane]);
 
 	int place = 1;
 	for (int i = 0; i < num_cars; ++i) {
@@ -1629,13 +1632,48 @@ int GameSim::get_player_race_place(int player_id) const
 		}
 		PhysicsCarSoA& other_soa = *cars[i].soa;
 		const int other_lane = cars[i].soa_index;
-		const int other_lap = other_soa.lap[other_lane];
-		const float other_progress = other_soa.lap_progress[other_lane];
-		if (other_lap > target_lap || (other_lap == target_lap && other_progress > target_progress)) {
+		const float other_distance = compute_vehicle_distance_along_track(
+			other_soa.current_checkpoint[other_lane],
+			other_soa.checkpoint_fraction[other_lane],
+			other_soa.lap[other_lane]);
+		if (other_distance > target_distance) {
 			place += 1;
 		}
 	}
 	return place;
+}
+
+godot::Array GameSim::get_race_order()
+{
+	godot::Array order;
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return order;
+	}
+	if (vehicle_tick_soa.capacity < num_cars || !vehicle_tick_soa.placement_distances || !vehicle_tick_soa.placement_indices) {
+		ensure_vehicle_tick_soa_capacity(num_cars);
+	}
+	if (!vehicle_tick_soa.placement_distances || !vehicle_tick_soa.placement_indices) {
+		return order;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		vehicle_tick_soa.placement_distances[i] = compute_vehicle_distance_along_track(
+			car_soa.current_checkpoint[lane],
+			car_soa.checkpoint_fraction[lane],
+			car_soa.lap[lane]);
+		vehicle_tick_soa.placement_indices[i] = i;
+	}
+	std::sort(vehicle_tick_soa.placement_indices, vehicle_tick_soa.placement_indices + num_cars, [&](int a, int b) {
+		return vehicle_tick_soa.placement_distances[a] > vehicle_tick_soa.placement_distances[b];
+	});
+	for (int i = 0; i < num_cars; ++i) {
+		const int car_index = vehicle_tick_soa.placement_indices[i];
+		if (car_index >= 0 && car_index < num_cars) {
+			order.append(car_player_ids[car_index]);
+		}
+	}
+	return order;
 }
 
 godot::Transform3D GameSim::get_player_render_transform(int player_id) const

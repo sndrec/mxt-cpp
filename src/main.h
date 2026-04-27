@@ -307,6 +307,7 @@ namespace godot {
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;
 		int get_player_race_place(int player_id) const;
+		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();

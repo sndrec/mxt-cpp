@@ -549,7 +549,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 				racer_roster_index += 1
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
-	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_player_index)
+	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
 	var idx := 0
 	for car:VisualCar in car_node_container.get_children():
 		car.game_manager = self
@@ -723,6 +723,25 @@ func _window_accepts_input() -> bool:
 	var window := get_window()
 	return window == null or window.has_focus()
 
+func _update_nametags(active_camera: Camera3D, delta: float) -> void:
+	if active_camera == null:
+		return
+	for car: VisualCar in car_node_container.get_children():
+		if car == null or car.local_visual_enabled or !is_instance_valid(car.name_label):
+			continue
+		var render_transform := game_sim.get_player_render_transform(car.owning_id)
+		var world_pos := render_transform.origin
+		var to_car := world_pos - active_camera.global_position
+		var hidden := active_camera.global_position.distance_squared_to(world_pos) > 12000.0
+		hidden = hidden or active_camera.global_basis.z.dot(to_car) > 0.0
+		var target_alpha := 0.0 if hidden else 1.0
+		car.name_label.visible = true
+		car.name_label.size = car.name_label.get_combined_minimum_size()
+		car.name_label.modulate.a = lerpf(car.name_label.modulate.a, target_alpha, delta * 20.0)
+		car.name_label.position = active_camera.unproject_position(
+			world_pos + active_camera.global_basis.x * 1.5 + active_camera.global_basis.y * 1.5
+		) + Vector2(72, -90)
+
 func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if headless_mode:
@@ -771,6 +790,7 @@ func _physics_process(delta: float) -> void:
 		game_sim.render_gamesim()
 		render_us = Time.get_ticks_usec() - render_start
 		var visual_start := Time.get_ticks_usec()
+		_update_nametags(get_viewport().get_camera_3d(), delta)
 		for car:VisualCar in car_node_container.get_children():
 			if car.local_visual_enabled:
 				car.just_rendered()
@@ -855,11 +875,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _return_to_menu() -> void:
 	race_finish_label.visible = false
+	var was_server := network_manager.is_server
 	network_manager.disconnect_from_server()
 	game_sim.destroy_gamesim()
-	if network_manager.is_server:
+	if was_server:
 		server_game_sim.destroy_gamesim()
-		network_manager.server_game_sim = null
+	network_manager.game_sim = null
+	network_manager.server_game_sim = null
 	for child in car_node_container.get_children():
 		child.queue_free()
 	for obj in trigger_objects:
@@ -908,16 +930,18 @@ func _check_race_finished() -> void:
 	if !game_sim.sim_started:
 		return
 	var all_done := true
+	var racer_ids := network_manager.get_simulation_roster()
 	for car in car_node_container.get_children():
 		if car is VisualCar:
-			if network_manager.player_ids.has(car.owning_id):
+			if racer_ids.has(car.owning_id):
+				if network_manager._disconnected_during_race.has(car.owning_id):
+					continue
 				var finished = (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0
 				if finished:
 					if network_manager.is_server and !network_manager.player_finish_times.has(car.owning_id):
 						network_manager.send_player_finished(car.owning_id, network_manager.server_tick)
 					elif singleplayer_mode and !network_manager.player_finish_times.has(car.owning_id):
-						network_manager.player_finish_times[car.owning_id] = network_manager.clients_server_tick
-						network_manager.player_finish_placements[car.owning_id] = 1
+						network_manager.record_player_finished(car.owning_id, network_manager.clients_server_tick)
 				else:
 					all_done = false
 	if network_manager.is_server:

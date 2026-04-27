@@ -676,6 +676,7 @@ func _client_start_sync_sample(seq: int, client_rtt_s: float, client_ahead: floa
 	_try_schedule_synced_start()
 
 func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> int:
+	disconnect_from_server()
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_server(port, max_players)
 	if err != OK:
@@ -732,6 +733,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	return OK
 
 func join(ip: String, port: int = 27016) -> int:
+	disconnect_from_server()
 	var peer := ENetMultiplayerPeer.new()
 	var err := peer.create_client(ip, port)
 	if err != OK:
@@ -1753,11 +1755,21 @@ func disconnect_from_server() -> void:
 		multiplayer.multiplayer_peer = null
 	is_server = false
 	listen_server = false
+	game_sim = null
+	server_game_sim = null
 	player_ids.clear()
+	spectator_ids.clear()
+	waiting_peers.clear()
+	race_player_ids.clear()
+	race_cpu_player_ids.clear()
+	cpu_player_ids.clear()
+	cpu_player_settings.clear()
+	_disconnected_during_race.clear()
 	pending_inputs.clear()
 	authoritative_inputs.clear()
 	input_history.clear()
 	sent_inputs_bytes.clear()
+	sent_input_times.clear()
 	last_input_time.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
 	server_tick = 0
@@ -1765,16 +1777,33 @@ func disconnect_from_server() -> void:
 	target_tick = 0
 	last_received_tick.clear()
 	last_ack_tick = -1
+	rtt_s = 0.0
 	player_settings.clear()
+	ready_players.clear()
+	_unverified_peers.clear()
+	_version_request_time.clear()
+	state_send_offsets.clear()
+	net_race_finish_time = -1
+	player_finish_times.clear()
+	player_finish_placements.clear()
+	finish_order.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
+	clients_server_tick = 0
+	clients_target_tick = 0
+	clients_max_ahead_from_server = 2.0
 	authoritative_history.clear()
 	authoritative_acks.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
 	_clear_state_chunk_buffers()
+	use_physics_ticks = 1.0
+	Engine.physics_ticks_per_second = 60
 	server_netcode_session.clear_peer_state()
+	netcode_session.reset()
+	server_netcode_session.reset()
 	_reset_start_sync_state()
+	_sync_cpu_manager()
 
 func _prune_authoritative_history() -> void:
 	var min_ack: int = server_netcode_session.get_min_peer_authoritative_ack(player_ids)
@@ -1854,3 +1883,9 @@ func send_player_finished(id: int, tick: int) -> void:
 	if is_server:
 		set_player_finished.rpc(id, tick, place)
 		set_player_finished(id, tick, place)
+
+func record_player_finished(id: int, tick: int) -> void:
+	if player_finish_times.has(id):
+		return
+	var place := finish_order.size() + 1
+	set_player_finished(id, tick, place)

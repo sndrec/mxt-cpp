@@ -20,6 +20,8 @@ class_name RaceHud extends Control
 var car_max_energy: float = 100.0
 var boost_energy_use_rate: float = 1.0
 var _sboost_full_width: float = 0.0
+var focus_player_id := 0
+const MAX_LEADERBOARD_ENTRIES := 5
 
 @export var placement_digit_size := Vector2(96.0, 96.0)
 @export var placement_digit_kerning := -24.0
@@ -39,6 +41,63 @@ var placement_digit_nodes: Array[TextureRect] = []
 
 @onready var real_input := $InputViewer/RealInput
 @onready var clamped_input := $InputViewer/ClampedInput
+
+func _player_name_for_id(nm: NetworkManager, id: int) -> String:
+	var name := str(id)
+	var settings = nm.player_settings.get(id, null)
+	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
+		name = str(settings["username"])
+	if nm.get_cpu_roster().has(id):
+		name = "[CPU] " + name
+	return name
+
+func _ordered_race_ids(car: VisualCar, nm: NetworkManager) -> Array:
+	var ordered: Array = []
+	for id in nm.finish_order:
+		if id != null and !ordered.has(id):
+			ordered.append(id)
+	var native_order: Array = car.game_manager.game_sim.get_race_order()
+	for id in native_order:
+		if !ordered.has(id):
+			ordered.append(id)
+	for id in nm.get_simulation_roster():
+		if !ordered.has(id):
+			ordered.append(id)
+	return ordered
+
+func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fallback_place: int) -> int:
+	if leaderboard_container == null:
+		return fallback_place
+	var entries: Array = []
+	var ordered_ids := _ordered_race_ids(car, nm)
+	for i in range(ordered_ids.size()):
+		var id = ordered_ids[i]
+		var place := int(nm.player_finish_placements[id]) if nm.player_finish_placements.has(id) else i + 1
+		entries.append({
+			"id": id,
+			"name": _player_name_for_id(nm, id),
+			"place": place,
+		})
+	var focus_index := ordered_ids.find(focus_id)
+	if focus_index < 0:
+		focus_index = clampi(fallback_place - 1, 0, maxi(entries.size() - 1, 0))
+	var start_index := 0
+	if entries.size() > MAX_LEADERBOARD_ENTRIES:
+		start_index = clampi(focus_index - 2, 0, entries.size() - MAX_LEADERBOARD_ENTRIES)
+	var visible_count := mini(MAX_LEADERBOARD_ENTRIES, entries.size() - start_index)
+	var labels := leaderboard_container.get_children()
+	for i in range(labels.size()):
+		var label := labels[i] as Label
+		if label == null:
+			continue
+		label.visible = i < visible_count
+		if i >= visible_count:
+			continue
+		var entry: Dictionary = entries[start_index + i]
+		label.text = "%d  %s" % [int(entry["place"]), str(entry["name"])]
+	if focus_index >= 0 and focus_index < entries.size():
+		return int(entries[focus_index]["place"])
+	return fallback_place
 
 func _ready() -> void:
 	if get_parent() is VisualCar:
@@ -101,6 +160,7 @@ func _process( _delta:float ) -> void:
 	var nm := car.game_manager.network_manager
 	var use_tick := nm.get_race_tick()
 	var local_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 0
+	var place_id := focus_player_id
 	if nm.player_finish_times.has(local_id):
 		use_tick = nm.player_finish_times[local_id]
 	elif nm.player_finish_times.has(car.owning_id):
@@ -125,11 +185,12 @@ func _process( _delta:float ) -> void:
 		countdowncontrol.scale += Vector2(1, 1) * _delta * 4
 		countdowncontrol.modulate.a = max(0, countdowncontrol.modulate.a - _delta * 4)
 	
-	var our_place := car.game_manager.game_sim.get_player_race_place(local_id)
+	var our_place := car.game_manager.game_sim.get_player_race_place(place_id)
 
-	if nm.player_finish_placements.has(local_id):
-		our_place = nm.player_finish_placements[local_id]
+	if nm.player_finish_placements.has(place_id):
+		our_place = nm.player_finish_placements[place_id]
 	
+	our_place = _update_leaderboard(car, nm, place_id, our_place)
 	_set_place_badge(our_place)
 	
 	var move_vec := Vector2(Input.get_axis("SteerLeft", "SteerRight"), Input.get_axis("SteerUp", "SteerDown"))
