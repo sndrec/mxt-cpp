@@ -132,7 +132,7 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 		"count": 0,
 		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0),
 		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
-		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -1),
+		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2),
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), shadow_mesh.mesh, shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
 	}
 	template.free()

@@ -3211,16 +3211,16 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_car_multimeshes[archetype]->set_instance_transform(slot, gd_transform(instance_transform));
 			render_car_multimeshes[archetype]->set_instance_color(slot, body_overlay);
 			render_car_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(0, 0, 0, 1));
-		}
-		if (archetype < static_cast<int>(render_outline_multimeshes.size()) &&
-				archetype < static_cast<int>(render_outline_local_transforms.size()) &&
-				render_outline_multimeshes[archetype].is_valid()) {
-			const SimTransform outline_transform = visual_transform * render_outline_local_transforms[archetype];
-			const float boost_outline = std::max(0.0f, std::min(1.0f, soa.boost_frames[lane] * 0.005f));
-			render_outline_multimeshes[archetype]->set_instance_transform(slot, gd_transform(outline_transform));
-			render_outline_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
-			render_outline_multimeshes[archetype]->set_instance_color(slot, godot::Color(0.5f * boost_outline, 0.7f * boost_outline, 1.0f * boost_outline, 1.0f));
-		}
+			}
+			if (archetype < static_cast<int>(render_outline_multimeshes.size()) &&
+					archetype < static_cast<int>(render_outline_local_transforms.size()) &&
+					render_outline_multimeshes[archetype].is_valid()) {
+				const SimTransform outline_transform = visual_transform * render_outline_local_transforms[archetype];
+				const float boost_outline = std::max(0.0f, std::min(1.0f, soa.boost_frames[lane] * 0.005f));
+				render_outline_multimeshes[archetype]->set_instance_transform(slot, gd_transform(outline_transform));
+				render_outline_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
+				render_outline_multimeshes[archetype]->set_instance_color(slot, godot::Color(0.5f * boost_outline, 0.7f * boost_outline, 1.0f * boost_outline, 1.0f));
+			}
 		if (archetype < static_cast<int>(render_outline_main_multimeshes.size()) &&
 				archetype < static_cast<int>(render_outline_main_local_transforms.size()) &&
 				render_outline_main_multimeshes[archetype].is_valid()) {

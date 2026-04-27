@@ -41,14 +41,14 @@ shader = ExtResource("4_6e66t")
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_6e66t"]
 render_priority = -1
 shader = ExtResource("1_gisdj")
-shader_parameter/base_outline_width = 0.5
-shader_parameter/trail_colour = Color(0.38, 0.131607, 0.0988, 1)
+shader_parameter/base_outline_width = 0.0
+shader_parameter/trail_colour = Color(0.16, 0.051173333, 0.0368, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_4psuq"]
 render_priority = -1
 shader = ExtResource("4_gisdj")
 shader_parameter/base_outline_width = 0.5
-shader_parameter/outline_color = Color(0, 0, 0, 1)
+shader_parameter/outline_color = Color(0.38, 0.131607, 0.0988, 1)
 
 [node name="Node3D" type="Node3D" unique_id=1885743347]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
