@@ -810,17 +810,25 @@ bool PhysicsCar::find_floor_beneath_machine()
 
 	SimVec2 road_t_sample_raw;
 	SimVec3 spatial_t_sample;
-	soa->current_track[soa_index]->convert_point_to_road(soa->current_checkpoint[soa_index], LOAD_VEC3(position_current), road_t_sample_raw, spatial_t_sample);
 
 	RoadTransform root;
+	RoadTransform root_derivative;
 	const TrackSegment &segment     = soa->current_track[soa_index]->segments[soa->current_track[soa_index]->checkpoints[soa->current_checkpoint[soa_index]].road_segment];
+	soa->current_track[soa_index]->convert_point_to_road(
+		soa->current_checkpoint[soa_index],
+		LOAD_VEC3(position_current),
+		road_t_sample_raw,
+		spatial_t_sample,
+		nullptr,
+		&root,
+		&root_derivative);
 	soa->road_sample[soa_index].road_t = road_t_sample_raw;
 	soa->road_sample[soa_index].spatial_t = spatial_t_sample;
 	SimTransform surf;
-	bool root_sampled = false;
+	bool root_sampled = road_t_sample_raw.x != -1000.0f;
 	auto sample_root = [&]() {
 		if (!root_sampled) {
-			segment.curve_matrix->sample(root, road_t_sample_raw.y);
+			segment.curve_matrix->sample_with_derivative(root, root_derivative, road_t_sample_raw.y);
 			root_sampled = true;
 		}
 	};
@@ -840,9 +848,15 @@ bool PhysicsCar::find_floor_beneath_machine()
 			//{
 			//	use_dir *= -1.0f;
 			//}
-			soa->current_track[soa_index]->convert_point_to_road(soa->current_checkpoint[soa_index], root.t3d.origin - flat_up.normalized() * 2000.0f, road_t_sample_raw, spatial_t_sample);
-			segment.curve_matrix->sample(root, road_t_sample_raw.y);
-			root_sampled = true;
+			soa->current_track[soa_index]->convert_point_to_road(
+				soa->current_checkpoint[soa_index],
+				root.t3d.origin - flat_up.normalized() * 2000.0f,
+				road_t_sample_raw,
+				spatial_t_sample,
+				nullptr,
+				&root,
+				&root_derivative);
+			root_sampled = road_t_sample_raw.x != -1000.0f;
 		}
 		if(pipe)
 		{
@@ -856,9 +870,15 @@ bool PhysicsCar::find_floor_beneath_machine()
 			}
 			sample_root();
 			SimVec3 flat_up = ((LOAD_TRANSFORM(basis_physical).basis.get_column(1)).slide(root.t3d.basis.get_column(2))).normalized();
-			soa->current_track[soa_index]->convert_point_to_road(soa->current_checkpoint[soa_index], root.t3d.origin - flat_up * 45.0f, road_t_sample_raw, spatial_t_sample);
-			segment.curve_matrix->sample(root, road_t_sample_raw.y);
-			root_sampled = true;
+			soa->current_track[soa_index]->convert_point_to_road(
+				soa->current_checkpoint[soa_index],
+				root.t3d.origin - flat_up * 45.0f,
+				road_t_sample_raw,
+				spatial_t_sample,
+				nullptr,
+				&root,
+				&root_derivative);
+			root_sampled = road_t_sample_raw.x != -1000.0f;
 		}
 	}
 	if (root_sampled) {
@@ -877,7 +897,7 @@ bool PhysicsCar::find_floor_beneath_machine()
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		return false;
 	}
-	segment.road_shape->get_oriented_transform_at_time(surf, road_t_sample_raw);
+	segment.road_shape->get_oriented_transform_at_time_presampled(surf, road_t_sample_raw, root, root_derivative);
 	STORE_VEC3(track_surface_normal, surf.basis[1]);
 	soa->height_above_track[soa_index] = fmaxf(1.0f, 20.0f - (LOAD_VEC3(position_current) - surf.origin).dot(LOAD_VEC3(track_surface_normal)));
 	soa->road_sample[soa_index].road_t = road_t_sample_raw;

@@ -68,7 +68,14 @@ public:
 	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);
-	void convert_point_to_road(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, float *out_cp_t = nullptr);
+	void convert_point_to_road(
+		int cp_idx,
+		const SimVec3 &point,
+		SimVec2 &road_t,
+		SimVec3 &spatial_t,
+		float *out_cp_t = nullptr,
+		RoadTransform *out_root = nullptr,
+		RoadTransform *out_root_derivative = nullptr);
 	int get_best_checkpoint(SimVec3 in_point, TrackQueryScratch &scratch)
 	{
 		int num_valid = 0;

@@ -35,6 +35,88 @@ static inline godot::Vector3 godot_vec3_from_sim(const SimVec3& v)
 	return godot::Vector3(v.x, v.y, v.z);
 }
 
+static inline float safe_inverse_road_scale(float scale)
+{
+	return (fabsf(scale) > 1.0e-5f) ? (1.0f / scale) : 0.0f;
+}
+
+static inline bool road_shape_opens_up(const RoadShape *shape)
+{
+	return shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+		shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
+}
+
+static inline bool road_shape_opens_down(const RoadShape *shape)
+{
+	return shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
+}
+
+static inline float checkpoint_time_for_point(
+	const CollisionCheckpoint &cp,
+	const SimVec3 &point,
+	bool clamp_cp_t,
+	float *out_cp_t)
+{
+	const SimVec3 p1 = cp.start_plane.project(point);
+	const SimVec3 p2 = cp.end_plane.project(point);
+	float cp_t = get_closest_t_on_segment(point, p1, p2);
+	if (clamp_cp_t) {
+		cp_t = std::clamp(cp_t, 0.0f, 1.0f);
+	}
+	if (out_cp_t) {
+		*out_cp_t = cp_t;
+	}
+	return remap_float(cp_t, 0.0f, 1.0f, cp.t_start, cp.t_end);
+}
+
+static bool inverse_root_point_to_road(
+	const TrackSegment &segment,
+	const SimVec3 &point,
+	float road_y,
+	SimVec2 &road_t,
+	SimVec3 &spatial_t,
+	RoadTransform *root_out,
+	RoadTransform *root_derivative_out)
+{
+	RoadTransform root;
+	RoadTransform root_derivative;
+	segment.curve_matrix->sample_with_derivative(root, root_derivative, road_y);
+
+	const SimVec3 local = root.t3d.xform_inv(point);
+	spatial_t = SimVec3(
+		local.x * safe_inverse_road_scale(root.scale.x),
+		local.y * safe_inverse_road_scale(root.scale.y),
+		road_y);
+
+	RoadShape *shape = segment.road_shape;
+	const bool is_open = road_shape_opens_up(shape) || road_shape_opens_down(shape);
+	if (is_open && fabsf(root.scale.y) < 5.0f) {
+		if (spatial_t.x > -1.0001f && spatial_t.x < 1.0001f) {
+			const float openness = shape->openness->sample(road_y);
+			if (openness <= 0.50001f) {
+				const float tx_clamped = std::clamp(spatial_t.x, -0.99f, 0.99f);
+				float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
+				if (road_shape_opens_down(shape)) {
+					y_val = -y_val;
+				}
+				spatial_t.y = y_val;
+			}
+		} else {
+			road_t = SimVec2(-1000.0f, road_y);
+			return false;
+		}
+	}
+
+	shape->find_t_from_relative_pos(road_t, spatial_t);
+	if (root_out) {
+		*root_out = root;
+	}
+	if (root_derivative_out) {
+		*root_derivative_out = root_derivative;
+	}
+	return true;
+}
+
 void RaceTrack::compute_checkpoint_distances()
 {
 	lap_length = 0.0f;
@@ -445,67 +527,14 @@ void RaceTrack::get_road_surface(int cp_idx, const SimVec3 &point,
 		return;
 	}
 	CollisionCheckpoint *cp = &checkpoints[cp_idx];
-	//if (cp->end_plane.is_point_over(point) || !cp->start_plane.is_point_over(point))
-	//{
-	//	int new_idx = get_best_checkpoint(point, cp_idx);
-	//	if (new_idx != -1)
-	//	{
-	//		cp_idx = new_idx;
-	//		cp = &checkpoints[cp_idx];
-	//	}
-	//}
-	SimVec3 p1 = cp->start_plane.project(point);
-	SimVec3 p2 = cp->end_plane.project(point);
-	float cp_t = get_closest_t_on_segment(point, p1, p2);
-	cp_t = std::clamp(cp_t, 0.0f, 1.0f);
-	SimBasis basis;
-	basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
-	basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
-	basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
-	SimVec3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
-	SimPlane sep_x_plane(basis[0], midpoint);
-	SimPlane sep_y_plane(basis[1], midpoint);
-	float x_r = lerp(cp->x_radius_start_inv, cp->x_radius_end_inv, cp_t);
-	float y_r = lerp(cp->y_radius_start_inv, cp->y_radius_end_inv, cp_t);
-	float tx = sep_x_plane.distance_to(point) * x_r;
-	float ty = sep_y_plane.distance_to(point) * y_r;
-	float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
-	spatial_t = SimVec3(tx, ty, tz);
-
-	bool y_less_than_x = y_r > 0.2f;
-	bool is_open = false;
-	bool use_top_half = false;
-
-	// Check for open road shape
-        RoadShape *shape = segments[cp->road_segment].road_shape;
-        if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN) {
-                is_open = true;
-                use_top_half = true;
-        } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
-                is_open = true;
-                use_top_half = false;
-        }
-	if (is_open && y_less_than_x) {
-		if (tx > -1.0001 && tx < 1.0001)
-		{
-			float openness = shape->openness->sample(tz);
-			if (openness <= 0.50001f) {
-				float tx_clamped = std::clamp(tx, -0.99f, 0.99f);
-				float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
-				if (!use_top_half)
-					y_val = -y_val;
-				spatial_t.y = y_val;
-			}
-		}
-		else
-		{
-			road_t.x = -1000.0;
-			return;
-		}
+	const TrackSegment &segment = segments[cp->road_segment];
+	const float road_y = checkpoint_time_for_point(*cp, point, true, nullptr);
+	RoadTransform root;
+	RoadTransform root_derivative;
+	if (!inverse_root_point_to_road(segment, point, road_y, road_t, spatial_t, &root, &root_derivative)) {
+		return;
 	}
-	segments[cp->road_segment].road_shape->find_t_from_relative_pos(road_t, spatial_t);
-	segments[cp->road_segment].road_shape->get_oriented_transform_at_time(out_transform, road_t);
+	segment.road_shape->get_oriented_transform_at_time_presampled(out_transform, road_t, root, root_derivative);
 }
 
 void RaceTrack::get_road_surface4_same_checkpoint(
@@ -558,29 +587,10 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 	SimFloat4 cp_t = (sx * qx + sy * qy + sz * qz) / l2;
 	cp_t = sim_max4(SimFloat4(0.0f), sim_min4(cp_t, SimFloat4(1.0f)));
 
-	auto lerp4 = [&](float a, float b) {
-		return SimFloat4(a) + (SimFloat4(b) - SimFloat4(a)) * cp_t;
-	};
-	const SimFloat4 b0x = lerp4(cp->orientation_start[0].x, cp->orientation_end[0].x);
-	const SimFloat4 b0y = lerp4(cp->orientation_start[0].y, cp->orientation_end[0].y);
-	const SimFloat4 b0z = lerp4(cp->orientation_start[0].z, cp->orientation_end[0].z);
-	const SimFloat4 b1x = lerp4(cp->orientation_start[1].x, cp->orientation_end[1].x);
-	const SimFloat4 b1y = lerp4(cp->orientation_start[1].y, cp->orientation_end[1].y);
-	const SimFloat4 b1z = lerp4(cp->orientation_start[1].z, cp->orientation_end[1].z);
-	const SimFloat4 mx = lerp4(cp->position_start.x, cp->position_end.x);
-	const SimFloat4 my = lerp4(cp->position_start.y, cp->position_end.y);
-	const SimFloat4 mz = lerp4(cp->position_start.z, cp->position_end.z);
-	const SimFloat4 x_r = lerp4(cp->x_radius_start_inv, cp->x_radius_end_inv);
-	const SimFloat4 y_r = lerp4(cp->y_radius_start_inv, cp->y_radius_end_inv);
-	const SimFloat4 tx = ((px - mx) * b0x + (py - my) * b0y + (pz - mz) * b0z) * x_r;
-	SimFloat4 ty = ((px - mx) * b1x + (py - my) * b1y + (pz - mz) * b1z) * y_r;
 	const SimFloat4 tz = SimFloat4(cp->t_start) + (SimFloat4(cp->t_end) - SimFloat4(cp->t_start)) * cp_t;
 
-	float tx_s[4], ty_s[4], tz_s[4], yr_s[4];
-	sim_store4(tx_s, tx);
-	sim_store4(ty_s, ty);
+	float tz_s[4];
 	sim_store4(tz_s, tz);
-	sim_store4(yr_s, y_r);
 
 	const bool shape_open_top =
 		shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
@@ -588,15 +598,22 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 	const bool shape_open_bottom = shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
 	const bool is_open = shape_open_top || shape_open_bottom;
 
+	RoadTransform root[4];
+	RoadTransform root_derivative[4];
+	segment.curve_matrix->sample4_with_derivative(root, root_derivative, tz_s);
+
 	bool invalid_lane[4] = { false, false, false, false };
 	for (int lane = 0; lane < 4; ++lane) {
-		spatial_t[lane] = SimVec3(tx_s[lane], ty_s[lane], tz_s[lane]);
-		const bool y_less_than_x = yr_s[lane] > 0.2f;
-		if (is_open && y_less_than_x) {
-			if (tx_s[lane] > -1.0001f && tx_s[lane] < 1.0001f) {
+		const SimVec3 local = root[lane].t3d.xform_inv(point[lane]);
+		spatial_t[lane] = SimVec3(
+			local.x * safe_inverse_road_scale(root[lane].scale.x),
+			local.y * safe_inverse_road_scale(root[lane].scale.y),
+			tz_s[lane]);
+		if (is_open && fabsf(root[lane].scale.y) < 5.0f) {
+			if (spatial_t[lane].x > -1.0001f && spatial_t[lane].x < 1.0001f) {
 				const float openness = shape->openness->sample(tz_s[lane]);
 				if (openness <= 0.50001f) {
-					const float tx_clamped = std::clamp(tx_s[lane], -0.99f, 0.99f);
+					const float tx_clamped = std::clamp(spatial_t[lane].x, -0.99f, 0.99f);
 					float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
 					if (shape_open_bottom) {
 						y_val = -y_val;
@@ -611,151 +628,56 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 		}
 		shape->find_t_from_relative_pos(road_t[lane], spatial_t[lane]);
 	}
-	shape->get_oriented_transform_at_time4(out_transform, road_t);
 	for (int lane = 0; lane < 4; ++lane) {
 		if (invalid_lane[lane]) {
 			road_t[lane].x = -1000.0f;
 			out_transform[lane] = SimTransform();
+			continue;
 		}
+		shape->get_oriented_transform_at_time_presampled(out_transform[lane], road_t[lane], root[lane], root_derivative[lane]);
 	}
 }
 
-static void convert_point_to_road(RaceTrack *track, int cp_idx, const SimVec3 &point,
-								  SimVec2 &road_t, SimVec3 &spatial_t, float *out_cp_t = nullptr)
+static void convert_point_to_road(
+	RaceTrack *track,
+	int cp_idx,
+	const SimVec3 &point,
+	SimVec2 &road_t,
+	SimVec3 &spatial_t,
+	float *out_cp_t = nullptr,
+	RoadTransform *out_root = nullptr,
+	RoadTransform *out_root_derivative = nullptr)
 {
 	if (cp_idx == -1)
 	{
+		road_t.x = -1000.0f;
 		return;
 	}
 	const CollisionCheckpoint *cp = &track->checkpoints[cp_idx];
-
-	SimVec3 p1 = cp->start_plane.project(point);
-	SimVec3 p2 = cp->end_plane.project(point);
-	float cp_t = get_closest_t_on_segment(point, p1, p2);
-	if (out_cp_t)
-		*out_cp_t = cp_t;
-
-       SimBasis basis;
-       basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
-       basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
-       basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
-
-	SimVec3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
-	SimPlane sep_x_plane(basis[0], midpoint);
-	SimPlane sep_y_plane(basis[1], midpoint);
-
-	float x_r = lerp(cp->x_radius_start_inv, cp->x_radius_end_inv, cp_t);
-	float y_r = lerp(cp->y_radius_start_inv, cp->y_radius_end_inv, cp_t);
-
-	float tx = sep_x_plane.distance_to(point) * x_r;
-	float ty = sep_y_plane.distance_to(point) * y_r;
-	float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
-
-	spatial_t = SimVec3(tx, ty, tz);
-
-        RoadShape *shape = track->segments[cp->road_segment].road_shape;
-
-        bool y_less_than_x = y_r > 0.2f;
-        bool is_open = false;
-        bool use_top_half = false;
-
-        if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN) {
-                is_open = true;
-                use_top_half = true;
-        } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
-                is_open = true;
-                use_top_half = false;
-        }
-	if (is_open && y_less_than_x) {
-		if (tx > -1.0001 && tx < 1.0001)
-		{
-			float openness = shape->openness->sample(tz);
-			if (openness <= 0.50001f) {
-				float tx_clamped = std::clamp(tx, -0.99f, 0.99f);
-				float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
-				if (!use_top_half)
-					y_val = -y_val;
-				spatial_t.y = y_val;
-			}
-		}
-		else
-		{
-			road_t.x = -1000.0;
-			return;
-		}
-	}
-
-	shape->find_t_from_relative_pos(road_t, spatial_t);
+	const TrackSegment &segment = track->segments[cp->road_segment];
+	const float road_y = checkpoint_time_for_point(*cp, point, false, out_cp_t);
+	inverse_root_point_to_road(segment, point, road_y, road_t, spatial_t, out_root, out_root_derivative);
 }
 
 
-void RaceTrack::convert_point_to_road(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, float *out_cp_t)
+void RaceTrack::convert_point_to_road(
+	int cp_idx,
+	const SimVec3 &point,
+	SimVec2 &road_t,
+	SimVec3 &spatial_t,
+	float *out_cp_t,
+	RoadTransform *out_root,
+	RoadTransform *out_root_derivative)
 {
 	if (cp_idx == -1)
 	{
+		road_t.x = -1000.0f;
 		return;
 	}
 	const CollisionCheckpoint *cp = &checkpoints[cp_idx];
-
-	SimVec3 p1 = cp->start_plane.project(point);
-	SimVec3 p2 = cp->end_plane.project(point);
-	float cp_t = get_closest_t_on_segment(point, p1, p2);
-	if (out_cp_t)
-		*out_cp_t = cp_t;
-
-       SimBasis basis;
-       basis[0] = cp->orientation_start[0].lerp(cp->orientation_end[0], cp_t);
-       basis[2] = cp->orientation_start[2].lerp(cp->orientation_end[2], cp_t);
-       basis[1] = cp->orientation_start[1].lerp(cp->orientation_end[1], cp_t);
-
-	SimVec3 midpoint = cp->position_start.lerp(cp->position_end, cp_t);
-	SimPlane sep_x_plane(basis[0], midpoint);
-	SimPlane sep_y_plane(basis[1], midpoint);
-
-	float x_r = lerp(cp->x_radius_start_inv, cp->x_radius_end_inv, cp_t);
-	float y_r = lerp(cp->y_radius_start_inv, cp->y_radius_end_inv, cp_t);
-
-	float tx = sep_x_plane.distance_to(point) * x_r;
-	float ty = sep_y_plane.distance_to(point) * y_r;
-	float tz = remap_float(cp_t, 0.0f, 1.0f, cp->t_start, cp->t_end);
-
-	spatial_t = SimVec3(tx, ty, tz);
-
-	RoadShape *shape = segments[cp->road_segment].road_shape;
-
-	bool y_less_than_x = y_r > 0.2f;
-	bool is_open = false;
-	bool use_top_half = false;
-
-        if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN) {
-                is_open = true;
-                use_top_half = true;
-        } else if (shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN) {
-                is_open = true;
-                use_top_half = false;
-        }
-	if (is_open && y_less_than_x) {
-		if (tx > -1.0001 && tx < 1.0001)
-		{
-			float openness = shape->openness->sample(tz);
-			if (openness <= 0.50001f) {
-				float tx_clamped = std::clamp(tx, -0.99f, 0.99f);
-				float y_val = sqrtf(1.0f - tx_clamped * tx_clamped);
-				if (!use_top_half)
-					y_val = -y_val;
-				spatial_t.y = y_val;
-			}
-		}
-		else
-		{
-			road_t.x = -1000.0;
-			return;
-		}
-	}
-
-	shape->find_t_from_relative_pos(road_t, spatial_t);
+	const TrackSegment &segment = segments[cp->road_segment];
+	const float road_y = checkpoint_time_for_point(*cp, point, false, out_cp_t);
+	inverse_root_point_to_road(segment, point, road_y, road_t, spatial_t, out_root, out_root_derivative);
 }
 
 struct CastParams {
@@ -794,7 +716,9 @@ static void cast_segment_fast(const CastParams  &params,
 	}
 
 	SimVec2  road_t_sample_raw;  SimVec3 spatial_t_sample;
-	convert_point_to_road(track, use_idx, sample_pt, road_t_sample_raw, spatial_t_sample);
+	RoadTransform sample_root;
+	RoadTransform sample_root_derivative;
+	convert_point_to_road(track, use_idx, sample_pt, road_t_sample_raw, spatial_t_sample, nullptr, &sample_root, &sample_root_derivative);
 	if (road_t_sample_raw.x == -1000.0)
 	{
 		return;
@@ -802,7 +726,7 @@ static void cast_segment_fast(const CastParams  &params,
 
 	SimTransform surf;        // THE ONLY SURFACE FETCH
 	//if (oriented)
-	segment.road_shape->get_oriented_transform_at_time(surf, road_t_sample_raw);
+	segment.road_shape->get_oriented_transform_at_time_presampled(surf, road_t_sample_raw, sample_root, sample_root_derivative);
 	//else
 		//segment.road_shape->get_transform_at_time(surf, road_t_sample_raw);
 
@@ -822,7 +746,8 @@ static void cast_segment_fast(const CastParams  &params,
 			const SimVec3 hit_point  = p0 + ray * t;
 
 			SimVec2 road_t_hit_raw;  SimVec3 spatial_t_hit;
-			convert_point_to_road(track, use_idx, hit_point, road_t_hit_raw, spatial_t_hit);
+			RoadTransform hit_root;
+			convert_point_to_road(track, use_idx, hit_point, road_t_hit_raw, spatial_t_hit, nullptr, &hit_root, nullptr);
 			if (road_t_hit_raw.x == -1000.0)
 			{
 				return;
@@ -839,7 +764,7 @@ static void cast_segment_fast(const CastParams  &params,
 				out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
 				out_collision.road_data.road_t          = sim_vec2_from_godot(road_t_hit_raw);
 				out_collision.road_data.closest_surface = sim_transform_from_godot(surf);     // reuse single transform
-				segment.curve_matrix->sample(out_collision.road_data.closest_root, road_t_hit_raw.y);
+				out_collision.road_data.closest_root = hit_root;
 
 				out_collision.road_data.terrain = 0;
 				if (params.mask & CAST_FLAGS::WANTS_TERRAIN) {
@@ -885,8 +810,7 @@ static void cast_segment_fast(const CastParams  &params,
                 segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN)
                 return;
 
-	RoadTransform root_t;
-	segment.curve_matrix->sample(root_t, road_t_sample_raw.y);
+	const RoadTransform &root_t = sample_root;
 	const SimBasis rbasis       = root_t.t3d.basis;
 	const SimVec3 up_normal = rbasis.get_column(1);
 	const SimVec3 side_dir = rbasis.get_column(0);
@@ -915,7 +839,8 @@ static void cast_segment_fast(const CastParams  &params,
 		const SimVec3 hit = p0 + ray * t;
 
 		SimVec2 road_t_hit_raw;  SimVec3 spatial_t_hit;
-		convert_point_to_road(track, use_idx, hit, road_t_hit_raw, spatial_t_hit);
+		RoadTransform hit_root;
+		convert_point_to_road(track, use_idx, hit, road_t_hit_raw, spatial_t_hit, nullptr, &hit_root, nullptr);
 		if (road_t_hit_raw.x == -1000.0)
 		{
 			continue;
@@ -938,7 +863,7 @@ static void cast_segment_fast(const CastParams  &params,
 			out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
 			out_collision.road_data.road_t          = sim_vec2_from_godot(road_t_hit_raw);
 			out_collision.road_data.closest_surface = sim_transform_from_godot(surf); // reuse same transform
-			segment.curve_matrix->sample(out_collision.road_data.closest_root, road_t_hit_raw.y);
+			out_collision.road_data.closest_root = hit_root;
 			out_collision.road_data.terrain         = 0x100;
 		}
 	}

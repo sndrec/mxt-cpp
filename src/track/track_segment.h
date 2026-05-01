@@ -38,6 +38,11 @@ public:
 		const SimVec2& in_t) const;
 	//virtual void get_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const;
 	virtual void find_t_from_relative_pos(SimVec2 &out_t, const SimVec3& in_pos) const;
+	void get_oriented_transform_at_time_presampled(
+		SimTransform &out_transform,
+		const SimVec2& in_t,
+		const RoadTransform& root,
+		const RoadTransform& root_derivative) const;
 	void get_oriented_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const;
 	void get_oriented_transform_at_time4(SimTransform out_transform[4], const SimVec2 in_t[4]) const;
 };

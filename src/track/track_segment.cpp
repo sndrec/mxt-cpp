@@ -987,6 +987,16 @@ void RoadShape::get_oriented_transform_at_time(SimTransform &out_transform, cons
 {
 	RoadTransform root;
 	RoadTransform root_derivative;
+	owning_segment->curve_matrix->sample_with_derivative(root, root_derivative, in_t.y);
+	get_oriented_transform_at_time_presampled(out_transform, in_t, root, root_derivative);
+}
+
+void RoadShape::get_oriented_transform_at_time_presampled(
+	SimTransform &out_transform,
+	const SimVec2& in_t,
+	const RoadTransform& root,
+	const RoadTransform& root_derivative) const
+{
 	SimVec3 local_pos;
 	SimVec3 local_dx;
 	SimVec3 local_dy;
@@ -999,7 +1009,6 @@ void RoadShape::get_oriented_transform_at_time(SimTransform &out_transform, cons
 	SimVec3 normal;
 	SimVec3 forward;
 
-	owning_segment->curve_matrix->sample_with_derivative(root, root_derivative, in_t.y);
 	get_local_surface_at_time(local_pos, local_dx, local_dy, in_t);
 
 	scaled_pos = _mul_components(local_pos, root.scale);
