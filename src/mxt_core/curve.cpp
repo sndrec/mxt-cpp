@@ -39,7 +39,7 @@ void Curve::sample_with_derivative(float in_t, float *value_out, float *derivati
 		}
 		return;
 	};
-	if (in_t <= keyframes[0].time)
+	if (in_t < keyframes[0].time)
 	{
 		if (value_out)
 		{
@@ -47,11 +47,35 @@ void Curve::sample_with_derivative(float in_t, float *value_out, float *derivati
 		}
 		return;
 	};
-	if (in_t >= keyframes[num_keyframes - 1].time)
+	if (in_t == keyframes[0].time)
+	{
+		if (value_out)
+		{
+			*value_out = keyframes[0].value;
+		}
+		if (derivative_out)
+		{
+			*derivative_out = keyframes[0].tangent_out;
+		}
+		return;
+	};
+	if (in_t > keyframes[num_keyframes - 1].time)
 	{
 		if (value_out)
 		{
 			*value_out = keyframes[num_keyframes - 1].value;
+		}
+		return;
+	};
+	if (in_t == keyframes[num_keyframes - 1].time)
+	{
+		if (value_out)
+		{
+			*value_out = keyframes[num_keyframes - 1].value;
+		}
+		if (derivative_out)
+		{
+			*derivative_out = keyframes[num_keyframes - 1].tangent_in;
 		}
 		return;
 	};
