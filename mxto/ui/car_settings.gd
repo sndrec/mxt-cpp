@@ -1,15 +1,16 @@
 extends Control
 
-@onready var machine_setting_slider: HSlider = $SettingContainer/MachineSettingSlider
-@onready var machine_setting_percent: Label = $SettingContainer/MachineSettingPercent
-@onready var vehicle_selector: ItemList = $VehicleSelector
-@onready var close_settings: Button = $CloseSettings
-@onready var pilot_name_input: LineEdit = $PilotNameInput
-@onready var spectator_toggle: CheckBox = $SpectatorToggle
-@onready var sticker_slot_1: OptionButton = $StickerGrid/StickerSlot1
-@onready var sticker_slot_2: OptionButton = $StickerGrid/StickerSlot2
-@onready var sticker_slot_3: OptionButton = $StickerGrid/StickerSlot3
-@onready var sticker_slot_4: OptionButton = $StickerGrid/StickerSlot4
+@onready var machine_setting_slider: HSlider = $Container/HBoxContainer/VBoxContainer/MachineSettingSlider
+@onready var machine_setting_percent: Label = $Container/HBoxContainer/VBoxContainer/MachineSettingPercent
+@onready var vehicle_selector: ItemList = $Container/ScrollContainer/VehicleSelector
+@onready var close_settings: Button = $Container/CloseSettings
+@onready var pilot_name_input: LineEdit = $Container/HBoxContainer/VBoxContainer/PilotNameInput
+@onready var spectator_toggle: CheckBox = $Container/HBoxContainer/VBoxContainer/SpectatorToggle
+@onready var car_name_label: Label = $Container/HBoxContainer/VBoxContainer/CarName
+@onready var sticker_slot_1: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot1
+@onready var sticker_slot_2: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot2
+@onready var sticker_slot_3: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot3
+@onready var sticker_slot_4: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot4
 
 var game_manager: GameManager
 var player_settings: PlayerSettings = PlayerSettings.new()
@@ -59,10 +60,12 @@ func _save_settings() -> void:
 func _populate_sticker_selectors() -> void:
 	for selector in sticker_selectors:
 		selector.clear()
+		selector.expand_icon = true
 		if sticker_selection == null:
 			continue
 		for i in range(sticker_selection.stickers.size()):
 			selector.add_icon_item(sticker_selection.stickers[i], "", i)
+			selector.get_popup().set_item_icon_max_width(i, 96)
 
 func _update_controls() -> void:
 	machine_setting_slider.value = player_settings.accel_setting * 100.0
@@ -78,6 +81,7 @@ func _update_controls() -> void:
 	if car_defs.size() > 0:
 		vehicle_selector.select(idx)
 		player_settings.car_definition_path = car_defs[idx].resource_path
+		car_name_label.text = car_defs[idx].name
 
 func _on_slider_changed(value: float) -> void:
 	machine_setting_percent.text = str(roundi(value)) + "%"
@@ -86,6 +90,7 @@ func _on_slider_changed(value: float) -> void:
 func _on_vehicle_selected(index: int) -> void:
 	if index >= 0 and index < car_defs.size():
 		player_settings.car_definition_path = car_defs[index].resource_path
+		car_name_label.text = car_defs[index].name
 
 func _on_name_changed(new_text: String) -> void:
 	player_settings.username = new_text
@@ -122,7 +127,9 @@ func _update_sticker_controls() -> void:
 		count = sticker_selection.stickers.size()
 	for i in range(sticker_selectors.size()):
 		if count > 0:
-			sticker_selectors[i].select(wrapi(_sticker_slot_value(i), 0, count))
+			var sticker_index := wrapi(_sticker_slot_value(i), 0, count)
+			sticker_selectors[i].select(sticker_index)
+			sticker_selectors[i].icon = sticker_selection.stickers[sticker_index]
 
 func _on_sticker_selected(index: int, slot: int) -> void:
 	_set_sticker_slot_value(slot, index)

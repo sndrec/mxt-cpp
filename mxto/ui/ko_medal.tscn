@@ -4,7 +4,11 @@
 [ext_resource type="Texture2D" path="res://ui/KO.png" id="2_tggeb"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ge2f3"]
-bg_color = Color(0, 0, 0, 1)
+bg_color = Color(0, 0, 0, 0.6)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
 
 [sub_resource type="Animation" id="Animation_3m1kp"]
 resource_name = "popup"
@@ -67,10 +71,6 @@ shadow_offset = Vector2(3, 3)
 
 [node name="KoMedal" type="Control"]
 layout_mode = 3
-anchor_left = 0.5
-anchor_top = 0.122
-anchor_right = 0.5
-anchor_bottom = 0.122
 offset_left = -142.5
 offset_top = -23.84
 offset_right = 142.5

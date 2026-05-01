@@ -138,6 +138,7 @@ var race_pause_open := false
 var debug_rail_trace_requested := false
 var active_stickers := {}
 var race_notification_hide_msec := 0
+var race_medals: Array[Control] = []
 
 func _record_outer_profile(sample: Dictionary) -> void:
 	if outer_profile_sums.is_empty():
@@ -503,14 +504,25 @@ func _format_race_time(tick_value: int) -> String:
 	return "%d:%02d.%03d" % [minutes, seconds, milliseconds]
 
 func _show_finish_medal(actor_id: int, tick_value: int) -> void:
-	var medal := FinishMedalScene.instantiate()
-	add_child(medal)
+	var medal := FinishMedalScene.instantiate() as Control
+	_add_race_medal(medal)
 	medal.call("set_finisher_name", _player_display_name(actor_id), _format_race_time(tick_value))
 
 func _show_ko_medal(actor_id: int, target_id: int) -> void:
-	var medal := KoMedalScene.instantiate()
-	add_child(medal)
+	var medal := KoMedalScene.instantiate() as Control
+	_add_race_medal(medal)
 	medal.call("set_names", _player_display_name(actor_id), _player_display_name(target_id))
+
+func _add_race_medal(medal: Control) -> void:
+	add_child(medal)
+	medal.tree_exited.connect(_refresh_race_medal_feed)
+	race_medals.insert(0, medal)
+	_refresh_race_medal_feed()
+
+func _refresh_race_medal_feed() -> void:
+	race_medals = race_medals.filter(func(existing): return is_instance_valid(existing) and existing.is_inside_tree())
+	for i in range(race_medals.size()):
+		race_medals[i].call("set_feed_index", i)
 
 func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_value: int, value: int) -> void:
 	if event_type == "sticker":

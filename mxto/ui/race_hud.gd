@@ -46,6 +46,8 @@ var sticker_menu_icons: Array[TextureRect] = []
 var sticker_nodes := {}
 var check_icons: Array[TextureRect] = []
 var sticker_menu_hide_msec := 0
+var sticker_menu_open := false
+var sticker_input_buffer_msec := 0
 
 @onready var real_input := $InputViewer/RealInput
 @onready var clamped_input := $InputViewer/ClampedInput
@@ -199,9 +201,9 @@ func _send_sticker(car: VisualCar, slot: int) -> void:
 	if stickers != null and stickers.stickers.size() > 0:
 		sticker_index = wrapi(sticker_index, 0, stickers.stickers.size())
 	car.game_manager.send_local_sticker(sticker_index)
-	_update_sticker_menu_icons(car)
-	sticker_menu.visible = true
-	sticker_menu_hide_msec = Time.get_ticks_msec() + 650
+	sticker_menu_open = false
+	sticker_menu.visible = false
+	sticker_input_buffer_msec = Time.get_ticks_msec() + 50
 
 func _update_sticker_menu_icons(car: VisualCar) -> void:
 	if stickers == null or stickers.stickers.is_empty():
@@ -211,6 +213,17 @@ func _update_sticker_menu_icons(car: VisualCar) -> void:
 		sticker_menu_icons[i].texture = stickers.stickers[sticker_index]
 
 func _update_sticker_input(car: VisualCar) -> void:
+	var now := Time.get_ticks_msec()
+	if now < sticker_input_buffer_msec:
+		return
+	if !sticker_menu_open:
+		if _action_just_pressed_any(["DpadUp", "DPadUp"]):
+			_update_sticker_menu_icons(car)
+			sticker_menu_open = true
+			sticker_menu.visible = true
+			sticker_menu_hide_msec = now + 2500
+			sticker_input_buffer_msec = now + 50
+		return
 	if _action_just_pressed_any(["DpadLeft", "DPadLeft"]):
 		_send_sticker(car, 0)
 	elif _action_just_pressed_any(["DpadDown", "DPadDown"]):
@@ -220,6 +233,7 @@ func _update_sticker_input(car: VisualCar) -> void:
 	elif _action_just_pressed_any(["DpadRight", "DPadRight"]):
 		_send_sticker(car, 3)
 	if sticker_menu != null and sticker_menu.visible and Time.get_ticks_msec() > sticker_menu_hide_msec:
+		sticker_menu_open = false
 		sticker_menu.visible = false
 
 func _update_check_warnings(car: VisualCar) -> void:
@@ -235,8 +249,9 @@ func _update_check_warnings(car: VisualCar) -> void:
 		var lateral := float(candidate.get("lateral", 0.0))
 		var alpha := float(candidate.get("alpha", 0.0))
 		icon.modulate.a = alpha
-		icon.position.x = clampf(viewport_size.x * 0.5 - lateral * 128.0, 0.0, viewport_size.x - icon.size.x)
-		icon.position.y = minf(580.0, viewport_size.y - icon.size.y)
+		var x := viewport_size.x * 0.5 - lateral * 12.0 - icon.size.x * 0.5
+		icon.position.x = clampf(x, 0.0, viewport_size.x - icon.size.x)
+		icon.position.y = maxf(0.0, minf(580.0, viewport_size.y - icon.size.y - 24.0))
 
 func _update_world_stickers(car: VisualCar) -> void:
 	var camera := get_viewport().get_camera_3d()
