@@ -4306,8 +4306,8 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	SimVec3 impulse = collision_normal * (-0.8f * closing_speed);
 	float impulse_strength = impulse.length();
 
-	float damage1 = impulse_strength * 0.05f;
-	float damage2 = impulse_strength * 0.05f;
+	float damage1 = impulse_strength * 5.0f;
+	float damage2 = impulse_strength * 5.0f;
 	SimVec3 impulse1 = impulse;
 	SimVec3 impulse2 = -impulse;
 	if (this_attacking && !other_attacking) {
@@ -4315,12 +4315,12 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		impulse1 = impulse;
 		impulse2 = collision_normal * (2.0f * impulse_strength);
 		damage1 = 0.0f;
-		damage2 = impulse_strength * 0.75f;
+		damage2 = impulse_strength * 60.0f;
 	} else if (!this_attacking && other_attacking) {
 		impulse_strength += 2.0f;
 		impulse1 = collision_normal * (-2.0f * impulse_strength);
 		impulse2 = -impulse;
-		damage1 = impulse_strength * 0.75f;
+		damage1 = impulse_strength * 60.0f;
 		damage2 = 0.0f;
 	} else if (this_attacking && other_attacking) {
 		impulse1 = impulse * 0.2f;
