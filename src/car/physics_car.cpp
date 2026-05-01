@@ -127,6 +127,61 @@ static void print_rail_sampling_trace(
 namespace {
 constexpr float kRespawnForwardDistance = 100.0f;
 constexpr float kMinCheckpointDistance = 0.01f;
+constexpr float kMaxPositiveCheckpointAdvance = 1500.0f;
+
+static inline float track_lap_length(const RaceTrack *track)
+{
+	if (!track) {
+		return 0.0f;
+	}
+	float lap_length = track->lap_length;
+	if (lap_length <= 0.0f && track->num_checkpoints > 0) {
+		lap_length = track->checkpoints[track->num_checkpoints - 1].distance;
+	}
+	return lap_length;
+}
+
+static inline float normalize_track_distance(float distance, float lap_length)
+{
+	if (lap_length <= 0.0f) {
+		return distance;
+	}
+	float normalized = std::fmod(distance, lap_length);
+	if (normalized < 0.0f) {
+		normalized += lap_length;
+	}
+	return normalized;
+}
+
+static inline bool track_distance_is_before_lap_line(float distance, float lap_length)
+{
+	if (lap_length <= 0.0f) {
+		return false;
+	}
+	return normalize_track_distance(distance, lap_length) > lap_length * 0.875f;
+}
+
+static inline void clear_motion_for_restore(PhysicsCarSoA *soa, int lane)
+{
+	soa->velocity_x[lane] = 0.0f;
+	soa->velocity_y[lane] = 0.0f;
+	soa->velocity_z[lane] = 0.0f;
+	soa->knockback_velocity_x[lane] = 0.0f;
+	soa->knockback_velocity_y[lane] = 0.0f;
+	soa->knockback_velocity_z[lane] = 0.0f;
+	soa->velocity_local_x[lane] = 0.0f;
+	soa->velocity_local_y[lane] = 0.0f;
+	soa->velocity_local_z[lane] = 0.0f;
+	soa->velocity_local_flattened_and_rotated_x[lane] = 0.0f;
+	soa->velocity_local_flattened_and_rotated_y[lane] = 0.0f;
+	soa->velocity_local_flattened_and_rotated_z[lane] = 0.0f;
+	soa->velocity_angular_x[lane] = 0.0f;
+	soa->velocity_angular_y[lane] = 0.0f;
+	soa->velocity_angular_z[lane] = 0.0f;
+	soa->base_speed[lane] = 0.0f;
+	soa->boost_turbo[lane] = 0.0f;
+	soa->state_2[lane] &= ~0x20u;
+}
 
 void print_car_collision_debug(
 	const char* reason,
@@ -2044,6 +2099,9 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->current_checkpoint[soa_index] = 0;
 	soa->checkpoint_fraction[soa_index] = 0.0f;
 	soa->lap[soa_index] = 0;
+	soa->previous_lap_distance[soa_index] = 0.0f;
+	soa->broken_lap_rollback_pending[soa_index] = false;
+	soa->broken_lap_rollback_lap[soa_index] = 0;
 	STORE_VEC3(visual_rotation, SimVec3());
 	STORE_VEC3(unk_vec3_0x4e4, SimVec3());
 	STORE_VEC3(unk_vec3_0x4f0, SimVec3());
@@ -3300,55 +3358,88 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	if (!soa->current_track[soa_index] || soa->current_track[soa_index]->num_checkpoints == 0)
 		return;
 
+	RaceTrack *track = soa->current_track[soa_index];
 	uint8_t prev_lap = soa->lap[soa_index];
 
-	int found = soa->current_track[soa_index]->get_best_checkpoint(LOAD_VEC3(position_current), soa->current_checkpoint[soa_index], scratch);
+	int found = track->get_best_checkpoint(LOAD_VEC3(position_current), soa->current_checkpoint[soa_index], scratch);
 	int collision = found;
 	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0 || found == -1)
 	{
-		collision = soa->current_track[soa_index]->get_best_checkpoint(LOAD_VEC3(position_current), scratch);
+		collision = track->get_best_checkpoint(LOAD_VEC3(position_current), scratch);
 	}
 	//if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0 && found == -1)
 	//{
 	//	found = collision;
 	//}
 	soa->current_collision_checkpoint[soa_index] = collision;
-	if (found >= 0 && found < soa->current_track[soa_index]->num_checkpoints && found != soa->current_checkpoint[soa_index]) {
+	if (found >= 0 && found < track->num_checkpoints && found != soa->current_checkpoint[soa_index]) {
+		uint8_t proposed_lap = soa->lap[soa_index];
+		int lap_delta = 0;
+		const int lap_line_window = std::max(1, track->num_checkpoints / 8);
+		const bool found_after_lap_line = found < lap_line_window;
+		const bool found_before_lap_line = found >= track->num_checkpoints - lap_line_window;
+		const bool current_after_lap_line = soa->current_checkpoint[soa_index] < lap_line_window;
+		const bool current_before_lap_line = soa->current_checkpoint[soa_index] >= track->num_checkpoints - lap_line_window;
 		if ((soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) != 0 & (soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0)
 		{
-			if (found < soa->current_track[soa_index]->num_checkpoints / 8 && soa->current_checkpoint[soa_index] > soa->current_track[soa_index]->num_checkpoints - soa->current_track[soa_index]->num_checkpoints / 8) {
-				soa->lap[soa_index] += 1;
-			} else if (soa->current_checkpoint[soa_index] < soa->current_track[soa_index]->num_checkpoints / 8 && found > soa->current_track[soa_index]->num_checkpoints - soa->current_track[soa_index]->num_checkpoints / 8) {
-				if (soa->lap[soa_index] > 0)
-					soa->lap[soa_index] -= 1;
+			if (found_after_lap_line && current_before_lap_line) {
+				proposed_lap += 1;
+				lap_delta = 1;
+			} else if (current_after_lap_line && found_before_lap_line) {
+				if (proposed_lap > 0) {
+					proposed_lap -= 1;
+					lap_delta = -1;
+				}
 			}
 		}
+
+		soa->lap[soa_index] = proposed_lap;
 		soa->current_checkpoint[soa_index] = static_cast<uint16_t>(found);
+		if (lap_delta < 0) {
+			soa->broken_lap_rollback_pending[soa_index] = false;
+			soa->broken_lap_rollback_lap[soa_index] = 0;
+		}
+		if (lap_delta > 0 && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) != 0) {
+			soa->broken_lap_rollback_pending[soa_index] = true;
+			soa->broken_lap_rollback_lap[soa_index] = proposed_lap;
+		}
 	}
 
 	if (soa->lap[soa_index] > 3){
 		soa->machine_state[soa_index] |= MACHINESTATE::COMPLETEDRACE_1_Q;
+		soa->broken_lap_rollback_pending[soa_index] = false;
+		soa->broken_lap_rollback_lap[soa_index] = 0;
 	}
 
-	const CollisionCheckpoint &cur_cp = soa->current_track[soa_index]->checkpoints[soa->current_checkpoint[soa_index]];
+	const CollisionCheckpoint &cur_cp = track->checkpoints[soa->current_checkpoint[soa_index]];
 	SimVec3 p1 = cur_cp.start_plane.project(LOAD_VEC3(position_current));
 	SimVec3 p2 = cur_cp.end_plane.project(LOAD_VEC3(position_current));
 	float t = get_closest_t_on_segment(LOAD_VEC3(position_current), p1, p2);
 	soa->checkpoint_fraction[soa_index] = t;
-	soa->lap_progress[soa_index] = (static_cast<float>(soa->current_checkpoint[soa_index]) + t) / static_cast<float>(soa->current_track[soa_index]->num_checkpoints);
+	soa->lap_progress[soa_index] = (static_cast<float>(soa->current_checkpoint[soa_index]) + t) / static_cast<float>(track->num_checkpoints);
 
 	float cp_length = cur_cp.local_distance;
 	float cp_start_distance = cur_cp.distance - cur_cp.local_distance;
 	float ground_distance = cp_start_distance + cp_length * std::clamp(soa->checkpoint_fraction[soa_index], 0.0f, 1.0f);
-	float lap_length = soa->current_track[soa_index]->lap_length;
-	if (lap_length <= 0.0f && soa->current_track[soa_index]->num_checkpoints > 0)
-		lap_length = soa->current_track[soa_index]->checkpoints[soa->current_track[soa_index]->num_checkpoints - 1].distance;
+	float lap_length = track_lap_length(track);
 	if (lap_length > 0.0f) {
 		ground_distance = std::fmod(ground_distance, lap_length);
 		if (ground_distance < 0.0f)
 			ground_distance += lap_length;
 	}
 	soa->checkpoint_track_distance[soa_index] = ground_distance;
+
+	const float current_lap_distance = track->compute_lap_distance(
+		soa->current_checkpoint[soa_index],
+		soa->checkpoint_fraction[soa_index],
+		soa->lap[soa_index]);
+	if (soa->restore_state[soa_index] == 0 &&
+		(soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0) {
+		if (current_lap_distance - soa->previous_lap_distance[soa_index] > kMaxPositiveCheckpointAdvance) {
+			start_restore_to_last_ground();
+		}
+	}
+	soa->previous_lap_distance[soa_index] = current_lap_distance;
 
 	if (soa->lap[soa_index] != prev_lap) {
 		soa->machine_state[soa_index] |= MACHINESTATE::CROSSEDLAPLINE_Q;
@@ -3567,6 +3658,19 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	if (!compute_respawn_target(cp_idx, spawn_transform, respawn_distance))
 		return;
 
+	if (soa->broken_lap_rollback_pending[soa_index] &&
+		(soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0) {
+		const float lap_length = track_lap_length(soa->current_track[soa_index]);
+		if (soa->lap[soa_index] == soa->broken_lap_rollback_lap[soa_index] &&
+			soa->lap[soa_index] > 0 &&
+			track_distance_is_before_lap_line(respawn_distance, lap_length)) {
+			soa->lap[soa_index] -= 1;
+			soa->machine_state[soa_index] |= MACHINESTATE::CROSSEDLAPLINE_Q;
+		}
+	}
+	soa->broken_lap_rollback_pending[soa_index] = false;
+	soa->broken_lap_rollback_lap[soa_index] = 0;
+
 	soa->last_ground_distance[soa_index] = respawn_distance;
 	STORE_VEC3(position_current, spawn_transform.origin);
 	STORE_VEC3(position_old, spawn_transform.origin);
@@ -3661,6 +3765,20 @@ SimTransform PhysicsCar::calculate_respawn_transform(uint16_t cp_idx) const
 	return spawn_transform;
 }
 
+void PhysicsCar::start_restore_to_last_ground()
+{
+	if (!soa->current_track[soa_index]) {
+		return;
+	}
+	soa->restore_state[soa_index] = 2;
+	soa->restore_wait_frames[soa_index] = 0;
+	soa->restore_move_frames[soa_index] = 0;
+	soa->machine_state[soa_index] |= MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE;
+	{ SimTransform mxt_tmp = LOAD_TRANSFORM(restore_start_transform); mxt_tmp.origin = LOAD_VEC3(position_current); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(restore_start_transform, mxt_tmp); }
+	STORE_TRANSFORM(restore_target_transform, calculate_respawn_transform(soa->last_ground_checkpoint[soa_index]));
+	clear_motion_for_restore(soa, soa_index);
+}
+
 void PhysicsCar::update_restore(float accel_input)
 {
 	if (!soa->current_track[soa_index])
@@ -3687,14 +3805,7 @@ void PhysicsCar::update_restore(float accel_input)
 			soa->restore_move_frames[soa_index] = 0;
 			{ SimTransform mxt_tmp = LOAD_TRANSFORM(restore_start_transform); mxt_tmp.origin = LOAD_VEC3(position_current); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(restore_start_transform, mxt_tmp); }
 			STORE_TRANSFORM(restore_target_transform, calculate_respawn_transform(soa->last_ground_checkpoint[soa_index]));
-			STORE_VEC3(velocity, SimVec3());
-			STORE_VEC3(knockback_velocity, SimVec3());
-			STORE_VEC3(velocity_local, SimVec3());
-			STORE_VEC3(velocity_local_flattened_and_rotated, SimVec3());
-			STORE_VEC3(velocity_angular, SimVec3());
-			soa->base_speed[soa_index] = 0.0f;
-			soa->boost_turbo[soa_index] = 0.0f;
-			soa->state_2[soa_index] &= ~0x20;
+			clear_motion_for_restore(soa, soa_index);
 		}
 	} else if (soa->restore_state[soa_index] == 2) {
 		soa->restore_move_frames[soa_index]++;

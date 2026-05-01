@@ -4,6 +4,7 @@
 #include "track/collision_checkpoint.h"
 #include "track/trigger_collider.h"
 #include "mxt_core/math_utils.h"
+#include <algorithm>
 #include <vector>
 #include <cstdint>
 
@@ -63,6 +64,25 @@ public:
 		std::vector<BranchInfo> branch_infos;
 		std::vector<int> checkpoint_branch_id;
 		void compute_checkpoint_distances();
+		float compute_lap_distance(uint16_t current_checkpoint, float checkpoint_fraction, uint8_t lap) const
+		{
+			float use_lap_length = lap_length;
+			if (use_lap_length <= 0.0f && num_checkpoints > 0) {
+				use_lap_length = checkpoints[num_checkpoints - 1].distance;
+			}
+
+			float lap_progress = 0.0f;
+			if (current_checkpoint < num_checkpoints) {
+				const CollisionCheckpoint& cp = checkpoints[current_checkpoint];
+				float entry_distance = cp.distance - cp.local_distance;
+				if (entry_distance < 0.0f) {
+					entry_distance = 0.0f;
+				}
+				const float fraction = std::clamp(checkpoint_fraction, 0.0f, 1.0f);
+				lap_progress = entry_distance + cp.local_distance * fraction;
+			}
+			return lap_progress + use_lap_length * static_cast<float>(lap);
+		}
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
 	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
@@ -187,10 +207,9 @@ public:
 			if (num_valid == 8)
 				break;
 
-			for (int i = 0; i < cp.num_neighboring_checkpoints; i++) {
-				int neighbor = cp.neighboring_checkpoints[i];
+			auto push_neighbor = [&](int neighbor) {
 				if (neighbor < 0 || neighbor >= num_checkpoints)
-					continue;
+					return;
 				bool neighbor_visited = false;
 				for (int visited_i = 0; visited_i < visited_count; ++visited_i) {
 					if (scratch.visited_checkpoints[visited_i] == neighbor) {
@@ -199,18 +218,29 @@ public:
 					}
 				}
 				if (neighbor_visited)
-					continue;
+					return;
 
 				// Prune based on checkpoint ordering and spatial relation
 				bool wraps_forward  = (idx == num_checkpoints - 1 && neighbor == 0);
 				bool wraps_backward = (idx == 0 && neighbor == num_checkpoints - 1);
 				if (idx < neighbor && !passed_end && !wraps_backward && !wraps_forward)
-						continue;
+					return;
 				if (idx > neighbor && passed_start && !wraps_backward && !wraps_forward)
-					continue;
+					return;
 
 				if (stack_top < 64) {
 					scratch.checkpoint_stack[stack_top++] = neighbor;
+				}
+			};
+
+			for (int i = 0; i < cp.num_neighboring_checkpoints; i++) {
+				push_neighbor(cp.neighboring_checkpoints[i]);
+			}
+			if (num_checkpoints > 1) {
+				if (idx == 0) {
+					push_neighbor(num_checkpoints - 1);
+				} else if (idx == num_checkpoints - 1) {
+					push_neighbor(0);
 				}
 			}
 		}

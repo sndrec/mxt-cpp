@@ -94,9 +94,12 @@ struct ImpactData {
 	X(uint16_t, current_collision_checkpoint, 0) \
 	X(uint16_t, last_ground_checkpoint, 0) \
 	X(float, last_ground_distance, 0.0f) \
+	X(float, previous_lap_distance, 0.0f) \
 	X(float, checkpoint_fraction, 0.0f) \
 	X(float, checkpoint_track_distance, 0.0f) \
 	X(uint8_t, lap, 1) \
+	X(bool, broken_lap_rollback_pending, false) \
+	X(uint8_t, broken_lap_rollback_lap, 0) \
 	X(float, lap_progress, 0.0f) \
 	X(float, input_strafe_32, 0.0f) \
 	X(float, input_strafe_1_6, 0.0f) \
@@ -297,6 +300,7 @@ class PhysicsCar
 private:
 	float scratch_float[16];
 	bool compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance) const;
+	void start_restore_to_last_ground();
 public:
 	PhysicsCarSoA* soa = nullptr;
 	int soa_index = 0;

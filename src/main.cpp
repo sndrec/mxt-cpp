@@ -2647,6 +2647,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				car_soa->lap_progress[car_idx] = (static_cast<float>(spawn_checkpoint) + checkpoint_fraction) / static_cast<float>(current_track->num_checkpoints);
 				car_soa->checkpoint_track_distance[car_idx] = ground_distance;
 				car_soa->last_ground_distance[car_idx] = ground_distance;
+				car_soa->previous_lap_distance[car_idx] = current_track->compute_lap_distance(
+					car_soa->current_checkpoint[car_idx],
+					car_soa->checkpoint_fraction[car_idx],
+					car_soa->lap[car_idx]);
 			}
 			const int point_base = car_idx * 4;
 			const SimVec3 reset_position = spawn_transform.origin;
@@ -3665,26 +3669,7 @@ float GameSim::compute_vehicle_distance_along_track(uint16_t current_checkpoint,
 {
 	if (!current_track)
 		return 0.0f;
-
-	float lap_length = current_track->lap_length;
-	if (lap_length <= 0.0f && current_track->num_checkpoints > 0) {
-		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
-	}
-
-	float lap_progress = 0.0f;
-	int cp_idx = current_checkpoint;
-	if (cp_idx >= 0 && cp_idx < current_track->num_checkpoints) {
-		const CollisionCheckpoint& cp = current_track->checkpoints[cp_idx];
-		float entry_distance = cp.distance - cp.local_distance;
-		if (entry_distance < 0.0f) {
-			entry_distance = 0.0f;
-		}
-		float fraction = std::clamp(checkpoint_fraction, 0.0f, 1.0f);
-		lap_progress = entry_distance + cp.local_distance * fraction;
-	}
-
-	float lap_total = lap_progress + lap_length * std::max(static_cast<float>(lap), 0.0f);
-	return lap_total;
+	return current_track->compute_lap_distance(current_checkpoint, checkpoint_fraction, lap);
 }
 
 void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
@@ -4268,6 +4253,7 @@ struct NetStateReader {
 	X(uint16_t, current_collision_checkpoint) \
 	X(uint16_t, last_ground_checkpoint) \
 	X(uint8_t, lap) \
+	X(uint8_t, broken_lap_rollback_lap) \
 	X(uint8_t, rail_collision_timer) \
 	X(uint8_t, grip_frames_from_accel_press) \
 	X(uint8_t, side_attack_delay) \
@@ -4285,6 +4271,7 @@ struct NetStateReader {
 	X(bool, has_last_hit_tick) \
 	X(bool, machine_crashed) \
 	X(bool, s_boost_active) \
+	X(bool, broken_lap_rollback_pending) \
 	X(bool, collision_old_valid) \
 	X(bool, collision_old_was_above) \
 	X(bool, collision_old_was_inside) \
@@ -4298,6 +4285,7 @@ struct NetStateReader {
 	X(float, spinattack_decrement) \
 	X(float, height_above_track) \
 	X(float, last_ground_distance) \
+	X(float, previous_lap_distance) \
 	X(float, checkpoint_fraction) \
 	X(float, input_strafe_32) \
 	X(float, input_strafe_1_6) \
