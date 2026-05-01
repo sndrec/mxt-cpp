@@ -1057,9 +1057,6 @@ void PhysicsCar::handle_suspension_states()
 						should_drift = true;
 					}
 				}
-				if (soa->machine_state[soa_index] & MACHINESTATE::SPINATTACKING) {
-					should_drift = true;
-				}
 				if (should_drift) {
 					set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 				}
@@ -2527,7 +2524,9 @@ void PhysicsCar::handle_attack_states()
 		if (cur_angle == 0.0f) {
 			soa->spinattack_angle[soa_index] = Math_PI * 8.0f;
 			soa->spinattack_decrement[soa_index] = Math_PI * 0.125f;
-			soa->spinattack_direction[soa_index] = (soa->input_steer_yaw[soa_index] <= 0.0f) ? 1 : 0;
+			if (std::abs(soa->input_steer_yaw[soa_index]) > 0.1f) {
+				soa->spinattack_direction[soa_index] = (soa->input_steer_yaw[soa_index] < 0.0f) ? 1 : 0;
+			}
 		} else if (soa->spinattack_decrement[soa_index] < cur_angle) {
 			soa->spinattack_angle[soa_index] = cur_angle - soa->spinattack_decrement[soa_index];
 			if (soa->spinattack_angle[soa_index] < Math_PI * 4.0f) {
