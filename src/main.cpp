@@ -4005,7 +4005,7 @@ void GameSim::update_super_spark_visuals()
 					current_track->segments[i].road_shape->get_oriented_transform_at_time(road_transform, shape_pos);
 
 					SimVec3 start = road_transform.origin;
-					SimVec3 end = start + road_transform.basis.transposed().get_column(1) * 2.0f; // arrow in local Y/up
+					SimVec3 end = start + road_transform.basis[1] * 2.0f; // arrow in local Y/up
 
 					dd3d->call("draw_arrow", gd_vec3(start), gd_vec3(end), godot::Color(r, g, b), 0.5, true, _TICK_DELTA);
 				}

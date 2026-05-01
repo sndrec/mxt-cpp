@@ -52,6 +52,13 @@ public:
 		const SimVec2& in_t,
 		const RoadTransform& root,
 		const RoadTransform& root_derivative) const;
+	void get_oriented_transform_at_time_presampled(
+		SimTransform &out_transform,
+		SimVec3 &out_tangent_x,
+		SimVec3 &out_tangent_y,
+		const SimVec2& in_t,
+		const RoadTransform& root,
+		const RoadTransform& root_derivative) const;
 	void get_oriented_transform_at_time(SimTransform &out_transform, const SimVec2& in_t) const;
 	void get_oriented_transform_at_time4(SimTransform out_transform[4], const SimVec2 in_t[4]) const;
 	bool supports_edge_rails() const;

@@ -997,6 +997,25 @@ void RoadShape::get_oriented_transform_at_time_presampled(
 	const RoadTransform& root,
 	const RoadTransform& root_derivative) const
 {
+	SimVec3 tangent_x;
+	SimVec3 tangent_y;
+	get_oriented_transform_at_time_presampled(
+		out_transform,
+		tangent_x,
+		tangent_y,
+		in_t,
+		root,
+		root_derivative);
+}
+
+void RoadShape::get_oriented_transform_at_time_presampled(
+	SimTransform &out_transform,
+	SimVec3 &out_tangent_x,
+	SimVec3 &out_tangent_y,
+	const SimVec2& in_t,
+	const RoadTransform& root,
+	const RoadTransform& root_derivative) const
+{
 	SimVec3 local_pos;
 	SimVec3 local_dx;
 	SimVec3 local_dy;
@@ -1021,6 +1040,8 @@ void RoadShape::get_oriented_transform_at_time_presampled(
 		root_derivative.t3d.origin +
 		root_derivative.t3d.basis.xform(scaled_pos) +
 		root.t3d.basis.xform(scaled_dy);
+	out_tangent_x = tangent_x;
+	out_tangent_y = tangent_y;
 
 	right = tangent_x.normalized();
 	normal = tangent_y.cross(tangent_x).normalized();
@@ -1088,14 +1109,21 @@ void RoadShape::get_edge_rail_sides(
 	const float edge_height[2] = { left_height, right_height };
 	for (int i = 0; i < 2; ++i) {
 		SimTransform edge_surface;
+		SimVec3 edge_tangent_x;
+		SimVec3 edge_tangent_y;
 		get_oriented_transform_at_time_presampled(
 			edge_surface,
+			edge_tangent_x,
+			edge_tangent_y,
 			SimVec2(edge_x[i], road_y),
 			root,
 			root_derivative);
 
 		SimVec3 up_n = edge_surface.basis[1].normalized();
-		SimVec3 forward_n = edge_surface.basis[2].normalized();
+		SimVec3 forward_n = edge_tangent_y.normalized();
+		if (forward_n.length_squared() < 0.000001f) {
+			forward_n = edge_surface.basis[2].normalized();
+		}
 		SimVec3 rail_n = up_n.cross(forward_n).normalized();
 		if (rail_n.length_squared() < 0.000001f) {
 			rail_n = edge_surface.basis[0].normalized();
