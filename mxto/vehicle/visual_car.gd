@@ -102,6 +102,7 @@ var race_start_charge := 0.0
 var speed_kmh := 0.0
 var air_tilt := 0.0
 var energy := 0.0
+var calced_max_energy := 100.0
 var s_boost_charge := 0
 var s_boost_charge_max := 50
 var s_boost_active := false
@@ -360,7 +361,8 @@ func apply_sim_state(
 	in_tilt_br_state: int,
 	in_camera_reorienting: float,
 	in_camera_repositioning: float,
-	in_track_surface_pos: Vector3
+	in_track_surface_pos: Vector3,
+	in_calced_max_energy: float = 100.0
 ) -> void:
 	position_current = in_position_current
 	position_old = in_position_old
@@ -412,6 +414,7 @@ func apply_sim_state(
 	camera_reorienting = in_camera_reorienting
 	camera_repositioning = in_camera_repositioning
 	track_surface_pos = in_track_surface_pos
+	calced_max_energy = in_calced_max_energy
 	if !is_processing():
 		_apply_low_cost_visual_state()
 
@@ -565,8 +568,8 @@ func _safe_track_normal() -> Vector3:
 func _step_gameplay_camera() -> void:
 	if !local_visual_enabled or !gameplay_camera:
 		return
-	var view_up_pressed := Input.is_action_just_pressed("CameraUp") or Input.is_action_just_pressed("DPadUp")
-	var view_down_pressed := Input.is_action_just_pressed("CameraDown") or Input.is_action_just_pressed("DPadDown")
+	var view_up_pressed := Input.is_action_just_pressed("CameraUp")
+	var view_down_pressed := Input.is_action_just_pressed("CameraDown")
 	gameplay_camera.step(
 		position_current,
 		position_old,

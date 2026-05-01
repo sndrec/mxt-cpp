@@ -3,6 +3,7 @@ extends Node
 
 signal race_started(track_index, player_settings)
 signal race_finished
+signal race_event(event_type, actor_id, target_id, tick, value)
 
 @rpc("any_peer", "reliable")
 func set_race_finish_time(time: int) -> void:
@@ -70,6 +71,7 @@ var net_race_finish_time := -1
 var player_finish_times := {}
 var player_finish_placements := {}
 var finish_order : Array = []
+var sticker_cooldown_msec := {}
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
 
@@ -539,6 +541,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	player_finish_times.clear()
 	player_finish_placements.clear()
 	finish_order.clear()
+	sticker_cooldown_msec.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	clients_server_tick = 0
@@ -1806,6 +1809,7 @@ func disconnect_from_server() -> void:
 	player_finish_times.clear()
 	player_finish_placements.clear()
 	finish_order.clear()
+	sticker_cooldown_msec.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	clients_server_tick = 0
@@ -1887,13 +1891,16 @@ func _adjust_time_scale() -> void:
 func get_race_tick() -> int:
 	return server_tick if is_server else clients_server_tick
 
-@rpc("any_peer", "reliable")
+@rpc("authority", "call_local", "reliable")
 func set_player_finished(id: int, tick: int, place: int) -> void:
+	var is_new := !player_finish_times.has(id)
 	player_finish_times[id] = tick
 	player_finish_placements[id] = place
 	if finish_order.size() < place:
 		finish_order.resize(place)
 	finish_order[place - 1] = id
+	if is_new:
+		race_event.emit("finish", id, -1, tick, place)
 
 func send_player_finished(id: int, tick: int) -> void:
 	if player_finish_times.has(id):
@@ -1908,3 +1915,32 @@ func record_player_finished(id: int, tick: int) -> void:
 		return
 	var place := finish_order.size() + 1
 	set_player_finished(id, tick, place)
+
+@rpc("authority", "call_local", "reliable")
+func receive_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:
+	race_event.emit(event_type, actor_id, target_id, tick, value)
+
+func send_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:
+	if is_server:
+		receive_race_event.rpc(event_type, actor_id, target_id, tick, value)
+
+@rpc("any_peer", "reliable")
+func request_sticker(sticker_index: int) -> void:
+	if !race_active:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	var now := Time.get_ticks_msec()
+	var last := int(sticker_cooldown_msec.get(sender, 0))
+	if now < last + 500:
+		return
+	sticker_cooldown_msec[sender] = now
+	if is_server:
+		send_race_event("sticker", sender, -1, get_race_tick(), sticker_index)
+
+func send_sticker(sticker_index: int) -> void:
+	if is_server or !multiplayer.has_multiplayer_peer():
+		request_sticker(sticker_index)
+	else:
+		request_sticker.rpc_id(1, sticker_index)

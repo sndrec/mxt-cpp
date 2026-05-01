@@ -2011,7 +2011,7 @@ void PhysicsCar::initialize_machine()
 	}
 
 	soa->stat_obstacle_collision[soa_index] += 0.1f;
-	soa->calced_max_energy[soa_index] = soa->car_properties[soa_index]->max_energy;
+	soa->calced_max_energy[soa_index] = soa->car_properties[soa_index]->max_energy + soa->ko_energy_bonus[soa_index];
 
 	reset_machine(1);
 };
@@ -4296,6 +4296,8 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 
 	const bool this_attacking = (soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
 	const bool other_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+	const bool this_alive_before = (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0;
+	const bool other_alive_before = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) == 0;
 
 	const SimVec3 plane_point = (p1 + p2) * 0.5f;
 	constexpr float depenetration_overcorrection = 1.1f;
@@ -4355,6 +4357,12 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	}
 	if (damage2 > 0.0f && other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0) {
 		other_machine.apply_damage(damage2);
+	}
+	if (this_alive_before && damage1 > 0.0f && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) != 0) {
+		soa->pending_ko_attacker_car_index[soa_index] = other_machine.soa->global_start + other_machine.soa_index;
+	}
+	if (other_alive_before && damage2 > 0.0f && (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) != 0) {
+		other_machine.soa->pending_ko_attacker_car_index[other_machine.soa_index] = soa->global_start + soa_index;
 	}
 	if (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) {
 		soa->energy[soa_index] = 0.0f;

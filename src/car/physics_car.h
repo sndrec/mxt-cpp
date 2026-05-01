@@ -80,10 +80,12 @@ struct ImpactData {
 	X(float, speed_kmh, 0.0f) \
 	X(float, air_tilt, 0.0f) \
 	X(float, energy, 0.0f) \
+	X(float, ko_energy_bonus, 0.0f) \
 	X(uint32_t, boost_frames, 0) \
 	X(uint32_t, boost_frames_manual, 0) \
 	X(uint32_t, simulation_tick, 0) \
 	X(uint32_t, last_hit_tick, 0) \
+	X(int, pending_ko_attacker_car_index, -1) \
 	X(bool, has_last_hit_tick, false) \
 	X(uint32_t, spinattack_direction, 0) \
 	X(float, spinattack_angle, 0.0f) \

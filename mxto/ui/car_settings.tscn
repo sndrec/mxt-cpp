@@ -39,7 +39,7 @@ theme_override_styles/slider = SubResource("StyleBoxFlat_msh7t")
 [node name="VehicleSelector" type="ItemList" parent="."]
 layout_mode = 1
 anchors_preset = -1
-anchor_top = 0.159
+anchor_top = 0.29
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_top = -0.0320053
@@ -82,3 +82,35 @@ offset_top = 108.0
 offset_right = 850.0
 offset_bottom = 138.0
 text = "Spectator"
+
+[node name="StickerSettingsLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 327.0
+offset_top = 145.0
+offset_right = 525.0
+offset_bottom = 168.0
+text = "Sticker Settings"
+
+[node name="StickerGrid" type="GridContainer" parent="."]
+layout_mode = 0
+offset_left = 327.0
+offset_top = 174.0
+offset_right = 875.0
+offset_bottom = 252.0
+columns = 4
+
+[node name="StickerSlot1" type="OptionButton" parent="StickerGrid"]
+custom_minimum_size = Vector2(128, 64)
+layout_mode = 2
+
+[node name="StickerSlot2" type="OptionButton" parent="StickerGrid"]
+custom_minimum_size = Vector2(128, 64)
+layout_mode = 2
+
+[node name="StickerSlot3" type="OptionButton" parent="StickerGrid"]
+custom_minimum_size = Vector2(128, 64)
+layout_mode = 2
+
+[node name="StickerSlot4" type="OptionButton" parent="StickerGrid"]
+custom_minimum_size = Vector2(128, 64)
+layout_mode = 2

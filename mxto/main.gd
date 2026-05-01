@@ -39,6 +39,8 @@ class_name GameManager extends Node
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
+const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
+const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -134,6 +136,8 @@ var race_pause_disconnect_button: Button
 var race_pause_lobby_button: Button
 var race_pause_open := false
 var debug_rail_trace_requested := false
+var active_stickers := {}
+var race_notification_hide_msec := 0
 
 func _record_outer_profile(sample: Dictionary) -> void:
 	if outer_profile_sums.is_empty():
@@ -170,6 +174,7 @@ func _ready() -> void:
 	_load_car_definitions()
 	network_manager.race_started.connect(_on_network_race_started)
 	network_manager.race_finished.connect(_on_network_race_finished)
+	network_manager.race_event.connect(_on_race_event)
 	car_settings.hide()
 	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
 	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
@@ -473,6 +478,73 @@ func _local_player_id() -> int:
 		return 0
 	return multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
 
+func _player_display_name(id: int) -> String:
+	var name := str(id)
+	var settings = network_manager.player_settings.get(id, null)
+	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
+		name = str(settings["username"])
+	if network_manager.get_cpu_roster().has(id):
+		name = "[CPU] " + name
+	return name
+
+func _show_race_notification(text: String, duration_msec: int = 2200) -> void:
+	if race_finish_label == null:
+		return
+	race_finish_label.text = text
+	race_finish_label.visible = true
+	race_notification_hide_msec = Time.get_ticks_msec() + duration_msec
+
+func _format_race_time(tick_value: int) -> String:
+	var race_tick := maxi(0, tick_value - 300)
+	var total_msec := int(round(float(race_tick) * 1000.0 / 60.0))
+	var minutes := int(total_msec / 60000)
+	var seconds := int(total_msec / 1000) % 60
+	var milliseconds := total_msec % 1000
+	return "%d:%02d.%03d" % [minutes, seconds, milliseconds]
+
+func _show_finish_medal(actor_id: int, tick_value: int) -> void:
+	var medal := FinishMedalScene.instantiate()
+	add_child(medal)
+	medal.call("set_finisher_name", _player_display_name(actor_id), _format_race_time(tick_value))
+
+func _show_ko_medal(actor_id: int, target_id: int) -> void:
+	var medal := KoMedalScene.instantiate()
+	add_child(medal)
+	medal.call("set_names", _player_display_name(actor_id), _player_display_name(target_id))
+
+func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_value: int, value: int) -> void:
+	if event_type == "sticker":
+		_show_sticker(actor_id, value)
+		return
+	if event_type == "ko":
+		_show_ko_medal(actor_id, target_id)
+		return
+	if event_type == "finish":
+		_show_finish_medal(actor_id, tick_value)
+
+func _show_sticker(actor_id: int, sticker_index: int) -> void:
+	active_stickers[actor_id] = {
+		"sticker": sticker_index,
+		"expires": Time.get_ticks_msec() + 2200,
+	}
+
+func send_local_sticker(sticker_index: int) -> void:
+	if singleplayer_mode or !multiplayer.has_multiplayer_peer():
+		_show_sticker(_local_player_id(), sticker_index)
+	else:
+		network_manager.send_sticker(sticker_index)
+
+func _consume_authoritative_race_events() -> void:
+	if singleplayer_mode:
+		for event in game_sim.consume_race_events():
+			_on_race_event("ko", int(event["actor_id"]), int(event["target_id"]), int(event["tick"]), int(event["value"]))
+		return
+	if network_manager.is_server and server_game_sim != null:
+		for event in server_game_sim.consume_race_events():
+			network_manager.send_race_event("ko", int(event["actor_id"]), int(event["target_id"]), int(event["tick"]), int(event["value"]))
+	else:
+		game_sim.consume_race_events()
+
 func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 	var pb := StreamPeerBuffer.new()
 	pb.data_array = bytes
@@ -756,6 +828,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 		return
 	_last_race_track_index = track_index
 	_last_race_settings = settings.duplicate(true)
+	active_stickers.clear()
+	race_notification_hide_msec = 0
 	var info : Dictionary = tracks[track_index]
 	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
 	current_track_meta = {}
@@ -973,6 +1047,7 @@ func _on_network_race_finished() -> void:
 	if headless_mode:
 		return
 	race_finish_label.visible = false
+	active_stickers.clear()
 	_return_to_lobby()
 
 func _update_player_list() -> void:
@@ -1058,6 +1133,7 @@ func _physics_process(delta: float) -> void:
 			else:
 				_simulate_single_tick()
 		_last_simulate_call_us = Time.get_ticks_usec() - simulate_start
+		_consume_authoritative_race_events()
 		var render_start := Time.get_ticks_usec()
 		game_sim.render_gamesim()
 		render_us = Time.get_ticks_usec() - render_start
@@ -1179,6 +1255,7 @@ func _return_to_menu() -> void:
 	debug_replay_playback = false
 	_close_race_pause_menu()
 	race_finish_label.visible = false
+	active_stickers.clear()
 	var was_server := network_manager.is_server
 	network_manager.disconnect_from_server()
 	game_sim.destroy_gamesim()
@@ -1241,8 +1318,6 @@ func _check_race_finished() -> void:
 	if !game_sim.sim_started:
 		return
 	if !network_manager.is_server and !singleplayer_mode:
-		if network_manager.net_race_finish_time != -1:
-			race_finish_label.visible = true
 		return
 	var all_done := true
 	var racer_ids := network_manager.get_simulation_roster()
@@ -1271,7 +1346,6 @@ func _check_race_finished() -> void:
 		if all_done:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
-				race_finish_label.visible = true
 				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
 			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 5000:
 				network_manager.send_end_race()
@@ -1280,9 +1354,6 @@ func _check_race_finished() -> void:
 		if singleplayer_mode and all_done:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
-				race_finish_label.visible = true
-		elif network_manager.net_race_finish_time != -1:
-			race_finish_label.visible = true
 
 @onready var obj_camera: Camera3D = $GameWorld/ObjViewport/ObjCamera
 @onready var outline_camera: Camera3D = $GameWorld/OutlineViewport/OutlineCamera
@@ -1313,6 +1384,14 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 
 func _process(delta: float) -> void:
 	var process_start := Time.get_ticks_usec()
+	var now_msec := Time.get_ticks_msec()
+	for id in active_stickers.keys():
+		var data: Dictionary = active_stickers[id]
+		if now_msec > int(data.get("expires", 0)):
+			active_stickers.erase(id)
+	if race_finish_label.visible and race_notification_hide_msec > 0 and now_msec > race_notification_hide_msec and network_manager.net_race_finish_time == -1:
+		race_finish_label.visible = false
+		race_notification_hide_msec = 0
 	var label_start := process_start
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"

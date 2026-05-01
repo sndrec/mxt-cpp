@@ -38,6 +38,14 @@ var placement_digit_textures: Array[Texture2D] = [
 	preload("res://ui/placements/mxt-8.png"),
 	preload("res://ui/placements/mxt-9.png")]
 var placement_digit_nodes: Array[TextureRect] = []
+var stickers: StickerSelection = preload("res://ui/emote_sticker/sticker_selection.tres")
+const CHECK_INCOMING_TEXTURE: Texture2D = preload("res://ui/check_incoming_vehicle.png")
+const DPAD_TEXTURE: Texture2D = preload("res://ui/dpad.png")
+var sticker_menu: Control
+var sticker_menu_icons: Array[TextureRect] = []
+var sticker_nodes := {}
+var check_icons: Array[TextureRect] = []
+var sticker_menu_hide_msec := 0
 
 @onready var real_input := $InputViewer/RealInput
 @onready var clamped_input := $InputViewer/ClampedInput
@@ -99,6 +107,170 @@ func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fall
 		return int(entries[focus_index]["place"])
 	return fallback_place
 
+func _action_just_pressed_any(names: Array[String]) -> bool:
+	for action in names:
+		if InputMap.has_action(action) and Input.is_action_just_pressed(action):
+			return true
+	return false
+
+func _sticker_slot_value(car: VisualCar, slot: int) -> int:
+	var settings = car.player_settings
+	if settings == null:
+		return slot
+	match slot:
+		0:
+			return int(settings.sticker_1)
+		1:
+			return int(settings.sticker_2)
+		2:
+			return int(settings.sticker_3)
+		3:
+			return int(settings.sticker_4)
+	return slot
+
+func _build_sticker_menu() -> void:
+	sticker_menu = Control.new()
+	sticker_menu.name = "EmoteMenu"
+	sticker_menu.visible = false
+	sticker_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sticker_menu.process_mode = Node.PROCESS_MODE_ALWAYS
+	sticker_menu.anchor_left = 0.029
+	sticker_menu.anchor_top = 0.446
+	sticker_menu.anchor_right = 0.305
+	sticker_menu.anchor_bottom = 0.904
+	sticker_menu.offset_left = 53.88
+	sticker_menu.offset_top = 116.88
+	sticker_menu.offset_right = 54.6
+	sticker_menu.offset_bottom = 117.12
+	sticker_menu.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	sticker_menu.grow_vertical = Control.GROW_DIRECTION_BOTH
+	sticker_menu.scale = Vector2(0.65, 0.65)
+	add_child(sticker_menu)
+
+	var dpad := _make_old_emote_rect("DPad", Vector2(-64.0, -64.0), Vector2(64.0, 64.0))
+	dpad.texture = DPAD_TEXTURE
+	sticker_menu.add_child(dpad)
+
+	var offsets := [
+		[Vector2(-196.0, -64.0), Vector2(-68.0, 64.0)],
+		[Vector2(-64.0, 71.0), Vector2(64.0, 199.0)],
+		[Vector2(-64.6923, -198.846), Vector2(63.3077, -70.8461)],
+		[Vector2(71.0, -64.0), Vector2(199.0, 64.0)],
+	]
+	for i in range(4):
+		var rect := _make_old_emote_rect("Emote%d" % (i + 1), offsets[i][0], offsets[i][1])
+		sticker_menu.add_child(rect)
+		sticker_menu_icons.append(rect)
+
+func _make_old_emote_rect(node_name: String, offset_start: Vector2, offset_end: Vector2) -> TextureRect:
+	var rect := TextureRect.new()
+	rect.name = node_name
+	rect.custom_minimum_size = Vector2(128.0, 128.0)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rect.anchor_left = 0.5
+	rect.anchor_top = 0.5
+	rect.anchor_right = 0.5
+	rect.anchor_bottom = 0.5
+	rect.offset_left = offset_start.x
+	rect.offset_top = offset_start.y
+	rect.offset_right = offset_end.x
+	rect.offset_bottom = offset_end.y
+	rect.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	rect.grow_vertical = Control.GROW_DIRECTION_BOTH
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	return rect
+
+func _ensure_check_icons(count: int) -> void:
+	check_control.visible = true
+	while check_icons.size() < count:
+		var icon := TextureRect.new()
+		icon.texture = CHECK_INCOMING_TEXTURE
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.size = Vector2(128.0, 128.0)
+		icon.pivot_offset = Vector2(64.0, 128.0)
+		check_control.add_child(icon)
+		check_icons.append(icon)
+
+func _send_sticker(car: VisualCar, slot: int) -> void:
+	var sticker_index := _sticker_slot_value(car, slot)
+	if stickers != null and stickers.stickers.size() > 0:
+		sticker_index = wrapi(sticker_index, 0, stickers.stickers.size())
+	car.game_manager.send_local_sticker(sticker_index)
+	_update_sticker_menu_icons(car)
+	sticker_menu.visible = true
+	sticker_menu_hide_msec = Time.get_ticks_msec() + 650
+
+func _update_sticker_menu_icons(car: VisualCar) -> void:
+	if stickers == null or stickers.stickers.is_empty():
+		return
+	for i in range(sticker_menu_icons.size()):
+		var sticker_index := wrapi(_sticker_slot_value(car, i), 0, stickers.stickers.size())
+		sticker_menu_icons[i].texture = stickers.stickers[sticker_index]
+
+func _update_sticker_input(car: VisualCar) -> void:
+	if _action_just_pressed_any(["DpadLeft", "DPadLeft"]):
+		_send_sticker(car, 0)
+	elif _action_just_pressed_any(["DpadDown", "DPadDown"]):
+		_send_sticker(car, 1)
+	elif _action_just_pressed_any(["DpadUp", "DPadUp"]):
+		_send_sticker(car, 2)
+	elif _action_just_pressed_any(["DpadRight", "DPadRight"]):
+		_send_sticker(car, 3)
+	if sticker_menu != null and sticker_menu.visible and Time.get_ticks_msec() > sticker_menu_hide_msec:
+		sticker_menu.visible = false
+
+func _update_check_warnings(car: VisualCar) -> void:
+	var candidates: Array = car.game_manager.game_sim.get_check_warning_candidates(car.owning_id)
+	_ensure_check_icons(candidates.size())
+	var viewport_size := get_viewport_rect().size
+	for i in range(check_icons.size()):
+		var icon := check_icons[i]
+		icon.visible = i < candidates.size()
+		if i >= candidates.size():
+			continue
+		var candidate: Dictionary = candidates[i]
+		var lateral := float(candidate.get("lateral", 0.0))
+		var alpha := float(candidate.get("alpha", 0.0))
+		icon.modulate.a = alpha
+		icon.position.x = clampf(viewport_size.x * 0.5 - lateral * 128.0, 0.0, viewport_size.x - icon.size.x)
+		icon.position.y = minf(580.0, viewport_size.y - icon.size.y)
+
+func _update_world_stickers(car: VisualCar) -> void:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or car.game_manager == null:
+		return
+	var active: Dictionary = car.game_manager.active_stickers
+	for actor_id in active.keys():
+		if !sticker_nodes.has(actor_id):
+			var rect := TextureRect.new()
+			rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			rect.size = Vector2(96.0, 96.0)
+			add_child(rect)
+			sticker_nodes[actor_id] = rect
+	for actor_id in sticker_nodes.keys():
+		var rect := sticker_nodes[actor_id] as TextureRect
+		if !active.has(actor_id):
+			rect.visible = false
+			continue
+		var data: Dictionary = active[actor_id]
+		var sticker_index := int(data.get("sticker", 0))
+		if stickers != null and stickers.stickers.size() > 0:
+			rect.texture = stickers.stickers[wrapi(sticker_index, 0, stickers.stickers.size())]
+		var render_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(int(actor_id))
+		var world_pos := render_transform.origin + render_transform.basis.y * 3.0
+		var to_sticker := world_pos - camera.global_position
+		if camera.global_basis.z.dot(to_sticker) > 0.0:
+			rect.visible = false
+			continue
+		rect.visible = true
+		rect.size = Vector2(128.0, 128.0)
+		rect.position = camera.unproject_position(world_pos) - rect.size * 0.5
+
 func _ready() -> void:
 	if get_parent() is VisualCar:
 		var car: VisualCar = get_parent()
@@ -115,6 +287,7 @@ func _ready() -> void:
 	if sboost_meter_bg:
 		_sboost_full_width = sboost_meter_bg.size.x
 	_set_place_badge(1)
+	_build_sticker_menu()
 
 func _set_place_badge(place: int) -> void:
 	var digits := str(maxi(place, 1))
@@ -155,6 +328,13 @@ func _process( _delta:float ) -> void:
 	if get_parent() is VisualCar:
 		car = get_parent()
 		#pl = car.get_parent()
+	if car == null:
+		return
+	if focus_player_id == 0:
+		focus_player_id = car.owning_id
+	_update_sticker_input(car)
+	_update_check_warnings(car)
+	_update_world_stickers(car)
 	speedometer.text = str(roundi(car.speed_kmh)) + " km/h"
 	lapcounter.text = "LAP " + str(car.lap) + "/3"
 	var nm := car.game_manager.network_manager
@@ -171,6 +351,7 @@ func _process( _delta:float ) -> void:
 	var milliseconds : int = int(floor(time_elapsed_float * 1000)) % 1000
 	var minutes : int = floor(time_elapsed_float / 60)
 	racetimer.text = str(minutes) + ":" + str(seconds) + "." + str(milliseconds)
+	car_max_energy = maxf(car.calced_max_energy, 1.0)
 	healthmeter.scale.x = car_max_energy * 0.01
 	var health_meter_shader := healthmeter.material as ShaderMaterial
 	health_meter_shader.set_shader_parameter("health_amount", car.energy)

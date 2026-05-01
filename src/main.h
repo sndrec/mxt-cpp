@@ -164,6 +164,14 @@ namespace godot {
 			int32_t last_generated_tick = -1;
 			godot::PackedByteArray pending_input;
 		};
+		struct RaceEvent {
+			uint8_t type = 0;
+			int32_t actor_id = -1;
+			int32_t target_id = -1;
+			int32_t tick = 0;
+			int32_t value = 0;
+		};
+		std::vector<RaceEvent> race_events;
 		std::vector<NativeCpuDriverState> native_cpu_drivers;
 		void reset_super_sparks();
 		void update_super_sparks();
@@ -177,6 +185,7 @@ namespace godot {
 		void update_native_cpu_driver(int car_index);
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
+		void process_pending_ko_events();
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
 		void update_native_gameplay_camera(bool step_camera);
@@ -310,6 +319,8 @@ namespace godot {
 		bool is_player_race_finished(int player_id) const;
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
+		godot::Array get_check_warning_candidates(int player_id) const;
+		godot::Array consume_race_events();
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
 		void destroy_gamesim();
 		void render_gamesim();

@@ -113,6 +113,7 @@ namespace {
 		visual_args[47] = car.soa->camera_reorienting[car.soa_index];
 		visual_args[48] = car.soa->camera_repositioning[car.soa_index];
 		visual_args[49] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index));
+		visual_args[50] = car.soa->calced_max_energy[car.soa_index];
 	}
 
 	static inline float fzgx_angle_units_to_rad(float units)
@@ -449,7 +450,7 @@ namespace {
 				car_views[i].update_restore(accel_raw);
 			}
 
-			c.calced_max_energy[i] = c.car_properties[i]->max_energy;
+			c.calced_max_energy[i] = c.car_properties[i]->max_energy + c.ko_energy_bonus[i];
 			STORE_INDEXED_VEC3(c, initial_pos, i, LOAD_INDEXED_VEC3(c, position_current, i));
 			c.side_attack_indicator[i] = 0.0f;
 
@@ -1219,6 +1220,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("is_player_race_finished", "player_id"), &GameSim::is_player_race_finished);
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
 	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
+	ClassDB::bind_method(D_METHOD("get_check_warning_candidates", "player_id"), &GameSim::get_check_warning_candidates);
+	ClassDB::bind_method(D_METHOD("consume_race_events"), &GameSim::consume_race_events);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
 	ClassDB::bind_method(D_METHOD("get_car_node_container"), &GameSim::get_car_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_node_container", "p_car_node_container"), &GameSim::set_car_node_container);
@@ -1715,6 +1718,119 @@ godot::Transform3D GameSim::get_player_render_transform(int player_id) const
 	return godot::Transform3D();
 }
 
+godot::Array GameSim::get_check_warning_candidates(int player_id) const
+{
+	godot::Array out;
+	if (!car_player_ids || num_cars <= 1 || render_final_current_transforms.empty()) {
+		return out;
+	}
+	int focus_index = -1;
+	for (int i = 0; i < num_cars && i < static_cast<int>(render_final_current_transforms.size()); ++i) {
+		if (car_player_ids[i] == player_id) {
+			focus_index = i;
+			break;
+		}
+	}
+	if (focus_index < 0) {
+		return out;
+	}
+
+	Engine* engine = Engine::get_singleton();
+	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+	const SimTransform focus = interpolate_sim_transform(
+		render_final_prev_transforms[focus_index],
+		render_final_current_transforms[focus_index],
+		alpha);
+	const SimVec3 focus_pos = focus.origin;
+	const SimVec3 focus_right = focus.basis.get_column(0);
+	const SimVec3 focus_forward = focus.basis.get_column(2);
+
+	for (int i = 0; i < num_cars && i < static_cast<int>(render_final_current_transforms.size()); ++i) {
+		if (i == focus_index) {
+			continue;
+		}
+		const SimTransform other = interpolate_sim_transform(
+			render_final_prev_transforms[i],
+			render_final_current_transforms[i],
+			alpha);
+		const SimVec3 delta = other.origin - focus_pos;
+		const float signed_dist = delta.dot(focus_forward);
+		if (signed_dist >= -1.0f || signed_dist < -80.0f) {
+			continue;
+		}
+		const SimVec3 other_forward = other.basis.get_column(2);
+		const float denom = other_forward.dot(focus_forward);
+		if (std::abs(denom) < 0.001f) {
+			continue;
+		}
+		const float ray_t = -signed_dist / denom;
+		if (ray_t < 0.0f || ray_t > 120.0f) {
+			continue;
+		}
+		const SimVec3 intersect = other.origin + other_forward * ray_t;
+		const float lateral = (intersect - focus_pos).dot(focus_right);
+		const float alpha_value = std::clamp((signed_dist + 80.0f) / 79.0f, 0.0f, 1.0f);
+		godot::Dictionary entry;
+		entry["player_id"] = car_player_ids[i];
+		entry["lateral"] = lateral;
+		entry["alpha"] = alpha_value;
+		out.append(entry);
+	}
+	return out;
+}
+
+godot::Array GameSim::consume_race_events()
+{
+	godot::Array out;
+	for (const RaceEvent& event : race_events) {
+		godot::Dictionary entry;
+		entry["type"] = static_cast<int>(event.type);
+		entry["actor_id"] = event.actor_id;
+		entry["target_id"] = event.target_id;
+		entry["tick"] = event.tick;
+		entry["value"] = event.value;
+		out.append(entry);
+	}
+	race_events.clear();
+	return out;
+}
+
+void GameSim::process_pending_ko_events()
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return;
+	}
+	for (int victim_index = 0; victim_index < num_cars; ++victim_index) {
+		PhysicsCarSoA& victim_soa = *cars[victim_index].soa;
+		const int victim_lane = cars[victim_index].soa_index;
+		const int attacker_index = victim_soa.pending_ko_attacker_car_index[victim_lane];
+		if (attacker_index < 0 || attacker_index >= num_cars || attacker_index == victim_index) {
+			victim_soa.pending_ko_attacker_car_index[victim_lane] = -1;
+			continue;
+		}
+
+		PhysicsCarSoA& attacker_soa = *cars[attacker_index].soa;
+		const int attacker_lane = cars[attacker_index].soa_index;
+		const float boost_cost = std::max(1.0f,
+			10.0f * attacker_soa.stat_boost_length[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
+		attacker_soa.ko_energy_bonus[attacker_lane] += boost_cost * 1.5f;
+		if (attacker_soa.car_properties[attacker_lane]) {
+			attacker_soa.calced_max_energy[attacker_lane] =
+				attacker_soa.car_properties[attacker_lane]->max_energy + attacker_soa.ko_energy_bonus[attacker_lane];
+		}
+		attacker_soa.energy[attacker_lane] = attacker_soa.calced_max_energy[attacker_lane];
+
+		RaceEvent event;
+		event.type = 1;
+		event.actor_id = car_player_ids[attacker_index];
+		event.target_id = car_player_ids[victim_index];
+		event.tick = tick;
+		event.value = static_cast<int32_t>(std::lround(boost_cost * 1.5f));
+		race_events.push_back(event);
+		victim_soa.pending_ko_attacker_car_index[victim_lane] = -1;
+	}
+}
+
 void GameSim::tick_singleplayer(int local_player_id, godot::PackedByteArray local_input)
 {
 	const PlayerInput decoded_local_input = PlayerInput::from_bytes(local_input);
@@ -1982,6 +2098,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		}
 	}
 
+	process_pending_ko_events();
 	update_super_sparks();
 	now = std::chrono::high_resolution_clock::now();
 	soa.prof_misc_us = elapsed_us(phase_start, now);
@@ -2088,6 +2205,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	std::memset(profile_sums, 0, sizeof(profile_sums));
 	profile_cursor = 0;
 	profile_count = 0;
+	race_events.clear();
 
 	int32_t buffer_size = lvldat_buf->get_size();
 	const int requested_cars_hint = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
@@ -2811,6 +2929,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_vehicle_visual_state.clear();
 		render_vehicle_effect_refs.clear();
 		native_cpu_drivers.clear();
+		race_events.clear();
 		cpu_driver_manager = nullptr;
 	};
 
@@ -3508,8 +3627,8 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 		}
 		track_up = track_up.normalized();
 		godot::Input* input = godot::Input::get_singleton();
-		const bool view_up_pressed = input && (input->is_action_just_pressed(godot::StringName("CameraUp")) || input->is_action_just_pressed(godot::StringName("DPadUp")));
-		const bool view_down_pressed = input && (input->is_action_just_pressed(godot::StringName("CameraDown")) || input->is_action_just_pressed(godot::StringName("DPadDown")));
+		const bool view_up_pressed = input && input->is_action_just_pressed(godot::StringName("CameraUp"));
+		const bool view_down_pressed = input && input->is_action_just_pressed(godot::StringName("CameraDown"));
 			gameplay_camera->step(
 			gd_vec3(LOAD_INDEXED_VEC3(soa, position_current, lane) + camera_position_correction),
 			gd_vec3(LOAD_INDEXED_VEC3(soa, position_old, lane) + camera_position_correction),
@@ -3882,7 +4001,7 @@ void GameSim::update_super_spark_visuals()
 		apply_render_multimeshes(alpha);
 		update_native_gameplay_camera(true);
 		godot::Array local_visual_args;
-		local_visual_args.resize(50);
+		local_visual_args.resize(51);
 		for (int i = 0; i < vis_car_count; i++) {
 			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
 			if (vis_car && static_cast<bool>(vis_car->get("local_visual_enabled"))) {
@@ -4281,6 +4400,7 @@ struct NetStateReader {
 	X(float, race_start_charge) \
 	X(float, air_tilt) \
 	X(float, energy) \
+	X(float, ko_energy_bonus) \
 	X(float, spinattack_angle) \
 	X(float, spinattack_decrement) \
 	X(float, height_above_track) \
@@ -4598,7 +4718,7 @@ void GameSim::rebuild_static_state_after_network_load() {
 		const int lane = car.soa_index;
 		car.update_machine_stats();
 		if (soa.car_properties[lane]) {
-			soa.calced_max_energy[lane] = soa.car_properties[lane]->max_energy;
+			soa.calced_max_energy[lane] = soa.car_properties[lane]->max_energy + soa.ko_energy_bonus[lane];
 		}
 		soa.weight_derived_1[lane] = 52.0f * soa.stat_weight[lane] * 0.0625f;
 		soa.weight_derived_2[lane] = 45.0f * soa.stat_weight[lane] * 0.0625f;
