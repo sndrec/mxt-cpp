@@ -86,6 +86,20 @@ var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
 var car_render_manager: CarRenderManager
+var debug_replay_recording: bool = false
+var debug_replay_playback: bool = false
+var debug_replay_inputs: Array = []
+var debug_replay_snapshot_tick: int = -1
+var debug_replay_snapshot_state: PackedByteArray = PackedByteArray()
+var debug_replay_playback_inputs: Array = []
+var debug_replay_playback_index: int = 0
+var debug_replay_autoload_path: String = ""
+var debug_replay_loaded_path: String = ""
+var _last_race_track_index: int = -1
+var _last_race_settings: Array = []
+
+const DEBUG_REPLAY_VERSION := 1
+const DIP_TRACE_RAIL_SAMPLING := 0x40
 
 const OUTER_PROFILE_WINDOW := 360
 const OUTER_PROFILE_FIELDS := [
@@ -113,6 +127,13 @@ var _last_process_total_us := 0
 var _last_process_labels_us := 0
 var _last_process_native_visual_us := 0
 var _last_process_effect_tiers_us := 0
+var race_pause_root: Control
+var race_pause_title: Label
+var race_pause_resume_button: Button
+var race_pause_disconnect_button: Button
+var race_pause_lobby_button: Button
+var race_pause_open := false
+var debug_rail_trace_requested := false
 
 func _record_outer_profile(sample: Dictionary) -> void:
 	if outer_profile_sums.is_empty():
@@ -162,6 +183,7 @@ func _ready() -> void:
 	cpu_slider.value_changed.connect(_on_singleplayer_cpu_slider_changed)
 	add_cpu_button.pressed.connect(_on_add_cpu_button_pressed)
 	remove_cpu_button.pressed.connect(_on_remove_cpu_button_pressed)
+	_build_race_pause_menu()
 	singleplayer_cpu_count = int(cpu_slider.value)
 	_update_cpu_slider_label()
 	network_manager.set_cpu_driver_manager(cpu_driver_manager)
@@ -181,9 +203,18 @@ func _ready() -> void:
 	var quit_idx := args.find("--quit-after-frames")
 	if quit_idx != -1 and quit_idx + 1 < args.size():
 		auto_quit_after_frames = max(0, int(args[quit_idx + 1]))
-	if auto_singleplayer_mode:
+	var replay_idx := args.find("--debug-replay")
+	if replay_idx != -1 and replay_idx + 1 < args.size():
+		debug_replay_autoload_path = String(args[replay_idx + 1])
+	debug_rail_trace_requested = args.has("--debug-rail-trace")
+	if debug_rail_trace_requested:
+		game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
+		server_game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
+	if debug_replay_autoload_path != "":
+		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
+	elif auto_singleplayer_mode:
 		call_deferred("_on_singleplayer_button_pressed")
-	if headless_mode and !auto_singleplayer_mode:
+	if headless_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "":
 		var def_path := ""
 		if car_definitions.size() > 0:
 			def_path = car_definitions[0].resource_path
@@ -354,6 +385,79 @@ func _update_cpu_slider_label() -> void:
 	if cpu_slider_label:
 		cpu_slider_label.text = "CPU Racers: %d" % singleplayer_cpu_count
 
+func _build_race_pause_menu() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+
+	race_pause_root = Control.new()
+	race_pause_root.visible = false
+	race_pause_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	race_pause_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	layer.add_child(race_pause_root)
+
+	var shade := ColorRect.new()
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.color = Color(0.0, 0.0, 0.0, 0.55)
+	race_pause_root.add_child(shade)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	race_pause_root.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(320.0, 0.0)
+	center.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+
+	race_pause_title = Label.new()
+	race_pause_title.text = "Race Paused"
+	race_pause_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(race_pause_title)
+
+	race_pause_resume_button = Button.new()
+	race_pause_resume_button.text = "Resume"
+	race_pause_resume_button.pressed.connect(_close_race_pause_menu)
+	box.add_child(race_pause_resume_button)
+
+	race_pause_lobby_button = Button.new()
+	race_pause_lobby_button.text = "Back To Lobby"
+	race_pause_lobby_button.pressed.connect(_on_pause_lobby_pressed)
+	box.add_child(race_pause_lobby_button)
+
+	race_pause_disconnect_button = Button.new()
+	race_pause_disconnect_button.text = "Disconnect"
+	race_pause_disconnect_button.pressed.connect(_on_pause_disconnect_pressed)
+	box.add_child(race_pause_disconnect_button)
+
+func _open_race_pause_menu() -> void:
+	if race_pause_root == null or !game_sim.sim_started:
+		return
+	race_pause_open = true
+	race_pause_root.visible = true
+	var host := network_manager.is_server and !singleplayer_mode
+	race_pause_title.text = "Host Race Menu" if host else "Race Menu"
+	race_pause_lobby_button.visible = host
+	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
+	race_pause_resume_button.grab_focus()
+
+func _close_race_pause_menu() -> void:
+	race_pause_open = false
+	if race_pause_root != null:
+		race_pause_root.visible = false
+
+func _on_pause_disconnect_pressed() -> void:
+	_close_race_pause_menu()
+	_return_to_menu()
+
+func _on_pause_lobby_pressed() -> void:
+	_close_race_pause_menu()
+	if network_manager.is_server:
+		network_manager.send_end_race()
+
 func _on_add_cpu_button_pressed() -> void:
 	if !network_manager.is_server:
 		return
@@ -478,6 +582,170 @@ func _generate_random_input() -> PlayerInput:
 	p.apply_quantization()
 	return p
 
+func _debug_replay_dir() -> String:
+	return ProjectSettings.globalize_path("user://debug_replays")
+
+func _debug_replay_make_stamp() -> String:
+	return Time.get_datetime_string_from_system(false, true).replace(":", "-").replace(" ", "_")
+
+func _debug_replay_track_name() -> String:
+	if _last_race_track_index >= 0 and _last_race_track_index < tracks.size():
+		return String(tracks[_last_race_track_index].get("name", "track"))
+	return "track"
+
+func _debug_replay_track_path() -> String:
+	if _last_race_track_index >= 0 and _last_race_track_index < tracks.size():
+		return String(tracks[_last_race_track_index].get("mxt", ""))
+	return ""
+
+func _debug_replay_find_track_index(data: Dictionary) -> int:
+	var replay_track_path := String(data.get("track_mxt", ""))
+	if replay_track_path != "":
+		for i in range(tracks.size()):
+			if String(tracks[i].get("mxt", "")) == replay_track_path:
+				return i
+	var replay_track_name := String(data.get("track_name", ""))
+	if replay_track_name != "":
+		for i in range(tracks.size()):
+			if String(tracks[i].get("name", "")) == replay_track_name:
+				return i
+	return int(data.get("track_index", -1))
+
+func _start_debug_replay_recording() -> void:
+	if !singleplayer_mode or !game_sim.sim_started:
+		print("MXT_DEBUG_REPLAY record ignored: start a singleplayer race first.")
+		return
+	if _singleplayer_tick <= 0:
+		print("MXT_DEBUG_REPLAY record ignored: wait one physics tick, then press F5 again.")
+		return
+	debug_replay_snapshot_tick = _singleplayer_tick - 1
+	debug_replay_snapshot_state = game_sim.get_state_data(debug_replay_snapshot_tick)
+	if debug_replay_snapshot_state.is_empty():
+		print("MXT_DEBUG_REPLAY record failed: native state snapshot was empty.")
+		return
+	debug_replay_inputs.clear()
+	debug_replay_recording = true
+	print("MXT_DEBUG_REPLAY recording from completed_tick=", debug_replay_snapshot_tick)
+
+func _stop_and_save_debug_replay_recording() -> void:
+	if !debug_replay_recording:
+		return
+	debug_replay_recording = false
+	var replay_dir := _debug_replay_dir()
+	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
+	if err != OK:
+		print("MXT_DEBUG_REPLAY save failed: could not create ", replay_dir, " err=", err)
+		return
+	var input_b64: Array = []
+	for input_bytes: PackedByteArray in debug_replay_inputs:
+		input_b64.append(Marshalls.raw_to_base64(input_bytes))
+	var replay := {
+		"version": DEBUG_REPLAY_VERSION,
+		"created_unix": Time.get_unix_time_from_system(),
+		"track_index": _last_race_track_index,
+		"track_name": _debug_replay_track_name(),
+		"track_mxt": _debug_replay_track_path(),
+		"settings": _last_race_settings.duplicate(true),
+		"singleplayer_cpu_count": singleplayer_cpu_count,
+		"spawn_seed": network_manager.spawn_seed,
+		"snapshot_tick": debug_replay_snapshot_tick,
+		"snapshot_state_b64": Marshalls.raw_to_base64(debug_replay_snapshot_state),
+		"inputs_b64": input_b64,
+	}
+	var safe_track := _debug_replay_track_name().replace("/", "_").replace("\\", "_").replace(" ", "_")
+	var path := replay_dir.path_join("mxt_%s_%s.json" % [safe_track, _debug_replay_make_stamp()])
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		print("MXT_DEBUG_REPLAY save failed: ", FileAccess.get_open_error())
+		return
+	file.store_string(JSON.stringify(replay, "\t"))
+	file.close()
+	print("MXT_DEBUG_REPLAY saved ", path, " frames=", debug_replay_inputs.size())
+
+func _load_debug_replay_file(path: String) -> Dictionary:
+	var resolved_path := path
+	if resolved_path.begins_with("user://") or resolved_path.begins_with("res://"):
+		resolved_path = ProjectSettings.globalize_path(resolved_path)
+	elif !resolved_path.is_absolute_path():
+		var project_dir := ProjectSettings.globalize_path("res://")
+		var project_candidate := project_dir.path_join(resolved_path)
+		var repo_candidate := project_dir.path_join("..").simplify_path().path_join(resolved_path)
+		if FileAccess.file_exists(project_candidate):
+			resolved_path = project_candidate
+		elif FileAccess.file_exists(repo_candidate):
+			resolved_path = repo_candidate
+	if !FileAccess.file_exists(resolved_path):
+		print("MXT_DEBUG_REPLAY load failed: file not found: ", resolved_path)
+		return {}
+	var text := FileAccess.get_file_as_string(resolved_path)
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		print("MXT_DEBUG_REPLAY load failed: JSON root is not a dictionary.")
+		return {}
+	if int(parsed.get("version", 0)) != DEBUG_REPLAY_VERSION:
+		print("MXT_DEBUG_REPLAY load failed: unsupported version ", parsed.get("version", null))
+		return {}
+	return parsed
+
+func _load_and_start_debug_replay(path: String) -> void:
+	var replay := _load_debug_replay_file(path)
+	if replay.is_empty():
+		return
+	if debug_replay_recording:
+		_stop_and_save_debug_replay_recording()
+	if game_sim.sim_started or singleplayer_mode:
+		_return_to_menu()
+	var track_index := _debug_replay_find_track_index(replay)
+	if track_index < 0 or track_index >= tracks.size():
+		print("MXT_DEBUG_REPLAY load failed: track not found for ", replay.get("track_name", ""))
+		return
+	var settings = replay.get("settings", [])
+	if typeof(settings) != TYPE_ARRAY or settings.is_empty():
+		print("MXT_DEBUG_REPLAY load failed: replay has no racer settings.")
+		return
+	var snapshot_tick := int(replay.get("snapshot_tick", -1))
+	var snapshot_state := Marshalls.base64_to_raw(String(replay.get("snapshot_state_b64", "")))
+	if snapshot_tick < 0 or snapshot_state.is_empty():
+		print("MXT_DEBUG_REPLAY load failed: missing native snapshot.")
+		return
+	debug_replay_playback_inputs.clear()
+	var inputs = replay.get("inputs_b64", [])
+	if typeof(inputs) != TYPE_ARRAY:
+		print("MXT_DEBUG_REPLAY load failed: inputs_b64 is not an array.")
+		return
+	for input_b64 in inputs:
+		debug_replay_playback_inputs.append(Marshalls.base64_to_raw(String(input_b64)))
+	if debug_replay_playback_inputs.is_empty():
+		print("MXT_DEBUG_REPLAY load failed: replay has no input frames.")
+		return
+
+	singleplayer_mode = true
+	_singleplayer_tick = 0
+	network_manager.reset_race_state()
+	network_manager.set_spawn_seed(int(replay.get("spawn_seed", 0)))
+	var local_id := _local_player_id()
+	network_manager.player_ids = [local_id]
+	network_manager.spectator_ids = []
+	singleplayer_cpu_count = maxi(0, settings.size() - 1)
+	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
+	network_manager.player_settings[local_id] = settings[0]
+	var cpu_ids := network_manager.get_cpu_roster()
+	for i in range(cpu_ids.size()):
+		if i + 1 < settings.size():
+			network_manager.player_settings[cpu_ids[i]] = settings[i + 1]
+
+	_start_race(track_index, settings)
+	game_sim.set_state_data(snapshot_tick, snapshot_state)
+	game_sim.load_state(snapshot_tick)
+	_singleplayer_tick = snapshot_tick + 1
+	network_manager.clients_server_tick = _singleplayer_tick
+	debug_replay_playback_index = 0
+	debug_replay_playback = true
+	debug_replay_loaded_path = path
+	$Control.visible = false
+	lobby_control.visible = false
+	print("MXT_DEBUG_REPLAY playback started ", path, " start_tick=", _singleplayer_tick, " frames=", debug_replay_playback_inputs.size())
+
 @onready var world_environment: WorldEnvironment = $GameWorld/WorldEnvironment
 @onready var track_floor: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackFloor
 @onready var track_clouds: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackClouds
@@ -486,6 +754,8 @@ func _generate_random_input() -> PlayerInput:
 func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
 		return
+	_last_race_track_index = track_index
+	_last_race_settings = settings.duplicate(true)
 	var info : Dictionary = tracks[track_index]
 	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
 	current_track_meta = {}
@@ -720,6 +990,8 @@ func _update_player_list() -> void:
 		player_list.add_item(name)
 
 func _window_accepts_input() -> bool:
+	if race_pause_open:
+		return false
 	var window := get_window()
 	return window == null or window.has_focus()
 
@@ -816,6 +1088,17 @@ func _physics_process(delta: float) -> void:
 func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(), build_inputs_us: int = 0):
 	var start_time := Time.get_ticks_usec()
 	var build_inputs_start := start_time
+	if debug_replay_playback:
+		if debug_replay_playback_index >= debug_replay_playback_inputs.size():
+			debug_replay_playback = false
+			game_sim.set_sim_started(false)
+			print("MXT_DEBUG_REPLAY playback complete ", debug_replay_loaded_path, " end_tick=", _singleplayer_tick)
+			if headless_mode:
+				get_tree().quit()
+			return
+		input_bytes = (debug_replay_playback_inputs[debug_replay_playback_index] as PackedByteArray).duplicate()
+		build_inputs_us = Time.get_ticks_usec() - build_inputs_start
+		debug_replay_playback_index += 1
 	if input_bytes.is_empty():
 		var local_pi := PlayerInputClass.new()
 		var accepts_input := _window_accepts_input()
@@ -825,6 +1108,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 				local_pi = controller.get_input()
 		input_bytes = local_pi.serialize()
 		build_inputs_us = Time.get_ticks_usec() - build_inputs_start
+	if debug_replay_recording:
+		debug_replay_inputs.append(input_bytes.duplicate())
 	_last_sp_build_inputs_us = build_inputs_us
 	var tick_gamesim_start := Time.get_ticks_usec()
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
@@ -870,10 +1155,29 @@ func _unhandled_input(event: InputEvent) -> void:
 		var render_profile := game_sim.get_render_profile_string()
 		var outer_profile := get_outer_profile_string()
 		DisplayServer.clipboard_set(profile + "\n" + render_profile + "\n" + outer_profile)
+	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F5:
+		if debug_replay_recording:
+			_stop_and_save_debug_replay_recording()
+		else:
+			_start_debug_replay_recording()
+		get_viewport().set_input_as_handled()
+	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F8:
+		var replay_path := DisplayServer.clipboard_get().strip_edges()
+		if replay_path != "":
+			_load_and_start_debug_replay(replay_path)
+		get_viewport().set_input_as_handled()
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
-		_return_to_menu()
+		if race_pause_open:
+			_close_race_pause_menu()
+		else:
+			_open_race_pause_menu()
+		get_viewport().set_input_as_handled()
 
 func _return_to_menu() -> void:
+	if debug_replay_recording:
+		_stop_and_save_debug_replay_recording()
+	debug_replay_playback = false
+	_close_race_pause_menu()
 	race_finish_label.visible = false
 	var was_server := network_manager.is_server
 	network_manager.disconnect_from_server()
@@ -902,18 +1206,25 @@ func _return_to_menu() -> void:
 	lobby_control.visible = false
 
 func _return_to_lobby() -> void:
+	if debug_replay_recording:
+		_stop_and_save_debug_replay_recording()
+	debug_replay_playback = false
+	_close_race_pause_menu()
 	game_sim.destroy_gamesim()
 	race_finish_label.visible = false
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
 	for child in car_node_container.get_children():
-		child.queue_free()
+		if child != null:
+			child.queue_free()
 	for obj in trigger_objects:
-		obj.queue_free()
+		if obj != null:
+			obj.queue_free()
 	trigger_objects.clear()
 	for p in players:
-		p.queue_free()
+		if p != null:
+			p.queue_free()
 	players.clear()
 	if spectator_node:
 		spectator_node.queue_free()
@@ -922,28 +1233,40 @@ func _return_to_lobby() -> void:
 	local_player_index = 0
 	lobby_control.visible = true
 	network_manager.flush_waiting_peers()
-	network_manager.reset_race_state()
+	network_manager.reset_race_state(true)
 	singleplayer_mode = false
 	_singleplayer_tick = 0
 
 func _check_race_finished() -> void:
 	if !game_sim.sim_started:
 		return
+	if !network_manager.is_server and !singleplayer_mode:
+		if network_manager.net_race_finish_time != -1:
+			race_finish_label.visible = true
+		return
 	var all_done := true
 	var racer_ids := network_manager.get_simulation_roster()
-	for car in car_node_container.get_children():
-		if car is VisualCar:
-			if racer_ids.has(car.owning_id):
-				if network_manager._disconnected_during_race.has(car.owning_id):
-					continue
-				var finished = (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0
-				if finished:
-					if network_manager.is_server and !network_manager.player_finish_times.has(car.owning_id):
-						network_manager.send_player_finished(car.owning_id, network_manager.server_tick)
-					elif singleplayer_mode and !network_manager.player_finish_times.has(car.owning_id):
-						network_manager.record_player_finished(car.owning_id, network_manager.clients_server_tick)
-				else:
-					all_done = false
+	var finish_sim := server_game_sim if network_manager.is_server and server_game_sim != null else game_sim
+	for racer_id in racer_ids:
+		if network_manager._disconnected_during_race.has(racer_id):
+			continue
+		if network_manager.player_finish_times.has(racer_id):
+			continue
+		var finished := false
+		if finish_sim != null and finish_sim.has_method("is_player_race_finished"):
+			finished = finish_sim.is_player_race_finished(racer_id)
+		else:
+			for car in car_node_container.get_children():
+				if car is VisualCar and car.owning_id == racer_id:
+					finished = (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0
+					break
+		if finished:
+			if network_manager.is_server:
+				network_manager.send_player_finished(racer_id, network_manager.server_tick)
+			else:
+				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
+		else:
+			all_done = false
 	if network_manager.is_server:
 		if all_done:
 			if network_manager.net_race_finish_time == -1:

@@ -508,7 +508,16 @@ static func _estimate_nested_inputs_size(inputs: Array) -> int:
 					total += (v as PackedByteArray).size()
 	return total
 
-func reset_race_state() -> void:
+func reset_race_state(preserve_player_settings: bool = false) -> void:
+	var preserved_player_settings := {}
+	if preserve_player_settings:
+		var preserve_ids := []
+		preserve_ids.append_array(player_ids)
+		preserve_ids.append_array(spectator_ids)
+		preserve_ids.append_array(waiting_peers)
+		for id in preserve_ids:
+			if player_settings.has(id):
+				preserved_player_settings[id] = player_settings[id]
 	race_active = false
 	race_player_ids.clear()
 	race_cpu_player_ids.clear()
@@ -546,6 +555,8 @@ func reset_race_state() -> void:
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	player_settings.clear()
+	for id in preserved_player_settings.keys():
+		player_settings[id] = preserved_player_settings[id]
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
 		player_settings[id] = settings
