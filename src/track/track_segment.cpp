@@ -24,6 +24,35 @@ static inline float _sign_no_zero(float value)
 	return (value < 0.0f) ? -1.0f : 1.0f;
 }
 
+static inline SimVec3 _normalized_or_zero(const SimVec3 &value)
+{
+	const float len2 = value.length_squared();
+	if (len2 <= 0.000001f)
+	{
+		return SimVec3();
+	}
+	return value * (1.0f / sqrtf(len2));
+}
+
+static inline SimVec3 _normalized_or(const SimVec3 &value, const SimVec3 &fallback)
+{
+	SimVec3 out = _normalized_or_zero(value);
+	return out.length_squared() > 0.0f ? out : fallback;
+}
+
+static inline void _sample_world_surface_pos_presampled(
+	const RoadShape *shape,
+	SimVec3 &out_pos,
+	const SimVec2 &in_t,
+	const RoadTransform &root)
+{
+	SimVec3 local_pos;
+	SimVec3 local_dx;
+	SimVec3 local_dy;
+	shape->get_local_surface_at_time(local_pos, local_dx, local_dy, in_t);
+	out_pos = root.t3d.xform(_mul_components(local_pos, root.scale));
+}
+
 static inline void _sample_curve_pair(
 	const Curve *curve,
 	float in_t,
@@ -1107,10 +1136,14 @@ void RoadShape::get_edge_rail_sides(
 {
 	const float edge_x[2] = { 1.0f, -1.0f };
 	const float edge_height[2] = { left_height, right_height };
+	const float edge_strip = 1.0f / 64.0f;
+	const SimVec3 root_up = _normalized_or_zero(root.t3d.basis[1]);
+	const SimVec3 root_forward = _normalized_or_zero(root.t3d.basis[2]);
 	for (int i = 0; i < 2; ++i) {
 		SimTransform edge_surface;
 		SimVec3 edge_tangent_x;
 		SimVec3 edge_tangent_y;
+		SimVec3 inner_pos;
 		get_oriented_transform_at_time_presampled(
 			edge_surface,
 			edge_tangent_x,
@@ -1118,15 +1151,30 @@ void RoadShape::get_edge_rail_sides(
 			SimVec2(edge_x[i], road_y),
 			root,
 			root_derivative);
+		_sample_world_surface_pos_presampled(
+			this,
+			inner_pos,
+			SimVec2(edge_x[i] - edge_x[i] * edge_strip, road_y),
+			root);
 
-		SimVec3 up_n = edge_surface.basis[1].normalized();
-		SimVec3 forward_n = edge_tangent_y.normalized();
-		if (forward_n.length_squared() < 0.000001f) {
-			forward_n = edge_surface.basis[2].normalized();
+		SimVec3 up_n = _normalized_or(edge_surface.basis[1], root_up);
+		SimVec3 forward_n = _normalized_or(edge_tangent_y, _normalized_or(edge_surface.basis[2], root_forward));
+		SimVec3 outward_n = _normalized_or_zero(edge_surface.origin - inner_pos);
+		SimVec3 strip_up = _normalized_or_zero(forward_n.cross(outward_n));
+		if (strip_up.length_squared() > 0.0f)
+		{
+			if (up_n.length_squared() > 0.0f && strip_up.dot(up_n) < 0.0f)
+			{
+				strip_up = -strip_up;
+			}
+			up_n = strip_up;
 		}
-		SimVec3 rail_n = up_n.cross(forward_n).normalized();
-		if (rail_n.length_squared() < 0.000001f) {
-			rail_n = edge_surface.basis[0].normalized();
+		SimVec3 rail_n = _normalized_or_zero(up_n.cross(forward_n));
+		if (rail_n.length_squared() <= 0.0f) {
+			rail_n = _normalized_or_zero(interior_reference - edge_surface.origin);
+		}
+		if (rail_n.length_squared() <= 0.0f) {
+			rail_n = _normalized_or(edge_surface.basis[0], root.t3d.basis[0]);
 		}
 		if (rail_n.dot(interior_reference - edge_surface.origin) < 0.0f) {
 			rail_n = -rail_n;
