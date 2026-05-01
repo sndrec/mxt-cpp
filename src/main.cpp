@@ -1769,6 +1769,9 @@ godot::Array GameSim::get_check_warning_candidates(int player_id) const
 		}
 		const SimVec3 intersect = other.origin + other_forward * ray_t;
 		const float lateral = (intersect - focus_pos).dot(focus_right);
+		if (std::abs(lateral) > 70.0f) {
+			continue;
+		}
 		const float alpha_value = std::clamp((signed_dist + 80.0f) / 79.0f, 0.0f, 1.0f);
 		godot::Dictionary entry;
 		entry["player_id"] = car_player_ids[i];

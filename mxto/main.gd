@@ -517,6 +517,10 @@ func _add_race_medal(medal: Control) -> void:
 	add_child(medal)
 	medal.tree_exited.connect(_refresh_race_medal_feed)
 	race_medals.insert(0, medal)
+	while race_medals.size() > 3:
+		var oldest := race_medals.pop_back() as Control
+		if is_instance_valid(oldest) and oldest.is_inside_tree():
+			oldest.call("dismiss")
 	_refresh_race_medal_feed()
 
 func _refresh_race_medal_feed() -> void:

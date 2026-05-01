@@ -248,10 +248,16 @@ func _update_check_warnings(car: VisualCar) -> void:
 		var candidate: Dictionary = candidates[i]
 		var lateral := float(candidate.get("lateral", 0.0))
 		var alpha := float(candidate.get("alpha", 0.0))
+		var size := lerpf(32.0, 96.0, alpha)
+		icon.size = Vector2(size, size)
+		icon.pivot_offset = Vector2(size * 0.5, size)
+		var x := viewport_size.x * 0.5 - lateral * -12.0 - size * 0.5
+		if x < -size or x > viewport_size.x:
+			icon.visible = false
+			continue
 		icon.modulate.a = alpha * alpha
-		var x := viewport_size.x * 0.5 - lateral * -12.0 - icon.size.x * 0.5
-		icon.position.x = clampf(x, 0.0, viewport_size.x - icon.size.x)
-		icon.position.y = maxf(0.0, minf(580.0, viewport_size.y - icon.size.y - 24.0))
+		icon.position.x = x
+		icon.position.y = maxf(0.0, minf(580.0, viewport_size.y - size - 12.0))
 
 func _update_world_stickers(car: VisualCar) -> void:
 	var camera := get_viewport().get_camera_3d()
