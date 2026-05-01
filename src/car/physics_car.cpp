@@ -4296,6 +4296,8 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 
 	const bool this_attacking = (soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
 	const bool other_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
+	const bool this_defending = (soa->machine_state[soa_index] & MACHINESTATE::B10) != 0;
+	const bool other_defending = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10) != 0;
 	const bool this_alive_before = (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0;
 	const bool other_alive_before = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) == 0;
 
@@ -4351,6 +4353,15 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		other_machine.remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 		soa->drift_ramp[soa_index] = 0.0f;
 		other_machine.soa->drift_ramp[other_machine.soa_index] = 0.0f;
+	}
+	if (!this_attacking && other_attacking && !this_defending && damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
+		set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		soa->rail_collision_timer[soa_index] = 20;
+	}
+	if (this_attacking && !other_attacking && !other_defending && damage2 > 0.0f &&
+		other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0) {
+		other_machine.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		other_machine.soa->rail_collision_timer[other_machine.soa_index] = 20;
 	}
 	if (damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
 		apply_damage(damage1);

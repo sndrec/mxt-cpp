@@ -1776,6 +1776,7 @@ godot::Array GameSim::get_check_warning_candidates(int player_id) const
 		godot::Dictionary entry;
 		entry["player_id"] = car_player_ids[i];
 		entry["lateral"] = lateral;
+		entry["intersect"] = gd_vec3(intersect);
 		entry["alpha"] = alpha_value;
 		out.append(entry);
 	}

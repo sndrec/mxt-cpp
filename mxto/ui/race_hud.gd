@@ -237,20 +237,25 @@ func _update_sticker_input(car: VisualCar) -> void:
 		sticker_menu.visible = false
 
 func _update_check_warnings(car: VisualCar) -> void:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
 	var candidates: Array = car.game_manager.game_sim.get_check_warning_candidates(car.owning_id)
 	_ensure_check_icons(candidates.size())
 	var viewport_size := get_viewport_rect().size
+	var focus_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(car.owning_id)
 	for i in range(check_icons.size()):
 		var icon := check_icons[i]
 		icon.visible = i < candidates.size()
 		if i >= candidates.size():
 			continue
 		var candidate: Dictionary = candidates[i]
-		var lateral := float(candidate.get("lateral", 0.0))
 		var alpha := float(candidate.get("alpha", 0.0))
 		var size := lerpf(32.0, 96.0, alpha)
 		icon.size = Vector2(size, size)
 		icon.pivot_offset = Vector2(size * 0.5, size)
+		var intersect := candidate.get("intersect", focus_transform.origin) as Vector3
+		var lateral := (intersect - focus_transform.origin).dot(camera.global_basis.x)
 		var x := viewport_size.x * 0.5 - lateral * -12.0 - size * 0.5
 		if x < -size or x > viewport_size.x:
 			icon.visible = false
