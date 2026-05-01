@@ -191,8 +191,8 @@ func _ensure_check_icons(count: int) -> void:
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.size = Vector2(128.0, 128.0)
-		icon.pivot_offset = Vector2(64.0, 128.0)
+		icon.size = Vector2(64.0, 64.0)
+		icon.pivot_offset = Vector2(32.0, 64.0)
 		check_control.add_child(icon)
 		check_icons.append(icon)
 
@@ -248,8 +248,8 @@ func _update_check_warnings(car: VisualCar) -> void:
 		var candidate: Dictionary = candidates[i]
 		var lateral := float(candidate.get("lateral", 0.0))
 		var alpha := float(candidate.get("alpha", 0.0))
-		icon.modulate.a = alpha
-		var x := viewport_size.x * 0.5 - lateral * 12.0 - icon.size.x * 0.5
+		icon.modulate.a = alpha * alpha
+		var x := viewport_size.x * 0.5 - lateral * -12.0 - icon.size.x * 0.5
 		icon.position.x = clampf(x, 0.0, viewport_size.x - icon.size.x)
 		icon.position.y = maxf(0.0, minf(580.0, viewport_size.y - icon.size.y - 24.0))
 
@@ -258,13 +258,15 @@ func _update_world_stickers(car: VisualCar) -> void:
 	if camera == null or car.game_manager == null:
 		return
 	var active: Dictionary = car.game_manager.active_stickers
+	var now := Time.get_ticks_msec()
 	for actor_id in active.keys():
 		if !sticker_nodes.has(actor_id):
 			var rect := TextureRect.new()
 			rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			rect.size = Vector2(96.0, 96.0)
+			rect.size = Vector2(128.0, 128.0)
+			rect.pivot_offset = Vector2(64.0, 64.0)
 			add_child(rect)
 			sticker_nodes[actor_id] = rect
 	for actor_id in sticker_nodes.keys():
@@ -276,6 +278,16 @@ func _update_world_stickers(car: VisualCar) -> void:
 		var sticker_index := int(data.get("sticker", 0))
 		if stickers != null and stickers.stickers.size() > 0:
 			rect.texture = stickers.stickers[wrapi(sticker_index, 0, stickers.stickers.size())]
+		var started := int(data.get("started", now))
+		var expires := int(data.get("expires", now))
+		var age_msec := maxi(0, now - started)
+		var remaining_msec := maxi(0, expires - now)
+		var pop_t := clampf(float(age_msec) / 180.0, 0.0, 1.0)
+		var pop_ease := pop_t * pop_t * (3.0 - 2.0 * pop_t)
+		var fade_t := clampf(float(remaining_msec) / 420.0, 0.0, 1.0)
+		var scale := lerpf(0.45, 1.0, pop_ease)
+		var rise := lerpf(22.0, 0.0, pop_ease)
+		var life_alpha := minf(pop_ease, fade_t)
 		var render_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(int(actor_id))
 		var world_pos := render_transform.origin + render_transform.basis.y * 3.0
 		var to_sticker := world_pos - camera.global_position
@@ -283,8 +295,9 @@ func _update_world_stickers(car: VisualCar) -> void:
 			rect.visible = false
 			continue
 		rect.visible = true
-		rect.size = Vector2(128.0, 128.0)
-		rect.position = camera.unproject_position(world_pos) - rect.size * 0.5
+		rect.modulate.a = life_alpha
+		rect.scale = Vector2(scale, scale)
+		rect.position = camera.unproject_position(world_pos) - rect.size * 0.5 + Vector2(0.0, rise)
 
 func _ready() -> void:
 	if get_parent() is VisualCar:

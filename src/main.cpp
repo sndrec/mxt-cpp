@@ -1743,7 +1743,7 @@ godot::Array GameSim::get_check_warning_candidates(int player_id) const
 		alpha);
 	const SimVec3 focus_pos = focus.origin;
 	const SimVec3 focus_right = focus.basis.get_column(0);
-	const SimVec3 focus_forward = focus.basis.get_column(2);
+	const SimVec3 focus_forward = -focus.basis.get_column(2);
 
 	for (int i = 0; i < num_cars && i < static_cast<int>(render_final_current_transforms.size()); ++i) {
 		if (i == focus_index) {
@@ -1758,7 +1758,7 @@ godot::Array GameSim::get_check_warning_candidates(int player_id) const
 		if (signed_dist >= -1.0f || signed_dist < -80.0f) {
 			continue;
 		}
-		const SimVec3 other_forward = other.basis.get_column(2);
+		const SimVec3 other_forward = -other.basis.get_column(2);
 		const float denom = other_forward.dot(focus_forward);
 		if (std::abs(denom) < 0.001f) {
 			continue;

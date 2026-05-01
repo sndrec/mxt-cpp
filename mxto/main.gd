@@ -535,9 +535,11 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 		_show_finish_medal(actor_id, tick_value)
 
 func _show_sticker(actor_id: int, sticker_index: int) -> void:
+	var now := Time.get_ticks_msec()
 	active_stickers[actor_id] = {
 		"sticker": sticker_index,
-		"expires": Time.get_ticks_msec() + 2200,
+		"started": now,
+		"expires": now + 2200,
 	}
 
 func send_local_sticker(sticker_index: int) -> void:
