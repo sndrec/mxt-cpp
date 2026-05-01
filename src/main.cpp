@@ -21,6 +21,7 @@
 #include "mxt_core/math_utils.h"
 #include <chrono>
 #include <cfenv>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -3063,6 +3064,11 @@ void GameSim::cache_native_visual_effect_nodes()
 			refs.recharge_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("RechargeParticles")));
 			refs.attack_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("AttackParticles")));
 			refs.landing_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("LandingParticles")));
+			refs.damage_electricity = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("DamageElectricity")));
+			if (refs.damage_electricity) {
+				refs.damage_smoke = Object::cast_to<GPUParticles3D>(refs.damage_electricity->get_node_or_null(NodePath("DamageSmoke")));
+				refs.damage_electricity_material = refs.damage_electricity->get_process_material().ptr();
+			}
 			Node* thruster_root = refs.car_transform->get_node_or_null(NodePath("VehicleThrustersProxy"));
 			if (thruster_root) {
 				TypedArray<Node> thruster_nodes = thruster_root->get_children();
@@ -3099,6 +3105,15 @@ void GameSim::cache_native_visual_effect_nodes()
 		}
 		if (refs.landing_particles) {
 			refs.landing_particles->set_emitting(false);
+		}
+		if (refs.damage_electricity) {
+			refs.damage_electricity->set_emitting(false);
+			refs.damage_electricity->set_amount_ratio(0.0);
+			refs.damage_electricity->set_visible(false);
+		}
+		if (refs.damage_smoke) {
+			refs.damage_smoke->set_emitting(false);
+			refs.damage_smoke->set_amount_ratio(0.0);
 		}
 		if (refs.boost_electricity) {
 			refs.boost_electricity->set("boosting", false);
@@ -3380,6 +3395,9 @@ void GameSim::apply_render_multimeshes(float alpha)
 		godot::Color body_overlay(0, 0, 0, 1);
 		if (i < static_cast<int>(render_vehicle_effect_refs.size())) {
 			body_overlay = render_vehicle_effect_refs[i].overlay;
+			body_overlay.r += render_vehicle_effect_refs[i].energy_overlay.r;
+			body_overlay.g += render_vehicle_effect_refs[i].energy_overlay.g;
+			body_overlay.b += render_vehicle_effect_refs[i].energy_overlay.b;
 			body_overlay.a = 1.0f;
 		}
 		SimVec3 outline_velocity = LOAD_INDEXED_VEC3(soa, position_old, lane) - LOAD_INDEXED_VEC3(soa, position_current, lane);
@@ -3522,6 +3540,15 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		}
 
 		const bool full = full_effects[i] != 0;
+		const float max_energy = std::max(soa.calced_max_energy[lane], 0.001f);
+		const float energy_ratio = std::clamp(soa.energy[lane] / max_energy, 0.0f, 1.0f);
+		const float health_effect_ratio = std::min(1.0f, energy_ratio * 4.0f);
+		const float low_energy_ratio = std::max(0.0f, 1.0f - health_effect_ratio);
+		const float boost_frames = static_cast<float>(std::max(soa.boost_frames[lane], soa.boost_frames_manual[lane]));
+		const float boost_duration_frames = std::max(1.0f, soa.stat_boost_length[lane] * 60.0f);
+		const float boost_ratio = boost_frames / boost_duration_frames;
+		const float low_energy_flash = (std::sin(static_cast<float>(tick) * 0.25f) * 0.5f + 0.5f) * low_energy_ratio;
+		refs.energy_overlay = godot::Color(0.8f * low_energy_flash, -0.2f * low_energy_flash, -0.2f * low_energy_flash, 1.0f);
 		if (refs.recharge_particles) {
 			refs.recharge_particles->set_emitting(full && ((terrain_state & TERRAIN::RECHARGE) != 0u));
 		}
@@ -3535,6 +3562,28 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			} else if (!full) {
 				refs.landing_particles->set_emitting(false);
 			}
+		}
+		if (refs.damage_electricity) {
+			const bool active = full && (low_energy_ratio > 0.001f || boost_ratio > 0.5f);
+			const SimVec3 damage_effect_origin = visual_transform.origin + visual_transform.basis.get_column(1) * -0.125f;
+			refs.damage_electricity->set_global_transform(godot::Transform3D(godot::Basis(), gd_vec3(damage_effect_origin)));
+			refs.damage_electricity->set_visible(full);
+			refs.damage_electricity->set_emitting(active);
+			refs.damage_electricity->set_amount_ratio(active ? low_energy_ratio + std::max(boost_ratio - 0.5f, 0.0f) : 0.0f);
+			if (refs.damage_electricity_material) {
+				refs.damage_electricity_material->set(
+					StringName("color"),
+					godot::Color(
+						1.0f + (0.5f - 1.0f) * health_effect_ratio,
+						0.75f,
+						0.5f + (1.0f - 0.5f) * health_effect_ratio,
+						1.0f));
+			}
+		}
+		if (refs.damage_smoke) {
+			const bool smoke_active = full && low_energy_ratio > 0.001f;
+			refs.damage_smoke->set_emitting(smoke_active);
+			refs.damage_smoke->set_amount_ratio(smoke_active ? low_energy_ratio : 0.0f);
 		}
 
 		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);

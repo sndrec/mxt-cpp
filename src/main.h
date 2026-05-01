@@ -286,11 +286,15 @@ namespace godot {
 				godot::GPUParticles3D* recharge_particles = nullptr;
 				godot::GPUParticles3D* attack_particles = nullptr;
 				godot::GPUParticles3D* landing_particles = nullptr;
+				godot::GPUParticles3D* damage_electricity = nullptr;
+				godot::GPUParticles3D* damage_smoke = nullptr;
+				godot::Object* damage_electricity_material = nullptr;
 				godot::Object* boost_electricity = nullptr;
 				std::vector<RenderThrusterVisualRefs> thrusters;
 				uint32_t terrain_state_old = 0;
 				uint32_t machine_state_old = 0;
 				godot::Color overlay = godot::Color(0, 0, 0, 1);
+				godot::Color energy_overlay = godot::Color(0, 0, 0, 1);
 			};
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
 			void cache_native_visual_effect_nodes();

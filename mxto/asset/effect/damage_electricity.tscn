@@ -1,0 +1,140 @@
+[gd_scene format=3 uid="uid://c6ncgos2n6eke"]
+
+[ext_resource type="Texture2D" uid="uid://ctfqjy31kw0go" path="res://asset/effect/spark_06.png" id="1_mwtw4"]
+[ext_resource type="Texture2D" uid="uid://b4l3iqubsvw6m" path="res://asset/effect/smoke_01.png" id="2_v08gd"]
+
+[sub_resource type="Curve" id="Curve_4khbn"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0, Vector2(0.0345912, 1), 0.0, 0.0, 0, 0, Vector2(0.0974843, 0), 0.0, 0.0, 0, 0, Vector2(1, 0), 0.0, 0.0, 0, 0]
+point_count = 4
+
+[sub_resource type="CurveTexture" id="CurveTexture_ysph2"]
+curve = SubResource("Curve_4khbn")
+
+[sub_resource type="Curve" id="Curve_ru1bg"]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(1e-05, 1), 0.0, 0.0, 0, 0, Vector2(1, 1), 0.0, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_1si03"]
+curve = SubResource("Curve_ru1bg")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_pg0ye"]
+particle_flag_damping_as_friction = true
+emission_shape = 1
+emission_sphere_radius = 1.0
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 64.0
+initial_velocity_max = 64.0
+gravity = Vector3(0, 100, 0)
+radial_accel_min = -250.0
+radial_accel_max = -250.0
+damping_min = 6.0
+damping_max = 6.0
+attractor_interaction_enabled = false
+color = Color(0.501961, 0.745098, 1, 1)
+alpha_curve = SubResource("CurveTexture_ysph2")
+turbulence_enabled = true
+turbulence_noise_strength = 20.0
+turbulence_noise_scale = 0.0
+turbulence_noise_speed = Vector3(0, 1, 0)
+turbulence_noise_speed_random = 0.5
+turbulence_influence_min = 0.508
+turbulence_influence_max = 0.508
+turbulence_influence_over_life = SubResource("CurveTexture_1si03")
+
+[sub_resource type="Curve" id="Curve_caun0"]
+_data = [Vector2(0, 1), 0.0, 0.0, 0, 0]
+point_count = 1
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_8lec2"]
+transparency = 1
+blend_mode = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_color = Color(3, 3, 3, 1)
+albedo_texture = ExtResource("1_mwtw4")
+uv1_scale = Vector3(1, 3, 1)
+use_particle_trails = true
+
+[sub_resource type="RibbonTrailMesh" id="RibbonTrailMesh_120qn"]
+material = SubResource("StandardMaterial3D_8lec2")
+shape = 0
+section_length = 0.25
+section_segments = 5
+curve = SubResource("Curve_caun0")
+
+[sub_resource type="Curve" id="Curve_o1tru"]
+_data = [Vector2(0, 0), 0.0, 0.0, 0, 0, Vector2(0.254717, 1), 0.488818, 0.488818, 0, 0, Vector2(1, 0), -2.10551, 0.0, 0, 0]
+point_count = 3
+
+[sub_resource type="CurveTexture" id="CurveTexture_fmi5y"]
+curve = SubResource("Curve_o1tru")
+
+[sub_resource type="Curve" id="Curve_e3kgp"]
+_limits = [0.0, 2.0, 0.0, 1.0]
+_data = [Vector2(0, 0.4725), 0.0, 2.00372, 0, 0, Vector2(1, 1.7725), 0.0, 0.0, 0, 0]
+point_count = 2
+
+[sub_resource type="CurveTexture" id="CurveTexture_k7odb"]
+curve = SubResource("Curve_e3kgp")
+
+[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_q3l0e"]
+lifetime_randomness = 0.5
+angle_min = -180.0
+angle_max = 180.0
+direction = Vector3(0, 1, 0)
+spread = 25.0
+initial_velocity_min = 2.0
+initial_velocity_max = 3.0
+angular_velocity_min = -45.0
+angular_velocity_max = 45.0
+gravity = Vector3(0, 8, 0)
+damping_min = 4.0
+damping_max = 5.0
+scale_min = 1.75
+scale_max = 2.25
+scale_curve = SubResource("CurveTexture_k7odb")
+color = Color(0.443137, 0.443137, 0.443137, 1)
+alpha_curve = SubResource("CurveTexture_fmi5y")
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_j2ryg"]
+transparency = 1
+shading_mode = 0
+vertex_color_use_as_albedo = true
+albedo_texture = ExtResource("2_v08gd")
+billboard_mode = 3
+billboard_keep_scale = true
+particles_anim_h_frames = 1
+particles_anim_v_frames = 1
+particles_anim_loop = false
+proximity_fade_enabled = true
+distance_fade_mode = 1
+distance_fade_min_distance = 1.0
+distance_fade_max_distance = 5.0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_n2k7r"]
+material = SubResource("StandardMaterial3D_j2ryg")
+orientation = 2
+
+[node name="DamageElectricity" type="GPUParticles3D" unique_id=1992265283]
+transform = Transform3D(3, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0)
+amount = 24
+lifetime = 4.0
+speed_scale = 6.0
+fixed_fps = 120
+interpolate = false
+visibility_aabb = AABB(-3.21954, -2.80045, -2.90805, 6.09802, 5.86265, 5.71641)
+local_coords = true
+transform_align = 3
+trail_enabled = true
+trail_lifetime = 0.1
+process_material = SubResource("ParticleProcessMaterial_pg0ye")
+draw_pass_1 = SubResource("RibbonTrailMesh_120qn")
+
+[node name="DamageSmoke" type="GPUParticles3D" parent="." unique_id=463099325]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.466821, 0)
+amount = 48
+lifetime = 2.0
+visibility_aabb = AABB(-4.136, -1.9722, -4.21883, 8.3208, 10.788, 8.35393)
+process_material = SubResource("ParticleProcessMaterial_q3l0e")
+draw_pass_1 = SubResource("PlaneMesh_n2k7r")
