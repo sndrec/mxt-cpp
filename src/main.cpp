@@ -405,6 +405,7 @@ namespace {
 		{"DIP_DRAW_SEG_BOUNDS", "Draw Segment Bounds", DIP_SWITCH::DIP_DRAW_SEG_BOUNDS},
 		{"DIP_DRAW_BRANCH_CENTERLINE", "Draw Branch Centerline", DIP_SWITCH::DIP_DRAW_BRANCH_CENTERLINE},
 		{"DIP_TRACE_RAIL_SAMPLING", "Trace Rail Sampling", DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING},
+		{"DIP_DRAW_RAIL_CANDIDATES", "Draw Rail Candidates", DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES},
 	};
 
 	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count)

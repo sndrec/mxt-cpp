@@ -1066,3 +1066,48 @@ void RoadShape::get_oriented_transform_at_time4(SimTransform out_transform[4], c
 		out_transform[lane].basis[2] = forward;
 	}
 }
+
+bool RoadShape::supports_edge_rails() const
+{
+	return shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
+		shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+		shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+		shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
+}
+
+void RoadShape::get_edge_rail_sides(
+	TrackEdgeRailSide out_sides[2],
+	float road_y,
+	const SimVec3& interior_reference,
+	const RoadTransform& root,
+	const RoadTransform& root_derivative,
+	float left_height,
+	float right_height) const
+{
+	const float edge_x[2] = { 1.0f, -1.0f };
+	const float edge_height[2] = { left_height, right_height };
+	for (int i = 0; i < 2; ++i) {
+		SimTransform edge_surface;
+		get_oriented_transform_at_time_presampled(
+			edge_surface,
+			SimVec2(edge_x[i], road_y),
+			root,
+			root_derivative);
+
+		SimVec3 up_n = edge_surface.basis[1].normalized();
+		SimVec3 forward_n = edge_surface.basis[2].normalized();
+		SimVec3 rail_n = up_n.cross(forward_n).normalized();
+		if (rail_n.length_squared() < 0.000001f) {
+			rail_n = edge_surface.basis[0].normalized();
+		}
+		if (rail_n.dot(interior_reference - edge_surface.origin) < 0.0f) {
+			rail_n = -rail_n;
+		}
+
+		out_sides[i].pos = edge_surface.origin;
+		out_sides[i].rail_n = rail_n;
+		out_sides[i].up_n = up_n;
+		out_sides[i].forward_n = forward_n;
+		out_sides[i].height = edge_height[i];
+	}
+}

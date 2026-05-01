@@ -98,6 +98,7 @@ namespace DIP_SWITCH {
                 DIP_DRAW_SEG_BOUNDS = 0x10,
                 DIP_DRAW_BRANCH_CENTERLINE = 0x20,
                 DIP_TRACE_RAIL_SAMPLING = 0x40,
+                DIP_DRAW_RAIL_CANDIDATES = 0x80,
         };
 }
 

@@ -36,6 +36,32 @@ static inline godot::Vector3 debug_gd_vec3(const SimVec3& v)
 	return godot::Vector3(v.x, v.y, v.z);
 }
 
+static void draw_nearest_rail_candidate(
+	const TrackEdgeRailSide sides[2],
+	const SimVec3& reference,
+	const PhysicsCarSoA* soa,
+	int lane,
+	float draw_time)
+{
+	if (!DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES) ||
+		!soa ||
+		(soa->global_start + lane) != 0) {
+		return;
+	}
+	int best_idx = 0;
+	float best_dist2 = (reference - sides[0].pos).length_squared();
+	const float dist2_1 = (reference - sides[1].pos).length_squared();
+	if (dist2_1 < best_dist2) {
+		best_idx = 1;
+		best_dist2 = dist2_1;
+	}
+	const TrackEdgeRailSide &side = sides[best_idx];
+	godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	dd3d->call("draw_arrow", debug_gd_vec3(side.pos), debug_gd_vec3(side.pos + side.rail_n * 8.0f), godot::Color(1.0f, 0.0f, 1.0f), 0.35, true, draw_time);
+	dd3d->call("draw_arrow", debug_gd_vec3(side.pos), debug_gd_vec3(side.pos + side.up_n * 6.0f), godot::Color(0.2f, 1.0f, 0.2f), 0.2, true, draw_time);
+	dd3d->call("draw_arrow", debug_gd_vec3(side.pos), debug_gd_vec3(side.pos + side.forward_n * 6.0f), godot::Color(0.2f, 0.5f, 1.0f), 0.2, true, draw_time);
+}
+
 static inline bool trace_rail_sampling_enabled(const PhysicsCarSoA* soa, int lane)
 {
 	return DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING) &&
@@ -2706,28 +2732,21 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 					}
 				}
 				TrackSegment *old_seg = &track->segments[track->checkpoints[use_cp_old].road_segment];
-				bool should_rail_old = (old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-					old_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
-				if (!should_rail_old && was_inside && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+				if (old_seg->road_shape->supports_edge_rails() && was_inside && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					RoadTransform root_t;
+					RoadTransform root_derivative;
 					const TrackSegment &segment     = track->segments[track->checkpoints[use_cp_old].road_segment];
-					segment.curve_matrix->sample(root_t, use_t.y);
-					const SimBasis rbasis       = root_t.t3d.basis;
-					const SimVec3 up_normal = rbasis.get_column(1);
-					const SimVec3 side_dir = rbasis.get_column(0);
-					const SimVec3 side_scaled = side_dir * root_t.scale.x;
-					const SimVec3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-					const SimVec3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-					const SimVec3 left_plane_n   = -side_dir;
-					const SimVec3 right_plane_n  =  side_dir;
-
-					struct RailSide { SimVec3 pos, plane_n, rail_n; float height; };
-					const RailSide sides[2] = {
-						{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
-						{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
-					};
+					segment.curve_matrix->sample_with_derivative(root_t, root_derivative, use_t.y);
+					TrackEdgeRailSide sides[2];
+					segment.road_shape->get_edge_rail_sides(
+						sides,
+						use_t.y,
+						use_transform.origin,
+						root_t,
+						root_derivative,
+						segment.left_rail_height,
+						segment.right_rail_height);
+					draw_nearest_rail_candidate(sides, LOAD_VEC3(position_current) + depenetration, soa, soa_index, _TICK_DELTA);
 					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 						for (int i = 0; i < 2; i++) {
@@ -2739,7 +2758,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							//{
 							//	continue;
 							//}
-							const RailSide &side = sides[i];
+							const TrackEdgeRailSide &side = sides[i];
 							if (side.height <= 0.f)
 							{
 								continue;
@@ -2752,7 +2771,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							{
 								continue;
 							}
-							if ((hit - side.pos).dot(up_normal) > side.height * root_t.scale.y)
+							if ((hit - side.pos).dot(side.up_n) > side.height * root_t.scale.y)
 							{
 								continue;
 							}
@@ -2809,28 +2828,21 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 					}
 				}
 				TrackSegment *new_seg = &track->segments[track->checkpoints[use_cp_new].road_segment];
-				bool should_rail_new = (new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-					new_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN);
-					if (!should_rail_new && was_inside && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+					if (new_seg->road_shape->supports_edge_rails() && was_inside && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					RoadTransform root_t;
+					RoadTransform root_derivative;
 					const TrackSegment &segment     = track->segments[track->checkpoints[use_cp_new].road_segment];
-					segment.curve_matrix->sample(root_t, use_t.y);
-					const SimBasis rbasis       = root_t.t3d.basis;
-					const SimVec3 up_normal = rbasis.get_column(1);
-					const SimVec3 side_dir = rbasis.get_column(0);
-					const SimVec3 side_scaled = side_dir * root_t.scale.x;
-					const SimVec3 left_pos   = root_t.t3d.origin + side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-					const SimVec3 right_pos  = root_t.t3d.origin - side_scaled + up_normal * up_normal.dot(use_transform.origin - root_t.t3d.origin + side_scaled);
-					const SimVec3 left_plane_n   = -side_dir;
-					const SimVec3 right_plane_n  =  side_dir;
-
-					struct RailSide { SimVec3 pos, plane_n, rail_n; float height; };
-					const RailSide sides[2] = {
-						{ left_pos,  left_plane_n,  -use_transform.basis[1].cross(use_transform.basis[2]),    segment.left_rail_height    },
-						{ right_pos, right_plane_n,  use_transform.basis[1].cross(use_transform.basis[2]),    segment.right_rail_height   }
-					};
+					segment.curve_matrix->sample_with_derivative(root_t, root_derivative, use_t.y);
+					TrackEdgeRailSide sides[2];
+					segment.road_shape->get_edge_rail_sides(
+						sides,
+						use_t.y,
+						use_transform.origin,
+						root_t,
+						root_derivative,
+						segment.left_rail_height,
+						segment.right_rail_height);
+					draw_nearest_rail_candidate(sides, LOAD_VEC3(position_current) + depenetration, soa, soa_index, _TICK_DELTA);
 					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 
@@ -2843,7 +2855,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							//{
 							//	continue;
 							//}
-							const RailSide &side = sides[i];
+							const TrackEdgeRailSide &side = sides[i];
 							if (side.height <= 0.f)
 							{
 								continue;
@@ -2856,7 +2868,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							{
 								continue;
 							}
-							if ((hit - side.pos).dot(up_normal) > side.height * root_t.scale.y)
+							if ((hit - side.pos).dot(side.up_n) > side.height * root_t.scale.y)
 							{
 								continue;
 							}

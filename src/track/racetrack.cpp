@@ -35,6 +35,28 @@ static inline godot::Vector3 godot_vec3_from_sim(const SimVec3& v)
 	return godot::Vector3(v.x, v.y, v.z);
 }
 
+static void draw_nearest_rail_candidate(
+	const TrackEdgeRailSide sides[2],
+	const SimVec3& reference,
+	float draw_time)
+{
+	if (!DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES)) {
+		return;
+	}
+	int best_idx = 0;
+	float best_dist2 = (reference - sides[0].pos).length_squared();
+	const float dist2_1 = (reference - sides[1].pos).length_squared();
+	if (dist2_1 < best_dist2) {
+		best_idx = 1;
+		best_dist2 = dist2_1;
+	}
+	const TrackEdgeRailSide &side = sides[best_idx];
+	godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	dd3d->call("draw_arrow", godot_vec3_from_sim(side.pos), godot_vec3_from_sim(side.pos + side.rail_n * 8.0f), godot::Color(1.0f, 0.0f, 1.0f), 0.35, true, draw_time);
+	dd3d->call("draw_arrow", godot_vec3_from_sim(side.pos), godot_vec3_from_sim(side.pos + side.up_n * 6.0f), godot::Color(0.2f, 1.0f, 0.2f), 0.2, true, draw_time);
+	dd3d->call("draw_arrow", godot_vec3_from_sim(side.pos), godot_vec3_from_sim(side.pos + side.forward_n * 6.0f), godot::Color(0.2f, 0.5f, 1.0f), 0.2, true, draw_time);
+}
+
 static inline float safe_inverse_road_scale(float scale)
 {
 	return (fabsf(scale) > 1.0e-5f) ? (1.0f / scale) : 0.0f;
@@ -802,33 +824,25 @@ static void cast_segment_fast(const CastParams  &params,
 	if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0)
 		return;
 
-        if (segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
-                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER ||
-                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
-                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
-                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT ||
-                segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN)
-                return;
+	if (!segment.road_shape->supports_edge_rails()) {
+		return;
+	}
 
 	const RoadTransform &root_t = sample_root;
-	const SimBasis rbasis       = root_t.t3d.basis;
-	const SimVec3 up_normal = rbasis.get_column(1);
-	const SimVec3 side_dir = rbasis.get_column(0);
-	const SimVec3 side_scaled = side_dir * root_t.scale.x;
-	const SimVec3 left_pos   = root_t.t3d.origin + side_scaled;
-	const SimVec3 right_pos  = root_t.t3d.origin - side_scaled;
-	const SimVec3 left_plane_n   = -side_dir;
-	const SimVec3 right_plane_n  =  side_dir;
+	TrackEdgeRailSide sides[2];
+	segment.road_shape->get_edge_rail_sides(
+		sides,
+		road_t_sample_raw.y,
+		surf.origin,
+		sample_root,
+		sample_root_derivative,
+		segment.left_rail_height,
+		segment.right_rail_height);
+	draw_nearest_rail_candidate(sides, sample_pt, _TICK_DELTA);
 
-	struct RailSide { SimVec3 pos, plane_n, rail_n; float height; };
-	const RailSide sides[2] = {
-		{ left_pos,  left_plane_n,  -surf_n.cross(surf_fwd),    segment.left_rail_height    },
-		{ right_pos, right_plane_n,  surf_n.cross(surf_fwd),    segment.right_rail_height   }
-	};
-
-	for (const RailSide &side : sides) {
-		const float ra = (p0 - side.pos).dot(side.plane_n);
-		const float rb = (p1 - side.pos).dot(side.plane_n);
+	for (const TrackEdgeRailSide &side : sides) {
+		const float ra = (p0 - side.pos).dot(side.rail_n);
+		const float rb = (p1 - side.pos).dot(side.rail_n);
 		if ((ra <= 0.0f && rb <= 0.0f) || (ra >= 0.0f && rb >= 0.0f))
 			continue;
 
@@ -847,7 +861,7 @@ static void cast_segment_fast(const CastParams  &params,
 		}
 
 		const float vdist = (hit - surf.origin).dot(surf_n);        // height above track
-		if (vdist < 0.0f || vdist > side.height * root_t.scale.y)
+		if (vdist < 0.0f || (hit - side.pos).dot(side.up_n) > side.height * root_t.scale.y)
 			continue;
 		if ((params.mask & CAST_FLAGS::WANTS_BACKFACE) == 0 && ray.dot(side.rail_n) > 0.0f)
 			continue;
