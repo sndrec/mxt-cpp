@@ -48,6 +48,8 @@ class NetcodeSession : public Object {
 	mutable uint64_t stat_auth_frames = 0;
 	mutable uint64_t stat_auth_encoded_inputs = 0;
 	mutable uint64_t stat_auth_unchanged_inputs = 0;
+	mutable uint64_t stat_auth_raw_bytes = 0;
+	mutable uint64_t stat_auth_payload_bytes = 0;
 
 	static PlayerInput decay_predicted_input(const PlayerInput& prev);
 	void recalculate_predictions_internal(GameSim* sim, int start_tick, int end_tick);
@@ -77,6 +79,7 @@ public:
 	godot::Dictionary store_authoritative_input_packet(godot::PackedByteArray packet);
 	godot::Dictionary consume_authoritative_packet_stats();
 	godot::Dictionary get_input_frame_debug(int tick) const;
+	void configure_authoritative_input_sample_dump(bool enabled, int limit, godot::String directory);
 	void clear_peer_state();
 	void remove_peer(int peer_id);
 	void set_peer_last_received(int peer_id, int tick, double now_sec);

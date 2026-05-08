@@ -65,7 +65,7 @@ const START_SYNC_PING_INTERVAL_MS := 50
 const START_SYNC_START_DELAY_MS := 750
 var player_settings := {}
 var ready_players : Array[int] = []
-const STATE_BROADCAST_INTERVAL_TICKS := 60
+const STATE_BROADCAST_INTERVAL_TICKS := 5
 const STATE_CHUNK_PAYLOAD_BYTES := 1000
 const STATE_CHUNK_SEND_COPIES := 2
 var state_send_offsets := {}
@@ -115,6 +115,13 @@ var start_sync_first_authoritative_count := 0
 var start_sync_debug_prints := 0
 
 var use_state_compression := true
+var dump_auth_input_samples := false
+var auth_input_sample_limit := 20000
+var auth_input_sample_dir := "user://auth_input_samples"
+var dump_state_samples := false
+var state_sample_limit := 5000
+var state_sample_dir := "user://state_samples"
+var state_sample_index := 0
 
 var log_enabled := true
 var log_file: FileAccess
@@ -129,6 +136,7 @@ var log_flat_client_payload_out := 0
 var log_flat_client_payload_in := 0
 var log_flat_server_payload_out := 0
 var log_flat_server_payload_in := 0
+var log_auth_packets_sent := 0
 var log_server_late_drops := 0
 var log_server_replacements := 0
 const STATE_FRAGMENT_PAYLOAD_BYTES := 1200
@@ -223,7 +231,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -441,17 +449,26 @@ func _flush_log() -> void:
 	var car_store_old_pos_ms := float(prof_car_store_old_pos_us_interval) / 1000.0
 	var car_post_render_ms := float(prof_car_post_render_us_interval) / 1000.0
 	var auth_stats: Dictionary = server_netcode_session.consume_authoritative_packet_stats()
-	var auth_packets := int(auth_stats.get("auth_packets", 0))
+	var auth_packet_builds := int(auth_stats.get("auth_packets", 0))
+	var auth_packets := log_auth_packets_sent
 	var auth_frames := int(auth_stats.get("auth_frames", 0))
 	var auth_encoded_inputs := int(auth_stats.get("auth_encoded_inputs", 0))
 	var auth_unchanged_inputs := int(auth_stats.get("auth_unchanged_inputs", 0))
+	var auth_raw_bytes := int(auth_stats.get("auth_raw_bytes", 0))
+	var auth_payload_bytes := int(auth_stats.get("auth_payload_bytes", 0))
 	var auth_payload_per_packet := 0.0
+	var auth_raw_per_packet := 0.0
+	var auth_compression_ratio := 1.0
 	if auth_packets > 0:
 		auth_payload_per_packet = float(log_flat_server_payload_out) / float(auth_packets)
+	if auth_packet_builds > 0:
+		auth_raw_per_packet = float(auth_raw_bytes) / float(auth_packet_builds)
+	if auth_raw_bytes > 0:
+		auth_compression_ratio = float(auth_payload_bytes) / float(auth_raw_bytes)
 	var state_success := log_state_min_success_2pct if log_state_sent_count > 0 else 1.0
 
 	var logged_max_ahead: float = max_ahead_from_server if is_server else clients_max_ahead_from_server
-	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(log_state_raw_out) + "," + str(log_state_payload_out) + "," + str(log_state_sent_count) + "," + str(log_state_max_fragments_out) + "," + str(state_success) + "," + str(log_state_payload_in) + "," + str(log_state_raw_in) + "," + str(log_state_recv_count) + "," + str(log_state_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
+	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(log_state_raw_out) + "," + str(log_state_payload_out) + "," + str(log_state_sent_count) + "," + str(log_state_max_fragments_out) + "," + str(state_success) + "," + str(log_state_payload_in) + "," + str(log_state_raw_in) + "," + str(log_state_recv_count) + "," + str(log_state_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
@@ -465,6 +482,7 @@ func _flush_log() -> void:
 	log_flat_client_payload_in = 0
 	log_flat_server_payload_out = 0
 	log_flat_server_payload_in = 0
+	log_auth_packets_sent = 0
 	log_state_raw_out = 0
 	log_state_payload_out = 0
 	log_state_sent_count = 0
@@ -568,7 +586,66 @@ func _calc_max_ahead() -> float:
 func _local_desired_ahead_for_shared() -> float:
 	return 0.0 if is_server and listen_server else desired_ahead_ticks
 
+func _parse_auth_input_sample_dump_args() -> void:
+	var args := OS.get_cmdline_args()
+	args.append_array(OS.get_cmdline_user_args())
+	for arg in args:
+		if arg == "--mxt-dump-auth-input-samples":
+			dump_auth_input_samples = true
+		elif arg == "--mxt-no-dump-auth-input-samples":
+			dump_auth_input_samples = false
+		elif arg.begins_with("--mxt-auth-input-sample-limit="):
+			auth_input_sample_limit = maxi(0, int(arg.get_slice("=", 1)))
+		elif arg.begins_with("--mxt-auth-input-sample-dir="):
+			auth_input_sample_dir = arg.get_slice("=", 1)
+		elif arg == "--mxt-dump-state-samples" or arg == "--mxt-dump-gamestate-samples":
+			dump_state_samples = true
+		elif arg == "--mxt-no-dump-state-samples" or arg == "--mxt-no-dump-gamestate-samples":
+			dump_state_samples = false
+		elif arg.begins_with("--mxt-state-sample-limit="):
+			state_sample_limit = maxi(0, int(arg.get_slice("=", 1)))
+		elif arg.begins_with("--mxt-gamestate-sample-limit="):
+			state_sample_limit = maxi(0, int(arg.get_slice("=", 1)))
+		elif arg.begins_with("--mxt-state-sample-dir="):
+			state_sample_dir = arg.get_slice("=", 1)
+		elif arg.begins_with("--mxt-gamestate-sample-dir="):
+			state_sample_dir = arg.get_slice("=", 1)
+
+func _apply_auth_input_sample_dump_settings() -> void:
+	netcode_session.configure_authoritative_input_sample_dump(
+		dump_auth_input_samples,
+		auth_input_sample_limit,
+		auth_input_sample_dir
+	)
+	server_netcode_session.configure_authoritative_input_sample_dump(
+		dump_auth_input_samples,
+		auth_input_sample_limit,
+		auth_input_sample_dir
+	)
+	state_sample_index = 0
+	if dump_state_samples:
+		var resolved_dir := ProjectSettings.globalize_path(state_sample_dir)
+		DirAccess.make_dir_recursive_absolute(resolved_dir)
+
+func dump_state_sample(state: PackedByteArray, tick: int, racer_count: int) -> void:
+	if !dump_state_samples:
+		return
+	if state.size() <= 0:
+		return
+	if state_sample_limit > 0 and state_sample_index >= state_sample_limit:
+		return
+	var resolved_dir := ProjectSettings.globalize_path(state_sample_dir)
+	var file_name := "state_%08d_t%d_p%d.bin" % [state_sample_index, tick, racer_count]
+	var file := FileAccess.open(resolved_dir.path_join(file_name), FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_buffer(state)
+	file.close()
+	state_sample_index += 1
+
 func _ready() -> void:
+	_parse_auth_input_sample_dump_args()
+	_apply_auth_input_sample_dump_settings()
 	var lbl: Label = get_node_or_null("../VersionLabel")
 	if lbl != null:
 		version_string = str(lbl.text)
@@ -608,11 +685,6 @@ func server_process() -> void:
 			log_net_cpu_us_interval += _net_t1 - _net_t0
 			loops += 1
 		if server_tick < target_tick:
-			var _idle_t0 := Time.get_ticks_usec()
-			_idle_broadcast()
-			var _idle_t1 := Time.get_ticks_usec()
-			log_net_cpu_us_interval += _idle_t1 - _idle_t0
-			prof_idle_broadcast_us_interval += _idle_t1 - _idle_t0
 			var _stall_t0 := Time.get_ticks_usec()
 			_check_client_stalls()
 			var _stall_t1 := Time.get_ticks_usec()
@@ -1447,6 +1519,8 @@ func post_tick() -> void:
 		var compressed_ready := false
 		var compressed_state : PackedByteArray = PackedByteArray()
 		var uncompressed_size := 0
+		var input_packet: PackedByteArray = PackedByteArray()
+		var input_packet_ready := false
 		for id in player_ids + spectator_ids:
 			if _startup_light_net_active(server_tick):
 				var startup_ack: int = server_netcode_session.get_peer_last_received(id)
@@ -1457,6 +1531,7 @@ func post_tick() -> void:
 			var send_state_uncomp_size := 0
 			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
 				if not compressed_ready:
+					dump_state_sample(state, server_tick, get_simulation_roster().size())
 					if state.size() > 0 and use_state_compression:
 						compressed_state = state.compress(FileAccess.COMPRESSION_ZSTD)
 						uncompressed_size = state.size()
@@ -1467,8 +1542,11 @@ func post_tick() -> void:
 				send_state = compressed_state
 				send_state_uncomp_size = uncompressed_size
 				_log_state_sent(uncompressed_size if uncompressed_size > 0 else send_state.size(), send_state.size())
-			var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES)
+			if not input_packet_ready:
+				input_packet = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES)
+				input_packet_ready = true
 			log_flat_server_payload_out += input_packet.size()
+			log_auth_packets_sent += 1
 			_acc_log_out(20 + input_packet.size())
 			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, server_netcode_session.get_peer_last_received(id), target_tick, max_ahead)
 			if send_state.size() > 0:
@@ -1489,32 +1567,6 @@ func post_tick() -> void:
 			_prune_authoritative_history()
 		var _t1 := Time.get_ticks_usec()
 		log_net_cpu_us_interval += _t1 - _t0
-
-func _idle_broadcast() -> void:
-	if !race_active:
-		return
-	if server_game_sim == null:
-		return
-	# timing start
-	var _t0 := Time.get_ticks_usec()
-	var max_ahead := _calc_max_ahead()
-	max_ahead_from_server = max_ahead
-	for id in player_ids + spectator_ids:
-		var latest_tick := maxi(server_tick - 1, 0)
-		var input_packet: PackedByteArray = server_netcode_session.build_authoritative_input_packet(latest_tick, AUTH_INPUT_REDUNDANCY_FRAMES)
-		var _bytes := 20 + input_packet.size()
-		log_flat_server_payload_out += input_packet.size()
-		_acc_log_out(_bytes)
-		_server_broadcast_flat.rpc_id(
-			id,
-			latest_tick,
-			input_packet,
-			server_netcode_session.get_peer_last_received(id),
-			target_tick,
-			max_ahead
-		)
-	var _t1 := Time.get_ticks_usec()
-	log_net_cpu_us_interval += _t1 - _t0
 
 func _check_client_stalls() -> void:
 	if !race_active:

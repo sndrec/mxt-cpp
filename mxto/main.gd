@@ -83,6 +83,7 @@ const ROAD_MATS = {
 var singleplayer_mode: bool = false
 var _singleplayer_tick: int = 0
 var singleplayer_cpu_count: int = 0
+var launch_cpu_driver_count: int = -1
 var auto_singleplayer_mode: bool = false
 var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
@@ -195,17 +196,19 @@ func _ready() -> void:
 	network_manager.set_cpu_driver_manager(cpu_driver_manager)
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
-	var cpu_idx := args.find("-cpu-drivers")
-	if cpu_idx != -1 and cpu_idx + 1 < args.size():
-		var cpu_count := int(clamp(float(args[cpu_idx + 1]), 0.0, 999.0))
-		singleplayer_cpu_count = cpu_count
+	var user_args := OS.get_cmdline_user_args()
+	launch_cpu_driver_count = _parse_cpu_driver_count_arg(args)
+	if launch_cpu_driver_count < 0:
+		launch_cpu_driver_count = _parse_cpu_driver_count_arg(user_args)
+	if launch_cpu_driver_count >= 0:
+		singleplayer_cpu_count = launch_cpu_driver_count
 		if cpu_slider != null:
 			cpu_slider.value = singleplayer_cpu_count
 		_update_cpu_slider_label()
-		network_manager.set_cpu_driver_count(cpu_count)
-	if args.has("--host"):
+		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
+	if args.has("--host") or user_args.has("--host"):
 		call_deferred("_auto_host")
-	auto_singleplayer_mode = args.has("--auto-singleplayer")
+	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
 	var quit_idx := args.find("--quit-after-frames")
 	if quit_idx != -1 and quit_idx + 1 < args.size():
 		auto_quit_after_frames = max(0, int(args[quit_idx + 1]))
@@ -241,6 +244,14 @@ func _ready() -> void:
 		join_timer.start()
 		$Control.visible = false
 		lobby_control.visible = true
+
+func _parse_cpu_driver_count_arg(args: Array) -> int:
+	var cpu_idx := args.find("-cpu-drivers")
+	if cpu_idx == -1:
+		cpu_idx = args.find("--cpu-drivers")
+	if cpu_idx == -1 or cpu_idx + 1 >= args.size():
+		return -1
+	return int(clamp(float(args[cpu_idx + 1]), 0.0, 999.0))
 
 func _load_tracks() -> void:
 	tracks.clear()
@@ -325,7 +336,11 @@ func _load_car_definitions() -> void:
 	dir.list_dir_end()
 
 func _on_start_button_pressed() -> void:
-	network_manager.host()
+	var err := network_manager.host()
+	if err != OK:
+		return
+	if launch_cpu_driver_count >= 0:
+		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
 	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
 	start_race_button.disabled = false
 	$Control.visible = false
@@ -1205,6 +1220,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	if debug_replay_recording:
 		debug_replay_inputs.append(input_bytes.duplicate())
 	_last_sp_build_inputs_us = build_inputs_us
+	_dump_offline_auth_input_sample(input_bytes)
+	_dump_offline_state_sample()
 	var tick_gamesim_start := Time.get_ticks_usec()
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
 	_last_sp_tick_gamesim_us = Time.get_ticks_usec() - tick_gamesim_start
@@ -1213,6 +1230,42 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	network_manager.clients_server_tick = _singleplayer_tick
 	var end_time := Time.get_ticks_usec()
 	network_manager.rollback_frametime_us = end_time - start_time
+
+func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
+	if !network_manager.dump_auth_input_samples:
+		return
+	if game_sim == null:
+		return
+	var roster := network_manager.get_simulation_roster()
+	if roster.is_empty():
+		return
+	var cpu_ids := network_manager.get_cpu_roster()
+	var local_id := _local_player_id()
+	for id in roster:
+		var input_bytes := network_manager.NEUTRAL_INPUT_BYTES
+		if cpu_ids.has(id):
+			input_bytes = game_sim.get_native_cpu_input_for_tick(int(id), _singleplayer_tick)
+		elif int(id) == local_id:
+			input_bytes = local_input_bytes
+		network_manager.netcode_session.store_authoritative_input(_singleplayer_tick, int(id), input_bytes)
+	network_manager.netcode_session.build_authoritative_input_packet(
+		_singleplayer_tick,
+		network_manager.AUTH_INPUT_REDUNDANCY_FRAMES
+	)
+
+func _dump_offline_state_sample() -> void:
+	if !network_manager.dump_state_samples:
+		return
+	if game_sim == null:
+		return
+	if _singleplayer_tick % network_manager.STATE_BROADCAST_INTERVAL_TICKS != 0:
+		return
+	var state := game_sim.get_state_data(_singleplayer_tick)
+	network_manager.dump_state_sample(
+		state,
+		_singleplayer_tick,
+		network_manager.get_simulation_roster().size()
+	)
 
 func _simulate_host_frame(local_input_bytes: PackedByteArray):
 	var loops := 0
