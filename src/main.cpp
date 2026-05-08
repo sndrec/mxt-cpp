@@ -1743,8 +1743,18 @@ godot::Array GameSim::get_check_warning_candidates(int player_id) const
 		render_final_current_transforms[focus_index],
 		alpha);
 	const SimVec3 focus_pos = focus.origin;
-	const SimVec3 focus_right = focus.basis.get_column(0);
-	const SimVec3 focus_forward = -focus.basis.get_column(2);
+	SimVec3 check_right = focus.basis.get_column(0);
+	SimVec3 check_forward = -focus.basis.get_column(2);
+	if (gameplay_camera_node) {
+		const godot::Transform3D camera_transform = gameplay_camera_node->get_global_transform();
+		check_right = sim_vec3(camera_transform.basis.get_column(0));
+		check_forward = -sim_vec3(camera_transform.basis.get_column(2));
+	}
+	if (check_forward.length_squared() <= 0.0001f || check_right.length_squared() <= 0.0001f) {
+		return out;
+	}
+	check_forward = check_forward.normalized();
+	check_right = check_right.normalized();
 
 	for (int i = 0; i < num_cars && i < static_cast<int>(render_final_current_transforms.size()); ++i) {
 		if (i == focus_index) {
@@ -1755,21 +1765,12 @@ godot::Array GameSim::get_check_warning_candidates(int player_id) const
 			render_final_current_transforms[i],
 			alpha);
 		const SimVec3 delta = other.origin - focus_pos;
-		const float signed_dist = delta.dot(focus_forward);
+		const float signed_dist = delta.dot(check_forward);
 		if (signed_dist >= -1.0f || signed_dist < -80.0f) {
 			continue;
 		}
-		const SimVec3 other_forward = -other.basis.get_column(2);
-		const float denom = other_forward.dot(focus_forward);
-		if (std::abs(denom) < 0.001f) {
-			continue;
-		}
-		const float ray_t = -signed_dist / denom;
-		if (ray_t < 0.0f || ray_t > 120.0f) {
-			continue;
-		}
-		const SimVec3 intersect = other.origin + other_forward * ray_t;
-		const float lateral = (intersect - focus_pos).dot(focus_right);
+		const SimVec3 intersect = other.origin - check_forward * signed_dist;
+		const float lateral = (intersect - focus_pos).dot(check_right);
 		if (std::abs(lateral) > 70.0f) {
 			continue;
 		}
@@ -3566,7 +3567,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		if (refs.damage_electricity) {
 			const bool active = full && (low_energy_ratio > 0.001f || boost_ratio > 0.5f);
 			const SimVec3 damage_effect_origin = visual_transform.origin + visual_transform.basis.get_column(1) * -0.125f;
-			refs.damage_electricity->set_global_transform(godot::Transform3D(godot::Basis(), gd_vec3(damage_effect_origin)));
+			refs.damage_electricity->set_global_position(gd_vec3(damage_effect_origin));
 			refs.damage_electricity->set_visible(full);
 			refs.damage_electricity->set_emitting(active);
 			refs.damage_electricity->set_amount_ratio(active ? low_energy_ratio + std::max(boost_ratio - 0.5f, 0.0f) : 0.0f);

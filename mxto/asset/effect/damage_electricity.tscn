@@ -23,8 +23,8 @@ emission_shape = 1
 emission_sphere_radius = 1.0
 direction = Vector3(0, 1, 0)
 spread = 180.0
-initial_velocity_min = 64.0
-initial_velocity_max = 64.0
+initial_velocity_min = 140.0
+initial_velocity_max = 140.0
 gravity = Vector3(0, 100, 0)
 radial_accel_min = -250.0
 radial_accel_max = -250.0
@@ -59,6 +59,7 @@ use_particle_trails = true
 [sub_resource type="RibbonTrailMesh" id="RibbonTrailMesh_120qn"]
 material = SubResource("StandardMaterial3D_8lec2")
 shape = 0
+size = 2.0
 section_length = 0.25
 section_segments = 5
 curve = SubResource("Curve_caun0")
@@ -117,7 +118,6 @@ material = SubResource("StandardMaterial3D_j2ryg")
 orientation = 2
 
 [node name="DamageElectricity" type="GPUParticles3D" unique_id=1992265283]
-transform = Transform3D(3, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0)
 amount = 24
 lifetime = 4.0
 speed_scale = 6.0
@@ -134,7 +134,7 @@ draw_pass_1 = SubResource("RibbonTrailMesh_120qn")
 [node name="DamageSmoke" type="GPUParticles3D" parent="." unique_id=463099325]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.466821, 0)
 amount = 48
-lifetime = 2.0
+lifetime = 3.0
 visibility_aabb = AABB(-4.136, -1.9722, -4.21883, 8.3208, 10.788, 8.35393)
 process_material = SubResource("ParticleProcessMaterial_q3l0e")
 draw_pass_1 = SubResource("PlaneMesh_n2k7r")

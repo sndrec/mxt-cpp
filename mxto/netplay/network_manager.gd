@@ -57,6 +57,8 @@ var base_wait_time: float = 1.0 / 60.0
 const JITTER_BUFFER := 0.016
 const RTT_SMOOTHING := 0.1
 const SPEED_ADJUST_STEP := 0.0003
+const SHARED_AHEAD_EXTRA_TICKS := 3.0
+const SHARED_AHEAD_CAP_TICKS := 10.0
 const START_SYNC_SAMPLE_COUNT := 4
 const START_SYNC_PING_INTERVAL_MS := 50
 const START_SYNC_START_DELAY_MS := 750
@@ -1862,7 +1864,9 @@ func _adjust_time_scale() -> void:
 		prof_adjust_time_scale_us_interval += __prof_t1_no_auth - __prof_t0
 		return
 	var current_ahead_ticks = local_tick - clients_target_tick
-	var target_ahead_ticks = lerpf(desired_ahead_ticks, clients_max_ahead_from_server, 0.75)
+	var shared_ahead_limit = max(desired_ahead_ticks, SHARED_AHEAD_CAP_TICKS)
+	var shared_ahead_target = min(clients_max_ahead_from_server, desired_ahead_ticks + SHARED_AHEAD_EXTRA_TICKS, shared_ahead_limit)
+	var target_ahead_ticks = max(desired_ahead_ticks, shared_ahead_target)
 	var diff = target_ahead_ticks - current_ahead_ticks
 	#DebugDraw2D.set_text("local_tick", local_tick)
 	#DebugDraw2D.set_text("clients_server_tick", clients_server_tick)
