@@ -27,7 +27,6 @@ class NetcodeSession : public Object {
 	struct PeerState {
 		int32_t id = 0;
 		int32_t last_received_tick = -1;
-		int32_t authoritative_ack = -1;
 		double last_input_time = 0.0;
 		float desired_ahead = 0.0f;
 		uint8_t active = 0;
@@ -47,10 +46,8 @@ class NetcodeSession : public Object {
 	int32_t latest_authoritative_tick = -1;
 	mutable uint64_t stat_auth_packets = 0;
 	mutable uint64_t stat_auth_frames = 0;
-	mutable uint64_t stat_auth_baseline_inputs = 0;
-	mutable uint64_t stat_auth_delta_frames = 0;
-	mutable uint64_t stat_auth_delta_changed_inputs = 0;
-	mutable uint64_t stat_auth_delta_unchanged_inputs = 0;
+	mutable uint64_t stat_auth_encoded_inputs = 0;
+	mutable uint64_t stat_auth_unchanged_inputs = 0;
 
 	static PlayerInput decay_predicted_input(const PlayerInput& prev);
 	void recalculate_predictions_internal(GameSim* sim, int start_tick, int end_tick);
@@ -75,8 +72,8 @@ public:
 	void store_authoritative_input(int tick, int player_id, godot::PackedByteArray input_bytes);
 	void store_pending_input(int tick, int player_id, godot::PackedByteArray input_bytes);
 	godot::PackedByteArray build_local_input_packet(int first_tick, int count) const;
-	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, int ack_tick, double ahead, double now_sec);
-	godot::PackedByteArray build_authoritative_input_packet(int ack_tick) const;
+	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec);
+	godot::PackedByteArray build_authoritative_input_packet(int last_tick, int max_frame_count) const;
 	godot::Dictionary store_authoritative_input_packet(godot::PackedByteArray packet);
 	godot::Dictionary consume_authoritative_packet_stats();
 	godot::Dictionary get_input_frame_debug(int tick) const;
@@ -85,9 +82,6 @@ public:
 	void set_peer_last_received(int peer_id, int tick, double now_sec);
 	int get_peer_last_received(int peer_id) const;
 	bool peer_has_received(int peer_id) const;
-	void set_peer_authoritative_ack(int peer_id, int ack_tick);
-	int get_peer_authoritative_ack(int peer_id) const;
-	int get_min_peer_authoritative_ack(godot::Array peer_ids) const;
 	void set_peer_desired_ahead(int peer_id, double ahead);
 	double get_max_peer_desired_ahead(godot::Array peer_ids, double fallback) const;
 	double get_peer_last_input_time(int peer_id) const;

@@ -146,8 +146,8 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
 	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count"), &NetcodeSession::build_local_input_packet);
-	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ack_tick", "ahead", "now_sec"), &NetcodeSession::store_pending_input_packet);
-	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "ack_tick"), &NetcodeSession::build_authoritative_input_packet);
+	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec"), &NetcodeSession::store_pending_input_packet);
+	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "last_tick", "max_frame_count"), &NetcodeSession::build_authoritative_input_packet);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet"), &NetcodeSession::store_authoritative_input_packet);
 	ClassDB::bind_method(D_METHOD("consume_authoritative_packet_stats"), &NetcodeSession::consume_authoritative_packet_stats);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
@@ -156,9 +156,6 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_peer_last_received", "peer_id", "tick", "now_sec"), &NetcodeSession::set_peer_last_received);
 	ClassDB::bind_method(D_METHOD("get_peer_last_received", "peer_id"), &NetcodeSession::get_peer_last_received);
 	ClassDB::bind_method(D_METHOD("peer_has_received", "peer_id"), &NetcodeSession::peer_has_received);
-	ClassDB::bind_method(D_METHOD("set_peer_authoritative_ack", "peer_id", "ack_tick"), &NetcodeSession::set_peer_authoritative_ack);
-	ClassDB::bind_method(D_METHOD("get_peer_authoritative_ack", "peer_id"), &NetcodeSession::get_peer_authoritative_ack);
-	ClassDB::bind_method(D_METHOD("get_min_peer_authoritative_ack", "peer_ids"), &NetcodeSession::get_min_peer_authoritative_ack);
 	ClassDB::bind_method(D_METHOD("set_peer_desired_ahead", "peer_id", "ahead"), &NetcodeSession::set_peer_desired_ahead);
 	ClassDB::bind_method(D_METHOD("get_max_peer_desired_ahead", "peer_ids", "fallback"), &NetcodeSession::get_max_peer_desired_ahead);
 	ClassDB::bind_method(D_METHOD("get_peer_last_input_time", "peer_id"), &NetcodeSession::get_peer_last_input_time);
@@ -259,10 +256,8 @@ void NetcodeSession::reset()
 	latest_authoritative_tick = -1;
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
-	stat_auth_baseline_inputs = 0;
-	stat_auth_delta_frames = 0;
-	stat_auth_delta_changed_inputs = 0;
-	stat_auth_delta_unchanged_inputs = 0;
+	stat_auth_encoded_inputs = 0;
+	stat_auth_unchanged_inputs = 0;
 	last_local_input = neutral_input;
 	for (int i = 0; i < MAX_RACERS; ++i) {
 		player_ids[i] = 0;
@@ -284,10 +279,8 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 	latest_authoritative_tick = -1;
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
-	stat_auth_baseline_inputs = 0;
-	stat_auth_delta_frames = 0;
-	stat_auth_delta_changed_inputs = 0;
-	stat_auth_delta_unchanged_inputs = 0;
+	stat_auth_encoded_inputs = 0;
+	stat_auth_unchanged_inputs = 0;
 	for (int i = 0; i < racer_count; ++i) {
 		player_ids[i] = static_cast<int32_t>(static_cast<int64_t>(p_player_ids[i]));
 		cpu_flags[i] = (i < p_cpu_flags.size() && static_cast<bool>(p_cpu_flags[i])) ? 1 : 0;
@@ -369,7 +362,7 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 	return writer.to_pba();
 }
 
-godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, int ack_tick, double ahead, double now_sec)
+godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec)
 {
 	Dictionary stats;
 	stats["start_tick"] = -1;
@@ -389,7 +382,6 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	stats["seen_before"] = seen_before;
 	if (peer_index >= 0) {
 		peer_states[peer_index].desired_ahead = static_cast<float>(ahead);
-		peer_states[peer_index].authoritative_ack = std::max(peer_states[peer_index].authoritative_ack, static_cast<int32_t>(ack_tick));
 	}
 	PacketReader reader(packet);
 	uint8_t count = 0;
@@ -437,14 +429,25 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	return stats;
 }
 
-godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_tick) const
+godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last_tick, int max_frame_count) const
 {
 	PacketWriter writer;
-	const int first_tick = ack_tick + 1;
-	int count = 0;
-	while (count < MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET &&
-		find_frame(authoritative_history, first_tick + count)) {
-		++count;
+	if (max_frame_count <= 0 || last_tick < 0) {
+		writer.write_i32(last_tick + 1);
+		writer.write_u8(0);
+		return writer.to_pba();
+	}
+	max_frame_count = std::min(max_frame_count, MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET);
+	int first_tick = last_tick - max_frame_count + 1;
+	if (first_tick < 0) {
+		first_tick = 0;
+	}
+	while (first_tick <= last_tick && !find_frame(authoritative_history, first_tick)) {
+		++first_tick;
+	}
+	int count = last_tick >= first_tick ? last_tick - first_tick + 1 : 0;
+	while (count > 0 && !find_frame(authoritative_history, first_tick + count - 1)) {
+		--count;
 	}
 	if (!writer.write_i32(first_tick) ||
 		!writer.write_u8(static_cast<uint8_t>(count))) {
@@ -452,9 +455,6 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 	}
 	++stat_auth_packets;
 	stat_auth_frames += static_cast<uint64_t>(count);
-	if (count > 0) {
-		stat_auth_baseline_inputs += static_cast<uint64_t>(racer_count);
-	}
 	EncodedInput previous[MAX_RACERS];
 	const int bitset_bytes = (racer_count + 7) >> 3;
 	for (int f = 0; f < count; ++f) {
@@ -473,11 +473,8 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int ack_
 				++changed_count;
 			}
 		}
-		if (f > 0) {
-			++stat_auth_delta_frames;
-			stat_auth_delta_changed_inputs += static_cast<uint64_t>(changed_count);
-			stat_auth_delta_unchanged_inputs += static_cast<uint64_t>(racer_count - changed_count);
-		}
+		stat_auth_encoded_inputs += static_cast<uint64_t>(changed_count);
+		stat_auth_unchanged_inputs += static_cast<uint64_t>(racer_count - changed_count);
 		if (f > 0 && !writer.write_bytes(changed_bits, bitset_bytes)) {
 			return PackedByteArray();
 		}
@@ -560,16 +557,12 @@ godot::Dictionary NetcodeSession::consume_authoritative_packet_stats()
 	Dictionary stats;
 	stats["auth_packets"] = static_cast<int64_t>(stat_auth_packets);
 	stats["auth_frames"] = static_cast<int64_t>(stat_auth_frames);
-	stats["auth_baseline_inputs"] = static_cast<int64_t>(stat_auth_baseline_inputs);
-	stats["auth_delta_frames"] = static_cast<int64_t>(stat_auth_delta_frames);
-	stats["auth_delta_changed_inputs"] = static_cast<int64_t>(stat_auth_delta_changed_inputs);
-	stats["auth_delta_unchanged_inputs"] = static_cast<int64_t>(stat_auth_delta_unchanged_inputs);
+	stats["auth_encoded_inputs"] = static_cast<int64_t>(stat_auth_encoded_inputs);
+	stats["auth_unchanged_inputs"] = static_cast<int64_t>(stat_auth_unchanged_inputs);
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
-	stat_auth_baseline_inputs = 0;
-	stat_auth_delta_frames = 0;
-	stat_auth_delta_changed_inputs = 0;
-	stat_auth_delta_unchanged_inputs = 0;
+	stat_auth_encoded_inputs = 0;
+	stat_auth_unchanged_inputs = 0;
 	return stats;
 }
 
@@ -643,34 +636,6 @@ int NetcodeSession::get_peer_last_received(int peer_id) const
 bool NetcodeSession::peer_has_received(int peer_id) const
 {
 	return get_peer_last_received(peer_id) >= 0;
-}
-
-void NetcodeSession::set_peer_authoritative_ack(int peer_id, int ack_tick)
-{
-	const int index = ensure_peer_index(static_cast<int32_t>(peer_id));
-	if (index < 0) {
-		return;
-	}
-	peer_states[index].authoritative_ack = std::max(peer_states[index].authoritative_ack, static_cast<int32_t>(ack_tick));
-}
-
-int NetcodeSession::get_peer_authoritative_ack(int peer_id) const
-{
-	const int index = find_peer_index(static_cast<int32_t>(peer_id));
-	return index >= 0 ? peer_states[index].authoritative_ack : -1;
-}
-
-int NetcodeSession::get_min_peer_authoritative_ack(godot::Array p_peer_ids) const
-{
-	int min_ack = -1;
-	for (int i = 0; i < p_peer_ids.size(); ++i) {
-		const int peer_id = static_cast<int32_t>(static_cast<int64_t>(p_peer_ids[i]));
-		const int ack = get_peer_authoritative_ack(peer_id);
-		if (min_ack == -1 || ack < min_ack) {
-			min_ack = ack;
-		}
-	}
-	return min_ack;
 }
 
 void NetcodeSession::set_peer_desired_ahead(int peer_id, double ahead)
