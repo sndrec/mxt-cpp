@@ -4270,7 +4270,7 @@ void GameSim::finish_render_rollback_correction_capture()
 
 namespace {
 constexpr uint32_t MXT_NET_STATE_MAGIC = 0x5354584du; // "MXTS", little-endian.
-constexpr uint16_t MXT_NET_STATE_VERSION = 1;
+constexpr uint16_t MXT_NET_STATE_VERSION = 2;
 
 struct NetStateWriter {
 	std::vector<uint8_t> data;
@@ -4540,20 +4540,76 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		writer.write_pod(active_spark_count);
 	}
 
+#define WRITE_NET_SCALAR(type, name) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		writer.write_pod(soa.name[lane]); \
+	}
+	MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_SCALAR)
+#undef WRITE_NET_SCALAR
+
+#define WRITE_NET_VEC3_COMPONENT(name, component) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		writer.write_pod(soa.name##_##component[lane]); \
+	}
+#define WRITE_NET_VEC3(name) \
+	WRITE_NET_VEC3_COMPONENT(name, x) \
+	WRITE_NET_VEC3_COMPONENT(name, y) \
+	WRITE_NET_VEC3_COMPONENT(name, z)
+	MXT_NET_CAR_VEC3_FIELDS(WRITE_NET_VEC3)
+#undef WRITE_NET_VEC3
+#undef WRITE_NET_VEC3_COMPONENT
+
+#define WRITE_NET_TRANSFORM_COMPONENT(name, component) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		writer.write_pod(soa.name##_##component[lane]); \
+	}
+#define WRITE_NET_TRANSFORM(name) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c0x) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c0y) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c0z) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c1x) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c1y) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c1z) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c2x) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c2y) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, c2z) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, ox) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, oy) \
+	WRITE_NET_TRANSFORM_COMPONENT(name, oz)
+	MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_TRANSFORM)
+#undef WRITE_NET_TRANSFORM
+#undef WRITE_NET_TRANSFORM_COMPONENT
+
+#define WRITE_NET_BASIS_COMPONENT(name, component) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		writer.write_pod(soa.name##_##component[lane]); \
+	}
+#define WRITE_NET_BASIS(name) \
+	WRITE_NET_BASIS_COMPONENT(name, c0x) \
+	WRITE_NET_BASIS_COMPONENT(name, c0y) \
+	WRITE_NET_BASIS_COMPONENT(name, c0z) \
+	WRITE_NET_BASIS_COMPONENT(name, c1x) \
+	WRITE_NET_BASIS_COMPONENT(name, c1y) \
+	WRITE_NET_BASIS_COMPONENT(name, c1z) \
+	WRITE_NET_BASIS_COMPONENT(name, c2x) \
+	WRITE_NET_BASIS_COMPONENT(name, c2y) \
+	WRITE_NET_BASIS_COMPONENT(name, c2z)
+	WRITE_NET_BASIS(basis_physical)
+	WRITE_NET_BASIS(basis_physical_other)
+#undef WRITE_NET_BASIS
+#undef WRITE_NET_BASIS_COMPONENT
+
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-#define WRITE_NET_SCALAR(type, name) writer.write_pod(soa.name[lane]);
-		MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_SCALAR)
-#undef WRITE_NET_SCALAR
-#define WRITE_NET_VEC3(name) writer.write_vec3(LOAD_INDEXED_VEC3(soa, name, lane));
-		MXT_NET_CAR_VEC3_FIELDS(WRITE_NET_VEC3)
-#undef WRITE_NET_VEC3
-#define WRITE_NET_TRANSFORM(name) writer.write_transform(MXT_LOAD_TRANSFORM(soa, name, lane));
-		MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_TRANSFORM)
-#undef WRITE_NET_TRANSFORM
-		writer.write_basis(MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis);
-		writer.write_basis(MXT_LOAD_TRANSFORM(soa, basis_physical_other, lane).basis);
 		if (soa.collision_old_valid[lane]) {
 			writer.write_vec2(soa.collision_old_road_t[lane]);
 			writer.write_vec3(soa.collision_old_spatial_t[lane]);
@@ -4563,21 +4619,50 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_start_transform, lane));
 			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_target_transform, lane));
 		}
-
-		const int point_base = lane * 4;
-		for (int point = 0; point < 4; ++point) {
-			const int p = point_base + point;
-#define WRITE_NET_TILT_SCALAR(type, name) writer.write_pod(soa.tilt_##name[p]);
-			MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_TILT_SCALAR)
-#undef WRITE_NET_TILT_SCALAR
-#define WRITE_NET_TILT_VEC3(name) writer.write_vec3(SimVec3(soa.tilt_##name##_x[p], soa.tilt_##name##_y[p], soa.tilt_##name##_z[p]));
-			MXT_NET_TILT_VEC3_FIELDS(WRITE_NET_TILT_VEC3)
-#undef WRITE_NET_TILT_VEC3
-#define WRITE_NET_WALL_VEC3(name) writer.write_vec3(SimVec3(soa.wall_##name##_x[p], soa.wall_##name##_y[p], soa.wall_##name##_z[p]));
-			MXT_NET_WALL_VEC3_FIELDS(WRITE_NET_WALL_VEC3)
-#undef WRITE_NET_WALL_VEC3
-		}
 	}
+
+#define WRITE_NET_TILT_SCALAR(type, name) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < num_cars; ++i) { \
+			PhysicsCarSoA& soa = *cars[i].soa; \
+			const int p = cars[i].soa_index * 4 + point; \
+			writer.write_pod(soa.tilt_##name[p]); \
+		} \
+	}
+	MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_TILT_SCALAR)
+#undef WRITE_NET_TILT_SCALAR
+
+#define WRITE_NET_TILT_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < num_cars; ++i) { \
+			PhysicsCarSoA& soa = *cars[i].soa; \
+			const int p = cars[i].soa_index * 4 + point; \
+			writer.write_pod(soa.tilt_##name##_##component[p]); \
+		} \
+	}
+#define WRITE_NET_TILT_VEC3(name) \
+	WRITE_NET_TILT_VEC3_COMPONENT(name, x) \
+	WRITE_NET_TILT_VEC3_COMPONENT(name, y) \
+	WRITE_NET_TILT_VEC3_COMPONENT(name, z)
+	MXT_NET_TILT_VEC3_FIELDS(WRITE_NET_TILT_VEC3)
+#undef WRITE_NET_TILT_VEC3
+#undef WRITE_NET_TILT_VEC3_COMPONENT
+
+#define WRITE_NET_WALL_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < num_cars; ++i) { \
+			PhysicsCarSoA& soa = *cars[i].soa; \
+			const int p = cars[i].soa_index * 4 + point; \
+			writer.write_pod(soa.wall_##name##_##component[p]); \
+		} \
+	}
+#define WRITE_NET_WALL_VEC3(name) \
+	WRITE_NET_WALL_VEC3_COMPONENT(name, x) \
+	WRITE_NET_WALL_VEC3_COMPONENT(name, y) \
+	WRITE_NET_WALL_VEC3_COMPONENT(name, z)
+	MXT_NET_WALL_VEC3_FIELDS(WRITE_NET_WALL_VEC3)
+#undef WRITE_NET_WALL_VEC3
+#undef WRITE_NET_WALL_VEC3_COMPONENT
 
 	for (int i = 0; i < trigger_count; ++i) {
 		TriggerCollider* trigger = current_track->trigger_colliders[i];
@@ -4662,28 +4747,83 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	}
 	super_sparks = super_spark_state->sparks;
 
+#define READ_NET_SCALAR(type, name) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		if (!reader.read_pod(soa.name[lane])) return false; \
+	}
+	MXT_NET_CAR_SCALAR_FIELDS(READ_NET_SCALAR)
+#undef READ_NET_SCALAR
+
+#define READ_NET_VEC3_COMPONENT(name, component) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
+	}
+#define READ_NET_VEC3(name) \
+	READ_NET_VEC3_COMPONENT(name, x) \
+	READ_NET_VEC3_COMPONENT(name, y) \
+	READ_NET_VEC3_COMPONENT(name, z)
+	MXT_NET_CAR_VEC3_FIELDS(READ_NET_VEC3)
+#undef READ_NET_VEC3
+#undef READ_NET_VEC3_COMPONENT
+
+#define READ_NET_TRANSFORM_COMPONENT(name, component) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
+	}
+#define READ_NET_TRANSFORM(name) \
+	READ_NET_TRANSFORM_COMPONENT(name, c0x) \
+	READ_NET_TRANSFORM_COMPONENT(name, c0y) \
+	READ_NET_TRANSFORM_COMPONENT(name, c0z) \
+	READ_NET_TRANSFORM_COMPONENT(name, c1x) \
+	READ_NET_TRANSFORM_COMPONENT(name, c1y) \
+	READ_NET_TRANSFORM_COMPONENT(name, c1z) \
+	READ_NET_TRANSFORM_COMPONENT(name, c2x) \
+	READ_NET_TRANSFORM_COMPONENT(name, c2y) \
+	READ_NET_TRANSFORM_COMPONENT(name, c2z) \
+	READ_NET_TRANSFORM_COMPONENT(name, ox) \
+	READ_NET_TRANSFORM_COMPONENT(name, oy) \
+	READ_NET_TRANSFORM_COMPONENT(name, oz)
+	MXT_NET_CAR_TRANSFORM_FIELDS(READ_NET_TRANSFORM)
+#undef READ_NET_TRANSFORM
+#undef READ_NET_TRANSFORM_COMPONENT
+
+#define READ_NET_BASIS_COMPONENT(name, component) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
+	}
+#define READ_NET_BASIS(name) \
+	READ_NET_BASIS_COMPONENT(name, c0x) \
+	READ_NET_BASIS_COMPONENT(name, c0y) \
+	READ_NET_BASIS_COMPONENT(name, c0z) \
+	READ_NET_BASIS_COMPONENT(name, c1x) \
+	READ_NET_BASIS_COMPONENT(name, c1y) \
+	READ_NET_BASIS_COMPONENT(name, c1z) \
+	READ_NET_BASIS_COMPONENT(name, c2x) \
+	READ_NET_BASIS_COMPONENT(name, c2y) \
+	READ_NET_BASIS_COMPONENT(name, c2z) \
+	for (int i = 0; i < num_cars; ++i) { \
+		PhysicsCarSoA& soa = *cars[i].soa; \
+		const int lane = cars[i].soa_index; \
+		soa.name##_ox[lane] = 0.0f; \
+		soa.name##_oy[lane] = 0.0f; \
+		soa.name##_oz[lane] = 0.0f; \
+	}
+	READ_NET_BASIS(basis_physical)
+	READ_NET_BASIS(basis_physical_other)
+#undef READ_NET_BASIS
+#undef READ_NET_BASIS_COMPONENT
+
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-#define READ_NET_SCALAR(type, name) if (!reader.read_pod(soa.name[lane])) return false;
-		MXT_NET_CAR_SCALAR_FIELDS(READ_NET_SCALAR)
-#undef READ_NET_SCALAR
-#define READ_NET_VEC3(name) do { SimVec3 v; if (!reader.read_vec3(v)) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
-		MXT_NET_CAR_VEC3_FIELDS(READ_NET_VEC3)
-#undef READ_NET_VEC3
-#define READ_NET_TRANSFORM(name) do { SimTransform t; if (!reader.read_transform(t)) return false; MXT_STORE_TRANSFORM(soa, name, lane, t); } while (0);
-		MXT_NET_CAR_TRANSFORM_FIELDS(READ_NET_TRANSFORM)
-#undef READ_NET_TRANSFORM
-		SimBasis basis_physical;
-		if (!reader.read_basis(basis_physical)) {
-			return false;
-		}
-		MXT_STORE_TRANSFORM(soa, basis_physical, lane, SimTransform(basis_physical, SimVec3()));
-		SimBasis basis_physical_other;
-		if (!reader.read_basis(basis_physical_other)) {
-			return false;
-		}
-		MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, SimTransform(basis_physical_other, SimVec3()));
 		if (soa.collision_old_valid[lane]) {
 			if (!reader.read_vec2(soa.collision_old_road_t[lane]) ||
 				!reader.read_vec3(soa.collision_old_spatial_t[lane]) ||
@@ -4709,21 +4849,50 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			MXT_STORE_TRANSFORM(soa, restore_start_transform, lane, basis);
 			MXT_STORE_TRANSFORM(soa, restore_target_transform, lane, basis);
 		}
-
-		const int point_base = lane * 4;
-		for (int point = 0; point < 4; ++point) {
-			const int p = point_base + point;
-#define READ_NET_TILT_SCALAR(type, name) if (!reader.read_pod(soa.tilt_##name[p])) return false;
-			MXT_NET_TILT_SCALAR_FIELDS(READ_NET_TILT_SCALAR)
-#undef READ_NET_TILT_SCALAR
-#define READ_NET_TILT_VEC3(name) do { SimVec3 v; if (!reader.read_vec3(v)) return false; soa.tilt_##name##_x[p] = v.x; soa.tilt_##name##_y[p] = v.y; soa.tilt_##name##_z[p] = v.z; } while (0);
-			MXT_NET_TILT_VEC3_FIELDS(READ_NET_TILT_VEC3)
-#undef READ_NET_TILT_VEC3
-#define READ_NET_WALL_VEC3(name) do { SimVec3 v; if (!reader.read_vec3(v)) return false; soa.wall_##name##_x[p] = v.x; soa.wall_##name##_y[p] = v.y; soa.wall_##name##_z[p] = v.z; } while (0);
-			MXT_NET_WALL_VEC3_FIELDS(READ_NET_WALL_VEC3)
-#undef READ_NET_WALL_VEC3
-		}
 	}
+
+#define READ_NET_TILT_SCALAR(type, name) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < num_cars; ++i) { \
+			PhysicsCarSoA& soa = *cars[i].soa; \
+			const int p = cars[i].soa_index * 4 + point; \
+			if (!reader.read_pod(soa.tilt_##name[p])) return false; \
+		} \
+	}
+	MXT_NET_TILT_SCALAR_FIELDS(READ_NET_TILT_SCALAR)
+#undef READ_NET_TILT_SCALAR
+
+#define READ_NET_TILT_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < num_cars; ++i) { \
+			PhysicsCarSoA& soa = *cars[i].soa; \
+			const int p = cars[i].soa_index * 4 + point; \
+			if (!reader.read_pod(soa.tilt_##name##_##component[p])) return false; \
+		} \
+	}
+#define READ_NET_TILT_VEC3(name) \
+	READ_NET_TILT_VEC3_COMPONENT(name, x) \
+	READ_NET_TILT_VEC3_COMPONENT(name, y) \
+	READ_NET_TILT_VEC3_COMPONENT(name, z)
+	MXT_NET_TILT_VEC3_FIELDS(READ_NET_TILT_VEC3)
+#undef READ_NET_TILT_VEC3
+#undef READ_NET_TILT_VEC3_COMPONENT
+
+#define READ_NET_WALL_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < num_cars; ++i) { \
+			PhysicsCarSoA& soa = *cars[i].soa; \
+			const int p = cars[i].soa_index * 4 + point; \
+			if (!reader.read_pod(soa.wall_##name##_##component[p])) return false; \
+		} \
+	}
+#define READ_NET_WALL_VEC3(name) \
+	READ_NET_WALL_VEC3_COMPONENT(name, x) \
+	READ_NET_WALL_VEC3_COMPONENT(name, y) \
+	READ_NET_WALL_VEC3_COMPONENT(name, z)
+	MXT_NET_WALL_VEC3_FIELDS(READ_NET_WALL_VEC3)
+#undef READ_NET_WALL_VEC3
+#undef READ_NET_WALL_VEC3_COMPONENT
 
 	const int local_trigger_count = current_track ? current_track->num_trigger_colliders : 0;
 	if (trigger_count != local_trigger_count) {
