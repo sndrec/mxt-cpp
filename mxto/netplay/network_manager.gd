@@ -78,6 +78,7 @@ var finish_order : Array = []
 var sticker_cooldown_msec := {}
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
+var delayed_peer_ids := {}
 
 const CPU_ID_MIN := 1
 const CPU_ID_MAX := 999
@@ -235,7 +236,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -470,9 +471,14 @@ func _flush_log() -> void:
 	if auth_raw_bytes > 0:
 		auth_compression_ratio = float(auth_payload_bytes) / float(auth_raw_bytes)
 	var state_success := log_state_min_success_2pct if log_state_sent_count > 0 else 1.0
+	var server_behind_ticks = maxi(target_tick - server_tick, 0) if is_server else 0
+	var server_behind_avg := 0.0
+	if log_server_behind_ticks_samples > 0:
+		server_behind_avg = float(log_server_behind_ticks_sum) / float(log_server_behind_ticks_samples)
+	var delayed_peers := delayed_peer_ids.size() if is_server else 0
 
 	var logged_max_ahead: float = max_ahead_from_server if is_server else clients_max_ahead_from_server
-	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(log_state_raw_out) + "," + str(log_state_payload_out) + "," + str(log_state_sent_count) + "," + str(log_state_max_fragments_out) + "," + str(state_success) + "," + str(log_state_payload_in) + "," + str(log_state_raw_in) + "," + str(log_state_recv_count) + "," + str(log_state_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
+	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(server_behind_ticks) + "," + str(server_behind_avg) + "," + str(log_server_behind_ticks_max) + "," + str(delayed_peers) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(log_state_raw_out) + "," + str(log_state_payload_out) + "," + str(log_state_sent_count) + "," + str(log_state_max_fragments_out) + "," + str(state_success) + "," + str(log_state_payload_in) + "," + str(log_state_raw_in) + "," + str(log_state_recv_count) + "," + str(log_state_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
@@ -487,6 +493,9 @@ func _flush_log() -> void:
 	log_flat_server_payload_out = 0
 	log_flat_server_payload_in = 0
 	log_auth_packets_sent = 0
+	log_server_behind_ticks_sum = 0
+	log_server_behind_ticks_samples = 0
+	log_server_behind_ticks_max = 0
 	log_state_raw_out = 0
 	log_state_payload_out = 0
 	log_state_sent_count = 0
@@ -550,6 +559,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	sticker_cooldown_msec.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
+	delayed_peer_ids.clear()
 	clients_server_tick = 0
 	clients_target_tick = 0
 	clients_max_ahead_from_server = 2.0
@@ -674,6 +684,10 @@ func server_process() -> void:
 		target_tick += 1
 		if target_tick > server_tick + MAX_AHEAD_TICKS:
 			target_tick = server_tick + MAX_AHEAD_TICKS
+		var server_behind := maxi(target_tick - server_tick, 0)
+		log_server_behind_ticks_sum += server_behind
+		log_server_behind_ticks_samples += 1
+		log_server_behind_ticks_max = maxi(log_server_behind_ticks_max, server_behind)
 		var loops := 0
 		const MAX_SERVER_TICKS_PER_PROCESS := 8
 		while server_tick < target_tick and loops < MAX_SERVER_TICKS_PER_PROCESS:
@@ -774,6 +788,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	rtt_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
+	delayed_peer_ids.clear()
 	server_netcode_session.clear_peer_state()
 	desired_ahead_ticks = 0.0
 	sent_input_times.clear()
@@ -829,6 +844,7 @@ func join(ip: String, port: int = 27016) -> int:
 	rtt_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
+	delayed_peer_ids.clear()
 	desired_ahead_ticks = 2.0
 	sent_input_times.clear()
 	last_input_time.clear()
@@ -882,6 +898,8 @@ func _on_peer_disconnected(id: int) -> void:
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
 			peer_desired_ahead.erase(id)
+		if delayed_peer_ids.has(id):
+			delayed_peer_ids.erase(id)
 		if player_settings.has(id):
 			player_settings.erase(id)
 		if last_received_tick.has(id):
@@ -1190,6 +1208,32 @@ func _input_frame_value(frame, player_id: int, fallback: PackedByteArray) -> Pac
 			return (frame as Array)[index]
 	return fallback
 
+func _fill_delayed_missing_inputs_for_tick(tick: int) -> void:
+	if !is_server:
+		return
+	var backlog := target_tick - tick
+	var can_mark_new_delayed := backlog >= SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS
+	if !can_mark_new_delayed and delayed_peer_ids.is_empty():
+		return
+	if not pending_inputs.has(tick):
+		pending_inputs[tick] = {}
+	var waiting: Dictionary = pending_inputs[tick]
+	var prev = authoritative_history.get(tick - 1, {})
+	var roster_chk := _get_human_roster()
+	for pid in roster_chk:
+		if waiting.has(pid):
+			continue
+		if !can_mark_new_delayed and !delayed_peer_ids.has(pid):
+			continue
+		if !server_netcode_session.peer_has_received(pid):
+			continue
+		var replacement := _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
+		waiting[pid] = replacement
+		server_netcode_session.store_pending_input(tick, int(pid), replacement)
+		delayed_peer_ids[pid] = true
+		log_server_replacements += 1
+	pending_inputs[tick] = waiting
+
 func _recent_unacked_input_keys(keys: Array) -> Array:
 	var out: Array = []
 	if keys.is_empty():
@@ -1236,6 +1280,7 @@ func collect_server_inputs() -> Dictionary:
 		server_netcode_session.set_peer_last_received(local_id, server_tick, last_input_time[local_id])
 	if server_tick > target_tick:
 		return {}
+	_fill_delayed_missing_inputs_for_tick(server_tick)
 	if !server_netcode_session.server_has_full_input_frame(server_tick):
 		return {}
 	if !server_netcode_session.tick_server_frame(server_game_sim, server_tick):
@@ -1363,6 +1408,8 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float) -> void:
 		if accepted > 0:
 			last_input_time[sender_id] = now_sec
 			last_received_tick[sender_id] = last_tick
+			if last_tick >= server_tick and delayed_peer_ids.has(sender_id):
+				delayed_peer_ids.erase(sender_id)
 		peer_desired_ahead[sender_id] = ahead
 		log_flat_client_payload_in += packet.size()
 		_acc_log_in(12 + packet.size())
@@ -1595,17 +1642,8 @@ func _check_client_stalls() -> void:
 					_on_peer_disconnected(id)
 					if !race_active:
 						_update_player_ids.rpc(player_ids)
-	if target_tick - server_tick > 5 and missing.size() > 0:
-		var prev = authoritative_history.get(server_tick - 1, {})
-		for i in range(roster_chk.size()):
-			var pid = roster_chk[i]
-			if missing.has(pid):
-				if !server_netcode_session.peer_has_received(pid):
-					continue
-				waiting[pid] = _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
-				server_netcode_session.store_pending_input(server_tick, int(pid), waiting[pid])
-				log_server_replacements += 1
-	pending_inputs[server_tick] = waiting
+	if missing.size() > 0:
+		_fill_delayed_missing_inputs_for_tick(server_tick)
 
 func _handle_state(tick: int, state: PackedByteArray) -> void:
 	if !race_active:
@@ -1698,6 +1736,7 @@ func disconnect_from_server() -> void:
 	sticker_cooldown_msec.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
+	delayed_peer_ids.clear()
 	clients_server_tick = 0
 	clients_target_tick = 0
 	clients_max_ahead_from_server = 2.0

@@ -562,6 +562,10 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	stats["start_tick"] = start_tick;
 	stats["count"] = static_cast<int>(count);
 	stats["valid"] = true;
+	if (count > 0 && start_tick + static_cast<int32_t>(count) <= reject_before_tick) {
+		stats["dropped"] = static_cast<int>(count);
+		return stats;
+	}
 
 	int accepted = 0;
 	int dropped = 0;
