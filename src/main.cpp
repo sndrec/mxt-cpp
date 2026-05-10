@@ -443,7 +443,6 @@ namespace {
 
 			const bool needs_restore =
 				c.current_track[i] &&
-				!c.s_boost_active[i] &&
 				(c.restore_state[i] != 0 ||
 				 c.position_current_y[i] < c.current_track[i]->minimum_y ||
 				 c.energy[i] <= 0.0f);
@@ -479,7 +478,7 @@ namespace {
 				c.machine_state[i] |= MACHINESTATE::SIDEATTACKING;
 			if (input.spinattack)
 				c.machine_state[i] |= MACHINESTATE::SPINATTACKING;
-			if (input.boost && c.lap[i] > 1)
+			if (input.boost && c.lap[i] > 1 && !c.s_boost_active[i])
 				c.machine_state[i] |= MACHINESTATE::JUST_PRESSED_BOOST;
 
 			c.g_anim_timer[i] += 1;
@@ -1825,6 +1824,18 @@ void GameSim::process_pending_ko_events()
 				attacker_soa.car_properties[attacker_lane]->max_energy + attacker_soa.ko_energy_bonus[attacker_lane];
 		}
 		attacker_soa.energy[attacker_lane] = attacker_soa.calced_max_energy[attacker_lane];
+		attacker_soa.machine_state[attacker_lane] &= ~(MACHINESTATE::ZEROHP |
+			MACHINESTATE::FALLOUT |
+			MACHINESTATE::TOOKDAMAGE |
+			MACHINESTATE::LOWGRIP);
+		attacker_soa.breakdown_frame_counter[attacker_lane] = 0;
+		attacker_soa.some_breakdown_int[attacker_lane] = 0;
+		attacker_soa.frames_since_death[attacker_lane] = 0;
+		attacker_soa.machine_crashed[attacker_lane] = false;
+		attacker_soa.state_2[attacker_lane] &= ~(0x2u | 0x20u | 0x80u | 0x100u);
+		STORE_INDEXED_VEC3(attacker_soa, visual_rotation, attacker_lane, SimVec3());
+		STORE_INDEXED_VEC3(attacker_soa, unk_vec3_0x4e4, attacker_lane, SimVec3());
+		STORE_INDEXED_VEC3(attacker_soa, unk_vec3_0x4f0, attacker_lane, SimVec3());
 
 		RaceEvent event;
 		event.type = 1;

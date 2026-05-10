@@ -588,6 +588,11 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
         description="Internal flag tracking if this segment has a preview mesh",
         default=False
     )
+    disable_auto_rebake: BoolProperty(
+        name="Disable Auto Rebake",
+        description="Do not automatically rebake this segment's curve matrix when primary controls change",
+        default=False
+    )
     prev_segments: CollectionProperty(type=MXTSegmentRef)
     next_segments: CollectionProperty(type=MXTSegmentRef)
     active_prev_seg_idx: IntProperty(default=0)
@@ -1256,6 +1261,8 @@ def _ensure_timer():
 def schedule_cm_rebake(obj):
     parent = _find_road_parent(obj)
     if parent:
+        if parent.mxt_road_overall_props.disable_auto_rebake:
+            return
         _cm_pending.add(parent.name)
         _mesh_pending.add(parent.name)
         _ensure_timer()
@@ -1363,6 +1370,8 @@ def _process_live_updates():
             name = _cm_pending.pop()
             parent = bpy.data.objects.get(name)
             if parent:
+                if parent.mxt_road_overall_props.disable_auto_rebake:
+                    continue
                 try: _bake_curve_matrix_direct(parent)
                 except Exception as e: print(f"CurvBake {name}: {e}")
 
@@ -1415,6 +1424,8 @@ def mxt_on_depsgraph_update(scene, depsgraph):
              is_primary_control = True
 
         if is_primary_control:
+            if props.disable_auto_rebake:
+                return
             parents_to_rebake_cm.add(parent)
             parents_to_rebuild_mesh.discard(parent) 
             return
@@ -2772,6 +2783,7 @@ class MXTRoad_PT_MainPanel(Panel):
         data_box = layout.box(); data_box.label(text="Data and Generation")
         data_box.prop(road_props, "num_checkpoints_per_segment")
         data_box.prop(road_props, "draw_checkpoints")
+        data_box.prop(road_props, "disable_auto_rebake")
         data_box.separator()
         data_box.operator("mxt_road.generate_curve_matrix", text="Generate CurveMatrix", icon='FCURVE')
         data_box.operator("mxt_road.generate_mesh", text="Generate/Update Mesh", icon='MESH_PLANE')
@@ -3660,7 +3672,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
         
         num_x = props.horiz_subdivs
         tx_1d = np.linspace(-1.0, 1.0, num_x, dtype=np.float64)
-        if props.segment_type == 'BEZIER':
+        if props.segment_type == 'BEZIER' and not getattr(props, "disable_auto_rebake", False):
             ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples(helper, road_parent, props.mesh_subdivision_length, math.radians(props.mesh_subdivision_angle_deg))
         else:
             ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples_from_fcurves(helper, props.mesh_subdivision_length, math.radians(props.mesh_subdivision_angle_deg))

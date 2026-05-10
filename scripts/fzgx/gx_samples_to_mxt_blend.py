@@ -1,0 +1,933 @@
+#!/usr/bin/env python3
+"""Create an MXT track-editor .blend and .mxt_track from GX sampler JSON.
+
+Run through Blender:
+  blender --background --python scripts/fzgx/gx_samples_to_mxt_blend.py -- samples.json out.blend --export out.mxt_track
+"""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import importlib.util
+import json
+import math
+from pathlib import Path
+
+import bpy
+from mathutils import Matrix, Quaternion, Vector
+
+
+DEFAULT_PLUGIN = Path(r"B:\programming\mxt-cpp\track-editor-blender-plugin\mxt_track_editor.py")
+
+
+def parse_args() -> argparse.Namespace:
+    import sys
+
+    args = sys.argv
+    if "--" in args:
+        args = args[args.index("--") + 1 :]
+    else:
+        args = []
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("samples_json", type=Path)
+    parser.add_argument("blend_out", type=Path)
+    parser.add_argument("--export", type=Path, default=None, help="Optional .mxt_track output path")
+    parser.add_argument("--plugin", type=Path, default=DEFAULT_PLUGIN)
+    parser.add_argument("--track-name", default=None)
+    parser.add_argument("--max-samples-per-segment", type=int, default=192)
+    parser.add_argument("--checkpoint-stride", type=int, default=8)
+    return parser.parse_args(args)
+
+
+def load_plugin(path: Path):
+    spec = importlib.util.spec_from_file_location("mxt_track_editor", str(path))
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load plugin from {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.register()
+    return module
+
+
+def clear_scene() -> None:
+    for obj in list(bpy.data.objects):
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for collection in (bpy.data.meshes, bpy.data.curves, bpy.data.actions, bpy.data.materials):
+        for item in list(collection):
+            if item.users == 0:
+                collection.remove(item)
+
+
+def ensure_material(name: str, color: tuple[float, float, float, float]) -> None:
+    mat = bpy.data.materials.get(name)
+    if mat is None:
+        mat = bpy.data.materials.new(name)
+    mat.diffuse_color = color
+
+
+def ensure_preview_materials() -> None:
+    ensure_material("track_surface", (0.42, 0.42, 0.44, 1.0))
+    ensure_material("track_rail", (0.78, 0.78, 0.82, 1.0))
+    ensure_material("embed_border", (0.03, 0.03, 0.035, 1.0))
+    ensure_material("embed_ice", (0.35, 0.75, 1.0, 1.0))
+    ensure_material("embed_recharge", (0.05, 0.95, 0.35, 1.0))
+    ensure_material("embed_dirt", (0.58, 0.36, 0.16, 1.0))
+    ensure_material("embed_lava", (1.0, 0.16, 0.04, 1.0))
+    ensure_material("embed_hole", (0.0, 0.0, 0.0, 1.0))
+
+
+def vec(values) -> Vector:
+    return Vector((float(values[0]), float(values[1]), float(values[2])))
+
+
+def safe_normal(v: Vector, fallback: Vector) -> Vector:
+    if v.length_squared < 1.0e-10:
+        return fallback.normalized()
+    return v.normalized()
+
+
+def sample_half_width(sample: dict) -> float:
+    if "track_width_or_radius" in sample:
+        if sample.get("shape") in {"CYLINDER", "CYLINDER_OPEN", "PIPE", "PIPE_OPEN"}:
+            return max(1.0, 0.5 * abs(float(sample["track_width_or_radius"])))
+        return max(1.0, 0.5 * abs(float(sample["track_width_or_radius"])))
+    return 1.0
+
+
+def sample_is_modulated(sample: dict) -> bool:
+    return (int(sample.get("source_piece_word", 0)) & 0x00200000) != 0
+
+
+def sample_shape_scale(sample: dict) -> float:
+    if sample.get("shape") in {"ROUNDED_SQUARE", "ROUNDED_SQUARE_OPEN"}:
+        return 1.0
+    return sample_half_width(sample)
+
+
+def sample_round_pipe_y_radius(sample: dict) -> float:
+    half_width = sample_half_width(sample)
+    current_scale = sample.get("track_current_scale", [1.0, 1.0, 1.0])
+    scale_x = abs(float(current_scale[0])) if len(current_scale) > 0 else 1.0
+    scale_y = abs(float(current_scale[1])) if len(current_scale) > 1 else scale_x
+    if scale_x <= 1.0e-6:
+        return half_width
+    return max(1.0e-6, half_width * (scale_y / scale_x))
+
+
+def sample_scale_vector(sample: dict, segment_is_modulated: bool) -> Vector:
+    if segment_is_modulated:
+        return Vector((
+            sample_half_width(sample),
+            1.0,
+            1.0,
+        ))
+    if sample_is_round_pipe_family(sample):
+        return Vector((
+            sample_half_width(sample),
+            sample_round_pipe_y_radius(sample),
+            1.0,
+        ))
+    shape_scale = sample_shape_scale(sample)
+    return Vector((shape_scale, shape_scale, 1.0))
+
+
+def sample_rounded_width(sample: dict) -> float:
+    width = abs(float(sample.get("track_width_or_radius", 0.0)))
+    if width <= 0.0:
+        width = abs(float(sample.get("track_scl_x", 0.0))) + abs(float(sample.get("track_scl_y", 0.0)))
+    return max(1.0, width)
+
+
+def sample_rounded_height(sample: dict) -> float:
+    height = abs(float(sample.get("track_scl_y", 0.0)))
+    if height <= 0.0:
+        height = abs(float(sample.get("rounded_height", 0.0)))
+    return max(1.0, height)
+
+
+def sample_rounded_radius(sample: dict) -> float:
+    radius = sample_rounded_height(sample) * 0.5
+    return max(0.0, radius)
+
+
+def sample_frame(samples: list[dict], index: int, closed: bool) -> tuple[Vector, Vector, Vector, Vector, float]:
+    center = vec(samples[index]["center"])
+    right_edge = vec(samples[index]["right"])
+    left_edge = vec(samples[index]["left"])
+    right = safe_normal(
+        vec(samples[index]["basis_right"]) if "basis_right" in samples[index] else left_edge - right_edge,
+        Vector((1.0, 0.0, 0.0)),
+    )
+
+    if "basis_forward" in samples[index] and "basis_up" in samples[index]:
+        forward = safe_normal(vec(samples[index]["basis_forward"]), Vector((0.0, 0.0, 1.0)))
+        up = safe_normal(vec(samples[index]["basis_up"]), Vector((0.0, 1.0, 0.0)))
+        right = safe_normal(up.cross(forward), right)
+        up = safe_normal(forward.cross(right), up)
+    else:
+        if len(samples) == 1:
+            forward = Vector((0.0, 0.0, 1.0))
+        elif index == 0:
+            forward = vec(samples[1]["center"]) - center
+        elif index + 1 == len(samples):
+            if closed and len(samples) > 2:
+                forward = vec(samples[0]["center"]) - vec(samples[index - 1]["center"])
+            else:
+                forward = center - vec(samples[index - 1]["center"])
+        else:
+            forward = vec(samples[index + 1]["center"]) - vec(samples[index - 1]["center"])
+        forward = safe_normal(forward, Vector((0.0, 0.0, 1.0)))
+        up = safe_normal(forward.cross(right), Vector((0.0, 1.0, 0.0)))
+        right = safe_normal(up.cross(forward), right)
+    half_width = sample_half_width(samples[index])
+    return center, right, up, forward, half_width
+
+
+def quat_from_axes(right: Vector, up: Vector, forward: Vector) -> Quaternion:
+    mat = Matrix(
+        (
+            (right.x, up.x, forward.x),
+            (right.y, up.y, forward.y),
+            (right.z, up.z, forward.z),
+        )
+    )
+    return mat.to_quaternion()
+
+
+def set_linear_x_fcurves(action) -> None:
+    for fcu in action.fcurves:
+        keyframes = fcu.keyframe_points
+        for index, kp in enumerate(keyframes):
+            kp.interpolation = "BEZIER"
+            kp.handle_left_type = "LINEAR_X"
+            kp.handle_right_type = "LINEAR_X"
+            if index > 0:
+                prev_kp = keyframes[index - 1]
+                dx_prev = kp.co.x - prev_kp.co.x
+                slope = (kp.co.y - prev_kp.co.y) / max(1.0e-9, dx_prev)
+                kp.handle_left.x = kp.co.x - dx_prev / 3.0
+                kp.handle_left.y = kp.co.y - slope * dx_prev / 3.0
+            else:
+                kp.handle_left = kp.co
+            if index + 1 < len(keyframes):
+                next_kp = keyframes[index + 1]
+                dx_next = next_kp.co.x - kp.co.x
+                slope = (next_kp.co.y - kp.co.y) / max(1.0e-9, dx_next)
+                kp.handle_right.x = kp.co.x + dx_next / 3.0
+                kp.handle_right.y = kp.co.y + slope * dx_next / 3.0
+            else:
+                kp.handle_right = kp.co
+        fcu.update()
+
+
+def set_plugin_smooth_fcurves(action) -> None:
+    for fcu in action.fcurves:
+        keyframes = fcu.keyframe_points
+        for kp in keyframes:
+            kp.interpolation = "BEZIER"
+        if len(keyframes) < 2:
+            fcu.update()
+            continue
+        for index, kp in enumerate(keyframes):
+            prev_kp = keyframes[index - 1] if index > 0 else None
+            next_kp = keyframes[index + 1] if index + 1 < len(keyframes) else None
+            if prev_kp and next_kp:
+                slope_prev = (kp.co.y - prev_kp.co.y) / max(1.0e-9, kp.co.x - prev_kp.co.x)
+                slope_next = (next_kp.co.y - kp.co.y) / max(1.0e-9, next_kp.co.x - kp.co.x)
+                slope = 0.5 * (slope_prev + slope_next)
+                dx_prev = kp.co.x - prev_kp.co.x
+                dx_next = next_kp.co.x - kp.co.x
+                kp.handle_left_type = "LINEAR_X"
+                kp.handle_left.x = kp.co.x - dx_prev / 3.0
+                kp.handle_left.y = kp.co.y - slope * dx_prev / 3.0
+                kp.handle_right_type = "LINEAR_X"
+                kp.handle_right.x = kp.co.x + dx_next / 3.0
+                kp.handle_right.y = kp.co.y + slope * dx_next / 3.0
+            elif prev_kp:
+                slope = (kp.co.y - prev_kp.co.y) / max(1.0e-9, kp.co.x - prev_kp.co.x)
+                dx_prev = kp.co.x - prev_kp.co.x
+                kp.handle_left_type = "LINEAR_X"
+                kp.handle_left.x = kp.co.x - dx_prev / 3.0
+                kp.handle_left.y = kp.co.y - slope * dx_prev / 3.0
+                kp.handle_right_type = "LINEAR_X"
+                kp.handle_right = kp.co
+            elif next_kp:
+                slope = (next_kp.co.y - kp.co.y) / max(1.0e-9, next_kp.co.x - kp.co.x)
+                dx_next = next_kp.co.x - kp.co.x
+                kp.handle_right_type = "LINEAR_X"
+                kp.handle_right.x = kp.co.x + dx_next / 3.0
+                kp.handle_right.y = kp.co.y + slope * dx_next / 3.0
+                kp.handle_left_type = "LINEAR_X"
+                kp.handle_left = kp.co
+        fcu.update()
+
+
+def set_fcurve_linear_x(fcu) -> None:
+    if not fcu:
+        return
+    keyframes = fcu.keyframe_points
+    for index, kp in enumerate(keyframes):
+        kp.interpolation = "BEZIER"
+        kp.handle_left_type = "LINEAR_X"
+        kp.handle_right_type = "LINEAR_X"
+        if index > 0:
+            prev_kp = keyframes[index - 1]
+            dx_prev = kp.co.x - prev_kp.co.x
+            slope = (kp.co.y - prev_kp.co.y) / max(1.0e-9, dx_prev)
+            kp.handle_left.x = kp.co.x - dx_prev / 3.0
+            kp.handle_left.y = kp.co.y - slope * dx_prev / 3.0
+        else:
+            kp.handle_left = kp.co
+        if index + 1 < len(keyframes):
+            next_kp = keyframes[index + 1]
+            dx_next = next_kp.co.x - kp.co.x
+            slope = (next_kp.co.y - kp.co.y) / max(1.0e-9, dx_next)
+            kp.handle_right.x = kp.co.x + dx_next / 3.0
+            kp.handle_right.y = kp.co.y + slope * dx_next / 3.0
+        else:
+            kp.handle_right = kp.co
+    fcu.update()
+
+
+def add_constant_helper(parent, name: str, value: float):
+    helper = bpy.data.objects.new(name, None)
+    helper.empty_display_type = "SPHERE"
+    helper.empty_display_size = 0.0
+    bpy.context.collection.objects.link(helper)
+    helper.parent = parent
+    helper.animation_data_create()
+    action = bpy.data.actions.new(f"{name}_curve")
+    helper.animation_data.action = action
+    for frame in (0.0, 100.0):
+        helper.location.x = value
+        helper.keyframe_insert(data_path="location", index=0, frame=frame)
+    set_linear_x_fcurves(action)
+    return helper
+
+
+def add_sampled_value_helper(parent, name: str, group: list[dict], value_fn):
+    helper = bpy.data.objects.new(name, None)
+    helper.empty_display_type = "SPHERE"
+    helper.empty_display_size = 0.0
+    bpy.context.collection.objects.link(helper)
+    helper.parent = parent
+    helper.animation_data_create()
+    action = bpy.data.actions.new(f"{name}_curve")
+    helper.animation_data.action = action
+
+    count = len(group)
+    for i, sample in enumerate(group):
+        frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+        helper.location.x = float(value_fn(sample))
+        helper.keyframe_insert(data_path="location", index=0, frame=frame)
+    set_plugin_smooth_fcurves(action)
+    return helper
+
+
+def add_embed_helper(parent, name: str, entries: list[tuple[float, float, float]]):
+    helper = bpy.data.objects.new(name, None)
+    helper.empty_display_type = "SPHERE"
+    helper.empty_display_size = 0.0
+    bpy.context.collection.objects.link(helper)
+    helper.parent = parent
+    helper.animation_data_create()
+    action = bpy.data.actions.new(f"{name}_embedCurves")
+    helper.animation_data.action = action
+
+    for ty, left_tx, right_tx in entries:
+        frame = max(0.0, min(100.0, ty * 100.0))
+        helper.location.y = left_tx
+        helper.keyframe_insert(data_path="location", index=1, frame=frame)
+        helper.location.z = right_tx
+        helper.keyframe_insert(data_path="location", index=2, frame=frame)
+    set_linear_x_fcurves(action)
+    return helper
+
+
+def add_gx_modulation_helper(parent, name: str, profile: dict, group: list[dict]):
+    helper = bpy.data.objects.new(name, None)
+    helper.empty_display_type = "SPHERE"
+    helper.empty_display_size = 0.0
+    bpy.context.collection.objects.link(helper)
+    helper.parent = parent
+    helper.animation_data_create()
+    action = bpy.data.actions.new(f"{name}_gxModulation")
+    helper.animation_data.action = action
+
+    keys = list(profile.get("keys", [])) if profile else []
+    if keys:
+        t0 = float(keys[0]["time"])
+        t1 = float(keys[-1]["time"])
+        span = t1 - t0
+        if abs(span) < 1.0e-6:
+            span = 1.0
+        entries = []
+        for key in keys:
+            gx_time = float(key["time"])
+            norm = (gx_time - t0) / span
+            frame = max(0.0, min(100.0, (1.0 - norm) * 100.0))
+            entries.append((frame, key))
+        entries.sort(key=lambda entry: entry[0])
+        for frame, key in entries:
+            helper.location.y = float(key["value"])
+            helper.keyframe_insert(data_path="location", index=1, frame=frame)
+        fcu = action.fcurves.find("location", index=1)
+        if fcu:
+            for i, kp in enumerate(fcu.keyframe_points):
+                frame, key = entries[i]
+                prev_frame = entries[i - 1][0] if i > 0 else frame
+                next_frame = entries[i + 1][0] if i + 1 < len(entries) else frame
+                slope_left = (-span / 100.0) * float(key.get("tangent_out", 0.0))
+                slope_right = (-span / 100.0) * float(key.get("tangent_in", 0.0))
+                kp.interpolation = "BEZIER"
+                kp.handle_left_type = "FREE"
+                kp.handle_right_type = "FREE"
+                if i > 0:
+                    dx = (frame - prev_frame) / 3.0
+                    kp.handle_left.x = frame - dx
+                    kp.handle_left.y = float(key["value"]) - slope_left * dx
+                else:
+                    kp.handle_left = kp.co
+                if i + 1 < len(entries):
+                    dx = (next_frame - frame) / 3.0
+                    kp.handle_right.x = frame + dx
+                    kp.handle_right.y = float(key["value"]) + slope_right * dx
+                else:
+                    kp.handle_right = kp.co
+            fcu.update()
+    else:
+        fallback = float(profile.get("fallback_height", 0.0)) if profile else 0.0
+        for frame in (0.0, 100.0):
+            helper.location.y = fallback
+            helper.keyframe_insert(data_path="location", index=1, frame=frame)
+
+    count = len(group)
+    for i, sample in enumerate(group):
+        frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+        if sample_is_modulated(sample):
+            current_scale = sample.get("track_current_scale", [1.0, 1.0, 1.0])
+            effect = max(1.0e-6, abs(float(current_scale[1])))
+        else:
+            effect = 0.0
+        helper.location.z = effect
+        helper.keyframe_insert(data_path="location", index=2, frame=frame)
+    set_fcurve_linear_x(action.fcurves.find("location", index=2))
+    if not keys:
+        set_fcurve_linear_x(action.fcurves.find("location", index=1))
+    return helper
+
+
+def add_open_helper(parent, name: str, group: list[dict] | None = None):
+    helper = bpy.data.objects.new(name, None)
+    helper.empty_display_type = "SPHERE"
+    helper.empty_display_size = 0.0
+    bpy.context.collection.objects.link(helper)
+    helper.parent = parent
+    helper.animation_data_create()
+    action = bpy.data.actions.new(f"{name}_curve")
+    helper.animation_data.action = action
+
+    if group and group[0].get("shape") in {"CYLINDER_OPEN", "PIPE_OPEN"}:
+        count = len(group)
+        for i, sample in enumerate(group):
+            frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+            helper.location.x = max(0.0, float(sample.get("track_hcylin", 1.0)))
+            helper.keyframe_insert(data_path="location", index=0, frame=frame)
+            helper.location.y = 0.0
+            helper.keyframe_insert(data_path="location", index=1, frame=frame)
+        set_linear_x_fcurves(action)
+        return helper
+
+    for frame in (0.0, 100.0):
+        helper.location.x = 1.0
+        helper.keyframe_insert(data_path="location", index=0, frame=frame)
+        helper.location.y = 0.0
+        helper.keyframe_insert(data_path="location", index=1, frame=frame)
+    set_linear_x_fcurves(action)
+    return helper
+
+
+def terrain_bands(sample: dict, embed_type: str) -> list[dict]:
+    bands = [
+        terrain
+        for terrain in sample.get("terrain", [])
+        if terrain.get("type") == embed_type
+    ]
+    bands.sort(key=lambda band: (float(band.get("left_tx", -1.0)) + float(band.get("right_tx", 1.0))) * 0.5)
+    return bands
+
+
+def add_terrain_embeds(parent, group: list[dict]) -> None:
+    props = parent.mxt_road_overall_props
+    count = len(group)
+    if count < 2:
+        return
+
+    for embed_type in ("RECHARGE", "DIRT", "ICE", "LAVA"):
+        max_band_count = max((len(terrain_bands(sample, embed_type)) for sample in group), default=0)
+        if max_band_count == 0:
+            continue
+
+        run_entries: list[tuple[float, float, float]] = []
+        run_start_t = 0.0
+        run_index = 0
+
+        def flush_run() -> None:
+            nonlocal run_entries, run_start_t, run_index
+            if len(run_entries) < 2:
+                run_entries = []
+                return
+            emb = props.embeds.add()
+            emb.label = f"GX {embed_type.title()} {run_index}"
+            emb.embed_type = embed_type
+            emb.start_t = max(0.0, min(1.0, run_start_t))
+            emb.end_t = max(0.0, min(1.0, run_entries[-1][0]))
+            emb.helper = add_embed_helper(parent, f"{parent.name}_{embed_type}_{run_index:02d}", run_entries)
+            run_index += 1
+            run_entries = []
+
+        for band_index in range(max_band_count):
+            for sample_index, sample in enumerate(group):
+                ty = 0.0 if count <= 1 else sample_index / (count - 1)
+                bands = terrain_bands(sample, embed_type)
+                if band_index >= len(bands):
+                    flush_run()
+                    continue
+                band = bands[band_index]
+                left_tx = float(band.get("left_tx", -1.0))
+                right_tx = float(band.get("right_tx", 1.0))
+                if not run_entries:
+                    run_start_t = ty
+                run_entries.append((ty, left_tx, right_tx))
+            flush_run()
+
+
+def group_rail_height(group: list[dict], key: str) -> float:
+    values = []
+    for sample in group:
+        raw_height = max(0.0, float(sample.get(key, 0.0)))
+        if raw_height <= 0.0:
+            values.append(0.0)
+        elif sample_is_modulated(sample):
+            values.append(raw_height)
+        else:
+            half_width = sample_half_width(sample)
+            values.append(raw_height / max(1.0, half_width))
+    return max(values) if values else 0.0
+
+
+def add_segment(name: str, group: list[dict], closed: bool):
+    bpy.ops.object.empty_add(type="PLAIN_AXES", radius=1.0, location=(0.0, 0.0, 0.0))
+    parent = bpy.context.active_object
+    parent.name = name
+    props = parent.mxt_road_overall_props
+    props.is_mxt_road_segment_parent = True
+    props.road_shape_type = group[0]["shape"]
+    if sample_is_round_pipe_family(group[0]):
+        props.horiz_subdivs = 17
+        props.mesh_subdivision_length = 4.0
+        props.mesh_subdivision_angle_deg = 2.0
+    else:
+        props.horiz_subdivs = 9
+        props.mesh_subdivision_length = 20.0
+        props.mesh_subdivision_angle_deg = 8.0
+    props.rail_height_left = group_rail_height(group, "rail_height_left")
+    props.rail_height_right = group_rail_height(group, "rail_height_right")
+    props.disable_auto_rebake = True
+    props.draw_embeds = True
+
+    helper = bpy.data.objects.new(f"{name}_CurveMatrixHelper", None)
+    helper.empty_display_type = "PLAIN_AXES"
+    helper.empty_display_size = 0.0
+    helper.rotation_mode = "QUATERNION"
+    bpy.context.collection.objects.link(helper)
+    helper.hide_set(True)
+    helper.parent = parent
+    props.curve_matrix_helper_empty = helper
+    helper.animation_data_create()
+    action = bpy.data.actions.new(f"{name}_CurveMatrix")
+    helper.animation_data.action = action
+
+    rounded = props.road_shape_type in {"ROUNDED_SQUARE", "ROUNDED_SQUARE_OPEN"}
+    open_shape = props.road_shape_type in {"CYLINDER_OPEN", "PIPE_OPEN", "ROUNDED_SQUARE_OPEN"}
+    segment_is_modulated = sample_is_modulated(group[0])
+    if rounded:
+        props.width_helper = add_sampled_value_helper(
+            parent, f"{name}_WidthHelper", group, sample_rounded_width
+        )
+        props.height_helper = add_sampled_value_helper(
+            parent, f"{name}_HeightHelper", group, sample_rounded_height
+        )
+        props.radius_helper = add_sampled_value_helper(
+            parent, f"{name}_RadiusHelper", group, sample_rounded_radius
+        )
+    if open_shape:
+        props.openness_helper = add_open_helper(parent, f"{name}_OpennessHelper", group)
+    if segment_is_modulated:
+        mod = props.modulations.add()
+        mod.label = "GX Profile"
+        mod.helper = add_gx_modulation_helper(
+            parent,
+            f"{name}_GXProfileModulation",
+            group[0].get("_road_modulation_profile") or {},
+            group,
+        )
+
+    count = len(group)
+    prev_quat: Quaternion | None = None
+    for i, sample in enumerate(group):
+        frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+        center, right, up, forward, half_width = sample_frame(group, i, closed)
+        quat = quat_from_axes(right, up, forward)
+        if prev_quat is not None and prev_quat.dot(quat) < 0.0:
+            quat = Quaternion((-quat.w, -quat.x, -quat.y, -quat.z))
+        prev_quat = quat.copy()
+        scale_value = sample_scale_vector(sample, segment_is_modulated)
+
+        helper.location = center
+        helper.rotation_quaternion = quat
+        helper.scale = scale_value
+        helper.keyframe_insert(data_path="location", frame=frame)
+        helper.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+        helper.keyframe_insert(data_path="scale", frame=frame)
+    if sample_is_round_pipe_family(group[0]):
+        set_linear_x_fcurves(action)
+    else:
+        set_plugin_smooth_fcurves(action)
+
+    cp_stride = max(1, math.ceil(count / 32))
+    cp_indices = list(range(0, count, cp_stride))
+    if cp_indices[-1] != count - 1:
+        cp_indices.append(count - 1)
+    cp_positions = [vec(group[sample_index]["center"]) for sample_index in cp_indices]
+    for cp_i, sample_index in enumerate(cp_indices):
+        center, right, up, forward, _half_width = sample_frame(group, sample_index, closed)
+        cp = bpy.data.objects.new(f"{name}.CP.{cp_i:03d}", None)
+        cp.empty_display_type = "PLAIN_AXES"
+        cp.empty_display_size = 1.0
+        cp.location = center
+        cp.rotation_mode = "QUATERNION"
+        cp.rotation_quaternion = quat_from_axes(right, up, forward)
+        cp.scale = Vector((max(1.0, sample_shape_scale(group[sample_index])),) * 3)
+        cp.parent = parent
+        bpy.context.collection.objects.link(cp)
+        cp.mxt_cp_data.is_mxt_control_point = True
+        cp.mxt_cp_data.time = 0.0 if count <= 1 else sample_index / (count - 1)
+        if cp_i > 0:
+            cp.mxt_cp_data.handle_in_length = max(0.001, (cp_positions[cp_i] - cp_positions[cp_i - 1]).length / 3.0)
+        if cp_i + 1 < len(cp_positions):
+            cp.mxt_cp_data.handle_out_length = max(0.001, (cp_positions[cp_i + 1] - cp_positions[cp_i]).length / 3.0)
+
+    checkpoint_stride = max(1, min(32, count - 1))
+    checkpoint_stride = max(1, min(checkpoint_stride, 8))
+    i = 0
+    while i + 1 < count:
+        j = min(count - 1, i + checkpoint_stride)
+        start = group[i]
+        end = group[j]
+        p0, r0, u0, f0, w0 = sample_frame(group, i, closed)
+        p1, r1, u1, f1, w1 = sample_frame(group, j, closed)
+        cp = props.checkpoints.add()
+        cp.start_t = 0.0 if count <= 1 else i / (count - 1)
+        cp.end_t = 0.0 if count <= 1 else j / (count - 1)
+        cp.pos_start = p0
+        cp.pos_end = p1
+        cp.basis_start = [r0.x, r0.y, r0.z, u0.x, u0.y, u0.z, f0.x, f0.y, f0.z]
+        cp.basis_end = [r1.x, r1.y, r1.z, u1.x, u1.y, u1.z, f1.x, f1.y, f1.z]
+        cp.x_rad_start = w0
+        cp.x_rad_end = w1
+        cp.y_rad_start = w0
+        cp.y_rad_end = w1
+        cp.distance = max(0.0, float(end["distance"]) - float(start["distance"])) or (p1 - p0).length
+        i = j
+
+    add_terrain_embeds(parent, group)
+    return parent
+
+
+def sample_distance(a: dict, b: dict) -> float:
+    return (vec(a["center"]) - vec(b["center"])).length
+
+
+def sample_is_round_pipe_family(sample: dict) -> bool:
+    return sample.get("shape") in {"CYLINDER", "CYLINDER_OPEN", "PIPE", "PIPE_OPEN"}
+
+
+def samples_can_share_boundary(a: dict, b: dict) -> bool:
+    a_round = sample_is_round_pipe_family(a)
+    b_round = sample_is_round_pipe_family(b)
+    if a_round != b_round:
+        return False
+    return True
+
+
+def samples_can_stitch_boundary(a: dict, b: dict) -> bool:
+    if samples_can_share_boundary(a, b):
+        return True
+    return sample_is_round_pipe_family(a) and not sample_is_round_pipe_family(b)
+
+
+def sample_seam_position(sample: dict) -> Vector:
+    if sample_is_round_pipe_family(sample) and "track_anchor" in sample:
+        return vec(sample["track_anchor"])
+    return vec(sample["center"])
+
+
+def sample_seam_distance(a: dict, b: dict) -> float:
+    return (sample_seam_position(a) - sample_seam_position(b)).length
+
+
+def split_samples(
+    samples: list[dict],
+    max_samples: int,
+) -> list[list[dict]]:
+    groups: list[list[dict]] = []
+    current: list[dict] = []
+    for sample in samples:
+        rail_cut = bool(
+            current
+            and (
+                abs(float(sample.get("rail_height_left", 0.0)) - float(current[-1].get("rail_height_left", 0.0))) > 0.01
+                or abs(float(sample.get("rail_height_right", 0.0)) - float(current[-1].get("rail_height_right", 0.0))) > 0.01
+            )
+        )
+        hard_gap = bool(current and sample.get("authored_gap_before", False))
+        stream_break = bool(current and sample.get("stream_break_before", False))
+        soft_cut = bool(
+            current
+            and (
+                sample["shape"] != current[-1]["shape"]
+                or rail_cut
+                or len(current) >= max(2, max_samples)
+            )
+        )
+        if (
+            current
+            and (hard_gap or stream_break or soft_cut)
+        ):
+            prev_sample = current[-1]
+            share_boundary = bool(
+                not hard_gap
+                and not stream_break
+                and (sample["shape"] != prev_sample["shape"] or rail_cut)
+                and samples_can_share_boundary(prev_sample, sample)
+            )
+            if len(current) >= 2:
+                if share_boundary:
+                    groups.append(current + [sample])
+                else:
+                    groups.append(current)
+            if hard_gap or stream_break:
+                current = [sample]
+            elif sample["shape"] != prev_sample["shape"] or rail_cut:
+                current = [prev_sample, sample] if share_boundary else [sample]
+            else:
+                current = [prev_sample, sample]
+        else:
+            current.append(sample)
+    if len(current) >= 2:
+        groups.append(current)
+    return groups
+
+
+def append_distinct_sample(group: list[dict], sample: dict, epsilon: float = 0.001) -> bool:
+    if not group:
+        group.append(sample)
+        return True
+    if sample_distance(group[-1], sample) <= epsilon:
+        return False
+    group.append(sample)
+    return True
+
+
+def prepend_distinct_boundary_sample(group: list[dict], sample: dict, epsilon: float = 0.001) -> bool:
+    if not group:
+        group.insert(0, sample)
+        return True
+    if sample_distance(sample, group[0]) <= epsilon:
+        return False
+
+    boundary = copy.deepcopy(sample)
+    boundary["shape"] = group[0]["shape"]
+    boundary["source_piece_word"] = group[0].get("source_piece_word", boundary.get("source_piece_word", 0))
+    boundary["_synthetic_boundary"] = True
+    group.insert(0, boundary)
+    return True
+
+
+def sample_sequence(sample: dict) -> int:
+    return int(sample.get("sample_sequence", -1))
+
+
+def max_cross_extent(sample: dict) -> float:
+    return max(1.0, sample_half_width(sample))
+
+
+def extend_adjacent_boundaries(
+    stream_groups: list[tuple[int, list[list[dict]]]],
+    closed: bool,
+) -> None:
+    all_groups = [group for _stream_index, groups in stream_groups for group in groups]
+    if len(all_groups) < 2:
+        return
+    max_sequence = max((sample_sequence(group[-1]) for group in all_groups), default=-1)
+
+    for group in all_groups:
+        end_sample = group[-1]
+        end_sequence = sample_sequence(end_sample)
+        best_next: dict | None = None
+        best_next_group: list[dict] | None = None
+        best_distance = 1.0e30
+        for candidate in all_groups:
+            if candidate is group:
+                continue
+            start_sample = candidate[0]
+            if bool(start_sample.get("authored_gap_before", False)):
+                continue
+            if not samples_can_stitch_boundary(end_sample, start_sample):
+                continue
+            sequence_delta = sample_sequence(start_sample) - end_sequence
+            if sequence_delta < 0 or sequence_delta > 1:
+                if not (closed and end_sequence >= max_sequence - 1 and sample_sequence(start_sample) <= 1):
+                    continue
+            distance = sample_seam_distance(end_sample, start_sample)
+            allowed = max(16.0, max_cross_extent(end_sample), max_cross_extent(start_sample))
+            if distance <= allowed and distance < best_distance:
+                best_distance = distance
+                best_next = start_sample
+                best_next_group = candidate
+        if best_next is not None:
+            if best_next_group is not None and sample_is_round_pipe_family(end_sample):
+                prepend_distinct_boundary_sample(best_next_group, end_sample)
+            else:
+                append_distinct_sample(group, best_next)
+
+
+def add_segment_link(source, target, forward: bool) -> None:
+    props = source.mxt_road_overall_props
+    refs = props.next_segments if forward else props.prev_segments
+    for ref in refs:
+        if ref.segment == target:
+            return
+    ref = refs.add()
+    ref.segment = target
+
+
+def link_segment_pair(prev_segment, next_segment) -> None:
+    add_segment_link(prev_segment, next_segment, True)
+    add_segment_link(next_segment, prev_segment, False)
+
+
+def link_close_segment_rows(
+    segment_rows: list[list[tuple[list[dict], object]]],
+    closed: bool,
+    epsilon: float = 0.001,
+) -> None:
+    for row_index, segment_row in enumerate(segment_rows):
+        for i in range(len(segment_row) - 1):
+            prev_group, prev_segment = segment_row[i]
+            next_group, next_segment = segment_row[i + 1]
+            if sample_distance(prev_group[-1], next_group[0]) <= epsilon:
+                link_segment_pair(prev_segment, next_segment)
+        if closed and row_index == 0 and len(segment_row) > 1:
+            last_group, last_segment = segment_row[-1]
+            first_group, first_segment = segment_row[0]
+            if sample_distance(last_group[-1], first_group[0]) <= epsilon:
+                link_segment_pair(last_segment, first_segment)
+
+
+def link_temporal_rows(segment_rows: list[list[tuple[list[dict], object]]], closed: bool) -> None:
+    flat_segments = [
+        (group, segment)
+        for segment_row in segment_rows
+        for group, segment in segment_row
+        if group
+    ]
+    max_sequence = max((sample_sequence(group[-1]) for group, _segment in flat_segments), default=-1)
+    for prev_group, prev_segment in flat_segments:
+        prev_sequence = sample_sequence(prev_group[-1])
+        for next_group, next_segment in flat_segments:
+            if prev_segment == next_segment:
+                continue
+            if bool(next_group[0].get("authored_gap_before", False)):
+                continue
+            sequence_delta = sample_sequence(next_group[0]) - prev_sequence
+            if sequence_delta < 0 or sequence_delta > 1:
+                if not (closed and prev_sequence >= max_sequence - 1 and sample_sequence(next_group[0]) <= 1):
+                    continue
+            link_segment_pair(prev_segment, next_segment)
+
+
+def main() -> int:
+    args = parse_args()
+    plugin = load_plugin(args.plugin)
+    clear_scene()
+    ensure_preview_materials()
+
+    data = json.loads(args.samples_json.read_text(encoding="utf-8"))
+    road_entries = data.get("roads") or [{"stream_index": 0, "samples": data.get("samples", [])}]
+    primary_samples = road_entries[0].get("samples", []) if road_entries else []
+    if len(primary_samples) < 2:
+        raise RuntimeError("sampler JSON did not contain enough samples")
+
+    closed = int(data.get("circuit_type", 0)) == 0
+    stream_groups: list[tuple[int, list[list[dict]]]] = []
+    total_samples = 0
+    for road in road_entries:
+        stream_index = int(road.get("stream_index", len(stream_groups)))
+        road_samples = road.get("samples", [])
+        modulation_profile = road.get("modulation_profile")
+        if modulation_profile:
+            for sample in road_samples:
+                sample["_road_modulation_profile"] = modulation_profile
+        total_samples += len(road_samples)
+        if len(road_samples) < 2:
+            continue
+        groups = split_samples(
+            road_samples,
+            args.max_samples_per_segment,
+        )
+        if groups:
+            stream_groups.append((stream_index, groups))
+    if not stream_groups:
+        raise RuntimeError("no segment groups produced")
+    extend_adjacent_boundaries(stream_groups, closed)
+
+    ts = bpy.context.scene.mxt_track_settings
+    ts.track_name = args.track_name or f"FZGX Course {int(data.get('authored_track_id', 0)):02d}"
+    ts.track_description = "Loose analytic conversion from F-ZERO GX COLI_COURSE data."
+    ts.track_difficulty = 5
+
+    segments = []
+    stream_segments: list[list[tuple[list[dict], object]]] = []
+    for stream_index, groups in stream_groups:
+        group_closed = closed and stream_index == 0 and len(groups) == 1
+        segment_row = []
+        for index, group in enumerate(groups):
+            seg = add_segment(f"FZGXStream{stream_index}.{index:03d}", group, group_closed)
+            segments.append(seg)
+            segment_row.append((group, seg))
+        stream_segments.append(segment_row)
+    ts.first_segment = segments[0]
+
+    link_close_segment_rows(stream_segments, closed)
+    link_temporal_rows(stream_segments, closed)
+
+    for seg in segments:
+        try:
+            plugin._build_mesh_direct(seg)
+        except Exception as exc:
+            print(f"MXT FZGX: preview mesh build failed for {seg.name}: {exc}")
+
+    args.blend_out.parent.mkdir(parents=True, exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=str(args.blend_out))
+    if args.export is not None:
+        args.export.parent.mkdir(parents=True, exist_ok=True)
+        plugin._export_stage(bpy.context, str(args.export))
+    print(f"MXT FZGX: wrote {args.blend_out} with {len(segments)} segments from {total_samples} samples")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

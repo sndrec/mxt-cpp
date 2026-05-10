@@ -1449,10 +1449,32 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 
 		current_machine_state = soa->machine_state[soa_index];
 		if (sboostActive) {
-			soa->machine_state[soa_index] &= ~(MACHINESTATE::JUST_PRESSED_BOOST | MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
-			soa->boost_frames[soa_index] = 0;
+			soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
 			soa->boost_frames_manual[soa_index] = 0;
-			soa->dashplate_heat_multiplier[soa_index] = 1.0f;
+			if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
+				if (soa->boost_frames[soa_index] > 0) {
+					soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE;
+				} else {
+					soa->machine_state[soa_index] &= ~(MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
+					soa->dashplate_heat_multiplier[soa_index] = 1.0f;
+				}
+			} else {
+				float boost_strength_factor = 1.0f - soa->boost_turbo[soa_index] / (9.0f * soa->stat_boost_strength[soa_index]);
+				int target_dash_boost_frames = static_cast<int>(0.5f * 60.0f * soa->stat_boost_length[soa_index]);
+
+				if (soa->boost_frames[soa_index] < static_cast<uint32_t>(target_dash_boost_frames))
+					soa->boost_frames[soa_index] = target_dash_boost_frames;
+
+				float min_boost_strength_factor = 0.2f;
+				soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE;
+
+				boost_strength_factor = std::max(boost_strength_factor, min_boost_strength_factor);
+				float dashplate_multiplier = soa->dashplate_heat_multiplier[soa_index];
+				if (dashplate_multiplier < 1.0f)
+					dashplate_multiplier = 1.0f;
+				soa->boost_turbo[soa_index] += dashplate_multiplier * (2.0f * soa->stat_boost_strength[soa_index]) * boost_strength_factor;
+				soa->dashplate_heat_multiplier[soa_index] = 1.0f;
+			}
 		} else if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
 			if (soa->boost_frames[soa_index] == 0) {
 				bool do_manual_boost = (current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) &&
@@ -1506,8 +1528,8 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		}
 		soa->boost_turbo[soa_index] = std::max(soa->boost_turbo[soa_index], 0.0f);
 
-		if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) && !sboostActive) {
-			if (soa->boost_frames_manual[soa_index] > 0) {
+		if (soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) {
+			if (!sboostActive && soa->boost_frames_manual[soa_index] > 0) {
 				soa->energy[soa_index] -= 0.1666666667f * soa->boost_energy_use_mult[soa_index];
 				soa->boost_frames_manual[soa_index] -= 1;
 			}
@@ -1515,14 +1537,14 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 			if (soa->boost_frames[soa_index] > 0)
 				soa->boost_frames[soa_index] -= 1;
 
-			if (soa->boost_frames[soa_index] == 0 && soa->speed_kmh[soa_index] > 1200.0f) {
+			if (!sboostActive && soa->boost_frames[soa_index] == 0 && soa->speed_kmh[soa_index] > 1200.0f) {
 				float cooldown_duration = (soa->speed_kmh[soa_index] - 1200.0f) / 60.0f;
 				cooldown_duration = std::min(cooldown_duration, 10.0f);
 				if (static_cast<float>(soa->boost_delay_frame_counter[soa_index]) < cooldown_duration)
 					soa->boost_delay_frame_counter[soa_index] = static_cast<uint8_t>(cooldown_duration);
 			}
 
-			if (soa->energy[soa_index] < 0.01f) {
+			if (!sboostActive && soa->energy[soa_index] < 0.01f) {
 				soa->energy[soa_index] = 0.01f;
 				soa->boost_frames_manual[soa_index] = 0;
 				if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING_DASHPLATE) == 0) {
@@ -1536,7 +1558,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 
 			if (soa->boost_frames[soa_index] <= 0) {
 				soa->boost_frames[soa_index] = 0;
-				soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING;
+				soa->machine_state[soa_index] &= ~(MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
 			}
 		}
 
@@ -3783,9 +3805,6 @@ void PhysicsCar::update_restore(float accel_input)
 	if (!soa->current_track[soa_index])
 		return;
 
-	if (soa->s_boost_active[soa_index])
-		return;
-
 	bool crashed = soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y || soa->energy[soa_index] <= 0.0f;
 
 	if (soa->restore_state[soa_index] == 0 && crashed) {
@@ -3808,10 +3827,12 @@ void PhysicsCar::update_restore(float accel_input)
 		}
 	} else if (soa->restore_state[soa_index] == 2) {
 		soa->restore_move_frames[soa_index]++;
-		float t = std::min(1.0f, static_cast<float>(soa->restore_move_frames[soa_index]) / 180.0f);
+		const uint32_t restore_total_frames = soa->s_boost_active[soa_index] ? 18u : 180u;
+		const uint32_t restore_countdown_frames = soa->s_boost_active[soa_index] ? 16u : 160u;
+		float t = std::min(1.0f, static_cast<float>(soa->restore_move_frames[soa_index]) / static_cast<float>(restore_total_frames));
 		t = (t < 0.5f) ? (2.0f * t * t) : (-1.0f + (4.0f - 2.0f * t) * t);
 		soa->state_2[soa_index] &= ~0x20;
-		if (soa->restore_move_frames[soa_index] >= 160) {
+		if (soa->restore_move_frames[soa_index] >= restore_countdown_frames) {
 			soa->machine_state[soa_index] |= MACHINESTATE::STARTINGCOUNTDOWN;
 		}
 		SimVec3 pos = LOAD_TRANSFORM(restore_start_transform).origin.lerp(LOAD_TRANSFORM(restore_target_transform).origin, t);
@@ -3829,7 +3850,7 @@ void PhysicsCar::update_restore(float accel_input)
 		STORE_VEC3(position_old_dupe, pos);
 		STORE_VEC3(position_bottom, mxt_transform_point(LOAD_TRANSFORM(basis_physical), pos, SimVec3(0.0f, -0.1f, 0.0f)));
 
-		if (soa->restore_move_frames[soa_index] >= 180) {
+		if (soa->restore_move_frames[soa_index] >= restore_total_frames) {
 			soa->state_2[soa_index] &= ~0x20;
 			respawn_at_checkpoint(soa->last_ground_checkpoint[soa_index]);
 			soa->energy[soa_index] = std::max(soa->energy[soa_index], soa->calced_max_energy[soa_index] * 0.5f);
@@ -3846,9 +3867,6 @@ void PhysicsCar::update_restore(float accel_input)
 void PhysicsCar::check_respawn()
 {
 	if (!soa->current_track[soa_index])
-		return;
-
-	if (soa->s_boost_active[soa_index])
 		return;
 
 	if (soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y || soa->energy[soa_index] <= 0.0f) {
@@ -3984,10 +4002,6 @@ bool PhysicsCar::apply_damage(float impactStrength)
 		return false;
 
 	float rawDamage = impactStrength * soa->stat_body[soa_index];
-
-    // Hard cap of 20 for human players
-	if ((soa->machine_state[soa_index] & MACHINESTATE::B10) == 0u)
-		rawDamage = std::min(rawDamage, 20.0f);
 
     // Never exceed 101 % of maxEnergy
 	const float maxAllowedDamage = 1.01f * soa->calced_max_energy[soa_index];
@@ -4309,8 +4323,8 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	SimVec3 impulse = collision_normal * (-0.8f * closing_speed);
 	float impulse_strength = impulse.length();
 
-	float damage1 = impulse_strength * 5.0f;
-	float damage2 = impulse_strength * 5.0f;
+	float damage1 = impulse_strength;
+	float damage2 = impulse_strength;
 	SimVec3 impulse1 = impulse;
 	SimVec3 impulse2 = -impulse;
 	if (this_attacking && !other_attacking) {
@@ -4318,12 +4332,12 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		impulse1 = impulse;
 		impulse2 = collision_normal * (2.0f * impulse_strength);
 		damage1 = 0.0f;
-		damage2 = impulse_strength * 60.0f;
+		damage2 = impulse_strength * 15.0f;
 	} else if (!this_attacking && other_attacking) {
 		impulse_strength += 2.0f;
 		impulse1 = collision_normal * (-2.0f * impulse_strength);
 		impulse2 = -impulse;
-		damage1 = impulse_strength * 60.0f;
+		damage1 = impulse_strength * 15.0f;
 		damage2 = 0.0f;
 	} else if (this_attacking && other_attacking) {
 		impulse1 = impulse * 0.2f;

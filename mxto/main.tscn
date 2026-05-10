@@ -2522,7 +2522,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.15"
+text = "MaxX Throttle v0.1.17"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/StartButton" to="." method="_on_start_button_pressed"]

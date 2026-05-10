@@ -673,6 +673,18 @@ func _on_car_settings_button_pressed() -> void:
 func _on_controller_settings_button_pressed() -> void:
 	controller_settings.call("open_settings")
 
+func _close_settings_menus_for_race_start() -> void:
+	if car_settings != null:
+		if car_settings.visible and car_settings.has_method("_on_close_pressed"):
+			car_settings.call("_on_close_pressed")
+		else:
+			car_settings.hide()
+	if controller_settings != null:
+		if controller_settings.visible and controller_settings.has_method("_on_close_pressed"):
+			controller_settings.call("_on_close_pressed")
+		else:
+			controller_settings.hide()
+
 func _generate_random_input() -> PlayerInput:
 	var p := PlayerInputClass.new()
 	p.strafe_left = randf()
@@ -859,6 +871,7 @@ func _load_and_start_debug_replay(path: String) -> void:
 func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
 		return
+	_close_settings_menus_for_race_start()
 	_last_race_track_index = track_index
 	_last_race_settings = settings.duplicate(true)
 	active_stickers.clear()
@@ -1055,6 +1068,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
+		_close_settings_menus_for_race_start()
 		network_manager.prepare_race_roster("start_button")
 		var settings_array : Array = []
 		var roster := network_manager.get_simulation_roster()
