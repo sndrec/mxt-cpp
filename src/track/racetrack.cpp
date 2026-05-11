@@ -840,7 +840,8 @@ static void cast_segment_fast(const CastParams  &params,
 		segment.right_rail_height);
 	draw_nearest_rail_candidate(sides, sample_pt, _TICK_DELTA);
 
-	for (const TrackEdgeRailSide &side : sides) {
+	for (int side_index = 0; side_index < 2; ++side_index) {
+		const TrackEdgeRailSide &side = sides[side_index];
 		const float ra = (p0 - side.pos).dot(side.rail_n);
 		const float rb = (p1 - side.pos).dot(side.rail_n);
 		if ((ra <= 0.0f && rb <= 0.0f) || (ra >= 0.0f && rb >= 0.0f))
@@ -856,6 +857,10 @@ static void cast_segment_fast(const CastParams  &params,
 		RoadTransform hit_root;
 		convert_point_to_road(track, use_idx, hit, road_t_hit_raw, spatial_t_hit, nullptr, &hit_root, nullptr);
 		if (road_t_hit_raw.x == -1000.0)
+		{
+			continue;
+		}
+		if (!track_segment_rail_side_active(segment, side_index, road_t_hit_raw.y))
 		{
 			continue;
 		}

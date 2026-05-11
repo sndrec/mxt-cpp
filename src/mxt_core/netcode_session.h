@@ -73,6 +73,7 @@ public:
 	void store_local_input(int tick, godot::PackedByteArray input_bytes);
 	void store_authoritative_input(int tick, int player_id, godot::PackedByteArray input_bytes);
 	void store_pending_input(int tick, int player_id, godot::PackedByteArray input_bytes);
+	godot::Dictionary fill_missing_pending_inputs(int tick, godot::Array player_ids, godot::Array disconnected_ids, godot::Array delayed_ids, bool allow_new_delayed);
 	godot::PackedByteArray build_local_input_packet(int first_tick, int count) const;
 	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec);
 	godot::PackedByteArray build_authoritative_input_packet(int last_tick, int max_frame_count) const;

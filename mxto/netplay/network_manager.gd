@@ -336,7 +336,7 @@ func _build_server_peer_log_fields() -> Dictionary:
 	}
 	if !is_server:
 		return out
-	var ids := _get_human_roster()
+	var ids := _get_active_human_roster()
 	if ids.is_empty():
 		return out
 	var lag_sum := 0.0
@@ -642,6 +642,16 @@ func _get_cpu_roster() -> Array:
 func _get_human_roster() -> Array:
 	return race_player_ids.duplicate(true) if race_player_ids.size() > 0 else player_ids.duplicate(true)
 
+func _get_active_human_roster() -> Array:
+	var roster := _get_human_roster()
+	if _disconnected_during_race.is_empty():
+		return roster
+	var out := []
+	for id in roster:
+		if !_disconnected_during_race.has(id):
+			out.append(id)
+	return out
+
 func get_simulation_roster() -> Array:
 	var roster := _get_human_roster()
 	roster.append_array(_get_cpu_roster())
@@ -903,7 +913,7 @@ func _calc_state_offsets() -> void:
 		state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
 
 func _calc_max_ahead() -> float:
-	return float(server_netcode_session.get_max_peer_desired_ahead(player_ids, _local_desired_ahead_for_shared()))
+	return float(server_netcode_session.get_max_peer_desired_ahead(_get_active_human_roster(), _local_desired_ahead_for_shared()))
 
 func _local_desired_ahead_for_shared() -> float:
 	return 0.0 if is_server and listen_server else desired_ahead_ticks
@@ -1591,23 +1601,23 @@ func _fill_delayed_missing_inputs_for_tick(tick: int) -> void:
 		return
 	var backlog := target_tick - tick
 	var can_mark_new_delayed := backlog >= SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS
-	if !can_mark_new_delayed and delayed_peer_ids.is_empty():
+	var has_disconnected_peers := !_disconnected_during_race.is_empty()
+	if !can_mark_new_delayed and delayed_peer_ids.is_empty() and !has_disconnected_peers:
 		return
 	if not pending_inputs.has(tick):
 		pending_inputs[tick] = {}
 	var waiting: Dictionary = pending_inputs[tick]
-	var prev = authoritative_history.get(tick - 1, {})
 	var roster_chk := _get_human_roster()
-	for pid in roster_chk:
-		if waiting.has(pid):
-			continue
-		if !can_mark_new_delayed and !delayed_peer_ids.has(pid):
-			continue
-		if !server_netcode_session.peer_has_received(pid):
-			continue
-		var replacement := _input_frame_value(prev, int(pid), NEUTRAL_INPUT_BYTES)
-		waiting[pid] = replacement
-		server_netcode_session.store_pending_input(tick, int(pid), replacement)
+	var replacement_stats: Dictionary = server_netcode_session.fill_missing_pending_inputs(
+		tick,
+		roster_chk,
+		_disconnected_during_race.keys(),
+		delayed_peer_ids.keys(),
+		can_mark_new_delayed
+	)
+	var replaced_ids: Array = replacement_stats.get("replaced_ids", [])
+	for pid in replaced_ids:
+		waiting[pid] = NEUTRAL_INPUT_BYTES
 		delayed_peer_ids[pid] = true
 		log_server_replacements += 1
 		_log_add_int(log_peer_replacements, pid, 1)
@@ -1779,7 +1789,7 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 		var sender_id := multiplayer.get_remote_sender_id()
 		var now_sec := 0.001 * float(Time.get_ticks_msec())
 		var sender_seen_before: bool = server_netcode_session.peer_has_received(sender_id)
-		var reject_before := target_tick - 5
+		var reject_before := maxi(target_tick - SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS, server_tick)
 		if !sender_seen_before:
 			reject_before = server_tick
 		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet, ahead, now_sec)
@@ -2044,7 +2054,7 @@ func _check_client_stalls() -> void:
 	var waiting = pending_inputs.get(server_tick, {})
 	var now := 0.001 * float(Time.get_ticks_msec())
 	var missing := []
-	var roster_chk : Array = _get_human_roster()
+	var roster_chk : Array = _get_active_human_roster()
 	for id in roster_chk:
 		if not waiting.has(id):
 			missing.append(id)

@@ -2838,6 +2838,10 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							//	continue;
 							//}
 							const TrackEdgeRailSide &side = sides[i];
+							if (!track_segment_rail_side_active(segment, i, use_t.y))
+							{
+								continue;
+							}
 							if (side.height <= 0.f)
 							{
 								continue;
@@ -2935,6 +2939,10 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							//	continue;
 							//}
 							const TrackEdgeRailSide &side = sides[i];
+							if (!track_segment_rail_side_active(segment, i, use_t.y))
+							{
+								continue;
+							}
 							if (side.height <= 0.f)
 							{
 								continue;
@@ -4328,16 +4336,16 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	SimVec3 impulse1 = impulse;
 	SimVec3 impulse2 = -impulse;
 	if (this_attacking && !other_attacking) {
-		impulse_strength += 2.0f;
-		impulse1 = impulse;
-		impulse2 = collision_normal * (2.0f * impulse_strength);
+		impulse_strength += 1.0f;
+		impulse1 = impulse * 2.0f;
+		impulse2 = collision_normal * (1.5f * impulse_strength);
 		damage1 = 0.0f;
-		damage2 = impulse_strength * 15.0f;
+		damage2 = impulse_strength * 10.0f;
 	} else if (!this_attacking && other_attacking) {
-		impulse_strength += 2.0f;
-		impulse1 = collision_normal * (-2.0f * impulse_strength);
-		impulse2 = -impulse;
-		damage1 = impulse_strength * 15.0f;
+		impulse_strength += 1.0f;
+		impulse1 = collision_normal * (-1.5f * impulse_strength);
+		impulse2 = -impulse * 2.0f;
+		damage1 = impulse_strength * 10.0f;
 		damage2 = 0.0f;
 	} else if (this_attacking && other_attacking) {
 		impulse1 = impulse * 0.2f;

@@ -2531,13 +2531,25 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		soa->last_k = 0;
 		soa->precompute();
 
-		// 4) version�dependent rail heights
+		// 4) version-dependent rail heights/spans
 		if (version_string != "v0.1") {
 			current_track->segments[seg].left_rail_height  = lvldat_buf->get_float();
 			current_track->segments[seg].right_rail_height = lvldat_buf->get_float();
 		} else {
 			current_track->segments[seg].left_rail_height  = 5.0f;
 			current_track->segments[seg].right_rail_height = 5.0f;
+		}
+		if (version_string != "v0.1" && version_string != "v0.2" &&
+			version_string != "v0.3" && version_string != "v0.4") {
+			current_track->segments[seg].left_rail_start = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
+			current_track->segments[seg].left_rail_end = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
+			current_track->segments[seg].right_rail_start = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
+			current_track->segments[seg].right_rail_end = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
+		} else {
+			current_track->segments[seg].left_rail_start = 0.0f;
+			current_track->segments[seg].left_rail_end = 1.0f;
+			current_track->segments[seg].right_rail_start = 0.0f;
+			current_track->segments[seg].right_rail_end = 1.0f;
 		}
 
 		// calc segment lengths //

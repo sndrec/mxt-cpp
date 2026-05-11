@@ -458,6 +458,38 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
         min=0.0,
         update=lambda self, ctx: schedule_mesh_build(self.id_data)
     )
+    rail_start_left: FloatProperty(
+        name="Left Rail Start",
+        description="t_y where the left rail starts",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
+    )
+    rail_end_left: FloatProperty(
+        name="Left Rail End",
+        description="t_y where the left rail ends",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
+    )
+    rail_start_right: FloatProperty(
+        name="Right Rail Start",
+        description="t_y where the right rail starts",
+        default=0.0,
+        min=0.0,
+        max=1.0,
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
+    )
+    rail_end_right: FloatProperty(
+        name="Right Rail End",
+        description="t_y where the right rail ends",
+        default=1.0,
+        min=0.0,
+        max=1.0,
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
+    )
     # Appearance per-segment
     ground_color: FloatVectorProperty(
         name="Ground Color",
@@ -1735,6 +1767,10 @@ class MXTRoad_OT_CreateRoadSegment(Operator):
         # Initialize rail heights
         props.rail_height_left = 0.15
         props.rail_height_right = 0.15
+        props.rail_start_left = 0.0
+        props.rail_end_left = 1.0
+        props.rail_start_right = 0.0
+        props.rail_end_right = 1.0
 
 
         if prev_seg:
@@ -1758,6 +1794,8 @@ class MXTRoad_OT_CreateRoadSegment(Operator):
                          "mesh_subdivision_angle_deg",
                          "num_checkpoints_per_segment",
                          "rail_height_left", "rail_height_right",
+                         "rail_start_left", "rail_end_left",
+                         "rail_start_right", "rail_end_right",
                          "rotation_mode"):
                 setattr(props, attr, getattr(prev_props, attr))
 
@@ -2754,6 +2792,12 @@ class MXTRoad_PT_MainPanel(Panel):
         rails_box.label(text="Rails:")
         rails_box.prop(road_props, "rail_height_left")
         rails_box.prop(road_props, "rail_height_right")
+        row = rails_box.row(align=True)
+        row.prop(road_props, "rail_start_left")
+        row.prop(road_props, "rail_end_left")
+        row = rails_box.row(align=True)
+        row.prop(road_props, "rail_start_right")
+        row.prop(road_props, "rail_end_right")
 
         # Per-segment appearance
         color_box = common_box.box()
@@ -3353,7 +3397,7 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
     total_mod_offset_grid = np.zeros((num_y, num_x), dtype=np.float64)
     
     
-    mod_t_grid = 0.5 * (1.0 - tx_grid) 
+    mod_t_grid = 0.5 * (1.0 + tx_grid) 
 
     for mod in props.modulations:
         helper = mod.helper
@@ -3475,7 +3519,7 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
             b      = -2.0 * (abs_dx * w_in + abs_dy * h_in)
             c      = w_in ** 2 + h_in ** 2 - radius_cl ** 2
             disc   = b ** 2 - 4.0 * c
-            sqrt_d = np.where(disc >= 0.0, np.sqrt(disc), 0.0)
+            sqrt_d = np.sqrt(np.maximum(disc, 0.0))
 
             root1  = (-b - sqrt_d) * 0.5
             root2  = (-b + sqrt_d) * 0.5
@@ -3513,6 +3557,163 @@ class MXTRoad_OT_GenerateMesh(Operator):
     bl_idname = "mxt_road.generate_mesh"
     bl_label  = "Generate/Update Mesh"
     bl_options = {'REGISTER', 'UNDO'}
+
+    @staticmethod
+    def _append_fcurve_key_times(out, helper, *, indices=None):
+        if not (helper and helper.animation_data and helper.animation_data.action):
+            return
+        wanted = None if indices is None else set(indices)
+        for fcu in helper.animation_data.action.fcurves:
+            if fcu.data_path != "location":
+                continue
+            if wanted is not None and fcu.array_index not in wanted:
+                continue
+            for kp in fcu.keyframe_points:
+                t = float(kp.co.x) / 100.0
+                if -1.0e-6 <= t <= 1.0 + 1.0e-6:
+                    out.append(max(0.0, min(1.0, t)))
+
+    @staticmethod
+    def _append_action_key_times(out, helper):
+        if not (helper and helper.animation_data and helper.animation_data.action):
+            return
+        for fcu in helper.animation_data.action.fcurves:
+            for kp in fcu.keyframe_points:
+                t = float(kp.co.x) / 100.0
+                if -1.0e-6 <= t <= 1.0 + 1.0e-6:
+                    out.append(max(0.0, min(1.0, t)))
+
+    @staticmethod
+    def _unique_sorted_ty(values):
+        values = sorted(max(0.0, min(1.0, float(v))) for v in values)
+        if not values:
+            return [0.0, 1.0]
+        out = []
+        for v in values:
+            if not out or abs(v - out[-1]) > 1.0e-7:
+                out.append(v)
+            else:
+                out[-1] = v
+        if out[0] > 0.0:
+            out.insert(0, 0.0)
+        else:
+            out[0] = 0.0
+        if out[-1] < 1.0:
+            out.append(1.0)
+        else:
+            out[-1] = 1.0
+        return out
+
+    @staticmethod
+    def _mandatory_mesh_ty_samples(props, cm_helper):
+        times = [0.0, 1.0]
+        MXTRoad_OT_GenerateMesh._append_action_key_times(times, cm_helper)
+
+        for helper in (
+            getattr(props, "width_helper", None),
+            getattr(props, "height_helper", None),
+            getattr(props, "radius_helper", None),
+            getattr(props, "openness_helper", None),
+        ):
+            MXTRoad_OT_GenerateMesh._append_fcurve_key_times(times, helper)
+
+        if hasattr(props, "modulations"):
+            for mod in props.modulations:
+                # location.z is the ty-keyed effect curve. location.y is a tx profile.
+                MXTRoad_OT_GenerateMesh._append_fcurve_key_times(times, mod.helper, indices=(2,))
+
+        if hasattr(props, "embeds"):
+            for embed in props.embeds:
+                times.append(float(embed.start_t))
+                times.append(float(embed.end_t))
+                MXTRoad_OT_GenerateMesh._append_fcurve_key_times(times, embed.helper)
+
+        for start_name, end_name in (
+            ("rail_start_left", "rail_end_left"),
+            ("rail_start_right", "rail_end_right"),
+        ):
+            times.append(float(getattr(props, start_name, 0.0)))
+            times.append(float(getattr(props, end_name, 1.0)))
+
+        return MXTRoad_OT_GenerateMesh._unique_sorted_ty(times)
+
+    @staticmethod
+    def _mesh_rows_at_ty(props, cm_helper, tx_1d, ty_1d):
+        ty_1d = np.asarray(ty_1d, dtype=np.float64)
+        tx_grid, ty_grid = np.meshgrid(tx_1d, ty_1d)
+        centerline_pos, centerline_quat, centerline_scl = _sample_curve_matrix_numpy(cm_helper, ty_1d)
+        return _calculate_vertex_positions_numpy(
+            props, centerline_pos, centerline_quat, centerline_scl, tx_grid, ty_grid
+        )
+
+    @staticmethod
+    def _adaptive_ty_samples_from_mesh_rows(cm_helper, props, tx_1d, max_len, max_ang_rad):
+        mandatory = MXTRoad_OT_GenerateMesh._mandatory_mesh_ty_samples(props, cm_helper)
+        max_len = max(float(max_len), 1.0e-4)
+        max_ang_rad = max(float(max_ang_rad), 1.0e-4)
+        min_dt = 1.0e-7
+        max_depth = 24
+        row_cache = {}
+
+        def row_at(t):
+            key = round(float(t), 12)
+            row = row_cache.get(key)
+            if row is None:
+                row = MXTRoad_OT_GenerateMesh._mesh_rows_at_ty(props, cm_helper, tx_1d, [key])[0]
+                row_cache[key] = row
+            return row
+
+        def interval_needs_split(t0, t1, row0, row1):
+            tm = (t0 + t1) * 0.5
+            rowm = row_at(tm)
+            d0 = rowm - row0
+            d1 = row1 - rowm
+            len0 = np.linalg.norm(d0, axis=1)
+            len1 = np.linalg.norm(d1, axis=1)
+            if float(max(np.max(len0), np.max(len1))) > max_len:
+                return True, tm, rowm
+
+            denom = len0 * len1
+            valid = denom > 1.0e-9
+            if np.any(valid):
+                dots = np.einsum("ij,ij->i", d0, d1)
+                cosang = np.ones_like(dots)
+                cosang[valid] = np.clip(dots[valid] / denom[valid], -1.0, 1.0)
+                if float(np.max(np.arccos(cosang[valid]))) > max_ang_rad:
+                    return True, tm, rowm
+
+            return False, tm, rowm
+
+        samples = [mandatory[0]]
+
+        def append_interval(t0, t1, row0, row1, depth):
+            if (t1 - t0) <= min_dt or depth >= max_depth:
+                samples.append(t1)
+                return
+            should_split, tm, rowm = interval_needs_split(t0, t1, row0, row1)
+            if not should_split:
+                samples.append(t1)
+                return
+            append_interval(t0, tm, row0, rowm, depth + 1)
+            append_interval(tm, t1, rowm, row1, depth + 1)
+
+        for i in range(len(mandatory) - 1):
+            t0 = mandatory[i]
+            t1 = mandatory[i + 1]
+            if t1 <= t0:
+                continue
+            append_interval(t0, t1, row_at(t0), row_at(t1), 0)
+
+        samps = MXTRoad_OT_GenerateMesh._unique_sorted_ty(samples)
+        centerline_pos, _centerline_quat, _centerline_scl = _sample_curve_matrix_numpy(
+            cm_helper, np.array(samps, dtype=np.float64)
+        )
+        dists = [0.0]
+        total_dist = 0.0
+        for i in range(1, len(centerline_pos)):
+            total_dist += float(np.linalg.norm(centerline_pos[i] - centerline_pos[i - 1]))
+            dists.append(total_dist)
+        return samps, dists
 
     def _adaptive_ty_samples_from_fcurves(cm_helper, max_len, max_ang_rad):
         samps = [0.0]; dists = [0.0]
@@ -3672,10 +3873,13 @@ class MXTRoad_OT_GenerateMesh(Operator):
         
         num_x = props.horiz_subdivs
         tx_1d = np.linspace(-1.0, 1.0, num_x, dtype=np.float64)
-        if props.segment_type == 'BEZIER' and not getattr(props, "disable_auto_rebake", False):
-            ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples(helper, road_parent, props.mesh_subdivision_length, math.radians(props.mesh_subdivision_angle_deg))
-        else:
-            ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples_from_fcurves(helper, props.mesh_subdivision_length, math.radians(props.mesh_subdivision_angle_deg))
+        ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples_from_mesh_rows(
+            helper,
+            props,
+            tx_1d,
+            props.mesh_subdivision_length,
+            math.radians(props.mesh_subdivision_angle_deg),
+        )
         ty_1d = np.array(ys, dtype=np.float64)
         num_y = len(ty_1d)
         if num_y < 2:
@@ -3729,8 +3933,23 @@ class MXTRoad_OT_GenerateMesh(Operator):
 
         rail_faces = []
 
+        def rail_span(start_value, end_value):
+            start = max(0.0, min(1.0, float(start_value)))
+            end = max(0.0, min(1.0, float(end_value)))
+            if end < start:
+                start, end = end, start
+            return start, end
+
+        def rail_interval_active(t0, t1, start, end):
+            mid = (float(t0) + float(t1)) * 0.5
+            return mid >= start and mid <= end
+
         if getattr(props, "rail_height_left", 0.0) > 0.0:
             h = props.rail_height_left
+            span_start, span_end = rail_span(
+                getattr(props, "rail_start_left", 0.0),
+                getattr(props, "rail_end_left", 1.0),
+            )
             top_indices = []
             bottom_dup_indices = []
             offset = num_x - 1
@@ -3753,6 +3972,8 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 top_indices.append(new_top_idx)
                 rail_top_vert_indices.add(new_top_idx)
             for row in range(num_y-1):
+                if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
+                    continue
                 b0 = bottom_dup_indices[row]
                 b1 = bottom_dup_indices[row+1]
                 face = [b0, b1, top_indices[row+1], top_indices[row]]
@@ -3763,6 +3984,10 @@ class MXTRoad_OT_GenerateMesh(Operator):
 
         if getattr(props, "rail_height_right", 0.0) > 0.0:
             h = props.rail_height_right
+            span_start, span_end = rail_span(
+                getattr(props, "rail_start_right", 0.0),
+                getattr(props, "rail_end_right", 1.0),
+            )
             top_indices = []
             bottom_dup_indices = []
             offset = 0
@@ -3784,6 +4009,8 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 top_indices.append(new_top_idx)
                 rail_top_vert_indices.add(new_top_idx)
             for row in range(num_y-1):
+                if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
+                    continue
                 b0 = bottom_dup_indices[row]
                 b1 = bottom_dup_indices[row+1]
                 face = [b0, b1, top_indices[row+1], top_indices[row]]
@@ -4358,6 +4585,10 @@ def _export_stage(context, filepath):
             "name": s.name,
             "ground_color": list(getattr(props, 'ground_color', (0.5, 0.5, 0.5))),
             "rail_color": list(getattr(props, 'rail_color', (0.8, 0.8, 0.8))),
+            "rail_start_left": float(getattr(props, "rail_start_left", 0.0)),
+            "rail_end_left": float(getattr(props, "rail_end_left", 1.0)),
+            "rail_start_right": float(getattr(props, "rail_start_right", 0.0)),
+            "rail_end_right": float(getattr(props, "rail_end_right", 1.0)),
         })
     metadata["segments"] = segment_meta
 
@@ -4512,6 +4743,13 @@ def _export_stage(context, filepath):
             # Store the rail heights for this segment
             seg_data += struct.pack('<f', getattr(props, "rail_height_left", 5.0))
             seg_data += struct.pack('<f', getattr(props, "rail_height_right", 5.0))
+            for attr, default in (
+                ("rail_start_left", 0.0),
+                ("rail_end_left", 1.0),
+                ("rail_start_right", 0.0),
+                ("rail_end_right", 1.0),
+            ):
+                seg_data += struct.pack('<f', max(0.0, min(1.0, float(getattr(props, attr, default)))))
 
         trigger_data = bytearray()
         trig_count = 0
@@ -4543,7 +4781,7 @@ def _export_stage(context, filepath):
             trigger_data += struct.pack('<3f', ext.x, ext.y, ext.z)
             trig_count += 1
 
-        header = struct.pack('<I4sIII', 0, b'v0.4', len(cp_list), len(seg_order), trig_count)
+        header = struct.pack('<I4sIII', 0, b'v0.5', len(cp_list), len(seg_order), trig_count)
         header = struct.pack('<I', len(header)) + header[4:]
         f.write(header)
         f.write(data)

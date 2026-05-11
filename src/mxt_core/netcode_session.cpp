@@ -310,6 +310,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_local_input", "tick", "input_bytes"), &NetcodeSession::store_local_input);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
+	ClassDB::bind_method(D_METHOD("fill_missing_pending_inputs", "tick", "player_ids", "disconnected_ids", "delayed_ids", "allow_new_delayed"), &NetcodeSession::fill_missing_pending_inputs);
 	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count"), &NetcodeSession::build_local_input_packet);
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec"), &NetcodeSession::store_pending_input_packet);
 	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "last_tick", "max_frame_count"), &NetcodeSession::build_authoritative_input_packet);
@@ -505,6 +506,67 @@ void NetcodeSession::store_pending_input(int tick, int player_id, godot::PackedB
 	InputFrame& frame = frame_for(pending_inputs, tick);
 	frame.inputs[index] = PlayerInput::from_bytes(input_bytes);
 	frame.present[index] = 1;
+}
+
+godot::Dictionary NetcodeSession::fill_missing_pending_inputs(int tick, godot::Array p_player_ids, godot::Array p_disconnected_ids, godot::Array p_delayed_ids, bool allow_new_delayed)
+{
+	Dictionary out;
+	Array replaced_ids;
+	int skipped_present = 0;
+	int skipped_unseen = 0;
+	int skipped_not_delayed = 0;
+	const InputFrame* prev = find_frame(authoritative_history, static_cast<int32_t>(tick - 1));
+	InputFrame& frame = frame_for(pending_inputs, static_cast<int32_t>(tick));
+
+	for (int p = 0; p < p_player_ids.size(); ++p) {
+		const int32_t player_id = static_cast<int32_t>(static_cast<int64_t>(p_player_ids[p]));
+		const int index = find_racer_index(player_id);
+		if (index < 0 || cpu_flags[index]) {
+			continue;
+		}
+		if (frame.present[index]) {
+			++skipped_present;
+			continue;
+		}
+
+		bool disconnected = false;
+		for (int i = 0; i < p_disconnected_ids.size(); ++i) {
+			if (static_cast<int32_t>(static_cast<int64_t>(p_disconnected_ids[i])) == player_id) {
+				disconnected = true;
+				break;
+			}
+		}
+
+		bool already_delayed = false;
+		if (!disconnected) {
+			for (int i = 0; i < p_delayed_ids.size(); ++i) {
+				if (static_cast<int32_t>(static_cast<int64_t>(p_delayed_ids[i])) == player_id) {
+					already_delayed = true;
+					break;
+				}
+			}
+		}
+
+		if (!disconnected && !peer_has_received(player_id)) {
+			++skipped_unseen;
+			continue;
+		}
+		if (!disconnected && !allow_new_delayed && !already_delayed) {
+			++skipped_not_delayed;
+			continue;
+		}
+
+		frame.inputs[index] = (prev && prev->present[index]) ? prev->inputs[index] : neutral_input;
+		frame.present[index] = 1;
+		replaced_ids.append(player_id);
+	}
+
+	out["replaced_ids"] = replaced_ids;
+	out["replaced_count"] = replaced_ids.size();
+	out["skipped_present"] = skipped_present;
+	out["skipped_unseen"] = skipped_unseen;
+	out["skipped_not_delayed"] = skipped_not_delayed;
+	return out;
 }
 
 godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, int count) const

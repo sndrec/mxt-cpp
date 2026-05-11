@@ -35,7 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--export", type=Path, default=None, help="Optional .mxt_track output path")
     parser.add_argument("--plugin", type=Path, default=DEFAULT_PLUGIN)
     parser.add_argument("--track-name", default=None)
-    parser.add_argument("--max-samples-per-segment", type=int, default=192)
+    parser.add_argument("--max-samples-per-segment", type=int, default=0)
     parser.add_argument("--checkpoint-stride", type=int, default=8)
     return parser.parse_args(args)
 
@@ -75,6 +75,86 @@ def ensure_preview_materials() -> None:
     ensure_material("embed_dirt", (0.58, 0.36, 0.16, 1.0))
     ensure_material("embed_lava", (1.0, 0.16, 0.04, 1.0))
     ensure_material("embed_hole", (0.0, 0.0, 0.0, 1.0))
+    ensure_material("gxmesh_dash", (0.05, 0.45, 1.0, 0.62))
+    ensure_material("gxmesh_jump", (1.0, 0.9, 0.05, 0.62))
+    ensure_material("gxmesh_ice", (0.35, 0.85, 1.0, 0.52))
+    ensure_material("gxmesh_dirt", (0.62, 0.35, 0.12, 0.58))
+    ensure_material("gxmesh_damage", (1.0, 0.12, 0.05, 0.62))
+    ensure_material("gxmesh_death", (0.08, 0.02, 0.02, 0.7))
+    ensure_material("gxmesh_mine", (1.0, 0.08, 0.9, 0.7))
+    ensure_material("gxmesh_other", (0.9, 0.9, 0.9, 0.38))
+
+
+def mesh_collision_material_name(entry: dict) -> str:
+    source = entry.get("source")
+    collider_type = int(entry.get("collider_type", 0))
+    surface = str(entry.get("surface", ""))
+    if source == "dynamic_scene" and (collider_type & 0x00004000):
+        return "gxmesh_mine"
+    if surface == "dash":
+        return "gxmesh_dash"
+    if surface == "jump":
+        return "gxmesh_jump"
+    if surface == "ice":
+        return "gxmesh_ice"
+    if surface == "dirt":
+        return "gxmesh_dirt"
+    if surface in {"damage", "lava"}:
+        return "gxmesh_damage"
+    if surface.startswith("death") or surface == "out_of_bounds":
+        return "gxmesh_death"
+    return "gxmesh_other"
+
+
+def add_mesh_collision_helpers(data: dict) -> None:
+    entries = data.get("mesh_collision") or []
+    if not entries:
+        return
+
+    collection = bpy.data.collections.new("GX Mesh Collision Helpers")
+    bpy.context.scene.collection.children.link(collection)
+
+    for index, entry in enumerate(entries):
+        verts = []
+        faces = []
+        for tri in entry.get("tris", []):
+            if len(tri) != 3:
+                continue
+            base = len(verts)
+            verts.extend((tuple(vec(v)) for v in tri))
+            faces.append((base, base + 1, base + 2))
+        for quad in entry.get("quads", []):
+            if len(quad) != 4:
+                continue
+            base = len(verts)
+            verts.extend((tuple(vec(v)) for v in quad))
+            faces.append((base, base + 1, base + 2, base + 3))
+        if not faces:
+            continue
+
+        name = f"GXMesh.{index:03d}.{entry.get('name', 'collision')}"
+        mesh = bpy.data.meshes.new(f"{name}.mesh")
+        mesh.from_pydata(verts, [], faces)
+        mesh.update()
+        obj = bpy.data.objects.new(name, mesh)
+        obj.display_type = "WIRE"
+        obj.show_wire = True
+        obj.show_in_front = True
+        obj["gx_source"] = entry.get("source", "")
+        obj["gx_surface"] = entry.get("surface", "")
+        surface_index = int(entry.get("surface_index", -1))
+        collider_type = int(entry.get("collider_type", 0))
+        obj["gx_surface_index"] = surface_index if surface_index <= 0x7fffffff else -1
+        obj["gx_surface_index_raw"] = str(surface_index)
+        obj["gx_collider_type"] = collider_type if collider_type <= 0x7fffffff else -1
+        obj["gx_collider_type_raw"] = str(collider_type)
+
+        mat = bpy.data.materials.get(mesh_collision_material_name(entry))
+        if mat:
+            mesh.materials.append(mat)
+            for poly in mesh.polygons:
+                poly.material_index = 0
+        collection.objects.link(obj)
 
 
 def vec(values) -> Vector:
@@ -182,6 +262,54 @@ def sample_frame(samples: list[dict], index: int, closed: bool) -> tuple[Vector,
         right = safe_normal(up.cross(forward), right)
     half_width = sample_half_width(samples[index])
     return center, right, up, forward, half_width
+
+
+def sample_x_scale_sign(sample: dict) -> float:
+    if "basis_right" not in sample or "basis_forward" not in sample or "basis_up" not in sample:
+        return 1.0
+
+    gx_right = safe_normal(vec(sample["basis_right"]), Vector((1.0, 0.0, 0.0)))
+    gx_up = safe_normal(vec(sample["basis_up"]), Vector((0.0, 1.0, 0.0)))
+    gx_forward = safe_normal(vec(sample["basis_forward"]), Vector((0.0, 0.0, 1.0)))
+    helper_right = safe_normal(gx_up.cross(gx_forward), gx_right)
+    return -1.0 if gx_right.dot(helper_right) < 0.0 else 1.0
+
+
+def sample_curve_time(sample: dict, fallback: float) -> float:
+    if "curve_time" in sample:
+        return float(sample["curve_time"])
+    if "distance" in sample:
+        return float(sample["distance"])
+    return fallback
+
+
+def sample_group_t(group: list[dict], index: int) -> float:
+    count = len(group)
+    if count <= 1:
+        return 0.0
+    first_time = sample_curve_time(group[0], 0.0)
+    last_time = sample_curve_time(group[-1], float(count - 1))
+    span = last_time - first_time
+    if abs(span) <= 1.0e-6:
+        return index / (count - 1)
+    t = (sample_curve_time(group[index], float(index)) - first_time) / span
+    return max(0.0, min(1.0, t))
+
+
+def sample_group_frame(group: list[dict], index: int) -> float:
+    return sample_group_t(group, index) * 100.0
+
+
+def ensure_fcurve(action, data_path: str, index: int):
+    fcu = action.fcurves.find(data_path, index=index)
+    if fcu is None:
+        fcu = action.fcurves.new(data_path, index=index)
+    return fcu
+
+
+def insert_fcurve_key(action, data_path: str, index: int, frame: float, value: float) -> None:
+    fcu = ensure_fcurve(action, data_path, index)
+    fcu.keyframe_points.insert(frame, value, options={"FAST"})
 
 
 def quat_from_axes(right: Vector, up: Vector, forward: Vector) -> Quaternion:
@@ -316,12 +444,11 @@ def add_sampled_value_helper(parent, name: str, group: list[dict], value_fn):
     action = bpy.data.actions.new(f"{name}_curve")
     helper.animation_data.action = action
 
-    count = len(group)
     for i, sample in enumerate(group):
-        frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+        frame = sample_group_frame(group, i)
         helper.location.x = float(value_fn(sample))
         helper.keyframe_insert(data_path="location", index=0, frame=frame)
-    set_plugin_smooth_fcurves(action)
+    set_linear_x_fcurves(action)
     return helper
 
 
@@ -402,12 +529,11 @@ def add_gx_modulation_helper(parent, name: str, profile: dict, group: list[dict]
             helper.location.y = fallback
             helper.keyframe_insert(data_path="location", index=1, frame=frame)
 
-    count = len(group)
     for i, sample in enumerate(group):
-        frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+        frame = sample_group_frame(group, i)
         if sample_is_modulated(sample):
             current_scale = sample.get("track_current_scale", [1.0, 1.0, 1.0])
-            effect = max(1.0e-6, abs(float(current_scale[1])))
+            effect = float(current_scale[1])
         else:
             effect = 0.0
         helper.location.z = effect
@@ -429,9 +555,8 @@ def add_open_helper(parent, name: str, group: list[dict] | None = None):
     helper.animation_data.action = action
 
     if group and group[0].get("shape") in {"CYLINDER_OPEN", "PIPE_OPEN"}:
-        count = len(group)
         for i, sample in enumerate(group):
-            frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+            frame = sample_group_frame(group, i)
             helper.location.x = max(0.0, float(sample.get("track_hcylin", 1.0)))
             helper.keyframe_insert(data_path="location", index=0, frame=frame)
             helper.location.y = 0.0
@@ -449,11 +574,18 @@ def add_open_helper(parent, name: str, group: list[dict] | None = None):
 
 
 def terrain_bands(sample: dict, embed_type: str) -> list[dict]:
-    bands = [
-        terrain
-        for terrain in sample.get("terrain", [])
-        if terrain.get("type") == embed_type
-    ]
+    x_sign = sample_x_scale_sign(sample)
+    bands = []
+    for terrain in sample.get("terrain", []):
+        if terrain.get("type") != embed_type:
+            continue
+        band = dict(terrain)
+        if x_sign < 0.0:
+            left_tx = float(band.get("left_tx", -1.0))
+            right_tx = float(band.get("right_tx", 1.0))
+            band["left_tx"] = -right_tx
+            band["right_tx"] = -left_tx
+        bands.append(band)
     bands.sort(key=lambda band: (float(band.get("left_tx", -1.0)) + float(band.get("right_tx", 1.0))) * 0.5)
     return bands
 
@@ -489,7 +621,7 @@ def add_terrain_embeds(parent, group: list[dict]) -> None:
 
         for band_index in range(max_band_count):
             for sample_index, sample in enumerate(group):
-                ty = 0.0 if count <= 1 else sample_index / (count - 1)
+                ty = sample_group_t(group, sample_index)
                 bands = terrain_bands(sample, embed_type)
                 if band_index >= len(bands):
                     flush_run()
@@ -517,6 +649,10 @@ def group_rail_height(group: list[dict], key: str) -> float:
     return max(values) if values else 0.0
 
 
+def group_uses_mirrored_helper_x(group: list[dict]) -> bool:
+    return bool(group and sample_x_scale_sign(group[0]) < 0.0)
+
+
 def add_segment(name: str, group: list[dict], closed: bool):
     bpy.ops.object.empty_add(type="PLAIN_AXES", radius=1.0, location=(0.0, 0.0, 0.0))
     parent = bpy.context.active_object
@@ -532,8 +668,16 @@ def add_segment(name: str, group: list[dict], closed: bool):
         props.horiz_subdivs = 9
         props.mesh_subdivision_length = 20.0
         props.mesh_subdivision_angle_deg = 8.0
-    props.rail_height_left = group_rail_height(group, "rail_height_left")
-    props.rail_height_right = group_rail_height(group, "rail_height_right")
+    left_rail_height = group_rail_height(group, "rail_height_left")
+    right_rail_height = group_rail_height(group, "rail_height_right")
+    if group_uses_mirrored_helper_x(group):
+        left_rail_height, right_rail_height = right_rail_height, left_rail_height
+    props.rail_height_left = left_rail_height
+    props.rail_height_right = right_rail_height
+    props.rail_start_left = 0.0
+    props.rail_end_left = 1.0
+    props.rail_start_right = 0.0
+    props.rail_end_right = 1.0
     props.disable_auto_rebake = True
     props.draw_embeds = True
 
@@ -577,7 +721,7 @@ def add_segment(name: str, group: list[dict], closed: bool):
     count = len(group)
     prev_quat: Quaternion | None = None
     for i, sample in enumerate(group):
-        frame = 0.0 if count <= 1 else 100.0 * i / (count - 1)
+        frame = sample_group_frame(group, i)
         center, right, up, forward, half_width = sample_frame(group, i, closed)
         quat = quat_from_axes(right, up, forward)
         if prev_quat is not None and prev_quat.dot(quat) < 0.0:
@@ -588,19 +732,22 @@ def add_segment(name: str, group: list[dict], closed: bool):
         helper.location = center
         helper.rotation_quaternion = quat
         helper.scale = scale_value
-        helper.keyframe_insert(data_path="location", frame=frame)
-        helper.keyframe_insert(data_path="rotation_quaternion", frame=frame)
-        helper.keyframe_insert(data_path="scale", frame=frame)
-    if sample_is_round_pipe_family(group[0]):
-        set_linear_x_fcurves(action)
-    else:
-        set_plugin_smooth_fcurves(action)
+        insert_fcurve_key(action, "location", 0, frame, center.x)
+        insert_fcurve_key(action, "location", 1, frame, center.y)
+        insert_fcurve_key(action, "location", 2, frame, center.z)
+        insert_fcurve_key(action, "rotation_quaternion", 0, frame, quat.w)
+        insert_fcurve_key(action, "rotation_quaternion", 1, frame, quat.x)
+        insert_fcurve_key(action, "rotation_quaternion", 2, frame, quat.y)
+        insert_fcurve_key(action, "rotation_quaternion", 3, frame, quat.z)
+        insert_fcurve_key(action, "scale", 0, frame, scale_value.x)
+        insert_fcurve_key(action, "scale", 1, frame, scale_value.y)
+        insert_fcurve_key(action, "scale", 2, frame, scale_value.z)
+    set_linear_x_fcurves(action)
 
     cp_stride = max(1, math.ceil(count / 32))
     cp_indices = list(range(0, count, cp_stride))
     if cp_indices[-1] != count - 1:
         cp_indices.append(count - 1)
-    cp_positions = [vec(group[sample_index]["center"]) for sample_index in cp_indices]
     for cp_i, sample_index in enumerate(cp_indices):
         center, right, up, forward, _half_width = sample_frame(group, sample_index, closed)
         cp = bpy.data.objects.new(f"{name}.CP.{cp_i:03d}", None)
@@ -613,11 +760,9 @@ def add_segment(name: str, group: list[dict], closed: bool):
         cp.parent = parent
         bpy.context.collection.objects.link(cp)
         cp.mxt_cp_data.is_mxt_control_point = True
-        cp.mxt_cp_data.time = 0.0 if count <= 1 else sample_index / (count - 1)
-        if cp_i > 0:
-            cp.mxt_cp_data.handle_in_length = max(0.001, (cp_positions[cp_i] - cp_positions[cp_i - 1]).length / 3.0)
-        if cp_i + 1 < len(cp_positions):
-            cp.mxt_cp_data.handle_out_length = max(0.001, (cp_positions[cp_i + 1] - cp_positions[cp_i]).length / 3.0)
+        cp.mxt_cp_data.time = sample_group_t(group, sample_index)
+        cp.mxt_cp_data.handle_in_length = 0.001
+        cp.mxt_cp_data.handle_out_length = 0.001
 
     checkpoint_stride = max(1, min(32, count - 1))
     checkpoint_stride = max(1, min(checkpoint_stride, 8))
@@ -629,8 +774,8 @@ def add_segment(name: str, group: list[dict], closed: bool):
         p0, r0, u0, f0, w0 = sample_frame(group, i, closed)
         p1, r1, u1, f1, w1 = sample_frame(group, j, closed)
         cp = props.checkpoints.add()
-        cp.start_t = 0.0 if count <= 1 else i / (count - 1)
-        cp.end_t = 0.0 if count <= 1 else j / (count - 1)
+        cp.start_t = sample_group_t(group, i)
+        cp.end_t = sample_group_t(group, j)
         cp.pos_start = p0
         cp.pos_end = p1
         cp.basis_start = [r0.x, r0.y, r0.z, u0.x, u0.y, u0.z, f0.x, f0.y, f0.z]
@@ -694,12 +839,13 @@ def split_samples(
         )
         hard_gap = bool(current and sample.get("authored_gap_before", False))
         stream_break = bool(current and sample.get("stream_break_before", False))
+        sample_limit_reached = bool(max_samples > 0 and len(current) >= max(2, max_samples))
         soft_cut = bool(
             current
             and (
                 sample["shape"] != current[-1]["shape"]
                 or rail_cut
-                or len(current) >= max(2, max_samples)
+                or sample_limit_reached
             )
         )
         if (
@@ -850,8 +996,6 @@ def link_temporal_rows(segment_rows: list[list[tuple[list[dict], object]]], clos
         for next_group, next_segment in flat_segments:
             if prev_segment == next_segment:
                 continue
-            if bool(next_group[0].get("authored_gap_before", False)):
-                continue
             sequence_delta = sample_sequence(next_group[0]) - prev_sequence
             if sequence_delta < 0 or sequence_delta > 1:
                 if not (closed and prev_sequence >= max_sequence - 1 and sample_sequence(next_group[0]) <= 1):
@@ -866,6 +1010,7 @@ def main() -> int:
     ensure_preview_materials()
 
     data = json.loads(args.samples_json.read_text(encoding="utf-8"))
+    add_mesh_collision_helpers(data)
     road_entries = data.get("roads") or [{"stream_index": 0, "samples": data.get("samples", [])}]
     primary_samples = road_entries[0].get("samples", []) if road_entries else []
     if len(primary_samples) < 2:
@@ -892,7 +1037,6 @@ def main() -> int:
             stream_groups.append((stream_index, groups))
     if not stream_groups:
         raise RuntimeError("no segment groups produced")
-    extend_adjacent_boundaries(stream_groups, closed)
 
     ts = bpy.context.scene.mxt_track_settings
     ts.track_name = args.track_name or f"FZGX Course {int(data.get('authored_track_id', 0)):02d}"

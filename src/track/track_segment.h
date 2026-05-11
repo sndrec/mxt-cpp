@@ -22,12 +22,34 @@ public:
         float segment_length;
         float left_rail_height;
         float right_rail_height;
+        float left_rail_start;
+        float left_rail_end;
+        float right_rail_start;
+        float right_rail_end;
         SimAABB bounds;
         int checkpoint_start;
         int checkpoint_run_length;
         RoadShape* road_shape;
         RoadTransformCurve* curve_matrix;
 };
+
+static inline bool track_segment_rail_span_contains(float start, float end, float ty)
+{
+	if (end < start) {
+		const float tmp = start;
+		start = end;
+		end = tmp;
+	}
+	return ty >= start && ty <= end;
+}
+
+static inline bool track_segment_rail_side_active(const TrackSegment &segment, int side_index, float ty)
+{
+	if (side_index == 0) {
+		return track_segment_rail_span_contains(segment.left_rail_start, segment.left_rail_end, ty);
+	}
+	return track_segment_rail_span_contains(segment.right_rail_start, segment.right_rail_end, ty);
+}
 
 class RoadShape
 {
