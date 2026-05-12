@@ -344,6 +344,7 @@ class MXTTrackSettings(PropertyGroup):
         soft_max=1.0,
     )
 
+    draw_checkpoints: BoolProperty(name="Draw Checkpoints", default=False)
     trigger_objects: CollectionProperty(type=MXTTriggerObject)
     active_trigger_obj_idx: IntProperty(default=0)
 
@@ -1112,6 +1113,22 @@ def get_active_mxt_road_segment_parent(context):
             return obj
         obj = obj.parent            
     return None
+
+def get_selected_mxt_road_segment_parents(context):
+    parents = []
+    seen = set()
+    for selected in getattr(context, "selected_objects", []):
+        obj = selected
+        while obj:
+            if getattr(obj, "mxt_road_overall_props", None) \
+                    and obj.mxt_road_overall_props.is_mxt_road_segment_parent:
+                if obj.name not in seen:
+                    parents.append(obj)
+                    seen.add(obj.name)
+                break
+            obj = obj.parent
+    return parents
+
 def get_mxt_control_point_empties(parent_obj, sorted_by_time=True):
     cps = []
     if not parent_obj: return cps
@@ -2370,6 +2387,7 @@ def mxt_draw_callback():
     parent = get_active_mxt_road_segment_parent(bpy.context)
     if not parent:
         return 
+    track_settings = getattr(bpy.context.scene, "mxt_track_settings", None)
 
     shader = gpu.shader.from_builtin('UNIFORM_COLOR')
     gpu.state.blend_set('ALPHA')
@@ -2392,32 +2410,39 @@ def mxt_draw_callback():
         shader.uniform_float("color", (1.0, 1.0, 0.0, 1.0))
         batch.draw(shader)
 
-    if props.draw_checkpoints and getattr(props, "checkpoints", None):
-        shader.uniform_float("color", (1.0, 0.2, 0.2, 1.0))  
-        for cp in props.checkpoints:
-            for pos, basis_flat, xr, yr in (
-                (cp.pos_start, cp.basis_start, cp.x_rad_start, cp.y_rad_start),
-                (cp.pos_end, cp.basis_end, cp.x_rad_end, cp.y_rad_end)):
+    if track_settings and track_settings.draw_checkpoints:
+        shader.uniform_float("color", (1.0, 0.2, 0.2, 1.0))
+        checkpoint_parents = get_selected_mxt_road_segment_parents(bpy.context)
+        if not checkpoint_parents:
+            checkpoint_parents = [parent]
+        for checkpoint_parent in checkpoint_parents:
+            checkpoint_props = checkpoint_parent.mxt_road_overall_props
+            if not getattr(checkpoint_props, "checkpoints", None):
+                continue
+            for cp in checkpoint_props.checkpoints:
+                for pos, basis_flat, xr, yr in (
+                    (cp.pos_start, cp.basis_start, cp.x_rad_start, cp.y_rad_start),
+                    (cp.pos_end, cp.basis_end, cp.x_rad_end, cp.y_rad_end)):
 
-                B = mathutils.Matrix((
-                    Vector(basis_flat[0:3]),
-                    Vector(basis_flat[3:6]),
-                    Vector(basis_flat[6:9]))).transposed()
+                    B = mathutils.Matrix((
+                        Vector(basis_flat[0:3]),
+                        Vector(basis_flat[3:6]),
+                        Vector(basis_flat[6:9]))).transposed()
 
                 
-                c = Vector(pos)
+                    c = Vector(pos)
 
-                p_x0 = c - B.col[0].normalized() * xr
-                p_x1 = c + B.col[0].normalized() * xr
-                p_y0 = c - B.col[1].normalized() * yr
-                p_y1 = c + B.col[1].normalized() * yr
+                    p_x0 = c - B.col[0].normalized() * xr
+                    p_x1 = c + B.col[0].normalized() * xr
+                    p_y0 = c - B.col[1].normalized() * yr
+                    p_y1 = c + B.col[1].normalized() * yr
 
-                world = [parent.matrix_world @ p for p in (p_x0, p_x1, p_y0, p_y1)]
+                    world = [checkpoint_parent.matrix_world @ p for p in (p_x0, p_x1, p_y0, p_y1)]
 
-                batch = batch_for_shader(shader, 'LINES', {"pos": world[0:2]})
-                batch.draw(shader)
-                batch = batch_for_shader(shader, 'LINES', {"pos": world[2:4]})
-                batch.draw(shader)
+                    batch = batch_for_shader(shader, 'LINES', {"pos": world[0:2]})
+                    batch.draw(shader)
+                    batch = batch_for_shader(shader, 'LINES', {"pos": world[2:4]})
+                    batch.draw(shader)
 
     
     if props.draw_embeds and getattr(props, "embeds", None):
@@ -2629,6 +2654,8 @@ class MXTRoad_PT_MainPanel(Panel):
                 global_box.prop(ts, "light_direction")
             else:
                 global_box.label(text="(Reload the MXT add-on or restart Blender to see lighting params)")
+            global_box.separator()
+            global_box.prop(ts, "draw_checkpoints")
             trig_box = layout.box()
             trig_box.label(text="Trigger Objects")
             row = trig_box.row()
@@ -2826,7 +2853,6 @@ class MXTRoad_PT_MainPanel(Panel):
         
         data_box = layout.box(); data_box.label(text="Data and Generation")
         data_box.prop(road_props, "num_checkpoints_per_segment")
-        data_box.prop(road_props, "draw_checkpoints")
         data_box.prop(road_props, "disable_auto_rebake")
         data_box.separator()
         data_box.operator("mxt_road.generate_curve_matrix", text="Generate CurveMatrix", icon='FCURVE')
