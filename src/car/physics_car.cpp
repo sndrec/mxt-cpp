@@ -31,6 +31,12 @@ static inline SimVec3 set_vec3_length(const SimVec3 &v, float len) {
 	return SimVec3();
 }
 
+static inline float landing_alignment_penalty_factor(uint32_t air_time)
+{
+	constexpr float full_penalty_frames = 0.5f * _TICKS_PER_SECOND;
+	return std::clamp(static_cast<float>(air_time) / full_penalty_frames, 0.0f, 1.0f);
+}
+
 static inline godot::Vector3 debug_gd_vec3(const SimVec3& v)
 {
 	return godot::Vector3(v.x, v.y, v.z);
@@ -3338,8 +3344,11 @@ if (apply_full_response) {
 	float vel_dot_track = normalized_safe(LOAD_VEC3(velocity)).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
 	if (up_dot_track < 0.0f)
 		up_dot_track = 0.0f;
+	const float landing_penalty_factor = landing_alignment_penalty_factor(soa->air_time[soa_index]);
+	const float effective_up_dot_track = 1.0f - ((1.0f - up_dot_track) * landing_penalty_factor);
+	const SimVec3 velocity_before_landing_penalty = LOAD_VEC3(velocity);
 	float vel_along_track = LOAD_VEC3(velocity).length() * vel_dot_track;
-	soa->base_speed[soa_index] = soa->base_speed[soa_index] * up_dot_track;
+	soa->base_speed[soa_index] = soa->base_speed[soa_index] * effective_up_dot_track;
 	SimVec3 normal_vel = LOAD_VEC3(track_surface_normal) * vel_along_track;
 	float vel_align_factor = 2.0f * std::abs(0.5f + vel_dot_track);
 	SimVec3 vel_add = LOAD_VEC3(velocity) - normal_vel;
@@ -3350,8 +3359,11 @@ if (apply_full_response) {
 	}else
 	{
 		vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);
-		SUB_VEC3(velocity, normal_vel * up_dot_track);
-		ADD_VEC3(velocity, vel_add);
+		const SimVec3 full_penalty_velocity =
+			velocity_before_landing_penalty - normal_vel * up_dot_track + vel_add;
+		STORE_VEC3(velocity,
+			velocity_before_landing_penalty +
+			(full_penalty_velocity - velocity_before_landing_penalty) * landing_penalty_factor);
 	}
 	soa->air_time[soa_index] = 0;
 }
