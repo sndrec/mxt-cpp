@@ -511,9 +511,6 @@ func update_spiral_values(_new_value : float) -> void:
 	current_path.set("spiral_axis", Vector3(spiral_axis_x.value, spiral_axis_y.value, spiral_axis_z.value))
 	_mark_spiral_dirty()
 
-var left_clicked := false
-var right_clicked := false
-
 func _input(event: InputEvent) -> void:
 	if !cs_rect.is_visible_in_tree():
 		return
@@ -522,10 +519,8 @@ func _input(event: InputEvent) -> void:
 		if mouse_pos.x < 0.0 or mouse_pos.y < 0.0 or mouse_pos.x > cs_rect.size.x or mouse_pos.y > cs_rect.size.y:
 			return
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			left_clicked = true
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			right_clicked = true
 			get_viewport().set_input_as_handled()
 
 func update_handle_properties(in_value : float) -> void:
