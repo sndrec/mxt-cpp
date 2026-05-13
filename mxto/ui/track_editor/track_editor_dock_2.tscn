@@ -939,32 +939,38 @@ max_value = 1.0
 step = 0.0
 value = 1.0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control"]
-layout_mode = 0
-offset_top = 1.0
-offset_right = 194.0
-offset_bottom = 647.0
+[node name="Handles" type="ScrollContainer" parent="Control/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+metadata/_tab_index = 7
 
-[node name="DrawMesh" type="CheckBox" parent="Control/VBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Handles"]
+custom_minimum_size = Vector2(335, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="DrawMesh" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer"]
 layout_mode = 2
 button_pressed = true
 text = "Draw Mesh"
 
-[node name="DrawCurve" type="CheckBox" parent="Control/VBoxContainer"]
+[node name="DrawCurve" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer"]
 layout_mode = 2
 button_pressed = true
 text = "Draw Curve"
 
-[node name="DrawHandles" type="CheckBox" parent="Control/VBoxContainer"]
+[node name="DrawHandles" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer"]
 layout_mode = 2
 button_pressed = true
 text = "Draw Handles"
 
-[node name="DataEditor" type="Control" parent="Control/VBoxContainer"]
+[node name="DataEditor" type="Control" parent="Control/TabContainer/Handles/VBoxContainer"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BezierHandleData" type="VBoxContainer" parent="Control/VBoxContainer/DataEditor"]
+[node name="BezierHandleData" type="VBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor"]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -973,31 +979,31 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
 
-[node name="HBoxContainer11" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer11" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="CopyTransformButton1" type="Button" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11"]
+[node name="CopyTransformButton1" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Copy"
 
-[node name="PasteTransformButton1" type="Button" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11"]
+[node name="PasteTransformButton1" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Paste"
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 text = "Position"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer"]
 layout_mode = 2
 text = " X "
 
-[node name="HandlePosX" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer"]
+[node name="HandlePosX" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_jhpqy")
@@ -1008,14 +1014,14 @@ value = -12.1
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2"]
 layout_mode = 2
 text = " Y "
 
-[node name="HandlePosY" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2"]
+[node name="HandlePosY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1026,14 +1032,14 @@ value = 164.5
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3"]
 layout_mode = 2
 text = " Z "
 
-[node name="HandlePosZ" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3"]
+[node name="HandlePosZ" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1044,18 +1050,18 @@ value = 52.4
 allow_greater = true
 allow_lesser = true
 
-[node name="Label2" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label2" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 text = "Rotation"
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4"]
 layout_mode = 2
 text = " P "
 
-[node name="HandleRotP" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4"]
+[node name="HandleRotP" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1066,14 +1072,14 @@ value = -9.3
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer5" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5"]
 layout_mode = 2
 text = " Y "
 
-[node name="HandleRotY" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5"]
+[node name="HandleRotY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1084,14 +1090,14 @@ value = 2.9
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6"]
 layout_mode = 2
 text = " R "
 
-[node name="HandleRotR" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6"]
+[node name="HandleRotR" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1102,18 +1108,18 @@ value = -0.1
 allow_greater = true
 allow_lesser = true
 
-[node name="Label3" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label3" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 text = "Scale"
 
-[node name="HBoxContainer7" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer7" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7"]
 layout_mode = 2
 text = " W "
 
-[node name="HandleScaleW" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7"]
+[node name="HandleScaleW" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1124,14 +1130,14 @@ value = 250.0
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer8" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer8" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8"]
 layout_mode = 2
 text = " H "
 
-[node name="HandleScaleH" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8"]
+[node name="HandleScaleH" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1142,18 +1148,18 @@ value = 1.0
 allow_greater = true
 allow_lesser = true
 
-[node name="Label4" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label4" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 text = "Handle In/Out Weight"
 
-[node name="HBoxContainer9" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer9" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9"]
 layout_mode = 2
 text = "  I  "
 
-[node name="HandleWeightI" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9"]
+[node name="HandleWeightI" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1164,14 +1170,14 @@ value = 200.0
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer10" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer10" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10"]
 layout_mode = 2
 text = " O "
 
-[node name="HandleWeightO" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10"]
+[node name="HandleWeightO" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1182,18 +1188,18 @@ value = 200.0
 allow_greater = true
 allow_lesser = true
 
-[node name="Label5" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label5" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 text = "Interpolation"
 
-[node name="HBoxContainer12" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer12" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
 layout_mode = 2
 text = "Rot"
 
-[node name="RotEaseType" type="OptionButton" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+[node name="RotEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
 layout_mode = 2
 size_flags_horizontal = 3
 item_count = 4
@@ -1206,7 +1212,7 @@ popup/item_2/id = 2
 popup/item_3/text = "Linear"
 popup/item_3/id = 3
 
-[node name="RotEaseStrength" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+[node name="RotEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1214,14 +1220,14 @@ max_value = 2.0
 step = 0.05
 value = 1.0
 
-[node name="HBoxContainer13" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer13" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
 layout_mode = 2
 text = "Twist"
 
-[node name="TwistEaseType" type="OptionButton" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+[node name="TwistEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
 layout_mode = 2
 size_flags_horizontal = 3
 item_count = 4
@@ -1234,7 +1240,7 @@ popup/item_2/id = 2
 popup/item_3/text = "Linear"
 popup/item_3/id = 3
 
-[node name="TwistEaseStrength" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+[node name="TwistEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1242,14 +1248,14 @@ max_value = 2.0
 step = 0.05
 value = 1.0
 
-[node name="HBoxContainer14" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer14" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
 layout_mode = 2
 text = "Scale"
 
-[node name="ScaleEaseType" type="OptionButton" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+[node name="ScaleEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
 layout_mode = 2
 size_flags_horizontal = 3
 item_count = 4
@@ -1262,7 +1268,7 @@ popup/item_2/id = 2
 popup/item_3/text = "Linear"
 popup/item_3/id = 3
 
-[node name="ScaleEaseStrength" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+[node name="ScaleEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1270,7 +1276,7 @@ max_value = 2.0
 step = 0.05
 value = 1.0
 
-[node name="LineHandleData" type="VBoxContainer" parent="Control/VBoxContainer/DataEditor"]
+[node name="LineHandleData" type="VBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor"]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -1280,31 +1286,31 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
 
-[node name="HBoxContainer11" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer11" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="CopyTransformButton2" type="Button" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11"]
+[node name="CopyTransformButton2" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Copy"
 
-[node name="PasteTransformButton2" type="Button" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11"]
+[node name="PasteTransformButton2" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Paste"
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 text = "Position"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer"]
 layout_mode = 2
 text = " X "
 
-[node name="HandlePosX" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer"]
+[node name="HandlePosX" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1315,14 +1321,14 @@ value = -927.9
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2"]
 layout_mode = 2
 text = " Y "
 
-[node name="HandlePosY" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2"]
+[node name="HandlePosY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1333,14 +1339,14 @@ value = 1061.8
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3"]
 layout_mode = 2
 text = " Z "
 
-[node name="HandlePosZ" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3"]
+[node name="HandlePosZ" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1351,18 +1357,18 @@ value = 982.3
 allow_greater = true
 allow_lesser = true
 
-[node name="Label2" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="Label2" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 text = "Rotation"
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4"]
 layout_mode = 2
 text = " P "
 
-[node name="HandleRotP" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4"]
+[node name="HandleRotP" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1373,14 +1379,14 @@ value = -10.2
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer5" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5"]
 layout_mode = 2
 text = " Y "
 
-[node name="HandleRotY" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5"]
+[node name="HandleRotY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1391,14 +1397,14 @@ value = -88.4
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6"]
 layout_mode = 2
 text = " R "
 
-[node name="HandleRotR" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6"]
+[node name="HandleRotR" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1409,18 +1415,18 @@ value = 113.5
 allow_greater = true
 allow_lesser = true
 
-[node name="Label3" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="Label3" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 text = "Scale"
 
-[node name="HBoxContainer7" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer7" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7"]
 layout_mode = 2
 text = " W "
 
-[node name="HandleScaleW" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7"]
+[node name="HandleScaleW" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1431,14 +1437,14 @@ value = 45.0
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer8" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer8" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8"]
 layout_mode = 2
 text = " H "
 
-[node name="HandleScaleH" type="SpinBox" parent="Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8"]
+[node name="HandleScaleH" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")

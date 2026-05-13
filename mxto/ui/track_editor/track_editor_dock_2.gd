@@ -8,9 +8,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
 const UI_EDGE_MARGIN := 24.0
-const HANDLE_PANEL_WIDTH := 194.0
 const PROPERTY_PANEL_WIDTH := 360.0
-const PROPERTY_PANEL_GAP := 6.0
 const PANEL_MIN_HEIGHT := 360.0
 const SCROLL_BAR_WIDTH := 24
 
@@ -19,10 +17,9 @@ var track_root : TrackRoot
 var current_path : RoadPath
 
 @onready var dock_control: Control = $Control
-@onready var handle_panel: VBoxContainer = $Control/VBoxContainer
-@onready var draw_mesh: CheckBox = $Control/VBoxContainer/DrawMesh
-@onready var draw_curve: CheckBox = $Control/VBoxContainer/DrawCurve
-@onready var draw_handles: CheckBox = $Control/VBoxContainer/DrawHandles
+@onready var draw_mesh: CheckBox = $Control/TabContainer/Handles/VBoxContainer/DrawMesh
+@onready var draw_curve: CheckBox = $Control/TabContainer/Handles/VBoxContainer/DrawCurve
+@onready var draw_handles: CheckBox = $Control/TabContainer/Handles/VBoxContainer/DrawHandles
 
 @onready var track_cross_section_slider: HSlider = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/TrackCrossSectionSlider
 @onready var tab_container: TabContainer = $Control/TabContainer
@@ -107,6 +104,7 @@ var current_path : RoadPath
 
 @onready var modulation: ScrollContainer = $Control/TabContainer/Modulation
 @onready var embeds: ScrollContainer = $Control/TabContainer/Embeds
+@onready var handles_panel: ScrollContainer = $Control/TabContainer/Handles
 
 @onready var cs_rect: CurveCrossSection = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect
 
@@ -117,36 +115,36 @@ var current_path : RoadPath
 @onready var mesh_layout_count: SpinBox = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2/MeshLayoutCount
 @onready var mesh_layout_create_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2
 
-@onready var bez_pos_x: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer/HandlePosX
-@onready var bez_pos_y: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2/HandlePosY
-@onready var bez_pos_z: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3/HandlePosZ
-@onready var bez_rot_x: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4/HandleRotP
-@onready var bez_rot_y: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5/HandleRotY
-@onready var bez_rot_z: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6/HandleRotR
-@onready var bez_scale_w: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7/HandleScaleW
-@onready var bez_scale_h: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8/HandleScaleH
-@onready var bez_weight_i: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9/HandleWeightI
-@onready var bez_weight_o: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10/HandleWeightO
-@onready var bez_rot_ease_type: OptionButton = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12/RotEaseType
-@onready var bez_rot_ease_strength: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12/RotEaseStrength
-@onready var bez_twist_ease_type: OptionButton = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13/TwistEaseType
-@onready var bez_twist_ease_strength: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13/TwistEaseStrength
-@onready var bez_scale_ease_type: OptionButton = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14/ScaleEaseType
-@onready var bez_scale_ease_strength: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14/ScaleEaseStrength
+@onready var bez_pos_x: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer/HandlePosX
+@onready var bez_pos_y: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2/HandlePosY
+@onready var bez_pos_z: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3/HandlePosZ
+@onready var bez_rot_x: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4/HandleRotP
+@onready var bez_rot_y: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5/HandleRotY
+@onready var bez_rot_z: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6/HandleRotR
+@onready var bez_scale_w: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7/HandleScaleW
+@onready var bez_scale_h: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8/HandleScaleH
+@onready var bez_weight_i: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9/HandleWeightI
+@onready var bez_weight_o: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10/HandleWeightO
+@onready var bez_rot_ease_type: OptionButton = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12/RotEaseType
+@onready var bez_rot_ease_strength: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12/RotEaseStrength
+@onready var bez_twist_ease_type: OptionButton = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13/TwistEaseType
+@onready var bez_twist_ease_strength: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13/TwistEaseStrength
+@onready var bez_scale_ease_type: OptionButton = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14/ScaleEaseType
+@onready var bez_scale_ease_strength: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14/ScaleEaseStrength
 
-@onready var line_pos_x: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer/HandlePosX
-@onready var line_pos_y: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2/HandlePosY
-@onready var line_pos_z: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3/HandlePosZ
-@onready var line_rot_x: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4/HandleRotP
-@onready var line_rot_y: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5/HandleRotY
-@onready var line_rot_z: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6/HandleRotR
-@onready var line_scale_w: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7/HandleScaleW
-@onready var line_scale_h: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8/HandleScaleH
+@onready var line_pos_x: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer/HandlePosX
+@onready var line_pos_y: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2/HandlePosY
+@onready var line_pos_z: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3/HandlePosZ
+@onready var line_rot_x: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4/HandleRotP
+@onready var line_rot_y: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5/HandleRotY
+@onready var line_rot_z: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6/HandleRotR
+@onready var line_scale_w: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7/HandleScaleW
+@onready var line_scale_h: SpinBox = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8/HandleScaleH
 
-@onready var copy_transform_button_1: Button = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11/CopyTransformButton1
-@onready var paste_transform_button_1: Button = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11/PasteTransformButton1
-@onready var copy_transform_button_2: Button = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11/CopyTransformButton2
-@onready var paste_transform_button_2: Button = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11/PasteTransformButton2
+@onready var copy_transform_button_1: Button = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11/CopyTransformButton1
+@onready var paste_transform_button_1: Button = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11/PasteTransformButton1
+@onready var copy_transform_button_2: Button = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11/CopyTransformButton2
+@onready var paste_transform_button_2: Button = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11/PasteTransformButton2
 
 var transform_clipboard := Transform3D.IDENTITY
 var road_poly_clipboard := PackedFloat32Array()
@@ -320,6 +318,7 @@ func _property_scroll_panels() -> Array:
 		object_panel,
 		modulation,
 		embeds,
+		handles_panel,
 	]
 
 func _refresh_scrollbar_widths() -> void:
@@ -330,19 +329,14 @@ func _refresh_scrollbar_widths() -> void:
 func _configure_screen_layout() -> void:
 	var viewport_size := get_viewport_rect().size
 	var panel_height : float = maxf(PANEL_MIN_HEIGHT, viewport_size.y - UI_EDGE_MARGIN * 2.0)
-	var tab_left := HANDLE_PANEL_WIDTH + PROPERTY_PANEL_GAP
-	var total_width := tab_left + PROPERTY_PANEL_WIDTH
 	set_anchors_preset(Control.PRESET_TOP_LEFT, false)
-	position = Vector2(maxf(UI_EDGE_MARGIN, viewport_size.x - UI_EDGE_MARGIN - total_width), UI_EDGE_MARGIN)
-	size = Vector2(total_width, panel_height)
+	position = Vector2(maxf(UI_EDGE_MARGIN, viewport_size.x - UI_EDGE_MARGIN - PROPERTY_PANEL_WIDTH), UI_EDGE_MARGIN)
+	size = Vector2(PROPERTY_PANEL_WIDTH, panel_height)
 	dock_control.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
 	dock_control.position = Vector2.ZERO
 	dock_control.size = size
-	handle_panel.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
-	handle_panel.position = Vector2.ZERO
-	handle_panel.size = Vector2(HANDLE_PANEL_WIDTH, panel_height)
 	tab_container.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
-	tab_container.position = Vector2(tab_left, 0.0)
+	tab_container.position = Vector2.ZERO
 	tab_container.size = Vector2(PROPERTY_PANEL_WIDTH, panel_height)
 	tab_container.custom_minimum_size = Vector2(PROPERTY_PANEL_WIDTH, 0.0)
 	for scroll_panel in _property_scroll_panels():
@@ -383,7 +377,7 @@ func _active_track_trigger() -> Node3D:
 		return selected
 	return null
 
-func _apply_context_tabs(show_info : bool, show_spiral : bool, show_rails : bool, show_track : bool, show_object : bool, show_modulation : bool, show_embeds : bool) -> void:
+func _apply_context_tabs(show_info : bool, show_spiral : bool, show_rails : bool, show_track : bool, show_object : bool, show_modulation : bool, show_embeds : bool, show_handles : bool) -> void:
 	info_panel.visible = show_info
 	spiral_panel.visible = show_spiral
 	rail_panel.visible = show_rails
@@ -391,18 +385,20 @@ func _apply_context_tabs(show_info : bool, show_spiral : bool, show_rails : bool
 	object_panel.visible = show_object
 	modulation.visible = show_modulation
 	embeds.visible = show_embeds
-	var any_visible := show_info or show_spiral or show_rails or show_track or show_object or show_modulation or show_embeds
+	handles_panel.visible = show_handles
+	var any_visible := show_info or show_spiral or show_rails or show_track or show_object or show_modulation or show_embeds or show_handles
 	tab_container.visible = any_visible
 	if !any_visible:
 		_hide_cross_section_visual()
 		return
-	var visible_tabs := [show_info, show_rails, show_spiral, show_track, show_object, show_modulation, show_embeds]
+	var visible_tabs := [show_info, show_rails, show_spiral, show_track, show_object, show_modulation, show_embeds, show_handles]
 	var first_visible := -1
 	for i in visible_tabs.size():
 		if visible_tabs[i]:
 			first_visible = i
 			tab_container.set_tab_hidden(i, false)
-	if first_visible >= 0:
+	var current_tab_visible := tab_container.current_tab >= 0 and tab_container.current_tab < visible_tabs.size() and bool(visible_tabs[tab_container.current_tab])
+	if first_visible >= 0 and !current_tab_visible:
 		tab_container.current_tab = first_visible
 	for i in visible_tabs.size():
 		tab_container.set_tab_hidden(i, !visible_tabs[i])
@@ -423,7 +419,8 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_object := mode == TrackEditingScene.ToolMode.EDIT_OBJECT and (active_trigger != null or has_path)
 	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION
 	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.EDIT_EMBED
-	_apply_context_tabs(show_info, show_spiral, show_rails, show_track, show_object, show_modulation, show_embeds)
+	var show_handles := has_path
+	_apply_context_tabs(show_info, show_spiral, show_rails, show_track, show_object, show_modulation, show_embeds, show_handles)
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
 	var show_mesh_layout_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT
 	var show_shape_type_controls := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
@@ -449,6 +446,8 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_handle_data := show_bezier_handle_data or show_line_handle_data
 	bezier_handle_data.visible = show_handle_data and selected is BezierHandle
 	line_handle_data.visible = show_handle_data and selected is LineHandle
+	if show_handle_data and handles_panel.visible:
+		tab_container.current_tab = tab_container.get_tab_idx_from_control(handles_panel)
 
 func _selected_embed() -> RoadEmbed:
 	if !current_path:
@@ -996,8 +995,8 @@ func _process(delta: float) -> void:
 		_hide_cross_section_visual()
 	_refresh_contextual_visibility()
 
-@onready var bezier_handle_data: VBoxContainer = $Control/VBoxContainer/DataEditor/BezierHandleData
-@onready var line_handle_data: VBoxContainer = $Control/VBoxContainer/DataEditor/LineHandleData
+@onready var bezier_handle_data: VBoxContainer = $Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData
+@onready var line_handle_data: VBoxContainer = $Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData
 
 func selection_updated() -> void:
 	smooth_curve.clear_points()
