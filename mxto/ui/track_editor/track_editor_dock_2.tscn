@@ -249,10 +249,116 @@ min_value = 2.0
 max_value = 64.0
 value = 5.0
 
-[node name="Spiral" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Rails" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 1
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Rails"]
+custom_minimum_size = Vector2(335, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 16
+
+[node name="LeftRailHeightRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Left Height"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="LeftRailHeight" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 10000.0
+step = 0.1
+value = 5.0
+
+[node name="LeftRailStartRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailStartRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Left Start"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="LeftRailStart" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailStartRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.001
+
+[node name="LeftRailEndRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailEndRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Left End"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="LeftRailEnd" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailEndRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.001
+value = 1.0
+
+[node name="RightRailHeightRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Right Height"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RightRailHeight" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 10000.0
+step = 0.1
+value = 5.0
+
+[node name="RightRailStartRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailStartRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Right Start"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RightRailStart" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailStartRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.001
+
+[node name="RightRailEndRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailEndRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Right End"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RightRailEnd" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailEndRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.001
+value = 1.0
+
+[node name="Spiral" type="ScrollContainer" parent="Control/TabContainer"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Spiral"]
 custom_minimum_size = Vector2(335, 0)
@@ -320,7 +426,7 @@ step = 0.01
 [node name="Track" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
-metadata/_tab_index = 2
+metadata/_tab_index = 3
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Track"]
 custom_minimum_size = Vector2(335, 0)
@@ -362,7 +468,7 @@ value = 1.0
 [node name="Object" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
-metadata/_tab_index = 3
+metadata/_tab_index = 4
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Object"]
 custom_minimum_size = Vector2(335, 0)
@@ -481,7 +587,7 @@ allow_greater = true
 [node name="Modulation" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
-metadata/_tab_index = 4
+metadata/_tab_index = 5
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Modulation"]
 custom_minimum_size = Vector2(335, 0)
@@ -511,7 +617,7 @@ text = "Remove"
 
 [node name="Embeds" type="ScrollContainer" parent="Control/TabContainer"]
 layout_mode = 2
-metadata/_tab_index = 5
+metadata/_tab_index = 6
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Embeds"]
 custom_minimum_size = Vector2(335, 0)

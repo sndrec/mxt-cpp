@@ -43,6 +43,14 @@ var current_path : RoadPath
 @onready var spiral_axis_y: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisY
 @onready var spiral_axis_z: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisZ
 
+@onready var rail_panel: ScrollContainer = $Control/TabContainer/Rails
+@onready var left_rail_height: SpinBox = $Control/TabContainer/Rails/VBoxContainer/LeftRailHeightRow/LeftRailHeight
+@onready var left_rail_start: SpinBox = $Control/TabContainer/Rails/VBoxContainer/LeftRailStartRow/LeftRailStart
+@onready var left_rail_end: SpinBox = $Control/TabContainer/Rails/VBoxContainer/LeftRailEndRow/LeftRailEnd
+@onready var right_rail_height: SpinBox = $Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow/RightRailHeight
+@onready var right_rail_start: SpinBox = $Control/TabContainer/Rails/VBoxContainer/RightRailStartRow/RightRailStart
+@onready var right_rail_end: SpinBox = $Control/TabContainer/Rails/VBoxContainer/RightRailEndRow/RightRailEnd
+
 @onready var track_panel: ScrollContainer = $Control/TabContainer/Track
 @onready var track_name_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackName
 @onready var track_description_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackDescription
@@ -119,6 +127,7 @@ var cross_section_mesh := ImmediateMesh.new()
 var cross_section_material := StandardMaterial3D.new()
 var connected_tool_scene : TrackEditingScene
 var updating_spiral_controls := false
+var updating_rail_controls := false
 var updating_track_controls := false
 var updating_object_controls := false
 var updating_road_shape_controls := false
@@ -199,6 +208,12 @@ func _ready():
 	spiral_axis_x.value_changed.connect(update_spiral_values)
 	spiral_axis_y.value_changed.connect(update_spiral_values)
 	spiral_axis_z.value_changed.connect(update_spiral_values)
+	left_rail_height.value_changed.connect(update_rail_values)
+	left_rail_start.value_changed.connect(update_rail_values)
+	left_rail_end.value_changed.connect(update_rail_values)
+	right_rail_height.value_changed.connect(update_rail_values)
+	right_rail_start.value_changed.connect(update_rail_values)
+	right_rail_end.value_changed.connect(update_rail_values)
 	track_name_edit.text_changed.connect(update_track_name)
 	track_description_edit.text_changed.connect(update_track_description)
 	track_difficulty_edit.value_changed.connect(update_track_difficulty)
@@ -273,19 +288,20 @@ func _active_track_trigger() -> Node3D:
 		return selected
 	return null
 
-func _apply_context_tabs(show_info : bool, show_spiral : bool, show_track : bool, show_object : bool, show_modulation : bool, show_embeds : bool) -> void:
+func _apply_context_tabs(show_info : bool, show_spiral : bool, show_rails : bool, show_track : bool, show_object : bool, show_modulation : bool, show_embeds : bool) -> void:
 	info_panel.visible = show_info
 	spiral_panel.visible = show_spiral
+	rail_panel.visible = show_rails
 	track_panel.visible = show_track
 	object_panel.visible = show_object
 	modulation.visible = show_modulation
 	embeds.visible = show_embeds
-	var any_visible := show_info or show_spiral or show_track or show_object or show_modulation or show_embeds
+	var any_visible := show_info or show_spiral or show_rails or show_track or show_object or show_modulation or show_embeds
 	tab_container.visible = any_visible
 	if !any_visible:
 		_hide_cross_section_visual()
 		return
-	var visible_tabs := [show_info, show_spiral, show_track, show_object, show_modulation, show_embeds]
+	var visible_tabs := [show_info, show_rails, show_spiral, show_track, show_object, show_modulation, show_embeds]
 	var first_visible := -1
 	for i in visible_tabs.size():
 		if visible_tabs[i]:
@@ -306,11 +322,12 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var has_path := current_path != null
 	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
 	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SPIRAL and _is_spiral_path(current_path)
+	var show_rails := has_path and mode == TrackEditingScene.ToolMode.EDIT_RAILS
 	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
 	var show_object := _active_track_trigger() != null and mode == TrackEditingScene.ToolMode.EDIT_OBJECT
 	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION
 	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.EDIT_EMBED
-	_apply_context_tabs(show_info, show_spiral, show_track, show_object, show_modulation, show_embeds)
+	_apply_context_tabs(show_info, show_spiral, show_rails, show_track, show_object, show_modulation, show_embeds)
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
 	var show_mesh_layout_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT
 	var show_shape_type_controls := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
@@ -500,6 +517,37 @@ func update_rail_color(new_color : Color) -> void:
 	if updating_road_color_controls or !current_path:
 		return
 	current_path.rail_color = new_color
+	update_track_visuals()
+
+func _refresh_rail_controls() -> void:
+	if !current_path:
+		return
+	updating_rail_controls = true
+	left_rail_height.set_value_no_signal(current_path.left_rail_height)
+	left_rail_start.set_value_no_signal(current_path.left_rail_start)
+	left_rail_end.set_value_no_signal(current_path.left_rail_end)
+	right_rail_height.set_value_no_signal(current_path.right_rail_height)
+	right_rail_start.set_value_no_signal(current_path.right_rail_start)
+	right_rail_end.set_value_no_signal(current_path.right_rail_end)
+	updating_rail_controls = false
+
+func update_rail_values(_new_value : float) -> void:
+	if updating_rail_controls or !current_path:
+		return
+	var left_start_value := clampf(left_rail_start.value, 0.0, 1.0)
+	var left_end_value := clampf(left_rail_end.value, 0.0, 1.0)
+	if left_end_value < left_start_value:
+		left_end_value = left_start_value
+	var right_start_value := clampf(right_rail_start.value, 0.0, 1.0)
+	var right_end_value := clampf(right_rail_end.value, 0.0, 1.0)
+	if right_end_value < right_start_value:
+		right_end_value = right_start_value
+	current_path.left_rail_height = maxf(0.0, left_rail_height.value)
+	current_path.left_rail_start = left_start_value
+	current_path.left_rail_end = left_end_value
+	current_path.right_rail_height = maxf(0.0, right_rail_height.value)
+	current_path.right_rail_start = right_start_value
+	current_path.right_rail_end = right_end_value
 	update_track_visuals()
 
 func _refresh_mesh_subdivision_controls() -> void:
@@ -703,6 +751,8 @@ func _process(delta: float) -> void:
 		_refresh_track_controls()
 	if object_panel.visible:
 		_refresh_track_object_controls()
+	if rail_panel.visible:
+		_refresh_rail_controls()
 	
 	var selected := get_active_node()
 	if !selected:
