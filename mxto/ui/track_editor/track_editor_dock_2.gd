@@ -874,12 +874,14 @@ func _on_embed_selected(in_selected_embed : int) -> void:
 
 func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.selected, in_selected_embed : int = embed_dropdown.selected) -> void:
 	if in_selected_mod < 0 or in_selected_mod >= current_path.road_shape.modulation_table.size() or modulation_dropdown.item_count == 0:
-		pass
+		if FZGlobal.editing_scene:
+			FZGlobal.editing_scene.set_active_modulation(null, -1)
 	else:
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_modulation(current_path, in_selected_mod)
 	if in_selected_embed < 0 or in_selected_embed >= current_path.road_shape.embed_table.size() or embed_dropdown.item_count == 0:
-		pass
+		if FZGlobal.editing_scene:
+			FZGlobal.editing_scene.set_active_embed(null, -1)
 	else:
 		var this_embed := current_path.road_shape.embed_table[in_selected_embed]
 		updating_embed_controls = true

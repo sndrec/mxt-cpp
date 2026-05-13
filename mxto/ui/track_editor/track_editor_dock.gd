@@ -155,30 +155,26 @@ func select_node(in_node : Node) -> void:
 		FZGlobal.select_node(in_node)
 	_sync_active_tool_target()
 
+func _clear_active_tool_targets() -> void:
+	track_scene.set_active_rail_path(null)
+	track_scene.set_active_modulation(null, -1)
+	track_scene.set_active_shape_path(null)
+	track_scene.set_active_mesh_layout_path(null)
+	track_scene.set_active_spiral_path(null)
+	track_scene.set_active_embed(null, -1)
+	track_scene.set_active_checkpoint_path(null)
+	track_scene.set_active_track_trigger(null)
+
 func _sync_active_tool_target() -> void:
 	var selected_node := FZGlobal.active_node
+	_clear_active_tool_targets()
 	if _is_track_trigger(selected_node):
 		track_scene.active_path = null
-		track_scene.set_active_rail_path(null)
-		track_scene.set_active_modulation(null, -1)
-		track_scene.set_active_shape_path(null)
-		track_scene.set_active_mesh_layout_path(null)
-		track_scene.set_active_spiral_path(null)
-		track_scene.set_active_embed(null, -1)
-		track_scene.set_active_checkpoint_path(null)
 		track_scene.set_active_track_trigger(selected_node)
 		return
-	track_scene.set_active_track_trigger(null)
 	var in_node := FZGlobal.get_selected_road_path()
 	if !(in_node is RoadPath):
 		track_scene.active_path = null
-		track_scene.set_active_rail_path(null)
-		track_scene.set_active_modulation(null, -1)
-		track_scene.set_active_shape_path(null)
-		track_scene.set_active_mesh_layout_path(null)
-		track_scene.set_active_spiral_path(null)
-		track_scene.set_active_embed(null, -1)
-		track_scene.set_active_checkpoint_path(null)
 		return
 	if in_node is RoadPath:
 		track_scene.active_path = in_node
