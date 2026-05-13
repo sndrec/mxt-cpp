@@ -56,6 +56,8 @@ func _process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("LeftMouse") and mousecast_wants_this_gizmo():
 		pressed_on_gizmo = scene.begin_pointer_action(self)
+		if pressed_on_gizmo:
+			get_viewport().set_input_as_handled()
 	
 	if Input.is_action_just_released("LeftMouse"):
 		var can_release := pressed_on_gizmo and scene.owns_pointer_action(self) and mousecast_wants_this_gizmo()
@@ -63,6 +65,7 @@ func _process(delta: float) -> void:
 		scene.end_pointer_action(self)
 		if !can_release:
 			return
+		get_viewport().set_input_as_handled()
 		if target_node is RoadPathBezier and !(target_node is RoadPathLine) and Input.is_action_pressed("Alt"):
 			var last_index : int = target_node.get_control_point_count() - 1
 			var handle_out : float = target_node.native_curve.get_control_point_handle_out(last_index)
@@ -75,7 +78,11 @@ func _process(delta: float) -> void:
 				handle_out)
 			target_node.point_changes = true
 		else:
-			scene.add_bezier_track_segment_after(target_node, scene.desired_road_type)
+			var new_segment := scene.add_bezier_track_segment_after(target_node, scene.desired_road_type)
+			if new_segment:
+				scene.active_path = new_segment
+				set_target_node(new_segment)
+				FZGlobal.select_node(new_segment)
 	if !active:
 		gizmo_collider.set_collision_layer_value(16, false)
 		return

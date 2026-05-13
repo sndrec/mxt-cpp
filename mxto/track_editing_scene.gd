@@ -389,6 +389,7 @@ func add_bezier_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_T
 	track_root.add_child(new_track_piece)
 	var id_to_put_above := track_root.get_children().find(in_path)
 	track_root.move_child(new_track_piece, id_to_put_above + 1)
+	track_structure_changed.emit()
 	return new_track_piece
 	
 
@@ -405,6 +406,7 @@ func add_regular_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_
 	track_root.add_child(new_track_piece)
 	var id_to_put_above := track_root.get_children().find(in_path)
 	track_root.move_child(new_track_piece, id_to_put_above + 1)
+	track_structure_changed.emit()
 	return new_track_piece
 
 func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_TYPE) -> RoadPath:
@@ -417,6 +419,7 @@ func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_T
 	track_root.add_child(new_track_piece)
 	var id_to_put_above := track_root.get_children().find(in_path)
 	track_root.move_child(new_track_piece, id_to_put_above + 1)
+	track_structure_changed.emit()
 	return new_track_piece
 
 func add_road_embed(embed_type : int, in_path : RoadPath, surface_t := Vector2(0.0, 0.5)) -> int:
