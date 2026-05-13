@@ -717,7 +717,7 @@ func _handle_basis(handle_id : int) -> Basis:
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
 		return _basis_from_y_axis(_spiral_axis_world())
 	if int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
-		return _basis_from_y_axis(-_end_frame()["z"])
+		return _basis_from_y_axis(_end_frame()["z"])
 	if !_record_wants_arrow(record):
 		return Basis.IDENTITY
 	var entry := curve_entries[int(record["entry"])]
