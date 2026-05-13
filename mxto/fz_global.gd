@@ -31,6 +31,8 @@ func get_selected_road_path() -> RoadPath:
 func emit_selection_changed() -> void:
 	if editing_scene:
 		editing_scene.active_path = get_selected_road_path()
+		if is_track_trigger_node(active_node):
+			editing_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_OBJECT)
 	selection_changed.emit()
 
 func get_transform_gizmo_target(in_node : Node3D) -> Node3D:
