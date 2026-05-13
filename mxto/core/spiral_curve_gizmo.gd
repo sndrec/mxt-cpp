@@ -331,6 +331,24 @@ func _tangent_value(curve : Resource, point_index : int, handle_kind : int, _del
 	var point : Vector2 = curve.get_point_position(point_index)
 	return point.y + _curve_tangent_handle(curve, point_index, handle_kind).y
 
+func _surface_tangent_axis(entry : Dictionary, frame : Dictionary, side : float) -> Vector3:
+	return _entry_axis(entry, frame).normalized() * side
+
+func _surface_tangent_origin(entry : Dictionary, frame : Dictionary, base_value : float, side : float) -> Vector3:
+	var axis := _surface_tangent_axis(entry, frame, side)
+	match int(entry["kind"]):
+		CurveKind.SCALE_X, CurveKind.SCALE_Y:
+			return frame["center"] + axis * VISUAL_OFFSET
+		CurveKind.RADIUS, CurveKind.HEIGHT:
+			return frame["center"] - axis * base_value
+		_:
+			return frame["center"]
+
+func _surface_tangent_position(entry : Dictionary, t : float, value : float, base_value : float, side : float) -> Vector3:
+	var frame := _sample_frame(t)
+	var axis := _surface_tangent_axis(entry, frame, side)
+	return _surface_tangent_origin(entry, frame, base_value, side) + axis * value
+
 func _point_handle_position(record : Dictionary) -> Vector3:
 	var entry := curve_entries[int(record["entry"])]
 	var curve : Resource = entry["curve"]
@@ -362,7 +380,9 @@ func _tangent_handle_position(record : Dictionary) -> Vector3:
 		CurveKind.TWIST:
 			return frame["center"]
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
-			return frame["center"] + _entry_axis(entry, frame) * side * (tangent_value + VISUAL_OFFSET)
+			return _surface_tangent_position(entry, tangent_t, tangent_value, 0.0, side)
+		CurveKind.RADIUS, CurveKind.HEIGHT:
+			return _surface_tangent_position(entry, tangent_t, tangent_value, curve.sample(tangent_t), side)
 		_:
 			var tangent_dir : Vector3 = frame["center"] - point_frame["center"]
 			if tangent_dir.length_squared() <= 0.00001:
@@ -953,17 +973,20 @@ func _draw_twist_point(entry_index : int, entry : Dictionary, point_index : int)
 	if _selected_key_matches(entry_index, point_index):
 		_draw_gizmo_circle(frame["center"], frame["x"], frame["y"], radius, _curve_color(entry_index))
 
-func _scale_tangent_connector_position(entry : Dictionary, t : float, value : float, side : float) -> Vector3:
-	var frame := _sample_frame(t)
-	return frame["center"] + _entry_axis(entry, frame) * side * (value + VISUAL_OFFSET)
+func _surface_tangent_base_value(entry : Dictionary, curve : Resource, t : float) -> float:
+	match int(entry["kind"]):
+		CurveKind.RADIUS, CurveKind.HEIGHT:
+			return curve.sample(t)
+		_:
+			return 0.0
 
-func _draw_scale_tangent_connector(entry : Dictionary, point : Vector2, tangent_t : float, tangent_value : float, side : float, color : Color) -> void:
-	var previous := _scale_tangent_connector_position(entry, point.x, point.y, side)
+func _draw_surface_tangent_connector(entry : Dictionary, curve : Resource, point : Vector2, tangent_t : float, tangent_value : float, side : float, color : Color) -> void:
+	var previous := _surface_tangent_position(entry, point.x, point.y, _surface_tangent_base_value(entry, curve, point.x), side)
 	for i in SCALE_TANGENT_CONNECTOR_STEPS:
 		var local_t := float(i + 1) / float(SCALE_TANGENT_CONNECTOR_STEPS)
 		var t := lerpf(point.x, tangent_t, local_t)
 		var value := lerpf(point.y, tangent_value, local_t)
-		var next := _scale_tangent_connector_position(entry, t, value, side)
+		var next := _surface_tangent_position(entry, t, value, _surface_tangent_base_value(entry, curve, t), side)
 		_draw_gizmo_line(previous, next, color)
 		previous = next
 
@@ -984,7 +1007,9 @@ func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side
 			for arc in _twist_tangent_arc_ranges():
 				_draw_gizmo_circle(frame["center"], frame["x"], frame["y"], radius, color, arc.x, arc.y, int(CIRCLE_STEPS / 4))
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
-			_draw_scale_tangent_connector(entry, point, tangent_t, _tangent_value(curve, point_index, handle_kind, delta), side, color)
+			_draw_surface_tangent_connector(entry, curve, point, tangent_t, _tangent_value(curve, point_index, handle_kind, delta), side, color)
+		CurveKind.RADIUS, CurveKind.HEIGHT:
+			_draw_surface_tangent_connector(entry, curve, point, tangent_t, _tangent_value(curve, point_index, handle_kind, delta), side, color)
 		_:
 			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
 			_draw_gizmo_line(point_frame["center"], tangent_pos, color)
@@ -1127,7 +1152,8 @@ func _direction_on_plane(offset : Vector3, plane_normal : Vector3) -> Vector3:
 func _record_wants_scale_tangent_surface(record : Dictionary, entry : Dictionary) -> bool:
 	if int(record["kind"]) == HandleKind.POINT:
 		return false
-	return int(entry["kind"]) == CurveKind.SCALE_X or int(entry["kind"]) == CurveKind.SCALE_Y
+	var kind := int(entry["kind"])
+	return kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y or kind == CurveKind.RADIUS or kind == CurveKind.HEIGHT
 
 func _scale_tangent_range(curve : Resource, point_index : int, handle_kind : int) -> Vector2:
 	var point_t := _curve_offset(curve, point_index)
@@ -1143,8 +1169,8 @@ func _build_scale_tangent_surface_snapshot(entry : Dictionary, curve : Resource,
 	for i in SCALE_TANGENT_SURFACE_STEPS + 1:
 		var t := lerpf(range.x, range.y, float(i) / float(SCALE_TANGENT_SURFACE_STEPS))
 		var frame := _sample_frame(t)
-		var axis := _entry_axis(entry, frame).normalized() * side
-		samples.append({"t": t, "origin": frame["center"] + axis * VISUAL_OFFSET, "axis": axis})
+		var axis := _surface_tangent_axis(entry, frame, side)
+		samples.append({"t": t, "origin": _surface_tangent_origin(entry, frame, _surface_tangent_base_value(entry, curve, t), side), "axis": axis})
 	return samples
 
 func _point_ray_distance_squared(point : Vector3, ray_origin : Vector3, ray_dir : Vector3) -> float:
