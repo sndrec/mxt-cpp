@@ -78,7 +78,6 @@ func _ready():
 	edit_modulation_button.pressed.connect(_on_edit_modulation_pressed)
 	edit_shape_button.pressed.connect(_on_edit_shape_pressed)
 	edit_mesh_layout_button.pressed.connect(_on_edit_mesh_layout_pressed)
-	edit_spiral_button.pressed.connect(_on_edit_spiral_pressed)
 	edit_embeds_button.pressed.connect(_on_edit_embeds_pressed)
 	edit_checkpoints_button.pressed.connect(_on_edit_checkpoints_pressed)
 	edit_track_object_button.pressed.connect(_on_edit_track_object_pressed)
@@ -133,7 +132,6 @@ func _enable_tool_button_toggles() -> void:
 		edit_segment_button,
 		edit_shape_button,
 		edit_mesh_layout_button,
-		edit_spiral_button,
 		edit_embeds_button,
 		edit_rails_button,
 		edit_modulation_button,
@@ -210,7 +208,6 @@ func _refresh_tool_button_states() -> void:
 	_set_tool_button_pressed(edit_segment_button, mode == TrackEditingScene.ToolMode.EDIT_SEGMENT)
 	_set_tool_button_pressed(edit_shape_button, mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
 	_set_tool_button_pressed(edit_mesh_layout_button, mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT)
-	_set_tool_button_pressed(edit_spiral_button, mode == TrackEditingScene.ToolMode.EDIT_SPIRAL)
 	_set_tool_button_pressed(edit_embeds_button, mode == TrackEditingScene.ToolMode.EDIT_EMBED)
 	_set_tool_button_pressed(edit_rails_button, mode == TrackEditingScene.ToolMode.EDIT_RAILS)
 	_set_tool_button_pressed(edit_modulation_button, mode == TrackEditingScene.ToolMode.EDIT_MODULATION)
@@ -289,7 +286,7 @@ func _sync_active_tool_target() -> void:
 			track_scene.set_active_shape_path(in_node)
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT:
 			track_scene.set_active_mesh_layout_path(in_node)
-		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SPIRAL:
+		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and _is_spiral_path(in_node):
 			track_scene.set_active_spiral_path(in_node)
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_EMBED:
 			var embed_index := _active_embed_index(in_node)
@@ -410,19 +407,6 @@ func _on_edit_mesh_layout_pressed() -> void:
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT)
 	select_node(selected)
 	selected._try_generate_mesh()
-	main_buttons.visible = true
-	new_track_segment_buttons.visible = false
-	new_track_segment_type_buttons.visible = false
-	new_embed_buttons.visible = false
-	new_track_object_buttons.visible = false
-
-func _on_edit_spiral_pressed() -> void:
-	var selected := get_active_path()
-	if !_is_spiral_path(selected):
-		return
-	track_scene.set_active_spiral_path(selected)
-	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SPIRAL)
-	select_node(selected)
 	main_buttons.visible = true
 	new_track_segment_buttons.visible = false
 	new_track_segment_type_buttons.visible = false

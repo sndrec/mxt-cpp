@@ -22,7 +22,6 @@ enum ToolMode {
 	EDIT_MODULATION,
 	EDIT_SHAPE,
 	EDIT_MESH_LAYOUT,
-	EDIT_SPIRAL,
 	EDIT_CHECKPOINTS,
 	ADD_OBJECT,
 	EDIT_OBJECT,
@@ -99,7 +98,7 @@ func set_tool_mode(in_mode : ToolMode) -> void:
 	tool_mode_changed.emit(tool_mode)
 
 func tool_mode_allows_transform_gizmos() -> bool:
-	return tool_mode == ToolMode.EDIT_SEGMENT or tool_mode == ToolMode.EDIT_SPIRAL
+	return tool_mode == ToolMode.EDIT_SEGMENT
 
 func tool_mode_allows_segment_add_gizmo() -> bool:
 	return tool_mode == ToolMode.EDIT_SEGMENT and Input.is_action_pressed("Alt")
@@ -126,7 +125,7 @@ func tool_mode_allows_mesh_layout_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_MESH_LAYOUT
 
 func tool_mode_allows_spiral_gizmos() -> bool:
-	return tool_mode == ToolMode.EDIT_SPIRAL
+	return tool_mode == ToolMode.EDIT_SEGMENT and draw_segment_handles
 
 func tool_mode_allows_checkpoint_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_CHECKPOINTS

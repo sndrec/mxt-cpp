@@ -417,7 +417,7 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var has_path := current_path != null
 	var active_trigger := _active_track_trigger()
 	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
-	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SPIRAL and _is_spiral_path(current_path)
+	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and _is_spiral_path(current_path)
 	var show_rails := has_path and mode == TrackEditingScene.ToolMode.EDIT_RAILS
 	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
 	var show_object := mode == TrackEditingScene.ToolMode.EDIT_OBJECT and (active_trigger != null or has_path)
@@ -445,7 +445,7 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	draw_curve.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	draw_handles.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var show_bezier_handle_data := mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and selected is BezierHandle
-	var show_line_handle_data := selected is LineHandle and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SPIRAL)
+	var show_line_handle_data := selected is LineHandle and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var show_handle_data := show_bezier_handle_data or show_line_handle_data
 	bezier_handle_data.visible = show_handle_data and selected is BezierHandle
 	line_handle_data.visible = show_handle_data and selected is LineHandle
