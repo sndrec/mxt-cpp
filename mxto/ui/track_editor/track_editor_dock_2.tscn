@@ -497,6 +497,229 @@ min_value = 1.0
 max_value = 10.0
 value = 1.0
 
+[node name="FirstSegmentLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+text = "First Segment"
+
+[node name="FirstSegmentValue" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+text = "Child order"
+
+[node name="SetFirstSegment" type="Button" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Use Selected Segment As First"
+
+[node name="FogDistanceRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/FogDistanceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Fog Distance"
+
+[node name="FogDistance" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/FogDistanceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 10000.0
+step = 1.0
+value = 2000.0
+
+[node name="SkyTopColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyTopColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sky Top"
+
+[node name="SkyTopColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyTopColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0, 0.1, 0.25, 1)
+
+[node name="SkyHorizonColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyHorizonColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sky Horizon"
+
+[node name="SkyHorizonColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyHorizonColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0.2, 0.25, 0.3, 1)
+
+[node name="SkyGroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyGroundColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sky Ground"
+
+[node name="SkyGroundColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyGroundColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0.02, 0.02, 0.02, 1)
+
+[node name="GlobalGroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/GlobalGroundColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "World Ground"
+
+[node name="GlobalGroundColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/GlobalGroundColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0.08, 0.08, 0.08, 1)
+
+[node name="GroundHeightRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/GroundHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Ground Height"
+
+[node name="GroundHeight" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/GroundHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -10000.0
+max_value = 10000.0
+step = 1.0
+
+[node name="CloudColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/CloudColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cloud Color"
+
+[node name="CloudColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/CloudColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(1, 1, 1, 1)
+
+[node name="CloudHeightRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/CloudHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cloud Height"
+
+[node name="CloudHeight" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/CloudHeightRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -10000.0
+max_value = 10000.0
+step = 1.0
+value = 800.0
+
+[node name="LightColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Light Color"
+
+[node name="LightColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/LightColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(1, 0.95, 0.9, 1)
+
+[node name="LightIntensityRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightIntensityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Light Intensity"
+
+[node name="LightIntensity" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightIntensityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 10.0
+step = 0.01
+value = 1.0
+
+[node name="AmbientIntensityRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/AmbientIntensityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Ambient Intensity"
+
+[node name="AmbientIntensity" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/AmbientIntensityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 5.0
+step = 0.01
+value = 0.1
+
+[node name="AmbientColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/AmbientColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Ambient Color"
+
+[node name="AmbientColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/AmbientColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0.15, 0.15, 0.18, 1)
+
+[node name="LightDirectionLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+text = "Light Direction"
+
+[node name="LightDirectionRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+layout_mode = 2
+
+[node name="LabelX" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+layout_mode = 2
+text = " X "
+
+[node name="LightDirectionX" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+value = 0.3
+
+[node name="LabelY" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+layout_mode = 2
+text = " Y "
+
+[node name="LightDirectionY" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+value = -1.0
+
+[node name="LabelZ" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+layout_mode = 2
+text = " Z "
+
+[node name="LightDirectionZ" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+value = 0.4
+
 [node name="Object" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2

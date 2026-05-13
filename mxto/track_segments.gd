@@ -11,9 +11,23 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 			_generate_checkpoints()
 
 @export var checkpoints : Array[Checkpoint] = []
+@export var first_segment_path : NodePath
 @export var track_name : String = "New Track"
 @export var track_description : String = ""
 @export var track_difficulty : int = 1
+@export var fog_distance : float = 2000.0
+@export var sky_top_color : Color = Color(0.0, 0.1, 0.25, 1.0)
+@export var sky_horizon_color : Color = Color(0.2, 0.25, 0.3, 1.0)
+@export var sky_ground_color : Color = Color(0.02, 0.02, 0.02, 1.0)
+@export var ground_color_global : Color = Color(0.08, 0.08, 0.08, 1.0)
+@export var ground_height : float = 0.0
+@export var cloud_color : Color = Color(1.0, 1.0, 1.0, 1.0)
+@export var cloud_height : float = 800.0
+@export var light_color : Color = Color(1.0, 0.95, 0.9, 1.0)
+@export var light_intensity : float = 1.0
+@export var ambient_intensity : float = 0.1
+@export var ambient_color : Color = Color(0.15, 0.15, 0.18, 1.0)
+@export var light_direction : Vector3 = Vector3(0.3, -1.0, 0.4)
 
 func _generate_checkpoints() -> void:
 	checkpoints.clear()
@@ -42,6 +56,41 @@ func get_road_segments() -> Array[RoadPath]:
 			out.append(child)
 	return out
 
+func get_first_segment() -> RoadPath:
+	if first_segment_path.is_empty():
+		return null
+	var node := get_node_or_null(first_segment_path)
+	if node is RoadPath:
+		return node
+	return null
+
+func set_first_segment(segment : RoadPath) -> void:
+	if !segment or segment.get_parent() != self:
+		first_segment_path = NodePath()
+		return
+	first_segment_path = get_path_to(segment)
+
+func get_export_road_segments() -> Array[RoadPath]:
+	var all_segments := get_road_segments()
+	var first := get_first_segment()
+	if !first:
+		return all_segments
+	var out : Array[RoadPath] = []
+	var queue : Array[RoadPath] = [first]
+	while !queue.is_empty():
+		var segment : RoadPath = queue.pop_front()
+		if !segment or out.has(segment):
+			continue
+		out.append(segment)
+		for next_path in segment.next_segment_paths:
+			var next_node : Node = get_node_or_null(next_path)
+			if next_node is RoadPath and !out.has(next_node):
+				queue.append(next_node)
+	for segment in all_segments:
+		if !out.has(segment):
+			out.append(segment)
+	return out
+
 func get_track_triggers() -> Array[Node3D]:
 	var out : Array[Node3D] = []
 	for child in get_children():
@@ -57,7 +106,7 @@ func save_edit_source(path : String) -> Error:
 	return ResourceSaver.save(scene, path)
 
 func export_mxt_track(path : String) -> Error:
-	var segments := get_road_segments()
+	var segments := get_export_road_segments()
 	if segments.is_empty():
 		return ERR_DOES_NOT_EXIST
 	_generate_checkpoints()
@@ -107,7 +156,40 @@ func export_mxt_track(path : String) -> Error:
 	if file == null:
 		return FileAccess.get_open_error()
 	file.store_buffer(buf.data_array)
+	var metadata_err := export_track_metadata(path.get_basename() + ".json")
+	if metadata_err != OK:
+		return metadata_err
 	return OK
+
+func export_track_metadata(path : String) -> Error:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	file.store_string(JSON.stringify(_track_metadata(), "\t"))
+	return OK
+
+func _color3(color : Color) -> Array[float]:
+	return [color.r, color.g, color.b]
+
+func _track_metadata() -> Dictionary:
+	return {
+		"name": track_name,
+		"description": track_description,
+		"difficulty": track_difficulty,
+		"fog_distance": fog_distance,
+		"sky_top_color": _color3(sky_top_color),
+		"sky_horizon_color": _color3(sky_horizon_color),
+		"sky_ground_color": _color3(sky_ground_color),
+		"ground_color": _color3(ground_color_global),
+		"ground_height": ground_height,
+		"cloud_color": _color3(cloud_color),
+		"cloud_height": cloud_height,
+		"light_color": _color3(light_color),
+		"light_intensity": light_intensity,
+		"ambient_intensity": ambient_intensity,
+		"ambient_color": _color3(ambient_color),
+		"light_direction": [light_direction.x, light_direction.y, light_direction.z],
+	}
 
 func _build_trigger_exports(segments : Array[RoadPath], cp_ranges : Array[Vector2i]) -> Array[Dictionary]:
 	var out : Array[Dictionary] = []

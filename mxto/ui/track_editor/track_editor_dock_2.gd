@@ -55,9 +55,26 @@ var current_path : RoadPath
 @onready var rail_mode_color: ColorPickerButton = $Control/TabContainer/Rails/VBoxContainer/RailColorRow/RailColor
 
 @onready var track_panel: ScrollContainer = $Control/TabContainer/Track
+@onready var first_segment_label: Label = $Control/TabContainer/Track/VBoxContainer/FirstSegmentValue
+@onready var set_first_segment_button: Button = $Control/TabContainer/Track/VBoxContainer/SetFirstSegment
 @onready var track_name_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackName
 @onready var track_description_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackDescription
 @onready var track_difficulty_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/TrackDifficultyRow/TrackDifficulty
+@onready var fog_distance_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/FogDistanceRow/FogDistance
+@onready var sky_top_color_edit: ColorPickerButton = $Control/TabContainer/Track/VBoxContainer/SkyTopColorRow/SkyTopColor
+@onready var sky_horizon_color_edit: ColorPickerButton = $Control/TabContainer/Track/VBoxContainer/SkyHorizonColorRow/SkyHorizonColor
+@onready var sky_ground_color_edit: ColorPickerButton = $Control/TabContainer/Track/VBoxContainer/SkyGroundColorRow/SkyGroundColor
+@onready var global_ground_color_edit: ColorPickerButton = $Control/TabContainer/Track/VBoxContainer/GlobalGroundColorRow/GlobalGroundColor
+@onready var ground_height_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/GroundHeightRow/GroundHeight
+@onready var cloud_color_edit: ColorPickerButton = $Control/TabContainer/Track/VBoxContainer/CloudColorRow/CloudColor
+@onready var cloud_height_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/CloudHeightRow/CloudHeight
+@onready var light_color_edit: ColorPickerButton = $Control/TabContainer/Track/VBoxContainer/LightColorRow/LightColor
+@onready var light_intensity_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/LightIntensityRow/LightIntensity
+@onready var ambient_intensity_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/AmbientIntensityRow/AmbientIntensity
+@onready var ambient_color_edit: ColorPickerButton = $Control/TabContainer/Track/VBoxContainer/AmbientColorRow/AmbientColor
+@onready var light_direction_x_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/LightDirectionRow/LightDirectionX
+@onready var light_direction_y_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/LightDirectionRow/LightDirectionY
+@onready var light_direction_z_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/LightDirectionRow/LightDirectionZ
 
 @onready var object_panel: ScrollContainer = $Control/TabContainer/Object
 @onready var object_type: OptionButton = $Control/TabContainer/Object/VBoxContainer/ObjectType
@@ -220,9 +237,25 @@ func _ready():
 	right_rail_start.value_changed.connect(update_right_rail_start)
 	right_rail_end.value_changed.connect(update_right_rail_end)
 	rail_mode_color.color_changed.connect(update_rail_color)
+	set_first_segment_button.pressed.connect(update_first_segment_from_selection)
 	track_name_edit.text_changed.connect(update_track_name)
 	track_description_edit.text_changed.connect(update_track_description)
 	track_difficulty_edit.value_changed.connect(update_track_difficulty)
+	fog_distance_edit.value_changed.connect(update_track_environment_values)
+	sky_top_color_edit.color_changed.connect(update_track_environment_values)
+	sky_horizon_color_edit.color_changed.connect(update_track_environment_values)
+	sky_ground_color_edit.color_changed.connect(update_track_environment_values)
+	global_ground_color_edit.color_changed.connect(update_track_environment_values)
+	ground_height_edit.value_changed.connect(update_track_environment_values)
+	cloud_color_edit.color_changed.connect(update_track_environment_values)
+	cloud_height_edit.value_changed.connect(update_track_environment_values)
+	light_color_edit.color_changed.connect(update_track_environment_values)
+	light_intensity_edit.value_changed.connect(update_track_environment_values)
+	ambient_intensity_edit.value_changed.connect(update_track_environment_values)
+	ambient_color_edit.color_changed.connect(update_track_environment_values)
+	light_direction_x_edit.value_changed.connect(update_track_environment_values)
+	light_direction_y_edit.value_changed.connect(update_track_environment_values)
+	light_direction_z_edit.value_changed.connect(update_track_environment_values)
 	object_type.item_selected.connect(update_track_object_type)
 	remove_track_object.pressed.connect(remove_track_object_func)
 	object_tx.value_changed.connect(update_track_object_values)
@@ -636,10 +669,35 @@ func _refresh_track_controls() -> void:
 	if !track_root:
 		return
 	updating_track_controls = true
+	var first_segment := track_root.get_first_segment()
+	first_segment_label.text = first_segment.name if first_segment else "Child order"
 	track_name_edit.text = track_root.track_name
 	track_description_edit.text = track_root.track_description
 	track_difficulty_edit.set_value_no_signal(track_root.track_difficulty)
+	fog_distance_edit.set_value_no_signal(track_root.fog_distance)
+	sky_top_color_edit.color = track_root.sky_top_color
+	sky_horizon_color_edit.color = track_root.sky_horizon_color
+	sky_ground_color_edit.color = track_root.sky_ground_color
+	global_ground_color_edit.color = track_root.ground_color_global
+	ground_height_edit.set_value_no_signal(track_root.ground_height)
+	cloud_color_edit.color = track_root.cloud_color
+	cloud_height_edit.set_value_no_signal(track_root.cloud_height)
+	light_color_edit.color = track_root.light_color
+	light_intensity_edit.set_value_no_signal(track_root.light_intensity)
+	ambient_intensity_edit.set_value_no_signal(track_root.ambient_intensity)
+	ambient_color_edit.color = track_root.ambient_color
+	light_direction_x_edit.set_value_no_signal(track_root.light_direction.x)
+	light_direction_y_edit.set_value_no_signal(track_root.light_direction.y)
+	light_direction_z_edit.set_value_no_signal(track_root.light_direction.z)
 	updating_track_controls = false
+
+func update_first_segment_from_selection() -> void:
+	if updating_track_controls or !track_root:
+		return
+	var selected := FZGlobal.get_selected_road_path()
+	if selected:
+		track_root.set_first_segment(selected)
+	_refresh_track_controls()
 
 func update_track_name(new_text : String) -> void:
 	if updating_track_controls or !track_root:
@@ -655,6 +713,23 @@ func update_track_difficulty(new_value : float) -> void:
 	if updating_track_controls or !track_root:
 		return
 	track_root.track_difficulty = int(new_value)
+
+func update_track_environment_values(_new_value = null) -> void:
+	if updating_track_controls or !track_root:
+		return
+	track_root.fog_distance = fog_distance_edit.value
+	track_root.sky_top_color = sky_top_color_edit.color
+	track_root.sky_horizon_color = sky_horizon_color_edit.color
+	track_root.sky_ground_color = sky_ground_color_edit.color
+	track_root.ground_color_global = global_ground_color_edit.color
+	track_root.ground_height = ground_height_edit.value
+	track_root.cloud_color = cloud_color_edit.color
+	track_root.cloud_height = cloud_height_edit.value
+	track_root.light_color = light_color_edit.color
+	track_root.light_intensity = light_intensity_edit.value
+	track_root.ambient_intensity = ambient_intensity_edit.value
+	track_root.ambient_color = ambient_color_edit.color
+	track_root.light_direction = Vector3(light_direction_x_edit.value, light_direction_y_edit.value, light_direction_z_edit.value)
 
 func _refresh_track_object_controls() -> void:
 	var trigger := _active_track_trigger()
