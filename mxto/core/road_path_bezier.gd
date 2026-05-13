@@ -13,14 +13,6 @@ const ROAD_SHAPE_PIPE_OPEN := 4
 const ROAD_SHAPE_ROUNDED_SQUARE := 5
 const ROAD_SHAPE_ROUNDED_SQUARE_OPEN := 6
 const CONTROL_STRIDE := 24
-const CONTROL_ROT_EASE_TYPE := 18
-const CONTROL_ROT_EASE_STRENGTH := 19
-const CONTROL_TWIST_EASE_TYPE := 20
-const CONTROL_TWIST_EASE_STRENGTH := 21
-const CONTROL_SCALE_EASE_TYPE := 22
-const CONTROL_SCALE_EASE_STRENGTH := 23
-const ADD_CONTROL_POINT_PREVIEW_STEPS := 96
-const ADD_CONTROL_POINT_MAX_SCREEN_DISTANCE := 60.0
 
 var _preview_material_cache := {}
 var bezier_handle_nodes : Array[BezierHandle] = []
@@ -31,7 +23,6 @@ var centerline_mesh := ImmediateMesh.new()
 var centerline_material := StandardMaterial3D.new()
 var add_point_preview_mesh_instance : MeshInstance3D
 var add_point_preview_material := StandardMaterial3D.new()
-var delete_pressed := false
 
 func _preview_material(material_name : String) -> Material:
 	if _preview_material_cache.has(material_name):
@@ -59,16 +50,6 @@ func _preview_material(material_name : String) -> Material:
 			material.albedo_color = Color(0.50, 0.52, 0.54, 1.0)
 	_preview_material_cache[material_name] = material
 	return material
-
-func _preview_surface_colors(material_name : String, colors : PackedColorArray) -> PackedColorArray:
-	if material_name != "track_surface" and material_name != "track_rail":
-		return colors
-	var out := PackedColorArray()
-	out.resize(colors.size())
-	var use_color := ground_color if material_name == "track_surface" else rail_color
-	for i in out.size():
-		out[i] = use_color
-	return out
 
 func _ensure_editor_visuals() -> void:
 	if !centerline_mesh_instance:
@@ -271,118 +252,6 @@ func _control_scale(points : PackedFloat32Array, index : int) -> Vector3:
 	var base := index * CONTROL_STRIDE
 	return Vector3(points[base + 13], points[base + 14], points[base + 15])
 
-func _control_point_insert_pick(cam : Camera3D) -> Dictionary:
-	if !cam:
-		return {}
-	var scene := FZGlobal.editing_scene
-	if scene and scene.mouse_gizmo_cast and scene.mouse_gizmo_cast.is_colliding():
-		return {}
-	var mouse_pos := get_viewport().get_mouse_position()
-	var best_time := 0.0
-	var best_dist := INF
-	var previous_screen := Vector2.ZERO
-	var previous_time := 0.0
-	var previous_valid := false
-	for i in ADD_CONTROL_POINT_PREVIEW_STEPS + 1:
-		var sample_time := float(i) / float(ADD_CONTROL_POINT_PREVIEW_STEPS)
-		var world_pos := get_root_transform(sample_time).origin
-		if cam.is_position_behind(world_pos):
-			previous_valid = false
-			continue
-		var screen_pos := cam.unproject_position(world_pos)
-		if previous_valid:
-			var closest := Geometry2D.get_closest_point_to_segment(mouse_pos, previous_screen, screen_pos)
-			var dist := mouse_pos.distance_squared_to(closest)
-			if dist < best_dist:
-				var screen_len := previous_screen.distance_to(screen_pos)
-				var local_t := 0.0 if screen_len <= 0.001 else previous_screen.distance_to(closest) / screen_len
-				best_time = lerpf(previous_time, sample_time, local_t)
-				best_dist = dist
-		previous_screen = screen_pos
-		previous_time = sample_time
-		previous_valid = true
-	if best_dist > ADD_CONTROL_POINT_MAX_SCREEN_DISTANCE * ADD_CONTROL_POINT_MAX_SCREEN_DISTANCE:
-		return {}
-	return {
-		"time": clampf(best_time, 0.0, 1.0),
-		"distance": best_dist,
-	}
-
-func _control_interval_for_time(points : PackedFloat32Array, point_count : int, time : float) -> int:
-	for i in point_count - 1:
-		var next_base := (i + 1) * CONTROL_STRIDE
-		if time <= points[next_base]:
-			return i
-	return point_count - 2
-
-func _try_alt_add_control_point(scene : TrackEditingScene, points : PackedFloat32Array, point_count : int) -> bool:
-	if !Input.is_action_pressed("Alt") or scene.pointer_action_busy_for(self) or scene.mouse_over_editor_ui():
-		_update_add_point_preview(Vector3.ZERO, false)
-		return false
-	var pick := _control_point_insert_pick(FZGlobal.current_cam)
-	if pick.is_empty():
-		_update_add_point_preview(Vector3.ZERO, false)
-		return false
-	var insert_time : float = pick["time"]
-	var insert_transform := get_root_transform(insert_time)
-	_update_add_point_preview(insert_transform.origin, true)
-	if !Input.is_action_just_pressed("LeftMouse"):
-		return false
-	if !scene.begin_pointer_action(self):
-		return false
-	get_viewport().set_input_as_handled()
-	var left_index := _control_interval_for_time(points, point_count, insert_time)
-	var right_index := left_index + 1
-	var base_1 := left_index * CONTROL_STRIDE
-	var base_2 := right_index * CONTROL_STRIDE
-	var time_1 : float = points[base_1]
-	var time_2 : float = points[base_2]
-	var span := maxf(time_2 - time_1, 0.0001)
-	var span_t := clampf((insert_time - time_1) / span, 0.0, 1.0)
-	var scale_1 : Vector3 = _control_scale(points, left_index)
-	var scale_2 : Vector3 = _control_scale(points, right_index)
-	var handle_out_1 : float = points[base_1 + 17]
-	var handle_in_2 : float = points[base_2 + 16]
-	points[base_1 + 17] = handle_out_1 * span_t
-	points[base_2 + 16] = handle_in_2 * (1.0 - span_t)
-	native_curve.set_control_points(points)
-	add_control_point(
-		insert_time,
-		insert_transform.origin,
-		insert_transform.basis,
-		scale_1.lerp(scale_2, span_t),
-		handle_out_1 * span_t,
-		handle_in_2 * (1.0 - span_t),
-		right_index,
-		int(points[base_1 + CONTROL_ROT_EASE_TYPE]),
-		points[base_1 + CONTROL_ROT_EASE_STRENGTH],
-		int(points[base_1 + CONTROL_TWIST_EASE_TYPE]),
-		points[base_1 + CONTROL_TWIST_EASE_STRENGTH],
-		int(points[base_1 + CONTROL_SCALE_EASE_TYPE]),
-		points[base_1 + CONTROL_SCALE_EASE_STRENGTH])
-	if right_index < bezier_handle_nodes.size():
-		FZGlobal.select_node(bezier_handle_nodes[right_index])
-	scene.end_pointer_action(self)
-	return true
-
-func _try_delete_selected_control_point(scene : TrackEditingScene, point_count : int) -> bool:
-	var delete_now := Input.is_key_pressed(KEY_DELETE)
-	var just_delete := delete_now and !delete_pressed
-	delete_pressed = delete_now
-	if scene.mouse_over_editor_ui():
-		return false
-	if !just_delete or scene.pointer_action_busy_for(self):
-		return false
-	var selected := FZGlobal.active_node as BezierHandle
-	if !selected or selected.get_parent() != self:
-		return false
-	if point_count <= 2:
-		return false
-	remove_bezier_point_at_index(clampi(selected.associated_index, 0, point_count - 1))
-	FZGlobal.select_node(self)
-	get_viewport().set_input_as_handled()
-	return true
-
 func _write_control_transform(points : PackedFloat32Array, index : int, position : Vector3, basis : Basis, scale : Vector3, handle_in : float, handle_out : float) -> void:
 	var base := index * CONTROL_STRIDE
 	var clean_basis := basis.orthonormalized()
@@ -403,15 +272,6 @@ func _write_control_transform(points : PackedFloat32Array, index : int, position
 	points[base + 15] = scale.z
 	points[base + 16] = handle_in
 	points[base + 17] = handle_out
-
-func _write_control_easing(points : PackedFloat32Array, index : int, handle : BezierHandle) -> void:
-	var base := index * CONTROL_STRIDE
-	points[base + CONTROL_ROT_EASE_TYPE] = handle.rot_ease_type
-	points[base + CONTROL_ROT_EASE_STRENGTH] = handle.rot_ease_strength
-	points[base + CONTROL_TWIST_EASE_TYPE] = handle.twist_ease_type
-	points[base + CONTROL_TWIST_EASE_STRENGTH] = handle.twist_ease_strength
-	points[base + CONTROL_SCALE_EASE_TYPE] = handle.scale_ease_type
-	points[base + CONTROL_SCALE_EASE_STRENGTH] = handle.scale_ease_strength
 
 func get_surface_position(in_t : Vector2) -> Vector3:
 	_ensure_native_curve()
@@ -445,8 +305,8 @@ func _try_generate_mesh(update_collision := true) -> void:
 		"shape_type": _native_shape_type(),
 		"horizontal_segments": horizontal_road_mesh_segments,
 		"uv_multiplier": road_uv_multiplier,
-		"mesh_subdivision_length": maxf(0.1, mesh_subdivision_length),
-		"mesh_subdivision_angle_radians": deg_to_rad(clampf(mesh_subdivision_angle_degrees, 0.1, 90.0)),
+		"mesh_subdivision_length": 30.0,
+		"mesh_subdivision_angle_radians": deg_to_rad(3.0),
 		"openness": _native_openness_value(),
 		"rounded_width": 1.0,
 		"rounded_height": 1.0,
@@ -477,10 +337,9 @@ func _try_generate_mesh(update_collision := true) -> void:
 			arrays[Mesh.ARRAY_NORMAL] = surface["normals"]
 			arrays[Mesh.ARRAY_TEX_UV] = surface["uvs"]
 			arrays[Mesh.ARRAY_TEX_UV2] = surface["uv2"]
-			var material_name : String = surface.get("material_name", "track_surface")
-			arrays[Mesh.ARRAY_COLOR] = _preview_surface_colors(material_name, surface["colors"])
+			arrays[Mesh.ARRAY_COLOR] = surface["colors"]
 			arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-			arr_mesh.surface_set_material(arr_mesh.get_surface_count() - 1, _preview_material(material_name))
+			arr_mesh.surface_set_material(arr_mesh.get_surface_count() - 1, _preview_material(surface.get("material_name", "track_surface")))
 	else:
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)
@@ -488,7 +347,7 @@ func _try_generate_mesh(update_collision := true) -> void:
 		arrays[Mesh.ARRAY_NORMAL] = mesh_data["normals"]
 		arrays[Mesh.ARRAY_TEX_UV] = mesh_data["uvs"]
 		arrays[Mesh.ARRAY_TEX_UV2] = mesh_data["uv2"]
-		arrays[Mesh.ARRAY_COLOR] = _preview_surface_colors("track_surface", mesh_data["colors"])
+		arrays[Mesh.ARRAY_COLOR] = mesh_data["colors"]
 		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		arr_mesh.surface_set_material(0, _preview_material("track_surface"))
 	road_mesh_instance.mesh = arr_mesh
@@ -539,22 +398,14 @@ func refresh_handle_nodes() -> void:
 		if node is BezierHandle:
 			node.free()
 	bezier_handle_nodes.clear()
-	var points : PackedFloat32Array = native_curve.get_control_points()
 	for i in native_curve.get_control_point_count():
 		var point_handle := BezierHandle.new()
-		var base : int = i * CONTROL_STRIDE
 		point_handle.position = native_curve.get_control_point_position(i)
 		point_handle.basis = native_curve.get_control_point_rotation(i)
 		point_handle.cp_scale = native_curve.get_control_point_scale(i)
 		point_handle.in_handle_length = native_curve.get_control_point_handle_in(i)
 		point_handle.out_handle_length = native_curve.get_control_point_handle_out(i)
 		point_handle.time = native_curve.get_control_point_time(i)
-		point_handle.rot_ease_type = int(points[base + CONTROL_ROT_EASE_TYPE])
-		point_handle.rot_ease_strength = points[base + CONTROL_ROT_EASE_STRENGTH]
-		point_handle.twist_ease_type = int(points[base + CONTROL_TWIST_EASE_TYPE])
-		point_handle.twist_ease_strength = points[base + CONTROL_TWIST_EASE_STRENGTH]
-		point_handle.scale_ease_type = int(points[base + CONTROL_SCALE_EASE_TYPE])
-		point_handle.scale_ease_strength = points[base + CONTROL_SCALE_EASE_STRENGTH]
 		point_handle.associated_index = i
 		add_child(point_handle)
 		bezier_handle_nodes.append(point_handle)
@@ -579,17 +430,53 @@ func _process(delta):
 		point_count = native_curve.get_control_point_count()
 
 	var control_points : PackedFloat32Array = native_curve.get_control_points()
-	if scene and scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
-		if scene.tool_mode_allows_control_point_curve():
-			_update_centerline_visual()
-		elif centerline_mesh_instance:
-			centerline_mesh_instance.visible = false
-		if _try_delete_selected_control_point(scene, point_count):
-			return
-		if _try_alt_add_control_point(scene, control_points, point_count):
-			return
+	for i in point_count:
+		DebugDraw2D.set_text("p" + str(i), control_points[i * CONTROL_STRIDE])
+
+	if scene and scene.tool_mode_allows_control_point_gizmos() and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
+		_update_centerline_visual()
+		_update_add_point_preview(Vector3.ZERO, false)
+		if Input.is_action_pressed("Alt"):
+			if FZGlobal.active_node == self or get_children().has(FZGlobal.active_node):
+				var cam := FZGlobal.editing_scene.edit_cam
+				var mp := get_viewport().get_mouse_position()
+				var closest_line := 0
+				var closest_line_dist := 1000000.0
+				for i in point_count - 1:
+					var bp1 := cam.unproject_position(_control_position(control_points, i))
+					var bp2 := cam.unproject_position(_control_position(control_points, i + 1))
+					var closest := Geometry2D.get_closest_point_to_segment(mp, bp1, bp2)
+					var line_dist := mp.distance_squared_to(closest)
+					if line_dist < closest_line_dist:
+						closest_line = i
+						closest_line_dist = line_dist
+				var base_1 := closest_line * CONTROL_STRIDE
+				var base_2 := (closest_line + 1) * CONTROL_STRIDE
+				var time_1 : float = control_points[base_1]
+				var time_2 : float = control_points[base_2]
+				var scale_1 : Vector3 = _control_scale(control_points, closest_line)
+				var scale_2 : Vector3 = _control_scale(control_points, closest_line + 1)
+				var handle_out_1 : float = control_points[base_1 + 17]
+				var handle_in_2 : float = control_points[base_2 + 16]
+				var add_p := get_root_transform(lerpf(time_1, time_2, 0.5))
+				if Input.is_action_just_pressed("LeftMouse"):
+					if !scene.begin_pointer_action(self):
+						return
+					control_points[base_1 + 17] = handle_out_1 * 0.5
+					control_points[base_2 + 16] = handle_in_2 * 0.5
+					native_curve.set_control_points(control_points)
+					add_control_point(
+						lerpf(time_1, time_2, 0.5),
+						add_p.origin,
+						add_p.basis,
+						scale_1.lerp(scale_2, 0.5),
+						handle_out_1 * 0.5,
+						handle_in_2 * 0.5,
+						closest_line + 1)
+					scene.end_pointer_action(self)
+					return
+				_update_add_point_preview(add_p.origin, true)
 	else:
-		delete_pressed = Input.is_key_pressed(KEY_DELETE)
 		_hide_editor_visuals()
 
 	var next_control_points : PackedFloat32Array = control_points.duplicate()
@@ -607,20 +494,7 @@ func _process(delta):
 			point_changes = true
 		if control_points[base + 17] != handle.out_handle_length:
 			point_changes = true
-		if int(control_points[base + CONTROL_ROT_EASE_TYPE]) != handle.rot_ease_type:
-			point_changes = true
-		if control_points[base + CONTROL_ROT_EASE_STRENGTH] != handle.rot_ease_strength:
-			point_changes = true
-		if int(control_points[base + CONTROL_TWIST_EASE_TYPE]) != handle.twist_ease_type:
-			point_changes = true
-		if control_points[base + CONTROL_TWIST_EASE_STRENGTH] != handle.twist_ease_strength:
-			point_changes = true
-		if int(control_points[base + CONTROL_SCALE_EASE_TYPE]) != handle.scale_ease_type:
-			point_changes = true
-		if control_points[base + CONTROL_SCALE_EASE_STRENGTH] != handle.scale_ease_strength:
-			point_changes = true
 		_write_control_transform(next_control_points, i, handle.global_position, handle_basis, handle.cp_scale, handle.in_handle_length, handle.out_handle_length)
-		_write_control_easing(next_control_points, i, handle)
 
 	if point_changes:
 		native_curve.set_control_points(next_control_points)

@@ -1,7 +1,7 @@
-[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://cwovoeg6f7jfc"]
 
-[ext_resource type="Shader" path="res://add_gizmo_shader.gdshader" id="1_6yl1a"]
-[ext_resource type="Texture2D" path="res://asset/tex/add_road_segment.png" id="2_6p7gd"]
+[ext_resource type="Shader" uid="uid://b6yui0l7fhr40" path="res://add_gizmo_shader.gdshader" id="1_6yl1a"]
+[ext_resource type="Texture2D" uid="uid://dookscg1swm" path="res://asset/tex/add_road_segment.png" id="2_6p7gd"]
 
 [resource]
 render_priority = 0
