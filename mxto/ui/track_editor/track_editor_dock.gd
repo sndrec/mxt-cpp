@@ -28,6 +28,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
 @onready var slip_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Slip
 @onready var lava_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Lava
+@onready var gap_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Gap
 @onready var dashplate_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/DashPlate
 @onready var jumpplate_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/Jump
 @onready var mine_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/Mine
@@ -71,6 +72,7 @@ func _ready():
 	dirt_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.DIRT))
 	slip_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.ICE))
 	lava_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.LAVA))
+	gap_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.HOLE))
 	dashplate_button.pressed.connect(_on_track_object_type_pressed.bind(0))
 	jumpplate_button.pressed.connect(_on_track_object_type_pressed.bind(1))
 	mine_button.pressed.connect(_on_track_object_type_pressed.bind(2))
