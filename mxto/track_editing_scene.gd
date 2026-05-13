@@ -25,6 +25,7 @@ enum ToolMode {
 	EDIT_SPIRAL,
 	EDIT_CHECKPOINTS,
 	ADD_OBJECT,
+	EDIT_OBJECT,
 	EDIT_TRACK,
 }
 
@@ -115,6 +116,9 @@ func tool_mode_allows_spiral_gizmos() -> bool:
 
 func tool_mode_allows_checkpoint_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_CHECKPOINTS
+
+func tool_mode_allows_track_trigger_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_OBJECT
 
 func set_active_embed(in_path : RoadPath, in_embed_index : int) -> void:
 	if !embed_gizmo:
@@ -304,7 +308,7 @@ func _handle_add_object_input() -> void:
 		var trigger := add_track_trigger(desired_trigger_type, path, surface_t)
 		if trigger:
 			FZGlobal.select_node(trigger)
-			set_tool_mode(ToolMode.EDIT_SEGMENT)
+			set_tool_mode(ToolMode.EDIT_OBJECT)
 			get_viewport().set_input_as_handled()
 	end_pointer_action(self)
 

@@ -23,6 +23,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var edit_checkpoints_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditCheckpoints
 @onready var add_embed_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/AddEmbed
 @onready var new_track_object_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackObject
+@onready var edit_track_object_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackObject
 @onready var edit_track_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackProps
 @onready var recharge_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Recharge
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
@@ -68,6 +69,7 @@ func _ready():
 	edit_spiral_button.pressed.connect(_on_edit_spiral_pressed)
 	edit_embeds_button.pressed.connect(_on_edit_embeds_pressed)
 	edit_checkpoints_button.pressed.connect(_on_edit_checkpoints_pressed)
+	edit_track_object_button.pressed.connect(_on_edit_track_object_pressed)
 	recharge_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.RECHARGE))
 	dirt_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.DIRT))
 	slip_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.ICE))
@@ -96,6 +98,7 @@ func _enable_tool_button_toggles() -> void:
 		edit_modulation_button,
 		edit_checkpoints_button,
 		new_track_object_button,
+		edit_track_object_button,
 		edit_track_button,
 	]:
 		button.toggle_mode = true
@@ -116,6 +119,7 @@ func _refresh_tool_button_states() -> void:
 	_set_tool_button_pressed(edit_modulation_button, mode == TrackEditingScene.ToolMode.EDIT_MODULATION)
 	_set_tool_button_pressed(edit_checkpoints_button, mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
 	_set_tool_button_pressed(new_track_object_button, mode == TrackEditingScene.ToolMode.ADD_OBJECT)
+	_set_tool_button_pressed(edit_track_object_button, mode == TrackEditingScene.ToolMode.EDIT_OBJECT)
 	_set_tool_button_pressed(edit_track_button, mode == TrackEditingScene.ToolMode.EDIT_TRACK)
 
 func get_track_root() -> void:
@@ -216,6 +220,18 @@ func _on_new_track_object_pressed():
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_OBJECT)
 	main_buttons.visible = false
 	new_track_object_buttons.visible = true
+
+func _on_edit_track_object_pressed() -> void:
+	var selected := FZGlobal.active_node
+	if !_is_track_trigger(selected):
+		return
+	track_scene.set_active_track_trigger(selected)
+	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_OBJECT)
+	main_buttons.visible = true
+	new_track_segment_buttons.visible = false
+	new_track_segment_type_buttons.visible = false
+	new_embed_buttons.visible = false
+	new_track_object_buttons.visible = false
 
 func _on_edit_segment_props_pressed():
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SEGMENT)

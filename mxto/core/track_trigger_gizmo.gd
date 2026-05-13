@@ -207,7 +207,7 @@ func _drag_plane_for(handle_id : int, cam : Camera3D) -> Plane:
 
 func _process(_delta : float) -> void:
 	var scene := FZGlobal.editing_scene
-	if !scene or scene.tool_mode != TrackEditingScene.ToolMode.EDIT_SEGMENT or !is_instance_valid(target_trigger):
+	if !scene or !scene.tool_mode_allows_track_trigger_gizmos() or !is_instance_valid(target_trigger):
 		if scene:
 			scene.end_pointer_action(self)
 		visible = false
