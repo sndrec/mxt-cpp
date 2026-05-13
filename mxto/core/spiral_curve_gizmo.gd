@@ -226,7 +226,7 @@ func _end_frame() -> Dictionary:
 
 func _spiral_degrees_handle_position() -> Vector3:
 	var frame := _end_frame()
-	return frame["center"] - frame["z"] * SPIRAL_DEGREES_ARROW_OFFSET
+	return frame["center"] + frame["z"] * SPIRAL_DEGREES_ARROW_OFFSET
 
 func _spiral_degrees_pole_point(end_position : Vector3) -> Vector3:
 	var axis := _spiral_axis_world()
@@ -1449,7 +1449,7 @@ func _apply_rotation_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 	var current_dir : Vector3 = (hit - center).normalized()
 	var origin_dir : Vector3 = drag_snapshot["origin_dir"]
 	var axis : Vector3 = drag_snapshot["axis"]
-	var value := float(drag_snapshot["start_value"]) - rad_to_deg(origin_dir.signed_angle_to(current_dir, axis))
+	var value := float(drag_snapshot["start_value"]) + rad_to_deg(origin_dir.signed_angle_to(current_dir, axis))
 	if int(record["kind"]) == HandleKind.POINT:
 		curve.set_point_value(point_index, value)
 	else:
