@@ -254,6 +254,12 @@ func _pick_road_path_under_mouse() -> Dictionary:
 	mouse_picker_cast.clear_exceptions()
 	return {}
 
+func _mouse_over_gizmo() -> bool:
+	if !mouse_gizmo_cast:
+		return false
+	mouse_gizmo_cast.force_raycast_update()
+	return mouse_gizmo_cast.is_colliding()
+
 func _closest_surface_param(segment : RoadPath, world_pos : Vector3) -> Vector2:
 	var best_param := Vector2(0.0, 0.5)
 	var best_distance := INF
@@ -286,6 +292,8 @@ func _handle_add_object_input() -> void:
 		return
 	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
 		return
+	if _mouse_over_gizmo():
+		return
 	if !begin_pointer_action(self):
 		return
 	var hit := _pick_road_path_under_mouse()
@@ -303,6 +311,8 @@ func _handle_add_embed_input() -> void:
 	if tool_mode != ToolMode.ADD_EMBED or !pending_embed_add:
 		return
 	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
+		return
+	if _mouse_over_gizmo():
 		return
 	if !begin_pointer_action(self):
 		return
@@ -325,7 +335,7 @@ func _handle_add_segment_input() -> void:
 		return
 	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
 		return
-	if mouse_gizmo_cast.is_colliding():
+	if _mouse_over_gizmo():
 		return
 	if !begin_pointer_action(self):
 		return
