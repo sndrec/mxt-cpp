@@ -106,6 +106,9 @@ func _update_visuals() -> void:
 	outline_mesh_instance.visible = true
 
 func _hovered_handle() -> int:
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_over_editor_ui():
+		return -1
 	if !mouse_cast or !mouse_cast.is_colliding():
 		return -1
 	var collider := mouse_cast.get_collider()

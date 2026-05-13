@@ -37,6 +37,9 @@ func set_target_node(in_node : Node3D) -> void:
 		set_colliders_active(false)
 
 func mousecast_wants_this_gizmo() -> bool:
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_over_editor_ui():
+		return false
 	return (mouse_cast.get_collider() == giz_x_col or mouse_cast.get_collider() == giz_y_col or mouse_cast.get_collider() == giz_z_col)
 
 func _process(delta: float) -> void:

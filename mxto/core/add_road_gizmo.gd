@@ -86,4 +86,7 @@ func _process(delta: float) -> void:
 		gizmo_collider.set_collision_layer_value(16, true)
 
 func mousecast_wants_this_gizmo() -> bool:
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_over_editor_ui():
+		return false
 	return mouse_cast.get_collider() == gizmo_collider and !FZGlobal.editing_scene.rotate_gizmo.is_moving and !FZGlobal.editing_scene.translate_gizmo.is_moving
