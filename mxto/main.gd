@@ -1155,7 +1155,6 @@ func _update_nametags(active_camera: Camera3D, delta: float) -> void:
 		) + Vector2(72, -90)
 
 func _physics_process(delta: float) -> void:
-	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if auto_track_editor_mode:
 		return
 	if headless_mode:
@@ -1169,6 +1168,7 @@ func _physics_process(delta: float) -> void:
 			network_manager.set_local_input(pi.serialize())
 			network_manager.collect_client_inputs()
 		return
+	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if lobby_control.visible:
 		_update_player_list()
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
