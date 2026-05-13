@@ -18,6 +18,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var edit_shape_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditShape
 @onready var edit_mesh_layout_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditMeshLayout
 @onready var edit_spiral_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditSpiral
+@onready var edit_embeds_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditEmbeds
 @onready var edit_checkpoints_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditCheckpoints
 @onready var recharge_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Recharge
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
@@ -59,6 +60,7 @@ func _ready():
 	edit_shape_button.pressed.connect(_on_edit_shape_pressed)
 	edit_mesh_layout_button.pressed.connect(_on_edit_mesh_layout_pressed)
 	edit_spiral_button.pressed.connect(_on_edit_spiral_pressed)
+	edit_embeds_button.pressed.connect(_on_edit_embeds_pressed)
 	edit_checkpoints_button.pressed.connect(_on_edit_checkpoints_pressed)
 	recharge_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.RECHARGE))
 	dirt_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.DIRT))
@@ -117,6 +119,10 @@ func select_node(in_node : Node) -> void:
 			track_scene.set_active_mesh_layout_path(in_node)
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SPIRAL:
 			track_scene.set_active_spiral_path(in_node)
+		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_EMBED:
+			var embed_index := _active_embed_index(in_node)
+			if embed_index >= 0:
+				track_scene.set_active_embed(in_node, embed_index)
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS:
 			track_scene.set_active_checkpoint_path(in_node)
 
@@ -182,6 +188,11 @@ func _ensure_active_modulation(path : RoadPath) -> int:
 		path.road_shape.modulation_table.append(new_mod)
 	return 0
 
+func _active_embed_index(path : RoadPath) -> int:
+	if !path or path.road_shape.embed_table.is_empty():
+		return -1
+	return 0
+
 func _on_edit_modulation_pressed() -> void:
 	var selected := get_active_path()
 	if !selected:
@@ -235,6 +246,25 @@ func _on_edit_spiral_pressed() -> void:
 	track_scene.set_active_spiral_path(selected)
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SPIRAL)
 	select_node(selected)
+	main_buttons.visible = true
+	new_track_segment_buttons.visible = false
+	new_track_segment_type_buttons.visible = false
+	new_embed_buttons.visible = false
+	new_track_object_buttons.visible = false
+	bezier_buttons.visible = false
+
+func _on_edit_embeds_pressed() -> void:
+	var selected := get_active_path()
+	if !selected:
+		return
+	var embed_index := _active_embed_index(selected)
+	if embed_index < 0:
+		_on_add_embed_pressed()
+		return
+	track_scene.set_active_embed(selected, embed_index)
+	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_EMBED)
+	select_node(selected)
+	selected._try_generate_mesh()
 	main_buttons.visible = true
 	new_track_segment_buttons.visible = false
 	new_track_segment_type_buttons.visible = false

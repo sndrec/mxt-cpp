@@ -330,7 +330,7 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
 	var show_object := _active_track_trigger() != null and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION
-	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.ADD_EMBED
+	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.EDIT_EMBED
 	_apply_context_tabs(show_info, show_spiral, show_track, show_object, show_modulation, show_embeds)
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
 	var show_mesh_layout_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT

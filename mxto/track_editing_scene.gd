@@ -16,6 +16,7 @@ enum ToolMode {
 	EDIT_SEGMENT,
 	ADD_SEGMENT,
 	ADD_EMBED,
+	EDIT_EMBED,
 	EDIT_RAILS,
 	EDIT_MODULATION,
 	EDIT_SHAPE,
@@ -87,7 +88,7 @@ func tool_mode_allows_control_point_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_SEGMENT
 
 func tool_mode_allows_embed_gizmos() -> bool:
-	return tool_mode == ToolMode.ADD_EMBED
+	return tool_mode == ToolMode.EDIT_EMBED
 
 func tool_mode_allows_rail_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_RAILS
@@ -300,6 +301,7 @@ func _handle_add_embed_input() -> void:
 			set_active_embed(path, embed_index)
 			FZGlobal.select_node(path)
 			pending_embed_add = false
+			set_tool_mode(ToolMode.EDIT_EMBED)
 			get_viewport().set_input_as_handled()
 	end_pointer_action(self)
 
