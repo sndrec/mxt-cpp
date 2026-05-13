@@ -25,8 +25,14 @@ var current_path : RoadPath
 @onready var road_shape_type: OptionButton = $Control/TabContainer/Info/RoadShapeRow/RoadShapeType
 @onready var road_uv_multiplier_row: HBoxContainer = $Control/TabContainer/Info/RoadUvMultiplierRow
 @onready var road_uv_multiplier: SpinBox = $Control/TabContainer/Info/RoadUvMultiplierRow/RoadUvMultiplier
+@onready var ground_color_row: HBoxContainer = $Control/TabContainer/Info/GroundColorRow
 @onready var ground_color: ColorPickerButton = $Control/TabContainer/Info/GroundColorRow/GroundColor
+@onready var rail_color_row: HBoxContainer = $Control/TabContainer/Info/RailColorRow
 @onready var rail_color: ColorPickerButton = $Control/TabContainer/Info/RailColorRow/RailColor
+@onready var mesh_subdivision_length_row: HBoxContainer = $Control/TabContainer/Info/MeshSubdivisionLengthRow
+@onready var mesh_subdivision_length: SpinBox = $Control/TabContainer/Info/MeshSubdivisionLengthRow/MeshSubdivisionLength
+@onready var mesh_subdivision_angle_row: HBoxContainer = $Control/TabContainer/Info/MeshSubdivisionAngleRow
+@onready var mesh_subdivision_angle: SpinBox = $Control/TabContainer/Info/MeshSubdivisionAngleRow/MeshSubdivisionAngle
 @onready var checkpoint_count_row: HBoxContainer = $Control/TabContainer/Info/CheckpointCountRow
 @onready var checkpoint_count: SpinBox = $Control/TabContainer/Info/CheckpointCountRow/CheckpointCount
 @onready var cross_section_controls: VBoxContainer = $Control/TabContainer/Info/VBoxContainer
@@ -112,6 +118,7 @@ var updating_object_controls := false
 var updating_road_shape_controls := false
 var updating_road_uv_controls := false
 var updating_road_color_controls := false
+var updating_mesh_subdivision_controls := false
 var updating_embed_controls := false
 var transform_clipboard_cp_scale := Vector3.ONE
 
@@ -177,6 +184,8 @@ func _ready():
 	road_uv_multiplier.value_changed.connect(update_road_uv_multiplier)
 	ground_color.color_changed.connect(update_ground_color)
 	rail_color.color_changed.connect(update_rail_color)
+	mesh_subdivision_length.value_changed.connect(update_mesh_subdivision_length)
+	mesh_subdivision_angle.value_changed.connect(update_mesh_subdivision_angle)
 	track_cross_section_slider.value_changed.connect(cs_rect.update_track_cross_sections)
 	checkpoint_count.value_changed.connect(update_checkpoint_count)
 	spiral_degrees.value_changed.connect(update_spiral_values)
@@ -293,8 +302,13 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_mesh_layout_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT
 	var show_shape_type_controls := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
 	var show_cross_section_controls := show_info and !show_checkpoint_controls
+	var show_appearance_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	road_shape_row.visible = show_shape_type_controls
 	road_uv_multiplier_row.visible = show_cross_section_controls
+	ground_color_row.visible = show_appearance_controls
+	rail_color_row.visible = show_appearance_controls
+	mesh_subdivision_length_row.visible = show_mesh_layout_controls
+	mesh_subdivision_angle_row.visible = show_mesh_layout_controls
 	checkpoint_count_row.visible = show_checkpoint_controls
 	cross_section_controls.visible = show_cross_section_controls
 	mesh_layout_clipboard_row.visible = show_mesh_layout_controls
@@ -473,6 +487,26 @@ func update_rail_color(new_color : Color) -> void:
 	if updating_road_color_controls or !current_path:
 		return
 	current_path.rail_color = new_color
+	update_track_visuals()
+
+func _refresh_mesh_subdivision_controls() -> void:
+	if !current_path:
+		return
+	updating_mesh_subdivision_controls = true
+	mesh_subdivision_length.set_value_no_signal(current_path.mesh_subdivision_length)
+	mesh_subdivision_angle.set_value_no_signal(current_path.mesh_subdivision_angle_degrees)
+	updating_mesh_subdivision_controls = false
+
+func update_mesh_subdivision_length(new_value : float) -> void:
+	if updating_mesh_subdivision_controls or !current_path:
+		return
+	current_path.mesh_subdivision_length = maxf(0.1, new_value)
+	update_track_visuals()
+
+func update_mesh_subdivision_angle(new_value : float) -> void:
+	if updating_mesh_subdivision_controls or !current_path:
+		return
+	current_path.mesh_subdivision_angle_degrees = clampf(new_value, 0.1, 90.0)
 	update_track_visuals()
 
 func _refresh_track_controls() -> void:
@@ -664,6 +698,7 @@ func _process(delta: float) -> void:
 		road_uv_multiplier.set_value_no_signal(current_path.road_uv_multiplier)
 		updating_road_uv_controls = false
 		_refresh_road_color_controls()
+		_refresh_mesh_subdivision_controls()
 		var mesh_was_visible : bool = current_path.get_child(0).visible
 		current_path.get_child(0).visible = draw_mesh.button_pressed
 		checkpoint_count.set_value_no_signal(current_path.num_checkpoints + 1)

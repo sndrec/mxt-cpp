@@ -5,6 +5,8 @@ class_name RoadPath extends Node3D
 @export var road_uv_multiplier := 1.0
 @export var ground_color := Color(0.5, 0.5, 0.5, 1.0)
 @export var rail_color := Color(0.8, 0.8, 0.8, 1.0)
+@export var mesh_subdivision_length := 30.0
+@export var mesh_subdivision_angle_degrees := 3.0
 @export var horizontal_road_mesh_segments : PackedFloat32Array
 @export var num_checkpoints := 8
 @export var previous_segment_paths : Array[NodePath] = []
