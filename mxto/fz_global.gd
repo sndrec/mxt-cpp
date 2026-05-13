@@ -8,7 +8,6 @@ var kmh_to_units : float = 1.0 / units_to_kmh
 var current_track : TrackRoot
 var current_cam : Camera3D
 var editing_scene : TrackEditingScene
-var curve_clipboard : Curve
 
 var undo_redo = UndoRedo.new()
 var active_node : Node3D
