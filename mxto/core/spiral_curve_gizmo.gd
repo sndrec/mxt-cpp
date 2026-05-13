@@ -257,6 +257,11 @@ func _point_sides(kind : int) -> Array[float]:
 		return [-1.0, 1.0]
 	return [1.0]
 
+func _tangent_sides(kind : int) -> Array[float]:
+	if kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y:
+		return [-1.0, 1.0]
+	return [1.0]
+
 func _entry_axis(entry : Dictionary, frame : Dictionary) -> Vector3:
 	match int(entry["kind"]):
 		CurveKind.RADIUS:
@@ -650,10 +655,10 @@ func _sync_handles() -> void:
 			if !_selected_key_matches(entry_index, point_index):
 				continue
 			if point_index > 0:
-				for side in _point_sides(int(entry["kind"])):
+				for side in _tangent_sides(int(entry["kind"])):
 					handle_records.append({"kind": HandleKind.LEFT_TANGENT, "entry": entry_index, "point": point_index, "side": side})
 			if point_index < curve.point_count - 1:
-				for side in _point_sides(int(entry["kind"])):
+				for side in _tangent_sides(int(entry["kind"])):
 					handle_records.append({"kind": HandleKind.RIGHT_TANGENT, "entry": entry_index, "point": point_index, "side": side})
 	while handles.size() < handle_records.size():
 		handles.append(_make_handle())
@@ -1027,11 +1032,11 @@ func _draw_curve_guides() -> void:
 				_:
 					_draw_arrow_point(entry_index, entry, point_index)
 			if point_index > 0:
-				for side in _point_sides(int(entry["kind"])):
+				for side in _tangent_sides(int(entry["kind"])):
 					if _selected_key_matches(entry_index, point_index):
 						_draw_tangent(entry_index, point_index, HandleKind.LEFT_TANGENT, side)
 			if point_index < curve.point_count - 1:
-				for side in _point_sides(int(entry["kind"])):
+				for side in _tangent_sides(int(entry["kind"])):
 					if _selected_key_matches(entry_index, point_index):
 						_draw_tangent(entry_index, point_index, HandleKind.RIGHT_TANGENT, side)
 
