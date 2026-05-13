@@ -62,6 +62,34 @@ layout_mode = 2
 text = "Standard Road"
 label_settings = SubResource("LabelSettings_h0jni")
 
+[node name="RoadShapeRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Info/RoadShapeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Road Shape"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RoadShapeType" type="OptionButton" parent="Control/TabContainer/Info/RoadShapeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 7
+popup/item_0/text = "Standard"
+popup/item_1/text = "Cylinder"
+popup/item_1/id = 1
+popup/item_2/text = "Open Cylinder"
+popup/item_2/id = 2
+popup/item_3/text = "Pipe"
+popup/item_3/id = 3
+popup/item_4/text = "Open Pipe"
+popup/item_4/id = 4
+popup/item_5/text = "Rounded Square"
+popup/item_5/id = 5
+popup/item_6/text = "Open Rounded Square"
+popup/item_6/id = 6
+
 [node name="CheckpointCountRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
 layout_mode = 2
 

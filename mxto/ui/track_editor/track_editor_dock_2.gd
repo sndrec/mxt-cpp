@@ -5,6 +5,8 @@ signal dock_ready
 signal update_track
 
 const TrackTriggerScript := preload("res://core/track_trigger.gd")
+const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
+const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
 
 var track_root : TrackRoot
 
@@ -19,6 +21,8 @@ var current_path : RoadPath
 @onready var info_panel: VBoxContainer = $Control/TabContainer/Info
 @onready var smooth_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/SmoothCurve
 @onready var poly_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/PolyCurve
+@onready var road_shape_row: HBoxContainer = $Control/TabContainer/Info/RoadShapeRow
+@onready var road_shape_type: OptionButton = $Control/TabContainer/Info/RoadShapeRow/RoadShapeType
 @onready var checkpoint_count_row: HBoxContainer = $Control/TabContainer/Info/CheckpointCountRow
 @onready var checkpoint_count: SpinBox = $Control/TabContainer/Info/CheckpointCountRow/CheckpointCount
 @onready var cross_section_controls: VBoxContainer = $Control/TabContainer/Info/VBoxContainer
@@ -107,6 +111,7 @@ var connected_tool_scene : TrackEditingScene
 var updating_spiral_controls := false
 var updating_track_controls := false
 var updating_object_controls := false
+var updating_road_shape_controls := false
 
 func _ensure_cross_section_visual() -> void:
 	if cross_section_mesh_instance:
@@ -168,6 +173,7 @@ func _ready():
 	embed_end.value_changed.connect(update_embed_values)
 	mod_curve_effect.curve_edited.connect(update_track_visuals)
 	mod_curve_height.curve_edited.connect(update_track_visuals)
+	road_shape_type.item_selected.connect(update_road_shape_type)
 	track_cross_section_slider.value_changed.connect(cs_rect.update_track_cross_sections)
 	checkpoint_count.value_changed.connect(update_checkpoint_count)
 	spiral_degrees.value_changed.connect(update_spiral_values)
@@ -281,7 +287,9 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.ADD_EMBED
 	_apply_context_tabs(show_info, show_spiral, show_track, show_object, show_modulation, show_embeds)
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
+	var show_shape_type_controls := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
 	var show_cross_section_controls := show_info and !show_checkpoint_controls
+	road_shape_row.visible = show_shape_type_controls
 	checkpoint_count_row.visible = show_checkpoint_controls
 	cross_section_controls.visible = show_cross_section_controls
 	draw_mesh.visible = has_path
@@ -342,6 +350,59 @@ func update_checkpoint_count(new_value : float) -> void:
 	if !current_path:
 		return
 	current_path.num_checkpoints = maxi(0, int(new_value) - 1)
+
+func _road_shape_type_id(shape : RoadShape) -> int:
+	if shape is RoadShapeCylinder:
+		return 1
+	if shape is RoadShapeCylinderOpen:
+		return 2
+	if shape is RoadShapePipe:
+		return 3
+	if shape is RoadShapePipeOpen:
+		return 4
+	if shape is RoadShapeRoundedSquareOpenScript:
+		return 6
+	if shape is RoadShapeRoundedSquareScript:
+		return 5
+	return 0
+
+func _make_road_shape(shape_id : int) -> RoadShape:
+	match shape_id:
+		1:
+			return RoadShapeCylinder.new()
+		2:
+			return RoadShapeCylinderOpen.new()
+		3:
+			return RoadShapePipe.new()
+		4:
+			return RoadShapePipeOpen.new()
+		5:
+			return RoadShapeRoundedSquareScript.new()
+		6:
+			return RoadShapeRoundedSquareOpenScript.new()
+	return RoadShape.new()
+
+func _refresh_road_shape_controls() -> void:
+	if !current_path:
+		return
+	updating_road_shape_controls = true
+	road_shape_type.select(_road_shape_type_id(current_path.road_shape))
+	updating_road_shape_controls = false
+
+func update_road_shape_type(shape_id : int) -> void:
+	if updating_road_shape_controls or !current_path:
+		return
+	if shape_id == _road_shape_type_id(current_path.road_shape):
+		return
+	var old_shape := current_path.road_shape
+	var new_shape := _make_road_shape(shape_id)
+	new_shape.modulation_table = old_shape.modulation_table
+	new_shape.embed_table = old_shape.embed_table
+	current_path.road_shape = new_shape
+	current_path._try_generate_mesh()
+	_refresh_road_shape_controls()
+	if FZGlobal.editing_scene:
+		FZGlobal.editing_scene.set_active_shape_path(current_path)
 
 func _refresh_track_controls() -> void:
 	if !track_root:
@@ -541,6 +602,7 @@ func _process(delta: float) -> void:
 		line_scale_h.set_value_no_signal(selected.scale.y)
 	
 	if current_path:
+		_refresh_road_shape_controls()
 		if _is_spiral_path(current_path):
 			_refresh_spiral_controls()
 		var mesh_was_visible : bool = current_path.get_child(0).visible
