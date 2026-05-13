@@ -157,8 +157,8 @@ func _ready():
 	if !FZGlobal.selection_changed.is_connected(selection_updated):
 		FZGlobal.selection_changed.connect(selection_updated)
 	_sync_tool_mode_signal()
-	embed_dropdown.item_selected.connect(update_modulations_and_embeds)
-	modulation_dropdown.item_selected.connect(update_modulations_and_embeds)
+	embed_dropdown.item_selected.connect(_on_embed_selected)
+	modulation_dropdown.item_selected.connect(_on_modulation_selected)
 	new_modulation.pressed.connect(add_new_modulation)
 	remove_mod_button.pressed.connect(remove_modulation)
 	new_embed.pressed.connect(add_new_embed)
@@ -683,21 +683,25 @@ func selection_updated() -> void:
 func add_new_modulation() -> void:
 	if !current_path:
 		return
+	var new_index := current_path.road_shape.modulation_table.size()
 	var new_mod := RoadModulation.new()
 	new_mod.modulation_effect = ClassDB.instantiate("TrackEditorFloatCurve")
 	new_mod.modulation_height = ClassDB.instantiate("TrackEditorFloatCurve")
 	new_mod.modulation_effect.add_point(Vector2(0, 0))
 	new_mod.modulation_effect.add_point(Vector2(1, 0))
-	new_mod.modulation_height.add_point(Vector2(0, 0))
-	new_mod.modulation_height.add_point(Vector2(1, 0))
+	new_mod.modulation_height.add_point(Vector2(0, 1))
+	new_mod.modulation_height.add_point(Vector2(1, 1))
 	current_path.road_shape.modulation_table.append(new_mod)
-	refresh_modulations_and_embeds()
+	refresh_modulations_and_embeds(new_index, embed_dropdown.selected)
 
 func remove_modulation() -> void:
 	if !current_path:
 		return
-	current_path.road_shape.modulation_table.remove_at(modulation_dropdown.selected)
-	refresh_modulations_and_embeds()
+	var selected := modulation_dropdown.selected
+	if selected < 0 or selected >= current_path.road_shape.modulation_table.size():
+		return
+	current_path.road_shape.modulation_table.remove_at(selected)
+	refresh_modulations_and_embeds(mini(selected, current_path.road_shape.modulation_table.size() - 1), embed_dropdown.selected)
 
 func add_new_embed() -> void:
 	var scene := FZGlobal.editing_scene as TrackEditingScene
@@ -712,36 +716,53 @@ func add_new_embed() -> void:
 func remove_embed_func() -> void:
 	if !current_path:
 		return
-	current_path.road_shape.embed_table.remove_at(embed_dropdown.selected)
-	refresh_modulations_and_embeds()
+	var selected := embed_dropdown.selected
+	if selected < 0 or selected >= current_path.road_shape.embed_table.size():
+		return
+	current_path.road_shape.embed_table.remove_at(selected)
+	refresh_modulations_and_embeds(modulation_dropdown.selected, mini(selected, current_path.road_shape.embed_table.size() - 1))
 
-func refresh_modulations_and_embeds() -> void:
+func refresh_modulations_and_embeds(preferred_modulation := -2, preferred_embed := -2) -> void:
 	if !current_path:
 		return
-	var selected := modulation_dropdown.selected
+	var previous_modulation := modulation_dropdown.selected
 	modulation_dropdown.clear()
 	for i in current_path.road_shape.modulation_table.size():
 		var mod := current_path.road_shape.modulation_table[i]
 		modulation_dropdown.add_item("Modulation " + str(i + 1))
-	if current_path.road_shape.modulation_table.size() > 0 and modulation_dropdown.selected != -1:
-		modulation_dropdown.select(minf(modulation_dropdown.selected + 1, current_path.road_shape.modulation_table.size() - 1))
-		
-	selected = embed_dropdown.selected
+	var modulation_selection := previous_modulation if preferred_modulation == -2 else preferred_modulation
+	if current_path.road_shape.modulation_table.size() > 0:
+		modulation_selection = clampi(modulation_selection, 0, current_path.road_shape.modulation_table.size() - 1)
+		modulation_dropdown.select(modulation_selection)
+	else:
+		modulation_selection = -1
+
+	var previous_embed := embed_dropdown.selected
 	embed_dropdown.clear()
 	for i in current_path.road_shape.embed_table.size():
 		var mod := current_path.road_shape.embed_table[i]
 		embed_dropdown.add_item("Embed " + str(i + 1))
-	if current_path.road_shape.embed_table.size() > 0 and embed_dropdown.selected != -1:
-		embed_dropdown.select(minf(embed_dropdown.selected + 1, current_path.road_shape.embed_table.size() - 1))
-	update_modulations_and_embeds()
+	var embed_selection := previous_embed if preferred_embed == -2 else preferred_embed
+	if current_path.road_shape.embed_table.size() > 0:
+		embed_selection = clampi(embed_selection, 0, current_path.road_shape.embed_table.size() - 1)
+		embed_dropdown.select(embed_selection)
+	else:
+		embed_selection = -1
+	update_modulations_and_embeds(modulation_selection, embed_selection)
+
+func _on_modulation_selected(in_selected_mod : int) -> void:
+	update_modulations_and_embeds(in_selected_mod, embed_dropdown.selected)
+
+func _on_embed_selected(in_selected_embed : int) -> void:
+	update_modulations_and_embeds(modulation_dropdown.selected, in_selected_embed)
 
 func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.selected, in_selected_embed : int = embed_dropdown.selected) -> void:
-	if in_selected_mod == -1 or modulation_dropdown.item_count == 0:
+	if in_selected_mod < 0 or in_selected_mod >= current_path.road_shape.modulation_table.size() or modulation_dropdown.item_count == 0:
 		pass
 	else:
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_modulation(current_path, in_selected_mod)
-	if in_selected_embed == -1 or embed_dropdown.item_count == 0:
+	if in_selected_embed < 0 or in_selected_embed >= current_path.road_shape.embed_table.size() or embed_dropdown.item_count == 0:
 		pass
 	else:
 		var this_embed := current_path.road_shape.embed_table[in_selected_embed]
