@@ -319,7 +319,7 @@ func _write_handle(embed : RoadEmbed, handle_id : int, param : Vector2) -> void:
 
 func _screen_distance_to_boundary(embed : RoadEmbed, boundary : int, cam : Camera3D, mouse_pos : Vector2) -> Dictionary:
 	var curve := _boundary_curve(embed, boundary)
-	var best_offset := 0.0
+	var best_offset := embed.road_start
 	var best_dist := INF
 	var previous_screen := Vector2.ZERO
 	for i in PREVIEW_STEPS + 1:
@@ -333,7 +333,8 @@ func _screen_distance_to_boundary(embed : RoadEmbed, boundary : int, cam : Camer
 				var span_offset := 1.0 / float(PREVIEW_STEPS)
 				var span_len := previous_screen.distance_to(screen)
 				var local_t := 0.0 if span_len <= 0.001 else previous_screen.distance_to(closest) / span_len
-				best_offset = clampf(float(i - 1) / float(PREVIEW_STEPS) + span_offset * local_t, 0.0, 1.0)
+				var embed_t := clampf(float(i - 1) / float(PREVIEW_STEPS) + span_offset * local_t, 0.0, 1.0)
+				best_offset = lerpf(embed.road_start, embed.road_end, embed_t)
 				best_dist = dist
 		previous_screen = screen
 	return {
