@@ -45,8 +45,8 @@ const TOOL_MIN_HEIGHT := 360.0
 @onready var outliner_scroll: ScrollContainer = $MainGUI/VBoxContainer/ScrollContainer
 @onready var outliner: VBoxContainer = $MainGUI/VBoxContainer/ScrollContainer/Outliner
 
-func _is_script_path(node : Node, script_path : String) -> bool:
-	if !node:
+func _is_script_path(node, script_path : String) -> bool:
+	if !is_instance_valid(node):
 		return false
 	var script : Script = node.get_script() as Script
 	return script and script.resource_path == script_path
@@ -59,10 +59,10 @@ func _segment_outliner_label(segment : RoadPath, index : int) -> String:
 		segment_type = "Spiral"
 	return segment_type + " Track Segment " + str(index + 1)
 
-func _is_track_trigger(node : Node) -> bool:
-	return node and node.get_script() == TrackTriggerScript
+func _is_track_trigger(node) -> bool:
+	return is_instance_valid(node) and node.get_script() == TrackTriggerScript
 
-func _is_spiral_path(node : Node) -> bool:
+func _is_spiral_path(node) -> bool:
 	return _is_script_path(node, "res://core/road_path_spiral.gd")
 
 func _track_object_outliner_label(track_object : Node, index : int) -> String:

@@ -17,25 +17,28 @@ var selected_nodes : Array[Node3D] = []
 
 var can_select := true
 
-func is_track_trigger_node(node : Node) -> bool:
-	return node and node.get_script() == TrackTriggerScript
+func is_track_trigger_node(node) -> bool:
+	return is_instance_valid(node) and node.get_script() == TrackTriggerScript
 
 func get_selected_road_path() -> RoadPath:
 	var node := active_node
-	while node:
+	while is_instance_valid(node):
 		if node is RoadPath:
 			return node
 		node = node.get_parent()
 	return null
 
 func emit_selection_changed() -> void:
+	if active_node and !is_instance_valid(active_node):
+		active_node = null
+		selected_nodes.clear()
 	if editing_scene:
 		editing_scene.active_path = get_selected_road_path()
 		if is_track_trigger_node(active_node):
 			editing_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_OBJECT)
 	selection_changed.emit()
 
-func get_transform_gizmo_target(in_node : Node3D) -> Node3D:
+func get_transform_gizmo_target(in_node) -> Node3D:
 	if !is_instance_valid(in_node):
 		return null
 	if in_node is RoadPath:

@@ -208,6 +208,9 @@ func get_runtime_track_root() -> TrackRoot:
 	return null
 
 func get_active_node() -> Node3D:
+	if FZGlobal.active_node and !is_instance_valid(FZGlobal.active_node):
+		FZGlobal.clear_selection_immediate()
+		return null
 	return FZGlobal.active_node
 
 func _ready():
@@ -349,17 +352,19 @@ func _sync_tool_mode_signal() -> void:
 	if connected_tool_scene and !connected_tool_scene.track_structure_changed.is_connected(selection_updated):
 		connected_tool_scene.track_structure_changed.connect(selection_updated)
 
-func _is_spiral_path(path : Node) -> bool:
-	if !path:
+func _is_spiral_path(path) -> bool:
+	if !is_instance_valid(path):
 		return false
 	var script : Script = path.get_script() as Script
 	return script and script.resource_path == "res://core/road_path_spiral.gd"
 
-func _is_bezier_path(path : Node) -> bool:
+func _is_bezier_path(path) -> bool:
+	if !is_instance_valid(path):
+		return false
 	return path is RoadPathBezier and !(path is RoadPathLine) and !_is_spiral_path(path)
 
-func _is_track_trigger(node : Node) -> bool:
-	return node and node.get_script() == TrackTriggerScript
+func _is_track_trigger(node) -> bool:
+	return is_instance_valid(node) and node.get_script() == TrackTriggerScript
 
 func _active_track_trigger() -> Node3D:
 	var selected := get_active_node()
