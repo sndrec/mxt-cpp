@@ -8,6 +8,7 @@ anchors_preset = 5
 anchor_left = 0.5
 anchor_right = 0.5
 grow_horizontal = 2
+mouse_filter = 2
 script = ExtResource("1_34gi2")
 
 [node name="HBoxContainer" type="HBoxContainer" parent="."]
@@ -19,6 +20,7 @@ offset_left = -65.5
 offset_right = 65.5
 offset_bottom = 31.0
 grow_horizontal = 2
+mouse_filter = 2
 
 [node name="TransformButton" type="Button" parent="HBoxContainer"]
 layout_mode = 2
