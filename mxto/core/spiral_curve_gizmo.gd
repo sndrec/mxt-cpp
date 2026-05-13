@@ -224,7 +224,7 @@ func _end_frame() -> Dictionary:
 
 func _spiral_degrees_handle_position() -> Vector3:
 	var frame := _end_frame()
-	return frame["center"] + frame["z"] * SPIRAL_DEGREES_ARROW_OFFSET
+	return frame["center"] - frame["z"] * SPIRAL_DEGREES_ARROW_OFFSET
 
 func _spiral_degrees_pole_point(end_position : Vector3) -> Vector3:
 	var axis := _spiral_axis_world()
