@@ -77,6 +77,7 @@ const DEFAULT_EMBED_WIDTH := 0.7
 func set_tool_mode(in_mode : ToolMode) -> void:
 	if tool_mode == in_mode:
 		return
+	pointer_action_owner = null
 	if in_mode != ToolMode.ADD_EMBED:
 		pending_embed_add = false
 	tool_mode = in_mode
