@@ -75,6 +75,8 @@ func _ready():
 	jumpplate_button.pressed.connect(_on_track_object_type_pressed.bind(1))
 	mine_button.pressed.connect(_on_track_object_type_pressed.bind(2))
 	track_scene.track_structure_changed.connect(update_outliner)
+	FZGlobal.selection_changed.connect(_sync_active_tool_target)
+	track_scene.tool_mode_changed.connect(_sync_active_tool_target.unbind(1))
 	update_outliner()
 	_refresh_tool_button_states()
 	dock_ready.emit()
@@ -149,6 +151,10 @@ func update_outliner() -> void:
 func select_node(in_node : Node) -> void:
 	if in_node is Node3D:
 		FZGlobal.select_node(in_node)
+	_sync_active_tool_target()
+
+func _sync_active_tool_target() -> void:
+	var in_node := get_active_path()
 	if in_node is RoadPath:
 		track_scene.active_path = in_node
 		if track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_RAILS:
