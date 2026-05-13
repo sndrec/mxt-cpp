@@ -213,6 +213,7 @@ func _on_edit_rails_pressed() -> void:
 		return
 	track_scene.set_active_rail_path(selected)
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_RAILS)
+	select_node(selected)
 	main_buttons.visible = true
 	new_track_segment_buttons.visible = false
 	new_track_segment_type_buttons.visible = false
