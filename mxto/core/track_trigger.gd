@@ -39,6 +39,8 @@ const TRIGGER_EXTENTS := [
 var preview_instance : Node3D
 var trigger_collision : StaticBody3D
 var trigger_collision_shape : CollisionShape3D
+var last_synced_transform := Transform3D.IDENTITY
+var has_synced_transform := false
 
 func get_selection_priority() -> int:
 	if FZGlobal.active_node == self:
@@ -106,8 +108,19 @@ func _refresh_preview() -> void:
 		add_child(preview_instance)
 
 func _surface_transform(segment : RoadPath) -> Transform3D:
+	var basis := _surface_basis(segment, surface_t)
+	basis = basis * Basis(Vector3.UP, deg_to_rad(add_yaw_degrees))
+	basis.x *= trigger_scale.x
+	basis.y *= trigger_scale.y
+	basis.z *= trigger_scale.z
+	return Transform3D(basis, segment.get_surface_position(surface_t))
+
+func _surface_basis(segment : RoadPath, param : Vector2) -> Basis:
 	var tx := clampf(surface_t.x, -1.0, 1.0)
 	var ty := clampf(surface_t.y, 0.0, 1.0)
+	if param != surface_t:
+		tx = clampf(param.x, -1.0, 1.0)
+		ty = clampf(param.y, 0.0, 1.0)
 	var eps := 0.002
 	var tx2 := clampf(tx + eps, -1.0, 1.0)
 	if is_equal_approx(tx2, tx):
@@ -131,12 +144,78 @@ func _surface_transform(segment : RoadPath) -> Transform3D:
 	if normal.is_zero_approx():
 		normal = Vector3.UP
 	right = forward.cross(normal).normalized()
-	var basis := Basis(right, -normal, forward).orthonormalized()
-	basis = basis * Basis(Vector3.UP, deg_to_rad(add_yaw_degrees))
-	basis.x *= trigger_scale.x
-	basis.y *= trigger_scale.y
-	basis.z *= trigger_scale.z
-	return Transform3D(basis, base)
+	return Basis(right, -normal, forward).orthonormalized()
+
+func _closest_surface_param(segment : RoadPath, world_pos : Vector3) -> Dictionary:
+	var best_param := surface_t
+	var best_distance := INF
+	var center := Vector2(0.0, 0.5)
+	var span := Vector2(2.0, 1.0)
+	for refine_pass in 4:
+		var query := PackedVector2Array()
+		var params : Array[Vector2] = []
+		var x_steps := 9
+		var y_steps := 17
+		for y in y_steps:
+			for x in x_steps:
+				var tx := clampf(center.x - span.x * 0.5 + span.x * (float(x) / float(x_steps - 1)), -1.0, 1.0)
+				var ty := clampf(center.y - span.y * 0.5 + span.y * (float(y) / float(y_steps - 1)), 0.0, 1.0)
+				var param := Vector2(tx, ty)
+				params.append(param)
+				query.append(param)
+		var positions := segment.get_surface_positions(query)
+		for i in positions.size():
+			var distance := positions[i].distance_squared_to(world_pos)
+			if distance < best_distance:
+				best_distance = distance
+				best_param = params[i]
+		center = best_param
+		span *= 0.25
+	return {"param": best_param, "distance": best_distance}
+
+func _closest_segment_surface(world_pos : Vector3) -> Dictionary:
+	var best_segment : RoadPath = get_target_segment()
+	var best_param := surface_t
+	var best_distance := INF
+	var parent := get_parent()
+	if !parent:
+		return {"segment": best_segment, "param": best_param}
+	for child in parent.get_children():
+		var segment := child as RoadPath
+		if !segment:
+			continue
+		var result := _closest_surface_param(segment, world_pos)
+		var distance : float = result["distance"]
+		if distance < best_distance:
+			best_distance = distance
+			best_param = result["param"]
+			best_segment = segment
+	return {"segment": best_segment, "param": best_param}
+
+func _sync_transform_cache() -> void:
+	last_synced_transform = global_transform
+	has_synced_transform = true
+
+func _sync_attachment_from_transform() -> void:
+	var result := _closest_segment_surface(global_position)
+	var segment := result["segment"] as RoadPath
+	if !segment:
+		_sync_transform_cache()
+		return
+	var next_surface_t : Vector2 = result["param"]
+	var surface_basis := _surface_basis(segment, next_surface_t)
+	var object_basis := global_basis
+	trigger_scale = Vector3(
+		maxf(object_basis.x.length(), 0.001),
+		maxf(object_basis.y.length(), 0.001),
+		maxf(object_basis.z.length(), 0.001))
+	var object_basis_normalized := object_basis.orthonormalized()
+	var local_forward := surface_basis.inverse() * object_basis_normalized.z
+	add_yaw_degrees = rad_to_deg(atan2(local_forward.x, local_forward.z))
+	surface_t = next_surface_t
+	set_target_segment(segment)
+	global_transform = _surface_transform(segment)
+	_sync_transform_cache()
 
 func place_on_segment(segment : RoadPath, tx := 0.0, ty := 0.5) -> void:
 	if !segment:
@@ -144,3 +223,13 @@ func place_on_segment(segment : RoadPath, tx := 0.0, ty := 0.5) -> void:
 	surface_t = Vector2(clampf(tx, -1.0, 1.0), clampf(ty, 0.0, 1.0))
 	set_target_segment(segment)
 	global_transform = _surface_transform(segment)
+	_sync_transform_cache()
+
+func _process(_delta : float) -> void:
+	if !has_synced_transform:
+		_sync_transform_cache()
+	var scene := FZGlobal.editing_scene
+	if scene and scene.pointer_action_owner and scene.pointer_action_owner != self:
+		return
+	if global_transform != last_synced_transform:
+		_sync_attachment_from_transform()
