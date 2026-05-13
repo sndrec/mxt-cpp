@@ -148,6 +148,10 @@ func _process(delta: float) -> void:
 		return
 	handle_collision.set_collision_layer_value(15, true)
 	if !is_selectable():
+		handle_collision.set_collision_layer_value(15, false)
+		handle_collision.set_collision_layer_value(16, false)
+		handle_in_collision.set_collision_layer_value(16, false)
+		handle_out_collision.set_collision_layer_value(16, false)
 		_hide_visuals()
 		return
 	var handle_in_colour := Color.WEB_PURPLE

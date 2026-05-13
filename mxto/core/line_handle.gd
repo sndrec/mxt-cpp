@@ -54,6 +54,7 @@ func _process(delta: float) -> void:
 		return
 	handle_collision.set_collision_layer_value(15, true)
 	if get_selection_priority() == -1:
+		handle_collision.set_collision_layer_value(15, false)
 		handle_mesh_instance.visible = false
 		return
 	scale = Vector3.ONE
