@@ -8,7 +8,6 @@ var gizmo_material := preload("res://asset/mat/add_road_gizmo_material.tres")
 var target_node : RoadPath
 
 var road_segment_texture := preload("res://asset/tex/add_road_segment.png")
-var bezier_point_texture := preload("res://asset/tex/add_bezier_point.png")
 var active := true
 var pressed_on_gizmo := false
 
@@ -50,12 +49,8 @@ func _process(delta: float) -> void:
 	var end_of_road := target_node.get_root_transform(1.0)
 	global_transform = end_of_road
 	scale = Vector3(end_of_road.basis.x.length() * 2.0, end_of_road.basis.x.length() * 2.0, end_of_road.basis.x.length() * 2.0)
-	if target_node is RoadPathBezier and !(target_node is RoadPathLine) and Input.is_action_pressed("Alt"):
-		gizmo_material.set_shader_parameter("in_texture", bezier_point_texture)
-		gizmo_material.set_shader_parameter("tint", Color.WHITE)
-	else:
-		gizmo_material.set_shader_parameter("in_texture", road_segment_texture)
-		gizmo_material.set_shader_parameter("tint", _segment_kind_tint(scene))
+	gizmo_material.set_shader_parameter("in_texture", road_segment_texture)
+	gizmo_material.set_shader_parameter("tint", _segment_kind_tint(scene))
 	if mousecast_wants_this_gizmo():
 		gizmo_material.set_shader_parameter("selected", true)
 	else:
@@ -79,23 +74,11 @@ func _process(delta: float) -> void:
 		scene.end_pointer_action(self)
 		if !can_release:
 			return
-		if target_node is RoadPathBezier and !(target_node is RoadPathLine) and Input.is_action_pressed("Alt"):
-			var last_index : int = target_node.get_control_point_count() - 1
-			var handle_out : float = target_node.native_curve.get_control_point_handle_out(last_index)
-			target_node.add_control_point(
-				1.0,
-				end_of_road.origin + end_of_road.basis.z.normalized() * handle_out * 3.0,
-				target_node.native_curve.get_control_point_rotation(last_index),
-				target_node.native_curve.get_control_point_scale(last_index),
-				handle_out,
-				handle_out)
-			target_node.point_changes = true
-		else:
-			var new_segment := scene.add_desired_track_segment_after(target_node)
-			if new_segment:
-				scene.active_path = new_segment
-				set_target_node(new_segment)
-				FZGlobal.select_node(new_segment)
+		var new_segment := scene.add_desired_track_segment_after(target_node)
+		if new_segment:
+			scene.active_path = new_segment
+			set_target_node(new_segment)
+			FZGlobal.select_node(new_segment)
 	if !active:
 		gizmo_collider.set_collision_layer_value(16, false)
 		return
