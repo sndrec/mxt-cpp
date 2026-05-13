@@ -7,37 +7,45 @@ signal update_track
 const TrackTriggerScript := preload("res://core/track_trigger.gd")
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
+const UI_EDGE_MARGIN := 24.0
+const HANDLE_PANEL_WIDTH := 194.0
+const PROPERTY_PANEL_WIDTH := 360.0
+const PROPERTY_PANEL_GAP := 6.0
+const PANEL_MIN_HEIGHT := 360.0
+const SCROLL_BAR_WIDTH := 24
 
 var track_root : TrackRoot
 
 var current_path : RoadPath
 
+@onready var dock_control: Control = $Control
+@onready var handle_panel: VBoxContainer = $Control/VBoxContainer
 @onready var draw_mesh: CheckBox = $Control/VBoxContainer/DrawMesh
 @onready var draw_curve: CheckBox = $Control/VBoxContainer/DrawCurve
 @onready var draw_handles: CheckBox = $Control/VBoxContainer/DrawHandles
 
-@onready var track_cross_section_slider: HSlider = $Control/TabContainer/Info/VBoxContainer/TrackCrossSectionSlider
+@onready var track_cross_section_slider: HSlider = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/TrackCrossSectionSlider
 @onready var tab_container: TabContainer = $Control/TabContainer
-@onready var info_panel: VBoxContainer = $Control/TabContainer/Info
-@onready var smooth_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/SmoothCurve
-@onready var poly_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/PolyCurve
-@onready var road_shape_row: HBoxContainer = $Control/TabContainer/Info/RoadShapeRow
-@onready var road_shape_type: OptionButton = $Control/TabContainer/Info/RoadShapeRow/RoadShapeType
-@onready var rotation_mode_row: HBoxContainer = $Control/TabContainer/Info/RotationModeRow
-@onready var rotation_mode: OptionButton = $Control/TabContainer/Info/RotationModeRow/RotationMode
-@onready var road_uv_multiplier_row: HBoxContainer = $Control/TabContainer/Info/RoadUvMultiplierRow
-@onready var road_uv_multiplier: SpinBox = $Control/TabContainer/Info/RoadUvMultiplierRow/RoadUvMultiplier
-@onready var ground_color_row: HBoxContainer = $Control/TabContainer/Info/GroundColorRow
-@onready var ground_color: ColorPickerButton = $Control/TabContainer/Info/GroundColorRow/GroundColor
-@onready var rail_color_row: HBoxContainer = $Control/TabContainer/Info/RailColorRow
-@onready var rail_color: ColorPickerButton = $Control/TabContainer/Info/RailColorRow/RailColor
-@onready var mesh_subdivision_length_row: HBoxContainer = $Control/TabContainer/Info/MeshSubdivisionLengthRow
-@onready var mesh_subdivision_length: SpinBox = $Control/TabContainer/Info/MeshSubdivisionLengthRow/MeshSubdivisionLength
-@onready var mesh_subdivision_angle_row: HBoxContainer = $Control/TabContainer/Info/MeshSubdivisionAngleRow
-@onready var mesh_subdivision_angle: SpinBox = $Control/TabContainer/Info/MeshSubdivisionAngleRow/MeshSubdivisionAngle
-@onready var checkpoint_count_row: HBoxContainer = $Control/TabContainer/Info/CheckpointCountRow
-@onready var checkpoint_count: SpinBox = $Control/TabContainer/Info/CheckpointCountRow/CheckpointCount
-@onready var cross_section_controls: VBoxContainer = $Control/TabContainer/Info/VBoxContainer
+@onready var info_panel: ScrollContainer = $Control/TabContainer/Info
+@onready var smooth_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect/SmoothCurve
+@onready var poly_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect/PolyCurve
+@onready var road_shape_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/RoadShapeRow
+@onready var road_shape_type: OptionButton = $Control/TabContainer/Info/VBoxContainer/RoadShapeRow/RoadShapeType
+@onready var rotation_mode_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/RotationModeRow
+@onready var rotation_mode: OptionButton = $Control/TabContainer/Info/VBoxContainer/RotationModeRow/RotationMode
+@onready var road_uv_multiplier_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow
+@onready var road_uv_multiplier: SpinBox = $Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow/RoadUvMultiplier
+@onready var ground_color_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/GroundColorRow
+@onready var ground_color: ColorPickerButton = $Control/TabContainer/Info/VBoxContainer/GroundColorRow/GroundColor
+@onready var rail_color_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/RailColorRow
+@onready var rail_color: ColorPickerButton = $Control/TabContainer/Info/VBoxContainer/RailColorRow/RailColor
+@onready var mesh_subdivision_length_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow
+@onready var mesh_subdivision_length: SpinBox = $Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow/MeshSubdivisionLength
+@onready var mesh_subdivision_angle_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow
+@onready var mesh_subdivision_angle: SpinBox = $Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow/MeshSubdivisionAngle
+@onready var checkpoint_count_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/CheckpointCountRow
+@onready var checkpoint_count: SpinBox = $Control/TabContainer/Info/VBoxContainer/CheckpointCountRow/CheckpointCount
+@onready var cross_section_controls: VBoxContainer = $Control/TabContainer/Info/VBoxContainer/VBoxContainer
 
 @onready var spiral_panel: ScrollContainer = $Control/TabContainer/Spiral
 @onready var spiral_degrees: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralDegreesRow/SpiralDegrees
@@ -100,14 +108,14 @@ var current_path : RoadPath
 @onready var modulation: ScrollContainer = $Control/TabContainer/Modulation
 @onready var embeds: ScrollContainer = $Control/TabContainer/Embeds
 
-@onready var cs_rect: CurveCrossSection = $Control/TabContainer/Info/VBoxContainer/ColorRect
+@onready var cs_rect: CurveCrossSection = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect
 
-@onready var copy_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/HBoxContainer/CopyMeshLayout
-@onready var paste_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/HBoxContainer/PasteMeshLayout
-@onready var mesh_layout_clipboard_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/HBoxContainer
-@onready var create_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/HBoxContainer2/CreateMeshLayout
-@onready var mesh_layout_count: SpinBox = $Control/TabContainer/Info/VBoxContainer/HBoxContainer2/MeshLayoutCount
-@onready var mesh_layout_create_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/HBoxContainer2
+@onready var copy_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer/CopyMeshLayout
+@onready var paste_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer/PasteMeshLayout
+@onready var mesh_layout_clipboard_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer
+@onready var create_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2/CreateMeshLayout
+@onready var mesh_layout_count: SpinBox = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2/MeshLayoutCount
+@onready var mesh_layout_create_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2
 
 @onready var bez_pos_x: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer/HandlePosX
 @onready var bez_pos_y: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2/HandlePosY
@@ -205,6 +213,7 @@ func get_active_node() -> Node3D:
 	return FZGlobal.active_node
 
 func _ready():
+	_configure_screen_layout()
 	dock_ready.emit()
 	if !FZGlobal.selection_changed.is_connected(selection_updated):
 		FZGlobal.selection_changed.connect(selection_updated)
@@ -297,6 +306,50 @@ func _ready():
 	line_scale_h.value_changed.connect(update_handle_properties)
 	embed_type.item_selected.connect(update_embed_type)
 	selection_updated()
+
+func _notification(what : int) -> void:
+	if what == NOTIFICATION_RESIZED and is_node_ready():
+		_configure_screen_layout()
+
+func _property_scroll_panels() -> Array:
+	return [
+		info_panel,
+		rail_panel,
+		spiral_panel,
+		track_panel,
+		object_panel,
+		modulation,
+		embeds,
+	]
+
+func _refresh_scrollbar_widths() -> void:
+	for scroll_panel in _property_scroll_panels():
+		if scroll_panel:
+			scroll_panel.get_v_scroll_bar().custom_minimum_size.x = SCROLL_BAR_WIDTH
+
+func _configure_screen_layout() -> void:
+	var viewport_size := get_viewport_rect().size
+	var panel_height : float = maxf(PANEL_MIN_HEIGHT, viewport_size.y - UI_EDGE_MARGIN * 2.0)
+	var tab_left := HANDLE_PANEL_WIDTH + PROPERTY_PANEL_GAP
+	var total_width := tab_left + PROPERTY_PANEL_WIDTH
+	set_anchors_preset(Control.PRESET_TOP_LEFT, false)
+	position = Vector2(maxf(UI_EDGE_MARGIN, viewport_size.x - UI_EDGE_MARGIN - total_width), UI_EDGE_MARGIN)
+	size = Vector2(total_width, panel_height)
+	dock_control.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
+	dock_control.position = Vector2.ZERO
+	dock_control.size = size
+	handle_panel.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
+	handle_panel.position = Vector2.ZERO
+	handle_panel.size = Vector2(HANDLE_PANEL_WIDTH, panel_height)
+	tab_container.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
+	tab_container.position = Vector2(tab_left, 0.0)
+	tab_container.size = Vector2(PROPERTY_PANEL_WIDTH, panel_height)
+	tab_container.custom_minimum_size = Vector2(PROPERTY_PANEL_WIDTH, 0.0)
+	for scroll_panel in _property_scroll_panels():
+		if scroll_panel:
+			scroll_panel.custom_minimum_size = Vector2(PROPERTY_PANEL_WIDTH, panel_height)
+			scroll_panel.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_refresh_scrollbar_widths()
 
 func _sync_tool_mode_signal() -> void:
 	var tool_scene := FZGlobal.editing_scene as TrackEditingScene
@@ -871,10 +924,7 @@ func _refresh_bezier_handle_controls(handle : BezierHandle) -> void:
 
 func _process(delta: float) -> void:
 	_sync_tool_mode_signal()
-	if modulation:
-		modulation.get_v_scroll_bar().custom_minimum_size.x = 24
-	if embeds:
-		embeds.get_v_scroll_bar().custom_minimum_size.x = 24
+	_refresh_scrollbar_widths()
 	if FZGlobal.editing_scene:
 		FZGlobal.editing_scene.editor_cross_section_t = track_cross_section_slider.value
 		FZGlobal.editing_scene.draw_segment_curve = draw_curve.button_pressed

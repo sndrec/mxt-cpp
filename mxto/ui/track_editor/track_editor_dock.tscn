@@ -113,9 +113,11 @@ layout_mode = 2
 mouse_filter = 2
 theme_override_constants/separation = 12
 
-[node name="MainButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="MainButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
 
 [node name="NewTrackSegment" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
 custom_minimum_size = Vector2(64, 64)
@@ -202,10 +204,12 @@ layout_mode = 2
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="NewTrackSegmentButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewTrackSegmentButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
 visible = false
+custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
 
 [node name="RoadStandard" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
 custom_minimum_size = Vector2(64, 64)
@@ -249,10 +253,12 @@ layout_mode = 2
 tooltip_text = "Open Rounded Square Road"
 text = "RO"
 
-[node name="NewTrackSegmentTypeButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewTrackSegmentTypeButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
 visible = false
+custom_minimum_size = Vector2(70, 672)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
 
 [node name="RoadLine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
 custom_minimum_size = Vector2(70, 70)
@@ -272,10 +278,12 @@ layout_mode = 2
 tooltip_text = "Spiral Segment"
 text = "Spiral"
 
-[node name="NewEmbedButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewEmbedButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
 visible = false
+custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
 
 [node name="Recharge" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
 custom_minimum_size = Vector2(64, 64)
@@ -307,10 +315,12 @@ layout_mode = 2
 tooltip_text = "Gap"
 text = "Gap"
 
-[node name="NewTrackObjectButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewTrackObjectButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
 visible = false
+custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
-theme_override_constants/separation = 16
+theme_override_constants/h_separation = 16
+theme_override_constants/v_separation = 16
 
 [node name="DashPlate" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons"]
 custom_minimum_size = Vector2(64, 64)

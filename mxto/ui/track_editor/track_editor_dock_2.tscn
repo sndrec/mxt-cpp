@@ -46,33 +46,39 @@ grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_ebxqu")
 current_tab = 2
 
-[node name="Info" type="VBoxContainer" parent="Control/TabContainer"]
+[node name="Info" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
-theme_override_constants/separation = 24
+horizontal_scroll_mode = 0
 metadata/_tab_index = 0
 
-[node name="SegmentLengthLabel" type="Label" parent="Control/TabContainer/Info"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Info"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 24
+
+[node name="SegmentLengthLabel" type="Label" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 text = "Segment Length
 4032.34m"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="SegmentLengthLabel2" type="Label" parent="Control/TabContainer/Info"]
+[node name="SegmentLengthLabel2" type="Label" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 text = "Standard Road"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RoadShapeRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="RoadShapeRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/RoadShapeRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RoadShapeRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Road Shape"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RoadShapeType" type="OptionButton" parent="Control/TabContainer/Info/RoadShapeRow"]
+[node name="RoadShapeType" type="OptionButton" parent="Control/TabContainer/Info/VBoxContainer/RoadShapeRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -91,16 +97,16 @@ popup/item_5/id = 5
 popup/item_6/text = "Open Rounded Square"
 popup/item_6/id = 6
 
-[node name="RotationModeRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="RotationModeRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/RotationModeRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RotationModeRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Rotation Mode"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RotationMode" type="OptionButton" parent="Control/TabContainer/Info/RotationModeRow"]
+[node name="RotationMode" type="OptionButton" parent="Control/TabContainer/Info/VBoxContainer/RotationModeRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
@@ -109,16 +115,16 @@ popup/item_0/text = "Smart"
 popup/item_1/text = "Simple"
 popup/item_1/id = 1
 
-[node name="RoadUvMultiplierRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="RoadUvMultiplierRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/RoadUvMultiplierRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "UV Y-Multiplier"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RoadUvMultiplier" type="SpinBox" parent="Control/TabContainer/Info/RoadUvMultiplierRow"]
+[node name="RoadUvMultiplier" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.001
@@ -126,45 +132,45 @@ max_value = 100.0
 step = 0.01
 value = 1.0
 
-[node name="GroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="GroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/GroundColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/GroundColorRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Ground Color"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="GroundColor" type="ColorPickerButton" parent="Control/TabContainer/Info/GroundColorRow"]
+[node name="GroundColor" type="ColorPickerButton" parent="Control/TabContainer/Info/VBoxContainer/GroundColorRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.5, 0.5, 0.5, 1)
 
-[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/RailColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RailColorRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Rail Color"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Info/RailColorRow"]
+[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Info/VBoxContainer/RailColorRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.8, 0.8, 0.8, 1)
 
-[node name="MeshSubdivisionLengthRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="MeshSubdivisionLengthRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 visible = false
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/MeshSubdivisionLengthRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Mesh Subdiv Length"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="MeshSubdivisionLength" type="SpinBox" parent="Control/TabContainer/Info/MeshSubdivisionLengthRow"]
+[node name="MeshSubdivisionLength" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.1
@@ -172,17 +178,17 @@ max_value = 1000.0
 step = 0.1
 value = 30.0
 
-[node name="MeshSubdivisionAngleRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="MeshSubdivisionAngleRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 visible = false
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/MeshSubdivisionAngleRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Mesh Subdiv Angle"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="MeshSubdivisionAngle" type="SpinBox" parent="Control/TabContainer/Info/MeshSubdivisionAngleRow"]
+[node name="MeshSubdivisionAngle" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.1
@@ -190,79 +196,79 @@ max_value = 90.0
 step = 0.1
 value = 3.0
 
-[node name="CheckpointCountRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+[node name="CheckpointCountRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/CheckpointCountRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/CheckpointCountRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Checkpoint Spans"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="CheckpointCount" type="SpinBox" parent="Control/TabContainer/Info/CheckpointCountRow"]
+[node name="CheckpointCount" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/CheckpointCountRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 256.0
 value = 8.0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Info"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
 layout_mode = 2
 
-[node name="TrackCrossSectionLabel" type="Label" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="TrackCrossSectionLabel" type="Label" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
 layout_mode = 2
 text = "Track Cross-section"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="TrackCrossSectionSlider" type="HSlider" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="TrackCrossSectionSlider" type="HSlider" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
 layout_mode = 2
 max_value = 1.0
 step = 0.0
 tick_count = 5
 
-[node name="ColorRect" type="ColorRect" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="ColorRect" type="ColorRect" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
 custom_minimum_size = Vector2(0, 358)
 layout_mode = 2
 color = Color(0, 0, 0, 0.294118)
 script = ExtResource("2_klk5r")
 
-[node name="SmoothCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/ColorRect"]
+[node name="SmoothCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect"]
 position = Vector2(179, 179)
 points = PackedVector2Array(179, 0, 177.997, -3.0348e-05, 176.994, 0, 175.992, 0, 174.989, 0, 173.986, 0, 172.983, 0, 171.98, 0, 170.978, 3.0348e-05, 169.975, 0, 168.972, 3.0348e-05, 167.969, 0, 166.966, 0, 165.964, -3.0348e-05, 164.961, -3.0348e-05, 163.958, -3.0348e-05, 162.955, -3.0348e-05, 161.952, 0, 160.95, -3.0348e-05, 159.947, 0, 158.944, -3.0348e-05, 157.941, 0, 156.938, 0, 155.936, 0, 154.933, 0, 153.93, 0, 152.927, 0, 151.924, 3.0348e-05, 150.922, 0, 149.919, 3.0348e-05, 148.916, 0, 147.913, -3.0348e-05, 146.91, -3.0348e-05, 145.908, -3.0348e-05, 144.905, -3.0348e-05, 143.902, -3.0348e-05, 142.899, 0, 141.896, -3.0348e-05, 140.894, 0, 139.891, -3.0348e-05, 138.888, 0, 137.885, 0, 136.882, 0, 135.88, 0, 134.877, 0, 133.874, 0, 132.871, 3.0348e-05, 131.868, 0, 130.866, 0, 129.863, -3.0348e-05, 128.86, -3.0348e-05, 127.857, -3.0348e-05, 126.854, -3.0348e-05, 125.852, 0, 124.849, -3.0348e-05, 123.846, 0, 122.843, -3.0348e-05, 121.84, 0, 120.838, -3.0348e-05, 119.835, 0, 118.832, 0, 117.829, 0, 116.826, 0, 115.824, 0, 114.821, 0, 113.818, 0, 112.815, 0, 111.812, -3.0348e-05, 110.81, -3.0348e-05, 109.807, -3.0348e-05, 108.804, -3.0348e-05, 107.801, -3.0348e-05, 106.798, 0, 105.796, -3.0348e-05, 104.793, 0, 103.79, -3.0348e-05, 102.787, 0, 101.784, 0, 100.781, 0, 99.7787, 0, 98.7759, 0, 97.7731, 0, 96.7703, 3.0348e-05, 95.7675, 0, 94.7647, 0, 93.7619, 0, 92.7591, -3.0348e-05, 91.7563, -3.0348e-05, 90.7535, -3.0348e-05, 89.7507, 0, 88.7479, -3.0348e-05, 87.7451, 0, 86.7423, -3.0348e-05, 85.7395, 0, 84.7367, -3.0348e-05, 83.7339, 0, 82.7311, 0, 81.7283, 0, 80.7255, 0, 79.7227, 0, 78.7199, 0, 77.7171, 0, 76.7143, 0, 75.7115, 0, 74.7087, 0, 73.7058, -3.0348e-05, 72.7031, -3.0348e-05, 71.7002, -3.0348e-05, 70.6975, 0, 69.6947, -3.0348e-05, 68.6919, 0, 67.6891, -3.0348e-05, 66.6862, 0, 65.6835, 0, 64.6807, 0, 63.6779, 0, 62.6751, 0, 61.6723, 0, 60.6695, -3.0348e-05, 59.6667, 0, 58.6639, 0, 57.661, 0, 56.6583, 0, 55.6554, -3.0348e-05, 54.6527, -3.0348e-05, 53.6499, -3.0348e-05, 52.6471, -3.0348e-05, 51.6442, 0, 50.6415, -3.0348e-05, 49.6386, 0, 48.6359, -3.0348e-05, 47.633, 0, 46.6302, 0, 45.6275, 0, 44.6246, 0, 43.6218, -3.0348e-05, 42.619, 0, 41.6162, 0, 40.6134, 0, 39.6106, 0, 38.6078, 0, 37.605, 0, 36.6022, -3.0348e-05, 35.5994, -3.0348e-05, 34.5966, 0, 33.5938, -3.0348e-05, 32.591, 0, 31.5882, -3.0348e-05, 30.5854, 0, 29.5826, -3.0348e-05, 28.5798, 0, 27.577, 0, 26.5742, 0, 25.5714, 0, 24.5686, -3.0348e-05, 23.5658, 0, 22.563, 0, 21.5602, 0, 20.5574, 0, 19.5546, 0, 18.5518, -3.0348e-05, 17.549, -3.0348e-05, 16.5462, -3.0348e-05, 15.5434, 0, 14.5406, -3.0348e-05, 13.5378, 0, 12.535, -3.0348e-05, 11.5322, 0, 10.5294, 0, 9.52661, 0, 8.52381, 0, 7.521, -3.0348e-05, 6.5182, 0, 5.5154, -3.0348e-05, 4.5126, 0, 3.5098, 0, 2.50699, 0, 1.50419, 0, 0.50139, 0, -0.501411, -3.0348e-05, -1.50421, 0, -2.50701, -3.0348e-05, -3.50981, 0, -4.51262, -3.0348e-05, -5.51542, 0, -6.51822, -3.0348e-05, -7.52102, 0, -8.52383, 0, -9.52663, -3.0348e-05, -10.5294, 0, -11.5322, -3.0348e-05, -12.535, 0, -13.5378, 0, -14.5406, 0, -15.5434, 0, -16.5462, 0, -17.549, 0, -18.5518, 0, -19.5546, -3.0348e-05, -20.5574, 0, -21.5602, -3.0348e-05, -22.563, 0, -23.5658, -3.0348e-05, -24.5686, 0, -25.5714, 0, -26.5742, 0, -27.577, 0, -28.5798, -3.0348e-05, -29.5826, 0, -30.5854, -3.0348e-05, -31.5882, 0, -32.591, 0, -33.5938, 0, -34.5966, 0, -35.5994, 0, -36.6022, 0, -37.605, 0, -38.6079, -3.0348e-05, -39.6107, 0, -40.6135, -3.0348e-05, -41.6163, 0, -42.6191, -3.0348e-05, -43.6219, 0, -44.6247, 0, -45.6275, -3.0348e-05, -46.6303, 0, -47.6331, -3.0348e-05, -48.6359, 0, -49.6387, 0, -50.6415, 0, -51.6443, 0, -52.6471, 0, -53.6499, 0, -54.6527, 0, -55.6555, 0, -56.6583, 0, -57.6611, -3.0348e-05, -58.6639, 0, -59.6667, -3.0348e-05, -60.6695, 0, -61.6723, -3.0348e-05, -62.6751, -3.0348e-05, -63.6779, 0, -64.6807, -3.0348e-05, -65.6835, 0, -66.6863, -3.0348e-05, -67.6891, 0, -68.6919, 0, -69.6947, 0, -70.6975, 0, -71.7003, 0, -72.7031, 0, -73.7059, 3.0348e-05, -74.7087, -3.0348e-05, -75.7115, 0, -76.7143, -3.0348e-05, -77.7171, 0, -78.7199, -3.0348e-05, -79.7227, -3.0348e-05, -80.7255, 0, -81.7283, -3.0348e-05, -82.7311, 0, -83.7339, -3.0348e-05, -84.7367, 0, -85.7395, -3.0348e-05, -86.7423, 0, -87.7451, 0, -88.7479, 0, -89.7507, 0, -90.7535, 0, -91.7563, 0, -92.7591, 3.0348e-05, -93.7619, -3.0348e-05, -94.7647, 0, -95.7675, -3.0348e-05, -96.7703, 0, -97.7731, -3.0348e-05, -98.7759, -3.0348e-05, -99.7787, 0, -100.782, -3.0348e-05, -101.784, 0, -102.787, -3.0348e-05, -103.79, 0, -104.793, 0, -105.796, 0, -106.798, 0, -107.801, 0, -108.804, 0, -109.807, 0, -110.81, 0, -111.812, 3.0348e-05, -112.815, -3.0348e-05, -113.818, 0, -114.821, -3.0348e-05, -115.824, -3.0348e-05, -116.826, 0, -117.829, -3.0348e-05, -118.832, 0, -119.835, -3.0348e-05, -120.838, 0, -121.84, -3.0348e-05, -122.843, 0, -123.846, 0, -124.849, 0, -125.852, 0, -126.854, 0, -127.857, 0, -128.86, 3.0348e-05, -129.863, 0, -130.866, 0, -131.868, -3.0348e-05, -132.871, -3.0348e-05, -133.874, -3.0348e-05, -134.877, -3.0348e-05, -135.88, 0, -136.882, -3.0348e-05, -137.885, 0, -138.888, -3.0348e-05, -139.891, 0, -140.894, 0, -141.896, 0, -142.899, 0, -143.902, 0, -144.905, 0, -145.908, 0, -146.91, 0, -147.913, 3.0348e-05, -148.916, -3.0348e-05, -149.919, -3.0348e-05, -150.922, -3.0348e-05, -151.924, -3.0348e-05, -152.927, -3.0348e-05, -153.93, -3.0348e-05, -154.933, 0, -155.936, -3.0348e-05, -156.938, 0, -157.941, -3.0348e-05, -158.944, 0, -159.947, 0, -160.95, 0, -161.952, 0, -162.955, 0, -163.958, 0, -164.961, 0, -165.964, 0, -166.966, 3.0348e-05, -167.969, -3.0348e-05, -168.972, -3.0348e-05, -169.975, -3.0348e-05, -170.978, -3.0348e-05, -171.98, 0, -172.983, -3.0348e-05, -173.986, 0, -174.989, -3.0348e-05, -175.992, 0, -176.994, -3.0348e-05, -177.997, 0, -179, 0)
 width = 2.0
 default_color = Color(0.82, 0.877, 1, 1)
 antialiased = true
 
-[node name="PolyCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/ColorRect"]
+[node name="PolyCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect"]
 position = Vector2(179, 179)
 points = PackedVector2Array(179, 0, 105, -3.0348e-05, 86.9997, -3.0348e-05, 64, 0, 41.9998, 0, -44, -3.0348e-05, -61, 0, -84.0001, -3.0348e-05, -103, 0, -179, 0, -179, 0, -179, 0)
 width = 2.0
 default_color = Color(0.87, 0.81519, 0.3219, 1)
 antialiased = true
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
 visible = false
 layout_mode = 2
 
-[node name="CopyMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/HBoxContainer"]
+[node name="CopyMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Copy Mesh Layout"
 
-[node name="PasteMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/HBoxContainer"]
+[node name="PasteMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Paste Mesh Layout"
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
 visible = false
 layout_mode = 2
 
-[node name="CreateMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/HBoxContainer2"]
+[node name="CreateMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Create Evenly Spaced Layout"
 
-[node name="MeshLayoutCount" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/HBoxContainer2"]
+[node name="MeshLayoutCount" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 2.0

@@ -54,12 +54,8 @@ orientation = 2
 script = ExtResource("1_1be7g")
 
 [node name="TrackEditorDock" parent="." unique_id=1319679744 instance=ExtResource("4_556vt")]
-offset_top = 72.0
-offset_right = -1278.0
 
 [node name="TrackEditorDock2" parent="." instance=ExtResource("11_dock2")]
-offset_left = 1040.0
-offset_top = 72.0
 
 [node name="Toolbox" parent="." unique_id=69382505 instance=ExtResource("3_bh613")]
 

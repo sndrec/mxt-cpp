@@ -4,14 +4,21 @@ signal dock_ready
 
 const TrackTriggerScript := preload("res://core/track_trigger.gd")
 
+const UI_EDGE_MARGIN := 24.0
+const TOOL_BUTTON_GAP := 16.0
+const TOOL_MIN_HEIGHT := 360.0
+
 @onready var track_root: TrackRoot = $"../TrackRoot"
 @onready var track_scene: TrackEditingScene = $".."
 
-@onready var main_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons
-@onready var new_track_segment_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons
-@onready var new_track_segment_type_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons
-@onready var new_embed_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons
-@onready var new_track_object_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons
+@onready var main_gui: Control = $MainGUI
+@onready var main_gui_margin: MarginContainer = $MainGUI/VBoxContainer/MainGUIMargin
+@onready var main_gui_hbox: HBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox
+@onready var main_buttons: Container = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons
+@onready var new_track_segment_buttons: Container = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons
+@onready var new_track_segment_type_buttons: Container = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons
+@onready var new_embed_buttons: Container = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons
+@onready var new_track_object_buttons: Container = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons
 @onready var new_track_segment_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackSegment
 @onready var edit_segment_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditSegmentProps
 @onready var edit_rails_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditRails
@@ -35,6 +42,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var jumpplate_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/Jump
 @onready var mine_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/Mine
 
+@onready var outliner_scroll: ScrollContainer = $MainGUI/VBoxContainer/ScrollContainer
 @onready var outliner: VBoxContainer = $MainGUI/VBoxContainer/ScrollContainer/Outliner
 
 func _is_script_path(node : Node, script_path : String) -> bool:
@@ -62,6 +70,7 @@ func _track_object_outliner_label(track_object : Node, index : int) -> String:
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
+	_configure_screen_layout()
 	get_track_root()
 	main_buttons.visible = true
 	_enable_tool_button_toggles()
@@ -87,6 +96,37 @@ func _ready():
 	update_outliner()
 	_refresh_tool_button_states()
 	dock_ready.emit()
+
+func _notification(what : int) -> void:
+	if what == NOTIFICATION_RESIZED and is_node_ready():
+		_configure_screen_layout()
+
+func _configure_screen_layout() -> void:
+	var viewport_size := get_viewport_rect().size
+	var available_height : float = maxf(TOOL_MIN_HEIGHT, viewport_size.y - UI_EDGE_MARGIN * 2.0)
+	set_anchors_preset(Control.PRESET_TOP_LEFT, false)
+	position = Vector2.ZERO
+	size = viewport_size
+	main_gui.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
+	main_gui.position = Vector2.ZERO
+	main_gui.size = viewport_size
+	main_gui_margin.add_theme_constant_override("margin_left", int(UI_EDGE_MARGIN))
+	main_gui_margin.add_theme_constant_override("margin_top", int(UI_EDGE_MARGIN))
+	main_gui_margin.add_theme_constant_override("margin_right", int(UI_EDGE_MARGIN))
+	main_gui_margin.add_theme_constant_override("margin_bottom", int(UI_EDGE_MARGIN))
+	main_gui_margin.custom_minimum_size.y = available_height
+	main_gui_hbox.custom_minimum_size.y = available_height
+	outliner_scroll.custom_minimum_size = Vector2.ZERO
+	for tool_container in [
+		main_buttons,
+		new_track_segment_buttons,
+		new_track_segment_type_buttons,
+		new_embed_buttons,
+		new_track_object_buttons,
+	]:
+		tool_container.custom_minimum_size.y = available_height
+		tool_container.add_theme_constant_override("h_separation", int(TOOL_BUTTON_GAP))
+		tool_container.add_theme_constant_override("v_separation", int(TOOL_BUTTON_GAP))
 
 func _enable_tool_button_toggles() -> void:
 	for button in [
