@@ -233,6 +233,23 @@ func refresh_from_attachment() -> void:
 	global_transform = _surface_transform(segment)
 	_sync_transform_cache()
 
+func attach_to_surface(segment : RoadPath, param : Vector2) -> void:
+	if !segment:
+		return
+	surface_t = Vector2(clampf(param.x, -1.0, 1.0), clampf(param.y, 0.0, 1.0))
+	set_target_segment(segment)
+	refresh_from_attachment()
+
+func attach_to_nearest_surface(world_pos : Vector3) -> void:
+	var result := _closest_segment_surface(world_pos)
+	attach_to_surface(result["segment"] as RoadPath, result["param"])
+
+func surface_basis_at_attachment() -> Basis:
+	var segment := get_target_segment()
+	if !segment:
+		return global_basis.orthonormalized()
+	return _surface_basis(segment, surface_t)
+
 func _process(_delta : float) -> void:
 	if !has_synced_transform:
 		_sync_transform_cache()

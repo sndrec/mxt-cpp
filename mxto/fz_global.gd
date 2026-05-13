@@ -2,6 +2,8 @@ extends Node
 
 signal selection_changed
 
+const TrackTriggerScript := preload("res://core/track_trigger.gd")
+
 var tick_delta : float = 1.0 / Engine.physics_ticks_per_second
 var units_to_kmh : float = 260
 var kmh_to_units : float = 1.0 / units_to_kmh
@@ -14,6 +16,9 @@ var active_node : Node3D
 var selected_nodes : Array[Node3D] = []
 
 var can_select := true
+
+func is_track_trigger_node(node : Node) -> bool:
+	return node and node.get_script() == TrackTriggerScript
 
 func get_selected_road_path() -> RoadPath:
 	var node := active_node
@@ -32,6 +37,8 @@ func get_transform_gizmo_target(in_node : Node3D) -> Node3D:
 	if !is_instance_valid(in_node):
 		return null
 	if in_node is RoadPath:
+		return null
+	if is_track_trigger_node(in_node):
 		return null
 	return in_node
 
@@ -57,6 +64,8 @@ func select_node(in_node : Node3D):
 		undo_redo.add_do_method(editing_scene.translate_gizmo.set_target_node.bind(transform_target))
 		undo_redo.add_do_method(editing_scene.rotate_gizmo.set_target_node.bind(transform_target))
 		undo_redo.add_do_method(editing_scene.add_road_gizmo.set_target_node.bind(in_node))
+		if editing_scene.has_method("set_active_track_trigger"):
+			undo_redo.add_do_method(editing_scene.set_active_track_trigger.bind(in_node if is_track_trigger_node(in_node) else null))
 	undo_redo.add_undo_property(self, "active_node", active_node)
 	undo_redo.add_undo_property(self, "selected_nodes", selected_nodes)
 	if editing_scene:
@@ -64,6 +73,8 @@ func select_node(in_node : Node3D):
 		undo_redo.add_undo_method(editing_scene.translate_gizmo.set_target_node.bind(previous_transform_target))
 		undo_redo.add_undo_method(editing_scene.rotate_gizmo.set_target_node.bind(previous_transform_target))
 		undo_redo.add_undo_method(editing_scene.add_road_gizmo.set_target_node.bind(active_node))
+		if editing_scene.has_method("set_active_track_trigger"):
+			undo_redo.add_undo_method(editing_scene.set_active_track_trigger.bind(active_node if is_track_trigger_node(active_node) else null))
 	undo_redo.add_do_method(emit_selection_changed)
 	undo_redo.add_undo_method(emit_selection_changed)
 	undo_redo.commit_action()
@@ -80,6 +91,8 @@ func select_additional_node(in_node : Node3D):
 		undo_redo.add_do_method(editing_scene.translate_gizmo.set_target_node.bind(transform_target))
 		undo_redo.add_do_method(editing_scene.rotate_gizmo.set_target_node.bind(transform_target))
 		undo_redo.add_do_method(editing_scene.add_road_gizmo.set_target_node.bind(in_node))
+		if editing_scene.has_method("set_active_track_trigger"):
+			undo_redo.add_do_method(editing_scene.set_active_track_trigger.bind(in_node if is_track_trigger_node(in_node) else null))
 	undo_redo.add_undo_property(self, "active_node", active_node)
 	undo_redo.add_undo_property(self, "selected_nodes", selected_nodes)
 	if editing_scene:
@@ -87,6 +100,8 @@ func select_additional_node(in_node : Node3D):
 		undo_redo.add_undo_method(editing_scene.translate_gizmo.set_target_node.bind(previous_transform_target))
 		undo_redo.add_undo_method(editing_scene.rotate_gizmo.set_target_node.bind(previous_transform_target))
 		undo_redo.add_undo_method(editing_scene.add_road_gizmo.set_target_node.bind(active_node))
+		if editing_scene.has_method("set_active_track_trigger"):
+			undo_redo.add_undo_method(editing_scene.set_active_track_trigger.bind(active_node if is_track_trigger_node(active_node) else null))
 	undo_redo.add_do_method(emit_selection_changed)
 	undo_redo.add_undo_method(emit_selection_changed)
 	undo_redo.commit_action()
@@ -100,6 +115,8 @@ func deselect_all():
 		undo_redo.add_do_method(editing_scene.translate_gizmo.set_target_node.bind(null))
 		undo_redo.add_do_method(editing_scene.rotate_gizmo.set_target_node.bind(null))
 		undo_redo.add_do_method(editing_scene.add_road_gizmo.set_target_node.bind(null))
+		if editing_scene.has_method("set_active_track_trigger"):
+			undo_redo.add_do_method(editing_scene.set_active_track_trigger.bind(null))
 	undo_redo.add_undo_property(self, "active_node", active_node)
 	undo_redo.add_undo_property(self, "selected_nodes", selected_nodes)
 	if editing_scene:
@@ -107,6 +124,8 @@ func deselect_all():
 		undo_redo.add_undo_method(editing_scene.translate_gizmo.set_target_node.bind(previous_transform_target))
 		undo_redo.add_undo_method(editing_scene.rotate_gizmo.set_target_node.bind(previous_transform_target))
 		undo_redo.add_undo_method(editing_scene.add_road_gizmo.set_target_node.bind(active_node))
+		if editing_scene.has_method("set_active_track_trigger"):
+			undo_redo.add_undo_method(editing_scene.set_active_track_trigger.bind(active_node if is_track_trigger_node(active_node) else null))
 	undo_redo.add_do_method(emit_selection_changed)
 	undo_redo.add_undo_method(emit_selection_changed)
 	undo_redo.commit_action()
@@ -118,6 +137,8 @@ func clear_selection_immediate() -> void:
 		editing_scene.translate_gizmo.set_target_node(null)
 		editing_scene.rotate_gizmo.set_target_node(null)
 		editing_scene.add_road_gizmo.set_target_node(null)
+		if editing_scene.has_method("set_active_track_trigger"):
+			editing_scene.set_active_track_trigger(null)
 	emit_selection_changed()
 
 func get_selectable_node_from_collider(in_collider : Node) -> Node3D:
