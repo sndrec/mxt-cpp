@@ -284,7 +284,7 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var selected := get_active_node()
 	var has_path := current_path != null
 	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
-	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and _is_spiral_path(current_path)
+	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SPIRAL and _is_spiral_path(current_path)
 	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
 	var show_object := _active_track_trigger() != null and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION

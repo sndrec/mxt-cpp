@@ -130,6 +130,12 @@ layout_mode = 2
 tooltip_text = "Edit Segment Shape Curves"
 text = "Shape"
 
+[node name="EditSpiral" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Edit Spiral Segment"
+text = "Spiral"
+
 [node name="AddEmbed" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2

@@ -40,9 +40,15 @@ func _ready() -> void:
 	handle_mesh_instance.material_override = handle_material
 	add_child(handle_mesh_instance)
 
+func _is_spiral_axis_marker() -> bool:
+	var parent := get_parent()
+	var script : Script = parent.get_script() as Script if parent else null
+	return script and script.resource_path == "res://core/road_path_spiral.gd"
+
 func _process(delta: float) -> void:
 	var scene := FZGlobal.editing_scene
-	if !scene or !scene.tool_mode_allows_control_point_gizmos():
+	var tool_allows_handle := scene and (scene.tool_mode_allows_control_point_gizmos() or (scene.tool_mode_allows_spiral_gizmos() and _is_spiral_axis_marker()))
+	if !tool_allows_handle:
 		handle_collision.set_collision_layer_value(15, false)
 		handle_mesh_instance.visible = false
 		return

@@ -16,6 +16,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var edit_rails_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditRails
 @onready var edit_modulation_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditModulation
 @onready var edit_shape_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditShape
+@onready var edit_spiral_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditSpiral
 @onready var edit_checkpoints_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditCheckpoints
 @onready var recharge_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Recharge
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
@@ -42,6 +43,9 @@ func _segment_outliner_label(segment : RoadPath, index : int) -> String:
 func _is_track_trigger(node : Node) -> bool:
 	return node.get_script() == TrackTriggerScript
 
+func _is_spiral_path(node : Node) -> bool:
+	return _is_script_path(node, "res://core/road_path_spiral.gd")
+
 func _track_object_outliner_label(track_object : Node, index : int) -> String:
 	return String(track_object.call("trigger_label")) + " " + str(index + 1)
 
@@ -52,6 +56,7 @@ func _ready():
 	edit_rails_button.pressed.connect(_on_edit_rails_pressed)
 	edit_modulation_button.pressed.connect(_on_edit_modulation_pressed)
 	edit_shape_button.pressed.connect(_on_edit_shape_pressed)
+	edit_spiral_button.pressed.connect(_on_edit_spiral_pressed)
 	edit_checkpoints_button.pressed.connect(_on_edit_checkpoints_pressed)
 	recharge_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.RECHARGE))
 	dirt_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.DIRT))
@@ -195,6 +200,19 @@ func _on_edit_shape_pressed() -> void:
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SHAPE)
 	select_node(selected)
 	selected._try_generate_mesh()
+	main_buttons.visible = true
+	new_track_segment_buttons.visible = false
+	new_track_segment_type_buttons.visible = false
+	new_embed_buttons.visible = false
+	new_track_object_buttons.visible = false
+	bezier_buttons.visible = false
+
+func _on_edit_spiral_pressed() -> void:
+	var selected := get_active_path()
+	if !_is_spiral_path(selected):
+		return
+	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SPIRAL)
+	select_node(selected)
 	main_buttons.visible = true
 	new_track_segment_buttons.visible = false
 	new_track_segment_type_buttons.visible = false
