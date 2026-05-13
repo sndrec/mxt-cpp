@@ -295,10 +295,10 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	draw_curve.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	draw_handles.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var show_bezier_handle_data := mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and selected is BezierHandle
-	var show_line_handle_data := selected is Marker3D and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SPIRAL)
+	var show_line_handle_data := selected is LineHandle and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SPIRAL)
 	var show_handle_data := show_bezier_handle_data or show_line_handle_data
 	bezier_handle_data.visible = show_handle_data and selected is BezierHandle
-	line_handle_data.visible = show_handle_data and selected is Marker3D
+	line_handle_data.visible = show_handle_data and selected is LineHandle
 
 func _selected_embed() -> RoadEmbed:
 	if !current_path:
@@ -552,15 +552,13 @@ func update_handle_properties(in_value : float) -> void:
 		selected.global_basis = use_rot
 		selected.in_handle_length = bez_weight_i.value
 		selected.out_handle_length = bez_weight_o.value
-	elif selected is Marker3D:
+	elif selected is LineHandle:
 		selected.global_position.x = line_pos_x.value
 		selected.global_position.y = line_pos_y.value
 		selected.global_position.z = line_pos_z.value
-		selected.scale.x = line_scale_w.value
-		selected.scale.y = line_scale_h.value
+		selected.cp_scale.x = line_scale_w.value
+		selected.cp_scale.y = line_scale_h.value
 		var use_rot : Basis = Basis.from_euler(Vector3(deg_to_rad(line_rot_x.value), deg_to_rad(line_rot_y.value), deg_to_rad(line_rot_z.value)))
-		use_rot.x *= selected.scale.x
-		use_rot.y *= selected.scale.y
 		selected.global_basis = use_rot
 
 
@@ -602,7 +600,7 @@ func _process(delta: float) -> void:
 		bez_scale_h.set_value_no_signal(selected.scale.y)
 		bez_weight_i.set_value_no_signal(selected.in_handle_length)
 		bez_weight_o.set_value_no_signal(selected.out_handle_length)
-	elif selected is Marker3D:
+	elif selected is LineHandle:
 		line_pos_x.set_value_no_signal(selected.global_position.x)
 		line_pos_y.set_value_no_signal(selected.global_position.y)
 		line_pos_z.set_value_no_signal(selected.global_position.z)
@@ -610,8 +608,8 @@ func _process(delta: float) -> void:
 		line_rot_x.set_value_no_signal(rad_to_deg(use_rot.x))
 		line_rot_y.set_value_no_signal(rad_to_deg(use_rot.y))
 		line_rot_z.set_value_no_signal(rad_to_deg(use_rot.z))
-		line_scale_w.set_value_no_signal(selected.scale.x)
-		line_scale_h.set_value_no_signal(selected.scale.y)
+		line_scale_w.set_value_no_signal(selected.cp_scale.x)
+		line_scale_h.set_value_no_signal(selected.cp_scale.y)
 	
 	if current_path:
 		_refresh_road_shape_controls()
@@ -671,7 +669,7 @@ func selection_updated() -> void:
 			bez_scale_h.set_value_no_signal(this_node.scale.y)
 			bez_weight_i.set_value_no_signal(this_node.in_handle_length)
 			bez_weight_o.set_value_no_signal(this_node.out_handle_length)
-		elif this_node is Marker3D:
+		elif this_node is LineHandle:
 			line_handle_data.visible = true
 			bezier_handle_data.visible = false
 			line_pos_x.set_value_no_signal(this_node.global_position.x)
@@ -681,8 +679,8 @@ func selection_updated() -> void:
 			line_rot_x.set_value_no_signal(rad_to_deg(use_rot.x))
 			line_rot_y.set_value_no_signal(rad_to_deg(use_rot.y))
 			line_rot_z.set_value_no_signal(rad_to_deg(use_rot.z))
-			line_scale_w.set_value_no_signal(this_node.scale.x)
-			line_scale_h.set_value_no_signal(this_node.scale.y)
+			line_scale_w.set_value_no_signal(this_node.cp_scale.x)
+			line_scale_h.set_value_no_signal(this_node.cp_scale.y)
 	
 	if !path:
 		current_path = null
