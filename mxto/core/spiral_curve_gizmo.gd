@@ -41,6 +41,7 @@ const TWIST_TANGENT_COLLISION_STEPS := 8
 const SPIRAL_DEGREES_MIN := 1.0
 const SPIRAL_DEGREES_ARROW_OFFSET := VISUAL_OFFSET + 8.0
 const SCALE_TANGENT_SURFACE_STEPS := 64
+const SCALE_TANGENT_CONNECTOR_STEPS := 12
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
@@ -952,6 +953,20 @@ func _draw_twist_point(entry_index : int, entry : Dictionary, point_index : int)
 	if _selected_key_matches(entry_index, point_index):
 		_draw_gizmo_circle(frame["center"], frame["x"], frame["y"], radius, _curve_color(entry_index))
 
+func _scale_tangent_connector_position(entry : Dictionary, t : float, value : float, side : float) -> Vector3:
+	var frame := _sample_frame(t)
+	return frame["center"] + _entry_axis(entry, frame) * side * (value + VISUAL_OFFSET)
+
+func _draw_scale_tangent_connector(entry : Dictionary, point : Vector2, tangent_t : float, tangent_value : float, side : float, color : Color) -> void:
+	var previous := _scale_tangent_connector_position(entry, point.x, point.y, side)
+	for i in SCALE_TANGENT_CONNECTOR_STEPS:
+		var local_t := float(i + 1) / float(SCALE_TANGENT_CONNECTOR_STEPS)
+		var t := lerpf(point.x, tangent_t, local_t)
+		var value := lerpf(point.y, tangent_value, local_t)
+		var next := _scale_tangent_connector_position(entry, t, value, side)
+		_draw_gizmo_line(previous, next, color)
+		previous = next
+
 func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side : float) -> void:
 	var entry := curve_entries[entry_index]
 	var curve : Resource = entry["curve"]
@@ -969,9 +984,7 @@ func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side
 			for arc in _twist_tangent_arc_ranges():
 				_draw_gizmo_circle(frame["center"], frame["x"], frame["y"], radius, color, arc.x, arc.y, int(CIRCLE_STEPS / 4))
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
-			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
-			var point_pos : Vector3 = point_frame["center"] + _entry_axis(entry, point_frame) * side * (_curve_value(curve, point_index) + VISUAL_OFFSET)
-			_draw_gizmo_line(point_pos, tangent_pos, color)
+			_draw_scale_tangent_connector(entry, point, tangent_t, _tangent_value(curve, point_index, handle_kind, delta), side, color)
 		_:
 			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
 			_draw_gizmo_line(point_frame["center"], tangent_pos, color)
