@@ -39,6 +39,8 @@ var delete_pressed := false
 var drag_snapshot := {}
 var selected_entry_index := -1
 var selected_point_index := -1
+var hovered_entry_index := -1
+var hovered_point_index := -1
 
 var outline_mesh_instance : MeshInstance3D
 var outline_mesh := ImmediateMesh.new()
@@ -84,6 +86,8 @@ func set_target_path(in_path : RoadPath) -> void:
 	drag_snapshot.clear()
 	selected_entry_index = -1
 	selected_point_index = -1
+	hovered_entry_index = -1
+	hovered_point_index = -1
 
 func _is_spiral_path(path : Node) -> bool:
 	var script : Script = path.get_script() as Script if path else null
@@ -305,11 +309,26 @@ func _record_key_is_selected(record : Dictionary) -> bool:
 func _selected_key_matches(entry_index : int, point_index : int) -> bool:
 	return selected_entry_index == entry_index and selected_point_index == point_index
 
+func _hovered_key_matches(entry_index : int, point_index : int) -> bool:
+	return hovered_entry_index == entry_index and hovered_point_index == point_index
+
 func _select_record_key(record : Dictionary) -> void:
 	if !record.has("entry") or !record.has("point"):
 		return
 	selected_entry_index = int(record["entry"])
 	selected_point_index = int(record["point"])
+
+func _set_hovered_key_from_handle(handle_id : int) -> bool:
+	var previous_entry := hovered_entry_index
+	var previous_point := hovered_point_index
+	hovered_entry_index = -1
+	hovered_point_index = -1
+	if handle_id >= 0:
+		var record := handle_records[handle_id]
+		if _record_is_key_point(record):
+			hovered_entry_index = int(record["entry"])
+			hovered_point_index = int(record["point"])
+	return previous_entry != hovered_entry_index or previous_point != hovered_point_index
 
 func _record_mesh_visible(record : Dictionary) -> bool:
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
@@ -386,6 +405,7 @@ func _configure_handle(handle_id : int) -> void:
 	var collision := handle_collision_shapes[handle_id]
 	var mesh_instance := handle_mesh_instances[handle_id]
 	mesh_instance.visible = _record_mesh_visible(record)
+	collision.disabled = _record_is_key_point(record)
 	if _record_wants_cube(record):
 		if handle_shape_keys[handle_id] == "cube":
 			return
@@ -471,6 +491,33 @@ func _draw_line(a : Vector3, b : Vector3, color : Color) -> void:
 	outline_mesh.surface_add_vertex(a)
 	outline_mesh.surface_add_vertex(b)
 
+func _world_per_screen_pixel(world_position : Vector3) -> float:
+	var cam := FZGlobal.current_cam
+	if !cam:
+		return 1.0
+	var viewport_height := maxf(1.0, get_viewport().get_visible_rect().size.y)
+	var distance := maxf(1.0, cam.global_position.distance_to(world_position))
+	return 2.0 * distance * tan(deg_to_rad(cam.fov) * 0.5) / viewport_height
+
+func _draw_key_line(a : Vector3, b : Vector3, color : Color, hovered : bool) -> void:
+	if !hovered:
+		_draw_line(a, b, color)
+		return
+	var cam := FZGlobal.current_cam
+	if !cam:
+		_draw_line(a, b, Color.WHITE)
+		return
+	var pixel := _world_per_screen_pixel((a + b) * 0.5)
+	var offsets : Array[Vector3] = [
+		Vector3.ZERO,
+		cam.global_basis.x.normalized() * pixel * 1.5,
+		-cam.global_basis.x.normalized() * pixel * 1.5,
+		cam.global_basis.y.normalized() * pixel * 1.5,
+		-cam.global_basis.y.normalized() * pixel * 1.5,
+	]
+	for offset in offsets:
+		_draw_line(a + offset, b + offset, Color.WHITE)
+
 func _draw_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radius : float, color : Color, start_angle := 0.0, end_angle := TAU, steps := CIRCLE_STEPS) -> void:
 	var previous := center + (x_axis * cos(start_angle) + y_axis * sin(start_angle)) * radius
 	for i in steps:
@@ -480,35 +527,44 @@ func _draw_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radius :
 		_draw_line(previous, next, color)
 		previous = next
 
+func _draw_key_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radius : float, color : Color, hovered : bool) -> void:
+	var previous := center + x_axis * radius
+	for i in CIRCLE_STEPS:
+		var angle := TAU * float(i + 1) / float(CIRCLE_STEPS)
+		var next := center + (x_axis * cos(angle) + y_axis * sin(angle)) * radius
+		_draw_key_line(previous, next, color, hovered)
+		previous = next
+
 func _draw_axis_pole() -> void:
 	var center := _axis_pole_center()
 	var axis := _spiral_axis_world()
 	_draw_line(center - axis * AXIS_POLE_LENGTH, center + axis * AXIS_POLE_LENGTH, Color(0.85, 0.55, 1.0, 0.9))
 	_draw_line(_axis_transform().origin, center, _grey())
 
-func _draw_scale_point(entry : Dictionary, point_index : int) -> void:
+func _draw_scale_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var value := _curve_value(curve, point_index)
 	var frame := _sample_frame(t)
 	var axis := _entry_axis(entry, frame)
+	var hovered := _hovered_key_matches(entry_index, point_index)
 	for side in [-1.0, 1.0]:
 		var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
-		_draw_line(handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, _grey())
-		_draw_line(frame["center"], handle_pos, _grey())
+		_draw_key_line(handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, _grey(), hovered)
+		_draw_key_line(frame["center"], handle_pos, _grey(), hovered)
 
-func _draw_arrow_point(entry : Dictionary, point_index : int) -> void:
+func _draw_arrow_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
 	var axis := _entry_axis(entry, frame)
-	_draw_line(frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH, _grey())
+	_draw_key_line(frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH, _grey(), _hovered_key_matches(entry_index, point_index))
 
-func _draw_twist_point(entry : Dictionary, point_index : int) -> void:
+func _draw_twist_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
-	_draw_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _grey())
+	_draw_key_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _grey(), _hovered_key_matches(entry_index, point_index))
 
 func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side : float) -> void:
 	var entry := curve_entries[entry_index]
@@ -543,11 +599,11 @@ func _draw_curve_guides() -> void:
 		for point_index in curve.point_count:
 			match int(entry["kind"]):
 				CurveKind.TWIST:
-					_draw_twist_point(entry, point_index)
+					_draw_twist_point(entry_index, entry, point_index)
 				CurveKind.SCALE_X, CurveKind.SCALE_Y:
-					_draw_scale_point(entry, point_index)
+					_draw_scale_point(entry_index, entry, point_index)
 				_:
-					_draw_arrow_point(entry, point_index)
+					_draw_arrow_point(entry_index, entry, point_index)
 			if point_index > 0:
 				for side in _point_sides(int(entry["kind"])):
 					if _selected_key_matches(entry_index, point_index):
@@ -573,10 +629,65 @@ func _update_visuals() -> void:
 	outline_mesh.surface_end()
 	outline_mesh_instance.visible = true
 
-func _hovered_handle() -> int:
+func _screen_distance_to_segment(mouse_pos : Vector2, a : Vector3, b : Vector3, cam : Camera3D) -> float:
+	var a_screen := cam.unproject_position(a)
+	var b_screen := cam.unproject_position(b)
+	var closest := Geometry2D.get_closest_point_to_segment(mouse_pos, a_screen, b_screen)
+	return mouse_pos.distance_squared_to(closest)
+
+func _screen_distance_to_key_record(record : Dictionary, cam : Camera3D, mouse_pos : Vector2) -> float:
+	if !_record_is_key_point(record):
+		return INF
+	var entry_index := int(record["entry"])
+	var entry := curve_entries[entry_index]
+	var curve : Resource = entry["curve"]
+	var point_index := int(record["point"])
+	var t := _curve_offset(curve, point_index)
+	var value := _curve_value(curve, point_index)
+	var frame := _sample_frame(t)
+	match int(entry["kind"]):
+		CurveKind.TWIST:
+			var best := INF
+			var radius := _twist_radius(t)
+			var previous : Vector3 = frame["center"] + frame["x"] * radius
+			for i in CIRCLE_STEPS:
+				var angle := TAU * float(i + 1) / float(CIRCLE_STEPS)
+				var next : Vector3 = frame["center"] + (frame["x"] * cos(angle) + frame["y"] * sin(angle)) * radius
+				best = minf(best, _screen_distance_to_segment(mouse_pos, previous, next, cam))
+				previous = next
+			return best
+		CurveKind.SCALE_X, CurveKind.SCALE_Y:
+			var best := INF
+			var axis := _entry_axis(entry, frame)
+			for side in [-1.0, 1.0]:
+				var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
+				best = minf(best, _screen_distance_to_segment(mouse_pos, handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, cam))
+				best = minf(best, _screen_distance_to_segment(mouse_pos, frame["center"], handle_pos, cam))
+			return best
+		_:
+			var axis := _entry_axis(entry, frame)
+			return _screen_distance_to_segment(mouse_pos, frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH, cam)
+
+func _hovered_key_handle(cam : Camera3D) -> int:
+	var mouse_pos := get_viewport().get_mouse_position()
+	var best_handle := -1
+	var best_distance := INF
+	for i in handle_records.size():
+		var distance := _screen_distance_to_key_record(handle_records[i], cam, mouse_pos)
+		if distance < best_distance:
+			best_distance = distance
+			best_handle = i
+	if best_distance <= 8.0 * 8.0:
+		return best_handle
+	return -1
+
+func _hovered_handle(cam : Camera3D) -> int:
 	var scene := FZGlobal.editing_scene
 	if scene and scene.mouse_over_editor_ui():
 		return -1
+	var key_handle := _hovered_key_handle(cam)
+	if key_handle != -1:
+		return key_handle
 	if !mouse_cast or !mouse_cast.is_colliding():
 		return -1
 	var collider := mouse_cast.get_collider()
@@ -890,7 +1001,9 @@ func _process(_delta : float) -> void:
 	if !cam:
 		return
 	var ray_dir := cam.project_ray_normal(get_viewport().get_mouse_position())
-	var hovered := _hovered_handle()
+	var hovered := _hovered_handle(cam)
+	if _set_hovered_key_from_handle(hovered):
+		_update_visuals()
 	_set_handle_colours(hovered)
 	if !scene.pointer_action_busy_for(self) and _try_delete_hovered_point(hovered):
 		return
