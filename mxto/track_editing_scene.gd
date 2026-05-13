@@ -741,15 +741,18 @@ func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_T
 	track_structure_changed.emit()
 	return new_track_piece
 
-func add_desired_track_segment_after(in_path : RoadPath) -> RoadPath:
-	var road_type := _road_type_from_path(in_path)
-	match _segment_kind_from_path(in_path):
+func add_track_segment_after(in_path : RoadPath, segment_kind : int, road_type : int) -> RoadPath:
+	match segment_kind:
 		SegmentKind.LINE:
 			return add_regular_track_segment_after(in_path, road_type)
 		SegmentKind.SPIRAL:
 			return add_spiral_track_segment_after(in_path, road_type)
 		_:
 			return add_bezier_track_segment_after(in_path, road_type)
+
+func add_desired_track_segment_after(in_path : RoadPath) -> RoadPath:
+	var road_type := _road_type_from_path(in_path)
+	return add_track_segment_after(in_path, _segment_kind_from_path(in_path), road_type)
 
 func add_road_embed(embed_type : int, in_path : RoadPath, surface_t := Vector2(0.0, 0.5)) -> int:
 	if !in_path:

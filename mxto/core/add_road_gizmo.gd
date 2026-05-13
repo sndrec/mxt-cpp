@@ -1,5 +1,7 @@
 class_name AddRoadGizmo extends Node3D
 
+const TrackEditorRadialMenuScript := preload("res://ui/track_editor/radial_menu.gd")
+
 @onready var gizmo_mesh: MeshInstance3D = $AddGizmo
 @onready var gizmo_collider: StaticBody3D = $StaticBody3D
 var mouse_cast : RayCast3D
@@ -10,6 +12,8 @@ var target_node : RoadPath
 var road_segment_texture := preload("res://asset/tex/add_road_segment.png")
 var active := true
 var pressed_on_gizmo := false
+var press_screen_position := Vector2.ZERO
+var active_radial_menu : Control
 
 func _segment_kind_tint(scene : TrackEditingScene) -> Color:
 	match scene.desired_segment_kind:
@@ -64,6 +68,7 @@ func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("LeftMouse") and mousecast_wants_this_gizmo():
 		pressed_on_gizmo = scene.begin_pointer_action(self)
 		if pressed_on_gizmo:
+			press_screen_position = get_viewport().get_mouse_position()
 			get_viewport().set_input_as_handled()
 	
 	if Input.is_action_just_released("LeftMouse"):
@@ -74,16 +79,67 @@ func _process(delta: float) -> void:
 		scene.end_pointer_action(self)
 		if !can_release:
 			return
-		var new_segment := scene.add_desired_track_segment_after(target_node)
-		if new_segment:
-			scene.active_path = new_segment
-			set_target_node(new_segment)
-			FZGlobal.select_node(new_segment)
+		_open_add_segment_menu(press_screen_position)
 	if !active:
 		gizmo_collider.set_collision_layer_value(16, false)
 		return
 	else:
 		gizmo_collider.set_collision_layer_value(16, true)
+
+func _open_add_segment_menu(screen_position : Vector2) -> void:
+	if active_radial_menu and is_instance_valid(active_radial_menu):
+		return
+	var scene := FZGlobal.editing_scene
+	if !scene or !target_node or !is_instance_valid(target_node):
+		return
+	var add_target := target_node
+	active_radial_menu = TrackEditorRadialMenuScript.new()
+	scene.add_child(active_radial_menu)
+	active_radial_menu.open_options(_shape_options(), screen_position)
+	var shape_result : Dictionary = await active_radial_menu.finished
+	if _menu_cancelled(shape_result):
+		active_radial_menu = null
+		return
+	var road_type := int(shape_result.get("value", ENUMS.ROAD_TYPE.STANDARD))
+	if !active_radial_menu or !is_instance_valid(active_radial_menu):
+		return
+	await active_radial_menu.transition_options(_segment_kind_options())
+	var segment_result : Dictionary = await active_radial_menu.finished
+	if _menu_cancelled(segment_result):
+		active_radial_menu = null
+		return
+	var segment_kind := int(segment_result.get("value", TrackEditingScene.SegmentKind.BEZIER))
+	if active_radial_menu and is_instance_valid(active_radial_menu):
+		await active_radial_menu.close_menu()
+	active_radial_menu = null
+	if !scene or !is_instance_valid(scene) or !is_instance_valid(add_target):
+		return
+	var new_segment := scene.add_track_segment_after(add_target, segment_kind, road_type)
+	if new_segment:
+		scene.active_path = new_segment
+		set_target_node(new_segment)
+		FZGlobal.select_node(new_segment)
+
+func _menu_cancelled(result : Dictionary) -> bool:
+	return bool(result.get("cancelled", true))
+
+func _shape_options() -> Array:
+	return [
+		{"label": "Std", "tooltip": "Standard Road", "value": ENUMS.ROAD_TYPE.STANDARD},
+		{"label": "Pipe", "tooltip": "Pipe Road", "value": ENUMS.ROAD_TYPE.PIPE},
+		{"label": "Cyl", "tooltip": "Cylinder Road", "value": ENUMS.ROAD_TYPE.CYLINDER},
+		{"label": "Open\nPipe", "tooltip": "Open Pipe Road", "value": ENUMS.ROAD_TYPE.PIPE_OPEN},
+		{"label": "Open\nCyl", "tooltip": "Open Cylinder Road", "value": ENUMS.ROAD_TYPE.CYLINDER_OPEN},
+		{"label": "Round", "tooltip": "Rounded Square Road", "value": ENUMS.ROAD_TYPE.ROUNDED_SQUARE},
+		{"label": "Open\nRound", "tooltip": "Open Rounded Square Road", "value": ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN},
+	]
+
+func _segment_kind_options() -> Array:
+	return [
+		{"label": "Line", "tooltip": "Line Segment", "value": TrackEditingScene.SegmentKind.LINE},
+		{"label": "Bezier", "tooltip": "Bezier Segment", "value": TrackEditingScene.SegmentKind.BEZIER},
+		{"label": "Spiral", "tooltip": "Spiral Segment", "value": TrackEditingScene.SegmentKind.SPIRAL},
+	]
 
 func mousecast_wants_this_gizmo() -> bool:
 	var scene := FZGlobal.editing_scene
