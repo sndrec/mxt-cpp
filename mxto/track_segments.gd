@@ -70,26 +70,68 @@ func set_first_segment(segment : RoadPath) -> void:
 		return
 	first_segment_path = get_path_to(segment)
 
+func _next_segments_for(segment : RoadPath) -> Array[RoadPath]:
+	var out : Array[RoadPath] = []
+	for next_path in segment.next_segment_paths:
+		var next_node := get_node_or_null(next_path)
+		if next_node is RoadPath and !out.has(next_node):
+			out.append(next_node)
+	return out
+
 func get_export_road_segments() -> Array[RoadPath]:
 	var all_segments := get_road_segments()
 	var first := get_first_segment()
 	if !first:
 		return all_segments
-	var out : Array[RoadPath] = []
+	var reachable : Array[RoadPath] = []
 	var queue : Array[RoadPath] = [first]
 	while !queue.is_empty():
 		var segment : RoadPath = queue.pop_front()
-		if !segment or out.has(segment):
+		if !segment or reachable.has(segment):
 			continue
-		out.append(segment)
-		for next_path in segment.next_segment_paths:
-			var next_node : Node = get_node_or_null(next_path)
-			if next_node is RoadPath and !out.has(next_node):
-				queue.append(next_node)
+		reachable.append(segment)
+		for next_segment in _next_segments_for(segment):
+			if !reachable.has(next_segment):
+				queue.append(next_segment)
+
+	var indegrees : Array[int] = []
+	for _segment in reachable:
+		indegrees.append(0)
+	for segment in reachable:
+		for next_segment in _next_segments_for(segment):
+			var next_index := reachable.find(next_segment)
+			if next_index >= 0 and next_segment != first:
+				indegrees[next_index] += 1
+
+	var ordered : Array[RoadPath] = []
+	var sort_queue : Array[RoadPath] = []
+	for i in reachable.size():
+		if indegrees[i] == 0:
+			sort_queue.append(reachable[i])
+	if sort_queue.has(first):
+		sort_queue.erase(first)
+		sort_queue.push_front(first)
+
+	var seen : Array[RoadPath] = []
+	while !sort_queue.is_empty():
+		var segment : RoadPath = sort_queue.pop_front()
+		if seen.has(segment):
+			continue
+		seen.append(segment)
+		ordered.append(segment)
+		for next_segment in _next_segments_for(segment):
+			var next_index := reachable.find(next_segment)
+			if next_index >= 0 and next_segment != first:
+				indegrees[next_index] -= 1
+				if indegrees[next_index] == 0:
+					sort_queue.append(next_segment)
+	for segment in reachable:
+		if !seen.has(segment):
+			ordered.append(segment)
 	for segment in all_segments:
-		if !out.has(segment):
-			out.append(segment)
-	return out
+		if !ordered.has(segment):
+			ordered.append(segment)
+	return ordered
 
 func get_track_triggers() -> Array[Node3D]:
 	var out : Array[Node3D] = []
@@ -156,22 +198,40 @@ func export_mxt_track(path : String) -> Error:
 	if file == null:
 		return FileAccess.get_open_error()
 	file.store_buffer(buf.data_array)
-	var metadata_err := export_track_metadata(path.get_basename() + ".json")
+	var metadata_err := export_track_metadata(path.get_basename() + ".json", segments)
 	if metadata_err != OK:
 		return metadata_err
 	return OK
 
-func export_track_metadata(path : String) -> Error:
+func export_track_metadata(path : String, segments : Array[RoadPath] = []) -> Error:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
-	file.store_string(JSON.stringify(_track_metadata(), "\t"))
+	file.store_string(JSON.stringify(_track_metadata(segments), "\t"))
 	return OK
 
 func _color3(color : Color) -> Array[float]:
 	return [color.r, color.g, color.b]
 
-func _track_metadata() -> Dictionary:
+func _segment_metadata(segments : Array[RoadPath]) -> Array[Dictionary]:
+	var out : Array[Dictionary] = []
+	for i in segments.size():
+		var segment := segments[i]
+		out.append({
+			"seg_index": i,
+			"name": segment.name,
+			"ground_color": _color3(segment.ground_color),
+			"rail_color": _color3(segment.rail_color),
+			"rail_start_left": segment.left_rail_start,
+			"rail_end_left": segment.left_rail_end,
+			"rail_start_right": segment.right_rail_start,
+			"rail_end_right": segment.right_rail_end,
+		})
+	return out
+
+func _track_metadata(segments : Array[RoadPath] = []) -> Dictionary:
+	if segments.is_empty():
+		segments = get_export_road_segments()
 	return {
 		"name": track_name,
 		"description": track_description,
@@ -189,6 +249,7 @@ func _track_metadata() -> Dictionary:
 		"ambient_intensity": ambient_intensity,
 		"ambient_color": _color3(ambient_color),
 		"light_direction": [light_direction.x, light_direction.y, light_direction.z],
+		"segments": _segment_metadata(segments),
 	}
 
 func _build_trigger_exports(segments : Array[RoadPath], cp_ranges : Array[Vector2i]) -> Array[Dictionary]:
