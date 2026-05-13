@@ -12,6 +12,8 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var new_track_segment_type_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons
 @onready var new_embed_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons
 @onready var new_track_object_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons
+@onready var new_track_segment_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackSegment
+@onready var edit_segment_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditSegmentProps
 @onready var edit_rails_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditRails
 @onready var edit_modulation_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditModulation
 @onready var edit_shape_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditShape
@@ -19,6 +21,9 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var edit_spiral_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditSpiral
 @onready var edit_embeds_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditEmbeds
 @onready var edit_checkpoints_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditCheckpoints
+@onready var add_embed_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/AddEmbed
+@onready var new_track_object_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackObject
+@onready var edit_track_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackProps
 @onready var recharge_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Recharge
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
 @onready var slip_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Slip
@@ -54,6 +59,7 @@ func _track_object_outliner_label(track_object : Node, index : int) -> String:
 func _ready():
 	get_track_root()
 	main_buttons.visible = true
+	_enable_tool_button_toggles()
 	edit_rails_button.pressed.connect(_on_edit_rails_pressed)
 	edit_modulation_button.pressed.connect(_on_edit_modulation_pressed)
 	edit_shape_button.pressed.connect(_on_edit_shape_pressed)
@@ -70,7 +76,43 @@ func _ready():
 	mine_button.pressed.connect(_on_track_object_type_pressed.bind(2))
 	track_scene.track_structure_changed.connect(update_outliner)
 	update_outliner()
+	_refresh_tool_button_states()
 	dock_ready.emit()
+
+func _enable_tool_button_toggles() -> void:
+	for button in [
+		new_track_segment_button,
+		edit_segment_button,
+		edit_shape_button,
+		edit_mesh_layout_button,
+		edit_spiral_button,
+		add_embed_button,
+		edit_embeds_button,
+		edit_rails_button,
+		edit_modulation_button,
+		edit_checkpoints_button,
+		new_track_object_button,
+		edit_track_button,
+	]:
+		button.toggle_mode = true
+
+func _set_tool_button_pressed(button : Button, pressed : bool) -> void:
+	button.set_pressed_no_signal(pressed)
+
+func _refresh_tool_button_states() -> void:
+	var mode := track_scene.tool_mode
+	_set_tool_button_pressed(new_track_segment_button, mode == TrackEditingScene.ToolMode.ADD_SEGMENT)
+	_set_tool_button_pressed(edit_segment_button, mode == TrackEditingScene.ToolMode.EDIT_SEGMENT)
+	_set_tool_button_pressed(edit_shape_button, mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
+	_set_tool_button_pressed(edit_mesh_layout_button, mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT)
+	_set_tool_button_pressed(edit_spiral_button, mode == TrackEditingScene.ToolMode.EDIT_SPIRAL)
+	_set_tool_button_pressed(add_embed_button, mode == TrackEditingScene.ToolMode.ADD_EMBED)
+	_set_tool_button_pressed(edit_embeds_button, mode == TrackEditingScene.ToolMode.EDIT_EMBED)
+	_set_tool_button_pressed(edit_rails_button, mode == TrackEditingScene.ToolMode.EDIT_RAILS)
+	_set_tool_button_pressed(edit_modulation_button, mode == TrackEditingScene.ToolMode.EDIT_MODULATION)
+	_set_tool_button_pressed(edit_checkpoints_button, mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
+	_set_tool_button_pressed(new_track_object_button, mode == TrackEditingScene.ToolMode.ADD_OBJECT)
+	_set_tool_button_pressed(edit_track_button, mode == TrackEditingScene.ToolMode.EDIT_TRACK)
 
 func get_track_root() -> void:
 	if !track_root:
@@ -84,6 +126,7 @@ func get_track_root() -> void:
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):
 	get_track_root()
+	_refresh_tool_button_states()
 
 func update_outliner() -> void:
 	if !track_root:
