@@ -382,16 +382,19 @@ func _apply_context_tabs(show_info : bool, show_spiral : bool, show_rails : bool
 		_hide_cross_section_visual()
 		return
 	var visible_tabs := [show_info, show_rails, show_spiral, show_track, show_object, show_modulation, show_embeds, show_handles]
+	var current_tab := tab_container.current_tab
 	var first_visible := -1
 	for i in visible_tabs.size():
 		if visible_tabs[i]:
 			first_visible = i
 			tab_container.set_tab_hidden(i, false)
-	var current_tab_visible := tab_container.current_tab >= 0 and tab_container.current_tab < visible_tabs.size() and bool(visible_tabs[tab_container.current_tab])
-	if first_visible >= 0 and !current_tab_visible:
-		tab_container.current_tab = first_visible
 	for i in visible_tabs.size():
 		tab_container.set_tab_hidden(i, !visible_tabs[i])
+	var current_tab_visible := current_tab >= 0 and current_tab < visible_tabs.size() and bool(visible_tabs[current_tab])
+	if current_tab_visible:
+		tab_container.current_tab = current_tab
+	elif first_visible >= 0:
+		tab_container.current_tab = first_visible
 
 func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	if !tab_container:
@@ -436,8 +439,6 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_handle_data := show_bezier_handle_data or show_line_handle_data
 	bezier_handle_data.visible = show_handle_data and selected is BezierHandle
 	line_handle_data.visible = show_handle_data and selected is LineHandle
-	if show_handle_data and handles_panel.visible:
-		tab_container.current_tab = tab_container.get_tab_idx_from_control(handles_panel)
 
 func _selected_embed() -> RoadEmbed:
 	if !current_path:
