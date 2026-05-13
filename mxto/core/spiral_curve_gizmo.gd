@@ -98,7 +98,7 @@ func _curve_value(curve : Resource, point_index : int) -> float:
 
 func _sample_transform(t : float) -> Transform3D:
 	if _is_spiral_path(target_path):
-		return target_path.call("_sample_spiral_transform", clampf(t, 0.0, 1.0))
+		return target_path.get_root_transform(clampf(t, 0.0, 1.0))
 	return Transform3D.IDENTITY
 
 func _basis_at(t : float) -> Basis:
