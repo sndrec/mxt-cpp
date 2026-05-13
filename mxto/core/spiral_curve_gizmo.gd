@@ -1,10 +1,18 @@
 class_name SpiralCurveGizmo extends Node3D
 
+enum HandleKind {
+	POINT,
+	LEFT_TANGENT,
+	RIGHT_TANGENT,
+}
+
 const HANDLE_RADIUS := 4.0
+const TANGENT_HANDLE_RADIUS := 2.5
 const SEARCH_STEPS := 10
 const SEARCH_PASSES := 5
 const PREVIEW_STEPS := 32
 const MIN_POINT_GAP := 0.001
+const TANGENT_HANDLE_OFFSET := 0.08
 const ADD_POINT_MAX_SCREEN_DISTANCE := 60.0
 
 var mouse_cast : RayCast3D
@@ -20,6 +28,7 @@ var handle_materials : Array[StandardMaterial3D] = []
 var handles : Array[StaticBody3D] = []
 var handle_curve_indices : Array[int] = []
 var handle_point_indices : Array[int] = []
+var handle_kinds : Array[int] = []
 var curve_entries : Array[Dictionary] = []
 
 func _ready() -> void:
@@ -106,7 +115,37 @@ func _point_position(entry_index : int, point_index : int) -> Vector3:
 	var normal := _basis_at(t).y.normalized()
 	return _base_position(entry_index, t) + normal * _curve_value(curve, point_index) * float(entry["scale"])
 
-func _make_handle(entry_index : int) -> StaticBody3D:
+func _curve_world_position(entry_index : int, t : float, value : float) -> Vector3:
+	var entry := curve_entries[entry_index]
+	return _base_position(entry_index, t) + _basis_at(t).y.normalized() * value * float(entry["scale"])
+
+func _tangent_position(entry_index : int, point_index : int, handle_kind : int) -> Vector3:
+	var curve : Resource = curve_entries[entry_index]["curve"]
+	var point : Vector2 = curve.get_point_position(point_index)
+	var offset_delta := TANGENT_HANDLE_OFFSET
+	var tangent := 0.0
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		offset_delta = -minf(TANGENT_HANDLE_OFFSET, point.x)
+		tangent = curve.get_point_left_tangent(point_index)
+	else:
+		offset_delta = minf(TANGENT_HANDLE_OFFSET, 1.0 - point.x)
+		tangent = curve.get_point_right_tangent(point_index)
+	if absf(offset_delta) <= 0.00001:
+		return _point_position(entry_index, point_index)
+	return _curve_world_position(entry_index, point.x + offset_delta, point.y + tangent * offset_delta)
+
+func _handle_position(handle_id : int) -> Vector3:
+	var entry_index := handle_curve_indices[handle_id]
+	var point_index := handle_point_indices[handle_id]
+	if handle_kinds[handle_id] == HandleKind.POINT:
+		return _point_position(entry_index, point_index)
+	return _tangent_position(entry_index, point_index, handle_kinds[handle_id])
+
+func _handle_base_color(handle_id : int) -> Color:
+	var color := _curve_color(handle_curve_indices[handle_id])
+	return color if handle_kinds[handle_id] == HandleKind.POINT else color.lerp(Color.WHITE, 0.35)
+
+func _make_handle(entry_index : int, handle_kind : int) -> StaticBody3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color = _curve_color(entry_index)
@@ -118,13 +157,13 @@ func _make_handle(entry_index : int) -> StaticBody3D:
 	body.set_collision_mask_value(1, false)
 	var collision := CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
-	sphere.radius = HANDLE_RADIUS
+	sphere.radius = TANGENT_HANDLE_RADIUS if handle_kind != HandleKind.POINT else HANDLE_RADIUS
 	collision.shape = sphere
 	body.add_child(collision)
 	var mesh_instance := MeshInstance3D.new()
 	var sphere_mesh := SphereMesh.new()
-	sphere_mesh.radius = HANDLE_RADIUS
-	sphere_mesh.height = HANDLE_RADIUS * 2.0
+	sphere_mesh.radius = sphere.radius
+	sphere_mesh.height = sphere.radius * 2.0
 	mesh_instance.mesh = sphere_mesh
 	mesh_instance.material_override = material
 	body.add_child(mesh_instance)
@@ -134,19 +173,29 @@ func _make_handle(entry_index : int) -> StaticBody3D:
 func _sync_handles() -> void:
 	handle_curve_indices.clear()
 	handle_point_indices.clear()
+	handle_kinds.clear()
 	for entry_index in curve_entries.size():
 		var curve : Resource = curve_entries[entry_index]["curve"]
 		for point_index in curve.point_count:
 			handle_curve_indices.append(entry_index)
 			handle_point_indices.append(point_index)
+			handle_kinds.append(HandleKind.POINT)
+			if point_index > 0:
+				handle_curve_indices.append(entry_index)
+				handle_point_indices.append(point_index)
+				handle_kinds.append(HandleKind.LEFT_TANGENT)
+			if point_index < curve.point_count - 1:
+				handle_curve_indices.append(entry_index)
+				handle_point_indices.append(point_index)
+				handle_kinds.append(HandleKind.RIGHT_TANGENT)
 	while handles.size() < handle_curve_indices.size():
-		handles.append(_make_handle(handle_curve_indices[handles.size()]))
+		handles.append(_make_handle(handle_curve_indices[handles.size()], handle_kinds[handles.size()]))
 	while handles.size() > handle_curve_indices.size():
 		var handle : StaticBody3D = handles.pop_back()
 		handle_materials.pop_back()
 		handle.queue_free()
 	for i in handles.size():
-		handle_materials[i].albedo_color = _curve_color(handle_curve_indices[i])
+		handle_materials[i].albedo_color = _handle_base_color(i)
 
 func _set_colliders_enabled(enabled : bool) -> void:
 	for handle in handles:
@@ -164,11 +213,21 @@ func _draw_curve_preview(entry_index : int) -> void:
 		outline_mesh.surface_add_vertex(p0)
 		outline_mesh.surface_add_vertex(p1)
 
+func _draw_tangent_handles() -> void:
+	outline_mesh.surface_set_color(Color(0.9, 0.95, 1.0, 0.85))
+	for handle_id in handles.size():
+		if handle_kinds[handle_id] == HandleKind.POINT:
+			continue
+		var point_pos := _point_position(handle_curve_indices[handle_id], handle_point_indices[handle_id])
+		var handle_pos := _handle_position(handle_id)
+		outline_mesh.surface_add_vertex(point_pos)
+		outline_mesh.surface_add_vertex(handle_pos)
+
 func _update_visuals() -> void:
 	_collect_curve_entries()
 	_sync_handles()
 	for i in handles.size():
-		handles[i].global_position = _point_position(handle_curve_indices[i], handle_point_indices[i])
+		handles[i].global_position = _handle_position(i)
 	outline_mesh.clear_surfaces()
 	if curve_entries.is_empty():
 		outline_mesh_instance.visible = false
@@ -176,6 +235,7 @@ func _update_visuals() -> void:
 	outline_mesh.surface_begin(Mesh.PRIMITIVE_LINES, outline_material)
 	for entry_index in curve_entries.size():
 		_draw_curve_preview(entry_index)
+	_draw_tangent_handles()
 	outline_mesh.surface_end()
 	outline_mesh_instance.visible = true
 
@@ -199,7 +259,7 @@ func _set_handle_colours(hovered : int) -> void:
 		elif i == hovered:
 			handle_materials[i].albedo_color = _curve_hover_color(entry_index)
 		else:
-			handle_materials[i].albedo_color = _curve_color(entry_index)
+			handle_materials[i].albedo_color = _handle_base_color(i)
 
 func _closest_t(world_pos : Vector3, entry_index : int) -> float:
 	var best_t := 0.0
@@ -227,7 +287,7 @@ func _clamped_curve_offset(curve : Resource, point_index : int, offset : float) 
 	var max_offset := _curve_offset(curve, point_index + 1) - MIN_POINT_GAP
 	return clampf(offset, min_offset, max_offset)
 
-func _write_dragged_handle(handle_id : int, world_pos : Vector3) -> void:
+func _write_point_handle(handle_id : int, world_pos : Vector3) -> void:
 	var entry_index := handle_curve_indices[handle_id]
 	var point_index := handle_point_indices[handle_id]
 	var entry := curve_entries[entry_index]
@@ -238,6 +298,37 @@ func _write_dragged_handle(handle_id : int, world_pos : Vector3) -> void:
 	value = maxf(value, float(entry["min"]))
 	curve.set_point_offset(point_index, t)
 	curve.set_point_value(point_index, value)
+
+func _write_tangent_handle(handle_id : int, world_pos : Vector3) -> void:
+	var entry_index := handle_curve_indices[handle_id]
+	var point_index := handle_point_indices[handle_id]
+	var handle_kind := handle_kinds[handle_id]
+	var entry := curve_entries[entry_index]
+	var curve : Resource = entry["curve"]
+	var point : Vector2 = curve.get_point_position(point_index)
+	var handle_t := _closest_t(world_pos, entry_index)
+	var delta : float = handle_t - point.x
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		delta = minf(delta, -MIN_POINT_GAP)
+	else:
+		delta = maxf(delta, MIN_POINT_GAP)
+	handle_t = clampf(point.x + delta, 0.0, 1.0)
+	delta = handle_t - point.x
+	if absf(delta) < MIN_POINT_GAP:
+		return
+	var normal := _basis_at(handle_t).y.normalized()
+	var value := (world_pos - _base_position(entry_index, handle_t)).dot(normal) / float(entry["scale"])
+	value = maxf(value, float(entry["min"]))
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		curve.set_point_left_tangent(point_index, (value - point.y) / delta)
+	else:
+		curve.set_point_right_tangent(point_index, (value - point.y) / delta)
+
+func _write_dragged_handle(handle_id : int, world_pos : Vector3) -> void:
+	if handle_kinds[handle_id] == HandleKind.POINT:
+		_write_point_handle(handle_id, world_pos)
+	else:
+		_write_tangent_handle(handle_id, world_pos)
 
 func _screen_distance_to_curve(entry_index : int, cam : Camera3D, mouse_pos : Vector2) -> Dictionary:
 	var entry := curve_entries[entry_index]
@@ -311,6 +402,8 @@ func _try_delete_hovered_point(hovered : int) -> bool:
 	if scene and scene.mouse_over_editor_ui():
 		return false
 	if !just_delete or hovered < 0:
+		return false
+	if handle_kinds[hovered] != HandleKind.POINT:
 		return false
 	var curve : Resource = curve_entries[handle_curve_indices[hovered]]["curve"]
 	var point_index := handle_point_indices[hovered]
