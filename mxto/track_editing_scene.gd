@@ -167,6 +167,8 @@ func set_active_track_trigger(in_trigger : Node3D) -> void:
 	track_trigger_gizmo.set_target_trigger(in_trigger)
 
 func begin_pointer_action(owner : Node) -> bool:
+	if mouse_over_editor_ui():
+		return false
 	if pointer_action_owner and pointer_action_owner != owner:
 		return false
 	pointer_action_owner = owner
