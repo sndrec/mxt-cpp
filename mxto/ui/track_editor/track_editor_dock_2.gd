@@ -368,14 +368,6 @@ func _active_track_trigger() -> Node3D:
 	return null
 
 func _apply_context_tabs(show_info : bool, show_spiral : bool, show_rails : bool, show_track : bool, show_object : bool, show_modulation : bool, show_embeds : bool, show_handles : bool) -> void:
-	info_panel.visible = show_info
-	spiral_panel.visible = show_spiral
-	rail_panel.visible = show_rails
-	track_panel.visible = show_track
-	object_panel.visible = show_object
-	modulation.visible = show_modulation
-	embeds.visible = show_embeds
-	handles_panel.visible = show_handles
 	var any_visible := show_info or show_spiral or show_rails or show_track or show_object or show_modulation or show_embeds or show_handles
 	tab_container.visible = any_visible
 	if !any_visible:
@@ -387,13 +379,11 @@ func _apply_context_tabs(show_info : bool, show_spiral : bool, show_rails : bool
 	for i in visible_tabs.size():
 		if visible_tabs[i]:
 			first_visible = i
-			tab_container.set_tab_hidden(i, false)
-	for i in visible_tabs.size():
-		tab_container.set_tab_hidden(i, !visible_tabs[i])
+		var should_hide := !bool(visible_tabs[i])
+		if tab_container.is_tab_hidden(i) != should_hide:
+			tab_container.set_tab_hidden(i, should_hide)
 	var current_tab_visible := current_tab >= 0 and current_tab < visible_tabs.size() and bool(visible_tabs[current_tab])
-	if current_tab_visible:
-		tab_container.current_tab = current_tab
-	elif first_visible >= 0:
+	if !current_tab_visible and first_visible >= 0:
 		tab_container.current_tab = first_visible
 
 func _refresh_contextual_visibility(_mode : int = -1) -> void:
