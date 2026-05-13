@@ -458,19 +458,35 @@ func _track_root_path_to(segment : RoadPath) -> NodePath:
 		return NodePath()
 	return track_root.get_path_to(segment)
 
+func _append_unique_segment_path(paths : Array[NodePath], segment_path : NodePath) -> void:
+	if segment_path.is_empty() or paths.has(segment_path):
+		return
+	paths.append(segment_path)
+
+func _segment_paths_without(paths : Array[NodePath], segment_path : NodePath) -> Array[NodePath]:
+	var out : Array[NodePath] = []
+	for path in paths:
+		if path != segment_path:
+			out.append(path)
+	return out
+
 func _insert_segment_after(in_path : RoadPath, new_track_piece : RoadPath) -> void:
 	track_root.add_child(new_track_piece)
 	var id_to_put_above := track_root.get_children().find(in_path)
 	track_root.move_child(new_track_piece, id_to_put_above + 1)
-	if in_path.next_segment_paths.is_empty():
-		return
+	var previous_path := _track_root_path_to(in_path)
+	var new_path := _track_root_path_to(new_track_piece)
 	var previous_paths : Array[NodePath] = []
-	previous_paths.append(_track_root_path_to(in_path))
-	var next_paths : Array[NodePath] = []
-	for next_path in in_path.next_segment_paths:
-		next_paths.append(next_path)
+	_append_unique_segment_path(previous_paths, previous_path)
+	var next_paths : Array[NodePath] = in_path.next_segment_paths.duplicate()
 	var inserted_next_paths : Array[NodePath] = []
-	inserted_next_paths.append(_track_root_path_to(new_track_piece))
+	_append_unique_segment_path(inserted_next_paths, new_path)
+	for next_path in in_path.next_segment_paths:
+		var next_segment := track_root.get_node_or_null(next_path) as RoadPath
+		if !next_segment:
+			continue
+		next_segment.previous_segment_paths = _segment_paths_without(next_segment.previous_segment_paths, previous_path)
+		_append_unique_segment_path(next_segment.previous_segment_paths, new_path)
 	new_track_piece.previous_segment_paths = previous_paths
 	new_track_piece.next_segment_paths = next_paths
 	in_path.next_segment_paths = inserted_next_paths
