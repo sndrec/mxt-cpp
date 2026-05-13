@@ -26,6 +26,7 @@ const MIN_POINT_GAP := 0.001
 const TANGENT_HANDLE_OFFSET := 0.08
 const ADD_POINT_MAX_SCREEN_DISTANCE := 60.0
 const VISUAL_OFFSET := 8.0
+const TWIST_VISUAL_OFFSET := VISUAL_OFFSET * 0.5
 const TANGENT_VISUAL_SPAN := 16.0
 const AXIS_POLE_LENGTH := 160.0
 const AXIS_HANDLE_OFFSET := 80.0
@@ -99,14 +100,15 @@ func _is_spiral_path(path : Node) -> bool:
 	return script and script.resource_path == "res://core/road_path_spiral.gd"
 
 func _curve_color(index : int) -> Color:
-	var palette : Array[Color] = [
-		Color(0.95, 0.32, 0.18, 1.0),
-		Color(0.24, 0.78, 1.0, 1.0),
-		Color(1.0, 0.22, 0.18, 1.0),
-		Color(0.55, 1.0, 0.42, 1.0),
-		Color(0.92, 0.86, 0.28, 1.0),
-	]
-	return palette[index % palette.size()]
+	if index >= 0 and index < curve_entries.size():
+		match int(curve_entries[index]["kind"]):
+			CurveKind.RADIUS, CurveKind.SCALE_X:
+				return Color(0.92, 0.24, 0.18, 1.0)
+			CurveKind.HEIGHT, CurveKind.SCALE_Y:
+				return Color(0.28, 0.82, 0.28, 1.0)
+			CurveKind.TWIST:
+				return Color(0.24, 0.48, 1.0, 1.0)
+	return Color(0.72, 0.72, 0.72, 1.0)
 
 func _curve_hover_color(index : int) -> Color:
 	return _curve_color(index).lerp(Color.WHITE, 0.45)
@@ -227,7 +229,7 @@ func _scale_value_at(kind : int, t : float) -> float:
 	return 25.0
 
 func _twist_radius(t : float) -> float:
-	return maxf(_scale_value_at(CurveKind.SCALE_X, t), _scale_value_at(CurveKind.SCALE_Y, t)) + VISUAL_OFFSET
+	return maxf(_scale_value_at(CurveKind.SCALE_X, t), _scale_value_at(CurveKind.SCALE_Y, t)) + TWIST_VISUAL_OFFSET
 
 func _tangent_delta(curve : Resource, point_index : int, handle_kind : int) -> float:
 	var point_t := _curve_offset(curve, point_index)
@@ -606,7 +608,6 @@ func _sync_selection_collisions() -> void:
 					for side in [-1.0, 1.0]:
 						var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
 						_append_selection_segment(entry_index, point_index, handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0)
-						_append_selection_segment(entry_index, point_index, frame["center"], handle_pos)
 				_:
 					var axis := _entry_axis(entry, frame)
 					_append_selection_arrow(entry_index, point_index, frame["center"], axis, frame)
@@ -690,23 +691,23 @@ func _draw_scale_point(entry_index : int, entry : Dictionary, point_index : int)
 	var frame := _sample_frame(t)
 	var axis := _entry_axis(entry, frame)
 	var hovered := _hovered_key_matches(entry_index, point_index)
+	var color := _curve_color(entry_index)
 	for side in [-1.0, 1.0]:
 		var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
-		_draw_key_line(handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, _grey(), hovered)
-		_draw_key_line(frame["center"], handle_pos, _grey(), hovered)
+		_draw_key_line(handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, color, hovered)
 
 func _draw_arrow_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
 	var axis := _entry_axis(entry, frame)
-	_draw_key_arrow(frame["center"], axis, frame, _grey(), _hovered_key_matches(entry_index, point_index))
+	_draw_key_arrow(frame["center"], axis, frame, _curve_color(entry_index), _hovered_key_matches(entry_index, point_index))
 
 func _draw_twist_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
-	_draw_key_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _grey(), _hovered_key_matches(entry_index, point_index))
+	_draw_key_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _curve_color(entry_index), _hovered_key_matches(entry_index, point_index))
 
 func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side : float) -> void:
 	var entry := curve_entries[entry_index]
