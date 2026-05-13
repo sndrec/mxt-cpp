@@ -1,7 +1,6 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://ui/track_editor/track_editor_dock_2.gd" id="1_w5rhc"]
-[ext_resource type="PackedScene" path="res://core/curve_editor.tscn" id="2_fstgu"]
 [ext_resource type="Script" path="res://ui/track_editor/cross_section_graph.gd" id="2_klk5r"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ebxqu"]
@@ -237,56 +236,6 @@ min_value = -1.0
 max_value = 1.0
 step = 0.01
 
-[node name="SpiralRadiusLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
-visible = false
-layout_mode = 2
-text = "Radius"
-
-[node name="SpiralRadiusCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
-
-[node name="SpiralHeightLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
-visible = false
-layout_mode = 2
-text = "Height"
-
-[node name="SpiralHeightCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
-
-[node name="SpiralTwistLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
-visible = false
-layout_mode = 2
-text = "Twist"
-
-[node name="SpiralTwistCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
-
-[node name="SpiralScaleXLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
-visible = false
-layout_mode = 2
-text = "Scale X"
-
-[node name="SpiralScaleXCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
-
-[node name="SpiralScaleYLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
-visible = false
-layout_mode = 2
-text = "Scale Y"
-
-[node name="SpiralScaleYCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 220)
-layout_mode = 2
-
 [node name="Track" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
@@ -474,38 +423,6 @@ modulate = Color(1, 0.37, 0.37, 1)
 layout_mode = 2
 text = "Remove"
 
-[node name="Label" type="Label" parent="Control/TabContainer/Modulation/VBoxContainer"]
-visible = false
-layout_mode = 2
-text = "Modulation Effect"
-
-[node name="Control" type="Control" parent="Control/TabContainer/Modulation/VBoxContainer"]
-visible = false
-custom_minimum_size = Vector2(0, 161.28)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="ModCurveEffect" parent="Control/TabContainer/Modulation/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 318)
-layout_mode = 2
-
-[node name="Label2" type="Label" parent="Control/TabContainer/Modulation/VBoxContainer"]
-visible = false
-layout_mode = 2
-text = "Modulation Height"
-
-[node name="Control2" type="Control" parent="Control/TabContainer/Modulation/VBoxContainer"]
-visible = false
-custom_minimum_size = Vector2(0, 161.28)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="ModCurveHeight" parent="Control/TabContainer/Modulation/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 318)
-layout_mode = 2
-
 [node name="Embeds" type="ScrollContainer" parent="Control/TabContainer"]
 layout_mode = 2
 metadata/_tab_index = 5
@@ -566,28 +483,6 @@ layout_mode = 2
 max_value = 1.0
 step = 0.0
 value = 1.0
-
-[node name="Control" type="Control" parent="Control/TabContainer/Embeds/VBoxContainer"]
-visible = false
-custom_minimum_size = Vector2(0, 158.16)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="EmbedCurveLeft" parent="Control/TabContainer/Embeds/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 315)
-layout_mode = 2
-
-[node name="Control2" type="Control" parent="Control/TabContainer/Embeds/VBoxContainer"]
-visible = false
-custom_minimum_size = Vector2(0, 158.16)
-layout_mode = 2
-mouse_filter = 2
-
-[node name="EmbedCurveRight" parent="Control/TabContainer/Embeds/VBoxContainer" instance=ExtResource("2_fstgu")]
-visible = false
-custom_minimum_size = Vector2(0, 315)
-layout_mode = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control"]
 layout_mode = 0

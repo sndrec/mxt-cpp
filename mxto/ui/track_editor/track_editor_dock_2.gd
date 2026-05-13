@@ -32,16 +32,6 @@ var current_path : RoadPath
 @onready var spiral_axis_x: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisX
 @onready var spiral_axis_y: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisY
 @onready var spiral_axis_z: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisZ
-@onready var spiral_radius_label: Label = $Control/TabContainer/Spiral/VBoxContainer/SpiralRadiusLabel
-@onready var spiral_curve_radius: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralRadiusCurve
-@onready var spiral_height_label: Label = $Control/TabContainer/Spiral/VBoxContainer/SpiralHeightLabel
-@onready var spiral_curve_height: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralHeightCurve
-@onready var spiral_twist_label: Label = $Control/TabContainer/Spiral/VBoxContainer/SpiralTwistLabel
-@onready var spiral_curve_twist: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralTwistCurve
-@onready var spiral_scale_x_label: Label = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleXLabel
-@onready var spiral_curve_scale_x: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleXCurve
-@onready var spiral_scale_y_label: Label = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleYLabel
-@onready var spiral_curve_scale_y: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleYCurve
 
 @onready var track_panel: ScrollContainer = $Control/TabContainer/Track
 @onready var track_name_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackName
@@ -59,12 +49,6 @@ var current_path : RoadPath
 
 @onready var modulation_dropdown: OptionButton = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/ModulationDropdown
 @onready var new_modulation: Button = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/NewModulation
-@onready var mod_effect_label: Label = $Control/TabContainer/Modulation/VBoxContainer/Label
-@onready var mod_effect_spacer: Control = $Control/TabContainer/Modulation/VBoxContainer/Control
-@onready var mod_curve_effect: CurveEditor = $Control/TabContainer/Modulation/VBoxContainer/ModCurveEffect
-@onready var mod_height_label: Label = $Control/TabContainer/Modulation/VBoxContainer/Label2
-@onready var mod_height_spacer: Control = $Control/TabContainer/Modulation/VBoxContainer/Control2
-@onready var mod_curve_height: CurveEditor = $Control/TabContainer/Modulation/VBoxContainer/ModCurveHeight
 @onready var remove_mod_button: Button = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/RemoveModulation
 
 @onready var new_embed: Button = $Control/TabContainer/Embeds/VBoxContainer/HBoxContainer/NewEmbed
@@ -73,10 +57,6 @@ var current_path : RoadPath
 @onready var embed_type: OptionButton = $Control/TabContainer/Embeds/VBoxContainer/EmbedType
 @onready var embed_start: HSlider = $Control/TabContainer/Embeds/VBoxContainer/EmbedStart
 @onready var embed_end: HSlider = $Control/TabContainer/Embeds/VBoxContainer/EmbedEnd
-@onready var embed_left_spacer: Control = $Control/TabContainer/Embeds/VBoxContainer/Control
-@onready var embed_curve_left: CurveEditor = $Control/TabContainer/Embeds/VBoxContainer/EmbedCurveLeft
-@onready var embed_right_spacer: Control = $Control/TabContainer/Embeds/VBoxContainer/Control2
-@onready var embed_curve_right: CurveEditor = $Control/TabContainer/Embeds/VBoxContainer/EmbedCurveRight
 
 @onready var modulation: ScrollContainer = $Control/TabContainer/Modulation
 @onready var embeds: ScrollContainer = $Control/TabContainer/Embeds
@@ -184,8 +164,6 @@ func _ready():
 	remove_embed.pressed.connect(remove_embed_func)
 	embed_start.value_changed.connect(update_embed_values)
 	embed_end.value_changed.connect(update_embed_values)
-	mod_curve_effect.curve_edited.connect(update_track_visuals)
-	mod_curve_height.curve_edited.connect(update_track_visuals)
 	road_shape_type.item_selected.connect(update_road_shape_type)
 	track_cross_section_slider.value_changed.connect(cs_rect.update_track_cross_sections)
 	checkpoint_count.value_changed.connect(update_checkpoint_count)
@@ -193,14 +171,6 @@ func _ready():
 	spiral_axis_x.value_changed.connect(update_spiral_values)
 	spiral_axis_y.value_changed.connect(update_spiral_values)
 	spiral_axis_z.value_changed.connect(update_spiral_values)
-	spiral_curve_radius.curve_edited.connect(update_spiral_curve)
-	spiral_curve_height.curve_edited.connect(update_spiral_curve)
-	spiral_curve_twist.curve_edited.connect(update_spiral_curve)
-	spiral_curve_scale_x.curve_edited.connect(update_spiral_curve)
-	spiral_curve_scale_y.curve_edited.connect(update_spiral_curve)
-	_hide_spiral_curve_editors()
-	_hide_modulation_curve_editors()
-	_hide_embed_curve_editors()
 	track_name_edit.text_changed.connect(update_track_name)
 	track_description_edit.text_changed.connect(update_track_description)
 	track_difficulty_edit.value_changed.connect(update_track_difficulty)
@@ -252,32 +222,6 @@ func _sync_tool_mode_signal() -> void:
 		connected_tool_scene.tool_mode_changed.connect(_refresh_contextual_visibility)
 	if connected_tool_scene and !connected_tool_scene.track_structure_changed.is_connected(selection_updated):
 		connected_tool_scene.track_structure_changed.connect(selection_updated)
-
-func _hide_spiral_curve_editors() -> void:
-	spiral_radius_label.visible = false
-	spiral_curve_radius.visible = false
-	spiral_height_label.visible = false
-	spiral_curve_height.visible = false
-	spiral_twist_label.visible = false
-	spiral_curve_twist.visible = false
-	spiral_scale_x_label.visible = false
-	spiral_curve_scale_x.visible = false
-	spiral_scale_y_label.visible = false
-	spiral_curve_scale_y.visible = false
-
-func _hide_modulation_curve_editors() -> void:
-	mod_effect_label.visible = false
-	mod_effect_spacer.visible = false
-	mod_curve_effect.visible = false
-	mod_height_label.visible = false
-	mod_height_spacer.visible = false
-	mod_curve_height.visible = false
-
-func _hide_embed_curve_editors() -> void:
-	embed_left_spacer.visible = false
-	embed_curve_left.visible = false
-	embed_right_spacer.visible = false
-	embed_curve_right.visible = false
 
 func _is_spiral_path(path : Node) -> bool:
 	if !path:
@@ -522,22 +466,6 @@ func _refresh_spiral_controls() -> void:
 	spiral_axis_x.set_value_no_signal(axis.x)
 	spiral_axis_y.set_value_no_signal(axis.y)
 	spiral_axis_z.set_value_no_signal(axis.z)
-	var radius_curve : Resource = current_path.get("radius_curve")
-	var height_curve : Resource = current_path.get("height_curve")
-	var twist_curve : Resource = current_path.get("twist_curve")
-	var scale_x_curve : Resource = current_path.get("scale_x_curve")
-	var scale_y_curve : Resource = current_path.get("scale_y_curve")
-	if spiral_curve_radius.associated_curve != radius_curve:
-		spiral_curve_radius.associated_curve = radius_curve
-	if spiral_curve_height.associated_curve != height_curve:
-		spiral_curve_height.associated_curve = height_curve
-	if spiral_curve_twist.associated_curve != twist_curve:
-		spiral_curve_twist.associated_curve = twist_curve
-	if spiral_curve_scale_x.associated_curve != scale_x_curve:
-		spiral_curve_scale_x.associated_curve = scale_x_curve
-	if spiral_curve_scale_y.associated_curve != scale_y_curve:
-		spiral_curve_scale_y.associated_curve = scale_y_curve
-	_hide_spiral_curve_editors()
 	updating_spiral_controls = false
 
 func _mark_spiral_dirty() -> void:
@@ -550,11 +478,6 @@ func update_spiral_values(_new_value : float) -> void:
 		return
 	current_path.set("spiral_degrees", spiral_degrees.value)
 	current_path.set("spiral_axis", Vector3(spiral_axis_x.value, spiral_axis_y.value, spiral_axis_z.value))
-	_mark_spiral_dirty()
-
-func update_spiral_curve() -> void:
-	if updating_spiral_controls:
-		return
 	_mark_spiral_dirty()
 
 var left_clicked := false
@@ -785,22 +708,15 @@ func refresh_modulations_and_embeds() -> void:
 	update_modulations_and_embeds()
 
 func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.selected, in_selected_embed : int = embed_dropdown.selected) -> void:
-	_hide_modulation_curve_editors()
 	if in_selected_mod == -1 or modulation_dropdown.item_count == 0:
 		pass
 	else:
-		var this_mod := current_path.road_shape.modulation_table[in_selected_mod]
-		mod_curve_effect.associated_curve = this_mod.modulation_effect
-		mod_curve_height.associated_curve = this_mod.modulation_height
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_modulation(current_path, in_selected_mod)
-	_hide_embed_curve_editors()
 	if in_selected_embed == -1 or embed_dropdown.item_count == 0:
 		pass
 	else:
 		var this_embed := current_path.road_shape.embed_table[in_selected_embed]
-		embed_curve_left.associated_curve = this_embed.left_boundary
-		embed_curve_right.associated_curve = this_embed.right_boundary
 		embed_type.selected = this_embed.embed_type
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_embed(current_path, in_selected_embed)
