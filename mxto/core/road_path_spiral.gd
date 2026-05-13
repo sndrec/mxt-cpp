@@ -54,7 +54,7 @@ func _ensure_curve(curve_name : String, start_value : float, end_value : float) 
 	return curve
 
 func _ensure_spiral_curves() -> void:
-	_ensure_curve("radius_curve", 50.0, 100.0)
+	_ensure_curve("radius_curve", 250.0, 250.0)
 	_ensure_curve("height_curve", 0.0, 0.0)
 	_ensure_curve("twist_curve", 0.0, 0.0)
 	_ensure_curve("scale_x_curve", 25.0, 25.0)
