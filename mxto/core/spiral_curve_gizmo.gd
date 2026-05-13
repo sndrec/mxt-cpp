@@ -29,10 +29,10 @@ const VISUAL_OFFSET := 8.0
 const TWIST_VISUAL_OFFSET := VISUAL_OFFSET * 0.5
 const TANGENT_VISUAL_SPAN := 16.0
 const AXIS_POLE_LENGTH := 160.0
-const AXIS_HANDLE_OFFSET := 80.0
 const ARROW_LENGTH := 18.0
 const KEY_ARROW_HEAD_LENGTH := 6.0
 const KEY_ARROW_HEAD_WIDTH := 4.0
+const AXIS_POLE_HIT_RADIUS := 6.0
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
@@ -52,6 +52,7 @@ var cube_handle_mesh := BoxMesh.new()
 var cube_handle_shape := BoxShape3D.new()
 var point_handle_mesh := SphereMesh.new()
 var point_handle_shape := SphereShape3D.new()
+var axis_handle_shape := CapsuleShape3D.new()
 var tangent_handle_mesh := SphereMesh.new()
 var tangent_handle_shape := SphereShape3D.new()
 var arrow_handle_mesh := ArrayMesh.new()
@@ -75,6 +76,8 @@ func _ready() -> void:
 	point_handle_mesh.radius = HANDLE_RADIUS
 	point_handle_mesh.height = HANDLE_RADIUS * 2.0
 	point_handle_shape.radius = HANDLE_RADIUS
+	axis_handle_shape.radius = AXIS_POLE_HIT_RADIUS
+	axis_handle_shape.height = AXIS_POLE_LENGTH * 2.0
 	tangent_handle_mesh.radius = TANGENT_HANDLE_RADIUS
 	tangent_handle_mesh.height = TANGENT_HANDLE_RADIUS * 2.0
 	tangent_handle_shape.radius = TANGENT_HANDLE_RADIUS
@@ -185,7 +188,7 @@ func _axis_pole_center() -> Vector3:
 	var transform := _axis_transform()
 	var axis := _spiral_axis_world()
 	var z := transform.basis.z.normalized()
-	var center_dir := z.cross(axis)
+	var center_dir := axis.cross(z)
 	if center_dir.length_squared() <= 0.00001:
 		center_dir = transform.basis.x.normalized()
 	else:
@@ -195,7 +198,7 @@ func _axis_pole_center() -> Vector3:
 	return transform.origin + center_dir * radius
 
 func _axis_handle_position() -> Vector3:
-	return _axis_pole_center() + _spiral_axis_world() * AXIS_HANDLE_OFFSET
+	return _axis_pole_center()
 
 func _point_sides(kind : int) -> Array[float]:
 	if kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y or kind == CurveKind.RADIUS or kind == CurveKind.HEIGHT:
@@ -443,7 +446,13 @@ func _configure_handle(handle_id : int) -> void:
 	var mesh_instance := handle_mesh_instances[handle_id]
 	mesh_instance.visible = _record_mesh_visible(record)
 	collision.disabled = _record_is_key_point(record) and !_record_key_is_selected(record)
-	if _record_wants_cube(record):
+	if int(record["kind"]) == HandleKind.AXIS_POLE:
+		if handle_shape_keys[handle_id] == "axis_pole":
+			return
+		handle_shape_keys[handle_id] = "axis_pole"
+		collision.shape = axis_handle_shape
+		mesh_instance.mesh = null
+	elif _record_wants_cube(record):
 		if handle_shape_keys[handle_id] == "cube":
 			return
 		handle_shape_keys[handle_id] = "cube"
@@ -511,6 +520,8 @@ func _basis_from_y_axis(axis : Vector3) -> Basis:
 
 func _handle_basis(handle_id : int) -> Basis:
 	var record := handle_records[handle_id]
+	if int(record["kind"]) == HandleKind.AXIS_POLE:
+		return _basis_from_y_axis(_spiral_axis_world())
 	if !_record_wants_arrow(record):
 		return Basis.IDENTITY
 	var entry := curve_entries[int(record["entry"])]
@@ -530,6 +541,12 @@ func _set_selection_colliders_enabled(enabled : bool) -> void:
 func _selection_handle_from_collider(collider : Object) -> int:
 	for i in selection_bodies.size():
 		if collider == selection_bodies[i]:
+			return i
+	return -1
+
+func _handle_from_collider(collider : Object) -> int:
+	for i in handles.size():
+		if collider == handles[i]:
 			return i
 	return -1
 
@@ -777,11 +794,20 @@ func _hovered_handle(cam : Camera3D) -> int:
 	var scene := FZGlobal.editing_scene
 	if scene and scene.mouse_over_editor_ui():
 		return -1
-	if mouse_cast and mouse_cast.is_colliding():
-		var collider := mouse_cast.get_collider()
-		for i in handles.size():
-			if collider == handles[i]:
-				return i
+	if mouse_cast:
+		mouse_cast.clear_exceptions()
+		mouse_cast.force_raycast_update()
+		while mouse_cast.is_colliding():
+			var active_handle := _handle_from_collider(mouse_cast.get_collider())
+			if active_handle != -1:
+				mouse_cast.clear_exceptions()
+				return active_handle
+			var collision_object := mouse_cast.get_collider() as CollisionObject3D
+			if !collision_object:
+				break
+			mouse_cast.add_exception(collision_object)
+			mouse_cast.force_raycast_update()
+		mouse_cast.clear_exceptions()
 	if scene:
 		var picker := scene.mouse_picker_cast
 		picker.clear_exceptions()
@@ -855,12 +881,21 @@ func _begin_drag(handle_id : int, cam : Camera3D, ray_dir : Vector3) -> bool:
 		var hit = plane.intersects_ray(cam.global_position, ray_dir)
 		if !(hit is Vector3):
 			return false
+		var local_z := Vector3(0.0, 0.0, 1.0)
+		var local_center_dir := axis_transform.basis.inverse() * (_axis_pole_center() - axis_transform.origin)
+		local_center_dir.z = 0.0
+		var local_grab_dir : Vector3 = axis_transform.basis.inverse() * (hit - axis_transform.origin)
+		local_grab_dir.z = 0.0
+		if local_center_dir.length_squared() <= 0.00001 or local_grab_dir.length_squared() <= 0.00001:
+			return false
+		var grab_to_center_angle := local_grab_dir.normalized().signed_angle_to(local_center_dir.normalized(), local_z)
 		drag_snapshot = {
 			"record": record.duplicate(),
 			"mode": "axis",
 			"plane": plane,
 			"axis_origin": axis_transform.origin,
 			"axis_basis_inverse": axis_transform.basis.inverse(),
+			"grab_to_center_angle": grab_to_center_angle,
 		}
 		return true
 	var entry := curve_entries[int(record["entry"])]
@@ -918,11 +953,16 @@ func _apply_axis_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 		return
 	var origin : Vector3 = drag_snapshot["axis_origin"]
 	var basis_inverse : Basis = drag_snapshot["axis_basis_inverse"]
-	var local_axis : Vector3 = basis_inverse * (hit - origin)
-	local_axis.z = 0.0
+	var local_center_dir : Vector3 = basis_inverse * (hit - origin)
+	local_center_dir.z = 0.0
+	if local_center_dir.length_squared() <= 0.00001:
+		return
+	var local_z := Vector3(0.0, 0.0, 1.0)
+	local_center_dir = Basis(local_z, float(drag_snapshot["grab_to_center_angle"])) * local_center_dir.normalized()
+	var local_axis := local_z.cross(local_center_dir).normalized()
 	if local_axis.length_squared() <= 0.00001:
 		return
-	target_path.set("spiral_axis", local_axis.normalized())
+	target_path.set("spiral_axis", local_axis)
 	_update_mesh(false)
 
 func _apply_line_drag(cam : Camera3D, ray_dir : Vector3) -> void:
