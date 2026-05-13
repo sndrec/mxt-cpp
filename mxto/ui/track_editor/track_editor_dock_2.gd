@@ -110,6 +110,7 @@ var updating_object_controls := false
 var updating_road_shape_controls := false
 var updating_road_uv_controls := false
 var updating_embed_controls := false
+var transform_clipboard_cp_scale := Vector3.ONE
 
 func _ensure_cross_section_visual() -> void:
 	if cross_section_mesh_instance:
@@ -360,12 +361,20 @@ func copy_transform() -> void:
 	if !selected:
 		return
 	transform_clipboard = selected.global_transform
+	if selected is LineHandle:
+		transform_clipboard_cp_scale = selected.cp_scale
+	elif selected is BezierHandle:
+		transform_clipboard_cp_scale = selected.cp_scale
 
 func paste_transform() -> void:
 	var selected := get_active_node()
 	if !selected:
 		return
 	selected.global_transform = transform_clipboard
+	if selected is LineHandle:
+		selected.cp_scale = transform_clipboard_cp_scale
+	elif selected is BezierHandle:
+		selected.cp_scale = transform_clipboard_cp_scale
 
 func create_simple_mesh_layout() -> void:
 	if !current_path:
