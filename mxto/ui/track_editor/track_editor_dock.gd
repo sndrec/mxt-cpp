@@ -16,6 +16,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var edit_rails_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditRails
 @onready var edit_modulation_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditModulation
 @onready var edit_shape_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditShape
+@onready var edit_mesh_layout_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditMeshLayout
 @onready var edit_spiral_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditSpiral
 @onready var edit_checkpoints_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditCheckpoints
 @onready var recharge_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Recharge
@@ -56,6 +57,7 @@ func _ready():
 	edit_rails_button.pressed.connect(_on_edit_rails_pressed)
 	edit_modulation_button.pressed.connect(_on_edit_modulation_pressed)
 	edit_shape_button.pressed.connect(_on_edit_shape_pressed)
+	edit_mesh_layout_button.pressed.connect(_on_edit_mesh_layout_pressed)
 	edit_spiral_button.pressed.connect(_on_edit_spiral_pressed)
 	edit_checkpoints_button.pressed.connect(_on_edit_checkpoints_pressed)
 	recharge_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.RECHARGE))
@@ -111,6 +113,8 @@ func select_node(in_node : Node) -> void:
 			track_scene.set_active_modulation(in_node, _ensure_active_modulation(in_node))
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SHAPE:
 			track_scene.set_active_shape_path(in_node)
+		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT:
+			track_scene.set_active_mesh_layout_path(in_node)
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SPIRAL:
 			track_scene.set_active_spiral_path(in_node)
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS:
@@ -200,6 +204,21 @@ func _on_edit_shape_pressed() -> void:
 		return
 	track_scene.set_active_shape_path(selected)
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SHAPE)
+	select_node(selected)
+	selected._try_generate_mesh()
+	main_buttons.visible = true
+	new_track_segment_buttons.visible = false
+	new_track_segment_type_buttons.visible = false
+	new_embed_buttons.visible = false
+	new_track_object_buttons.visible = false
+	bezier_buttons.visible = false
+
+func _on_edit_mesh_layout_pressed() -> void:
+	var selected := get_active_path()
+	if !selected:
+		return
+	track_scene.set_active_mesh_layout_path(selected)
+	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT)
 	select_node(selected)
 	selected._try_generate_mesh()
 	main_buttons.visible = true

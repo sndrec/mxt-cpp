@@ -85,8 +85,10 @@ var current_path : RoadPath
 
 @onready var copy_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/HBoxContainer/CopyMeshLayout
 @onready var paste_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/HBoxContainer/PasteMeshLayout
+@onready var mesh_layout_clipboard_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/HBoxContainer
 @onready var create_mesh_layout_button: Button = $Control/TabContainer/Info/VBoxContainer/HBoxContainer2/CreateMeshLayout
 @onready var mesh_layout_count: SpinBox = $Control/TabContainer/Info/VBoxContainer/HBoxContainer2/MeshLayoutCount
+@onready var mesh_layout_create_row: HBoxContainer = $Control/TabContainer/Info/VBoxContainer/HBoxContainer2
 
 @onready var bez_pos_x: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer/HandlePosX
 @onready var bez_pos_y: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2/HandlePosY
@@ -323,7 +325,7 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var mode := scene.tool_mode if scene else TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var selected := get_active_node()
 	var has_path := current_path != null
-	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
+	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
 	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SPIRAL and _is_spiral_path(current_path)
 	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
 	var show_object := _active_track_trigger() != null and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
@@ -331,11 +333,14 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.ADD_EMBED
 	_apply_context_tabs(show_info, show_spiral, show_track, show_object, show_modulation, show_embeds)
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
+	var show_mesh_layout_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT
 	var show_shape_type_controls := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
 	var show_cross_section_controls := show_info and !show_checkpoint_controls
 	road_shape_row.visible = show_shape_type_controls
 	checkpoint_count_row.visible = show_checkpoint_controls
 	cross_section_controls.visible = show_cross_section_controls
+	mesh_layout_clipboard_row.visible = show_mesh_layout_controls
+	mesh_layout_create_row.visible = show_mesh_layout_controls
 	draw_mesh.visible = has_path
 	draw_curve.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	draw_handles.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT

@@ -19,6 +19,7 @@ enum ToolMode {
 	EDIT_RAILS,
 	EDIT_MODULATION,
 	EDIT_SHAPE,
+	EDIT_MESH_LAYOUT,
 	EDIT_SPIRAL,
 	EDIT_CHECKPOINTS,
 	ADD_OBJECT,
@@ -97,6 +98,9 @@ func tool_mode_allows_modulation_gizmos() -> bool:
 func tool_mode_allows_shape_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_SHAPE
 
+func tool_mode_allows_mesh_layout_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_MESH_LAYOUT
+
 func tool_mode_allows_spiral_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_SPIRAL
 
@@ -122,6 +126,8 @@ func set_active_shape_path(in_path : RoadPath) -> void:
 	if !shape_curve_gizmo:
 		return
 	shape_curve_gizmo.set_target_path(in_path)
+
+func set_active_mesh_layout_path(in_path : RoadPath) -> void:
 	if mesh_layout_gizmo:
 		mesh_layout_gizmo.set_target_path(in_path)
 

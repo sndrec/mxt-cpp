@@ -140,6 +140,7 @@ default_color = Color(0.87, 0.81519, 0.3219, 1)
 antialiased = true
 
 [node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+visible = false
 layout_mode = 2
 
 [node name="CopyMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/HBoxContainer"]
@@ -153,6 +154,7 @@ size_flags_horizontal = 3
 text = "Paste Mesh Layout"
 
 [node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+visible = false
 layout_mode = 2
 
 [node name="CreateMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/HBoxContainer2"]

@@ -210,7 +210,7 @@ func _update_mesh(force_collision := false) -> void:
 
 func _process(delta : float) -> void:
 	var scene := FZGlobal.editing_scene
-	if !scene or !scene.tool_mode_allows_shape_gizmos() or !is_instance_valid(target_path):
+	if !scene or !scene.tool_mode_allows_mesh_layout_gizmos() or !is_instance_valid(target_path):
 		if scene:
 			scene.end_pointer_action(self)
 		visible = false
