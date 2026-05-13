@@ -1271,13 +1271,16 @@ float TrackEditorCurve::rebuild_spiral_from_packets(
 	const Vector3 axis = spiral_axis_or_up(p_spiral_axis);
 	const Transform3D raw_start = canonical_spiral_transform(axis, spiral_radians, p_radius_curve, p_height_curve, p_twist_curve, 0.0f);
 	const Transform3D correction = p_axis_transform * raw_start.affine_inverse();
+	const float start_height = curve_packet_sample(p_height_curve, 0, 0.0f, 0.0f);
+	const Vector3 world_height_axis = normalized_or(p_axis_transform.basis.xform(axis), Vector3(0.0, 1.0, 0.0));
 	control_points.resize(point_count * CONTROL_STRIDE);
 	curve_mode = CURVE_MODE_LINEAR;
 	segment_length = 0.0f;
 	Vector3 prev;
 	for (int i = 0; i < point_count; ++i) {
 		const float t = (float)i / (float)subdivisions;
-		const Transform3D transform = correction * canonical_spiral_transform(axis, spiral_radians, p_radius_curve, p_height_curve, p_twist_curve, t);
+		Transform3D transform = correction * canonical_spiral_transform(axis, spiral_radians, p_radius_curve, p_height_curve, p_twist_curve, t);
+		transform.origin += world_height_axis * start_height;
 		const Vector3 scale(
 			curve_packet_sample(p_scale_x_curve, 0, t, 25.0f),
 			curve_packet_sample(p_scale_y_curve, 0, t, 25.0f),
