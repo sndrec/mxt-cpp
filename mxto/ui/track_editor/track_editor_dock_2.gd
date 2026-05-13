@@ -42,6 +42,7 @@ var current_path : RoadPath
 
 @onready var object_panel: ScrollContainer = $Control/TabContainer/Object
 @onready var object_type: OptionButton = $Control/TabContainer/Object/VBoxContainer/ObjectType
+@onready var remove_track_object: Button = $Control/TabContainer/Object/VBoxContainer/RemoveTrackObject
 @onready var object_tx: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow/ObjectTX
 @onready var object_ty: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow/ObjectTY
 @onready var object_yaw: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectYaw
@@ -180,6 +181,7 @@ func _ready():
 	track_description_edit.text_changed.connect(update_track_description)
 	track_difficulty_edit.value_changed.connect(update_track_difficulty)
 	object_type.item_selected.connect(update_track_object_type)
+	remove_track_object.pressed.connect(remove_track_object_func)
 	object_tx.value_changed.connect(update_track_object_values)
 	object_ty.value_changed.connect(update_track_object_values)
 	object_yaw.value_changed.connect(update_track_object_values)
@@ -487,6 +489,15 @@ func update_track_object_type(new_type : int) -> void:
 		return
 	trigger.set("trigger_type", new_type)
 	trigger.call("refresh_from_attachment")
+
+func remove_track_object_func() -> void:
+	var trigger := _active_track_trigger()
+	if !trigger:
+		return
+	FZGlobal.deselect_all()
+	trigger.queue_free()
+	if FZGlobal.editing_scene:
+		FZGlobal.editing_scene.track_structure_changed.emit()
 
 func update_track_object_values(_new_value : float) -> void:
 	if updating_object_controls:

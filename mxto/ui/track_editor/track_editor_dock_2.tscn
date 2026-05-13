@@ -321,6 +321,11 @@ popup/item_1/id = 1
 popup/item_2/text = "Mine"
 popup/item_2/id = 2
 
+[node name="RemoveTrackObject" type="Button" parent="Control/TabContainer/Object/VBoxContainer"]
+modulate = Color(1, 0.37, 0.37, 1)
+layout_mode = 2
+text = "Remove"
+
 [node name="ObjectSurfaceLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
 layout_mode = 2
 text = "Surface Position"
