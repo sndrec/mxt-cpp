@@ -195,8 +195,8 @@ func _ready():
 	remove_mod_button.pressed.connect(remove_modulation)
 	new_embed.pressed.connect(add_new_embed)
 	remove_embed.pressed.connect(remove_embed_func)
-	embed_start.value_changed.connect(update_embed_values)
-	embed_end.value_changed.connect(update_embed_values)
+	embed_start.value_changed.connect(update_embed_start_value)
+	embed_end.value_changed.connect(update_embed_end_value)
 	road_shape_type.item_selected.connect(update_road_shape_type)
 	road_uv_multiplier.value_changed.connect(update_road_uv_multiplier)
 	ground_color.color_changed.connect(update_ground_color)
@@ -379,21 +379,32 @@ func update_embed_type(in_type : int):
 	embed.embed_type = in_type
 	update_track_visuals()
 
-func update_embed_values(new_value):
+func _refresh_embed_edge_controls(embed : RoadEmbed) -> void:
+	updating_embed_controls = true
+	embed_start.set_value_no_signal(embed.road_start)
+	embed_end.set_value_no_signal(embed.road_end)
+	updating_embed_controls = false
+
+func update_embed_start_value(new_value : float) -> void:
 	if updating_embed_controls:
 		return
 	var embed := _selected_embed()
 	if !embed:
 		return
-	var start_value := minf(embed_start.value, embed_end.value - 0.01)
-	var end_value := maxf(embed_end.value, start_value + 0.01)
-	embed.road_start = clampf(start_value, 0.0, 0.99)
-	embed.road_end = clampf(end_value, embed.road_start + 0.01, 1.0)
+	embed.road_start = clampf(new_value, 0.0, embed.road_end - 0.01)
 	_sync_embed_curve_edges(embed)
-	updating_embed_controls = true
-	embed_start.set_value_no_signal(embed.road_start)
-	embed_end.set_value_no_signal(embed.road_end)
-	updating_embed_controls = false
+	_refresh_embed_edge_controls(embed)
+	update_track_visuals()
+
+func update_embed_end_value(new_value : float) -> void:
+	if updating_embed_controls:
+		return
+	var embed := _selected_embed()
+	if !embed:
+		return
+	embed.road_end = clampf(new_value, embed.road_start + 0.01, 1.0)
+	_sync_embed_curve_edges(embed)
+	_refresh_embed_edge_controls(embed)
 	update_track_visuals()
 
 func copy_mesh_layout() -> void:
