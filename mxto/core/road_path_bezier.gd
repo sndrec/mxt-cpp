@@ -369,6 +369,8 @@ func _try_delete_selected_control_point(scene : TrackEditingScene, point_count :
 	var delete_now := Input.is_key_pressed(KEY_DELETE)
 	var just_delete := delete_now and !delete_pressed
 	delete_pressed = delete_now
+	if scene.mouse_over_editor_ui():
+		return false
 	if !just_delete or scene.pointer_action_busy_for(self):
 		return false
 	var selected := FZGlobal.active_node as BezierHandle

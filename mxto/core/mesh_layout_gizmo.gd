@@ -192,6 +192,9 @@ func _try_delete_hovered_point(hovered : int) -> bool:
 	var delete_now := Input.is_key_pressed(KEY_DELETE)
 	var just_delete := delete_now and !delete_pressed
 	delete_pressed = delete_now
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_over_editor_ui():
+		return false
 	if !just_delete or hovered < 0:
 		return false
 	if hovered <= 0 or hovered >= target_path.horizontal_road_mesh_segments.size() - 1:

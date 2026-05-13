@@ -304,6 +304,9 @@ func _try_delete_hovered_point(hovered : int) -> bool:
 	var delete_now := Input.is_key_pressed(KEY_DELETE)
 	var just_delete := delete_now and !delete_pressed
 	delete_pressed = delete_now
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_over_editor_ui():
+		return false
 	if !just_delete or hovered < 0:
 		return false
 	var curve : Resource = curve_entries[handle_curve_indices[hovered]]["curve"]

@@ -367,6 +367,9 @@ func _try_delete_hovered_checkpoint(hovered : int) -> bool:
 	var delete_now := Input.is_key_pressed(KEY_DELETE)
 	var just_delete := delete_now and !delete_pressed
 	delete_pressed = delete_now
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_over_editor_ui():
+		return false
 	if !just_delete or hovered < 0:
 		return false
 	if target_path.num_checkpoints <= 0:
@@ -382,6 +385,9 @@ func _try_delete_hovered_link(hovered_link : int) -> bool:
 	var delete_now := Input.is_key_pressed(KEY_DELETE)
 	var just_delete := delete_now and !delete_pressed
 	delete_pressed = delete_now
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_over_editor_ui():
+		return false
 	if !just_delete:
 		return false
 	_clear_link_side(hovered_link)
