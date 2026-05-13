@@ -316,7 +316,7 @@ func _control_interval_for_time(points : PackedFloat32Array, point_count : int, 
 	return point_count - 2
 
 func _try_alt_add_control_point(scene : TrackEditingScene, points : PackedFloat32Array, point_count : int) -> bool:
-	if !Input.is_action_pressed("Alt") or scene.pointer_action_busy_for(self):
+	if !Input.is_action_pressed("Alt") or scene.pointer_action_busy_for(self) or scene.mouse_over_editor_ui():
 		_update_add_point_preview(Vector3.ZERO, false)
 		return false
 	var pick := _control_point_insert_pick(FZGlobal.current_cam)
