@@ -497,10 +497,12 @@ text = "Draw Mesh"
 
 [node name="DrawCurve" type="CheckBox" parent="Control/VBoxContainer"]
 layout_mode = 2
+button_pressed = true
 text = "Draw Curve"
 
 [node name="DrawHandles" type="CheckBox" parent="Control/VBoxContainer"]
 layout_mode = 2
+button_pressed = true
 text = "Draw Handles"
 
 [node name="DataEditor" type="Control" parent="Control/VBoxContainer"]

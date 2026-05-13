@@ -537,8 +537,11 @@ func _process(delta):
 		point_count = native_curve.get_control_point_count()
 
 	var control_points : PackedFloat32Array = native_curve.get_control_points()
-	if scene and scene.tool_mode_allows_control_point_gizmos() and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
-		_update_centerline_visual()
+	if scene and scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
+		if scene.tool_mode_allows_control_point_curve():
+			_update_centerline_visual()
+		elif centerline_mesh_instance:
+			centerline_mesh_instance.visible = false
 		if _try_delete_selected_control_point(scene, point_count):
 			return
 		if _try_alt_add_control_point(scene, control_points, point_count):

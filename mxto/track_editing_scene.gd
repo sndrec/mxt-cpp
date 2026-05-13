@@ -56,6 +56,8 @@ var desired_embed_type := RoadEmbed.EmbedType.RECHARGE
 var desired_trigger_type := 0
 var pending_embed_add := false
 var editor_cross_section_t := 0.5
+var draw_segment_curve := true
+var draw_segment_handles := true
 var pointer_action_owner : Node
 var embed_gizmo : Node3D
 var rail_gizmo : Node3D
@@ -85,7 +87,10 @@ func tool_mode_allows_segment_add_gizmo() -> bool:
 	return tool_mode == ToolMode.ADD_SEGMENT
 
 func tool_mode_allows_control_point_gizmos() -> bool:
-	return tool_mode == ToolMode.EDIT_SEGMENT
+	return tool_mode == ToolMode.EDIT_SEGMENT and draw_segment_handles
+
+func tool_mode_allows_control_point_curve() -> bool:
+	return tool_mode == ToolMode.EDIT_SEGMENT and draw_segment_curve
 
 func tool_mode_allows_embed_gizmos() -> bool:
 	return tool_mode == ToolMode.EDIT_EMBED

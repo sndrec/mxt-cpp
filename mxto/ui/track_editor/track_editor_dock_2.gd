@@ -566,6 +566,8 @@ func _process(delta: float) -> void:
 		embeds.get_v_scroll_bar().custom_minimum_size.x = 24
 	if FZGlobal.editing_scene:
 		FZGlobal.editing_scene.editor_cross_section_t = track_cross_section_slider.value
+		FZGlobal.editing_scene.draw_segment_curve = draw_curve.button_pressed
+		FZGlobal.editing_scene.draw_segment_handles = draw_handles.button_pressed
 	if !track_root:
 		track_root = get_runtime_track_root()
 	
