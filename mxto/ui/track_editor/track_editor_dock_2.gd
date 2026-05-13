@@ -209,12 +209,12 @@ func _ready():
 	spiral_axis_x.value_changed.connect(update_spiral_values)
 	spiral_axis_y.value_changed.connect(update_spiral_values)
 	spiral_axis_z.value_changed.connect(update_spiral_values)
-	left_rail_height.value_changed.connect(update_rail_values)
-	left_rail_start.value_changed.connect(update_rail_values)
-	left_rail_end.value_changed.connect(update_rail_values)
-	right_rail_height.value_changed.connect(update_rail_values)
-	right_rail_start.value_changed.connect(update_rail_values)
-	right_rail_end.value_changed.connect(update_rail_values)
+	left_rail_height.value_changed.connect(update_left_rail_height)
+	left_rail_start.value_changed.connect(update_left_rail_start)
+	left_rail_end.value_changed.connect(update_left_rail_end)
+	right_rail_height.value_changed.connect(update_right_rail_height)
+	right_rail_start.value_changed.connect(update_right_rail_start)
+	right_rail_end.value_changed.connect(update_right_rail_end)
 	rail_mode_color.color_changed.connect(update_rail_color)
 	track_name_edit.text_changed.connect(update_track_name)
 	track_description_edit.text_changed.connect(update_track_description)
@@ -552,23 +552,40 @@ func _refresh_rail_controls() -> void:
 	right_rail_end.set_value_no_signal(current_path.right_rail_end)
 	updating_rail_controls = false
 
-func update_rail_values(_new_value : float) -> void:
+func update_left_rail_height(new_value : float) -> void:
 	if updating_rail_controls or !current_path:
 		return
-	var left_start_value := clampf(left_rail_start.value, 0.0, 1.0)
-	var left_end_value := clampf(left_rail_end.value, 0.0, 1.0)
-	if left_end_value < left_start_value:
-		left_end_value = left_start_value
-	var right_start_value := clampf(right_rail_start.value, 0.0, 1.0)
-	var right_end_value := clampf(right_rail_end.value, 0.0, 1.0)
-	if right_end_value < right_start_value:
-		right_end_value = right_start_value
-	current_path.left_rail_height = maxf(0.0, left_rail_height.value)
-	current_path.left_rail_start = left_start_value
-	current_path.left_rail_end = left_end_value
-	current_path.right_rail_height = maxf(0.0, right_rail_height.value)
-	current_path.right_rail_start = right_start_value
-	current_path.right_rail_end = right_end_value
+	current_path.left_rail_height = maxf(0.0, new_value)
+	update_track_visuals()
+
+func update_left_rail_start(new_value : float) -> void:
+	if updating_rail_controls or !current_path:
+		return
+	current_path.left_rail_start = clampf(new_value, 0.0, current_path.left_rail_end)
+	update_track_visuals()
+
+func update_left_rail_end(new_value : float) -> void:
+	if updating_rail_controls or !current_path:
+		return
+	current_path.left_rail_end = clampf(new_value, current_path.left_rail_start, 1.0)
+	update_track_visuals()
+
+func update_right_rail_height(new_value : float) -> void:
+	if updating_rail_controls or !current_path:
+		return
+	current_path.right_rail_height = maxf(0.0, new_value)
+	update_track_visuals()
+
+func update_right_rail_start(new_value : float) -> void:
+	if updating_rail_controls or !current_path:
+		return
+	current_path.right_rail_start = clampf(new_value, 0.0, current_path.right_rail_end)
+	update_track_visuals()
+
+func update_right_rail_end(new_value : float) -> void:
+	if updating_rail_controls or !current_path:
+		return
+	current_path.right_rail_end = clampf(new_value, current_path.right_rail_start, 1.0)
 	update_track_visuals()
 
 func _refresh_mesh_subdivision_controls() -> void:
