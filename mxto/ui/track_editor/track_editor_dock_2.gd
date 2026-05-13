@@ -289,7 +289,9 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	draw_mesh.visible = has_path
 	draw_curve.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	draw_handles.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
-	var show_handle_data := mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and (selected is BezierHandle or selected is Marker3D)
+	var show_bezier_handle_data := mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and selected is BezierHandle
+	var show_line_handle_data := selected is Marker3D and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SPIRAL)
+	var show_handle_data := show_bezier_handle_data or show_line_handle_data
 	bezier_handle_data.visible = show_handle_data and selected is BezierHandle
 	line_handle_data.visible = show_handle_data and selected is Marker3D
 
