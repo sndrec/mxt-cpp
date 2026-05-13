@@ -35,6 +35,8 @@ const KEY_ARROW_HEAD_WIDTH := 4.0
 const AXIS_POLE_HIT_RADIUS := 6.0
 const AXIS_POLE_VISUAL_RADIUS := 2.5
 const GIZMO_LINE_PIXEL_WIDTH := 4.0
+const TWIST_TANGENT_HIT_RADIUS := 6.0
+const TWIST_TANGENT_COLLISION_STEPS := 8
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
@@ -67,6 +69,7 @@ var handles : Array[StaticBody3D] = []
 var handle_materials : Array[StandardMaterial3D] = []
 var handle_mesh_instances : Array[MeshInstance3D] = []
 var handle_collision_shapes : Array[CollisionShape3D] = []
+var handle_extra_collision_shapes : Array[Array] = []
 var handle_shape_keys : Array[String] = []
 var selection_records : Array[Dictionary] = []
 var selection_bodies : Array[StaticBody3D] = []
@@ -312,7 +315,7 @@ func _tangent_handle_position(record : Dictionary) -> Vector3:
 	var point_frame := _sample_frame(point.x)
 	match int(entry["kind"]):
 		CurveKind.TWIST:
-			return frame["center"] + frame["x"] * _twist_radius(point.x)
+			return frame["center"]
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
 			return frame["center"] + _entry_axis(entry, frame) * side * (tangent_value + VISUAL_OFFSET)
 		_:
@@ -345,9 +348,22 @@ func _record_wants_arrow(record : Dictionary) -> bool:
 	var entry := curve_entries[int(record["entry"])]
 	return int(entry["kind"]) == CurveKind.RADIUS or int(entry["kind"]) == CurveKind.HEIGHT
 
-func _entry_uses_side_drag(entry : Dictionary) -> bool:
-	var kind := int(entry["kind"])
-	return kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y
+func _record_wants_twist_tangent(record : Dictionary) -> bool:
+	if int(record["kind"]) != HandleKind.LEFT_TANGENT and int(record["kind"]) != HandleKind.RIGHT_TANGENT:
+		return false
+	if !record.has("entry"):
+		return false
+	var entry := curve_entries[int(record["entry"])]
+	return int(entry["kind"]) == CurveKind.TWIST
+
+func _entry_drag_scale(entry : Dictionary, record : Dictionary) -> float:
+	match int(entry["kind"]):
+		CurveKind.RADIUS:
+			return -1.0
+		CurveKind.SCALE_X, CurveKind.SCALE_Y:
+			return float(record.get("side", 1.0))
+		_:
+			return 1.0
 
 func _record_is_key_point(record : Dictionary) -> bool:
 	return int(record["kind"]) == HandleKind.POINT and record.has("entry") and record.has("point")
@@ -454,6 +470,7 @@ func _make_handle() -> StaticBody3D:
 	var collision := CollisionShape3D.new()
 	body.add_child(collision)
 	handle_collision_shapes.append(collision)
+	handle_extra_collision_shapes.append([])
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	handle_materials.append(material)
@@ -464,6 +481,26 @@ func _make_handle() -> StaticBody3D:
 	handle_shape_keys.append("")
 	add_child(body)
 	return body
+
+func _disable_extra_handle_collisions(handle_id : int) -> void:
+	for collision in handle_extra_collision_shapes[handle_id]:
+		collision.disabled = true
+
+func _ensure_extra_collision_count(handle_id : int, count : int) -> void:
+	var shapes : Array = handle_extra_collision_shapes[handle_id]
+	var body := handles[handle_id]
+	while shapes.size() < count:
+		var collision := CollisionShape3D.new()
+		var capsule := CapsuleShape3D.new()
+		capsule.radius = TWIST_TANGENT_HIT_RADIUS
+		capsule.height = TWIST_TANGENT_HIT_RADIUS * 2.0
+		collision.shape = capsule
+		body.add_child(collision)
+		shapes.append(collision)
+	for i in shapes.size():
+		var collision : CollisionShape3D = shapes[i]
+		collision.disabled = i >= count
+	handle_extra_collision_shapes[handle_id] = shapes
 
 func _make_selection_body() -> StaticBody3D:
 	var body := StaticBody3D.new()
@@ -487,6 +524,8 @@ func _configure_handle(handle_id : int) -> void:
 	var mesh_instance := handle_mesh_instances[handle_id]
 	mesh_instance.visible = _record_mesh_visible(record)
 	collision.disabled = _record_is_key_point(record) and !_record_key_is_selected(record)
+	collision.transform = Transform3D.IDENTITY
+	_disable_extra_handle_collisions(handle_id)
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
 		if handle_shape_keys[handle_id] == "axis_pole":
 			return
@@ -505,6 +544,12 @@ func _configure_handle(handle_id : int) -> void:
 		handle_shape_keys[handle_id] = "arrow"
 		collision.shape = point_handle_shape
 		mesh_instance.mesh = arrow_handle_mesh
+	elif _record_wants_twist_tangent(record):
+		if handle_shape_keys[handle_id] == "twist_tangent":
+			return
+		handle_shape_keys[handle_id] = "twist_tangent"
+		collision.shape = CapsuleShape3D.new()
+		mesh_instance.mesh = null
 	else:
 		var point_sized := int(record["kind"]) == HandleKind.POINT or int(record["kind"]) == HandleKind.AXIS_POLE
 		var key := "sphere_point" if point_sized else "sphere_tangent"
@@ -542,6 +587,7 @@ func _sync_handles() -> void:
 		handle_materials.pop_back()
 		handle_mesh_instances.pop_back()
 		handle_collision_shapes.pop_back()
+		handle_extra_collision_shapes.pop_back()
 		handle_shape_keys.pop_back()
 		handle.queue_free()
 	for i in handles.size():
@@ -558,6 +604,58 @@ func _basis_from_y_axis(axis : Vector3) -> Basis:
 	x_axis = x_axis.normalized()
 	var z_axis := x_axis.cross(y_axis).normalized()
 	return Basis(x_axis, y_axis, z_axis).orthonormalized()
+
+func _set_capsule_segment(collision : CollisionShape3D, a : Vector3, b : Vector3, radius : float) -> void:
+	var length := a.distance_to(b)
+	if length <= 0.001:
+		collision.disabled = true
+		return
+	var capsule := collision.shape as CapsuleShape3D
+	if !capsule:
+		capsule = CapsuleShape3D.new()
+		collision.shape = capsule
+	capsule.radius = radius
+	capsule.height = maxf(length, radius * 2.0)
+	collision.transform = Transform3D(_basis_from_y_axis(b - a), (a + b) * 0.5)
+	collision.disabled = false
+
+func _twist_tangent_arc_ranges() -> Array[Vector2]:
+	return [Vector2(PI * 0.75, PI * 1.25), Vector2(-PI * 0.25, PI * 0.25)]
+
+func _sync_twist_tangent_collision(handle_id : int) -> void:
+	var record := handle_records[handle_id]
+	if !_record_wants_twist_tangent(record):
+		return
+	var entry := curve_entries[int(record["entry"])]
+	var curve : Resource = entry["curve"]
+	var point_index := int(record["point"])
+	var point : Vector2 = curve.get_point_position(point_index)
+	var delta := _tangent_delta(curve, point_index, int(record["kind"]))
+	var tangent_t := clampf(point.x + delta, 0.0, 1.0)
+	var frame := _sample_frame(tangent_t)
+	var radius := _twist_radius(point.x)
+	var ranges := _twist_tangent_arc_ranges()
+	var segment_count := ranges.size() * TWIST_TANGENT_COLLISION_STEPS
+	_ensure_extra_collision_count(handle_id, max(0, segment_count - 1))
+	var segment_index := 0
+	for arc in ranges:
+		var previous : Vector3 = (frame["x"] * cos(arc.x) + frame["y"] * sin(arc.x)) * radius
+		for i in TWIST_TANGENT_COLLISION_STEPS:
+			var t := float(i + 1) / float(TWIST_TANGENT_COLLISION_STEPS)
+			var angle := lerpf(arc.x, arc.y, t)
+			var next : Vector3 = (frame["x"] * cos(angle) + frame["y"] * sin(angle)) * radius
+			var collision : CollisionShape3D = handle_collision_shapes[handle_id]
+			if segment_index > 0:
+				collision = handle_extra_collision_shapes[handle_id][segment_index - 1]
+			_set_capsule_segment(collision, previous, next, TWIST_TANGENT_HIT_RADIUS)
+			previous = next
+			segment_index += 1
+
+func _sync_handle_collision(handle_id : int) -> void:
+	_disable_extra_handle_collisions(handle_id)
+	if !_record_wants_twist_tangent(handle_records[handle_id]):
+		return
+	_sync_twist_tangent_collision(handle_id)
 
 func _handle_basis(handle_id : int) -> Basis:
 	var record := handle_records[handle_id]
@@ -812,10 +910,8 @@ func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side
 	match int(entry["kind"]):
 		CurveKind.TWIST:
 			var radius := _twist_radius(point.x)
-			var left_center : Vector3 = frame["center"] - frame["x"] * radius
-			var right_center : Vector3 = frame["center"] + frame["x"] * radius
-			_draw_gizmo_circle(left_center, frame["x"], frame["y"], radius, color, PI * 0.75, PI * 1.25, int(CIRCLE_STEPS / 4))
-			_draw_gizmo_circle(right_center, frame["x"], frame["y"], radius, color, -PI * 0.25, PI * 0.25, int(CIRCLE_STEPS / 4))
+			for arc in _twist_tangent_arc_ranges():
+				_draw_gizmo_circle(frame["center"], frame["x"], frame["y"], radius, color, arc.x, arc.y, int(CIRCLE_STEPS / 4))
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
 			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
 			var point_pos : Vector3 = point_frame["center"] + _entry_axis(entry, point_frame) * side * (_curve_value(curve, point_index) + VISUAL_OFFSET)
@@ -852,6 +948,7 @@ func _update_visuals() -> void:
 	for i in handles.size():
 		handles[i].global_position = _handle_position(i)
 		handles[i].global_basis = _handle_basis(i)
+		_sync_handle_collision(i)
 	outline_mesh.clear_surfaces()
 	gizmo_mesh.clear_surfaces()
 	if curve_entries.is_empty():
@@ -1053,8 +1150,7 @@ func _apply_line_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 		return
 	var axis : Vector3 = drag_snapshot["axis"]
 	var start_axis_point : Vector3 = drag_snapshot["start_axis_point"]
-	var side := float(drag_snapshot["side"]) if _entry_uses_side_drag(entry) else 1.0
-	var delta : float = (hit - start_axis_point).dot(axis) * side
+	var delta : float = (hit - start_axis_point).dot(axis) * _entry_drag_scale(entry, record)
 	var value := maxf(float(entry["min"]), float(drag_snapshot["start_value"]) + delta)
 	if int(record["kind"]) == HandleKind.POINT:
 		curve.set_point_value(point_index, value)
