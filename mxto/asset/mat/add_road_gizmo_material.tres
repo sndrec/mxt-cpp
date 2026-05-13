@@ -7,5 +7,6 @@
 render_priority = 0
 shader = ExtResource("1_6yl1a")
 shader_parameter/in_texture = ExtResource("2_6p7gd")
+shader_parameter/tint = Color(1, 1, 1, 1)
 shader_parameter/selected = false
 shader_parameter/clicked = false

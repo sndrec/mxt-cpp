@@ -12,6 +12,14 @@ var bezier_point_texture := preload("res://asset/tex/add_bezier_point.png")
 var active := true
 var pressed_on_gizmo := false
 
+func _segment_kind_tint(scene : TrackEditingScene) -> Color:
+	match scene.desired_segment_kind:
+		TrackEditingScene.SegmentKind.LINE:
+			return Color(0.45, 0.75, 1.0, 1.0)
+		TrackEditingScene.SegmentKind.SPIRAL:
+			return Color(1.0, 0.72, 0.28, 1.0)
+		_:
+			return Color(0.42, 1.0, 0.52, 1.0)
 
 func set_target_node(in_node : Node3D) -> void:
 	if is_instance_valid(in_node) and (in_node is RoadPath or in_node.get_parent() is RoadPath):
@@ -44,8 +52,10 @@ func _process(delta: float) -> void:
 	scale = Vector3(end_of_road.basis.x.length() * 2.0, end_of_road.basis.x.length() * 2.0, end_of_road.basis.x.length() * 2.0)
 	if target_node is RoadPathBezier and !(target_node is RoadPathLine) and Input.is_action_pressed("Alt"):
 		gizmo_material.set_shader_parameter("in_texture", bezier_point_texture)
+		gizmo_material.set_shader_parameter("tint", Color.WHITE)
 	else:
 		gizmo_material.set_shader_parameter("in_texture", road_segment_texture)
+		gizmo_material.set_shader_parameter("tint", _segment_kind_tint(scene))
 	if mousecast_wants_this_gizmo():
 		gizmo_material.set_shader_parameter("selected", true)
 	else:
