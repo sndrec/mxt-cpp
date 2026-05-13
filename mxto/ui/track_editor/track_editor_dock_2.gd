@@ -105,6 +105,7 @@ var updating_spiral_controls := false
 var updating_track_controls := false
 var updating_object_controls := false
 var updating_road_shape_controls := false
+var updating_embed_controls := false
 
 func _ensure_cross_section_visual() -> void:
 	if cross_section_mesh_instance:
@@ -292,18 +293,46 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	bezier_handle_data.visible = show_handle_data and selected is BezierHandle
 	line_handle_data.visible = show_handle_data and selected is Marker3D
 
-func update_embed_type(in_type : int):
+func _selected_embed() -> RoadEmbed:
 	if !current_path:
+		return null
+	var index := embed_dropdown.selected
+	if index < 0 or index >= current_path.road_shape.embed_table.size():
+		return null
+	return current_path.road_shape.embed_table[index]
+
+func _sync_embed_curve_edges(embed : RoadEmbed) -> void:
+	if embed.left_boundary and embed.left_boundary.point_count > 0:
+		embed.left_boundary.set_point_offset(0, embed.road_start)
+		embed.left_boundary.set_point_offset(embed.left_boundary.point_count - 1, embed.road_end)
+	if embed.right_boundary and embed.right_boundary.point_count > 0:
+		embed.right_boundary.set_point_offset(0, embed.road_start)
+		embed.right_boundary.set_point_offset(embed.right_boundary.point_count - 1, embed.road_end)
+
+func update_embed_type(in_type : int):
+	if updating_embed_controls:
 		return
-	current_path.road_shape.embed_table[embed_dropdown.selected].embed_type = in_type
+	var embed := _selected_embed()
+	if !embed:
+		return
+	embed.embed_type = in_type
 	update_track_visuals()
 
 func update_embed_values(new_value):
-	if !current_path:
+	if updating_embed_controls:
 		return
-	current_path.road_shape.embed_table[embed_dropdown.selected].embed_type = embed_type.selected
-	current_path.road_shape.embed_table[embed_dropdown.selected].road_start = embed_start.value
-	current_path.road_shape.embed_table[embed_dropdown.selected].road_end = embed_end.value
+	var embed := _selected_embed()
+	if !embed:
+		return
+	var start_value := minf(embed_start.value, embed_end.value - 0.01)
+	var end_value := maxf(embed_end.value, start_value + 0.01)
+	embed.road_start = clampf(start_value, 0.0, 0.99)
+	embed.road_end = clampf(end_value, embed.road_start + 0.01, 1.0)
+	_sync_embed_curve_edges(embed)
+	updating_embed_controls = true
+	embed_start.set_value_no_signal(embed.road_start)
+	embed_end.set_value_no_signal(embed.road_end)
+	updating_embed_controls = false
 	update_track_visuals()
 
 func copy_mesh_layout() -> void:
@@ -717,7 +746,11 @@ func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.s
 		pass
 	else:
 		var this_embed := current_path.road_shape.embed_table[in_selected_embed]
+		updating_embed_controls = true
 		embed_type.selected = this_embed.embed_type
+		embed_start.set_value_no_signal(this_embed.road_start)
+		embed_end.set_value_no_signal(this_embed.road_end)
+		updating_embed_controls = false
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_embed(current_path, in_selected_embed)
 	update_track_visuals()
