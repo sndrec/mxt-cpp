@@ -25,6 +25,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var new_track_object_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackObject
 @onready var edit_track_object_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackObject
 @onready var edit_track_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackProps
+@onready var add_segment_status: Label = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/AddSegmentStatus
 @onready var recharge_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Recharge
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
 @onready var slip_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Slip
@@ -108,6 +109,32 @@ func _enable_tool_button_toggles() -> void:
 func _set_tool_button_pressed(button : Button, pressed : bool) -> void:
 	button.set_pressed_no_signal(pressed)
 
+func _road_type_label(road_type : int) -> String:
+	match road_type:
+		ENUMS.ROAD_TYPE.PIPE:
+			return "Pipe"
+		ENUMS.ROAD_TYPE.CYLINDER:
+			return "Cylinder"
+		ENUMS.ROAD_TYPE.PIPE_OPEN:
+			return "Open Pipe"
+		ENUMS.ROAD_TYPE.CYLINDER_OPEN:
+			return "Open Cylinder"
+		ENUMS.ROAD_TYPE.ROUNDED_SQUARE:
+			return "Rounded Square"
+		ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN:
+			return "Open Rounded Square"
+		_:
+			return "Standard"
+
+func _segment_kind_label(kind : int) -> String:
+	match kind:
+		TrackEditingScene.SegmentKind.LINE:
+			return "Line"
+		TrackEditingScene.SegmentKind.SPIRAL:
+			return "Spiral"
+		_:
+			return "Bezier"
+
 func _refresh_tool_button_states() -> void:
 	var mode := track_scene.tool_mode
 	_set_tool_button_pressed(new_track_segment_button, mode == TrackEditingScene.ToolMode.ADD_SEGMENT)
@@ -123,6 +150,9 @@ func _refresh_tool_button_states() -> void:
 	_set_tool_button_pressed(new_track_object_button, mode == TrackEditingScene.ToolMode.ADD_OBJECT)
 	_set_tool_button_pressed(edit_track_object_button, mode == TrackEditingScene.ToolMode.EDIT_OBJECT)
 	_set_tool_button_pressed(edit_track_button, mode == TrackEditingScene.ToolMode.EDIT_TRACK)
+	add_segment_status.visible = mode == TrackEditingScene.ToolMode.ADD_SEGMENT
+	if add_segment_status.visible:
+		add_segment_status.text = _road_type_label(track_scene.desired_road_type) + " " + _segment_kind_label(track_scene.desired_segment_kind)
 
 func get_track_root() -> void:
 	if !track_root:
