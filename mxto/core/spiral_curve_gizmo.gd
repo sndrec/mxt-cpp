@@ -978,6 +978,11 @@ func _try_delete_hovered_point(hovered : int) -> bool:
 	get_viewport().set_input_as_handled()
 	return true
 
+func _end_deferred_pointer_action() -> void:
+	var scene := FZGlobal.editing_scene
+	if scene:
+		scene.end_pointer_action(self)
+
 func _process(_delta : float) -> void:
 	var scene := FZGlobal.editing_scene
 	if !scene or !scene.tool_mode_allows_spiral_gizmos() or !_is_spiral_path(target_path):
@@ -1009,15 +1014,19 @@ func _process(_delta : float) -> void:
 		return
 	if hovered == -1 and !scene.pointer_action_busy_for(self) and _try_alt_add_point(cam):
 		return
-	if Input.is_action_just_pressed("LeftMouse") and hovered != -1:
+	if Input.is_action_just_pressed("RightMouse") and hovered != -1:
 		var hovered_record := handle_records[hovered]
-		if _record_is_key_point(hovered_record) and !_record_key_is_selected(hovered_record):
+		if _record_is_key_point(hovered_record):
 			if !scene.begin_pointer_action(self):
 				return
 			_select_record_key(hovered_record)
 			_update_visuals()
 			get_viewport().set_input_as_handled()
-			scene.end_pointer_action(self)
+			call_deferred("_end_deferred_pointer_action")
+			return
+	if Input.is_action_just_pressed("LeftMouse") and hovered != -1:
+		var hovered_record := handle_records[hovered]
+		if _record_is_key_point(hovered_record) and !_record_key_is_selected(hovered_record):
 			return
 		if !scene.begin_pointer_action(self):
 			return
