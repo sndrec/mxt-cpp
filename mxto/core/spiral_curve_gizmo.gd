@@ -280,9 +280,21 @@ func _tangent_delta(curve : Resource, point_index : int, handle_kind : int) -> f
 		return -minf(TANGENT_HANDLE_OFFSET, point_t)
 	return minf(TANGENT_HANDLE_OFFSET, 1.0 - point_t)
 
-func _tangent_value(curve : Resource, point_index : int, handle_kind : int) -> float:
+func _bezier_segment_tangent_delta(curve : Resource, point_index : int, handle_kind : int) -> float:
+	var point_t := _curve_offset(curve, point_index)
+	if handle_kind == HandleKind.LEFT_TANGENT and point_index > 0:
+		return (_curve_offset(curve, point_index - 1) - point_t) / 3.0
+	if handle_kind == HandleKind.RIGHT_TANGENT and point_index < curve.point_count - 1:
+		return (_curve_offset(curve, point_index + 1) - point_t) / 3.0
+	return _tangent_delta(curve, point_index, handle_kind)
+
+func _entry_tangent_delta(entry : Dictionary, curve : Resource, point_index : int, handle_kind : int) -> float:
+	if int(entry["kind"]) == CurveKind.TWIST:
+		return _bezier_segment_tangent_delta(curve, point_index, handle_kind)
+	return _tangent_delta(curve, point_index, handle_kind)
+
+func _tangent_value(curve : Resource, point_index : int, handle_kind : int, delta : float) -> float:
 	var point : Vector2 = curve.get_point_position(point_index)
-	var delta : float = _tangent_delta(curve, point_index, handle_kind)
 	var tangent : float = curve.get_point_left_tangent(point_index) if handle_kind == HandleKind.LEFT_TANGENT else curve.get_point_right_tangent(point_index)
 	return point.y + tangent * delta
 
@@ -308,9 +320,9 @@ func _tangent_handle_position(record : Dictionary) -> Vector3:
 	var point_index := int(record["point"])
 	var side := float(record.get("side", 1.0))
 	var point : Vector2 = curve.get_point_position(point_index)
-	var delta := _tangent_delta(curve, point_index, int(record["kind"]))
+	var delta := _entry_tangent_delta(entry, curve, point_index, int(record["kind"]))
 	var tangent_t := clampf(point.x + delta, 0.0, 1.0)
-	var tangent_value := _tangent_value(curve, point_index, int(record["kind"]))
+	var tangent_value := _tangent_value(curve, point_index, int(record["kind"]), delta)
 	var frame := _sample_frame(tangent_t)
 	var point_frame := _sample_frame(point.x)
 	match int(entry["kind"]):
@@ -630,7 +642,7 @@ func _sync_twist_tangent_collision(handle_id : int) -> void:
 	var curve : Resource = entry["curve"]
 	var point_index := int(record["point"])
 	var point : Vector2 = curve.get_point_position(point_index)
-	var delta := _tangent_delta(curve, point_index, int(record["kind"]))
+	var delta := _entry_tangent_delta(entry, curve, point_index, int(record["kind"]))
 	var tangent_t := clampf(point.x + delta, 0.0, 1.0)
 	var frame := _sample_frame(tangent_t)
 	var radius := _twist_radius(point.x)
@@ -900,7 +912,7 @@ func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side
 	var entry := curve_entries[entry_index]
 	var curve : Resource = entry["curve"]
 	var point : Vector2 = curve.get_point_position(point_index)
-	var delta : float = _tangent_delta(curve, point_index, handle_kind)
+	var delta : float = _entry_tangent_delta(entry, curve, point_index, handle_kind)
 	if absf(delta) <= 0.00001:
 		return
 	var tangent_t := clampf(point.x + delta, 0.0, 1.0)
@@ -1081,10 +1093,14 @@ func _begin_drag(handle_id : int, cam : Camera3D, ray_dir : Vector3) -> bool:
 	var kind := int(entry["kind"])
 	if kind == CurveKind.TWIST:
 		var center : Vector3 = frame["center"]
+		var tangent_delta := 0.0
+		var drag_axis : Vector3 = frame["z"]
 		if int(record["kind"]) != HandleKind.POINT:
-			var delta : float = _tangent_delta(curve, point_index, int(record["kind"]))
-			center = _sample_frame(clampf(point_t + delta, 0.0, 1.0))["center"]
-		var plane := Plane(frame["z"], center)
+			tangent_delta = _entry_tangent_delta(entry, curve, point_index, int(record["kind"]))
+			var tangent_frame := _sample_frame(clampf(point_t + tangent_delta, 0.0, 1.0))
+			center = tangent_frame["center"]
+			drag_axis = tangent_frame["z"]
+		var plane := Plane(drag_axis, center)
 		var hit = plane.intersects_ray(cam.global_position, ray_dir)
 		if !(hit is Vector3):
 			return false
@@ -1093,11 +1109,11 @@ func _begin_drag(handle_id : int, cam : Camera3D, ray_dir : Vector3) -> bool:
 			"mode": "rotation",
 			"plane": plane,
 			"center": center,
-			"axis": frame["z"],
+			"axis": drag_axis,
 			"origin_dir": (hit - center).normalized(),
-			"start_value": _curve_value(curve, point_index) if int(record["kind"]) == HandleKind.POINT else _tangent_value(curve, point_index, int(record["kind"])),
+			"start_value": _curve_value(curve, point_index) if int(record["kind"]) == HandleKind.POINT else _tangent_value(curve, point_index, int(record["kind"]), tangent_delta),
 			"point_value": _curve_value(curve, point_index),
-			"delta_t": _tangent_delta(curve, point_index, int(record["kind"])),
+			"delta_t": tangent_delta,
 		}
 		return true
 	var value_axis := _entry_axis(entry, frame).normalized()
@@ -1113,9 +1129,9 @@ func _begin_drag(handle_id : int, cam : Camera3D, ray_dir : Vector3) -> bool:
 		"axis": value_axis,
 		"origin": origin,
 		"start_axis_point": (hit - origin).project(value_axis) + origin,
-		"start_value": _curve_value(curve, point_index) if int(record["kind"]) == HandleKind.POINT else _tangent_value(curve, point_index, int(record["kind"])),
+		"start_value": _curve_value(curve, point_index) if int(record["kind"]) == HandleKind.POINT else _tangent_value(curve, point_index, int(record["kind"]), _entry_tangent_delta(entry, curve, point_index, int(record["kind"]))),
 		"point_value": _curve_value(curve, point_index),
-		"delta_t": _tangent_delta(curve, point_index, int(record["kind"])),
+		"delta_t": _entry_tangent_delta(entry, curve, point_index, int(record["kind"])),
 		"side": side,
 	}
 	return true
@@ -1177,7 +1193,7 @@ func _apply_rotation_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 	var current_dir : Vector3 = (hit - center).normalized()
 	var origin_dir : Vector3 = drag_snapshot["origin_dir"]
 	var axis : Vector3 = drag_snapshot["axis"]
-	var value := float(drag_snapshot["start_value"]) + rad_to_deg(origin_dir.signed_angle_to(current_dir, axis))
+	var value := float(drag_snapshot["start_value"]) - rad_to_deg(origin_dir.signed_angle_to(current_dir, axis))
 	if int(record["kind"]) == HandleKind.POINT:
 		curve.set_point_value(point_index, value)
 	else:
