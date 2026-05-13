@@ -381,9 +381,16 @@ func update_embed_type(in_type : int):
 
 func _refresh_embed_edge_controls(embed : RoadEmbed) -> void:
 	updating_embed_controls = true
+	embed_type.select(int(embed.embed_type))
 	embed_start.set_value_no_signal(embed.road_start)
 	embed_end.set_value_no_signal(embed.road_end)
 	updating_embed_controls = false
+
+func _refresh_selected_embed_controls() -> void:
+	var embed := _selected_embed()
+	if !embed:
+		return
+	_refresh_embed_edge_controls(embed)
 
 func update_embed_start_value(new_value : float) -> void:
 	if updating_embed_controls:
@@ -767,6 +774,8 @@ func _process(delta: float) -> void:
 		_refresh_track_object_controls()
 	if rail_panel.visible:
 		_refresh_rail_controls()
+	if embeds.visible:
+		_refresh_selected_embed_controls()
 	
 	var selected := get_active_node()
 	if !selected:
@@ -948,11 +957,7 @@ func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.s
 			FZGlobal.editing_scene.set_active_embed(null, -1)
 	else:
 		var this_embed := current_path.road_shape.embed_table[in_selected_embed]
-		updating_embed_controls = true
-		embed_type.selected = this_embed.embed_type
-		embed_start.set_value_no_signal(this_embed.road_start)
-		embed_end.set_value_no_signal(this_embed.road_end)
-		updating_embed_controls = false
+		_refresh_embed_edge_controls(this_embed)
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_embed(current_path, in_selected_embed)
 	update_track_visuals()
