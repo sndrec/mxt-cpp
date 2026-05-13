@@ -32,6 +32,11 @@ var current_path : RoadPath
 @onready var spiral_curve_scale_x: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleXCurve
 @onready var spiral_curve_scale_y: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleYCurve
 
+@onready var track_panel: ScrollContainer = $Control/TabContainer/Track
+@onready var track_name_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackName
+@onready var track_description_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackDescription
+@onready var track_difficulty_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/TrackDifficultyRow/TrackDifficulty
+
 @onready var modulation_dropdown: OptionButton = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/ModulationDropdown
 @onready var new_modulation: Button = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/NewModulation
 @onready var mod_curve_effect: CurveEditor = $Control/TabContainer/Modulation/VBoxContainer/ModCurveEffect
@@ -89,6 +94,7 @@ var cross_section_mesh := ImmediateMesh.new()
 var cross_section_material := StandardMaterial3D.new()
 var connected_tool_scene : TrackEditingScene
 var updating_spiral_controls := false
+var updating_track_controls := false
 
 func _ensure_cross_section_visual() -> void:
 	if cross_section_mesh_instance:
@@ -161,6 +167,9 @@ func _ready():
 	spiral_curve_twist.curve_edited.connect(update_spiral_curve)
 	spiral_curve_scale_x.curve_edited.connect(update_spiral_curve)
 	spiral_curve_scale_y.curve_edited.connect(update_spiral_curve)
+	track_name_edit.text_changed.connect(update_track_name)
+	track_description_edit.text_changed.connect(update_track_description)
+	track_difficulty_edit.value_changed.connect(update_track_difficulty)
 	copy_mesh_layout_button.pressed.connect(copy_mesh_layout)
 	paste_mesh_layout_button.pressed.connect(paste_mesh_layout)
 	create_mesh_layout_button.pressed.connect(create_simple_mesh_layout)
@@ -205,17 +214,18 @@ func _is_spiral_path(path : Node) -> bool:
 	var script : Script = path.get_script() as Script
 	return script and script.resource_path == "res://core/road_path_spiral.gd"
 
-func _apply_context_tabs(show_info : bool, show_spiral : bool, show_modulation : bool, show_embeds : bool) -> void:
+func _apply_context_tabs(show_info : bool, show_spiral : bool, show_track : bool, show_modulation : bool, show_embeds : bool) -> void:
 	info_panel.visible = show_info
 	spiral_panel.visible = show_spiral
+	track_panel.visible = show_track
 	modulation.visible = show_modulation
 	embeds.visible = show_embeds
-	var any_visible := show_info or show_spiral or show_modulation or show_embeds
+	var any_visible := show_info or show_spiral or show_track or show_modulation or show_embeds
 	tab_container.visible = any_visible
 	if !any_visible:
 		_hide_cross_section_visual()
 		return
-	var visible_tabs := [show_info, show_spiral, show_modulation, show_embeds]
+	var visible_tabs := [show_info, show_spiral, show_track, show_modulation, show_embeds]
 	var first_visible := -1
 	for i in visible_tabs.size():
 		if visible_tabs[i]:
@@ -234,11 +244,12 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var mode := scene.tool_mode if scene else TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var selected := get_active_node()
 	var has_path := current_path != null
-	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS or mode == TrackEditingScene.ToolMode.EDIT_TRACK)
+	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
 	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and _is_spiral_path(current_path)
+	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
 	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION
 	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.ADD_EMBED
-	_apply_context_tabs(show_info, show_spiral, show_modulation, show_embeds)
+	_apply_context_tabs(show_info, show_spiral, show_track, show_modulation, show_embeds)
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
 	var show_cross_section_controls := show_info and !show_checkpoint_controls
 	checkpoint_count_row.visible = show_checkpoint_controls
@@ -301,6 +312,30 @@ func update_checkpoint_count(new_value : float) -> void:
 	if !current_path:
 		return
 	current_path.num_checkpoints = maxi(0, int(new_value) - 1)
+
+func _refresh_track_controls() -> void:
+	if !track_root:
+		return
+	updating_track_controls = true
+	track_name_edit.text = track_root.track_name
+	track_description_edit.text = track_root.track_description
+	track_difficulty_edit.set_value_no_signal(track_root.track_difficulty)
+	updating_track_controls = false
+
+func update_track_name(new_text : String) -> void:
+	if updating_track_controls or !track_root:
+		return
+	track_root.track_name = new_text
+
+func update_track_description(new_text : String) -> void:
+	if updating_track_controls or !track_root:
+		return
+	track_root.track_description = new_text
+
+func update_track_difficulty(new_value : float) -> void:
+	if updating_track_controls or !track_root:
+		return
+	track_root.track_difficulty = int(new_value)
 
 func _refresh_spiral_controls() -> void:
 	if !_is_spiral_path(current_path):
@@ -405,6 +440,8 @@ func _process(delta: float) -> void:
 	
 	if !track_root:
 		return
+	if track_panel.visible:
+		_refresh_track_controls()
 	
 	var selected := get_active_node()
 	if !selected:
