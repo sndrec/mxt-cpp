@@ -337,6 +337,20 @@ void TrackEditorCurve::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_segment_length"), &TrackEditorCurve::get_segment_length);
 	ClassDB::bind_method(D_METHOD("respace_control_point_times", "samples_per_span"), &TrackEditorCurve::respace_control_point_times, DEFVAL(8));
 	ClassDB::bind_method(D_METHOD("build_centerline_points", "point_count"), &TrackEditorCurve::build_centerline_points);
+	ClassDB::bind_method(
+		D_METHOD(
+			"rebuild_spiral_from_packets",
+			"axis_transform",
+			"spiral_axis",
+			"spiral_degrees",
+			"radius_curve",
+			"height_curve",
+			"twist_curve",
+			"scale_x_curve",
+			"scale_y_curve",
+			"subdivisions"),
+		&TrackEditorCurve::rebuild_spiral_from_packets,
+		DEFVAL(64));
 	ClassDB::bind_method(D_METHOD("sample_bezier", "t"), &TrackEditorCurve::sample_bezier);
 	ClassDB::bind_method(D_METHOD("sample_linear", "t"), &TrackEditorCurve::sample_linear);
 	ClassDB::bind_method(D_METHOD("sample_surface_position", "config"), &TrackEditorCurve::sample_surface_position);
@@ -1159,6 +1173,106 @@ static float curve_packet_sample(const PackedFloat32Array &p_packet, int p_curso
 		p1 * 3.0f * omt * omt * u +
 		p2 * 3.0f * omt * u * u +
 		p3 * u * u * u;
+}
+
+static inline Vector3 spiral_axis_or_up(const Vector3 &p_axis) {
+	if (p_axis.length_squared() <= 0.0000001) {
+		return Vector3(0.0, 1.0, 0.0);
+	}
+	return p_axis.normalized();
+}
+
+static inline Vector3 perpendicular_to_spiral_axis(const Vector3 &p_axis) {
+	Vector3 out(p_axis.y, -p_axis.x, 0.0);
+	if (out.length_squared() <= 0.0000001) {
+		out = Vector3(1.0, 0.0, 0.0);
+	}
+	return out.normalized();
+}
+
+static Transform3D canonical_spiral_transform(
+	const Vector3 &p_axis,
+	float p_spiral_radians,
+	const PackedFloat32Array &p_radius_curve,
+	const PackedFloat32Array &p_height_curve,
+	const PackedFloat32Array &p_twist_curve,
+	float p_t) {
+	const Vector3 axis = spiral_axis_or_up(p_axis);
+	const Vector3 perpendicular = perpendicular_to_spiral_axis(axis);
+	const float radius = curve_packet_sample(p_radius_curve, 0, p_t, 50.0f);
+	const float height = curve_packet_sample(p_height_curve, 0, p_t, 0.0f);
+	const float angle = p_spiral_radians * p_t;
+	const Basis rot(Quaternion(axis, angle));
+	const Vector3 about = perpendicular * radius;
+	const Vector3 pos = -rot.xform(about) + axis * height;
+	Basis basis(rot);
+	const float twist = curve_packet_sample(p_twist_curve, 0, p_t, 0.0f) * PI_F / 180.0f;
+	const Vector3 twist_axis = normalized_or(basis.get_column(2), Vector3(0.0, 0.0, 1.0));
+	if (twist_axis.length_squared() > 0.0000001) {
+		basis = Basis(Quaternion(twist_axis, twist)) * basis;
+	}
+	float t2 = clampf_local(p_t + 0.001f, 0.0f, 1.0f);
+	if (std::fabs(t2 - p_t) <= 0.000001f) {
+		t2 = clampf_local(p_t - 0.001f, 0.0f, 1.0f);
+	}
+	const float radius2 = curve_packet_sample(p_radius_curve, 0, t2, 100.0f);
+	const float height2 = curve_packet_sample(p_height_curve, 0, t2, 0.0f);
+	const float angle2 = p_spiral_radians * t2;
+	const Vector3 pos2 = -Basis(Quaternion(axis, angle2)).xform(perpendicular * radius2) + axis * height2;
+	const Vector3 delta = pos2 - pos;
+	if (delta.length_squared() > 0.0000001) {
+		const Vector3 tangent = delta.normalized();
+		const Vector3 current_z = normalized_or(basis.get_column(2), Vector3(0.0, 0.0, 1.0));
+		const Vector3 axis_x = normalized_or(basis.get_column(0), Vector3(1.0, 0.0, 0.0));
+		Vector3 z_proj = current_z - axis_x * current_z.dot(axis_x);
+		Vector3 tan_proj = tangent - axis_x * tangent.dot(axis_x);
+		if (z_proj.length_squared() > 0.0000001 && tan_proj.length_squared() > 0.0000001) {
+			z_proj.normalize();
+			tan_proj.normalize();
+			float adjust_angle = std::atan2((float)z_proj.cross(tan_proj).length(), (float)clampf_local((float)z_proj.dot(tan_proj), -1.0f, 1.0f));
+			if (z_proj.cross(tan_proj).dot(axis_x) < 0.0f) {
+				adjust_angle = -adjust_angle;
+			}
+			basis = Basis(Quaternion(axis_x, adjust_angle)) * basis;
+		}
+	}
+	return Transform3D(basis, pos);
+}
+
+float TrackEditorCurve::rebuild_spiral_from_packets(
+	const Transform3D &p_axis_transform,
+	const Vector3 &p_spiral_axis,
+	float p_spiral_degrees,
+	const PackedFloat32Array &p_radius_curve,
+	const PackedFloat32Array &p_height_curve,
+	const PackedFloat32Array &p_twist_curve,
+	const PackedFloat32Array &p_scale_x_curve,
+	const PackedFloat32Array &p_scale_y_curve,
+	int p_subdivisions) {
+	const int subdivisions = p_subdivisions > 1 ? p_subdivisions : 1;
+	const int point_count = subdivisions + 1;
+	const float spiral_radians = p_spiral_degrees * PI_F / 180.0f;
+	const Vector3 axis = spiral_axis_or_up(p_spiral_axis);
+	const Transform3D raw_start = canonical_spiral_transform(axis, spiral_radians, p_radius_curve, p_height_curve, p_twist_curve, 0.0f);
+	const Transform3D correction = p_axis_transform * raw_start.affine_inverse();
+	control_points.resize(point_count * CONTROL_STRIDE);
+	curve_mode = CURVE_MODE_LINEAR;
+	segment_length = 0.0f;
+	Vector3 prev;
+	for (int i = 0; i < point_count; ++i) {
+		const float t = (float)i / (float)subdivisions;
+		const Transform3D transform = correction * canonical_spiral_transform(axis, spiral_radians, p_radius_curve, p_height_curve, p_twist_curve, t);
+		const Vector3 scale(
+			curve_packet_sample(p_scale_x_curve, 0, t, 25.0f),
+			curve_packet_sample(p_scale_y_curve, 0, t, 25.0f),
+			1.0f);
+		write_control_point(control_points, i, t, transform.origin, transform.basis.orthonormalized(), scale, 0.0f, 0.0f, EASE_LINEAR, 1.0f, EASE_LINEAR, 1.0f, EASE_LINEAR, 1.0f);
+		if (i > 0) {
+			segment_length += (float)prev.distance_to(transform.origin);
+		}
+		prev = transform.origin;
+	}
+	return segment_length;
 }
 
 static float sample_modulation_offset(const PackedFloat32Array &p_modulation_curves, float p_tx, float p_ty) {

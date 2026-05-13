@@ -85,6 +85,16 @@ public:
 
 	PackedFloat32Array respace_control_point_times(int p_samples_per_span);
 	PackedVector3Array build_centerline_points(int p_point_count) const;
+	float rebuild_spiral_from_packets(
+		const Transform3D &p_axis_transform,
+		const Vector3 &p_spiral_axis,
+		float p_spiral_degrees,
+		const PackedFloat32Array &p_radius_curve,
+		const PackedFloat32Array &p_height_curve,
+		const PackedFloat32Array &p_twist_curve,
+		const PackedFloat32Array &p_scale_x_curve,
+		const PackedFloat32Array &p_scale_y_curve,
+		int p_subdivisions);
 	Transform3D sample_bezier(float p_t) const;
 	Transform3D sample_linear(float p_t) const;
 	Vector3 sample_surface_position(const Dictionary &p_config) const;
