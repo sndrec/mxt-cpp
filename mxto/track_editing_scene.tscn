@@ -1,0 +1,115 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://track_editing_scene.gd" id="1_1be7g"]
+[ext_resource type="Shader" path="res://track_edit_grid.gdshader" id="1_i63ss"]
+[ext_resource type="Texture2D" path="res://asset/tex/track_editor/simple_grid.png" id="2_ps0cd"]
+[ext_resource type="PackedScene" path="res://toolbox.tscn" id="3_bh613"]
+[ext_resource type="PackedScene" path="res://ui/track_editor/track_editor_dock.tscn" id="4_556vt"]
+[ext_resource type="Script" path="res://track_segments.gd" id="5_556vt"]
+[ext_resource type="Script" path="res://core/road_path_line.gd" id="6_x817w"]
+[ext_resource type="PackedScene" path="res://core/translate_gizmo.tscn" id="7_dtlg5"]
+[ext_resource type="PackedScene" path="res://core/rotate_gizmo.tscn" id="8_1l7qs"]
+[ext_resource type="PackedScene" path="res://core/add_road_gizmo.tscn" id="10_x817w"]
+[ext_resource type="PackedScene" path="res://ui/track_editor/track_editor_dock_2.tscn" id="11_dock2"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_nbp6g"]
+sky_top_color = Color(0.412152, 0.412152, 0.412152, 1)
+sky_horizon_color = Color(0.1564, 0.1598, 0.17, 1)
+sky_curve = 1.56917
+ground_bottom_color = Color(0.0562916, 0.0562916, 0.0562916, 1)
+ground_horizon_color = Color(0.156863, 0.160784, 0.172549, 1)
+ground_curve = 0.25
+sun_angle_max = 4.27
+sun_curve = 2.23928
+
+[sub_resource type="Sky" id="Sky_i63ss"]
+sky_material = SubResource("ProceduralSkyMaterial_nbp6g")
+
+[sub_resource type="Environment" id="Environment_ps0cd"]
+background_mode = 2
+sky = SubResource("Sky_i63ss")
+tonemap_mode = 2
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_ps0cd"]
+render_priority = 0
+shader = ExtResource("1_i63ss")
+shader_parameter/grid_size = 50.0
+shader_parameter/grid_tex = ExtResource("2_ps0cd")
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_h1teh"]
+material = SubResource("ShaderMaterial_ps0cd")
+size = Vector2(4096, 4096)
+orientation = 0
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_5v0t5"]
+material = SubResource("ShaderMaterial_ps0cd")
+size = Vector2(4096, 4096)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_dtlg5"]
+material = SubResource("ShaderMaterial_ps0cd")
+size = Vector2(4096, 4096)
+orientation = 2
+
+[node name="Node3D" type="Node3D" unique_id=247121743]
+script = ExtResource("1_1be7g")
+
+[node name="TrackEditorDock" parent="." unique_id=1319679744 instance=ExtResource("4_556vt")]
+offset_top = 72.0
+offset_right = -1278.0
+
+[node name="TrackEditorDock2" parent="." instance=ExtResource("11_dock2")]
+offset_left = 1040.0
+offset_top = 72.0
+
+[node name="Toolbox" parent="." unique_id=69382505 instance=ExtResource("3_bh613")]
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="." unique_id=809820757]
+transform = Transform3D(-0.866023, -0.433016, 0.250001, 0, 0.499998, 0.866027, -0.500003, 0.749999, -0.43301, 0, 0, -1017680)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1039572403]
+environment = SubResource("Environment_ps0cd")
+
+[node name="EditorCamera" type="Camera3D" parent="." unique_id=2078805516]
+transform = Transform3D(0.707107, -0.612372, 0.353553, 0, 0.5, 0.866026, -0.707107, -0.612372, 0.353553, 96.9457, 85.3384, 96.9457)
+current = true
+
+[node name="RefCamera" type="Camera3D" parent="." unique_id=1824610130]
+visible = false
+
+[node name="TrackRoot" type="Node3D" parent="." unique_id=224486525]
+script = ExtResource("5_556vt")
+metadata/_custom_type_script = "uid://cn2skfmhsbc0h"
+
+[node name="RoadPathLine" type="Node3D" parent="TrackRoot" unique_id=1717132214]
+script = ExtResource("6_x817w")
+metadata/_custom_type_script = "uid://sd2tv7pbfiap"
+
+[node name="GridOrigin" type="Node3D" parent="." unique_id=2013911673]
+
+[node name="EditorGridX" type="MeshInstance3D" parent="GridOrigin" unique_id=2080103200]
+mesh = SubResource("PlaneMesh_h1teh")
+skeleton = NodePath("../../WorldEnvironment")
+metadata/_edit_lock_ = true
+
+[node name="EditorGridY" type="MeshInstance3D" parent="GridOrigin" unique_id=574007748]
+mesh = SubResource("PlaneMesh_5v0t5")
+skeleton = NodePath("../../WorldEnvironment")
+metadata/_edit_lock_ = true
+
+[node name="EditorGridZ" type="MeshInstance3D" parent="GridOrigin" unique_id=1356256004]
+mesh = SubResource("PlaneMesh_dtlg5")
+skeleton = NodePath("../../WorldEnvironment")
+metadata/_edit_lock_ = true
+
+[node name="TranslateGizmo" parent="." unique_id=336671567 instance=ExtResource("7_dtlg5")]
+
+[node name="RotateGizmo" parent="." unique_id=1240095265 instance=ExtResource("8_1l7qs")]
+
+[node name="AddRoadGizmo" parent="." unique_id=557975612 instance=ExtResource("10_x817w")]
+transform = Transform3D(50, 0, 0, 0, 50, 0, 0, 0, 50, 0, 0, 0)
+
+[node name="MousePickerCast" type="RayCast3D" parent="." unique_id=1468074902]
+collision_mask = 16384
+
+[node name="MouseGizmoCast" type="RayCast3D" parent="." unique_id=1034066978]
+collision_mask = 32768

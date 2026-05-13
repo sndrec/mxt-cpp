@@ -22,6 +22,7 @@ class_name GameManager extends Node
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
 @onready var spectator_race_button: Button = $Control/SpectatorRaceButton
 @onready var controller_settings_button: Button = $Control/ControllerSettingsButton
+@onready var track_editor_button: Button = $Control/TrackEditorButton
 @onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
 @onready var controller_settings_button_lobby: Button = $Lobby/ControllerSettingsButton
 @onready var race_finish_label: Label = $RaceFinishLabel
@@ -32,10 +33,10 @@ class_name GameManager extends Node
 @onready var add_cpu_button: Button = $Lobby/AddCpuButton
 @onready var remove_cpu_button: Button = $Lobby/RemoveCpuButton
 
-@onready var obj_viewport: SubViewport = $GameWorld/ObjViewport
-@onready var outline_viewport: SubViewport = $GameWorld/OutlineViewport
-@onready var obj_viewport_texture: ColorRect = $GameWorld/ObjViewportTexture
-@onready var outline_viewport_texture: ColorRect = $GameWorld/OutlineViewportTexture
+@onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
+@onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
+@onready var obj_viewport_texture: ColorRect = get_node_or_null("GameWorld/ObjViewportTexture") as ColorRect
+@onready var outline_viewport_texture: ColorRect = get_node_or_null("GameWorld/OutlineViewportTexture") as ColorRect
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
@@ -85,6 +86,7 @@ var _singleplayer_tick: int = 0
 var singleplayer_cpu_count: int = 0
 var launch_cpu_driver_count: int = -1
 var auto_singleplayer_mode: bool = false
+var auto_track_editor_mode: bool = false
 var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
@@ -178,10 +180,16 @@ func _ready() -> void:
 	network_manager.race_finished.connect(_on_network_race_finished)
 	network_manager.race_event.connect(_on_race_event)
 	car_settings.hide()
-	car_settings_button.pressed.connect(_on_car_settings_button_pressed)
-	car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
-	controller_settings_button.pressed.connect(_on_controller_settings_button_pressed)
-	controller_settings_button_lobby.pressed.connect(_on_controller_settings_button_pressed)
+	if !car_settings_button.pressed.is_connected(_on_car_settings_button_pressed):
+		car_settings_button.pressed.connect(_on_car_settings_button_pressed)
+	if !car_settings_button_lobby.pressed.is_connected(_on_car_settings_button_pressed):
+		car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
+	if !controller_settings_button.pressed.is_connected(_on_controller_settings_button_pressed):
+		controller_settings_button.pressed.connect(_on_controller_settings_button_pressed)
+	if !controller_settings_button_lobby.pressed.is_connected(_on_controller_settings_button_pressed):
+		controller_settings_button_lobby.pressed.connect(_on_controller_settings_button_pressed)
+	if !track_editor_button.pressed.is_connected(_on_track_editor_button_pressed):
+		track_editor_button.pressed.connect(_on_track_editor_button_pressed)
 	# Rewire the Singleplayer button to its own handler, not the multiplayer host flow
 	if singleplayer_button.pressed.is_connected(_on_start_button_pressed):
 		singleplayer_button.pressed.disconnect(_on_start_button_pressed)
@@ -209,6 +217,7 @@ func _ready() -> void:
 	if args.has("--host") or user_args.has("--host"):
 		call_deferred("_auto_host")
 	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
+	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var quit_idx := args.find("--quit-after-frames")
 	if quit_idx != -1 and quit_idx + 1 < args.size():
 		auto_quit_after_frames = max(0, int(args[quit_idx + 1]))
@@ -221,9 +230,11 @@ func _ready() -> void:
 		server_game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
 	if debug_replay_autoload_path != "":
 		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
+	elif auto_track_editor_mode:
+		call_deferred("_on_track_editor_button_pressed")
 	elif auto_singleplayer_mode:
 		call_deferred("_on_singleplayer_button_pressed")
-	if headless_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "":
+	if headless_mode and !auto_track_editor_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "":
 		var def_path := ""
 		if car_definitions.size() > 0:
 			def_path = car_definitions[0].resource_path
@@ -351,6 +362,9 @@ func _on_singleplayer_button_pressed() -> void:
 
 func _on_spectator_race_button_pressed() -> void:
 	_start_singleplayer_race(true)
+
+func _on_track_editor_button_pressed() -> void:
+	get_tree().change_scene_to_file("res://track_editing_scene.tscn")
 
 func _start_singleplayer_race(as_spectator: bool) -> void:
 	# Start a local, singleplayer race that does not touch networking at all.
@@ -1138,6 +1152,8 @@ func _update_nametags(active_camera: Camera3D, delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
+	if auto_track_editor_mode:
+		return
 	if headless_mode:
 		if singleplayer_mode and game_sim.sim_started:
 			_simulate_singleplayer_tick()
@@ -1440,8 +1456,8 @@ func _check_race_finished() -> void:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
 
-@onready var obj_camera: Camera3D = $GameWorld/ObjViewport/ObjCamera
-@onready var outline_camera: Camera3D = $GameWorld/OutlineViewport/OutlineCamera
+@onready var obj_camera: Camera3D = get_node_or_null("GameWorld/ObjViewport/ObjCamera") as Camera3D
+@onready var outline_camera: Camera3D = get_node_or_null("GameWorld/OutlineViewport/OutlineCamera") as Camera3D
 const FULL_EFFECT_CAR_BUDGET := 10
 
 func _update_car_effect_tiers(active_camera: Camera3D) -> void:

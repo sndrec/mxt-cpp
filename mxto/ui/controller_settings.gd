@@ -4,7 +4,7 @@ extends Control
 @onready var input_square: ColorRect = $HBoxContainer/Control/SteerAndPitchInputSquare
 @onready var input_dot: TextureRect = $HBoxContainer/Control/SteerAndPitchInputSquare/ControllerInputDot
 @onready var input_dot_calibrated: TextureRect = $HBoxContainer/Control/SteerAndPitchInputSquare/ControllerInputDotCalibrated
-@onready var input_area: TextureRect = $HBoxContainer/Control/SteerAndPitchInputSquare/ControllerInputArea
+@onready var input_area: TextureRect = get_node_or_null("HBoxContainer/Control/SteerAndPitchInputSquare/ControllerInputArea") as TextureRect
 @onready var octagon_line: Line2D = $HBoxContainer/Control/SteerAndPitchInputSquare/Line2D
 @onready var calibrate_button: Button = $HBoxContainer/Control/CalibrateButton
 @onready var deadzone_label: Label = $HBoxContainer/Control/Label

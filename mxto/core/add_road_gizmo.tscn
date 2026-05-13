@@ -1,0 +1,27 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://core/add_road_gizmo.gd" id="1_dhr16"]
+[ext_resource type="Material" path="res://asset/mat/add_road_gizmo_material.tres" id="2_a4hs7"]
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_ny0yw"]
+material = ExtResource("2_a4hs7")
+size = Vector2(1, 0.667)
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_c5ktg"]
+size = Vector3(1, 0.01, 0.667)
+
+[node name="AddRoadGizmo" type="Node3D"]
+script = ExtResource("1_dhr16")
+
+[node name="AddGizmo" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.333)
+layers = 3
+mesh = SubResource("PlaneMesh_ny0yw")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.333)
+collision_layer = 32768
+collision_mask = 32768
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="StaticBody3D"]
+shape = SubResource("BoxShape3D_c5ktg")

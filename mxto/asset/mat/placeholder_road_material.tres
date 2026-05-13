@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://asset/shader/placeholder_road_shader.gdshader" id="1_1q8fn"]
+[ext_resource type="Texture2D" path="res://asset/tex/border_tex.png" id="2_etb7u"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_1q8fn")
+shader_parameter/road_tex = ExtResource("2_etb7u")

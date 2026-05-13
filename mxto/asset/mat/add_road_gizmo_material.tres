@@ -1,0 +1,11 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://add_gizmo_shader.gdshader" id="1_6yl1a"]
+[ext_resource type="Texture2D" path="res://asset/tex/add_road_segment.png" id="2_6p7gd"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_6yl1a")
+shader_parameter/in_texture = ExtResource("2_6p7gd")
+shader_parameter/selected = false
+shader_parameter/clicked = false

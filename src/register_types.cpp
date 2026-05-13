@@ -3,6 +3,7 @@
 #include "main.h"
 #include "fzgx_gameplay_camera.h"
 #include "mxt_core/netcode_session.h"
+#include "track/track_editor_curve.h"
 
 #include <gdextension_interface.h>
 #include <godot_cpp/core/defs.hpp>
@@ -15,6 +16,8 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 		return;
 	}
 
+	GDREGISTER_CLASS(TrackEditorCurve);
+	GDREGISTER_CLASS(TrackEditorFloatCurve);
 	GDREGISTER_CLASS(GameSim);
 	GDREGISTER_CLASS(FzgxGameplayCamera);
 	GDREGISTER_CLASS(NetcodeSession);

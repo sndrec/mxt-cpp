@@ -1,0 +1,13 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://asset/shader/translate_gizmo_shader.gdshader" id="1_54ebw"]
+[ext_resource type="Texture2D" path="res://asset/mdl/edit/gizmo/gizmo_translate_gizmo_colors.png" id="2_d1use"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_54ebw")
+shader_parameter/x_moused = false
+shader_parameter/y_moused = false
+shader_parameter/z_moused = false
+shader_parameter/clicking = false
+shader_parameter/gizmo_colour = ExtResource("2_d1use")

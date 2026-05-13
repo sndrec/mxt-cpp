@@ -1,0 +1,329 @@
+[gd_scene load_steps=16 format=3]
+
+[ext_resource type="Script" path="res://ui/track_editor/track_editor_dock.gd" id="1_lnexm"]
+[ext_resource type="Texture2D" path="res://asset/tex/ui/leveleditor/buttons.png" id="2_rt8pl"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jfhpx"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(0, 0, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_204uj"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(0, 186, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_boeyx"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(0, 62, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2b737"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(0, 124, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_rf86j"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(62, 0, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_gwkyo"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(186, 0, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_wl136"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(124, 0, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_tha3g"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(62, 62, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_edgxp"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(124, 62, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_047vs"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(186, 62, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_nr0ua"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(124, 124, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_h34me"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(186, 124, 62, 62)
+filter_clip = true
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3iywc"]
+atlas = ExtResource("2_rt8pl")
+region = Rect2(62, 124, 62, 62)
+filter_clip = true
+
+[node name="TrackEditorDock" type="Control"]
+custom_minimum_size = Vector2(256, 0)
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = -896.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.2
+script = ExtResource("1_lnexm")
+
+[node name="MainGUI" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MainGUI"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MainGUIMargin" type="MarginContainer" parent="MainGUI/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 24
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 24
+
+[node name="MainGUIHBox" type="HBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MainButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="NewTrackSegment" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Add New Track Segment"
+icon = SubResource("AtlasTexture_jfhpx")
+
+[node name="EditSegmentProps" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Edit Currently Selected Segment"
+icon = SubResource("AtlasTexture_204uj")
+
+[node name="AddEmbed" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Add Embedded Property to Selected Segment"
+icon = SubResource("AtlasTexture_boeyx")
+
+[node name="NewTrackObject" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Add New Track Object"
+icon = SubResource("AtlasTexture_2b737")
+
+[node name="EditTrackProps" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Edit Racetrack Properties"
+text = "ETP"
+
+[node name="NewTrackSegmentButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="RoadStandard" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Standard Road"
+icon = SubResource("AtlasTexture_rf86j")
+
+[node name="RoadPipe" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Interior Pipe Road"
+icon = SubResource("AtlasTexture_gwkyo")
+
+[node name="RoadCylinder" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Exterior Cylinder Road"
+icon = SubResource("AtlasTexture_wl136")
+
+[node name="RoadPipeOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Open Interior Pipe Road"
+text = "PO"
+
+[node name="RoadCylinderOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Open Exterior Cylinder Road"
+text = "CO"
+
+[node name="RoadRoundedSquare" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Rounded Square Road"
+text = "RS"
+
+[node name="RoadRoundedSquareOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Open Rounded Square Road"
+text = "RO"
+
+[node name="NewTrackSegmentTypeButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="RoadLine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+tooltip_text = "Standard Road"
+text = "Line"
+
+[node name="RoadBezier" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+tooltip_text = "Interior Pipe Road"
+text = "Bezier"
+
+[node name="RoadCurve" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+tooltip_text = "Exterior Cylinder Road"
+text = "Spiral"
+
+[node name="NewEmbedButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Recharge" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Recharge"
+icon = SubResource("AtlasTexture_tha3g")
+
+[node name="Dirt" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Dirt/Rough"
+icon = SubResource("AtlasTexture_edgxp")
+
+[node name="Slip" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Slip Zone"
+icon = SubResource("AtlasTexture_047vs")
+
+[node name="Lava" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Lava"
+text = "Lava"
+
+[node name="NewTrackObjectButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="DashPlate" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Dash Plate"
+icon = SubResource("AtlasTexture_nr0ua")
+
+[node name="Jump" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Jump Plate"
+icon = SubResource("AtlasTexture_h34me")
+
+[node name="Mine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Mine"
+icon = SubResource("AtlasTexture_3iywc")
+
+[node name="BezierButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="AddPointAfter" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/BezierButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Add New Track Segment"
+text = "addpt
+after"
+
+[node name="AddPointBefore" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/BezierButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Add Embedded Property to Selected Segment"
+text = "addpt
+before"
+
+[node name="DeletePoint" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/BezierButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Add New Track Object"
+text = "del
+pt"
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MainGUI/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="Outliner" type="VBoxContainer" parent="MainGUI/VBoxContainer/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ScreenOverlay" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackSegment" to="." method="_on_new_track_segment_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditSegmentProps" to="." method="_on_edit_segment_props_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/AddEmbed" to="." method="_on_add_embed_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackObject" to="." method="_on_new_track_object_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackProps" to="." method="_on_edit_track_props_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons/RoadStandard" to="." method="_on_road_standard_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons/RoadPipe" to="." method="_on_road_pipe_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons/RoadCylinder" to="." method="_on_road_cylinder_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons/RoadPipeOpen" to="." method="_on_road_pipe_open_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons/RoadCylinderOpen" to="." method="_on_road_cylinder_open_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons/RoadRoundedSquare" to="." method="_on_road_rounded_square_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons/RoadRoundedSquareOpen" to="." method="_on_road_rounded_square_open_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons/RoadLine" to="." method="_on_road_line_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons/RoadBezier" to="." method="_on_road_bezier_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons/RoadCurve" to="." method="_on_road_curve_pressed"]
+[connection signal="pressed" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/BezierButtons/AddPointAfter" to="." method="_on_add_point_after_pressed"]
+[connection signal="button_down" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/BezierButtons/AddPointBefore" to="." method="_on_add_point_before_button_down"]
+[connection signal="button_down" from="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/BezierButtons/DeletePoint" to="." method="_on_delete_point_button_down"]
