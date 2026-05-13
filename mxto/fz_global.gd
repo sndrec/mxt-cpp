@@ -111,6 +111,15 @@ func deselect_all():
 	undo_redo.add_undo_method(emit_selection_changed)
 	undo_redo.commit_action()
 
+func clear_selection_immediate() -> void:
+	active_node = null
+	selected_nodes.clear()
+	if editing_scene:
+		editing_scene.translate_gizmo.set_target_node(null)
+		editing_scene.rotate_gizmo.set_target_node(null)
+		editing_scene.add_road_gizmo.set_target_node(null)
+	emit_selection_changed()
+
 func get_selectable_node_from_collider(in_collider : Node) -> Node3D:
 	var node := in_collider
 	while node:

@@ -494,7 +494,7 @@ func remove_track_object_func() -> void:
 	var trigger := _active_track_trigger()
 	if !trigger:
 		return
-	FZGlobal.deselect_all()
+	FZGlobal.clear_selection_immediate()
 	trigger.queue_free()
 	if FZGlobal.editing_scene:
 		FZGlobal.editing_scene.track_structure_changed.emit()
