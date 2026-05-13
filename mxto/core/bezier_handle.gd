@@ -4,6 +4,12 @@ class_name BezierHandle extends Node3D
 @export var out_handle_length : float = 1.0
 @export var time : float = 0.5
 @export var cp_scale := Vector3.ONE
+@export var rot_ease_type := 0
+@export var rot_ease_strength := 1.0
+@export var twist_ease_type := 0
+@export var twist_ease_strength := 1.0
+@export var scale_ease_type := 0
+@export var scale_ease_strength := 1.0
 var handle_collision : StaticBody3D
 var handle_in_collision : StaticBody3D
 var handle_out_collision : StaticBody3D

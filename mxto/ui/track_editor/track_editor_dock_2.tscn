@@ -813,6 +813,94 @@ value = 200.0
 allow_greater = true
 allow_lesser = true
 
+[node name="Label5" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+layout_mode = 2
+text = "Interpolation"
+
+[node name="HBoxContainer12" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+layout_mode = 2
+text = "Rot"
+
+[node name="RotEaseType" type="OptionButton" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+layout_mode = 2
+size_flags_horizontal = 3
+item_count = 4
+selected = 0
+popup/item_0/text = "InOut"
+popup/item_1/text = "In"
+popup/item_1/id = 1
+popup/item_2/text = "Out"
+popup/item_2/id = 2
+popup/item_3/text = "Linear"
+popup/item_3/id = 3
+
+[node name="RotEaseStrength" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
+max_value = 2.0
+step = 0.05
+value = 1.0
+
+[node name="HBoxContainer13" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+layout_mode = 2
+text = "Twist"
+
+[node name="TwistEaseType" type="OptionButton" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+layout_mode = 2
+size_flags_horizontal = 3
+item_count = 4
+selected = 0
+popup/item_0/text = "InOut"
+popup/item_1/text = "In"
+popup/item_1/id = 1
+popup/item_2/text = "Out"
+popup/item_2/id = 2
+popup/item_3/text = "Linear"
+popup/item_3/id = 3
+
+[node name="TwistEaseStrength" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
+max_value = 2.0
+step = 0.05
+value = 1.0
+
+[node name="HBoxContainer14" type="HBoxContainer" parent="Control/VBoxContainer/DataEditor/BezierHandleData"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+layout_mode = 2
+text = "Scale"
+
+[node name="ScaleEaseType" type="OptionButton" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+layout_mode = 2
+size_flags_horizontal = 3
+item_count = 4
+selected = 0
+popup/item_0/text = "InOut"
+popup/item_1/text = "In"
+popup/item_1/id = 1
+popup/item_2/text = "Out"
+popup/item_2/id = 2
+popup/item_3/text = "Linear"
+popup/item_3/id = 3
+
+[node name="ScaleEaseStrength" type="SpinBox" parent="Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
+max_value = 2.0
+step = 0.05
+value = 1.0
+
 [node name="LineHandleData" type="VBoxContainer" parent="Control/VBoxContainer/DataEditor"]
 visible = false
 layout_mode = 1

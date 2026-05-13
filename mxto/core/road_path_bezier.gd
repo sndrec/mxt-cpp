@@ -13,6 +13,12 @@ const ROAD_SHAPE_PIPE_OPEN := 4
 const ROAD_SHAPE_ROUNDED_SQUARE := 5
 const ROAD_SHAPE_ROUNDED_SQUARE_OPEN := 6
 const CONTROL_STRIDE := 24
+const CONTROL_ROT_EASE_TYPE := 18
+const CONTROL_ROT_EASE_STRENGTH := 19
+const CONTROL_TWIST_EASE_TYPE := 20
+const CONTROL_TWIST_EASE_STRENGTH := 21
+const CONTROL_SCALE_EASE_TYPE := 22
+const CONTROL_SCALE_EASE_STRENGTH := 23
 const ADD_CONTROL_POINT_PREVIEW_STEPS := 96
 const ADD_CONTROL_POINT_MAX_SCREEN_DISTANCE := 60.0
 
@@ -347,7 +353,13 @@ func _try_alt_add_control_point(scene : TrackEditingScene, points : PackedFloat3
 		scale_1.lerp(scale_2, span_t),
 		handle_out_1 * span_t,
 		handle_in_2 * (1.0 - span_t),
-		right_index)
+		right_index,
+		int(points[base_1 + CONTROL_ROT_EASE_TYPE]),
+		points[base_1 + CONTROL_ROT_EASE_STRENGTH],
+		int(points[base_1 + CONTROL_TWIST_EASE_TYPE]),
+		points[base_1 + CONTROL_TWIST_EASE_STRENGTH],
+		int(points[base_1 + CONTROL_SCALE_EASE_TYPE]),
+		points[base_1 + CONTROL_SCALE_EASE_STRENGTH])
 	if right_index < bezier_handle_nodes.size():
 		FZGlobal.select_node(bezier_handle_nodes[right_index])
 	scene.end_pointer_action(self)
@@ -389,6 +401,15 @@ func _write_control_transform(points : PackedFloat32Array, index : int, position
 	points[base + 15] = scale.z
 	points[base + 16] = handle_in
 	points[base + 17] = handle_out
+
+func _write_control_easing(points : PackedFloat32Array, index : int, handle : BezierHandle) -> void:
+	var base := index * CONTROL_STRIDE
+	points[base + CONTROL_ROT_EASE_TYPE] = handle.rot_ease_type
+	points[base + CONTROL_ROT_EASE_STRENGTH] = handle.rot_ease_strength
+	points[base + CONTROL_TWIST_EASE_TYPE] = handle.twist_ease_type
+	points[base + CONTROL_TWIST_EASE_STRENGTH] = handle.twist_ease_strength
+	points[base + CONTROL_SCALE_EASE_TYPE] = handle.scale_ease_type
+	points[base + CONTROL_SCALE_EASE_STRENGTH] = handle.scale_ease_strength
 
 func get_surface_position(in_t : Vector2) -> Vector3:
 	_ensure_native_curve()
@@ -516,14 +537,22 @@ func refresh_handle_nodes() -> void:
 		if node is BezierHandle:
 			node.free()
 	bezier_handle_nodes.clear()
+	var points : PackedFloat32Array = native_curve.get_control_points()
 	for i in native_curve.get_control_point_count():
 		var point_handle := BezierHandle.new()
+		var base : int = i * CONTROL_STRIDE
 		point_handle.position = native_curve.get_control_point_position(i)
 		point_handle.basis = native_curve.get_control_point_rotation(i)
 		point_handle.cp_scale = native_curve.get_control_point_scale(i)
 		point_handle.in_handle_length = native_curve.get_control_point_handle_in(i)
 		point_handle.out_handle_length = native_curve.get_control_point_handle_out(i)
 		point_handle.time = native_curve.get_control_point_time(i)
+		point_handle.rot_ease_type = int(points[base + CONTROL_ROT_EASE_TYPE])
+		point_handle.rot_ease_strength = points[base + CONTROL_ROT_EASE_STRENGTH]
+		point_handle.twist_ease_type = int(points[base + CONTROL_TWIST_EASE_TYPE])
+		point_handle.twist_ease_strength = points[base + CONTROL_TWIST_EASE_STRENGTH]
+		point_handle.scale_ease_type = int(points[base + CONTROL_SCALE_EASE_TYPE])
+		point_handle.scale_ease_strength = points[base + CONTROL_SCALE_EASE_STRENGTH]
 		point_handle.associated_index = i
 		add_child(point_handle)
 		bezier_handle_nodes.append(point_handle)
@@ -576,7 +605,20 @@ func _process(delta):
 			point_changes = true
 		if control_points[base + 17] != handle.out_handle_length:
 			point_changes = true
+		if int(control_points[base + CONTROL_ROT_EASE_TYPE]) != handle.rot_ease_type:
+			point_changes = true
+		if control_points[base + CONTROL_ROT_EASE_STRENGTH] != handle.rot_ease_strength:
+			point_changes = true
+		if int(control_points[base + CONTROL_TWIST_EASE_TYPE]) != handle.twist_ease_type:
+			point_changes = true
+		if control_points[base + CONTROL_TWIST_EASE_STRENGTH] != handle.twist_ease_strength:
+			point_changes = true
+		if int(control_points[base + CONTROL_SCALE_EASE_TYPE]) != handle.scale_ease_type:
+			point_changes = true
+		if control_points[base + CONTROL_SCALE_EASE_STRENGTH] != handle.scale_ease_strength:
+			point_changes = true
 		_write_control_transform(next_control_points, i, handle.global_position, handle_basis, handle.cp_scale, handle.in_handle_length, handle.out_handle_length)
+		_write_control_easing(next_control_points, i, handle)
 
 	if point_changes:
 		native_curve.set_control_points(next_control_points)

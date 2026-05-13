@@ -91,6 +91,12 @@ var current_path : RoadPath
 @onready var bez_scale_h: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8/HandleScaleH
 @onready var bez_weight_i: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9/HandleWeightI
 @onready var bez_weight_o: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10/HandleWeightO
+@onready var bez_rot_ease_type: OptionButton = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12/RotEaseType
+@onready var bez_rot_ease_strength: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12/RotEaseStrength
+@onready var bez_twist_ease_type: OptionButton = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13/TwistEaseType
+@onready var bez_twist_ease_strength: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13/TwistEaseStrength
+@onready var bez_scale_ease_type: OptionButton = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14/ScaleEaseType
+@onready var bez_scale_ease_strength: SpinBox = $Control/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14/ScaleEaseStrength
 
 @onready var line_pos_x: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer/HandlePosX
 @onready var line_pos_y: SpinBox = $Control/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2/HandlePosY
@@ -120,6 +126,7 @@ var updating_road_uv_controls := false
 var updating_road_color_controls := false
 var updating_mesh_subdivision_controls := false
 var updating_embed_controls := false
+var updating_handle_controls := false
 var transform_clipboard_cp_scale := Vector3.ONE
 
 func _ensure_cross_section_visual() -> void:
@@ -220,6 +227,12 @@ func _ready():
 	bez_scale_h.value_changed.connect(update_handle_properties)
 	bez_weight_i.value_changed.connect(update_handle_properties)
 	bez_weight_o.value_changed.connect(update_handle_properties)
+	bez_rot_ease_type.item_selected.connect(update_handle_ease_type)
+	bez_rot_ease_strength.value_changed.connect(update_handle_properties)
+	bez_twist_ease_type.item_selected.connect(update_handle_ease_type)
+	bez_twist_ease_strength.value_changed.connect(update_handle_properties)
+	bez_scale_ease_type.item_selected.connect(update_handle_ease_type)
+	bez_scale_ease_strength.value_changed.connect(update_handle_properties)
 	line_pos_x.value_changed.connect(update_handle_properties)
 	line_pos_y.value_changed.connect(update_handle_properties)
 	line_pos_z.value_changed.connect(update_handle_properties)
@@ -614,6 +627,8 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func update_handle_properties(in_value : float) -> void:
+	if updating_handle_controls:
+		return
 	
 	var selected := get_active_node()
 	if !selected:
@@ -623,14 +638,18 @@ func update_handle_properties(in_value : float) -> void:
 		selected.global_position.x = bez_pos_x.value
 		selected.global_position.y = bez_pos_y.value
 		selected.global_position.z = bez_pos_z.value
-		selected.scale.x = bez_scale_w.value
-		selected.scale.y = bez_scale_h.value
+		selected.cp_scale.x = bez_scale_w.value
+		selected.cp_scale.y = bez_scale_h.value
 		var use_rot : Basis = Basis.from_euler(Vector3(deg_to_rad(bez_rot_x.value), deg_to_rad(bez_rot_y.value), deg_to_rad(bez_rot_z.value)))
-		use_rot.x *= selected.scale.x
-		use_rot.y *= selected.scale.y
 		selected.global_basis = use_rot
 		selected.in_handle_length = bez_weight_i.value
 		selected.out_handle_length = bez_weight_o.value
+		selected.rot_ease_type = bez_rot_ease_type.selected
+		selected.rot_ease_strength = bez_rot_ease_strength.value
+		selected.twist_ease_type = bez_twist_ease_type.selected
+		selected.twist_ease_strength = bez_twist_ease_strength.value
+		selected.scale_ease_type = bez_scale_ease_type.selected
+		selected.scale_ease_strength = bez_scale_ease_strength.value
 	elif selected is LineHandle:
 		selected.global_position.x = line_pos_x.value
 		selected.global_position.y = line_pos_y.value
@@ -639,6 +658,30 @@ func update_handle_properties(in_value : float) -> void:
 		selected.cp_scale.y = line_scale_h.value
 		var use_rot : Basis = Basis.from_euler(Vector3(deg_to_rad(line_rot_x.value), deg_to_rad(line_rot_y.value), deg_to_rad(line_rot_z.value)))
 		selected.global_basis = use_rot
+
+func update_handle_ease_type(_index : int) -> void:
+	update_handle_properties(0.0)
+
+func _refresh_bezier_handle_controls(handle : BezierHandle) -> void:
+	updating_handle_controls = true
+	bez_pos_x.set_value_no_signal(handle.global_position.x)
+	bez_pos_y.set_value_no_signal(handle.global_position.y)
+	bez_pos_z.set_value_no_signal(handle.global_position.z)
+	var use_rot : Vector3 = handle.global_basis.orthonormalized().get_euler()
+	bez_rot_x.set_value_no_signal(rad_to_deg(use_rot.x))
+	bez_rot_y.set_value_no_signal(rad_to_deg(use_rot.y))
+	bez_rot_z.set_value_no_signal(rad_to_deg(use_rot.z))
+	bez_scale_w.set_value_no_signal(handle.cp_scale.x)
+	bez_scale_h.set_value_no_signal(handle.cp_scale.y)
+	bez_weight_i.set_value_no_signal(handle.in_handle_length)
+	bez_weight_o.set_value_no_signal(handle.out_handle_length)
+	bez_rot_ease_type.select(clampi(handle.rot_ease_type, 0, 3))
+	bez_rot_ease_strength.set_value_no_signal(handle.rot_ease_strength)
+	bez_twist_ease_type.select(clampi(handle.twist_ease_type, 0, 3))
+	bez_twist_ease_strength.set_value_no_signal(handle.twist_ease_strength)
+	bez_scale_ease_type.select(clampi(handle.scale_ease_type, 0, 3))
+	bez_scale_ease_strength.set_value_no_signal(handle.scale_ease_strength)
+	updating_handle_controls = false
 
 
 func _process(delta: float) -> void:
@@ -668,17 +711,7 @@ func _process(delta: float) -> void:
 		return
 	
 	if selected is BezierHandle:
-		bez_pos_x.set_value_no_signal(selected.global_position.x)
-		bez_pos_y.set_value_no_signal(selected.global_position.y)
-		bez_pos_z.set_value_no_signal(selected.global_position.z)
-		var use_rot : Vector3 = selected.global_basis.orthonormalized().get_euler()
-		bez_rot_x.set_value_no_signal(rad_to_deg(use_rot.x))
-		bez_rot_y.set_value_no_signal(rad_to_deg(use_rot.y))
-		bez_rot_z.set_value_no_signal(rad_to_deg(use_rot.z))
-		bez_scale_w.set_value_no_signal(selected.scale.x)
-		bez_scale_h.set_value_no_signal(selected.scale.y)
-		bez_weight_i.set_value_no_signal(selected.in_handle_length)
-		bez_weight_o.set_value_no_signal(selected.out_handle_length)
+		_refresh_bezier_handle_controls(selected)
 	elif selected is LineHandle:
 		line_pos_x.set_value_no_signal(selected.global_position.x)
 		line_pos_y.set_value_no_signal(selected.global_position.y)
@@ -739,17 +772,7 @@ func selection_updated() -> void:
 		if this_node is BezierHandle:
 			bezier_handle_data.visible = true
 			line_handle_data.visible = false
-			bez_pos_x.set_value_no_signal(this_node.global_position.x)
-			bez_pos_y.set_value_no_signal(this_node.global_position.y)
-			bez_pos_z.set_value_no_signal(this_node.global_position.z)
-			var use_rot : Vector3 = this_node.global_basis.orthonormalized().get_euler()
-			bez_rot_x.set_value_no_signal(rad_to_deg(use_rot.x))
-			bez_rot_y.set_value_no_signal(rad_to_deg(use_rot.y))
-			bez_rot_z.set_value_no_signal(rad_to_deg(use_rot.z))
-			bez_scale_w.set_value_no_signal(this_node.scale.x)
-			bez_scale_h.set_value_no_signal(this_node.scale.y)
-			bez_weight_i.set_value_no_signal(this_node.in_handle_length)
-			bez_weight_o.set_value_no_signal(this_node.out_handle_length)
+			_refresh_bezier_handle_controls(this_node)
 		elif this_node is LineHandle:
 			line_handle_data.visible = true
 			bezier_handle_data.visible = false
