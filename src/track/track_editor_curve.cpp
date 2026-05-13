@@ -406,6 +406,14 @@ TrackEditorFloatCurve::TrackEditorFloatCurve() {
 	add_point(Vector2(1.0, 0.0));
 }
 
+static inline float float_curve_default_handle_x(int p_handle_kind) {
+	return p_handle_kind < 0 ? -0.05f : 0.05f;
+}
+
+static inline float float_curve_slope_from_handle(float p_dx, float p_dy) {
+	return std::fabs(p_dx) > 0.000001f ? p_dy / p_dx : 0.0f;
+}
+
 void TrackEditorFloatCurve::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_points", "points"), &TrackEditorFloatCurve::set_points);
 	ClassDB::bind_method(D_METHOD("get_points"), &TrackEditorFloatCurve::get_points);
@@ -417,10 +425,16 @@ void TrackEditorFloatCurve::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_point_position", "index"), &TrackEditorFloatCurve::get_point_position);
 	ClassDB::bind_method(D_METHOD("get_point_left_tangent", "index"), &TrackEditorFloatCurve::get_point_left_tangent);
 	ClassDB::bind_method(D_METHOD("get_point_right_tangent", "index"), &TrackEditorFloatCurve::get_point_right_tangent);
+	ClassDB::bind_method(D_METHOD("get_point_left_handle", "index"), &TrackEditorFloatCurve::get_point_left_handle);
+	ClassDB::bind_method(D_METHOD("get_point_right_handle", "index"), &TrackEditorFloatCurve::get_point_right_handle);
+	ClassDB::bind_method(D_METHOD("get_point_left_mode", "index"), &TrackEditorFloatCurve::get_point_left_mode);
+	ClassDB::bind_method(D_METHOD("get_point_right_mode", "index"), &TrackEditorFloatCurve::get_point_right_mode);
 	ClassDB::bind_method(D_METHOD("set_point_offset", "index", "offset"), &TrackEditorFloatCurve::set_point_offset);
 	ClassDB::bind_method(D_METHOD("set_point_value", "index", "value"), &TrackEditorFloatCurve::set_point_value);
 	ClassDB::bind_method(D_METHOD("set_point_left_tangent", "index", "tangent"), &TrackEditorFloatCurve::set_point_left_tangent);
 	ClassDB::bind_method(D_METHOD("set_point_right_tangent", "index", "tangent"), &TrackEditorFloatCurve::set_point_right_tangent);
+	ClassDB::bind_method(D_METHOD("set_point_left_handle", "index", "handle"), &TrackEditorFloatCurve::set_point_left_handle);
+	ClassDB::bind_method(D_METHOD("set_point_right_handle", "index", "handle"), &TrackEditorFloatCurve::set_point_right_handle);
 	ClassDB::bind_method(D_METHOD("set_point_left_mode", "index", "mode"), &TrackEditorFloatCurve::set_point_left_mode);
 	ClassDB::bind_method(D_METHOD("set_point_right_mode", "index", "mode"), &TrackEditorFloatCurve::set_point_right_mode);
 	ClassDB::bind_method(D_METHOD("sample", "t"), &TrackEditorFloatCurve::sample);
@@ -428,14 +442,42 @@ void TrackEditorFloatCurve::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("find_open_pipe_t_from_relative_pos", "pos"), &TrackEditorFloatCurve::find_open_pipe_t_from_relative_pos);
 	ClassDB::bind_method(D_METHOD("find_open_cylinder_t_from_relative_pos", "pos"), &TrackEditorFloatCurve::find_open_cylinder_t_from_relative_pos);
 	ClassDB::bind_method(D_METHOD("build_packet"), &TrackEditorFloatCurve::build_packet);
+	ClassDB::bind_method(D_METHOD("build_linear_x_packet"), &TrackEditorFloatCurve::build_linear_x_packet);
 
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "points"), "set_points", "get_points");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "point_count", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_point_count", "get_point_count");
 	BIND_CONSTANT(POINT_STRIDE);
+	BIND_CONSTANT(LEGACY_POINT_STRIDE);
+	BIND_ENUM_CONSTANT(FLOAT_CURVE_BEZIER);
+	BIND_ENUM_CONSTANT(FLOAT_CURVE_LINEAR);
+	BIND_ENUM_CONSTANT(FLOAT_CURVE_CONSTANT);
 }
 
 void TrackEditorFloatCurve::set_points(const PackedFloat32Array &p_points) {
-	points = p_points;
+	if (p_points.size() % POINT_STRIDE == 0) {
+		points = p_points;
+		return;
+	}
+	if (p_points.size() % LEGACY_POINT_STRIDE != 0) {
+		points = p_points;
+		return;
+	}
+	const int count = p_points.size() / LEGACY_POINT_STRIDE;
+	points.resize(count * POINT_STRIDE);
+	for (int i = 0; i < count; ++i) {
+		const int in_base = i * LEGACY_POINT_STRIDE;
+		const int out_base = i * POINT_STRIDE;
+		const float left_dx = float_curve_default_handle_x(-1);
+		const float right_dx = float_curve_default_handle_x(1);
+		points.set(out_base + 0, p_points[in_base + 0]);
+		points.set(out_base + 1, p_points[in_base + 1]);
+		points.set(out_base + 2, left_dx);
+		points.set(out_base + 3, left_dx * p_points[in_base + 2]);
+		points.set(out_base + 4, right_dx);
+		points.set(out_base + 5, right_dx * p_points[in_base + 3]);
+		points.set(out_base + 6, (float)FLOAT_CURVE_BEZIER);
+		points.set(out_base + 7, (float)FLOAT_CURVE_BEZIER);
+	}
 }
 
 PackedFloat32Array TrackEditorFloatCurve::get_points() const {
@@ -447,7 +489,10 @@ void TrackEditorFloatCurve::set_point_count(int p_count) {
 }
 
 int TrackEditorFloatCurve::get_point_count() const {
-	return points.size() / POINT_STRIDE;
+	if (points.size() % POINT_STRIDE == 0) {
+		return points.size() / POINT_STRIDE;
+	}
+	return points.size() / LEGACY_POINT_STRIDE;
 }
 
 void TrackEditorFloatCurve::clear_points() {
@@ -455,8 +500,6 @@ void TrackEditorFloatCurve::clear_points() {
 }
 
 void TrackEditorFloatCurve::add_point(const Vector2 &p_position, float p_left_tangent, float p_right_tangent, int p_left_mode, int p_right_mode) {
-	(void)p_left_mode;
-	(void)p_right_mode;
 	const int insert_count = get_point_count();
 	int insert_index = insert_count;
 	for (int i = 0; i < insert_count; ++i) {
@@ -471,10 +514,16 @@ void TrackEditorFloatCurve::add_point(const Vector2 &p_position, float p_left_ta
 		new_points.set(i, points[i]);
 	}
 	const int base = insert_index * POINT_STRIDE;
+	const float left_dx = float_curve_default_handle_x(-1);
+	const float right_dx = float_curve_default_handle_x(1);
 	new_points.set(base + 0, (float)p_position.x);
 	new_points.set(base + 1, (float)p_position.y);
-	new_points.set(base + 2, p_left_tangent);
-	new_points.set(base + 3, p_right_tangent);
+	new_points.set(base + 2, left_dx);
+	new_points.set(base + 3, left_dx * p_left_tangent);
+	new_points.set(base + 4, right_dx);
+	new_points.set(base + 5, right_dx * p_right_tangent);
+	new_points.set(base + 6, (float)p_left_mode);
+	new_points.set(base + 7, (float)p_right_mode);
 	for (int i = base; i < points.size(); ++i) {
 		new_points.set(i + POINT_STRIDE, points[i]);
 	}
@@ -513,14 +562,46 @@ float TrackEditorFloatCurve::get_point_left_tangent(int p_index) const {
 	if (p_index < 0 || p_index >= get_point_count()) {
 		return 0.0f;
 	}
-	return points[p_index * POINT_STRIDE + 2];
+	const int base = p_index * POINT_STRIDE;
+	return float_curve_slope_from_handle(points[base + 2], points[base + 3]);
 }
 
 float TrackEditorFloatCurve::get_point_right_tangent(int p_index) const {
 	if (p_index < 0 || p_index >= get_point_count()) {
 		return 0.0f;
 	}
-	return points[p_index * POINT_STRIDE + 3];
+	const int base = p_index * POINT_STRIDE;
+	return float_curve_slope_from_handle(points[base + 4], points[base + 5]);
+}
+
+Vector2 TrackEditorFloatCurve::get_point_left_handle(int p_index) const {
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return Vector2(float_curve_default_handle_x(-1), 0.0f);
+	}
+	const int base = p_index * POINT_STRIDE;
+	return Vector2(points[base + 2], points[base + 3]);
+}
+
+Vector2 TrackEditorFloatCurve::get_point_right_handle(int p_index) const {
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return Vector2(float_curve_default_handle_x(1), 0.0f);
+	}
+	const int base = p_index * POINT_STRIDE;
+	return Vector2(points[base + 4], points[base + 5]);
+}
+
+int TrackEditorFloatCurve::get_point_left_mode(int p_index) const {
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return FLOAT_CURVE_BEZIER;
+	}
+	return (int)points[p_index * POINT_STRIDE + 6];
+}
+
+int TrackEditorFloatCurve::get_point_right_mode(int p_index) const {
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return FLOAT_CURVE_BEZIER;
+	}
+	return (int)points[p_index * POINT_STRIDE + 7];
 }
 
 void TrackEditorFloatCurve::set_point_offset(int p_index, float p_offset) {
@@ -541,24 +622,58 @@ void TrackEditorFloatCurve::set_point_left_tangent(int p_index, float p_tangent)
 	if (p_index < 0 || p_index >= get_point_count()) {
 		return;
 	}
-	points.set(p_index * POINT_STRIDE + 2, p_tangent);
+	const int base = p_index * POINT_STRIDE;
+	float dx = points[base + 2];
+	if (std::fabs(dx) <= 0.000001f) {
+		dx = float_curve_default_handle_x(-1);
+		points.set(base + 2, dx);
+	}
+	points.set(base + 3, dx * p_tangent);
 }
 
 void TrackEditorFloatCurve::set_point_right_tangent(int p_index, float p_tangent) {
 	if (p_index < 0 || p_index >= get_point_count()) {
 		return;
 	}
-	points.set(p_index * POINT_STRIDE + 3, p_tangent);
+	const int base = p_index * POINT_STRIDE;
+	float dx = points[base + 4];
+	if (std::fabs(dx) <= 0.000001f) {
+		dx = float_curve_default_handle_x(1);
+		points.set(base + 4, dx);
+	}
+	points.set(base + 5, dx * p_tangent);
+}
+
+void TrackEditorFloatCurve::set_point_left_handle(int p_index, const Vector2 &p_handle) {
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return;
+	}
+	const int base = p_index * POINT_STRIDE;
+	points.set(base + 2, (float)p_handle.x);
+	points.set(base + 3, (float)p_handle.y);
+}
+
+void TrackEditorFloatCurve::set_point_right_handle(int p_index, const Vector2 &p_handle) {
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return;
+	}
+	const int base = p_index * POINT_STRIDE;
+	points.set(base + 4, (float)p_handle.x);
+	points.set(base + 5, (float)p_handle.y);
 }
 
 void TrackEditorFloatCurve::set_point_left_mode(int p_index, int p_mode) {
-	(void)p_index;
-	(void)p_mode;
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return;
+	}
+	points.set(p_index * POINT_STRIDE + 6, (float)p_mode);
 }
 
 void TrackEditorFloatCurve::set_point_right_mode(int p_index, int p_mode) {
-	(void)p_index;
-	(void)p_mode;
+	if (p_index < 0 || p_index >= get_point_count()) {
+		return;
+	}
+	points.set(p_index * POINT_STRIDE + 7, (float)p_mode);
 }
 
 float TrackEditorFloatCurve::sample(float p_t) const {
@@ -591,17 +706,45 @@ float TrackEditorFloatCurve::sample(float p_t) const {
 	if (std::fabs(dt) <= 0.000001f) {
 		return points[base1 + 1];
 	}
-	const float u = (p_t - t0) / dt;
 	const float p0 = points[base0 + 1];
 	const float p3 = points[base1 + 1];
-	const float handle_dist = dt * (1.0f / 3.0f);
-	const float p1 = p0 + handle_dist * points[base0 + 3];
-	const float p2 = p3 - handle_dist * points[base1 + 2];
+	const int mode = (int)points[base0 + 7];
+	if (mode == FLOAT_CURVE_CONSTANT) {
+		return p0;
+	}
+	const float linear_u = (p_t - t0) / dt;
+	if (mode == FLOAT_CURVE_LINEAR) {
+		return p0 + (p3 - p0) * linear_u;
+	}
+	const float x0 = t0;
+	const float y0 = p0;
+	const float x1 = t0 + points[base0 + 4];
+	const float y1 = p0 + points[base0 + 5];
+	const float x2 = t1 + points[base1 + 2];
+	const float y2 = p3 + points[base1 + 3];
+	const float x3 = t1;
+	const float y3 = p3;
+	float lo = 0.0f;
+	float hi = 1.0f;
+	float u = linear_u;
+	for (int i = 0; i < 16; ++i) {
+		const float omt = 1.0f - u;
+		const float x = x0 * omt * omt * omt +
+			x1 * 3.0f * omt * omt * u +
+			x2 * 3.0f * omt * u * u +
+			x3 * u * u * u;
+		if (x < p_t) {
+			lo = u;
+		} else {
+			hi = u;
+		}
+		u = (lo + hi) * 0.5f;
+	}
 	const float omt = 1.0f - u;
-	return p0 * omt * omt * omt +
-		p1 * 3.0f * omt * omt * u +
-		p2 * 3.0f * omt * u * u +
-		p3 * u * u * u;
+	return y0 * omt * omt * omt +
+		y1 * 3.0f * omt * omt * u +
+		y2 * 3.0f * omt * u * u +
+		y3 * u * u * u;
 }
 
 PackedVector2Array TrackEditorFloatCurve::build_sampled_points(int p_point_count) const {
@@ -637,9 +780,25 @@ PackedFloat32Array TrackEditorFloatCurve::build_packet() const {
 	PackedFloat32Array out;
 	const int count = get_point_count();
 	out.resize(1 + count * POINT_STRIDE);
-	out.set(0, (float)count);
+	out.set(0, -(float)count);
 	for (int i = 0; i < count * POINT_STRIDE; ++i) {
 		out.set(i + 1, points[i]);
+	}
+	return out;
+}
+
+PackedFloat32Array TrackEditorFloatCurve::build_linear_x_packet() const {
+	PackedFloat32Array out;
+	const int count = get_point_count();
+	out.resize(1 + count * LEGACY_POINT_STRIDE);
+	out.set(0, (float)count);
+	for (int i = 0; i < count; ++i) {
+		const int in_base = i * POINT_STRIDE;
+		const int out_base = 1 + i * LEGACY_POINT_STRIDE;
+		out.set(out_base + 0, points[in_base + 0]);
+		out.set(out_base + 1, points[in_base + 1]);
+		out.set(out_base + 2, float_curve_slope_from_handle(points[in_base + 2], points[in_base + 3]));
+		out.set(out_base + 3, float_curve_slope_from_handle(points[in_base + 4], points[in_base + 5]));
 	}
 	return out;
 }
@@ -1139,17 +1298,26 @@ static inline int curve_packet_point_count(const PackedFloat32Array &p_packet, i
 	if (p_cursor < 0 || p_cursor >= p_packet.size()) {
 		return 0;
 	}
-	return (int)p_packet[p_cursor];
+	const int count = (int)p_packet[p_cursor];
+	return count < 0 ? -count : count;
+}
+
+static inline int curve_packet_stride(const PackedFloat32Array &p_packet, int p_cursor) {
+	if (p_cursor < 0 || p_cursor >= p_packet.size()) {
+		return TrackEditorFloatCurve::LEGACY_POINT_STRIDE;
+	}
+	return p_packet[p_cursor] < 0.0f ? TrackEditorFloatCurve::POINT_STRIDE : TrackEditorFloatCurve::LEGACY_POINT_STRIDE;
 }
 
 static inline int curve_packet_next(const PackedFloat32Array &p_packet, int p_cursor) {
 	const int count = curve_packet_point_count(p_packet, p_cursor);
-	return p_cursor + 1 + count * TrackEditorFloatCurve::POINT_STRIDE;
+	return p_cursor + 1 + count * curve_packet_stride(p_packet, p_cursor);
 }
 
 static float curve_packet_sample(const PackedFloat32Array &p_packet, int p_cursor, float p_t, float p_default) {
 	const int count = curve_packet_point_count(p_packet, p_cursor);
-	if (count <= 0 || p_cursor + 1 + count * TrackEditorFloatCurve::POINT_STRIDE > p_packet.size()) {
+	const int stride = curve_packet_stride(p_packet, p_cursor);
+	if (count <= 0 || p_cursor + 1 + count * stride > p_packet.size()) {
 		return p_default;
 	}
 	const int data = p_cursor + 1;
@@ -1159,28 +1327,67 @@ static float curve_packet_sample(const PackedFloat32Array &p_packet, int p_curso
 	if (p_t <= p_packet[data]) {
 		return p_packet[data + 1];
 	}
-	const int last = data + (count - 1) * TrackEditorFloatCurve::POINT_STRIDE;
+	const int last = data + (count - 1) * stride;
 	if (p_t >= p_packet[last]) {
 		return p_packet[last + 1];
 	}
 	int start = 0;
 	for (int i = 0; i < count - 1; ++i) {
-		if (p_t <= p_packet[data + (i + 1) * TrackEditorFloatCurve::POINT_STRIDE]) {
+		if (p_t <= p_packet[data + (i + 1) * stride]) {
 			start = i;
 			break;
 		}
 	}
-	const int base0 = data + start * TrackEditorFloatCurve::POINT_STRIDE;
-	const int base1 = data + (start + 1) * TrackEditorFloatCurve::POINT_STRIDE;
+	const int base0 = data + start * stride;
+	const int base1 = data + (start + 1) * stride;
 	const float t0 = p_packet[base0 + 0];
 	const float t1 = p_packet[base1 + 0];
 	const float dt = t1 - t0;
 	if (std::fabs(dt) <= 0.000001f) {
 		return p_packet[base1 + 1];
 	}
-	const float u = (p_t - t0) / dt;
 	const float p0 = p_packet[base0 + 1];
 	const float p3 = p_packet[base1 + 1];
+	const float linear_u = (p_t - t0) / dt;
+	if (stride == TrackEditorFloatCurve::POINT_STRIDE) {
+		const int mode = (int)p_packet[base0 + 7];
+		if (mode == TrackEditorFloatCurve::FLOAT_CURVE_CONSTANT) {
+			return p0;
+		}
+		if (mode == TrackEditorFloatCurve::FLOAT_CURVE_LINEAR) {
+			return p0 + (p3 - p0) * linear_u;
+		}
+		const float x0 = t0;
+		const float y0 = p0;
+		const float x1 = t0 + p_packet[base0 + 4];
+		const float y1 = p0 + p_packet[base0 + 5];
+		const float x2 = t1 + p_packet[base1 + 2];
+		const float y2 = p3 + p_packet[base1 + 3];
+		const float x3 = t1;
+		const float y3 = p3;
+		float lo = 0.0f;
+		float hi = 1.0f;
+		float u = linear_u;
+		for (int i = 0; i < 16; ++i) {
+			const float omt = 1.0f - u;
+			const float x = x0 * omt * omt * omt +
+				x1 * 3.0f * omt * omt * u +
+				x2 * 3.0f * omt * u * u +
+				x3 * u * u * u;
+			if (x < p_t) {
+				lo = u;
+			} else {
+				hi = u;
+			}
+			u = (lo + hi) * 0.5f;
+		}
+		const float omt = 1.0f - u;
+		return y0 * omt * omt * omt +
+			y1 * 3.0f * omt * omt * u +
+			y2 * 3.0f * omt * u * u +
+			y3 * u * u * u;
+	}
+	const float u = linear_u;
 	const float handle_dist = dt * (1.0f / 3.0f);
 	const float p1 = p0 + handle_dist * p_packet[base0 + 3];
 	const float p2 = p3 - handle_dist * p_packet[base1 + 2];
@@ -1318,13 +1525,14 @@ static float sample_modulation_offset(const PackedFloat32Array &p_modulation_cur
 
 static void append_curve_key_times(PackedFloat32Array &r_rows, const PackedFloat32Array &p_packet, int p_cursor, float p_start, float p_end) {
 	const int count = curve_packet_point_count(p_packet, p_cursor);
-	if (count <= 0 || p_cursor + 1 + count * TrackEditorFloatCurve::POINT_STRIDE > p_packet.size()) {
+	const int stride = curve_packet_stride(p_packet, p_cursor);
+	if (count <= 0 || p_cursor + 1 + count * stride > p_packet.size()) {
 		return;
 	}
 	const int data = p_cursor + 1;
 	const float span = p_end - p_start;
 	for (int i = 0; i < count; ++i) {
-		const float embed_t = p_packet[data + i * TrackEditorFloatCurve::POINT_STRIDE];
+		const float embed_t = p_packet[data + i * stride];
 		const float ty = p_start + span * embed_t;
 		if (ty > p_start && ty < p_end) {
 			r_rows.append(ty);
@@ -1334,12 +1542,13 @@ static void append_curve_key_times(PackedFloat32Array &r_rows, const PackedFloat
 
 static void append_curve_key_times_in_range(PackedFloat32Array &r_rows, const PackedFloat32Array &p_packet, int p_cursor, float p_start, float p_end) {
 	const int count = curve_packet_point_count(p_packet, p_cursor);
-	if (count <= 0 || p_cursor + 1 + count * TrackEditorFloatCurve::POINT_STRIDE > p_packet.size()) {
+	const int stride = curve_packet_stride(p_packet, p_cursor);
+	if (count <= 0 || p_cursor + 1 + count * stride > p_packet.size()) {
 		return;
 	}
 	const int data = p_cursor + 1;
 	for (int i = 0; i < count; ++i) {
-		const float ty = p_packet[data + i * TrackEditorFloatCurve::POINT_STRIDE];
+		const float ty = p_packet[data + i * stride];
 		if (ty > p_start && ty < p_end) {
 			r_rows.append(ty);
 		}

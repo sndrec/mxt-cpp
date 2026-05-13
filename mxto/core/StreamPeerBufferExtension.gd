@@ -33,7 +33,7 @@ func put_track_editor_curve(in_curve : Resource) -> void:
 	if in_curve == null:
 		put_u32(0)
 		return
-	var packet : PackedFloat32Array = in_curve.build_packet()
+	var packet : PackedFloat32Array = in_curve.build_linear_x_packet() if in_curve.has_method("build_linear_x_packet") else in_curve.build_packet()
 	var point_count := int(packet[0])
 	put_u32(point_count)
 	var cursor := 1

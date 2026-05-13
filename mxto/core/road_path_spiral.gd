@@ -51,6 +51,9 @@ func _ensure_curve(curve_name : String, start_value : float, end_value : float) 
 	if should_seed:
 		curve.set_point_value(0, start_value)
 		curve.set_point_value(1, end_value)
+	if should_seed and curve.has_method("set_point_right_handle") and curve.point_count >= 2:
+		curve.set_point_right_handle(0, Vector2(1.0 / 3.0, 0.0))
+		curve.set_point_left_handle(curve.point_count - 1, Vector2(-1.0 / 3.0, 0.0))
 	return curve
 
 func _ensure_spiral_curves() -> void:

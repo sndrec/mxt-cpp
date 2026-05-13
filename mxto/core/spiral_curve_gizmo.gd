@@ -40,6 +40,7 @@ const TWIST_TANGENT_HIT_RADIUS := 6.0
 const TWIST_TANGENT_COLLISION_STEPS := 8
 const SPIRAL_DEGREES_MIN := 1.0
 const SPIRAL_DEGREES_ARROW_OFFSET := VISUAL_OFFSET + 8.0
+const SCALE_TANGENT_SURFACE_STEPS := 64
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
@@ -306,15 +307,28 @@ func _bezier_segment_tangent_delta(curve : Resource, point_index : int, handle_k
 		return (_curve_offset(curve, point_index + 1) - point_t) / 3.0
 	return _tangent_delta(curve, point_index, handle_kind)
 
+func _curve_tangent_handle(curve : Resource, point_index : int, handle_kind : int) -> Vector2:
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		if curve.has_method("get_point_left_handle"):
+			return curve.get_point_left_handle(point_index)
+		var delta := _tangent_delta(curve, point_index, handle_kind)
+		return Vector2(delta, curve.get_point_left_tangent(point_index) * delta)
+	if curve.has_method("get_point_right_handle"):
+		return curve.get_point_right_handle(point_index)
+	var delta := _tangent_delta(curve, point_index, handle_kind)
+	return Vector2(delta, curve.get_point_right_tangent(point_index) * delta)
+
 func _entry_tangent_delta(entry : Dictionary, curve : Resource, point_index : int, handle_kind : int) -> float:
-	if int(entry["kind"]) == CurveKind.TWIST:
-		return _bezier_segment_tangent_delta(curve, point_index, handle_kind)
+	var handle := _curve_tangent_handle(curve, point_index, handle_kind)
+	if handle_kind == HandleKind.LEFT_TANGENT and handle.x < -MIN_POINT_GAP:
+		return handle.x
+	if handle_kind == HandleKind.RIGHT_TANGENT and handle.x > MIN_POINT_GAP:
+		return handle.x
 	return _tangent_delta(curve, point_index, handle_kind)
 
-func _tangent_value(curve : Resource, point_index : int, handle_kind : int, delta : float) -> float:
+func _tangent_value(curve : Resource, point_index : int, handle_kind : int, _delta : float) -> float:
 	var point : Vector2 = curve.get_point_position(point_index)
-	var tangent : float = curve.get_point_left_tangent(point_index) if handle_kind == HandleKind.LEFT_TANGENT else curve.get_point_right_tangent(point_index)
-	return point.y + tangent * delta
+	return point.y + _curve_tangent_handle(curve, point_index, handle_kind).y
 
 func _point_handle_position(record : Dictionary) -> Vector3:
 	var entry := curve_entries[int(record["entry"])]
@@ -1097,6 +1111,79 @@ func _direction_on_plane(offset : Vector3, plane_normal : Vector3) -> Vector3:
 		return Vector3.ZERO
 	return direction.normalized()
 
+func _record_wants_scale_tangent_surface(record : Dictionary, entry : Dictionary) -> bool:
+	if int(record["kind"]) == HandleKind.POINT:
+		return false
+	return int(entry["kind"]) == CurveKind.SCALE_X or int(entry["kind"]) == CurveKind.SCALE_Y
+
+func _scale_tangent_range(curve : Resource, point_index : int, handle_kind : int) -> Vector2:
+	var point_t := _curve_offset(curve, point_index)
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		return Vector2(0.0, point_t - MIN_POINT_GAP)
+	return Vector2(point_t + MIN_POINT_GAP, 1.0)
+
+func _build_scale_tangent_surface_snapshot(entry : Dictionary, curve : Resource, point_index : int, handle_kind : int, side : float) -> Array[Dictionary]:
+	var range := _scale_tangent_range(curve, point_index, handle_kind)
+	var samples : Array[Dictionary] = []
+	if range.y < range.x:
+		return samples
+	for i in SCALE_TANGENT_SURFACE_STEPS + 1:
+		var t := lerpf(range.x, range.y, float(i) / float(SCALE_TANGENT_SURFACE_STEPS))
+		var frame := _sample_frame(t)
+		var axis := _entry_axis(entry, frame).normalized() * side
+		samples.append({"t": t, "origin": frame["center"] + axis * VISUAL_OFFSET, "axis": axis})
+	return samples
+
+func _point_ray_distance_squared(point : Vector3, ray_origin : Vector3, ray_dir : Vector3) -> float:
+	var ray_t := maxf(0.0, (point - ray_origin).dot(ray_dir))
+	return point.distance_squared_to(ray_origin + ray_dir * ray_t)
+
+func _closest_on_scale_tangent_surface(samples : Array, ray_origin : Vector3, ray_dir : Vector3, min_value : float) -> Dictionary:
+	var best_t := 0.0
+	var best_value := min_value
+	var best_dist := INF
+	for sample in samples:
+		var origin : Vector3 = sample["origin"]
+		var axis : Vector3 = sample["axis"]
+		var w := ray_origin - origin
+		var b := ray_dir.dot(axis)
+		var d := ray_dir.dot(w)
+		var e := axis.dot(w)
+		var denom := 1.0 - b * b
+		var ray_distance := 0.0
+		var value := 0.0
+		if absf(denom) > 0.00001:
+			ray_distance = (b * e - d) / denom
+			value = (e - b * d) / denom
+		else:
+			ray_distance = (origin - ray_origin).dot(ray_dir)
+			value = (ray_origin + ray_dir * ray_distance - origin).dot(axis)
+		if ray_distance < 0.0:
+			ray_distance = 0.0
+			value = (ray_origin - origin).dot(axis)
+		value = maxf(min_value, value)
+		var point := origin + axis * value
+		var dist := _point_ray_distance_squared(point, ray_origin, ray_dir)
+		if dist < best_dist:
+			best_dist = dist
+			best_t = float(sample["t"])
+			best_value = value
+	return {"t": best_t, "value": best_value}
+
+func _begin_scale_tangent_surface_drag(record : Dictionary, entry : Dictionary, curve : Resource, point_index : int, side : float) -> bool:
+	var samples := _build_scale_tangent_surface_snapshot(entry, curve, point_index, int(record["kind"]), side)
+	if samples.is_empty():
+		return false
+	drag_snapshot = {
+		"record": record.duplicate(),
+		"mode": "scale_tangent_surface",
+		"samples": samples,
+		"min": float(entry["min"]),
+		"point_t": _curve_offset(curve, point_index),
+		"point_value": _curve_value(curve, point_index),
+	}
+	return true
+
 func _begin_spiral_degrees_drag(record : Dictionary, cam : Camera3D, ray_dir : Vector3) -> bool:
 	var end_frame := _end_frame()
 	var axis := _spiral_axis_world()
@@ -1155,6 +1242,8 @@ func _begin_drag(handle_id : int, cam : Camera3D, ray_dir : Vector3) -> bool:
 	var frame := _sample_frame(point_t)
 	var side := float(record.get("side", 1.0))
 	var kind := int(entry["kind"])
+	if _record_wants_scale_tangent_surface(record, entry):
+		return _begin_scale_tangent_surface_drag(record, entry, curve, point_index, side)
 	if kind == CurveKind.TWIST:
 		var center : Vector3 = frame["center"]
 		var tangent_delta := 0.0
@@ -1255,11 +1344,37 @@ func _apply_line_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 	else:
 		var delta_t := float(drag_snapshot["delta_t"])
 		if absf(delta_t) > 0.00001:
-			var slope := (value - float(drag_snapshot["point_value"])) / delta_t
+			var handle := Vector2(delta_t, value - float(drag_snapshot["point_value"]))
 			if int(record["kind"]) == HandleKind.LEFT_TANGENT:
-				curve.set_point_left_tangent(point_index, slope)
+				if curve.has_method("set_point_left_handle"):
+					curve.set_point_left_handle(point_index, handle)
+				else:
+					curve.set_point_left_tangent(point_index, handle.y / delta_t)
 			else:
-				curve.set_point_right_tangent(point_index, slope)
+				if curve.has_method("set_point_right_handle"):
+					curve.set_point_right_handle(point_index, handle)
+				else:
+					curve.set_point_right_tangent(point_index, handle.y / delta_t)
+		_update_mesh(false)
+
+func _apply_scale_tangent_surface_drag(cam : Camera3D, ray_dir : Vector3) -> void:
+	var record : Dictionary = drag_snapshot["record"]
+	var entry := curve_entries[int(record["entry"])]
+	var curve : Resource = entry["curve"]
+	var point_index := int(record["point"])
+	var pick := _closest_on_scale_tangent_surface(drag_snapshot["samples"], cam.global_position, ray_dir, float(drag_snapshot["min"]))
+	var delta_t := float(pick["t"]) - float(drag_snapshot["point_t"])
+	if absf(delta_t) <= MIN_POINT_GAP:
+		return
+	var handle := Vector2(delta_t, float(pick["value"]) - float(drag_snapshot["point_value"]))
+	if int(record["kind"]) == HandleKind.LEFT_TANGENT:
+		if handle.x >= -MIN_POINT_GAP:
+			return
+		curve.set_point_left_handle(point_index, handle)
+	else:
+		if handle.x <= MIN_POINT_GAP:
+			return
+		curve.set_point_right_handle(point_index, handle)
 	_update_mesh(false)
 
 func _apply_rotation_drag(cam : Camera3D, ray_dir : Vector3) -> void:
@@ -1281,11 +1396,17 @@ func _apply_rotation_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 	else:
 		var delta_t := float(drag_snapshot["delta_t"])
 		if absf(delta_t) > 0.00001:
-			var slope := (value - float(drag_snapshot["point_value"])) / delta_t
+			var handle := Vector2(delta_t, value - float(drag_snapshot["point_value"]))
 			if int(record["kind"]) == HandleKind.LEFT_TANGENT:
-				curve.set_point_left_tangent(point_index, slope)
+				if curve.has_method("set_point_left_handle"):
+					curve.set_point_left_handle(point_index, handle)
+				else:
+					curve.set_point_left_tangent(point_index, handle.y / delta_t)
 			else:
-				curve.set_point_right_tangent(point_index, slope)
+				if curve.has_method("set_point_right_handle"):
+					curve.set_point_right_handle(point_index, handle)
+				else:
+					curve.set_point_right_tangent(point_index, handle.y / delta_t)
 	_update_mesh(false)
 
 func _write_dragged_handle(cam : Camera3D, ray_dir : Vector3) -> void:
@@ -1294,6 +1415,8 @@ func _write_dragged_handle(cam : Camera3D, ray_dir : Vector3) -> void:
 			_apply_axis_drag(cam, ray_dir)
 		"spiral_degrees":
 			_apply_spiral_degrees_drag(cam, ray_dir)
+		"scale_tangent_surface":
+			_apply_scale_tangent_surface_drag(cam, ray_dir)
 		"rotation":
 			_apply_rotation_drag(cam, ray_dir)
 		_:

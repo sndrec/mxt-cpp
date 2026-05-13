@@ -162,7 +162,14 @@ private:
 	static void _bind_methods();
 
 public:
-	static constexpr int POINT_STRIDE = 4;
+	enum FloatCurveMode {
+		FLOAT_CURVE_BEZIER = 0,
+		FLOAT_CURVE_LINEAR = 1,
+		FLOAT_CURVE_CONSTANT = 2,
+	};
+
+	static constexpr int POINT_STRIDE = 8;
+	static constexpr int LEGACY_POINT_STRIDE = 4;
 
 	TrackEditorFloatCurve();
 
@@ -178,10 +185,16 @@ public:
 	Vector2 get_point_position(int p_index) const;
 	float get_point_left_tangent(int p_index) const;
 	float get_point_right_tangent(int p_index) const;
+	Vector2 get_point_left_handle(int p_index) const;
+	Vector2 get_point_right_handle(int p_index) const;
+	int get_point_left_mode(int p_index) const;
+	int get_point_right_mode(int p_index) const;
 	void set_point_offset(int p_index, float p_offset);
 	void set_point_value(int p_index, float p_value);
 	void set_point_left_tangent(int p_index, float p_tangent);
 	void set_point_right_tangent(int p_index, float p_tangent);
+	void set_point_left_handle(int p_index, const Vector2 &p_handle);
+	void set_point_right_handle(int p_index, const Vector2 &p_handle);
 	void set_point_left_mode(int p_index, int p_mode);
 	void set_point_right_mode(int p_index, int p_mode);
 	float sample(float p_t) const;
@@ -189,6 +202,7 @@ public:
 	Vector2 find_open_pipe_t_from_relative_pos(const Vector3 &p_pos) const;
 	Vector2 find_open_cylinder_t_from_relative_pos(const Vector3 &p_pos) const;
 	PackedFloat32Array build_packet() const;
+	PackedFloat32Array build_linear_x_packet() const;
 };
 
 }
@@ -197,3 +211,4 @@ VARIANT_ENUM_CAST(godot::TrackEditorCurve::RoadShapeType);
 VARIANT_ENUM_CAST(godot::TrackEditorCurve::EaseType);
 VARIANT_ENUM_CAST(godot::TrackEditorCurve::CurveMode);
 VARIANT_ENUM_CAST(godot::TrackEditorCurve::RotationMode);
+VARIANT_ENUM_CAST(godot::TrackEditorFloatCurve::FloatCurveMode);
