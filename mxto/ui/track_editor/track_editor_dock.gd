@@ -111,6 +111,8 @@ func select_node(in_node : Node) -> void:
 			track_scene.set_active_modulation(in_node, _ensure_active_modulation(in_node))
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SHAPE:
 			track_scene.set_active_shape_path(in_node)
+		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_SPIRAL:
+			track_scene.set_active_spiral_path(in_node)
 		elif track_scene.tool_mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS:
 			track_scene.set_active_checkpoint_path(in_node)
 
@@ -211,6 +213,7 @@ func _on_edit_spiral_pressed() -> void:
 	var selected := get_active_path()
 	if !_is_spiral_path(selected):
 		return
+	track_scene.set_active_spiral_path(selected)
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SPIRAL)
 	select_node(selected)
 	main_buttons.visible = true

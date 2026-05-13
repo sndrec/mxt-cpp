@@ -185,6 +185,7 @@ func _ready():
 	spiral_curve_twist.curve_edited.connect(update_spiral_curve)
 	spiral_curve_scale_x.curve_edited.connect(update_spiral_curve)
 	spiral_curve_scale_y.curve_edited.connect(update_spiral_curve)
+	_hide_spiral_curve_editors()
 	track_name_edit.text_changed.connect(update_track_name)
 	track_description_edit.text_changed.connect(update_track_description)
 	track_difficulty_edit.value_changed.connect(update_track_difficulty)
@@ -236,6 +237,13 @@ func _sync_tool_mode_signal() -> void:
 		connected_tool_scene.tool_mode_changed.connect(_refresh_contextual_visibility)
 	if connected_tool_scene and !connected_tool_scene.track_structure_changed.is_connected(selection_updated):
 		connected_tool_scene.track_structure_changed.connect(selection_updated)
+
+func _hide_spiral_curve_editors() -> void:
+	spiral_curve_radius.visible = false
+	spiral_curve_height.visible = false
+	spiral_curve_twist.visible = false
+	spiral_curve_scale_x.visible = false
+	spiral_curve_scale_y.visible = false
 
 func _is_spiral_path(path : Node) -> bool:
 	if !path:
@@ -492,6 +500,7 @@ func _refresh_spiral_controls() -> void:
 		spiral_curve_scale_x.associated_curve = scale_x_curve
 	if spiral_curve_scale_y.associated_curve != scale_y_curve:
 		spiral_curve_scale_y.associated_curve = scale_y_curve
+	_hide_spiral_curve_editors()
 	updating_spiral_controls = false
 
 func _mark_spiral_dirty() -> void:

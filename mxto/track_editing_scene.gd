@@ -9,6 +9,7 @@ const ShapeCurveGizmoScript := preload("res://core/shape_curve_gizmo.gd")
 const MeshLayoutGizmoScript := preload("res://core/mesh_layout_gizmo.gd")
 const CheckpointGizmoScript := preload("res://core/checkpoint_gizmo.gd")
 const RoadPathSpiralScript := preload("res://core/road_path_spiral.gd")
+const SpiralCurveGizmoScript := preload("res://core/spiral_curve_gizmo.gd")
 const TrackTriggerScript := preload("res://core/track_trigger.gd")
 
 enum ToolMode {
@@ -60,6 +61,7 @@ var modulation_gizmo : Node3D
 var shape_curve_gizmo : Node3D
 var mesh_layout_gizmo : Node3D
 var checkpoint_gizmo : Node3D
+var spiral_curve_gizmo : Node3D
 
 const simple_mesh_layout : PackedFloat32Array = [0.0, 0.25, 0.5, 0.75, 1.0]
 const cylinder_mesh_layout : PackedFloat32Array = [0.0, 0.032258064516129, 0.064516129032258, 0.096774193548387, 0.12903225806452, 0.16129032258065, 0.19354838709677, 0.2258064516129, 0.25806451612903, 0.29032258064516, 0.32258064516129, 0.35483870967742, 0.38709677419355, 0.41935483870968, 0.45161290322581, 0.48387096774194, 0.51612903225806, 0.54838709677419, 0.58064516129032, 0.61290322580645, 0.64516129032258, 0.67741935483871, 0.70967741935484, 0.74193548387097, 0.7741935483871, 0.80645161290323, 0.83870967741935, 0.87096774193548, 0.90322580645161, 0.93548387096774, 0.96774193548387, 1.0]
@@ -123,6 +125,11 @@ func set_active_shape_path(in_path : RoadPath) -> void:
 	if mesh_layout_gizmo:
 		mesh_layout_gizmo.set_target_path(in_path)
 
+func set_active_spiral_path(in_path : RoadPath) -> void:
+	if !spiral_curve_gizmo:
+		return
+	spiral_curve_gizmo.set_target_path(in_path)
+
 func set_active_checkpoint_path(in_path : RoadPath) -> void:
 	if !checkpoint_gizmo:
 		return
@@ -170,6 +177,8 @@ func _ready() -> void:
 	add_child(mesh_layout_gizmo)
 	checkpoint_gizmo = CheckpointGizmoScript.new()
 	add_child(checkpoint_gizmo)
+	spiral_curve_gizmo = SpiralCurveGizmoScript.new()
+	add_child(spiral_curve_gizmo)
 	translate_gizmo.mouse_cast = mouse_gizmo_cast
 	rotate_gizmo.mouse_cast = mouse_gizmo_cast
 	add_road_gizmo.mouse_cast = mouse_gizmo_cast
@@ -179,6 +188,7 @@ func _ready() -> void:
 	shape_curve_gizmo.mouse_cast = mouse_gizmo_cast
 	mesh_layout_gizmo.mouse_cast = mouse_gizmo_cast
 	checkpoint_gizmo.mouse_cast = mouse_gizmo_cast
+	spiral_curve_gizmo.mouse_cast = mouse_gizmo_cast
 
 func save_edit_source(path : String) -> Error:
 	return track_root.save_edit_source(path)
