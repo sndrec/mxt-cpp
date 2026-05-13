@@ -60,6 +60,7 @@ func _ready():
 	dashplate_button.pressed.connect(_on_track_object_type_pressed.bind(0))
 	jumpplate_button.pressed.connect(_on_track_object_type_pressed.bind(1))
 	mine_button.pressed.connect(_on_track_object_type_pressed.bind(2))
+	track_scene.track_structure_changed.connect(update_outliner)
 	update_outliner()
 	dock_ready.emit()
 
@@ -239,14 +240,8 @@ func _on_embed_type_pressed(embed_type : int) -> void:
 	main_buttons.visible = true
 
 func _on_track_object_type_pressed(trigger_type : int) -> void:
-	var selected := get_active_path()
-	if !selected:
-		return
-	var new_trigger := track_scene.add_track_trigger(trigger_type, selected)
-	if new_trigger:
-		select_node(new_trigger)
-	update_outliner()
-	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SEGMENT)
+	track_scene.desired_trigger_type = trigger_type
+	track_scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_OBJECT)
 	new_track_object_buttons.visible = false
 	main_buttons.visible = true
 	bezier_buttons.visible = false

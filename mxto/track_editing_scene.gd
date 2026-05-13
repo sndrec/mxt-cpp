@@ -24,6 +24,7 @@ enum ToolMode {
 }
 
 signal tool_mode_changed(mode : ToolMode)
+signal track_structure_changed
 
 @onready var edit_cam: Camera3D = $EditorCamera
 @onready var ref_cam: Camera3D = $RefCamera
@@ -47,6 +48,7 @@ var last_mouse_pos := Vector2.ZERO
 var active_path : RoadPath
 var tool_mode : ToolMode = ToolMode.EDIT_SEGMENT
 var desired_road_type := ENUMS.ROAD_TYPE.STANDARD
+var desired_trigger_type := 0
 var editor_cross_section_t := 0.5
 var pointer_action_owner : Node
 var embed_gizmo : Node3D
@@ -184,6 +186,77 @@ func update_mouse_casts(force_update := false) -> void:
 		mouse_picker_cast.force_raycast_update()
 		mouse_gizmo_cast.force_raycast_update()
 
+func _road_path_from_collider(collider : Object) -> RoadPath:
+	var node := collider as Node
+	while node:
+		if node is RoadPath:
+			return node
+		node = node.get_parent()
+	return null
+
+func _pick_road_path_under_mouse() -> Dictionary:
+	mouse_picker_cast.clear_exceptions()
+	mouse_picker_cast.force_raycast_update()
+	while mouse_picker_cast.is_colliding():
+		var collider := mouse_picker_cast.get_collider()
+		var path := _road_path_from_collider(collider)
+		if path:
+			var point := mouse_picker_cast.get_collision_point()
+			mouse_picker_cast.clear_exceptions()
+			return {"path": path, "point": point}
+		var collision_object := collider as CollisionObject3D
+		if !collision_object:
+			break
+		mouse_picker_cast.add_exception(collision_object)
+		mouse_picker_cast.force_raycast_update()
+	mouse_picker_cast.clear_exceptions()
+	return {}
+
+func _closest_surface_param(segment : RoadPath, world_pos : Vector3) -> Vector2:
+	var best_param := Vector2(0.0, 0.5)
+	var best_distance := INF
+	var center := best_param
+	var span := Vector2(2.0, 1.0)
+	for refine_pass in 4:
+		var query := PackedVector2Array()
+		var params : Array[Vector2] = []
+		var x_steps := 9
+		var y_steps := 17
+		for y in y_steps:
+			for x in x_steps:
+				var tx := clampf(center.x - span.x * 0.5 + span.x * (float(x) / float(x_steps - 1)), -1.0, 1.0)
+				var ty := clampf(center.y - span.y * 0.5 + span.y * (float(y) / float(y_steps - 1)), 0.0, 1.0)
+				var param := Vector2(tx, ty)
+				params.append(param)
+				query.append(param)
+		var positions := segment.get_surface_positions(query)
+		for i in positions.size():
+			var distance := positions[i].distance_squared_to(world_pos)
+			if distance < best_distance:
+				best_distance = distance
+				best_param = params[i]
+		center = best_param
+		span *= 0.25
+	return best_param
+
+func _handle_add_object_input() -> void:
+	if tool_mode != ToolMode.ADD_OBJECT:
+		return
+	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
+		return
+	if !begin_pointer_action(self):
+		return
+	var hit := _pick_road_path_under_mouse()
+	if !hit.is_empty():
+		var path := hit["path"] as RoadPath
+		var surface_t := _closest_surface_param(path, hit["point"])
+		var trigger := add_track_trigger(desired_trigger_type, path, surface_t)
+		if trigger:
+			FZGlobal.select_node(trigger)
+			set_tool_mode(ToolMode.EDIT_SEGMENT)
+			get_viewport().set_input_as_handled()
+	end_pointer_action(self)
+
 func _process(delta: float) -> void:
 	if pointer_action_owner and !is_instance_valid(pointer_action_owner):
 		pointer_action_owner = null
@@ -236,6 +309,7 @@ func _process(delta: float) -> void:
 	last_mouse_pos = get_viewport().get_mouse_position()
 	grid_origin.position = grid_origin.position.lerp(snapped(cam_origin, Vector3(16, 16, 16)), delta * 30)
 	update_mouse_casts(true)
+	_handle_add_object_input()
 
 func _apply_road_type_to_path(path : RoadPath, road_type : ENUMS.ROAD_TYPE) -> void:
 	match road_type:
@@ -318,12 +392,13 @@ func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_T
 	track_root.move_child(new_track_piece, id_to_put_above + 1)
 	return new_track_piece
 
-func add_track_trigger(trigger_type : int, in_path : RoadPath) -> Node3D:
+func add_track_trigger(trigger_type : int, in_path : RoadPath, surface_t := Vector2(0.0, 0.5)) -> Node3D:
 	if !in_path:
 		return null
 	var trigger : Node3D = TrackTriggerScript.new()
 	trigger.set("trigger_type", trigger_type)
 	track_root.add_child(trigger)
 	trigger.name = String(trigger.call("trigger_label")) + " Trigger"
-	trigger.call("place_on_segment", in_path, 0.0, 0.5)
+	trigger.call("place_on_segment", in_path, surface_t.x, surface_t.y)
+	track_structure_changed.emit()
 	return trigger
