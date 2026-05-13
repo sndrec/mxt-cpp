@@ -200,6 +200,22 @@ func _axis_pole_center() -> Vector3:
 func _axis_handle_position() -> Vector3:
 	return _axis_pole_center()
 
+func _radius_axis(frame : Dictionary) -> Vector3:
+	var pole_axis := _spiral_axis_world()
+	var pole_center := _axis_pole_center()
+	var center : Vector3 = frame["center"]
+	var frame_x : Vector3 = frame["x"]
+	var frame_z : Vector3 = frame["z"]
+	var closest_pole_point := pole_center + pole_axis * (center - pole_center).dot(pole_axis)
+	var axis := closest_pole_point - center
+	if axis.length_squared() <= 0.00001:
+		axis = frame_x - pole_axis * frame_x.dot(pole_axis)
+	if axis.length_squared() <= 0.00001:
+		axis = frame_z.cross(pole_axis)
+	if axis.length_squared() <= 0.00001:
+		return frame_x.normalized()
+	return axis.normalized()
+
 func _point_sides(kind : int) -> Array[float]:
 	if kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y or kind == CurveKind.RADIUS or kind == CurveKind.HEIGHT:
 		return [-1.0, 1.0]
@@ -207,6 +223,8 @@ func _point_sides(kind : int) -> Array[float]:
 
 func _entry_axis(entry : Dictionary, frame : Dictionary) -> Vector3:
 	match int(entry["kind"]):
+		CurveKind.RADIUS:
+			return _radius_axis(frame)
 		CurveKind.HEIGHT:
 			return _spiral_axis_world()
 		CurveKind.SCALE_Y:
@@ -216,6 +234,12 @@ func _entry_axis(entry : Dictionary, frame : Dictionary) -> Vector3:
 
 func _entry_plane_normal(entry : Dictionary, frame : Dictionary) -> Vector3:
 	match int(entry["kind"]):
+		CurveKind.RADIUS:
+			var frame_z : Vector3 = frame["z"]
+			var normal := _radius_axis(frame).cross(frame_z)
+			if normal.length_squared() <= 0.00001:
+				return _spiral_axis_world()
+			return normal.normalized()
 		CurveKind.HEIGHT:
 			return frame["x"]
 		CurveKind.SCALE_X:
