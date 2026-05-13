@@ -329,16 +329,6 @@ func _refresh_scrollbar_widths() -> void:
 func _configure_screen_layout() -> void:
 	var viewport_size := get_viewport_rect().size
 	var panel_height : float = maxf(PANEL_MIN_HEIGHT, viewport_size.y - UI_EDGE_MARGIN * 2.0)
-	set_anchors_preset(Control.PRESET_TOP_LEFT, false)
-	position = Vector2(maxf(UI_EDGE_MARGIN, viewport_size.x - UI_EDGE_MARGIN - PROPERTY_PANEL_WIDTH), UI_EDGE_MARGIN)
-	size = Vector2(PROPERTY_PANEL_WIDTH, panel_height)
-	dock_control.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
-	dock_control.position = Vector2.ZERO
-	dock_control.size = size
-	tab_container.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
-	tab_container.position = Vector2.ZERO
-	tab_container.size = Vector2(PROPERTY_PANEL_WIDTH, panel_height)
-	tab_container.custom_minimum_size = Vector2(PROPERTY_PANEL_WIDTH, 0.0)
 	for scroll_panel in _property_scroll_panels():
 		if scroll_panel:
 			scroll_panel.custom_minimum_size = Vector2(PROPERTY_PANEL_WIDTH, panel_height)
