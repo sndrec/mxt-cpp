@@ -1435,14 +1435,16 @@ static Transform3D canonical_spiral_transform(
 		basis = Basis(Quaternion(twist_axis, twist)) * basis;
 	}
 	float t2 = clampf_local(p_t + 0.001f, 0.0f, 1.0f);
+	bool sample_backward = false;
 	if (std::fabs(t2 - p_t) <= 0.000001f) {
 		t2 = clampf_local(p_t - 0.001f, 0.0f, 1.0f);
+		sample_backward = true;
 	}
 	const float radius2 = curve_packet_sample(p_radius_curve, 0, t2, 100.0f);
 	const float height2 = curve_packet_sample(p_height_curve, 0, t2, 0.0f);
 	const float angle2 = p_spiral_radians * t2;
 	const Vector3 pos2 = -Basis(Quaternion(axis, angle2)).xform(perpendicular * radius2) + axis * height2;
-	const Vector3 delta = pos2 - pos;
+	const Vector3 delta = sample_backward ? pos - pos2 : pos2 - pos;
 	if (delta.length_squared() > 0.0000001) {
 		const Vector3 tangent = delta.normalized();
 		const Vector3 current_z = normalized_or(basis.get_column(2), Vector3(0.0, 0.0, 1.0));
