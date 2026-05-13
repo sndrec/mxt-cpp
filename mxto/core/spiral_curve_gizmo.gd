@@ -1414,7 +1414,7 @@ func _apply_line_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 					curve.set_point_right_handle(point_index, handle)
 				else:
 					curve.set_point_right_tangent(point_index, handle.y / delta_t)
-		_update_mesh(false)
+	_update_mesh(false)
 
 func _apply_scale_tangent_surface_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 	var record : Dictionary = drag_snapshot["record"]
