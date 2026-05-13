@@ -37,6 +37,8 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var outliner: VBoxContainer = $MainGUI/VBoxContainer/ScrollContainer/Outliner
 
 func _is_script_path(node : Node, script_path : String) -> bool:
+	if !node:
+		return false
 	var script : Script = node.get_script() as Script
 	return script and script.resource_path == script_path
 
@@ -49,7 +51,7 @@ func _segment_outliner_label(segment : RoadPath, index : int) -> String:
 	return segment_type + " Track Segment " + str(index + 1)
 
 func _is_track_trigger(node : Node) -> bool:
-	return node.get_script() == TrackTriggerScript
+	return node and node.get_script() == TrackTriggerScript
 
 func _is_spiral_path(node : Node) -> bool:
 	return _is_script_path(node, "res://core/road_path_spiral.gd")
