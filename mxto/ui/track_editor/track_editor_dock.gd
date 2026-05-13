@@ -12,7 +12,6 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var new_track_segment_type_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons
 @onready var new_embed_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons
 @onready var new_track_object_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons
-@onready var bezier_buttons: VBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/BezierButtons
 @onready var edit_rails_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditRails
 @onready var edit_modulation_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditModulation
 @onready var edit_shape_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditShape
@@ -155,7 +154,6 @@ func _on_edit_segment_props_pressed():
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 
 func _on_edit_track_props_pressed():
@@ -165,7 +163,6 @@ func _on_edit_track_props_pressed():
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _on_edit_rails_pressed() -> void:
 	var selected := get_active_path()
@@ -178,7 +175,6 @@ func _on_edit_rails_pressed() -> void:
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _ensure_active_modulation(path : RoadPath) -> int:
 	if path.road_shape.modulation_table.is_empty():
@@ -207,7 +203,6 @@ func _on_edit_modulation_pressed() -> void:
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _on_edit_shape_pressed() -> void:
 	var selected := get_active_path()
@@ -222,7 +217,6 @@ func _on_edit_shape_pressed() -> void:
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _on_edit_mesh_layout_pressed() -> void:
 	var selected := get_active_path()
@@ -237,7 +231,6 @@ func _on_edit_mesh_layout_pressed() -> void:
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _on_edit_spiral_pressed() -> void:
 	var selected := get_active_path()
@@ -251,7 +244,6 @@ func _on_edit_spiral_pressed() -> void:
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _on_edit_embeds_pressed() -> void:
 	var selected := get_active_path()
@@ -270,7 +262,6 @@ func _on_edit_embeds_pressed() -> void:
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _on_edit_checkpoints_pressed() -> void:
 	var selected := get_active_path()
@@ -284,7 +275,6 @@ func _on_edit_checkpoints_pressed() -> void:
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = false
 
 func _on_embed_type_pressed(embed_type : int) -> void:
 	track_scene.desired_embed_type = embed_type
@@ -298,7 +288,6 @@ func _on_track_object_type_pressed(trigger_type : int) -> void:
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_OBJECT)
 	new_track_object_buttons.visible = false
 	main_buttons.visible = true
-	bezier_buttons.visible = false
 
 
 func _on_road_standard_pressed():
@@ -338,96 +327,6 @@ func _on_road_rounded_square_open_pressed() -> void:
 	new_track_segment_buttons.visible = false
 	new_track_segment_type_buttons.visible = true
 	track_scene.desired_road_type = ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN
-
-func retrieve_point_int_from_string(in_name : String) -> int:
-	var cut := in_name.erase(0, 6)
-	var space_pos := cut.find(" ")
-	var truncate := cut
-	if space_pos != -1:
-		truncate = cut.erase(space_pos, 100)
-	var num = int(truncate)
-	return num
-
-func _selected_bezier_handle() -> BezierHandle:
-	if FZGlobal.active_node is BezierHandle:
-		return FZGlobal.active_node as BezierHandle
-	return null
-
-func _insert_bezier_point_at_handle(insert_after : bool) -> void:
-	var handle := _selected_bezier_handle()
-	if !handle:
-		return
-	var bez_seg := handle.get_parent() as RoadPathBezier
-	if !bez_seg or bez_seg is RoadPathLine:
-		return
-	var point_count := bez_seg.get_control_point_count()
-	if point_count < 2:
-		return
-	var source_index := clampi(handle.associated_index, 0, point_count - 1)
-	var left_index := source_index
-	var right_index := source_index + 1
-	if !insert_after:
-		left_index = source_index - 1
-		right_index = source_index
-	var insert_index := right_index
-	var in_time := 0.0
-	var in_transform := Transform3D.IDENTITY
-	var in_scale := Vector3.ONE
-	var handle_in := 166.0
-	var handle_out := 166.0
-	if left_index >= 0 and right_index < point_count:
-		var time_1 : float = bez_seg.native_curve.get_control_point_time(left_index)
-		var time_2 : float = bez_seg.native_curve.get_control_point_time(right_index)
-		var handle_out_1 : float = bez_seg.native_curve.get_control_point_handle_out(left_index)
-		var handle_in_2 : float = bez_seg.native_curve.get_control_point_handle_in(right_index)
-		in_time = lerpf(time_1, time_2, 0.5)
-		in_transform = bez_seg.get_root_transform(in_time)
-		in_scale = bez_seg.native_curve.get_control_point_scale(left_index).lerp(bez_seg.native_curve.get_control_point_scale(right_index), 0.5)
-		handle_in = handle_out_1 * 0.5
-		handle_out = handle_in_2 * 0.5
-		bez_seg.native_curve.set_control_point_handles(left_index, bez_seg.native_curve.get_control_point_handle_in(left_index), handle_out_1 * 0.5)
-		bez_seg.native_curve.set_control_point_handles(right_index, handle_in_2 * 0.5, bez_seg.native_curve.get_control_point_handle_out(right_index))
-	else:
-		var edge_index := source_index
-		in_time = 1.0 if insert_after else 0.0
-		in_transform = bez_seg.get_root_transform(in_time)
-		in_scale = bez_seg.native_curve.get_control_point_scale(edge_index)
-		var edge_handle := maxf(32.0, bez_seg.native_curve.get_control_point_handle_out(edge_index) if insert_after else bez_seg.native_curve.get_control_point_handle_in(edge_index))
-		in_transform.origin += in_transform.basis.z.normalized() * edge_handle * (3.0 if insert_after else -3.0)
-		insert_index = point_count if insert_after else 0
-		handle_in = edge_handle
-		handle_out = edge_handle
-	bez_seg.add_control_point(
-		in_time,
-		in_transform.origin,
-		in_transform.basis,
-		in_scale,
-		handle_in,
-		handle_out,
-		insert_index)
-	if insert_index < bez_seg.bezier_handle_nodes.size():
-		select_node(bez_seg.bezier_handle_nodes[insert_index])
-
-func _on_add_point_before_button_down():
-	_insert_bezier_point_at_handle(false)
-
-func _on_add_point_after_pressed():
-	_insert_bezier_point_at_handle(true)
-
-
-func _on_delete_point_button_down():
-	var sel = FZGlobal.active_node
-	if sel is BezierHandle:
-		var pt_handle : BezierHandle = sel as BezierHandle
-		var num := pt_handle.associated_index + 1
-		if num <= 0:
-			num = retrieve_point_int_from_string(pt_handle.name)
-		var bez_seg := sel.get_parent() as RoadPathBezier
-		if bez_seg is RoadPathLine:
-			return
-		bez_seg.remove_bezier_point_at_index(num - 1)
-		select_node(bez_seg)
-
 
 func _on_road_line_pressed() -> void:
 	var selected := get_active_path()
