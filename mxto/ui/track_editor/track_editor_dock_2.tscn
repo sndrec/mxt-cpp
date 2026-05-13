@@ -236,42 +236,52 @@ max_value = 1.0
 step = 0.01
 
 [node name="SpiralRadiusLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
+visible = false
 layout_mode = 2
 text = "Radius"
 
 [node name="SpiralRadiusCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
+visible = false
 custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
 
 [node name="SpiralHeightLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
+visible = false
 layout_mode = 2
 text = "Height"
 
 [node name="SpiralHeightCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
+visible = false
 custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
 
 [node name="SpiralTwistLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
+visible = false
 layout_mode = 2
 text = "Twist"
 
 [node name="SpiralTwistCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
+visible = false
 custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
 
 [node name="SpiralScaleXLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
+visible = false
 layout_mode = 2
 text = "Scale X"
 
 [node name="SpiralScaleXCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
+visible = false
 custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
 
 [node name="SpiralScaleYLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
+visible = false
 layout_mode = 2
 text = "Scale Y"
 
 [node name="SpiralScaleYCurve" parent="Control/TabContainer/Spiral/VBoxContainer" instance=ExtResource("2_fstgu")]
+visible = false
 custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
 
@@ -463,28 +473,34 @@ layout_mode = 2
 text = "Remove"
 
 [node name="Label" type="Label" parent="Control/TabContainer/Modulation/VBoxContainer"]
+visible = false
 layout_mode = 2
 text = "Modulation Effect"
 
 [node name="Control" type="Control" parent="Control/TabContainer/Modulation/VBoxContainer"]
+visible = false
 custom_minimum_size = Vector2(0, 161.28)
 layout_mode = 2
 mouse_filter = 2
 
 [node name="ModCurveEffect" parent="Control/TabContainer/Modulation/VBoxContainer" instance=ExtResource("2_fstgu")]
+visible = false
 custom_minimum_size = Vector2(0, 318)
 layout_mode = 2
 
 [node name="Label2" type="Label" parent="Control/TabContainer/Modulation/VBoxContainer"]
+visible = false
 layout_mode = 2
 text = "Modulation Height"
 
 [node name="Control2" type="Control" parent="Control/TabContainer/Modulation/VBoxContainer"]
+visible = false
 custom_minimum_size = Vector2(0, 161.28)
 layout_mode = 2
 mouse_filter = 2
 
 [node name="ModCurveHeight" parent="Control/TabContainer/Modulation/VBoxContainer" instance=ExtResource("2_fstgu")]
+visible = false
 custom_minimum_size = Vector2(0, 318)
 layout_mode = 2
 
@@ -550,6 +566,7 @@ step = 0.0
 value = 1.0
 
 [node name="Control" type="Control" parent="Control/TabContainer/Embeds/VBoxContainer"]
+visible = false
 custom_minimum_size = Vector2(0, 158.16)
 layout_mode = 2
 mouse_filter = 2
@@ -560,6 +577,7 @@ custom_minimum_size = Vector2(0, 315)
 layout_mode = 2
 
 [node name="Control2" type="Control" parent="Control/TabContainer/Embeds/VBoxContainer"]
+visible = false
 custom_minimum_size = Vector2(0, 158.16)
 layout_mode = 2
 mouse_filter = 2
