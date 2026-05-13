@@ -735,6 +735,11 @@ func _hovered_handle(cam : Camera3D) -> int:
 	var scene := FZGlobal.editing_scene
 	if scene and scene.mouse_over_editor_ui():
 		return -1
+	if mouse_cast and mouse_cast.is_colliding():
+		var collider := mouse_cast.get_collider()
+		for i in handles.size():
+			if collider == handles[i]:
+				return i
 	if scene:
 		var picker := scene.mouse_picker_cast
 		picker.clear_exceptions()
@@ -750,12 +755,6 @@ func _hovered_handle(cam : Camera3D) -> int:
 			picker.add_exception(collision_object)
 			picker.force_raycast_update()
 		picker.clear_exceptions()
-	if !mouse_cast or !mouse_cast.is_colliding():
-		return -1
-	var collider := mouse_cast.get_collider()
-	for i in handles.size():
-		if collider == handles[i]:
-			return i
 	return -1
 
 func _set_handle_colours(hovered : int) -> void:
