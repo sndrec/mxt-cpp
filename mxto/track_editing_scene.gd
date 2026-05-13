@@ -48,7 +48,9 @@ var last_mouse_pos := Vector2.ZERO
 var active_path : RoadPath
 var tool_mode : ToolMode = ToolMode.EDIT_SEGMENT
 var desired_road_type := ENUMS.ROAD_TYPE.STANDARD
+var desired_embed_type := RoadEmbed.EmbedType.RECHARGE
 var desired_trigger_type := 0
+var pending_embed_add := false
 var editor_cross_section_t := 0.5
 var pointer_action_owner : Node
 var embed_gizmo : Node3D
@@ -60,10 +62,14 @@ var checkpoint_gizmo : Node3D
 
 const simple_mesh_layout : PackedFloat32Array = [0.0, 0.25, 0.5, 0.75, 1.0]
 const cylinder_mesh_layout : PackedFloat32Array = [0.0, 0.032258064516129, 0.064516129032258, 0.096774193548387, 0.12903225806452, 0.16129032258065, 0.19354838709677, 0.2258064516129, 0.25806451612903, 0.29032258064516, 0.32258064516129, 0.35483870967742, 0.38709677419355, 0.41935483870968, 0.45161290322581, 0.48387096774194, 0.51612903225806, 0.54838709677419, 0.58064516129032, 0.61290322580645, 0.64516129032258, 0.67741935483871, 0.70967741935484, 0.74193548387097, 0.7741935483871, 0.80645161290323, 0.83870967741935, 0.87096774193548, 0.90322580645161, 0.93548387096774, 0.96774193548387, 1.0]
+const DEFAULT_EMBED_LENGTH := 0.3
+const DEFAULT_EMBED_WIDTH := 0.7
 
 func set_tool_mode(in_mode : ToolMode) -> void:
 	if tool_mode == in_mode:
 		return
+	if in_mode != ToolMode.ADD_EMBED:
+		pending_embed_add = false
 	tool_mode = in_mode
 	tool_mode_changed.emit(tool_mode)
 
@@ -257,6 +263,26 @@ func _handle_add_object_input() -> void:
 			get_viewport().set_input_as_handled()
 	end_pointer_action(self)
 
+func _handle_add_embed_input() -> void:
+	if tool_mode != ToolMode.ADD_EMBED or !pending_embed_add:
+		return
+	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
+		return
+	if !begin_pointer_action(self):
+		return
+	var hit := _pick_road_path_under_mouse()
+	if !hit.is_empty():
+		var path := hit["path"] as RoadPath
+		var surface_t := _closest_surface_param(path, hit["point"])
+		var embed_index := add_road_embed(desired_embed_type, path, surface_t)
+		if embed_index >= 0:
+			active_path = path
+			set_active_embed(path, embed_index)
+			FZGlobal.select_node(path)
+			pending_embed_add = false
+			get_viewport().set_input_as_handled()
+	end_pointer_action(self)
+
 func _process(delta: float) -> void:
 	if pointer_action_owner and !is_instance_valid(pointer_action_owner):
 		pointer_action_owner = null
@@ -309,6 +335,7 @@ func _process(delta: float) -> void:
 	last_mouse_pos = get_viewport().get_mouse_position()
 	grid_origin.position = grid_origin.position.lerp(snapped(cam_origin, Vector3(16, 16, 16)), delta * 30)
 	update_mouse_casts(true)
+	_handle_add_embed_input()
 	_handle_add_object_input()
 
 func _apply_road_type_to_path(path : RoadPath, road_type : ENUMS.ROAD_TYPE) -> void:
@@ -391,6 +418,32 @@ func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_T
 	var id_to_put_above := track_root.get_children().find(in_path)
 	track_root.move_child(new_track_piece, id_to_put_above + 1)
 	return new_track_piece
+
+func add_road_embed(embed_type : int, in_path : RoadPath, surface_t := Vector2(0.0, 0.5)) -> int:
+	if !in_path:
+		return -1
+	var length := minf(DEFAULT_EMBED_LENGTH, 1.0)
+	var width := minf(DEFAULT_EMBED_WIDTH, 2.0)
+	var road_start := clampf(surface_t.y - length * 0.5, 0.0, 1.0 - length)
+	var road_end := road_start + length
+	var left := clampf(surface_t.x - width * 0.5, -1.0, 1.0 - width)
+	var right := left + width
+	var new_embed := RoadEmbed.new()
+	new_embed.road_start = road_start
+	new_embed.road_end = road_end
+	new_embed.embed_type = embed_type
+	new_embed.left_boundary.set_point_offset(0, road_start)
+	new_embed.left_boundary.set_point_offset(1, road_end)
+	new_embed.right_boundary.set_point_offset(0, road_start)
+	new_embed.right_boundary.set_point_offset(1, road_end)
+	new_embed.left_boundary.set_point_value(0, left)
+	new_embed.left_boundary.set_point_value(1, left)
+	new_embed.right_boundary.set_point_value(0, right)
+	new_embed.right_boundary.set_point_value(1, right)
+	in_path.road_shape.embed_table.append(new_embed)
+	in_path._try_generate_mesh()
+	track_structure_changed.emit()
+	return in_path.road_shape.embed_table.size() - 1
 
 func add_track_trigger(trigger_type : int, in_path : RoadPath, surface_t := Vector2(0.0, 0.5)) -> Node3D:
 	if !in_path:

@@ -229,9 +229,13 @@ func _sync_tool_mode_signal() -> void:
 		return
 	if connected_tool_scene and connected_tool_scene.tool_mode_changed.is_connected(_refresh_contextual_visibility):
 		connected_tool_scene.tool_mode_changed.disconnect(_refresh_contextual_visibility)
+	if connected_tool_scene and connected_tool_scene.track_structure_changed.is_connected(selection_updated):
+		connected_tool_scene.track_structure_changed.disconnect(selection_updated)
 	connected_tool_scene = tool_scene
 	if connected_tool_scene and !connected_tool_scene.tool_mode_changed.is_connected(_refresh_contextual_visibility):
 		connected_tool_scene.tool_mode_changed.connect(_refresh_contextual_visibility)
+	if connected_tool_scene and !connected_tool_scene.track_structure_changed.is_connected(selection_updated):
+		connected_tool_scene.track_structure_changed.connect(selection_updated)
 
 func _is_spiral_path(path : Node) -> bool:
 	if !path:

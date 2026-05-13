@@ -122,6 +122,7 @@ func _on_new_track_segment_pressed():
 
 func _on_add_embed_pressed():
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_EMBED)
+	track_scene.pending_embed_add = false
 	main_buttons.visible = false
 	new_embed_buttons.visible = true
 
@@ -216,26 +217,9 @@ func _on_edit_checkpoints_pressed() -> void:
 	bezier_buttons.visible = false
 
 func _on_embed_type_pressed(embed_type : int) -> void:
-	var selected := get_active_path()
-	if !selected:
-		return
-	var new_embed := RoadEmbed.new()
-	new_embed.road_start = 0.35
-	new_embed.road_end = 0.65
-	new_embed.embed_type = embed_type
-	new_embed.left_boundary.set_point_offset(0, new_embed.road_start)
-	new_embed.left_boundary.set_point_offset(1, new_embed.road_end)
-	new_embed.right_boundary.set_point_offset(0, new_embed.road_start)
-	new_embed.right_boundary.set_point_offset(1, new_embed.road_end)
-	new_embed.left_boundary.set_point_value(0, -0.35)
-	new_embed.left_boundary.set_point_value(1, -0.35)
-	new_embed.right_boundary.set_point_value(0, 0.35)
-	new_embed.right_boundary.set_point_value(1, 0.35)
-	selected.road_shape.embed_table.append(new_embed)
-	track_scene.set_active_embed(selected, selected.road_shape.embed_table.size() - 1)
+	track_scene.desired_embed_type = embed_type
+	track_scene.pending_embed_add = true
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_EMBED)
-	select_node(selected)
-	selected._try_generate_mesh()
 	new_embed_buttons.visible = false
 	main_buttons.visible = true
 
