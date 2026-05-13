@@ -33,6 +33,8 @@ const ARROW_LENGTH := 18.0
 const KEY_ARROW_HEAD_LENGTH := 6.0
 const KEY_ARROW_HEAD_WIDTH := 4.0
 const AXIS_POLE_HIT_RADIUS := 6.0
+const AXIS_POLE_VISUAL_RADIUS := 2.5
+const GIZMO_LINE_PIXEL_WIDTH := 4.0
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
@@ -48,10 +50,13 @@ var hovered_point_index := -1
 var outline_mesh_instance : MeshInstance3D
 var outline_mesh := ImmediateMesh.new()
 var outline_material := StandardMaterial3D.new()
+var gizmo_mesh_instance : MeshInstance3D
+var gizmo_mesh := ImmediateMesh.new()
 var cube_handle_mesh := BoxMesh.new()
 var cube_handle_shape := BoxShape3D.new()
 var point_handle_mesh := SphereMesh.new()
 var point_handle_shape := SphereShape3D.new()
+var axis_handle_mesh := CylinderMesh.new()
 var axis_handle_shape := CapsuleShape3D.new()
 var tangent_handle_mesh := SphereMesh.new()
 var tangent_handle_shape := SphereShape3D.new()
@@ -76,6 +81,10 @@ func _ready() -> void:
 	point_handle_mesh.radius = HANDLE_RADIUS
 	point_handle_mesh.height = HANDLE_RADIUS * 2.0
 	point_handle_shape.radius = HANDLE_RADIUS
+	axis_handle_mesh.top_radius = AXIS_POLE_VISUAL_RADIUS
+	axis_handle_mesh.bottom_radius = AXIS_POLE_VISUAL_RADIUS
+	axis_handle_mesh.height = AXIS_POLE_LENGTH * 2.0
+	axis_handle_mesh.radial_segments = 16
 	axis_handle_shape.radius = AXIS_POLE_HIT_RADIUS
 	axis_handle_shape.height = AXIS_POLE_LENGTH * 2.0
 	tangent_handle_mesh.radius = TANGENT_HANDLE_RADIUS
@@ -86,6 +95,10 @@ func _ready() -> void:
 	outline_mesh_instance.mesh = outline_mesh
 	outline_mesh_instance.top_level = true
 	add_child(outline_mesh_instance)
+	gizmo_mesh_instance = MeshInstance3D.new()
+	gizmo_mesh_instance.mesh = gizmo_mesh
+	gizmo_mesh_instance.top_level = true
+	add_child(gizmo_mesh_instance)
 	set_target_path(null)
 
 func set_target_path(in_path : RoadPath) -> void:
@@ -316,7 +329,7 @@ func _handle_position(handle_id : int) -> Vector3:
 func _handle_base_color(handle_id : int) -> Color:
 	var record := handle_records[handle_id]
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
-		return Color(0.85, 0.55, 1.0, 1.0)
+		return Color(0.34, 0.18, 0.48, 1.0)
 	var color := _curve_color(int(record["entry"]))
 	return color if int(record["kind"]) == HandleKind.POINT else color.lerp(Color.WHITE, 0.35)
 
@@ -479,7 +492,7 @@ func _configure_handle(handle_id : int) -> void:
 			return
 		handle_shape_keys[handle_id] = "axis_pole"
 		collision.shape = axis_handle_shape
-		mesh_instance.mesh = null
+		mesh_instance.mesh = axis_handle_mesh
 	elif _record_wants_cube(record):
 		if handle_shape_keys[handle_id] == "cube":
 			return
@@ -666,6 +679,28 @@ func _draw_line(a : Vector3, b : Vector3, color : Color) -> void:
 	outline_mesh.surface_add_vertex(a)
 	outline_mesh.surface_add_vertex(b)
 
+func _draw_gizmo_line(a : Vector3, b : Vector3, color : Color, pixel_width := GIZMO_LINE_PIXEL_WIDTH) -> void:
+	var length := a.distance_to(b)
+	if length <= 0.001:
+		return
+	var cam := FZGlobal.current_cam
+	var segment_dir := (b - a).normalized()
+	var side := Vector3.ZERO
+	if cam:
+		side = segment_dir.cross(cam.global_position - ((a + b) * 0.5))
+	if side.length_squared() <= 0.00001:
+		side = segment_dir.cross(Vector3.UP)
+	if side.length_squared() <= 0.00001:
+		side = segment_dir.cross(Vector3.RIGHT)
+	side = side.normalized() * _world_per_screen_pixel((a + b) * 0.5) * pixel_width * 0.5
+	gizmo_mesh.surface_set_color(color)
+	gizmo_mesh.surface_add_vertex(a + side)
+	gizmo_mesh.surface_add_vertex(a - side)
+	gizmo_mesh.surface_add_vertex(b - side)
+	gizmo_mesh.surface_add_vertex(a + side)
+	gizmo_mesh.surface_add_vertex(b - side)
+	gizmo_mesh.surface_add_vertex(b + side)
+
 func _world_per_screen_pixel(world_position : Vector3) -> float:
 	var cam := FZGlobal.current_cam
 	if !cam:
@@ -702,6 +737,15 @@ func _draw_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radius :
 		_draw_line(previous, next, color)
 		previous = next
 
+func _draw_gizmo_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radius : float, color : Color, start_angle := 0.0, end_angle := TAU, steps := CIRCLE_STEPS) -> void:
+	var previous := center + (x_axis * cos(start_angle) + y_axis * sin(start_angle)) * radius
+	for i in steps:
+		var t := float(i + 1) / float(steps)
+		var angle := lerpf(start_angle, end_angle, t)
+		var next := center + (x_axis * cos(angle) + y_axis * sin(angle)) * radius
+		_draw_gizmo_line(previous, next, color)
+		previous = next
+
 func _draw_key_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radius : float, color : Color, hovered : bool) -> void:
 	var previous := center + x_axis * radius
 	for i in CIRCLE_STEPS:
@@ -725,8 +769,6 @@ func _draw_key_arrow(center : Vector3, axis : Vector3, frame : Dictionary, color
 
 func _draw_axis_pole() -> void:
 	var center := _axis_pole_center()
-	var axis := _spiral_axis_world()
-	_draw_line(center - axis * AXIS_POLE_LENGTH, center + axis * AXIS_POLE_LENGTH, Color(0.85, 0.55, 1.0, 0.9))
 	_draw_line(_axis_transform().origin, center, _grey())
 
 func _draw_scale_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
@@ -751,7 +793,10 @@ func _draw_twist_point(entry_index : int, entry : Dictionary, point_index : int)
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
-	_draw_key_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _grey(), _hovered_key_matches(entry_index, point_index))
+	var radius := _twist_radius(t)
+	_draw_key_circle(frame["center"], frame["x"], frame["y"], radius, _grey(), _hovered_key_matches(entry_index, point_index))
+	if _selected_key_matches(entry_index, point_index):
+		_draw_gizmo_circle(frame["center"], frame["x"], frame["y"], radius, _curve_color(entry_index))
 
 func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side : float) -> void:
 	var entry := curve_entries[entry_index]
@@ -769,15 +814,15 @@ func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side
 			var radius := _twist_radius(point.x)
 			var left_center : Vector3 = frame["center"] - frame["x"] * radius
 			var right_center : Vector3 = frame["center"] + frame["x"] * radius
-			_draw_circle(left_center, frame["x"], frame["y"], radius, color, PI * 0.75, PI * 1.25, int(CIRCLE_STEPS / 4))
-			_draw_circle(right_center, frame["x"], frame["y"], radius, color, -PI * 0.25, PI * 0.25, int(CIRCLE_STEPS / 4))
+			_draw_gizmo_circle(left_center, frame["x"], frame["y"], radius, color, PI * 0.75, PI * 1.25, int(CIRCLE_STEPS / 4))
+			_draw_gizmo_circle(right_center, frame["x"], frame["y"], radius, color, -PI * 0.25, PI * 0.25, int(CIRCLE_STEPS / 4))
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
 			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
 			var point_pos : Vector3 = point_frame["center"] + _entry_axis(entry, point_frame) * side * (_curve_value(curve, point_index) + VISUAL_OFFSET)
-			_draw_line(point_pos, tangent_pos, color)
+			_draw_gizmo_line(point_pos, tangent_pos, color)
 		_:
 			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
-			_draw_line(point_frame["center"], tangent_pos, color)
+			_draw_gizmo_line(point_frame["center"], tangent_pos, color)
 
 func _draw_curve_guides() -> void:
 	for entry_index in curve_entries.size():
@@ -808,14 +853,19 @@ func _update_visuals() -> void:
 		handles[i].global_position = _handle_position(i)
 		handles[i].global_basis = _handle_basis(i)
 	outline_mesh.clear_surfaces()
+	gizmo_mesh.clear_surfaces()
 	if curve_entries.is_empty():
 		outline_mesh_instance.visible = false
+		gizmo_mesh_instance.visible = false
 		return
 	outline_mesh.surface_begin(Mesh.PRIMITIVE_LINES, outline_material)
+	gizmo_mesh.surface_begin(Mesh.PRIMITIVE_TRIANGLES, outline_material)
 	_draw_axis_pole()
 	_draw_curve_guides()
+	gizmo_mesh.surface_end()
 	outline_mesh.surface_end()
 	outline_mesh_instance.visible = true
+	gizmo_mesh_instance.visible = true
 
 func _hovered_handle(cam : Camera3D) -> int:
 	var scene := FZGlobal.editing_scene
@@ -1161,6 +1211,7 @@ func _process(_delta : float) -> void:
 			scene.end_pointer_action(self)
 		visible = false
 		outline_mesh_instance.visible = false
+		gizmo_mesh_instance.visible = false
 		_set_colliders_enabled(false)
 		_set_selection_colliders_enabled(false)
 		dragging = false
