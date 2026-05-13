@@ -743,26 +743,22 @@ func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.s
 		mod_curve_effect.visible = false
 		mod_curve_height.visible = false
 	else:
-		mod_curve_effect.visible = true
-		mod_curve_height.visible = true
+		mod_curve_effect.visible = false
+		mod_curve_height.visible = false
 		var this_mod := current_path.road_shape.modulation_table[in_selected_mod]
 		mod_curve_effect.associated_curve = this_mod.modulation_effect
 		mod_curve_height.associated_curve = this_mod.modulation_height
-		mod_curve_effect.queue_redraw()
-		mod_curve_height.queue_redraw()
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_modulation(current_path, in_selected_mod)
 	if in_selected_embed == -1 or embed_dropdown.item_count == 0:
 		embed_curve_left.visible = false
 		embed_curve_right.visible = false
 	else:
-		embed_curve_left.visible = true
-		embed_curve_right.visible = true
+		embed_curve_left.visible = false
+		embed_curve_right.visible = false
 		var this_embed := current_path.road_shape.embed_table[in_selected_embed]
 		embed_curve_left.associated_curve = this_embed.left_boundary
 		embed_curve_right.associated_curve = this_embed.right_boundary
-		embed_curve_left.queue_redraw()
-		embed_curve_right.queue_redraw()
 		embed_type.selected = this_embed.embed_type
 		if FZGlobal.editing_scene:
 			FZGlobal.editing_scene.set_active_embed(current_path, in_selected_embed)
