@@ -29,12 +29,12 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @export var ambient_color : Color = Color(0.15, 0.15, 0.18, 1.0)
 @export var light_direction : Vector3 = Vector3(0.3, -1.0, 0.4)
 
-func _generate_checkpoints() -> void:
+func _generate_checkpoints(segments : Array[RoadPath] = []) -> void:
+	if segments.is_empty():
+		segments = get_road_segments()
 	checkpoints.clear()
-	for ch in get_children().size():
-		var child := get_child(ch) as RoadPath
-		if child == null:
-			continue
+	for ch in segments.size():
+		var child := segments[ch]
 		var num_checks := child.num_checkpoints
 		for i in num_checks + 1:
 			var ty := (1.0 / (num_checks + 1)) * i
@@ -109,7 +109,7 @@ func export_mxt_track(path : String) -> Error:
 	var segments := get_export_road_segments()
 	if segments.is_empty():
 		return ERR_DOES_NOT_EXIST
-	_generate_checkpoints()
+	_generate_checkpoints(segments)
 	var cp_ranges := _build_checkpoint_ranges(segments)
 	var topology := _build_segment_topology(segments)
 	var trigger_exports := _build_trigger_exports(segments, cp_ranges)
