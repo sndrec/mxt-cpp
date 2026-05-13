@@ -13,6 +13,8 @@ const ROAD_SHAPE_PIPE_OPEN := 4
 const ROAD_SHAPE_ROUNDED_SQUARE := 5
 const ROAD_SHAPE_ROUNDED_SQUARE_OPEN := 6
 const CONTROL_STRIDE := 24
+const ADD_CONTROL_POINT_PREVIEW_STEPS := 96
+const ADD_CONTROL_POINT_MAX_SCREEN_DISTANCE := 60.0
 
 var _preview_material_cache := {}
 var bezier_handle_nodes : Array[BezierHandle] = []
@@ -252,6 +254,94 @@ func _control_scale(points : PackedFloat32Array, index : int) -> Vector3:
 	var base := index * CONTROL_STRIDE
 	return Vector3(points[base + 13], points[base + 14], points[base + 15])
 
+func _control_point_insert_pick(cam : Camera3D) -> Dictionary:
+	if !cam:
+		return {}
+	var scene := FZGlobal.editing_scene
+	if scene and scene.mouse_gizmo_cast and scene.mouse_gizmo_cast.is_colliding():
+		return {}
+	var mouse_pos := get_viewport().get_mouse_position()
+	var best_time := 0.0
+	var best_dist := INF
+	var previous_screen := Vector2.ZERO
+	var previous_time := 0.0
+	var previous_valid := false
+	for i in ADD_CONTROL_POINT_PREVIEW_STEPS + 1:
+		var sample_time := float(i) / float(ADD_CONTROL_POINT_PREVIEW_STEPS)
+		var world_pos := get_root_transform(sample_time).origin
+		if cam.is_position_behind(world_pos):
+			previous_valid = false
+			continue
+		var screen_pos := cam.unproject_position(world_pos)
+		if previous_valid:
+			var closest := Geometry2D.get_closest_point_to_segment(mouse_pos, previous_screen, screen_pos)
+			var dist := mouse_pos.distance_squared_to(closest)
+			if dist < best_dist:
+				var screen_len := previous_screen.distance_to(screen_pos)
+				var local_t := 0.0 if screen_len <= 0.001 else previous_screen.distance_to(closest) / screen_len
+				best_time = lerpf(previous_time, sample_time, local_t)
+				best_dist = dist
+		previous_screen = screen_pos
+		previous_time = sample_time
+		previous_valid = true
+	if best_dist > ADD_CONTROL_POINT_MAX_SCREEN_DISTANCE * ADD_CONTROL_POINT_MAX_SCREEN_DISTANCE:
+		return {}
+	return {
+		"time": clampf(best_time, 0.0, 1.0),
+		"distance": best_dist,
+	}
+
+func _control_interval_for_time(points : PackedFloat32Array, point_count : int, time : float) -> int:
+	for i in point_count - 1:
+		var next_base := (i + 1) * CONTROL_STRIDE
+		if time <= points[next_base]:
+			return i
+	return point_count - 2
+
+func _try_alt_add_control_point(scene : TrackEditingScene, points : PackedFloat32Array, point_count : int) -> bool:
+	if !Input.is_action_pressed("Alt") or scene.pointer_action_busy_for(self):
+		_update_add_point_preview(Vector3.ZERO, false)
+		return false
+	var pick := _control_point_insert_pick(FZGlobal.current_cam)
+	if pick.is_empty():
+		_update_add_point_preview(Vector3.ZERO, false)
+		return false
+	var insert_time : float = pick["time"]
+	var insert_transform := get_root_transform(insert_time)
+	_update_add_point_preview(insert_transform.origin, true)
+	if !Input.is_action_just_pressed("LeftMouse"):
+		return false
+	if !scene.begin_pointer_action(self):
+		return false
+	get_viewport().set_input_as_handled()
+	var left_index := _control_interval_for_time(points, point_count, insert_time)
+	var right_index := left_index + 1
+	var base_1 := left_index * CONTROL_STRIDE
+	var base_2 := right_index * CONTROL_STRIDE
+	var time_1 : float = points[base_1]
+	var time_2 : float = points[base_2]
+	var span := maxf(time_2 - time_1, 0.0001)
+	var span_t := clampf((insert_time - time_1) / span, 0.0, 1.0)
+	var scale_1 : Vector3 = _control_scale(points, left_index)
+	var scale_2 : Vector3 = _control_scale(points, right_index)
+	var handle_out_1 : float = points[base_1 + 17]
+	var handle_in_2 : float = points[base_2 + 16]
+	points[base_1 + 17] = handle_out_1 * span_t
+	points[base_2 + 16] = handle_in_2 * (1.0 - span_t)
+	native_curve.set_control_points(points)
+	add_control_point(
+		insert_time,
+		insert_transform.origin,
+		insert_transform.basis,
+		scale_1.lerp(scale_2, span_t),
+		handle_out_1 * span_t,
+		handle_in_2 * (1.0 - span_t),
+		right_index)
+	if right_index < bezier_handle_nodes.size():
+		FZGlobal.select_node(bezier_handle_nodes[right_index])
+	scene.end_pointer_action(self)
+	return true
+
 func _write_control_transform(points : PackedFloat32Array, index : int, position : Vector3, basis : Basis, scale : Vector3, handle_in : float, handle_out : float) -> void:
 	var base := index * CONTROL_STRIDE
 	var clean_basis := basis.orthonormalized()
@@ -432,48 +522,8 @@ func _process(delta):
 	var control_points : PackedFloat32Array = native_curve.get_control_points()
 	if scene and scene.tool_mode_allows_control_point_gizmos() and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
 		_update_centerline_visual()
-		_update_add_point_preview(Vector3.ZERO, false)
-		if Input.is_action_pressed("Alt"):
-			if FZGlobal.active_node == self or get_children().has(FZGlobal.active_node):
-				var cam := FZGlobal.editing_scene.edit_cam
-				var mp := get_viewport().get_mouse_position()
-				var closest_line := 0
-				var closest_line_dist := 1000000.0
-				for i in point_count - 1:
-					var bp1 := cam.unproject_position(_control_position(control_points, i))
-					var bp2 := cam.unproject_position(_control_position(control_points, i + 1))
-					var closest := Geometry2D.get_closest_point_to_segment(mp, bp1, bp2)
-					var line_dist := mp.distance_squared_to(closest)
-					if line_dist < closest_line_dist:
-						closest_line = i
-						closest_line_dist = line_dist
-				var base_1 := closest_line * CONTROL_STRIDE
-				var base_2 := (closest_line + 1) * CONTROL_STRIDE
-				var time_1 : float = control_points[base_1]
-				var time_2 : float = control_points[base_2]
-				var scale_1 : Vector3 = _control_scale(control_points, closest_line)
-				var scale_2 : Vector3 = _control_scale(control_points, closest_line + 1)
-				var handle_out_1 : float = control_points[base_1 + 17]
-				var handle_in_2 : float = control_points[base_2 + 16]
-				var add_p := get_root_transform(lerpf(time_1, time_2, 0.5))
-				if Input.is_action_just_pressed("LeftMouse"):
-					if !scene.begin_pointer_action(self):
-						return
-					get_viewport().set_input_as_handled()
-					control_points[base_1 + 17] = handle_out_1 * 0.5
-					control_points[base_2 + 16] = handle_in_2 * 0.5
-					native_curve.set_control_points(control_points)
-					add_control_point(
-						lerpf(time_1, time_2, 0.5),
-						add_p.origin,
-						add_p.basis,
-						scale_1.lerp(scale_2, 0.5),
-						handle_out_1 * 0.5,
-						handle_in_2 * 0.5,
-						closest_line + 1)
-					scene.end_pointer_action(self)
-					return
-				_update_add_point_preview(add_p.origin, true)
+		if _try_alt_add_control_point(scene, control_points, point_count):
+			return
 	else:
 		_hide_editor_visuals()
 
