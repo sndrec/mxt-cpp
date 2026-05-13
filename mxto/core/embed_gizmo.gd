@@ -424,6 +424,8 @@ func _process(delta : float) -> void:
 		drag_plane = Plane(-cam.global_basis.z.normalized(), handles[hovered].global_position)
 		get_viewport().set_input_as_handled()
 	if Input.is_action_just_released("LeftMouse"):
+		if dragging or scene.owns_pointer_action(self):
+			get_viewport().set_input_as_handled()
 		dragging = false
 		drag_handle = -1
 		scene.end_pointer_action(self)

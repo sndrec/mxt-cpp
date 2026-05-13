@@ -34,6 +34,7 @@ func _process(delta: float) -> void:
 		return
 	visible = true
 	if !target_node or !is_instance_valid(target_node):
+		scene.end_pointer_action(self)
 		gizmo_collider.set_collision_layer_value(16, false)
 		pressed_on_gizmo = false
 		return
@@ -61,11 +62,12 @@ func _process(delta: float) -> void:
 	
 	if Input.is_action_just_released("LeftMouse"):
 		var can_release := pressed_on_gizmo and scene.owns_pointer_action(self) and mousecast_wants_this_gizmo()
+		if pressed_on_gizmo or scene.owns_pointer_action(self):
+			get_viewport().set_input_as_handled()
 		pressed_on_gizmo = false
 		scene.end_pointer_action(self)
 		if !can_release:
 			return
-		get_viewport().set_input_as_handled()
 		if target_node is RoadPathBezier and !(target_node is RoadPathLine) and Input.is_action_pressed("Alt"):
 			var last_index : int = target_node.get_control_point_count() - 1
 			var handle_out : float = target_node.native_curve.get_control_point_handle_out(last_index)
