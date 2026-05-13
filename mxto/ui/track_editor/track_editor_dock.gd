@@ -156,7 +156,7 @@ func select_node(in_node : Node) -> void:
 	_sync_active_tool_target()
 
 func _sync_active_tool_target() -> void:
-	var in_node := get_active_path()
+	var in_node := FZGlobal.get_selected_road_path()
 	if !(in_node is RoadPath):
 		track_scene.active_path = null
 		track_scene.set_active_rail_path(null)
