@@ -103,8 +103,9 @@ func deselect_all():
 	undo_redo.add_undo_property(self, "active_node", active_node)
 	undo_redo.add_undo_property(self, "selected_nodes", selected_nodes)
 	if editing_scene:
-		undo_redo.add_undo_method(editing_scene.translate_gizmo.set_target_node.bind(active_node))
-		undo_redo.add_undo_method(editing_scene.rotate_gizmo.set_target_node.bind(active_node))
+		var previous_transform_target := get_transform_gizmo_target(active_node)
+		undo_redo.add_undo_method(editing_scene.translate_gizmo.set_target_node.bind(previous_transform_target))
+		undo_redo.add_undo_method(editing_scene.rotate_gizmo.set_target_node.bind(previous_transform_target))
 		undo_redo.add_undo_method(editing_scene.add_road_gizmo.set_target_node.bind(active_node))
 	undo_redo.add_do_method(emit_selection_changed)
 	undo_redo.add_undo_method(emit_selection_changed)
@@ -133,7 +134,7 @@ func _process(delta):
 		if undo_redo.has_redo():
 			undo_redo.redo()
 	
-	if editing_scene and can_select and Input.is_action_just_pressed("RightMouse"):
+	if editing_scene and can_select and !editing_scene.pointer_action_owner and Input.is_action_just_pressed("RightMouse"):
 		var selectable_nodes : Array[Node3D] = []
 		var mpc := editing_scene.mouse_picker_cast
 		editing_scene.update_mouse_casts(true)
