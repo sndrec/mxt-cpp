@@ -130,17 +130,14 @@ func _configure_screen_layout() -> void:
 
 func _enable_tool_button_toggles() -> void:
 	for button in [
-		new_track_segment_button,
 		edit_segment_button,
 		edit_shape_button,
 		edit_mesh_layout_button,
 		edit_spiral_button,
-		add_embed_button,
 		edit_embeds_button,
 		edit_rails_button,
 		edit_modulation_button,
 		edit_checkpoints_button,
-		new_track_object_button,
 		edit_track_object_button,
 		edit_track_button,
 	]:
@@ -210,17 +207,14 @@ func _add_tool_status_text(mode : int) -> String:
 
 func _refresh_tool_button_states() -> void:
 	var mode := track_scene.tool_mode
-	_set_tool_button_pressed(new_track_segment_button, mode == TrackEditingScene.ToolMode.ADD_SEGMENT)
 	_set_tool_button_pressed(edit_segment_button, mode == TrackEditingScene.ToolMode.EDIT_SEGMENT)
 	_set_tool_button_pressed(edit_shape_button, mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
 	_set_tool_button_pressed(edit_mesh_layout_button, mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT)
 	_set_tool_button_pressed(edit_spiral_button, mode == TrackEditingScene.ToolMode.EDIT_SPIRAL)
-	_set_tool_button_pressed(add_embed_button, mode == TrackEditingScene.ToolMode.ADD_EMBED)
 	_set_tool_button_pressed(edit_embeds_button, mode == TrackEditingScene.ToolMode.EDIT_EMBED)
 	_set_tool_button_pressed(edit_rails_button, mode == TrackEditingScene.ToolMode.EDIT_RAILS)
 	_set_tool_button_pressed(edit_modulation_button, mode == TrackEditingScene.ToolMode.EDIT_MODULATION)
 	_set_tool_button_pressed(edit_checkpoints_button, mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
-	_set_tool_button_pressed(new_track_object_button, mode == TrackEditingScene.ToolMode.ADD_OBJECT)
 	_set_tool_button_pressed(edit_track_object_button, mode == TrackEditingScene.ToolMode.EDIT_OBJECT)
 	_set_tool_button_pressed(edit_track_button, mode == TrackEditingScene.ToolMode.EDIT_TRACK)
 	var status_text := _add_tool_status_text(mode)
@@ -328,9 +322,7 @@ func _on_new_track_object_pressed():
 
 func _on_edit_track_object_pressed() -> void:
 	var selected := FZGlobal.active_node
-	if !_is_track_trigger(selected):
-		return
-	track_scene.set_active_track_trigger(selected)
+	track_scene.set_active_track_trigger(selected if _is_track_trigger(selected) else null)
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_OBJECT)
 	main_buttons.visible = true
 	new_track_segment_buttons.visible = false
@@ -442,9 +434,6 @@ func _on_edit_embeds_pressed() -> void:
 	if !selected:
 		return
 	var embed_index := _active_embed_index(selected)
-	if embed_index < 0:
-		_on_add_embed_pressed()
-		return
 	track_scene.set_active_embed(selected, embed_index)
 	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_EMBED)
 	select_node(selected)

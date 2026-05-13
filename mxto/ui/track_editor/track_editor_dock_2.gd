@@ -415,11 +415,12 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var mode := scene.tool_mode if scene else TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var selected := get_active_node()
 	var has_path := current_path != null
+	var active_trigger := _active_track_trigger()
 	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
 	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SPIRAL and _is_spiral_path(current_path)
 	var show_rails := has_path and mode == TrackEditingScene.ToolMode.EDIT_RAILS
 	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
-	var show_object := _active_track_trigger() != null and mode == TrackEditingScene.ToolMode.EDIT_OBJECT
+	var show_object := mode == TrackEditingScene.ToolMode.EDIT_OBJECT and (active_trigger != null or has_path)
 	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION
 	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.EDIT_EMBED
 	_apply_context_tabs(show_info, show_spiral, show_rails, show_track, show_object, show_modulation, show_embeds)
@@ -468,6 +469,8 @@ func _sync_embed_curve_edges(embed : RoadEmbed) -> void:
 func update_embed_type(in_type : int):
 	if updating_embed_controls:
 		return
+	if FZGlobal.editing_scene:
+		FZGlobal.editing_scene.desired_embed_type = in_type
 	var embed := _selected_embed()
 	if !embed:
 		return
@@ -803,6 +806,8 @@ func _refresh_track_object_controls() -> void:
 func update_track_object_type(new_type : int) -> void:
 	if updating_object_controls:
 		return
+	if FZGlobal.editing_scene:
+		FZGlobal.editing_scene.desired_trigger_type = new_type
 	var trigger := _active_track_trigger()
 	if !trigger:
 		return
@@ -1064,8 +1069,7 @@ func add_new_embed() -> void:
 	if !scene:
 		return
 	scene.desired_embed_type = embed_type.selected if embed_type.selected >= 0 else RoadEmbed.EmbedType.RECHARGE
-	scene.pending_embed_add = true
-	scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_EMBED)
+	scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_EMBED)
 	if current_path:
 		scene.active_path = current_path
 
