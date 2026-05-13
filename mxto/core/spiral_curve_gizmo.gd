@@ -13,6 +13,7 @@ enum HandleKind {
 	LEFT_TANGENT,
 	RIGHT_TANGENT,
 	AXIS_POLE,
+	SPIRAL_DEGREES,
 }
 
 const HANDLE_RADIUS := 4.0
@@ -37,6 +38,8 @@ const AXIS_POLE_VISUAL_RADIUS := 2.5
 const GIZMO_LINE_PIXEL_WIDTH := 4.0
 const TWIST_TANGENT_HIT_RADIUS := 6.0
 const TWIST_TANGENT_COLLISION_STEPS := 8
+const SPIRAL_DEGREES_MIN := 1.0
+const SPIRAL_DEGREES_ARROW_OFFSET := VISUAL_OFFSET + 8.0
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
@@ -216,6 +219,21 @@ func _axis_pole_center() -> Vector3:
 func _axis_handle_position() -> Vector3:
 	return _axis_pole_center()
 
+func _end_frame() -> Dictionary:
+	return _sample_frame(1.0)
+
+func _spiral_degrees_handle_position() -> Vector3:
+	var frame := _end_frame()
+	return frame["center"] + frame["z"] * SPIRAL_DEGREES_ARROW_OFFSET
+
+func _spiral_degrees_pole_point(end_position : Vector3) -> Vector3:
+	var axis := _spiral_axis_world()
+	var pole_center := _axis_pole_center()
+	return pole_center + axis * (end_position - pole_center).dot(axis)
+
+func _spiral_degrees_color() -> Color:
+	return Color(0.95, 0.62, 0.22, 1.0)
+
 func _radius_axis(frame : Dictionary) -> Vector3:
 	var pole_axis := _spiral_axis_world()
 	var pole_center := _axis_pole_center()
@@ -337,6 +355,8 @@ func _handle_position(handle_id : int) -> Vector3:
 	var record := handle_records[handle_id]
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
 		return _axis_handle_position()
+	if int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
+		return _spiral_degrees_handle_position()
 	if int(record["kind"]) == HandleKind.POINT:
 		return _point_handle_position(record)
 	return _tangent_handle_position(record)
@@ -345,6 +365,8 @@ func _handle_base_color(handle_id : int) -> Color:
 	var record := handle_records[handle_id]
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
 		return Color(0.34, 0.18, 0.48, 1.0)
+	if int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
+		return _spiral_degrees_color()
 	var color := _curve_color(int(record["entry"]))
 	return color if int(record["kind"]) == HandleKind.POINT else color.lerp(Color.WHITE, 0.35)
 
@@ -355,6 +377,8 @@ func _record_wants_cube(record : Dictionary) -> bool:
 	return int(entry["kind"]) == CurveKind.SCALE_X or int(entry["kind"]) == CurveKind.SCALE_Y
 
 func _record_wants_arrow(record : Dictionary) -> bool:
+	if int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
+		return true
 	if int(record["kind"]) != HandleKind.POINT or !record.has("entry"):
 		return false
 	var entry := curve_entries[int(record["entry"])]
@@ -419,7 +443,7 @@ func _handle_id_for_selected_key(record : Dictionary) -> int:
 	return -1
 
 func _record_mesh_visible(record : Dictionary) -> bool:
-	if int(record["kind"]) == HandleKind.AXIS_POLE:
+	if int(record["kind"]) == HandleKind.AXIS_POLE or int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
 		return true
 	if !_record_key_is_selected(record):
 		return false
@@ -575,6 +599,7 @@ func _sync_handles() -> void:
 	handle_records.clear()
 	if _is_spiral_path(target_path):
 		handle_records.append({"kind": HandleKind.AXIS_POLE})
+		handle_records.append({"kind": HandleKind.SPIRAL_DEGREES})
 	for entry_index in curve_entries.size():
 		var entry := curve_entries[entry_index]
 		var curve : Resource = entry["curve"]
@@ -673,6 +698,8 @@ func _handle_basis(handle_id : int) -> Basis:
 	var record := handle_records[handle_id]
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
 		return _basis_from_y_axis(_spiral_axis_world())
+	if int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
+		return _basis_from_y_axis(_end_frame()["z"])
 	if !_record_wants_arrow(record):
 		return Basis.IDENTITY
 	var entry := curve_entries[int(record["entry"])]
@@ -1019,6 +1046,8 @@ func _set_handle_colours(hovered : int) -> void:
 			var record := handle_records[i]
 			if int(record["kind"]) == HandleKind.AXIS_POLE:
 				handle_materials[i].albedo_color = Color.WHITE
+			elif int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
+				handle_materials[i].albedo_color = _spiral_degrees_color().lerp(Color.WHITE, 0.45)
 			else:
 				handle_materials[i].albedo_color = _curve_hover_color(int(record["entry"]))
 		else:
@@ -1059,8 +1088,40 @@ func _line_drag_plane(cam : Camera3D, axis : Vector3, origin : Vector3) -> Plane
 		plane_normal = axis.cross(cam.global_basis.z).normalized()
 	return Plane(plane_normal, origin)
 
+func _direction_on_plane(offset : Vector3, plane_normal : Vector3) -> Vector3:
+	var direction := offset - plane_normal * offset.dot(plane_normal)
+	if direction.length_squared() <= 0.00001:
+		return Vector3.ZERO
+	return direction.normalized()
+
+func _begin_spiral_degrees_drag(record : Dictionary, cam : Camera3D, ray_dir : Vector3) -> bool:
+	var end_frame := _end_frame()
+	var axis := _spiral_axis_world()
+	var plane := Plane(axis, end_frame["center"])
+	var hit = plane.intersects_ray(cam.global_position, ray_dir)
+	if !(hit is Vector3):
+		return false
+	var pole_point := _spiral_degrees_pole_point(end_frame["center"])
+	var grab_dir := _direction_on_plane(hit - pole_point, axis)
+	if grab_dir.length_squared() <= 0.00001:
+		grab_dir = _direction_on_plane(_spiral_degrees_handle_position() - pole_point, axis)
+	if grab_dir.length_squared() <= 0.00001:
+		return false
+	drag_snapshot = {
+		"record": record.duplicate(),
+		"mode": "spiral_degrees",
+		"plane": plane,
+		"axis": axis,
+		"pole_point": pole_point,
+		"previous_dir": grab_dir,
+		"current_degrees": maxf(SPIRAL_DEGREES_MIN, float(target_path.get("spiral_degrees"))),
+	}
+	return true
+
 func _begin_drag(handle_id : int, cam : Camera3D, ray_dir : Vector3) -> bool:
 	var record := handle_records[handle_id]
+	if int(record["kind"]) == HandleKind.SPIRAL_DEGREES:
+		return _begin_spiral_degrees_drag(record, cam, ray_dir)
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
 		var axis_transform := _axis_transform()
 		var plane := Plane(axis_transform.basis.z.normalized(), axis_transform.origin)
@@ -1155,6 +1216,24 @@ func _apply_axis_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 	target_path.set("spiral_axis", local_axis)
 	_update_mesh(false)
 
+func _apply_spiral_degrees_drag(cam : Camera3D, ray_dir : Vector3) -> void:
+	var plane : Plane = drag_snapshot["plane"]
+	var hit = plane.intersects_ray(cam.global_position, ray_dir)
+	if !(hit is Vector3):
+		return
+	var axis : Vector3 = drag_snapshot["axis"]
+	var pole_point : Vector3 = drag_snapshot["pole_point"]
+	var current_dir := _direction_on_plane(hit - pole_point, axis)
+	if current_dir.length_squared() <= 0.00001:
+		return
+	var previous_dir : Vector3 = drag_snapshot["previous_dir"]
+	var delta_degrees := rad_to_deg(previous_dir.signed_angle_to(current_dir, axis))
+	var degrees := maxf(SPIRAL_DEGREES_MIN, float(drag_snapshot["current_degrees"]) + delta_degrees)
+	target_path.set("spiral_degrees", degrees)
+	drag_snapshot["current_degrees"] = degrees
+	drag_snapshot["previous_dir"] = current_dir
+	_update_mesh(false)
+
 func _apply_line_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 	var record : Dictionary = drag_snapshot["record"]
 	var entry := curve_entries[int(record["entry"])]
@@ -1210,6 +1289,8 @@ func _write_dragged_handle(cam : Camera3D, ray_dir : Vector3) -> void:
 	match String(drag_snapshot.get("mode", "")):
 		"axis":
 			_apply_axis_drag(cam, ray_dir)
+		"spiral_degrees":
+			_apply_spiral_degrees_drag(cam, ray_dir)
 		"rotation":
 			_apply_rotation_drag(cam, ray_dir)
 		_:
