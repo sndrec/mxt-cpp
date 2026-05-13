@@ -289,10 +289,124 @@ min_value = 1.0
 max_value = 10.0
 value = 1.0
 
-[node name="Modulation" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Object" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 3
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Object"]
+custom_minimum_size = Vector2(335, 0)
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="ObjectTypeLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+text = "Object Type"
+
+[node name="ObjectType" type="OptionButton" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 3
+popup/item_0/text = "Dashplate"
+popup/item_1/text = "Jumpplate"
+popup/item_1/id = 1
+popup/item_2/text = "Mine"
+popup/item_2/id = 2
+
+[node name="ObjectSurfaceLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+text = "Surface Position"
+
+[node name="ObjectSurfaceRow" type="HBoxContainer" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+
+[node name="LabelX" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+layout_mode = 2
+text = " X "
+
+[node name="ObjectTX" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -1.0
+max_value = 1.0
+step = 0.01
+
+[node name="LabelY" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+layout_mode = 2
+text = " Y "
+
+[node name="ObjectTY" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.01
+value = 0.5
+
+[node name="ObjectYawLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+text = "Yaw"
+
+[node name="ObjectYaw" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -100000.0
+max_value = 100000.0
+step = 0.1
+allow_greater = true
+allow_lesser = true
+
+[node name="ObjectScaleLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+text = "Scale"
+
+[node name="ObjectScaleRow" type="HBoxContainer" parent="Control/TabContainer/Object/VBoxContainer"]
+layout_mode = 2
+
+[node name="LabelX" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+layout_mode = 2
+text = " X "
+
+[node name="ObjectScaleX" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.001
+max_value = 1000.0
+step = 0.01
+value = 1.0
+allow_greater = true
+
+[node name="LabelY" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+layout_mode = 2
+text = " Y "
+
+[node name="ObjectScaleY" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.001
+max_value = 1000.0
+step = 0.01
+value = 1.0
+allow_greater = true
+
+[node name="LabelZ" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+layout_mode = 2
+text = " Z "
+
+[node name="ObjectScaleZ" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.001
+max_value = 1000.0
+step = 0.01
+value = 1.0
+allow_greater = true
+
+[node name="Modulation" type="ScrollContainer" parent="Control/TabContainer"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 4
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Modulation"]
 custom_minimum_size = Vector2(335, 0)
@@ -348,7 +462,7 @@ layout_mode = 2
 
 [node name="Embeds" type="ScrollContainer" parent="Control/TabContainer"]
 layout_mode = 2
-metadata/_tab_index = 4
+metadata/_tab_index = 5
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Embeds"]
 custom_minimum_size = Vector2(335, 0)

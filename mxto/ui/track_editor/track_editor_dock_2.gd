@@ -4,6 +4,8 @@ signal dock_ready
 
 signal update_track
 
+const TrackTriggerScript := preload("res://core/track_trigger.gd")
+
 var track_root : TrackRoot
 
 var current_path : RoadPath
@@ -36,6 +38,15 @@ var current_path : RoadPath
 @onready var track_name_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackName
 @onready var track_description_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackDescription
 @onready var track_difficulty_edit: SpinBox = $Control/TabContainer/Track/VBoxContainer/TrackDifficultyRow/TrackDifficulty
+
+@onready var object_panel: ScrollContainer = $Control/TabContainer/Object
+@onready var object_type: OptionButton = $Control/TabContainer/Object/VBoxContainer/ObjectType
+@onready var object_tx: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow/ObjectTX
+@onready var object_ty: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow/ObjectTY
+@onready var object_yaw: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectYaw
+@onready var object_scale_x: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectScaleRow/ObjectScaleX
+@onready var object_scale_y: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectScaleRow/ObjectScaleY
+@onready var object_scale_z: SpinBox = $Control/TabContainer/Object/VBoxContainer/ObjectScaleRow/ObjectScaleZ
 
 @onready var modulation_dropdown: OptionButton = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/ModulationDropdown
 @onready var new_modulation: Button = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/NewModulation
@@ -95,6 +106,7 @@ var cross_section_material := StandardMaterial3D.new()
 var connected_tool_scene : TrackEditingScene
 var updating_spiral_controls := false
 var updating_track_controls := false
+var updating_object_controls := false
 
 func _ensure_cross_section_visual() -> void:
 	if cross_section_mesh_instance:
@@ -170,6 +182,13 @@ func _ready():
 	track_name_edit.text_changed.connect(update_track_name)
 	track_description_edit.text_changed.connect(update_track_description)
 	track_difficulty_edit.value_changed.connect(update_track_difficulty)
+	object_type.item_selected.connect(update_track_object_type)
+	object_tx.value_changed.connect(update_track_object_values)
+	object_ty.value_changed.connect(update_track_object_values)
+	object_yaw.value_changed.connect(update_track_object_values)
+	object_scale_x.value_changed.connect(update_track_object_values)
+	object_scale_y.value_changed.connect(update_track_object_values)
+	object_scale_z.value_changed.connect(update_track_object_values)
 	copy_mesh_layout_button.pressed.connect(copy_mesh_layout)
 	paste_mesh_layout_button.pressed.connect(paste_mesh_layout)
 	create_mesh_layout_button.pressed.connect(create_simple_mesh_layout)
@@ -214,18 +233,28 @@ func _is_spiral_path(path : Node) -> bool:
 	var script : Script = path.get_script() as Script
 	return script and script.resource_path == "res://core/road_path_spiral.gd"
 
-func _apply_context_tabs(show_info : bool, show_spiral : bool, show_track : bool, show_modulation : bool, show_embeds : bool) -> void:
+func _is_track_trigger(node : Node) -> bool:
+	return node and node.get_script() == TrackTriggerScript
+
+func _active_track_trigger() -> Node3D:
+	var selected := get_active_node()
+	if _is_track_trigger(selected):
+		return selected
+	return null
+
+func _apply_context_tabs(show_info : bool, show_spiral : bool, show_track : bool, show_object : bool, show_modulation : bool, show_embeds : bool) -> void:
 	info_panel.visible = show_info
 	spiral_panel.visible = show_spiral
 	track_panel.visible = show_track
+	object_panel.visible = show_object
 	modulation.visible = show_modulation
 	embeds.visible = show_embeds
-	var any_visible := show_info or show_spiral or show_track or show_modulation or show_embeds
+	var any_visible := show_info or show_spiral or show_track or show_object or show_modulation or show_embeds
 	tab_container.visible = any_visible
 	if !any_visible:
 		_hide_cross_section_visual()
 		return
-	var visible_tabs := [show_info, show_spiral, show_track, show_modulation, show_embeds]
+	var visible_tabs := [show_info, show_spiral, show_track, show_object, show_modulation, show_embeds]
 	var first_visible := -1
 	for i in visible_tabs.size():
 		if visible_tabs[i]:
@@ -247,9 +276,10 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS)
 	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and _is_spiral_path(current_path)
 	var show_track := track_root != null and mode == TrackEditingScene.ToolMode.EDIT_TRACK
+	var show_object := _active_track_trigger() != null and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION
 	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.ADD_EMBED
-	_apply_context_tabs(show_info, show_spiral, show_track, show_modulation, show_embeds)
+	_apply_context_tabs(show_info, show_spiral, show_track, show_object, show_modulation, show_embeds)
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
 	var show_cross_section_controls := show_info and !show_checkpoint_controls
 	checkpoint_count_row.visible = show_checkpoint_controls
@@ -336,6 +366,42 @@ func update_track_difficulty(new_value : float) -> void:
 	if updating_track_controls or !track_root:
 		return
 	track_root.track_difficulty = int(new_value)
+
+func _refresh_track_object_controls() -> void:
+	var trigger := _active_track_trigger()
+	if !trigger:
+		return
+	updating_object_controls = true
+	object_type.select(int(trigger.get("trigger_type")))
+	var surface_t : Vector2 = trigger.get("surface_t")
+	object_tx.set_value_no_signal(surface_t.x)
+	object_ty.set_value_no_signal(surface_t.y)
+	object_yaw.set_value_no_signal(trigger.get("add_yaw_degrees"))
+	var trigger_scale : Vector3 = trigger.get("trigger_scale")
+	object_scale_x.set_value_no_signal(trigger_scale.x)
+	object_scale_y.set_value_no_signal(trigger_scale.y)
+	object_scale_z.set_value_no_signal(trigger_scale.z)
+	updating_object_controls = false
+
+func update_track_object_type(new_type : int) -> void:
+	if updating_object_controls:
+		return
+	var trigger := _active_track_trigger()
+	if !trigger:
+		return
+	trigger.set("trigger_type", new_type)
+	trigger.call("refresh_from_attachment")
+
+func update_track_object_values(_new_value : float) -> void:
+	if updating_object_controls:
+		return
+	var trigger := _active_track_trigger()
+	if !trigger:
+		return
+	trigger.set("surface_t", Vector2(object_tx.value, object_ty.value))
+	trigger.set("add_yaw_degrees", object_yaw.value)
+	trigger.set("trigger_scale", Vector3(object_scale_x.value, object_scale_y.value, object_scale_z.value))
+	trigger.call("refresh_from_attachment")
 
 func _refresh_spiral_controls() -> void:
 	if !_is_spiral_path(current_path):
@@ -442,6 +508,8 @@ func _process(delta: float) -> void:
 		return
 	if track_panel.visible:
 		_refresh_track_controls()
+	if object_panel.visible:
+		_refresh_track_object_controls()
 	
 	var selected := get_active_node()
 	if !selected:

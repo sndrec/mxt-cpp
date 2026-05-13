@@ -225,6 +225,14 @@ func place_on_segment(segment : RoadPath, tx := 0.0, ty := 0.5) -> void:
 	global_transform = _surface_transform(segment)
 	_sync_transform_cache()
 
+func refresh_from_attachment() -> void:
+	var segment := get_target_segment()
+	if !segment:
+		return
+	surface_t = Vector2(clampf(surface_t.x, -1.0, 1.0), clampf(surface_t.y, 0.0, 1.0))
+	global_transform = _surface_transform(segment)
+	_sync_transform_cache()
+
 func _process(_delta : float) -> void:
 	if !has_synced_transform:
 		_sync_transform_cache()
