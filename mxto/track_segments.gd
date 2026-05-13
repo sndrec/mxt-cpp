@@ -62,6 +62,7 @@ func export_mxt_track(path : String) -> Error:
 		return ERR_DOES_NOT_EXIST
 	_generate_checkpoints()
 	var cp_ranges := _build_checkpoint_ranges(segments)
+	var topology := _build_segment_topology(segments)
 	var trigger_exports := _build_trigger_exports(segments, cp_ranges)
 	var buf := StreamPeerBufferExtension.new()
 	buf.big_endian = false
@@ -72,7 +73,7 @@ func export_mxt_track(path : String) -> Error:
 	buf.put_u32(segments.size())
 	buf.put_u32(trigger_exports.size())
 	for i in checkpoints.size():
-		buf.put_checkpoint_with_neighbors(checkpoints[i], _checkpoint_neighbors(i, cp_ranges))
+		buf.put_checkpoint_with_neighbors(checkpoints[i], _checkpoint_neighbors(i, cp_ranges, topology))
 	for i in segments.size():
 		var segment := segments[i]
 		if !(segment is RoadPathBezier):
@@ -148,7 +149,52 @@ func _build_checkpoint_ranges(segments : Array[RoadPath]) -> Array[Vector2i]:
 		start += count
 	return ranges
 
-func _checkpoint_neighbors(index : int, ranges : Array[Vector2i]) -> Array[int]:
+func _segment_index_for_path(segment_path : NodePath, segments : Array[RoadPath]) -> int:
+	if segment_path.is_empty():
+		return -1
+	var node := get_node_or_null(segment_path)
+	if !(node is RoadPath):
+		return -1
+	return segments.find(node)
+
+func _append_unique_segment_index(out : Array, segment_index : int) -> void:
+	if segment_index < 0 or out.has(segment_index):
+		return
+	out.append(segment_index)
+
+func _build_segment_topology(segments : Array[RoadPath]) -> Dictionary:
+	var previous_by_segment : Array = []
+	var next_by_segment : Array = []
+	for _segment in segments:
+		previous_by_segment.append([])
+		next_by_segment.append([])
+	for i in segments.size():
+		var segment := segments[i]
+		for previous_path in segment.previous_segment_paths:
+			var previous_index := _segment_index_for_path(previous_path, segments)
+			if previous_index == i:
+				continue
+			_append_unique_segment_index(previous_by_segment[i], previous_index)
+			if previous_index >= 0:
+				_append_unique_segment_index(next_by_segment[previous_index], i)
+		for next_path in segment.next_segment_paths:
+			var next_index := _segment_index_for_path(next_path, segments)
+			if next_index == i:
+				continue
+			_append_unique_segment_index(next_by_segment[i], next_index)
+			if next_index >= 0:
+				_append_unique_segment_index(previous_by_segment[next_index], i)
+	return {
+		"previous": previous_by_segment,
+		"next": next_by_segment,
+	}
+
+func _append_unique_checkpoint(out : Array[int], checkpoint_index : int) -> void:
+	if checkpoint_index < 0 or out.has(checkpoint_index):
+		return
+	out.append(checkpoint_index)
+
+func _checkpoint_neighbors(index : int, ranges : Array[Vector2i], topology : Dictionary) -> Array[int]:
 	var segment_index := 0
 	for i in ranges.size():
 		var range := ranges[i]
@@ -159,16 +205,22 @@ func _checkpoint_neighbors(index : int, ranges : Array[Vector2i]) -> Array[int]:
 	var local_index := index - range.x
 	var out : Array[int] = []
 	if local_index > 0:
-		out.append(index - 1)
+		_append_unique_checkpoint(out, index - 1)
 	else:
-		var prev_segment := (segment_index - 1 + ranges.size()) % ranges.size()
-		var prev_range := ranges[prev_segment]
-		out.append(prev_range.x + prev_range.y - 1)
+		var previous_segments : Array = topology["previous"][segment_index]
+		if previous_segments.is_empty():
+			previous_segments = [(segment_index - 1 + ranges.size()) % ranges.size()]
+		for previous_segment in previous_segments:
+			var prev_range := ranges[int(previous_segment)]
+			_append_unique_checkpoint(out, prev_range.x + prev_range.y - 1)
 	if local_index < range.y - 1:
-		out.append(index + 1)
+		_append_unique_checkpoint(out, index + 1)
 	else:
-		var next_segment := (segment_index + 1) % ranges.size()
-		out.append(ranges[next_segment].x)
+		var next_segments : Array = topology["next"][segment_index]
+		if next_segments.is_empty():
+			next_segments = [(segment_index + 1) % ranges.size()]
+		for next_segment in next_segments:
+			_append_unique_checkpoint(out, ranges[int(next_segment)].x)
 	return out
 
 func _road_type_for_shape(shape : RoadShape) -> int:

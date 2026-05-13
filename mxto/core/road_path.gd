@@ -5,6 +5,8 @@ class_name RoadPath extends Node3D
 @export var road_uv_multiplier := 1.0
 @export var horizontal_road_mesh_segments : PackedFloat32Array
 @export var num_checkpoints := 8
+@export var previous_segment_paths : Array[NodePath] = []
+@export var next_segment_paths : Array[NodePath] = []
 var segment_length := 0.0
 var road_mesh_instance : MeshInstance3D
 var road_collision : StaticBody3D
