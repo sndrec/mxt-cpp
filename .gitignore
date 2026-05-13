@@ -19,3 +19,14 @@ profiling/
 symbols.pdb
 test_apply_patch_target.txt
 venv/
+
+# Local workspace scratch/import dumps
+.codex
+.venv-scons/
+AGTrackEditor/
+old-for-reference/
+old-for-reference-real/
+replays/
+thirdparty/
+car_base.gd
+mxt-cpp.7z
