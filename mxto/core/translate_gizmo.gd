@@ -60,6 +60,7 @@ func _process(delta: float) -> void:
 	else:
 		set_colliders_active(true)
 	if Input.is_action_just_released("LeftMouse") and is_moving and active:
+		get_viewport().set_input_as_handled()
 		FZGlobal.transform_object(target_node, global_transform, original_transform)
 		scene.end_pointer_action(self)
 	if !Input.is_action_pressed("LeftMouse"):
@@ -77,6 +78,7 @@ func _process(delta: float) -> void:
 			if mouse_cast.is_colliding() and mousecast_wants_this_gizmo():
 				if !scene.begin_pointer_action(self):
 					return
+				get_viewport().set_input_as_handled()
 				if mouse_cast.get_collider() == giz_x_col:
 					use_axis = "x"
 					use_vector = global_basis.x
