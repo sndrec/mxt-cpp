@@ -188,6 +188,7 @@ func _process(delta: float) -> void:
 		if FZGlobal.active_node == self and Input.is_action_just_pressed("LeftMouse") and (mgc.get_collider() == handle_in_collision or mgc.get_collider() == handle_out_collision):
 			if !scene.begin_pointer_action(self):
 				return
+			get_viewport().set_input_as_handled()
 			clicking = true
 			var handle_dir := global_basis.orthonormalized().z
 			var cam_pos_projected := (cam.global_position - global_position).project(handle_dir)
@@ -196,6 +197,8 @@ func _process(delta: float) -> void:
 			origin_point = test_plane.intersects_ray(cam.global_position, cam.project_ray_normal(get_viewport().get_mouse_position()) * 4096)
 			origin_point = (origin_point - global_position).project(handle_dir) + global_position
 	if Input.is_action_just_released("LeftMouse"):
+		if clicking or scene.owns_pointer_action(self):
+			get_viewport().set_input_as_handled()
 		clicking = false
 		scene.end_pointer_action(self)
 	if clicking:

@@ -430,9 +430,6 @@ func _process(delta):
 		point_count = native_curve.get_control_point_count()
 
 	var control_points : PackedFloat32Array = native_curve.get_control_points()
-	for i in point_count:
-		DebugDraw2D.set_text("p" + str(i), control_points[i * CONTROL_STRIDE])
-
 	if scene and scene.tool_mode_allows_control_point_gizmos() and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
 		_update_centerline_visual()
 		_update_add_point_preview(Vector3.ZERO, false)
@@ -462,6 +459,7 @@ func _process(delta):
 				if Input.is_action_just_pressed("LeftMouse"):
 					if !scene.begin_pointer_action(self):
 						return
+					get_viewport().set_input_as_handled()
 					control_points[base_1 + 17] = handle_out_1 * 0.5
 					control_points[base_2 + 16] = handle_in_2 * 0.5
 					native_curve.set_control_points(control_points)
