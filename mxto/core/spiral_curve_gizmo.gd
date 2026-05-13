@@ -349,7 +349,10 @@ func _tangent_handle_position(record : Dictionary) -> Vector3:
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
 			return frame["center"] + _entry_axis(entry, frame) * side * (tangent_value + VISUAL_OFFSET)
 		_:
-			return point_frame["center"] + point_frame["z"] * signf(delta) * TANGENT_VISUAL_SPAN + _entry_axis(entry, point_frame) * side * (tangent_value - point.y)
+			var tangent_dir : Vector3 = frame["center"] - point_frame["center"]
+			if tangent_dir.length_squared() <= 0.00001:
+				tangent_dir = point_frame["z"] * signf(delta)
+			return point_frame["center"] + tangent_dir.normalized() * TANGENT_VISUAL_SPAN + _entry_axis(entry, point_frame) * side * (tangent_value - point.y)
 
 func _handle_position(handle_id : int) -> Vector3:
 	var record := handle_records[handle_id]
