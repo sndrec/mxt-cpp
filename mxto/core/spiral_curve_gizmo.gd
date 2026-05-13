@@ -30,6 +30,8 @@ const TANGENT_VISUAL_SPAN := 16.0
 const AXIS_POLE_LENGTH := 160.0
 const AXIS_HANDLE_OFFSET := 80.0
 const ARROW_LENGTH := 18.0
+const KEY_ARROW_HEAD_LENGTH := 6.0
+const KEY_ARROW_HEAD_WIDTH := 4.0
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
@@ -375,6 +377,9 @@ func _build_arrow_mesh() -> void:
 	vertices.append(Vector3(0.0, head_tip, 0.0))
 	normals.append(Vector3.UP)
 	var tip_index := vertices.size() - 1
+	vertices.append(Vector3(0.0, shaft_start, 0.0))
+	normals.append(Vector3.DOWN)
+	var bottom_cap_index := vertices.size() - 1
 	for i in ring_count:
 		var next := (i + 1) % ring_count
 		var shaft_0 := i * 3
@@ -384,6 +389,8 @@ func _build_arrow_mesh() -> void:
 		var head_0 := shaft_0 + 2
 		var head_1 := shaft_1 + 2
 		indices.append_array([shaft_0, shaft_1, shaft_0_top, shaft_1, shaft_1_top, shaft_0_top])
+		indices.append_array([bottom_cap_index, shaft_0, shaft_1])
+		indices.append_array([shaft_0_top, shaft_1_top, head_0, shaft_1_top, head_1, head_0])
 		indices.append_array([head_0, head_1, tip_index])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -553,6 +560,27 @@ func _append_selection_segment(entry_index : int, point_index : int, a : Vector3
 	body.global_transform = Transform3D(_basis_from_y_axis(b - a), (a + b) * 0.5)
 	body.set_collision_layer_value(15, true)
 
+func _arrow_head_wing(axis : Vector3, frame : Dictionary) -> Vector3:
+	var wing : Vector3 = frame["z"]
+	if absf(wing.normalized().dot(axis.normalized())) > 0.95:
+		wing = frame["y"]
+	if absf(wing.normalized().dot(axis.normalized())) > 0.95:
+		wing = frame["x"]
+	return wing.normalized()
+
+func _append_selection_arrow(entry_index : int, point_index : int, center : Vector3, axis : Vector3, frame : Dictionary) -> void:
+	var direction := axis.normalized()
+	var wing := _arrow_head_wing(direction, frame)
+	var negative_tip := center - direction * ARROW_LENGTH
+	var positive_tip := center + direction * ARROW_LENGTH
+	var negative_base := negative_tip + direction * KEY_ARROW_HEAD_LENGTH
+	var positive_base := positive_tip - direction * KEY_ARROW_HEAD_LENGTH
+	_append_selection_segment(entry_index, point_index, negative_tip, positive_tip)
+	_append_selection_segment(entry_index, point_index, negative_tip, negative_base + wing * KEY_ARROW_HEAD_WIDTH)
+	_append_selection_segment(entry_index, point_index, negative_tip, negative_base - wing * KEY_ARROW_HEAD_WIDTH)
+	_append_selection_segment(entry_index, point_index, positive_tip, positive_base + wing * KEY_ARROW_HEAD_WIDTH)
+	_append_selection_segment(entry_index, point_index, positive_tip, positive_base - wing * KEY_ARROW_HEAD_WIDTH)
+
 func _append_selection_circle(entry_index : int, point_index : int, center : Vector3, x_axis : Vector3, y_axis : Vector3, radius : float) -> void:
 	var previous := center + x_axis * radius
 	for i in CIRCLE_STEPS:
@@ -581,7 +609,7 @@ func _sync_selection_collisions() -> void:
 						_append_selection_segment(entry_index, point_index, frame["center"], handle_pos)
 				_:
 					var axis := _entry_axis(entry, frame)
-					_append_selection_segment(entry_index, point_index, frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH)
+					_append_selection_arrow(entry_index, point_index, frame["center"], axis, frame)
 	for i in selection_bodies.size():
 		var active := i < selection_records.size()
 		selection_bodies[i].set_collision_layer_value(15, active)
@@ -636,6 +664,19 @@ func _draw_key_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radi
 		_draw_key_line(previous, next, color, hovered)
 		previous = next
 
+func _draw_key_arrow(center : Vector3, axis : Vector3, frame : Dictionary, color : Color, hovered : bool) -> void:
+	var direction := axis.normalized()
+	var wing := _arrow_head_wing(direction, frame)
+	var negative_tip := center - direction * ARROW_LENGTH
+	var positive_tip := center + direction * ARROW_LENGTH
+	var negative_base := negative_tip + direction * KEY_ARROW_HEAD_LENGTH
+	var positive_base := positive_tip - direction * KEY_ARROW_HEAD_LENGTH
+	_draw_key_line(negative_tip, positive_tip, color, hovered)
+	_draw_key_line(negative_tip, negative_base + wing * KEY_ARROW_HEAD_WIDTH, color, hovered)
+	_draw_key_line(negative_tip, negative_base - wing * KEY_ARROW_HEAD_WIDTH, color, hovered)
+	_draw_key_line(positive_tip, positive_base + wing * KEY_ARROW_HEAD_WIDTH, color, hovered)
+	_draw_key_line(positive_tip, positive_base - wing * KEY_ARROW_HEAD_WIDTH, color, hovered)
+
 func _draw_axis_pole() -> void:
 	var center := _axis_pole_center()
 	var axis := _spiral_axis_world()
@@ -659,7 +700,7 @@ func _draw_arrow_point(entry_index : int, entry : Dictionary, point_index : int)
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
 	var axis := _entry_axis(entry, frame)
-	_draw_key_line(frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH, _grey(), _hovered_key_matches(entry_index, point_index))
+	_draw_key_arrow(frame["center"], axis, frame, _grey(), _hovered_key_matches(entry_index, point_index))
 
 func _draw_twist_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
