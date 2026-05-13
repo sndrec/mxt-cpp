@@ -1138,36 +1138,82 @@ func _point_ray_distance_squared(point : Vector3, ray_origin : Vector3, ray_dir 
 	var ray_t := maxf(0.0, (point - ray_origin).dot(ray_dir))
 	return point.distance_squared_to(ray_origin + ray_dir * ray_t)
 
+func _scale_tangent_surface_sample_at(samples : Array, t : float) -> Dictionary:
+	if samples.is_empty():
+		return {}
+	if samples.size() == 1:
+		return samples[0]
+	var first_t := float(samples[0]["t"])
+	var last_t := float(samples[samples.size() - 1]["t"])
+	if last_t <= first_t:
+		return samples[0]
+	var scaled_index := clampf((t - first_t) / (last_t - first_t), 0.0, 1.0) * float(samples.size() - 1)
+	var sample_index := mini(int(floorf(scaled_index)), samples.size() - 2)
+	var local_t := scaled_index - float(sample_index)
+	var a : Dictionary = samples[sample_index]
+	var b : Dictionary = samples[sample_index + 1]
+	var origin : Vector3 = (a["origin"] as Vector3).lerp(b["origin"], local_t)
+	var axis : Vector3 = (a["axis"] as Vector3).lerp(b["axis"], local_t)
+	if axis.length_squared() <= 0.00001:
+		axis = a["axis"] as Vector3
+	return {
+		"t": lerpf(float(a["t"]), float(b["t"]), local_t),
+		"origin": origin,
+		"axis": axis.normalized(),
+	}
+
+func _scale_tangent_pick_at_t(samples : Array, t : float, ray_origin : Vector3, ray_dir : Vector3, min_value : float) -> Dictionary:
+	var sample := _scale_tangent_surface_sample_at(samples, t)
+	if sample.is_empty():
+		return {"t": 0.0, "value": min_value, "distance": INF}
+	var origin : Vector3 = sample["origin"]
+	var axis : Vector3 = sample["axis"]
+	var w := ray_origin - origin
+	var b := ray_dir.dot(axis)
+	var d := ray_dir.dot(w)
+	var e := axis.dot(w)
+	var denom := 1.0 - b * b
+	var ray_distance := 0.0
+	var value := 0.0
+	if absf(denom) > 0.00001:
+		ray_distance = (b * e - d) / denom
+		value = (e - b * d) / denom
+	else:
+		ray_distance = (origin - ray_origin).dot(ray_dir)
+		value = (ray_origin + ray_dir * ray_distance - origin).dot(axis)
+	if ray_distance < 0.0:
+		ray_distance = 0.0
+		value = (ray_origin - origin).dot(axis)
+	value = maxf(min_value, value)
+	var point := origin + axis * value
+	return {
+		"t": float(sample["t"]),
+		"value": value,
+		"distance": _point_ray_distance_squared(point, ray_origin, ray_dir),
+	}
+
 func _closest_on_scale_tangent_surface(samples : Array, ray_origin : Vector3, ray_dir : Vector3, min_value : float) -> Dictionary:
-	var best_t := 0.0
+	if samples.is_empty():
+		return {"t": 0.0, "value": min_value}
+	var range_min := float(samples[0]["t"])
+	var range_max := float(samples[samples.size() - 1]["t"])
+	var min_t := range_min
+	var max_t := range_max
+	var best_t := range_min
 	var best_value := min_value
 	var best_dist := INF
-	for sample in samples:
-		var origin : Vector3 = sample["origin"]
-		var axis : Vector3 = sample["axis"]
-		var w := ray_origin - origin
-		var b := ray_dir.dot(axis)
-		var d := ray_dir.dot(w)
-		var e := axis.dot(w)
-		var denom := 1.0 - b * b
-		var ray_distance := 0.0
-		var value := 0.0
-		if absf(denom) > 0.00001:
-			ray_distance = (b * e - d) / denom
-			value = (e - b * d) / denom
-		else:
-			ray_distance = (origin - ray_origin).dot(ray_dir)
-			value = (ray_origin + ray_dir * ray_distance - origin).dot(axis)
-		if ray_distance < 0.0:
-			ray_distance = 0.0
-			value = (ray_origin - origin).dot(axis)
-		value = maxf(min_value, value)
-		var point := origin + axis * value
-		var dist := _point_ray_distance_squared(point, ray_origin, ray_dir)
-		if dist < best_dist:
-			best_dist = dist
-			best_t = float(sample["t"])
-			best_value = value
+	for pass_index in SEARCH_PASSES:
+		for i in SEARCH_STEPS + 1:
+			var t := lerpf(min_t, max_t, float(i) / float(SEARCH_STEPS))
+			var pick := _scale_tangent_pick_at_t(samples, t, ray_origin, ray_dir, min_value)
+			var dist := float(pick["distance"])
+			if dist < best_dist:
+				best_dist = dist
+				best_t = float(pick["t"])
+				best_value = float(pick["value"])
+		var radius := (max_t - min_t) / float(SEARCH_STEPS)
+		min_t = maxf(range_min, best_t - radius)
+		max_t = minf(range_max, best_t + radius)
 	return {"t": best_t, "value": best_value}
 
 func _begin_scale_tangent_surface_drag(record : Dictionary, entry : Dictionary, curve : Resource, point_index : int, side : float) -> bool:
