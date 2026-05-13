@@ -155,7 +155,7 @@ func _on_edit_segment_props_pressed():
 	new_track_segment_type_buttons.visible = false
 	new_embed_buttons.visible = false
 	new_track_object_buttons.visible = false
-	bezier_buttons.visible = FZGlobal.active_node is BezierHandle
+	bezier_buttons.visible = false
 
 
 func _on_edit_track_props_pressed():

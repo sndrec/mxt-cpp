@@ -25,6 +25,7 @@ var centerline_mesh := ImmediateMesh.new()
 var centerline_material := StandardMaterial3D.new()
 var add_point_preview_mesh_instance : MeshInstance3D
 var add_point_preview_material := StandardMaterial3D.new()
+var delete_pressed := false
 
 func _preview_material(material_name : String) -> Material:
 	if _preview_material_cache.has(material_name):
@@ -342,6 +343,22 @@ func _try_alt_add_control_point(scene : TrackEditingScene, points : PackedFloat3
 	scene.end_pointer_action(self)
 	return true
 
+func _try_delete_selected_control_point(scene : TrackEditingScene, point_count : int) -> bool:
+	var delete_now := Input.is_key_pressed(KEY_DELETE)
+	var just_delete := delete_now and !delete_pressed
+	delete_pressed = delete_now
+	if !just_delete or scene.pointer_action_busy_for(self):
+		return false
+	var selected := FZGlobal.active_node as BezierHandle
+	if !selected or selected.get_parent() != self:
+		return false
+	if point_count <= 2:
+		return false
+	remove_bezier_point_at_index(clampi(selected.associated_index, 0, point_count - 1))
+	FZGlobal.select_node(self)
+	get_viewport().set_input_as_handled()
+	return true
+
 func _write_control_transform(points : PackedFloat32Array, index : int, position : Vector3, basis : Basis, scale : Vector3, handle_in : float, handle_out : float) -> void:
 	var base := index * CONTROL_STRIDE
 	var clean_basis := basis.orthonormalized()
@@ -522,9 +539,12 @@ func _process(delta):
 	var control_points : PackedFloat32Array = native_curve.get_control_points()
 	if scene and scene.tool_mode_allows_control_point_gizmos() and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
 		_update_centerline_visual()
+		if _try_delete_selected_control_point(scene, point_count):
+			return
 		if _try_alt_add_control_point(scene, control_points, point_count):
 			return
 	else:
+		delete_pressed = Input.is_key_pressed(KEY_DELETE)
 		_hide_editor_visuals()
 
 	var next_control_points : PackedFloat32Array = control_points.duplicate()
