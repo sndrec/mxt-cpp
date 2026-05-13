@@ -272,6 +272,9 @@ func _mouse_over_gizmo() -> bool:
 	mouse_gizmo_cast.force_raycast_update()
 	return mouse_gizmo_cast.is_colliding()
 
+func mouse_over_editor_ui() -> bool:
+	return get_viewport().gui_get_hovered_control() != null
+
 func _closest_surface_param(segment : RoadPath, world_pos : Vector3) -> Vector2:
 	var best_param := Vector2(0.0, 0.5)
 	var best_distance := INF
@@ -304,6 +307,8 @@ func _handle_add_object_input() -> void:
 		return
 	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
 		return
+	if mouse_over_editor_ui():
+		return
 	if _mouse_over_gizmo():
 		return
 	if !begin_pointer_action(self):
@@ -323,6 +328,8 @@ func _handle_add_embed_input() -> void:
 	if tool_mode != ToolMode.ADD_EMBED or !pending_embed_add:
 		return
 	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
+		return
+	if mouse_over_editor_ui():
 		return
 	if _mouse_over_gizmo():
 		return
@@ -346,6 +353,8 @@ func _handle_add_segment_input() -> void:
 	if tool_mode != ToolMode.ADD_SEGMENT:
 		return
 	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
+		return
+	if mouse_over_editor_ui():
 		return
 	if _mouse_over_gizmo():
 		return

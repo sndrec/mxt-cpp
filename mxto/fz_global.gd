@@ -168,7 +168,7 @@ func _process(delta):
 		if undo_redo.has_redo():
 			undo_redo.redo()
 	
-	if editing_scene and can_select and !editing_scene.pointer_action_owner and Input.is_action_just_pressed("RightMouse"):
+	if editing_scene and can_select and !editing_scene.pointer_action_owner and !editing_scene.mouse_over_editor_ui() and Input.is_action_just_pressed("RightMouse"):
 		var selectable_nodes : Array[Node3D] = []
 		var mpc := editing_scene.mouse_picker_cast
 		editing_scene.update_mouse_casts(true)
