@@ -283,6 +283,26 @@ func _handle_add_embed_input() -> void:
 			get_viewport().set_input_as_handled()
 	end_pointer_action(self)
 
+func _handle_add_segment_input() -> void:
+	if tool_mode != ToolMode.ADD_SEGMENT:
+		return
+	if !Input.is_action_pressed("Alt") or !Input.is_action_just_pressed("LeftMouse"):
+		return
+	if mouse_gizmo_cast.is_colliding():
+		return
+	if !begin_pointer_action(self):
+		return
+	var hit := _pick_road_path_under_mouse()
+	if !hit.is_empty():
+		var path := hit["path"] as RoadPath
+		var new_segment := add_bezier_track_segment_after(path, desired_road_type)
+		if new_segment:
+			active_path = new_segment
+			add_road_gizmo.set_target_node(new_segment)
+			FZGlobal.select_node(new_segment)
+			get_viewport().set_input_as_handled()
+	end_pointer_action(self)
+
 func _process(delta: float) -> void:
 	if pointer_action_owner and !is_instance_valid(pointer_action_owner):
 		pointer_action_owner = null
@@ -335,6 +355,7 @@ func _process(delta: float) -> void:
 	last_mouse_pos = get_viewport().get_mouse_position()
 	grid_origin.position = grid_origin.position.lerp(snapped(cam_origin, Vector3(16, 16, 16)), delta * 30)
 	update_mouse_casts(true)
+	_handle_add_segment_input()
 	_handle_add_embed_input()
 	_handle_add_object_input()
 
