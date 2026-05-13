@@ -1,7 +1,7 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene format=3 uid="uid://clemaibgnvlk6"]
 
-[ext_resource type="Script" path="res://ui/track_editor/track_editor_dock.gd" id="1_lnexm"]
-[ext_resource type="Texture2D" path="res://asset/tex/ui/leveleditor/buttons.png" id="2_rt8pl"]
+[ext_resource type="Script" uid="uid://cnkwdm5rr38tt" path="res://ui/track_editor/track_editor_dock.gd" id="1_lnexm"]
+[ext_resource type="Texture2D" uid="uid://dr7kptcp0m1w2" path="res://asset/tex/ui/leveleditor/buttons.png" id="2_rt8pl"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_jfhpx"]
 atlas = ExtResource("2_rt8pl")
@@ -68,7 +68,7 @@ atlas = ExtResource("2_rt8pl")
 region = Rect2(62, 124, 62, 62)
 filter_clip = true
 
-[node name="TrackEditorDock" type="Control"]
+[node name="TrackEditorDock" type="Control" unique_id=1250059392]
 custom_minimum_size = Vector2(256, 0)
 layout_mode = 3
 anchors_preset = 15
@@ -82,7 +82,7 @@ size_flags_stretch_ratio = 0.2
 mouse_filter = 2
 script = ExtResource("1_lnexm")
 
-[node name="MainGUI" type="Control" parent="."]
+[node name="MainGUI" type="Control" parent="." unique_id=724681149]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -91,7 +91,7 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="MainGUI"]
+[node name="VBoxContainer" type="VBoxContainer" parent="MainGUI" unique_id=1722761585]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -100,261 +100,261 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="MainGUIMargin" type="MarginContainer" parent="MainGUI/VBoxContainer"]
+[node name="MainGUIMargin" type="MarginContainer" parent="MainGUI/VBoxContainer" unique_id=1603358960]
 layout_mode = 2
 mouse_filter = 2
-theme_override_constants/margin_left = 24
-theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 24
-theme_override_constants/margin_bottom = 24
+theme_override_constants/margin_left = 4
+theme_override_constants/margin_top = 4
+theme_override_constants/margin_right = 4
+theme_override_constants/margin_bottom = 4
 
-[node name="MainGUIHBox" type="HBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin"]
+[node name="MainGUIHBox" type="HBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin" unique_id=1330984454]
 layout_mode = 2
 mouse_filter = 2
-theme_override_constants/separation = 12
+theme_override_constants/separation = 4
 
-[node name="MainButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="MainButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox" unique_id=1516490569]
 custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
-theme_override_constants/h_separation = 16
-theme_override_constants/v_separation = 16
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
 
-[node name="NewTrackSegment" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="NewTrackSegment" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1746042672]
 visible = false
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Add New Track Segment"
 icon = SubResource("AtlasTexture_jfhpx")
 
-[node name="EditSegmentProps" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditSegmentProps" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1718167275]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Currently Selected Segment"
 icon = SubResource("AtlasTexture_204uj")
 
-[node name="EditShape" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditShape" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=806852652]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Segment Shape Curves"
 text = "Shape"
 
-[node name="EditMeshLayout" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditMeshLayout" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=2054032886]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Segment Mesh Layout"
 text = "Mesh"
 
-[node name="EditSpiral" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditSpiral" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1471772258]
 visible = false
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Spiral Segment"
 text = "Spiral"
 
-[node name="AddEmbed" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="AddEmbed" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1503311746]
 visible = false
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Add Embedded Property to Selected Segment"
 icon = SubResource("AtlasTexture_boeyx")
 
-[node name="EditEmbeds" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditEmbeds" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=312399185]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Segment Embeds"
 text = "Embed"
 
-[node name="EditRails" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditRails" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1620506685]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Segment Rails"
 text = "Rails"
 
-[node name="EditModulation" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditModulation" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1758688817]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Segment Modulation"
 text = "Mod"
 
-[node name="EditCheckpoints" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditCheckpoints" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1105846760]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Segment Checkpoints"
 text = "CPs"
 
-[node name="NewTrackObject" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="NewTrackObject" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=2049856768]
 visible = false
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Add New Track Object"
 icon = SubResource("AtlasTexture_2b737")
 
-[node name="EditTrackObject" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditTrackObject" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1542299062]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Selected Track Object"
 text = "Obj"
 
-[node name="EditTrackProps" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="EditTrackProps" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=443056355]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Edit Racetrack Properties"
 text = "ETP"
 
-[node name="AddToolStatus" type="Label" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="AddToolStatus" type="Label" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons" unique_id=1804404300]
 visible = false
 custom_minimum_size = Vector2(64, 0)
 layout_mode = 2
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="NewTrackSegmentButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewTrackSegmentButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox" unique_id=2026728439]
 visible = false
 custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
 theme_override_constants/h_separation = 16
 theme_override_constants/v_separation = 16
 
-[node name="RoadStandard" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+[node name="RoadStandard" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons" unique_id=764139891]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Standard Road"
 icon = SubResource("AtlasTexture_rf86j")
 
-[node name="RoadPipe" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+[node name="RoadPipe" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons" unique_id=55522656]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Interior Pipe Road"
 icon = SubResource("AtlasTexture_gwkyo")
 
-[node name="RoadCylinder" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+[node name="RoadCylinder" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons" unique_id=350264419]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Exterior Cylinder Road"
 icon = SubResource("AtlasTexture_wl136")
 
-[node name="RoadPipeOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+[node name="RoadPipeOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons" unique_id=936576021]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Open Interior Pipe Road"
 text = "PO"
 
-[node name="RoadCylinderOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+[node name="RoadCylinderOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons" unique_id=1333536190]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Open Exterior Cylinder Road"
 text = "CO"
 
-[node name="RoadRoundedSquare" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+[node name="RoadRoundedSquare" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons" unique_id=1429729440]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Rounded Square Road"
 text = "RS"
 
-[node name="RoadRoundedSquareOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons"]
+[node name="RoadRoundedSquareOpen" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentButtons" unique_id=1875833495]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Open Rounded Square Road"
 text = "RO"
 
-[node name="NewTrackSegmentTypeButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewTrackSegmentTypeButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox" unique_id=588720792]
 visible = false
 custom_minimum_size = Vector2(70, 672)
 layout_mode = 2
 theme_override_constants/h_separation = 16
 theme_override_constants/v_separation = 16
 
-[node name="RoadLine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
+[node name="RoadLine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons" unique_id=1235319155]
 custom_minimum_size = Vector2(70, 70)
 layout_mode = 2
 tooltip_text = "Line Segment"
 text = "Line"
 
-[node name="RoadBezier" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
+[node name="RoadBezier" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons" unique_id=1884571008]
 custom_minimum_size = Vector2(70, 70)
 layout_mode = 2
 tooltip_text = "Bezier Segment"
 text = "Bezier"
 
-[node name="RoadCurve" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
+[node name="RoadCurve" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons" unique_id=1250878570]
 custom_minimum_size = Vector2(70, 70)
 layout_mode = 2
 tooltip_text = "Spiral Segment"
 text = "Spiral"
 
-[node name="NewEmbedButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewEmbedButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox" unique_id=1978921700]
 visible = false
 custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
 theme_override_constants/h_separation = 16
 theme_override_constants/v_separation = 16
 
-[node name="Recharge" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+[node name="Recharge" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons" unique_id=637434761]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Recharge"
 icon = SubResource("AtlasTexture_tha3g")
 
-[node name="Dirt" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+[node name="Dirt" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons" unique_id=702036424]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Dirt/Rough"
 icon = SubResource("AtlasTexture_edgxp")
 
-[node name="Slip" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+[node name="Slip" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons" unique_id=1903344899]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Slip Zone"
 icon = SubResource("AtlasTexture_047vs")
 
-[node name="Lava" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+[node name="Lava" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons" unique_id=854033044]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Lava"
 text = "Lava"
 
-[node name="Gap" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons"]
+[node name="Gap" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons" unique_id=1987713282]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Gap"
 text = "Gap"
 
-[node name="NewTrackObjectButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
+[node name="NewTrackObjectButtons" type="VFlowContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox" unique_id=1829898272]
 visible = false
 custom_minimum_size = Vector2(64, 672)
 layout_mode = 2
 theme_override_constants/h_separation = 16
 theme_override_constants/v_separation = 16
 
-[node name="DashPlate" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons"]
+[node name="DashPlate" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons" unique_id=953066611]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Dash Plate"
 icon = SubResource("AtlasTexture_nr0ua")
 
-[node name="Jump" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons"]
+[node name="Jump" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons" unique_id=1502405046]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Jump Plate"
 icon = SubResource("AtlasTexture_h34me")
 
-[node name="Mine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons"]
+[node name="Mine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons" unique_id=635599888]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Mine"
 icon = SubResource("AtlasTexture_3iywc")
 
-[node name="ScrollContainer" type="ScrollContainer" parent="MainGUI/VBoxContainer"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MainGUI/VBoxContainer" unique_id=1944006970]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Outliner" type="VBoxContainer" parent="MainGUI/VBoxContainer/ScrollContainer"]
+[node name="Outliner" type="VBoxContainer" parent="MainGUI/VBoxContainer/ScrollContainer" unique_id=1348404937]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="ScreenOverlay" type="Control" parent="."]
+[node name="ScreenOverlay" type="Control" parent="." unique_id=514195545]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
