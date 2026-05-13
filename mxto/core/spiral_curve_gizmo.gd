@@ -1,39 +1,72 @@
 class_name SpiralCurveGizmo extends Node3D
 
+enum CurveKind {
+	RADIUS,
+	HEIGHT,
+	TWIST,
+	SCALE_X,
+	SCALE_Y,
+}
+
 enum HandleKind {
 	POINT,
 	LEFT_TANGENT,
 	RIGHT_TANGENT,
+	AXIS_POLE,
 }
 
 const HANDLE_RADIUS := 4.0
 const TANGENT_HANDLE_RADIUS := 2.5
+const CUBE_HANDLE_SIZE := 8.0
 const SEARCH_STEPS := 10
 const SEARCH_PASSES := 5
 const PREVIEW_STEPS := 32
+const CIRCLE_STEPS := 48
 const MIN_POINT_GAP := 0.001
 const TANGENT_HANDLE_OFFSET := 0.08
 const ADD_POINT_MAX_SCREEN_DISTANCE := 60.0
+const VISUAL_OFFSET := 8.0
+const TANGENT_VISUAL_SPAN := 16.0
+const AXIS_POLE_LENGTH := 160.0
+const AXIS_HANDLE_OFFSET := 80.0
+const ARROW_LENGTH := 18.0
 
 var mouse_cast : RayCast3D
 var target_path : RoadPath
 var dragging := false
 var drag_handle := -1
 var delete_pressed := false
-var drag_plane := Plane.PLANE_XZ
+var drag_snapshot := {}
+
 var outline_mesh_instance : MeshInstance3D
 var outline_mesh := ImmediateMesh.new()
 var outline_material := StandardMaterial3D.new()
-var handle_materials : Array[StandardMaterial3D] = []
+var cube_handle_mesh := BoxMesh.new()
+var cube_handle_shape := BoxShape3D.new()
+var point_handle_mesh := SphereMesh.new()
+var point_handle_shape := SphereShape3D.new()
+var tangent_handle_mesh := SphereMesh.new()
+var tangent_handle_shape := SphereShape3D.new()
+
+var handle_records : Array[Dictionary] = []
 var handles : Array[StaticBody3D] = []
-var handle_curve_indices : Array[int] = []
-var handle_point_indices : Array[int] = []
-var handle_kinds : Array[int] = []
+var handle_materials : Array[StandardMaterial3D] = []
+var handle_mesh_instances : Array[MeshInstance3D] = []
+var handle_collision_shapes : Array[CollisionShape3D] = []
+var handle_shape_keys : Array[String] = []
 var curve_entries : Array[Dictionary] = []
 
 func _ready() -> void:
 	outline_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	outline_material.vertex_color_use_as_albedo = true
+	cube_handle_mesh.size = Vector3.ONE * CUBE_HANDLE_SIZE
+	cube_handle_shape.size = Vector3.ONE * CUBE_HANDLE_SIZE
+	point_handle_mesh.radius = HANDLE_RADIUS
+	point_handle_mesh.height = HANDLE_RADIUS * 2.0
+	point_handle_shape.radius = HANDLE_RADIUS
+	tangent_handle_mesh.radius = TANGENT_HANDLE_RADIUS
+	tangent_handle_mesh.height = TANGENT_HANDLE_RADIUS * 2.0
+	tangent_handle_shape.radius = TANGENT_HANDLE_RADIUS
 	outline_mesh_instance = MeshInstance3D.new()
 	outline_mesh_instance.mesh = outline_mesh
 	outline_mesh_instance.top_level = true
@@ -44,6 +77,7 @@ func set_target_path(in_path : RoadPath) -> void:
 	target_path = in_path
 	dragging = false
 	drag_handle = -1
+	drag_snapshot.clear()
 
 func _is_spiral_path(path : Node) -> bool:
 	var script : Script = path.get_script() as Script if path else null
@@ -51,32 +85,30 @@ func _is_spiral_path(path : Node) -> bool:
 
 func _curve_color(index : int) -> Color:
 	var palette : Array[Color] = [
-		Color(0.98, 0.50, 0.18, 1.0),
+		Color(0.95, 0.32, 0.18, 1.0),
 		Color(0.24, 0.78, 1.0, 1.0),
-		Color(0.92, 0.86, 0.28, 1.0),
+		Color(1.0, 0.22, 0.18, 1.0),
 		Color(0.55, 1.0, 0.42, 1.0),
-		Color(1.0, 0.38, 0.72, 1.0),
+		Color(0.92, 0.86, 0.28, 1.0),
 	]
 	return palette[index % palette.size()]
 
 func _curve_hover_color(index : int) -> Color:
 	return _curve_color(index).lerp(Color.WHITE, 0.45)
 
-func _entry_lane_offset(entry_index : int) -> float:
-	if curve_entries.size() <= 1:
-		return 0.0
-	return lerpf(-48.0, 48.0, float(entry_index) / float(curve_entries.size() - 1))
+func _grey() -> Color:
+	return Color(0.55, 0.55, 0.55, 0.78)
 
 func _collect_curve_entries() -> void:
 	curve_entries.clear()
 	if !_is_spiral_path(target_path):
 		return
 	target_path.call("_ensure_spiral_curves")
-	curve_entries.append({"name": "radius", "curve": target_path.get("radius_curve"), "min": 0.0, "scale": 1.0})
-	curve_entries.append({"name": "height", "curve": target_path.get("height_curve"), "min": -INF, "scale": 1.0})
-	curve_entries.append({"name": "twist", "curve": target_path.get("twist_curve"), "min": -INF, "scale": 0.75})
-	curve_entries.append({"name": "scale_x", "curve": target_path.get("scale_x_curve"), "min": 0.05, "scale": 2.0})
-	curve_entries.append({"name": "scale_y", "curve": target_path.get("scale_y_curve"), "min": 0.05, "scale": 2.0})
+	curve_entries.append({"name": "radius", "kind": CurveKind.RADIUS, "curve": target_path.get("radius_curve"), "min": 0.0})
+	curve_entries.append({"name": "height", "kind": CurveKind.HEIGHT, "curve": target_path.get("height_curve"), "min": -INF})
+	curve_entries.append({"name": "twist", "kind": CurveKind.TWIST, "curve": target_path.get("twist_curve"), "min": -INF})
+	curve_entries.append({"name": "scale_x", "kind": CurveKind.SCALE_X, "curve": target_path.get("scale_x_curve"), "min": 0.05})
+	curve_entries.append({"name": "scale_y", "kind": CurveKind.SCALE_Y, "curve": target_path.get("scale_y_curve"), "min": 0.05})
 	for entry in curve_entries:
 		_ensure_curve(entry["curve"], float(entry["min"]))
 
@@ -101,127 +133,315 @@ func _sample_transform(t : float) -> Transform3D:
 		return target_path.get_root_transform(clampf(t, 0.0, 1.0))
 	return Transform3D.IDENTITY
 
-func _basis_at(t : float) -> Basis:
-	return _sample_transform(t).basis.orthonormalized()
-
-func _base_position(entry_index : int, t : float) -> Vector3:
+func _sample_frame(t : float) -> Dictionary:
 	var transform := _sample_transform(t)
-	return transform.origin + transform.basis.orthonormalized().x * _entry_lane_offset(entry_index)
+	var basis := transform.basis
+	return {
+		"transform": transform,
+		"center": transform.origin,
+		"x": basis.x.normalized(),
+		"y": basis.y.normalized(),
+		"z": basis.z.normalized(),
+		"scale_x": basis.x.length(),
+		"scale_y": basis.y.length(),
+	}
 
-func _point_position(entry_index : int, point_index : int) -> Vector3:
-	var entry := curve_entries[entry_index]
-	var curve : Resource = entry["curve"]
-	var t := _curve_offset(curve, point_index)
-	var normal := _basis_at(t).y.normalized()
-	return _base_position(entry_index, t) + normal * _curve_value(curve, point_index) * float(entry["scale"])
+func _axis_transform() -> Transform3D:
+	if !_is_spiral_path(target_path):
+		return Transform3D.IDENTITY
+	return target_path.get("axis_transform")
 
-func _curve_world_position(entry_index : int, t : float, value : float) -> Vector3:
-	var entry := curve_entries[entry_index]
-	return _base_position(entry_index, t) + _basis_at(t).y.normalized() * value * float(entry["scale"])
+func _spiral_axis_local() -> Vector3:
+	if !_is_spiral_path(target_path):
+		return Vector3.UP
+	var axis : Vector3 = target_path.get("spiral_axis")
+	axis.z = 0.0
+	if axis.length_squared() <= 0.00001:
+		return Vector3.UP
+	return axis.normalized()
 
-func _tangent_position(entry_index : int, point_index : int, handle_kind : int) -> Vector3:
-	var curve : Resource = curve_entries[entry_index]["curve"]
-	var point : Vector2 = curve.get_point_position(point_index)
-	var offset_delta := TANGENT_HANDLE_OFFSET
-	var tangent := 0.0
-	if handle_kind == HandleKind.LEFT_TANGENT:
-		offset_delta = -minf(TANGENT_HANDLE_OFFSET, point.x)
-		tangent = curve.get_point_left_tangent(point_index)
+func _spiral_axis_world() -> Vector3:
+	var transform := _axis_transform()
+	return (transform.basis * _spiral_axis_local()).normalized()
+
+func _axis_pole_center() -> Vector3:
+	var transform := _axis_transform()
+	var axis := _spiral_axis_world()
+	var z := transform.basis.z.normalized()
+	var center_dir := z.cross(axis)
+	if center_dir.length_squared() <= 0.00001:
+		center_dir = transform.basis.x.normalized()
 	else:
-		offset_delta = minf(TANGENT_HANDLE_OFFSET, 1.0 - point.x)
-		tangent = curve.get_point_right_tangent(point_index)
-	if absf(offset_delta) <= 0.00001:
-		return _point_position(entry_index, point_index)
-	return _curve_world_position(entry_index, point.x + offset_delta, point.y + tangent * offset_delta)
+		center_dir = center_dir.normalized()
+	var radius_curve : Resource = target_path.get("radius_curve") if _is_spiral_path(target_path) else null
+	var radius : float = radius_curve.sample(0.5) if radius_curve else 64.0
+	return transform.origin + center_dir * radius
+
+func _axis_handle_position() -> Vector3:
+	return _axis_pole_center() + _spiral_axis_world() * AXIS_HANDLE_OFFSET
+
+func _point_sides(kind : int) -> Array[float]:
+	if kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y or kind == CurveKind.RADIUS or kind == CurveKind.HEIGHT:
+		return [-1.0, 1.0]
+	return [1.0]
+
+func _entry_axis(entry : Dictionary, frame : Dictionary) -> Vector3:
+	match int(entry["kind"]):
+		CurveKind.HEIGHT:
+			return _spiral_axis_world()
+		CurveKind.SCALE_Y:
+			return frame["y"]
+		_:
+			return frame["x"]
+
+func _entry_plane_normal(entry : Dictionary, frame : Dictionary) -> Vector3:
+	match int(entry["kind"]):
+		CurveKind.HEIGHT:
+			return frame["x"]
+		CurveKind.SCALE_X:
+			return frame["y"]
+		CurveKind.SCALE_Y:
+			return frame["x"]
+		_:
+			return frame["y"]
+
+func _scale_value_at(kind : int, t : float) -> float:
+	for entry in curve_entries:
+		if int(entry["kind"]) == kind:
+			return entry["curve"].sample(t)
+	return 25.0
+
+func _twist_radius(t : float) -> float:
+	return maxf(_scale_value_at(CurveKind.SCALE_X, t), _scale_value_at(CurveKind.SCALE_Y, t)) + VISUAL_OFFSET
+
+func _tangent_delta(curve : Resource, point_index : int, handle_kind : int) -> float:
+	var point_t := _curve_offset(curve, point_index)
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		return -minf(TANGENT_HANDLE_OFFSET, point_t)
+	return minf(TANGENT_HANDLE_OFFSET, 1.0 - point_t)
+
+func _tangent_value(curve : Resource, point_index : int, handle_kind : int) -> float:
+	var point : Vector2 = curve.get_point_position(point_index)
+	var delta : float = _tangent_delta(curve, point_index, handle_kind)
+	var tangent : float = curve.get_point_left_tangent(point_index) if handle_kind == HandleKind.LEFT_TANGENT else curve.get_point_right_tangent(point_index)
+	return point.y + tangent * delta
+
+func _point_handle_position(record : Dictionary) -> Vector3:
+	var entry := curve_entries[int(record["entry"])]
+	var curve : Resource = entry["curve"]
+	var point_index := int(record["point"])
+	var side := float(record.get("side", 1.0))
+	var t := _curve_offset(curve, point_index)
+	var value := _curve_value(curve, point_index)
+	var frame := _sample_frame(t)
+	match int(entry["kind"]):
+		CurveKind.TWIST:
+			return frame["center"] + frame["x"] * _twist_radius(t)
+		CurveKind.SCALE_X, CurveKind.SCALE_Y:
+			return frame["center"] + _entry_axis(entry, frame) * side * (value + VISUAL_OFFSET)
+		_:
+			return frame["center"] + _entry_axis(entry, frame) * side * ARROW_LENGTH
+
+func _tangent_handle_position(record : Dictionary) -> Vector3:
+	var entry := curve_entries[int(record["entry"])]
+	var curve : Resource = entry["curve"]
+	var point_index := int(record["point"])
+	var side := float(record.get("side", 1.0))
+	var point : Vector2 = curve.get_point_position(point_index)
+	var delta := _tangent_delta(curve, point_index, int(record["kind"]))
+	var tangent_t := clampf(point.x + delta, 0.0, 1.0)
+	var tangent_value := _tangent_value(curve, point_index, int(record["kind"]))
+	var frame := _sample_frame(tangent_t)
+	var point_frame := _sample_frame(point.x)
+	match int(entry["kind"]):
+		CurveKind.TWIST:
+			return frame["center"] + frame["x"] * _twist_radius(tangent_t)
+		CurveKind.SCALE_X, CurveKind.SCALE_Y:
+			return frame["center"] + _entry_axis(entry, frame) * side * (tangent_value + VISUAL_OFFSET)
+		_:
+			return point_frame["center"] + point_frame["z"] * signf(delta) * TANGENT_VISUAL_SPAN + _entry_axis(entry, point_frame) * side * (tangent_value - point.y)
 
 func _handle_position(handle_id : int) -> Vector3:
-	var entry_index := handle_curve_indices[handle_id]
-	var point_index := handle_point_indices[handle_id]
-	if handle_kinds[handle_id] == HandleKind.POINT:
-		return _point_position(entry_index, point_index)
-	return _tangent_position(entry_index, point_index, handle_kinds[handle_id])
+	var record := handle_records[handle_id]
+	if int(record["kind"]) == HandleKind.AXIS_POLE:
+		return _axis_handle_position()
+	if int(record["kind"]) == HandleKind.POINT:
+		return _point_handle_position(record)
+	return _tangent_handle_position(record)
 
 func _handle_base_color(handle_id : int) -> Color:
-	var color := _curve_color(handle_curve_indices[handle_id])
-	return color if handle_kinds[handle_id] == HandleKind.POINT else color.lerp(Color.WHITE, 0.35)
+	var record := handle_records[handle_id]
+	if int(record["kind"]) == HandleKind.AXIS_POLE:
+		return Color(0.85, 0.55, 1.0, 1.0)
+	var color := _curve_color(int(record["entry"]))
+	return color if int(record["kind"]) == HandleKind.POINT else color.lerp(Color.WHITE, 0.35)
 
-func _make_handle(entry_index : int, handle_kind : int) -> StaticBody3D:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.albedo_color = _curve_color(entry_index)
-	handle_materials.append(material)
+func _record_wants_cube(record : Dictionary) -> bool:
+	if int(record["kind"]) != HandleKind.POINT:
+		return false
+	var entry := curve_entries[int(record["entry"])]
+	return int(entry["kind"]) == CurveKind.SCALE_X or int(entry["kind"]) == CurveKind.SCALE_Y
+
+func _make_handle() -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.set_collision_layer_value(16, true)
 	body.set_collision_mask_value(16, true)
 	body.set_collision_layer_value(1, false)
 	body.set_collision_mask_value(1, false)
 	var collision := CollisionShape3D.new()
-	var sphere := SphereShape3D.new()
-	sphere.radius = TANGENT_HANDLE_RADIUS if handle_kind != HandleKind.POINT else HANDLE_RADIUS
-	collision.shape = sphere
 	body.add_child(collision)
+	handle_collision_shapes.append(collision)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	handle_materials.append(material)
 	var mesh_instance := MeshInstance3D.new()
-	var sphere_mesh := SphereMesh.new()
-	sphere_mesh.radius = sphere.radius
-	sphere_mesh.height = sphere.radius * 2.0
-	mesh_instance.mesh = sphere_mesh
 	mesh_instance.material_override = material
 	body.add_child(mesh_instance)
+	handle_mesh_instances.append(mesh_instance)
+	handle_shape_keys.append("")
 	add_child(body)
 	return body
 
+func _configure_handle(handle_id : int) -> void:
+	var record := handle_records[handle_id]
+	var collision := handle_collision_shapes[handle_id]
+	var mesh_instance := handle_mesh_instances[handle_id]
+	if _record_wants_cube(record):
+		if handle_shape_keys[handle_id] == "cube":
+			return
+		handle_shape_keys[handle_id] = "cube"
+		collision.shape = cube_handle_shape
+		mesh_instance.mesh = cube_handle_mesh
+	else:
+		var point_sized := int(record["kind"]) == HandleKind.POINT or int(record["kind"]) == HandleKind.AXIS_POLE
+		var key := "sphere_point" if point_sized else "sphere_tangent"
+		if handle_shape_keys[handle_id] == key:
+			return
+		handle_shape_keys[handle_id] = key
+		collision.shape = point_handle_shape if point_sized else tangent_handle_shape
+		mesh_instance.mesh = point_handle_mesh if point_sized else tangent_handle_mesh
+
 func _sync_handles() -> void:
-	handle_curve_indices.clear()
-	handle_point_indices.clear()
-	handle_kinds.clear()
+	handle_records.clear()
+	if _is_spiral_path(target_path):
+		handle_records.append({"kind": HandleKind.AXIS_POLE})
 	for entry_index in curve_entries.size():
-		var curve : Resource = curve_entries[entry_index]["curve"]
+		var entry := curve_entries[entry_index]
+		var curve : Resource = entry["curve"]
 		for point_index in curve.point_count:
-			handle_curve_indices.append(entry_index)
-			handle_point_indices.append(point_index)
-			handle_kinds.append(HandleKind.POINT)
+			for side in _point_sides(int(entry["kind"])):
+				handle_records.append({"kind": HandleKind.POINT, "entry": entry_index, "point": point_index, "side": side})
 			if point_index > 0:
-				handle_curve_indices.append(entry_index)
-				handle_point_indices.append(point_index)
-				handle_kinds.append(HandleKind.LEFT_TANGENT)
+				for side in _point_sides(int(entry["kind"])):
+					handle_records.append({"kind": HandleKind.LEFT_TANGENT, "entry": entry_index, "point": point_index, "side": side})
 			if point_index < curve.point_count - 1:
-				handle_curve_indices.append(entry_index)
-				handle_point_indices.append(point_index)
-				handle_kinds.append(HandleKind.RIGHT_TANGENT)
-	while handles.size() < handle_curve_indices.size():
-		handles.append(_make_handle(handle_curve_indices[handles.size()], handle_kinds[handles.size()]))
-	while handles.size() > handle_curve_indices.size():
+				for side in _point_sides(int(entry["kind"])):
+					handle_records.append({"kind": HandleKind.RIGHT_TANGENT, "entry": entry_index, "point": point_index, "side": side})
+	while handles.size() < handle_records.size():
+		handles.append(_make_handle())
+	while handles.size() > handle_records.size():
 		var handle : StaticBody3D = handles.pop_back()
 		handle_materials.pop_back()
+		handle_mesh_instances.pop_back()
+		handle_collision_shapes.pop_back()
+		handle_shape_keys.pop_back()
 		handle.queue_free()
 	for i in handles.size():
+		_configure_handle(i)
 		handle_materials[i].albedo_color = _handle_base_color(i)
 
 func _set_colliders_enabled(enabled : bool) -> void:
 	for handle in handles:
 		handle.set_collision_layer_value(16, enabled)
 
-func _draw_curve_preview(entry_index : int) -> void:
+func _draw_line(a : Vector3, b : Vector3, color : Color) -> void:
+	outline_mesh.surface_set_color(color)
+	outline_mesh.surface_add_vertex(a)
+	outline_mesh.surface_add_vertex(b)
+
+func _draw_circle(center : Vector3, x_axis : Vector3, y_axis : Vector3, radius : float, color : Color, start_angle := 0.0, end_angle := TAU, steps := CIRCLE_STEPS) -> void:
+	var previous := center + (x_axis * cos(start_angle) + y_axis * sin(start_angle)) * radius
+	for i in steps:
+		var t := float(i + 1) / float(steps)
+		var angle := lerpf(start_angle, end_angle, t)
+		var next := center + (x_axis * cos(angle) + y_axis * sin(angle)) * radius
+		_draw_line(previous, next, color)
+		previous = next
+
+func _draw_axis_pole() -> void:
+	var center := _axis_pole_center()
+	var axis := _spiral_axis_world()
+	_draw_line(center - axis * AXIS_POLE_LENGTH, center + axis * AXIS_POLE_LENGTH, Color(0.85, 0.55, 1.0, 0.9))
+	_draw_line(_axis_transform().origin, center, _grey())
+
+func _draw_scale_point(entry : Dictionary, point_index : int) -> void:
+	var curve : Resource = entry["curve"]
+	var t := _curve_offset(curve, point_index)
+	var value := _curve_value(curve, point_index)
+	var frame := _sample_frame(t)
+	var axis := _entry_axis(entry, frame)
+	for side in [-1.0, 1.0]:
+		var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
+		_draw_line(handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, _grey())
+		_draw_line(frame["center"], handle_pos, _grey())
+
+func _draw_arrow_point(entry : Dictionary, point_index : int) -> void:
+	var curve : Resource = entry["curve"]
+	var t := _curve_offset(curve, point_index)
+	var frame := _sample_frame(t)
+	var axis := _entry_axis(entry, frame)
+	_draw_line(frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH, _grey())
+
+func _draw_twist_point(entry : Dictionary, point_index : int) -> void:
+	var curve : Resource = entry["curve"]
+	var t := _curve_offset(curve, point_index)
+	var frame := _sample_frame(t)
+	_draw_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _grey())
+
+func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side : float) -> void:
 	var entry := curve_entries[entry_index]
 	var curve : Resource = entry["curve"]
-	outline_mesh.surface_set_color(_curve_color(entry_index))
-	for i in PREVIEW_STEPS:
-		var t0 := float(i) / float(PREVIEW_STEPS)
-		var t1 := float(i + 1) / float(PREVIEW_STEPS)
-		var p0 : Vector3 = _base_position(entry_index, t0) + _basis_at(t0).y.normalized() * curve.sample(t0) * float(entry["scale"])
-		var p1 : Vector3 = _base_position(entry_index, t1) + _basis_at(t1).y.normalized() * curve.sample(t1) * float(entry["scale"])
-		outline_mesh.surface_add_vertex(p0)
-		outline_mesh.surface_add_vertex(p1)
+	var point : Vector2 = curve.get_point_position(point_index)
+	var delta : float = _tangent_delta(curve, point_index, handle_kind)
+	if absf(delta) <= 0.00001:
+		return
+	var tangent_t := clampf(point.x + delta, 0.0, 1.0)
+	var frame := _sample_frame(tangent_t)
+	var point_frame := _sample_frame(point.x)
+	var color := _curve_color(entry_index).lerp(Color.WHITE, 0.3)
+	match int(entry["kind"]):
+		CurveKind.TWIST:
+			var radius := _twist_radius(tangent_t)
+			var left_center : Vector3 = frame["center"] - frame["x"] * radius
+			var right_center : Vector3 = frame["center"] + frame["x"] * radius
+			_draw_circle(left_center, frame["x"], frame["y"], radius, color, PI * 0.75, PI * 1.25, int(CIRCLE_STEPS / 4))
+			_draw_circle(right_center, frame["x"], frame["y"], radius, color, -PI * 0.25, PI * 0.25, int(CIRCLE_STEPS / 4))
+		CurveKind.SCALE_X, CurveKind.SCALE_Y:
+			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
+			var point_pos : Vector3 = point_frame["center"] + _entry_axis(entry, point_frame) * side * (_curve_value(curve, point_index) + VISUAL_OFFSET)
+			_draw_line(point_pos, tangent_pos, color)
+		_:
+			var tangent_pos := _tangent_handle_position({"kind": handle_kind, "entry": entry_index, "point": point_index, "side": side})
+			_draw_line(point_frame["center"], tangent_pos, color)
 
-func _draw_tangent_handles() -> void:
-	outline_mesh.surface_set_color(Color(0.9, 0.95, 1.0, 0.85))
-	for handle_id in handles.size():
-		if handle_kinds[handle_id] == HandleKind.POINT:
-			continue
-		var point_pos := _point_position(handle_curve_indices[handle_id], handle_point_indices[handle_id])
-		var handle_pos := _handle_position(handle_id)
-		outline_mesh.surface_add_vertex(point_pos)
-		outline_mesh.surface_add_vertex(handle_pos)
+func _draw_curve_guides() -> void:
+	for entry_index in curve_entries.size():
+		var entry := curve_entries[entry_index]
+		var curve : Resource = entry["curve"]
+		for point_index in curve.point_count:
+			match int(entry["kind"]):
+				CurveKind.TWIST:
+					_draw_twist_point(entry, point_index)
+				CurveKind.SCALE_X, CurveKind.SCALE_Y:
+					_draw_scale_point(entry, point_index)
+				_:
+					_draw_arrow_point(entry, point_index)
+			if point_index > 0:
+				for side in _point_sides(int(entry["kind"])):
+					_draw_tangent(entry_index, point_index, HandleKind.LEFT_TANGENT, side)
+			if point_index < curve.point_count - 1:
+				for side in _point_sides(int(entry["kind"])):
+					_draw_tangent(entry_index, point_index, HandleKind.RIGHT_TANGENT, side)
 
 func _update_visuals() -> void:
 	_collect_curve_entries()
@@ -233,9 +453,8 @@ func _update_visuals() -> void:
 		outline_mesh_instance.visible = false
 		return
 	outline_mesh.surface_begin(Mesh.PRIMITIVE_LINES, outline_material)
-	for entry_index in curve_entries.size():
-		_draw_curve_preview(entry_index)
-	_draw_tangent_handles()
+	_draw_axis_pole()
+	_draw_curve_guides()
 	outline_mesh.surface_end()
 	outline_mesh_instance.visible = true
 
@@ -253,15 +472,18 @@ func _hovered_handle() -> int:
 
 func _set_handle_colours(hovered : int) -> void:
 	for i in handle_materials.size():
-		var entry_index := handle_curve_indices[i]
 		if dragging and i == drag_handle:
 			handle_materials[i].albedo_color = Color.WHITE
 		elif i == hovered:
-			handle_materials[i].albedo_color = _curve_hover_color(entry_index)
+			var record := handle_records[i]
+			if int(record["kind"]) == HandleKind.AXIS_POLE:
+				handle_materials[i].albedo_color = Color.WHITE
+			else:
+				handle_materials[i].albedo_color = _curve_hover_color(int(record["entry"]))
 		else:
 			handle_materials[i].albedo_color = _handle_base_color(i)
 
-func _closest_t(world_pos : Vector3, entry_index : int) -> float:
+func _closest_t(world_pos : Vector3, entry : Dictionary) -> float:
 	var best_t := 0.0
 	var best_dist := INF
 	var min_t := 0.0
@@ -269,7 +491,8 @@ func _closest_t(world_pos : Vector3, entry_index : int) -> float:
 	for pass_index in SEARCH_PASSES:
 		for i in SEARCH_STEPS + 1:
 			var t := lerpf(min_t, max_t, float(i) / float(SEARCH_STEPS))
-			var dist := _base_position(entry_index, t).distance_squared_to(world_pos)
+			var frame := _sample_frame(t)
+			var dist : float = frame["center"].distance_squared_to(world_pos)
 			if dist < best_dist:
 				best_dist = dist
 				best_t = t
@@ -287,48 +510,161 @@ func _clamped_curve_offset(curve : Resource, point_index : int, offset : float) 
 	var max_offset := _curve_offset(curve, point_index + 1) - MIN_POINT_GAP
 	return clampf(offset, min_offset, max_offset)
 
-func _write_point_handle(handle_id : int, world_pos : Vector3) -> void:
-	var entry_index := handle_curve_indices[handle_id]
-	var point_index := handle_point_indices[handle_id]
-	var entry := curve_entries[entry_index]
-	var curve : Resource = entry["curve"]
-	var t := _clamped_curve_offset(curve, point_index, _closest_t(world_pos, entry_index))
-	var normal := _basis_at(t).y.normalized()
-	var value := (world_pos - _base_position(entry_index, t)).dot(normal) / float(entry["scale"])
-	value = maxf(value, float(entry["min"]))
-	curve.set_point_offset(point_index, t)
-	curve.set_point_value(point_index, value)
+func _line_drag_plane(cam : Camera3D, axis : Vector3, origin : Vector3) -> Plane:
+	var offset_pos := cam.global_position - origin
+	var cam_pos_projected := offset_pos.project(axis) + origin
+	var plane_normal := (cam.global_position - cam_pos_projected).normalized()
+	if plane_normal.length_squared() <= 0.00001:
+		plane_normal = axis.cross(cam.global_basis.z).normalized()
+	return Plane(plane_normal, origin)
 
-func _write_tangent_handle(handle_id : int, world_pos : Vector3) -> void:
-	var entry_index := handle_curve_indices[handle_id]
-	var point_index := handle_point_indices[handle_id]
-	var handle_kind := handle_kinds[handle_id]
-	var entry := curve_entries[entry_index]
+func _begin_drag(handle_id : int, cam : Camera3D, ray_dir : Vector3) -> bool:
+	var record := handle_records[handle_id]
+	if int(record["kind"]) == HandleKind.AXIS_POLE:
+		var axis_transform := _axis_transform()
+		var plane := Plane(axis_transform.basis.z.normalized(), axis_transform.origin)
+		var hit = plane.intersects_ray(cam.global_position, ray_dir)
+		if !(hit is Vector3):
+			return false
+		drag_snapshot = {
+			"record": record.duplicate(),
+			"mode": "axis",
+			"plane": plane,
+			"axis_origin": axis_transform.origin,
+			"axis_basis_inverse": axis_transform.basis.inverse(),
+		}
+		return true
+	var entry := curve_entries[int(record["entry"])]
 	var curve : Resource = entry["curve"]
-	var point : Vector2 = curve.get_point_position(point_index)
-	var handle_t := _closest_t(world_pos, entry_index)
-	var delta : float = handle_t - point.x
-	if handle_kind == HandleKind.LEFT_TANGENT:
-		delta = minf(delta, -MIN_POINT_GAP)
-	else:
-		delta = maxf(delta, MIN_POINT_GAP)
-	handle_t = clampf(point.x + delta, 0.0, 1.0)
-	delta = handle_t - point.x
-	if absf(delta) < MIN_POINT_GAP:
+	var point_index := int(record["point"])
+	var point_t := _curve_offset(curve, point_index)
+	var frame := _sample_frame(point_t)
+	var side := float(record.get("side", 1.0))
+	var kind := int(entry["kind"])
+	if kind == CurveKind.TWIST:
+		var center : Vector3 = frame["center"]
+		if int(record["kind"]) != HandleKind.POINT:
+			var delta : float = _tangent_delta(curve, point_index, int(record["kind"]))
+			center = _sample_frame(clampf(point_t + delta, 0.0, 1.0))["center"]
+		var plane := Plane(frame["z"], center)
+		var hit = plane.intersects_ray(cam.global_position, ray_dir)
+		if !(hit is Vector3):
+			return false
+		drag_snapshot = {
+			"record": record.duplicate(),
+			"mode": "rotation",
+			"plane": plane,
+			"center": center,
+			"axis": frame["z"],
+			"origin_dir": (hit - center).normalized(),
+			"start_value": _curve_value(curve, point_index) if int(record["kind"]) == HandleKind.POINT else _tangent_value(curve, point_index, int(record["kind"])),
+			"point_value": _curve_value(curve, point_index),
+			"delta_t": _tangent_delta(curve, point_index, int(record["kind"])),
+		}
+		return true
+	var value_axis := _entry_axis(entry, frame).normalized()
+	var origin := _handle_position(handle_id)
+	var plane := _line_drag_plane(cam, value_axis, origin) if int(record["kind"]) == HandleKind.POINT else Plane(_entry_plane_normal(entry, frame), origin)
+	var hit = plane.intersects_ray(cam.global_position, ray_dir)
+	if !(hit is Vector3):
+		return false
+	drag_snapshot = {
+		"record": record.duplicate(),
+		"mode": "line",
+		"plane": plane,
+		"axis": value_axis,
+		"origin": origin,
+		"start_axis_point": (hit - origin).project(value_axis) + origin,
+		"start_value": _curve_value(curve, point_index) if int(record["kind"]) == HandleKind.POINT else _tangent_value(curve, point_index, int(record["kind"])),
+		"point_value": _curve_value(curve, point_index),
+		"delta_t": _tangent_delta(curve, point_index, int(record["kind"])),
+		"side": side,
+	}
+	return true
+
+func _apply_axis_drag(cam : Camera3D, ray_dir : Vector3) -> void:
+	var plane : Plane = drag_snapshot["plane"]
+	var hit = plane.intersects_ray(cam.global_position, ray_dir)
+	if !(hit is Vector3):
 		return
-	var normal := _basis_at(handle_t).y.normalized()
-	var value := (world_pos - _base_position(entry_index, handle_t)).dot(normal) / float(entry["scale"])
-	value = maxf(value, float(entry["min"]))
-	if handle_kind == HandleKind.LEFT_TANGENT:
-		curve.set_point_left_tangent(point_index, (value - point.y) / delta)
-	else:
-		curve.set_point_right_tangent(point_index, (value - point.y) / delta)
+	var origin : Vector3 = drag_snapshot["axis_origin"]
+	var basis_inverse : Basis = drag_snapshot["axis_basis_inverse"]
+	var local_axis : Vector3 = basis_inverse * (hit - origin)
+	local_axis.z = 0.0
+	if local_axis.length_squared() <= 0.00001:
+		return
+	target_path.set("spiral_axis", local_axis.normalized())
+	_update_mesh(false)
 
-func _write_dragged_handle(handle_id : int, world_pos : Vector3) -> void:
-	if handle_kinds[handle_id] == HandleKind.POINT:
-		_write_point_handle(handle_id, world_pos)
+func _apply_line_drag(cam : Camera3D, ray_dir : Vector3) -> void:
+	var record : Dictionary = drag_snapshot["record"]
+	var entry := curve_entries[int(record["entry"])]
+	var curve : Resource = entry["curve"]
+	var point_index := int(record["point"])
+	var plane : Plane = drag_snapshot["plane"]
+	var hit = plane.intersects_ray(cam.global_position, ray_dir)
+	if !(hit is Vector3):
+		return
+	var axis : Vector3 = drag_snapshot["axis"]
+	var start_axis_point : Vector3 = drag_snapshot["start_axis_point"]
+	var delta : float = (hit - start_axis_point).dot(axis) * float(drag_snapshot["side"])
+	var value := maxf(float(entry["min"]), float(drag_snapshot["start_value"]) + delta)
+	if int(record["kind"]) == HandleKind.POINT:
+		curve.set_point_value(point_index, value)
 	else:
-		_write_tangent_handle(handle_id, world_pos)
+		var delta_t := float(drag_snapshot["delta_t"])
+		if absf(delta_t) > 0.00001:
+			var slope := (value - float(drag_snapshot["point_value"])) / delta_t
+			if int(record["kind"]) == HandleKind.LEFT_TANGENT:
+				curve.set_point_left_tangent(point_index, slope)
+			else:
+				curve.set_point_right_tangent(point_index, slope)
+	_update_mesh(false)
+
+func _apply_rotation_drag(cam : Camera3D, ray_dir : Vector3) -> void:
+	var record : Dictionary = drag_snapshot["record"]
+	var entry := curve_entries[int(record["entry"])]
+	var curve : Resource = entry["curve"]
+	var point_index := int(record["point"])
+	var plane : Plane = drag_snapshot["plane"]
+	var hit = plane.intersects_ray(cam.global_position, ray_dir)
+	if !(hit is Vector3):
+		return
+	var center : Vector3 = drag_snapshot["center"]
+	var current_dir : Vector3 = (hit - center).normalized()
+	var origin_dir : Vector3 = drag_snapshot["origin_dir"]
+	var axis : Vector3 = drag_snapshot["axis"]
+	var value := float(drag_snapshot["start_value"]) + rad_to_deg(origin_dir.signed_angle_to(current_dir, axis))
+	if int(record["kind"]) == HandleKind.POINT:
+		curve.set_point_value(point_index, value)
+	else:
+		var delta_t := float(drag_snapshot["delta_t"])
+		if absf(delta_t) > 0.00001:
+			var slope := (value - float(drag_snapshot["point_value"])) / delta_t
+			if int(record["kind"]) == HandleKind.LEFT_TANGENT:
+				curve.set_point_left_tangent(point_index, slope)
+			else:
+				curve.set_point_right_tangent(point_index, slope)
+	_update_mesh(false)
+
+func _write_dragged_handle(cam : Camera3D, ray_dir : Vector3) -> void:
+	match String(drag_snapshot.get("mode", "")):
+		"axis":
+			_apply_axis_drag(cam, ray_dir)
+		"rotation":
+			_apply_rotation_drag(cam, ray_dir)
+		_:
+			_apply_line_drag(cam, ray_dir)
+
+func _curve_world_position(entry : Dictionary, t : float, value : float, side := 1.0) -> Vector3:
+	var frame := _sample_frame(t)
+	match int(entry["kind"]):
+		CurveKind.TWIST:
+			return frame["center"] + frame["x"] * _twist_radius(t)
+		CurveKind.SCALE_X, CurveKind.SCALE_Y:
+			return frame["center"] + _entry_axis(entry, frame) * side * (value + VISUAL_OFFSET)
+		_:
+			return frame["center"] + _entry_axis(entry, frame) * side * ARROW_LENGTH
 
 func _screen_distance_to_curve(entry_index : int, cam : Camera3D, mouse_pos : Vector2) -> Dictionary:
 	var entry := curve_entries[entry_index]
@@ -338,7 +674,7 @@ func _screen_distance_to_curve(entry_index : int, cam : Camera3D, mouse_pos : Ve
 	var previous_screen := Vector2.ZERO
 	for i in PREVIEW_STEPS + 1:
 		var offset := float(i) / float(PREVIEW_STEPS)
-		var world : Vector3 = _base_position(entry_index, offset) + _basis_at(offset).y.normalized() * curve.sample(offset) * float(entry["scale"])
+		var world := _curve_world_position(entry, offset, curve.sample(offset), 1.0)
 		var screen := cam.unproject_position(world)
 		if i > 0:
 			var closest := Geometry2D.get_closest_point_to_segment(mouse_pos, previous_screen, screen)
@@ -403,10 +739,11 @@ func _try_delete_hovered_point(hovered : int) -> bool:
 		return false
 	if !just_delete or hovered < 0:
 		return false
-	if handle_kinds[hovered] != HandleKind.POINT:
+	var record := handle_records[hovered]
+	if int(record["kind"]) != HandleKind.POINT or !record.has("entry"):
 		return false
-	var curve : Resource = curve_entries[handle_curve_indices[hovered]]["curve"]
-	var point_index := handle_point_indices[hovered]
+	var curve : Resource = curve_entries[int(record["entry"])]["curve"]
+	var point_index := int(record["point"])
 	if point_index <= 0 or point_index >= curve.point_count - 1:
 		return false
 	curve.remove_point(point_index)
@@ -424,6 +761,7 @@ func _process(_delta : float) -> void:
 		outline_mesh_instance.visible = false
 		_set_colliders_enabled(false)
 		dragging = false
+		drag_snapshot.clear()
 		delete_pressed = Input.is_key_pressed(KEY_DELETE)
 		return
 	visible = true
@@ -446,19 +784,19 @@ func _process(_delta : float) -> void:
 	if Input.is_action_just_pressed("LeftMouse") and hovered != -1:
 		if !scene.begin_pointer_action(self):
 			return
+		if !_begin_drag(hovered, cam, ray_dir):
+			scene.end_pointer_action(self)
+			return
 		dragging = true
 		drag_handle = hovered
-		drag_plane = Plane(-cam.global_basis.z.normalized(), handles[hovered].global_position)
 		get_viewport().set_input_as_handled()
 	if Input.is_action_just_released("LeftMouse"):
 		if dragging or scene.owns_pointer_action(self):
 			get_viewport().set_input_as_handled()
 		dragging = false
 		drag_handle = -1
+		drag_snapshot.clear()
 		scene.end_pointer_action(self)
 	if dragging and drag_handle != -1:
-		var hit = drag_plane.intersects_ray(cam.global_position, ray_dir)
-		if hit is Vector3:
-			_write_dragged_handle(drag_handle, hit)
-			_update_mesh(false)
-			_update_visuals()
+		_write_dragged_handle(cam, ray_dir)
+		_update_visuals()

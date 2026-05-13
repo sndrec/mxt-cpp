@@ -842,7 +842,7 @@ func _refresh_spiral_controls() -> void:
 	var axis : Vector3 = current_path.get("spiral_axis")
 	spiral_axis_x.set_value_no_signal(axis.x)
 	spiral_axis_y.set_value_no_signal(axis.y)
-	spiral_axis_z.set_value_no_signal(axis.z)
+	spiral_axis_z.set_value_no_signal(0.0)
 	updating_spiral_controls = false
 
 func _mark_spiral_dirty() -> void:
@@ -854,7 +854,7 @@ func update_spiral_values(_new_value : float) -> void:
 	if updating_spiral_controls or !_is_spiral_path(current_path):
 		return
 	current_path.set("spiral_degrees", spiral_degrees.value)
-	current_path.set("spiral_axis", Vector3(spiral_axis_x.value, spiral_axis_y.value, spiral_axis_z.value))
+	current_path.set("spiral_axis", Vector3(spiral_axis_x.value, spiral_axis_y.value, 0.0))
 	_mark_spiral_dirty()
 
 func _input(event: InputEvent) -> void:

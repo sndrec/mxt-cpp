@@ -14,6 +14,11 @@ const BAKE_SUBDIVISIONS := 64
 var axis_marker : LineHandle
 var should_update := false
 
+func _constrain_spiral_axis() -> void:
+	spiral_axis.z = 0.0
+	if spiral_axis.length_squared() <= 0.00001:
+		spiral_axis = Vector3.UP
+
 func _init() -> void:
 	_ensure_spiral_curves()
 
@@ -57,6 +62,7 @@ func _ensure_spiral_curves() -> void:
 
 func refresh_spiral_road() -> void:
 	_ensure_spiral_curves()
+	_constrain_spiral_axis()
 	if !native_curve:
 		native_curve = ClassDB.instantiate("TrackEditorCurve")
 	axis_transform = axis_marker.global_transform if axis_marker else axis_transform
