@@ -260,7 +260,7 @@ func _point_sides(kind : int) -> Array[float]:
 func _tangent_sides(kind : int) -> Array[float]:
 	if kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y:
 		return [-1.0, 1.0]
-	if kind == CurveKind.RADIUS or kind == CurveKind.HEIGHT:
+	if kind == CurveKind.RADIUS:
 		return [-1.0]
 	return [1.0]
 
