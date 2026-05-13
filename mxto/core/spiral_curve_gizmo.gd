@@ -332,6 +332,10 @@ func _record_wants_arrow(record : Dictionary) -> bool:
 	var entry := curve_entries[int(record["entry"])]
 	return int(entry["kind"]) == CurveKind.RADIUS or int(entry["kind"]) == CurveKind.HEIGHT
 
+func _entry_uses_side_drag(entry : Dictionary) -> bool:
+	var kind := int(entry["kind"])
+	return kind == CurveKind.SCALE_X or kind == CurveKind.SCALE_Y
+
 func _record_is_key_point(record : Dictionary) -> bool:
 	return int(record["kind"]) == HandleKind.POINT and record.has("entry") and record.has("point")
 
@@ -1000,7 +1004,8 @@ func _apply_line_drag(cam : Camera3D, ray_dir : Vector3) -> void:
 		return
 	var axis : Vector3 = drag_snapshot["axis"]
 	var start_axis_point : Vector3 = drag_snapshot["start_axis_point"]
-	var delta : float = (hit - start_axis_point).dot(axis) * float(drag_snapshot["side"])
+	var side := float(drag_snapshot["side"]) if _entry_uses_side_drag(entry) else 1.0
+	var delta : float = (hit - start_axis_point).dot(axis) * side
 	var value := maxf(float(entry["min"]), float(drag_snapshot["start_value"]) + delta)
 	if int(record["kind"]) == HandleKind.POINT:
 		curve.set_point_value(point_index, value)
