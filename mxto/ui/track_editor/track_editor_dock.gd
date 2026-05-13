@@ -2,6 +2,8 @@ class_name TrackEditorDock extends Control
 
 signal dock_ready
 
+const TrackTriggerScript := preload("res://core/track_trigger.gd")
+
 @onready var track_root: TrackRoot = $"../TrackRoot"
 @onready var track_scene: TrackEditingScene = $".."
 
@@ -19,6 +21,9 @@ signal dock_ready
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
 @onready var slip_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Slip
 @onready var lava_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Lava
+@onready var dashplate_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/DashPlate
+@onready var jumpplate_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/Jump
+@onready var mine_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackObjectButtons/Mine
 
 @onready var outliner: VBoxContainer = $MainGUI/VBoxContainer/ScrollContainer/Outliner
 
@@ -34,6 +39,12 @@ func _segment_outliner_label(segment : RoadPath, index : int) -> String:
 		segment_type = "Spiral"
 	return segment_type + " Track Segment " + str(index + 1)
 
+func _is_track_trigger(node : Node) -> bool:
+	return node.get_script() == TrackTriggerScript
+
+func _track_object_outliner_label(track_object : Node, index : int) -> String:
+	return String(track_object.call("trigger_label")) + " " + str(index + 1)
+
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	get_track_root()
@@ -46,6 +57,9 @@ func _ready():
 	dirt_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.DIRT))
 	slip_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.ICE))
 	lava_button.pressed.connect(_on_embed_type_pressed.bind(RoadEmbed.EmbedType.LAVA))
+	dashplate_button.pressed.connect(_on_track_object_type_pressed.bind(0))
+	jumpplate_button.pressed.connect(_on_track_object_type_pressed.bind(1))
+	mine_button.pressed.connect(_on_track_object_type_pressed.bind(2))
 	update_outliner()
 	dock_ready.emit()
 
@@ -72,6 +86,11 @@ func update_outliner() -> void:
 		if child is RoadPath:
 			var new_button := Button.new()
 			new_button.text = _segment_outliner_label(child, i)
+			new_button.pressed.connect(select_node.bind(child))
+			outliner.add_child(new_button)
+		elif _is_track_trigger(child):
+			var new_button := Button.new()
+			new_button.text = _track_object_outliner_label(child, i)
 			new_button.pressed.connect(select_node.bind(child))
 			outliner.add_child(new_button)
 
@@ -218,6 +237,19 @@ func _on_embed_type_pressed(embed_type : int) -> void:
 	selected._try_generate_mesh()
 	new_embed_buttons.visible = false
 	main_buttons.visible = true
+
+func _on_track_object_type_pressed(trigger_type : int) -> void:
+	var selected := get_active_path()
+	if !selected:
+		return
+	var new_trigger := track_scene.add_track_trigger(trigger_type, selected)
+	if new_trigger:
+		select_node(new_trigger)
+	update_outliner()
+	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SEGMENT)
+	new_track_object_buttons.visible = false
+	main_buttons.visible = true
+	bezier_buttons.visible = false
 
 
 func _on_road_standard_pressed():

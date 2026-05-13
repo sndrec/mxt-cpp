@@ -2,6 +2,7 @@ class_name TrackRoot extends Node3D
 
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
+const TrackTriggerScript := preload("res://core/track_trigger.gd")
 
 @export var gen_checkpoints : bool = false:
 	set(new_bool):
@@ -41,6 +42,13 @@ func get_road_segments() -> Array[RoadPath]:
 			out.append(child)
 	return out
 
+func get_track_triggers() -> Array[Node3D]:
+	var out : Array[Node3D] = []
+	for child in get_children():
+		if child.get_script() == TrackTriggerScript:
+			out.append(child)
+	return out
+
 func save_edit_source(path : String) -> Error:
 	var scene := PackedScene.new()
 	var pack_err := scene.pack(self)
@@ -54,6 +62,7 @@ func export_mxt_track(path : String) -> Error:
 		return ERR_DOES_NOT_EXIST
 	_generate_checkpoints()
 	var cp_ranges := _build_checkpoint_ranges(segments)
+	var trigger_exports := _build_trigger_exports(segments, cp_ranges)
 	var buf := StreamPeerBufferExtension.new()
 	buf.big_endian = false
 	var version := "v0.5".to_ascii_buffer()
@@ -61,7 +70,7 @@ func export_mxt_track(path : String) -> Error:
 	buf.put_data(version)
 	buf.put_u32(checkpoints.size())
 	buf.put_u32(segments.size())
-	buf.put_u32(0)
+	buf.put_u32(trigger_exports.size())
 	for i in checkpoints.size():
 		buf.put_checkpoint_with_neighbors(checkpoints[i], _checkpoint_neighbors(i, cp_ranges))
 	for i in segments.size():
@@ -91,11 +100,44 @@ func export_mxt_track(path : String) -> Error:
 		buf.put_float(clampf(segment.left_rail_end, 0.0, 1.0))
 		buf.put_float(clampf(segment.right_rail_start, 0.0, 1.0))
 		buf.put_float(clampf(segment.right_rail_end, 0.0, 1.0))
+	for trigger_export in trigger_exports:
+		_write_trigger_export(buf, trigger_export)
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
 	file.store_buffer(buf.data_array)
 	return OK
+
+func _build_trigger_exports(segments : Array[RoadPath], cp_ranges : Array[Vector2i]) -> Array[Dictionary]:
+	var out : Array[Dictionary] = []
+	for trigger in get_track_triggers():
+		var segment := trigger.get_target_segment() as RoadPath
+		var segment_index := segments.find(segment)
+		if segment_index < 0:
+			continue
+		var cp_range := cp_ranges[segment_index]
+		var cp_count := maxi(1, cp_range.y)
+		var surface_t : Vector2 = trigger.get("surface_t")
+		var local_cp := mini(int(clampf(surface_t.y, 0.0, 1.0) * float(cp_count)), cp_count - 1)
+		var checkpoint_index := cp_range.x + local_cp
+		trigger.set("mxt_segment_index", segment_index)
+		trigger.set("mxt_checkpoint_index", checkpoint_index)
+		out.append({
+			"trigger": trigger,
+			"type": int(trigger.get("trigger_type")),
+			"segment_index": segment_index,
+			"checkpoint_index": checkpoint_index,
+			"extents": trigger.call("trigger_extents"),
+		})
+	return out
+
+func _write_trigger_export(buf : StreamPeerBufferExtension, trigger_export : Dictionary) -> void:
+	var trigger := trigger_export["trigger"] as Node3D
+	buf.put_u32(trigger_export["type"])
+	buf.put_u32(trigger_export["segment_index"])
+	buf.put_u32(trigger_export["checkpoint_index"])
+	buf.put_transform(trigger.global_transform.affine_inverse())
+	buf.put_vector3(trigger_export["extents"])
 
 func _build_checkpoint_ranges(segments : Array[RoadPath]) -> Array[Vector2i]:
 	var ranges : Array[Vector2i] = []

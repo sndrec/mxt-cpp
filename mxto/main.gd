@@ -651,7 +651,11 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 			_skip_curve.call()
 		for j in range(3):
 			_skip_curve.call()
-		pb.get_float(); pb.get_float()
+		if version != "v0.1":
+			pb.get_float(); pb.get_float()
+		if version != "v0.1" and version != "v0.2" and version != "v0.3" and version != "v0.4":
+			pb.get_float(); pb.get_float()
+			pb.get_float(); pb.get_float()
 
 	var out := []
 	for i in range(trig_count):

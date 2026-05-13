@@ -9,6 +9,7 @@ const ShapeCurveGizmoScript := preload("res://core/shape_curve_gizmo.gd")
 const MeshLayoutGizmoScript := preload("res://core/mesh_layout_gizmo.gd")
 const CheckpointGizmoScript := preload("res://core/checkpoint_gizmo.gd")
 const RoadPathSpiralScript := preload("res://core/road_path_spiral.gd")
+const TrackTriggerScript := preload("res://core/track_trigger.gd")
 
 enum ToolMode {
 	EDIT_SEGMENT,
@@ -316,3 +317,13 @@ func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_T
 	var id_to_put_above := track_root.get_children().find(in_path)
 	track_root.move_child(new_track_piece, id_to_put_above + 1)
 	return new_track_piece
+
+func add_track_trigger(trigger_type : int, in_path : RoadPath) -> Node3D:
+	if !in_path:
+		return null
+	var trigger : Node3D = TrackTriggerScript.new()
+	trigger.set("trigger_type", trigger_type)
+	track_root.add_child(trigger)
+	trigger.name = String(trigger.call("trigger_label")) + " Trigger"
+	trigger.call("place_on_segment", in_path, 0.0, 0.5)
+	return trigger
