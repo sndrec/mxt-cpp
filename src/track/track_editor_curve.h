@@ -39,12 +39,18 @@ public:
 		CURVE_MODE_LINEAR = 1,
 	};
 
+	enum RotationMode {
+		ROTATION_MODE_SMART = 0,
+		ROTATION_MODE_SIMPLE = 1,
+	};
+
 	static constexpr int CONTROL_STRIDE = 24;
 
 private:
 	PackedFloat32Array control_points;
 	float segment_length = 0.0f;
 	int curve_mode = CURVE_MODE_BEZIER;
+	int rotation_mode = ROTATION_MODE_SMART;
 
 	static void _bind_methods();
 
@@ -79,6 +85,8 @@ public:
 	void sort_control_points_by_time();
 	void set_curve_mode(int p_curve_mode);
 	int get_curve_mode() const;
+	void set_rotation_mode(int p_rotation_mode);
+	int get_rotation_mode() const;
 
 	int get_control_point_count() const;
 	float get_segment_length() const;
@@ -188,3 +196,4 @@ public:
 VARIANT_ENUM_CAST(godot::TrackEditorCurve::RoadShapeType);
 VARIANT_ENUM_CAST(godot::TrackEditorCurve::EaseType);
 VARIANT_ENUM_CAST(godot::TrackEditorCurve::CurveMode);
+VARIANT_ENUM_CAST(godot::TrackEditorCurve::RotationMode);

@@ -89,6 +89,24 @@ popup/item_5/id = 5
 popup/item_6/text = "Open Rounded Square"
 popup/item_6/id = 6
 
+[node name="RotationModeRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Info/RotationModeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Rotation Mode"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RotationMode" type="OptionButton" parent="Control/TabContainer/Info/RotationModeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+selected = 0
+item_count = 2
+popup/item_0/text = "Smart"
+popup/item_1/text = "Simple"
+popup/item_1/id = 1
+
 [node name="RoadUvMultiplierRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
 layout_mode = 2
 

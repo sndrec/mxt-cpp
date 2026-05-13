@@ -333,6 +333,8 @@ void TrackEditorCurve::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("sort_control_points_by_time"), &TrackEditorCurve::sort_control_points_by_time);
 	ClassDB::bind_method(D_METHOD("set_curve_mode", "curve_mode"), &TrackEditorCurve::set_curve_mode);
 	ClassDB::bind_method(D_METHOD("get_curve_mode"), &TrackEditorCurve::get_curve_mode);
+	ClassDB::bind_method(D_METHOD("set_rotation_mode", "rotation_mode"), &TrackEditorCurve::set_rotation_mode);
+	ClassDB::bind_method(D_METHOD("get_rotation_mode"), &TrackEditorCurve::get_rotation_mode);
 	ClassDB::bind_method(D_METHOD("get_control_point_count"), &TrackEditorCurve::get_control_point_count);
 	ClassDB::bind_method(D_METHOD("get_segment_length"), &TrackEditorCurve::get_segment_length);
 	ClassDB::bind_method(D_METHOD("respace_control_point_times", "samples_per_span"), &TrackEditorCurve::respace_control_point_times, DEFVAL(8));
@@ -381,6 +383,7 @@ void TrackEditorCurve::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::PACKED_FLOAT32_ARRAY, "control_points"), "set_control_points", "get_control_points");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "curve_mode"), "set_curve_mode", "get_curve_mode");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "rotation_mode"), "set_rotation_mode", "get_rotation_mode");
 
 	BIND_CONSTANT(CONTROL_STRIDE);
 
@@ -394,6 +397,8 @@ void TrackEditorCurve::_bind_methods() {
 
 	BIND_ENUM_CONSTANT(CURVE_MODE_BEZIER);
 	BIND_ENUM_CONSTANT(CURVE_MODE_LINEAR);
+	BIND_ENUM_CONSTANT(ROTATION_MODE_SMART);
+	BIND_ENUM_CONSTANT(ROTATION_MODE_SIMPLE);
 }
 
 TrackEditorFloatCurve::TrackEditorFloatCurve() {
@@ -854,6 +859,14 @@ int TrackEditorCurve::get_curve_mode() const {
 	return curve_mode;
 }
 
+void TrackEditorCurve::set_rotation_mode(int p_rotation_mode) {
+	rotation_mode = p_rotation_mode == ROTATION_MODE_SIMPLE ? ROTATION_MODE_SIMPLE : ROTATION_MODE_SMART;
+}
+
+int TrackEditorCurve::get_rotation_mode() const {
+	return rotation_mode;
+}
+
 int TrackEditorCurve::get_control_point_count() const {
 	return control_points.size() / CONTROL_STRIDE;
 }
@@ -984,20 +997,23 @@ Transform3D TrackEditorCurve::sample_bezier(float p_t) const {
 	const float scale_ease = godot_ease(bt, remapped_ease_strength(cp_value(control_points, span, 23), (int)cp_value(control_points, span, 22)));
 	const Quaternion start_quat = start_basis.get_rotation_quaternion();
 	const Quaternion end_quat = end_basis.get_rotation_quaternion();
-	(void)rot_ease;
+	Basis final_rot;
+	if (rotation_mode == ROTATION_MODE_SIMPLE) {
+		final_rot = Basis(start_quat.slerp(end_quat, rot_ease));
+	} else {
+		const Vector3 start_z = start_basis.get_column(2).normalized();
+		const Vector3 end_z = end_basis.get_column(2).normalized();
+		Quaternion to_forward = quat_from_to(start_z, forward_dir);
+		final_rot = Basis(to_forward * start_quat);
 
-	const Vector3 start_z = start_basis.get_column(2).normalized();
-	const Vector3 end_z = end_basis.get_column(2).normalized();
-	Quaternion to_forward = quat_from_to(start_z, forward_dir);
-	Basis final_rot = Basis(to_forward * start_quat);
+		Quaternion base_to_forward_for_end = quat_from_to(start_z, end_z);
+		Basis end_rot_fixed = Basis(base_to_forward_for_end * start_quat);
+		Quaternion end_to_forward = quat_from_to(end_rot_fixed.get_column(2), end_z);
+		end_rot_fixed = Basis(end_to_forward) * end_rot_fixed;
 
-	Quaternion base_to_forward_for_end = quat_from_to(start_z, end_z);
-	Basis end_rot_fixed = Basis(base_to_forward_for_end * start_quat);
-	Quaternion end_to_forward = quat_from_to(end_rot_fixed.get_column(2), end_z);
-	end_rot_fixed = Basis(end_to_forward) * end_rot_fixed;
-
-	const float twist_end = signed_angle_to(end_rot_fixed.get_column(1).normalized(), end_basis.get_column(1).normalized(), end_z);
-	final_rot.rotate(forward_dir, twist_end * twist_ease);
+		const float twist_end = signed_angle_to(end_rot_fixed.get_column(1).normalized(), end_basis.get_column(1).normalized(), end_z);
+		final_rot.rotate(forward_dir, twist_end * twist_ease);
+	}
 
 	Basis basis = final_rot.orthonormalized();
 	set_basis_scale(basis, cp_scale(control_points, span).lerp(cp_scale(control_points, span + 1), scale_ease));

@@ -23,6 +23,8 @@ var current_path : RoadPath
 @onready var poly_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/PolyCurve
 @onready var road_shape_row: HBoxContainer = $Control/TabContainer/Info/RoadShapeRow
 @onready var road_shape_type: OptionButton = $Control/TabContainer/Info/RoadShapeRow/RoadShapeType
+@onready var rotation_mode_row: HBoxContainer = $Control/TabContainer/Info/RotationModeRow
+@onready var rotation_mode: OptionButton = $Control/TabContainer/Info/RotationModeRow/RotationMode
 @onready var road_uv_multiplier_row: HBoxContainer = $Control/TabContainer/Info/RoadUvMultiplierRow
 @onready var road_uv_multiplier: SpinBox = $Control/TabContainer/Info/RoadUvMultiplierRow/RoadUvMultiplier
 @onready var ground_color_row: HBoxContainer = $Control/TabContainer/Info/GroundColorRow
@@ -132,6 +134,7 @@ var updating_rail_controls := false
 var updating_track_controls := false
 var updating_object_controls := false
 var updating_road_shape_controls := false
+var updating_rotation_mode_controls := false
 var updating_road_uv_controls := false
 var updating_road_color_controls := false
 var updating_mesh_subdivision_controls := false
@@ -198,6 +201,7 @@ func _ready():
 	embed_start.value_changed.connect(update_embed_start_value)
 	embed_end.value_changed.connect(update_embed_end_value)
 	road_shape_type.item_selected.connect(update_road_shape_type)
+	rotation_mode.item_selected.connect(update_rotation_mode)
 	road_uv_multiplier.value_changed.connect(update_road_uv_multiplier)
 	ground_color.color_changed.connect(update_ground_color)
 	rail_color.color_changed.connect(update_rail_color)
@@ -281,6 +285,9 @@ func _is_spiral_path(path : Node) -> bool:
 	var script : Script = path.get_script() as Script
 	return script and script.resource_path == "res://core/road_path_spiral.gd"
 
+func _is_bezier_path(path : Node) -> bool:
+	return path is RoadPathBezier and !(path is RoadPathLine) and !_is_spiral_path(path)
+
 func _is_track_trigger(node : Node) -> bool:
 	return node and node.get_script() == TrackTriggerScript
 
@@ -333,9 +340,11 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
 	var show_mesh_layout_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_MESH_LAYOUT
 	var show_shape_type_controls := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
+	var show_rotation_mode_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and _is_bezier_path(current_path)
 	var show_cross_section_controls := show_info and !show_checkpoint_controls
 	var show_appearance_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
 	road_shape_row.visible = show_shape_type_controls
+	rotation_mode_row.visible = show_rotation_mode_controls
 	road_uv_multiplier_row.visible = show_cross_section_controls
 	ground_color_row.visible = show_appearance_controls
 	rail_color_row.visible = show_appearance_controls
@@ -497,6 +506,21 @@ func _refresh_road_shape_controls() -> void:
 	updating_road_shape_controls = true
 	road_shape_type.select(_road_shape_type_id(current_path.road_shape))
 	updating_road_shape_controls = false
+
+func _refresh_rotation_mode_controls() -> void:
+	if !_is_bezier_path(current_path):
+		return
+	current_path._ensure_native_curve()
+	updating_rotation_mode_controls = true
+	rotation_mode.select(clampi(current_path.native_curve.rotation_mode, 0, 1))
+	updating_rotation_mode_controls = false
+
+func update_rotation_mode(new_mode : int) -> void:
+	if updating_rotation_mode_controls or !_is_bezier_path(current_path):
+		return
+	current_path._ensure_native_curve()
+	current_path.native_curve.rotation_mode = clampi(new_mode, 0, 1)
+	current_path._try_generate_mesh()
 
 func update_road_shape_type(shape_id : int) -> void:
 	if updating_road_shape_controls or !current_path:
@@ -815,6 +839,7 @@ func _process(delta: float) -> void:
 	
 	if current_path:
 		_refresh_road_shape_controls()
+		_refresh_rotation_mode_controls()
 		if _is_spiral_path(current_path):
 			_refresh_spiral_controls()
 		updating_road_uv_controls = true
