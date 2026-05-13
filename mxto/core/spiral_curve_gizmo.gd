@@ -299,7 +299,7 @@ func _tangent_handle_position(record : Dictionary) -> Vector3:
 	var point_frame := _sample_frame(point.x)
 	match int(entry["kind"]):
 		CurveKind.TWIST:
-			return frame["center"] + frame["x"] * _twist_radius(tangent_t)
+			return frame["center"] + frame["x"] * _twist_radius(point.x)
 		CurveKind.SCALE_X, CurveKind.SCALE_Y:
 			return frame["center"] + _entry_axis(entry, frame) * side * (tangent_value + VISUAL_OFFSET)
 		_:
@@ -736,23 +736,22 @@ func _draw_scale_point(entry_index : int, entry : Dictionary, point_index : int)
 	var frame := _sample_frame(t)
 	var axis := _entry_axis(entry, frame)
 	var hovered := _hovered_key_matches(entry_index, point_index)
-	var color := _curve_color(entry_index)
 	for side in [-1.0, 1.0]:
 		var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
-		_draw_key_line(handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, color, hovered)
+		_draw_key_line(handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, _grey(), hovered)
 
 func _draw_arrow_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
 	var axis := _entry_axis(entry, frame)
-	_draw_key_arrow(frame["center"], axis, frame, _curve_color(entry_index), _hovered_key_matches(entry_index, point_index))
+	_draw_key_arrow(frame["center"], axis, frame, _grey(), _hovered_key_matches(entry_index, point_index))
 
 func _draw_twist_point(entry_index : int, entry : Dictionary, point_index : int) -> void:
 	var curve : Resource = entry["curve"]
 	var t := _curve_offset(curve, point_index)
 	var frame := _sample_frame(t)
-	_draw_key_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _curve_color(entry_index), _hovered_key_matches(entry_index, point_index))
+	_draw_key_circle(frame["center"], frame["x"], frame["y"], _twist_radius(t), _grey(), _hovered_key_matches(entry_index, point_index))
 
 func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side : float) -> void:
 	var entry := curve_entries[entry_index]
@@ -767,7 +766,7 @@ func _draw_tangent(entry_index : int, point_index : int, handle_kind : int, side
 	var color := _curve_color(entry_index).lerp(Color.WHITE, 0.3)
 	match int(entry["kind"]):
 		CurveKind.TWIST:
-			var radius := _twist_radius(tangent_t)
+			var radius := _twist_radius(point.x)
 			var left_center : Vector3 = frame["center"] - frame["x"] * radius
 			var right_center : Vector3 = frame["center"] + frame["x"] * radius
 			_draw_circle(left_center, frame["x"], frame["y"], radius, color, PI * 0.75, PI * 1.25, int(CIRCLE_STEPS / 4))
