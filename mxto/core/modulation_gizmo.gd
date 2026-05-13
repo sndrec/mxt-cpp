@@ -5,13 +5,21 @@ enum CurveKind {
 	HEIGHT,
 }
 
+enum HandleKind {
+	POINT,
+	LEFT_TANGENT,
+	RIGHT_TANGENT,
+}
+
 const HANDLE_RADIUS := 4.0
+const TANGENT_HANDLE_RADIUS := 2.5
 const NORMAL_EPSILON := 0.002
 const SEARCH_STEPS := 10
 const SEARCH_PASSES := 5
 const PREVIEW_STEPS := 24
 const HEIGHT_PREVIEW_TY := 0.5
 const MIN_POINT_GAP := 0.001
+const TANGENT_HANDLE_OFFSET := 0.08
 const ADD_POINT_MAX_SCREEN_DISTANCE := 60.0
 
 var mouse_cast : RayCast3D
@@ -27,6 +35,7 @@ var outline_mesh := ImmediateMesh.new()
 var outline_material := StandardMaterial3D.new()
 var handle_materials : Array[StandardMaterial3D] = []
 var handles : Array[StaticBody3D] = []
+var handle_curve_kinds : Array[int] = []
 var handle_kinds : Array[int] = []
 var handle_indices : Array[int] = []
 
@@ -129,13 +138,52 @@ func _height_position(curve : Resource, point_index : int) -> Vector3:
 	var tx := _height_tx(offset)
 	return _surface_point(tx, HEIGHT_PREVIEW_TY) + _surface_normal(tx, HEIGHT_PREVIEW_TY) * _curve_value(curve, point_index)
 
-func _handle_position(modulation : RoadModulation, handle_id : int) -> Vector3:
-	var kind := handle_kinds[handle_id]
-	var point_index := handle_indices[handle_id]
+func _curve_base_position(kind : int, offset : float) -> Vector3:
+	var tx := _height_tx(offset) if kind == CurveKind.HEIGHT else 0.0
+	var ty := HEIGHT_PREVIEW_TY if kind == CurveKind.HEIGHT else offset
+	return _surface_point(tx, ty)
+
+func _curve_normal(kind : int, offset : float) -> Vector3:
+	var tx := _height_tx(offset) if kind == CurveKind.HEIGHT else 0.0
+	var ty := HEIGHT_PREVIEW_TY if kind == CurveKind.HEIGHT else offset
+	return _surface_normal(tx, ty)
+
+func _curve_world_position(kind : int, offset : float, value : float) -> Vector3:
+	return _curve_base_position(kind, offset) + _curve_normal(kind, offset) * value
+
+func _point_handle_position(modulation : RoadModulation, kind : int, point_index : int) -> Vector3:
 	var curve := _curve_for_kind(modulation, kind)
 	return _height_position(curve, point_index) if kind == CurveKind.HEIGHT else _effect_position(curve, point_index)
 
-func _make_handle(kind : int) -> StaticBody3D:
+func _tangent_handle_position(modulation : RoadModulation, kind : int, point_index : int, handle_kind : int) -> Vector3:
+	var curve := _curve_for_kind(modulation, kind)
+	var point : Vector2 = curve.get_point_position(point_index)
+	var offset_delta := TANGENT_HANDLE_OFFSET
+	var tangent := 0.0
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		offset_delta = -minf(TANGENT_HANDLE_OFFSET, point.x)
+		tangent = curve.get_point_left_tangent(point_index)
+	else:
+		offset_delta = minf(TANGENT_HANDLE_OFFSET, 1.0 - point.x)
+		tangent = curve.get_point_right_tangent(point_index)
+	if absf(offset_delta) <= 0.00001:
+		return _point_handle_position(modulation, kind, point_index)
+	return _curve_world_position(kind, point.x + offset_delta, point.y + tangent * offset_delta)
+
+func _handle_position(modulation : RoadModulation, handle_id : int) -> Vector3:
+	var kind := handle_curve_kinds[handle_id]
+	var point_index := handle_indices[handle_id]
+	var handle_kind := handle_kinds[handle_id]
+	if handle_kind == HandleKind.POINT:
+		return _point_handle_position(modulation, kind, point_index)
+	return _tangent_handle_position(modulation, kind, point_index, handle_kind)
+
+func _handle_base_color(handle_id : int) -> Color:
+	var curve_kind := handle_curve_kinds[handle_id]
+	var color := _curve_color(curve_kind)
+	return color if handle_kinds[handle_id] == HandleKind.POINT else color.lerp(Color.WHITE, 0.35)
+
+func _make_handle(kind : int, handle_kind : int) -> StaticBody3D:
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color = _curve_color(kind)
@@ -147,13 +195,13 @@ func _make_handle(kind : int) -> StaticBody3D:
 	body.set_collision_mask_value(1, false)
 	var collision := CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
-	sphere.radius = HANDLE_RADIUS
+	sphere.radius = TANGENT_HANDLE_RADIUS if handle_kind != HandleKind.POINT else HANDLE_RADIUS
 	collision.shape = sphere
 	body.add_child(collision)
 	var mesh_instance := MeshInstance3D.new()
 	var sphere_mesh := SphereMesh.new()
-	sphere_mesh.radius = HANDLE_RADIUS
-	sphere_mesh.height = HANDLE_RADIUS * 2.0
+	sphere_mesh.radius = sphere.radius
+	sphere_mesh.height = sphere.radius * 2.0
 	mesh_instance.mesh = sphere_mesh
 	mesh_instance.material_override = material
 	body.add_child(mesh_instance)
@@ -161,22 +209,41 @@ func _make_handle(kind : int) -> StaticBody3D:
 	return body
 
 func _sync_handles(modulation : RoadModulation) -> void:
+	handle_curve_kinds.clear()
 	handle_kinds.clear()
 	handle_indices.clear()
 	for i in modulation.modulation_effect.point_count:
-		handle_kinds.append(CurveKind.EFFECT)
+		handle_curve_kinds.append(CurveKind.EFFECT)
+		handle_kinds.append(HandleKind.POINT)
 		handle_indices.append(i)
+		if i > 0:
+			handle_curve_kinds.append(CurveKind.EFFECT)
+			handle_kinds.append(HandleKind.LEFT_TANGENT)
+			handle_indices.append(i)
+		if i < modulation.modulation_effect.point_count - 1:
+			handle_curve_kinds.append(CurveKind.EFFECT)
+			handle_kinds.append(HandleKind.RIGHT_TANGENT)
+			handle_indices.append(i)
 	for i in modulation.modulation_height.point_count:
-		handle_kinds.append(CurveKind.HEIGHT)
+		handle_curve_kinds.append(CurveKind.HEIGHT)
+		handle_kinds.append(HandleKind.POINT)
 		handle_indices.append(i)
+		if i > 0:
+			handle_curve_kinds.append(CurveKind.HEIGHT)
+			handle_kinds.append(HandleKind.LEFT_TANGENT)
+			handle_indices.append(i)
+		if i < modulation.modulation_height.point_count - 1:
+			handle_curve_kinds.append(CurveKind.HEIGHT)
+			handle_kinds.append(HandleKind.RIGHT_TANGENT)
+			handle_indices.append(i)
 	while handles.size() < handle_kinds.size():
-		handles.append(_make_handle(handle_kinds[handles.size()]))
+		handles.append(_make_handle(handle_curve_kinds[handles.size()], handle_kinds[handles.size()]))
 	while handles.size() > handle_kinds.size():
 		var handle : StaticBody3D = handles.pop_back()
 		handle_materials.pop_back()
 		handle.queue_free()
 	for i in handles.size():
-		handle_materials[i].albedo_color = _curve_color(handle_kinds[i])
+		handle_materials[i].albedo_color = _handle_base_color(i)
 
 func _draw_curve_preview(curve : Resource, kind : int) -> void:
 	outline_mesh.surface_set_color(_curve_color(kind))
@@ -196,6 +263,16 @@ func _draw_curve_preview(curve : Resource, kind : int) -> void:
 		outline_mesh.surface_add_vertex(p0)
 		outline_mesh.surface_add_vertex(p1)
 
+func _draw_tangent_handles(modulation : RoadModulation) -> void:
+	outline_mesh.surface_set_color(Color(0.9, 0.95, 1.0, 0.85))
+	for handle_id in handles.size():
+		if handle_kinds[handle_id] == HandleKind.POINT:
+			continue
+		var point_pos := _point_handle_position(modulation, handle_curve_kinds[handle_id], handle_indices[handle_id])
+		var handle_pos := _handle_position(modulation, handle_id)
+		outline_mesh.surface_add_vertex(point_pos)
+		outline_mesh.surface_add_vertex(handle_pos)
+
 func _update_visuals(modulation : RoadModulation) -> void:
 	_ensure_effect_curve(modulation.modulation_effect)
 	_ensure_height_curve(modulation.modulation_height)
@@ -206,6 +283,7 @@ func _update_visuals(modulation : RoadModulation) -> void:
 	outline_mesh.surface_begin(Mesh.PRIMITIVE_LINES, outline_material)
 	_draw_curve_preview(modulation.modulation_effect, CurveKind.EFFECT)
 	_draw_curve_preview(modulation.modulation_height, CurveKind.HEIGHT)
+	_draw_tangent_handles(modulation)
 	outline_mesh.surface_end()
 	outline_mesh_instance.visible = true
 
@@ -226,9 +304,9 @@ func _set_handle_colours(hovered : int) -> void:
 		if dragging and i == drag_handle:
 			handle_materials[i].albedo_color = Color.WHITE
 		elif i == hovered:
-			handle_materials[i].albedo_color = _curve_hover_color(handle_kinds[i])
+			handle_materials[i].albedo_color = _curve_hover_color(handle_curve_kinds[i])
 		else:
-			handle_materials[i].albedo_color = _curve_color(handle_kinds[i])
+			handle_materials[i].albedo_color = _handle_base_color(i)
 
 func _closest_center_ty(world_pos : Vector3) -> float:
 	var best_ty := 0.0
@@ -273,18 +351,46 @@ func _clamped_curve_offset(curve : Resource, point_index : int, offset : float) 
 	var max_offset := _curve_offset(curve, point_index + 1) - MIN_POINT_GAP
 	return clampf(offset, min_offset, max_offset)
 
-func _write_dragged_handle(modulation : RoadModulation, handle_id : int, world_pos : Vector3) -> void:
-	var kind := handle_kinds[handle_id]
+func _write_point_handle(modulation : RoadModulation, handle_id : int, world_pos : Vector3) -> void:
+	var kind := handle_curve_kinds[handle_id]
 	var point_index := handle_indices[handle_id]
 	var curve := _curve_for_kind(modulation, kind)
 	var offset := _closest_height_offset(world_pos) if kind == CurveKind.HEIGHT else _closest_center_ty(world_pos)
 	offset = _clamped_curve_offset(curve, point_index, offset)
-	var tx := _height_tx(offset) if kind == CurveKind.HEIGHT else 0.0
-	var ty := HEIGHT_PREVIEW_TY if kind == CurveKind.HEIGHT else offset
-	var base := _surface_point(tx, ty)
-	var normal := _surface_normal(tx, ty)
+	var base := _curve_base_position(kind, offset)
+	var normal := _curve_normal(kind, offset)
 	curve.set_point_offset(point_index, offset)
 	curve.set_point_value(point_index, (world_pos - base).dot(normal))
+
+func _write_tangent_handle(modulation : RoadModulation, handle_id : int, world_pos : Vector3) -> void:
+	var kind := handle_curve_kinds[handle_id]
+	var point_index := handle_indices[handle_id]
+	var handle_kind := handle_kinds[handle_id]
+	var curve := _curve_for_kind(modulation, kind)
+	var point : Vector2 = curve.get_point_position(point_index)
+	var handle_offset := _closest_height_offset(world_pos) if kind == CurveKind.HEIGHT else _closest_center_ty(world_pos)
+	var delta : float = handle_offset - point.x
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		delta = minf(delta, -MIN_POINT_GAP)
+	else:
+		delta = maxf(delta, MIN_POINT_GAP)
+	handle_offset = clampf(point.x + delta, 0.0, 1.0)
+	delta = handle_offset - point.x
+	if absf(delta) < MIN_POINT_GAP:
+		return
+	var base := _curve_base_position(kind, handle_offset)
+	var normal := _curve_normal(kind, handle_offset)
+	var value := (world_pos - base).dot(normal)
+	if handle_kind == HandleKind.LEFT_TANGENT:
+		curve.set_point_left_tangent(point_index, (value - point.y) / delta)
+	else:
+		curve.set_point_right_tangent(point_index, (value - point.y) / delta)
+
+func _write_dragged_handle(modulation : RoadModulation, handle_id : int, world_pos : Vector3) -> void:
+	if handle_kinds[handle_id] == HandleKind.POINT:
+		_write_point_handle(modulation, handle_id, world_pos)
+	else:
+		_write_tangent_handle(modulation, handle_id, world_pos)
 
 func _screen_distance_to_curve(curve : Resource, kind : int, cam : Camera3D, mouse_pos : Vector2) -> Dictionary:
 	var best_offset := 0.0
@@ -350,7 +456,9 @@ func _try_delete_hovered_point(modulation : RoadModulation, hovered : int) -> bo
 		return false
 	if !just_delete or hovered < 0:
 		return false
-	var kind := handle_kinds[hovered]
+	if handle_kinds[hovered] != HandleKind.POINT:
+		return false
+	var kind := handle_curve_kinds[hovered]
 	var point_index := handle_indices[hovered]
 	var curve := _curve_for_kind(modulation, kind)
 	if point_index <= 0 or point_index >= curve.point_count - 1:
