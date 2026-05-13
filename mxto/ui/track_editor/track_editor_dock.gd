@@ -418,6 +418,7 @@ func _on_road_rounded_square_open_pressed() -> void:
 	track_scene.desired_road_type = ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN
 
 func _on_road_line_pressed() -> void:
+	track_scene.desired_segment_kind = TrackEditingScene.SegmentKind.LINE
 	var selected := get_active_path()
 	var new_track_piece : RoadPath
 	if selected:
@@ -434,6 +435,7 @@ func _on_road_line_pressed() -> void:
 
 
 func _on_road_bezier_pressed() -> void:
+	track_scene.desired_segment_kind = TrackEditingScene.SegmentKind.BEZIER
 	var selected := get_active_path()
 	var new_track_piece : RoadPath
 	if selected:
@@ -449,6 +451,7 @@ func _on_road_bezier_pressed() -> void:
 
 
 func _on_road_curve_pressed() -> void:
+	track_scene.desired_segment_kind = TrackEditingScene.SegmentKind.SPIRAL
 	var selected := get_active_path()
 	var new_track_piece : RoadPath
 	if selected:

@@ -29,6 +29,12 @@ enum ToolMode {
 	EDIT_TRACK,
 }
 
+enum SegmentKind {
+	LINE,
+	BEZIER,
+	SPIRAL,
+}
+
 signal tool_mode_changed(mode : ToolMode)
 signal track_structure_changed
 
@@ -54,6 +60,7 @@ var last_mouse_pos := Vector2.ZERO
 var active_path : RoadPath
 var tool_mode : ToolMode = ToolMode.EDIT_SEGMENT
 var desired_road_type := ENUMS.ROAD_TYPE.STANDARD
+var desired_segment_kind := SegmentKind.BEZIER
 var desired_embed_type := RoadEmbed.EmbedType.RECHARGE
 var desired_trigger_type := 0
 var pending_embed_add := false
@@ -347,7 +354,7 @@ func _handle_add_segment_input() -> void:
 	var hit := _pick_road_path_under_mouse()
 	if !hit.is_empty():
 		var path := hit["path"] as RoadPath
-		var new_segment := add_bezier_track_segment_after(path, desired_road_type)
+		var new_segment := add_desired_track_segment_after(path)
 		if new_segment:
 			active_path = new_segment
 			add_road_gizmo.set_target_node(new_segment)
@@ -510,6 +517,15 @@ func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_T
 	_insert_segment_after(in_path, new_track_piece)
 	track_structure_changed.emit()
 	return new_track_piece
+
+func add_desired_track_segment_after(in_path : RoadPath) -> RoadPath:
+	match desired_segment_kind:
+		SegmentKind.LINE:
+			return add_regular_track_segment_after(in_path, desired_road_type)
+		SegmentKind.SPIRAL:
+			return add_spiral_track_segment_after(in_path, desired_road_type)
+		_:
+			return add_bezier_track_segment_after(in_path, desired_road_type)
 
 func add_road_embed(embed_type : int, in_path : RoadPath, surface_t := Vector2(0.0, 0.5)) -> int:
 	if !in_path:

@@ -81,7 +81,7 @@ func _process(delta: float) -> void:
 				handle_out)
 			target_node.point_changes = true
 		else:
-			var new_segment := scene.add_bezier_track_segment_after(target_node, scene.desired_road_type)
+			var new_segment := scene.add_desired_track_segment_after(target_node)
 			if new_segment:
 				scene.active_path = new_segment
 				set_target_node(new_segment)
