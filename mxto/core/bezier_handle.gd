@@ -154,6 +154,8 @@ func _process(delta: float) -> void:
 		return
 	handle_collision.set_collision_layer_value(15, true)
 	if !is_selectable():
+		scene.end_pointer_action(self)
+		clicking = false
 		handle_collision.set_collision_layer_value(15, false)
 		handle_collision.set_collision_layer_value(16, false)
 		handle_in_collision.set_collision_layer_value(16, false)
