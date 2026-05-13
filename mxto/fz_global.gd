@@ -160,7 +160,6 @@ func _process(delta):
 		if !desired_node_to_select:
 			deselect_all()
 			return
-		#DebugDraw3D.draw_arrow(mpc.global_position, mpc.to_global(mpc.target_position), Color.RED, 0.5, true, 3)
 		if Input.is_action_pressed("Shift"):
 			select_additional_node(desired_node_to_select)
 		else:
