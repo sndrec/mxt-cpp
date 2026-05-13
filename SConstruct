@@ -14,6 +14,7 @@ env = SConscript("godot-cpp/SConstruct")
 # tweak this if you want to use different folders, or more folders, to store your source code in.
 env.Append(CPPPATH=["src/"])
 env.Append(CPPPATH=["src/mathfu/include"])
+env.Append(CPPPATH=["thirdparty/zstd/lib"])
 if env["platform"] == "windows":
     env.Append(CXXFLAGS=[
         '/fp:precise',  # Ensure safe floating-point math optimizations
@@ -23,6 +24,9 @@ sources.append(Glob("src/*.cpp"))
 sources.append(Glob("src/mxt_core/*.cpp"))
 sources.append(Glob("src/track/*.cpp"))
 sources.append(Glob("src/car/*.cpp"))
+sources.append(Glob("thirdparty/zstd/lib/common/*.c"))
+sources.append(Glob("thirdparty/zstd/lib/compress/*.c"))
+sources.append(Glob("thirdparty/zstd/lib/decompress/*.c"))
 
 env['PDB'] = 'symbols.pdb'
 
