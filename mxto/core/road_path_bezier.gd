@@ -54,6 +54,16 @@ func _preview_material(material_name : String) -> Material:
 	_preview_material_cache[material_name] = material
 	return material
 
+func _preview_surface_colors(material_name : String, colors : PackedColorArray) -> PackedColorArray:
+	if material_name != "track_surface" and material_name != "track_rail":
+		return colors
+	var out := PackedColorArray()
+	out.resize(colors.size())
+	var use_color := ground_color if material_name == "track_surface" else rail_color
+	for i in out.size():
+		out[i] = use_color
+	return out
+
 func _ensure_editor_visuals() -> void:
 	if !centerline_mesh_instance:
 		centerline_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -444,9 +454,10 @@ func _try_generate_mesh(update_collision := true) -> void:
 			arrays[Mesh.ARRAY_NORMAL] = surface["normals"]
 			arrays[Mesh.ARRAY_TEX_UV] = surface["uvs"]
 			arrays[Mesh.ARRAY_TEX_UV2] = surface["uv2"]
-			arrays[Mesh.ARRAY_COLOR] = surface["colors"]
+			var material_name : String = surface.get("material_name", "track_surface")
+			arrays[Mesh.ARRAY_COLOR] = _preview_surface_colors(material_name, surface["colors"])
 			arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-			arr_mesh.surface_set_material(arr_mesh.get_surface_count() - 1, _preview_material(surface.get("material_name", "track_surface")))
+			arr_mesh.surface_set_material(arr_mesh.get_surface_count() - 1, _preview_material(material_name))
 	else:
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)
@@ -454,7 +465,7 @@ func _try_generate_mesh(update_collision := true) -> void:
 		arrays[Mesh.ARRAY_NORMAL] = mesh_data["normals"]
 		arrays[Mesh.ARRAY_TEX_UV] = mesh_data["uvs"]
 		arrays[Mesh.ARRAY_TEX_UV2] = mesh_data["uv2"]
-		arrays[Mesh.ARRAY_COLOR] = mesh_data["colors"]
+		arrays[Mesh.ARRAY_COLOR] = _preview_surface_colors("track_surface", mesh_data["colors"])
 		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		arr_mesh.surface_set_material(0, _preview_material("track_surface"))
 	road_mesh_instance.mesh = arr_mesh

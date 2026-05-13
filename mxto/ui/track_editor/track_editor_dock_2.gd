@@ -25,6 +25,8 @@ var current_path : RoadPath
 @onready var road_shape_type: OptionButton = $Control/TabContainer/Info/RoadShapeRow/RoadShapeType
 @onready var road_uv_multiplier_row: HBoxContainer = $Control/TabContainer/Info/RoadUvMultiplierRow
 @onready var road_uv_multiplier: SpinBox = $Control/TabContainer/Info/RoadUvMultiplierRow/RoadUvMultiplier
+@onready var ground_color: ColorPickerButton = $Control/TabContainer/Info/GroundColorRow/GroundColor
+@onready var rail_color: ColorPickerButton = $Control/TabContainer/Info/RailColorRow/RailColor
 @onready var checkpoint_count_row: HBoxContainer = $Control/TabContainer/Info/CheckpointCountRow
 @onready var checkpoint_count: SpinBox = $Control/TabContainer/Info/CheckpointCountRow/CheckpointCount
 @onready var cross_section_controls: VBoxContainer = $Control/TabContainer/Info/VBoxContainer
@@ -109,6 +111,7 @@ var updating_track_controls := false
 var updating_object_controls := false
 var updating_road_shape_controls := false
 var updating_road_uv_controls := false
+var updating_road_color_controls := false
 var updating_embed_controls := false
 var transform_clipboard_cp_scale := Vector3.ONE
 
@@ -172,6 +175,8 @@ func _ready():
 	embed_end.value_changed.connect(update_embed_values)
 	road_shape_type.item_selected.connect(update_road_shape_type)
 	road_uv_multiplier.value_changed.connect(update_road_uv_multiplier)
+	ground_color.color_changed.connect(update_ground_color)
+	rail_color.color_changed.connect(update_rail_color)
 	track_cross_section_slider.value_changed.connect(cs_rect.update_track_cross_sections)
 	checkpoint_count.value_changed.connect(update_checkpoint_count)
 	spiral_degrees.value_changed.connect(update_spiral_values)
@@ -450,6 +455,26 @@ func update_road_uv_multiplier(new_value : float) -> void:
 	current_path.road_uv_multiplier = maxf(0.001, new_value)
 	update_track_visuals()
 
+func _refresh_road_color_controls() -> void:
+	if !current_path:
+		return
+	updating_road_color_controls = true
+	ground_color.color = current_path.ground_color
+	rail_color.color = current_path.rail_color
+	updating_road_color_controls = false
+
+func update_ground_color(new_color : Color) -> void:
+	if updating_road_color_controls or !current_path:
+		return
+	current_path.ground_color = new_color
+	update_track_visuals()
+
+func update_rail_color(new_color : Color) -> void:
+	if updating_road_color_controls or !current_path:
+		return
+	current_path.rail_color = new_color
+	update_track_visuals()
+
 func _refresh_track_controls() -> void:
 	if !track_root:
 		return
@@ -638,6 +663,7 @@ func _process(delta: float) -> void:
 		updating_road_uv_controls = true
 		road_uv_multiplier.set_value_no_signal(current_path.road_uv_multiplier)
 		updating_road_uv_controls = false
+		_refresh_road_color_controls()
 		var mesh_was_visible : bool = current_path.get_child(0).visible
 		current_path.get_child(0).visible = draw_mesh.button_pressed
 		checkpoint_count.set_value_no_signal(current_path.num_checkpoints + 1)

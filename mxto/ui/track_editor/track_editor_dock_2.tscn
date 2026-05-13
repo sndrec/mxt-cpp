@@ -106,6 +106,34 @@ max_value = 100.0
 step = 0.01
 value = 1.0
 
+[node name="GroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Info/GroundColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Ground Color"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="GroundColor" type="ColorPickerButton" parent="Control/TabContainer/Info/GroundColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0.5, 0.5, 0.5, 1)
+
+[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Info/RailColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Rail Color"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Info/RailColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0.8, 0.8, 0.8, 1)
+
 [node name="CheckpointCountRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
 layout_mode = 2
 
