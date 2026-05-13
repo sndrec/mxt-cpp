@@ -18,6 +18,11 @@ var _preview_material_cache := {}
 var bezier_handle_nodes : Array[BezierHandle] = []
 var point_changes := false
 var smoothed_bezier_path : PackedVector3Array = []
+var centerline_mesh_instance : MeshInstance3D
+var centerline_mesh := ImmediateMesh.new()
+var centerline_material := StandardMaterial3D.new()
+var add_point_preview_mesh_instance : MeshInstance3D
+var add_point_preview_material := StandardMaterial3D.new()
 
 func _preview_material(material_name : String) -> Material:
 	if _preview_material_cache.has(material_name):
@@ -45,6 +50,57 @@ func _preview_material(material_name : String) -> Material:
 			material.albedo_color = Color(0.50, 0.52, 0.54, 1.0)
 	_preview_material_cache[material_name] = material
 	return material
+
+func _ensure_editor_visuals() -> void:
+	if !centerline_mesh_instance:
+		centerline_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		centerline_material.vertex_color_use_as_albedo = true
+		centerline_mesh_instance = MeshInstance3D.new()
+		centerline_mesh_instance.mesh = centerline_mesh
+		centerline_mesh_instance.top_level = true
+		add_child(centerline_mesh_instance)
+	if !add_point_preview_mesh_instance:
+		add_point_preview_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		add_point_preview_material.albedo_color = Color.RED
+		var sphere_mesh := SphereMesh.new()
+		sphere_mesh.radius = 1.0
+		sphere_mesh.height = 2.0
+		add_point_preview_mesh_instance = MeshInstance3D.new()
+		add_point_preview_mesh_instance.mesh = sphere_mesh
+		add_point_preview_mesh_instance.material_override = add_point_preview_material
+		add_point_preview_mesh_instance.top_level = true
+		add_child(add_point_preview_mesh_instance)
+
+func _hide_editor_visuals() -> void:
+	if centerline_mesh_instance:
+		centerline_mesh_instance.visible = false
+	if add_point_preview_mesh_instance:
+		add_point_preview_mesh_instance.visible = false
+
+func _update_centerline_visual() -> void:
+	_ensure_editor_visuals()
+	centerline_mesh.clear_surfaces()
+	if smoothed_bezier_path.size() < 2:
+		centerline_mesh_instance.visible = false
+		return
+	centerline_mesh.surface_begin(Mesh.PRIMITIVE_LINES, centerline_material)
+	centerline_mesh.surface_set_color(Color.ROYAL_BLUE)
+	for i in smoothed_bezier_path.size() - 1:
+		centerline_mesh.surface_add_vertex(smoothed_bezier_path[i])
+		centerline_mesh.surface_add_vertex(smoothed_bezier_path[i + 1])
+	centerline_mesh.surface_end()
+	centerline_mesh_instance.visible = smoothed_bezier_path.size() > 1
+
+func _update_add_point_preview(pos : Vector3, visible_now : bool) -> void:
+	_ensure_editor_visuals()
+	add_point_preview_mesh_instance.visible = visible_now
+	if visible_now:
+		add_point_preview_mesh_instance.global_position = pos
+		var cam := FZGlobal.current_cam
+		var size := 1.0
+		if cam:
+			size = maxf(1.0, pos.distance_to(cam.global_position) * 0.01)
+		add_point_preview_mesh_instance.scale = Vector3.ONE * size
 
 func _ensure_native_curve() -> void:
 	if !native_curve:
@@ -239,7 +295,7 @@ func _get_surface(in_t : Vector2) -> Basis:
 	var pos := get_surface_position(in_t)
 	return Basis(pos, Vector3.UP, Vector3.ZERO)
 
-func _try_generate_mesh() -> void:
+func _try_generate_mesh(update_collision := true) -> void:
 	if !road_mesh_instance:
 		create_road_mesh_instance()
 	_ensure_native_curve()
@@ -295,7 +351,7 @@ func _try_generate_mesh() -> void:
 		arr_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		arr_mesh.surface_set_material(0, _preview_material("track_surface"))
 	road_mesh_instance.mesh = arr_mesh
-	if road_mesh_instance.mesh and road_collision_shape_mesh:
+	if update_collision and road_mesh_instance.mesh and road_collision_shape_mesh:
 		var col_triangles := road_mesh_instance.mesh.create_trimesh_shape()
 		road_collision_shape_mesh.set_faces(col_triangles.get_faces())
 	smoothed_bezier_path = native_curve.build_centerline_points(maxi(2, floori(segment_length * 0.1)))
@@ -356,12 +412,16 @@ func refresh_handle_nodes() -> void:
 		point_handle.name = "Point " + str(i + 1)
 
 func _process(delta):
+	var scene := FZGlobal.editing_scene
 	if !(road_shape and native_curve):
+		_hide_editor_visuals()
 		return
 	var point_count : int = native_curve.get_control_point_count()
 	if point_count < 2:
+		_hide_editor_visuals()
 		return
 	if !(road_mesh_instance and road_collision):
+		_hide_editor_visuals()
 		return
 	road_mesh_instance.global_transform = Transform3D.IDENTITY
 	road_collision.global_transform = Transform3D.IDENTITY
@@ -373,8 +433,9 @@ func _process(delta):
 	for i in point_count:
 		DebugDraw2D.set_text("p" + str(i), control_points[i * CONTROL_STRIDE])
 
-	if FZGlobal.active_node == self or get_children().has(FZGlobal.active_node):
-		DebugDraw3D.draw_line_path(smoothed_bezier_path, Color.ROYAL_BLUE, delta * 2)
+	if scene and scene.tool_mode_allows_control_point_gizmos() and (FZGlobal.active_node == self or get_children().has(FZGlobal.active_node)):
+		_update_centerline_visual()
+		_update_add_point_preview(Vector3.ZERO, false)
 		if Input.is_action_pressed("Alt"):
 			if FZGlobal.active_node == self or get_children().has(FZGlobal.active_node):
 				var cam := FZGlobal.editing_scene.edit_cam
@@ -399,6 +460,8 @@ func _process(delta):
 				var handle_in_2 : float = control_points[base_2 + 16]
 				var add_p := get_root_transform(lerpf(time_1, time_2, 0.5))
 				if Input.is_action_just_pressed("LeftMouse"):
+					if !scene.begin_pointer_action(self):
+						return
 					control_points[base_1 + 17] = handle_out_1 * 0.5
 					control_points[base_2 + 16] = handle_in_2 * 0.5
 					native_curve.set_control_points(control_points)
@@ -410,8 +473,11 @@ func _process(delta):
 						handle_out_1 * 0.5,
 						handle_in_2 * 0.5,
 						closest_line + 1)
+					scene.end_pointer_action(self)
 					return
-				DebugDraw3D.draw_sphere(add_p.origin, 1.0, Color.RED, delta)
+				_update_add_point_preview(add_p.origin, true)
+	else:
+		_hide_editor_visuals()
 
 	var next_control_points : PackedFloat32Array = control_points.duplicate()
 	for i in point_count:
@@ -433,11 +499,11 @@ func _process(delta):
 	if point_changes:
 		native_curve.set_control_points(next_control_points)
 
-	if Time.get_ticks_msec() > last_gen_time + 20:
-		last_gen_time = Time.get_ticks_msec()
-		if !point_changes:
-			return
+	if point_changes:
+		var update_collision := Time.get_ticks_msec() > last_gen_time + 100
+		if update_collision:
+			last_gen_time = Time.get_ticks_msec()
 		point_changes = false
 		calculate_bezier_times()
 		calculate_curves_from_bezier()
-		_try_generate_mesh()
+		_try_generate_mesh(update_collision)

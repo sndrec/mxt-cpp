@@ -10,6 +10,7 @@ var target_node : RoadPath
 var road_segment_texture := preload("res://asset/tex/add_road_segment.png")
 var bezier_point_texture := preload("res://asset/tex/add_bezier_point.png")
 var active := true
+var pressed_on_gizmo := false
 
 
 func set_target_node(in_node : Node3D) -> void:
@@ -23,7 +24,18 @@ func set_target_node(in_node : Node3D) -> void:
 		active = false
 
 func _process(delta: float) -> void:
+	var scene := FZGlobal.editing_scene
+	if !scene or !scene.tool_mode_allows_segment_add_gizmo():
+		if scene:
+			scene.end_pointer_action(self)
+		visible = false
+		gizmo_collider.set_collision_layer_value(16, false)
+		pressed_on_gizmo = false
+		return
+	visible = true
 	if !target_node or !is_instance_valid(target_node):
+		gizmo_collider.set_collision_layer_value(16, false)
+		pressed_on_gizmo = false
 		return
 	var end_of_road := target_node.get_root_transform(1.0)
 	global_transform = end_of_road
@@ -41,8 +53,16 @@ func _process(delta: float) -> void:
 		gizmo_material.set_shader_parameter("clicked", true)
 	else:
 		gizmo_material.set_shader_parameter("clicked", false)
+
+	if Input.is_action_just_pressed("LeftMouse") and mousecast_wants_this_gizmo():
+		pressed_on_gizmo = scene.begin_pointer_action(self)
 	
-	if Input.is_action_just_released("LeftMouse") and mousecast_wants_this_gizmo():
+	if Input.is_action_just_released("LeftMouse"):
+		var can_release := pressed_on_gizmo and scene.owns_pointer_action(self) and mousecast_wants_this_gizmo()
+		pressed_on_gizmo = false
+		scene.end_pointer_action(self)
+		if !can_release:
+			return
 		if target_node is RoadPathBezier and !(target_node is RoadPathLine) and Input.is_action_pressed("Alt"):
 			var last_index : int = target_node.get_control_point_count() - 1
 			var handle_out : float = target_node.native_curve.get_control_point_handle_out(last_index)
@@ -55,7 +75,7 @@ func _process(delta: float) -> void:
 				handle_out)
 			target_node.point_changes = true
 		else:
-			FZGlobal.editing_scene.add_bezier_track_segment_after(target_node, ENUMS.ROAD_TYPE.STANDARD)
+			scene.add_bezier_track_segment_after(target_node, scene.desired_road_type)
 	if !active:
 		gizmo_collider.set_collision_layer_value(16, false)
 		return

@@ -86,7 +86,7 @@ func get_surface_local_positions(in_points : PackedVector2Array) -> PackedVector
 func _get_surface(in_t : Vector2) -> Basis:
 	return Basis(get_surface_position(in_t), Vector3.UP, Vector3.ZERO)
 
-func _try_generate_mesh() -> void:
+func _try_generate_mesh(update_collision := true) -> void:
 	pass
 
 func _process(delta : float) -> void:

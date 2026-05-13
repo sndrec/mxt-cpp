@@ -14,8 +14,23 @@ var current_path : RoadPath
 
 @onready var track_cross_section_slider: HSlider = $Control/TabContainer/Info/VBoxContainer/TrackCrossSectionSlider
 @onready var tab_container: TabContainer = $Control/TabContainer
+@onready var info_panel: VBoxContainer = $Control/TabContainer/Info
 @onready var smooth_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/SmoothCurve
 @onready var poly_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/PolyCurve
+@onready var checkpoint_count_row: HBoxContainer = $Control/TabContainer/Info/CheckpointCountRow
+@onready var checkpoint_count: SpinBox = $Control/TabContainer/Info/CheckpointCountRow/CheckpointCount
+@onready var cross_section_controls: VBoxContainer = $Control/TabContainer/Info/VBoxContainer
+
+@onready var spiral_panel: ScrollContainer = $Control/TabContainer/Spiral
+@onready var spiral_degrees: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralDegreesRow/SpiralDegrees
+@onready var spiral_axis_x: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisX
+@onready var spiral_axis_y: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisY
+@onready var spiral_axis_z: SpinBox = $Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow/SpiralAxisZ
+@onready var spiral_curve_radius: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralRadiusCurve
+@onready var spiral_curve_height: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralHeightCurve
+@onready var spiral_curve_twist: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralTwistCurve
+@onready var spiral_curve_scale_x: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleXCurve
+@onready var spiral_curve_scale_y: CurveEditor = $Control/TabContainer/Spiral/VBoxContainer/SpiralScaleYCurve
 
 @onready var modulation_dropdown: OptionButton = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/ModulationDropdown
 @onready var new_modulation: Button = $Control/TabContainer/Modulation/VBoxContainer/HBoxContainer/NewModulation
@@ -69,6 +84,42 @@ var current_path : RoadPath
 
 var transform_clipboard := Transform3D.IDENTITY
 var road_poly_clipboard := PackedFloat32Array()
+var cross_section_mesh_instance : MeshInstance3D
+var cross_section_mesh := ImmediateMesh.new()
+var cross_section_material := StandardMaterial3D.new()
+var connected_tool_scene : TrackEditingScene
+var updating_spiral_controls := false
+
+func _ensure_cross_section_visual() -> void:
+	if cross_section_mesh_instance:
+		return
+	cross_section_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cross_section_material.vertex_color_use_as_albedo = true
+	cross_section_mesh_instance = MeshInstance3D.new()
+	cross_section_mesh_instance.mesh = cross_section_mesh
+	cross_section_mesh_instance.top_level = true
+	if FZGlobal.editing_scene:
+		FZGlobal.editing_scene.add_child(cross_section_mesh_instance)
+	else:
+		add_child(cross_section_mesh_instance)
+
+func _hide_cross_section_visual() -> void:
+	if cross_section_mesh_instance:
+		cross_section_mesh_instance.visible = false
+
+func _update_cross_section_visual(points : PackedVector3Array) -> void:
+	_ensure_cross_section_visual()
+	cross_section_mesh.clear_surfaces()
+	if points.size() < 2:
+		cross_section_mesh_instance.visible = false
+		return
+	cross_section_mesh.surface_begin(Mesh.PRIMITIVE_LINES, cross_section_material)
+	cross_section_mesh.surface_set_color(Color.RED)
+	for i in range(0, points.size() - 1, 2):
+		cross_section_mesh.surface_add_vertex(points[i])
+		cross_section_mesh.surface_add_vertex(points[i + 1])
+	cross_section_mesh.surface_end()
+	cross_section_mesh_instance.visible = true
 
 func get_runtime_track_root() -> TrackRoot:
 	if FZGlobal.current_track:
@@ -88,6 +139,7 @@ func _ready():
 	dock_ready.emit()
 	if !FZGlobal.selection_changed.is_connected(selection_updated):
 		FZGlobal.selection_changed.connect(selection_updated)
+	_sync_tool_mode_signal()
 	embed_dropdown.item_selected.connect(update_modulations_and_embeds)
 	modulation_dropdown.item_selected.connect(update_modulations_and_embeds)
 	new_modulation.pressed.connect(add_new_modulation)
@@ -99,6 +151,16 @@ func _ready():
 	mod_curve_effect.curve_edited.connect(update_track_visuals)
 	mod_curve_height.curve_edited.connect(update_track_visuals)
 	track_cross_section_slider.value_changed.connect(cs_rect.update_track_cross_sections)
+	checkpoint_count.value_changed.connect(update_checkpoint_count)
+	spiral_degrees.value_changed.connect(update_spiral_values)
+	spiral_axis_x.value_changed.connect(update_spiral_values)
+	spiral_axis_y.value_changed.connect(update_spiral_values)
+	spiral_axis_z.value_changed.connect(update_spiral_values)
+	spiral_curve_radius.curve_edited.connect(update_spiral_curve)
+	spiral_curve_height.curve_edited.connect(update_spiral_curve)
+	spiral_curve_twist.curve_edited.connect(update_spiral_curve)
+	spiral_curve_scale_x.curve_edited.connect(update_spiral_curve)
+	spiral_curve_scale_y.curve_edited.connect(update_spiral_curve)
 	copy_mesh_layout_button.pressed.connect(copy_mesh_layout)
 	paste_mesh_layout_button.pressed.connect(paste_mesh_layout)
 	create_mesh_layout_button.pressed.connect(create_simple_mesh_layout)
@@ -127,10 +189,72 @@ func _ready():
 	embed_type.item_selected.connect(update_embed_type)
 	selection_updated()
 
+func _sync_tool_mode_signal() -> void:
+	var tool_scene := FZGlobal.editing_scene as TrackEditingScene
+	if tool_scene == connected_tool_scene:
+		return
+	if connected_tool_scene and connected_tool_scene.tool_mode_changed.is_connected(_refresh_contextual_visibility):
+		connected_tool_scene.tool_mode_changed.disconnect(_refresh_contextual_visibility)
+	connected_tool_scene = tool_scene
+	if connected_tool_scene and !connected_tool_scene.tool_mode_changed.is_connected(_refresh_contextual_visibility):
+		connected_tool_scene.tool_mode_changed.connect(_refresh_contextual_visibility)
+
+func _is_spiral_path(path : Node) -> bool:
+	if !path:
+		return false
+	var script : Script = path.get_script() as Script
+	return script and script.resource_path == "res://core/road_path_spiral.gd"
+
+func _apply_context_tabs(show_info : bool, show_spiral : bool, show_modulation : bool, show_embeds : bool) -> void:
+	info_panel.visible = show_info
+	spiral_panel.visible = show_spiral
+	modulation.visible = show_modulation
+	embeds.visible = show_embeds
+	var any_visible := show_info or show_spiral or show_modulation or show_embeds
+	tab_container.visible = any_visible
+	if !any_visible:
+		_hide_cross_section_visual()
+		return
+	var visible_tabs := [show_info, show_spiral, show_modulation, show_embeds]
+	var first_visible := -1
+	for i in visible_tabs.size():
+		if visible_tabs[i]:
+			first_visible = i
+			tab_container.set_tab_hidden(i, false)
+	if first_visible >= 0:
+		tab_container.current_tab = first_visible
+	for i in visible_tabs.size():
+		tab_container.set_tab_hidden(i, !visible_tabs[i])
+
+func _refresh_contextual_visibility(_mode : int = -1) -> void:
+	if !tab_container:
+		return
+	_sync_tool_mode_signal()
+	var scene := connected_tool_scene
+	var mode := scene.tool_mode if scene else TrackEditingScene.ToolMode.EDIT_SEGMENT
+	var selected := get_active_node()
+	var has_path := current_path != null
+	var show_info := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE or mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS or mode == TrackEditingScene.ToolMode.EDIT_TRACK)
+	var show_spiral := has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and _is_spiral_path(current_path)
+	var show_modulation := has_path and mode == TrackEditingScene.ToolMode.EDIT_MODULATION
+	var show_embeds := has_path and mode == TrackEditingScene.ToolMode.ADD_EMBED
+	_apply_context_tabs(show_info, show_spiral, show_modulation, show_embeds)
+	var show_checkpoint_controls := has_path and mode == TrackEditingScene.ToolMode.EDIT_CHECKPOINTS
+	var show_cross_section_controls := show_info and !show_checkpoint_controls
+	checkpoint_count_row.visible = show_checkpoint_controls
+	cross_section_controls.visible = show_cross_section_controls
+	draw_mesh.visible = has_path
+	draw_curve.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
+	draw_handles.visible = has_path and mode == TrackEditingScene.ToolMode.EDIT_SEGMENT
+	var show_handle_data := mode == TrackEditingScene.ToolMode.EDIT_SEGMENT and (selected is BezierHandle or selected is Marker3D)
+	bezier_handle_data.visible = show_handle_data and selected is BezierHandle
+	line_handle_data.visible = show_handle_data and selected is Marker3D
+
 func update_embed_type(in_type : int):
 	if !current_path:
 		return
 	current_path.road_shape.embed_table[embed_dropdown.selected].embed_type = in_type
+	update_track_visuals()
 
 func update_embed_values(new_value):
 	if !current_path:
@@ -138,6 +262,7 @@ func update_embed_values(new_value):
 	current_path.road_shape.embed_table[embed_dropdown.selected].embed_type = embed_type.selected
 	current_path.road_shape.embed_table[embed_dropdown.selected].road_start = embed_start.value
 	current_path.road_shape.embed_table[embed_dropdown.selected].road_end = embed_end.value
+	update_track_visuals()
 
 func copy_mesh_layout() -> void:
 	if !current_path:
@@ -171,6 +296,54 @@ func create_simple_mesh_layout() -> void:
 		new_array.append(i / (num - 1))
 	current_path.horizontal_road_mesh_segments = new_array
 	update_track_visuals()
+
+func update_checkpoint_count(new_value : float) -> void:
+	if !current_path:
+		return
+	current_path.num_checkpoints = maxi(0, int(new_value) - 1)
+
+func _refresh_spiral_controls() -> void:
+	if !_is_spiral_path(current_path):
+		return
+	updating_spiral_controls = true
+	spiral_degrees.set_value_no_signal(current_path.get("spiral_degrees"))
+	var axis : Vector3 = current_path.get("spiral_axis")
+	spiral_axis_x.set_value_no_signal(axis.x)
+	spiral_axis_y.set_value_no_signal(axis.y)
+	spiral_axis_z.set_value_no_signal(axis.z)
+	var radius_curve : Resource = current_path.get("radius_curve")
+	var height_curve : Resource = current_path.get("height_curve")
+	var twist_curve : Resource = current_path.get("twist_curve")
+	var scale_x_curve : Resource = current_path.get("scale_x_curve")
+	var scale_y_curve : Resource = current_path.get("scale_y_curve")
+	if spiral_curve_radius.associated_curve != radius_curve:
+		spiral_curve_radius.associated_curve = radius_curve
+	if spiral_curve_height.associated_curve != height_curve:
+		spiral_curve_height.associated_curve = height_curve
+	if spiral_curve_twist.associated_curve != twist_curve:
+		spiral_curve_twist.associated_curve = twist_curve
+	if spiral_curve_scale_x.associated_curve != scale_x_curve:
+		spiral_curve_scale_x.associated_curve = scale_x_curve
+	if spiral_curve_scale_y.associated_curve != scale_y_curve:
+		spiral_curve_scale_y.associated_curve = scale_y_curve
+	updating_spiral_controls = false
+
+func _mark_spiral_dirty() -> void:
+	if !_is_spiral_path(current_path):
+		return
+	current_path.set("should_update", true)
+
+func update_spiral_values(_new_value : float) -> void:
+	if updating_spiral_controls or !_is_spiral_path(current_path):
+		return
+	current_path.set("spiral_degrees", spiral_degrees.value)
+	current_path.set("spiral_axis", Vector3(spiral_axis_x.value, spiral_axis_y.value, spiral_axis_z.value))
+	_mark_spiral_dirty()
+
+func update_spiral_curve() -> void:
+	if updating_spiral_controls:
+		return
+	_mark_spiral_dirty()
 
 var left_clicked := false
 var right_clicked := false
@@ -220,10 +393,13 @@ func update_handle_properties(in_value : float) -> void:
 
 
 func _process(delta: float) -> void:
+	_sync_tool_mode_signal()
 	if modulation:
 		modulation.get_v_scroll_bar().custom_minimum_size.x = 24
 	if embeds:
 		embeds.get_v_scroll_bar().custom_minimum_size.x = 24
+	if FZGlobal.editing_scene:
+		FZGlobal.editing_scene.editor_cross_section_t = track_cross_section_slider.value
 	if !track_root:
 		track_root = get_runtime_track_root()
 	
@@ -232,10 +408,9 @@ func _process(delta: float) -> void:
 	
 	var selected := get_active_node()
 	if !selected:
-		tab_container.visible = false
+		current_path = null
+		_refresh_contextual_visibility()
 		return
-	
-	var editor_cam := FZGlobal.current_cam
 	
 	if selected is BezierHandle:
 		bez_pos_x.set_value_no_signal(selected.global_position.x)
@@ -261,42 +436,26 @@ func _process(delta: float) -> void:
 		line_scale_h.set_value_no_signal(selected.scale.y)
 	
 	if current_path:
-		tab_container.visible = true
-		var base_pos : Vector3 = current_path.get_root_transform(track_cross_section_slider.value).origin
-		var segments := 4.0
-		var debug_thickness := 1.0
-		if editor_cam:
-			debug_thickness = base_pos.distance_to(editor_cam.global_position) * 0.0025
-		DebugDraw3D.scoped_config().set_thickness(debug_thickness)
-		var debug_t_values := PackedVector2Array()
-		for i in segments - 1:
-			debug_t_values.append(Vector2((i / (segments - 1) * 2.0) - 1.0, track_cross_section_slider.value))
-			debug_t_values.append(Vector2(((i + 1) / (segments - 1) * 2.0) - 1.0, track_cross_section_slider.value))
+		if _is_spiral_path(current_path):
+			_refresh_spiral_controls()
 		var mesh_was_visible : bool = current_path.get_child(0).visible
 		current_path.get_child(0).visible = draw_mesh.button_pressed
-		for i in current_path.road_shape.embed_table.size():
-			var current_embed := current_path.road_shape.embed_table[i]
-			var left_boundary_points : PackedVector2Array = current_embed.left_boundary.build_sampled_points(32)
-			var right_boundary_points : PackedVector2Array = current_embed.right_boundary.build_sampled_points(32)
-			for ny in 32:
-				for nx in 8:
-					var ty = remap(float(ny), 0.0, 31.0, current_embed.road_start, current_embed.road_end)
-					var leftbound : float = left_boundary_points[ny].y
-					var rightbound : float = right_boundary_points[ny].y
-					var tx = lerpf(leftbound, rightbound, nx / 7.0)
-					debug_t_values.append(Vector2(tx, ty))
-		var debug_points : PackedVector3Array = current_path.get_surface_positions(debug_t_values)
-		var cursor := 0
-		for i in segments - 1:
-			DebugDraw3D.draw_line(debug_points[cursor], debug_points[cursor + 1], Color.RED, delta)
-			cursor += 2
-		while cursor < debug_points.size():
-			DebugDraw3D.draw_sphere(debug_points[cursor], 1, Color.RED, delta)
-			cursor += 1
+		checkpoint_count.set_value_no_signal(current_path.num_checkpoints + 1)
+		if info_panel.visible and cross_section_controls.visible:
+			var segments := 4.0
+			var debug_t_values := PackedVector2Array()
+			for i in segments - 1:
+				debug_t_values.append(Vector2((i / (segments - 1) * 2.0) - 1.0, track_cross_section_slider.value))
+				debug_t_values.append(Vector2(((i + 1) / (segments - 1) * 2.0) - 1.0, track_cross_section_slider.value))
+			var debug_points : PackedVector3Array = current_path.get_surface_positions(debug_t_values)
+			_update_cross_section_visual(debug_points)
+		else:
+			_hide_cross_section_visual()
 		if !mesh_was_visible and draw_mesh.button_pressed:
 			current_path._try_generate_mesh()
 	else:
-		tab_container.visible = false
+		_hide_cross_section_visual()
+	_refresh_contextual_visibility()
 
 @onready var bezier_handle_data: VBoxContainer = $Control/VBoxContainer/DataEditor/BezierHandleData
 @onready var line_handle_data: VBoxContainer = $Control/VBoxContainer/DataEditor/LineHandleData
@@ -307,7 +466,7 @@ func selection_updated() -> void:
 	var this_node := get_active_node()
 	if !this_node:
 		current_path = null
-		tab_container.visible = false
+		_refresh_contextual_visibility()
 		return
 	var path : RoadPath
 	if this_node is RoadPath:
@@ -344,10 +503,14 @@ func selection_updated() -> void:
 			line_scale_h.set_value_no_signal(this_node.scale.y)
 	
 	if !path:
+		current_path = null
+		_refresh_contextual_visibility()
 		return
 	current_path = path
 	draw_mesh.button_pressed = current_path.get_child(0).visible
+	_refresh_spiral_controls()
 	refresh_modulations_and_embeds()
+	_refresh_contextual_visibility()
 
 func add_new_modulation() -> void:
 	if !current_path:
@@ -422,6 +585,8 @@ func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.s
 		mod_curve_height.associated_curve = this_mod.modulation_height
 		mod_curve_effect.queue_redraw()
 		mod_curve_height.queue_redraw()
+		if FZGlobal.editing_scene:
+			FZGlobal.editing_scene.set_active_modulation(current_path, in_selected_mod)
 	if in_selected_embed == -1 or embed_dropdown.item_count == 0:
 		embed_curve_left.visible = false
 		embed_curve_right.visible = false
@@ -434,6 +599,8 @@ func update_modulations_and_embeds(in_selected_mod : int = modulation_dropdown.s
 		embed_curve_left.queue_redraw()
 		embed_curve_right.queue_redraw()
 		embed_type.selected = this_embed.embed_type
+		if FZGlobal.editing_scene:
+			FZGlobal.editing_scene.set_active_embed(current_path, in_selected_embed)
 	update_track_visuals()
 
 

@@ -72,8 +72,10 @@ func _process(delta):
 		should_update = true
 	if end_marker.cp_scale != end_scale:
 		should_update = true
-	if should_update and Time.get_ticks_msec() > last_gen_time + 20:
+	if should_update:
 		refresh_line_road()
-		last_gen_time = Time.get_ticks_msec()
-		_try_generate_mesh()
+		var update_collision := Time.get_ticks_msec() > last_gen_time + 100
+		if update_collision:
+			last_gen_time = Time.get_ticks_msec()
+		_try_generate_mesh(update_collision)
 		should_update = false

@@ -124,11 +124,35 @@ layout_mode = 2
 tooltip_text = "Edit Currently Selected Segment"
 icon = SubResource("AtlasTexture_204uj")
 
+[node name="EditShape" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Edit Segment Shape Curves"
+text = "Shape"
+
 [node name="AddEmbed" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
 custom_minimum_size = Vector2(64, 64)
 layout_mode = 2
 tooltip_text = "Add Embedded Property to Selected Segment"
 icon = SubResource("AtlasTexture_boeyx")
+
+[node name="EditRails" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Edit Segment Rails"
+text = "Rails"
+
+[node name="EditModulation" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Edit Segment Modulation"
+text = "Mod"
+
+[node name="EditCheckpoints" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+tooltip_text = "Edit Segment Checkpoints"
+text = "CPs"
 
 [node name="NewTrackObject" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
 custom_minimum_size = Vector2(64, 64)

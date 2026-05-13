@@ -2,6 +2,27 @@ class_name TrackEditingScene extends Node3D
 
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
+const EmbedGizmoScript := preload("res://core/embed_gizmo.gd")
+const RailGizmoScript := preload("res://core/rail_gizmo.gd")
+const ModulationGizmoScript := preload("res://core/modulation_gizmo.gd")
+const ShapeCurveGizmoScript := preload("res://core/shape_curve_gizmo.gd")
+const MeshLayoutGizmoScript := preload("res://core/mesh_layout_gizmo.gd")
+const CheckpointGizmoScript := preload("res://core/checkpoint_gizmo.gd")
+const RoadPathSpiralScript := preload("res://core/road_path_spiral.gd")
+
+enum ToolMode {
+	EDIT_SEGMENT,
+	ADD_SEGMENT,
+	ADD_EMBED,
+	EDIT_RAILS,
+	EDIT_MODULATION,
+	EDIT_SHAPE,
+	EDIT_CHECKPOINTS,
+	ADD_OBJECT,
+	EDIT_TRACK,
+}
+
+signal tool_mode_changed(mode : ToolMode)
 
 @onready var edit_cam: Camera3D = $EditorCamera
 @onready var ref_cam: Camera3D = $RefCamera
@@ -23,9 +44,92 @@ var last_pan_plane := Plane.PLANE_XZ
 var last_mouse_pos := Vector2.ZERO
 
 var active_path : RoadPath
+var tool_mode : ToolMode = ToolMode.EDIT_SEGMENT
+var desired_road_type := ENUMS.ROAD_TYPE.STANDARD
+var editor_cross_section_t := 0.5
+var pointer_action_owner : Node
+var embed_gizmo : Node3D
+var rail_gizmo : Node3D
+var modulation_gizmo : Node3D
+var shape_curve_gizmo : Node3D
+var mesh_layout_gizmo : Node3D
+var checkpoint_gizmo : Node3D
 
 const simple_mesh_layout : PackedFloat32Array = [0.0, 0.25, 0.5, 0.75, 1.0]
 const cylinder_mesh_layout : PackedFloat32Array = [0.0, 0.032258064516129, 0.064516129032258, 0.096774193548387, 0.12903225806452, 0.16129032258065, 0.19354838709677, 0.2258064516129, 0.25806451612903, 0.29032258064516, 0.32258064516129, 0.35483870967742, 0.38709677419355, 0.41935483870968, 0.45161290322581, 0.48387096774194, 0.51612903225806, 0.54838709677419, 0.58064516129032, 0.61290322580645, 0.64516129032258, 0.67741935483871, 0.70967741935484, 0.74193548387097, 0.7741935483871, 0.80645161290323, 0.83870967741935, 0.87096774193548, 0.90322580645161, 0.93548387096774, 0.96774193548387, 1.0]
+
+func set_tool_mode(in_mode : ToolMode) -> void:
+	if tool_mode == in_mode:
+		return
+	tool_mode = in_mode
+	tool_mode_changed.emit(tool_mode)
+
+func tool_mode_allows_transform_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_SEGMENT
+
+func tool_mode_allows_segment_add_gizmo() -> bool:
+	return tool_mode == ToolMode.ADD_SEGMENT
+
+func tool_mode_allows_control_point_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_SEGMENT
+
+func tool_mode_allows_embed_gizmos() -> bool:
+	return tool_mode == ToolMode.ADD_EMBED
+
+func tool_mode_allows_rail_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_RAILS
+
+func tool_mode_allows_modulation_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_MODULATION
+
+func tool_mode_allows_shape_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_SHAPE
+
+func tool_mode_allows_checkpoint_gizmos() -> bool:
+	return tool_mode == ToolMode.EDIT_CHECKPOINTS
+
+func set_active_embed(in_path : RoadPath, in_embed_index : int) -> void:
+	if !embed_gizmo:
+		return
+	embed_gizmo.set_target_embed(in_path, in_embed_index)
+
+func set_active_rail_path(in_path : RoadPath) -> void:
+	if !rail_gizmo:
+		return
+	rail_gizmo.set_target_path(in_path)
+
+func set_active_modulation(in_path : RoadPath, in_modulation_index : int) -> void:
+	if !modulation_gizmo:
+		return
+	modulation_gizmo.set_target_modulation(in_path, in_modulation_index)
+
+func set_active_shape_path(in_path : RoadPath) -> void:
+	if !shape_curve_gizmo:
+		return
+	shape_curve_gizmo.set_target_path(in_path)
+	if mesh_layout_gizmo:
+		mesh_layout_gizmo.set_target_path(in_path)
+
+func set_active_checkpoint_path(in_path : RoadPath) -> void:
+	if !checkpoint_gizmo:
+		return
+	checkpoint_gizmo.set_target_path(in_path)
+
+func begin_pointer_action(owner : Node) -> bool:
+	if pointer_action_owner and pointer_action_owner != owner:
+		return false
+	pointer_action_owner = owner
+	return true
+
+func owns_pointer_action(owner : Node) -> bool:
+	return pointer_action_owner == owner
+
+func pointer_action_busy_for(owner : Node) -> bool:
+	return pointer_action_owner and pointer_action_owner != owner
+
+func end_pointer_action(owner : Node) -> void:
+	if pointer_action_owner == owner:
+		pointer_action_owner = null
 
 func find_camera_trackball_normal() -> Vector3:
 	var sphere_pos := ref_cam.position + ref_cam.basis.z * -100
@@ -41,9 +145,27 @@ func _ready() -> void:
 	FZGlobal.current_cam = edit_cam
 	FZGlobal.editing_scene = self
 	FZGlobal.current_track = track_root
+	embed_gizmo = EmbedGizmoScript.new()
+	add_child(embed_gizmo)
+	rail_gizmo = RailGizmoScript.new()
+	add_child(rail_gizmo)
+	modulation_gizmo = ModulationGizmoScript.new()
+	add_child(modulation_gizmo)
+	shape_curve_gizmo = ShapeCurveGizmoScript.new()
+	add_child(shape_curve_gizmo)
+	mesh_layout_gizmo = MeshLayoutGizmoScript.new()
+	add_child(mesh_layout_gizmo)
+	checkpoint_gizmo = CheckpointGizmoScript.new()
+	add_child(checkpoint_gizmo)
 	translate_gizmo.mouse_cast = mouse_gizmo_cast
 	rotate_gizmo.mouse_cast = mouse_gizmo_cast
 	add_road_gizmo.mouse_cast = mouse_gizmo_cast
+	embed_gizmo.mouse_cast = mouse_gizmo_cast
+	rail_gizmo.mouse_cast = mouse_gizmo_cast
+	modulation_gizmo.mouse_cast = mouse_gizmo_cast
+	shape_curve_gizmo.mouse_cast = mouse_gizmo_cast
+	mesh_layout_gizmo.mouse_cast = mouse_gizmo_cast
+	checkpoint_gizmo.mouse_cast = mouse_gizmo_cast
 
 func save_edit_source(path : String) -> Error:
 	return track_root.save_edit_source(path)
@@ -62,15 +184,15 @@ func update_mouse_casts(force_update := false) -> void:
 		mouse_gizmo_cast.force_raycast_update()
 
 func _process(delta: float) -> void:
+	if pointer_action_owner and !is_instance_valid(pointer_action_owner):
+		pointer_action_owner = null
 	if Input.is_action_just_pressed("MiddleMouse"):
 		last_trackball_dir = find_camera_trackball_normal()
 		if mouse_picker_cast.is_colliding():
 			last_pan_plane = Plane(-edit_cam.basis.z, mouse_picker_cast.get_collision_point())
 		else:
 			var sphere_pos := cam_origin.lerp(edit_cam.global_position, 0.5)
-			#print("yay")
 			var sphere_radius := cam_dist * 0.5
-			#DebugDraw3D.draw_sphere(sphere_pos, sphere_radius, Color.WHITE, 0.5)
 			var ray := edit_cam.project_ray_normal(get_viewport().get_mouse_position())
 			var p1 := edit_cam.global_position
 			var intersect := Geometry3D.segment_intersects_sphere(p1 + ray * cam_dist * 2.2, p1, sphere_pos, sphere_radius)
@@ -85,18 +207,12 @@ func _process(delta: float) -> void:
 			var port_size : Vector2i = get_viewport().size
 			var mp := get_viewport().get_mouse_position() / Vector2(port_size)
 			var dist_to_edge := mp.distance_to(Vector2(0.5, 0.5))
-			#print("---")
-			#print(dist_to_edge)
 			dist_to_edge = minf(1.0, dist_to_edge * 2)
-			#print(dist_to_edge)
 			var angle_from_center := axis.angle_to(Vector3.FORWARD) - PI * 0.5
 			angle_from_center = clampf(remap(angle_from_center, -0.08, 0.08, 1, -1), -1, 1)
-			#print(angle_from_center)
 			axis = axis.slerp(Vector3.FORWARD, dist_to_edge * angle_from_center)
 			axis = edit_cam.basis * axis
 			axis = axis.normalized()
-			#print(axis)
-			#print(angle)
 			edit_cam.basis = edit_cam.basis.rotated(axis, angle * -24)
 			last_trackball_dir = cur_trackball_dir
 	
@@ -117,7 +233,6 @@ func _process(delta: float) -> void:
 	cam_dist = lerpf(cam_dist, cam_dist_desired, delta * 12)
 	edit_cam.position = cam_origin + edit_cam.basis.z * cam_dist
 	last_mouse_pos = get_viewport().get_mouse_position()
-	#DebugDraw3D.draw_gizmo(Transform3D.IDENTITY.translated(cam_origin), Color.RED, true, delta)
 	grid_origin.position = grid_origin.position.lerp(snapped(cam_origin, Vector3(16, 16, 16)), delta * 30)
 	update_mouse_casts(true)
 
@@ -185,6 +300,18 @@ func add_regular_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_
 	new_track_piece.end_pos = latest_track_piece_transform.origin + latest_track_piece_transform.basis.orthonormalized().z * 250
 	new_track_piece.end_rotation = latest_track_piece_transform.basis.orthonormalized()
 	new_track_piece.end_scale = latest_track_piece_transform.basis.get_scale()
+	track_root.add_child(new_track_piece)
+	var id_to_put_above := track_root.get_children().find(in_path)
+	track_root.move_child(new_track_piece, id_to_put_above + 1)
+	return new_track_piece
+
+func add_spiral_track_segment_after(in_path : RoadPath, road_type : ENUMS.ROAD_TYPE) -> RoadPath:
+	var new_track_piece : RoadPath = RoadPathSpiralScript.new()
+	var latest_track_piece_transform := in_path.get_root_transform(1.0)
+	_apply_road_type_to_path(new_track_piece, road_type)
+	new_track_piece.axis_transform = latest_track_piece_transform
+	new_track_piece.axis_transform.basis = latest_track_piece_transform.basis.orthonormalized()
+	new_track_piece.spiral_axis = Vector3.UP
 	track_root.add_child(new_track_piece)
 	var id_to_put_above := track_root.get_children().find(in_path)
 	track_root.move_child(new_track_piece, id_to_put_above + 1)

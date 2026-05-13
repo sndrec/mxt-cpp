@@ -1199,6 +1199,20 @@ static void append_curve_key_times(PackedFloat32Array &r_rows, const PackedFloat
 	}
 }
 
+static void append_curve_key_times_in_range(PackedFloat32Array &r_rows, const PackedFloat32Array &p_packet, int p_cursor, float p_start, float p_end) {
+	const int count = curve_packet_point_count(p_packet, p_cursor);
+	if (count <= 0 || p_cursor + 1 + count * TrackEditorFloatCurve::POINT_STRIDE > p_packet.size()) {
+		return;
+	}
+	const int data = p_cursor + 1;
+	for (int i = 0; i < count; ++i) {
+		const float ty = p_packet[data + i * TrackEditorFloatCurve::POINT_STRIDE];
+		if (ty > p_start && ty < p_end) {
+			r_rows.append(ty);
+		}
+	}
+}
+
 static void append_curve_key_times_full_range(PackedFloat32Array &r_rows, const PackedFloat32Array &p_packet) {
 	append_curve_key_times(r_rows, p_packet, 0, 0.0f, 1.0f);
 }
@@ -1292,9 +1306,8 @@ static bool embed_packet_contains_hole(const PackedFloat32Array &p_embed_curves,
 		if (p_ty < start || p_ty > end || end - start <= 0.000001f) {
 			continue;
 		}
-		const float embed_t = remapf_local(p_ty, start, end, 0.0f, 1.0f);
-		float left = curve_packet_sample(p_embed_curves, left_cursor, embed_t, 0.0f);
-		float right = curve_packet_sample(p_embed_curves, right_cursor, embed_t, 0.0f);
+		float left = curve_packet_sample(p_embed_curves, left_cursor, p_ty, 0.0f);
+		float right = curve_packet_sample(p_embed_curves, right_cursor, p_ty, 0.0f);
 		if (right < left) {
 			const float tmp = left;
 			left = right;
@@ -1339,9 +1352,8 @@ static void append_hole_boundary_x_values(PackedFloat32Array &r_x_values, const 
 		if (p_ty < start || p_ty > end || end - start <= 0.000001f) {
 			continue;
 		}
-		const float embed_t = remapf_local(p_ty, start, end, 0.0f, 1.0f);
-		float left = curve_packet_sample(p_embed_curves, left_cursor, embed_t, -1.0f);
-		float right = curve_packet_sample(p_embed_curves, right_cursor, embed_t, 1.0f);
+		float left = curve_packet_sample(p_embed_curves, left_cursor, p_ty, -1.0f);
+		float right = curve_packet_sample(p_embed_curves, right_cursor, p_ty, 1.0f);
 		if (right < left) {
 			const float tmp = left;
 			left = right;
@@ -1830,8 +1842,8 @@ Dictionary TrackEditorCurve::build_preview_mesh_full(
 			}
 			mandatory_times.append(start);
 			mandatory_times.append(end);
-			append_curve_key_times(mandatory_times, p_embed_curves, left_cursor, start, end);
-			append_curve_key_times(mandatory_times, p_embed_curves, right_cursor, start, end);
+			append_curve_key_times_in_range(mandatory_times, p_embed_curves, left_cursor, start, end);
+			append_curve_key_times_in_range(mandatory_times, p_embed_curves, right_cursor, start, end);
 			cursor = next_cursor;
 		}
 	}
@@ -2065,8 +2077,8 @@ Dictionary TrackEditorCurve::build_preview_mesh_full(
 					embed_rows.append(ty);
 				}
 			}
-			append_curve_key_times(embed_rows, p_embed_curves, left_cursor, start, end);
-			append_curve_key_times(embed_rows, p_embed_curves, right_cursor, start, end);
+			append_curve_key_times_in_range(embed_rows, p_embed_curves, left_cursor, start, end);
+			append_curve_key_times_in_range(embed_rows, p_embed_curves, right_cursor, start, end);
 			embed_rows.append(end);
 			embed_rows = unique_sorted_rows(embed_rows);
 			const int embed_y_count = embed_rows.size();
@@ -2086,9 +2098,8 @@ Dictionary TrackEditorCurve::build_preview_mesh_full(
 			embed_rights.resize(embed_y_count);
 			for (int y = 0; y < embed_y_count; ++y) {
 				const float ty = embed_rows[y];
-				const float embed_t = remapf_local(ty, start, end, 0.0f, 1.0f);
-				float left = curve_packet_sample(p_embed_curves, left_cursor, embed_t, 0.0f);
-				float right = curve_packet_sample(p_embed_curves, right_cursor, embed_t, 0.0f);
+				float left = curve_packet_sample(p_embed_curves, left_cursor, ty, 0.0f);
+				float right = curve_packet_sample(p_embed_curves, right_cursor, ty, 0.0f);
 				if (right < left) {
 					const float tmp = left;
 					left = right;
@@ -2122,9 +2133,8 @@ Dictionary TrackEditorCurve::build_preview_mesh_full(
 				} else if (y == embed_y_count - 1) {
 					inset_ty = clampf_local(end - inset_t, start, end);
 				}
-				const float embed_t = remapf_local(inset_ty, start, end, 0.0f, 1.0f);
-				float left = curve_packet_sample(p_embed_curves, left_cursor, embed_t, 0.0f);
-				float right = curve_packet_sample(p_embed_curves, right_cursor, embed_t, 0.0f);
+				float left = curve_packet_sample(p_embed_curves, left_cursor, inset_ty, 0.0f);
+				float right = curve_packet_sample(p_embed_curves, right_cursor, inset_ty, 0.0f);
 				if (right < left) {
 					const float tmp = left;
 					left = right;

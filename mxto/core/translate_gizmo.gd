@@ -40,7 +40,10 @@ func mousecast_wants_this_gizmo() -> bool:
 	return (mouse_cast.get_collider() == giz_x_col or mouse_cast.get_collider() == giz_y_col or mouse_cast.get_collider() == giz_z_col)
 
 func _process(delta: float) -> void:
-	if !target_node or !is_instance_valid(target_node):
+	var scene := FZGlobal.editing_scene
+	if !target_node or !is_instance_valid(target_node) or !scene or !scene.tool_mode_allows_transform_gizmos():
+		if scene:
+			scene.end_pointer_action(self)
 		visible = false
 		set_colliders_active(false)
 		return
@@ -58,9 +61,11 @@ func _process(delta: float) -> void:
 		set_colliders_active(true)
 	if Input.is_action_just_released("LeftMouse") and is_moving and active:
 		FZGlobal.transform_object(target_node, global_transform, original_transform)
+		scene.end_pointer_action(self)
 	if !Input.is_action_pressed("LeftMouse"):
 		is_moving = false
 		target_node.global_position = global_position
+		scene.end_pointer_action(self)
 	if !is_moving:
 		mouse_cast.global_position = cam.global_position
 		mouse_cast.target_position = mouse_cast.to_local(cam.global_position + dir * 4096)
@@ -70,6 +75,8 @@ func _process(delta: float) -> void:
 			gizmo_material.set_shader_parameter("y_moused", false)
 			gizmo_material.set_shader_parameter("z_moused", false)
 			if mouse_cast.is_colliding() and mousecast_wants_this_gizmo():
+				if !scene.begin_pointer_action(self):
+					return
 				if mouse_cast.get_collider() == giz_x_col:
 					use_axis = "x"
 					use_vector = global_basis.x
@@ -83,15 +90,12 @@ func _process(delta: float) -> void:
 				var cam_pos_projected := offset_pos.project(use_vector) + global_position
 				var plane_normal = (cam.global_position - cam_pos_projected).normalized()
 				test_plane = Plane(plane_normal, global_position)
-				#DebugDraw3D.draw_plane(test_plane, Color.CYAN, global_position, 3)
 				origin_point = test_plane.intersects_ray(cam.global_position, dir)
 				if origin_point is Vector3:
 					gizmo_material.set_shader_parameter("clicking", true)
 					is_moving = true
 					original_transform = global_transform
-					#DebugDraw3D.draw_sphere(origin_point, 2.0, Color.RED, 3)
 					origin_point = (origin_point - global_position).project(use_vector) + global_position
-					#DebugDraw3D.draw_sphere(origin_point, 2.0, Color.GREEN, 3)
 					if mouse_cast.get_collider() == giz_x_col:
 						gizmo_material.set_shader_parameter("x_moused", true)
 						use_axis = "x"
@@ -122,7 +126,6 @@ func _process(delta: float) -> void:
 		var intersect_pos = test_plane.intersects_ray(cam.global_position, dir)
 		if intersect_pos is Vector3 and origin_point is Vector3:
 			var desire_point : Vector3 = original_transform.origin + (intersect_pos - origin_point).project(use_vector)
-			#DebugDraw3D.draw_sphere(desire_point, 1.0, Color.BLUE, delta)
 			if Input.is_action_pressed("Ctrl"):
 				if Input.is_action_pressed("Shift"):
 					desire_point = snapped(desire_point, Vector3(12.5, 12.5, 12.5))
