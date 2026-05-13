@@ -703,20 +703,14 @@ func remove_modulation() -> void:
 	refresh_modulations_and_embeds()
 
 func add_new_embed() -> void:
-	if !current_path:
+	var scene := FZGlobal.editing_scene as TrackEditingScene
+	if !scene:
 		return
-	var new_embed := RoadEmbed.new()
-	new_embed.road_start = 0.0
-	new_embed.road_end = 1.0
-	new_embed.left_boundary = ClassDB.instantiate("TrackEditorFloatCurve")
-	new_embed.right_boundary = ClassDB.instantiate("TrackEditorFloatCurve")
-	new_embed.left_boundary.add_point(Vector2(0, 0))
-	new_embed.left_boundary.add_point(Vector2(1, 0))
-	new_embed.right_boundary.add_point(Vector2(0, 0))
-	new_embed.right_boundary.add_point(Vector2(1, 0))
-	new_embed.embed_type = RoadEmbed.EmbedType.RECHARGE
-	current_path.road_shape.embed_table.append(new_embed)
-	refresh_modulations_and_embeds()
+	scene.desired_embed_type = embed_type.selected if embed_type.selected >= 0 else RoadEmbed.EmbedType.RECHARGE
+	scene.pending_embed_add = true
+	scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_EMBED)
+	if current_path:
+		scene.active_path = current_path
 
 func remove_embed_func() -> void:
 	if !current_path:
