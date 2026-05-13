@@ -35,6 +35,7 @@ func _process(delta: float) -> void:
 	visible = true
 	if !target_node or !is_instance_valid(target_node):
 		scene.end_pointer_action(self)
+		visible = false
 		gizmo_collider.set_collision_layer_value(16, false)
 		pressed_on_gizmo = false
 		return
