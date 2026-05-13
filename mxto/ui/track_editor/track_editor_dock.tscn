@@ -190,7 +190,7 @@ layout_mode = 2
 tooltip_text = "Edit Racetrack Properties"
 text = "ETP"
 
-[node name="AddSegmentStatus" type="Label" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
+[node name="AddToolStatus" type="Label" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons"]
 visible = false
 custom_minimum_size = Vector2(64, 0)
 layout_mode = 2

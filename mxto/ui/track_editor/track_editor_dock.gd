@@ -25,7 +25,7 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 @onready var new_track_object_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/NewTrackObject
 @onready var edit_track_object_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackObject
 @onready var edit_track_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/EditTrackProps
-@onready var add_segment_status: Label = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/AddSegmentStatus
+@onready var add_tool_status: Label = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons/AddToolStatus
 @onready var recharge_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Recharge
 @onready var dirt_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Dirt
 @onready var slip_button: Button = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewEmbedButtons/Slip
@@ -135,6 +135,39 @@ func _segment_kind_label(kind : int) -> String:
 		_:
 			return "Bezier"
 
+func _embed_type_label(embed_type : int) -> String:
+	match embed_type:
+		RoadEmbed.EmbedType.DIRT:
+			return "Dirt"
+		RoadEmbed.EmbedType.ICE:
+			return "Slip"
+		RoadEmbed.EmbedType.LAVA:
+			return "Lava"
+		RoadEmbed.EmbedType.HOLE:
+			return "Gap"
+		_:
+			return "Recharge"
+
+func _track_object_type_label(trigger_type : int) -> String:
+	match trigger_type:
+		1:
+			return "Jumpplate"
+		2:
+			return "Mine"
+		_:
+			return "Dashplate"
+
+func _add_tool_status_text(mode : int) -> String:
+	match mode:
+		TrackEditingScene.ToolMode.ADD_SEGMENT:
+			return _road_type_label(track_scene.desired_road_type) + " " + _segment_kind_label(track_scene.desired_segment_kind)
+		TrackEditingScene.ToolMode.ADD_EMBED:
+			return _embed_type_label(track_scene.desired_embed_type) + " Embed"
+		TrackEditingScene.ToolMode.ADD_OBJECT:
+			return _track_object_type_label(track_scene.desired_trigger_type)
+		_:
+			return ""
+
 func _refresh_tool_button_states() -> void:
 	var mode := track_scene.tool_mode
 	_set_tool_button_pressed(new_track_segment_button, mode == TrackEditingScene.ToolMode.ADD_SEGMENT)
@@ -150,9 +183,9 @@ func _refresh_tool_button_states() -> void:
 	_set_tool_button_pressed(new_track_object_button, mode == TrackEditingScene.ToolMode.ADD_OBJECT)
 	_set_tool_button_pressed(edit_track_object_button, mode == TrackEditingScene.ToolMode.EDIT_OBJECT)
 	_set_tool_button_pressed(edit_track_button, mode == TrackEditingScene.ToolMode.EDIT_TRACK)
-	add_segment_status.visible = mode == TrackEditingScene.ToolMode.ADD_SEGMENT
-	if add_segment_status.visible:
-		add_segment_status.text = _road_type_label(track_scene.desired_road_type) + " " + _segment_kind_label(track_scene.desired_segment_kind)
+	var status_text := _add_tool_status_text(mode)
+	add_tool_status.visible = !status_text.is_empty()
+	add_tool_status.text = status_text
 
 func get_track_root() -> void:
 	if !track_root:
