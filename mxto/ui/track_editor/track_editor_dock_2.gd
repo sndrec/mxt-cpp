@@ -50,6 +50,7 @@ var current_path : RoadPath
 @onready var right_rail_height: SpinBox = $Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow/RightRailHeight
 @onready var right_rail_start: SpinBox = $Control/TabContainer/Rails/VBoxContainer/RightRailStartRow/RightRailStart
 @onready var right_rail_end: SpinBox = $Control/TabContainer/Rails/VBoxContainer/RightRailEndRow/RightRailEnd
+@onready var rail_mode_color: ColorPickerButton = $Control/TabContainer/Rails/VBoxContainer/RailColorRow/RailColor
 
 @onready var track_panel: ScrollContainer = $Control/TabContainer/Track
 @onready var track_name_edit: LineEdit = $Control/TabContainer/Track/VBoxContainer/TrackName
@@ -214,6 +215,7 @@ func _ready():
 	right_rail_height.value_changed.connect(update_rail_values)
 	right_rail_start.value_changed.connect(update_rail_values)
 	right_rail_end.value_changed.connect(update_rail_values)
+	rail_mode_color.color_changed.connect(update_rail_color)
 	track_name_edit.text_changed.connect(update_track_name)
 	track_description_edit.text_changed.connect(update_track_description)
 	track_difficulty_edit.value_changed.connect(update_track_difficulty)
@@ -505,6 +507,7 @@ func _refresh_road_color_controls() -> void:
 	updating_road_color_controls = true
 	ground_color.color = current_path.ground_color
 	rail_color.color = current_path.rail_color
+	rail_mode_color.color = current_path.rail_color
 	updating_road_color_controls = false
 
 func update_ground_color(new_color : Color) -> void:

@@ -355,6 +355,20 @@ max_value = 1.0
 step = 0.001
 value = 1.0
 
+[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RailColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Rail Color"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Rails/VBoxContainer/RailColorRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+color = Color(0.8, 0.8, 0.8, 1)
+
 [node name="Spiral" type="ScrollContainer" parent="Control/TabContainer"]
 visible = false
 layout_mode = 2
