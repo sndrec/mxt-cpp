@@ -105,11 +105,8 @@ func _process(_delta: float) -> void:
 	if !cp:
 		return
 	var mouse_pos := get_local_mouse_position()
-	var previous_closest := cached_poly_closest
-	var closest := find_closest_poly_point(mouse_pos)
-	var oob := mouse_pos.x < 0.0 or mouse_pos.y < 0.0 or mouse_pos.x > size.x or mouse_pos.y > size.y
-	if !oob and closest != previous_closest:
-		queue_redraw()
+	find_closest_poly_point(mouse_pos)
+	queue_redraw()
 
 func update_track_cross_sections() -> void:
 	cached_poly_valid = false
