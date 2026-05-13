@@ -44,6 +44,8 @@ func _process(delta: float) -> void:
 	if !target_node or !is_instance_valid(target_node) or !scene or !scene.tool_mode_allows_transform_gizmos():
 		if scene:
 			scene.end_pointer_action(self)
+		is_moving = false
+		active = false
 		visible = false
 		set_colliders_active(false)
 		return
