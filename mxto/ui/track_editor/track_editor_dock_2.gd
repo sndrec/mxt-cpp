@@ -23,6 +23,8 @@ var current_path : RoadPath
 @onready var poly_curve: Line2D = $Control/TabContainer/Info/VBoxContainer/ColorRect/PolyCurve
 @onready var road_shape_row: HBoxContainer = $Control/TabContainer/Info/RoadShapeRow
 @onready var road_shape_type: OptionButton = $Control/TabContainer/Info/RoadShapeRow/RoadShapeType
+@onready var road_uv_multiplier_row: HBoxContainer = $Control/TabContainer/Info/RoadUvMultiplierRow
+@onready var road_uv_multiplier: SpinBox = $Control/TabContainer/Info/RoadUvMultiplierRow/RoadUvMultiplier
 @onready var checkpoint_count_row: HBoxContainer = $Control/TabContainer/Info/CheckpointCountRow
 @onready var checkpoint_count: SpinBox = $Control/TabContainer/Info/CheckpointCountRow/CheckpointCount
 @onready var cross_section_controls: VBoxContainer = $Control/TabContainer/Info/VBoxContainer
@@ -105,6 +107,7 @@ var updating_spiral_controls := false
 var updating_track_controls := false
 var updating_object_controls := false
 var updating_road_shape_controls := false
+var updating_road_uv_controls := false
 var updating_embed_controls := false
 
 func _ensure_cross_section_visual() -> void:
@@ -166,6 +169,7 @@ func _ready():
 	embed_start.value_changed.connect(update_embed_values)
 	embed_end.value_changed.connect(update_embed_values)
 	road_shape_type.item_selected.connect(update_road_shape_type)
+	road_uv_multiplier.value_changed.connect(update_road_uv_multiplier)
 	track_cross_section_slider.value_changed.connect(cs_rect.update_track_cross_sections)
 	checkpoint_count.value_changed.connect(update_checkpoint_count)
 	spiral_degrees.value_changed.connect(update_spiral_values)
@@ -282,6 +286,7 @@ func _refresh_contextual_visibility(_mode : int = -1) -> void:
 	var show_shape_type_controls := has_path and (mode == TrackEditingScene.ToolMode.EDIT_SEGMENT or mode == TrackEditingScene.ToolMode.EDIT_SHAPE)
 	var show_cross_section_controls := show_info and !show_checkpoint_controls
 	road_shape_row.visible = show_shape_type_controls
+	road_uv_multiplier_row.visible = show_cross_section_controls
 	checkpoint_count_row.visible = show_checkpoint_controls
 	cross_section_controls.visible = show_cross_section_controls
 	mesh_layout_clipboard_row.visible = show_mesh_layout_controls
@@ -427,6 +432,12 @@ func update_road_shape_type(shape_id : int) -> void:
 	_refresh_road_shape_controls()
 	if FZGlobal.editing_scene:
 		FZGlobal.editing_scene.set_active_shape_path(current_path)
+
+func update_road_uv_multiplier(new_value : float) -> void:
+	if updating_road_uv_controls or !current_path:
+		return
+	current_path.road_uv_multiplier = maxf(0.001, new_value)
+	update_track_visuals()
 
 func _refresh_track_controls() -> void:
 	if !track_root:
@@ -606,6 +617,9 @@ func _process(delta: float) -> void:
 		_refresh_road_shape_controls()
 		if _is_spiral_path(current_path):
 			_refresh_spiral_controls()
+		updating_road_uv_controls = true
+		road_uv_multiplier.set_value_no_signal(current_path.road_uv_multiplier)
+		updating_road_uv_controls = false
 		var mesh_was_visible : bool = current_path.get_child(0).visible
 		current_path.get_child(0).visible = draw_mesh.button_pressed
 		checkpoint_count.set_value_no_signal(current_path.num_checkpoints + 1)

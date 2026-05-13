@@ -89,6 +89,23 @@ popup/item_5/id = 5
 popup/item_6/text = "Open Rounded Square"
 popup/item_6/id = 6
 
+[node name="RoadUvMultiplierRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Control/TabContainer/Info/RoadUvMultiplierRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "UV Y-Multiplier"
+label_settings = SubResource("LabelSettings_h0jni")
+
+[node name="RoadUvMultiplier" type="SpinBox" parent="Control/TabContainer/Info/RoadUvMultiplierRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.001
+max_value = 100.0
+step = 0.01
+value = 1.0
+
 [node name="CheckpointCountRow" type="HBoxContainer" parent="Control/TabContainer/Info"]
 layout_mode = 2
 
