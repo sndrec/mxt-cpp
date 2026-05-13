@@ -417,50 +417,19 @@ func _on_road_rounded_square_open_pressed() -> void:
 	new_track_segment_type_buttons.visible = true
 	track_scene.desired_road_type = ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN
 
-func _on_road_line_pressed() -> void:
-	track_scene.desired_segment_kind = TrackEditingScene.SegmentKind.LINE
-	var selected := get_active_path()
-	var new_track_piece : RoadPath
-	if selected:
-		new_track_piece = track_scene.add_regular_track_segment_after(selected, track_scene.desired_road_type)
-	elif track_root.get_child_count() > 0:
-		new_track_piece = track_scene.add_regular_track_segment_after(track_root.get_child(track_root.get_child_count() - 1), track_scene.desired_road_type)
-	if new_track_piece:
-		select_node(new_track_piece)
-	update_outliner()
+func _select_segment_kind(kind : int) -> void:
+	track_scene.desired_segment_kind = kind
 	new_track_segment_type_buttons.visible = false
-	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SEGMENT)
+	track_scene.set_tool_mode(TrackEditingScene.ToolMode.ADD_SEGMENT)
 	main_buttons.visible = true
 
+func _on_road_line_pressed() -> void:
+	_select_segment_kind(TrackEditingScene.SegmentKind.LINE)
 
 
 func _on_road_bezier_pressed() -> void:
-	track_scene.desired_segment_kind = TrackEditingScene.SegmentKind.BEZIER
-	var selected := get_active_path()
-	var new_track_piece : RoadPath
-	if selected:
-		new_track_piece = track_scene.add_bezier_track_segment_after(selected, track_scene.desired_road_type)
-	elif track_root.get_child_count() > 0:
-		new_track_piece = track_scene.add_bezier_track_segment_after(track_root.get_child(track_root.get_child_count() - 1), track_scene.desired_road_type)
-	if new_track_piece:
-		select_node(new_track_piece)
-	update_outliner()
-	new_track_segment_type_buttons.visible = false
-	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SEGMENT)
-	main_buttons.visible = true
+	_select_segment_kind(TrackEditingScene.SegmentKind.BEZIER)
 
 
 func _on_road_curve_pressed() -> void:
-	track_scene.desired_segment_kind = TrackEditingScene.SegmentKind.SPIRAL
-	var selected := get_active_path()
-	var new_track_piece : RoadPath
-	if selected:
-		new_track_piece = track_scene.add_spiral_track_segment_after(selected, track_scene.desired_road_type)
-	elif track_root.get_child_count() > 0:
-		new_track_piece = track_scene.add_spiral_track_segment_after(track_root.get_child(track_root.get_child_count() - 1), track_scene.desired_road_type)
-	if new_track_piece:
-		select_node(new_track_piece)
-	update_outliner()
-	new_track_segment_type_buttons.visible = false
-	track_scene.set_tool_mode(TrackEditingScene.ToolMode.EDIT_SEGMENT)
-	main_buttons.visible = true
+	_select_segment_kind(TrackEditingScene.SegmentKind.SPIRAL)

@@ -245,19 +245,19 @@ theme_override_constants/separation = 16
 [node name="RoadLine" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
 custom_minimum_size = Vector2(70, 70)
 layout_mode = 2
-tooltip_text = "Standard Road"
+tooltip_text = "Line Segment"
 text = "Line"
 
 [node name="RoadBezier" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
 custom_minimum_size = Vector2(70, 70)
 layout_mode = 2
-tooltip_text = "Interior Pipe Road"
+tooltip_text = "Bezier Segment"
 text = "Bezier"
 
 [node name="RoadCurve" type="Button" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/NewTrackSegmentTypeButtons"]
 custom_minimum_size = Vector2(70, 70)
 layout_mode = 2
-tooltip_text = "Exterior Cylinder Road"
+tooltip_text = "Spiral Segment"
 text = "Spiral"
 
 [node name="NewEmbedButtons" type="VBoxContainer" parent="MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox"]
