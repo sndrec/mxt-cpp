@@ -59,6 +59,9 @@ var handle_materials : Array[StandardMaterial3D] = []
 var handle_mesh_instances : Array[MeshInstance3D] = []
 var handle_collision_shapes : Array[CollisionShape3D] = []
 var handle_shape_keys : Array[String] = []
+var selection_records : Array[Dictionary] = []
+var selection_bodies : Array[StaticBody3D] = []
+var selection_collision_shapes : Array[CollisionShape3D] = []
 var curve_entries : Array[Dictionary] = []
 
 func _ready() -> void:
@@ -330,6 +333,15 @@ func _set_hovered_key_from_handle(handle_id : int) -> bool:
 			hovered_point_index = int(record["point"])
 	return previous_entry != hovered_entry_index or previous_point != hovered_point_index
 
+func _handle_id_for_selected_key(record : Dictionary) -> int:
+	for i in handle_records.size():
+		var handle_record := handle_records[i]
+		if !_record_is_key_point(handle_record):
+			continue
+		if int(handle_record["entry"]) == int(record["entry"]) and int(handle_record["point"]) == int(record["point"]):
+			return i
+	return -1
+
 func _record_mesh_visible(record : Dictionary) -> bool:
 	if int(record["kind"]) == HandleKind.AXIS_POLE:
 		return true
@@ -400,12 +412,28 @@ func _make_handle() -> StaticBody3D:
 	add_child(body)
 	return body
 
+func _make_selection_body() -> StaticBody3D:
+	var body := StaticBody3D.new()
+	body.set_collision_layer_value(15, true)
+	body.set_collision_mask_value(15, true)
+	body.set_collision_layer_value(1, false)
+	body.set_collision_mask_value(1, false)
+	var collision := CollisionShape3D.new()
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = 4.0
+	capsule.height = 8.0
+	collision.shape = capsule
+	body.add_child(collision)
+	selection_collision_shapes.append(collision)
+	add_child(body)
+	return body
+
 func _configure_handle(handle_id : int) -> void:
 	var record := handle_records[handle_id]
 	var collision := handle_collision_shapes[handle_id]
 	var mesh_instance := handle_mesh_instances[handle_id]
 	mesh_instance.visible = _record_mesh_visible(record)
-	collision.disabled = _record_is_key_point(record)
+	collision.disabled = _record_is_key_point(record) and !_record_key_is_selected(record)
 	if _record_wants_cube(record):
 		if handle_shape_keys[handle_id] == "cube":
 			return
@@ -485,6 +513,79 @@ func _handle_basis(handle_id : int) -> Basis:
 func _set_colliders_enabled(enabled : bool) -> void:
 	for handle in handles:
 		handle.set_collision_layer_value(16, enabled)
+
+func _set_selection_colliders_enabled(enabled : bool) -> void:
+	for body in selection_bodies:
+		body.set_collision_layer_value(15, enabled)
+
+func _selection_handle_from_collider(collider : Object) -> int:
+	for i in selection_bodies.size():
+		if collider == selection_bodies[i]:
+			return i
+	return -1
+
+func select_keyframe_from_selection_collider(collider : Object) -> bool:
+	var selection_id := _selection_handle_from_collider(collider)
+	if selection_id < 0 or selection_id >= selection_records.size():
+		return false
+	var record := selection_records[selection_id]
+	selected_entry_index = int(record["entry"])
+	selected_point_index = int(record["point"])
+	hovered_entry_index = selected_entry_index
+	hovered_point_index = selected_point_index
+	_update_visuals()
+	return true
+
+func _append_selection_segment(entry_index : int, point_index : int, a : Vector3, b : Vector3) -> void:
+	var length := a.distance_to(b)
+	if length <= 0.001:
+		return
+	var selection_id := selection_records.size()
+	selection_records.append({"entry": entry_index, "point": point_index})
+	while selection_bodies.size() <= selection_id:
+		selection_bodies.append(_make_selection_body())
+	var body := selection_bodies[selection_id]
+	var collision := selection_collision_shapes[selection_id]
+	var shape := collision.shape as CapsuleShape3D
+	shape.radius = 4.0
+	shape.height = maxf(length, shape.radius * 2.0)
+	collision.disabled = false
+	body.global_transform = Transform3D(_basis_from_y_axis(b - a), (a + b) * 0.5)
+	body.set_collision_layer_value(15, true)
+
+func _append_selection_circle(entry_index : int, point_index : int, center : Vector3, x_axis : Vector3, y_axis : Vector3, radius : float) -> void:
+	var previous := center + x_axis * radius
+	for i in CIRCLE_STEPS:
+		var angle := TAU * float(i + 1) / float(CIRCLE_STEPS)
+		var next := center + (x_axis * cos(angle) + y_axis * sin(angle)) * radius
+		_append_selection_segment(entry_index, point_index, previous, next)
+		previous = next
+
+func _sync_selection_collisions() -> void:
+	selection_records.clear()
+	for entry_index in curve_entries.size():
+		var entry := curve_entries[entry_index]
+		var curve : Resource = entry["curve"]
+		for point_index in curve.point_count:
+			var t := _curve_offset(curve, point_index)
+			var value := _curve_value(curve, point_index)
+			var frame := _sample_frame(t)
+			match int(entry["kind"]):
+				CurveKind.TWIST:
+					_append_selection_circle(entry_index, point_index, frame["center"], frame["x"], frame["y"], _twist_radius(t))
+				CurveKind.SCALE_X, CurveKind.SCALE_Y:
+					var axis := _entry_axis(entry, frame)
+					for side in [-1.0, 1.0]:
+						var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
+						_append_selection_segment(entry_index, point_index, handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0)
+						_append_selection_segment(entry_index, point_index, frame["center"], handle_pos)
+				_:
+					var axis := _entry_axis(entry, frame)
+					_append_selection_segment(entry_index, point_index, frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH)
+	for i in selection_bodies.size():
+		var active := i < selection_records.size()
+		selection_bodies[i].set_collision_layer_value(15, active)
+		selection_collision_shapes[i].disabled = !active
 
 func _draw_line(a : Vector3, b : Vector3, color : Color) -> void:
 	outline_mesh.surface_set_color(color)
@@ -616,6 +717,7 @@ func _draw_curve_guides() -> void:
 func _update_visuals() -> void:
 	_collect_curve_entries()
 	_sync_handles()
+	_sync_selection_collisions()
 	for i in handles.size():
 		handles[i].global_position = _handle_position(i)
 		handles[i].global_basis = _handle_basis(i)
@@ -629,65 +731,25 @@ func _update_visuals() -> void:
 	outline_mesh.surface_end()
 	outline_mesh_instance.visible = true
 
-func _screen_distance_to_segment(mouse_pos : Vector2, a : Vector3, b : Vector3, cam : Camera3D) -> float:
-	var a_screen := cam.unproject_position(a)
-	var b_screen := cam.unproject_position(b)
-	var closest := Geometry2D.get_closest_point_to_segment(mouse_pos, a_screen, b_screen)
-	return mouse_pos.distance_squared_to(closest)
-
-func _screen_distance_to_key_record(record : Dictionary, cam : Camera3D, mouse_pos : Vector2) -> float:
-	if !_record_is_key_point(record):
-		return INF
-	var entry_index := int(record["entry"])
-	var entry := curve_entries[entry_index]
-	var curve : Resource = entry["curve"]
-	var point_index := int(record["point"])
-	var t := _curve_offset(curve, point_index)
-	var value := _curve_value(curve, point_index)
-	var frame := _sample_frame(t)
-	match int(entry["kind"]):
-		CurveKind.TWIST:
-			var best := INF
-			var radius := _twist_radius(t)
-			var previous : Vector3 = frame["center"] + frame["x"] * radius
-			for i in CIRCLE_STEPS:
-				var angle := TAU * float(i + 1) / float(CIRCLE_STEPS)
-				var next : Vector3 = frame["center"] + (frame["x"] * cos(angle) + frame["y"] * sin(angle)) * radius
-				best = minf(best, _screen_distance_to_segment(mouse_pos, previous, next, cam))
-				previous = next
-			return best
-		CurveKind.SCALE_X, CurveKind.SCALE_Y:
-			var best := INF
-			var axis := _entry_axis(entry, frame)
-			for side in [-1.0, 1.0]:
-				var handle_pos : Vector3 = frame["center"] + axis * side * (value + VISUAL_OFFSET)
-				best = minf(best, _screen_distance_to_segment(mouse_pos, handle_pos - frame["z"] * 8.0, handle_pos + frame["z"] * 8.0, cam))
-				best = minf(best, _screen_distance_to_segment(mouse_pos, frame["center"], handle_pos, cam))
-			return best
-		_:
-			var axis := _entry_axis(entry, frame)
-			return _screen_distance_to_segment(mouse_pos, frame["center"] - axis * ARROW_LENGTH, frame["center"] + axis * ARROW_LENGTH, cam)
-
-func _hovered_key_handle(cam : Camera3D) -> int:
-	var mouse_pos := get_viewport().get_mouse_position()
-	var best_handle := -1
-	var best_distance := INF
-	for i in handle_records.size():
-		var distance := _screen_distance_to_key_record(handle_records[i], cam, mouse_pos)
-		if distance < best_distance:
-			best_distance = distance
-			best_handle = i
-	if best_distance <= 8.0 * 8.0:
-		return best_handle
-	return -1
-
 func _hovered_handle(cam : Camera3D) -> int:
 	var scene := FZGlobal.editing_scene
 	if scene and scene.mouse_over_editor_ui():
 		return -1
-	var key_handle := _hovered_key_handle(cam)
-	if key_handle != -1:
-		return key_handle
+	if scene:
+		var picker := scene.mouse_picker_cast
+		picker.clear_exceptions()
+		picker.force_raycast_update()
+		while picker.is_colliding():
+			var selection_handle := _selection_handle_from_collider(picker.get_collider())
+			if selection_handle != -1:
+				picker.clear_exceptions()
+				return _handle_id_for_selected_key(selection_records[selection_handle])
+			var collision_object := picker.get_collider() as CollisionObject3D
+			if !collision_object:
+				break
+			picker.add_exception(collision_object)
+			picker.force_raycast_update()
+		picker.clear_exceptions()
 	if !mouse_cast or !mouse_cast.is_colliding():
 		return -1
 	var collider := mouse_cast.get_collider()
@@ -991,6 +1053,7 @@ func _process(_delta : float) -> void:
 		visible = false
 		outline_mesh_instance.visible = false
 		_set_colliders_enabled(false)
+		_set_selection_colliders_enabled(false)
 		dragging = false
 		drag_snapshot.clear()
 		delete_pressed = Input.is_key_pressed(KEY_DELETE)
@@ -999,6 +1062,7 @@ func _process(_delta : float) -> void:
 	_update_visuals()
 	if curve_entries.is_empty():
 		_set_colliders_enabled(false)
+		_set_selection_colliders_enabled(false)
 		delete_pressed = Input.is_key_pressed(KEY_DELETE)
 		return
 	_set_colliders_enabled(true)

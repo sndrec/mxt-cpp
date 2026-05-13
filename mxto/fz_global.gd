@@ -173,10 +173,16 @@ func _process(delta):
 		mpc.clear_exceptions()
 		mpc.force_raycast_update()
 		while mpc.is_colliding():
-			var selectable_node := get_selectable_node_from_collider(mpc.get_collider())
+			var collider := mpc.get_collider()
+			if editing_scene.spiral_curve_gizmo and editing_scene.spiral_curve_gizmo.has_method("select_keyframe_from_selection_collider"):
+				if editing_scene.spiral_curve_gizmo.select_keyframe_from_selection_collider(collider):
+					editing_scene.get_viewport().set_input_as_handled()
+					mpc.clear_exceptions()
+					return
+			var selectable_node := get_selectable_node_from_collider(collider)
 			if selectable_node and !selectable_nodes.has(selectable_node):
 				selectable_nodes.append(selectable_node)
-			mpc.add_exception(mpc.get_collider())
+			mpc.add_exception(collider)
 			mpc.force_raycast_update()
 		if selectable_nodes.size() == 0:
 			deselect_all()
