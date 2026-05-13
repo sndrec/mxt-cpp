@@ -37,6 +37,8 @@ var dragging := false
 var drag_handle := -1
 var delete_pressed := false
 var drag_snapshot := {}
+var selected_entry_index := -1
+var selected_point_index := -1
 
 var outline_mesh_instance : MeshInstance3D
 var outline_mesh := ImmediateMesh.new()
@@ -47,6 +49,7 @@ var point_handle_mesh := SphereMesh.new()
 var point_handle_shape := SphereShape3D.new()
 var tangent_handle_mesh := SphereMesh.new()
 var tangent_handle_shape := SphereShape3D.new()
+var arrow_handle_mesh := ArrayMesh.new()
 
 var handle_records : Array[Dictionary] = []
 var handles : Array[StaticBody3D] = []
@@ -67,6 +70,7 @@ func _ready() -> void:
 	tangent_handle_mesh.radius = TANGENT_HANDLE_RADIUS
 	tangent_handle_mesh.height = TANGENT_HANDLE_RADIUS * 2.0
 	tangent_handle_shape.radius = TANGENT_HANDLE_RADIUS
+	_build_arrow_mesh()
 	outline_mesh_instance = MeshInstance3D.new()
 	outline_mesh_instance.mesh = outline_mesh
 	outline_mesh_instance.top_level = true
@@ -78,6 +82,8 @@ func set_target_path(in_path : RoadPath) -> void:
 	dragging = false
 	drag_handle = -1
 	drag_snapshot.clear()
+	selected_entry_index = -1
+	selected_point_index = -1
 
 func _is_spiral_path(path : Node) -> bool:
 	var script : Script = path.get_script() as Script if path else null
@@ -282,6 +288,79 @@ func _record_wants_cube(record : Dictionary) -> bool:
 	var entry := curve_entries[int(record["entry"])]
 	return int(entry["kind"]) == CurveKind.SCALE_X or int(entry["kind"]) == CurveKind.SCALE_Y
 
+func _record_wants_arrow(record : Dictionary) -> bool:
+	if int(record["kind"]) != HandleKind.POINT or !record.has("entry"):
+		return false
+	var entry := curve_entries[int(record["entry"])]
+	return int(entry["kind"]) == CurveKind.RADIUS or int(entry["kind"]) == CurveKind.HEIGHT
+
+func _record_is_key_point(record : Dictionary) -> bool:
+	return int(record["kind"]) == HandleKind.POINT and record.has("entry") and record.has("point")
+
+func _record_key_is_selected(record : Dictionary) -> bool:
+	if !record.has("entry") or !record.has("point"):
+		return true
+	return int(record["entry"]) == selected_entry_index and int(record["point"]) == selected_point_index
+
+func _selected_key_matches(entry_index : int, point_index : int) -> bool:
+	return selected_entry_index == entry_index and selected_point_index == point_index
+
+func _select_record_key(record : Dictionary) -> void:
+	if !record.has("entry") or !record.has("point"):
+		return
+	selected_entry_index = int(record["entry"])
+	selected_point_index = int(record["point"])
+
+func _record_mesh_visible(record : Dictionary) -> bool:
+	if int(record["kind"]) == HandleKind.AXIS_POLE:
+		return true
+	if !_record_key_is_selected(record):
+		return false
+	if _record_is_key_point(record):
+		var entry := curve_entries[int(record["entry"])]
+		return int(entry["kind"]) != CurveKind.TWIST
+	return true
+
+func _build_arrow_mesh() -> void:
+	var vertices := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var indices := PackedInt32Array()
+	var ring_count := 16
+	var shaft_radius := 1.4
+	var shaft_start := -8.0
+	var shaft_end := 1.5
+	var head_radius := 4.4
+	var head_base := 1.5
+	var head_tip := 9.5
+	for i in ring_count:
+		var angle := TAU * float(i) / float(ring_count)
+		var dir := Vector3(cos(angle), 0.0, sin(angle))
+		vertices.append(dir * shaft_radius + Vector3(0.0, shaft_start, 0.0))
+		normals.append(dir)
+		vertices.append(dir * shaft_radius + Vector3(0.0, shaft_end, 0.0))
+		normals.append(dir)
+		vertices.append(dir * head_radius + Vector3(0.0, head_base, 0.0))
+		normals.append((dir * head_tip + Vector3.UP * head_radius).normalized())
+	vertices.append(Vector3(0.0, head_tip, 0.0))
+	normals.append(Vector3.UP)
+	var tip_index := vertices.size() - 1
+	for i in ring_count:
+		var next := (i + 1) % ring_count
+		var shaft_0 := i * 3
+		var shaft_1 := next * 3
+		var shaft_0_top := shaft_0 + 1
+		var shaft_1_top := shaft_1 + 1
+		var head_0 := shaft_0 + 2
+		var head_1 := shaft_1 + 2
+		indices.append_array([shaft_0, shaft_1, shaft_0_top, shaft_1, shaft_1_top, shaft_0_top])
+		indices.append_array([head_0, head_1, tip_index])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = indices
+	arrow_handle_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+
 func _make_handle() -> StaticBody3D:
 	var body := StaticBody3D.new()
 	body.set_collision_layer_value(16, true)
@@ -306,12 +385,19 @@ func _configure_handle(handle_id : int) -> void:
 	var record := handle_records[handle_id]
 	var collision := handle_collision_shapes[handle_id]
 	var mesh_instance := handle_mesh_instances[handle_id]
+	mesh_instance.visible = _record_mesh_visible(record)
 	if _record_wants_cube(record):
 		if handle_shape_keys[handle_id] == "cube":
 			return
 		handle_shape_keys[handle_id] = "cube"
 		collision.shape = cube_handle_shape
 		mesh_instance.mesh = cube_handle_mesh
+	elif _record_wants_arrow(record):
+		if handle_shape_keys[handle_id] == "arrow":
+			return
+		handle_shape_keys[handle_id] = "arrow"
+		collision.shape = point_handle_shape
+		mesh_instance.mesh = arrow_handle_mesh
 	else:
 		var point_sized := int(record["kind"]) == HandleKind.POINT or int(record["kind"]) == HandleKind.AXIS_POLE
 		var key := "sphere_point" if point_sized else "sphere_tangent"
@@ -328,9 +414,14 @@ func _sync_handles() -> void:
 	for entry_index in curve_entries.size():
 		var entry := curve_entries[entry_index]
 		var curve : Resource = entry["curve"]
+		if selected_entry_index == entry_index and selected_point_index >= curve.point_count:
+			selected_entry_index = -1
+			selected_point_index = -1
 		for point_index in curve.point_count:
 			for side in _point_sides(int(entry["kind"])):
 				handle_records.append({"kind": HandleKind.POINT, "entry": entry_index, "point": point_index, "side": side})
+			if !_selected_key_matches(entry_index, point_index):
+				continue
 			if point_index > 0:
 				for side in _point_sides(int(entry["kind"])):
 					handle_records.append({"kind": HandleKind.LEFT_TANGENT, "entry": entry_index, "point": point_index, "side": side})
@@ -349,6 +440,27 @@ func _sync_handles() -> void:
 	for i in handles.size():
 		_configure_handle(i)
 		handle_materials[i].albedo_color = _handle_base_color(i)
+
+func _basis_from_y_axis(axis : Vector3) -> Basis:
+	var y_axis := axis.normalized()
+	if y_axis.length_squared() <= 0.00001:
+		return Basis.IDENTITY
+	var x_axis := y_axis.cross(Vector3.FORWARD)
+	if x_axis.length_squared() <= 0.00001:
+		x_axis = y_axis.cross(Vector3.RIGHT)
+	x_axis = x_axis.normalized()
+	var z_axis := x_axis.cross(y_axis).normalized()
+	return Basis(x_axis, y_axis, z_axis).orthonormalized()
+
+func _handle_basis(handle_id : int) -> Basis:
+	var record := handle_records[handle_id]
+	if !_record_wants_arrow(record):
+		return Basis.IDENTITY
+	var entry := curve_entries[int(record["entry"])]
+	var curve : Resource = entry["curve"]
+	var frame := _sample_frame(_curve_offset(curve, int(record["point"])))
+	var axis := _entry_axis(entry, frame) * float(record.get("side", 1.0))
+	return _basis_from_y_axis(axis)
 
 func _set_colliders_enabled(enabled : bool) -> void:
 	for handle in handles:
@@ -438,16 +550,19 @@ func _draw_curve_guides() -> void:
 					_draw_arrow_point(entry, point_index)
 			if point_index > 0:
 				for side in _point_sides(int(entry["kind"])):
-					_draw_tangent(entry_index, point_index, HandleKind.LEFT_TANGENT, side)
+					if _selected_key_matches(entry_index, point_index):
+						_draw_tangent(entry_index, point_index, HandleKind.LEFT_TANGENT, side)
 			if point_index < curve.point_count - 1:
 				for side in _point_sides(int(entry["kind"])):
-					_draw_tangent(entry_index, point_index, HandleKind.RIGHT_TANGENT, side)
+					if _selected_key_matches(entry_index, point_index):
+						_draw_tangent(entry_index, point_index, HandleKind.RIGHT_TANGENT, side)
 
 func _update_visuals() -> void:
 	_collect_curve_entries()
 	_sync_handles()
 	for i in handles.size():
 		handles[i].global_position = _handle_position(i)
+		handles[i].global_basis = _handle_basis(i)
 	outline_mesh.clear_surfaces()
 	if curve_entries.is_empty():
 		outline_mesh_instance.visible = false
@@ -782,6 +897,15 @@ func _process(_delta : float) -> void:
 	if hovered == -1 and !scene.pointer_action_busy_for(self) and _try_alt_add_point(cam):
 		return
 	if Input.is_action_just_pressed("LeftMouse") and hovered != -1:
+		var hovered_record := handle_records[hovered]
+		if _record_is_key_point(hovered_record) and !_record_key_is_selected(hovered_record):
+			if !scene.begin_pointer_action(self):
+				return
+			_select_record_key(hovered_record)
+			_update_visuals()
+			get_viewport().set_input_as_handled()
+			scene.end_pointer_action(self)
+			return
 		if !scene.begin_pointer_action(self):
 			return
 		if !_begin_drag(hovered, cam, ray_dir):
