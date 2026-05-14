@@ -2,6 +2,7 @@ class_name TrackRoot extends Node3D
 
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
+const RoadShapeTunnelScript := preload("res://core/road_shape_tunnel.gd")
 const TrackTriggerScript := preload("res://core/track_trigger.gd")
 
 @export var gen_checkpoints : bool = false:
@@ -379,7 +380,7 @@ func _road_type_for_shape(shape : RoadShape) -> int:
 		return 6
 	if shape is RoadShapeRoundedSquareScript:
 		return 5
-	if shape is RoadShapeTunnel:
+	if shape is RoadShapeTunnelScript:
 		return 7
 	return 0
 

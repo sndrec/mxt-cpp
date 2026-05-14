@@ -57,6 +57,75 @@ static void draw_nearest_rail_candidate(
 	dd3d->call("draw_arrow", godot_vec3_from_sim(side.pos), godot_vec3_from_sim(side.pos + side.forward_n * 6.0f), godot::Color(0.2f, 0.5f, 1.0f), 0.2, true, draw_time);
 }
 
+static bool intersect_tunnel_roof_rail(
+	const TrackEdgeRailSide sides[2],
+	const RoadTransform &root,
+	const SimVec3 &p0,
+	const SimVec3 &ray,
+	float *hit_t_out,
+	SimVec3 *normal_out)
+{
+	const float left_height = sides[0].height * root.scale.y;
+	const float right_height = sides[1].height * root.scale.y;
+	if (left_height <= 0.0f || right_height <= 0.0f) {
+		return false;
+	}
+
+	const SimVec3 left_top = sides[0].pos + sides[0].up_n * left_height;
+	const SimVec3 right_top = sides[1].pos + sides[1].up_n * right_height;
+	const SimVec3 center = (left_top + right_top) * 0.5f;
+	const SimVec3 side_axis = (left_top - right_top).normalized();
+	const SimVec3 up_axis = (sides[0].up_n + sides[1].up_n).normalized();
+	const float radius = left_top.distance_to(right_top) * 0.5f;
+	if (radius <= 0.000001f || side_axis.length_squared() <= 0.0f || up_axis.length_squared() <= 0.0f) {
+		return false;
+	}
+
+	const SimVec3 rel0 = p0 - center;
+	const float x0 = rel0.dot(side_axis) / radius;
+	const float y0 = rel0.dot(up_axis) / radius;
+	const float dx = ray.dot(side_axis) / radius;
+	const float dy = ray.dot(up_axis) / radius;
+	const float a = dx * dx + dy * dy;
+	if (a <= 0.00000001f) {
+		return false;
+	}
+	const float b = 2.0f * (x0 * dx + y0 * dy);
+	const float c = x0 * x0 + y0 * y0 - 1.0f;
+	const float disc = b * b - 4.0f * a * c;
+	if (disc < 0.0f) {
+		return false;
+	}
+
+	const float sqrt_disc = sqrtf(disc);
+	const float inv_denom = 0.5f / a;
+	float best_t = FLT_MAX;
+	for (int i = 0; i < 2; ++i) {
+		const float t = (-b + (i == 0 ? -sqrt_disc : sqrt_disc)) * inv_denom;
+		if (t < 0.0f || t > 1.0f || t >= best_t) {
+			continue;
+		}
+		const float y = y0 + dy * t;
+		if (y < 0.0f) {
+			continue;
+		}
+		const float x = x0 + dx * t;
+		const SimVec3 radial = side_axis * x + up_axis * y;
+		const SimVec3 normal = (-radial).normalized();
+		if (normal.length_squared() <= 0.0f) {
+			continue;
+		}
+		best_t = t;
+		*normal_out = normal;
+	}
+
+	if (best_t == FLT_MAX) {
+		return false;
+	}
+	*hit_t_out = best_t;
+	return true;
+}
+
 static inline float safe_inverse_road_scale(float scale)
 {
 	return (fabsf(scale) > 1.0e-5f) ? (1.0f / scale) : 0.0f;
@@ -884,6 +953,38 @@ static void cast_segment_fast(const CastParams  &params,
 			out_collision.road_data.closest_surface = sim_transform_from_godot(surf); // reuse same transform
 			out_collision.road_data.closest_root = hit_root;
 			out_collision.road_data.terrain         = 0x100;
+		}
+	}
+
+	if (segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL &&
+		track_segment_rail_side_active(segment, 0, road_t_sample_raw.y) &&
+		track_segment_rail_side_active(segment, 1, road_t_sample_raw.y)) {
+		float tunnel_t = 0.0f;
+		SimVec3 tunnel_n;
+		if (intersect_tunnel_roof_rail(sides, root_t, p0, ray, &tunnel_t, &tunnel_n)) {
+			const SimVec3 hit = p0 + ray * tunnel_t;
+			SimVec2 road_t_hit_raw;  SimVec3 spatial_t_hit;
+			RoadTransform hit_root;
+			convert_point_to_road(track, use_idx, hit, road_t_hit_raw, spatial_t_hit, nullptr, &hit_root, nullptr);
+			if (road_t_hit_raw.x != -1000.0f &&
+				track_segment_rail_side_active(segment, 0, road_t_hit_raw.y) &&
+				track_segment_rail_side_active(segment, 1, road_t_hit_raw.y) &&
+				((params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0 || ray.dot(tunnel_n) <= 0.0f)) {
+				const float dist = tunnel_t * ray.length();
+				if (dist < best_t) {
+					best_t                          = dist;
+					out_collision.collided          = true;
+					out_collision.collision_point   = sim_vec3_from_godot(hit);
+					out_collision.collision_normal  = sim_vec3_from_godot(tunnel_n);
+
+					out_collision.road_data.cp_idx          = use_idx;
+					out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
+					out_collision.road_data.road_t          = sim_vec2_from_godot(road_t_hit_raw);
+					out_collision.road_data.closest_surface = sim_transform_from_godot(surf);
+					out_collision.road_data.closest_root = hit_root;
+					out_collision.road_data.terrain         = 0x100;
+				}
+			}
 		}
 	}
 

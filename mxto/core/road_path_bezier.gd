@@ -2,6 +2,7 @@ class_name RoadPathBezier extends RoadPath
 
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
+const RoadShapeTunnelScript := preload("res://core/road_shape_tunnel.gd")
 
 @export var native_curve : Resource
 
@@ -167,7 +168,7 @@ func _native_shape_type() -> int:
 		return ROAD_SHAPE_ROUNDED_SQUARE_OPEN
 	if road_shape is RoadShapeRoundedSquareScript:
 		return ROAD_SHAPE_ROUNDED_SQUARE
-	if road_shape is RoadShapeTunnel:
+	if road_shape is RoadShapeTunnelScript:
 		return ROAD_SHAPE_TUNNEL
 	return ROAD_SHAPE_FLAT
 

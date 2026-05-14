@@ -1107,6 +1107,7 @@ void RoadShape::get_oriented_transform_at_time4(SimTransform out_transform[4], c
 bool RoadShape::supports_edge_rails() const
 {
 	return shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
+		shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL ||
 		shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
 		shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
 		shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;

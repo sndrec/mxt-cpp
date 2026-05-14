@@ -1,5 +1,7 @@
 class_name RailGizmo extends Node3D
 
+const RoadShapeTunnelScript := preload("res://core/road_shape_tunnel.gd")
+
 enum HandleId {
 	LEFT_START,
 	LEFT_END,
@@ -177,7 +179,7 @@ func _write_handle(handle_id : int, world_pos : Vector3) -> void:
 	var base := _surface_point(tx, ty)
 	var normal := _surface_normal(tx, ty)
 	var height := maxf(0.0, (world_pos - base).dot(normal))
-	var tunnel := target_path.road_shape is RoadShapeTunnel
+	var tunnel := target_path.road_shape is RoadShapeTunnelScript
 	match handle_id:
 		HandleId.LEFT_START:
 			target_path.left_rail_start = clampf(ty, 0.0, target_path.left_rail_end)
