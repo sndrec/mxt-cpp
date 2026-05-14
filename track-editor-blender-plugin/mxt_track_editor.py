@@ -3501,7 +3501,7 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
         radius_grid = radius_vals_1d.reshape(num_y,1)
 
     
-    if shape_type == 'FLAT':
+    if shape_type in ('FLAT', 'TUNNEL'):
         local_space_offsets[..., 0] = tx_grid 
         local_space_offsets[..., 1] = total_mod_offset_grid
     
