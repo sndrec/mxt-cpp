@@ -35,6 +35,11 @@ static inline godot::Vector3 godot_vec3_from_sim(const SimVec3& v)
 	return godot::Vector3(v.x, v.y, v.z);
 }
 
+static inline float safe_inverse_road_scale(float scale)
+{
+	return (fabsf(scale) > 1.0e-5f) ? (1.0f / scale) : 0.0f;
+}
+
 static void draw_nearest_rail_candidate(
 	const TrackEdgeRailSide sides[2],
 	const SimVec3& reference,
@@ -73,19 +78,39 @@ static bool intersect_tunnel_roof_rail(
 
 	const SimVec3 left_top = sides[0].pos + sides[0].up_n * left_height;
 	const SimVec3 right_top = sides[1].pos + sides[1].up_n * right_height;
-	const SimVec3 center = (left_top + right_top) * 0.5f;
-	const SimVec3 side_axis = (left_top - right_top).normalized();
-	const SimVec3 up_axis = (sides[0].up_n + sides[1].up_n).normalized();
-	const float radius = left_top.distance_to(right_top) * 0.5f;
+	SimVec3 left_top_local = root.t3d.xform_inv(left_top);
+	SimVec3 right_top_local = root.t3d.xform_inv(right_top);
+	SimVec3 p0_local = root.t3d.xform_inv(p0);
+	SimVec3 ray_local = root.t3d.basis.xform_inv(ray);
+	left_top_local = SimVec3(
+		left_top_local.x * safe_inverse_road_scale(root.scale.x),
+		left_top_local.y * safe_inverse_road_scale(root.scale.y),
+		left_top_local.z * safe_inverse_road_scale(root.scale.z));
+	right_top_local = SimVec3(
+		right_top_local.x * safe_inverse_road_scale(root.scale.x),
+		right_top_local.y * safe_inverse_road_scale(root.scale.y),
+		right_top_local.z * safe_inverse_road_scale(root.scale.z));
+	p0_local = SimVec3(
+		p0_local.x * safe_inverse_road_scale(root.scale.x),
+		p0_local.y * safe_inverse_road_scale(root.scale.y),
+		p0_local.z * safe_inverse_road_scale(root.scale.z));
+	ray_local = SimVec3(
+		ray_local.x * safe_inverse_road_scale(root.scale.x),
+		ray_local.y * safe_inverse_road_scale(root.scale.y),
+		ray_local.z * safe_inverse_road_scale(root.scale.z));
+	const SimVec3 center = (left_top_local + right_top_local) * 0.5f;
+	const SimVec3 side_axis = (left_top_local - right_top_local).normalized();
+	const SimVec3 up_axis(0.0f, 1.0f, 0.0f);
+	const float radius = left_top_local.distance_to(right_top_local) * 0.5f;
 	if (radius <= 0.000001f || side_axis.length_squared() <= 0.0f || up_axis.length_squared() <= 0.0f) {
 		return false;
 	}
 
-	const SimVec3 rel0 = p0 - center;
+	const SimVec3 rel0 = p0_local - center;
 	const float x0 = rel0.dot(side_axis) / radius;
 	const float y0 = rel0.dot(up_axis) / radius;
-	const float dx = ray.dot(side_axis) / radius;
-	const float dy = ray.dot(up_axis) / radius;
+	const float dx = ray_local.dot(side_axis) / radius;
+	const float dy = ray_local.dot(up_axis) / radius;
 	const float a = dx * dx + dy * dy;
 	if (a <= 0.00000001f) {
 		return false;
@@ -111,7 +136,14 @@ static bool intersect_tunnel_roof_rail(
 		}
 		const float x = x0 + dx * t;
 		const SimVec3 radial = side_axis * x + up_axis * y;
-		const SimVec3 normal = (-radial).normalized();
+		const SimVec3 normal_local = (-radial).normalized();
+		if (normal_local.length_squared() <= 0.0f) {
+			continue;
+		}
+		const SimVec3 normal = root.t3d.basis.xform(SimVec3(
+			normal_local.x * safe_inverse_road_scale(root.scale.x),
+			normal_local.y * safe_inverse_road_scale(root.scale.y),
+			normal_local.z * safe_inverse_road_scale(root.scale.z))).normalized();
 		if (normal.length_squared() <= 0.0f) {
 			continue;
 		}
@@ -124,11 +156,6 @@ static bool intersect_tunnel_roof_rail(
 	}
 	*hit_t_out = best_t;
 	return true;
-}
-
-static inline float safe_inverse_road_scale(float scale)
-{
-	return (fabsf(scale) > 1.0e-5f) ? (1.0f / scale) : 0.0f;
 }
 
 static inline bool road_shape_opens_up(const RoadShape *shape)

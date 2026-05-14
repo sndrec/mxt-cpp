@@ -2387,24 +2387,25 @@ Dictionary TrackEditorCurve::build_preview_mesh_full(
 		const float tunnel_end = rail_ends[0] < rail_ends[1] ? rail_ends[0] : rail_ends[1];
 		if (tunnel_end >= tunnel_start) {
 			auto roof_point = [&](int p_y, int p_arc) -> Vector3 {
-				const int right_idx = p_y * num_x;
-				const int left_idx = p_y * num_x + num_x - 1;
-				const Vector3 right_top = vertices[right_idx] + normals[right_idx] * p_right_rail_height;
-				const Vector3 left_top = vertices[left_idx] + normals[left_idx] * p_left_rail_height;
+				const float ty = y_times[p_y];
+				const Transform3D root = sample_bezier(ty);
+				const Vector3 right_top = local_shape_position(p_shape_type, -1.0f, ty, p_openness, p_rounded_width, p_rounded_height, p_rounded_radius, p_rounded_open_rotation, p_openness_curve, p_rounded_width_curve, p_rounded_height_curve, p_rounded_radius_curve, p_rounded_open_rotation_curve, p_modulation_curves) + Vector3(0.0f, p_right_rail_height, 0.0f);
+				const Vector3 left_top = local_shape_position(p_shape_type, 1.0f, ty, p_openness, p_rounded_width, p_rounded_height, p_rounded_radius, p_rounded_open_rotation, p_openness_curve, p_rounded_width_curve, p_rounded_height_curve, p_rounded_radius_curve, p_rounded_open_rotation_curve, p_modulation_curves) + Vector3(0.0f, p_left_rail_height, 0.0f);
 				const Vector3 center = (right_top + left_top) * 0.5f;
 				const Vector3 side = normalized_or(left_top - right_top, Vector3(1.0, 0.0, 0.0));
-				const Vector3 up = normalized_or(normals[right_idx] + normals[left_idx], Vector3(0.0, 1.0, 0.0));
+				const Vector3 up(0.0f, 1.0f, 0.0f);
 				const float radius = (float)right_top.distance_to(left_top) * 0.5f;
 				const float theta = ((float)p_arc / (float)TUNNEL_ROOF_SEGMENTS) * PI_F;
-				return center - side * (std::cos(theta) * radius) + up * (std::sin(theta) * radius);
+				const Vector3 local_point = center - side * (std::cos(theta) * radius) + up * (std::sin(theta) * radius);
+				return root.xform(local_point);
 			};
 			auto roof_normal = [&](const Vector3 &p_point, int p_y) -> Vector3 {
-				const int right_idx = p_y * num_x;
-				const int left_idx = p_y * num_x + num_x - 1;
-				const Vector3 right_top = vertices[right_idx] + normals[right_idx] * p_right_rail_height;
-				const Vector3 left_top = vertices[left_idx] + normals[left_idx] * p_left_rail_height;
-				const Vector3 center = (right_top + left_top) * 0.5f;
-				return normalized_or(center - p_point, -normalized_or(normals[right_idx] + normals[left_idx], Vector3(0.0, 1.0, 0.0)));
+				const float ty = y_times[p_y];
+				const Transform3D root = sample_bezier(ty);
+				const Vector3 right_top = local_shape_position(p_shape_type, -1.0f, ty, p_openness, p_rounded_width, p_rounded_height, p_rounded_radius, p_rounded_open_rotation, p_openness_curve, p_rounded_width_curve, p_rounded_height_curve, p_rounded_radius_curve, p_rounded_open_rotation_curve, p_modulation_curves) + Vector3(0.0f, p_right_rail_height, 0.0f);
+				const Vector3 left_top = local_shape_position(p_shape_type, 1.0f, ty, p_openness, p_rounded_width, p_rounded_height, p_rounded_radius, p_rounded_open_rotation, p_openness_curve, p_rounded_width_curve, p_rounded_height_curve, p_rounded_radius_curve, p_rounded_open_rotation_curve, p_modulation_curves) + Vector3(0.0f, p_left_rail_height, 0.0f);
+				const Vector3 center = root.xform((right_top + left_top) * 0.5f);
+				return normalized_or(center - p_point, -root.basis.get_column(1).normalized());
 			};
 			for (int y = 0; y < num_y - 1; ++y) {
 				const float mid = (y_times[y] + y_times[y + 1]) * 0.5f;

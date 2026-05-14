@@ -4069,22 +4069,25 @@ class MXTRoad_OT_GenerateMesh(Operator):
             roof_end = min(left_end, right_end)
             if roof_end >= roof_start:
                 roof_rows = []
+                inv_scale = np.divide(
+                    1.0,
+                    centerline_scl,
+                    out=np.ones_like(centerline_scl),
+                    where=np.abs(centerline_scl) > 1.0e-9,
+                )
                 for row in range(num_y):
                     right_top = np.array(all_verts[right_rail_top_indices[row]], dtype=np.float64)
                     left_top = np.array(all_verts[left_rail_top_indices[row]], dtype=np.float64)
-                    center = (right_top + left_top) * 0.5
-                    side = left_top - right_top
+                    right_top_local = (cl_rot_mats[row].T @ (right_top - centerline_pos[row])) * inv_scale[row]
+                    left_top_local = (cl_rot_mats[row].T @ (left_top - centerline_pos[row])) * inv_scale[row]
+                    center = (right_top_local + left_top_local) * 0.5
+                    side = left_top_local - right_top_local
                     radius = np.linalg.norm(side) * 0.5
                     if radius > 1.0e-9:
                         side /= radius * 2.0
                     else:
                         side = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-                    up = main_road_vertex_normals[row * num_x] + main_road_vertex_normals[row * num_x + num_x - 1]
-                    up_norm = np.linalg.norm(up)
-                    if up_norm > 1.0e-9:
-                        up /= up_norm
-                    else:
-                        up = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+                    up = np.array([0.0, 1.0, 0.0], dtype=np.float64)
                     row_indices = []
                     for arc in range(roof_segments + 1):
                         if arc == 0:
@@ -4094,7 +4097,8 @@ class MXTRoad_OT_GenerateMesh(Operator):
                             row_indices.append(left_rail_top_indices[row])
                             continue
                         theta = (float(arc) / float(roof_segments)) * math.pi
-                        pos = center - side * (math.cos(theta) * radius) + up * (math.sin(theta) * radius)
+                        local_pos = center - side * (math.cos(theta) * radius) + up * (math.sin(theta) * radius)
+                        pos = centerline_pos[row] + cl_rot_mats[row] @ (local_pos * centerline_scl[row])
                         all_verts.append(pos.tolist())
                         all_uvs_per_vert.append([float(arc) / float(roof_segments), uvs_per_vert[row * num_x][1]])
                         row_indices.append(len(all_verts) - 1)
