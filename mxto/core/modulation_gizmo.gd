@@ -17,6 +17,7 @@ const NORMAL_EPSILON := 0.002
 const SEARCH_STEPS := 10
 const SEARCH_PASSES := 5
 const PREVIEW_STEPS := 24
+const DRAG_SURFACE_STEPS := 64
 const HEIGHT_PREVIEW_TY := 0.5
 const MIN_POINT_GAP := 0.001
 const TANGENT_HANDLE_OFFSET := 0.08
@@ -30,6 +31,7 @@ var drag_handle := -1
 var delete_pressed := false
 var drag_plane := Plane.PLANE_XZ
 var drag_start_point := Vector3.ZERO
+var drag_snapshot := {}
 var outline_mesh_instance : MeshInstance3D
 var outline_mesh := ImmediateMesh.new()
 var outline_material := StandardMaterial3D.new()
@@ -53,6 +55,7 @@ func set_target_modulation(in_path : RoadPath, in_modulation_index : int) -> voi
 	modulation_index = in_modulation_index
 	dragging = false
 	drag_handle = -1
+	drag_snapshot.clear()
 
 func _active_modulation() -> RoadModulation:
 	if !is_instance_valid(target_path):
@@ -126,6 +129,11 @@ func _surface_normal(tx : float, ty : float) -> Vector3:
 		return Vector3.UP
 	return normal
 
+func _surface_param_for_kind(kind : int, offset : float) -> Vector2:
+	if kind == CurveKind.HEIGHT:
+		return Vector2(_height_tx(offset), HEIGHT_PREVIEW_TY)
+	return Vector2(0.0, offset)
+
 func _height_tx(offset : float) -> float:
 	return 1.0 - clampf(offset, 0.0, 1.0) * 2.0
 
@@ -150,6 +158,76 @@ func _curve_normal(kind : int, offset : float) -> Vector3:
 
 func _curve_world_position(kind : int, offset : float, value : float) -> Vector3:
 	return _curve_base_position(kind, offset) + _curve_normal(kind, offset) * value
+
+func _build_drag_surface_snapshot(kind : int) -> Array[Dictionary]:
+	var samples : Array[Dictionary] = []
+	var query := PackedVector2Array()
+	for i in DRAG_SURFACE_STEPS + 1:
+		var offset := float(i) / float(DRAG_SURFACE_STEPS)
+		query.append(_surface_param_for_kind(kind, offset))
+		query.append(_surface_param_for_kind(kind, clampf(offset + NORMAL_EPSILON, 0.0, 1.0)))
+		query.append(_surface_param_for_kind(kind, clampf(offset - NORMAL_EPSILON, 0.0, 1.0)))
+	var positions := target_path.get_surface_positions(query)
+	if positions.size() != query.size():
+		return samples
+	for i in DRAG_SURFACE_STEPS + 1:
+		var base_index := i * 3
+		var offset := float(i) / float(DRAG_SURFACE_STEPS)
+		var base : Vector3 = positions[base_index]
+		var normal := Vector3.UP
+		if kind == CurveKind.HEIGHT:
+			var tx := _height_tx(offset)
+			normal = _surface_normal(tx, HEIGHT_PREVIEW_TY)
+		else:
+			var tangent_y : Vector3
+			if offset < 0.5:
+				tangent_y = positions[base_index + 1] - base
+			else:
+				tangent_y = base - positions[base_index + 2]
+			var side_a := target_path.get_surface_positions(PackedVector2Array([Vector2(NORMAL_EPSILON, offset), Vector2(-NORMAL_EPSILON, offset)]))
+			var tangent_x := side_a[0] - side_a[1] if side_a.size() == 2 else Vector3.RIGHT
+			normal = tangent_y.cross(tangent_x).normalized()
+			if normal.is_zero_approx():
+				normal = Vector3.UP
+		samples.append({"offset": offset, "base": base, "normal": normal})
+	return samples
+
+func _drag_surface_sample_at(samples : Array, offset : float) -> Dictionary:
+	if samples.is_empty():
+		return {"offset": 0.0, "base": Vector3.ZERO, "normal": Vector3.UP}
+	if samples.size() == 1:
+		return samples[0]
+	var scaled_index := clampf(offset, 0.0, 1.0) * float(samples.size() - 1)
+	var sample_index := mini(int(floorf(scaled_index)), samples.size() - 2)
+	var local_t := scaled_index - float(sample_index)
+	var a : Dictionary = samples[sample_index]
+	var b : Dictionary = samples[sample_index + 1]
+	var normal : Vector3 = (a["normal"] as Vector3).lerp(b["normal"], local_t)
+	if normal.length_squared() <= 0.00001:
+		normal = a["normal"] as Vector3
+	return {
+		"offset": lerpf(float(a["offset"]), float(b["offset"]), local_t),
+		"base": (a["base"] as Vector3).lerp(b["base"], local_t),
+		"normal": normal.normalized(),
+	}
+
+func _closest_drag_surface_offset(samples : Array, world_pos : Vector3) -> float:
+	var best_offset := 0.0
+	var best_dist := INF
+	var min_offset := 0.0
+	var max_offset := 1.0
+	for pass_index in SEARCH_PASSES:
+		for i in SEARCH_STEPS + 1:
+			var offset := lerpf(min_offset, max_offset, float(i) / float(SEARCH_STEPS))
+			var sample := _drag_surface_sample_at(samples, offset)
+			var dist : float = (sample["base"] as Vector3).distance_squared_to(world_pos)
+			if dist < best_dist:
+				best_dist = dist
+				best_offset = float(sample["offset"])
+		var radius := (max_offset - min_offset) / float(SEARCH_STEPS)
+		min_offset = maxf(0.0, best_offset - radius)
+		max_offset = minf(1.0, best_offset + radius)
+	return best_offset
 
 func _point_handle_position(modulation : RoadModulation, kind : int, point_index : int) -> Vector3:
 	var curve := _curve_for_kind(modulation, kind)
@@ -351,14 +429,21 @@ func _clamped_curve_offset(curve : Resource, point_index : int, offset : float) 
 	var max_offset := _curve_offset(curve, point_index + 1) - MIN_POINT_GAP
 	return clampf(offset, min_offset, max_offset)
 
+func _drag_samples_for_handle(handle_id : int) -> Array:
+	if int(drag_snapshot.get("handle", -1)) == handle_id:
+		return drag_snapshot.get("samples", [])
+	return []
+
 func _write_point_handle(modulation : RoadModulation, handle_id : int, world_pos : Vector3) -> void:
 	var kind := handle_curve_kinds[handle_id]
 	var point_index := handle_indices[handle_id]
 	var curve := _curve_for_kind(modulation, kind)
-	var offset := _closest_height_offset(world_pos) if kind == CurveKind.HEIGHT else _closest_center_ty(world_pos)
+	var samples := _drag_samples_for_handle(handle_id)
+	var offset := _closest_drag_surface_offset(samples, world_pos) if !samples.is_empty() else (_closest_height_offset(world_pos) if kind == CurveKind.HEIGHT else _closest_center_ty(world_pos))
 	offset = _clamped_curve_offset(curve, point_index, offset)
-	var base := _curve_base_position(kind, offset)
-	var normal := _curve_normal(kind, offset)
+	var surface := _drag_surface_sample_at(samples, offset) if !samples.is_empty() else {}
+	var base : Vector3 = surface["base"] if !surface.is_empty() else _curve_base_position(kind, offset)
+	var normal : Vector3 = surface["normal"] if !surface.is_empty() else _curve_normal(kind, offset)
 	curve.set_point_offset(point_index, offset)
 	curve.set_point_value(point_index, (world_pos - base).dot(normal))
 
@@ -368,7 +453,8 @@ func _write_tangent_handle(modulation : RoadModulation, handle_id : int, world_p
 	var handle_kind := handle_kinds[handle_id]
 	var curve := _curve_for_kind(modulation, kind)
 	var point : Vector2 = curve.get_point_position(point_index)
-	var handle_offset := _closest_height_offset(world_pos) if kind == CurveKind.HEIGHT else _closest_center_ty(world_pos)
+	var samples := _drag_samples_for_handle(handle_id)
+	var handle_offset := _closest_drag_surface_offset(samples, world_pos) if !samples.is_empty() else (_closest_height_offset(world_pos) if kind == CurveKind.HEIGHT else _closest_center_ty(world_pos))
 	var delta : float = handle_offset - point.x
 	if handle_kind == HandleKind.LEFT_TANGENT:
 		delta = minf(delta, -MIN_POINT_GAP)
@@ -378,8 +464,9 @@ func _write_tangent_handle(modulation : RoadModulation, handle_id : int, world_p
 	delta = handle_offset - point.x
 	if absf(delta) < MIN_POINT_GAP:
 		return
-	var base := _curve_base_position(kind, handle_offset)
-	var normal := _curve_normal(kind, handle_offset)
+	var surface := _drag_surface_sample_at(samples, handle_offset) if !samples.is_empty() else {}
+	var base : Vector3 = surface["base"] if !surface.is_empty() else _curve_base_position(kind, handle_offset)
+	var normal : Vector3 = surface["normal"] if !surface.is_empty() else _curve_normal(kind, handle_offset)
 	var value := (world_pos - base).dot(normal)
 	if handle_kind == HandleKind.LEFT_TANGENT:
 		curve.set_point_left_tangent(point_index, (value - point.y) / delta)
@@ -485,6 +572,7 @@ func _process(delta : float) -> void:
 		outline_mesh_instance.visible = false
 		_set_colliders_enabled(false)
 		dragging = false
+		drag_snapshot.clear()
 		delete_pressed = Input.is_key_pressed(KEY_DELETE)
 		return
 	visible = true
@@ -507,12 +595,18 @@ func _process(delta : float) -> void:
 		drag_handle = hovered
 		drag_start_point = handles[hovered].global_position
 		drag_plane = Plane(-cam.global_basis.z.normalized(), drag_start_point)
+		drag_snapshot = {
+			"handle": hovered,
+			"kind": handle_curve_kinds[hovered],
+			"samples": _build_drag_surface_snapshot(handle_curve_kinds[hovered]),
+		}
 		get_viewport().set_input_as_handled()
 	if Input.is_action_just_released("LeftMouse"):
 		if dragging or scene.owns_pointer_action(self):
 			get_viewport().set_input_as_handled()
 		dragging = false
 		drag_handle = -1
+		drag_snapshot.clear()
 		scene.end_pointer_action(self)
 	if dragging and drag_handle != -1:
 		var hit = drag_plane.intersects_ray(cam.global_position, ray_dir)
