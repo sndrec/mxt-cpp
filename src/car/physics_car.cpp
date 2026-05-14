@@ -2,8 +2,6 @@
 #include "physics_car.h"
 #include "main.h"
 #include "godot_cpp/variant/plane.hpp"
-#include "godot_cpp/variant/string.hpp"
-#include "godot_cpp/variant/utility_functions.hpp"
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/object.hpp"
 #include "godot_cpp/core/math.hpp"
@@ -12,7 +10,6 @@
 #include <cmath>
 #include <algorithm>
 #include <cstdint>
-#include <atomic>
 #include "mxt_core/debug.hpp"
 #include "mxt_core/math_utils.h"
 #include "mxt_core/player_input.h"
@@ -66,68 +63,6 @@ static void draw_nearest_rail_candidate(
 	dd3d->call("draw_arrow", debug_gd_vec3(side.pos), debug_gd_vec3(side.pos + side.rail_n * 8.0f), godot::Color(1.0f, 0.0f, 1.0f), 0.35, true, draw_time);
 	dd3d->call("draw_arrow", debug_gd_vec3(side.pos), debug_gd_vec3(side.pos + side.up_n * 6.0f), godot::Color(0.2f, 1.0f, 0.2f), 0.2, true, draw_time);
 	dd3d->call("draw_arrow", debug_gd_vec3(side.pos), debug_gd_vec3(side.pos + side.forward_n * 6.0f), godot::Color(0.2f, 0.5f, 1.0f), 0.2, true, draw_time);
-}
-
-static inline bool trace_rail_sampling_enabled(const PhysicsCarSoA* soa, int lane)
-{
-	return DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING) &&
-		soa && (soa->global_start + lane) == 0;
-}
-
-static inline godot::String trace_f(float v)
-{
-	return godot::String::num(v, 4);
-}
-
-static inline godot::String trace_i(int64_t v)
-{
-	return godot::String::num_int64(v);
-}
-
-static inline godot::String trace_v2(const SimVec2& v)
-{
-	return "(" + trace_f(v.x) + "," + trace_f(v.y) + ")";
-}
-
-static inline godot::String trace_v3(const SimVec3& v)
-{
-	return "(" + trace_f(v.x) + "," + trace_f(v.y) + "," + trace_f(v.z) + ")";
-}
-
-static void print_rail_sampling_trace(
-	const char* stage,
-	const PhysicsCarSoA* soa,
-	int lane,
-	const SimVec3& position,
-	int cp,
-	int fallback_cp,
-	const SimVec2& road_t,
-	bool was_inside,
-	bool was_above,
-	const SimVec3& push_rail,
-	const SimVec3& push_track)
-{
-	if (!trace_rail_sampling_enabled(soa, lane)) {
-		return;
-	}
-	godot::UtilityFunctions::print(
-		"MXT_RAIL_TRACE stage=", stage,
-		" tick=", trace_i(static_cast<int64_t>(soa->simulation_tick[lane])),
-		" car=", trace_i(static_cast<int64_t>(soa->global_start + lane)),
-		" cp=", trace_i(cp),
-		" fallback_cp=", trace_i(fallback_cp),
-		" current_cp=", trace_i(static_cast<int64_t>(soa->current_checkpoint[lane])),
-		" collision_cp=", trace_i(static_cast<int64_t>(soa->current_collision_checkpoint[lane])),
-		" inside=", trace_i(was_inside ? 1 : 0),
-		" above=", trace_i(was_above ? 1 : 0),
-		" road_t=", trace_v2(road_t),
-		" pos=", trace_v3(position),
-		" height=", trace_f(soa->height_above_track[lane]),
-		" rail_push=", trace_v3(push_rail),
-		" rail_push_len=", trace_f(push_rail.length()),
-		" track_push_len=", trace_f(push_track.length()),
-		" rail_timer=", trace_i(static_cast<int64_t>(soa->rail_collision_timer[lane])),
-		" machine_state=", trace_i(static_cast<int64_t>(soa->machine_state[lane])));
 }
 
 namespace {
@@ -189,75 +124,6 @@ static inline void clear_motion_for_restore(PhysicsCarSoA *soa, int lane)
 	soa->state_2[lane] &= ~0x20u;
 }
 
-void print_car_collision_debug(
-	const char* reason,
-	const PhysicsCar& a,
-	const PhysicsCar& b,
-	const SimVec3& p1_old,
-	const SimVec3& p1,
-	const SimVec3& p2_old,
-	const SimVec3& p2,
-	const SimVec3& normal,
-	const SimVec3& relative_motion,
-	float dist_sq,
-	float closing_speed,
-	float impulse_strength,
-	const SimVec3& impulse1,
-	const SimVec3& impulse2,
-	bool a_attacking,
-	bool b_attacking)
-{
-#if 0
-	static std::atomic<int> printed{0};
-	const int slot = printed.fetch_add(1, std::memory_order_relaxed);
-	if (slot >= 128) {
-		return;
-	}
-	const int ai = a.soa->global_start + a.soa_index;
-	const int bi = b.soa->global_start + b.soa_index;
-	const SimVec3 a_delta = p1 - p1_old;
-	const SimVec3 b_delta = p2 - p2_old;
-	auto f = [](float v) -> godot::String { return godot::String::num(v, 4); };
-	auto i = [](int64_t v) -> godot::String { return godot::String::num_int64(v); };
-	auto vec = [&](const SimVec3& v) -> godot::String {
-		return "(" + f(v.x) + "," + f(v.y) + "," + f(v.z) + ")";
-	};
-	const godot::String line =
-		"MXT_CAR_COLLISION_DBG reason=" + godot::String(reason) +
-		" slot=" + i(slot) +
-		" a=" + i(ai) +
-		" b=" + i(bi) +
-		" tick=" + i(static_cast<int64_t>(a.soa->simulation_tick[a.soa_index])) + "/" + i(static_cast<int64_t>(b.soa->simulation_tick[b.soa_index])) +
-		" lane=" + i(a.soa_index) + "/" + i(b.soa_index) +
-		" shard=" + i(a.soa->shard_index) + "/" + i(b.soa->shard_index) +
-		" dist_sq=" + f(dist_sq) +
-		" closing=" + f(closing_speed) +
-		" impulse_strength=" + f(impulse_strength) +
-		" a_attack=" + i(a_attacking ? 1 : 0) +
-		" b_attack=" + i(b_attacking ? 1 : 0) +
-		" a_state=" + i(static_cast<int64_t>(a.soa->machine_state[a.soa_index])) +
-		" b_state=" + i(static_cast<int64_t>(b.soa->machine_state[b.soa_index])) +
-		" a_pos=" + vec(p1) +
-		" a_old=" + vec(p1_old) +
-		" a_delta=" + vec(a_delta) +
-		" a_delta_len=" + f(a_delta.length()) +
-		" b_pos=" + vec(p2) +
-		" b_old=" + vec(p2_old) +
-		" b_delta=" + vec(b_delta) +
-		" b_delta_len=" + f(b_delta.length()) +
-		" normal=" + vec(normal) +
-		" rel=" + vec(relative_motion) +
-		" rel_len=" + f(relative_motion.length()) +
-		" impulse1=" + vec(impulse1) +
-		" impulse1_len=" + f(impulse1.length()) +
-		" impulse2=" + vec(impulse2) +
-		" impulse2_len=" + f(impulse2.length()) +
-		" speed_kmh=" + f(a.soa->speed_kmh[a.soa_index]) + "/" + f(b.soa->speed_kmh[b.soa_index]) +
-		" weight=" + f(a.soa->stat_weight[a.soa_index]) + "/" + f(b.soa->stat_weight[b.soa_index]) +
-		" hit_inv=" + i(static_cast<int64_t>(a.soa->car_hit_invincibility[a.soa_index])) + "/" + i(static_cast<int64_t>(b.soa->car_hit_invincibility[b.soa_index]));
-	godot::UtilityFunctions::print(line);
-#endif
-}
 }
 
 #define LOAD_CAR_VEC3(car, name) SimVec3((car).soa->name##_x[(car).soa_index], (car).soa->name##_y[(car).soa_index], (car).soa->name##_z[(car).soa_index])
@@ -2276,7 +2142,6 @@ void PhysicsCar::update_suspension_forces(
 	bool hit_found = false;
 
 	if ((soa->tilt_state[p] & TILTSTATE::B6) != 0 || (soa->height_above_track[soa_index] <= 0.0f && (soa->tilt_state[p] & TILTSTATE::AIRBORNE))) {
-		//godot::UtilityFunctions::print("disconnected!");
 		soa->tilt_state[p] |= TILTSTATE::DISCONNECTED;
 	} else {
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
@@ -2721,17 +2586,8 @@ void PhysicsCar::sample_old_corner_collision_surface(TrackQueryScratch &scratch)
 	}
 
 	int use_cp_old = soa->current_track[soa_index]->get_best_checkpoint(LOAD_VEC3(position_old), soa->current_collision_checkpoint[soa_index], scratch);
-	int fallback_cp_old = -1;
-	if (use_cp_old == -1) {
-		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING)) {
-			fallback_cp_old = soa->current_track[soa_index]->get_best_checkpoint(LOAD_VEC3(position_old), scratch);
-		}
-	}
 	soa->collision_old_cp[soa_index] = use_cp_old;
 	if (use_cp_old == -1) {
-		print_rail_sampling_trace("old_sample_miss",
-			soa, soa_index, LOAD_VEC3(position_old), use_cp_old, fallback_cp_old,
-			SimVec2(), false, false, LOAD_VEC3(collision_push_rail), LOAD_VEC3(collision_push_track));
 		return;
 	}
 
@@ -2745,12 +2601,6 @@ void PhysicsCar::sample_old_corner_collision_surface(TrackQueryScratch &scratch)
 	soa->collision_old_surface[soa_index] = use_transform;
 	soa->collision_old_was_above[soa_index] = (LOAD_VEC3(position_old) - use_transform.origin).dot(use_transform.basis[1]) >= -5.0f;
 	soa->collision_old_was_inside[soa_index] = use_t.x > -1.0f && use_t.x < 1.0f;
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING)) {
-		print_rail_sampling_trace("old_sample",
-			soa, soa_index, LOAD_VEC3(position_old), use_cp_old, fallback_cp_old,
-			use_t, soa->collision_old_was_inside[soa_index], soa->collision_old_was_above[soa_index],
-			LOAD_VEC3(collision_push_rail), LOAD_VEC3(collision_push_track));
-	}
 }
 
 int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
@@ -2867,9 +2717,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							float depth = (p0 - side.pos).dot(side.rail_n);
 							if (depth >= 0.0f) continue;
 							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.5f, 0.0f), 0.25, true, 10.0);
-							//godot::UtilityFunctions::print("old depen");
-							//godot::UtilityFunctions::print(i);
-							//godot::UtilityFunctions::print(use_t.x);
 							//DEBUG::disp_text("use_hit_t old", use_hit_t);
 							SimVec3 d = side.rail_n * (-depth);
 							ADD_VEC3(collision_push_total, d);
@@ -2882,24 +2729,10 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 				}
 			}
 				int use_cp_new = track->get_best_checkpoint(LOAD_VEC3(position_current) + depenetration, soa->current_collision_checkpoint[soa_index], scratch);
-				int fallback_cp_new = -1;
-				if (use_cp_new == -1) {
-					if (DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING)) {
-						fallback_cp_new = track->get_best_checkpoint(LOAD_VEC3(position_current) + depenetration, scratch);
-					}
-				}
 				bool new_valid = use_cp_new != -1;
 				if (new_valid)
 				{
 					track->get_road_surface(use_cp_new, LOAD_VEC3(position_current) + depenetration, use_t, use_spatial_t, use_transform);
-					const bool new_was_inside = use_t.x > -1.0f && use_t.x < 1.0f;
-					const bool new_was_above = (LOAD_VEC3(position_current) + depenetration - use_transform.origin).dot(use_transform.basis[1]) >= -5.0f;
-					if (DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING)) {
-						print_rail_sampling_trace("new_sample",
-							soa, soa_index, LOAD_VEC3(position_current) + depenetration, use_cp_new, fallback_cp_new,
-							use_t, new_was_inside, new_was_above,
-							LOAD_VEC3(collision_push_rail), LOAD_VEC3(collision_push_track));
-					}
 					if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					auto normal = use_transform.basis[1];
 					auto plane_pos = use_transform.origin;
@@ -2969,9 +2802,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							if (depth >= 0.0f) continue;
 							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.0f, 0.5f), 0.25, true, 10.0);
 							//DEBUG::disp_text("use_hit_t new", use_hit_t);
-							//godot::UtilityFunctions::print("new depen");
-							//godot::UtilityFunctions::print(i);
-							//godot::UtilityFunctions::print(use_t.x);
 							SimVec3 d = side.rail_n * (-depth);
 							ADD_VEC3(collision_push_total, d);
 							any_corner_hit = true;
@@ -2981,17 +2811,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 						}
 						}
 					}
-				} else {
-					print_rail_sampling_trace("new_sample_miss",
-						soa, soa_index, LOAD_VEC3(position_current) + depenetration, use_cp_new, fallback_cp_new,
-						SimVec2(), false, false,
-						LOAD_VEC3(collision_push_rail), LOAD_VEC3(collision_push_track));
-				}
-				if (DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING)) {
-					print_rail_sampling_trace("corner_result",
-						soa, soa_index, LOAD_VEC3(position_current) + depenetration, use_cp_new, fallback_cp_new,
-						use_t, was_inside, was_above,
-						LOAD_VEC3(collision_push_rail), LOAD_VEC3(collision_push_track));
 				}
 				ADD_VEC3(position_current, depenetration);
 				total_depenetration += depenetration;
@@ -4364,16 +4183,6 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		impulse2 = impulse * -0.2f;
 		damage1 = 0.0f;
 		damage2 = 0.0f;
-	}
-
-	if (impulse1.length_squared() > 1.0f ||
-		impulse2.length_squared() > 1.0f ||
-		(p1 - p1_old).length_squared() > 100.0f ||
-		(p2 - p2_old).length_squared() > 100.0f) {
-		print_car_collision_debug("suspicious",
-			*this, other_machine, p1_old, p1, p2_old, p2, collision_normal,
-			relative_motion, dist_sq, closing_speed, impulse_strength,
-			impulse1, impulse2, this_attacking, other_attacking);
 	}
 
 	apply_car_collision_knockback(*this, impulse1);
