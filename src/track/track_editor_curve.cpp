@@ -2381,6 +2381,62 @@ Dictionary TrackEditorCurve::build_preview_mesh_full(
 		}
 	}
 
+	if (p_shape_type == ROAD_SHAPE_TUNNEL && p_left_rail_height > 0.0f && p_right_rail_height > 0.0f) {
+		static constexpr int TUNNEL_ROOF_SEGMENTS = 10;
+		const float tunnel_start = rail_starts[0] > rail_starts[1] ? rail_starts[0] : rail_starts[1];
+		const float tunnel_end = rail_ends[0] < rail_ends[1] ? rail_ends[0] : rail_ends[1];
+		if (tunnel_end >= tunnel_start) {
+			auto roof_point = [&](int p_y, int p_arc) -> Vector3 {
+				const int right_idx = p_y * num_x;
+				const int left_idx = p_y * num_x + num_x - 1;
+				const Vector3 right_top = vertices[right_idx] + normals[right_idx] * p_right_rail_height;
+				const Vector3 left_top = vertices[left_idx] + normals[left_idx] * p_left_rail_height;
+				const Vector3 center = (right_top + left_top) * 0.5f;
+				const Vector3 side = normalized_or(left_top - right_top, Vector3(1.0, 0.0, 0.0));
+				const Vector3 up = normalized_or(normals[right_idx] + normals[left_idx], Vector3(0.0, 1.0, 0.0));
+				const float radius = (float)right_top.distance_to(left_top) * 0.5f;
+				const float theta = ((float)p_arc / (float)TUNNEL_ROOF_SEGMENTS) * PI_F;
+				return center - side * (std::cos(theta) * radius) + up * (std::sin(theta) * radius);
+			};
+			auto roof_normal = [&](const Vector3 &p_point, int p_y) -> Vector3 {
+				const int right_idx = p_y * num_x;
+				const int left_idx = p_y * num_x + num_x - 1;
+				const Vector3 right_top = vertices[right_idx] + normals[right_idx] * p_right_rail_height;
+				const Vector3 left_top = vertices[left_idx] + normals[left_idx] * p_left_rail_height;
+				const Vector3 center = (right_top + left_top) * 0.5f;
+				return normalized_or(center - p_point, -normalized_or(normals[right_idx] + normals[left_idx], Vector3(0.0, 1.0, 0.0)));
+			};
+			for (int y = 0; y < num_y - 1; ++y) {
+				const float mid = (y_times[y] + y_times[y + 1]) * 0.5f;
+				if (mid < tunnel_start || mid > tunnel_end) {
+					continue;
+				}
+				for (int a = 0; a < TUNNEL_ROOF_SEGMENTS; ++a) {
+					const Vector3 v00 = roof_point(y, a);
+					const Vector3 v10 = roof_point(y, a + 1);
+					const Vector3 v01 = roof_point(y + 1, a);
+					const Vector3 v11 = roof_point(y + 1, a + 1);
+					const Vector3 n00 = roof_normal(v00, y);
+					const Vector3 n10 = roof_normal(v10, y);
+					const Vector3 n01 = roof_normal(v01, y + 1);
+					const Vector3 n11 = roof_normal(v11, y + 1);
+					const Vector2 uv00((float)a / (float)TUNNEL_ROOF_SEGMENTS, uvs[y * num_x].y);
+					const Vector2 uv10((float)(a + 1) / (float)TUNNEL_ROOF_SEGMENTS, uvs[y * num_x].y);
+					const Vector2 uv01((float)a / (float)TUNNEL_ROOF_SEGMENTS, uvs[(y + 1) * num_x].y);
+					const Vector2 uv11((float)(a + 1) / (float)TUNNEL_ROOF_SEGMENTS, uvs[(y + 1) * num_x].y);
+					append_mesh_triangle(mesh_surfaces, MESH_MATERIAL_TRACK_RAIL,
+						v10, n10, uv10, Vector2(0.0, 0.0),
+						v01, n01, uv01, Vector2(0.0, 0.0),
+						v00, n00, uv00, Vector2(0.0, 0.0));
+					append_mesh_triangle(mesh_surfaces, MESH_MATERIAL_TRACK_RAIL,
+						v10, n10, uv10, Vector2(0.0, 0.0),
+						v11, n11, uv11, Vector2(0.0, 0.0),
+						v01, n01, uv01, Vector2(0.0, 0.0));
+				}
+			}
+		}
+	}
+
 	if (p_embed_curves.size() > 0) {
 		static constexpr float EMBED_INSET_UNITS = 1.0f;
 		static constexpr float EMBED_PUSH_DISTANCE = 0.5f;

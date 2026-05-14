@@ -3948,6 +3948,8 @@ class MXTRoad_OT_GenerateMesh(Operator):
         rail_top_vert_indices = set()
         all_loop_normals = []
         all_material_indices = [get_mat_idx('track_surface')] * len(main_road_faces)
+        left_rail_top_indices = []
+        right_rail_top_indices = []
 
         
         epsilon = 0.0001
@@ -3962,6 +3964,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
             for v_idx in face: all_loop_normals.append(main_road_vertex_normals[v_idx])
 
         rail_faces = []
+        tunnel_roof_faces = []
 
         def rail_span(start_value, end_value):
             start = max(0.0, min(1.0, float(start_value)))
@@ -4001,6 +4004,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 new_top_idx = len(all_verts) - 1
                 top_indices.append(new_top_idx)
                 rail_top_vert_indices.add(new_top_idx)
+            left_rail_top_indices = top_indices
             for row in range(num_y-1):
                 if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
                     continue
@@ -4038,6 +4042,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 new_top_idx = len(all_verts) - 1
                 top_indices.append(new_top_idx)
                 rail_top_vert_indices.add(new_top_idx)
+            right_rail_top_indices = top_indices
             for row in range(num_y-1):
                 if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
                     continue
@@ -4049,6 +4054,66 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 rail_faces.append(face)
                 rail_face_indices.add(len(all_faces) - 1)
                 all_material_indices.append(get_mat_idx('track_rail'))
+
+        if props.road_shape_type == 'TUNNEL' and left_rail_top_indices and right_rail_top_indices:
+            roof_segments = 10
+            left_start, left_end = rail_span(
+                getattr(props, "rail_start_left", 0.0),
+                getattr(props, "rail_end_left", 1.0),
+            )
+            right_start, right_end = rail_span(
+                getattr(props, "rail_start_right", 0.0),
+                getattr(props, "rail_end_right", 1.0),
+            )
+            roof_start = max(left_start, right_start)
+            roof_end = min(left_end, right_end)
+            if roof_end >= roof_start:
+                roof_rows = []
+                for row in range(num_y):
+                    right_top = np.array(all_verts[right_rail_top_indices[row]], dtype=np.float64)
+                    left_top = np.array(all_verts[left_rail_top_indices[row]], dtype=np.float64)
+                    center = (right_top + left_top) * 0.5
+                    side = left_top - right_top
+                    radius = np.linalg.norm(side) * 0.5
+                    if radius > 1.0e-9:
+                        side /= radius * 2.0
+                    else:
+                        side = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+                    up = main_road_vertex_normals[row * num_x] + main_road_vertex_normals[row * num_x + num_x - 1]
+                    up_norm = np.linalg.norm(up)
+                    if up_norm > 1.0e-9:
+                        up /= up_norm
+                    else:
+                        up = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+                    row_indices = []
+                    for arc in range(roof_segments + 1):
+                        if arc == 0:
+                            row_indices.append(right_rail_top_indices[row])
+                            continue
+                        if arc == roof_segments:
+                            row_indices.append(left_rail_top_indices[row])
+                            continue
+                        theta = (float(arc) / float(roof_segments)) * math.pi
+                        pos = center - side * (math.cos(theta) * radius) + up * (math.sin(theta) * radius)
+                        all_verts.append(pos.tolist())
+                        all_uvs_per_vert.append([float(arc) / float(roof_segments), uvs_per_vert[row * num_x][1]])
+                        row_indices.append(len(all_verts) - 1)
+                    roof_rows.append(row_indices)
+                for row in range(num_y - 1):
+                    if not rail_interval_active(ty_1d[row], ty_1d[row + 1], roof_start, roof_end):
+                        continue
+                    for arc in range(roof_segments):
+                        face = [
+                            roof_rows[row][arc],
+                            roof_rows[row + 1][arc],
+                            roof_rows[row + 1][arc + 1],
+                            roof_rows[row][arc + 1],
+                        ]
+                        all_faces.append(face)
+                        rail_faces.append(face)
+                        tunnel_roof_faces.append(face)
+                        rail_face_indices.add(len(all_faces) - 1)
+                        all_material_indices.append(get_mat_idx('track_rail'))
 
         if rail_faces:
             all_loop_normals.extend(MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(np.array(all_verts), rail_faces))
