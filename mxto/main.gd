@@ -87,6 +87,7 @@ var singleplayer_cpu_count: int = 0
 var launch_cpu_driver_count: int = -1
 var auto_singleplayer_mode: bool = false
 var auto_track_editor_mode: bool = false
+var auto_accelerate_mode: bool = false
 var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
@@ -217,14 +218,23 @@ func _ready() -> void:
 	if args.has("--host") or user_args.has("--host"):
 		call_deferred("_auto_host")
 	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
+	auto_accelerate_mode = args.has("--auto-accelerate") or user_args.has("--auto-accelerate")
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var quit_idx := args.find("--quit-after-frames")
-	if quit_idx != -1 and quit_idx + 1 < args.size():
-		auto_quit_after_frames = max(0, int(args[quit_idx + 1]))
+	var quit_args := args
+	if quit_idx == -1:
+		quit_idx = user_args.find("--quit-after-frames")
+		quit_args = user_args
+	if quit_idx != -1 and quit_idx + 1 < quit_args.size():
+		auto_quit_after_frames = max(0, int(quit_args[quit_idx + 1]))
 	var replay_idx := args.find("--debug-replay")
-	if replay_idx != -1 and replay_idx + 1 < args.size():
-		debug_replay_autoload_path = String(args[replay_idx + 1])
-	debug_rail_trace_requested = args.has("--debug-rail-trace")
+	var replay_args := args
+	if replay_idx == -1:
+		replay_idx = user_args.find("--debug-replay")
+		replay_args = user_args
+	if replay_idx != -1 and replay_idx + 1 < replay_args.size():
+		debug_replay_autoload_path = String(replay_args[replay_idx + 1])
+	debug_rail_trace_requested = args.has("--debug-rail-trace") or user_args.has("--debug-rail-trace")
 	if debug_rail_trace_requested:
 		game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
 		server_game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
@@ -276,9 +286,14 @@ func _load_tracks() -> void:
 		track_selector.selected = 0
 		lobby_track_selector.selected = 0
 	var args := OS.get_cmdline_args()
+	var user_args := OS.get_cmdline_user_args()
 	var track_name_idx := args.find("--track-name")
-	if track_name_idx != -1 and track_name_idx + 1 < args.size():
-		var desired_track := String(args[track_name_idx + 1]).to_lower()
+	var track_args := args
+	if track_name_idx == -1:
+		track_name_idx = user_args.find("--track-name")
+		track_args = user_args
+	if track_name_idx != -1 and track_name_idx + 1 < track_args.size():
+		var desired_track := String(track_args[track_name_idx + 1]).to_lower()
 		for i in range(tracks.size()):
 			if String(tracks[i].get("name", "")).to_lower() == desired_track:
 				track_selector.selected = i
@@ -1244,8 +1259,10 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		debug_replay_playback_index += 1
 	if input_bytes.is_empty():
 		var local_pi := PlayerInputClass.new()
+		if auto_accelerate_mode:
+			local_pi.accelerate = 1.0
 		var accepts_input := _window_accepts_input()
-		if accepts_input and players.size() > local_player_index:
+		if !auto_accelerate_mode and accepts_input and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()

@@ -2266,6 +2266,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (version_string != "v0.1" && version_string != "v0.2") {
 		trigger_count = lvldat_buf->get_u32();
 	}
+	UtilityFunctions::print(String("MXT_LOAD_DEBUG header ver="), version_string, String(" cp="), checkpoint_count, String(" seg="), segment_count, String(" trig="), trigger_count);
 
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
@@ -2349,8 +2350,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	for (int seg = 0; seg < segment_count; seg++)
 	{
+		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_begin "), seg, String(" pos="), lvldat_buf->get_position());
 		int segment_index = (int)lvldat_buf->get_u32();
 		int road_type = (int)lvldat_buf->get_u32();
+		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_type idx="), segment_index, String(" road="), road_type);
 
 		// what road shape? //
 
@@ -2465,6 +2468,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		int pos = lvldat_buf->get_position();
 		int num_keyframes = static_cast<int>(lvldat_buf->get_u32());
 		lvldat_buf->seek(pos);
+		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_keys "), seg, String(" keys="), num_keyframes, String(" pos="), pos);
       // 1) allocate the SoA object itself on your heap
 		{
 			uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
@@ -2611,6 +2615,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 		}
 		current_track->segments[seg].bounds.grow_by(5.f);
+		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_done "), seg, String(" len="), current_track->segments[seg].segment_length);
 		current_track->segments[seg].checkpoint_start = -1;
 		current_track->segments[seg].checkpoint_run_length = 0;
 		for (int i = 0; i < current_track->num_checkpoints; i++)
@@ -2629,6 +2634,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->minimum_y -= 250.0f;
 
 	if (trigger_count > 0) {
+		UtilityFunctions::print(String("MXT_LOAD_DEBUG triggers_begin pos="), lvldat_buf->get_position());
 		current_track->num_trigger_colliders = trigger_count;
 		current_track->trigger_colliders = level_data.allocate_array<TriggerCollider*>(trigger_count);
 		for (uint32_t t = 0; t < trigger_count; ++t) {
@@ -2683,6 +2689,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 
 	int requested_cars = requested_cars_hint;
+	UtilityFunctions::print(String("MXT_LOAD_DEBUG cars_begin requested="), requested_cars);
 	PhysicsCarProperties* props_array = nullptr;
 	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
 	car_properties_array = props_array;
@@ -2707,6 +2714,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		TrackQueryScratch spawn_scratch;
 		for (int i = 0; i < num_cars; i++)
 		{
+			UtilityFunctions::print(String("MXT_LOAD_DEBUG car_begin "), i);
 			cars[i].soa->current_track[cars[i].soa_index] = current_track;
 			if (i < car_prop_buffers.size()) {
 				godot::PackedByteArray arr = car_prop_buffers[i];
@@ -2720,6 +2728,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				cars[i].soa->m_accel_setting[cars[i].soa_index] = accel_settings[i];
 			}
 			cars[i].initialize_machine();
+			UtilityFunctions::print(String("MXT_LOAD_DEBUG car_initialized "), i);
 
                 // Determine spawn transform at the end of the last track segment
 			int seg_idx = current_track->num_segments - 1;
@@ -2745,7 +2754,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			float t_x = remap_float(static_cast<float>(slot % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
 
 			SimTransform spawn_transform;
+			UtilityFunctions::print(String("MXT_LOAD_DEBUG spawn_sample seg="), seg_idx, String(" tx="), t_x, String(" ty="), t_y);
 			spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, SimVec2(t_x, t_y));
+			UtilityFunctions::print(String("MXT_LOAD_DEBUG spawn_sample_done"));
 			spawn_transform.basis.orthonormalize();
 			spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
 			const SimVec3 spawn_up = spawn_transform.basis.get_column(1);
@@ -2771,6 +2782,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			PhysicsCarSoA *car_soa = cars[i].soa;
 			const int car_idx = cars[i].soa_index;
 			int spawn_checkpoint = current_track->get_best_checkpoint(spawn_transform.origin, spawn_scratch);
+			UtilityFunctions::print(String("MXT_LOAD_DEBUG spawn_checkpoint "), spawn_checkpoint);
 			if (spawn_checkpoint < 0) {
 				spawn_checkpoint = current_track->get_best_checkpoint(track_surface_pos, spawn_scratch);
 			}
