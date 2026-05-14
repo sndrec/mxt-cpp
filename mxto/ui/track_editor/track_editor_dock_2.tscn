@@ -1,7 +1,7 @@
-[gd_scene load_steps=8 format=3]
+[gd_scene format=3 uid="uid://htynotf4koq0"]
 
-[ext_resource type="Script" path="res://ui/track_editor/track_editor_dock_2.gd" id="1_w5rhc"]
-[ext_resource type="Script" path="res://ui/track_editor/cross_section_graph.gd" id="2_klk5r"]
+[ext_resource type="Script" uid="uid://ywk531qa36m" path="res://ui/track_editor/track_editor_dock_2.gd" id="1_w5rhc"]
+[ext_resource type="Script" uid="uid://d21j2hjn3don5" path="res://ui/track_editor/cross_section_graph.gd" id="2_klk5r"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ebxqu"]
 bg_color = Color(0, 0, 0, 0.164706)
@@ -16,7 +16,7 @@ size = Vector2(0, 0)
 [sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_7yl4s"]
 size = Vector2(0, 1)
 
-[node name="TrackEditorDock2" type="Control"]
+[node name="TrackEditorDock2" type="Control" unique_id=641090439]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -28,62 +28,67 @@ size_flags_vertical = 3
 mouse_filter = 2
 script = ExtResource("1_w5rhc")
 
-[node name="Control" type="Control" parent="."]
+[node name="Control" type="Control" parent="." unique_id=1580445585]
 layout_mode = 1
-anchors_preset = 9
+anchors_preset = 15
+anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="TabContainer" type="TabContainer" parent="Control"]
+[node name="TabContainer" type="TabContainer" parent="Control" unique_id=695144323]
 custom_minimum_size = Vector2(358.59, 0)
 layout_mode = 1
-anchors_preset = 9
+anchors_preset = 11
+anchor_left = 1.0
+anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 200.0
-offset_right = 558.59
+offset_left = -118.0
+grow_horizontal = 0
 grow_vertical = 2
 theme_override_styles/panel = SubResource("StyleBoxFlat_ebxqu")
-current_tab = 2
+current_tab = 1
 
-[node name="Info" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Info" type="ScrollContainer" parent="Control/TabContainer" unique_id=229716531]
 visible = false
 layout_mode = 2
 horizontal_scroll_mode = 0
 metadata/_tab_index = 0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Info"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Info" unique_id=1931897632]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 24
 
-[node name="SegmentLengthLabel" type="Label" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="SegmentLengthLabel" type="Label" parent="Control/TabContainer/Info/VBoxContainer" unique_id=1920941896]
 layout_mode = 2
 text = "Segment Length
 4032.34m"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="SegmentLengthLabel2" type="Label" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="SegmentLengthLabel2" type="Label" parent="Control/TabContainer/Info/VBoxContainer" unique_id=123453064]
 layout_mode = 2
 text = "Standard Road"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RoadShapeRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="RoadShapeRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=1070447359]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RoadShapeRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RoadShapeRow" unique_id=756851009]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Road Shape"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RoadShapeType" type="OptionButton" parent="Control/TabContainer/Info/VBoxContainer/RoadShapeRow"]
+[node name="RoadShapeType" type="OptionButton" parent="Control/TabContainer/Info/VBoxContainer/RoadShapeRow" unique_id=1415487702]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
 item_count = 7
 popup/item_0/text = "Standard"
+popup/item_0/id = 0
 popup/item_1/text = "Cylinder"
 popup/item_1/id = 1
 popup/item_2/text = "Open Cylinder"
@@ -97,80 +102,80 @@ popup/item_5/id = 5
 popup/item_6/text = "Open Rounded Square"
 popup/item_6/id = 6
 
-[node name="RotationModeRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="RotationModeRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=776717004]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RotationModeRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RotationModeRow" unique_id=435795729]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Rotation Mode"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RotationMode" type="OptionButton" parent="Control/TabContainer/Info/VBoxContainer/RotationModeRow"]
+[node name="RotationMode" type="OptionButton" parent="Control/TabContainer/Info/VBoxContainer/RotationModeRow" unique_id=11581279]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
 item_count = 2
 popup/item_0/text = "Smart"
+popup/item_0/id = 0
 popup/item_1/text = "Simple"
 popup/item_1/id = 1
 
-[node name="RoadUvMultiplierRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="RoadUvMultiplierRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=414443916]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow" unique_id=1989202021]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "UV Y-Multiplier"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RoadUvMultiplier" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow"]
+[node name="RoadUvMultiplier" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/RoadUvMultiplierRow" unique_id=227071796]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.001
-max_value = 100.0
 step = 0.01
-value = 1.0
+value = 1.001
 
-[node name="GroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="GroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=522897080]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/GroundColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/GroundColorRow" unique_id=1294641054]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Ground Color"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="GroundColor" type="ColorPickerButton" parent="Control/TabContainer/Info/VBoxContainer/GroundColorRow"]
+[node name="GroundColor" type="ColorPickerButton" parent="Control/TabContainer/Info/VBoxContainer/GroundColorRow" unique_id=1799556279]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.5, 0.5, 0.5, 1)
 
-[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=1551362327]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RailColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/RailColorRow" unique_id=2056136967]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Rail Color"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Info/VBoxContainer/RailColorRow"]
+[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Info/VBoxContainer/RailColorRow" unique_id=1566166969]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.8, 0.8, 0.8, 1)
 
-[node name="MeshSubdivisionLengthRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="MeshSubdivisionLengthRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=1098276299]
 visible = false
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow" unique_id=644482719]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Mesh Subdiv Length"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="MeshSubdivisionLength" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow"]
+[node name="MeshSubdivisionLength" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionLengthRow" unique_id=1780517746]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.1
@@ -178,17 +183,17 @@ max_value = 1000.0
 step = 0.1
 value = 30.0
 
-[node name="MeshSubdivisionAngleRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="MeshSubdivisionAngleRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=550675609]
 visible = false
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow" unique_id=1648341752]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Mesh Subdiv Angle"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="MeshSubdivisionAngle" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow"]
+[node name="MeshSubdivisionAngle" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/MeshSubdivisionAngleRow" unique_id=284282221]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.1
@@ -196,223 +201,222 @@ max_value = 90.0
 step = 0.1
 value = 3.0
 
-[node name="CheckpointCountRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="CheckpointCountRow" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=871861985]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/CheckpointCountRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Info/VBoxContainer/CheckpointCountRow" unique_id=1210010642]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Checkpoint Spans"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="CheckpointCount" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/CheckpointCountRow"]
+[node name="CheckpointCount" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/CheckpointCountRow" unique_id=993005237]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 256.0
 value = 8.0
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Info/VBoxContainer"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Info/VBoxContainer" unique_id=176501573]
 layout_mode = 2
 
-[node name="TrackCrossSectionLabel" type="Label" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
+[node name="TrackCrossSectionLabel" type="Label" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer" unique_id=23259167]
 layout_mode = 2
 text = "Track Cross-section"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="TrackCrossSectionSlider" type="HSlider" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
+[node name="TrackCrossSectionSlider" type="HSlider" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer" unique_id=1495444817]
 layout_mode = 2
 max_value = 1.0
 step = 0.0
 tick_count = 5
 
-[node name="ColorRect" type="ColorRect" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
+[node name="ColorRect" type="ColorRect" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer" unique_id=27197326]
 custom_minimum_size = Vector2(0, 358)
 layout_mode = 2
 color = Color(0, 0, 0, 0.294118)
 script = ExtResource("2_klk5r")
 
-[node name="SmoothCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect"]
+[node name="SmoothCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect" unique_id=1027198379]
 position = Vector2(179, 179)
 points = PackedVector2Array(179, 0, 177.997, -3.0348e-05, 176.994, 0, 175.992, 0, 174.989, 0, 173.986, 0, 172.983, 0, 171.98, 0, 170.978, 3.0348e-05, 169.975, 0, 168.972, 3.0348e-05, 167.969, 0, 166.966, 0, 165.964, -3.0348e-05, 164.961, -3.0348e-05, 163.958, -3.0348e-05, 162.955, -3.0348e-05, 161.952, 0, 160.95, -3.0348e-05, 159.947, 0, 158.944, -3.0348e-05, 157.941, 0, 156.938, 0, 155.936, 0, 154.933, 0, 153.93, 0, 152.927, 0, 151.924, 3.0348e-05, 150.922, 0, 149.919, 3.0348e-05, 148.916, 0, 147.913, -3.0348e-05, 146.91, -3.0348e-05, 145.908, -3.0348e-05, 144.905, -3.0348e-05, 143.902, -3.0348e-05, 142.899, 0, 141.896, -3.0348e-05, 140.894, 0, 139.891, -3.0348e-05, 138.888, 0, 137.885, 0, 136.882, 0, 135.88, 0, 134.877, 0, 133.874, 0, 132.871, 3.0348e-05, 131.868, 0, 130.866, 0, 129.863, -3.0348e-05, 128.86, -3.0348e-05, 127.857, -3.0348e-05, 126.854, -3.0348e-05, 125.852, 0, 124.849, -3.0348e-05, 123.846, 0, 122.843, -3.0348e-05, 121.84, 0, 120.838, -3.0348e-05, 119.835, 0, 118.832, 0, 117.829, 0, 116.826, 0, 115.824, 0, 114.821, 0, 113.818, 0, 112.815, 0, 111.812, -3.0348e-05, 110.81, -3.0348e-05, 109.807, -3.0348e-05, 108.804, -3.0348e-05, 107.801, -3.0348e-05, 106.798, 0, 105.796, -3.0348e-05, 104.793, 0, 103.79, -3.0348e-05, 102.787, 0, 101.784, 0, 100.781, 0, 99.7787, 0, 98.7759, 0, 97.7731, 0, 96.7703, 3.0348e-05, 95.7675, 0, 94.7647, 0, 93.7619, 0, 92.7591, -3.0348e-05, 91.7563, -3.0348e-05, 90.7535, -3.0348e-05, 89.7507, 0, 88.7479, -3.0348e-05, 87.7451, 0, 86.7423, -3.0348e-05, 85.7395, 0, 84.7367, -3.0348e-05, 83.7339, 0, 82.7311, 0, 81.7283, 0, 80.7255, 0, 79.7227, 0, 78.7199, 0, 77.7171, 0, 76.7143, 0, 75.7115, 0, 74.7087, 0, 73.7058, -3.0348e-05, 72.7031, -3.0348e-05, 71.7002, -3.0348e-05, 70.6975, 0, 69.6947, -3.0348e-05, 68.6919, 0, 67.6891, -3.0348e-05, 66.6862, 0, 65.6835, 0, 64.6807, 0, 63.6779, 0, 62.6751, 0, 61.6723, 0, 60.6695, -3.0348e-05, 59.6667, 0, 58.6639, 0, 57.661, 0, 56.6583, 0, 55.6554, -3.0348e-05, 54.6527, -3.0348e-05, 53.6499, -3.0348e-05, 52.6471, -3.0348e-05, 51.6442, 0, 50.6415, -3.0348e-05, 49.6386, 0, 48.6359, -3.0348e-05, 47.633, 0, 46.6302, 0, 45.6275, 0, 44.6246, 0, 43.6218, -3.0348e-05, 42.619, 0, 41.6162, 0, 40.6134, 0, 39.6106, 0, 38.6078, 0, 37.605, 0, 36.6022, -3.0348e-05, 35.5994, -3.0348e-05, 34.5966, 0, 33.5938, -3.0348e-05, 32.591, 0, 31.5882, -3.0348e-05, 30.5854, 0, 29.5826, -3.0348e-05, 28.5798, 0, 27.577, 0, 26.5742, 0, 25.5714, 0, 24.5686, -3.0348e-05, 23.5658, 0, 22.563, 0, 21.5602, 0, 20.5574, 0, 19.5546, 0, 18.5518, -3.0348e-05, 17.549, -3.0348e-05, 16.5462, -3.0348e-05, 15.5434, 0, 14.5406, -3.0348e-05, 13.5378, 0, 12.535, -3.0348e-05, 11.5322, 0, 10.5294, 0, 9.52661, 0, 8.52381, 0, 7.521, -3.0348e-05, 6.5182, 0, 5.5154, -3.0348e-05, 4.5126, 0, 3.5098, 0, 2.50699, 0, 1.50419, 0, 0.50139, 0, -0.501411, -3.0348e-05, -1.50421, 0, -2.50701, -3.0348e-05, -3.50981, 0, -4.51262, -3.0348e-05, -5.51542, 0, -6.51822, -3.0348e-05, -7.52102, 0, -8.52383, 0, -9.52663, -3.0348e-05, -10.5294, 0, -11.5322, -3.0348e-05, -12.535, 0, -13.5378, 0, -14.5406, 0, -15.5434, 0, -16.5462, 0, -17.549, 0, -18.5518, 0, -19.5546, -3.0348e-05, -20.5574, 0, -21.5602, -3.0348e-05, -22.563, 0, -23.5658, -3.0348e-05, -24.5686, 0, -25.5714, 0, -26.5742, 0, -27.577, 0, -28.5798, -3.0348e-05, -29.5826, 0, -30.5854, -3.0348e-05, -31.5882, 0, -32.591, 0, -33.5938, 0, -34.5966, 0, -35.5994, 0, -36.6022, 0, -37.605, 0, -38.6079, -3.0348e-05, -39.6107, 0, -40.6135, -3.0348e-05, -41.6163, 0, -42.6191, -3.0348e-05, -43.6219, 0, -44.6247, 0, -45.6275, -3.0348e-05, -46.6303, 0, -47.6331, -3.0348e-05, -48.6359, 0, -49.6387, 0, -50.6415, 0, -51.6443, 0, -52.6471, 0, -53.6499, 0, -54.6527, 0, -55.6555, 0, -56.6583, 0, -57.6611, -3.0348e-05, -58.6639, 0, -59.6667, -3.0348e-05, -60.6695, 0, -61.6723, -3.0348e-05, -62.6751, -3.0348e-05, -63.6779, 0, -64.6807, -3.0348e-05, -65.6835, 0, -66.6863, -3.0348e-05, -67.6891, 0, -68.6919, 0, -69.6947, 0, -70.6975, 0, -71.7003, 0, -72.7031, 0, -73.7059, 3.0348e-05, -74.7087, -3.0348e-05, -75.7115, 0, -76.7143, -3.0348e-05, -77.7171, 0, -78.7199, -3.0348e-05, -79.7227, -3.0348e-05, -80.7255, 0, -81.7283, -3.0348e-05, -82.7311, 0, -83.7339, -3.0348e-05, -84.7367, 0, -85.7395, -3.0348e-05, -86.7423, 0, -87.7451, 0, -88.7479, 0, -89.7507, 0, -90.7535, 0, -91.7563, 0, -92.7591, 3.0348e-05, -93.7619, -3.0348e-05, -94.7647, 0, -95.7675, -3.0348e-05, -96.7703, 0, -97.7731, -3.0348e-05, -98.7759, -3.0348e-05, -99.7787, 0, -100.782, -3.0348e-05, -101.784, 0, -102.787, -3.0348e-05, -103.79, 0, -104.793, 0, -105.796, 0, -106.798, 0, -107.801, 0, -108.804, 0, -109.807, 0, -110.81, 0, -111.812, 3.0348e-05, -112.815, -3.0348e-05, -113.818, 0, -114.821, -3.0348e-05, -115.824, -3.0348e-05, -116.826, 0, -117.829, -3.0348e-05, -118.832, 0, -119.835, -3.0348e-05, -120.838, 0, -121.84, -3.0348e-05, -122.843, 0, -123.846, 0, -124.849, 0, -125.852, 0, -126.854, 0, -127.857, 0, -128.86, 3.0348e-05, -129.863, 0, -130.866, 0, -131.868, -3.0348e-05, -132.871, -3.0348e-05, -133.874, -3.0348e-05, -134.877, -3.0348e-05, -135.88, 0, -136.882, -3.0348e-05, -137.885, 0, -138.888, -3.0348e-05, -139.891, 0, -140.894, 0, -141.896, 0, -142.899, 0, -143.902, 0, -144.905, 0, -145.908, 0, -146.91, 0, -147.913, 3.0348e-05, -148.916, -3.0348e-05, -149.919, -3.0348e-05, -150.922, -3.0348e-05, -151.924, -3.0348e-05, -152.927, -3.0348e-05, -153.93, -3.0348e-05, -154.933, 0, -155.936, -3.0348e-05, -156.938, 0, -157.941, -3.0348e-05, -158.944, 0, -159.947, 0, -160.95, 0, -161.952, 0, -162.955, 0, -163.958, 0, -164.961, 0, -165.964, 0, -166.966, 3.0348e-05, -167.969, -3.0348e-05, -168.972, -3.0348e-05, -169.975, -3.0348e-05, -170.978, -3.0348e-05, -171.98, 0, -172.983, -3.0348e-05, -173.986, 0, -174.989, -3.0348e-05, -175.992, 0, -176.994, -3.0348e-05, -177.997, 0, -179, 0)
 width = 2.0
 default_color = Color(0.82, 0.877, 1, 1)
 antialiased = true
 
-[node name="PolyCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect"]
+[node name="PolyCurve" type="Line2D" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/ColorRect" unique_id=416119196]
 position = Vector2(179, 179)
 points = PackedVector2Array(179, 0, 105, -3.0348e-05, 86.9997, -3.0348e-05, 64, 0, 41.9998, 0, -44, -3.0348e-05, -61, 0, -84.0001, -3.0348e-05, -103, 0, -179, 0, -179, 0, -179, 0)
 width = 2.0
 default_color = Color(0.87, 0.81519, 0.3219, 1)
 antialiased = true
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer" unique_id=716583514]
 visible = false
 layout_mode = 2
 
-[node name="CopyMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="CopyMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer" unique_id=735675777]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Copy Mesh Layout"
 
-[node name="PasteMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="PasteMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer" unique_id=228358659]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Paste Mesh Layout"
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer" unique_id=43882698]
 visible = false
 layout_mode = 2
 
-[node name="CreateMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2"]
+[node name="CreateMeshLayout" type="Button" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2" unique_id=155912059]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Create Evenly Spaced Layout"
 
-[node name="MeshLayoutCount" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2"]
+[node name="MeshLayoutCount" type="SpinBox" parent="Control/TabContainer/Info/VBoxContainer/VBoxContainer/HBoxContainer2" unique_id=1611809667]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 2.0
 max_value = 64.0
 value = 5.0
 
-[node name="Rails" type="ScrollContainer" parent="Control/TabContainer"]
-visible = false
+[node name="Rails" type="ScrollContainer" parent="Control/TabContainer" unique_id=891883276]
 layout_mode = 2
 metadata/_tab_index = 1
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Rails"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Rails" unique_id=553826657]
 custom_minimum_size = Vector2(335, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 16
 
-[node name="LeftRailHeightRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+[node name="LeftRailHeightRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer" unique_id=339915702]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailHeightRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailHeightRow" unique_id=41266238]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Left Height"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="LeftRailHeight" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailHeightRow"]
+[node name="LeftRailHeight" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailHeightRow" unique_id=822993777]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 10000.0
 step = 0.1
 value = 5.0
 
-[node name="LeftRailStartRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+[node name="LeftRailStartRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer" unique_id=1559702733]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailStartRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailStartRow" unique_id=1899554555]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Left Start"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="LeftRailStart" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailStartRow"]
+[node name="LeftRailStart" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailStartRow" unique_id=1292282602]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.001
 
-[node name="LeftRailEndRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+[node name="LeftRailEndRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer" unique_id=104090033]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailEndRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailEndRow" unique_id=919680516]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Left End"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="LeftRailEnd" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailEndRow"]
+[node name="LeftRailEnd" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/LeftRailEndRow" unique_id=1963246796]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.001
 value = 1.0
 
-[node name="RightRailHeightRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+[node name="RightRailHeightRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer" unique_id=436485041]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow" unique_id=853472847]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Height"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RightRailHeight" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow"]
+[node name="RightRailHeight" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailHeightRow" unique_id=1360249068]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 10000.0
 step = 0.1
 value = 5.0
 
-[node name="RightRailStartRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+[node name="RightRailStartRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer" unique_id=1904098877]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailStartRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailStartRow" unique_id=593266644]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Start"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RightRailStart" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailStartRow"]
+[node name="RightRailStart" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailStartRow" unique_id=1788082743]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.001
 
-[node name="RightRailEndRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+[node name="RightRailEndRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer" unique_id=730075376]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailEndRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RightRailEndRow" unique_id=963176971]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right End"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RightRailEnd" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailEndRow"]
+[node name="RightRailEnd" type="SpinBox" parent="Control/TabContainer/Rails/VBoxContainer/RightRailEndRow" unique_id=603410539]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.001
 value = 1.0
 
-[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer"]
+[node name="RailColorRow" type="HBoxContainer" parent="Control/TabContainer/Rails/VBoxContainer" unique_id=1539300593]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RailColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Rails/VBoxContainer/RailColorRow" unique_id=730371065]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Rail Color"
 label_settings = SubResource("LabelSettings_h0jni")
 
-[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Rails/VBoxContainer/RailColorRow"]
+[node name="RailColor" type="ColorPickerButton" parent="Control/TabContainer/Rails/VBoxContainer/RailColorRow" unique_id=880662955]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.8, 0.8, 0.8, 1)
 
-[node name="Spiral" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Spiral" type="ScrollContainer" parent="Control/TabContainer" unique_id=1534486789]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Spiral"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Spiral" unique_id=671568931]
 custom_minimum_size = Vector2(335, 0)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="SpiralDegreesLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
+[node name="SpiralDegreesLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer" unique_id=493803783]
 layout_mode = 2
 text = "Spiral Degrees"
 
-[node name="SpiralDegreesRow" type="HBoxContainer" parent="Control/TabContainer/Spiral/VBoxContainer"]
+[node name="SpiralDegreesRow" type="HBoxContainer" parent="Control/TabContainer/Spiral/VBoxContainer" unique_id=434286950]
 layout_mode = 2
 
-[node name="SpiralDegrees" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralDegreesRow"]
+[node name="SpiralDegrees" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralDegreesRow" unique_id=1980462686]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100000.0
@@ -422,29 +426,29 @@ value = 90.0
 allow_greater = true
 allow_lesser = true
 
-[node name="SpiralAxisLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer"]
+[node name="SpiralAxisLabel" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer" unique_id=607137551]
 layout_mode = 2
 text = "Spiral Axis"
 
-[node name="SpiralAxisRow" type="HBoxContainer" parent="Control/TabContainer/Spiral/VBoxContainer"]
+[node name="SpiralAxisRow" type="HBoxContainer" parent="Control/TabContainer/Spiral/VBoxContainer" unique_id=2062223085]
 layout_mode = 2
 
-[node name="LabelX" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow"]
+[node name="LabelX" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow" unique_id=1760057888]
 layout_mode = 2
 text = " X "
 
-[node name="SpiralAxisX" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow"]
+[node name="SpiralAxisX" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow" unique_id=171132405]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -1.0
 max_value = 1.0
 step = 0.01
 
-[node name="LabelY" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow"]
+[node name="LabelY" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow" unique_id=2032571200]
 layout_mode = 2
 text = " Y "
 
-[node name="SpiralAxisY" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow"]
+[node name="SpiralAxisY" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow" unique_id=810555214]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -1.0
@@ -452,263 +456,260 @@ max_value = 1.0
 step = 0.01
 value = 1.0
 
-[node name="LabelZ" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow"]
+[node name="LabelZ" type="Label" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow" unique_id=1938596196]
 layout_mode = 2
 text = " Z "
 
-[node name="SpiralAxisZ" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow"]
+[node name="SpiralAxisZ" type="SpinBox" parent="Control/TabContainer/Spiral/VBoxContainer/SpiralAxisRow" unique_id=1614396972]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -1.0
 max_value = 1.0
 step = 0.01
 
-[node name="Track" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Track" type="ScrollContainer" parent="Control/TabContainer" unique_id=1256967409]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 3
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Track"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Track" unique_id=1010659668]
 custom_minimum_size = Vector2(335, 0)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="TrackNameLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="TrackNameLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1148548385]
 layout_mode = 2
 text = "Track Name"
 
-[node name="TrackName" type="LineEdit" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="TrackName" type="LineEdit" parent="Control/TabContainer/Track/VBoxContainer" unique_id=2098017661]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "New Track"
 
-[node name="TrackDescriptionLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="TrackDescriptionLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1045719167]
 layout_mode = 2
 text = "Track Description"
 
-[node name="TrackDescription" type="LineEdit" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="TrackDescription" type="LineEdit" parent="Control/TabContainer/Track/VBoxContainer" unique_id=135164137]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="TrackDifficultyLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="TrackDifficultyLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer" unique_id=355124973]
 layout_mode = 2
 text = "Track Difficulty"
 
-[node name="TrackDifficultyRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="TrackDifficultyRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=2062733585]
 layout_mode = 2
 
-[node name="TrackDifficulty" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/TrackDifficultyRow"]
+[node name="TrackDifficulty" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/TrackDifficultyRow" unique_id=775312430]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 1.0
 max_value = 10.0
 value = 1.0
 
-[node name="FirstSegmentLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="FirstSegmentLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer" unique_id=131068733]
 layout_mode = 2
 text = "First Segment"
 
-[node name="FirstSegmentValue" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="FirstSegmentValue" type="Label" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1345350764]
 layout_mode = 2
 text = "Child order"
 
-[node name="SetFirstSegment" type="Button" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="SetFirstSegment" type="Button" parent="Control/TabContainer/Track/VBoxContainer" unique_id=564052650]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Use Selected Segment As First"
 
-[node name="FogDistanceRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="FogDistanceRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=621636070]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/FogDistanceRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/FogDistanceRow" unique_id=1154932748]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Fog Distance"
 
-[node name="FogDistance" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/FogDistanceRow"]
+[node name="FogDistance" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/FogDistanceRow" unique_id=1839117395]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 10000.0
-step = 1.0
 value = 2000.0
 
-[node name="SkyTopColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="SkyTopColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=72115047]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyTopColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyTopColorRow" unique_id=141678033]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Sky Top"
 
-[node name="SkyTopColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyTopColorRow"]
+[node name="SkyTopColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyTopColorRow" unique_id=1843535702]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0, 0.1, 0.25, 1)
 
-[node name="SkyHorizonColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="SkyHorizonColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=498685721]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyHorizonColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyHorizonColorRow" unique_id=1829347301]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Sky Horizon"
 
-[node name="SkyHorizonColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyHorizonColorRow"]
+[node name="SkyHorizonColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyHorizonColorRow" unique_id=1802530517]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.2, 0.25, 0.3, 1)
 
-[node name="SkyGroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="SkyGroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=84773406]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyGroundColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/SkyGroundColorRow" unique_id=334331153]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Sky Ground"
 
-[node name="SkyGroundColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyGroundColorRow"]
+[node name="SkyGroundColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/SkyGroundColorRow" unique_id=433266313]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.02, 0.02, 0.02, 1)
 
-[node name="GlobalGroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="GlobalGroundColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1419448712]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/GlobalGroundColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/GlobalGroundColorRow" unique_id=593225826]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "World Ground"
 
-[node name="GlobalGroundColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/GlobalGroundColorRow"]
+[node name="GlobalGroundColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/GlobalGroundColorRow" unique_id=905613359]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.08, 0.08, 0.08, 1)
 
-[node name="GroundHeightRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="GroundHeightRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1358052525]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/GroundHeightRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/GroundHeightRow" unique_id=483462642]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Ground Height"
 
-[node name="GroundHeight" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/GroundHeightRow"]
+[node name="GroundHeight" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/GroundHeightRow" unique_id=1438778797]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -10000.0
 max_value = 10000.0
-step = 1.0
 
-[node name="CloudColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="CloudColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1554579142]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/CloudColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/CloudColorRow" unique_id=1401401435]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Cloud Color"
 
-[node name="CloudColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/CloudColorRow"]
+[node name="CloudColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/CloudColorRow" unique_id=87916228]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(1, 1, 1, 1)
 
-[node name="CloudHeightRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="CloudHeightRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=487941468]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/CloudHeightRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/CloudHeightRow" unique_id=1119648790]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Cloud Height"
 
-[node name="CloudHeight" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/CloudHeightRow"]
+[node name="CloudHeight" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/CloudHeightRow" unique_id=1697432801]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -10000.0
 max_value = 10000.0
-step = 1.0
 value = 800.0
 
-[node name="LightColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="LightColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=483062216]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightColorRow" unique_id=1961429200]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Light Color"
 
-[node name="LightColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/LightColorRow"]
+[node name="LightColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/LightColorRow" unique_id=2003763175]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(1, 0.95, 0.9, 1)
 
-[node name="LightIntensityRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="LightIntensityRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=875391492]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightIntensityRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightIntensityRow" unique_id=256766759]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Light Intensity"
 
-[node name="LightIntensity" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightIntensityRow"]
+[node name="LightIntensity" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightIntensityRow" unique_id=1180680863]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 10.0
 step = 0.01
 value = 1.0
 
-[node name="AmbientIntensityRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="AmbientIntensityRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1440374878]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/AmbientIntensityRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/AmbientIntensityRow" unique_id=206938816]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Ambient Intensity"
 
-[node name="AmbientIntensity" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/AmbientIntensityRow"]
+[node name="AmbientIntensity" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/AmbientIntensityRow" unique_id=2140072011]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 5.0
 step = 0.01
 value = 0.1
 
-[node name="AmbientColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="AmbientColorRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1391522353]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/AmbientColorRow"]
+[node name="Label" type="Label" parent="Control/TabContainer/Track/VBoxContainer/AmbientColorRow" unique_id=1196985509]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Ambient Color"
 
-[node name="AmbientColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/AmbientColorRow"]
+[node name="AmbientColor" type="ColorPickerButton" parent="Control/TabContainer/Track/VBoxContainer/AmbientColorRow" unique_id=15847172]
 layout_mode = 2
 size_flags_horizontal = 3
 color = Color(0.15, 0.15, 0.18, 1)
 
-[node name="LightDirectionLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="LightDirectionLabel" type="Label" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1422763476]
 layout_mode = 2
 text = "Light Direction"
 
-[node name="LightDirectionRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer"]
+[node name="LightDirectionRow" type="HBoxContainer" parent="Control/TabContainer/Track/VBoxContainer" unique_id=1076772418]
 layout_mode = 2
 
-[node name="LabelX" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+[node name="LabelX" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow" unique_id=460943625]
 layout_mode = 2
 text = " X "
 
-[node name="LightDirectionX" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+[node name="LightDirectionX" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow" unique_id=1230068301]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -1.0
 max_value = 1.0
 step = 0.01
-value = 0.3
+value = 0.30000000000000004
 
-[node name="LabelY" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+[node name="LabelY" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow" unique_id=1068250954]
 layout_mode = 2
 text = " Y "
 
-[node name="LightDirectionY" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+[node name="LightDirectionY" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow" unique_id=376271393]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -1.0
@@ -716,83 +717,84 @@ max_value = 1.0
 step = 0.01
 value = -1.0
 
-[node name="LabelZ" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+[node name="LabelZ" type="Label" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow" unique_id=1252051795]
 layout_mode = 2
 text = " Z "
 
-[node name="LightDirectionZ" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow"]
+[node name="LightDirectionZ" type="SpinBox" parent="Control/TabContainer/Track/VBoxContainer/LightDirectionRow" unique_id=1584855091]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -1.0
 max_value = 1.0
 step = 0.01
-value = 0.4
+value = 0.3999999999999999
 
-[node name="Object" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Object" type="ScrollContainer" parent="Control/TabContainer" unique_id=104890533]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 4
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Object"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Object" unique_id=1794189474]
 custom_minimum_size = Vector2(335, 0)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="ObjectTypeLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectTypeLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer" unique_id=1097800993]
 layout_mode = 2
 text = "Object Type"
 
-[node name="ObjectType" type="OptionButton" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectType" type="OptionButton" parent="Control/TabContainer/Object/VBoxContainer" unique_id=2147037784]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
 item_count = 3
 popup/item_0/text = "Dashplate"
+popup/item_0/id = 0
 popup/item_1/text = "Jumpplate"
 popup/item_1/id = 1
 popup/item_2/text = "Mine"
 popup/item_2/id = 2
 
-[node name="RemoveTrackObject" type="Button" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="RemoveTrackObject" type="Button" parent="Control/TabContainer/Object/VBoxContainer" unique_id=1184571648]
 modulate = Color(1, 0.37, 0.37, 1)
 layout_mode = 2
 text = "Remove"
 
-[node name="ObjectSurfaceLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectSurfaceLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer" unique_id=870800457]
 layout_mode = 2
 text = "Surface Position"
 
-[node name="ObjectSurfaceRow" type="HBoxContainer" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectSurfaceRow" type="HBoxContainer" parent="Control/TabContainer/Object/VBoxContainer" unique_id=1115013052]
 layout_mode = 2
 
-[node name="LabelX" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+[node name="LabelX" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow" unique_id=709524571]
 layout_mode = 2
 text = " X "
 
-[node name="ObjectTX" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+[node name="ObjectTX" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow" unique_id=1728451754]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -1.0
 max_value = 1.0
 step = 0.01
 
-[node name="LabelY" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+[node name="LabelY" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow" unique_id=1572618718]
 layout_mode = 2
 text = " Y "
 
-[node name="ObjectTY" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow"]
+[node name="ObjectTY" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectSurfaceRow" unique_id=1117044835]
 layout_mode = 2
 size_flags_horizontal = 3
 max_value = 1.0
 step = 0.01
 value = 0.5
 
-[node name="ObjectYawLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectYawLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer" unique_id=1049631012]
 layout_mode = 2
 text = "Yaw"
 
-[node name="ObjectYaw" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectYaw" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer" unique_id=1087582753]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = -100000.0
@@ -801,116 +803,119 @@ step = 0.1
 allow_greater = true
 allow_lesser = true
 
-[node name="ObjectScaleLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectScaleLabel" type="Label" parent="Control/TabContainer/Object/VBoxContainer" unique_id=1325251187]
 layout_mode = 2
 text = "Scale"
 
-[node name="ObjectScaleRow" type="HBoxContainer" parent="Control/TabContainer/Object/VBoxContainer"]
+[node name="ObjectScaleRow" type="HBoxContainer" parent="Control/TabContainer/Object/VBoxContainer" unique_id=1498397903]
 layout_mode = 2
 
-[node name="LabelX" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+[node name="LabelX" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow" unique_id=1226274940]
 layout_mode = 2
 text = " X "
 
-[node name="ObjectScaleX" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+[node name="ObjectScaleX" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow" unique_id=1426679462]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.001
 max_value = 1000.0
 step = 0.01
-value = 1.0
+value = 1.001
 allow_greater = true
 
-[node name="LabelY" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+[node name="LabelY" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow" unique_id=1032167803]
 layout_mode = 2
 text = " Y "
 
-[node name="ObjectScaleY" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+[node name="ObjectScaleY" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow" unique_id=1729644980]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.001
 max_value = 1000.0
 step = 0.01
-value = 1.0
+value = 1.001
 allow_greater = true
 
-[node name="LabelZ" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+[node name="LabelZ" type="Label" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow" unique_id=229197994]
 layout_mode = 2
 text = " Z "
 
-[node name="ObjectScaleZ" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow"]
+[node name="ObjectScaleZ" type="SpinBox" parent="Control/TabContainer/Object/VBoxContainer/ObjectScaleRow" unique_id=100791077]
 layout_mode = 2
 size_flags_horizontal = 3
 min_value = 0.001
 max_value = 1000.0
 step = 0.01
-value = 1.0
+value = 1.001
 allow_greater = true
 
-[node name="Modulation" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Modulation" type="ScrollContainer" parent="Control/TabContainer" unique_id=565163113]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 5
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Modulation"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Modulation" unique_id=97115445]
 custom_minimum_size = Vector2(335, 0)
 layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/separation = 0
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Modulation/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Modulation/VBoxContainer" unique_id=1684930469]
 layout_mode = 2
 
-[node name="ModulationDropdown" type="OptionButton" parent="Control/TabContainer/Modulation/VBoxContainer/HBoxContainer"]
+[node name="ModulationDropdown" type="OptionButton" parent="Control/TabContainer/Modulation/VBoxContainer/HBoxContainer" unique_id=310891881]
 layout_mode = 2
 size_flags_horizontal = 3
 selected = 0
 item_count = 1
 popup/item_0/text = "Modulation 1"
+popup/item_0/id = 0
 
-[node name="NewModulation" type="Button" parent="Control/TabContainer/Modulation/VBoxContainer/HBoxContainer"]
+[node name="NewModulation" type="Button" parent="Control/TabContainer/Modulation/VBoxContainer/HBoxContainer" unique_id=1521019608]
 modulate = Color(0.52549, 1, 0.529412, 1)
 layout_mode = 2
 text = "+ New"
 
-[node name="RemoveModulation" type="Button" parent="Control/TabContainer/Modulation/VBoxContainer/HBoxContainer"]
+[node name="RemoveModulation" type="Button" parent="Control/TabContainer/Modulation/VBoxContainer/HBoxContainer" unique_id=1484606875]
 modulate = Color(1, 0.37, 0.37, 1)
 layout_mode = 2
 text = "Remove"
 
-[node name="Embeds" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Embeds" type="ScrollContainer" parent="Control/TabContainer" unique_id=713583186]
+visible = false
 layout_mode = 2
 metadata/_tab_index = 6
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Embeds"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Embeds" unique_id=340338362]
 custom_minimum_size = Vector2(335, 0)
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Embeds/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Embeds/VBoxContainer" unique_id=1497084331]
 layout_mode = 2
 
-[node name="EmbedDropdown" type="OptionButton" parent="Control/TabContainer/Embeds/VBoxContainer/HBoxContainer"]
+[node name="EmbedDropdown" type="OptionButton" parent="Control/TabContainer/Embeds/VBoxContainer/HBoxContainer" unique_id=286083595]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="NewEmbed" type="Button" parent="Control/TabContainer/Embeds/VBoxContainer/HBoxContainer"]
+[node name="NewEmbed" type="Button" parent="Control/TabContainer/Embeds/VBoxContainer/HBoxContainer" unique_id=685258418]
 layout_mode = 2
 text = "+ New"
 
-[node name="RemoveEmbed" type="Button" parent="Control/TabContainer/Embeds/VBoxContainer/HBoxContainer"]
+[node name="RemoveEmbed" type="Button" parent="Control/TabContainer/Embeds/VBoxContainer/HBoxContainer" unique_id=1602845754]
 layout_mode = 2
 text = "- Remove"
 
-[node name="Label" type="Label" parent="Control/TabContainer/Embeds/VBoxContainer"]
+[node name="Label" type="Label" parent="Control/TabContainer/Embeds/VBoxContainer" unique_id=1935647807]
 layout_mode = 2
 text = "Embed Type"
 
-[node name="EmbedType" type="OptionButton" parent="Control/TabContainer/Embeds/VBoxContainer"]
+[node name="EmbedType" type="OptionButton" parent="Control/TabContainer/Embeds/VBoxContainer" unique_id=796644680]
 layout_mode = 2
 size_flags_horizontal = 3
 item_count = 5
 popup/item_0/text = "Energy Recharge"
+popup/item_0/id = 0
 popup/item_1/text = "Dirt"
 popup/item_1/id = 1
 popup/item_2/text = "Ice"
@@ -920,57 +925,57 @@ popup/item_3/id = 3
 popup/item_4/text = "Gap"
 popup/item_4/id = 4
 
-[node name="Label3" type="Label" parent="Control/TabContainer/Embeds/VBoxContainer"]
+[node name="Label3" type="Label" parent="Control/TabContainer/Embeds/VBoxContainer" unique_id=1410981408]
 layout_mode = 2
 text = "Start Position"
 
-[node name="EmbedStart" type="HSlider" parent="Control/TabContainer/Embeds/VBoxContainer"]
+[node name="EmbedStart" type="HSlider" parent="Control/TabContainer/Embeds/VBoxContainer" unique_id=518212415]
 layout_mode = 2
 max_value = 1.0
 step = 0.0
 
-[node name="Label2" type="Label" parent="Control/TabContainer/Embeds/VBoxContainer"]
+[node name="Label2" type="Label" parent="Control/TabContainer/Embeds/VBoxContainer" unique_id=596421281]
 layout_mode = 2
 text = "End Position"
 
-[node name="EmbedEnd" type="HSlider" parent="Control/TabContainer/Embeds/VBoxContainer"]
+[node name="EmbedEnd" type="HSlider" parent="Control/TabContainer/Embeds/VBoxContainer" unique_id=557507525]
 layout_mode = 2
 max_value = 1.0
 step = 0.0
 value = 1.0
 
-[node name="Handles" type="ScrollContainer" parent="Control/TabContainer"]
+[node name="Handles" type="ScrollContainer" parent="Control/TabContainer" unique_id=1944209011]
 visible = false
 layout_mode = 2
 horizontal_scroll_mode = 0
 metadata/_tab_index = 7
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Handles"]
+[node name="VBoxContainer" type="VBoxContainer" parent="Control/TabContainer/Handles" unique_id=847078919]
 custom_minimum_size = Vector2(335, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="DrawMesh" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer"]
+[node name="DrawMesh" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer" unique_id=1638723019]
 layout_mode = 2
 button_pressed = true
 text = "Draw Mesh"
 
-[node name="DrawCurve" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer"]
+[node name="DrawCurve" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer" unique_id=775035958]
 layout_mode = 2
 button_pressed = true
 text = "Draw Curve"
 
-[node name="DrawHandles" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer"]
+[node name="DrawHandles" type="CheckBox" parent="Control/TabContainer/Handles/VBoxContainer" unique_id=725855487]
 layout_mode = 2
 button_pressed = true
 text = "Draw Handles"
 
-[node name="DataEditor" type="Control" parent="Control/TabContainer/Handles/VBoxContainer"]
+[node name="DataEditor" type="Control" parent="Control/TabContainer/Handles/VBoxContainer" unique_id=294483257]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="BezierHandleData" type="VBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor"]
+[node name="BezierHandleData" type="VBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor" unique_id=1830559571]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -979,49 +984,49 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
 
-[node name="HBoxContainer11" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer11" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=375333827]
 layout_mode = 2
 
-[node name="CopyTransformButton1" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11"]
+[node name="CopyTransformButton1" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11" unique_id=1428248103]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Copy"
 
-[node name="PasteTransformButton1" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11"]
+[node name="PasteTransformButton1" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer11" unique_id=2072145736]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Paste"
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=1731009075]
 layout_mode = 2
 text = "Position"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=2015259467]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer" unique_id=479603317]
 layout_mode = 2
 text = " X "
 
-[node name="HandlePosX" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer"]
+[node name="HandlePosX" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer" unique_id=2061355054]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_jhpqy")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = -12.1
+value = -12.10000000000582
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=2088661831]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2" unique_id=1606284089]
 layout_mode = 2
 text = " Y "
 
-[node name="HandlePosY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2"]
+[node name="HandlePosY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer2" unique_id=2137088492]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1032,94 +1037,94 @@ value = 164.5
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=373285221]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3" unique_id=1201591645]
 layout_mode = 2
 text = " Z "
 
-[node name="HandlePosZ" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3"]
+[node name="HandlePosZ" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer3" unique_id=1251163731]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = 52.4
+value = 52.39999999999418
 allow_greater = true
 allow_lesser = true
 
-[node name="Label2" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label2" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=420248079]
 layout_mode = 2
 text = "Rotation"
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=881055650]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4" unique_id=299425093]
 layout_mode = 2
 text = " P "
 
-[node name="HandleRotP" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4"]
+[node name="HandleRotP" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer4" unique_id=915973540]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = -9.3
+value = -9.30000000000291
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer5" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=1671204854]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5" unique_id=136511944]
 layout_mode = 2
 text = " Y "
 
-[node name="HandleRotY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5"]
+[node name="HandleRotY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer5" unique_id=1580587691]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = 2.9
+value = 2.8999999999941792
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=1437909915]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6" unique_id=614393810]
 layout_mode = 2
 text = " R "
 
-[node name="HandleRotR" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6"]
+[node name="HandleRotR" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer6" unique_id=153272582]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = -0.1
+value = -0.10000000000582077
 allow_greater = true
 allow_lesser = true
 
-[node name="Label3" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label3" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=157788317]
 layout_mode = 2
 text = "Scale"
 
-[node name="HBoxContainer7" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer7" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=1985913222]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7" unique_id=1608276251]
 layout_mode = 2
 text = " W "
 
-[node name="HandleScaleW" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7"]
+[node name="HandleScaleW" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer7" unique_id=1669271409]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1130,14 +1135,14 @@ value = 250.0
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer8" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer8" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=701349853]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8" unique_id=1515468959]
 layout_mode = 2
 text = " H "
 
-[node name="HandleScaleH" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8"]
+[node name="HandleScaleH" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer8" unique_id=182236428]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1148,18 +1153,18 @@ value = 1.0
 allow_greater = true
 allow_lesser = true
 
-[node name="Label4" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label4" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=106072946]
 layout_mode = 2
 text = "Handle In/Out Weight"
 
-[node name="HBoxContainer9" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer9" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=279857412]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9" unique_id=1668582954]
 layout_mode = 2
 text = "  I  "
 
-[node name="HandleWeightI" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9"]
+[node name="HandleWeightI" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer9" unique_id=729914958]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1170,14 +1175,14 @@ value = 200.0
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer10" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer10" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=1269868549]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10" unique_id=1259154279]
 layout_mode = 2
 text = " O "
 
-[node name="HandleWeightO" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10"]
+[node name="HandleWeightO" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer10" unique_id=735417608]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1188,23 +1193,24 @@ value = 200.0
 allow_greater = true
 allow_lesser = true
 
-[node name="Label5" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="Label5" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=273802449]
 layout_mode = 2
 text = "Interpolation"
 
-[node name="HBoxContainer12" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer12" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=494351625]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12" unique_id=1923873537]
 layout_mode = 2
 text = "Rot"
 
-[node name="RotEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+[node name="RotEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12" unique_id=1319676994]
 layout_mode = 2
 size_flags_horizontal = 3
-item_count = 4
 selected = 0
+item_count = 4
 popup/item_0/text = "InOut"
+popup/item_0/id = 0
 popup/item_1/text = "In"
 popup/item_1/id = 1
 popup/item_2/text = "Out"
@@ -1212,7 +1218,7 @@ popup/item_2/id = 2
 popup/item_3/text = "Linear"
 popup/item_3/id = 3
 
-[node name="RotEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12"]
+[node name="RotEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer12" unique_id=1716425642]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1220,19 +1226,20 @@ max_value = 2.0
 step = 0.05
 value = 1.0
 
-[node name="HBoxContainer13" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer13" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=407855746]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13" unique_id=2097311477]
 layout_mode = 2
 text = "Twist"
 
-[node name="TwistEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+[node name="TwistEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13" unique_id=1602619187]
 layout_mode = 2
 size_flags_horizontal = 3
-item_count = 4
 selected = 0
+item_count = 4
 popup/item_0/text = "InOut"
+popup/item_0/id = 0
 popup/item_1/text = "In"
 popup/item_1/id = 1
 popup/item_2/text = "Out"
@@ -1240,7 +1247,7 @@ popup/item_2/id = 2
 popup/item_3/text = "Linear"
 popup/item_3/id = 3
 
-[node name="TwistEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13"]
+[node name="TwistEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer13" unique_id=312446858]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1248,19 +1255,20 @@ max_value = 2.0
 step = 0.05
 value = 1.0
 
-[node name="HBoxContainer14" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData"]
+[node name="HBoxContainer14" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData" unique_id=334802628]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14" unique_id=1265217675]
 layout_mode = 2
 text = "Scale"
 
-[node name="ScaleEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+[node name="ScaleEaseType" type="OptionButton" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14" unique_id=945907225]
 layout_mode = 2
 size_flags_horizontal = 3
-item_count = 4
 selected = 0
+item_count = 4
 popup/item_0/text = "InOut"
+popup/item_0/id = 0
 popup/item_1/text = "In"
 popup/item_1/id = 1
 popup/item_2/text = "Out"
@@ -1268,7 +1276,7 @@ popup/item_2/id = 2
 popup/item_3/text = "Linear"
 popup/item_3/id = 3
 
-[node name="ScaleEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14"]
+[node name="ScaleEaseStrength" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/BezierHandleData/HBoxContainer14" unique_id=603688313]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_mqhhv")
@@ -1276,7 +1284,7 @@ max_value = 2.0
 step = 0.05
 value = 1.0
 
-[node name="LineHandleData" type="VBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor"]
+[node name="LineHandleData" type="VBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor" unique_id=2064822881]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -1286,125 +1294,125 @@ grow_horizontal = 2
 grow_vertical = 2
 size_flags_vertical = 3
 
-[node name="HBoxContainer11" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer11" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=1812305898]
 layout_mode = 2
 
-[node name="CopyTransformButton2" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11"]
+[node name="CopyTransformButton2" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11" unique_id=1904143193]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Copy"
 
-[node name="PasteTransformButton2" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11"]
+[node name="PasteTransformButton2" type="Button" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer11" unique_id=1846490442]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Paste"
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=2034959818]
 layout_mode = 2
 text = "Position"
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=43842843]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer" unique_id=1473436761]
 layout_mode = 2
 text = " X "
 
-[node name="HandlePosX" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer"]
+[node name="HandlePosX" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer" unique_id=724677799]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = -927.9
+value = -927.8999999999942
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=1416096064]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2" unique_id=1030251387]
 layout_mode = 2
 text = " Y "
 
-[node name="HandlePosY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2"]
+[node name="HandlePosY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer2" unique_id=14237163]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = 1061.8
+value = 1061.800000000003
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=598398363]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3" unique_id=738575665]
 layout_mode = 2
 text = " Z "
 
-[node name="HandlePosZ" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3"]
+[node name="HandlePosZ" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer3" unique_id=2106998496]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = 982.3
+value = 982.3000000000029
 allow_greater = true
 allow_lesser = true
 
-[node name="Label2" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="Label2" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=1220216007]
 layout_mode = 2
 text = "Rotation"
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=1574969066]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4" unique_id=449635086]
 layout_mode = 2
 text = " P "
 
-[node name="HandleRotP" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4"]
+[node name="HandleRotP" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer4" unique_id=2089062944]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = -10.2
+value = -10.19999999999709
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer5" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=1714679301]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5" unique_id=1450787777]
 layout_mode = 2
 text = " Y "
 
-[node name="HandleRotY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5"]
+[node name="HandleRotY" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer5" unique_id=1152625117]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
 min_value = -100000.0
 max_value = 100000.0
 step = 0.1
-value = -88.4
+value = -88.39999999999418
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=675288836]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6" unique_id=1334854784]
 layout_mode = 2
 text = " R "
 
-[node name="HandleRotR" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6"]
+[node name="HandleRotR" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer6" unique_id=661827421]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1415,18 +1423,18 @@ value = 113.5
 allow_greater = true
 allow_lesser = true
 
-[node name="Label3" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="Label3" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=338410582]
 layout_mode = 2
 text = "Scale"
 
-[node name="HBoxContainer7" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer7" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=912267614]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7" unique_id=1401864350]
 layout_mode = 2
 text = " W "
 
-[node name="HandleScaleW" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7"]
+[node name="HandleScaleW" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer7" unique_id=1330197511]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
@@ -1437,14 +1445,14 @@ value = 45.0
 allow_greater = true
 allow_lesser = true
 
-[node name="HBoxContainer8" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData"]
+[node name="HBoxContainer8" type="HBoxContainer" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData" unique_id=1217051100]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8"]
+[node name="Label" type="Label" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8" unique_id=1537793459]
 layout_mode = 2
 text = " H "
 
-[node name="HandleScaleH" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8"]
+[node name="HandleScaleH" type="SpinBox" parent="Control/TabContainer/Handles/VBoxContainer/DataEditor/LineHandleData/HBoxContainer8" unique_id=75450583]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_icons/updown = SubResource("PlaceholderTexture2D_7yl4s")
