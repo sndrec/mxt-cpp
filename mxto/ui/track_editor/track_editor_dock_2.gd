@@ -7,6 +7,7 @@ signal update_track
 const TrackTriggerScript := preload("res://core/track_trigger.gd")
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
+const RoadShapeTunnelScript := preload("res://core/road_shape_tunnel.gd")
 const UI_EDGE_MARGIN := 24.0
 const PROPERTY_PANEL_WIDTH := 360.0
 const PANEL_MIN_HEIGHT := 360.0
@@ -215,6 +216,7 @@ func get_active_node() -> Node3D:
 
 func _ready():
 	_configure_screen_layout()
+	_configure_road_shape_options()
 	dock_ready.emit()
 	if !FZGlobal.selection_changed.is_connected(selection_updated):
 		FZGlobal.selection_changed.connect(selection_updated)
@@ -556,6 +558,8 @@ func _road_shape_type_id(shape : RoadShape) -> int:
 		return 6
 	if shape is RoadShapeRoundedSquareScript:
 		return 5
+	if shape is RoadShapeTunnelScript:
+		return 7
 	return 0
 
 func _make_road_shape(shape_id : int) -> RoadShape:
@@ -572,7 +576,20 @@ func _make_road_shape(shape_id : int) -> RoadShape:
 			return RoadShapeRoundedSquareScript.new()
 		6:
 			return RoadShapeRoundedSquareOpenScript.new()
+		7:
+			return RoadShapeTunnelScript.new()
 	return RoadShape.new()
+
+func _configure_road_shape_options() -> void:
+	road_shape_type.clear()
+	road_shape_type.add_item("Standard", 0)
+	road_shape_type.add_item("Cylinder", 1)
+	road_shape_type.add_item("Open Cylinder", 2)
+	road_shape_type.add_item("Pipe", 3)
+	road_shape_type.add_item("Open Pipe", 4)
+	road_shape_type.add_item("Rounded Square", 5)
+	road_shape_type.add_item("Open Rounded Square", 6)
+	road_shape_type.add_item("Tunnel", 7)
 
 func _refresh_road_shape_controls() -> void:
 	if !current_path:
@@ -654,36 +671,54 @@ func update_left_rail_height(new_value : float) -> void:
 	if updating_rail_controls or !current_path:
 		return
 	current_path.left_rail_height = maxf(0.0, new_value)
+	if current_path.road_shape is RoadShapeTunnelScript:
+		current_path.right_rail_height = current_path.left_rail_height
+		_refresh_rail_controls()
 	update_track_visuals()
 
 func update_left_rail_start(new_value : float) -> void:
 	if updating_rail_controls or !current_path:
 		return
 	current_path.left_rail_start = clampf(new_value, 0.0, current_path.left_rail_end)
+	if current_path.road_shape is RoadShapeTunnelScript:
+		current_path.right_rail_start = current_path.left_rail_start
+		_refresh_rail_controls()
 	update_track_visuals()
 
 func update_left_rail_end(new_value : float) -> void:
 	if updating_rail_controls or !current_path:
 		return
 	current_path.left_rail_end = clampf(new_value, current_path.left_rail_start, 1.0)
+	if current_path.road_shape is RoadShapeTunnelScript:
+		current_path.right_rail_end = current_path.left_rail_end
+		_refresh_rail_controls()
 	update_track_visuals()
 
 func update_right_rail_height(new_value : float) -> void:
 	if updating_rail_controls or !current_path:
 		return
 	current_path.right_rail_height = maxf(0.0, new_value)
+	if current_path.road_shape is RoadShapeTunnelScript:
+		current_path.left_rail_height = current_path.right_rail_height
+		_refresh_rail_controls()
 	update_track_visuals()
 
 func update_right_rail_start(new_value : float) -> void:
 	if updating_rail_controls or !current_path:
 		return
 	current_path.right_rail_start = clampf(new_value, 0.0, current_path.right_rail_end)
+	if current_path.road_shape is RoadShapeTunnelScript:
+		current_path.left_rail_start = current_path.right_rail_start
+		_refresh_rail_controls()
 	update_track_visuals()
 
 func update_right_rail_end(new_value : float) -> void:
 	if updating_rail_controls or !current_path:
 		return
 	current_path.right_rail_end = clampf(new_value, current_path.right_rail_start, 1.0)
+	if current_path.road_shape is RoadShapeTunnelScript:
+		current_path.left_rail_end = current_path.right_rail_end
+		_refresh_rail_controls()
 	update_track_visuals()
 
 func _refresh_mesh_subdivision_controls() -> void:

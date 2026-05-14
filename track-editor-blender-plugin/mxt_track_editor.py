@@ -59,6 +59,7 @@ ROAD_SHAPE_TYPE_ITEMS = [
     ('PIPE_OPEN', "Open Pipe", "Open Pipe Shape (interior)"),
     ('ROUNDED_SQUARE', "Rounded Square", "Rounded square cross-section"),
     ('ROUNDED_SQUARE_OPEN', "Open Rounded Square", "Rounded square with gap"),
+    ('TUNNEL', "Tunnel", "Flat road with side rails and a half-pipe ceiling"),
 ]
 
 class MXTEmbed(bpy.types.PropertyGroup):
@@ -1622,6 +1623,7 @@ def _update_trigger_helper(trig):
         'PIPE_OPEN': RoadShapePipeOpen(),
         'ROUNDED_SQUARE': RoadShapeRoundedSquare(),
         'ROUNDED_SQUARE_OPEN': RoadShapeRoundedSquareOpen(),
+        'TUNNEL': RoadShapeFlat(),
     }[props.road_shape_type]
     base = shape.get_pos(cm_helper, Vector((trig.tx, trig.ty)))
     if base is None:
@@ -2454,6 +2456,7 @@ def mxt_draw_callback():
             'PIPE_OPEN': RoadShapePipeOpen(),
             'ROUNDED_SQUARE': RoadShapeRoundedSquare(),
             'ROUNDED_SQUARE_OPEN': RoadShapeRoundedSquareOpen(),
+            'TUNNEL': RoadShapeFlat(),
         }
         shape = shape_map[props.road_shape_type]
         for emb in props.embeds:
@@ -2507,6 +2510,7 @@ def mxt_draw_callback():
                 'PIPE_OPEN': RoadShapePipeOpen(),
                 'ROUNDED_SQUARE': RoadShapeRoundedSquare(),
                 'ROUNDED_SQUARE_OPEN': RoadShapeRoundedSquareOpen(),
+                'TUNNEL': RoadShapeFlat(),
             }[props.road_shape_type]
 
             
@@ -4700,7 +4704,7 @@ def _export_stage(context, filepath):
 
         # segment data
         seg_data = bytearray()
-        type_map = {'FLAT':0, 'CYLINDER':1, 'CYLINDER_OPEN':2, 'PIPE':3, 'PIPE_OPEN':4, 'ROUNDED_SQUARE':5, 'ROUNDED_SQUARE_OPEN':6}
+        type_map = {'FLAT':0, 'CYLINDER':1, 'CYLINDER_OPEN':2, 'PIPE':3, 'PIPE_OPEN':4, 'ROUNDED_SQUARE':5, 'ROUNDED_SQUARE_OPEN':6, 'TUNNEL':7}
         for seg in seg_order:
             props = seg.mxt_road_overall_props
             seg_data += struct.pack('<I', seg_index[seg])
@@ -4807,7 +4811,7 @@ def _export_stage(context, filepath):
             trigger_data += struct.pack('<3f', ext.x, ext.y, ext.z)
             trig_count += 1
 
-        header = struct.pack('<I4sIII', 0, b'v0.5', len(cp_list), len(seg_order), trig_count)
+        header = struct.pack('<I4sIII', 0, b'v0.6', len(cp_list), len(seg_order), trig_count)
         header = struct.pack('<I', len(header)) + header[4:]
         f.write(header)
         f.write(data)

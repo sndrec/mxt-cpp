@@ -2406,6 +2406,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			current_track->segments[seg].road_shape = rs;
 			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
 		}
+		else if (road_type == 7)
+		{
+			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
+			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL;
+		}
 
 		// road modulations //
 

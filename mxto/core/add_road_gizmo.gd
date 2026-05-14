@@ -132,6 +132,7 @@ func _shape_options() -> Array:
 		{"label": "Open\nCyl", "tooltip": "Open Cylinder Road", "value": ENUMS.ROAD_TYPE.CYLINDER_OPEN},
 		{"label": "Round", "tooltip": "Rounded Square Road", "value": ENUMS.ROAD_TYPE.ROUNDED_SQUARE},
 		{"label": "Open\nRound", "tooltip": "Open Rounded Square Road", "value": ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN},
+		{"label": "Tunnel", "tooltip": "Tunnel Road", "value": ENUMS.ROAD_TYPE.TUNNEL},
 	]
 
 func _segment_kind_options() -> Array:

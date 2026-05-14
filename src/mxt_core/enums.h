@@ -110,6 +110,7 @@ namespace ROAD_SHAPE_TYPE {
                 ROAD_SHAPE_PIPE = 0x3,
                 ROAD_SHAPE_PIPE_OPEN = 0x4,
                 ROAD_SHAPE_ROUNDED_RECT = 0x5,
-                ROAD_SHAPE_ROUNDED_RECT_OPEN = 0x6
+                ROAD_SHAPE_ROUNDED_RECT_OPEN = 0x6,
+                ROAD_SHAPE_TUNNEL = 0x7
         };
 }

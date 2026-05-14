@@ -12,6 +12,7 @@ const ROAD_SHAPE_PIPE := 3
 const ROAD_SHAPE_PIPE_OPEN := 4
 const ROAD_SHAPE_ROUNDED_SQUARE := 5
 const ROAD_SHAPE_ROUNDED_SQUARE_OPEN := 6
+const ROAD_SHAPE_TUNNEL := 7
 const CONTROL_STRIDE := 24
 
 var _preview_material_cache := {}
@@ -166,6 +167,8 @@ func _native_shape_type() -> int:
 		return ROAD_SHAPE_ROUNDED_SQUARE_OPEN
 	if road_shape is RoadShapeRoundedSquareScript:
 		return ROAD_SHAPE_ROUNDED_SQUARE
+	if road_shape is RoadShapeTunnel:
+		return ROAD_SHAPE_TUNNEL
 	return ROAD_SHAPE_FLAT
 
 func _native_openness_value() -> float:

@@ -177,6 +177,7 @@ func _write_handle(handle_id : int, world_pos : Vector3) -> void:
 	var base := _surface_point(tx, ty)
 	var normal := _surface_normal(tx, ty)
 	var height := maxf(0.0, (world_pos - base).dot(normal))
+	var tunnel := target_path.road_shape is RoadShapeTunnel
 	match handle_id:
 		HandleId.LEFT_START:
 			target_path.left_rail_start = clampf(ty, 0.0, target_path.left_rail_end)
@@ -190,6 +191,15 @@ func _write_handle(handle_id : int, world_pos : Vector3) -> void:
 		HandleId.RIGHT_END:
 			target_path.right_rail_end = clampf(ty, target_path.right_rail_start, 1.0)
 			target_path.right_rail_height = height
+	if tunnel:
+		if handle_id == HandleId.LEFT_START or handle_id == HandleId.RIGHT_START:
+			target_path.left_rail_start = clampf(ty, 0.0, target_path.left_rail_end)
+			target_path.right_rail_start = clampf(ty, 0.0, target_path.right_rail_end)
+		else:
+			target_path.left_rail_end = clampf(ty, target_path.left_rail_start, 1.0)
+			target_path.right_rail_end = clampf(ty, target_path.right_rail_start, 1.0)
+		target_path.left_rail_height = height
+		target_path.right_rail_height = height
 
 func _process(delta : float) -> void:
 	var scene := FZGlobal.editing_scene

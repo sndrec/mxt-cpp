@@ -157,7 +157,7 @@ func export_mxt_track(path : String) -> Error:
 	var trigger_exports := _build_trigger_exports(segments, cp_ranges)
 	var buf := StreamPeerBufferExtension.new()
 	buf.big_endian = false
-	var version := "v0.5".to_ascii_buffer()
+	var version := "v0.6".to_ascii_buffer()
 	buf.put_u32(20)
 	buf.put_data(version)
 	buf.put_u32(checkpoints.size())
@@ -379,6 +379,8 @@ func _road_type_for_shape(shape : RoadShape) -> int:
 		return 6
 	if shape is RoadShapeRoundedSquareScript:
 		return 5
+	if shape is RoadShapeTunnel:
+		return 7
 	return 0
 
 func _write_shape_prefix(buf : StreamPeerBufferExtension, shape : RoadShape, road_type : int) -> void:

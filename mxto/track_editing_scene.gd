@@ -2,6 +2,7 @@ class_name TrackEditingScene extends Node3D
 
 const RoadShapeRoundedSquareScript := preload("res://core/road_shape_rounded_square.gd")
 const RoadShapeRoundedSquareOpenScript := preload("res://core/road_shape_open_rounded_square.gd")
+const RoadShapeTunnelScript := preload("res://core/road_shape_tunnel.gd")
 const EmbedGizmoScript := preload("res://core/embed_gizmo.gd")
 const RailGizmoScript := preload("res://core/rail_gizmo.gd")
 const ModulationGizmoScript := preload("res://core/modulation_gizmo.gd")
@@ -558,6 +559,9 @@ func _apply_road_type_to_path(path : RoadPath, road_type : ENUMS.ROAD_TYPE) -> v
 		ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN:
 			path.road_shape = RoadShapeRoundedSquareOpenScript.new()
 			path.horizontal_road_mesh_segments = cylinder_mesh_layout.duplicate()
+		ENUMS.ROAD_TYPE.TUNNEL:
+			path.road_shape = RoadShapeTunnelScript.new()
+			path.horizontal_road_mesh_segments = simple_mesh_layout.duplicate()
 
 func _road_type_from_path(path : RoadPath) -> int:
 	if path.road_shape is RoadShapePipe:
@@ -572,6 +576,8 @@ func _road_type_from_path(path : RoadPath) -> int:
 		return ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN
 	if path.road_shape is RoadShapeRoundedSquareScript:
 		return ENUMS.ROAD_TYPE.ROUNDED_SQUARE
+	if path.road_shape is RoadShapeTunnelScript:
+		return ENUMS.ROAD_TYPE.TUNNEL
 	return ENUMS.ROAD_TYPE.STANDARD
 
 func _segment_kind_from_path(path : RoadPath) -> int:

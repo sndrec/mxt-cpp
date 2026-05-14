@@ -158,6 +158,8 @@ func _road_type_label(road_type : int) -> String:
 			return "Rounded Square"
 		ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN:
 			return "Open Rounded Square"
+		ENUMS.ROAD_TYPE.TUNNEL:
+			return "Tunnel"
 		_:
 			return "Standard"
 
@@ -492,6 +494,11 @@ func _on_road_rounded_square_open_pressed() -> void:
 	new_track_segment_buttons.visible = false
 	new_track_segment_type_buttons.visible = true
 	track_scene.desired_road_type = ENUMS.ROAD_TYPE.ROUNDED_SQUARE_OPEN
+
+func _on_road_tunnel_pressed() -> void:
+	new_track_segment_buttons.visible = false
+	new_track_segment_type_buttons.visible = true
+	track_scene.desired_road_type = ENUMS.ROAD_TYPE.TUNNEL
 
 func _select_segment_kind(kind : int) -> void:
 	track_scene.desired_segment_kind = kind
