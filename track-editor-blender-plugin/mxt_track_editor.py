@@ -4104,10 +4104,10 @@ class MXTRoad_OT_GenerateMesh(Operator):
                         continue
                     for arc in range(roof_segments):
                         face = [
-                            roof_rows[row][arc],
-                            roof_rows[row + 1][arc],
-                            roof_rows[row + 1][arc + 1],
                             roof_rows[row][arc + 1],
+                            roof_rows[row + 1][arc + 1],
+                            roof_rows[row + 1][arc],
+                            roof_rows[row][arc],
                         ]
                         all_faces.append(face)
                         rail_faces.append(face)
