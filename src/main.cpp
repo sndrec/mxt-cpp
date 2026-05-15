@@ -2021,6 +2021,7 @@ String GameSim::get_phase_profile_string() const
 		out += prefix + String("_projmiss=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_PROJECTION_MISSES] / static_cast<uint64_t>(count)));
 		out += prefix + String("_face=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS] / static_cast<uint64_t>(count)));
 		out += prefix + String("_smooth=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_smooth_retry=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SMOOTH_RETRY_QUERIES] / static_cast<uint64_t>(count)));
 		out += prefix + String("_bestrej=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] / static_cast<uint64_t>(count)));
 		out += prefix + String("_bestupd=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_UPDATES] / static_cast<uint64_t>(count)));
 		out += prefix + String("_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_QUERY_US] / static_cast<uint64_t>(count)));
@@ -2649,6 +2650,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			dst[MESH_FLOOR_PROFILE_PROJECTION_MISSES] += src.projection_misses;
 			dst[MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS] += src.face_projection_hits;
 			dst[MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS] += src.smooth_projection_hits;
+			dst[MESH_FLOOR_PROFILE_SMOOTH_RETRY_QUERIES] += src.smooth_retry_queries;
 			dst[MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] += src.best_dist_rejects;
 			dst[MESH_FLOOR_PROFILE_BEST_UPDATES] += src.best_updates;
 			dst[MESH_FLOOR_PROFILE_QUERY_US] += src.query_us;

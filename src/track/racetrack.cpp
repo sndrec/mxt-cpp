@@ -2132,6 +2132,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	};
 	scan_mesh_floor_candidates();
 	if (!best_tri && saw_smooth_projection_candidate) {
+		if (floor_profile) {
+			floor_profile->smooth_retry_queries += 1;
+		}
 		allow_smooth_projection_retry = true;
 		scan_mesh_floor_candidates();
 	}

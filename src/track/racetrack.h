@@ -64,6 +64,7 @@ struct alignas(64) TrackQueryScratch
 		uint32_t projection_misses = 0;
 		uint32_t face_projection_hits = 0;
 		uint32_t smooth_projection_hits = 0;
+		uint32_t smooth_retry_queries = 0;
 		uint32_t best_dist_rejects = 0;
 		uint32_t best_updates = 0;
 		uint32_t query_us = 0;
