@@ -1166,6 +1166,7 @@ func _physics_process(delta: float) -> void:
 		_check_race_finished()
 
 func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray()):
+	var start_time := Time.get_ticks_usec()
 	if debug_replay_playback:
 		if debug_replay_playback_index >= debug_replay_playback_inputs.size():
 			debug_replay_playback = false
@@ -1194,7 +1195,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	_singleplayer_tick += 1
 	# Update HUD timing using the same field clients use
 	network_manager.clients_server_tick = _singleplayer_tick
-	network_manager.rollback_frametime_us = 0
+	network_manager.rollback_frametime_us = Time.get_ticks_usec() - start_time
 
 func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
 	if !network_manager.dump_auth_input_samples:
