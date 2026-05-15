@@ -1178,6 +1178,9 @@ func _physics_process(delta: float) -> void:
 		if singleplayer_mode and game_sim.sim_started:
 			_simulate_singleplayer_tick()
 			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
+				print(game_sim.get_phase_profile_string())
+				print(game_sim.get_render_profile_string())
+				print(get_outer_profile_string())
 				get_tree().quit()
 			return
 		if multiplayer.has_multiplayer_peer():
