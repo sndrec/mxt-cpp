@@ -1402,7 +1402,8 @@ static void cast_mesh_collision_fast(
 	}
 	const int segment_index = track->checkpoints[start_idx].road_segment;
 	const TrackSegment &segment = track->segments[segment_index];
-	if (segment.mesh_collision_count <= 0) {
+	if (segment.mesh_collision_count <= 0 &&
+		(!track->mesh_world_bvh_nodes || !track->mesh_world_bvh_triangle_indices || track->num_mesh_world_bvh_nodes <= 0)) {
 		return;
 	}
 	const bool wants_backface = (params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0;

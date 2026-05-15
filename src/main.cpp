@@ -1010,7 +1010,9 @@ namespace {
 						STORE_INDEXED_VEC3(c, track_surface_normal, i, ground_normal);
 					}
 				} else {
-					c.machine_state[i] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
+					if (c.height_above_track[i] >= 16.0f) {
+						c.machine_state[i] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
+					}
 				}
 			} else {
 				const int base = i * 4;

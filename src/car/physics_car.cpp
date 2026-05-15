@@ -1108,7 +1108,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 			STORE_VEC3(track_surface_pos, hit.collision_point);
 			if (nearest_mesh_sample) {
 				const float signed_surface_distance = (LOAD_VEC3(position_current) - hit.collision_point).dot(hit.collision_normal);
-				contact_dist_metric = local_mesh_sample ? fmaxf(1.0f, 20.0f - fabsf(signed_surface_distance)) : 20.0f - signed_surface_distance;
+				contact_dist_metric = local_mesh_sample ? 20.0f - fabsf(signed_surface_distance) : 20.0f - signed_surface_distance;
 			} else {
 				float dist_p0_to_surface =
 				LOAD_VEC3(position_current).distance_to(hit.collision_point);
@@ -2931,6 +2931,8 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 	bool has_floor = find_floor_beneath_machine(scratch);
 	if (has_floor && (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
 		STORE_VEC3(track_surface_normal, ground_normal);
+	} else if (has_floor && soa->height_above_track[soa_index] >= 16.0f) {
+		soa->machine_state[soa_index] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
 	} else {
 		const int point_base = soa_index * 4;
 		for (int lane = 0; lane < 4; ++lane) {
@@ -3054,6 +3056,15 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 		mxt_transform_points4(
 			machine_transform,
 			machine_position,
+			sim_load4(soa->wall_offset_x + point_base),
+			sim_load4(soa->wall_offset_y + point_base),
+			sim_load4(soa->wall_offset_z + point_base)));
+	SimVec3 wall_corner_old_world[4];
+	mxt_store_points4(
+		wall_corner_old_world,
+		mxt_transform_points4(
+			LOAD_TRANSFORM(basis_physical_other),
+			LOAD_VEC3(position_old),
 			sim_load4(soa->wall_offset_x + point_base),
 			sim_load4(soa->wall_offset_y + point_base),
 			sim_load4(soa->wall_offset_z + point_base)));
@@ -3293,6 +3304,38 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 						if (!mesh_wall_segment.analytic_collision_enabled) {
 							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 								const SimVec3 p0 = machine_position + depenetration;
+								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
+								CollisionData hit;
+								track->cast_vs_track_fast(
+									hit,
+									p0,
+									p1,
+									CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P1,
+									mesh_wall_cp,
+									false,
+									&scratch);
+								if (!hit.collided) {
+									continue;
+								}
+								const float depth = (hit.collision_point - p1).dot(hit.collision_normal);
+								if (depth <= 0.0f) {
+									continue;
+								}
+								const SimVec3 d = hit.collision_normal * depth;
+								const bool rail_hit = (hit.road_data.terrain & TERRAIN::RAIL) != 0;
+								ADD_VEC3(collision_push_total, d);
+								if (rail_hit) {
+									ADD_VEC3(collision_push_rail, d);
+									overall_hit_detected_flag |= 2;
+								} else {
+									ADD_VEC3(collision_push_track, d);
+									overall_hit_detected_flag |= 1;
+								}
+								any_corner_hit = true;
+								depenetration += d;
+							}
+							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+								const SimVec3 p0 = wall_corner_old_world[wc_idx] + depenetration;
 								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
 								CollisionData hit;
 								track->cast_vs_track_fast(
