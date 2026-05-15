@@ -28,6 +28,7 @@ public:
         float right_rail_end;
         bool analytic_collision_enabled;
         SimAABB bounds;
+        SimAABB mesh_bounds;
         int checkpoint_start;
         int checkpoint_run_length;
         int mesh_collision_start;

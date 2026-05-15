@@ -1151,6 +1151,83 @@ static SimTransform mesh_collision_surface_transform(const TrackMeshCollisionTri
 	return SimTransform(basis, hit_point);
 }
 
+static SimVec3 closest_point_on_mesh_triangle(const TrackMeshCollisionTriangle &tri, const SimVec3 &p, float *out_u, float *out_v, float *out_w)
+{
+	const SimVec3 ab = tri.p1 - tri.p0;
+	const SimVec3 ac = tri.p2 - tri.p0;
+	const SimVec3 ap = p - tri.p0;
+	const float d1 = ab.dot(ap);
+	const float d2 = ac.dot(ap);
+	if (d1 <= 0.0f && d2 <= 0.0f) {
+		*out_u = 1.0f; *out_v = 0.0f; *out_w = 0.0f;
+		return tri.p0;
+	}
+
+	const SimVec3 bp = p - tri.p1;
+	const float d3 = ab.dot(bp);
+	const float d4 = ac.dot(bp);
+	if (d3 >= 0.0f && d4 <= d3) {
+		*out_u = 0.0f; *out_v = 1.0f; *out_w = 0.0f;
+		return tri.p1;
+	}
+
+	const float vc = d1 * d4 - d3 * d2;
+	if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+		const float v = d1 / (d1 - d3);
+		*out_u = 1.0f - v; *out_v = v; *out_w = 0.0f;
+		return tri.p0 + ab * v;
+	}
+
+	const SimVec3 cp = p - tri.p2;
+	const float d5 = ab.dot(cp);
+	const float d6 = ac.dot(cp);
+	if (d6 >= 0.0f && d5 <= d6) {
+		*out_u = 0.0f; *out_v = 0.0f; *out_w = 1.0f;
+		return tri.p2;
+	}
+
+	const float vb = d5 * d2 - d1 * d6;
+	if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+		const float w = d2 / (d2 - d6);
+		*out_u = 1.0f - w; *out_v = 0.0f; *out_w = w;
+		return tri.p0 + ac * w;
+	}
+
+	const float va = d3 * d6 - d5 * d4;
+	if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
+		const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+		*out_u = 0.0f; *out_v = 1.0f - w; *out_w = w;
+		return tri.p1 + (tri.p2 - tri.p1) * w;
+	}
+
+	const float denom = 1.0f / (va + vb + vc);
+	const float v = vb * denom;
+	const float w = vc * denom;
+	*out_u = 1.0f - v - w;
+	*out_v = v;
+	*out_w = w;
+	return tri.p0 * (*out_u) + tri.p1 * (*out_v) + tri.p2 * (*out_w);
+}
+
+static float distance2_to_aabb(const SimAABB &bounds, const SimVec3 &p)
+{
+	const SimVec3 box_max = bounds.position + bounds.size;
+	float d2 = 0.0f;
+	const float values[3] = {p.x, p.y, p.z};
+	const float mins[3] = {bounds.position.x, bounds.position.y, bounds.position.z};
+	const float maxs[3] = {box_max.x, box_max.y, box_max.z};
+	for (int axis = 0; axis < 3; ++axis) {
+		float delta = 0.0f;
+		if (values[axis] < mins[axis]) {
+			delta = mins[axis] - values[axis];
+		} else if (values[axis] > maxs[axis]) {
+			delta = values[axis] - maxs[axis];
+		}
+		d2 += delta * delta;
+	}
+	return d2;
+}
+
 static void cast_mesh_collision_fast(
 	const CastParams &params,
 	CollisionData &out_collision,
@@ -1175,19 +1252,19 @@ static void cast_mesh_collision_fast(
 	}
 
 	float best_dist = out_collision.collided ? p0.distance_to(out_collision.collision_point) : FLT_MAX;
-	const int tri_end = segment.mesh_collision_start + segment.mesh_collision_count;
-	for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
+	bool mesh_hit = false;
+	auto scan_triangle = [&](int tri_index) {
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
 		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 		if (is_rail) {
 			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
-				continue;
+				return;
 			}
 		} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
-			continue;
+			return;
 		}
 		if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
-			continue;
+			return;
 		}
 
 		float hit_t = 0.0f;
@@ -1196,15 +1273,18 @@ static void cast_mesh_collision_fast(
 		float w = 0.0f;
 		SimVec3 face_normal;
 		if (!triangle_ray_hit(tri, p0, ray, wants_backface, &hit_t, &u, &v, &w, &face_normal)) {
-			continue;
+			return;
 		}
 		const float dist = hit_t * ray_len;
 		if (dist >= best_dist) {
-			continue;
+			return;
 		}
 
-		const SimVec3 smooth_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
+		SimVec3 smooth_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
 		const SimVec3 smooth_point = mesh_collision_phong_point(tri, u, v, w);
+		if (wants_backface && (p0 - smooth_point).dot(smooth_normal) < 0.0f) {
+			smooth_normal *= -1.0f;
+		}
 		const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
 		if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
 			godot::UtilityFunctions::printerr(godot::String("MXT mesh collision triangle has invalid checkpoint index "), cp_idx);
@@ -1212,6 +1292,7 @@ static void cast_mesh_collision_fast(
 		}
 
 		best_dist = dist;
+		mesh_hit = true;
 		out_collision.collided = true;
 		out_collision.collision_point = smooth_point;
 		out_collision.collision_normal = smooth_normal;
@@ -1221,7 +1302,139 @@ static void cast_mesh_collision_fast(
 		out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, smooth_point, smooth_normal);
 		out_collision.road_data.closest_root = RoadTransform();
 		out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
+	};
+
+	auto scan_checkpoint = [&](int cp_idx) {
+		if (cp_idx < 0 || cp_idx >= track->num_checkpoints || !track->mesh_checkpoint_triangle_head) {
+			return;
+		}
+		for (int tri_index = track->mesh_checkpoint_triangle_head[cp_idx]; tri_index >= 0; tri_index = track->mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
+			scan_triangle(tri_index);
+		}
+	};
+
+	scan_checkpoint(start_idx);
+	for (int delta = 1; delta <= 4; ++delta) {
+		scan_checkpoint(start_idx - delta);
+		scan_checkpoint(start_idx + delta);
 	}
+	const CollisionCheckpoint &start_cp = track->checkpoints[start_idx];
+	for (int neighbor = 0; neighbor < start_cp.num_neighboring_checkpoints; ++neighbor) {
+		scan_checkpoint(start_cp.neighboring_checkpoints[neighbor]);
+	}
+	if (!mesh_hit && (params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+		const int tri_end = segment.mesh_collision_start + segment.mesh_collision_count;
+		for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
+			scan_triangle(tri_index);
+		}
+	}
+}
+
+void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback)
+{
+	out_collision.collided = false;
+	out_collision.road_data.cp_idx = -1;
+	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
+		return;
+	}
+	if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
+		return;
+	}
+
+	const float max_dist2 = max_distance * max_distance;
+	float best_dist2 = max_dist2;
+	float best_u = 0.0f;
+	float best_v = 0.0f;
+	float best_w = 0.0f;
+	const TrackMeshCollisionTriangle *best_tri = nullptr;
+
+	auto scan_triangle = [&](int tri_index) {
+		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
+		if ((tri.terrain & TERRAIN::RAIL) != 0 || distance2_to_aabb(tri.bounds, point) > best_dist2) {
+			return;
+		}
+		float u = 0.0f;
+		float v = 0.0f;
+		float w = 0.0f;
+		const SimVec3 closest = closest_point_on_mesh_triangle(tri, point, &u, &v, &w);
+		const float dist2 = (point - closest).length_squared();
+		if (dist2 < best_dist2) {
+			best_dist2 = dist2;
+			best_u = u;
+			best_v = v;
+			best_w = w;
+			best_tri = &tri;
+		}
+	};
+
+	auto scan_checkpoint = [&](int cp_idx) {
+		if (cp_idx < 0 || cp_idx >= num_checkpoints || !mesh_checkpoint_triangle_head) {
+			return;
+		}
+		for (int tri_index = mesh_checkpoint_triangle_head[cp_idx]; tri_index >= 0; tri_index = mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
+			scan_triangle(tri_index);
+		}
+	};
+
+	auto scan_segment = [&](int seg) {
+		if (seg < 0 || seg >= num_segments) {
+			return;
+		}
+		const TrackSegment &segment = segments[seg];
+		if (segment.mesh_collision_count <= 0 || distance2_to_aabb(segment.mesh_bounds, point) > best_dist2) {
+			return;
+		}
+		const int tri_end = segment.mesh_collision_start + segment.mesh_collision_count;
+		for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
+			scan_triangle(tri_index);
+		}
+	};
+
+	scan_checkpoint(start_idx);
+	for (int delta = 1; delta <= 2; ++delta) {
+		scan_checkpoint(start_idx - delta);
+		scan_checkpoint(start_idx + delta);
+	}
+	const CollisionCheckpoint &start_cp = checkpoints[start_idx];
+	for (int neighbor = 0; neighbor < start_cp.num_neighboring_checkpoints; ++neighbor) {
+		scan_checkpoint(start_cp.neighboring_checkpoints[neighbor]);
+	}
+	if (!best_tri && allow_global_fallback) {
+		scan_segment(checkpoints[start_idx].road_segment);
+	}
+	if (!best_tri && allow_global_fallback) {
+		for (int seg = 0; seg < num_segments; ++seg) {
+			scan_segment(seg);
+		}
+	}
+
+	if (!best_tri) {
+		return;
+	}
+
+	const SimVec3 edge0 = best_tri->p1 - best_tri->p0;
+	const SimVec3 edge1 = best_tri->p2 - best_tri->p0;
+	SimVec3 face_normal = edge0.cross(edge1).normalized();
+	SimVec3 smooth_normal = mesh_collision_smooth_normal(*best_tri, best_u, best_v, best_w, face_normal);
+	const SimVec3 smooth_point = mesh_collision_phong_point(*best_tri, best_u, best_v, best_w);
+	if ((point - smooth_point).dot(smooth_normal) < 0.0f) {
+		smooth_normal *= -1.0f;
+	}
+	const int cp_idx = best_tri->checkpoint_index >= 0 ? best_tri->checkpoint_index : start_idx;
+	if (cp_idx < 0 || cp_idx >= num_checkpoints) {
+		godot::UtilityFunctions::printerr(godot::String("MXT mesh collision triangle has invalid checkpoint index "), cp_idx);
+		std::abort();
+	}
+
+	out_collision.collided = true;
+	out_collision.collision_point = smooth_point;
+	out_collision.collision_normal = smooth_normal;
+	out_collision.road_data.cp_idx = cp_idx;
+	out_collision.road_data.spatial_t = SimVec3();
+	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
+	out_collision.road_data.closest_surface = mesh_collision_surface_transform(*best_tri, smooth_point, smooth_normal);
+	out_collision.road_data.closest_root = RoadTransform();
+	out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
 }
 
 void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
@@ -1233,7 +1446,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
 
-	if ((mask & CAST_FLAGS::WANTS_TRACK) == 0)
+	if ((mask & (CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL)) == 0)
 		return;
 
 	if (start_idx == -1)

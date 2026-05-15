@@ -692,8 +692,20 @@ namespace {
 
 			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch);
 			const bool has_floor = car_views[i].find_floor_beneath_machine();
-			if (has_floor && (c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0) {
-				STORE_INDEXED_VEC3(c, track_surface_normal, i, ground_normal);
+			if (has_floor) {
+				if ((c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0) {
+					bool use_analytic_floor_normal = true;
+					RaceTrack *track = c.current_track[i];
+					if (track && c.current_checkpoint[i] < track->num_checkpoints) {
+						const TrackSegment &segment = track->segments[track->checkpoints[c.current_checkpoint[i]].road_segment];
+						use_analytic_floor_normal = segment.analytic_collision_enabled;
+					}
+					if (use_analytic_floor_normal) {
+						STORE_INDEXED_VEC3(c, track_surface_normal, i, ground_normal);
+					}
+				} else {
+					c.machine_state[i] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
+				}
 			} else {
 				const int base = i * 4;
 				for (int lane = 0; lane < 4; ++lane) {
@@ -2366,6 +2378,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->trigger_colliders = nullptr;
 	current_track->num_mesh_collision_triangles = 0;
 	current_track->mesh_collision_triangles = nullptr;
+	current_track->mesh_checkpoint_triangle_head = nullptr;
+	current_track->mesh_checkpoint_triangle_count = nullptr;
 	current_track->lap_length = 0.0f;
 
 	uint32_t header_size = lvldat_buf->get_u32();
@@ -2391,6 +2405,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	current_track->num_checkpoints = checkpoint_count;
 	current_track->checkpoints = level_data.allocate_array<CollisionCheckpoint>(checkpoint_count);
+	current_track->mesh_checkpoint_triangle_head = level_data.allocate_array<int32_t>(checkpoint_count);
+	current_track->mesh_checkpoint_triangle_count = level_data.allocate_array<int32_t>(checkpoint_count);
+	for (uint32_t i = 0; i < checkpoint_count; ++i) {
+		current_track->mesh_checkpoint_triangle_head[i] = -1;
+		current_track->mesh_checkpoint_triangle_count[i] = 0;
+	}
 
 	for (int i = 0; i < checkpoint_count; i++)
 	{
@@ -2714,6 +2734,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		current_track->segments[seg].checkpoint_run_length = 0;
 		current_track->segments[seg].mesh_collision_start = -1;
 		current_track->segments[seg].mesh_collision_count = 0;
+		current_track->segments[seg].mesh_bounds.position = SimVec3();
+		current_track->segments[seg].mesh_bounds.size = SimVec3();
 		for (int i = 0; i < current_track->num_checkpoints; i++)
 		{
 			if (current_track->checkpoints[i].road_segment == seg)
@@ -2792,8 +2814,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			tri.terrain = lvldat_buf->get_u32();
 			tri.segment_index = static_cast<int32_t>(lvldat_buf->get_u32());
 			tri.checkpoint_index = static_cast<int32_t>(lvldat_buf->get_u32());
+			tri.next_checkpoint_triangle = -1;
 			if (tri.segment_index < 0 || tri.segment_index >= current_track->num_segments) {
 				UtilityFunctions::printerr(String("MXT mesh collision triangle has invalid segment index "), tri.segment_index);
+				std::abort();
+			}
+			if (tri.checkpoint_index < 0 || tri.checkpoint_index >= current_track->num_checkpoints) {
+				UtilityFunctions::printerr(String("MXT mesh collision triangle has invalid checkpoint index "), tri.checkpoint_index);
 				std::abort();
 			}
 			if (tri.segment_index < last_mesh_segment) {
@@ -2804,7 +2831,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				current_track->segments[tri.segment_index].mesh_collision_start = static_cast<int>(tri_index);
 				last_mesh_segment = tri.segment_index;
 			}
-			current_track->segments[tri.segment_index].mesh_collision_count++;
+			TrackSegment &mesh_segment = current_track->segments[tri.segment_index];
+			mesh_segment.mesh_collision_count++;
 
 			tri.p0.x = lvldat_buf->get_float();
 			tri.p0.y = lvldat_buf->get_float();
@@ -2830,6 +2858,16 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			tri.bounds.expand_to(tri.p1);
 			tri.bounds.expand_to(tri.p2);
 			tri.bounds.grow_by(0.1f);
+			if (mesh_segment.mesh_collision_count == 1) {
+				mesh_segment.mesh_bounds.position = tri.p0;
+				mesh_segment.mesh_bounds.size = SimVec3();
+			}
+			mesh_segment.mesh_bounds.expand_to(tri.p0);
+			mesh_segment.mesh_bounds.expand_to(tri.p1);
+			mesh_segment.mesh_bounds.expand_to(tri.p2);
+			tri.next_checkpoint_triangle = current_track->mesh_checkpoint_triangle_head[tri.checkpoint_index];
+			current_track->mesh_checkpoint_triangle_head[tri.checkpoint_index] = static_cast<int32_t>(tri_index);
+			current_track->mesh_checkpoint_triangle_count[tri.checkpoint_index]++;
 			if (tri.p0.y < current_track->minimum_y) current_track->minimum_y = tri.p0.y;
 			if (tri.p1.y < current_track->minimum_y) current_track->minimum_y = tri.p1.y;
 			if (tri.p2.y < current_track->minimum_y) current_track->minimum_y = tri.p2.y;

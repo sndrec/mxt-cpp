@@ -15,6 +15,8 @@ func _init() -> void:
 	var car_props_path := _arg_value(args, "--car-props", DEFAULT_CAR_PROPS)
 	var frames := int(_arg_value(args, "--frames", "3600"))
 	var cars := int(_arg_value(args, "--cars", "100"))
+	var watch_player := int(_arg_value(args, "--watch-player", "-1"))
+	var watch_every := int(_arg_value(args, "--watch-every", "300"))
 	var require_full_lap := args.has("--require-full-lap")
 	if frames <= 0 or cars <= 0:
 		push_error("profile_gamesim requires positive --frames and --cars")
@@ -64,6 +66,8 @@ func _init() -> void:
 	for frame in range(frames):
 		sim.tick_singleplayer(-1, neutral)
 		frames_run = frame + 1
+		if watch_player >= 0 and watch_every > 0 and frames_run % watch_every == 0:
+			print("MXT_PROFILE_WATCH frame=", frames_run, " ", sim.get_player_debug_string(watch_player))
 		if require_full_lap:
 			full_lap_count = 0
 			min_lap_delta = INF

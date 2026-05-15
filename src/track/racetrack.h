@@ -22,6 +22,7 @@ struct TrackMeshCollisionTriangle
 	uint32_t terrain;
 	int32_t segment_index;
 	int32_t checkpoint_index;
+	int32_t next_checkpoint_triangle;
 };
 
 struct alignas(64) TrackQueryScratch
@@ -64,6 +65,8 @@ public:
 	TrackSegment* segments;
 	TrackMeshCollisionTriangle* mesh_collision_triangles;
 	int num_mesh_collision_triangles;
+	int32_t* mesh_checkpoint_triangle_head;
+	int32_t* mesh_checkpoint_triangle_count;
 		CollisionCheckpoint* checkpoints;
 		int num_trigger_colliders;
 		TriggerCollider** trigger_colliders;
@@ -102,6 +105,7 @@ public:
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
 	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
+	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true);
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);
 	void convert_point_to_road(

@@ -4631,7 +4631,7 @@ def _quaternion_matrix_points(fc_quat):
     return pts
 
 
-def _pack_mesh_collision_triangles(context, seg_index):
+def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
     import struct
 
     terrain_map = {
@@ -4661,6 +4661,26 @@ def _pack_mesh_collision_triangles(context, seg_index):
             return name[:-4]
         return name
 
+    def nearest_checkpoint_index(seg, triangle_center):
+        props = seg.mxt_road_overall_props
+        cp_count = cp_counts.get(seg, 0)
+        if cp_count <= 0:
+            raise RuntimeError(f"{seg.name} has mesh collision but no checkpoints")
+        best_local = 0
+        best_dist2 = None
+        for local_idx, cp in enumerate(props.checkpoints):
+            p0 = Vector(cp.pos_start)
+            p1 = Vector(cp.pos_end)
+            edge = p1 - p0
+            denom = edge.length_squared
+            t = 0.0 if denom <= 1.0e-8 else max(0.0, min(1.0, (triangle_center - p0).dot(edge) / denom))
+            closest = p0 + edge * t
+            dist2 = (triangle_center - closest).length_squared
+            if best_dist2 is None or dist2 < best_dist2:
+                best_dist2 = dist2
+                best_local = local_idx
+        return seg_cp_start[seg] + best_local
+
     def append_object_triangles(records_by_segment, obj, segment_index, checkpoint_index, surface_for_polygon, depsgraph, required):
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
@@ -4677,8 +4697,6 @@ def _pack_mesh_collision_triangles(context, seg_index):
                 loop_indices = list(loop_tri.loops)
                 if len(loop_indices) != 3:
                     raise RuntimeError(f"{obj.name} produced a non-triangle loop triangle")
-                record = bytearray()
-                record += struct.pack('<Iii', terrain_map[terrain_key], segment_index, checkpoint_index)
                 positions = []
                 normals = []
                 for loop_index in loop_indices:
@@ -4686,6 +4704,11 @@ def _pack_mesh_collision_triangles(context, seg_index):
                     vert = mesh.vertices[loop.vertex_index]
                     positions.append(obj.matrix_world @ vert.co)
                     normals.append((normal_matrix @ loop.normal).normalized())
+                use_checkpoint_index = checkpoint_index(positions) if callable(checkpoint_index) else checkpoint_index
+                if use_checkpoint_index < 0:
+                    raise RuntimeError(f"{obj.name} mesh collision triangle has no checkpoint")
+                record = bytearray()
+                record += struct.pack('<Iii', terrain_map[terrain_key], segment_index, use_checkpoint_index)
                 for p in positions:
                     record += struct.pack('<3f', p.x, p.y, p.z)
                 for n in normals:
@@ -4737,7 +4760,14 @@ def _pack_mesh_collision_triangles(context, seg_index):
                 raise RuntimeError(f"{preview_obj.name} material {mat_name} cannot be exported as mesh collision")
             return preview_material_map[mat_name]
 
-        append_object_triangles(records_by_segment, preview_obj, segment_index, -1, preview_surface, depsgraph, True)
+        append_object_triangles(
+            records_by_segment,
+            preview_obj,
+            segment_index,
+            lambda positions, seg=seg: nearest_checkpoint_index(seg, (positions[0] + positions[1] + positions[2]) / 3.0),
+            preview_surface,
+            depsgraph,
+            True)
 
     mesh_data = bytearray()
     tri_count = 0
@@ -5045,7 +5075,7 @@ def _export_stage(context, filepath):
             trigger_data += struct.pack('<3f', ext.x, ext.y, ext.z)
             trig_count += 1
 
-        mesh_collision_triangle_count, mesh_collision_data = _pack_mesh_collision_triangles(context, seg_index)
+        mesh_collision_triangle_count, mesh_collision_data = _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts)
 
         header = struct.pack('<I4sIIII', 0, b'v0.8', len(cp_list), len(seg_order), trig_count, mesh_collision_triangle_count)
         header = struct.pack('<I', len(header)) + header[4:]
