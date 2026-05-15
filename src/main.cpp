@@ -2637,6 +2637,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_done "), seg, String(" len="), current_track->segments[seg].segment_length);
 		current_track->segments[seg].checkpoint_start = -1;
 		current_track->segments[seg].checkpoint_run_length = 0;
+		current_track->segments[seg].mesh_collision_start = -1;
+		current_track->segments[seg].mesh_collision_count = 0;
 		for (int i = 0; i < current_track->num_checkpoints; i++)
 		{
 			if (current_track->checkpoints[i].road_segment == seg)
@@ -2709,11 +2711,25 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (mesh_collision_triangle_count > 0) {
 		current_track->num_mesh_collision_triangles = static_cast<int>(mesh_collision_triangle_count);
 		current_track->mesh_collision_triangles = level_data.allocate_array<TrackMeshCollisionTriangle>(mesh_collision_triangle_count);
+		int32_t last_mesh_segment = -1;
 		for (uint32_t tri_index = 0; tri_index < mesh_collision_triangle_count; ++tri_index) {
 			TrackMeshCollisionTriangle &tri = current_track->mesh_collision_triangles[tri_index];
 			tri.terrain = lvldat_buf->get_u32();
 			tri.segment_index = static_cast<int32_t>(lvldat_buf->get_u32());
 			tri.checkpoint_index = static_cast<int32_t>(lvldat_buf->get_u32());
+			if (tri.segment_index < 0 || tri.segment_index >= current_track->num_segments) {
+				UtilityFunctions::printerr(String("MXT mesh collision triangle has invalid segment index "), tri.segment_index);
+				std::abort();
+			}
+			if (tri.segment_index < last_mesh_segment) {
+				UtilityFunctions::printerr(String("MXT mesh collision triangles must be grouped by ascending segment index"));
+				std::abort();
+			}
+			if (tri.segment_index != last_mesh_segment) {
+				current_track->segments[tri.segment_index].mesh_collision_start = static_cast<int>(tri_index);
+				last_mesh_segment = tri.segment_index;
+			}
+			current_track->segments[tri.segment_index].mesh_collision_count++;
 
 			tri.p0.x = lvldat_buf->get_float();
 			tri.p0.y = lvldat_buf->get_float();

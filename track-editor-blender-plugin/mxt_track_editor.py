@@ -474,6 +474,11 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
         description="Use this road segment's procedural shape for collision; disable for mesh-only collision while keeping checkpoints and CPU navigation",
         default=True
     )
+    export_preview_mesh_collision: BoolProperty(
+        name="Preview Mesh Collision",
+        description="Export this segment's generated preview mesh as authored mesh collision",
+        default=False
+    )
 
     rail_height_left: FloatProperty(
         name="Left Rail Height",
@@ -2897,6 +2902,7 @@ class MXTRoad_PT_MainPanel(Panel):
         data_box = layout.box(); data_box.label(text="Data and Generation")
         data_box.prop(road_props, "num_checkpoints_per_segment")
         data_box.prop(road_props, "analytic_collision_enabled")
+        data_box.prop(road_props, "export_preview_mesh_collision")
         data_box.prop(road_props, "disable_auto_rebake")
         data_box.separator()
         data_box.operator("mxt_road.generate_curve_matrix", text="Generate CurveMatrix", icon='FCURVE')
@@ -4639,34 +4645,40 @@ def _pack_mesh_collision_triangles(context, seg_index):
         'DASH': 0x2,
         'JUMP': 0x10,
     }
+    preview_material_map = {
+        'track_surface': 'TRACK',
+        'track_rail': 'RAIL',
+        'embed_border': 'TRACK',
+        'embed_recharge': 'RECHARGE',
+        'embed_dirt': 'DIRT',
+        'embed_ice': 'ICE',
+        'embed_lava': 'LAVA',
+        'embed_hole': 'HOLE',
+    }
 
-    depsgraph = context.evaluated_depsgraph_get()
-    mesh_data = bytearray()
-    tri_count = 0
-    for obj in bpy.data.objects:
-        props = getattr(obj, "mxt_mesh_collision_props", None)
-        if obj.type != 'MESH' or not props or not props.is_mxt_collision_mesh:
-            continue
-        if props.surface_type not in terrain_map:
-            raise RuntimeError(f"{obj.name} has unsupported mesh collision surface {props.surface_type}")
+    def base_material_name(name):
+        if len(name) > 4 and name[-4] == '.' and name[-3:].isdigit():
+            return name[:-4]
+        return name
 
-        if not props.segment:
-            raise RuntimeError(f"{obj.name} is marked for mesh collision but has no segment")
-        if props.segment not in seg_index:
-            raise RuntimeError(f"{obj.name} references non-exported segment {props.segment.name}")
-        segment_index = seg_index[props.segment]
-
+    def append_object_triangles(records_by_segment, obj, segment_index, checkpoint_index, surface_for_polygon, depsgraph, required):
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
         try:
             mesh.calc_loop_triangles()
             object_tri_count = 0
             normal_matrix = obj.matrix_world.to_3x3().inverted().transposed()
-            terrain_flags = terrain_map[props.surface_type]
             for loop_tri in mesh.loop_triangles:
+                terrain_key = surface_for_polygon(mesh, loop_tri.polygon_index)
+                if terrain_key is None:
+                    continue
+                if terrain_key not in terrain_map:
+                    raise RuntimeError(f"{obj.name} has unsupported mesh collision surface {terrain_key}")
                 loop_indices = list(loop_tri.loops)
                 if len(loop_indices) != 3:
                     raise RuntimeError(f"{obj.name} produced a non-triangle loop triangle")
+                record = bytearray()
+                record += struct.pack('<Iii', terrain_map[terrain_key], segment_index, checkpoint_index)
                 positions = []
                 normals = []
                 for loop_index in loop_indices:
@@ -4674,18 +4686,65 @@ def _pack_mesh_collision_triangles(context, seg_index):
                     vert = mesh.vertices[loop.vertex_index]
                     positions.append(obj.matrix_world @ vert.co)
                     normals.append((normal_matrix @ loop.normal).normalized())
-                mesh_data += struct.pack('<Iii', terrain_flags, segment_index, props.checkpoint_index)
                 for p in positions:
-                    mesh_data += struct.pack('<3f', p.x, p.y, p.z)
+                    record += struct.pack('<3f', p.x, p.y, p.z)
                 for n in normals:
-                    mesh_data += struct.pack('<3f', n.x, n.y, n.z)
-                tri_count += 1
+                    record += struct.pack('<3f', n.x, n.y, n.z)
+                records_by_segment[segment_index].append(record)
                 object_tri_count += 1
-            if object_tri_count == 0:
+            if required and object_tri_count == 0:
                 raise RuntimeError(f"{obj.name} is marked for mesh collision but has no triangles")
+            return object_tri_count
         finally:
             eval_obj.to_mesh_clear()
 
+    depsgraph = context.evaluated_depsgraph_get()
+    records_by_segment = {index: [] for index in seg_index.values()}
+    for obj in bpy.data.objects:
+        props = getattr(obj, "mxt_mesh_collision_props", None)
+        if obj.type != 'MESH' or not props or not props.is_mxt_collision_mesh:
+            continue
+        if not props.segment:
+            raise RuntimeError(f"{obj.name} is marked for mesh collision but has no segment")
+        if props.segment not in seg_index:
+            raise RuntimeError(f"{obj.name} references non-exported segment {props.segment.name}")
+        segment_index = seg_index[props.segment]
+        surface_type = props.surface_type
+        append_object_triangles(
+            records_by_segment,
+            obj,
+            segment_index,
+            props.checkpoint_index,
+            lambda _mesh, _poly_index, surface_type=surface_type: surface_type,
+            depsgraph,
+            True)
+
+    for seg, segment_index in seg_index.items():
+        props = seg.mxt_road_overall_props
+        if not getattr(props, "export_preview_mesh_collision", False):
+            continue
+        mesh_name = f"{seg.name}_PreviewMesh"
+        preview_obj = next((c for c in seg.children if c.name == mesh_name), None)
+        if not preview_obj or preview_obj.type != 'MESH':
+            raise RuntimeError(f"{seg.name} has Preview Mesh Collision enabled but no preview mesh")
+
+        def preview_surface(mesh, polygon_index):
+            poly = mesh.polygons[polygon_index]
+            if poly.material_index >= len(mesh.materials):
+                raise RuntimeError(f"{preview_obj.name} polygon has invalid material index")
+            mat_name = base_material_name(mesh.materials[poly.material_index].name)
+            if mat_name not in preview_material_map:
+                raise RuntimeError(f"{preview_obj.name} material {mat_name} cannot be exported as mesh collision")
+            return preview_material_map[mat_name]
+
+        append_object_triangles(records_by_segment, preview_obj, segment_index, -1, preview_surface, depsgraph, True)
+
+    mesh_data = bytearray()
+    tri_count = 0
+    for segment_index in sorted(records_by_segment.keys()):
+        for record in records_by_segment[segment_index]:
+            mesh_data += record
+            tri_count += 1
     return tri_count, mesh_data
 
 

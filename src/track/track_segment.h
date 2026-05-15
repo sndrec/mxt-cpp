@@ -30,6 +30,8 @@ public:
         SimAABB bounds;
         int checkpoint_start;
         int checkpoint_run_length;
+        int mesh_collision_start;
+        int mesh_collision_count;
         RoadShape* road_shape;
         RoadTransformCurve* curve_matrix;
 };

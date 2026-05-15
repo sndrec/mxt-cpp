@@ -1163,6 +1163,10 @@ static void cast_mesh_collision_fast(
 		return;
 	}
 	const int segment_index = track->checkpoints[start_idx].road_segment;
+	const TrackSegment &segment = track->segments[segment_index];
+	if (segment.mesh_collision_count <= 0) {
+		return;
+	}
 	const bool wants_backface = (params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0;
 	const SimVec3 ray = p1 - p0;
 	const float ray_len = ray.length();
@@ -1171,11 +1175,9 @@ static void cast_mesh_collision_fast(
 	}
 
 	float best_dist = out_collision.collided ? p0.distance_to(out_collision.collision_point) : FLT_MAX;
-	for (int tri_index = 0; tri_index < track->num_mesh_collision_triangles; ++tri_index) {
+	const int tri_end = segment.mesh_collision_start + segment.mesh_collision_count;
+	for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-		if (tri.segment_index != segment_index) {
-			continue;
-		}
 		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 		if (is_rail) {
 			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {

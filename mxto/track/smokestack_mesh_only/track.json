@@ -1,0 +1,682 @@
+{
+  "name": "SMOKESTACK_MESH_ONLY",
+  "description": "",
+  "difficulty": 1,
+  "fog_distance": 1000.0,
+  "sky_top_color": [
+    0.6653836965560913,
+    0.3712381422519684,
+    0.13563348352909088
+  ],
+  "sky_horizon_color": [
+    0.745400071144104,
+    0.22696596384048462,
+    0.3515327572822571
+  ],
+  "sky_ground_color": [
+    0.2383963167667389,
+    0.059511277824640274,
+    0.048171862959861755
+  ],
+  "ground_color": [
+    0.5269225239753723,
+    0.2827931046485901,
+    0.26060786843299866
+  ],
+  "ground_height": -800.0,
+  "cloud_color": [
+    1.0,
+    0.36691996455192566,
+    0.5231820940971375
+  ],
+  "cloud_height": 1350.0,
+  "light_color": [
+    1.0,
+    0.949999988079071,
+    0.8999999761581421
+  ],
+  "light_intensity": 1.0,
+  "ambient_intensity": 0.800000011920929,
+  "ambient_color": [
+    0.3907774090766907,
+    0.2804163694381714,
+    0.2891421616077423
+  ],
+  "light_direction": [
+    0.30000001192092896,
+    -1.0,
+    0.4000000059604645
+  ],
+  "segments": [
+    {
+      "seg_index": 0,
+      "name": "MXTRoadSegment.000",
+      "ground_color": [
+        0.1070019006729126,
+        0.015179903246462345,
+        0.015179903246462345
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 1,
+      "name": "MXTRoadSegment.003",
+      "ground_color": [
+        0.03381187468767166,
+        0.19994407892227173,
+        0.03559665381908417
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 2,
+      "name": "MXTRoadSegment.008",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 3,
+      "name": "MXTRoadSegment.013",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 4,
+      "name": "MXTRoadSegment.018",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 5,
+      "name": "MXTRoadSegment.023",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 6,
+      "name": "MXTRoadSegment.030",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 7,
+      "name": "MXTRoadSegment.035",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 8,
+      "name": "MXTRoadSegment.040",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 9,
+      "name": "MXTRoadSegment.043",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 10,
+      "name": "MXTRoadSegment.046",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 11,
+      "name": "MXTRoadSegment.050",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 12,
+      "name": "MXTRoadSegment.053",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 13,
+      "name": "MXTRoadSegment.058",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 14,
+      "name": "MXTRoadSegment.061",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 15,
+      "name": "MXTRoadSegment.066",
+      "ground_color": [
+        0.10447070002555847,
+        0.15085619688034058,
+        0.30554911494255066
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 16,
+      "name": "MXTRoadSegment.069",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 17,
+      "name": "MXTRoadSegment.074",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 18,
+      "name": "MXTRoadSegment.079",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 19,
+      "name": "MXTRoadSegment.084",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 20,
+      "name": "MXTRoadSegment.089",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 21,
+      "name": "MXTRoadSegment.094",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 22,
+      "name": "MXTRoadSegment.099",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 23,
+      "name": "MXTRoadSegment.103",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 24,
+      "name": "MXTRoadSegment.107",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 25,
+      "name": "MXTRoadSegment.113",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 26,
+      "name": "MXTRoadSegment.117",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 27,
+      "name": "MXTRoadSegment.124",
+      "ground_color": [
+        0.03381200134754181,
+        0.19994400441646576,
+        0.035597000271081924
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 28,
+      "name": "MXTRoadSegment.121",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 29,
+      "name": "MXTRoadSegment.127",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 30,
+      "name": "MXTRoadSegment.135",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 31,
+      "name": "MXTRoadSegment.141",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 32,
+      "name": "MXTRoadSegment.149",
+      "ground_color": [
+        0.08877403289079666,
+        0.20818403363227844,
+        0.07315158098936081
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 33,
+      "name": "MXTRoadSegment.159",
+      "ground_color": [
+        0.08877400308847427,
+        0.20818400382995605,
+        0.07315199822187424
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 34,
+      "name": "MXTRoadSegment.156",
+      "ground_color": [
+        0.10700199753046036,
+        0.015180000104010105,
+        0.015180000104010105
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    }
+  ]
+}
