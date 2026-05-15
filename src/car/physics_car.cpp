@@ -3300,8 +3300,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 				if (track) {
 					const int mesh_wall_cp = soa->current_checkpoint[soa_index];
 					if (mesh_wall_cp >= 0 && mesh_wall_cp < track->num_checkpoints) {
-						const TrackSegment &mesh_wall_segment = track->segments[track->checkpoints[mesh_wall_cp].road_segment];
-						if (!mesh_wall_segment.analytic_collision_enabled) {
+						if (track->num_mesh_collision_triangles > 0) {
 							SimAABB mesh_cast_bounds;
 							mesh_cast_bounds.position = LOAD_VEC3(position_old);
 							mesh_cast_bounds.size = SimVec3();
