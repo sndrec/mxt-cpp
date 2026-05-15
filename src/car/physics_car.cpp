@@ -999,6 +999,33 @@ static bool project_machine_down_to_road_cross_section(
 	return true;
 }
 
+void PhysicsCar::sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch)
+{
+	RaceTrack *track = soa->current_track[soa_index];
+	if (!track) {
+		out_collision.collided = false;
+		out_collision.road_data.cp_idx = -1;
+		out_collision.mesh_triangle_index = -1;
+		return;
+	}
+	track->sample_mesh_floor_fast(
+		out_collision,
+		point,
+		max_distance,
+		mask,
+		start_idx,
+		allow_global_fallback,
+		&scratch,
+		soa->last_mesh_floor_triangle[soa_index]);
+	if (out_collision.collided) {
+		if (out_collision.mesh_triangle_index < 0) {
+			godot::UtilityFunctions::printerr(godot::String("MXT mesh floor sample produced no triangle index"));
+			std::abort();
+		}
+		soa->last_mesh_floor_triangle[soa_index] = out_collision.mesh_triangle_index;
+	}
+}
+
 bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 {
 	soa->road_sample[soa_index].terrain = 0;
@@ -1031,7 +1058,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 			}
 		};
 		SimVec3 p0_sweep_start_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, 1.0f, 0.0f));
-		SimVec3 p1_sweep_end_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, -2000.0f, 0.0f));
+		SimVec3 p1_sweep_end_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, -20.0f, 0.0f));
 		STORE_VEC3(position_bottom, p1_sweep_end_ws);
 		soa->current_track[soa_index]->cast_vs_track_fast(hit, p0_sweep_start_ws,
 			LOAD_VEC3(position_bottom),
@@ -1042,14 +1069,14 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
 		if (!floor_seg->analytic_collision_enabled) {
 			CollisionData nearest_hit;
-			soa->current_track[soa_index]->sample_mesh_floor_fast(
+			sample_mesh_floor_with_seed(
 				nearest_hit,
 				LOAD_VEC3(position_current),
 				120.0f,
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				false,
-				&scratch);
+				scratch);
 			if (nearest_hit.collided) {
 				orient_mesh_floor_hit(nearest_hit);
 				hit = nearest_hit;
@@ -1059,14 +1086,14 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 			}
 		}
 		if (!sweep_hit_occurred && !floor_seg->analytic_collision_enabled) {
-			soa->current_track[soa_index]->sample_mesh_floor_fast(
+			sample_mesh_floor_with_seed(
 				hit,
 				LOAD_VEC3(position_current),
-				2000.0f,
+				120.0f,
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				true,
-				&scratch);
+				scratch);
 			sweep_hit_occurred = hit.collided;
 			nearest_mesh_sample = hit.collided;
 		}

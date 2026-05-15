@@ -20,6 +20,7 @@
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "mxt_core/math_utils.h"
 #include <chrono>
+#include <cfloat>
 #include <cfenv>
 #include <cmath>
 #include <cstdint>
@@ -76,6 +77,12 @@ static float mesh_bvh_axis_value(const SimVec3 &value, int axis)
 	return value.z;
 }
 
+static float mesh_bvh_surface_area(const SimAABB &bounds)
+{
+	const SimVec3 s = bounds.size;
+	return 2.0f * (s.x * s.y + s.y * s.z + s.z * s.x);
+}
+
 static void build_mesh_bvh_node(std::vector<MeshBVHBuildPrim> &prims, std::vector<TrackMeshBVHNode> &nodes, int start, int count)
 {
 	const int node_index = static_cast<int>(nodes.size());
@@ -96,15 +103,104 @@ static void build_mesh_bvh_node(std::vector<MeshBVHBuildPrim> &prims, std::vecto
 		nodes[node_index].right_first = -1;
 		return;
 	}
-	const int axis = mesh_bvh_longest_axis(centroid_bounds);
-	const int mid = start + count / 2;
-	std::nth_element(
-		prims.begin() + start,
-		prims.begin() + mid,
-		prims.begin() + start + count,
-		[axis](const MeshBVHBuildPrim &a, const MeshBVHBuildPrim &b) {
-			return mesh_bvh_axis_value(a.center, axis) < mesh_bvh_axis_value(b.center, axis);
-		});
+	constexpr int kBinCount = 16;
+	struct MeshBVHBin {
+		SimAABB bounds;
+		int count = 0;
+	};
+	int best_axis = -1;
+	int best_bin = -1;
+	float best_cost = FLT_MAX;
+	for (int axis = 0; axis < 3; ++axis) {
+		const float cmin = mesh_bvh_axis_value(centroid_bounds.position, axis);
+		const float cmax = mesh_bvh_axis_value(centroid_bounds.position + centroid_bounds.size, axis);
+		const float extent = cmax - cmin;
+		if (extent <= 1.0e-6f) {
+			continue;
+		}
+		MeshBVHBin bins[kBinCount];
+		for (int i = start; i < start + count; ++i) {
+			int bin_index = static_cast<int>(((mesh_bvh_axis_value(prims[i].center, axis) - cmin) / extent) * static_cast<float>(kBinCount));
+			if (bin_index < 0) {
+				bin_index = 0;
+			} else if (bin_index >= kBinCount) {
+				bin_index = kBinCount - 1;
+			}
+			MeshBVHBin &bin = bins[bin_index];
+			if (bin.count == 0) {
+				bin.bounds = prims[i].bounds;
+			} else {
+				bin.bounds = mesh_bvh_merge_bounds(bin.bounds, prims[i].bounds);
+			}
+			bin.count++;
+		}
+		SimAABB left_bounds[kBinCount - 1];
+		SimAABB right_bounds[kBinCount - 1];
+		int left_count[kBinCount - 1] = {};
+		int right_count[kBinCount - 1] = {};
+		bool left_valid = false;
+		SimAABB left_accum;
+		int left_accum_count = 0;
+		for (int bin = 0; bin < kBinCount - 1; ++bin) {
+			if (bins[bin].count > 0) {
+				left_accum = left_valid ? mesh_bvh_merge_bounds(left_accum, bins[bin].bounds) : bins[bin].bounds;
+				left_valid = true;
+				left_accum_count += bins[bin].count;
+			}
+			left_bounds[bin] = left_accum;
+			left_count[bin] = left_accum_count;
+		}
+		bool right_valid = false;
+		SimAABB right_accum;
+		int right_accum_count = 0;
+		for (int bin = kBinCount - 1; bin > 0; --bin) {
+			if (bins[bin].count > 0) {
+				right_accum = right_valid ? mesh_bvh_merge_bounds(right_accum, bins[bin].bounds) : bins[bin].bounds;
+				right_valid = true;
+				right_accum_count += bins[bin].count;
+			}
+			right_bounds[bin - 1] = right_accum;
+			right_count[bin - 1] = right_accum_count;
+		}
+		for (int bin = 0; bin < kBinCount - 1; ++bin) {
+			if (left_count[bin] == 0 || right_count[bin] == 0) {
+				continue;
+			}
+			const float cost =
+				mesh_bvh_surface_area(left_bounds[bin]) * static_cast<float>(left_count[bin]) +
+				mesh_bvh_surface_area(right_bounds[bin]) * static_cast<float>(right_count[bin]);
+			if (cost < best_cost) {
+				best_cost = cost;
+				best_axis = axis;
+				best_bin = bin;
+			}
+		}
+	}
+	int mid = start + count / 2;
+	if (best_axis >= 0) {
+		const float cmin = mesh_bvh_axis_value(centroid_bounds.position, best_axis);
+		const float cmax = mesh_bvh_axis_value(centroid_bounds.position + centroid_bounds.size, best_axis);
+		const float extent = cmax - cmin;
+		const float split_pos = cmin + extent * (static_cast<float>(best_bin + 1) / static_cast<float>(kBinCount));
+		auto mid_it = std::partition(
+			prims.begin() + start,
+			prims.begin() + start + count,
+			[best_axis, split_pos](const MeshBVHBuildPrim &prim) {
+				return mesh_bvh_axis_value(prim.center, best_axis) < split_pos;
+			});
+		mid = static_cast<int>(mid_it - prims.begin());
+	}
+	if (mid <= start || mid >= start + count) {
+		const int axis = mesh_bvh_longest_axis(centroid_bounds);
+		mid = start + count / 2;
+		std::nth_element(
+			prims.begin() + start,
+			prims.begin() + mid,
+			prims.begin() + start + count,
+			[axis](const MeshBVHBuildPrim &a, const MeshBVHBuildPrim &b) {
+				return mesh_bvh_axis_value(a.center, axis) < mesh_bvh_axis_value(b.center, axis);
+			});
+	}
 	nodes[node_index].bounds = bounds;
 	nodes[node_index].count = 0;
 	nodes[node_index].left_first = static_cast<int32_t>(nodes.size());
@@ -174,6 +270,36 @@ static void build_track_mesh_checkpoint_bvh(RaceTrack *track, HeapHandler &level
 		track->mesh_checkpoint_bvh_node_count[i] = node_count[i];
 	}
 	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_checkpoint_bvh_loaded nodes="), track->num_mesh_checkpoint_bvh_nodes);
+}
+
+static void build_track_mesh_world_bvh(RaceTrack *track, HeapHandler &level_data)
+{
+	if (track->num_mesh_collision_triangles <= 0) {
+		return;
+	}
+	std::vector<MeshBVHBuildPrim> prims;
+	prims.reserve(track->num_mesh_collision_triangles);
+	for (int tri_index = 0; tri_index < track->num_mesh_collision_triangles; ++tri_index) {
+		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
+		MeshBVHBuildPrim prim;
+		prim.bounds = tri.bounds;
+		prim.center = (tri.p0 + tri.p1 + tri.p2) * (1.0f / 3.0f);
+		prim.triangle_index = tri_index;
+		prims.push_back(prim);
+	}
+	std::vector<TrackMeshBVHNode> nodes;
+	nodes.reserve(static_cast<size_t>(track->num_mesh_collision_triangles) * 2u);
+	build_mesh_bvh_node(prims, nodes, 0, track->num_mesh_collision_triangles);
+	track->num_mesh_world_bvh_nodes = static_cast<int>(nodes.size());
+	track->mesh_world_bvh_nodes = level_data.allocate_array<TrackMeshBVHNode>(nodes.size());
+	track->mesh_world_bvh_triangle_indices = level_data.allocate_array<int32_t>(prims.size());
+	for (int i = 0; i < track->num_mesh_world_bvh_nodes; ++i) {
+		track->mesh_world_bvh_nodes[i] = nodes[i];
+	}
+	for (int i = 0; i < static_cast<int>(prims.size()); ++i) {
+		track->mesh_world_bvh_triangle_indices[i] = prims[i].triangle_index;
+	}
+	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_world_bvh_loaded nodes="), track->num_mesh_world_bvh_nodes);
 }
 
 #define LOAD_INDEXED_VEC3(storage, name, index) SimVec3((storage).name##_x[(index)], (storage).name##_y[(index)], (storage).name##_z[(index)])
@@ -689,9 +815,11 @@ namespace {
 		auto phase_start = std::chrono::high_resolution_clock::now();
 		for (int i = 0; i < count; ++i) {
 			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
+				scratch.debug_mesh_current_global_car_index = c.global_start + i;
 				car_views[i].sample_old_corner_collision_surface(scratch);
 			}
 		}
+		scratch.debug_mesh_current_global_car_index = -1;
 		auto now = std::chrono::high_resolution_clock::now();
 		sample_old_us = elapsed_us(phase_start, now);
 
@@ -699,6 +827,7 @@ namespace {
 		uint32_t apply_response_accum_us = 0;
 		for (int i = 0; i < count; ++i) {
 			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
+				scratch.debug_mesh_current_global_car_index = c.global_start + i;
 				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch);
 				const SimVec3 rail_push = LOAD_INDEXED_VEC3(c, collision_push_rail, i);
 				const SimVec3 track_push = LOAD_INDEXED_VEC3(c, collision_push_track, i);
@@ -732,6 +861,7 @@ namespace {
 				}
 			}
 		}
+		scratch.debug_mesh_current_global_car_index = -1;
 		now = std::chrono::high_resolution_clock::now();
 		apply_response_us = apply_response_accum_us;
 		const uint32_t corner_and_apply_us = elapsed_us(phase_start, now);
@@ -830,6 +960,7 @@ namespace {
 				continue;
 			}
 
+			scratch.debug_mesh_current_global_car_index = c.global_start + i;
 			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch);
 			const bool has_floor = car_views[i].find_floor_beneath_machine(scratch);
 			if (has_floor) {
@@ -859,6 +990,7 @@ namespace {
 				}
 			}
 		}
+		scratch.debug_mesh_current_global_car_index = -1;
 	}
 
 	static void commit_vehicle_trigger_events(PhysicsCarSoA* car_shards, PhysicsCar* cars, int shard_count, TrackQueryScratch* lane_scratch)
@@ -1717,6 +1849,8 @@ void GameSim::record_phase_profile_sample()
 		soa.prof_mesh_floor_segment_scans,
 		soa.prof_mesh_cast_calls,
 		soa.prof_mesh_cast_tri_tests,
+		soa.prof_mesh_floor_bvh_node_tests,
+		soa.prof_mesh_cast_bvh_node_tests,
 	};
 
 	if (profile_count == PROFILE_WINDOW_TICKS) {
@@ -1768,6 +1902,8 @@ String GameSim::get_phase_profile_string() const
 	out += " mesh_floor_seg_scans=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEG_SCANS));
 	out += " mesh_cast_calls=" + String::num_int64(avg(PROFILE_MESH_CAST_CALLS));
 	out += " mesh_cast_tri_tests=" + String::num_int64(avg(PROFILE_MESH_CAST_TRI_TESTS));
+	out += " mesh_floor_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BVH_NODE_TESTS));
+	out += " mesh_cast_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_CAST_BVH_NODE_TESTS));
 	return out;
 }
 
@@ -2224,6 +2360,8 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	soa.prof_mesh_floor_segment_scans = 0;
 	soa.prof_mesh_cast_calls = 0;
 	soa.prof_mesh_cast_tri_tests = 0;
+	soa.prof_mesh_floor_bvh_node_tests = 0;
+	soa.prof_mesh_cast_bvh_node_tests = 0;
 	uint32_t lane_prepare_floor_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_project_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_steer_susp_us[VEHICLE_WORKER_COUNT] = {};
@@ -2334,6 +2472,8 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.prof_mesh_floor_segment_scans += track_scratch.mesh_floor_segment_scans;
 		soa.prof_mesh_cast_calls += track_scratch.mesh_cast_calls;
 		soa.prof_mesh_cast_tri_tests += track_scratch.mesh_cast_tri_tests;
+		soa.prof_mesh_floor_bvh_node_tests += track_scratch.mesh_floor_bvh_node_tests;
+		soa.prof_mesh_cast_bvh_node_tests += track_scratch.mesh_cast_bvh_node_tests;
 	}
 
 	soa.prof_collision_us = lane_collision_us[0];
@@ -2558,6 +2698,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->mesh_checkpoint_bvh_node_start = nullptr;
 	current_track->mesh_checkpoint_bvh_node_count = nullptr;
 	current_track->num_mesh_checkpoint_bvh_nodes = 0;
+	current_track->mesh_world_bvh_nodes = nullptr;
+	current_track->mesh_world_bvh_triangle_indices = nullptr;
+	current_track->num_mesh_world_bvh_nodes = 0;
 	current_track->lap_length = 0.0f;
 
 	uint32_t header_size = lvldat_buf->get_u32();
@@ -3051,6 +3194,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			if (tri.p2.y < current_track->minimum_y) current_track->minimum_y = tri.p2.y;
 		}
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_collision_loaded tri="), mesh_collision_triangle_count);
+		build_track_mesh_world_bvh(current_track, level_data);
 		build_track_mesh_checkpoint_bvh(current_track, level_data);
 	}
 

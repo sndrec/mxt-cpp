@@ -55,9 +55,10 @@ struct alignas(64) TrackQueryScratch
 	uint32_t mesh_floor_segment_scans = 0;
 	uint32_t mesh_cast_calls = 0;
 	uint32_t mesh_cast_tri_tests = 0;
-	uint32_t debug_mesh_floor_draw_count = 0;
-	uint32_t debug_mesh_cast_draw_count = 0;
-	uint32_t debug_mesh_hit_draw_count = 0;
+	uint32_t mesh_floor_bvh_node_tests = 0;
+	uint32_t mesh_cast_bvh_node_tests = 0;
+	int debug_mesh_current_global_car_index = -1;
+	int debug_mesh_draw_global_car_index = 0;
 
 	void reset_mesh_query_profile()
 	{
@@ -67,9 +68,9 @@ struct alignas(64) TrackQueryScratch
 		mesh_floor_segment_scans = 0;
 		mesh_cast_calls = 0;
 		mesh_cast_tri_tests = 0;
-		debug_mesh_floor_draw_count = 0;
-		debug_mesh_cast_draw_count = 0;
-		debug_mesh_hit_draw_count = 0;
+		mesh_floor_bvh_node_tests = 0;
+		mesh_cast_bvh_node_tests = 0;
+		debug_mesh_current_global_car_index = -1;
 	}
 
 	void reset_trigger_events()
@@ -102,6 +103,9 @@ public:
 	int32_t* mesh_checkpoint_bvh_node_start;
 	int32_t* mesh_checkpoint_bvh_node_count;
 	int num_mesh_checkpoint_bvh_nodes;
+	TrackMeshBVHNode* mesh_world_bvh_nodes;
+	int32_t* mesh_world_bvh_triangle_indices;
+	int num_mesh_world_bvh_nodes;
 		CollisionCheckpoint* checkpoints;
 		int num_trigger_colliders;
 		TriggerCollider** trigger_colliders;
@@ -140,7 +144,7 @@ public:
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
 	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr);
-	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr);
+	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr, int seed_triangle_index = -1);
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);
 	void convert_point_to_road(

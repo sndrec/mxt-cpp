@@ -34,6 +34,7 @@ struct CollisionData {
 	SimVec3 collision_point; // position of collision
 	SimVec3 collision_normal; // surface normal at collision
 	RoadData road_data;
+	int32_t mesh_triangle_index = -1;
 };
 
 struct ImpactData {
@@ -95,6 +96,7 @@ struct ImpactData {
 	X(uint16_t, current_checkpoint, 0) \
 	X(uint16_t, current_collision_checkpoint, 0) \
 	X(uint16_t, last_ground_checkpoint, 0) \
+	X(int32_t, last_mesh_floor_triangle, -1) \
 	X(float, last_ground_distance, 0.0f) \
 	X(float, previous_lap_distance, 0.0f) \
 	X(float, checkpoint_fraction, 0.0f) \
@@ -303,6 +305,7 @@ private:
 	float scratch_float[16];
 	bool compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance) const;
 	void start_restore_to_last_ground();
+	void sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch);
 public:
 	PhysicsCarSoA* soa = nullptr;
 	int soa_index = 0;

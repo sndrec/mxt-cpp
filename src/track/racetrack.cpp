@@ -36,6 +36,11 @@ static inline godot::Vector3 godot_vec3_from_sim(const SimVec3& v)
 	return godot::Vector3(v.x, v.y, v.z);
 }
 
+static bool mesh_debug_draw_current_car(const TrackQueryScratch *scratch)
+{
+	return scratch && scratch->debug_mesh_current_global_car_index == scratch->debug_mesh_draw_global_car_index;
+}
+
 static void draw_mesh_debug_triangle(const TrackMeshCollisionTriangle &tri, const godot::Color &color, float draw_time)
 {
 	const SimVec3 face = (tri.p1 - tri.p0).cross(tri.p2 - tri.p0);
@@ -1043,18 +1048,33 @@ static void cast_segment_fast(const CastParams  &params,
 
 static bool aabb_overlaps_segment(const SimAABB &bounds, const SimVec3 &p0, const SimVec3 &p1)
 {
-	const SimVec3 seg_min(
-		std::min(p0.x, p1.x),
-		std::min(p0.y, p1.y),
-		std::min(p0.z, p1.z));
-	const SimVec3 seg_max(
-		std::max(p0.x, p1.x),
-		std::max(p0.y, p1.y),
-		std::max(p0.z, p1.z));
 	const SimVec3 box_max = bounds.position + bounds.size;
-	return seg_max.x >= bounds.position.x && seg_min.x <= box_max.x &&
-		seg_max.y >= bounds.position.y && seg_min.y <= box_max.y &&
-		seg_max.z >= bounds.position.z && seg_min.z <= box_max.z;
+	const SimVec3 ray = p1 - p0;
+	float t_min = 0.0f;
+	float t_max = 1.0f;
+	const float origins[3] = {p0.x, p0.y, p0.z};
+	const float dirs[3] = {ray.x, ray.y, ray.z};
+	const float mins[3] = {bounds.position.x, bounds.position.y, bounds.position.z};
+	const float maxs[3] = {box_max.x, box_max.y, box_max.z};
+	for (int axis = 0; axis < 3; ++axis) {
+		if (fabsf(dirs[axis]) <= 1.0e-7f) {
+			if (origins[axis] < mins[axis] || origins[axis] > maxs[axis]) {
+				return false;
+			}
+			continue;
+		}
+		float t0 = (mins[axis] - origins[axis]) / dirs[axis];
+		float t1 = (maxs[axis] - origins[axis]) / dirs[axis];
+		if (t0 > t1) {
+			std::swap(t0, t1);
+		}
+		t_min = std::max(t_min, t0);
+		t_max = std::min(t_max, t1);
+		if (t_min > t_max) {
+			return false;
+		}
+	}
+	return true;
 }
 
 static bool triangle_ray_hit(
@@ -1384,15 +1404,6 @@ static void cast_mesh_collision_fast(
 			scratch->mesh_cast_tri_tests += 1;
 		}
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-		if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS) && scratch->debug_mesh_cast_draw_count < 256) {
-			scratch->debug_mesh_cast_draw_count += 1;
-			const bool rail_query = (params.mask & CAST_FLAGS::WANTS_RAIL) != 0;
-			const bool terrain_query = (params.mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
-			const godot::Color color = rail_query
-				? godot::Color(1.0f, 0.0f, 1.0f, 0.75f)
-				: (terrain_query ? godot::Color(1.0f, 0.85f, 0.1f, 0.75f) : godot::Color(1.0f, 0.45f, 0.05f, 0.75f));
-			draw_mesh_debug_triangle(tri, color, _TICK_DELTA);
-		}
 		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 		if (is_rail) {
 			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
@@ -1403,6 +1414,14 @@ static void cast_mesh_collision_fast(
 		}
 		if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
 			return;
+		}
+		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS)) {
+			const bool rail_query = (params.mask & CAST_FLAGS::WANTS_RAIL) != 0;
+			const bool terrain_query = (params.mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
+			const godot::Color color = rail_query
+				? godot::Color(1.0f, 0.0f, 1.0f, 0.75f)
+				: (terrain_query ? godot::Color(1.0f, 0.85f, 0.1f, 0.75f) : godot::Color(1.0f, 0.45f, 0.05f, 0.75f));
+			draw_mesh_debug_triangle(tri, color, _TICK_DELTA);
 		}
 
 		float hit_t = 0.0f;
@@ -1432,8 +1451,7 @@ static void cast_mesh_collision_fast(
 
 		best_dist = dist;
 		mesh_hit = true;
-		if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS) && scratch->debug_mesh_hit_draw_count < 256) {
-			scratch->debug_mesh_hit_draw_count += 1;
+		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
 			draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
 		}
 		out_collision.collided = true;
@@ -1445,6 +1463,7 @@ static void cast_mesh_collision_fast(
 		out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, smooth_point, smooth_normal);
 		out_collision.road_data.closest_root = RoadTransform();
 		out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
+		out_collision.mesh_triangle_index = tri_index;
 	};
 
 	auto scan_checkpoint = [&](int cp_idx) {
@@ -1462,6 +1481,9 @@ static void cast_mesh_collision_fast(
 			while (stack_count > 0) {
 				const int node_index = stack[--stack_count];
 				const TrackMeshBVHNode &node = track->mesh_checkpoint_bvh_nodes[node_index];
+				if (scratch) {
+					scratch->mesh_cast_bvh_node_tests += 1;
+				}
 				if (!aabb_overlaps_segment(node.bounds, p0, p1)) {
 					continue;
 				}
@@ -1490,6 +1512,40 @@ static void cast_mesh_collision_fast(
 		}
 	};
 
+	if (track->mesh_world_bvh_nodes && track->mesh_world_bvh_triangle_indices && track->num_mesh_world_bvh_nodes > 0) {
+		int stack[256];
+		int stack_count = 0;
+		stack[stack_count++] = 0;
+		while (stack_count > 0) {
+			const int node_index = stack[--stack_count];
+			const TrackMeshBVHNode &node = track->mesh_world_bvh_nodes[node_index];
+			if (scratch) {
+				scratch->mesh_cast_bvh_node_tests += 1;
+			}
+			if (!aabb_overlaps_segment(node.bounds, p0, p1)) {
+				continue;
+			}
+			if (node.count > 0) {
+				const int end = node.left_first + node.count;
+				for (int i = node.left_first; i < end; ++i) {
+					scan_triangle(track->mesh_world_bvh_triangle_indices[i]);
+				}
+			} else {
+				if (stack_count + 2 > 256) {
+					godot::UtilityFunctions::printerr(godot::String("MXT mesh world cast BVH traversal stack overflow"));
+					std::abort();
+				}
+				if (node.left_first < 0 || node.right_first < 0) {
+					godot::UtilityFunctions::printerr(godot::String("MXT mesh world cast BVH interior node has invalid child"));
+					std::abort();
+				}
+				stack[stack_count++] = node.left_first;
+				stack[stack_count++] = node.right_first;
+			}
+		}
+		return;
+	}
+
 	scan_checkpoint(start_idx);
 	for (int delta = 1; delta <= 4; ++delta) {
 		scan_checkpoint(start_idx - delta);
@@ -1507,13 +1563,14 @@ static void cast_mesh_collision_fast(
 	}
 }
 
-void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch)
+void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index)
 {
 	if (scratch) {
 		scratch->mesh_floor_calls += 1;
 	}
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
+	out_collision.mesh_triangle_index = -1;
 	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
 		return;
 	}
@@ -1528,16 +1585,13 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	float best_w = 0.0f;
 	SimVec3 best_flat_point;
 	const TrackMeshCollisionTriangle *best_tri = nullptr;
+	int best_tri_index = -1;
 
 	auto scan_triangle = [&](int tri_index) {
 		if (scratch) {
 			scratch->mesh_floor_tri_tests += 1;
 		}
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-		if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS) && scratch->debug_mesh_floor_draw_count < 256) {
-			scratch->debug_mesh_floor_draw_count += 1;
-			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 0.8f, 1.0f, 0.7f), _TICK_DELTA);
-		}
 		if ((tri.terrain & TERRAIN::RAIL) != 0 || distance2_to_aabb(tri.bounds, point) > best_dist2) {
 			return;
 		}
@@ -1548,6 +1602,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		if (!project_point_to_mesh_triangle(tri, point, &projected, &u, &v, &w)) {
 			return;
 		}
+		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS)) {
+			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 0.8f, 1.0f, 0.7f), _TICK_DELTA);
+		}
 		const float dist2 = (point - projected).length_squared();
 		if (dist2 < best_dist2) {
 			best_dist2 = dist2;
@@ -1556,8 +1613,8 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			best_w = w;
 			best_flat_point = projected;
 			best_tri = &tri;
-			if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS) && scratch->debug_mesh_hit_draw_count < 256) {
-				scratch->debug_mesh_hit_draw_count += 1;
+			best_tri_index = tri_index;
+			if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
 				draw_mesh_debug_triangle(tri, godot::Color(0.1f, 1.0f, 0.45f, 0.95f), _TICK_DELTA);
 			}
 		}
@@ -1592,21 +1649,72 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		}
 	};
 
-	scan_checkpoint(start_idx);
-	for (int delta = 1; delta <= 2; ++delta) {
-		scan_checkpoint(start_idx - delta);
-		scan_checkpoint(start_idx + delta);
+	auto scan_world_bvh_root = [&](int root_node_index) {
+		if (!mesh_world_bvh_nodes || !mesh_world_bvh_triangle_indices || num_mesh_world_bvh_nodes <= 0) {
+			return false;
+		}
+		int stack[256];
+		int stack_count = 0;
+		stack[stack_count++] = root_node_index;
+		while (stack_count > 0) {
+			const int node_index = stack[--stack_count];
+			const TrackMeshBVHNode &node = mesh_world_bvh_nodes[node_index];
+			if (scratch) {
+				scratch->mesh_floor_bvh_node_tests += 1;
+			}
+			if (distance2_to_aabb(node.bounds, point) > best_dist2) {
+				continue;
+			}
+			if (node.count > 0) {
+				const int end = node.left_first + node.count;
+				for (int i = node.left_first; i < end; ++i) {
+					scan_triangle(mesh_world_bvh_triangle_indices[i]);
+				}
+			} else {
+				if (stack_count + 2 > 256) {
+					godot::UtilityFunctions::printerr(godot::String("MXT mesh world BVH traversal stack overflow"));
+					std::abort();
+				}
+				if (node.left_first < 0 || node.right_first < 0) {
+					godot::UtilityFunctions::printerr(godot::String("MXT mesh world BVH interior node has invalid child"));
+					std::abort();
+				}
+				stack[stack_count++] = node.left_first;
+				stack[stack_count++] = node.right_first;
+			}
+		}
+		return true;
+	};
+
+	if (seed_triangle_index >= num_mesh_collision_triangles) {
+		godot::UtilityFunctions::printerr(godot::String("MXT mesh floor seed triangle out of range "), seed_triangle_index);
+		std::abort();
 	}
-	const CollisionCheckpoint &start_cp = checkpoints[start_idx];
-	for (int neighbor = 0; neighbor < start_cp.num_neighboring_checkpoints; ++neighbor) {
-		scan_checkpoint(start_cp.neighboring_checkpoints[neighbor]);
+	if (seed_triangle_index >= 0) {
+		scan_triangle(seed_triangle_index);
 	}
-	if (!best_tri && allow_global_fallback) {
-		scan_segment(checkpoints[start_idx].road_segment);
-	}
-	if (!best_tri && allow_global_fallback) {
-		for (int seg = 0; seg < num_segments; ++seg) {
-			scan_segment(seg);
+
+	if (scan_world_bvh_root(0)) {
+		if (!best_tri) {
+			return;
+		}
+	} else {
+		scan_checkpoint(start_idx);
+		for (int delta = 1; delta <= 2; ++delta) {
+			scan_checkpoint(start_idx - delta);
+			scan_checkpoint(start_idx + delta);
+		}
+		const CollisionCheckpoint &start_cp = checkpoints[start_idx];
+		for (int neighbor = 0; neighbor < start_cp.num_neighboring_checkpoints; ++neighbor) {
+			scan_checkpoint(start_cp.neighboring_checkpoints[neighbor]);
+		}
+		if (!best_tri && allow_global_fallback) {
+			scan_segment(checkpoints[start_idx].road_segment);
+		}
+		if (!best_tri && allow_global_fallback) {
+			for (int seg = 0; seg < num_segments; ++seg) {
+				scan_segment(seg);
+			}
 		}
 	}
 
@@ -1637,6 +1745,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.road_data.closest_surface = mesh_collision_surface_transform(*best_tri, smooth_point, smooth_normal);
 	out_collision.road_data.closest_root = RoadTransform();
 	out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
+	out_collision.mesh_triangle_index = best_tri_index;
 }
 
 void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
@@ -1647,6 +1756,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
+	out_collision.mesh_triangle_index = -1;
 
 	if ((mask & (CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL)) == 0)
 		return;
