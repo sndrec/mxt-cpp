@@ -1108,12 +1108,13 @@ static bool triangle_ray_hit(
 	const TrackMeshCollisionTriangle &tri,
 	const SimVec3 &p0,
 	const SimVec3 &ray,
-	bool wants_backface,
+	bool allow_backface,
 	float *out_t,
 	float *out_u,
 	float *out_v,
 	float *out_w,
-	SimVec3 *out_face_normal)
+	SimVec3 *out_face_normal,
+	bool *out_backside_hit)
 {
 	const SimVec3 edge0 = tri.p1 - tri.p0;
 	const SimVec3 edge1 = tri.p2 - tri.p0;
@@ -1127,7 +1128,8 @@ static bool triangle_ray_hit(
 	if (fabsf(denom) <= 1.0e-7f) {
 		return false;
 	}
-	if (!wants_backface && denom > 0.0f) {
+	const bool backside_hit = denom > 0.0f;
+	if (!allow_backface && backside_hit) {
 		return false;
 	}
 
@@ -1163,6 +1165,7 @@ static bool triangle_ray_hit(
 	*out_v = v;
 	*out_w = w;
 	*out_face_normal = face_normal;
+	*out_backside_hit = backside_hit;
 	return true;
 }
 
@@ -1308,7 +1311,15 @@ static void mesh_triangle_barycentric_on_face(
 	*out_u = 1.0f - *out_v - *out_w;
 }
 
-static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri, const SimVec3 &p, SimVec3 *out_point, float *out_u, float *out_v, float *out_w)
+static bool project_point_to_mesh_triangle(
+	const TrackMeshCollisionTriangle &tri,
+	const SimVec3 &p,
+	bool allow_backside,
+	SimVec3 *out_point,
+	float *out_u,
+	float *out_v,
+	float *out_w,
+	bool *out_backside_sample)
 {
 	const SimVec3 &v0 = tri.edge0;
 	const SimVec3 &v1 = tri.edge1;
@@ -1319,6 +1330,12 @@ static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri
 	const float inv_denom = tri.projection_inv_denom;
 
 	SimVec3 projected = p - face_n * ((p - tri.p0).dot(face_n));
+	constexpr float kBacksideSlop = -0.01f;
+	const float signed_face_dist = (p - projected).dot(face_n);
+	if (signed_face_dist < kBacksideSlop && !allow_backside) {
+		return false;
+	}
+	const bool backside_sample = signed_face_dist < kBacksideSlop;
 	float u = 0.0f;
 	float v = 0.0f;
 	float w = 0.0f;
@@ -1329,6 +1346,7 @@ static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri
 		*out_u = u;
 		*out_v = v;
 		*out_w = w;
+		*out_backside_sample = backside_sample;
 		return true;
 	}
 	constexpr float kSmoothRetrySlop = -0.10f;
@@ -1348,6 +1366,9 @@ static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri
 			return false;
 		}
 		projected = p - smooth_n * ((p - tri.p0).dot(face_n) / normal_dot_face);
+		if ((p - projected).dot(face_n) < kBacksideSlop && !allow_backside) {
+			return false;
+		}
 		mesh_triangle_barycentric_on_face(tri, projected, v0, v1, inv_denom, d00, d01, d11, &u, &v, &w);
 	}
 
@@ -1358,6 +1379,7 @@ static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri
 	*out_u = u;
 	*out_v = v;
 	*out_w = w;
+	*out_backside_sample = backside_sample;
 	return true;
 }
 
@@ -1411,7 +1433,6 @@ static void cast_mesh_collision_fast(
 		(!track->mesh_world_bvh_nodes || !track->mesh_world_bvh_triangle_indices || track->num_mesh_world_bvh_nodes <= 0)) {
 		return;
 	}
-	const bool wants_backface = (params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0;
 	const SimVec3 ray = p1 - p0;
 	const float ray_len = ray.length();
 	if (ray_len <= 1.0e-6f) {
@@ -1450,7 +1471,9 @@ static void cast_mesh_collision_fast(
 		float v = 0.0f;
 		float w = 0.0f;
 		SimVec3 face_normal;
-		if (!triangle_ray_hit(tri, p0, ray, wants_backface, &hit_t, &u, &v, &w, &face_normal)) {
+		bool backside_hit = false;
+		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
+		if (!triangle_ray_hit(tri, p0, ray, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit)) {
 			return;
 		}
 		const float dist = hit_t * ray_len;
@@ -1465,7 +1488,7 @@ static void cast_mesh_collision_fast(
 			hit_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
 			hit_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
 		}
-		if (wants_backface && (p0 - hit_point).dot(hit_normal) < 0.0f) {
+		if (backside_hit) {
 			hit_normal *= -1.0f;
 		}
 		const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
@@ -1609,6 +1632,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	float best_v = 0.0f;
 	float best_w = 0.0f;
 	SimVec3 best_flat_point;
+	bool best_backside_sample = false;
 	const TrackMeshCollisionTriangle *best_tri = nullptr;
 	int best_tri_index = -1;
 
@@ -1624,7 +1648,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		float v = 0.0f;
 		float w = 0.0f;
 		SimVec3 projected;
-		if (!project_point_to_mesh_triangle(tri, point, &projected, &u, &v, &w)) {
+		bool backside_sample = false;
+		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
+		if (!project_point_to_mesh_triangle(tri, point, allow_backside, &projected, &u, &v, &w, &backside_sample)) {
 			return;
 		}
 		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS)) {
@@ -1637,6 +1663,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			best_v = v;
 			best_w = w;
 			best_flat_point = projected;
+			best_backside_sample = backside_sample;
 			best_tri = &tri;
 			best_tri_index = tri_index;
 			if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
@@ -1773,7 +1800,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		smooth_normal = mesh_collision_smooth_normal(*best_tri, best_u, best_v, best_w, face_normal);
 		smooth_point = clamp_mesh_collision_phong_point(best_flat_point, mesh_collision_phong_point(*best_tri, best_u, best_v, best_w));
 	}
-	if ((point - smooth_point).dot(smooth_normal) < 0.0f) {
+	if (best_backside_sample) {
 		smooth_normal *= -1.0f;
 	}
 	const int cp_idx = best_tri->checkpoint_index >= 0 ? best_tri->checkpoint_index : start_idx;
