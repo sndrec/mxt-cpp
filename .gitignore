@@ -28,5 +28,7 @@ old-for-reference/
 old-for-reference-real/
 replays/
 thirdparty/
+RolledOut-Source/
+tmp-probes/
 car_base.gd
 mxt-cpp.7z

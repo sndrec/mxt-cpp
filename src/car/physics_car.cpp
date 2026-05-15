@@ -2700,17 +2700,43 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 	if (use_analytic_corner_sample) {
 		track->get_road_surface4_same_checkpoint(use_cp, p0_ws, road_t, spatial_t, surf);
 	} else {
+		bool use_mesh_suspension_cast_candidates = false;
+		SimAABB mesh_suspension_cast_bounds;
+		if (track && use_cp >= 0) {
+			mesh_suspension_cast_bounds.position = p0_ray_start_ws[0];
+			mesh_suspension_cast_bounds.size = SimVec3();
+			mesh_suspension_cast_bounds.expand_to(p1_ray_end_ws[0]);
+			for (int lane = 1; lane < 4; ++lane) {
+				mesh_suspension_cast_bounds.expand_to(p0_ray_start_ws[lane]);
+				mesh_suspension_cast_bounds.expand_to(p1_ray_end_ws[lane]);
+			}
+			use_mesh_suspension_cast_candidates = track->collect_mesh_cast_candidates(
+				mesh_suspension_cast_bounds,
+				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+				scratch);
+		}
 		for (int lane = 0; lane < 4; ++lane) {
 			CollisionData hit;
 			if (track && use_cp >= 0) {
-				track->cast_vs_track_fast(
-					hit,
-					p0_ray_start_ws[lane],
-					p1_ray_end_ws[lane],
-					CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
-					use_cp,
-					false,
-					&scratch);
+				if (use_mesh_suspension_cast_candidates) {
+					track->cast_vs_mesh_candidates_fast(
+						hit,
+						p0_ray_start_ws[lane],
+						p1_ray_end_ws[lane],
+						CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+						use_cp,
+						&scratch,
+						true);
+				} else {
+					track->cast_vs_track_fast(
+						hit,
+						p0_ray_start_ws[lane],
+						p1_ray_end_ws[lane],
+						CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+						use_cp,
+						false,
+						&scratch);
+				}
 			}
 			if (!hit.collided && track && use_cp >= 0) {
 				const TrackQueryScratch::MeshFloorProfileScope prev_floor_scope = scratch.mesh_floor_profile_scope;
