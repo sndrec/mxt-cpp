@@ -3316,13 +3316,12 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 										false,
 										&mesh_side_reference_point);
 								} else {
-									track->cast_vs_track_fast(
+									track->cast_vs_mesh_fast(
 										hit,
 										p0,
 										p1,
 										mesh_cast_mask,
 										mesh_wall_cp,
-										false,
 										&scratch,
 										false,
 										&mesh_side_reference_point);

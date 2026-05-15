@@ -1950,6 +1950,32 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	}
 }
 
+void RaceTrack::cast_vs_mesh_fast(
+	CollisionData &out_collision,
+	const SimVec3 &p0,
+	const SimVec3 &p1,
+	uint8_t mask,
+	int start_idx,
+	TrackQueryScratch *scratch,
+	bool smooth_mesh_hits,
+	const SimVec3 *mesh_side_reference_point)
+{
+	out_collision.collided = false;
+	out_collision.road_data.cp_idx = -1;
+	out_collision.mesh_triangle_index = -1;
+	out_collision.collision_face_point = SimVec3();
+	out_collision.collision_face_normal = SimVec3();
+	if ((mask & (CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL)) == 0) {
+		return;
+	}
+	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
+		return;
+	}
+
+	CastParams params{ this, mask, smooth_mesh_hits, mesh_side_reference_point };
+	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
+}
+
 void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index)
 {
 	(void)allow_global_fallback;
