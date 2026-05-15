@@ -3311,6 +3311,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							}
 							const uint8_t mesh_cast_mask = CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P1;
 							const bool use_mesh_cast_candidates = track->collect_mesh_cast_candidates(mesh_cast_bounds, mesh_cast_mask, scratch);
+							const SimVec3 mesh_side_reference_point = LOAD_VEC3(position_old);
 							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1) {
 								CollisionData hit;
 								if (use_mesh_cast_candidates && mesh_cast_bounds.has_point(p0) && mesh_cast_bounds.has_point(p1)) {
@@ -3321,7 +3322,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 										mesh_cast_mask,
 										mesh_wall_cp,
 										&scratch,
-										false);
+										false,
+										&mesh_side_reference_point);
 								} else {
 									track->cast_vs_track_fast(
 										hit,
@@ -3331,7 +3333,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 										mesh_wall_cp,
 										false,
 										&scratch,
-										false);
+										false,
+										&mesh_side_reference_point);
 								}
 								if (!hit.collided) {
 									return;

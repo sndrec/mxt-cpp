@@ -823,6 +823,7 @@ struct CastParams {
 	RaceTrack *track;
 	uint8_t mask;
 	bool smooth_mesh_hits = true;
+	const SimVec3 *mesh_side_reference_point = nullptr;
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1309,6 +1310,7 @@ static bool triangle_ray_hit(
 	const TrackMeshCollisionTriangle &tri,
 	const SimVec3 &p0,
 	const SimVec3 &ray,
+	const SimVec3 &side_reference_point,
 	bool allow_backface,
 	float *out_t,
 	float *out_u,
@@ -1327,7 +1329,7 @@ static bool triangle_ray_hit(
 		return false;
 	}
 
-	const float signed_start = (p0 - tri.p0).dot(face_normal);
+	const float signed_start = (side_reference_point - tri.p0).dot(face_normal);
 	const bool backside_hit = signed_start < -1.0e-4f || (fabsf(signed_start) <= 1.0e-4f && denom > 0.0f);
 	if (!allow_backface && backside_hit) {
 		if (out_reject_reason) {
@@ -1777,7 +1779,8 @@ static bool scan_mesh_cast_triangle(
 	bool backside_hit = false;
 	const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
 	MeshCastRejectReason reject_reason = MESH_CAST_REJECT_NONE;
-	if (!triangle_ray_hit(tri, p0, ray, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, &reject_reason)) {
+	const SimVec3 &side_reference_point = params.mesh_side_reference_point ? *params.mesh_side_reference_point : p0;
+	if (!triangle_ray_hit(tri, p0, ray, side_reference_point, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, &reject_reason)) {
 #if MXT_MESH_DEEP_PROFILE
 		if (scratch) {
 			switch (reject_reason) {
@@ -1994,7 +1997,8 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	uint8_t mask,
 	int start_idx,
 	TrackQueryScratch *scratch,
-	bool smooth_mesh_hits)
+	bool smooth_mesh_hits,
+	const SimVec3 *mesh_side_reference_point)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -2017,7 +2021,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	}
 
 	float best_dist = FLT_MAX;
-	CastParams params{ this, mask, smooth_mesh_hits };
+	CastParams params{ this, mask, smooth_mesh_hits, mesh_side_reference_point };
 	for (int i = 0; i < scratch->mesh_cast_candidate_count; ++i) {
 		scan_mesh_cast_triangle(
 			params,
@@ -2404,7 +2408,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	SimVec3 const &p0,
 	SimVec3 const &p1,
 	uint8_t mask,
-	int start_idx, bool oriented, TrackQueryScratch *scratch, bool smooth_mesh_hits)
+	int start_idx, bool oriented, TrackQueryScratch *scratch, bool smooth_mesh_hits, const SimVec3 *mesh_side_reference_point)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -2429,7 +2433,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	else
 		sample_point = p1;
 	
-	CastParams params{ this, mask, smooth_mesh_hits };
+	CastParams params{ this, mask, smooth_mesh_hits, mesh_side_reference_point };
 	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
 	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }
