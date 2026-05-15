@@ -50,7 +50,6 @@ struct alignas(64) TrackQueryScratch
 		MESH_FLOOR_SCOPE_MAIN_LOCAL,
 		MESH_FLOOR_SCOPE_MAIN_GLOBAL,
 		MESH_FLOOR_SCOPE_SUSPENSION,
-		MESH_FLOOR_SCOPE_CORNER_DEPENETRATION,
 		MESH_FLOOR_PROFILE_SCOPE_COUNT
 	};
 	struct MeshFloorProfileCounters
@@ -225,9 +224,9 @@ public:
 		}
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
-	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr);
+	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true);
 	bool collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask, TrackQueryScratch &scratch);
-	void cast_vs_mesh_candidates_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch);
+	void cast_vs_mesh_candidates_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits = true);
 	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr, int seed_triangle_index = -1);
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);

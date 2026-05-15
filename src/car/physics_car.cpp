@@ -3272,46 +3272,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 					}
 				}
 				if (track) {
-					const int mesh_track_cp = soa->current_checkpoint[soa_index];
-					if (mesh_track_cp >= 0 && mesh_track_cp < track->num_checkpoints) {
-						const TrackSegment &mesh_track_segment = track->segments[track->checkpoints[mesh_track_cp].road_segment];
-						if (!mesh_track_segment.analytic_collision_enabled) {
-							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
-								const SimVec3 p = wall_corner_world[wc_idx] + depenetration;
-								CollisionData hit;
-								const TrackQueryScratch::MeshFloorProfileScope prev_floor_scope = scratch.mesh_floor_profile_scope;
-								scratch.mesh_floor_profile_scope = TrackQueryScratch::MESH_FLOOR_SCOPE_CORNER_DEPENETRATION;
-								track->sample_mesh_floor_fast(
-									hit,
-									p,
-									80.0f,
-									CAST_FLAGS::WANTS_TRACK,
-									mesh_track_cp,
-									false,
-									&scratch);
-								scratch.mesh_floor_profile_scope = prev_floor_scope;
-								if (!hit.collided) {
-									continue;
-								}
-								if (hit.collision_normal.dot(mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
-									hit.collision_normal *= -1.0f;
-									hit.collision_face_normal *= -1.0f;
-								}
-								const float depth = (p - hit.collision_face_point).dot(hit.collision_face_normal);
-								if (depth >= 0.0f) {
-									continue;
-								}
-								const SimVec3 d = hit.collision_face_normal * (-depth);
-								ADD_VEC3(collision_push_total, d);
-								ADD_VEC3(collision_push_track, d);
-								overall_hit_detected_flag |= 1;
-								any_corner_hit = true;
-								depenetration += d;
-							}
-						}
-					}
-				}
-				if (track) {
 					const int mesh_wall_cp = soa->current_checkpoint[soa_index];
 					if (mesh_wall_cp >= 0 && mesh_wall_cp < track->num_checkpoints) {
 						const TrackSegment &mesh_wall_segment = track->segments[track->checkpoints[mesh_wall_cp].road_segment];
@@ -3335,7 +3295,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 										p1,
 										mesh_cast_mask,
 										mesh_wall_cp,
-										&scratch);
+										&scratch,
+										false);
 								} else {
 									track->cast_vs_track_fast(
 										hit,
@@ -3344,7 +3305,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 										mesh_cast_mask,
 										mesh_wall_cp,
 										false,
-										&scratch);
+										&scratch,
+										false);
 								}
 								if (!hit.collided) {
 									return;

@@ -2001,8 +2001,6 @@ String GameSim::get_phase_profile_string() const
 				return "main_global";
 			case TrackQueryScratch::MESH_FLOOR_SCOPE_SUSPENSION:
 				return "suspension";
-			case TrackQueryScratch::MESH_FLOOR_SCOPE_CORNER_DEPENETRATION:
-				return "corner";
 			default:
 				return "unknown";
 		}

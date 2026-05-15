@@ -819,6 +819,7 @@ void RaceTrack::convert_point_to_road(
 struct CastParams {
 	RaceTrack *track;
 	uint8_t mask;
+	bool smooth_mesh_hits = true;
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1587,7 +1588,7 @@ static bool scan_mesh_cast_triangle(
 	SimVec3 hit_normal = face_normal;
 	SimVec3 hit_face_normal = face_normal;
 	SimVec3 hit_point = flat_point;
-	if (mesh_collision_uses_smooth_surface(tri.terrain)) {
+	if (params.smooth_mesh_hits && mesh_collision_uses_smooth_surface(tri.terrain)) {
 		hit_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
 		hit_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
 	}
@@ -1816,7 +1817,8 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	const SimVec3 &p1,
 	uint8_t mask,
 	int start_idx,
-	TrackQueryScratch *scratch)
+	TrackQueryScratch *scratch,
+	bool smooth_mesh_hits)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -1837,7 +1839,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	}
 
 	float best_dist = FLT_MAX;
-	CastParams params{ this, mask };
+	CastParams params{ this, mask, smooth_mesh_hits };
 	for (int i = 0; i < scratch->mesh_cast_candidate_count; ++i) {
 		scan_mesh_cast_triangle(
 			params,
@@ -2156,7 +2158,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	SimVec3 const &p0,
 	SimVec3 const &p1,
 	uint8_t mask,
-	int start_idx, bool oriented, TrackQueryScratch *scratch)
+	int start_idx, bool oriented, TrackQueryScratch *scratch, bool smooth_mesh_hits)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -2181,7 +2183,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	else
 		sample_point = p1;
 	
-	CastParams params{ this, mask };
+	CastParams params{ this, mask, smooth_mesh_hits };
 	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
 	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }
