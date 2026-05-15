@@ -1657,8 +1657,25 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 					godot::UtilityFunctions::printerr(godot::String("MXT mesh world BVH interior node has invalid child"));
 					std::abort();
 				}
-				stack[stack_count++] = node.left_first;
-				stack[stack_count++] = node.right_first;
+				const TrackMeshBVHNode &left = mesh_world_bvh_nodes[node.left_first];
+				const TrackMeshBVHNode &right = mesh_world_bvh_nodes[node.right_first];
+				const float left_dist2 = distance2_to_aabb(left.bounds, point);
+				const float right_dist2 = distance2_to_aabb(right.bounds, point);
+				if (left_dist2 <= right_dist2) {
+					if (right_dist2 <= best_dist2) {
+						stack[stack_count++] = node.right_first;
+					}
+					if (left_dist2 <= best_dist2) {
+						stack[stack_count++] = node.left_first;
+					}
+				} else {
+					if (left_dist2 <= best_dist2) {
+						stack[stack_count++] = node.left_first;
+					}
+					if (right_dist2 <= best_dist2) {
+						stack[stack_count++] = node.right_first;
+					}
+				}
 			}
 		}
 		return true;
