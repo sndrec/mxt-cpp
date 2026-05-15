@@ -242,7 +242,7 @@
         0.800000011920929
       ],
       "rail_start_left": 0.0,
-      "rail_end_left": 1.0,
+      "rail_end_left": 0.9990000128746033,
       "rail_start_right": 0.0,
       "rail_end_right": 1.0
     },
@@ -638,9 +638,9 @@
         0.800000011920929
       ],
       "rail_start_left": 0.0,
-      "rail_end_left": 1.0,
+      "rail_end_left": 0.9990000128746033,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 0.9990000128746033
     },
     {
       "seg_index": 33,

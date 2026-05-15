@@ -5174,6 +5174,11 @@ def _export_stage(context, filepath):
         mesh_obj = next((c for c in seg.children if c.name == mesh_name), None)
         if mesh_obj:
             preview_meshes.append(mesh_obj)
+    for obj in bpy.data.objects:
+        props = getattr(obj, "mxt_mesh_collision_props", None)
+        if obj.type == 'MESH' and props and props.is_mxt_collision_mesh and not obj.hide_render:
+            if obj not in preview_meshes:
+                preview_meshes.append(obj)
 
     if preview_meshes:
         prev_mode = None

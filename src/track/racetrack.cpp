@@ -1326,7 +1326,9 @@ static bool triangle_ray_hit(
 		}
 		return false;
 	}
-	const bool backside_hit = denom > 0.0f;
+
+	const float signed_start = (p0 - tri.p0).dot(face_normal);
+	const bool backside_hit = signed_start < -1.0e-4f || (fabsf(signed_start) <= 1.0e-4f && denom > 0.0f);
 	if (!allow_backface && backside_hit) {
 		if (out_reject_reason) {
 			*out_reject_reason = MESH_CAST_REJECT_BACKSIDE;
