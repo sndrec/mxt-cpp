@@ -1053,6 +1053,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		auto orient_mesh_floor_hit = [&](CollisionData &mesh_hit) {
 			if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) < 0.0f) {
 				mesh_hit.collision_normal *= -1.0f;
+				mesh_hit.collision_face_normal *= -1.0f;
 				mesh_hit.road_data.closest_surface.basis[1] *= -1.0f;
 				mesh_hit.road_data.closest_surface.basis[2] *= -1.0f;
 			}
@@ -3282,12 +3283,13 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 								}
 								if (hit.collision_normal.dot(mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
 									hit.collision_normal *= -1.0f;
+									hit.collision_face_normal *= -1.0f;
 								}
-								const float depth = (p - hit.collision_point).dot(hit.collision_normal);
+								const float depth = (p - hit.collision_face_point).dot(hit.collision_face_normal);
 								if (depth >= 0.0f) {
 									continue;
 								}
-								const SimVec3 d = hit.collision_normal * (-depth);
+								const SimVec3 d = hit.collision_face_normal * (-depth);
 								ADD_VEC3(collision_push_total, d);
 								ADD_VEC3(collision_push_track, d);
 								overall_hit_detected_flag |= 1;
@@ -3302,9 +3304,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 					if (mesh_wall_cp >= 0 && mesh_wall_cp < track->num_checkpoints) {
 						const TrackSegment &mesh_wall_segment = track->segments[track->checkpoints[mesh_wall_cp].road_segment];
 						if (!mesh_wall_segment.analytic_collision_enabled) {
-							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
-								const SimVec3 p0 = machine_position + depenetration;
-								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
+							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1) {
 								CollisionData hit;
 								track->cast_vs_track_fast(
 									hit,
@@ -3315,50 +3315,37 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 									false,
 									&scratch);
 								if (!hit.collided) {
-									continue;
+									return;
 								}
-								const float depth = (hit.collision_point - p1).dot(hit.collision_normal);
-								if (depth <= 0.0f) {
-									continue;
-								}
-								const SimVec3 d = hit.collision_normal * depth;
 								const bool rail_hit = (hit.road_data.terrain & TERRAIN::RAIL) != 0;
-								ADD_VEC3(collision_push_total, d);
-								if (rail_hit) {
-									ADD_VEC3(collision_push_rail, d);
-									overall_hit_detected_flag |= 2;
-								} else {
-									ADD_VEC3(collision_push_track, d);
-									overall_hit_detected_flag |= 1;
+								for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+									const SimVec3 p = wall_corner_world[wc_idx] + depenetration;
+									const float depth = (p - hit.collision_face_point).dot(hit.collision_face_normal);
+									if (depth > 0.0f) {
+										continue;
+									}
+									const SimVec3 d = hit.collision_face_normal * (-depth);
+									ADD_VEC3(collision_push_total, d);
+									if (rail_hit) {
+										ADD_VEC3(collision_push_rail, d);
+										overall_hit_detected_flag |= 2;
+									} else {
+										ADD_VEC3(collision_push_track, d);
+										overall_hit_detected_flag |= 1;
+									}
+									any_corner_hit = true;
+									depenetration += d;
 								}
-								any_corner_hit = true;
-								depenetration += d;
+							};
+							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+								const SimVec3 p0 = LOAD_VEC3(position_old) + depenetration;
+								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
+								sweep_mesh_plane_and_depenetrate(p0, p1);
 							}
 							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 								const SimVec3 p0 = wall_corner_old_world[wc_idx] + depenetration;
 								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
-								CollisionData hit;
-								track->cast_vs_track_fast(
-									hit,
-									p0,
-									p1,
-									CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P1,
-									mesh_wall_cp,
-									false,
-									&scratch);
-								if (!hit.collided) {
-									continue;
-								}
-								const float depth = (hit.collision_point - p1).dot(hit.collision_normal);
-								if (depth <= 0.0f) {
-									continue;
-								}
-								const SimVec3 d = hit.collision_normal * depth;
-								ADD_VEC3(collision_push_total, d);
-								ADD_VEC3(collision_push_rail, d);
-								overall_hit_detected_flag |= 2;
-								any_corner_hit = true;
-								depenetration += d;
+								sweep_mesh_plane_and_depenetrate(p0, p1);
 							}
 						}
 					}

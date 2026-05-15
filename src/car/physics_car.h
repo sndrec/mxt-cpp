@@ -33,6 +33,8 @@ struct CollisionData {
 	bool collided; // did we collide?
 	SimVec3 collision_point; // position of collision
 	SimVec3 collision_normal; // surface normal at collision
+	SimVec3 collision_face_point; // unsmoothed mesh face point for hard depenetration
+	SimVec3 collision_face_normal; // unsmoothed mesh face normal for hard depenetration
 	RoadData road_data;
 	int32_t mesh_triangle_index = -1;
 };

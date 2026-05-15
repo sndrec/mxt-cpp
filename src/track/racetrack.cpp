@@ -897,6 +897,8 @@ static void cast_segment_fast(const CastParams  &params,
 				out_collision.collided      = true;
 				out_collision.collision_point   = sim_vec3_from_godot(hit_point);
 				out_collision.collision_normal  = sim_vec3_from_godot(surf_n);
+				out_collision.collision_face_point = out_collision.collision_point;
+				out_collision.collision_face_normal = out_collision.collision_normal;
 
 				out_collision.road_data.cp_idx          = use_idx;
 				out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
@@ -993,6 +995,8 @@ static void cast_segment_fast(const CastParams  &params,
 			out_collision.collided          = true;
 			out_collision.collision_point   = sim_vec3_from_godot(hit);
 			out_collision.collision_normal  = sim_vec3_from_godot(side.rail_n);
+			out_collision.collision_face_point = out_collision.collision_point;
+			out_collision.collision_face_normal = out_collision.collision_normal;
 
 			out_collision.road_data.cp_idx          = use_idx;
 			out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
@@ -1023,6 +1027,8 @@ static void cast_segment_fast(const CastParams  &params,
 					out_collision.collided          = true;
 					out_collision.collision_point   = sim_vec3_from_godot(hit);
 					out_collision.collision_normal  = sim_vec3_from_godot(tunnel_n);
+					out_collision.collision_face_point = out_collision.collision_point;
+					out_collision.collision_face_normal = out_collision.collision_normal;
 
 					out_collision.road_data.cp_idx          = use_idx;
 					out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
@@ -1483,6 +1489,7 @@ static void cast_mesh_collision_fast(
 
 		const SimVec3 flat_point = p0 + ray * hit_t;
 		SimVec3 hit_normal = face_normal;
+		SimVec3 hit_face_normal = face_normal;
 		SimVec3 hit_point = flat_point;
 		if (mesh_collision_uses_smooth_surface(tri.terrain)) {
 			hit_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
@@ -1490,6 +1497,7 @@ static void cast_mesh_collision_fast(
 		}
 		if (backside_hit) {
 			hit_normal *= -1.0f;
+			hit_face_normal *= -1.0f;
 		}
 		const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
 		if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
@@ -1505,6 +1513,8 @@ static void cast_mesh_collision_fast(
 		out_collision.collided = true;
 		out_collision.collision_point = hit_point;
 		out_collision.collision_normal = hit_normal;
+		out_collision.collision_face_point = flat_point;
+		out_collision.collision_face_normal = hit_face_normal;
 		out_collision.road_data.cp_idx = cp_idx;
 		out_collision.road_data.spatial_t = SimVec3();
 		out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
@@ -1619,6 +1629,8 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
 	out_collision.mesh_triangle_index = -1;
+	out_collision.collision_face_point = SimVec3();
+	out_collision.collision_face_normal = SimVec3();
 	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
 		return;
 	}
@@ -1802,6 +1814,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	}
 	if (best_backside_sample) {
 		smooth_normal *= -1.0f;
+		face_normal *= -1.0f;
 	}
 	const int cp_idx = best_tri->checkpoint_index >= 0 ? best_tri->checkpoint_index : start_idx;
 	if (cp_idx < 0 || cp_idx >= num_checkpoints) {
@@ -1812,6 +1825,8 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.collided = true;
 	out_collision.collision_point = smooth_point;
 	out_collision.collision_normal = smooth_normal;
+	out_collision.collision_face_point = best_flat_point;
+	out_collision.collision_face_normal = face_normal;
 	out_collision.road_data.cp_idx = cp_idx;
 	out_collision.road_data.spatial_t = SimVec3();
 	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
@@ -1830,6 +1845,8 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
 	out_collision.mesh_triangle_index = -1;
+	out_collision.collision_face_point = SimVec3();
+	out_collision.collision_face_normal = SimVec3();
 
 	if ((mask & (CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL)) == 0)
 		return;
