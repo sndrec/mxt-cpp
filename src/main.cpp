@@ -302,6 +302,41 @@ static void build_track_mesh_world_bvh(RaceTrack *track, HeapHandler &level_data
 	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_world_bvh_loaded nodes="), track->num_mesh_world_bvh_nodes);
 }
 
+static SimVec3 normalize_mesh_source_normal_or_abort(const SimVec3 &normal, uint32_t tri_index, const char *name)
+{
+	const float len2 = normal.length_squared();
+	if (len2 <= 1.0e-8f) {
+		UtilityFunctions::printerr(String("MXT mesh collision triangle "), static_cast<int64_t>(tri_index), String(" has invalid "), name);
+		std::abort();
+	}
+	return normal / sqrtf(len2);
+}
+
+static void precompute_mesh_triangle_projection(TrackMeshCollisionTriangle &tri, uint32_t tri_index)
+{
+	tri.edge0 = tri.p1 - tri.p0;
+	tri.edge1 = tri.p2 - tri.p0;
+	const SimVec3 face = tri.edge0.cross(tri.edge1);
+	const float face_len2 = face.length_squared();
+	if (face_len2 <= 1.0e-8f) {
+		UtilityFunctions::printerr(String("MXT mesh collision triangle "), static_cast<int64_t>(tri_index), String(" is degenerate"));
+		std::abort();
+	}
+	tri.face_normal = face / sqrtf(face_len2);
+	tri.projection_d00 = tri.edge0.dot(tri.edge0);
+	tri.projection_d01 = tri.edge0.dot(tri.edge1);
+	tri.projection_d11 = tri.edge1.dot(tri.edge1);
+	const float denom = tri.projection_d00 * tri.projection_d11 - tri.projection_d01 * tri.projection_d01;
+	if (fabsf(denom) <= 1.0e-8f) {
+		UtilityFunctions::printerr(String("MXT mesh collision triangle "), static_cast<int64_t>(tri_index), String(" has invalid projection domain"));
+		std::abort();
+	}
+	tri.projection_inv_denom = 1.0f / denom;
+	tri.n0 = normalize_mesh_source_normal_or_abort(tri.n0, tri_index, "n0");
+	tri.n1 = normalize_mesh_source_normal_or_abort(tri.n1, tri_index, "n1");
+	tri.n2 = normalize_mesh_source_normal_or_abort(tri.n2, tri_index, "n2");
+}
+
 #define LOAD_INDEXED_VEC3(storage, name, index) SimVec3((storage).name##_x[(index)], (storage).name##_y[(index)], (storage).name##_z[(index)])
 #define STORE_INDEXED_VEC3(storage, name, index, value) do { const SimVec3 mxt_v3_tmp = (value); (storage).name##_x[(index)] = mxt_v3_tmp.x; (storage).name##_y[(index)] = mxt_v3_tmp.y; (storage).name##_z[(index)] = mxt_v3_tmp.z; } while (0)
 
@@ -3173,6 +3208,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			tri.n2.x = lvldat_buf->get_float();
 			tri.n2.y = lvldat_buf->get_float();
 			tri.n2.z = lvldat_buf->get_float();
+			precompute_mesh_triangle_projection(tri, tri_index);
 
 			tri.bounds.position = tri.p0;
 			tri.bounds.size = SimVec3();

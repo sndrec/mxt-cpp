@@ -1278,22 +1278,13 @@ static void mesh_triangle_barycentric_on_face(
 
 static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri, const SimVec3 &p, SimVec3 *out_point, float *out_u, float *out_v, float *out_w)
 {
-	const SimVec3 v0 = tri.p1 - tri.p0;
-	const SimVec3 v1 = tri.p2 - tri.p0;
-	const SimVec3 face_normal = v0.cross(v1);
-	const float normal_len2 = face_normal.length_squared();
-	if (normal_len2 <= 1.0e-8f) {
-		return false;
-	}
-	const SimVec3 face_n = face_normal / sqrtf(normal_len2);
-	const float d00 = v0.dot(v0);
-	const float d01 = v0.dot(v1);
-	const float d11 = v1.dot(v1);
-	const float denom = d00 * d11 - d01 * d01;
-	if (fabsf(denom) <= 1.0e-8f) {
-		return false;
-	}
-	const float inv_denom = 1.0f / denom;
+	const SimVec3 &v0 = tri.edge0;
+	const SimVec3 &v1 = tri.edge1;
+	const SimVec3 &face_n = tri.face_normal;
+	const float d00 = tri.projection_d00;
+	const float d01 = tri.projection_d01;
+	const float d11 = tri.projection_d11;
+	const float inv_denom = tri.projection_inv_denom;
 
 	SimVec3 projected = p - face_n * ((p - tri.p0).dot(face_n));
 	float u = 0.0f;
@@ -1313,21 +1304,8 @@ static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri
 		return false;
 	}
 
-	SimVec3 n0 = tri.n0.normalized();
-	SimVec3 n1 = tri.n1.normalized();
-	SimVec3 n2 = tri.n2.normalized();
-	if (n0.length_squared() <= 1.0e-8f) {
-		n0 = face_n;
-	}
-	if (n1.length_squared() <= 1.0e-8f) {
-		n1 = face_n;
-	}
-	if (n2.length_squared() <= 1.0e-8f) {
-		n2 = face_n;
-	}
-
 	for (int i = 0; i < 3; ++i) {
-		SimVec3 smooth_n = n0 * u + n1 * v + n2 * w;
+		SimVec3 smooth_n = tri.n0 * u + tri.n1 * v + tri.n2 * w;
 		if (smooth_n.length_squared() <= 1.0e-8f) {
 			smooth_n = face_n;
 		} else {

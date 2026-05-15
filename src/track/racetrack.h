@@ -18,7 +18,14 @@ struct TrackMeshCollisionTriangle
 	SimVec3 n0;
 	SimVec3 n1;
 	SimVec3 n2;
+	SimVec3 edge0;
+	SimVec3 edge1;
+	SimVec3 face_normal;
 	SimAABB bounds;
+	float projection_d00;
+	float projection_d01;
+	float projection_d11;
+	float projection_inv_denom;
 	uint32_t terrain;
 	int32_t segment_index;
 	int32_t checkpoint_index;
