@@ -1370,13 +1370,18 @@ static bool project_point_to_mesh_triangle(
 	const TrackMeshCollisionTriangle &tri,
 	const SimVec3 &p,
 	bool allow_backside,
+	bool allow_smooth_retry,
 	SimVec3 *out_point,
 	float *out_u,
 	float *out_v,
 	float *out_w,
 	bool *out_backside_sample,
-	MeshFloorProjectionResult *out_projection_result = nullptr)
+	MeshFloorProjectionResult *out_projection_result = nullptr,
+	bool *out_smooth_retry_candidate = nullptr)
 {
+	if (out_smooth_retry_candidate) {
+		*out_smooth_retry_candidate = false;
+	}
 	const SimVec3 &v0 = tri.edge0;
 	const SimVec3 &v1 = tri.edge1;
 	const SimVec3 &face_n = tri.face_normal;
@@ -1413,6 +1418,15 @@ static bool project_point_to_mesh_triangle(
 	}
 	constexpr float kSmoothRetrySlop = -0.10f;
 	if (u < kSmoothRetrySlop || v < kSmoothRetrySlop || w < kSmoothRetrySlop) {
+		if (out_projection_result) {
+			*out_projection_result = MESH_FLOOR_PROJECT_MISS;
+		}
+		return false;
+	}
+	if (!allow_smooth_retry) {
+		if (out_smooth_retry_candidate && mesh_collision_uses_smooth_surface(tri.terrain)) {
+			*out_smooth_retry_candidate = true;
+		}
 		if (out_projection_result) {
 			*out_projection_result = MESH_FLOOR_PROJECT_MISS;
 		}
@@ -1894,6 +1908,8 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	bool best_backside_sample = false;
 	const TrackMeshCollisionTriangle *best_tri = nullptr;
 	int best_tri_index = -1;
+	bool allow_smooth_projection_retry = false;
+	bool saw_smooth_projection_candidate = false;
 
 	auto scan_triangle = [&](int tri_index) {
 		if (scratch) {
@@ -1928,7 +1944,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		bool backside_sample = false;
 		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
 		MeshFloorProjectionResult projection_result = MESH_FLOOR_PROJECT_MISS;
-		if (!project_point_to_mesh_triangle(tri, point, allow_backside, &projected, &u, &v, &w, &backside_sample, &projection_result)) {
+		bool smooth_retry_candidate = false;
+		if (!project_point_to_mesh_triangle(tri, point, allow_backside, allow_smooth_projection_retry, &projected, &u, &v, &w, &backside_sample, &projection_result, &smooth_retry_candidate)) {
+			saw_smooth_projection_candidate |= smooth_retry_candidate;
 			if (scratch) {
 				scratch->mesh_floor_projection_misses += 1;
 			}
@@ -2073,29 +2091,27 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		godot::UtilityFunctions::printerr(godot::String("MXT mesh floor seed triangle out of range "), seed_triangle_index);
 		std::abort();
 	}
-	if (seed_triangle_index >= 0) {
-		if (scratch) {
-			scratch->mesh_floor_seed_calls += 1;
+	auto scan_mesh_floor_candidates = [&]() {
+		if (seed_triangle_index >= 0) {
+			if (scratch) {
+				scratch->mesh_floor_seed_calls += 1;
+			}
+			if (floor_profile) {
+				floor_profile->seed_calls += 1;
+			}
+			const int prev_best_tri_index = best_tri_index;
+			scan_triangle(seed_triangle_index);
+			if (scratch && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
+				scratch->mesh_floor_seed_hits += 1;
+			}
+			if (floor_profile && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
+				floor_profile->seed_hits += 1;
+			}
 		}
-		if (floor_profile) {
-			floor_profile->seed_calls += 1;
-		}
-		const int prev_best_tri_index = best_tri_index;
-		scan_triangle(seed_triangle_index);
-		if (scratch && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
-			scratch->mesh_floor_seed_hits += 1;
-		}
-		if (floor_profile && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
-			floor_profile->seed_hits += 1;
-		}
-	}
 
-	if (scan_world_bvh_root(0)) {
-		if (!best_tri) {
-			finish_floor_profile();
+		if (scan_world_bvh_root(0)) {
 			return;
 		}
-	} else {
 		scan_checkpoint(start_idx);
 		for (int delta = 1; delta <= 2; ++delta) {
 			scan_checkpoint(start_idx - delta);
@@ -2113,6 +2129,11 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 				scan_segment(seg);
 			}
 		}
+	};
+	scan_mesh_floor_candidates();
+	if (!best_tri && saw_smooth_projection_candidate) {
+		allow_smooth_projection_retry = true;
+		scan_mesh_floor_candidates();
 	}
 
 	if (!best_tri) {
