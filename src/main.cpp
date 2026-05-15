@@ -1243,6 +1243,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("get_first_lap_distance"), &GameSim::get_first_lap_distance);
+	ClassDB::bind_method(D_METHOD("get_track_lap_length"), &GameSim::get_track_lap_length);
 	ClassDB::bind_method(D_METHOD("set_cpu_driver_manager", "manager"), &GameSim::set_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("get_cpu_driver_manager"), &GameSim::get_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("get_native_cpu_input_for_tick", "player_id", "expected_tick"), &GameSim::get_native_cpu_input_for_tick);
@@ -1251,6 +1252,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
 	ClassDB::bind_method(D_METHOD("get_player_race_place", "player_id"), &GameSim::get_player_race_place);
 	ClassDB::bind_method(D_METHOD("is_player_race_finished", "player_id"), &GameSim::is_player_race_finished);
+	ClassDB::bind_method(D_METHOD("get_player_lap_distance", "player_id"), &GameSim::get_player_lap_distance);
+	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
 	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
 	ClassDB::bind_method(D_METHOD("get_check_warning_candidates", "player_id"), &GameSim::get_check_warning_candidates);
@@ -1696,6 +1699,36 @@ bool GameSim::is_player_race_finished(int player_id) const
 		return (car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u;
 	}
 	return false;
+}
+
+double GameSim::get_player_lap_distance(int player_id) const
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return 0.0;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		return static_cast<double>(compute_car_distance_along_track(cars[i]));
+	}
+	return 0.0;
+}
+
+int GameSim::get_player_lap(int player_id) const
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return 0;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		return static_cast<int>(car_soa.lap[lane]);
+	}
+	return 0;
 }
 
 godot::Array GameSim::get_race_order()
@@ -2244,6 +2277,18 @@ double GameSim::get_first_lap_distance() const
 		return 0.0;
 	}
 	return static_cast<double>(compute_car_distance_along_track(cars[0]));
+}
+
+double GameSim::get_track_lap_length() const
+{
+	if (!current_track) {
+		return 0.0;
+	}
+	float lap_length = current_track->lap_length;
+	if (lap_length <= 0.0f && current_track->num_checkpoints > 0) {
+		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+	}
+	return static_cast<double>(lap_length);
 }
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers, godot::Array accel_settings)

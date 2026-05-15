@@ -15,6 +15,7 @@ func _init() -> void:
 	var car_props_path := _arg_value(args, "--car-props", DEFAULT_CAR_PROPS)
 	var frames := int(_arg_value(args, "--frames", "3600"))
 	var cars := int(_arg_value(args, "--cars", "100"))
+	var require_full_lap := args.has("--require-full-lap")
 	if frames <= 0 or cars <= 0:
 		push_error("profile_gamesim requires positive --frames and --cars")
 		quit(1)
@@ -48,11 +49,40 @@ func _init() -> void:
 	sim.set_player_metadata(player_ids, cpu_flags)
 	sim.set_sim_started(true)
 
+	var lap_length := float(sim.get_track_lap_length())
+	var start_distances: Array[float] = []
+	for player_id in player_ids:
+		start_distances.append(float(sim.get_player_lap_distance(player_id)))
+
 	var neutral := PackedByteArray([0])
+	var frames_run := 0
+	var full_lap_count := 0
+	var min_lap_delta := 0.0
 	for frame in range(frames):
 		sim.tick_singleplayer(-1, neutral)
+		frames_run = frame + 1
+		if require_full_lap:
+			full_lap_count = 0
+			min_lap_delta = INF
+			for i in range(cars):
+				var distance := float(sim.get_player_lap_distance(player_ids[i]))
+				var delta := distance - start_distances[i]
+				min_lap_delta = minf(min_lap_delta, delta)
+				if delta >= lap_length:
+					full_lap_count += 1
+			if full_lap_count == cars:
+				break
 
-	print("MXT_PROFILE_RUN track=", track_path, " cars=", cars, " frames=", frames)
+	if require_full_lap:
+		print("MXT_PROFILE_LAP_CHECK completed=", full_lap_count, " cars=", cars, " frames_run=", frames_run, " lap_length=", lap_length, " min_delta=", min_lap_delta)
+		if full_lap_count != cars:
+			push_error("profile_gamesim full-lap requirement was not met")
+			root.remove_child(sim)
+			sim.free()
+			quit(1)
+			return
+
+	print("MXT_PROFILE_RUN track=", track_path, " cars=", cars, " frames=", frames_run)
 	print(sim.get_phase_profile_string())
 	root.remove_child(sim)
 	sim.free()

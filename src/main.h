@@ -321,6 +321,8 @@ namespace godot {
 		godot::String get_render_profile_string() const;
 		int get_player_race_place(int player_id) const;
 		bool is_player_race_finished(int player_id) const;
+		double get_player_lap_distance(int player_id) const;
+		int get_player_lap(int player_id) const;
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
 		godot::Array get_check_warning_candidates(int player_id) const;
@@ -343,6 +345,7 @@ namespace godot {
 		bool is_dip_switch_enabled(int flag) const;
 		void set_dip_switch_enabled(int flag, bool enabled);
 		double get_first_lap_distance() const;
+		double get_track_lap_length() const;
 		void emit_super_sparks_from_car(const PhysicsCar& car, int count);
 	};
 
