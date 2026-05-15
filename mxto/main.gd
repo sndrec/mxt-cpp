@@ -108,32 +108,6 @@ const DEBUG_REPLAY_VERSION := 1
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 
-const OUTER_PROFILE_WINDOW := 3600
-const OUTER_PROFILE_FIELDS := [
-	"physics_total",
-	"local_input",
-	"simulate_call",
-	"sp_build_inputs",
-	"sp_tick_gamesim",
-	"render_gamesim",
-	"visual_just_rendered",
-	"race_finish",
-	"process_total",
-	"process_labels",
-	"process_native_visual",
-	"process_effect_tiers",
-]
-var outer_profile_samples: Array = []
-var outer_profile_sums: Dictionary = {}
-var outer_profile_cursor := 0
-var outer_profile_count := 0
-var _last_sp_build_inputs_us := 0
-var _last_sp_tick_gamesim_us := 0
-var _last_simulate_call_us := 0
-var _last_process_total_us := 0
-var _last_process_labels_us := 0
-var _last_process_native_visual_us := 0
-var _last_process_effect_tiers_us := 0
 var race_pause_root: Control
 var race_pause_title: Label
 var race_pause_resume_button: Button
@@ -144,30 +118,6 @@ var debug_rail_trace_requested := false
 var active_stickers := {}
 var race_notification_hide_msec := 0
 var race_medals: Array[Control] = []
-
-func _record_outer_profile(sample: Dictionary) -> void:
-	if outer_profile_sums.is_empty():
-		for field in OUTER_PROFILE_FIELDS:
-			outer_profile_sums[field] = 0
-	if outer_profile_count == OUTER_PROFILE_WINDOW:
-		var old: Dictionary = outer_profile_samples[outer_profile_cursor]
-		for field in OUTER_PROFILE_FIELDS:
-			outer_profile_sums[field] -= int(old.get(field, 0))
-	else:
-		outer_profile_samples.append({})
-		outer_profile_count += 1
-	for field in OUTER_PROFILE_FIELDS:
-		var value := int(sample.get(field, 0))
-		outer_profile_sums[field] += value
-	outer_profile_samples[outer_profile_cursor] = sample.duplicate()
-	outer_profile_cursor = (outer_profile_cursor + 1) % OUTER_PROFILE_WINDOW
-
-func get_outer_profile_string() -> String:
-	var count := maxi(outer_profile_count, 1)
-	var out := "MXT_OUTER_AVG_US frames=%d" % outer_profile_count
-	for field in OUTER_PROFILE_FIELDS:
-		out += " %s=%d" % [field, int(int(outer_profile_sums.get(field, 0)) / count)]
-	return out
 
 func _ready() -> void:
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
@@ -1179,9 +1129,6 @@ func _physics_process(delta: float) -> void:
 		if singleplayer_mode and game_sim.sim_started:
 			_simulate_singleplayer_tick()
 			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
-				print(game_sim.get_phase_profile_string())
-				print(game_sim.get_render_profile_string())
-				print(get_outer_profile_string())
 				get_tree().quit()
 			return
 		if multiplayer.has_multiplayer_peer():
@@ -1196,62 +1143,29 @@ func _physics_process(delta: float) -> void:
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
 	if game_sim.sim_started:
-		var physics_start := Time.get_ticks_usec()
-		var local_input_us := 0
-		var render_us := 0
-		var visual_us := 0
-		var race_finish_us := 0
-		_last_sp_build_inputs_us = 0
-		_last_sp_tick_gamesim_us = 0
 		var local_pi := PlayerInputClass.new()
-		var local_input_start := Time.get_ticks_usec()
 		if _window_accepts_input() and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
 		var input_bytes := local_pi.serialize()
-		local_input_us = Time.get_ticks_usec() - local_input_start
-		var simulate_start := Time.get_ticks_usec()
 		if singleplayer_mode:
-			_simulate_singleplayer_tick(input_bytes, local_input_us)
+			_simulate_singleplayer_tick(input_bytes)
 		else:
 			network_manager.set_local_input(input_bytes)
 			if network_manager.is_server:
 				_simulate_host_frame(input_bytes)
 			else:
 				_simulate_single_tick()
-		_last_simulate_call_us = Time.get_ticks_usec() - simulate_start
 		_consume_authoritative_race_events()
-		var render_start := Time.get_ticks_usec()
 		game_sim.render_gamesim()
-		render_us = Time.get_ticks_usec() - render_start
-		var visual_start := Time.get_ticks_usec()
 		_update_nametags(get_viewport().get_camera_3d(), delta)
 		for car:VisualCar in car_node_container.get_children():
 			if car.local_visual_enabled:
 				car.just_rendered()
-		visual_us = Time.get_ticks_usec() - visual_start
-		var race_finish_start := Time.get_ticks_usec()
 		_check_race_finished()
-		race_finish_us = Time.get_ticks_usec() - race_finish_start
-		_record_outer_profile({
-			"physics_total": Time.get_ticks_usec() - physics_start,
-			"local_input": local_input_us,
-			"simulate_call": _last_simulate_call_us,
-			"sp_build_inputs": _last_sp_build_inputs_us,
-			"sp_tick_gamesim": _last_sp_tick_gamesim_us,
-			"render_gamesim": render_us,
-			"visual_just_rendered": visual_us,
-			"race_finish": race_finish_us,
-			"process_total": _last_process_total_us,
-			"process_labels": _last_process_labels_us,
-			"process_native_visual": _last_process_native_visual_us,
-			"process_effect_tiers": _last_process_effect_tiers_us,
-		})
 
-func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(), build_inputs_us: int = 0):
-	var start_time := Time.get_ticks_usec()
-	var build_inputs_start := start_time
+func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray()):
 	if debug_replay_playback:
 		if debug_replay_playback_index >= debug_replay_playback_inputs.size():
 			debug_replay_playback = false
@@ -1261,7 +1175,6 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 				get_tree().quit()
 			return
 		input_bytes = (debug_replay_playback_inputs[debug_replay_playback_index] as PackedByteArray).duplicate()
-		build_inputs_us = Time.get_ticks_usec() - build_inputs_start
 		debug_replay_playback_index += 1
 	if input_bytes.is_empty():
 		var local_pi := PlayerInputClass.new()
@@ -1273,20 +1186,15 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 			if controller != null:
 				local_pi = controller.get_input()
 		input_bytes = local_pi.serialize()
-		build_inputs_us = Time.get_ticks_usec() - build_inputs_start
 	if debug_replay_recording:
 		debug_replay_inputs.append(input_bytes.duplicate())
-	_last_sp_build_inputs_us = build_inputs_us
 	_dump_offline_auth_input_sample(input_bytes)
 	_dump_offline_state_sample()
-	var tick_gamesim_start := Time.get_ticks_usec()
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
-	_last_sp_tick_gamesim_us = Time.get_ticks_usec() - tick_gamesim_start
 	_singleplayer_tick += 1
 	# Update HUD timing using the same field clients use
 	network_manager.clients_server_tick = _singleplayer_tick
-	var end_time := Time.get_ticks_usec()
-	network_manager.rollback_frametime_us = end_time - start_time
+	network_manager.rollback_frametime_us = 0
 
 func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
 	if !network_manager.dump_auth_input_samples:
@@ -1357,8 +1265,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F3:
 		var profile := game_sim.get_phase_profile_string()
 		var render_profile := game_sim.get_render_profile_string()
-		var outer_profile := get_outer_profile_string()
-		DisplayServer.clipboard_set(profile + "\n" + render_profile + "\n" + outer_profile)
+		DisplayServer.clipboard_set(profile + "\n" + render_profile)
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F5:
 		if debug_replay_recording:
 			_stop_and_save_debug_replay_recording()
@@ -1511,7 +1418,6 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 			car.set_effect_tier(VisualCar.EffectTier.THRUSTER_ONLY)
 
 func _process(delta: float) -> void:
-	var process_start := Time.get_ticks_usec()
 	var now_msec := Time.get_ticks_msec()
 	for id in active_stickers.keys():
 		var data: Dictionary = active_stickers[id]
@@ -1520,21 +1426,7 @@ func _process(delta: float) -> void:
 	if race_finish_label.visible and race_notification_hide_msec > 0 and now_msec > race_notification_hide_msec and network_manager.net_race_finish_time == -1:
 		race_finish_label.visible = false
 		race_notification_hide_msec = 0
-	var label_start := process_start
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
-	var label_us := Time.get_ticks_usec() - label_start
-	var native_visual_us := 0
 	if game_sim.sim_started:
-		var native_visual_start := Time.get_ticks_usec()
 		game_sim.render_gamesim_visuals_only(delta)
-		native_visual_us = Time.get_ticks_usec() - native_visual_start
-	var effect_us := 0
-	var active_camera := get_viewport().get_camera_3d()
-	if game_sim.sim_started and is_instance_valid(active_camera):
-		effect_us = 0
-	if game_sim.sim_started:
-		_last_process_total_us = Time.get_ticks_usec() - process_start
-		_last_process_labels_us = label_us
-		_last_process_native_visual_us = native_visual_us
-		_last_process_effect_tiers_us = effect_us

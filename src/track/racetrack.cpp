@@ -1702,21 +1702,6 @@ static float distance2_to_aabb(const SimAABB &bounds, const SimVec3 &p)
 	return d2;
 }
 
-static TrackQueryScratch::MeshFloorProfileCounters *mesh_floor_profile_counters(TrackQueryScratch *scratch)
-{
-#if !MXT_MESH_DEEP_PROFILE
-	return nullptr;
-#endif
-	if (!scratch) {
-		return nullptr;
-	}
-	int scope = static_cast<int>(scratch->mesh_floor_profile_scope);
-	if (scope < 0 || scope >= TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT) {
-		scope = TrackQueryScratch::MESH_FLOOR_SCOPE_UNKNOWN;
-	}
-	return &scratch->mesh_floor_profile[scope];
-}
-
 static bool scan_mesh_cast_triangle(
 	const CastParams &params,
 	CollisionData &out_collision,
@@ -1730,36 +1715,16 @@ static bool scan_mesh_cast_triangle(
 	TrackQueryScratch *scratch)
 {
 	RaceTrack *track = params.track;
-#if MXT_MESH_DEEP_PROFILE
-	if (scratch) {
-		scratch->mesh_cast_tri_tests += 1;
-	}
-#endif
 	const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
 	const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 	if (is_rail) {
 		if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_cast_surface_rejects += 1;
-			}
-#endif
 			return false;
 		}
 	} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_cast_surface_rejects += 1;
-		}
-#endif
 		return false;
 	}
 	if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_cast_aabb_rejects += 1;
-		}
-#endif
 		return false;
 	}
 	if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS)) {
@@ -1781,35 +1746,10 @@ static bool scan_mesh_cast_triangle(
 	MeshCastRejectReason reject_reason = MESH_CAST_REJECT_NONE;
 	const SimVec3 &side_reference_point = params.mesh_side_reference_point ? *params.mesh_side_reference_point : p0;
 	if (!triangle_ray_hit(tri, p0, ray, side_reference_point, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, &reject_reason)) {
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			switch (reject_reason) {
-				case MESH_CAST_REJECT_PARALLEL:
-					scratch->mesh_cast_ray_parallel_rejects += 1;
-					break;
-				case MESH_CAST_REJECT_BACKSIDE:
-					scratch->mesh_cast_backside_rejects += 1;
-					break;
-				case MESH_CAST_REJECT_T:
-					scratch->mesh_cast_t_rejects += 1;
-					break;
-				case MESH_CAST_REJECT_BARY:
-					scratch->mesh_cast_bary_rejects += 1;
-					break;
-				default:
-					break;
-			}
-		}
-#endif
 		return false;
 	}
 	const float dist = hit_t * ray_len;
 	if (dist >= best_dist) {
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_cast_best_dist_rejects += 1;
-		}
-#endif
 		return false;
 	}
 
@@ -1831,11 +1771,6 @@ static bool scan_mesh_cast_triangle(
 	}
 
 	best_dist = dist;
-#if MXT_MESH_DEEP_PROFILE
-	if (scratch) {
-		scratch->mesh_cast_hits += 1;
-	}
-#endif
 	if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
 		draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
 	}
@@ -1863,11 +1798,6 @@ static void cast_mesh_collision_fast(
 	TrackQueryScratch *scratch)
 {
 	RaceTrack *track = params.track;
-#if MXT_MESH_DEEP_PROFILE
-	if (scratch) {
-		scratch->mesh_cast_calls += 1;
-	}
-#endif
 	if (track->num_mesh_collision_triangles <= 0) {
 		return;
 	}
@@ -1895,11 +1825,6 @@ static void cast_mesh_collision_fast(
 	while (stack_count > 0) {
 		const int node_index = stack[--stack_count];
 		const TrackMeshBVHNode &node = track->mesh_world_bvh_nodes[node_index];
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_cast_bvh_node_tests += 1;
-		}
-#endif
 		uint32_t child_mask = mesh_bvh_child_segment_mask(node, p0, p1);
 		for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
 			if ((child_mask & (1u << slot)) == 0) {
@@ -1928,9 +1853,6 @@ static void cast_mesh_collision_fast(
 bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask, TrackQueryScratch &scratch)
 {
 	scratch.mesh_cast_candidate_count = 0;
-#if MXT_MESH_DEEP_PROFILE
-	scratch.mesh_cast_candidate_builds += 1;
-#endif
 	if (!mesh_world_bvh_nodes || !mesh_world_bvh_triangle_indices || num_mesh_world_bvh_nodes <= 0) {
 		return false;
 	}
@@ -1941,9 +1863,6 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 	while (stack_count > 0) {
 		const int node_index = stack[--stack_count];
 		const TrackMeshBVHNode &node = mesh_world_bvh_nodes[node_index];
-#if MXT_MESH_DEEP_PROFILE
-		scratch.mesh_cast_candidate_bvh_node_tests += 1;
-#endif
 		uint32_t child_mask = mesh_bvh_child_aabb_mask(node, bounds);
 		for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
 			if ((child_mask & (1u << slot)) == 0) {
@@ -1970,9 +1889,6 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 						std::abort();
 					}
 					scratch.mesh_cast_candidate_indices[scratch.mesh_cast_candidate_count++] = tri_index;
-#if MXT_MESH_DEEP_PROFILE
-					scratch.mesh_cast_candidate_triangles += 1;
-#endif
 				}
 			} else {
 				if (stack_count + 1 > 256) {
@@ -2011,9 +1927,6 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	if ((mask & (CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL)) == 0) {
 		return;
 	}
-#if MXT_MESH_DEEP_PROFILE
-	scratch->mesh_cast_calls += 1;
-#endif
 	const SimVec3 ray = p1 - p0;
 	const float ray_len = ray.length();
 	if (ray_len <= 1.0e-6f) {
@@ -2040,37 +1953,15 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index)
 {
 	(void)allow_global_fallback;
-	TrackQueryScratch::MeshFloorProfileCounters *floor_profile = mesh_floor_profile_counters(scratch);
-#if MXT_MESH_DEEP_PROFILE
-	const auto floor_profile_start = std::chrono::high_resolution_clock::now();
-#endif
-	auto finish_floor_profile = [&]() {
-#if MXT_MESH_DEEP_PROFILE
-		if (floor_profile) {
-			const auto floor_profile_end = std::chrono::high_resolution_clock::now();
-			floor_profile->query_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(floor_profile_end - floor_profile_start).count());
-		}
-#endif
-	};
-#if MXT_MESH_DEEP_PROFILE
-	if (scratch) {
-		scratch->mesh_floor_calls += 1;
-	}
-	if (floor_profile) {
-		floor_profile->calls += 1;
-	}
-#endif
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
 	out_collision.mesh_triangle_index = -1;
 	out_collision.collision_face_point = SimVec3();
 	out_collision.collision_face_normal = SimVec3();
 	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
-		finish_floor_profile();
 		return;
 	}
 	if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
-		finish_floor_profile();
 		return;
 	}
 
@@ -2087,35 +1978,11 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	bool saw_smooth_projection_candidate = false;
 
 	auto scan_triangle = [&](int tri_index) {
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_floor_tri_tests += 1;
-		}
-		if (floor_profile) {
-			floor_profile->tri_tests += 1;
-		}
-#endif
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
 		if ((tri.terrain & TERRAIN::RAIL) != 0) {
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_floor_rail_rejects += 1;
-			}
-			if (floor_profile) {
-				floor_profile->rail_rejects += 1;
-			}
-#endif
 			return;
 		}
 		if (distance2_to_aabb(tri.bounds, point) > best_dist2) {
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_floor_aabb_rejects += 1;
-			}
-			if (floor_profile) {
-				floor_profile->aabb_rejects += 1;
-			}
-#endif
 			return;
 		}
 		float u = 0.0f;
@@ -2131,14 +1998,6 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		if (allow_smooth_projection_retry) {
 			if (!project_point_to_mesh_triangle(tri, point, allow_backside, true, &projected, &u, &v, &w, &backside_sample, &projection_result, &smooth_retry_candidate)) {
 				saw_smooth_projection_candidate |= smooth_retry_candidate;
-#if MXT_MESH_DEEP_PROFILE
-				if (scratch) {
-					scratch->mesh_floor_projection_misses += 1;
-				}
-				if (floor_profile) {
-					floor_profile->projection_misses += 1;
-				}
-#endif
 				return;
 			}
 			dist2 = (point - projected).length_squared();
@@ -2147,54 +2006,14 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			dist2 = signed_face_dist * signed_face_dist;
 		} else {
 			saw_smooth_projection_candidate |= smooth_retry_candidate;
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_floor_projection_misses += 1;
-			}
-			if (floor_profile) {
-				floor_profile->projection_misses += 1;
-			}
-#endif
 			return;
 		}
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			if (projection_result == MESH_FLOOR_PROJECT_SMOOTH) {
-				scratch->mesh_floor_smooth_projection_hits += 1;
-			} else {
-				scratch->mesh_floor_face_projection_hits += 1;
-			}
-		}
-		if (floor_profile) {
-			if (projection_result == MESH_FLOOR_PROJECT_SMOOTH) {
-				floor_profile->smooth_projection_hits += 1;
-			} else {
-				floor_profile->face_projection_hits += 1;
-			}
-		}
-#endif
 		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS)) {
 			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 0.8f, 1.0f, 0.7f), _TICK_DELTA);
 		}
 		if (dist2 >= best_dist2) {
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_floor_best_dist_rejects += 1;
-			}
-			if (floor_profile) {
-				floor_profile->best_dist_rejects += 1;
-			}
-#endif
 			return;
 		}
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_floor_best_updates += 1;
-		}
-		if (floor_profile) {
-			floor_profile->best_updates += 1;
-		}
-#endif
 		best_dist2 = dist2;
 		best_u = u;
 		best_v = v;
@@ -2219,28 +2038,11 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		int stack[256];
 		int stack_count = 0;
 		stack[stack_count++] = root_node_index;
-#if MXT_MESH_DEEP_PROFILE
-		uint32_t stack_peak = 1;
-#endif
 		while (stack_count > 0) {
 			const int node_index = stack[--stack_count];
 			const TrackMeshBVHNode &node = mesh_floor_bvh_nodes[node_index];
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_floor_bvh_node_tests += 1;
-			}
-			if (floor_profile) {
-				floor_profile->bvh_node_tests += 1;
-			}
-#endif
 			float child_dist2[MXT_MESH_BVH_WIDTH];
 			mesh_bvh_child_distance2_quad(node, point, child_dist2);
-#if MXT_MESH_DEEP_PROFILE
-			if (floor_profile) {
-				floor_profile->bvh_interior_visits += 1;
-				floor_profile->bvh_child_tests += MXT_MESH_BVH_WIDTH;
-			}
-#endif
 			int ordered_slots[MXT_MESH_BVH_WIDTH];
 			int ordered_count = 0;
 			for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
@@ -2258,12 +2060,6 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			for (int order = ordered_count - 1; order >= 0; --order) {
 				const int slot = ordered_slots[order];
 				if (mesh_bvh_child_is_leaf(node, slot)) {
-#if MXT_MESH_DEEP_PROFILE
-					if (floor_profile) {
-						floor_profile->bvh_leaf_visits += 1;
-						floor_profile->bvh_leaf_triangles += static_cast<uint32_t>(node.count[slot]);
-					}
-#endif
 					const int end = node.child[slot] + node.count[slot];
 					for (int i = node.child[slot]; i < end; ++i) {
 						scan_triangle(mesh_floor_bvh_triangle_indices[i]);
@@ -2278,24 +2074,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 						std::abort();
 					}
 					stack[stack_count++] = node.child[slot];
-#if MXT_MESH_DEEP_PROFILE
-					if (floor_profile) {
-						floor_profile->bvh_child_pushes += 1;
-					}
-#endif
 				}
 			}
-#if MXT_MESH_DEEP_PROFILE
-			if (static_cast<uint32_t>(stack_count) > stack_peak) {
-				stack_peak = static_cast<uint32_t>(stack_count);
-			}
-#endif
 		}
-#if MXT_MESH_DEEP_PROFILE
-		if (floor_profile) {
-			floor_profile->bvh_stack_max = std::max(floor_profile->bvh_stack_max, stack_peak);
-		}
-#endif
 		return true;
 	};
 
@@ -2305,61 +2086,21 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	}
 	auto scan_mesh_floor_candidates = [&]() {
 		if (seed_triangle_index >= 0) {
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_floor_seed_calls += 1;
-			}
-			if (floor_profile) {
-				floor_profile->seed_calls += 1;
-			}
-#endif
 			const int prev_best_tri_index = best_tri_index;
 			scan_triangle(seed_triangle_index);
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
-				scratch->mesh_floor_seed_hits += 1;
-			}
-			if (floor_profile && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
-				floor_profile->seed_hits += 1;
-			}
-#endif
 		}
 
 		if (scan_floor_bvh_root(0)) {
 			return;
 		}
 	};
-#if MXT_MESH_DEEP_PROFILE
-	auto scan_profile_start = std::chrono::high_resolution_clock::now();
-#endif
 	scan_mesh_floor_candidates();
-#if MXT_MESH_DEEP_PROFILE
-	if (floor_profile) {
-		const auto scan_profile_end = std::chrono::high_resolution_clock::now();
-		floor_profile->scan_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(scan_profile_end - scan_profile_start).count());
-	}
-#endif
 	if (!best_tri && saw_smooth_projection_candidate) {
-#if MXT_MESH_DEEP_PROFILE
-		if (floor_profile) {
-			floor_profile->smooth_retry_queries += 1;
-		}
-#endif
 		allow_smooth_projection_retry = true;
-#if MXT_MESH_DEEP_PROFILE
-		scan_profile_start = std::chrono::high_resolution_clock::now();
-#endif
 		scan_mesh_floor_candidates();
-#if MXT_MESH_DEEP_PROFILE
-		if (floor_profile) {
-			const auto scan_profile_end = std::chrono::high_resolution_clock::now();
-			floor_profile->scan_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(scan_profile_end - scan_profile_start).count());
-		}
-#endif
 	}
 
 	if (!best_tri) {
-		finish_floor_profile();
 		return;
 	}
 
@@ -2367,18 +2108,8 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	SimVec3 smooth_normal = face_normal;
 	SimVec3 smooth_point = best_flat_point;
 	if (mesh_collision_uses_smooth_surface(best_tri->terrain)) {
-#if MXT_MESH_DEEP_PROFILE
-		const auto smooth_profile_start = std::chrono::high_resolution_clock::now();
-#endif
 		smooth_normal = mesh_collision_smooth_normal(*best_tri, best_u, best_v, best_w, face_normal);
 		smooth_point = clamp_mesh_collision_phong_point(best_flat_point, mesh_collision_phong_point(*best_tri, best_u, best_v, best_w));
-#if MXT_MESH_DEEP_PROFILE
-		if (floor_profile) {
-			const auto smooth_profile_end = std::chrono::high_resolution_clock::now();
-			floor_profile->final_smooth_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(smooth_profile_end - smooth_profile_start).count());
-			floor_profile->final_smooth_outputs += 1;
-		}
-#endif
 	}
 	if (best_backside_sample) {
 		smooth_normal *= -1.0f;
@@ -2401,7 +2132,6 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.road_data.closest_root = RoadTransform();
 	out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
 	out_collision.mesh_triangle_index = best_tri_index;
-	finish_floor_profile();
 }
 
 void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,

@@ -43,106 +43,6 @@ namespace godot {
 		std::vector<char> network_state_live_backup;
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
-		static const int PROFILE_WINDOW_TICKS = 3600;
-		static const int PROFILE_FIELD_COUNT = 48;
-		static const int MESH_FLOOR_PROFILE_FIELD_COUNT = 23;
-		static const int RENDER_PROFILE_FIELD_COUNT = 9;
-		enum ProfileField {
-			PROFILE_TOTAL,
-			PROFILE_INPUT,
-			PROFILE_BEGIN,
-			PROFILE_PREPARE_FLOOR,
-			PROFILE_PROJECT,
-			PROFILE_STEER_SUSP,
-			PROFILE_LINEAR,
-			PROFILE_INTEGRATE,
-			PROFILE_COLLISION,
-			PROFILE_POST,
-			PROFILE_POST_RESPONSE,
-			PROFILE_POST_SAMPLE_OLD,
-			PROFILE_POST_CORNERS,
-			PROFILE_POST_APPLY_RESPONSE,
-			PROFILE_POST_PROJECT_SPEED,
-			PROFILE_POST_VISUAL_GEOM,
-			PROFILE_POST_DAMAGE_TAIL,
-			PROFILE_MISC,
-			PROFILE_LANE_GROUP,
-			PROFILE_LANES,
-			PROFILE_MESH_FLOOR_CALLS,
-			PROFILE_MESH_FLOOR_TRI_TESTS,
-			PROFILE_MESH_FLOOR_CP_SCANS,
-			PROFILE_MESH_FLOOR_SEG_SCANS,
-			PROFILE_MESH_FLOOR_SEED_CALLS,
-			PROFILE_MESH_FLOOR_SEED_HITS,
-			PROFILE_MESH_FLOOR_RAIL_REJECTS,
-			PROFILE_MESH_FLOOR_AABB_REJECTS,
-			PROFILE_MESH_FLOOR_PROJECTION_MISSES,
-			PROFILE_MESH_FLOOR_FACE_PROJECTION_HITS,
-			PROFILE_MESH_FLOOR_SMOOTH_PROJECTION_HITS,
-			PROFILE_MESH_FLOOR_BEST_DIST_REJECTS,
-			PROFILE_MESH_FLOOR_BEST_UPDATES,
-			PROFILE_MESH_CAST_CALLS,
-			PROFILE_MESH_CAST_TRI_TESTS,
-			PROFILE_MESH_CAST_CANDIDATE_BUILDS,
-			PROFILE_MESH_CAST_CANDIDATE_BVH_NODE_TESTS,
-			PROFILE_MESH_CAST_CANDIDATE_TRIANGLES,
-			PROFILE_MESH_FLOOR_BVH_NODE_TESTS,
-			PROFILE_MESH_CAST_BVH_NODE_TESTS,
-			PROFILE_MESH_CAST_SURFACE_REJECTS,
-			PROFILE_MESH_CAST_AABB_REJECTS,
-			PROFILE_MESH_CAST_RAY_PARALLEL_REJECTS,
-			PROFILE_MESH_CAST_BACKSIDE_REJECTS,
-			PROFILE_MESH_CAST_T_REJECTS,
-			PROFILE_MESH_CAST_BARY_REJECTS,
-			PROFILE_MESH_CAST_BEST_DIST_REJECTS,
-			PROFILE_MESH_CAST_HITS,
-		};
-		enum MeshFloorProfileField {
-			MESH_FLOOR_PROFILE_CALLS,
-			MESH_FLOOR_PROFILE_TRI_TESTS,
-			MESH_FLOOR_PROFILE_BVH_NODE_TESTS,
-			MESH_FLOOR_PROFILE_SEED_CALLS,
-			MESH_FLOOR_PROFILE_SEED_HITS,
-			MESH_FLOOR_PROFILE_RAIL_REJECTS,
-			MESH_FLOOR_PROFILE_AABB_REJECTS,
-			MESH_FLOOR_PROFILE_PROJECTION_MISSES,
-			MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS,
-			MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS,
-			MESH_FLOOR_PROFILE_SMOOTH_RETRY_QUERIES,
-			MESH_FLOOR_PROFILE_BEST_DIST_REJECTS,
-			MESH_FLOOR_PROFILE_BEST_UPDATES,
-			MESH_FLOOR_PROFILE_QUERY_US,
-			MESH_FLOOR_PROFILE_SCAN_US,
-			MESH_FLOOR_PROFILE_FINAL_SMOOTH_US,
-			MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS,
-			MESH_FLOOR_PROFILE_BVH_LEAF_VISITS,
-			MESH_FLOOR_PROFILE_BVH_LEAF_TRIANGLES,
-			MESH_FLOOR_PROFILE_BVH_INTERIOR_VISITS,
-			MESH_FLOOR_PROFILE_BVH_CHILD_TESTS,
-			MESH_FLOOR_PROFILE_BVH_CHILD_PUSHES,
-			MESH_FLOOR_PROFILE_BVH_STACK_MAX,
-		};
-		enum RenderProfileField {
-			RENDER_PROFILE_TOTAL,
-			RENDER_PROFILE_GET_CHILDREN,
-			RENDER_PROFILE_VISUAL_APPLY,
-			RENDER_PROFILE_CPU_TOTAL,
-			RENDER_PROFILE_CPU_BUILD_OBS,
-			RENDER_PROFILE_CPU_SUBMIT,
-			RENDER_PROFILE_SPARKS,
-			RENDER_PROFILE_DEBUG_DRAW,
-			RENDER_PROFILE_VIS_CARS,
-		};
-		uint32_t profile_samples[PROFILE_WINDOW_TICKS][PROFILE_FIELD_COUNT] = {};
-		uint64_t profile_sums[PROFILE_FIELD_COUNT] = {};
-		uint32_t mesh_floor_profile_samples[PROFILE_WINDOW_TICKS][TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT][MESH_FLOOR_PROFILE_FIELD_COUNT] = {};
-		uint64_t mesh_floor_profile_sums[TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT][MESH_FLOOR_PROFILE_FIELD_COUNT] = {};
-		int profile_cursor = 0;
-		int profile_count = 0;
-		uint32_t render_profile_samples[PROFILE_WINDOW_TICKS][RENDER_PROFILE_FIELD_COUNT] = {};
-		uint64_t render_profile_sums[RENDER_PROFILE_FIELD_COUNT] = {};
-		int render_profile_cursor = 0;
-		int render_profile_count = 0;
 		struct VehicleTickSoA {
 			int capacity = 0;
 			PlayerInput* inputs = nullptr;
@@ -165,57 +65,6 @@ namespace godot {
 			float* position_old_z = nullptr;
 			float* speed_kmh = nullptr;
 			float* collectable_super_spark = nullptr;
-			uint32_t prof_input_us = 0;
-			uint32_t prof_begin_us = 0;
-			uint32_t prof_prepare_floor_us = 0;
-			uint32_t prof_project_us = 0;
-			uint32_t prof_steer_susp_us = 0;
-			uint32_t prof_linear_us = 0;
-			uint32_t prof_integrate_us = 0;
-			uint32_t prof_collision_us = 0;
-			uint32_t prof_post_us = 0;
-			uint32_t prof_post_response_us = 0;
-			uint32_t prof_post_checkpoints_us = 0;
-			uint32_t prof_post_sparks_us = 0;
-			uint32_t prof_post_sample_old_us = 0;
-			uint32_t prof_post_corners_us = 0;
-			uint32_t prof_post_apply_response_us = 0;
-			uint32_t prof_post_project_speed_us = 0;
-			uint32_t prof_post_visual_geom_us = 0;
-			uint32_t prof_post_damage_tail_us = 0;
-			uint32_t prof_misc_us = 0;
-			uint32_t prof_total_us = 0;
-			uint32_t prof_lane_group_us = 0;
-			uint32_t prof_lanes = 1;
-			uint32_t prof_mesh_floor_calls = 0;
-			uint32_t prof_mesh_floor_tri_tests = 0;
-			uint32_t prof_mesh_floor_checkpoint_scans = 0;
-			uint32_t prof_mesh_floor_segment_scans = 0;
-			uint32_t prof_mesh_floor_seed_calls = 0;
-			uint32_t prof_mesh_floor_seed_hits = 0;
-			uint32_t prof_mesh_floor_rail_rejects = 0;
-			uint32_t prof_mesh_floor_aabb_rejects = 0;
-			uint32_t prof_mesh_floor_projection_misses = 0;
-			uint32_t prof_mesh_floor_face_projection_hits = 0;
-			uint32_t prof_mesh_floor_smooth_projection_hits = 0;
-			uint32_t prof_mesh_floor_best_dist_rejects = 0;
-			uint32_t prof_mesh_floor_best_updates = 0;
-			uint32_t prof_mesh_cast_calls = 0;
-			uint32_t prof_mesh_cast_tri_tests = 0;
-			uint32_t prof_mesh_cast_candidate_builds = 0;
-			uint32_t prof_mesh_cast_candidate_bvh_node_tests = 0;
-			uint32_t prof_mesh_cast_candidate_triangles = 0;
-			uint32_t prof_mesh_floor_bvh_node_tests = 0;
-			uint32_t prof_mesh_cast_bvh_node_tests = 0;
-			uint32_t prof_mesh_cast_surface_rejects = 0;
-			uint32_t prof_mesh_cast_aabb_rejects = 0;
-			uint32_t prof_mesh_cast_ray_parallel_rejects = 0;
-			uint32_t prof_mesh_cast_backside_rejects = 0;
-			uint32_t prof_mesh_cast_t_rejects = 0;
-			uint32_t prof_mesh_cast_bary_rejects = 0;
-			uint32_t prof_mesh_cast_best_dist_rejects = 0;
-			uint32_t prof_mesh_cast_hits = 0;
-			uint32_t prof_mesh_floor_profile[TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT][MESH_FLOOR_PROFILE_FIELD_COUNT] = {};
 		};
 		VehicleTickSoA vehicle_tick_soa;
 		static const int SUPER_SPARK_CAPACITY = 256;
@@ -286,8 +135,6 @@ namespace godot {
 			int decoded_car_input_count);
 		void ensure_vehicle_tick_soa_capacity(int capacity);
 		void free_vehicle_tick_soa();
-		void record_phase_profile_sample();
-		void record_render_profile_sample(const uint32_t sample[RENDER_PROFILE_FIELD_COUNT]);
 		godot::PackedByteArray serialize_network_state(int target_tick) const;
 		bool deserialize_network_state(int target_tick, const godot::PackedByteArray& data);
 		void rebuild_static_state_after_network_load();

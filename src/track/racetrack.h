@@ -1,6 +1,5 @@
 #pragma once
 
-#include "track/mesh_profile_config.h"
 #include "track/track_segment.h"
 #include "track/collision_checkpoint.h"
 #include "track/trigger_collider.h"
@@ -48,40 +47,6 @@ struct alignas(64) TrackQueryScratch
 {
 	static constexpr int MAX_TRIGGER_EVENTS = 4096;
 	static constexpr int MAX_MESH_CAST_CANDIDATES = 8192;
-	enum MeshFloorProfileScope
-	{
-		MESH_FLOOR_SCOPE_UNKNOWN,
-		MESH_FLOOR_SCOPE_MAIN_LOCAL,
-		MESH_FLOOR_SCOPE_MAIN_GLOBAL,
-		MESH_FLOOR_SCOPE_SUSPENSION,
-		MESH_FLOOR_PROFILE_SCOPE_COUNT
-	};
-	struct MeshFloorProfileCounters
-	{
-		uint32_t calls = 0;
-		uint32_t tri_tests = 0;
-		uint32_t bvh_node_tests = 0;
-		uint32_t seed_calls = 0;
-		uint32_t seed_hits = 0;
-		uint32_t rail_rejects = 0;
-		uint32_t aabb_rejects = 0;
-		uint32_t projection_misses = 0;
-		uint32_t face_projection_hits = 0;
-		uint32_t smooth_projection_hits = 0;
-		uint32_t smooth_retry_queries = 0;
-		uint32_t best_dist_rejects = 0;
-		uint32_t best_updates = 0;
-		uint32_t query_us = 0;
-		uint32_t scan_us = 0;
-		uint32_t final_smooth_us = 0;
-		uint32_t final_smooth_outputs = 0;
-		uint32_t bvh_leaf_visits = 0;
-		uint32_t bvh_leaf_triangles = 0;
-		uint32_t bvh_interior_visits = 0;
-		uint32_t bvh_child_tests = 0;
-		uint32_t bvh_child_pushes = 0;
-		uint32_t bvh_stack_max = 0;
-	};
 	struct TriggerEvent
 	{
 		int car_index;
@@ -97,74 +62,12 @@ struct alignas(64) TrackQueryScratch
 	TriggerEvent trigger_events[MAX_TRIGGER_EVENTS];
 	int mesh_cast_candidate_count = 0;
 	int mesh_cast_candidate_indices[MAX_MESH_CAST_CANDIDATES];
-	MeshFloorProfileScope mesh_floor_profile_scope = MESH_FLOOR_SCOPE_UNKNOWN;
-	MeshFloorProfileCounters mesh_floor_profile[MESH_FLOOR_PROFILE_SCOPE_COUNT];
-	uint32_t mesh_floor_calls = 0;
-	uint32_t mesh_floor_tri_tests = 0;
-	uint32_t mesh_floor_checkpoint_scans = 0;
-	uint32_t mesh_floor_segment_scans = 0;
-	uint32_t mesh_floor_seed_calls = 0;
-	uint32_t mesh_floor_seed_hits = 0;
-	uint32_t mesh_floor_rail_rejects = 0;
-	uint32_t mesh_floor_aabb_rejects = 0;
-	uint32_t mesh_floor_projection_misses = 0;
-	uint32_t mesh_floor_face_projection_hits = 0;
-	uint32_t mesh_floor_smooth_projection_hits = 0;
-	uint32_t mesh_floor_best_dist_rejects = 0;
-	uint32_t mesh_floor_best_updates = 0;
-	uint32_t mesh_cast_calls = 0;
-	uint32_t mesh_cast_tri_tests = 0;
-	uint32_t mesh_cast_candidate_builds = 0;
-	uint32_t mesh_cast_candidate_bvh_node_tests = 0;
-	uint32_t mesh_cast_candidate_triangles = 0;
-	uint32_t mesh_floor_bvh_node_tests = 0;
-	uint32_t mesh_cast_bvh_node_tests = 0;
-	uint32_t mesh_cast_surface_rejects = 0;
-	uint32_t mesh_cast_aabb_rejects = 0;
-	uint32_t mesh_cast_ray_parallel_rejects = 0;
-	uint32_t mesh_cast_backside_rejects = 0;
-	uint32_t mesh_cast_t_rejects = 0;
-	uint32_t mesh_cast_bary_rejects = 0;
-	uint32_t mesh_cast_best_dist_rejects = 0;
-	uint32_t mesh_cast_hits = 0;
 	int debug_mesh_current_global_car_index = -1;
 	int debug_mesh_draw_global_car_index = 0;
 
-	void reset_mesh_query_profile()
+	void reset_mesh_query()
 	{
-		mesh_floor_calls = 0;
-		mesh_floor_tri_tests = 0;
-		mesh_floor_checkpoint_scans = 0;
-		mesh_floor_segment_scans = 0;
-		mesh_floor_seed_calls = 0;
-		mesh_floor_seed_hits = 0;
-		mesh_floor_rail_rejects = 0;
-		mesh_floor_aabb_rejects = 0;
-		mesh_floor_projection_misses = 0;
-		mesh_floor_face_projection_hits = 0;
-		mesh_floor_smooth_projection_hits = 0;
-		mesh_floor_best_dist_rejects = 0;
-		mesh_floor_best_updates = 0;
-		mesh_floor_profile_scope = MESH_FLOOR_SCOPE_UNKNOWN;
-		for (int i = 0; i < MESH_FLOOR_PROFILE_SCOPE_COUNT; ++i) {
-			mesh_floor_profile[i] = MeshFloorProfileCounters();
-		}
 		mesh_cast_candidate_count = 0;
-		mesh_cast_calls = 0;
-		mesh_cast_tri_tests = 0;
-		mesh_cast_candidate_builds = 0;
-		mesh_cast_candidate_bvh_node_tests = 0;
-		mesh_cast_candidate_triangles = 0;
-		mesh_floor_bvh_node_tests = 0;
-		mesh_cast_bvh_node_tests = 0;
-		mesh_cast_surface_rejects = 0;
-		mesh_cast_aabb_rejects = 0;
-		mesh_cast_ray_parallel_rejects = 0;
-		mesh_cast_backside_rejects = 0;
-		mesh_cast_t_rejects = 0;
-		mesh_cast_bary_rejects = 0;
-		mesh_cast_best_dist_rejects = 0;
-		mesh_cast_hits = 0;
 		debug_mesh_current_global_car_index = -1;
 	}
 

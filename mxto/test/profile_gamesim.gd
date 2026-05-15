@@ -63,8 +63,11 @@ func _init() -> void:
 	var max_lap_delta := 0.0
 	var min_lap_player := -1
 	var max_lap_player := -1
+	var tick_total_us := 0
 	for frame in range(frames):
+		var tick_start := Time.get_ticks_usec()
 		sim.tick_singleplayer(-1, neutral)
+		tick_total_us += Time.get_ticks_usec() - tick_start
 		frames_run = frame + 1
 		if watch_player >= 0 and watch_every > 0 and frames_run % watch_every == 0:
 			print("MXT_PROFILE_WATCH frame=", frames_run, " ", sim.get_player_debug_string(watch_player))
@@ -109,7 +112,7 @@ func _init() -> void:
 			return
 
 	print("MXT_PROFILE_RUN track=", track_path, " cars=", cars, " frames=", frames_run)
-	print(sim.get_phase_profile_string())
+	print("MXT_PROFILE_TICK_AVG_US frames=", frames_run, " total=", int(tick_total_us / maxi(frames_run, 1)))
 	root.remove_child(sim)
 	sim.free()
 	quit()

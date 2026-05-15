@@ -348,7 +348,6 @@ static void build_track_mesh_world_bvh(RaceTrack *track, HeapHandler &level_data
 	for (int i = 0; i < static_cast<int>(prims.size()); ++i) {
 		track->mesh_world_bvh_triangle_indices[i] = prims[i].triangle_index;
 	}
-	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_world_bvh_loaded nodes="), track->num_mesh_world_bvh_nodes);
 }
 
 static void build_track_mesh_floor_bvh(RaceTrack *track, HeapHandler &level_data)
@@ -383,7 +382,6 @@ static void build_track_mesh_floor_bvh(RaceTrack *track, HeapHandler &level_data
 	for (int i = 0; i < static_cast<int>(prims.size()); ++i) {
 		track->mesh_floor_bvh_triangle_indices[i] = prims[i].triangle_index;
 	}
-	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_floor_bvh_loaded nodes="), track->num_mesh_floor_bvh_nodes);
 }
 
 static SimVec3 normalize_mesh_source_normal_or_abort(const SimVec3 &normal, uint32_t tri_index, const char *name)
@@ -916,22 +914,12 @@ namespace {
 		}
 	}
 
-	static inline uint32_t elapsed_us(std::chrono::high_resolution_clock::time_point start,
-		std::chrono::high_resolution_clock::time_point end)
-	{
-		return static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count());
-	}
-
 	static void update_damage_visual_geometry_soa(PhysicsCarSoA& c, int count);
 	static void project_startup_velocity_and_speed_soa(PhysicsCarSoA& c, int count);
 
 	static void post_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, uint8_t* pending_s_boost_sparks, int count,
-		TrackQueryScratch &scratch,
-		uint32_t& response_us, uint32_t& checkpoints_us, uint32_t& sparks_us,
-		uint32_t& sample_old_us, uint32_t& corners_us, uint32_t& apply_response_us,
-		uint32_t& project_speed_us, uint32_t& visual_geom_us, uint32_t& damage_tail_us)
+		TrackQueryScratch &scratch)
 	{
-		auto phase_start = std::chrono::high_resolution_clock::now();
 		for (int i = 0; i < count; ++i) {
 			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
 				scratch.debug_mesh_current_global_car_index = c.global_start + i;
@@ -939,11 +927,7 @@ namespace {
 			}
 		}
 		scratch.debug_mesh_current_global_car_index = -1;
-		auto now = std::chrono::high_resolution_clock::now();
-		sample_old_us = elapsed_us(phase_start, now);
 
-		phase_start = now;
-		uint32_t apply_response_accum_us = 0;
 		for (int i = 0; i < count; ++i) {
 			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
 				scratch.debug_mesh_current_global_car_index = c.global_start + i;
@@ -969,11 +953,8 @@ namespace {
 					speed_over_weight >= 0.0462962962962f;
 				if (push_magnitude_track > 0.0023148148f || push_magnitude_rail > 0.0023148148f ||
 					full_response || landing_response) {
-					auto apply_start = std::chrono::high_resolution_clock::now();
 					car_views[i].apply_machine_collision_response_from_corners(corner_collision_type_flag,
 						push_magnitude_rail, push_magnitude_track, current_world_speed, speed_over_weight, false);
-					auto apply_end = std::chrono::high_resolution_clock::now();
-					apply_response_accum_us += elapsed_us(apply_start, apply_end);
 				}
 				if (c.machine_state[i] & MACHINESTATE::JUSTLANDED) {
 					c.air_time[i] = 0;
@@ -981,22 +962,11 @@ namespace {
 			}
 		}
 		scratch.debug_mesh_current_global_car_index = -1;
-		now = std::chrono::high_resolution_clock::now();
-		apply_response_us = apply_response_accum_us;
-		const uint32_t corner_and_apply_us = elapsed_us(phase_start, now);
-		corners_us = corner_and_apply_us > apply_response_us ? corner_and_apply_us - apply_response_us : 0;
 
-		phase_start = now;
 		project_startup_velocity_and_speed_soa(c, count);
-		now = std::chrono::high_resolution_clock::now();
-		project_speed_us = elapsed_us(phase_start, now);
 
-		phase_start = now;
 		update_damage_visual_geometry_soa(c, count);
-		now = std::chrono::high_resolution_clock::now();
-		visual_geom_us = elapsed_us(phase_start, now);
 
-		phase_start = now;
 		for (int i = 0; i < count; ++i) {
 			if (c.restore_state[i] == 2) {
 				continue;
@@ -1007,11 +977,7 @@ namespace {
 				STORE_INDEXED_VEC3(c, position_current, i, LOAD_INDEXED_VEC3(c, initial_pos, i));
 			}
 		}
-		now = std::chrono::high_resolution_clock::now();
-		damage_tail_us = elapsed_us(phase_start, now);
-		response_us = sample_old_us + corners_us + apply_response_us + project_speed_us + visual_geom_us + damage_tail_us;
 
-		phase_start = now;
 		for (int i = 0; i < count; ++i) {
 			if (c.restore_state[i] == 2) {
 				continue;
@@ -1022,18 +988,13 @@ namespace {
 				c.last_ground_checkpoint[i] = c.current_checkpoint[i];
 			}
 		}
-		now = std::chrono::high_resolution_clock::now();
-		checkpoints_us = elapsed_us(phase_start, now);
 
-		phase_start = now;
 		for (int i = 0; i < count; ++i) {
 			uint16_t pending = static_cast<uint16_t>(c.s_boost_pending_spark_spawns[i]) + c.pending_super_sparks[i];
 			pending_s_boost_sparks[i] = static_cast<uint8_t>(pending > 255 ? 255 : pending);
 			c.s_boost_pending_spark_spawns[i] = 0;
 			c.pending_super_sparks[i] = 0;
 		}
-		now = std::chrono::high_resolution_clock::now();
-		sparks_us = elapsed_us(phase_start, now);
 	}
 
 	static inline bool vehicle_motion_active(const PhysicsCarSoA& c, int i)
@@ -1370,39 +1331,19 @@ namespace {
 	}
 
 	static void begin_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs,
-		int count, TrackQueryScratch &scratch, uint32_t& prepare_floor_us)
+		int count, TrackQueryScratch &scratch)
 	{
 		apply_vehicle_motion_inputs_soa(c, inputs, count);
-
-		auto phase_start = std::chrono::high_resolution_clock::now();
 		prepare_vehicle_floor_phase(c, car_views, count, scratch);
-		auto now = std::chrono::high_resolution_clock::now();
-		prepare_floor_us = elapsed_us(phase_start, now);
 	}
 
-	static void finish_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count,
-		uint32_t& project_us, uint32_t& steer_susp_us, uint32_t& linear_us, uint32_t& integrate_us)
+	static void finish_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
 	{
-		auto phase_start = std::chrono::high_resolution_clock::now();
 		project_vehicle_velocity_phase(c, count);
-		auto now = std::chrono::high_resolution_clock::now();
-		project_us = elapsed_us(phase_start, now);
-
-		phase_start = now;
 		steering_and_suspension_phase(c, car_views, count);
-		now = std::chrono::high_resolution_clock::now();
-		steer_susp_us = elapsed_us(phase_start, now);
-
-		phase_start = now;
 		linear_orientation_drag_phase(c, car_views, count);
-		now = std::chrono::high_resolution_clock::now();
-		linear_us = elapsed_us(phase_start, now);
-
-		phase_start = now;
 		integrate_vehicle_positions_phase(c, count);
 		rotate_and_finish_motion_phase(c, car_views, count);
-		now = std::chrono::high_resolution_clock::now();
-		integrate_us = elapsed_us(phase_start, now);
 	}
 
 	static inline bool intervals_overlap(float min_a, float max_a, float min_b, float max_b)
@@ -1940,223 +1881,14 @@ bool GameSim::get_sim_started()
 	return sim_started;
 }
 
-void GameSim::record_phase_profile_sample()
-{
-	VehicleTickSoA& soa = vehicle_tick_soa;
-	uint32_t sample[PROFILE_FIELD_COUNT] = {
-		soa.prof_total_us,
-		soa.prof_input_us,
-		soa.prof_begin_us,
-		soa.prof_prepare_floor_us,
-		soa.prof_project_us,
-		soa.prof_steer_susp_us,
-		soa.prof_linear_us,
-		soa.prof_integrate_us,
-		soa.prof_collision_us,
-		soa.prof_post_us,
-		soa.prof_post_response_us,
-		soa.prof_post_sample_old_us,
-		soa.prof_post_corners_us,
-		soa.prof_post_apply_response_us,
-		soa.prof_post_project_speed_us,
-		soa.prof_post_visual_geom_us,
-		soa.prof_post_damage_tail_us,
-		soa.prof_misc_us,
-		soa.prof_lane_group_us,
-		soa.prof_lanes,
-		soa.prof_mesh_floor_calls,
-		soa.prof_mesh_floor_tri_tests,
-		soa.prof_mesh_floor_checkpoint_scans,
-		soa.prof_mesh_floor_segment_scans,
-		soa.prof_mesh_floor_seed_calls,
-		soa.prof_mesh_floor_seed_hits,
-		soa.prof_mesh_floor_rail_rejects,
-		soa.prof_mesh_floor_aabb_rejects,
-		soa.prof_mesh_floor_projection_misses,
-		soa.prof_mesh_floor_face_projection_hits,
-		soa.prof_mesh_floor_smooth_projection_hits,
-		soa.prof_mesh_floor_best_dist_rejects,
-		soa.prof_mesh_floor_best_updates,
-		soa.prof_mesh_cast_calls,
-		soa.prof_mesh_cast_tri_tests,
-		soa.prof_mesh_cast_candidate_builds,
-		soa.prof_mesh_cast_candidate_bvh_node_tests,
-		soa.prof_mesh_cast_candidate_triangles,
-		soa.prof_mesh_floor_bvh_node_tests,
-		soa.prof_mesh_cast_bvh_node_tests,
-		soa.prof_mesh_cast_surface_rejects,
-		soa.prof_mesh_cast_aabb_rejects,
-		soa.prof_mesh_cast_ray_parallel_rejects,
-		soa.prof_mesh_cast_backside_rejects,
-		soa.prof_mesh_cast_t_rejects,
-		soa.prof_mesh_cast_bary_rejects,
-		soa.prof_mesh_cast_best_dist_rejects,
-		soa.prof_mesh_cast_hits,
-	};
-
-	if (profile_count == PROFILE_WINDOW_TICKS) {
-		for (int i = 0; i < PROFILE_FIELD_COUNT; ++i) {
-			profile_sums[i] -= profile_samples[profile_cursor][i];
-		}
-		for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
-			for (int field = 0; field < MESH_FLOOR_PROFILE_FIELD_COUNT; ++field) {
-				mesh_floor_profile_sums[scope][field] -= mesh_floor_profile_samples[profile_cursor][scope][field];
-			}
-		}
-	} else {
-		profile_count += 1;
-	}
-
-	for (int i = 0; i < PROFILE_FIELD_COUNT; ++i) {
-		profile_samples[profile_cursor][i] = sample[i];
-		profile_sums[i] += sample[i];
-	}
-	for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
-		for (int field = 0; field < MESH_FLOOR_PROFILE_FIELD_COUNT; ++field) {
-			const uint32_t scope_sample = soa.prof_mesh_floor_profile[scope][field];
-			mesh_floor_profile_samples[profile_cursor][scope][field] = scope_sample;
-			mesh_floor_profile_sums[scope][field] += scope_sample;
-		}
-	}
-	profile_cursor = (profile_cursor + 1) % PROFILE_WINDOW_TICKS;
-}
-
 String GameSim::get_phase_profile_string() const
 {
-	const int count = profile_count > 0 ? profile_count : 1;
-	auto avg = [&](int field) -> int64_t {
-		return static_cast<int64_t>(profile_sums[field] / static_cast<uint64_t>(count));
-	};
-
-	String out = "MXT_PHASE_AVG_US frames=" + String::num_int64(profile_count);
-	out += " total=" + String::num_int64(avg(PROFILE_TOTAL));
-	out += " input=" + String::num_int64(avg(PROFILE_INPUT));
-	out += " begin=" + String::num_int64(avg(PROFILE_BEGIN));
-	out += " prepare_floor=" + String::num_int64(avg(PROFILE_PREPARE_FLOOR));
-	out += " project=" + String::num_int64(avg(PROFILE_PROJECT));
-	out += " steer_susp=" + String::num_int64(avg(PROFILE_STEER_SUSP));
-	out += " linear=" + String::num_int64(avg(PROFILE_LINEAR));
-	out += " integrate=" + String::num_int64(avg(PROFILE_INTEGRATE));
-	out += " collision=" + String::num_int64(avg(PROFILE_COLLISION));
-	out += " post=" + String::num_int64(avg(PROFILE_POST));
-	out += " post_response=" + String::num_int64(avg(PROFILE_POST_RESPONSE));
-	out += " post_sample_old=" + String::num_int64(avg(PROFILE_POST_SAMPLE_OLD));
-	out += " post_corners=" + String::num_int64(avg(PROFILE_POST_CORNERS));
-	out += " post_apply_response=" + String::num_int64(avg(PROFILE_POST_APPLY_RESPONSE));
-	out += " post_project_speed=" + String::num_int64(avg(PROFILE_POST_PROJECT_SPEED));
-	out += " post_visual_geom=" + String::num_int64(avg(PROFILE_POST_VISUAL_GEOM));
-	out += " post_damage_tail=" + String::num_int64(avg(PROFILE_POST_DAMAGE_TAIL));
-	out += " misc=" + String::num_int64(avg(PROFILE_MISC));
-	out += " lane_group=" + String::num_int64(avg(PROFILE_LANE_GROUP));
-	out += " lanes=" + String::num_int64(avg(PROFILE_LANES));
-	out += " mesh_floor_calls=" + String::num_int64(avg(PROFILE_MESH_FLOOR_CALLS));
-	out += " mesh_floor_tri_tests=" + String::num_int64(avg(PROFILE_MESH_FLOOR_TRI_TESTS));
-	out += " mesh_floor_cp_scans=" + String::num_int64(avg(PROFILE_MESH_FLOOR_CP_SCANS));
-	out += " mesh_floor_seg_scans=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEG_SCANS));
-	out += " mesh_floor_seed_calls=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEED_CALLS));
-	out += " mesh_floor_seed_hits=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEED_HITS));
-	out += " mesh_floor_rail_rejects=" + String::num_int64(avg(PROFILE_MESH_FLOOR_RAIL_REJECTS));
-	out += " mesh_floor_aabb_rejects=" + String::num_int64(avg(PROFILE_MESH_FLOOR_AABB_REJECTS));
-	out += " mesh_floor_projection_misses=" + String::num_int64(avg(PROFILE_MESH_FLOOR_PROJECTION_MISSES));
-	out += " mesh_floor_face_projection_hits=" + String::num_int64(avg(PROFILE_MESH_FLOOR_FACE_PROJECTION_HITS));
-	out += " mesh_floor_smooth_projection_hits=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SMOOTH_PROJECTION_HITS));
-	out += " mesh_floor_best_dist_rejects=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BEST_DIST_REJECTS));
-	out += " mesh_floor_best_updates=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BEST_UPDATES));
-	out += " mesh_cast_calls=" + String::num_int64(avg(PROFILE_MESH_CAST_CALLS));
-	out += " mesh_cast_tri_tests=" + String::num_int64(avg(PROFILE_MESH_CAST_TRI_TESTS));
-	out += " mesh_cast_candidate_builds=" + String::num_int64(avg(PROFILE_MESH_CAST_CANDIDATE_BUILDS));
-	out += " mesh_cast_candidate_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_CAST_CANDIDATE_BVH_NODE_TESTS));
-	out += " mesh_cast_candidate_tris=" + String::num_int64(avg(PROFILE_MESH_CAST_CANDIDATE_TRIANGLES));
-	out += " mesh_floor_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BVH_NODE_TESTS));
-	out += " mesh_cast_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_CAST_BVH_NODE_TESTS));
-	out += " mesh_cast_surface_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_SURFACE_REJECTS));
-	out += " mesh_cast_aabb_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_AABB_REJECTS));
-	out += " mesh_cast_ray_parallel_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_RAY_PARALLEL_REJECTS));
-	out += " mesh_cast_backside_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BACKSIDE_REJECTS));
-	out += " mesh_cast_t_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_T_REJECTS));
-	out += " mesh_cast_bary_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BARY_REJECTS));
-	out += " mesh_cast_best_dist_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BEST_DIST_REJECTS));
-	out += " mesh_cast_hits=" + String::num_int64(avg(PROFILE_MESH_CAST_HITS));
-	auto floor_scope_name = [](int scope) -> const char * {
-		switch (scope) {
-			case TrackQueryScratch::MESH_FLOOR_SCOPE_MAIN_LOCAL:
-				return "main_local";
-			case TrackQueryScratch::MESH_FLOOR_SCOPE_MAIN_GLOBAL:
-				return "main_global";
-			case TrackQueryScratch::MESH_FLOOR_SCOPE_SUSPENSION:
-				return "suspension";
-			default:
-				return "unknown";
-		}
-	};
-	for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
-		const uint64_t calls = mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_CALLS] / static_cast<uint64_t>(count);
-		if (calls == 0) {
-			continue;
-		}
-		const char *name = floor_scope_name(scope);
-		const String prefix = String(" floor_") + String(name);
-		out += prefix + String("_calls=") + String::num_int64(static_cast<int64_t>(calls));
-		out += prefix + String("_tri=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_TRI_TESTS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_bvh=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_NODE_TESTS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_seed=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SEED_HITS] / static_cast<uint64_t>(count))) + String("/") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SEED_CALLS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_rail=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_RAIL_REJECTS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_aabb=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_AABB_REJECTS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_projmiss=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_PROJECTION_MISSES] / static_cast<uint64_t>(count)));
-		out += prefix + String("_face=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_smooth=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_smooth_retry=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SMOOTH_RETRY_QUERIES] / static_cast<uint64_t>(count)));
-		out += prefix + String("_bestrej=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_bestupd=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_UPDATES] / static_cast<uint64_t>(count)));
-		out += prefix + String("_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_QUERY_US] / static_cast<uint64_t>(count)));
-		out += prefix + String("_scan_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SCAN_US] / static_cast<uint64_t>(count)));
-		out += prefix + String("_smooth_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FINAL_SMOOTH_US] / static_cast<uint64_t>(count)));
-		out += prefix + String("_smooth_out=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_leaf=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_LEAF_VISITS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_leaf_tri=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_LEAF_TRIANGLES] / static_cast<uint64_t>(count)));
-		out += prefix + String("_inner=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_INTERIOR_VISITS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_child_tests=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_CHILD_TESTS] / static_cast<uint64_t>(count)));
-		out += prefix + String("_child_push=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_CHILD_PUSHES] / static_cast<uint64_t>(count)));
-		out += prefix + String("_stack_max=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_STACK_MAX] / static_cast<uint64_t>(count)));
-	}
-	return out;
-}
-
-void GameSim::record_render_profile_sample(const uint32_t sample[RENDER_PROFILE_FIELD_COUNT])
-{
-	if (render_profile_count == PROFILE_WINDOW_TICKS) {
-		for (int i = 0; i < RENDER_PROFILE_FIELD_COUNT; ++i) {
-			render_profile_sums[i] -= render_profile_samples[render_profile_cursor][i];
-		}
-	} else {
-		render_profile_count += 1;
-	}
-
-	for (int i = 0; i < RENDER_PROFILE_FIELD_COUNT; ++i) {
-		render_profile_samples[render_profile_cursor][i] = sample[i];
-		render_profile_sums[i] += sample[i];
-	}
-	render_profile_cursor = (render_profile_cursor + 1) % PROFILE_WINDOW_TICKS;
+	return "MXT_PHASE_PROFILE_DISABLED";
 }
 
 String GameSim::get_render_profile_string() const
 {
-	const int count = render_profile_count > 0 ? render_profile_count : 1;
-	auto avg = [&](int field) -> int64_t {
-		return static_cast<int64_t>(render_profile_sums[field] / static_cast<uint64_t>(count));
-	};
-
-	String out = "MXT_RENDER_AVG_US frames=" + String::num_int64(render_profile_count);
-	out += " total=" + String::num_int64(avg(RENDER_PROFILE_TOTAL));
-	out += " get_children=" + String::num_int64(avg(RENDER_PROFILE_GET_CHILDREN));
-	out += " visual_apply=" + String::num_int64(avg(RENDER_PROFILE_VISUAL_APPLY));
-	out += " cpu_total=" + String::num_int64(avg(RENDER_PROFILE_CPU_TOTAL));
-	out += " cpu_build_obs=" + String::num_int64(avg(RENDER_PROFILE_CPU_BUILD_OBS));
-	out += " cpu_submit=" + String::num_int64(avg(RENDER_PROFILE_CPU_SUBMIT));
-	out += " sparks=" + String::num_int64(avg(RENDER_PROFILE_SPARKS));
-	out += " debug_draw=" + String::num_int64(avg(RENDER_PROFILE_DEBUG_DRAW));
-	out += " vis_cars=" + String::num_int64(avg(RENDER_PROFILE_VIS_CARS));
-	return out;
+	return "MXT_RENDER_PROFILE_DISABLED";
 }
 
 int GameSim::get_player_race_place(int player_id) const
@@ -2488,18 +2220,15 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		return;
 	}
 
-	auto start = std::chrono::high_resolution_clock::now();
 	VehicleTickSoA& soa = vehicle_tick_soa;
 	PhysicsCarSoA& first_shard = *cars[0].soa;
 	PhysicsCarSoA* car_shards = first_shard.shards ? first_shard.shards : &first_shard;
 	const int car_shard_count = first_shard.shards ? first_shard.shard_count : 1;
 	const int sim_lane_count = first_shard.total_lane_count > 0 ? first_shard.total_lane_count : first_shard.lane_count;
 	const bool parallel_vehicle_shards = num_cars >= 16 && car_shard_count == VEHICLE_WORKER_COUNT;
-	const int active_vehicle_lanes = parallel_vehicle_shards ? std::min(car_shard_count, VEHICLE_WORKER_COUNT) : 1;
 	ensure_vehicle_tick_soa_capacity(sim_lane_count);
 	int buf_index = tick % INPUT_BUFFER_LEN;
 	PlayerInput* slot = input_buffer + buf_index * num_cars;
-	auto phase_start = std::chrono::high_resolution_clock::now();
 
 	float lead_distance = 0.0f;
 	for (int i = 0; i < num_cars; ++i) {
@@ -2561,79 +2290,19 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.inputs[i] = PlayerInput::from_neutral();
 		soa.pending_s_boost_sparks[i] = 0;
 	}
-	auto now = std::chrono::high_resolution_clock::now();
-	soa.prof_input_us = elapsed_us(phase_start, now);
 
-	soa.prof_prepare_floor_us = 0;
-	soa.prof_project_us = 0;
-	soa.prof_steer_susp_us = 0;
-	soa.prof_linear_us = 0;
-	soa.prof_integrate_us = 0;
-	soa.prof_mesh_floor_calls = 0;
-	soa.prof_mesh_floor_tri_tests = 0;
-	soa.prof_mesh_floor_checkpoint_scans = 0;
-	soa.prof_mesh_floor_segment_scans = 0;
-	soa.prof_mesh_floor_seed_calls = 0;
-	soa.prof_mesh_floor_seed_hits = 0;
-	soa.prof_mesh_floor_rail_rejects = 0;
-	soa.prof_mesh_floor_aabb_rejects = 0;
-	soa.prof_mesh_floor_projection_misses = 0;
-	soa.prof_mesh_floor_face_projection_hits = 0;
-	soa.prof_mesh_floor_smooth_projection_hits = 0;
-	soa.prof_mesh_floor_best_dist_rejects = 0;
-	soa.prof_mesh_floor_best_updates = 0;
-	soa.prof_mesh_cast_calls = 0;
-	soa.prof_mesh_cast_tri_tests = 0;
-	soa.prof_mesh_cast_candidate_builds = 0;
-	soa.prof_mesh_cast_candidate_bvh_node_tests = 0;
-	soa.prof_mesh_cast_candidate_triangles = 0;
-	soa.prof_mesh_floor_bvh_node_tests = 0;
-	soa.prof_mesh_cast_bvh_node_tests = 0;
-	soa.prof_mesh_cast_surface_rejects = 0;
-	soa.prof_mesh_cast_aabb_rejects = 0;
-	soa.prof_mesh_cast_ray_parallel_rejects = 0;
-	soa.prof_mesh_cast_backside_rejects = 0;
-	soa.prof_mesh_cast_t_rejects = 0;
-	soa.prof_mesh_cast_bary_rejects = 0;
-	soa.prof_mesh_cast_best_dist_rejects = 0;
-	soa.prof_mesh_cast_hits = 0;
-	std::memset(soa.prof_mesh_floor_profile, 0, sizeof(soa.prof_mesh_floor_profile));
-	uint32_t lane_prepare_floor_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t lane_project_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t lane_steer_susp_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t lane_linear_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t lane_integrate_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t lane_collision_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_response_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_checkpoints_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_sparks_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_sample_old_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_corners_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_apply_response_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_project_speed_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_visual_geom_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_damage_tail_us[VEHICLE_WORKER_COUNT] = {};
-	uint32_t post_total_us[VEHICLE_WORKER_COUNT] = {};
-
-	auto lane_group_start = std::chrono::high_resolution_clock::now();
 	run_vehicle_lanes(car_shard_count, parallel_vehicle_shards, [&](int lane, VehicleLaneGroup& group) {
 		PhysicsCarSoA& car_soa = car_shards[lane];
 		const int global_start = car_soa.global_start;
 		TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
-		track_scratch.reset_mesh_query_profile();
+		track_scratch.reset_mesh_query();
 
 		begin_vehicle_tick_soa(car_soa, cars + global_start,
 			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count);
 		group.sync();
 
-		uint32_t prepare_floor_us = 0;
-		uint32_t project_us = 0;
-		uint32_t steer_susp_us = 0;
-		uint32_t linear_us = 0;
-		uint32_t integrate_us = 0;
 		begin_vehicle_motion_phased_soa(car_soa, cars + global_start,
-			soa.inputs + global_start, car_soa.count, track_scratch, prepare_floor_us);
-		lane_prepare_floor_us[lane] = prepare_floor_us;
+			soa.inputs + global_start, car_soa.count, track_scratch);
 		group.sync();
 
 		if (lane == 0) {
@@ -2641,154 +2310,30 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		}
 		group.sync();
 
-		finish_vehicle_motion_phased_soa(car_soa, cars + global_start, car_soa.count,
-			project_us, steer_susp_us, linear_us, integrate_us);
-		lane_project_us[lane] = project_us;
-		lane_steer_susp_us[lane] = steer_susp_us;
-		lane_linear_us[lane] = linear_us;
-		lane_integrate_us[lane] = integrate_us;
+		finish_vehicle_motion_phased_soa(car_soa, cars + global_start, car_soa.count);
 		group.sync();
 
 		finish_vehicle_tick_soa(car_soa, car_soa.count);
 		group.sync();
 
 		if (lane == 0) {
-			auto collision_start = std::chrono::high_resolution_clock::now();
 			collide_vehicles_broadphase(*this, cars, num_cars,
 				soa.collision_indices,
 				soa.collision_min_x, soa.collision_max_x,
 				soa.collision_min_y, soa.collision_max_y,
 				soa.collision_min_z, soa.collision_max_z);
-			auto collision_end = std::chrono::high_resolution_clock::now();
-			lane_collision_us[lane] = elapsed_us(collision_start, collision_end);
 		}
 		group.sync();
 
-		uint32_t response_us = 0;
-		uint32_t checkpoints_us = 0;
-		uint32_t sparks_us = 0;
-		uint32_t sample_old_us = 0;
-		uint32_t corners_us = 0;
-		uint32_t apply_response_us = 0;
-		uint32_t project_speed_us = 0;
-		uint32_t visual_geom_us = 0;
-		uint32_t damage_tail_us = 0;
 		post_vehicle_tick_soa(car_soa, cars + global_start,
-			soa.pending_s_boost_sparks + global_start, car_soa.count, track_scratch,
-			response_us, checkpoints_us, sparks_us,
-			sample_old_us, corners_us, apply_response_us,
-			project_speed_us, visual_geom_us, damage_tail_us);
-		post_response_us[lane] = response_us;
-		post_checkpoints_us[lane] = checkpoints_us;
-		post_sparks_us[lane] = sparks_us;
-		post_sample_old_us[lane] = sample_old_us;
-		post_corners_us[lane] = corners_us;
-		post_apply_response_us[lane] = apply_response_us;
-		post_project_speed_us[lane] = project_speed_us;
-		post_visual_geom_us[lane] = visual_geom_us;
-		post_damage_tail_us[lane] = damage_tail_us;
-		post_total_us[lane] = response_us + checkpoints_us + sparks_us;
+			soa.pending_s_boost_sparks + global_start, car_soa.count, track_scratch);
 	});
-	now = std::chrono::high_resolution_clock::now();
-	const uint32_t lane_group_us = elapsed_us(lane_group_start, now);
-	soa.prof_lane_group_us = lane_group_us;
-	soa.prof_lanes = static_cast<uint32_t>(active_vehicle_lanes);
-
-	soa.prof_begin_us = 0;
-	for (int lane = 0; lane < car_shard_count; ++lane) {
-		soa.prof_prepare_floor_us = std::max(soa.prof_prepare_floor_us, lane_prepare_floor_us[lane]);
-		soa.prof_project_us = std::max(soa.prof_project_us, lane_project_us[lane]);
-		soa.prof_steer_susp_us = std::max(soa.prof_steer_susp_us, lane_steer_susp_us[lane]);
-		soa.prof_linear_us = std::max(soa.prof_linear_us, lane_linear_us[lane]);
-		soa.prof_integrate_us = std::max(soa.prof_integrate_us, lane_integrate_us[lane]);
-		const TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
-		soa.prof_mesh_floor_calls += track_scratch.mesh_floor_calls;
-		soa.prof_mesh_floor_tri_tests += track_scratch.mesh_floor_tri_tests;
-		soa.prof_mesh_floor_checkpoint_scans += track_scratch.mesh_floor_checkpoint_scans;
-		soa.prof_mesh_floor_segment_scans += track_scratch.mesh_floor_segment_scans;
-		soa.prof_mesh_floor_seed_calls += track_scratch.mesh_floor_seed_calls;
-		soa.prof_mesh_floor_seed_hits += track_scratch.mesh_floor_seed_hits;
-		soa.prof_mesh_floor_rail_rejects += track_scratch.mesh_floor_rail_rejects;
-		soa.prof_mesh_floor_aabb_rejects += track_scratch.mesh_floor_aabb_rejects;
-		soa.prof_mesh_floor_projection_misses += track_scratch.mesh_floor_projection_misses;
-		soa.prof_mesh_floor_face_projection_hits += track_scratch.mesh_floor_face_projection_hits;
-		soa.prof_mesh_floor_smooth_projection_hits += track_scratch.mesh_floor_smooth_projection_hits;
-		soa.prof_mesh_floor_best_dist_rejects += track_scratch.mesh_floor_best_dist_rejects;
-		soa.prof_mesh_floor_best_updates += track_scratch.mesh_floor_best_updates;
-		soa.prof_mesh_cast_calls += track_scratch.mesh_cast_calls;
-		soa.prof_mesh_cast_tri_tests += track_scratch.mesh_cast_tri_tests;
-		soa.prof_mesh_cast_candidate_builds += track_scratch.mesh_cast_candidate_builds;
-		soa.prof_mesh_cast_candidate_bvh_node_tests += track_scratch.mesh_cast_candidate_bvh_node_tests;
-		soa.prof_mesh_cast_candidate_triangles += track_scratch.mesh_cast_candidate_triangles;
-		soa.prof_mesh_floor_bvh_node_tests += track_scratch.mesh_floor_bvh_node_tests;
-		soa.prof_mesh_cast_bvh_node_tests += track_scratch.mesh_cast_bvh_node_tests;
-		soa.prof_mesh_cast_surface_rejects += track_scratch.mesh_cast_surface_rejects;
-		soa.prof_mesh_cast_aabb_rejects += track_scratch.mesh_cast_aabb_rejects;
-		soa.prof_mesh_cast_ray_parallel_rejects += track_scratch.mesh_cast_ray_parallel_rejects;
-		soa.prof_mesh_cast_backside_rejects += track_scratch.mesh_cast_backside_rejects;
-		soa.prof_mesh_cast_t_rejects += track_scratch.mesh_cast_t_rejects;
-		soa.prof_mesh_cast_bary_rejects += track_scratch.mesh_cast_bary_rejects;
-		soa.prof_mesh_cast_best_dist_rejects += track_scratch.mesh_cast_best_dist_rejects;
-		soa.prof_mesh_cast_hits += track_scratch.mesh_cast_hits;
-		for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
-			const TrackQueryScratch::MeshFloorProfileCounters &src = track_scratch.mesh_floor_profile[scope];
-			uint32_t *dst = soa.prof_mesh_floor_profile[scope];
-			dst[MESH_FLOOR_PROFILE_CALLS] += src.calls;
-			dst[MESH_FLOOR_PROFILE_TRI_TESTS] += src.tri_tests;
-			dst[MESH_FLOOR_PROFILE_BVH_NODE_TESTS] += src.bvh_node_tests;
-			dst[MESH_FLOOR_PROFILE_SEED_CALLS] += src.seed_calls;
-			dst[MESH_FLOOR_PROFILE_SEED_HITS] += src.seed_hits;
-			dst[MESH_FLOOR_PROFILE_RAIL_REJECTS] += src.rail_rejects;
-			dst[MESH_FLOOR_PROFILE_AABB_REJECTS] += src.aabb_rejects;
-			dst[MESH_FLOOR_PROFILE_PROJECTION_MISSES] += src.projection_misses;
-			dst[MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS] += src.face_projection_hits;
-			dst[MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS] += src.smooth_projection_hits;
-			dst[MESH_FLOOR_PROFILE_SMOOTH_RETRY_QUERIES] += src.smooth_retry_queries;
-			dst[MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] += src.best_dist_rejects;
-			dst[MESH_FLOOR_PROFILE_BEST_UPDATES] += src.best_updates;
-			dst[MESH_FLOOR_PROFILE_QUERY_US] += src.query_us;
-			dst[MESH_FLOOR_PROFILE_SCAN_US] += src.scan_us;
-			dst[MESH_FLOOR_PROFILE_FINAL_SMOOTH_US] += src.final_smooth_us;
-			dst[MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS] += src.final_smooth_outputs;
-			dst[MESH_FLOOR_PROFILE_BVH_LEAF_VISITS] += src.bvh_leaf_visits;
-			dst[MESH_FLOOR_PROFILE_BVH_LEAF_TRIANGLES] += src.bvh_leaf_triangles;
-			dst[MESH_FLOOR_PROFILE_BVH_INTERIOR_VISITS] += src.bvh_interior_visits;
-			dst[MESH_FLOOR_PROFILE_BVH_CHILD_TESTS] += src.bvh_child_tests;
-			dst[MESH_FLOOR_PROFILE_BVH_CHILD_PUSHES] += src.bvh_child_pushes;
-			dst[MESH_FLOOR_PROFILE_BVH_STACK_MAX] = std::max(dst[MESH_FLOOR_PROFILE_BVH_STACK_MAX], src.bvh_stack_max);
-		}
-	}
-
-	soa.prof_collision_us = lane_collision_us[0];
-	soa.prof_post_us = 0;
-	soa.prof_post_response_us = 0;
-	soa.prof_post_checkpoints_us = 0;
-	soa.prof_post_sparks_us = 0;
-	soa.prof_post_sample_old_us = 0;
-	soa.prof_post_corners_us = 0;
-	soa.prof_post_apply_response_us = 0;
-	soa.prof_post_project_speed_us = 0;
-	soa.prof_post_visual_geom_us = 0;
-	soa.prof_post_damage_tail_us = 0;
-	for (int shard = 0; shard < car_shard_count; ++shard) {
-		soa.prof_post_us = std::max(soa.prof_post_us, post_total_us[shard]);
-		soa.prof_post_response_us = std::max(soa.prof_post_response_us, post_response_us[shard]);
-		soa.prof_post_checkpoints_us = std::max(soa.prof_post_checkpoints_us, post_checkpoints_us[shard]);
-		soa.prof_post_sparks_us = std::max(soa.prof_post_sparks_us, post_sparks_us[shard]);
-		soa.prof_post_sample_old_us = std::max(soa.prof_post_sample_old_us, post_sample_old_us[shard]);
-		soa.prof_post_corners_us = std::max(soa.prof_post_corners_us, post_corners_us[shard]);
-		soa.prof_post_apply_response_us = std::max(soa.prof_post_apply_response_us, post_apply_response_us[shard]);
-		soa.prof_post_project_speed_us = std::max(soa.prof_post_project_speed_us, post_project_speed_us[shard]);
-		soa.prof_post_visual_geom_us = std::max(soa.prof_post_visual_geom_us, post_visual_geom_us[shard]);
-		soa.prof_post_damage_tail_us = std::max(soa.prof_post_damage_tail_us, post_damage_tail_us[shard]);
-	}
 	for (int i = 0; i < num_cars; i++) {
 		if (soa.pending_s_boost_sparks[i] > 0) {
 			emit_super_sparks_from_car(cars[i], soa.pending_s_boost_sparks[i]);
 		}
 	}
 
-	phase_start = now;
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
@@ -2818,8 +2363,6 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 
 	process_pending_ko_events();
 	update_super_sparks();
-	now = std::chrono::high_resolution_clock::now();
-	soa.prof_misc_us = elapsed_us(phase_start, now);
 
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -2835,40 +2378,6 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	//	}
 	//}
 	save_state();
-	auto end = std::chrono::high_resolution_clock::now();
-	soa.prof_total_us = elapsed_us(start, end);
-	record_phase_profile_sample();
-#if 0
-	if ((tick % 120) == 0) {
-		UtilityFunctions::print("MXT_PHASE_US total=", static_cast<int64_t>(soa.prof_total_us),
-			" input=", static_cast<int64_t>(soa.prof_input_us),
-			" begin=", static_cast<int64_t>(soa.prof_begin_us),
-			" prepare_floor=", static_cast<int64_t>(soa.prof_prepare_floor_us),
-			" project=", static_cast<int64_t>(soa.prof_project_us),
-			" steer_susp=", static_cast<int64_t>(soa.prof_steer_susp_us),
-			" linear=", static_cast<int64_t>(soa.prof_linear_us),
-			" integrate=", static_cast<int64_t>(soa.prof_integrate_us),
-			" collision=", static_cast<int64_t>(soa.prof_collision_us),
-			" post=", static_cast<int64_t>(soa.prof_post_us),
-			" post_response=", static_cast<int64_t>(soa.prof_post_response_us),
-			" post_checkpoints=", static_cast<int64_t>(soa.prof_post_checkpoints_us),
-			" post_sparks=", static_cast<int64_t>(soa.prof_post_sparks_us),
-			" post_sample_old=", static_cast<int64_t>(soa.prof_post_sample_old_us),
-			" post_corners=", static_cast<int64_t>(soa.prof_post_corners_us),
-			" post_apply_response=", static_cast<int64_t>(soa.prof_post_apply_response_us),
-			" post_project_speed=", static_cast<int64_t>(soa.prof_post_project_speed_us),
-			" post_visual_geom=", static_cast<int64_t>(soa.prof_post_visual_geom_us),
-			" post_damage_tail=", static_cast<int64_t>(soa.prof_post_damage_tail_us),
-			" misc=", static_cast<int64_t>(soa.prof_misc_us),
-			" lane_group=", static_cast<int64_t>(soa.prof_lane_group_us),
-			" lanes=", static_cast<int64_t>(soa.prof_lanes));
-	}
-#endif
-
-	//auto elapsed = std::chrono::high_resolution_clock::now() - start;
-	//long long microseconds = std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count();
-	//godot::Object* dd2d = godot::Engine::get_singleton()->get_singleton("DebugDraw2D");
-	//dd2d->call("set_text", "frame time us", microseconds);
 	
 	
 	tick += 1;
@@ -2931,12 +2440,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (Engine::get_singleton()->is_editor_hint()) return;
 
 	tick = 0;
-	std::memset(profile_samples, 0, sizeof(profile_samples));
-	std::memset(profile_sums, 0, sizeof(profile_sums));
-	std::memset(mesh_floor_profile_samples, 0, sizeof(mesh_floor_profile_samples));
-	std::memset(mesh_floor_profile_sums, 0, sizeof(mesh_floor_profile_sums));
-	profile_cursor = 0;
-	profile_count = 0;
 	race_events.clear();
 
 	int32_t buffer_size = lvldat_buf->get_size();
@@ -2994,7 +2497,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	uint32_t segment_count = lvldat_buf->get_u32();
 	uint32_t trigger_count = lvldat_buf->get_u32();
 	uint32_t mesh_collision_triangle_count = lvldat_buf->get_u32();
-	UtilityFunctions::print(String("MXT_LOAD_DEBUG header ver="), version_string, String(" cp="), checkpoint_count, String(" seg="), segment_count, String(" trig="), trigger_count, String(" mesh_tri="), mesh_collision_triangle_count);
 
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
@@ -3078,11 +2580,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	for (int seg = 0; seg < segment_count; seg++)
 	{
-		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_begin "), seg, String(" pos="), lvldat_buf->get_position());
 		int segment_index = (int)lvldat_buf->get_u32();
 		int road_type = (int)lvldat_buf->get_u32();
 		current_track->segments[seg].analytic_collision_enabled = lvldat_buf->get_u32() != 0;
-		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_type idx="), segment_index, String(" road="), road_type);
 
 		// what road shape? //
 
@@ -3192,7 +2692,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		int pos = lvldat_buf->get_position();
 		int num_keyframes = static_cast<int>(lvldat_buf->get_u32());
 		lvldat_buf->seek(pos);
-		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_keys "), seg, String(" keys="), num_keyframes, String(" pos="), pos);
       // 1) allocate the SoA object itself on your heap
 		{
 			uintptr_t addr = reinterpret_cast<uintptr_t>(level_data.heap_allocation);
@@ -3325,7 +2824,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 		}
 		current_track->segments[seg].bounds.grow_by(5.f);
-		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_done "), seg, String(" len="), current_track->segments[seg].segment_length);
 		current_track->segments[seg].checkpoint_start = -1;
 		current_track->segments[seg].checkpoint_run_length = 0;
 		for (int i = 0; i < current_track->num_checkpoints; i++)
@@ -3344,7 +2842,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->minimum_y -= 250.0f;
 
 	if (trigger_count > 0) {
-		UtilityFunctions::print(String("MXT_LOAD_DEBUG triggers_begin pos="), lvldat_buf->get_position());
 		current_track->num_trigger_colliders = trigger_count;
 		current_track->trigger_colliders = level_data.allocate_array<TriggerCollider*>(trigger_count);
 		for (uint32_t t = 0; t < trigger_count; ++t) {
@@ -3433,14 +2930,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			if (tri.p1.y < current_track->minimum_y) current_track->minimum_y = tri.p1.y;
 			if (tri.p2.y < current_track->minimum_y) current_track->minimum_y = tri.p2.y;
 		}
-		UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_collision_loaded tri="), mesh_collision_triangle_count);
 		build_track_mesh_world_bvh(current_track, level_data);
 		build_track_mesh_floor_bvh(current_track, level_data);
 	}
 
 
 	int requested_cars = requested_cars_hint;
-	UtilityFunctions::print(String("MXT_LOAD_DEBUG cars_begin requested="), requested_cars);
 	PhysicsCarProperties* props_array = nullptr;
 	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
 	car_properties_array = props_array;
@@ -3465,7 +2960,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		TrackQueryScratch spawn_scratch;
 		for (int i = 0; i < num_cars; i++)
 		{
-			UtilityFunctions::print(String("MXT_LOAD_DEBUG car_begin "), i);
 			cars[i].soa->current_track[cars[i].soa_index] = current_track;
 			if (i < car_prop_buffers.size()) {
 				godot::PackedByteArray arr = car_prop_buffers[i];
@@ -3479,7 +2973,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				cars[i].soa->m_accel_setting[cars[i].soa_index] = accel_settings[i];
 			}
 			cars[i].initialize_machine();
-			UtilityFunctions::print(String("MXT_LOAD_DEBUG car_initialized "), i);
 
                 // Determine spawn transform at the end of the last track segment
 			int seg_idx = current_track->num_segments - 1;
@@ -3505,9 +2998,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			float t_x = remap_float(static_cast<float>(slot % columns), 0.0f, static_cast<float>(columns - 1), column_width_start, column_width_end);
 
 			SimTransform spawn_transform;
-			UtilityFunctions::print(String("MXT_LOAD_DEBUG spawn_sample seg="), seg_idx, String(" tx="), t_x, String(" ty="), t_y);
 			spawn_seg.road_shape->get_oriented_transform_at_time(spawn_transform, SimVec2(t_x, t_y));
-			UtilityFunctions::print(String("MXT_LOAD_DEBUG spawn_sample_done"));
 			spawn_transform.basis.orthonormalize();
 			spawn_transform.basis = spawn_transform.basis.rotated(spawn_transform.basis.get_column(1), Math_PI);
 			const SimVec3 spawn_up = spawn_transform.basis.get_column(1);
@@ -3533,7 +3024,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			PhysicsCarSoA *car_soa = cars[i].soa;
 			const int car_idx = cars[i].soa_index;
 			int spawn_checkpoint = current_track->get_best_checkpoint(spawn_transform.origin, spawn_scratch);
-			UtilityFunctions::print(String("MXT_LOAD_DEBUG spawn_checkpoint "), spawn_checkpoint);
 			if (spawn_checkpoint < 0) {
 				spawn_checkpoint = current_track->get_best_checkpoint(track_surface_pos, spawn_scratch);
 			}
@@ -3630,22 +3120,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		}
 
 		sim_started = true;
-#if 0
-		UtilityFunctions::print("finished constructing level!");
-		UtilityFunctions::print("level data size:");
-		UtilityFunctions::print(level_data.get_size());
-		UtilityFunctions::print("gamestate size:");
-		UtilityFunctions::print(gamestate_data.get_size());
-		UtilityFunctions::print("trigger objects:");
-		UtilityFunctions::print(trigger_count);
-#endif
 
 		if (!car_node_container) {
-			UtilityFunctions::print("car_node_container is null");
 			return;
 		}
 		if (car_node_container == nullptr) {
-			UtilityFunctions::print("container is null");
 			return;
 		}
 	};
@@ -4811,16 +4290,6 @@ void GameSim::update_super_spark_visuals()
 }
 
 	void GameSim::render_gamesim() {
-		auto render_start = std::chrono::high_resolution_clock::now();
-		uint32_t render_get_children_us = 0;
-		uint32_t render_visual_apply_us = 0;
-		uint32_t render_cpu_total_us = 0;
-		uint32_t render_cpu_build_obs_us = 0;
-		uint32_t render_cpu_submit_us = 0;
-		uint32_t render_sparks_us = 0;
-		uint32_t render_debug_draw_us = 0;
-		int render_vis_car_count = 0;
-
 		if (!sim_started || !car_node_container || !cars) {
 			return;
 		}
@@ -4829,16 +4298,11 @@ void GameSim::update_super_spark_visuals()
 			return;
 		}
 
-		auto phase_start = std::chrono::high_resolution_clock::now();
 		TypedArray<godot::Node> vis_cars = car_node_container->get_children();
-		auto phase_end = std::chrono::high_resolution_clock::now();
-		render_get_children_us = elapsed_us(phase_start, phase_end);
 		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
-		render_vis_car_count = vis_car_count;
 		if (static_cast<int>(render_vehicle_effect_refs.size()) != vis_car_count) {
 			cache_native_visual_effect_nodes();
 		}
-		phase_start = std::chrono::high_resolution_clock::now();
 		update_render_visual_snapshots(vis_car_count);
 		Engine* engine = Engine::get_singleton();
 		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
@@ -4854,22 +4318,10 @@ void GameSim::update_super_spark_visuals()
 				vis_car->callv("apply_sim_state", local_visual_args);
 			}
 		}
-		phase_end = std::chrono::high_resolution_clock::now();
-		render_visual_apply_us = elapsed_us(phase_start, phase_end);
 		if (car_player_ids && car_is_cpu) {
-			auto cpu_start = std::chrono::high_resolution_clock::now();
-			auto cpu_build_start = std::chrono::high_resolution_clock::now();
 			update_native_cpu_drivers();
-			auto cpu_build_end = std::chrono::high_resolution_clock::now();
-			render_cpu_build_obs_us = elapsed_us(cpu_build_start, cpu_build_end);
-			auto cpu_end = std::chrono::high_resolution_clock::now();
-			render_cpu_total_us = elapsed_us(cpu_start, cpu_end);
 		}
-		phase_start = std::chrono::high_resolution_clock::now();
 		update_super_spark_visuals();
-		phase_end = std::chrono::high_resolution_clock::now();
-		render_sparks_us = elapsed_us(phase_start, phase_end);
-		phase_start = std::chrono::high_resolution_clock::now();
 		if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_CHECKPOINTS))
 		{
 			for (int i = 0; i < current_track->num_checkpoints; i++)
@@ -4961,21 +4413,6 @@ void GameSim::update_super_spark_visuals()
 			}
 		}
 	}
-		phase_end = std::chrono::high_resolution_clock::now();
-		render_debug_draw_us = elapsed_us(phase_start, phase_end);
-		auto render_end = std::chrono::high_resolution_clock::now();
-		uint32_t sample[RENDER_PROFILE_FIELD_COUNT] = {
-			elapsed_us(render_start, render_end),
-			render_get_children_us,
-			render_visual_apply_us,
-			render_cpu_total_us,
-			render_cpu_build_obs_us,
-			render_cpu_submit_us,
-			render_sparks_us,
-			render_debug_draw_us,
-			static_cast<uint32_t>(render_vis_car_count),
-		};
-		record_render_profile_sample(sample);
 }
 
 void GameSim::save_state()
