@@ -10,6 +10,20 @@
 
 struct CollisionData;
 
+struct TrackMeshCollisionTriangle
+{
+	SimVec3 p0;
+	SimVec3 p1;
+	SimVec3 p2;
+	SimVec3 n0;
+	SimVec3 n1;
+	SimVec3 n2;
+	SimAABB bounds;
+	uint32_t terrain;
+	int32_t segment_index;
+	int32_t checkpoint_index;
+};
+
 struct alignas(64) TrackQueryScratch
 {
 	static constexpr int MAX_TRIGGER_EVENTS = 4096;
@@ -48,6 +62,8 @@ public:
 	int num_checkpoints;
 	float minimum_y;
 	TrackSegment* segments;
+	TrackMeshCollisionTriangle* mesh_collision_triangles;
+	int num_mesh_collision_triangles;
 		CollisionCheckpoint* checkpoints;
 		int num_trigger_colliders;
 		TriggerCollider** trigger_colliders;

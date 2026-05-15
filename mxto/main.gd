@@ -614,11 +614,13 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 	pb.big_endian = false
 	var header_size := pb.get_u32()
 	var version := pb.get_string(4)
+	if version != "v0.7":
+		push_error("MXT track format hard-cutover failure: expected v0.7, got %s" % version)
+		return []
 	var cp_count := pb.get_u32()
 	var seg_count := pb.get_u32()
-	var trig_count := 0
-	if version != "v0.1" and version != "v0.2":
-		trig_count = pb.get_u32()
+	var trig_count := pb.get_u32()
+	var mesh_collision_triangle_count := pb.get_u32()
 
 	for i in range(cp_count):
 		pb.get_float() # pos start x
@@ -652,8 +654,7 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 			_skip_curve.call(); _skip_curve.call(); _skip_curve.call()
 		if road_type == 2 or road_type == 4 or road_type == 6:
 			_skip_curve.call()
-		# v0.4+: Open Rounded Square has an extra seam-rotation curve after openness
-		if road_type == 6 and version != "v0.1" and version != "v0.2" and version != "v0.3":
+		if road_type == 6:
 			_skip_curve.call()
 		var mod_count := pb.get_u32()
 		for m in range(mod_count):
@@ -667,11 +668,9 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 			_skip_curve.call()
 		for j in range(3):
 			_skip_curve.call()
-		if version != "v0.1":
-			pb.get_float(); pb.get_float()
-		if version != "v0.1" and version != "v0.2" and version != "v0.3" and version != "v0.4":
-			pb.get_float(); pb.get_float()
-			pb.get_float(); pb.get_float()
+		pb.get_float(); pb.get_float()
+		pb.get_float(); pb.get_float()
+		pb.get_float(); pb.get_float()
 
 	var out := []
 	for i in range(trig_count):
@@ -699,6 +698,8 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 		ext.y = pb.get_float()
 		ext.z = pb.get_float()
 		out.append({"type": t_type, "transform": tform, "extents": ext})
+	if mesh_collision_triangle_count > 0:
+		pb.seek(pb.get_position() + mesh_collision_triangle_count * (12 + 18 * 4))
 	return out
 
 func _on_car_settings_button_pressed() -> void:

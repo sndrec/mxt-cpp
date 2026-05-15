@@ -2289,17 +2289,21 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track = level_data.allocate_class<RaceTrack>();
 	current_track->num_trigger_colliders = 0;
 	current_track->trigger_colliders = nullptr;
+	current_track->num_mesh_collision_triangles = 0;
+	current_track->mesh_collision_triangles = nullptr;
 	current_track->lap_length = 0.0f;
 
 	uint32_t header_size = lvldat_buf->get_u32();
 	String version_string = lvldat_buf->get_string(4);
+	if (version_string != "v0.7") {
+		UtilityFunctions::printerr(String("MXT track format hard-cutover failure: expected v0.7, got "), version_string);
+		std::abort();
+	}
 	uint32_t checkpoint_count = lvldat_buf->get_u32();
 	uint32_t segment_count = lvldat_buf->get_u32();
-	uint32_t trigger_count = 0;
-	if (version_string != "v0.1" && version_string != "v0.2") {
-		trigger_count = lvldat_buf->get_u32();
-	}
-	UtilityFunctions::print(String("MXT_LOAD_DEBUG header ver="), version_string, String(" cp="), checkpoint_count, String(" seg="), segment_count, String(" trig="), trigger_count);
+	uint32_t trigger_count = lvldat_buf->get_u32();
+	uint32_t mesh_collision_triangle_count = lvldat_buf->get_u32();
+	UtilityFunctions::print(String("MXT_LOAD_DEBUG header ver="), version_string, String(" cp="), checkpoint_count, String(" seg="), segment_count, String(" trig="), trigger_count, String(" mesh_tri="), mesh_collision_triangle_count);
 
 	std::vector<uint32_t> neighboring_checkpoint_indices;
 
@@ -2433,12 +2437,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			rs->height = level_data.allocate_curve_from_buffer(lvldat_buf);
 			rs->radius = level_data.allocate_curve_from_buffer(lvldat_buf);
 			rs->openness = level_data.allocate_curve_from_buffer(lvldat_buf);
-                // Seam rotation curve added starting in v0.4
-			if (version_string != String("v0.1") && version_string != String("v0.2") && version_string != String("v0.3")) {
-				rs->open_rotation = level_data.allocate_curve_from_buffer(lvldat_buf);
-			} else {
-				rs->open_rotation = nullptr;
-			}
+			rs->open_rotation = level_data.allocate_curve_from_buffer(lvldat_buf);
 			current_track->segments[seg].road_shape = rs;
 			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
 		}
@@ -2573,26 +2572,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		soa->last_k = 0;
 		soa->precompute();
 
-		// 4) version-dependent rail heights/spans
-		if (version_string != "v0.1") {
-			current_track->segments[seg].left_rail_height  = lvldat_buf->get_float();
-			current_track->segments[seg].right_rail_height = lvldat_buf->get_float();
-		} else {
-			current_track->segments[seg].left_rail_height  = 5.0f;
-			current_track->segments[seg].right_rail_height = 5.0f;
-		}
-		if (version_string != "v0.1" && version_string != "v0.2" &&
-			version_string != "v0.3" && version_string != "v0.4") {
-			current_track->segments[seg].left_rail_start = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
-			current_track->segments[seg].left_rail_end = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
-			current_track->segments[seg].right_rail_start = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
-			current_track->segments[seg].right_rail_end = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
-		} else {
-			current_track->segments[seg].left_rail_start = 0.0f;
-			current_track->segments[seg].left_rail_end = 1.0f;
-			current_track->segments[seg].right_rail_start = 0.0f;
-			current_track->segments[seg].right_rail_end = 1.0f;
-		}
+		current_track->segments[seg].left_rail_height  = lvldat_buf->get_float();
+		current_track->segments[seg].right_rail_height = lvldat_buf->get_float();
+		current_track->segments[seg].left_rail_start = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
+		current_track->segments[seg].left_rail_end = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
+		current_track->segments[seg].right_rail_start = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
+		current_track->segments[seg].right_rail_end = std::clamp(static_cast<float>(lvldat_buf->get_float()), 0.0f, 1.0f);
 
 		// calc segment lengths //
 
@@ -2718,6 +2703,46 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			trig->half_extents = ext;
 			current_track->trigger_colliders[t] = trig;
 		}
+	}
+
+	if (mesh_collision_triangle_count > 0) {
+		current_track->num_mesh_collision_triangles = static_cast<int>(mesh_collision_triangle_count);
+		current_track->mesh_collision_triangles = level_data.allocate_array<TrackMeshCollisionTriangle>(mesh_collision_triangle_count);
+		for (uint32_t tri_index = 0; tri_index < mesh_collision_triangle_count; ++tri_index) {
+			TrackMeshCollisionTriangle &tri = current_track->mesh_collision_triangles[tri_index];
+			tri.terrain = lvldat_buf->get_u32();
+			tri.segment_index = static_cast<int32_t>(lvldat_buf->get_u32());
+			tri.checkpoint_index = static_cast<int32_t>(lvldat_buf->get_u32());
+
+			tri.p0.x = lvldat_buf->get_float();
+			tri.p0.y = lvldat_buf->get_float();
+			tri.p0.z = lvldat_buf->get_float();
+			tri.p1.x = lvldat_buf->get_float();
+			tri.p1.y = lvldat_buf->get_float();
+			tri.p1.z = lvldat_buf->get_float();
+			tri.p2.x = lvldat_buf->get_float();
+			tri.p2.y = lvldat_buf->get_float();
+			tri.p2.z = lvldat_buf->get_float();
+			tri.n0.x = lvldat_buf->get_float();
+			tri.n0.y = lvldat_buf->get_float();
+			tri.n0.z = lvldat_buf->get_float();
+			tri.n1.x = lvldat_buf->get_float();
+			tri.n1.y = lvldat_buf->get_float();
+			tri.n1.z = lvldat_buf->get_float();
+			tri.n2.x = lvldat_buf->get_float();
+			tri.n2.y = lvldat_buf->get_float();
+			tri.n2.z = lvldat_buf->get_float();
+
+			tri.bounds.position = tri.p0;
+			tri.bounds.size = SimVec3();
+			tri.bounds.expand_to(tri.p1);
+			tri.bounds.expand_to(tri.p2);
+			tri.bounds.grow_by(0.1f);
+			if (tri.p0.y < current_track->minimum_y) current_track->minimum_y = tri.p0.y;
+			if (tri.p1.y < current_track->minimum_y) current_track->minimum_y = tri.p1.y;
+			if (tri.p2.y < current_track->minimum_y) current_track->minimum_y = tri.p2.y;
+		}
+		UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_collision_loaded tri="), mesh_collision_triangle_count);
 	}
 
 

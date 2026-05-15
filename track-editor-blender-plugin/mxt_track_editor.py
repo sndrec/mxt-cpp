@@ -117,6 +117,31 @@ class MXTTriggerObject(PropertyGroup):
                            update=lambda self,ctx:_update_trigger_helper(self))
     checkpoint_index: IntProperty(name="Checkpoint", default=0, min=0)
 
+MESH_COLLISION_SURFACE_ITEMS = [
+    ('TRACK', "Track", "Drivable mesh surface"),
+    ('RAIL', "Rail", "Rail or wall mesh surface"),
+    ('RECHARGE', "Recharge", "Recharge terrain mesh surface"),
+    ('DIRT', "Dirt", "Dirt terrain mesh surface"),
+    ('ICE', "Ice", "Ice terrain mesh surface"),
+    ('LAVA', "Lava", "Lava terrain mesh surface"),
+    ('HOLE', "Hole", "Hole terrain mesh surface"),
+    ('DASH', "Dash", "Dash terrain mesh surface"),
+    ('JUMP', "Jump", "Jump terrain mesh surface"),
+]
+
+class MXTMeshCollisionProperties(PropertyGroup):
+    is_mxt_collision_mesh: BoolProperty(name="Export Mesh Collision", default=False)
+    surface_type: EnumProperty(
+        name="Surface",
+        items=MESH_COLLISION_SURFACE_ITEMS,
+        default='TRACK')
+    segment: PointerProperty(
+        name="Segment",
+        type=bpy.types.Object,
+        poll=lambda self,obj: (obj and getattr(obj, "mxt_road_overall_props", None) \
+            and obj.mxt_road_overall_props.is_mxt_road_segment_parent))
+    checkpoint_index: IntProperty(name="Checkpoint", default=-1, min=-1)
+
 class MXT_UL_Modulations(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
         layout.prop(item, "label", text="", emboss=False, icon='FCURVE')
@@ -2679,6 +2704,15 @@ class MXTRoad_PT_MainPanel(Panel):
                 box.prop(trig, "checkpoint_index")
         layout.separator()
 
+        if obj and obj.type == 'MESH' and getattr(obj, "mxt_mesh_collision_props", None):
+            mesh_collision_box = layout.box()
+            mesh_collision_box.label(text="Mesh Collision")
+            mesh_props = obj.mxt_mesh_collision_props
+            mesh_collision_box.prop(mesh_props, "is_mxt_collision_mesh")
+            mesh_collision_box.prop(mesh_props, "surface_type")
+            mesh_collision_box.prop(mesh_props, "segment")
+            mesh_collision_box.prop(mesh_props, "checkpoint_index")
+
         active_road_parent = get_active_mxt_road_segment_parent(context)
         if not active_road_parent:
             layout.label(text="Select an MXT Road Segment Parent or CP, or create new.")
@@ -4585,6 +4619,66 @@ def _quaternion_matrix_points(fc_quat):
     return pts
 
 
+def _pack_mesh_collision_triangles(context, seg_index):
+    import struct
+
+    terrain_map = {
+        'TRACK': 0,
+        'RAIL': 0x100,
+        'RECHARGE': 0x4,
+        'DIRT': 0x8,
+        'ICE': 0x40,
+        'LAVA': 0x20,
+        'HOLE': 0x200,
+        'DASH': 0x2,
+        'JUMP': 0x10,
+    }
+
+    depsgraph = context.evaluated_depsgraph_get()
+    mesh_data = bytearray()
+    tri_count = 0
+    for obj in bpy.data.objects:
+        props = getattr(obj, "mxt_mesh_collision_props", None)
+        if obj.type != 'MESH' or not props or not props.is_mxt_collision_mesh:
+            continue
+        if props.surface_type not in terrain_map:
+            raise RuntimeError(f"{obj.name} has unsupported mesh collision surface {props.surface_type}")
+
+        segment_index = -1
+        if props.segment:
+            if props.segment not in seg_index:
+                raise RuntimeError(f"{obj.name} references non-exported segment {props.segment.name}")
+            segment_index = seg_index[props.segment]
+
+        eval_obj = obj.evaluated_get(depsgraph)
+        mesh = eval_obj.to_mesh()
+        try:
+            mesh.calc_loop_triangles()
+            normal_matrix = obj.matrix_world.to_3x3().inverted().transposed()
+            terrain_flags = terrain_map[props.surface_type]
+            for loop_tri in mesh.loop_triangles:
+                loop_indices = list(loop_tri.loops)
+                if len(loop_indices) != 3:
+                    raise RuntimeError(f"{obj.name} produced a non-triangle loop triangle")
+                positions = []
+                normals = []
+                for loop_index in loop_indices:
+                    loop = mesh.loops[loop_index]
+                    vert = mesh.vertices[loop.vertex_index]
+                    positions.append(obj.matrix_world @ vert.co)
+                    normals.append((normal_matrix @ loop.normal).normalized())
+                mesh_data += struct.pack('<Iii', terrain_flags, segment_index, props.checkpoint_index)
+                for p in positions:
+                    mesh_data += struct.pack('<3f', p.x, p.y, p.z)
+                for n in normals:
+                    mesh_data += struct.pack('<3f', n.x, n.y, n.z)
+                tri_count += 1
+        finally:
+            eval_obj.to_mesh_clear()
+
+    return tri_count, mesh_data
+
+
 def _export_stage(context, filepath):
     import struct
     import os
@@ -4881,12 +4975,15 @@ def _export_stage(context, filepath):
             trigger_data += struct.pack('<3f', ext.x, ext.y, ext.z)
             trig_count += 1
 
-        header = struct.pack('<I4sIII', 0, b'v0.6', len(cp_list), len(seg_order), trig_count)
+        mesh_collision_triangle_count, mesh_collision_data = _pack_mesh_collision_triangles(context, seg_index)
+
+        header = struct.pack('<I4sIIII', 0, b'v0.7', len(cp_list), len(seg_order), trig_count, mesh_collision_triangle_count)
         header = struct.pack('<I', len(header)) + header[4:]
         f.write(header)
         f.write(data)
         f.write(seg_data)
         f.write(trigger_data)
+        f.write(mesh_collision_data)
 
     # Export preview meshes as OBJ
     obj_path = base_path + ".obj"
@@ -4992,6 +5089,7 @@ class MXTRoad_OT_ExportTrack(Operator):
 classes_to_register = (
     MXTSegmentRef,
     MXTTriggerObject,
+    MXTMeshCollisionProperties,
     MXTTrackSettings,
     MXT_UL_SegmentRefs,
     MXTRoad_OT_AddPrevSegment,
@@ -5036,6 +5134,7 @@ def register():
     bpy.types.Object.mxt_road_overall_props = PointerProperty(type=MXTRoad_RoadSegmentOverallProperties)
     bpy.types.Object.mxt_cp_data = PointerProperty(type=MXTRoad_ControlPointData)
     bpy.types.Object.mxt_line_handle_data = PointerProperty(type=MXTRoad_LineHandleData)
+    bpy.types.Object.mxt_mesh_collision_props = PointerProperty(type=MXTMeshCollisionProperties)
     bpy.types.Scene.mxt_track_settings = PointerProperty(type=MXTTrackSettings)
     handlers = bpy.app.handlers.depsgraph_update_post
     if mxt_on_depsgraph_update not in handlers: handlers.append(mxt_on_depsgraph_update)
@@ -5064,6 +5163,7 @@ def unregister():
     if mxt_on_depsgraph_update in handlers: handlers.remove(mxt_on_depsgraph_update)
     if hasattr(bpy.types.Object, "mxt_cp_data"): del bpy.types.Object.mxt_cp_data
     if hasattr(bpy.types.Object, "mxt_line_handle_data"): del bpy.types.Object.mxt_line_handle_data
+    if hasattr(bpy.types.Object, "mxt_mesh_collision_props"): del bpy.types.Object.mxt_mesh_collision_props
     if hasattr(bpy.types.Object, "mxt_road_overall_props"): del bpy.types.Object.mxt_road_overall_props
     if hasattr(bpy.types.Scene, "mxt_track_settings"): del bpy.types.Scene.mxt_track_settings
     for cls in reversed(classes_to_register): bpy.utils.unregister_class(cls)
