@@ -9,6 +9,7 @@
 #include "mxt_core/enums.h"
 #include <cmath>
 #include <algorithm>
+#include <cfloat>
 #include <cstdint>
 #include "mxt_core/debug.hpp"
 #include "mxt_core/math_utils.h"
@@ -710,6 +711,181 @@ void PhysicsCar::handle_machine_damage_and_visuals_tail()
 	}
 }
 
+static inline float safe_inverse_floor_scale(float scale)
+{
+	return fabsf(scale) > 0.00001f ? 1.0f / scale : 0.0f;
+}
+
+static bool ray_unit_circle_xy(const SimVec2 &p, const SimVec2 &dir, SimVec2 &out_hit)
+{
+	const float a = dir.length_squared();
+	if (a <= 0.0000001f) {
+		return false;
+	}
+	const float b = 2.0f * (p.x * dir.x + p.y * dir.y);
+	const float c = p.length_squared() - 1.0f;
+	const float disc = b * b - 4.0f * a * c;
+	if (disc < 0.0f) {
+		return false;
+	}
+	const float sqrt_disc = sqrtf(disc);
+	const float inv_2a = 0.5f / a;
+	const float t0 = (-b - sqrt_disc) * inv_2a;
+	const float t1 = (-b + sqrt_disc) * inv_2a;
+	float t = FLT_MAX;
+	if (t0 >= 0.0f) {
+		t = t0;
+	}
+	if (t1 >= 0.0f && t1 < t) {
+		t = t1;
+	}
+	if (t == FLT_MAX) {
+		return false;
+	}
+	out_hit = p + dir * t;
+	return true;
+}
+
+static inline void floor_consider_ray_hit(float t, const SimVec2 &hit, float &best_t, SimVec2 &best_hit)
+{
+	if (t >= 0.0f && t < best_t) {
+		best_t = t;
+		best_hit = hit;
+	}
+}
+
+static bool ray_rounded_rect_xy(const SimVec2 &p, const SimVec2 &dir, float width, float height, float radius, SimVec2 &out_hit)
+{
+	const float w2 = fabsf(width) * 0.5f;
+	const float h2 = fabsf(height) * 0.5f;
+	const float r = fminf(fmaxf(radius, 0.0f), fminf(w2, h2));
+	const float inner_w = fmaxf(w2 - r, 0.0f);
+	const float inner_h = fmaxf(h2 - r, 0.0f);
+	float best_t = FLT_MAX;
+	SimVec2 best_hit;
+
+	if (fabsf(dir.x) > 0.0000001f) {
+		float t = (w2 - p.x) / dir.x;
+		SimVec2 hit = p + dir * t;
+		if (hit.y >= -inner_h - 0.0001f && hit.y <= inner_h + 0.0001f) {
+			floor_consider_ray_hit(t, hit, best_t, best_hit);
+		}
+		t = (-w2 - p.x) / dir.x;
+		hit = p + dir * t;
+		if (hit.y >= -inner_h - 0.0001f && hit.y <= inner_h + 0.0001f) {
+			floor_consider_ray_hit(t, hit, best_t, best_hit);
+		}
+	}
+	if (fabsf(dir.y) > 0.0000001f) {
+		float t = (h2 - p.y) / dir.y;
+		SimVec2 hit = p + dir * t;
+		if (hit.x >= -inner_w - 0.0001f && hit.x <= inner_w + 0.0001f) {
+			floor_consider_ray_hit(t, hit, best_t, best_hit);
+		}
+		t = (-h2 - p.y) / dir.y;
+		hit = p + dir * t;
+		if (hit.x >= -inner_w - 0.0001f && hit.x <= inner_w + 0.0001f) {
+			floor_consider_ray_hit(t, hit, best_t, best_hit);
+		}
+	}
+	if (r > 0.0000001f) {
+		for (int sx = -1; sx <= 1; sx += 2) {
+			for (int sy = -1; sy <= 1; sy += 2) {
+				const SimVec2 center(inner_w * static_cast<float>(sx), inner_h * static_cast<float>(sy));
+				const SimVec2 rel = p - center;
+				const float a = dir.length_squared();
+				const float b = 2.0f * (rel.x * dir.x + rel.y * dir.y);
+				const float c = rel.length_squared() - r * r;
+				const float disc = b * b - 4.0f * a * c;
+				if (disc < 0.0f || a <= 0.0000001f) {
+					continue;
+				}
+				const float sqrt_disc = sqrtf(disc);
+				const float inv_2a = 0.5f / a;
+				const float roots[2] = {
+					(-b - sqrt_disc) * inv_2a,
+					(-b + sqrt_disc) * inv_2a,
+				};
+				for (int i = 0; i < 2; ++i) {
+					const float t = roots[i];
+					const SimVec2 hit = p + dir * t;
+					if (static_cast<float>(sx) * (hit.x - center.x) >= -0.0001f &&
+						static_cast<float>(sy) * (hit.y - center.y) >= -0.0001f) {
+						floor_consider_ray_hit(t, hit, best_t, best_hit);
+					}
+				}
+			}
+		}
+	}
+	if (best_t == FLT_MAX) {
+		return false;
+	}
+	out_hit = best_hit;
+	return true;
+}
+
+static bool project_machine_down_to_road_cross_section(
+	const TrackSegment &segment,
+	const RoadTransform &root,
+	const SimTransform &machine_transform,
+	const SimVec3 &machine_pos,
+	SimVec2 &road_t,
+	SimVec3 &spatial_t)
+{
+	const SimVec3 root_forward = root.t3d.basis.get_column(2);
+	const SimVec3 machine_up = machine_transform.basis.get_column(1);
+	const SimVec3 world_down = -machine_up.slide(root_forward);
+	if (world_down.length_squared() <= 0.000001f) {
+		return false;
+	}
+
+	const SimVec3 local_pos = root.t3d.xform_inv(machine_pos);
+	const SimVec3 local_down_unscaled = root.t3d.basis.xform_inv(world_down);
+	const SimVec2 p(
+		local_pos.x * safe_inverse_floor_scale(root.scale.x),
+		local_pos.y * safe_inverse_floor_scale(root.scale.y));
+	const SimVec2 dir(
+		local_down_unscaled.x * safe_inverse_floor_scale(root.scale.x),
+		local_down_unscaled.y * safe_inverse_floor_scale(root.scale.y));
+	if (dir.length_squared() <= 0.000001f) {
+		return false;
+	}
+
+	SimVec2 hit;
+	switch (segment.road_shape->shape_type) {
+		case ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE:
+		case ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN:
+			if (p.length_squared() > 1.0201f) {
+				return false;
+			}
+			if (!ray_unit_circle_xy(p, dir, hit)) {
+				return false;
+			}
+			break;
+		case ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT:
+		case ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN: {
+			RoadShapeRoundedRect *rect = static_cast<RoadShapeRoundedRect *>(segment.road_shape);
+			if (!ray_rounded_rect_xy(
+					p,
+					dir,
+					rect->width->sample(road_t.y),
+					rect->height->sample(road_t.y),
+					rect->radius->sample(road_t.y),
+					hit)) {
+				return false;
+			}
+			break;
+		}
+		default:
+			return false;
+	}
+
+	spatial_t.x = hit.x;
+	spatial_t.y = hit.y;
+	segment.road_shape->find_t_from_relative_pos(road_t, spatial_t);
+	return true;
+}
+
 bool PhysicsCar::find_floor_beneath_machine()
 {
 	soa->road_sample[soa_index].terrain = 0;
@@ -791,47 +967,20 @@ bool PhysicsCar::find_floor_beneath_machine()
 	//}
 	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0)
 	{	
-		if(rect)// && ((road_t_sample_raw.x > -0.25f && road_t_sample_raw.x < 0.25f) || (road_t_sample_raw.x > 0.75f || road_t_sample_raw.x < -0.75f)))
+		if(rect || pipe)
 		{
-			//DEBUG::disp_text("road_t_sample_raw", road_t_sample_raw);
-			//SimVec3 use_dir = (LOAD_VEC3(position_current) - root.t3d.origin);
 			sample_root();
-			SimVec3 flat_up = (LOAD_TRANSFORM(basis_physical).basis.get_column(1)).slide(root.t3d.basis.get_column(2)).normalized();
-			//if (use_dir.dot(flat_up) > 0.0f)
-			//{
-			//	use_dir *= -1.0f;
-			//}
-			soa->current_track[soa_index]->convert_point_to_road(
-				soa->current_checkpoint[soa_index],
-				root.t3d.origin - flat_up.normalized() * 2000.0f,
+			if (!project_machine_down_to_road_cross_section(
+				segment,
+				root,
+				LOAD_TRANSFORM(basis_physical),
+				LOAD_VEC3(position_current),
 				road_t_sample_raw,
-				spatial_t_sample,
-				nullptr,
-				&root,
-				&root_derivative);
-			root_sampled = road_t_sample_raw.x != -1000.0f;
-		}
-		if(pipe)
-		{
-			//DEBUG::disp_text("Spatial dist", spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y);
-			if (spatial_t_sample.x * spatial_t_sample.x + spatial_t_sample.y * spatial_t_sample.y > 1.01f)
-			{	
-				//DEBUG::disp_text("Outside pipe/rect!", spatial_t_sample);
+				spatial_t_sample)) {
 				soa->height_above_track[soa_index] = 0.0f;
 				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 				return false;
 			}
-			sample_root();
-			SimVec3 flat_up = ((LOAD_TRANSFORM(basis_physical).basis.get_column(1)).slide(root.t3d.basis.get_column(2))).normalized();
-			soa->current_track[soa_index]->convert_point_to_road(
-				soa->current_checkpoint[soa_index],
-				root.t3d.origin - flat_up * 45.0f,
-				road_t_sample_raw,
-				spatial_t_sample,
-				nullptr,
-				&root,
-				&root_derivative);
-			root_sampled = road_t_sample_raw.x != -1000.0f;
 		}
 	}
 	if (root_sampled) {
