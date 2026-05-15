@@ -58,24 +58,37 @@ func _init() -> void:
 	var frames_run := 0
 	var full_lap_count := 0
 	var min_lap_delta := 0.0
+	var max_lap_delta := 0.0
+	var min_lap_player := -1
+	var max_lap_player := -1
 	for frame in range(frames):
 		sim.tick_singleplayer(-1, neutral)
 		frames_run = frame + 1
 		if require_full_lap:
 			full_lap_count = 0
 			min_lap_delta = INF
+			max_lap_delta = -INF
+			min_lap_player = -1
+			max_lap_player = -1
 			for i in range(cars):
 				var distance := float(sim.get_player_lap_distance(player_ids[i]))
 				var delta := distance - start_distances[i]
-				min_lap_delta = minf(min_lap_delta, delta)
+				if delta < min_lap_delta:
+					min_lap_delta = delta
+					min_lap_player = player_ids[i]
+				if delta > max_lap_delta:
+					max_lap_delta = delta
+					max_lap_player = player_ids[i]
 				if delta >= lap_length:
 					full_lap_count += 1
 			if full_lap_count == cars:
 				break
 
 	if require_full_lap:
-		print("MXT_PROFILE_LAP_CHECK completed=", full_lap_count, " cars=", cars, " frames_run=", frames_run, " lap_length=", lap_length, " min_delta=", min_lap_delta)
+		print("MXT_PROFILE_LAP_CHECK completed=", full_lap_count, " cars=", cars, " frames_run=", frames_run, " lap_length=", lap_length, " min_delta=", min_lap_delta, " min_player=", min_lap_player, " min_lap=", sim.get_player_lap(min_lap_player), " max_delta=", max_lap_delta, " max_player=", max_lap_player, " max_lap=", sim.get_player_lap(max_lap_player))
 		if full_lap_count != cars:
+			print("MXT_PROFILE_MIN_PLAYER ", sim.get_player_debug_string(min_lap_player))
+			print("MXT_PROFILE_MAX_PLAYER ", sim.get_player_debug_string(max_lap_player))
 			push_error("profile_gamesim full-lap requirement was not met")
 			root.remove_child(sim)
 			sim.free()

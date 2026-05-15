@@ -323,6 +323,7 @@ namespace godot {
 		bool is_player_race_finished(int player_id) const;
 		double get_player_lap_distance(int player_id) const;
 		int get_player_lap(int player_id) const;
+		godot::String get_player_debug_string(int player_id) const;
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
 		godot::Array get_check_warning_candidates(int player_id) const;

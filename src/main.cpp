@@ -1254,6 +1254,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("is_player_race_finished", "player_id"), &GameSim::is_player_race_finished);
 	ClassDB::bind_method(D_METHOD("get_player_lap_distance", "player_id"), &GameSim::get_player_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
+	ClassDB::bind_method(D_METHOD("get_player_debug_string", "player_id"), &GameSim::get_player_debug_string);
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
 	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
 	ClassDB::bind_method(D_METHOD("get_check_warning_candidates", "player_id"), &GameSim::get_check_warning_candidates);
@@ -1729,6 +1730,35 @@ int GameSim::get_player_lap(int player_id) const
 		return static_cast<int>(car_soa.lap[lane]);
 	}
 	return 0;
+}
+
+godot::String GameSim::get_player_debug_string(int player_id) const
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return "missing cars";
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const SimVec3 pos = LOAD_INDEXED_VEC3(car_soa, position_current, lane);
+		const SimVec3 vel = LOAD_INDEXED_VEC3(car_soa, velocity, lane);
+		godot::String out = "id=" + godot::String::num_int64(player_id);
+		out += " cp=" + godot::String::num_int64(car_soa.current_checkpoint[lane]);
+		out += " frac=" + godot::String::num(car_soa.checkpoint_fraction[lane]);
+		out += " lap=" + godot::String::num_int64(car_soa.lap[lane]);
+		out += " dist=" + godot::String::num(compute_car_distance_along_track(cars[i]));
+		out += " pos=(" + godot::String::num(pos.x) + "," + godot::String::num(pos.y) + "," + godot::String::num(pos.z) + ")";
+		out += " vel=(" + godot::String::num(vel.x) + "," + godot::String::num(vel.y) + "," + godot::String::num(vel.z) + ")";
+		out += " speed=" + godot::String::num(car_soa.speed_kmh[lane]);
+		out += " h=" + godot::String::num(car_soa.height_above_track[lane]);
+		out += " state=0x" + godot::String::num_int64(car_soa.machine_state[lane], 16);
+		out += " terrain=0x" + godot::String::num_int64(car_soa.terrain_state[lane], 16);
+		return out;
+	}
+	return "missing player";
 }
 
 godot::Array GameSim::get_race_order()
