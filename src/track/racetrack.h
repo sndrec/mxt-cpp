@@ -1,5 +1,6 @@
 #pragma once
 
+#include "track/mesh_profile_config.h"
 #include "track/track_segment.h"
 #include "track/collision_checkpoint.h"
 #include "track/trigger_collider.h"
@@ -7,10 +8,6 @@
 #include <algorithm>
 #include <vector>
 #include <cstdint>
-
-#ifndef MXT_MESH_DEEP_PROFILE
-#define MXT_MESH_DEEP_PROFILE 0
-#endif
 
 struct CollisionData;
 

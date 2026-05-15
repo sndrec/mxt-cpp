@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import os
 import sys
-from SCons.Script import ARGUMENTS
 
 env = SConscript("godot-cpp/SConstruct")
 # For reference:
@@ -20,8 +19,6 @@ if env["platform"] == "windows":
     env.Append(CXXFLAGS=[
         '/fp:precise',  # Ensure safe floating-point math optimizations
     ])
-if ARGUMENTS.get("mesh_deep_profile", "no").lower() in ("1", "yes", "true", "on"):
-    env.Append(CPPDEFINES=[("MXT_MESH_DEEP_PROFILE", "1")])
 sources = []
 sources.append(Glob("src/*.cpp"))
 sources.append(Glob("src/mxt_core/*.cpp"))

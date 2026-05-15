@@ -1075,7 +1075,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 			sample_mesh_floor_with_seed(
 				nearest_hit,
 				LOAD_VEC3(position_current),
-				120.0f,
+				8.0f,
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				false,
@@ -1095,7 +1095,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 			sample_mesh_floor_with_seed(
 				hit,
 				LOAD_VEC3(position_current),
-				120.0f,
+				8.0f,
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				true,
@@ -2744,7 +2744,7 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 				track->sample_mesh_floor_fast(
 					hit,
 					p0_ws[lane],
-					160.0f,
+					8.0f,
 					CAST_FLAGS::WANTS_TRACK,
 					use_cp,
 					false,

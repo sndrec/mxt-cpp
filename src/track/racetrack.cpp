@@ -1318,17 +1318,7 @@ static bool triangle_ray_hit(
 	bool *out_backside_hit,
 	MeshCastRejectReason *out_reject_reason = nullptr)
 {
-	const SimVec3 edge0 = tri.p1 - tri.p0;
-	const SimVec3 edge1 = tri.p2 - tri.p0;
-	SimVec3 face_normal = edge0.cross(edge1);
-	const float face_len2 = face_normal.length_squared();
-	if (face_len2 <= 1.0e-8f) {
-		if (out_reject_reason) {
-			*out_reject_reason = MESH_CAST_REJECT_PARALLEL;
-		}
-		return false;
-	}
-	face_normal *= 1.0f / sqrtf(face_len2);
+	const SimVec3 &face_normal = tri.face_normal;
 	const float denom = ray.dot(face_normal);
 	if (fabsf(denom) <= 1.0e-7f) {
 		if (out_reject_reason) {
@@ -1353,24 +1343,11 @@ static bool triangle_ray_hit(
 	}
 
 	const SimVec3 hit = p0 + ray * t;
-	const SimVec3 v0 = tri.p1 - tri.p0;
-	const SimVec3 v1 = tri.p2 - tri.p0;
 	const SimVec3 v2 = hit - tri.p0;
-	const float d00 = v0.dot(v0);
-	const float d01 = v0.dot(v1);
-	const float d11 = v1.dot(v1);
-	const float d20 = v2.dot(v0);
-	const float d21 = v2.dot(v1);
-	const float denom_bary = d00 * d11 - d01 * d01;
-	if (fabsf(denom_bary) <= 1.0e-8f) {
-		if (out_reject_reason) {
-			*out_reject_reason = MESH_CAST_REJECT_BARY;
-		}
-		return false;
-	}
-	const float inv_denom = 1.0f / denom_bary;
-	const float v = (d11 * d20 - d01 * d21) * inv_denom;
-	const float w = (d00 * d21 - d01 * d20) * inv_denom;
+	const float d20 = v2.dot(tri.edge0);
+	const float d21 = v2.dot(tri.edge1);
+	const float v = (tri.projection_d11 * d20 - tri.projection_d01 * d21) * tri.projection_inv_denom;
+	const float w = (tri.projection_d00 * d21 - tri.projection_d01 * d20) * tri.projection_inv_denom;
 	const float u = 1.0f - v - w;
 	const float slop = -1.0e-4f;
 	if (u < slop || v < slop || w < slop) {
@@ -1394,10 +1371,7 @@ static bool triangle_ray_hit(
 
 static SimVec3 mesh_collision_smooth_normal(const TrackMeshCollisionTriangle &tri, float u, float v, float w, const SimVec3 &face_normal)
 {
-	SimVec3 n0 = tri.n0.normalized();
-	SimVec3 n1 = tri.n1.normalized();
-	SimVec3 n2 = tri.n2.normalized();
-	SimVec3 n = n0 * u + n1 * v + n2 * w;
+	SimVec3 n = tri.n0 * u + tri.n1 * v + tri.n2 * w;
 	if (n.length_squared() <= 1.0e-8f) {
 		return face_normal;
 	}
@@ -1406,13 +1380,10 @@ static SimVec3 mesh_collision_smooth_normal(const TrackMeshCollisionTriangle &tr
 
 static SimVec3 mesh_collision_phong_point(const TrackMeshCollisionTriangle &tri, float u, float v, float w)
 {
-	const SimVec3 n0 = tri.n0.normalized();
-	const SimVec3 n1 = tri.n1.normalized();
-	const SimVec3 n2 = tri.n2.normalized();
 	const SimVec3 flat_pos = tri.p0 * u + tri.p1 * v + tri.p2 * w;
-	const SimVec3 proj0 = flat_pos - n0 * (flat_pos - tri.p0).dot(n0);
-	const SimVec3 proj1 = flat_pos - n1 * (flat_pos - tri.p1).dot(n1);
-	const SimVec3 proj2 = flat_pos - n2 * (flat_pos - tri.p2).dot(n2);
+	const SimVec3 proj0 = flat_pos - tri.n0 * (flat_pos - tri.p0).dot(tri.n0);
+	const SimVec3 proj1 = flat_pos - tri.n1 * (flat_pos - tri.p1).dot(tri.n1);
+	const SimVec3 proj2 = flat_pos - tri.n2 * (flat_pos - tri.p2).dot(tri.n2);
 	const SimVec3 phong_pos = proj0 * u + proj1 * v + proj2 * w;
 	return phong_pos.lerp(flat_pos, 0.5f);
 }
@@ -2386,9 +2357,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		return;
 	}
 
-	const SimVec3 edge0 = best_tri->p1 - best_tri->p0;
-	const SimVec3 edge1 = best_tri->p2 - best_tri->p0;
-	SimVec3 face_normal = edge0.cross(edge1).normalized();
+	SimVec3 face_normal = best_tri->face_normal;
 	SimVec3 smooth_normal = face_normal;
 	SimVec3 smooth_point = best_flat_point;
 	if (mesh_collision_uses_smooth_surface(best_tri->terrain)) {
