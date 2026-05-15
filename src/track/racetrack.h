@@ -41,6 +41,22 @@ struct alignas(64) TrackQueryScratch
 	int visited_checkpoints[64];
 	int trigger_event_count = 0;
 	TriggerEvent trigger_events[MAX_TRIGGER_EVENTS];
+	uint32_t mesh_floor_calls = 0;
+	uint32_t mesh_floor_tri_tests = 0;
+	uint32_t mesh_floor_checkpoint_scans = 0;
+	uint32_t mesh_floor_segment_scans = 0;
+	uint32_t mesh_cast_calls = 0;
+	uint32_t mesh_cast_tri_tests = 0;
+
+	void reset_mesh_query_profile()
+	{
+		mesh_floor_calls = 0;
+		mesh_floor_tri_tests = 0;
+		mesh_floor_checkpoint_scans = 0;
+		mesh_floor_segment_scans = 0;
+		mesh_cast_calls = 0;
+		mesh_cast_tri_tests = 0;
+	}
 
 	void reset_trigger_events()
 	{
@@ -104,8 +120,8 @@ public:
 		}
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
-	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false);
-	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true);
+	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr);
+	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr);
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);
 	void convert_point_to_road(

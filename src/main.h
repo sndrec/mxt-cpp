@@ -44,7 +44,7 @@ namespace godot {
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
 		static const int PROFILE_WINDOW_TICKS = 360;
-		static const int PROFILE_FIELD_COUNT = 20;
+		static const int PROFILE_FIELD_COUNT = 26;
 		static const int RENDER_PROFILE_FIELD_COUNT = 9;
 		enum ProfileField {
 			PROFILE_TOTAL,
@@ -67,6 +67,12 @@ namespace godot {
 			PROFILE_MISC,
 			PROFILE_LANE_GROUP,
 			PROFILE_LANES,
+			PROFILE_MESH_FLOOR_CALLS,
+			PROFILE_MESH_FLOOR_TRI_TESTS,
+			PROFILE_MESH_FLOOR_CP_SCANS,
+			PROFILE_MESH_FLOOR_SEG_SCANS,
+			PROFILE_MESH_CAST_CALLS,
+			PROFILE_MESH_CAST_TRI_TESTS,
 		};
 		enum RenderProfileField {
 			RENDER_PROFILE_TOTAL,
@@ -131,6 +137,12 @@ namespace godot {
 			uint32_t prof_total_us = 0;
 			uint32_t prof_lane_group_us = 0;
 			uint32_t prof_lanes = 1;
+			uint32_t prof_mesh_floor_calls = 0;
+			uint32_t prof_mesh_floor_tri_tests = 0;
+			uint32_t prof_mesh_floor_checkpoint_scans = 0;
+			uint32_t prof_mesh_floor_segment_scans = 0;
+			uint32_t prof_mesh_cast_calls = 0;
+			uint32_t prof_mesh_cast_tri_tests = 0;
 		};
 		VehicleTickSoA vehicle_tick_soa;
 		static const int SUPER_SPARK_CAPACITY = 256;

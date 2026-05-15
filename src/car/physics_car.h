@@ -313,7 +313,7 @@ public:
 	float get_current_stage_min_y() const;
     void handle_machine_damage_and_visuals();
     void handle_machine_damage_and_visuals_tail();
-	bool find_floor_beneath_machine();
+	bool find_floor_beneath_machine(TrackQueryScratch &scratch);
 	void handle_steering();
 	void set_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
 	void remove_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
@@ -335,7 +335,7 @@ public:
 	void reset_machine(int reset_type);
 	void update_pitch_transform_from_machine_front_back();
 	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight);
-	SimVec3 get_avg_track_normal_from_tilt_corners();
+	SimVec3 get_avg_track_normal_from_tilt_corners(TrackQueryScratch &scratch);
 	void set_terrain_state_from_track(TrackQueryScratch &scratch);
 	void handle_attack_states();
 	void apply_torque_from_force(const SimVec3& p_local_offset, const SimVec3& wf_world_force);

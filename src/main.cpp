@@ -691,7 +691,7 @@ namespace {
 			}
 
 			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch);
-			const bool has_floor = car_views[i].find_floor_beneath_machine();
+			const bool has_floor = car_views[i].find_floor_beneath_machine(scratch);
 			if (has_floor) {
 				if ((c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0) {
 					bool use_analytic_floor_normal = true;
@@ -1571,6 +1571,12 @@ void GameSim::record_phase_profile_sample()
 		soa.prof_misc_us,
 		soa.prof_lane_group_us,
 		soa.prof_lanes,
+		soa.prof_mesh_floor_calls,
+		soa.prof_mesh_floor_tri_tests,
+		soa.prof_mesh_floor_checkpoint_scans,
+		soa.prof_mesh_floor_segment_scans,
+		soa.prof_mesh_cast_calls,
+		soa.prof_mesh_cast_tri_tests,
 	};
 
 	if (profile_count == PROFILE_WINDOW_TICKS) {
@@ -1616,6 +1622,12 @@ String GameSim::get_phase_profile_string() const
 	out += " misc=" + String::num_int64(avg(PROFILE_MISC));
 	out += " lane_group=" + String::num_int64(avg(PROFILE_LANE_GROUP));
 	out += " lanes=" + String::num_int64(avg(PROFILE_LANES));
+	out += " mesh_floor_calls=" + String::num_int64(avg(PROFILE_MESH_FLOOR_CALLS));
+	out += " mesh_floor_tri_tests=" + String::num_int64(avg(PROFILE_MESH_FLOOR_TRI_TESTS));
+	out += " mesh_floor_cp_scans=" + String::num_int64(avg(PROFILE_MESH_FLOOR_CP_SCANS));
+	out += " mesh_floor_seg_scans=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEG_SCANS));
+	out += " mesh_cast_calls=" + String::num_int64(avg(PROFILE_MESH_CAST_CALLS));
+	out += " mesh_cast_tri_tests=" + String::num_int64(avg(PROFILE_MESH_CAST_TRI_TESTS));
 	return out;
 }
 
@@ -2066,6 +2078,12 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	soa.prof_steer_susp_us = 0;
 	soa.prof_linear_us = 0;
 	soa.prof_integrate_us = 0;
+	soa.prof_mesh_floor_calls = 0;
+	soa.prof_mesh_floor_tri_tests = 0;
+	soa.prof_mesh_floor_checkpoint_scans = 0;
+	soa.prof_mesh_floor_segment_scans = 0;
+	soa.prof_mesh_cast_calls = 0;
+	soa.prof_mesh_cast_tri_tests = 0;
 	uint32_t lane_prepare_floor_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_project_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_steer_susp_us[VEHICLE_WORKER_COUNT] = {};
@@ -2088,6 +2106,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		PhysicsCarSoA& car_soa = car_shards[lane];
 		const int global_start = car_soa.global_start;
 		TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
+		track_scratch.reset_mesh_query_profile();
 
 		begin_vehicle_tick_soa(car_soa, cars + global_start,
 			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count);
@@ -2168,6 +2187,13 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.prof_steer_susp_us = std::max(soa.prof_steer_susp_us, lane_steer_susp_us[lane]);
 		soa.prof_linear_us = std::max(soa.prof_linear_us, lane_linear_us[lane]);
 		soa.prof_integrate_us = std::max(soa.prof_integrate_us, lane_integrate_us[lane]);
+		const TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
+		soa.prof_mesh_floor_calls += track_scratch.mesh_floor_calls;
+		soa.prof_mesh_floor_tri_tests += track_scratch.mesh_floor_tri_tests;
+		soa.prof_mesh_floor_checkpoint_scans += track_scratch.mesh_floor_checkpoint_scans;
+		soa.prof_mesh_floor_segment_scans += track_scratch.mesh_floor_segment_scans;
+		soa.prof_mesh_cast_calls += track_scratch.mesh_cast_calls;
+		soa.prof_mesh_cast_tri_tests += track_scratch.mesh_cast_tri_tests;
 	}
 
 	soa.prof_collision_us = lane_collision_us[0];

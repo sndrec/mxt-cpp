@@ -1344,9 +1344,13 @@ static void cast_mesh_collision_fast(
 	CollisionData &out_collision,
 	const SimVec3 &p0,
 	const SimVec3 &p1,
-	int start_idx)
+	int start_idx,
+	TrackQueryScratch *scratch)
 {
 	RaceTrack *track = params.track;
+	if (scratch) {
+		scratch->mesh_cast_calls += 1;
+	}
 	if (track->num_mesh_collision_triangles <= 0) {
 		return;
 	}
@@ -1365,6 +1369,9 @@ static void cast_mesh_collision_fast(
 	float best_dist = out_collision.collided ? p0.distance_to(out_collision.collision_point) : FLT_MAX;
 	bool mesh_hit = false;
 	auto scan_triangle = [&](int tri_index) {
+		if (scratch) {
+			scratch->mesh_cast_tri_tests += 1;
+		}
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
 		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 		if (is_rail) {
@@ -1442,8 +1449,11 @@ static void cast_mesh_collision_fast(
 	}
 }
 
-void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback)
+void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch)
 {
+	if (scratch) {
+		scratch->mesh_floor_calls += 1;
+	}
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
 	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
@@ -1462,6 +1472,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	const TrackMeshCollisionTriangle *best_tri = nullptr;
 
 	auto scan_triangle = [&](int tri_index) {
+		if (scratch) {
+			scratch->mesh_floor_tri_tests += 1;
+		}
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
 		if ((tri.terrain & TERRAIN::RAIL) != 0 || distance2_to_aabb(tri.bounds, point) > best_dist2) {
 			return;
@@ -1488,6 +1501,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		if (cp_idx < 0 || cp_idx >= num_checkpoints || !mesh_checkpoint_triangle_head) {
 			return;
 		}
+		if (scratch) {
+			scratch->mesh_floor_checkpoint_scans += 1;
+		}
 		for (int tri_index = mesh_checkpoint_triangle_head[cp_idx]; tri_index >= 0; tri_index = mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
 			scan_triangle(tri_index);
 		}
@@ -1500,6 +1516,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		const TrackSegment &segment = segments[seg];
 		if (segment.mesh_collision_count <= 0 || distance2_to_aabb(segment.mesh_bounds, point) > best_dist2) {
 			return;
+		}
+		if (scratch) {
+			scratch->mesh_floor_segment_scans += 1;
 		}
 		const int tri_end = segment.mesh_collision_start + segment.mesh_collision_count;
 		for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
@@ -1558,7 +1577,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	SimVec3 const &p0,
 	SimVec3 const &p1,
 	uint8_t mask,
-	int start_idx, bool oriented)
+	int start_idx, bool oriented, TrackQueryScratch *scratch)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -1582,5 +1601,5 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	
 	CastParams params{ this, mask };
 	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
-	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx);
+	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }

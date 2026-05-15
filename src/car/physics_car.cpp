@@ -332,7 +332,7 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 
 	SimVec3 ground_normal = SimVec3(0, 1, 0);
 	if (soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) {
-		ground_normal = get_avg_track_normal_from_tilt_corners();
+		ground_normal = get_avg_track_normal_from_tilt_corners(scratch);
 	}
 
 	bool all_airborne = true;
@@ -999,7 +999,7 @@ static bool project_machine_down_to_road_cross_section(
 	return true;
 }
 
-bool PhysicsCar::find_floor_beneath_machine()
+bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 {
 	soa->road_sample[soa_index].terrain = 0;
 	soa->road_sample[soa_index].road_t = SimVec2();
@@ -1036,7 +1036,9 @@ bool PhysicsCar::find_floor_beneath_machine()
 		soa->current_track[soa_index]->cast_vs_track_fast(hit, p0_sweep_start_ws,
 			LOAD_VEC3(position_bottom),
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
-			soa->current_checkpoint[soa_index]);
+			soa->current_checkpoint[soa_index],
+			false,
+			&scratch);
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
 		if (!floor_seg->analytic_collision_enabled) {
 			CollisionData nearest_hit;
@@ -1046,7 +1048,8 @@ bool PhysicsCar::find_floor_beneath_machine()
 				120.0f,
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
-				false);
+				false,
+				&scratch);
 			if (nearest_hit.collided) {
 				orient_mesh_floor_hit(nearest_hit);
 				hit = nearest_hit;
@@ -1061,7 +1064,9 @@ bool PhysicsCar::find_floor_beneath_machine()
 				LOAD_VEC3(position_current),
 				2000.0f,
 				CAST_FLAGS::WANTS_TRACK,
-				soa->current_checkpoint[soa_index]);
+				soa->current_checkpoint[soa_index],
+				true,
+				&scratch);
 			sweep_hit_occurred = hit.collided;
 			nearest_mesh_sample = hit.collided;
 		}
@@ -2610,7 +2615,7 @@ void PhysicsCar::update_suspension_forces(
 	STORE_TILT_VEC3(force_spatial, p, LOAD_TILT_VEC3(up_vector, p) * calculated_force_magnitude);
 };
 
-SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
+SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &scratch)
 {
 	const int point_base = soa_index * 4;
 	const SimTransform machine_transform = LOAD_TRANSFORM(basis_physical);
@@ -2669,7 +2674,9 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
 					p0_ray_start_ws[lane],
 					p1_ray_end_ws[lane],
 					CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
-					use_cp);
+					use_cp,
+					false,
+					&scratch);
 			}
 			if (!hit.collided && track && use_cp >= 0) {
 				track->sample_mesh_floor_fast(
@@ -2678,7 +2685,8 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
 					160.0f,
 					CAST_FLAGS::WANTS_TRACK,
 					use_cp,
-					false);
+					false,
+					&scratch);
 			}
 			if (hit.collided) {
 				if (hit.collision_normal.dot(mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
@@ -2723,7 +2731,9 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 		CollisionData hit;
 		track->cast_vs_track_fast(hit, LOAD_VEC3(position_current), LOAD_VEC3(position_current) + LOAD_VEC3(track_surface_normal) * -3,
 			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P1,
-			soa->current_checkpoint[soa_index]);
+			soa->current_checkpoint[soa_index],
+			false,
+			&scratch);
 		if (hit.collided) {
 			terrain_bits |= hit.road_data.terrain;
 		}
@@ -2891,7 +2901,7 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 
 	TrackQueryScratch scratch;
 	SimVec3 ground_normal = prepare_machine_frame(scratch);
-	bool has_floor = find_floor_beneath_machine();
+	bool has_floor = find_floor_beneath_machine(scratch);
 	if (has_floor && (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
 		STORE_VEC3(track_surface_normal, ground_normal);
 	} else {
@@ -3227,7 +3237,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 									80.0f,
 									CAST_FLAGS::WANTS_TRACK,
 									mesh_track_cp,
-									false);
+									false,
+									&scratch);
 								if (!hit.collided) {
 									continue;
 								}
@@ -3262,7 +3273,9 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 									p0,
 									p1,
 									CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P1,
-									mesh_wall_cp);
+									mesh_wall_cp,
+									false,
+									&scratch);
 								if (!hit.collided) {
 									continue;
 								}
