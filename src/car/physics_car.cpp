@@ -1020,8 +1020,16 @@ bool PhysicsCar::find_floor_beneath_machine()
 	{
 		bool sweep_hit_occurred = false;
 		bool nearest_mesh_sample = false;
-		bool mesh_stay_on_sample = false;
+		bool local_mesh_sample = false;
 		CollisionData hit;
+		const SimVec3 machine_up_ws = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f));
+		auto orient_mesh_floor_hit = [&](CollisionData &mesh_hit) {
+			if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) < 0.0f) {
+				mesh_hit.collision_normal *= -1.0f;
+				mesh_hit.road_data.closest_surface.basis[1] *= -1.0f;
+				mesh_hit.road_data.closest_surface.basis[2] *= -1.0f;
+			}
+		};
 		SimVec3 p0_sweep_start_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, 1.0f, 0.0f));
 		SimVec3 p1_sweep_end_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, -2000.0f, 0.0f));
 		STORE_VEC3(position_bottom, p1_sweep_end_ws);
@@ -1035,15 +1043,16 @@ bool PhysicsCar::find_floor_beneath_machine()
 			soa->current_track[soa_index]->sample_mesh_floor_fast(
 				nearest_hit,
 				LOAD_VEC3(position_current),
-				180.0f,
+				120.0f,
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				false);
 			if (nearest_hit.collided) {
+				orient_mesh_floor_hit(nearest_hit);
 				hit = nearest_hit;
 				sweep_hit_occurred = true;
 				nearest_mesh_sample = true;
-				mesh_stay_on_sample = true;
+				local_mesh_sample = true;
 			}
 		}
 		if (!sweep_hit_occurred && !floor_seg->analytic_collision_enabled) {
@@ -1056,6 +1065,9 @@ bool PhysicsCar::find_floor_beneath_machine()
 			sweep_hit_occurred = hit.collided;
 			nearest_mesh_sample = hit.collided;
 		}
+		if (!floor_seg->analytic_collision_enabled) {
+			orient_mesh_floor_hit(hit);
+		}
 		soa->road_sample[soa_index].road_t = hit.road_data.road_t;
 		soa->road_sample[soa_index].spatial_t = hit.road_data.spatial_t;
 		soa->road_sample[soa_index].closest_surface = hit.road_data.closest_surface;
@@ -1064,14 +1076,14 @@ bool PhysicsCar::find_floor_beneath_machine()
 			STORE_VEC3(track_surface_pos, hit.collision_point);
 			if (nearest_mesh_sample) {
 				const float signed_surface_distance = (LOAD_VEC3(position_current) - hit.collision_point).dot(hit.collision_normal);
-				contact_dist_metric = mesh_stay_on_sample ? fmaxf(1.0f, 20.0f - signed_surface_distance) : 20.0f - signed_surface_distance;
+				contact_dist_metric = local_mesh_sample ? fmaxf(1.0f, 20.0f - fabsf(signed_surface_distance)) : 20.0f - signed_surface_distance;
 			} else {
 				float dist_p0_to_surface =
 				LOAD_VEC3(position_current).distance_to(hit.collision_point);
 				contact_dist_metric = 20.0f - dist_p0_to_surface;
 			}
 		}
-		if (nearest_mesh_sample && contact_dist_metric > 20.1f) {
+		if (nearest_mesh_sample && !local_mesh_sample && contact_dist_metric > 20.1f) {
 			sweep_hit_occurred = false;
 		}
 		if (sweep_hit_occurred && contact_dist_metric > 0.0f) {
@@ -2669,6 +2681,11 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners()
 					false);
 			}
 			if (hit.collided) {
+				if (hit.collision_normal.dot(mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
+					hit.collision_normal *= -1.0f;
+					hit.road_data.closest_surface.basis[1] *= -1.0f;
+					hit.road_data.closest_surface.basis[2] *= -1.0f;
+				}
 				road_t[lane] = hit.road_data.road_t;
 				spatial_t[lane] = hit.road_data.spatial_t;
 				surf[lane] = hit.road_data.closest_surface;
@@ -3213,6 +3230,9 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 									false);
 								if (!hit.collided) {
 									continue;
+								}
+								if (hit.collision_normal.dot(mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
+									hit.collision_normal *= -1.0f;
 								}
 								const float depth = (p - hit.collision_point).dot(hit.collision_normal);
 								if (depth >= 0.0f) {

@@ -93,6 +93,15 @@ func _init() -> void:
 		if full_lap_count != cars:
 			print("MXT_PROFILE_MIN_PLAYER ", sim.get_player_debug_string(min_lap_player))
 			print("MXT_PROFILE_MAX_PLAYER ", sim.get_player_debug_string(max_lap_player))
+			var lag_printed := 0
+			for i in range(cars):
+				var distance := float(sim.get_player_lap_distance(player_ids[i]))
+				var delta := distance - start_distances[i]
+				if delta < lap_length:
+					print("MXT_PROFILE_LAG_PLAYER delta=", delta, " ", sim.get_player_debug_string(player_ids[i]))
+					lag_printed += 1
+					if lag_printed >= 12:
+						break
 			push_error("profile_gamesim full-lap requirement was not met")
 			root.remove_child(sim)
 			sim.free()

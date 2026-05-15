@@ -1133,6 +1133,21 @@ static SimVec3 mesh_collision_phong_point(const TrackMeshCollisionTriangle &tri,
 	return phong_pos.lerp(flat_pos, 0.5f);
 }
 
+static SimVec3 clamp_mesh_collision_phong_point(const SimVec3 &flat_point, const SimVec3 &phong_point)
+{
+	constexpr float kMaxPhongOffset = 2.0f;
+	const SimVec3 offset = phong_point - flat_point;
+	const float len2 = offset.length_squared();
+	if (len2 <= kMaxPhongOffset * kMaxPhongOffset) {
+		return phong_point;
+	}
+	const float len = sqrtf(len2);
+	if (len <= 1.0e-6f) {
+		return flat_point;
+	}
+	return flat_point + offset * (kMaxPhongOffset / len);
+}
+
 static SimTransform mesh_collision_surface_transform(const TrackMeshCollisionTriangle &tri, const SimVec3 &hit_point, const SimVec3 &normal)
 {
 	SimVec3 tangent = (tri.p1 - tri.p0).normalized();
@@ -1281,7 +1296,8 @@ static void cast_mesh_collision_fast(
 		}
 
 		SimVec3 smooth_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
-		const SimVec3 smooth_point = mesh_collision_phong_point(tri, u, v, w);
+		const SimVec3 flat_point = p0 + ray * hit_t;
+		const SimVec3 smooth_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
 		if (wants_backface && (p0 - smooth_point).dot(smooth_normal) < 0.0f) {
 			smooth_normal *= -1.0f;
 		}
@@ -1346,6 +1362,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	float best_u = 0.0f;
 	float best_v = 0.0f;
 	float best_w = 0.0f;
+	SimVec3 best_flat_point;
 	const TrackMeshCollisionTriangle *best_tri = nullptr;
 
 	auto scan_triangle = [&](int tri_index) {
@@ -1363,6 +1380,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			best_u = u;
 			best_v = v;
 			best_w = w;
+			best_flat_point = closest;
 			best_tri = &tri;
 		}
 	};
@@ -1416,7 +1434,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	const SimVec3 edge1 = best_tri->p2 - best_tri->p0;
 	SimVec3 face_normal = edge0.cross(edge1).normalized();
 	SimVec3 smooth_normal = mesh_collision_smooth_normal(*best_tri, best_u, best_v, best_w, face_normal);
-	const SimVec3 smooth_point = mesh_collision_phong_point(*best_tri, best_u, best_v, best_w);
+	const SimVec3 smooth_point = clamp_mesh_collision_phong_point(best_flat_point, mesh_collision_phong_point(*best_tri, best_u, best_v, best_w));
 	if ((point - smooth_point).dot(smooth_normal) < 0.0f) {
 		smooth_normal *= -1.0f;
 	}

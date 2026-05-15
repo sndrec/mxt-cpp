@@ -1757,6 +1757,8 @@ godot::String GameSim::get_player_debug_string(int player_id) const
 		const int lane = cars[i].soa_index;
 		const SimVec3 pos = LOAD_INDEXED_VEC3(car_soa, position_current, lane);
 		const SimVec3 vel = LOAD_INDEXED_VEC3(car_soa, velocity, lane);
+		const SimVec3 track_normal = LOAD_INDEXED_VEC3(car_soa, track_surface_normal, lane);
+		const SimVec3 up = MXT_LOAD_TRANSFORM(car_soa, basis_physical, lane).basis.get_column(1);
 		godot::String out = "id=" + godot::String::num_int64(player_id);
 		out += " cp=" + godot::String::num_int64(car_soa.current_checkpoint[lane]);
 		out += " frac=" + godot::String::num(car_soa.checkpoint_fraction[lane]);
@@ -1766,6 +1768,8 @@ godot::String GameSim::get_player_debug_string(int player_id) const
 		out += " vel=(" + godot::String::num(vel.x) + "," + godot::String::num(vel.y) + "," + godot::String::num(vel.z) + ")";
 		out += " speed=" + godot::String::num(car_soa.speed_kmh[lane]);
 		out += " h=" + godot::String::num(car_soa.height_above_track[lane]);
+		out += " n=(" + godot::String::num(track_normal.x) + "," + godot::String::num(track_normal.y) + "," + godot::String::num(track_normal.z) + ")";
+		out += " up=(" + godot::String::num(up.x) + "," + godot::String::num(up.y) + "," + godot::String::num(up.z) + ")";
 		out += " state=0x" + godot::String::num_int64(car_soa.machine_state[lane], 16);
 		out += " terrain=0x" + godot::String::num_int64(car_soa.terrain_state[lane], 16);
 		return out;
