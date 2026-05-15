@@ -1895,6 +1895,9 @@ void GameSim::record_phase_profile_sample()
 		soa.prof_mesh_floor_best_updates,
 		soa.prof_mesh_cast_calls,
 		soa.prof_mesh_cast_tri_tests,
+		soa.prof_mesh_cast_candidate_builds,
+		soa.prof_mesh_cast_candidate_bvh_node_tests,
+		soa.prof_mesh_cast_candidate_triangles,
 		soa.prof_mesh_floor_bvh_node_tests,
 		soa.prof_mesh_cast_bvh_node_tests,
 		soa.prof_mesh_cast_surface_rejects,
@@ -1965,6 +1968,9 @@ String GameSim::get_phase_profile_string() const
 	out += " mesh_floor_best_updates=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BEST_UPDATES));
 	out += " mesh_cast_calls=" + String::num_int64(avg(PROFILE_MESH_CAST_CALLS));
 	out += " mesh_cast_tri_tests=" + String::num_int64(avg(PROFILE_MESH_CAST_TRI_TESTS));
+	out += " mesh_cast_candidate_builds=" + String::num_int64(avg(PROFILE_MESH_CAST_CANDIDATE_BUILDS));
+	out += " mesh_cast_candidate_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_CAST_CANDIDATE_BVH_NODE_TESTS));
+	out += " mesh_cast_candidate_tris=" + String::num_int64(avg(PROFILE_MESH_CAST_CANDIDATE_TRIANGLES));
 	out += " mesh_floor_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BVH_NODE_TESTS));
 	out += " mesh_cast_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_CAST_BVH_NODE_TESTS));
 	out += " mesh_cast_surface_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_SURFACE_REJECTS));
@@ -2440,6 +2446,9 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	soa.prof_mesh_floor_best_updates = 0;
 	soa.prof_mesh_cast_calls = 0;
 	soa.prof_mesh_cast_tri_tests = 0;
+	soa.prof_mesh_cast_candidate_builds = 0;
+	soa.prof_mesh_cast_candidate_bvh_node_tests = 0;
+	soa.prof_mesh_cast_candidate_triangles = 0;
 	soa.prof_mesh_floor_bvh_node_tests = 0;
 	soa.prof_mesh_cast_bvh_node_tests = 0;
 	soa.prof_mesh_cast_surface_rejects = 0;
@@ -2569,6 +2578,9 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.prof_mesh_floor_best_updates += track_scratch.mesh_floor_best_updates;
 		soa.prof_mesh_cast_calls += track_scratch.mesh_cast_calls;
 		soa.prof_mesh_cast_tri_tests += track_scratch.mesh_cast_tri_tests;
+		soa.prof_mesh_cast_candidate_builds += track_scratch.mesh_cast_candidate_builds;
+		soa.prof_mesh_cast_candidate_bvh_node_tests += track_scratch.mesh_cast_candidate_bvh_node_tests;
+		soa.prof_mesh_cast_candidate_triangles += track_scratch.mesh_cast_candidate_triangles;
 		soa.prof_mesh_floor_bvh_node_tests += track_scratch.mesh_floor_bvh_node_tests;
 		soa.prof_mesh_cast_bvh_node_tests += track_scratch.mesh_cast_bvh_node_tests;
 		soa.prof_mesh_cast_surface_rejects += track_scratch.mesh_cast_surface_rejects;

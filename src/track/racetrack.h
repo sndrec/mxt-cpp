@@ -43,6 +43,7 @@ struct TrackMeshBVHNode
 struct alignas(64) TrackQueryScratch
 {
 	static constexpr int MAX_TRIGGER_EVENTS = 4096;
+	static constexpr int MAX_MESH_CAST_CANDIDATES = 8192;
 	struct TriggerEvent
 	{
 		int car_index;
@@ -56,6 +57,8 @@ struct alignas(64) TrackQueryScratch
 	int visited_checkpoints[64];
 	int trigger_event_count = 0;
 	TriggerEvent trigger_events[MAX_TRIGGER_EVENTS];
+	int mesh_cast_candidate_count = 0;
+	int mesh_cast_candidate_indices[MAX_MESH_CAST_CANDIDATES];
 	uint32_t mesh_floor_calls = 0;
 	uint32_t mesh_floor_tri_tests = 0;
 	uint32_t mesh_floor_checkpoint_scans = 0;
@@ -71,6 +74,9 @@ struct alignas(64) TrackQueryScratch
 	uint32_t mesh_floor_best_updates = 0;
 	uint32_t mesh_cast_calls = 0;
 	uint32_t mesh_cast_tri_tests = 0;
+	uint32_t mesh_cast_candidate_builds = 0;
+	uint32_t mesh_cast_candidate_bvh_node_tests = 0;
+	uint32_t mesh_cast_candidate_triangles = 0;
 	uint32_t mesh_floor_bvh_node_tests = 0;
 	uint32_t mesh_cast_bvh_node_tests = 0;
 	uint32_t mesh_cast_surface_rejects = 0;
@@ -99,8 +105,12 @@ struct alignas(64) TrackQueryScratch
 		mesh_floor_smooth_projection_hits = 0;
 		mesh_floor_best_dist_rejects = 0;
 		mesh_floor_best_updates = 0;
+		mesh_cast_candidate_count = 0;
 		mesh_cast_calls = 0;
 		mesh_cast_tri_tests = 0;
+		mesh_cast_candidate_builds = 0;
+		mesh_cast_candidate_bvh_node_tests = 0;
+		mesh_cast_candidate_triangles = 0;
 		mesh_floor_bvh_node_tests = 0;
 		mesh_cast_bvh_node_tests = 0;
 		mesh_cast_surface_rejects = 0;
@@ -185,6 +195,8 @@ public:
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
 	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr);
+	bool collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask, TrackQueryScratch &scratch);
+	void cast_vs_mesh_candidates_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch);
 	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr, int seed_triangle_index = -1);
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);

@@ -1110,6 +1110,15 @@ static bool aabb_overlaps_segment(const SimAABB &bounds, const SimVec3 &p0, cons
 	return true;
 }
 
+static bool aabb_overlaps_aabb(const SimAABB &a, const SimAABB &b)
+{
+	const SimVec3 a_max = a.position + a.size;
+	const SimVec3 b_max = b.position + b.size;
+	return a.position.x <= b_max.x && a_max.x >= b.position.x &&
+		a.position.y <= b_max.y && a_max.y >= b.position.y &&
+		a.position.z <= b_max.z && a_max.z >= b.position.z;
+}
+
 enum MeshCastRejectReason
 {
 	MESH_CAST_REJECT_NONE,
@@ -1478,6 +1487,129 @@ static float distance2_to_aabb(const SimAABB &bounds, const SimVec3 &p)
 	return d2;
 }
 
+static bool scan_mesh_cast_triangle(
+	const CastParams &params,
+	CollisionData &out_collision,
+	const SimVec3 &p0,
+	const SimVec3 &p1,
+	const SimVec3 &ray,
+	float ray_len,
+	int start_idx,
+	int tri_index,
+	float &best_dist,
+	TrackQueryScratch *scratch)
+{
+	RaceTrack *track = params.track;
+	if (scratch) {
+		scratch->mesh_cast_tri_tests += 1;
+	}
+	const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
+	const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
+	if (is_rail) {
+		if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+			if (scratch) {
+				scratch->mesh_cast_surface_rejects += 1;
+			}
+			return false;
+		}
+	} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
+		if (scratch) {
+			scratch->mesh_cast_surface_rejects += 1;
+		}
+		return false;
+	}
+	if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
+		if (scratch) {
+			scratch->mesh_cast_aabb_rejects += 1;
+		}
+		return false;
+	}
+	if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS)) {
+		const bool rail_query = (params.mask & CAST_FLAGS::WANTS_RAIL) != 0;
+		const bool terrain_query = (params.mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
+		const godot::Color color = rail_query
+			? godot::Color(1.0f, 0.0f, 1.0f, 0.75f)
+			: (terrain_query ? godot::Color(1.0f, 0.85f, 0.1f, 0.75f) : godot::Color(1.0f, 0.45f, 0.05f, 0.75f));
+		draw_mesh_debug_triangle(tri, color, _TICK_DELTA);
+	}
+
+	float hit_t = 0.0f;
+	float u = 0.0f;
+	float v = 0.0f;
+	float w = 0.0f;
+	SimVec3 face_normal;
+	bool backside_hit = false;
+	const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
+	MeshCastRejectReason reject_reason = MESH_CAST_REJECT_NONE;
+	if (!triangle_ray_hit(tri, p0, ray, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, &reject_reason)) {
+		if (scratch) {
+			switch (reject_reason) {
+				case MESH_CAST_REJECT_PARALLEL:
+					scratch->mesh_cast_ray_parallel_rejects += 1;
+					break;
+				case MESH_CAST_REJECT_BACKSIDE:
+					scratch->mesh_cast_backside_rejects += 1;
+					break;
+				case MESH_CAST_REJECT_T:
+					scratch->mesh_cast_t_rejects += 1;
+					break;
+				case MESH_CAST_REJECT_BARY:
+					scratch->mesh_cast_bary_rejects += 1;
+					break;
+				default:
+					break;
+			}
+		}
+		return false;
+	}
+	const float dist = hit_t * ray_len;
+	if (dist >= best_dist) {
+		if (scratch) {
+			scratch->mesh_cast_best_dist_rejects += 1;
+		}
+		return false;
+	}
+
+	const SimVec3 flat_point = p0 + ray * hit_t;
+	SimVec3 hit_normal = face_normal;
+	SimVec3 hit_face_normal = face_normal;
+	SimVec3 hit_point = flat_point;
+	if (mesh_collision_uses_smooth_surface(tri.terrain)) {
+		hit_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
+		hit_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
+	}
+	if (backside_hit) {
+		hit_normal *= -1.0f;
+		hit_face_normal *= -1.0f;
+	}
+	const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
+	if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
+		godot::UtilityFunctions::printerr(godot::String("MXT mesh collision triangle has invalid checkpoint index "), cp_idx);
+		std::abort();
+	}
+
+	best_dist = dist;
+	if (scratch) {
+		scratch->mesh_cast_hits += 1;
+	}
+	if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
+		draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
+	}
+	out_collision.collided = true;
+	out_collision.collision_point = hit_point;
+	out_collision.collision_normal = hit_normal;
+	out_collision.collision_face_point = flat_point;
+	out_collision.collision_face_normal = hit_face_normal;
+	out_collision.road_data.cp_idx = cp_idx;
+	out_collision.road_data.spatial_t = SimVec3();
+	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
+	out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, hit_point, hit_normal);
+	out_collision.road_data.closest_root = RoadTransform();
+	out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
+	out_collision.mesh_triangle_index = tri_index;
+	return true;
+}
+
 static void cast_mesh_collision_fast(
 	const CastParams &params,
 	CollisionData &out_collision,
@@ -1508,114 +1640,7 @@ static void cast_mesh_collision_fast(
 	float best_dist = out_collision.collided ? p0.distance_to(out_collision.collision_point) : FLT_MAX;
 	bool mesh_hit = false;
 	auto scan_triangle = [&](int tri_index) {
-		if (scratch) {
-			scratch->mesh_cast_tri_tests += 1;
-		}
-		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
-		if (is_rail) {
-			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
-				if (scratch) {
-					scratch->mesh_cast_surface_rejects += 1;
-				}
-				return;
-			}
-		} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
-			if (scratch) {
-				scratch->mesh_cast_surface_rejects += 1;
-			}
-			return;
-		}
-		if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
-			if (scratch) {
-				scratch->mesh_cast_aabb_rejects += 1;
-			}
-			return;
-		}
-		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS)) {
-			const bool rail_query = (params.mask & CAST_FLAGS::WANTS_RAIL) != 0;
-			const bool terrain_query = (params.mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
-			const godot::Color color = rail_query
-				? godot::Color(1.0f, 0.0f, 1.0f, 0.75f)
-				: (terrain_query ? godot::Color(1.0f, 0.85f, 0.1f, 0.75f) : godot::Color(1.0f, 0.45f, 0.05f, 0.75f));
-			draw_mesh_debug_triangle(tri, color, _TICK_DELTA);
-		}
-
-		float hit_t = 0.0f;
-		float u = 0.0f;
-		float v = 0.0f;
-		float w = 0.0f;
-		SimVec3 face_normal;
-		bool backside_hit = false;
-		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
-		MeshCastRejectReason reject_reason = MESH_CAST_REJECT_NONE;
-		if (!triangle_ray_hit(tri, p0, ray, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, &reject_reason)) {
-			if (scratch) {
-				switch (reject_reason) {
-					case MESH_CAST_REJECT_PARALLEL:
-						scratch->mesh_cast_ray_parallel_rejects += 1;
-						break;
-					case MESH_CAST_REJECT_BACKSIDE:
-						scratch->mesh_cast_backside_rejects += 1;
-						break;
-					case MESH_CAST_REJECT_T:
-						scratch->mesh_cast_t_rejects += 1;
-						break;
-					case MESH_CAST_REJECT_BARY:
-						scratch->mesh_cast_bary_rejects += 1;
-						break;
-					default:
-						break;
-				}
-			}
-			return;
-		}
-		const float dist = hit_t * ray_len;
-		if (dist >= best_dist) {
-			if (scratch) {
-				scratch->mesh_cast_best_dist_rejects += 1;
-			}
-			return;
-		}
-
-		const SimVec3 flat_point = p0 + ray * hit_t;
-		SimVec3 hit_normal = face_normal;
-		SimVec3 hit_face_normal = face_normal;
-		SimVec3 hit_point = flat_point;
-		if (mesh_collision_uses_smooth_surface(tri.terrain)) {
-			hit_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
-			hit_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
-		}
-		if (backside_hit) {
-			hit_normal *= -1.0f;
-			hit_face_normal *= -1.0f;
-		}
-		const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
-		if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
-			godot::UtilityFunctions::printerr(godot::String("MXT mesh collision triangle has invalid checkpoint index "), cp_idx);
-			std::abort();
-		}
-
-		best_dist = dist;
-		mesh_hit = true;
-		if (scratch) {
-			scratch->mesh_cast_hits += 1;
-		}
-		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
-			draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
-		}
-		out_collision.collided = true;
-		out_collision.collision_point = hit_point;
-		out_collision.collision_normal = hit_normal;
-		out_collision.collision_face_point = flat_point;
-		out_collision.collision_face_normal = hit_face_normal;
-		out_collision.road_data.cp_idx = cp_idx;
-		out_collision.road_data.spatial_t = SimVec3();
-		out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
-		out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, hit_point, hit_normal);
-		out_collision.road_data.closest_root = RoadTransform();
-		out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
-		out_collision.mesh_triangle_index = tri_index;
+		mesh_hit |= scan_mesh_cast_triangle(params, out_collision, p0, p1, ray, ray_len, start_idx, tri_index, best_dist, scratch);
 	};
 
 	auto scan_checkpoint = [&](int cp_idx) {
@@ -1712,6 +1737,106 @@ static void cast_mesh_collision_fast(
 		for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
 			scan_triangle(tri_index);
 		}
+	}
+}
+
+bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask, TrackQueryScratch &scratch)
+{
+	scratch.mesh_cast_candidate_count = 0;
+	scratch.mesh_cast_candidate_builds += 1;
+	if (!mesh_world_bvh_nodes || !mesh_world_bvh_triangle_indices || num_mesh_world_bvh_nodes <= 0) {
+		return false;
+	}
+
+	int stack[256];
+	int stack_count = 0;
+	stack[stack_count++] = 0;
+	while (stack_count > 0) {
+		const int node_index = stack[--stack_count];
+		const TrackMeshBVHNode &node = mesh_world_bvh_nodes[node_index];
+		scratch.mesh_cast_candidate_bvh_node_tests += 1;
+		if (!aabb_overlaps_aabb(node.bounds, bounds)) {
+			continue;
+		}
+		if (node.count > 0) {
+			const int end = node.left_first + node.count;
+			for (int i = node.left_first; i < end; ++i) {
+				const int tri_index = mesh_world_bvh_triangle_indices[i];
+				const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
+				const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
+				if (is_rail) {
+					if ((mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+						continue;
+					}
+				} else if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
+					continue;
+				}
+				if (!aabb_overlaps_aabb(tri.bounds, bounds)) {
+					continue;
+				}
+				if (scratch.mesh_cast_candidate_count >= TrackQueryScratch::MAX_MESH_CAST_CANDIDATES) {
+					godot::UtilityFunctions::printerr(godot::String("MXT mesh cast candidate list overflow"));
+					std::abort();
+				}
+				scratch.mesh_cast_candidate_indices[scratch.mesh_cast_candidate_count++] = tri_index;
+				scratch.mesh_cast_candidate_triangles += 1;
+			}
+		} else {
+			if (stack_count + 2 > 256) {
+				godot::UtilityFunctions::printerr(godot::String("MXT mesh world candidate BVH traversal stack overflow"));
+				std::abort();
+			}
+			if (node.left_first < 0 || node.right_first < 0) {
+				godot::UtilityFunctions::printerr(godot::String("MXT mesh world candidate BVH interior node has invalid child"));
+				std::abort();
+			}
+			stack[stack_count++] = node.left_first;
+			stack[stack_count++] = node.right_first;
+		}
+	}
+	return true;
+}
+
+void RaceTrack::cast_vs_mesh_candidates_fast(
+	CollisionData &out_collision,
+	const SimVec3 &p0,
+	const SimVec3 &p1,
+	uint8_t mask,
+	int start_idx,
+	TrackQueryScratch *scratch)
+{
+	out_collision.collided = false;
+	out_collision.road_data.cp_idx = -1;
+	out_collision.mesh_triangle_index = -1;
+	out_collision.collision_face_point = SimVec3();
+	out_collision.collision_face_normal = SimVec3();
+	if (!scratch || start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
+		return;
+	}
+	if ((mask & (CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL)) == 0) {
+		return;
+	}
+	scratch->mesh_cast_calls += 1;
+	const SimVec3 ray = p1 - p0;
+	const float ray_len = ray.length();
+	if (ray_len <= 1.0e-6f) {
+		return;
+	}
+
+	float best_dist = FLT_MAX;
+	CastParams params{ this, mask };
+	for (int i = 0; i < scratch->mesh_cast_candidate_count; ++i) {
+		scan_mesh_cast_triangle(
+			params,
+			out_collision,
+			p0,
+			p1,
+			ray,
+			ray_len,
+			start_idx,
+			scratch->mesh_cast_candidate_indices[i],
+			best_dist,
+			scratch);
 	}
 }
 

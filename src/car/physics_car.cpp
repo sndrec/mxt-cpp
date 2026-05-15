@@ -3304,16 +3304,36 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 					if (mesh_wall_cp >= 0 && mesh_wall_cp < track->num_checkpoints) {
 						const TrackSegment &mesh_wall_segment = track->segments[track->checkpoints[mesh_wall_cp].road_segment];
 						if (!mesh_wall_segment.analytic_collision_enabled) {
+							SimAABB mesh_cast_bounds;
+							mesh_cast_bounds.position = LOAD_VEC3(position_old);
+							mesh_cast_bounds.size = SimVec3();
+							mesh_cast_bounds.expand_to(machine_position);
+							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+								mesh_cast_bounds.expand_to(wall_corner_world[wc_idx]);
+								mesh_cast_bounds.expand_to(wall_corner_old_world[wc_idx]);
+							}
+							const uint8_t mesh_cast_mask = CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P1;
+							const bool use_mesh_cast_candidates = track->collect_mesh_cast_candidates(mesh_cast_bounds, mesh_cast_mask, scratch);
 							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1) {
 								CollisionData hit;
-								track->cast_vs_track_fast(
-									hit,
-									p0,
-									p1,
-									CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P1,
-									mesh_wall_cp,
-									false,
-									&scratch);
+								if (use_mesh_cast_candidates && mesh_cast_bounds.has_point(p0) && mesh_cast_bounds.has_point(p1)) {
+									track->cast_vs_mesh_candidates_fast(
+										hit,
+										p0,
+										p1,
+										mesh_cast_mask,
+										mesh_wall_cp,
+										&scratch);
+								} else {
+									track->cast_vs_track_fast(
+										hit,
+										p0,
+										p1,
+										mesh_cast_mask,
+										mesh_wall_cp,
+										false,
+										&scratch);
+								}
 								if (!hit.collided) {
 									return;
 								}

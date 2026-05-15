@@ -44,7 +44,7 @@ namespace godot {
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
 		static const int PROFILE_WINDOW_TICKS = 360;
-		static const int PROFILE_FIELD_COUNT = 45;
+		static const int PROFILE_FIELD_COUNT = 48;
 		static const int RENDER_PROFILE_FIELD_COUNT = 9;
 		enum ProfileField {
 			PROFILE_TOTAL,
@@ -82,6 +82,9 @@ namespace godot {
 			PROFILE_MESH_FLOOR_BEST_UPDATES,
 			PROFILE_MESH_CAST_CALLS,
 			PROFILE_MESH_CAST_TRI_TESTS,
+			PROFILE_MESH_CAST_CANDIDATE_BUILDS,
+			PROFILE_MESH_CAST_CANDIDATE_BVH_NODE_TESTS,
+			PROFILE_MESH_CAST_CANDIDATE_TRIANGLES,
 			PROFILE_MESH_FLOOR_BVH_NODE_TESTS,
 			PROFILE_MESH_CAST_BVH_NODE_TESTS,
 			PROFILE_MESH_CAST_SURFACE_REJECTS,
@@ -171,6 +174,9 @@ namespace godot {
 			uint32_t prof_mesh_floor_best_updates = 0;
 			uint32_t prof_mesh_cast_calls = 0;
 			uint32_t prof_mesh_cast_tri_tests = 0;
+			uint32_t prof_mesh_cast_candidate_builds = 0;
+			uint32_t prof_mesh_cast_candidate_bvh_node_tests = 0;
+			uint32_t prof_mesh_cast_candidate_triangles = 0;
 			uint32_t prof_mesh_floor_bvh_node_tests = 0;
 			uint32_t prof_mesh_cast_bvh_node_tests = 0;
 			uint32_t prof_mesh_cast_surface_rejects = 0;
