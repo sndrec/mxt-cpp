@@ -1052,19 +1052,46 @@ static bool aabb_overlaps_segment(const SimAABB &bounds, const SimVec3 &p0, cons
 	const SimVec3 ray = p1 - p0;
 	float t_min = 0.0f;
 	float t_max = 1.0f;
-	const float origins[3] = {p0.x, p0.y, p0.z};
-	const float dirs[3] = {ray.x, ray.y, ray.z};
-	const float mins[3] = {bounds.position.x, bounds.position.y, bounds.position.z};
-	const float maxs[3] = {box_max.x, box_max.y, box_max.z};
-	for (int axis = 0; axis < 3; ++axis) {
-		if (fabsf(dirs[axis]) <= 1.0e-7f) {
-			if (origins[axis] < mins[axis] || origins[axis] > maxs[axis]) {
-				return false;
-			}
-			continue;
+
+	if (fabsf(ray.x) <= 1.0e-7f) {
+		if (p0.x < bounds.position.x || p0.x > box_max.x) {
+			return false;
 		}
-		float t0 = (mins[axis] - origins[axis]) / dirs[axis];
-		float t1 = (maxs[axis] - origins[axis]) / dirs[axis];
+	} else {
+		float t0 = (bounds.position.x - p0.x) / ray.x;
+		float t1 = (box_max.x - p0.x) / ray.x;
+		if (t0 > t1) {
+			std::swap(t0, t1);
+		}
+		t_min = std::max(t_min, t0);
+		t_max = std::min(t_max, t1);
+		if (t_min > t_max) {
+			return false;
+		}
+	}
+	if (fabsf(ray.y) <= 1.0e-7f) {
+		if (p0.y < bounds.position.y || p0.y > box_max.y) {
+			return false;
+		}
+	} else {
+		float t0 = (bounds.position.y - p0.y) / ray.y;
+		float t1 = (box_max.y - p0.y) / ray.y;
+		if (t0 > t1) {
+			std::swap(t0, t1);
+		}
+		t_min = std::max(t_min, t0);
+		t_max = std::min(t_max, t1);
+		if (t_min > t_max) {
+			return false;
+		}
+	}
+	if (fabsf(ray.z) <= 1.0e-7f) {
+		if (p0.z < bounds.position.z || p0.z > box_max.z) {
+			return false;
+		}
+	} else {
+		float t0 = (bounds.position.z - p0.z) / ray.z;
+		float t1 = (box_max.z - p0.z) / ray.z;
 		if (t0 > t1) {
 			std::swap(t0, t1);
 		}
@@ -1333,16 +1360,26 @@ static float distance2_to_aabb(const SimAABB &bounds, const SimVec3 &p)
 {
 	const SimVec3 box_max = bounds.position + bounds.size;
 	float d2 = 0.0f;
-	const float values[3] = {p.x, p.y, p.z};
-	const float mins[3] = {bounds.position.x, bounds.position.y, bounds.position.z};
-	const float maxs[3] = {box_max.x, box_max.y, box_max.z};
-	for (int axis = 0; axis < 3; ++axis) {
-		float delta = 0.0f;
-		if (values[axis] < mins[axis]) {
-			delta = mins[axis] - values[axis];
-		} else if (values[axis] > maxs[axis]) {
-			delta = values[axis] - maxs[axis];
-		}
+	float delta = 0.0f;
+	if (p.x < bounds.position.x) {
+		delta = bounds.position.x - p.x;
+		d2 += delta * delta;
+	} else if (p.x > box_max.x) {
+		delta = p.x - box_max.x;
+		d2 += delta * delta;
+	}
+	if (p.y < bounds.position.y) {
+		delta = bounds.position.y - p.y;
+		d2 += delta * delta;
+	} else if (p.y > box_max.y) {
+		delta = p.y - box_max.y;
+		d2 += delta * delta;
+	}
+	if (p.z < bounds.position.z) {
+		delta = bounds.position.z - p.z;
+		d2 += delta * delta;
+	} else if (p.z > box_max.z) {
+		delta = p.z - box_max.z;
 		d2 += delta * delta;
 	}
 	return d2;
