@@ -1914,6 +1914,11 @@ void GameSim::record_phase_profile_sample()
 		for (int i = 0; i < PROFILE_FIELD_COUNT; ++i) {
 			profile_sums[i] -= profile_samples[profile_cursor][i];
 		}
+		for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
+			for (int field = 0; field < MESH_FLOOR_PROFILE_FIELD_COUNT; ++field) {
+				mesh_floor_profile_sums[scope][field] -= mesh_floor_profile_samples[profile_cursor][scope][field];
+			}
+		}
 	} else {
 		profile_count += 1;
 	}
@@ -1921,6 +1926,13 @@ void GameSim::record_phase_profile_sample()
 	for (int i = 0; i < PROFILE_FIELD_COUNT; ++i) {
 		profile_samples[profile_cursor][i] = sample[i];
 		profile_sums[i] += sample[i];
+	}
+	for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
+		for (int field = 0; field < MESH_FLOOR_PROFILE_FIELD_COUNT; ++field) {
+			const uint32_t scope_sample = soa.prof_mesh_floor_profile[scope][field];
+			mesh_floor_profile_samples[profile_cursor][scope][field] = scope_sample;
+			mesh_floor_profile_sums[scope][field] += scope_sample;
+		}
 	}
 	profile_cursor = (profile_cursor + 1) % PROFILE_WINDOW_TICKS;
 }
@@ -1981,6 +1993,40 @@ String GameSim::get_phase_profile_string() const
 	out += " mesh_cast_bary_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BARY_REJECTS));
 	out += " mesh_cast_best_dist_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BEST_DIST_REJECTS));
 	out += " mesh_cast_hits=" + String::num_int64(avg(PROFILE_MESH_CAST_HITS));
+	auto floor_scope_name = [](int scope) -> const char * {
+		switch (scope) {
+			case TrackQueryScratch::MESH_FLOOR_SCOPE_MAIN_LOCAL:
+				return "main_local";
+			case TrackQueryScratch::MESH_FLOOR_SCOPE_MAIN_GLOBAL:
+				return "main_global";
+			case TrackQueryScratch::MESH_FLOOR_SCOPE_SUSPENSION:
+				return "suspension";
+			case TrackQueryScratch::MESH_FLOOR_SCOPE_CORNER_DEPENETRATION:
+				return "corner";
+			default:
+				return "unknown";
+		}
+	};
+	for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
+		const uint64_t calls = mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_CALLS] / static_cast<uint64_t>(count);
+		if (calls == 0) {
+			continue;
+		}
+		const char *name = floor_scope_name(scope);
+		const String prefix = String(" floor_") + String(name);
+		out += prefix + String("_calls=") + String::num_int64(static_cast<int64_t>(calls));
+		out += prefix + String("_tri=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_TRI_TESTS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_bvh=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_NODE_TESTS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_seed=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SEED_HITS] / static_cast<uint64_t>(count))) + String("/") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SEED_CALLS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_rail=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_RAIL_REJECTS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_aabb=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_AABB_REJECTS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_projmiss=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_PROJECTION_MISSES] / static_cast<uint64_t>(count)));
+		out += prefix + String("_face=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_smooth=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_bestrej=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_bestupd=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_UPDATES] / static_cast<uint64_t>(count)));
+		out += prefix + String("_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_QUERY_US] / static_cast<uint64_t>(count)));
+	}
 	return out;
 }
 
@@ -2459,6 +2505,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	soa.prof_mesh_cast_bary_rejects = 0;
 	soa.prof_mesh_cast_best_dist_rejects = 0;
 	soa.prof_mesh_cast_hits = 0;
+	std::memset(soa.prof_mesh_floor_profile, 0, sizeof(soa.prof_mesh_floor_profile));
 	uint32_t lane_prepare_floor_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_project_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_steer_susp_us[VEHICLE_WORKER_COUNT] = {};
@@ -2591,6 +2638,23 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.prof_mesh_cast_bary_rejects += track_scratch.mesh_cast_bary_rejects;
 		soa.prof_mesh_cast_best_dist_rejects += track_scratch.mesh_cast_best_dist_rejects;
 		soa.prof_mesh_cast_hits += track_scratch.mesh_cast_hits;
+		for (int scope = 0; scope < TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT; ++scope) {
+			const TrackQueryScratch::MeshFloorProfileCounters &src = track_scratch.mesh_floor_profile[scope];
+			uint32_t *dst = soa.prof_mesh_floor_profile[scope];
+			dst[MESH_FLOOR_PROFILE_CALLS] += src.calls;
+			dst[MESH_FLOOR_PROFILE_TRI_TESTS] += src.tri_tests;
+			dst[MESH_FLOOR_PROFILE_BVH_NODE_TESTS] += src.bvh_node_tests;
+			dst[MESH_FLOOR_PROFILE_SEED_CALLS] += src.seed_calls;
+			dst[MESH_FLOOR_PROFILE_SEED_HITS] += src.seed_hits;
+			dst[MESH_FLOOR_PROFILE_RAIL_REJECTS] += src.rail_rejects;
+			dst[MESH_FLOOR_PROFILE_AABB_REJECTS] += src.aabb_rejects;
+			dst[MESH_FLOOR_PROFILE_PROJECTION_MISSES] += src.projection_misses;
+			dst[MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS] += src.face_projection_hits;
+			dst[MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS] += src.smooth_projection_hits;
+			dst[MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] += src.best_dist_rejects;
+			dst[MESH_FLOOR_PROFILE_BEST_UPDATES] += src.best_updates;
+			dst[MESH_FLOOR_PROFILE_QUERY_US] += src.query_us;
+		}
 	}
 
 	soa.prof_collision_us = lane_collision_us[0];
@@ -2767,6 +2831,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	tick = 0;
 	std::memset(profile_samples, 0, sizeof(profile_samples));
 	std::memset(profile_sums, 0, sizeof(profile_sums));
+	std::memset(mesh_floor_profile_samples, 0, sizeof(mesh_floor_profile_samples));
+	std::memset(mesh_floor_profile_sums, 0, sizeof(mesh_floor_profile_sums));
 	profile_cursor = 0;
 	profile_count = 0;
 	race_events.clear();

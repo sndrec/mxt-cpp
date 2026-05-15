@@ -1070,6 +1070,8 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
 		if (!floor_seg->analytic_collision_enabled) {
 			CollisionData nearest_hit;
+			const TrackQueryScratch::MeshFloorProfileScope prev_floor_scope = scratch.mesh_floor_profile_scope;
+			scratch.mesh_floor_profile_scope = TrackQueryScratch::MESH_FLOOR_SCOPE_MAIN_LOCAL;
 			sample_mesh_floor_with_seed(
 				nearest_hit,
 				LOAD_VEC3(position_current),
@@ -1078,6 +1080,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				soa->current_checkpoint[soa_index],
 				false,
 				scratch);
+			scratch.mesh_floor_profile_scope = prev_floor_scope;
 			if (nearest_hit.collided) {
 				orient_mesh_floor_hit(nearest_hit);
 				hit = nearest_hit;
@@ -1087,6 +1090,8 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 			}
 		}
 		if (!sweep_hit_occurred && !floor_seg->analytic_collision_enabled) {
+			const TrackQueryScratch::MeshFloorProfileScope prev_floor_scope = scratch.mesh_floor_profile_scope;
+			scratch.mesh_floor_profile_scope = TrackQueryScratch::MESH_FLOOR_SCOPE_MAIN_GLOBAL;
 			sample_mesh_floor_with_seed(
 				hit,
 				LOAD_VEC3(position_current),
@@ -1095,6 +1100,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				soa->current_checkpoint[soa_index],
 				true,
 				scratch);
+			scratch.mesh_floor_profile_scope = prev_floor_scope;
 			sweep_hit_occurred = hit.collided;
 			nearest_mesh_sample = hit.collided;
 		}
@@ -2707,6 +2713,8 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 					&scratch);
 			}
 			if (!hit.collided && track && use_cp >= 0) {
+				const TrackQueryScratch::MeshFloorProfileScope prev_floor_scope = scratch.mesh_floor_profile_scope;
+				scratch.mesh_floor_profile_scope = TrackQueryScratch::MESH_FLOOR_SCOPE_SUSPENSION;
 				track->sample_mesh_floor_fast(
 					hit,
 					p0_ws[lane],
@@ -2715,6 +2723,7 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 					use_cp,
 					false,
 					&scratch);
+				scratch.mesh_floor_profile_scope = prev_floor_scope;
 			}
 			if (hit.collided) {
 				if (hit.collision_normal.dot(mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
@@ -3270,6 +3279,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 								const SimVec3 p = wall_corner_world[wc_idx] + depenetration;
 								CollisionData hit;
+								const TrackQueryScratch::MeshFloorProfileScope prev_floor_scope = scratch.mesh_floor_profile_scope;
+								scratch.mesh_floor_profile_scope = TrackQueryScratch::MESH_FLOOR_SCOPE_CORNER_DEPENETRATION;
 								track->sample_mesh_floor_fast(
 									hit,
 									p,
@@ -3278,6 +3289,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 									mesh_track_cp,
 									false,
 									&scratch);
+								scratch.mesh_floor_profile_scope = prev_floor_scope;
 								if (!hit.collided) {
 									continue;
 								}

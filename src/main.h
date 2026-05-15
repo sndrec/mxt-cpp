@@ -45,6 +45,7 @@ namespace godot {
 		PlayerInput* input_buffer = nullptr;
 		static const int PROFILE_WINDOW_TICKS = 360;
 		static const int PROFILE_FIELD_COUNT = 48;
+		static const int MESH_FLOOR_PROFILE_FIELD_COUNT = 13;
 		static const int RENDER_PROFILE_FIELD_COUNT = 9;
 		enum ProfileField {
 			PROFILE_TOTAL,
@@ -96,6 +97,21 @@ namespace godot {
 			PROFILE_MESH_CAST_BEST_DIST_REJECTS,
 			PROFILE_MESH_CAST_HITS,
 		};
+		enum MeshFloorProfileField {
+			MESH_FLOOR_PROFILE_CALLS,
+			MESH_FLOOR_PROFILE_TRI_TESTS,
+			MESH_FLOOR_PROFILE_BVH_NODE_TESTS,
+			MESH_FLOOR_PROFILE_SEED_CALLS,
+			MESH_FLOOR_PROFILE_SEED_HITS,
+			MESH_FLOOR_PROFILE_RAIL_REJECTS,
+			MESH_FLOOR_PROFILE_AABB_REJECTS,
+			MESH_FLOOR_PROFILE_PROJECTION_MISSES,
+			MESH_FLOOR_PROFILE_FACE_PROJECTION_HITS,
+			MESH_FLOOR_PROFILE_SMOOTH_PROJECTION_HITS,
+			MESH_FLOOR_PROFILE_BEST_DIST_REJECTS,
+			MESH_FLOOR_PROFILE_BEST_UPDATES,
+			MESH_FLOOR_PROFILE_QUERY_US,
+		};
 		enum RenderProfileField {
 			RENDER_PROFILE_TOTAL,
 			RENDER_PROFILE_GET_CHILDREN,
@@ -109,6 +125,8 @@ namespace godot {
 		};
 		uint32_t profile_samples[PROFILE_WINDOW_TICKS][PROFILE_FIELD_COUNT] = {};
 		uint64_t profile_sums[PROFILE_FIELD_COUNT] = {};
+		uint32_t mesh_floor_profile_samples[PROFILE_WINDOW_TICKS][TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT][MESH_FLOOR_PROFILE_FIELD_COUNT] = {};
+		uint64_t mesh_floor_profile_sums[TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT][MESH_FLOOR_PROFILE_FIELD_COUNT] = {};
 		int profile_cursor = 0;
 		int profile_count = 0;
 		uint32_t render_profile_samples[PROFILE_WINDOW_TICKS][RENDER_PROFILE_FIELD_COUNT] = {};
@@ -187,6 +205,7 @@ namespace godot {
 			uint32_t prof_mesh_cast_bary_rejects = 0;
 			uint32_t prof_mesh_cast_best_dist_rejects = 0;
 			uint32_t prof_mesh_cast_hits = 0;
+			uint32_t prof_mesh_floor_profile[TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT][MESH_FLOOR_PROFILE_FIELD_COUNT] = {};
 		};
 		VehicleTickSoA vehicle_tick_soa;
 		static const int SUPER_SPARK_CAPACITY = 256;

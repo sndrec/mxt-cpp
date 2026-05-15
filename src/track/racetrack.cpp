@@ -3,6 +3,7 @@
 #include <cfloat>
 #include <cstdlib>
 #include <algorithm>
+#include <chrono>
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
@@ -1487,6 +1488,18 @@ static float distance2_to_aabb(const SimAABB &bounds, const SimVec3 &p)
 	return d2;
 }
 
+static TrackQueryScratch::MeshFloorProfileCounters *mesh_floor_profile_counters(TrackQueryScratch *scratch)
+{
+	if (!scratch) {
+		return nullptr;
+	}
+	int scope = static_cast<int>(scratch->mesh_floor_profile_scope);
+	if (scope < 0 || scope >= TrackQueryScratch::MESH_FLOOR_PROFILE_SCOPE_COUNT) {
+		scope = TrackQueryScratch::MESH_FLOOR_SCOPE_UNKNOWN;
+	}
+	return &scratch->mesh_floor_profile[scope];
+}
+
 static bool scan_mesh_cast_triangle(
 	const CastParams &params,
 	CollisionData &out_collision,
@@ -1842,8 +1855,19 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 
 void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index)
 {
+	TrackQueryScratch::MeshFloorProfileCounters *floor_profile = mesh_floor_profile_counters(scratch);
+	const auto floor_profile_start = std::chrono::high_resolution_clock::now();
+	auto finish_floor_profile = [&]() {
+		if (floor_profile) {
+			const auto floor_profile_end = std::chrono::high_resolution_clock::now();
+			floor_profile->query_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(floor_profile_end - floor_profile_start).count());
+		}
+	};
 	if (scratch) {
 		scratch->mesh_floor_calls += 1;
+	}
+	if (floor_profile) {
+		floor_profile->calls += 1;
 	}
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -1851,9 +1875,11 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.collision_face_point = SimVec3();
 	out_collision.collision_face_normal = SimVec3();
 	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
+		finish_floor_profile();
 		return;
 	}
 	if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
+		finish_floor_profile();
 		return;
 	}
 
@@ -1871,16 +1897,25 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		if (scratch) {
 			scratch->mesh_floor_tri_tests += 1;
 		}
+		if (floor_profile) {
+			floor_profile->tri_tests += 1;
+		}
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
 		if ((tri.terrain & TERRAIN::RAIL) != 0) {
 			if (scratch) {
 				scratch->mesh_floor_rail_rejects += 1;
+			}
+			if (floor_profile) {
+				floor_profile->rail_rejects += 1;
 			}
 			return;
 		}
 		if (distance2_to_aabb(tri.bounds, point) > best_dist2) {
 			if (scratch) {
 				scratch->mesh_floor_aabb_rejects += 1;
+			}
+			if (floor_profile) {
+				floor_profile->aabb_rejects += 1;
 			}
 			return;
 		}
@@ -1895,6 +1930,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			if (scratch) {
 				scratch->mesh_floor_projection_misses += 1;
 			}
+			if (floor_profile) {
+				floor_profile->projection_misses += 1;
+			}
 			return;
 		}
 		if (scratch) {
@@ -1902,6 +1940,13 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 				scratch->mesh_floor_smooth_projection_hits += 1;
 			} else {
 				scratch->mesh_floor_face_projection_hits += 1;
+			}
+		}
+		if (floor_profile) {
+			if (projection_result == MESH_FLOOR_PROJECT_SMOOTH) {
+				floor_profile->smooth_projection_hits += 1;
+			} else {
+				floor_profile->face_projection_hits += 1;
 			}
 		}
 		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS)) {
@@ -1912,10 +1957,16 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			if (scratch) {
 				scratch->mesh_floor_best_dist_rejects += 1;
 			}
+			if (floor_profile) {
+				floor_profile->best_dist_rejects += 1;
+			}
 			return;
 		}
 		if (scratch) {
 			scratch->mesh_floor_best_updates += 1;
+		}
+		if (floor_profile) {
+			floor_profile->best_updates += 1;
 		}
 		best_dist2 = dist2;
 		best_u = u;
@@ -1972,6 +2023,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			if (scratch) {
 				scratch->mesh_floor_bvh_node_tests += 1;
 			}
+			if (floor_profile) {
+				floor_profile->bvh_node_tests += 1;
+			}
 			if (distance2_to_aabb(node.bounds, point) > best_dist2) {
 				continue;
 			}
@@ -2021,15 +2075,22 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		if (scratch) {
 			scratch->mesh_floor_seed_calls += 1;
 		}
+		if (floor_profile) {
+			floor_profile->seed_calls += 1;
+		}
 		const int prev_best_tri_index = best_tri_index;
 		scan_triangle(seed_triangle_index);
 		if (scratch && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
 			scratch->mesh_floor_seed_hits += 1;
 		}
+		if (floor_profile && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
+			floor_profile->seed_hits += 1;
+		}
 	}
 
 	if (scan_world_bvh_root(0)) {
 		if (!best_tri) {
+			finish_floor_profile();
 			return;
 		}
 	} else {
@@ -2053,6 +2114,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	}
 
 	if (!best_tri) {
+		finish_floor_profile();
 		return;
 	}
 
@@ -2087,6 +2149,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.road_data.closest_root = RoadTransform();
 	out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
 	out_collision.mesh_triangle_index = best_tri_index;
+	finish_floor_profile();
 }
 
 void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
