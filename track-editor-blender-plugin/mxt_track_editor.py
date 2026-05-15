@@ -4648,12 +4648,6 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
     preview_material_map = {
         'track_surface': 'TRACK',
         'track_rail': 'RAIL',
-        'embed_border': 'TRACK',
-        'embed_recharge': 'RECHARGE',
-        'embed_dirt': 'DIRT',
-        'embed_ice': 'ICE',
-        'embed_lava': 'LAVA',
-        'embed_hole': 'HOLE',
     }
 
     def base_material_name(name):
@@ -4681,6 +4675,21 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                 best_local = local_idx
         return seg_cp_start[seg] + best_local
 
+    def append_triangle_record(records_by_segment, segment_index, terrain_key, checkpoint_index, positions, normals, source_name):
+        if terrain_key not in terrain_map:
+            raise RuntimeError(f"{source_name} has unsupported mesh collision surface {terrain_key}")
+        if len(positions) != 3 or len(normals) != 3:
+            raise RuntimeError(f"{source_name} produced an invalid mesh collision triangle")
+        if checkpoint_index < 0:
+            raise RuntimeError(f"{source_name} mesh collision triangle has no checkpoint")
+        record = bytearray()
+        record += struct.pack('<Iii', terrain_map[terrain_key], segment_index, checkpoint_index)
+        for p in positions:
+            record += struct.pack('<3f', p.x, p.y, p.z)
+        for n in normals:
+            record += struct.pack('<3f', n.x, n.y, n.z)
+        records_by_segment[segment_index].append(record)
+
     def append_object_triangles(records_by_segment, obj, segment_index, checkpoint_index, surface_for_polygon, depsgraph, required):
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
@@ -4692,8 +4701,6 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                 terrain_key = surface_for_polygon(mesh, loop_tri.polygon_index)
                 if terrain_key is None:
                     continue
-                if terrain_key not in terrain_map:
-                    raise RuntimeError(f"{obj.name} has unsupported mesh collision surface {terrain_key}")
                 loop_indices = list(loop_tri.loops)
                 if len(loop_indices) != 3:
                     raise RuntimeError(f"{obj.name} produced a non-triangle loop triangle")
@@ -4705,21 +4712,108 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                     positions.append(obj.matrix_world @ vert.co)
                     normals.append((normal_matrix @ loop.normal).normalized())
                 use_checkpoint_index = checkpoint_index(positions) if callable(checkpoint_index) else checkpoint_index
-                if use_checkpoint_index < 0:
-                    raise RuntimeError(f"{obj.name} mesh collision triangle has no checkpoint")
-                record = bytearray()
-                record += struct.pack('<Iii', terrain_map[terrain_key], segment_index, use_checkpoint_index)
-                for p in positions:
-                    record += struct.pack('<3f', p.x, p.y, p.z)
-                for n in normals:
-                    record += struct.pack('<3f', n.x, n.y, n.z)
-                records_by_segment[segment_index].append(record)
+                append_triangle_record(records_by_segment, segment_index, terrain_key, use_checkpoint_index, positions, normals, obj.name)
                 object_tri_count += 1
             if required and object_tri_count == 0:
                 raise RuntimeError(f"{obj.name} is marked for mesh collision but has no triangles")
             return object_tri_count
         finally:
             eval_obj.to_mesh_clear()
+
+    def append_segment_embed_terrain_triangles(records_by_segment, seg, segment_index):
+        props = seg.mxt_road_overall_props
+        if not hasattr(props, "embeds") or len(props.embeds) == 0:
+            return 0
+        helper = props.curve_matrix_helper_empty
+        if not (helper and helper.animation_data and helper.animation_data.action):
+            raise RuntimeError(f"{seg.name} has terrain embeds but no baked CurveMatrix action")
+
+        embed_x_divs = 8
+        terrain_offset = 0.03
+        tx_probe = np.linspace(-1.0, 1.0, max(2, int(getattr(props, "horiz_subdivs", 2))), dtype=np.float64)
+        ty_base, _dist_base = MXTRoad_OT_GenerateMesh._adaptive_ty_samples_from_mesh_rows(
+            helper,
+            props,
+            tx_probe,
+            props.mesh_subdivision_length,
+            math.radians(props.mesh_subdivision_angle_deg),
+        )
+        ty_base = np.array(ty_base, dtype=np.float64)
+        emitted = 0
+
+        for embed in props.embeds:
+            terrain_key = embed.embed_type
+            if terrain_key == 'HOLE':
+                continue
+            if terrain_key not in terrain_map:
+                raise RuntimeError(f"{seg.name} embed {embed.label} has unsupported terrain {terrain_key}")
+            if not (embed.helper and embed.helper.animation_data and embed.helper.animation_data.action):
+                raise RuntimeError(f"{seg.name} embed {embed.label} has no helper action")
+            act = embed.helper.animation_data.action
+            f_left = act.fcurves.find("location", index=1)
+            f_right = act.fcurves.find("location", index=2)
+            if not (f_left and f_right):
+                raise RuntimeError(f"{seg.name} embed {embed.label} has no left/right border curves")
+
+            start_t = max(0.0, min(1.0, float(embed.start_t)))
+            end_t = max(0.0, min(1.0, float(embed.end_t)))
+            if end_t <= start_t:
+                raise RuntimeError(f"{seg.name} embed {embed.label} has invalid t range")
+
+            samples = [start_t, end_t]
+            for t in ty_base:
+                if start_t < t < end_t:
+                    samples.append(float(t))
+            for fcurve in (f_left, f_right):
+                for kfp in fcurve.keyframe_points:
+                    t = float(kfp.co.x) / 100.0
+                    if start_t < t < end_t:
+                        samples.append(max(start_t, t - 0.0001))
+                        samples.append(min(end_t, t + 0.0001))
+            ty_embed_1d = np.array(MXTRoad_OT_GenerateMesh._unique_sorted_ty(samples), dtype=np.float64)
+            ty_embed_1d = ty_embed_1d[(ty_embed_1d >= start_t) & (ty_embed_1d <= end_t)]
+            if len(ty_embed_1d) < 2:
+                raise RuntimeError(f"{seg.name} embed {embed.label} produced too few terrain samples")
+
+            cl_pos, cl_quat, cl_scl = _sample_curve_matrix_numpy(helper, ty_embed_1d)
+            frames = ty_embed_1d * 100.0
+            tx_left = np.array([f_left.evaluate(f) for f in frames], dtype=np.float64)
+            tx_right = np.array([f_right.evaluate(f) for f in frames], dtype=np.float64)
+            tx_lerp = np.linspace(0.0, 1.0, embed_x_divs, dtype=np.float64)[np.newaxis, :]
+            tx_grid = tx_left[:, np.newaxis] + (tx_right - tx_left)[:, np.newaxis] * tx_lerp
+            ty_grid = np.repeat(ty_embed_1d[:, np.newaxis], embed_x_divs, axis=1)
+            points = _calculate_vertex_positions_numpy(props, cl_pos, cl_quat, cl_scl, tx_grid, ty_grid)
+            d_ty = np.gradient(points, axis=0)
+            d_tx = np.gradient(points, axis=1)
+            normals = np.cross(d_ty, d_tx)
+            normal_len = np.linalg.norm(normals, axis=2, keepdims=True)
+            if np.any(normal_len <= 1.0e-9):
+                raise RuntimeError(f"{seg.name} embed {embed.label} produced degenerate terrain normals")
+            normals /= normal_len
+            points = points + normals * terrain_offset
+
+            num_y = points.shape[0]
+            for row in range(num_y - 1):
+                for col in range(embed_x_divs - 1):
+                    tris = (
+                        ((row, col), (row + 1, col), (row + 1, col + 1)),
+                        ((row, col), (row + 1, col + 1), (row, col + 1)),
+                    )
+                    for tri in tris:
+                        tri_positions = [Vector(tuple(points[r, c])) for r, c in tri]
+                        tri_normals = [Vector(tuple(normals[r, c])).normalized() for r, c in tri]
+                        center = (tri_positions[0] + tri_positions[1] + tri_positions[2]) / 3.0
+                        cp_idx = nearest_checkpoint_index(seg, center)
+                        append_triangle_record(
+                            records_by_segment,
+                            segment_index,
+                            terrain_key,
+                            cp_idx,
+                            tri_positions,
+                            tri_normals,
+                            f"{seg.name} embed {embed.label}")
+                        emitted += 1
+        return emitted
 
     depsgraph = context.evaluated_depsgraph_get()
     records_by_segment = {index: [] for index in seg_index.values()}
@@ -4757,6 +4851,8 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                 raise RuntimeError(f"{preview_obj.name} polygon has invalid material index")
             mat_name = base_material_name(mesh.materials[poly.material_index].name)
             if mat_name not in preview_material_map:
+                if mat_name.startswith('embed_'):
+                    return None
                 raise RuntimeError(f"{preview_obj.name} material {mat_name} cannot be exported as mesh collision")
             return preview_material_map[mat_name]
 
@@ -4768,6 +4864,7 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
             preview_surface,
             depsgraph,
             True)
+        append_segment_embed_terrain_triangles(records_by_segment, seg, segment_index)
 
     mesh_data = bytearray()
     tri_count = 0

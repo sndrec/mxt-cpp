@@ -1224,6 +1224,102 @@ static SimVec3 closest_point_on_mesh_triangle(const TrackMeshCollisionTriangle &
 	return tri.p0 * (*out_u) + tri.p1 * (*out_v) + tri.p2 * (*out_w);
 }
 
+static void mesh_triangle_barycentric_on_face(
+	const TrackMeshCollisionTriangle &tri,
+	const SimVec3 &point,
+	const SimVec3 &edge0,
+	const SimVec3 &edge1,
+	float inv_denom,
+	float d00,
+	float d01,
+	float d11,
+	float *out_u,
+	float *out_v,
+	float *out_w)
+{
+	const SimVec3 v2 = point - tri.p0;
+	const float d20 = v2.dot(edge0);
+	const float d21 = v2.dot(edge1);
+	*out_v = (d11 * d20 - d01 * d21) * inv_denom;
+	*out_w = (d00 * d21 - d01 * d20) * inv_denom;
+	*out_u = 1.0f - *out_v - *out_w;
+}
+
+static bool project_point_to_mesh_triangle(const TrackMeshCollisionTriangle &tri, const SimVec3 &p, SimVec3 *out_point, float *out_u, float *out_v, float *out_w)
+{
+	const SimVec3 v0 = tri.p1 - tri.p0;
+	const SimVec3 v1 = tri.p2 - tri.p0;
+	const SimVec3 face_normal = v0.cross(v1);
+	const float normal_len2 = face_normal.length_squared();
+	if (normal_len2 <= 1.0e-8f) {
+		return false;
+	}
+	const SimVec3 face_n = face_normal / sqrtf(normal_len2);
+	const float d00 = v0.dot(v0);
+	const float d01 = v0.dot(v1);
+	const float d11 = v1.dot(v1);
+	const float denom = d00 * d11 - d01 * d01;
+	if (fabsf(denom) <= 1.0e-8f) {
+		return false;
+	}
+	const float inv_denom = 1.0f / denom;
+
+	SimVec3 projected = p - face_n * ((p - tri.p0).dot(face_n));
+	float u = 0.0f;
+	float v = 0.0f;
+	float w = 0.0f;
+	mesh_triangle_barycentric_on_face(tri, projected, v0, v1, inv_denom, d00, d01, d11, &u, &v, &w);
+	constexpr float kSupportSlop = -0.01f;
+	if (u >= kSupportSlop && v >= kSupportSlop && w >= kSupportSlop) {
+		*out_point = projected;
+		*out_u = u;
+		*out_v = v;
+		*out_w = w;
+		return true;
+	}
+	constexpr float kSmoothRetrySlop = -0.10f;
+	if (u < kSmoothRetrySlop || v < kSmoothRetrySlop || w < kSmoothRetrySlop) {
+		return false;
+	}
+
+	SimVec3 n0 = tri.n0.normalized();
+	SimVec3 n1 = tri.n1.normalized();
+	SimVec3 n2 = tri.n2.normalized();
+	if (n0.length_squared() <= 1.0e-8f) {
+		n0 = face_n;
+	}
+	if (n1.length_squared() <= 1.0e-8f) {
+		n1 = face_n;
+	}
+	if (n2.length_squared() <= 1.0e-8f) {
+		n2 = face_n;
+	}
+
+	for (int i = 0; i < 3; ++i) {
+		SimVec3 smooth_n = n0 * u + n1 * v + n2 * w;
+		if (smooth_n.length_squared() <= 1.0e-8f) {
+			smooth_n = face_n;
+		} else {
+			smooth_n = smooth_n.normalized();
+		}
+		const float normal_dot_face = smooth_n.dot(face_n);
+		if (fabsf(normal_dot_face) <= 1.0e-4f) {
+			return false;
+		}
+		projected = p - smooth_n * ((p - tri.p0).dot(face_n) / normal_dot_face);
+		mesh_triangle_barycentric_on_face(tri, projected, v0, v1, inv_denom, d00, d01, d11, &u, &v, &w);
+	}
+
+	if (u < kSupportSlop || v < kSupportSlop || w < kSupportSlop) {
+		return false;
+	}
+	*out_point = projected;
+	*out_u = u;
+	*out_v = v;
+	*out_w = w;
+	return true;
+}
+
 static float distance2_to_aabb(const SimAABB &bounds, const SimVec3 &p)
 {
 	const SimVec3 box_max = bounds.position + bounds.size;
@@ -1373,14 +1469,17 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		float u = 0.0f;
 		float v = 0.0f;
 		float w = 0.0f;
-		const SimVec3 closest = closest_point_on_mesh_triangle(tri, point, &u, &v, &w);
-		const float dist2 = (point - closest).length_squared();
+		SimVec3 projected;
+		if (!project_point_to_mesh_triangle(tri, point, &projected, &u, &v, &w)) {
+			return;
+		}
+		const float dist2 = (point - projected).length_squared();
 		if (dist2 < best_dist2) {
 			best_dist2 = dist2;
 			best_u = u;
 			best_v = v;
 			best_w = w;
-			best_flat_point = closest;
+			best_flat_point = projected;
 			best_tri = &tri;
 		}
 	};
