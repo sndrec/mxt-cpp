@@ -578,6 +578,9 @@ namespace {
 		{"DIP_TRACE_RAIL_SAMPLING", "Trace Rail Sampling", DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING},
 		{"DIP_DRAW_RAIL_CANDIDATES", "Draw Rail Candidates", DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES},
 		{"DIP_TRACE_PIPE_FLOOR", "Trace Pipe Floor", DIP_SWITCH::DIP_TRACE_PIPE_FLOOR},
+		{"DIP_DRAW_MESH_FLOOR_TESTS", "Draw Mesh Floor Tests", DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS},
+		{"DIP_DRAW_MESH_CAST_TESTS", "Draw Mesh Cast Tests", DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS},
+		{"DIP_DRAW_MESH_COLLISION_HITS", "Draw Mesh Collision Hits", DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS},
 	};
 
 	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count)

@@ -100,6 +100,9 @@ namespace DIP_SWITCH {
                 DIP_TRACE_RAIL_SAMPLING = 0x40,
                 DIP_DRAW_RAIL_CANDIDATES = 0x80,
                 DIP_TRACE_PIPE_FLOOR = 0x100,
+                DIP_DRAW_MESH_FLOOR_TESTS = 0x200,
+                DIP_DRAW_MESH_CAST_TESTS = 0x400,
+                DIP_DRAW_MESH_COLLISION_HITS = 0x800,
         };
 }
 

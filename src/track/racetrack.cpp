@@ -36,6 +36,17 @@ static inline godot::Vector3 godot_vec3_from_sim(const SimVec3& v)
 	return godot::Vector3(v.x, v.y, v.z);
 }
 
+static void draw_mesh_debug_triangle(const TrackMeshCollisionTriangle &tri, const godot::Color &color, float draw_time)
+{
+	const SimVec3 face = (tri.p1 - tri.p0).cross(tri.p2 - tri.p0);
+	const float face_len2 = face.length_squared();
+	const SimVec3 offset = face_len2 > 1.0e-8f ? face * (0.05f / sqrtf(face_len2)) : SimVec3();
+	godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
+	dd3d->call("draw_line", godot_vec3_from_sim(tri.p0 + offset), godot_vec3_from_sim(tri.p1 + offset), color, draw_time);
+	dd3d->call("draw_line", godot_vec3_from_sim(tri.p1 + offset), godot_vec3_from_sim(tri.p2 + offset), color, draw_time);
+	dd3d->call("draw_line", godot_vec3_from_sim(tri.p2 + offset), godot_vec3_from_sim(tri.p0 + offset), color, draw_time);
+}
+
 static inline float safe_inverse_road_scale(float scale)
 {
 	return (fabsf(scale) > 1.0e-5f) ? (1.0f / scale) : 0.0f;
@@ -1373,6 +1384,15 @@ static void cast_mesh_collision_fast(
 			scratch->mesh_cast_tri_tests += 1;
 		}
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
+		if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS) && scratch->debug_mesh_cast_draw_count < 256) {
+			scratch->debug_mesh_cast_draw_count += 1;
+			const bool rail_query = (params.mask & CAST_FLAGS::WANTS_RAIL) != 0;
+			const bool terrain_query = (params.mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
+			const godot::Color color = rail_query
+				? godot::Color(1.0f, 0.0f, 1.0f, 0.75f)
+				: (terrain_query ? godot::Color(1.0f, 0.85f, 0.1f, 0.75f) : godot::Color(1.0f, 0.45f, 0.05f, 0.75f));
+			draw_mesh_debug_triangle(tri, color, _TICK_DELTA);
+		}
 		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 		if (is_rail) {
 			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
@@ -1412,6 +1432,10 @@ static void cast_mesh_collision_fast(
 
 		best_dist = dist;
 		mesh_hit = true;
+		if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS) && scratch->debug_mesh_hit_draw_count < 256) {
+			scratch->debug_mesh_hit_draw_count += 1;
+			draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
+		}
 		out_collision.collided = true;
 		out_collision.collision_point = smooth_point;
 		out_collision.collision_normal = smooth_normal;
@@ -1510,6 +1534,10 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			scratch->mesh_floor_tri_tests += 1;
 		}
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
+		if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS) && scratch->debug_mesh_floor_draw_count < 256) {
+			scratch->debug_mesh_floor_draw_count += 1;
+			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 0.8f, 1.0f, 0.7f), _TICK_DELTA);
+		}
 		if ((tri.terrain & TERRAIN::RAIL) != 0 || distance2_to_aabb(tri.bounds, point) > best_dist2) {
 			return;
 		}
@@ -1528,6 +1556,10 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			best_w = w;
 			best_flat_point = projected;
 			best_tri = &tri;
+			if (scratch && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS) && scratch->debug_mesh_hit_draw_count < 256) {
+				scratch->debug_mesh_hit_draw_count += 1;
+				draw_mesh_debug_triangle(tri, godot::Color(0.1f, 1.0f, 0.45f, 0.95f), _TICK_DELTA);
+			}
 		}
 	};
 

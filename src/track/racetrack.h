@@ -55,6 +55,9 @@ struct alignas(64) TrackQueryScratch
 	uint32_t mesh_floor_segment_scans = 0;
 	uint32_t mesh_cast_calls = 0;
 	uint32_t mesh_cast_tri_tests = 0;
+	uint32_t debug_mesh_floor_draw_count = 0;
+	uint32_t debug_mesh_cast_draw_count = 0;
+	uint32_t debug_mesh_hit_draw_count = 0;
 
 	void reset_mesh_query_profile()
 	{
@@ -64,6 +67,9 @@ struct alignas(64) TrackQueryScratch
 		mesh_floor_segment_scans = 0;
 		mesh_cast_calls = 0;
 		mesh_cast_tri_tests = 0;
+		debug_mesh_floor_draw_count = 0;
+		debug_mesh_cast_draw_count = 0;
+		debug_mesh_hit_draw_count = 0;
 	}
 
 	void reset_trigger_events()
