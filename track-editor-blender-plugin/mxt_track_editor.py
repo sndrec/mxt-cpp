@@ -135,12 +135,6 @@ class MXTMeshCollisionProperties(PropertyGroup):
         name="Surface",
         items=MESH_COLLISION_SURFACE_ITEMS,
         default='TRACK')
-    segment: PointerProperty(
-        name="Segment",
-        type=bpy.types.Object,
-        poll=lambda self,obj: (obj and getattr(obj, "mxt_road_overall_props", None) \
-            and obj.mxt_road_overall_props.is_mxt_road_segment_parent))
-    checkpoint_index: IntProperty(name="Checkpoint", default=-1, min=-1)
 
 class MXT_UL_Modulations(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -2720,8 +2714,6 @@ class MXTRoad_PT_MainPanel(Panel):
             mesh_props = obj.mxt_mesh_collision_props
             mesh_collision_box.prop(mesh_props, "is_mxt_collision_mesh")
             mesh_collision_box.prop(mesh_props, "surface_type")
-            mesh_collision_box.prop(mesh_props, "segment")
-            mesh_collision_box.prop(mesh_props, "checkpoint_index")
 
         active_road_parent = get_active_mxt_road_segment_parent(context)
         if not active_road_parent:
@@ -4023,6 +4015,22 @@ class MXTRoad_OT_GenerateMesh(Operator):
             mid = (float(t0) + float(t1)) * 0.5
             return mid >= start and mid <= end
 
+        def normalized_vec(v, fallback):
+            length = float(np.linalg.norm(v))
+            if length > 1.0e-9:
+                return v / length
+            return fallback
+
+        def edge_rail_top(row, base_idx, height):
+            base_vert = verts_co[base_idx]
+            up_n = normalized_vec(N_main[row, base_idx - row * num_x], cl_rot_mats[row] @ np.array([0.0, 1.0, 0.0], dtype=np.float64))
+            forward_n = normalized_vec(PF[row, base_idx - row * num_x] - P0[row, base_idx - row * num_x], cl_rot_mats[row] @ np.array([0.0, 0.0, 1.0], dtype=np.float64))
+            rail_n = normalized_vec(np.cross(up_n, forward_n), cl_rot_mats[row] @ np.array([1.0, 0.0, 0.0], dtype=np.float64))
+            interior_idx = row * num_x + (num_x // 2)
+            interior_vec = verts_co[interior_idx] - base_vert
+            scaled_height = float(height) * float(centerline_scl[row, 1])
+            return base_vert + up_n * scaled_height, float(np.dot(rail_n, interior_vec)) >= 0.0
+
         if getattr(props, "rail_height_left", 0.0) > 0.0:
             h = props.rail_height_left
             span_start, span_end = rail_span(
@@ -4031,6 +4039,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
             )
             top_indices = []
             bottom_dup_indices = []
+            inward_winding = []
             offset = num_x - 1
             for row in range(num_y):
                 base_idx = row * num_x + offset
@@ -4043,12 +4052,12 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 new_bottom_idx = len(all_verts) - 1
                 bottom_dup_indices.append(new_bottom_idx)
 
-                # Create top vertex for the rail side
-                up_vec = cl_rot_mats[row] @ np.array([0.0, h * centerline_scl[row,1], 0.0])
-                all_verts.append((base_vert + up_vec).tolist())
+                top_pos, row_inward_winding = edge_rail_top(row, base_idx, h)
+                all_verts.append(top_pos.tolist())
                 all_uvs_per_vert.append([1.0, base_uv[1]])
                 new_top_idx = len(all_verts) - 1
                 top_indices.append(new_top_idx)
+                inward_winding.append(row_inward_winding)
                 rail_top_vert_indices.add(new_top_idx)
             left_rail_top_indices = top_indices
             for row in range(num_y-1):
@@ -4056,7 +4065,9 @@ class MXTRoad_OT_GenerateMesh(Operator):
                     continue
                 b0 = bottom_dup_indices[row]
                 b1 = bottom_dup_indices[row+1]
-                face = [b0, b1, top_indices[row+1], top_indices[row]]
+                face = [b0, top_indices[row], top_indices[row+1], b1]
+                if not inward_winding[row]:
+                    face = list(reversed(face))
                 all_faces.append(face)
                 rail_faces.append(face)
                 rail_face_indices.add(len(all_faces) - 1)
@@ -4070,6 +4081,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
             )
             top_indices = []
             bottom_dup_indices = []
+            inward_winding = []
             offset = 0
             for row in range(num_y):
                 base_idx = row * num_x + offset
@@ -4082,11 +4094,12 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 new_bottom_idx = len(all_verts) - 1
                 bottom_dup_indices.append(new_bottom_idx)
 
-                up_vec = cl_rot_mats[row] @ np.array([0.0, h * centerline_scl[row,1], 0.0])
-                all_verts.append((base_vert + up_vec).tolist())
+                top_pos, row_inward_winding = edge_rail_top(row, base_idx, h)
+                all_verts.append(top_pos.tolist())
                 all_uvs_per_vert.append([0.0, base_uv[1]])
                 new_top_idx = len(all_verts) - 1
                 top_indices.append(new_top_idx)
+                inward_winding.append(row_inward_winding)
                 rail_top_vert_indices.add(new_top_idx)
             right_rail_top_indices = top_indices
             for row in range(num_y-1):
@@ -4094,8 +4107,9 @@ class MXTRoad_OT_GenerateMesh(Operator):
                     continue
                 b0 = bottom_dup_indices[row]
                 b1 = bottom_dup_indices[row+1]
-                face = [b0, b1, top_indices[row+1], top_indices[row]]
-                face = list(reversed(face))  # Flip winding so faces point inward
+                face = [b0, top_indices[row], top_indices[row+1], b1]
+                if not inward_winding[row]:
+                    face = list(reversed(face))
                 all_faces.append(face)
                 rail_faces.append(face)
                 rail_face_indices.add(len(all_faces) - 1)
@@ -4655,42 +4669,20 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
             return name[:-4]
         return name
 
-    def nearest_checkpoint_index(seg, triangle_center):
-        props = seg.mxt_road_overall_props
-        cp_count = cp_counts.get(seg, 0)
-        if cp_count <= 0:
-            raise RuntimeError(f"{seg.name} has mesh collision but no checkpoints")
-        best_local = 0
-        best_dist2 = None
-        for local_idx, cp in enumerate(props.checkpoints):
-            p0 = Vector(cp.pos_start)
-            p1 = Vector(cp.pos_end)
-            edge = p1 - p0
-            denom = edge.length_squared
-            t = 0.0 if denom <= 1.0e-8 else max(0.0, min(1.0, (triangle_center - p0).dot(edge) / denom))
-            closest = p0 + edge * t
-            dist2 = (triangle_center - closest).length_squared
-            if best_dist2 is None or dist2 < best_dist2:
-                best_dist2 = dist2
-                best_local = local_idx
-        return seg_cp_start[seg] + best_local
-
-    def append_triangle_record(records_by_segment, segment_index, terrain_key, checkpoint_index, positions, normals, source_name):
+    def append_triangle_record(records, terrain_key, positions, normals, source_name):
         if terrain_key not in terrain_map:
             raise RuntimeError(f"{source_name} has unsupported mesh collision surface {terrain_key}")
         if len(positions) != 3 or len(normals) != 3:
             raise RuntimeError(f"{source_name} produced an invalid mesh collision triangle")
-        if checkpoint_index < 0:
-            raise RuntimeError(f"{source_name} mesh collision triangle has no checkpoint")
         record = bytearray()
-        record += struct.pack('<Iii', terrain_map[terrain_key], segment_index, checkpoint_index)
+        record += struct.pack('<I', terrain_map[terrain_key])
         for p in positions:
             record += struct.pack('<3f', p.x, p.y, p.z)
         for n in normals:
             record += struct.pack('<3f', n.x, n.y, n.z)
-        records_by_segment[segment_index].append(record)
+        records.append(record)
 
-    def append_object_triangles(records_by_segment, obj, segment_index, checkpoint_index, surface_for_polygon, depsgraph, required):
+    def append_object_triangles(records, obj, surface_for_polygon, depsgraph, required):
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
         try:
@@ -4711,8 +4703,7 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                     vert = mesh.vertices[loop.vertex_index]
                     positions.append(obj.matrix_world @ vert.co)
                     normals.append((normal_matrix @ loop.normal).normalized())
-                use_checkpoint_index = checkpoint_index(positions) if callable(checkpoint_index) else checkpoint_index
-                append_triangle_record(records_by_segment, segment_index, terrain_key, use_checkpoint_index, positions, normals, obj.name)
+                append_triangle_record(records, terrain_key, positions, normals, obj.name)
                 object_tri_count += 1
             if required and object_tri_count == 0:
                 raise RuntimeError(f"{obj.name} is marked for mesh collision but has no triangles")
@@ -4720,7 +4711,7 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
         finally:
             eval_obj.to_mesh_clear()
 
-    def append_segment_embed_terrain_triangles(records_by_segment, seg, segment_index):
+    def append_segment_embed_terrain_triangles(records, seg):
         props = seg.mxt_road_overall_props
         if not hasattr(props, "embeds") or len(props.embeds) == 0:
             return 0
@@ -4802,13 +4793,9 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                     for tri in tris:
                         tri_positions = [Vector(tuple(points[r, c])) for r, c in tri]
                         tri_normals = [Vector(tuple(normals[r, c])).normalized() for r, c in tri]
-                        center = (tri_positions[0] + tri_positions[1] + tri_positions[2]) / 3.0
-                        cp_idx = nearest_checkpoint_index(seg, center)
                         append_triangle_record(
-                            records_by_segment,
-                            segment_index,
+                            records,
                             terrain_key,
-                            cp_idx,
                             tri_positions,
                             tri_normals,
                             f"{seg.name} embed {embed.label}")
@@ -4816,22 +4803,15 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
         return emitted
 
     depsgraph = context.evaluated_depsgraph_get()
-    records_by_segment = {index: [] for index in seg_index.values()}
+    records = []
     for obj in bpy.data.objects:
         props = getattr(obj, "mxt_mesh_collision_props", None)
         if obj.type != 'MESH' or not props or not props.is_mxt_collision_mesh:
             continue
-        if not props.segment:
-            raise RuntimeError(f"{obj.name} is marked for mesh collision but has no segment")
-        if props.segment not in seg_index:
-            raise RuntimeError(f"{obj.name} references non-exported segment {props.segment.name}")
-        segment_index = seg_index[props.segment]
         surface_type = props.surface_type
         append_object_triangles(
-            records_by_segment,
+            records,
             obj,
-            segment_index,
-            props.checkpoint_index,
             lambda _mesh, _poly_index, surface_type=surface_type: surface_type,
             depsgraph,
             True)
@@ -4857,21 +4837,18 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
             return preview_material_map[mat_name]
 
         append_object_triangles(
-            records_by_segment,
+            records,
             preview_obj,
-            segment_index,
-            lambda positions, seg=seg: nearest_checkpoint_index(seg, (positions[0] + positions[1] + positions[2]) / 3.0),
             preview_surface,
             depsgraph,
             True)
-        append_segment_embed_terrain_triangles(records_by_segment, seg, segment_index)
+        append_segment_embed_terrain_triangles(records, seg)
 
     mesh_data = bytearray()
     tri_count = 0
-    for segment_index in sorted(records_by_segment.keys()):
-        for record in records_by_segment[segment_index]:
-            mesh_data += record
-            tri_count += 1
+    for record in records:
+        mesh_data += record
+        tri_count += 1
     return tri_count, mesh_data
 
 
@@ -5174,7 +5151,7 @@ def _export_stage(context, filepath):
 
         mesh_collision_triangle_count, mesh_collision_data = _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts)
 
-        header = struct.pack('<I4sIIII', 0, b'v0.8', len(cp_list), len(seg_order), trig_count, mesh_collision_triangle_count)
+        header = struct.pack('<I4sIIII', 0, b'v0.9', len(cp_list), len(seg_order), trig_count, mesh_collision_triangle_count)
         header = struct.pack('<I', len(header)) + header[4:]
         f.write(header)
         f.write(data)

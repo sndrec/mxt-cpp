@@ -31,17 +31,18 @@ struct TrackMeshCollisionTriangle
 	float projection_d11;
 	float projection_inv_denom;
 	uint32_t terrain;
-	int32_t segment_index;
-	int32_t checkpoint_index;
-	int32_t next_checkpoint_triangle;
 };
 
 struct TrackMeshBVHNode
 {
-	SimAABB bounds;
-	int32_t left_first;
-	int32_t count;
-	int32_t right_first;
+	float min_x[2];
+	float min_y[2];
+	float min_z[2];
+	float max_x[2];
+	float max_y[2];
+	float max_z[2];
+	int32_t child[2];
+	int32_t count[2];
 };
 
 struct alignas(64) TrackQueryScratch
@@ -191,13 +192,6 @@ public:
 	TrackSegment* segments;
 	TrackMeshCollisionTriangle* mesh_collision_triangles;
 	int num_mesh_collision_triangles;
-	int32_t* mesh_checkpoint_triangle_head;
-	int32_t* mesh_checkpoint_triangle_count;
-	TrackMeshBVHNode* mesh_checkpoint_bvh_nodes;
-	int32_t* mesh_checkpoint_bvh_triangle_indices;
-	int32_t* mesh_checkpoint_bvh_node_start;
-	int32_t* mesh_checkpoint_bvh_node_count;
-	int num_mesh_checkpoint_bvh_nodes;
 	TrackMeshBVHNode* mesh_world_bvh_nodes;
 	int32_t* mesh_world_bvh_triangle_indices;
 	int num_mesh_world_bvh_nodes;

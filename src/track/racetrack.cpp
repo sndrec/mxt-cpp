@@ -10,6 +10,9 @@
 #include <queue>
 #include <vector>
 #include <limits>
+#if defined(__SSE__)
+#include <xmmintrin.h>
+#endif
 #include "mxt_core/debug.hpp"
 
 static inline SimVec3 sim_vec3_from_godot(const SimVec3& v)
@@ -1121,6 +1124,96 @@ static bool aabb_overlaps_aabb(const SimAABB &a, const SimAABB &b)
 		a.position.z <= b_max.z && a_max.z >= b.position.z;
 }
 
+static bool mesh_bvh_child_empty(const TrackMeshBVHNode &node, int slot)
+{
+	return node.count[slot] < 0;
+}
+
+static bool mesh_bvh_child_is_leaf(const TrackMeshBVHNode &node, int slot)
+{
+	return node.count[slot] > 0;
+}
+
+static SimAABB mesh_bvh_child_bounds(const TrackMeshBVHNode &node, int slot)
+{
+	SimAABB bounds;
+	bounds.position = SimVec3(node.min_x[slot], node.min_y[slot], node.min_z[slot]);
+	bounds.size = SimVec3(
+		node.max_x[slot] - node.min_x[slot],
+		node.max_y[slot] - node.min_y[slot],
+		node.max_z[slot] - node.min_z[slot]);
+	return bounds;
+}
+
+static bool mesh_bvh_child_overlaps_aabb(const TrackMeshBVHNode &node, int slot, const SimAABB &bounds)
+{
+	const SimVec3 b_max = bounds.position + bounds.size;
+	return node.min_x[slot] <= b_max.x && node.max_x[slot] >= bounds.position.x &&
+		node.min_y[slot] <= b_max.y && node.max_y[slot] >= bounds.position.y &&
+		node.min_z[slot] <= b_max.z && node.max_z[slot] >= bounds.position.z;
+}
+
+static bool mesh_bvh_child_overlaps_segment(const TrackMeshBVHNode &node, int slot, const SimVec3 &p0, const SimVec3 &p1)
+{
+	const SimAABB bounds = mesh_bvh_child_bounds(node, slot);
+	return aabb_overlaps_segment(bounds, p0, p1);
+}
+
+static float mesh_bvh_child_distance2_to_point(const TrackMeshBVHNode &node, int slot, const SimVec3 &p)
+{
+	float d2 = 0.0f;
+	float delta = 0.0f;
+	if (p.x < node.min_x[slot]) {
+		delta = node.min_x[slot] - p.x;
+		d2 += delta * delta;
+	} else if (p.x > node.max_x[slot]) {
+		delta = p.x - node.max_x[slot];
+		d2 += delta * delta;
+	}
+	if (p.y < node.min_y[slot]) {
+		delta = node.min_y[slot] - p.y;
+		d2 += delta * delta;
+	} else if (p.y > node.max_y[slot]) {
+		delta = p.y - node.max_y[slot];
+		d2 += delta * delta;
+	}
+	if (p.z < node.min_z[slot]) {
+		delta = node.min_z[slot] - p.z;
+		d2 += delta * delta;
+	} else if (p.z > node.max_z[slot]) {
+		delta = p.z - node.max_z[slot];
+		d2 += delta * delta;
+	}
+	return d2;
+}
+
+static void mesh_bvh_child_distance2_pair(const TrackMeshBVHNode &node, const SimVec3 &p, float out_dist2[2])
+{
+#if defined(__SSE__)
+	const __m128 px = _mm_set1_ps(p.x);
+	const __m128 py = _mm_set1_ps(p.y);
+	const __m128 pz = _mm_set1_ps(p.z);
+	const __m128 min_x = _mm_set_ps(0.0f, 0.0f, node.min_x[1], node.min_x[0]);
+	const __m128 min_y = _mm_set_ps(0.0f, 0.0f, node.min_y[1], node.min_y[0]);
+	const __m128 min_z = _mm_set_ps(0.0f, 0.0f, node.min_z[1], node.min_z[0]);
+	const __m128 max_x = _mm_set_ps(0.0f, 0.0f, node.max_x[1], node.max_x[0]);
+	const __m128 max_y = _mm_set_ps(0.0f, 0.0f, node.max_y[1], node.max_y[0]);
+	const __m128 max_z = _mm_set_ps(0.0f, 0.0f, node.max_z[1], node.max_z[0]);
+	const __m128 zero = _mm_setzero_ps();
+	const __m128 dx = _mm_max_ps(_mm_max_ps(_mm_sub_ps(min_x, px), _mm_sub_ps(px, max_x)), zero);
+	const __m128 dy = _mm_max_ps(_mm_max_ps(_mm_sub_ps(min_y, py), _mm_sub_ps(py, max_y)), zero);
+	const __m128 dz = _mm_max_ps(_mm_max_ps(_mm_sub_ps(min_z, pz), _mm_sub_ps(pz, max_z)), zero);
+	const __m128 d2 = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, dx), _mm_mul_ps(dy, dy)), _mm_mul_ps(dz, dz));
+	alignas(16) float lanes[4];
+	_mm_store_ps(lanes, d2);
+	out_dist2[0] = mesh_bvh_child_empty(node, 0) ? FLT_MAX : lanes[0];
+	out_dist2[1] = mesh_bvh_child_empty(node, 1) ? FLT_MAX : lanes[1];
+#else
+	out_dist2[0] = mesh_bvh_child_empty(node, 0) ? FLT_MAX : mesh_bvh_child_distance2_to_point(node, 0, p);
+	out_dist2[1] = mesh_bvh_child_empty(node, 1) ? FLT_MAX : mesh_bvh_child_distance2_to_point(node, 1, p);
+#endif
+}
+
 enum MeshCastRejectReason
 {
 	MESH_CAST_REJECT_NONE,
@@ -1674,9 +1767,8 @@ static bool scan_mesh_cast_triangle(
 		hit_normal *= -1.0f;
 		hit_face_normal *= -1.0f;
 	}
-	const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
-	if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
-		godot::UtilityFunctions::printerr(godot::String("MXT mesh collision triangle has invalid checkpoint index "), cp_idx);
+	if (start_idx < 0 || start_idx >= track->num_checkpoints) {
+		godot::UtilityFunctions::printerr(godot::String("MXT mesh collision query has invalid checkpoint index "), start_idx);
 		std::abort();
 	}
 
@@ -1694,7 +1786,7 @@ static bool scan_mesh_cast_triangle(
 	out_collision.collision_normal = hit_normal;
 	out_collision.collision_face_point = flat_point;
 	out_collision.collision_face_normal = hit_face_normal;
-	out_collision.road_data.cp_idx = cp_idx;
+	out_collision.road_data.cp_idx = start_idx;
 	out_collision.road_data.spatial_t = SimVec3();
 	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
 	out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, hit_point, hit_normal);
@@ -1721,10 +1813,11 @@ static void cast_mesh_collision_fast(
 	if (track->num_mesh_collision_triangles <= 0) {
 		return;
 	}
-	const int segment_index = track->checkpoints[start_idx].road_segment;
-	const TrackSegment &segment = track->segments[segment_index];
-	if (segment.mesh_collision_count <= 0 &&
-		(!track->mesh_world_bvh_nodes || !track->mesh_world_bvh_triangle_indices || track->num_mesh_world_bvh_nodes <= 0)) {
+	if (start_idx < 0 || start_idx >= track->num_checkpoints) {
+		godot::UtilityFunctions::printerr(godot::String("MXT mesh cast query has invalid checkpoint index "), start_idx);
+		std::abort();
+	}
+	if (!track->mesh_world_bvh_nodes || !track->mesh_world_bvh_triangle_indices || track->num_mesh_world_bvh_nodes <= 0) {
 		return;
 	}
 	const SimVec3 ray = p1 - p0;
@@ -1734,108 +1827,41 @@ static void cast_mesh_collision_fast(
 	}
 
 	float best_dist = out_collision.collided ? p0.distance_to(out_collision.collision_point) : FLT_MAX;
-	bool mesh_hit = false;
 	auto scan_triangle = [&](int tri_index) {
-		mesh_hit |= scan_mesh_cast_triangle(params, out_collision, p0, p1, ray, ray_len, start_idx, tri_index, best_dist, scratch);
+		scan_mesh_cast_triangle(params, out_collision, p0, p1, ray, ray_len, start_idx, tri_index, best_dist, scratch);
 	};
 
-	auto scan_checkpoint = [&](int cp_idx) {
-		if (cp_idx < 0 || cp_idx >= track->num_checkpoints || !track->mesh_checkpoint_triangle_head) {
-			return;
-		}
-		if (track->mesh_checkpoint_bvh_nodes && track->mesh_checkpoint_bvh_triangle_indices && track->mesh_checkpoint_bvh_node_start) {
-			const int root = track->mesh_checkpoint_bvh_node_start[cp_idx];
-			if (root < 0) {
-				return;
-			}
-			int stack[128];
-			int stack_count = 0;
-			stack[stack_count++] = root;
-			while (stack_count > 0) {
-				const int node_index = stack[--stack_count];
-				const TrackMeshBVHNode &node = track->mesh_checkpoint_bvh_nodes[node_index];
+	int stack[256];
+	int stack_count = 0;
+	stack[stack_count++] = 0;
+	while (stack_count > 0) {
+		const int node_index = stack[--stack_count];
+		const TrackMeshBVHNode &node = track->mesh_world_bvh_nodes[node_index];
 #if MXT_MESH_DEEP_PROFILE
-				if (scratch) {
-					scratch->mesh_cast_bvh_node_tests += 1;
-				}
-#endif
-				if (!aabb_overlaps_segment(node.bounds, p0, p1)) {
-					continue;
-				}
-				if (node.count > 0) {
-					const int end = node.left_first + node.count;
-					for (int i = node.left_first; i < end; ++i) {
-						scan_triangle(track->mesh_checkpoint_bvh_triangle_indices[i]);
-					}
-				} else {
-					if (stack_count + 2 > 128) {
-						godot::UtilityFunctions::printerr(godot::String("MXT mesh checkpoint BVH traversal stack overflow"));
-						std::abort();
-					}
-					if (node.left_first < 0 || node.right_first < 0) {
-						godot::UtilityFunctions::printerr(godot::String("MXT mesh checkpoint BVH interior node has invalid child"));
-						std::abort();
-					}
-					stack[stack_count++] = node.left_first;
-					stack[stack_count++] = node.right_first;
-				}
-			}
-			return;
+		if (scratch) {
+			scratch->mesh_cast_bvh_node_tests += 1;
 		}
-		for (int tri_index = track->mesh_checkpoint_triangle_head[cp_idx]; tri_index >= 0; tri_index = track->mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
-			scan_triangle(tri_index);
-		}
-	};
-
-	if (track->mesh_world_bvh_nodes && track->mesh_world_bvh_triangle_indices && track->num_mesh_world_bvh_nodes > 0) {
-		int stack[256];
-		int stack_count = 0;
-		stack[stack_count++] = 0;
-		while (stack_count > 0) {
-			const int node_index = stack[--stack_count];
-			const TrackMeshBVHNode &node = track->mesh_world_bvh_nodes[node_index];
-#if MXT_MESH_DEEP_PROFILE
-			if (scratch) {
-				scratch->mesh_cast_bvh_node_tests += 1;
-			}
 #endif
-			if (!aabb_overlaps_segment(node.bounds, p0, p1)) {
+		for (int slot = 0; slot < 2; ++slot) {
+			if (mesh_bvh_child_empty(node, slot) || !mesh_bvh_child_overlaps_segment(node, slot, p0, p1)) {
 				continue;
 			}
-			if (node.count > 0) {
-				const int end = node.left_first + node.count;
-				for (int i = node.left_first; i < end; ++i) {
+			if (mesh_bvh_child_is_leaf(node, slot)) {
+				const int end = node.child[slot] + node.count[slot];
+				for (int i = node.child[slot]; i < end; ++i) {
 					scan_triangle(track->mesh_world_bvh_triangle_indices[i]);
 				}
 			} else {
-				if (stack_count + 2 > 256) {
+				if (stack_count + 1 > 256) {
 					godot::UtilityFunctions::printerr(godot::String("MXT mesh world cast BVH traversal stack overflow"));
 					std::abort();
 				}
-				if (node.left_first < 0 || node.right_first < 0) {
+				if (node.child[slot] < 0) {
 					godot::UtilityFunctions::printerr(godot::String("MXT mesh world cast BVH interior node has invalid child"));
 					std::abort();
 				}
-				stack[stack_count++] = node.left_first;
-				stack[stack_count++] = node.right_first;
+				stack[stack_count++] = node.child[slot];
 			}
-		}
-		return;
-	}
-
-	scan_checkpoint(start_idx);
-	for (int delta = 1; delta <= 4; ++delta) {
-		scan_checkpoint(start_idx - delta);
-		scan_checkpoint(start_idx + delta);
-	}
-	const CollisionCheckpoint &start_cp = track->checkpoints[start_idx];
-	for (int neighbor = 0; neighbor < start_cp.num_neighboring_checkpoints; ++neighbor) {
-		scan_checkpoint(start_cp.neighboring_checkpoints[neighbor]);
-	}
-	if (!mesh_hit && (params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
-		const int tri_end = segment.mesh_collision_start + segment.mesh_collision_count;
-		for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
-			scan_triangle(tri_index);
 		}
 	}
 }
@@ -1859,45 +1885,46 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 #if MXT_MESH_DEEP_PROFILE
 		scratch.mesh_cast_candidate_bvh_node_tests += 1;
 #endif
-		if (!aabb_overlaps_aabb(node.bounds, bounds)) {
-			continue;
-		}
-		if (node.count > 0) {
-			const int end = node.left_first + node.count;
-			for (int i = node.left_first; i < end; ++i) {
-				const int tri_index = mesh_world_bvh_triangle_indices[i];
-				const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-				const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
-				if (is_rail) {
-					if ((mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+		for (int slot = 0; slot < 2; ++slot) {
+			if (mesh_bvh_child_empty(node, slot) || !mesh_bvh_child_overlaps_aabb(node, slot, bounds)) {
+				continue;
+			}
+			if (mesh_bvh_child_is_leaf(node, slot)) {
+				const int end = node.child[slot] + node.count[slot];
+				for (int i = node.child[slot]; i < end; ++i) {
+					const int tri_index = mesh_world_bvh_triangle_indices[i];
+					const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
+					const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
+					if (is_rail) {
+						if ((mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+							continue;
+						}
+					} else if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
 						continue;
 					}
-				} else if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
-					continue;
+					if (!aabb_overlaps_aabb(tri.bounds, bounds)) {
+						continue;
+					}
+					if (scratch.mesh_cast_candidate_count >= TrackQueryScratch::MAX_MESH_CAST_CANDIDATES) {
+						godot::UtilityFunctions::printerr(godot::String("MXT mesh cast candidate list overflow"));
+						std::abort();
+					}
+					scratch.mesh_cast_candidate_indices[scratch.mesh_cast_candidate_count++] = tri_index;
+#if MXT_MESH_DEEP_PROFILE
+					scratch.mesh_cast_candidate_triangles += 1;
+#endif
 				}
-				if (!aabb_overlaps_aabb(tri.bounds, bounds)) {
-					continue;
-				}
-				if (scratch.mesh_cast_candidate_count >= TrackQueryScratch::MAX_MESH_CAST_CANDIDATES) {
-					godot::UtilityFunctions::printerr(godot::String("MXT mesh cast candidate list overflow"));
+			} else {
+				if (stack_count + 1 > 256) {
+					godot::UtilityFunctions::printerr(godot::String("MXT mesh world candidate BVH traversal stack overflow"));
 					std::abort();
 				}
-				scratch.mesh_cast_candidate_indices[scratch.mesh_cast_candidate_count++] = tri_index;
-#if MXT_MESH_DEEP_PROFILE
-				scratch.mesh_cast_candidate_triangles += 1;
-#endif
+				if (node.child[slot] < 0) {
+					godot::UtilityFunctions::printerr(godot::String("MXT mesh world candidate BVH interior node has invalid child"));
+					std::abort();
+				}
+				stack[stack_count++] = node.child[slot];
 			}
-		} else {
-			if (stack_count + 2 > 256) {
-				godot::UtilityFunctions::printerr(godot::String("MXT mesh world candidate BVH traversal stack overflow"));
-				std::abort();
-			}
-			if (node.left_first < 0 || node.right_first < 0) {
-				godot::UtilityFunctions::printerr(godot::String("MXT mesh world candidate BVH interior node has invalid child"));
-				std::abort();
-			}
-			stack[stack_count++] = node.left_first;
-			stack[stack_count++] = node.right_first;
 		}
 	}
 	return true;
@@ -1951,6 +1978,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 
 void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index)
 {
+	(void)allow_global_fallback;
 	TrackQueryScratch::MeshFloorProfileCounters *floor_profile = mesh_floor_profile_counters(scratch);
 #if MXT_MESH_DEEP_PROFILE
 	const auto floor_profile_start = std::chrono::high_resolution_clock::now();
@@ -2123,39 +2151,6 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		}
 	};
 
-	auto scan_checkpoint = [&](int cp_idx) {
-		if (cp_idx < 0 || cp_idx >= num_checkpoints || !mesh_checkpoint_triangle_head) {
-			return;
-		}
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_floor_checkpoint_scans += 1;
-		}
-#endif
-		for (int tri_index = mesh_checkpoint_triangle_head[cp_idx]; tri_index >= 0; tri_index = mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
-			scan_triangle(tri_index);
-		}
-	};
-
-	auto scan_segment = [&](int seg) {
-		if (seg < 0 || seg >= num_segments) {
-			return;
-		}
-		const TrackSegment &segment = segments[seg];
-		if (segment.mesh_collision_count <= 0 || distance2_to_aabb(segment.mesh_bounds, point) > best_dist2) {
-			return;
-		}
-#if MXT_MESH_DEEP_PROFILE
-		if (scratch) {
-			scratch->mesh_floor_segment_scans += 1;
-		}
-#endif
-		const int tri_end = segment.mesh_collision_start + segment.mesh_collision_count;
-		for (int tri_index = segment.mesh_collision_start; tri_index < tri_end; ++tri_index) {
-			scan_triangle(tri_index);
-		}
-	};
-
 	auto scan_floor_bvh_root = [&](int root_node_index) {
 		if (!mesh_floor_bvh_nodes || !mesh_floor_bvh_triangle_indices || num_mesh_floor_bvh_nodes <= 0) {
 			return false;
@@ -2177,80 +2172,54 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 				floor_profile->bvh_node_tests += 1;
 			}
 #endif
-			if (distance2_to_aabb(node.bounds, point) > best_dist2) {
-				continue;
+			float child_dist2[2];
+			mesh_bvh_child_distance2_pair(node, point, child_dist2);
+#if MXT_MESH_DEEP_PROFILE
+			if (floor_profile) {
+				floor_profile->bvh_interior_visits += 1;
+				floor_profile->bvh_child_tests += 2;
 			}
-			if (node.count > 0) {
-#if MXT_MESH_DEEP_PROFILE
-				if (floor_profile) {
-					floor_profile->bvh_leaf_visits += 1;
-					floor_profile->bvh_leaf_triangles += static_cast<uint32_t>(node.count);
-				}
 #endif
-				const int end = node.left_first + node.count;
-				for (int i = node.left_first; i < end; ++i) {
-					scan_triangle(mesh_floor_bvh_triangle_indices[i]);
+			const int first_slot = child_dist2[0] <= child_dist2[1] ? 0 : 1;
+			const int second_slot = first_slot ^ 1;
+			for (int order = 0; order < 2; ++order) {
+				const int slot = order == 0 ? second_slot : first_slot;
+				if (mesh_bvh_child_empty(node, slot) || child_dist2[slot] > best_dist2) {
+					continue;
 				}
-			} else {
+				if (mesh_bvh_child_is_leaf(node, slot)) {
 #if MXT_MESH_DEEP_PROFILE
-				if (floor_profile) {
-					floor_profile->bvh_interior_visits += 1;
-					floor_profile->bvh_child_tests += 2;
-				}
-#endif
-				if (stack_count + 2 > 256) {
-					godot::UtilityFunctions::printerr(godot::String("MXT mesh floor BVH traversal stack overflow"));
-					std::abort();
-				}
-				if (node.left_first < 0 || node.right_first < 0) {
-					godot::UtilityFunctions::printerr(godot::String("MXT mesh floor BVH interior node has invalid child"));
-					std::abort();
-				}
-				const TrackMeshBVHNode &left = mesh_floor_bvh_nodes[node.left_first];
-				const TrackMeshBVHNode &right = mesh_floor_bvh_nodes[node.right_first];
-				const float left_dist2 = distance2_to_aabb(left.bounds, point);
-				const float right_dist2 = distance2_to_aabb(right.bounds, point);
-				if (left_dist2 <= right_dist2) {
-					if (right_dist2 <= best_dist2) {
-						stack[stack_count++] = node.right_first;
-#if MXT_MESH_DEEP_PROFILE
-						if (floor_profile) {
-							floor_profile->bvh_child_pushes += 1;
-						}
-#endif
+					if (floor_profile) {
+						floor_profile->bvh_leaf_visits += 1;
+						floor_profile->bvh_leaf_triangles += static_cast<uint32_t>(node.count[slot]);
 					}
-					if (left_dist2 <= best_dist2) {
-						stack[stack_count++] = node.left_first;
-#if MXT_MESH_DEEP_PROFILE
-						if (floor_profile) {
-							floor_profile->bvh_child_pushes += 1;
-						}
 #endif
+					const int end = node.child[slot] + node.count[slot];
+					for (int i = node.child[slot]; i < end; ++i) {
+						scan_triangle(mesh_floor_bvh_triangle_indices[i]);
 					}
 				} else {
-					if (left_dist2 <= best_dist2) {
-						stack[stack_count++] = node.left_first;
-#if MXT_MESH_DEEP_PROFILE
-						if (floor_profile) {
-							floor_profile->bvh_child_pushes += 1;
-						}
-#endif
+					if (stack_count + 1 > 256) {
+						godot::UtilityFunctions::printerr(godot::String("MXT mesh floor BVH traversal stack overflow"));
+						std::abort();
 					}
-					if (right_dist2 <= best_dist2) {
-						stack[stack_count++] = node.right_first;
-#if MXT_MESH_DEEP_PROFILE
-						if (floor_profile) {
-							floor_profile->bvh_child_pushes += 1;
-						}
-#endif
+					if (node.child[slot] < 0) {
+						godot::UtilityFunctions::printerr(godot::String("MXT mesh floor BVH interior node has invalid child"));
+						std::abort();
 					}
-				}
+					stack[stack_count++] = node.child[slot];
 #if MXT_MESH_DEEP_PROFILE
-				if (static_cast<uint32_t>(stack_count) > stack_peak) {
-					stack_peak = static_cast<uint32_t>(stack_count);
-				}
+					if (floor_profile) {
+						floor_profile->bvh_child_pushes += 1;
+					}
 #endif
+				}
 			}
+#if MXT_MESH_DEEP_PROFILE
+			if (static_cast<uint32_t>(stack_count) > stack_peak) {
+				stack_peak = static_cast<uint32_t>(stack_count);
+			}
+#endif
 		}
 #if MXT_MESH_DEEP_PROFILE
 		if (floor_profile) {
@@ -2288,23 +2257,6 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 
 		if (scan_floor_bvh_root(0)) {
 			return;
-		}
-		scan_checkpoint(start_idx);
-		for (int delta = 1; delta <= 2; ++delta) {
-			scan_checkpoint(start_idx - delta);
-			scan_checkpoint(start_idx + delta);
-		}
-		const CollisionCheckpoint &start_cp = checkpoints[start_idx];
-		for (int neighbor = 0; neighbor < start_cp.num_neighboring_checkpoints; ++neighbor) {
-			scan_checkpoint(start_cp.neighboring_checkpoints[neighbor]);
-		}
-		if (!best_tri && allow_global_fallback) {
-			scan_segment(checkpoints[start_idx].road_segment);
-		}
-		if (!best_tri && allow_global_fallback) {
-			for (int seg = 0; seg < num_segments; ++seg) {
-				scan_segment(seg);
-			}
 		}
 	};
 #if MXT_MESH_DEEP_PROFILE
@@ -2364,9 +2316,8 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		smooth_normal *= -1.0f;
 		face_normal *= -1.0f;
 	}
-	const int cp_idx = best_tri->checkpoint_index >= 0 ? best_tri->checkpoint_index : start_idx;
-	if (cp_idx < 0 || cp_idx >= num_checkpoints) {
-		godot::UtilityFunctions::printerr(godot::String("MXT mesh collision triangle has invalid checkpoint index "), cp_idx);
+	if (start_idx < 0 || start_idx >= num_checkpoints) {
+		godot::UtilityFunctions::printerr(godot::String("MXT mesh floor query has invalid checkpoint index "), start_idx);
 		std::abort();
 	}
 
@@ -2375,7 +2326,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.collision_normal = smooth_normal;
 	out_collision.collision_face_point = best_flat_point;
 	out_collision.collision_face_normal = face_normal;
-	out_collision.road_data.cp_idx = cp_idx;
+	out_collision.road_data.cp_idx = start_idx;
 	out_collision.road_data.spatial_t = SimVec3();
 	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
 	out_collision.road_data.closest_surface = mesh_collision_surface_transform(*best_tri, smooth_point, smooth_normal);

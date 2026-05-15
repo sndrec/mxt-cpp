@@ -83,10 +83,37 @@ static float mesh_bvh_surface_area(const SimAABB &bounds)
 	return 2.0f * (s.x * s.y + s.y * s.z + s.z * s.x);
 }
 
-static void build_mesh_bvh_node(std::vector<MeshBVHBuildPrim> &prims, std::vector<TrackMeshBVHNode> &nodes, int start, int count)
+struct MeshBVHBuildRef
 {
-	const int node_index = static_cast<int>(nodes.size());
-	nodes.push_back({});
+	SimAABB bounds;
+	int32_t child = -1;
+	int32_t count = -1;
+};
+
+static TrackMeshBVHNode mesh_bvh_empty_node()
+{
+	TrackMeshBVHNode node = {};
+	for (int i = 0; i < 2; ++i) {
+		node.child[i] = -1;
+		node.count[i] = -1;
+	}
+	return node;
+}
+
+static void mesh_bvh_set_child(TrackMeshBVHNode &node, int slot, const MeshBVHBuildRef &child)
+{
+	node.min_x[slot] = child.bounds.position.x;
+	node.min_y[slot] = child.bounds.position.y;
+	node.min_z[slot] = child.bounds.position.z;
+	node.max_x[slot] = child.bounds.position.x + child.bounds.size.x;
+	node.max_y[slot] = child.bounds.position.y + child.bounds.size.y;
+	node.max_z[slot] = child.bounds.position.z + child.bounds.size.z;
+	node.child[slot] = child.child;
+	node.count[slot] = child.count;
+}
+
+static MeshBVHBuildRef build_mesh_bvh_child(std::vector<MeshBVHBuildPrim> &prims, std::vector<TrackMeshBVHNode> &nodes, int start, int count)
+{
 	SimAABB bounds = prims[start].bounds;
 	SimAABB centroid_bounds;
 	centroid_bounds.position = prims[start].center;
@@ -97,11 +124,11 @@ static void build_mesh_bvh_node(std::vector<MeshBVHBuildPrim> &prims, std::vecto
 	}
 	constexpr int kLeafTriangleCount = 8;
 	if (count <= kLeafTriangleCount) {
-		nodes[node_index].bounds = bounds;
-		nodes[node_index].left_first = start;
-		nodes[node_index].count = count;
-		nodes[node_index].right_first = -1;
-		return;
+		MeshBVHBuildRef ref;
+		ref.bounds = bounds;
+		ref.child = start;
+		ref.count = count;
+		return ref;
 	}
 	constexpr int kBinCount = 16;
 	struct MeshBVHBin {
@@ -201,75 +228,33 @@ static void build_mesh_bvh_node(std::vector<MeshBVHBuildPrim> &prims, std::vecto
 				return mesh_bvh_axis_value(a.center, axis) < mesh_bvh_axis_value(b.center, axis);
 			});
 	}
-	nodes[node_index].bounds = bounds;
-	nodes[node_index].count = 0;
-	nodes[node_index].left_first = static_cast<int32_t>(nodes.size());
-	build_mesh_bvh_node(prims, nodes, start, mid - start);
-	nodes[node_index].right_first = static_cast<int32_t>(nodes.size());
-	build_mesh_bvh_node(prims, nodes, mid, start + count - mid);
+	const int node_index = static_cast<int>(nodes.size());
+	nodes.push_back(mesh_bvh_empty_node());
+	const MeshBVHBuildRef left = build_mesh_bvh_child(prims, nodes, start, mid - start);
+	const MeshBVHBuildRef right = build_mesh_bvh_child(prims, nodes, mid, start + count - mid);
+	mesh_bvh_set_child(nodes[node_index], 0, left);
+	mesh_bvh_set_child(nodes[node_index], 1, right);
+
+	MeshBVHBuildRef ref;
+	ref.bounds = bounds;
+	ref.child = node_index;
+	ref.count = 0;
+	return ref;
 }
 
-static void build_track_mesh_checkpoint_bvh(RaceTrack *track, HeapHandler &level_data)
+static void build_mesh_bvh(std::vector<MeshBVHBuildPrim> &prims, std::vector<TrackMeshBVHNode> &nodes)
 {
-	if (track->num_mesh_collision_triangles <= 0) {
+	nodes.clear();
+	if (prims.empty()) {
 		return;
 	}
-	std::vector<TrackMeshBVHNode> all_nodes;
-	std::vector<int32_t> all_triangle_indices;
-	std::vector<int32_t> node_start(track->num_checkpoints, -1);
-	std::vector<int32_t> node_count(track->num_checkpoints, 0);
-	std::vector<MeshBVHBuildPrim> prims;
-	for (int cp = 0; cp < track->num_checkpoints; ++cp) {
-		const int tri_count = track->mesh_checkpoint_triangle_count[cp];
-		if (tri_count <= 0) {
-			continue;
-		}
-		prims.clear();
-		prims.reserve(tri_count);
-		for (int tri_index = track->mesh_checkpoint_triangle_head[cp]; tri_index >= 0; tri_index = track->mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
-			const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-			MeshBVHBuildPrim prim;
-			prim.bounds = tri.bounds;
-			prim.center = (tri.p0 + tri.p1 + tri.p2) * (1.0f / 3.0f);
-			prim.triangle_index = tri_index;
-			prims.push_back(prim);
-		}
-		std::vector<TrackMeshBVHNode> cp_nodes;
-		cp_nodes.reserve(static_cast<size_t>(tri_count) * 2u);
-		build_mesh_bvh_node(prims, cp_nodes, 0, tri_count);
-		const int node_base = static_cast<int>(all_nodes.size());
-		const int index_base = static_cast<int>(all_triangle_indices.size());
-		node_start[cp] = node_base;
-		node_count[cp] = static_cast<int32_t>(cp_nodes.size());
-		for (TrackMeshBVHNode node : cp_nodes) {
-			if (node.count > 0) {
-				node.left_first += index_base;
-			} else {
-				node.left_first += node_base;
-				node.right_first += node_base;
-			}
-			all_nodes.push_back(node);
-		}
-		for (const MeshBVHBuildPrim &prim : prims) {
-			all_triangle_indices.push_back(prim.triangle_index);
-		}
+	nodes.reserve(prims.size() * 2u);
+	const MeshBVHBuildRef root = build_mesh_bvh_child(prims, nodes, 0, static_cast<int>(prims.size()));
+	if (root.count > 0) {
+		TrackMeshBVHNode root_node = mesh_bvh_empty_node();
+		mesh_bvh_set_child(root_node, 0, root);
+		nodes.push_back(root_node);
 	}
-	track->num_mesh_checkpoint_bvh_nodes = static_cast<int>(all_nodes.size());
-	track->mesh_checkpoint_bvh_nodes = level_data.allocate_array<TrackMeshBVHNode>(all_nodes.size());
-	track->mesh_checkpoint_bvh_triangle_indices = level_data.allocate_array<int32_t>(all_triangle_indices.size());
-	track->mesh_checkpoint_bvh_node_start = level_data.allocate_array<int32_t>(track->num_checkpoints);
-	track->mesh_checkpoint_bvh_node_count = level_data.allocate_array<int32_t>(track->num_checkpoints);
-	for (int i = 0; i < track->num_mesh_checkpoint_bvh_nodes; ++i) {
-		track->mesh_checkpoint_bvh_nodes[i] = all_nodes[i];
-	}
-	for (int i = 0; i < static_cast<int>(all_triangle_indices.size()); ++i) {
-		track->mesh_checkpoint_bvh_triangle_indices[i] = all_triangle_indices[i];
-	}
-	for (int i = 0; i < track->num_checkpoints; ++i) {
-		track->mesh_checkpoint_bvh_node_start[i] = node_start[i];
-		track->mesh_checkpoint_bvh_node_count[i] = node_count[i];
-	}
-	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_checkpoint_bvh_loaded nodes="), track->num_mesh_checkpoint_bvh_nodes);
 }
 
 static void build_track_mesh_world_bvh(RaceTrack *track, HeapHandler &level_data)
@@ -288,8 +273,7 @@ static void build_track_mesh_world_bvh(RaceTrack *track, HeapHandler &level_data
 		prims.push_back(prim);
 	}
 	std::vector<TrackMeshBVHNode> nodes;
-	nodes.reserve(static_cast<size_t>(track->num_mesh_collision_triangles) * 2u);
-	build_mesh_bvh_node(prims, nodes, 0, track->num_mesh_collision_triangles);
+	build_mesh_bvh(prims, nodes);
 	track->num_mesh_world_bvh_nodes = static_cast<int>(nodes.size());
 	track->mesh_world_bvh_nodes = level_data.allocate_array<TrackMeshBVHNode>(nodes.size());
 	track->mesh_world_bvh_triangle_indices = level_data.allocate_array<int32_t>(prims.size());
@@ -324,8 +308,7 @@ static void build_track_mesh_floor_bvh(RaceTrack *track, HeapHandler &level_data
 		return;
 	}
 	std::vector<TrackMeshBVHNode> nodes;
-	nodes.reserve(prims.size() * 2u);
-	build_mesh_bvh_node(prims, nodes, 0, static_cast<int>(prims.size()));
+	build_mesh_bvh(prims, nodes);
 	track->num_mesh_floor_bvh_nodes = static_cast<int>(nodes.size());
 	track->mesh_floor_bvh_nodes = level_data.allocate_array<TrackMeshBVHNode>(nodes.size());
 	track->mesh_floor_bvh_triangle_indices = level_data.allocate_array<int32_t>(prims.size());
@@ -2928,13 +2911,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->trigger_colliders = nullptr;
 	current_track->num_mesh_collision_triangles = 0;
 	current_track->mesh_collision_triangles = nullptr;
-	current_track->mesh_checkpoint_triangle_head = nullptr;
-	current_track->mesh_checkpoint_triangle_count = nullptr;
-	current_track->mesh_checkpoint_bvh_nodes = nullptr;
-	current_track->mesh_checkpoint_bvh_triangle_indices = nullptr;
-	current_track->mesh_checkpoint_bvh_node_start = nullptr;
-	current_track->mesh_checkpoint_bvh_node_count = nullptr;
-	current_track->num_mesh_checkpoint_bvh_nodes = 0;
 	current_track->mesh_world_bvh_nodes = nullptr;
 	current_track->mesh_world_bvh_triangle_indices = nullptr;
 	current_track->num_mesh_world_bvh_nodes = 0;
@@ -2945,8 +2921,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	uint32_t header_size = lvldat_buf->get_u32();
 	String version_string = lvldat_buf->get_string(4);
-	if (version_string != "v0.8") {
-		UtilityFunctions::printerr(String("MXT track format hard-cutover failure: expected v0.8, got "), version_string);
+	if (version_string != "v0.9") {
+		UtilityFunctions::printerr(String("MXT track format hard-cutover failure: expected v0.9, got "), version_string);
 		std::abort();
 	}
 	uint32_t checkpoint_count = lvldat_buf->get_u32();
@@ -2966,12 +2942,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	current_track->num_checkpoints = checkpoint_count;
 	current_track->checkpoints = level_data.allocate_array<CollisionCheckpoint>(checkpoint_count);
-	current_track->mesh_checkpoint_triangle_head = level_data.allocate_array<int32_t>(checkpoint_count);
-	current_track->mesh_checkpoint_triangle_count = level_data.allocate_array<int32_t>(checkpoint_count);
-	for (uint32_t i = 0; i < checkpoint_count; ++i) {
-		current_track->mesh_checkpoint_triangle_head[i] = -1;
-		current_track->mesh_checkpoint_triangle_count[i] = 0;
-	}
 
 	for (int i = 0; i < checkpoint_count; i++)
 	{
@@ -3293,10 +3263,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_done "), seg, String(" len="), current_track->segments[seg].segment_length);
 		current_track->segments[seg].checkpoint_start = -1;
 		current_track->segments[seg].checkpoint_run_length = 0;
-		current_track->segments[seg].mesh_collision_start = -1;
-		current_track->segments[seg].mesh_collision_count = 0;
-		current_track->segments[seg].mesh_bounds.position = SimVec3();
-		current_track->segments[seg].mesh_bounds.size = SimVec3();
 		for (int i = 0; i < current_track->num_checkpoints; i++)
 		{
 			if (current_track->checkpoints[i].road_segment == seg)
@@ -3369,31 +3335,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (mesh_collision_triangle_count > 0) {
 		current_track->num_mesh_collision_triangles = static_cast<int>(mesh_collision_triangle_count);
 		current_track->mesh_collision_triangles = level_data.allocate_array<TrackMeshCollisionTriangle>(mesh_collision_triangle_count);
-		int32_t last_mesh_segment = -1;
 		for (uint32_t tri_index = 0; tri_index < mesh_collision_triangle_count; ++tri_index) {
 			TrackMeshCollisionTriangle &tri = current_track->mesh_collision_triangles[tri_index];
 			tri.terrain = lvldat_buf->get_u32();
-			tri.segment_index = static_cast<int32_t>(lvldat_buf->get_u32());
-			tri.checkpoint_index = static_cast<int32_t>(lvldat_buf->get_u32());
-			tri.next_checkpoint_triangle = -1;
-			if (tri.segment_index < 0 || tri.segment_index >= current_track->num_segments) {
-				UtilityFunctions::printerr(String("MXT mesh collision triangle has invalid segment index "), tri.segment_index);
-				std::abort();
-			}
-			if (tri.checkpoint_index < 0 || tri.checkpoint_index >= current_track->num_checkpoints) {
-				UtilityFunctions::printerr(String("MXT mesh collision triangle has invalid checkpoint index "), tri.checkpoint_index);
-				std::abort();
-			}
-			if (tri.segment_index < last_mesh_segment) {
-				UtilityFunctions::printerr(String("MXT mesh collision triangles must be grouped by ascending segment index"));
-				std::abort();
-			}
-			if (tri.segment_index != last_mesh_segment) {
-				current_track->segments[tri.segment_index].mesh_collision_start = static_cast<int>(tri_index);
-				last_mesh_segment = tri.segment_index;
-			}
-			TrackSegment &mesh_segment = current_track->segments[tri.segment_index];
-			mesh_segment.mesh_collision_count++;
 
 			tri.p0.x = lvldat_buf->get_float();
 			tri.p0.y = lvldat_buf->get_float();
@@ -3420,16 +3364,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			tri.bounds.expand_to(tri.p1);
 			tri.bounds.expand_to(tri.p2);
 			tri.bounds.grow_by(0.1f);
-			if (mesh_segment.mesh_collision_count == 1) {
-				mesh_segment.mesh_bounds.position = tri.p0;
-				mesh_segment.mesh_bounds.size = SimVec3();
-			}
-			mesh_segment.mesh_bounds.expand_to(tri.p0);
-			mesh_segment.mesh_bounds.expand_to(tri.p1);
-			mesh_segment.mesh_bounds.expand_to(tri.p2);
-			tri.next_checkpoint_triangle = current_track->mesh_checkpoint_triangle_head[tri.checkpoint_index];
-			current_track->mesh_checkpoint_triangle_head[tri.checkpoint_index] = static_cast<int32_t>(tri_index);
-			current_track->mesh_checkpoint_triangle_count[tri.checkpoint_index]++;
 			if (tri.p0.y < current_track->minimum_y) current_track->minimum_y = tri.p0.y;
 			if (tri.p1.y < current_track->minimum_y) current_track->minimum_y = tri.p1.y;
 			if (tri.p2.y < current_track->minimum_y) current_track->minimum_y = tri.p2.y;
@@ -3437,7 +3371,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_collision_loaded tri="), mesh_collision_triangle_count);
 		build_track_mesh_world_bvh(current_track, level_data);
 		build_track_mesh_floor_bvh(current_track, level_data);
-		build_track_mesh_checkpoint_bvh(current_track, level_data);
 	}
 
 

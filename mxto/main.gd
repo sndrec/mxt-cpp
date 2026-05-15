@@ -614,8 +614,8 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 	pb.big_endian = false
 	var header_size := pb.get_u32()
 	var version := pb.get_string(4)
-	if version != "v0.8":
-		push_error("MXT track format hard-cutover failure: expected v0.8, got %s" % version)
+	if version != "v0.9":
+		push_error("MXT track format hard-cutover failure: expected v0.9, got %s" % version)
 		return []
 	var cp_count := pb.get_u32()
 	var seg_count := pb.get_u32()
@@ -700,7 +700,7 @@ func _parse_level_triggers(bytes: PackedByteArray) -> Array:
 		ext.z = pb.get_float()
 		out.append({"type": t_type, "transform": tform, "extents": ext})
 	if mesh_collision_triangle_count > 0:
-		pb.seek(pb.get_position() + mesh_collision_triangle_count * (12 + 18 * 4))
+		pb.seek(pb.get_position() + mesh_collision_triangle_count * (4 + 18 * 4))
 	return out
 
 func _on_car_settings_button_pressed() -> void:
