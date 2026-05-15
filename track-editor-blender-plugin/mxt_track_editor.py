@@ -135,6 +135,10 @@ class MXTMeshCollisionProperties(PropertyGroup):
         name="Surface",
         items=MESH_COLLISION_SURFACE_ITEMS,
         default='TRACK')
+    double_sided: BoolProperty(
+        name="Double Sided",
+        description="Allow this authored mesh collision to be hit from either triangle side",
+        default=False)
 
 class MXT_UL_Modulations(bpy.types.UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname, index):
@@ -2714,6 +2718,7 @@ class MXTRoad_PT_MainPanel(Panel):
             mesh_props = obj.mxt_mesh_collision_props
             mesh_collision_box.prop(mesh_props, "is_mxt_collision_mesh")
             mesh_collision_box.prop(mesh_props, "surface_type")
+            mesh_collision_box.prop(mesh_props, "double_sided")
 
         active_road_parent = get_active_mxt_road_segment_parent(context)
         if not active_road_parent:
@@ -4669,20 +4674,20 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
             return name[:-4]
         return name
 
-    def append_triangle_record(records, terrain_key, positions, normals, source_name):
+    def append_triangle_record(records, terrain_key, positions, normals, source_name, terrain_flags=0):
         if terrain_key not in terrain_map:
             raise RuntimeError(f"{source_name} has unsupported mesh collision surface {terrain_key}")
         if len(positions) != 3 or len(normals) != 3:
             raise RuntimeError(f"{source_name} produced an invalid mesh collision triangle")
         record = bytearray()
-        record += struct.pack('<I', terrain_map[terrain_key])
+        record += struct.pack('<I', terrain_map[terrain_key] | terrain_flags)
         for p in positions:
             record += struct.pack('<3f', p.x, p.y, p.z)
         for n in normals:
             record += struct.pack('<3f', n.x, n.y, n.z)
         records.append(record)
 
-    def append_object_triangles(records, obj, surface_for_polygon, depsgraph, required):
+    def append_object_triangles(records, obj, surface_for_polygon, depsgraph, required, terrain_flags=0):
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
         try:
@@ -4703,7 +4708,7 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                     vert = mesh.vertices[loop.vertex_index]
                     positions.append(obj.matrix_world @ vert.co)
                     normals.append((normal_matrix @ loop.normal).normalized())
-                append_triangle_record(records, terrain_key, positions, normals, obj.name)
+                append_triangle_record(records, terrain_key, positions, normals, obj.name, terrain_flags)
                 object_tri_count += 1
             if required and object_tri_count == 0:
                 raise RuntimeError(f"{obj.name} is marked for mesh collision but has no triangles")
@@ -4809,12 +4814,14 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
         if obj.type != 'MESH' or not props or not props.is_mxt_collision_mesh:
             continue
         surface_type = props.surface_type
+        terrain_flags = 0x80 if props.double_sided else 0
         append_object_triangles(
             records,
             obj,
             lambda _mesh, _poly_index, surface_type=surface_type: surface_type,
             depsgraph,
-            True)
+            True,
+            terrain_flags)
 
     for seg, segment_index in seg_index.items():
         props = seg.mxt_road_overall_props

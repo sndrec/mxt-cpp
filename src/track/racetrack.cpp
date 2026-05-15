@@ -1159,6 +1159,85 @@ static bool mesh_bvh_child_overlaps_segment(const TrackMeshBVHNode &node, int sl
 	return aabb_overlaps_segment(bounds, p0, p1);
 }
 
+static uint32_t mesh_bvh_live_child_mask(const TrackMeshBVHNode &node)
+{
+	uint32_t mask = 0;
+	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+		if (!mesh_bvh_child_empty(node, slot)) {
+			mask |= 1u << slot;
+		}
+	}
+	return mask;
+}
+
+static uint32_t mesh_bvh_child_aabb_mask(const TrackMeshBVHNode &node, const SimAABB &bounds)
+{
+#if defined(__SSE__)
+	const SimVec3 b_max = bounds.position + bounds.size;
+	const __m128 q_min_x = _mm_load_ps(node.min_x);
+	const __m128 q_min_y = _mm_load_ps(node.min_y);
+	const __m128 q_min_z = _mm_load_ps(node.min_z);
+	const __m128 q_max_x = _mm_load_ps(node.max_x);
+	const __m128 q_max_y = _mm_load_ps(node.max_y);
+	const __m128 q_max_z = _mm_load_ps(node.max_z);
+	__m128 valid = _mm_cmple_ps(q_min_x, _mm_set1_ps(b_max.x));
+	valid = _mm_and_ps(valid, _mm_cmpge_ps(q_max_x, _mm_set1_ps(bounds.position.x)));
+	valid = _mm_and_ps(valid, _mm_cmple_ps(q_min_y, _mm_set1_ps(b_max.y)));
+	valid = _mm_and_ps(valid, _mm_cmpge_ps(q_max_y, _mm_set1_ps(bounds.position.y)));
+	valid = _mm_and_ps(valid, _mm_cmple_ps(q_min_z, _mm_set1_ps(b_max.z)));
+	valid = _mm_and_ps(valid, _mm_cmpge_ps(q_max_z, _mm_set1_ps(bounds.position.z)));
+	return static_cast<uint32_t>(_mm_movemask_ps(valid)) & mesh_bvh_live_child_mask(node);
+#else
+	uint32_t mask = 0;
+	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+		if (!mesh_bvh_child_empty(node, slot) && mesh_bvh_child_overlaps_aabb(node, slot, bounds)) {
+			mask |= 1u << slot;
+		}
+	}
+	return mask;
+#endif
+}
+
+static uint32_t mesh_bvh_child_segment_mask(const TrackMeshBVHNode &node, const SimVec3 &p0, const SimVec3 &p1)
+{
+#if defined(__SSE__)
+	const SimVec3 ray = p1 - p0;
+	__m128 t_min = _mm_setzero_ps();
+	__m128 t_max = _mm_set1_ps(1.0f);
+	__m128 valid = _mm_cmpeq_ps(_mm_setzero_ps(), _mm_setzero_ps());
+
+	auto apply_axis = [&](__m128 min_v, __m128 max_v, float p, float ray_axis) {
+		if (fabsf(ray_axis) <= 1.0e-7f) {
+			__m128 axis_valid = _mm_and_ps(_mm_cmple_ps(min_v, _mm_set1_ps(p)), _mm_cmpge_ps(max_v, _mm_set1_ps(p)));
+			valid = _mm_and_ps(valid, axis_valid);
+		} else {
+			const __m128 inv_ray = _mm_set1_ps(1.0f / ray_axis);
+			const __m128 p_lane = _mm_set1_ps(p);
+			const __m128 t0 = _mm_mul_ps(_mm_sub_ps(min_v, p_lane), inv_ray);
+			const __m128 t1 = _mm_mul_ps(_mm_sub_ps(max_v, p_lane), inv_ray);
+			const __m128 lo = _mm_min_ps(t0, t1);
+			const __m128 hi = _mm_max_ps(t0, t1);
+			t_min = _mm_max_ps(t_min, lo);
+			t_max = _mm_min_ps(t_max, hi);
+			valid = _mm_and_ps(valid, _mm_cmple_ps(t_min, t_max));
+		}
+	};
+
+	apply_axis(_mm_load_ps(node.min_x), _mm_load_ps(node.max_x), p0.x, ray.x);
+	apply_axis(_mm_load_ps(node.min_y), _mm_load_ps(node.max_y), p0.y, ray.y);
+	apply_axis(_mm_load_ps(node.min_z), _mm_load_ps(node.max_z), p0.z, ray.z);
+	return static_cast<uint32_t>(_mm_movemask_ps(valid)) & mesh_bvh_live_child_mask(node);
+#else
+	uint32_t mask = 0;
+	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+		if (!mesh_bvh_child_empty(node, slot) && mesh_bvh_child_overlaps_segment(node, slot, p0, p1)) {
+			mask |= 1u << slot;
+		}
+	}
+	return mask;
+#endif
+}
+
 static float mesh_bvh_child_distance2_to_point(const TrackMeshBVHNode &node, int slot, const SimVec3 &p)
 {
 	float d2 = 0.0f;
@@ -1187,30 +1266,33 @@ static float mesh_bvh_child_distance2_to_point(const TrackMeshBVHNode &node, int
 	return d2;
 }
 
-static void mesh_bvh_child_distance2_pair(const TrackMeshBVHNode &node, const SimVec3 &p, float out_dist2[2])
+static void mesh_bvh_child_distance2_quad(const TrackMeshBVHNode &node, const SimVec3 &p, float out_dist2[MXT_MESH_BVH_WIDTH])
 {
 #if defined(__SSE__)
 	const __m128 px = _mm_set1_ps(p.x);
 	const __m128 py = _mm_set1_ps(p.y);
 	const __m128 pz = _mm_set1_ps(p.z);
-	const __m128 min_x = _mm_set_ps(0.0f, 0.0f, node.min_x[1], node.min_x[0]);
-	const __m128 min_y = _mm_set_ps(0.0f, 0.0f, node.min_y[1], node.min_y[0]);
-	const __m128 min_z = _mm_set_ps(0.0f, 0.0f, node.min_z[1], node.min_z[0]);
-	const __m128 max_x = _mm_set_ps(0.0f, 0.0f, node.max_x[1], node.max_x[0]);
-	const __m128 max_y = _mm_set_ps(0.0f, 0.0f, node.max_y[1], node.max_y[0]);
-	const __m128 max_z = _mm_set_ps(0.0f, 0.0f, node.max_z[1], node.max_z[0]);
+	const __m128 min_x = _mm_load_ps(node.min_x);
+	const __m128 min_y = _mm_load_ps(node.min_y);
+	const __m128 min_z = _mm_load_ps(node.min_z);
+	const __m128 max_x = _mm_load_ps(node.max_x);
+	const __m128 max_y = _mm_load_ps(node.max_y);
+	const __m128 max_z = _mm_load_ps(node.max_z);
 	const __m128 zero = _mm_setzero_ps();
 	const __m128 dx = _mm_max_ps(_mm_max_ps(_mm_sub_ps(min_x, px), _mm_sub_ps(px, max_x)), zero);
 	const __m128 dy = _mm_max_ps(_mm_max_ps(_mm_sub_ps(min_y, py), _mm_sub_ps(py, max_y)), zero);
 	const __m128 dz = _mm_max_ps(_mm_max_ps(_mm_sub_ps(min_z, pz), _mm_sub_ps(pz, max_z)), zero);
 	const __m128 d2 = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, dx), _mm_mul_ps(dy, dy)), _mm_mul_ps(dz, dz));
-	alignas(16) float lanes[4];
-	_mm_store_ps(lanes, d2);
-	out_dist2[0] = mesh_bvh_child_empty(node, 0) ? FLT_MAX : lanes[0];
-	out_dist2[1] = mesh_bvh_child_empty(node, 1) ? FLT_MAX : lanes[1];
+	_mm_storeu_ps(out_dist2, d2);
+	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+		if (mesh_bvh_child_empty(node, slot)) {
+			out_dist2[slot] = FLT_MAX;
+		}
+	}
 #else
-	out_dist2[0] = mesh_bvh_child_empty(node, 0) ? FLT_MAX : mesh_bvh_child_distance2_to_point(node, 0, p);
-	out_dist2[1] = mesh_bvh_child_empty(node, 1) ? FLT_MAX : mesh_bvh_child_distance2_to_point(node, 1, p);
+	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+		out_dist2[slot] = mesh_bvh_child_empty(node, slot) ? FLT_MAX : mesh_bvh_child_distance2_to_point(node, slot, p);
+	}
 #endif
 }
 
@@ -1842,8 +1924,9 @@ static void cast_mesh_collision_fast(
 			scratch->mesh_cast_bvh_node_tests += 1;
 		}
 #endif
-		for (int slot = 0; slot < 2; ++slot) {
-			if (mesh_bvh_child_empty(node, slot) || !mesh_bvh_child_overlaps_segment(node, slot, p0, p1)) {
+		uint32_t child_mask = mesh_bvh_child_segment_mask(node, p0, p1);
+		for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+			if ((child_mask & (1u << slot)) == 0) {
 				continue;
 			}
 			if (mesh_bvh_child_is_leaf(node, slot)) {
@@ -1885,8 +1968,9 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 #if MXT_MESH_DEEP_PROFILE
 		scratch.mesh_cast_candidate_bvh_node_tests += 1;
 #endif
-		for (int slot = 0; slot < 2; ++slot) {
-			if (mesh_bvh_child_empty(node, slot) || !mesh_bvh_child_overlaps_aabb(node, slot, bounds)) {
+		uint32_t child_mask = mesh_bvh_child_aabb_mask(node, bounds);
+		for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+			if ((child_mask & (1u << slot)) == 0) {
 				continue;
 			}
 			if (mesh_bvh_child_is_leaf(node, slot)) {
@@ -2172,21 +2256,30 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 				floor_profile->bvh_node_tests += 1;
 			}
 #endif
-			float child_dist2[2];
-			mesh_bvh_child_distance2_pair(node, point, child_dist2);
+			float child_dist2[MXT_MESH_BVH_WIDTH];
+			mesh_bvh_child_distance2_quad(node, point, child_dist2);
 #if MXT_MESH_DEEP_PROFILE
 			if (floor_profile) {
 				floor_profile->bvh_interior_visits += 1;
-				floor_profile->bvh_child_tests += 2;
+				floor_profile->bvh_child_tests += MXT_MESH_BVH_WIDTH;
 			}
 #endif
-			const int first_slot = child_dist2[0] <= child_dist2[1] ? 0 : 1;
-			const int second_slot = first_slot ^ 1;
-			for (int order = 0; order < 2; ++order) {
-				const int slot = order == 0 ? second_slot : first_slot;
-				if (mesh_bvh_child_empty(node, slot) || child_dist2[slot] > best_dist2) {
+			int ordered_slots[MXT_MESH_BVH_WIDTH];
+			int ordered_count = 0;
+			for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
+				if (child_dist2[slot] > best_dist2) {
 					continue;
 				}
+				int insert_at = ordered_count;
+				while (insert_at > 0 && child_dist2[slot] < child_dist2[ordered_slots[insert_at - 1]]) {
+					ordered_slots[insert_at] = ordered_slots[insert_at - 1];
+					--insert_at;
+				}
+				ordered_slots[insert_at] = slot;
+				++ordered_count;
+			}
+			for (int order = ordered_count - 1; order >= 0; --order) {
+				const int slot = ordered_slots[order];
 				if (mesh_bvh_child_is_leaf(node, slot)) {
 #if MXT_MESH_DEEP_PROFILE
 					if (floor_profile) {

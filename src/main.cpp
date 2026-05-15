@@ -93,7 +93,7 @@ struct MeshBVHBuildRef
 static TrackMeshBVHNode mesh_bvh_empty_node()
 {
 	TrackMeshBVHNode node = {};
-	for (int i = 0; i < 2; ++i) {
+	for (int i = 0; i < MXT_MESH_BVH_WIDTH; ++i) {
 		node.child[i] = -1;
 		node.count[i] = -1;
 	}
@@ -112,24 +112,27 @@ static void mesh_bvh_set_child(TrackMeshBVHNode &node, int slot, const MeshBVHBu
 	node.count[slot] = child.count;
 }
 
-static MeshBVHBuildRef build_mesh_bvh_child(std::vector<MeshBVHBuildPrim> &prims, std::vector<TrackMeshBVHNode> &nodes, int start, int count)
+struct MeshBVHBuildGroup
 {
-	SimAABB bounds = prims[start].bounds;
+	int start = 0;
+	int count = 0;
+	SimAABB bounds;
 	SimAABB centroid_bounds;
-	centroid_bounds.position = prims[start].center;
-	centroid_bounds.size = SimVec3();
-	for (int i = start + 1; i < start + count; ++i) {
-		bounds = mesh_bvh_merge_bounds(bounds, prims[i].bounds);
-		centroid_bounds.expand_to(prims[i].center);
+};
+
+static void mesh_bvh_compute_group_bounds(std::vector<MeshBVHBuildPrim> &prims, MeshBVHBuildGroup &group)
+{
+	group.bounds = prims[group.start].bounds;
+	group.centroid_bounds.position = prims[group.start].center;
+	group.centroid_bounds.size = SimVec3();
+	for (int i = group.start + 1; i < group.start + group.count; ++i) {
+		group.bounds = mesh_bvh_merge_bounds(group.bounds, prims[i].bounds);
+		group.centroid_bounds.expand_to(prims[i].center);
 	}
-	constexpr int kLeafTriangleCount = 8;
-	if (count <= kLeafTriangleCount) {
-		MeshBVHBuildRef ref;
-		ref.bounds = bounds;
-		ref.child = start;
-		ref.count = count;
-		return ref;
-	}
+}
+
+static int mesh_bvh_partition_group(std::vector<MeshBVHBuildPrim> &prims, const MeshBVHBuildGroup &group)
+{
 	constexpr int kBinCount = 16;
 	struct MeshBVHBin {
 		SimAABB bounds;
@@ -139,14 +142,14 @@ static MeshBVHBuildRef build_mesh_bvh_child(std::vector<MeshBVHBuildPrim> &prims
 	int best_bin = -1;
 	float best_cost = FLT_MAX;
 	for (int axis = 0; axis < 3; ++axis) {
-		const float cmin = mesh_bvh_axis_value(centroid_bounds.position, axis);
-		const float cmax = mesh_bvh_axis_value(centroid_bounds.position + centroid_bounds.size, axis);
+		const float cmin = mesh_bvh_axis_value(group.centroid_bounds.position, axis);
+		const float cmax = mesh_bvh_axis_value(group.centroid_bounds.position + group.centroid_bounds.size, axis);
 		const float extent = cmax - cmin;
 		if (extent <= 1.0e-6f) {
 			continue;
 		}
 		MeshBVHBin bins[kBinCount];
-		for (int i = start; i < start + count; ++i) {
+		for (int i = group.start; i < group.start + group.count; ++i) {
 			int bin_index = static_cast<int>(((mesh_bvh_axis_value(prims[i].center, axis) - cmin) / extent) * static_cast<float>(kBinCount));
 			if (bin_index < 0) {
 				bin_index = 0;
@@ -203,40 +206,102 @@ static MeshBVHBuildRef build_mesh_bvh_child(std::vector<MeshBVHBuildPrim> &prims
 			}
 		}
 	}
-	int mid = start + count / 2;
+	int mid = group.start + group.count / 2;
 	if (best_axis >= 0) {
-		const float cmin = mesh_bvh_axis_value(centroid_bounds.position, best_axis);
-		const float cmax = mesh_bvh_axis_value(centroid_bounds.position + centroid_bounds.size, best_axis);
+		const float cmin = mesh_bvh_axis_value(group.centroid_bounds.position, best_axis);
+		const float cmax = mesh_bvh_axis_value(group.centroid_bounds.position + group.centroid_bounds.size, best_axis);
 		const float extent = cmax - cmin;
 		const float split_pos = cmin + extent * (static_cast<float>(best_bin + 1) / static_cast<float>(kBinCount));
 		auto mid_it = std::partition(
-			prims.begin() + start,
-			prims.begin() + start + count,
+			prims.begin() + group.start,
+			prims.begin() + group.start + group.count,
 			[best_axis, split_pos](const MeshBVHBuildPrim &prim) {
 				return mesh_bvh_axis_value(prim.center, best_axis) < split_pos;
 			});
 		mid = static_cast<int>(mid_it - prims.begin());
 	}
-	if (mid <= start || mid >= start + count) {
-		const int axis = mesh_bvh_longest_axis(centroid_bounds);
-		mid = start + count / 2;
+	if (mid <= group.start || mid >= group.start + group.count) {
+		const int axis = mesh_bvh_longest_axis(group.centroid_bounds);
+		mid = group.start + group.count / 2;
 		std::nth_element(
-			prims.begin() + start,
+			prims.begin() + group.start,
 			prims.begin() + mid,
-			prims.begin() + start + count,
+			prims.begin() + group.start + group.count,
 			[axis](const MeshBVHBuildPrim &a, const MeshBVHBuildPrim &b) {
 				return mesh_bvh_axis_value(a.center, axis) < mesh_bvh_axis_value(b.center, axis);
 			});
 	}
+	return mid;
+}
+
+static MeshBVHBuildRef build_mesh_bvh_child(std::vector<MeshBVHBuildPrim> &prims, std::vector<TrackMeshBVHNode> &nodes, int start, int count)
+{
+	constexpr int kLeafTriangleCount = 8;
+	MeshBVHBuildGroup root_group;
+	root_group.start = start;
+	root_group.count = count;
+	mesh_bvh_compute_group_bounds(prims, root_group);
+	if (count <= kLeafTriangleCount) {
+		MeshBVHBuildRef ref;
+		ref.bounds = root_group.bounds;
+		ref.child = start;
+		ref.count = count;
+		return ref;
+	}
+
 	const int node_index = static_cast<int>(nodes.size());
 	nodes.push_back(mesh_bvh_empty_node());
-	const MeshBVHBuildRef left = build_mesh_bvh_child(prims, nodes, start, mid - start);
-	const MeshBVHBuildRef right = build_mesh_bvh_child(prims, nodes, mid, start + count - mid);
-	mesh_bvh_set_child(nodes[node_index], 0, left);
-	mesh_bvh_set_child(nodes[node_index], 1, right);
+
+	MeshBVHBuildGroup groups[MXT_MESH_BVH_WIDTH];
+	int group_count = 1;
+	groups[0] = root_group;
+	while (group_count < MXT_MESH_BVH_WIDTH) {
+		int split_group_index = -1;
+		float split_score = -1.0f;
+		for (int i = 0; i < group_count; ++i) {
+			if (groups[i].count <= kLeafTriangleCount) {
+				continue;
+			}
+			const float score = mesh_bvh_surface_area(groups[i].bounds) * static_cast<float>(groups[i].count);
+			if (score > split_score) {
+				split_score = score;
+				split_group_index = i;
+			}
+		}
+		if (split_group_index < 0) {
+			break;
+		}
+		const MeshBVHBuildGroup split_group = groups[split_group_index];
+		const int mid = mesh_bvh_partition_group(prims, split_group);
+		if (mid <= split_group.start || mid >= split_group.start + split_group.count) {
+			break;
+		}
+		MeshBVHBuildGroup left;
+		left.start = split_group.start;
+		left.count = mid - split_group.start;
+		mesh_bvh_compute_group_bounds(prims, left);
+		MeshBVHBuildGroup right;
+		right.start = mid;
+		right.count = split_group.start + split_group.count - mid;
+		mesh_bvh_compute_group_bounds(prims, right);
+		groups[split_group_index] = left;
+		groups[group_count++] = right;
+	}
+
+	for (int i = 0; i < group_count; ++i) {
+		MeshBVHBuildRef child_ref;
+		if (groups[i].count <= kLeafTriangleCount) {
+			child_ref.bounds = groups[i].bounds;
+			child_ref.child = groups[i].start;
+			child_ref.count = groups[i].count;
+		} else {
+			child_ref = build_mesh_bvh_child(prims, nodes, groups[i].start, groups[i].count);
+		}
+		mesh_bvh_set_child(nodes[node_index], i, child_ref);
+	}
 
 	MeshBVHBuildRef ref;
-	ref.bounds = bounds;
+	ref.bounds = root_group.bounds;
 	ref.child = node_index;
 	ref.count = 0;
 	return ref;

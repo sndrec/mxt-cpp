@@ -108,7 +108,7 @@ const DEBUG_REPLAY_VERSION := 1
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 
-const OUTER_PROFILE_WINDOW := 360
+const OUTER_PROFILE_WINDOW := 3600
 const OUTER_PROFILE_FIELDS := [
 	"physics_total",
 	"local_input",

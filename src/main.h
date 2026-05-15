@@ -43,7 +43,7 @@ namespace godot {
 		std::vector<char> network_state_live_backup;
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
-		static const int PROFILE_WINDOW_TICKS = 360;
+		static const int PROFILE_WINDOW_TICKS = 3600;
 		static const int PROFILE_FIELD_COUNT = 48;
 		static const int MESH_FLOOR_PROFILE_FIELD_COUNT = 23;
 		static const int RENDER_PROFILE_FIELD_COUNT = 9;

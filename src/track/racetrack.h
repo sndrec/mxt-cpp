@@ -33,16 +33,18 @@ struct TrackMeshCollisionTriangle
 	uint32_t terrain;
 };
 
-struct TrackMeshBVHNode
+static constexpr int MXT_MESH_BVH_WIDTH = 4;
+
+struct alignas(64) TrackMeshBVHNode
 {
-	float min_x[2];
-	float min_y[2];
-	float min_z[2];
-	float max_x[2];
-	float max_y[2];
-	float max_z[2];
-	int32_t child[2];
-	int32_t count[2];
+	float min_x[MXT_MESH_BVH_WIDTH];
+	float min_y[MXT_MESH_BVH_WIDTH];
+	float min_z[MXT_MESH_BVH_WIDTH];
+	float max_x[MXT_MESH_BVH_WIDTH];
+	float max_y[MXT_MESH_BVH_WIDTH];
+	float max_z[MXT_MESH_BVH_WIDTH];
+	int32_t child[MXT_MESH_BVH_WIDTH];
+	int32_t count[MXT_MESH_BVH_WIDTH];
 };
 
 struct alignas(64) TrackQueryScratch
