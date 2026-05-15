@@ -1,6 +1,7 @@
 #include "track/racetrack.h"
 #include "car/physics_car.h" // for CollisionData and RoadData
 #include <cfloat>
+#include <cstdlib>
 #include <algorithm>
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/curve.h"
@@ -1026,6 +1027,198 @@ static void cast_segment_fast(const CastParams  &params,
 	}
 }
 
+static bool aabb_overlaps_segment(const SimAABB &bounds, const SimVec3 &p0, const SimVec3 &p1)
+{
+	const SimVec3 seg_min(
+		std::min(p0.x, p1.x),
+		std::min(p0.y, p1.y),
+		std::min(p0.z, p1.z));
+	const SimVec3 seg_max(
+		std::max(p0.x, p1.x),
+		std::max(p0.y, p1.y),
+		std::max(p0.z, p1.z));
+	const SimVec3 box_max = bounds.position + bounds.size;
+	return seg_max.x >= bounds.position.x && seg_min.x <= box_max.x &&
+		seg_max.y >= bounds.position.y && seg_min.y <= box_max.y &&
+		seg_max.z >= bounds.position.z && seg_min.z <= box_max.z;
+}
+
+static bool triangle_ray_hit(
+	const TrackMeshCollisionTriangle &tri,
+	const SimVec3 &p0,
+	const SimVec3 &ray,
+	bool wants_backface,
+	float *out_t,
+	float *out_u,
+	float *out_v,
+	float *out_w,
+	SimVec3 *out_face_normal)
+{
+	const SimVec3 edge0 = tri.p1 - tri.p0;
+	const SimVec3 edge1 = tri.p2 - tri.p0;
+	SimVec3 face_normal = edge0.cross(edge1);
+	const float face_len2 = face_normal.length_squared();
+	if (face_len2 <= 1.0e-8f) {
+		return false;
+	}
+	face_normal *= 1.0f / sqrtf(face_len2);
+	const float denom = ray.dot(face_normal);
+	if (fabsf(denom) <= 1.0e-7f) {
+		return false;
+	}
+	if (!wants_backface && denom > 0.0f) {
+		return false;
+	}
+
+	const float t = (tri.p0 - p0).dot(face_normal) / denom;
+	if (t < 0.0f || t > 1.0f) {
+		return false;
+	}
+
+	const SimVec3 hit = p0 + ray * t;
+	const SimVec3 v0 = tri.p1 - tri.p0;
+	const SimVec3 v1 = tri.p2 - tri.p0;
+	const SimVec3 v2 = hit - tri.p0;
+	const float d00 = v0.dot(v0);
+	const float d01 = v0.dot(v1);
+	const float d11 = v1.dot(v1);
+	const float d20 = v2.dot(v0);
+	const float d21 = v2.dot(v1);
+	const float denom_bary = d00 * d11 - d01 * d01;
+	if (fabsf(denom_bary) <= 1.0e-8f) {
+		return false;
+	}
+	const float inv_denom = 1.0f / denom_bary;
+	const float v = (d11 * d20 - d01 * d21) * inv_denom;
+	const float w = (d00 * d21 - d01 * d20) * inv_denom;
+	const float u = 1.0f - v - w;
+	const float slop = -1.0e-4f;
+	if (u < slop || v < slop || w < slop) {
+		return false;
+	}
+
+	*out_t = t;
+	*out_u = u;
+	*out_v = v;
+	*out_w = w;
+	*out_face_normal = face_normal;
+	return true;
+}
+
+static SimVec3 mesh_collision_smooth_normal(const TrackMeshCollisionTriangle &tri, float u, float v, float w, const SimVec3 &face_normal)
+{
+	SimVec3 n0 = tri.n0.normalized();
+	SimVec3 n1 = tri.n1.normalized();
+	SimVec3 n2 = tri.n2.normalized();
+	SimVec3 n = n0 * u + n1 * v + n2 * w;
+	if (n.length_squared() <= 1.0e-8f) {
+		return face_normal;
+	}
+	return n.normalized();
+}
+
+static SimVec3 mesh_collision_phong_point(const TrackMeshCollisionTriangle &tri, float u, float v, float w)
+{
+	const SimVec3 n0 = tri.n0.normalized();
+	const SimVec3 n1 = tri.n1.normalized();
+	const SimVec3 n2 = tri.n2.normalized();
+	const SimVec3 flat_pos = tri.p0 * u + tri.p1 * v + tri.p2 * w;
+	const SimVec3 proj0 = flat_pos - n0 * (flat_pos - tri.p0).dot(n0);
+	const SimVec3 proj1 = flat_pos - n1 * (flat_pos - tri.p1).dot(n1);
+	const SimVec3 proj2 = flat_pos - n2 * (flat_pos - tri.p2).dot(n2);
+	const SimVec3 phong_pos = proj0 * u + proj1 * v + proj2 * w;
+	return phong_pos.lerp(flat_pos, 0.5f);
+}
+
+static SimTransform mesh_collision_surface_transform(const TrackMeshCollisionTriangle &tri, const SimVec3 &hit_point, const SimVec3 &normal)
+{
+	SimVec3 tangent = (tri.p1 - tri.p0).normalized();
+	if (tangent.length_squared() <= 1.0e-8f || fabsf(tangent.dot(normal)) > 0.98f) {
+		tangent = (tri.p2 - tri.p0).normalized();
+	}
+	tangent = (tangent - normal * tangent.dot(normal)).normalized();
+	if (tangent.length_squared() <= 1.0e-8f) {
+		tangent = SimVec3(1.0f, 0.0f, 0.0f);
+	}
+	SimVec3 forward = tangent.cross(normal).normalized();
+	SimBasis basis;
+	basis[0] = tangent;
+	basis[1] = normal;
+	basis[2] = forward;
+	return SimTransform(basis, hit_point);
+}
+
+static void cast_mesh_collision_fast(
+	const CastParams &params,
+	CollisionData &out_collision,
+	const SimVec3 &p0,
+	const SimVec3 &p1,
+	int start_idx)
+{
+	RaceTrack *track = params.track;
+	if (track->num_mesh_collision_triangles <= 0) {
+		return;
+	}
+	const int segment_index = track->checkpoints[start_idx].road_segment;
+	const bool wants_backface = (params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0;
+	const SimVec3 ray = p1 - p0;
+	const float ray_len = ray.length();
+	if (ray_len <= 1.0e-6f) {
+		return;
+	}
+
+	float best_dist = out_collision.collided ? p0.distance_to(out_collision.collision_point) : FLT_MAX;
+	for (int tri_index = 0; tri_index < track->num_mesh_collision_triangles; ++tri_index) {
+		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
+		if (tri.segment_index != segment_index) {
+			continue;
+		}
+		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
+		if (is_rail) {
+			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+				continue;
+			}
+		} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
+			continue;
+		}
+		if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
+			continue;
+		}
+
+		float hit_t = 0.0f;
+		float u = 0.0f;
+		float v = 0.0f;
+		float w = 0.0f;
+		SimVec3 face_normal;
+		if (!triangle_ray_hit(tri, p0, ray, wants_backface, &hit_t, &u, &v, &w, &face_normal)) {
+			continue;
+		}
+		const float dist = hit_t * ray_len;
+		if (dist >= best_dist) {
+			continue;
+		}
+
+		const SimVec3 smooth_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
+		const SimVec3 smooth_point = mesh_collision_phong_point(tri, u, v, w);
+		const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
+		if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
+			godot::UtilityFunctions::printerr(godot::String("MXT mesh collision triangle has invalid checkpoint index "), cp_idx);
+			std::abort();
+		}
+
+		best_dist = dist;
+		out_collision.collided = true;
+		out_collision.collision_point = smooth_point;
+		out_collision.collision_normal = smooth_normal;
+		out_collision.road_data.cp_idx = cp_idx;
+		out_collision.road_data.spatial_t = SimVec3();
+		out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
+		out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, smooth_point, smooth_normal);
+		out_collision.road_data.closest_root = RoadTransform();
+		out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
+	}
+}
+
 void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	SimVec3 const &p0,
 	SimVec3 const &p1,
@@ -1054,4 +1247,5 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	
 	CastParams params{ this, mask };
 	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
+	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx);
 }

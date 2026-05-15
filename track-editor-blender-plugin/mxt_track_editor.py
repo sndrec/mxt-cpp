@@ -4644,16 +4644,17 @@ def _pack_mesh_collision_triangles(context, seg_index):
         if props.surface_type not in terrain_map:
             raise RuntimeError(f"{obj.name} has unsupported mesh collision surface {props.surface_type}")
 
-        segment_index = -1
-        if props.segment:
-            if props.segment not in seg_index:
-                raise RuntimeError(f"{obj.name} references non-exported segment {props.segment.name}")
-            segment_index = seg_index[props.segment]
+        if not props.segment:
+            raise RuntimeError(f"{obj.name} is marked for mesh collision but has no segment")
+        if props.segment not in seg_index:
+            raise RuntimeError(f"{obj.name} references non-exported segment {props.segment.name}")
+        segment_index = seg_index[props.segment]
 
         eval_obj = obj.evaluated_get(depsgraph)
         mesh = eval_obj.to_mesh()
         try:
             mesh.calc_loop_triangles()
+            object_tri_count = 0
             normal_matrix = obj.matrix_world.to_3x3().inverted().transposed()
             terrain_flags = terrain_map[props.surface_type]
             for loop_tri in mesh.loop_triangles:
@@ -4673,6 +4674,9 @@ def _pack_mesh_collision_triangles(context, seg_index):
                 for n in normals:
                     mesh_data += struct.pack('<3f', n.x, n.y, n.z)
                 tri_count += 1
+                object_tri_count += 1
+            if object_tri_count == 0:
+                raise RuntimeError(f"{obj.name} is marked for mesh collision but has no triangles")
         finally:
             eval_obj.to_mesh_clear()
 
