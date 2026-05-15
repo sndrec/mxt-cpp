@@ -1110,6 +1110,15 @@ static bool aabb_overlaps_segment(const SimAABB &bounds, const SimVec3 &p0, cons
 	return true;
 }
 
+enum MeshCastRejectReason
+{
+	MESH_CAST_REJECT_NONE,
+	MESH_CAST_REJECT_PARALLEL,
+	MESH_CAST_REJECT_BACKSIDE,
+	MESH_CAST_REJECT_T,
+	MESH_CAST_REJECT_BARY
+};
+
 static bool triangle_ray_hit(
 	const TrackMeshCollisionTriangle &tri,
 	const SimVec3 &p0,
@@ -1120,27 +1129,40 @@ static bool triangle_ray_hit(
 	float *out_v,
 	float *out_w,
 	SimVec3 *out_face_normal,
-	bool *out_backside_hit)
+	bool *out_backside_hit,
+	MeshCastRejectReason *out_reject_reason = nullptr)
 {
 	const SimVec3 edge0 = tri.p1 - tri.p0;
 	const SimVec3 edge1 = tri.p2 - tri.p0;
 	SimVec3 face_normal = edge0.cross(edge1);
 	const float face_len2 = face_normal.length_squared();
 	if (face_len2 <= 1.0e-8f) {
+		if (out_reject_reason) {
+			*out_reject_reason = MESH_CAST_REJECT_PARALLEL;
+		}
 		return false;
 	}
 	face_normal *= 1.0f / sqrtf(face_len2);
 	const float denom = ray.dot(face_normal);
 	if (fabsf(denom) <= 1.0e-7f) {
+		if (out_reject_reason) {
+			*out_reject_reason = MESH_CAST_REJECT_PARALLEL;
+		}
 		return false;
 	}
 	const bool backside_hit = denom > 0.0f;
 	if (!allow_backface && backside_hit) {
+		if (out_reject_reason) {
+			*out_reject_reason = MESH_CAST_REJECT_BACKSIDE;
+		}
 		return false;
 	}
 
 	const float t = (tri.p0 - p0).dot(face_normal) / denom;
 	if (t < 0.0f || t > 1.0f) {
+		if (out_reject_reason) {
+			*out_reject_reason = MESH_CAST_REJECT_T;
+		}
 		return false;
 	}
 
@@ -1155,6 +1177,9 @@ static bool triangle_ray_hit(
 	const float d21 = v2.dot(v1);
 	const float denom_bary = d00 * d11 - d01 * d01;
 	if (fabsf(denom_bary) <= 1.0e-8f) {
+		if (out_reject_reason) {
+			*out_reject_reason = MESH_CAST_REJECT_BARY;
+		}
 		return false;
 	}
 	const float inv_denom = 1.0f / denom_bary;
@@ -1163,9 +1188,15 @@ static bool triangle_ray_hit(
 	const float u = 1.0f - v - w;
 	const float slop = -1.0e-4f;
 	if (u < slop || v < slop || w < slop) {
+		if (out_reject_reason) {
+			*out_reject_reason = MESH_CAST_REJECT_BARY;
+		}
 		return false;
 	}
 
+	if (out_reject_reason) {
+		*out_reject_reason = MESH_CAST_REJECT_NONE;
+	}
 	*out_t = t;
 	*out_u = u;
 	*out_v = v;
@@ -1317,6 +1348,13 @@ static void mesh_triangle_barycentric_on_face(
 	*out_u = 1.0f - *out_v - *out_w;
 }
 
+enum MeshFloorProjectionResult
+{
+	MESH_FLOOR_PROJECT_MISS,
+	MESH_FLOOR_PROJECT_FACE,
+	MESH_FLOOR_PROJECT_SMOOTH
+};
+
 static bool project_point_to_mesh_triangle(
 	const TrackMeshCollisionTriangle &tri,
 	const SimVec3 &p,
@@ -1325,7 +1363,8 @@ static bool project_point_to_mesh_triangle(
 	float *out_u,
 	float *out_v,
 	float *out_w,
-	bool *out_backside_sample)
+	bool *out_backside_sample,
+	MeshFloorProjectionResult *out_projection_result = nullptr)
 {
 	const SimVec3 &v0 = tri.edge0;
 	const SimVec3 &v1 = tri.edge1;
@@ -1339,6 +1378,9 @@ static bool project_point_to_mesh_triangle(
 	constexpr float kBacksideSlop = -0.01f;
 	const float signed_face_dist = (p - projected).dot(face_n);
 	if (signed_face_dist < kBacksideSlop && !allow_backside) {
+		if (out_projection_result) {
+			*out_projection_result = MESH_FLOOR_PROJECT_MISS;
+		}
 		return false;
 	}
 	const bool backside_sample = signed_face_dist < kBacksideSlop;
@@ -1353,10 +1395,16 @@ static bool project_point_to_mesh_triangle(
 		*out_v = v;
 		*out_w = w;
 		*out_backside_sample = backside_sample;
+		if (out_projection_result) {
+			*out_projection_result = MESH_FLOOR_PROJECT_FACE;
+		}
 		return true;
 	}
 	constexpr float kSmoothRetrySlop = -0.10f;
 	if (u < kSmoothRetrySlop || v < kSmoothRetrySlop || w < kSmoothRetrySlop) {
+		if (out_projection_result) {
+			*out_projection_result = MESH_FLOOR_PROJECT_MISS;
+		}
 		return false;
 	}
 
@@ -1369,16 +1417,25 @@ static bool project_point_to_mesh_triangle(
 		}
 		const float normal_dot_face = smooth_n.dot(face_n);
 		if (fabsf(normal_dot_face) <= 1.0e-4f) {
+			if (out_projection_result) {
+				*out_projection_result = MESH_FLOOR_PROJECT_MISS;
+			}
 			return false;
 		}
 		projected = p - smooth_n * ((p - tri.p0).dot(face_n) / normal_dot_face);
 		if ((p - projected).dot(face_n) < kBacksideSlop && !allow_backside) {
+			if (out_projection_result) {
+				*out_projection_result = MESH_FLOOR_PROJECT_MISS;
+			}
 			return false;
 		}
 		mesh_triangle_barycentric_on_face(tri, projected, v0, v1, inv_denom, d00, d01, d11, &u, &v, &w);
 	}
 
 	if (u < kSupportSlop || v < kSupportSlop || w < kSupportSlop) {
+		if (out_projection_result) {
+			*out_projection_result = MESH_FLOOR_PROJECT_MISS;
+		}
 		return false;
 	}
 	*out_point = projected;
@@ -1386,6 +1443,9 @@ static bool project_point_to_mesh_triangle(
 	*out_v = v;
 	*out_w = w;
 	*out_backside_sample = backside_sample;
+	if (out_projection_result) {
+		*out_projection_result = MESH_FLOOR_PROJECT_SMOOTH;
+	}
 	return true;
 }
 
@@ -1455,12 +1515,21 @@ static void cast_mesh_collision_fast(
 		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 		if (is_rail) {
 			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+				if (scratch) {
+					scratch->mesh_cast_surface_rejects += 1;
+				}
 				return;
 			}
 		} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
+			if (scratch) {
+				scratch->mesh_cast_surface_rejects += 1;
+			}
 			return;
 		}
 		if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
+			if (scratch) {
+				scratch->mesh_cast_aabb_rejects += 1;
+			}
 			return;
 		}
 		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS)) {
@@ -1479,11 +1548,33 @@ static void cast_mesh_collision_fast(
 		SimVec3 face_normal;
 		bool backside_hit = false;
 		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
-		if (!triangle_ray_hit(tri, p0, ray, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit)) {
+		MeshCastRejectReason reject_reason = MESH_CAST_REJECT_NONE;
+		if (!triangle_ray_hit(tri, p0, ray, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, &reject_reason)) {
+			if (scratch) {
+				switch (reject_reason) {
+					case MESH_CAST_REJECT_PARALLEL:
+						scratch->mesh_cast_ray_parallel_rejects += 1;
+						break;
+					case MESH_CAST_REJECT_BACKSIDE:
+						scratch->mesh_cast_backside_rejects += 1;
+						break;
+					case MESH_CAST_REJECT_T:
+						scratch->mesh_cast_t_rejects += 1;
+						break;
+					case MESH_CAST_REJECT_BARY:
+						scratch->mesh_cast_bary_rejects += 1;
+						break;
+					default:
+						break;
+				}
+			}
 			return;
 		}
 		const float dist = hit_t * ray_len;
 		if (dist >= best_dist) {
+			if (scratch) {
+				scratch->mesh_cast_best_dist_rejects += 1;
+			}
 			return;
 		}
 
@@ -1507,6 +1598,9 @@ static void cast_mesh_collision_fast(
 
 		best_dist = dist;
 		mesh_hit = true;
+		if (scratch) {
+			scratch->mesh_cast_hits += 1;
+		}
 		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
 			draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
 		}
@@ -1653,7 +1747,16 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			scratch->mesh_floor_tri_tests += 1;
 		}
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-		if ((tri.terrain & TERRAIN::RAIL) != 0 || distance2_to_aabb(tri.bounds, point) > best_dist2) {
+		if ((tri.terrain & TERRAIN::RAIL) != 0) {
+			if (scratch) {
+				scratch->mesh_floor_rail_rejects += 1;
+			}
+			return;
+		}
+		if (distance2_to_aabb(tri.bounds, point) > best_dist2) {
+			if (scratch) {
+				scratch->mesh_floor_aabb_rejects += 1;
+			}
 			return;
 		}
 		float u = 0.0f;
@@ -1662,25 +1765,43 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		SimVec3 projected;
 		bool backside_sample = false;
 		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
-		if (!project_point_to_mesh_triangle(tri, point, allow_backside, &projected, &u, &v, &w, &backside_sample)) {
+		MeshFloorProjectionResult projection_result = MESH_FLOOR_PROJECT_MISS;
+		if (!project_point_to_mesh_triangle(tri, point, allow_backside, &projected, &u, &v, &w, &backside_sample, &projection_result)) {
+			if (scratch) {
+				scratch->mesh_floor_projection_misses += 1;
+			}
 			return;
+		}
+		if (scratch) {
+			if (projection_result == MESH_FLOOR_PROJECT_SMOOTH) {
+				scratch->mesh_floor_smooth_projection_hits += 1;
+			} else {
+				scratch->mesh_floor_face_projection_hits += 1;
+			}
 		}
 		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS)) {
 			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 0.8f, 1.0f, 0.7f), _TICK_DELTA);
 		}
 		const float dist2 = (point - projected).length_squared();
-		if (dist2 < best_dist2) {
-			best_dist2 = dist2;
-			best_u = u;
-			best_v = v;
-			best_w = w;
-			best_flat_point = projected;
-			best_backside_sample = backside_sample;
-			best_tri = &tri;
-			best_tri_index = tri_index;
-			if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
-				draw_mesh_debug_triangle(tri, godot::Color(0.1f, 1.0f, 0.45f, 0.95f), _TICK_DELTA);
+		if (dist2 >= best_dist2) {
+			if (scratch) {
+				scratch->mesh_floor_best_dist_rejects += 1;
 			}
+			return;
+		}
+		if (scratch) {
+			scratch->mesh_floor_best_updates += 1;
+		}
+		best_dist2 = dist2;
+		best_u = u;
+		best_v = v;
+		best_w = w;
+		best_flat_point = projected;
+		best_backside_sample = backside_sample;
+		best_tri = &tri;
+		best_tri_index = tri_index;
+		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
+			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 1.0f, 0.45f, 0.95f), _TICK_DELTA);
 		}
 	};
 
@@ -1772,7 +1893,14 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		std::abort();
 	}
 	if (seed_triangle_index >= 0) {
+		if (scratch) {
+			scratch->mesh_floor_seed_calls += 1;
+		}
+		const int prev_best_tri_index = best_tri_index;
 		scan_triangle(seed_triangle_index);
+		if (scratch && best_tri_index == seed_triangle_index && best_tri_index != prev_best_tri_index) {
+			scratch->mesh_floor_seed_hits += 1;
+		}
 	}
 
 	if (scan_world_bvh_root(0)) {

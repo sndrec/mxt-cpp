@@ -1884,10 +1884,27 @@ void GameSim::record_phase_profile_sample()
 		soa.prof_mesh_floor_tri_tests,
 		soa.prof_mesh_floor_checkpoint_scans,
 		soa.prof_mesh_floor_segment_scans,
+		soa.prof_mesh_floor_seed_calls,
+		soa.prof_mesh_floor_seed_hits,
+		soa.prof_mesh_floor_rail_rejects,
+		soa.prof_mesh_floor_aabb_rejects,
+		soa.prof_mesh_floor_projection_misses,
+		soa.prof_mesh_floor_face_projection_hits,
+		soa.prof_mesh_floor_smooth_projection_hits,
+		soa.prof_mesh_floor_best_dist_rejects,
+		soa.prof_mesh_floor_best_updates,
 		soa.prof_mesh_cast_calls,
 		soa.prof_mesh_cast_tri_tests,
 		soa.prof_mesh_floor_bvh_node_tests,
 		soa.prof_mesh_cast_bvh_node_tests,
+		soa.prof_mesh_cast_surface_rejects,
+		soa.prof_mesh_cast_aabb_rejects,
+		soa.prof_mesh_cast_ray_parallel_rejects,
+		soa.prof_mesh_cast_backside_rejects,
+		soa.prof_mesh_cast_t_rejects,
+		soa.prof_mesh_cast_bary_rejects,
+		soa.prof_mesh_cast_best_dist_rejects,
+		soa.prof_mesh_cast_hits,
 	};
 
 	if (profile_count == PROFILE_WINDOW_TICKS) {
@@ -1937,10 +1954,27 @@ String GameSim::get_phase_profile_string() const
 	out += " mesh_floor_tri_tests=" + String::num_int64(avg(PROFILE_MESH_FLOOR_TRI_TESTS));
 	out += " mesh_floor_cp_scans=" + String::num_int64(avg(PROFILE_MESH_FLOOR_CP_SCANS));
 	out += " mesh_floor_seg_scans=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEG_SCANS));
+	out += " mesh_floor_seed_calls=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEED_CALLS));
+	out += " mesh_floor_seed_hits=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SEED_HITS));
+	out += " mesh_floor_rail_rejects=" + String::num_int64(avg(PROFILE_MESH_FLOOR_RAIL_REJECTS));
+	out += " mesh_floor_aabb_rejects=" + String::num_int64(avg(PROFILE_MESH_FLOOR_AABB_REJECTS));
+	out += " mesh_floor_projection_misses=" + String::num_int64(avg(PROFILE_MESH_FLOOR_PROJECTION_MISSES));
+	out += " mesh_floor_face_projection_hits=" + String::num_int64(avg(PROFILE_MESH_FLOOR_FACE_PROJECTION_HITS));
+	out += " mesh_floor_smooth_projection_hits=" + String::num_int64(avg(PROFILE_MESH_FLOOR_SMOOTH_PROJECTION_HITS));
+	out += " mesh_floor_best_dist_rejects=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BEST_DIST_REJECTS));
+	out += " mesh_floor_best_updates=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BEST_UPDATES));
 	out += " mesh_cast_calls=" + String::num_int64(avg(PROFILE_MESH_CAST_CALLS));
 	out += " mesh_cast_tri_tests=" + String::num_int64(avg(PROFILE_MESH_CAST_TRI_TESTS));
 	out += " mesh_floor_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_FLOOR_BVH_NODE_TESTS));
 	out += " mesh_cast_bvh_nodes=" + String::num_int64(avg(PROFILE_MESH_CAST_BVH_NODE_TESTS));
+	out += " mesh_cast_surface_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_SURFACE_REJECTS));
+	out += " mesh_cast_aabb_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_AABB_REJECTS));
+	out += " mesh_cast_ray_parallel_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_RAY_PARALLEL_REJECTS));
+	out += " mesh_cast_backside_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BACKSIDE_REJECTS));
+	out += " mesh_cast_t_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_T_REJECTS));
+	out += " mesh_cast_bary_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BARY_REJECTS));
+	out += " mesh_cast_best_dist_rejects=" + String::num_int64(avg(PROFILE_MESH_CAST_BEST_DIST_REJECTS));
+	out += " mesh_cast_hits=" + String::num_int64(avg(PROFILE_MESH_CAST_HITS));
 	return out;
 }
 
@@ -2395,10 +2429,27 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	soa.prof_mesh_floor_tri_tests = 0;
 	soa.prof_mesh_floor_checkpoint_scans = 0;
 	soa.prof_mesh_floor_segment_scans = 0;
+	soa.prof_mesh_floor_seed_calls = 0;
+	soa.prof_mesh_floor_seed_hits = 0;
+	soa.prof_mesh_floor_rail_rejects = 0;
+	soa.prof_mesh_floor_aabb_rejects = 0;
+	soa.prof_mesh_floor_projection_misses = 0;
+	soa.prof_mesh_floor_face_projection_hits = 0;
+	soa.prof_mesh_floor_smooth_projection_hits = 0;
+	soa.prof_mesh_floor_best_dist_rejects = 0;
+	soa.prof_mesh_floor_best_updates = 0;
 	soa.prof_mesh_cast_calls = 0;
 	soa.prof_mesh_cast_tri_tests = 0;
 	soa.prof_mesh_floor_bvh_node_tests = 0;
 	soa.prof_mesh_cast_bvh_node_tests = 0;
+	soa.prof_mesh_cast_surface_rejects = 0;
+	soa.prof_mesh_cast_aabb_rejects = 0;
+	soa.prof_mesh_cast_ray_parallel_rejects = 0;
+	soa.prof_mesh_cast_backside_rejects = 0;
+	soa.prof_mesh_cast_t_rejects = 0;
+	soa.prof_mesh_cast_bary_rejects = 0;
+	soa.prof_mesh_cast_best_dist_rejects = 0;
+	soa.prof_mesh_cast_hits = 0;
 	uint32_t lane_prepare_floor_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_project_us[VEHICLE_WORKER_COUNT] = {};
 	uint32_t lane_steer_susp_us[VEHICLE_WORKER_COUNT] = {};
@@ -2507,10 +2558,27 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.prof_mesh_floor_tri_tests += track_scratch.mesh_floor_tri_tests;
 		soa.prof_mesh_floor_checkpoint_scans += track_scratch.mesh_floor_checkpoint_scans;
 		soa.prof_mesh_floor_segment_scans += track_scratch.mesh_floor_segment_scans;
+		soa.prof_mesh_floor_seed_calls += track_scratch.mesh_floor_seed_calls;
+		soa.prof_mesh_floor_seed_hits += track_scratch.mesh_floor_seed_hits;
+		soa.prof_mesh_floor_rail_rejects += track_scratch.mesh_floor_rail_rejects;
+		soa.prof_mesh_floor_aabb_rejects += track_scratch.mesh_floor_aabb_rejects;
+		soa.prof_mesh_floor_projection_misses += track_scratch.mesh_floor_projection_misses;
+		soa.prof_mesh_floor_face_projection_hits += track_scratch.mesh_floor_face_projection_hits;
+		soa.prof_mesh_floor_smooth_projection_hits += track_scratch.mesh_floor_smooth_projection_hits;
+		soa.prof_mesh_floor_best_dist_rejects += track_scratch.mesh_floor_best_dist_rejects;
+		soa.prof_mesh_floor_best_updates += track_scratch.mesh_floor_best_updates;
 		soa.prof_mesh_cast_calls += track_scratch.mesh_cast_calls;
 		soa.prof_mesh_cast_tri_tests += track_scratch.mesh_cast_tri_tests;
 		soa.prof_mesh_floor_bvh_node_tests += track_scratch.mesh_floor_bvh_node_tests;
 		soa.prof_mesh_cast_bvh_node_tests += track_scratch.mesh_cast_bvh_node_tests;
+		soa.prof_mesh_cast_surface_rejects += track_scratch.mesh_cast_surface_rejects;
+		soa.prof_mesh_cast_aabb_rejects += track_scratch.mesh_cast_aabb_rejects;
+		soa.prof_mesh_cast_ray_parallel_rejects += track_scratch.mesh_cast_ray_parallel_rejects;
+		soa.prof_mesh_cast_backside_rejects += track_scratch.mesh_cast_backside_rejects;
+		soa.prof_mesh_cast_t_rejects += track_scratch.mesh_cast_t_rejects;
+		soa.prof_mesh_cast_bary_rejects += track_scratch.mesh_cast_bary_rejects;
+		soa.prof_mesh_cast_best_dist_rejects += track_scratch.mesh_cast_best_dist_rejects;
+		soa.prof_mesh_cast_hits += track_scratch.mesh_cast_hits;
 	}
 
 	soa.prof_collision_us = lane_collision_us[0];

@@ -60,10 +60,27 @@ struct alignas(64) TrackQueryScratch
 	uint32_t mesh_floor_tri_tests = 0;
 	uint32_t mesh_floor_checkpoint_scans = 0;
 	uint32_t mesh_floor_segment_scans = 0;
+	uint32_t mesh_floor_seed_calls = 0;
+	uint32_t mesh_floor_seed_hits = 0;
+	uint32_t mesh_floor_rail_rejects = 0;
+	uint32_t mesh_floor_aabb_rejects = 0;
+	uint32_t mesh_floor_projection_misses = 0;
+	uint32_t mesh_floor_face_projection_hits = 0;
+	uint32_t mesh_floor_smooth_projection_hits = 0;
+	uint32_t mesh_floor_best_dist_rejects = 0;
+	uint32_t mesh_floor_best_updates = 0;
 	uint32_t mesh_cast_calls = 0;
 	uint32_t mesh_cast_tri_tests = 0;
 	uint32_t mesh_floor_bvh_node_tests = 0;
 	uint32_t mesh_cast_bvh_node_tests = 0;
+	uint32_t mesh_cast_surface_rejects = 0;
+	uint32_t mesh_cast_aabb_rejects = 0;
+	uint32_t mesh_cast_ray_parallel_rejects = 0;
+	uint32_t mesh_cast_backside_rejects = 0;
+	uint32_t mesh_cast_t_rejects = 0;
+	uint32_t mesh_cast_bary_rejects = 0;
+	uint32_t mesh_cast_best_dist_rejects = 0;
+	uint32_t mesh_cast_hits = 0;
 	int debug_mesh_current_global_car_index = -1;
 	int debug_mesh_draw_global_car_index = 0;
 
@@ -73,10 +90,27 @@ struct alignas(64) TrackQueryScratch
 		mesh_floor_tri_tests = 0;
 		mesh_floor_checkpoint_scans = 0;
 		mesh_floor_segment_scans = 0;
+		mesh_floor_seed_calls = 0;
+		mesh_floor_seed_hits = 0;
+		mesh_floor_rail_rejects = 0;
+		mesh_floor_aabb_rejects = 0;
+		mesh_floor_projection_misses = 0;
+		mesh_floor_face_projection_hits = 0;
+		mesh_floor_smooth_projection_hits = 0;
+		mesh_floor_best_dist_rejects = 0;
+		mesh_floor_best_updates = 0;
 		mesh_cast_calls = 0;
 		mesh_cast_tri_tests = 0;
 		mesh_floor_bvh_node_tests = 0;
 		mesh_cast_bvh_node_tests = 0;
+		mesh_cast_surface_rejects = 0;
+		mesh_cast_aabb_rejects = 0;
+		mesh_cast_ray_parallel_rejects = 0;
+		mesh_cast_backside_rejects = 0;
+		mesh_cast_t_rejects = 0;
+		mesh_cast_bary_rejects = 0;
+		mesh_cast_best_dist_rejects = 0;
+		mesh_cast_hits = 0;
 		debug_mesh_current_global_car_index = -1;
 	}
 

@@ -44,7 +44,7 @@ namespace godot {
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
 		static const int PROFILE_WINDOW_TICKS = 360;
-		static const int PROFILE_FIELD_COUNT = 28;
+		static const int PROFILE_FIELD_COUNT = 45;
 		static const int RENDER_PROFILE_FIELD_COUNT = 9;
 		enum ProfileField {
 			PROFILE_TOTAL,
@@ -71,10 +71,27 @@ namespace godot {
 			PROFILE_MESH_FLOOR_TRI_TESTS,
 			PROFILE_MESH_FLOOR_CP_SCANS,
 			PROFILE_MESH_FLOOR_SEG_SCANS,
+			PROFILE_MESH_FLOOR_SEED_CALLS,
+			PROFILE_MESH_FLOOR_SEED_HITS,
+			PROFILE_MESH_FLOOR_RAIL_REJECTS,
+			PROFILE_MESH_FLOOR_AABB_REJECTS,
+			PROFILE_MESH_FLOOR_PROJECTION_MISSES,
+			PROFILE_MESH_FLOOR_FACE_PROJECTION_HITS,
+			PROFILE_MESH_FLOOR_SMOOTH_PROJECTION_HITS,
+			PROFILE_MESH_FLOOR_BEST_DIST_REJECTS,
+			PROFILE_MESH_FLOOR_BEST_UPDATES,
 			PROFILE_MESH_CAST_CALLS,
 			PROFILE_MESH_CAST_TRI_TESTS,
 			PROFILE_MESH_FLOOR_BVH_NODE_TESTS,
 			PROFILE_MESH_CAST_BVH_NODE_TESTS,
+			PROFILE_MESH_CAST_SURFACE_REJECTS,
+			PROFILE_MESH_CAST_AABB_REJECTS,
+			PROFILE_MESH_CAST_RAY_PARALLEL_REJECTS,
+			PROFILE_MESH_CAST_BACKSIDE_REJECTS,
+			PROFILE_MESH_CAST_T_REJECTS,
+			PROFILE_MESH_CAST_BARY_REJECTS,
+			PROFILE_MESH_CAST_BEST_DIST_REJECTS,
+			PROFILE_MESH_CAST_HITS,
 		};
 		enum RenderProfileField {
 			RENDER_PROFILE_TOTAL,
@@ -143,10 +160,27 @@ namespace godot {
 			uint32_t prof_mesh_floor_tri_tests = 0;
 			uint32_t prof_mesh_floor_checkpoint_scans = 0;
 			uint32_t prof_mesh_floor_segment_scans = 0;
+			uint32_t prof_mesh_floor_seed_calls = 0;
+			uint32_t prof_mesh_floor_seed_hits = 0;
+			uint32_t prof_mesh_floor_rail_rejects = 0;
+			uint32_t prof_mesh_floor_aabb_rejects = 0;
+			uint32_t prof_mesh_floor_projection_misses = 0;
+			uint32_t prof_mesh_floor_face_projection_hits = 0;
+			uint32_t prof_mesh_floor_smooth_projection_hits = 0;
+			uint32_t prof_mesh_floor_best_dist_rejects = 0;
+			uint32_t prof_mesh_floor_best_updates = 0;
 			uint32_t prof_mesh_cast_calls = 0;
 			uint32_t prof_mesh_cast_tri_tests = 0;
 			uint32_t prof_mesh_floor_bvh_node_tests = 0;
 			uint32_t prof_mesh_cast_bvh_node_tests = 0;
+			uint32_t prof_mesh_cast_surface_rejects = 0;
+			uint32_t prof_mesh_cast_aabb_rejects = 0;
+			uint32_t prof_mesh_cast_ray_parallel_rejects = 0;
+			uint32_t prof_mesh_cast_backside_rejects = 0;
+			uint32_t prof_mesh_cast_t_rejects = 0;
+			uint32_t prof_mesh_cast_bary_rejects = 0;
+			uint32_t prof_mesh_cast_best_dist_rejects = 0;
+			uint32_t prof_mesh_cast_hits = 0;
 		};
 		VehicleTickSoA vehicle_tick_soa;
 		static const int SUPER_SPARK_CAPACITY = 256;
