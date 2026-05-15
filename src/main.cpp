@@ -393,6 +393,38 @@ namespace {
 		return SimTransform(sim_basis(t.basis), sim_vec3(t.origin));
 	}
 
+	static bool invert_basis(const SimBasis& basis, SimBasis& out)
+	{
+		const SimVec3 a = basis.c0;
+		const SimVec3 b = basis.c1;
+		const SimVec3 c = basis.c2;
+		const SimVec3 row0 = b.cross(c);
+		const float det = a.dot(row0);
+		if (std::abs(det) <= 1.0e-8f) {
+			out = basis.transposed();
+			return false;
+		}
+
+		const float inv_det = 1.0f / det;
+		const SimVec3 r0 = row0 * inv_det;
+		const SimVec3 r1 = c.cross(a) * inv_det;
+		const SimVec3 r2 = a.cross(b) * inv_det;
+		out.c0 = SimVec3(r0.x, r1.x, r2.x);
+		out.c1 = SimVec3(r0.y, r1.y, r2.y);
+		out.c2 = SimVec3(r0.z, r1.z, r2.z);
+		return true;
+	}
+
+	static SimTransform invert_scaled_transform(const SimTransform& transform)
+	{
+		SimTransform out;
+		if (!invert_basis(transform.basis, out.basis)) {
+			return transform.affine_inverse();
+		}
+		out.origin = out.basis.xform(-transform.origin);
+		return out;
+	}
+
 	struct DipSwitchDefinition {
 		const char* key;
 		const char* label;
@@ -408,6 +440,7 @@ namespace {
 		{"DIP_DRAW_BRANCH_CENTERLINE", "Draw Branch Centerline", DIP_SWITCH::DIP_DRAW_BRANCH_CENTERLINE},
 		{"DIP_TRACE_RAIL_SAMPLING", "Trace Rail Sampling", DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING},
 		{"DIP_DRAW_RAIL_CANDIDATES", "Draw Rail Candidates", DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES},
+		{"DIP_TRACE_PIPE_FLOOR", "Trace Pipe Floor", DIP_SWITCH::DIP_TRACE_PIPE_FLOOR},
 	};
 
 	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count)
@@ -2681,7 +2714,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			trig->segment_index = seg_idx;
 			trig->checkpoint_index = cp_idx;
 			trig->inv_transform = inv_t;
-			trig->transform = inv_t.affine_inverse();
+			trig->transform = invert_scaled_transform(inv_t);
 			trig->half_extents = ext;
 			current_track->trigger_colliders[t] = trig;
 		}

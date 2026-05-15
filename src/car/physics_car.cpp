@@ -5,6 +5,7 @@
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/object.hpp"
 #include "godot_cpp/core/math.hpp"
+#include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
 #include <cmath>
@@ -754,6 +755,70 @@ static inline void floor_consider_ray_hit(float t, const SimVec2 &hit, float &be
 	}
 }
 
+static inline float cross2(const SimVec2 &a, const SimVec2 &b)
+{
+	return a.x * b.y - a.y * b.x;
+}
+
+static bool road_shape_is_open_pipe_or_rect(const RoadShape *shape)
+{
+	return shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+		shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
+}
+
+struct PipeFloorTrace
+{
+	const char *reason = "ok";
+	SimVec2 center;
+	SimVec2 ray_dir;
+	SimVec2 hit;
+	float ray_dir_len2 = 0.0f;
+	bool open_shape = false;
+	bool lip_valid = false;
+	bool center_on_road_side = false;
+	bool center_in_road_arc = false;
+	bool center_on_open_road_side = false;
+};
+
+static SimVec2 sample_road_local_xy(const RoadShape *shape, float tx, float ty)
+{
+	SimVec3 pos;
+	SimVec3 dx;
+	SimVec3 dy;
+	shape->get_local_surface_at_time(pos, dx, dy, SimVec2(tx, ty));
+	return SimVec2(pos.x, pos.y);
+}
+
+static bool open_road_lip_relation(
+	const TrackSegment &segment,
+	const SimVec2 &p,
+	float ty,
+	bool &out_center_on_road_side,
+	bool &out_center_in_road_arc)
+{
+	const RoadShape *shape = segment.road_shape;
+	const SimVec2 left = sample_road_local_xy(shape, -1.0f, ty);
+	const SimVec2 middle = sample_road_local_xy(shape, 0.0f, ty);
+	const SimVec2 right = sample_road_local_xy(shape, 1.0f, ty);
+	const SimVec2 lip = right - left;
+	if (lip.length_squared() <= 0.000001f) {
+		return false;
+	}
+
+	const float road_side = cross2(lip, middle - left);
+	if (fabsf(road_side) <= 0.000001f) {
+		return false;
+	}
+
+	SimVec2 center_t;
+	SimVec3 center_spatial(p.x, p.y, ty);
+	segment.road_shape->find_t_from_relative_pos(center_t, center_spatial);
+	const float center_side = cross2(lip, p - left);
+	out_center_on_road_side = (center_side * road_side) >= -0.0001f;
+	out_center_in_road_arc = center_t.x >= -1.0001f && center_t.x <= 1.0001f;
+	return true;
+}
+
 static bool ray_rounded_rect_xy(const SimVec2 &p, const SimVec2 &dir, float width, float height, float radius, SimVec2 &out_hit)
 {
 	const float w2 = fabsf(width) * 0.5f;
@@ -830,12 +895,18 @@ static bool project_machine_down_to_road_cross_section(
 	const SimTransform &machine_transform,
 	const SimVec3 &machine_pos,
 	SimVec2 &road_t,
-	SimVec3 &spatial_t)
+	SimVec3 &spatial_t,
+	bool &center_on_open_road_side,
+	PipeFloorTrace *trace)
 {
+	center_on_open_road_side = false;
 	const SimVec3 root_forward = root.t3d.basis.get_column(2);
 	const SimVec3 machine_up = machine_transform.basis.get_column(1);
 	const SimVec3 world_down = -machine_up.slide(root_forward);
 	if (world_down.length_squared() <= 0.000001f) {
+		if (trace) {
+			trace->reason = "cross_section_down_degenerate";
+		}
 		return false;
 	}
 
@@ -847,18 +918,51 @@ static bool project_machine_down_to_road_cross_section(
 	const SimVec2 dir(
 		local_down_unscaled.x * safe_inverse_floor_scale(root.scale.x),
 		local_down_unscaled.y * safe_inverse_floor_scale(root.scale.y));
+	if (trace) {
+		trace->center = p;
+		trace->ray_dir = dir;
+		trace->ray_dir_len2 = dir.length_squared();
+	}
 	if (dir.length_squared() <= 0.000001f) {
+		if (trace) {
+			trace->reason = "local_ray_degenerate";
+		}
 		return false;
+	}
+
+	if (road_shape_is_open_pipe_or_rect(segment.road_shape)) {
+		bool center_on_road_side = false;
+		bool center_in_road_arc = false;
+		if (trace) {
+			trace->open_shape = true;
+		}
+		if (open_road_lip_relation(segment, p, road_t.y, center_on_road_side, center_in_road_arc)) {
+			if (trace) {
+				trace->lip_valid = true;
+				trace->center_on_road_side = center_on_road_side;
+				trace->center_in_road_arc = center_in_road_arc;
+			}
+			if (!center_on_road_side && !center_in_road_arc) {
+				if (trace) {
+					trace->reason = "open_hole_side_outside_arc";
+				}
+				return false;
+			}
+			center_on_open_road_side = center_on_road_side && center_in_road_arc;
+			if (trace) {
+				trace->center_on_open_road_side = center_on_open_road_side;
+			}
+		}
 	}
 
 	SimVec2 hit;
 	switch (segment.road_shape->shape_type) {
 		case ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE:
 		case ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN:
-			if (p.length_squared() > 1.0201f) {
-				return false;
-			}
 			if (!ray_unit_circle_xy(p, dir, hit)) {
+				if (trace) {
+					trace->reason = "pipe_ray_miss";
+				}
 				return false;
 			}
 			break;
@@ -872,14 +976,23 @@ static bool project_machine_down_to_road_cross_section(
 					rect->height->sample(road_t.y),
 					rect->radius->sample(road_t.y),
 					hit)) {
+				if (trace) {
+					trace->reason = "rounded_rect_ray_miss";
+				}
 				return false;
 			}
 			break;
 		}
 		default:
+			if (trace) {
+				trace->reason = "unsupported_shape";
+			}
 			return false;
 	}
 
+	if (trace) {
+		trace->hit = hit;
+	}
 	spatial_t.x = hit.x;
 	spatial_t.y = hit.y;
 	segment.road_shape->find_t_from_relative_pos(road_t, spatial_t);
@@ -943,6 +1056,38 @@ bool PhysicsCar::find_floor_beneath_machine()
 	RoadTransform root;
 	RoadTransform root_derivative;
 	const TrackSegment &segment     = soa->current_track[soa_index]->segments[soa->current_track[soa_index]->checkpoints[soa->current_checkpoint[soa_index]].road_segment];
+	const bool trace_pipe_floor =
+		DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_PIPE_FLOOR) &&
+		(soa->global_start + soa_index) == 0 &&
+		(pipe || rect);
+	auto trace_floor = [&](const char *reason, const PipeFloorTrace *trace, const SimVec2 &road_t, const SimVec3 &spatial_t, float surface_dist) {
+		if (!trace_pipe_floor) {
+			return;
+		}
+		godot::UtilityFunctions::print(
+			godot::String("MXT_PIPE_FLOOR reason="), godot::String(reason),
+			godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+			godot::String(" coll_cp="), static_cast<int64_t>(soa->current_collision_checkpoint[soa_index]),
+			godot::String(" shape="), static_cast<int64_t>(segment.road_shape->shape_type),
+			godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16),
+			godot::String(" road_t=("), road_t.x, godot::String(","), road_t.y, godot::String(")"),
+			godot::String(" spatial=("), spatial_t.x, godot::String(","), spatial_t.y, godot::String(","), spatial_t.z, godot::String(")"),
+			godot::String(" pos=("), soa->position_current_x[soa_index], godot::String(","), soa->position_current_y[soa_index], godot::String(","), soa->position_current_z[soa_index], godot::String(")"),
+			godot::String(" vel=("), soa->velocity_x[soa_index], godot::String(","), soa->velocity_y[soa_index], godot::String(","), soa->velocity_z[soa_index], godot::String(")"),
+			godot::String(" surf_dist="), surface_dist,
+			godot::String(" h="), soa->height_above_track[soa_index],
+			godot::String(" push_track_len="), LOAD_VEC3(collision_push_track).length(),
+			godot::String(" push_rail_len="), LOAD_VEC3(collision_push_rail).length(),
+			godot::String(" trace_reason="), godot::String(trace ? trace->reason : "none"),
+			godot::String(" ray_len2="), trace ? trace->ray_dir_len2 : 0.0f,
+			godot::String(" center=("), trace ? trace->center.x : 0.0f, godot::String(","), trace ? trace->center.y : 0.0f, godot::String(")"),
+			godot::String(" ray=("), trace ? trace->ray_dir.x : 0.0f, godot::String(","), trace ? trace->ray_dir.y : 0.0f, godot::String(")"),
+			godot::String(" hit=("), trace ? trace->hit.x : 0.0f, godot::String(","), trace ? trace->hit.y : 0.0f, godot::String(")"),
+			godot::String(" lip_valid="), trace ? trace->lip_valid : false,
+			godot::String(" road_side="), trace ? trace->center_on_road_side : false,
+			godot::String(" in_arc="), trace ? trace->center_in_road_arc : false,
+			godot::String(" on_open_road="), trace ? trace->center_on_open_road_side : false);
+	};
 	soa->current_track[soa_index]->convert_point_to_road(
 		soa->current_checkpoint[soa_index],
 		LOAD_VEC3(position_current),
@@ -955,6 +1100,7 @@ bool PhysicsCar::find_floor_beneath_machine()
 	soa->road_sample[soa_index].spatial_t = spatial_t_sample;
 	SimTransform surf;
 	bool root_sampled = road_t_sample_raw.x != -1000.0f;
+	bool center_on_open_road_side = false;
 	auto sample_root = [&]() {
 		if (!root_sampled) {
 			segment.curve_matrix->sample_with_derivative(root, root_derivative, road_t_sample_raw.y);
@@ -965,6 +1111,8 @@ bool PhysicsCar::find_floor_beneath_machine()
 	//if (cylinder || pipe)
 	//{
 	//}
+	PipeFloorTrace pipe_trace;
+	PipeFloorTrace *pipe_trace_ptr = trace_pipe_floor ? &pipe_trace : nullptr;
 	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0)
 	{	
 		if(rect || pipe)
@@ -976,7 +1124,10 @@ bool PhysicsCar::find_floor_beneath_machine()
 				LOAD_TRANSFORM(basis_physical),
 				LOAD_VEC3(position_current),
 				road_t_sample_raw,
-				spatial_t_sample)) {
+				spatial_t_sample,
+				center_on_open_road_side,
+				pipe_trace_ptr)) {
+				trace_floor("orientation_ray_reject", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, 0.0f);
 				soa->height_above_track[soa_index] = 0.0f;
 				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 				return false;
@@ -988,6 +1139,7 @@ bool PhysicsCar::find_floor_beneath_machine()
 	}
 	if (road_t_sample_raw.x == -1000.0)
 	{
+		trace_floor("invalid_road_t", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		return false;
@@ -995,13 +1147,21 @@ bool PhysicsCar::find_floor_beneath_machine()
 
 	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || road_t_sample_raw.y > 1.001f || road_t_sample_raw.y < -0.001f)
 	{
+		trace_floor("road_t_bounds", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		return false;
 	}
 	segment.road_shape->get_oriented_transform_at_time_presampled(surf, road_t_sample_raw, root, root_derivative);
+	const float surface_dist = (LOAD_VEC3(position_current) - surf.origin).dot(surf.basis[1]);
+	if (center_on_open_road_side && surface_dist < -0.001f) {
+		trace_floor("open_center_below_surface", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
+		soa->height_above_track[soa_index] = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		return false;
+	}
 	STORE_VEC3(track_surface_normal, surf.basis[1]);
-	soa->height_above_track[soa_index] = fmaxf(1.0f, 20.0f - (LOAD_VEC3(position_current) - surf.origin).dot(LOAD_VEC3(track_surface_normal)));
+	soa->height_above_track[soa_index] = fmaxf(1.0f, 20.0f - surface_dist);
 	soa->road_sample[soa_index].road_t = road_t_sample_raw;
 	soa->road_sample[soa_index].spatial_t = spatial_t_sample;
 	soa->road_sample[soa_index].closest_surface = surf;
@@ -1012,6 +1172,7 @@ bool PhysicsCar::find_floor_beneath_machine()
 
 	if (soa->height_above_track[soa_index] > 20.1f)
 	{
+		trace_floor("height_above_track_too_large", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		soa->height_above_track[soa_index] = 0.0f;
 		return false;
@@ -3144,6 +3305,39 @@ void PhysicsCar::handle_machine_collision_response()
 	float speed_over_weight = 0.0f;
 	if (std::abs(soa->stat_weight[soa_index]) > 0.0001f)
 		speed_over_weight = current_world_speed / soa->stat_weight[soa_index];
+
+	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_PIPE_FLOOR) &&
+		(soa->global_start + soa_index) == 0 &&
+		soa->height_above_track[soa_index] <= 0.0f &&
+		(push_magnitude_track > 0.0001f || push_magnitude_rail > 0.0001f)) {
+		int shape_type = -1;
+		if (soa->current_track[soa_index] != nullptr &&
+			soa->current_checkpoint[soa_index] < soa->current_track[soa_index]->num_checkpoints) {
+			const CollisionCheckpoint &cp = soa->current_track[soa_index]->checkpoints[soa->current_checkpoint[soa_index]];
+			if (cp.road_segment >= 0 && cp.road_segment < soa->current_track[soa_index]->num_segments) {
+				shape_type = soa->current_track[soa_index]->segments[cp.road_segment].road_shape->shape_type;
+			}
+		}
+		if (shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE ||
+			shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+			shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT ||
+			shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN) {
+			const RoadData &sample = soa->road_sample[soa_index];
+			godot::UtilityFunctions::print(
+				godot::String("MXT_PIPE_DEPEN_NO_FLOOR cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+				godot::String(" coll_cp="), static_cast<int64_t>(soa->current_collision_checkpoint[soa_index]),
+				godot::String(" shape="), static_cast<int64_t>(shape_type),
+				godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16),
+				godot::String(" corner_flags="), static_cast<int64_t>(corner_collision_type_flag),
+				godot::String(" road_t=("), sample.road_t.x, godot::String(","), sample.road_t.y, godot::String(")"),
+				godot::String(" spatial=("), sample.spatial_t.x, godot::String(","), sample.spatial_t.y, godot::String(","), sample.spatial_t.z, godot::String(")"),
+				godot::String(" pos=("), soa->position_current_x[soa_index], godot::String(","), soa->position_current_y[soa_index], godot::String(","), soa->position_current_z[soa_index], godot::String(")"),
+				godot::String(" vel=("), soa->velocity_x[soa_index], godot::String(","), soa->velocity_y[soa_index], godot::String(","), soa->velocity_z[soa_index], godot::String(")"),
+				godot::String(" push_track_len="), push_magnitude_track,
+				godot::String(" push_rail_len="), push_magnitude_rail,
+				godot::String(" push_total=("), soa->collision_push_total_x[soa_index], godot::String(","), soa->collision_push_total_y[soa_index], godot::String(","), soa->collision_push_total_z[soa_index], godot::String(")"));
+		}
+	}
 
 	apply_machine_collision_response_from_corners(corner_collision_type_flag,
 		push_magnitude_rail, push_magnitude_track, current_world_speed, speed_over_weight, true);
