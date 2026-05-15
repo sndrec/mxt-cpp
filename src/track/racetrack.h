@@ -68,6 +68,9 @@ struct alignas(64) TrackQueryScratch
 		uint32_t best_dist_rejects = 0;
 		uint32_t best_updates = 0;
 		uint32_t query_us = 0;
+		uint32_t scan_us = 0;
+		uint32_t final_smooth_us = 0;
+		uint32_t final_smooth_outputs = 0;
 	};
 	struct TriggerEvent
 	{

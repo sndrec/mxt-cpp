@@ -2199,13 +2199,23 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			}
 		}
 	};
+	auto scan_profile_start = std::chrono::high_resolution_clock::now();
 	scan_mesh_floor_candidates();
+	if (floor_profile) {
+		const auto scan_profile_end = std::chrono::high_resolution_clock::now();
+		floor_profile->scan_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(scan_profile_end - scan_profile_start).count());
+	}
 	if (!best_tri && saw_smooth_projection_candidate) {
 		if (floor_profile) {
 			floor_profile->smooth_retry_queries += 1;
 		}
 		allow_smooth_projection_retry = true;
+		scan_profile_start = std::chrono::high_resolution_clock::now();
 		scan_mesh_floor_candidates();
+		if (floor_profile) {
+			const auto scan_profile_end = std::chrono::high_resolution_clock::now();
+			floor_profile->scan_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(scan_profile_end - scan_profile_start).count());
+		}
 	}
 
 	if (!best_tri) {
@@ -2219,8 +2229,14 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	SimVec3 smooth_normal = face_normal;
 	SimVec3 smooth_point = best_flat_point;
 	if (mesh_collision_uses_smooth_surface(best_tri->terrain)) {
+		const auto smooth_profile_start = std::chrono::high_resolution_clock::now();
 		smooth_normal = mesh_collision_smooth_normal(*best_tri, best_u, best_v, best_w, face_normal);
 		smooth_point = clamp_mesh_collision_phong_point(best_flat_point, mesh_collision_phong_point(*best_tri, best_u, best_v, best_w));
+		if (floor_profile) {
+			const auto smooth_profile_end = std::chrono::high_resolution_clock::now();
+			floor_profile->final_smooth_us += static_cast<uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(smooth_profile_end - smooth_profile_start).count());
+			floor_profile->final_smooth_outputs += 1;
+		}
 	}
 	if (best_backside_sample) {
 		smooth_normal *= -1.0f;

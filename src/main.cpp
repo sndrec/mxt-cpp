@@ -2025,6 +2025,9 @@ String GameSim::get_phase_profile_string() const
 		out += prefix + String("_bestrej=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] / static_cast<uint64_t>(count)));
 		out += prefix + String("_bestupd=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BEST_UPDATES] / static_cast<uint64_t>(count)));
 		out += prefix + String("_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_QUERY_US] / static_cast<uint64_t>(count)));
+		out += prefix + String("_scan_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SCAN_US] / static_cast<uint64_t>(count)));
+		out += prefix + String("_smooth_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FINAL_SMOOTH_US] / static_cast<uint64_t>(count)));
+		out += prefix + String("_smooth_out=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS] / static_cast<uint64_t>(count)));
 	}
 	return out;
 }
@@ -2654,6 +2657,9 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			dst[MESH_FLOOR_PROFILE_BEST_DIST_REJECTS] += src.best_dist_rejects;
 			dst[MESH_FLOOR_PROFILE_BEST_UPDATES] += src.best_updates;
 			dst[MESH_FLOOR_PROFILE_QUERY_US] += src.query_us;
+			dst[MESH_FLOOR_PROFILE_SCAN_US] += src.scan_us;
+			dst[MESH_FLOOR_PROFILE_FINAL_SMOOTH_US] += src.final_smooth_us;
+			dst[MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS] += src.final_smooth_outputs;
 		}
 	}
 

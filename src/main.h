@@ -45,7 +45,7 @@ namespace godot {
 		PlayerInput* input_buffer = nullptr;
 		static const int PROFILE_WINDOW_TICKS = 360;
 		static const int PROFILE_FIELD_COUNT = 48;
-		static const int MESH_FLOOR_PROFILE_FIELD_COUNT = 14;
+		static const int MESH_FLOOR_PROFILE_FIELD_COUNT = 17;
 		static const int RENDER_PROFILE_FIELD_COUNT = 9;
 		enum ProfileField {
 			PROFILE_TOTAL,
@@ -112,6 +112,9 @@ namespace godot {
 			MESH_FLOOR_PROFILE_BEST_DIST_REJECTS,
 			MESH_FLOOR_PROFILE_BEST_UPDATES,
 			MESH_FLOOR_PROFILE_QUERY_US,
+			MESH_FLOOR_PROFILE_SCAN_US,
+			MESH_FLOOR_PROFILE_FINAL_SMOOTH_US,
+			MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS,
 		};
 		enum RenderProfileField {
 			RENDER_PROFILE_TOTAL,
