@@ -1474,6 +1474,55 @@ static bool project_point_to_mesh_triangle(
 	return true;
 }
 
+static bool project_point_to_mesh_triangle_face_fast(
+	const TrackMeshCollisionTriangle &tri,
+	const SimVec3 &p,
+	bool allow_backside,
+	float *out_signed_face_dist,
+	float *out_u,
+	float *out_v,
+	float *out_w,
+	bool *out_backside_sample,
+	bool *out_smooth_retry_candidate)
+{
+	if (out_smooth_retry_candidate) {
+		*out_smooth_retry_candidate = false;
+	}
+	const float px = p.x - tri.p0.x;
+	const float py = p.y - tri.p0.y;
+	const float pz = p.z - tri.p0.z;
+	const SimVec3 &face_n = tri.face_normal;
+	const float signed_face_dist = px * face_n.x + py * face_n.y + pz * face_n.z;
+	constexpr float kBacksideSlop = -0.01f;
+	if (signed_face_dist < kBacksideSlop && !allow_backside) {
+		return false;
+	}
+
+	const SimVec3 &edge0 = tri.edge0;
+	const SimVec3 &edge1 = tri.edge1;
+	const float d20 = px * edge0.x + py * edge0.y + pz * edge0.z;
+	const float d21 = px * edge1.x + py * edge1.y + pz * edge1.z;
+	const float v = (tri.projection_d11 * d20 - tri.projection_d01 * d21) * tri.projection_inv_denom;
+	const float w = (tri.projection_d00 * d21 - tri.projection_d01 * d20) * tri.projection_inv_denom;
+	const float u = 1.0f - v - w;
+	constexpr float kSupportSlop = -0.01f;
+	if (u >= kSupportSlop && v >= kSupportSlop && w >= kSupportSlop) {
+		*out_signed_face_dist = signed_face_dist;
+		*out_u = u;
+		*out_v = v;
+		*out_w = w;
+		*out_backside_sample = signed_face_dist < kBacksideSlop;
+		return true;
+	}
+
+	constexpr float kSmoothRetrySlop = -0.10f;
+	if (u >= kSmoothRetrySlop && v >= kSmoothRetrySlop && w >= kSmoothRetrySlop &&
+		out_smooth_retry_candidate && mesh_collision_uses_smooth_surface(tri.terrain)) {
+		*out_smooth_retry_candidate = true;
+	}
+	return false;
+}
+
 static float distance2_to_aabb(const SimAABB &bounds, const SimVec3 &p)
 {
 	const SimVec3 box_max = bounds.position + bounds.size;
@@ -1945,7 +1994,24 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
 		MeshFloorProjectionResult projection_result = MESH_FLOOR_PROJECT_MISS;
 		bool smooth_retry_candidate = false;
-		if (!project_point_to_mesh_triangle(tri, point, allow_backside, allow_smooth_projection_retry, &projected, &u, &v, &w, &backside_sample, &projection_result, &smooth_retry_candidate)) {
+		float signed_face_dist = 0.0f;
+		float dist2 = 0.0f;
+		if (allow_smooth_projection_retry) {
+			if (!project_point_to_mesh_triangle(tri, point, allow_backside, true, &projected, &u, &v, &w, &backside_sample, &projection_result, &smooth_retry_candidate)) {
+				saw_smooth_projection_candidate |= smooth_retry_candidate;
+				if (scratch) {
+					scratch->mesh_floor_projection_misses += 1;
+				}
+				if (floor_profile) {
+					floor_profile->projection_misses += 1;
+				}
+				return;
+			}
+			dist2 = (point - projected).length_squared();
+		} else if (project_point_to_mesh_triangle_face_fast(tri, point, allow_backside, &signed_face_dist, &u, &v, &w, &backside_sample, &smooth_retry_candidate)) {
+			projection_result = MESH_FLOOR_PROJECT_FACE;
+			dist2 = signed_face_dist * signed_face_dist;
+		} else {
 			saw_smooth_projection_candidate |= smooth_retry_candidate;
 			if (scratch) {
 				scratch->mesh_floor_projection_misses += 1;
@@ -1972,7 +2038,6 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS)) {
 			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 0.8f, 1.0f, 0.7f), _TICK_DELTA);
 		}
-		const float dist2 = (point - projected).length_squared();
 		if (dist2 >= best_dist2) {
 			if (scratch) {
 				scratch->mesh_floor_best_dist_rejects += 1;
@@ -1992,7 +2057,11 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		best_u = u;
 		best_v = v;
 		best_w = w;
-		best_flat_point = projected;
+		if (projection_result == MESH_FLOOR_PROJECT_FACE) {
+			best_flat_point = point - tri.face_normal * signed_face_dist;
+		} else {
+			best_flat_point = projected;
+		}
 		best_backside_sample = backside_sample;
 		best_tri = &tri;
 		best_tri_index = tri_index;
