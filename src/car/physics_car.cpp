@@ -3095,8 +3095,43 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 			sim_load4(soa->wall_offset_x + point_base),
 			sim_load4(soa->wall_offset_y + point_base),
 			sim_load4(soa->wall_offset_z + point_base)));
-
 	RaceTrack* track = soa->current_track[soa_index];
+	auto analytic_rail_corner_hit_valid = [&](int cp_idx, const TrackEdgeRailSide &side,
+		const SimVec3 &old_corner, const SimVec3 &new_corner, float rail_height) {
+		const float new_depth = (new_corner - side.pos).dot(side.rail_n);
+		if (new_depth >= 0.0f) {
+			return false;
+		}
+
+		const SimVec3 final_hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), new_corner);
+		const float final_t = checkpoint_longitudinal_t(*track, cp_idx, final_hit);
+		if (final_t >= 0.0f && final_t <= 1.0f && (final_hit - side.pos).dot(side.up_n) <= rail_height) {
+			return true;
+		}
+
+		const float old_depth = (old_corner - side.pos).dot(side.rail_n);
+		if (old_depth < 0.0f) {
+			return false;
+		}
+		const float denom = old_depth - new_depth;
+		if (denom <= 0.000001f) {
+			return false;
+		}
+		const float alpha = old_depth / denom;
+		if (alpha < 0.0f || alpha > 1.0f) {
+			return false;
+		}
+		const SimVec3 sweep_hit = old_corner + (new_corner - old_corner) * alpha;
+		const float sweep_t = checkpoint_longitudinal_t(*track, cp_idx, sweep_hit);
+		if (sweep_t < 0.0f || sweep_t > 1.0f) {
+			return false;
+		}
+		if ((sweep_hit - side.pos).dot(side.up_n) > rail_height) {
+			return false;
+		}
+		return true;
+	};
+
 	const int use_cp_old = soa->collision_old_cp[soa_index];
 	const bool old_valid = soa->collision_old_valid[soa_index];
 	{
@@ -3170,21 +3205,10 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							{
 								continue;
 							}
-
-							const SimVec3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//SimPlane(side.rail_n, side.pos).project(p0);
-							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.25f, 0.0f), 0.25, true, 10.0);
-							const float hit_t = checkpoint_longitudinal_t(*track, use_cp_old, hit);
-							if (hit_t < 0.0f || hit_t > 1.0f)
-							{
-								continue;
-							}
-							if ((hit - side.pos).dot(side.up_n) > side.height * root_t.scale.y)
-							{
+							if (!analytic_rail_corner_hit_valid(use_cp_old, side, wall_corner_old_world[wc_idx] + depenetration, p0, side.height * root_t.scale.y)) {
 								continue;
 							}
 							float depth = (p0 - side.pos).dot(side.rail_n);
-							if (depth >= 0.0f) continue;
-							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.5f, 0.0f), 0.25, true, 10.0);
 							//DEBUG::disp_text("use_hit_t old", use_hit_t);
 							SimVec3 d = side.rail_n * (-depth);
 							ADD_VEC3(collision_push_total, d);
@@ -3262,21 +3286,10 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							{
 								continue;
 							}
-
-							const SimVec3 hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), p0);//SimPlane(side.rail_n, side.pos).project(p0);
-							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 2.0, godot::Color(1.0f, 0.0f, 0.25f), 0.25, true, 10.0);
-							const float hit_t = checkpoint_longitudinal_t(*track, use_cp_new, hit);
-							if (hit_t < 0.0f || hit_t > 1.0f)
-							{
-								continue;
-							}
-							if ((hit - side.pos).dot(side.up_n) > side.height * root_t.scale.y)
-							{
+							if (!analytic_rail_corner_hit_valid(use_cp_new, side, wall_corner_old_world[wc_idx] + depenetration, p0, side.height * root_t.scale.y)) {
 								continue;
 							}
 							float depth = (p0 - side.pos).dot(side.rail_n);
-							if (depth >= 0.0f) continue;
-							//dd3d->call("draw_arrow", hit, hit + side.rail_n * 4.0, godot::Color(1.0f, 0.0f, 0.5f), 0.25, true, 10.0);
 							//DEBUG::disp_text("use_hit_t new", use_hit_t);
 							SimVec3 d = side.rail_n * (-depth);
 							ADD_VEC3(collision_push_total, d);
