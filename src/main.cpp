@@ -302,6 +302,42 @@ static void build_track_mesh_world_bvh(RaceTrack *track, HeapHandler &level_data
 	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_world_bvh_loaded nodes="), track->num_mesh_world_bvh_nodes);
 }
 
+static void build_track_mesh_floor_bvh(RaceTrack *track, HeapHandler &level_data)
+{
+	if (track->num_mesh_collision_triangles <= 0) {
+		return;
+	}
+	std::vector<MeshBVHBuildPrim> prims;
+	prims.reserve(track->num_mesh_collision_triangles);
+	for (int tri_index = 0; tri_index < track->num_mesh_collision_triangles; ++tri_index) {
+		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
+		if ((tri.terrain & TERRAIN::RAIL) != 0) {
+			continue;
+		}
+		MeshBVHBuildPrim prim;
+		prim.bounds = tri.bounds;
+		prim.center = (tri.p0 + tri.p1 + tri.p2) * (1.0f / 3.0f);
+		prim.triangle_index = tri_index;
+		prims.push_back(prim);
+	}
+	if (prims.empty()) {
+		return;
+	}
+	std::vector<TrackMeshBVHNode> nodes;
+	nodes.reserve(prims.size() * 2u);
+	build_mesh_bvh_node(prims, nodes, 0, static_cast<int>(prims.size()));
+	track->num_mesh_floor_bvh_nodes = static_cast<int>(nodes.size());
+	track->mesh_floor_bvh_nodes = level_data.allocate_array<TrackMeshBVHNode>(nodes.size());
+	track->mesh_floor_bvh_triangle_indices = level_data.allocate_array<int32_t>(prims.size());
+	for (int i = 0; i < track->num_mesh_floor_bvh_nodes; ++i) {
+		track->mesh_floor_bvh_nodes[i] = nodes[i];
+	}
+	for (int i = 0; i < static_cast<int>(prims.size()); ++i) {
+		track->mesh_floor_bvh_triangle_indices[i] = prims[i].triangle_index;
+	}
+	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_floor_bvh_loaded nodes="), track->num_mesh_floor_bvh_nodes);
+}
+
 static SimVec3 normalize_mesh_source_normal_or_abort(const SimVec3 &normal, uint32_t tri_index, const char *name)
 {
 	const float len2 = normal.length_squared();
@@ -2902,6 +2938,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->mesh_world_bvh_nodes = nullptr;
 	current_track->mesh_world_bvh_triangle_indices = nullptr;
 	current_track->num_mesh_world_bvh_nodes = 0;
+	current_track->mesh_floor_bvh_nodes = nullptr;
+	current_track->mesh_floor_bvh_triangle_indices = nullptr;
+	current_track->num_mesh_floor_bvh_nodes = 0;
 	current_track->lap_length = 0.0f;
 
 	uint32_t header_size = lvldat_buf->get_u32();
@@ -3397,6 +3436,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		}
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_collision_loaded tri="), mesh_collision_triangle_count);
 		build_track_mesh_world_bvh(current_track, level_data);
+		build_track_mesh_floor_bvh(current_track, level_data);
 		build_track_mesh_checkpoint_bvh(current_track, level_data);
 	}
 

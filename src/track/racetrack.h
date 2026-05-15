@@ -8,6 +8,10 @@
 #include <vector>
 #include <cstdint>
 
+#ifndef MXT_MESH_DEEP_PROFILE
+#define MXT_MESH_DEEP_PROFILE 0
+#endif
+
 struct CollisionData;
 
 struct TrackMeshCollisionTriangle
@@ -197,6 +201,9 @@ public:
 	TrackMeshBVHNode* mesh_world_bvh_nodes;
 	int32_t* mesh_world_bvh_triangle_indices;
 	int num_mesh_world_bvh_nodes;
+	TrackMeshBVHNode* mesh_floor_bvh_nodes;
+	int32_t* mesh_floor_bvh_triangle_indices;
+	int num_mesh_floor_bvh_nodes;
 		CollisionCheckpoint* checkpoints;
 		int num_trigger_colliders;
 		TriggerCollider** trigger_colliders;
