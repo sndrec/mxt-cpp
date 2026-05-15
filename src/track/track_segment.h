@@ -26,6 +26,7 @@ public:
         float left_rail_end;
         float right_rail_start;
         float right_rail_end;
+        bool analytic_collision_enabled;
         SimAABB bounds;
         int checkpoint_start;
         int checkpoint_run_length;

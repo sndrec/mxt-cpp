@@ -828,6 +828,9 @@ static void cast_segment_fast(const CastParams  &params,
 
 	RaceTrack *track                = params.track;
 	const TrackSegment &segment     = track->segments[track->checkpoints[use_idx].road_segment];
+	if (!segment.analytic_collision_enabled) {
+		return;
+	}
 
 	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS)){
 		godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");

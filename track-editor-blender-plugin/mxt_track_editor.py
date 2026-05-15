@@ -469,6 +469,11 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
     mesh_subdivision_angle_deg: FloatProperty(name="Mesh Subdiv Angle", default=8.0, min=0.1, max=90.0,
     update=lambda self, ctx: schedule_mesh_build(self.id_data))
     num_checkpoints_per_segment: IntProperty(name="Checkpoints in Segment", default=8, min=0)
+    analytic_collision_enabled: BoolProperty(
+        name="Analytic Collision",
+        description="Use this road segment's procedural shape for collision; disable for mesh-only collision while keeping checkpoints and CPU navigation",
+        default=True
+    )
 
     rail_height_left: FloatProperty(
         name="Left Rail Height",
@@ -2891,6 +2896,7 @@ class MXTRoad_PT_MainPanel(Panel):
         
         data_box = layout.box(); data_box.label(text="Data and Generation")
         data_box.prop(road_props, "num_checkpoints_per_segment")
+        data_box.prop(road_props, "analytic_collision_enabled")
         data_box.prop(road_props, "disable_auto_rebake")
         data_box.separator()
         data_box.operator("mxt_road.generate_curve_matrix", text="Generate CurveMatrix", icon='FCURVE')
@@ -4878,6 +4884,7 @@ def _export_stage(context, filepath):
             seg_data += struct.pack('<I', seg_index[seg])
             road_type = type_map.get(props.road_shape_type, 0)
             seg_data += struct.pack('<I', road_type)
+            seg_data += struct.pack('<I', 1 if getattr(props, "analytic_collision_enabled", True) else 0)
             if road_type in (5,6):
                 helpers = [props.width_helper, props.height_helper, props.radius_helper]
                 for helper in helpers:
@@ -4981,7 +4988,7 @@ def _export_stage(context, filepath):
 
         mesh_collision_triangle_count, mesh_collision_data = _pack_mesh_collision_triangles(context, seg_index)
 
-        header = struct.pack('<I4sIIII', 0, b'v0.7', len(cp_list), len(seg_order), trig_count, mesh_collision_triangle_count)
+        header = struct.pack('<I4sIIII', 0, b'v0.8', len(cp_list), len(seg_order), trig_count, mesh_collision_triangle_count)
         header = struct.pack('<I', len(header)) + header[4:]
         f.write(header)
         f.write(data)

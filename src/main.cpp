@@ -2295,8 +2295,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	uint32_t header_size = lvldat_buf->get_u32();
 	String version_string = lvldat_buf->get_string(4);
-	if (version_string != "v0.7") {
-		UtilityFunctions::printerr(String("MXT track format hard-cutover failure: expected v0.7, got "), version_string);
+	if (version_string != "v0.8") {
+		UtilityFunctions::printerr(String("MXT track format hard-cutover failure: expected v0.8, got "), version_string);
 		std::abort();
 	}
 	uint32_t checkpoint_count = lvldat_buf->get_u32();
@@ -2390,6 +2390,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_begin "), seg, String(" pos="), lvldat_buf->get_position());
 		int segment_index = (int)lvldat_buf->get_u32();
 		int road_type = (int)lvldat_buf->get_u32();
+		current_track->segments[seg].analytic_collision_enabled = lvldat_buf->get_u32() != 0;
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG seg_type idx="), segment_index, String(" road="), road_type);
 
 		// what road shape? //
