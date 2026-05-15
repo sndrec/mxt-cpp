@@ -2028,6 +2028,12 @@ String GameSim::get_phase_profile_string() const
 		out += prefix + String("_scan_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_SCAN_US] / static_cast<uint64_t>(count)));
 		out += prefix + String("_smooth_us=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FINAL_SMOOTH_US] / static_cast<uint64_t>(count)));
 		out += prefix + String("_smooth_out=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_leaf=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_LEAF_VISITS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_leaf_tri=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_LEAF_TRIANGLES] / static_cast<uint64_t>(count)));
+		out += prefix + String("_inner=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_INTERIOR_VISITS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_child_tests=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_CHILD_TESTS] / static_cast<uint64_t>(count)));
+		out += prefix + String("_child_push=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_CHILD_PUSHES] / static_cast<uint64_t>(count)));
+		out += prefix + String("_stack_max=") + String::num_int64(static_cast<int64_t>(mesh_floor_profile_sums[scope][MESH_FLOOR_PROFILE_BVH_STACK_MAX] / static_cast<uint64_t>(count)));
 	}
 	return out;
 }
@@ -2660,6 +2666,12 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			dst[MESH_FLOOR_PROFILE_SCAN_US] += src.scan_us;
 			dst[MESH_FLOOR_PROFILE_FINAL_SMOOTH_US] += src.final_smooth_us;
 			dst[MESH_FLOOR_PROFILE_FINAL_SMOOTH_OUTPUTS] += src.final_smooth_outputs;
+			dst[MESH_FLOOR_PROFILE_BVH_LEAF_VISITS] += src.bvh_leaf_visits;
+			dst[MESH_FLOOR_PROFILE_BVH_LEAF_TRIANGLES] += src.bvh_leaf_triangles;
+			dst[MESH_FLOOR_PROFILE_BVH_INTERIOR_VISITS] += src.bvh_interior_visits;
+			dst[MESH_FLOOR_PROFILE_BVH_CHILD_TESTS] += src.bvh_child_tests;
+			dst[MESH_FLOOR_PROFILE_BVH_CHILD_PUSHES] += src.bvh_child_pushes;
+			dst[MESH_FLOOR_PROFILE_BVH_STACK_MAX] = std::max(dst[MESH_FLOOR_PROFILE_BVH_STACK_MAX], src.bvh_stack_max);
 		}
 	}
 

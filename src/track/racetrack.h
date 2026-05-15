@@ -71,6 +71,12 @@ struct alignas(64) TrackQueryScratch
 		uint32_t scan_us = 0;
 		uint32_t final_smooth_us = 0;
 		uint32_t final_smooth_outputs = 0;
+		uint32_t bvh_leaf_visits = 0;
+		uint32_t bvh_leaf_triangles = 0;
+		uint32_t bvh_interior_visits = 0;
+		uint32_t bvh_child_tests = 0;
+		uint32_t bvh_child_pushes = 0;
+		uint32_t bvh_stack_max = 0;
 	};
 	struct TriggerEvent
 	{

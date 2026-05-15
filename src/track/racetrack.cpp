@@ -2106,6 +2106,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		int stack[256];
 		int stack_count = 0;
 		stack[stack_count++] = root_node_index;
+		uint32_t stack_peak = 1;
 		while (stack_count > 0) {
 			const int node_index = stack[--stack_count];
 			const TrackMeshBVHNode &node = mesh_world_bvh_nodes[node_index];
@@ -2119,11 +2120,19 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 				continue;
 			}
 			if (node.count > 0) {
+				if (floor_profile) {
+					floor_profile->bvh_leaf_visits += 1;
+					floor_profile->bvh_leaf_triangles += static_cast<uint32_t>(node.count);
+				}
 				const int end = node.left_first + node.count;
 				for (int i = node.left_first; i < end; ++i) {
 					scan_triangle(mesh_world_bvh_triangle_indices[i]);
 				}
 			} else {
+				if (floor_profile) {
+					floor_profile->bvh_interior_visits += 1;
+					floor_profile->bvh_child_tests += 2;
+				}
 				if (stack_count + 2 > 256) {
 					godot::UtilityFunctions::printerr(godot::String("MXT mesh world BVH traversal stack overflow"));
 					std::abort();
@@ -2139,19 +2148,37 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 				if (left_dist2 <= right_dist2) {
 					if (right_dist2 <= best_dist2) {
 						stack[stack_count++] = node.right_first;
+						if (floor_profile) {
+							floor_profile->bvh_child_pushes += 1;
+						}
 					}
 					if (left_dist2 <= best_dist2) {
 						stack[stack_count++] = node.left_first;
+						if (floor_profile) {
+							floor_profile->bvh_child_pushes += 1;
+						}
 					}
 				} else {
 					if (left_dist2 <= best_dist2) {
 						stack[stack_count++] = node.left_first;
+						if (floor_profile) {
+							floor_profile->bvh_child_pushes += 1;
+						}
 					}
 					if (right_dist2 <= best_dist2) {
 						stack[stack_count++] = node.right_first;
+						if (floor_profile) {
+							floor_profile->bvh_child_pushes += 1;
+						}
 					}
 				}
+				if (static_cast<uint32_t>(stack_count) > stack_peak) {
+					stack_peak = static_cast<uint32_t>(stack_count);
+				}
 			}
+		}
+		if (floor_profile) {
+			floor_profile->bvh_stack_max = std::max(floor_profile->bvh_stack_max, stack_peak);
 		}
 		return true;
 	};
