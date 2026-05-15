@@ -21,7 +21,7 @@ void vertex() {
 }
 
 void fragment() {
-	vec2 base_uv = UV * vec2(1.0, 0.5);
+	vec2 base_uv = UV * vec2(4.0, 2.0);
 	vec4 albedo_tex = texture(texture_albedo, base_uv);
 	vec3 use_color = vec3(0.0, 0.0, 0.0);
 	if (!FRONT_FACING)
