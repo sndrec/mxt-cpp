@@ -157,6 +157,601 @@ def add_mesh_collision_helpers(data: dict) -> None:
         collection.objects.link(obj)
 
 
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def clamp_tx(value: float) -> float:
+    return max(-1.0, min(1.0, float(value)))
+
+
+def checkpoint_basis(flat) -> Matrix:
+    return Matrix((
+        Vector(flat[0:3]),
+        Vector(flat[3:6]),
+        Vector(flat[6:9]),
+    )).transposed()
+
+
+def closest_t_on_segment(point: Vector, a: Vector, b: Vector) -> float:
+    delta = b - a
+    denom = delta.length_squared
+    if denom <= 1.0e-8:
+        return 0.0
+    return (point - a).dot(delta) / denom
+
+
+def segment_shape(plugin, segment):
+    props = segment.mxt_road_overall_props
+    return {
+        "FLAT": plugin.RoadShapeFlat(),
+        "CYLINDER": plugin.RoadShapeCylinder(),
+        "PIPE": plugin.RoadShapePipe(),
+        "CYLINDER_OPEN": plugin.RoadShapeCylinderOpen(),
+        "PIPE_OPEN": plugin.RoadShapePipeOpen(),
+        "ROUNDED_SQUARE": plugin.RoadShapeRoundedSquare(),
+        "ROUNDED_SQUARE_OPEN": plugin.RoadShapeRoundedSquareOpen(),
+        "TUNNEL": plugin.RoadShapeFlat(),
+    }[props.road_shape_type]
+
+
+def checkpoint_seed_tys(segment, point: Vector) -> list[float]:
+    seeds = []
+    props = segment.mxt_road_overall_props
+    for cp in props.checkpoints:
+        p0 = Vector(cp.pos_start)
+        p1 = Vector(cp.pos_end)
+        b0 = checkpoint_basis(cp.basis_start)
+        b1 = checkpoint_basis(cp.basis_end)
+        n0 = b0.col[2].normalized()
+        n1 = b1.col[2].normalized()
+        q0 = point - n0 * (n0.dot(point) - n0.dot(p0))
+        q1 = point - n1 * (n1.dot(point) - n1.dot(p1))
+        u_raw = closest_t_on_segment(point, q0, q1)
+        if u_raw < -0.05 or u_raw > 1.05:
+            continue
+        u = clamp01(u_raw)
+
+        center = p0.lerp(p1, u)
+        right = b0.col[0].lerp(b1.col[0], u)
+        up = b0.col[1].lerp(b1.col[1], u)
+        x_radius = max(1.0, cp.x_rad_start + (cp.x_rad_end - cp.x_rad_start) * u)
+        y_radius = max(1.0, cp.y_rad_start + (cp.y_rad_end - cp.y_rad_start) * u)
+        delta = point - center
+        if abs(right.normalized().dot(delta)) > x_radius * 1.15:
+            continue
+        if abs(up.normalized().dot(delta)) > max(20.0, y_radius * 1.15):
+            continue
+        seeds.append(clamp01(cp.start_t + (cp.end_t - cp.start_t) * u))
+    return seeds
+
+
+def rough_segment_seed(point: Vector, group: list[dict]) -> tuple[float, float]:
+    best_tx = 0.0
+    best_ty = 0.0
+    best_score = float("inf")
+    if not group:
+        return best_tx, best_ty
+    if len(group) == 1:
+        center, right, up, _forward, half_width = sample_frame(group, 0, False)
+        delta = point - center
+        return clamp_tx(right.dot(delta) / max(1.0, half_width)), 0.0
+
+    frames = [sample_frame(group, i, False) for i in range(len(group))]
+    for i in range(len(group) - 1):
+        c0, right0, up0, _forward0, half_width0 = frames[i]
+        c1, right1, up1, _forward1, half_width1 = frames[i + 1]
+        center_delta = c1 - c0
+        u = clamp01(closest_t_on_segment(point, c0, c1))
+        center = c0.lerp(c1, u)
+        right = safe_normal(right0.lerp(right1, u), right0)
+        up = safe_normal(up0.lerp(up1, u), up0)
+        half_width = half_width0 + (half_width1 - half_width0) * u
+        delta = point - center
+        tx = right.dot(delta) / max(1.0, half_width)
+        score = (center - point).length_squared + up.dot(delta) * up.dot(delta)
+        if score < best_score:
+            ty0 = sample_group_t(group, i)
+            ty1 = sample_group_t(group, i + 1)
+            best_score = score
+            best_tx = clamp_tx(tx)
+            best_ty = clamp01(ty0 + (ty1 - ty0) * u)
+    return best_tx, best_ty
+
+
+def surface_frame(shape, helper, tx: float, ty: float) -> tuple[Vector, Vector, Vector, Vector]:
+    tx = clamp_tx(tx)
+    ty = clamp01(ty)
+    base = shape.get_pos(helper, Vector((tx, ty)))
+    eps_x = 0.002
+    eps_y = 0.002
+    right_pos = shape.get_pos(helper, Vector((clamp_tx(tx + eps_x), ty)))
+    left_pos = shape.get_pos(helper, Vector((clamp_tx(tx - eps_x), ty)))
+    fwd_pos = shape.get_pos(helper, Vector((tx, clamp01(ty + eps_y))))
+    back_pos = shape.get_pos(helper, Vector((tx, clamp01(ty - eps_y))))
+    right = safe_normal(right_pos - left_pos, Vector((1.0, 0.0, 0.0)))
+    forward = safe_normal(fwd_pos - back_pos, Vector((0.0, 0.0, 1.0)))
+    normal = safe_normal(right.cross(forward), Vector((0.0, 1.0, 0.0)))
+    right = safe_normal(forward.cross(normal), right)
+    return base, right, normal, forward
+
+
+def refine_surface_point(shape, helper, point: Vector, seed_tx: float, seed_ty: float) -> dict | None:
+    tx = clamp_tx(seed_tx)
+    ty = clamp01(seed_ty)
+
+    def eval_score(x, y):
+        pos = shape.get_pos(helper, Vector((clamp_tx(x), clamp01(y))))
+        if pos is None:
+            return float("inf")
+        return (pos - point).length_squared
+
+    best_score = eval_score(tx, ty)
+    step_tx = 0.35
+    step_ty = 0.035
+    for _ in range(18):
+        improved = False
+        best_candidate = (tx, ty, best_score)
+        for dx, dy in (
+            (-step_tx, 0.0), (step_tx, 0.0),
+            (0.0, -step_ty), (0.0, step_ty),
+            (-step_tx, -step_ty), (-step_tx, step_ty),
+            (step_tx, -step_ty), (step_tx, step_ty),
+        ):
+            cx = clamp_tx(tx + dx)
+            cy = clamp01(ty + dy)
+            score = eval_score(cx, cy)
+            if score < best_candidate[2]:
+                best_candidate = (cx, cy, score)
+                improved = True
+        tx, ty, best_score = best_candidate
+        if not improved:
+            step_tx *= 0.5
+            step_ty *= 0.5
+            if step_tx < 1.0e-4 and step_ty < 1.0e-5:
+                break
+
+    pos, right, normal, forward = surface_frame(shape, helper, tx, ty)
+    vertical = abs((point - pos).dot(normal))
+    return {
+        "tx": tx,
+        "ty": ty,
+        "score": best_score,
+        "vertical": vertical,
+        "right": right,
+        "up": normal,
+        "forward": forward,
+        "surface_pos": pos,
+    }
+
+
+def closest_segment_point(
+    point: Vector,
+    stream_segments: list[list[tuple[list[dict], object]]],
+    plugin,
+) -> dict | None:
+    best = None
+    best_score = float("inf")
+
+    candidate_rows = []
+    for segment_row in stream_segments:
+        for group, segment in segment_row:
+            seeds = checkpoint_seed_tys(segment, point)
+            if seeds:
+                candidate_rows.append((group, segment, seeds))
+
+    if not candidate_rows:
+        for segment_row in stream_segments:
+            for group, segment in segment_row:
+                _seed_tx, seed_ty = rough_segment_seed(point, group)
+                candidate_rows.append((group, segment, [seed_ty]))
+
+    for group, segment, seeds in candidate_rows:
+        props = segment.mxt_road_overall_props
+        helper = props.curve_matrix_helper_empty
+        if helper is None:
+            continue
+        shape = segment_shape(plugin, segment)
+        rough_tx, _rough_ty = rough_segment_seed(point, group)
+        for seed_ty in seeds:
+            for seed_tx in (rough_tx, -0.75, -0.25, 0.25, 0.75):
+                refined = refine_surface_point(shape, helper, point, seed_tx, seed_ty)
+                if refined is None:
+                    continue
+                candidate = {
+                    "segment": segment,
+                    **refined,
+                }
+                raw_score = refined["score"] + refined["vertical"] * refined["vertical"] * 4.0
+                if refined["vertical"] > 2.0:
+                    continue
+                if refined["tx"] < -1.0 or refined["tx"] > 1.0:
+                    continue
+                if raw_score < best_score:
+                    best_score = raw_score
+                    best = candidate
+
+    return best
+
+
+def fit_dashplate_yaw_and_scale(
+    verts: list[Vector],
+    center: Vector,
+    placement: dict,
+    base_extents: Vector = Vector((6.0, 4.0, 12.0)),
+) -> tuple[float, tuple[float, float, float]]:
+    right = placement["right"]
+    up = placement["up"]
+    forward = placement["forward"]
+
+    points = []
+    for vert in verts:
+        rel = vert - center
+        points.append((right.dot(rel), forward.dot(rel), up.dot(rel)))
+
+    xx = 0.0
+    zz = 0.0
+    xz = 0.0
+    for x, z, _y in points:
+        xx += x * x
+        zz += z * z
+        xz += x * z
+
+    angle = 0.5 * math.atan2(2.0 * xz, xx - zz)
+    axis_x = math.cos(angle)
+    axis_z = math.sin(angle)
+
+    # The PCA formula above gives an axis, not a direction. Prefer the road-forward
+    # half-space so asymmetric preview meshes do not get flipped by 180 degrees.
+    if axis_z < 0.0:
+        axis_x = -axis_x
+        axis_z = -axis_z
+
+    def score_yaw(yaw: float) -> tuple[float, float, float]:
+        f_x = math.sin(yaw)
+        f_z = math.cos(yaw)
+        r_x = f_z
+        r_z = -f_x
+        x_extent = 0.0
+        z_extent = 0.0
+        projected = []
+        for x, z, _y in points:
+            px = x * r_x + z * r_z
+            pz = x * f_x + z * f_z
+            projected.append((px, pz))
+            x_extent = max(x_extent, abs(px))
+            z_extent = max(z_extent, abs(pz))
+
+        error = 0.0
+        for px, pz in projected:
+            dx = abs(px) - x_extent
+            dz = abs(pz) - z_extent
+            error += dx * dx + dz * dz
+        return error, x_extent, z_extent
+
+    yaw = math.atan2(axis_x, axis_z)
+    best_yaw = yaw
+    best_error, best_x_extent, best_z_extent = score_yaw(best_yaw)
+    step = math.radians(20.0)
+    for _ in range(24):
+        improved = False
+        for candidate_yaw in (best_yaw - step, best_yaw + step):
+            if math.cos(candidate_yaw) < 0.0:
+                continue
+            error, x_extent, z_extent = score_yaw(candidate_yaw)
+            if error < best_error:
+                best_yaw = candidate_yaw
+                best_error = error
+                best_x_extent = x_extent
+                best_z_extent = z_extent
+                improved = True
+        if not improved:
+            step *= 0.5
+            if step < math.radians(0.01):
+                break
+
+    y_extent = 0.0
+    for _x, _z, y in points:
+        y_extent = max(y_extent, abs(y))
+
+    yaw_deg = math.degrees(best_yaw)
+    scale = (
+        max(0.05, best_x_extent / base_extents.x),
+        max(0.25, y_extent / base_extents.y),
+        max(0.05, best_z_extent / base_extents.z),
+    )
+    return yaw_deg, scale
+
+
+def transform_vec(transform: dict | None, key: str) -> Vector | None:
+    if not transform:
+        return None
+    values = transform.get(key)
+    if not values:
+        return None
+    return vec(values)
+
+
+def yaw_from_world_axis(axis: Vector | None, placement: dict) -> float | None:
+    if axis is None or axis.length_squared <= 1.0e-8:
+        return None
+    right = placement["right"]
+    forward = placement["forward"]
+    axis_x = right.dot(axis)
+    axis_z = forward.dot(axis)
+    length_sq = axis_x * axis_x + axis_z * axis_z
+    if length_sq <= 1.0e-8:
+        return None
+    inv_len = 1.0 / math.sqrt(length_sq)
+    axis_x *= inv_len
+    axis_z *= inv_len
+    if axis_z < 0.0:
+        axis_x = -axis_x
+        axis_z = -axis_z
+    return math.atan2(axis_x, axis_z)
+
+
+def scale_for_yaw(
+    verts: list[Vector],
+    center: Vector,
+    placement: dict,
+    yaw: float,
+    base_extents: Vector,
+    min_scale: Vector,
+) -> tuple[float, float, float]:
+    right = placement["right"]
+    up = placement["up"]
+    forward = placement["forward"]
+    f_x = math.sin(yaw)
+    f_z = math.cos(yaw)
+    r_x = f_z
+    r_z = -f_x
+    x_extent = 0.0
+    y_extent = 0.0
+    z_extent = 0.0
+    for vert in verts:
+        rel = vert - center
+        x = right.dot(rel)
+        z = forward.dot(rel)
+        y = up.dot(rel)
+        x_extent = max(x_extent, abs(x * r_x + z * r_z))
+        z_extent = max(z_extent, abs(x * f_x + z * f_z))
+        y_extent = max(y_extent, abs(y))
+    return (
+        max(min_scale.x, x_extent / base_extents.x),
+        max(min_scale.y, y_extent / base_extents.y),
+        max(min_scale.z, z_extent / base_extents.z),
+    )
+
+
+def fit_mine_yaw_and_scale(
+    verts: list[Vector],
+    center: Vector,
+    placement: dict,
+    object_transform: dict | None,
+) -> tuple[float, tuple[float, float, float]]:
+    base_extents = Vector((2.0, 3.0, 2.0))
+    yaw = yaw_from_world_axis(transform_vec(object_transform, "basis_y"), placement)
+    if yaw is None:
+        yaw_deg, scale = fit_dashplate_yaw_and_scale(verts, center, placement, base_extents)
+        return yaw_deg, (scale[0], scale[1], max(1.0, scale[2]))
+    return (
+        math.degrees(yaw),
+        scale_for_yaw(verts, center, placement, yaw, base_extents, Vector((0.25, 0.25, 1.0))),
+    )
+
+
+def fit_jumpplate_yaw_and_scale(
+    verts: list[Vector],
+    center: Vector,
+    placement: dict,
+) -> tuple[float, tuple[float, float, float]]:
+    right = placement["right"]
+    up = placement["up"]
+    forward = placement["forward"]
+    base_extents = Vector((12.0, 4.0, 4.0))
+
+    points = []
+    for vert in verts:
+        rel = vert - center
+        points.append((right.dot(rel), forward.dot(rel), up.dot(rel)))
+
+    xx = 0.0
+    zz = 0.0
+    xz = 0.0
+    for x, z, _y in points:
+        xx += x * x
+        zz += z * z
+        xz += x * z
+
+    angle = 0.5 * math.atan2(2.0 * xz, xx - zz)
+    major_x = math.cos(angle)
+    major_z = math.sin(angle)
+    local_z_x = -major_z
+    local_z_z = major_x
+    if local_z_z < 0.0:
+        major_x = -major_x
+        major_z = -major_z
+        local_z_x = -local_z_x
+        local_z_z = -local_z_z
+
+    yaw = math.atan2(local_z_x, local_z_z)
+    x_extent = 0.0
+    y_extent = 0.0
+    z_extent = 0.0
+    for x, z, y in points:
+        x_extent = max(x_extent, abs(x * major_x + z * major_z))
+        z_extent = max(z_extent, abs(x * local_z_x + z * local_z_z))
+        y_extent = max(y_extent, abs(y))
+
+    return (
+        math.degrees(yaw),
+        (
+            max(0.05, x_extent / base_extents.x),
+            max(0.25, y_extent / base_extents.y),
+            max(0.05, z_extent / base_extents.z),
+        ),
+    )
+
+
+def vertices_match(a: Vector, b: Vector, epsilon: float = 0.05) -> bool:
+    return (a - b).length_squared <= epsilon * epsilon
+
+
+def quads_share_edge(a: list[Vector], b: list[Vector]) -> bool:
+    shared = 0
+    for va in a:
+        for vb in b:
+            if vertices_match(va, vb):
+                shared += 1
+                break
+    return shared >= 2
+
+
+def unique_vertices(quads: list[list[Vector]]) -> list[Vector]:
+    verts: list[Vector] = []
+    for quad in quads:
+        for vert in quad:
+            if not any(vertices_match(vert, existing) for existing in verts):
+                verts.append(vert)
+    return verts
+
+
+def jump_quad_components(raw_quads: list) -> list[tuple[int, list[Vector]]]:
+    quads = [(index, [vec(v) for v in quad]) for index, quad in enumerate(raw_quads) if len(quad) == 4]
+    used = [False] * len(quads)
+    components: list[tuple[int, list[Vector]]] = []
+    for i in range(len(quads)):
+        if used[i]:
+            continue
+        stack = [i]
+        used[i] = True
+        component_indices = []
+        component_quads = []
+        while stack:
+            current = stack.pop()
+            quad_index, quad = quads[current]
+            component_indices.append(quad_index)
+            component_quads.append(quad)
+            for j in range(len(quads)):
+                if used[j]:
+                    continue
+                if quads_share_edge(quad, quads[j][1]):
+                    used[j] = True
+                    stack.append(j)
+        components.append((min(component_indices), unique_vertices(component_quads)))
+    return components
+
+
+def add_trigger_from_gx_quad(
+    ts,
+    plugin,
+    obj_type: str,
+    name_prefix: str,
+    created: int,
+    entry: dict,
+    quad_index: int,
+    verts: list[Vector],
+    center: Vector,
+    placement: dict,
+    yaw_deg: float,
+    scale: tuple[float, float, float],
+) -> None:
+    helper = bpy.data.objects.new(f"{name_prefix}_{created:03d}", None)
+    helper.empty_display_type = "PLAIN_AXES"
+    helper.empty_display_size = 4.0
+    bpy.context.collection.objects.link(helper)
+
+    trig = ts.trigger_objects.add()
+    trig.label = helper.name
+    trig.helper = helper
+    trig.obj_type = obj_type
+    trig.segment = placement["segment"]
+    trig.tx = float(placement["tx"])
+    trig.ty = float(placement["ty"])
+    trig.yaw_deg = yaw_deg
+    trig.scale = scale
+    helper["gx_source"] = entry.get("source", "")
+    helper["gx_mesh_group"] = entry.get("name", "")
+    helper["gx_quad_index"] = quad_index
+
+    mesh = bpy.data.meshes.get(f"MESH_{obj_type}")
+    if mesh:
+        preview = bpy.data.objects.new(f"{helper.name}_Preview", mesh)
+        bpy.context.collection.objects.link(preview)
+        preview.parent = helper
+        trig.preview_mesh = preview
+
+    plugin._update_trigger_helper(trig)
+
+
+def auto_add_gx_trigger_objects(
+    data: dict,
+    stream_segments: list[list[tuple[list[dict], object]]],
+    plugin,
+) -> tuple[int, int, int]:
+    ts = bpy.context.scene.mxt_track_settings
+    if not ts:
+        return 0, 0, 0
+
+    dash_created = 0
+    jump_created = 0
+    mine_created = 0
+    for entry in data.get("mesh_collision") or []:
+        source = str(entry.get("source", ""))
+        name = str(entry.get("name", ""))
+        surface = str(entry.get("surface", ""))
+        collider_type = int(entry.get("collider_type", 0))
+        search_name = f"{name} {surface}".lower()
+        is_dash = source == "static_collider" and "dash" in search_name
+        is_jump = source == "static_collider" and "jump" in search_name
+        is_mine = source == "dynamic_scene" and (collider_type & 0x00004000) and "mine" in search_name
+        if not is_dash and not is_jump and not is_mine:
+            continue
+
+        if is_jump:
+            for component_index, verts in jump_quad_components(entry.get("quads", [])):
+                if len(verts) < 4:
+                    continue
+                center = sum(verts, Vector((0.0, 0.0, 0.0))) / len(verts)
+                placement = closest_segment_point(center, stream_segments, plugin)
+                if placement is None:
+                    continue
+                yaw_deg, scale = fit_jumpplate_yaw_and_scale(verts, center, placement)
+                add_trigger_from_gx_quad(
+                    ts, plugin, "JUMPPLATE", "GXJumpplate", jump_created,
+                    entry, component_index, verts, center, placement, yaw_deg, scale)
+                jump_created += 1
+            continue
+
+        for quad_index, quad in enumerate(entry.get("quads", [])):
+            if len(quad) != 4:
+                continue
+            verts = [vec(v) for v in quad]
+            object_transform = entry.get("object_transform") if is_mine else None
+            center = transform_vec(object_transform, "origin") or (sum(verts, Vector((0.0, 0.0, 0.0))) * 0.25)
+            placement = closest_segment_point(center, stream_segments, plugin)
+            if placement is None:
+                continue
+
+            if is_dash:
+                yaw_deg, scale = fit_dashplate_yaw_and_scale(verts, center, placement)
+                add_trigger_from_gx_quad(
+                    ts, plugin, "DASHPLATE", "GXDashplate", dash_created,
+                    entry, quad_index, verts, center, placement, yaw_deg, scale)
+                dash_created += 1
+            else:
+                yaw_deg, scale = fit_mine_yaw_and_scale(verts, center, placement, object_transform)
+                add_trigger_from_gx_quad(
+                    ts, plugin, "MINE", "GXMine", mine_created,
+                    entry, quad_index, verts, center, placement, yaw_deg, scale)
+                mine_created += 1
+
+    if dash_created or jump_created or mine_created:
+        ts.active_trigger_obj_idx = len(ts.trigger_objects) - 1
+    return dash_created, jump_created, mine_created
+
+
 def vec(values) -> Vector:
     return Vector((float(values[0]), float(values[1]), float(values[2])))
 
@@ -346,6 +941,22 @@ def set_linear_x_fcurves(action) -> None:
                 kp.handle_right.y = kp.co.y + slope * dx_next / 3.0
             else:
                 kp.handle_right = kp.co
+        fcu.update()
+
+
+def set_interior_auto_then_linear_x_fcurves(action) -> None:
+    set_linear_x_fcurves(action)
+    for fcu in action.fcurves:
+        keyframes = fcu.keyframe_points
+        if len(keyframes) <= 2:
+            continue
+        for kp in keyframes[1:-1]:
+            kp.handle_left_type = "AUTO"
+            kp.handle_right_type = "AUTO"
+        fcu.update()
+        for kp in keyframes[1:-1]:
+            kp.handle_left_type = "LINEAR_X"
+            kp.handle_right_type = "LINEAR_X"
         fcu.update()
 
 
@@ -653,6 +1264,17 @@ def group_uses_mirrored_helper_x(group: list[dict]) -> bool:
     return bool(group and sample_x_scale_sign(group[0]) < 0.0)
 
 
+def group_mxt_rail_heights(group: list[dict]) -> tuple[float, float]:
+    gx_left = group_rail_height(group, "rail_height_left")
+    gx_right = group_rail_height(group, "rail_height_right")
+    # GX applies rail_height_right to local +X and rail_height_left to local -X.
+    # MXT's editor labels tx=+1 as "left", so swap only when helper +X still
+    # points along GX +X.
+    if group_uses_mirrored_helper_x(group):
+        return gx_left, gx_right
+    return gx_right, gx_left
+
+
 def add_segment(name: str, group: list[dict], closed: bool):
     bpy.ops.object.empty_add(type="PLAIN_AXES", radius=1.0, location=(0.0, 0.0, 0.0))
     parent = bpy.context.active_object
@@ -668,10 +1290,7 @@ def add_segment(name: str, group: list[dict], closed: bool):
         props.horiz_subdivs = 9
         props.mesh_subdivision_length = 20.0
         props.mesh_subdivision_angle_deg = 8.0
-    left_rail_height = group_rail_height(group, "rail_height_left")
-    right_rail_height = group_rail_height(group, "rail_height_right")
-    if group_uses_mirrored_helper_x(group):
-        left_rail_height, right_rail_height = right_rail_height, left_rail_height
+    left_rail_height, right_rail_height = group_mxt_rail_heights(group)
     props.rail_height_left = left_rail_height
     props.rail_height_right = right_rail_height
     props.rail_start_left = 0.0
@@ -742,7 +1361,7 @@ def add_segment(name: str, group: list[dict], closed: bool):
         insert_fcurve_key(action, "scale", 0, frame, scale_value.x)
         insert_fcurve_key(action, "scale", 1, frame, scale_value.y)
         insert_fcurve_key(action, "scale", 2, frame, scale_value.z)
-    set_linear_x_fcurves(action)
+    set_interior_auto_then_linear_x_fcurves(action)
 
     cp_stride = max(1, math.ceil(count / 32))
     cp_indices = list(range(0, count, cp_stride))
@@ -1057,6 +1676,13 @@ def main() -> int:
 
     link_close_segment_rows(stream_segments, closed)
     link_temporal_rows(stream_segments, closed)
+    dash_trigger_count, jump_trigger_count, mine_trigger_count = auto_add_gx_trigger_objects(data, stream_segments, plugin)
+    if dash_trigger_count:
+        print(f"MXT FZGX: added {dash_trigger_count} dashplate triggers from static dash quads")
+    if jump_trigger_count:
+        print(f"MXT FZGX: added {jump_trigger_count} jumpplate triggers from static jump quad components")
+    if mine_trigger_count:
+        print(f"MXT FZGX: added {mine_trigger_count} mine triggers from dynamic scene mine objects")
 
     for seg in segments:
         try:

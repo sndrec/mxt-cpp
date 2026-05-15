@@ -4712,26 +4712,27 @@ def _export_stage(context, filepath):
         cps = props.checkpoints
         for i, cp in enumerate(cps):
             gidx = cp_indices[(seg, cp)]
+            def add_neighbour(idx):
+                if idx not in neighbours[gidx]:
+                    neighbours[gidx].append(idx)
             if i == 0:
                 for prev in props.prev_segments:
                     ps = prev.segment
                     if ps and ps in seg_cp_start:
                         last_idx = seg_cp_start[ps] + cp_counts[ps] - 1
                         if last_idx < gidx or ps == first:
-                            neighbours[gidx].append(last_idx)
-                if len(cps) > 1:
-                    neighbours[gidx].append(gidx + 1)
-            elif i == len(cps) - 1:
-                if i > 0:
-                    neighbours[gidx].append(gidx - 1)
+                            add_neighbour(last_idx)
+            if i > 0:
+                add_neighbour(gidx - 1)
+            if i + 1 < len(cps):
+                add_neighbour(gidx + 1)
+            if i == len(cps) - 1:
                 for nxt in props.next_segments:
                     ns = nxt.segment
                     if ns and ns in seg_cp_start:
                         nidx = seg_cp_start[ns]
                         if nidx > gidx or ns == first:
-                            neighbours[gidx].append(nidx)
-            else:
-                neighbours[gidx].extend([gidx - 1, gidx + 1])
+                            add_neighbour(nidx)
 
     with open(filepath, 'wb') as f:
         data = bytearray()
@@ -4855,7 +4856,7 @@ def _export_stage(context, filepath):
         type_map_trig = {'DASHPLATE':0,'JUMPPLATE':1,'MINE':2}
         ext_map = {
             'DASHPLATE': Vector((6.0,4.0,12.0)),
-            'JUMPPLATE': Vector((12.0,4.0,2.0)),
+            'JUMPPLATE': Vector((12.0,4.0,4.0)),
             'MINE': Vector((2.0,3.0,2.0)),
         }
         for trig in ts.trigger_objects:

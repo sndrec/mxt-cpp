@@ -93,6 +93,7 @@ struct SampleRequest {
 static fzgx_vec3 mat43_basis_x(const fzgx_mat43 &m);
 static fzgx_vec3 mat43_basis_y(const fzgx_mat43 &m);
 static fzgx_vec3 mat43_basis_z(const fzgx_mat43 &m);
+static fzgx_vec3 mat43_origin(const fzgx_mat43 &m);
 
 static fzgx_mat43 identity_mat43() {
     fzgx_mat43 m = {};
@@ -1393,6 +1394,18 @@ static void print_collision_quad(FILE *out, const fzgx_static_collider_quad_reco
     std::fprintf(out, "]");
 }
 
+static void print_mat43_json(FILE *out, const fzgx_mat43 &transform) {
+    std::fprintf(out, "{\"basis_x\":");
+    print_vec3_json(out, mat43_basis_x(transform));
+    std::fprintf(out, ",\"basis_y\":");
+    print_vec3_json(out, mat43_basis_y(transform));
+    std::fprintf(out, ",\"basis_z\":");
+    print_vec3_json(out, mat43_basis_z(transform));
+    std::fprintf(out, ",\"origin\":");
+    print_vec3_json(out, mat43_origin(transform));
+    std::fprintf(out, "}");
+}
+
 static void print_collision_mesh_object_json(
         FILE *out,
         bool *wrote_any,
@@ -1404,7 +1417,8 @@ static void print_collision_mesh_object_json(
         const std::vector<uint8_t> &tri_used,
         const fzgx_static_collider_quad_record *quads,
         const std::vector<uint8_t> &quad_used,
-        const fzgx_mat43 *transform) {
+        const fzgx_mat43 *transform,
+        const fzgx_mat43 *object_transform) {
     uint32_t tri_count = 0u;
     uint32_t quad_count = 0u;
     for (uint8_t used : tri_used) {
@@ -1449,7 +1463,16 @@ static void print_collision_mesh_object_json(
         wrote_poly = true;
         print_collision_quad(out, quads[i], transform);
     }
-    std::fprintf(out, "]}");
+    std::fprintf(out, "]");
+    if (object_transform != nullptr) {
+        std::fprintf(out, ",\"object_transform\":");
+        print_mat43_json(out, *object_transform);
+    }
+    if ((transform != nullptr) && (transform != object_transform)) {
+        std::fprintf(out, ",\"collider_transform\":");
+        print_mat43_json(out, *transform);
+    }
+    std::fprintf(out, "}");
 }
 
 static void mark_static_surface_indices(
@@ -1536,7 +1559,7 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
             mark_static_surface_indices(static_course, surface_index, &tri_used, &quad_used);
             print_collision_mesh_object_json(
                     out, &wrote_any, "static_collider", name, surface_index, 0u,
-                    static_course.tris, tri_used, static_course.quads, quad_used, nullptr);
+                    static_course.tris, tri_used, static_course.quads, quad_used, nullptr, nullptr);
         }
     }
 
@@ -1558,7 +1581,7 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
                 print_collision_mesh_object_json(
                         out, &wrote_any, "track_mesh", name, class_index, 0u,
                         chunk.tris, tri_used, chunk.quads, quad_used,
-                        chunk_index == 0u ? nullptr : &transform);
+                        chunk_index == 0u ? nullptr : &transform, nullptr);
             }
         }
     }
@@ -1576,16 +1599,22 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
             char name[160];
             std::snprintf(name, sizeof(name), "Dynamic %03u %s type0x%08x",
                     object_index, object.primary_lod_name, object.collider_mesh.collider_type);
-            const fzgx_mat43 *transform = object.has_transform_matrix ? &object.transform_matrix : nullptr;
-            fzgx_mat43 trxs_transform = {};
-            if (transform == nullptr) {
-                trxs_transform = transform_trxs_matrix(object.transform);
-                transform = &trxs_transform;
+            fzgx_mat43 object_transform = {};
+            if (object.has_transform_matrix) {
+                object_transform = object.transform_matrix;
+            } else {
+                object_transform = transform_trxs_matrix(object.transform);
+            }
+            const fzgx_mat43 *transform = &object_transform;
+            fzgx_mat43 collider_transform = {};
+            if (!object.has_transform_matrix && object.has_collision_transform) {
+                collider_transform = transform_trxs_matrix(object.collision_transform);
+                transform = &collider_transform;
             }
             print_collision_mesh_object_json(
                     out, &wrote_any, "dynamic_scene", name, 0xffffffffu,
                     object.collider_mesh.collider_type, object.collider_mesh.tris, tri_used,
-                    object.collider_mesh.quads, quad_used, transform);
+                    object.collider_mesh.quads, quad_used, transform, &object_transform);
         }
         for (uint32_t object_index = 0u; object_index < dynamic_course.unknown_collider_count; ++object_index) {
             const fzgx_owned_unknown_collider_record &object = dynamic_course.unknown_colliders[object_index];
@@ -1602,7 +1631,7 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
             print_collision_mesh_object_json(
                     out, &wrote_any, "unknown_scene", name, 0xffffffffu,
                     object.collider_mesh.collider_type, object.collider_mesh.tris, tri_used,
-                    object.collider_mesh.quads, quad_used, &transform);
+                    object.collider_mesh.quads, quad_used, &transform, &transform);
         }
         for (uint32_t object_index = 0u; object_index < dynamic_course.static_scene_object_count; ++object_index) {
             const fzgx_owned_static_scene_object_record &object = dynamic_course.static_scene_objects[object_index];
@@ -1618,7 +1647,7 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
             print_collision_mesh_object_json(
                     out, &wrote_any, "static_scene", name, 0xffffffffu,
                     object.collider_mesh.collider_type, object.collider_mesh.tris, tri_used,
-                    object.collider_mesh.quads, quad_used, nullptr);
+                    object.collider_mesh.quads, quad_used, nullptr, nullptr);
         }
     }
 
