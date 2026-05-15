@@ -1206,6 +1206,11 @@ static SimVec3 clamp_mesh_collision_phong_point(const SimVec3 &flat_point, const
 	return flat_point + offset * (kMaxPhongOffset / len);
 }
 
+static bool mesh_collision_uses_smooth_surface(uint32_t terrain)
+{
+	return (terrain & (TERRAIN::RAIL | TERRAIN::HOLE)) == 0;
+}
+
 static SimTransform mesh_collision_surface_transform(const TrackMeshCollisionTriangle &tri, const SimVec3 &hit_point, const SimVec3 &normal)
 {
 	SimVec3 tangent = (tri.p1 - tri.p0).normalized();
@@ -1453,11 +1458,15 @@ static void cast_mesh_collision_fast(
 			return;
 		}
 
-		SimVec3 smooth_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
 		const SimVec3 flat_point = p0 + ray * hit_t;
-		const SimVec3 smooth_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
-		if (wants_backface && (p0 - smooth_point).dot(smooth_normal) < 0.0f) {
-			smooth_normal *= -1.0f;
+		SimVec3 hit_normal = face_normal;
+		SimVec3 hit_point = flat_point;
+		if (mesh_collision_uses_smooth_surface(tri.terrain)) {
+			hit_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
+			hit_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
+		}
+		if (wants_backface && (p0 - hit_point).dot(hit_normal) < 0.0f) {
+			hit_normal *= -1.0f;
 		}
 		const int cp_idx = tri.checkpoint_index >= 0 ? tri.checkpoint_index : start_idx;
 		if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
@@ -1471,12 +1480,12 @@ static void cast_mesh_collision_fast(
 			draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
 		}
 		out_collision.collided = true;
-		out_collision.collision_point = smooth_point;
-		out_collision.collision_normal = smooth_normal;
+		out_collision.collision_point = hit_point;
+		out_collision.collision_normal = hit_normal;
 		out_collision.road_data.cp_idx = cp_idx;
 		out_collision.road_data.spatial_t = SimVec3();
 		out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
-		out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, smooth_point, smooth_normal);
+		out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, hit_point, hit_normal);
 		out_collision.road_data.closest_root = RoadTransform();
 		out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
 		out_collision.mesh_triangle_index = tri_index;
@@ -1758,8 +1767,12 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	const SimVec3 edge0 = best_tri->p1 - best_tri->p0;
 	const SimVec3 edge1 = best_tri->p2 - best_tri->p0;
 	SimVec3 face_normal = edge0.cross(edge1).normalized();
-	SimVec3 smooth_normal = mesh_collision_smooth_normal(*best_tri, best_u, best_v, best_w, face_normal);
-	const SimVec3 smooth_point = clamp_mesh_collision_phong_point(best_flat_point, mesh_collision_phong_point(*best_tri, best_u, best_v, best_w));
+	SimVec3 smooth_normal = face_normal;
+	SimVec3 smooth_point = best_flat_point;
+	if (mesh_collision_uses_smooth_surface(best_tri->terrain)) {
+		smooth_normal = mesh_collision_smooth_normal(*best_tri, best_u, best_v, best_w, face_normal);
+		smooth_point = clamp_mesh_collision_phong_point(best_flat_point, mesh_collision_phong_point(*best_tri, best_u, best_v, best_w));
+	}
 	if ((point - smooth_point).dot(smooth_normal) < 0.0f) {
 		smooth_normal *= -1.0f;
 	}
