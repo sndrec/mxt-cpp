@@ -1427,6 +1427,40 @@ static void cast_mesh_collision_fast(
 		if (cp_idx < 0 || cp_idx >= track->num_checkpoints || !track->mesh_checkpoint_triangle_head) {
 			return;
 		}
+		if (track->mesh_checkpoint_bvh_nodes && track->mesh_checkpoint_bvh_triangle_indices && track->mesh_checkpoint_bvh_node_start) {
+			const int root = track->mesh_checkpoint_bvh_node_start[cp_idx];
+			if (root < 0) {
+				return;
+			}
+			int stack[128];
+			int stack_count = 0;
+			stack[stack_count++] = root;
+			while (stack_count > 0) {
+				const int node_index = stack[--stack_count];
+				const TrackMeshBVHNode &node = track->mesh_checkpoint_bvh_nodes[node_index];
+				if (!aabb_overlaps_segment(node.bounds, p0, p1)) {
+					continue;
+				}
+				if (node.count > 0) {
+					const int end = node.left_first + node.count;
+					for (int i = node.left_first; i < end; ++i) {
+						scan_triangle(track->mesh_checkpoint_bvh_triangle_indices[i]);
+					}
+				} else {
+					if (stack_count + 2 > 128) {
+						godot::UtilityFunctions::printerr(godot::String("MXT mesh checkpoint BVH traversal stack overflow"));
+						std::abort();
+					}
+					if (node.left_first < 0 || node.right_first < 0) {
+						godot::UtilityFunctions::printerr(godot::String("MXT mesh checkpoint BVH interior node has invalid child"));
+						std::abort();
+					}
+					stack[stack_count++] = node.left_first;
+					stack[stack_count++] = node.right_first;
+				}
+			}
+			return;
+		}
 		for (int tri_index = track->mesh_checkpoint_triangle_head[cp_idx]; tri_index >= 0; tri_index = track->mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
 			scan_triangle(tri_index);
 		}

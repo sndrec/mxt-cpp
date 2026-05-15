@@ -39,6 +39,143 @@
 
 using namespace godot;
 
+struct MeshBVHBuildPrim
+{
+	SimAABB bounds;
+	SimVec3 center;
+	int32_t triangle_index;
+};
+
+static SimAABB mesh_bvh_merge_bounds(const SimAABB &a, const SimAABB &b)
+{
+	SimAABB out = a;
+	out.expand_to(b.position);
+	out.expand_to(b.position + b.size);
+	return out;
+}
+
+static int mesh_bvh_longest_axis(const SimAABB &bounds)
+{
+	if (bounds.size.x >= bounds.size.y && bounds.size.x >= bounds.size.z) {
+		return 0;
+	}
+	if (bounds.size.y >= bounds.size.z) {
+		return 1;
+	}
+	return 2;
+}
+
+static float mesh_bvh_axis_value(const SimVec3 &value, int axis)
+{
+	if (axis == 0) {
+		return value.x;
+	}
+	if (axis == 1) {
+		return value.y;
+	}
+	return value.z;
+}
+
+static void build_mesh_bvh_node(std::vector<MeshBVHBuildPrim> &prims, std::vector<TrackMeshBVHNode> &nodes, int start, int count)
+{
+	const int node_index = static_cast<int>(nodes.size());
+	nodes.push_back({});
+	SimAABB bounds = prims[start].bounds;
+	SimAABB centroid_bounds;
+	centroid_bounds.position = prims[start].center;
+	centroid_bounds.size = SimVec3();
+	for (int i = start + 1; i < start + count; ++i) {
+		bounds = mesh_bvh_merge_bounds(bounds, prims[i].bounds);
+		centroid_bounds.expand_to(prims[i].center);
+	}
+	constexpr int kLeafTriangleCount = 8;
+	if (count <= kLeafTriangleCount) {
+		nodes[node_index].bounds = bounds;
+		nodes[node_index].left_first = start;
+		nodes[node_index].count = count;
+		nodes[node_index].right_first = -1;
+		return;
+	}
+	const int axis = mesh_bvh_longest_axis(centroid_bounds);
+	const int mid = start + count / 2;
+	std::nth_element(
+		prims.begin() + start,
+		prims.begin() + mid,
+		prims.begin() + start + count,
+		[axis](const MeshBVHBuildPrim &a, const MeshBVHBuildPrim &b) {
+			return mesh_bvh_axis_value(a.center, axis) < mesh_bvh_axis_value(b.center, axis);
+		});
+	nodes[node_index].bounds = bounds;
+	nodes[node_index].count = 0;
+	nodes[node_index].left_first = static_cast<int32_t>(nodes.size());
+	build_mesh_bvh_node(prims, nodes, start, mid - start);
+	nodes[node_index].right_first = static_cast<int32_t>(nodes.size());
+	build_mesh_bvh_node(prims, nodes, mid, start + count - mid);
+}
+
+static void build_track_mesh_checkpoint_bvh(RaceTrack *track, HeapHandler &level_data)
+{
+	if (track->num_mesh_collision_triangles <= 0) {
+		return;
+	}
+	std::vector<TrackMeshBVHNode> all_nodes;
+	std::vector<int32_t> all_triangle_indices;
+	std::vector<int32_t> node_start(track->num_checkpoints, -1);
+	std::vector<int32_t> node_count(track->num_checkpoints, 0);
+	std::vector<MeshBVHBuildPrim> prims;
+	for (int cp = 0; cp < track->num_checkpoints; ++cp) {
+		const int tri_count = track->mesh_checkpoint_triangle_count[cp];
+		if (tri_count <= 0) {
+			continue;
+		}
+		prims.clear();
+		prims.reserve(tri_count);
+		for (int tri_index = track->mesh_checkpoint_triangle_head[cp]; tri_index >= 0; tri_index = track->mesh_collision_triangles[tri_index].next_checkpoint_triangle) {
+			const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
+			MeshBVHBuildPrim prim;
+			prim.bounds = tri.bounds;
+			prim.center = (tri.p0 + tri.p1 + tri.p2) * (1.0f / 3.0f);
+			prim.triangle_index = tri_index;
+			prims.push_back(prim);
+		}
+		std::vector<TrackMeshBVHNode> cp_nodes;
+		cp_nodes.reserve(static_cast<size_t>(tri_count) * 2u);
+		build_mesh_bvh_node(prims, cp_nodes, 0, tri_count);
+		const int node_base = static_cast<int>(all_nodes.size());
+		const int index_base = static_cast<int>(all_triangle_indices.size());
+		node_start[cp] = node_base;
+		node_count[cp] = static_cast<int32_t>(cp_nodes.size());
+		for (TrackMeshBVHNode node : cp_nodes) {
+			if (node.count > 0) {
+				node.left_first += index_base;
+			} else {
+				node.left_first += node_base;
+				node.right_first += node_base;
+			}
+			all_nodes.push_back(node);
+		}
+		for (const MeshBVHBuildPrim &prim : prims) {
+			all_triangle_indices.push_back(prim.triangle_index);
+		}
+	}
+	track->num_mesh_checkpoint_bvh_nodes = static_cast<int>(all_nodes.size());
+	track->mesh_checkpoint_bvh_nodes = level_data.allocate_array<TrackMeshBVHNode>(all_nodes.size());
+	track->mesh_checkpoint_bvh_triangle_indices = level_data.allocate_array<int32_t>(all_triangle_indices.size());
+	track->mesh_checkpoint_bvh_node_start = level_data.allocate_array<int32_t>(track->num_checkpoints);
+	track->mesh_checkpoint_bvh_node_count = level_data.allocate_array<int32_t>(track->num_checkpoints);
+	for (int i = 0; i < track->num_mesh_checkpoint_bvh_nodes; ++i) {
+		track->mesh_checkpoint_bvh_nodes[i] = all_nodes[i];
+	}
+	for (int i = 0; i < static_cast<int>(all_triangle_indices.size()); ++i) {
+		track->mesh_checkpoint_bvh_triangle_indices[i] = all_triangle_indices[i];
+	}
+	for (int i = 0; i < track->num_checkpoints; ++i) {
+		track->mesh_checkpoint_bvh_node_start[i] = node_start[i];
+		track->mesh_checkpoint_bvh_node_count[i] = node_count[i];
+	}
+	UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_checkpoint_bvh_loaded nodes="), track->num_mesh_checkpoint_bvh_nodes);
+}
+
 #define LOAD_INDEXED_VEC3(storage, name, index) SimVec3((storage).name##_x[(index)], (storage).name##_y[(index)], (storage).name##_z[(index)])
 #define STORE_INDEXED_VEC3(storage, name, index, value) do { const SimVec3 mxt_v3_tmp = (value); (storage).name##_x[(index)] = mxt_v3_tmp.x; (storage).name##_y[(index)] = mxt_v3_tmp.y; (storage).name##_z[(index)] = mxt_v3_tmp.z; } while (0)
 
@@ -2377,7 +2514,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	int32_t buffer_size = lvldat_buf->get_size();
 	const int requested_cars_hint = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
 
-	level_data.instantiate(1024 * 1024 * 16);
+	const size_t level_heap_size = std::max<size_t>(
+		1024u * 1024u * 32u,
+		static_cast<size_t>(buffer_size) * 4u + 1024u * 1024u * 8u);
+	level_data.instantiate(level_heap_size);
 
 	gamestate_data.instantiate(1024 * 1024 + static_cast<size_t>(requested_cars_hint) * 8192u);
 	spark_multimesh_instance = nullptr;
@@ -2410,6 +2550,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->mesh_collision_triangles = nullptr;
 	current_track->mesh_checkpoint_triangle_head = nullptr;
 	current_track->mesh_checkpoint_triangle_count = nullptr;
+	current_track->mesh_checkpoint_bvh_nodes = nullptr;
+	current_track->mesh_checkpoint_bvh_triangle_indices = nullptr;
+	current_track->mesh_checkpoint_bvh_node_start = nullptr;
+	current_track->mesh_checkpoint_bvh_node_count = nullptr;
+	current_track->num_mesh_checkpoint_bvh_nodes = 0;
 	current_track->lap_length = 0.0f;
 
 	uint32_t header_size = lvldat_buf->get_u32();
@@ -2903,6 +3048,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			if (tri.p2.y < current_track->minimum_y) current_track->minimum_y = tri.p2.y;
 		}
 		UtilityFunctions::print(String("MXT_LOAD_DEBUG mesh_collision_loaded tri="), mesh_collision_triangle_count);
+		build_track_mesh_checkpoint_bvh(current_track, level_data);
 	}
 
 

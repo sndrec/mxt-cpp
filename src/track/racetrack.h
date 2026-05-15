@@ -25,6 +25,14 @@ struct TrackMeshCollisionTriangle
 	int32_t next_checkpoint_triangle;
 };
 
+struct TrackMeshBVHNode
+{
+	SimAABB bounds;
+	int32_t left_first;
+	int32_t count;
+	int32_t right_first;
+};
+
 struct alignas(64) TrackQueryScratch
 {
 	static constexpr int MAX_TRIGGER_EVENTS = 4096;
@@ -83,6 +91,11 @@ public:
 	int num_mesh_collision_triangles;
 	int32_t* mesh_checkpoint_triangle_head;
 	int32_t* mesh_checkpoint_triangle_count;
+	TrackMeshBVHNode* mesh_checkpoint_bvh_nodes;
+	int32_t* mesh_checkpoint_bvh_triangle_indices;
+	int32_t* mesh_checkpoint_bvh_node_start;
+	int32_t* mesh_checkpoint_bvh_node_count;
+	int num_mesh_checkpoint_bvh_nodes;
 		CollisionCheckpoint* checkpoints;
 		int num_trigger_colliders;
 		TriggerCollider** trigger_colliders;
