@@ -3291,6 +3291,13 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 	const int point_base = soa_index * 4;
 	const SimTransform machine_transform = LOAD_TRANSFORM(basis_physical);
 	const SimVec3 machine_position = LOAD_VEC3(position_current);
+	const RoadData &center_floor_sample = soa->road_sample[soa_index];
+	const bool center_floor_sample_valid =
+		soa->height_above_track[soa_index] > 0.0f &&
+		center_floor_sample.closest_surface.basis[0].length_squared() >= 0.1f;
+	const bool mesh_floor_depenetration_enabled =
+		((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) ||
+		center_floor_sample_valid;
 	SimVec3 wall_corner_world[4];
 	mxt_store_points4(
 		wall_corner_world,
@@ -3527,7 +3534,11 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 								mesh_cast_bounds.expand_to(wall_corner_world[wc_idx]);
 								mesh_cast_bounds.expand_to(wall_corner_old_world[wc_idx]);
 							}
-							const uint8_t mesh_cast_mask = CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P1;
+							const uint8_t mesh_cast_mask =
+								(mesh_floor_depenetration_enabled ? CAST_FLAGS::WANTS_TRACK : 0) |
+								CAST_FLAGS::WANTS_RAIL |
+								CAST_FLAGS::WANTS_BACKFACE |
+								CAST_FLAGS::SAMPLE_FROM_P1;
 							const bool use_mesh_cast_candidates = track->collect_mesh_cast_candidates(mesh_cast_bounds, mesh_cast_mask, scratch);
 							const SimVec3 mesh_side_reference_point = LOAD_VEC3(position_old);
 							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1) {
