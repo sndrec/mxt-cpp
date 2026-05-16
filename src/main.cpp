@@ -2195,6 +2195,8 @@ void GameSim::process_pending_ko_events()
 	}
 }
 
+static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed);
+
 void GameSim::tick_singleplayer(int local_player_id, godot::PackedByteArray local_input)
 {
 	const PlayerInput decoded_local_input = PlayerInput::from_bytes(local_input);
@@ -2251,7 +2253,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 				(!decoded_car_input_present || decoded_car_input_present[i])) {
 			inp = decoded_car_inputs[i];
 		} else if (car_is_cpu && car_is_cpu[i]) {
-			inp = PlayerInput::from_bytes(generate_native_cpu_input_for_tick(player_id, tick));
+			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		}
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
