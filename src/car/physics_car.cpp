@@ -2738,6 +2738,11 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 	SimTransform surf[4];
 	int mesh_corner_tri[4] = {-1, -1, -1, -1};
 	bool corner_collided[4] = {false, false, false, false};
+	const RoadData &center_floor_sample = soa->road_sample[soa_index];
+	const bool center_floor_sample_valid =
+		soa->height_above_track[soa_index] > 0.0f &&
+		center_floor_sample.road_t.x != -1000.0f &&
+		center_floor_sample.closest_surface.basis[0].length_squared() >= 0.1f;
 	mxt_store_points4(
 		p0_ray_start_ws,
 		mxt_transform_points4(
@@ -2919,6 +2924,12 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 	SimVec3 normal_sum(0, 0, 0);
 	int valid_count = 0;
 	for (int i = 0; i < 4; ++i) {
+		if (road_t[i].x == -1000.0f && center_floor_sample_valid) {
+			road_t[i] = center_floor_sample.road_t;
+			spatial_t[i] = center_floor_sample.spatial_t;
+			surf[i] = center_floor_sample.closest_surface;
+			mesh_corner_tri[i] = -2;
+		}
 		const int p = point_base + i;
 		update_suspension_forces(i, p0_ray_start_ws[i], p0_ws[i], p1_ray_end_ws[i], road_t[i], surf[i], stat_weight);
 		if ((soa->tilt_state[p] & TILTSTATE::AIRBORNE) == 0) {
