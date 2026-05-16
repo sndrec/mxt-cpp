@@ -2808,7 +2808,18 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 				terrain_bits |= hit.road_data.terrain;
 			}
 		} else {
-			terrain_bits |= soa->road_sample[soa_index].terrain;
+			CollisionData hit;
+			sample_mesh_floor_with_seed(
+				hit,
+				LOAD_VEC3(position_current),
+				8.0f,
+				CAST_FLAGS::WANTS_TRACK,
+				soa->current_checkpoint[soa_index],
+				false,
+				scratch);
+			if (hit.collided) {
+				terrain_bits |= hit.road_data.terrain;
+			}
 		}
 	} else {
 		terrain_bits = 0;
