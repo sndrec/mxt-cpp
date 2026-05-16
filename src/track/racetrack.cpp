@@ -1805,7 +1805,13 @@ static void cast_mesh_collision_fast(
 		godot::UtilityFunctions::printerr(godot::String("MXT mesh cast query has invalid checkpoint index "), start_idx);
 		std::abort();
 	}
-	if (!track->mesh_world_bvh_nodes || !track->mesh_world_bvh_triangle_indices || track->num_mesh_world_bvh_nodes <= 0) {
+	const bool track_only_query =
+		(params.mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
+		(params.mask & CAST_FLAGS::WANTS_RAIL) == 0;
+	const TrackMeshBVHNode *bvh_nodes = track_only_query ? track->mesh_floor_bvh_nodes : track->mesh_world_bvh_nodes;
+	const int32_t *bvh_triangle_indices = track_only_query ? track->mesh_floor_bvh_triangle_indices : track->mesh_world_bvh_triangle_indices;
+	const int num_bvh_nodes = track_only_query ? track->num_mesh_floor_bvh_nodes : track->num_mesh_world_bvh_nodes;
+	if (!bvh_nodes || !bvh_triangle_indices || num_bvh_nodes <= 0) {
 		return;
 	}
 	const SimVec3 ray = p1 - p0;
@@ -1824,7 +1830,7 @@ static void cast_mesh_collision_fast(
 	stack[stack_count++] = 0;
 	while (stack_count > 0) {
 		const int node_index = stack[--stack_count];
-		const TrackMeshBVHNode &node = track->mesh_world_bvh_nodes[node_index];
+		const TrackMeshBVHNode &node = bvh_nodes[node_index];
 		uint32_t child_mask = mesh_bvh_child_segment_mask(node, p0, p1);
 		for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
 			if ((child_mask & (1u << slot)) == 0) {
@@ -1833,7 +1839,7 @@ static void cast_mesh_collision_fast(
 			if (mesh_bvh_child_is_leaf(node, slot)) {
 				const int end = node.child[slot] + node.count[slot];
 				for (int i = node.child[slot]; i < end; ++i) {
-					scan_triangle(track->mesh_world_bvh_triangle_indices[i]);
+					scan_triangle(bvh_triangle_indices[i]);
 				}
 			} else {
 				if (stack_count + 1 > 256) {
@@ -1853,7 +1859,13 @@ static void cast_mesh_collision_fast(
 bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask, TrackQueryScratch &scratch)
 {
 	scratch.mesh_cast_candidate_count = 0;
-	if (!mesh_world_bvh_nodes || !mesh_world_bvh_triangle_indices || num_mesh_world_bvh_nodes <= 0) {
+	const bool track_only_query =
+		(mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
+		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
+	const TrackMeshBVHNode *bvh_nodes = track_only_query ? mesh_floor_bvh_nodes : mesh_world_bvh_nodes;
+	const int32_t *bvh_triangle_indices = track_only_query ? mesh_floor_bvh_triangle_indices : mesh_world_bvh_triangle_indices;
+	const int num_bvh_nodes = track_only_query ? num_mesh_floor_bvh_nodes : num_mesh_world_bvh_nodes;
+	if (!bvh_nodes || !bvh_triangle_indices || num_bvh_nodes <= 0) {
 		return false;
 	}
 
@@ -1862,7 +1874,7 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 	stack[stack_count++] = 0;
 	while (stack_count > 0) {
 		const int node_index = stack[--stack_count];
-		const TrackMeshBVHNode &node = mesh_world_bvh_nodes[node_index];
+		const TrackMeshBVHNode &node = bvh_nodes[node_index];
 		uint32_t child_mask = mesh_bvh_child_aabb_mask(node, bounds);
 		for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
 			if ((child_mask & (1u << slot)) == 0) {
@@ -1871,7 +1883,7 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 			if (mesh_bvh_child_is_leaf(node, slot)) {
 				const int end = node.child[slot] + node.count[slot];
 				for (int i = node.child[slot]; i < end; ++i) {
-					const int tri_index = mesh_world_bvh_triangle_indices[i];
+					const int tri_index = bvh_triangle_indices[i];
 					const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
 					const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
 					if (is_rail) {
