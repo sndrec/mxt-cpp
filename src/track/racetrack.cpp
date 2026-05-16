@@ -1552,15 +1552,16 @@ static bool project_point_to_mesh_triangle(
 	const float inv_denom = tri.projection_inv_denom;
 
 	SimVec3 projected = p - face_n * ((p - tri.p0).dot(face_n));
-	constexpr float kBacksideSlop = -0.01f;
+	constexpr float kBacksideRecoverySlop = -5.0f;
+	constexpr float kBacksideNormalFlipSlop = -0.01f;
 	const float signed_face_dist = (p - projected).dot(face_n);
-	if (signed_face_dist < kBacksideSlop && !allow_backside) {
+	if (signed_face_dist < kBacksideRecoverySlop && !allow_backside) {
 		if (out_projection_result) {
 			*out_projection_result = MESH_FLOOR_PROJECT_MISS;
 		}
 		return false;
 	}
-	const bool backside_sample = signed_face_dist < kBacksideSlop;
+	const bool backside_sample = allow_backside && signed_face_dist < kBacksideNormalFlipSlop;
 	float u = 0.0f;
 	float v = 0.0f;
 	float w = 0.0f;
@@ -1609,7 +1610,7 @@ static bool project_point_to_mesh_triangle(
 			return false;
 		}
 		projected = p - smooth_n * ((p - tri.p0).dot(face_n) / normal_dot_face);
-		if ((p - projected).dot(face_n) < kBacksideSlop && !allow_backside) {
+		if ((p - projected).dot(face_n) < kBacksideRecoverySlop && !allow_backside) {
 			if (out_projection_result) {
 				*out_projection_result = MESH_FLOOR_PROJECT_MISS;
 			}
@@ -1654,8 +1655,9 @@ static bool project_point_to_mesh_triangle_face_fast(
 	const float pz = p.z - tri.p0.z;
 	const SimVec3 &face_n = tri.face_normal;
 	const float signed_face_dist = px * face_n.x + py * face_n.y + pz * face_n.z;
-	constexpr float kBacksideSlop = -0.01f;
-	if (signed_face_dist < kBacksideSlop && !allow_backside) {
+	constexpr float kBacksideRecoverySlop = -5.0f;
+	constexpr float kBacksideNormalFlipSlop = -0.01f;
+	if (signed_face_dist < kBacksideRecoverySlop && !allow_backside) {
 		return false;
 	}
 
@@ -1672,7 +1674,7 @@ static bool project_point_to_mesh_triangle_face_fast(
 		*out_u = u;
 		*out_v = v;
 		*out_w = w;
-		*out_backside_sample = signed_face_dist < kBacksideSlop;
+		*out_backside_sample = allow_backside && signed_face_dist < kBacksideNormalFlipSlop;
 		return true;
 	}
 
