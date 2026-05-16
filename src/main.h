@@ -192,6 +192,12 @@ namespace godot {
 		std::vector<float> render_thruster_current_thrust;
 		std::vector<int> render_car_archetype_indices;
 		std::vector<int> render_car_slots;
+		std::vector<int> render_visible_car_slots;
+		std::vector<int> render_visible_thruster_slots;
+		std::vector<int> render_visible_counts;
+		std::vector<int> render_visible_thruster_counts;
+		int render_last_body_instances = 0;
+		int render_last_thruster_instances = 0;
 			std::vector<SimTransform> render_visual_prev_transforms;
 			std::vector<SimTransform> render_visual_current_transforms;
 			std::vector<SimTransform> render_final_prev_transforms;
@@ -249,6 +255,8 @@ namespace godot {
 			uint64_t render_profile_snapshots_us = 0;
 			uint64_t render_profile_effects_us = 0;
 			uint64_t render_profile_multimesh_us = 0;
+			uint64_t render_profile_body_instances = 0;
+			uint64_t render_profile_thruster_instances = 0;
 			uint64_t render_profile_camera_us = 0;
 			uint64_t render_profile_local_visual_us = 0;
 			uint64_t render_profile_cpu_driver_us = 0;
@@ -257,6 +265,8 @@ namespace godot {
 			uint64_t render_profile_visuals_only_total_us = 0;
 			uint64_t render_profile_visuals_only_effects_us = 0;
 			uint64_t render_profile_visuals_only_multimesh_us = 0;
+			uint64_t render_profile_visuals_only_body_instances = 0;
+			uint64_t render_profile_visuals_only_thruster_instances = 0;
 			uint64_t render_profile_visuals_only_camera_us = 0;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;

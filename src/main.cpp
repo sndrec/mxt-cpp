@@ -1919,6 +1919,8 @@ String GameSim::get_render_profile_string() const
 	out += " snapshots_us=" + avg(render_profile_snapshots_us, render_profile_frames);
 	out += " effects_us=" + avg(render_profile_effects_us, render_profile_frames);
 	out += " multimesh_us=" + avg(render_profile_multimesh_us, render_profile_frames);
+	out += " body_instances=" + avg(render_profile_body_instances, render_profile_frames);
+	out += " thruster_instances=" + avg(render_profile_thruster_instances, render_profile_frames);
 	out += " camera_us=" + avg(render_profile_camera_us, render_profile_frames);
 	out += " local_visual_us=" + avg(render_profile_local_visual_us, render_profile_frames);
 	out += " cpu_driver_us=" + avg(render_profile_cpu_driver_us, render_profile_frames);
@@ -1927,6 +1929,8 @@ String GameSim::get_render_profile_string() const
 	out += " visuals_only_total_us=" + avg(render_profile_visuals_only_total_us, render_profile_visuals_only_frames);
 	out += " visuals_only_effects_us=" + avg(render_profile_visuals_only_effects_us, render_profile_visuals_only_frames);
 	out += " visuals_only_multimesh_us=" + avg(render_profile_visuals_only_multimesh_us, render_profile_visuals_only_frames);
+	out += " visuals_only_body_instances=" + avg(render_profile_visuals_only_body_instances, render_profile_visuals_only_frames);
+	out += " visuals_only_thruster_instances=" + avg(render_profile_visuals_only_thruster_instances, render_profile_visuals_only_frames);
 	out += " visuals_only_camera_us=" + avg(render_profile_visuals_only_camera_us, render_profile_visuals_only_frames);
 	return out;
 }
@@ -1941,6 +1945,8 @@ void GameSim::set_render_profile_enabled(bool enabled)
 	render_profile_snapshots_us = 0;
 	render_profile_effects_us = 0;
 	render_profile_multimesh_us = 0;
+	render_profile_body_instances = 0;
+	render_profile_thruster_instances = 0;
 	render_profile_camera_us = 0;
 	render_profile_local_visual_us = 0;
 	render_profile_cpu_driver_us = 0;
@@ -1949,6 +1955,8 @@ void GameSim::set_render_profile_enabled(bool enabled)
 	render_profile_visuals_only_total_us = 0;
 	render_profile_visuals_only_effects_us = 0;
 	render_profile_visuals_only_multimesh_us = 0;
+	render_profile_visuals_only_body_instances = 0;
+	render_profile_visuals_only_thruster_instances = 0;
 	render_profile_visuals_only_camera_us = 0;
 }
 
@@ -3302,6 +3310,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_thruster_local_transforms.clear();
 		render_car_archetype_indices.clear();
 		render_car_slots.clear();
+		render_visible_car_slots.clear();
+		render_visible_thruster_slots.clear();
+		render_visible_counts.clear();
+		render_visible_thruster_counts.clear();
+		render_last_body_instances = 0;
+		render_last_thruster_instances = 0;
 		render_visual_prev_transforms.clear();
 		render_visual_current_transforms.clear();
 		render_final_prev_transforms.clear();
@@ -3338,6 +3352,12 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_thruster_local_transforms.clear();
 	render_car_archetype_indices.clear();
 	render_car_slots.clear();
+	render_visible_car_slots.clear();
+	render_visible_thruster_slots.clear();
+	render_visible_counts.clear();
+	render_visible_thruster_counts.clear();
+	render_last_body_instances = 0;
+	render_last_thruster_instances = 0;
 	render_visual_prev_transforms.clear();
 	render_visual_current_transforms.clear();
 	render_final_prev_transforms.clear();
@@ -3449,6 +3469,10 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	for (int i = 0; i < slots.size(); ++i) {
 		render_car_slots[i] = slots[i];
 	}
+	render_visible_car_slots.assign(render_car_slots.size(), -1);
+	render_visible_thruster_slots.assign(render_car_slots.size(), -1);
+	render_visible_counts.assign(render_car_multimeshes.size(), 0);
+	render_visible_thruster_counts.assign(render_thruster_multimeshes.size(), 0);
 	cache_native_visual_effect_nodes();
 }
 
@@ -3845,6 +3869,48 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 void GameSim::apply_render_multimeshes(float alpha)
 {
 	const int visual_count = std::min(num_cars, static_cast<int>(render_final_current_transforms.size()));
+	if (render_visible_car_slots.size() < static_cast<size_t>(visual_count)) {
+		render_visible_car_slots.resize(visual_count, -1);
+	}
+	if (render_visible_thruster_slots.size() < static_cast<size_t>(visual_count)) {
+		render_visible_thruster_slots.resize(visual_count, -1);
+	}
+	if (render_visible_counts.size() < render_car_multimeshes.size()) {
+		render_visible_counts.resize(render_car_multimeshes.size(), 0);
+	}
+	if (render_visible_thruster_counts.size() < render_thruster_multimeshes.size()) {
+		render_visible_thruster_counts.resize(render_thruster_multimeshes.size(), 0);
+	}
+	render_last_body_instances = 0;
+	render_last_thruster_instances = 0;
+	std::fill(render_visible_counts.begin(), render_visible_counts.end(), 0);
+	std::fill(render_visible_thruster_counts.begin(), render_visible_thruster_counts.end(), 0);
+	Camera3D* camera = gameplay_camera_node;
+	SimVec3 camera_origin;
+	SimVec3 camera_right;
+	SimVec3 camera_up;
+	SimVec3 camera_forward;
+	float camera_tan_half_fov = 1.0f;
+	float camera_aspect = 4.0f / 3.0f;
+	float camera_far = 40000.0f;
+	if (camera) {
+		const Transform3D camera_transform = camera->get_global_transform();
+		camera_origin = sim_vec3(camera_transform.origin);
+		camera_right = sim_vec3(camera_transform.basis.get_column(0)).normalized();
+		camera_up = sim_vec3(camera_transform.basis.get_column(1)).normalized();
+		camera_forward = sim_vec3(camera_transform.basis.get_column(2)) * -1.0f;
+		camera_forward = camera_forward.normalized();
+		camera_tan_half_fov = std::tan(static_cast<float>(camera->get_fov()) * (TAU / 360.0f) * 0.5f);
+		camera_far = static_cast<float>(camera->get_far());
+		if (Viewport* viewport = camera->get_viewport()) {
+			const Vector2 size = viewport->get_visible_rect().size;
+			if (size.y > 0.0f) {
+				camera_aspect = static_cast<float>(size.x / size.y);
+			}
+		}
+	}
+	constexpr float CAR_VISIBILITY_RADIUS = 32.0f;
+	constexpr float BODY_LOD_MAX_DISTANCE_SQ = 360.0f * 360.0f;
 	for (int i = 0; i < visual_count; ++i) {
 		if (i >= static_cast<int>(render_car_archetype_indices.size()) || i >= static_cast<int>(render_car_slots.size())) {
 			continue;
@@ -3860,6 +3926,41 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_final_prev_transforms[i],
 			render_final_current_transforms[i],
 			alpha);
+		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
+				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
+				render_thruster_multimeshes[archetype].is_valid()) {
+			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
+			const int thruster_count = static_cast<int>(thruster_locals.size());
+			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
+			for (int t = 0; t < thruster_count; ++t) {
+				const int thruster_slot = slot * thruster_count + t;
+				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
+				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
+				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
+				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
+			}
+		}
+		bool visible = true;
+		if (camera) {
+			const SimVec3 camera_to_car = visual_transform.origin - camera_origin;
+			const float camera_distance_sq = camera_to_car.length_squared();
+			const float forward_distance = camera_to_car.dot(camera_forward);
+			const float right_distance = camera_to_car.dot(camera_right);
+			const float up_distance = camera_to_car.dot(camera_up);
+			const float depth_for_width = std::max(forward_distance, 0.0f);
+			visible =
+				forward_distance >= -CAR_VISIBILITY_RADIUS &&
+				forward_distance <= camera_far + CAR_VISIBILITY_RADIUS &&
+				std::abs(right_distance) <= depth_for_width * camera_tan_half_fov * camera_aspect + CAR_VISIBILITY_RADIUS &&
+				std::abs(up_distance) <= depth_for_width * camera_tan_half_fov + CAR_VISIBILITY_RADIUS;
+			visible = visible && camera_distance_sq <= BODY_LOD_MAX_DISTANCE_SQ;
+		}
+		if (!visible) {
+			render_visible_car_slots[i] = -1;
+			continue;
+		}
+		const int visible_slot = render_visible_counts[archetype]++;
+		render_visible_car_slots[i] = visible_slot;
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		godot::Color body_overlay(0, 0, 0, 1);
@@ -3880,26 +3981,26 @@ void GameSim::apply_render_multimeshes(float alpha)
 		}
 		if (render_car_multimeshes[archetype].is_valid()) {
 			const SimTransform instance_transform = visual_transform * render_car_local_transforms[archetype];
-			render_car_multimeshes[archetype]->set_instance_transform(slot, gd_transform(instance_transform));
-			render_car_multimeshes[archetype]->set_instance_color(slot, body_overlay);
-			render_car_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(0, 0, 0, 1));
+			render_car_multimeshes[archetype]->set_instance_transform(visible_slot, gd_transform(instance_transform));
+			render_car_multimeshes[archetype]->set_instance_color(visible_slot, body_overlay);
+			render_car_multimeshes[archetype]->set_instance_custom_data(visible_slot, godot::Color(0, 0, 0, 1));
 			}
 			if (archetype < static_cast<int>(render_outline_multimeshes.size()) &&
 					archetype < static_cast<int>(render_outline_local_transforms.size()) &&
 					render_outline_multimeshes[archetype].is_valid()) {
 				const SimTransform outline_transform = visual_transform * render_outline_local_transforms[archetype];
 				const float boost_outline = std::max(0.0f, std::min(1.0f, soa.boost_frames[lane] * 0.005f));
-				render_outline_multimeshes[archetype]->set_instance_transform(slot, gd_transform(outline_transform));
-				render_outline_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
-				render_outline_multimeshes[archetype]->set_instance_color(slot, godot::Color(0.5f * boost_outline, 0.7f * boost_outline, 1.0f * boost_outline, 1.0f));
+				render_outline_multimeshes[archetype]->set_instance_transform(visible_slot, gd_transform(outline_transform));
+				render_outline_multimeshes[archetype]->set_instance_custom_data(visible_slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
+				render_outline_multimeshes[archetype]->set_instance_color(visible_slot, godot::Color(0.5f * boost_outline, 0.7f * boost_outline, 1.0f * boost_outline, 1.0f));
 			}
 		if (archetype < static_cast<int>(render_outline_main_multimeshes.size()) &&
 				archetype < static_cast<int>(render_outline_main_local_transforms.size()) &&
 				render_outline_main_multimeshes[archetype].is_valid()) {
 			const SimTransform outline_transform = visual_transform * render_outline_main_local_transforms[archetype];
-			render_outline_main_multimeshes[archetype]->set_instance_transform(slot, gd_transform(outline_transform));
-			render_outline_main_multimeshes[archetype]->set_instance_custom_data(slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
-			render_outline_main_multimeshes[archetype]->set_instance_color(slot, godot::Color(0, 0, 0, 1));
+			render_outline_main_multimeshes[archetype]->set_instance_transform(visible_slot, gd_transform(outline_transform));
+			render_outline_main_multimeshes[archetype]->set_instance_custom_data(visible_slot, godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
+			render_outline_main_multimeshes[archetype]->set_instance_color(visible_slot, godot::Color(0, 0, 0, 1));
 		}
 		if (archetype < static_cast<int>(render_shadow_multimeshes.size()) &&
 				archetype < static_cast<int>(render_shadow_local_transforms.size()) &&
@@ -3923,21 +4024,28 @@ void GameSim::apply_render_multimeshes(float alpha)
 				shadow_transform.basis.c1 = shadow_transform.basis.c1.slide(shadow_normal);
 				shadow_transform.basis.c2 = shadow_transform.basis.c2.slide(shadow_normal);
 			}
-			render_shadow_multimeshes[archetype]->set_instance_transform(slot, gd_transform(shadow_transform));
+			render_shadow_multimeshes[archetype]->set_instance_transform(visible_slot, gd_transform(shadow_transform));
 		}
-		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
-				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
-				render_thruster_multimeshes[archetype].is_valid()) {
-			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
-			const int thruster_count = static_cast<int>(thruster_locals.size());
-			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
-			for (int t = 0; t < thruster_count; ++t) {
-				const int thruster_slot = slot * thruster_count + t;
-				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
-				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
-				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
-				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.0012f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
-			}
+	}
+	for (int archetype = 0; archetype < static_cast<int>(render_car_multimeshes.size()); ++archetype) {
+		const int visible_count = archetype < static_cast<int>(render_visible_counts.size()) ? render_visible_counts[archetype] : 0;
+		render_last_body_instances += visible_count;
+		if (render_car_multimeshes[archetype].is_valid()) {
+			render_car_multimeshes[archetype]->set_visible_instance_count(visible_count);
+		}
+		if (archetype < static_cast<int>(render_outline_multimeshes.size()) && render_outline_multimeshes[archetype].is_valid()) {
+			render_outline_multimeshes[archetype]->set_visible_instance_count(visible_count);
+		}
+		if (archetype < static_cast<int>(render_outline_main_multimeshes.size()) && render_outline_main_multimeshes[archetype].is_valid()) {
+			render_outline_main_multimeshes[archetype]->set_visible_instance_count(visible_count);
+		}
+		if (archetype < static_cast<int>(render_shadow_multimeshes.size()) && render_shadow_multimeshes[archetype].is_valid()) {
+			render_shadow_multimeshes[archetype]->set_visible_instance_count(visible_count);
+		}
+		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) && render_thruster_multimeshes[archetype].is_valid()) {
+			const int thruster_instances = render_thruster_multimeshes[archetype]->get_instance_count();
+			render_last_thruster_instances += thruster_instances;
+			render_thruster_multimeshes[archetype]->set_visible_instance_count(thruster_instances);
 		}
 	}
 }
@@ -4283,6 +4391,8 @@ void GameSim::render_gamesim_visuals_only(double process_delta)
 	if (render_profile_enabled) {
 		const uint64_t now = render_profile_now_us();
 		render_profile_visuals_only_multimesh_us += now - profile_step;
+		render_profile_visuals_only_body_instances += static_cast<uint64_t>(std::max(render_last_body_instances, 0));
+		render_profile_visuals_only_thruster_instances += static_cast<uint64_t>(std::max(render_last_thruster_instances, 0));
 		profile_step = now;
 	}
 	update_native_gameplay_camera(false);
@@ -4630,6 +4740,8 @@ void GameSim::update_super_spark_visuals()
 		if (render_profile_enabled) {
 			const uint64_t now = render_profile_now_us();
 			render_profile_multimesh_us += now - profile_step;
+			render_profile_body_instances += static_cast<uint64_t>(std::max(render_last_body_instances, 0));
+			render_profile_thruster_instances += static_cast<uint64_t>(std::max(render_last_thruster_instances, 0));
 			profile_step = now;
 		}
 		update_native_gameplay_camera(true);
