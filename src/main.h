@@ -138,7 +138,7 @@ namespace godot {
 		godot::PackedByteArray serialize_network_state(int target_tick) const;
 		bool deserialize_network_state(int target_tick, const godot::PackedByteArray& data);
 		void rebuild_static_state_after_network_load();
-		static constexpr int VEHICLE_WORKER_COUNT = 4;
+		static constexpr int VEHICLE_WORKER_COUNT = 5;
 		struct VehicleLaneGroup {
 			int count = 1;
 			int waiting = 0;

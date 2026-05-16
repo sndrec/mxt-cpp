@@ -241,7 +241,7 @@ public:
                if (!cars || num_cars <= 0) {
                        return;
                }
-               constexpr int kVehicleShardCount = 4;
+               constexpr int kVehicleShardCount = 5;
                const int total_lane_count = (num_cars + 3) & ~3;
                PhysicsCarSoA* shards = cars[0].soa;
                if (!shards) {
@@ -288,7 +288,7 @@ public:
 
        PhysicsCar* create_and_allocate_cars(int num_cars, PhysicsCarProperties** out_properties)
        {
-               constexpr int kVehicleShardCount = 4;
+               constexpr int kVehicleShardCount = 5;
                const int total_lane_count = (num_cars + 3) & ~3;
                PhysicsCarSoA* shards = allocate_array<PhysicsCarSoA>(kVehicleShardCount);
                const int shard_lane_base = ((total_lane_count / kVehicleShardCount) + 3) & ~3;
