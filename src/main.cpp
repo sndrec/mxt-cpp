@@ -366,7 +366,7 @@ static void build_track_mesh_floor_bvh(RaceTrack *track, HeapHandler &level_data
 	prims.reserve(track->num_mesh_collision_triangles);
 	for (int tri_index = 0; tri_index < track->num_mesh_collision_triangles; ++tri_index) {
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-		if ((tri.terrain & TERRAIN::RAIL) != 0) {
+		if (!terrain_mesh_has_floor_response(tri.terrain)) {
 			continue;
 		}
 		MeshBVHBuildPrim prim;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace EMBED_TYPE_TO_TERRAIN {
 	enum FLAGS {
 		RECHARGE = 0x0,
@@ -21,8 +23,20 @@ namespace TERRAIN {
 		ICE = 0x40,
 		BACKSIDE = 0x80,
 		RAIL = 0x100,
-		HOLE = 0x200
+		HOLE = 0x200,
+		FALL = 0x400,
+		KILL = 0x800
 	};
+}
+
+static inline bool terrain_mesh_blocks_like_rail(uint32_t terrain)
+{
+	return (terrain & (TERRAIN::RAIL | TERRAIN::KILL)) != 0u;
+}
+
+static inline bool terrain_mesh_has_floor_response(uint32_t terrain)
+{
+	return (terrain & (TERRAIN::RAIL | TERRAIN::FALL | TERRAIN::KILL)) == 0u;
 }
 
 namespace TILTSTATE {

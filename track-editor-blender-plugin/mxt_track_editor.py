@@ -125,6 +125,8 @@ MESH_COLLISION_SURFACE_ITEMS = [
     ('ICE', "Ice", "Ice terrain mesh surface"),
     ('LAVA', "Lava", "Lava terrain mesh surface"),
     ('HOLE', "Hole", "Hole terrain mesh surface"),
+    ('FALL', "Fall", "Fallout trigger mesh surface with no collision response"),
+    ('KILL', "Kill", "Fatal rail-like mesh collision surface"),
     ('DASH', "Dash", "Dash terrain mesh surface"),
     ('JUMP', "Jump", "Jump terrain mesh surface"),
 ]
@@ -4661,6 +4663,8 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
         'ICE': 0x40,
         'LAVA': 0x20,
         'HOLE': 0x200,
+        'FALL': 0x400,
+        'KILL': 0x800,
         'DASH': 0x2,
         'JUMP': 0x10,
     }

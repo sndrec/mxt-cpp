@@ -3537,12 +3537,17 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							const uint8_t mesh_cast_mask =
 								(mesh_floor_depenetration_enabled ? CAST_FLAGS::WANTS_TRACK : 0) |
 								CAST_FLAGS::WANTS_RAIL |
+								CAST_FLAGS::WANTS_TERRAIN |
 								CAST_FLAGS::WANTS_BACKFACE |
 								CAST_FLAGS::SAMPLE_FROM_P1;
 							const bool use_mesh_cast_candidates = track->collect_mesh_cast_candidates(mesh_cast_bounds, mesh_cast_mask, scratch);
 							const SimVec3 mesh_side_reference_point = LOAD_VEC3(position_old);
+							bool mesh_fallout_hit = false;
 							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1) {
 								CollisionData hit;
+								if (mesh_fallout_hit) {
+									return;
+								}
 								if (use_mesh_cast_candidates && mesh_cast_bounds.has_point(p0) && mesh_cast_bounds.has_point(p1)) {
 									track->cast_vs_mesh_candidates_fast(
 										hit,
@@ -3567,7 +3572,17 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 								if (!hit.collided) {
 									return;
 								}
-								const bool rail_hit = (hit.road_data.terrain & TERRAIN::RAIL) != 0;
+								if ((hit.road_data.terrain & TERRAIN::FALL) != 0) {
+									trigger_mesh_fallout();
+									mesh_fallout_hit = true;
+									depenetration = SimVec3();
+									return;
+								}
+								const bool kill_hit = (hit.road_data.terrain & TERRAIN::KILL) != 0;
+								if (kill_hit) {
+									trigger_mesh_kill_collision();
+								}
+								const bool rail_hit = terrain_mesh_blocks_like_rail(hit.road_data.terrain);
 								for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 									const SimVec3 p = wall_corner_world[wc_idx] + depenetration;
 									const float depth = (p - hit.collision_face_point).dot(hit.collision_face_normal);
@@ -3588,11 +3603,17 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 								}
 							};
 							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+								if (mesh_fallout_hit) {
+									break;
+								}
 								const SimVec3 p0 = LOAD_VEC3(position_old) + depenetration;
 								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
 								sweep_mesh_plane_and_depenetrate(p0, p1);
 							}
 							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
+								if (mesh_fallout_hit) {
+									break;
+								}
 								const SimVec3 p0 = wall_corner_old_world[wc_idx] + depenetration;
 								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
 								sweep_mesh_plane_and_depenetrate(p0, p1);
@@ -4458,6 +4479,33 @@ void PhysicsCar::start_restore_to_last_ground()
 	{ SimTransform mxt_tmp = LOAD_TRANSFORM(restore_start_transform); mxt_tmp.origin = LOAD_VEC3(position_current); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(restore_start_transform, mxt_tmp); }
 	STORE_TRANSFORM(restore_target_transform, calculate_respawn_transform(soa->last_ground_checkpoint[soa_index]));
 	clear_motion_for_restore(soa, soa_index);
+}
+
+void PhysicsCar::trigger_mesh_fallout()
+{
+	soa->machine_state[soa_index] |= MACHINESTATE::FALLOUT |
+		MACHINESTATE::AIRBORNE |
+		MACHINESTATE::DIEDTHISFRAMEOOB_Q;
+	soa->terrain_state[soa_index] |= TERRAIN::FALL;
+	start_restore_to_last_ground();
+}
+
+void PhysicsCar::trigger_mesh_kill_collision()
+{
+	soa->terrain_state[soa_index] |= TERRAIN::KILL;
+	soa->machine_state[soa_index] |= MACHINESTATE::TOOKDAMAGE;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) != 0) {
+		soa->energy[soa_index] = 0.0f;
+		return;
+	}
+
+	soa->damage_from_last_hit[soa_index] = 1.01f * soa->calced_max_energy[soa_index];
+	soa->energy[soa_index] = 0.0f;
+	soa->base_speed[soa_index] = 0.0f;
+	if ((soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0) {
+		soa->breakdown_frame_counter[soa_index] = 60;
+	}
+	soa->machine_state[soa_index] |= MACHINESTATE::ZEROHP;
 }
 
 void PhysicsCar::update_restore(float accel_input)
