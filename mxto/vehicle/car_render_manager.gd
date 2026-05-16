@@ -58,10 +58,12 @@ func get_native_render_bindings() -> Dictionary:
 	var outline_multimeshes: Array = []
 	var outline_main_multimeshes: Array = []
 	var shadow_multimeshes: Array = []
+	var thruster_multimeshes: Array = []
 	var local_transforms: Array = []
 	var outline_local_transforms: Array = []
 	var outline_main_local_transforms: Array = []
 	var shadow_local_transforms: Array = []
+	var thruster_local_transforms: Array = []
 	for archetype in archetypes:
 		var pass_data: Dictionary = archetype[PASS_MAIN]
 		multimeshes.append(pass_data["multimesh"])
@@ -75,15 +77,20 @@ func get_native_render_bindings() -> Dictionary:
 		var shadow_pass_data: Dictionary = archetype["shadow"]
 		shadow_multimeshes.append(shadow_pass_data["multimesh"])
 		shadow_local_transforms.append(shadow_pass_data["local_transform"])
+		var thruster_pass_data: Dictionary = archetype["thruster"]
+		thruster_multimeshes.append(thruster_pass_data["multimesh"])
+		thruster_local_transforms.append(thruster_pass_data["local_transforms"])
 	return {
 		"multimeshes": multimeshes,
 		"outline_multimeshes": outline_multimeshes,
 		"outline_main_multimeshes": outline_main_multimeshes,
 		"shadow_multimeshes": shadow_multimeshes,
+		"thruster_multimeshes": thruster_multimeshes,
 		"local_transforms": local_transforms,
 		"outline_local_transforms": outline_local_transforms,
 		"outline_main_local_transforms": outline_main_local_transforms,
 		"shadow_local_transforms": shadow_local_transforms,
+		"thruster_local_transforms": thruster_local_transforms,
 		"archetype_indices": car_archetype_indices,
 		"slots": car_slots,
 	}
@@ -127,6 +134,7 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 	var shadow_mesh: MeshInstance3D = template.get_node("VEHICLE_SHADOW")
 	var outline_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE")
 	var outline_main_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE_MAIN")
+	var thruster_data := _collect_thruster_data(template, root_transform)
 	var archetype := {
 		"indices": [],
 		"count": 0,
@@ -134,9 +142,27 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
 		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2),
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), shadow_mesh.mesh, shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
+		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), thruster_data["material"], thruster_data["local_transforms"]),
 	}
 	template.free()
 	return archetype
+
+func _collect_thruster_data(template: Node3D, root_transform: Transform3D) -> Dictionary:
+	var local_transforms: Array[Transform3D] = []
+	var material: Material = null
+	var thruster_root := template.get_node_or_null("THRUSTERS") as Node3D
+	if thruster_root == null:
+		return {"local_transforms": local_transforms, "material": material}
+	for child in thruster_root.get_children():
+		var thruster := child as Node3D
+		if thruster == null:
+			continue
+		local_transforms.append(root_transform * thruster_root.transform * thruster.transform)
+		if material == null:
+			var sprite := thruster.get_node_or_null("Sprite3D") as Sprite3D
+			if sprite != null:
+				material = sprite.material_override
+	return {"local_transforms": local_transforms, "material": material}
 
 func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_transform: Transform3D, layers: int, render_priority: int) -> Dictionary:
 	var node := MultiMeshInstance3D.new()
@@ -165,6 +191,31 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 		"multimesh": multimesh,
 	}
 
+func _create_thruster_pass(pass_name: String, material: Material, local_transforms: Array) -> Dictionary:
+	var node := MultiMeshInstance3D.new()
+	node.name = pass_name
+	node.layers = 2
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.ignore_occlusion_culling = true
+	node.extra_cull_margin = 1000000.0
+	var quad := QuadMesh.new()
+	quad.size = Vector2(1.0, 1.0)
+	if material != null:
+		quad.material = material.duplicate()
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.use_colors = true
+	multimesh.use_custom_data = true
+	multimesh.mesh = quad
+	multimesh.instance_count = 0
+	node.multimesh = multimesh
+	add_child(node)
+	return {
+		"local_transforms": local_transforms,
+		"node": node,
+		"multimesh": multimesh,
+	}
+
 func _resize_passes(archetype: Dictionary, count: int) -> void:
 	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow"]:
 		var pass_data: Dictionary = archetype[pass_name]
@@ -172,6 +223,13 @@ func _resize_passes(archetype: Dictionary, count: int) -> void:
 		if multimesh.instance_count != count:
 			multimesh.instance_count = count
 		multimesh.visible_instance_count = count
+	var thruster_pass: Dictionary = archetype["thruster"]
+	var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
+	var thruster_count: int = (thruster_pass["local_transforms"] as Array).size()
+	var total_thrusters := count * thruster_count
+	if thruster_multimesh.instance_count != total_thrusters:
+		thruster_multimesh.instance_count = total_thrusters
+	thruster_multimesh.visible_instance_count = total_thrusters
 
 func _set_pass_instance(pass_data: Dictionary, slot: int, transform: Transform3D, custom_vec: Vector3, color: Color) -> void:
 	var multimesh: MultiMesh = pass_data["multimesh"]

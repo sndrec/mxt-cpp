@@ -1,102 +1,37 @@
-[gd_scene load_steps=12 format=3 uid="uid://cn4wo1jqle0j3"]
+[gd_scene load_steps=4 format=3 uid="uid://cn4wo1jqle0j3"]
 
-[ext_resource type="Script" uid="uid://cishjumsew5h3" path="res://vehicle/particle/thruster.gd" id="1_brhvl"]
 [ext_resource type="Texture2D" uid="uid://25lwsbao0jyg" path="res://asset/beautifulstar.png" id="1_q4p32"]
-[ext_resource type="Material" uid="uid://cl5x8e7iljmdr" path="res://vehicle/particle/thruster_particle_pass_2.tres" id="2_73f3u"]
-
-[sub_resource type="Curve" id="Curve_brhvl"]
-_data = [Vector2(0, 0.708707), 0.0, 2.53412, 0, 0, Vector2(1, 0.34251), -1.35172, 0.0, 0, 0]
-point_count = 2
-
-[sub_resource type="CurveTexture" id="CurveTexture_ryscc"]
-curve = SubResource("Curve_brhvl")
-
-[sub_resource type="ParticleProcessMaterial" id="ParticleProcessMaterial_73f3u"]
-direction = Vector3(0, 0, 1)
-spread = 10.0
-initial_velocity_min = 10.0
-initial_velocity_max = 20.0
-gravity = Vector3(0, 0, 200)
-radial_accel_min = 300.0
-radial_accel_max = 300.0
-tangential_accel_min = -2.23517e-06
-tangential_accel_max = -2.23517e-06
-damping_min = 500.0
-damping_max = 500.0
-scale_min = 0.6
-scale_max = 0.8
-scale_curve = SubResource("CurveTexture_ryscc")
-color = Color(0.6, 0.9, 1.2, 1)
-
-[sub_resource type="Shader" id="Shader_j1jng"]
-code = "shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_front, unshaded;
-
-uniform vec4 albedo : source_color;
-
-void fragment() {
-	ALBEDO = albedo.rgb * COLOR.rgb;
-	DEPTH = FRAGCOORD.z * 1.3;
-}
-"
-
-[sub_resource type="ShaderMaterial" id="ShaderMaterial_hc4px"]
-render_priority = 0
-next_pass = ExtResource("2_73f3u")
-shader = SubResource("Shader_j1jng")
-shader_parameter/albedo = Color(1, 1, 1, 1)
-
-[sub_resource type="SphereMesh" id="SphereMesh_mlb58"]
-material = SubResource("ShaderMaterial_hc4px")
-radius = 0.25
-height = 0.5
-radial_segments = 16
-rings = 8
 
 [sub_resource type="Shader" id="Shader_q4p32"]
-code = "// NOTE: Shader automatically converted from Godot Engine 4.4.1.rc1's StandardMaterial3D.
-
-shader_type spatial;
+code = "shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_disabled, unshaded;
 
 uniform vec4 albedo : source_color;
 uniform sampler2D texture_albedo : source_color, filter_linear_mipmap, repeat_enable;
-
-uniform float distance_fade_min : hint_range(0.0, 4096.0, 0.01);
-uniform float distance_fade_max : hint_range(0.0, 4096.0, 0.01);
 uniform ivec2 albedo_texture_size;
 uniform float point_size : hint_range(0.1, 128.0, 0.1);
 
 void vertex() {
+	float thrust_scale = max(INSTANCE_CUSTOM.x, 0.0);
+	VERTEX.x *= (sin(TIME * 120.0 + INSTANCE_CUSTOM.y) * 0.1 + 1.2) * thrust_scale;
+	VERTEX.y *= (cos(TIME * 90.0 + INSTANCE_CUSTOM.y) * 0.02 + 0.75) * thrust_scale;
 
-	// Billboard Mode: Particles
-	VERTEX.x *= sin(TIME * 120.0) * 0.1 + 1.2;
-	VERTEX.y *= cos(TIME * 90.0) * 0.02 + 0.75;
 	mat4 mat_world = mat4(
 			normalize(INV_VIEW_MATRIX[0]),
 			normalize(INV_VIEW_MATRIX[1]),
 			normalize(INV_VIEW_MATRIX[2]),
 			MODEL_MATRIX[3]);
-	mat_world = mat_world * mat4(
-			vec4(cos(INSTANCE_CUSTOM.x), -sin(INSTANCE_CUSTOM.x), 0.0, 0.0),
-			vec4(sin(INSTANCE_CUSTOM.x), cos(INSTANCE_CUSTOM.x), 0.0, 0.0),
-			vec4(0.0, 0.0, 1.0, 0.0),
-			vec4(0.0, 0.0, 0.0, 1.0));
 	MODELVIEW_MATRIX = VIEW_MATRIX * mat_world;
-
 	MODELVIEW_NORMAL_MATRIX = mat3(MODELVIEW_MATRIX);
-	// Fixed Size: Enabled
+
 	if (PROJECTION_MATRIX[3][3] != 0.0) {
-		// Orthogonal matrix; try to do about the same with viewport size.
 		float h = abs(1.0 / (2.0 * PROJECTION_MATRIX[1][1]));
-		// Consistent with vertical FOV (Keep Height).
-		float sc = (h * 2.0);
-		MODELVIEW_MATRIX[0] *= sc;
-		MODELVIEW_MATRIX[1] *= sc;
-		MODELVIEW_MATRIX[2] *= sc;
+		MODELVIEW_MATRIX[0] *= h * 2.0;
+		MODELVIEW_MATRIX[1] *= h * 2.0;
+		MODELVIEW_MATRIX[2] *= h * 2.0;
 	} else {
-		// Scale by depth.
-		float sc = -(MODELVIEW_MATRIX)[3].z * (15.0 / pow(-MODELVIEW_MATRIX[3].z, 0.5)) * 0.2;
+		float depth = max(0.001, -MODELVIEW_MATRIX[3].z);
+		float sc = depth * (15.0 / pow(depth, 0.5)) * 0.2;
 		MODELVIEW_MATRIX[0] *= sc;
 		MODELVIEW_MATRIX[1] *= sc;
 		MODELVIEW_MATRIX[2] *= sc;
@@ -106,18 +41,14 @@ void vertex() {
 void fragment() {
 	vec4 albedo_tex = texture(texture_albedo, UV);
 	float albedo_float = albedo_tex.r + 0.49;
-	//albedo_float += smoothstep(0.0, 1.0, clamp(length(VERTEX) * 0.05, 0.0, 1.0)) * 0.49;
 	float outline = round(albedo_float);
 	float inline = round(albedo_float - 0.1);
 	ALPHA = outline;
-	ALBEDO = vec3(outline * 0.5 + inline);
-	ALBEDO *= vec3(0.3, 0.7, 1.0) * 0.75;
+	ALBEDO = vec3(outline * 0.5 + inline) * vec3(0.3, 0.7, 1.0) * 0.75;
 	DEPTH = FRAGCOORD.z * 1.1;
-	if (outline <= 0.0)
-	{
+	if (outline <= 0.0) {
 		discard;
 	}
-	//ALBEDO = round(ALBEDO);
 }
 "
 
@@ -126,27 +57,14 @@ render_priority = 0
 shader = SubResource("Shader_q4p32")
 shader_parameter/albedo = Color(1, 1, 1, 1)
 shader_parameter/texture_albedo = ExtResource("1_q4p32")
-shader_parameter/distance_fade_min = 25.0
-shader_parameter/distance_fade_max = 150.0
 shader_parameter/albedo_texture_size = Vector2i(256, 256)
 shader_parameter/point_size = 128.0
 
 [node name="Thruster" type="Node3D"]
 transform = Transform3D(0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0)
-script = ExtResource("1_brhvl")
-target_thrust = 1.0
-
-[node name="GPUParticles3D" type="GPUParticles3D" parent="."]
-layers = 2
-cast_shadow = 0
-amount = 32
-lifetime = 0.12
-fixed_fps = 60
-local_coords = true
-process_material = SubResource("ParticleProcessMaterial_73f3u")
-draw_pass_1 = SubResource("SphereMesh_mlb58")
 
 [node name="Sprite3D" type="Sprite3D" parent="."]
+visible = false
 layers = 2
 material_override = SubResource("ShaderMaterial_brhvl")
 extra_cull_margin = 100.0
@@ -155,16 +73,3 @@ billboard = 1
 fixed_size = true
 texture_filter = 5
 texture = ExtResource("1_q4p32")
-
-[node name="OmniLight3D" type="OmniLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0.852505)
-layers = 2
-light_color = Color(0.553758, 0.856327, 0.999059, 1)
-light_energy = 4.74651
-light_indirect_energy = 0.0
-light_volumetric_fog_energy = 0.0
-light_specular = 0.0
-light_bake_mode = 0
-light_cull_mask = 2
-omni_range = 64.0
-omni_attenuation = 1.74651

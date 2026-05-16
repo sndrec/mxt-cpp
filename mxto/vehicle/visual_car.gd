@@ -190,42 +190,12 @@ var car_material : ShaderMaterial
 var car_outline_material : ShaderMaterial
 var vehicle_main : MeshInstance3D
 var vehicle_shadow : MeshInstance3D
-var vehicle_thrusters : Node3D
-var vehicle_main_local_transform := Transform3D.IDENTITY
-var vehicle_shadow_local_transform := Transform3D.IDENTITY
 var _needs_process_reset := false
 
 func _ready() -> void:
-	var template: Node3D = car_definition.car_scene.instantiate()
-	var root_transform := template.transform
-	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
-	var shadow_mesh: MeshInstance3D = template.get_node("VEHICLE_SHADOW")
-	vehicle_main_local_transform = root_transform * main_mesh.transform
-	vehicle_shadow_local_transform = root_transform * shadow_mesh.transform
-	if false and local_visual_enabled:
-		vehicle_shadow = MeshInstance3D.new()
-		vehicle_shadow.name = "LocalVehicleShadow"
-		vehicle_shadow.mesh = shadow_mesh.mesh
-		vehicle_shadow.material_override = shadow_mesh.material_override.duplicate()
-		vehicle_shadow.material_override.render_priority = 96
-		vehicle_shadow.layers = 1
-		vehicle_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		vehicle_shadow.extra_cull_margin = 100000.0
-		vehicle_shadow.visible = true
-		add_child(vehicle_shadow)
-	var template_thrusters := template.get_node_or_null("THRUSTERS")
-	if template_thrusters != null:
-		vehicle_thrusters = template_thrusters.duplicate()
-		vehicle_thrusters.name = "VehicleThrustersProxy"
-		vehicle_thrusters.transform = root_transform * template_thrusters.transform
-	else:
-		vehicle_thrusters = Node3D.new()
-		vehicle_thrusters.name = "VehicleThrustersProxy"
-	template.free()
 	car_visual = Node3D.new()
 	car_visual.name = "CarVisualProxy"
 	car_transform.add_child(car_visual)
-	car_transform.add_child(vehicle_thrusters)
 	if local_visual_enabled:
 		car_camera.make_current()
 	_apply_effect_tier_state()
@@ -287,8 +257,6 @@ func _apply_low_cost_visual_state() -> void:
 		car_outline_material.set_shader_parameter("in_velocity", Vector3.ZERO)
 	if car_material and is_instance_valid(car_material):
 		car_material.set_shader_parameter("in_overlay_colour", Color.BLACK)
-	for node: VehicleThruster in vehicle_thrusters.get_children():
-		node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
 
 func _apply_effect_tier_state() -> void:
 	var full_effects_enabled := effect_tier == EffectTier.FULL
@@ -302,8 +270,6 @@ func _apply_effect_tier_state() -> void:
 	boost_electricity.visible = full_effects_enabled
 	if is_instance_valid(name_label):
 		name_label.visible = !local_visual_enabled
-	for node: VehicleThruster in vehicle_thrusters.get_children():
-		node.set_visual_mode(full_effects_enabled, use_frame_processing)
 	if !local_visual_enabled:
 		for player in [terrain_sound, thrust_sound, engine_sound, boost_sound, air_sound, strafe_sound, landing_sound]:
 			player.stop()
@@ -750,8 +716,6 @@ func _process(delta: float) -> void:
 	#car_camera.global_basis = car_camera.global_basis.slerp(car_transform.global_basis, 0.25)
 	#car_camera.fov = 90
 	
-	for node:VehicleThruster in vehicle_thrusters.get_children():
-		node.adjust_thruster((input_accel + sqrt(boost_turbo) * 0.1) * input_accel, velocity)
 	if effect_tier == EffectTier.FULL and (boost_frames > 0 or boost_frames_manual > 0) and (machine_state & FZ_MS.AIRBORNE) == 0:
 		boost_electricity.boosting = true
 		if is_instance_valid(vehicle_shadow):

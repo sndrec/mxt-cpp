@@ -3,6 +3,7 @@
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/input.hpp"
 #include "godot_cpp/classes/viewport.hpp"
+#include "godot_cpp/classes/world3d.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "godot_cpp/variant/string_name.hpp"
 #include "godot_cpp/core/math.hpp"
@@ -3292,10 +3293,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_outline_multimeshes.clear();
 		render_outline_main_multimeshes.clear();
 		render_shadow_multimeshes.clear();
+		render_thruster_multimeshes.clear();
+		render_thruster_current_thrust.clear();
 		render_car_local_transforms.clear();
 		render_outline_local_transforms.clear();
 		render_outline_main_local_transforms.clear();
 		render_shadow_local_transforms.clear();
+		render_thruster_local_transforms.clear();
 		render_car_archetype_indices.clear();
 		render_car_slots.clear();
 		render_visual_prev_transforms.clear();
@@ -3312,6 +3316,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_vehicle_visual_state.clear();
 		render_vehicle_effect_refs.clear();
 		render_effect_full_flags.clear();
+		clear_render_thruster_lights();
 		native_cpu_drivers.clear();
 		race_events.clear();
 		cpu_driver_manager = nullptr;
@@ -3324,10 +3329,13 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_outline_multimeshes.clear();
 	render_outline_main_multimeshes.clear();
 	render_shadow_multimeshes.clear();
+	render_thruster_multimeshes.clear();
+	render_thruster_current_thrust.clear();
 	render_car_local_transforms.clear();
 	render_outline_local_transforms.clear();
 	render_outline_main_local_transforms.clear();
 	render_shadow_local_transforms.clear();
+	render_thruster_local_transforms.clear();
 	render_car_archetype_indices.clear();
 	render_car_slots.clear();
 	render_visual_prev_transforms.clear();
@@ -3344,6 +3352,7 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_vehicle_visual_state.clear();
 	render_vehicle_effect_refs.clear();
 	render_effect_full_flags.clear();
+	clear_render_thruster_lights();
 	if (!car_render_manager) {
 		return;
 	}
@@ -3357,10 +3366,12 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	godot::Array outline_multimeshes = bindings.get("outline_multimeshes", godot::Array());
 	godot::Array outline_main_multimeshes = bindings.get("outline_main_multimeshes", godot::Array());
 	godot::Array shadow_multimeshes = bindings.get("shadow_multimeshes", godot::Array());
+	godot::Array thruster_multimeshes = bindings.get("thruster_multimeshes", godot::Array());
 	godot::Array local_transforms = bindings.get("local_transforms", godot::Array());
 	godot::Array outline_local_transforms = bindings.get("outline_local_transforms", godot::Array());
 	godot::Array outline_main_local_transforms = bindings.get("outline_main_local_transforms", godot::Array());
 	godot::Array shadow_local_transforms = bindings.get("shadow_local_transforms", godot::Array());
+	godot::Array thruster_local_transforms = bindings.get("thruster_local_transforms", godot::Array());
 	godot::PackedInt32Array archetype_indices = bindings.get("archetype_indices", godot::PackedInt32Array());
 	godot::PackedInt32Array slots = bindings.get("slots", godot::PackedInt32Array());
 
@@ -3368,10 +3379,12 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_outline_multimeshes.reserve(multimeshes.size());
 	render_outline_main_multimeshes.reserve(multimeshes.size());
 	render_shadow_multimeshes.reserve(shadow_multimeshes.size());
+	render_thruster_multimeshes.reserve(thruster_multimeshes.size());
 	render_car_local_transforms.reserve(local_transforms.size());
 	render_outline_local_transforms.reserve(local_transforms.size());
 	render_outline_main_local_transforms.reserve(local_transforms.size());
 	render_shadow_local_transforms.reserve(shadow_local_transforms.size());
+	render_thruster_local_transforms.reserve(thruster_local_transforms.size());
 	for (int i = 0; i < multimeshes.size(); ++i) {
 		godot::Ref<godot::MultiMesh> multimesh = multimeshes[i];
 		render_car_multimeshes.push_back(multimesh);
@@ -3390,6 +3403,11 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 			shadow_multimesh = shadow_multimeshes[i];
 		}
 		render_shadow_multimeshes.push_back(shadow_multimesh);
+		godot::Ref<godot::MultiMesh> thruster_multimesh;
+		if (i < thruster_multimeshes.size()) {
+			thruster_multimesh = thruster_multimeshes[i];
+		}
+		render_thruster_multimeshes.push_back(thruster_multimesh);
 		if (i < local_transforms.size() && local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
 			render_car_local_transforms.push_back(sim_transform(local_transforms[i]));
 		} else {
@@ -3410,6 +3428,17 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 		} else {
 			render_shadow_local_transforms.push_back(SimTransform());
 		}
+		std::vector<SimTransform> local_thrusters;
+		if (i < thruster_local_transforms.size() && thruster_local_transforms[i].get_type() == godot::Variant::ARRAY) {
+			godot::Array transforms = thruster_local_transforms[i];
+			local_thrusters.reserve(transforms.size());
+			for (int t = 0; t < transforms.size(); ++t) {
+				if (transforms[t].get_type() == godot::Variant::TRANSFORM3D) {
+					local_thrusters.push_back(sim_transform(transforms[t]));
+				}
+			}
+		}
+		render_thruster_local_transforms.push_back(std::move(local_thrusters));
 	}
 
 	render_car_archetype_indices.resize(archetype_indices.size());
@@ -3421,6 +3450,80 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 		render_car_slots[i] = slots[i];
 	}
 	cache_native_visual_effect_nodes();
+}
+
+void GameSim::clear_render_thruster_lights()
+{
+	RenderingServer* rs = RenderingServer::get_singleton();
+	if (rs) {
+		for (RenderThrusterLightRID& light : render_thruster_lights) {
+			if (light.instance.is_valid()) {
+				rs->free_rid(light.instance);
+			}
+			if (light.light.is_valid()) {
+				rs->free_rid(light.light);
+			}
+		}
+	}
+	render_thruster_lights.clear();
+	render_thruster_light_scenario = RID();
+	render_thruster_light_visible_count = 0;
+}
+
+void GameSim::ensure_render_thruster_light_capacity(int capacity)
+{
+	if (capacity <= static_cast<int>(render_thruster_lights.size())) {
+		return;
+	}
+	RenderingServer* rs = RenderingServer::get_singleton();
+	if (!rs || !car_node_container) {
+		return;
+	}
+	Ref<World3D> world = car_node_container->get_world_3d();
+	if (world.is_null()) {
+		return;
+	}
+	const RID scenario = world->get_scenario();
+	if (!scenario.is_valid()) {
+		return;
+	}
+	if (render_thruster_light_scenario.is_valid() && render_thruster_light_scenario != scenario) {
+		clear_render_thruster_lights();
+	}
+	render_thruster_light_scenario = scenario;
+	render_thruster_lights.reserve(capacity);
+	while (static_cast<int>(render_thruster_lights.size()) < capacity) {
+		RenderThrusterLightRID item;
+		item.light = rs->omni_light_create();
+		rs->light_set_color(item.light, Color(0.3f, 0.7f, 1.0f, 1.0f));
+		rs->light_set_param(item.light, RenderingServer::LIGHT_PARAM_RANGE, 64.0);
+		rs->light_set_param(item.light, RenderingServer::LIGHT_PARAM_ENERGY, 0.0);
+		rs->light_set_param(item.light, RenderingServer::LIGHT_PARAM_ATTENUATION, 1.0);
+		rs->light_set_shadow(item.light, false);
+		rs->light_set_cull_mask(item.light, 2);
+		item.instance = rs->instance_create2(item.light, render_thruster_light_scenario);
+		rs->instance_set_layer_mask(item.instance, 2);
+		rs->instance_set_visible(item.instance, false);
+		render_thruster_lights.push_back(item);
+	}
+}
+
+void GameSim::hide_unused_render_thruster_lights(int used_count)
+{
+	RenderingServer* rs = RenderingServer::get_singleton();
+	if (!rs) {
+		return;
+	}
+	if (used_count < 0) {
+		used_count = 0;
+	}
+	if (used_count > static_cast<int>(render_thruster_lights.size())) {
+		used_count = static_cast<int>(render_thruster_lights.size());
+	}
+	for (int i = used_count; i < render_thruster_light_visible_count && i < static_cast<int>(render_thruster_lights.size()); ++i) {
+		rs->instance_set_visible(render_thruster_lights[i].instance, false);
+	}
+	render_thruster_light_visible_count = used_count;
 }
 
 void GameSim::cache_native_visual_effect_nodes()
@@ -3449,33 +3552,7 @@ void GameSim::cache_native_visual_effect_nodes()
 			refs.damage_electricity = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("DamageElectricity")));
 			if (refs.damage_electricity) {
 				refs.damage_smoke = Object::cast_to<GPUParticles3D>(refs.damage_electricity->get_node_or_null(NodePath("DamageSmoke")));
-				refs.damage_electricity_material = refs.damage_electricity->get_process_material().ptr();
-			}
-			Node* thruster_root = refs.car_transform->get_node_or_null(NodePath("VehicleThrustersProxy"));
-			if (thruster_root) {
-				TypedArray<Node> thruster_nodes = thruster_root->get_children();
-				refs.thrusters.reserve(thruster_nodes.size());
-				for (int t = 0; t < thruster_nodes.size(); ++t) {
-					Node3D* thruster_node = Object::cast_to<Node3D>(thruster_nodes[t]);
-					if (!thruster_node) {
-						continue;
-					}
-					thruster_node->set_process(false);
-					thruster_node->set_physics_process(false);
-					RenderThrusterVisualRefs thruster;
-					thruster.root = thruster_node;
-					thruster.particles = Object::cast_to<GPUParticles3D>(thruster_node->get_node_or_null(NodePath("GPUParticles3D")));
-					thruster.sprite = Object::cast_to<Sprite3D>(thruster_node->get_node_or_null(NodePath("Sprite3D")));
-					thruster.light = Object::cast_to<Light3D>(thruster_node->get_node_or_null(NodePath("OmniLight3D")));
-					if (thruster.particles) {
-						thruster.particles->set_emitting(false);
-						thruster.particles->set_amount_ratio(0.0);
-					}
-					if (thruster.light) {
-						thruster.light->set_visible(false);
-					}
-					refs.thrusters.push_back(thruster);
-				}
+				refs.damage_electricity_material = refs.damage_electricity->get_process_material();
 			}
 		}
 		refs.boost_electricity = Object::cast_to<Object>(car_node->get_node_or_null(NodePath("BoostElectricity")));
@@ -3848,6 +3925,20 @@ void GameSim::apply_render_multimeshes(float alpha)
 			}
 			render_shadow_multimeshes[archetype]->set_instance_transform(slot, gd_transform(shadow_transform));
 		}
+		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
+				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
+				render_thruster_multimeshes[archetype].is_valid()) {
+			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
+			const int thruster_count = static_cast<int>(thruster_locals.size());
+			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
+			for (int t = 0; t < thruster_count; ++t) {
+				const int thruster_slot = slot * thruster_count + t;
+				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
+				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
+				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
+				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.0012f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
+			}
+		}
 	}
 }
 
@@ -3857,6 +3948,9 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		return;
 	}
 	const int count = std::min(visual_count, static_cast<int>(render_vehicle_effect_refs.size()));
+	if (static_cast<int>(render_thruster_current_thrust.size()) < count) {
+		render_thruster_current_thrust.resize(count, 0.0f);
+	}
 	int local_car_index = -1;
 	for (int i = 0; i < num_cars; ++i) {
 		if (car_player_ids && car_player_ids[i] == gameplay_camera_player_id) {
@@ -3912,6 +4006,15 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		render_effect_full_flags[local_car_index] = 1;
 	}
 
+	int max_thrusters_per_car = 0;
+	for (const std::vector<SimTransform>& thrusters : render_thruster_local_transforms) {
+		max_thrusters_per_car = std::max(max_thrusters_per_car, static_cast<int>(thrusters.size()));
+	}
+	ensure_render_thruster_light_capacity((FULL_EFFECT_BUDGET + 1) * max_thrusters_per_car);
+	RenderingServer* rs = RenderingServer::get_singleton();
+	const float light_phase = std::sin(static_cast<float>(tick) * 2.0f) * 0.5f + 0.5f;
+	int thruster_light_slot = 0;
+
 	for (int i = 0; i < count; ++i) {
 		RenderVehicleEffectRefs& refs = render_vehicle_effect_refs[i];
 		PhysicsCarSoA& soa = *cars[i].soa;
@@ -3957,6 +4060,8 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		const float boost_ratio = boost_frames / boost_duration_frames;
 		const float low_energy_flash = (std::sin(static_cast<float>(tick) * 0.25f) * 0.5f + 0.5f) * low_energy_ratio;
 		refs.energy_overlay = godot::Color(0.8f * low_energy_flash, -0.2f * low_energy_flash, -0.2f * low_energy_flash, 1.0f);
+		const float thrust = std::max(0.0f, (soa.input_accel[lane] + std::sqrt(std::max(0.0f, soa.boost_turbo[lane])) * 0.1f) * soa.input_accel[lane]);
+		render_thruster_current_thrust[i] += (thrust - render_thruster_current_thrust[i]) * 0.4f;
 		if (!full) {
 			if (refs.full_effect_active) {
 				if (refs.car_transform) {
@@ -3979,15 +4084,6 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 				if (refs.damage_smoke) {
 					refs.damage_smoke->set_emitting(false);
 					refs.damage_smoke->set_amount_ratio(0.0);
-				}
-				for (RenderThrusterVisualRefs& thruster : refs.thrusters) {
-					if (thruster.particles) {
-						thruster.particles->set_emitting(false);
-						thruster.particles->set_amount_ratio(0.0);
-					}
-					if (thruster.light) {
-						thruster.light->set_visible(false);
-					}
 				}
 				if (refs.boost_electricity) {
 					refs.boost_electricity->set("boosting", false);
@@ -4026,7 +4122,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			refs.damage_electricity->set_visible(full);
 			refs.damage_electricity->set_emitting(active);
 			refs.damage_electricity->set_amount_ratio(active ? low_energy_ratio + std::max(boost_ratio - 0.5f, 0.0f) : 0.0f);
-			if (refs.damage_electricity_material) {
+			if (refs.damage_electricity_material.is_valid()) {
 				refs.damage_electricity_material->set(
 					StringName("color"),
 					godot::Color(
@@ -4041,24 +4137,22 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			refs.damage_smoke->set_emitting(smoke_active);
 			refs.damage_smoke->set_amount_ratio(smoke_active ? low_energy_ratio : 0.0f);
 		}
-
-		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);
-		const float thrust = std::max(0.0f, (soa.input_accel[lane] + std::sqrt(std::max(0.0f, soa.boost_turbo[lane])) * 0.1f) * soa.input_accel[lane]);
-		for (RenderThrusterVisualRefs& thruster : refs.thrusters) {
-			if (step_effects) {
-				thruster.current_thrust += (thrust - thruster.current_thrust) * 0.4f;
-			}
-			if (thruster.sprite) {
-				thruster.sprite->set_pixel_size(thruster.current_thrust * 0.0012);
-			}
-			if (thruster.particles) {
-				thruster.particles->set_emitting(full && thruster.current_thrust > 0.01f);
-				thruster.particles->set_amount_ratio(full ? std::min(1.0f, thruster.current_thrust) : 0.0f);
-			}
-			if (thruster.light) {
-				thruster.light->set_visible(full && thruster.current_thrust > 0.01f);
-				thruster.light->set_param(Light3D::PARAM_ENERGY, 5.0 * thruster.current_thrust);
-				thruster.light->set_param(Light3D::PARAM_ATTENUATION, 2.0 * thruster.current_thrust);
+		const int archetype = i < static_cast<int>(render_car_archetype_indices.size()) ? render_car_archetype_indices[i] : -1;
+		if (rs && archetype >= 0 && archetype < static_cast<int>(render_thruster_local_transforms.size())) {
+			const std::vector<SimTransform>& local_thrusters = render_thruster_local_transforms[archetype];
+			const float current_thrust = render_thruster_current_thrust[i];
+			for (int t = 0; t < static_cast<int>(local_thrusters.size()) && thruster_light_slot < static_cast<int>(render_thruster_lights.size()); ++t) {
+				RenderThrusterLightRID& light = render_thruster_lights[thruster_light_slot];
+				if (current_thrust > 0.01f) {
+					const SimTransform thruster_transform = visual_transform * local_thrusters[t];
+					rs->instance_set_transform(light.instance, gd_transform(thruster_transform));
+					rs->light_set_param(light.light, RenderingServer::LIGHT_PARAM_ENERGY, (4.0f + 2.0f * light_phase) * current_thrust);
+					rs->light_set_param(light.light, RenderingServer::LIGHT_PARAM_ATTENUATION, (1.0f + 2.0f * light_phase) * current_thrust);
+					rs->instance_set_visible(light.instance, true);
+				} else {
+					rs->instance_set_visible(light.instance, false);
+				}
+				++thruster_light_slot;
 			}
 		}
 
@@ -4093,8 +4187,8 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			refs.terrain_state_old = terrain_state;
 			refs.machine_state_old = machine_state;
 		}
-		(void)velocity;
 	}
+	hide_unused_render_thruster_lights(thruster_light_slot);
 }
 
 void GameSim::update_native_gameplay_camera(bool step_camera)

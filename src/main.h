@@ -7,9 +7,10 @@
 #include "godot_cpp/classes/multi_mesh.hpp"
 #include "godot_cpp/classes/camera3d.hpp"
 #include "godot_cpp/classes/gpu_particles3d.hpp"
-#include "godot_cpp/classes/light3d.hpp"
-#include "godot_cpp/classes/sprite3d.hpp"
+#include "godot_cpp/classes/material.hpp"
+#include "godot_cpp/classes/rendering_server.hpp"
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
+#include "godot_cpp/variant/rid.hpp"
 #include "godot_cpp/variant/array.hpp"
 #include "fzgx_gameplay_camera.h"
 #include "track/racetrack.h"
@@ -182,10 +183,13 @@ namespace godot {
 		std::vector<godot::Ref<godot::MultiMesh>> render_outline_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_outline_main_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_shadow_multimeshes;
+		std::vector<godot::Ref<godot::MultiMesh>> render_thruster_multimeshes;
 		std::vector<SimTransform> render_car_local_transforms;
 		std::vector<SimTransform> render_outline_local_transforms;
 		std::vector<SimTransform> render_outline_main_local_transforms;
 		std::vector<SimTransform> render_shadow_local_transforms;
+		std::vector<std::vector<SimTransform>> render_thruster_local_transforms;
+		std::vector<float> render_thruster_current_thrust;
 		std::vector<int> render_car_archetype_indices;
 		std::vector<int> render_car_slots;
 			std::vector<SimTransform> render_visual_prev_transforms;
@@ -207,13 +211,6 @@ namespace godot {
 				SimQuat visual_quat;
 			};
 			std::vector<RenderVehicleVisualState> render_vehicle_visual_state;
-			struct RenderThrusterVisualRefs {
-				godot::Node3D* root = nullptr;
-				godot::GPUParticles3D* particles = nullptr;
-				godot::Sprite3D* sprite = nullptr;
-				godot::Light3D* light = nullptr;
-				float current_thrust = 0.0f;
-			};
 			struct RenderVehicleEffectRefs {
 				godot::Node3D* car_transform = nullptr;
 				godot::GPUParticles3D* recharge_particles = nullptr;
@@ -221,9 +218,8 @@ namespace godot {
 				godot::GPUParticles3D* landing_particles = nullptr;
 				godot::GPUParticles3D* damage_electricity = nullptr;
 				godot::GPUParticles3D* damage_smoke = nullptr;
-				godot::Object* damage_electricity_material = nullptr;
+				godot::Ref<godot::Material> damage_electricity_material;
 				godot::Object* boost_electricity = nullptr;
-				std::vector<RenderThrusterVisualRefs> thrusters;
 				uint32_t terrain_state_old = 0;
 				uint32_t machine_state_old = 0;
 				uint8_t full_effect_active = 0;
@@ -232,8 +228,18 @@ namespace godot {
 			};
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
 			std::vector<uint8_t> render_effect_full_flags;
+			struct RenderThrusterLightRID {
+				godot::RID light;
+				godot::RID instance;
+			};
+			std::vector<RenderThrusterLightRID> render_thruster_lights;
+			godot::RID render_thruster_light_scenario;
+			int render_thruster_light_visible_count = 0;
 			void cache_native_visual_effect_nodes();
 			void update_native_visual_effects(int visual_count, float alpha, bool step_effects, float effect_delta, bool step_electricity);
+			void clear_render_thruster_lights();
+			void ensure_render_thruster_light_capacity(int capacity);
+			void hide_unused_render_thruster_lights(int used_count);
 			godot::Camera3D* gameplay_camera_node = nullptr;
 			bool render_profile_enabled = false;
 			uint64_t render_profile_frames = 0;
