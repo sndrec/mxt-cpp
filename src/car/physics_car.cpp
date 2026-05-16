@@ -36,6 +36,13 @@ static inline float landing_alignment_penalty_factor(uint32_t air_time)
 	return std::clamp(static_cast<float>(air_time) / full_penalty_frames, 0.0f, 1.0f);
 }
 
+static inline bool trace_mesh_floor_for_car(const PhysicsCarSoA *soa, int soa_index)
+{
+	return soa &&
+		DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_MESH_FLOOR) &&
+		(soa->global_start + soa_index) == 0;
+}
+
 static inline godot::Vector3 debug_gd_vec3(const SimVec3& v)
 {
 	return godot::Vector3(v.x, v.y, v.z);
@@ -1043,14 +1050,14 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
         bool rect = (floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN);
         pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
 	stay_on = floor_seg->analytic_collision_enabled && (pipe || cylinder || rect);
+	const bool trace_mesh_floor = trace_mesh_floor_for_car(soa, soa_index);
 
 	if (!stay_on)
 	{
 		bool sweep_hit_occurred = false;
 		bool nearest_mesh_sample = false;
 		bool local_mesh_sample = false;
-		CollisionData hit;
-		hit.collided = false;
+		CollisionData hit{};
 		hit.road_data.cp_idx = -1;
 		hit.mesh_triangle_index = -1;
 		const SimVec3 machine_up_ws = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f));
@@ -1074,7 +1081,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				&scratch);
 			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
 		} else {
-			CollisionData nearest_hit;
+			CollisionData nearest_hit{};
 			sample_mesh_floor_with_seed(
 				nearest_hit,
 				LOAD_VEC3(position_current),
@@ -1089,6 +1096,24 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				sweep_hit_occurred = true;
 				nearest_mesh_sample = true;
 				local_mesh_sample = true;
+			}
+		}
+		if (!sweep_hit_occurred && floor_seg->analytic_collision_enabled) {
+			CollisionData mesh_hit{};
+			sample_mesh_floor_with_seed(
+				mesh_hit,
+				LOAD_VEC3(position_current),
+				8.0f,
+				CAST_FLAGS::WANTS_TRACK,
+				soa->current_checkpoint[soa_index],
+				true,
+				scratch);
+			if (mesh_hit.collided) {
+				orient_mesh_floor_hit(mesh_hit);
+				hit = mesh_hit;
+				sweep_hit_occurred = true;
+				nearest_mesh_sample = true;
+				local_mesh_sample = false;
 			}
 		}
 		if (!sweep_hit_occurred && !floor_seg->analytic_collision_enabled) {
@@ -1133,6 +1158,25 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		}
 		if (nearest_mesh_sample && !local_mesh_sample && contact_dist_metric > 20.1f) {
 			sweep_hit_occurred = false;
+		}
+		if (trace_mesh_floor) {
+			const SimVec3 pos = LOAD_VEC3(position_current);
+			godot::UtilityFunctions::print(
+				godot::String("MXT_MESH_FLOOR_CENTER tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+				godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+				godot::String(" coll_cp="), static_cast<int64_t>(soa->current_collision_checkpoint[soa_index]),
+				godot::String(" analytic="), floor_seg->analytic_collision_enabled,
+				godot::String(" stay_on="), stay_on,
+				godot::String(" sweep="), sweep_hit_occurred,
+				godot::String(" nearest="), nearest_mesh_sample,
+				godot::String(" local="), local_mesh_sample,
+				godot::String(" hit="), hit.collided,
+				godot::String(" mesh_tri="), static_cast<int64_t>(hit.mesh_triangle_index),
+				godot::String(" contact="), contact_dist_metric,
+				godot::String(" terrain=0x"), godot::String::num_int64(hit.road_data.terrain, 16),
+				godot::String(" pos=("), pos.x, godot::String(","), pos.y, godot::String(","), pos.z, godot::String(")"),
+				godot::String(" n=("), hit.collision_normal.x, godot::String(","), hit.collision_normal.y, godot::String(","), hit.collision_normal.z, godot::String(")"),
+				godot::String(" road_t=("), hit.road_data.road_t.x, godot::String(","), hit.road_data.road_t.y, godot::String(")"));
 		}
 		if (sweep_hit_occurred && contact_dist_metric > 0.0f) {
 			STORE_VEC3(track_surface_normal, hit.collision_normal);
@@ -2669,7 +2713,22 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 	const float inv_weight = 1.0f / std::max(stat_weight, 0.0001f);
 	const float offset_add = std::max(0.0f, -((velocity_ws * inv_weight).dot(track_normal)));
 	RaceTrack* track = soa->current_track[soa_index];
-	const int use_cp = ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) ? soa->current_checkpoint[soa_index] : -1;
+	const bool machine_grounded = (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0;
+	const int collision_cp = soa->current_collision_checkpoint[soa_index];
+	const int current_cp = soa->current_checkpoint[soa_index];
+	const int analytic_cp =
+		machine_grounded &&
+		track &&
+		collision_cp >= 0 &&
+		collision_cp < track->num_checkpoints
+			? collision_cp
+			: -1;
+	const int mesh_query_cp =
+		track &&
+		current_cp >= 0 &&
+		current_cp < track->num_checkpoints
+			? current_cp
+			: analytic_cp;
 
 	SimVec3 p0_ray_start_ws[4];
 	SimVec3 p0_ws[4];
@@ -2677,6 +2736,8 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 	SimVec2 road_t[4];
 	SimVec3 spatial_t[4];
 	SimTransform surf[4];
+	int mesh_corner_tri[4] = {-1, -1, -1, -1};
+	bool corner_collided[4] = {false, false, false, false};
 	mxt_store_points4(
 		p0_ray_start_ws,
 		mxt_transform_points4(
@@ -2701,18 +2762,29 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 			sim_load4(soa->tilt_offset_x + point_base),
 			sim_load4(soa->tilt_offset_y + point_base) - SimFloat4(4.0f),
 			sim_load4(soa->tilt_offset_z + point_base)));
+	auto plane_ray_t = [](const SimVec3 &ray_start, const SimVec3 &ray_end, const SimTransform &surface) {
+		const SimVec3 ray_dir = ray_end - ray_start;
+		const SimVec3 plane_n = surface.basis[1];
+		const float denom = ray_dir.dot(plane_n);
+		if (std::abs(denom) <= 0.000001f) {
+			return FLT_MAX;
+		}
+		const float t = (surface.origin - ray_start).dot(plane_n) / denom;
+		return (t >= 0.0f && t <= 1.0f) ? t : FLT_MAX;
+	};
+	auto analytic_corner_in_domain = [](const SimVec2 &sample) {
+		return sample.x >= -1.0f && sample.x <= 1.0f && sample.y >= -0.001f && sample.y <= 1.001f;
+	};
 	const bool use_analytic_corner_sample =
 		track &&
-		use_cp >= 0 &&
-		use_cp < track->num_checkpoints &&
-		track->segments[track->checkpoints[use_cp].road_segment].analytic_collision_enabled;
+		analytic_cp >= 0 &&
+		track->segments[track->checkpoints[analytic_cp].road_segment].analytic_collision_enabled;
 	if (use_analytic_corner_sample) {
-		track->get_road_surface4_same_checkpoint(use_cp, p0_ws, road_t, spatial_t, surf);
-	} else {
+		track->get_road_surface4_same_checkpoint(analytic_cp, p0_ws, road_t, spatial_t, surf);
 		bool use_mesh_suspension_cast_candidates = false;
 		SimAABB mesh_suspension_cast_bounds;
 		CollisionData mesh_suspension_hits[4];
-		if (track && use_cp >= 0) {
+		if (mesh_query_cp >= 0 && track->num_mesh_collision_triangles > 0) {
 			mesh_suspension_cast_bounds.position = p0_ray_start_ws[0];
 			mesh_suspension_cast_bounds.size = SimVec3();
 			mesh_suspension_cast_bounds.expand_to(p1_ray_end_ws[0]);
@@ -2730,39 +2802,95 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 					p0_ray_start_ws,
 					p1_ray_end_ws,
 					CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
-					use_cp,
+					mesh_query_cp,
 					&scratch,
 					true,
 					false);
 			}
 		}
 		for (int lane = 0; lane < 4; ++lane) {
-			CollisionData hit;
+			CollisionData hit{};
+			hit.road_data.cp_idx = -1;
+			hit.mesh_triangle_index = -1;
 			if (use_mesh_suspension_cast_candidates) {
 				hit = mesh_suspension_hits[lane];
 			}
-			if (track && use_cp >= 0) {
+			if (!hit.collided) {
+				continue;
+			}
+			const float analytic_t = analytic_corner_in_domain(road_t[lane])
+				? plane_ray_t(p0_ray_start_ws[lane], p1_ray_end_ws[lane], surf[lane])
+				: FLT_MAX;
+			const float mesh_t = plane_ray_t(p0_ray_start_ws[lane], p1_ray_end_ws[lane], hit.road_data.closest_surface);
+			if (mesh_t <= analytic_t) {
+				if (hit.collision_normal.dot(mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
+					hit.collision_normal *= -1.0f;
+					hit.road_data.closest_surface.basis[1] *= -1.0f;
+					hit.road_data.closest_surface.basis[2] *= -1.0f;
+				}
+				corner_collided[lane] = true;
+				mesh_corner_tri[lane] = hit.mesh_triangle_index;
+				road_t[lane] = hit.road_data.road_t;
+				spatial_t[lane] = hit.road_data.spatial_t;
+				surf[lane] = hit.road_data.closest_surface;
+			}
+		}
+	} else {
+		bool use_mesh_suspension_cast_candidates = false;
+		SimAABB mesh_suspension_cast_bounds;
+		CollisionData mesh_suspension_hits[4];
+		if (track && mesh_query_cp >= 0) {
+			mesh_suspension_cast_bounds.position = p0_ray_start_ws[0];
+			mesh_suspension_cast_bounds.size = SimVec3();
+			mesh_suspension_cast_bounds.expand_to(p1_ray_end_ws[0]);
+			for (int lane = 1; lane < 4; ++lane) {
+				mesh_suspension_cast_bounds.expand_to(p0_ray_start_ws[lane]);
+				mesh_suspension_cast_bounds.expand_to(p1_ray_end_ws[lane]);
+			}
+			use_mesh_suspension_cast_candidates = track->collect_mesh_cast_candidates(
+				mesh_suspension_cast_bounds,
+				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+				scratch);
+			if (use_mesh_suspension_cast_candidates) {
+				track->cast_vs_mesh_candidates4_same_ray_fast(
+					mesh_suspension_hits,
+					p0_ray_start_ws,
+					p1_ray_end_ws,
+					CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+					mesh_query_cp,
+					&scratch,
+					true,
+					false);
+			}
+		}
+		for (int lane = 0; lane < 4; ++lane) {
+			CollisionData hit{};
+			hit.road_data.cp_idx = -1;
+			hit.mesh_triangle_index = -1;
+			if (use_mesh_suspension_cast_candidates) {
+				hit = mesh_suspension_hits[lane];
+			}
+			if (track && mesh_query_cp >= 0) {
 				if (!use_mesh_suspension_cast_candidates) {
-					track->cast_vs_track_fast(
+					track->cast_vs_mesh_fast(
 						hit,
 						p0_ray_start_ws[lane],
 						p1_ray_end_ws[lane],
 						CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
-						use_cp,
-						false,
+						mesh_query_cp,
 						&scratch,
 						true,
 						nullptr,
 						false);
 				}
 			}
-			if (!hit.collided && track && use_cp >= 0) {
+			if (!hit.collided && track && mesh_query_cp >= 0) {
 				track->sample_mesh_floor_fast(
 					hit,
 					p0_ws[lane],
 					8.0f,
 					CAST_FLAGS::WANTS_TRACK,
-					use_cp,
+					mesh_query_cp,
 					false,
 					&scratch,
 					-1,
@@ -2775,6 +2903,8 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 					hit.road_data.closest_surface.basis[1] *= -1.0f;
 					hit.road_data.closest_surface.basis[2] *= -1.0f;
 				}
+				corner_collided[lane] = true;
+				mesh_corner_tri[lane] = hit.mesh_triangle_index;
 				road_t[lane] = hit.road_data.road_t;
 				spatial_t[lane] = hit.road_data.spatial_t;
 				surf[lane] = hit.road_data.closest_surface;
@@ -2798,9 +2928,35 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 	}
 
 	if (valid_count > 0) {
-		return normal_sum.normalized();
+		const SimVec3 avg_normal = normal_sum.normalized();
+		if (trace_mesh_floor_for_car(soa, soa_index)) {
+			godot::UtilityFunctions::print(
+				godot::String("MXT_MESH_FLOOR_CORNERS tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+				godot::String(" analytic_cp="), static_cast<int64_t>(analytic_cp),
+				godot::String(" mesh_cp="), static_cast<int64_t>(mesh_query_cp),
+				godot::String(" analytic_corner="), use_analytic_corner_sample,
+				godot::String(" valid="), static_cast<int64_t>(valid_count),
+				godot::String(" avg_n=("), avg_normal.x, godot::String(","), avg_normal.y, godot::String(","), avg_normal.z, godot::String(")"),
+				godot::String(" c0=("), corner_collided[0], godot::String(","), static_cast<int64_t>(mesh_corner_tri[0]), godot::String(","), road_t[0].x, godot::String(","), road_t[0].y, godot::String(")"),
+				godot::String(" c1=("), corner_collided[1], godot::String(","), static_cast<int64_t>(mesh_corner_tri[1]), godot::String(","), road_t[1].x, godot::String(","), road_t[1].y, godot::String(")"),
+				godot::String(" c2=("), corner_collided[2], godot::String(","), static_cast<int64_t>(mesh_corner_tri[2]), godot::String(","), road_t[2].x, godot::String(","), road_t[2].y, godot::String(")"),
+				godot::String(" c3=("), corner_collided[3], godot::String(","), static_cast<int64_t>(mesh_corner_tri[3]), godot::String(","), road_t[3].x, godot::String(","), road_t[3].y, godot::String(")"));
+		}
+		return avg_normal;
 	}
 
+	if (trace_mesh_floor_for_car(soa, soa_index)) {
+		godot::UtilityFunctions::print(
+			godot::String("MXT_MESH_FLOOR_CORNERS tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" analytic_cp="), static_cast<int64_t>(analytic_cp),
+			godot::String(" mesh_cp="), static_cast<int64_t>(mesh_query_cp),
+			godot::String(" analytic_corner="), use_analytic_corner_sample,
+			godot::String(" valid=0"),
+			godot::String(" c0=("), corner_collided[0], godot::String(","), static_cast<int64_t>(mesh_corner_tri[0]), godot::String(","), road_t[0].x, godot::String(","), road_t[0].y, godot::String(")"),
+			godot::String(" c1=("), corner_collided[1], godot::String(","), static_cast<int64_t>(mesh_corner_tri[1]), godot::String(","), road_t[1].x, godot::String(","), road_t[1].y, godot::String(")"),
+			godot::String(" c2=("), corner_collided[2], godot::String(","), static_cast<int64_t>(mesh_corner_tri[2]), godot::String(","), road_t[2].x, godot::String(","), road_t[2].y, godot::String(")"),
+			godot::String(" c3=("), corner_collided[3], godot::String(","), static_cast<int64_t>(mesh_corner_tri[3]), godot::String(","), road_t[3].x, godot::String(","), road_t[3].y, godot::String(")"));
+	}
 	return SimVec3();
 };
 

@@ -116,6 +116,7 @@ var _last_race_settings: Array = []
 const DEBUG_REPLAY_VERSION := 1
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
+const DIP_TRACE_MESH_FLOOR := 0x1000
 
 var race_pause_root: Control
 var race_pause_title: Label
@@ -227,6 +228,9 @@ func _ready() -> void:
 	if debug_rail_trace_requested:
 		game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
 		server_game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
+	if args.has("--debug-mesh-floor-trace") or user_args.has("--debug-mesh-floor-trace"):
+		game_sim.set_dip_switch_enabled(DIP_TRACE_MESH_FLOOR, true)
+		server_game_sim.set_dip_switch_enabled(DIP_TRACE_MESH_FLOOR, true)
 	if debug_replay_autoload_path != "":
 		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
 	elif auto_track_editor_mode:
@@ -828,9 +832,16 @@ func _load_debug_replay_file(path: String) -> Dictionary:
 		return {}
 	return parsed
 
+func _debug_replay_load_failed(message: String) -> void:
+	print(message)
+	if headless_mode:
+		get_tree().quit()
+
 func _load_and_start_debug_replay(path: String) -> void:
 	var replay := _load_debug_replay_file(path)
 	if replay.is_empty():
+		if headless_mode:
+			get_tree().quit()
 		return
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
@@ -838,26 +849,26 @@ func _load_and_start_debug_replay(path: String) -> void:
 		_return_to_menu()
 	var track_index := _debug_replay_find_track_index(replay)
 	if track_index < 0 or track_index >= tracks.size():
-		print("MXT_DEBUG_REPLAY load failed: track not found for ", replay.get("track_name", ""))
+		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: track not found for %s" % replay.get("track_name", ""))
 		return
 	var settings = replay.get("settings", [])
 	if typeof(settings) != TYPE_ARRAY or settings.is_empty():
-		print("MXT_DEBUG_REPLAY load failed: replay has no racer settings.")
+		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: replay has no racer settings.")
 		return
 	var snapshot_tick := int(replay.get("snapshot_tick", -1))
 	var snapshot_state := Marshalls.base64_to_raw(String(replay.get("snapshot_state_b64", "")))
 	if snapshot_tick < 0 or snapshot_state.is_empty():
-		print("MXT_DEBUG_REPLAY load failed: missing native snapshot.")
+		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: missing native snapshot.")
 		return
 	debug_replay_playback_inputs.clear()
 	var inputs = replay.get("inputs_b64", [])
 	if typeof(inputs) != TYPE_ARRAY:
-		print("MXT_DEBUG_REPLAY load failed: inputs_b64 is not an array.")
+		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: inputs_b64 is not an array.")
 		return
 	for input_b64 in inputs:
 		debug_replay_playback_inputs.append(Marshalls.base64_to_raw(String(input_b64)))
 	if debug_replay_playback_inputs.is_empty():
-		print("MXT_DEBUG_REPLAY load failed: replay has no input frames.")
+		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: replay has no input frames.")
 		return
 
 	singleplayer_mode = true
@@ -876,8 +887,10 @@ func _load_and_start_debug_replay(path: String) -> void:
 			network_manager.player_settings[cpu_ids[i]] = settings[i + 1]
 
 	_start_race(track_index, settings)
-	game_sim.set_state_data(snapshot_tick, snapshot_state)
-	game_sim.load_state(snapshot_tick)
+	if !game_sim.load_state_data(snapshot_tick, snapshot_state):
+		_return_to_menu()
+		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: native snapshot could not be applied.")
+		return
 	_singleplayer_tick = snapshot_tick + 1
 	network_manager.clients_server_tick = _singleplayer_tick
 	debug_replay_playback_index = 0

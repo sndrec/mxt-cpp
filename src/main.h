@@ -321,6 +321,7 @@ namespace godot {
 		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);
 		void save_state();
 		void load_state(int target_tick);
+		bool load_state_data(int target_tick, godot::PackedByteArray data);
 		void finish_render_rollback_correction_capture();
 		godot::PackedByteArray get_state_data(int target_tick) const;
 		void set_state_data(int target_tick, godot::PackedByteArray data);

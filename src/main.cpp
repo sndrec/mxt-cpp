@@ -831,6 +831,7 @@ namespace {
 		{"DIP_DRAW_MESH_FLOOR_TESTS", "Draw Mesh Floor Tests", DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS},
 		{"DIP_DRAW_MESH_CAST_TESTS", "Draw Mesh Cast Tests", DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS},
 		{"DIP_DRAW_MESH_COLLISION_HITS", "Draw Mesh Collision Hits", DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS},
+		{"DIP_TRACE_MESH_FLOOR", "Trace Mesh Floor", DIP_SWITCH::DIP_TRACE_MESH_FLOOR},
 	};
 
 	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count)
@@ -1589,6 +1590,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_spawn_seed", "seed"), &GameSim::set_spawn_seed);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
+	ClassDB::bind_method(D_METHOD("load_state_data", "target_tick", "data"), &GameSim::load_state_data);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
 	ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
 	ClassDB::bind_method(D_METHOD("render_gamesim_visuals_only", "process_delta"), &GameSim::render_gamesim_visuals_only);
@@ -5637,6 +5639,24 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	MXT_NET_CAR_SCALAR_FIELDS(READ_NET_SCALAR)
 #undef READ_NET_SCALAR
 
+	if (current_track) {
+		for (int i = 0; i < num_cars; ++i) {
+			PhysicsCarSoA& soa = *cars[i].soa;
+			const int lane = cars[i].soa_index;
+			if (soa.current_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.current_collision_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.last_ground_checkpoint[lane] >= current_track->num_checkpoints) {
+				godot::UtilityFunctions::printerr(
+					godot::String("MXT network state rejected invalid checkpoint car="), static_cast<int64_t>(i),
+					godot::String(" cp="), static_cast<int64_t>(soa.current_checkpoint[lane]),
+					godot::String(" coll_cp="), static_cast<int64_t>(soa.current_collision_checkpoint[lane]),
+					godot::String(" last_ground_cp="), static_cast<int64_t>(soa.last_ground_checkpoint[lane]),
+					godot::String(" checkpoint_count="), static_cast<int64_t>(current_track->num_checkpoints));
+				return false;
+			}
+		}
+	}
+
 #define READ_NET_VEC3_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
@@ -5805,6 +5825,23 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	}
 
 	rebuild_static_state_after_network_load();
+	if (current_track) {
+		for (int i = 0; i < num_cars; ++i) {
+			PhysicsCarSoA& soa = *cars[i].soa;
+			const int lane = cars[i].soa_index;
+			if (soa.current_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.current_collision_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.last_ground_checkpoint[lane] >= current_track->num_checkpoints) {
+				godot::UtilityFunctions::printerr(
+					godot::String("MXT network state rejected invalid rebuilt checkpoint car="), static_cast<int64_t>(i),
+					godot::String(" cp="), static_cast<int64_t>(soa.current_checkpoint[lane]),
+					godot::String(" coll_cp="), static_cast<int64_t>(soa.current_collision_checkpoint[lane]),
+					godot::String(" last_ground_cp="), static_cast<int64_t>(soa.last_ground_checkpoint[lane]),
+					godot::String(" checkpoint_count="), static_cast<int64_t>(current_track->num_checkpoints));
+				return false;
+			}
+		}
+	}
 	const int index = target_tick % STATE_BUFFER_LEN;
 	const int size = gamestate_data.get_size();
 	if (state_buffer[index].data && size > 0) {
@@ -5815,7 +5852,6 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 }
 
 void GameSim::rebuild_static_state_after_network_load() {
-	fix_pointers();
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCar& car = cars[i];
 		PhysicsCarSoA& soa = *car.soa;
@@ -5948,6 +5984,24 @@ godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
 	return serialize_network_state(target_tick);
 }
 
+bool GameSim::load_state_data(int target_tick, godot::PackedByteArray data) {
+	if (data.size() >= static_cast<int>(sizeof(uint32_t))) {
+		uint32_t magic = 0;
+		std::memcpy(&magic, data.ptr(), sizeof(uint32_t));
+		if (magic == MXT_NET_STATE_MAGIC) {
+			if (!deserialize_network_state(target_tick, data)) {
+				godot::UtilityFunctions::printerr(godot::String("MXT load_state_data failed to deserialize network state"));
+				return false;
+			}
+			tick = target_tick + 1;
+			return true;
+		}
+	}
+	set_state_data(target_tick, data);
+	load_state(target_tick);
+	return true;
+}
+
 void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 	int index = target_tick % STATE_BUFFER_LEN;
 	if (!state_buffer[index].data)
@@ -5963,7 +6017,11 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 				}
 				std::memcpy(network_state_live_backup.data(), gamestate_data.heap_start, static_cast<size_t>(live_size));
 			}
-			deserialize_network_state(target_tick, data);
+			if (!deserialize_network_state(target_tick, data)) {
+				godot::UtilityFunctions::printerr(
+					godot::String("MXT set_state_data failed to deserialize network state tick="),
+					static_cast<int64_t>(target_tick));
+			}
 			if (live_size > 0 && static_cast<int>(network_state_live_backup.size()) >= live_size) {
 				std::memcpy(gamestate_data.heap_start, network_state_live_backup.data(), static_cast<size_t>(live_size));
 				gamestate_data.set_size(live_size);
