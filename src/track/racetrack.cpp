@@ -2124,8 +2124,10 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	}
 	auto scan_mesh_floor_candidates = [&]() {
 		if (seed_triangle_index >= 0) {
-			const int prev_best_tri_index = best_tri_index;
 			scan_triangle(seed_triangle_index);
+			if (best_tri_index == seed_triangle_index && best_dist2 <= 4.0f) {
+				return;
+			}
 		}
 
 		if (scan_floor_bvh_root(0)) {

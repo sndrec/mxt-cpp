@@ -3078,6 +3078,9 @@ void PhysicsCar::sample_old_corner_collision_surface(TrackQueryScratch &scratch)
 	if (use_cp_old == -1) {
 		return;
 	}
+	if (!soa->current_track[soa_index]->segments[soa->current_track[soa_index]->checkpoints[use_cp_old].road_segment].analytic_collision_enabled) {
+		return;
+	}
 
 	SimVec2 use_t;
 	SimVec3 use_spatial_t;
