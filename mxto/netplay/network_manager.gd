@@ -83,7 +83,7 @@ var peer_desired_ahead := {}
 var delayed_peer_ids := {}
 
 const CPU_ID_MIN := 1
-const CPU_ID_MAX := 999
+const CPU_ID_MAX := 5000
 var cpu_player_ids: Array = []
 var race_cpu_player_ids: Array = []
 var cpu_player_settings := {}

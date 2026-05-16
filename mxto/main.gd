@@ -261,7 +261,7 @@ func _parse_cpu_driver_count_arg(args: Array) -> int:
 		cpu_idx = args.find("--cpu-drivers")
 	if cpu_idx == -1 or cpu_idx + 1 >= args.size():
 		return -1
-	return int(clamp(float(args[cpu_idx + 1]), 0.0, 999.0))
+	return int(clamp(float(args[cpu_idx + 1]), 0.0, 5000.0))
 
 func _load_tracks() -> void:
 	tracks.clear()
