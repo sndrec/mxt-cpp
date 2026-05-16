@@ -1114,6 +1114,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		if (!floor_seg->analytic_collision_enabled) {
 			orient_mesh_floor_hit(hit);
 		}
+		soa->road_sample[soa_index].terrain = hit.road_data.terrain;
 		soa->road_sample[soa_index].road_t = hit.road_data.road_t;
 		soa->road_sample[soa_index].spatial_t = hit.road_data.spatial_t;
 		soa->road_sample[soa_index].closest_surface = hit.road_data.closest_surface;
@@ -2795,14 +2796,19 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 	uint32_t terrain_bits = 0;
 	RaceTrack* track = soa->current_track[soa_index];
 	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0 && track != nullptr) {
-		CollisionData hit;
-		track->cast_vs_track_fast(hit, LOAD_VEC3(position_current), LOAD_VEC3(position_current) + LOAD_VEC3(track_surface_normal) * -3,
-			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P1,
-			soa->current_checkpoint[soa_index],
-			false,
-			&scratch);
-		if (hit.collided) {
-			terrain_bits |= hit.road_data.terrain;
+		const TrackSegment &segment = track->segments[track->checkpoints[soa->current_checkpoint[soa_index]].road_segment];
+		if (segment.analytic_collision_enabled) {
+			CollisionData hit;
+			track->cast_vs_track_fast(hit, LOAD_VEC3(position_current), LOAD_VEC3(position_current) + LOAD_VEC3(track_surface_normal) * -3,
+				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P1,
+				soa->current_checkpoint[soa_index],
+				false,
+				&scratch);
+			if (hit.collided) {
+				terrain_bits |= hit.road_data.terrain;
+			}
+		} else {
+			terrain_bits |= soa->road_sample[soa_index].terrain;
 		}
 	} else {
 		terrain_bits = 0;
