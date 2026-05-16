@@ -48,6 +48,7 @@ var check_icons: Array[TextureRect] = []
 var sticker_menu_hide_msec := 0
 var sticker_menu_open := false
 var sticker_input_buffer_msec := 0
+const CHECK_ICON_POOL_SIZE := 6
 
 @onready var real_input := $InputViewer/RealInput
 @onready var clamped_input := $InputViewer/ClampedInput
@@ -185,7 +186,8 @@ func _make_old_emote_rect(node_name: String, offset_start: Vector2, offset_end: 
 
 func _ensure_check_icons(count: int) -> void:
 	check_control.visible = true
-	while check_icons.size() < count:
+	var target_count := mini(count, CHECK_ICON_POOL_SIZE)
+	while check_icons.size() < target_count:
 		var icon := TextureRect.new()
 		icon.texture = CHECK_INCOMING_TEXTURE
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -241,13 +243,13 @@ func _update_check_warnings(car: VisualCar) -> void:
 	if camera == null:
 		return
 	var candidates: Array = car.game_manager.game_sim.get_check_warning_candidates(car.owning_id)
-	_ensure_check_icons(candidates.size())
+	_ensure_check_icons(CHECK_ICON_POOL_SIZE)
 	var viewport_size := get_viewport_rect().size
 	var focus_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(car.owning_id)
 	for i in range(check_icons.size()):
 		var icon := check_icons[i]
-		icon.visible = i < candidates.size()
-		if i >= candidates.size():
+		icon.visible = i < candidates.size() and i < CHECK_ICON_POOL_SIZE
+		if i >= candidates.size() or i >= CHECK_ICON_POOL_SIZE:
 			continue
 		var candidate: Dictionary = candidates[i]
 		var alpha := float(candidate.get("alpha", 0.0))
@@ -327,6 +329,7 @@ func _ready() -> void:
 		_sboost_full_width = sboost_meter_bg.size.x
 	_set_place_badge(1)
 	_build_sticker_menu()
+	_ensure_check_icons(CHECK_ICON_POOL_SIZE)
 
 func _set_place_badge(place: int) -> void:
 	var digits := str(maxi(place, 1))

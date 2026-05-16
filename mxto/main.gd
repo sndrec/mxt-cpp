@@ -88,6 +88,7 @@ var launch_cpu_driver_count: int = -1
 var auto_singleplayer_mode: bool = false
 var auto_track_editor_mode: bool = false
 var auto_accelerate_mode: bool = false
+var auto_render_profile_mode: bool = false
 var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
@@ -118,6 +119,23 @@ var debug_rail_trace_requested := false
 var active_stickers := {}
 var race_notification_hide_msec := 0
 var race_medals: Array[Control] = []
+var render_profile_frames := 0
+var render_profile_physics_us := 0
+var render_profile_tick_us := 0
+var render_profile_render_us := 0
+var render_profile_nametag_us := 0
+var render_profile_local_visual_us := 0
+var render_profile_process_us := 0
+var render_profile_visuals_only_us := 0
+var nametag_pool: Array[Label] = []
+var nametag_pool_car_indices: Array[int] = []
+var nametag_pool_pending_indices: Array[int] = []
+var nametag_names: Array[String] = []
+var nametag_best_distances: Array[float] = []
+var nametag_best_indices: Array[int] = []
+
+const NAMETAG_VISIBLE_BUDGET := 30
+const NAMETAG_MAX_DISTANCE_SQ := 12000.0
 
 func _ready() -> void:
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
@@ -170,6 +188,8 @@ func _ready() -> void:
 		call_deferred("_auto_host")
 	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
 	auto_accelerate_mode = args.has("--auto-accelerate") or user_args.has("--auto-accelerate")
+	auto_render_profile_mode = args.has("--render-profile") or user_args.has("--render-profile")
+	game_sim.set_render_profile_enabled(auto_render_profile_mode)
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var quit_idx := args.find("--quit-after-frames")
 	var quit_args := args
@@ -927,11 +947,16 @@ func _start_race(track_index: int, settings: Array) -> void:
 	local_player_index = racer_ids.find(local_id)
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
 	var idx := 0
+	nametag_names.clear()
+	nametag_names.resize(car_node_container.get_child_count())
 	for car:VisualCar in car_node_container.get_children():
 		car.game_manager = self
 		if idx < racer_settings.size():
 			car.player_settings = racer_settings[idx]
-			car.name_label.text = " " + racer_settings[idx].username + " "
+			var nametag_text: String = " " + racer_settings[idx].username + " "
+			nametag_names[idx] = nametag_text
+			if is_instance_valid(car.name_label):
+				car.name_label.text = nametag_text
 		idx += 1
 	car_render_manager.configure(chosen_defs, car_node_container.get_children())
 	for p in players:
@@ -983,6 +1008,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		var local_car := car_node_container.get_child(local_player_index) as VisualCar
 		if local_car != null:
 			game_sim.set_gameplay_camera(local_car.car_camera, local_car.owning_id)
+	_configure_nametag_pool()
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
 		server_game_sim.spark_node_container = spark_node_container
@@ -1103,24 +1129,173 @@ func _window_accepts_input() -> bool:
 	var window := get_window()
 	return window == null or window.has_focus()
 
-func _update_nametags(active_camera: Camera3D, delta: float) -> void:
-	if active_camera == null:
-		return
+func _reset_nametag_pool() -> void:
+	for label in nametag_pool:
+		if is_instance_valid(label):
+			label.queue_free()
+	nametag_pool.clear()
+	nametag_pool_car_indices.clear()
+	nametag_pool_pending_indices.clear()
+	nametag_best_distances.clear()
+	nametag_best_indices.clear()
+
+func _configure_nametag_pool() -> void:
+	_reset_nametag_pool()
+	var template_label: Label = null
 	for car: VisualCar in car_node_container.get_children():
-		if car == null or car.local_visual_enabled or !is_instance_valid(car.name_label):
+		if car != null and !car.local_visual_enabled and is_instance_valid(car.name_label):
+			template_label = car.name_label
+			break
+	if template_label == null:
+		return
+	for slot in NAMETAG_VISIBLE_BUDGET:
+		var label := template_label.duplicate() as Label
+		label.name = "NametagPool%d" % slot
+		label.visible = false
+		label.modulate.a = 1.0
+		add_child(label)
+		nametag_pool.append(label)
+		nametag_pool_car_indices.append(-1)
+		nametag_pool_pending_indices.append(-1)
+		nametag_best_distances.append(INF)
+		nametag_best_indices.append(-1)
+	for car: VisualCar in car_node_container.get_children():
+		if car != null and is_instance_valid(car.name_label):
+			car.name_label.queue_free()
+
+func _nametag_best_contains(car_index: int) -> bool:
+	for slot in NAMETAG_VISIBLE_BUDGET:
+		if nametag_best_indices[slot] == car_index:
+			return true
+	return false
+
+func _nametag_pool_has_car(car_index: int) -> bool:
+	for slot in NAMETAG_VISIBLE_BUDGET:
+		if nametag_pool_car_indices[slot] == car_index or nametag_pool_pending_indices[slot] == car_index:
+			return true
+	return false
+
+func _nametag_assign(label: Label, slot: int, car_index: int) -> void:
+	label.text = nametag_names[car_index] if car_index < nametag_names.size() else ""
+	label.size = label.get_combined_minimum_size()
+	label.modulate.a = 0.0
+	label.visible = true
+	nametag_pool_car_indices[slot] = car_index
+	nametag_pool_pending_indices[slot] = -1
+
+func _update_nametags(active_camera: Camera3D, delta: float) -> void:
+	if active_camera == null or nametag_pool.is_empty():
+		return
+	var camera_position := active_camera.global_position
+	var camera_right := active_camera.global_basis.x
+	var camera_up := active_camera.global_basis.y
+	var child_count := car_node_container.get_child_count()
+	for slot in NAMETAG_VISIBLE_BUDGET:
+		nametag_best_distances[slot] = INF
+		nametag_best_indices[slot] = -1
+	for car_index in child_count:
+		var car := car_node_container.get_child(car_index) as VisualCar
+		if car == null or car.local_visual_enabled:
 			continue
-		var render_transform := game_sim.get_player_render_transform(car.owning_id)
-		var world_pos := render_transform.origin
-		var to_car := world_pos - active_camera.global_position
-		var hidden := active_camera.global_position.distance_squared_to(world_pos) > 12000.0
-		hidden = hidden or active_camera.global_basis.z.dot(to_car) > 0.0
-		var target_alpha := 0.0 if hidden else 1.0
-		car.name_label.visible = true
-		car.name_label.size = car.name_label.get_combined_minimum_size()
-		car.name_label.modulate.a = lerpf(car.name_label.modulate.a, target_alpha, delta * 20.0)
-		car.name_label.position = active_camera.unproject_position(
-			world_pos + active_camera.global_basis.x * 1.5 + active_camera.global_basis.y * 1.5
+		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
+		var world_pos: Vector3 = render_transform.origin
+		var distance_sq := camera_position.distance_squared_to(world_pos)
+		if distance_sq > NAMETAG_MAX_DISTANCE_SQ or !active_camera.is_position_in_frustum(world_pos):
+			continue
+		if distance_sq >= nametag_best_distances[NAMETAG_VISIBLE_BUDGET - 1]:
+			continue
+		var insert_at := NAMETAG_VISIBLE_BUDGET - 1
+		while insert_at > 0 and distance_sq < nametag_best_distances[insert_at - 1]:
+			nametag_best_distances[insert_at] = nametag_best_distances[insert_at - 1]
+			nametag_best_indices[insert_at] = nametag_best_indices[insert_at - 1]
+			insert_at -= 1
+		nametag_best_distances[insert_at] = distance_sq
+		nametag_best_indices[insert_at] = car_index
+	for slot in NAMETAG_VISIBLE_BUDGET:
+		var label := nametag_pool[slot]
+		var car_index := nametag_pool_car_indices[slot]
+		if car_index < 0:
+			label.visible = false
+			label.modulate.a = 0.0
+			continue
+		var car := car_node_container.get_child(car_index) as VisualCar
+		if car == null:
+			label.visible = false
+			label.modulate.a = 0.0
+			nametag_pool_car_indices[slot] = -1
+			nametag_pool_pending_indices[slot] = -1
+			continue
+		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
+		var world_pos: Vector3 = render_transform.origin
+		if !active_camera.is_position_in_frustum(world_pos) or camera_position.distance_squared_to(world_pos) > NAMETAG_MAX_DISTANCE_SQ:
+			label.visible = false
+			label.modulate.a = 0.0
+			nametag_pool_car_indices[slot] = -1
+			nametag_pool_pending_indices[slot] = -1
+			continue
+		if !_nametag_best_contains(car_index):
+			label.modulate.a = maxf(0.0, label.modulate.a - delta * 12.0)
+			if label.modulate.a <= 0.0:
+				label.visible = false
+				nametag_pool_car_indices[slot] = -1
+			continue
+		label.visible = true
+		label.modulate.a = minf(1.0, label.modulate.a + delta * 20.0)
+		label.position = active_camera.unproject_position(
+			world_pos + camera_right * 1.5 + camera_up * 1.5
 		) + Vector2(72, -90)
+	for desired_slot in NAMETAG_VISIBLE_BUDGET:
+		var desired_car_index := nametag_best_indices[desired_slot]
+		if desired_car_index < 0 or _nametag_pool_has_car(desired_car_index):
+			continue
+		var target_pool_slot := -1
+		for slot in NAMETAG_VISIBLE_BUDGET:
+			if nametag_pool_car_indices[slot] == -1:
+				target_pool_slot = slot
+				break
+		if target_pool_slot == -1:
+			for slot in NAMETAG_VISIBLE_BUDGET:
+				if nametag_pool_pending_indices[slot] == -1 and !_nametag_best_contains(nametag_pool_car_indices[slot]):
+					nametag_pool_pending_indices[slot] = desired_car_index
+					target_pool_slot = slot
+					break
+		if target_pool_slot == -1:
+			continue
+		var label := nametag_pool[target_pool_slot]
+		if nametag_pool_car_indices[target_pool_slot] == -1 or label.modulate.a <= 0.0:
+			_nametag_assign(label, target_pool_slot, desired_car_index)
+	for slot in NAMETAG_VISIBLE_BUDGET:
+		var pending_index := nametag_pool_pending_indices[slot]
+		if pending_index < 0:
+			continue
+		var label := nametag_pool[slot]
+		label.modulate.a = maxf(0.0, label.modulate.a - delta * 12.0)
+		if label.modulate.a <= 0.0:
+			_nametag_assign(label, slot, pending_index)
+	for slot in NAMETAG_VISIBLE_BUDGET:
+		var car_index := nametag_pool_car_indices[slot]
+		if car_index < 0:
+			continue
+		var label := nametag_pool[slot]
+		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
+		var world_pos: Vector3 = render_transform.origin
+		label.visible = true
+		label.position = active_camera.unproject_position(
+			world_pos + camera_right * 1.5 + camera_up * 1.5
+		) + Vector2(72, -90)
+
+func _print_render_profile_summary() -> void:
+	if !auto_render_profile_mode or render_profile_frames <= 0:
+		return
+	print("MXT_RENDER_PROFILE frames=", render_profile_frames,
+		" physics_us=", int(render_profile_physics_us / render_profile_frames),
+		" tick_us=", int(render_profile_tick_us / render_profile_frames),
+		" render_us=", int(render_profile_render_us / render_profile_frames),
+		" nametag_us=", int(render_profile_nametag_us / render_profile_frames),
+		" local_visual_us=", int(render_profile_local_visual_us / render_profile_frames),
+		" process_us=", int(render_profile_process_us / render_profile_frames),
+		" visuals_only_us=", int(render_profile_visuals_only_us / render_profile_frames))
+	print(game_sim.get_render_profile_string())
 
 func _physics_process(delta: float) -> void:
 	if auto_track_editor_mode:
@@ -1143,6 +1318,7 @@ func _physics_process(delta: float) -> void:
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
 	if game_sim.sim_started:
+		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var local_pi := PlayerInputClass.new()
 		if _window_accepts_input() and players.size() > local_player_index:
 			var controller = players[local_player_index]
@@ -1150,8 +1326,12 @@ func _physics_process(delta: float) -> void:
 				local_pi = controller.get_input()
 		var input_bytes := local_pi.serialize()
 		if singleplayer_mode:
+			var profile_tick_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 			_simulate_singleplayer_tick(input_bytes)
+			if auto_render_profile_mode:
+				render_profile_tick_us += Time.get_ticks_usec() - profile_tick_start
 			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
+				_print_render_profile_summary()
 				get_tree().quit()
 				return
 		else:
@@ -1161,11 +1341,22 @@ func _physics_process(delta: float) -> void:
 			else:
 				_simulate_single_tick()
 		_consume_authoritative_race_events()
+		var profile_render_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim()
+		if auto_render_profile_mode:
+			render_profile_render_us += Time.get_ticks_usec() - profile_render_start
+		var profile_nametag_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		_update_nametags(get_viewport().get_camera_3d(), delta)
+		if auto_render_profile_mode:
+			render_profile_nametag_us += Time.get_ticks_usec() - profile_nametag_start
+		var profile_local_visual_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		for car:VisualCar in car_node_container.get_children():
 			if car.local_visual_enabled:
 				car.just_rendered()
+		if auto_render_profile_mode:
+			render_profile_local_visual_us += Time.get_ticks_usec() - profile_local_visual_start
+			render_profile_physics_us += Time.get_ticks_usec() - profile_physics_start
+			render_profile_frames += 1
 		_check_race_finished()
 
 func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray()):
@@ -1422,6 +1613,7 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 			car.set_effect_tier(VisualCar.EffectTier.THRUSTER_ONLY)
 
 func _process(delta: float) -> void:
+	var profile_process_start := Time.get_ticks_usec() if auto_render_profile_mode and game_sim.sim_started else 0
 	var now_msec := Time.get_ticks_msec()
 	for id in active_stickers.keys():
 		var data: Dictionary = active_stickers[id]
@@ -1433,4 +1625,8 @@ func _process(delta: float) -> void:
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
 	if game_sim.sim_started:
+		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim_visuals_only(delta)
+		if auto_render_profile_mode:
+			render_profile_visuals_only_us += Time.get_ticks_usec() - profile_visuals_start
+			render_profile_process_us += Time.get_ticks_usec() - profile_process_start

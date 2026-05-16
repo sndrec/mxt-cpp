@@ -123,6 +123,7 @@ namespace godot {
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
 		void update_native_gameplay_camera(bool step_camera);
+		uint64_t render_profile_now_us() const;
 		enum class InputFrameMode : uint8_t {
 			SingleLocal,
 			DecodedCarArray,
@@ -225,13 +226,32 @@ namespace godot {
 				std::vector<RenderThrusterVisualRefs> thrusters;
 				uint32_t terrain_state_old = 0;
 				uint32_t machine_state_old = 0;
+				uint8_t full_effect_active = 0;
 				godot::Color overlay = godot::Color(0, 0, 0, 1);
 				godot::Color energy_overlay = godot::Color(0, 0, 0, 1);
 			};
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
+			std::vector<uint8_t> render_effect_full_flags;
 			void cache_native_visual_effect_nodes();
 			void update_native_visual_effects(int visual_count, float alpha, bool step_effects, float effect_delta, bool step_electricity);
 			godot::Camera3D* gameplay_camera_node = nullptr;
+			bool render_profile_enabled = false;
+			uint64_t render_profile_frames = 0;
+			uint64_t render_profile_total_us = 0;
+			uint64_t render_profile_get_children_us = 0;
+			uint64_t render_profile_cache_us = 0;
+			uint64_t render_profile_snapshots_us = 0;
+			uint64_t render_profile_effects_us = 0;
+			uint64_t render_profile_multimesh_us = 0;
+			uint64_t render_profile_camera_us = 0;
+			uint64_t render_profile_local_visual_us = 0;
+			uint64_t render_profile_cpu_driver_us = 0;
+			uint64_t render_profile_spark_us = 0;
+			uint64_t render_profile_visuals_only_frames = 0;
+			uint64_t render_profile_visuals_only_total_us = 0;
+			uint64_t render_profile_visuals_only_effects_us = 0;
+			uint64_t render_profile_visuals_only_multimesh_us = 0;
+			uint64_t render_profile_visuals_only_camera_us = 0;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;
 		int spawn_seed = 0;
@@ -251,6 +271,7 @@ namespace godot {
 		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;
+		void set_render_profile_enabled(bool enabled);
 		int get_player_race_place(int player_id) const;
 		bool is_player_race_finished(int player_id) const;
 		double get_player_lap_distance(int player_id) const;
@@ -258,6 +279,7 @@ namespace godot {
 		godot::String get_player_debug_string(int player_id) const;
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
+		godot::Transform3D get_car_render_transform(int car_index) const;
 		godot::Array get_check_warning_candidates(int player_id) const;
 		godot::Array consume_race_events();
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);

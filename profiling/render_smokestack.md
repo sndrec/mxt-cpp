@@ -1,0 +1,14 @@
+# Smokestack Render Profiling
+
+Windowed render harness:
+
+`A:\programs\Godot_v4.6.1-stable_win64\Godot_v4.6.1-stable_win64_console.exe --path B:\programming\mxt-cpp\mxto --disable-vsync --max-fps 0 --print-fps -- --auto-singleplayer --auto-accelerate --render-profile --track-name SMOKESTACK --cpu-drivers <N> --quit-after-frames 900`
+
+| Date | Slice | CPU drivers | Result | Profile |
+| --- | --- | ---: | --- | --- |
+| 2026-05-16 | Baseline before render effects cap | 500 | FPS mostly `7-16` | `physics_us=8741 tick_us=925 render_us=4927 nametag_us=2665 local_visual_us=156 process_us=707 visuals_only_us=705` |
+| 2026-05-16 | Direct-index nametag lookup and C++ render breakdown | 500 | FPS mostly `8-20` | `physics_us=7928 tick_us=959 render_us=4812 nametag_us=1958 local_visual_us=137 process_us=878 visuals_only_us=875`; C++ `effects_us=3686 multimesh_us=367 visuals_only_effects_us=3485` |
+| 2026-05-16 | Frustum-capped 30-car full effects budget | 500 | FPS mostly `25-70`, early clear view reaches `57-70` | `physics_us=4754 tick_us=972 render_us=1583 nametag_us=1980 local_visual_us=155 process_us=555 visuals_only_us=546`; C++ `effects_us=459 multimesh_us=366 visuals_only_effects_us=412` |
+| 2026-05-16 | Physics-rate 30-label nametag pool and 6-icon CHECK pool | 500 | FPS mostly `30-80` | `physics_us=3107 tick_us=978 render_us=1596 nametag_us=389 local_visual_us=81 process_us=682 visuals_only_us=671`; C++ `effects_us=467 multimesh_us=363 visuals_only_effects_us=420` |
+| 2026-05-16 | Physics-rate 30-label nametag pool and 6-icon CHECK pool | 999 | FPS mostly `7-23` | `physics_us=5329 tick_us=1585 render_us=2842 nametag_us=687 local_visual_us=175 process_us=312 visuals_only_us=309`; C++ `effects_us=702 multimesh_us=714 local_visual_us=643 cpu_driver_us=207 visuals_only_multimesh_us=729` |
+
