@@ -94,6 +94,12 @@ static TrackMeshBVHNode mesh_bvh_empty_node()
 {
 	TrackMeshBVHNode node = {};
 	for (int i = 0; i < MXT_MESH_BVH_WIDTH; ++i) {
+		node.min_x[i] = FLT_MAX;
+		node.min_y[i] = FLT_MAX;
+		node.min_z[i] = FLT_MAX;
+		node.max_x[i] = -FLT_MAX;
+		node.max_y[i] = -FLT_MAX;
+		node.max_z[i] = -FLT_MAX;
 		node.child[i] = -1;
 		node.count[i] = -1;
 	}

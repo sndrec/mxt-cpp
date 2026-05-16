@@ -1187,7 +1187,7 @@ static uint32_t mesh_bvh_child_aabb_mask(const TrackMeshBVHNode &node, const Sim
 	valid = _mm_and_ps(valid, _mm_cmpge_ps(q_max_y, _mm_set1_ps(bounds.position.y)));
 	valid = _mm_and_ps(valid, _mm_cmple_ps(q_min_z, _mm_set1_ps(b_max.z)));
 	valid = _mm_and_ps(valid, _mm_cmpge_ps(q_max_z, _mm_set1_ps(bounds.position.z)));
-	return static_cast<uint32_t>(_mm_movemask_ps(valid)) & mesh_bvh_live_child_mask(node);
+	return static_cast<uint32_t>(_mm_movemask_ps(valid));
 #else
 	uint32_t mask = 0;
 	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
@@ -1227,7 +1227,7 @@ static uint32_t mesh_bvh_child_segment_mask(const TrackMeshBVHNode &node, const 
 	apply_axis(_mm_load_ps(node.min_x), _mm_load_ps(node.max_x), p0.x, ray.x);
 	apply_axis(_mm_load_ps(node.min_y), _mm_load_ps(node.max_y), p0.y, ray.y);
 	apply_axis(_mm_load_ps(node.min_z), _mm_load_ps(node.max_z), p0.z, ray.z);
-	return static_cast<uint32_t>(_mm_movemask_ps(valid)) & mesh_bvh_live_child_mask(node);
+	return static_cast<uint32_t>(_mm_movemask_ps(valid));
 #else
 	uint32_t mask = 0;
 	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
@@ -1285,11 +1285,6 @@ static void mesh_bvh_child_distance2_quad(const TrackMeshBVHNode &node, const Si
 	const __m128 dz = _mm_max_ps(_mm_max_ps(_mm_sub_ps(min_z, pz), _mm_sub_ps(pz, max_z)), zero);
 	const __m128 d2 = _mm_add_ps(_mm_add_ps(_mm_mul_ps(dx, dx), _mm_mul_ps(dy, dy)), _mm_mul_ps(dz, dz));
 	_mm_storeu_ps(out_dist2, d2);
-	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
-		if (mesh_bvh_child_empty(node, slot)) {
-			out_dist2[slot] = FLT_MAX;
-		}
-	}
 #else
 	for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
 		out_dist2[slot] = mesh_bvh_child_empty(node, slot) ? FLT_MAX : mesh_bvh_child_distance2_to_point(node, slot, p);
@@ -1414,15 +1409,18 @@ static bool mesh_collision_uses_smooth_surface(uint32_t terrain)
 
 static SimTransform mesh_collision_surface_transform(const TrackMeshCollisionTriangle &tri, const SimVec3 &hit_point, const SimVec3 &normal)
 {
-	SimVec3 tangent = (tri.p1 - tri.p0).normalized();
-	if (tangent.length_squared() <= 1.0e-8f || fabsf(tangent.dot(normal)) > 0.98f) {
-		tangent = (tri.p2 - tri.p0).normalized();
+	SimVec3 tangent = tri.edge0 - normal * tri.edge0.dot(normal);
+	float tangent_len2 = tangent.length_squared();
+	if (tangent_len2 <= 1.0e-8f) {
+		tangent = tri.edge1 - normal * tri.edge1.dot(normal);
+		tangent_len2 = tangent.length_squared();
 	}
-	tangent = (tangent - normal * tangent.dot(normal)).normalized();
-	if (tangent.length_squared() <= 1.0e-8f) {
+	if (tangent_len2 > 1.0e-8f) {
+		tangent *= 1.0f / sqrtf(tangent_len2);
+	} else {
 		tangent = SimVec3(1.0f, 0.0f, 0.0f);
 	}
-	SimVec3 forward = tangent.cross(normal).normalized();
+	SimVec3 forward = tangent.cross(normal);
 	SimBasis basis;
 	basis[0] = tangent;
 	basis[1] = normal;
@@ -1724,9 +1722,6 @@ static bool scan_mesh_cast_triangle(
 	} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
 		return false;
 	}
-	if (!aabb_overlaps_segment(tri.bounds, p0, p1)) {
-		return false;
-	}
 	if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS)) {
 		const bool rail_query = (params.mask & CAST_FLAGS::WANTS_RAIL) != 0;
 		const bool terrain_query = (params.mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
@@ -1782,7 +1777,7 @@ static bool scan_mesh_cast_triangle(
 	out_collision.road_data.cp_idx = start_idx;
 	out_collision.road_data.spatial_t = SimVec3();
 	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
-	out_collision.road_data.closest_surface = mesh_collision_surface_transform(tri, hit_point, hit_normal);
+	out_collision.road_data.closest_surface = params.smooth_mesh_hits ? mesh_collision_surface_transform(tri, hit_point, hit_normal) : SimTransform();
 	out_collision.road_data.closest_root = RoadTransform();
 	out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
 	out_collision.mesh_triangle_index = tri_index;
