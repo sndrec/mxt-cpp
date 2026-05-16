@@ -1151,6 +1151,9 @@ func _physics_process(delta: float) -> void:
 		var input_bytes := local_pi.serialize()
 		if singleplayer_mode:
 			_simulate_singleplayer_tick(input_bytes)
+			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
+				get_tree().quit()
+				return
 		else:
 			network_manager.set_local_input(input_bytes)
 			if network_manager.is_server:

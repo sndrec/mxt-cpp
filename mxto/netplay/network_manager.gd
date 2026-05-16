@@ -1560,6 +1560,8 @@ func _rebroadcast_player_settings_to_peer(peer_id: int) -> void:
 		update_player_settings.rpc_id(peer_id, player_settings[pid], pid)
 
 func _resync_player_settings() -> void:
+	if game_manager != null and game_manager.singleplayer_mode:
+		return
 	if !multiplayer.has_multiplayer_peer():
 		return
 	if race_active:
