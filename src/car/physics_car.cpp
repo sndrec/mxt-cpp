@@ -1049,6 +1049,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		bool nearest_mesh_sample = false;
 		bool local_mesh_sample = false;
 		CollisionData hit;
+		hit.collided = false;
+		hit.road_data.cp_idx = -1;
+		hit.mesh_triangle_index = -1;
 		const SimVec3 machine_up_ws = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f));
 		auto orient_mesh_floor_hit = [&](CollisionData &mesh_hit) {
 			if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) < 0.0f) {
@@ -1061,14 +1064,15 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		SimVec3 p0_sweep_start_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, 1.0f, 0.0f));
 		SimVec3 p1_sweep_end_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, -20.0f, 0.0f));
 		STORE_VEC3(position_bottom, p1_sweep_end_ws);
-		soa->current_track[soa_index]->cast_vs_track_fast(hit, p0_sweep_start_ws,
-			LOAD_VEC3(position_bottom),
-			CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
-			soa->current_checkpoint[soa_index],
-			false,
-			&scratch);
-		sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
-		if (!floor_seg->analytic_collision_enabled) {
+		if (floor_seg->analytic_collision_enabled) {
+			soa->current_track[soa_index]->cast_vs_track_fast(hit, p0_sweep_start_ws,
+				LOAD_VEC3(position_bottom),
+				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+				soa->current_checkpoint[soa_index],
+				false,
+				&scratch);
+			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
+		} else {
 			CollisionData nearest_hit;
 			sample_mesh_floor_with_seed(
 				nearest_hit,
@@ -1085,6 +1089,15 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				nearest_mesh_sample = true;
 				local_mesh_sample = true;
 			}
+		}
+		if (!sweep_hit_occurred && !floor_seg->analytic_collision_enabled) {
+			soa->current_track[soa_index]->cast_vs_track_fast(hit, p0_sweep_start_ws,
+				LOAD_VEC3(position_bottom),
+				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+				soa->current_checkpoint[soa_index],
+				false,
+				&scratch);
+			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
 		}
 		if (!sweep_hit_occurred && !floor_seg->analytic_collision_enabled) {
 			sample_mesh_floor_with_seed(
