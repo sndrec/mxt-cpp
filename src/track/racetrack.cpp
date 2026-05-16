@@ -823,6 +823,10 @@ struct CastParams {
 	RaceTrack *track;
 	uint8_t mask;
 	bool smooth_mesh_hits = true;
+	bool track_only_query = false;
+	bool draw_cast_tests = false;
+	bool draw_collision_hits = false;
+	bool build_surface_basis = true;
 	const SimVec3 *mesh_side_reference_point = nullptr;
 };
 
@@ -1428,6 +1432,15 @@ static SimTransform mesh_collision_surface_transform(const TrackMeshCollisionTri
 	return SimTransform(basis, hit_point);
 }
 
+static SimTransform mesh_collision_plane_transform(const SimVec3 &hit_point, const SimVec3 &normal)
+{
+	SimBasis basis;
+	basis[0] = SimVec3(1.0f, 0.0f, 0.0f);
+	basis[1] = normal;
+	basis[2] = SimVec3();
+	return SimTransform(basis, hit_point);
+}
+
 static SimVec3 closest_point_on_mesh_triangle(const TrackMeshCollisionTriangle &tri, const SimVec3 &p, float *out_u, float *out_v, float *out_w)
 {
 	const SimVec3 ab = tri.p1 - tri.p0;
@@ -1714,15 +1727,17 @@ static bool scan_mesh_cast_triangle(
 {
 	RaceTrack *track = params.track;
 	const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-	const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
-	if (is_rail) {
-		if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+	if (!params.track_only_query) {
+		const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
+		if (is_rail) {
+			if ((params.mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+				return false;
+			}
+		} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
 			return false;
 		}
-	} else if ((params.mask & CAST_FLAGS::WANTS_TRACK) == 0) {
-		return false;
 	}
-	if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS)) {
+	if (params.draw_cast_tests) {
 		const bool rail_query = (params.mask & CAST_FLAGS::WANTS_RAIL) != 0;
 		const bool terrain_query = (params.mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
 		const godot::Color color = rail_query
@@ -1766,7 +1781,7 @@ static bool scan_mesh_cast_triangle(
 	}
 
 	best_dist = dist;
-	if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
+	if (params.draw_collision_hits) {
 		draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
 	}
 	out_collision.collided = true;
@@ -1777,7 +1792,9 @@ static bool scan_mesh_cast_triangle(
 	out_collision.road_data.cp_idx = start_idx;
 	out_collision.road_data.spatial_t = SimVec3();
 	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
-	out_collision.road_data.closest_surface = params.smooth_mesh_hits ? mesh_collision_surface_transform(tri, hit_point, hit_normal) : SimTransform();
+	out_collision.road_data.closest_surface = params.smooth_mesh_hits
+		? (params.build_surface_basis ? mesh_collision_surface_transform(tri, hit_point, hit_normal) : mesh_collision_plane_transform(hit_point, hit_normal))
+		: SimTransform();
 	out_collision.road_data.closest_root = RoadTransform();
 	out_collision.road_data.terrain = static_cast<uint16_t>(tri.terrain);
 	out_collision.mesh_triangle_index = tri_index;
@@ -1880,13 +1897,15 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 				for (int i = node.child[slot]; i < end; ++i) {
 					const int tri_index = bvh_triangle_indices[i];
 					const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-					const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
-					if (is_rail) {
-						if ((mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+					if (!track_only_query) {
+						const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
+						if (is_rail) {
+							if ((mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+								continue;
+							}
+						} else if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
 							continue;
 						}
-					} else if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
-						continue;
 					}
 					if (!aabb_overlaps_aabb(tri.bounds, bounds)) {
 						continue;
@@ -1921,7 +1940,8 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	int start_idx,
 	TrackQueryScratch *scratch,
 	bool smooth_mesh_hits,
-	const SimVec3 *mesh_side_reference_point)
+	const SimVec3 *mesh_side_reference_point,
+	bool build_surface_basis)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -1941,7 +1961,18 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	}
 
 	float best_dist = FLT_MAX;
-	CastParams params{ this, mask, smooth_mesh_hits, mesh_side_reference_point };
+	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 && (mask & CAST_FLAGS::WANTS_RAIL) == 0;
+	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
+	CastParams params{
+		this,
+		mask,
+		smooth_mesh_hits,
+		track_only_query,
+		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS),
+		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS),
+		build_surface_basis,
+		mesh_side_reference_point
+	};
 	for (int i = 0; i < scratch->mesh_cast_candidate_count; ++i) {
 		scan_mesh_cast_triangle(
 			params,
@@ -1957,6 +1988,113 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	}
 }
 
+void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
+	CollisionData out_collision[4],
+	const SimVec3 p0[4],
+	const SimVec3 p1[4],
+	uint8_t mask,
+	int start_idx,
+	TrackQueryScratch *scratch,
+	bool smooth_mesh_hits,
+	bool build_surface_basis)
+{
+	for (int lane = 0; lane < 4; ++lane) {
+		out_collision[lane].collided = false;
+		out_collision[lane].road_data.cp_idx = -1;
+		out_collision[lane].mesh_triangle_index = -1;
+		out_collision[lane].collision_face_point = SimVec3();
+		out_collision[lane].collision_face_normal = SimVec3();
+	}
+	if (!scratch || start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
+		return;
+	}
+	if ((mask & (CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_RAIL)) == 0) {
+		return;
+	}
+	const SimVec3 ray = p1[0] - p0[0];
+	const float ray_len = ray.length();
+	if (ray_len <= 1.0e-6f) {
+		return;
+	}
+
+	float best_dist[4] = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX };
+	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 && (mask & CAST_FLAGS::WANTS_RAIL) == 0;
+	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
+	const bool draw_cast_tests = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS);
+	const bool draw_collision_hits = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS);
+
+	for (int candidate = 0; candidate < scratch->mesh_cast_candidate_count; ++candidate) {
+		const int tri_index = scratch->mesh_cast_candidate_indices[candidate];
+		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
+		if (!track_only_query) {
+			const bool is_rail = (tri.terrain & TERRAIN::RAIL) != 0;
+			if (is_rail) {
+				if ((mask & CAST_FLAGS::WANTS_RAIL) == 0) {
+					continue;
+				}
+			} else if ((mask & CAST_FLAGS::WANTS_TRACK) == 0) {
+				continue;
+			}
+		}
+		if (draw_cast_tests) {
+			const bool rail_query = (mask & CAST_FLAGS::WANTS_RAIL) != 0;
+			const bool terrain_query = (mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
+			const godot::Color color = rail_query
+				? godot::Color(1.0f, 0.0f, 1.0f, 0.75f)
+				: (terrain_query ? godot::Color(1.0f, 0.85f, 0.1f, 0.75f) : godot::Color(1.0f, 0.45f, 0.05f, 0.75f));
+			draw_mesh_debug_triangle(tri, color, _TICK_DELTA);
+		}
+		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
+		for (int lane = 0; lane < 4; ++lane) {
+			float hit_t = 0.0f;
+			float u = 0.0f;
+			float v = 0.0f;
+			float w = 0.0f;
+			SimVec3 face_normal;
+			bool backside_hit = false;
+			if (!triangle_ray_hit(tri, p0[lane], ray, p0[lane], allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, nullptr)) {
+				continue;
+			}
+			const float dist = hit_t * ray_len;
+			if (dist >= best_dist[lane]) {
+				continue;
+			}
+
+			const SimVec3 flat_point = p0[lane] + ray * hit_t;
+			SimVec3 hit_normal = face_normal;
+			SimVec3 hit_face_normal = face_normal;
+			SimVec3 hit_point = flat_point;
+			if (smooth_mesh_hits && mesh_collision_uses_smooth_surface(tri.terrain)) {
+				hit_normal = mesh_collision_smooth_normal(tri, u, v, w, face_normal);
+				hit_point = clamp_mesh_collision_phong_point(flat_point, mesh_collision_phong_point(tri, u, v, w));
+			}
+			if (backside_hit) {
+				hit_normal *= -1.0f;
+				hit_face_normal *= -1.0f;
+			}
+
+			best_dist[lane] = dist;
+			out_collision[lane].collided = true;
+			out_collision[lane].collision_point = hit_point;
+			out_collision[lane].collision_normal = hit_normal;
+			out_collision[lane].collision_face_point = flat_point;
+			out_collision[lane].collision_face_normal = hit_face_normal;
+			out_collision[lane].road_data.cp_idx = start_idx;
+			out_collision[lane].road_data.spatial_t = SimVec3();
+			out_collision[lane].road_data.road_t = SimVec2(0.0f, 0.5f);
+			out_collision[lane].road_data.closest_surface = smooth_mesh_hits
+				? (build_surface_basis ? mesh_collision_surface_transform(tri, hit_point, hit_normal) : mesh_collision_plane_transform(hit_point, hit_normal))
+				: SimTransform();
+			out_collision[lane].road_data.closest_root = RoadTransform();
+			out_collision[lane].road_data.terrain = static_cast<uint16_t>(tri.terrain);
+			out_collision[lane].mesh_triangle_index = tri_index;
+			if (draw_collision_hits) {
+				draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
+			}
+		}
+	}
+}
+
 void RaceTrack::cast_vs_mesh_fast(
 	CollisionData &out_collision,
 	const SimVec3 &p0,
@@ -1965,7 +2103,8 @@ void RaceTrack::cast_vs_mesh_fast(
 	int start_idx,
 	TrackQueryScratch *scratch,
 	bool smooth_mesh_hits,
-	const SimVec3 *mesh_side_reference_point)
+	const SimVec3 *mesh_side_reference_point,
+	bool build_surface_basis)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -1979,11 +2118,22 @@ void RaceTrack::cast_vs_mesh_fast(
 		return;
 	}
 
-	CastParams params{ this, mask, smooth_mesh_hits, mesh_side_reference_point };
+	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 && (mask & CAST_FLAGS::WANTS_RAIL) == 0;
+	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
+	CastParams params{
+		this,
+		mask,
+		smooth_mesh_hits,
+		track_only_query,
+		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS),
+		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS),
+		build_surface_basis,
+		mesh_side_reference_point
+	};
 	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }
 
-void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index)
+void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index, bool build_surface, bool build_surface_basis)
 {
 	(void)allow_global_fallback;
 	out_collision.collided = false;
@@ -2009,6 +2159,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	int best_tri_index = -1;
 	bool allow_smooth_projection_retry = false;
 	bool saw_smooth_projection_candidate = false;
+	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
+	const bool draw_floor_tests = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS);
+	const bool draw_collision_hits = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS);
 
 	auto scan_triangle = [&](int tri_index) {
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
@@ -2041,7 +2194,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			saw_smooth_projection_candidate |= smooth_retry_candidate;
 			return;
 		}
-		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS)) {
+		if (draw_floor_tests) {
 			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 0.8f, 1.0f, 0.7f), _TICK_DELTA);
 		}
 		if (dist2 >= best_dist2) {
@@ -2059,7 +2212,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		best_backside_sample = backside_sample;
 		best_tri = &tri;
 		best_tri_index = tri_index;
-		if (mesh_debug_draw_current_car(scratch) && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS)) {
+		if (draw_collision_hits) {
 			draw_mesh_debug_triangle(tri, godot::Color(0.1f, 1.0f, 0.45f, 0.95f), _TICK_DELTA);
 		}
 	};
@@ -2139,6 +2292,22 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		return;
 	}
 
+	if (!build_surface) {
+		out_collision.collided = true;
+		out_collision.collision_point = best_flat_point;
+		out_collision.collision_normal = best_backside_sample ? best_tri->face_normal * -1.0f : best_tri->face_normal;
+		out_collision.collision_face_point = best_flat_point;
+		out_collision.collision_face_normal = out_collision.collision_normal;
+		out_collision.road_data.cp_idx = start_idx;
+		out_collision.road_data.spatial_t = SimVec3();
+		out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
+		out_collision.road_data.closest_surface = SimTransform();
+		out_collision.road_data.closest_root = RoadTransform();
+		out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
+		out_collision.mesh_triangle_index = best_tri_index;
+		return;
+	}
+
 	SimVec3 face_normal = best_tri->face_normal;
 	SimVec3 smooth_normal = face_normal;
 	SimVec3 smooth_point = best_flat_point;
@@ -2163,7 +2332,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.road_data.cp_idx = start_idx;
 	out_collision.road_data.spatial_t = SimVec3();
 	out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
-	out_collision.road_data.closest_surface = mesh_collision_surface_transform(*best_tri, smooth_point, smooth_normal);
+	out_collision.road_data.closest_surface = build_surface_basis
+		? mesh_collision_surface_transform(*best_tri, smooth_point, smooth_normal)
+		: mesh_collision_plane_transform(smooth_point, smooth_normal);
 	out_collision.road_data.closest_root = RoadTransform();
 	out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
 	out_collision.mesh_triangle_index = best_tri_index;
@@ -2173,7 +2344,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	SimVec3 const &p0,
 	SimVec3 const &p1,
 	uint8_t mask,
-	int start_idx, bool oriented, TrackQueryScratch *scratch, bool smooth_mesh_hits, const SimVec3 *mesh_side_reference_point)
+	int start_idx, bool oriented, TrackQueryScratch *scratch, bool smooth_mesh_hits, const SimVec3 *mesh_side_reference_point, bool build_surface_basis)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -2198,7 +2369,18 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	else
 		sample_point = p1;
 	
-	CastParams params{ this, mask, smooth_mesh_hits, mesh_side_reference_point };
+	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 && (mask & CAST_FLAGS::WANTS_RAIL) == 0;
+	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
+	CastParams params{
+		this,
+		mask,
+		smooth_mesh_hits,
+		track_only_query,
+		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS),
+		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS),
+		build_surface_basis,
+		mesh_side_reference_point
+	};
 	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
 	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }

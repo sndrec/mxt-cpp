@@ -999,7 +999,7 @@ static bool project_machine_down_to_road_cross_section(
 	return true;
 }
 
-void PhysicsCar::sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch)
+void PhysicsCar::sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface)
 {
 	RaceTrack *track = soa->current_track[soa_index];
 	if (!track) {
@@ -1016,7 +1016,8 @@ void PhysicsCar::sample_mesh_floor_with_seed(CollisionData &out_collision, const
 		start_idx,
 		allow_global_fallback,
 		&scratch,
-		soa->last_mesh_floor_triangle[soa_index]);
+		soa->last_mesh_floor_triangle[soa_index],
+		build_surface);
 	if (out_collision.collided) {
 		if (out_collision.mesh_triangle_index < 0) {
 			godot::UtilityFunctions::printerr(godot::String("MXT mesh floor sample produced no triangle index"));
@@ -2710,6 +2711,7 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 	} else {
 		bool use_mesh_suspension_cast_candidates = false;
 		SimAABB mesh_suspension_cast_bounds;
+		CollisionData mesh_suspension_hits[4];
 		if (track && use_cp >= 0) {
 			mesh_suspension_cast_bounds.position = p0_ray_start_ws[0];
 			mesh_suspension_cast_bounds.size = SimVec3();
@@ -2722,20 +2724,25 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 				mesh_suspension_cast_bounds,
 				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
 				scratch);
+			if (use_mesh_suspension_cast_candidates) {
+				track->cast_vs_mesh_candidates4_same_ray_fast(
+					mesh_suspension_hits,
+					p0_ray_start_ws,
+					p1_ray_end_ws,
+					CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+					use_cp,
+					&scratch,
+					true,
+					false);
+			}
 		}
 		for (int lane = 0; lane < 4; ++lane) {
 			CollisionData hit;
+			if (use_mesh_suspension_cast_candidates) {
+				hit = mesh_suspension_hits[lane];
+			}
 			if (track && use_cp >= 0) {
-				if (use_mesh_suspension_cast_candidates) {
-					track->cast_vs_mesh_candidates_fast(
-						hit,
-						p0_ray_start_ws[lane],
-						p1_ray_end_ws[lane],
-						CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
-						use_cp,
-						&scratch,
-						true);
-				} else {
+				if (!use_mesh_suspension_cast_candidates) {
 					track->cast_vs_track_fast(
 						hit,
 						p0_ray_start_ws[lane],
@@ -2743,7 +2750,10 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 						CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
 						use_cp,
 						false,
-						&scratch);
+						&scratch,
+						true,
+						nullptr,
+						false);
 				}
 			}
 			if (!hit.collided && track && use_cp >= 0) {
@@ -2754,7 +2764,10 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 					CAST_FLAGS::WANTS_TRACK,
 					use_cp,
 					false,
-					&scratch);
+					&scratch,
+					-1,
+					true,
+					false);
 			}
 			if (hit.collided) {
 				if (hit.collision_normal.dot(mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f))) < 0.0f) {
@@ -2816,7 +2829,8 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				false,
-				scratch);
+				scratch,
+				false);
 			if (hit.collided) {
 				terrain_bits |= hit.road_data.terrain;
 			}

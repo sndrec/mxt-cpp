@@ -137,11 +137,12 @@ public:
 		}
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
-	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr);
+	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
 	bool collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask, TrackQueryScratch &scratch);
-	void cast_vs_mesh_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr);
-	void cast_vs_mesh_candidates_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr);
-	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr, int seed_triangle_index = -1);
+	void cast_vs_mesh_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
+	void cast_vs_mesh_candidates_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
+	void cast_vs_mesh_candidates4_same_ray_fast(CollisionData out_collision[4], const SimVec3 p0[4], const SimVec3 p1[4], uint8_t mask, int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits = true, bool build_surface_basis = true);
+	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr, int seed_triangle_index = -1, bool build_surface = true, bool build_surface_basis = true);
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);
 	void convert_point_to_road(
