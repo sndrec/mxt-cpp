@@ -3480,12 +3480,23 @@ static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& ca
 			sample_cp = soa.current_checkpoint[i];
 		}
 		if (sample_cp >= 0 && sample_cp < soa.current_track[i]->num_checkpoints) {
-			SimVec2 road_t;
-			SimVec3 spatial_t;
-			SimTransform road_surface;
-			soa.current_track[i]->get_road_surface(sample_cp, LOAD_INDEXED_VEC3(soa, position_current, i), road_t, spatial_t, road_surface);
-			surface = road_surface.basis;
-			road_tx = road_t.x;
+			const CollisionCheckpoint &cp = soa.current_track[i]->checkpoints[sample_cp];
+			const SimVec3 pos = LOAD_INDEXED_VEC3(soa, position_current, i);
+			const SimVec3 p1 = cp.start_plane.project(pos);
+			const SimVec3 p2 = cp.end_plane.project(pos);
+			const SimVec3 span = p2 - p1;
+			const float span_len2 = span.length_squared();
+			float cp_t = 0.0f;
+			if (span_len2 > 1.0e-6f) {
+				cp_t = (pos - p1).dot(span) / span_len2;
+				cp_t = std::max(0.0f, std::min(1.0f, cp_t));
+			}
+			surface[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t);
+			surface[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t);
+			surface[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t);
+			const SimVec3 center = cp.position_start.lerp(cp.position_end, cp_t);
+			const float x_radius_inv = lerp(cp.x_radius_start_inv, cp.x_radius_end_inv, cp_t);
+			road_tx = (pos - center).dot(surface[0]) * x_radius_inv;
 		}
 	}
 	const float energy = soa.energy[i];
