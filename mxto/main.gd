@@ -90,6 +90,13 @@ var auto_track_editor_mode: bool = false
 var auto_accelerate_mode: bool = false
 var auto_render_profile_mode: bool = false
 var auto_disable_car_multimesh_mode: bool = false
+var auto_disable_node_effects_mode: bool = false
+var auto_disable_thruster_lights_mode: bool = false
+var auto_hide_track_visuals_mode: bool = false
+var auto_disable_hud_mode: bool = false
+var auto_hide_hud_only_mode: bool = false
+var auto_disable_hud_process_only_mode: bool = false
+var auto_disable_minimap_mode: bool = false
 var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
@@ -191,7 +198,16 @@ func _ready() -> void:
 	auto_accelerate_mode = args.has("--auto-accelerate") or user_args.has("--auto-accelerate")
 	auto_render_profile_mode = args.has("--render-profile") or user_args.has("--render-profile")
 	auto_disable_car_multimesh_mode = args.has("--profile-disable-car-multimesh") or user_args.has("--profile-disable-car-multimesh")
+	auto_disable_node_effects_mode = args.has("--profile-disable-node-effects") or user_args.has("--profile-disable-node-effects")
+	auto_disable_thruster_lights_mode = args.has("--profile-disable-thruster-lights") or user_args.has("--profile-disable-thruster-lights")
+	auto_hide_track_visuals_mode = args.has("--profile-hide-track-visuals") or user_args.has("--profile-hide-track-visuals")
+	auto_disable_hud_mode = args.has("--profile-disable-hud") or user_args.has("--profile-disable-hud")
+	auto_hide_hud_only_mode = args.has("--profile-hide-hud-only") or user_args.has("--profile-hide-hud-only")
+	auto_disable_hud_process_only_mode = args.has("--profile-disable-hud-process-only") or user_args.has("--profile-disable-hud-process-only")
+	auto_disable_minimap_mode = args.has("--profile-disable-minimap") or user_args.has("--profile-disable-minimap")
 	game_sim.set_render_profile_enabled(auto_render_profile_mode)
+	game_sim.set_render_node_effects_enabled(!auto_disable_node_effects_mode)
+	game_sim.set_render_thruster_lights_enabled(!auto_disable_thruster_lights_mode)
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var quit_idx := args.find("--quit-after-frames")
 	var quit_args := args
@@ -888,6 +904,10 @@ func _start_race(track_index: int, settings: Array) -> void:
 	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
 	current_track_meta = {}
 	current_track_ground_image = null
+	debug_track_mesh.visible = !auto_hide_track_visuals_mode
+	track_floor.visible = !auto_hide_track_visuals_mode
+	track_clouds.visible = !auto_hide_track_visuals_mode
+	obj_container.visible = !auto_hide_track_visuals_mode
 	var json_path = info["mxt"].get_basename() + ".json"
 	if FileAccess.file_exists(json_path):
 		var json_text := FileAccess.get_file_as_string(json_path)
@@ -996,6 +1016,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
 	game_sim.car_node_container = car_node_container
 	game_sim.spark_node_container = spark_node_container
+	game_sim.set_render_node_effects_enabled(!auto_disable_node_effects_mode)
+	game_sim.set_render_thruster_lights_enabled(!auto_disable_thruster_lights_mode)
 	game_sim.set_car_render_manager(car_render_manager)
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
@@ -1004,6 +1026,23 @@ func _start_race(track_index: int, settings: Array) -> void:
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
+		var local_hud := car_node_container.local_visual_car.race_hud
+		if auto_disable_minimap_mode:
+			var minimap_control := local_hud.get_node_or_null("MinimapControl") as Control
+			if minimap_control != null:
+				minimap_control.visible = false
+				minimap_control.process_mode = Node.PROCESS_MODE_DISABLED
+			var minimap_viewport := local_hud.get_node_or_null("MinimapControl/SubViewport") as SubViewport
+			if minimap_viewport != null:
+				minimap_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		if auto_disable_hud_mode or auto_hide_hud_only_mode:
+			local_hud.visible = false
+		if auto_disable_hud_mode or auto_disable_hud_process_only_mode:
+			local_hud.process_mode = Node.PROCESS_MODE_DISABLED
+		if auto_disable_hud_mode:
+			car_node_container.local_visual_car.race_hud.process_mode = Node.PROCESS_MODE_DISABLED
+			frame_time_label.visible = false
+			rtt_label.visible = false
 	_configure_nametag_pool()
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
@@ -1180,7 +1219,7 @@ func _nametag_assign(label: Label, slot: int, car_index: int) -> void:
 	nametag_pool_pending_indices[slot] = -1
 
 func _update_nametags(active_camera: Camera3D, delta: float) -> void:
-	if active_camera == null or nametag_pool.is_empty():
+	if auto_disable_hud_mode or active_camera == null or nametag_pool.is_empty():
 		return
 	var camera_position := active_camera.global_position
 	var camera_right := active_camera.global_basis.x

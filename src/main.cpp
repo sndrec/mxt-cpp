@@ -1604,7 +1604,10 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
 	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
 	ClassDB::bind_method(D_METHOD("set_render_profile_enabled", "enabled"), &GameSim::set_render_profile_enabled);
+	ClassDB::bind_method(D_METHOD("set_render_node_effects_enabled", "enabled"), &GameSim::set_render_node_effects_enabled);
+	ClassDB::bind_method(D_METHOD("set_render_thruster_lights_enabled", "enabled"), &GameSim::set_render_thruster_lights_enabled);
 	ClassDB::bind_method(D_METHOD("get_player_race_place", "player_id"), &GameSim::get_player_race_place);
+	ClassDB::bind_method(D_METHOD("get_race_leaderboard_window", "player_id", "max_entries"), &GameSim::get_race_leaderboard_window);
 	ClassDB::bind_method(D_METHOD("is_player_race_finished", "player_id"), &GameSim::is_player_race_finished);
 	ClassDB::bind_method(D_METHOD("get_player_lap_distance", "player_id"), &GameSim::get_player_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
@@ -1814,6 +1817,7 @@ void GameSim::free_vehicle_tick_soa()
 		free_cache_aligned(vehicle_tick_soa.placement_indices);
 		vehicle_tick_soa.placement_indices = nullptr;
 	}
+	vehicle_tick_soa.placement_order_valid = false;
 	if (vehicle_tick_soa.pending_s_boost_sparks) {
 		free_cache_aligned(vehicle_tick_soa.pending_s_boost_sparks);
 		vehicle_tick_soa.pending_s_boost_sparks = nullptr;
@@ -1960,46 +1964,116 @@ void GameSim::set_render_profile_enabled(bool enabled)
 	render_profile_visuals_only_camera_us = 0;
 }
 
+void GameSim::set_render_node_effects_enabled(bool enabled)
+{
+	render_node_effects_enabled = enabled;
+	if (!enabled) {
+		for (RenderEffectPoolSlot& slot : render_effect_pool_slots) {
+			if (slot.recharge_particles) {
+				slot.recharge_particles->set_emitting(false);
+			}
+			if (slot.attack_particles) {
+				slot.attack_particles->set_emitting(false);
+			}
+			if (slot.landing_particles) {
+				slot.landing_particles->set_emitting(false);
+			}
+			if (slot.damage_electricity) {
+				slot.damage_electricity->set_visible(false);
+				slot.damage_electricity->set_emitting(false);
+				slot.damage_electricity->set_amount_ratio(0.0);
+			}
+			if (slot.damage_smoke) {
+				slot.damage_smoke->set_visible(false);
+				slot.damage_smoke->set_emitting(false);
+				slot.damage_smoke->set_amount_ratio(0.0);
+			}
+			if (slot.boost_electricity) {
+				slot.boost_electricity->set("boosting", false);
+				slot.boost_electricity->set("visible", false);
+			}
+			slot.car_index = -1;
+		}
+	}
+}
+
+void GameSim::set_render_thruster_lights_enabled(bool enabled)
+{
+	render_thruster_lights_enabled = enabled;
+	if (!enabled) {
+		hide_unused_render_thruster_lights(0);
+	}
+}
+
 int GameSim::get_player_race_place(int player_id) const
 {
-	if (!cars || !car_player_ids || num_cars <= 0) {
+	if (!cars || !car_player_ids || num_cars <= 0 ||
+			!vehicle_tick_soa.placement_order_valid ||
+			!vehicle_tick_soa.placement_indices) {
 		return 1;
 	}
 
-	int target_index = -1;
 	for (int i = 0; i < num_cars; ++i) {
-		if (car_player_ids[i] == player_id) {
-			target_index = i;
+		const int car_index = vehicle_tick_soa.placement_indices[i];
+		if (car_index < 0 || car_index >= num_cars) {
+			continue;
+		}
+		if (car_player_ids[car_index] == player_id) {
+			return i + 1;
+		}
+	}
+	return 1;
+}
+
+godot::PackedInt32Array GameSim::get_race_leaderboard_window(int player_id, int max_entries) const
+{
+	godot::PackedInt32Array window;
+	if (!cars || !car_player_ids || num_cars <= 0 ||
+			!vehicle_tick_soa.placement_order_valid ||
+			!vehicle_tick_soa.placement_indices) {
+		return window;
+	}
+	const int entry_count = std::max(1, std::min(max_entries, num_cars));
+	int focus_rank = -1;
+	for (int i = 0; i < num_cars; ++i) {
+		const int car_index = vehicle_tick_soa.placement_indices[i];
+		if (car_index < 0 || car_index >= num_cars) {
+			continue;
+		}
+		if (car_player_ids[car_index] == player_id) {
+			focus_rank = i;
 			break;
 		}
 	}
-	if (target_index < 0) {
-		return 1;
+	if (focus_rank < 0) {
+		focus_rank = 0;
 	}
 
-	PhysicsCarSoA& target_soa = *cars[target_index].soa;
-	const int target_lane = cars[target_index].soa_index;
-	const float target_distance = compute_vehicle_distance_along_track(
-		target_soa.current_checkpoint[target_lane],
-		target_soa.checkpoint_fraction[target_lane],
-		target_soa.lap[target_lane]);
+	const int half = entry_count >> 1;
+	int start = focus_rank - half;
+	const int max_start = num_cars - entry_count;
+	if (start < 0) {
+		start = 0;
+	}
+	if (start > max_start) {
+		start = max_start;
+	}
 
-	int place = 1;
-	for (int i = 0; i < num_cars; ++i) {
-		if (i == target_index) {
+	window.resize(1 + entry_count * 2);
+	window.set(0, focus_rank + 1);
+	int out_index = 1;
+	for (int i = 0; i < entry_count; ++i) {
+		const int rank = start + i;
+		const int car_index = vehicle_tick_soa.placement_indices[rank];
+		if (car_index < 0 || car_index >= num_cars) {
+			window.set(out_index++, -1);
+			window.set(out_index++, rank + 1);
 			continue;
 		}
-		PhysicsCarSoA& other_soa = *cars[i].soa;
-		const int other_lane = cars[i].soa_index;
-		const float other_distance = compute_vehicle_distance_along_track(
-			other_soa.current_checkpoint[other_lane],
-			other_soa.checkpoint_fraction[other_lane],
-			other_soa.lap[other_lane]);
-		if (other_distance > target_distance) {
-			place += 1;
-		}
+		window.set(out_index++, car_player_ids[car_index]);
+		window.set(out_index++, rank + 1);
 	}
-	return place;
+	return window;
 }
 
 bool GameSim::is_player_race_finished(int player_id) const
@@ -2084,27 +2158,11 @@ godot::String GameSim::get_player_debug_string(int player_id) const
 godot::Array GameSim::get_race_order()
 {
 	godot::Array order;
-	if (!cars || !car_player_ids || num_cars <= 0) {
+	if (!cars || !car_player_ids || num_cars <= 0 ||
+			!vehicle_tick_soa.placement_order_valid ||
+			!vehicle_tick_soa.placement_indices) {
 		return order;
 	}
-	if (vehicle_tick_soa.capacity < num_cars || !vehicle_tick_soa.placement_distances || !vehicle_tick_soa.placement_indices) {
-		ensure_vehicle_tick_soa_capacity(num_cars);
-	}
-	if (!vehicle_tick_soa.placement_distances || !vehicle_tick_soa.placement_indices) {
-		return order;
-	}
-	for (int i = 0; i < num_cars; ++i) {
-		PhysicsCarSoA& car_soa = *cars[i].soa;
-		const int lane = cars[i].soa_index;
-		vehicle_tick_soa.placement_distances[i] = compute_vehicle_distance_along_track(
-			car_soa.current_checkpoint[lane],
-			car_soa.checkpoint_fraction[lane],
-			car_soa.lap[lane]);
-		vehicle_tick_soa.placement_indices[i] = i;
-	}
-	std::sort(vehicle_tick_soa.placement_indices, vehicle_tick_soa.placement_indices + num_cars, [&](int a, int b) {
-		return vehicle_tick_soa.placement_distances[a] > vehicle_tick_soa.placement_distances[b];
-	});
 	for (int i = 0; i < num_cars; ++i) {
 		const int car_index = vehicle_tick_soa.placement_indices[i];
 		if (car_index >= 0 && car_index < num_cars) {
@@ -2460,6 +2518,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	std::sort(soa.placement_indices, soa.placement_indices + num_cars, [&](int a, int b) {
 		return soa.placement_distances[a] > soa.placement_distances[b];
 	});
+	soa.placement_order_valid = true;
 
 	if (super_spark_state) {
 		super_spark_state->placement_timer += 1;
@@ -4148,8 +4207,10 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 	}
 
 	int max_thrusters_per_car = 0;
-	for (const std::vector<SimTransform>& thrusters : render_thruster_local_transforms) {
-		max_thrusters_per_car = std::max(max_thrusters_per_car, static_cast<int>(thrusters.size()));
+	if (render_thruster_lights_enabled) {
+		for (const std::vector<SimTransform>& thrusters : render_thruster_local_transforms) {
+			max_thrusters_per_car = std::max(max_thrusters_per_car, static_cast<int>(thrusters.size()));
+		}
 	}
 	ensure_render_thruster_light_capacity((FULL_EFFECT_BUDGET + 1) * max_thrusters_per_car);
 	RenderingServer* rs = RenderingServer::get_singleton();
@@ -4160,9 +4221,12 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 	for (RenderEffectPoolSlot& slot : render_effect_pool_slots) {
 		if (slot.fixed_local) {
 			local_effect_slot = &slot;
-			continue;
+			if (render_node_effects_enabled) {
+				continue;
+			}
 		}
-		if (slot.car_index >= 0 && (slot.car_index >= count || render_effect_full_flags[slot.car_index] == 0)) {
+		if (!render_node_effects_enabled ||
+				(slot.car_index >= 0 && (slot.car_index >= count || render_effect_full_flags[slot.car_index] == 0))) {
 			if (slot.recharge_particles) {
 				slot.recharge_particles->set_emitting(false);
 			}
@@ -4249,7 +4313,9 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		}
 		refs.full_effect_active = 1;
 		RenderEffectPoolSlot* pool_slot = nullptr;
-		if (i == local_car_index && local_effect_slot) {
+		if (!render_node_effects_enabled) {
+			pool_slot = nullptr;
+		} else if (i == local_car_index && local_effect_slot) {
 			pool_slot = local_effect_slot;
 		} else {
 			while (node_effect_slot < static_cast<int>(render_effect_pool_slots.size()) &&
@@ -4336,7 +4402,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			}
 		}
 		const int archetype = i < static_cast<int>(render_car_archetype_indices.size()) ? render_car_archetype_indices[i] : -1;
-		if (rs && archetype >= 0 && archetype < static_cast<int>(render_thruster_local_transforms.size())) {
+		if (render_thruster_lights_enabled && rs && archetype >= 0 && archetype < static_cast<int>(render_thruster_local_transforms.size())) {
 			const std::vector<SimTransform>& local_thrusters = render_thruster_local_transforms[archetype];
 			const float current_thrust = render_thruster_current_thrust[i];
 			for (int t = 0; t < static_cast<int>(local_thrusters.size()) && thruster_light_slot < static_cast<int>(render_thruster_lights.size()); ++t) {

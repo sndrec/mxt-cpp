@@ -12,6 +12,7 @@
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "godot_cpp/variant/rid.hpp"
 #include "godot_cpp/variant/array.hpp"
+#include "godot_cpp/variant/packed_int32_array.hpp"
 #include "fzgx_gameplay_camera.h"
 #include "track/racetrack.h"
 #include "mxt_core/heap_handler.h"
@@ -50,6 +51,7 @@ namespace godot {
 			float* pre_distances = nullptr;
 			float* placement_distances = nullptr;
 			int* placement_indices = nullptr;
+			bool placement_order_valid = false;
 			uint8_t* pending_s_boost_sparks = nullptr;
 			int* collision_indices = nullptr;
 			float* collision_min_x = nullptr;
@@ -247,6 +249,8 @@ namespace godot {
 			std::vector<RenderThrusterLightRID> render_thruster_lights;
 			godot::RID render_thruster_light_scenario;
 			int render_thruster_light_visible_count = 0;
+			bool render_node_effects_enabled = true;
+			bool render_thruster_lights_enabled = true;
 			void cache_native_visual_effect_nodes();
 			void update_native_visual_effects(int visual_count, float alpha, bool step_effects, float effect_delta, bool step_electricity);
 			void clear_render_thruster_lights();
@@ -294,7 +298,10 @@ namespace godot {
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;
 		void set_render_profile_enabled(bool enabled);
+		void set_render_node_effects_enabled(bool enabled);
+		void set_render_thruster_lights_enabled(bool enabled);
 		int get_player_race_place(int player_id) const;
+		godot::PackedInt32Array get_race_leaderboard_window(int player_id, int max_entries) const;
 		bool is_player_race_finished(int player_id) const;
 		double get_player_lap_distance(int player_id) const;
 		int get_player_lap(int player_id) const;

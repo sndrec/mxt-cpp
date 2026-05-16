@@ -22,6 +22,7 @@ var boost_energy_use_rate: float = 1.0
 var _sboost_full_width: float = 0.0
 var focus_player_id := 0
 const MAX_LEADERBOARD_ENTRIES := 5
+var leaderboard_labels: Array[Label] = []
 
 @export var placement_digit_size := Vector2(96.0, 96.0)
 @export var placement_digit_kerning := -24.0
@@ -54,6 +55,8 @@ const CHECK_ICON_POOL_SIZE := 6
 @onready var clamped_input := $InputViewer/ClampedInput
 
 func _player_name_for_id(nm: NetworkManager, id: int) -> String:
+	if id < 0:
+		return ""
 	var name := str(id)
 	var settings = nm.player_settings.get(id, null)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
@@ -62,53 +65,28 @@ func _player_name_for_id(nm: NetworkManager, id: int) -> String:
 		name = "[CPU] " + name
 	return name
 
-func _ordered_race_ids(car: VisualCar, nm: NetworkManager) -> Array:
-	var ordered: Array = []
-	for id in nm.finish_order:
-		if id != null and !ordered.has(id):
-			ordered.append(id)
-	var native_order: Array = car.game_manager.game_sim.get_race_order()
-	for id in native_order:
-		if !ordered.has(id):
-			ordered.append(id)
-	for id in nm.get_simulation_roster():
-		if !ordered.has(id):
-			ordered.append(id)
-	return ordered
-
 func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fallback_place: int) -> int:
 	if leaderboard_container == null:
 		return fallback_place
-	var entries: Array = []
-	var ordered_ids := _ordered_race_ids(car, nm)
-	for i in range(ordered_ids.size()):
-		var id = ordered_ids[i]
-		var place := int(nm.player_finish_placements[id]) if nm.player_finish_placements.has(id) else i + 1
-		entries.append({
-			"id": id,
-			"name": _player_name_for_id(nm, id),
-			"place": place,
-		})
-	var focus_index := ordered_ids.find(focus_id)
-	if focus_index < 0:
-		focus_index = clampi(fallback_place - 1, 0, maxi(entries.size() - 1, 0))
-	var start_index := 0
-	if entries.size() > MAX_LEADERBOARD_ENTRIES:
-		start_index = clampi(focus_index - 2, 0, entries.size() - MAX_LEADERBOARD_ENTRIES)
-	var visible_count := mini(MAX_LEADERBOARD_ENTRIES, entries.size() - start_index)
-	var labels := leaderboard_container.get_children()
-	for i in range(labels.size()):
-		var label := labels[i] as Label
-		if label == null:
-			continue
+	var window: PackedInt32Array = car.game_manager.game_sim.get_race_leaderboard_window(focus_id, MAX_LEADERBOARD_ENTRIES)
+	if window.size() <= 1:
+		return fallback_place
+	var focus_place := int(window[0])
+	var visible_count := int((window.size() - 1) / 2)
+	for i in range(leaderboard_labels.size()):
+		var label := leaderboard_labels[i]
 		label.visible = i < visible_count
 		if i >= visible_count:
 			continue
-		var entry: Dictionary = entries[start_index + i]
-		label.text = "%d  %s" % [int(entry["place"]), str(entry["name"])]
-	if focus_index >= 0 and focus_index < entries.size():
-		return int(entries[focus_index]["place"])
-	return fallback_place
+		var window_index := 1 + i * 2
+		var id := int(window[window_index])
+		var place := int(window[window_index + 1])
+		if nm.player_finish_placements.has(id):
+			place = int(nm.player_finish_placements[id])
+		label.text = "%d  %s" % [place, _player_name_for_id(nm, id)]
+	if nm.player_finish_placements.has(focus_id):
+		focus_place = int(nm.player_finish_placements[focus_id])
+	return focus_place
 
 func _action_just_pressed_any(names: Array[String]) -> bool:
 	for action in names:
@@ -313,6 +291,10 @@ func _update_world_stickers(car: VisualCar) -> void:
 		rect.position = camera.unproject_position(world_pos) - rect.size * 0.5 + Vector2(0.0, rise)
 
 func _ready() -> void:
+	if leaderboard_container:
+		for child in leaderboard_container.get_children():
+			if child is Label:
+				leaderboard_labels.append(child as Label)
 	if get_parent() is VisualCar:
 		var car: VisualCar = get_parent()
 		var path: String = car.car_definition.car_definition
@@ -408,7 +390,7 @@ func _process( _delta:float ) -> void:
 		countdowncontrol.scale += Vector2(1, 1) * _delta * 4
 		countdowncontrol.modulate.a = max(0, countdowncontrol.modulate.a - _delta * 4)
 	
-	var our_place := car.game_manager.game_sim.get_player_race_place(place_id)
+	var our_place := 1
 
 	if nm.player_finish_placements.has(place_id):
 		our_place = nm.player_finish_placements[place_id]
