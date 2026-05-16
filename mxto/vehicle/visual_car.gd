@@ -79,6 +79,7 @@ enum FZ_TC{
 @onready var landing_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D7
 
 var owning_id : int = 0
+var effect_pool_slot : int = -1
 var player_settings: Resource
 var game_manager : GameManager
 @onready var race_hud: RaceHud = $race_hud

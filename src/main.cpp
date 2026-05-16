@@ -3330,6 +3330,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_vehicle_visual_state.clear();
 		render_vehicle_effect_refs.clear();
 		render_effect_full_flags.clear();
+		render_effect_pool_slots.clear();
 		clear_render_thruster_lights();
 		native_cpu_drivers.clear();
 		race_events.clear();
@@ -3372,6 +3373,7 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_vehicle_visual_state.clear();
 	render_vehicle_effect_refs.clear();
 	render_effect_full_flags.clear();
+	render_effect_pool_slots.clear();
 	clear_render_thruster_lights();
 	if (!car_render_manager) {
 		return;
@@ -3554,53 +3556,74 @@ void GameSim::cache_native_visual_effect_nodes()
 {
 	render_vehicle_effect_refs.clear();
 	render_effect_full_flags.clear();
+	render_effect_pool_slots.clear();
+	const int car_count = std::max(0, num_cars);
+	render_vehicle_effect_refs.resize(car_count);
+	render_effect_full_flags.resize(car_count);
 	if (!car_node_container) {
 		return;
 	}
-	TypedArray<godot::Node> vis_cars = car_node_container->get_children();
-	render_vehicle_effect_refs.resize(vis_cars.size());
-	render_effect_full_flags.resize(vis_cars.size());
-	for (int i = 0; i < vis_cars.size(); ++i) {
-		Node* car_node = Object::cast_to<Node>(vis_cars[i]);
+	TypedArray<godot::Node> visual_nodes = car_node_container->get_children();
+	for (int i = 0; i < visual_nodes.size(); ++i) {
+		Node* car_node = Object::cast_to<Node>(visual_nodes[i]);
 		if (!car_node) {
 			continue;
 		}
 		car_node->set_process(false);
 		car_node->set_physics_process(false);
-		RenderVehicleEffectRefs& refs = render_vehicle_effect_refs[i];
-		refs.car_transform = Object::cast_to<Node3D>(car_node->get_node_or_null(NodePath("CarTransform")));
-		if (refs.car_transform) {
-			refs.recharge_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("RechargeParticles")));
-			refs.attack_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("AttackParticles")));
-			refs.landing_particles = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("LandingParticles")));
-			refs.damage_electricity = Object::cast_to<GPUParticles3D>(refs.car_transform->get_node_or_null(NodePath("DamageElectricity")));
-			if (refs.damage_electricity) {
-				refs.damage_smoke = Object::cast_to<GPUParticles3D>(refs.damage_electricity->get_node_or_null(NodePath("DamageSmoke")));
-				refs.damage_electricity_material = refs.damage_electricity->get_process_material();
+		const Variant slot_var = car_node->get(StringName("effect_pool_slot"));
+		if (slot_var.get_type() != Variant::INT) {
+			continue;
+		}
+		const int slot_index = static_cast<int>(static_cast<int64_t>(slot_var));
+		const bool local_visual = static_cast<bool>(car_node->get(StringName("local_visual_enabled")));
+		int output_slot = slot_index;
+		if (slot_index < 0 && local_visual) {
+			output_slot = static_cast<int>(render_effect_pool_slots.size());
+		}
+		if (output_slot < 0) {
+			continue;
+		}
+		if (static_cast<int>(render_effect_pool_slots.size()) <= output_slot) {
+			render_effect_pool_slots.resize(output_slot + 1);
+		}
+		RenderEffectPoolSlot& slot = render_effect_pool_slots[output_slot];
+		slot.car_index = -1;
+		slot.fixed_local = local_visual ? 1 : 0;
+		slot.node = car_node;
+		slot.car_transform = Object::cast_to<Node3D>(car_node->get_node_or_null(NodePath("CarTransform")));
+		if (slot.car_transform) {
+			slot.recharge_particles = Object::cast_to<GPUParticles3D>(slot.car_transform->get_node_or_null(NodePath("RechargeParticles")));
+			slot.attack_particles = Object::cast_to<GPUParticles3D>(slot.car_transform->get_node_or_null(NodePath("AttackParticles")));
+			slot.landing_particles = Object::cast_to<GPUParticles3D>(slot.car_transform->get_node_or_null(NodePath("LandingParticles")));
+			slot.damage_electricity = Object::cast_to<GPUParticles3D>(slot.car_transform->get_node_or_null(NodePath("DamageElectricity")));
+			if (slot.damage_electricity) {
+				slot.damage_smoke = Object::cast_to<GPUParticles3D>(slot.damage_electricity->get_node_or_null(NodePath("DamageSmoke")));
+				slot.damage_electricity_material = slot.damage_electricity->get_process_material();
 			}
 		}
-		refs.boost_electricity = Object::cast_to<Object>(car_node->get_node_or_null(NodePath("BoostElectricity")));
-		if (refs.recharge_particles) {
-			refs.recharge_particles->set_emitting(false);
+		slot.boost_electricity = Object::cast_to<Object>(car_node->get_node_or_null(NodePath("BoostElectricity")));
+		if (slot.recharge_particles) {
+			slot.recharge_particles->set_emitting(false);
 		}
-		if (refs.attack_particles) {
-			refs.attack_particles->set_emitting(false);
+		if (slot.attack_particles) {
+			slot.attack_particles->set_emitting(false);
 		}
-		if (refs.landing_particles) {
-			refs.landing_particles->set_emitting(false);
+		if (slot.landing_particles) {
+			slot.landing_particles->set_emitting(false);
 		}
-		if (refs.damage_electricity) {
-			refs.damage_electricity->set_emitting(false);
-			refs.damage_electricity->set_amount_ratio(0.0);
-			refs.damage_electricity->set_visible(false);
+		if (slot.damage_electricity) {
+			slot.damage_electricity->set_emitting(false);
+			slot.damage_electricity->set_amount_ratio(0.0);
+			slot.damage_electricity->set_visible(false);
 		}
-		if (refs.damage_smoke) {
-			refs.damage_smoke->set_emitting(false);
-			refs.damage_smoke->set_amount_ratio(0.0);
+		if (slot.damage_smoke) {
+			slot.damage_smoke->set_emitting(false);
+			slot.damage_smoke->set_amount_ratio(0.0);
 		}
-		if (refs.boost_electricity) {
-			refs.boost_electricity->set("boosting", false);
-			refs.boost_electricity->set("visible", false);
+		if (slot.boost_electricity) {
+			slot.boost_electricity->set("boosting", false);
+			slot.boost_electricity->set("visible", false);
 		}
 	}
 }
@@ -4104,14 +4127,24 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		}
 	}
 	const int full_budget = std::min(count, FULL_EFFECT_BUDGET);
+	if (local_car_index >= 0 && local_car_index < count) {
+		bool local_selected = false;
+		for (int n = 0; n < full_budget; ++n) {
+			if (nearest_indices[n] == local_car_index) {
+				local_selected = true;
+				break;
+			}
+		}
+		if (!local_selected && full_budget > 0) {
+			nearest_indices[full_budget - 1] = local_car_index;
+			nearest_distances[full_budget - 1] = -1.0f;
+		}
+	}
 	for (int n = 0; n < full_budget; ++n) {
 		const int idx = nearest_indices[n];
 		if (idx >= 0 && idx < count) {
 			render_effect_full_flags[idx] = 1;
 		}
-	}
-	if (local_car_index >= 0 && local_car_index < count) {
-		render_effect_full_flags[local_car_index] = 1;
 	}
 
 	int max_thrusters_per_car = 0;
@@ -4122,6 +4155,40 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 	RenderingServer* rs = RenderingServer::get_singleton();
 	const float light_phase = std::sin(static_cast<float>(tick) * 2.0f) * 0.5f + 0.5f;
 	int thruster_light_slot = 0;
+	int node_effect_slot = 0;
+	RenderEffectPoolSlot* local_effect_slot = nullptr;
+	for (RenderEffectPoolSlot& slot : render_effect_pool_slots) {
+		if (slot.fixed_local) {
+			local_effect_slot = &slot;
+			continue;
+		}
+		if (slot.car_index >= 0 && (slot.car_index >= count || render_effect_full_flags[slot.car_index] == 0)) {
+			if (slot.recharge_particles) {
+				slot.recharge_particles->set_emitting(false);
+			}
+			if (slot.attack_particles) {
+				slot.attack_particles->set_emitting(false);
+			}
+			if (slot.landing_particles) {
+				slot.landing_particles->set_emitting(false);
+			}
+			if (slot.damage_electricity) {
+				slot.damage_electricity->set_visible(false);
+				slot.damage_electricity->set_emitting(false);
+				slot.damage_electricity->set_amount_ratio(0.0);
+			}
+			if (slot.damage_smoke) {
+				slot.damage_smoke->set_visible(false);
+				slot.damage_smoke->set_emitting(false);
+				slot.damage_smoke->set_amount_ratio(0.0);
+			}
+			if (slot.boost_electricity) {
+				slot.boost_electricity->set("boosting", false);
+				slot.boost_electricity->set("visible", false);
+			}
+			slot.car_index = -1;
+		}
+	}
 
 	for (int i = 0; i < count; ++i) {
 		RenderVehicleEffectRefs& refs = render_vehicle_effect_refs[i];
@@ -4172,31 +4239,6 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		render_thruster_current_thrust[i] += (thrust - render_thruster_current_thrust[i]) * 0.4f;
 		if (!full) {
 			if (refs.full_effect_active) {
-				if (refs.car_transform) {
-					refs.car_transform->set_global_transform(gd_transform(visual_transform));
-				}
-				if (refs.recharge_particles) {
-					refs.recharge_particles->set_emitting(false);
-				}
-				if (refs.attack_particles) {
-					refs.attack_particles->set_emitting(false);
-				}
-				if (refs.landing_particles) {
-					refs.landing_particles->set_emitting(false);
-				}
-				if (refs.damage_electricity) {
-					refs.damage_electricity->set_visible(false);
-					refs.damage_electricity->set_emitting(false);
-					refs.damage_electricity->set_amount_ratio(0.0);
-				}
-				if (refs.damage_smoke) {
-					refs.damage_smoke->set_emitting(false);
-					refs.damage_smoke->set_amount_ratio(0.0);
-				}
-				if (refs.boost_electricity) {
-					refs.boost_electricity->set("boosting", false);
-					refs.boost_electricity->set("visible", false);
-				}
 				refs.full_effect_active = 0;
 			}
 			if (step_effects) {
@@ -4206,44 +4248,92 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			continue;
 		}
 		refs.full_effect_active = 1;
-		if (refs.car_transform) {
-			refs.car_transform->set_global_transform(gd_transform(visual_transform));
-		}
-		if (refs.recharge_particles) {
-			refs.recharge_particles->set_emitting(full && ((terrain_state & TERRAIN::RECHARGE) != 0u));
-		}
-		if (refs.attack_particles) {
-			refs.attack_particles->set_emitting(full && ((machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0u));
-		}
-		if (step_effects && refs.landing_particles) {
-			if (full && (machine_state & MACHINESTATE::JUSTLANDED) != 0u && (refs.machine_state_old & MACHINESTATE::JUSTLANDED) == 0u) {
-				refs.landing_particles->restart();
-				refs.landing_particles->set_emitting(true);
-			} else if (!full) {
-				refs.landing_particles->set_emitting(false);
+		RenderEffectPoolSlot* pool_slot = nullptr;
+		if (i == local_car_index && local_effect_slot) {
+			pool_slot = local_effect_slot;
+		} else {
+			while (node_effect_slot < static_cast<int>(render_effect_pool_slots.size()) &&
+					render_effect_pool_slots[node_effect_slot].fixed_local) {
+				++node_effect_slot;
+			}
+			if (node_effect_slot < static_cast<int>(render_effect_pool_slots.size())) {
+				pool_slot = &render_effect_pool_slots[node_effect_slot];
+				++node_effect_slot;
 			}
 		}
-		if (refs.damage_electricity) {
-			const bool active = full && (low_energy_ratio > 0.001f || boost_ratio > 0.5f);
-			const SimVec3 damage_effect_origin = visual_transform.origin + visual_transform.basis.get_column(1) * -0.125f;
-			refs.damage_electricity->set_global_position(gd_vec3(damage_effect_origin));
-			refs.damage_electricity->set_visible(full);
-			refs.damage_electricity->set_emitting(active);
-			refs.damage_electricity->set_amount_ratio(active ? low_energy_ratio + std::max(boost_ratio - 0.5f, 0.0f) : 0.0f);
-			if (refs.damage_electricity_material.is_valid()) {
-				refs.damage_electricity_material->set(
-					StringName("color"),
-					godot::Color(
-						1.0f + (0.5f - 1.0f) * health_effect_ratio,
-						0.75f,
-						0.5f + (1.0f - 0.5f) * health_effect_ratio,
-						1.0f));
+		if (pool_slot) {
+			if (pool_slot->car_index != i) {
+				if (pool_slot->recharge_particles) {
+					pool_slot->recharge_particles->set_emitting(false);
+				}
+				if (pool_slot->attack_particles) {
+					pool_slot->attack_particles->set_emitting(false);
+				}
+				if (pool_slot->landing_particles) {
+					pool_slot->landing_particles->set_emitting(false);
+				}
+				if (pool_slot->damage_electricity) {
+					pool_slot->damage_electricity->set_visible(false);
+					pool_slot->damage_electricity->set_emitting(false);
+					pool_slot->damage_electricity->set_amount_ratio(0.0);
+					pool_slot->damage_electricity->restart();
+				}
+				if (pool_slot->damage_smoke) {
+					pool_slot->damage_smoke->set_emitting(false);
+					pool_slot->damage_smoke->set_amount_ratio(0.0);
+					pool_slot->damage_smoke->restart();
+				}
+				if (pool_slot->boost_electricity) {
+					pool_slot->boost_electricity->set("boosting", false);
+					pool_slot->boost_electricity->set("visible", false);
+					pool_slot->boost_electricity->set("old_transform", gd_transform(visual_transform));
+					pool_slot->boost_electricity->set("queued_tendrils", 0.0);
+				}
+				if (!pool_slot->fixed_local && pool_slot->node) {
+					pool_slot->node->set("owning_id", car_player_ids ? car_player_ids[i] : -1);
+				}
 			}
+			pool_slot->car_index = i;
 		}
-		if (refs.damage_smoke) {
-			const bool smoke_active = full && low_energy_ratio > 0.001f;
-			refs.damage_smoke->set_emitting(smoke_active);
-			refs.damage_smoke->set_amount_ratio(smoke_active ? low_energy_ratio : 0.0f);
+		if (pool_slot) {
+			if (pool_slot->car_transform) {
+				pool_slot->car_transform->set_global_transform(gd_transform(visual_transform));
+			}
+			if (pool_slot->recharge_particles) {
+				pool_slot->recharge_particles->set_emitting((terrain_state & TERRAIN::RECHARGE) != 0u);
+			}
+			if (pool_slot->attack_particles) {
+				pool_slot->attack_particles->set_emitting((machine_state & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0u);
+			}
+			if (step_effects && pool_slot->landing_particles &&
+					(machine_state & MACHINESTATE::JUSTLANDED) != 0u &&
+					(refs.machine_state_old & MACHINESTATE::JUSTLANDED) == 0u) {
+				pool_slot->landing_particles->restart();
+				pool_slot->landing_particles->set_emitting(true);
+			}
+			if (pool_slot->damage_electricity) {
+				const bool active = low_energy_ratio > 0.001f || boost_ratio > 0.5f;
+				const SimVec3 damage_effect_origin = visual_transform.origin + visual_transform.basis.get_column(1) * -0.125f;
+				pool_slot->damage_electricity->set_global_position(gd_vec3(damage_effect_origin));
+				pool_slot->damage_electricity->set_visible(active);
+				pool_slot->damage_electricity->set_emitting(active);
+				pool_slot->damage_electricity->set_amount_ratio(active ? low_energy_ratio + std::max(boost_ratio - 0.5f, 0.0f) : 0.0f);
+				if (pool_slot->damage_electricity_material.is_valid()) {
+					pool_slot->damage_electricity_material->set(
+						StringName("color"),
+						godot::Color(
+							1.0f + (0.5f - 1.0f) * health_effect_ratio,
+							0.75f,
+							0.5f + (1.0f - 0.5f) * health_effect_ratio,
+							1.0f));
+				}
+			}
+			if (pool_slot->damage_smoke) {
+				const bool smoke_active = low_energy_ratio > 0.001f;
+				pool_slot->damage_smoke->set_visible(smoke_active);
+				pool_slot->damage_smoke->set_emitting(smoke_active);
+				pool_slot->damage_smoke->set_amount_ratio(smoke_active ? low_energy_ratio : 0.0f);
+			}
 		}
 		const int archetype = i < static_cast<int>(render_car_archetype_indices.size()) ? render_car_archetype_indices[i] : -1;
 		if (rs && archetype >= 0 && archetype < static_cast<int>(render_thruster_local_transforms.size())) {
@@ -4264,7 +4354,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			}
 		}
 
-		if (refs.boost_electricity) {
+		if (pool_slot && pool_slot->boost_electricity) {
 			SimVec3 track_up = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 			if (track_up.length_squared() <= 0.0001f) {
 				track_up = visual_transform.basis.get_column(1);
@@ -4282,18 +4372,46 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 				full &&
 				((soa.boost_frames[lane] > 0u || soa.boost_frames_manual[lane] > 0u) &&
 					(machine_state & MACHINESTATE::AIRBORNE) == 0u);
-			refs.boost_electricity->set("boosting", boosting);
-			refs.boost_electricity->set("visible", full);
+			pool_slot->boost_electricity->set("boosting", boosting);
+			pool_slot->boost_electricity->set("visible", true);
 			if (full && step_electricity) {
-				refs.boost_electricity->set("ground", godot::Plane(gd_vec3(track_up), gd_vec3(track_surface_pos)));
-				refs.boost_electricity->set("tendril_lifetime", std::max(0.1f, std::min(0.3f, 0.3f - soa.speed_kmh[lane] * (0.2f / 3000.0f))));
-				refs.boost_electricity->call("calculate_electricity", static_cast<double>(effect_delta), gd_transform(visual_transform));
+				pool_slot->boost_electricity->set("ground", godot::Plane(gd_vec3(track_up), gd_vec3(track_surface_pos)));
+				pool_slot->boost_electricity->set("tendril_lifetime", std::max(0.1f, std::min(0.3f, 0.3f - soa.speed_kmh[lane] * (0.2f / 3000.0f))));
+				pool_slot->boost_electricity->call("calculate_electricity", static_cast<double>(effect_delta), gd_transform(visual_transform));
 			}
 		}
 
 		if (step_effects) {
 			refs.terrain_state_old = terrain_state;
 			refs.machine_state_old = machine_state;
+		}
+	}
+	for (int i = node_effect_slot; i < static_cast<int>(render_effect_pool_slots.size()); ++i) {
+		RenderEffectPoolSlot& slot = render_effect_pool_slots[i];
+		if (slot.fixed_local) {
+			continue;
+		}
+		if (slot.recharge_particles) {
+			slot.recharge_particles->set_emitting(false);
+		}
+		if (slot.attack_particles) {
+			slot.attack_particles->set_emitting(false);
+		}
+		if (slot.landing_particles) {
+			slot.landing_particles->set_emitting(false);
+		}
+		if (slot.damage_electricity) {
+			slot.damage_electricity->set_visible(false);
+			slot.damage_electricity->set_emitting(false);
+			slot.damage_electricity->set_amount_ratio(0.0);
+		}
+		if (slot.damage_smoke) {
+			slot.damage_smoke->set_emitting(false);
+			slot.damage_smoke->set_amount_ratio(0.0);
+		}
+		if (slot.boost_electricity) {
+			slot.boost_electricity->set("boosting", false);
+			slot.boost_electricity->set("visible", false);
 		}
 	}
 	hide_unused_render_thruster_lights(thruster_light_slot);
@@ -4713,8 +4831,9 @@ void GameSim::update_super_spark_visuals()
 			render_profile_get_children_us += now - profile_step;
 			profile_step = now;
 		}
-		const int vis_car_count = std::min(num_cars, static_cast<int>(vis_cars.size()));
-		if (static_cast<int>(render_vehicle_effect_refs.size()) != vis_car_count) {
+		const int vis_car_count = std::max(0, num_cars);
+		if (static_cast<int>(render_vehicle_effect_refs.size()) != vis_car_count ||
+				render_effect_pool_slots.empty()) {
 			cache_native_visual_effect_nodes();
 		}
 		if (render_profile_enabled) {
@@ -4752,10 +4871,21 @@ void GameSim::update_super_spark_visuals()
 		}
 		godot::Array local_visual_args;
 		local_visual_args.resize(51);
-		for (int i = 0; i < vis_car_count; i++) {
+		for (int i = 0; i < vis_cars.size(); i++) {
 			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
 			if (vis_car && static_cast<bool>(vis_car->get("local_visual_enabled"))) {
-				populate_visual_car_args(local_visual_args, cars[i]);
+				const int32_t owner_id = static_cast<int32_t>(static_cast<int64_t>(vis_car->get("owning_id")));
+				int car_index = -1;
+				for (int n = 0; n < num_cars; ++n) {
+					if (car_player_ids && car_player_ids[n] == owner_id) {
+						car_index = n;
+						break;
+					}
+				}
+				if (car_index < 0 || car_index >= num_cars) {
+					continue;
+				}
+				populate_visual_car_args(local_visual_args, cars[car_index]);
 				vis_car->callv("apply_sim_state", local_visual_args);
 			}
 		}

@@ -89,6 +89,7 @@ var auto_singleplayer_mode: bool = false
 var auto_track_editor_mode: bool = false
 var auto_accelerate_mode: bool = false
 var auto_render_profile_mode: bool = false
+var auto_disable_car_multimesh_mode: bool = false
 var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
@@ -189,6 +190,7 @@ func _ready() -> void:
 	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
 	auto_accelerate_mode = args.has("--auto-accelerate") or user_args.has("--auto-accelerate")
 	auto_render_profile_mode = args.has("--render-profile") or user_args.has("--render-profile")
+	auto_disable_car_multimesh_mode = args.has("--profile-disable-car-multimesh") or user_args.has("--profile-disable-car-multimesh")
 	game_sim.set_render_profile_enabled(auto_render_profile_mode)
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var quit_idx := args.find("--quit-after-frames")
@@ -946,18 +948,18 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
-	var idx := 0
 	nametag_names.clear()
-	nametag_names.resize(car_node_container.get_child_count())
-	for car:VisualCar in car_node_container.get_children():
+	nametag_names.resize(racer_settings.size())
+	for idx in racer_settings.size():
+		var nametag_text: String = " " + racer_settings[idx].username + " "
+		nametag_names[idx] = nametag_text
+	for car: VisualCar in car_node_container.get_children():
 		car.game_manager = self
-		if idx < racer_settings.size():
-			car.player_settings = racer_settings[idx]
-			var nametag_text: String = " " + racer_settings[idx].username + " "
-			nametag_names[idx] = nametag_text
-			if is_instance_valid(car.name_label):
-				car.name_label.text = nametag_text
-		idx += 1
+	if car_node_container.local_visual_car != null and local_player_index >= 0 and local_player_index < racer_settings.size():
+		car_node_container.local_visual_car.player_settings = racer_settings[local_player_index]
+		if is_instance_valid(car_node_container.local_visual_car.name_label):
+			car_node_container.local_visual_car.name_label.text = nametag_names[local_player_index]
+	car_render_manager.multimesh_render_enabled = !auto_disable_car_multimesh_mode
 	car_render_manager.configure(chosen_defs, car_node_container.get_children())
 	for p in players:
 		if p != null:
@@ -982,10 +984,6 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if local_player_index == -1:
 		spectator_node = spectator_scene.instantiate()
 		add_child(spectator_node)
-	else:
-		for car:VisualCar in car_node_container.get_children():
-			if car.owning_id == local_id:
-				car.name_label.queue_free()
 	for n in chosen_defs.size():
 		var def = chosen_defs[n]
 		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
@@ -1004,10 +1002,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
-	if local_player_index >= 0 and local_player_index < car_node_container.get_child_count():
-		var local_car := car_node_container.get_child(local_player_index) as VisualCar
-		if local_car != null:
-			game_sim.set_gameplay_camera(local_car.car_camera, local_car.owning_id)
+	if car_node_container.local_visual_car != null:
+		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 	_configure_nametag_pool()
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
@@ -1143,7 +1139,7 @@ func _configure_nametag_pool() -> void:
 	_reset_nametag_pool()
 	var template_label: Label = null
 	for car: VisualCar in car_node_container.get_children():
-		if car != null and !car.local_visual_enabled and is_instance_valid(car.name_label):
+		if car != null and is_instance_valid(car.name_label):
 			template_label = car.name_label
 			break
 	if template_label == null:
@@ -1189,13 +1185,12 @@ func _update_nametags(active_camera: Camera3D, delta: float) -> void:
 	var camera_position := active_camera.global_position
 	var camera_right := active_camera.global_basis.x
 	var camera_up := active_camera.global_basis.y
-	var child_count := car_node_container.get_child_count()
+	var car_count := nametag_names.size()
 	for slot in NAMETAG_VISIBLE_BUDGET:
 		nametag_best_distances[slot] = INF
 		nametag_best_indices[slot] = -1
-	for car_index in child_count:
-		var car := car_node_container.get_child(car_index) as VisualCar
-		if car == null or car.local_visual_enabled:
+	for car_index in car_count:
+		if car_index == local_player_index:
 			continue
 		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
 		var world_pos: Vector3 = render_transform.origin
@@ -1218,8 +1213,7 @@ func _update_nametags(active_camera: Camera3D, delta: float) -> void:
 			label.visible = false
 			label.modulate.a = 0.0
 			continue
-		var car := car_node_container.get_child(car_index) as VisualCar
-		if car == null:
+		if car_index >= car_count:
 			label.visible = false
 			label.modulate.a = 0.0
 			nametag_pool_car_indices[slot] = -1
@@ -1350,9 +1344,8 @@ func _physics_process(delta: float) -> void:
 		if auto_render_profile_mode:
 			render_profile_nametag_us += Time.get_ticks_usec() - profile_nametag_start
 		var profile_local_visual_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
-		for car:VisualCar in car_node_container.get_children():
-			if car.local_visual_enabled:
-				car.just_rendered()
+		if car_node_container.local_visual_car != null:
+			car_node_container.local_visual_car.just_rendered()
 		if auto_render_profile_mode:
 			render_profile_local_visual_us += Time.get_ticks_usec() - profile_local_visual_start
 			render_profile_physics_us += Time.get_ticks_usec() - profile_physics_start

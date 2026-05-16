@@ -218,14 +218,6 @@ namespace godot {
 			};
 			std::vector<RenderVehicleVisualState> render_vehicle_visual_state;
 			struct RenderVehicleEffectRefs {
-				godot::Node3D* car_transform = nullptr;
-				godot::GPUParticles3D* recharge_particles = nullptr;
-				godot::GPUParticles3D* attack_particles = nullptr;
-				godot::GPUParticles3D* landing_particles = nullptr;
-				godot::GPUParticles3D* damage_electricity = nullptr;
-				godot::GPUParticles3D* damage_smoke = nullptr;
-				godot::Ref<godot::Material> damage_electricity_material;
-				godot::Object* boost_electricity = nullptr;
 				uint32_t terrain_state_old = 0;
 				uint32_t machine_state_old = 0;
 				uint8_t full_effect_active = 0;
@@ -234,6 +226,20 @@ namespace godot {
 			};
 			std::vector<RenderVehicleEffectRefs> render_vehicle_effect_refs;
 			std::vector<uint8_t> render_effect_full_flags;
+			struct RenderEffectPoolSlot {
+				godot::Node* node = nullptr;
+				godot::Node3D* car_transform = nullptr;
+				godot::GPUParticles3D* recharge_particles = nullptr;
+				godot::GPUParticles3D* attack_particles = nullptr;
+				godot::GPUParticles3D* landing_particles = nullptr;
+				godot::GPUParticles3D* damage_electricity = nullptr;
+				godot::GPUParticles3D* damage_smoke = nullptr;
+				godot::Ref<godot::Material> damage_electricity_material;
+				godot::Object* boost_electricity = nullptr;
+				int car_index = -1;
+				uint8_t fixed_local = 0;
+			};
+			std::vector<RenderEffectPoolSlot> render_effect_pool_slots;
 			struct RenderThrusterLightRID {
 				godot::RID light;
 				godot::RID instance;

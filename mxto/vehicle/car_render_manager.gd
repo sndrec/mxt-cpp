@@ -8,6 +8,7 @@ var cars: Array = []
 var archetypes: Array = []
 var car_archetype_indices: PackedInt32Array = PackedInt32Array()
 var car_slots: PackedInt32Array = PackedInt32Array()
+var multimesh_render_enabled: bool = true
 
 func _ready() -> void:
 	process_priority = 2
@@ -31,8 +32,13 @@ func configure(definitions: Array, car_nodes: Array) -> void:
 	clear_renderer()
 	set_process(false)
 	cars = car_nodes.duplicate()
-	car_archetype_indices.resize(cars.size())
-	car_slots.resize(cars.size())
+	car_archetype_indices.resize(definitions.size())
+	car_slots.resize(definitions.size())
+	if !multimesh_render_enabled:
+		for i in range(definitions.size()):
+			car_archetype_indices[i] = -1
+			car_slots[i] = -1
+		return
 	var archetype_map := {}
 	for i in range(definitions.size()):
 		var def: CarDefinition = definitions[i]
