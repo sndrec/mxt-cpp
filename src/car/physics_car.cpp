@@ -2812,7 +2812,7 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 			sample_mesh_floor_with_seed(
 				hit,
 				LOAD_VEC3(position_current),
-				8.0f,
+				3.0f,
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				false,
