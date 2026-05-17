@@ -44,10 +44,12 @@ namespace godot {
 			uint32_t next_sequence = 0;
 			float target_lane = 0.0f;
 		};
+		static constexpr int BUMPER_POOL_SIZE = 60;
 		struct SavedState {
 			char* data;
 			int size;
-			std::vector<BumperState> bumper_states;
+			int bumper_state_count;
+			BumperState bumper_states[BUMPER_POOL_SIZE];
 		};
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		std::vector<char> network_state_live_backup;
@@ -118,7 +120,7 @@ namespace godot {
 		};
 		std::vector<RaceEvent> race_events;
 		std::vector<NativeCpuDriverState> native_cpu_drivers;
-		std::vector<BumperState> bumper_states;
+		BumperState bumper_states[BUMPER_POOL_SIZE];
 		void reset_super_sparks();
 		void update_super_sparks();
 		void update_super_spark_visuals();
@@ -136,6 +138,8 @@ namespace godot {
 		void deactivate_bumper_car(int car_index);
 		void set_bumper_track_state(int car_index, float absolute_distance, float lane_offset, bool reset_history);
 		void update_bumpers(float lead_distance, int leader_lap);
+		void save_bumper_states_to_saved_state(SavedState& state) const;
+		void restore_bumper_states_from_saved_state(const SavedState& state);
 		bool sample_track_transform_at_distance(float absolute_distance, float lane, SimTransform& out_transform, uint16_t& out_checkpoint, float& out_fraction) const;
 		PlayerInput generate_bumper_input_for_car(int car_index) const;
 		void process_pending_ko_events();

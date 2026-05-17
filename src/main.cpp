@@ -1816,6 +1816,7 @@ GameSim::GameSim()
 	{
 		state_buffer[i].data = nullptr;
 		state_buffer[i].size = 0;
+		state_buffer[i].bumper_state_count = 0;
 	}
 	input_buffer = nullptr;
 };
@@ -2031,7 +2032,7 @@ void GameSim::configure_bumper_car(int car_index, int bumper_slot)
 	}
 	soa.machine_name[lane] = "Bumper";
 	soa.m_accel_setting[lane] = 1.0f;
-	if (bumper_slot >= 0 && bumper_slot < static_cast<int>(bumper_states.size())) {
+	if (bumper_slot >= 0 && bumper_slot < bumper_count) {
 		bumper_states[bumper_slot].active = 0;
 		bumper_states[bumper_slot].spawn_lap = 0;
 		bumper_states[bumper_slot].next_sequence = static_cast<uint32_t>(bumper_slot);
@@ -2085,7 +2086,7 @@ void GameSim::deactivate_bumper_car(int car_index)
 		return;
 	}
 	const int bumper_slot = car_index - bumper_start_index;
-	if (bumper_slot >= 0 && bumper_slot < static_cast<int>(bumper_states.size())) {
+	if (bumper_slot >= 0 && bumper_slot < bumper_count) {
 		const int was_active = bumper_states[bumper_slot].active;
 		bumper_states[bumper_slot].active = 0;
 		if (was_active) {
@@ -2182,7 +2183,7 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		lap_distance += lap_length;
 	}
 	const float interval = leader_lap == 2 ? 520.0f : 300.0f;
-	for (int slot = 0; slot < bumper_count && slot < static_cast<int>(bumper_states.size()); ++slot) {
+	for (int slot = 0; slot < bumper_count && slot < BUMPER_POOL_SIZE; ++slot) {
 		const int car_index = bumper_start_index + slot;
 		if (car_index < 0 || car_index >= num_cars) {
 			continue;
@@ -2248,6 +2249,31 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 	}
 }
 
+void GameSim::save_bumper_states_to_saved_state(SavedState& state) const
+{
+	const int capacity = BUMPER_POOL_SIZE;
+	const int count = std::min(bumper_count, capacity);
+	state.bumper_state_count = count;
+	for (int i = 0; i < count; ++i) {
+		state.bumper_states[i] = bumper_states[i];
+	}
+}
+
+void GameSim::restore_bumper_states_from_saved_state(const SavedState& state)
+{
+	const int capacity = BUMPER_POOL_SIZE;
+	const int count = std::min(std::max(state.bumper_state_count, 0), std::min(bumper_count, capacity));
+	for (int i = 0; i < count; ++i) {
+		bumper_states[i] = state.bumper_states[i];
+	}
+	for (int i = count; i < bumper_count && i < BUMPER_POOL_SIZE; ++i) {
+		bumper_states[i].active = 0;
+		bumper_states[i].spawn_lap = 0;
+		bumper_states[i].next_sequence = static_cast<uint32_t>(i);
+		bumper_states[i].target_lane = 0.0f;
+	}
+}
+
 PlayerInput GameSim::generate_bumper_input_for_car(int car_index) const
 {
 	PlayerInput input = PlayerInput::from_neutral();
@@ -2255,10 +2281,10 @@ PlayerInput GameSim::generate_bumper_input_for_car(int car_index) const
 		return input;
 	}
 	const int slot = car_index - bumper_start_index;
-	const float target_lane = (slot >= 0 && slot < static_cast<int>(bumper_states.size())) ? bumper_states[slot].target_lane : 0.0f;
+	const float target_lane = (slot >= 0 && slot < bumper_count) ? bumper_states[slot].target_lane : 0.0f;
 	const PhysicsCarSoA& soa = *cars[car_index].soa;
 	const int lane = cars[car_index].soa_index;
-	if (slot < 0 || slot >= static_cast<int>(bumper_states.size()) || !bumper_states[slot].active) {
+	if (slot < 0 || slot >= bumper_count || !bumper_states[slot].active) {
 		return input;
 	}
 	input.accelerate = 1.0f;
@@ -3716,18 +3742,21 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 
 	bumper_track_seed = bumper_track_seed_from_track(current_track);
-	constexpr int kBumperPoolSize = 12;
 	int requested_cars = requested_cars_hint;
 	race_car_count = requested_cars;
 	bumper_count = 0;
 	bumper_start_index = requested_cars;
-	if (bumpers_enabled && requested_cars > kBumperPoolSize) {
-		bumper_count = kBumperPoolSize;
+	if (bumpers_enabled && requested_cars > BUMPER_POOL_SIZE) {
+		bumper_count = BUMPER_POOL_SIZE;
 		race_car_count = requested_cars - bumper_count;
 		bumper_start_index = race_car_count;
 	}
-	bumper_states.clear();
-	bumper_states.resize(std::max(0, bumper_count));
+	for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
+		bumper_states[i].active = 0;
+		bumper_states[i].spawn_lap = 0;
+		bumper_states[i].next_sequence = static_cast<uint32_t>(i);
+		bumper_states[i].target_lane = 0.0f;
+	}
 	PhysicsCarProperties* props_array = nullptr;
 	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
 	car_properties_array = props_array;
@@ -4018,7 +4047,12 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		render_vehicle_effect_refs.clear();
 		render_effect_full_flags.clear();
 		render_effect_pool_slots.clear();
-		bumper_states.clear();
+		for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
+			bumper_states[i].active = 0;
+			bumper_states[i].spawn_lap = 0;
+			bumper_states[i].next_sequence = static_cast<uint32_t>(i);
+			bumper_states[i].target_lane = 0.0f;
+		}
 		race_car_count = 0;
 		bumper_start_index = 0;
 		bumper_count = 0;
@@ -5845,7 +5879,7 @@ void GameSim::save_state()
 	int index = tick % STATE_BUFFER_LEN;
 	int size = gamestate_data.get_size();
 	state_buffer[index].size = size;
-	state_buffer[index].bumper_states = bumper_states;
+	save_bumper_states_to_saved_state(state_buffer[index]);
 	if (state_buffer[index].data)
 	{
 		memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
@@ -5887,7 +5921,7 @@ void GameSim::load_state(int target_tick)
 	gamestate_data.set_size(size);
 	tick = target_tick + 1;
 	fix_pointers();
-	bumper_states = state_buffer[index].bumper_states;
+	restore_bumper_states_from_saved_state(state_buffer[index]);
 }
 
 void GameSim::finish_render_rollback_correction_capture()
@@ -6155,9 +6189,10 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	writer.write_pod(static_cast<uint16_t>(0));
 	writer.write_pod(static_cast<int32_t>(target_tick));
 	writer.write_pod(static_cast<int32_t>(num_cars));
-	writer.write_pod(static_cast<int32_t>(bumper_states.size()));
+	writer.write_pod(static_cast<int32_t>(bumper_count));
 	writer.write_pod(bumper_track_seed);
-	for (const BumperState& state : bumper_states) {
+	for (int i = 0; i < bumper_count && i < BUMPER_POOL_SIZE; ++i) {
+		const BumperState& state = bumper_states[i];
 		writer.write_pod(state.active);
 		writer.write_pod(state.spawn_lap);
 		writer.write_pod(state.next_sequence);
@@ -6372,7 +6407,8 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	(void)snapshot_tick;
 	if (snapshot_cars != num_cars ||
 			snapshot_bumper_count < 0 ||
-			snapshot_bumper_count != static_cast<int32_t>(bumper_states.size())) {
+			snapshot_bumper_count != bumper_count ||
+			snapshot_bumper_count > BUMPER_POOL_SIZE) {
 		return false;
 	}
 	for (int i = 0; i < snapshot_bumper_count; ++i) {
@@ -6651,7 +6687,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	if (state_buffer[index].data && size > 0) {
 		std::memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
 		state_buffer[index].size = size;
-		state_buffer[index].bumper_states = bumper_states;
+		save_bumper_states_to_saved_state(state_buffer[index]);
 	}
 	return true;
 }
@@ -6816,7 +6852,10 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 		std::memcpy(&magic, data.ptr(), sizeof(uint32_t));
 		if (magic == MXT_NET_STATE_MAGIC) {
 			const int live_size = gamestate_data.get_size();
-			const std::vector<BumperState> live_bumper_states = bumper_states;
+			BumperState live_bumper_states[BUMPER_POOL_SIZE];
+			for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
+				live_bumper_states[i] = bumper_states[i];
+			}
 			if (live_size > 0) {
 				if (static_cast<int>(network_state_live_backup.size()) < live_size) {
 					network_state_live_backup.resize(static_cast<size_t>(live_size));
@@ -6833,7 +6872,9 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 				gamestate_data.set_size(live_size);
 				fix_pointers();
 			}
-			bumper_states = live_bumper_states;
+			for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
+				bumper_states[i] = live_bumper_states[i];
+			}
 			return;
 		}
 	}
