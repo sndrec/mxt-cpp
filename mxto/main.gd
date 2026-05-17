@@ -47,6 +47,7 @@ var lobby_say_text: LineEdit
 var lobby_send_text_button: Button
 var lobby_chibi_cars := {}
 var lobby_grand_prix_track_sequence: Array[int] = []
+var lobby_applying_race_options := false
 
 @onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
 @onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
@@ -184,6 +185,7 @@ func _ready() -> void:
 	network_manager.race_started.connect(_on_network_race_started)
 	network_manager.race_finished.connect(_on_network_race_finished)
 	network_manager.race_event.connect(_on_race_event)
+	network_manager.race_options_changed.connect(_on_network_race_options_changed)
 	car_settings.hide()
 	if !car_settings_button.pressed.is_connected(_on_car_settings_button_pressed):
 		car_settings_button.pressed.connect(_on_car_settings_button_pressed)
@@ -836,7 +838,38 @@ func _build_lobby_race_options() -> Dictionary:
 	}
 
 func _refresh_lobby_race_options() -> void:
-	network_manager.race_options = _build_lobby_race_options()
+	if lobby_applying_race_options:
+		_refresh_lobby_stage_preview()
+		return
+	var options := _build_lobby_race_options()
+	if network_manager.is_server:
+		network_manager.send_race_options(options)
+	else:
+		network_manager.race_options = options
+	_refresh_lobby_stage_preview()
+
+func _on_network_race_options_changed(options: Dictionary) -> void:
+	if lobby_game_mode_choice == null:
+		return
+	lobby_applying_race_options = true
+	var mode := int(options.get("game_mode", 0))
+	if mode >= 0 and mode < lobby_game_mode_choice.item_count:
+		lobby_game_mode_choice.select(mode)
+	if lobby_vehicle_restore_toggle != null:
+		lobby_vehicle_restore_toggle.set_pressed_no_signal(bool(options.get("vehicle_restore", true)))
+	if lobby_bumpers_toggle != null:
+		lobby_bumpers_toggle.set_pressed_no_signal(bool(options.get("bumpers", false)))
+	lobby_grand_prix_track_sequence.clear()
+	var track_indices: Array = options.get("track_indices", [])
+	for track_index in track_indices:
+		var idx := int(track_index)
+		if idx >= 0 and idx < tracks.size():
+			lobby_grand_prix_track_sequence.append(idx)
+	if track_indices.size() > 0:
+		var first_index := int(track_indices[0])
+		if first_index >= 0 and first_index < tracks.size():
+			lobby_track_selector.selected = first_index
+	lobby_applying_race_options = false
 	_refresh_lobby_stage_preview()
 
 func _refresh_lobby_stage_preview() -> void:

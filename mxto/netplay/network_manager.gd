@@ -4,6 +4,7 @@ extends Node
 signal race_started(track_index, player_settings)
 signal race_finished
 signal race_event(event_type, actor_id, target_id, tick, value)
+signal race_options_changed(options)
 
 @rpc("any_peer", "reliable")
 func set_race_finish_time(time: int) -> void:
@@ -1272,6 +1273,7 @@ func _accept_peer(id: int) -> void:
 		waiting_peers.append(id)
 		_update_player_ids.rpc_id(id, player_ids)
 		_send_cpu_roster_to_peer(id)
+		sync_race_options.rpc_id(id, race_options)
 		return
 	if !player_ids.has(id):
 		player_ids.append(id)
@@ -1285,6 +1287,7 @@ func _accept_peer(id: int) -> void:
 		if cpu_ids_changed:
 			_broadcast_cpu_roster()
 		_send_cpu_roster_to_peer(id)
+		sync_race_options.rpc_id(id, race_options)
 	for pid in player_settings.keys():
 		update_player_settings.rpc_id(id, player_settings[pid], pid)
 	_calc_state_offsets()
@@ -2368,6 +2371,7 @@ func is_grand_prix_enabled() -> bool:
 @rpc("authority", "call_local", "reliable")
 func sync_race_options(options: Dictionary) -> void:
 	race_options = options.duplicate(true)
+	race_options_changed.emit(race_options.duplicate(true))
 
 func send_race_options(options: Dictionary) -> void:
 	if is_server:
