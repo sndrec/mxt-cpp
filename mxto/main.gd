@@ -495,11 +495,7 @@ func _build_lobby_options_controls() -> void:
 	var root := VBoxContainer.new()
 	root.name = "LobbyContainer"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.offset_left = 16.0
-	root.offset_top = 16.0
-	root.offset_right = -16.0
-	root.offset_bottom = -16.0
-	root.add_theme_constant_override("separation", 10)
+	root.add_theme_constant_override("separation", 0)
 	lobby_control.add_child(root)
 
 	var top_panel := PanelContainer.new()
@@ -536,13 +532,7 @@ func _build_lobby_options_controls() -> void:
 	stage_box.add_theme_constant_override("separation", 6)
 	top_box.add_child(stage_box)
 
-	var stage_title := Label.new()
-	stage_title.text = "Stage List"
-	stage_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stage_box.add_child(stage_title)
-
-	_move_lobby_control(lobby_track_selector, stage_box)
-	lobby_track_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_hide_lobby_control(lobby_track_selector)
 	if !lobby_track_selector.item_selected.is_connected(_on_lobby_track_selected):
 		lobby_track_selector.item_selected.connect(_on_lobby_track_selected)
 
@@ -557,10 +547,6 @@ func _build_lobby_options_controls() -> void:
 	lobby_stage_button_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lobby_stage_button_container.add_theme_constant_override("separation", 4)
 	stage_scroll.add_child(lobby_stage_button_container)
-
-	var preview_label := Label.new()
-	preview_label.text = "Grand Prix Preview"
-	stage_box.add_child(preview_label)
 
 	var preview_scroll := ScrollContainer.new()
 	preview_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -577,11 +563,6 @@ func _build_lobby_options_controls() -> void:
 	options_box.size_flags_stretch_ratio = 0.85
 	options_box.add_theme_constant_override("separation", 8)
 	top_box.add_child(options_box)
-
-	var options_title := Label.new()
-	options_title.text = "Race Options"
-	options_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	options_box.add_child(options_title)
 
 	lobby_game_mode_choice = OptionButton.new()
 	lobby_game_mode_choice.add_item("Single Race", 0)
@@ -601,19 +582,11 @@ func _build_lobby_options_controls() -> void:
 	lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
 	options_box.add_child(lobby_bumpers_toggle)
 
-	var cpu_box := HBoxContainer.new()
-	cpu_box.add_theme_constant_override("separation", 6)
-	options_box.add_child(cpu_box)
-	_move_lobby_control(add_cpu_button, cpu_box)
-	_move_lobby_control(remove_cpu_button, cpu_box)
-	add_cpu_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	remove_cpu_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	_move_lobby_control(car_settings_button_lobby, options_box)
-	_move_lobby_control(controller_settings_button_lobby, options_box)
+	_hide_lobby_control(add_cpu_button)
+	_hide_lobby_control(remove_cpu_button)
+	_hide_lobby_control(car_settings_button_lobby)
+	_hide_lobby_control(controller_settings_button_lobby)
 	_move_lobby_control(start_race_button, options_box)
-	car_settings_button_lobby.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	controller_settings_button_lobby.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	start_race_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	start_race_button.custom_minimum_size = Vector2(0.0, 44.0)
 	start_race_button.text = "PLAY!"
@@ -726,6 +699,13 @@ func _build_lobby_options_controls() -> void:
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_stage_preview()
 
+func _hide_lobby_control(control: Control) -> void:
+	if control == null:
+		return
+	_move_lobby_control(control, lobby_control)
+	control.visible = false
+	control.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 func _move_lobby_control(control: Control, new_parent: Node) -> void:
 	if control == null:
 		return
@@ -733,6 +713,8 @@ func _move_lobby_control(control: Control, new_parent: Node) -> void:
 	if old_parent != null:
 		old_parent.remove_child(control)
 	new_parent.add_child(control)
+	control.visible = true
+	control.mouse_filter = Control.MOUSE_FILTER_STOP
 	control.position = Vector2.ZERO
 	control.set_anchors_preset(Control.PRESET_TOP_LEFT)
 
@@ -861,9 +843,8 @@ func _on_lobby_bumpers_toggled(_toggled: bool) -> void:
 
 func _build_lobby_race_options() -> Dictionary:
 	var selected_track_indices := []
-	if lobby_game_mode_choice != null and lobby_game_mode_choice.selected == 1:
-		for selected_index in lobby_grand_prix_track_sequence:
-			selected_track_indices.append(int(selected_index))
+	for selected_index in lobby_grand_prix_track_sequence:
+		selected_track_indices.append(int(selected_index))
 	if selected_track_indices.is_empty():
 		selected_track_indices.append(lobby_track_selector.selected)
 	return {
@@ -2075,10 +2056,10 @@ func _physics_process(delta: float) -> void:
 		_update_player_list()
 		_update_lobby_chibi_cars(delta)
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
-		var missing_grand_prix_tracks := lobby_game_mode_choice != null and lobby_game_mode_choice.selected == 1 and lobby_grand_prix_track_sequence.is_empty()
+		var missing_selected_tracks := lobby_grand_prix_track_sequence.is_empty()
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
-		start_race_button.disabled = !can_edit_cpu or tracks.is_empty() or missing_grand_prix_tracks
+		start_race_button.disabled = !can_edit_cpu or tracks.is_empty() or missing_selected_tracks
 		lobby_track_selector.disabled = !can_edit_cpu
 		if lobby_game_mode_choice != null:
 			lobby_game_mode_choice.disabled = !can_edit_cpu
