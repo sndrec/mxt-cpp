@@ -2205,10 +2205,6 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 				continue;
 			}
 			set_bumper_track_state(car_index, bumper_distance, state.target_lane, false);
-			const SimTransform bumper_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
-			STORE_INDEXED_VEC3(soa, velocity, lane, -bumper_transform.basis.get_column(2) * (850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f));
-			soa.speed_kmh[lane] = 850.0f;
-			soa.base_speed[lane] = 850.0f / 216.0f;
 		}
 		if (state.active) {
 			continue;
