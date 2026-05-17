@@ -1089,6 +1089,8 @@ namespace {
 			}
 
 			scratch.debug_mesh_current_global_car_index = c.global_start + i;
+			const SimVec3 trigger_p0 = LOAD_INDEXED_VEC3(c, position_old, i);
+			const SimVec3 trigger_p1 = LOAD_INDEXED_VEC3(c, position_current, i);
 			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch);
 			const bool has_floor = car_views[i].find_floor_beneath_machine(scratch);
 			if (has_floor) {
@@ -1118,6 +1120,9 @@ namespace {
 					c.tilt_force_spatial_len[p] = 0.0f;
 					c.tilt_state[p] |= TILTSTATE::DISCONNECTED | TILTSTATE::AIRBORNE;
 				}
+			}
+			if ((c.machine_state[i] & MACHINESTATE::B29) == 0) {
+				car_views[i].set_terrain_state_from_track(scratch, trigger_p0, trigger_p1);
 			}
 		}
 		scratch.debug_mesh_current_global_car_index = -1;

@@ -2966,7 +2966,9 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 	uint32_t terrain_bits = soa->road_sample[soa_index].terrain;
 	RaceTrack* track = soa->current_track[soa_index];
 	if (soa->height_above_track[soa_index] > 0.0f && track != nullptr) {
-		terrain_bits |= track->sample_mesh_terrain_overlay_fast(LOAD_VEC3(position_current), 3.0f);
+		const uint32_t overlay_body = track->sample_mesh_terrain_overlay_fast(LOAD_VEC3(position_current), 3.0f);
+		const uint32_t overlay_surface = track->sample_mesh_terrain_overlay_fast(LOAD_VEC3(track_surface_pos), 3.0f);
+		terrain_bits |= overlay_body | overlay_surface;
 		const TrackSegment &segment = track->segments[track->checkpoints[soa->current_checkpoint[soa_index]].road_segment];
 		if (segment.analytic_collision_enabled) {
 			CollisionData hit;
