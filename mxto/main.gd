@@ -949,7 +949,7 @@ func _submit_lobby_chat_message(text: String) -> void:
 		return
 	if clean.length() > 220:
 		clean = clean.substr(0, 220)
-	if !multiplayer.has_multiplayer_peer():
+	if !network_manager.has_network_peer():
 		_append_lobby_chat_message(_local_player_id(), clean)
 	elif network_manager.is_server:
 		_broadcast_lobby_chat_message.rpc(_local_player_id(), clean)
@@ -1039,7 +1039,7 @@ func _lobby_chibi_spawn_position(index: int) -> Vector3:
 	return Vector3(x, 0.6, z)
 
 func _send_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
-	if !multiplayer.has_multiplayer_peer():
+	if !network_manager.has_network_peer():
 		_apply_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
 	elif network_manager.is_server:
 		_apply_lobby_chibi_state.rpc(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
@@ -1080,7 +1080,7 @@ func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dicti
 func _local_player_id() -> int:
 	if singleplayer_mode:
 		return 0
-	return multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
+	return multiplayer.get_unique_id() if network_manager.has_network_peer() else 0
 
 func _player_display_name(id: int) -> String:
 	if id < 0:
@@ -1199,7 +1199,7 @@ func _show_sticker(actor_id: int, sticker_index: int) -> void:
 	}
 
 func send_local_sticker(sticker_index: int) -> void:
-	if singleplayer_mode or !multiplayer.has_multiplayer_peer():
+	if singleplayer_mode or !network_manager.has_network_peer():
 		_show_sticker(_local_player_id(), sticker_index)
 	else:
 		network_manager.send_sticker(sticker_index)
@@ -2065,7 +2065,7 @@ func _physics_process(delta: float) -> void:
 			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
 				get_tree().quit()
 			return
-		if multiplayer.has_multiplayer_peer():
+		if network_manager.has_network_peer():
 			var pi := _generate_random_input()
 			network_manager.set_local_input(pi.serialize())
 			network_manager.collect_client_inputs()

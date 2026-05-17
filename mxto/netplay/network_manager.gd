@@ -24,6 +24,7 @@ var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 var is_server: bool = false
 var listen_server: bool = false
+var network_active: bool = false
 var player_ids: Array = []
 var spectator_ids: Array = []
 var waiting_peers: Array = []
@@ -43,6 +44,9 @@ var server_game_sim: GameSim
 var netcode_session := NetcodeSession.new()
 var server_netcode_session := NetcodeSession.new()
 var last_received_tick := {}
+
+func has_network_peer() -> bool:
+	return network_active and multiplayer.multiplayer_peer != null
 var last_ack_tick: int = -1
 var target_tick: int = 0
 const MAX_AHEAD_TICKS := 30
@@ -531,7 +535,7 @@ func _cpu_human_overlaps() -> Array:
 
 func prepare_race_roster(reason: String) -> void:
 	var changed := false
-	if is_server or !multiplayer.has_multiplayer_peer():
+	if is_server or !has_network_peer():
 		changed = _ensure_cpu_ids_do_not_overlap_humans(reason)
 	if changed and is_server and !race_active:
 		_broadcast_cpu_roster()
@@ -643,7 +647,7 @@ func _send_cpu_roster_to_peer(id: int) -> void:
 	sync_cpu_roster.rpc_id(id, cpu_player_ids, _collect_cpu_settings_array())
 
 func _sync_cpu_manager() -> void:
-	if cpu_driver_manager != null and (is_server or !multiplayer.has_multiplayer_peer()):
+	if cpu_driver_manager != null and (is_server or !has_network_peer()):
 		var roster := _get_cpu_roster()
 		cpu_driver_manager.configure_drivers(roster)
 
@@ -1127,6 +1131,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	push_error("Host!")
 	multiplayer.multiplayer_peer = peer
 	is_server = true
+	network_active = true
 	listen_server = !dedicated
 	server_tick = 0
 	local_tick = 0
@@ -1185,6 +1190,7 @@ func join(ip: String, port: int = 27016) -> int:
 	push_error("Client!")
 	multiplayer.multiplayer_peer = peer
 	is_server = false
+	network_active = true
 	listen_server = false
 	local_tick = 0
 	target_tick = 0
@@ -1593,7 +1599,7 @@ func _rebroadcast_player_settings_to_peer(peer_id: int) -> void:
 func _resync_player_settings() -> void:
 	if game_manager != null and game_manager.singleplayer_mode:
 		return
-	if !multiplayer.has_multiplayer_peer():
+	if !has_network_peer():
 		return
 	if race_active:
 		return
@@ -2168,6 +2174,7 @@ func disconnect_from_server() -> void:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
 	is_server = false
+	network_active = false
 	listen_server = false
 	game_sim = null
 	server_game_sim = null
@@ -2402,7 +2409,7 @@ func request_sticker(sticker_index: int) -> void:
 		send_race_event("sticker", sender, -1, get_race_tick(), sticker_index)
 
 func send_sticker(sticker_index: int) -> void:
-	if is_server or !multiplayer.has_multiplayer_peer():
+	if is_server or !has_network_peer():
 		request_sticker(sticker_index)
 	else:
 		request_sticker.rpc_id(1, sticker_index)
