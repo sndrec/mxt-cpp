@@ -283,8 +283,6 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 			MACHINESTATE::SPINATTACKING);
 	}
 
-	uint32_t old_terrain_state = soa->terrain_state[soa_index];
-
 	soa->machine_state[soa_index] &= ~(MACHINESTATE::DIEDTHISFRAMEOOB_Q |
 		MACHINESTATE::JUST_HIT_DASHPLATE |
 		MACHINESTATE::RACEJUSTBEGAN_Q |
@@ -297,15 +295,6 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 	soa->state_2[soa_index] &= 0xfffffcff;
 	soa->terrain_state[soa_index] = 0;
 	soa->dashplate_heat_multiplier[soa_index] = 1.0f;
-
-	if ((soa->machine_state[soa_index] & MACHINESTATE::B29) == 0) {
-		set_terrain_state_from_track(scratch);
-	}
-
-	if (old_terrain_state & TERRAIN::DASH) {
-		soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_HIT_DASHPLATE;
-	}
-
 
 	const SimTransform previous_physical = LOAD_TRANSFORM(basis_physical_other);
 	const SimVec3 previous_position = LOAD_VEC3(position_old);
@@ -1006,13 +995,16 @@ static bool project_machine_down_to_road_cross_section(
 	return true;
 }
 
-void PhysicsCar::sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface)
+void PhysicsCar::sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface, uint32_t *out_overlay_terrain, float overlay_max_distance)
 {
 	RaceTrack *track = soa->current_track[soa_index];
 	if (!track) {
 		out_collision.collided = false;
 		out_collision.road_data.cp_idx = -1;
 		out_collision.mesh_triangle_index = -1;
+		if (out_overlay_terrain) {
+			*out_overlay_terrain = 0;
+		}
 		return;
 	}
 	track->sample_mesh_floor_fast(
@@ -1024,7 +1016,10 @@ void PhysicsCar::sample_mesh_floor_with_seed(CollisionData &out_collision, const
 		allow_global_fallback,
 		&scratch,
 		soa->last_mesh_floor_triangle[soa_index],
-		build_surface);
+		build_surface,
+		true,
+		out_overlay_terrain,
+		overlay_max_distance);
 	if (out_collision.collided) {
 		if (out_collision.mesh_triangle_index < 0) {
 			godot::UtilityFunctions::printerr(godot::String("MXT mesh floor sample produced no triangle index"));
@@ -1054,12 +1049,34 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 
 	if (!stay_on)
 	{
+		constexpr float kMeshOverlayTerrainSampleDistance = 3.0f;
 		bool sweep_hit_occurred = false;
 		bool nearest_mesh_sample = false;
 		bool local_mesh_sample = false;
+		bool mesh_overlay_sampled = false;
+		uint32_t mesh_overlay_terrain = 0;
 		CollisionData hit{};
 		hit.road_data.cp_idx = -1;
 		hit.mesh_triangle_index = -1;
+		auto sample_mesh_overlay_only = [&]() -> uint32_t {
+			if (soa->current_track[soa_index]->num_mesh_overlay_triangles <= 0) {
+				return 0;
+			}
+			CollisionData overlay_probe{};
+			uint32_t overlay_terrain = 0;
+			sample_mesh_floor_with_seed(
+				overlay_probe,
+				LOAD_VEC3(position_current),
+				0.0f,
+				CAST_FLAGS::WANTS_TRACK,
+				soa->current_checkpoint[soa_index],
+				false,
+				scratch,
+				false,
+				&overlay_terrain,
+				kMeshOverlayTerrainSampleDistance);
+			return overlay_terrain;
+		};
 		const SimVec3 machine_up_ws = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f));
 		auto orient_mesh_floor_hit = [&](CollisionData &mesh_hit) {
 			if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) < 0.0f) {
@@ -1089,7 +1106,11 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				false,
-				scratch);
+				scratch,
+				true,
+				&mesh_overlay_terrain,
+				kMeshOverlayTerrainSampleDistance);
+			mesh_overlay_sampled = true;
 			if (nearest_hit.collided) {
 				orient_mesh_floor_hit(nearest_hit);
 				hit = nearest_hit;
@@ -1107,7 +1128,11 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				true,
-				scratch);
+				scratch,
+				true,
+				&mesh_overlay_terrain,
+				kMeshOverlayTerrainSampleDistance);
+			mesh_overlay_sampled = true;
 			if (mesh_hit.collided) {
 				orient_mesh_floor_hit(mesh_hit);
 				hit = mesh_hit;
@@ -1133,13 +1158,21 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				CAST_FLAGS::WANTS_TRACK,
 				soa->current_checkpoint[soa_index],
 				true,
-				scratch);
+				scratch,
+				true,
+				&mesh_overlay_terrain,
+				kMeshOverlayTerrainSampleDistance);
+			mesh_overlay_sampled = true;
 			sweep_hit_occurred = hit.collided;
 			nearest_mesh_sample = hit.collided;
 		}
 		if (!floor_seg->analytic_collision_enabled) {
 			orient_mesh_floor_hit(hit);
 		}
+		if (!mesh_overlay_sampled) {
+			mesh_overlay_terrain = sample_mesh_overlay_only();
+		}
+		hit.road_data.terrain |= static_cast<uint16_t>(mesh_overlay_terrain);
 		soa->road_sample[soa_index].terrain = hit.road_data.terrain;
 		soa->road_sample[soa_index].road_t = hit.road_data.road_t;
 		soa->road_sample[soa_index].spatial_t = hit.road_data.spatial_t;
@@ -1305,6 +1338,23 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 	soa->road_sample[soa_index].road_t = road_t_sample_raw;
 	soa->road_sample[soa_index].spatial_t = spatial_t_sample;
 	soa->road_sample[soa_index].closest_surface = surf;
+	if (soa->current_track[soa_index]->num_mesh_overlay_triangles > 0) {
+		constexpr float kMeshOverlayTerrainSampleDistance = 3.0f;
+		CollisionData overlay_probe{};
+		uint32_t overlay_terrain = 0;
+		sample_mesh_floor_with_seed(
+			overlay_probe,
+			LOAD_VEC3(position_current),
+			0.0f,
+			CAST_FLAGS::WANTS_TRACK,
+			soa->current_checkpoint[soa_index],
+			false,
+			scratch,
+			false,
+			&overlay_terrain,
+			kMeshOverlayTerrainSampleDistance);
+		soa->road_sample[soa_index].terrain |= static_cast<uint16_t>(overlay_terrain);
+	}
 
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 	//dd3d->call("draw_arrow", surf.origin, surf.origin + LOAD_VEC3(track_surface_normal) * 40.0f, godot::Color(1.0f, 1.0f, 1.0f), 0.125, true, _TICK_DELTA);
@@ -2973,9 +3023,9 @@ SimVec3 PhysicsCar::get_avg_track_normal_from_tilt_corners(TrackQueryScratch &sc
 
 void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 {
-	uint32_t terrain_bits = 0;
+	uint32_t terrain_bits = soa->road_sample[soa_index].terrain;
 	RaceTrack* track = soa->current_track[soa_index];
-	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0 && track != nullptr) {
+	if (soa->height_above_track[soa_index] > 0.0f && track != nullptr) {
 		const TrackSegment &segment = track->segments[track->checkpoints[soa->current_checkpoint[soa_index]].road_segment];
 		if (segment.analytic_collision_enabled) {
 			CollisionData hit;
@@ -2987,23 +3037,7 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 			if (hit.collided) {
 				terrain_bits |= hit.road_data.terrain;
 			}
-		} else {
-			CollisionData hit;
-			sample_mesh_floor_with_seed(
-				hit,
-				LOAD_VEC3(position_current),
-				2.0f,
-				CAST_FLAGS::WANTS_TRACK,
-				soa->current_checkpoint[soa_index],
-				false,
-				scratch,
-				false);
-			if (hit.collided) {
-				terrain_bits |= hit.road_data.terrain;
-			}
 		}
-	} else {
-		terrain_bits = 0;
 	}
 
 	if (track != nullptr) for (int i = 0; i < track->num_trigger_colliders; i++)
@@ -3056,6 +3090,10 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch)
 
 	if (terrain_bits & TERRAIN::LAVA) {
 		soa->terrain_state[soa_index] |= TERRAIN::LAVA;
+	}
+
+	if (terrain_bits & TERRAIN::FALL) {
+		trigger_mesh_fallout();
 	}
 };
 
@@ -3165,8 +3203,15 @@ void PhysicsCar::simulate_machine_motion(PlayerInput in_input)
 	soa->state_2[soa_index] |= 8u;
 
 	TrackQueryScratch scratch;
+	const uint32_t old_terrain_state = soa->terrain_state[soa_index];
 	SimVec3 ground_normal = prepare_machine_frame(scratch);
 	bool has_floor = find_floor_beneath_machine(scratch);
+	if ((soa->machine_state[soa_index] & MACHINESTATE::B29) == 0) {
+		set_terrain_state_from_track(scratch);
+	}
+	if (old_terrain_state & TERRAIN::DASH) {
+		soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_HIT_DASHPLATE;
+	}
 	if (has_floor && (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
 		STORE_VEC3(track_surface_normal, ground_normal);
 	} else if (has_floor && soa->height_above_track[soa_index] >= 16.0f) {
@@ -3537,17 +3582,12 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 							const uint8_t mesh_cast_mask =
 								(mesh_floor_depenetration_enabled ? CAST_FLAGS::WANTS_TRACK : 0) |
 								CAST_FLAGS::WANTS_RAIL |
-								CAST_FLAGS::WANTS_TERRAIN |
 								CAST_FLAGS::WANTS_BACKFACE |
 								CAST_FLAGS::SAMPLE_FROM_P1;
 							const bool use_mesh_cast_candidates = track->collect_mesh_cast_candidates(mesh_cast_bounds, mesh_cast_mask, scratch);
 							const SimVec3 mesh_side_reference_point = LOAD_VEC3(position_old);
-							bool mesh_fallout_hit = false;
 							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1) {
 								CollisionData hit;
-								if (mesh_fallout_hit) {
-									return;
-								}
 								if (use_mesh_cast_candidates && mesh_cast_bounds.has_point(p0) && mesh_cast_bounds.has_point(p1)) {
 									track->cast_vs_mesh_candidates_fast(
 										hit,
@@ -3570,12 +3610,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 										&mesh_side_reference_point);
 								}
 								if (!hit.collided) {
-									return;
-								}
-								if ((hit.road_data.terrain & TERRAIN::FALL) != 0) {
-									trigger_mesh_fallout();
-									mesh_fallout_hit = true;
-									depenetration = SimVec3();
 									return;
 								}
 								const bool kill_hit = (hit.road_data.terrain & TERRAIN::KILL) != 0;
@@ -3603,17 +3637,11 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 								}
 							};
 							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
-								if (mesh_fallout_hit) {
-									break;
-								}
 								const SimVec3 p0 = LOAD_VEC3(position_old) + depenetration;
 								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
 								sweep_mesh_plane_and_depenetrate(p0, p1);
 							}
 							for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
-								if (mesh_fallout_hit) {
-									break;
-								}
 								const SimVec3 p0 = wall_corner_old_world[wc_idx] + depenetration;
 								const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
 								sweep_mesh_plane_and_depenetrate(p0, p1);

@@ -338,11 +338,17 @@ static void build_track_mesh_world_bvh(RaceTrack *track, HeapHandler &level_data
 	prims.reserve(track->num_mesh_collision_triangles);
 	for (int tri_index = 0; tri_index < track->num_mesh_collision_triangles; ++tri_index) {
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
+		if (terrain_mesh_is_overlay_surface(tri.terrain)) {
+			continue;
+		}
 		MeshBVHBuildPrim prim;
 		prim.bounds = tri.bounds;
 		prim.center = (tri.p0 + tri.p1 + tri.p2) * (1.0f / 3.0f);
 		prim.triangle_index = tri_index;
 		prims.push_back(prim);
+	}
+	if (prims.empty()) {
+		return;
 	}
 	std::vector<TrackMeshBVHNode> nodes;
 	build_mesh_bvh(prims, nodes);
@@ -366,7 +372,7 @@ static void build_track_mesh_floor_bvh(RaceTrack *track, HeapHandler &level_data
 	prims.reserve(track->num_mesh_collision_triangles);
 	for (int tri_index = 0; tri_index < track->num_mesh_collision_triangles; ++tri_index) {
 		const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-		if (!terrain_mesh_has_floor_response(tri.terrain)) {
+		if (!terrain_mesh_has_floor_response(tri.terrain) && !terrain_mesh_is_overlay_surface(tri.terrain)) {
 			continue;
 		}
 		MeshBVHBuildPrim prim;
@@ -2662,6 +2668,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	current_track->mesh_floor_bvh_nodes = nullptr;
 	current_track->mesh_floor_bvh_triangle_indices = nullptr;
 	current_track->num_mesh_floor_bvh_nodes = 0;
+	current_track->num_mesh_overlay_triangles = 0;
 	current_track->lap_length = 0.0f;
 
 	uint32_t header_size = lvldat_buf->get_u32();
@@ -3077,6 +3084,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		for (uint32_t tri_index = 0; tri_index < mesh_collision_triangle_count; ++tri_index) {
 			TrackMeshCollisionTriangle &tri = current_track->mesh_collision_triangles[tri_index];
 			tri.terrain = lvldat_buf->get_u32();
+			if (terrain_mesh_is_overlay_surface(tri.terrain)) {
+				++current_track->num_mesh_overlay_triangles;
+			}
 
 			tri.p0.x = lvldat_buf->get_float();
 			tri.p0.y = lvldat_buf->get_float();

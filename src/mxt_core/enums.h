@@ -34,9 +34,19 @@ static inline bool terrain_mesh_blocks_like_rail(uint32_t terrain)
 	return (terrain & (TERRAIN::RAIL | TERRAIN::KILL)) != 0u;
 }
 
+static inline bool terrain_mesh_is_track_surface(uint32_t terrain)
+{
+	return (terrain & ~TERRAIN::BACKSIDE) == 0u;
+}
+
 static inline bool terrain_mesh_has_floor_response(uint32_t terrain)
 {
-	return (terrain & (TERRAIN::RAIL | TERRAIN::FALL | TERRAIN::KILL)) == 0u;
+	return terrain_mesh_is_track_surface(terrain);
+}
+
+static inline bool terrain_mesh_is_overlay_surface(uint32_t terrain)
+{
+	return !terrain_mesh_is_track_surface(terrain) && !terrain_mesh_blocks_like_rail(terrain);
 }
 
 namespace TILTSTATE {

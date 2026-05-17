@@ -307,7 +307,7 @@ private:
 	float scratch_float[16];
 	bool compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance) const;
 	void start_restore_to_last_ground();
-	void sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface = true);
+	void sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface = true, uint32_t *out_overlay_terrain = nullptr, float overlay_max_distance = 0.0f);
 	void trigger_mesh_fallout();
 	void trigger_mesh_kill_collision();
 public:

@@ -1416,10 +1416,10 @@ static bool mesh_collision_mask_accepts_surface(uint32_t terrain, uint8_t mask)
 	if (terrain_mesh_blocks_like_rail(terrain)) {
 		return (mask & CAST_FLAGS::WANTS_RAIL) != 0;
 	}
-	if ((terrain & TERRAIN::FALL) != 0) {
-		return (mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
+	if (terrain_mesh_is_track_surface(terrain)) {
+		return (mask & CAST_FLAGS::WANTS_TRACK) != 0;
 	}
-	return (mask & CAST_FLAGS::WANTS_TRACK) != 0;
+	return false;
 }
 
 static SimTransform mesh_collision_surface_transform(const TrackMeshCollisionTriangle &tri, const SimVec3 &hit_point, const SimVec3 &normal)
@@ -1740,7 +1740,11 @@ static bool scan_mesh_cast_triangle(
 {
 	RaceTrack *track = params.track;
 	const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-	if (!params.track_only_query) {
+	if (params.track_only_query) {
+		if (!terrain_mesh_has_floor_response(tri.terrain)) {
+			return false;
+		}
+	} else {
 		if (!mesh_collision_mask_accepts_surface(tri.terrain, params.mask)) {
 			return false;
 		}
@@ -1827,7 +1831,7 @@ static void cast_mesh_collision_fast(
 	}
 	const bool track_only_query =
 		(params.mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
-		(params.mask & (CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_TERRAIN)) == 0;
+		(params.mask & CAST_FLAGS::WANTS_RAIL) == 0;
 	const TrackMeshBVHNode *bvh_nodes = track_only_query ? track->mesh_floor_bvh_nodes : track->mesh_world_bvh_nodes;
 	const int32_t *bvh_triangle_indices = track_only_query ? track->mesh_floor_bvh_triangle_indices : track->mesh_world_bvh_triangle_indices;
 	const int num_bvh_nodes = track_only_query ? track->num_mesh_floor_bvh_nodes : track->num_mesh_world_bvh_nodes;
@@ -1881,7 +1885,7 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 	scratch.mesh_cast_candidate_count = 0;
 	const bool track_only_query =
 		(mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
-		(mask & (CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_TERRAIN)) == 0;
+		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
 	const TrackMeshBVHNode *bvh_nodes = track_only_query ? mesh_floor_bvh_nodes : mesh_world_bvh_nodes;
 	const int32_t *bvh_triangle_indices = track_only_query ? mesh_floor_bvh_triangle_indices : mesh_world_bvh_triangle_indices;
 	const int num_bvh_nodes = track_only_query ? num_mesh_floor_bvh_nodes : num_mesh_world_bvh_nodes;
@@ -1905,7 +1909,11 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 				for (int i = node.child[slot]; i < end; ++i) {
 					const int tri_index = bvh_triangle_indices[i];
 					const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-					if (!track_only_query) {
+					if (track_only_query) {
+						if (!terrain_mesh_has_floor_response(tri.terrain)) {
+							continue;
+						}
+					} else {
 						if (!mesh_collision_mask_accepts_surface(tri.terrain, mask)) {
 							continue;
 						}
@@ -1948,6 +1956,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
+	out_collision.road_data.terrain = 0;
 	out_collision.mesh_triangle_index = -1;
 	out_collision.collision_face_point = SimVec3();
 	out_collision.collision_face_normal = SimVec3();
@@ -1965,7 +1974,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 
 	float best_dist = FLT_MAX;
 	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
-		(mask & (CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_TERRAIN)) == 0;
+		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
 	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
 	CastParams params{
 		this,
@@ -2023,7 +2032,7 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 
 	float best_dist[4] = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX };
 	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
-		(mask & (CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_TERRAIN)) == 0;
+		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
 	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
 	const bool draw_cast_tests = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS);
 	const bool draw_collision_hits = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS);
@@ -2031,7 +2040,11 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 	for (int candidate = 0; candidate < scratch->mesh_cast_candidate_count; ++candidate) {
 		const int tri_index = scratch->mesh_cast_candidate_indices[candidate];
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-		if (!track_only_query) {
+		if (track_only_query) {
+			if (!terrain_mesh_has_floor_response(tri.terrain)) {
+				continue;
+			}
+		} else {
 			if (!mesh_collision_mask_accepts_surface(tri.terrain, mask)) {
 				continue;
 			}
@@ -2119,7 +2132,7 @@ void RaceTrack::cast_vs_mesh_fast(
 	}
 
 	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
-		(mask & (CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_TERRAIN)) == 0;
+		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
 	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
 	CastParams params{
 		this,
@@ -2134,7 +2147,7 @@ void RaceTrack::cast_vs_mesh_fast(
 	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }
 
-void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index, bool build_surface, bool build_surface_basis)
+void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index, bool build_surface, bool build_surface_basis, uint32_t *out_overlay_terrain, float overlay_max_distance)
 {
 	(void)allow_global_fallback;
 	out_collision.collided = false;
@@ -2142,6 +2155,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	out_collision.mesh_triangle_index = -1;
 	out_collision.collision_face_point = SimVec3();
 	out_collision.collision_face_normal = SimVec3();
+	if (out_overlay_terrain) {
+		*out_overlay_terrain = 0;
+	}
 	if (start_idx < 0 || start_idx >= num_checkpoints || num_mesh_collision_triangles <= 0) {
 		return;
 	}
@@ -2150,6 +2166,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 	}
 
 	const float max_dist2 = max_distance * max_distance;
+	const bool wants_overlay = out_overlay_terrain && overlay_max_distance > 0.0f;
+	float best_overlay_dist2 = wants_overlay ? overlay_max_distance * overlay_max_distance : -1.0f;
+	uint32_t best_overlay_terrain = 0;
 	float best_dist2 = max_dist2;
 	float best_u = 0.0f;
 	float best_v = 0.0f;
@@ -2166,6 +2185,20 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 
 	auto scan_triangle = [&](int tri_index) {
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
+		if (wants_overlay && terrain_mesh_is_overlay_surface(tri.terrain)) {
+			if (distance2_to_aabb(tri.bounds, point) <= best_overlay_dist2) {
+				float overlay_u = 0.0f;
+				float overlay_v = 0.0f;
+				float overlay_w = 0.0f;
+				const SimVec3 overlay_point = closest_point_on_mesh_triangle(tri, point, &overlay_u, &overlay_v, &overlay_w);
+				const float overlay_dist2 = (point - overlay_point).length_squared();
+				if (overlay_dist2 < best_overlay_dist2) {
+					best_overlay_dist2 = overlay_dist2;
+					best_overlay_terrain = tri.terrain & ~TERRAIN::BACKSIDE;
+				}
+			}
+			return;
+		}
 		if (!terrain_mesh_has_floor_response(tri.terrain)) {
 			return;
 		}
@@ -2233,7 +2266,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 			int ordered_slots[MXT_MESH_BVH_WIDTH];
 			int ordered_count = 0;
 			for (int slot = 0; slot < MXT_MESH_BVH_WIDTH; ++slot) {
-				if (child_dist2[slot] > best_dist2) {
+				const bool floor_reachable = child_dist2[slot] <= best_dist2;
+				const bool overlay_reachable = wants_overlay && child_dist2[slot] <= best_overlay_dist2;
+				if (!floor_reachable && !overlay_reachable) {
 					continue;
 				}
 				int insert_at = ordered_count;
@@ -2288,6 +2323,9 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		allow_smooth_projection_retry = true;
 		scan_mesh_floor_candidates();
 	}
+	if (out_overlay_terrain) {
+		*out_overlay_terrain = best_overlay_terrain;
+	}
 
 	if (!best_tri) {
 		return;
@@ -2304,7 +2342,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		out_collision.road_data.road_t = SimVec2(0.0f, 0.5f);
 		out_collision.road_data.closest_surface = SimTransform();
 		out_collision.road_data.closest_root = RoadTransform();
-		out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
+		out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain | best_overlay_terrain);
 		out_collision.mesh_triangle_index = best_tri_index;
 		return;
 	}
@@ -2337,7 +2375,7 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		? mesh_collision_surface_transform(*best_tri, smooth_point, smooth_normal)
 		: mesh_collision_plane_transform(smooth_point, smooth_normal);
 	out_collision.road_data.closest_root = RoadTransform();
-	out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain);
+	out_collision.road_data.terrain = static_cast<uint16_t>(best_tri->terrain | best_overlay_terrain);
 	out_collision.mesh_triangle_index = best_tri_index;
 }
 
@@ -2371,7 +2409,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 		sample_point = p1;
 	
 	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
-		(mask & (CAST_FLAGS::WANTS_RAIL | CAST_FLAGS::WANTS_TERRAIN)) == 0;
+		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
 	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
 	CastParams params{
 		this,
