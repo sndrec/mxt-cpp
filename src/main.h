@@ -307,6 +307,8 @@ namespace godot {
 		godot::PackedInt32Array get_race_leaderboard_window(int player_id, int max_entries) const;
 		bool is_player_race_finished(int player_id) const;
 		bool is_player_race_eliminated(int player_id) const;
+		double get_player_ko_energy_bonus(int player_id) const;
+		void set_player_ko_energy_bonus(int player_id, double bonus);
 		double get_player_lap_distance(int player_id) const;
 		int get_player_lap(int player_id) const;
 		godot::String get_player_debug_string(int player_id) const;

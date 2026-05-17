@@ -1680,6 +1680,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_race_leaderboard_window", "player_id", "max_entries"), &GameSim::get_race_leaderboard_window);
 	ClassDB::bind_method(D_METHOD("is_player_race_finished", "player_id"), &GameSim::is_player_race_finished);
 	ClassDB::bind_method(D_METHOD("is_player_race_eliminated", "player_id"), &GameSim::is_player_race_eliminated);
+	ClassDB::bind_method(D_METHOD("get_player_ko_energy_bonus", "player_id"), &GameSim::get_player_ko_energy_bonus);
+	ClassDB::bind_method(D_METHOD("set_player_ko_energy_bonus", "player_id", "bonus"), &GameSim::set_player_ko_energy_bonus);
 	ClassDB::bind_method(D_METHOD("get_player_lap_distance", "player_id"), &GameSim::get_player_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
 	ClassDB::bind_method(D_METHOD("get_player_debug_string", "player_id"), &GameSim::get_player_debug_string);
@@ -2184,6 +2186,44 @@ bool GameSim::is_player_race_eliminated(int player_id) const
 			car_soa.position_current_y[lane] < car_soa.current_track[lane]->minimum_y;
 	}
 	return false;
+}
+
+double GameSim::get_player_ko_energy_bonus(int player_id) const
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return 0.0;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		return static_cast<double>(car_soa.ko_energy_bonus[lane]);
+	}
+	return 0.0;
+}
+
+void GameSim::set_player_ko_energy_bonus(int player_id, double bonus)
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return;
+	}
+	const float clamped_bonus = std::max(0.0f, static_cast<float>(bonus));
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		car_soa.ko_energy_bonus[lane] = clamped_bonus;
+		if (car_soa.car_properties[lane]) {
+			car_soa.calced_max_energy[lane] =
+				car_soa.car_properties[lane]->max_energy + car_soa.ko_energy_bonus[lane];
+		}
+		car_soa.energy[lane] = car_soa.calced_max_energy[lane];
+		return;
+	}
 }
 
 double GameSim::get_player_lap_distance(int player_id) const

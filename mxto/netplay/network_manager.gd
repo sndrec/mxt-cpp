@@ -83,7 +83,13 @@ var race_options := {
 	"track_indices": [],
 	"vehicle_restore": true,
 	"bumpers": false,
+	"grand_prix_current_track": 0,
+	"grand_prix_points": {},
+	"grand_prix_ko_energy_bonuses": {},
 }
+var pending_next_race_track_index := -1
+var pending_next_race_settings: Array = []
+var pending_next_race_options: Dictionary = {}
 var sticker_cooldown_msec := {}
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
@@ -848,6 +854,9 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	player_finish_placements.clear()
 	finish_order.clear()
 	player_eliminations.clear()
+	pending_next_race_track_index = -1
+	pending_next_race_settings.clear()
+	pending_next_race_options.clear()
 	sticker_cooldown_msec.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
@@ -1381,14 +1390,19 @@ func send_start_race(track_index: int, settings: Array, options: Dictionary = {}
 		start_race.rpc_id(1, track_index, settings, options)
 
 @rpc("any_peer", "reliable")
-func end_race() -> void:
+func end_race(next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
+	pending_next_race_track_index = next_track_index
+	pending_next_race_settings = next_settings.duplicate(true)
+	pending_next_race_options = next_options.duplicate(true)
+	if !pending_next_race_options.is_empty():
+		race_options = pending_next_race_options.duplicate(true)
 	race_active = false
 	emit_signal("race_finished")
 
-func send_end_race() -> void:
+func send_end_race(next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
 	if is_server:
-		end_race.rpc()
-		end_race()
+		end_race.rpc(next_track_index, next_settings, next_options)
+		end_race(next_track_index, next_settings, next_options)
 
 @rpc("any_peer", "reliable")
 func set_spawn_seed(seed: int) -> void:
@@ -2152,6 +2166,9 @@ func disconnect_from_server() -> void:
 	cpu_player_ids.clear()
 	cpu_player_settings.clear()
 	player_eliminations.clear()
+	pending_next_race_track_index = -1
+	pending_next_race_settings.clear()
+	pending_next_race_options.clear()
 	_disconnected_during_race.clear()
 	pending_inputs.clear()
 	input_history.clear()
@@ -2334,6 +2351,9 @@ func send_player_eliminated(id: int, tick: int) -> void:
 
 func is_vehicle_restore_enabled() -> bool:
 	return bool(race_options.get("vehicle_restore", true))
+
+func is_grand_prix_enabled() -> bool:
+	return int(race_options.get("game_mode", 0)) == 1
 
 @rpc("authority", "call_local", "reliable")
 func receive_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:

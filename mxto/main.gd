@@ -590,10 +590,28 @@ func _build_lobby_race_options() -> Dictionary:
 		"track_indices": selected_track_indices,
 		"vehicle_restore": lobby_vehicle_restore_toggle.button_pressed if lobby_vehicle_restore_toggle != null else true,
 		"bumpers": lobby_bumpers_toggle.button_pressed if lobby_bumpers_toggle != null else false,
+		"grand_prix_current_track": 0,
+		"grand_prix_points": {},
+		"grand_prix_ko_energy_bonuses": {},
+		"grand_prix_eliminated_ids": [],
 	}
 
 func _refresh_lobby_race_options() -> void:
 	network_manager.race_options = _build_lobby_race_options()
+
+func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dictionary:
+	var initialized := options.duplicate(true)
+	if int(initialized.get("game_mode", 0)) != 1:
+		return initialized
+	var points := {}
+	for id in roster:
+		if !network_manager.get_cpu_roster().has(id):
+			points[int(id)] = 0
+	initialized["grand_prix_current_track"] = 0
+	initialized["grand_prix_points"] = points
+	initialized["grand_prix_ko_energy_bonuses"] = {}
+	initialized["grand_prix_eliminated_ids"] = []
+	return initialized
 
 func _local_player_id() -> int:
 	if singleplayer_mode:
@@ -1121,6 +1139,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
+	_apply_grand_prix_ko_energy_bonuses(game_sim, racer_ids)
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
@@ -1150,6 +1169,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
+		_apply_grand_prix_ko_energy_bonuses(server_game_sim, racer_ids)
 		network_manager.server_netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
 	if singleplayer_mode:
 		game_sim.set_cpu_driver_manager(null)
@@ -1225,6 +1245,7 @@ func _on_start_race_button_pressed() -> void:
 				ps = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
 			settings_array.append(ps)
 		var race_options := _build_lobby_race_options()
+		race_options = _initialize_grand_prix_options(race_options, roster)
 		var track_indices: Array = race_options.get("track_indices", [lobby_track_selector.selected])
 		var first_track_index := lobby_track_selector.selected
 		if !track_indices.is_empty():
@@ -1242,11 +1263,14 @@ func _on_network_race_started(track_index: int, settings: Array) -> void:
 		server_game_sim.set_sim_started(false)
 
 func _on_network_race_finished() -> void:
-	if headless_mode:
+	if headless_mode and network_manager.pending_next_race_track_index < 0:
 		return
 	race_finish_label.visible = false
 	active_stickers.clear()
-	_return_to_lobby()
+	if network_manager.pending_next_race_track_index >= 0:
+		_transition_to_next_grand_prix_race()
+	else:
+		_return_to_lobby()
 
 func _update_player_list() -> void:
 	player_list.clear()
@@ -1689,6 +1713,157 @@ func _return_to_lobby() -> void:
 	singleplayer_mode = false
 	_singleplayer_tick = 0
 
+func _teardown_race_world_for_transition() -> void:
+	if debug_replay_recording:
+		_stop_and_save_debug_replay_recording()
+	debug_replay_playback = false
+	_close_race_pause_menu()
+	game_sim.destroy_gamesim()
+	race_finish_label.visible = false
+	if network_manager.is_server:
+		server_game_sim.destroy_gamesim()
+		network_manager.server_game_sim = null
+	for child in car_node_container.get_children():
+		if child != null:
+			child.queue_free()
+	for obj in trigger_objects:
+		if obj != null:
+			obj.queue_free()
+	trigger_objects.clear()
+	for p in players:
+		if p != null:
+			p.queue_free()
+	players.clear()
+	if spectator_node:
+		spectator_node.queue_free()
+		spectator_node = null
+	Engine.physics_ticks_per_second = 60
+	local_player_index = 0
+	lobby_control.visible = false
+	singleplayer_mode = false
+	_singleplayer_tick = 0
+
+func _transition_to_next_grand_prix_race() -> void:
+	var next_track_index := network_manager.pending_next_race_track_index
+	var next_settings := network_manager.pending_next_race_settings.duplicate(true)
+	var next_options := network_manager.pending_next_race_options.duplicate(true)
+	_teardown_race_world_for_transition()
+	network_manager.reset_race_state(true)
+	network_manager.race_options = next_options
+	_apply_grand_prix_eliminations(next_options)
+	network_manager.start_race(next_track_index, next_settings, next_options)
+	if network_manager.is_server and network_manager.player_ids.size() <= 1:
+		network_manager.begin_simulation()
+
+func _apply_grand_prix_eliminations(options: Dictionary) -> void:
+	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
+	if eliminated_ids.is_empty():
+		return
+	for eliminated_id in eliminated_ids:
+		var id := int(eliminated_id)
+		if network_manager.player_ids.has(id):
+			network_manager.player_ids.erase(id)
+			if !network_manager.spectator_ids.has(id):
+				network_manager.spectator_ids.append(id)
+		if network_manager.cpu_player_ids.has(id):
+			network_manager.cpu_player_ids.erase(id)
+			network_manager.cpu_player_settings.erase(id)
+
+func _lookup_id_value(dict: Dictionary, id: int, fallback):
+	if dict.has(id):
+		return dict[id]
+	var id_string := str(id)
+	if dict.has(id_string):
+		return dict[id_string]
+	return fallback
+
+func _apply_grand_prix_ko_energy_bonuses(sim: GameSim, racer_ids: Array) -> void:
+	if sim == null or !network_manager.is_grand_prix_enabled():
+		return
+	if !sim.has_method("set_player_ko_energy_bonus"):
+		return
+	var bonuses: Dictionary = network_manager.race_options.get("grand_prix_ko_energy_bonuses", {})
+	if bonuses.is_empty():
+		return
+	for id_value in racer_ids:
+		var id := int(id_value)
+		var bonus := float(_lookup_id_value(bonuses, id, 0.0))
+		if bonus > 0.0:
+			sim.set_player_ko_energy_bonus(id, bonus)
+
+func _capture_grand_prix_ko_energy_bonuses(sim: GameSim) -> Dictionary:
+	var bonuses := {}
+	if sim == null or !sim.has_method("get_player_ko_energy_bonus"):
+		return bonuses
+	for id_value in network_manager.get_simulation_roster():
+		var id := int(id_value)
+		bonuses[id] = float(sim.get_player_ko_energy_bonus(id))
+	return bonuses
+
+func _record_grand_prix_race_results(sim: GameSim) -> void:
+	if !network_manager.is_server or !network_manager.is_grand_prix_enabled():
+		return
+	var options := network_manager.race_options.duplicate(true)
+	var points: Dictionary = options.get("grand_prix_points", {})
+	var human_racers := network_manager.race_player_ids.duplicate(true)
+	var racer_count := human_racers.size()
+	for id_value in human_racers:
+		var id := int(id_value)
+		var total := int(_lookup_id_value(points, id, 0))
+		if network_manager.player_finish_placements.has(id):
+			var place := int(network_manager.player_finish_placements[id])
+			total += maxi(0, racer_count - place + 1)
+		points[id] = total
+	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
+	if !network_manager.is_vehicle_restore_enabled():
+		for id_value in network_manager.player_eliminations.keys():
+			var id := int(id_value)
+			if !eliminated_ids.has(id):
+				eliminated_ids.append(id)
+	options["grand_prix_points"] = points
+	options["grand_prix_eliminated_ids"] = eliminated_ids
+	options["grand_prix_ko_energy_bonuses"] = _capture_grand_prix_ko_energy_bonuses(sim)
+	network_manager.race_options = options
+
+func _build_next_grand_prix_settings(options: Dictionary) -> Array:
+	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
+	var settings := []
+	for id_value in network_manager.get_simulation_roster():
+		var id := int(id_value)
+		if eliminated_ids.has(id):
+			continue
+		var ps = network_manager.player_settings.get(id, null)
+		if ps != null:
+			settings.append(ps)
+	return settings
+
+func _has_active_human_grand_prix_racer(options: Dictionary) -> bool:
+	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
+	for id_value in network_manager.player_ids:
+		if !eliminated_ids.has(int(id_value)):
+			return true
+	return false
+
+func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
+	_record_grand_prix_race_results(finish_sim)
+	if !network_manager.is_grand_prix_enabled():
+		network_manager.send_end_race()
+		return
+	var options := network_manager.race_options.duplicate(true)
+	var track_indices: Array = options.get("track_indices", [])
+	var current_index := int(options.get("grand_prix_current_track", 0))
+	var next_index := current_index + 1
+	if next_index >= track_indices.size() or !_has_active_human_grand_prix_racer(options):
+		network_manager.send_end_race()
+		return
+	options["grand_prix_current_track"] = next_index
+	var next_track_index := int(track_indices[next_index])
+	var next_settings := _build_next_grand_prix_settings(options)
+	var seed := randi()
+	network_manager.set_spawn_seed.rpc(seed)
+	network_manager.set_spawn_seed(seed)
+	network_manager.send_end_race(next_track_index, next_settings, options)
+
 func _check_race_finished() -> void:
 	if !game_sim.sim_started:
 		return
@@ -1732,7 +1907,7 @@ func _check_race_finished() -> void:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
 				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
 			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 10000:
-				network_manager.send_end_race()
+				_finish_or_advance_grand_prix(finish_sim)
 				race_finish_label.visible = false
 	else:
 		if singleplayer_mode and all_done:
