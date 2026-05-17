@@ -5108,6 +5108,9 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			float lateral_sum = 0.0f;
 			int grid_count = 0;
 			for (int i = 0; i < num_cars; ++i) {
+				if (car_player_ids && car_player_ids[i] < 0) {
+					continue;
+				}
 				const PhysicsCarSoA& other_soa = *cars[i].soa;
 				const int other_lane = cars[i].soa_index;
 				const SimVec3 pos = LOAD_INDEXED_VEC3(other_soa, position_current, other_lane);
