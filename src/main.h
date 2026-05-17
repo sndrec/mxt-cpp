@@ -282,6 +282,8 @@ namespace godot {
 		int gameplay_camera_player_id = -1;
 		int spawn_seed = 0;
 		bool vehicle_restore_enabled = true;
+		bool multiplayer_intro_camera_enabled = false;
+		uint32_t start_countdown_extra_frames = 0;
 
 		GameSim();
 		~GameSim();
@@ -291,6 +293,8 @@ namespace godot {
 		void set_spawn_seed(int p_seed) { spawn_seed = p_seed; }
 		void set_vehicle_restore_enabled(bool enabled) { vehicle_restore_enabled = enabled; }
 		bool get_vehicle_restore_enabled() const { return vehicle_restore_enabled; }
+		void set_multiplayer_intro_camera_enabled(bool enabled);
+		bool get_multiplayer_intro_camera_enabled() const { return multiplayer_intro_camera_enabled; }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
 		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }

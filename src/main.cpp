@@ -489,6 +489,38 @@ namespace {
 		return godot::Transform3D(gd_basis(t.basis), gd_vec3(t.origin));
 	}
 
+	static godot::Transform3D build_camera_transform(const godot::Vector3& position, const godot::Vector3& interest, const godot::Vector3& up)
+	{
+		godot::Vector3 backward = position - interest;
+		if (backward.length_squared() <= 0.0000001f) {
+			return godot::Transform3D(godot::Basis(), position);
+		}
+		backward.normalize();
+		godot::Vector3 right = up.cross(backward);
+		if (right.length_squared() <= 0.0000001f) {
+			right = godot::Vector3(1.0f, 0.0f, 0.0f);
+		} else {
+			right.normalize();
+		}
+		godot::Vector3 corrected_up = backward.cross(right);
+		if (corrected_up.length_squared() <= 0.0000001f) {
+			corrected_up = godot::Vector3(0.0f, 1.0f, 0.0f);
+		} else {
+			corrected_up.normalize();
+		}
+		godot::Basis basis;
+		basis.set_column(0, right);
+		basis.set_column(1, corrected_up);
+		basis.set_column(2, backward);
+		return godot::Transform3D(basis, position);
+	}
+
+	static float smoothstep01(float alpha)
+	{
+		alpha = std::max(0.0f, std::min(1.0f, alpha));
+		return alpha * alpha * (3.0f - 2.0f * alpha);
+	}
+
 	static void populate_visual_car_args(godot::Array& visual_args, const PhysicsCar& car)
 	{
 		visual_args[0] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index));
@@ -1656,6 +1688,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_spawn_seed", "seed"), &GameSim::set_spawn_seed);
 	ClassDB::bind_method(D_METHOD("set_vehicle_restore_enabled", "enabled"), &GameSim::set_vehicle_restore_enabled);
 	ClassDB::bind_method(D_METHOD("get_vehicle_restore_enabled"), &GameSim::get_vehicle_restore_enabled);
+	ClassDB::bind_method(D_METHOD("set_multiplayer_intro_camera_enabled", "enabled"), &GameSim::set_multiplayer_intro_camera_enabled);
+	ClassDB::bind_method(D_METHOD("get_multiplayer_intro_camera_enabled"), &GameSim::get_multiplayer_intro_camera_enabled);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("load_state_data", "target_tick", "data"), &GameSim::load_state_data);
@@ -1870,6 +1904,12 @@ void GameSim::run_vehicle_lanes(int lane_count, bool parallel, const std::functi
 		vehicle_lane_fn = nullptr;
 		vehicle_lane_active_count = 0;
 	}
+}
+
+void GameSim::set_multiplayer_intro_camera_enabled(bool enabled)
+{
+	multiplayer_intro_camera_enabled = enabled;
+	start_countdown_extra_frames = enabled ? 600u : 0u;
 }
 
 void GameSim::free_vehicle_tick_soa()
@@ -3291,6 +3331,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				cars[i].soa->m_accel_setting[cars[i].soa_index] = accel_settings[i];
 			}
 			cars[i].initialize_machine();
+			cars[i].soa->level_start_time[cars[i].soa_index] += start_countdown_extra_frames;
 
                 // Determine spawn transform at the end of the last track segment
 			int seg_idx = current_track->num_segments - 1;
@@ -4692,8 +4733,75 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	}
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
-	gameplay_camera_node->set_global_transform(gameplay_camera->get_render_transform(alpha));
-	gameplay_camera_node->set_fov(gameplay_camera->get_render_fov(alpha));
+	godot::Transform3D render_transform = gameplay_camera->get_render_transform(alpha);
+	float render_fov = gameplay_camera->get_render_fov(alpha);
+	if (multiplayer_intro_camera_enabled && start_countdown_extra_frames > 0u) {
+		const float intro_frame = static_cast<float>(tick) + alpha;
+		if (intro_frame < static_cast<float>(start_countdown_extra_frames)) {
+			constexpr float kFlybyFrames = 420.0f;
+			constexpr float kReturnFrames = 180.0f;
+			SimTransform focus_basis_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+			SimVec3 up = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+			if (up.length_squared() <= 0.0001f) {
+				up = focus_basis_transform.basis.get_column(1);
+			}
+			up = up.normalized();
+			SimVec3 forward = focus_basis_transform.basis.get_column(2) * -1.0f;
+			if (forward.length_squared() <= 0.0001f) {
+				forward = SimVec3(0.0f, 0.0f, -1.0f);
+			}
+			forward = forward.normalized();
+			SimVec3 right = focus_basis_transform.basis.get_column(0);
+			if (right.length_squared() <= 0.0001f) {
+				right = forward.cross(up);
+			}
+			right = right.normalized();
+			const SimVec3 origin = LOAD_INDEXED_VEC3(soa, position_current, lane);
+			float min_forward = FLT_MAX;
+			float max_forward = -FLT_MAX;
+			float lateral_sum = 0.0f;
+			int grid_count = 0;
+			for (int i = 0; i < num_cars; ++i) {
+				const PhysicsCarSoA& other_soa = *cars[i].soa;
+				const int other_lane = cars[i].soa_index;
+				const SimVec3 pos = LOAD_INDEXED_VEC3(other_soa, position_current, other_lane);
+				const SimVec3 delta = pos - origin;
+				const float forward_proj = delta.dot(forward);
+				min_forward = std::min(min_forward, forward_proj);
+				max_forward = std::max(max_forward, forward_proj);
+				lateral_sum += delta.dot(right);
+				grid_count += 1;
+			}
+			if (grid_count > 0) {
+				const float flyby_alpha = smoothstep01(std::min(intro_frame / kFlybyFrames, 1.0f));
+				const float sweep_start = min_forward - 24.0f;
+				const float sweep_end = max_forward + 24.0f;
+				const float sweep = sweep_start + (sweep_end - sweep_start) * flyby_alpha;
+				const float lateral = lateral_sum / static_cast<float>(grid_count);
+				const SimVec3 interest_sim = origin + forward * sweep + right * lateral + up * 3.5f;
+				const SimVec3 position_sim = interest_sim - forward * 58.0f + right * 42.0f + up * 30.0f;
+				const godot::Vector3 preview_interest = gd_vec3(interest_sim);
+				const godot::Vector3 preview_position = gd_vec3(position_sim);
+				const godot::Vector3 preview_up = gd_vec3(up);
+				if (intro_frame < kFlybyFrames) {
+					render_transform = build_camera_transform(preview_position, preview_interest, preview_up);
+					render_fov = 72.0f;
+				} else {
+					const float return_alpha = smoothstep01((intro_frame - kFlybyFrames) / kReturnFrames);
+					const godot::Vector3 normal_position = render_transform.origin;
+					const godot::Vector3 normal_up = render_transform.basis.get_column(1).normalized();
+					const godot::Vector3 normal_interest = normal_position - render_transform.basis.get_column(2).normalized() * 80.0f;
+					const godot::Vector3 blended_position = preview_position.lerp(normal_position, return_alpha);
+					const godot::Vector3 blended_interest = preview_interest.lerp(normal_interest, return_alpha);
+					const godot::Vector3 blended_up = preview_up.lerp(normal_up, return_alpha).normalized();
+					render_transform = build_camera_transform(blended_position, blended_interest, blended_up);
+					render_fov = 72.0f + (render_fov - 72.0f) * return_alpha;
+				}
+			}
+		}
+	}
+	gameplay_camera_node->set_global_transform(render_transform);
+	gameplay_camera_node->set_fov(render_fov);
 	gameplay_camera_node->set_near(0.25);
 	gameplay_camera_node->set_far(40000.0);
 }

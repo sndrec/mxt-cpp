@@ -1191,6 +1191,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
+	if game_sim.has_method("set_multiplayer_intro_camera_enabled"):
+		game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	_apply_grand_prix_ko_energy_bonuses(game_sim, racer_ids)
@@ -1221,6 +1223,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.set_car_render_manager(car_render_manager)
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
 		server_game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
+		if server_game_sim.has_method("set_multiplayer_intro_camera_enabled"):
+			server_game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 		_apply_grand_prix_ko_energy_bonuses(server_game_sim, racer_ids)
