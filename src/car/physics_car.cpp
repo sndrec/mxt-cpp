@@ -4050,7 +4050,7 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	//{
 	//	found = collision;
 	//}
-	soa->current_collision_checkpoint[soa_index] = collision;
+	soa->current_collision_checkpoint[soa_index] = static_cast<int16_t>(collision);
 	if (found >= 0 && found < track->num_checkpoints && found != soa->current_checkpoint[soa_index]) {
 		uint8_t proposed_lap = soa->lap[soa_index];
 		int lap_delta = 0;

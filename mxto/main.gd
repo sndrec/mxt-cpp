@@ -2,13 +2,15 @@ class_name GameManager extends Node
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
-@onready var start_button: Button = $Control/StartButton
-@onready var join_button: Button = $Control/JoinButton
-@onready var ip_field: LineEdit = $Control/IPField
+@onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
+@onready var start_button: Button = $Control/ConnectHostBox/StartButton
+@onready var join_button: Button = $Control/ConnectHostBox/JoinButton
+@onready var ip_field: LineEdit = $Control/ConnectHostBox/IPField
+@onready var port_field: LineEdit = $Control/ConnectHostBox/Port
 @onready var track_selector: OptionButton = $Control/TrackSelector
 @onready var lobby_control: Control = $Lobby
 @onready var lobby_track_selector: OptionButton = $Lobby/LobbyTrackSelector
-@onready var start_race_button: Button = $Lobby/StartRaceButton
+@onready var start_race_button: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/StartRaceButton
 @onready var player_list: ItemList = $Lobby/PlayerList
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
 @onready var spark_node_container: SuperSparkContainer = $GameWorld/SuperSparkContainer
@@ -32,22 +34,24 @@ class_name GameManager extends Node
 @onready var cpu_slider_label: Label = $Control/CpuSliderLabel
 @onready var add_cpu_button: Button = $Lobby/AddCpuButton
 @onready var remove_cpu_button: Button = $Lobby/RemoveCpuButton
-
-var connect_host_box: HBoxContainer
-var port_field: LineEdit
-var lobby_game_mode_choice: OptionButton
-var lobby_vehicle_restore_toggle: CheckBox
-var lobby_bumpers_toggle: CheckBox
-var lobby_stage_button_container: VBoxContainer
-var lobby_stage_preview_container: HBoxContainer
-var lobby_player_list_container: VBoxContainer
-var lobby_chibi_viewport: SubViewport
-var lobby_chibi_camera: Camera3D
-var lobby_chibi_root: Node3D
-var lobby_chibi_nameplates: Control
-var lobby_chat_box: RichTextLabel
-var lobby_say_text: LineEdit
-var lobby_send_text_button: Button
+@onready var lobby_game_mode_choice: OptionButton = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/GameModeChoice
+@onready var lobby_vehicle_restore_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/VehicleRestoreToggle
+@onready var lobby_bumpers_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/BumpersToggle
+@onready var lobby_stage_button_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer
+@onready var lobby_stage_preview_container: HBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer
+@onready var lobby_player_list_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer
+@onready var lobby_chibi_viewport: SubViewport = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport
+@onready var lobby_chibi_camera: Camera3D = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiCamera
+@onready var lobby_chibi_root: Node3D = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiRoot
+@onready var lobby_chibi_nameplates: Control = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiNameplates
+@onready var lobby_chat_box: RichTextLabel = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/LobbyChatBox
+@onready var lobby_say_text: LineEdit = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySayText
+@onready var lobby_send_text_button: Button = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySendTextButton
+@onready var race_pause_root: Control = $RacePauseLayer/RacePauseRoot
+@onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
+@onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
+@onready var race_pause_lobby_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/LobbyButton
+@onready var race_pause_disconnect_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/DisconnectButton
 var lobby_chibi_cars := {}
 var lobby_grand_prix_track_sequence: Array[int] = []
 var lobby_applying_race_options := false
@@ -64,7 +68,6 @@ const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
-const LOBBY_CHIBI_TRACK_TEXTURE_PATH := "res://ui/lobby_assets/track_11.png"
 const BUMPER_POOL_SIZE := 12
 
 var tracks: Array = []
@@ -144,11 +147,6 @@ const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 const DIP_TRACE_MESH_FLOOR := 0x1000
 
-var race_pause_root: Control
-var race_pause_title: Label
-var race_pause_resume_button: Button
-var race_pause_disconnect_button: Button
-var race_pause_lobby_button: Button
 var race_pause_open := false
 var debug_rail_trace_requested := false
 var active_stickers := {}
@@ -213,6 +211,8 @@ func _ready() -> void:
 	cpu_slider.value_changed.connect(_on_singleplayer_cpu_slider_changed)
 	add_cpu_button.pressed.connect(_on_add_cpu_button_pressed)
 	remove_cpu_button.pressed.connect(_on_remove_cpu_button_pressed)
+	if !start_race_button.pressed.is_connected(_on_start_race_button_pressed):
+		start_race_button.pressed.connect(_on_start_race_button_pressed)
 	_build_race_pause_menu()
 	singleplayer_cpu_count = int(cpu_slider.value)
 	_update_cpu_slider_label()
@@ -474,39 +474,16 @@ func _update_cpu_slider_label() -> void:
 		cpu_slider_label.text = "CPU Racers: %d" % singleplayer_cpu_count
 
 func _build_multiplayer_connect_box() -> void:
-	connect_host_box = HBoxContainer.new()
-	connect_host_box.name = "ConnectHostBox"
-	connect_host_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	connect_host_box.set_anchors_preset(Control.PRESET_CENTER)
-	connect_host_box.offset_left = -267.0
-	connect_host_box.offset_top = -12.5
-	connect_host_box.offset_right = 267.0
-	connect_host_box.offset_bottom = 12.5
-	$Control.add_child(connect_host_box)
-
-	_move_control_to_box(start_button, connect_host_box)
 	start_button.text = "Host\n"
-	_move_control_to_box(join_button, connect_host_box)
 	join_button.text = "Connect\n"
-	_move_control_to_box(ip_field, connect_host_box)
 	ip_field.custom_minimum_size = Vector2(192.0, 0.0)
-
-	port_field = LineEdit.new()
-	port_field.name = "Port"
 	port_field.custom_minimum_size = Vector2(192.0, 0.0)
 	port_field.text = "27016"
-	port_field.text_submitted.connect(func(_text: String): _on_join_button_pressed())
-	connect_host_box.add_child(port_field)
+	if !port_field.text_submitted.is_connected(_on_multiplayer_port_submitted):
+		port_field.text_submitted.connect(_on_multiplayer_port_submitted)
 
-func _move_control_to_box(control: Control, new_parent: Node) -> void:
-	var old_parent := control.get_parent()
-	if old_parent != null:
-		old_parent.remove_child(control)
-	new_parent.add_child(control)
-	control.visible = true
-	control.mouse_filter = Control.MOUSE_FILTER_STOP
-	control.position = Vector2.ZERO
-	control.set_anchors_preset(Control.PRESET_TOP_LEFT)
+func _on_multiplayer_port_submitted(_text: String) -> void:
+	_on_join_button_pressed()
 
 func _multiplayer_lobby_port() -> int:
 	if port_field == null:
@@ -517,402 +494,43 @@ func _multiplayer_lobby_port() -> int:
 	return int(clamp(parsed_port, 1, 65535))
 
 func _build_lobby_options_controls() -> void:
-	var background_noise := FastNoiseLite.new()
-	background_noise.frequency = 0.0176
-	background_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
-	background_noise.domain_warp_enabled = true
-	background_noise.domain_warp_amplitude = 12.74
-	var background_gradient := Gradient.new()
-	background_gradient.offsets = PackedFloat32Array([0.0, 0.63354, 1.0])
-	background_gradient.colors = PackedColorArray([
-		Color(0.0, 0.0, 0.0, 1.0),
-		Color(0.168337, 0.168337, 0.168337, 1.0),
-		Color(0.404511, 0.404511, 0.404511, 1.0),
-	])
-	var background_texture := NoiseTexture2D.new()
-	background_texture.width = 128
-	background_texture.height = 128
-	background_texture.noise = background_noise
-	background_texture.color_ramp = background_gradient
-	var background := TextureRect.new()
-	background.name = "LobbyBG"
-	background.set_anchors_preset(Control.PRESET_FULL_RECT)
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	background.texture = background_texture
-	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-
-	var root := VBoxContainer.new()
-	root.name = "LobbyContainer"
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.add_theme_constant_override("separation", 0)
-	lobby_control.add_child(root)
-
-	var top_area := Control.new()
-	top_area.name = "Container"
-	top_area.clip_contents = true
-	top_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	top_area.size_flags_stretch_ratio = 8.45
-	root.add_child(top_area)
-	top_area.add_child(background)
-
-	var top_box := HBoxContainer.new()
-	top_box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	top_box.add_theme_constant_override("separation", 10)
-	top_area.add_child(top_box)
-
-	var player_scroll := ScrollContainer.new()
-	player_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	player_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	player_scroll.size_flags_stretch_ratio = 0.7
-	player_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	top_box.add_child(player_scroll)
-	_move_lobby_control(player_list, lobby_control)
 	player_list.visible = false
 	player_list.custom_minimum_size = Vector2(220.0, 320.0)
 	player_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	player_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
-	lobby_player_list_container = VBoxContainer.new()
-	lobby_player_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_player_list_container.add_theme_constant_override("separation", 4)
-	player_scroll.add_child(lobby_player_list_container)
-
-	var stage_box := VBoxContainer.new()
-	stage_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stage_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	stage_box.size_flags_stretch_ratio = 0.7
-	stage_box.add_theme_constant_override("separation", 6)
-	top_box.add_child(stage_box)
-
-	_hide_lobby_control(lobby_track_selector)
+	lobby_track_selector.visible = false
+	lobby_track_selector.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	if !lobby_track_selector.item_selected.is_connected(_on_lobby_track_selected):
 		lobby_track_selector.item_selected.connect(_on_lobby_track_selected)
 
-	var stage_scroll := ScrollContainer.new()
-	stage_scroll.custom_minimum_size = Vector2(280.0, 145.0)
-	stage_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stage_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	stage_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	stage_box.add_child(stage_scroll)
-
-	lobby_stage_button_container = VBoxContainer.new()
-	lobby_stage_button_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_stage_button_container.add_theme_constant_override("separation", 4)
-	stage_scroll.add_child(lobby_stage_button_container)
-
-	var preview_scroll := ScrollContainer.new()
-	preview_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	preview_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	stage_box.add_child(preview_scroll)
-	lobby_stage_preview_container = HBoxContainer.new()
-	lobby_stage_preview_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_stage_preview_container.add_theme_constant_override("separation", 4)
-	preview_scroll.add_child(lobby_stage_preview_container)
-
-	var options_column := VBoxContainer.new()
-	options_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	options_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	options_column.size_flags_stretch_ratio = 0.5
-	top_box.add_child(options_column)
-
-	var options_scroll := ScrollContainer.new()
-	options_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	options_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	options_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	options_column.add_child(options_scroll)
-
-	var options_box := VBoxContainer.new()
-	options_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	options_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	options_box.add_theme_constant_override("separation", 8)
-	options_scroll.add_child(options_box)
-
-	lobby_game_mode_choice = OptionButton.new()
-	lobby_game_mode_choice.add_item("Single Race", 0)
-	lobby_game_mode_choice.add_item("Grand Prix", 1)
-	lobby_game_mode_choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_game_mode_choice.item_selected.connect(_on_lobby_game_mode_selected)
-	options_box.add_child(lobby_game_mode_choice)
-
-	lobby_vehicle_restore_toggle = CheckBox.new()
-	lobby_vehicle_restore_toggle.text = " Vehicle Restore"
-	lobby_vehicle_restore_toggle.button_pressed = true
-	lobby_vehicle_restore_toggle.toggled.connect(_on_lobby_vehicle_restore_toggled)
-	options_box.add_child(lobby_vehicle_restore_toggle)
-
-	lobby_bumpers_toggle = CheckBox.new()
-	lobby_bumpers_toggle.text = " Bumpers"
-	lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
-	options_box.add_child(lobby_bumpers_toggle)
-
-	_hide_lobby_control(add_cpu_button)
-	_hide_lobby_control(remove_cpu_button)
-	_hide_lobby_control(car_settings_button_lobby)
-	_hide_lobby_control(controller_settings_button_lobby)
-	_move_lobby_control(start_race_button, options_column)
-	start_race_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	start_race_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	start_race_button.size_flags_stretch_ratio = 0.5
-	start_race_button.custom_minimum_size = Vector2(0.0, 44.0)
-	start_race_button.text = "PLAY!"
-	start_race_button.add_theme_font_size_override("font_size", 48)
-
-	var bottom_box := HBoxContainer.new()
-	bottom_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bottom_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	bottom_box.add_theme_constant_override("separation", 10)
-	root.add_child(bottom_box)
-
-	var chat_panel := PanelContainer.new()
-	chat_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	chat_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	chat_panel.size_flags_stretch_ratio = 0.37
-	bottom_box.add_child(chat_panel)
-
-	var chat_margin := MarginContainer.new()
-	chat_margin.add_theme_constant_override("margin_left", 2)
-	chat_margin.add_theme_constant_override("margin_top", 2)
-	chat_margin.add_theme_constant_override("margin_right", 2)
-	chat_margin.add_theme_constant_override("margin_bottom", 2)
-	chat_panel.add_child(chat_margin)
-
-	var chat_box := VBoxContainer.new()
-	chat_box.add_theme_constant_override("separation", 6)
-	chat_margin.add_child(chat_box)
-
-	lobby_chat_box = RichTextLabel.new()
-	lobby_chat_box.bbcode_enabled = true
-	lobby_chat_box.scroll_following = true
-	lobby_chat_box.selection_enabled = true
-	lobby_chat_box.add_theme_font_size_override("normal_font_size", 16)
-	lobby_chat_box.text = "[color=555555]Never tell your password to anyone.[/color]"
-	lobby_chat_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_chat_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	chat_box.add_child(lobby_chat_box)
-
-	var chat_input_box := HBoxContainer.new()
-	chat_input_box.add_theme_constant_override("separation", 6)
-	chat_box.add_child(chat_input_box)
-
-	lobby_say_text = LineEdit.new()
-	lobby_say_text.placeholder_text = "Say..."
-	lobby_say_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
-	chat_input_box.add_child(lobby_say_text)
-
-	lobby_send_text_button = Button.new()
-	lobby_send_text_button.text = "Send"
-	lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
-	chat_input_box.add_child(lobby_send_text_button)
-
-	var viewport_stack := Control.new()
-	viewport_stack.clip_contents = true
-	viewport_stack.mouse_filter = Control.MOUSE_FILTER_STOP
-	viewport_stack.custom_minimum_size = Vector2(420.0, 220.0)
-	viewport_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	viewport_stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
-	bottom_box.add_child(viewport_stack)
-
-	var viewport_container := SubViewportContainer.new()
-	viewport_container.set_anchors_preset(Control.PRESET_FULL_RECT)
-	viewport_container.stretch = true
-	viewport_stack.add_child(viewport_container)
-
-	lobby_chibi_viewport = SubViewport.new()
-	lobby_chibi_viewport.own_world_3d = true
-	lobby_chibi_viewport.size = Vector2i(1280, 512)
-	lobby_chibi_viewport.transparent_bg = false
-	lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	viewport_container.add_child(lobby_chibi_viewport)
-
-	var world_environment := WorldEnvironment.new()
-	world_environment.environment = _build_lobby_chibi_environment()
-	lobby_chibi_viewport.add_child(world_environment)
-
-	lobby_chibi_root = Node3D.new()
-	lobby_chibi_root.name = "LobbyChibiRoot"
-	lobby_chibi_viewport.add_child(lobby_chibi_root)
-
-	var floor_mesh := MeshInstance3D.new()
-	floor_mesh.name = "LobbyChibiFloor"
-	floor_mesh.position = Vector3(0.0, -30.0, -51.95)
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(30.0, 24.0)
-	floor_mesh.mesh = plane
-	floor_mesh.material_override = _build_lobby_chibi_track_material()
-	lobby_chibi_root.add_child(floor_mesh)
-
-	var light := DirectionalLight3D.new()
-	light.transform = Transform3D(
-		Basis(
-			Vector3(-0.707107, 0.5, -0.5),
-			Vector3(0.0, 0.707107, 0.707107),
-			Vector3(0.707107, 0.5, -0.5)
-		),
-		Vector3.ZERO
-	)
-	light.light_energy = 0.5
-	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-	light.directional_shadow_fade_start = 1.0
-	light.directional_shadow_max_distance = 0.1
-	lobby_chibi_viewport.add_child(light)
-
-	lobby_chibi_camera = Camera3D.new()
-	lobby_chibi_camera.transform = Transform3D(
-		Basis(
-			Vector3(1.0, 0.0, 0.0),
-			Vector3(0.0, 0.866025, 0.5),
-			Vector3(0.0, -0.5, 0.866025)
-		),
-		Vector3(0.0, 124.5, 215.64)
-	)
-	lobby_chibi_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	lobby_chibi_camera.size = 12.0
-	lobby_chibi_camera.near = 0.1
-	lobby_chibi_camera.far = 30000.0
-	lobby_chibi_camera.current = true
-	lobby_chibi_viewport.add_child(lobby_chibi_camera)
-
-	lobby_chibi_nameplates = Control.new()
-	lobby_chibi_nameplates.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	lobby_chibi_nameplates.set_anchors_preset(Control.PRESET_FULL_RECT)
-	lobby_chibi_viewport.add_child(lobby_chibi_nameplates)
+	add_cpu_button.visible = false
+	remove_cpu_button.visible = false
+	car_settings_button_lobby.visible = false
+	controller_settings_button_lobby.visible = false
+	if !lobby_game_mode_choice.item_selected.is_connected(_on_lobby_game_mode_selected):
+		lobby_game_mode_choice.item_selected.connect(_on_lobby_game_mode_selected)
+	if !lobby_vehicle_restore_toggle.toggled.is_connected(_on_lobby_vehicle_restore_toggled):
+		lobby_vehicle_restore_toggle.toggled.connect(_on_lobby_vehicle_restore_toggled)
+	if !lobby_bumpers_toggle.toggled.is_connected(_on_lobby_bumpers_toggled):
+		lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
+	if !lobby_say_text.text_submitted.is_connected(_on_lobby_chat_text_submitted):
+		lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
+	if !lobby_send_text_button.pressed.is_connected(_on_lobby_chat_send_pressed):
+		lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
+	var viewport_stack := $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack as Control
+	if viewport_stack != null and !viewport_stack.gui_input.is_connected(_on_lobby_chibi_view_gui_input):
+		viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_stage_preview()
 
-func _build_lobby_chibi_environment() -> Environment:
-	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1.0)
-	sky_material.ground_horizon_color = Color(0.64625, 0.65575, 0.67075, 1.0)
-	var sky := Sky.new()
-	sky.sky_material = sky_material
-	var environment := Environment.new()
-	environment.background_mode = Environment.BG_SKY
-	environment.sky = sky
-	environment.tonemap_mode = 2
-	environment.glow_enabled = true
-	return environment
-
-func _load_lobby_chibi_texture(path: String) -> Texture2D:
-	var image := Image.new()
-	if image.load(path) != OK:
-		return null
-	return ImageTexture.create_from_image(image)
-
-func _build_lobby_chibi_track_material() -> Material:
-	var track_texture := _load_lobby_chibi_texture(LOBBY_CHIBI_TRACK_TEXTURE_PATH)
-	if track_texture == null:
-		var fallback_material := StandardMaterial3D.new()
-		fallback_material.albedo_color = Color(0.541176, 0.541176, 0.541176, 1.0)
-		return fallback_material
-	var shader := Shader.new()
-	shader.code = """
-shader_type spatial;
-render_mode blend_mix,depth_draw_opaque,cull_back,diffuse_burley,specular_schlick_ggx;
-uniform vec4 albedo : source_color;
-uniform sampler2D texture_albedo : source_color, repeat_disable;
-uniform vec3 uv1_scale;
-uniform vec3 uv1_offset;
-uniform vec3 uv2_scale;
-uniform vec3 uv2_offset;
-
-void vertex() {
-	UV = UV * uv1_scale.xy + uv1_offset.xy;
-}
-
-void fragment() {
-	vec2 base_uv = UV;
-	if (int(floor(base_uv.x)) % 2 == 1) {
-		base_uv.x = 1.0 - fract(base_uv.x);
-	}
-	if (int(floor(base_uv.y)) % 2 == 1) {
-		base_uv.y = 1.0 - fract(base_uv.y);
-	}
-	base_uv = fract(base_uv);
-	vec4 albedo_tex = texture(texture_albedo, base_uv);
-	ALBEDO = albedo.rgb * albedo_tex.rgb;
-	ALPHA = 1.0;
-	DEPTH = 1.0;
-}
-"""
-	var material := ShaderMaterial.new()
-	material.shader = shader
-	material.set_shader_parameter("albedo", Color(0.541176, 0.541176, 0.541176, 1.0))
-	material.set_shader_parameter("texture_albedo", track_texture)
-	material.set_shader_parameter("uv1_scale", Vector3(10.0, 3.0, 1.0))
-	material.set_shader_parameter("uv1_offset", Vector3.ZERO)
-	material.set_shader_parameter("uv2_scale", Vector3.ONE)
-	material.set_shader_parameter("uv2_offset", Vector3.ZERO)
-	return material
-
-func _hide_lobby_control(control: Control) -> void:
-	if control == null:
-		return
-	_move_lobby_control(control, lobby_control)
-	control.visible = false
-	control.mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-func _move_lobby_control(control: Control, new_parent: Node) -> void:
-	if control == null:
-		return
-	var old_parent := control.get_parent()
-	if old_parent != null:
-		old_parent.remove_child(control)
-	new_parent.add_child(control)
-	control.visible = true
-	control.mouse_filter = Control.MOUSE_FILTER_STOP
-	control.position = Vector2.ZERO
-	control.set_anchors_preset(Control.PRESET_TOP_LEFT)
-
 func _build_race_pause_menu() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 100
-	add_child(layer)
-
-	race_pause_root = Control.new()
-	race_pause_root.visible = false
-	race_pause_root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	race_pause_root.mouse_filter = Control.MOUSE_FILTER_STOP
-	layer.add_child(race_pause_root)
-
-	var shade := ColorRect.new()
-	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	shade.color = Color(0.0, 0.0, 0.0, 0.55)
-	race_pause_root.add_child(shade)
-
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	race_pause_root.add_child(center)
-
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(320.0, 0.0)
-	center.add_child(panel)
-
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 10)
-	panel.add_child(box)
-
-	race_pause_title = Label.new()
-	race_pause_title.text = "Race Paused"
-	race_pause_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(race_pause_title)
-
-	race_pause_resume_button = Button.new()
-	race_pause_resume_button.text = "Resume"
-	race_pause_resume_button.pressed.connect(_close_race_pause_menu)
-	box.add_child(race_pause_resume_button)
-
-	race_pause_lobby_button = Button.new()
-	race_pause_lobby_button.text = "Back To Lobby"
-	race_pause_lobby_button.pressed.connect(_on_pause_lobby_pressed)
-	box.add_child(race_pause_lobby_button)
-
-	race_pause_disconnect_button = Button.new()
-	race_pause_disconnect_button.text = "Disconnect"
-	race_pause_disconnect_button.pressed.connect(_on_pause_disconnect_pressed)
-	box.add_child(race_pause_disconnect_button)
+	if !race_pause_resume_button.pressed.is_connected(_close_race_pause_menu):
+		race_pause_resume_button.pressed.connect(_close_race_pause_menu)
+	if !race_pause_lobby_button.pressed.is_connected(_on_pause_lobby_pressed):
+		race_pause_lobby_button.pressed.connect(_on_pause_lobby_pressed)
+	if !race_pause_disconnect_button.pressed.is_connected(_on_pause_disconnect_pressed):
+		race_pause_disconnect_button.pressed.connect(_on_pause_disconnect_pressed)
 
 func _open_race_pause_menu() -> void:
 	if race_pause_root == null or !game_sim.sim_started:

@@ -1779,6 +1779,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_player_ko_energy_bonus", "player_id", "bonus"), &GameSim::set_player_ko_energy_bonus);
 	ClassDB::bind_method(D_METHOD("get_player_lap_distance", "player_id"), &GameSim::get_player_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
+	ClassDB::bind_method(D_METHOD("get_player_level_start_time", "player_id"), &GameSim::get_player_level_start_time);
 	ClassDB::bind_method(D_METHOD("get_player_debug_string", "player_id"), &GameSim::get_player_debug_string);
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
 	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
@@ -2106,7 +2107,7 @@ void GameSim::deactivate_bumper_car(int car_index)
 	soa.machine_state[lane] |= MACHINESTATE::ZEROHP;
 }
 
-void GameSim::set_bumper_track_state(int car_index, float absolute_distance, float lane_offset)
+void GameSim::set_bumper_track_state(int car_index, float absolute_distance, float lane_offset, bool reset_history)
 {
 	if (!cars || !current_track || car_index < 0 || car_index >= num_cars) {
 		return;
@@ -2125,14 +2126,18 @@ void GameSim::set_bumper_track_state(int car_index, float absolute_distance, flo
 	PhysicsCarSoA& soa = *cars[car_index].soa;
 	const int lane = cars[car_index].soa_index;
 	STORE_INDEXED_VEC3(soa, position_current, lane, transform.origin);
-	STORE_INDEXED_VEC3(soa, position_old, lane, transform.origin);
-	STORE_INDEXED_VEC3(soa, position_old_2, lane, transform.origin);
-	STORE_INDEXED_VEC3(soa, position_old_dupe, lane, transform.origin);
+	if (reset_history) {
+		STORE_INDEXED_VEC3(soa, position_old, lane, transform.origin);
+		STORE_INDEXED_VEC3(soa, position_old_2, lane, transform.origin);
+		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, transform.origin);
+	}
 	STORE_INDEXED_VEC3(soa, position_bottom, lane, transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
 	STORE_INDEXED_VEC3(soa, track_surface_normal, lane, transform.basis.get_column(1));
 	STORE_INDEXED_VEC3(soa, track_surface_pos, lane, transform.origin);
 	MXT_STORE_TRANSFORM(soa, basis_physical, lane, transform);
-	MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, transform);
+	if (reset_history) {
+		MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, transform);
+	}
 	MXT_STORE_TRANSFORM(soa, transform_visual, lane, transform);
 	soa.current_checkpoint[lane] = checkpoint;
 	soa.current_collision_checkpoint[lane] = checkpoint;
@@ -2146,7 +2151,7 @@ void GameSim::set_bumper_track_state(int car_index, float absolute_distance, flo
 	soa.machine_state[lane] &= ~(MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
 }
 
-void GameSim::update_bumpers(float lead_distance)
+void GameSim::update_bumpers(float lead_distance, int leader_lap)
 {
 	if (!bumpers_enabled || bumper_count <= 0 || !cars || !current_track) {
 		return;
@@ -2158,11 +2163,13 @@ void GameSim::update_bumpers(float lead_distance)
 	if (lap_length <= 0.0f) {
 		return;
 	}
-	const int leader_lap = static_cast<int>(std::floor(lead_distance / lap_length)) + 1;
 	if (leader_lap <= 1) {
 		return;
 	}
-	const float lap_distance = lead_distance - static_cast<float>(leader_lap - 1) * lap_length;
+	float lap_distance = std::fmod(lead_distance, lap_length);
+	if (lap_distance < 0.0f) {
+		lap_distance += lap_length;
+	}
 	const float interval = leader_lap == 2 ? 520.0f : 300.0f;
 	for (int slot = 0; slot < bumper_count && slot < static_cast<int>(bumper_states.size()); ++slot) {
 		const int car_index = bumper_start_index + slot;
@@ -2186,7 +2193,7 @@ void GameSim::update_bumpers(float lead_distance)
 				deactivate_bumper_car(car_index);
 				continue;
 			}
-			set_bumper_track_state(car_index, bumper_distance, state.target_lane);
+			set_bumper_track_state(car_index, bumper_distance, state.target_lane, false);
 		}
 		if (state.active) {
 			continue;
@@ -2212,7 +2219,7 @@ void GameSim::update_bumpers(float lead_distance)
 			continue;
 		}
 		STORE_INDEXED_VEC3(soa, velocity, lane, -spawn_transform.basis.get_column(2) * (850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f));
-		set_bumper_track_state(car_index, spawn_distance, state.target_lane);
+		set_bumper_track_state(car_index, spawn_distance, state.target_lane, true);
 		soa.energy[lane] = soa.calced_max_energy[lane];
 		soa.machine_state[lane] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
 		soa.machine_state[lane] |= MACHINESTATE::ACTIVE;
@@ -2649,6 +2656,22 @@ int GameSim::get_player_lap(int player_id) const
 	return 0;
 }
 
+int GameSim::get_player_level_start_time(int player_id) const
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return 300;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		return static_cast<int>(std::min<uint64_t>(car_soa.level_start_time[lane], static_cast<uint64_t>(INT32_MAX)));
+	}
+	return 300;
+}
+
 godot::String GameSim::get_player_debug_string(int player_id) const
 {
 	if (!cars || !car_player_ids || num_cars <= 0) {
@@ -2946,6 +2969,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	PlayerInput* slot = input_buffer + buf_index * num_cars;
 
 	float lead_distance = 0.0f;
+	int leader_lap = 0;
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
@@ -2954,9 +2978,10 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.pre_distances[i] = distance;
 		if (!is_bumper_car(i) && distance > lead_distance) {
 			lead_distance = distance;
+			leader_lap = static_cast<int>(car_soa.lap[lane]);
 		}
 	}
-	update_bumpers(lead_distance);
+	update_bumpers(lead_distance, leader_lap);
 
 	for (int i = 0; i < num_cars; i++) {
 		PlayerInput inp = PlayerInput::from_neutral();
@@ -3805,7 +3830,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 					}
 				}
 				car_soa->current_checkpoint[car_idx] = static_cast<uint16_t>(spawn_checkpoint);
-				car_soa->current_collision_checkpoint[car_idx] = static_cast<uint16_t>(spawn_checkpoint);
+				car_soa->current_collision_checkpoint[car_idx] = static_cast<int16_t>(spawn_checkpoint);
 				car_soa->last_ground_checkpoint[car_idx] = static_cast<uint16_t>(spawn_checkpoint);
 				car_soa->checkpoint_fraction[car_idx] = checkpoint_fraction;
 				car_soa->lap_progress[car_idx] = (static_cast<float>(spawn_checkpoint) + checkpoint_fraction) / static_cast<float>(current_track->num_checkpoints);
@@ -5141,6 +5166,26 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	}
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+	auto get_interpolated_car_transform = [&](int index) -> SimTransform {
+		if (index >= 0 &&
+				index < static_cast<int>(render_final_prev_transforms.size()) &&
+				index < static_cast<int>(render_final_current_transforms.size())) {
+			return interpolate_sim_transform(
+				render_final_prev_transforms[index],
+				render_final_current_transforms[index],
+				alpha);
+		}
+		PhysicsCarSoA& fallback_soa = *cars[index].soa;
+		const int fallback_lane = cars[index].soa_index;
+		SimTransform fallback = interpolate_sim_transform(
+			MXT_LOAD_TRANSFORM(fallback_soa, basis_physical_other, fallback_lane),
+			MXT_LOAD_TRANSFORM(fallback_soa, basis_physical, fallback_lane),
+			alpha);
+		fallback.origin = LOAD_INDEXED_VEC3(fallback_soa, position_old, fallback_lane).lerp(
+			LOAD_INDEXED_VEC3(fallback_soa, position_current, fallback_lane),
+			alpha);
+		return fallback;
+	};
 	godot::Transform3D render_transform = gameplay_camera->get_render_transform(alpha);
 	float render_fov = gameplay_camera->get_render_fov(alpha);
 	bool intro_camera_active = false;
@@ -5150,7 +5195,7 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			intro_camera_active = true;
 			constexpr float kFlybyFrames = 420.0f;
 			constexpr float kReturnFrames = 180.0f;
-			SimTransform focus_basis_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+			SimTransform focus_basis_transform = get_interpolated_car_transform(car_index);
 			SimVec3 up = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 			if (up.length_squared() <= 0.0001f) {
 				up = focus_basis_transform.basis.get_column(1);
@@ -5166,7 +5211,7 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 				right = forward.cross(up);
 			}
 			right = right.normalized();
-			const SimVec3 origin = LOAD_INDEXED_VEC3(soa, position_current, lane);
+			const SimVec3 origin = focus_basis_transform.origin + camera_position_correction;
 			float min_forward = FLT_MAX;
 			float max_forward = -FLT_MAX;
 			float lateral_sum = 0.0f;
@@ -5175,9 +5220,7 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 				if (car_player_ids && car_player_ids[i] < 0) {
 					continue;
 				}
-				const PhysicsCarSoA& other_soa = *cars[i].soa;
-				const int other_lane = cars[i].soa_index;
-				const SimVec3 pos = LOAD_INDEXED_VEC3(other_soa, position_current, other_lane);
+				const SimVec3 pos = get_interpolated_car_transform(i).origin;
 				const SimVec3 delta = pos - origin;
 				const float forward_proj = delta.dot(forward);
 				min_forward = std::min(min_forward, forward_proj);
@@ -5214,7 +5257,8 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 		}
 	}
 	if (!intro_camera_active && (soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
-		const SimTransform car_basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+		SimTransform car_basis = get_interpolated_car_transform(car_index);
+		car_basis.origin += camera_position_correction;
 		SimVec3 up_sim = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 		if (up_sim.length_squared() <= 0.0001f) {
 			up_sim = car_basis.basis.get_column(1);
@@ -5230,13 +5274,14 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			right_sim = forward_sim.cross(up_sim);
 		}
 		right_sim = right_sim.normalized();
-		const SimVec3 car_pos_sim = LOAD_INDEXED_VEC3(soa, position_current, lane) + camera_position_correction;
+		const SimVec3 car_pos_sim = car_basis.origin;
 		const godot::Vector3 car_pos = gd_vec3(car_pos_sim);
 		const godot::Vector3 up = gd_vec3(up_sim);
 		const godot::Vector3 forward = gd_vec3(forward_sim);
 		const godot::Vector3 right = gd_vec3(right_sim);
-		const float mode_phase = static_cast<float>(tick % 240u) / 240.0f;
-		const int camera_mode = static_cast<int>((tick / 240u) % 4u);
+		const float mode_time = static_cast<float>(tick) + alpha;
+		const float mode_phase = std::fmod(mode_time, 240.0f) / 240.0f;
+		const int camera_mode = static_cast<int>(std::floor(mode_time / 240.0f)) & 3;
 		godot::Vector3 interest = car_pos + up * 2.4f;
 		godot::Vector3 position;
 		if (camera_mode == 0) {
@@ -6015,7 +6060,7 @@ struct NetStateReader {
 	X(uint32_t, restore_move_frames) \
 	X(int, collision_old_cp) \
 	X(uint16_t, current_checkpoint) \
-	X(uint16_t, current_collision_checkpoint) \
+	X(int16_t, current_collision_checkpoint) \
 	X(uint16_t, last_ground_checkpoint) \
 	X(uint8_t, lap) \
 	X(uint8_t, broken_lap_rollback_lap) \
@@ -6353,6 +6398,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			PhysicsCarSoA& soa = *cars[i].soa;
 			const int lane = cars[i].soa_index;
 			if (soa.current_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.current_collision_checkpoint[lane] < -1 ||
 					soa.current_collision_checkpoint[lane] >= current_track->num_checkpoints ||
 					soa.last_ground_checkpoint[lane] >= current_track->num_checkpoints) {
 				godot::UtilityFunctions::printerr(
@@ -6539,6 +6585,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			PhysicsCarSoA& soa = *cars[i].soa;
 			const int lane = cars[i].soa_index;
 			if (soa.current_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.current_collision_checkpoint[lane] < -1 ||
 					soa.current_collision_checkpoint[lane] >= current_track->num_checkpoints ||
 					soa.last_ground_checkpoint[lane] >= current_track->num_checkpoints) {
 				godot::UtilityFunctions::printerr(

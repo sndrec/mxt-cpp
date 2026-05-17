@@ -1,0 +1,11 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://ui/lobby_assets/chibi_track.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" path="res://asset/tex/track/tracktex (11).png" id="2_track"]
+
+[resource]
+shader = ExtResource("1_shader")
+shader_parameter/albedo = Color(0.541176, 0.541176, 0.541176, 1)
+shader_parameter/texture_albedo = ExtResource("2_track")
+shader_parameter/uv1_scale = Vector3(10, 3, 1)
+shader_parameter/uv1_offset = Vector3(0, 0, 0)

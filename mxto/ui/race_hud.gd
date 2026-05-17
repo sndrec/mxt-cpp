@@ -369,7 +369,10 @@ func _process( _delta:float ) -> void:
 		use_tick = nm.player_finish_times[local_id]
 	elif nm.player_finish_times.has(car.owning_id):
 		use_tick = nm.player_finish_times[car.owning_id]
-	var time_elapsed : int = use_tick - 300
+	var official_start_tick := 300
+	if car.game_manager != null and car.game_manager.game_sim != null:
+		official_start_tick = int(car.game_manager.game_sim.get_player_level_start_time(car.owning_id))
+	var time_elapsed : int = use_tick - official_start_tick
 	var time_elapsed_float : float = float(time_elapsed) / 60
 	var seconds : int = int(floor(time_elapsed_float)) % 60
 	var milliseconds : int = int(floor(time_elapsed_float * 1000)) % 1000
@@ -384,7 +387,7 @@ func _process( _delta:float ) -> void:
 	var boost_health_total_cost : float = float(car.boost_frames_manual) * 0.1666666667 * boost_energy_use_rate
 	health_meter_shader.set_shader_parameter("health_to_deplete", boost_health_total_cost)
 	
-	var time_until_start : float = float(300 - use_tick) / 60
+	var time_until_start : float = float(official_start_tick - use_tick) / 60
 	countdown_arrow.rotation_degrees = 360 - minf(270, (time_until_start * 90))
 	if time_until_start <= 0 and countdowncontrol.modulate.a > 0:
 		countdowncontrol.scale += Vector2(1, 1) * _delta * 4

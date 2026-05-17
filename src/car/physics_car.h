@@ -96,7 +96,7 @@ struct ImpactData {
 	X(uint32_t, brake_timer, 0) \
 	X(float, height_above_track, 0.0f) \
 	X(uint16_t, current_checkpoint, 0) \
-	X(uint16_t, current_collision_checkpoint, 0) \
+	X(int16_t, current_collision_checkpoint, -1) \
 	X(uint16_t, last_ground_checkpoint, 0) \
 	X(int32_t, last_mesh_floor_triangle, -1) \
 	X(float, last_ground_distance, 0.0f) \

@@ -132,8 +132,8 @@ namespace godot {
 		bool is_bumper_car(int car_index) const;
 		void configure_bumper_car(int car_index, int bumper_slot);
 		void deactivate_bumper_car(int car_index);
-		void set_bumper_track_state(int car_index, float absolute_distance, float lane_offset);
-		void update_bumpers(float lead_distance);
+		void set_bumper_track_state(int car_index, float absolute_distance, float lane_offset, bool reset_history);
+		void update_bumpers(float lead_distance, int leader_lap);
 		bool sample_track_transform_at_distance(float absolute_distance, float lane, SimTransform& out_transform, uint16_t& out_checkpoint, float& out_fraction) const;
 		PlayerInput generate_bumper_input_for_car(int car_index) const;
 		void process_pending_ko_events();
@@ -336,6 +336,7 @@ namespace godot {
 		void set_player_ko_energy_bonus(int player_id, double bonus);
 		double get_player_lap_distance(int player_id) const;
 		int get_player_lap(int player_id) const;
+		int get_player_level_start_time(int player_id) const;
 		godot::String get_player_debug_string(int player_id) const;
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;

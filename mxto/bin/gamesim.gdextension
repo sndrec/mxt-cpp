@@ -8,6 +8,7 @@ reloadable = true
 
 macos.debug = "res://bin/libgamesim.macos.template_debug.framework"
 macos.release = "res://bin/libgamesim.macos.template_release.framework"
+windows.x86_64 = "res://bin/libgamesim.windows.template_debug.x86_64.dll"
 windows.debug.x86_32 = "res://bin/libgamesim.windows.template_debug.x86_32.dll"
 windows.release.x86_32 = "res://bin/libgamesim.windows.template_release.x86_32.dll"
 windows.debug.x86_64 = "res://bin/libgamesim.windows.template_debug.x86_64.dll"
