@@ -1342,7 +1342,7 @@ static const char *mesh_surface_name(uint32_t surface_index) {
 }
 
 static bool mesh_surface_is_interesting(uint32_t surface_index) {
-    return (surface_index >= FZGX_STATIC_COLLIDER_SURFACE_DASH) &&
+    return (surface_index >= FZGX_STATIC_COLLIDER_SURFACE_DRIVEABLE) &&
            (surface_index <= FZGX_STATIC_COLLIDER_SURFACE_DEATH_4);
 }
 
@@ -1590,8 +1590,7 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
         have_dynamic = true;
         for (uint32_t object_index = 0u; object_index < dynamic_course.object_count; ++object_index) {
             const fzgx_owned_dynamic_scene_object_record &object = dynamic_course.objects[object_index];
-            if ((object.has_collider_mesh == 0u) ||
-                ((object.collider_mesh.collider_type & 0x00004000u) == 0u)) {
+            if (object.has_collider_mesh == 0u) {
                 continue;
             }
             std::vector<uint8_t> tri_used(object.collider_mesh.tri_count, 1u);
@@ -1618,8 +1617,7 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
         }
         for (uint32_t object_index = 0u; object_index < dynamic_course.unknown_collider_count; ++object_index) {
             const fzgx_owned_unknown_collider_record &object = dynamic_course.unknown_colliders[object_index];
-            if ((object.has_collider_mesh == 0u) ||
-                ((object.collider_mesh.collider_type & 0x00004000u) == 0u)) {
+            if (object.has_collider_mesh == 0u) {
                 continue;
             }
             std::vector<uint8_t> tri_used(object.collider_mesh.tri_count, 1u);
@@ -1635,8 +1633,7 @@ static void print_mesh_collision_json(FILE *out, const uint8_t *bytes, uint32_t 
         }
         for (uint32_t object_index = 0u; object_index < dynamic_course.static_scene_object_count; ++object_index) {
             const fzgx_owned_static_scene_object_record &object = dynamic_course.static_scene_objects[object_index];
-            if ((object.has_collider_mesh == 0u) ||
-                ((object.collider_mesh.collider_type & 0x00004000u) == 0u)) {
+            if (object.has_collider_mesh == 0u) {
                 continue;
             }
             std::vector<uint8_t> tri_used(object.collider_mesh.tri_count, 1u);

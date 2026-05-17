@@ -75,6 +75,8 @@ def ensure_preview_materials() -> None:
     ensure_material("embed_dirt", (0.58, 0.36, 0.16, 1.0))
     ensure_material("embed_lava", (1.0, 0.16, 0.04, 1.0))
     ensure_material("embed_hole", (0.0, 0.0, 0.0, 1.0))
+    ensure_material("gxmesh_track", (0.35, 0.75, 0.42, 0.36))
+    ensure_material("gxmesh_wall", (0.95, 0.88, 0.35, 0.58))
     ensure_material("gxmesh_dash", (0.05, 0.45, 1.0, 0.62))
     ensure_material("gxmesh_jump", (1.0, 0.9, 0.05, 0.62))
     ensure_material("gxmesh_ice", (0.35, 0.85, 1.0, 0.52))
@@ -91,6 +93,10 @@ def mesh_collision_material_name(entry: dict) -> str:
     surface = str(entry.get("surface", ""))
     if source == "dynamic_scene" and (collider_type & 0x00004000):
         return "gxmesh_mine"
+    if surface in {"driveable", "recover"}:
+        return "gxmesh_track"
+    if surface == "wall":
+        return "gxmesh_wall"
     if surface == "dash":
         return "gxmesh_dash"
     if surface == "jump":
