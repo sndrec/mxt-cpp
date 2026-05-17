@@ -1,0 +1,6 @@
+usage: blender.exe [-h] [--export EXPORT] [--plugin PLUGIN]
+                   [--track-name TRACK_NAME]
+                   [--max-samples-per-segment MAX_SAMPLES_PER_SEGMENT]
+                   [--checkpoint-stride CHECKPOINT_STRIDE]
+                   samples_json blend_out
+blender.exe: error: unrecognized arguments: Plant - Mobius Ring

@@ -676,7 +676,11 @@ def add_trigger_from_gx_quad(
     trig.tx = float(placement["tx"])
     trig.ty = float(placement["ty"])
     trig.yaw_deg = yaw_deg
-    trig.scale = scale
+    trig.scale = (
+        max(0.001, float(scale[0])),
+        max(0.001, float(scale[1])),
+        max(0.001, float(scale[2])),
+    )
     helper["gx_source"] = entry.get("source", "")
     helper["gx_mesh_group"] = entry.get("name", "")
     helper["gx_quad_index"] = quad_index

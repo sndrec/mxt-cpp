@@ -1,0 +1,1240 @@
+{
+  "name": "Sand Ocean - Lateral Shift",
+  "description": "Loose analytic conversion from F-ZERO GX COLI_COURSE data.",
+  "difficulty": 5,
+  "fog_distance": 2000.0,
+  "sky_top_color": [
+    0.0,
+    0.10000000149011612,
+    0.25
+  ],
+  "sky_horizon_color": [
+    0.20000000298023224,
+    0.25,
+    0.30000001192092896
+  ],
+  "sky_ground_color": [
+    0.019999999552965164,
+    0.019999999552965164,
+    0.019999999552965164
+  ],
+  "ground_color": [
+    0.07999999821186066,
+    0.07999999821186066,
+    0.07999999821186066
+  ],
+  "ground_height": -500.0,
+  "cloud_color": [
+    1.0,
+    1.0,
+    1.0
+  ],
+  "cloud_height": 800.0,
+  "light_color": [
+    1.0,
+    0.949999988079071,
+    0.8999999761581421
+  ],
+  "light_intensity": 1.0,
+  "ambient_intensity": 0.10000000149011612,
+  "ambient_color": [
+    0.15000000596046448,
+    0.15000000596046448,
+    0.18000000715255737
+  ],
+  "light_direction": [
+    0.30000001192092896,
+    -1.0,
+    0.4000000059604645
+  ],
+  "segments": [
+    {
+      "seg_index": 0,
+      "name": "FZGXStream0.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 1,
+      "name": "FZGXStream1.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 2,
+      "name": "FZGXStream2.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 3,
+      "name": "FZGXStream3.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 4,
+      "name": "FZGXStream4.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 5,
+      "name": "FZGXStream5.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 6,
+      "name": "FZGXStream6.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 7,
+      "name": "FZGXStream7.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 8,
+      "name": "FZGXStream8.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 9,
+      "name": "FZGXStream9.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 10,
+      "name": "FZGXStream10.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 11,
+      "name": "FZGXStream11.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 12,
+      "name": "FZGXStream12.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 13,
+      "name": "FZGXStream13.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 14,
+      "name": "FZGXStream14.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 15,
+      "name": "FZGXStream15.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 16,
+      "name": "FZGXStream16.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 17,
+      "name": "FZGXStream17.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 18,
+      "name": "FZGXStream18.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 19,
+      "name": "FZGXStream19.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 20,
+      "name": "FZGXStream20.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 21,
+      "name": "FZGXStream21.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 22,
+      "name": "FZGXStream22.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 23,
+      "name": "FZGXStream23.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 24,
+      "name": "FZGXStream24.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 25,
+      "name": "FZGXStream25.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 26,
+      "name": "FZGXStream26.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 27,
+      "name": "FZGXStream27.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 28,
+      "name": "FZGXStream28.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 29,
+      "name": "FZGXStream29.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 30,
+      "name": "FZGXStream30.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 31,
+      "name": "FZGXStream31.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 32,
+      "name": "FZGXStream32.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 33,
+      "name": "FZGXStream33.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 34,
+      "name": "FZGXStream34.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 35,
+      "name": "FZGXStream35.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 36,
+      "name": "FZGXStream36.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 37,
+      "name": "FZGXStream37.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 38,
+      "name": "FZGXStream38.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 39,
+      "name": "FZGXStream39.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 40,
+      "name": "FZGXStream40.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 41,
+      "name": "FZGXStream41.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 42,
+      "name": "FZGXStream42.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 43,
+      "name": "FZGXStream43.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 44,
+      "name": "FZGXStream44.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 45,
+      "name": "FZGXStream45.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 46,
+      "name": "FZGXStream46.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 47,
+      "name": "FZGXStream47.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 48,
+      "name": "FZGXStream48.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 49,
+      "name": "FZGXStream49.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 50,
+      "name": "FZGXStream50.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 51,
+      "name": "FZGXStream51.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 52,
+      "name": "FZGXStream52.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 53,
+      "name": "FZGXStream53.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 54,
+      "name": "FZGXStream54.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 55,
+      "name": "FZGXStream55.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 56,
+      "name": "FZGXStream56.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 57,
+      "name": "FZGXStream57.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 58,
+      "name": "FZGXStream58.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 59,
+      "name": "FZGXStream59.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 60,
+      "name": "FZGXStream60.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 61,
+      "name": "FZGXStream61.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 62,
+      "name": "FZGXStream62.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 63,
+      "name": "FZGXStream63.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 64,
+      "name": "FZGXStream64.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    },
+    {
+      "seg_index": 65,
+      "name": "FZGXStream65.000",
+      "ground_color": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "rail_color": [
+        0.800000011920929,
+        0.800000011920929,
+        0.800000011920929
+      ],
+      "rail_start_left": 0.0,
+      "rail_end_left": 1.0,
+      "rail_start_right": 0.0,
+      "rail_end_right": 1.0
+    }
+  ]
+}
