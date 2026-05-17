@@ -516,7 +516,7 @@ func _build_lobby_options_controls() -> void:
 	player_scroll.size_flags_stretch_ratio = 0.7
 	player_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	top_box.add_child(player_scroll)
-	_move_lobby_control(player_list, player_scroll)
+	_move_lobby_control(player_list, lobby_control)
 	player_list.visible = false
 	player_list.custom_minimum_size = Vector2(220.0, 320.0)
 	player_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
