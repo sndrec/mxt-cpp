@@ -33,6 +33,8 @@ class_name GameManager extends Node
 @onready var add_cpu_button: Button = $Lobby/AddCpuButton
 @onready var remove_cpu_button: Button = $Lobby/RemoveCpuButton
 
+var connect_host_box: HBoxContainer
+var port_field: LineEdit
 var lobby_game_mode_choice: OptionButton
 var lobby_vehicle_restore_toggle: CheckBox
 var lobby_bumpers_toggle: CheckBox
@@ -184,6 +186,7 @@ func _ready() -> void:
 	$GameWorld.add_child(car_render_manager)
 	randomize()
 	_build_lobby_options_controls()
+	_build_multiplayer_connect_box()
 	_load_tracks()
 	_load_car_definitions()
 	network_manager.race_started.connect(_on_network_race_started)
@@ -394,7 +397,7 @@ func _load_car_definitions() -> void:
 	dir.list_dir_end()
 
 func _on_start_button_pressed() -> void:
-	var err := network_manager.host()
+	var err := network_manager.host(_multiplayer_lobby_port())
 	if err != OK:
 		return
 	if launch_cpu_driver_count >= 0:
@@ -447,11 +450,13 @@ func _start_singleplayer_race(as_spectator: bool) -> void:
 
 func _on_join_button_pressed() -> void:
 	var settings_dict = car_settings.get_player_settings().to_dict()
+	var err := network_manager.join(ip_field.text, _multiplayer_lobby_port())
+	if err != OK:
+		return
 	network_manager.multiplayer.connected_to_server.connect(
 		func():
 			network_manager.send_player_settings(settings_dict),
 		Object.CONNECT_ONE_SHOT)
-	network_manager.join(ip_field.text)
 	start_race_button.disabled = true
 	$Control.visible = false
 	lobby_control.visible = true
@@ -466,6 +471,49 @@ func _on_singleplayer_cpu_slider_changed(value: float) -> void:
 func _update_cpu_slider_label() -> void:
 	if cpu_slider_label:
 		cpu_slider_label.text = "CPU Racers: %d" % singleplayer_cpu_count
+
+func _build_multiplayer_connect_box() -> void:
+	connect_host_box = HBoxContainer.new()
+	connect_host_box.name = "ConnectHostBox"
+	connect_host_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	connect_host_box.set_anchors_preset(Control.PRESET_CENTER)
+	connect_host_box.offset_left = -267.0
+	connect_host_box.offset_top = -12.5
+	connect_host_box.offset_right = 267.0
+	connect_host_box.offset_bottom = 12.5
+	$Control.add_child(connect_host_box)
+
+	_move_control_to_box(start_button, connect_host_box)
+	start_button.text = "Host\n"
+	_move_control_to_box(join_button, connect_host_box)
+	join_button.text = "Connect\n"
+	_move_control_to_box(ip_field, connect_host_box)
+	ip_field.custom_minimum_size = Vector2(192.0, 0.0)
+
+	port_field = LineEdit.new()
+	port_field.name = "Port"
+	port_field.custom_minimum_size = Vector2(192.0, 0.0)
+	port_field.text = "27016"
+	port_field.text_submitted.connect(func(_text: String): _on_join_button_pressed())
+	connect_host_box.add_child(port_field)
+
+func _move_control_to_box(control: Control, new_parent: Node) -> void:
+	var old_parent := control.get_parent()
+	if old_parent != null:
+		old_parent.remove_child(control)
+	new_parent.add_child(control)
+	control.visible = true
+	control.mouse_filter = Control.MOUSE_FILTER_STOP
+	control.position = Vector2.ZERO
+	control.set_anchors_preset(Control.PRESET_TOP_LEFT)
+
+func _multiplayer_lobby_port() -> int:
+	if port_field == null:
+		return 27016
+	var parsed_port := port_field.text.to_int()
+	if parsed_port <= 0:
+		return 27016
+	return int(clamp(parsed_port, 1, 65535))
 
 func _build_lobby_options_controls() -> void:
 	var background_noise := FastNoiseLite.new()
