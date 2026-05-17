@@ -68,7 +68,7 @@ const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
-const BUMPER_POOL_SIZE := 12
+const BUMPER_POOL_SIZE := 60
 
 var tracks: Array = []
 var car_definitions: Array = []
