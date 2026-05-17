@@ -1089,6 +1089,7 @@ namespace {
 			}
 
 			scratch.debug_mesh_current_global_car_index = c.global_start + i;
+			const uint32_t old_terrain_state = c.terrain_state[i];
 			const SimVec3 trigger_p0 = LOAD_INDEXED_VEC3(c, position_old, i);
 			const SimVec3 trigger_p1 = LOAD_INDEXED_VEC3(c, position_current, i);
 			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch);
@@ -1123,6 +1124,9 @@ namespace {
 			}
 			if ((c.machine_state[i] & MACHINESTATE::B29) == 0) {
 				car_views[i].set_terrain_state_from_track(scratch, trigger_p0, trigger_p1);
+			}
+			if ((old_terrain_state & TERRAIN::DASH) != 0u) {
+				c.machine_state[i] &= ~MACHINESTATE::JUST_HIT_DASHPLATE;
 			}
 		}
 		scratch.debug_mesh_current_global_car_index = -1;
