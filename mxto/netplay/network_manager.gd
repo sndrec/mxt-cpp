@@ -46,7 +46,11 @@ var server_netcode_session := NetcodeSession.new()
 var last_received_tick := {}
 
 func has_network_peer() -> bool:
-	return network_active and multiplayer.multiplayer_peer != null
+	if !network_active or multiplayer.multiplayer_peer == null:
+		return false
+	if is_server:
+		return true
+	return multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
 var last_ack_tick: int = -1
 var target_tick: int = 0
 const MAX_AHEAD_TICKS := 30
