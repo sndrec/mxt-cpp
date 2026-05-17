@@ -1,6 +1,51 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=6 format=3]
 
-[ext_resource type="Script" path="res://vehicle/asset/bumper/bumper_vehicle.gd" id="1_bumper"]
+[sub_resource type="SphereMesh" id="SphereMesh_bumper"]
+radius = 1.0
+height = 1.0
+radial_segments = 24
+rings = 8
+is_hemisphere = true
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_body"]
+albedo_color = Color(0.95, 0.16, 0.08, 1)
+roughness = 0.35
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_shadow"]
+transparency = 1
+albedo_color = Color(0, 0, 0, 0.45)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_outline"]
+albedo_color = Color(0.08, 0, 0, 1)
 
 [node name="BumperVehicle" type="Node3D"]
-script = ExtResource("1_bumper")
+
+[node name="VEHICLE_MAIN" type="MeshInstance3D" parent="."]
+transform = Transform3D(3, 0, 0, 0, 1.6, 0, 0, 0, 3, 0, 0, 0)
+layers = 2
+material_override = SubResource("StandardMaterial3D_body")
+cast_shadow = 0
+mesh = SubResource("SphereMesh_bumper")
+
+[node name="VEHICLE_SHADOW" type="MeshInstance3D" parent="."]
+transform = Transform3D(3.2, 0, 0, 0, 0.08, 0, 0, 0, 3.2, 0, -0.05, 0)
+layers = 2
+material_override = SubResource("StandardMaterial3D_shadow")
+cast_shadow = 0
+mesh = SubResource("SphereMesh_bumper")
+
+[node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="."]
+transform = Transform3D(3.22, 0, 0, 0, 1.72, 0, 0, 0, 3.22, 0, 0, 0)
+layers = 4
+material_override = SubResource("StandardMaterial3D_outline")
+cast_shadow = 0
+mesh = SubResource("SphereMesh_bumper")
+
+[node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="."]
+transform = Transform3D(3.12, 0, 0, 0, 1.66, 0, 0, 0, 3.12, 0, 0, 0)
+layers = 2
+material_override = SubResource("StandardMaterial3D_outline")
+cast_shadow = 0
+mesh = SubResource("SphereMesh_bumper")
+
+[node name="THRUSTERS" type="Node3D" parent="."]
