@@ -64,6 +64,7 @@ const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
+const LOBBY_CHIBI_TRACK_TEXTURE_PATH := "res://ui/lobby_assets/track_11.png"
 const BUMPER_POOL_SIZE := 12
 
 var tracks: Array = []
@@ -720,10 +721,15 @@ func _build_lobby_options_controls() -> void:
 	viewport_stack.add_child(viewport_container)
 
 	lobby_chibi_viewport = SubViewport.new()
-	lobby_chibi_viewport.size = Vector2i(960, 360)
+	lobby_chibi_viewport.own_world_3d = true
+	lobby_chibi_viewport.size = Vector2i(1280, 512)
 	lobby_chibi_viewport.transparent_bg = false
 	lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	viewport_container.add_child(lobby_chibi_viewport)
+
+	var world_environment := WorldEnvironment.new()
+	world_environment.environment = _build_lobby_chibi_environment()
+	lobby_chibi_viewport.add_child(world_environment)
 
 	lobby_chibi_root = Node3D.new()
 	lobby_chibi_root.name = "LobbyChibiRoot"
@@ -731,24 +737,41 @@ func _build_lobby_options_controls() -> void:
 
 	var floor_mesh := MeshInstance3D.new()
 	floor_mesh.name = "LobbyChibiFloor"
+	floor_mesh.position = Vector3(0.0, -30.0, -51.95)
 	var plane := PlaneMesh.new()
-	plane.size = Vector2(30.0, 22.0)
+	plane.size = Vector2(30.0, 24.0)
 	floor_mesh.mesh = plane
-	var floor_material := StandardMaterial3D.new()
-	floor_material.albedo_color = Color(0.08, 0.095, 0.12, 1.0)
-	floor_material.roughness = 0.85
-	floor_mesh.material_override = floor_material
+	floor_mesh.material_override = _build_lobby_chibi_track_material()
 	lobby_chibi_root.add_child(floor_mesh)
 
 	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-55.0, 35.0, 0.0)
-	light.light_energy = 1.65
-	lobby_chibi_root.add_child(light)
+	light.transform = Transform3D(
+		Basis(
+			Vector3(-0.707107, 0.5, -0.5),
+			Vector3(0.0, 0.707107, 0.707107),
+			Vector3(0.707107, 0.5, -0.5)
+		),
+		Vector3.ZERO
+	)
+	light.light_energy = 0.5
+	light.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	light.directional_shadow_fade_start = 1.0
+	light.directional_shadow_max_distance = 0.1
+	lobby_chibi_viewport.add_child(light)
 
 	lobby_chibi_camera = Camera3D.new()
-	lobby_chibi_camera.position = Vector3(0.0, 20.0, 18.0)
-	lobby_chibi_camera.rotation_degrees = Vector3(-50.0, 0.0, 0.0)
-	lobby_chibi_camera.fov = 48.0
+	lobby_chibi_camera.transform = Transform3D(
+		Basis(
+			Vector3(1.0, 0.0, 0.0),
+			Vector3(0.0, 0.866025, 0.5),
+			Vector3(0.0, -0.5, 0.866025)
+		),
+		Vector3(0.0, 124.5, 215.64)
+	)
+	lobby_chibi_camera.projection = Camera3D.PROJECTION_ORTHOGONAL
+	lobby_chibi_camera.size = 12.0
+	lobby_chibi_camera.near = 0.1
+	lobby_chibi_camera.far = 30000.0
 	lobby_chibi_camera.current = true
 	lobby_chibi_viewport.add_child(lobby_chibi_camera)
 
@@ -758,6 +781,71 @@ func _build_lobby_options_controls() -> void:
 	lobby_chibi_viewport.add_child(lobby_chibi_nameplates)
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_stage_preview()
+
+func _build_lobby_chibi_environment() -> Environment:
+	var sky_material := ProceduralSkyMaterial.new()
+	sky_material.sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1.0)
+	sky_material.ground_horizon_color = Color(0.64625, 0.65575, 0.67075, 1.0)
+	var sky := Sky.new()
+	sky.sky_material = sky_material
+	var environment := Environment.new()
+	environment.background_mode = Environment.BG_SKY
+	environment.sky = sky
+	environment.tonemap_mode = 2
+	environment.glow_enabled = true
+	return environment
+
+func _load_lobby_chibi_texture(path: String) -> Texture2D:
+	var image := Image.new()
+	if image.load(path) != OK:
+		return null
+	return ImageTexture.create_from_image(image)
+
+func _build_lobby_chibi_track_material() -> Material:
+	var track_texture := _load_lobby_chibi_texture(LOBBY_CHIBI_TRACK_TEXTURE_PATH)
+	if track_texture == null:
+		var fallback_material := StandardMaterial3D.new()
+		fallback_material.albedo_color = Color(0.541176, 0.541176, 0.541176, 1.0)
+		return fallback_material
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+render_mode blend_mix,depth_draw_opaque,cull_back,diffuse_burley,specular_schlick_ggx;
+uniform vec4 albedo : source_color;
+uniform sampler2D texture_albedo : source_color, repeat_disable;
+uniform vec3 uv1_scale;
+uniform vec3 uv1_offset;
+uniform vec3 uv2_scale;
+uniform vec3 uv2_offset;
+
+void vertex() {
+	UV = UV * uv1_scale.xy + uv1_offset.xy;
+}
+
+void fragment() {
+	vec2 base_uv = UV;
+	if (int(floor(base_uv.x)) % 2 == 1) {
+		base_uv.x = 1.0 - fract(base_uv.x);
+	}
+	if (int(floor(base_uv.y)) % 2 == 1) {
+		base_uv.y = 1.0 - fract(base_uv.y);
+	}
+	base_uv = fract(base_uv);
+	vec4 albedo_tex = texture(texture_albedo, base_uv);
+	ALBEDO = albedo.rgb * albedo_tex.rgb;
+	ALPHA = 1.0;
+	DEPTH = 1.0;
+}
+"""
+	var material := ShaderMaterial.new()
+	material.shader = shader
+	material.set_shader_parameter("albedo", Color(0.541176, 0.541176, 0.541176, 1.0))
+	material.set_shader_parameter("texture_albedo", track_texture)
+	material.set_shader_parameter("uv1_scale", Vector3(10.0, 3.0, 1.0))
+	material.set_shader_parameter("uv1_offset", Vector3.ZERO)
+	material.set_shader_parameter("uv2_scale", Vector3.ONE)
+	material.set_shader_parameter("uv2_offset", Vector3.ZERO)
+	return material
 
 func _hide_lobby_control(control: Control) -> void:
 	if control == null:
