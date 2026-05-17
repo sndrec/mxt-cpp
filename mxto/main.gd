@@ -649,6 +649,53 @@ func _format_race_time(tick_value: int) -> String:
 	var milliseconds := total_msec % 1000
 	return "%d:%02d.%03d" % [minutes, seconds, milliseconds]
 
+func _format_ordinal(value: int) -> String:
+	var mod_100 := value % 100
+	if mod_100 >= 11 and mod_100 <= 13:
+		return "%dth" % value
+	match value % 10:
+		1:
+			return "%dst" % value
+		2:
+			return "%dnd" % value
+		3:
+			return "%drd" % value
+		_:
+			return "%dth" % value
+
+func _format_race_results_summary() -> String:
+	var lines := ["Race Results"]
+	for i in range(network_manager.finish_order.size()):
+		var id := int(network_manager.finish_order[i])
+		lines.append("%s  %s" % [_format_ordinal(i + 1), _player_display_name(id)])
+	if !network_manager.player_eliminations.is_empty():
+		lines.append("")
+		lines.append("Eliminated")
+		for id_value in network_manager.player_eliminations.keys():
+			lines.append(_player_display_name(int(id_value)))
+	if network_manager.is_grand_prix_enabled():
+		lines.append("")
+		lines.append("Grand Prix Standings")
+		var points: Dictionary = network_manager.race_options.get("grand_prix_points", {})
+		var standings := []
+		for id_value in points.keys():
+			standings.append([int(_lookup_id_value(points, int(id_value), 0)), int(id_value)])
+		standings.sort_custom(func(a, b): return a[0] > b[0])
+		for i in range(standings.size()):
+			lines.append("%s  %s  %d" % [
+				_format_ordinal(i + 1),
+				_player_display_name(int(standings[i][1])),
+				int(standings[i][0])
+			])
+	return "\n".join(lines)
+
+func _show_race_results_summary() -> void:
+	if race_finish_label == null:
+		return
+	race_finish_label.text = _format_race_results_summary()
+	race_finish_label.visible = true
+	race_notification_hide_msec = 0
+
 func _show_finish_medal(actor_id: int, tick_value: int) -> void:
 	var medal := FinishMedalScene.instantiate() as Control
 	_add_race_medal(medal)
@@ -1869,6 +1916,9 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	if !network_manager.is_server or !network_manager.is_grand_prix_enabled():
 		return
 	var options := network_manager.race_options.duplicate(true)
+	var current_track_index := int(options.get("grand_prix_current_track", 0))
+	if int(options.get("grand_prix_recorded_track", -1)) == current_track_index:
+		return
 	var points: Dictionary = options.get("grand_prix_points", {})
 	var human_racers := network_manager.race_player_ids.duplicate(true)
 	var racer_count := human_racers.size()
@@ -1888,7 +1938,9 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	options["grand_prix_points"] = points
 	options["grand_prix_eliminated_ids"] = eliminated_ids
 	options["grand_prix_ko_energy_bonuses"] = _capture_grand_prix_ko_energy_bonuses(sim)
+	options["grand_prix_recorded_track"] = current_track_index
 	network_manager.race_options = options
+	network_manager.send_race_options(options)
 
 func _build_next_grand_prix_settings(options: Dictionary) -> Array:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -1971,6 +2023,8 @@ func _check_race_finished() -> void:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
 				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
+				_record_grand_prix_race_results(finish_sim)
+				_show_race_results_summary()
 			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 10000:
 				_finish_or_advance_grand_prix(finish_sim)
 				race_finish_label.visible = false
@@ -1978,6 +2032,7 @@ func _check_race_finished() -> void:
 		if singleplayer_mode and all_done:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
+				_show_race_results_summary()
 
 @onready var obj_camera: Camera3D = get_node_or_null("GameWorld/ObjViewport/ObjCamera") as Camera3D
 @onready var outline_camera: Camera3D = get_node_or_null("GameWorld/OutlineViewport/OutlineCamera") as Camera3D
@@ -2018,6 +2073,8 @@ func _process(delta: float) -> void:
 		race_notification_hide_msec = 0
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
+	if game_sim.sim_started and network_manager.net_race_finish_time != -1:
+		_show_race_results_summary()
 	if game_sim.sim_started:
 		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim_visuals_only(delta)

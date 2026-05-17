@@ -2356,6 +2356,15 @@ func is_grand_prix_enabled() -> bool:
 	return int(race_options.get("game_mode", 0)) == 1
 
 @rpc("authority", "call_local", "reliable")
+func sync_race_options(options: Dictionary) -> void:
+	race_options = options.duplicate(true)
+
+func send_race_options(options: Dictionary) -> void:
+	if is_server:
+		sync_race_options.rpc(options)
+		sync_race_options(options)
+
+@rpc("authority", "call_local", "reliable")
 func receive_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:
 	race_event.emit(event_type, actor_id, target_id, tick, value)
 
