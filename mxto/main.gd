@@ -37,6 +37,15 @@ var lobby_game_mode_choice: OptionButton
 var lobby_vehicle_restore_toggle: CheckBox
 var lobby_bumpers_toggle: CheckBox
 var lobby_grand_prix_track_list: ItemList
+var lobby_stage_preview_container: VBoxContainer
+var lobby_chibi_viewport: SubViewport
+var lobby_chibi_camera: Camera3D
+var lobby_chibi_root: Node3D
+var lobby_chibi_nameplates: Control
+var lobby_chat_box: RichTextLabel
+var lobby_say_text: LineEdit
+var lobby_send_text_button: Button
+var lobby_chibi_cars := {}
 
 @onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
 @onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
@@ -45,6 +54,7 @@ var lobby_grand_prix_track_list: ItemList
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
+const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
@@ -313,6 +323,7 @@ func _load_tracks() -> void:
 				track_selector.selected = i
 				lobby_track_selector.selected = i
 				break
+	_refresh_lobby_stage_preview()
 
 func get_cpu_driver_manager() -> CpuDriverManager:
 	return cpu_driver_manager
@@ -450,47 +461,233 @@ func _update_cpu_slider_label() -> void:
 		cpu_slider_label.text = "CPU Racers: %d" % singleplayer_cpu_count
 
 func _build_lobby_options_controls() -> void:
-	var panel := PanelContainer.new()
-	panel.name = "RaceOptionsPanel"
-	panel.position = Vector2(315.0, 20.0)
-	panel.custom_minimum_size = Vector2(300.0, 250.0)
-	lobby_control.add_child(panel)
+	var root := VBoxContainer.new()
+	root.name = "LobbyContainer"
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.offset_left = 16.0
+	root.offset_top = 16.0
+	root.offset_right = -16.0
+	root.offset_bottom = -16.0
+	root.add_theme_constant_override("separation", 10)
+	lobby_control.add_child(root)
 
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
-	panel.add_child(box)
+	var top_panel := PanelContainer.new()
+	top_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	top_panel.custom_minimum_size = Vector2(0.0, 360.0)
+	root.add_child(top_panel)
 
-	var title := Label.new()
-	title.text = "Race Options"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	box.add_child(title)
+	var top_box := HBoxContainer.new()
+	top_box.add_theme_constant_override("separation", 10)
+	top_panel.add_child(top_box)
+
+	var player_scroll := ScrollContainer.new()
+	player_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	player_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	player_scroll.size_flags_stretch_ratio = 0.7
+	top_box.add_child(player_scroll)
+	_move_lobby_control(player_list, player_scroll)
+	player_list.custom_minimum_size = Vector2(220.0, 320.0)
+	player_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	player_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	var stage_box := VBoxContainer.new()
+	stage_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stage_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stage_box.size_flags_stretch_ratio = 1.1
+	stage_box.add_theme_constant_override("separation", 6)
+	top_box.add_child(stage_box)
+
+	var stage_title := Label.new()
+	stage_title.text = "Stage List"
+	stage_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stage_box.add_child(stage_title)
+
+	_move_lobby_control(lobby_track_selector, stage_box)
+	lobby_track_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if !lobby_track_selector.item_selected.is_connected(_on_lobby_track_selected):
+		lobby_track_selector.item_selected.connect(_on_lobby_track_selected)
+
+	lobby_grand_prix_track_list = ItemList.new()
+	lobby_grand_prix_track_list.select_mode = ItemList.SELECT_MULTI
+	lobby_grand_prix_track_list.custom_minimum_size = Vector2(280.0, 145.0)
+	lobby_grand_prix_track_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lobby_grand_prix_track_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	lobby_grand_prix_track_list.multi_selected.connect(_on_lobby_grand_prix_track_selected)
+	stage_box.add_child(lobby_grand_prix_track_list)
+
+	var preview_label := Label.new()
+	preview_label.text = "Grand Prix Preview"
+	stage_box.add_child(preview_label)
+
+	var preview_scroll := ScrollContainer.new()
+	preview_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stage_box.add_child(preview_scroll)
+	lobby_stage_preview_container = VBoxContainer.new()
+	lobby_stage_preview_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preview_scroll.add_child(lobby_stage_preview_container)
+
+	var options_box := VBoxContainer.new()
+	options_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	options_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	options_box.size_flags_stretch_ratio = 0.85
+	options_box.add_theme_constant_override("separation", 8)
+	top_box.add_child(options_box)
+
+	var options_title := Label.new()
+	options_title.text = "Race Options"
+	options_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	options_box.add_child(options_title)
 
 	lobby_game_mode_choice = OptionButton.new()
 	lobby_game_mode_choice.add_item("Single Race", 0)
 	lobby_game_mode_choice.add_item("Grand Prix", 1)
+	lobby_game_mode_choice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lobby_game_mode_choice.item_selected.connect(_on_lobby_game_mode_selected)
-	box.add_child(lobby_game_mode_choice)
+	options_box.add_child(lobby_game_mode_choice)
 
 	lobby_vehicle_restore_toggle = CheckBox.new()
 	lobby_vehicle_restore_toggle.text = " Vehicle Restore"
 	lobby_vehicle_restore_toggle.button_pressed = true
 	lobby_vehicle_restore_toggle.toggled.connect(_on_lobby_vehicle_restore_toggled)
-	box.add_child(lobby_vehicle_restore_toggle)
+	options_box.add_child(lobby_vehicle_restore_toggle)
 
 	lobby_bumpers_toggle = CheckBox.new()
 	lobby_bumpers_toggle.text = " Bumpers"
 	lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
-	box.add_child(lobby_bumpers_toggle)
+	options_box.add_child(lobby_bumpers_toggle)
 
-	var tracks_label := Label.new()
-	tracks_label.text = "Grand Prix Tracks"
-	box.add_child(tracks_label)
+	var cpu_box := HBoxContainer.new()
+	cpu_box.add_theme_constant_override("separation", 6)
+	options_box.add_child(cpu_box)
+	_move_lobby_control(add_cpu_button, cpu_box)
+	_move_lobby_control(remove_cpu_button, cpu_box)
+	add_cpu_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	remove_cpu_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	lobby_grand_prix_track_list = ItemList.new()
-	lobby_grand_prix_track_list.select_mode = ItemList.SELECT_MULTI
-	lobby_grand_prix_track_list.custom_minimum_size = Vector2(280.0, 105.0)
-	lobby_grand_prix_track_list.multi_selected.connect(_on_lobby_grand_prix_track_selected)
-	box.add_child(lobby_grand_prix_track_list)
+	_move_lobby_control(car_settings_button_lobby, options_box)
+	_move_lobby_control(controller_settings_button_lobby, options_box)
+	_move_lobby_control(start_race_button, options_box)
+	car_settings_button_lobby.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	controller_settings_button_lobby.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start_race_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start_race_button.custom_minimum_size = Vector2(0.0, 44.0)
+
+	var bottom_box := HBoxContainer.new()
+	bottom_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	bottom_box.size_flags_stretch_ratio = 0.78
+	bottom_box.add_theme_constant_override("separation", 10)
+	root.add_child(bottom_box)
+
+	var chat_panel := PanelContainer.new()
+	chat_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	chat_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	chat_panel.size_flags_stretch_ratio = 0.85
+	bottom_box.add_child(chat_panel)
+
+	var chat_margin := MarginContainer.new()
+	chat_margin.add_theme_constant_override("margin_left", 8)
+	chat_margin.add_theme_constant_override("margin_top", 8)
+	chat_margin.add_theme_constant_override("margin_right", 8)
+	chat_margin.add_theme_constant_override("margin_bottom", 8)
+	chat_panel.add_child(chat_margin)
+
+	var chat_box := VBoxContainer.new()
+	chat_box.add_theme_constant_override("separation", 6)
+	chat_margin.add_child(chat_box)
+
+	lobby_chat_box = RichTextLabel.new()
+	lobby_chat_box.bbcode_enabled = true
+	lobby_chat_box.scroll_following = true
+	lobby_chat_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lobby_chat_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	chat_box.add_child(lobby_chat_box)
+
+	var chat_input_box := HBoxContainer.new()
+	chat_input_box.add_theme_constant_override("separation", 6)
+	chat_box.add_child(chat_input_box)
+
+	lobby_say_text = LineEdit.new()
+	lobby_say_text.placeholder_text = "Say..."
+	lobby_say_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
+	chat_input_box.add_child(lobby_say_text)
+
+	lobby_send_text_button = Button.new()
+	lobby_send_text_button.text = "Send"
+	lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
+	chat_input_box.add_child(lobby_send_text_button)
+
+	var viewport_panel := PanelContainer.new()
+	viewport_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	viewport_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	viewport_panel.size_flags_stretch_ratio = 1.25
+	bottom_box.add_child(viewport_panel)
+
+	var viewport_stack := Control.new()
+	viewport_stack.clip_contents = true
+	viewport_stack.mouse_filter = Control.MOUSE_FILTER_STOP
+	viewport_stack.custom_minimum_size = Vector2(420.0, 220.0)
+	viewport_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	viewport_stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
+	viewport_panel.add_child(viewport_stack)
+
+	var viewport_container := SubViewportContainer.new()
+	viewport_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	viewport_container.stretch = true
+	viewport_stack.add_child(viewport_container)
+
+	lobby_chibi_viewport = SubViewport.new()
+	lobby_chibi_viewport.size = Vector2i(960, 360)
+	lobby_chibi_viewport.transparent_bg = false
+	lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport_container.add_child(lobby_chibi_viewport)
+
+	lobby_chibi_root = Node3D.new()
+	lobby_chibi_root.name = "LobbyChibiRoot"
+	lobby_chibi_viewport.add_child(lobby_chibi_root)
+
+	var floor_mesh := MeshInstance3D.new()
+	floor_mesh.name = "LobbyChibiFloor"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(30.0, 22.0)
+	floor_mesh.mesh = plane
+	var floor_material := StandardMaterial3D.new()
+	floor_material.albedo_color = Color(0.08, 0.095, 0.12, 1.0)
+	floor_material.roughness = 0.85
+	floor_mesh.material_override = floor_material
+	lobby_chibi_root.add_child(floor_mesh)
+
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = Vector3(-55.0, 35.0, 0.0)
+	light.light_energy = 1.65
+	lobby_chibi_root.add_child(light)
+
+	lobby_chibi_camera = Camera3D.new()
+	lobby_chibi_camera.position = Vector3(0.0, 20.0, 18.0)
+	lobby_chibi_camera.rotation_degrees = Vector3(-50.0, 0.0, 0.0)
+	lobby_chibi_camera.fov = 48.0
+	lobby_chibi_camera.current = true
+	lobby_chibi_viewport.add_child(lobby_chibi_camera)
+
+	lobby_chibi_nameplates = Control.new()
+	lobby_chibi_nameplates.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lobby_chibi_nameplates.set_anchors_preset(Control.PRESET_FULL_RECT)
+	lobby_chibi_viewport.add_child(lobby_chibi_nameplates)
+	_refresh_lobby_stage_preview()
+
+func _move_lobby_control(control: Control, new_parent: Node) -> void:
+	if control == null:
+		return
+	var old_parent := control.get_parent()
+	if old_parent != null:
+		old_parent.remove_child(control)
+	new_parent.add_child(control)
+	control.position = Vector2.ZERO
+	control.set_anchors_preset(Control.PRESET_TOP_LEFT)
 
 func _build_race_pause_menu() -> void:
 	var layer := CanvasLayer.new()
@@ -578,6 +775,9 @@ func _on_remove_cpu_button_pressed() -> void:
 func _on_lobby_game_mode_selected(_index: int) -> void:
 	_refresh_lobby_race_options()
 
+func _on_lobby_track_selected(_index: int) -> void:
+	_refresh_lobby_race_options()
+
 func _on_lobby_vehicle_restore_toggled(_toggled: bool) -> void:
 	_refresh_lobby_race_options()
 
@@ -607,6 +807,153 @@ func _build_lobby_race_options() -> Dictionary:
 
 func _refresh_lobby_race_options() -> void:
 	network_manager.race_options = _build_lobby_race_options()
+	_refresh_lobby_stage_preview()
+
+func _refresh_lobby_stage_preview() -> void:
+	if lobby_stage_preview_container == null:
+		return
+	for child in lobby_stage_preview_container.get_children():
+		child.queue_free()
+	var options := _build_lobby_race_options()
+	var track_indices: Array = options.get("track_indices", [])
+	for i in range(track_indices.size()):
+		var track_index := int(track_indices[i])
+		var label := Button.new()
+		label.disabled = true
+		if track_index >= 0 and track_index < tracks.size():
+			label.text = "%d. %s" % [i + 1, str(tracks[track_index].get("name", "Track"))]
+		else:
+			label.text = "%d. Missing Track" % (i + 1)
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lobby_stage_preview_container.add_child(label)
+
+func _on_lobby_chat_send_pressed() -> void:
+	if lobby_say_text == null:
+		return
+	_submit_lobby_chat_message(lobby_say_text.text)
+	lobby_say_text.clear()
+
+func _on_lobby_chat_text_submitted(text: String) -> void:
+	_submit_lobby_chat_message(text)
+	if lobby_say_text != null:
+		lobby_say_text.clear()
+		lobby_say_text.release_focus()
+
+func _submit_lobby_chat_message(text: String) -> void:
+	var clean := text.strip_edges()
+	if clean == "":
+		return
+	if clean.length() > 220:
+		clean = clean.substr(0, 220)
+	if !multiplayer.has_multiplayer_peer():
+		_append_lobby_chat_message(_local_player_id(), clean)
+	elif network_manager.is_server:
+		_broadcast_lobby_chat_message.rpc(_local_player_id(), clean)
+	else:
+		_send_lobby_chat_message_to_server.rpc_id(1, clean)
+
+@rpc("any_peer", "call_local", "reliable")
+func _send_lobby_chat_message_to_server(text: String) -> void:
+	if !network_manager.is_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = _local_player_id()
+	var clean := text.strip_edges()
+	if clean == "":
+		return
+	if clean.length() > 220:
+		clean = clean.substr(0, 220)
+	_broadcast_lobby_chat_message.rpc(sender, clean)
+
+@rpc("any_peer", "call_local", "reliable")
+func _broadcast_lobby_chat_message(sender_id: int, text: String) -> void:
+	_append_lobby_chat_message(sender_id, text)
+
+func _append_lobby_chat_message(sender_id: int, text: String) -> void:
+	if lobby_chat_box == null:
+		return
+	var color := "FFFF66" if sender_id == _local_player_id() else "C8D5FF"
+	var name := _player_display_name(sender_id)
+	lobby_chat_box.append_text("\n[color=%s]%s[/color]: %s" % [color, name.escape_bbcode(), text.escape_bbcode()])
+
+func _on_lobby_chibi_view_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and lobby_say_text != null:
+		lobby_say_text.release_focus()
+
+func _lobby_accepts_chibi_input() -> bool:
+	if !_window_accepts_input():
+		return false
+	return lobby_say_text == null or !lobby_say_text.has_focus()
+
+func _update_lobby_chibi_cars(_delta: float) -> void:
+	if lobby_chibi_root == null:
+		return
+	var roster := _get_lobby_human_roster()
+	var live := {}
+	for i in range(roster.size()):
+		var id := int(roster[i])
+		live[id] = true
+		var settings = network_manager.player_settings.get(id, {})
+		if !lobby_chibi_cars.has(id) or !is_instance_valid(lobby_chibi_cars[id]):
+			var new_car: LobbyChibiCar = LobbyChibiCarClass.new()
+			new_car.name = "ChibiCar%d" % id
+			new_car.position = _lobby_chibi_spawn_position(i)
+			lobby_chibi_root.add_child(new_car)
+			new_car.setup(id, settings, self, lobby_chibi_camera, lobby_chibi_nameplates, id == _local_player_id())
+			lobby_chibi_cars[id] = new_car
+		else:
+			var existing_car: LobbyChibiCar = lobby_chibi_cars[id]
+			existing_car.update_settings(settings)
+			existing_car.set_local_control(id == _local_player_id())
+	for id in lobby_chibi_cars.keys():
+		if !live.has(id):
+			var stale_car = lobby_chibi_cars[id]
+			if is_instance_valid(stale_car):
+				stale_car.queue_free()
+			lobby_chibi_cars.erase(id)
+
+func _get_lobby_human_roster() -> Array:
+	var out := []
+	for source in [network_manager.player_ids, network_manager.spectator_ids, network_manager.waiting_peers]:
+		for id in source:
+			var int_id := int(id)
+			if network_manager.get_cpu_roster().has(int_id):
+				continue
+			if out.has(int_id):
+				continue
+			out.append(int_id)
+	return out
+
+func _lobby_chibi_spawn_position(index: int) -> Vector3:
+	var x := -6.0 + float(index % 4) * 4.0
+	var z := -3.0 + float(index / 4) * 3.0
+	return Vector3(x, 0.6, z)
+
+func _send_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
+	if !multiplayer.has_multiplayer_peer():
+		_apply_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+	elif network_manager.is_server:
+		_apply_lobby_chibi_state.rpc(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+	else:
+		_submit_lobby_chibi_state.rpc_id(1, player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+
+@rpc("any_peer", "call_local", "unreliable_ordered")
+func _submit_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
+	if !network_manager.is_server:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender != 0:
+		player_id = sender
+	_apply_lobby_chibi_state.rpc(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+
+@rpc("any_peer", "call_local", "unreliable_ordered")
+func _apply_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
+	if !lobby_chibi_cars.has(player_id):
+		return
+	var car: LobbyChibiCar = lobby_chibi_cars[player_id]
+	if car != null and is_instance_valid(car):
+		car.apply_remote_state(velocity, knockback_velocity, angle_velocity, position, rotation)
 
 func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dictionary:
 	var initialized := options.duplicate(true)
@@ -1601,9 +1948,12 @@ func _physics_process(delta: float) -> void:
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if lobby_control.visible:
 		_update_player_list()
+		_update_lobby_chibi_cars(delta)
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
+		start_race_button.disabled = !can_edit_cpu or tracks.is_empty()
+		lobby_track_selector.disabled = !can_edit_cpu
 		if lobby_game_mode_choice != null:
 			lobby_game_mode_choice.disabled = !can_edit_cpu
 		if lobby_vehicle_restore_toggle != null:

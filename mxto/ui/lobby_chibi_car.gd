@@ -1,0 +1,216 @@
+class_name LobbyChibiCar
+extends Node3D
+
+const BOUNDS_X := 14.0
+const BOUNDS_Z := 10.0
+const MAX_SPEED := 30.0
+const ACCEL := 32.0
+const FRICTION := 18.0
+const TURN_RATE := 3.2
+const STRAFE_SPEED := 8.5
+const SYNC_INTERVAL_MSEC := 33
+
+var player_id := 0
+var player_settings: Dictionary = {}
+var game_manager: Node
+var lobby_camera: Camera3D
+var nameplate_parent: Control
+var local_control := false
+
+var velocity := 0.0
+var knockback_velocity := Vector3.ZERO
+var angle_velocity := 0.0
+
+var visual_root: Node3D
+var nameplate: Control
+var username_label: Label
+var ping_label: Label
+var pointer_line: Line2D
+var last_sync_msec := 0
+
+func setup(in_player_id: int, in_settings: Dictionary, in_game_manager: Node, in_camera: Camera3D, in_nameplate_parent: Control, in_local_control: bool) -> void:
+	player_id = in_player_id
+	game_manager = in_game_manager
+	lobby_camera = in_camera
+	nameplate_parent = in_nameplate_parent
+	local_control = in_local_control
+	_apply_settings(in_settings)
+	_ensure_nameplate()
+	_rebuild_visual()
+
+func set_local_control(enabled: bool) -> void:
+	local_control = enabled
+	if nameplate != null:
+		nameplate.modulate = Color(1.0, 0.75, 0.25) if local_control else Color.WHITE
+
+func update_settings(in_settings: Dictionary) -> void:
+	var old_path := str(player_settings.get("car_definition_path", ""))
+	_apply_settings(in_settings)
+	_ensure_nameplate()
+	if old_path != str(player_settings.get("car_definition_path", "")):
+		_rebuild_visual()
+
+func apply_remote_state(in_velocity: float, in_knockback: Vector3, in_angle_velocity: float, in_position: Vector3, in_rotation: Vector3) -> void:
+	if local_control:
+		return
+	velocity = in_velocity
+	knockback_velocity = in_knockback
+	angle_velocity = in_angle_velocity
+	position = in_position
+	rotation = in_rotation
+
+func _exit_tree() -> void:
+	if nameplate != null and is_instance_valid(nameplate):
+		nameplate.queue_free()
+
+func _apply_settings(in_settings: Dictionary) -> void:
+	player_settings = in_settings.duplicate(true) if typeof(in_settings) == TYPE_DICTIONARY else {}
+	if username_label != null:
+		username_label.text = str(player_settings.get("username", str(player_id)))
+
+func _ensure_nameplate() -> void:
+	if nameplate != null:
+		return
+	if nameplate_parent == null:
+		return
+	nameplate = Control.new()
+	nameplate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	nameplate.custom_minimum_size = Vector2(70.0, 52.0)
+	nameplate_parent.add_child(nameplate)
+
+	var panel := PanelContainer.new()
+	panel.clip_contents = true
+	panel.position = Vector2(32.0, -55.0)
+	nameplate.add_child(panel)
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.56)
+	style.border_color = Color(1.0, 1.0, 1.0, 0.12)
+	style.set_border_width_all(1)
+	panel.add_theme_stylebox_override("panel", style)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 3)
+	margin.add_theme_constant_override("margin_top", 3)
+	margin.add_theme_constant_override("margin_right", 3)
+	margin.add_theme_constant_override("margin_bottom", 3)
+	panel.add_child(margin)
+
+	var labels := VBoxContainer.new()
+	labels.add_theme_constant_override("separation", 1)
+	margin.add_child(labels)
+
+	username_label = Label.new()
+	username_label.text = str(player_settings.get("username", str(player_id)))
+	username_label.add_theme_font_size_override("font_size", 10)
+	labels.add_child(username_label)
+
+	ping_label = Label.new()
+	ping_label.text = "0ms"
+	ping_label.add_theme_font_size_override("font_size", 8)
+	ping_label.modulate = Color(0.75, 0.85, 1.0, 0.9)
+	labels.add_child(ping_label)
+
+	pointer_line = Line2D.new()
+	pointer_line.position = Vector2(20.0, -14.0)
+	pointer_line.points = PackedVector2Array([Vector2(-19.0, 13.0), Vector2(-5.0, -1.0), Vector2(12.0, -1.0)])
+	pointer_line.width = 4.0
+	pointer_line.default_color = Color(0.0, 0.0, 0.0, 0.26)
+	pointer_line.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	pointer_line.antialiased = true
+	nameplate.add_child(pointer_line)
+	set_local_control(local_control)
+
+func _rebuild_visual() -> void:
+	if visual_root != null and is_instance_valid(visual_root):
+		visual_root.queue_free()
+	visual_root = null
+
+	var def_path := str(player_settings.get("car_definition_path", ""))
+	if def_path != "" and ResourceLoader.exists(def_path):
+		var definition := load(def_path) as CarDefinition
+		if definition != null and definition.car_scene != null:
+			visual_root = definition.car_scene.instantiate() as Node3D
+			if visual_root != null:
+				visual_root.scale = Vector3(0.08, 0.08, 0.08)
+				add_child(visual_root)
+				_configure_visual_meshes(visual_root)
+	if visual_root == null:
+		var mesh_instance := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(1.2, 0.35, 2.0)
+		mesh_instance.mesh = mesh
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color(0.25, 0.65, 1.0, 1.0)
+		mesh_instance.material_override = material
+		visual_root = mesh_instance
+		add_child(visual_root)
+
+func _configure_visual_meshes(root: Node) -> void:
+	for child in root.get_children():
+		_configure_visual_meshes(child)
+	var mesh := root as MeshInstance3D
+	if mesh == null:
+		return
+	mesh.layers = 1
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if mesh.name.find("SHADOW") != -1 or mesh.name.find("OUTLINE") != -1:
+		mesh.visible = false
+
+func _physics_process(delta: float) -> void:
+	if local_control and _can_accept_input():
+		_update_local_drive(delta)
+	_update_motion(delta)
+	_update_nameplate()
+	if local_control:
+		_sync_state_if_needed()
+
+func _can_accept_input() -> bool:
+	if game_manager != null and game_manager.has_method("_lobby_accepts_chibi_input"):
+		return bool(game_manager.call("_lobby_accepts_chibi_input"))
+	return true
+
+func _update_local_drive(delta: float) -> void:
+	var steer := Input.get_axis("SteerLeft", "SteerRight")
+	var accel := Input.get_action_strength("Accelerate")
+	var strafe := Input.get_action_strength("StrafeRight") - Input.get_action_strength("StrafeLeft")
+	angle_velocity = steer
+	if accel > 0.01:
+		velocity = minf(MAX_SPEED, velocity + ACCEL * accel * delta)
+	else:
+		velocity = maxf(0.0, velocity - FRICTION * delta)
+	position += basis.x.slide(Vector3.UP).normalized() * strafe * STRAFE_SPEED * delta
+
+func _update_motion(delta: float) -> void:
+	position.y = lerpf(0.6, 0.65, sin(0.005 * float(Time.get_ticks_msec())))
+	var speed_turn_factor := 0.35 + (velocity / MAX_SPEED) * 0.65
+	rotation.y += -angle_velocity * TURN_RATE * speed_turn_factor * delta
+	position += basis.z * velocity * delta + knockback_velocity * delta * 0.2
+	rotation.z = lerpf(rotation.z, angle_velocity * -0.28, delta * 4.0)
+	if absf(position.x) > BOUNDS_X:
+		velocity *= 0.5
+		knockback_velocity += Vector3(-signf(position.x) * velocity, 0.0, 0.0)
+		position.x = clampf(position.x, -BOUNDS_X, BOUNDS_X)
+	if absf(position.z) > BOUNDS_Z:
+		velocity *= 0.5
+		knockback_velocity += Vector3(0.0, 0.0, -signf(position.z) * velocity)
+		position.z = clampf(position.z, -BOUNDS_Z, BOUNDS_Z)
+	knockback_velocity = knockback_velocity.lerp(Vector3.ZERO, minf(1.0, 8.0 * delta))
+
+func _update_nameplate() -> void:
+	if nameplate == null or lobby_camera == null:
+		return
+	if lobby_camera.is_position_behind(global_position):
+		nameplate.visible = false
+		return
+	nameplate.visible = true
+	nameplate.position = lobby_camera.unproject_position(global_position) + Vector2(16.0, -32.0)
+
+func _sync_state_if_needed() -> void:
+	if game_manager == null or !game_manager.has_method("_send_lobby_chibi_state"):
+		return
+	var now := Time.get_ticks_msec()
+	if now < last_sync_msec + SYNC_INTERVAL_MSEC:
+		return
+	game_manager.call("_send_lobby_chibi_state", player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+	last_sync_msec = now
