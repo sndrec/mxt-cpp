@@ -100,6 +100,9 @@ public:
 	TrackMeshBVHNode* mesh_floor_bvh_nodes;
 	int32_t* mesh_floor_bvh_triangle_indices;
 	int num_mesh_floor_bvh_nodes;
+	TrackMeshBVHNode* mesh_overlay_bvh_nodes;
+	int32_t* mesh_overlay_bvh_triangle_indices;
+	int num_mesh_overlay_bvh_nodes;
 	int num_mesh_overlay_triangles;
 		CollisionCheckpoint* checkpoints;
 		int num_trigger_colliders;
@@ -143,7 +146,8 @@ public:
 	void cast_vs_mesh_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
 	void cast_vs_mesh_candidates_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
 	void cast_vs_mesh_candidates4_same_ray_fast(CollisionData out_collision[4], const SimVec3 p0[4], const SimVec3 p1[4], uint8_t mask, int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits = true, bool build_surface_basis = true);
-	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr, int seed_triangle_index = -1, bool build_surface = true, bool build_surface_basis = true, uint32_t *out_overlay_terrain = nullptr, float overlay_max_distance = 0.0f);
+	void sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx = -1, bool allow_global_fallback = true, TrackQueryScratch *scratch = nullptr, int seed_triangle_index = -1, bool build_surface = true, bool build_surface_basis = true);
+	uint32_t sample_mesh_terrain_overlay_fast(const SimVec3 &point, float max_distance) const;
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);
 	void convert_point_to_road(

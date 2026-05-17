@@ -307,7 +307,7 @@ private:
 	float scratch_float[16];
 	bool compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance) const;
 	void start_restore_to_last_ground();
-	void sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface = true, uint32_t *out_overlay_terrain = nullptr, float overlay_max_distance = 0.0f);
+	void sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface = true);
 	void trigger_mesh_fallout();
 	void trigger_mesh_kill_collision();
 public:
@@ -343,7 +343,7 @@ public:
 	void update_pitch_transform_from_machine_front_back();
 	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight);
 	SimVec3 get_avg_track_normal_from_tilt_corners(TrackQueryScratch &scratch);
-	void set_terrain_state_from_track(TrackQueryScratch &scratch);
+	void set_terrain_state_from_track(TrackQueryScratch &scratch, const SimVec3 &trigger_p0, const SimVec3 &trigger_p1);
 	void handle_attack_states();
 	void apply_torque_from_force(const SimVec3& p_local_offset, const SimVec3& wf_world_force);
 	void simulate_machine_motion(PlayerInput in_input);
