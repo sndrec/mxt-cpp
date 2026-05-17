@@ -36,8 +36,8 @@ class_name GameManager extends Node
 var lobby_game_mode_choice: OptionButton
 var lobby_vehicle_restore_toggle: CheckBox
 var lobby_bumpers_toggle: CheckBox
-var lobby_grand_prix_track_list: ItemList
-var lobby_stage_preview_container: VBoxContainer
+var lobby_stage_button_container: VBoxContainer
+var lobby_stage_preview_container: HBoxContainer
 var lobby_chibi_viewport: SubViewport
 var lobby_chibi_camera: Camera3D
 var lobby_chibi_root: Node3D
@@ -46,6 +46,7 @@ var lobby_chat_box: RichTextLabel
 var lobby_say_text: LineEdit
 var lobby_send_text_button: Button
 var lobby_chibi_cars := {}
+var lobby_grand_prix_track_sequence: Array[int] = []
 
 @onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
 @onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
@@ -296,19 +297,15 @@ func _load_tracks() -> void:
 	tracks.clear()
 	track_selector.clear()
 	lobby_track_selector.clear()
-	if lobby_grand_prix_track_list != null:
-		lobby_grand_prix_track_list.clear()
+	lobby_grand_prix_track_sequence.clear()
 	_scan_dir("res://track")
 	for t in tracks:
 		track_selector.add_item(t["name"])
 		lobby_track_selector.add_item(t["name"])
-		if lobby_grand_prix_track_list != null:
-			lobby_grand_prix_track_list.add_item(t["name"])
 	if tracks.size() > 0:
 		track_selector.selected = 0
 		lobby_track_selector.selected = 0
-		if lobby_grand_prix_track_list != null:
-			lobby_grand_prix_track_list.select(0, false)
+		lobby_grand_prix_track_sequence.append(0)
 	var args := OS.get_cmdline_args()
 	var user_args := OS.get_cmdline_user_args()
 	var track_name_idx := args.find("--track-name")
@@ -323,6 +320,7 @@ func _load_tracks() -> void:
 				track_selector.selected = i
 				lobby_track_selector.selected = i
 				break
+	_populate_lobby_stage_buttons()
 	_refresh_lobby_stage_preview()
 
 func get_cpu_driver_manager() -> CpuDriverManager:
@@ -508,13 +506,17 @@ func _build_lobby_options_controls() -> void:
 	if !lobby_track_selector.item_selected.is_connected(_on_lobby_track_selected):
 		lobby_track_selector.item_selected.connect(_on_lobby_track_selected)
 
-	lobby_grand_prix_track_list = ItemList.new()
-	lobby_grand_prix_track_list.select_mode = ItemList.SELECT_MULTI
-	lobby_grand_prix_track_list.custom_minimum_size = Vector2(280.0, 145.0)
-	lobby_grand_prix_track_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	lobby_grand_prix_track_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	lobby_grand_prix_track_list.multi_selected.connect(_on_lobby_grand_prix_track_selected)
-	stage_box.add_child(lobby_grand_prix_track_list)
+	var stage_scroll := ScrollContainer.new()
+	stage_scroll.custom_minimum_size = Vector2(280.0, 145.0)
+	stage_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stage_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stage_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	stage_box.add_child(stage_scroll)
+
+	lobby_stage_button_container = VBoxContainer.new()
+	lobby_stage_button_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lobby_stage_button_container.add_theme_constant_override("separation", 4)
+	stage_scroll.add_child(lobby_stage_button_container)
 
 	var preview_label := Label.new()
 	preview_label.text = "Grand Prix Preview"
@@ -524,8 +526,9 @@ func _build_lobby_options_controls() -> void:
 	preview_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preview_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stage_box.add_child(preview_scroll)
-	lobby_stage_preview_container = VBoxContainer.new()
+	lobby_stage_preview_container = HBoxContainer.new()
 	lobby_stage_preview_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lobby_stage_preview_container.add_theme_constant_override("separation", 4)
 	preview_scroll.add_child(lobby_stage_preview_container)
 
 	var options_box := VBoxContainer.new()
@@ -601,6 +604,7 @@ func _build_lobby_options_controls() -> void:
 	lobby_chat_box = RichTextLabel.new()
 	lobby_chat_box.bbcode_enabled = true
 	lobby_chat_box.scroll_following = true
+	lobby_chat_box.text = "[color=555555]Never tell your password to anyone.[/color]"
 	lobby_chat_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lobby_chat_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	chat_box.add_child(lobby_chat_box)
@@ -677,6 +681,7 @@ func _build_lobby_options_controls() -> void:
 	lobby_chibi_nameplates.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lobby_chibi_nameplates.set_anchors_preset(Control.PRESET_FULL_RECT)
 	lobby_chibi_viewport.add_child(lobby_chibi_nameplates)
+	_populate_lobby_stage_buttons()
 	_refresh_lobby_stage_preview()
 
 func _move_lobby_control(control: Control, new_parent: Node) -> void:
@@ -778,19 +783,44 @@ func _on_lobby_game_mode_selected(_index: int) -> void:
 func _on_lobby_track_selected(_index: int) -> void:
 	_refresh_lobby_race_options()
 
+func _populate_lobby_stage_buttons() -> void:
+	if lobby_stage_button_container == null:
+		return
+	for child in lobby_stage_button_container.get_children():
+		child.queue_free()
+	for i in range(tracks.size()):
+		var button := Button.new()
+		button.text = str(tracks[i].get("name", "Track"))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.pressed.connect(_on_lobby_stage_button_pressed.bind(i))
+		lobby_stage_button_container.add_child(button)
+
+func _on_lobby_stage_button_pressed(track_index: int) -> void:
+	if !network_manager.is_server:
+		return
+	if track_index < 0 or track_index >= tracks.size():
+		return
+	lobby_grand_prix_track_sequence.append(track_index)
+	_refresh_lobby_race_options()
+
+func _on_lobby_stage_preview_pressed(sequence_index: int) -> void:
+	if !network_manager.is_server:
+		return
+	if sequence_index < 0 or sequence_index >= lobby_grand_prix_track_sequence.size():
+		return
+	lobby_grand_prix_track_sequence.remove_at(sequence_index)
+	_refresh_lobby_race_options()
+
 func _on_lobby_vehicle_restore_toggled(_toggled: bool) -> void:
 	_refresh_lobby_race_options()
 
 func _on_lobby_bumpers_toggled(_toggled: bool) -> void:
 	_refresh_lobby_race_options()
 
-func _on_lobby_grand_prix_track_selected(_index: int, _selected: bool) -> void:
-	_refresh_lobby_race_options()
-
 func _build_lobby_race_options() -> Dictionary:
 	var selected_track_indices := []
-	if lobby_game_mode_choice != null and lobby_game_mode_choice.selected == 1 and lobby_grand_prix_track_list != null:
-		for selected_index in lobby_grand_prix_track_list.get_selected_items():
+	if lobby_game_mode_choice != null and lobby_game_mode_choice.selected == 1:
+		for selected_index in lobby_grand_prix_track_sequence:
 			selected_track_indices.append(int(selected_index))
 	if selected_track_indices.is_empty():
 		selected_track_indices.append(lobby_track_selector.selected)
@@ -819,12 +849,13 @@ func _refresh_lobby_stage_preview() -> void:
 	for i in range(track_indices.size()):
 		var track_index := int(track_indices[i])
 		var label := Button.new()
-		label.disabled = true
+		label.disabled = !network_manager.is_server
 		if track_index >= 0 and track_index < tracks.size():
 			label.text = "%d. %s" % [i + 1, str(tracks[track_index].get("name", "Track"))]
 		else:
 			label.text = "%d. Missing Track" % (i + 1)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.pressed.connect(_on_lobby_stage_preview_pressed.bind(i))
 		lobby_stage_preview_container.add_child(label)
 
 func _on_lobby_chat_send_pressed() -> void:
@@ -1950,9 +1981,10 @@ func _physics_process(delta: float) -> void:
 		_update_player_list()
 		_update_lobby_chibi_cars(delta)
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
+		var missing_grand_prix_tracks := lobby_game_mode_choice != null and lobby_game_mode_choice.selected == 1 and lobby_grand_prix_track_sequence.is_empty()
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
-		start_race_button.disabled = !can_edit_cpu or tracks.is_empty()
+		start_race_button.disabled = !can_edit_cpu or tracks.is_empty() or missing_grand_prix_tracks
 		lobby_track_selector.disabled = !can_edit_cpu
 		if lobby_game_mode_choice != null:
 			lobby_game_mode_choice.disabled = !can_edit_cpu
@@ -1960,9 +1992,16 @@ func _physics_process(delta: float) -> void:
 			lobby_vehicle_restore_toggle.disabled = !can_edit_cpu
 		if lobby_bumpers_toggle != null:
 			lobby_bumpers_toggle.disabled = !can_edit_cpu
-		if lobby_grand_prix_track_list != null:
-			lobby_grand_prix_track_list.mouse_filter = Control.MOUSE_FILTER_STOP if can_edit_cpu else Control.MOUSE_FILTER_IGNORE
-			lobby_grand_prix_track_list.modulate = Color.WHITE if can_edit_cpu else Color(1.0, 1.0, 1.0, 0.55)
+		if lobby_stage_button_container != null:
+			for child in lobby_stage_button_container.get_children():
+				var button := child as Button
+				if button != null:
+					button.disabled = !can_edit_cpu
+		if lobby_stage_preview_container != null:
+			for child in lobby_stage_preview_container.get_children():
+				var button := child as Button
+				if button != null:
+					button.disabled = !can_edit_cpu
 	if game_sim.sim_started:
 		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var local_pi := PlayerInputClass.new()
