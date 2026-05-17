@@ -147,6 +147,13 @@ var nametag_pool_pending_indices: Array[int] = []
 var nametag_names: Array[String] = []
 var nametag_best_distances: Array[float] = []
 var nametag_best_indices: Array[int] = []
+var placement_badge_pool: Array[TextureRect] = []
+
+const TOP_PLACE_BADGE_TEXTURES: Array[Texture2D] = [
+	preload("res://ui/placements/mxt-1.png"),
+	preload("res://ui/placements/mxt-2.png"),
+	preload("res://ui/placements/mxt-3.png"),
+]
 
 const NAMETAG_VISIBLE_BUDGET := 30
 const NAMETAG_MAX_DISTANCE_SQ := 12000.0
@@ -1296,11 +1303,15 @@ func _reset_nametag_pool() -> void:
 	for label in nametag_pool:
 		if is_instance_valid(label):
 			label.queue_free()
+	for badge in placement_badge_pool:
+		if is_instance_valid(badge):
+			badge.queue_free()
 	nametag_pool.clear()
 	nametag_pool_car_indices.clear()
 	nametag_pool_pending_indices.clear()
 	nametag_best_distances.clear()
 	nametag_best_indices.clear()
+	placement_badge_pool.clear()
 
 func _configure_nametag_pool() -> void:
 	_reset_nametag_pool()
@@ -1325,6 +1336,18 @@ func _configure_nametag_pool() -> void:
 	for car: VisualCar in car_node_container.get_children():
 		if car != null and is_instance_valid(car.name_label):
 			car.name_label.queue_free()
+	for place in TOP_PLACE_BADGE_TEXTURES.size():
+		var badge := TextureRect.new()
+		badge.name = "TopPlaceBadge%d" % (place + 1)
+		badge.texture = TOP_PLACE_BADGE_TEXTURES[place]
+		badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		badge.custom_minimum_size = Vector2(56.0, 56.0)
+		badge.size = Vector2(56.0, 56.0)
+		badge.pivot_offset = badge.size * 0.5
+		badge.visible = false
+		add_child(badge)
+		placement_badge_pool.append(badge)
 
 func _nametag_best_contains(car_index: int) -> bool:
 	for slot in NAMETAG_VISIBLE_BUDGET:
@@ -1345,6 +1368,44 @@ func _nametag_assign(label: Label, slot: int, car_index: int) -> void:
 	label.visible = true
 	nametag_pool_car_indices[slot] = car_index
 	nametag_pool_pending_indices[slot] = -1
+
+func _car_index_for_player_id(player_id: int) -> int:
+	var car_index := 0
+	for car in car_node_container.get_children():
+		if car is VisualCar:
+			if car.owning_id == player_id:
+				return car_index
+			car_index += 1
+	return -1
+
+func _update_top_place_badges(active_camera: Camera3D, camera_position: Vector3, camera_right: Vector3, camera_up: Vector3) -> void:
+	for badge in placement_badge_pool:
+		badge.visible = false
+	if singleplayer_mode or game_sim == null or placement_badge_pool.is_empty():
+		return
+	var local_id := _local_player_id()
+	var order: Array = game_sim.get_race_order()
+	var badge_slot := 0
+	for rank in mini(order.size(), TOP_PLACE_BADGE_TEXTURES.size()):
+		var player_id := int(order[rank])
+		if player_id == local_id:
+			continue
+		var car_index := _car_index_for_player_id(player_id)
+		if car_index < 0:
+			continue
+		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
+		var world_pos := render_transform.origin
+		if camera_position.distance_squared_to(world_pos) > NAMETAG_MAX_DISTANCE_SQ or !active_camera.is_position_in_frustum(world_pos):
+			continue
+		var badge := placement_badge_pool[badge_slot]
+		badge.texture = TOP_PLACE_BADGE_TEXTURES[rank]
+		badge.visible = true
+		badge.position = active_camera.unproject_position(
+			world_pos + camera_right * 1.5 + camera_up * 2.35
+		) + Vector2(42.0, -132.0)
+		badge_slot += 1
+		if badge_slot >= placement_badge_pool.size():
+			return
 
 func _update_nametags(active_camera: Camera3D, delta: float) -> void:
 	if auto_disable_hud_mode or active_camera == null or nametag_pool.is_empty():
@@ -1405,6 +1466,7 @@ func _update_nametags(active_camera: Camera3D, delta: float) -> void:
 		label.position = active_camera.unproject_position(
 			world_pos + camera_right * 1.5 + camera_up * 1.5
 		) + Vector2(72, -90)
+	_update_top_place_badges(active_camera, camera_position, camera_right, camera_up)
 	for desired_slot in NAMETAG_VISIBLE_BUDGET:
 		var desired_car_index := nametag_best_indices[desired_slot]
 		if desired_car_index < 0 or _nametag_pool_has_car(desired_car_index):
@@ -1655,6 +1717,7 @@ func _return_to_menu() -> void:
 	_close_race_pause_menu()
 	race_finish_label.visible = false
 	active_stickers.clear()
+	_reset_nametag_pool()
 	var was_server := network_manager.is_server
 	network_manager.disconnect_from_server()
 	game_sim.destroy_gamesim()
@@ -1686,6 +1749,7 @@ func _return_to_lobby() -> void:
 		_stop_and_save_debug_replay_recording()
 	debug_replay_playback = false
 	_close_race_pause_menu()
+	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
 	race_finish_label.visible = false
 	if network_manager.is_server:
@@ -1718,6 +1782,7 @@ func _teardown_race_world_for_transition() -> void:
 		_stop_and_save_debug_replay_recording()
 	debug_replay_playback = false
 	_close_race_pause_menu()
+	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
 	race_finish_label.visible = false
 	if network_manager.is_server:
