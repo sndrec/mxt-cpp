@@ -131,6 +131,7 @@ namespace godot {
 		bool is_bumper_car(int car_index) const;
 		void configure_bumper_car(int car_index, int bumper_slot);
 		void deactivate_bumper_car(int car_index);
+		void set_bumper_track_state(int car_index, float absolute_distance, float lane_offset);
 		void update_bumpers(float lead_distance);
 		bool sample_track_transform_at_distance(float absolute_distance, float lane, SimTransform& out_transform, uint16_t& out_checkpoint, float& out_fraction) const;
 		PlayerInput generate_bumper_input_for_car(int car_index) const;

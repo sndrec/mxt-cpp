@@ -2058,6 +2058,46 @@ void GameSim::deactivate_bumper_car(int car_index)
 	soa.machine_state[lane] |= MACHINESTATE::ZEROHP;
 }
 
+void GameSim::set_bumper_track_state(int car_index, float absolute_distance, float lane_offset)
+{
+	if (!cars || !current_track || car_index < 0 || car_index >= num_cars) {
+		return;
+	}
+	SimTransform transform;
+	uint16_t checkpoint = 0;
+	float checkpoint_fraction = 0.0f;
+	if (!sample_track_transform_at_distance(absolute_distance, lane_offset, transform, checkpoint, checkpoint_fraction)) {
+		return;
+	}
+	float lap_length = current_track->lap_length;
+	if (lap_length <= 0.0f && current_track->num_checkpoints > 0) {
+		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+	}
+	transform.origin += transform.basis.get_column(1) * 1.2f;
+	PhysicsCarSoA& soa = *cars[car_index].soa;
+	const int lane = cars[car_index].soa_index;
+	STORE_INDEXED_VEC3(soa, position_current, lane, transform.origin);
+	STORE_INDEXED_VEC3(soa, position_old, lane, transform.origin);
+	STORE_INDEXED_VEC3(soa, position_old_2, lane, transform.origin);
+	STORE_INDEXED_VEC3(soa, position_old_dupe, lane, transform.origin);
+	STORE_INDEXED_VEC3(soa, position_bottom, lane, transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
+	STORE_INDEXED_VEC3(soa, track_surface_normal, lane, transform.basis.get_column(1));
+	STORE_INDEXED_VEC3(soa, track_surface_pos, lane, transform.origin);
+	MXT_STORE_TRANSFORM(soa, basis_physical, lane, transform);
+	MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, transform);
+	MXT_STORE_TRANSFORM(soa, transform_visual, lane, transform);
+	soa.current_checkpoint[lane] = checkpoint;
+	soa.current_collision_checkpoint[lane] = checkpoint;
+	soa.last_ground_checkpoint[lane] = checkpoint;
+	soa.checkpoint_fraction[lane] = checkpoint_fraction;
+	if (lap_length > 0.0f) {
+		soa.checkpoint_track_distance[lane] = std::fmod(absolute_distance, lap_length);
+		soa.lap[lane] = static_cast<uint8_t>(std::clamp(static_cast<int>(absolute_distance / lap_length), 0, 255));
+	}
+	soa.height_above_track[lane] = 1.2f;
+	soa.machine_state[lane] &= ~(MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
+}
+
 void GameSim::update_bumpers(float lead_distance)
 {
 	if (!bumpers_enabled || bumper_count <= 0 || !cars || !current_track) {
@@ -2089,11 +2129,13 @@ void GameSim::update_bumpers(float lead_distance)
 			soa.current_checkpoint[lane],
 			soa.checkpoint_fraction[lane],
 			soa.lap[lane]);
-		if (state.active && ((soa.machine_state[lane] & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT)) != 0u ||
-				lead_distance - bumper_distance > 180.0f ||
-				soa.position_current_y[lane] < current_track->minimum_y)) {
-			deactivate_bumper_car(car_index);
-			continue;
+		if (state.active) {
+			if ((soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u ||
+					lead_distance - bumper_distance > 180.0f) {
+				deactivate_bumper_car(car_index);
+				continue;
+			}
+			set_bumper_track_state(car_index, bumper_distance, state.target_lane);
 		}
 		if (state.active || sequence < state.next_sequence) {
 			continue;
@@ -2107,24 +2149,8 @@ void GameSim::update_bumpers(float lead_distance)
 		if (!sample_track_transform_at_distance(spawn_distance, state.target_lane, spawn_transform, cp, cp_fraction)) {
 			continue;
 		}
-		spawn_transform.origin += spawn_transform.basis.get_column(1) * 1.2f;
-		STORE_INDEXED_VEC3(soa, position_current, lane, spawn_transform.origin);
-		STORE_INDEXED_VEC3(soa, position_old, lane, spawn_transform.origin);
-		STORE_INDEXED_VEC3(soa, position_old_2, lane, spawn_transform.origin);
-		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, spawn_transform.origin);
-		STORE_INDEXED_VEC3(soa, position_bottom, lane, spawn_transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
 		STORE_INDEXED_VEC3(soa, velocity, lane, -spawn_transform.basis.get_column(2) * (850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f));
-		MXT_STORE_TRANSFORM(soa, basis_physical, lane, spawn_transform);
-		MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, spawn_transform);
-		MXT_STORE_TRANSFORM(soa, transform_visual, lane, spawn_transform);
-		STORE_INDEXED_VEC3(soa, track_surface_normal, lane, spawn_transform.basis.get_column(1));
-		STORE_INDEXED_VEC3(soa, track_surface_pos, lane, spawn_transform.origin);
-		soa.current_checkpoint[lane] = cp;
-		soa.current_collision_checkpoint[lane] = cp;
-		soa.last_ground_checkpoint[lane] = cp;
-		soa.checkpoint_fraction[lane] = cp_fraction;
-		soa.checkpoint_track_distance[lane] = std::fmod(spawn_distance, lap_length);
-		soa.lap[lane] = static_cast<uint8_t>(std::clamp(static_cast<int>(spawn_distance / lap_length), 0, 255));
+		set_bumper_track_state(car_index, spawn_distance, state.target_lane);
 		soa.energy[lane] = soa.calced_max_energy[lane];
 		soa.machine_state[lane] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
 		soa.machine_state[lane] |= MACHINESTATE::ACTIVE;
