@@ -106,6 +106,7 @@ var singleplayer_mode: bool = false
 var _singleplayer_tick: int = 0
 var singleplayer_cpu_count: int = 0
 var launch_cpu_driver_count: int = -1
+var auto_host_mode: bool = false
 var auto_singleplayer_mode: bool = false
 var auto_track_editor_mode: bool = false
 var auto_accelerate_mode: bool = false
@@ -223,7 +224,8 @@ func _ready() -> void:
 			cpu_slider.value = singleplayer_cpu_count
 		_update_cpu_slider_label()
 		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
-	if args.has("--host") or user_args.has("--host"):
+	auto_host_mode = args.has("--host") or user_args.has("--host")
+	if auto_host_mode:
 		call_deferred("_auto_host")
 	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
 	auto_accelerate_mode = args.has("--auto-accelerate") or user_args.has("--auto-accelerate")
@@ -267,7 +269,7 @@ func _ready() -> void:
 		call_deferred("_on_track_editor_button_pressed")
 	elif auto_singleplayer_mode:
 		call_deferred("_on_singleplayer_button_pressed")
-	if headless_mode and !auto_track_editor_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "":
+	if headless_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "":
 		var def_path := ""
 		if car_definitions.size() > 0:
 			def_path = car_definitions[0].resource_path
