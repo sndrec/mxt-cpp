@@ -539,11 +539,11 @@ def fit_mine_yaw_and_scale(
     base_extents = Vector((2.0, 3.0, 2.0))
     yaw = yaw_from_world_axis(transform_vec(object_transform, "basis_y"), placement)
     if yaw is None:
-        yaw_deg, scale = fit_dashplate_yaw_and_scale(verts, center, placement, base_extents)
-        return yaw_deg, (scale[0], scale[1], max(1.0, scale[2]))
+        yaw_deg, _scale = fit_dashplate_yaw_and_scale(verts, center, placement, base_extents)
+        return yaw_deg, (1.0, 1.0, 1.0)
     return (
         math.degrees(yaw),
-        scale_for_yaw(verts, center, placement, yaw, base_extents, Vector((0.25, 0.25, 1.0))),
+        (1.0, 1.0, 1.0),
     )
 
 
