@@ -2102,9 +2102,18 @@ void GameSim::deactivate_bumper_car(int car_index)
 	SimTransform hidden_transform = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
 	hidden_transform.origin = hidden;
 	MXT_STORE_TRANSFORM(soa, transform_visual, lane, hidden_transform);
+	MXT_STORE_TRANSFORM(soa, basis_physical, lane, hidden_transform);
+	MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, hidden_transform);
+	STORE_INDEXED_VEC3(soa, position_bottom, lane, hidden);
+	STORE_INDEXED_VEC3(soa, position_behind, lane, hidden);
 	STORE_INDEXED_VEC3(soa, velocity, lane, SimVec3());
+	STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3());
+	STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3());
 	soa.energy[lane] = 0.0f;
+	soa.speed_kmh[lane] = 0.0f;
+	soa.base_speed[lane] = 0.0f;
 	soa.machine_state[lane] |= MACHINESTATE::ZEROHP;
+	soa.machine_state[lane] &= ~(MACHINESTATE::ACTIVE | MACHINESTATE::STARTINGCOUNTDOWN | MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
 }
 
 void GameSim::set_bumper_track_state(int car_index, float absolute_distance, float lane_offset, bool reset_history)
@@ -2118,6 +2127,8 @@ void GameSim::set_bumper_track_state(int car_index, float absolute_distance, flo
 	if (!sample_track_transform_at_distance(absolute_distance, lane_offset, transform, checkpoint, checkpoint_fraction)) {
 		return;
 	}
+	transform.basis = transform.basis.rotated(transform.basis.get_column(1), Math_PI);
+	transform.basis.orthonormalize();
 	float lap_length = current_track->lap_length;
 	if (lap_length <= 0.0f && current_track->num_checkpoints > 0) {
 		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
@@ -2194,6 +2205,10 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 				continue;
 			}
 			set_bumper_track_state(car_index, bumper_distance, state.target_lane, false);
+			const SimTransform bumper_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+			STORE_INDEXED_VEC3(soa, velocity, lane, -bumper_transform.basis.get_column(2) * (850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f));
+			soa.speed_kmh[lane] = 850.0f;
+			soa.base_speed[lane] = 850.0f / 216.0f;
 		}
 		if (state.active) {
 			continue;
@@ -2218,11 +2233,16 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		if (!sample_track_transform_at_distance(spawn_distance, state.target_lane, spawn_transform, cp, cp_fraction)) {
 			continue;
 		}
-		STORE_INDEXED_VEC3(soa, velocity, lane, -spawn_transform.basis.get_column(2) * (850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f));
 		set_bumper_track_state(car_index, spawn_distance, state.target_lane, true);
+		const SimTransform bumper_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+		STORE_INDEXED_VEC3(soa, velocity, lane, -bumper_transform.basis.get_column(2) * (850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f));
+		STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f)));
+		STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * std::max(soa.stat_weight[lane], 0.001f)));
 		soa.energy[lane] = soa.calced_max_energy[lane];
 		soa.machine_state[lane] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
 		soa.machine_state[lane] |= MACHINESTATE::ACTIVE;
+		soa.speed_kmh[lane] = 850.0f;
+		soa.base_speed[lane] = 850.0f / 216.0f;
 		soa.boost_frames[lane] = 0;
 		soa.boost_frames_manual[lane] = 0;
 		soa.s_boost_active[lane] = false;
@@ -5829,6 +5849,7 @@ void GameSim::save_state()
 	int index = tick % STATE_BUFFER_LEN;
 	int size = gamestate_data.get_size();
 	state_buffer[index].size = size;
+	state_buffer[index].bumper_states = bumper_states;
 	if (state_buffer[index].data)
 	{
 		memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
@@ -5870,6 +5891,7 @@ void GameSim::load_state(int target_tick)
 	gamestate_data.set_size(size);
 	tick = target_tick + 1;
 	fix_pointers();
+	bumper_states = state_buffer[index].bumper_states;
 }
 
 void GameSim::finish_render_rollback_correction_capture()
@@ -5907,7 +5929,7 @@ void GameSim::finish_render_rollback_correction_capture()
 
 namespace {
 constexpr uint32_t MXT_NET_STATE_MAGIC = 0x5354584du; // "MXTS", little-endian.
-constexpr uint16_t MXT_NET_STATE_VERSION = 2;
+constexpr uint16_t MXT_NET_STATE_VERSION = 3;
 
 struct NetStateWriter {
 	std::vector<uint8_t> data;
@@ -6137,6 +6159,14 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	writer.write_pod(static_cast<uint16_t>(0));
 	writer.write_pod(static_cast<int32_t>(target_tick));
 	writer.write_pod(static_cast<int32_t>(num_cars));
+	writer.write_pod(static_cast<int32_t>(bumper_states.size()));
+	writer.write_pod(bumper_track_seed);
+	for (const BumperState& state : bumper_states) {
+		writer.write_pod(state.active);
+		writer.write_pod(state.spawn_lap);
+		writer.write_pod(state.next_sequence);
+		writer.write_pod(state.target_lane);
+	}
 
 	const int trigger_count = current_track ? current_track->num_trigger_colliders : 0;
 	writer.write_pod(static_cast<int32_t>(trigger_count));
@@ -6331,18 +6361,40 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	uint16_t flags = 0;
 	int32_t snapshot_tick = 0;
 	int32_t snapshot_cars = 0;
+	int32_t snapshot_bumper_count = 0;
 	int32_t trigger_count = 0;
 	if (!reader.read_pod(magic) || magic != MXT_NET_STATE_MAGIC ||
 		!reader.read_pod(version) || version != MXT_NET_STATE_VERSION ||
 		!reader.read_pod(flags) ||
 		!reader.read_pod(snapshot_tick) ||
 		!reader.read_pod(snapshot_cars) ||
-		!reader.read_pod(trigger_count)) {
+		!reader.read_pod(snapshot_bumper_count) ||
+		!reader.read_pod(bumper_track_seed)) {
 		return false;
 	}
 	(void)flags;
 	(void)snapshot_tick;
-	if (snapshot_cars != num_cars || trigger_count < 0) {
+	if (snapshot_cars != num_cars ||
+			snapshot_bumper_count < 0 ||
+			snapshot_bumper_count != static_cast<int32_t>(bumper_states.size())) {
+		return false;
+	}
+	for (int i = 0; i < snapshot_bumper_count; ++i) {
+		BumperState& state = bumper_states[i];
+		if (!reader.read_pod(state.active) ||
+				!reader.read_pod(state.spawn_lap) ||
+				!reader.read_pod(state.next_sequence) ||
+				!reader.read_pod(state.target_lane)) {
+			return false;
+		}
+		if (state.active > 1 || !std::isfinite(state.target_lane)) {
+			return false;
+		}
+	}
+	if (!reader.read_pod(trigger_count)) {
+		return false;
+	}
+	if (trigger_count < 0) {
 		return false;
 	}
 	if (!super_spark_state) {
@@ -6603,6 +6655,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	if (state_buffer[index].data && size > 0) {
 		std::memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
 		state_buffer[index].size = size;
+		state_buffer[index].bumper_states = bumper_states;
 	}
 	return true;
 }
@@ -6767,6 +6820,7 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 		std::memcpy(&magic, data.ptr(), sizeof(uint32_t));
 		if (magic == MXT_NET_STATE_MAGIC) {
 			const int live_size = gamestate_data.get_size();
+			const std::vector<BumperState> live_bumper_states = bumper_states;
 			if (live_size > 0) {
 				if (static_cast<int>(network_state_live_backup.size()) < live_size) {
 					network_state_live_backup.resize(static_cast<size_t>(live_size));
@@ -6783,6 +6837,7 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 				gamestate_data.set_size(live_size);
 				fix_pointers();
 			}
+			bumper_states = live_bumper_states;
 			return;
 		}
 	}

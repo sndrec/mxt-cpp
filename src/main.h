@@ -22,6 +22,7 @@
 #include <functional>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace godot {
 
@@ -37,9 +38,16 @@ namespace godot {
 		HeapHandler level_data;
 		HeapHandler gamestate_data;
 		static const int STATE_BUFFER_LEN = 45;
+		struct BumperState {
+			uint8_t active = 0;
+			uint8_t spawn_lap = 0;
+			uint32_t next_sequence = 0;
+			float target_lane = 0.0f;
+		};
 		struct SavedState {
 			char* data;
 			int size;
+			std::vector<BumperState> bumper_states;
 		};
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		std::vector<char> network_state_live_backup;
@@ -110,12 +118,6 @@ namespace godot {
 		};
 		std::vector<RaceEvent> race_events;
 		std::vector<NativeCpuDriverState> native_cpu_drivers;
-		struct BumperState {
-			uint8_t active = 0;
-			uint8_t spawn_lap = 0;
-			uint32_t next_sequence = 0;
-			float target_lane = 0.0f;
-		};
 		std::vector<BumperState> bumper_states;
 		void reset_super_sparks();
 		void update_super_sparks();
