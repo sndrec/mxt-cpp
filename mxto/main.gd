@@ -463,6 +463,31 @@ func _update_cpu_slider_label() -> void:
 		cpu_slider_label.text = "CPU Racers: %d" % singleplayer_cpu_count
 
 func _build_lobby_options_controls() -> void:
+	var background_noise := FastNoiseLite.new()
+	background_noise.frequency = 0.0176
+	background_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	background_noise.domain_warp_enabled = true
+	background_noise.domain_warp_amplitude = 12.74
+	var background_gradient := Gradient.new()
+	background_gradient.offsets = PackedFloat32Array([0.0, 0.63354, 1.0])
+	background_gradient.colors = PackedColorArray([
+		Color(0.0, 0.0, 0.0, 1.0),
+		Color(0.168337, 0.168337, 0.168337, 1.0),
+		Color(0.404511, 0.404511, 0.404511, 1.0),
+	])
+	var background_texture := NoiseTexture2D.new()
+	background_texture.width = 128
+	background_texture.height = 128
+	background_texture.noise = background_noise
+	background_texture.color_ramp = background_gradient
+	var background := TextureRect.new()
+	background.name = "LobbyBG"
+	background.set_anchors_preset(Control.PRESET_FULL_RECT)
+	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	background.texture = background_texture
+	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	lobby_control.add_child(background)
+
 	var root := VBoxContainer.new()
 	root.name = "LobbyContainer"
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
