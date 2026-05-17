@@ -38,6 +38,7 @@ var lobby_vehicle_restore_toggle: CheckBox
 var lobby_bumpers_toggle: CheckBox
 var lobby_stage_button_container: VBoxContainer
 var lobby_stage_preview_container: HBoxContainer
+var lobby_player_list_container: VBoxContainer
 var lobby_chibi_viewport: SubViewport
 var lobby_chibi_camera: Camera3D
 var lobby_chibi_root: Node3D
@@ -48,6 +49,7 @@ var lobby_send_text_button: Button
 var lobby_chibi_cars := {}
 var lobby_grand_prix_track_sequence: Array[int] = []
 var lobby_applying_race_options := false
+var lobby_player_list_signature := ""
 
 @onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
 @onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
@@ -485,11 +487,18 @@ func _build_lobby_options_controls() -> void:
 	player_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	player_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	player_scroll.size_flags_stretch_ratio = 0.7
+	player_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	top_box.add_child(player_scroll)
 	_move_lobby_control(player_list, player_scroll)
+	player_list.visible = false
 	player_list.custom_minimum_size = Vector2(220.0, 320.0)
 	player_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	player_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	lobby_player_list_container = VBoxContainer.new()
+	lobby_player_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lobby_player_list_container.add_theme_constant_override("separation", 4)
+	player_scroll.add_child(lobby_player_list_container)
 
 	var stage_box := VBoxContainer.new()
 	stage_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -578,6 +587,8 @@ func _build_lobby_options_controls() -> void:
 	controller_settings_button_lobby.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	start_race_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	start_race_button.custom_minimum_size = Vector2(0.0, 44.0)
+	start_race_button.text = "PLAY!"
+	start_race_button.add_theme_font_size_override("font_size", 48)
 
 	var bottom_box := HBoxContainer.new()
 	bottom_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1759,9 +1770,26 @@ func _on_network_race_finished() -> void:
 		_return_to_lobby()
 
 func _update_player_list() -> void:
-	player_list.clear()
 	var roster := network_manager.get_simulation_roster()
 	var cpu_ids := network_manager.get_cpu_roster()
+	if lobby_player_list_container != null:
+		var signature_parts := []
+		for id in roster:
+			signature_parts.append("%d:%s" % [int(id), _player_display_name(int(id))])
+		var signature := "|".join(signature_parts)
+		if signature == lobby_player_list_signature:
+			return
+		lobby_player_list_signature = signature
+		for child in lobby_player_list_container.get_children():
+			child.queue_free()
+		for id in roster:
+			var row := Button.new()
+			row.text = _player_display_name(int(id))
+			row.disabled = true
+			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			lobby_player_list_container.add_child(row)
+		return
+	player_list.clear()
 	for id in roster:
 		var name := str(id)
 		if network_manager.player_settings.has(id):
