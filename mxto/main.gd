@@ -1189,7 +1189,8 @@ func _show_finish_medal(actor_id: int, tick_value: int) -> void:
 func _show_ko_medal(actor_id: int, target_id: int) -> void:
 	var medal := KoMedalScene.instantiate() as Control
 	_add_race_medal(medal)
-	medal.call("set_names", _player_display_name(actor_id), _player_display_name(target_id))
+	var target_name := "Obstacle" if target_id < 0 else _player_display_name(target_id)
+	medal.call("set_names", _player_display_name(actor_id), target_name)
 
 func _add_race_medal(medal: Control) -> void:
 	add_child(medal)
