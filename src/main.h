@@ -112,6 +112,7 @@ namespace godot {
 		std::vector<NativeCpuDriverState> native_cpu_drivers;
 		struct BumperState {
 			uint8_t active = 0;
+			uint8_t spawn_lap = 0;
 			uint32_t next_sequence = 0;
 			float target_lane = 0.0f;
 		};

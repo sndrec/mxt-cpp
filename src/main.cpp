@@ -1985,6 +1985,7 @@ void GameSim::configure_bumper_car(int car_index, int bumper_slot)
 	soa.m_accel_setting[lane] = 1.0f;
 	if (bumper_slot >= 0 && bumper_slot < static_cast<int>(bumper_states.size())) {
 		bumper_states[bumper_slot].active = 0;
+		bumper_states[bumper_slot].spawn_lap = 0;
 		bumper_states[bumper_slot].next_sequence = static_cast<uint32_t>(bumper_slot);
 		bumper_states[bumper_slot].target_lane = 0.0f;
 	}
@@ -2123,6 +2124,10 @@ void GameSim::update_bumpers(float lead_distance)
 			continue;
 		}
 		BumperState& state = bumper_states[slot];
+		if (state.spawn_lap != static_cast<uint8_t>(std::min(leader_lap, 255))) {
+			state.spawn_lap = static_cast<uint8_t>(std::min(leader_lap, 255));
+			state.next_sequence = static_cast<uint32_t>(slot);
+		}
 		PhysicsCarSoA& soa = *cars[car_index].soa;
 		const int lane = cars[car_index].soa_index;
 		const float bumper_distance = current_track->compute_lap_distance(
