@@ -5020,6 +5020,8 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	float damage2 = impulse_strength;
 	SimVec3 impulse1 = impulse;
 	SimVec3 impulse2 = -impulse;
+	bool this_bumper_slide = false;
+	bool other_bumper_slide = false;
 	if (this_attacking && !other_attacking) {
 		impulse_strength += 1.0f;
 		impulse1 = impulse * 2.0f;
@@ -5046,12 +5048,14 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 			damage1 += 12.0f;
 			set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 			soa->rail_collision_timer[soa_index] = 24;
+			this_bumper_slide = true;
 		}
 		if (!other_bumper && !other_attacking) {
 			impulse2 += collision_normal * 2.0f;
 			damage2 += 12.0f;
 			other_machine.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 			other_machine.soa->rail_collision_timer[other_machine.soa_index] = 24;
+			other_bumper_slide = true;
 		}
 	}
 
@@ -5062,10 +5066,14 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	other_machine.soa->visual_rotation_z[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).x;
 	other_machine.soa->visual_rotation_x[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).z;
 	if (impulse_strength > 0.5f) {
-		remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
-		other_machine.remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
-		soa->drift_ramp[soa_index] = 0.0f;
-		other_machine.soa->drift_ramp[other_machine.soa_index] = 0.0f;
+		if (!this_bumper_slide) {
+			remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+			soa->drift_ramp[soa_index] = 0.0f;
+		}
+		if (!other_bumper_slide) {
+			other_machine.remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+			other_machine.soa->drift_ramp[other_machine.soa_index] = 0.0f;
+		}
 	}
 	if (!this_attacking && other_attacking && !this_defending && damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
 		set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
