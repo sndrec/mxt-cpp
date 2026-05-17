@@ -1664,12 +1664,22 @@ def _update_trigger_helper(trig):
     if base is None:
         return
     eps = 0.002
-    pr = shape.get_pos(cm_helper, Vector((trig.tx + eps, trig.ty)))
-    pf = shape.get_pos(cm_helper, Vector((trig.tx, min(trig.ty + eps, 1.0))))
+    tx_forward = min(trig.tx + eps, 1.0)
+    tx_backward = max(trig.tx - eps, -1.0)
+    ty_forward = min(trig.ty + eps, 1.0)
+    ty_backward = max(trig.ty - eps, 0.0)
+    pr = shape.get_pos(cm_helper, Vector((tx_forward, trig.ty)))
+    use_right_backward = abs(tx_forward - trig.tx) <= 1.0e-6
+    if use_right_backward:
+        pr = shape.get_pos(cm_helper, Vector((tx_backward, trig.ty)))
+    pf = shape.get_pos(cm_helper, Vector((trig.tx, ty_forward)))
+    use_forward_backward = abs(ty_forward - trig.ty) <= 1.0e-6
+    if use_forward_backward:
+        pf = shape.get_pos(cm_helper, Vector((trig.tx, ty_backward)))
     if pr is None or pf is None:
         return
-    right = (pr - base).normalized()
-    forward = (pf - base).normalized()
+    right = (base - pr).normalized() if use_right_backward else (pr - base).normalized()
+    forward = (base - pf).normalized() if use_forward_backward else (pf - base).normalized()
     normal = (right.cross(forward)).normalized()
     right = forward.cross(normal).normalized()
     B = (Matrix((right, -normal, forward))).transposed()
@@ -3472,7 +3482,7 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
     total_mod_offset_grid = np.zeros((num_y, num_x), dtype=np.float64)
     
     
-    mod_t_grid = 0.5 * (1.0 + tx_grid) 
+    mod_t_grid = 0.5 * (1.0 - tx_grid)
 
     for mod in props.modulations:
         helper = mod.helper
