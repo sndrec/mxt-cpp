@@ -117,6 +117,8 @@ var auto_host_mode: bool = false
 var auto_singleplayer_mode: bool = false
 var auto_track_editor_mode: bool = false
 var auto_accelerate_mode: bool = false
+var auto_bumpers_mode: bool = false
+var debug_bumper_smoke_mode: bool = false
 var auto_render_profile_mode: bool = false
 var auto_disable_car_multimesh_mode: bool = false
 var auto_disable_node_effects_mode: bool = false
@@ -234,6 +236,8 @@ func _ready() -> void:
 		call_deferred("_auto_host")
 	auto_singleplayer_mode = args.has("--auto-singleplayer") or user_args.has("--auto-singleplayer")
 	auto_accelerate_mode = args.has("--auto-accelerate") or user_args.has("--auto-accelerate")
+	auto_bumpers_mode = args.has("--auto-bumpers") or user_args.has("--auto-bumpers")
+	debug_bumper_smoke_mode = args.has("--debug-bumper-smoke") or user_args.has("--debug-bumper-smoke")
 	auto_render_profile_mode = args.has("--render-profile") or user_args.has("--render-profile")
 	auto_disable_car_multimesh_mode = args.has("--profile-disable-car-multimesh") or user_args.has("--profile-disable-car-multimesh")
 	auto_disable_node_effects_mode = args.has("--profile-disable-node-effects") or user_args.has("--profile-disable-node-effects")
@@ -431,6 +435,8 @@ func _start_singleplayer_race(as_spectator: bool) -> void:
 		network_manager.player_ids = [my_id]
 		network_manager.spectator_ids = []
 	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
+	if auto_bumpers_mode:
+		network_manager.race_options["bumpers"] = true
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.car_definition_path == "" and car_definitions.size() > 0:
@@ -1951,6 +1957,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	_dump_offline_state_sample()
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
 	_singleplayer_tick += 1
+	if debug_bumper_smoke_mode and _singleplayer_tick % 120 == 0 and game_sim.has_method("get_bumper_debug_string"):
+		print("MXT_BUMPER_SMOKE tick=", _singleplayer_tick, " ", game_sim.get_bumper_debug_string())
 	# Update HUD timing using the same field clients use
 	network_manager.clients_server_tick = _singleplayer_tick
 	network_manager.rollback_frametime_us = Time.get_ticks_usec() - start_time

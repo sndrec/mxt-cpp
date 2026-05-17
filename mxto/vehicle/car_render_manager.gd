@@ -228,14 +228,14 @@ func _resize_passes(archetype: Dictionary, count: int) -> void:
 		var multimesh: MultiMesh = pass_data["multimesh"]
 		if multimesh.instance_count != count:
 			multimesh.instance_count = count
-		multimesh.visible_instance_count = count
+		multimesh.visible_instance_count = 0
 	var thruster_pass: Dictionary = archetype["thruster"]
 	var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
 	var thruster_count: int = (thruster_pass["local_transforms"] as Array).size()
 	var total_thrusters := count * thruster_count
 	if thruster_multimesh.instance_count != total_thrusters:
 		thruster_multimesh.instance_count = total_thrusters
-	thruster_multimesh.visible_instance_count = total_thrusters
+	thruster_multimesh.visible_instance_count = 0
 
 func _set_pass_instance(pass_data: Dictionary, slot: int, transform: Transform3D, custom_vec: Vector3, color: Color) -> void:
 	var multimesh: MultiMesh = pass_data["multimesh"]

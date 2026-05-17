@@ -344,6 +344,7 @@ namespace godot {
 		int get_player_lap(int player_id) const;
 		int get_player_level_start_time(int player_id) const;
 		godot::String get_player_debug_string(int player_id) const;
+		godot::String get_bumper_debug_string() const;
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
 		godot::Transform3D get_car_render_transform(int car_index) const;
