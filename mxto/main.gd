@@ -2467,10 +2467,15 @@ func _check_race_finished() -> void:
 		return
 	if !network_manager.is_server and !singleplayer_mode:
 		return
-	var all_done := true
 	var racer_ids := network_manager.get_simulation_roster()
+	var human_racer_ids := network_manager.race_player_ids.duplicate(true)
+	if human_racer_ids.is_empty():
+		human_racer_ids = network_manager.player_ids.duplicate(true)
+	var finish_watch_ids := human_racer_ids if !human_racer_ids.is_empty() else racer_ids
+	var all_done := true
 	var finish_sim := server_game_sim if network_manager.is_server and server_game_sim != null else game_sim
 	for racer_id in racer_ids:
+		var watch_racer := finish_watch_ids.has(racer_id)
 		if network_manager._disconnected_during_race.has(racer_id):
 			continue
 		if network_manager.player_finish_times.has(racer_id):
@@ -2497,7 +2502,7 @@ func _check_race_finished() -> void:
 		elif eliminated:
 			if network_manager.is_server:
 				network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
-		else:
+		elif watch_racer:
 			all_done = false
 	if network_manager.is_server:
 		if all_done:
