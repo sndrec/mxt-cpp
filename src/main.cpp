@@ -2983,14 +2983,22 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	if (super_spark_state) {
 		super_spark_state->placement_timer += 1;
 		while (super_spark_state->placement_timer >= 120) {
-			if (num_cars > 0) {
-				emit_super_sparks_from_car(cars[soa.placement_indices[0]], 4);
+			int top_racer_indices[3] = { -1, -1, -1 };
+			int top_racer_count = 0;
+			for (int i = 0; i < num_cars && top_racer_count < 3; ++i) {
+				const int car_index = soa.placement_indices[i];
+				if (car_index >= 0 && car_index < num_cars && car_player_ids && car_player_ids[car_index] >= 0) {
+					top_racer_indices[top_racer_count++] = car_index;
+				}
 			}
-			if (num_cars > 1) {
-				emit_super_sparks_from_car(cars[soa.placement_indices[1]], 3);
+			if (top_racer_count > 0) {
+				emit_super_sparks_from_car(cars[top_racer_indices[0]], 4);
 			}
-			if (num_cars > 2) {
-				emit_super_sparks_from_car(cars[soa.placement_indices[2]], 2);
+			if (top_racer_count > 1) {
+				emit_super_sparks_from_car(cars[top_racer_indices[1]], 3);
+			}
+			if (top_racer_count > 2) {
+				emit_super_sparks_from_car(cars[top_racer_indices[2]], 2);
 			}
 			super_spark_state->placement_timer -= 120;
 		}
