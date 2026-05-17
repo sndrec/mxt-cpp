@@ -2037,8 +2037,11 @@ void GameSim::deactivate_bumper_car(int car_index)
 	}
 	const int bumper_slot = car_index - bumper_start_index;
 	if (bumper_slot >= 0 && bumper_slot < static_cast<int>(bumper_states.size())) {
+		const int was_active = bumper_states[bumper_slot].active;
 		bumper_states[bumper_slot].active = 0;
-		bumper_states[bumper_slot].next_sequence += 1u;
+		if (was_active) {
+			bumper_states[bumper_slot].next_sequence += 1u;
+		}
 	}
 	PhysicsCarSoA& soa = *cars[car_index].soa;
 	const int lane = cars[car_index].soa_index;
@@ -2047,6 +2050,9 @@ void GameSim::deactivate_bumper_car(int car_index)
 	STORE_INDEXED_VEC3(soa, position_old, lane, hidden);
 	STORE_INDEXED_VEC3(soa, position_old_2, lane, hidden);
 	STORE_INDEXED_VEC3(soa, position_old_dupe, lane, hidden);
+	SimTransform hidden_transform = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
+	hidden_transform.origin = hidden;
+	MXT_STORE_TRANSFORM(soa, transform_visual, lane, hidden_transform);
 	STORE_INDEXED_VEC3(soa, velocity, lane, SimVec3());
 	soa.energy[lane] = 0.0f;
 	soa.machine_state[lane] |= MACHINESTATE::ZEROHP;
@@ -3589,16 +3595,17 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	car_properties_array = props_array;
 	num_cars = requested_cars;
 	// Build randomized spawn order using shared seed from server, if provided.
-	// This affects only grid slots, not which car index belongs to which player.
+	// This affects only racer grid slots, not which car index belongs to which player.
 	std::vector<int> spawn_order;
-	spawn_order.resize(num_cars);
-	for (int i = 0; i < num_cars; ++i) spawn_order[i] = i;
-		if (spawn_seed != 0 && num_cars > 1) {
+	const int grid_car_count = std::max(0, race_car_count);
+	spawn_order.resize(grid_car_count);
+	for (int i = 0; i < grid_car_count; ++i) spawn_order[i] = i;
+		if (spawn_seed != 0 && grid_car_count > 1) {
 			uint32_t seed = static_cast<uint32_t>(spawn_seed);
 			auto next_rand = [&seed]() {
 				seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed;
 			};
-			for (int i = num_cars - 1; i > 0; --i) {
+			for (int i = grid_car_count - 1; i > 0; --i) {
 				uint32_t r = next_rand();
 				int j = static_cast<int>(r % (i + 1));
 				std::swap(spawn_order[i], spawn_order[j]);
@@ -3634,7 +3641,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			const float row_spacing = 20.0f;
 			const float start_offset = 40.0f;
 
-			int slot = spawn_order[i];
+			int slot = i;
+			if (i < grid_car_count) {
+				slot = spawn_order[i];
+			}
 			float distance_back = start_offset + slot * 10;
 			while (seg_idx > 0 && distance_back > current_track->segments[seg_idx].segment_length) {
 				distance_back -= current_track->segments[seg_idx].segment_length;
@@ -3751,6 +3761,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			sim_store4(car_soa->wall_pos_b_z + point_base, wall_pos.z);
 			car_soa->machine_state[car_idx] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q | MACHINESTATE::JUSTLANDED);
 			car_soa->air_time[car_idx] = 0;
+			if (is_bumper_car(i)) {
+				deactivate_bumper_car(i);
+			}
 		}
 
 		input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
