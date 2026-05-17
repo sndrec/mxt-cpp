@@ -281,6 +281,7 @@ namespace godot {
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;
 		int spawn_seed = 0;
+		bool vehicle_restore_enabled = true;
 
 		GameSim();
 		~GameSim();
@@ -288,6 +289,8 @@ namespace godot {
 		void set_sim_started(const bool p_sim_started);
 		bool get_sim_started();
 		void set_spawn_seed(int p_seed) { spawn_seed = p_seed; }
+		void set_vehicle_restore_enabled(bool enabled) { vehicle_restore_enabled = enabled; }
+		bool get_vehicle_restore_enabled() const { return vehicle_restore_enabled; }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
 		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }
@@ -303,6 +306,7 @@ namespace godot {
 		int get_player_race_place(int player_id) const;
 		godot::PackedInt32Array get_race_leaderboard_window(int player_id, int max_entries) const;
 		bool is_player_race_finished(int player_id) const;
+		bool is_player_race_eliminated(int player_id) const;
 		double get_player_lap_distance(int player_id) const;
 		int get_player_lap(int player_id) const;
 		godot::String get_player_debug_string(int player_id) const;

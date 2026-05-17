@@ -77,6 +77,13 @@ var net_race_finish_time := -1
 var player_finish_times := {}
 var player_finish_placements := {}
 var finish_order : Array = []
+var player_eliminations := {}
+var race_options := {
+	"game_mode": 0,
+	"track_indices": [],
+	"vehicle_restore": true,
+	"bumpers": false,
+}
 var sticker_cooldown_msec := {}
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
@@ -840,6 +847,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	player_finish_times.clear()
 	player_finish_placements.clear()
 	finish_order.clear()
+	player_eliminations.clear()
 	sticker_cooldown_msec.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
@@ -1328,9 +1336,11 @@ func _update_player_ids(ids: Array) -> void:
 		_calc_state_offsets()
 
 @rpc("any_peer", "reliable")
-func start_race(track_index: int, settings: Array) -> void:
+func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> void:
 	prepare_race_roster("start_race")
 	_reset_start_sync_state()
+	if !options.is_empty():
+		race_options = options.duplicate(true)
 	race_active = true
 	race_player_ids = player_ids.duplicate(true)
 	race_cpu_player_ids = cpu_player_ids.duplicate(true)
@@ -1346,16 +1356,20 @@ func start_race(track_index: int, settings: Array) -> void:
 			start_sync_sample_counts[local_id] = START_SYNC_SAMPLE_COUNT
 			start_sync_peer_ahead[local_id] = _local_desired_ahead_for_shared()
 
-func send_start_race(track_index: int, settings: Array) -> void:
+func send_start_race(track_index: int, settings: Array, options: Dictionary = {}) -> void:
 	if is_server:
 		ready_players.clear()
+		if options.is_empty():
+			options = race_options.duplicate(true)
+		else:
+			race_options = options.duplicate(true)
 		# Generate and distribute a shared spawn seed before starting the race.
 		# This lets all peers randomize starting grid slots deterministically.
 		var seed := randi()
 		set_spawn_seed.rpc(seed)
 		set_spawn_seed(seed)
-		start_race.rpc(track_index, settings)
-		start_race(track_index, settings)
+		start_race.rpc(track_index, settings, options)
+		start_race(track_index, settings, options)
 		if player_ids.size() > 1:
 			if game_sim != null:
 					game_sim.set_sim_started(false)
@@ -1364,7 +1378,7 @@ func send_start_race(track_index: int, settings: Array) -> void:
 		else:
 			begin_simulation()
 	else:
-		start_race.rpc_id(1, track_index, settings)
+		start_race.rpc_id(1, track_index, settings, options)
 
 @rpc("any_peer", "reliable")
 func end_race() -> void:
@@ -2137,6 +2151,7 @@ func disconnect_from_server() -> void:
 	race_cpu_player_ids.clear()
 	cpu_player_ids.clear()
 	cpu_player_settings.clear()
+	player_eliminations.clear()
 	_disconnected_during_race.clear()
 	pending_inputs.clear()
 	input_history.clear()
@@ -2302,6 +2317,23 @@ func record_player_finished(id: int, tick: int) -> void:
 		return
 	var place := finish_order.size() + 1
 	set_player_finished(id, tick, place)
+
+@rpc("authority", "call_local", "reliable")
+func set_player_eliminated(id: int, tick: int) -> void:
+	var is_new := !player_eliminations.has(id)
+	player_eliminations[id] = tick
+	if is_new:
+		race_event.emit("eliminated", id, -1, tick, 0)
+
+func send_player_eliminated(id: int, tick: int) -> void:
+	if player_eliminations.has(id):
+		return
+	if is_server:
+		set_player_eliminated.rpc(id, tick)
+		set_player_eliminated(id, tick)
+
+func is_vehicle_restore_enabled() -> bool:
+	return bool(race_options.get("vehicle_restore", true))
 
 @rpc("authority", "call_local", "reliable")
 func receive_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:

@@ -874,7 +874,7 @@ namespace {
 		{"DIP_TRACE_MESH_FLOOR", "Trace Mesh Floor", DIP_SWITCH::DIP_TRACE_MESH_FLOOR},
 	};
 
-	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count)
+	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count, bool vehicle_restore_enabled)
 	{
 		for (int i = 0; i < count; ++i) {
 			PlayerInput& input = inputs[i];
@@ -905,11 +905,27 @@ namespace {
 				}
 			}
 
+			const bool completed_race = (c.machine_state[i] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0;
+			const bool fell_out = c.current_track[i] && c.position_current_y[i] < c.current_track[i]->minimum_y;
+			const bool zero_hp = c.energy[i] <= 0.0f;
+			const bool restore_allowed = vehicle_restore_enabled || completed_race;
+			if (!restore_allowed && (fell_out || zero_hp)) {
+				if (fell_out) {
+					c.machine_state[i] |= MACHINESTATE::FALLOUT;
+				}
+				if (zero_hp) {
+					c.machine_state[i] |= MACHINESTATE::ZEROHP;
+					c.energy[i] = 0.0f;
+				}
+				c.s_boost_active[i] = false;
+				c.s_boost_frames_remaining[i] = 0;
+				c.s_boost_emit_frame_accumulator[i] = 0;
+				c.s_boost_pending_spark_spawns[i] = 0;
+			}
 			const bool needs_restore =
+				restore_allowed &&
 				c.current_track[i] &&
-				(c.restore_state[i] != 0 ||
-				 c.position_current_y[i] < c.current_track[i]->minimum_y ||
-				 c.energy[i] <= 0.0f);
+				(c.restore_state[i] != 0 || fell_out || zero_hp);
 			if (needs_restore) {
 				car_views[i].update_restore(accel_raw);
 			}
@@ -929,7 +945,8 @@ namespace {
 				c.machine_state[i] &= ~MACHINESTATE::STARTINGCOUNTDOWN;
 			}
 
-			if (c.machine_state[i] & MACHINESTATE::ZEROHP) {
+			if ((c.machine_state[i] & MACHINESTATE::ZEROHP) ||
+				(!vehicle_restore_enabled && (c.machine_state[i] & MACHINESTATE::FALLOUT))) {
 				input.steer_horizontal = 0.0f;
 				input.steer_vertical = 0.0f;
 				input.boost = false;
@@ -1637,6 +1654,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
 	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
 	ClassDB::bind_method(D_METHOD("set_spawn_seed", "seed"), &GameSim::set_spawn_seed);
+	ClassDB::bind_method(D_METHOD("set_vehicle_restore_enabled", "enabled"), &GameSim::set_vehicle_restore_enabled);
+	ClassDB::bind_method(D_METHOD("get_vehicle_restore_enabled"), &GameSim::get_vehicle_restore_enabled);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("load_state_data", "target_tick", "data"), &GameSim::load_state_data);
@@ -1660,6 +1679,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_player_race_place", "player_id"), &GameSim::get_player_race_place);
 	ClassDB::bind_method(D_METHOD("get_race_leaderboard_window", "player_id", "max_entries"), &GameSim::get_race_leaderboard_window);
 	ClassDB::bind_method(D_METHOD("is_player_race_finished", "player_id"), &GameSim::is_player_race_finished);
+	ClassDB::bind_method(D_METHOD("is_player_race_eliminated", "player_id"), &GameSim::is_player_race_eliminated);
 	ClassDB::bind_method(D_METHOD("get_player_lap_distance", "player_id"), &GameSim::get_player_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
 	ClassDB::bind_method(D_METHOD("get_player_debug_string", "player_id"), &GameSim::get_player_debug_string);
@@ -2143,6 +2163,29 @@ bool GameSim::is_player_race_finished(int player_id) const
 	return false;
 }
 
+bool GameSim::is_player_race_eliminated(int player_id) const
+{
+	if (vehicle_restore_enabled || !cars || !car_player_ids || num_cars <= 0) {
+		return false;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		if ((car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
+			return false;
+		}
+		if ((car_soa.machine_state[lane] & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT)) != 0u) {
+			return true;
+		}
+		return car_soa.current_track[lane] &&
+			car_soa.position_current_y[lane] < car_soa.current_track[lane]->minimum_y;
+	}
+	return false;
+}
+
 double GameSim::get_player_lap_distance(int player_id) const
 {
 	if (!cars || !car_player_ids || num_cars <= 0) {
@@ -2523,7 +2566,8 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		track_scratch.reset_mesh_query();
 
 		begin_vehicle_tick_soa(car_soa, cars + global_start,
-			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count);
+			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count,
+			vehicle_restore_enabled);
 		group.sync();
 
 		begin_vehicle_motion_phased_soa(car_soa, cars + global_start,

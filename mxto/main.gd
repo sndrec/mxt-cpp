@@ -33,6 +33,11 @@ class_name GameManager extends Node
 @onready var add_cpu_button: Button = $Lobby/AddCpuButton
 @onready var remove_cpu_button: Button = $Lobby/RemoveCpuButton
 
+var lobby_game_mode_choice: OptionButton
+var lobby_vehicle_restore_toggle: CheckBox
+var lobby_bumpers_toggle: CheckBox
+var lobby_grand_prix_track_list: ItemList
+
 @onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
 @onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
 @onready var obj_viewport_texture: ColorRect = get_node_or_null("GameWorld/ObjViewportTexture") as ColorRect
@@ -153,6 +158,7 @@ func _ready() -> void:
 	car_render_manager.name = "CarRenderManager"
 	$GameWorld.add_child(car_render_manager)
 	randomize()
+	_build_lobby_options_controls()
 	_load_tracks()
 	_load_car_definitions()
 	network_manager.race_started.connect(_on_network_race_started)
@@ -271,13 +277,19 @@ func _load_tracks() -> void:
 	tracks.clear()
 	track_selector.clear()
 	lobby_track_selector.clear()
+	if lobby_grand_prix_track_list != null:
+		lobby_grand_prix_track_list.clear()
 	_scan_dir("res://track")
 	for t in tracks:
 		track_selector.add_item(t["name"])
 		lobby_track_selector.add_item(t["name"])
+		if lobby_grand_prix_track_list != null:
+			lobby_grand_prix_track_list.add_item(t["name"])
 	if tracks.size() > 0:
 		track_selector.selected = 0
 		lobby_track_selector.selected = 0
+		if lobby_grand_prix_track_list != null:
+			lobby_grand_prix_track_list.select(0, false)
 	var args := OS.get_cmdline_args()
 	var user_args := OS.get_cmdline_user_args()
 	var track_name_idx := args.find("--track-name")
@@ -428,6 +440,49 @@ func _update_cpu_slider_label() -> void:
 	if cpu_slider_label:
 		cpu_slider_label.text = "CPU Racers: %d" % singleplayer_cpu_count
 
+func _build_lobby_options_controls() -> void:
+	var panel := PanelContainer.new()
+	panel.name = "RaceOptionsPanel"
+	panel.position = Vector2(315.0, 20.0)
+	panel.custom_minimum_size = Vector2(300.0, 250.0)
+	lobby_control.add_child(panel)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+
+	var title := Label.new()
+	title.text = "Race Options"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+
+	lobby_game_mode_choice = OptionButton.new()
+	lobby_game_mode_choice.add_item("Single Race", 0)
+	lobby_game_mode_choice.add_item("Grand Prix", 1)
+	lobby_game_mode_choice.item_selected.connect(_on_lobby_game_mode_selected)
+	box.add_child(lobby_game_mode_choice)
+
+	lobby_vehicle_restore_toggle = CheckBox.new()
+	lobby_vehicle_restore_toggle.text = " Vehicle Restore"
+	lobby_vehicle_restore_toggle.button_pressed = true
+	lobby_vehicle_restore_toggle.toggled.connect(_on_lobby_vehicle_restore_toggled)
+	box.add_child(lobby_vehicle_restore_toggle)
+
+	lobby_bumpers_toggle = CheckBox.new()
+	lobby_bumpers_toggle.text = " Bumpers"
+	lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
+	box.add_child(lobby_bumpers_toggle)
+
+	var tracks_label := Label.new()
+	tracks_label.text = "Grand Prix Tracks"
+	box.add_child(tracks_label)
+
+	lobby_grand_prix_track_list = ItemList.new()
+	lobby_grand_prix_track_list.select_mode = ItemList.SELECT_MULTI
+	lobby_grand_prix_track_list.custom_minimum_size = Vector2(280.0, 105.0)
+	lobby_grand_prix_track_list.multi_selected.connect(_on_lobby_grand_prix_track_selected)
+	box.add_child(lobby_grand_prix_track_list)
+
 func _build_race_pause_menu() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 100
@@ -510,6 +565,35 @@ func _on_remove_cpu_button_pressed() -> void:
 	if !network_manager.is_server:
 		return
 	network_manager.remove_cpu_driver()
+
+func _on_lobby_game_mode_selected(_index: int) -> void:
+	_refresh_lobby_race_options()
+
+func _on_lobby_vehicle_restore_toggled(_toggled: bool) -> void:
+	_refresh_lobby_race_options()
+
+func _on_lobby_bumpers_toggled(_toggled: bool) -> void:
+	_refresh_lobby_race_options()
+
+func _on_lobby_grand_prix_track_selected(_index: int, _selected: bool) -> void:
+	_refresh_lobby_race_options()
+
+func _build_lobby_race_options() -> Dictionary:
+	var selected_track_indices := []
+	if lobby_game_mode_choice != null and lobby_game_mode_choice.selected == 1 and lobby_grand_prix_track_list != null:
+		for selected_index in lobby_grand_prix_track_list.get_selected_items():
+			selected_track_indices.append(int(selected_index))
+	if selected_track_indices.is_empty():
+		selected_track_indices.append(lobby_track_selector.selected)
+	return {
+		"game_mode": lobby_game_mode_choice.selected if lobby_game_mode_choice != null else 0,
+		"track_indices": selected_track_indices,
+		"vehicle_restore": lobby_vehicle_restore_toggle.button_pressed if lobby_vehicle_restore_toggle != null else true,
+		"bumpers": lobby_bumpers_toggle.button_pressed if lobby_bumpers_toggle != null else false,
+	}
+
+func _refresh_lobby_race_options() -> void:
+	network_manager.race_options = _build_lobby_race_options()
 
 func _local_player_id() -> int:
 	if singleplayer_mode:
@@ -1034,6 +1118,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_car_render_manager(car_render_manager)
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
+	game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
@@ -1062,6 +1147,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.spark_node_container = spark_node_container
 		server_game_sim.set_car_render_manager(car_render_manager)
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
+		server_game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 		network_manager.server_netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
@@ -1138,7 +1224,12 @@ func _on_start_race_button_pressed() -> void:
 				var def_path = car_definitions[randi() % car_definitions.size()].resource_path
 				ps = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
 			settings_array.append(ps)
-		network_manager.send_start_race(lobby_track_selector.selected, settings_array)
+		var race_options := _build_lobby_race_options()
+		var track_indices: Array = race_options.get("track_indices", [lobby_track_selector.selected])
+		var first_track_index := lobby_track_selector.selected
+		if !track_indices.is_empty():
+			first_track_index = int(track_indices[0])
+		network_manager.send_start_race(first_track_index, settings_array, race_options)
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
 	if headless_mode:
@@ -1363,6 +1454,15 @@ func _physics_process(delta: float) -> void:
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
+		if lobby_game_mode_choice != null:
+			lobby_game_mode_choice.disabled = !can_edit_cpu
+		if lobby_vehicle_restore_toggle != null:
+			lobby_vehicle_restore_toggle.disabled = !can_edit_cpu
+		if lobby_bumpers_toggle != null:
+			lobby_bumpers_toggle.disabled = !can_edit_cpu
+		if lobby_grand_prix_track_list != null:
+			lobby_grand_prix_track_list.mouse_filter = Control.MOUSE_FILTER_STOP if can_edit_cpu else Control.MOUSE_FILTER_IGNORE
+			lobby_grand_prix_track_list.modulate = Color.WHITE if can_edit_cpu else Color(1.0, 1.0, 1.0, 0.55)
 	if game_sim.sim_started:
 		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var local_pi := PlayerInputClass.new()
@@ -1602,19 +1702,28 @@ func _check_race_finished() -> void:
 			continue
 		if network_manager.player_finish_times.has(racer_id):
 			continue
+		if network_manager.player_eliminations.has(racer_id):
+			continue
 		var finished := false
+		var eliminated := false
 		if finish_sim != null and finish_sim.has_method("is_player_race_finished"):
 			finished = finish_sim.is_player_race_finished(racer_id)
+		if !network_manager.is_vehicle_restore_enabled() and finish_sim != null and finish_sim.has_method("is_player_race_eliminated"):
+			eliminated = finish_sim.is_player_race_eliminated(racer_id)
 		else:
 			for car in car_node_container.get_children():
 				if car is VisualCar and car.owning_id == racer_id:
 					finished = (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0
+					eliminated = !network_manager.is_vehicle_restore_enabled() and (car.machine_state & (VisualCar.FZ_MS.ZEROHP | VisualCar.FZ_MS.FALLOUT)) != 0
 					break
 		if finished:
 			if network_manager.is_server:
 				network_manager.send_player_finished(racer_id, network_manager.server_tick)
 			else:
 				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
+		elif eliminated:
+			if network_manager.is_server:
+				network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
 		else:
 			all_done = false
 	if network_manager.is_server:
@@ -1622,7 +1731,7 @@ func _check_race_finished() -> void:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
 				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
-			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 5000:
+			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 10000:
 				network_manager.send_end_race()
 				race_finish_label.visible = false
 	else:
