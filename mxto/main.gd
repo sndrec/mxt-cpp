@@ -323,9 +323,11 @@ func _load_tracks() -> void:
 			if String(tracks[i].get("name", "")).to_lower() == desired_track:
 				track_selector.selected = i
 				lobby_track_selector.selected = i
+				if !lobby_grand_prix_track_sequence.is_empty():
+					lobby_grand_prix_track_sequence[0] = i
 				break
 	_populate_lobby_stage_buttons()
-	_refresh_lobby_stage_preview()
+	_refresh_lobby_race_options()
 
 func get_cpu_driver_manager() -> CpuDriverManager:
 	return cpu_driver_manager
