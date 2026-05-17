@@ -357,7 +357,7 @@ public:
         float speed_over_weight, bool include_start_projection);
     void align_machine_y_with_track_normal_immediate();
     void handle_checkpoints(TrackQueryScratch &scratch);
-    void collide_with_landmine(Mine* in_mine);
+    void collide_with_landmine(Mine* in_mine, const SimVec3 &travel_start, const SimVec3 &travel_end);
     void respawn_at_checkpoint(uint16_t cp_idx);
     SimTransform calculate_respawn_transform(uint16_t cp_idx) const;
     void update_restore(float accel_input);

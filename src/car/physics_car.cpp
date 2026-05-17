@@ -2999,7 +2999,7 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 				soa->terrain_state[soa_index] |= TERRAIN::JUMP;
 				break;
 			case TRIGGER_TYPE::MINE:
-				collide_with_landmine(static_cast<Mine*>(trigger));
+				collide_with_landmine(static_cast<Mine*>(trigger), trigger_p0, trigger_p1);
 				scratch.push_trigger_event(soa_index, i, collision, static_cast<uint8_t>(trigger->type));
 				break;
 			default:
@@ -4124,7 +4124,7 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	}
 };
 
-void PhysicsCar::collide_with_landmine(Mine* in_mine)
+void PhysicsCar::collide_with_landmine(Mine* in_mine, const SimVec3 &travel_start, const SimVec3 &travel_end)
 {	
 	if (in_mine->exploded)
 	{
@@ -4133,15 +4133,15 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine)
 
 	SimVec3 mine_pos = in_mine->transform.origin;// + in_mine->transform.basis.get_column(1);
 
-	SimVec3 travel_vec = LOAD_VEC3(position_current) - LOAD_VEC3(position_old);
+	SimVec3 travel_vec = travel_end - travel_start;
 
-	SimVec3 prev_to_mine = mine_pos - LOAD_VEC3(position_old);
+	SimVec3 prev_to_mine = mine_pos - travel_start;
 
 	float travel_len = travel_vec.length();
 
 	float t = travel_vec.dot(prev_to_mine) / (travel_len * travel_len);
 
-	SimVec3 closest_on_path = travel_vec * t + LOAD_VEC3(position_old);
+	SimVec3 closest_on_path = travel_vec * t + travel_start;
 
 	float speed_dir_sign = (soa->speed_kmh[soa_index] > 600.0f) ? 1.0f : -1.0f;
 
