@@ -531,6 +531,18 @@ namespace {
 		return x;
 	}
 
+	static float bumper_sequence_trigger_distance(uint32_t spawn_seed, int leader_lap, uint32_t sequence, float interval, float lap_length)
+	{
+		const uint32_t hash = bumper_hash_u32(
+			static_cast<uint32_t>(spawn_seed) ^
+			(static_cast<uint32_t>(leader_lap) * 0x27D4EB2Du) ^
+			(sequence * 0x9E3779B9u) ^
+			0xA341316Cu);
+		const float jitter = (static_cast<float>(hash & 0xffffu) * (1.0f / 65535.0f) - 0.5f) * interval * 0.45f;
+		const float trigger = (static_cast<float>(sequence) + 1.0f) * interval + jitter;
+		return std::clamp(trigger, 80.0f, std::max(80.0f, lap_length - 80.0f));
+	}
+
 	static void populate_visual_car_args(godot::Array& visual_args, const PhysicsCar& car)
 	{
 		visual_args[0] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index));
@@ -2117,7 +2129,6 @@ void GameSim::update_bumpers(float lead_distance)
 	}
 	const float lap_distance = lead_distance - static_cast<float>(leader_lap - 1) * lap_length;
 	const float interval = leader_lap == 2 ? 520.0f : 300.0f;
-	const uint32_t sequence = static_cast<uint32_t>(std::max(0.0f, std::floor(lap_distance / interval)));
 	for (int slot = 0; slot < bumper_count && slot < static_cast<int>(bumper_states.size()); ++slot) {
 		const int car_index = bumper_start_index + slot;
 		if (car_index < 0 || car_index >= num_cars) {
@@ -2142,10 +2153,20 @@ void GameSim::update_bumpers(float lead_distance)
 			}
 			set_bumper_track_state(car_index, bumper_distance, state.target_lane);
 		}
-		if (state.active || sequence < state.next_sequence) {
+		if (state.active) {
 			continue;
 		}
-		const uint32_t lane_hash = bumper_hash_u32(static_cast<uint32_t>(spawn_seed) ^ (sequence * 0x9E3779B9u) ^ (static_cast<uint32_t>(slot) * 0x85EBCA6Bu));
+		const float trigger_distance = bumper_sequence_trigger_distance(
+			static_cast<uint32_t>(spawn_seed),
+			leader_lap,
+			state.next_sequence,
+			interval,
+			lap_length);
+		if (lap_distance < trigger_distance) {
+			continue;
+		}
+		const uint32_t spawn_sequence = state.next_sequence;
+		const uint32_t lane_hash = bumper_hash_u32(static_cast<uint32_t>(spawn_seed) ^ (spawn_sequence * 0x9E3779B9u) ^ (static_cast<uint32_t>(slot) * 0x85EBCA6Bu));
 		state.target_lane = (static_cast<float>(lane_hash & 0xffffu) / 65535.0f) * 1.5f - 0.75f;
 		const float spawn_distance = lead_distance + 1000.0f + static_cast<float>(slot % 3) * 38.0f;
 		SimTransform spawn_transform;
@@ -2164,7 +2185,7 @@ void GameSim::update_bumpers(float lead_distance)
 		soa.s_boost_active[lane] = false;
 		soa.height_above_track[lane] = 1.2f;
 		state.active = 1;
-		state.next_sequence = sequence + static_cast<uint32_t>(bumper_count);
+		state.next_sequence = spawn_sequence + static_cast<uint32_t>(bumper_count);
 	}
 }
 
