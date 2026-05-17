@@ -491,7 +491,6 @@ func _build_lobby_options_controls() -> void:
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	background.texture = background_texture
 	background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	lobby_control.add_child(background)
 
 	var root := VBoxContainer.new()
 	root.name = "LobbyContainer"
@@ -499,15 +498,19 @@ func _build_lobby_options_controls() -> void:
 	root.add_theme_constant_override("separation", 0)
 	lobby_control.add_child(root)
 
-	var top_panel := PanelContainer.new()
-	top_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	top_panel.custom_minimum_size = Vector2(0.0, 360.0)
-	root.add_child(top_panel)
+	var top_area := Control.new()
+	top_area.name = "Container"
+	top_area.clip_contents = true
+	top_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	top_area.size_flags_stretch_ratio = 8.45
+	root.add_child(top_area)
+	top_area.add_child(background)
 
 	var top_box := HBoxContainer.new()
+	top_box.set_anchors_preset(Control.PRESET_FULL_RECT)
 	top_box.add_theme_constant_override("separation", 10)
-	top_panel.add_child(top_box)
+	top_area.add_child(top_box)
 
 	var player_scroll := ScrollContainer.new()
 	player_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -529,7 +532,7 @@ func _build_lobby_options_controls() -> void:
 	var stage_box := VBoxContainer.new()
 	stage_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stage_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	stage_box.size_flags_stretch_ratio = 1.1
+	stage_box.size_flags_stretch_ratio = 0.7
 	stage_box.add_theme_constant_override("separation", 6)
 	top_box.add_child(stage_box)
 
@@ -558,12 +561,23 @@ func _build_lobby_options_controls() -> void:
 	lobby_stage_preview_container.add_theme_constant_override("separation", 4)
 	preview_scroll.add_child(lobby_stage_preview_container)
 
+	var options_column := VBoxContainer.new()
+	options_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	options_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	options_column.size_flags_stretch_ratio = 0.5
+	top_box.add_child(options_column)
+
+	var options_scroll := ScrollContainer.new()
+	options_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	options_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	options_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	options_column.add_child(options_scroll)
+
 	var options_box := VBoxContainer.new()
 	options_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	options_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	options_box.size_flags_stretch_ratio = 0.85
 	options_box.add_theme_constant_override("separation", 8)
-	top_box.add_child(options_box)
+	options_scroll.add_child(options_box)
 
 	lobby_game_mode_choice = OptionButton.new()
 	lobby_game_mode_choice.add_item("Single Race", 0)
@@ -587,8 +601,10 @@ func _build_lobby_options_controls() -> void:
 	_hide_lobby_control(remove_cpu_button)
 	_hide_lobby_control(car_settings_button_lobby)
 	_hide_lobby_control(controller_settings_button_lobby)
-	_move_lobby_control(start_race_button, options_box)
+	_move_lobby_control(start_race_button, options_column)
 	start_race_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start_race_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	start_race_button.size_flags_stretch_ratio = 0.5
 	start_race_button.custom_minimum_size = Vector2(0.0, 44.0)
 	start_race_button.text = "PLAY!"
 	start_race_button.add_theme_font_size_override("font_size", 48)
@@ -596,21 +612,20 @@ func _build_lobby_options_controls() -> void:
 	var bottom_box := HBoxContainer.new()
 	bottom_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bottom_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	bottom_box.size_flags_stretch_ratio = 0.78
 	bottom_box.add_theme_constant_override("separation", 10)
 	root.add_child(bottom_box)
 
 	var chat_panel := PanelContainer.new()
 	chat_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	chat_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	chat_panel.size_flags_stretch_ratio = 0.85
+	chat_panel.size_flags_stretch_ratio = 0.37
 	bottom_box.add_child(chat_panel)
 
 	var chat_margin := MarginContainer.new()
-	chat_margin.add_theme_constant_override("margin_left", 8)
-	chat_margin.add_theme_constant_override("margin_top", 8)
-	chat_margin.add_theme_constant_override("margin_right", 8)
-	chat_margin.add_theme_constant_override("margin_bottom", 8)
+	chat_margin.add_theme_constant_override("margin_left", 2)
+	chat_margin.add_theme_constant_override("margin_top", 2)
+	chat_margin.add_theme_constant_override("margin_right", 2)
+	chat_margin.add_theme_constant_override("margin_bottom", 2)
 	chat_panel.add_child(chat_margin)
 
 	var chat_box := VBoxContainer.new()
@@ -620,6 +635,8 @@ func _build_lobby_options_controls() -> void:
 	lobby_chat_box = RichTextLabel.new()
 	lobby_chat_box.bbcode_enabled = true
 	lobby_chat_box.scroll_following = true
+	lobby_chat_box.selection_enabled = true
+	lobby_chat_box.add_theme_font_size_override("normal_font_size", 16)
 	lobby_chat_box.text = "[color=555555]Never tell your password to anyone.[/color]"
 	lobby_chat_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lobby_chat_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -640,12 +657,6 @@ func _build_lobby_options_controls() -> void:
 	lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
 	chat_input_box.add_child(lobby_send_text_button)
 
-	var viewport_panel := PanelContainer.new()
-	viewport_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	viewport_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	viewport_panel.size_flags_stretch_ratio = 1.25
-	bottom_box.add_child(viewport_panel)
-
 	var viewport_stack := Control.new()
 	viewport_stack.clip_contents = true
 	viewport_stack.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -653,7 +664,7 @@ func _build_lobby_options_controls() -> void:
 	viewport_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	viewport_stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
-	viewport_panel.add_child(viewport_stack)
+	bottom_box.add_child(viewport_stack)
 
 	var viewport_container := SubViewportContainer.new()
 	viewport_container.set_anchors_preset(Control.PRESET_FULL_RECT)
