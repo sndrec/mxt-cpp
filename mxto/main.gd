@@ -937,9 +937,13 @@ func _broadcast_lobby_chat_message(sender_id: int, text: String) -> void:
 func _append_lobby_chat_message(sender_id: int, text: String) -> void:
 	if lobby_chat_box == null:
 		return
-	var color := "FFFF66" if sender_id == _local_player_id() else "C8D5FF"
+	var color := Color(1.0, 1.0, 0.4, 1.0) if sender_id == _local_player_id() else Color(0.78, 0.84, 1.0, 1.0)
 	var name := _player_display_name(sender_id)
-	lobby_chat_box.append_text("\n[color=%s]%s[/color]: %s" % [color, name.escape_bbcode(), text.escape_bbcode()])
+	lobby_chat_box.add_text("\n")
+	lobby_chat_box.push_color(color)
+	lobby_chat_box.add_text(name)
+	lobby_chat_box.pop()
+	lobby_chat_box.add_text(": " + text)
 
 func _on_lobby_chibi_view_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and lobby_say_text != null:
@@ -960,14 +964,14 @@ func _update_lobby_chibi_cars(_delta: float) -> void:
 		live[id] = true
 		var settings = network_manager.player_settings.get(id, {})
 		if !lobby_chibi_cars.has(id) or !is_instance_valid(lobby_chibi_cars[id]):
-			var new_car: LobbyChibiCar = LobbyChibiCarClass.new()
+			var new_car = LobbyChibiCarClass.new()
 			new_car.name = "ChibiCar%d" % id
 			new_car.position = _lobby_chibi_spawn_position(i)
 			lobby_chibi_root.add_child(new_car)
 			new_car.setup(id, settings, self, lobby_chibi_camera, lobby_chibi_nameplates, id == _local_player_id())
 			lobby_chibi_cars[id] = new_car
 		else:
-			var existing_car: LobbyChibiCar = lobby_chibi_cars[id]
+			var existing_car = lobby_chibi_cars[id]
 			existing_car.update_settings(settings)
 			existing_car.set_local_control(id == _local_player_id())
 	for id in lobby_chibi_cars.keys():
@@ -1015,7 +1019,7 @@ func _submit_lobby_chibi_state(player_id: int, velocity: float, knockback_veloci
 func _apply_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
 	if !lobby_chibi_cars.has(player_id):
 		return
-	var car: LobbyChibiCar = lobby_chibi_cars[player_id]
+	var car = lobby_chibi_cars[player_id]
 	if car != null and is_instance_valid(car):
 		car.apply_remote_state(velocity, knockback_velocity, angle_velocity, position, rotation)
 
