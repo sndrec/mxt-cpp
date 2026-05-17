@@ -16,9 +16,13 @@ func _ready() -> void:
 		camera = Camera3D.new()
 		add_child(camera)
 	camera.current = true
+	sync_look_from_current_transform()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func sync_look_from_current_transform() -> void:
 	yaw_rad = rotation.y
 	pitch_rad = rotation.x
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	pending_look_delta = Vector2.ZERO
 
 func _exit_tree() -> void:
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:

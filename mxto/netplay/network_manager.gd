@@ -1712,7 +1712,10 @@ func collect_server_inputs() -> Dictionary:
 		server_netcode_session.set_peer_last_received(local_id, server_tick, last_input_time[local_id])
 	if server_game_sim != null and server_game_sim.has_method("get_native_cpu_input_for_tick"):
 		for id in _get_human_roster():
-			if player_finish_times.has(id):
+			if player_eliminations.has(id):
+				pending_inputs[server_tick][id] = NEUTRAL_INPUT_BYTES
+				server_netcode_session.store_pending_input(server_tick, int(id), NEUTRAL_INPUT_BYTES)
+			elif player_finish_times.has(id):
 				var cpu_input: PackedByteArray = server_game_sim.get_native_cpu_input_for_tick(int(id), server_tick)
 				pending_inputs[server_tick][id] = cpu_input
 				server_netcode_session.store_pending_input(server_tick, int(id), cpu_input)
@@ -1776,7 +1779,9 @@ func collect_client_inputs() -> Dictionary:
 		return {}
 	var local_input_for_tick: PackedByteArray = last_local_input_bytes
 	var local_player_id := multiplayer.get_unique_id()
-	if player_finish_times.has(local_player_id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
+	if player_eliminations.has(local_player_id):
+		local_input_for_tick = NEUTRAL_INPUT_BYTES
+	elif player_finish_times.has(local_player_id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
 		local_input_for_tick = game_sim.get_native_cpu_input_for_tick(local_player_id, local_tick)
 	sent_inputs_bytes[local_tick] = local_input_for_tick
 	sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
@@ -2372,6 +2377,11 @@ func send_player_eliminated(id: int, tick: int) -> void:
 	if is_server:
 		set_player_eliminated.rpc(id, tick)
 		set_player_eliminated(id, tick)
+
+func record_player_eliminated(id: int, tick: int) -> void:
+	if player_eliminations.has(id):
+		return
+	set_player_eliminated(id, tick)
 
 func is_vehicle_restore_enabled() -> bool:
 	return bool(race_options.get("vehicle_restore", true))

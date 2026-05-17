@@ -73,6 +73,7 @@ var local_player_index: int = 0
 var headless_mode: bool = false
 var trigger_objects: Array = []
 var spectator_node: Node3D
+var local_elimination_spectator_active := false
 const TRIGGER_SCENES = {
 			 0: preload("res://asset/obj_dashplate.tscn"),
 			 1: preload("res://asset/obj_jumpplate.tscn"),
@@ -1081,6 +1082,39 @@ func _show_race_notification(text: String, duration_msec: int = 2200) -> void:
 	race_finish_label.visible = true
 	race_notification_hide_msec = Time.get_ticks_msec() + duration_msec
 
+func _local_player_is_eliminated() -> bool:
+	return !network_manager.is_vehicle_restore_enabled() and network_manager.player_eliminations.has(_local_player_id())
+
+func _should_suppress_local_race_input() -> bool:
+	return _local_player_is_eliminated()
+
+func _activate_local_elimination_spectator() -> void:
+	if local_elimination_spectator_active:
+		return
+	if !_local_player_is_eliminated():
+		return
+	local_elimination_spectator_active = true
+	var current_camera := get_viewport().get_camera_3d()
+	var start_transform := Transform3D.IDENTITY
+	if current_camera != null:
+		start_transform = current_camera.global_transform
+	elif car_node_container.local_visual_car != null:
+		var car := car_node_container.local_visual_car
+		var car_transform := car.car_transform.global_transform
+		var interest := car_transform.origin + car_transform.basis.y * 2.0
+		var position := interest - car_transform.basis.z * 26.0 + car_transform.basis.y * 10.0 + car_transform.basis.x * 10.0
+		start_transform.origin = position
+		start_transform = start_transform.looking_at(interest, car_transform.basis.y.normalized())
+	if spectator_node == null:
+		spectator_node = spectator_scene.instantiate()
+		add_child(spectator_node)
+	spectator_node.global_transform = start_transform
+	if spectator_node.has_method("sync_look_from_current_transform"):
+		spectator_node.call("sync_look_from_current_transform")
+	if car_node_container.local_visual_car != null:
+		car_node_container.local_visual_car.race_hud.visible = false
+	_show_race_notification("Eliminated - Spectating", 3000)
+
 func _format_race_time(tick_value: int) -> String:
 	var race_tick := maxi(0, tick_value - 300)
 	var total_msec := int(round(float(race_tick) * 1000.0 / 60.0))
@@ -1164,6 +1198,10 @@ func _refresh_race_medal_feed() -> void:
 func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_value: int, value: int) -> void:
 	if event_type == "sticker":
 		_show_sticker(actor_id, value)
+		return
+	if event_type == "eliminated":
+		if actor_id == _local_player_id():
+			_activate_local_elimination_spectator()
 		return
 	if event_type == "ko":
 		_show_ko_medal(actor_id, target_id)
@@ -1509,6 +1547,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	_last_race_settings = settings.duplicate(true)
 	active_stickers.clear()
 	race_notification_hide_msec = 0
+	local_elimination_spectator_active = false
 	var info : Dictionary = tracks[track_index]
 	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
 	current_track_meta = {}
@@ -2080,7 +2119,7 @@ func _physics_process(delta: float) -> void:
 	if game_sim.sim_started:
 		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var local_pi := PlayerInputClass.new()
-		if _window_accepts_input() and players.size() > local_player_index:
+		if !_should_suppress_local_race_input() and _window_accepts_input() and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
@@ -2135,7 +2174,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		if auto_accelerate_mode:
 			local_pi.accelerate = 1.0
 		var accepts_input := _window_accepts_input()
-		if !auto_accelerate_mode and accepts_input and players.size() > local_player_index:
+		if !auto_accelerate_mode and !_should_suppress_local_race_input() and accepts_input and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
@@ -2265,6 +2304,7 @@ func _return_to_menu() -> void:
 	if spectator_node:
 		spectator_node.queue_free()
 		spectator_node = null
+	local_elimination_spectator_active = false
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	singleplayer_mode = false
@@ -2297,6 +2337,7 @@ func _return_to_lobby() -> void:
 	if spectator_node:
 		spectator_node.queue_free()
 		spectator_node = null
+	local_elimination_spectator_active = false
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	lobby_control.visible = true
@@ -2330,6 +2371,7 @@ func _teardown_race_world_for_transition() -> void:
 	if spectator_node:
 		spectator_node.queue_free()
 		spectator_node = null
+	local_elimination_spectator_active = false
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	lobby_control.visible = false
@@ -2502,6 +2544,8 @@ func _check_race_finished() -> void:
 		elif eliminated:
 			if network_manager.is_server:
 				network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
+			elif singleplayer_mode:
+				network_manager.record_player_eliminated(racer_id, network_manager.clients_server_tick)
 		elif watch_racer:
 			all_done = false
 	if network_manager.is_server:
