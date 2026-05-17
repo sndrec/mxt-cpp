@@ -531,6 +531,41 @@ namespace {
 		return x;
 	}
 
+	static uint32_t bumper_mix_u32(uint32_t state, uint32_t value)
+	{
+		return bumper_hash_u32(state ^ (value + 0x9E3779B9u + (state << 6) + (state >> 2)));
+	}
+
+	static uint32_t bumper_float_bits(float value)
+	{
+		uint32_t bits = 0;
+		std::memcpy(&bits, &value, sizeof(bits));
+		return bits;
+	}
+
+	static uint32_t bumper_track_seed_from_track(const RaceTrack* track)
+	{
+		if (!track) {
+			return 0xB62A1C3Du;
+		}
+		uint32_t seed = 0xB62A1C3Du;
+		seed = bumper_mix_u32(seed, static_cast<uint32_t>(track->num_checkpoints));
+		seed = bumper_mix_u32(seed, static_cast<uint32_t>(track->num_segments));
+		seed = bumper_mix_u32(seed, bumper_float_bits(track->lap_length));
+		for (int i = 0; i < track->num_checkpoints; ++i) {
+			const CollisionCheckpoint& cp = track->checkpoints[i];
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.position_start.x));
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.position_start.y));
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.position_start.z));
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.position_end.x));
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.position_end.y));
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.position_end.z));
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.distance));
+			seed = bumper_mix_u32(seed, bumper_float_bits(cp.local_distance));
+		}
+		return seed ? seed : 0xB62A1C3Du;
+	}
+
 	static float bumper_sequence_trigger_distance(uint32_t spawn_seed, int leader_lap, uint32_t sequence, float interval, float lap_length)
 	{
 		const uint32_t hash = bumper_hash_u32(
@@ -2156,8 +2191,9 @@ void GameSim::update_bumpers(float lead_distance)
 		if (state.active) {
 			continue;
 		}
+		const uint32_t sequence_seed = bumper_track_seed ? bumper_track_seed : bumper_track_seed_from_track(current_track);
 		const float trigger_distance = bumper_sequence_trigger_distance(
-			static_cast<uint32_t>(spawn_seed),
+			sequence_seed,
 			leader_lap,
 			state.next_sequence,
 			interval,
@@ -2166,7 +2202,7 @@ void GameSim::update_bumpers(float lead_distance)
 			continue;
 		}
 		const uint32_t spawn_sequence = state.next_sequence;
-		const uint32_t lane_hash = bumper_hash_u32(static_cast<uint32_t>(spawn_seed) ^ (spawn_sequence * 0x9E3779B9u) ^ (static_cast<uint32_t>(slot) * 0x85EBCA6Bu));
+		const uint32_t lane_hash = bumper_hash_u32(sequence_seed ^ (spawn_sequence * 0x9E3779B9u) ^ (static_cast<uint32_t>(slot) * 0x85EBCA6Bu));
 		state.target_lane = (static_cast<float>(lane_hash & 0xffffu) / 65535.0f) * 1.5f - 0.75f;
 		const float spawn_distance = lead_distance + 1000.0f + static_cast<float>(slot % 3) * 38.0f;
 		SimTransform spawn_transform;
@@ -3638,6 +3674,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	}
 
 
+	bumper_track_seed = bumper_track_seed_from_track(current_track);
 	constexpr int kBumperPoolSize = 12;
 	int requested_cars = requested_cars_hint;
 	race_car_count = requested_cars;
@@ -3944,6 +3981,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		race_car_count = 0;
 		bumper_start_index = 0;
 		bumper_count = 0;
+		bumper_track_seed = 0;
 		clear_render_thruster_lights();
 		native_cpu_drivers.clear();
 		race_events.clear();

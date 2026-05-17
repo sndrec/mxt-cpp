@@ -301,6 +301,7 @@ namespace godot {
 		int race_car_count = 0;
 		int bumper_start_index = 0;
 		int bumper_count = 0;
+		uint32_t bumper_track_seed = 0;
 		uint32_t start_countdown_extra_frames = 0;
 
 		GameSim();
