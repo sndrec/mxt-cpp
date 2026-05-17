@@ -364,8 +364,7 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch)
 			soa->frames_since_start_2[soa_index] = std::min(255u, soa->frames_since_start_2[soa_index] + 1);
 	}
 
-	if ((soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0 ||
-		(soa->terrain_state[soa_index] & TERRAIN::RECHARGE) != 0)
+	if ((soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0)
 	{
 		soa->energy[soa_index] += 1.111111f * soa->energy_recharge_mult[soa_index];
 		if (soa->energy[soa_index] > soa->calced_max_energy[soa_index])
@@ -3017,6 +3016,10 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 	if ((terrain_bits & TERRAIN::RECHARGE) && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0) {
 		soa->state_2[soa_index] |= 1;
 		soa->terrain_state[soa_index] |= TERRAIN::RECHARGE;
+		soa->energy[soa_index] += 1.111111f * soa->energy_recharge_mult[soa_index];
+		if (soa->energy[soa_index] > soa->calced_max_energy[soa_index]) {
+			soa->energy[soa_index] = soa->calced_max_energy[soa_index];
+		}
 	}
 
 	if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) == 0 && (terrain_bits & TERRAIN::DIRT)) {
