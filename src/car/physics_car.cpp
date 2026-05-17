@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cfloat>
 #include <cstdint>
+#include <cstring>
 #include "mxt_core/debug.hpp"
 #include "mxt_core/math_utils.h"
 #include "mxt_core/player_input.h"
@@ -4950,6 +4951,12 @@ static void apply_car_collision_knockback(PhysicsCar& car, const SimVec3& impuls
 	STORE_CAR_VEC3(car, velocity, LOAD_CAR_VEC3(car, velocity) + impulse * weight);
 }
 
+static bool car_is_bumper(const PhysicsCar& car)
+{
+	const char* name = car.soa->machine_name[car.soa_index];
+	return name && std::strcmp(name, "Bumper") == 0;
+}
+
 bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 {
 	if (soa->s_boost_active[soa_index] || other_machine.soa->s_boost_active[other_machine.soa_index]) {
@@ -4959,8 +4966,10 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		return false;
 	}
 
-	constexpr float radius1 = 2.0f;
-	constexpr float radius2 = 2.0f;
+	const bool this_bumper = car_is_bumper(*this);
+	const bool other_bumper = car_is_bumper(other_machine);
+	const float radius1 = this_bumper ? 3.0f : 2.0f;
+	const float radius2 = other_bumper ? 3.0f : 2.0f;
 	const float combined_radius = radius1 + radius2;
 	const SimVec3 p1_old = LOAD_VEC3(position_old_dupe);
 	const SimVec3 p1 = LOAD_VEC3(position_collision_snapshot);
@@ -5028,6 +5037,22 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		impulse2 = impulse * -0.2f;
 		damage1 = 0.0f;
 		damage2 = 0.0f;
+	}
+	if (this_bumper != other_bumper) {
+		impulse1 = impulse1 * 1.5f;
+		impulse2 = impulse2 * 1.5f;
+		if (!this_bumper && !this_attacking) {
+			impulse1 += collision_normal * -2.0f;
+			damage1 += 12.0f;
+			set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+			soa->rail_collision_timer[soa_index] = 24;
+		}
+		if (!other_bumper && !other_attacking) {
+			impulse2 += collision_normal * 2.0f;
+			damage2 += 12.0f;
+			other_machine.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+			other_machine.soa->rail_collision_timer[other_machine.soa_index] = 24;
+		}
 	}
 
 	apply_car_collision_knockback(*this, impulse1);

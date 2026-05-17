@@ -110,6 +110,12 @@ namespace godot {
 		};
 		std::vector<RaceEvent> race_events;
 		std::vector<NativeCpuDriverState> native_cpu_drivers;
+		struct BumperState {
+			uint8_t active = 0;
+			uint32_t next_sequence = 0;
+			float target_lane = 0.0f;
+		};
+		std::vector<BumperState> bumper_states;
 		void reset_super_sparks();
 		void update_super_sparks();
 		void update_super_spark_visuals();
@@ -122,6 +128,12 @@ namespace godot {
 		void update_native_cpu_driver(int car_index);
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
+		bool is_bumper_car(int car_index) const;
+		void configure_bumper_car(int car_index, int bumper_slot);
+		void deactivate_bumper_car(int car_index);
+		void update_bumpers(float lead_distance);
+		bool sample_track_transform_at_distance(float absolute_distance, float lane, SimTransform& out_transform, uint16_t& out_checkpoint, float& out_fraction) const;
+		PlayerInput generate_bumper_input_for_car(int car_index) const;
 		void process_pending_ko_events();
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
@@ -283,6 +295,10 @@ namespace godot {
 		int spawn_seed = 0;
 		bool vehicle_restore_enabled = true;
 		bool multiplayer_intro_camera_enabled = false;
+		bool bumpers_enabled = false;
+		int race_car_count = 0;
+		int bumper_start_index = 0;
+		int bumper_count = 0;
 		uint32_t start_countdown_extra_frames = 0;
 
 		GameSim();
@@ -295,6 +311,8 @@ namespace godot {
 		bool get_vehicle_restore_enabled() const { return vehicle_restore_enabled; }
 		void set_multiplayer_intro_camera_enabled(bool enabled);
 		bool get_multiplayer_intro_camera_enabled() const { return multiplayer_intro_camera_enabled; }
+		void set_bumpers_enabled(bool enabled);
+		bool get_bumpers_enabled() const { return bumpers_enabled; }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
 		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }

@@ -47,6 +47,8 @@ const PlayerInputClass = preload("res://player/player_input.gd")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
+const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
+const BUMPER_POOL_SIZE := 12
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -364,7 +366,7 @@ func _load_car_definitions() -> void:
 	dir.list_dir_begin()
 	var folder := dir.get_next()
 	while folder != "":
-		if dir.current_is_dir() and !folder.begins_with("."):
+		if dir.current_is_dir() and !folder.begins_with(".") and folder != "bumper":
 			var def_path := "res://vehicle/asset/%s/definition.tres" % folder
 			if ResourceLoader.exists(def_path):
 				var def_res := load(def_path)
@@ -626,6 +628,8 @@ func _local_player_id() -> int:
 	return multiplayer.get_unique_id() if multiplayer.has_multiplayer_peer() else 0
 
 func _player_display_name(id: int) -> String:
+	if id < 0:
+		return "Bumper"
 	var name := str(id)
 	var settings = network_manager.player_settings.get(id, null)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
@@ -1134,6 +1138,11 @@ func _start_race(track_index: int, settings: Array) -> void:
 					racer_ids.append(pid)
 					racer_cpu_flags.append(cpu_ids.has(pid))
 				racer_roster_index += 1
+	var bumpers_enabled := bool(network_manager.race_options.get("bumpers", false))
+	var bumper_def: CarDefinition = load(BUMPER_DEFINITION_PATH) if bumpers_enabled else null
+	if bumper_def != null:
+		for _slot in BUMPER_POOL_SIZE:
+			chosen_defs.append(bumper_def)
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
@@ -1191,6 +1200,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
 	game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
+	if game_sim.has_method("set_bumpers_enabled"):
+		game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
 	if game_sim.has_method("set_multiplayer_intro_camera_enabled"):
 		game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
@@ -1223,6 +1234,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.set_car_render_manager(car_render_manager)
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
 		server_game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
+		if server_game_sim.has_method("set_bumpers_enabled"):
+			server_game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
 		if server_game_sim.has_method("set_multiplayer_intro_camera_enabled"):
 			server_game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
