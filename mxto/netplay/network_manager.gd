@@ -1697,6 +1697,12 @@ func collect_server_inputs() -> Dictionary:
 		last_input_time[local_id] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[local_id] = server_tick
 		server_netcode_session.set_peer_last_received(local_id, server_tick, last_input_time[local_id])
+	if server_game_sim != null and server_game_sim.has_method("get_native_cpu_input_for_tick"):
+		for id in _get_human_roster():
+			if player_finish_times.has(id):
+				var cpu_input: PackedByteArray = server_game_sim.get_native_cpu_input_for_tick(int(id), server_tick)
+				pending_inputs[server_tick][id] = cpu_input
+				server_netcode_session.store_pending_input(server_tick, int(id), cpu_input)
 	if server_tick > target_tick:
 		return {}
 	_fill_delayed_missing_inputs_for_tick(server_tick)
@@ -1755,17 +1761,21 @@ func collect_client_inputs() -> Dictionary:
 				_client_send_input_flat.rpc_id(1, packet, desired_ahead_ticks, rtt_s)
 				last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 		return {}
-	sent_inputs_bytes[local_tick] = last_local_input_bytes
+	var local_input_for_tick: PackedByteArray = last_local_input_bytes
+	var local_player_id := multiplayer.get_unique_id()
+	if player_finish_times.has(local_player_id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
+		local_input_for_tick = game_sim.get_native_cpu_input_for_tick(local_player_id, local_tick)
+	sent_inputs_bytes[local_tick] = local_input_for_tick
 	sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
-	netcode_session.store_local_input(local_tick, last_local_input_bytes)
+	netcode_session.store_local_input(local_tick, local_input_for_tick)
 	if is_server:
 		if not pending_inputs.has(local_tick):
 			pending_inputs[local_tick] = {}
-		pending_inputs[local_tick][multiplayer.get_unique_id()] = last_local_input_bytes
-		server_netcode_session.store_pending_input(local_tick, multiplayer.get_unique_id(), last_local_input_bytes)
-		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
-		last_received_tick[multiplayer.get_unique_id()] = local_tick
-		server_netcode_session.set_peer_last_received(multiplayer.get_unique_id(), local_tick, last_input_time[multiplayer.get_unique_id()])
+		pending_inputs[local_tick][local_player_id] = local_input_for_tick
+		server_netcode_session.store_pending_input(local_tick, local_player_id, local_input_for_tick)
+		last_input_time[local_player_id] = 0.001 * float(Time.get_ticks_msec())
+		last_received_tick[local_player_id] = local_tick
+		server_netcode_session.set_peer_last_received(local_player_id, local_tick, last_input_time[local_player_id])
 	var all_keys := sent_inputs_bytes.keys()
 	if !is_server and all_keys.size() > 0:
 		var recent_keys := _recent_unacked_input_keys(all_keys)

@@ -2593,7 +2593,12 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	for (int i = 0; i < num_cars; i++) {
 		PlayerInput inp = PlayerInput::from_neutral();
 		const int32_t player_id = car_player_ids ? car_player_ids[i] : -1;
-		if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
+		PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const bool completed_race = (car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u;
+		if (completed_race && player_id != -1) {
+			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
+		} else if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
 			inp = *local_input;
 		} else if (mode == InputFrameMode::DecodedCarArray && i < decoded_car_input_count && decoded_car_inputs &&
 				(!decoded_car_input_present || decoded_car_input_present[i])) {
@@ -2601,8 +2606,6 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		} else if (car_is_cpu && car_is_cpu[i]) {
 			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		}
-		PhysicsCarSoA& car_soa = *cars[i].soa;
-		const int lane = cars[i].soa_index;
 		if (!car_soa.s_boost_active[lane] && car_soa.s_boost_charge[lane] >= car_soa.s_boost_charge_max[lane] && inp.boost) {
 			float gap = lead_distance - soa.pre_distances[i];
 			if (gap < 0.0f) {
@@ -4047,15 +4050,15 @@ godot::PackedByteArray GameSim::get_native_cpu_input_for_tick(int player_id, int
 godot::PackedByteArray GameSim::generate_native_cpu_input_for_tick(int player_id, int expected_tick)
 {
 	NativeCpuDriverState* driver = find_native_cpu_driver(static_cast<int32_t>(player_id));
-	if (!driver) {
-		return PlayerInput::to_bytes(PlayerInput::from_neutral());
-	}
 	for (int car_index = 0; car_index < num_cars; ++car_index) {
 		if (car_player_ids && car_player_ids[car_index] == player_id) {
 			PlayerInput input = native_cpu_generate_input_for_car(cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed);
-			driver->pending_input = PlayerInput::to_bytes(input);
-			driver->last_generated_tick = expected_tick;
-			return driver->pending_input;
+			godot::PackedByteArray input_bytes = PlayerInput::to_bytes(input);
+			if (driver) {
+				driver->pending_input = input_bytes;
+				driver->last_generated_tick = expected_tick;
+			}
+			return input_bytes;
 		}
 	}
 	return PlayerInput::to_bytes(PlayerInput::from_neutral());
@@ -4735,9 +4738,11 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
 	godot::Transform3D render_transform = gameplay_camera->get_render_transform(alpha);
 	float render_fov = gameplay_camera->get_render_fov(alpha);
+	bool intro_camera_active = false;
 	if (multiplayer_intro_camera_enabled && start_countdown_extra_frames > 0u) {
 		const float intro_frame = static_cast<float>(tick) + alpha;
 		if (intro_frame < static_cast<float>(start_countdown_extra_frames)) {
+			intro_camera_active = true;
 			constexpr float kFlybyFrames = 420.0f;
 			constexpr float kReturnFrames = 180.0f;
 			SimTransform focus_basis_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
@@ -4799,6 +4804,49 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 				}
 			}
 		}
+	}
+	if (!intro_camera_active && (soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
+		const SimTransform car_basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+		SimVec3 up_sim = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+		if (up_sim.length_squared() <= 0.0001f) {
+			up_sim = car_basis.basis.get_column(1);
+		}
+		up_sim = up_sim.normalized();
+		SimVec3 forward_sim = car_basis.basis.get_column(2) * -1.0f;
+		if (forward_sim.length_squared() <= 0.0001f) {
+			forward_sim = SimVec3(0.0f, 0.0f, -1.0f);
+		}
+		forward_sim = forward_sim.normalized();
+		SimVec3 right_sim = car_basis.basis.get_column(0);
+		if (right_sim.length_squared() <= 0.0001f) {
+			right_sim = forward_sim.cross(up_sim);
+		}
+		right_sim = right_sim.normalized();
+		const SimVec3 car_pos_sim = LOAD_INDEXED_VEC3(soa, position_current, lane) + camera_position_correction;
+		const godot::Vector3 car_pos = gd_vec3(car_pos_sim);
+		const godot::Vector3 up = gd_vec3(up_sim);
+		const godot::Vector3 forward = gd_vec3(forward_sim);
+		const godot::Vector3 right = gd_vec3(right_sim);
+		const float mode_phase = static_cast<float>(tick % 240u) / 240.0f;
+		const int camera_mode = static_cast<int>((tick / 240u) % 4u);
+		godot::Vector3 interest = car_pos + up * 2.4f;
+		godot::Vector3 position;
+		if (camera_mode == 0) {
+			position = interest - forward * 24.0f + up * 8.0f + right * 9.0f;
+			render_fov = 62.0f;
+		} else if (camera_mode == 1) {
+			const float side = mode_phase < 0.5f ? -1.0f : 1.0f;
+			position = interest + forward * 34.0f + right * (24.0f * side) + up * 7.5f;
+			render_fov = 54.0f;
+		} else if (camera_mode == 2) {
+			const float angle = mode_phase * 6.28318530718f;
+			position = interest + right * (std::cos(angle) * 28.0f) - forward * (std::sin(angle) * 28.0f) + up * 10.0f;
+			render_fov = 66.0f;
+		} else {
+			position = interest - forward * 10.0f + up * 38.0f + right * 7.0f;
+			render_fov = 72.0f;
+		}
+		render_transform = build_camera_transform(position, interest, up);
 	}
 	gameplay_camera_node->set_global_transform(render_transform);
 	gameplay_camera_node->set_fov(render_fov);
