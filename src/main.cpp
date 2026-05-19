@@ -573,9 +573,10 @@ namespace {
 			(static_cast<uint32_t>(leader_lap) * 0x27D4EB2Du) ^
 			(sequence * 0x9E3779B9u) ^
 			0xA341316Cu);
-		const float jitter = (static_cast<float>(hash & 0xffffu) * (1.0f / 65535.0f) - 0.5f) * interval * 0.45f;
-		const float trigger = (static_cast<float>(sequence) + 1.0f) * interval + jitter;
-		return std::clamp(trigger, 80.0f, std::max(80.0f, lap_length - 80.0f));
+		const float jitter = (static_cast<float>(hash & 0xffffu) * (1.0f / 65535.0f) - 0.5f) * interval * 0.35f;
+		const float first_trigger = leader_lap == 2 ? 680.0f : 360.0f;
+		(void)lap_length;
+		return first_trigger + static_cast<float>(sequence) * interval + jitter;
 	}
 
 	static void populate_visual_car_args(godot::Array& visual_args, const PhysicsCar& car)
@@ -1701,8 +1702,7 @@ namespace {
 			c.position_collision_snapshot_x[lane] = c.position_current_x[lane];
 			c.position_collision_snapshot_y[lane] = c.position_current_y[lane];
 			c.position_collision_snapshot_z[lane] = c.position_current_z[lane];
-			const bool bumper = c.machine_name[lane] && std::strcmp(c.machine_name[lane], "Bumper") == 0;
-			const float radius = bumper ? kMachineCollisionRadius * 1.5f : kMachineCollisionRadius;
+			const float radius = kMachineCollisionRadius;
 			const float extent = radius + c.speed_kmh[lane] / 216.0f + kMutationSlop;
 			indices[i] = i;
 			min_x[i] = c.position_current_x[lane] - extent;
@@ -1812,12 +1812,16 @@ GameSim::GameSim()
 	num_cars = 0;
 	cars = nullptr;
 	car_properties_array = nullptr;
+	bumper_cars = nullptr;
+	bumper_properties_array = nullptr;
 	reset_super_sparks();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
 		state_buffer[i].data = nullptr;
 		state_buffer[i].size = 0;
 		state_buffer[i].bumper_state_count = 0;
+		state_buffer[i].bumper_scheduler_lap = 0;
+		state_buffer[i].bumper_next_sequence = 0;
 	}
 	input_buffer = nullptr;
 };
@@ -1981,22 +1985,13 @@ void GameSim::set_bumpers_enabled(bool enabled)
 	bumpers_enabled = enabled;
 }
 
-bool GameSim::is_bumper_car(int car_index) const
+void GameSim::configure_bumper_car(int bumper_slot)
 {
-	return bumpers_enabled &&
-		bumper_count > 0 &&
-		car_index >= bumper_start_index &&
-		car_index < bumper_start_index + bumper_count &&
-		car_index < num_cars;
-}
-
-void GameSim::configure_bumper_car(int car_index, int bumper_slot)
-{
-	if (!cars || car_index < 0 || car_index >= num_cars) {
+	if (!bumper_cars || bumper_slot < 0 || bumper_slot >= bumper_count) {
 		return;
 	}
-	PhysicsCarSoA& soa = *cars[car_index].soa;
-	const int lane = cars[car_index].soa_index;
+	PhysicsCarSoA& soa = *bumper_cars[bumper_slot].soa;
+	const int lane = bumper_cars[bumper_slot].soa_index;
 	PhysicsCarProperties* props = soa.car_properties[lane];
 	if (!props) {
 		return;
@@ -2081,21 +2076,18 @@ bool GameSim::sample_track_transform_at_distance(float absolute_distance, float 
 	return true;
 }
 
-void GameSim::deactivate_bumper_car(int car_index)
+void GameSim::deactivate_bumper_car(int bumper_slot)
 {
-	if (!is_bumper_car(car_index)) {
+	if (!bumper_cars || bumper_slot < 0 || bumper_slot >= bumper_count) {
 		return;
 	}
-	const int bumper_slot = car_index - bumper_start_index;
-	if (bumper_slot >= 0 && bumper_slot < bumper_count) {
-		const int was_active = bumper_states[bumper_slot].active;
-		bumper_states[bumper_slot].active = 0;
-		if (was_active) {
-			bumper_states[bumper_slot].next_sequence += 1u;
-		}
+	const int was_active = bumper_states[bumper_slot].active;
+	bumper_states[bumper_slot].active = 0;
+	if (was_active) {
+		bumper_states[bumper_slot].next_sequence = 0u;
 	}
-	PhysicsCarSoA& soa = *cars[car_index].soa;
-	const int lane = cars[car_index].soa_index;
+	PhysicsCarSoA& soa = *bumper_cars[bumper_slot].soa;
+	const int lane = bumper_cars[bumper_slot].soa_index;
 	const SimVec3 hidden(0.0f, current_track ? current_track->minimum_y - 10000.0f : -10000.0f, 0.0f);
 	STORE_INDEXED_VEC3(soa, position_current, lane, hidden);
 	STORE_INDEXED_VEC3(soa, position_old, lane, hidden);
@@ -2114,13 +2106,17 @@ void GameSim::deactivate_bumper_car(int car_index)
 	soa.energy[lane] = 0.0f;
 	soa.speed_kmh[lane] = 0.0f;
 	soa.base_speed[lane] = 0.0f;
+	soa.current_track[lane] = nullptr;
+	soa.restore_state[lane] = 2;
+	soa.restore_wait_frames[lane] = 0;
+	soa.restore_move_frames[lane] = 0;
 	soa.machine_state[lane] |= MACHINESTATE::ZEROHP;
 	soa.machine_state[lane] &= ~(MACHINESTATE::ACTIVE | MACHINESTATE::STARTINGCOUNTDOWN | MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
 }
 
-void GameSim::set_bumper_track_state(int car_index, float absolute_distance, float lane_offset, bool reset_history)
+void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, float lane_offset, bool reset_history)
 {
-	if (!cars || !current_track || car_index < 0 || car_index >= num_cars) {
+	if (!bumper_cars || !current_track || bumper_slot < 0 || bumper_slot >= bumper_count) {
 		return;
 	}
 	SimTransform transform;
@@ -2139,8 +2135,12 @@ void GameSim::set_bumper_track_state(int car_index, float absolute_distance, flo
 	const float bumper_surface_offset = 0.0f;
 	const float bumper_spawn_height = 19.5f;
 	transform.origin += transform.basis.get_column(1) * bumper_surface_offset;
-	PhysicsCarSoA& soa = *cars[car_index].soa;
-	const int lane = cars[car_index].soa_index;
+	PhysicsCarSoA& soa = *bumper_cars[bumper_slot].soa;
+	const int lane = bumper_cars[bumper_slot].soa_index;
+	soa.current_track[lane] = current_track;
+	soa.restore_state[lane] = 0;
+	soa.restore_wait_frames[lane] = 0;
+	soa.restore_move_frames[lane] = 0;
 	STORE_INDEXED_VEC3(soa, position_current, lane, transform.origin);
 	if (reset_history) {
 		STORE_INDEXED_VEC3(soa, position_old, lane, transform.origin);
@@ -2205,13 +2205,19 @@ void GameSim::set_bumper_track_state(int car_index, float absolute_distance, flo
 		soa.checkpoint_track_distance[lane] = std::fmod(absolute_distance, lap_length);
 		soa.lap[lane] = static_cast<uint8_t>(std::clamp(static_cast<int>(absolute_distance / lap_length), 0, 255));
 	}
+	soa.previous_lap_distance[lane] = current_track->compute_lap_distance(
+		soa.current_checkpoint[lane],
+		soa.checkpoint_fraction[lane],
+		soa.lap[lane]);
+	soa.last_ground_distance[lane] = soa.checkpoint_track_distance[lane];
+	soa.last_ground_checkpoint[lane] = checkpoint;
 	soa.height_above_track[lane] = bumper_spawn_height;
 	soa.machine_state[lane] &= ~(MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
 }
 
 void GameSim::update_bumpers(float lead_distance, int leader_lap)
 {
-	if (!bumpers_enabled || bumper_count <= 0 || !cars || !current_track) {
+	if (!bumpers_enabled || bumper_count <= 0 || !bumper_cars || !current_track) {
 		return;
 	}
 	float lap_length = current_track->lap_length;
@@ -2221,26 +2227,28 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 	if (lap_length <= 0.0f) {
 		return;
 	}
-	if (leader_lap < 1) {
+	if (leader_lap < 2) {
 		return;
 	}
 	float lap_distance = std::fmod(lead_distance, lap_length);
 	if (lap_distance < 0.0f) {
 		lap_distance += lap_length;
 	}
-	const float interval = leader_lap == 1 ? 520.0f : 300.0f;
+	const float interval = leader_lap == 2 ? 520.0f : 300.0f;
+	const uint8_t scheduler_lap = static_cast<uint8_t>(std::min(leader_lap, 255));
+	if (bumper_scheduler_lap != scheduler_lap) {
+		bumper_scheduler_lap = scheduler_lap;
+		bumper_next_sequence = 0;
+	}
+	const int max_active_bumpers = leader_lap == 2 ? 4 : 12;
+	int active_count = 0;
 	for (int slot = 0; slot < bumper_count && slot < BUMPER_POOL_SIZE; ++slot) {
-		const int car_index = bumper_start_index + slot;
-		if (car_index < 0 || car_index >= num_cars) {
-			continue;
-		}
 		BumperState& state = bumper_states[slot];
 		if (state.spawn_lap != static_cast<uint8_t>(std::min(leader_lap, 255))) {
 			state.spawn_lap = static_cast<uint8_t>(std::min(leader_lap, 255));
-			state.next_sequence = static_cast<uint32_t>(slot);
 		}
-		PhysicsCarSoA& soa = *cars[car_index].soa;
-		const int lane = cars[car_index].soa_index;
+		PhysicsCarSoA& soa = *bumper_cars[slot].soa;
+		const int lane = bumper_cars[slot].soa_index;
 		const float bumper_distance = current_track->compute_lap_distance(
 			soa.current_checkpoint[lane],
 			soa.checkpoint_fraction[lane],
@@ -2248,24 +2256,35 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		if (state.active) {
 			if ((soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0u ||
 					lead_distance - bumper_distance > 180.0f) {
-				deactivate_bumper_car(car_index);
+				deactivate_bumper_car(slot);
 				continue;
 			}
 		}
 		if (state.active) {
+			active_count += 1;
+		}
+	}
+	if (active_count >= max_active_bumpers) {
+		return;
+	}
+	const uint32_t sequence_seed = bumper_track_seed ? bumper_track_seed : bumper_track_seed_from_track(current_track);
+	const float trigger_distance = bumper_sequence_trigger_distance(
+		sequence_seed,
+		leader_lap,
+		bumper_next_sequence,
+		interval,
+		lap_length);
+	if (lap_distance < trigger_distance || trigger_distance >= lap_length - 80.0f) {
+		return;
+	}
+	for (int slot = 0; slot < bumper_count && slot < BUMPER_POOL_SIZE; ++slot) {
+		BumperState& state = bumper_states[slot];
+		if (state.active) {
 			continue;
 		}
-		const uint32_t sequence_seed = bumper_track_seed ? bumper_track_seed : bumper_track_seed_from_track(current_track);
-		const float trigger_distance = bumper_sequence_trigger_distance(
-			sequence_seed,
-			leader_lap,
-			state.next_sequence,
-			interval,
-			lap_length);
-		if (lap_distance < trigger_distance) {
-			continue;
-		}
-		const uint32_t spawn_sequence = state.next_sequence;
+		PhysicsCarSoA& soa = *bumper_cars[slot].soa;
+		const int lane = bumper_cars[slot].soa_index;
+		const uint32_t spawn_sequence = bumper_next_sequence;
 		const uint32_t lane_hash = bumper_hash_u32(sequence_seed ^ (spawn_sequence * 0x9E3779B9u) ^ (static_cast<uint32_t>(slot) * 0x85EBCA6Bu));
 		state.target_lane = (static_cast<float>(lane_hash & 0xffffu) / 65535.0f) * 1.2f - 0.6f;
 		const float spawn_distance = lead_distance + 1000.0f + static_cast<float>(slot % 3) * 38.0f;
@@ -2275,10 +2294,24 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		if (!sample_track_transform_at_distance(spawn_distance, state.target_lane, spawn_transform, cp, cp_fraction)) {
 			continue;
 		}
-		set_bumper_track_state(car_index, spawn_distance, state.target_lane, true);
+		set_bumper_track_state(slot, spawn_distance, state.target_lane, true);
 		const SimTransform bumper_transform = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
 		const float bumper_weight = std::max(soa.stat_weight[lane], 0.001f);
-		const SimVec3 cruise_velocity = -bumper_transform.basis.get_column(2) * (850.0f / 216.0f) * bumper_weight;
+		SimTransform forward_sample;
+		uint16_t forward_cp = 0;
+		float forward_fraction = 0.0f;
+		SimVec3 cruise_direction;
+		if (sample_track_transform_at_distance(spawn_distance + 5.0f, state.target_lane, forward_sample, forward_cp, forward_fraction)) {
+			cruise_direction = forward_sample.origin - spawn_transform.origin;
+		}
+		if (cruise_direction.length_squared() <= 0.000001f) {
+			cruise_direction = -bumper_transform.basis.get_column(2);
+		}
+		if (cruise_direction.length_squared() <= 0.000001f) {
+			cruise_direction = SimVec3(0.0f, 0.0f, -1.0f);
+		}
+		cruise_direction.normalize();
+		const SimVec3 cruise_velocity = cruise_direction * (850.0f / 216.0f) * bumper_weight;
 		const SimVec3 cruise_delta = cruise_velocity / bumper_weight;
 		const SimVec3 spawn_position = LOAD_INDEXED_VEC3(soa, position_current, lane);
 		STORE_INDEXED_VEC3(soa, velocity, lane, cruise_velocity);
@@ -2288,8 +2321,10 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		STORE_INDEXED_VEC3(soa, position_old_2, lane, spawn_position - cruise_delta * 2.0f);
 		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, spawn_position - cruise_delta);
 		soa.energy[lane] = soa.calced_max_energy[lane];
+		soa.level_start_time[lane] = static_cast<uint64_t>(tick);
 		soa.machine_state[lane] &= ~(MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::LOWGRIP);
 		soa.machine_state[lane] |= MACHINESTATE::ACTIVE;
+		soa.frames_since_start_2[lane] = 91;
 		soa.speed_kmh[lane] = 850.0f;
 		soa.base_speed[lane] = 850.0f / 216.0f;
 		soa.boost_frames[lane] = 0;
@@ -2297,7 +2332,81 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		soa.s_boost_active[lane] = false;
 		soa.height_above_track[lane] = 19.5f;
 		state.active = 1;
-		state.next_sequence = spawn_sequence + static_cast<uint32_t>(bumper_count);
+		state.spawn_lap = scheduler_lap;
+		state.next_sequence = spawn_sequence;
+		bumper_next_sequence = spawn_sequence + 1u;
+		break;
+	}
+}
+
+void GameSim::update_bumper_vehicles()
+{
+	if (!bumpers_enabled || bumper_count <= 0 || !bumper_cars) {
+		return;
+	}
+	VehicleTickSoA& soa = vehicle_tick_soa;
+	PhysicsCarSoA& first_shard = *bumper_cars[0].soa;
+	PhysicsCarSoA* bumper_shards = first_shard.shards ? first_shard.shards : &first_shard;
+	const int bumper_shard_count = first_shard.shards ? first_shard.shard_count : 1;
+	const int sim_lane_count = first_shard.total_lane_count > 0 ? first_shard.total_lane_count : first_shard.lane_count;
+	const bool parallel_vehicle_shards = bumper_count >= 16 && bumper_shard_count == VEHICLE_WORKER_COUNT;
+	ensure_vehicle_tick_soa_capacity(sim_lane_count);
+	for (int i = 0; i < bumper_count; ++i) {
+		soa.inputs[i] = generate_bumper_input_for_slot(i);
+	}
+	for (int i = bumper_count; i < sim_lane_count; ++i) {
+		soa.inputs[i] = PlayerInput::from_neutral();
+		soa.pending_s_boost_sparks[i] = 0;
+	}
+	run_vehicle_lanes(bumper_shard_count, parallel_vehicle_shards, [&](int lane, VehicleLaneGroup& group) {
+		PhysicsCarSoA& car_soa = bumper_shards[lane];
+		const int global_start = car_soa.global_start;
+		TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
+		track_scratch.reset_mesh_query();
+
+		begin_vehicle_tick_soa(car_soa, bumper_cars + global_start,
+			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count,
+			false);
+		group.sync();
+
+		begin_vehicle_motion_phased_soa(car_soa, bumper_cars + global_start,
+			soa.inputs + global_start, car_soa.count, track_scratch);
+		group.sync();
+
+		if (lane == 0) {
+			commit_vehicle_trigger_events(bumper_shards, bumper_cars, bumper_shard_count, vehicle_lane_track_scratch);
+		}
+		group.sync();
+
+		finish_vehicle_motion_phased_soa(car_soa, bumper_cars + global_start, car_soa.count);
+		group.sync();
+
+		finish_vehicle_tick_soa(car_soa, car_soa.count);
+		group.sync();
+
+		post_vehicle_tick_soa(car_soa, bumper_cars + global_start,
+			soa.pending_s_boost_sparks + global_start, car_soa.count, track_scratch);
+	});
+}
+
+void GameSim::collide_racers_with_bumpers()
+{
+	if (!bumpers_enabled || bumper_count <= 0 || !bumper_cars || !cars) {
+		return;
+	}
+	for (int slot = 0; slot < bumper_count; ++slot) {
+		if (!bumper_states[slot].active) {
+			continue;
+		}
+		PhysicsCar& bumper = bumper_cars[slot];
+		PhysicsCarSoA& bumper_soa = *bumper.soa;
+		const int bumper_lane = bumper.soa_index;
+		bumper_soa.position_collision_snapshot_x[bumper_lane] = bumper_soa.position_current_x[bumper_lane];
+		bumper_soa.position_collision_snapshot_y[bumper_lane] = bumper_soa.position_current_y[bumper_lane];
+		bumper_soa.position_collision_snapshot_z[bumper_lane] = bumper_soa.position_current_z[bumper_lane];
+		for (int racer_index = 0; racer_index < num_cars; ++racer_index) {
+			cars[racer_index].handle_machine_v_bumper_collision(bumper);
+		}
 	}
 }
 
@@ -2306,6 +2415,8 @@ void GameSim::save_bumper_states_to_saved_state(SavedState& state) const
 	const int capacity = BUMPER_POOL_SIZE;
 	const int count = std::min(bumper_count, capacity);
 	state.bumper_state_count = count;
+	state.bumper_scheduler_lap = bumper_scheduler_lap;
+	state.bumper_next_sequence = bumper_next_sequence;
 	for (int i = 0; i < count; ++i) {
 		state.bumper_states[i] = bumper_states[i];
 	}
@@ -2315,6 +2426,8 @@ void GameSim::restore_bumper_states_from_saved_state(const SavedState& state)
 {
 	const int capacity = BUMPER_POOL_SIZE;
 	const int count = std::min(std::max(state.bumper_state_count, 0), std::min(bumper_count, capacity));
+	bumper_scheduler_lap = state.bumper_scheduler_lap;
+	bumper_next_sequence = state.bumper_next_sequence;
 	for (int i = 0; i < count; ++i) {
 		bumper_states[i] = state.bumper_states[i];
 	}
@@ -2324,21 +2437,32 @@ void GameSim::restore_bumper_states_from_saved_state(const SavedState& state)
 		bumper_states[i].next_sequence = static_cast<uint32_t>(i);
 		bumper_states[i].target_lane = 0.0f;
 	}
+	for (int i = 0; i < bumper_count && i < BUMPER_POOL_SIZE; ++i) {
+		if (!bumper_cars) {
+			continue;
+		}
+		PhysicsCarSoA& soa = *bumper_cars[i].soa;
+		const int lane = bumper_cars[i].soa_index;
+		if (bumper_states[i].active) {
+			soa.current_track[lane] = current_track;
+			soa.restore_state[lane] = 0;
+			soa.restore_wait_frames[lane] = 0;
+			soa.restore_move_frames[lane] = 0;
+		} else {
+			deactivate_bumper_car(i);
+		}
+	}
 }
 
-PlayerInput GameSim::generate_bumper_input_for_car(int car_index) const
+PlayerInput GameSim::generate_bumper_input_for_slot(int bumper_slot) const
 {
 	PlayerInput input = PlayerInput::from_neutral();
-	if (!is_bumper_car(car_index) || !cars) {
+	if (!bumper_cars || bumper_slot < 0 || bumper_slot >= bumper_count || !bumper_states[bumper_slot].active) {
 		return input;
 	}
-	const int slot = car_index - bumper_start_index;
-	const float target_lane = (slot >= 0 && slot < bumper_count) ? bumper_states[slot].target_lane : 0.0f;
-	const PhysicsCarSoA& soa = *cars[car_index].soa;
-	const int lane = cars[car_index].soa_index;
-	if (slot < 0 || slot >= bumper_count || !bumper_states[slot].active) {
-		return input;
-	}
+	const float target_lane = bumper_states[bumper_slot].target_lane;
+	const PhysicsCarSoA& soa = *bumper_cars[bumper_slot].soa;
+	const int lane = bumper_cars[bumper_slot].soa_index;
 	input.accelerate = 1.0f;
 	input.boost = false;
 	const SimBasis physical_basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis;
@@ -2372,11 +2496,19 @@ PlayerInput GameSim::generate_bumper_input_for_car(int car_index) const
 	if (road_tx == -1000.0f || !std::isfinite(road_tx)) {
 		road_tx = 0.0f;
 	}
-	const float lane_error = road_tx - target_lane;
-	input.strafe_left = std::clamp(std::abs(std::min(lane_error, 0.0f)) * 4.0f, 0.0f, 1.0f);
-	input.strafe_right = std::clamp(std::max(lane_error, 0.0f) * 4.0f, 0.0f, 1.0f);
+	const float bumper_weight = std::max(soa.stat_weight[lane], 0.001f);
+	const SimVec3 velocity_world = LOAD_INDEXED_VEC3(soa, velocity, lane) / bumper_weight;
+	const float lateral_velocity = velocity_world.dot(surface.c0);
+	const float lane_error = std::clamp(road_tx - target_lane, -1.0f, 1.0f);
+	float desired_strafe = 0.0f;
+	if (std::abs(lane_error) > 0.025f) {
+		desired_strafe = lane_error * 1.35f + lateral_velocity * 0.04f;
+		desired_strafe = std::clamp(desired_strafe, -0.55f, 0.55f);
+	}
+	input.strafe_left = std::clamp(-desired_strafe, 0.0f, 1.0f);
+	input.strafe_right = std::clamp(desired_strafe, 0.0f, 1.0f);
 	const float desired_steer = (physical_basis.c0 + surface.c0).dot(surface.c2);
-	input.steer_horizontal = std::clamp(desired_steer * 45.0f, -1.0f, 1.0f);
+	input.steer_horizontal = std::clamp(desired_steer * 18.0f, -1.0f, 1.0f);
 	if (soa.speed_kmh[lane] > 850.0f) {
 		input.brake = std::clamp((soa.speed_kmh[lane] - 850.0f) / 160.0f, 0.0f, 1.0f);
 		input.accelerate = 0.0f;
@@ -2834,17 +2966,14 @@ godot::String GameSim::get_bumper_debug_string() const
 {
 	godot::String out = "enabled=" + godot::String(bumpers_enabled ? "1" : "0");
 	out += " count=" + godot::String::num_int64(bumper_count);
-	out += " start=" + godot::String::num_int64(bumper_start_index);
-	if (!cars || bumper_count <= 0) {
+	out += " start=" + godot::String::num_int64(num_cars);
+	if (!cars || !bumper_cars || bumper_count <= 0) {
 		out += " active=0";
 		return out;
 	}
 	float lead_distance = 0.0f;
 	int leader_lap = 0;
 	for (int i = 0; i < num_cars; ++i) {
-		if (is_bumper_car(i)) {
-			continue;
-		}
 		const PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		const float distance = compute_vehicle_distance_along_track(
@@ -2855,6 +2984,14 @@ godot::String GameSim::get_bumper_debug_string() const
 			lead_distance = distance;
 			leader_lap = static_cast<int>(car_soa.lap[lane]);
 		}
+	}
+	if (num_cars > 0) {
+		const PhysicsCarSoA& racer_soa = *cars[0].soa;
+		const int racer_lane = cars[0].soa_index;
+		out += " racer0_cp=" + godot::String::num_int64(racer_soa.current_checkpoint[racer_lane]);
+		out += " racer0_coll=" + godot::String::num_int64(racer_soa.current_collision_checkpoint[racer_lane]);
+		out += " racer0_lap=" + godot::String::num_int64(racer_soa.lap[racer_lane]);
+		out += " racer0_state=0x" + godot::String::num_int64(racer_soa.machine_state[racer_lane], 16);
 	}
 	out += " leader_lap=" + godot::String::num_int64(leader_lap);
 	out += " lead_dist=" + godot::String::num(lead_distance);
@@ -2872,13 +3009,12 @@ godot::String GameSim::get_bumper_debug_string() const
 	if (first_active < 0) {
 		return out;
 	}
-	const int car_index = bumper_start_index + first_active;
-	if (car_index < 0 || car_index >= num_cars) {
+	if (first_active < 0 || first_active >= bumper_count) {
 		out += " first_oob=1";
 		return out;
 	}
-	const PhysicsCarSoA& car_soa = *cars[car_index].soa;
-	const int lane = cars[car_index].soa_index;
+	const PhysicsCarSoA& car_soa = *bumper_cars[first_active].soa;
+	const int lane = bumper_cars[first_active].soa_index;
 	const SimVec3 pos = LOAD_INDEXED_VEC3(car_soa, position_current, lane);
 	const SimVec3 vel = LOAD_INDEXED_VEC3(car_soa, velocity, lane);
 	out += " first_slot=" + godot::String::num_int64(first_active);
@@ -2886,9 +3022,12 @@ godot::String GameSim::get_bumper_debug_string() const
 	out += " cp=" + godot::String::num_int64(car_soa.current_checkpoint[lane]);
 	out += " coll_cp=" + godot::String::num_int64(car_soa.current_collision_checkpoint[lane]);
 	out += " lap=" + godot::String::num_int64(car_soa.lap[lane]);
-	out += " dist=" + godot::String::num(compute_car_distance_along_track(cars[car_index]));
+	out += " dist=" + godot::String::num(compute_car_distance_along_track(bumper_cars[first_active]));
 	out += " road_x=" + godot::String::num(car_soa.road_sample[lane].road_t.x);
 	out += " speed=" + godot::String::num(car_soa.speed_kmh[lane]);
+	out += " base=" + godot::String::num(car_soa.base_speed[lane]);
+	out += " restore=" + godot::String::num_int64(car_soa.restore_state[lane]);
+	out += " state2=0x" + godot::String::num_int64(car_soa.state_2[lane], 16);
 	out += " pos=(" + godot::String::num(pos.x) + "," + godot::String::num(pos.y) + "," + godot::String::num(pos.z) + ")";
 	out += " vel=(" + godot::String::num(vel.x) + "," + godot::String::num(vel.y) + "," + godot::String::num(vel.z) + ")";
 	out += " state=0x" + godot::String::num_int64(car_soa.machine_state[lane], 16);
@@ -3075,24 +3214,16 @@ void GameSim::process_pending_ko_events()
 
 		PhysicsCarSoA& attacker_soa = *cars[attacker_index].soa;
 		const int attacker_lane = cars[attacker_index].soa_index;
-		const bool victim_is_bumper = is_bumper_car(victim_index);
-		const bool attacker_is_bumper = is_bumper_car(attacker_index);
 		const float boost_cost = std::max(1.0f,
 			10.0f * attacker_soa.stat_boost_length[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
-		const float energy_gain = victim_is_bumper ? boost_cost * 0.75f : boost_cost * 1.5f;
-		if (!attacker_is_bumper && car_player_ids[attacker_index] >= 0) {
+		const float energy_gain = boost_cost * 1.5f;
+		if (car_player_ids[attacker_index] >= 0) {
 			attacker_soa.ko_energy_bonus[attacker_lane] += energy_gain;
 			if (attacker_soa.car_properties[attacker_lane]) {
 				attacker_soa.calced_max_energy[attacker_lane] =
 					attacker_soa.car_properties[attacker_lane]->max_energy + attacker_soa.ko_energy_bonus[attacker_lane];
 			}
-			if (victim_is_bumper) {
-				attacker_soa.energy[attacker_lane] = std::min(
-					attacker_soa.energy[attacker_lane] + energy_gain,
-					attacker_soa.calced_max_energy[attacker_lane]);
-			} else {
-				attacker_soa.energy[attacker_lane] = attacker_soa.calced_max_energy[attacker_lane];
-			}
+			attacker_soa.energy[attacker_lane] = attacker_soa.calced_max_energy[attacker_lane];
 			attacker_soa.machine_state[attacker_lane] &= ~(MACHINESTATE::ZEROHP |
 				MACHINESTATE::FALLOUT |
 				MACHINESTATE::TOOKDAMAGE |
@@ -3114,10 +3245,46 @@ void GameSim::process_pending_ko_events()
 		event.tick = tick;
 		event.value = static_cast<int32_t>(std::lround(energy_gain));
 		race_events.push_back(event);
-		if (victim_is_bumper) {
-			deactivate_bumper_car(victim_index);
-		}
 		victim_soa.pending_ko_attacker_car_index[victim_lane] = -1;
+	}
+	if (!bumpers_enabled || !bumper_cars || bumper_count <= 0) {
+		return;
+	}
+	for (int slot = 0; slot < bumper_count; ++slot) {
+		if (!bumper_states[slot].active) {
+			continue;
+		}
+		PhysicsCarSoA& victim_soa = *bumper_cars[slot].soa;
+		const int victim_lane = bumper_cars[slot].soa_index;
+		const int attacker_index = victim_soa.pending_ko_attacker_car_index[victim_lane];
+		if (attacker_index < 0 || attacker_index >= num_cars) {
+			victim_soa.pending_ko_attacker_car_index[victim_lane] = -1;
+			continue;
+		}
+		PhysicsCarSoA& attacker_soa = *cars[attacker_index].soa;
+		const int attacker_lane = cars[attacker_index].soa_index;
+		const float boost_cost = std::max(1.0f,
+			10.0f * attacker_soa.stat_boost_length[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
+		const float energy_gain = boost_cost * 0.75f;
+		if (car_player_ids[attacker_index] >= 0) {
+			attacker_soa.ko_energy_bonus[attacker_lane] += energy_gain;
+			if (attacker_soa.car_properties[attacker_lane]) {
+				attacker_soa.calced_max_energy[attacker_lane] =
+					attacker_soa.car_properties[attacker_lane]->max_energy + attacker_soa.ko_energy_bonus[attacker_lane];
+			}
+			attacker_soa.energy[attacker_lane] = std::min(
+				attacker_soa.energy[attacker_lane] + energy_gain,
+				attacker_soa.calced_max_energy[attacker_lane]);
+		}
+		RaceEvent event;
+		event.type = 1;
+		event.actor_id = car_player_ids[attacker_index];
+		event.target_id = -1;
+		event.tick = tick;
+		event.value = static_cast<int32_t>(std::lround(energy_gain));
+		race_events.push_back(event);
+		victim_soa.pending_ko_attacker_car_index[victim_lane] = -1;
+		deactivate_bumper_car(slot);
 	}
 }
 
@@ -3166,7 +3333,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		const float distance = compute_vehicle_distance_along_track(
 			car_soa.current_checkpoint[lane], car_soa.checkpoint_fraction[lane], car_soa.lap[lane]);
 		soa.pre_distances[i] = distance;
-		if (!is_bumper_car(i) && distance > lead_distance) {
+		if (distance > lead_distance) {
 			lead_distance = distance;
 			leader_lap = static_cast<int>(car_soa.lap[lane]);
 		}
@@ -3179,9 +3346,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		const bool completed_race = (car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u;
-		if (is_bumper_car(i)) {
-			inp = generate_bumper_input_for_car(i);
-		} else if (completed_race && player_id != -1) {
+		if (completed_race && player_id != -1) {
 			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		} else if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
 			inp = *local_input;
@@ -3270,6 +3435,8 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			emit_super_sparks_from_car(cars[i], soa.pending_s_boost_sparks[i]);
 		}
 	}
+	update_bumper_vehicles();
+	collide_racers_with_bumpers();
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
@@ -3396,7 +3563,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		static_cast<size_t>(buffer_size) * 4u + 1024u * 1024u * 8u);
 	level_data.instantiate(level_heap_size);
 
-	gamestate_data.instantiate(1024 * 1024 + static_cast<size_t>(requested_cars_hint) * 8192u);
+	const int bumper_capacity_hint = bumpers_enabled ? BUMPER_POOL_SIZE : 0;
+	gamestate_data.instantiate(1024 * 1024 + static_cast<size_t>(requested_cars_hint + bumper_capacity_hint) * 8192u);
 	spark_multimesh_instance = nullptr;
 	super_spark_state = gamestate_data.allocate_object<SuperSparkState>();
 	if (super_spark_state) {
@@ -3890,15 +4058,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 
 	bumper_track_seed = bumper_track_seed_from_track(current_track);
+	bumper_scheduler_lap = 0;
+	bumper_next_sequence = 0;
 	int requested_cars = requested_cars_hint;
-	race_car_count = requested_cars;
-	bumper_count = 0;
-	bumper_start_index = requested_cars;
-	if (bumpers_enabled && requested_cars > BUMPER_POOL_SIZE) {
-		bumper_count = BUMPER_POOL_SIZE;
-		race_car_count = requested_cars - bumper_count;
-		bumper_start_index = race_car_count;
-	}
+	bumper_count = bumpers_enabled ? BUMPER_POOL_SIZE : 0;
 	for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
 		bumper_states[i].active = 0;
 		bumper_states[i].spawn_lap = 0;
@@ -3909,10 +4072,15 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	cars = gamestate_data.create_and_allocate_cars(requested_cars, &props_array);
 	car_properties_array = props_array;
 	num_cars = requested_cars;
+	bumper_cars = nullptr;
+	bumper_properties_array = nullptr;
+	if (bumper_count > 0) {
+		bumper_cars = gamestate_data.create_and_allocate_cars(bumper_count, &bumper_properties_array);
+	}
 	// Build randomized spawn order using shared seed from server, if provided.
 	// This affects only racer grid slots, not which car index belongs to which player.
 	std::vector<int> spawn_order;
-	const int grid_car_count = std::max(0, race_car_count);
+	const int grid_car_count = std::max(0, num_cars);
 	spawn_order.resize(grid_car_count);
 	for (int i = 0; i < grid_car_count; ++i) spawn_order[i] = i;
 		if (spawn_seed != 0 && grid_car_count > 1) {
@@ -3941,9 +4109,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 			if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
 				cars[i].soa->m_accel_setting[cars[i].soa_index] = accel_settings[i];
-			}
-			if (is_bumper_car(i)) {
-				configure_bumper_car(i, i - bumper_start_index);
 			}
 			cars[i].initialize_machine();
 			cars[i].soa->level_start_time[cars[i].soa_index] += start_countdown_extra_frames;
@@ -4076,16 +4241,20 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			sim_store4(car_soa->wall_pos_b_z + point_base, wall_pos.z);
 			car_soa->machine_state[car_idx] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q | MACHINESTATE::JUSTLANDED);
 			car_soa->air_time[car_idx] = 0;
-			if (is_bumper_car(i)) {
-				deactivate_bumper_car(i);
-			}
+		}
+
+		for (int i = 0; i < bumper_count; ++i) {
+			bumper_cars[i].soa->current_track[bumper_cars[i].soa_index] = current_track;
+			configure_bumper_car(i);
+			bumper_cars[i].initialize_machine();
+			deactivate_bumper_car(i);
 		}
 
 		input_buffer = static_cast<PlayerInput*>(malloc(sizeof(PlayerInput) * INPUT_BUFFER_LEN * num_cars));
 		for (int i = 0; i < INPUT_BUFFER_LEN * num_cars; i++) {
 			input_buffer[i] = PlayerInput::from_neutral();
 		}
-		ensure_vehicle_tick_soa_capacity(num_cars);
+		ensure_vehicle_tick_soa_capacity(std::max(num_cars, bumper_count));
 		if (car_player_ids) {
 			::free(car_player_ids);
 		}
@@ -4121,9 +4290,14 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				::free(cars);
 				cars = nullptr;
 			}
+			if (bumper_cars) {
+				::free(bumper_cars);
+				bumper_cars = nullptr;
+			}
 			level_data.free_heap();
 			gamestate_data.free_heap();
 			car_properties_array = nullptr;
+			bumper_properties_array = nullptr;
 			super_spark_state = nullptr;
 			super_sparks = nullptr;
 			spark_multimesh_instance = nullptr;
@@ -4147,6 +4321,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		if (cars) {
 			::free(cars);
 			cars = nullptr;
+		}
+		if (bumper_cars) {
+			::free(bumper_cars);
+			bumper_cars = nullptr;
 		}
 	if (car_player_ids) {
 		::free(car_player_ids);
@@ -4201,10 +4379,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			bumper_states[i].next_sequence = static_cast<uint32_t>(i);
 			bumper_states[i].target_lane = 0.0f;
 		}
-		race_car_count = 0;
-		bumper_start_index = 0;
 		bumper_count = 0;
 		bumper_track_seed = 0;
+		bumper_scheduler_lap = 0;
+		bumper_next_sequence = 0;
 		clear_render_thruster_lights();
 		native_cpu_drivers.clear();
 		race_events.clear();
@@ -4712,9 +4890,28 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 		render_rollback_capture_pending = false;
 	}
 	for (int i = 0; i < visual_count; ++i) {
-		update_machine_visual_transform_for_render(*cars[i].soa, cars[i].soa_index, render_vehicle_visual_state[i]);
-		PhysicsCarSoA& soa = *cars[i].soa;
-		const int lane = cars[i].soa_index;
+		PhysicsCar* visual_car = nullptr;
+		if (i < num_cars) {
+			visual_car = &cars[i];
+		} else if (bumper_cars && i < num_cars + bumper_count) {
+			const int bumper_slot = i - num_cars;
+			if (bumper_states[bumper_slot].active) {
+				visual_car = &bumper_cars[bumper_slot];
+			}
+		}
+		if (!visual_car) {
+			render_visual_initialized[i] = 0;
+			render_visual_prev_transforms[i] = SimTransform();
+			render_visual_current_transforms[i] = SimTransform();
+			render_final_prev_transforms[i] = SimTransform();
+			render_final_current_transforms[i] = SimTransform();
+			render_visual_prev_ground_distances[i] = 20.0f;
+			render_visual_current_ground_distances[i] = 20.0f;
+			continue;
+		}
+		update_machine_visual_transform_for_render(*visual_car->soa, visual_car->soa_index, render_vehicle_visual_state[i]);
+		PhysicsCarSoA& soa = *visual_car->soa;
+		const int lane = visual_car->soa_index;
 		const SimTransform current = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
 		float current_ground_distance = 20.0f - soa.height_above_track[lane];
 		if (current_ground_distance < 0.0f) {
@@ -4765,7 +4962,8 @@ void GameSim::update_render_visual_snapshots(int visual_count)
 
 void GameSim::apply_render_multimeshes(float alpha)
 {
-	const int visual_count = std::min(num_cars, static_cast<int>(render_final_current_transforms.size()));
+	const int render_binding_count = static_cast<int>(render_car_archetype_indices.size());
+	const int visual_count = std::min(render_binding_count, static_cast<int>(render_final_current_transforms.size()));
 	if (render_visible_car_slots.size() < static_cast<size_t>(visual_count)) {
 		render_visible_car_slots.resize(visual_count, -1);
 	}
@@ -4809,6 +5007,19 @@ void GameSim::apply_render_multimeshes(float alpha)
 	constexpr float CAR_VISIBILITY_RADIUS = 32.0f;
 	constexpr float BODY_LOD_MAX_DISTANCE_SQ = 360.0f * 360.0f;
 	for (int i = 0; i < visual_count; ++i) {
+		PhysicsCar* visual_car = nullptr;
+		if (i < num_cars) {
+			visual_car = &cars[i];
+		} else if (bumper_cars && i < num_cars + bumper_count) {
+			const int bumper_slot = i - num_cars;
+			if (bumper_states[bumper_slot].active) {
+				visual_car = &bumper_cars[bumper_slot];
+			}
+		}
+		if (!visual_car) {
+			render_visible_car_slots[i] = -1;
+			continue;
+		}
 		if (i >= static_cast<int>(render_car_archetype_indices.size()) || i >= static_cast<int>(render_car_slots.size())) {
 			continue;
 		}
@@ -4823,20 +5034,6 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_final_prev_transforms[i],
 			render_final_current_transforms[i],
 			alpha);
-		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
-				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
-				render_thruster_multimeshes[archetype].is_valid()) {
-			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
-			const int thruster_count = static_cast<int>(thruster_locals.size());
-			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
-			for (int t = 0; t < thruster_count; ++t) {
-				const int thruster_slot = slot * thruster_count + t;
-				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
-				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
-				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
-				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
-			}
-		}
 		bool visible = true;
 		if (camera) {
 			const SimVec3 camera_to_car = visual_transform.origin - camera_origin;
@@ -4858,8 +5055,25 @@ void GameSim::apply_render_multimeshes(float alpha)
 		}
 		const int visible_slot = render_visible_counts[archetype]++;
 		render_visible_car_slots[i] = visible_slot;
-		PhysicsCarSoA& soa = *cars[i].soa;
-		const int lane = cars[i].soa_index;
+		PhysicsCarSoA& soa = *visual_car->soa;
+		const int lane = visual_car->soa_index;
+		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
+				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
+				render_thruster_multimeshes[archetype].is_valid()) {
+			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
+			const int thruster_count = static_cast<int>(thruster_locals.size());
+			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
+			for (int t = 0; t < thruster_count; ++t) {
+				const int thruster_slot = visible_slot * thruster_count + t;
+				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
+				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
+				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
+				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
+			}
+			if (archetype < static_cast<int>(render_visible_thruster_counts.size())) {
+				render_visible_thruster_counts[archetype] += thruster_count;
+			}
+		}
 		godot::Color body_overlay(0, 0, 0, 1);
 		if (i < static_cast<int>(render_vehicle_effect_refs.size())) {
 			body_overlay = render_vehicle_effect_refs[i].overlay;
@@ -4940,7 +5154,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_shadow_multimeshes[archetype]->set_visible_instance_count(visible_count);
 		}
 		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) && render_thruster_multimeshes[archetype].is_valid()) {
-			const int thruster_instances = render_thruster_multimeshes[archetype]->get_instance_count();
+			const int thruster_instances = archetype < static_cast<int>(render_visible_thruster_counts.size()) ? render_visible_thruster_counts[archetype] : 0;
 			render_last_thruster_instances += thruster_instances;
 			render_thruster_multimeshes[archetype]->set_visible_instance_count(thruster_instances);
 		}
@@ -5456,7 +5670,6 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 	}
 	if (!intro_camera_active && (soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
 		SimTransform car_basis = get_interpolated_car_transform(car_index);
-		car_basis.origin += camera_position_correction;
 		SimVec3 up_sim = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 		if (up_sim.length_squared() <= 0.0001f) {
 			up_sim = car_basis.basis.get_column(1);
@@ -5567,10 +5780,6 @@ void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flag
 			}
 		}
 		car_is_cpu[i] = is_cpu ? 1 : 0;
-	}
-	for (int i = bumper_start_index; i < bumper_start_index + bumper_count && i < num_cars; ++i) {
-		car_player_ids[i] = -1;
-		car_is_cpu[i] = 1;
 	}
 	configure_native_cpu_drivers();
 }
@@ -5852,6 +6061,8 @@ void GameSim::update_super_spark_visuals()
 			profile_step = now;
 		}
 		const int vis_car_count = std::max(0, num_cars);
+		const int native_visual_count = std::max(vis_car_count + (bumpers_enabled ? bumper_count : 0),
+				static_cast<int>(render_car_archetype_indices.size()));
 		if (static_cast<int>(render_vehicle_effect_refs.size()) != vis_car_count ||
 				render_effect_pool_slots.empty()) {
 			cache_native_visual_effect_nodes();
@@ -5861,7 +6072,7 @@ void GameSim::update_super_spark_visuals()
 			render_profile_cache_us += now - profile_step;
 			profile_step = now;
 		}
-		update_render_visual_snapshots(vis_car_count);
+		update_render_visual_snapshots(native_visual_count);
 		if (render_profile_enabled) {
 			const uint64_t now = render_profile_now_us();
 			render_profile_snapshots_us += now - profile_step;
@@ -6107,7 +6318,7 @@ void GameSim::finish_render_rollback_correction_capture()
 
 namespace {
 constexpr uint32_t MXT_NET_STATE_MAGIC = 0x5354584du; // "MXTS", little-endian.
-constexpr uint16_t MXT_NET_STATE_VERSION = 3;
+constexpr uint16_t MXT_NET_STATE_VERSION = 5;
 
 struct NetStateWriter {
 	std::vector<uint8_t> data;
@@ -6339,6 +6550,8 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	writer.write_pod(static_cast<int32_t>(num_cars));
 	writer.write_pod(static_cast<int32_t>(bumper_count));
 	writer.write_pod(bumper_track_seed);
+	writer.write_pod(bumper_scheduler_lap);
+	writer.write_pod(bumper_next_sequence);
 	for (int i = 0; i < bumper_count && i < BUMPER_POOL_SIZE; ++i) {
 		const BumperState& state = bumper_states[i];
 		writer.write_pod(state.active);
@@ -6395,6 +6608,17 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_SCALAR)
 #undef WRITE_NET_SCALAR
 
+#define WRITE_NET_BUMPER_SCALAR(type, name) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		writer.write_pod(soa.name[lane]); \
+	}
+	if (bumper_cars) { \
+		MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_BUMPER_SCALAR) \
+	}
+#undef WRITE_NET_BUMPER_SCALAR
+
 #define WRITE_NET_VEC3_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
@@ -6408,6 +6632,22 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_CAR_VEC3_FIELDS(WRITE_NET_VEC3)
 #undef WRITE_NET_VEC3
 #undef WRITE_NET_VEC3_COMPONENT
+
+#define WRITE_NET_BUMPER_VEC3_COMPONENT(name, component) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		writer.write_pod(soa.name##_##component[lane]); \
+	}
+#define WRITE_NET_BUMPER_VEC3(name) \
+	WRITE_NET_BUMPER_VEC3_COMPONENT(name, x) \
+	WRITE_NET_BUMPER_VEC3_COMPONENT(name, y) \
+	WRITE_NET_BUMPER_VEC3_COMPONENT(name, z)
+	if (bumper_cars) { \
+		MXT_NET_CAR_VEC3_FIELDS(WRITE_NET_BUMPER_VEC3) \
+	}
+#undef WRITE_NET_BUMPER_VEC3
+#undef WRITE_NET_BUMPER_VEC3_COMPONENT
 
 #define WRITE_NET_TRANSFORM_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
@@ -6432,6 +6672,31 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 #undef WRITE_NET_TRANSFORM
 #undef WRITE_NET_TRANSFORM_COMPONENT
 
+#define WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, component) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		writer.write_pod(soa.name##_##component[lane]); \
+	}
+#define WRITE_NET_BUMPER_TRANSFORM(name) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c0x) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c0y) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c0z) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c1x) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c1y) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c1z) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c2x) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c2y) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, c2z) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, ox) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, oy) \
+	WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, oz)
+	if (bumper_cars) { \
+		MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_BUMPER_TRANSFORM) \
+	}
+#undef WRITE_NET_BUMPER_TRANSFORM
+#undef WRITE_NET_BUMPER_TRANSFORM_COMPONENT
+
 #define WRITE_NET_BASIS_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
@@ -6453,6 +6718,29 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 #undef WRITE_NET_BASIS
 #undef WRITE_NET_BASIS_COMPONENT
 
+#define WRITE_NET_BUMPER_BASIS_COMPONENT(name, component) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		writer.write_pod(soa.name##_##component[lane]); \
+	}
+#define WRITE_NET_BUMPER_BASIS(name) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c0x) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c0y) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c0z) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c1x) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c1y) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c1z) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c2x) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c2y) \
+	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c2z)
+	if (bumper_cars) { \
+		WRITE_NET_BUMPER_BASIS(basis_physical) \
+		WRITE_NET_BUMPER_BASIS(basis_physical_other) \
+	}
+#undef WRITE_NET_BUMPER_BASIS
+#undef WRITE_NET_BUMPER_BASIS_COMPONENT
+
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
@@ -6466,6 +6754,21 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_target_transform, lane));
 		}
 	}
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+			if (soa.collision_old_valid[lane]) {
+				writer.write_vec2(soa.collision_old_road_t[lane]);
+				writer.write_vec3(soa.collision_old_spatial_t[lane]);
+				writer.write_transform(soa.collision_old_surface[lane]);
+			}
+			if (soa.restore_state[lane] != 0) {
+				writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_start_transform, lane));
+				writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_target_transform, lane));
+			}
+		}
+	}
 
 #define WRITE_NET_TILT_SCALAR(type, name) \
 	for (int point = 0; point < 4; ++point) { \
@@ -6477,6 +6780,19 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	}
 	MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_TILT_SCALAR)
 #undef WRITE_NET_TILT_SCALAR
+
+#define WRITE_NET_BUMPER_TILT_SCALAR(type, name) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < bumper_count; ++i) { \
+			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+			const int p = bumper_cars[i].soa_index * 4 + point; \
+			writer.write_pod(soa.tilt_##name[p]); \
+		} \
+	}
+	if (bumper_cars) { \
+		MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_BUMPER_TILT_SCALAR) \
+	}
+#undef WRITE_NET_BUMPER_TILT_SCALAR
 
 #define WRITE_NET_TILT_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
@@ -6494,6 +6810,24 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 #undef WRITE_NET_TILT_VEC3
 #undef WRITE_NET_TILT_VEC3_COMPONENT
 
+#define WRITE_NET_BUMPER_TILT_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < bumper_count; ++i) { \
+			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+			const int p = bumper_cars[i].soa_index * 4 + point; \
+			writer.write_pod(soa.tilt_##name##_##component[p]); \
+		} \
+	}
+#define WRITE_NET_BUMPER_TILT_VEC3(name) \
+	WRITE_NET_BUMPER_TILT_VEC3_COMPONENT(name, x) \
+	WRITE_NET_BUMPER_TILT_VEC3_COMPONENT(name, y) \
+	WRITE_NET_BUMPER_TILT_VEC3_COMPONENT(name, z)
+	if (bumper_cars) { \
+		MXT_NET_TILT_VEC3_FIELDS(WRITE_NET_BUMPER_TILT_VEC3) \
+	}
+#undef WRITE_NET_BUMPER_TILT_VEC3
+#undef WRITE_NET_BUMPER_TILT_VEC3_COMPONENT
+
 #define WRITE_NET_WALL_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < num_cars; ++i) { \
@@ -6509,6 +6843,24 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_WALL_VEC3_FIELDS(WRITE_NET_WALL_VEC3)
 #undef WRITE_NET_WALL_VEC3
 #undef WRITE_NET_WALL_VEC3_COMPONENT
+
+#define WRITE_NET_BUMPER_WALL_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < bumper_count; ++i) { \
+			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+			const int p = bumper_cars[i].soa_index * 4 + point; \
+			writer.write_pod(soa.wall_##name##_##component[p]); \
+		} \
+	}
+#define WRITE_NET_BUMPER_WALL_VEC3(name) \
+	WRITE_NET_BUMPER_WALL_VEC3_COMPONENT(name, x) \
+	WRITE_NET_BUMPER_WALL_VEC3_COMPONENT(name, y) \
+	WRITE_NET_BUMPER_WALL_VEC3_COMPONENT(name, z)
+	if (bumper_cars) { \
+		MXT_NET_WALL_VEC3_FIELDS(WRITE_NET_BUMPER_WALL_VEC3) \
+	}
+#undef WRITE_NET_BUMPER_WALL_VEC3
+#undef WRITE_NET_BUMPER_WALL_VEC3_COMPONENT
 
 	for (int i = 0; i < trigger_count; ++i) {
 		TriggerCollider* trigger = current_track->trigger_colliders[i];
@@ -6548,7 +6900,9 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		!reader.read_pod(snapshot_tick) ||
 		!reader.read_pod(snapshot_cars) ||
 		!reader.read_pod(snapshot_bumper_count) ||
-		!reader.read_pod(bumper_track_seed)) {
+		!reader.read_pod(bumper_track_seed) ||
+		!reader.read_pod(bumper_scheduler_lap) ||
+		!reader.read_pod(bumper_next_sequence)) {
 		return false;
 	}
 	(void)flags;
@@ -6625,6 +6979,20 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	MXT_NET_CAR_SCALAR_FIELDS(READ_NET_SCALAR)
 #undef READ_NET_SCALAR
 
+#define READ_NET_BUMPER_SCALAR(type, name) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		if (!reader.read_pod(soa.name[lane])) return false; \
+	}
+	if (bumper_count > 0 && !bumper_cars) { \
+		return false; \
+	}
+	if (bumper_cars) { \
+		MXT_NET_CAR_SCALAR_FIELDS(READ_NET_BUMPER_SCALAR) \
+	}
+#undef READ_NET_BUMPER_SCALAR
+
 	if (current_track) {
 		for (int i = 0; i < num_cars; ++i) {
 			PhysicsCarSoA& soa = *cars[i].soa;
@@ -6635,6 +7003,23 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 					soa.last_ground_checkpoint[lane] >= current_track->num_checkpoints) {
 				godot::UtilityFunctions::printerr(
 					godot::String("MXT network state rejected invalid checkpoint car="), static_cast<int64_t>(i),
+					godot::String(" cp="), static_cast<int64_t>(soa.current_checkpoint[lane]),
+					godot::String(" coll_cp="), static_cast<int64_t>(soa.current_collision_checkpoint[lane]),
+					godot::String(" last_ground_cp="), static_cast<int64_t>(soa.last_ground_checkpoint[lane]),
+					godot::String(" checkpoint_count="), static_cast<int64_t>(current_track->num_checkpoints));
+				return false;
+			}
+		}
+		for (int i = 0; bumper_cars && i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+			if (bumper_states[i].active &&
+					(soa.current_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.current_collision_checkpoint[lane] < -1 ||
+					soa.current_collision_checkpoint[lane] >= current_track->num_checkpoints ||
+					soa.last_ground_checkpoint[lane] >= current_track->num_checkpoints)) {
+				godot::UtilityFunctions::printerr(
+					godot::String("MXT network state rejected invalid bumper checkpoint car="), static_cast<int64_t>(i),
 					godot::String(" cp="), static_cast<int64_t>(soa.current_checkpoint[lane]),
 					godot::String(" coll_cp="), static_cast<int64_t>(soa.current_collision_checkpoint[lane]),
 					godot::String(" last_ground_cp="), static_cast<int64_t>(soa.last_ground_checkpoint[lane]),
@@ -6658,6 +7043,22 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 #undef READ_NET_VEC3
 #undef READ_NET_VEC3_COMPONENT
 
+#define READ_NET_BUMPER_VEC3_COMPONENT(name, component) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
+	}
+#define READ_NET_BUMPER_VEC3(name) \
+	READ_NET_BUMPER_VEC3_COMPONENT(name, x) \
+	READ_NET_BUMPER_VEC3_COMPONENT(name, y) \
+	READ_NET_BUMPER_VEC3_COMPONENT(name, z)
+	if (bumper_cars) { \
+		MXT_NET_CAR_VEC3_FIELDS(READ_NET_BUMPER_VEC3) \
+	}
+#undef READ_NET_BUMPER_VEC3
+#undef READ_NET_BUMPER_VEC3_COMPONENT
+
 #define READ_NET_TRANSFORM_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
@@ -6680,6 +7081,31 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	MXT_NET_CAR_TRANSFORM_FIELDS(READ_NET_TRANSFORM)
 #undef READ_NET_TRANSFORM
 #undef READ_NET_TRANSFORM_COMPONENT
+
+#define READ_NET_BUMPER_TRANSFORM_COMPONENT(name, component) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
+	}
+#define READ_NET_BUMPER_TRANSFORM(name) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c0x) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c0y) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c0z) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c1x) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c1y) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c1z) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c2x) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c2y) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, c2z) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, ox) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, oy) \
+	READ_NET_BUMPER_TRANSFORM_COMPONENT(name, oz)
+	if (bumper_cars) { \
+		MXT_NET_CAR_TRANSFORM_FIELDS(READ_NET_BUMPER_TRANSFORM) \
+	}
+#undef READ_NET_BUMPER_TRANSFORM
+#undef READ_NET_BUMPER_TRANSFORM_COMPONENT
 
 #define READ_NET_BASIS_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
@@ -6708,6 +7134,36 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	READ_NET_BASIS(basis_physical_other)
 #undef READ_NET_BASIS
 #undef READ_NET_BASIS_COMPONENT
+
+#define READ_NET_BUMPER_BASIS_COMPONENT(name, component) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
+	}
+#define READ_NET_BUMPER_BASIS(name) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c0x) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c0y) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c0z) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c1x) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c1y) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c1z) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c2x) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c2y) \
+	READ_NET_BUMPER_BASIS_COMPONENT(name, c2z) \
+	for (int i = 0; i < bumper_count; ++i) { \
+		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+		const int lane = bumper_cars[i].soa_index; \
+		soa.name##_ox[lane] = 0.0f; \
+		soa.name##_oy[lane] = 0.0f; \
+		soa.name##_oz[lane] = 0.0f; \
+	}
+	if (bumper_cars) { \
+		READ_NET_BUMPER_BASIS(basis_physical) \
+		READ_NET_BUMPER_BASIS(basis_physical_other) \
+	}
+#undef READ_NET_BUMPER_BASIS
+#undef READ_NET_BUMPER_BASIS_COMPONENT
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
@@ -6738,6 +7194,37 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			MXT_STORE_TRANSFORM(soa, restore_target_transform, lane, basis);
 		}
 	}
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+			if (soa.collision_old_valid[lane]) {
+				if (!reader.read_vec2(soa.collision_old_road_t[lane]) ||
+					!reader.read_vec3(soa.collision_old_spatial_t[lane]) ||
+					!reader.read_transform(soa.collision_old_surface[lane])) {
+					return false;
+				}
+			} else {
+				soa.collision_old_road_t[lane] = SimVec2();
+				soa.collision_old_spatial_t[lane] = SimVec3();
+				soa.collision_old_surface[lane] = SimTransform();
+			}
+			if (soa.restore_state[lane] != 0) {
+				SimTransform restore_start;
+				SimTransform restore_target;
+				if (!reader.read_transform(restore_start) ||
+					!reader.read_transform(restore_target)) {
+					return false;
+				}
+				MXT_STORE_TRANSFORM(soa, restore_start_transform, lane, restore_start);
+				MXT_STORE_TRANSFORM(soa, restore_target_transform, lane, restore_target);
+			} else {
+				const SimTransform basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+				MXT_STORE_TRANSFORM(soa, restore_start_transform, lane, basis);
+				MXT_STORE_TRANSFORM(soa, restore_target_transform, lane, basis);
+			}
+		}
+	}
 
 #define READ_NET_TILT_SCALAR(type, name) \
 	for (int point = 0; point < 4; ++point) { \
@@ -6749,6 +7236,19 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	}
 	MXT_NET_TILT_SCALAR_FIELDS(READ_NET_TILT_SCALAR)
 #undef READ_NET_TILT_SCALAR
+
+#define READ_NET_BUMPER_TILT_SCALAR(type, name) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < bumper_count; ++i) { \
+			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+			const int p = bumper_cars[i].soa_index * 4 + point; \
+			if (!reader.read_pod(soa.tilt_##name[p])) return false; \
+		} \
+	}
+	if (bumper_cars) { \
+		MXT_NET_TILT_SCALAR_FIELDS(READ_NET_BUMPER_TILT_SCALAR) \
+	}
+#undef READ_NET_BUMPER_TILT_SCALAR
 
 #define READ_NET_TILT_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
@@ -6766,6 +7266,24 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 #undef READ_NET_TILT_VEC3
 #undef READ_NET_TILT_VEC3_COMPONENT
 
+#define READ_NET_BUMPER_TILT_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < bumper_count; ++i) { \
+			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+			const int p = bumper_cars[i].soa_index * 4 + point; \
+			if (!reader.read_pod(soa.tilt_##name##_##component[p])) return false; \
+		} \
+	}
+#define READ_NET_BUMPER_TILT_VEC3(name) \
+	READ_NET_BUMPER_TILT_VEC3_COMPONENT(name, x) \
+	READ_NET_BUMPER_TILT_VEC3_COMPONENT(name, y) \
+	READ_NET_BUMPER_TILT_VEC3_COMPONENT(name, z)
+	if (bumper_cars) { \
+		MXT_NET_TILT_VEC3_FIELDS(READ_NET_BUMPER_TILT_VEC3) \
+	}
+#undef READ_NET_BUMPER_TILT_VEC3
+#undef READ_NET_BUMPER_TILT_VEC3_COMPONENT
+
 #define READ_NET_WALL_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < num_cars; ++i) { \
@@ -6781,6 +7299,24 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	MXT_NET_WALL_VEC3_FIELDS(READ_NET_WALL_VEC3)
 #undef READ_NET_WALL_VEC3
 #undef READ_NET_WALL_VEC3_COMPONENT
+
+#define READ_NET_BUMPER_WALL_VEC3_COMPONENT(name, component) \
+	for (int point = 0; point < 4; ++point) { \
+		for (int i = 0; i < bumper_count; ++i) { \
+			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
+			const int p = bumper_cars[i].soa_index * 4 + point; \
+			if (!reader.read_pod(soa.wall_##name##_##component[p])) return false; \
+		} \
+	}
+#define READ_NET_BUMPER_WALL_VEC3(name) \
+	READ_NET_BUMPER_WALL_VEC3_COMPONENT(name, x) \
+	READ_NET_BUMPER_WALL_VEC3_COMPONENT(name, y) \
+	READ_NET_BUMPER_WALL_VEC3_COMPONENT(name, z)
+	if (bumper_cars) { \
+		MXT_NET_WALL_VEC3_FIELDS(READ_NET_BUMPER_WALL_VEC3) \
+	}
+#undef READ_NET_BUMPER_WALL_VEC3
+#undef READ_NET_BUMPER_WALL_VEC3_COMPONENT
 
 	const int local_trigger_count = current_track ? current_track->num_trigger_colliders : 0;
 	if (trigger_count != local_trigger_count) {
@@ -6812,6 +7348,21 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	}
 
 	rebuild_static_state_after_network_load();
+	for (int i = 0; i < bumper_count && i < BUMPER_POOL_SIZE; ++i) {
+		if (!bumper_cars) {
+			continue;
+		}
+		PhysicsCarSoA& soa = *bumper_cars[i].soa;
+		const int lane = bumper_cars[i].soa_index;
+		if (bumper_states[i].active) {
+			soa.current_track[lane] = current_track;
+			soa.restore_state[lane] = 0;
+			soa.restore_wait_frames[lane] = 0;
+			soa.restore_move_frames[lane] = 0;
+		} else {
+			deactivate_bumper_car(i);
+		}
+	}
 	if (current_track) {
 		for (int i = 0; i < num_cars; ++i) {
 			PhysicsCarSoA& soa = *cars[i].soa;
@@ -6841,8 +7392,9 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 }
 
 void GameSim::rebuild_static_state_after_network_load() {
-	for (int i = 0; i < num_cars; ++i) {
-		PhysicsCar& car = cars[i];
+	const int rebuild_count = num_cars + (bumper_cars ? bumper_count : 0);
+	for (int i = 0; i < rebuild_count; ++i) {
+		PhysicsCar& car = i < num_cars ? cars[i] : bumper_cars[i - num_cars];
 		PhysicsCarSoA& soa = *car.soa;
 		const int lane = car.soa_index;
 		car.update_machine_stats();
@@ -7001,6 +7553,8 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 		if (magic == MXT_NET_STATE_MAGIC) {
 			const int live_size = gamestate_data.get_size();
 			BumperState live_bumper_states[BUMPER_POOL_SIZE];
+			const uint8_t live_bumper_scheduler_lap = bumper_scheduler_lap;
+			const uint32_t live_bumper_next_sequence = bumper_next_sequence;
 			for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
 				live_bumper_states[i] = bumper_states[i];
 			}
@@ -7023,6 +7577,8 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 			for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
 				bumper_states[i] = live_bumper_states[i];
 			}
+			bumper_scheduler_lap = live_bumper_scheduler_lap;
+			bumper_next_sequence = live_bumper_next_sequence;
 			return;
 		}
 	}
@@ -7052,8 +7608,6 @@ void GameSim::fix_pointers() {
 		return;
 	}
 
-	gamestate_data.repair_allocated_cars(cars, num_cars, &car_properties_array);
-
 	const int total_lane_count = (num_cars + 3) & ~3;
 	for (int i = 0; i < total_lane_count; ++i) {
 		cars[i].soa->current_track[cars[i].soa_index] = current_track;
@@ -7061,6 +7615,19 @@ void GameSim::fix_pointers() {
 		cars[i].soa->machine_name[cars[i].soa_index] = "Blue Falcon";
 		if (car_properties_array) {
 			cars[i].soa->car_properties[cars[i].soa_index] = &car_properties_array[i];
+		}
+	}
+	if (bumper_cars && bumper_count > 0) {
+		const int total_bumper_lane_count = (bumper_count + 3) & ~3;
+		for (int i = 0; i < total_bumper_lane_count; ++i) {
+			const int slot = i < bumper_count ? i : bumper_count - 1;
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+			soa.current_track[lane] = (i < bumper_count && bumper_states[slot].active) ? current_track : nullptr;
+			soa.machine_name[lane] = "Bumper";
+			if (bumper_properties_array) {
+				soa.car_properties[lane] = &bumper_properties_array[i];
+			}
 		}
 	}
 

@@ -20,7 +20,7 @@ albedo_color = Color(0.08, 0, 0, 1)
 [node name="BumperVehicle" type="Node3D" unique_id=6492350]
 
 [node name="VEHICLE_MAIN" type="MeshInstance3D" parent="." unique_id=2048801890]
-transform = Transform3D(3, 0, 0, 0, 1.6, 0, 0, 0, 3, 0, 0, 0)
+transform = Transform3D(3, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0)
 layers = 2
 material_override = SubResource("StandardMaterial3D_body")
 cast_shadow = 0
@@ -34,14 +34,14 @@ cast_shadow = 0
 mesh = SubResource("SphereMesh_bumper")
 
 [node name="VEHICLE_OUTLINE" type="MeshInstance3D" parent="." unique_id=696687322]
-transform = Transform3D(3.22, 0, 0, 0, 1.72, 0, 0, 0, 3.22, 0, 0, 0)
+transform = Transform3D(3.22, 0, 0, 0, 3.22, 0, 0, 0, 3.22, 0, 0, 0)
 layers = 4
 material_override = SubResource("StandardMaterial3D_outline")
 cast_shadow = 0
 mesh = SubResource("SphereMesh_bumper")
 
 [node name="VEHICLE_OUTLINE_MAIN" type="MeshInstance3D" parent="." unique_id=1505032188]
-transform = Transform3D(3.12, 0, 0, 0, 1.66, 0, 0, 0, 3.12, 0, 0, 0)
+transform = Transform3D(3.12, 0, 0, 0, 3.12, 0, 0, 0, 3.12, 0, 0, 0)
 layers = 2
 material_override = SubResource("StandardMaterial3D_outline")
 cast_shadow = 0

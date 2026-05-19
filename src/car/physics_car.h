@@ -370,6 +370,7 @@ public:
     float prepare_impact_direction_info(ImpactData &impact, const SimVec3 &impactDirWorld);
     void buildSweepForMachine(float cappedSpeedMps, SimVec3 &sweepStartOut, SimVec3 &cappedVelocityOut);
     bool handle_machine_v_machine_collision(PhysicsCar &other_machine);
+    bool handle_machine_v_bumper_collision(PhysicsCar &bumper_machine);
     void post_tick();
     void motion_tick(PlayerInput input);
 	bool can_collect_super_spark() const;

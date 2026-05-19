@@ -1387,9 +1387,10 @@ func _start_race(track_index: int, settings: Array) -> void:
 				racer_roster_index += 1
 	var bumpers_enabled := bool(network_manager.race_options.get("bumpers", false))
 	var bumper_def: CarDefinition = load(BUMPER_DEFINITION_PATH) if bumpers_enabled else null
+	var render_defs := chosen_defs.duplicate()
 	if bumper_def != null:
 		for _slot in BUMPER_POOL_SIZE:
-			chosen_defs.append(bumper_def)
+			render_defs.append(bumper_def)
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
@@ -1405,7 +1406,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		if is_instance_valid(car_node_container.local_visual_car.name_label):
 			car_node_container.local_visual_car.name_label.text = nametag_names[local_player_index]
 	car_render_manager.multimesh_render_enabled = !auto_disable_car_multimesh_mode
-	car_render_manager.configure(chosen_defs, car_node_container.get_children())
+	car_render_manager.configure(render_defs, car_node_container.get_children())
 	for p in players:
 		if p != null:
 			p.queue_free()

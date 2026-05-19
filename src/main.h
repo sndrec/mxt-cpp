@@ -49,6 +49,8 @@ namespace godot {
 			char* data;
 			int size;
 			int bumper_state_count;
+			uint8_t bumper_scheduler_lap;
+			uint32_t bumper_next_sequence;
 			BumperState bumper_states[BUMPER_POOL_SIZE];
 		};
 		SavedState state_buffer[STATE_BUFFER_LEN];
@@ -133,15 +135,16 @@ namespace godot {
 		void update_native_cpu_driver(int car_index);
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
-		bool is_bumper_car(int car_index) const;
-		void configure_bumper_car(int car_index, int bumper_slot);
-		void deactivate_bumper_car(int car_index);
-		void set_bumper_track_state(int car_index, float absolute_distance, float lane_offset, bool reset_history);
+		void configure_bumper_car(int bumper_slot);
+		void deactivate_bumper_car(int bumper_slot);
+		void set_bumper_track_state(int bumper_slot, float absolute_distance, float lane_offset, bool reset_history);
 		void update_bumpers(float lead_distance, int leader_lap);
+		void update_bumper_vehicles();
+		void collide_racers_with_bumpers();
 		void save_bumper_states_to_saved_state(SavedState& state) const;
 		void restore_bumper_states_from_saved_state(const SavedState& state);
 		bool sample_track_transform_at_distance(float absolute_distance, float lane, SimTransform& out_transform, uint16_t& out_checkpoint, float& out_fraction) const;
-		PlayerInput generate_bumper_input_for_car(int car_index) const;
+		PlayerInput generate_bumper_input_for_slot(int bumper_slot) const;
 		void process_pending_ko_events();
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
@@ -197,6 +200,8 @@ namespace godot {
 		int num_cars;
 		PhysicsCar* cars;
 		PhysicsCarProperties* car_properties_array = nullptr;
+		PhysicsCar* bumper_cars = nullptr;
+		PhysicsCarProperties* bumper_properties_array = nullptr;
 		godot::Node3D* car_node_container = nullptr;
 		godot::Node3D* spark_node_container = nullptr;
 		godot::Object* car_render_manager = nullptr;
@@ -304,10 +309,10 @@ namespace godot {
 		bool vehicle_restore_enabled = true;
 		bool multiplayer_intro_camera_enabled = false;
 		bool bumpers_enabled = false;
-		int race_car_count = 0;
-		int bumper_start_index = 0;
 		int bumper_count = 0;
 		uint32_t bumper_track_seed = 0;
+		uint8_t bumper_scheduler_lap = 0;
+		uint32_t bumper_next_sequence = 0;
 		uint32_t start_countdown_extra_frames = 0;
 
 		GameSim();

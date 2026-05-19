@@ -4951,14 +4951,10 @@ static void apply_car_collision_knockback(PhysicsCar& car, const SimVec3& impuls
 	STORE_CAR_VEC3(car, velocity, LOAD_CAR_VEC3(car, velocity) + impulse * weight);
 }
 
-static bool car_is_bumper(const PhysicsCar& car)
+static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar &other_machine, bool this_bumper, bool other_bumper)
 {
-	const char* name = car.soa->machine_name[car.soa_index];
-	return name && std::strcmp(name, "Bumper") == 0;
-}
-
-bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
-{
+	PhysicsCarSoA* soa = self.soa;
+	const int soa_index = self.soa_index;
 	if (soa->s_boost_active[soa_index] || other_machine.soa->s_boost_active[other_machine.soa_index]) {
 		return false;
 	}
@@ -4966,13 +4962,11 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		return false;
 	}
 
-	const bool this_bumper = car_is_bumper(*this);
-	const bool other_bumper = car_is_bumper(other_machine);
 	const float radius1 = this_bumper ? 3.0f : 2.0f;
 	const float radius2 = other_bumper ? 3.0f : 2.0f;
 	const float combined_radius = radius1 + radius2;
-	const SimVec3 p1_old = LOAD_VEC3(position_old_dupe);
-	const SimVec3 p1 = LOAD_VEC3(position_collision_snapshot);
+	const SimVec3 p1_old = LOAD_CAR_VEC3(self, position_old_dupe);
+	const SimVec3 p1 = LOAD_CAR_VEC3(self, position_collision_snapshot);
 	const SimVec3 p2_old = LOAD_CAR_VEC3(other_machine, position_old_dupe);
 	const SimVec3 p2 = LOAD_CAR_VEC3(other_machine, position_collision_snapshot);
 
@@ -4991,7 +4985,7 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		collision_normal = (p1 - p1_old) - (p2 - p2_old);
 	}
 	if (collision_normal.length_squared() <= 0.000001f) {
-		collision_normal = LOAD_TRANSFORM(basis_physical).basis.get_column(0);
+		collision_normal = LOAD_CAR_TRANSFORM(self, basis_physical).basis.get_column(0);
 	}
 	collision_normal.normalize();
 
@@ -5010,7 +5004,7 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 
 	const SimVec3 plane_point = (p1 + p2) * 0.5f;
 	constexpr float depenetration_overcorrection = 1.1f;
-	move_to_plane_side(*this, plane_point, collision_normal, -radius1 * depenetration_overcorrection);
+	move_to_plane_side(self, plane_point, collision_normal, -radius1 * depenetration_overcorrection);
 	move_to_plane_side(other_machine, plane_point, collision_normal, radius2 * depenetration_overcorrection);
 
 	SimVec3 impulse = collision_normal * (-0.8f * closing_speed);
@@ -5046,7 +5040,7 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		if (!this_bumper && !this_attacking) {
 			impulse1 += collision_normal * -2.0f;
 			damage1 += 12.0f;
-			set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+			self.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 			soa->rail_collision_timer[soa_index] = 24;
 			this_bumper_slide = true;
 		}
@@ -5059,15 +5053,15 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		}
 	}
 
-	apply_car_collision_knockback(*this, impulse1);
+	apply_car_collision_knockback(self, impulse1);
 	apply_car_collision_knockback(other_machine, impulse2);
-	soa->visual_rotation_z[soa_index] += mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), impulse1).x;
-	soa->visual_rotation_x[soa_index] += mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), impulse1).z;
+	soa->visual_rotation_z[soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(self, basis_physical), impulse1).x;
+	soa->visual_rotation_x[soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(self, basis_physical), impulse1).z;
 	other_machine.soa->visual_rotation_z[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).x;
 	other_machine.soa->visual_rotation_x[other_machine.soa_index] += mxt_basis_inverse_rotate(LOAD_CAR_TRANSFORM(other_machine, basis_physical), impulse2).z;
 	if (impulse_strength > 0.5f) {
 		if (!this_bumper_slide) {
-			remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+			self.remove_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 			soa->drift_ramp[soa_index] = 0.0f;
 		}
 		if (!other_bumper_slide) {
@@ -5076,7 +5070,7 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		}
 	}
 	if (!this_attacking && other_attacking && !this_defending && damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
-		set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
+		self.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 		soa->rail_collision_timer[soa_index] = 20;
 	}
 	if (this_attacking && !other_attacking && !other_defending && damage2 > 0.0f &&
@@ -5085,7 +5079,7 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 		other_machine.soa->rail_collision_timer[other_machine.soa_index] = 20;
 	}
 	if (damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
-		apply_damage(damage1);
+		self.apply_damage(damage1);
 	}
 	if (damage2 > 0.0f && other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0) {
 		other_machine.apply_damage(damage2);
@@ -5107,13 +5101,23 @@ bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
 	other_machine.soa->machine_state[other_machine.soa_index] |= (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::ACTIVE);
 
 	if (soa->frames_since_start_2[soa_index] == 0) {
-		apply_initial_accel_activation(0.0f);
+		self.apply_initial_accel_activation(0.0f);
 	}
 	if (other_machine.soa->frames_since_start_2[other_machine.soa_index] == 0) {
 		other_machine.apply_initial_accel_activation(0.0f);
 	}
 
     return true;     // collision handled
+}
+
+bool PhysicsCar::handle_machine_v_machine_collision(PhysicsCar &other_machine)
+{
+	return handle_machine_v_machine_collision_impl(*this, other_machine, false, false);
+}
+
+bool PhysicsCar::handle_machine_v_bumper_collision(PhysicsCar &bumper_machine)
+{
+	return handle_machine_v_machine_collision_impl(*this, bumper_machine, false, true);
 }
 
 void PhysicsCar::test_collision_with_other_car(PhysicsCar &other_car)

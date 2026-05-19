@@ -4,8 +4,6 @@ const PlayerInputClass := preload("res://player/player_input.gd")
 
 const DEFAULT_TRACK := "res://track/smokestack/track.mxt_track"
 const DEFAULT_RACER_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
-const DEFAULT_BUMPER_PROPS := "res://vehicle/asset/bruiser/wild_goose.mxt_car_props"
-const BUMPER_POOL_SIZE := 60
 
 func _arg_value(args: Array, name: String, fallback: String) -> String:
 	var idx := args.find(name)
@@ -25,8 +23,7 @@ func _init() -> void:
 
 	var track_bytes := FileAccess.get_file_as_bytes(track_path)
 	var racer_bytes := FileAccess.get_file_as_bytes(DEFAULT_RACER_PROPS)
-	var bumper_bytes := FileAccess.get_file_as_bytes(DEFAULT_BUMPER_PROPS)
-	if track_bytes.is_empty() or racer_bytes.is_empty() or bumper_bytes.is_empty():
+	if track_bytes.is_empty() or racer_bytes.is_empty():
 		push_error("bumper_smoke missing track or car data")
 		quit(1)
 		return
@@ -37,9 +34,6 @@ func _init() -> void:
 
 	var car_buffers: Array = [racer_bytes]
 	var accel_settings: Array = [1.0]
-	for _slot in range(BUMPER_POOL_SIZE):
-		car_buffers.append(bumper_bytes)
-		accel_settings.append(1.0)
 
 	var sim := GameSim.new()
 	root.add_child(sim)
@@ -67,7 +61,7 @@ func _init() -> void:
 		var leader_lap := int(fields.get("leader_lap", "0"))
 		if active > 0:
 			saw_active = true
-			if leader_lap <= 0:
+			if leader_lap < 2:
 				saw_lap1_active = true
 			var slot := int(fields.get("first_slot", "-1"))
 			if slot != last_slot:
