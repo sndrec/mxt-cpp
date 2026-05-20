@@ -37,6 +37,16 @@ func _make_input(tick: int, racer_index: int, mode: String) -> PackedByteArray:
 		input.strafe_right = float((tick * 41 + racer_index * 19) % 255) / 254.0
 		input.steer_horizontal = float(((tick * 43 + racer_index * 23) % 255) - 127) / 127.0
 		input.steer_vertical = 0.0
+	elif mode == "zero_sparse":
+		input.accelerate = 1.0
+		input.brake = 1.0 if ((tick + racer_index * 17) % 47) == 0 else 0.0
+		input.spinattack = ((tick + racer_index * 11) % 113) == 0
+		input.sideattack = ((tick + racer_index * 13) % 157) == 0
+		input.boost = ((tick + racer_index * 7) % 83) == 0
+		input.strafe_left = 0.0 if ((tick + racer_index) % 5) < 3 else float((tick * 37 + racer_index * 17) % 255) / 254.0
+		input.strafe_right = 0.0 if ((tick + racer_index * 3) % 5) < 3 else float((tick * 41 + racer_index * 19) % 255) / 254.0
+		input.steer_horizontal = sin(float(tick + racer_index * 19) * 0.19) * 0.75
+		input.steer_vertical = sin(float(tick + racer_index * 23) * 0.13) * 0.25
 	else:
 		input.accelerate = 1.0 if ((tick + racer_index) % 2) == 0 else 0.0
 		input.brake = 1.0 if ((tick + racer_index) % 7) == 0 else 0.0
@@ -50,7 +60,7 @@ func _make_input(tick: int, racer_index: int, mode: String) -> PackedByteArray:
 	input.apply_quantization()
 	return input.serialize()
 
-func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1) -> bool:
+func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input_tick_base := 0) -> bool:
 	var racer_count := 100
 	var player_ids: Array = []
 	var cpu_flags: Array = []
@@ -67,7 +77,7 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1) -> bo
 	for tick in range(frame_count):
 		for i in range(racer_count):
 			var id := int(player_ids[i])
-			var bytes := _make_input(tick, i, mode)
+			var bytes := _make_input(tick + input_tick_base, i, mode)
 			server.store_authoritative_input(tick, id, bytes)
 			expected[[tick, id]] = bytes
 
@@ -134,6 +144,9 @@ func _init() -> void:
 			quit(1)
 			return
 	if !_run_case("low_entropy", 2):
+		quit(1)
+		return
+	if !_run_case("zero_sparse", 2, 1, 900):
 		quit(1)
 		return
 	print("MXT_AUTH_INPUT_ROUNDTRIP_OK")

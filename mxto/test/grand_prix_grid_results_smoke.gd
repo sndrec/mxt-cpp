@@ -103,7 +103,7 @@ func _init() -> void:
 	nm.netcode_session.configure([1], [false], 1)
 	var stale_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 0, 0)
 	if !bool(stale_auth_stats.get("stale", false)):
-		push_error("phase-mismatched authoritative packet should be dropped as stale")
+		push_error("phase-mismatched authoritative packet should be dropped as stale, packet=%s stats=%s" % [phase_one_auth_packet, stale_auth_stats])
 		quit(1)
 		return
 	var current_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 1, 0)
