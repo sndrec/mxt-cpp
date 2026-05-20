@@ -5034,6 +5034,20 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_final_prev_transforms[i],
 			render_final_current_transforms[i],
 			alpha);
+		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
+				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
+				render_thruster_multimeshes[archetype].is_valid()) {
+			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
+			const int thruster_count = static_cast<int>(thruster_locals.size());
+			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
+			for (int t = 0; t < thruster_count; ++t) {
+				const int thruster_slot = slot * thruster_count + t;
+				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
+				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
+				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
+				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
+			}
+		}
 		bool visible = true;
 		if (camera) {
 			const SimVec3 camera_to_car = visual_transform.origin - camera_origin;
@@ -5057,23 +5071,6 @@ void GameSim::apply_render_multimeshes(float alpha)
 		render_visible_car_slots[i] = visible_slot;
 		PhysicsCarSoA& soa = *visual_car->soa;
 		const int lane = visual_car->soa_index;
-		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
-				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
-				render_thruster_multimeshes[archetype].is_valid()) {
-			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
-			const int thruster_count = static_cast<int>(thruster_locals.size());
-			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
-			for (int t = 0; t < thruster_count; ++t) {
-				const int thruster_slot = visible_slot * thruster_count + t;
-				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
-				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
-				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
-				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
-			}
-			if (archetype < static_cast<int>(render_visible_thruster_counts.size())) {
-				render_visible_thruster_counts[archetype] += thruster_count;
-			}
-		}
 		godot::Color body_overlay(0, 0, 0, 1);
 		if (i < static_cast<int>(render_vehicle_effect_refs.size())) {
 			body_overlay = render_vehicle_effect_refs[i].overlay;
@@ -5154,7 +5151,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_shadow_multimeshes[archetype]->set_visible_instance_count(visible_count);
 		}
 		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) && render_thruster_multimeshes[archetype].is_valid()) {
-			const int thruster_instances = archetype < static_cast<int>(render_visible_thruster_counts.size()) ? render_visible_thruster_counts[archetype] : 0;
+			const int thruster_instances = render_thruster_multimeshes[archetype]->get_instance_count();
 			render_last_thruster_instances += thruster_instances;
 			render_thruster_multimeshes[archetype]->set_visible_instance_count(thruster_instances);
 		}

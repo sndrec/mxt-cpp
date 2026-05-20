@@ -3965,11 +3965,91 @@ class MXTRoad_OT_GenerateMesh(Operator):
             props.mesh_subdivision_length,
             math.radians(props.mesh_subdivision_angle_deg),
         )
+
+        def append_hole_boundary_crossing_times(times, fcurve, start_t, end_t):
+            if not fcurve:
+                return
+            samples = [start_t, end_t]
+            for kfp in fcurve.keyframe_points:
+                t = max(start_t, min(end_t, float(kfp.co.x) / 100.0))
+                samples.append(t)
+            samples = sorted(set(round(float(t), 9) for t in samples))
+
+            def eval_tx(t):
+                return float(fcurve.evaluate(float(t) * 100.0))
+
+            for x_target in tx_1d:
+                for sample_idx in range(len(samples) - 1):
+                    seg_start = samples[sample_idx]
+                    seg_end = samples[sample_idx + 1]
+                    if seg_end - seg_start <= 1.0e-7:
+                        continue
+                    prev_t = seg_start
+                    prev_v = eval_tx(prev_t) - x_target
+                    if abs(prev_v) <= 1.0e-7 and start_t < prev_t < end_t:
+                        times.append(prev_t)
+                    for step in range(1, 9):
+                        cur_t = seg_start + (seg_end - seg_start) * (float(step) / 8.0)
+                        cur_v = eval_tx(cur_t) - x_target
+                        if abs(cur_v) <= 1.0e-7:
+                            if start_t < cur_t < end_t:
+                                times.append(cur_t)
+                        elif (prev_v < 0.0 and cur_v > 0.0) or (prev_v > 0.0 and cur_v < 0.0):
+                            lo = prev_t
+                            hi = cur_t
+                            lo_v = prev_v
+                            for _ in range(24):
+                                mid = (lo + hi) * 0.5
+                                mid_v = eval_tx(mid) - x_target
+                                if (lo_v < 0.0 and mid_v > 0.0) or (lo_v > 0.0 and mid_v < 0.0):
+                                    hi = mid
+                                else:
+                                    lo = mid
+                                    lo_v = mid_v
+                            root = (lo + hi) * 0.5
+                            if start_t < root < end_t:
+                                times.append(root)
+                        prev_t = cur_t
+                        prev_v = cur_v
+
+        if hasattr(props, "embeds"):
+            extra_hole_rows = []
+            HOLE_BOUNDARY_STEPS = 32
+            for embed in props.embeds:
+                if embed.embed_type != 'HOLE':
+                    continue
+                if not (embed.helper and embed.helper.animation_data and embed.helper.animation_data.action):
+                    continue
+                act = embed.helper.animation_data.action
+                f_left = act.fcurves.find("location", index=1)
+                f_right = act.fcurves.find("location", index=2)
+                if not (f_left and f_right):
+                    continue
+                start_t = max(0.0, min(1.0, float(embed.start_t)))
+                end_t = max(0.0, min(1.0, float(embed.end_t)))
+                if end_t < start_t:
+                    start_t, end_t = end_t, start_t
+                if end_t - start_t <= 1.0e-7:
+                    continue
+                for step in range(1, HOLE_BOUNDARY_STEPS):
+                    extra_hole_rows.append(start_t + (end_t - start_t) * (float(step) / float(HOLE_BOUNDARY_STEPS)))
+                append_hole_boundary_crossing_times(extra_hole_rows, f_left, start_t, end_t)
+                append_hole_boundary_crossing_times(extra_hole_rows, f_right, start_t, end_t)
+            if extra_hole_rows:
+                ys = MXTRoad_OT_GenerateMesh._unique_sorted_ty(list(ys) + extra_hole_rows)
+
         ty_1d = np.array(ys, dtype=np.float64)
         num_y = len(ty_1d)
         if num_y < 2:
             if report_fn: report_fn({'ERROR'}, "Not enough vertical samples to build mesh.");
             return False
+
+        centerline_dist_pos, _centerline_dist_quat, _centerline_dist_scl = _sample_curve_matrix_numpy(helper, ty_1d)
+        dist_1d = [0.0]
+        total_dist_actual = 0.0
+        for row in range(1, num_y):
+            total_dist_actual += float(np.linalg.norm(centerline_dist_pos[row] - centerline_dist_pos[row - 1]))
+            dist_1d.append(total_dist_actual)
 
         
         tx_grid, ty_grid = np.meshgrid(tx_1d, ty_1d)
@@ -3991,18 +4071,12 @@ class MXTRoad_OT_GenerateMesh(Operator):
         uv_grid_x, uv_grid_y = np.meshgrid(uv_x, uv_y)
         uvs_per_vert = np.stack((uv_grid_x, uv_grid_y), axis=2).reshape(-1, 2)
         
-        i = np.arange(verts_co.shape[0], dtype=np.int32).reshape(num_y, num_x)
-        q0, q1, q2, q3 = i[:-1, :-1], i[:-1, 1:], i[1:, 1:], i[1:, :-1]
-        main_road_faces = np.stack((q0, q3, q2, q1), axis=2).reshape(-1, 4)
-
-        
         all_verts = list(verts_co)
-        all_faces = main_road_faces.tolist()
+        all_faces = []
         all_uvs_per_vert = list(uvs_per_vert)
         rail_face_indices = set()
         rail_top_vert_indices = set()
-        all_loop_normals = []
-        all_material_indices = [get_mat_idx('track_surface')] * len(main_road_faces)
+        all_material_indices = []
         left_rail_top_indices = []
         right_rail_top_indices = []
 
@@ -4015,8 +4089,172 @@ class MXTRoad_OT_GenerateMesh(Operator):
         N_main = np.cross(PF - P0, PR - P0)
         norms = np.linalg.norm(N_main, axis=2, keepdims=True); norms[norms==0]=1.0; N_main /= norms
         main_road_vertex_normals = N_main.reshape(-1, 3)
-        for face in main_road_faces:
-            for v_idx in face: all_loop_normals.append(main_road_vertex_normals[v_idx])
+
+        hole_embeds = []
+        if hasattr(props, "embeds"):
+            for embed in props.embeds:
+                if embed.embed_type != 'HOLE':
+                    continue
+                if not (embed.helper and embed.helper.animation_data and embed.helper.animation_data.action):
+                    continue
+                act = embed.helper.animation_data.action
+                f_left = act.fcurves.find("location", index=1)
+                f_right = act.fcurves.find("location", index=2)
+                if not (f_left and f_right):
+                    continue
+                start_t = max(0.0, min(1.0, float(embed.start_t)))
+                end_t = max(0.0, min(1.0, float(embed.end_t)))
+                if end_t < start_t:
+                    start_t, end_t = end_t, start_t
+                if end_t - start_t <= 1.0e-7:
+                    continue
+                hole_embeds.append((start_t, end_t, f_left, f_right))
+
+        def raw_hole_bounds_at(embed_tuple, ty):
+            start_t, end_t, f_left, f_right = embed_tuple
+            if ty < start_t or ty > end_t:
+                return None
+            frame = ty * 100.0
+            left = float(f_left.evaluate(frame))
+            right = float(f_right.evaluate(frame))
+            if right < left:
+                left, right = right, left
+            return left, right
+
+        def hole_bounds_at(embed_tuple, ty):
+            raw_bounds = raw_hole_bounds_at(embed_tuple, ty)
+            if raw_bounds is None:
+                return None
+            left, right = raw_bounds
+            if right < -1.0 or left > 1.0:
+                return None
+            return max(-1.0, min(1.0, left)), max(-1.0, min(1.0, right))
+
+        def tx_ty_inside_hole(tx, ty):
+            for hole in hole_embeds:
+                bounds = hole_bounds_at(hole, ty)
+                if bounds is None:
+                    continue
+                if tx >= bounds[0] and tx <= bounds[1]:
+                    return True
+            return False
+
+        surface_position_cache = {}
+
+        def surface_position_at(tx, ty):
+            key = (round(float(tx), 9), round(float(ty), 9))
+            cached = surface_position_cache.get(key)
+            if cached is not None:
+                return cached
+            tx_point = np.array([[tx]], dtype=np.float64)
+            ty_point = np.array([[ty]], dtype=np.float64)
+            cl_pos_p, cl_quat_p, cl_scl_p = _sample_curve_matrix_numpy(helper, np.array([ty], dtype=np.float64))
+            pos = _calculate_vertex_positions_numpy(props, cl_pos_p, cl_quat_p, cl_scl_p, tx_point, ty_point)[0, 0]
+            surface_position_cache[key] = pos
+            return pos
+
+        def surface_normal_at(tx, ty):
+            pos = surface_position_at(tx, ty)
+            tx_side = min(tx + epsilon, 1.0) if tx < 0.0 else max(tx - epsilon, -1.0)
+            ty_side = min(ty + epsilon, 1.0) if ty < 0.5 else max(ty - epsilon, 0.0)
+            pos_side = surface_position_at(tx_side, ty)
+            pos_forward = surface_position_at(tx, ty_side)
+            tangent_x = (pos_side - pos) if tx < 0.0 else (pos - pos_side)
+            tangent_y = (pos_forward - pos) if ty < 0.5 else (pos - pos_forward)
+            normal = np.cross(tangent_y, tangent_x)
+            length = float(np.linalg.norm(normal))
+            if length <= 1.0e-9:
+                return np.array([0.0, 1.0, 0.0], dtype=np.float64)
+            return normal / length
+
+        row_vertex_maps = []
+        normal_by_vert_idx = {}
+        for row in range(num_y):
+            row_map = {}
+            for col, tx in enumerate(tx_1d):
+                vert_idx = row * num_x + col
+                row_map[round(float(tx), 9)] = vert_idx
+                normal_by_vert_idx[vert_idx] = main_road_vertex_normals[vert_idx]
+            row_vertex_maps.append(row_map)
+
+        def road_vertex_at(row, tx):
+            tx = max(-1.0, min(1.0, float(tx)))
+            key = round(tx, 9)
+            row_map = row_vertex_maps[row]
+            existing = row_map.get(key)
+            if existing is not None:
+                return existing
+            ty = float(ty_1d[row])
+            all_verts.append(surface_position_at(tx, ty).tolist())
+            all_uvs_per_vert.append([(tx + 1.0) * 0.5, float(uv_y[row])])
+            vert_idx = len(all_verts) - 1
+            base_col = int(np.argmin(np.abs(tx_1d - tx)))
+            if abs(float(tx_1d[base_col]) - tx) <= 1.0e-7:
+                normal_by_vert_idx[vert_idx] = main_road_vertex_normals[row * num_x + base_col]
+            else:
+                normal_by_vert_idx[vert_idx] = surface_normal_at(tx, ty)
+            row_map[key] = vert_idx
+            return vert_idx
+
+        def active_hole_boundary_columns(ty):
+            columns = []
+            for hole in hole_embeds:
+                if hole_bounds_at(hole, ty) is None:
+                    continue
+                columns.append(('hole_left', hole))
+                columns.append(('hole_right', hole))
+            return columns
+
+        def column_tx(column, ty):
+            kind = column[0]
+            if kind == 'const':
+                return column[1]
+            hole = column[1]
+            bounds = hole_bounds_at(hole, ty)
+            if bounds is None:
+                start_t, end_t = hole[0], hole[1]
+                sample_ty = max(start_t, min(end_t, ty))
+                raw_bounds = raw_hole_bounds_at(hole, sample_ty)
+                if raw_bounds is None:
+                    return -1.0 if kind == 'hole_left' else 1.0
+                if raw_bounds[1] < -1.0:
+                    return -1.0
+                if raw_bounds[0] > 1.0:
+                    return 1.0
+                bounds = max(-1.0, min(1.0, raw_bounds[0])), max(-1.0, min(1.0, raw_bounds[1]))
+            return bounds[0] if kind == 'hole_left' else bounds[1]
+
+        for row in range(num_y - 1):
+            ty0 = float(ty_1d[row])
+            ty1 = float(ty_1d[row + 1])
+            mid_ty = (ty0 + ty1) * 0.5
+            columns = [('const', float(tx)) for tx in tx_1d]
+            columns.extend(active_hole_boundary_columns(mid_ty))
+            columns.sort(key=lambda column: column_tx(column, mid_ty))
+            for col in range(len(columns) - 1):
+                left_column = columns[col]
+                right_column = columns[col + 1]
+                mid_left = column_tx(left_column, mid_ty)
+                mid_right = column_tx(right_column, mid_ty)
+                if mid_right - mid_left <= 1.0e-7:
+                    continue
+                mid_tx = (mid_left + mid_right) * 0.5
+                if tx_ty_inside_hole(mid_tx, mid_ty):
+                    continue
+                tx0_left = column_tx(left_column, ty0)
+                tx0_right = column_tx(right_column, ty0)
+                tx1_left = column_tx(left_column, ty1)
+                tx1_right = column_tx(right_column, ty1)
+                if max(abs(tx0_right - tx0_left), abs(tx1_right - tx1_left), mid_right - mid_left) <= 1.0e-7:
+                    continue
+                face = [
+                    road_vertex_at(row, tx0_left),
+                    road_vertex_at(row + 1, tx1_left),
+                    road_vertex_at(row + 1, tx1_right),
+                    road_vertex_at(row, tx0_right),
+                ]
+                all_faces.append(face)
+                all_material_indices.append(get_mat_idx('track_surface'))
 
         rail_faces = []
         tunnel_roof_faces = []
@@ -4031,6 +4269,128 @@ class MXTRoad_OT_GenerateMesh(Operator):
         def rail_interval_active(t0, t1, start, end):
             mid = (float(t0) + float(t1)) * 0.5
             return mid >= start and mid <= end
+
+        def append_unique_time(out, value, t_min, t_max):
+            value = float(value)
+            if value <= t_min + 1.0e-7 or value >= t_max - 1.0e-7:
+                return
+            for existing in out:
+                if abs(existing - value) <= 1.0e-7:
+                    return
+            out.append(value)
+
+        def boundary_crossings_for_tx(fcurve, target_tx, t0, t1):
+            crossings = []
+            if not fcurve or t1 - t0 <= 1.0e-7:
+                return crossings
+            samples = [t0, t1]
+            for kfp in fcurve.keyframe_points:
+                t = float(kfp.co.x) / 100.0
+                if t0 < t < t1:
+                    samples.append(t)
+            samples = sorted(set(round(float(t), 9) for t in samples))
+
+            def value_at(t):
+                return float(fcurve.evaluate(float(t) * 100.0)) - target_tx
+
+            for sample_idx in range(len(samples) - 1):
+                seg_start = samples[sample_idx]
+                seg_end = samples[sample_idx + 1]
+                if seg_end - seg_start <= 1.0e-7:
+                    continue
+                prev_t = seg_start
+                prev_v = value_at(prev_t)
+                if abs(prev_v) <= 1.0e-7:
+                    append_unique_time(crossings, prev_t, t0, t1)
+                for step in range(1, 33):
+                    cur_t = seg_start + (seg_end - seg_start) * (float(step) / 32.0)
+                    cur_v = value_at(cur_t)
+                    if abs(cur_v) <= 1.0e-7:
+                        append_unique_time(crossings, cur_t, t0, t1)
+                    elif (prev_v < 0.0 and cur_v > 0.0) or (prev_v > 0.0 and cur_v < 0.0):
+                        lo = prev_t
+                        hi = cur_t
+                        lo_v = prev_v
+                        for _ in range(28):
+                            mid = (lo + hi) * 0.5
+                            mid_v = value_at(mid)
+                            if (lo_v < 0.0 and mid_v > 0.0) or (lo_v > 0.0 and mid_v < 0.0):
+                                hi = mid
+                            else:
+                                lo = mid
+                                lo_v = mid_v
+                        append_unique_time(crossings, (lo + hi) * 0.5, t0, t1)
+                    prev_t = cur_t
+                    prev_v = cur_v
+            return crossings
+
+        def rail_hole_split_times(edge_tx, t0, t1):
+            times = [float(t0), float(t1)]
+            for hole in hole_embeds:
+                start_t, end_t, f_left, f_right = hole
+                overlap_start = max(float(t0), start_t)
+                overlap_end = min(float(t1), end_t)
+                if overlap_end - overlap_start <= 1.0e-7:
+                    continue
+                append_unique_time(times, overlap_start, t0, t1)
+                append_unique_time(times, overlap_end, t0, t1)
+                for root in boundary_crossings_for_tx(f_left, edge_tx, overlap_start, overlap_end):
+                    append_unique_time(times, root, t0, t1)
+                for root in boundary_crossings_for_tx(f_right, edge_tx, overlap_start, overlap_end):
+                    append_unique_time(times, root, t0, t1)
+            return sorted(times)
+
+        rail_scale_y_cache = {}
+
+        def scale_y_at(ty):
+            key = round(float(ty), 9)
+            cached = rail_scale_y_cache.get(key)
+            if cached is not None:
+                return cached
+            _pos, _quat, scl = _sample_curve_matrix_numpy(helper, np.array([float(ty)], dtype=np.float64))
+            value = float(scl[0, 1])
+            rail_scale_y_cache[key] = value
+            return value
+
+        def rail_inward_winding(edge_tx, ty):
+            base = surface_position_at(edge_tx, ty)
+            up_n = surface_normal_at(edge_tx, ty)
+            forward_t = min(float(ty) + epsilon, 1.0) if ty < 0.5 else max(float(ty) - epsilon, 0.0)
+            forward_vec = surface_position_at(edge_tx, forward_t) - base
+            if ty >= 0.5:
+                forward_vec = -forward_vec
+            forward_n = normalized_vec(forward_vec, np.array([0.0, 0.0, 1.0], dtype=np.float64))
+            rail_n = normalized_vec(np.cross(up_n, forward_n), np.array([1.0, 0.0, 0.0], dtype=np.float64))
+            interior_vec = surface_position_at(0.0, ty) - base
+            return float(np.dot(rail_n, interior_vec)) >= 0.0
+
+        def rail_vertex(edge_tx, ty, h, uv_u, top):
+            base = surface_position_at(edge_tx, ty)
+            pos = base + surface_normal_at(edge_tx, ty) * (float(h) * scale_y_at(ty)) if top else base
+            all_verts.append(pos.tolist())
+            all_uvs_per_vert.append([float(uv_u), float(np.interp(ty, ty_1d, uv_y))])
+            idx = len(all_verts) - 1
+            if top:
+                rail_top_vert_indices.add(idx)
+            return idx
+
+        def append_rail_segment(edge_tx, h, t0, t1, bottom_u, top_u):
+            if t1 - t0 <= 1.0e-7:
+                return
+            mid = (float(t0) + float(t1)) * 0.5
+            if tx_ty_inside_hole(edge_tx, mid):
+                return
+            b0 = rail_vertex(edge_tx, t0, h, bottom_u, False)
+            t0_idx = rail_vertex(edge_tx, t0, h, top_u, True)
+            t1_idx = rail_vertex(edge_tx, t1, h, top_u, True)
+            b1 = rail_vertex(edge_tx, t1, h, bottom_u, False)
+            face = [b0, t0_idx, t1_idx, b1]
+            if not rail_inward_winding(edge_tx, mid):
+                face = list(reversed(face))
+            all_faces.append(face)
+            rail_faces.append(face)
+            rail_face_indices.add(len(all_faces) - 1)
+            all_material_indices.append(get_mat_idx('track_rail'))
 
         def normalized_vec(v, fallback):
             length = float(np.linalg.norm(v))
@@ -4080,15 +4440,9 @@ class MXTRoad_OT_GenerateMesh(Operator):
             for row in range(num_y-1):
                 if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
                     continue
-                b0 = bottom_dup_indices[row]
-                b1 = bottom_dup_indices[row+1]
-                face = [b0, top_indices[row], top_indices[row+1], b1]
-                if not inward_winding[row]:
-                    face = list(reversed(face))
-                all_faces.append(face)
-                rail_faces.append(face)
-                rail_face_indices.add(len(all_faces) - 1)
-                all_material_indices.append(get_mat_idx('track_rail'))
+                split_times = rail_hole_split_times(1.0, float(ty_1d[row]), float(ty_1d[row + 1]))
+                for split_idx in range(len(split_times) - 1):
+                    append_rail_segment(1.0, h, split_times[split_idx], split_times[split_idx + 1], 0.0, 1.0)
 
         if getattr(props, "rail_height_right", 0.0) > 0.0:
             h = props.rail_height_right
@@ -4122,15 +4476,9 @@ class MXTRoad_OT_GenerateMesh(Operator):
             for row in range(num_y-1):
                 if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
                     continue
-                b0 = bottom_dup_indices[row]
-                b1 = bottom_dup_indices[row+1]
-                face = [b0, top_indices[row], top_indices[row+1], b1]
-                if not inward_winding[row]:
-                    face = list(reversed(face))
-                all_faces.append(face)
-                rail_faces.append(face)
-                rail_face_indices.add(len(all_faces) - 1)
-                all_material_indices.append(get_mat_idx('track_rail'))
+                split_times = rail_hole_split_times(-1.0, float(ty_1d[row]), float(ty_1d[row + 1]))
+                for split_idx in range(len(split_times) - 1):
+                    append_rail_segment(-1.0, h, split_times[split_idx], split_times[split_idx + 1], 1.0, 0.0)
 
         if props.road_shape_type == 'TUNNEL' and left_rail_top_indices and right_rail_top_indices:
             roof_segments = 10
@@ -4196,16 +4544,11 @@ class MXTRoad_OT_GenerateMesh(Operator):
                         rail_face_indices.add(len(all_faces) - 1)
                         all_material_indices.append(get_mat_idx('track_rail'))
 
-        if rail_faces:
-            all_loop_normals.extend(MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(np.array(all_verts), rail_faces))
-
-        
         if hasattr(props, "embeds"):
             EMBED_INSET_UNITS = 1.0
             EMBED_PUSH_DISTANCE = 0.5
             EMBED_X_DIVS = 8
             
-            hole_cutter_objects = []
             embeds_for_bmesh = [] 
 
             for embed in props.embeds:
@@ -4249,32 +4592,6 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 
                 
                 if embed.embed_type == 'HOLE':
-
-                    EXTRUDE_DEPTH, TOP_OFFSET = -4.0, -2.0
-                    P_grid = P_footprint.copy()
-                    d_ty, d_tx = np.gradient(P_grid, axis=0), np.gradient(P_grid, axis=1)
-                    N_grid = np.cross(d_ty, d_tx)
-                    n_len = np.linalg.norm(N_grid, axis=2, keepdims=True); n_len[n_len == 0.0] = 1.0; N_grid /= n_len
-                    base_verts, n_flat = P_grid.reshape(-1, 3), N_grid.reshape(-1, 3)
-                    cutter_mesh = bpy.data.meshes.new(f"{embed.label}_cutter"); cutter_obj = bpy.data.objects.new(f"{embed.label}_cutter", cutter_mesh)
-                    _disallow_deletion(cutter_obj)
-                    context.collection.objects.link(cutter_obj); hole_cutter_objects.append(cutter_obj)
-                    bm = bmesh.new()
-                    v_top = [bm.verts.new(tuple(v + n * TOP_OFFSET)) for v, n in zip(base_verts, n_flat)]
-                    v_bot = [bm.verts.new(tuple(v - n * EXTRUDE_DEPTH)) for v, n in zip(base_verts, n_flat)]
-                    n_y, n_x = P_grid.shape[0:2]
-                    for row in range(n_y-1): 
-                        for col in range(n_x-1):
-                            i0=row*n_x+col; i1=i0+1; i2=i1+n_x; i3=i0+n_x
-                            bm.faces.new((v_top[i0],v_top[i1],v_top[i2],v_top[i3])); bm.faces.new((v_bot[i3],v_bot[i2],v_bot[i1],v_bot[i0]))
-                    for row in range(n_y-1): 
-                        i0=row*n_x; i1=i0+n_x; i2=i1+n_x-1; i3=i0+n_x-1
-                        bm.faces.new((v_top[i0],v_top[i1],v_bot[i1],v_bot[i0])); bm.faces.new((v_top[i3],v_bot[i3],v_bot[i2],v_top[i2]))
-                    for col in range(n_x-1): 
-                        i0=col; i1=i0+1; i2=(n_y-1)*n_x+i1; i3=(n_y-1)*n_x+i0
-                        bm.faces.new((v_top[i0],v_bot[i0],v_bot[i1],v_top[i1])); bm.faces.new((v_top[i3],v_top[i2],v_bot[i2],v_bot[i3]))
-                    bm.normal_update(); bm.to_mesh(cutter_mesh); bm.free()
-                    cutter_obj.hide_set(True)
                     continue
 
                 
@@ -4291,7 +4608,6 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 surface_mat_idx = get_mat_idx(f'embed_{embed_type_name}')
                 all_material_indices.extend([surface_mat_idx] * len(footprint_faces))
 
-                all_loop_normals.extend(MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(np.array(all_verts), footprint_faces))
                 uv_y_embed = np.interp(ty_embed_1d, ty_1d, uv_y)
                 uv_x_foot = np.linspace(0,1,EMBED_X_DIVS); uv_grid_x_foot,uv_grid_y_foot=np.meshgrid(uv_x_foot,uv_y_embed)
                 all_uvs_per_vert.extend(np.stack((uv_grid_x_foot,uv_grid_y_foot),axis=2).reshape(-1,2).tolist())
@@ -4299,6 +4615,85 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 border_mat_idx = get_mat_idx('embed_border')
                 embeds_for_bmesh.append( (current_face_idx, num_new_faces, border_mat_idx) )
                 
+
+        def face_area_squared(face):
+            if len(set(int(v_idx) for v_idx in face)) < 4:
+                return 0.0
+            pts = [np.array(all_verts[int(v_idx)], dtype=np.float64) for v_idx in face]
+            area_vec = np.zeros(3, dtype=np.float64)
+            for i in range(len(pts)):
+                area_vec += np.cross(pts[i], pts[(i + 1) % len(pts)])
+            return float(np.dot(area_vec, area_vec))
+
+        filtered_faces = []
+        filtered_material_indices = []
+        filtered_rail_face_indices = set()
+        filtered_embeds_for_bmesh = []
+        embed_ranges = []
+        for face_start_idx, num_faces, border_mat_idx in embeds_for_bmesh:
+            embed_ranges.append([face_start_idx, face_start_idx + num_faces, border_mat_idx, None, 0])
+
+        for face_idx, face in enumerate(all_faces):
+            if face_area_squared(face) <= 1.0e-12:
+                continue
+            new_face_idx = len(filtered_faces)
+            filtered_faces.append(face)
+            filtered_material_indices.append(all_material_indices[face_idx])
+            if face_idx in rail_face_indices:
+                filtered_rail_face_indices.add(new_face_idx)
+            for embed_range in embed_ranges:
+                if face_idx >= embed_range[0] and face_idx < embed_range[1]:
+                    if embed_range[3] is None:
+                        embed_range[3] = new_face_idx
+                    embed_range[4] += 1
+
+        for start_old, _end_old, border_mat_idx, start_new, count_new in embed_ranges:
+            if start_new is not None and count_new > 0:
+                filtered_embeds_for_bmesh.append((start_new, count_new, border_mat_idx))
+
+        all_faces = filtered_faces
+        all_material_indices = filtered_material_indices
+        rail_face_indices = filtered_rail_face_indices
+        embeds_for_bmesh = filtered_embeds_for_bmesh
+
+        used_vert_indices = sorted({int(v_idx) for face in all_faces for v_idx in face})
+        if len(used_vert_indices) != len(all_verts):
+            vert_remap = {old_idx: new_idx for new_idx, old_idx in enumerate(used_vert_indices)}
+            all_verts = [all_verts[old_idx] for old_idx in used_vert_indices]
+            all_uvs_per_vert = [all_uvs_per_vert[old_idx] for old_idx in used_vert_indices]
+            all_faces = [[vert_remap[int(v_idx)] for v_idx in face] for face in all_faces]
+            normal_by_vert_idx = {
+                vert_remap[int(v_idx)]: normal
+                for v_idx, normal in normal_by_vert_idx.items()
+                if int(v_idx) in vert_remap
+            }
+            rail_top_vert_indices = {
+                vert_remap[int(v_idx)]
+                for v_idx in rail_top_vert_indices
+                if int(v_idx) in vert_remap
+            }
+
+        rail_faces = [all_faces[face_idx] for face_idx in sorted(rail_face_indices)]
+        rail_loop_normals = {}
+        if rail_faces:
+            rail_normals = MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(np.array(all_verts), rail_faces)
+            normal_cursor = 0
+            for face_idx in sorted(rail_face_indices):
+                rail_loop_normals[face_idx] = rail_normals[normal_cursor:normal_cursor + 4]
+                normal_cursor += 4
+
+        all_loop_normals = []
+        all_verts_np_for_normals = np.array(all_verts, dtype=np.float64)
+        track_surface_mat_idx = get_mat_idx('track_surface')
+        for face_idx, face in enumerate(all_faces):
+            if face_idx in rail_loop_normals:
+                all_loop_normals.extend(rail_loop_normals[face_idx])
+                continue
+            if all_material_indices[face_idx] == track_surface_mat_idx and all(int(v_idx) in normal_by_vert_idx for v_idx in face):
+                for v_idx in face:
+                    all_loop_normals.append(normal_by_vert_idx[int(v_idx)])
+            else:
+                all_loop_normals.extend(MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(all_verts_np_for_normals, [face]))
 
         
         mesh = mesh_obj.data
@@ -4322,32 +4717,23 @@ class MXTRoad_OT_GenerateMesh(Operator):
 
         if not mesh.uv_layers: mesh.uv_layers.new(name="UVMap")
         loop_uvs = []
-        for face_idx, face in enumerate(final_faces_as_indices):
+        for face_idx, poly in enumerate(mesh.polygons):
+            face = [loop.vertex_index for loop in (mesh.loops[li] for li in poly.loop_indices)]
             if face_idx in rail_face_indices:
-                base_vs = [v for v in face if v not in rail_top_vert_indices]
-                # Map UVs per loop in face order, ensuring U=0 for base edge and U=1 for top edge.
                 for v in face:
-                    if v in rail_top_vert_indices:
-                        # Match this top vertex to nearest base vertex to get consistent V (y) value.
-                        vx, vy, vz = final_verts_co[3*v:3*v+3]
-                        best_b = None
-                        best_d2 = 1e30
-                        for b in base_vs:
-                            bx, by, bz = final_verts_co[3*b:3*b+3]
-                            d2 = (vx-bx)*(vx-bx) + (vy-by)*(vy-by) + (vz-bz)*(vz-bz)
-                            if d2 < best_d2:
-                                best_d2 = d2
-                                best_b = b
-                        y_val = final_uvs_per_vert[best_b][1] if best_b is not None else final_uvs_per_vert[v][1]
-                        loop_uvs.append([1.0, y_val])
-                    else:
-                        y_val = final_uvs_per_vert[v][1]
-                        loop_uvs.append([0.0, y_val])
+                    loop_uvs.append(final_uvs_per_vert[v])
             else:
                 for v_idx in face:
                     loop_uvs.append(final_uvs_per_vert[v_idx])
         loop_uvs = np.array(loop_uvs, dtype=np.float32)
         mesh.uv_layers.active.data.foreach_set('uv', loop_uvs.ravel())
+
+        if len(all_loop_normals) != len(mesh.loops):
+            all_loop_normals = []
+            mesh_vertices_np = np.array([v.co[:] for v in mesh.vertices], dtype=np.float64)
+            for poly in mesh.polygons:
+                face = [loop.vertex_index for loop in (mesh.loops[li] for li in poly.loop_indices)]
+                all_loop_normals.extend(MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(mesh_vertices_np, [face]))
 
         mesh.normals_split_custom_set(all_loop_normals)
         mesh.update()
@@ -4380,45 +4766,6 @@ class MXTRoad_OT_GenerateMesh(Operator):
             mesh.update()
 
         
-        if hole_cutter_objects:
-            
-            context.view_layer.update() 
-            
-            orig_active = context.view_layer.objects.active
-            orig_selected = [obj for obj in context.selected_objects]
-            bpy.ops.object.select_all(action='DESELECT')
-            mesh_obj.select_set(True)
-            context.view_layer.objects.active = mesh_obj
-
-            for cutter_obj in hole_cutter_objects:
-                mod = mesh_obj.modifiers.new(name="HoleCutter", type='BOOLEAN')
-                mod.object = cutter_obj
-                mod.operation = 'DIFFERENCE'
-                mod.solver = 'FAST'
-                try:
-                    bpy.ops.object.modifier_apply(modifier=mod.name)
-                except RuntimeError as e:
-                    if report_fn: report_fn({'ERROR'}, f"Boolean for {cutter_obj.name} failed: {e}")
-                finally:
-                    bpy.data.objects.remove(cutter_obj, do_unlink=True)
-            
-            if mesh.uv_layers and mesh.uv_layers.active:
-                uv_layer = mesh.uv_layers.active.data
-                bad_polys = [p.index for p in mesh.polygons if all(uv_layer[li].uv.length < 1e-6 for li in p.loop_indices)]
-                if bad_polys:
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    bpy.ops.mesh.select_all(action='DESELECT')
-                    bpy.ops.object.mode_set(mode='OBJECT')
-                    for idx in bad_polys: mesh.polygons[idx].select = True
-                    bpy.ops.object.mode_set(mode='EDIT')
-                    bpy.ops.mesh.delete(type='FACE')
-                    bpy.ops.object.mode_set(mode='OBJECT')
-            
-            
-            for obj in bpy.data.objects:
-                obj.select_set(obj in orig_selected)
-            context.view_layer.objects.active = orig_active
-
         # Apply per-segment vertex colors (ground vs rail) based on material assignment
         try:
             rail_mat_idx = None
