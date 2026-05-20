@@ -60,8 +60,8 @@ const STICKER_BASE_HEIGHT_OFFSET := 3.0
 const STICKER_BASE_RISE_OFFSET := 0.66
 const STICKER_DISTANCE_SCALE_START := 100.0
 const STICKER_DISTANCE_SCALE_END := 600.0
-const STICKER_FAR_SCALE := 0.5
-const STICKER_XRAY_ALPHA := 0.25
+const STICKER_FAR_SCALE := 0.25
+const STICKER_XRAY_ALPHA := 0.35
 
 @onready var real_input := $InputViewer/RealInput
 @onready var clamped_input := $InputViewer/ClampedInput
