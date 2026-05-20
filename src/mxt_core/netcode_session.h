@@ -52,6 +52,7 @@ class NetcodeSession : public Object {
 	mutable uint64_t stat_auth_payload_bytes = 0;
 
 	static PlayerInput decay_predicted_input(const PlayerInput& prev);
+	bool write_authoritative_input_raw(godot::PackedByteArray& raw, const InputFrame* const* frames, int frame_count, uint8_t layout) const;
 	void recalculate_predictions_internal(GameSim* sim, int start_tick, int end_tick);
 	InputFrame& frame_for(InputFrame* frames, int32_t tick);
 	const InputFrame* find_frame(const InputFrame* frames, int32_t tick) const;
@@ -78,6 +79,7 @@ public:
 	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase = 0);
 	godot::PackedByteArray build_authoritative_input_packet(int last_tick, int max_frame_count, int race_phase = 0) const;
 	godot::Dictionary store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase = 0);
+	godot::Dictionary debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase = 0) const;
 	godot::Dictionary consume_authoritative_packet_stats();
 	godot::Dictionary get_input_frame_debug(int tick) const;
 	void configure_authoritative_input_sample_dump(bool enabled, int limit, godot::String directory);

@@ -17,7 +17,9 @@ using namespace godot;
 namespace {
 constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
 constexpr int MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET = 255;
-constexpr int MXT_NET_AUTHORITATIVE_INPUT_FIELDS = 9;
+constexpr int MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER = 5;
+constexpr int MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER = 9;
+constexpr int MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES = 10;
 constexpr int MXT_NET_COMPRESSION_ZSTD = FileAccess::COMPRESSION_ZSTD;
 constexpr uint8_t MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD = 0;
 constexpr uint8_t MXT_NET_AUTH_COMPRESSION_DICT_ZSTD = 1;
@@ -28,6 +30,10 @@ constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
 constexpr const char* MXT_NET_DEFAULT_AUTH_SAMPLE_DIR = "user://auth_input_samples";
 constexpr uint32_t MXT_NET_RACE_PHASE_BIT = 0x80000000u;
 constexpr uint32_t MXT_NET_TICK_MASK = 0x7fffffffu;
+enum AuthInputLayout : uint8_t {
+	AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES = 0,
+	AUTH_INPUT_LAYOUT_PACKED_BUTTONS = 1,
+};
 bool g_auth_input_sample_dump_enabled = false;
 int64_t g_auth_input_sample_dump_limit = MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT;
 int64_t g_auth_input_sample_dump_index = 0;
@@ -144,9 +150,15 @@ bool read_packet_input(PacketReader& reader, PlayerInput& out)
 	return true;
 }
 
-uint8_t input_button_byte(bool v)
+uint8_t input_button_mask(const PlayerInput& input)
 {
-	return v ? 1 : 0;
+	uint8_t mask = 0;
+	if (input.accelerate > 0.0f) mask |= 1u << 0;
+	if (input.brake > 0.0f) mask |= 1u << 1;
+	if (input.spinattack) mask |= 1u << 2;
+	if (input.sideattack) mask |= 1u << 3;
+	if (input.boost) mask |= 1u << 4;
+	return mask;
 }
 
 uint8_t input_trigger_byte(float v)
@@ -167,6 +179,14 @@ float trigger_from_byte(uint8_t v)
 float axis_from_byte(uint8_t v)
 {
 	return (static_cast<float>(v) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION)) * 2.0f - 1.0f;
+}
+
+int auth_input_raw_size(int frame_count, int racer_count, AuthInputLayout layout)
+{
+	const int bytes_per_racer = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS ?
+		MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER :
+		MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER;
+	return frame_count * racer_count * bytes_per_racer;
 }
 
 int32_t pack_tick_phase(int tick, int race_phase)
@@ -321,6 +341,91 @@ void dump_auth_input_sample(const PackedByteArray& raw, int first_tick, int coun
 }
 }
 
+bool NetcodeSession::write_authoritative_input_raw(
+	PackedByteArray& raw,
+	const InputFrame* const* frames,
+	int frame_count,
+	uint8_t p_layout) const
+{
+	const AuthInputLayout layout = static_cast<AuthInputLayout>(p_layout);
+	uint8_t* raw_bytes = raw.ptrw();
+	int raw_pos = 0;
+	if (layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS) {
+		for (int f = 0; f < frame_count; ++f) {
+			const InputFrame* frame = frames[f];
+			for (int i = 0; i < racer_count; ++i) {
+				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+				raw_bytes[raw_pos++] = input_button_mask(input);
+			}
+		}
+	} else {
+		for (int f = 0; f < frame_count; ++f) {
+			const InputFrame* frame = frames[f];
+			for (int i = 0; i < racer_count; ++i) {
+				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+				raw_bytes[raw_pos++] = input.accelerate > 0.0f ? 1 : 0;
+			}
+		}
+		for (int f = 0; f < frame_count; ++f) {
+			const InputFrame* frame = frames[f];
+			for (int i = 0; i < racer_count; ++i) {
+				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+				raw_bytes[raw_pos++] = input.brake > 0.0f ? 1 : 0;
+			}
+		}
+		for (int f = 0; f < frame_count; ++f) {
+			const InputFrame* frame = frames[f];
+			for (int i = 0; i < racer_count; ++i) {
+				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+				raw_bytes[raw_pos++] = input.spinattack ? 1 : 0;
+			}
+		}
+		for (int f = 0; f < frame_count; ++f) {
+			const InputFrame* frame = frames[f];
+			for (int i = 0; i < racer_count; ++i) {
+				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+				raw_bytes[raw_pos++] = input.sideattack ? 1 : 0;
+			}
+		}
+		for (int f = 0; f < frame_count; ++f) {
+			const InputFrame* frame = frames[f];
+			for (int i = 0; i < racer_count; ++i) {
+				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+				raw_bytes[raw_pos++] = input.boost ? 1 : 0;
+			}
+		}
+	}
+	for (int f = 0; f < frame_count; ++f) {
+		const InputFrame* frame = frames[f];
+		for (int i = 0; i < racer_count; ++i) {
+			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+			raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_left);
+		}
+	}
+	for (int f = 0; f < frame_count; ++f) {
+		const InputFrame* frame = frames[f];
+		for (int i = 0; i < racer_count; ++i) {
+			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+			raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_right);
+		}
+	}
+	for (int f = 0; f < frame_count; ++f) {
+		const InputFrame* frame = frames[f];
+		for (int i = 0; i < racer_count; ++i) {
+			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+			raw_bytes[raw_pos++] = input_axis_byte(input.steer_horizontal);
+		}
+	}
+	for (int f = 0; f < frame_count; ++f) {
+		const InputFrame* frame = frames[f];
+		for (int i = 0; i < racer_count; ++i) {
+			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+			raw_bytes[raw_pos++] = input_axis_byte(input.steer_vertical);
+		}
+	}
+	return raw_pos == raw.size();
+}
+
 void NetcodeSession::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("reset"), &NetcodeSession::reset);
@@ -334,6 +439,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec", "expected_race_phase"), &NetcodeSession::store_pending_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::build_authoritative_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet", "expected_race_phase"), &NetcodeSession::store_authoritative_input_packet, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("debug_compare_authoritative_input_packet_sizes", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::debug_compare_authoritative_input_packet_sizes, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("consume_authoritative_packet_stats"), &NetcodeSession::consume_authoritative_packet_stats);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
 	ClassDB::bind_method(D_METHOD("configure_authoritative_input_sample_dump", "enabled", "limit", "directory"), &NetcodeSession::configure_authoritative_input_sample_dump);
@@ -719,7 +825,7 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	}
 	++stat_auth_packets;
 	stat_auth_frames += static_cast<uint64_t>(count);
-	const int raw_size = count * racer_count * MXT_NET_AUTHORITATIVE_INPUT_FIELDS;
+	const int raw_size = count * racer_count * MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER;
 	stat_auth_encoded_inputs += static_cast<uint64_t>(count) * static_cast<uint64_t>(racer_count);
 	stat_auth_raw_bytes += static_cast<uint64_t>(raw_size);
 	if (!writer.write_i32(raw_size)) {
@@ -744,84 +850,13 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 			return PackedByteArray();
 		}
 	}
-	uint8_t* raw_bytes = raw.ptrw();
-	int raw_pos = 0;
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_button_byte(input.accelerate > 0.0f);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_button_byte(input.brake > 0.0f);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_button_byte(input.spinattack);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_button_byte(input.sideattack);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_button_byte(input.boost);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_left);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_right);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_axis_byte(input.steer_horizontal);
-		}
-	}
-	for (int f = 0; f < count; ++f) {
-		const InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_axis_byte(input.steer_vertical);
-		}
+	if (!write_authoritative_input_raw(raw, frames, count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS)) {
+		return PackedByteArray();
 	}
 	dump_auth_input_sample(raw, first_tick, count, racer_count);
 	uint8_t compression_mode = MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD;
-	PackedByteArray compressed;
-	if (raw_size >= MXT_NET_AUTH_DICT_MIN_RAW_BYTES) {
-		compressed = compress_auth_input_with_dict(raw);
-		if (compressed.size() > 0) {
-			compression_mode = MXT_NET_AUTH_COMPRESSION_DICT_ZSTD;
-		}
-	}
-	if (compressed.size() <= 0) {
-		compressed = raw.compress(MXT_NET_COMPRESSION_ZSTD);
-		compression_mode = MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD;
-	}
+	PackedByteArray compressed = raw.compress(MXT_NET_COMPRESSION_ZSTD);
+	compression_mode = MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD;
 	if (compressed.size() <= 0 || !writer.write_bytes(compressed.ptr(), static_cast<int>(compressed.size()))) {
 		return PackedByteArray();
 	}
@@ -856,7 +891,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	stats["first_tick"] = first_tick;
 	stats["count"] = static_cast<int>(count);
 	stats["valid"] = true;
-	const int expected_raw_size = static_cast<int>(count) * racer_count * MXT_NET_AUTHORITATIVE_INPUT_FIELDS;
+	const int expected_raw_size = static_cast<int>(count) * racer_count * MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER;
 	if (raw_size != expected_raw_size || raw_size < 0) {
 		stats["valid"] = false;
 		return stats;
@@ -894,31 +929,12 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].accelerate = raw_bytes[raw_pos++] != 0 ? 1.0f : 0.0f;
-		}
-	}
-	for (int f = 0; f < static_cast<int>(count); ++f) {
-		InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].brake = raw_bytes[raw_pos++] != 0 ? 1.0f : 0.0f;
-		}
-	}
-	for (int f = 0; f < static_cast<int>(count); ++f) {
-		InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].spinattack = raw_bytes[raw_pos++] != 0;
-		}
-	}
-	for (int f = 0; f < static_cast<int>(count); ++f) {
-		InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].sideattack = raw_bytes[raw_pos++] != 0;
-		}
-	}
-	for (int f = 0; f < static_cast<int>(count); ++f) {
-		InputFrame* frame = frames[f];
-		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].boost = raw_bytes[raw_pos++] != 0;
+			const uint8_t mask = raw_bytes[raw_pos++];
+			frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
+			frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
+			frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
+			frame->inputs[i].sideattack = (mask & (1u << 3)) != 0;
+			frame->inputs[i].boost = (mask & (1u << 4)) != 0;
 		}
 	}
 	for (int f = 0; f < static_cast<int>(count); ++f) {
@@ -951,6 +967,74 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		stats["last_tick"] = tick;
 	}
 	return stats;
+}
+
+godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase) const
+{
+	Dictionary out;
+	out["valid"] = false;
+	out["first_tick"] = -1;
+	out["last_tick"] = -1;
+	out["count"] = 0;
+	out["racer_count"] = racer_count;
+	out["race_phase"] = race_phase & 1;
+	if (max_frame_count <= 0 || last_tick < 0 || racer_count <= 0) {
+		return out;
+	}
+	max_frame_count = std::min(max_frame_count, MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET);
+	int first_tick = last_tick - max_frame_count + 1;
+	if (first_tick < 0) {
+		first_tick = 0;
+	}
+	while (first_tick <= last_tick && !find_frame(authoritative_history, first_tick)) {
+		++first_tick;
+	}
+	int count = last_tick >= first_tick ? last_tick - first_tick + 1 : 0;
+	while (count > 0 && !find_frame(authoritative_history, first_tick + count - 1)) {
+		--count;
+	}
+	if (count <= 0) {
+		return out;
+	}
+	const InputFrame* frames[MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET] = {};
+	for (int f = 0; f < count; ++f) {
+		frames[f] = find_frame(authoritative_history, first_tick + f);
+		if (!frames[f]) {
+			return out;
+		}
+	}
+	const AuthInputLayout layouts[2] = {
+		AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES,
+		AUTH_INPUT_LAYOUT_PACKED_BUTTONS,
+	};
+	const char* names[2] = {
+		"old",
+		"packed",
+	};
+	for (int l = 0; l < 2; ++l) {
+		const AuthInputLayout layout = layouts[l];
+		const int raw_size = auth_input_raw_size(count, racer_count, layout);
+		PackedByteArray raw;
+		if (raw.resize(raw_size) != 0) {
+			return out;
+		}
+		if (!write_authoritative_input_raw(raw, frames, count, layout)) {
+			return out;
+		}
+		const PackedByteArray plain = raw.compress(MXT_NET_COMPRESSION_ZSTD);
+		const PackedByteArray dict = compress_auth_input_with_dict(raw);
+		const String prefix = String(names[l]) + String("_");
+		out[prefix + String("raw")] = raw_size;
+		out[prefix + String("plain_payload")] = plain.size();
+		out[prefix + String("plain_packet")] = plain.size() + MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES;
+		out[prefix + String("dict_payload")] = dict.size();
+		out[prefix + String("dict_packet")] = dict.size() + MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES;
+	}
+	out["valid"] = true;
+	out["first_tick"] = first_tick;
+	out["last_tick"] = first_tick + count - 1;
+	out["count"] = count;
+	return out;
 }
 
 godot::Dictionary NetcodeSession::consume_authoritative_packet_stats()
