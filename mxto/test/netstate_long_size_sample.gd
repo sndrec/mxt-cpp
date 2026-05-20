@@ -12,8 +12,14 @@ func _arg_value(args: Array, name: String, fallback: String) -> String:
 func _arg_int(args: Array, name: String, fallback: int) -> int:
 	return int(_arg_value(args, name, str(fallback)))
 
-func _sample_state(sim: GameSim, tick: int) -> void:
+func _sample_state(sim: GameSim, tick: int, dump_dir: String) -> void:
 	var state := sim.get_state_data(tick)
+	if !dump_dir.is_empty():
+		DirAccess.make_dir_recursive_absolute(dump_dir)
+		var file := FileAccess.open(dump_dir.path_join("state_%06d.bin" % tick), FileAccess.WRITE)
+		if file != null:
+			file.store_buffer(state)
+			file.close()
 	var compressed := state.compress(FileAccess.COMPRESSION_ZSTD)
 	var stats: Dictionary = sim.get_network_state_size_stats()
 	var payload_size := compressed.size() if !compressed.is_empty() else state.size()
@@ -46,6 +52,7 @@ func _init() -> void:
 	var end_tick := _arg_int(args, "--end-tick", 3600)
 	var sample_start := _arg_int(args, "--sample-start", maxi(0, end_tick - 300))
 	var sample_every := _arg_int(args, "--sample-every", 60)
+	var dump_dir := _arg_value(args, "--dump-dir", "")
 
 	var track_bytes := FileAccess.get_file_as_bytes(track_path)
 	var car_bytes := FileAccess.get_file_as_bytes(car_props_path)
@@ -91,7 +98,7 @@ func _init() -> void:
 			quit(1)
 			return
 		if tick >= sample_start and sample_every > 0 and (tick - sample_start) % sample_every == 0:
-			_sample_state(sim, tick)
+			_sample_state(sim, tick, dump_dir)
 
 	var total_us := Time.get_ticks_usec() - start_us
 	print("MXT_NETSTATE_LONG_DONE track=", track_path,
