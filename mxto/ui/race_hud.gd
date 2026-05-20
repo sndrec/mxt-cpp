@@ -54,7 +54,7 @@ var sticker_menu_open := false
 var sticker_input_buffer_msec := 0
 const CHECK_ICON_POOL_SIZE := 6
 const STICKER_POOL_SIZE := 30
-const STICKER_BASE_PIXEL_SIZE := 0.004
+const STICKER_BASE_PIXEL_SIZE := 0.003
 const STICKER_BASE_TEXTURE_PIXELS := 128.0
 const STICKER_BASE_HEIGHT_OFFSET := 3.0
 const STICKER_BASE_RISE_OFFSET := 0.66
@@ -205,6 +205,9 @@ func _update_sticker_menu_icons(car: VisualCar) -> void:
 		sticker_menu_icons[i].texture = stickers.stickers[sticker_index]
 
 func _update_sticker_input(car: VisualCar) -> void:
+	if car.game_manager != null and car.game_manager.has_method("_window_accepts_input"):
+		if !bool(car.game_manager.call("_window_accepts_input")):
+			return
 	var now := Time.get_ticks_msec()
 	if now < sticker_input_buffer_msec:
 		return
@@ -259,7 +262,7 @@ func _update_check_warnings(car: VisualCar) -> void:
 func _make_world_sticker_sprite(no_depth: bool, alpha: float) -> Sprite3D:
 	var sprite := Sprite3D.new()
 	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	sprite.centered = true
+	sprite.centered = false
 	sprite.fixed_size = true
 	sprite.no_depth_test = no_depth
 	sprite.modulate = Color(1.0, 1.0, 1.0, alpha)
@@ -302,6 +305,26 @@ func _sticker_pixel_size_for_texture(texture: Texture2D, display_scale: float) -
 		return STICKER_BASE_PIXEL_SIZE * display_scale
 	return STICKER_BASE_PIXEL_SIZE * display_scale * (STICKER_BASE_TEXTURE_PIXELS / max_texture_axis)
 
+func _sticker_offset_for_anchor(texture: Texture2D, anchor_direction: Vector2) -> Vector2:
+	if texture == null:
+		return Vector2.ZERO
+	var texture_size := texture.get_size()
+	var dir := anchor_direction
+	if dir.length_squared() < 0.0001:
+		dir = Vector2(0.0, -1.0)
+	else:
+		dir = dir.normalized()
+	var half_size := texture_size * 0.5
+	var center_distance := absf(dir.x) * half_size.x + absf(dir.y) * half_size.y
+	var center := dir * center_distance
+	return center - half_size
+
+func _set_world_sticker_sprite(sprite: Sprite3D, texture: Texture2D, pixel_size: float, alpha: float, anchor_direction: Vector2) -> void:
+	sprite.texture = texture
+	sprite.pixel_size = pixel_size
+	sprite.modulate.a = alpha
+	sprite.offset = _sticker_offset_for_anchor(texture, anchor_direction)
+
 func _update_world_stickers(car: VisualCar) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or car.game_manager == null or car.game_manager.game_sim == null:
@@ -320,12 +343,12 @@ func _update_world_stickers(car: VisualCar) -> void:
 	for actor_id in active.keys():
 		var actor_int := int(actor_id)
 		var render_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(actor_int)
-		var distance_scale := _distance_sticker_scale(camera_position.distance_to(render_transform.origin))
-		var world_pos := render_transform.origin + render_transform.basis.y * (STICKER_BASE_HEIGHT_OFFSET * distance_scale)
+		var world_pos := render_transform.origin + render_transform.basis.y * STICKER_BASE_HEIGHT_OFFSET
 		if !camera.is_position_in_frustum(world_pos):
 			continue
 		var owner_distance_scale := _distance_sticker_scale(focus_transform.origin.distance_to(render_transform.origin))
-		sticker_candidates.append([camera_position.distance_squared_to(world_pos), actor_int, render_transform, world_pos, distance_scale, owner_distance_scale])
+		var screen_direction := camera.unproject_position(world_pos) - camera.unproject_position(render_transform.origin)
+		sticker_candidates.append([camera_position.distance_squared_to(world_pos), actor_int, render_transform, world_pos, owner_distance_scale, screen_direction])
 	sticker_candidates.sort_custom(func(a, b): return float(a[0]) < float(b[0]))
 	var visible_count := mini(sticker_candidates.size(), sticker_pool.size())
 	for slot in visible_count:
@@ -333,8 +356,8 @@ func _update_world_stickers(car: VisualCar) -> void:
 		var actor_id := int(candidate[1])
 		var render_transform := candidate[2] as Transform3D
 		var world_pos := candidate[3] as Vector3
-		var distance_scale := float(candidate[4])
-		var owner_distance_scale := float(candidate[5])
+		var owner_distance_scale := float(candidate[4])
+		var screen_direction := candidate[5] as Vector2
 		var sticker_node := sticker_pool[slot]
 		sticker_pool_actor_ids[slot] = actor_id
 		sticker_nodes[actor_id] = slot
@@ -353,18 +376,14 @@ func _update_world_stickers(car: VisualCar) -> void:
 		var scale := lerpf(0.45, 1.0, pop_ease)
 		var life_alpha := minf(pop_ease, fade_t)
 		sticker_node.visible = true
-		sticker_node.global_position = world_pos + camera.global_basis.y * (STICKER_BASE_RISE_OFFSET * pop_ease * distance_scale)
+		sticker_node.global_position = world_pos + camera.global_basis.y * (STICKER_BASE_RISE_OFFSET * pop_ease)
 		var pixel_size := _sticker_pixel_size_for_texture(texture, scale * owner_distance_scale)
 		var xray := sticker_node.get_node_or_null("XRay") as Sprite3D
 		if xray != null:
-			xray.texture = texture
-			xray.pixel_size = pixel_size
-			xray.modulate.a = life_alpha * STICKER_XRAY_ALPHA
+			_set_world_sticker_sprite(xray, texture, pixel_size, life_alpha * STICKER_XRAY_ALPHA, screen_direction)
 		var normal := sticker_node.get_node_or_null("Normal") as Sprite3D
 		if normal != null:
-			normal.texture = texture
-			normal.pixel_size = pixel_size
-			normal.modulate.a = life_alpha
+			_set_world_sticker_sprite(normal, texture, pixel_size, life_alpha, screen_direction)
 
 func _ready() -> void:
 	if leaderboard_container:
