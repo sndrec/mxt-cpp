@@ -99,6 +99,7 @@ func _init() -> void:
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
+	var delta_pairs_dict_packet_bytes := 0
 	var bitpacked_plain_packet_bytes := 0
 	var hybrid_plain_packet_bytes := 0
 	var old_dict_packet_bytes := 0
@@ -140,6 +141,7 @@ func _init() -> void:
 				old_plain_packet_bytes += int(cmp.get("old_plain_packet", 0))
 				packed_plain_packet_bytes += int(cmp.get("packed_plain_packet", 0))
 				delta_plain_packet_bytes += int(cmp.get("delta_plain_packet", 0))
+				delta_pairs_dict_packet_bytes += int(cmp.get("delta_pairs_dict_packet", 0))
 				bitpacked_plain_packet_bytes += int(cmp.get("bitpacked_plain_packet", 0))
 				hybrid_plain_packet_bytes += int(cmp.get("hybrid_plain_packet", 0))
 				old_dict_packet_bytes += int(cmp.get("old_dict_packet", 0))
@@ -183,6 +185,7 @@ func _init() -> void:
 		" old_plain_packet_avg=", float(old_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" packed_plain_packet_avg=", float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_plain_packet_avg=", float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),
+		" delta_pairs_dict_packet_avg=", float(delta_pairs_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" bitpacked_plain_packet_avg=", float(bitpacked_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_plain_packet_avg=", float(hybrid_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" old_dict_packet_avg=", float(old_dict_packet_bytes) / float(maxi(sample_count, 1)),
