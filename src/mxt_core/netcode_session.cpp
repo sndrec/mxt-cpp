@@ -557,13 +557,29 @@ PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool h
 	if (out.resize(static_cast<int>(bound)) != 0) {
 		return PackedByteArray();
 	}
-	const size_t compressed_size = ZSTD_compress_usingCDict(
+	ZSTD_CCtx_reset(cctx, ZSTD_reset_session_only);
+	size_t zstd_result = ZSTD_CCtx_refCDict(cctx, cdict);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_contentSizeFlag, 0);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 0);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_dictIDFlag, 0);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	const size_t compressed_size = ZSTD_compress2(
 		cctx,
 		out.ptrw(),
 		bound,
 		raw.ptr(),
-		static_cast<size_t>(raw_size),
-		cdict
+		static_cast<size_t>(raw_size)
 	);
 	if (ZSTD_isError(compressed_size) || compressed_size > bound || compressed_size > static_cast<size_t>(INT32_MAX)) {
 		return PackedByteArray();
