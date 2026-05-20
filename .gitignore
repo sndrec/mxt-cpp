@@ -19,6 +19,7 @@ profiling/
 symbols.pdb
 test_apply_patch_target.txt
 venv/
+tmp/
 
 # Local workspace scratch/import dumps
 .codex
