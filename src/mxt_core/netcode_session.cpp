@@ -43,7 +43,8 @@ constexpr uint8_t MXT_NET_AUTH_COUNT_MASK = 0x78;
 constexpr uint8_t MXT_NET_AUTH_COUNT_ESCAPE = 0x0f;
 constexpr uint8_t MXT_NET_AUTH_PHASE_BIT = 0x80;
 constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 3;
-constexpr int MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL = 7;
+constexpr int MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL = 12;
+constexpr int MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL = 7;
 constexpr int MXT_NET_AUTH_ZERO_BITMAP_ZSTD_LEVEL = 7;
 constexpr int64_t MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT = 20000;
 constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
@@ -393,7 +394,7 @@ ZSTD_CDict* auth_input_delta_pairs_zstd_cdict()
 			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT,
 			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT_SIZE,
 			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btlazy2
+			ZSTD_btopt
 		);
 	}
 	return g_auth_input_delta_pairs_zstd_cdict;
@@ -405,7 +406,7 @@ ZSTD_CDict* auth_input_delta_pairs_surface_zstd_cdict()
 		g_auth_input_delta_pairs_surface_zstd_cdict = create_auth_input_zstd_cdict(
 			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ZSTD_DICT,
 			MXT_AUTH_INPUT_DELTA_PAIRS_SURFACE_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
+			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
 			ZSTD_btlazy2
 		);
 	}
@@ -419,7 +420,7 @@ ZSTD_CDict* auth_input_delta_low_entropy_zstd_cdict()
 			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ZSTD_DICT,
 			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_ZSTD_DICT_SIZE,
 			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
-			ZSTD_btlazy2
+			ZSTD_btopt
 		);
 	}
 	return g_auth_input_delta_low_entropy_zstd_cdict;
@@ -431,7 +432,7 @@ ZSTD_CDict* auth_input_delta_low_entropy_surface_zstd_cdict()
 		g_auth_input_delta_low_entropy_surface_zstd_cdict = create_auth_input_zstd_cdict(
 			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ZSTD_DICT,
 			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_SURFACE_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
+			MXT_NET_AUTH_DELTA_PAIRS_SURFACE_ZSTD_LEVEL,
 			ZSTD_btlazy2
 		);
 	}
