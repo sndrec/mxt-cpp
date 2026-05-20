@@ -687,7 +687,10 @@ constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT = 0;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS = 1;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS = 2;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS = 3;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_ESCAPE_TAIL = 4;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_ESCAPE_TAIL = 5;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL = 6;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[10][2] = {
 	{1, 0}, {127, 127}, {0, 0}, {1, 32}, {17, 31},
 	{17, 0}, {0, 32}, {1, 17}, {0, 31}, {32, 31},
@@ -746,6 +749,13 @@ constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIR_FIELDS[3][15][
 
 const uint8_t (*auth_input_low_entropy_table_for_sublayout(uint8_t sublayout))[15][2]
 {
+	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_ESCAPE_TAIL) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS;
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_ESCAPE_TAIL) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
+	}
 	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
 		return MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS;
 	}
@@ -758,6 +768,13 @@ const uint8_t (*auth_input_low_entropy_table_for_sublayout(uint8_t sublayout))[1
 	return nullptr;
 }
 
+bool auth_input_low_entropy_sublayout_escape_tail(uint8_t sublayout)
+{
+	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_ESCAPE_TAIL ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_ESCAPE_TAIL ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL;
+}
+
 PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_raw, int frame_count, int p_racer_count, uint8_t sublayout, bool write_sublayout)
 {
 	if (frame_count != 2 || p_racer_count <= 0 || delta_pairs_raw.size() != frame_count * p_racer_count * 5) {
@@ -767,6 +784,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	if (sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT && !pair_table) {
 		return PackedByteArray();
 	}
+	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
 	const int field_bytes = frame_count * p_racer_count;
 	const int sv_class_bytes = (p_racer_count + 3) >> 2;
 	const int mask_code_bytes = (p_racer_count + 1) >> 1;
@@ -828,7 +846,75 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	if (write_sublayout) {
 		dst[pos++] = sublayout;
 	}
-	if (pair_table) {
+	if (pair_table && escape_tail) {
+		int field_code_pos[3] = {};
+		for (int field = 0; field < 3; ++field) {
+			field_code_pos[field] = pos;
+			std::memset(dst + pos, 0, static_cast<size_t>(table_code_bytes));
+			pos += table_code_bytes;
+		}
+		const int sv_class_pos = pos;
+		std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
+		pos += sv_class_bytes;
+		const int mask_code_pos = pos;
+		std::memset(dst + pos, 0, static_cast<size_t>(mask_code_bytes));
+		pos += mask_code_bytes;
+		for (int field = 0; field < 3; ++field) {
+			const int base = field * field_bytes;
+			const int code_pos = field_code_pos[field];
+			for (int i = 0; i < p_racer_count; ++i) {
+				const uint8_t a = src[base + (i * 2)];
+				const uint8_t b = src[base + (i * 2) + 1];
+				uint8_t code = 15;
+				for (int p = 0; p < 15; ++p) {
+					if (pair_table[field][p][0] == a && pair_table[field][p][1] == b) {
+						code = static_cast<uint8_t>(p);
+						break;
+					}
+				}
+				dst[code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
+				if (code == 15) {
+					dst[pos++] = a;
+					dst[pos++] = b;
+				}
+			}
+		}
+		for (int i = 0; i < p_racer_count; ++i) {
+			const uint8_t a = src[sv_base + (i * 2)];
+			const uint8_t b = src[sv_base + (i * 2) + 1];
+			uint8_t code = 2;
+			if (a == 127 && b == 0) {
+				code = 0;
+			} else if (a == 0 && b == 0) {
+				code = 1;
+			} else if (a == 127 && b == 127) {
+				code = 2;
+			} else {
+				code = 3;
+			}
+			dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
+			if (code == 3) {
+				dst[pos++] = a;
+				dst[pos++] = b;
+			}
+		}
+		for (int i = 0; i < p_racer_count; ++i) {
+			const uint8_t a = src[mask_base + (i * 2)];
+			const uint8_t b = src[mask_base + (i * 2) + 1];
+			uint8_t code = 15;
+			for (int p = 0; p < 10; ++p) {
+				if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
+					code = static_cast<uint8_t>(p);
+					break;
+				}
+			}
+			dst[mask_code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
+			if (code == 15) {
+				dst[pos++] = a;
+				dst[pos++] = b;
+			}
+		}
+	} else if (pair_table) {
 		for (int field = 0; field < 3; ++field) {
 			const int base = field * field_bytes;
 			std::memset(dst + pos, 0, static_cast<size_t>(table_code_bytes));
@@ -855,45 +941,47 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 		std::memcpy(dst + pos, src, static_cast<size_t>(3 * field_bytes));
 		pos += 3 * field_bytes;
 	}
-	std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
-	const int sv_class_pos = pos;
-	pos += sv_class_bytes;
-	for (int i = 0; i < p_racer_count; ++i) {
-		const uint8_t a = src[sv_base + (i * 2)];
-		const uint8_t b = src[sv_base + (i * 2) + 1];
-		uint8_t code = 2;
-		if (a == 127 && b == 0) {
-			code = 0;
-		} else if (a == 0 && b == 0) {
-			code = 1;
-		} else if (a == 127 && b == 127) {
-			code = 2;
-		} else {
-			code = 3;
-		}
-		dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
-		if (code == 3) {
-			dst[pos++] = a;
-			dst[pos++] = b;
-		}
-	}
-	std::memset(dst + pos, 0, static_cast<size_t>(mask_code_bytes));
-	const int mask_code_pos = pos;
-	pos += mask_code_bytes;
-	for (int i = 0; i < p_racer_count; ++i) {
-		const uint8_t a = src[mask_base + (i * 2)];
-		const uint8_t b = src[mask_base + (i * 2) + 1];
-		uint8_t code = 15;
-		for (int p = 0; p < 10; ++p) {
-			if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
-				code = static_cast<uint8_t>(p);
-				break;
+	if (!escape_tail) {
+		std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
+		const int sv_class_pos = pos;
+		pos += sv_class_bytes;
+		for (int i = 0; i < p_racer_count; ++i) {
+			const uint8_t a = src[sv_base + (i * 2)];
+			const uint8_t b = src[sv_base + (i * 2) + 1];
+			uint8_t code = 2;
+			if (a == 127 && b == 0) {
+				code = 0;
+			} else if (a == 0 && b == 0) {
+				code = 1;
+			} else if (a == 127 && b == 127) {
+				code = 2;
+			} else {
+				code = 3;
+			}
+			dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
+			if (code == 3) {
+				dst[pos++] = a;
+				dst[pos++] = b;
 			}
 		}
-		dst[mask_code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
-		if (code == 15) {
-			dst[pos++] = a;
-			dst[pos++] = b;
+		std::memset(dst + pos, 0, static_cast<size_t>(mask_code_bytes));
+		const int mask_code_pos = pos;
+		pos += mask_code_bytes;
+		for (int i = 0; i < p_racer_count; ++i) {
+			const uint8_t a = src[mask_base + (i * 2)];
+			const uint8_t b = src[mask_base + (i * 2) + 1];
+			uint8_t code = 15;
+			for (int p = 0; p < 10; ++p) {
+				if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
+					code = static_cast<uint8_t>(p);
+					break;
+				}
+			}
+			dst[mask_code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
+			if (code == 15) {
+				dst[pos++] = a;
+				dst[pos++] = b;
+			}
 		}
 	}
 	if (pos != out_size) {
@@ -919,7 +1007,45 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	int pos = 0;
 	const uint8_t sublayout = read_sublayout ? src[pos++] : static_cast<uint8_t>(external_sublayout);
 	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
-	if (pair_table) {
+	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
+	int tail_field_code_pos[3] = {};
+	int tail_sv_class_pos = 0;
+	int tail_mask_code_pos = 0;
+	if (pair_table && escape_tail) {
+		const int table_code_bytes = (p_racer_count + 1) >> 1;
+		for (int field = 0; field < 3; ++field) {
+			tail_field_code_pos[field] = pos;
+			pos += table_code_bytes;
+		}
+		tail_sv_class_pos = pos;
+		pos += sv_class_bytes;
+		tail_mask_code_pos = pos;
+		pos += mask_code_bytes;
+		if (pos > encoded.size()) {
+			return false;
+		}
+		for (int field = 0; field < 3; ++field) {
+			const int base = field * field_bytes;
+			const int code_pos = tail_field_code_pos[field];
+			for (int i = 0; i < p_racer_count; ++i) {
+				const uint8_t code = static_cast<uint8_t>((src[code_pos + (i >> 1)] >> ((i & 1) * 4)) & 0x0f);
+				uint8_t a = 0;
+				uint8_t b = 0;
+				if (code < 15) {
+					a = pair_table[field][code][0];
+					b = pair_table[field][code][1];
+				} else {
+					if (pos + 2 > encoded.size()) {
+						return false;
+					}
+					a = src[pos++];
+					b = src[pos++];
+				}
+				dst[base + (i * 2)] = a;
+				dst[base + (i * 2) + 1] = b;
+			}
+		}
+	} else if (pair_table) {
 		const int table_code_bytes = (p_racer_count + 1) >> 1;
 		for (int field = 0; field < 3; ++field) {
 			const int base = field * field_bytes;
@@ -955,10 +1081,12 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	} else {
 		return false;
 	}
-	const int sv_class_pos = pos;
-	pos += sv_class_bytes;
-	if (pos > encoded.size()) {
-		return false;
+	const int sv_class_pos = escape_tail ? tail_sv_class_pos : pos;
+	if (!escape_tail) {
+		pos += sv_class_bytes;
+		if (pos > encoded.size()) {
+			return false;
+		}
 	}
 	const int sv_base = 3 * field_bytes;
 	for (int i = 0; i < p_racer_count; ++i) {
@@ -981,10 +1109,12 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 		dst[sv_base + (i * 2)] = a;
 		dst[sv_base + (i * 2) + 1] = b;
 	}
-	const int mask_code_pos = pos;
-	pos += mask_code_bytes;
-	if (pos > encoded.size()) {
-		return false;
+	const int mask_code_pos = escape_tail ? tail_mask_code_pos : pos;
+	if (!escape_tail) {
+		pos += mask_code_bytes;
+		if (pos > encoded.size()) {
+			return false;
+		}
 	}
 	const int mask_base = 4 * field_bytes;
 	for (int i = 0; i < p_racer_count; ++i) {
