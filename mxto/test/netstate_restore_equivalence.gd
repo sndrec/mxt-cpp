@@ -116,7 +116,12 @@ func _parse_debug_vec(s: String, key: String) -> Vector3:
 		return Vector3.ZERO
 	return Vector3(float(parts[0]), float(parts[1]), float(parts[2]))
 
-func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int, pos_epsilon: float, basis_epsilon: float) -> bool:
+func _print_debug_pair(prefix: String, a: GameSim, b: GameSim, player_id: int) -> void:
+	if player_id < 0:
+		return
+	print(prefix, " player=", player_id, " auth=[", a.get_player_debug_string(player_id), "] restored=[", b.get_player_debug_string(player_id), "]")
+
+func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int, pos_epsilon: float, basis_epsilon: float, detail_threshold: float) -> bool:
 	var max_pos_delta := 0.0
 	var max_vel_delta := 0.0
 	var max_up_delta := 0.0
@@ -158,6 +163,10 @@ func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int
 		" max_up_player=", max_up_player,
 		" max_dist_delta=", max_dist_delta,
 		" max_dist_player=", max_dist_player)
+	if detail_threshold >= 0.0 and max_pos_delta >= detail_threshold:
+		_print_debug_pair("MXT_NETSTATE_RESTORE_EQUIV_DETAIL_POS tick=%d delta=%.9f" % [tick, max_pos_delta], a, b, max_pos_player)
+		if max_vel_player != max_pos_player:
+			_print_debug_pair("MXT_NETSTATE_RESTORE_EQUIV_DETAIL_VEL tick=%d delta=%.9f" % [tick, max_vel_delta], a, b, max_vel_player)
 	return true
 
 func _make_sim(track_bytes: PackedByteArray, car_bytes: PackedByteArray, cars: int, humans: int, player_ids: Array, cpu_flags: Array) -> GameSim:
@@ -208,6 +217,7 @@ func _init() -> void:
 	var compare_every := maxi(1, _arg_int(args, "--compare-every", 60))
 	var pos_epsilon := float(_arg_value(args, "--pos-epsilon", "0.02"))
 	var basis_epsilon := float(_arg_value(args, "--basis-epsilon", "0.0002"))
+	var detail_threshold := float(_arg_value(args, "--detail-threshold", "-1.0"))
 	var raw_load_baseline := _arg_bool(args, "--raw-load-baseline", false)
 
 	var track_bytes := FileAccess.get_file_as_bytes(track_path)
@@ -268,12 +278,12 @@ func _init() -> void:
 			int(restored_snapshot[diff]) if diff >= 0 and diff < restored_snapshot.size() else -1])
 			quit(1)
 			return
-		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon):
+		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold):
 			quit(1)
 			return
 
 	if raw_load_baseline:
-		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon):
+		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold):
 			quit(1)
 			return
 	for tick in range(snapshot_tick + 1, snapshot_tick + verify_frames + 1):
@@ -293,7 +303,7 @@ func _init() -> void:
 			quit(1)
 			return
 		if (tick - snapshot_tick) % compare_every == 0:
-			if !_compare_debug_numeric(authoritative, restored, player_ids, tick, pos_epsilon, basis_epsilon):
+			if !_compare_debug_numeric(authoritative, restored, player_ids, tick, pos_epsilon, basis_epsilon, detail_threshold):
 				quit(1)
 				return
 
