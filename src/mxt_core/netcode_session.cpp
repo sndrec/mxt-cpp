@@ -733,7 +733,8 @@ constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3 = 11
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3 = 12;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 = 13;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1 = 14;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1 = 15;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[10][2] = {
 	{1, 0}, {127, 127}, {0, 0}, {1, 32}, {17, 31},
 	{17, 0}, {0, 32}, {1, 17}, {0, 31}, {32, 31},
@@ -860,7 +861,8 @@ bool auth_input_low_entropy_sublayout_mask3(uint8_t sublayout)
 bool auth_input_low_entropy_sublayout_mask1(uint8_t sublayout)
 {
 	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1;
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1;
 }
 
 int auth_input_low_entropy_mask3_code(uint8_t table_code)
@@ -902,7 +904,9 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 		return PackedByteArray();
 	}
 	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
-	if (sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT && !pair_table) {
+	if (sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT &&
+		sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1 &&
+		!pair_table) {
 		return PackedByteArray();
 	}
 	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
@@ -1128,9 +1132,9 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 				dst[pos++] = b;
 			}
 		}
-		std::memset(dst + pos, 0, static_cast<size_t>(mask_code_bytes));
+		std::memset(dst + pos, 0, static_cast<size_t>(mask_class_bytes));
 		const int mask_code_pos = pos;
-		pos += mask_code_bytes;
+		pos += mask_class_bytes;
 		for (int i = 0; i < p_racer_count; ++i) {
 			const uint8_t a = src[mask_base + (i * 2)];
 			const uint8_t b = src[mask_base + (i * 2) + 1];
@@ -1141,10 +1145,20 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 					break;
 				}
 			}
-			dst[mask_code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
-			if (code == 15) {
-				dst[pos++] = a;
-				dst[pos++] = b;
+			if (mask1) {
+				if (code == 0) {
+					dst[mask_code_pos + (i >> 3)] &= static_cast<uint8_t>(~(1u << (i & 7)));
+				} else {
+					dst[mask_code_pos + (i >> 3)] |= static_cast<uint8_t>(1u << (i & 7));
+					dst[pos++] = a;
+					dst[pos++] = b;
+				}
+			} else {
+				dst[mask_code_pos + (i >> 1)] |= static_cast<uint8_t>(code << ((i & 1) * 4));
+				if (code == 15) {
+					dst[pos++] = a;
+					dst[pos++] = b;
+				}
 			}
 		}
 	}
@@ -1245,7 +1259,8 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 				dst[base + (i * 2) + 1] = b;
 			}
 		}
-	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT) {
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1) {
 		if (pos + (3 * field_bytes) > encoded.size()) {
 			return false;
 		}
@@ -1284,7 +1299,7 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	}
 	const int mask_code_pos = escape_tail ? tail_mask_code_pos : pos;
 	if (!escape_tail) {
-		pos += mask_code_bytes;
+		pos += mask_class_bytes;
 		if (pos > encoded.size()) {
 			return false;
 		}
