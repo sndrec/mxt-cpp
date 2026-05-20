@@ -24,7 +24,7 @@ constexpr int MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER = 9;
 constexpr int MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES = 1;
 constexpr int MXT_NET_COMPRESSION_ZSTD = FileAccess::COMPRESSION_ZSTD;
 constexpr uint8_t MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD = 0;
-constexpr uint8_t MXT_NET_AUTH_MODE_PACKED_DICT_ZSTD = 1;
+constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD = 1;
 constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_PLAIN_ZSTD = 2;
 constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD = 3;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD = 4;
@@ -49,6 +49,7 @@ enum AuthInputLayout : uint8_t {
 	AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA = 2,
 	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS = 3,
 	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA = 4,
+	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP = 5,
 };
 bool g_auth_input_sample_dump_enabled = false;
 int64_t g_auth_input_sample_dump_limit = MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT;
@@ -218,9 +219,15 @@ float axis_from_byte(uint8_t v)
 
 int auth_input_raw_size(int frame_count, int racer_count, AuthInputLayout layout)
 {
-	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS || layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
+	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS ||
+		layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA ||
+		layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
 		const int input_count = frame_count * racer_count;
-		return (((input_count + 7) >> 3) * 5) + input_count * 4;
+		const int bitpacked_size = (((input_count + 7) >> 3) * 5) + input_count * 4;
+		if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
+			return ((bitpacked_size + 7) >> 3) + bitpacked_size;
+		}
+		return bitpacked_size;
 	}
 	const int bytes_per_racer = layout == AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES ?
 		MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER :
@@ -240,14 +247,16 @@ AuthInputLayout auth_input_layout_from_mode(uint8_t mode)
 	if (mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_PLAIN_ZSTD || mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD) {
 		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
 	}
+	if (mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD) {
+		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
+	}
 	return AUTH_INPUT_LAYOUT_PACKED_BUTTONS;
 }
 
 bool auth_input_mode_uses_dict(uint8_t mode)
 {
 	mode &= MXT_NET_AUTH_MODE_MASK;
-	return mode == MXT_NET_AUTH_MODE_PACKED_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD ||
+	return mode == MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD ||
 		mode == MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD ||
 		mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD;
 }
@@ -393,6 +402,67 @@ bool auth_input_mode_uses_hybrid_dict(uint8_t mode)
 	return mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD;
 }
 
+int auth_input_bitpacked_raw_size(int frame_count, int racer_count)
+{
+	const int input_count = frame_count * racer_count;
+	return (((input_count + 7) >> 3) * 5) + input_count * 4;
+}
+
+PackedByteArray encode_zero_bitmap_raw(const PackedByteArray& src)
+{
+	const int src_size = src.size();
+	if (src_size <= 0) {
+		return PackedByteArray();
+	}
+	const int bitmap_bytes = (src_size + 7) >> 3;
+	int nonzero_count = 0;
+	const uint8_t* src_bytes = src.ptr();
+	for (int i = 0; i < src_size; ++i) {
+		if (src_bytes[i] != 0) {
+			++nonzero_count;
+		}
+	}
+	PackedByteArray out;
+	if (out.resize(bitmap_bytes + nonzero_count) != 0) {
+		return PackedByteArray();
+	}
+	uint8_t* out_bytes = out.ptrw();
+	std::memset(out_bytes, 0, static_cast<size_t>(bitmap_bytes));
+	int out_pos = bitmap_bytes;
+	for (int i = 0; i < src_size; ++i) {
+		const uint8_t value = src_bytes[i];
+		if (value != 0) {
+			out_bytes[i >> 3] |= static_cast<uint8_t>(1u << (i & 7));
+			out_bytes[out_pos++] = value;
+		}
+	}
+	return out;
+}
+
+bool decode_zero_bitmap_raw(const PackedByteArray& encoded, PackedByteArray& out, int raw_size)
+{
+	if (raw_size <= 0 || encoded.size() <= 0) {
+		return false;
+	}
+	const int bitmap_bytes = (raw_size + 7) >> 3;
+	if (encoded.size() < bitmap_bytes || out.resize(raw_size) != 0) {
+		return false;
+	}
+	const uint8_t* encoded_bytes = encoded.ptr();
+	uint8_t* out_bytes = out.ptrw();
+	std::memset(out_bytes, 0, static_cast<size_t>(raw_size));
+	int encoded_pos = bitmap_bytes;
+	for (int i = 0; i < raw_size; ++i) {
+		if ((encoded_bytes[i >> 3] & static_cast<uint8_t>(1u << (i & 7))) != 0) {
+			if (encoded_pos >= encoded.size()) {
+				return false;
+			}
+			out_bytes[i] = encoded_bytes[encoded_pos++];
+		}
+	}
+	return encoded_pos == encoded.size();
+}
+
 PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool hybrid_dict = false, bool bitpacked_dict = false)
 {
 	const int raw_size = raw.size();
@@ -454,6 +524,33 @@ PackedByteArray decompress_auth_input_with_dict(const PackedByteArray& compresse
 	if (ZSTD_isError(decompressed_size) || decompressed_size != static_cast<size_t>(raw_size)) {
 		return PackedByteArray();
 	}
+	return out;
+}
+
+PackedByteArray decompress_auth_input_plain_bound(const PackedByteArray& compressed, int raw_size_bound)
+{
+	if (raw_size_bound <= 0 || compressed.size() <= 0) {
+		return PackedByteArray();
+	}
+	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
+	if (!dctx) {
+		return PackedByteArray();
+	}
+	PackedByteArray out;
+	if (out.resize(raw_size_bound) != 0) {
+		return PackedByteArray();
+	}
+	const size_t decompressed_size = ZSTD_decompressDCtx(
+		dctx,
+		out.ptrw(),
+		static_cast<size_t>(raw_size_bound),
+		compressed.ptr(),
+		static_cast<size_t>(compressed.size())
+	);
+	if (ZSTD_isError(decompressed_size) || decompressed_size > static_cast<size_t>(raw_size_bound) || decompressed_size > static_cast<size_t>(INT32_MAX)) {
+		return PackedByteArray();
+	}
+	out.resize(static_cast<int>(decompressed_size));
 	return out;
 }
 
@@ -1118,6 +1215,10 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	if (!write_authoritative_input_raw(bitpacked_raw, frames, count, AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS)) {
 		return PackedByteArray();
 	}
+	PackedByteArray bitpacked_zero_raw = encode_zero_bitmap_raw(bitpacked_raw);
+	if (bitpacked_zero_raw.size() <= 0) {
+		return PackedByteArray();
+	}
 	PackedByteArray hybrid_raw;
 	if (hybrid_raw.resize(hybrid_raw_size) != 0) {
 		return PackedByteArray();
@@ -1143,19 +1244,19 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		selected_layout = AUTH_INPUT_LAYOUT_PACKED_BUTTONS;
 		selected_raw_size = packed_raw_size;
 	}
-	candidate = compress_auth_input_with_dict(packed_raw);
-	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
-		compressed = candidate;
-		compression_mode = MXT_NET_AUTH_MODE_PACKED_DICT_ZSTD;
-		selected_layout = AUTH_INPUT_LAYOUT_PACKED_BUTTONS;
-		selected_raw_size = packed_raw_size;
-	}
 	candidate = bitpacked_raw.compress(MXT_NET_COMPRESSION_ZSTD);
 	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
 		compressed = candidate;
 		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD;
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
 		selected_raw_size = bitpacked_raw_size;
+	}
+	candidate = bitpacked_zero_raw.compress(MXT_NET_COMPRESSION_ZSTD);
+	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
+		compressed = candidate;
+		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD;
+		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
+		selected_raw_size = bitpacked_zero_raw.size();
 	}
 	candidate = compress_auth_input_with_dict(bitpacked_raw, false, true);
 	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
@@ -1187,6 +1288,8 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		dump_auth_input_sample(bitpacked_raw, first_tick, count, racer_count);
 	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
 		dump_auth_input_sample(hybrid_raw, first_tick, count, racer_count);
+	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
+		dump_auth_input_sample(bitpacked_zero_raw, first_tick, count, racer_count);
 	} else {
 		dump_auth_input_sample(packed_raw, first_tick, count, racer_count);
 	}
@@ -1241,8 +1344,9 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		stats["valid"] = false;
 		return stats;
 	}
-	const AuthInputLayout layout = auth_input_layout_from_mode(compression_mode);
-	const int raw_size = auth_input_raw_size(static_cast<int>(count), racer_count, layout);
+	const AuthInputLayout packet_layout = auth_input_layout_from_mode(compression_mode);
+	const bool zero_bitmap_layout = packet_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
+	const int raw_size = auth_input_raw_size(static_cast<int>(count), racer_count, packet_layout);
 	if (raw_size < 0) {
 		stats["valid"] = false;
 		return stats;
@@ -1259,12 +1363,25 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 			auth_input_mode_uses_hybrid_dict(compression_mode),
 			auth_input_mode_uses_bitpacked_dict(compression_mode)
 		);
+	} else if (zero_bitmap_layout) {
+		raw = decompress_auth_input_plain_bound(compressed, raw_size);
 	} else {
 		raw = compressed.decompress(raw_size, MXT_NET_COMPRESSION_ZSTD);
 	}
-	if (raw.size() != raw_size) {
+	if ((!zero_bitmap_layout && raw.size() != raw_size) || (zero_bitmap_layout && raw.size() > raw_size)) {
 		stats["valid"] = false;
 		return stats;
+	}
+	AuthInputLayout layout = packet_layout;
+	if (zero_bitmap_layout) {
+		PackedByteArray expanded_raw;
+		const int bitpacked_size = auth_input_bitpacked_raw_size(static_cast<int>(count), racer_count);
+		if (!decode_zero_bitmap_raw(raw, expanded_raw, bitpacked_size)) {
+			stats["valid"] = false;
+			return stats;
+		}
+		raw = expanded_raw;
+		layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
 	}
 	const uint8_t* raw_bytes = raw.ptr();
 	int raw_pos = 0;
@@ -1410,29 +1527,44 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 			return out;
 		}
 	}
-	const AuthInputLayout layouts[5] = {
+	const AuthInputLayout layouts[6] = {
 		AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES,
 		AUTH_INPUT_LAYOUT_PACKED_BUTTONS,
 		AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA,
 		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS,
 		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA,
+		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP,
 	};
-	const char* names[5] = {
+	const char* names[6] = {
 		"old",
 		"packed",
 		"delta",
 		"bitpacked",
 		"hybrid",
+		"bitpacked_zero",
 	};
-	for (int l = 0; l < 5; ++l) {
+	for (int l = 0; l < 6; ++l) {
 		const AuthInputLayout layout = layouts[l];
-		const int raw_size = auth_input_raw_size(count, racer_count, layout);
+		int raw_size = auth_input_raw_size(count, racer_count, layout);
 		PackedByteArray raw;
-		if (raw.resize(raw_size) != 0) {
-			return out;
-		}
-		if (!write_authoritative_input_raw(raw, frames, count, layout)) {
-			return out;
+		if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
+			PackedByteArray bitpacked_raw;
+			const int bitpacked_raw_size = auth_input_bitpacked_raw_size(count, racer_count);
+			if (bitpacked_raw.resize(bitpacked_raw_size) != 0) {
+				return out;
+			}
+			if (!write_authoritative_input_raw(bitpacked_raw, frames, count, AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS)) {
+				return out;
+			}
+			raw = encode_zero_bitmap_raw(bitpacked_raw);
+			raw_size = raw.size();
+		} else {
+			if (raw.resize(raw_size) != 0) {
+				return out;
+			}
+			if (!write_authoritative_input_raw(raw, frames, count, layout)) {
+				return out;
+			}
 		}
 		const PackedByteArray plain = raw.compress(MXT_NET_COMPRESSION_ZSTD);
 		const PackedByteArray dict = compress_auth_input_with_dict(raw);
