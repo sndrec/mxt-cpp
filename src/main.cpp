@@ -6689,6 +6689,7 @@ struct NetStateReader {
 	X(velocity)
 
 #define MXT_NET_CAR_VEC3_HALF_FIELDS(X) \
+	X(track_surface_normal) \
 	X(knockback_velocity) \
 	X(velocity_angular)
 
@@ -7791,42 +7792,61 @@ void GameSim::rebuild_static_state_after_network_load() {
 			soa.current_checkpoint[lane] < track->num_checkpoints) {
 			track->get_road_surface(soa.current_checkpoint[lane], position, road.road_t, road.spatial_t, road.closest_surface);
 			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, road.closest_surface.origin);
-			STORE_INDEXED_VEC3(soa, track_surface_normal, lane, road.closest_surface.basis.get_column(1));
+			road.closest_surface.basis[1] = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 		} else {
 			road.closest_surface = basis;
 			road.closest_surface.origin = position;
 			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, position);
-			STORE_INDEXED_VEC3(soa, track_surface_normal, lane, SimVec3(0.0f, 1.0f, 0.0f));
+			road.closest_surface.basis[1] = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 		}
 		STORE_INDEXED_VEC3(soa, track_surface_normal_prev, lane, LOAD_INDEXED_VEC3(soa, track_surface_normal, lane));
 
+		const SimTransform previous_basis = MXT_LOAD_TRANSFORM(soa, basis_physical_other, lane);
+		const SimVec3 previous_position = LOAD_INDEXED_VEC3(soa, position_old, lane);
 		const int point_base = lane * 4;
+		const SimFloat4 tilt_x = sim_load4(soa.tilt_offset_x + point_base);
+		const SimFloat4 tilt_y =
+			sim_load4(soa.tilt_offset_y + point_base) +
+			sim_load4(soa.tilt_force + point_base) -
+			sim_load4(soa.tilt_rest_length + point_base);
+		const SimFloat4 tilt_z = sim_load4(soa.tilt_offset_z + point_base);
+		const SimVec3x4 tilt_pos_old = transform_points_components4(
+			previous_basis.basis.c0.x, previous_basis.basis.c0.y, previous_basis.basis.c0.z,
+			previous_basis.basis.c1.x, previous_basis.basis.c1.y, previous_basis.basis.c1.z,
+			previous_basis.basis.c2.x, previous_basis.basis.c2.y, previous_basis.basis.c2.z,
+			previous_position.x, previous_position.y, previous_position.z,
+			tilt_x, tilt_y, tilt_z);
 		const SimVec3x4 tilt_pos = transform_points_components4(
 			basis.basis.c0.x, basis.basis.c0.y, basis.basis.c0.z,
 			basis.basis.c1.x, basis.basis.c1.y, basis.basis.c1.z,
 			basis.basis.c2.x, basis.basis.c2.y, basis.basis.c2.z,
 			position.x, position.y, position.z,
-			sim_load4(soa.tilt_offset_x + point_base),
-			sim_load4(soa.tilt_offset_y + point_base) + sim_load4(soa.tilt_force + point_base) - sim_load4(soa.tilt_rest_length + point_base),
-			sim_load4(soa.tilt_offset_z + point_base));
-		sim_store4(soa.tilt_pos_old_x + point_base, tilt_pos.x);
-		sim_store4(soa.tilt_pos_old_y + point_base, tilt_pos.y);
-		sim_store4(soa.tilt_pos_old_z + point_base, tilt_pos.z);
+			tilt_x, tilt_y, tilt_z);
+		sim_store4(soa.tilt_pos_old_x + point_base, tilt_pos_old.x);
+		sim_store4(soa.tilt_pos_old_y + point_base, tilt_pos_old.y);
+		sim_store4(soa.tilt_pos_old_z + point_base, tilt_pos_old.z);
 		sim_store4(soa.tilt_pos_x + point_base, tilt_pos.x);
 		sim_store4(soa.tilt_pos_y + point_base, tilt_pos.y);
 		sim_store4(soa.tilt_pos_z + point_base, tilt_pos.z);
 
+		const SimFloat4 wall_x = sim_load4(soa.wall_offset_x + point_base);
+		const SimFloat4 wall_y = sim_load4(soa.wall_offset_y + point_base);
+		const SimFloat4 wall_z = sim_load4(soa.wall_offset_z + point_base);
+		const SimVec3x4 wall_pos_old = transform_points_components4(
+			previous_basis.basis.c0.x, previous_basis.basis.c0.y, previous_basis.basis.c0.z,
+			previous_basis.basis.c1.x, previous_basis.basis.c1.y, previous_basis.basis.c1.z,
+			previous_basis.basis.c2.x, previous_basis.basis.c2.y, previous_basis.basis.c2.z,
+			previous_position.x, previous_position.y, previous_position.z,
+			wall_x, wall_y, wall_z);
 		const SimVec3x4 wall_pos = transform_points_components4(
 			basis.basis.c0.x, basis.basis.c0.y, basis.basis.c0.z,
 			basis.basis.c1.x, basis.basis.c1.y, basis.basis.c1.z,
 			basis.basis.c2.x, basis.basis.c2.y, basis.basis.c2.z,
 			position.x, position.y, position.z,
-			sim_load4(soa.wall_offset_x + point_base),
-			sim_load4(soa.wall_offset_y + point_base),
-			sim_load4(soa.wall_offset_z + point_base));
-		sim_store4(soa.wall_pos_a_x + point_base, wall_pos.x);
-		sim_store4(soa.wall_pos_a_y + point_base, wall_pos.y);
-		sim_store4(soa.wall_pos_a_z + point_base, wall_pos.z);
+			wall_x, wall_y, wall_z);
+		sim_store4(soa.wall_pos_a_x + point_base, wall_pos_old.x);
+		sim_store4(soa.wall_pos_a_y + point_base, wall_pos_old.y);
+		sim_store4(soa.wall_pos_a_z + point_base, wall_pos_old.z);
 		sim_store4(soa.wall_pos_b_x + point_base, wall_pos.x);
 		sim_store4(soa.wall_pos_b_y + point_base, wall_pos.y);
 		sim_store4(soa.wall_pos_b_z + point_base, wall_pos.z);

@@ -16,6 +16,13 @@ func _arg_bool(args: Array, name: String, fallback: bool) -> bool:
 	var value := _arg_value(args, name, "true" if fallback else "false").to_lower()
 	return value == "1" or value == "true" or value == "yes" or value == "on"
 
+func _arg_int_list(args: Array, name: String) -> Array:
+	var value := _arg_value(args, name, "")
+	var out: Array = []
+	for part in value.split(",", false):
+		out.append(int(part))
+	return out
+
 func _bytes_equal(a: PackedByteArray, b: PackedByteArray) -> bool:
 	if a.size() != b.size():
 		return false
@@ -124,6 +131,10 @@ func _print_debug_pair(prefix: String, a: GameSim, b: GameSim, player_id: int) -
 		return
 	print(prefix, " player=", player_id, " auth=[", a.get_player_debug_string(player_id), "] restored=[", b.get_player_debug_string(player_id), "]")
 
+func _print_watch_players(prefix: String, a: GameSim, b: GameSim, players: Array) -> void:
+	for id in players:
+		_print_debug_pair(prefix, a, b, int(id))
+
 func _measure_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, pos_epsilon: float, ignore_worst_pos: int) -> Dictionary:
 	var max_pos_delta := 0.0
 	var max_vel_delta := 0.0
@@ -220,7 +231,10 @@ func _maybe_print_details(prefix: String, a: GameSim, b: GameSim, tick: int, m: 
 		return
 	var max_pos_player := int(m.get("max_pos_player", -1))
 	var max_vel_player := int(m.get("max_vel_player", -1))
+	var fail_player := int(m.get("fail_player", -1))
 	_print_debug_pair("%s_POS tick=%d delta=%.9f" % [prefix, tick, float(m.get("max_pos_delta", 0.0))], a, b, max_pos_player)
+	if fail_player != max_pos_player:
+		_print_debug_pair("%s_EFFECTIVE tick=%d delta=%.9f" % [prefix, tick, float(m.get("fail_pos_delta", 0.0))], a, b, fail_player)
 	if max_vel_player != max_pos_player:
 		_print_debug_pair("%s_VEL tick=%d delta=%.9f" % [prefix, tick, float(m.get("max_vel_delta", 0.0))], a, b, max_vel_player)
 
@@ -375,6 +389,7 @@ func _init() -> void:
 	if detail_threshold < 0.0:
 		detail_threshold = pos_epsilon
 	var ignore_worst_pos := maxi(0, _arg_int(args, "--ignore-worst-pos", 3))
+	var watch_players := _arg_int_list(args, "--watch-players")
 	var raw_load_baseline := _arg_bool(args, "--raw-load-baseline", false)
 	var resync_interval := _arg_int(args, "--resync-interval", 0)
 
@@ -452,6 +467,8 @@ func _init() -> void:
 		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
 			quit(1)
 			return
+	if watch_players.size() > 0:
+		_print_watch_players("MXT_NETSTATE_RESTORE_WATCH tick=%d" % snapshot_tick, authoritative, restored, watch_players)
 	for tick in range(snapshot_tick + 1, snapshot_tick + verify_frames + 1):
 		var shared_inputs := _make_inputs(authoritative, tick, humans, player_ids)
 		shared_inputs_by_tick[tick] = shared_inputs
@@ -466,6 +483,8 @@ func _init() -> void:
 			quit(1)
 			return
 		if (tick - snapshot_tick) % compare_every == 0:
+			if watch_players.size() > 0:
+				_print_watch_players("MXT_NETSTATE_RESTORE_WATCH tick=%d" % tick, authoritative, restored, watch_players)
 			if !_compare_debug_numeric(authoritative, restored, player_ids, tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
 				quit(1)
 				return
