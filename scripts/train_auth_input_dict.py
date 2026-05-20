@@ -60,6 +60,7 @@ def main() -> int:
     parser.add_argument("--samples", required=True)
     parser.add_argument("--current-header", default="src/mxt_core/auth_input_zstd_dictionary.h")
     parser.add_argument("--write-header", default="")
+    parser.add_argument("--symbol", default="MXT_AUTH_INPUT_ZSTD_DICT")
     parser.add_argument("--dict-size", type=int, default=4096)
     parser.add_argument("--train-split", type=float, default=0.75)
     args = parser.parse_args()
@@ -86,11 +87,13 @@ def main() -> int:
         print(_summarize(f"{label} trained_dict_{args.dict_size}", trained_sizes))
 
     if args.write_header:
-        _write_header(
-            Path(args.write_header),
-            trained,
-            f"{len(train_samples)} auth input samples from {sample_dir.name}",
-        )
+        write_path = Path(args.write_header)
+        _write_header(write_path, trained, f"{len(train_samples)} auth input samples from {sample_dir.name}")
+        if args.symbol != "MXT_AUTH_INPUT_ZSTD_DICT":
+            text = write_path.read_text(encoding="utf-8")
+            text = text.replace("MXT_AUTH_INPUT_ZSTD_DICT_SIZE", f"{args.symbol}_SIZE")
+            text = text.replace("MXT_AUTH_INPUT_ZSTD_DICT", args.symbol)
+            write_path.write_text(text, encoding="utf-8")
         print(f"wrote {args.write_header} bytes={len(trained)}")
     return 0
 

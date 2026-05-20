@@ -36,7 +36,8 @@ constexpr uint8_t MXT_NET_AUTH_COUNT_SHIFT = 3;
 constexpr uint8_t MXT_NET_AUTH_COUNT_MASK = 0x78;
 constexpr uint8_t MXT_NET_AUTH_COUNT_ESCAPE = 0x0f;
 constexpr uint8_t MXT_NET_AUTH_PHASE_BIT = 0x80;
-constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 1;
+constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 3;
+constexpr int MXT_NET_AUTH_BITPACKED_ZSTD_LEVEL = 1;
 constexpr int64_t MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT = 20000;
 constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
 constexpr const char* MXT_NET_DEFAULT_AUTH_SAMPLE_DIR = "user://auth_input_samples";
@@ -341,7 +342,7 @@ ZSTD_CDict* auth_input_bitpacked_zstd_cdict()
 		g_auth_input_bitpacked_zstd_cdict = ZSTD_createCDict(
 			MXT_AUTH_INPUT_BITPACKED_ZSTD_DICT,
 			MXT_AUTH_INPUT_BITPACKED_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_ZSTD_LEVEL
+			MXT_NET_AUTH_BITPACKED_ZSTD_LEVEL
 		);
 	}
 	return g_auth_input_bitpacked_zstd_cdict;
