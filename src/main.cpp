@@ -1756,6 +1756,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("load_state_data", "target_tick", "data"), &GameSim::load_state_data);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
+	ClassDB::bind_method(D_METHOD("get_network_state_size_stats"), &GameSim::get_network_state_size_stats);
 	ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
 	ClassDB::bind_method(D_METHOD("render_gamesim_visuals_only", "process_delta"), &GameSim::render_gamesim_visuals_only);
 	ClassDB::bind_method(D_METHOD("get_dip_switches"), &GameSim::get_dip_switches);
@@ -5969,13 +5970,24 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 	}
 }
 
+static constexpr uint16_t MXT_SUPER_SPARK_ANIMATION_FRAMES = 30;
+static constexpr float MXT_SUPER_SPARK_ARC_HEIGHT = 8.4f;
+
+static SimVec3 mxt_super_spark_position_at_frame(const SimVec3& start_position, const SimVec3& final_position, const SimVec3& plane_normal, uint16_t animation_frame, uint8_t collectable)
+{
+	if (collectable) {
+		return final_position;
+	}
+	const float t = std::min(static_cast<float>(animation_frame) / static_cast<float>(MXT_SUPER_SPARK_ANIMATION_FRAMES), 1.0f);
+	const float arc = 4.0f * t * (1.0f - t);
+	return start_position.lerp(final_position, t) + plane_normal * (MXT_SUPER_SPARK_ARC_HEIGHT * arc);
+}
+
 void GameSim::update_super_sparks()
 {
 	if (!sim_started || !cars || !super_spark_state || !super_sparks)
 		return;
 
-	constexpr uint16_t kSparkAnimationFrames = 30;
-	constexpr float kSparkArcHeight = 8.4f;
 	const float collect_radius_sq = SUPER_SPARK_COLLECT_RADIUS * SUPER_SPARK_COLLECT_RADIUS;
 	auto checkpoint_matches = [&](uint16_t spark_checkpoint, uint16_t car_checkpoint) -> bool {
 		if (!current_track || car_checkpoint >= static_cast<uint16_t>(current_track->num_checkpoints))
@@ -5998,10 +6010,9 @@ void GameSim::update_super_sparks()
 		spark.prev_position = spark.position;
 
 		if (!spark.collectable) {
-			const float t = std::min(static_cast<float>(spark.animation_frame) / static_cast<float>(kSparkAnimationFrames), 1.0f);
-			const float arc = 4.0f * t * (1.0f - t);
-			spark.position = spark.start_position.lerp(spark.final_position, t) + spark.plane_normal * (kSparkArcHeight * arc);
-			if (spark.animation_frame >= kSparkAnimationFrames) {
+			spark.position = mxt_super_spark_position_at_frame(
+				spark.start_position, spark.final_position, spark.plane_normal, spark.animation_frame, spark.collectable);
+			if (spark.animation_frame >= MXT_SUPER_SPARK_ANIMATION_FRAMES) {
 				spark.position = spark.final_position;
 				spark.collectable = 1;
 			} else {
@@ -6339,7 +6350,6 @@ void GameSim::finish_render_rollback_correction_capture()
 
 namespace {
 constexpr uint32_t MXT_NET_STATE_MAGIC = 0x5354584du; // "MXTS", little-endian.
-constexpr uint16_t MXT_NET_STATE_VERSION = 5;
 
 struct NetStateWriter {
 	std::vector<uint8_t> data;
@@ -6387,6 +6397,10 @@ struct NetStateWriter {
 			write_vec3(t.basis.get_column(col));
 		}
 		write_vec3(t.origin);
+	}
+
+	int size() const {
+		return static_cast<int>(data.size());
 	}
 
 	godot::PackedByteArray to_packed_byte_array() const {
@@ -6469,28 +6483,28 @@ struct NetStateReader {
 
 #define MXT_NET_CAR_SCALAR_FIELDS(X) \
 	X(uint32_t, machine_state) \
-	X(uint32_t, boost_frames) \
-	X(uint32_t, boost_frames_manual) \
+	X(uint16_t, boost_frames) \
+	X(uint16_t, boost_frames_manual) \
 	X(uint32_t, simulation_tick) \
 	X(uint32_t, last_hit_tick) \
-	X(uint32_t, spinattack_direction) \
-	X(uint32_t, brake_timer) \
+	X(uint8_t, spinattack_direction) \
+	X(uint8_t, brake_timer) \
 	X(uint32_t, terrain_state) \
 	X(uint32_t, frames_since_start) \
-	X(uint32_t, frames_since_start_2) \
-	X(uint32_t, air_time) \
+	X(uint8_t, frames_since_start_2) \
+	X(uint8_t, air_time) \
 	X(uint32_t, strafe_effect) \
-	X(uint32_t, frames_since_death) \
+	X(uint8_t, frames_since_death) \
 	X(uint32_t, terrain_state_2) \
 	X(uint32_t, suspension_reset_flag) \
 	X(uint32_t, state_2) \
-	X(uint32_t, g_anim_timer) \
-	X(uint64_t, level_start_time) \
-	X(int, some_breakdown_int) \
-	X(int, breakdown_frame_counter) \
-	X(uint32_t, restore_wait_frames) \
-	X(uint32_t, restore_move_frames) \
-	X(int, collision_old_cp) \
+	X(uint16_t, g_anim_timer) \
+	X(uint32_t, level_start_time) \
+	X(uint16_t, some_breakdown_int) \
+	X(uint8_t, breakdown_frame_counter) \
+	X(uint16_t, restore_wait_frames) \
+	X(uint16_t, restore_move_frames) \
+	X(int16_t, collision_old_cp) \
 	X(uint16_t, current_checkpoint) \
 	X(int16_t, current_collision_checkpoint) \
 	X(uint16_t, last_ground_checkpoint) \
@@ -6507,7 +6521,7 @@ struct NetStateReader {
 	X(uint16_t, s_boost_charge) \
 	X(uint16_t, s_boost_charge_max) \
 	X(uint16_t, s_boost_frames_remaining) \
-	X(uint16_t, s_boost_emit_frame_accumulator) \
+	X(uint8_t, s_boost_emit_frame_accumulator) \
 	X(uint8_t, s_boost_pending_spark_spawns) \
 	X(uint8_t, pending_super_sparks) \
 	X(bool, has_last_hit_tick) \
@@ -6542,7 +6556,6 @@ struct NetStateReader {
 #define MXT_NET_CAR_VEC3_FIELDS(X) \
 	X(position_current) \
 	X(position_old) \
-	X(position_old_2) \
 	X(position_old_dupe) \
 	X(velocity) \
 	X(knockback_velocity) \
@@ -6564,8 +6577,11 @@ struct NetStateReader {
 
 godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	NetStateWriter writer;
+	NetworkStateSizeStats stats;
+	stats.car_count = num_cars;
+	stats.bumper_count = bumper_count;
+	int section_start = writer.size();
 	writer.write_pod(MXT_NET_STATE_MAGIC);
-	writer.write_pod(MXT_NET_STATE_VERSION);
 	writer.write_pod(static_cast<uint16_t>(0));
 	writer.write_pod(static_cast<int32_t>(target_tick));
 	writer.write_pod(static_cast<int32_t>(num_cars));
@@ -6573,15 +6589,23 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	writer.write_pod(bumper_track_seed);
 	writer.write_pod(bumper_scheduler_lap);
 	writer.write_pod(bumper_next_sequence);
+	stats.header += writer.size() - section_start;
+	section_start = writer.size();
 	for (int i = 0; i < bumper_count && i < BUMPER_POOL_SIZE; ++i) {
 		const BumperState& state = bumper_states[i];
+		if (state.active) {
+			++stats.active_bumper_count;
+		}
 		writer.write_pod(state.active);
 		writer.write_pod(state.spawn_lap);
 		writer.write_pod(state.next_sequence);
 		writer.write_pod(state.target_lane);
 	}
+	stats.bumper_meta += writer.size() - section_start;
 
 	const int trigger_count = current_track ? current_track->num_trigger_colliders : 0;
+	stats.trigger_count = trigger_count;
+	section_start = writer.size();
 	writer.write_pod(static_cast<int32_t>(trigger_count));
 	uint16_t active_spark_count = 0;
 	if (super_spark_state) {
@@ -6604,8 +6628,6 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			writer.write_pod(spark.collectable);
 			writer.write_pod(spark.animation_frame);
 			writer.write_pod(spark.checkpoint);
-			writer.write_vec3(spark.position);
-			writer.write_vec3(spark.prev_position);
 			writer.write_vec3(spark.start_position);
 			writer.write_vec3(spark.final_position);
 			writer.write_vec3(spark.plane_normal);
@@ -6619,27 +6641,36 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		writer.write_pod(placement_timer);
 		writer.write_pod(active_spark_count);
 	}
+	stats.active_spark_count = static_cast<int>(active_spark_count);
+	stats.sparks += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_SCALAR(type, name) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		writer.write_pod(soa.name[lane]); \
+		const type wire_value = static_cast<type>(soa.name[lane]); \
+		writer.write_pod(wire_value); \
 	}
 	MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_SCALAR)
 #undef WRITE_NET_SCALAR
+	stats.car_scalars += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_BUMPER_SCALAR(type, name) \
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		writer.write_pod(soa.name[lane]); \
+		const type wire_value = static_cast<type>(soa.name[lane]); \
+		writer.write_pod(wire_value); \
 	}
 	if (bumper_cars) { \
 		MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_BUMPER_SCALAR) \
 	}
 #undef WRITE_NET_BUMPER_SCALAR
+	stats.bumper_scalars += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_VEC3_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
@@ -6653,7 +6684,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_CAR_VEC3_FIELDS(WRITE_NET_VEC3)
 #undef WRITE_NET_VEC3
 #undef WRITE_NET_VEC3_COMPONENT
+	stats.car_vec3 += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_BUMPER_VEC3_COMPONENT(name, component) \
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
@@ -6669,7 +6702,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	}
 #undef WRITE_NET_BUMPER_VEC3
 #undef WRITE_NET_BUMPER_VEC3_COMPONENT
+	stats.bumper_vec3 += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_TRANSFORM_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
@@ -6692,7 +6727,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_CAR_TRANSFORM_FIELDS(WRITE_NET_TRANSFORM)
 #undef WRITE_NET_TRANSFORM
 #undef WRITE_NET_TRANSFORM_COMPONENT
+	stats.car_transform += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_BUMPER_TRANSFORM_COMPONENT(name, component) \
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
@@ -6717,80 +6754,72 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	}
 #undef WRITE_NET_BUMPER_TRANSFORM
 #undef WRITE_NET_BUMPER_TRANSFORM_COMPONENT
+	stats.bumper_transform += writer.size() - section_start;
 
-#define WRITE_NET_BASIS_COMPONENT(name, component) \
+	section_start = writer.size();
+#define WRITE_NET_BASIS(name) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		writer.write_pod(soa.name##_##component[lane]); \
+		writer.write_quat(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
 	}
-#define WRITE_NET_BASIS(name) \
-	WRITE_NET_BASIS_COMPONENT(name, c0x) \
-	WRITE_NET_BASIS_COMPONENT(name, c0y) \
-	WRITE_NET_BASIS_COMPONENT(name, c0z) \
-	WRITE_NET_BASIS_COMPONENT(name, c1x) \
-	WRITE_NET_BASIS_COMPONENT(name, c1y) \
-	WRITE_NET_BASIS_COMPONENT(name, c1z) \
-	WRITE_NET_BASIS_COMPONENT(name, c2x) \
-	WRITE_NET_BASIS_COMPONENT(name, c2y) \
-	WRITE_NET_BASIS_COMPONENT(name, c2z)
 	WRITE_NET_BASIS(basis_physical)
 	WRITE_NET_BASIS(basis_physical_other)
 #undef WRITE_NET_BASIS
-#undef WRITE_NET_BASIS_COMPONENT
+	stats.car_basis += writer.size() - section_start;
 
-#define WRITE_NET_BUMPER_BASIS_COMPONENT(name, component) \
+	section_start = writer.size();
+#define WRITE_NET_BUMPER_BASIS(name) \
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		writer.write_pod(soa.name##_##component[lane]); \
+		writer.write_quat(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
 	}
-#define WRITE_NET_BUMPER_BASIS(name) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c0x) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c0y) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c0z) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c1x) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c1y) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c1z) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c2x) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c2y) \
-	WRITE_NET_BUMPER_BASIS_COMPONENT(name, c2z)
 	if (bumper_cars) { \
 		WRITE_NET_BUMPER_BASIS(basis_physical) \
 		WRITE_NET_BUMPER_BASIS(basis_physical_other) \
 	}
 #undef WRITE_NET_BUMPER_BASIS
-#undef WRITE_NET_BUMPER_BASIS_COMPONENT
+	stats.bumper_basis += writer.size() - section_start;
 
+	section_start = writer.size();
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		if (soa.collision_old_valid[lane]) {
+			++stats.car_collision_old_count;
 			writer.write_vec2(soa.collision_old_road_t[lane]);
 			writer.write_vec3(soa.collision_old_spatial_t[lane]);
 			writer.write_transform(soa.collision_old_surface[lane]);
 		}
 		if (soa.restore_state[lane] != 0) {
+			++stats.car_restore_count;
 			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_start_transform, lane));
 			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_target_transform, lane));
 		}
 	}
+	stats.car_conditionals += writer.size() - section_start;
+	section_start = writer.size();
 	if (bumper_cars) {
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
 			if (soa.collision_old_valid[lane]) {
+				++stats.bumper_collision_old_count;
 				writer.write_vec2(soa.collision_old_road_t[lane]);
 				writer.write_vec3(soa.collision_old_spatial_t[lane]);
 				writer.write_transform(soa.collision_old_surface[lane]);
 			}
 			if (soa.restore_state[lane] != 0) {
+				++stats.bumper_restore_count;
 				writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_start_transform, lane));
 				writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_target_transform, lane));
 			}
 		}
 	}
+	stats.bumper_conditionals += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_TILT_SCALAR(type, name) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < num_cars; ++i) { \
@@ -6801,7 +6830,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	}
 	MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_TILT_SCALAR)
 #undef WRITE_NET_TILT_SCALAR
+	stats.car_tilt += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_BUMPER_TILT_SCALAR(type, name) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < bumper_count; ++i) { \
@@ -6814,7 +6845,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_BUMPER_TILT_SCALAR) \
 	}
 #undef WRITE_NET_BUMPER_TILT_SCALAR
+	stats.bumper_tilt += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_TILT_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < num_cars; ++i) { \
@@ -6830,7 +6863,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_TILT_VEC3_FIELDS(WRITE_NET_TILT_VEC3)
 #undef WRITE_NET_TILT_VEC3
 #undef WRITE_NET_TILT_VEC3_COMPONENT
+	stats.car_tilt += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_BUMPER_TILT_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < bumper_count; ++i) { \
@@ -6848,7 +6883,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	}
 #undef WRITE_NET_BUMPER_TILT_VEC3
 #undef WRITE_NET_BUMPER_TILT_VEC3_COMPONENT
+	stats.bumper_tilt += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_WALL_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < num_cars; ++i) { \
@@ -6864,7 +6901,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_WALL_VEC3_FIELDS(WRITE_NET_WALL_VEC3)
 #undef WRITE_NET_WALL_VEC3
 #undef WRITE_NET_WALL_VEC3_COMPONENT
+	stats.car_wall += writer.size() - section_start;
 
+	section_start = writer.size();
 #define WRITE_NET_BUMPER_WALL_VEC3_COMPONENT(name, component) \
 	for (int point = 0; point < 4; ++point) { \
 		for (int i = 0; i < bumper_count; ++i) { \
@@ -6882,7 +6921,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	}
 #undef WRITE_NET_BUMPER_WALL_VEC3
 #undef WRITE_NET_BUMPER_WALL_VEC3_COMPONENT
+	stats.bumper_wall += writer.size() - section_start;
 
+	section_start = writer.size();
 	for (int i = 0; i < trigger_count; ++i) {
 		TriggerCollider* trigger = current_track->trigger_colliders[i];
 		uint8_t exploded = 0;
@@ -6902,21 +6943,22 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		writer.write_pod(last_activation_tick);
 		writer.write_pod(has_last_activation);
 	}
+	stats.triggers += writer.size() - section_start;
 
+	stats.total = writer.size();
+	last_network_state_size_stats = stats;
 	return writer.to_packed_byte_array();
 }
 
 bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByteArray& data) {
 	NetStateReader reader(data);
 	uint32_t magic = 0;
-	uint16_t version = 0;
 	uint16_t flags = 0;
 	int32_t snapshot_tick = 0;
 	int32_t snapshot_cars = 0;
 	int32_t snapshot_bumper_count = 0;
 	int32_t trigger_count = 0;
 	if (!reader.read_pod(magic) || magic != MXT_NET_STATE_MAGIC ||
-		!reader.read_pod(version) || version != MXT_NET_STATE_VERSION ||
 		!reader.read_pod(flags) ||
 		!reader.read_pod(snapshot_tick) ||
 		!reader.read_pod(snapshot_cars) ||
@@ -6981,12 +7023,18 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			!reader.read_pod(spark.collectable) ||
 			!reader.read_pod(spark.animation_frame) ||
 			!reader.read_pod(spark.checkpoint) ||
-			!reader.read_vec3(spark.position) ||
-			!reader.read_vec3(spark.prev_position) ||
 			!reader.read_vec3(spark.start_position) ||
 			!reader.read_vec3(spark.final_position) ||
 			!reader.read_vec3(spark.plane_normal)) {
 			return false;
+		}
+		spark.position = mxt_super_spark_position_at_frame(
+			spark.start_position, spark.final_position, spark.plane_normal, spark.animation_frame, spark.collectable);
+		if (!spark.collectable && spark.animation_frame > 0) {
+			spark.prev_position = mxt_super_spark_position_at_frame(
+				spark.start_position, spark.final_position, spark.plane_normal, spark.animation_frame - 1, spark.collectable);
+		} else {
+			spark.prev_position = spark.position;
 		}
 	}
 	super_sparks = super_spark_state->sparks;
@@ -6995,7 +7043,9 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		if (!reader.read_pod(soa.name[lane])) return false; \
+		type wire_value; \
+		if (!reader.read_pod(wire_value)) return false; \
+		soa.name[lane] = wire_value; \
 	}
 	MXT_NET_CAR_SCALAR_FIELDS(READ_NET_SCALAR)
 #undef READ_NET_SCALAR
@@ -7004,7 +7054,9 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		if (!reader.read_pod(soa.name[lane])) return false; \
+		type wire_value; \
+		if (!reader.read_pod(wire_value)) return false; \
+		soa.name[lane] = wire_value; \
 	}
 	if (bumper_count > 0 && !bumper_cars) { \
 		return false; \
@@ -7080,6 +7132,19 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 #undef READ_NET_BUMPER_VEC3
 #undef READ_NET_BUMPER_VEC3_COMPONENT
 
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		STORE_INDEXED_VEC3(soa, position_old_2, lane, LOAD_INDEXED_VEC3(soa, position_current, lane));
+	}
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+			STORE_INDEXED_VEC3(soa, position_old_2, lane, LOAD_INDEXED_VEC3(soa, position_current, lane));
+		}
+	}
+
 #define READ_NET_TRANSFORM_COMPONENT(name, component) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
@@ -7128,25 +7193,15 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 #undef READ_NET_BUMPER_TRANSFORM
 #undef READ_NET_BUMPER_TRANSFORM_COMPONENT
 
-#define READ_NET_BASIS_COMPONENT(name, component) \
-	for (int i = 0; i < num_cars; ++i) { \
-		PhysicsCarSoA& soa = *cars[i].soa; \
-		const int lane = cars[i].soa_index; \
-		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
-	}
 #define READ_NET_BASIS(name) \
-	READ_NET_BASIS_COMPONENT(name, c0x) \
-	READ_NET_BASIS_COMPONENT(name, c0y) \
-	READ_NET_BASIS_COMPONENT(name, c0z) \
-	READ_NET_BASIS_COMPONENT(name, c1x) \
-	READ_NET_BASIS_COMPONENT(name, c1y) \
-	READ_NET_BASIS_COMPONENT(name, c1z) \
-	READ_NET_BASIS_COMPONENT(name, c2x) \
-	READ_NET_BASIS_COMPONENT(name, c2y) \
-	READ_NET_BASIS_COMPONENT(name, c2z) \
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
+		SimQuat q; \
+		if (!reader.read_quat(q)) return false; \
+		SimTransform t = MXT_LOAD_TRANSFORM(soa, name, lane); \
+		t.basis = SimBasis(q); \
+		MXT_STORE_TRANSFORM(soa, name, lane, t); \
 		soa.name##_ox[lane] = 0.0f; \
 		soa.name##_oy[lane] = 0.0f; \
 		soa.name##_oz[lane] = 0.0f; \
@@ -7154,27 +7209,16 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	READ_NET_BASIS(basis_physical)
 	READ_NET_BASIS(basis_physical_other)
 #undef READ_NET_BASIS
-#undef READ_NET_BASIS_COMPONENT
 
-#define READ_NET_BUMPER_BASIS_COMPONENT(name, component) \
-	for (int i = 0; i < bumper_count; ++i) { \
-		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
-		const int lane = bumper_cars[i].soa_index; \
-		if (!reader.read_pod(soa.name##_##component[lane])) return false; \
-	}
 #define READ_NET_BUMPER_BASIS(name) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c0x) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c0y) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c0z) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c1x) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c1y) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c1z) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c2x) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c2y) \
-	READ_NET_BUMPER_BASIS_COMPONENT(name, c2z) \
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
+		SimQuat q; \
+		if (!reader.read_quat(q)) return false; \
+		SimTransform t = MXT_LOAD_TRANSFORM(soa, name, lane); \
+		t.basis = SimBasis(q); \
+		MXT_STORE_TRANSFORM(soa, name, lane, t); \
 		soa.name##_ox[lane] = 0.0f; \
 		soa.name##_oy[lane] = 0.0f; \
 		soa.name##_oz[lane] = 0.0f; \
@@ -7184,7 +7228,6 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		READ_NET_BUMPER_BASIS(basis_physical_other) \
 	}
 #undef READ_NET_BUMPER_BASIS
-#undef READ_NET_BUMPER_BASIS_COMPONENT
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
@@ -7544,6 +7587,40 @@ godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
 	if (!state_buffer[index].data)
 		return godot::PackedByteArray();
 	return serialize_network_state(target_tick);
+}
+
+godot::Dictionary GameSim::get_network_state_size_stats() const {
+	const NetworkStateSizeStats& stats = last_network_state_size_stats;
+	godot::Dictionary out;
+	out["total"] = stats.total;
+	out["header"] = stats.header;
+	out["bumper_meta"] = stats.bumper_meta;
+	out["sparks"] = stats.sparks;
+	out["car_scalars"] = stats.car_scalars;
+	out["bumper_scalars"] = stats.bumper_scalars;
+	out["car_vec3"] = stats.car_vec3;
+	out["bumper_vec3"] = stats.bumper_vec3;
+	out["car_transform"] = stats.car_transform;
+	out["bumper_transform"] = stats.bumper_transform;
+	out["car_basis"] = stats.car_basis;
+	out["bumper_basis"] = stats.bumper_basis;
+	out["car_conditionals"] = stats.car_conditionals;
+	out["bumper_conditionals"] = stats.bumper_conditionals;
+	out["car_tilt"] = stats.car_tilt;
+	out["bumper_tilt"] = stats.bumper_tilt;
+	out["car_wall"] = stats.car_wall;
+	out["bumper_wall"] = stats.bumper_wall;
+	out["triggers"] = stats.triggers;
+	out["car_collision_old_count"] = stats.car_collision_old_count;
+	out["bumper_collision_old_count"] = stats.bumper_collision_old_count;
+	out["car_restore_count"] = stats.car_restore_count;
+	out["bumper_restore_count"] = stats.bumper_restore_count;
+	out["active_bumper_count"] = stats.active_bumper_count;
+	out["active_spark_count"] = stats.active_spark_count;
+	out["trigger_count"] = stats.trigger_count;
+	out["car_count"] = stats.car_count;
+	out["bumper_count"] = stats.bumper_count;
+	return out;
 }
 
 bool GameSim::load_state_data(int target_tick, godot::PackedByteArray data) {

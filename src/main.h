@@ -12,6 +12,7 @@
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "godot_cpp/variant/rid.hpp"
 #include "godot_cpp/variant/array.hpp"
+#include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/packed_int32_array.hpp"
 #include "fzgx_gameplay_camera.h"
 #include "track/racetrack.h"
@@ -55,6 +56,37 @@ namespace godot {
 		};
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		std::vector<char> network_state_live_backup;
+		struct NetworkStateSizeStats {
+			int total = 0;
+			int header = 0;
+			int bumper_meta = 0;
+			int sparks = 0;
+			int car_scalars = 0;
+			int bumper_scalars = 0;
+			int car_vec3 = 0;
+			int bumper_vec3 = 0;
+			int car_transform = 0;
+			int bumper_transform = 0;
+			int car_basis = 0;
+			int bumper_basis = 0;
+			int car_conditionals = 0;
+			int bumper_conditionals = 0;
+			int car_tilt = 0;
+			int bumper_tilt = 0;
+			int car_wall = 0;
+			int bumper_wall = 0;
+			int triggers = 0;
+			int car_collision_old_count = 0;
+			int bumper_collision_old_count = 0;
+			int car_restore_count = 0;
+			int bumper_restore_count = 0;
+			int active_bumper_count = 0;
+			int active_spark_count = 0;
+			int trigger_count = 0;
+			int car_count = 0;
+			int bumper_count = 0;
+		};
+		mutable NetworkStateSizeStats last_network_state_size_stats;
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
 		struct VehicleTickSoA {
@@ -370,6 +402,7 @@ namespace godot {
 		bool load_state_data(int target_tick, godot::PackedByteArray data);
 		void finish_render_rollback_correction_capture();
 		godot::PackedByteArray get_state_data(int target_tick) const;
+		godot::Dictionary get_network_state_size_stats() const;
 		void set_state_data(int target_tick, godot::PackedByteArray data);
 		void fix_pointers();
 		godot::Array get_dip_switches() const;

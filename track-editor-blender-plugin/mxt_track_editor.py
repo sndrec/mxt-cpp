@@ -48,6 +48,37 @@ def _no_undo():
         if orig:
             prefs.use_global_undo = True
 
+MXT_PROFILE_BUILDS = True
+
+@contextmanager
+def _mxt_profile_scope(label):
+    start = time.perf_counter()
+    yield
+    if MXT_PROFILE_BUILDS:
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        print(f"MXT_PROFILE {label}: {elapsed_ms:.2f} ms")
+
+class _MXTProfiler:
+    def __init__(self, label):
+        self.label = label
+        self.start = time.perf_counter()
+        self.last = self.start
+        self.parts = []
+
+    def mark(self, name):
+        if not MXT_PROFILE_BUILDS:
+            return
+        now = time.perf_counter()
+        self.parts.append((name, (now - self.last) * 1000.0))
+        self.last = now
+
+    def finish(self):
+        if not MXT_PROFILE_BUILDS:
+            return
+        total_ms = (time.perf_counter() - self.start) * 1000.0
+        detail = ", ".join(f"{name}={ms:.1f}" for name, ms in self.parts)
+        print(f"MXT_PROFILE {self.label}: total={total_ms:.1f} ms" + (f" ({detail})" if detail else ""))
+
 def _disallow_deletion(obj):
     if obj and hasattr(obj, "can_user_delete"):
         obj.can_user_delete = False
@@ -133,6 +164,10 @@ MESH_COLLISION_SURFACE_ITEMS = [
 
 class MXTMeshCollisionProperties(PropertyGroup):
     is_mxt_collision_mesh: BoolProperty(name="Export Mesh Collision", default=False)
+    is_mxt_visual_mesh: BoolProperty(
+        name="Export Visual Mesh",
+        description="Include this mesh in the exported OBJ without using it as track collision",
+        default=False)
     surface_type: EnumProperty(
         name="Surface",
         items=MESH_COLLISION_SURFACE_ITEMS,
@@ -151,6 +186,32 @@ class MXT_UL_TriggerObjects(bpy.types.UIList):
         row = layout.row(align=True)
         row.prop(item, "label", text="", emboss=False, icon='EMPTY_AXIS')
         row.prop(item, "obj_type", text="", emboss=False, icon='DOT')
+
+class MXTTrackEditorUIState(PropertyGroup):
+    show_track_identity: BoolProperty(name="Track", default=True)
+    show_global_params: BoolProperty(name="Global Track Params", default=False)
+    show_lighting: BoolProperty(name="Lighting", default=False)
+    show_triggers: BoolProperty(name="Trigger Objects", default=False)
+    show_active_trigger: BoolProperty(name="Active Trigger", default=True)
+    show_mesh_export: BoolProperty(name="MXT Mesh Export", default=True)
+    show_segment: BoolProperty(name="Segment", default=True)
+    show_connections: BoolProperty(name="Connections", default=False)
+    show_cp_controls: BoolProperty(name="Control Point", default=True)
+    show_cp_easing: BoolProperty(name="CP Easing F-Curves", default=False)
+    show_line_controls: BoolProperty(name="Line Controls", default=True)
+    show_line_easing: BoolProperty(name="Line Easing F-Curves", default=False)
+    show_spiral_controls: BoolProperty(name="Spiral Controls", default=True)
+    show_spiral_fcurves: BoolProperty(name="Spiral F-Curves", default=False)
+    show_shape_mesh: BoolProperty(name="Shape and Mesh", default=False)
+    show_open_shape: BoolProperty(name="Open Shape", default=False)
+    show_rounded_square: BoolProperty(name="Rounded Square Helpers", default=False)
+    show_adaptive_mesh: BoolProperty(name="Adaptive Mesh Settings", default=False)
+    show_rails: BoolProperty(name="Rails", default=False)
+    show_colors: BoolProperty(name="Colors", default=False)
+    show_mods_embeds: BoolProperty(name="Vertical Modulations & Embeds", default=False)
+    show_active_embed: BoolProperty(name="Active Embed", default=True)
+    show_data_generation: BoolProperty(name="Data and Generation", default=True)
+
 mxt_roads_pending_visual_update = set()
 mxt_timer_is_active = False
 _build_in_progress  = False     
@@ -250,6 +311,12 @@ class MXTTrackSettings(PropertyGroup):
 
     track_description: StringProperty(
         name="Description",
+        default=""
+    )
+
+    visual_scene_path: StringProperty(
+        name="Visual Scene",
+        description="Optional track-local Godot scene path to load for visuals, e.g. track.tscn",
         default=""
     )
 
@@ -478,6 +545,12 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
         name="Preview Mesh Collision",
         description="Export this segment's generated preview mesh as authored mesh collision",
         default=False
+    )
+    disable_preview_mesh_generation: BoolProperty(
+        name="Disable Preview Mesh",
+        description="Do not generate or export this segment's procedural preview mesh",
+        default=False,
+        update=lambda self, ctx: schedule_mesh_build(self.id_data)
     )
 
     rail_height_left: FloatProperty(
@@ -1282,16 +1355,23 @@ def _curve_matrix_endpoint_step(t_samples):
             last_step = step
     return min(first_step or (1.0 / 64.0), last_step or (1.0 / 64.0))
 
-def _curve_matrix_channel_values(pos, quat, scale):
-    q = quat.normalized()
+def _curve_matrix_channel_values(pos, basis, scale):
+    c0 = basis.col[0]
+    c1 = basis.col[1]
+    c2 = basis.col[2]
     return {
         ("location", 0): pos.x,
         ("location", 1): pos.y,
         ("location", 2): pos.z,
-        ("rotation_quaternion", 0): q.w,
-        ("rotation_quaternion", 1): q.x,
-        ("rotation_quaternion", 2): q.y,
-        ("rotation_quaternion", 3): q.z,
+        ("basis", 0): c0.x,
+        ("basis", 1): c0.y,
+        ("basis", 2): c0.z,
+        ("basis", 3): c1.x,
+        ("basis", 4): c1.y,
+        ("basis", 5): c1.z,
+        ("basis", 6): c2.x,
+        ("basis", 7): c2.y,
+        ("basis", 8): c2.z,
         ("scale", 0): scale.x,
         ("scale", 1): scale.y,
         ("scale", 2): scale.z,
@@ -1301,10 +1381,10 @@ def _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_sampl
     step = _curve_matrix_endpoint_step(t_samples)
     pre_t = min(t_samples) - step
     post_t = max(t_samples) + step
-    pre_pos, pre_quat, pre_scale = eval_sample(pre_t)
-    post_pos, post_quat, post_scale = eval_sample(post_t)
-    pre_values = _curve_matrix_channel_values(pre_pos, pre_quat, pre_scale)
-    post_values = _curve_matrix_channel_values(post_pos, post_quat, post_scale)
+    pre_pos, pre_rot, pre_scale = eval_sample(pre_t)
+    post_pos, post_rot, post_scale = eval_sample(post_t)
+    pre_values = _curve_matrix_channel_values(pre_pos, pre_rot.to_matrix(), pre_scale)
+    post_values = _curve_matrix_channel_values(post_pos, post_rot.to_matrix(), post_scale)
     pre_frame = pre_t * 100.0
     post_frame = post_t * 100.0
     for key, fcu in curves.items():
@@ -2157,7 +2237,8 @@ def _ensure_fcurve(act, data_path, array_index):
     return act.fcurves.new(data_path, index=array_index)
 def _bake_curve_matrix_direct(parent_obj):
     with _no_undo():
-        MXTRoad_OT_GenerateCurveMatrix.bake_for_parent(parent_obj)
+        with _mxt_profile_scope(f"bake_curvematrix {parent_obj.name}"):
+            MXTRoad_OT_GenerateCurveMatrix.bake_for_parent(parent_obj)
 
 def _build_mesh_direct(parent_obj):
     with _no_undo():
@@ -2420,63 +2501,27 @@ class RoadShapeRoundedSquareOpen(RoadShapeRoundedSquare):
         return pos + basis @ Vector((p.x, p.y, 0.0))
 
 def _sample_curve_matrix(helper_obj, t: float):
-    act = helper_obj.animation_data.action
-    fc_loc = [act.fcurves.find("location", index=i) for i in range(3)]
-    fc_rot = [act.fcurves.find("rotation_quaternion", index=i) for i in range(4)]
-    fc_scl = [act.fcurves.find("scale", index=i) for i in range(3)]
-    pos = Vector((fc_loc[0].evaluate(t * 100),
-                  fc_loc[1].evaluate(t * 100),
-                  fc_loc[2].evaluate(t * 100)))
-    quat = Quaternion((fc_rot[0].evaluate(t * 100),
-                       fc_rot[1].evaluate(t * 100),
-                       fc_rot[2].evaluate(t * 100),
-                       fc_rot[3].evaluate(t * 100))).normalized()
-    basis = quat.to_matrix().to_3x3()
-    scale = Vector((fc_scl[0].evaluate(t * 100),
-                    fc_scl[1].evaluate(t * 100),
-                    fc_scl[2].evaluate(t * 100)))
+    sampler = _curve_matrix_sampler(helper_obj)
+    if sampler is None:
+        return Matrix.Identity(3), Vector((0.0, 0.0, 0.0)), Vector((1.0, 1.0, 1.0))
+    positions, basis_mats, scales = sampler.sample(np.array([t], dtype=np.float64))
+    pos = Vector(tuple(float(v) for v in positions[0]))
+    basis = Matrix(tuple(tuple(float(v) for v in row) for row in basis_mats[0])).to_3x3()
+    scale = Vector(tuple(float(v) for v in scales[0]))
     basis.col[0] *= scale.x
     basis.col[1] *= scale.y
     basis.col[2] *= scale.z
     return basis, pos, scale
 def _sample_curve_matrix_numpy(helper_obj, t_values_1d):
-    act = helper_obj.animation_data.action
-
-    
-    fc_loc = [act.fcurves.find("location", index=i) for i in range(3)]
-    fc_rot = [act.fcurves.find("rotation_quaternion", index=i) for i in range(4)]
-    fc_scl = [act.fcurves.find("scale", index=i) for i in range(3)]
-
-    
-    
-    frames = t_values_1d * 100.0
-
-    
-    loc_x = np.array([fc_loc[0].evaluate(f) for f in frames])
-    loc_y = np.array([fc_loc[1].evaluate(f) for f in frames])
-    loc_z = np.array([fc_loc[2].evaluate(f) for f in frames])
-
-    rot_w = np.array([fc_rot[0].evaluate(f) for f in frames])
-    rot_x = np.array([fc_rot[1].evaluate(f) for f in frames])
-    rot_y = np.array([fc_rot[2].evaluate(f) for f in frames])
-    rot_z = np.array([fc_rot[3].evaluate(f) for f in frames])
-
-    scl_x = np.array([fc_scl[0].evaluate(f) for f in frames])
-    scl_y = np.array([fc_scl[1].evaluate(f) for f in frames])
-    scl_z = np.array([fc_scl[2].evaluate(f) for f in frames])
-
-    
-    positions = np.stack((loc_x, loc_y, loc_z), axis=-1)
-    quaternions = np.stack((rot_w, rot_x, rot_y, rot_z), axis=-1)
-    scales = np.stack((scl_x, scl_y, scl_z), axis=-1)
-
-    
-    norms = np.linalg.norm(quaternions, axis=1, keepdims=True)
-    
-    norms[norms == 0] = 1
-    quaternions /= norms
-
-    return positions, quaternions, scales
+    sampler = _curve_matrix_sampler(helper_obj)
+    if sampler is None:
+        t_values_1d = np.asarray(t_values_1d, dtype=np.float64)
+        return (
+            np.zeros((len(t_values_1d), 3), dtype=np.float64),
+            np.tile(np.eye(3, dtype=np.float64), (len(t_values_1d), 1, 1)),
+            np.ones((len(t_values_1d), 3), dtype=np.float64),
+        )
+    return sampler.sample(t_values_1d)
 def mxt_draw_callback():
     parent = get_active_mxt_road_segment_parent(bpy.context)
     if not parent:
@@ -2702,82 +2747,99 @@ def mxt_draw_callback():
 class MXTRoad_PT_MainPanel(Panel):
     bl_label = "MXT Road Creator"; bl_idname = "MXTROAD_PT_main_panel"; bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'; bl_category = "MXT Road"
-    def draw_cp_empty_props(self, layout, cp_empty):
+    @staticmethod
+    def section(layout, ui_state, state_prop, label, *, icon='NONE'):
+        box = layout.box()
+        is_open = bool(getattr(ui_state, state_prop))
+        row = box.row(align=True)
+        row.prop(ui_state, state_prop, text=label, icon='TRIA_DOWN' if is_open else 'TRIA_RIGHT', emboss=False)
+        return box if is_open else None
+
+    def draw_cp_empty_props(self, layout, cp_empty, ui_state):
         cp_data = cp_empty.mxt_cp_data; layout.prop(cp_data, "time")
         layout.label(text="Transform (on Empty):")
         col = layout.column(align=True); col.prop(cp_empty, "location", text=""); col.prop(cp_empty, "rotation_euler", text=""); col.prop(cp_empty, "scale", text="")
-        layout.separator(); layout.label(text="Handle Lengths:")
+        layout.separator(); layout.label(text="Handle Lengths")
         row = layout.row(align=True); row.prop(cp_data, "handle_in_length", text="In"); row.prop(cp_data, "handle_out_length", text="Out")
-        easing_box = layout.box(); easing_box.label(text="Property Easing F-Curves (to Next CP):")
-        easing_box.label(text="Select this CP Empty, then open the"); easing_box.label(text="Graph Editor to visually edit easing.")
-        col = easing_box.column(align=True)
-        col.label(text="- Rotation Ease: 'Rotation Ease Factor'", icon='FCURVE')
-        col.label(text="- Scale Ease: 'Scale Ease Factor'", icon='FCURVE')
-        col.label(text="- Twist Ease: 'Twist Ease Factor'", icon='FCURVE')
-        if cp_empty.animation_data and cp_empty.animation_data.action:
-            action = cp_empty.animation_data.action
-            for prop_name_ui, data_path_str_part in { "Rotation": 'rotation_ease_factor_channel', "Scale": 'scale_ease_factor_channel', "Twist": 'twist_ease_factor_channel'}.items():
-                fcu = action.fcurves.find(f'mxt_cp_data.{data_path_str_part}')
-                if fcu and len(fcu.keyframe_points) > 0 : layout.label(text=f"{prop_name_ui} Factor @ t=0.5: {fcu.evaluate(0.5 * 100):.2f}")
+        easing_box = self.section(layout, ui_state, "show_cp_easing", "Property Easing F-Curves")
+        if easing_box:
+            easing_box.label(text="Select this CP Empty, then open the"); easing_box.label(text="Graph Editor to visually edit easing.")
+            col = easing_box.column(align=True)
+            col.label(text="- Rotation Ease: 'Rotation Ease Factor'", icon='FCURVE')
+            col.label(text="- Scale Ease: 'Scale Ease Factor'", icon='FCURVE')
+            col.label(text="- Twist Ease: 'Twist Ease Factor'", icon='FCURVE')
+            if cp_empty.animation_data and cp_empty.animation_data.action:
+                action = cp_empty.animation_data.action
+                for prop_name_ui, data_path_str_part in { "Rotation": 'rotation_ease_factor_channel', "Scale": 'scale_ease_factor_channel', "Twist": 'twist_ease_factor_channel'}.items():
+                    fcu = action.fcurves.find(f'mxt_cp_data.{data_path_str_part}')
+                    if fcu and len(fcu.keyframe_points) > 0 : easing_box.label(text=f"{prop_name_ui} Factor @ t=0.5: {fcu.evaluate(0.5 * 100):.2f}")
 
     def draw(self, context):
         layout = self.layout; obj = context.active_object
+        ui_state = context.window_manager.mxt_track_editor_ui_state
         layout.operator(MXTRoad_OT_CreateRoadSegment.bl_idname)
         ts = context.scene.mxt_track_settings
         if ts:
-            layout.prop(ts, "first_segment")
-            layout.prop(ts, "track_name")
-            layout.prop(ts, "track_description")
-            layout.prop(ts, "track_difficulty")
+            track_box = self.section(layout, ui_state, "show_track_identity", "Track", icon='WORLD')
+            if track_box:
+                track_box.prop(ts, "first_segment")
+                track_box.prop(ts, "track_name")
+                track_box.prop(ts, "track_description")
+                track_box.prop(ts, "visual_scene_path")
+                track_box.prop(ts, "track_difficulty")
             # Global track parameters
-            global_box = layout.box()
-            global_box.label(text="Global Track Params")
-            global_box.prop(ts, "fog_distance")
-            global_box.prop(ts, "sky_top_color")
-            global_box.prop(ts, "sky_horizon_color")
-            global_box.prop(ts, "sky_ground_color")
-            global_box.prop(ts, "ground_color_global")
-            global_box.prop(ts, "ground_height")
-            global_box.prop(ts, "cloud_color")
-            global_box.prop(ts, "cloud_height")
-            global_box.separator()
-            global_box.label(text="Lighting")
-            if hasattr(ts, "light_color") and hasattr(ts, "light_intensity") and hasattr(ts, "ambient_intensity") and hasattr(ts, "ambient_color") and hasattr(ts, "light_direction"):
-                global_box.prop(ts, "light_color")
-                global_box.prop(ts, "light_intensity")
-                global_box.prop(ts, "ambient_intensity")
-                global_box.prop(ts, "ambient_color")
-                global_box.prop(ts, "light_direction")
-            else:
-                global_box.label(text="(Reload the MXT add-on or restart Blender to see lighting params)")
-            global_box.separator()
-            global_box.prop(ts, "draw_checkpoints")
-            trig_box = layout.box()
-            trig_box.label(text="Trigger Objects")
-            row = trig_box.row()
-            row.template_list("MXT_UL_TriggerObjects", "", ts, "trigger_objects", ts, "active_trigger_obj_idx", rows=3)
-            col = row.column(align=True)
-            col.operator("mxt_track.add_trigger", icon='ADD', text="")
-            col.operator("mxt_track.remove_trigger", icon='REMOVE', text="")
-            if ts.trigger_objects and 0 <= ts.active_trigger_obj_idx < len(ts.trigger_objects):
-                trig = ts.trigger_objects[ts.active_trigger_obj_idx]
-                box = trig_box.box()
-                box.prop(trig, "obj_type")
-                box.prop(trig, "segment")
-                box.prop(trig, "tx")
-                box.prop(trig, "ty")
-                box.prop(trig, "scale")
-                box.prop(trig, "yaw_deg")
-                box.prop(trig, "checkpoint_index")
+            global_box = self.section(layout, ui_state, "show_global_params", "Global Track Params", icon='WORLD_DATA')
+            if global_box:
+                global_box.prop(ts, "fog_distance")
+                global_box.prop(ts, "sky_top_color")
+                global_box.prop(ts, "sky_horizon_color")
+                global_box.prop(ts, "sky_ground_color")
+                global_box.prop(ts, "ground_color_global")
+                global_box.prop(ts, "ground_height")
+                global_box.prop(ts, "cloud_color")
+                global_box.prop(ts, "cloud_height")
+                global_box.separator()
+                global_box.prop(ts, "draw_checkpoints")
+                lighting_box = self.section(global_box, ui_state, "show_lighting", "Lighting")
+                if lighting_box:
+                    if hasattr(ts, "light_color") and hasattr(ts, "light_intensity") and hasattr(ts, "ambient_intensity") and hasattr(ts, "ambient_color") and hasattr(ts, "light_direction"):
+                        lighting_box.prop(ts, "light_color")
+                        lighting_box.prop(ts, "light_intensity")
+                        lighting_box.prop(ts, "ambient_intensity")
+                        lighting_box.prop(ts, "ambient_color")
+                        lighting_box.prop(ts, "light_direction")
+                    else:
+                        lighting_box.label(text="(Reload the MXT add-on or restart Blender to see lighting params)")
+            trig_box = self.section(layout, ui_state, "show_triggers", "Trigger Objects", icon='EMPTY_AXIS')
+            if trig_box:
+                row = trig_box.row()
+                row.template_list("MXT_UL_TriggerObjects", "", ts, "trigger_objects", ts, "active_trigger_obj_idx", rows=3)
+                col = row.column(align=True)
+                col.operator("mxt_track.add_trigger", icon='ADD', text="")
+                col.operator("mxt_track.remove_trigger", icon='REMOVE', text="")
+                if ts.trigger_objects and 0 <= ts.active_trigger_obj_idx < len(ts.trigger_objects):
+                    trig = ts.trigger_objects[ts.active_trigger_obj_idx]
+                    active_trigger_box = self.section(trig_box, ui_state, "show_active_trigger", f"Active Trigger: {trig.label}")
+                    if active_trigger_box:
+                        active_trigger_box.prop(trig, "obj_type")
+                        active_trigger_box.prop(trig, "segment")
+                        active_trigger_box.prop(trig, "tx")
+                        active_trigger_box.prop(trig, "ty")
+                        active_trigger_box.prop(trig, "scale")
+                        active_trigger_box.prop(trig, "yaw_deg")
+                        active_trigger_box.prop(trig, "checkpoint_index")
         layout.separator()
 
         if obj and obj.type == 'MESH' and getattr(obj, "mxt_mesh_collision_props", None):
-            mesh_collision_box = layout.box()
-            mesh_collision_box.label(text="Mesh Collision")
-            mesh_props = obj.mxt_mesh_collision_props
-            mesh_collision_box.prop(mesh_props, "is_mxt_collision_mesh")
-            mesh_collision_box.prop(mesh_props, "surface_type")
-            mesh_collision_box.prop(mesh_props, "double_sided")
+            mesh_collision_box = self.section(layout, ui_state, "show_mesh_export", "MXT Mesh Export", icon='MESH_DATA')
+            if mesh_collision_box:
+                mesh_props = obj.mxt_mesh_collision_props
+                mesh_collision_box.prop(mesh_props, "is_mxt_visual_mesh")
+                mesh_collision_box.prop(mesh_props, "is_mxt_collision_mesh")
+                collision_col = mesh_collision_box.column()
+                collision_col.enabled = bool(mesh_props.is_mxt_collision_mesh)
+                collision_col.prop(mesh_props, "surface_type")
+                collision_col.prop(mesh_props, "double_sided")
 
         active_road_parent = get_active_mxt_road_segment_parent(context)
         if not active_road_parent:
@@ -2787,184 +2849,180 @@ class MXTRoad_PT_MainPanel(Panel):
         road_props = active_road_parent.mxt_road_overall_props
         
         
-        parent_box = layout.box()
-        header_row = parent_box.row(align=True)
-        header_row.label(text=f"Segment: {active_road_parent.name}")
-        
-        
-        if road_props.segment_type == 'BEZIER':
-            header_row.operator(MXTRoad_OT_AddControlPoint.bl_idname, text="", icon='ADD')
-            header_row.operator('mxt_road.respace_cp_times', text="", icon='TIME')
-            header_row.operator(MXTRoad_OT_UpdatePathVisuals.bl_idname, text="", icon='FILE_REFRESH')
-        
-        parent_box.separator()
-        
-        
-        parent_box.prop(road_props, "segment_type")
-        if road_props.segment_type == 'BEZIER':
-            parent_box.prop(road_props, "rotation_mode")
-        conn_box = parent_box.box()
-        conn_box.label(text="Connections:")
-        row = conn_box.row()
-        row.label(text="Previous")
-        col = row.column(align=True)
-        col.template_list("MXT_UL_SegmentRefs", "", road_props, "prev_segments", road_props, "active_prev_seg_idx", rows=2)
-        buttons = col.column(align=True)
-        buttons.operator("mxt_road.add_prev_segment", icon='ADD', text="")
-        buttons.operator("mxt_road.remove_prev_segment", icon='REMOVE', text="")
-        row = conn_box.row()
-        row.label(text="Next")
-        col = row.column(align=True)
-        col.template_list("MXT_UL_SegmentRefs", "", road_props, "next_segments", road_props, "active_next_seg_idx", rows=2)
-        buttons = col.column(align=True)
-        buttons.operator("mxt_road.add_next_segment", icon='ADD', text="")
-        buttons.operator("mxt_road.remove_next_segment", icon='REMOVE', text="")
-        parent_box.separator()
+        parent_box = self.section(layout, ui_state, "show_segment", f"Segment: {active_road_parent.name}", icon='CURVE_PATH')
+        if parent_box:
+            header_row = parent_box.row(align=True)
+            if road_props.segment_type == 'BEZIER':
+                header_row.operator(MXTRoad_OT_AddControlPoint.bl_idname, text="", icon='ADD')
+                header_row.operator('mxt_road.respace_cp_times', text="", icon='TIME')
+                header_row.operator(MXTRoad_OT_UpdatePathVisuals.bl_idname, text="", icon='FILE_REFRESH')
 
-        
-        if road_props.segment_type == 'BEZIER':
-            selected_cp = None
-            if obj and obj.parent == active_road_parent and hasattr(obj, "mxt_cp_data") and obj.mxt_cp_data.is_mxt_control_point:
-                selected_cp = obj
-            
-            if selected_cp:
-                cp_box = parent_box.box()
-                cp_box.label(text=f"Control Point: {selected_cp.name}")
-                self.draw_cp_empty_props(cp_box, selected_cp)
-            else:
-                parent_box.label(text="Select a child CP Empty to edit its properties.")
+            parent_box.prop(road_props, "segment_type")
+            if road_props.segment_type == 'BEZIER':
+                parent_box.prop(road_props, "rotation_mode")
 
-        elif road_props.segment_type == 'LINE':
-            line_box = parent_box.box()
-            line_box.label(text="Line Segment Controls:")
-            line_box.prop(road_props, "line_start_point")
-            line_box.prop(road_props, "line_end_point")
+            conn_box = self.section(parent_box, ui_state, "show_connections", "Connections", icon='LINKED')
+            if conn_box:
+                row = conn_box.row()
+                row.label(text="Previous")
+                col = row.column(align=True)
+                col.template_list("MXT_UL_SegmentRefs", "", road_props, "prev_segments", road_props, "active_prev_seg_idx", rows=2)
+                buttons = col.column(align=True)
+                buttons.operator("mxt_road.add_prev_segment", icon='ADD', text="")
+                buttons.operator("mxt_road.remove_prev_segment", icon='REMOVE', text="")
+                row = conn_box.row()
+                row.label(text="Next")
+                col = row.column(align=True)
+                col.template_list("MXT_UL_SegmentRefs", "", road_props, "next_segments", road_props, "active_next_seg_idx", rows=2)
+                buttons = col.column(align=True)
+                buttons.operator("mxt_road.add_next_segment", icon='ADD', text="")
+                buttons.operator("mxt_road.remove_next_segment", icon='REMOVE', text="")
 
-            if obj and obj == road_props.line_start_point:
-                easing_box = line_box.box()
-                easing_box.label(text="Edit Easing in Graph Editor:")
-                col = easing_box.column(align=True)
-                col.label(text="- Rotation Ease: 'Rotation Ease Factor'", icon='FCURVE')
-                col.label(text="- Scale Ease: 'Scale Ease Factor'", icon='FCURVE')
+            if road_props.segment_type == 'BEZIER':
+                selected_cp = None
+                if obj and obj.parent == active_road_parent and hasattr(obj, "mxt_cp_data") and obj.mxt_cp_data.is_mxt_control_point:
+                    selected_cp = obj
 
-        elif road_props.segment_type == 'SPIRAL':
-            spiral_box = parent_box.box()
-            spiral_box.label(text="Spiral Segment Controls:")
-            spiral_box.prop(road_props, "spiral_axis_helper")
-            spiral_box.prop(road_props, "spiral_degrees")
-            spiral_box.prop(road_props, "spiral_axis")
-            spiral_box.prop(road_props, "spiral_helper")
-            
-            info_box = spiral_box.box()
-            info_box.label(text="Edit F-Curves on Spiral Helper:")
-            col = info_box.column(align=True)
-            col.label(text="- Radius: Location X", icon='FCURVE')
-            col.label(text="- Height: Location Y", icon='FCURVE')
-            col.label(text="- Twist: Location Z (degrees)", icon='FCURVE')
-            col.separator()
-            col.label(text="- Road Width: Scale X", icon='FCURVE')
-            col.label(text="- Road Thickness: Scale Y", icon='FCURVE')
+                cp_box = self.section(parent_box, ui_state, "show_cp_controls", f"Control Point: {selected_cp.name if selected_cp else 'None'}", icon='EMPTY_SINGLE_ARROW')
+                if cp_box:
+                    if selected_cp:
+                        self.draw_cp_empty_props(cp_box, selected_cp, ui_state)
+                    else:
+                        cp_box.label(text="Select a child CP Empty to edit its properties.")
 
-            
-            select_box = info_box.row()
-            op = select_box.operator("mxt_road.select_helper", text="Edit Spiral Curves", icon='GRAPH')
-            op.helper_name = road_props.spiral_helper.name if road_props.spiral_helper else ""
-            select_box.enabled = bool(road_props.spiral_helper)
+            elif road_props.segment_type == 'LINE':
+                line_box = self.section(parent_box, ui_state, "show_line_controls", "Line Segment Controls", icon='EMPTY_ARROWS')
+                if line_box:
+                    line_box.prop(road_props, "line_start_point")
+                    line_box.prop(road_props, "line_end_point")
 
+                    if obj and obj == road_props.line_start_point:
+                        easing_box = self.section(line_box, ui_state, "show_line_easing", "Edit Easing in Graph Editor")
+                        if easing_box:
+                            col = easing_box.column(align=True)
+                            col.label(text="- Rotation Ease: 'Rotation Ease Factor'", icon='FCURVE')
+                            col.label(text="- Scale Ease: 'Scale Ease Factor'", icon='FCURVE')
 
-        parent_box.separator()
-        
-        
-        common_box = layout.box()
-        common_box.label(text="Shape and Mesh")
-        common_box.prop(road_props, "road_shape_type")
-        
-        if road_props.road_shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
-            open_box = common_box.box()
-            open_box.prop(road_props, "openness_helper")
-            
-            
-            select_row = open_box.row()
-            op = select_row.operator("mxt_road.select_helper", text="Edit Openness Curve", icon='GRAPH')
-            op.helper_name = road_props.openness_helper.name if road_props.openness_helper else ""
-            select_row.enabled = bool(road_props.openness_helper)
-            if road_props.road_shape_type == 'ROUNDED_SQUARE_OPEN':
-                select_row = open_box.row()
-                op = select_row.operator("mxt_road.select_helper", text="Edit Seam Rotation Curve", icon='GRAPH')
-                op.helper_name = road_props.openness_helper.name if road_props.openness_helper else ""
-                select_row.enabled = bool(road_props.openness_helper)
-            
-        if road_props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
-            sq_box = common_box.box()
-            sq_box.prop(road_props, "width_helper")
-            width_row = sq_box.row()
-            op = width_row.operator("mxt_road.select_helper", text="Edit Width Curve", icon='GRAPH')
-            op.helper_name = road_props.width_helper.name if road_props.width_helper else ""
-            width_row.enabled = bool(road_props.width_helper)
+            elif road_props.segment_type == 'SPIRAL':
+                spiral_box = self.section(parent_box, ui_state, "show_spiral_controls", "Spiral Segment Controls", icon='MOD_SCREW')
+                if spiral_box:
+                    spiral_box.prop(road_props, "spiral_axis_helper")
+                    spiral_box.prop(road_props, "spiral_degrees")
+                    spiral_box.prop(road_props, "spiral_axis")
+                    spiral_box.prop(road_props, "spiral_helper")
 
-            sq_box.prop(road_props, "height_helper")
-            height_row = sq_box.row()
-            op = height_row.operator("mxt_road.select_helper", text="Edit Height Curve", icon='GRAPH')
-            op.helper_name = road_props.height_helper.name if road_props.height_helper else ""
-            height_row.enabled = bool(road_props.height_helper)
+                    info_box = self.section(spiral_box, ui_state, "show_spiral_fcurves", "Edit F-Curves on Spiral Helper")
+                    if info_box:
+                        col = info_box.column(align=True)
+                        col.label(text="- Radius: Location X", icon='FCURVE')
+                        col.label(text="- Height: Location Y", icon='FCURVE')
+                        col.label(text="- Twist: Location Z (degrees)", icon='FCURVE')
+                        col.separator()
+                        col.label(text="- Road Width: Scale X", icon='FCURVE')
+                        col.label(text="- Road Thickness: Scale Y", icon='FCURVE')
 
-            sq_box.prop(road_props, "radius_helper")
-            radius_row = sq_box.row()
-            op = radius_row.operator("mxt_road.select_helper", text="Edit Radius Curve", icon='GRAPH')
-            op.helper_name = road_props.radius_helper.name if road_props.radius_helper else ""
-            radius_row.enabled = bool(road_props.radius_helper)
-
-        common_box.prop(road_props, "horiz_subdivs")
-        common_box.prop(road_props, "road_uv_multiplier")
-        mesh_gen_box = common_box.box(); mesh_gen_box.label(text="Adaptive Mesh Settings:")
-        mesh_gen_box.prop(road_props, "mesh_subdivision_length"); mesh_gen_box.prop(road_props, "mesh_subdivision_angle_deg")
-
-        rails_box = common_box.box()
-        rails_box.label(text="Rails:")
-        rails_box.prop(road_props, "rail_height_left")
-        rails_box.prop(road_props, "rail_height_right")
-        row = rails_box.row(align=True)
-        row.prop(road_props, "rail_start_left")
-        row.prop(road_props, "rail_end_left")
-        row = rails_box.row(align=True)
-        row.prop(road_props, "rail_start_right")
-        row.prop(road_props, "rail_end_right")
-
-        # Per-segment appearance
-        color_box = common_box.box()
-        color_box.label(text="Colors (Vertex Colors)")
-        color_box.prop(road_props, "ground_color")
-        color_box.prop(road_props, "rail_color")
-
-        
-        mods_box = layout.box(); mods_box.label(text="Vertical Modulations & Embeds")
-        mods_box.prop(road_props, "draw_embeds")
-        row = mods_box.row()
-        row.template_list("MXT_UL_Modulations", "", road_props, "modulations", road_props, "active_mod_index", rows=3)
-        col = row.column(align=True); col.operator("mxt_road.add_modulation", icon='ADD', text=""); col.operator("mxt_road.remove_modulation", icon='REMOVE', text="")
-        
-        row = mods_box.row()
-        row.template_list("MXT_UL_Embeds", "", road_props, "embeds", road_props, "active_embed_idx", rows=3)
-        col = row.column(align=True); col.operator("mxt_road.add_embed", icon='ADD', text=""); col.operator("mxt_road.remove_embed", icon='REMOVE', text="")
-        
-        if road_props.embeds and 0 <= road_props.active_embed_idx < len(road_props.embeds):
-            emb = road_props.embeds[road_props.active_embed_idx]
-            emb_box = mods_box.box()
-            emb_box.prop(emb, "label"); emb_box.prop(emb, "embed_type")
-            emb_box.prop(emb, "start_t"); emb_box.prop(emb, "end_t")
-            emb_box.prop(emb, "helper", text="Helper Empty")
+                        select_box = info_box.row()
+                        op = select_box.operator("mxt_road.select_helper", text="Edit Spiral Curves", icon='GRAPH')
+                        op.helper_name = road_props.spiral_helper.name if road_props.spiral_helper else ""
+                        select_box.enabled = bool(road_props.spiral_helper)
         
         
-        data_box = layout.box(); data_box.label(text="Data and Generation")
-        data_box.prop(road_props, "num_checkpoints_per_segment")
-        data_box.prop(road_props, "analytic_collision_enabled")
-        data_box.prop(road_props, "export_preview_mesh_collision")
-        data_box.prop(road_props, "disable_auto_rebake")
-        data_box.separator()
-        data_box.operator("mxt_road.generate_curve_matrix", text="Generate CurveMatrix", icon='FCURVE')
-        data_box.operator("mxt_road.generate_mesh", text="Generate/Update Mesh", icon='MESH_PLANE')
-        data_box.operator("mxt_road.generate_checkpoints", text="Generate Checkpoints", icon='OUTLINER_OB_EMPTY')
-        data_box.operator("mxt_road.export_track", text="Export Track", icon='EXPORT')
+        common_box = self.section(layout, ui_state, "show_shape_mesh", "Shape and Mesh", icon='MESH_GRID')
+        if common_box:
+            common_box.prop(road_props, "road_shape_type")
+        
+            if road_props.road_shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
+                open_box = self.section(common_box, ui_state, "show_open_shape", "Open Shape", icon='MOD_SIMPLEDEFORM')
+                if open_box:
+                    open_box.prop(road_props, "openness_helper")
+
+                    select_row = open_box.row()
+                    op = select_row.operator("mxt_road.select_helper", text="Edit Openness Curve", icon='GRAPH')
+                    op.helper_name = road_props.openness_helper.name if road_props.openness_helper else ""
+                    select_row.enabled = bool(road_props.openness_helper)
+                    if road_props.road_shape_type == 'ROUNDED_SQUARE_OPEN':
+                        select_row = open_box.row()
+                        op = select_row.operator("mxt_road.select_helper", text="Edit Seam Rotation Curve", icon='GRAPH')
+                        op.helper_name = road_props.openness_helper.name if road_props.openness_helper else ""
+                        select_row.enabled = bool(road_props.openness_helper)
+
+            if road_props.road_shape_type in ('ROUNDED_SQUARE', 'ROUNDED_SQUARE_OPEN'):
+                sq_box = self.section(common_box, ui_state, "show_rounded_square", "Rounded Square Helpers", icon='MESH_CUBE')
+                if sq_box:
+                    sq_box.prop(road_props, "width_helper")
+                    width_row = sq_box.row()
+                    op = width_row.operator("mxt_road.select_helper", text="Edit Width Curve", icon='GRAPH')
+                    op.helper_name = road_props.width_helper.name if road_props.width_helper else ""
+                    width_row.enabled = bool(road_props.width_helper)
+
+                    sq_box.prop(road_props, "height_helper")
+                    height_row = sq_box.row()
+                    op = height_row.operator("mxt_road.select_helper", text="Edit Height Curve", icon='GRAPH')
+                    op.helper_name = road_props.height_helper.name if road_props.height_helper else ""
+                    height_row.enabled = bool(road_props.height_helper)
+
+                    sq_box.prop(road_props, "radius_helper")
+                    radius_row = sq_box.row()
+                    op = radius_row.operator("mxt_road.select_helper", text="Edit Radius Curve", icon='GRAPH')
+                    op.helper_name = road_props.radius_helper.name if road_props.radius_helper else ""
+                    radius_row.enabled = bool(road_props.radius_helper)
+
+            common_box.prop(road_props, "horiz_subdivs")
+            common_box.prop(road_props, "road_uv_multiplier")
+            mesh_gen_box = self.section(common_box, ui_state, "show_adaptive_mesh", "Adaptive Mesh Settings", icon='MOD_DECIM')
+            if mesh_gen_box:
+                mesh_gen_box.prop(road_props, "mesh_subdivision_length")
+                mesh_gen_box.prop(road_props, "mesh_subdivision_angle_deg")
+
+            rails_box = self.section(common_box, ui_state, "show_rails", "Rails", icon='MOD_SOLIDIFY')
+            if rails_box:
+                rails_box.prop(road_props, "rail_height_left")
+                rails_box.prop(road_props, "rail_height_right")
+                row = rails_box.row(align=True)
+                row.prop(road_props, "rail_start_left")
+                row.prop(road_props, "rail_end_left")
+                row = rails_box.row(align=True)
+                row.prop(road_props, "rail_start_right")
+                row.prop(road_props, "rail_end_right")
+
+            color_box = self.section(common_box, ui_state, "show_colors", "Colors", icon='COLOR')
+            if color_box:
+                color_box.prop(road_props, "ground_color")
+                color_box.prop(road_props, "rail_color")
+
+        mods_box = self.section(layout, ui_state, "show_mods_embeds", "Vertical Modulations & Embeds", icon='FCURVE')
+        if mods_box:
+            mods_box.prop(road_props, "draw_embeds")
+            row = mods_box.row()
+            row.template_list("MXT_UL_Modulations", "", road_props, "modulations", road_props, "active_mod_index", rows=3)
+            col = row.column(align=True); col.operator("mxt_road.add_modulation", icon='ADD', text=""); col.operator("mxt_road.remove_modulation", icon='REMOVE', text="")
+
+            row = mods_box.row()
+            row.template_list("MXT_UL_Embeds", "", road_props, "embeds", road_props, "active_embed_idx", rows=3)
+            col = row.column(align=True); col.operator("mxt_road.add_embed", icon='ADD', text=""); col.operator("mxt_road.remove_embed", icon='REMOVE', text="")
+
+            if road_props.embeds and 0 <= road_props.active_embed_idx < len(road_props.embeds):
+                emb = road_props.embeds[road_props.active_embed_idx]
+                emb_box = self.section(mods_box, ui_state, "show_active_embed", f"Active Embed: {emb.label}", icon='DOT')
+                if emb_box:
+                    emb_box.prop(emb, "label"); emb_box.prop(emb, "embed_type")
+                    emb_box.prop(emb, "start_t"); emb_box.prop(emb, "end_t")
+                    emb_box.prop(emb, "helper", text="Helper Empty")
+
+        data_box = self.section(layout, ui_state, "show_data_generation", "Data and Generation", icon='EXPORT')
+        if data_box:
+            data_box.prop(road_props, "num_checkpoints_per_segment")
+            data_box.prop(road_props, "analytic_collision_enabled")
+            data_box.prop(road_props, "disable_preview_mesh_generation")
+            preview_collision_row = data_box.row()
+            preview_collision_row.enabled = not bool(road_props.disable_preview_mesh_generation)
+            preview_collision_row.prop(road_props, "export_preview_mesh_collision")
+            data_box.prop(road_props, "disable_auto_rebake")
+            data_box.separator()
+            data_box.operator("mxt_road.generate_curve_matrix", text="Generate CurveMatrix", icon='FCURVE')
+            data_box.operator("mxt_road.generate_mesh", text="Generate/Update Mesh", icon='MESH_PLANE')
+            data_box.operator("mxt_road.generate_checkpoints", text="Generate Checkpoints", icon='OUTLINER_OB_EMPTY')
+            data_box.operator("mxt_road.export_track", text="Export Track", icon='EXPORT')
 
 
 def _add_key(fcu, frame, value):
@@ -2973,6 +3031,160 @@ def _add_key(fcu, frame, value):
     kp.handle_left_type = "LINEAR_X"
     kp.handle_right_type = "LINEAR_X"
     return kp
+
+_CURVE_MATRIX_SAMPLER_CACHE = {}
+_CURVE_MATRIX_BASIS_PROP_NAMES = tuple(f"mxt_cm_basis_{i}" for i in range(9))
+_CURVE_MATRIX_BASIS_DATA_PATHS = tuple(f'["{name}"]' for name in _CURVE_MATRIX_BASIS_PROP_NAMES)
+_CURVE_MATRIX_BASIS_DEFAULTS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+
+def _curve_matrix_action(helper_obj):
+    if not (helper_obj and helper_obj.animation_data and helper_obj.animation_data.action):
+        return None
+    return helper_obj.animation_data.action
+
+def _invalidate_curve_matrix_sampler(helper_obj):
+    act = _curve_matrix_action(helper_obj)
+    if act:
+        _CURVE_MATRIX_SAMPLER_CACHE.pop(act.as_pointer(), None)
+
+def _ensure_curve_matrix_basis_props(helper_obj):
+    for name, default in zip(_CURVE_MATRIX_BASIS_PROP_NAMES, _CURVE_MATRIX_BASIS_DEFAULTS):
+        if name not in helper_obj:
+            helper_obj[name] = default
+
+def _ensure_scalar_fcurve(act, data_path):
+    fcu = act.fcurves.find(data_path)
+    if fcu:
+        return fcu
+    return act.fcurves.new(data_path)
+
+def _remove_curve_matrix_legacy_quaternion_fcurves(act):
+    for index in range(4):
+        fcu = act.fcurves.find("rotation_quaternion", index=index)
+        if fcu:
+            act.fcurves.remove(fcu)
+
+def _set_fcurve_keys_fast(fcu, frames, values):
+    fcu.keyframe_points.clear()
+    count = len(frames)
+    if count <= 0:
+        fcu.update()
+        return
+    fcu.keyframe_points.add(count)
+    co = np.empty(count * 2, dtype=np.float32)
+    co[0::2] = np.asarray(frames, dtype=np.float32)
+    co[1::2] = np.asarray(values, dtype=np.float32)
+    fcu.keyframe_points.foreach_set("co", co)
+    for kp in fcu.keyframe_points:
+        kp.interpolation = 'BEZIER'
+        kp.handle_left_type = "LINEAR_X"
+        kp.handle_right_type = "LINEAR_X"
+    fcu.update()
+
+def _set_curve_matrix_keys_fast(curves, frames, samples_by_channel):
+    for key, fcu in curves.items():
+        _set_fcurve_keys_fast(fcu, frames, samples_by_channel[key])
+
+class _CurveMatrixSampler:
+    def __init__(self, helper_obj):
+        act = _curve_matrix_action(helper_obj)
+        if not act:
+            raise RuntimeError("CurveMatrix helper has no action")
+        self.loc = [self._read_fcurve(act.fcurves.find("location", index=i)) for i in range(3)]
+        self.basis = [self._read_fcurve(act.fcurves.find(path)) for path in _CURVE_MATRIX_BASIS_DATA_PATHS]
+        self.legacy_rot = [self._read_fcurve(act.fcurves.find("rotation_quaternion", index=i)) for i in range(4)]
+        self.scl = [self._read_fcurve(act.fcurves.find("scale", index=i)) for i in range(3)]
+
+    @staticmethod
+    def _read_fcurve(fcu):
+        if not fcu or len(fcu.keyframe_points) == 0:
+            return None
+        count = len(fcu.keyframe_points)
+        times = np.empty(count, dtype=np.float64)
+        values = np.empty(count, dtype=np.float64)
+        handle_right = np.empty(count, dtype=np.float64)
+        handle_left = np.empty(count, dtype=np.float64)
+        for i, kp in enumerate(fcu.keyframe_points):
+            times[i] = float(kp.co.x)
+            values[i] = float(kp.co.y)
+            handle_right[i] = float(kp.handle_right.y)
+            handle_left[i] = float(kp.handle_left.y)
+        return times, values, handle_left, handle_right
+
+    @staticmethod
+    def _sample_channel(data, frames, default_value=0.0):
+        frames = np.asarray(frames, dtype=np.float64)
+        if data is None:
+            return np.full(frames.shape, default_value, dtype=np.float64)
+        times, values, handle_left, handle_right = data
+        count = len(times)
+        if count == 1:
+            return np.full(frames.shape, values[0], dtype=np.float64)
+
+        idx = np.searchsorted(times, frames, side="right") - 1
+        idx = np.clip(idx, 0, count - 2)
+        t0 = times[idx]
+        t1 = times[idx + 1]
+        dt = t1 - t0
+        u = np.divide(frames - t0, dt, out=np.zeros_like(frames, dtype=np.float64), where=np.abs(dt) > 1.0e-9)
+        u = np.clip(u, 0.0, 1.0)
+        omt = 1.0 - u
+        p0 = values[idx]
+        p1 = handle_right[idx]
+        p2 = handle_left[idx + 1]
+        p3 = values[idx + 1]
+        return (
+            p0 * (omt ** 3) +
+            p1 * (3.0 * omt * omt * u) +
+            p2 * (3.0 * omt * u * u) +
+            p3 * (u ** 3)
+        )
+
+    def sample(self, t_values_1d):
+        t_values_1d = np.asarray(t_values_1d, dtype=np.float64)
+        frames = t_values_1d * 100.0
+        positions = np.stack([self._sample_channel(channel, frames) for channel in self.loc], axis=-1)
+        scales = np.stack([
+            self._sample_channel(self.scl[0], frames, 1.0),
+            self._sample_channel(self.scl[1], frames, 1.0),
+            self._sample_channel(self.scl[2], frames, 1.0),
+        ], axis=-1)
+
+        if all(channel is not None for channel in self.basis):
+            basis_values = [self._sample_channel(channel, frames) for channel in self.basis]
+            basis_mats = np.empty((len(t_values_1d), 3, 3), dtype=np.float64)
+            basis_mats[:, 0, 0] = basis_values[0]
+            basis_mats[:, 1, 0] = basis_values[1]
+            basis_mats[:, 2, 0] = basis_values[2]
+            basis_mats[:, 0, 1] = basis_values[3]
+            basis_mats[:, 1, 1] = basis_values[4]
+            basis_mats[:, 2, 1] = basis_values[5]
+            basis_mats[:, 0, 2] = basis_values[6]
+            basis_mats[:, 1, 2] = basis_values[7]
+            basis_mats[:, 2, 2] = basis_values[8]
+            return positions, basis_mats, scales
+
+        quaternions = np.stack([
+            self._sample_channel(self.legacy_rot[0], frames, 1.0),
+            self._sample_channel(self.legacy_rot[1], frames),
+            self._sample_channel(self.legacy_rot[2], frames),
+            self._sample_channel(self.legacy_rot[3], frames),
+        ], axis=-1)
+        norms = np.linalg.norm(quaternions, axis=1, keepdims=True)
+        norms[norms == 0.0] = 1.0
+        quaternions /= norms
+        return positions, quaternions_to_rotation_matrices_numpy(quaternions), scales
+
+def _curve_matrix_sampler(helper_obj):
+    act = _curve_matrix_action(helper_obj)
+    if not act:
+        return None
+    key = act.as_pointer()
+    sampler = _CURVE_MATRIX_SAMPLER_CACHE.get(key)
+    if sampler is None:
+        sampler = _CurveMatrixSampler(helper_obj)
+        _CURVE_MATRIX_SAMPLER_CACHE[key] = sampler
+    return sampler
 
 class MXTRoad_OT_GenerateCurveMatrix(Operator):
     bl_idname = "mxt_road.generate_curve_matrix"
@@ -3040,15 +3252,16 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         act = helper.animation_data.action or \
             bpy.data.actions.new(f"{helper.name}_CurveMatrix")
         helper.animation_data.action = act
+        _ensure_curve_matrix_basis_props(helper)
+        _remove_curve_matrix_legacy_quaternion_fcurves(act)
         curves = {
             ("location",i): _ensure_fcurve(act, "location", i)        for i in range(3)}
-        curves |= {("rotation_quaternion",i): _ensure_fcurve(act,"rotation_quaternion",i) for i in range(4)}
+        curves |= {("basis",i): _ensure_scalar_fcurve(act, _CURVE_MATRIX_BASIS_DATA_PATHS[i]) for i in range(9)}
         curves |= {("scale",i): _ensure_fcurve(act, "scale", i)      for i in range(3)}
 
         
         for fcu in curves.values():
             fcu.keyframe_points.clear()
-        helper.rotation_mode = 'QUATERNION'
         rot_mode = road_parent.mxt_road_overall_props.rotation_mode
         def eval_bezier_sample(t):
             if t <= cps[1].mxt_cp_data.time:
@@ -3106,27 +3319,21 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             scale = a.scale.lerp(b.scale, scale_fac)
             return pos, final_rot, scale
 
+        frames = [float(t) * 100.0 for t in t_samples]
+        samples_by_channel = {key: [] for key in curves.keys()}
         for t in t_samples:
             pos, final_rot, scale = eval_bezier_sample(t)
-            helper.location = pos
-            helper.rotation_quaternion = final_rot
-            helper.scale = scale
-            _add_key(curves[("location",0)], t * 100, pos.x)
-            _add_key(curves[("location",1)], t * 100, pos.y)
-            _add_key(curves[("location",2)], t * 100, pos.z)
-
-            q = final_rot.normalized()
-            for idx,val in enumerate((q.w, q.x, q.y, q.z)):
-                _add_key(curves[("rotation_quaternion",idx)], t * 100, val)
-
-            for idx,val in enumerate(scale):
-                _add_key(curves[("scale",idx)], t * 100, val)
+            values = _curve_matrix_channel_values(pos, final_rot.to_matrix(), scale)
+            for key, value in values.items():
+                samples_by_channel[key].append(float(value))
+        _set_curve_matrix_keys_fast(curves, frames, samples_by_channel)
         for fc in act.fcurves:
             for kp in fc.keyframe_points:
                 kp.interpolation = 'BEZIER'
         _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_bezier_sample)
         for fc in act.fcurves:
             fc.update()
+        _invalidate_curve_matrix_sampler(helper)
         if isinstance(MXTRoad_OT_GenerateCurveMatrix, Operator):
             if report_fn: report_fn({'INFO'}, f"Baked {len(t_samples)} keys with {rot_mode.lower()} rotation.")
         return True
@@ -3174,11 +3381,9 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         act = helper.animation_data.action or bpy.data.actions.new(f"{helper.name}_CurveMatrix")
         helper.animation_data.action = act
         act.fcurves.clear()
-        helper.rotation_mode = 'QUATERNION'
-        
-        
+        _ensure_curve_matrix_basis_props(helper)
         curves = {("location",i): _ensure_fcurve(act, "location", i) for i in range(3)}
-        curves |= {("rotation_quaternion",i): _ensure_fcurve(act,"rotation_quaternion",i) for i in range(4)}
+        curves |= {("basis",i): _ensure_scalar_fcurve(act, _CURVE_MATRIX_BASIS_DATA_PATHS[i]) for i in range(9)}
         curves |= {("scale",i): _ensure_fcurve(act, "scale", i) for i in range(3)}
 
         
@@ -3206,23 +3411,19 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             scl = start_scl.lerp(end_scl, scl_t)
             return pos, rot, scl
 
+        frames = [float(t) * 100.0 for t in t_samples]
+        samples_by_channel = {key: [] for key in curves.keys()}
         for t in t_samples:
-            frame = t * 100.0
             pos, rot, scl = eval_line_sample(t)
-            _add_key(curves[("location",0)], frame, pos.x)
-            _add_key(curves[("location",1)], frame, pos.y)
-            _add_key(curves[("location",2)], frame, pos.z)
-            _add_key(curves[("rotation_quaternion",0)], frame, rot.w)
-            _add_key(curves[("rotation_quaternion",1)], frame, rot.x)
-            _add_key(curves[("rotation_quaternion",2)], frame, rot.y)
-            _add_key(curves[("rotation_quaternion",3)], frame, rot.z)
-            _add_key(curves[("scale",0)], frame, scl.x)
-            _add_key(curves[("scale",1)], frame, scl.y)
-            _add_key(curves[("scale",2)], frame, scl.z)
+            values = _curve_matrix_channel_values(pos, rot.to_matrix(), scl)
+            for key, value in values.items():
+                samples_by_channel[key].append(float(value))
+        _set_curve_matrix_keys_fast(curves, frames, samples_by_channel)
 
         _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_line_sample)
         for fc in curves.values():
             fc.update()
+        _invalidate_curve_matrix_sampler(helper)
 
         if report_fn: report_fn({'INFO'}, f"Baked Eased Line segment with {len(t_samples)} keys.")
         return True
@@ -3262,12 +3463,11 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             f"{cm.name}_CurveMatrix")
         cm.animation_data.action = act_cm
         act_cm.fcurves.clear()
-        cm.rotation_mode = 'QUATERNION'
-
+        _ensure_curve_matrix_basis_props(cm)
         curves = {("location", i): _ensure_fcurve(act_cm, "location", i)
                   for i in range(3)}
-        curves |= {("rotation_quaternion", i): _ensure_fcurve(
-            act_cm, "rotation_quaternion", i) for i in range(4)}
+        curves |= {("basis", i): _ensure_scalar_fcurve(
+            act_cm, _CURVE_MATRIX_BASIS_DATA_PATHS[i]) for i in range(9)}
         curves |= {("scale", i): _ensure_fcurve(act_cm, "scale", i)
                    for i in range(3)}
 
@@ -3354,27 +3554,22 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             scl = Vector((fcu_sx.evaluate(frame), fcu_sy.evaluate(frame), 1.0))
             return pos, rot, scl
 
+        frames = [float(t) * 100.0 for t in ts]
+        samples_by_channel = {key: [] for key in curves.keys()}
         last_q = None
         for i, t in enumerate(ts):
-            fr = t * 100.0
             pos, rot, scl = eval_spiral_sample(t)
             if last_q and last_q.dot(rot) < 0: rot.negate()
             last_q = rot.copy()
-
-            _add_key(curves[("location", 0)], fr, pos.x)
-            _add_key(curves[("location", 1)], fr, pos.y)
-            _add_key(curves[("location", 2)], fr, pos.z)
-            _add_key(curves[("rotation_quaternion", 0)], fr, rot.w)
-            _add_key(curves[("rotation_quaternion", 1)], fr, rot.x)
-            _add_key(curves[("rotation_quaternion", 2)], fr, rot.y)
-            _add_key(curves[("rotation_quaternion", 3)], fr, rot.z)
-            _add_key(curves[("scale", 0)], fr, scl.x)
-            _add_key(curves[("scale", 1)], fr, scl.y)
-            _add_key(curves[("scale", 2)], fr, scl.z)
+            values = _curve_matrix_channel_values(pos, rot.to_matrix(), scl)
+            for key, value in values.items():
+                samples_by_channel[key].append(float(value))
+        _set_curve_matrix_keys_fast(curves, frames, samples_by_channel)
 
         _linearize_curve_matrix_handles_with_extension(curves, ts, eval_spiral_sample)
         for fcu in curves.values():
             fcu.update()
+        _invalidate_curve_matrix_sampler(cm)
 
         if report_fn:
             report_fn({'INFO'}, f"Baked spiral with axis‑locked orientation ({len(ts)} keys).")
@@ -3400,7 +3595,8 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             self.report({'ERROR'}, "Select an MXT road-segment parent")
             return {'CANCELLED'}
         
-        ok = MXTRoad_OT_GenerateCurveMatrix.bake_for_parent(road_parent, report_fn=self.report)
+        with _mxt_profile_scope(f"manual_bake_curvematrix {road_parent.name}"):
+            ok = MXTRoad_OT_GenerateCurveMatrix.bake_for_parent(road_parent, report_fn=self.report)
         
         
         if ok:
@@ -3535,7 +3731,7 @@ def _evaluate_modulation_numpy(props, ty_1d):
 
     return total_offset
 
-def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, centerline_scl, tx_grid, ty_grid):
+def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_basis, centerline_scl, tx_grid, ty_grid):
     num_y, num_x = tx_grid.shape
     ty_1d = ty_grid[:, 0]
 
@@ -3561,20 +3757,18 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
         effect_frames = ty_1d * 100.0
         effect_vals_1d = np.array([f_e.evaluate(f) for f in effect_frames], dtype=np.float64)
 
-        
-        
-        height_frames_grid = mod_t_grid * 100.0
-        
-        flat_height_frames = height_frames_grid.ravel()
-        flat_height_vals = np.array([f_h.evaluate(f) for f in flat_height_frames], dtype=np.float64)
-        height_vals_grid = flat_height_vals.reshape(num_y, num_x)
+        if np.allclose(mod_t_grid, mod_t_grid[0:1], rtol=0.0, atol=1.0e-12):
+            height_frames = mod_t_grid[0] * 100.0
+            height_vals_grid = np.array([f_h.evaluate(f) for f in height_frames], dtype=np.float64).reshape(1, num_x)
+        else:
+            height_frames = mod_t_grid.ravel() * 100.0
+            height_vals_grid = np.array([f_h.evaluate(f) for f in height_frames], dtype=np.float64).reshape(num_y, num_x)
 
         
         mod_grid = effect_vals_1d[:, np.newaxis] * height_vals_grid
         total_mod_offset_grid += mod_grid
 
     
-    centerline_rot_mats = quaternions_to_rotation_matrices_numpy(centerline_quat)
     local_space_offsets = np.zeros((num_y, num_x, 3), dtype=np.float64)
 
     
@@ -3692,7 +3886,7 @@ def _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, ce
     
     cl_pos = centerline_pos[:, np.newaxis, :]
     cl_scl = centerline_scl[:, np.newaxis, :]
-    cl_rot = centerline_rot_mats[:, np.newaxis, :, :]
+    cl_rot = centerline_basis[:, np.newaxis, :, :]
     scaled_offsets = local_space_offsets * cl_scl
     rotated_offsets = np.einsum('yxij,yxj->yxi', cl_rot, scaled_offsets)
     final_positions = cl_pos + rotated_offsets
@@ -3787,9 +3981,9 @@ class MXTRoad_OT_GenerateMesh(Operator):
     def _mesh_rows_at_ty(props, cm_helper, tx_1d, ty_1d):
         ty_1d = np.asarray(ty_1d, dtype=np.float64)
         tx_grid, ty_grid = np.meshgrid(tx_1d, ty_1d)
-        centerline_pos, centerline_quat, centerline_scl = _sample_curve_matrix_numpy(cm_helper, ty_1d)
+        centerline_pos, centerline_basis, centerline_scl = _sample_curve_matrix_numpy(cm_helper, ty_1d)
         return _calculate_vertex_positions_numpy(
-            props, centerline_pos, centerline_quat, centerline_scl, tx_grid, ty_grid
+            props, centerline_pos, centerline_basis, centerline_scl, tx_grid, ty_grid
         )
 
     @staticmethod
@@ -3851,7 +4045,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
             append_interval(t0, t1, row_at(t0), row_at(t1), 0)
 
         samps = MXTRoad_OT_GenerateMesh._unique_sorted_ty(samples)
-        centerline_pos, _centerline_quat, _centerline_scl = _sample_curve_matrix_numpy(
+        centerline_pos, _centerline_basis, _centerline_scl = _sample_curve_matrix_numpy(
             cm_helper, np.array(samps, dtype=np.float64)
         )
         dists = [0.0]
@@ -3916,14 +4110,40 @@ class MXTRoad_OT_GenerateMesh(Operator):
 
     def _adaptive_ty_samples(helper, seg_parent, max_len, max_ang_rad):
         samps = [0.0]; dists = [0.0]
+        cps = get_mxt_control_point_empties(seg_parent, sorted_by_time=True)
+        if len(cps) < 2:
+            return samps + [1.0], dists + [0.0]
+        cp_times = [float(cp.mxt_cp_data.time) for cp in cps]
+        cp_positions = [cp.location.copy() for cp in cps]
+        cp_forward = [cp.rotation_euler.to_matrix().col[2].normalized() for cp in cps]
+        cp_out_len = [float(cp.mxt_cp_data.handle_out_length) for cp in cps]
+        cp_in_len = [float(cp.mxt_cp_data.handle_in_length) for cp in cps]
+
+        def centerline_pos_fast(ty):
+            if ty >= 1.0:
+                a_i = len(cps) - 2
+            elif ty <= 0.0:
+                a_i = 0
+            else:
+                a_i = 0
+                while a_i + 1 < len(cp_times) - 1 and ty >= cp_times[a_i + 1]:
+                    a_i += 1
+            span_len = (cp_times[a_i + 1] - cp_times[a_i]) or 1.0e-6
+            bt = (ty - cp_times[a_i]) / span_len
+            p0 = cp_positions[a_i]
+            p3 = cp_positions[a_i + 1]
+            p1 = p0 + cp_forward[a_i] * cp_out_len[a_i]
+            p2 = p3 - cp_forward[a_i + 1] * cp_in_len[a_i + 1]
+            return _cubic(p0, p1, p2, p3, bt)
+
         t = 0.0
         h = 1e-2
-        p_prev = _centerline_pos(seg_parent, 0.0)
+        p_prev = centerline_pos_fast(0.0)
         total = 0.0
         while t < 1.0 - 1e-6:
-            p_m = _centerline_pos(seg_parent, t-h)
-            p_0 = _centerline_pos(seg_parent, t)
-            p_p = _centerline_pos(seg_parent, t+h)
+            p_m = centerline_pos_fast(t-h)
+            p_0 = centerline_pos_fast(t)
+            p_p = centerline_pos_fast(t+h)
             r1 = (p_p - p_m) / (2*h)
             r2 = (p_p - 2*p_0 + p_m) / (h*h)
             speed = r1.length
@@ -3932,7 +4152,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
             dt_len = max_len       / max(speed,       1e-9)
             dt = max(1e-5, min(dt_ang, dt_len, 1.0 - t))
             next_t = min(t + dt, 1.0)
-            p_next = _centerline_pos(seg_parent, next_t)
+            p_next = centerline_pos_fast(next_t)
             total += (p_next - p_prev).length
             samps.append(next_t); dists.append(total)
             t      = next_t
@@ -3941,62 +4161,70 @@ class MXTRoad_OT_GenerateMesh(Operator):
 
     @staticmethod
     def _get_smooth_strip_normals(v_all, faces):
-        face_normals = []
-        for face in faces:
-            v0, v1, v2 = v_all[face[0]], v_all[face[1]], v_all[face[2]]
-            face_normals.append(np.cross(v1 - v0, v2 - v0))
+        return MXTRoad_OT_GenerateMesh._get_smooth_strip_normals_array(v_all, np.asarray(faces, dtype=np.int32)).reshape(-1, 3).tolist()
 
-        face_normals = np.array(face_normals)
-        
+    @staticmethod
+    def _get_smooth_strip_normals_array(v_all, faces_np):
+        faces_np = np.asarray(faces_np, dtype=np.int32)
+        if len(faces_np) == 0:
+            return np.zeros((0, 4, 3), dtype=np.float64)
+        v_all = np.asarray(v_all, dtype=np.float64)
+        face_pts = v_all[faces_np]
+        face_normals = np.cross(face_pts[:, 1] - face_pts[:, 0], face_pts[:, 2] - face_pts[:, 0])
         norms = np.linalg.norm(face_normals, axis=1, keepdims=True)
-        norms[norms == 0] = 1.0
+        norms[norms == 0.0] = 1.0
         face_normals /= norms
 
-        vert_normals_map = {}
-        for i, face in enumerate(faces):
-            for v_idx in face:
-                if v_idx not in vert_normals_map:
-                    vert_normals_map[v_idx] = []
-                vert_normals_map[v_idx].append(face_normals[i])
-        
-        
-        for v_idx, normals in vert_normals_map.items():
-            avg_normal = np.mean(normals, axis=0)
-            norm = np.linalg.norm(avg_normal)
-            if norm > 0:
-                avg_normal /= norm
-            vert_normals_map[v_idx] = avg_normal
-            
-        
-        loop_normals = []
-        for face in faces:
-            for v_idx in face:
-                loop_normals.append(vert_normals_map[v_idx])
-        
-        return loop_normals
+        vert_count = int(faces_np.max()) + 1
+        vert_normals = np.zeros((vert_count, 3), dtype=np.float64)
+        flat_faces = faces_np.reshape(-1)
+        repeated_normals = np.repeat(face_normals, 4, axis=0)
+        np.add.at(vert_normals, flat_faces, repeated_normals)
+        vert_norms = np.linalg.norm(vert_normals, axis=1, keepdims=True)
+        vert_norms[vert_norms == 0.0] = 1.0
+        vert_normals /= vert_norms
+        return vert_normals[faces_np]
 
     @staticmethod
     def build_for_parent(road_parent, context, *, report_fn=None):
         if report_fn:
             if not road_parent:
                 report_fn({'ERROR'},"Select a road-segment parent"); return False
+        profiler = _MXTProfiler(f"mesh {road_parent.name if road_parent else '<none>'}")
         props  = road_parent.mxt_road_overall_props
+        mesh_name = f"{road_parent.name}_PreviewMesh"
+        mesh_obj = next((c for c in road_parent.children if c.name == mesh_name), None)
+        if getattr(props, "disable_preview_mesh_generation", False):
+            if mesh_obj and mesh_obj.type == 'MESH':
+                if context and context.view_layer.objects.active == mesh_obj:
+                    road_parent.select_set(True)
+                    context.view_layer.objects.active = road_parent
+                mesh_obj.select_set(False)
+                mesh_obj.data.clear_geometry()
+                mesh_obj.hide_viewport = True
+                mesh_obj.hide_render = True
+            props.preview_mesh_exists = False
+            if report_fn:
+                report_fn({'INFO'}, f"Preview mesh generation disabled for {road_parent.name}.")
+            return True
+
         helper = props.curve_matrix_helper_empty
         if not (helper and helper.animation_data and helper.animation_data.action):
             if report_fn: report_fn({'ERROR'},"Bake CurveMatrix first: no Action found on helper.");
             return False
+        _invalidate_curve_matrix_sampler(helper)
         if props.horiz_subdivs < 2:
             if report_fn: report_fn({'ERROR'}, "Horizontal subdivisions must be >= 2");
             return False
         
         
-        mesh_name = f"{road_parent.name}_PreviewMesh"
-        mesh_obj = next((c for c in road_parent.children if c.name == mesh_name), None)
         if not mesh_obj:
             mesh_data = bpy.data.meshes.new(mesh_name)
             mesh_obj = bpy.data.objects.new(mesh_name, mesh_data)
             mesh_obj.parent = road_parent
             context.collection.objects.link(mesh_obj)
+        mesh_obj.hide_viewport = False
+        mesh_obj.hide_render = False
         props.preview_mesh_exists = True
         
         mesh_obj.data.materials.clear()
@@ -4104,6 +4332,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 append_hole_boundary_crossing_times(extra_hole_rows, f_right, start_t, end_t)
             if extra_hole_rows:
                 ys = MXTRoad_OT_GenerateMesh._unique_sorted_ty(list(ys) + extra_hole_rows)
+        profiler.mark("rows")
 
         ty_1d = np.array(ys, dtype=np.float64)
         num_y = len(ty_1d)
@@ -4111,17 +4340,18 @@ class MXTRoad_OT_GenerateMesh(Operator):
             if report_fn: report_fn({'ERROR'}, "Not enough vertical samples to build mesh.");
             return False
 
-        centerline_dist_pos, _centerline_dist_quat, _centerline_dist_scl = _sample_curve_matrix_numpy(helper, ty_1d)
+        centerline_dist_pos, _centerline_dist_basis, _centerline_dist_scl = _sample_curve_matrix_numpy(helper, ty_1d)
         dist_1d = [0.0]
         total_dist_actual = 0.0
         for row in range(1, num_y):
             total_dist_actual += float(np.linalg.norm(centerline_dist_pos[row] - centerline_dist_pos[row - 1]))
             dist_1d.append(total_dist_actual)
+        profiler.mark("dist")
 
         
         tx_grid, ty_grid = np.meshgrid(tx_1d, ty_1d)
-        centerline_pos, centerline_quat, centerline_scl = _sample_curve_matrix_numpy(helper, ty_1d)
-        P0 = _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, centerline_scl, tx_grid, ty_grid)
+        centerline_pos, centerline_basis, centerline_scl = _sample_curve_matrix_numpy(helper, ty_1d)
+        P0 = _calculate_vertex_positions_numpy(props, centerline_pos, centerline_basis, centerline_scl, tx_grid, ty_grid)
         
         verts_co = P0.reshape(-1, 3)
         uv_x = np.linspace(0.0, 1.0, num_x, dtype=np.float64)
@@ -4149,13 +4379,14 @@ class MXTRoad_OT_GenerateMesh(Operator):
 
         
         epsilon = 0.0001
-        cl_pos_f, cl_quat_f, cl_scl_f = _sample_curve_matrix_numpy(helper, np.minimum(ty_1d + epsilon, 1.0))
-        PF = _calculate_vertex_positions_numpy(props, cl_pos_f, cl_quat_f, cl_scl_f, tx_grid, ty_grid + epsilon)
-        PR = _calculate_vertex_positions_numpy(props, centerline_pos, centerline_quat, centerline_scl, tx_grid + epsilon, ty_grid)
-        cl_rot_mats = quaternions_to_rotation_matrices_numpy(centerline_quat)
+        cl_pos_f, cl_basis_f, cl_scl_f = _sample_curve_matrix_numpy(helper, np.minimum(ty_1d + epsilon, 1.0))
+        PF = _calculate_vertex_positions_numpy(props, cl_pos_f, cl_basis_f, cl_scl_f, tx_grid, ty_grid + epsilon)
+        PR = _calculate_vertex_positions_numpy(props, centerline_pos, centerline_basis, centerline_scl, tx_grid + epsilon, ty_grid)
+        cl_rot_mats = centerline_basis
         N_main = np.cross(PF - P0, PR - P0)
         norms = np.linalg.norm(N_main, axis=2, keepdims=True); norms[norms==0]=1.0; N_main /= norms
         main_road_vertex_normals = N_main.reshape(-1, 3)
+        profiler.mark("surface_and_normals")
 
         hole_embeds = []
         if hasattr(props, "embeds"):
@@ -4215,8 +4446,8 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 return cached
             tx_point = np.array([[tx]], dtype=np.float64)
             ty_point = np.array([[ty]], dtype=np.float64)
-            cl_pos_p, cl_quat_p, cl_scl_p = _sample_curve_matrix_numpy(helper, np.array([ty], dtype=np.float64))
-            pos = _calculate_vertex_positions_numpy(props, cl_pos_p, cl_quat_p, cl_scl_p, tx_point, ty_point)[0, 0]
+            cl_pos_p, cl_basis_p, cl_scl_p = _sample_curve_matrix_numpy(helper, np.array([ty], dtype=np.float64))
+            pos = _calculate_vertex_positions_numpy(props, cl_pos_p, cl_basis_p, cl_scl_p, tx_point, ty_point)[0, 0]
             surface_position_cache[key] = pos
             return pos
 
@@ -4291,37 +4522,49 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 bounds = max(-1.0, min(1.0, raw_bounds[0])), max(-1.0, min(1.0, raw_bounds[1]))
             return bounds[0] if kind == 'hole_left' else bounds[1]
 
-        for row in range(num_y - 1):
-            ty0 = float(ty_1d[row])
-            ty1 = float(ty_1d[row + 1])
-            mid_ty = (ty0 + ty1) * 0.5
-            columns = [('const', float(tx)) for tx in tx_1d]
-            columns.extend(active_hole_boundary_columns(mid_ty))
-            columns.sort(key=lambda column: column_tx(column, mid_ty))
-            for col in range(len(columns) - 1):
-                left_column = columns[col]
-                right_column = columns[col + 1]
-                mid_left = column_tx(left_column, mid_ty)
-                mid_right = column_tx(right_column, mid_ty)
-                if mid_right - mid_left <= 1.0e-7:
-                    continue
-                mid_tx = (mid_left + mid_right) * 0.5
-                if tx_ty_inside_hole(mid_tx, mid_ty):
-                    continue
-                tx0_left = column_tx(left_column, ty0)
-                tx0_right = column_tx(right_column, ty0)
-                tx1_left = column_tx(left_column, ty1)
-                tx1_right = column_tx(right_column, ty1)
-                if max(abs(tx0_right - tx0_left), abs(tx1_right - tx1_left), mid_right - mid_left) <= 1.0e-7:
-                    continue
-                face = [
-                    road_vertex_at(row, tx0_left),
-                    road_vertex_at(row + 1, tx1_left),
-                    road_vertex_at(row + 1, tx1_right),
-                    road_vertex_at(row, tx0_right),
-                ]
-                all_faces.append(face)
-                all_material_indices.append(get_mat_idx('track_surface'))
+        track_surface_mat_idx_cached = get_mat_idx('track_surface')
+        if not hole_embeds:
+            grid_indices = np.arange(num_y * num_x, dtype=np.int32).reshape(num_y, num_x)
+            q0 = grid_indices[:-1, :-1]
+            q1 = grid_indices[1:, :-1]
+            q2 = grid_indices[1:, 1:]
+            q3 = grid_indices[:-1, 1:]
+            road_faces_np = np.stack((q0, q1, q2, q3), axis=2).reshape(-1, 4)
+            all_faces.extend(road_faces_np.tolist())
+            all_material_indices.extend([track_surface_mat_idx_cached] * len(road_faces_np))
+        else:
+            for row in range(num_y - 1):
+                ty0 = float(ty_1d[row])
+                ty1 = float(ty_1d[row + 1])
+                mid_ty = (ty0 + ty1) * 0.5
+                columns = [('const', float(tx)) for tx in tx_1d]
+                columns.extend(active_hole_boundary_columns(mid_ty))
+                columns.sort(key=lambda column: column_tx(column, mid_ty))
+                for col in range(len(columns) - 1):
+                    left_column = columns[col]
+                    right_column = columns[col + 1]
+                    mid_left = column_tx(left_column, mid_ty)
+                    mid_right = column_tx(right_column, mid_ty)
+                    if mid_right - mid_left <= 1.0e-7:
+                        continue
+                    mid_tx = (mid_left + mid_right) * 0.5
+                    if tx_ty_inside_hole(mid_tx, mid_ty):
+                        continue
+                    tx0_left = column_tx(left_column, ty0)
+                    tx0_right = column_tx(right_column, ty0)
+                    tx1_left = column_tx(left_column, ty1)
+                    tx1_right = column_tx(right_column, ty1)
+                    if max(abs(tx0_right - tx0_left), abs(tx1_right - tx1_left), mid_right - mid_left) <= 1.0e-7:
+                        continue
+                    face = [
+                        road_vertex_at(row, tx0_left),
+                        road_vertex_at(row + 1, tx1_left),
+                        road_vertex_at(row + 1, tx1_right),
+                        road_vertex_at(row, tx0_right),
+                    ]
+                    all_faces.append(face)
+                    all_material_indices.append(track_surface_mat_idx_cached)
+        profiler.mark("road_faces")
 
         rail_faces = []
         tunnel_roof_faces = []
@@ -4391,20 +4634,36 @@ class MXTRoad_OT_GenerateMesh(Operator):
                     prev_v = cur_v
             return crossings
 
-        def rail_hole_split_times(edge_tx, t0, t1):
-            times = [float(t0), float(t1)]
+        rail_edge_split_cache = {}
+
+        def rail_edge_hole_split_times(edge_tx):
+            key = float(edge_tx)
+            cached = rail_edge_split_cache.get(key)
+            if cached is not None:
+                return cached
+            times = []
             for hole in hole_embeds:
                 start_t, end_t, f_left, f_right = hole
-                overlap_start = max(float(t0), start_t)
-                overlap_end = min(float(t1), end_t)
-                if overlap_end - overlap_start <= 1.0e-7:
+                if end_t - start_t <= 1.0e-7:
                     continue
-                append_unique_time(times, overlap_start, t0, t1)
-                append_unique_time(times, overlap_end, t0, t1)
-                for root in boundary_crossings_for_tx(f_left, edge_tx, overlap_start, overlap_end):
-                    append_unique_time(times, root, t0, t1)
-                for root in boundary_crossings_for_tx(f_right, edge_tx, overlap_start, overlap_end):
-                    append_unique_time(times, root, t0, t1)
+                append_unique_time(times, start_t, 0.0, 1.0)
+                append_unique_time(times, end_t, 0.0, 1.0)
+                for root in boundary_crossings_for_tx(f_left, edge_tx, start_t, end_t):
+                    append_unique_time(times, root, 0.0, 1.0)
+                for root in boundary_crossings_for_tx(f_right, edge_tx, start_t, end_t):
+                    append_unique_time(times, root, 0.0, 1.0)
+            cached = sorted(times)
+            rail_edge_split_cache[key] = cached
+            return cached
+
+        def rail_hole_split_times(edge_tx, t0, t1):
+            t0 = float(t0)
+            t1 = float(t1)
+            if not hole_embeds:
+                return [t0, t1]
+            times = [t0, t1]
+            for split_t in rail_edge_hole_split_times(edge_tx):
+                append_unique_time(times, split_t, t0, t1)
             return sorted(times)
 
         rail_scale_y_cache = {}
@@ -4441,6 +4700,14 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 rail_top_vert_indices.add(idx)
             return idx
 
+        def append_rail_face(face, inward):
+            if not inward:
+                face = list(reversed(face))
+            all_faces.append(face)
+            rail_faces.append(face)
+            rail_face_indices.add(len(all_faces) - 1)
+            all_material_indices.append(get_mat_idx('track_rail'))
+
         def append_rail_segment(edge_tx, h, t0, t1, bottom_u, top_u):
             if t1 - t0 <= 1.0e-7:
                 return
@@ -4452,12 +4719,21 @@ class MXTRoad_OT_GenerateMesh(Operator):
             t1_idx = rail_vertex(edge_tx, t1, h, top_u, True)
             b1 = rail_vertex(edge_tx, t1, h, bottom_u, False)
             face = [b0, t0_idx, t1_idx, b1]
-            if not rail_inward_winding(edge_tx, mid):
-                face = list(reversed(face))
-            all_faces.append(face)
-            rail_faces.append(face)
-            rail_face_indices.add(len(all_faces) - 1)
-            all_material_indices.append(get_mat_idx('track_rail'))
+            append_rail_face(face, rail_inward_winding(edge_tx, mid))
+
+        def append_rail_row_segment(edge_tx, row, bottom_dup_indices, top_indices, inward_winding):
+            mid = (float(ty_1d[row]) + float(ty_1d[row + 1])) * 0.5
+            if tx_ty_inside_hole(edge_tx, mid):
+                return
+            append_rail_face(
+                [
+                    bottom_dup_indices[row],
+                    top_indices[row],
+                    top_indices[row + 1],
+                    bottom_dup_indices[row + 1],
+                ],
+                inward_winding[row],
+            )
 
         def normalized_vec(v, fallback):
             length = float(np.linalg.norm(v))
@@ -4507,9 +4783,14 @@ class MXTRoad_OT_GenerateMesh(Operator):
             for row in range(num_y-1):
                 if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
                     continue
-                split_times = rail_hole_split_times(1.0, float(ty_1d[row]), float(ty_1d[row + 1]))
-                for split_idx in range(len(split_times) - 1):
-                    append_rail_segment(1.0, h, split_times[split_idx], split_times[split_idx + 1], 0.0, 1.0)
+                row_t0 = float(ty_1d[row])
+                row_t1 = float(ty_1d[row + 1])
+                split_times = rail_hole_split_times(1.0, row_t0, row_t1)
+                if len(split_times) == 2 and abs(split_times[0] - row_t0) <= 1.0e-9 and abs(split_times[1] - row_t1) <= 1.0e-9:
+                    append_rail_row_segment(1.0, row, bottom_dup_indices, top_indices, inward_winding)
+                else:
+                    for split_idx in range(len(split_times) - 1):
+                        append_rail_segment(1.0, h, split_times[split_idx], split_times[split_idx + 1], 0.0, 1.0)
 
         if getattr(props, "rail_height_right", 0.0) > 0.0:
             h = props.rail_height_right
@@ -4543,9 +4824,14 @@ class MXTRoad_OT_GenerateMesh(Operator):
             for row in range(num_y-1):
                 if not rail_interval_active(ty_1d[row], ty_1d[row + 1], span_start, span_end):
                     continue
-                split_times = rail_hole_split_times(-1.0, float(ty_1d[row]), float(ty_1d[row + 1]))
-                for split_idx in range(len(split_times) - 1):
-                    append_rail_segment(-1.0, h, split_times[split_idx], split_times[split_idx + 1], 1.0, 0.0)
+                row_t0 = float(ty_1d[row])
+                row_t1 = float(ty_1d[row + 1])
+                split_times = rail_hole_split_times(-1.0, row_t0, row_t1)
+                if len(split_times) == 2 and abs(split_times[0] - row_t0) <= 1.0e-9 and abs(split_times[1] - row_t1) <= 1.0e-9:
+                    append_rail_row_segment(-1.0, row, bottom_dup_indices, top_indices, inward_winding)
+                else:
+                    for split_idx in range(len(split_times) - 1):
+                        append_rail_segment(-1.0, h, split_times[split_idx], split_times[split_idx + 1], 1.0, 0.0)
 
         if props.road_shape_type == 'TUNNEL' and left_rail_top_indices and right_rail_top_indices:
             roof_segments = 10
@@ -4610,6 +4896,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
                         tunnel_roof_faces.append(face)
                         rail_face_indices.add(len(all_faces) - 1)
                         all_material_indices.append(get_mat_idx('track_rail'))
+        profiler.mark("rails")
 
         if hasattr(props, "embeds"):
             EMBED_INSET_UNITS = 1.0
@@ -4638,15 +4925,15 @@ class MXTRoad_OT_GenerateMesh(Operator):
 
                 if len(ty_embed_1d) < 2: continue
 
-                cl_pos_e, cl_quat_e, cl_scl_e = _sample_curve_matrix_numpy(helper, ty_embed_1d)
-                cl_rot_mats_e = quaternions_to_rotation_matrices_numpy(cl_quat_e)
+                cl_pos_e, cl_basis_e, cl_scl_e = _sample_curve_matrix_numpy(helper, ty_embed_1d)
+                cl_rot_mats_e = cl_basis_e
                 scl_ones = np.ones_like(cl_scl_e)
                 frames_e = ty_embed_1d * 100.0
                 tx_left, tx_right = np.array([f_left.evaluate(f) for f in frames_e]), np.array([f_right.evaluate(f) for f in frames_e])
                 tx_embed_linspace = np.linspace(0, 1, EMBED_X_DIVS)[np.newaxis, :]
                 tx_embed_grid = tx_left[:, np.newaxis] + (tx_right - tx_left)[:, np.newaxis] * tx_embed_linspace
                 ty_embed_grid = np.repeat(ty_embed_1d[:, np.newaxis], EMBED_X_DIVS, axis=1)
-                P_footprint_unscaled = _calculate_vertex_positions_numpy(props, cl_pos_e, cl_quat_e, scl_ones, tx_embed_grid, ty_embed_grid)
+                P_footprint_unscaled = _calculate_vertex_positions_numpy(props, cl_pos_e, cl_basis_e, scl_ones, tx_embed_grid, ty_embed_grid)
 
                 def apply_scale(points_unscaled, centers, rotations, scales):
                     points_centered = points_unscaled - centers[:, np.newaxis, :]
@@ -4681,86 +4968,108 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 num_new_faces = len(footprint_faces)
                 border_mat_idx = get_mat_idx('embed_border')
                 embeds_for_bmesh.append( (current_face_idx, num_new_faces, border_mat_idx) )
+        profiler.mark("embeds")
                 
 
-        def face_area_squared(face):
-            if len(set(int(v_idx) for v_idx in face)) < 4:
-                return 0.0
-            pts = [np.array(all_verts[int(v_idx)], dtype=np.float64) for v_idx in face]
-            area_vec = np.zeros(3, dtype=np.float64)
-            for i in range(len(pts)):
-                area_vec += np.cross(pts[i], pts[(i + 1) % len(pts)])
-            return float(np.dot(area_vec, area_vec))
+        faces_np_pre = np.asarray(all_faces, dtype=np.int32)
+        verts_np_pre = np.asarray(all_verts, dtype=np.float64)
+        if len(faces_np_pre) > 0:
+            face_pts = verts_np_pre[faces_np_pre]
+            unique_mask = (
+                (faces_np_pre[:, 0] != faces_np_pre[:, 1]) &
+                (faces_np_pre[:, 0] != faces_np_pre[:, 2]) &
+                (faces_np_pre[:, 0] != faces_np_pre[:, 3]) &
+                (faces_np_pre[:, 1] != faces_np_pre[:, 2]) &
+                (faces_np_pre[:, 1] != faces_np_pre[:, 3]) &
+                (faces_np_pre[:, 2] != faces_np_pre[:, 3])
+            )
+            diag_02 = face_pts[:, 2] - face_pts[:, 0]
+            area_vec = np.cross(face_pts[:, 1] - face_pts[:, 0], diag_02)
+            area_vec += np.cross(diag_02, face_pts[:, 3] - face_pts[:, 0])
+            keep_mask = unique_mask & (np.einsum('ij,ij->i', area_vec, area_vec) > 1.0e-12)
+        else:
+            keep_mask = np.zeros(0, dtype=bool)
 
-        filtered_faces = []
-        filtered_material_indices = []
-        filtered_rail_face_indices = set()
+        old_to_new = np.full(len(all_faces), -1, dtype=np.int32)
+        kept_old_indices = np.nonzero(keep_mask)[0]
+        old_to_new[kept_old_indices] = np.arange(len(kept_old_indices), dtype=np.int32)
+        kept_faces_np = faces_np_pre[keep_mask]
+        all_faces = kept_faces_np.tolist()
+        all_material_indices = np.asarray(all_material_indices, dtype=np.int32)[keep_mask].tolist()
+        rail_face_indices = {
+            int(old_to_new[face_idx])
+            for face_idx in rail_face_indices
+            if face_idx < len(old_to_new) and old_to_new[face_idx] >= 0
+        }
         filtered_embeds_for_bmesh = []
-        embed_ranges = []
         for face_start_idx, num_faces, border_mat_idx in embeds_for_bmesh:
-            embed_ranges.append([face_start_idx, face_start_idx + num_faces, border_mat_idx, None, 0])
-
-        for face_idx, face in enumerate(all_faces):
-            if face_area_squared(face) <= 1.0e-12:
-                continue
-            new_face_idx = len(filtered_faces)
-            filtered_faces.append(face)
-            filtered_material_indices.append(all_material_indices[face_idx])
-            if face_idx in rail_face_indices:
-                filtered_rail_face_indices.add(new_face_idx)
-            for embed_range in embed_ranges:
-                if face_idx >= embed_range[0] and face_idx < embed_range[1]:
-                    if embed_range[3] is None:
-                        embed_range[3] = new_face_idx
-                    embed_range[4] += 1
-
-        for start_old, _end_old, border_mat_idx, start_new, count_new in embed_ranges:
-            if start_new is not None and count_new > 0:
-                filtered_embeds_for_bmesh.append((start_new, count_new, border_mat_idx))
-
-        all_faces = filtered_faces
-        all_material_indices = filtered_material_indices
-        rail_face_indices = filtered_rail_face_indices
+            mapped = old_to_new[face_start_idx:face_start_idx + num_faces]
+            mapped = mapped[mapped >= 0]
+            if len(mapped) > 0:
+                filtered_embeds_for_bmesh.append((int(mapped[0]), int(len(mapped)), border_mat_idx))
         embeds_for_bmesh = filtered_embeds_for_bmesh
+        profiler.mark("filter_faces")
 
-        used_vert_indices = sorted({int(v_idx) for face in all_faces for v_idx in face})
-        if len(used_vert_indices) != len(all_verts):
-            vert_remap = {old_idx: new_idx for new_idx, old_idx in enumerate(used_vert_indices)}
-            all_verts = [all_verts[old_idx] for old_idx in used_vert_indices]
-            all_uvs_per_vert = [all_uvs_per_vert[old_idx] for old_idx in used_vert_indices]
-            all_faces = [[vert_remap[int(v_idx)] for v_idx in face] for face in all_faces]
+        used_vert_indices_np = np.unique(kept_faces_np.reshape(-1)) if len(kept_faces_np) > 0 else np.zeros(0, dtype=np.int32)
+        if len(used_vert_indices_np) != len(all_verts):
+            vert_remap_np = np.full(len(all_verts), -1, dtype=np.int32)
+            vert_remap_np[used_vert_indices_np] = np.arange(len(used_vert_indices_np), dtype=np.int32)
+            all_verts = verts_np_pre[used_vert_indices_np].tolist()
+            all_uvs_per_vert = np.asarray(all_uvs_per_vert, dtype=np.float64)[used_vert_indices_np].tolist()
+            all_faces = vert_remap_np[kept_faces_np].tolist()
             normal_by_vert_idx = {
-                vert_remap[int(v_idx)]: normal
+                int(vert_remap_np[int(v_idx)]): normal
                 for v_idx, normal in normal_by_vert_idx.items()
-                if int(v_idx) in vert_remap
+                if 0 <= int(v_idx) < len(vert_remap_np) and vert_remap_np[int(v_idx)] >= 0
             }
             rail_top_vert_indices = {
-                vert_remap[int(v_idx)]
+                int(vert_remap_np[int(v_idx)])
                 for v_idx in rail_top_vert_indices
-                if int(v_idx) in vert_remap
+                if 0 <= int(v_idx) < len(vert_remap_np) and vert_remap_np[int(v_idx)] >= 0
             }
+        profiler.mark("compact")
 
-        rail_faces = [all_faces[face_idx] for face_idx in sorted(rail_face_indices)]
-        rail_loop_normals = {}
-        if rail_faces:
-            rail_normals = MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(np.array(all_verts), rail_faces)
-            normal_cursor = 0
-            for face_idx in sorted(rail_face_indices):
-                rail_loop_normals[face_idx] = rail_normals[normal_cursor:normal_cursor + 4]
-                normal_cursor += 4
-
-        all_loop_normals = []
         all_verts_np_for_normals = np.array(all_verts, dtype=np.float64)
+        all_faces_np_for_normals = np.asarray(all_faces, dtype=np.int32)
+        all_material_indices_np = np.asarray(all_material_indices, dtype=np.int32)
+        if len(all_faces_np_for_normals) > 0:
+            face_pts_for_normals = all_verts_np_for_normals[all_faces_np_for_normals]
+            face_normals = np.cross(
+                face_pts_for_normals[:, 1] - face_pts_for_normals[:, 0],
+                face_pts_for_normals[:, 2] - face_pts_for_normals[:, 0],
+            )
+            face_normal_lengths = np.linalg.norm(face_normals, axis=1, keepdims=True)
+            face_normal_lengths[face_normal_lengths == 0.0] = 1.0
+            face_normals /= face_normal_lengths
+            all_loop_normals_np = np.repeat(face_normals[:, np.newaxis, :], 4, axis=1)
+        else:
+            all_loop_normals_np = np.zeros((0, 4, 3), dtype=np.float64)
+
         track_surface_mat_idx = get_mat_idx('track_surface')
-        for face_idx, face in enumerate(all_faces):
-            if face_idx in rail_loop_normals:
-                all_loop_normals.extend(rail_loop_normals[face_idx])
-                continue
-            if all_material_indices[face_idx] == track_surface_mat_idx and all(int(v_idx) in normal_by_vert_idx for v_idx in face):
-                for v_idx in face:
-                    all_loop_normals.append(normal_by_vert_idx[int(v_idx)])
-            else:
-                all_loop_normals.extend(MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(all_verts_np_for_normals, [face]))
+        if len(all_faces_np_for_normals) > 0 and normal_by_vert_idx:
+            has_vert_normal = np.zeros(len(all_verts), dtype=bool)
+            vert_normals_np = np.zeros((len(all_verts), 3), dtype=np.float64)
+            for v_idx, normal in normal_by_vert_idx.items():
+                v_idx = int(v_idx)
+                if 0 <= v_idx < len(all_verts):
+                    has_vert_normal[v_idx] = True
+                    vert_normals_np[v_idx] = normal
+            road_normal_mask = (
+                (all_material_indices_np == track_surface_mat_idx) &
+                np.all(has_vert_normal[all_faces_np_for_normals], axis=1)
+            )
+            if np.any(road_normal_mask):
+                all_loop_normals_np[road_normal_mask] = vert_normals_np[all_faces_np_for_normals[road_normal_mask]]
+
+        if rail_face_indices:
+            sorted_rail_face_indices = np.fromiter(sorted(rail_face_indices), dtype=np.int32)
+            rail_faces_np = all_faces_np_for_normals[sorted_rail_face_indices]
+            all_loop_normals_np[sorted_rail_face_indices] = MXTRoad_OT_GenerateMesh._get_smooth_strip_normals_array(
+                all_verts_np_for_normals,
+                rail_faces_np,
+            )
+        all_loop_normals = all_loop_normals_np.reshape(-1, 3)
+        profiler.mark("normals_prepare")
 
         
         mesh = mesh_obj.data
@@ -4780,30 +5089,21 @@ class MXTRoad_OT_GenerateMesh(Operator):
         mesh.loops.foreach_set("vertex_index", final_faces_as_indices.ravel())
         mesh.polygons.foreach_set("material_index", np.array(all_material_indices, dtype=np.int32))
 
-        mesh.update(); mesh.validate()
+        mesh.update()
+        profiler.mark("mesh_upload")
 
         if not mesh.uv_layers: mesh.uv_layers.new(name="UVMap")
-        loop_uvs = []
-        for face_idx, poly in enumerate(mesh.polygons):
-            face = [loop.vertex_index for loop in (mesh.loops[li] for li in poly.loop_indices)]
-            if face_idx in rail_face_indices:
-                for v in face:
-                    loop_uvs.append(final_uvs_per_vert[v])
-            else:
-                for v_idx in face:
-                    loop_uvs.append(final_uvs_per_vert[v_idx])
-        loop_uvs = np.array(loop_uvs, dtype=np.float32)
+        loop_uvs = final_uvs_per_vert[final_faces_as_indices].reshape(-1, 2).astype(np.float32, copy=False)
         mesh.uv_layers.active.data.foreach_set('uv', loop_uvs.ravel())
+        profiler.mark("uvs")
 
         if len(all_loop_normals) != len(mesh.loops):
-            all_loop_normals = []
             mesh_vertices_np = np.array([v.co[:] for v in mesh.vertices], dtype=np.float64)
-            for poly in mesh.polygons:
-                face = [loop.vertex_index for loop in (mesh.loops[li] for li in poly.loop_indices)]
-                all_loop_normals.extend(MXTRoad_OT_GenerateMesh._get_smooth_strip_normals(mesh_vertices_np, [face]))
+            all_loop_normals = MXTRoad_OT_GenerateMesh._get_smooth_strip_normals_array(mesh_vertices_np, final_faces_as_indices).reshape(-1, 3)
 
         mesh.normals_split_custom_set(all_loop_normals)
         mesh.update()
+        profiler.mark("custom_normals")
 
         
         if embeds_for_bmesh:
@@ -4831,6 +5131,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
             bm.to_mesh(mesh)
             bm.free()
             mesh.update()
+        profiler.mark("bmesh_embed_borders")
 
         
         # Apply per-segment vertex colors (ground vs rail) based on material assignment
@@ -4859,16 +5160,24 @@ class MXTRoad_OT_GenerateMesh(Operator):
                 color_layer = mesh.vertex_colors['Col']
             # Fill per-loop colors
             if hasattr(mesh, 'color_attributes'):
-                total_loops = len(mesh.loops)
-                colors = [0.0] * (total_loops * 4)
-                for poly in mesh.polygons:
-                    use_rgba = rail_rgba if (rail_mat_idx is not None and poly.material_index == rail_mat_idx) else ground_rgba
-                    for li in poly.loop_indices:
-                        base = li * 4
-                        colors[base + 0] = use_rgba[0]
-                        colors[base + 1] = use_rgba[1]
-                        colors[base + 2] = use_rgba[2]
-                        colors[base + 3] = use_rgba[3]
+                if not embeds_for_bmesh:
+                    mat_indices_np = np.asarray(all_material_indices, dtype=np.int32)
+                    face_colors = np.empty((len(mat_indices_np), 4), dtype=np.float32)
+                    face_colors[:] = ground_rgba
+                    if rail_mat_idx is not None:
+                        face_colors[mat_indices_np == rail_mat_idx] = rail_rgba
+                    colors = np.repeat(face_colors, 4, axis=0).ravel()
+                else:
+                    total_loops = len(mesh.loops)
+                    colors = [0.0] * (total_loops * 4)
+                    for poly in mesh.polygons:
+                        use_rgba = rail_rgba if (rail_mat_idx is not None and poly.material_index == rail_mat_idx) else ground_rgba
+                        for li in poly.loop_indices:
+                            base = li * 4
+                            colors[base + 0] = use_rgba[0]
+                            colors[base + 1] = use_rgba[1]
+                            colors[base + 2] = use_rgba[2]
+                            colors[base + 3] = use_rgba[3]
                 color_layer.data.foreach_set('color', colors)
                 # Make sure this layer is active for exporters that rely on the active color attribute
                 try:
@@ -4881,22 +5190,31 @@ class MXTRoad_OT_GenerateMesh(Operator):
                     point_layer = mesh.color_attributes.get('ColV')
                     if point_layer is None or point_layer.domain != 'POINT':
                         point_layer = mesh.color_attributes.new(name='ColV', domain='POINT', type='FLOAT_COLOR')
-                    # Default all verts to ground
-                    vcol = [0.0] * (len(mesh.vertices) * 4)
-                    # Build a set of verts that belong to rail faces
-                    rail_verts = set()
-                    if rail_mat_idx is not None:
-                        for poly in mesh.polygons:
-                            if poly.material_index == rail_mat_idx:
-                                for vi in poly.vertices:
-                                    rail_verts.add(int(vi))
-                    for vi in range(len(mesh.vertices)):
-                        base = vi * 4
-                        use = rail_rgba if vi in rail_verts else ground_rgba
-                        vcol[base + 0] = use[0]
-                        vcol[base + 1] = use[1]
-                        vcol[base + 2] = use[2]
-                        vcol[base + 3] = use[3]
+                    if not embeds_for_bmesh:
+                        vcol_np = np.empty((len(mesh.vertices), 4), dtype=np.float32)
+                        vcol_np[:] = ground_rgba
+                        if rail_mat_idx is not None and len(final_faces_as_indices) > 0:
+                            mat_indices_np = np.asarray(all_material_indices, dtype=np.int32)
+                            rail_faces_mask = mat_indices_np == rail_mat_idx
+                            if np.any(rail_faces_mask):
+                                rail_verts_np = np.unique(final_faces_as_indices[rail_faces_mask].ravel())
+                                vcol_np[rail_verts_np] = rail_rgba
+                        vcol = vcol_np.ravel()
+                    else:
+                        vcol = [0.0] * (len(mesh.vertices) * 4)
+                        rail_verts = set()
+                        if rail_mat_idx is not None:
+                            for poly in mesh.polygons:
+                                if poly.material_index == rail_mat_idx:
+                                    for vi in poly.vertices:
+                                        rail_verts.add(int(vi))
+                        for vi in range(len(mesh.vertices)):
+                            base = vi * 4
+                            use = rail_rgba if vi in rail_verts else ground_rgba
+                            vcol[base + 0] = use[0]
+                            vcol[base + 1] = use[1]
+                            vcol[base + 2] = use[2]
+                            vcol[base + 3] = use[3]
                     point_layer.data.foreach_set('color', vcol)
                     # Prefer the vertex color layer as active for OBJ export
                     mesh.color_attributes.active_color = point_layer
@@ -4916,6 +5234,8 @@ class MXTRoad_OT_GenerateMesh(Operator):
         except Exception as e:
             if report_fn:
                 report_fn({'WARNING'}, f"Failed to assign vertex colors: {e}")
+        profiler.mark("colors")
+        profiler.finish()
 
         if report_fn:
             report_fn({'INFO'}, f"NumPy+Bmesh build complete. Verts: {len(mesh.vertices)}, Faces: {len(mesh.polygons)}")
@@ -4929,6 +5249,48 @@ class MXTRoad_OT_GenerateMesh(Operator):
         ok = MXTRoad_OT_GenerateMesh.build_for_parent(parent, context, report_fn=self.report)
         return {'FINISHED'} if ok else {'CANCELLED'}
 
+def _generate_checkpoints_for_segment(seg):
+    props = seg.mxt_road_overall_props
+    helper = props.curve_matrix_helper_empty
+    if not (helper and helper.animation_data):
+        raise RuntimeError(f"{seg.name}: Bake CurveMatrix first")
+
+    props.checkpoints.clear()
+
+    num = max(0, props.num_checkpoints_per_segment)
+    if num <= 0:
+        return 0
+
+    step = 1.0 / num
+    for i in range(num):
+        t0 = i * step
+        t1 = (i + 1) * step
+
+        b0, p0, _ = _sample_curve_matrix(helper, t0)
+        b1, p1, _ = _sample_curve_matrix(helper, min(t1, 1.0))
+
+        B0 = b0.copy(); B0.col[0].normalize(); B0.col[1].normalize(); B0.col[2].normalize()
+        B1 = b1.copy(); B1.col[0].normalize(); B1.col[1].normalize(); B1.col[2].normalize()
+
+        cp = props.checkpoints.add()
+        cp.start_t = t0
+        cp.end_t = t1
+
+        cp.pos_start = p0
+        cp.pos_end = p1
+
+        cp.basis_start = sum([list(B0.col[c]) for c in range(3)], [])
+        cp.basis_end = sum([list(B1.col[c]) for c in range(3)], [])
+
+        cp.x_rad_start = b0.col[0].length
+        cp.x_rad_end = b1.col[0].length
+        cp.y_rad_start = b0.col[1].length
+        cp.y_rad_end = b1.col[1].length
+        cp.distance = (p1 - p0).length
+
+    return len(props.checkpoints)
+
+
 class MXTRoad_OT_GenerateCheckpoints(Operator):
     bl_idname  = "mxt_road.generate_checkpoints"
     bl_label   = "Generate Checkpoints"
@@ -4940,44 +5302,13 @@ class MXTRoad_OT_GenerateCheckpoints(Operator):
 
     def execute(self, ctx):
         seg    = get_active_mxt_road_segment_parent(ctx)
-        props  = seg.mxt_road_overall_props
-        helper = props.curve_matrix_helper_empty
-        if not (helper and helper.animation_data):
-            self.report({'ERROR'}, "Bake CurveMatrix first")
+        try:
+            count = _generate_checkpoints_for_segment(seg)
+        except RuntimeError as e:
+            self.report({'ERROR'}, str(e))
             return {'CANCELLED'}
 
-        props.checkpoints.clear()
-
-        num   = max(0, props.num_checkpoints_per_segment)
-        step  = 1.0 / (num)                 
-        for i in range(num):                
-            t0 = i      * step
-            t1 = (i+1)  * step
-
-            b0, p0, _ = _sample_curve_matrix(helper, t0)
-            b1, p1, _ = _sample_curve_matrix(helper, min(t1, 1.0))
-
-            
-            B0 = b0.copy();  B0.col[0].normalize(); B0.col[1].normalize(); B0.col[2].normalize()
-            B1 = b1.copy();  B1.col[0].normalize(); B1.col[1].normalize(); B1.col[2].normalize()
-
-            cp = props.checkpoints.add()
-            cp.start_t  = t0
-            cp.end_t    = t1
-
-            cp.pos_start = p0
-            cp.pos_end   = p1
-
-            cp.basis_start = sum([list(B0.col[c]) for c in range(3)], [])
-            cp.basis_end   = sum([list(B1.col[c]) for c in range(3)], [])
-
-            cp.x_rad_start = b0.col[0].length
-            cp.x_rad_end   = b1.col[0].length
-            cp.y_rad_start = b0.col[1].length
-            cp.y_rad_end   = b1.col[1].length
-            cp.distance    = (p1 - p0).length
-
-        self.report({'INFO'}, f"{len(props.checkpoints)} checkpoints generated")
+        self.report({'INFO'}, f"{count} checkpoints generated")
         return {'FINISHED'}
 
 
@@ -5001,125 +5332,6 @@ def _fcurve_to_points(fcu):
         tan_r = ((kp.handle_right.y - kp.co.y) / dt_r) if dt_r != 0 else 0.0
         pts.append((t, kp.co.y, tan_l, tan_r))
     return pts
-
-
-def _quaternion_matrix_points(fc_quat):
-    w, x, y, z = fc_quat
-    pts = [[] for _ in range(9)]
-    if not all(fc_quat):
-        return [ [] for _ in range(9) ]
-
-    def key_slope(fcu, key_index, use_right):
-        kp = fcu.keyframe_points[key_index]
-        if use_right:
-            dt = (kp.handle_right.x - kp.co.x) / 100.0
-            return ((kp.handle_right.y - kp.co.y) / dt) if abs(dt) > 1e-8 else 0.0
-        dt = (kp.co.x - kp.handle_left.x) / 100.0
-        return ((kp.co.y - kp.handle_left.y) / dt) if abs(dt) > 1e-8 else 0.0
-
-    def key_quat(key_index):
-        return Quaternion((
-            w.keyframe_points[key_index].co.y,
-            x.keyframe_points[key_index].co.y,
-            y.keyframe_points[key_index].co.y,
-            z.keyframe_points[key_index].co.y
-        )).normalized()
-
-    def offset_quat(key_index, dt_norm, forward):
-        sign = 1.0 if forward else -1.0
-        use_right = forward
-        return Quaternion((
-            w.keyframe_points[key_index].co.y + sign * key_slope(w, key_index, use_right) * dt_norm,
-            x.keyframe_points[key_index].co.y + sign * key_slope(x, key_index, use_right) * dt_norm,
-            y.keyframe_points[key_index].co.y + sign * key_slope(y, key_index, use_right) * dt_norm,
-            z.keyframe_points[key_index].co.y + sign * key_slope(z, key_index, use_right) * dt_norm
-        )).normalized()
-
-    if len(w.keyframe_points) < 2:
-        if len(w.keyframe_points) == 1:
-            frame = w.keyframe_points[0].co.x
-            t = frame / 100.0
-            mat = key_quat(0).to_matrix()
-            vals = [
-                mat[0][0], mat[0][1], mat[0][2],
-                mat[1][0], mat[1][1], mat[1][2],
-                mat[2][0], mat[2][1], mat[2][2]
-            ]
-            for i in range(9):
-                pts[i].append((t, vals[i], 0.0, 0.0))
-        return pts
-
-    for idx, kp in enumerate(w.keyframe_points):
-        frame = kp.co.x
-        t = frame / 100.0
-
-        # Evaluate this frame
-        q = Quaternion((
-            w.evaluate(frame),
-            x.evaluate(frame),
-            y.evaluate(frame),
-            z.evaluate(frame)
-        )).normalized()
-        mat = q.to_matrix()
-        vals = [
-            mat[0][0], mat[0][1], mat[0][2],
-            mat[1][0], mat[1][1], mat[1][2],
-            mat[2][0], mat[2][1], mat[2][2]
-        ]
-
-        # Estimate slopes from previous/next frame
-        if idx > 0:
-            frame_prev = w.keyframe_points[idx - 1].co.x
-            q_prev = key_quat(idx - 1)
-            mat_prev = q_prev.to_matrix()
-            vals_prev = [
-                mat_prev[0][0], mat_prev[0][1], mat_prev[0][2],
-                mat_prev[1][0], mat_prev[1][1], mat_prev[1][2],
-                mat_prev[2][0], mat_prev[2][1], mat_prev[2][2]
-            ]
-        else:
-            frame_next_for_step = w.keyframe_points[idx + 1].co.x
-            frame_prev = frame - (frame_next_for_step - frame)
-            q_prev = offset_quat(idx, (frame - frame_prev) / 100.0, False)
-            mat_prev = q_prev.to_matrix()
-            vals_prev = [
-                mat_prev[0][0], mat_prev[0][1], mat_prev[0][2],
-                mat_prev[1][0], mat_prev[1][1], mat_prev[1][2],
-                mat_prev[2][0], mat_prev[2][1], mat_prev[2][2]
-            ]
-
-        if idx + 1 < len(w.keyframe_points):
-            frame_next = w.keyframe_points[idx + 1].co.x
-            q_next = key_quat(idx + 1)
-            mat_next = q_next.to_matrix()
-            vals_next = [
-                mat_next[0][0], mat_next[0][1], mat_next[0][2],
-                mat_next[1][0], mat_next[1][1], mat_next[1][2],
-                mat_next[2][0], mat_next[2][1], mat_next[2][2]
-            ]
-        else:
-            frame_prev_for_step = w.keyframe_points[idx - 1].co.x
-            frame_next = frame + (frame - frame_prev_for_step)
-            q_next = offset_quat(idx, (frame_next - frame) / 100.0, True)
-            mat_next = q_next.to_matrix()
-            vals_next = [
-                mat_next[0][0], mat_next[0][1], mat_next[0][2],
-                mat_next[1][0], mat_next[1][1], mat_next[1][2],
-                mat_next[2][0], mat_next[2][1], mat_next[2][2]
-            ]
-
-        # Average slopes
-        dt_prev = (frame - frame_prev) / 100.0 if frame != frame_prev else 1.0
-        dt_next = (frame_next - frame) / 100.0 if frame != frame_next else 1.0
-        for i in range(9):
-            slope_prev = (vals[i] - vals_prev[i]) / dt_prev
-            slope_next = (vals_next[i] - vals[i]) / dt_next
-            slope = 0.5 * (slope_prev + slope_next)
-            tan_l = slope
-            tan_r = slope
-            pts[i].append((t, vals[i], tan_l, tan_r))
-    return pts
-
 
 def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
     import struct
@@ -5244,14 +5456,14 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
             if len(ty_embed_1d) < 2:
                 raise RuntimeError(f"{seg.name} embed {embed.label} produced too few terrain samples")
 
-            cl_pos, cl_quat, cl_scl = _sample_curve_matrix_numpy(helper, ty_embed_1d)
+            cl_pos, cl_basis, cl_scl = _sample_curve_matrix_numpy(helper, ty_embed_1d)
             frames = ty_embed_1d * 100.0
             tx_left = np.array([f_left.evaluate(f) for f in frames], dtype=np.float64)
             tx_right = np.array([f_right.evaluate(f) for f in frames], dtype=np.float64)
             tx_lerp = np.linspace(0.0, 1.0, embed_x_divs, dtype=np.float64)[np.newaxis, :]
             tx_grid = tx_left[:, np.newaxis] + (tx_right - tx_left)[:, np.newaxis] * tx_lerp
             ty_grid = np.repeat(ty_embed_1d[:, np.newaxis], embed_x_divs, axis=1)
-            points = _calculate_vertex_positions_numpy(props, cl_pos, cl_quat, cl_scl, tx_grid, ty_grid)
+            points = _calculate_vertex_positions_numpy(props, cl_pos, cl_basis, cl_scl, tx_grid, ty_grid)
             d_ty = np.gradient(points, axis=0)
             d_tx = np.gradient(points, axis=1)
             normals = np.cross(d_ty, d_tx)
@@ -5300,6 +5512,8 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
         props = seg.mxt_road_overall_props
         if not getattr(props, "export_preview_mesh_collision", False):
             continue
+        if getattr(props, "disable_preview_mesh_generation", False):
+            raise RuntimeError(f"{seg.name} has Preview Mesh Collision enabled but preview mesh generation is disabled")
         mesh_name = f"{seg.name}_PreviewMesh"
         preview_obj = next((c for c in seg.children if c.name == mesh_name), None)
         if not preview_obj or preview_obj.type != 'MESH':
@@ -5362,6 +5576,8 @@ def _export_stage(context, filepath):
         "ambient_color": list(ts.ambient_color),
         "light_direction": list(ts.light_direction),
     }
+    if ts.visual_scene_path.strip():
+        metadata["visual_scene"] = ts.visual_scene_path.strip()
 
     # gather all reachable segments
     segs = []
@@ -5412,6 +5628,16 @@ def _export_stage(context, filepath):
     for seg in segs:
         if seg not in seen:
             seg_order.append(seg)
+
+    with _mxt_profile_scope("export_rebake_curvematrix_checkpoints"):
+        for seg in seg_order:
+            _bake_curve_matrix_direct(seg)
+            _generate_checkpoints_for_segment(seg)
+
+    for trig in ts.trigger_objects:
+        if trig.segment in visited:
+            _update_trigger_helper(trig)
+    context.view_layer.update()
 
     # Build preview meshes so they can be exported
     for seg in seg_order:
@@ -5573,17 +5799,14 @@ def _export_stage(context, filepath):
             cm_helper = props.curve_matrix_helper_empty
             act = cm_helper.animation_data.action if cm_helper and cm_helper.animation_data else None
             fc_loc = [act.fcurves.find('location', index=i) for i in range(3)] if act else [None]*3
-            fc_rot = [act.fcurves.find('rotation_quaternion', index=i) for i in range(4)] if act else [None]*4
+            fc_basis = [act.fcurves.find(_CURVE_MATRIX_BASIS_DATA_PATHS[i]) for i in range(9)] if act else [None]*9
             fc_scl = [act.fcurves.find('scale', index=i) for i in range(3)] if act else [None]*3
 
             for fcu in fc_loc:
                 seg_data += _pack_curve(_fcurve_to_points(fcu))
 
-            rot_points = _quaternion_matrix_points(fc_rot)
-            rot_points_T = [rot_points[i] for i in (0,3,6,1,4,7,2,5,8)]
-
-            for pts in rot_points_T:
-                seg_data += _pack_curve(pts)
+            for fcu in fc_basis:
+                seg_data += _pack_curve(_fcurve_to_points(fcu))
 
             for fcu in fc_scl:
                 seg_data += _pack_curve(_fcurve_to_points(fcu))
@@ -5643,13 +5866,16 @@ def _export_stage(context, filepath):
     obj_path = base_path + ".obj"
     preview_meshes = []
     for seg in seg_order:
+        props = seg.mxt_road_overall_props
+        if getattr(props, "disable_preview_mesh_generation", False):
+            continue
         mesh_name = f"{seg.name}_PreviewMesh"
         mesh_obj = next((c for c in seg.children if c.name == mesh_name), None)
         if mesh_obj:
             preview_meshes.append(mesh_obj)
     for obj in bpy.data.objects:
         props = getattr(obj, "mxt_mesh_collision_props", None)
-        if obj.type == 'MESH' and props and props.is_mxt_collision_mesh and not obj.hide_render:
+        if obj.type == 'MESH' and props and not obj.hide_render and (props.is_mxt_collision_mesh or props.is_mxt_visual_mesh):
             if obj not in preview_meshes:
                 preview_meshes.append(obj)
 
@@ -5749,6 +5975,7 @@ classes_to_register = (
     MXTSegmentRef,
     MXTTriggerObject,
     MXTMeshCollisionProperties,
+    MXTTrackEditorUIState,
     MXTTrackSettings,
     MXT_UL_SegmentRefs,
     MXTRoad_OT_AddPrevSegment,
@@ -5795,6 +6022,7 @@ def register():
     bpy.types.Object.mxt_line_handle_data = PointerProperty(type=MXTRoad_LineHandleData)
     bpy.types.Object.mxt_mesh_collision_props = PointerProperty(type=MXTMeshCollisionProperties)
     bpy.types.Scene.mxt_track_settings = PointerProperty(type=MXTTrackSettings)
+    bpy.types.WindowManager.mxt_track_editor_ui_state = PointerProperty(type=MXTTrackEditorUIState)
     handlers = bpy.app.handlers.depsgraph_update_post
     if mxt_on_depsgraph_update not in handlers: handlers.append(mxt_on_depsgraph_update)
     global _mxt_draw_handle
@@ -5825,6 +6053,7 @@ def unregister():
     if hasattr(bpy.types.Object, "mxt_mesh_collision_props"): del bpy.types.Object.mxt_mesh_collision_props
     if hasattr(bpy.types.Object, "mxt_road_overall_props"): del bpy.types.Object.mxt_road_overall_props
     if hasattr(bpy.types.Scene, "mxt_track_settings"): del bpy.types.Scene.mxt_track_settings
+    if hasattr(bpy.types.WindowManager, "mxt_track_editor_ui_state"): del bpy.types.WindowManager.mxt_track_editor_ui_state
     for cls in reversed(classes_to_register): bpy.utils.unregister_class(cls)
     print("MXT Road Creator (v0.1.0) Unregistered")
 if __name__ == "__main__":

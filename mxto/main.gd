@@ -1724,7 +1724,6 @@ func _on_network_race_started(track_index: int, settings: Array) -> void:
 	_close_settings_menus_for_race_start()
 	if headless_mode:
 		_start_race(track_index, settings)
-		network_manager.client_ready.rpc_id(1, network_manager.race_netplay_phase)
 		return
 	_start_race(track_index, settings)
 	game_sim.set_sim_started(false)

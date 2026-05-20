@@ -241,6 +241,25 @@ var log_state_raw_in := 0
 var log_state_recv_count := 0
 var log_state_max_recv_gap_ms := 0
 var log_state_last_recv_ms := -1
+var log_state_sec_header := 0
+var log_state_sec_bumper_meta := 0
+var log_state_sec_sparks := 0
+var log_state_sec_car_scalars := 0
+var log_state_sec_car_vec3 := 0
+var log_state_sec_car_basis := 0
+var log_state_sec_car_conditionals := 0
+var log_state_sec_car_tilt := 0
+var log_state_sec_car_wall := 0
+var log_state_sec_bumper_total := 0
+var log_state_sec_triggers := 0
+var log_state_sec_total := 0
+var log_state_stat_car_count := 0
+var log_state_stat_bumper_count := 0
+var log_state_stat_active_bumpers := 0
+var log_state_stat_active_sparks := 0
+var log_state_stat_trigger_count := 0
+var log_state_stat_car_collision_old := 0
+var log_state_stat_car_restore := 0
 var log_net_cpu_us_interval := 0
 var log_sim_cpu_us_interval := 0
 var log_rollback_us_sum := 0
@@ -299,6 +318,29 @@ func _log_state_received(raw_size: int, payload_size: int) -> void:
 	log_state_payload_in += payload_size
 	log_state_raw_in += max(raw_size, 0)
 	log_state_recv_count += 1
+
+func _log_state_size_stats(stats: Dictionary) -> void:
+	if stats.is_empty():
+		return
+	log_state_sec_header += int(stats.get("header", 0))
+	log_state_sec_bumper_meta += int(stats.get("bumper_meta", 0))
+	log_state_sec_sparks += int(stats.get("sparks", 0))
+	log_state_sec_car_scalars += int(stats.get("car_scalars", 0))
+	log_state_sec_car_vec3 += int(stats.get("car_vec3", 0))
+	log_state_sec_car_basis += int(stats.get("car_basis", 0))
+	log_state_sec_car_conditionals += int(stats.get("car_conditionals", 0))
+	log_state_sec_car_tilt += int(stats.get("car_tilt", 0))
+	log_state_sec_car_wall += int(stats.get("car_wall", 0))
+	log_state_sec_bumper_total += int(stats.get("bumper_scalars", 0)) + int(stats.get("bumper_vec3", 0)) + int(stats.get("bumper_transform", 0)) + int(stats.get("bumper_basis", 0)) + int(stats.get("bumper_conditionals", 0)) + int(stats.get("bumper_tilt", 0)) + int(stats.get("bumper_wall", 0))
+	log_state_sec_triggers += int(stats.get("triggers", 0))
+	log_state_sec_total += int(stats.get("total", 0))
+	log_state_stat_car_count = maxi(log_state_stat_car_count, int(stats.get("car_count", 0)))
+	log_state_stat_bumper_count = maxi(log_state_stat_bumper_count, int(stats.get("bumper_count", 0)))
+	log_state_stat_active_bumpers = maxi(log_state_stat_active_bumpers, int(stats.get("active_bumper_count", 0)))
+	log_state_stat_active_sparks = maxi(log_state_stat_active_sparks, int(stats.get("active_spark_count", 0)))
+	log_state_stat_trigger_count = maxi(log_state_stat_trigger_count, int(stats.get("trigger_count", 0)))
+	log_state_stat_car_collision_old = maxi(log_state_stat_car_collision_old, int(stats.get("car_collision_old_count", 0)))
+	log_state_stat_car_restore = maxi(log_state_stat_car_restore, int(stats.get("car_restore_count", 0)))
 
 func _state_pending_log_fields() -> Dictionary:
 	var out := {
@@ -540,7 +582,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -853,6 +895,7 @@ func _flush_log() -> void:
 	line += "," + str(peer_fields["server_peer_lag_max"]) + "," + str(peer_fields["server_peer_lag_avg"]) + "," + str(peer_fields["target_peer_lag_max"]) + "," + str(peer_fields["target_peer_lag_avg"]) + "," + str(peer_fields["peer_ahead_min"]) + "," + str(peer_fields["peer_ahead_max"]) + "," + str(peer_fields["peer_ahead_avg"]) + "," + str(peer_fields["peer_rtt_max_ms"]) + "," + str(peer_fields["peer_rtt_avg_ms"]) + "," + str(peer_fields["peer_inputs_accepted"]) + "," + str(peer_fields["peer_inputs_dropped"]) + "," + str(peer_fields["peer_replacements"]) + "," + str(peer_fields["peer_input_server_lead_min"]) + "," + str(peer_fields["peer_input_server_lead_max"]) + "," + str(peer_fields["peer_input_server_lead_avg"]) + "," + str(peer_fields["peer_input_target_lead_min"]) + "," + str(peer_fields["peer_input_target_lead_max"]) + "," + str(peer_fields["peer_input_target_lead_avg"]) + "," + str(peer_fields["peer_snapshot"])
 	line += "," + str(log_timing_ping_out) + "," + str(log_timing_ping_in) + "," + str(log_timing_sync_out) + "," + str(log_timing_sync_in) + "," + str(timing_sync_rtt_avg) + "," + str(log_timing_sync_rtt_ms_max) + "," + str(log_timing_server_gap_max) + "," + str(log_timing_target_gap_max) + "," + str(log_timing_ack_advance)
 	line += "," + str(log_state_chunk_msgs_out) + "," + str(log_state_chunk_msgs_in) + "," + str(log_state_chunk_dups_in) + "," + str(log_state_chunk_stale_drops) + "," + str(log_state_chunk_bad_meta_drops) + "," + str(log_state_chunk_completed) + "," + str(log_state_chunk_completed_count_max) + "," + str(state_pending["records"]) + "," + str(state_pending["best_recv_pct"]) + "," + str(state_pending["best_missing"]) + "," + str(state_pending["oldest_tick"]) + "," + str(state_pending["newest_tick"])
+	line += "," + str(log_state_sec_header) + "," + str(log_state_sec_bumper_meta) + "," + str(log_state_sec_sparks) + "," + str(log_state_sec_car_scalars) + "," + str(log_state_sec_car_vec3) + "," + str(log_state_sec_car_basis) + "," + str(log_state_sec_car_conditionals) + "," + str(log_state_sec_car_tilt) + "," + str(log_state_sec_car_wall) + "," + str(log_state_sec_bumper_total) + "," + str(log_state_sec_triggers) + "," + str(log_state_sec_total) + "," + str(log_state_stat_car_count) + "," + str(log_state_stat_bumper_count) + "," + str(log_state_stat_active_bumpers) + "," + str(log_state_stat_active_sparks) + "," + str(log_state_stat_trigger_count) + "," + str(log_state_stat_car_collision_old) + "," + str(log_state_stat_car_restore)
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
@@ -880,6 +923,25 @@ func _flush_log() -> void:
 	log_state_raw_in = 0
 	log_state_recv_count = 0
 	log_state_max_recv_gap_ms = 0
+	log_state_sec_header = 0
+	log_state_sec_bumper_meta = 0
+	log_state_sec_sparks = 0
+	log_state_sec_car_scalars = 0
+	log_state_sec_car_vec3 = 0
+	log_state_sec_car_basis = 0
+	log_state_sec_car_conditionals = 0
+	log_state_sec_car_tilt = 0
+	log_state_sec_car_wall = 0
+	log_state_sec_bumper_total = 0
+	log_state_sec_triggers = 0
+	log_state_sec_total = 0
+	log_state_stat_car_count = 0
+	log_state_stat_bumper_count = 0
+	log_state_stat_active_bumpers = 0
+	log_state_stat_active_sparks = 0
+	log_state_stat_trigger_count = 0
+	log_state_stat_car_collision_old = 0
+	log_state_stat_car_restore = 0
 	log_sim_cpu_us_interval = 0
 	prof_collect_server_inputs_us_interval = 0
 	prof_idle_broadcast_us_interval = 0
@@ -2051,6 +2113,8 @@ func collect_client_inputs() -> Dictionary:
 func _send_server_timing_sync(peer_id: int, sync_tick: int, max_ahead: float, echo_client_msec: int = -1) -> void:
 	if !is_server or !race_active:
 		return
+	if listen_server and peer_id == multiplayer.get_unique_id():
+		return
 	var ack_tick := server_netcode_session.get_peer_last_received(peer_id)
 	log_timing_sync_out += 1
 	_acc_log_out(28)
@@ -2386,6 +2450,8 @@ func post_tick() -> void:
 				send_state = compressed_state
 				send_state_uncomp_size = uncompressed_size
 				_log_state_sent(uncompressed_size if uncompressed_size > 0 else send_state.size(), send_state.size())
+				if server_game_sim.has_method("get_network_state_size_stats"):
+					_log_state_size_stats(server_game_sim.get_network_state_size_stats())
 			if not input_packet_ready:
 				input_packet = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES, race_netplay_phase)
 				input_packet_ready = true

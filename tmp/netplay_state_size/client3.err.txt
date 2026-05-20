@@ -1,0 +1,263 @@
+WARNING: "usage" is not supported in add_property_info().
+   at: _add_property_info_bind (core/config/project_settings.cpp:1347)
+WARNING: "usage" is not supported in add_property_info().
+   at: _add_property_info_bind (core/config/project_settings.cpp:1347)
+ERROR: Client!
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] join (res://netplay/network_manager.gd:1455)
+       [1] <anonymous lambda> (res://main.gd:311)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: No multiplayer peer is assigned. Unable to get unique ID.
+   at: get_unique_id (modules/multiplayer/scene_multiplayer.cpp:529)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2028)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+ERROR: Trying to call an RPC while no multiplayer peer is active.
+   at: rpcp (modules/multiplayer/scene_rpc_interface.cpp:473)
+   GDScript backtrace (most recent call first):
+       [0] collect_client_inputs (res://netplay/network_manager.gd:2047)
+       [1] _simulate_single_tick (res://main.gd:2202)
+       [2] _process (res://test/netplay_state_size_client.gd:47)
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)

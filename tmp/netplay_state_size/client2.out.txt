@@ -1,0 +1,4 @@
+Godot Engine v4.6.1.stable.official.14d19694e - https://godotengine.org
+
+MXT_NETPLAY_STATE_SIZE_CLIENT_RACE_SEEN players=2
+MXT_NETPLAY_STATE_SIZE_CLIENT_DONE race_frames=900 local_tick=47
