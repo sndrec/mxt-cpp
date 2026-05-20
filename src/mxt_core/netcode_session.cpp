@@ -3104,6 +3104,16 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 		const PackedByteArray delta_low_entropy_surface_fallback_dict = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY ?
 			compress_auth_input_with_dict(raw, false, false, false, false, false, false, false, true) :
 			PackedByteArray();
+		const bool low_entropy_compare_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY;
+		const int delta_low_entropy_best_default_size = low_entropy_compare_layout ?
+			best_low_entropy_default_payload :
+			delta_low_entropy_dict.size();
+		const int delta_low_entropy_best_surface_size = low_entropy_compare_layout ?
+			best_low_entropy_surface_payload :
+			delta_low_entropy_surface_dict.size();
+		const int delta_low_entropy_best_surface_fallback_size = low_entropy_compare_layout ?
+			best_low_entropy_surface_fallback_payload :
+			delta_low_entropy_surface_fallback_dict.size();
 		const String prefix = String(names[l]) + String("_");
 		out[prefix + String("raw")] = raw_size;
 		out[prefix + String("plain_payload")] = plain.size();
@@ -3119,7 +3129,7 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 				out[prefix + String("mask_pair_count_") + String::num_int64(i)] = low_entropy_mask_pair_counts[i];
 			}
 		}
-		const int dict_size = delta_low_entropy_dict.size() > 0 ? delta_low_entropy_dict.size() :
+		const int dict_size = delta_low_entropy_best_default_size > 0 ? delta_low_entropy_best_default_size :
 			(delta_pairs_dict.size() > 0 ? delta_pairs_dict.size() :
 				(hybrid_dict.size() > 0 ? hybrid_dict.size() :
 					(zero_bitmap_dict.size() > 0 ? zero_bitmap_dict.size() : dict.size())));
@@ -3133,13 +3143,13 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 			out[prefix + String("surface_dict_payload")] = delta_pairs_surface_dict.size();
 			out[prefix + String("surface_dict_packet")] = delta_pairs_surface_dict.size() + auth_input_packet_header_size(count);
 		}
-		if (delta_low_entropy_surface_dict.size() > 0) {
-			out[prefix + String("surface_dict_payload")] = delta_low_entropy_surface_dict.size();
-			out[prefix + String("surface_dict_packet")] = delta_low_entropy_surface_dict.size() + auth_input_packet_header_size(count);
+		if (delta_low_entropy_best_surface_size > 0) {
+			out[prefix + String("surface_dict_payload")] = delta_low_entropy_best_surface_size;
+			out[prefix + String("surface_dict_packet")] = delta_low_entropy_best_surface_size + auth_input_packet_header_size(count);
 		}
-		if (delta_low_entropy_surface_fallback_dict.size() > 0) {
-			out[prefix + String("surface_fallback_dict_payload")] = delta_low_entropy_surface_fallback_dict.size();
-			out[prefix + String("surface_fallback_dict_packet")] = delta_low_entropy_surface_fallback_dict.size() + auth_input_packet_header_size(count);
+		if (delta_low_entropy_best_surface_fallback_size > 0) {
+			out[prefix + String("surface_fallback_dict_payload")] = delta_low_entropy_best_surface_fallback_size;
+			out[prefix + String("surface_fallback_dict_packet")] = delta_low_entropy_best_surface_fallback_size + auth_input_packet_header_size(count);
 		}
 	}
 	out["valid"] = true;
