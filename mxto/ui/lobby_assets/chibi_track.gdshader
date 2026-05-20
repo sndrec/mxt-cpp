@@ -22,5 +22,4 @@ void fragment() {
 	vec4 albedo_tex = texture(texture_albedo, base_uv);
 	ALBEDO = albedo.rgb * albedo_tex.rgb;
 	ALPHA = 1.0;
-	DEPTH = 1.0;
 }

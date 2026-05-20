@@ -1,22 +1,24 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene format=3 uid="uid://do7bo8imdv64e"]
 
-[ext_resource type="Material" path="res://ui/lobby_assets/chibi_track_material.tres" id="1_trackmat"]
-
-[sub_resource type="FastNoiseLite" id="FastNoiseLite_lobby"]
-frequency = 0.0176
-fractal_type = 1
-domain_warp_enabled = true
-domain_warp_amplitude = 12.74
+[ext_resource type="Material" uid="uid://uhd11t7w8vw2" path="res://ui/lobby_assets/chibi_track_material.tres" id="1_trackmat"]
+[ext_resource type="Texture2D" uid="uid://delifuq4b6ivp" path="res://ui/lobby_assets/checkerboard.png" id="2_checker"]
 
 [sub_resource type="Gradient" id="Gradient_lobby"]
 offsets = PackedFloat32Array(0, 0.63354, 1)
 colors = PackedColorArray(0, 0, 0, 1, 0.168337, 0.168337, 0.168337, 1, 0.404511, 0.404511, 0.404511, 1)
 
+[sub_resource type="FastNoiseLite" id="FastNoiseLite_lobby"]
+frequency = 0.0176
+fractal_type = 2
+domain_warp_enabled = true
+domain_warp_type = 2
+domain_warp_amplitude = 12.74
+
 [sub_resource type="NoiseTexture2D" id="NoiseTexture2D_lobby"]
 width = 128
 height = 128
-color_ramp = SubResource("Gradient_lobby")
 noise = SubResource("FastNoiseLite_lobby")
+color_ramp = SubResource("Gradient_lobby")
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_chibi"]
 sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
@@ -32,9 +34,18 @@ tonemap_mode = 2
 glow_enabled = true
 
 [sub_resource type="PlaneMesh" id="PlaneMesh_chibi_floor"]
+material = ExtResource("1_trackmat")
 size = Vector2(30, 24)
 
-[node name="LobbyStatic" type="Control"]
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_chibi_checker"]
+albedo_texture = ExtResource("2_checker")
+uv1_scale = Vector3(0.5, 6, 1)
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_chibi_strip"]
+material = SubResource("StandardMaterial3D_chibi_checker")
+size = Vector2(2.425, 48)
+
+[node name="LobbyStatic" type="Control" unique_id=774706989]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -42,7 +53,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="LobbyContainer" type="VBoxContainer" parent="."]
+[node name="LobbyContainer" type="VBoxContainer" parent="." unique_id=499949625]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -51,13 +62,13 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 0
 
-[node name="Container" type="Control" parent="LobbyContainer"]
+[node name="Container" type="Control" parent="LobbyContainer" unique_id=1599611655]
 clip_contents = true
 layout_mode = 2
 size_flags_vertical = 3
 size_flags_stretch_ratio = 8.45
 
-[node name="LobbyBG" type="TextureRect" parent="LobbyContainer/Container"]
+[node name="LobbyBG" type="TextureRect" parent="LobbyContainer/Container" unique_id=1558967405]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -68,7 +79,7 @@ mouse_filter = 2
 texture = SubResource("NoiseTexture2D_lobby")
 expand_mode = 1
 
-[node name="TopBox" type="HBoxContainer" parent="LobbyContainer/Container"]
+[node name="TopBox" type="HBoxContainer" parent="LobbyContainer/Container" unique_id=75526277]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -77,85 +88,115 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 10
 
-[node name="PlayerScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox"]
+[node name="PlayerScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox" unique_id=1185048290]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.7
 horizontal_scroll_mode = 0
 
-[node name="PlayerListContainer" type="VBoxContainer" parent="LobbyContainer/Container/TopBox/PlayerScroll"]
+[node name="PlayerListContainer" type="VBoxContainer" parent="LobbyContainer/Container/TopBox/PlayerScroll" unique_id=1424547817]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="StageBox" type="VBoxContainer" parent="LobbyContainer/Container/TopBox"]
+[node name="StageBox" type="VBoxContainer" parent="LobbyContainer/Container/TopBox" unique_id=1738215251]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.7
 theme_override_constants/separation = 6
 
-[node name="StageScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox/StageBox"]
+[node name="StageScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox/StageBox" unique_id=666404963]
 custom_minimum_size = Vector2(280, 145)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="StageButtonContainer" type="VBoxContainer" parent="LobbyContainer/Container/TopBox/StageBox/StageScroll"]
+[node name="StageButtonContainer" type="VBoxContainer" parent="LobbyContainer/Container/TopBox/StageBox/StageScroll" unique_id=370591663]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="PreviewScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox/StageBox"]
+[node name="PreviewScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox/StageBox" unique_id=34561701]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
-[node name="StagePreviewContainer" type="HBoxContainer" parent="LobbyContainer/Container/TopBox/StageBox/PreviewScroll"]
+[node name="StagePreviewContainer" type="HBoxContainer" parent="LobbyContainer/Container/TopBox/StageBox/PreviewScroll" unique_id=432651495]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 4
 
-[node name="OptionsColumn" type="VBoxContainer" parent="LobbyContainer/Container/TopBox"]
+[node name="OptionsColumn" type="VBoxContainer" parent="LobbyContainer/Container/TopBox" unique_id=1459908807]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.5
 
-[node name="OptionsScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox/OptionsColumn"]
+[node name="OptionsScroll" type="ScrollContainer" parent="LobbyContainer/Container/TopBox/OptionsColumn" unique_id=526161193]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="OptionsBox" type="VBoxContainer" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll"]
+[node name="OptionsBox" type="VBoxContainer" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll" unique_id=1482657148]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 8
 
-[node name="GameModeChoice" type="OptionButton" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox"]
+[node name="GameModeChoice" type="OptionButton" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=840021955]
 layout_mode = 2
 size_flags_horizontal = 3
-item_count = 2
 selected = 0
+item_count = 2
 popup/item_0/text = "Single Race"
 popup/item_0/id = 0
 popup/item_1/text = "Grand Prix"
 popup/item_1/id = 1
 
-[node name="VehicleRestoreToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox"]
+[node name="VehicleRestoreToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=1478342266]
 layout_mode = 2
 button_pressed = true
 text = " Vehicle Restore"
 
-[node name="BumpersToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox"]
+[node name="BumpersToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=1388832483]
 layout_mode = 2
 text = " Bumpers"
 
-[node name="StartRaceButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn"]
+[node name="CpuControlBox" type="HBoxContainer" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=619192241]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="CpuCountLabel" type="Label" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox" unique_id=449423237]
+custom_minimum_size = Vector2(96, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "CPU Drivers: 0"
+vertical_alignment = 1
+
+[node name="AddCpuButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox" unique_id=2110795462]
+layout_mode = 2
+text = "+ CPU"
+
+[node name="RemoveCpuButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox" unique_id=1795570023]
+layout_mode = 2
+text = "- CPU"
+
+[node name="CarSettingsButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=1414752797]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Car Settings"
+
+[node name="ControllerSettingsButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=1992039734]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Controller Settings"
+
+[node name="StartRaceButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn" unique_id=305305536]
 custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
 size_flags_horizontal = 3
@@ -164,61 +205,61 @@ size_flags_stretch_ratio = 0.5
 theme_override_font_sizes/font_size = 48
 text = "PLAY!"
 
-[node name="BottomBox" type="HBoxContainer" parent="LobbyContainer"]
+[node name="BottomBox" type="HBoxContainer" parent="LobbyContainer" unique_id=2081310698]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
 
-[node name="ChatPanel" type="PanelContainer" parent="LobbyContainer/BottomBox"]
+[node name="ChatPanel" type="PanelContainer" parent="LobbyContainer/BottomBox" unique_id=1076480741]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 size_flags_stretch_ratio = 0.37
 
-[node name="ChatMargin" type="MarginContainer" parent="LobbyContainer/BottomBox/ChatPanel"]
+[node name="ChatMargin" type="MarginContainer" parent="LobbyContainer/BottomBox/ChatPanel" unique_id=1884374354]
 layout_mode = 2
 theme_override_constants/margin_left = 2
 theme_override_constants/margin_top = 2
 theme_override_constants/margin_right = 2
 theme_override_constants/margin_bottom = 2
 
-[node name="ChatBox" type="VBoxContainer" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin"]
+[node name="ChatBox" type="VBoxContainer" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin" unique_id=1032014747]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="LobbyChatBox" type="RichTextLabel" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox"]
+[node name="LobbyChatBox" type="RichTextLabel" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox" unique_id=1960317987]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+focus_mode = 2
 theme_override_font_sizes/normal_font_size = 16
 bbcode_enabled = true
 text = "[color=555555]Never tell your password to anyone.[/color]"
-selection_enabled = true
 scroll_following = true
+selection_enabled = true
 
-[node name="ChatInputBox" type="HBoxContainer" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox"]
+[node name="ChatInputBox" type="HBoxContainer" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox" unique_id=2091933183]
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="LobbySayText" type="LineEdit" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox"]
+[node name="LobbySayText" type="LineEdit" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox" unique_id=302336399]
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Say..."
 
-[node name="LobbySendTextButton" type="Button" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox"]
+[node name="LobbySendTextButton" type="Button" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox" unique_id=1689184039]
 layout_mode = 2
 text = "Send"
 
-[node name="ViewportStack" type="Control" parent="LobbyContainer/BottomBox"]
+[node name="ViewportStack" type="Control" parent="LobbyContainer/BottomBox" unique_id=895817764]
 clip_contents = true
 custom_minimum_size = Vector2(420, 220)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-mouse_filter = 0
 
-[node name="ViewportContainer" type="SubViewportContainer" parent="LobbyContainer/BottomBox/ViewportStack"]
+[node name="ViewportContainer" type="SubViewportContainer" parent="LobbyContainer/BottomBox/ViewportStack" unique_id=51844148]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -227,29 +268,36 @@ grow_horizontal = 2
 grow_vertical = 2
 stretch = true
 
-[node name="LobbyChibiViewport" type="SubViewport" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer"]
+[node name="LobbyChibiViewport" type="SubViewport" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer" unique_id=605594656]
 own_world_3d = true
-size = Vector2i(1280, 512)
+handle_input_locally = false
+size = Vector2i(928, 220)
 render_target_update_mode = 4
 
-[node name="WorldEnvironment" type="WorldEnvironment" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport"]
+[node name="WorldEnvironment" type="WorldEnvironment" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport" unique_id=775694462]
 environment = SubResource("Environment_chibi")
 
-[node name="LobbyChibiRoot" type="Node3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport"]
+[node name="LobbyChibiRoot" type="Node3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport" unique_id=787147025]
 
-[node name="LobbyChibiFloor" type="MeshInstance3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiRoot"]
+[node name="LobbyChibiFloor" type="MeshInstance3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiRoot" unique_id=1052144204]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -30, -51.95)
 mesh = SubResource("PlaneMesh_chibi_floor")
-material_override = ExtResource("1_trackmat")
+skeleton = NodePath("../LobbyChibiCamera")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport"]
+[node name="LobbyChibiStrip" type="MeshInstance3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiRoot" unique_id=542206926]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.11154, 0.016, 0)
+visible = false
+mesh = SubResource("PlaneMesh_chibi_strip")
+skeleton = NodePath("../LobbyChibiCamera")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport" unique_id=1149851290]
 transform = Transform3D(-0.707107, 0.5, -0.5, 0, 0.707107, 0.707107, 0.707107, 0.5, -0.5, 0, 0, 0)
 light_energy = 0.5
 directional_shadow_mode = 0
-directional_shadow_max_distance = 0.1
 directional_shadow_fade_start = 1.0
+directional_shadow_max_distance = 0.1
 
-[node name="LobbyChibiCamera" type="Camera3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport"]
+[node name="LobbyChibiCamera" type="Camera3D" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport" unique_id=1695831659]
 transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 124.5, 215.64)
 projection = 1
 current = true
@@ -257,7 +305,8 @@ size = 12.0
 near = 0.1
 far = 30000.0
 
-[node name="LobbyChibiNameplates" type="Control" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport"]
+[node name="LobbyChibiNameplates" type="Control" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport" unique_id=265398332]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0

@@ -15,6 +15,7 @@ class_name GameManager extends Node
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
 @onready var spark_node_container: SuperSparkContainer = $GameWorld/SuperSparkContainer
 @onready var obj_container: Node3D = $GameWorld/ObjContainer
+@onready var debug_track_mesh_container: Node3D = $GameWorld/DebugTrackMeshContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var cpu_driver_manager: CpuDriverManager = $CpuDriverManager
@@ -25,15 +26,16 @@ class_name GameManager extends Node
 @onready var spectator_race_button: Button = $Control/SpectatorRaceButton
 @onready var controller_settings_button: Button = $Control/ControllerSettingsButton
 @onready var track_editor_button: Button = $Control/TrackEditorButton
-@onready var car_settings_button_lobby: Button = $Lobby/CarSettingsButton
-@onready var controller_settings_button_lobby: Button = $Lobby/ControllerSettingsButton
+@onready var car_settings_button_lobby: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CarSettingsButton
+@onready var controller_settings_button_lobby: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/ControllerSettingsButton
 @onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
 @onready var rtt_label: Label = $RTTLabel
 @onready var cpu_slider: HSlider = $Control/CpuSlider
 @onready var cpu_slider_label: Label = $Control/CpuSliderLabel
-@onready var add_cpu_button: Button = $Lobby/AddCpuButton
-@onready var remove_cpu_button: Button = $Lobby/RemoveCpuButton
+@onready var lobby_cpu_count_label: Label = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox/CpuCountLabel
+@onready var add_cpu_button: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox/AddCpuButton
+@onready var remove_cpu_button: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox/RemoveCpuButton
 @onready var lobby_game_mode_choice: OptionButton = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/GameModeChoice
 @onready var lobby_vehicle_restore_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/VehicleRestoreToggle
 @onready var lobby_bumpers_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/BumpersToggle
@@ -67,6 +69,7 @@ const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
+const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 
@@ -78,6 +81,7 @@ var spectator_scene := preload("res://player/spectator.tscn")
 var local_player_index: int = 0
 var headless_mode: bool = false
 var trigger_objects: Array = []
+var track_visual_scene_instance: Node
 var spectator_node: Node3D
 var local_elimination_spectator_active := false
 const TRIGGER_SCENES = {
@@ -132,6 +136,8 @@ var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
 var car_render_manager: CarRenderManager
+var lobby_chibi_render_manager: CarRenderManager
+var lobby_chibi_render_signature := ""
 var debug_replay_recording: bool = false
 var debug_replay_playback: bool = false
 var debug_replay_inputs: Array = []
@@ -154,6 +160,7 @@ var debug_rail_trace_requested := false
 var active_stickers := {}
 var race_notification_hide_msec := 0
 var race_medals: Array[Control] = []
+var race_results_overlay: RaceResultsOverlay
 var render_profile_frames := 0
 var render_profile_physics_us := 0
 var render_profile_tick_us := 0
@@ -185,6 +192,12 @@ func _ready() -> void:
 	car_render_manager = CarRenderManagerClass.new()
 	car_render_manager.name = "CarRenderManager"
 	$GameWorld.add_child(car_render_manager)
+	race_results_overlay = RaceResultsOverlayScene.instantiate() as RaceResultsOverlay
+	add_child(race_results_overlay)
+	lobby_chibi_render_manager = CarRenderManagerClass.new()
+	lobby_chibi_render_manager.name = "LobbyChibiRenderManager"
+	if lobby_chibi_root != null:
+		lobby_chibi_root.add_child(lobby_chibi_render_manager)
 	randomize()
 	_build_lobby_options_controls()
 	_build_multiplayer_connect_box()
@@ -364,6 +377,46 @@ func build_cpu_player_settings(index: int) -> Dictionary:
 	ps.spectator = false
 	return ps.to_dict()
 
+func _clear_track_visual_scene() -> void:
+	if track_visual_scene_instance != null:
+		if is_instance_valid(track_visual_scene_instance):
+			track_visual_scene_instance.queue_free()
+		track_visual_scene_instance = null
+
+func _resolve_track_visual_scene_path(track_dir: String, meta: Dictionary) -> String:
+	var scene_path := String(meta.get("visual_scene", "")).strip_edges()
+	if scene_path != "":
+		if scene_path.begins_with("res://") or scene_path.begins_with("user://"):
+			return scene_path
+		return track_dir.path_join(scene_path)
+	var default_path := track_dir.path_join("track.tscn")
+	if ResourceLoader.exists(default_path):
+		return default_path
+	return ""
+
+func _load_track_visual_scene(scene_path: String) -> bool:
+	if scene_path == "" or !ResourceLoader.exists(scene_path):
+		return false
+	var packed := load(scene_path) as PackedScene
+	if packed == null:
+		push_warning("Track visual scene is not a PackedScene: %s" % scene_path)
+		return false
+	var inst := packed.instantiate()
+	if inst == null:
+		push_warning("Failed to instantiate track visual scene: %s" % scene_path)
+		return false
+	track_visual_scene_instance = inst
+	obj_container.add_child(inst)
+	return true
+
+func _set_builtin_track_visuals_enabled(enabled: bool) -> void:
+	if debug_track_mesh_container != null:
+		debug_track_mesh_container.visible = enabled and !auto_hide_track_visuals_mode
+	if directional_light_3d != null:
+		directional_light_3d.visible = enabled
+	if world_environment != null:
+		world_environment.environment = default_world_environment_resource if enabled else null
+
 func _scan_dir(path: String) -> void:
 	var dir := DirAccess.open(path)
 	if dir == null:
@@ -510,10 +563,8 @@ func _build_lobby_options_controls() -> void:
 	if !lobby_track_selector.item_selected.is_connected(_on_lobby_track_selected):
 		lobby_track_selector.item_selected.connect(_on_lobby_track_selected)
 
-	add_cpu_button.visible = false
-	remove_cpu_button.visible = false
-	car_settings_button_lobby.visible = false
-	controller_settings_button_lobby.visible = false
+	car_settings_button_lobby.visible = true
+	controller_settings_button_lobby.visible = true
 	if !lobby_game_mode_choice.item_selected.is_connected(_on_lobby_game_mode_selected):
 		lobby_game_mode_choice.item_selected.connect(_on_lobby_game_mode_selected)
 	if !lobby_vehicle_restore_toggle.toggled.is_connected(_on_lobby_vehicle_restore_toggled):
@@ -773,6 +824,44 @@ func _update_lobby_chibi_cars(_delta: float) -> void:
 			if is_instance_valid(stale_car):
 				stale_car.queue_free()
 			lobby_chibi_cars.erase(id)
+	_submit_lobby_chibi_render(roster)
+
+func _submit_lobby_chibi_render(roster: Array) -> void:
+	if lobby_chibi_render_manager == null:
+		return
+	var definitions := []
+	var render_cars := []
+	var signature_parts := []
+	for id in roster:
+		if !lobby_chibi_cars.has(id):
+			continue
+		var car = lobby_chibi_cars[id]
+		if car == null or !is_instance_valid(car):
+			continue
+		var definition: CarDefinition = car.get_render_definition()
+		if definition == null:
+			continue
+		definitions.append(definition)
+		render_cars.append(car)
+		signature_parts.append(str(id) + ":" + definition.resource_path)
+	var signature := ""
+	for part in signature_parts:
+		signature += part + "|"
+	if signature != lobby_chibi_render_signature:
+		lobby_chibi_render_manager.configure_manual(definitions)
+		lobby_chibi_render_signature = signature
+	lobby_chibi_render_manager.begin_manual_submit()
+	var render_root_inv := lobby_chibi_render_manager.global_transform.affine_inverse()
+	for i in range(render_cars.size()):
+		var car = render_cars[i]
+		lobby_chibi_render_manager.submit_manual_car(
+			i,
+			render_root_inv * car.get_render_transform(),
+			car.get_render_overlay(),
+			car.get_render_outline_velocity(),
+			car.get_render_outline_overlay(),
+			car.get_render_thrust(),
+			false)
 
 func _get_lobby_human_roster() -> Array:
 	var out := []
@@ -816,14 +905,27 @@ func _apply_lobby_chibi_state(player_id: int, velocity: float, knockback_velocit
 	if car != null and is_instance_valid(car):
 		car.apply_remote_state(velocity, knockback_velocity, angle_velocity, position, rotation)
 
+func _lobby_latency_text_for_player(player_id: int) -> String:
+	if player_id == _local_player_id():
+		return "0ms"
+	var value := -1.0
+	if network_manager.lobby_latency_rtt_s.has(player_id):
+		value = float(network_manager.lobby_latency_rtt_s[player_id])
+	elif network_manager.peer_client_rtt_s.has(player_id):
+		value = float(network_manager.peer_client_rtt_s[player_id])
+	elif !network_manager.is_server and player_id == 1:
+		value = network_manager.rtt_s
+	if value < 0.0:
+		return "--ms"
+	return "%dms" % roundi(value * 1000.0)
+
 func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dictionary:
 	var initialized := options.duplicate(true)
 	if int(initialized.get("game_mode", 0)) != 1:
 		return initialized
 	var points := {}
 	for id in roster:
-		if !network_manager.get_cpu_roster().has(id):
-			points[int(id)] = 0
+		points[int(id)] = 0
 	initialized["grand_prix_current_track"] = 0
 	initialized["grand_prix_points"] = points
 	initialized["grand_prix_ko_energy_bonuses"] = {}
@@ -908,38 +1010,71 @@ func _format_ordinal(value: int) -> String:
 		_:
 			return "%dth" % value
 
-func _format_race_results_summary() -> String:
+func _format_race_results_text() -> String:
 	var lines := ["Race Results"]
-	for i in range(network_manager.finish_order.size()):
-		var id := int(network_manager.finish_order[i])
-		lines.append("%s  %s" % [_format_ordinal(i + 1), _player_display_name(id)])
+	var finish_rows := []
+	for id_value in network_manager.player_finish_placements.keys():
+		var id := int(id_value)
+		finish_rows.append([int(network_manager.player_finish_placements[id_value]), id])
+	finish_rows.sort_custom(func(a, b):
+		if int(a[0]) != int(b[0]):
+			return int(a[0]) < int(b[0])
+		return int(a[1]) < int(b[1])
+	)
+	for row in finish_rows:
+		var place := int(row[0])
+		var id := int(row[1])
+		var time_text := ""
+		var tick_value := int(_lookup_id_value(network_manager.player_finish_times, id, -1))
+		if tick_value >= 0:
+			time_text = "  " + _format_race_time(tick_value)
+		lines.append("%s  %s%s" % [_format_ordinal(place), _player_display_name(id), time_text])
 	if !network_manager.player_eliminations.is_empty():
 		lines.append("")
 		lines.append("Eliminated")
 		for id_value in network_manager.player_eliminations.keys():
 			lines.append(_player_display_name(int(id_value)))
+	return "\n".join(lines)
+
+func _format_grand_prix_results_text() -> String:
 	if network_manager.is_grand_prix_enabled():
-		lines.append("")
-		lines.append("Grand Prix Standings")
+		var lines := ["Grand Prix Standings"]
 		var points: Dictionary = network_manager.race_options.get("grand_prix_points", {})
 		var standings := []
 		for id_value in points.keys():
 			standings.append([int(_lookup_id_value(points, int(id_value), 0)), int(id_value)])
-		standings.sort_custom(func(a, b): return a[0] > b[0])
+		standings.sort_custom(func(a, b):
+			if int(a[0]) != int(b[0]):
+				return int(a[0]) > int(b[0])
+			return int(a[1]) < int(b[1])
+		)
 		for i in range(standings.size()):
 			lines.append("%s  %s  %d" % [
 				_format_ordinal(i + 1),
 				_player_display_name(int(standings[i][1])),
 				int(standings[i][0])
 			])
-	return "\n".join(lines)
+		return "\n".join(lines)
+	return ""
+
+func _format_race_results_summary() -> String:
+	var race_text := _format_race_results_text()
+	var grand_prix_text := _format_grand_prix_results_text()
+	if grand_prix_text == "":
+		return race_text
+	return race_text + "\n\n" + grand_prix_text
 
 func _show_race_results_summary() -> void:
-	if race_finish_label == null:
-		return
-	race_finish_label.text = _format_race_results_summary()
-	race_finish_label.visible = true
+	if race_finish_label != null:
+		race_finish_label.visible = false
+	if race_results_overlay != null:
+		race_results_overlay.set_results(_format_race_results_text(), _format_grand_prix_results_text())
+		race_results_overlay.visible = true
 	race_notification_hide_msec = 0
+
+func _hide_race_results_summary() -> void:
+	if race_results_overlay != null:
+		race_results_overlay.visible = false
 
 func _show_finish_medal(actor_id: int, tick_value: int) -> void:
 	var medal := FinishMedalScene.instantiate() as Control
@@ -1310,6 +1445,7 @@ func _load_and_start_debug_replay(path: String) -> void:
 @onready var track_floor: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackFloor
 @onready var track_clouds: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackClouds
 @onready var directional_light_3d: DirectionalLight3D = $GameWorld/DirectionalLight3D
+@onready var default_world_environment_resource: Environment = world_environment.environment
 
 func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
@@ -1324,33 +1460,42 @@ func _start_race(track_index: int, settings: Array) -> void:
 	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
 	current_track_meta = {}
 	current_track_ground_image = null
-	debug_track_mesh.visible = !auto_hide_track_visuals_mode
-	track_floor.visible = !auto_hide_track_visuals_mode
-	track_clouds.visible = !auto_hide_track_visuals_mode
+	_hide_race_results_summary()
+	_clear_track_visual_scene()
+	debug_track_mesh.mesh = null
 	obj_container.visible = !auto_hide_track_visuals_mode
-	var json_path = info["mxt"].get_basename() + ".json"
+	var json_path: String = String(info["mxt"]).get_basename() + ".json"
+	var track_dir: String = json_path.get_base_dir()
 	if FileAccess.file_exists(json_path):
 		var json_text := FileAccess.get_file_as_string(json_path)
 		var parsed = JSON.parse_string(json_text)
 		if typeof(parsed) == TYPE_DICTIONARY:
 			current_track_meta = parsed
-			RenderingServer.global_shader_parameter_set("fog_dist", current_track_meta.fog_distance)
-			var floor_mat : ShaderMaterial = track_floor.get_active_material(0)
-			var cloud_mat : ShaderMaterial = track_clouds.get_active_material(0)
-			floor_mat.set_shader_parameter("albedo", current_track_meta.ground_color)
-			cloud_mat.set_shader_parameter("albedo", current_track_meta.cloud_color)
-			track_floor.position.z = -current_track_meta.ground_height
-			track_clouds.position.z = -current_track_meta.cloud_height
-			var sky_mat : ProceduralSkyMaterial = world_environment.environment.sky.sky_material
-			sky_mat.sky_top_color = Color(current_track_meta.sky_top_color[0], current_track_meta.sky_top_color[1], current_track_meta.sky_top_color[2])
-			sky_mat.sky_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
-			sky_mat.ground_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
-			sky_mat.ground_bottom_color = Color(current_track_meta.sky_ground_color[0], current_track_meta.sky_ground_color[1], current_track_meta.sky_ground_color[2])
-			directional_light_3d.light_color = Color(current_track_meta.light_color[0], current_track_meta.light_color[1], current_track_meta.light_color[2])
-			directional_light_3d.light_energy = current_track_meta.light_intensity
-			world_environment.environment.ambient_light_color = Color(current_track_meta.ambient_color[0], current_track_meta.ambient_color[1], current_track_meta.ambient_color[2])
-			world_environment.environment.ambient_light_energy = current_track_meta.ambient_intensity
-			var track_dir = json_path.get_base_dir()
+	var visual_scene_path_for_race := _resolve_track_visual_scene_path(track_dir, current_track_meta)
+	var has_track_visual_scene := visual_scene_path_for_race != "" and ResourceLoader.exists(visual_scene_path_for_race)
+	_set_builtin_track_visuals_enabled(!has_track_visual_scene)
+	if !has_track_visual_scene:
+		debug_track_mesh.visible = !auto_hide_track_visuals_mode
+		track_floor.visible = !auto_hide_track_visuals_mode
+		track_clouds.visible = !auto_hide_track_visuals_mode
+	if !current_track_meta.is_empty() and world_environment.environment != null:
+		RenderingServer.global_shader_parameter_set("fog_dist", current_track_meta.fog_distance)
+		var floor_mat : ShaderMaterial = track_floor.get_active_material(0)
+		var cloud_mat : ShaderMaterial = track_clouds.get_active_material(0)
+		floor_mat.set_shader_parameter("albedo", current_track_meta.ground_color)
+		cloud_mat.set_shader_parameter("albedo", current_track_meta.cloud_color)
+		track_floor.position.z = -current_track_meta.ground_height
+		track_clouds.position.z = -current_track_meta.cloud_height
+		var sky_mat : ProceduralSkyMaterial = world_environment.environment.sky.sky_material
+		sky_mat.sky_top_color = Color(current_track_meta.sky_top_color[0], current_track_meta.sky_top_color[1], current_track_meta.sky_top_color[2])
+		sky_mat.sky_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
+		sky_mat.ground_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
+		sky_mat.ground_bottom_color = Color(current_track_meta.sky_ground_color[0], current_track_meta.sky_ground_color[1], current_track_meta.sky_ground_color[2])
+		directional_light_3d.light_color = Color(current_track_meta.light_color[0], current_track_meta.light_color[1], current_track_meta.light_color[2])
+		directional_light_3d.light_energy = current_track_meta.light_intensity
+		world_environment.environment.ambient_light_color = Color(current_track_meta.ambient_color[0], current_track_meta.ambient_color[1], current_track_meta.ambient_color[2])
+		world_environment.environment.ambient_light_energy = current_track_meta.ambient_intensity
+		if !has_track_visual_scene:
 			var ground_path = track_dir.path_join("ground.png")
 			if FileAccess.file_exists(ground_path):
 				var bytes := FileAccess.get_file_as_bytes(ground_path)
@@ -1393,6 +1538,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 			render_defs.append(bumper_def)
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
+	var start_grid_slots := _build_start_grid_slots(racer_ids)
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
 	nametag_names.clear()
 	nametag_names.resize(racer_settings.size())
@@ -1447,6 +1593,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_car_render_manager(car_render_manager)
 	# Ensure the C++ sim sees the shared spawn seed before instantiation
 	game_sim.set_spawn_seed(network_manager.spawn_seed)
+	game_sim.set_start_grid_slots(start_grid_slots)
 	game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 	if game_sim.has_method("set_bumpers_enabled"):
 		game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
@@ -1481,6 +1628,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.spark_node_container = spark_node_container
 		server_game_sim.set_car_render_manager(car_render_manager)
 		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
+		server_game_sim.set_start_grid_slots(start_grid_slots)
 		server_game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 		if server_game_sim.has_method("set_bumpers_enabled"):
 			server_game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
@@ -1504,8 +1652,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim
 	if !headless_mode:
-		var obj_path = info["mxt"].get_basename() + ".obj"
-		if ResourceLoader.exists(obj_path):
+		var visual_scene_loaded := _load_track_visual_scene(visual_scene_path_for_race)
+		var obj_path: String = String(info["mxt"]).get_basename() + ".obj"
+		if !visual_scene_loaded and ResourceLoader.exists(obj_path):
 			var loaded_mesh: Mesh = load(obj_path)
 			if loaded_mesh != null:
 				var runtime_mesh: Mesh = loaded_mesh.duplicate(true)
@@ -1547,9 +1696,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 				trigger_objects.append(inst)
 	if !singleplayer_mode:
 		if network_manager.is_server:
-			network_manager.client_ready()
+			network_manager.client_ready(network_manager.race_netplay_phase)
 		else:
-			network_manager.client_ready.rpc_id(1)
+			network_manager.client_ready.rpc_id(1, network_manager.race_netplay_phase)
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
@@ -1572,9 +1721,10 @@ func _on_start_race_button_pressed() -> void:
 		network_manager.send_start_race(first_track_index, settings_array, race_options)
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
+	_close_settings_menus_for_race_start()
 	if headless_mode:
 		_start_race(track_index, settings)
-		network_manager.client_ready.rpc_id(1)
+		network_manager.client_ready.rpc_id(1, network_manager.race_netplay_phase)
 		return
 	_start_race(track_index, settings)
 	game_sim.set_sim_started(false)
@@ -1585,6 +1735,7 @@ func _on_network_race_finished() -> void:
 	if headless_mode and network_manager.pending_next_race_track_index < 0:
 		return
 	race_finish_label.visible = false
+	_hide_race_results_summary()
 	active_stickers.clear()
 	if network_manager.pending_next_race_track_index >= 0:
 		_transition_to_next_grand_prix_race()
@@ -1597,7 +1748,12 @@ func _update_player_list() -> void:
 	if lobby_player_list_container != null:
 		var signature_parts := []
 		for id in roster:
-			signature_parts.append("%d:%s" % [int(id), _player_display_name(int(id))])
+			signature_parts.append("%d:%s:%s:%s" % [
+				int(id),
+				_player_display_name(int(id)),
+				str(cpu_ids.has(id)),
+				str(network_manager.is_server)
+			])
 		var signature := "|".join(signature_parts)
 		if signature == lobby_player_list_signature:
 			return
@@ -1605,11 +1761,23 @@ func _update_player_list() -> void:
 		for child in lobby_player_list_container.get_children():
 			child.queue_free()
 		for id in roster:
-			var row := Button.new()
-			row.text = _player_display_name(int(id))
-			row.disabled = true
+			var id_int := int(id)
+			var row := HBoxContainer.new()
 			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_theme_constant_override("separation", 6)
 			lobby_player_list_container.add_child(row)
+			var name_label := Label.new()
+			name_label.text = _player_display_name(id_int)
+			if cpu_ids.has(id):
+				name_label.text = "[CPU] " + name_label.text
+			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(name_label)
+			var can_kick := network_manager.is_server and !cpu_ids.has(id) and id_int != _local_player_id()
+			if can_kick:
+				var kick_button := Button.new()
+				kick_button.text = "Kick"
+				kick_button.pressed.connect(_on_lobby_kick_player_pressed.bind(id_int))
+				row.add_child(kick_button)
 		return
 	player_list.clear()
 	for id in roster:
@@ -1621,6 +1789,11 @@ func _update_player_list() -> void:
 		if cpu_ids.has(id):
 			name = "[CPU] " + name
 		player_list.add_item(name)
+
+func _on_lobby_kick_player_pressed(player_id: int) -> void:
+	network_manager.kick_human_player(player_id)
+	lobby_player_list_signature = ""
+	_update_player_list()
 
 func _window_accepts_input() -> bool:
 	if race_pause_open:
@@ -1713,21 +1886,28 @@ func _update_top_place_badges(active_camera: Camera3D, camera_position: Vector3,
 	if singleplayer_mode or game_sim == null or placement_badge_pool.is_empty():
 		return
 	var local_id := _local_player_id()
-	var order: Array = game_sim.get_race_order()
-	var badge_slot := 0
-	for rank in mini(order.size(), TOP_PLACE_BADGE_TEXTURES.size()):
-		var player_id := int(order[rank])
+	var top_players := []
+	for car in car_node_container.get_children():
+		var visual_car := car as VisualCar
+		if visual_car == null:
+			continue
+		var player_id := visual_car.owning_id
 		if player_id == local_id:
 			continue
-		var car_index := _car_index_for_player_id(player_id)
-		if car_index < 0:
-			continue
-		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
+		var place := int(game_sim.get_player_race_place(player_id))
+		if place >= 1 and place <= TOP_PLACE_BADGE_TEXTURES.size():
+			top_players.append([place, player_id])
+	top_players.sort_custom(func(a, b): return int(a[0]) < int(b[0]))
+	var badge_slot := 0
+	for entry in top_players:
+		var place := int(entry[0])
+		var player_id := int(entry[1])
+		var render_transform: Transform3D = game_sim.get_player_render_transform(player_id)
 		var world_pos := render_transform.origin
 		if camera_position.distance_squared_to(world_pos) > NAMETAG_MAX_DISTANCE_SQ or !active_camera.is_position_in_frustum(world_pos):
 			continue
 		var badge := placement_badge_pool[badge_slot]
-		badge.texture = TOP_PLACE_BADGE_TEXTURES[rank]
+		badge.texture = TOP_PLACE_BADGE_TEXTURES[place - 1]
 		badge.visible = true
 		badge.position = active_camera.unproject_position(
 			world_pos + camera_right * 1.5 + camera_up * 2.35
@@ -1865,10 +2045,13 @@ func _physics_process(delta: float) -> void:
 		return
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if lobby_control.visible:
+		network_manager.process_lobby_latency()
 		_update_player_list()
 		_update_lobby_chibi_cars(delta)
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
 		var missing_selected_tracks := lobby_grand_prix_track_sequence.is_empty()
+		if lobby_cpu_count_label != null:
+			lobby_cpu_count_label.text = "CPU Drivers: %d" % network_manager.get_cpu_roster().size()
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
 		start_race_button.disabled = !can_edit_cpu or tracks.is_empty() or missing_selected_tracks
@@ -2045,6 +2228,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if replay_path != "":
 			_load_and_start_debug_replay(replay_path)
 		get_viewport().set_input_as_handled()
+	if lobby_control.visible and event.is_action_pressed("ui_cancel"):
+		_close_settings_menus_for_race_start()
+		_return_to_menu()
+		get_viewport().set_input_as_handled()
 	if game_sim.sim_started and event.is_action_pressed("ui_cancel"):
 		if race_pause_open:
 			_close_race_pause_menu()
@@ -2058,6 +2245,7 @@ func _return_to_menu() -> void:
 	debug_replay_playback = false
 	_close_race_pause_menu()
 	race_finish_label.visible = false
+	_hide_race_results_summary()
 	active_stickers.clear()
 	_reset_nametag_pool()
 	var was_server := network_manager.is_server
@@ -2067,6 +2255,9 @@ func _return_to_menu() -> void:
 		server_game_sim.destroy_gamesim()
 	network_manager.game_sim = null
 	network_manager.server_game_sim = null
+	_clear_track_visual_scene()
+	debug_track_mesh.mesh = null
+	_set_builtin_track_visuals_enabled(true)
 	for child in car_node_container.get_children():
 		child.queue_free()
 	for obj in trigger_objects:
@@ -2095,9 +2286,13 @@ func _return_to_lobby() -> void:
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
 	race_finish_label.visible = false
+	_hide_race_results_summary()
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
+	_clear_track_visual_scene()
+	debug_track_mesh.mesh = null
+	_set_builtin_track_visuals_enabled(true)
 	for child in car_node_container.get_children():
 		if child != null:
 			child.queue_free()
@@ -2129,9 +2324,13 @@ func _teardown_race_world_for_transition() -> void:
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
 	race_finish_label.visible = false
+	_hide_race_results_summary()
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
+	_clear_track_visual_scene()
+	debug_track_mesh.mesh = null
+	_set_builtin_track_visuals_enabled(true)
 	for child in car_node_container.get_children():
 		if child != null:
 			child.queue_free()
@@ -2187,6 +2386,32 @@ func _lookup_id_value(dict: Dictionary, id: int, fallback):
 		return dict[id_string]
 	return fallback
 
+func _build_start_grid_slots(racer_ids: Array) -> PackedInt32Array:
+	var slots := PackedInt32Array()
+	slots.resize(racer_ids.size())
+	for i in range(racer_ids.size()):
+		slots[i] = -1
+	if !network_manager.is_grand_prix_enabled():
+		return slots
+	var current_track_index := int(network_manager.race_options.get("grand_prix_current_track", 0))
+	if current_track_index <= 0:
+		return slots
+	var points: Dictionary = network_manager.race_options.get("grand_prix_points", {})
+	var standings := []
+	for i in range(racer_ids.size()):
+		var id := int(racer_ids[i])
+		standings.append([int(_lookup_id_value(points, id, 0)), i, id])
+	standings.sort_custom(func(a, b):
+		if int(a[0]) != int(b[0]):
+			return int(a[0]) > int(b[0])
+		return int(a[1]) < int(b[1])
+	)
+	var racer_count := racer_ids.size()
+	for rank in range(standings.size()):
+		var racer_index := int(standings[rank][1])
+		slots[racer_index] = racer_count - 1 - rank
+	return slots
+
 func _apply_grand_prix_ko_energy_bonuses(sim: GameSim, racer_ids: Array) -> void:
 	if sim == null or !network_manager.is_grand_prix_enabled():
 		return
@@ -2218,13 +2443,15 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	if int(options.get("grand_prix_recorded_track", -1)) == current_track_index:
 		return
 	var points: Dictionary = options.get("grand_prix_points", {})
-	var human_racers := network_manager.race_player_ids.duplicate(true)
-	var racer_count := human_racers.size()
-	for id_value in human_racers:
+	var race_racers := network_manager.get_simulation_roster()
+	var racer_count := race_racers.size()
+	var place_by_id := _build_final_race_place_map(sim, race_racers)
+	network_manager.send_final_race_placements(place_by_id)
+	for id_value in race_racers:
 		var id := int(id_value)
 		var total := int(_lookup_id_value(points, id, 0))
-		if network_manager.player_finish_placements.has(id):
-			var place := int(network_manager.player_finish_placements[id])
+		var place := int(_lookup_id_value(place_by_id, id, 0))
+		if place > 0:
 			total += maxi(0, racer_count - place + 1)
 		points[id] = total
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -2239,6 +2466,29 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	options["grand_prix_recorded_track"] = current_track_index
 	network_manager.race_options = options
 	network_manager.send_race_options(options)
+
+func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary:
+	var place_by_id := {}
+	var used_places := {}
+	for id_value in race_racers:
+		var id := int(id_value)
+		var place := int(_lookup_id_value(network_manager.player_finish_placements, id, 0))
+		if place > 0:
+			place_by_id[id] = place
+			used_places[place] = true
+	if sim == null or !sim.has_method("get_race_order"):
+		return place_by_id
+	var order: Array = sim.get_race_order()
+	var next_place := 1
+	for id_value in order:
+		var id := int(id_value)
+		if !race_racers.has(id) or place_by_id.has(id):
+			continue
+		while used_places.has(next_place):
+			next_place += 1
+		place_by_id[id] = next_place
+		used_places[next_place] = true
+	return place_by_id
 
 func _build_next_grand_prix_settings(options: Dictionary) -> Array:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -2274,9 +2524,9 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 	options["grand_prix_current_track"] = next_index
 	var next_track_index := int(track_indices[next_index])
 	var next_settings := _build_next_grand_prix_settings(options)
+	options = network_manager.reserve_next_race_netplay_options(options)
 	var seed := randi()
-	network_manager.set_spawn_seed.rpc(seed)
-	network_manager.set_spawn_seed(seed)
+	options["spawn_seed"] = seed
 	network_manager.send_end_race(next_track_index, next_settings, options)
 
 func _check_race_finished() -> void:
@@ -2312,10 +2562,13 @@ func _check_race_finished() -> void:
 					eliminated = !network_manager.is_vehicle_restore_enabled() and (car.machine_state & (VisualCar.FZ_MS.ZEROHP | VisualCar.FZ_MS.FALLOUT)) != 0
 					break
 		if finished:
+			var race_place := 1
+			if finish_sim != null and finish_sim.has_method("get_player_race_place"):
+				race_place = int(finish_sim.get_player_race_place(racer_id))
 			if network_manager.is_server:
-				network_manager.send_player_finished(racer_id, network_manager.server_tick)
+				network_manager.send_player_finished(racer_id, network_manager.server_tick, race_place)
 			else:
-				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
+				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick, race_place)
 		elif eliminated:
 			if network_manager.is_server:
 				network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
@@ -2333,6 +2586,7 @@ func _check_race_finished() -> void:
 			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 10000:
 				_finish_or_advance_grand_prix(finish_sim)
 				race_finish_label.visible = false
+				_hide_race_results_summary()
 	else:
 		if singleplayer_mode and all_done:
 			if network_manager.net_race_finish_time == -1:

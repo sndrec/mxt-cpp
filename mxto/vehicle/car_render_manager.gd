@@ -32,6 +32,15 @@ func configure(definitions: Array, car_nodes: Array) -> void:
 	clear_renderer()
 	set_process(false)
 	cars = car_nodes.duplicate()
+	_configure_archetypes(definitions)
+
+func configure_manual(definitions: Array) -> void:
+	clear_renderer()
+	set_process(false)
+	cars.clear()
+	_configure_archetypes(definitions)
+
+func _configure_archetypes(definitions: Array) -> void:
 	car_archetype_indices.resize(definitions.size())
 	car_slots.resize(definitions.size())
 	if !multimesh_render_enabled:
@@ -58,6 +67,49 @@ func configure(definitions: Array, car_nodes: Array) -> void:
 		archetype["count"] = count + 1
 		_resize_passes(archetype, archetype["count"])
 		archetypes[archetype_index] = archetype
+
+func begin_manual_submit() -> void:
+	for archetype in archetypes:
+		for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow"]:
+			var pass_data: Dictionary = archetype[pass_name]
+			var multimesh: MultiMesh = pass_data["multimesh"]
+			multimesh.visible_instance_count = 0
+		var thruster_pass: Dictionary = archetype["thruster"]
+		var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
+		thruster_multimesh.visible_instance_count = 0
+
+func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Color, outline_velocity: Vector3, outline_overlay: Color, thrust: float, submit_outlines: bool = true) -> void:
+	if index < 0 or index >= car_archetype_indices.size() or index >= car_slots.size():
+		return
+	var archetype_index := car_archetype_indices[index]
+	var slot := car_slots[index]
+	if archetype_index < 0 or archetype_index >= archetypes.size() or slot < 0:
+		return
+	var archetype: Dictionary = archetypes[archetype_index]
+	_set_pass_instance(archetype[PASS_MAIN], slot, body_transform * archetype[PASS_MAIN]["local_transform"], Vector3.ZERO, body_overlay)
+	if submit_outlines:
+		_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay)
+		_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK)
+	_set_pass_instance(archetype["shadow"], slot, body_transform * archetype["shadow"]["local_transform"], Vector3.ZERO, Color.WHITE)
+	for pass_name in [PASS_MAIN, "shadow"]:
+		var pass_data: Dictionary = archetype[pass_name]
+		var multimesh: MultiMesh = pass_data["multimesh"]
+		multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
+	if submit_outlines:
+		for pass_name in [PASS_OUTLINE, PASS_OUTLINE_MAIN]:
+			var pass_data: Dictionary = archetype[pass_name]
+			var multimesh: MultiMesh = pass_data["multimesh"]
+			multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
+	var thruster_pass: Dictionary = archetype["thruster"]
+	var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
+	var thruster_locals: Array = thruster_pass["local_transforms"]
+	var tick_phase := int(Time.get_ticks_msec() / 16)
+	for i in range(thruster_locals.size()):
+		var thruster_slot := slot * thruster_locals.size() + i
+		thruster_multimesh.set_instance_transform(thruster_slot, body_transform * thruster_locals[i])
+		thruster_multimesh.set_instance_color(thruster_slot, Color(thrust, thrust, thrust, thrust))
+		thruster_multimesh.set_instance_custom_data(thruster_slot, Color(thrust * 0.2, float((tick_phase + i) & 255) * 0.0245436926, thrust, 1.0))
+	thruster_multimesh.visible_instance_count = max(thruster_multimesh.visible_instance_count, slot * thruster_locals.size() + thruster_locals.size())
 
 func get_native_render_bindings() -> Dictionary:
 	var multimeshes: Array = []

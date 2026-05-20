@@ -23,8 +23,8 @@ config/icon="res://icon.svg"
 [autoload]
 
 DipDebugMenu="*res://ui/dip_debug_menu.gd"
-ImGuiRoot="*uid://dugmpnsxaagba"
 FZGlobal="*res://fz_global.gd"
+ImGuiRoot="*uid://dugmpnsxaagba"
 
 [debug]
 

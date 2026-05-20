@@ -1,9 +1,10 @@
-[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+[gd_resource type="ShaderMaterial" format=3 uid="uid://uhd11t7w8vw2"]
 
-[ext_resource type="Shader" path="res://ui/lobby_assets/chibi_track.gdshader" id="1_shader"]
-[ext_resource type="Texture2D" path="res://asset/tex/track/tracktex (11).png" id="2_track"]
+[ext_resource type="Shader" uid="uid://82rcjs5ulqv5" path="res://ui/lobby_assets/chibi_track.gdshader" id="1_shader"]
+[ext_resource type="Texture2D" uid="uid://cc5kanbboclds" path="res://ui/lobby_assets/track_11.png" id="2_track"]
 
 [resource]
+render_priority = 0
 shader = ExtResource("1_shader")
 shader_parameter/albedo = Color(0.541176, 0.541176, 0.541176, 1)
 shader_parameter/texture_albedo = ExtResource("2_track")

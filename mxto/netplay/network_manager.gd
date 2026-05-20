@@ -7,15 +7,15 @@ signal race_event(event_type, actor_id, target_id, tick, value)
 signal race_options_changed(options)
 
 @rpc("any_peer", "reliable")
-func set_race_finish_time(time: int) -> void:
-	if !race_active:
+func set_race_finish_time(phase: int, time: int) -> void:
+	if !race_active or !_accept_race_packet_phase(phase):
 		return
 	net_race_finish_time = time
 
 func send_race_finish_time(time: int) -> void:
 	if is_server:
-		set_race_finish_time.rpc(time)
-		set_race_finish_time(time)
+		set_race_finish_time.rpc(race_netplay_phase, time)
+		set_race_finish_time(race_netplay_phase, time)
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
@@ -73,6 +73,9 @@ const SHARED_AHEAD_CAP_TICKS := 10.0
 const START_SYNC_SAMPLE_COUNT := 4
 const START_SYNC_PING_INTERVAL_MS := 50
 const START_SYNC_START_DELAY_MS := 750
+const RACE_PHASE_TICK_BIT := 0x80000000
+const RACE_PHASE_TICK_MASK := 0x7fffffff
+const LOBBY_LATENCY_SAMPLE_INTERVAL_MS := 1000
 var player_settings := {}
 var ready_players : Array[int] = []
 const PLAYER_SETTINGS_RESYNC_INTERVAL_SEC := 1.0
@@ -92,10 +95,12 @@ var race_options := {
 	"track_indices": [],
 	"vehicle_restore": true,
 	"bumpers": false,
+	"race_netplay_phase": 0,
 	"grand_prix_current_track": 0,
 	"grand_prix_points": {},
 	"grand_prix_ko_energy_bonuses": {},
 }
+var race_netplay_phase := 0
 var pending_next_race_track_index := -1
 var pending_next_race_settings: Array = []
 var pending_next_race_options: Dictionary = {}
@@ -103,6 +108,9 @@ var sticker_cooldown_msec := {}
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
 var delayed_peer_ids := {}
+var lobby_latency_rtt_s := {}
+var lobby_latency_pending_msec := {}
+var lobby_latency_last_sample_msec := 0
 
 const CPU_ID_MIN := 1
 const CPU_ID_MAX := 5000
@@ -566,6 +574,35 @@ func _reset_start_sync_state() -> void:
 	start_sync_first_authoritative_count = 0
 	start_sync_debug_prints = 0
 
+func reserve_next_race_netplay_options(options: Dictionary) -> Dictionary:
+	var out := options.duplicate(true)
+	if !is_server:
+		return out
+	out["race_netplay_phase"] = 1 - race_netplay_phase
+	return out
+
+func _race_phase_from_options(options: Dictionary) -> int:
+	return int(options.get("race_netplay_phase", race_netplay_phase)) & 1
+
+func _accept_race_start_phase(phase: int) -> bool:
+	phase = phase & 1
+	if race_active and phase != race_netplay_phase:
+		return false
+	race_netplay_phase = phase
+	return true
+
+func _accept_race_packet_phase(phase: int) -> bool:
+	return (phase & 1) == race_netplay_phase
+
+func _pack_race_phase_tick(tick: int) -> int:
+	return (tick & RACE_PHASE_TICK_MASK) | (race_netplay_phase << 31)
+
+func _unpack_race_phase(packed_tick: int) -> int:
+	return 1 if (packed_tick & RACE_PHASE_TICK_BIT) != 0 else 0
+
+func _unpack_race_tick(packed_tick: int) -> int:
+	return packed_tick & RACE_PHASE_TICK_MASK
+
 func set_cpu_driver_count(count: int) -> void:
 	count = clamp(count, 0, CPU_ID_MAX - CPU_ID_MIN + 1)
 	while cpu_player_ids.size() < count:
@@ -863,6 +900,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	player_finish_placements.clear()
 	finish_order.clear()
 	player_eliminations.clear()
+	ready_players.clear()
 	pending_next_race_track_index = -1
 	pending_next_race_settings.clear()
 	pending_next_race_options.clear()
@@ -870,6 +908,9 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	peer_client_rtt_s.clear()
+	lobby_latency_rtt_s.clear()
+	lobby_latency_pending_msec.clear()
+	lobby_latency_last_sample_msec = 0
 	delayed_peer_ids.clear()
 	log_peer_inputs_accepted.clear()
 	log_peer_inputs_dropped.clear()
@@ -1074,7 +1115,7 @@ func _process_start_sync() -> void:
 		if now >= start_sync_last_ping_msec + START_SYNC_PING_INTERVAL_MS and !start_sync_scheduled:
 			start_sync_last_ping_msec = now
 			start_sync_seq += 1
-			_start_sync_ping.rpc_id(1, now, start_sync_seq)
+			_start_sync_ping.rpc_id(1, now, _pack_race_phase_tick(start_sync_seq))
 	if start_sync_scheduled:
 		if !start_sync_client_started and game_sim != null and !game_sim.sim_started and now >= start_sync_local_start_msec:
 			var initial_target := int(ceil(clamp(_local_desired_ahead_for_shared(), 0.0, float(MAX_AHEAD_TICKS))))
@@ -1082,18 +1123,70 @@ func _process_start_sync() -> void:
 		if is_server and !start_sync_authoritative_started and server_game_sim != null and !server_game_sim.sim_started and now >= start_sync_server_start_msec:
 			_begin_authoritative_simulation_now()
 
+func process_lobby_latency() -> void:
+	if race_active or !has_network_peer():
+		return
+	var now := Time.get_ticks_msec()
+	if now < lobby_latency_last_sample_msec + LOBBY_LATENCY_SAMPLE_INTERVAL_MS:
+		return
+	lobby_latency_last_sample_msec = now
+	if is_server:
+		lobby_latency_rtt_s[multiplayer.get_unique_id()] = 0.0
+		for id in player_ids + spectator_ids + waiting_peers:
+			if int(id) == multiplayer.get_unique_id() or cpu_player_ids.has(id):
+				continue
+			lobby_latency_pending_msec[id] = now
+			_lobby_latency_ping.rpc_id(id, now)
+		_lobby_latency_snapshot.rpc(lobby_latency_rtt_s)
+	else:
+		lobby_latency_pending_msec[1] = now
+		_lobby_latency_ping.rpc_id(1, now)
+
 @rpc("any_peer", "unreliable")
-func _start_sync_ping(client_send_msec: int, seq: int) -> void:
-	if !race_active or !is_server or start_sync_scheduled:
+func _lobby_latency_ping(sent_msec: int) -> void:
+	if race_active:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	_lobby_latency_pong.rpc_id(sender, sent_msec)
+
+@rpc("any_peer", "unreliable")
+func _lobby_latency_pong(sent_msec: int) -> void:
+	if race_active:
+		return
+	var sender := multiplayer.get_remote_sender_id()
+	if sender == 0:
+		sender = multiplayer.get_unique_id()
+	var sample := maxf(0.0, 0.001 * float(Time.get_ticks_msec() - sent_msec))
+	if is_server:
+		peer_client_rtt_s[sender] = sample
+		lobby_latency_rtt_s[sender] = sample
+	else:
+		rtt_s = sample if rtt_s == 0.0 else lerp(rtt_s, sample, RTT_SMOOTHING)
+		lobby_latency_rtt_s[multiplayer.get_unique_id()] = rtt_s
+	lobby_latency_pending_msec.erase(sender)
+
+@rpc("authority", "unreliable")
+func _lobby_latency_snapshot(latencies: Dictionary) -> void:
+	if race_active:
+		return
+	lobby_latency_rtt_s = latencies.duplicate(true)
+	if !is_server:
+		lobby_latency_rtt_s[multiplayer.get_unique_id()] = rtt_s
+
+@rpc("any_peer", "unreliable")
+func _start_sync_ping(client_send_msec: int, packed_sample_seq: int) -> void:
+	if !race_active or !is_server or start_sync_scheduled or !_accept_race_packet_phase(_unpack_race_phase(packed_sample_seq)):
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	if !player_ids.has(sender):
 		return
-	_start_sync_pong.rpc_id(sender, client_send_msec, Time.get_ticks_msec(), seq)
+	_start_sync_pong.rpc_id(sender, client_send_msec, Time.get_ticks_msec(), packed_sample_seq)
 
 @rpc("any_peer", "unreliable")
-func _start_sync_pong(client_send_msec: int, server_recv_msec: int, seq: int) -> void:
-	if !race_active or is_server:
+func _start_sync_pong(client_send_msec: int, server_recv_msec: int, packed_sample_seq: int) -> void:
+	if !race_active or is_server or !_accept_race_packet_phase(_unpack_race_phase(packed_sample_seq)):
 		return
 	var now := Time.get_ticks_msec()
 	var sample_rtt_s: float = max(0.0, 0.001 * float(now - client_send_msec))
@@ -1109,11 +1202,11 @@ func _start_sync_pong(client_send_msec: int, server_recv_msec: int, seq: int) ->
 		start_sync_server_offset_msec = lerp(start_sync_server_offset_msec, sample_offset, 0.35)
 	start_sync_client_sample_count += 1
 	_update_desired_ahead()
-	_client_start_sync_sample.rpc_id(1, seq, rtt_s, desired_ahead_ticks)
+	_client_start_sync_sample.rpc_id(1, packed_sample_seq, rtt_s, desired_ahead_ticks)
 
 @rpc("any_peer", "unreliable")
-func _client_start_sync_sample(seq: int, client_rtt_s: float, client_ahead: float) -> void:
-	if !race_active or !is_server or start_sync_scheduled:
+func _client_start_sync_sample(packed_sample_seq: int, client_rtt_s: float, client_ahead: float) -> void:
+	if !race_active or !is_server or start_sync_scheduled or !_accept_race_packet_phase(_unpack_race_phase(packed_sample_seq)):
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	if !player_ids.has(sender):
@@ -1259,6 +1352,10 @@ func _on_peer_disconnected(id: int) -> void:
 			peer_desired_ahead.erase(id)
 		if peer_client_rtt_s.has(id):
 			peer_client_rtt_s.erase(id)
+		if lobby_latency_rtt_s.has(id):
+			lobby_latency_rtt_s.erase(id)
+		if lobby_latency_pending_msec.has(id):
+			lobby_latency_pending_msec.erase(id)
 		if delayed_peer_ids.has(id):
 			delayed_peer_ids.erase(id)
 		if player_settings.has(id):
@@ -1272,6 +1369,18 @@ func _on_peer_disconnected(id: int) -> void:
 		if !race_active:
 			_update_player_ids.rpc(player_ids)
 		_calc_state_offsets()
+
+func kick_human_player(id: int) -> void:
+	if !is_server or race_active:
+		return
+	if id == multiplayer.get_unique_id() or cpu_player_ids.has(id):
+		return
+	if !player_ids.has(id) and !spectator_ids.has(id) and !waiting_peers.has(id):
+		return
+	multiplayer.disconnect_peer(id)
+	_on_peer_disconnected(id)
+	_update_player_ids.rpc(player_ids)
+	_calc_state_offsets()
 
 
 func _accept_peer(id: int) -> void:
@@ -1360,9 +1469,16 @@ func _update_player_ids(ids: Array) -> void:
 @rpc("any_peer", "reliable")
 func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> void:
 	prepare_race_roster("start_race")
+	var incoming_phase := _race_phase_from_options(options)
+	if !_accept_race_start_phase(incoming_phase):
+		return
+	if is_server:
+		ready_players.clear()
 	_reset_start_sync_state()
 	if !options.is_empty():
 		race_options = options.duplicate(true)
+	if race_options.has("spawn_seed"):
+		set_spawn_seed(int(race_options.get("spawn_seed", spawn_seed)))
 	race_active = true
 	race_player_ids = player_ids.duplicate(true)
 	race_cpu_player_ids = cpu_player_ids.duplicate(true)
@@ -1382,14 +1498,15 @@ func send_start_race(track_index: int, settings: Array, options: Dictionary = {}
 	if is_server:
 		ready_players.clear()
 		if options.is_empty():
-			options = race_options.duplicate(true)
+			options = reserve_next_race_netplay_options(race_options)
 		else:
-			race_options = options.duplicate(true)
+			options = reserve_next_race_netplay_options(options)
+		race_options = options.duplicate(true)
 		# Generate and distribute a shared spawn seed before starting the race.
 		# This lets all peers randomize starting grid slots deterministically.
 		var seed := randi()
-		set_spawn_seed.rpc(seed)
-		set_spawn_seed(seed)
+		options["spawn_seed"] = seed
+		race_options = options.duplicate(true)
 		start_race.rpc(track_index, settings, options)
 		start_race(track_index, settings, options)
 		if player_ids.size() > 1:
@@ -1403,7 +1520,9 @@ func send_start_race(track_index: int, settings: Array, options: Dictionary = {}
 		start_race.rpc_id(1, track_index, settings, options)
 
 @rpc("any_peer", "reliable")
-func end_race(next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
+func end_race(phase: int, next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
+	if !_accept_race_packet_phase(phase):
+		return
 	pending_next_race_track_index = next_track_index
 	pending_next_race_settings = next_settings.duplicate(true)
 	pending_next_race_options = next_options.duplicate(true)
@@ -1414,8 +1533,8 @@ func end_race(next_track_index: int = -1, next_settings: Array = [], next_option
 
 func send_end_race(next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
 	if is_server:
-		end_race.rpc(next_track_index, next_settings, next_options)
-		end_race(next_track_index, next_settings, next_options)
+		end_race.rpc(race_netplay_phase, next_track_index, next_settings, next_options)
+		end_race(race_netplay_phase, next_track_index, next_settings, next_options)
 
 @rpc("any_peer", "reliable")
 func set_spawn_seed(seed: int) -> void:
@@ -1426,8 +1545,8 @@ func set_spawn_seed(seed: int) -> void:
 		server_game_sim.set_spawn_seed(seed)
 
 @rpc("any_peer", "reliable")
-func client_ready() -> void:
-	if !race_active:
+func client_ready(phase: int) -> void:
+	if !race_active or !_accept_race_packet_phase(phase):
 		return
 	var id := multiplayer.get_remote_sender_id()
 	if id == 0:
@@ -1480,12 +1599,12 @@ func _try_schedule_synced_start() -> void:
 	var start_delay_msec: int = max(START_SYNC_START_DELAY_MS, lead_msec + 250)
 	start_sync_server_start_msec = Time.get_ticks_msec() + start_delay_msec
 	start_sync_scheduled = true
-	begin_simulation_at.rpc(start_sync_server_start_msec, start_sync_initial_max_ahead)
-	begin_simulation_at(start_sync_server_start_msec, start_sync_initial_max_ahead)
+	begin_simulation_at.rpc(race_netplay_phase, start_sync_server_start_msec, start_sync_initial_max_ahead)
+	begin_simulation_at(race_netplay_phase, start_sync_server_start_msec, start_sync_initial_max_ahead)
 
 @rpc("any_peer", "reliable")
-func begin_simulation_at(server_start_msec: int, initial_max_ahead: float) -> void:
-	if !race_active:
+func begin_simulation_at(phase: int, server_start_msec: int, initial_max_ahead: float) -> void:
+	if !race_active or !_accept_race_packet_phase(phase):
 		return
 	start_sync_active = true
 	start_sync_scheduled = true
@@ -1753,7 +1872,7 @@ func collect_client_inputs() -> Dictionary:
 		_store_neutral_authoritative_frame_for_all_racers(local_tick)
 		netcode_session.store_local_input(local_tick, NEUTRAL_INPUT_BYTES)
 		if !is_server:
-			_client_startup_sync.rpc_id(1, desired_ahead_ticks, local_tick, rtt_s)
+			_client_startup_sync.rpc_id(1, desired_ahead_ticks, _pack_race_phase_tick(local_tick), rtt_s)
 			_acc_log_out(12)
 		netcode_session.tick_client_predicted_frame(game_sim, local_tick)
 		var startup_frame_inputs := netcode_session.get_frame_as_dictionary(local_tick)
@@ -1771,7 +1890,7 @@ func collect_client_inputs() -> Dictionary:
 			if old_keys.size() > 0:
 				var recent_keys := _recent_unacked_input_keys(old_keys)
 				var start := int(recent_keys[0])
-				var packet: PackedByteArray = netcode_session.build_local_input_packet(start, recent_keys.size())
+				var packet: PackedByteArray = netcode_session.build_local_input_packet(start, recent_keys.size(), race_netplay_phase)
 				log_flat_client_payload_out += packet.size()
 				_acc_log_out(12 + packet.size())
 				_client_send_input_flat.rpc_id(1, packet, desired_ahead_ticks, rtt_s)
@@ -1798,7 +1917,7 @@ func collect_client_inputs() -> Dictionary:
 	if !is_server and all_keys.size() > 0:
 		var recent_keys := _recent_unacked_input_keys(all_keys)
 		var first_tick := int(recent_keys[0])
-		var input_packet: PackedByteArray = netcode_session.build_local_input_packet(first_tick, recent_keys.size())
+		var input_packet: PackedByteArray = netcode_session.build_local_input_packet(first_tick, recent_keys.size(), race_netplay_phase)
 		log_flat_client_payload_out += input_packet.size()
 		_acc_log_out(12 + input_packet.size())
 		for k in recent_keys:
@@ -1821,7 +1940,7 @@ func collect_client_inputs() -> Dictionary:
 
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_startup_sync(ahead: float, client_tick: int, client_rtt_s: float) -> void:
-	if !race_active:
+	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(client_tick)):
 		return
 	if !is_server:
 		return
@@ -1829,11 +1948,12 @@ func _client_startup_sync(ahead: float, client_tick: int, client_rtt_s: float) -
 	if !player_ids.has(sender_id):
 		return
 	var now_sec := 0.001 * float(Time.get_ticks_msec())
+	var unpacked_client_tick := _unpack_race_tick(client_tick)
 	peer_desired_ahead[sender_id] = ahead
 	peer_client_rtt_s[sender_id] = client_rtt_s
 	server_netcode_session.set_peer_desired_ahead(sender_id, ahead)
 	last_input_time[sender_id] = now_sec
-	last_received_tick[sender_id] = max(int(last_received_tick.get(sender_id, -1)), min(client_tick, STARTUP_LIGHT_NET_TICKS - 1))
+	last_received_tick[sender_id] = max(int(last_received_tick.get(sender_id, -1)), min(unpacked_client_tick, STARTUP_LIGHT_NET_TICKS - 1))
 	server_netcode_session.set_peer_last_received(sender_id, int(last_received_tick[sender_id]), now_sec)
 	_acc_log_in(12)
 	_prune_authoritative_history()
@@ -1850,8 +1970,10 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 		var reject_before := maxi(target_tick - SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS, server_tick)
 		if !sender_seen_before:
 			reject_before = server_tick
-		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet, ahead, now_sec)
+		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet, ahead, now_sec, race_netplay_phase)
 		if !bool(stats.get("valid", false)):
+			return
+		if bool(stats.get("stale", false)):
 			return
 		var start_tick := int(stats.get("start_tick", -1))
 		var count := int(stats.get("count", 0))
@@ -1918,12 +2040,13 @@ func _apply_server_input_ack(ack_tick: int) -> void:
 
 @rpc("any_peer", "unreliable", "call_local", 3)
 func _server_startup_sync(server_tick_value: int, this_ack: int, tgt: int, max_ahead: float) -> void:
-	if !race_active:
+	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(server_tick_value)):
 		return
+	var unpacked_server_tick := _unpack_race_tick(server_tick_value)
 	if not is_server or listen_server:
 		var old_clients_server_tick : int = clients_server_tick
 		var old_clients_target_tick : int = clients_target_tick
-		clients_server_tick = max(clients_server_tick, server_tick_value + 1)
+		clients_server_tick = max(clients_server_tick, unpacked_server_tick + 1)
 		clients_target_tick = max(clients_target_tick, tgt)
 		if clients_server_tick > old_clients_server_tick:
 			log_client_server_tick_advances += clients_server_tick - old_clients_server_tick
@@ -1931,19 +2054,22 @@ func _server_startup_sync(server_tick_value: int, this_ack: int, tgt: int, max_a
 			log_client_target_tick_remote_advances += clients_target_tick - old_clients_target_tick
 		last_target_tick_update = Time.get_ticks_msec()
 		clients_max_ahead_from_server = max_ahead
-		last_server_input_tick = max(last_server_input_tick, server_tick_value)
+		last_server_input_tick = max(last_server_input_tick, unpacked_server_tick)
 	_apply_server_input_ack(this_ack)
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
 func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedByteArray, this_ack: int, tgt: int, max_ahead: float) -> void:
-	if !race_active:
+	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(authoritative_last_tick)):
 		return
+	authoritative_last_tick = _unpack_race_tick(authoritative_last_tick)
 	var __prof_t0 := Time.get_ticks_usec()
 	if not is_server or listen_server:
 		var old_clients_server_tick : int = clients_server_tick
 		var old_clients_target_tick : int = clients_target_tick
-		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet)
+		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet, race_netplay_phase)
 		if bool(stats.get("valid", false)):
+			if bool(stats.get("stale", false)):
+				return
 			var count := int(stats.get("count", 0))
 			if count > 0:
 				var first_tick := int(stats.get("first_tick", -1))
@@ -1975,8 +2101,9 @@ func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedBy
 
 @rpc("any_peer", "unreliable", "call_local", 4)
 func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_payload_size: int, chunk_index: int, chunk_count: int, chunk: PackedByteArray) -> void:
-	if !race_active:
+	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(state_tick)):
 		return
+	state_tick = _unpack_race_tick(state_tick)
 	if chunk.size() <= 0:
 		return
 	if state_tick <= latest_state_tick:
@@ -2058,7 +2185,7 @@ func post_tick() -> void:
 			if _startup_light_net_active(server_tick):
 				var startup_ack: int = server_netcode_session.get_peer_last_received(id)
 				_acc_log_out(12)
-				_server_startup_sync.rpc_id(id, server_tick, startup_ack, target_tick, max_ahead)
+				_server_startup_sync.rpc_id(id, _pack_race_phase_tick(server_tick), startup_ack, target_tick, max_ahead)
 				continue
 			var send_state : PackedByteArray = PackedByteArray()
 			var send_state_uncomp_size := 0
@@ -2076,12 +2203,12 @@ func post_tick() -> void:
 				send_state_uncomp_size = uncompressed_size
 				_log_state_sent(uncompressed_size if uncompressed_size > 0 else send_state.size(), send_state.size())
 			if not input_packet_ready:
-				input_packet = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES)
+				input_packet = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES, race_netplay_phase)
 				input_packet_ready = true
 			log_flat_server_payload_out += input_packet.size()
 			log_auth_packets_sent += 1
 			_acc_log_out(20 + input_packet.size())
-			_server_broadcast_flat.rpc_id(id, server_tick, input_packet, server_netcode_session.get_peer_last_received(id), target_tick, max_ahead)
+			_server_broadcast_flat.rpc_id(id, _pack_race_phase_tick(server_tick), input_packet, server_netcode_session.get_peer_last_received(id), target_tick, max_ahead)
 			if send_state.size() > 0:
 				var chunk_count := int(ceil(float(send_state.size()) / float(STATE_CHUNK_PAYLOAD_BYTES)))
 				var state_chunks := []
@@ -2094,7 +2221,7 @@ func post_tick() -> void:
 					for chunk_index in range(chunk_count):
 						var chunk: PackedByteArray = state_chunks[chunk_index]
 						_acc_log_out(20 + chunk.size())
-						_server_state_chunk.rpc_id(id, server_tick, send_state_uncomp_size, send_state.size(), chunk_index, chunk_count, chunk)
+						_server_state_chunk.rpc_id(id, _pack_race_phase_tick(server_tick), send_state_uncomp_size, send_state.size(), chunk_index, chunk_count, chunk)
 		server_tick += 1
 		if listen_server:
 			_prune_authoritative_history()
@@ -2341,6 +2468,9 @@ func get_race_tick() -> int:
 
 @rpc("authority", "call_local", "reliable")
 func set_player_finished(id: int, tick: int, place: int) -> void:
+	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
+		return
+	tick = _unpack_race_tick(tick)
 	var is_new := !player_finish_times.has(id)
 	player_finish_times[id] = tick
 	player_finish_placements[id] = place
@@ -2350,22 +2480,46 @@ func set_player_finished(id: int, tick: int, place: int) -> void:
 	if is_new:
 		race_event.emit("finish", id, -1, tick, place)
 
-func send_player_finished(id: int, tick: int) -> void:
+func send_player_finished(id: int, tick: int, place_override: int = -1) -> void:
 	if player_finish_times.has(id):
 		return
-	var place := finish_order.size() + 1
+	var place := place_override if place_override > 0 else finish_order.size() + 1
 	if is_server:
-		set_player_finished.rpc(id, tick, place)
-		set_player_finished(id, tick, place)
+		var packed_tick := _pack_race_phase_tick(tick)
+		set_player_finished.rpc(id, packed_tick, place)
+		set_player_finished(id, packed_tick, place)
 
-func record_player_finished(id: int, tick: int) -> void:
+func record_player_finished(id: int, tick: int, place_override: int = -1) -> void:
 	if player_finish_times.has(id):
 		return
-	var place := finish_order.size() + 1
-	set_player_finished(id, tick, place)
+	var place := place_override if place_override > 0 else finish_order.size() + 1
+	set_player_finished(id, _pack_race_phase_tick(tick), place)
+
+@rpc("authority", "call_local", "reliable")
+func set_final_race_placements(phase: int, placements: Dictionary) -> void:
+	if !_accept_race_packet_phase(phase):
+		return
+	for id_value in placements.keys():
+		var id := int(id_value)
+		var place := int(placements[id_value])
+		if place <= 0:
+			continue
+		player_finish_placements[id] = place
+		if finish_order.size() < place:
+			finish_order.resize(place)
+		finish_order[place - 1] = id
+
+func send_final_race_placements(placements: Dictionary) -> void:
+	if !is_server:
+		return
+	set_final_race_placements.rpc(race_netplay_phase, placements)
+	set_final_race_placements(race_netplay_phase, placements)
 
 @rpc("authority", "call_local", "reliable")
 func set_player_eliminated(id: int, tick: int) -> void:
+	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
+		return
+	tick = _unpack_race_tick(tick)
 	var is_new := !player_eliminations.has(id)
 	player_eliminations[id] = tick
 	if is_new:
@@ -2375,13 +2529,14 @@ func send_player_eliminated(id: int, tick: int) -> void:
 	if player_eliminations.has(id):
 		return
 	if is_server:
-		set_player_eliminated.rpc(id, tick)
-		set_player_eliminated(id, tick)
+		var packed_tick := _pack_race_phase_tick(tick)
+		set_player_eliminated.rpc(id, packed_tick)
+		set_player_eliminated(id, packed_tick)
 
 func record_player_eliminated(id: int, tick: int) -> void:
 	if player_eliminations.has(id):
 		return
-	set_player_eliminated(id, tick)
+	set_player_eliminated(id, _pack_race_phase_tick(tick))
 
 func is_vehicle_restore_enabled() -> bool:
 	return bool(race_options.get("vehicle_restore", true))
@@ -2391,6 +2546,8 @@ func is_grand_prix_enabled() -> bool:
 
 @rpc("authority", "call_local", "reliable")
 func sync_race_options(options: Dictionary) -> void:
+	if race_active and options.has("race_netplay_phase") and !_accept_race_packet_phase(int(options.get("race_netplay_phase", race_netplay_phase))):
+		return
 	race_options = options.duplicate(true)
 	race_options_changed.emit(race_options.duplicate(true))
 
@@ -2401,11 +2558,14 @@ func send_race_options(options: Dictionary) -> void:
 
 @rpc("authority", "call_local", "reliable")
 func receive_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:
+	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
+		return
+	tick = _unpack_race_tick(tick)
 	race_event.emit(event_type, actor_id, target_id, tick, value)
 
 func send_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:
 	if is_server:
-		receive_race_event.rpc(event_type, actor_id, target_id, tick, value)
+		receive_race_event.rpc(event_type, actor_id, target_id, _pack_race_phase_tick(tick), value)
 
 @rpc("any_peer", "reliable")
 func request_sticker(sticker_index: int) -> void:

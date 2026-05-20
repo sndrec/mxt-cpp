@@ -26,6 +26,8 @@ constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 1;
 constexpr int64_t MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT = 20000;
 constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
 constexpr const char* MXT_NET_DEFAULT_AUTH_SAMPLE_DIR = "user://auth_input_samples";
+constexpr uint32_t MXT_NET_RACE_PHASE_BIT = 0x80000000u;
+constexpr uint32_t MXT_NET_TICK_MASK = 0x7fffffffu;
 bool g_auth_input_sample_dump_enabled = false;
 int64_t g_auth_input_sample_dump_limit = MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT;
 int64_t g_auth_input_sample_dump_index = 0;
@@ -165,6 +167,23 @@ float trigger_from_byte(uint8_t v)
 float axis_from_byte(uint8_t v)
 {
 	return (static_cast<float>(v) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION)) * 2.0f - 1.0f;
+}
+
+int32_t pack_tick_phase(int tick, int race_phase)
+{
+	const uint32_t tick_bits = static_cast<uint32_t>(std::max(tick, 0)) & MXT_NET_TICK_MASK;
+	const uint32_t phase_bit = (race_phase & 1) ? MXT_NET_RACE_PHASE_BIT : 0u;
+	return static_cast<int32_t>(tick_bits | phase_bit);
+}
+
+int unpack_tick(int32_t packed_tick)
+{
+	return static_cast<int>(static_cast<uint32_t>(packed_tick) & MXT_NET_TICK_MASK);
+}
+
+int unpack_race_phase(int32_t packed_tick)
+{
+	return (static_cast<uint32_t>(packed_tick) & MXT_NET_RACE_PHASE_BIT) ? 1 : 0;
 }
 
 ZSTD_CCtx* auth_input_zstd_cctx()
@@ -311,10 +330,10 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
 	ClassDB::bind_method(D_METHOD("fill_missing_pending_inputs", "tick", "player_ids", "disconnected_ids", "delayed_ids", "allow_new_delayed"), &NetcodeSession::fill_missing_pending_inputs);
-	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count"), &NetcodeSession::build_local_input_packet);
-	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec"), &NetcodeSession::store_pending_input_packet);
-	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "last_tick", "max_frame_count"), &NetcodeSession::build_authoritative_input_packet);
-	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet"), &NetcodeSession::store_authoritative_input_packet);
+	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count", "race_phase"), &NetcodeSession::build_local_input_packet, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec", "expected_race_phase"), &NetcodeSession::store_pending_input_packet, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::build_authoritative_input_packet, DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet", "expected_race_phase"), &NetcodeSession::store_authoritative_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("consume_authoritative_packet_stats"), &NetcodeSession::consume_authoritative_packet_stats);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
 	ClassDB::bind_method(D_METHOD("configure_authoritative_input_sample_dump", "enabled", "limit", "directory"), &NetcodeSession::configure_authoritative_input_sample_dump);
@@ -569,7 +588,7 @@ godot::Dictionary NetcodeSession::fill_missing_pending_inputs(int tick, godot::A
 	return out;
 }
 
-godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, int count) const
+godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, int count, int race_phase) const
 {
 	PacketWriter writer;
 	const int index = find_racer_index(local_player_id);
@@ -577,7 +596,7 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 		return writer.to_pba();
 	}
 	count = std::min(count, 255);
-	if (!writer.write_i32(first_tick) ||
+	if (!writer.write_i32(pack_tick_phase(first_tick, race_phase)) ||
 		!writer.write_u8(static_cast<uint8_t>(count))) {
 		return PackedByteArray();
 	}
@@ -594,7 +613,7 @@ godot::PackedByteArray NetcodeSession::build_local_input_packet(int first_tick, 
 	return writer.to_pba();
 }
 
-godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec)
+godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase)
 {
 	Dictionary stats;
 	stats["start_tick"] = -1;
@@ -603,6 +622,7 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	stats["dropped"] = 0;
 	stats["last_tick"] = -1;
 	stats["valid"] = false;
+	stats["stale"] = false;
 	stats["seen_before"] = false;
 
 	const int index = find_racer_index(static_cast<int32_t>(player_id));
@@ -617,10 +637,16 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	}
 	PacketReader reader(packet);
 	uint8_t count = 0;
-	int32_t start_tick = -1;
-	if (!reader.read_i32(start_tick) || !reader.read_u8(count)) {
+	int32_t packed_start_tick = -1;
+	if (!reader.read_i32(packed_start_tick) || !reader.read_u8(count)) {
 		return stats;
 	}
+	if (unpack_race_phase(packed_start_tick) != (expected_race_phase & 1)) {
+		stats["stale"] = true;
+		stats["valid"] = true;
+		return stats;
+	}
+	const int start_tick = unpack_tick(packed_start_tick);
 	stats["start_tick"] = start_tick;
 	stats["count"] = static_cast<int>(count);
 	stats["valid"] = true;
@@ -665,11 +691,11 @@ godot::Dictionary NetcodeSession::store_pending_input_packet(int player_id, int 
 	return stats;
 }
 
-godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last_tick, int max_frame_count) const
+godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last_tick, int max_frame_count, int race_phase) const
 {
 	PacketWriter writer;
 	if (max_frame_count <= 0 || last_tick < 0) {
-		writer.write_i32(last_tick + 1);
+		writer.write_i32(pack_tick_phase(last_tick + 1, race_phase));
 		writer.write_u8(0);
 		writer.write_i32(0);
 		writer.write_u8(MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD);
@@ -687,7 +713,7 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	while (count > 0 && !find_frame(authoritative_history, first_tick + count - 1)) {
 		--count;
 	}
-	if (!writer.write_i32(first_tick) ||
+	if (!writer.write_i32(pack_tick_phase(first_tick, race_phase)) ||
 		!writer.write_u8(static_cast<uint8_t>(count))) {
 		return PackedByteArray();
 	}
@@ -804,22 +830,29 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	return writer.to_pba();
 }
 
-godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray packet)
+godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase)
 {
 	Dictionary stats;
 	stats["first_tick"] = -1;
 	stats["last_tick"] = -1;
 	stats["count"] = 0;
 	stats["valid"] = false;
+	stats["stale"] = false;
 
 	PacketReader reader(packet);
 	uint8_t count = 0;
 	uint8_t compression_mode = MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD;
-	int32_t first_tick = -1;
+	int32_t packed_first_tick = -1;
 	int32_t raw_size = 0;
-	if (!reader.read_i32(first_tick) || !reader.read_u8(count) || !reader.read_i32(raw_size) || !reader.read_u8(compression_mode)) {
+	if (!reader.read_i32(packed_first_tick) || !reader.read_u8(count) || !reader.read_i32(raw_size) || !reader.read_u8(compression_mode)) {
 		return stats;
 	}
+	if (unpack_race_phase(packed_first_tick) != (expected_race_phase & 1)) {
+		stats["stale"] = true;
+		stats["valid"] = true;
+		return stats;
+	}
+	const int first_tick = unpack_tick(packed_first_tick);
 	stats["first_tick"] = first_tick;
 	stats["count"] = static_cast<int>(count);
 	stats["valid"] = true;

@@ -29,6 +29,7 @@ var username_label: Label
 var ping_label: Label
 var pointer_line: Line2D
 var last_sync_msec := 0
+var car_definition: CarDefinition
 
 func setup(in_player_id: int, in_settings: Dictionary, in_game_manager: Node, in_camera: Camera3D, in_nameplate_parent: Control, in_local_control: bool) -> void:
 	player_id = in_player_id
@@ -127,18 +128,17 @@ func _rebuild_visual() -> void:
 	if visual_root != null and is_instance_valid(visual_root):
 		visual_root.queue_free()
 	visual_root = null
+	car_definition = null
 
 	var def_path := str(player_settings.get("car_definition_path", ""))
 	if def_path != "" and ResourceLoader.exists(def_path):
 		var definition := load(def_path) as CarDefinition
 		if definition != null and definition.car_scene != null:
+			car_definition = definition
 			_load_chibi_stats(definition)
-			visual_root = definition.car_scene.instantiate() as Node3D
-			if visual_root != null:
-				visual_root.scale = Vector3(0.08, 0.08, 0.08)
-				add_child(visual_root)
-				_configure_visual_meshes(visual_root)
 	if visual_root == null:
+		if car_definition != null:
+			return
 		var mesh_instance := MeshInstance3D.new()
 		var mesh := BoxMesh.new()
 		mesh.size = Vector3(1.2, 0.35, 2.0)
@@ -148,6 +148,24 @@ func _rebuild_visual() -> void:
 		mesh_instance.material_override = material
 		visual_root = mesh_instance
 		add_child(visual_root)
+
+func get_render_definition() -> CarDefinition:
+	return car_definition
+
+func get_render_transform() -> Transform3D:
+	return global_transform * Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO)
+
+func get_render_overlay() -> Color:
+	return Color(0.0, 0.0, 0.0, 1.0)
+
+func get_render_outline_overlay() -> Color:
+	return Color(0.0, 0.0, 0.0, 1.0)
+
+func get_render_outline_velocity() -> Vector3:
+	return basis.z * 0.01
+
+func get_render_thrust() -> float:
+	return clampf(velocity / 220.0, 0.0, 1.0)
 
 func _load_chibi_stats(definition: CarDefinition) -> void:
 	var prop_path := definition.car_definition
@@ -240,6 +258,8 @@ func _update_nameplate() -> void:
 		return
 	nameplate.visible = true
 	nameplate.position = lobby_camera.unproject_position(global_position) + Vector2(16.0, -32.0)
+	if ping_label != null and game_manager != null and game_manager.has_method("_lobby_latency_text_for_player"):
+		ping_label.text = str(game_manager.call("_lobby_latency_text_for_player", player_id))
 
 func _sync_state_if_needed() -> void:
 	if game_manager == null or !game_manager.has_method("_send_lobby_chibi_state"):

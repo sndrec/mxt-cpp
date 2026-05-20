@@ -1745,6 +1745,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);
 	ClassDB::bind_method(D_METHOD("set_sim_started", "p_sim_started"), &GameSim::set_sim_started);
 	ClassDB::bind_method(D_METHOD("set_spawn_seed", "seed"), &GameSim::set_spawn_seed);
+	ClassDB::bind_method(D_METHOD("set_start_grid_slots", "slots"), &GameSim::set_start_grid_slots);
 	ClassDB::bind_method(D_METHOD("set_vehicle_restore_enabled", "enabled"), &GameSim::set_vehicle_restore_enabled);
 	ClassDB::bind_method(D_METHOD("get_vehicle_restore_enabled"), &GameSim::get_vehicle_restore_enabled);
 	ClassDB::bind_method(D_METHOD("set_multiplayer_intro_camera_enabled", "enabled"), &GameSim::set_multiplayer_intro_camera_enabled);
@@ -2719,6 +2720,15 @@ void GameSim::set_render_thruster_lights_enabled(bool enabled)
 	render_thruster_lights_enabled = enabled;
 	if (!enabled) {
 		hide_unused_render_thruster_lights(0);
+	}
+}
+
+void GameSim::set_start_grid_slots(godot::PackedInt32Array p_slots)
+{
+	start_grid_slots.clear();
+	start_grid_slots.reserve(p_slots.size());
+	for (int i = 0; i < p_slots.size(); ++i) {
+		start_grid_slots.push_back(p_slots[i]);
 	}
 }
 
@@ -4077,13 +4087,27 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	if (bumper_count > 0) {
 		bumper_cars = gamestate_data.create_and_allocate_cars(bumper_count, &bumper_properties_array);
 	}
-	// Build randomized spawn order using shared seed from server, if provided.
-	// This affects only racer grid slots, not which car index belongs to which player.
+	// Build spawn order using an explicit race grid override when one is supplied.
+	// Otherwise, use the shared seed to randomize the first Grand Prix race / normal multiplayer race.
 	std::vector<int> spawn_order;
 	const int grid_car_count = std::max(0, num_cars);
 	spawn_order.resize(grid_car_count);
 	for (int i = 0; i < grid_car_count; ++i) spawn_order[i] = i;
-		if (spawn_seed != 0 && grid_car_count > 1) {
+	bool using_explicit_grid = false;
+	if (static_cast<int>(start_grid_slots.size()) >= grid_car_count && grid_car_count > 0) {
+		std::vector<uint8_t> used_slots(static_cast<size_t>(grid_car_count), 0);
+		using_explicit_grid = true;
+		for (int i = 0; i < grid_car_count; ++i) {
+			const int slot = start_grid_slots[static_cast<size_t>(i)];
+			if (slot < 0 || slot >= grid_car_count || used_slots[static_cast<size_t>(slot)] != 0) {
+				using_explicit_grid = false;
+				break;
+			}
+			used_slots[static_cast<size_t>(slot)] = 1;
+			spawn_order[i] = slot;
+		}
+	}
+		if (!using_explicit_grid && spawn_seed != 0 && grid_car_count > 1) {
 			uint32_t seed = static_cast<uint32_t>(spawn_seed);
 			auto next_rand = [&seed]() {
 				seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed;

@@ -383,38 +383,6 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Remove CPU Racer"
 
-[node name="CarSettingsButton" type="Button" parent="Lobby" unique_id=1561832191]
-visible = false
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -115.0
-offset_top = 74.0
-offset_right = 115.0
-offset_bottom = 104.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "Car Settings"
-
-[node name="ControllerSettingsButton" type="Button" parent="Lobby" unique_id=1110371015]
-visible = false
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -115.0
-offset_top = 104.0
-offset_right = 115.0
-offset_bottom = 134.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "Controller Settings"
-
 [node name="CarSettings" parent="." unique_id=774432447 instance=ExtResource("3_carsettings")]
 visible = false
 
@@ -427,6 +395,7 @@ visible = false
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="GameWorld" unique_id=1671305165]
 transform = Transform3D(-0.866023, -0.433016, 0.250001, 0, 0.499998, 0.866027, -0.500003, 0.749999, -0.43301, 0, 0, 0)
+visible = false
 layers = 2147483647
 shadow_bias = 1.0
 shadow_normal_bias = 3.0
@@ -446,6 +415,7 @@ script = ExtResource("18_spark")
 
 [node name="DebugTrackMeshContainer" type="Node3D" parent="GameWorld" unique_id=86658115]
 transform = Transform3D(1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0)
+visible = false
 
 [node name="DebugTrackMesh" type="MeshInstance3D" parent="GameWorld/DebugTrackMeshContainer" unique_id=1098176152]
 mesh = SubResource("BoxMesh_efxa6")
@@ -503,7 +473,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.18"
+text = "MaxX Throttle v0.1.19"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/ConnectHostBox/StartButton" to="." method="_on_start_button_pressed"]
@@ -511,5 +481,3 @@ text = "MaxX Throttle v0.1.18"
 [connection signal="pressed" from="Control/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]
 [connection signal="pressed" from="Control/ControllerSettingsButton" to="." method="_on_controller_settings_button_pressed"]
 [connection signal="pressed" from="Lobby/StartRaceButton" to="." method="_on_start_race_button_pressed"]
-[connection signal="pressed" from="Lobby/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]
-[connection signal="pressed" from="Lobby/ControllerSettingsButton" to="." method="_on_controller_settings_button_pressed"]

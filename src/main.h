@@ -306,6 +306,7 @@ namespace godot {
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;
 		int spawn_seed = 0;
+		std::vector<int> start_grid_slots;
 		bool vehicle_restore_enabled = true;
 		bool multiplayer_intro_camera_enabled = false;
 		bool bumpers_enabled = false;
@@ -321,6 +322,7 @@ namespace godot {
 		void set_sim_started(const bool p_sim_started);
 		bool get_sim_started();
 		void set_spawn_seed(int p_seed) { spawn_seed = p_seed; }
+		void set_start_grid_slots(godot::PackedInt32Array p_slots);
 		void set_vehicle_restore_enabled(bool enabled) { vehicle_restore_enabled = enabled; }
 		bool get_vehicle_restore_enabled() const { return vehicle_restore_enabled; }
 		void set_multiplayer_intro_camera_enabled(bool enabled);
