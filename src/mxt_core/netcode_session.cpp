@@ -901,6 +901,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	}
 	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
 	const bool implicit_tail = sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_IMPLICIT_TAIL;
+	const bool implicit_sv = implicit_tail || pair_table != nullptr;
 	if (sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT &&
 		sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_IMPLICIT_TAIL &&
 		sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_TAIL_MASK1 &&
@@ -916,7 +917,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	const int mask_code_bytes = (p_racer_count + 1) >> 1;
 	const int mask1_bytes = (p_racer_count + 7) >> 3;
 	const int mask3_bytes = ((p_racer_count * 3) + 7) >> 3;
-	const int sv_out_bytes = implicit_tail ? 0 : sv_class_bytes;
+	const int sv_out_bytes = implicit_sv ? 0 : sv_class_bytes;
 	const int mask_class_bytes = implicit_tail ? 0 : (mask1 ? mask1_bytes : (mask2 ? ((p_racer_count + 3) >> 2) : (mask3 ? mask3_bytes : mask_code_bytes)));
 	const uint8_t* src = delta_pairs_raw.ptr();
 	int escape_count = 0;
@@ -943,7 +944,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	for (int i = 0; i < p_racer_count; ++i) {
 		const uint8_t a = src[sv_base + (i * 2)];
 		const uint8_t b = src[sv_base + (i * 2) + 1];
-		if (implicit_tail) {
+		if (implicit_sv) {
 			if (a != 127 || b != 0) {
 				return PackedByteArray();
 			}
@@ -1000,9 +1001,12 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 			std::memset(dst + pos, 0, static_cast<size_t>(table_code_bytes));
 			pos += table_code_bytes;
 		}
-		const int sv_class_pos = pos;
-		std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
-		pos += sv_class_bytes;
+		int sv_class_pos = 0;
+		if (!implicit_sv) {
+			sv_class_pos = pos;
+			std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
+			pos += sv_class_bytes;
+		}
 		const int mask_code_pos = pos;
 		std::memset(dst + pos, 0, static_cast<size_t>(mask_class_bytes));
 		pos += mask_class_bytes;
@@ -1026,23 +1030,25 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 				}
 			}
 		}
-		for (int i = 0; i < p_racer_count; ++i) {
-			const uint8_t a = src[sv_base + (i * 2)];
-			const uint8_t b = src[sv_base + (i * 2) + 1];
-			uint8_t code = 2;
-			if (a == 127 && b == 0) {
-				code = 0;
-			} else if (a == 0 && b == 0) {
-				code = 1;
-			} else if (a == 127 && b == 127) {
-				code = 2;
-			} else {
-				code = 3;
-			}
-			dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
-			if (code == 3) {
-				dst[pos++] = a;
-				dst[pos++] = b;
+		if (!implicit_sv) {
+			for (int i = 0; i < p_racer_count; ++i) {
+				const uint8_t a = src[sv_base + (i * 2)];
+				const uint8_t b = src[sv_base + (i * 2) + 1];
+				uint8_t code = 2;
+				if (a == 127 && b == 0) {
+					code = 0;
+				} else if (a == 0 && b == 0) {
+					code = 1;
+				} else if (a == 127 && b == 127) {
+					code = 2;
+				} else {
+					code = 3;
+				}
+				dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
+				if (code == 3) {
+					dst[pos++] = a;
+					dst[pos++] = b;
+				}
 			}
 		}
 		for (int i = 0; i < p_racer_count; ++i) {
@@ -1128,26 +1134,28 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 		return out;
 	}
 	if (!escape_tail) {
-		std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
-		const int sv_class_pos = pos;
-		pos += sv_class_bytes;
-		for (int i = 0; i < p_racer_count; ++i) {
-			const uint8_t a = src[sv_base + (i * 2)];
-			const uint8_t b = src[sv_base + (i * 2) + 1];
-			uint8_t code = 2;
-			if (a == 127 && b == 0) {
-				code = 0;
-			} else if (a == 0 && b == 0) {
-				code = 1;
-			} else if (a == 127 && b == 127) {
-				code = 2;
-			} else {
-				code = 3;
-			}
-			dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
-			if (code == 3) {
-				dst[pos++] = a;
-				dst[pos++] = b;
+		if (!implicit_sv) {
+			std::memset(dst + pos, 0, static_cast<size_t>(sv_class_bytes));
+			const int sv_class_pos = pos;
+			pos += sv_class_bytes;
+			for (int i = 0; i < p_racer_count; ++i) {
+				const uint8_t a = src[sv_base + (i * 2)];
+				const uint8_t b = src[sv_base + (i * 2) + 1];
+				uint8_t code = 2;
+				if (a == 127 && b == 0) {
+					code = 0;
+				} else if (a == 0 && b == 0) {
+					code = 1;
+				} else if (a == 127 && b == 127) {
+					code = 2;
+				} else {
+					code = 3;
+				}
+				dst[sv_class_pos + (i >> 2)] |= static_cast<uint8_t>(code << ((i & 3) * 2));
+				if (code == 3) {
+					dst[pos++] = a;
+					dst[pos++] = b;
+				}
 			}
 		}
 		std::memset(dst + pos, 0, static_cast<size_t>(mask_class_bytes));
@@ -1204,13 +1212,14 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	const uint8_t sublayout = read_sublayout ? src[pos++] : static_cast<uint8_t>(external_sublayout);
 	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
 	const bool implicit_tail = sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT_IMPLICIT_TAIL;
+	const bool implicit_sv = implicit_tail || pair_table != nullptr;
 	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
 	const bool mask1 = auth_input_low_entropy_sublayout_mask1(sublayout);
 	const bool mask2 = auth_input_low_entropy_sublayout_mask2(sublayout);
 	const bool mask3 = auth_input_low_entropy_sublayout_mask3(sublayout);
 	const int mask1_bytes = (p_racer_count + 7) >> 3;
 	const int mask3_bytes = ((p_racer_count * 3) + 7) >> 3;
-	const int sv_min_bytes = implicit_tail ? 0 : sv_class_bytes;
+	const int sv_min_bytes = implicit_sv ? 0 : sv_class_bytes;
 	const int mask_class_bytes = implicit_tail ? 0 : (mask1 ? mask1_bytes : (mask2 ? ((p_racer_count + 3) >> 2) : (mask3 ? mask3_bytes : mask_code_bytes)));
 	if (encoded.size() < pos + sv_min_bytes + mask_class_bytes) {
 		return false;
@@ -1224,8 +1233,10 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 			tail_field_code_pos[field] = pos;
 			pos += table_code_bytes;
 		}
-		tail_sv_class_pos = pos;
-		pos += sv_class_bytes;
+		if (!implicit_sv) {
+			tail_sv_class_pos = pos;
+			pos += sv_class_bytes;
+		}
 		tail_mask_code_pos = pos;
 		pos += mask_class_bytes;
 		if (pos > encoded.size()) {
@@ -1304,33 +1315,40 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 		}
 		return true;
 	}
-	const int sv_class_pos = escape_tail ? tail_sv_class_pos : pos;
-	if (!escape_tail) {
-		pos += sv_class_bytes;
-		if (pos > encoded.size()) {
-			return false;
-		}
-	}
 	const int sv_base = 3 * field_bytes;
-	for (int i = 0; i < p_racer_count; ++i) {
-		const uint8_t code = static_cast<uint8_t>((src[sv_class_pos + (i >> 2)] >> ((i & 3) * 2)) & 0x03);
-		uint8_t a = 127;
-		uint8_t b = 0;
-		if (code == 1) {
-			a = 0;
-			b = 0;
-		} else if (code == 2) {
-			a = 127;
-			b = 127;
-		} else if (code == 3) {
-			if (pos + 2 > encoded.size()) {
+	if (implicit_sv) {
+		for (int i = 0; i < p_racer_count; ++i) {
+			dst[sv_base + (i * 2)] = 127;
+			dst[sv_base + (i * 2) + 1] = 0;
+		}
+	} else {
+		const int sv_class_pos = escape_tail ? tail_sv_class_pos : pos;
+		if (!escape_tail) {
+			pos += sv_class_bytes;
+			if (pos > encoded.size()) {
 				return false;
 			}
-			a = src[pos++];
-			b = src[pos++];
 		}
-		dst[sv_base + (i * 2)] = a;
-		dst[sv_base + (i * 2) + 1] = b;
+		for (int i = 0; i < p_racer_count; ++i) {
+			const uint8_t code = static_cast<uint8_t>((src[sv_class_pos + (i >> 2)] >> ((i & 3) * 2)) & 0x03);
+			uint8_t a = 127;
+			uint8_t b = 0;
+			if (code == 1) {
+				a = 0;
+				b = 0;
+			} else if (code == 2) {
+				a = 127;
+				b = 127;
+			} else if (code == 3) {
+				if (pos + 2 > encoded.size()) {
+					return false;
+				}
+				a = src[pos++];
+				b = src[pos++];
+			}
+			dst[sv_base + (i * 2)] = a;
+			dst[sv_base + (i * 2) + 1] = b;
+		}
 	}
 	const int mask_code_pos = escape_tail ? tail_mask_code_pos : pos;
 	if (!escape_tail) {
