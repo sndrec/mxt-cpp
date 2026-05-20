@@ -108,6 +108,7 @@ func _init() -> void:
 	var bitpacked_zero_plain_packet_bytes := 0
 	var bitpacked_zero_dict_packet_bytes := 0
 	var hybrid_dict_packet_bytes := 0
+	var hybrid_smooth_dict_packet_bytes := 0
 	var old_raw_bytes := 0
 	var packed_raw_bytes := 0
 	var delta_raw_bytes := 0
@@ -148,6 +149,7 @@ func _init() -> void:
 				bitpacked_zero_plain_packet_bytes += int(cmp.get("bitpacked_zero_plain_packet", 0))
 				bitpacked_zero_dict_packet_bytes += int(cmp.get("bitpacked_zero_dict_packet", 0))
 				hybrid_dict_packet_bytes += int(cmp.get("hybrid_dict_packet", 0))
+				hybrid_smooth_dict_packet_bytes += int(cmp.get("hybrid_smooth_dict_packet", 0))
 				old_raw_bytes += int(cmp.get("old_raw", 0))
 				packed_raw_bytes += int(cmp.get("packed_raw", 0))
 				delta_raw_bytes += int(cmp.get("delta_raw", 0))
@@ -190,6 +192,7 @@ func _init() -> void:
 		" bitpacked_zero_plain_packet_avg=", float(bitpacked_zero_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" bitpacked_zero_dict_packet_avg=", float(bitpacked_zero_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_dict_packet_avg=", float(hybrid_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		" hybrid_smooth_dict_packet_avg=", float(hybrid_smooth_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" auth_packets=", int(stats.get("auth_packets", 0)),
 		" auth_frames=", int(stats.get("auth_frames", 0)),
 		" auth_encoded_inputs=", int(stats.get("auth_encoded_inputs", 0)),

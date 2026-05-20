@@ -132,6 +132,7 @@ func _init() -> void:
 	var bitpacked_zero_plain_packet_bytes := 0
 	var bitpacked_zero_dict_packet_bytes := 0
 	var hybrid_dict_packet_bytes := 0
+	var hybrid_smooth_dict_packet_bytes := 0
 	for tick in range(frames):
 		for i in range(racers):
 			session.store_authoritative_input(tick, int(player_ids[i]), _make_input(tick, i, mode))
@@ -163,9 +164,10 @@ func _init() -> void:
 				bitpacked_zero_plain_packet_bytes += int(cmp.get("bitpacked_zero_plain_packet", 0))
 				bitpacked_zero_dict_packet_bytes += int(cmp.get("bitpacked_zero_dict_packet", 0))
 				hybrid_dict_packet_bytes += int(cmp.get("hybrid_dict_packet", 0))
+				hybrid_smooth_dict_packet_bytes += int(cmp.get("hybrid_smooth_dict_packet", 0))
 			sample_count += 1
 
-	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d wire_packet_avg=%f wire_packet_min=%d wire_packet_max=%d sparse_plain_wire_avg=%f mode_counts=%s old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f bitpacked_zero_plain_packet_avg=%f bitpacked_zero_dict_packet_avg=%f hybrid_dict_packet_avg=%f" % [
+	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d wire_packet_avg=%f wire_packet_min=%d wire_packet_max=%d sparse_plain_wire_avg=%f mode_counts=%s old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f bitpacked_zero_plain_packet_avg=%f bitpacked_zero_dict_packet_avg=%f hybrid_dict_packet_avg=%f hybrid_smooth_dict_packet_avg=%f" % [
 		mode,
 		racers,
 		frames,
@@ -194,6 +196,7 @@ func _init() -> void:
 		float(bitpacked_zero_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(bitpacked_zero_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		float(hybrid_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		float(hybrid_smooth_dict_packet_bytes) / float(maxi(sample_count, 1)),
 	]
 	if !result_file.is_empty():
 		var out := FileAccess.open(result_file, FileAccess.WRITE)

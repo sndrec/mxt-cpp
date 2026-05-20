@@ -2,6 +2,7 @@
 
 #include "main.h"
 #include "mxt_core/auth_input_hybrid_zstd_dictionary.h"
+#include "mxt_core/auth_input_hybrid_smooth_zstd_dictionary.h"
 #include "mxt_core/auth_input_zstd_dictionary.h"
 #include "mxt_core/auth_input_zero_bitmap_zstd_dictionary.h"
 #include "godot_cpp/classes/dir_access.hpp"
@@ -29,7 +30,7 @@ constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_PLAIN_ZSTD = 2;
 constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD = 3;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD = 4;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD = 5;
-constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DELTA_PLAIN_ZSTD = 6;
+constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD = 6;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD = 7;
 constexpr uint8_t MXT_NET_AUTH_MODE_MASK = 0x07;
 constexpr uint8_t MXT_NET_AUTH_COUNT_SHIFT = 3;
@@ -61,6 +62,8 @@ ZSTD_CDict* g_auth_input_zstd_cdict = nullptr;
 ZSTD_DDict* g_auth_input_zstd_ddict = nullptr;
 ZSTD_CDict* g_auth_input_hybrid_zstd_cdict = nullptr;
 ZSTD_DDict* g_auth_input_hybrid_zstd_ddict = nullptr;
+ZSTD_CDict* g_auth_input_hybrid_smooth_zstd_cdict = nullptr;
+ZSTD_DDict* g_auth_input_hybrid_smooth_zstd_ddict = nullptr;
 ZSTD_CDict* g_auth_input_zero_bitmap_zstd_cdict = nullptr;
 ZSTD_DDict* g_auth_input_zero_bitmap_zstd_ddict = nullptr;
 
@@ -244,7 +247,7 @@ AuthInputLayout auth_input_layout_from_mode(uint8_t mode)
 	if (mode == MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD) {
 		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
 	}
-	if (mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_PLAIN_ZSTD || mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD) {
+	if (mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD || mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD) {
 		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
 	}
 	if (mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD ||
@@ -259,6 +262,7 @@ bool auth_input_mode_uses_dict(uint8_t mode)
 	mode &= MXT_NET_AUTH_MODE_MASK;
 	return mode == MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD ||
 		mode == MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_DICT_ZSTD ||
+		mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD ||
 		mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD;
 }
 
@@ -346,6 +350,18 @@ ZSTD_CDict* auth_input_hybrid_zstd_cdict()
 	return g_auth_input_hybrid_zstd_cdict;
 }
 
+ZSTD_CDict* auth_input_hybrid_smooth_zstd_cdict()
+{
+	if (!g_auth_input_hybrid_smooth_zstd_cdict) {
+		g_auth_input_hybrid_smooth_zstd_cdict = ZSTD_createCDict(
+			MXT_AUTH_INPUT_HYBRID_SMOOTH_ZSTD_DICT,
+			MXT_AUTH_INPUT_HYBRID_SMOOTH_ZSTD_DICT_SIZE,
+			MXT_NET_AUTH_ZSTD_LEVEL
+		);
+	}
+	return g_auth_input_hybrid_smooth_zstd_cdict;
+}
+
 ZSTD_CDict* auth_input_zero_bitmap_zstd_cdict()
 {
 	if (!g_auth_input_zero_bitmap_zstd_cdict) {
@@ -380,6 +396,17 @@ ZSTD_DDict* auth_input_hybrid_zstd_ddict()
 	return g_auth_input_hybrid_zstd_ddict;
 }
 
+ZSTD_DDict* auth_input_hybrid_smooth_zstd_ddict()
+{
+	if (!g_auth_input_hybrid_smooth_zstd_ddict) {
+		g_auth_input_hybrid_smooth_zstd_ddict = ZSTD_createDDict(
+			MXT_AUTH_INPUT_HYBRID_SMOOTH_ZSTD_DICT,
+			MXT_AUTH_INPUT_HYBRID_SMOOTH_ZSTD_DICT_SIZE
+		);
+	}
+	return g_auth_input_hybrid_smooth_zstd_ddict;
+}
+
 ZSTD_DDict* auth_input_zero_bitmap_zstd_ddict()
 {
 	if (!g_auth_input_zero_bitmap_zstd_ddict) {
@@ -401,6 +428,12 @@ bool auth_input_mode_uses_hybrid_dict(uint8_t mode)
 {
 	mode &= MXT_NET_AUTH_MODE_MASK;
 	return mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD;
+}
+
+bool auth_input_mode_uses_hybrid_smooth_dict(uint8_t mode)
+{
+	mode &= MXT_NET_AUTH_MODE_MASK;
+	return mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD;
 }
 
 int auth_input_bitpacked_raw_size(int frame_count, int racer_count)
@@ -464,15 +497,16 @@ bool decode_zero_bitmap_raw(const PackedByteArray& encoded, PackedByteArray& out
 	return encoded_pos == encoded.size();
 }
 
-PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool hybrid_dict = false, bool zero_bitmap_dict = false)
+PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false)
 {
 	const int raw_size = raw.size();
 	if (raw_size <= 0) {
 		return PackedByteArray();
 	}
 	ZSTD_CCtx* cctx = auth_input_zstd_cctx();
-	ZSTD_CDict* cdict = hybrid_dict ? auth_input_hybrid_zstd_cdict() :
-		(zero_bitmap_dict ? auth_input_zero_bitmap_zstd_cdict() : auth_input_zstd_cdict());
+	ZSTD_CDict* cdict = hybrid_smooth_dict ? auth_input_hybrid_smooth_zstd_cdict() :
+		(hybrid_dict ? auth_input_hybrid_zstd_cdict() :
+			(zero_bitmap_dict ? auth_input_zero_bitmap_zstd_cdict() : auth_input_zstd_cdict()));
 	if (!cctx || !cdict) {
 		return PackedByteArray();
 	}
@@ -499,14 +533,15 @@ PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool h
 	return out;
 }
 
-PackedByteArray decompress_auth_input_with_dict(const PackedByteArray& compressed, int raw_size, bool hybrid_dict = false, bool zero_bitmap_dict = false)
+PackedByteArray decompress_auth_input_with_dict(const PackedByteArray& compressed, int raw_size, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false)
 {
 	if (raw_size <= 0 || compressed.size() <= 0) {
 		return PackedByteArray();
 	}
 	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
-	ZSTD_DDict* ddict = hybrid_dict ? auth_input_hybrid_zstd_ddict() :
-		(zero_bitmap_dict ? auth_input_zero_bitmap_zstd_ddict() : auth_input_zstd_ddict());
+	ZSTD_DDict* ddict = hybrid_smooth_dict ? auth_input_hybrid_smooth_zstd_ddict() :
+		(hybrid_dict ? auth_input_hybrid_zstd_ddict() :
+			(zero_bitmap_dict ? auth_input_zero_bitmap_zstd_ddict() : auth_input_zstd_ddict()));
 	if (!dctx || !ddict) {
 		return PackedByteArray();
 	}
@@ -555,14 +590,15 @@ PackedByteArray decompress_auth_input_plain_bound(const PackedByteArray& compres
 	return out;
 }
 
-PackedByteArray decompress_auth_input_with_dict_bound(const PackedByteArray& compressed, int raw_size_bound, bool hybrid_dict = false, bool zero_bitmap_dict = false)
+PackedByteArray decompress_auth_input_with_dict_bound(const PackedByteArray& compressed, int raw_size_bound, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false)
 {
 	if (raw_size_bound <= 0 || compressed.size() <= 0) {
 		return PackedByteArray();
 	}
 	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
-	ZSTD_DDict* ddict = hybrid_dict ? auth_input_hybrid_zstd_ddict() :
-		(zero_bitmap_dict ? auth_input_zero_bitmap_zstd_ddict() : auth_input_zstd_ddict());
+	ZSTD_DDict* ddict = hybrid_smooth_dict ? auth_input_hybrid_smooth_zstd_ddict() :
+		(hybrid_dict ? auth_input_hybrid_zstd_ddict() :
+			(zero_bitmap_dict ? auth_input_zero_bitmap_zstd_ddict() : auth_input_zstd_ddict()));
 	if (!dctx || !ddict) {
 		return PackedByteArray();
 	}
@@ -1296,10 +1332,10 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
 		selected_raw_size = bitpacked_zero_raw.size();
 	}
-	candidate = hybrid_raw.compress(MXT_NET_COMPRESSION_ZSTD);
+	candidate = compress_auth_input_with_dict(hybrid_raw, false, false, true);
 	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
 		compressed = candidate;
-		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_DELTA_PLAIN_ZSTD;
+		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_DELTA_SMOOTH_DICT_ZSTD;
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
 		selected_raw_size = hybrid_raw_size;
 	}
@@ -1400,7 +1436,8 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 				compressed,
 				raw_size,
 				auth_input_mode_uses_hybrid_dict(compression_mode),
-				false
+				false,
+				auth_input_mode_uses_hybrid_smooth_dict(compression_mode)
 			);
 		}
 	} else if (zero_bitmap_layout) {
@@ -1611,6 +1648,9 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 		const PackedByteArray hybrid_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA ?
 			compress_auth_input_with_dict(raw, true) :
 			PackedByteArray();
+		const PackedByteArray hybrid_smooth_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA ?
+			compress_auth_input_with_dict(raw, false, false, true) :
+			PackedByteArray();
 		const PackedByteArray zero_bitmap_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP ?
 			compress_auth_input_with_dict(raw, false, true) :
 			PackedByteArray();
@@ -1622,6 +1662,10 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 			(zero_bitmap_dict.size() > 0 ? zero_bitmap_dict.size() : dict.size());
 		out[prefix + String("dict_payload")] = dict_size;
 		out[prefix + String("dict_packet")] = dict_size + auth_input_packet_header_size(count);
+		if (hybrid_smooth_dict.size() > 0) {
+			out[prefix + String("smooth_dict_payload")] = hybrid_smooth_dict.size();
+			out[prefix + String("smooth_dict_packet")] = hybrid_smooth_dict.size() + auth_input_packet_header_size(count);
+		}
 	}
 	out["valid"] = true;
 	out["first_tick"] = first_tick;
