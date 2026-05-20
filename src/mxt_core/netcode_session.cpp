@@ -19,7 +19,7 @@ constexpr int MXT_NET_MAX_INPUT_BYTES = 8;
 constexpr int MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET = 255;
 constexpr int MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER = 5;
 constexpr int MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER = 9;
-constexpr int MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES = 10;
+constexpr int MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES = 5;
 constexpr int MXT_NET_COMPRESSION_ZSTD = FileAccess::COMPRESSION_ZSTD;
 constexpr uint8_t MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD = 0;
 constexpr uint8_t MXT_NET_AUTH_MODE_PACKED_DICT_ZSTD = 1;
@@ -27,6 +27,8 @@ constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_PLAIN_ZSTD = 2;
 constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD = 3;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD = 4;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD = 5;
+constexpr uint8_t MXT_NET_AUTH_MODE_MASK = 0x7f;
+constexpr uint8_t MXT_NET_AUTH_PHASE_BIT = 0x80;
 constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 1;
 constexpr int64_t MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT = 20000;
 constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
@@ -72,6 +74,13 @@ struct PacketWriter {
 			write_u8(static_cast<uint8_t>((u >> 8) & 0xff)) &&
 			write_u8(static_cast<uint8_t>((u >> 16) & 0xff)) &&
 			write_u8(static_cast<uint8_t>((u >> 24) & 0xff));
+	}
+
+	bool write_u24(uint32_t v)
+	{
+		return write_u8(static_cast<uint8_t>(v & 0xff)) &&
+			write_u8(static_cast<uint8_t>((v >> 8) & 0xff)) &&
+			write_u8(static_cast<uint8_t>((v >> 16) & 0xff));
 	}
 
 	bool write_bytes(const uint8_t* src, int len)
@@ -128,6 +137,16 @@ struct PacketReader {
 			(static_cast<uint32_t>(c) << 16) |
 			(static_cast<uint32_t>(d) << 24);
 		out = static_cast<int32_t>(u);
+		return true;
+	}
+
+	bool read_u24(uint32_t& out)
+	{
+		uint8_t a = 0, b = 0, c = 0;
+		if (!read_u8(a) || !read_u8(b) || !read_u8(c)) return false;
+		out = static_cast<uint32_t>(a) |
+			(static_cast<uint32_t>(b) << 8) |
+			(static_cast<uint32_t>(c) << 16);
 		return true;
 	}
 
@@ -215,6 +234,7 @@ int auth_input_raw_size(int frame_count, int racer_count, AuthInputLayout layout
 
 AuthInputLayout auth_input_layout_from_mode(uint8_t mode)
 {
+	mode &= MXT_NET_AUTH_MODE_MASK;
 	if (mode == MXT_NET_AUTH_MODE_DELTA_PLAIN_ZSTD || mode == MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD) {
 		return AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA;
 	}
@@ -226,6 +246,7 @@ AuthInputLayout auth_input_layout_from_mode(uint8_t mode)
 
 bool auth_input_mode_uses_dict(uint8_t mode)
 {
+	mode &= MXT_NET_AUTH_MODE_MASK;
 	return mode == MXT_NET_AUTH_MODE_PACKED_DICT_ZSTD ||
 		mode == MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD ||
 		mode == MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD;
@@ -233,7 +254,7 @@ bool auth_input_mode_uses_dict(uint8_t mode)
 
 bool auth_input_mode_valid(uint8_t mode)
 {
-	return mode <= MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD;
+	return (mode & MXT_NET_AUTH_MODE_MASK) <= MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD;
 }
 
 int32_t pack_tick_phase(int tick, int race_phase)
@@ -927,10 +948,9 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 {
 	PacketWriter writer;
 	if (max_frame_count <= 0 || last_tick < 0) {
-		writer.write_i32(pack_tick_phase(last_tick + 1, race_phase));
+		writer.write_u24(static_cast<uint32_t>(std::max(last_tick + 1, 0)) & 0x00ffffffu);
 		writer.write_u8(0);
-		writer.write_i32(0);
-		writer.write_u8(MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD);
+		writer.write_u8(static_cast<uint8_t>(MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD | ((race_phase & 1) ? MXT_NET_AUTH_PHASE_BIT : 0)));
 		return writer.to_pba();
 	}
 	max_frame_count = std::min(max_frame_count, MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET);
@@ -945,17 +965,13 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	while (count > 0 && !find_frame(authoritative_history, first_tick + count - 1)) {
 		--count;
 	}
-	if (!writer.write_i32(pack_tick_phase(first_tick, race_phase)) ||
+	if (!writer.write_u24(static_cast<uint32_t>(first_tick) & 0x00ffffffu) ||
 		!writer.write_u8(static_cast<uint8_t>(count))) {
 		return PackedByteArray();
 	}
 	++stat_auth_packets;
 	stat_auth_frames += static_cast<uint64_t>(count);
 	stat_auth_encoded_inputs += static_cast<uint64_t>(count) * static_cast<uint64_t>(racer_count);
-	const int raw_size_pos = writer.pos;
-	if (!writer.write_i32(0)) {
-		return PackedByteArray();
-	}
 	int compression_mode_pos = writer.pos;
 	if (!writer.write_u8(MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD)) {
 		return PackedByteArray();
@@ -1043,11 +1059,7 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	} else {
 		dump_auth_input_sample(packed_raw, first_tick, count, racer_count);
 	}
-	writer.data[raw_size_pos] = static_cast<uint8_t>(selected_raw_size & 0xff);
-	writer.data[raw_size_pos + 1] = static_cast<uint8_t>((selected_raw_size >> 8) & 0xff);
-	writer.data[raw_size_pos + 2] = static_cast<uint8_t>((selected_raw_size >> 16) & 0xff);
-	writer.data[raw_size_pos + 3] = static_cast<uint8_t>((selected_raw_size >> 24) & 0xff);
-	writer.data[compression_mode_pos] = compression_mode;
+	writer.data[compression_mode_pos] = static_cast<uint8_t>(compression_mode | ((race_phase & 1) ? MXT_NET_AUTH_PHASE_BIT : 0));
 	stat_auth_raw_bytes += static_cast<uint64_t>(selected_raw_size);
 	stat_auth_payload_bytes += static_cast<uint64_t>(writer.pos);
 	return writer.to_pba();
@@ -1064,18 +1076,18 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 
 	PacketReader reader(packet);
 	uint8_t count = 0;
-	uint8_t compression_mode = MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD;
-	int32_t packed_first_tick = -1;
-	int32_t raw_size = 0;
-	if (!reader.read_i32(packed_first_tick) || !reader.read_u8(count) || !reader.read_i32(raw_size) || !reader.read_u8(compression_mode)) {
+	uint8_t mode_phase = MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD;
+	uint32_t packed_first_tick = 0;
+	if (!reader.read_u24(packed_first_tick) || !reader.read_u8(count) || !reader.read_u8(mode_phase)) {
 		return stats;
 	}
-	if (unpack_race_phase(packed_first_tick) != (expected_race_phase & 1)) {
+	if (((mode_phase & MXT_NET_AUTH_PHASE_BIT) ? 1 : 0) != (expected_race_phase & 1)) {
 		stats["stale"] = true;
 		stats["valid"] = true;
 		return stats;
 	}
-	const int first_tick = unpack_tick(packed_first_tick);
+	const uint8_t compression_mode = mode_phase & MXT_NET_AUTH_MODE_MASK;
+	const int first_tick = static_cast<int>(packed_first_tick);
 	stats["first_tick"] = first_tick;
 	stats["count"] = static_cast<int>(count);
 	stats["valid"] = true;
@@ -1084,8 +1096,8 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		return stats;
 	}
 	const AuthInputLayout layout = auth_input_layout_from_mode(compression_mode);
-	const int expected_raw_size = auth_input_raw_size(static_cast<int>(count), racer_count, layout);
-	if (raw_size != expected_raw_size || raw_size < 0) {
+	const int raw_size = auth_input_raw_size(static_cast<int>(count), racer_count, layout);
+	if (raw_size < 0) {
 		stats["valid"] = false;
 		return stats;
 	}
