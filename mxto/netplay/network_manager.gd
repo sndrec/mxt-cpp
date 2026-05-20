@@ -2305,7 +2305,7 @@ func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedBy
 	if not is_server or listen_server:
 		var old_clients_server_tick : int = clients_server_tick
 		var old_clients_target_tick : int = clients_target_tick
-		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet, race_netplay_phase)
+		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet, race_netplay_phase, authoritative_last_tick)
 		if bool(stats.get("valid", false)):
 			if bool(stats.get("stale", false)):
 				return

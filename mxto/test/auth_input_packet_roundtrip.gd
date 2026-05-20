@@ -60,7 +60,7 @@ func _run_case(mode: String) -> bool:
 			expected[[tick, id]] = bytes
 
 	var packet: PackedByteArray = server.build_authoritative_input_packet(frame_count - 1, frame_count, 1)
-	var stats: Dictionary = client.store_authoritative_input_packet(packet, 1)
+	var stats: Dictionary = client.store_authoritative_input_packet(packet, 1, frame_count - 1)
 	if !bool(stats.get("valid", false)) or bool(stats.get("stale", false)):
 		push_error("MXT_AUTH_INPUT_ROUNDTRIP invalid mode=%s stats=%s" % [mode, stats])
 		return false

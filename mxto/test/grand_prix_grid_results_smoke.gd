@@ -101,12 +101,12 @@ func _init() -> void:
 	nm.server_netcode_session.store_authoritative_input(0, 1, nm.NEUTRAL_INPUT_BYTES)
 	var phase_one_auth_packet: PackedByteArray = nm.server_netcode_session.build_authoritative_input_packet(0, 1, 1)
 	nm.netcode_session.configure([1], [false], 1)
-	var stale_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 0)
+	var stale_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 0, 0)
 	if !bool(stale_auth_stats.get("stale", false)):
 		push_error("phase-mismatched authoritative packet should be dropped as stale")
 		quit(1)
 		return
-	var current_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 1)
+	var current_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 1, 0)
 	if bool(current_auth_stats.get("stale", false)) or !bool(current_auth_stats.get("valid", false)):
 		push_error("phase-matched authoritative packet should be valid, got %s" % [current_auth_stats])
 		quit(1)
