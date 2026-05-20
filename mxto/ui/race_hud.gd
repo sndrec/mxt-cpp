@@ -317,7 +317,7 @@ func _sticker_offset_for_anchor(texture: Texture2D, anchor_direction: Vector2) -
 	var half_size := texture_size * 0.5
 	var center_distance := absf(dir.x) * half_size.x + absf(dir.y) * half_size.y
 	var center := dir * center_distance
-	return center - half_size
+	return Vector2(center.x - half_size.x, -center.y - half_size.y)
 
 func _set_world_sticker_sprite(sprite: Sprite3D, texture: Texture2D, pixel_size: float, alpha: float, anchor_direction: Vector2) -> void:
 	sprite.texture = texture
