@@ -38,18 +38,18 @@ else:
     else:
         env.Append(CCFLAGS=["-O2"])
 
-#if env["platform"] == "macos":
-#    library = env.SharedLibrary(
-#        "mxto/bin/libgamesim.{}.{}.framework/libgamesim.{}.{}".format(
-#            env["platform"], env["target"], env["platform"], env["target"]
-#        ),
-#        source=sources,
-#    )
-#else:
-library = env.SharedLibrary(
-    "mxto/bin/libgamesim{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
-    source=sources,
-)
+if env["platform"] == "macos":
+    library = env.SharedLibrary(
+        "mxto/bin/libgamesim.{}.{}.framework/libgamesim.{}.{}".format(
+            env["platform"], env["target"], env["platform"], env["target"]
+        ),
+        source=sources,
+    )
+else:
+    library = env.SharedLibrary(
+        "mxto/bin/libgamesim{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        source=sources,
+    )
 
 
 db = env.CompilationDatabase()

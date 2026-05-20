@@ -9,7 +9,7 @@
 [ext_resource type="Texture2D" uid="uid://tv10kddv5k24" path="res://asset/tex/clouds2.png" id="17_yaehf"]
 [ext_resource type="Script" uid="uid://dy134idknaa2x" path="res://super_spark_container.gd" id="18_spark"]
 [ext_resource type="Script" uid="uid://77we1ngt1kj5" path="res://cpu/cpu_driver_manager.gd" id="19_cpu_manager"]
-[ext_resource type="PackedScene" path="res://ui/lobby_static.tscn" id="20_lobby_static"]
+[ext_resource type="PackedScene" uid="uid://do7bo8imdv64e" path="res://ui/lobby_static.tscn" id="20_lobby_static"]
 [ext_resource type="PackedScene" uid="uid://bbe5vn5g66jbq" path="res://ui/race_pause_menu.tscn" id="21_race_pause"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
@@ -473,7 +473,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.19"
+text = "MaxX Throttle v0.1.20"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/ConnectHostBox/StartButton" to="." method="_on_start_button_pressed"]

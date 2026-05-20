@@ -1,7 +1,7 @@
 class_name LobbyChibiCar
 extends Node3D
 
-const BOUNDS_X := 14.0
+const BOUNDS_X := 25.0
 const BOUNDS_Z := 10.0
 const CHIBI_TICK_DELTA := 1.0 / 60.0
 const SYNC_INTERVAL_MSEC := 15
@@ -153,7 +153,9 @@ func get_render_definition() -> CarDefinition:
 	return car_definition
 
 func get_render_transform() -> Transform3D:
-	return global_transform * Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO)
+	return global_transform * Transform3D(
+		Basis(Vector3.UP, PI).scaled(Vector3.ONE * 0.5),
+		Vector3.ZERO)
 
 func get_render_overlay() -> Color:
 	return Color(0.0, 0.0, 0.0, 1.0)
@@ -236,7 +238,7 @@ func _calculate_friction(in_speed: float) -> float:
 	return friction_reduction_linear + friction_reduction_proportional
 
 func _update_motion(delta: float) -> void:
-	position.y = lerpf(0.6, 0.65, sin(0.005 * float(Time.get_ticks_msec())))
+	position.y = lerpf(0.0, 0.05, sin(0.005 * float(Time.get_ticks_msec())))
 	rotation_degrees += Vector3(0.0, angle_velocity * delta * -20.0, 0.0)
 	position += basis.z * velocity * delta * 0.1 + knockback_velocity * delta * 0.2
 	rotation_degrees.z = lerpf(rotation_degrees.z, angle_velocity * 2.0, delta * 4.0)
