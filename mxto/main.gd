@@ -1603,6 +1603,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	_apply_grand_prix_ko_energy_bonuses(game_sim, racer_ids)
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
+	network_manager.netcode_session.set_cpu_input_prediction_enabled(singleplayer_mode or network_manager.is_server)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 		var local_hud := car_node_container.local_visual_car.race_hud
@@ -1638,6 +1639,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 		_apply_grand_prix_ko_energy_bonuses(server_game_sim, racer_ids)
 		network_manager.server_netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
+		network_manager.server_netcode_session.set_cpu_input_prediction_enabled(true)
 	if singleplayer_mode:
 		game_sim.set_cpu_driver_manager(null)
 		if network_manager.is_server:

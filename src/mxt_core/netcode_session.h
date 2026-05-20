@@ -44,6 +44,7 @@ class NetcodeSession : public Object {
 	InputFrame pending_inputs[HISTORY_LEN];
 	PeerState peer_states[MAX_PEERS];
 	int32_t latest_authoritative_tick = -1;
+	bool cpu_input_prediction_enabled = true;
 	mutable uint64_t stat_auth_packets = 0;
 	mutable uint64_t stat_auth_frames = 0;
 	mutable uint64_t stat_auth_encoded_inputs = 0;
@@ -74,6 +75,7 @@ public:
 	void store_local_input(int tick, godot::PackedByteArray input_bytes);
 	void store_authoritative_input(int tick, int player_id, godot::PackedByteArray input_bytes);
 	void store_pending_input(int tick, int player_id, godot::PackedByteArray input_bytes);
+	void set_cpu_input_prediction_enabled(bool enabled);
 	godot::Dictionary fill_missing_pending_inputs(int tick, godot::Array player_ids, godot::Array disconnected_ids, godot::Array delayed_ids, bool allow_new_delayed);
 	godot::PackedByteArray build_local_input_packet(int first_tick, int count, int race_phase = 0) const;
 	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase = 0);
