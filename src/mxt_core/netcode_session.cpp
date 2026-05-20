@@ -693,7 +693,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count", "race_phase"), &NetcodeSession::build_local_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec", "expected_race_phase"), &NetcodeSession::store_pending_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("build_authoritative_input_packet", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::build_authoritative_input_packet, DEFVAL(0));
-	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet", "expected_race_phase", "authoritative_last_tick"), &NetcodeSession::store_authoritative_input_packet, DEFVAL(0), DEFVAL(-1));
+	ClassDB::bind_method(D_METHOD("store_authoritative_input_packet", "packet", "expected_race_phase", "authoritative_last_tick", "external_mode_count_phase"), &NetcodeSession::store_authoritative_input_packet, DEFVAL(0), DEFVAL(-1), DEFVAL(-1));
 	ClassDB::bind_method(D_METHOD("debug_compare_authoritative_input_packet_sizes", "last_tick", "max_frame_count", "race_phase"), &NetcodeSession::debug_compare_authoritative_input_packet_sizes, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("consume_authoritative_packet_stats"), &NetcodeSession::consume_authoritative_packet_stats);
 	ClassDB::bind_method(D_METHOD("get_input_frame_debug", "tick"), &NetcodeSession::get_input_frame_debug);
@@ -1195,7 +1195,7 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	return writer.to_pba();
 }
 
-godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase, int authoritative_last_tick)
+godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase, int authoritative_last_tick, int external_mode_count_phase)
 {
 	Dictionary stats;
 	stats["first_tick"] = -1;
@@ -1207,8 +1207,12 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	PacketReader reader(packet);
 	uint8_t count = 0;
 	uint8_t mode_count_phase = MXT_NET_AUTH_MODE_PACKED_PLAIN_ZSTD;
-	if (!reader.read_u8(mode_count_phase)) {
-		return stats;
+	if (external_mode_count_phase >= 0) {
+		mode_count_phase = static_cast<uint8_t>(external_mode_count_phase & 0xff);
+	} else {
+		if (!reader.read_u8(mode_count_phase)) {
+			return stats;
+		}
 	}
 	const uint8_t count_code = static_cast<uint8_t>((mode_count_phase & MXT_NET_AUTH_COUNT_MASK) >> MXT_NET_AUTH_COUNT_SHIFT);
 	if (count_code == MXT_NET_AUTH_COUNT_ESCAPE) {

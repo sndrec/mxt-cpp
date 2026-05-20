@@ -2,6 +2,16 @@ extends SceneTree
 
 const DEFAULT_TRACK := "res://track/surface_slide/track.mxt_track"
 const DEFAULT_CAR_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+const AUTH_INPUT_COUNT_MASK := 0x78
+const AUTH_INPUT_COUNT_SHIFT := 3
+const AUTH_INPUT_COUNT_ESCAPE := 0x0f
+
+func _authoritative_input_wire_size(packet: PackedByteArray) -> int:
+	if packet.size() <= 0:
+		return 0
+	var meta := int(packet[0])
+	var count_code := (meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
+	return packet.size() - 1 if count_code != AUTH_INPUT_COUNT_ESCAPE else packet.size()
 
 func _arg_value(args: Array, name: String, fallback: String) -> String:
 	var idx := args.find(name)
@@ -62,8 +72,11 @@ func _init() -> void:
 
 	var sample_count := 0
 	var packet_bytes := 0
+	var wire_packet_bytes := 0
 	var packet_min := 1 << 30
 	var packet_max := 0
+	var wire_packet_min := 1 << 30
+	var wire_packet_max := 0
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
@@ -89,9 +102,13 @@ func _init() -> void:
 		var packet: PackedByteArray = session.build_authoritative_input_packet(tick, redundancy, 0)
 		if tick >= sample_start and tick < sample_end:
 			var size := packet.size()
+			var wire_size := _authoritative_input_wire_size(packet)
 			packet_bytes += size
+			wire_packet_bytes += wire_size
 			packet_min = mini(packet_min, size)
 			packet_max = maxi(packet_max, size)
+			wire_packet_min = mini(wire_packet_min, wire_size)
+			wire_packet_max = maxi(wire_packet_max, wire_size)
 			var cmp: Dictionary = session.debug_compare_authoritative_input_packet_sizes(tick, redundancy, 0)
 			if bool(cmp.get("valid", false)):
 				old_plain_packet_bytes += int(cmp.get("old_plain_packet", 0))
@@ -112,6 +129,7 @@ func _init() -> void:
 
 	var stats := session.consume_authoritative_packet_stats()
 	var avg_packet := float(packet_bytes) / float(maxi(sample_count, 1))
+	var avg_wire_packet := float(wire_packet_bytes) / float(maxi(sample_count, 1))
 	print("MXT_AUTH_INPUT_SIZE_DONE track=", track_path,
 		" cars=", cars,
 		" humans=", humans,
@@ -124,6 +142,9 @@ func _init() -> void:
 		" packet_avg=", avg_packet,
 		" packet_min=", packet_min,
 		" packet_max=", packet_max,
+		" wire_packet_avg=", avg_wire_packet,
+		" wire_packet_min=", wire_packet_min,
+		" wire_packet_max=", wire_packet_max,
 		" old_raw_avg=", float(old_raw_bytes) / float(maxi(sample_count, 1)),
 		" packed_raw_avg=", float(packed_raw_bytes) / float(maxi(sample_count, 1)),
 		" delta_raw_avg=", float(delta_raw_bytes) / float(maxi(sample_count, 1)),

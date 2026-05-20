@@ -1,6 +1,9 @@
 extends SceneTree
 
 const PlayerInputClass := preload("res://player/player_input.gd")
+const AUTH_INPUT_COUNT_MASK := 0x78
+const AUTH_INPUT_COUNT_SHIFT := 3
+const AUTH_INPUT_COUNT_ESCAPE := 0x0f
 
 func _make_input(tick: int, racer_index: int, mode: String) -> PackedByteArray:
 	var input := PlayerInputClass.new()
@@ -78,10 +81,42 @@ func _run_case(mode: String) -> bool:
 				push_error("MXT_AUTH_INPUT_ROUNDTRIP mismatch mode=%s tick=%d id=%d got=%s want=%s" % [mode, tick, id, got, want])
 				return false
 
+	var stripped_client := NetcodeSession.new()
+	stripped_client.configure(player_ids, cpu_flags, 1001)
+	var packet_meta := int(packet[0])
+	var count_code := (packet_meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
+	if count_code == AUTH_INPUT_COUNT_ESCAPE:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP unexpected escaped count mode=%s packet=%d" % [mode, packet.size()])
+		return false
+	var stripped_packet := packet.slice(1)
+	var stripped_stats: Dictionary = stripped_client.store_authoritative_input_packet(stripped_packet, 1, frame_count - 1, packet_meta)
+	if !bool(stripped_stats.get("valid", false)) or bool(stripped_stats.get("stale", false)):
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped invalid mode=%s stats=%s" % [mode, stripped_stats])
+		return false
+	if int(stripped_stats.get("count", -1)) != frame_count or int(stripped_stats.get("first_tick", -1)) != 0 or int(stripped_stats.get("last_tick", -1)) != frame_count - 1:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped bad range mode=%s stats=%s" % [mode, stripped_stats])
+		return false
+	for tick in range(frame_count):
+		var stripped_decoded: Dictionary = stripped_client.get_frame_as_dictionary(tick)
+		for i in range(racer_count):
+			var id := int(player_ids[i])
+			var got: PackedByteArray = stripped_decoded.get(id, PackedByteArray())
+			var want: PackedByteArray = expected[[tick, id]]
+			if got != want:
+				push_error("MXT_AUTH_INPUT_ROUNDTRIP stripped mismatch mode=%s tick=%d id=%d got=%s want=%s" % [mode, tick, id, got, want])
+				return false
+
 	print("MXT_AUTH_INPUT_ROUNDTRIP_CASE_OK mode=", mode, " racers=", racer_count, " frames=", frame_count, " packet=", packet.size())
 	return true
 
 func _init() -> void:
+	var nm := NetworkManager.new()
+	nm.race_netplay_phase = 1
+	var packed_auth_tick := nm._pack_authoritative_input_tick(12345, 0x2a)
+	if nm._unpack_race_phase(packed_auth_tick) != 1 or nm._unpack_race_tick(packed_auth_tick) != 12345 or nm._unpack_authoritative_input_meta(packed_auth_tick) != 0x2a:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP auth tick metadata packing failed")
+		quit(1)
+		return
 	for mode in ["varied", "smooth", "randomish"]:
 		if !_run_case(mode):
 			quit(1)

@@ -78,7 +78,7 @@ public:
 	godot::PackedByteArray build_local_input_packet(int first_tick, int count, int race_phase = 0) const;
 	godot::Dictionary store_pending_input_packet(int player_id, int reject_before_tick, godot::PackedByteArray packet, double ahead, double now_sec, int expected_race_phase = 0);
 	godot::PackedByteArray build_authoritative_input_packet(int last_tick, int max_frame_count, int race_phase = 0) const;
-	godot::Dictionary store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase = 0, int authoritative_last_tick = -1);
+	godot::Dictionary store_authoritative_input_packet(godot::PackedByteArray packet, int expected_race_phase = 0, int authoritative_last_tick = -1, int external_mode_count_phase = -1);
 	godot::Dictionary debug_compare_authoritative_input_packet_sizes(int last_tick, int max_frame_count, int race_phase = 0) const;
 	godot::Dictionary consume_authoritative_packet_stats();
 	godot::Dictionary get_input_frame_debug(int tick) const;

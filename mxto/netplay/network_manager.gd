@@ -75,6 +75,12 @@ const START_SYNC_PING_INTERVAL_MS := 50
 const START_SYNC_START_DELAY_MS := 750
 const RACE_PHASE_TICK_BIT := 0x80000000
 const RACE_PHASE_TICK_MASK := 0x7fffffff
+const AUTH_INPUT_COUNT_MASK := 0x78
+const AUTH_INPUT_COUNT_SHIFT := 3
+const AUTH_INPUT_COUNT_ESCAPE := 0x0f
+const AUTH_INPUT_META_SHIFT := 32
+const AUTH_INPUT_META_BYTE_MASK := 0xff
+const AUTH_INPUT_META_PRESENT_BIT := 1 << 40
 const SERVER_TIMING_SYNC_INTERVAL_TICKS := 1
 const CLIENT_TIMING_PING_INTERVAL_MS := 250
 const LOBBY_LATENCY_SAMPLE_INTERVAL_MS := 1000
@@ -696,6 +702,17 @@ func _accept_race_packet_phase(phase: int) -> bool:
 
 func _pack_race_phase_tick(tick: int) -> int:
 	return (tick & RACE_PHASE_TICK_MASK) | (race_netplay_phase << 31)
+
+func _pack_authoritative_input_tick(tick: int, input_meta: int) -> int:
+	var packed_tick := _pack_race_phase_tick(tick)
+	if input_meta >= 0:
+		packed_tick |= AUTH_INPUT_META_PRESENT_BIT | ((input_meta & AUTH_INPUT_META_BYTE_MASK) << AUTH_INPUT_META_SHIFT)
+	return packed_tick
+
+func _unpack_authoritative_input_meta(packed_tick: int) -> int:
+	if (packed_tick & AUTH_INPUT_META_PRESENT_BIT) == 0:
+		return -1
+	return (packed_tick >> AUTH_INPUT_META_SHIFT) & AUTH_INPUT_META_BYTE_MASK
 
 func _unpack_race_phase(packed_tick: int) -> int:
 	return 1 if (packed_tick & RACE_PHASE_TICK_BIT) != 0 else 0
@@ -2300,12 +2317,13 @@ func _server_startup_sync(server_tick_value: int, this_ack: int, tgt: int, max_a
 func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedByteArray, this_ack: int, tgt: int, max_ahead: float) -> void:
 	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(authoritative_last_tick)):
 		return
+	var input_packet_meta := _unpack_authoritative_input_meta(authoritative_last_tick)
 	authoritative_last_tick = _unpack_race_tick(authoritative_last_tick)
 	var __prof_t0 := Time.get_ticks_usec()
 	if not is_server or listen_server:
 		var old_clients_server_tick : int = clients_server_tick
 		var old_clients_target_tick : int = clients_target_tick
-		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet, race_netplay_phase, authoritative_last_tick)
+		var stats: Dictionary = netcode_session.store_authoritative_input_packet(input_packet, race_netplay_phase, authoritative_last_tick, input_packet_meta)
 		if bool(stats.get("valid", false)):
 			if bool(stats.get("stale", false)):
 				return
@@ -2426,6 +2444,7 @@ func post_tick() -> void:
 		var compressed_state : PackedByteArray = PackedByteArray()
 		var uncompressed_size := 0
 		var input_packet: PackedByteArray = PackedByteArray()
+		var input_packet_meta := -1
 		var input_packet_ready := false
 		for id in player_ids + spectator_ids:
 			if SERVER_TIMING_SYNC_INTERVAL_TICKS <= 1 or server_tick % SERVER_TIMING_SYNC_INTERVAL_TICKS == 0:
@@ -2454,11 +2473,18 @@ func post_tick() -> void:
 					_log_state_size_stats(server_game_sim.get_network_state_size_stats())
 			if not input_packet_ready:
 				input_packet = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES, race_netplay_phase)
+				if input_packet.size() > 0:
+					input_packet_meta = int(input_packet[0])
+					var count_code := (input_packet_meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
+					if count_code != AUTH_INPUT_COUNT_ESCAPE:
+						input_packet = input_packet.slice(1)
+					else:
+						input_packet_meta = -1
 				input_packet_ready = true
 			log_flat_server_payload_out += input_packet.size()
 			log_auth_packets_sent += 1
 			_acc_log_out(20 + input_packet.size())
-			_server_broadcast_flat.rpc_id(id, _pack_race_phase_tick(server_tick), input_packet, server_netcode_session.get_peer_last_received(id), target_tick, max_ahead)
+			_server_broadcast_flat.rpc_id(id, _pack_authoritative_input_tick(server_tick, input_packet_meta), input_packet, server_netcode_session.get_peer_last_received(id), target_tick, max_ahead)
 			if send_state.size() > 0:
 				var chunk_count := int(ceil(float(send_state.size()) / float(STATE_CHUNK_PAYLOAD_BYTES)))
 				var state_chunks := []

@@ -1,6 +1,16 @@
 extends SceneTree
 
 const PlayerInputClass := preload("res://player/player_input.gd")
+const AUTH_INPUT_COUNT_MASK := 0x78
+const AUTH_INPUT_COUNT_SHIFT := 3
+const AUTH_INPUT_COUNT_ESCAPE := 0x0f
+
+func _authoritative_input_wire_size(packet: PackedByteArray) -> int:
+	if packet.size() <= 0:
+		return 0
+	var meta := int(packet[0])
+	var count_code := (meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
+	return packet.size() - 1 if count_code != AUTH_INPUT_COUNT_ESCAPE else packet.size()
 
 func _arg_value(args: Array, name: String, fallback: String) -> String:
 	var idx := args.find(name)
@@ -86,8 +96,11 @@ func _init() -> void:
 
 	var sample_count := 0
 	var packet_bytes := 0
+	var wire_packet_bytes := 0
 	var packet_min := 1 << 30
 	var packet_max := 0
+	var wire_packet_min := 1 << 30
+	var wire_packet_max := 0
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
@@ -104,9 +117,13 @@ func _init() -> void:
 		var packet: PackedByteArray = session.build_authoritative_input_packet(tick, redundancy, 0)
 		if tick >= sample_start and tick < sample_end:
 			var size := packet.size()
+			var wire_size := _authoritative_input_wire_size(packet)
 			packet_bytes += size
+			wire_packet_bytes += wire_size
 			packet_min = mini(packet_min, size)
 			packet_max = maxi(packet_max, size)
+			wire_packet_min = mini(wire_packet_min, wire_size)
+			wire_packet_max = maxi(wire_packet_max, wire_size)
 			var cmp: Dictionary = session.debug_compare_authoritative_input_packet_sizes(tick, redundancy, 0)
 			if bool(cmp.get("valid", false)):
 				old_plain_packet_bytes += int(cmp.get("old_plain_packet", 0))
@@ -121,7 +138,7 @@ func _init() -> void:
 				hybrid_dict_packet_bytes += int(cmp.get("hybrid_dict_packet", 0))
 			sample_count += 1
 
-	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f hybrid_dict_packet_avg=%f" % [
+	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d wire_packet_avg=%f wire_packet_min=%d wire_packet_max=%d old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f hybrid_dict_packet_avg=%f" % [
 		mode,
 		racers,
 		frames,
@@ -133,6 +150,9 @@ func _init() -> void:
 		float(packet_bytes) / float(maxi(sample_count, 1)),
 		packet_min,
 		packet_max,
+		float(wire_packet_bytes) / float(maxi(sample_count, 1)),
+		wire_packet_min,
+		wire_packet_max,
 		float(old_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),
