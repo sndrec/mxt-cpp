@@ -122,6 +122,7 @@ func _init() -> void:
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
 	var delta_pairs_dict_packet_bytes := 0
+	var delta_pairs_surface_dict_packet_bytes := 0
 	var delta_low_entropy_dict_packet_bytes := 0
 	var bitpacked_plain_packet_bytes := 0
 	var hybrid_plain_packet_bytes := 0
@@ -168,6 +169,7 @@ func _init() -> void:
 				packed_plain_packet_bytes += int(cmp.get("packed_plain_packet", 0))
 				delta_plain_packet_bytes += int(cmp.get("delta_plain_packet", 0))
 				delta_pairs_dict_packet_bytes += int(cmp.get("delta_pairs_dict_packet", 0))
+				delta_pairs_surface_dict_packet_bytes += int(cmp.get("delta_pairs_surface_dict_packet", 0))
 				delta_low_entropy_dict_packet_bytes += int(cmp.get("delta_low_entropy_dict_packet", 0))
 				bitpacked_plain_packet_bytes += int(cmp.get("bitpacked_plain_packet", 0))
 				hybrid_plain_packet_bytes += int(cmp.get("hybrid_plain_packet", 0))
@@ -213,6 +215,7 @@ func _init() -> void:
 		" packed_plain_packet_avg=", float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_plain_packet_avg=", float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_pairs_dict_packet_avg=", float(delta_pairs_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		" delta_pairs_surface_dict_packet_avg=", float(delta_pairs_surface_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_low_entropy_dict_packet_avg=", float(delta_low_entropy_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" bitpacked_plain_packet_avg=", float(bitpacked_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_plain_packet_avg=", float(hybrid_plain_packet_bytes) / float(maxi(sample_count, 1)),
