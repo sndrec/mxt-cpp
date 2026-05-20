@@ -39,6 +39,7 @@ constexpr uint8_t MXT_NET_AUTH_COUNT_MASK = 0x78;
 constexpr uint8_t MXT_NET_AUTH_COUNT_ESCAPE = 0x0f;
 constexpr uint8_t MXT_NET_AUTH_PHASE_BIT = 0x80;
 constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 3;
+constexpr int MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL = 5;
 constexpr int MXT_NET_AUTH_ZERO_BITMAP_ZSTD_LEVEL = 1;
 constexpr int64_t MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT = 20000;
 constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
@@ -352,7 +353,7 @@ ZSTD_CDict* auth_input_delta_pairs_zstd_cdict()
 		g_auth_input_delta_pairs_zstd_cdict = ZSTD_createCDict(
 			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT,
 			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_ZSTD_LEVEL
+			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL
 		);
 	}
 	return g_auth_input_delta_pairs_zstd_cdict;
@@ -787,17 +788,6 @@ bool NetcodeSession::write_authoritative_input_raw(
 			for (int f = 0; f < frame_count; ++f) {
 				const InputFrame* frame = frames[f];
 				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				uint8_t value = input_button_mask(input);
-				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
-				previous = value;
-				raw_bytes[raw_pos++] = encoded;
-			}
-		}
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < frame_count; ++f) {
-				const InputFrame* frame = frames[f];
-				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
 				uint8_t value = input_trigger_byte(input.strafe_left);
 				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
 				previous = value;
@@ -832,6 +822,17 @@ bool NetcodeSession::write_authoritative_input_raw(
 				const InputFrame* frame = frames[f];
 				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
 				uint8_t value = input_axis_byte(input.steer_vertical);
+				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
+				previous = value;
+				raw_bytes[raw_pos++] = encoded;
+			}
+		}
+		for (int i = 0; i < racer_count; ++i) {
+			uint8_t previous = 0;
+			for (int f = 0; f < frame_count; ++f) {
+				const InputFrame* frame = frames[f];
+				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
+				uint8_t value = input_button_mask(input);
 				const uint8_t encoded = f > 0 ? zigzag_i8(wrapped_i8_delta(value, previous)) : value;
 				previous = value;
 				raw_bytes[raw_pos++] = encoded;
@@ -1613,16 +1614,12 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 			uint8_t previous = 0;
 			for (int f = 0; f < static_cast<int>(count); ++f) {
 				InputFrame* frame = frames[f];
-				uint8_t mask = raw_bytes[raw_pos++];
+				uint8_t value = raw_bytes[raw_pos++];
 				if (f > 0) {
-					mask = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(mask));
+					value = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(value));
 				}
-				previous = mask;
-				frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
-				frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
-				frame->inputs[i].sideattack = (mask & (1u << 3)) != 0;
-				frame->inputs[i].boost = (mask & (1u << 4)) != 0;
+				previous = value;
+				frame->inputs[i].strafe_left = trigger_from_byte(value);
 			}
 		}
 	} else {
@@ -1643,18 +1640,6 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		}
 	}
 	if (delta_pairs_layout) {
-		for (int i = 0; i < racer_count; ++i) {
-			uint8_t previous = 0;
-			for (int f = 0; f < static_cast<int>(count); ++f) {
-				InputFrame* frame = frames[f];
-				uint8_t value = raw_bytes[raw_pos++];
-				if (f > 0) {
-					value = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(value));
-				}
-				previous = value;
-				frame->inputs[i].strafe_left = trigger_from_byte(value);
-			}
-		}
 		for (int i = 0; i < racer_count; ++i) {
 			uint8_t previous = 0;
 			for (int f = 0; f < static_cast<int>(count); ++f) {
@@ -1689,6 +1674,22 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 				}
 				previous = value;
 				frame->inputs[i].steer_vertical = axis_from_byte(value);
+			}
+		}
+		for (int i = 0; i < racer_count; ++i) {
+			uint8_t previous = 0;
+			for (int f = 0; f < static_cast<int>(count); ++f) {
+				InputFrame* frame = frames[f];
+				uint8_t mask = raw_bytes[raw_pos++];
+				if (f > 0) {
+					mask = static_cast<uint8_t>(static_cast<int>(previous) + unzigzag_i8(mask));
+				}
+				previous = mask;
+				frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
+				frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
+				frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
+				frame->inputs[i].sideattack = (mask & (1u << 3)) != 0;
+				frame->inputs[i].boost = (mask & (1u << 4)) != 0;
 			}
 		}
 	} else {
