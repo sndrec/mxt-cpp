@@ -9,6 +9,7 @@
 #include "godot_cpp/classes/dir_access.hpp"
 #include "godot_cpp/classes/file_access.hpp"
 #include "godot_cpp/core/class_db.hpp"
+#define ZSTD_STATIC_LINKING_ONLY
 #include "zstd.h"
 #include <algorithm>
 #include <cstdint>
@@ -335,6 +336,24 @@ ZSTD_DCtx* auth_input_zstd_dctx()
 	return g_auth_input_zstd_dctx;
 }
 
+ZSTD_CDict* create_auth_input_zstd_cdict(const void* dict, size_t dict_size, int level, ZSTD_strategy strategy)
+{
+	ZSTD_compressionParameters params = ZSTD_getCParams(level, 1024, dict_size);
+	params.strategy = strategy;
+	const size_t check = ZSTD_checkCParams(params);
+	if (ZSTD_isError(check)) {
+		return nullptr;
+	}
+	return ZSTD_createCDict_advanced(
+		dict,
+		dict_size,
+		ZSTD_dlm_byCopy,
+		ZSTD_dct_auto,
+		params,
+		ZSTD_defaultCMem
+	);
+}
+
 ZSTD_CDict* auth_input_zstd_cdict()
 {
 	if (!g_auth_input_zstd_cdict) {
@@ -350,10 +369,11 @@ ZSTD_CDict* auth_input_zstd_cdict()
 ZSTD_CDict* auth_input_delta_pairs_zstd_cdict()
 {
 	if (!g_auth_input_delta_pairs_zstd_cdict) {
-		g_auth_input_delta_pairs_zstd_cdict = ZSTD_createCDict(
+		g_auth_input_delta_pairs_zstd_cdict = create_auth_input_zstd_cdict(
 			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT,
 			MXT_AUTH_INPUT_DELTA_PAIRS_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL
+			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
+			ZSTD_btlazy2
 		);
 	}
 	return g_auth_input_delta_pairs_zstd_cdict;
@@ -374,10 +394,11 @@ ZSTD_CDict* auth_input_hybrid_zstd_cdict()
 ZSTD_CDict* auth_input_hybrid_smooth_zstd_cdict()
 {
 	if (!g_auth_input_hybrid_smooth_zstd_cdict) {
-		g_auth_input_hybrid_smooth_zstd_cdict = ZSTD_createCDict(
+		g_auth_input_hybrid_smooth_zstd_cdict = create_auth_input_zstd_cdict(
 			MXT_AUTH_INPUT_HYBRID_SMOOTH_ZSTD_DICT,
 			MXT_AUTH_INPUT_HYBRID_SMOOTH_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_ZSTD_LEVEL
+			MXT_NET_AUTH_ZSTD_LEVEL,
+			ZSTD_btlazy2
 		);
 	}
 	return g_auth_input_hybrid_smooth_zstd_cdict;
@@ -386,10 +407,11 @@ ZSTD_CDict* auth_input_hybrid_smooth_zstd_cdict()
 ZSTD_CDict* auth_input_zero_bitmap_zstd_cdict()
 {
 	if (!g_auth_input_zero_bitmap_zstd_cdict) {
-		g_auth_input_zero_bitmap_zstd_cdict = ZSTD_createCDict(
+		g_auth_input_zero_bitmap_zstd_cdict = create_auth_input_zstd_cdict(
 			MXT_AUTH_INPUT_ZERO_BITMAP_ZSTD_DICT,
 			MXT_AUTH_INPUT_ZERO_BITMAP_ZSTD_DICT_SIZE,
-			MXT_NET_AUTH_ZERO_BITMAP_ZSTD_LEVEL
+			MXT_NET_AUTH_ZERO_BITMAP_ZSTD_LEVEL,
+			ZSTD_btlazy2
 		);
 	}
 	return g_auth_input_zero_bitmap_zstd_cdict;
