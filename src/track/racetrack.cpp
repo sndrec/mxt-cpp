@@ -819,6 +819,40 @@ void RaceTrack::convert_point_to_road(
 	inverse_root_point_to_road(segment, point, road_y, road_t, spatial_t, out_root, out_root_derivative);
 }
 
+uint32_t RaceTrack::sample_analytic_road_embed_terrain(int cp_idx, const SimVec2 &road_t) const
+{
+	if (cp_idx < 0 || cp_idx >= num_checkpoints) {
+		return 0;
+	}
+	const TrackSegment &segment = segments[checkpoints[cp_idx].road_segment];
+	if (!segment.road_shape || segment.road_shape->num_embeds <= 0) {
+		return 0;
+	}
+
+	for (int i = 0; i < segment.road_shape->num_embeds; ++i) {
+		const RoadEmbed *embed = &segment.road_shape->road_embeds[i];
+		if (road_t.y < embed->start_offset || road_t.y > embed->end_offset) {
+			continue;
+		}
+		float left = embed->left_border->sample(road_t.y);
+		float right = embed->right_border->sample(road_t.y);
+		if (left > right) {
+			const float tmp = left;
+			left = right;
+			right = tmp;
+		}
+		if (road_t.x >= left && road_t.x <= right) {
+			return static_cast<uint32_t>(embed->embed_type);
+		}
+	}
+	return 0;
+}
+
+bool RaceTrack::analytic_road_sample_has_hole(int cp_idx, const SimVec2 &road_t) const
+{
+	return (sample_analytic_road_embed_terrain(cp_idx, road_t) & TERRAIN::HOLE) != 0u;
+}
+
 struct CastParams {
 	RaceTrack *track;
 	uint8_t mask;
@@ -918,21 +952,7 @@ static void cast_segment_fast(const CastParams  &params,
 
 				out_collision.road_data.terrain = 0;
 				if (params.mask & CAST_FLAGS::WANTS_TERRAIN) {
-					for (int i = 0; i < segment.road_shape->num_embeds; ++i) {
-						RoadEmbed *embed = &segment.road_shape->road_embeds[i];
-						if (road_t_hit_raw.y > embed->start_offset && road_t_hit_raw.y < embed->end_offset) {
-							const float l   = embed->left_border->sample(road_t_hit_raw.y);
-							const float r   = embed->right_border->sample(road_t_hit_raw.y);
-							//DEBUG::disp_text("embed_l", l);
-							//DEBUG::disp_text("embed_r", r);
-							//DEBUG::disp_text("road_t_x", road_t_hit_raw.x);
-							if (road_t_hit_raw.x > l && road_t_hit_raw.x < r) {
-								//DEBUG::disp_text("terrain", out_collision.road_data.terrain);
-								out_collision.road_data.terrain = embed->embed_type;
-								break;
-							}
-						}
-					}
+					out_collision.road_data.terrain = track->sample_analytic_road_embed_terrain(use_idx, road_t_hit_raw);
 				}
 			}
 		}

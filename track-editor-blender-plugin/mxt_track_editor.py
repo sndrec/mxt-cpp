@@ -1209,62 +1209,109 @@ def _linearize_fcurve_handles(fcu: bpy.types.FCurve):
     fcu.update()
 
 def _linearize_fcurve_handles_smooth(fcu: bpy.types.FCurve):
+    _linearize_fcurve_handles_smooth_with_end_samples(fcu)
+
+def _linearize_fcurve_handles_smooth_with_end_samples(fcu: bpy.types.FCurve, prev_sample=None, next_sample=None):
     kps = fcu.keyframe_points
     if len(kps) < 2:
         return
 
     for idx, kp in enumerate(kps):
-        
-        if idx == 0:
-            kp_prev = None
-            kp_next = kps[idx + 1]
-        elif idx == len(kps) - 1:
+        prev_x = prev_y = next_x = next_y = None
+        if idx > 0:
             kp_prev = kps[idx - 1]
-            kp_next = None
+            prev_x = kp_prev.co.x
+            prev_y = kp_prev.co.y
+        elif prev_sample is not None:
+            prev_x, prev_y = prev_sample
+
+        if idx < len(kps) - 1:
+            kp_next = kps[idx + 1]
+            next_x = kp_next.co.x
+            next_y = kp_next.co.y
+        elif next_sample is not None:
+            next_x, next_y = next_sample
+
+        slope = 0.0
+        slope_count = 0
+        dx_prev = 0.0
+        dx_next = 0.0
+        if prev_x is not None:
+            dx_prev = kp.co.x - prev_x
+            if abs(dx_prev) > 1e-6:
+                slope += (kp.co.y - prev_y) / dx_prev
+                slope_count += 1
+        if next_x is not None:
+            dx_next = next_x - kp.co.x
+            if abs(dx_next) > 1e-6:
+                slope += (next_y - kp.co.y) / dx_next
+                slope_count += 1
+        if slope_count > 0:
+            slope /= slope_count
+
+        if abs(dx_prev) <= 1e-6:
+            dx_prev = dx_next
+        if abs(dx_next) <= 1e-6:
+            dx_next = dx_prev
+
+        kp.handle_left_type = 'LINEAR_X'
+        kp.handle_right_type = 'LINEAR_X'
+        if abs(dx_prev) > 1e-6:
+            kp.handle_left.x = kp.co.x - dx_prev / 3.0
+            kp.handle_left.y = kp.co.y - slope * dx_prev / 3.0
         else:
-            kp_prev = kps[idx - 1]
-            kp_next = kps[idx + 1]
-        
-        if kp_prev and kp_next:
-            
-            slope_prev = (kp.co.y - kp_prev.co.y) / (kp.co.x - kp_prev.co.x)
-            slope_next = (kp_next.co.y - kp.co.y) / (kp_next.co.x - kp.co.x)
-            slope = 0.5 * (slope_prev + slope_next)
-
-            dx_prev = kp.co.x - kp_prev.co.x
-            dx_next = kp_next.co.x - kp.co.x
-
-            kp.handle_left_type  = 'LINEAR_X'
-            kp.handle_left.x     = kp.co.x - dx_prev / 3.0
-            kp.handle_left.y     = kp.co.y - slope * dx_prev / 3.0
-            kp.handle_right_type = 'LINEAR_X'
-            kp.handle_right.x    = kp.co.x + dx_next / 3.0
-            kp.handle_right.y    = kp.co.y + slope * dx_next / 3.0
-
-        elif kp_prev:           
-            slope = (kp.co.y - kp_prev.co.y) / (kp.co.x - kp_prev.co.x)
-            dx_prev = kp.co.x - kp_prev.co.x
-
-            kp.handle_left_type  = 'LINEAR_X'
-            kp.handle_left.x     = kp.co.x - dx_prev / 3.0
-            kp.handle_left.y     = kp.co.y - slope * dx_prev / 3.0
-
-            
-            kp.handle_right_type = 'LINEAR_X'
-            kp.handle_right[:]   = kp.co
-
-        else:                   
-            slope = (kp_next.co.y - kp.co.y) / (kp_next.co.x - kp.co.x)
-            dx_next = kp_next.co.x - kp.co.x
-
-            kp.handle_right_type = 'LINEAR_X'
-            kp.handle_right.x    = kp.co.x + dx_next / 3.0
-            kp.handle_right.y    = kp.co.y + slope * dx_next / 3.0
-
-            
-            kp.handle_left_type  = 'LINEAR_X'
-            kp.handle_left[:]    = kp.co
+            kp.handle_left[:] = kp.co
+        if abs(dx_next) > 1e-6:
+            kp.handle_right.x = kp.co.x + dx_next / 3.0
+            kp.handle_right.y = kp.co.y + slope * dx_next / 3.0
+        else:
+            kp.handle_right[:] = kp.co
     fcu.update()
+
+def _curve_matrix_endpoint_step(t_samples):
+    unique = sorted(set(float(t) for t in t_samples))
+    if len(unique) < 2:
+        return 1.0 / 64.0
+    first_step = None
+    last_step = None
+    for i in range(len(unique) - 1):
+        step = unique[i + 1] - unique[i]
+        if step > 1e-8 and first_step is None:
+            first_step = step
+        if step > 1e-8:
+            last_step = step
+    return min(first_step or (1.0 / 64.0), last_step or (1.0 / 64.0))
+
+def _curve_matrix_channel_values(pos, quat, scale):
+    q = quat.normalized()
+    return {
+        ("location", 0): pos.x,
+        ("location", 1): pos.y,
+        ("location", 2): pos.z,
+        ("rotation_quaternion", 0): q.w,
+        ("rotation_quaternion", 1): q.x,
+        ("rotation_quaternion", 2): q.y,
+        ("rotation_quaternion", 3): q.z,
+        ("scale", 0): scale.x,
+        ("scale", 1): scale.y,
+        ("scale", 2): scale.z,
+    }
+
+def _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_sample):
+    step = _curve_matrix_endpoint_step(t_samples)
+    pre_t = min(t_samples) - step
+    post_t = max(t_samples) + step
+    pre_pos, pre_quat, pre_scale = eval_sample(pre_t)
+    post_pos, post_quat, post_scale = eval_sample(post_t)
+    pre_values = _curve_matrix_channel_values(pre_pos, pre_quat, pre_scale)
+    post_values = _curve_matrix_channel_values(post_pos, post_quat, post_scale)
+    pre_frame = pre_t * 100.0
+    post_frame = post_t * 100.0
+    for key, fcu in curves.items():
+        _linearize_fcurve_handles_smooth_with_end_samples(
+            fcu,
+            (pre_frame, pre_values[key]),
+            (post_frame, post_values[key]))
 def _update_road_segment_visual_guide_logic(road_parent_empty, report_fn=None):
     if not road_parent_empty or not hasattr(road_parent_empty, "mxt_road_overall_props"):
         if report_fn: report_fn({'WARNING'}, "Invalid road parent empty for visual update.")
@@ -3003,12 +3050,17 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             fcu.keyframe_points.clear()
         helper.rotation_mode = 'QUATERNION'
         rot_mode = road_parent.mxt_road_overall_props.rotation_mode
-        for t in t_samples:
-            span = next(i for i in range(len(cps)-1) if t <= cps[i+1].mxt_cp_data.time)
+        def eval_bezier_sample(t):
+            if t <= cps[1].mxt_cp_data.time:
+                span = 0
+            elif t >= cps[-2].mxt_cp_data.time:
+                span = len(cps) - 2
+            else:
+                span = next(i for i in range(len(cps)-1) if t <= cps[i+1].mxt_cp_data.time)
             a, b = cps[span], cps[span+1]
             span_len = b.mxt_cp_data.time - a.mxt_cp_data.time
             if span_len <= 1e-12:
-                continue    
+                return a.location.copy(), a.rotation_euler.to_quaternion(), a.scale.copy()
             bt = (t - a.mxt_cp_data.time) / span_len
             az = (a.rotation_euler.to_matrix().col[2]).normalized()
             bz = (b.rotation_euler.to_matrix().col[2]).normalized()
@@ -3052,6 +3104,10 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
                 q_twist   = Quaternion(forward_dir, twist_cur)
                 final_rot = q_twist @ rot_fwd_start
             scale = a.scale.lerp(b.scale, scale_fac)
+            return pos, final_rot, scale
+
+        for t in t_samples:
+            pos, final_rot, scale = eval_bezier_sample(t)
             helper.location = pos
             helper.rotation_quaternion = final_rot
             helper.scale = scale
@@ -3068,7 +3124,8 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         for fc in act.fcurves:
             for kp in fc.keyframe_points:
                 kp.interpolation = 'BEZIER'
-            _linearize_fcurve_handles_smooth(fc)
+        _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_bezier_sample)
+        for fc in act.fcurves:
             fc.update()
         if isinstance(MXTRoad_OT_GenerateCurveMatrix, Operator):
             if report_fn: report_fn({'INFO'}, f"Baked {len(t_samples)} keys with {rot_mode.lower()} rotation.")
@@ -3140,20 +3197,18 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         subdiv = 64 
         t_samples = [i/subdiv for i in range(subdiv + 1)]
         MXTRoad_OT_GenerateCurveMatrix._auto_calc_line_easing(start_point, start_quat, end_quat, start_scl, end_scl)
-        for t in t_samples:
+        def eval_line_sample(t):
             frame = t * 100.0
-            
-            
             pos = start_loc.lerp(end_loc, t)
-            
-            
             rot_t = fcu_rot_ease.evaluate(frame)
             scl_t = fcu_scl_ease.evaluate(frame)
-
-            
             rot = start_quat.slerp(end_quat, rot_t)
             scl = start_scl.lerp(end_scl, scl_t)
+            return pos, rot, scl
 
+        for t in t_samples:
+            frame = t * 100.0
+            pos, rot, scl = eval_line_sample(t)
             _add_key(curves[("location",0)], frame, pos.x)
             _add_key(curves[("location",1)], frame, pos.y)
             _add_key(curves[("location",2)], frame, pos.z)
@@ -3165,8 +3220,8 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             _add_key(curves[("scale",1)], frame, scl.y)
             _add_key(curves[("scale",2)], frame, scl.z)
 
+        _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_line_sample)
         for fc in curves.values():
-            _linearize_fcurve_handles_smooth(fc)
             fc.update()
 
         if report_fn: report_fn({'INFO'}, f"Baked Eased Line segment with {len(t_samples)} keys.")
@@ -3291,14 +3346,20 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         qcorr = Mcorr.to_quaternion()
 
         
+        def eval_spiral_sample(t):
+            frame = t * 100.0
+            trans = canon_matrix(t)
+            pos = Mcorr @ trans.translation
+            rot = (qcorr @ trans.to_3x3().to_quaternion()).normalized()
+            scl = Vector((fcu_sx.evaluate(frame), fcu_sy.evaluate(frame), 1.0))
+            return pos, rot, scl
+
         last_q = None
         for i, t in enumerate(ts):
             fr = t * 100.0
-            pos = Mcorr @ raw_transforms[i].translation
-            rot = (qcorr @ raw_transforms[i].to_3x3().to_quaternion()).normalized()
+            pos, rot, scl = eval_spiral_sample(t)
             if last_q and last_q.dot(rot) < 0: rot.negate()
             last_q = rot.copy()
-            scl = raw_s[i]
 
             _add_key(curves[("location", 0)], fr, pos.x)
             _add_key(curves[("location", 1)], fr, pos.y)
@@ -3311,8 +3372,8 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             _add_key(curves[("scale", 1)], fr, scl.y)
             _add_key(curves[("scale", 2)], fr, scl.z)
 
+        _linearize_curve_matrix_handles_with_extension(curves, ts, eval_spiral_sample)
         for fcu in curves.values():
-            _linearize_fcurve_handles_smooth(fcu)
             fcu.update()
 
         if report_fn:
@@ -3958,13 +4019,19 @@ class MXTRoad_OT_GenerateMesh(Operator):
         
         num_x = props.horiz_subdivs
         tx_1d = np.linspace(-1.0, 1.0, num_x, dtype=np.float64)
-        ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples_from_mesh_rows(
-            helper,
-            props,
-            tx_1d,
-            props.mesh_subdivision_length,
-            math.radians(props.mesh_subdivision_angle_deg),
-        )
+        if props.segment_type == 'BEZIER':
+            ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples(
+                helper,
+                road_parent,
+                props.mesh_subdivision_length,
+                math.radians(props.mesh_subdivision_angle_deg),
+            )
+        else:
+            ys, dist_1d = MXTRoad_OT_GenerateMesh._adaptive_ty_samples_from_fcurves(
+                helper,
+                props.mesh_subdivision_length,
+                math.radians(props.mesh_subdivision_angle_deg),
+            )
 
         def append_hole_boundary_crossing_times(times, fcurve, start_t, end_t):
             if not fcurve:
@@ -4941,6 +5008,47 @@ def _quaternion_matrix_points(fc_quat):
     pts = [[] for _ in range(9)]
     if not all(fc_quat):
         return [ [] for _ in range(9) ]
+
+    def key_slope(fcu, key_index, use_right):
+        kp = fcu.keyframe_points[key_index]
+        if use_right:
+            dt = (kp.handle_right.x - kp.co.x) / 100.0
+            return ((kp.handle_right.y - kp.co.y) / dt) if abs(dt) > 1e-8 else 0.0
+        dt = (kp.co.x - kp.handle_left.x) / 100.0
+        return ((kp.co.y - kp.handle_left.y) / dt) if abs(dt) > 1e-8 else 0.0
+
+    def key_quat(key_index):
+        return Quaternion((
+            w.keyframe_points[key_index].co.y,
+            x.keyframe_points[key_index].co.y,
+            y.keyframe_points[key_index].co.y,
+            z.keyframe_points[key_index].co.y
+        )).normalized()
+
+    def offset_quat(key_index, dt_norm, forward):
+        sign = 1.0 if forward else -1.0
+        use_right = forward
+        return Quaternion((
+            w.keyframe_points[key_index].co.y + sign * key_slope(w, key_index, use_right) * dt_norm,
+            x.keyframe_points[key_index].co.y + sign * key_slope(x, key_index, use_right) * dt_norm,
+            y.keyframe_points[key_index].co.y + sign * key_slope(y, key_index, use_right) * dt_norm,
+            z.keyframe_points[key_index].co.y + sign * key_slope(z, key_index, use_right) * dt_norm
+        )).normalized()
+
+    if len(w.keyframe_points) < 2:
+        if len(w.keyframe_points) == 1:
+            frame = w.keyframe_points[0].co.x
+            t = frame / 100.0
+            mat = key_quat(0).to_matrix()
+            vals = [
+                mat[0][0], mat[0][1], mat[0][2],
+                mat[1][0], mat[1][1], mat[1][2],
+                mat[2][0], mat[2][1], mat[2][2]
+            ]
+            for i in range(9):
+                pts[i].append((t, vals[i], 0.0, 0.0))
+        return pts
+
     for idx, kp in enumerate(w.keyframe_points):
         frame = kp.co.x
         t = frame / 100.0
@@ -4962,12 +5070,7 @@ def _quaternion_matrix_points(fc_quat):
         # Estimate slopes from previous/next frame
         if idx > 0:
             frame_prev = w.keyframe_points[idx - 1].co.x
-            q_prev = Quaternion((
-                w.evaluate(frame_prev),
-                x.evaluate(frame_prev),
-                y.evaluate(frame_prev),
-                z.evaluate(frame_prev)
-            )).normalized()
+            q_prev = key_quat(idx - 1)
             mat_prev = q_prev.to_matrix()
             vals_prev = [
                 mat_prev[0][0], mat_prev[0][1], mat_prev[0][2],
@@ -4975,17 +5078,19 @@ def _quaternion_matrix_points(fc_quat):
                 mat_prev[2][0], mat_prev[2][1], mat_prev[2][2]
             ]
         else:
-            vals_prev = vals
-            frame_prev = frame
+            frame_next_for_step = w.keyframe_points[idx + 1].co.x
+            frame_prev = frame - (frame_next_for_step - frame)
+            q_prev = offset_quat(idx, (frame - frame_prev) / 100.0, False)
+            mat_prev = q_prev.to_matrix()
+            vals_prev = [
+                mat_prev[0][0], mat_prev[0][1], mat_prev[0][2],
+                mat_prev[1][0], mat_prev[1][1], mat_prev[1][2],
+                mat_prev[2][0], mat_prev[2][1], mat_prev[2][2]
+            ]
 
         if idx + 1 < len(w.keyframe_points):
             frame_next = w.keyframe_points[idx + 1].co.x
-            q_next = Quaternion((
-                w.evaluate(frame_next),
-                x.evaluate(frame_next),
-                y.evaluate(frame_next),
-                z.evaluate(frame_next)
-            )).normalized()
+            q_next = key_quat(idx + 1)
             mat_next = q_next.to_matrix()
             vals_next = [
                 mat_next[0][0], mat_next[0][1], mat_next[0][2],
@@ -4993,8 +5098,15 @@ def _quaternion_matrix_points(fc_quat):
                 mat_next[2][0], mat_next[2][1], mat_next[2][2]
             ]
         else:
-            vals_next = vals
-            frame_next = frame
+            frame_prev_for_step = w.keyframe_points[idx - 1].co.x
+            frame_next = frame + (frame - frame_prev_for_step)
+            q_next = offset_quat(idx, (frame_next - frame) / 100.0, True)
+            mat_next = q_next.to_matrix()
+            vals_next = [
+                mat_next[0][0], mat_next[0][1], mat_next[0][2],
+                mat_next[1][0], mat_next[1][1], mat_next[1][2],
+                mat_next[2][0], mat_next[2][1], mat_next[2][2]
+            ]
 
         # Average slopes
         dt_prev = (frame - frame_prev) / 100.0 if frame != frame_prev else 1.0

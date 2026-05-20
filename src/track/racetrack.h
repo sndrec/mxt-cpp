@@ -150,6 +150,8 @@ public:
 	uint32_t sample_mesh_terrain_overlay_fast(const SimVec3 &point, float max_distance) const;
 	void get_road_surface(int cp_idx, const SimVec3 &point, SimVec2 &road_t, SimVec3 &spatial_t, SimTransform &out_transform, bool oriented = true);
 	void get_road_surface4_same_checkpoint(int cp_idx, const SimVec3 point[4], SimVec2 road_t[4], SimVec3 spatial_t[4], SimTransform out_transform[4]);
+	uint32_t sample_analytic_road_embed_terrain(int cp_idx, const SimVec2 &road_t) const;
+	bool analytic_road_sample_has_hole(int cp_idx, const SimVec2 &road_t) const;
 	void convert_point_to_road(
 		int cp_idx,
 		const SimVec3 &point,

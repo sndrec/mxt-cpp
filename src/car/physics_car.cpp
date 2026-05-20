@@ -1063,9 +1063,34 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		SimVec3 p1_sweep_end_ws = mxt_transform_point(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(position_current), SimVec3(0.0f, -20.0f, 0.0f));
 		STORE_VEC3(position_bottom, p1_sweep_end_ws);
 		if (floor_seg->analytic_collision_enabled) {
+			SimVec2 center_road_t;
+			SimVec3 center_spatial_t;
+			RoadTransform center_root;
+			soa->current_track[soa_index]->convert_point_to_road(
+				soa->current_checkpoint[soa_index],
+				LOAD_VEC3(position_current),
+				center_road_t,
+				center_spatial_t,
+				nullptr,
+				&center_root,
+				nullptr);
+			if (center_road_t.x != -1000.0f &&
+				center_road_t.x >= -1.01f && center_road_t.x <= 1.01f &&
+				center_road_t.y >= -0.001f && center_road_t.y <= 1.001f &&
+				soa->current_track[soa_index]->analytic_road_sample_has_hole(soa->current_checkpoint[soa_index], center_road_t)) {
+				soa->road_sample[soa_index].terrain = TERRAIN::HOLE;
+				soa->road_sample[soa_index].road_t = center_road_t;
+				soa->road_sample[soa_index].spatial_t = center_spatial_t;
+				soa->road_sample[soa_index].closest_root = center_root;
+				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+				soa->height_above_track[soa_index] = 0.0f;
+				return false;
+			}
+		}
+		if (floor_seg->analytic_collision_enabled) {
 			soa->current_track[soa_index]->cast_vs_track_fast(hit, p0_sweep_start_ws,
 				LOAD_VEC3(position_bottom),
-				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
+				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P0,
 				soa->current_checkpoint[soa_index],
 				false,
 				&scratch);
@@ -1137,6 +1162,14 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		float contact_dist_metric = 0.0f;
 		if (sweep_hit_occurred) {
 			STORE_VEC3(track_surface_pos, hit.collision_point);
+			if ((hit.road_data.terrain & TERRAIN::HOLE) != 0u ||
+				(hit.road_data.cp_idx >= 0 && soa->current_track[soa_index]->analytic_road_sample_has_hole(hit.road_data.cp_idx, hit.road_data.road_t))) {
+				soa->road_sample[soa_index].terrain |= TERRAIN::HOLE;
+				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+				STORE_VEC3(position_bottom, p1_sweep_end_ws);
+				soa->height_above_track[soa_index] = 0.0f;
+				return false;
+			}
 			if (nearest_mesh_sample) {
 				const float signed_surface_distance = (LOAD_VEC3(position_current) - hit.collision_point).dot(hit.collision_normal);
 				contact_dist_metric = local_mesh_sample ? 20.0f - fabsf(signed_surface_distance) : 20.0f - signed_surface_distance;
@@ -1278,6 +1311,13 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || road_t_sample_raw.y > 1.001f || road_t_sample_raw.y < -0.001f)
 	{
 		trace_floor("road_t_bounds", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
+		soa->height_above_track[soa_index] = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		return false;
+	}
+	if (soa->current_track[soa_index]->analytic_road_sample_has_hole(soa->current_checkpoint[soa_index], road_t_sample_raw)) {
+		trace_floor("hole_embed", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
+		soa->road_sample[soa_index].terrain |= TERRAIN::HOLE;
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		return false;
@@ -3039,6 +3079,10 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 		soa->terrain_state[soa_index] |= TERRAIN::LAVA;
 	}
 
+	if (terrain_bits & TERRAIN::HOLE) {
+		soa->terrain_state[soa_index] |= TERRAIN::HOLE;
+	}
+
 	if (terrain_bits & TERRAIN::FALL) {
 		trigger_mesh_fallout();
 	}
@@ -3261,6 +3305,9 @@ void PhysicsCar::sample_old_corner_collision_surface(TrackQueryScratch &scratch)
 	SimVec3 use_spatial_t;
 	SimTransform use_transform;
 	soa->current_track[soa_index]->get_road_surface(use_cp_old, LOAD_VEC3(position_old), use_t, use_spatial_t, use_transform);
+	if (soa->current_track[soa_index]->analytic_road_sample_has_hole(use_cp_old, use_t)) {
+		return;
+	}
 	soa->collision_old_valid[soa_index] = true;
 	soa->collision_old_road_t[soa_index] = use_t;
 	soa->collision_old_spatial_t[soa_index] = use_spatial_t;
@@ -3286,12 +3333,14 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 	const SimTransform machine_transform = LOAD_TRANSFORM(basis_physical);
 	const SimVec3 machine_position = LOAD_VEC3(position_current);
 	const RoadData &center_floor_sample = soa->road_sample[soa_index];
+	const bool center_floor_sample_is_hole = (center_floor_sample.terrain & TERRAIN::HOLE) != 0u;
 	const bool center_floor_sample_valid =
 		soa->height_above_track[soa_index] > 0.0f &&
 		center_floor_sample.closest_surface.basis[0].length_squared() >= 0.1f;
 	const bool mesh_floor_depenetration_enabled =
-		((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) ||
-		center_floor_sample_valid;
+		!center_floor_sample_is_hole &&
+		(((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) ||
+		center_floor_sample_valid);
 	SimVec3 wall_corner_world[4];
 	mxt_store_points4(
 		wall_corner_world,
@@ -3368,7 +3417,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 				//DEBUG::disp_text("vehicle use_cp_old", use_cp_old);
 				//DEBUG::disp_text("vehicle use_t", use_t);
 				TrackSegment *old_seg = &track->segments[track->checkpoints[use_cp_old].road_segment];
-				if (old_seg->analytic_collision_enabled) {
+				if (old_seg->analytic_collision_enabled && !center_floor_sample_is_hole) {
 				if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
 					auto normal = use_transform.basis[1];
 					auto plane_pos = use_transform.origin;
@@ -3438,6 +3487,9 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch) {
 			}
 				int use_cp_new = track->get_best_checkpoint(LOAD_VEC3(position_current) + depenetration, soa->current_collision_checkpoint[soa_index], scratch);
 				bool new_valid = use_cp_new != -1;
+				if (new_valid && center_floor_sample_is_hole) {
+					new_valid = false;
+				}
 				if (new_valid)
 				{
 					const TrackSegment &new_segment = track->segments[track->checkpoints[use_cp_new].road_segment];
