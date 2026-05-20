@@ -7,6 +7,7 @@ const AUTH_INPUT_COUNT_SHIFT := 3
 const AUTH_INPUT_COUNT_ESCAPE := 0x0f
 const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT := 2
 const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT := 4
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT := 7
 
 func _authoritative_input_wire_size(packet: PackedByteArray) -> int:
 	if packet.size() <= 0:
@@ -131,6 +132,7 @@ func _init() -> void:
 	var delta_pairs_surface_dict_packet_bytes := 0
 	var delta_low_entropy_dict_packet_bytes := 0
 	var delta_low_entropy_surface_dict_packet_bytes := 0
+	var delta_low_entropy_surface_fallback_dict_packet_bytes := 0
 	var bitpacked_plain_packet_bytes := 0
 	var hybrid_plain_packet_bytes := 0
 	var old_dict_packet_bytes := 0
@@ -163,7 +165,7 @@ func _init() -> void:
 			var sparse_wire_size := _sparse_plain_wire_size(session, tick, redundancy, player_ids)
 			var packet_mode := int(packet[0]) & 0x07 if packet.size() > 0 else -1
 			mode_counts[packet_mode] = int(mode_counts.get(packet_mode, 0)) + 1
-			if packet.size() > 0 and (packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT or packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT):
+			if packet.size() > 0 and (packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT or packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT or packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT):
 				var sublayout := (int(packet[0]) & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
 				var sublayout_key := "%d:%d" % [packet_mode, sublayout]
 				low_entropy_sublayout_counts[sublayout_key] = int(low_entropy_sublayout_counts.get(sublayout_key, 0)) + 1
@@ -183,6 +185,7 @@ func _init() -> void:
 				delta_pairs_surface_dict_packet_bytes += int(cmp.get("delta_pairs_surface_dict_packet", 0))
 				delta_low_entropy_dict_packet_bytes += int(cmp.get("delta_low_entropy_dict_packet", 0))
 				delta_low_entropy_surface_dict_packet_bytes += int(cmp.get("delta_low_entropy_surface_dict_packet", 0))
+				delta_low_entropy_surface_fallback_dict_packet_bytes += int(cmp.get("delta_low_entropy_surface_fallback_dict_packet", 0))
 				bitpacked_plain_packet_bytes += int(cmp.get("bitpacked_plain_packet", 0))
 				hybrid_plain_packet_bytes += int(cmp.get("hybrid_plain_packet", 0))
 				old_dict_packet_bytes += int(cmp.get("old_dict_packet", 0))
@@ -244,6 +247,7 @@ func _init() -> void:
 		" delta_pairs_surface_dict_packet_avg=", float(delta_pairs_surface_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_low_entropy_dict_packet_avg=", float(delta_low_entropy_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_low_entropy_surface_dict_packet_avg=", float(delta_low_entropy_surface_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		" delta_low_entropy_surface_fallback_dict_packet_avg=", float(delta_low_entropy_surface_fallback_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" bitpacked_plain_packet_avg=", float(bitpacked_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_plain_packet_avg=", float(hybrid_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" old_dict_packet_avg=", float(old_dict_packet_bytes) / float(maxi(sample_count, 1)),
