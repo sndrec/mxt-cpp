@@ -23,7 +23,6 @@ constexpr int MXT_NET_AUTHORITATIVE_INPUT_PACKET_HEADER_BYTES = 10;
 constexpr int MXT_NET_COMPRESSION_ZSTD = FileAccess::COMPRESSION_ZSTD;
 constexpr uint8_t MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD = 0;
 constexpr uint8_t MXT_NET_AUTH_COMPRESSION_DICT_ZSTD = 1;
-constexpr int MXT_NET_AUTH_DICT_MIN_RAW_BYTES = 288;
 constexpr int MXT_NET_AUTH_ZSTD_LEVEL = 1;
 constexpr int64_t MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT = 20000;
 constexpr int MXT_NET_AUTH_SAMPLE_DIR_BYTES = 1024;
@@ -33,6 +32,7 @@ constexpr uint32_t MXT_NET_TICK_MASK = 0x7fffffffu;
 enum AuthInputLayout : uint8_t {
 	AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES = 0,
 	AUTH_INPUT_LAYOUT_PACKED_BUTTONS = 1,
+	AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA = 2,
 };
 bool g_auth_input_sample_dump_enabled = false;
 int64_t g_auth_input_sample_dump_limit = MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT;
@@ -171,6 +171,21 @@ uint8_t input_axis_byte(float v)
 	return PlayerInput::quantize_axis(v);
 }
 
+uint8_t zigzag_i8(int v)
+{
+	return static_cast<uint8_t>(((v << 1) ^ (v >> 7)) & 0xff);
+}
+
+int unzigzag_i8(uint8_t v)
+{
+	return (static_cast<int>(v) >> 1) ^ -static_cast<int>(v & 1u);
+}
+
+int wrapped_i8_delta(uint8_t value, uint8_t previous)
+{
+	return ((static_cast<int>(value) - static_cast<int>(previous) + 128) & 0xff) - 128;
+}
+
 float trigger_from_byte(uint8_t v)
 {
 	return static_cast<float>(v) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION);
@@ -183,9 +198,9 @@ float axis_from_byte(uint8_t v)
 
 int auth_input_raw_size(int frame_count, int racer_count, AuthInputLayout layout)
 {
-	const int bytes_per_racer = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS ?
-		MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER :
-		MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER;
+	const int bytes_per_racer = layout == AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES ?
+		MXT_NET_AUTHORITATIVE_INPUT_OLD_BYTES_PER_RACER :
+		MXT_NET_AUTHORITATIVE_INPUT_BYTES_PER_RACER;
 	return frame_count * racer_count * bytes_per_racer;
 }
 
@@ -350,12 +365,19 @@ bool NetcodeSession::write_authoritative_input_raw(
 	const AuthInputLayout layout = static_cast<AuthInputLayout>(p_layout);
 	uint8_t* raw_bytes = raw.ptrw();
 	int raw_pos = 0;
-	if (layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS) {
+	const bool delta_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA;
+	if (layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS || delta_layout) {
 		for (int f = 0; f < frame_count; ++f) {
 			const InputFrame* frame = frames[f];
 			for (int i = 0; i < racer_count; ++i) {
 				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input_button_mask(input);
+				uint8_t value = input_button_mask(input);
+				if (delta_layout && f > 0) {
+					const InputFrame* prev_frame = frames[f - 1];
+					const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+					value = zigzag_i8(wrapped_i8_delta(value, input_button_mask(prev)));
+				}
+				raw_bytes[raw_pos++] = value;
 			}
 		}
 	} else {
@@ -399,28 +421,52 @@ bool NetcodeSession::write_authoritative_input_raw(
 		const InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_left);
+			uint8_t value = input_trigger_byte(input.strafe_left);
+			if (delta_layout && f > 0) {
+				const InputFrame* prev_frame = frames[f - 1];
+				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+				value = zigzag_i8(wrapped_i8_delta(value, input_trigger_byte(prev.strafe_left)));
+			}
+			raw_bytes[raw_pos++] = value;
 		}
 	}
 	for (int f = 0; f < frame_count; ++f) {
 		const InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_right);
+			uint8_t value = input_trigger_byte(input.strafe_right);
+			if (delta_layout && f > 0) {
+				const InputFrame* prev_frame = frames[f - 1];
+				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+				value = zigzag_i8(wrapped_i8_delta(value, input_trigger_byte(prev.strafe_right)));
+			}
+			raw_bytes[raw_pos++] = value;
 		}
 	}
 	for (int f = 0; f < frame_count; ++f) {
 		const InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_axis_byte(input.steer_horizontal);
+			uint8_t value = input_axis_byte(input.steer_horizontal);
+			if (delta_layout && f > 0) {
+				const InputFrame* prev_frame = frames[f - 1];
+				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+				value = zigzag_i8(wrapped_i8_delta(value, input_axis_byte(prev.steer_horizontal)));
+			}
+			raw_bytes[raw_pos++] = value;
 		}
 	}
 	for (int f = 0; f < frame_count; ++f) {
 		const InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-			raw_bytes[raw_pos++] = input_axis_byte(input.steer_vertical);
+			uint8_t value = input_axis_byte(input.steer_vertical);
+			if (delta_layout && f > 0) {
+				const InputFrame* prev_frame = frames[f - 1];
+				const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+				value = zigzag_i8(wrapped_i8_delta(value, input_axis_byte(prev.steer_vertical)));
+			}
+			raw_bytes[raw_pos++] = value;
 		}
 	}
 	return raw_pos == raw.size();
@@ -850,13 +896,16 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 			return PackedByteArray();
 		}
 	}
-	if (!write_authoritative_input_raw(raw, frames, count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS)) {
+	if (!write_authoritative_input_raw(raw, frames, count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA)) {
 		return PackedByteArray();
 	}
 	dump_auth_input_sample(raw, first_tick, count, racer_count);
-	uint8_t compression_mode = MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD;
-	PackedByteArray compressed = raw.compress(MXT_NET_COMPRESSION_ZSTD);
-	compression_mode = MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD;
+	uint8_t compression_mode = MXT_NET_AUTH_COMPRESSION_DICT_ZSTD;
+	PackedByteArray compressed = compress_auth_input_with_dict(raw);
+	if (compressed.size() <= 0) {
+		compressed = raw.compress(MXT_NET_COMPRESSION_ZSTD);
+		compression_mode = MXT_NET_AUTH_COMPRESSION_PLAIN_ZSTD;
+	}
 	if (compressed.size() <= 0 || !writer.write_bytes(compressed.ptr(), static_cast<int>(compressed.size()))) {
 		return PackedByteArray();
 	}
@@ -926,10 +975,15 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 			frame.present[i] = 1;
 		}
 	}
+	uint8_t previous_values[MAX_RACERS] = {};
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
-			const uint8_t mask = raw_bytes[raw_pos++];
+			uint8_t mask = raw_bytes[raw_pos++];
+			if (f > 0) {
+				mask = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(mask));
+			}
+			previous_values[i] = mask;
 			frame->inputs[i].accelerate = (mask & (1u << 0)) != 0 ? 1.0f : 0.0f;
 			frame->inputs[i].brake = (mask & (1u << 1)) != 0 ? 1.0f : 0.0f;
 			frame->inputs[i].spinattack = (mask & (1u << 2)) != 0;
@@ -937,28 +991,52 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 			frame->inputs[i].boost = (mask & (1u << 4)) != 0;
 		}
 	}
+	std::memset(previous_values, 0, sizeof(previous_values));
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].strafe_left = trigger_from_byte(raw_bytes[raw_pos++]);
+			uint8_t value = raw_bytes[raw_pos++];
+			if (f > 0) {
+				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
+			}
+			previous_values[i] = value;
+			frame->inputs[i].strafe_left = trigger_from_byte(value);
 		}
 	}
+	std::memset(previous_values, 0, sizeof(previous_values));
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].strafe_right = trigger_from_byte(raw_bytes[raw_pos++]);
+			uint8_t value = raw_bytes[raw_pos++];
+			if (f > 0) {
+				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
+			}
+			previous_values[i] = value;
+			frame->inputs[i].strafe_right = trigger_from_byte(value);
 		}
 	}
+	std::memset(previous_values, 0, sizeof(previous_values));
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].steer_horizontal = axis_from_byte(raw_bytes[raw_pos++]);
+			uint8_t value = raw_bytes[raw_pos++];
+			if (f > 0) {
+				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
+			}
+			previous_values[i] = value;
+			frame->inputs[i].steer_horizontal = axis_from_byte(value);
 		}
 	}
+	std::memset(previous_values, 0, sizeof(previous_values));
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
-			frame->inputs[i].steer_vertical = axis_from_byte(raw_bytes[raw_pos++]);
+			uint8_t value = raw_bytes[raw_pos++];
+			if (f > 0) {
+				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
+			}
+			previous_values[i] = value;
+			frame->inputs[i].steer_vertical = axis_from_byte(value);
 		}
 	}
 	for (int f = 0; f < static_cast<int>(count); ++f) {
@@ -1003,15 +1081,17 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 			return out;
 		}
 	}
-	const AuthInputLayout layouts[2] = {
+	const AuthInputLayout layouts[3] = {
 		AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES,
 		AUTH_INPUT_LAYOUT_PACKED_BUTTONS,
+		AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA,
 	};
-	const char* names[2] = {
+	const char* names[3] = {
 		"old",
 		"packed",
+		"delta",
 	};
-	for (int l = 0; l < 2; ++l) {
+	for (int l = 0; l < 3; ++l) {
 		const AuthInputLayout layout = layouts[l];
 		const int raw_size = auth_input_raw_size(count, racer_count, layout);
 		PackedByteArray raw;

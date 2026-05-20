@@ -25,6 +25,7 @@ func _init() -> void:
 	var sample_start := _arg_int(args, "--sample-start", 900)
 	var sample_end := _arg_int(args, "--sample-end", frames)
 	var redundancy := _arg_int(args, "--redundancy", 2)
+	var dump_dir := _arg_value(args, "--dump-dir", "")
 
 	var track_bytes := FileAccess.get_file_as_bytes(track_path)
 	var car_bytes := FileAccess.get_file_as_bytes(car_props_path)
@@ -56,6 +57,8 @@ func _init() -> void:
 	sim.set_sim_started(true)
 	var session := NetcodeSession.new()
 	session.configure(player_ids, cpu_flags, int(player_ids[0]))
+	if !dump_dir.is_empty():
+		session.configure_authoritative_input_sample_dump(true, frames, dump_dir)
 
 	var sample_count := 0
 	var packet_bytes := 0
@@ -63,10 +66,13 @@ func _init() -> void:
 	var packet_max := 0
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
+	var delta_plain_packet_bytes := 0
 	var old_dict_packet_bytes := 0
 	var packed_dict_packet_bytes := 0
+	var delta_dict_packet_bytes := 0
 	var old_raw_bytes := 0
 	var packed_raw_bytes := 0
+	var delta_raw_bytes := 0
 	for tick in range(frames):
 		for i in range(humans):
 			var id := int(player_ids[i])
@@ -85,10 +91,13 @@ func _init() -> void:
 			if bool(cmp.get("valid", false)):
 				old_plain_packet_bytes += int(cmp.get("old_plain_packet", 0))
 				packed_plain_packet_bytes += int(cmp.get("packed_plain_packet", 0))
+				delta_plain_packet_bytes += int(cmp.get("delta_plain_packet", 0))
 				old_dict_packet_bytes += int(cmp.get("old_dict_packet", 0))
 				packed_dict_packet_bytes += int(cmp.get("packed_dict_packet", 0))
+				delta_dict_packet_bytes += int(cmp.get("delta_dict_packet", 0))
 				old_raw_bytes += int(cmp.get("old_raw", 0))
 				packed_raw_bytes += int(cmp.get("packed_raw", 0))
+				delta_raw_bytes += int(cmp.get("delta_raw", 0))
 			sample_count += 1
 
 	var stats := session.consume_authoritative_packet_stats()
@@ -100,16 +109,20 @@ func _init() -> void:
 		" sample_start=", sample_start,
 		" sample_end=", sample_end,
 		" redundancy=", redundancy,
+		" dump_dir=", dump_dir,
 		" sample_packets=", sample_count,
 		" packet_avg=", avg_packet,
 		" packet_min=", packet_min,
 		" packet_max=", packet_max,
 		" old_raw_avg=", float(old_raw_bytes) / float(maxi(sample_count, 1)),
 		" packed_raw_avg=", float(packed_raw_bytes) / float(maxi(sample_count, 1)),
+		" delta_raw_avg=", float(delta_raw_bytes) / float(maxi(sample_count, 1)),
 		" old_plain_packet_avg=", float(old_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" packed_plain_packet_avg=", float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
+		" delta_plain_packet_avg=", float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" old_dict_packet_avg=", float(old_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" packed_dict_packet_avg=", float(packed_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		" delta_dict_packet_avg=", float(delta_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" auth_packets=", int(stats.get("auth_packets", 0)),
 		" auth_frames=", int(stats.get("auth_frames", 0)),
 		" auth_encoded_inputs=", int(stats.get("auth_encoded_inputs", 0)),
