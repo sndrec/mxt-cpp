@@ -965,6 +965,27 @@ namespace {
 		{"DIP_TRACE_MESH_FLOOR", "Trace Mesh Floor", DIP_SWITCH::DIP_TRACE_MESH_FLOOR},
 	};
 
+	static bool vehicle_restore_off_eliminated(const PhysicsCarSoA& c, int i)
+	{
+		const uint32_t state = c.machine_state[i];
+		if ((state & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
+			return false;
+		}
+		if ((state & MACHINESTATE::FALLOUT) != 0u) {
+			return true;
+		}
+		if (c.current_track[i] && c.position_current_y[i] < c.current_track[i]->minimum_y) {
+			return true;
+		}
+		if ((state & MACHINESTATE::ZEROHP) == 0u) {
+			return false;
+		}
+		if ((state & MACHINESTATE::RETIRED) != 0u) {
+			return true;
+		}
+		return (c.state_2[i] & 0x80u) != 0u && (state & MACHINESTATE::AIRBORNE) == 0u;
+	}
+
 	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count, bool vehicle_restore_enabled)
 	{
 		for (int i = 0; i < count; ++i) {
@@ -2845,14 +2866,7 @@ bool GameSim::is_player_race_eliminated(int player_id) const
 		}
 		const PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-		if ((car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
-			return false;
-		}
-		if ((car_soa.machine_state[lane] & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT)) != 0u) {
-			return true;
-		}
-		return car_soa.current_track[lane] &&
-			car_soa.position_current_y[lane] < car_soa.current_track[lane]->minimum_y;
+		return vehicle_restore_off_eliminated(car_soa, lane);
 	}
 	return false;
 }

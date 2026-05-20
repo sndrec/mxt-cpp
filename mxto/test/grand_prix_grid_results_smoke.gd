@@ -38,7 +38,9 @@ func _init() -> void:
 	main.network_manager.race_cpu_player_ids = [3]
 	main.network_manager.is_server = true
 	main.network_manager.player_finish_placements = {1: 2, 2: 3, 3: 1}
+	main.network_manager.player_finish_times = {1: 480}
 	main.network_manager.finish_order = [3, 1, 2]
+	main.network_manager.server_tick = 900
 	main.network_manager.race_options = {
 		"game_mode": 1,
 		"grand_prix_current_track": 2,
@@ -48,6 +50,14 @@ func _init() -> void:
 	var points: Dictionary = main.network_manager.race_options.get("grand_prix_points", {})
 	if int(points.get(3, -1)) != 3 or int(points.get(1, -1)) != 2 or int(points.get(2, -1)) != 1:
 		push_error("Grand Prix points should use all racers, got %s" % [points])
+		quit(1)
+		return
+	if int(main.network_manager.player_finish_times.get(3, -1)) != 900:
+		push_error("Grand Prix final results should synthesize CPU finish ticks at cutoff, got %s" % [main.network_manager.player_finish_times])
+		quit(1)
+		return
+	if String(main.call("_format_race_time", 900, 420)) != "0:08.000":
+		push_error("race result formatting should respect the race start tick")
 		quit(1)
 		return
 	main.network_manager.player_finish_times.clear()

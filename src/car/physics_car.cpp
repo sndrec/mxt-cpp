@@ -4282,10 +4282,16 @@ void PhysicsCar::collide_with_landmine(Mine* in_mine, const SimVec3 &travel_star
 }
 
 
-bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance) const
+bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance, uint16_t *out_checkpoint, float *out_fraction) const
 {
 	out_transform = SimTransform();
 	out_distance = soa->last_ground_distance[soa_index];
+	if (out_checkpoint) {
+		*out_checkpoint = cp_idx;
+	}
+	if (out_fraction) {
+		*out_fraction = 0.0f;
+	}
 
 	if (!soa->current_track[soa_index] || soa->current_track[soa_index]->num_checkpoints == 0 || cp_idx >= soa->current_track[soa_index]->num_checkpoints)
 		return false;
@@ -4375,6 +4381,12 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, SimTransform &out_trans
 			new_distance += lap_length;
 	}
 	out_distance = new_distance;
+	if (out_checkpoint) {
+		*out_checkpoint = static_cast<uint16_t>(target_cp_idx);
+	}
+	if (out_fraction) {
+		*out_fraction = target_fraction;
+	}
 
 	return true;
 }
@@ -4386,7 +4398,9 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 
 	SimTransform spawn_transform;
 	float respawn_distance = soa->last_ground_distance[soa_index];
-	if (!compute_respawn_target(cp_idx, spawn_transform, respawn_distance))
+	uint16_t respawn_checkpoint = cp_idx;
+	float respawn_fraction = 0.0f;
+	if (!compute_respawn_target(cp_idx, spawn_transform, respawn_distance, &respawn_checkpoint, &respawn_fraction))
 		return;
 
 	if (soa->broken_lap_rollback_pending[soa_index] &&
@@ -4403,6 +4417,13 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	soa->broken_lap_rollback_lap[soa_index] = 0;
 
 	soa->last_ground_distance[soa_index] = respawn_distance;
+	soa->last_ground_checkpoint[soa_index] = respawn_checkpoint;
+	soa->current_checkpoint[soa_index] = respawn_checkpoint;
+	soa->current_collision_checkpoint[soa_index] = static_cast<int16_t>(respawn_checkpoint);
+	soa->checkpoint_fraction[soa_index] = respawn_fraction;
+	soa->lap_progress[soa_index] = (static_cast<float>(respawn_checkpoint) + respawn_fraction) / static_cast<float>(soa->current_track[soa_index]->num_checkpoints);
+	soa->checkpoint_track_distance[soa_index] = respawn_distance;
+	soa->previous_lap_distance[soa_index] = soa->current_track[soa_index]->compute_lap_distance(respawn_checkpoint, respawn_fraction, soa->lap[soa_index]);
 	STORE_VEC3(position_current, spawn_transform.origin);
 	STORE_VEC3(position_old, spawn_transform.origin);
 	STORE_VEC3(position_old_2, spawn_transform.origin);
@@ -4491,7 +4512,7 @@ SimTransform PhysicsCar::calculate_respawn_transform(uint16_t cp_idx) const
 {
 	SimTransform spawn_transform;
 	float dummy_distance = soa->last_ground_distance[soa_index];
-	if (!compute_respawn_target(cp_idx, spawn_transform, dummy_distance))
+	if (!compute_respawn_target(cp_idx, spawn_transform, dummy_distance, nullptr, nullptr))
 		return SimTransform();
 	return spawn_transform;
 }

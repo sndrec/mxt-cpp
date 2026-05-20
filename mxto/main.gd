@@ -40,7 +40,7 @@ class_name GameManager extends Node
 @onready var lobby_vehicle_restore_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/VehicleRestoreToggle
 @onready var lobby_bumpers_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/BumpersToggle
 @onready var lobby_stage_button_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer
-@onready var lobby_stage_preview_container: HBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer
+@onready var lobby_stage_preview_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer
 @onready var lobby_player_list_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer
 @onready var lobby_chibi_viewport: SubViewport = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport
 @onready var lobby_chibi_camera: Camera3D = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiCamera
@@ -668,8 +668,6 @@ func _build_lobby_race_options() -> Dictionary:
 	var selected_track_indices := []
 	for selected_index in lobby_grand_prix_track_sequence:
 		selected_track_indices.append(int(selected_index))
-	if selected_track_indices.is_empty():
-		selected_track_indices.append(lobby_track_selector.selected)
 	return {
 		"game_mode": lobby_game_mode_choice.selected if lobby_game_mode_choice != null else 0,
 		"track_indices": selected_track_indices,
@@ -684,6 +682,7 @@ func _build_lobby_race_options() -> Dictionary:
 func _refresh_lobby_race_options() -> void:
 	if lobby_applying_race_options:
 		_refresh_lobby_stage_preview()
+		_update_lobby_start_race_button()
 		return
 	var options := _build_lobby_race_options()
 	if network_manager.is_server:
@@ -691,6 +690,13 @@ func _refresh_lobby_race_options() -> void:
 	else:
 		network_manager.race_options = options
 	_refresh_lobby_stage_preview()
+	_update_lobby_start_race_button()
+
+func _update_lobby_start_race_button() -> void:
+	if start_race_button == null:
+		return
+	var can_edit_cpu := network_manager.is_server and !network_manager.race_active
+	start_race_button.disabled = !can_edit_cpu or tracks.is_empty() or lobby_grand_prix_track_sequence.is_empty()
 
 func _on_network_race_options_changed(options: Dictionary) -> void:
 	if lobby_game_mode_choice == null:
@@ -961,6 +967,19 @@ func _local_player_is_eliminated() -> bool:
 func _should_suppress_local_race_input() -> bool:
 	return _local_player_is_eliminated()
 
+func _vehicle_restore_off_state_is_eliminated(machine_state: int, state_2: int, position_y: float, minimum_y: float) -> bool:
+	if (machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0:
+		return false
+	if (machine_state & VisualCar.FZ_MS.FALLOUT) != 0:
+		return true
+	if position_y < minimum_y:
+		return true
+	if (machine_state & VisualCar.FZ_MS.ZEROHP) == 0:
+		return false
+	if (machine_state & VisualCar.FZ_MS.RETIRED) != 0:
+		return true
+	return (state_2 & 0x80) != 0 and (machine_state & VisualCar.FZ_MS.AIRBORNE) == 0
+
 func _activate_local_elimination_spectator() -> void:
 	if local_elimination_spectator_active:
 		return
@@ -988,8 +1007,29 @@ func _activate_local_elimination_spectator() -> void:
 		car_node_container.local_visual_car.race_hud.visible = false
 	_show_race_notification("Eliminated - Spectating", 3000)
 
-func _format_race_time(tick_value: int) -> String:
-	var race_tick := maxi(0, tick_value - 300)
+func _race_results_sim() -> GameSim:
+	if network_manager.is_server and server_game_sim != null:
+		return server_game_sim
+	return game_sim
+
+func _race_results_start_tick() -> int:
+	var sim := _race_results_sim()
+	if sim != null and sim.has_method("get_player_level_start_time"):
+		var local_id := _local_player_id()
+		if local_id != 0:
+			var local_start := int(sim.get_player_level_start_time(local_id))
+			if local_start > 0:
+				return local_start
+		for id_value in network_manager.get_simulation_roster():
+			var start_tick := int(sim.get_player_level_start_time(int(id_value)))
+			if start_tick > 0:
+				return start_tick
+	return 300
+
+func _format_race_time(tick_value: int, official_start_tick: int = -1) -> String:
+	if official_start_tick < 0:
+		official_start_tick = _race_results_start_tick()
+	var race_tick := maxi(0, tick_value - official_start_tick)
 	var total_msec := int(round(float(race_tick) * 1000.0 / 60.0))
 	var minutes := int(total_msec / 60000)
 	var seconds := int(total_msec / 1000) % 60
@@ -1704,6 +1744,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
+		if lobby_grand_prix_track_sequence.is_empty():
+			return
 		_close_settings_menus_for_race_start()
 		network_manager.prepare_race_roster("start_button")
 		var settings_array : Array = []
@@ -2050,12 +2092,11 @@ func _physics_process(delta: float) -> void:
 		_update_player_list()
 		_update_lobby_chibi_cars(delta)
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
-		var missing_selected_tracks := lobby_grand_prix_track_sequence.is_empty()
 		if lobby_cpu_count_label != null:
 			lobby_cpu_count_label.text = "CPU Drivers: %d" % network_manager.get_cpu_roster().size()
 		add_cpu_button.disabled = !can_edit_cpu
 		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
-		start_race_button.disabled = !can_edit_cpu or tracks.is_empty() or missing_selected_tracks
+		_update_lobby_start_race_button()
 		lobby_track_selector.disabled = !can_edit_cpu
 		if lobby_game_mode_choice != null:
 			lobby_game_mode_choice.disabled = !can_edit_cpu
@@ -2447,7 +2488,8 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	var race_racers := network_manager.get_simulation_roster()
 	var racer_count := race_racers.size()
 	var place_by_id := _build_final_race_place_map(sim, race_racers)
-	network_manager.send_final_race_placements(place_by_id)
+	var finish_tick_by_id := _build_final_race_finish_tick_map(place_by_id, network_manager.server_tick)
+	network_manager.send_final_race_results(place_by_id, finish_tick_by_id)
 	for id_value in race_racers:
 		var id := int(id_value)
 		var total := int(_lookup_id_value(points, id, 0))
@@ -2473,6 +2515,8 @@ func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary
 	var used_places := {}
 	for id_value in race_racers:
 		var id := int(id_value)
+		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id):
+			continue
 		var place := int(_lookup_id_value(network_manager.player_finish_placements, id, 0))
 		if place > 0:
 			place_by_id[id] = place
@@ -2485,11 +2529,22 @@ func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary
 		var id := int(id_value)
 		if !race_racers.has(id) or place_by_id.has(id):
 			continue
+		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id):
+			continue
 		while used_places.has(next_place):
 			next_place += 1
 		place_by_id[id] = next_place
 		used_places[next_place] = true
 	return place_by_id
+
+func _build_final_race_finish_tick_map(place_by_id: Dictionary, fallback_tick: int) -> Dictionary:
+	var finish_tick_by_id := {}
+	for id_value in place_by_id.keys():
+		var id := int(id_value)
+		if network_manager.player_eliminations.has(id):
+			continue
+		finish_tick_by_id[id] = int(_lookup_id_value(network_manager.player_finish_times, id, fallback_tick))
+	return finish_tick_by_id
 
 func _build_next_grand_prix_settings(options: Dictionary) -> Array:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -2560,7 +2615,11 @@ func _check_race_finished() -> void:
 			for car in car_node_container.get_children():
 				if car is VisualCar and car.owning_id == racer_id:
 					finished = (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0
-					eliminated = !network_manager.is_vehicle_restore_enabled() and (car.machine_state & (VisualCar.FZ_MS.ZEROHP | VisualCar.FZ_MS.FALLOUT)) != 0
+					eliminated = !network_manager.is_vehicle_restore_enabled() and _vehicle_restore_off_state_is_eliminated(
+						car.machine_state,
+						car.state_2,
+						car.position_current.y,
+						-100000.0)
 					break
 		if finished:
 			var race_place := 1

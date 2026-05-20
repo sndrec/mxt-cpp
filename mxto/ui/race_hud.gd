@@ -481,7 +481,7 @@ func _process( _delta:float ) -> void:
 	var seconds : int = int(floor(time_elapsed_float)) % 60
 	var milliseconds : int = int(floor(time_elapsed_float * 1000)) % 1000
 	var minutes : int = floor(time_elapsed_float / 60)
-	racetimer.text = str(minutes) + ":" + str(seconds) + "." + str(milliseconds)
+	racetimer.text = "%d:%02d.%03d" % [minutes, seconds, milliseconds]
 	car_max_energy = maxf(car.calced_max_energy, 1.0)
 	healthmeter.scale.x = car_max_energy * 0.01
 	var health_meter_shader := healthmeter.material as ShaderMaterial

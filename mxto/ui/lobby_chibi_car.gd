@@ -5,6 +5,13 @@ const BOUNDS_X := 25.0
 const BOUNDS_Z := 10.0
 const CHIBI_TICK_DELTA := 1.0 / 60.0
 const SYNC_INTERVAL_MSEC := 15
+const NAMEPLATE_PANEL_OFFSET := Vector2(48.0, -87.0)
+const NAMEPLATE_POINTER_OFFSET := Vector2(36.0, -46.0)
+const NAMEPLATE_POINTER_POINTS := [
+	Vector2(-19.0, 13.0),
+	Vector2(-5.0, -1.0),
+	Vector2(12.0, -1.0),
+]
 
 var player_id := 0
 var player_settings: Dictionary = {}
@@ -25,6 +32,7 @@ var chibi_strafe_power := 30.0
 
 var visual_root: Node3D
 var nameplate: Control
+var nameplate_panel: PanelContainer
 var username_label: Label
 var ping_label: Label
 var pointer_line: Line2D
@@ -81,23 +89,23 @@ func _ensure_nameplate() -> void:
 	nameplate.custom_minimum_size = Vector2(70.0, 52.0)
 	nameplate_parent.add_child(nameplate)
 
-	var panel := PanelContainer.new()
-	panel.clip_contents = true
-	panel.position = Vector2(32.0, -55.0)
-	nameplate.add_child(panel)
+	nameplate_panel = PanelContainer.new()
+	nameplate_panel.clip_contents = true
+	nameplate_panel.position = NAMEPLATE_PANEL_OFFSET
+	nameplate.add_child(nameplate_panel)
 
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.0, 0.0, 0.0, 0.56)
 	style.border_color = Color(1.0, 1.0, 1.0, 0.12)
 	style.set_border_width_all(1)
-	panel.add_theme_stylebox_override("panel", style)
+	nameplate_panel.add_theme_stylebox_override("panel", style)
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 3)
 	margin.add_theme_constant_override("margin_top", 3)
 	margin.add_theme_constant_override("margin_right", 3)
 	margin.add_theme_constant_override("margin_bottom", 3)
-	panel.add_child(margin)
+	nameplate_panel.add_child(margin)
 
 	var labels := VBoxContainer.new()
 	labels.add_theme_constant_override("separation", 1)
@@ -115,7 +123,7 @@ func _ensure_nameplate() -> void:
 	labels.add_child(ping_label)
 
 	pointer_line = Line2D.new()
-	pointer_line.position = Vector2(20.0, -14.0)
+	pointer_line.position = NAMEPLATE_POINTER_OFFSET
 	pointer_line.points = PackedVector2Array([Vector2(-19.0, 13.0), Vector2(-5.0, -1.0), Vector2(12.0, -1.0)])
 	pointer_line.width = 4.0
 	pointer_line.default_color = Color(0.0, 0.0, 0.0, 0.26)
@@ -123,6 +131,44 @@ func _ensure_nameplate() -> void:
 	pointer_line.antialiased = true
 	nameplate.add_child(pointer_line)
 	set_local_control(local_control)
+
+func _nameplate_parent_size() -> Vector2:
+	if nameplate_parent != null:
+		var parent_size := nameplate_parent.size
+		if parent_size.x > 0.0 and parent_size.y > 0.0:
+			return parent_size
+	if lobby_camera != null and lobby_camera.get_viewport() != null:
+		return lobby_camera.get_viewport().get_visible_rect().size
+	return Vector2.ZERO
+
+func _update_nameplate_layout(anchor: Vector2) -> void:
+	if nameplate_panel == null or pointer_line == null:
+		return
+	var parent_size := _nameplate_parent_size()
+	var panel_size := nameplate_panel.size
+	var panel_min_size := nameplate_panel.get_combined_minimum_size()
+	panel_size.x = maxf(panel_size.x, panel_min_size.x)
+	panel_size.y = maxf(panel_size.y, panel_min_size.y)
+
+	var flip_x := parent_size.x > 0.0 and anchor.x + NAMEPLATE_PANEL_OFFSET.x + panel_size.x > parent_size.x
+	var flip_y := anchor.y + NAMEPLATE_PANEL_OFFSET.y < 0.0
+	var x_sign := -1.0 if flip_x else 1.0
+	var y_sign := -1.0 if flip_y else 1.0
+
+	var panel_offset := NAMEPLATE_PANEL_OFFSET
+	if flip_x:
+		panel_offset.x = -NAMEPLATE_PANEL_OFFSET.x - panel_size.x
+	if flip_y:
+		panel_offset.y = -NAMEPLATE_PANEL_OFFSET.y - panel_size.y
+	nameplate_panel.position = panel_offset
+
+	pointer_line.position = Vector2(NAMEPLATE_POINTER_OFFSET.x * x_sign, NAMEPLATE_POINTER_OFFSET.y * y_sign)
+	var points := PackedVector2Array()
+	points.resize(NAMEPLATE_POINTER_POINTS.size())
+	for i in range(NAMEPLATE_POINTER_POINTS.size()):
+		var point: Vector2 = NAMEPLATE_POINTER_POINTS[i]
+		points[i] = Vector2(point.x * x_sign, point.y * y_sign)
+	pointer_line.points = points
 
 func _rebuild_visual() -> void:
 	if visual_root != null and is_instance_valid(visual_root):
@@ -259,7 +305,9 @@ func _update_nameplate() -> void:
 		nameplate.visible = false
 		return
 	nameplate.visible = true
-	nameplate.position = lobby_camera.unproject_position(global_position) + Vector2(16.0, -32.0)
+	var anchor := lobby_camera.unproject_position(global_position)
+	nameplate.position = anchor
+	_update_nameplate_layout(anchor)
 	if ping_label != null and game_manager != null and game_manager.has_method("_lobby_latency_text_for_player"):
 		ping_label.text = str(game_manager.call("_lobby_latency_text_for_player", player_id))
 
