@@ -75,6 +75,8 @@ const START_SYNC_PING_INTERVAL_MS := 50
 const START_SYNC_START_DELAY_MS := 750
 const RACE_PHASE_TICK_BIT := 0x80000000
 const RACE_PHASE_TICK_MASK := 0x7fffffff
+const SERVER_TIMING_SYNC_INTERVAL_TICKS := 1
+const CLIENT_TIMING_PING_INTERVAL_MS := 250
 const LOBBY_LATENCY_SAMPLE_INTERVAL_MS := 1000
 var player_settings := {}
 var ready_players : Array[int] = []
@@ -122,6 +124,7 @@ var cpu_driver_manager: CpuDriverManager
 var clients_server_tick := 0
 var clients_target_tick := 0
 var last_target_tick_update := 0
+var last_client_timing_ping_msec := 0
 var clients_max_ahead_from_server := 2.0
 var authoritative_history := {}
 var last_server_input_tick := -1
@@ -210,12 +213,29 @@ var log_peer_packet_target_lead_sum := 0.0
 var log_peer_packet_target_lead_samples := 0
 var log_peer_packet_target_lead_min := INF
 var log_peer_packet_target_lead_max := -INF
+var log_timing_ping_out := 0
+var log_timing_ping_in := 0
+var log_timing_sync_out := 0
+var log_timing_sync_in := 0
+var log_timing_sync_rtt_ms_sum := 0.0
+var log_timing_sync_rtt_ms_max := 0.0
+var log_timing_sync_rtt_samples := 0
+var log_timing_server_gap_max := 0
+var log_timing_target_gap_max := 0
+var log_timing_ack_advance := 0
 const STATE_FRAGMENT_PAYLOAD_BYTES := 1200
 var log_state_raw_out := 0
 var log_state_payload_out := 0
 var log_state_sent_count := 0
 var log_state_max_fragments_out := 0
 var log_state_min_success_2pct := 1.0
+var log_state_chunk_msgs_out := 0
+var log_state_chunk_msgs_in := 0
+var log_state_chunk_dups_in := 0
+var log_state_chunk_stale_drops := 0
+var log_state_chunk_bad_meta_drops := 0
+var log_state_chunk_completed := 0
+var log_state_chunk_completed_count_max := 0
 var log_state_payload_in := 0
 var log_state_raw_in := 0
 var log_state_recv_count := 0
@@ -252,7 +272,7 @@ func _store_neutral_authoritative_frame_for_all_racers(tick: int) -> void:
 func _estimate_state_fragments(byte_count: int) -> int:
 	if byte_count <= 0:
 		return 0
-	return int(ceil(float(byte_count) / float(STATE_FRAGMENT_PAYLOAD_BYTES)))
+	return int(ceil(float(byte_count) / float(STATE_CHUNK_PAYLOAD_BYTES)))
 
 func _state_success_probability_at_2pct_loss(fragment_count: int) -> float:
 	if fragment_count <= 0:
@@ -279,6 +299,44 @@ func _log_state_received(raw_size: int, payload_size: int) -> void:
 	log_state_payload_in += payload_size
 	log_state_raw_in += max(raw_size, 0)
 	log_state_recv_count += 1
+
+func _state_pending_log_fields() -> Dictionary:
+	var out := {
+		"records": pending_state_chunks.size(),
+		"best_recv_pct": 0.0,
+		"best_missing": 0,
+		"oldest_tick": -1,
+		"newest_tick": -1,
+	}
+	var best_received := 0
+	var best_count := 0
+	for tick_key in pending_state_chunks.keys():
+		var tick := int(tick_key)
+		if int(out["oldest_tick"]) < 0 or tick < int(out["oldest_tick"]):
+			out["oldest_tick"] = tick
+		if tick > int(out["newest_tick"]):
+			out["newest_tick"] = tick
+		var record = pending_state_chunks[tick_key]
+		if typeof(record) != TYPE_DICTIONARY:
+			continue
+		var count := int(record.get("chunk_count", 0))
+		var received := int(record.get("received_count", 0))
+		if count > 0 and (best_count <= 0 or float(received) / float(count) > float(best_received) / float(best_count)):
+			best_received = received
+			best_count = count
+	if best_count > 0:
+		out["best_recv_pct"] = float(best_received) / float(best_count)
+		out["best_missing"] = max(0, best_count - best_received)
+	return out
+
+func _reset_state_chunk_log_counters() -> void:
+	log_state_chunk_msgs_out = 0
+	log_state_chunk_msgs_in = 0
+	log_state_chunk_dups_in = 0
+	log_state_chunk_stale_drops = 0
+	log_state_chunk_bad_meta_drops = 0
+	log_state_chunk_completed = 0
+	log_state_chunk_completed_count_max = 0
 
 func _clear_state_chunk_buffers() -> void:
 	pending_state_chunks.clear()
@@ -482,7 +540,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -784,11 +842,17 @@ func _flush_log() -> void:
 		client_ahead_error_avg = log_client_ahead_error_sum / float(log_client_ahead_samples)
 		client_ahead_error_min = log_client_ahead_error_min
 		client_ahead_error_max = log_client_ahead_error_max
+	var timing_sync_rtt_avg := 0.0
+	if log_timing_sync_rtt_samples > 0:
+		timing_sync_rtt_avg = log_timing_sync_rtt_ms_sum / float(log_timing_sync_rtt_samples)
 	var peer_fields := _build_server_peer_log_fields()
+	var state_pending := _state_pending_log_fields()
 	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(server_behind_ticks) + "," + str(server_behind_avg) + "," + str(log_server_behind_ticks_max) + "," + str(delayed_peers) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(log_state_raw_out) + "," + str(log_state_payload_out) + "," + str(log_state_sent_count) + "," + str(log_state_max_fragments_out) + "," + str(state_success) + "," + str(log_state_payload_in) + "," + str(log_state_raw_in) + "," + str(log_state_recv_count) + "," + str(log_state_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	line += "," + str(client_current_ahead) + "," + str(client_target_ahead) + "," + str(client_ahead_error) + "," + str(client_server_gap) + "," + str(client_unacked["count"]) + "," + str(client_unacked["oldest"]) + "," + str(client_unacked["newest"]) + "," + str(last_ack_tick) + "," + str(client_ack_lag) + "," + str(log_client_ahead_throttle_frames) + "," + str(use_physics_ticks)
 	line += "," + str(log_client_sim_ticks) + "," + str(log_client_target_tick_advances) + "," + str(log_client_target_tick_remote_advances) + "," + str(log_client_server_tick_advances) + "," + str(log_client_ahead_samples) + "," + str(client_current_ahead_min) + "," + str(client_current_ahead_max) + "," + str(client_current_ahead_avg) + "," + str(client_target_ahead_avg) + "," + str(client_ahead_error_min) + "," + str(client_ahead_error_max) + "," + str(client_ahead_error_avg) + "," + str(log_client_pre_auth_adjust_samples)
 	line += "," + str(peer_fields["server_peer_lag_max"]) + "," + str(peer_fields["server_peer_lag_avg"]) + "," + str(peer_fields["target_peer_lag_max"]) + "," + str(peer_fields["target_peer_lag_avg"]) + "," + str(peer_fields["peer_ahead_min"]) + "," + str(peer_fields["peer_ahead_max"]) + "," + str(peer_fields["peer_ahead_avg"]) + "," + str(peer_fields["peer_rtt_max_ms"]) + "," + str(peer_fields["peer_rtt_avg_ms"]) + "," + str(peer_fields["peer_inputs_accepted"]) + "," + str(peer_fields["peer_inputs_dropped"]) + "," + str(peer_fields["peer_replacements"]) + "," + str(peer_fields["peer_input_server_lead_min"]) + "," + str(peer_fields["peer_input_server_lead_max"]) + "," + str(peer_fields["peer_input_server_lead_avg"]) + "," + str(peer_fields["peer_input_target_lead_min"]) + "," + str(peer_fields["peer_input_target_lead_max"]) + "," + str(peer_fields["peer_input_target_lead_avg"]) + "," + str(peer_fields["peer_snapshot"])
+	line += "," + str(log_timing_ping_out) + "," + str(log_timing_ping_in) + "," + str(log_timing_sync_out) + "," + str(log_timing_sync_in) + "," + str(timing_sync_rtt_avg) + "," + str(log_timing_sync_rtt_ms_max) + "," + str(log_timing_server_gap_max) + "," + str(log_timing_target_gap_max) + "," + str(log_timing_ack_advance)
+	line += "," + str(log_state_chunk_msgs_out) + "," + str(log_state_chunk_msgs_in) + "," + str(log_state_chunk_dups_in) + "," + str(log_state_chunk_stale_drops) + "," + str(log_state_chunk_bad_meta_drops) + "," + str(log_state_chunk_completed) + "," + str(log_state_chunk_completed_count_max) + "," + str(state_pending["records"]) + "," + str(state_pending["best_recv_pct"]) + "," + str(state_pending["best_missing"]) + "," + str(state_pending["oldest_tick"]) + "," + str(state_pending["newest_tick"])
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
@@ -811,6 +875,7 @@ func _flush_log() -> void:
 	log_state_sent_count = 0
 	log_state_max_fragments_out = 0
 	log_state_min_success_2pct = 1.0
+	_reset_state_chunk_log_counters()
 	log_state_payload_in = 0
 	log_state_raw_in = 0
 	log_state_recv_count = 0
@@ -860,6 +925,16 @@ func _flush_log() -> void:
 	log_peer_packet_target_lead_samples = 0
 	log_peer_packet_target_lead_min = INF
 	log_peer_packet_target_lead_max = -INF
+	log_timing_ping_out = 0
+	log_timing_ping_in = 0
+	log_timing_sync_out = 0
+	log_timing_sync_in = 0
+	log_timing_sync_rtt_ms_sum = 0.0
+	log_timing_sync_rtt_ms_max = 0.0
+	log_timing_sync_rtt_samples = 0
+	log_timing_server_gap_max = 0
+	log_timing_target_gap_max = 0
+	log_timing_ack_advance = 0
 
 func _acc_log_out(bytes: int) -> void:
 	log_bytes_out_interval += bytes
@@ -868,6 +943,18 @@ func _acc_log_out(bytes: int) -> void:
 func _acc_log_in(bytes: int) -> void:
 	log_bytes_in_interval += bytes
 	log_bytes_in_total += bytes
+
+func _reset_timing_sync_log_counters() -> void:
+	log_timing_ping_out = 0
+	log_timing_ping_in = 0
+	log_timing_sync_out = 0
+	log_timing_sync_in = 0
+	log_timing_sync_rtt_ms_sum = 0.0
+	log_timing_sync_rtt_ms_max = 0.0
+	log_timing_sync_rtt_samples = 0
+	log_timing_server_gap_max = 0
+	log_timing_target_gap_max = 0
+	log_timing_ack_advance = 0
 
 func reset_race_state(preserve_player_settings: bool = false) -> void:
 	var preserved_player_settings := {}
@@ -945,8 +1032,11 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	log_peer_packet_target_lead_samples = 0
 	log_peer_packet_target_lead_min = INF
 	log_peer_packet_target_lead_max = -INF
+	_reset_timing_sync_log_counters()
+	_reset_state_chunk_log_counters()
 	clients_server_tick = 0
 	clients_target_tick = 0
+	last_client_timing_ping_msec = 0
 	clients_max_ahead_from_server = 2.0
 	authoritative_history.clear()
 	last_server_input_tick = -1
@@ -1106,6 +1196,20 @@ func server_process() -> void:
 			clients_target_tick = clients_server_tick + MAX_AHEAD_TICKS
 		if clients_target_tick > old_clients_target_tick:
 			log_client_target_tick_advances += clients_target_tick - old_clients_target_tick
+	_process_client_timing_ping()
+
+func _process_client_timing_ping() -> void:
+	if is_server or listen_server or !race_active:
+		return
+	if game_sim == null or !game_sim.sim_started:
+		return
+	var now := Time.get_ticks_msec()
+	if now < last_client_timing_ping_msec + CLIENT_TIMING_PING_INTERVAL_MS:
+		return
+	last_client_timing_ping_msec = now
+	log_timing_ping_out += 1
+	_acc_log_out(8)
+	_client_timing_ping.rpc_id(1, now, _pack_race_phase_tick(local_tick))
 
 func _process_start_sync() -> void:
 	if !race_active:
@@ -1256,12 +1360,14 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 		player_settings[id] = settings
 	clients_server_tick = 0
 	clients_target_tick = 0
+	last_client_timing_ping_msec = 0
 	clients_max_ahead_from_server = 2.0
 	authoritative_history.clear()
 	server_netcode_session.clear_peer_state()
 	last_server_input_tick = -1
 	latest_state_tick = -1
 	_clear_state_chunk_buffers()
+	_reset_state_chunk_log_counters()
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	race_cpu_player_ids.clear()
@@ -1305,11 +1411,13 @@ func join(ip: String, port: int = 27016) -> int:
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
 	clients_server_tick = 0
 	clients_target_tick = 0
+	last_client_timing_ping_msec = 0
 	clients_max_ahead_from_server = 2.0
 	authoritative_history.clear()
 	last_server_input_tick = -1
 	latest_state_tick = -1
 	_clear_state_chunk_buffers()
+	_reset_state_chunk_log_counters()
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	player_ids = [multiplayer.get_unique_id()]
@@ -1612,6 +1720,7 @@ func begin_simulation_at(phase: int, server_start_msec: int, initial_max_ahead: 
 	start_sync_initial_max_ahead = initial_max_ahead
 	clients_max_ahead_from_server = initial_max_ahead
 	clients_server_tick = 0
+	last_client_timing_ping_msec = 0
 	last_target_tick_update = Time.get_ticks_msec()
 	var client_lead_msec := int(ceil(clamp(_local_desired_ahead_for_shared(), 0.0, float(MAX_AHEAD_TICKS)) * 1000.0 / 60.0))
 	if is_server:
@@ -1627,6 +1736,7 @@ func _begin_client_simulation_now(initial_target_tick: int) -> void:
 	local_tick = 0
 	clients_server_tick = 0
 	clients_target_tick = clamp(initial_target_tick, 0, MAX_AHEAD_TICKS)
+	last_client_timing_ping_msec = 0
 	last_target_tick_update = Time.get_ticks_msec()
 	start_sync_client_started = true
 
@@ -1938,6 +2048,69 @@ func collect_client_inputs() -> Dictionary:
 	_adjust_time_scale()
 	return frame_inputs
 
+func _send_server_timing_sync(peer_id: int, sync_tick: int, max_ahead: float, echo_client_msec: int = -1) -> void:
+	if !is_server or !race_active:
+		return
+	var ack_tick := server_netcode_session.get_peer_last_received(peer_id)
+	log_timing_sync_out += 1
+	_acc_log_out(28)
+	_server_timing_sync.rpc_id(
+		peer_id,
+		_pack_race_phase_tick(sync_tick),
+		target_tick,
+		ack_tick,
+		max_ahead,
+		Time.get_ticks_msec(),
+		echo_client_msec)
+
+@rpc("any_peer", "unreliable", "call_remote", 5)
+func _client_timing_ping(client_msec: int, packed_client_tick: int) -> void:
+	if !race_active or !is_server or !_accept_race_packet_phase(_unpack_race_phase(packed_client_tick)):
+		return
+	var sender_id := multiplayer.get_remote_sender_id()
+	if sender_id == 0 or (!player_ids.has(sender_id) and !spectator_ids.has(sender_id)):
+		return
+	log_timing_ping_in += 1
+	var max_ahead := _calc_max_ahead()
+	max_ahead_from_server = max_ahead
+	_send_server_timing_sync(sender_id, server_tick, max_ahead, client_msec)
+
+@rpc("authority", "unreliable", "call_remote", 5)
+func _server_timing_sync(packed_server_tick: int, tgt: int, this_ack: int, max_ahead: float, _server_msec: int, echo_client_msec: int) -> void:
+	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(packed_server_tick)):
+		return
+	var unpacked_server_tick := _unpack_race_tick(packed_server_tick)
+	if not is_server or listen_server:
+		log_timing_sync_in += 1
+		var old_clients_server_tick : int = clients_server_tick
+		var old_clients_target_tick : int = clients_target_tick
+		log_timing_server_gap_max = maxi(log_timing_server_gap_max, maxi((unpacked_server_tick + 1) - clients_server_tick, 0))
+		log_timing_target_gap_max = maxi(log_timing_target_gap_max, maxi(tgt - clients_target_tick, 0))
+		clients_server_tick = max(clients_server_tick, unpacked_server_tick + 1)
+		clients_target_tick = max(clients_target_tick, tgt)
+		if clients_server_tick > old_clients_server_tick:
+			log_client_server_tick_advances += clients_server_tick - old_clients_server_tick
+		if clients_target_tick > old_clients_target_tick:
+			log_client_target_tick_remote_advances += clients_target_tick - old_clients_target_tick
+		last_target_tick_update = Time.get_ticks_msec()
+		clients_max_ahead_from_server = max_ahead
+		last_server_input_tick = max(last_server_input_tick, unpacked_server_tick)
+		if echo_client_msec >= 0:
+			var sample_ms: float = maxf(0.0, float(Time.get_ticks_msec() - echo_client_msec))
+			log_timing_sync_rtt_ms_sum += sample_ms
+			log_timing_sync_rtt_ms_max = maxf(log_timing_sync_rtt_ms_max, sample_ms)
+			log_timing_sync_rtt_samples += 1
+			var sample: float = 0.001 * sample_ms
+			if rtt_s == 0.0:
+				rtt_s = sample
+			else:
+				rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
+			_update_desired_ahead()
+	var old_ack := last_ack_tick
+	_apply_server_input_ack(this_ack, false)
+	log_timing_ack_advance += max(0, last_ack_tick - max(old_ack, -1))
+	_acc_log_in(28)
+
 @rpc("any_peer", "unreliable_ordered", "call_remote", 1)
 func _client_startup_sync(ahead: float, client_tick: int, client_rtt_s: float) -> void:
 	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(client_tick)):
@@ -1967,7 +2140,9 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 		var sender_id := multiplayer.get_remote_sender_id()
 		var now_sec := 0.001 * float(Time.get_ticks_msec())
 		var sender_seen_before: bool = server_netcode_session.peer_has_received(sender_id)
-		var reject_before := maxi(target_tick - SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS, server_tick)
+		var recovery_cutoff := target_tick - SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS
+		var sender_delayed := delayed_peer_ids.has(sender_id)
+		var reject_before := recovery_cutoff if sender_delayed else maxi(recovery_cutoff, server_tick)
 		if !sender_seen_before:
 			reject_before = server_tick
 		var stats: Dictionary = server_netcode_session.store_pending_input_packet(sender_id, reject_before, packet, ahead, now_sec, race_netplay_phase)
@@ -1999,7 +2174,7 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 			last_input_time[sender_id] = now_sec
 			last_received_tick[sender_id] = last_tick
 			_log_add_int(log_peer_inputs_accepted, sender_id, accepted)
-			if last_tick >= server_tick and delayed_peer_ids.has(sender_id):
+			if last_tick >= recovery_cutoff and delayed_peer_ids.has(sender_id):
 				delayed_peer_ids.erase(sender_id)
 		peer_desired_ahead[sender_id] = ahead
 		peer_client_rtt_s[sender_id] = client_rtt_s
@@ -2009,7 +2184,7 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_client_send_input_us_interval += __prof_t1 - __prof_t0
 
-func _apply_server_input_ack(ack_tick: int) -> void:
+func _apply_server_input_ack(ack_tick: int, update_rtt_from_input: bool = true) -> void:
 	if ack_tick == -1:
 		return
 	var old_ack := last_ack_tick
@@ -2019,7 +2194,7 @@ func _apply_server_input_ack(ack_tick: int) -> void:
 	for key in _log_sent_counts.keys():
 		if int(key) <= last_ack_tick:
 			_log_sent_counts.erase(key)
-	if sent_input_times.has(ack_tick):
+	if update_rtt_from_input and sent_input_times.has(ack_tick):
 		if is_server and listen_server:
 			rtt_s = 0.0
 			desired_ahead_ticks = 0.0
@@ -2055,7 +2230,7 @@ func _server_startup_sync(server_tick_value: int, this_ack: int, tgt: int, max_a
 		last_target_tick_update = Time.get_ticks_msec()
 		clients_max_ahead_from_server = max_ahead
 		last_server_input_tick = max(last_server_input_tick, unpacked_server_tick)
-	_apply_server_input_ack(this_ack)
+	_apply_server_input_ack(this_ack, false)
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
 func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedByteArray, this_ack: int, tgt: int, max_ahead: float) -> void:
@@ -2094,7 +2269,7 @@ func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedBy
 		last_target_tick_update = Time.get_ticks_msec()
 		clients_max_ahead_from_server = max_ahead
 		log_flat_server_payload_in += input_packet.size()
-	_apply_server_input_ack(this_ack)
+	_apply_server_input_ack(this_ack, false)
 	_acc_log_in(20 + input_packet.size())
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
@@ -2107,10 +2282,13 @@ func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_pa
 	if chunk.size() <= 0:
 		return
 	if state_tick <= latest_state_tick:
+		log_state_chunk_stale_drops += 1
 		return
 	if state_payload_size <= 0 or chunk_count <= 0 or chunk_index < 0 or chunk_index >= chunk_count:
+		log_state_chunk_bad_meta_drops += 1
 		return
 	var __prof_t0 := Time.get_ticks_usec()
+	log_state_chunk_msgs_in += 1
 	_acc_log_in(20 + chunk.size())
 	var record = pending_state_chunks.get(state_tick)
 	if typeof(record) != TYPE_DICTIONARY:
@@ -2132,11 +2310,13 @@ func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_pa
 	else:
 		if int(record.get("payload_size", -1)) != state_payload_size or int(record.get("chunk_count", -1)) != chunk_count:
 			pending_state_chunks.erase(state_tick)
+			log_state_chunk_bad_meta_drops += 1
 			var __prof_t_bad := Time.get_ticks_usec()
 			prof_server_broadcast_recv_us_interval += __prof_t_bad - __prof_t0
 			return
 	var received_arr: Array = record["received"]
 	if bool(received_arr[chunk_index]):
+		log_state_chunk_dups_in += 1
 		var __prof_t_dup := Time.get_ticks_usec()
 		prof_server_broadcast_recv_us_interval += __prof_t_dup - __prof_t0
 		return
@@ -2148,6 +2328,8 @@ func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_pa
 		var __prof_t_wait := Time.get_ticks_usec()
 		prof_server_broadcast_recv_us_interval += __prof_t_wait - __prof_t0
 		return
+	log_state_chunk_completed += 1
+	log_state_chunk_completed_count_max = maxi(log_state_chunk_completed_count_max, chunk_count)
 	var state := PackedByteArray()
 	state.resize(state_payload_size)
 	var offset := 0
@@ -2182,6 +2364,8 @@ func post_tick() -> void:
 		var input_packet: PackedByteArray = PackedByteArray()
 		var input_packet_ready := false
 		for id in player_ids + spectator_ids:
+			if SERVER_TIMING_SYNC_INTERVAL_TICKS <= 1 or server_tick % SERVER_TIMING_SYNC_INTERVAL_TICKS == 0:
+				_send_server_timing_sync(int(id), server_tick, max_ahead)
 			if _startup_light_net_active(server_tick):
 				var startup_ack: int = server_netcode_session.get_peer_last_received(id)
 				_acc_log_out(12)
@@ -2220,6 +2404,7 @@ func post_tick() -> void:
 				for copy_index in range(STATE_CHUNK_SEND_COPIES):
 					for chunk_index in range(chunk_count):
 						var chunk: PackedByteArray = state_chunks[chunk_index]
+						log_state_chunk_msgs_out += 1
 						_acc_log_out(20 + chunk.size())
 						_server_state_chunk.rpc_id(id, _pack_race_phase_tick(server_tick), send_state_uncomp_size, send_state.size(), chunk_index, chunk_count, chunk)
 		server_tick += 1
@@ -2385,8 +2570,11 @@ func disconnect_from_server() -> void:
 	log_peer_packet_target_lead_samples = 0
 	log_peer_packet_target_lead_min = INF
 	log_peer_packet_target_lead_max = -INF
+	_reset_timing_sync_log_counters()
+	_reset_state_chunk_log_counters()
 	clients_server_tick = 0
 	clients_target_tick = 0
+	last_client_timing_ping_msec = 0
 	clients_max_ahead_from_server = 2.0
 	authoritative_history.clear()
 	last_server_input_tick = -1
