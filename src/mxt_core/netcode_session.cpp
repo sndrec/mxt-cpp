@@ -693,11 +693,17 @@ constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL =
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK2 = 7;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK2 = 8;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2 = 9;
-constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK3 = 10;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3 = 11;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3 = 12;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 = 13;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1 = 14;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[10][2] = {
 	{1, 0}, {127, 127}, {0, 0}, {1, 32}, {17, 31},
 	{17, 0}, {0, 32}, {1, 17}, {0, 31}, {32, 31},
 };
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MASK3_CODES[7] = {0, 3, 4, 5, 6, 7, 8};
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[3][15][2] = {
 	{
 		{1, 0}, {0, 0}, {254, 0}, {1, 1}, {2, 0},
@@ -764,6 +770,16 @@ const uint8_t (*auth_input_low_entropy_table_for_sublayout(uint8_t sublayout))[1
 		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
 	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2) {
 		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK3) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS;
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS;
+	} else if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1) {
+		sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
 	}
 	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
 		return MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS;
@@ -784,7 +800,12 @@ bool auth_input_low_entropy_sublayout_escape_tail(uint8_t sublayout)
 		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_ESCAPE_TAIL ||
 		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK2 ||
 		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK2 ||
-		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2;
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK3 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1;
 }
 
 bool auth_input_low_entropy_sublayout_mask2(uint8_t sublayout)
@@ -792,6 +813,52 @@ bool auth_input_low_entropy_sublayout_mask2(uint8_t sublayout)
 	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK2 ||
 		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK2 ||
 		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK2;
+}
+
+bool auth_input_low_entropy_sublayout_mask3(uint8_t sublayout)
+{
+	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS_TAIL_MASK3 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK3 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK3;
+}
+
+bool auth_input_low_entropy_sublayout_mask1(uint8_t sublayout)
+{
+	return sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS_TAIL_MASK1 ||
+		sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS_TAIL_MASK1;
+}
+
+int auth_input_low_entropy_mask3_code(uint8_t table_code)
+{
+	for (int i = 0; i < 7; ++i) {
+		if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK3_CODES[i] == table_code) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void auth_input_write_packed3(uint8_t* dst, int index, uint8_t value)
+{
+	const int bit = index * 3;
+	const int byte = bit >> 3;
+	const int shift = bit & 7;
+	dst[byte] |= static_cast<uint8_t>((value & 0x07) << shift);
+	if (shift > 5) {
+		dst[byte + 1] |= static_cast<uint8_t>((value & 0x07) >> (8 - shift));
+	}
+}
+
+uint8_t auth_input_read_packed3(const uint8_t* src, int index)
+{
+	const int bit = index * 3;
+	const int byte = bit >> 3;
+	const int shift = bit & 7;
+	uint16_t bits = src[byte];
+	if (shift > 5) {
+		bits |= static_cast<uint16_t>(src[byte + 1]) << 8;
+	}
+	return static_cast<uint8_t>((bits >> shift) & 0x07);
 }
 
 PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_raw, int frame_count, int p_racer_count, uint8_t sublayout, bool write_sublayout)
@@ -804,11 +871,15 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 		return PackedByteArray();
 	}
 	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
+	const bool mask1 = auth_input_low_entropy_sublayout_mask1(sublayout);
 	const bool mask2 = auth_input_low_entropy_sublayout_mask2(sublayout);
+	const bool mask3 = auth_input_low_entropy_sublayout_mask3(sublayout);
 	const int field_bytes = frame_count * p_racer_count;
 	const int sv_class_bytes = (p_racer_count + 3) >> 2;
 	const int mask_code_bytes = (p_racer_count + 1) >> 1;
-	const int mask_class_bytes = mask2 ? ((p_racer_count + 3) >> 2) : mask_code_bytes;
+	const int mask1_bytes = (p_racer_count + 7) >> 3;
+	const int mask3_bytes = ((p_racer_count * 3) + 7) >> 3;
+	const int mask_class_bytes = mask1 ? mask1_bytes : (mask2 ? ((p_racer_count + 3) >> 2) : (mask3 ? mask3_bytes : mask_code_bytes));
 	const uint8_t* src = delta_pairs_raw.ptr();
 	int escape_count = 0;
 	if (pair_table) {
@@ -851,7 +922,9 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 				break;
 			}
 		}
-		if (!found || (mask2 && found_code != 0 && found_code != 3 && found_code != 4)) {
+		if (!found || (mask1 && found_code != 0) || (mask2 && found_code != 0 && found_code != 3 && found_code != 4)) {
+			++escape_count;
+		} else if (mask3 && auth_input_low_entropy_mask3_code(static_cast<uint8_t>(found_code)) < 0) {
 			++escape_count;
 		}
 	}
@@ -931,7 +1004,15 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 					break;
 				}
 			}
-			if (mask2) {
+			if (mask1) {
+				if (code == 0) {
+					dst[mask_code_pos + (i >> 3)] &= static_cast<uint8_t>(~(1u << (i & 7)));
+				} else {
+					dst[mask_code_pos + (i >> 3)] |= static_cast<uint8_t>(1u << (i & 7));
+					dst[pos++] = a;
+					dst[pos++] = b;
+				}
+			} else if (mask2) {
 				uint8_t compact_code = 3;
 				if (code == 0) {
 					compact_code = 0;
@@ -942,6 +1023,15 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 				}
 				dst[mask_code_pos + (i >> 2)] |= static_cast<uint8_t>(compact_code << ((i & 3) * 2));
 				if (compact_code == 3) {
+					dst[pos++] = a;
+					dst[pos++] = b;
+				}
+			} else if (mask3) {
+				const int compact_code = auth_input_low_entropy_mask3_code(code);
+				if (compact_code >= 0) {
+					auth_input_write_packed3(dst + mask_code_pos, i, static_cast<uint8_t>(compact_code));
+				} else {
+					auth_input_write_packed3(dst + mask_code_pos, i, 7);
 					dst[pos++] = a;
 					dst[pos++] = b;
 				}
@@ -1038,7 +1128,7 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	const int sv_class_bytes = (p_racer_count + 3) >> 2;
 	const int mask_code_bytes = (p_racer_count + 1) >> 1;
 	const bool read_sublayout = external_sublayout < 0;
-	if (encoded.size() < (read_sublayout ? 1 : 0) + sv_class_bytes + mask_code_bytes || out.resize(5 * field_bytes) != 0) {
+	if (encoded.size() < (read_sublayout ? 1 : 0) || out.resize(5 * field_bytes) != 0) {
 		return false;
 	}
 	const uint8_t* src = encoded.ptr();
@@ -1047,8 +1137,15 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	const uint8_t sublayout = read_sublayout ? src[pos++] : static_cast<uint8_t>(external_sublayout);
 	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
 	const bool escape_tail = auth_input_low_entropy_sublayout_escape_tail(sublayout);
+	const bool mask1 = auth_input_low_entropy_sublayout_mask1(sublayout);
 	const bool mask2 = auth_input_low_entropy_sublayout_mask2(sublayout);
-	const int mask_class_bytes = mask2 ? ((p_racer_count + 3) >> 2) : mask_code_bytes;
+	const bool mask3 = auth_input_low_entropy_sublayout_mask3(sublayout);
+	const int mask1_bytes = (p_racer_count + 7) >> 3;
+	const int mask3_bytes = ((p_racer_count * 3) + 7) >> 3;
+	const int mask_class_bytes = mask1 ? mask1_bytes : (mask2 ? ((p_racer_count + 3) >> 2) : (mask3 ? mask3_bytes : mask_code_bytes));
+	if (encoded.size() < pos + sv_class_bytes + mask_class_bytes) {
+		return false;
+	}
 	int tail_field_code_pos[3] = {};
 	int tail_sv_class_pos = 0;
 	int tail_mask_code_pos = 0;
@@ -1159,12 +1256,21 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	}
 	const int mask_base = 4 * field_bytes;
 	for (int i = 0; i < p_racer_count; ++i) {
-		const uint8_t code = mask2 ?
+		const uint8_t code = mask1 ?
+			static_cast<uint8_t>((src[mask_code_pos + (i >> 3)] >> (i & 7)) & 0x01) : (mask3 ?
+			auth_input_read_packed3(src + mask_code_pos, i) : (mask2 ?
 			static_cast<uint8_t>((src[mask_code_pos + (i >> 2)] >> ((i & 3) * 2)) & 0x03) :
-			static_cast<uint8_t>((src[mask_code_pos + (i >> 1)] >> ((i & 1) * 4)) & 0x0f);
+			static_cast<uint8_t>((src[mask_code_pos + (i >> 1)] >> ((i & 1) * 4)) & 0x0f)));
 		uint8_t a = 0;
 		uint8_t b = 0;
-		if (mask2 && code == 0) {
+		if (mask1 && code == 0) {
+			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][0];
+			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][1];
+		} else if (mask3 && code < 7) {
+			const uint8_t table_code = MXT_AUTH_INPUT_LOW_ENTROPY_MASK3_CODES[code];
+			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[table_code][0];
+			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[table_code][1];
+		} else if (mask2 && code == 0) {
 			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][0];
 			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[0][1];
 		} else if (mask2 && code == 1) {
@@ -1173,10 +1279,10 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 		} else if (mask2 && code == 2) {
 			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[4][0];
 			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[4][1];
-		} else if (!mask2 && code < 10) {
+		} else if (!mask1 && !mask2 && !mask3 && code < 10) {
 			a = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[code][0];
 			b = MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[code][1];
-		} else if ((mask2 && code == 3) || (!mask2 && code == 15)) {
+		} else if ((mask1 && code == 1) || (mask3 && code == 7) || (mask2 && code == 3) || (!mask2 && !mask3 && code == 15)) {
 			if (pos + 2 > encoded.size()) {
 				return false;
 			}
@@ -2580,6 +2686,11 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 	for (int l = 0; l < 8; ++l) {
 		const AuthInputLayout layout = layouts[l];
 		int raw_size = auth_input_raw_size(count, racer_count, layout);
+		int best_low_entropy_default_sublayout = -1;
+		int best_low_entropy_surface_sublayout = -1;
+		int best_low_entropy_default_payload = 0;
+		int best_low_entropy_surface_payload = 0;
+		int low_entropy_mask_pair_counts[11] = {};
 		PackedByteArray raw;
 		if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
 			PackedByteArray bitpacked_raw;
@@ -2601,15 +2712,38 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 			if (!write_authoritative_input_raw(delta_pairs_raw, frames, count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS)) {
 				return out;
 			}
+			const int field_bytes = count * racer_count;
+			const int mask_base = 4 * field_bytes;
+			const uint8_t* delta_pairs_src = delta_pairs_raw.ptr();
+			for (int i = 0; i < racer_count; ++i) {
+				const uint8_t a = delta_pairs_src[mask_base + (i * 2)];
+				const uint8_t b = delta_pairs_src[mask_base + (i * 2) + 1];
+				int code = 10;
+				for (int p = 0; p < 10; ++p) {
+					if (MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][0] == a && MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[p][1] == b) {
+						code = p;
+						break;
+					}
+				}
+				++low_entropy_mask_pair_counts[code];
+			}
 			int best_compressed_size = 0;
 			for (uint8_t sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT; sublayout <= MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT; ++sublayout) {
 				PackedByteArray candidate_raw = encode_delta_low_entropy_raw(delta_pairs_raw, count, racer_count, sublayout, false);
 				const PackedByteArray compressed_default = compress_auth_input_with_dict(candidate_raw, false, false, false, false, true);
+				if (compressed_default.size() > 0 && (best_low_entropy_default_payload <= 0 || compressed_default.size() < best_low_entropy_default_payload)) {
+					best_low_entropy_default_payload = compressed_default.size();
+					best_low_entropy_default_sublayout = static_cast<int>(sublayout);
+				}
 				if (compressed_default.size() > 0 && (best_compressed_size <= 0 || compressed_default.size() < best_compressed_size)) {
 					raw = candidate_raw;
 					best_compressed_size = compressed_default.size();
 				}
 				const PackedByteArray compressed_surface = compress_auth_input_with_dict(candidate_raw, false, false, false, false, false, false, true);
+				if (compressed_surface.size() > 0 && (best_low_entropy_surface_payload <= 0 || compressed_surface.size() < best_low_entropy_surface_payload)) {
+					best_low_entropy_surface_payload = compressed_surface.size();
+					best_low_entropy_surface_sublayout = static_cast<int>(sublayout);
+				}
 				if (compressed_surface.size() > 0 && (best_compressed_size <= 0 || compressed_surface.size() < best_compressed_size)) {
 					raw = candidate_raw;
 					best_compressed_size = compressed_surface.size();
@@ -2651,6 +2785,15 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 		out[prefix + String("raw")] = raw_size;
 		out[prefix + String("plain_payload")] = plain.size();
 		out[prefix + String("plain_packet")] = plain.size() + auth_input_packet_header_size(count);
+		if (layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY) {
+			out[prefix + String("best_default_sublayout")] = best_low_entropy_default_sublayout;
+			out[prefix + String("best_surface_sublayout")] = best_low_entropy_surface_sublayout;
+			out[prefix + String("best_default_payload")] = best_low_entropy_default_payload;
+			out[prefix + String("best_surface_payload")] = best_low_entropy_surface_payload;
+			for (int i = 0; i < 11; ++i) {
+				out[prefix + String("mask_pair_count_") + String::num_int64(i)] = low_entropy_mask_pair_counts[i];
+			}
+		}
 		const int dict_size = delta_low_entropy_dict.size() > 0 ? delta_low_entropy_dict.size() :
 			(delta_pairs_dict.size() > 0 ? delta_pairs_dict.size() :
 				(hybrid_dict.size() > 0 ? hybrid_dict.size() :

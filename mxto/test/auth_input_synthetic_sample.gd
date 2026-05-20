@@ -4,6 +4,8 @@ const PlayerInputClass := preload("res://player/player_input.gd")
 const AUTH_INPUT_COUNT_MASK := 0x78
 const AUTH_INPUT_COUNT_SHIFT := 3
 const AUTH_INPUT_COUNT_ESCAPE := 0x0f
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT := 2
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT := 4
 
 func _authoritative_input_wire_size(packet: PackedByteArray) -> int:
 	if packet.size() <= 0:
@@ -120,6 +122,10 @@ func _init() -> void:
 	var wire_packet_min := 1 << 30
 	var wire_packet_max := 0
 	var mode_counts := {}
+	var low_entropy_sublayout_counts := {}
+	var low_entropy_default_best_sublayout_counts := {}
+	var low_entropy_surface_best_sublayout_counts := {}
+	var low_entropy_mask_pair_counts := {}
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
@@ -147,6 +153,10 @@ func _init() -> void:
 			var sparse_wire_size := _sparse_plain_wire_size(session, tick, redundancy, player_ids)
 			var packet_mode := int(packet[0]) & 0x07 if packet.size() > 0 else -1
 			mode_counts[packet_mode] = int(mode_counts.get(packet_mode, 0)) + 1
+			if packet.size() > 0 and (packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT or packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT):
+				var sublayout := (int(packet[0]) & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
+				var sublayout_key := "%d:%d" % [packet_mode, sublayout]
+				low_entropy_sublayout_counts[sublayout_key] = int(low_entropy_sublayout_counts.get(sublayout_key, 0)) + 1
 			packet_bytes += size
 			wire_packet_bytes += wire_size
 			sparse_plain_wire_bytes += sparse_wire_size
@@ -173,9 +183,19 @@ func _init() -> void:
 				bitpacked_zero_dict_packet_bytes += int(cmp.get("bitpacked_zero_dict_packet", 0))
 				hybrid_dict_packet_bytes += int(cmp.get("hybrid_dict_packet", 0))
 				hybrid_smooth_dict_packet_bytes += int(cmp.get("hybrid_smooth_dict_packet", 0))
+				var default_best_sublayout := int(cmp.get("delta_low_entropy_best_default_sublayout", -1))
+				if default_best_sublayout >= 0:
+					low_entropy_default_best_sublayout_counts[default_best_sublayout] = int(low_entropy_default_best_sublayout_counts.get(default_best_sublayout, 0)) + 1
+				var surface_best_sublayout := int(cmp.get("delta_low_entropy_best_surface_sublayout", -1))
+				if surface_best_sublayout >= 0:
+					low_entropy_surface_best_sublayout_counts[surface_best_sublayout] = int(low_entropy_surface_best_sublayout_counts.get(surface_best_sublayout, 0)) + 1
+				for mask_pair_code in range(11):
+					var mask_pair_count := int(cmp.get("delta_low_entropy_mask_pair_count_%d" % mask_pair_code, 0))
+					if mask_pair_count > 0:
+						low_entropy_mask_pair_counts[mask_pair_code] = int(low_entropy_mask_pair_counts.get(mask_pair_code, 0)) + mask_pair_count
 			sample_count += 1
 
-	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d wire_packet_avg=%f wire_packet_min=%d wire_packet_max=%d sparse_plain_wire_avg=%f mode_counts=%s old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f delta_pairs_dict_packet_avg=%f delta_pairs_surface_dict_packet_avg=%f delta_low_entropy_dict_packet_avg=%f delta_low_entropy_surface_dict_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f bitpacked_zero_plain_packet_avg=%f bitpacked_zero_dict_packet_avg=%f hybrid_dict_packet_avg=%f hybrid_smooth_dict_packet_avg=%f" % [
+	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d wire_packet_avg=%f wire_packet_min=%d wire_packet_max=%d sparse_plain_wire_avg=%f mode_counts=%s low_entropy_sublayout_counts=%s low_entropy_default_best_sublayout_counts=%s low_entropy_surface_best_sublayout_counts=%s low_entropy_mask_pair_counts=%s old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f delta_pairs_dict_packet_avg=%f delta_pairs_surface_dict_packet_avg=%f delta_low_entropy_dict_packet_avg=%f delta_low_entropy_surface_dict_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f bitpacked_zero_plain_packet_avg=%f bitpacked_zero_dict_packet_avg=%f hybrid_dict_packet_avg=%f hybrid_smooth_dict_packet_avg=%f" % [
 		mode,
 		racers,
 		frames,
@@ -192,6 +212,10 @@ func _init() -> void:
 		wire_packet_max,
 		float(sparse_plain_wire_bytes) / float(maxi(sample_count, 1)),
 		str(mode_counts),
+		str(low_entropy_sublayout_counts),
+		str(low_entropy_default_best_sublayout_counts),
+		str(low_entropy_surface_best_sublayout_counts),
+		str(low_entropy_mask_pair_counts),
 		float(old_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),

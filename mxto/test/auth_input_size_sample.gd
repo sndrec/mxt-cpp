@@ -5,6 +5,8 @@ const DEFAULT_CAR_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_p
 const AUTH_INPUT_COUNT_MASK := 0x78
 const AUTH_INPUT_COUNT_SHIFT := 3
 const AUTH_INPUT_COUNT_ESCAPE := 0x0f
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT := 2
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT := 4
 
 func _authoritative_input_wire_size(packet: PackedByteArray) -> int:
 	if packet.size() <= 0:
@@ -118,6 +120,10 @@ func _init() -> void:
 	var wire_packet_min := 1 << 30
 	var wire_packet_max := 0
 	var mode_counts := {}
+	var low_entropy_sublayout_counts := {}
+	var low_entropy_default_best_sublayout_counts := {}
+	var low_entropy_surface_best_sublayout_counts := {}
+	var low_entropy_mask_pair_counts := {}
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
@@ -157,6 +163,10 @@ func _init() -> void:
 			var sparse_wire_size := _sparse_plain_wire_size(session, tick, redundancy, player_ids)
 			var packet_mode := int(packet[0]) & 0x07 if packet.size() > 0 else -1
 			mode_counts[packet_mode] = int(mode_counts.get(packet_mode, 0)) + 1
+			if packet.size() > 0 and (packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT or packet_mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT):
+				var sublayout := (int(packet[0]) & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
+				var sublayout_key := "%d:%d" % [packet_mode, sublayout]
+				low_entropy_sublayout_counts[sublayout_key] = int(low_entropy_sublayout_counts.get(sublayout_key, 0)) + 1
 			packet_bytes += size
 			wire_packet_bytes += wire_size
 			sparse_plain_wire_bytes += sparse_wire_size
@@ -187,6 +197,16 @@ func _init() -> void:
 				packed_raw_bytes += int(cmp.get("packed_raw", 0))
 				delta_raw_bytes += int(cmp.get("delta_raw", 0))
 				bitpacked_raw_bytes += int(cmp.get("bitpacked_raw", 0))
+				var default_best_sublayout := int(cmp.get("delta_low_entropy_best_default_sublayout", -1))
+				if default_best_sublayout >= 0:
+					low_entropy_default_best_sublayout_counts[default_best_sublayout] = int(low_entropy_default_best_sublayout_counts.get(default_best_sublayout, 0)) + 1
+				var surface_best_sublayout := int(cmp.get("delta_low_entropy_best_surface_sublayout", -1))
+				if surface_best_sublayout >= 0:
+					low_entropy_surface_best_sublayout_counts[surface_best_sublayout] = int(low_entropy_surface_best_sublayout_counts.get(surface_best_sublayout, 0)) + 1
+				for mask_pair_code in range(11):
+					var mask_pair_count := int(cmp.get("delta_low_entropy_mask_pair_count_%d" % mask_pair_code, 0))
+					if mask_pair_count > 0:
+						low_entropy_mask_pair_counts[mask_pair_code] = int(low_entropy_mask_pair_counts.get(mask_pair_code, 0)) + mask_pair_count
 			sample_count += 1
 
 	var stats := session.consume_authoritative_packet_stats()
@@ -209,6 +229,10 @@ func _init() -> void:
 		" wire_packet_max=", wire_packet_max,
 		" sparse_plain_wire_avg=", float(sparse_plain_wire_bytes) / float(maxi(sample_count, 1)),
 		" mode_counts=", str(mode_counts),
+		" low_entropy_sublayout_counts=", str(low_entropy_sublayout_counts),
+		" low_entropy_default_best_sublayout_counts=", str(low_entropy_default_best_sublayout_counts),
+		" low_entropy_surface_best_sublayout_counts=", str(low_entropy_surface_best_sublayout_counts),
+		" low_entropy_mask_pair_counts=", str(low_entropy_mask_pair_counts),
 		" old_raw_avg=", float(old_raw_bytes) / float(maxi(sample_count, 1)),
 		" packed_raw_avg=", float(packed_raw_bytes) / float(maxi(sample_count, 1)),
 		" delta_raw_avg=", float(delta_raw_bytes) / float(maxi(sample_count, 1)),
