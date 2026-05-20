@@ -2,6 +2,7 @@ extends SceneTree
 
 const DEFAULT_TRACK := "res://track/surface_slide/track.mxt_track"
 const DEFAULT_CAR_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+const AUTH_INPUT_MODE_MASK := 0x07
 const AUTH_INPUT_COUNT_MASK := 0x78
 const AUTH_INPUT_COUNT_SHIFT := 3
 const AUTH_INPUT_COUNT_ESCAPE := 0x0f
@@ -13,6 +14,11 @@ func _authoritative_input_wire_size(packet: PackedByteArray) -> int:
 	if packet.size() <= 0:
 		return 0
 	var meta := int(packet[0])
+	var mode := meta & AUTH_INPUT_MODE_MASK
+	if mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT \
+			or mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT \
+			or mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT:
+		return packet.size() - 1
 	var count_code := (meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
 	return packet.size() - 1 if count_code != AUTH_INPUT_COUNT_ESCAPE else packet.size()
 

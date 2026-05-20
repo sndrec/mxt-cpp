@@ -75,9 +75,13 @@ const START_SYNC_PING_INTERVAL_MS := 50
 const START_SYNC_START_DELAY_MS := 750
 const RACE_PHASE_TICK_BIT := 0x80000000
 const RACE_PHASE_TICK_MASK := 0x7fffffff
+const AUTH_INPUT_MODE_MASK := 0x07
 const AUTH_INPUT_COUNT_MASK := 0x78
 const AUTH_INPUT_COUNT_SHIFT := 3
 const AUTH_INPUT_COUNT_ESCAPE := 0x0f
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT := 2
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT := 4
+const AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT := 7
 const AUTH_INPUT_META_SHIFT := 32
 const AUTH_INPUT_META_BYTE_MASK := 0xff
 const AUTH_INPUT_META_PRESENT_BIT := 1 << 40
@@ -708,6 +712,15 @@ func _pack_authoritative_input_tick(tick: int, input_meta: int) -> int:
 	if input_meta >= 0:
 		packed_tick |= AUTH_INPUT_META_PRESENT_BIT | ((input_meta & AUTH_INPUT_META_BYTE_MASK) << AUTH_INPUT_META_SHIFT)
 	return packed_tick
+
+func _authoritative_input_meta_can_strip(input_meta: int) -> bool:
+	var mode := input_meta & AUTH_INPUT_MODE_MASK
+	if mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_DICT \
+			or mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_DICT \
+			or mode == AUTH_INPUT_MODE_DELTA_LOW_ENTROPY_SURFACE_FALLBACK_DICT:
+		return true
+	var count_code := (input_meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
+	return count_code != AUTH_INPUT_COUNT_ESCAPE
 
 func _unpack_authoritative_input_meta(packed_tick: int) -> int:
 	if (packed_tick & AUTH_INPUT_META_PRESENT_BIT) == 0:
@@ -2477,8 +2490,7 @@ func post_tick() -> void:
 				input_packet = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES, race_netplay_phase)
 				if input_packet.size() > 0:
 					input_packet_meta = int(input_packet[0])
-					var count_code := (input_packet_meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
-					if count_code != AUTH_INPUT_COUNT_ESCAPE:
+					if _authoritative_input_meta_can_strip(input_packet_meta):
 						input_packet = input_packet.slice(1)
 					else:
 						input_packet_meta = -1
