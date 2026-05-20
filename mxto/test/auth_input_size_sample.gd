@@ -13,6 +13,23 @@ func _authoritative_input_wire_size(packet: PackedByteArray) -> int:
 	var count_code := (meta & AUTH_INPUT_COUNT_MASK) >> AUTH_INPUT_COUNT_SHIFT
 	return packet.size() - 1 if count_code != AUTH_INPUT_COUNT_ESCAPE else packet.size()
 
+func _sparse_plain_wire_size(session: NetcodeSession, last_tick: int, redundancy: int, player_ids: Array) -> int:
+	var first_tick := maxi(0, last_tick - redundancy + 1)
+	var raw := PackedByteArray()
+	for tick in range(first_tick, last_tick + 1):
+		var frame: Dictionary = session.get_frame_as_dictionary(tick)
+		if frame.is_empty():
+			return 0
+		for id in player_ids:
+			var bytes: PackedByteArray = frame.get(id, PackedByteArray())
+			if bytes.is_empty():
+				return 0
+			raw.append_array(bytes)
+	var compressed := raw.compress(FileAccess.COMPRESSION_ZSTD)
+	if compressed.is_empty():
+		return 0
+	return compressed.size() + 2
+
 func _arg_value(args: Array, name: String, fallback: String) -> String:
 	var idx := args.find(name)
 	if idx == -1 or idx + 1 >= args.size():
@@ -73,6 +90,7 @@ func _init() -> void:
 	var sample_count := 0
 	var packet_bytes := 0
 	var wire_packet_bytes := 0
+	var sparse_plain_wire_bytes := 0
 	var packet_min := 1 << 30
 	var packet_max := 0
 	var wire_packet_min := 1 << 30
@@ -103,8 +121,10 @@ func _init() -> void:
 		if tick >= sample_start and tick < sample_end:
 			var size := packet.size()
 			var wire_size := _authoritative_input_wire_size(packet)
+			var sparse_wire_size := _sparse_plain_wire_size(session, tick, redundancy, player_ids)
 			packet_bytes += size
 			wire_packet_bytes += wire_size
+			sparse_plain_wire_bytes += sparse_wire_size
 			packet_min = mini(packet_min, size)
 			packet_max = maxi(packet_max, size)
 			wire_packet_min = mini(wire_packet_min, wire_size)
@@ -145,6 +165,7 @@ func _init() -> void:
 		" wire_packet_avg=", avg_wire_packet,
 		" wire_packet_min=", wire_packet_min,
 		" wire_packet_max=", wire_packet_max,
+		" sparse_plain_wire_avg=", float(sparse_plain_wire_bytes) / float(maxi(sample_count, 1)),
 		" old_raw_avg=", float(old_raw_bytes) / float(maxi(sample_count, 1)),
 		" packed_raw_avg=", float(packed_raw_bytes) / float(maxi(sample_count, 1)),
 		" delta_raw_avg=", float(delta_raw_bytes) / float(maxi(sample_count, 1)),
