@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import random
 import re
 from pathlib import Path
 
@@ -13,13 +14,13 @@ def _read_header_dict(path: Path) -> bytes:
     return bytes(int(x, 16) for x in re.findall(r"0x([0-9a-fA-F]{2})", text))
 
 
-def _packet_size_plain(sample: bytes) -> int:
-    return len(zstd.ZstdCompressor(level=1).compress(sample)) + 10
+def _packet_size_plain(sample: bytes, level: int) -> int:
+    return len(zstd.ZstdCompressor(level=level).compress(sample)) + 10
 
 
-def _packet_size_dict(sample: bytes, dictionary: bytes) -> int:
+def _packet_size_dict(sample: bytes, dictionary: bytes, level: int) -> int:
     dict_data = zstd.ZstdCompressionDict(dictionary)
-    return len(zstd.ZstdCompressor(level=1, dict_data=dict_data).compress(sample)) + 10
+    return len(zstd.ZstdCompressor(level=level, dict_data=dict_data).compress(sample)) + 10
 
 
 def _summarize(name: str, sizes: list[int]) -> str:
@@ -63,12 +64,16 @@ def main() -> int:
     parser.add_argument("--symbol", default="MXT_AUTH_INPUT_ZSTD_DICT")
     parser.add_argument("--dict-size", type=int, default=4096)
     parser.add_argument("--train-split", type=float, default=0.75)
+    parser.add_argument("--compress-level", type=int, default=1)
+    parser.add_argument("--shuffle-seed", type=int, default=-1)
     args = parser.parse_args()
 
     sample_dir = Path(args.samples)
     samples = [p.read_bytes() for p in sorted(sample_dir.glob("*.bin")) if p.stat().st_size > 0]
     if len(samples) < 8:
         raise SystemExit(f"need at least 8 samples, got {len(samples)}")
+    if args.shuffle_seed >= 0:
+        random.Random(args.shuffle_seed).shuffle(samples)
 
     split = max(1, min(len(samples) - 1, int(len(samples) * args.train_split)))
     train_samples = samples[:split]
@@ -77,11 +82,15 @@ def main() -> int:
     trained = trained_dict.as_bytes()
     current = _read_header_dict(Path(args.current_header))
 
-    print(f"samples={len(samples)} train={len(train_samples)} test={len(test_samples)} sample_size={len(samples[0])}")
+    print(
+        f"samples={len(samples)} train={len(train_samples)} test={len(test_samples)} "
+        f"sample_size={len(samples[0])} compress_level={args.compress_level} "
+        f"shuffle_seed={args.shuffle_seed}"
+    )
     for label, group in (("train", train_samples), ("test", test_samples), ("all", samples)):
-        plain = [_packet_size_plain(s) for s in group]
-        current_sizes = [_packet_size_dict(s, current) for s in group]
-        trained_sizes = [_packet_size_dict(s, trained) for s in group]
+        plain = [_packet_size_plain(s, args.compress_level) for s in group]
+        current_sizes = [_packet_size_dict(s, current, args.compress_level) for s in group]
+        trained_sizes = [_packet_size_dict(s, trained, args.compress_level) for s in group]
         print(_summarize(f"{label} plain", plain))
         print(_summarize(f"{label} current_dict", current_sizes))
         print(_summarize(f"{label} trained_dict_{args.dict_size}", trained_sizes))
