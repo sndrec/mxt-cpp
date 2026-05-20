@@ -2688,7 +2688,6 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("store_local_input", "tick", "input_bytes"), &NetcodeSession::store_local_input);
 	ClassDB::bind_method(D_METHOD("store_authoritative_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_authoritative_input);
 	ClassDB::bind_method(D_METHOD("store_pending_input", "tick", "player_id", "input_bytes"), &NetcodeSession::store_pending_input);
-	ClassDB::bind_method(D_METHOD("set_cpu_input_prediction_enabled", "enabled"), &NetcodeSession::set_cpu_input_prediction_enabled);
 	ClassDB::bind_method(D_METHOD("fill_missing_pending_inputs", "tick", "player_ids", "disconnected_ids", "delayed_ids", "allow_new_delayed"), &NetcodeSession::fill_missing_pending_inputs);
 	ClassDB::bind_method(D_METHOD("build_local_input_packet", "first_tick", "count", "race_phase"), &NetcodeSession::build_local_input_packet, DEFVAL(0));
 	ClassDB::bind_method(D_METHOD("store_pending_input_packet", "player_id", "reject_before_tick", "packet", "ahead", "now_sec", "expected_race_phase"), &NetcodeSession::store_pending_input_packet, DEFVAL(0));
@@ -2863,11 +2862,6 @@ void NetcodeSession::store_local_input(int tick, godot::PackedByteArray input_by
 	frame.inputs[index] = PlayerInput::from_bytes(input_bytes);
 	frame.present[index] = 1;
 	last_local_input = frame.inputs[index];
-}
-
-void NetcodeSession::set_cpu_input_prediction_enabled(bool enabled)
-{
-	cpu_input_prediction_enabled = enabled;
 }
 
 void NetcodeSession::store_authoritative_input(int tick, int player_id, godot::PackedByteArray input_bytes)
@@ -4122,12 +4116,12 @@ void NetcodeSession::recalculate_predictions_internal(GameSim* sim, int start_ti
 				if (authoritative && authoritative->present[i]) {
 					frame.inputs[i] = authoritative->inputs[i];
 					frame.present[i] = 1;
-				} else if (sim && cpu_input_prediction_enabled) {
+				} else if (sim) {
 					godot::PackedByteArray cpu_bytes = sim->generate_native_cpu_input_for_tick(player_ids[i], tick);
 					frame.inputs[i] = PlayerInput::from_bytes(cpu_bytes);
 					frame.present[i] = 1;
 				} else if (previous && previous->present[i]) {
-					frame.inputs[i] = decay_predicted_input(previous->inputs[i]);
+					frame.inputs[i] = previous->inputs[i];
 					frame.present[i] = 1;
 				}
 				continue;
