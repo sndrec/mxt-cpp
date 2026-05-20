@@ -1511,7 +1511,7 @@ void set_auth_input_sample_dump_dir(const String& directory)
 	);
 }
 
-void dump_auth_input_sample(const PackedByteArray& raw, int first_tick, int count, int racer_count)
+void dump_auth_input_sample(const PackedByteArray& raw, int first_tick, int count, int racer_count, int mode, int sublayout)
 {
 	if (!g_auth_input_sample_dump_enabled) {
 		return;
@@ -1522,7 +1522,9 @@ void dump_auth_input_sample(const PackedByteArray& raw, int first_tick, int coun
 	const String file_name = "auth_" + String::num_int64(g_auth_input_sample_dump_index).pad_zeros(8) +
 		"_t" + String::num_int64(first_tick) +
 		"_f" + String::num_int64(count) +
-		"_p" + String::num_int64(racer_count) + ".bin";
+		"_p" + String::num_int64(racer_count) +
+		"_m" + String::num_int64(mode) +
+		"_s" + String::num_int64(sublayout) + ".bin";
 	const String path = String(g_auth_input_sample_dump_dir) + String("/") + file_name;
 	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
 	if (file.is_valid()) {
@@ -2299,17 +2301,17 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		return PackedByteArray();
 	}
 	if (selected_layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS) {
-		dump_auth_input_sample(delta_pairs_raw, first_tick, count, racer_count);
+		dump_auth_input_sample(delta_pairs_raw, first_tick, count, racer_count, compression_mode, -1);
 	} else if (selected_layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY) {
-		dump_auth_input_sample(delta_low_entropy_raw, first_tick, count, racer_count);
+		dump_auth_input_sample(delta_low_entropy_raw, first_tick, count, racer_count, compression_mode, selected_low_entropy_sublayout);
 	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS) {
-		dump_auth_input_sample(bitpacked_raw, first_tick, count, racer_count);
+		dump_auth_input_sample(bitpacked_raw, first_tick, count, racer_count, compression_mode, -1);
 	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
-		dump_auth_input_sample(hybrid_raw, first_tick, count, racer_count);
+		dump_auth_input_sample(hybrid_raw, first_tick, count, racer_count, compression_mode, -1);
 	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP) {
-		dump_auth_input_sample(bitpacked_zero_raw, first_tick, count, racer_count);
+		dump_auth_input_sample(bitpacked_zero_raw, first_tick, count, racer_count, compression_mode, -1);
 	} else {
-		dump_auth_input_sample(packed_raw, first_tick, count, racer_count);
+		dump_auth_input_sample(packed_raw, first_tick, count, racer_count, compression_mode, -1);
 	}
 	writer.data[mode_count_pos] = selected_layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_LOW_ENTROPY ?
 		pack_auth_low_entropy_mode_sublayout_phase(compression_mode, selected_low_entropy_sublayout, race_phase) :
