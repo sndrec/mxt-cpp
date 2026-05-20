@@ -557,8 +557,57 @@ PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool h
 	if (out.resize(static_cast<int>(bound)) != 0) {
 		return PackedByteArray();
 	}
-	ZSTD_CCtx_reset(cctx, ZSTD_reset_session_only);
+	ZSTD_CCtx_reset(cctx, ZSTD_reset_session_and_parameters);
 	size_t zstd_result = ZSTD_CCtx_refCDict(cctx, cdict);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_contentSizeFlag, 0);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 0);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_dictIDFlag, 0);
+	if (ZSTD_isError(zstd_result)) {
+		return PackedByteArray();
+	}
+	const size_t compressed_size = ZSTD_compress2(
+		cctx,
+		out.ptrw(),
+		bound,
+		raw.ptr(),
+		static_cast<size_t>(raw_size)
+	);
+	if (ZSTD_isError(compressed_size) || compressed_size > bound || compressed_size > static_cast<size_t>(INT32_MAX)) {
+		return PackedByteArray();
+	}
+	out.resize(static_cast<int>(compressed_size));
+	return out;
+}
+
+PackedByteArray compress_auth_input_plain(const PackedByteArray& raw)
+{
+	const int raw_size = raw.size();
+	if (raw_size <= 0) {
+		return PackedByteArray();
+	}
+	ZSTD_CCtx* cctx = auth_input_zstd_cctx();
+	if (!cctx) {
+		return PackedByteArray();
+	}
+	const size_t bound = ZSTD_compressBound(static_cast<size_t>(raw_size));
+	if (bound > static_cast<size_t>(INT32_MAX)) {
+		return PackedByteArray();
+	}
+	PackedByteArray out;
+	if (out.resize(static_cast<int>(bound)) != 0) {
+		return PackedByteArray();
+	}
+	ZSTD_CCtx_reset(cctx, ZSTD_reset_session_and_parameters);
+	size_t zstd_result = ZSTD_CCtx_setParameter(cctx, ZSTD_c_compressionLevel, MXT_NET_AUTH_ZSTD_LEVEL);
 	if (ZSTD_isError(zstd_result)) {
 		return PackedByteArray();
 	}
@@ -1417,7 +1466,7 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	if (!write_authoritative_input_raw(delta_pairs_raw, frames, count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS)) {
 		return PackedByteArray();
 	}
-	PackedByteArray compressed = delta_raw.compress(MXT_NET_COMPRESSION_ZSTD);
+	PackedByteArray compressed = compress_auth_input_plain(delta_raw);
 	uint8_t compression_mode = MXT_NET_AUTH_MODE_DELTA_PLAIN_ZSTD;
 	AuthInputLayout selected_layout = AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA;
 	int selected_raw_size = packed_raw_size;
@@ -1435,14 +1484,14 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		selected_layout = AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS;
 		selected_raw_size = delta_pairs_raw_size;
 	}
-	candidate = bitpacked_raw.compress(MXT_NET_COMPRESSION_ZSTD);
+	candidate = compress_auth_input_plain(bitpacked_raw);
 	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
 		compressed = candidate;
 		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD;
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
 		selected_raw_size = bitpacked_raw_size;
 	}
-	candidate = bitpacked_zero_raw.compress(MXT_NET_COMPRESSION_ZSTD);
+	candidate = compress_auth_input_plain(bitpacked_zero_raw);
 	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
 		compressed = candidate;
 		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_PLAIN_ZSTD;
@@ -1570,7 +1619,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	} else if (zero_bitmap_layout) {
 		raw = decompress_auth_input_plain_bound(compressed, raw_size);
 	} else {
-		raw = compressed.decompress(raw_size, MXT_NET_COMPRESSION_ZSTD);
+		raw = decompress_auth_input_plain_bound(compressed, raw_size);
 	}
 	if ((!zero_bitmap_layout && raw.size() != raw_size) || (zero_bitmap_layout && raw.size() > raw_size)) {
 		stats["valid"] = false;
@@ -1841,7 +1890,7 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 				return out;
 			}
 		}
-		const PackedByteArray plain = raw.compress(MXT_NET_COMPRESSION_ZSTD);
+		const PackedByteArray plain = compress_auth_input_plain(raw);
 		const PackedByteArray dict = compress_auth_input_with_dict(raw);
 		const PackedByteArray hybrid_dict = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA ?
 			compress_auth_input_with_dict(raw, true) :
