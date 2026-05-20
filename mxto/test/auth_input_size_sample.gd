@@ -42,6 +42,25 @@ func _arg_int(args: Array, name: String, fallback: int) -> int:
 		return fallback
 	return int(args[idx + 1])
 
+func _validate_packet_roundtrip(source: NetcodeSession, validator: NetcodeSession, packet: PackedByteArray, expected_last_tick: int, player_ids: Array) -> bool:
+	var stats: Dictionary = validator.store_authoritative_input_packet(packet, 0, expected_last_tick)
+	if !bool(stats.get("valid", false)) or bool(stats.get("stale", false)):
+		push_error("auth_input_size_sample invalid roundtrip stats=%s" % [stats])
+		return false
+	var first_tick := int(stats.get("first_tick", -1))
+	var last_tick := int(stats.get("last_tick", -1))
+	for tick in range(first_tick, last_tick + 1):
+		var source_frame: Dictionary = source.get_frame_as_dictionary(tick)
+		var decoded_frame: Dictionary = validator.get_frame_as_dictionary(tick)
+		for id in player_ids:
+			var player_id := int(id)
+			var got: PackedByteArray = decoded_frame.get(player_id, PackedByteArray())
+			var want: PackedByteArray = source_frame.get(player_id, PackedByteArray())
+			if got != want:
+				push_error("auth_input_size_sample roundtrip mismatch tick=%d id=%d got=%s want=%s" % [tick, player_id, got, want])
+				return false
+	return true
+
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var track_path := _arg_value(args, "--track", DEFAULT_TRACK)
@@ -53,6 +72,7 @@ func _init() -> void:
 	var sample_end := _arg_int(args, "--sample-end", frames)
 	var redundancy := _arg_int(args, "--redundancy", 2)
 	var dump_dir := _arg_value(args, "--dump-dir", "")
+	var validate_roundtrip := _arg_int(args, "--validate-roundtrip", 0) != 0
 
 	var track_bytes := FileAccess.get_file_as_bytes(track_path)
 	var car_bytes := FileAccess.get_file_as_bytes(car_props_path)
@@ -84,6 +104,8 @@ func _init() -> void:
 	sim.set_sim_started(true)
 	var session := NetcodeSession.new()
 	session.configure(player_ids, cpu_flags, int(player_ids[0]))
+	var validator := NetcodeSession.new()
+	validator.configure(player_ids, cpu_flags, int(player_ids[0]))
 	if !dump_dir.is_empty():
 		session.configure_authoritative_input_sample_dump(true, frames, dump_dir)
 
@@ -100,6 +122,7 @@ func _init() -> void:
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
 	var delta_pairs_dict_packet_bytes := 0
+	var delta_low_entropy_dict_packet_bytes := 0
 	var bitpacked_plain_packet_bytes := 0
 	var hybrid_plain_packet_bytes := 0
 	var old_dict_packet_bytes := 0
@@ -124,6 +147,9 @@ func _init() -> void:
 			return
 		var packet: PackedByteArray = session.build_authoritative_input_packet(tick, redundancy, 0)
 		if tick >= sample_start and tick < sample_end:
+			if validate_roundtrip and packet.size() > 0 and !_validate_packet_roundtrip(session, validator, packet, tick, player_ids):
+				quit(1)
+				return
 			var size := packet.size()
 			var wire_size := _authoritative_input_wire_size(packet)
 			var sparse_wire_size := _sparse_plain_wire_size(session, tick, redundancy, player_ids)
@@ -142,6 +168,7 @@ func _init() -> void:
 				packed_plain_packet_bytes += int(cmp.get("packed_plain_packet", 0))
 				delta_plain_packet_bytes += int(cmp.get("delta_plain_packet", 0))
 				delta_pairs_dict_packet_bytes += int(cmp.get("delta_pairs_dict_packet", 0))
+				delta_low_entropy_dict_packet_bytes += int(cmp.get("delta_low_entropy_dict_packet", 0))
 				bitpacked_plain_packet_bytes += int(cmp.get("bitpacked_plain_packet", 0))
 				hybrid_plain_packet_bytes += int(cmp.get("hybrid_plain_packet", 0))
 				old_dict_packet_bytes += int(cmp.get("old_dict_packet", 0))
@@ -186,6 +213,7 @@ func _init() -> void:
 		" packed_plain_packet_avg=", float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_plain_packet_avg=", float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_pairs_dict_packet_avg=", float(delta_pairs_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		" delta_low_entropy_dict_packet_avg=", float(delta_low_entropy_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" bitpacked_plain_packet_avg=", float(bitpacked_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_plain_packet_avg=", float(hybrid_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		" old_dict_packet_avg=", float(old_dict_packet_bytes) / float(maxi(sample_count, 1)),

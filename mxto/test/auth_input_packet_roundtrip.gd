@@ -27,6 +27,16 @@ func _make_input(tick: int, racer_index: int, mode: String) -> PackedByteArray:
 		input.strafe_right = float((tick * 41 + racer_index * 19) % 255) / 254.0
 		input.steer_horizontal = float(((tick * 43 + racer_index * 23) % 255) - 127) / 127.0
 		input.steer_vertical = float(((tick * 47 + racer_index * 29) % 255) - 127) / 127.0
+	elif mode == "low_entropy":
+		input.accelerate = 1.0
+		input.brake = 0.0
+		input.spinattack = false
+		input.sideattack = false
+		input.boost = false
+		input.strafe_left = float((tick * 37 + racer_index * 17) % 255) / 254.0
+		input.strafe_right = float((tick * 41 + racer_index * 19) % 255) / 254.0
+		input.steer_horizontal = float(((tick * 43 + racer_index * 23) % 255) - 127) / 127.0
+		input.steer_vertical = 0.0
 	else:
 		input.accelerate = 1.0 if ((tick + racer_index) % 2) == 0 else 0.0
 		input.brake = 1.0 if ((tick + racer_index) % 7) == 0 else 0.0
@@ -40,9 +50,8 @@ func _make_input(tick: int, racer_index: int, mode: String) -> PackedByteArray:
 	input.apply_quantization()
 	return input.serialize()
 
-func _run_case(mode: String) -> bool:
+func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1) -> bool:
 	var racer_count := 100
-	var frame_count := 6
 	var player_ids: Array = []
 	var cpu_flags: Array = []
 	for i in range(racer_count):
@@ -63,6 +72,9 @@ func _run_case(mode: String) -> bool:
 			expected[[tick, id]] = bytes
 
 	var packet: PackedByteArray = server.build_authoritative_input_packet(frame_count - 1, frame_count, 1)
+	if expected_packet_mode >= 0 and packet.size() > 0 and (int(packet[0]) & 0x07) != expected_packet_mode:
+		push_error("MXT_AUTH_INPUT_ROUNDTRIP wrong packet mode=%s got=%d want=%d packet=%d" % [mode, int(packet[0]) & 0x07, expected_packet_mode, packet.size()])
+		return false
 	var stats: Dictionary = client.store_authoritative_input_packet(packet, 1, frame_count - 1)
 	if !bool(stats.get("valid", false)) or bool(stats.get("stale", false)):
 		push_error("MXT_AUTH_INPUT_ROUNDTRIP invalid mode=%s stats=%s" % [mode, stats])
@@ -121,5 +133,8 @@ func _init() -> void:
 		if !_run_case(mode):
 			quit(1)
 			return
+	if !_run_case("low_entropy", 2):
+		quit(1)
+		return
 	print("MXT_AUTH_INPUT_ROUNDTRIP_OK")
 	quit()
