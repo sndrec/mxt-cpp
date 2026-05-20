@@ -1451,6 +1451,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if track_index < 0 or track_index >= tracks.size():
 		return
 	_close_settings_menus_for_race_start()
+	$Control.visible = false
+	lobby_control.visible = false
 	_last_race_track_index = track_index
 	_last_race_settings = settings.duplicate(true)
 	active_stickers.clear()
