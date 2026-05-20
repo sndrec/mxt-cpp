@@ -92,10 +92,12 @@ func _init() -> void:
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
 	var bitpacked_plain_packet_bytes := 0
+	var hybrid_plain_packet_bytes := 0
 	var old_dict_packet_bytes := 0
 	var packed_dict_packet_bytes := 0
 	var delta_dict_packet_bytes := 0
 	var bitpacked_dict_packet_bytes := 0
+	var hybrid_dict_packet_bytes := 0
 	for tick in range(frames):
 		for i in range(racers):
 			session.store_authoritative_input(tick, int(player_ids[i]), _make_input(tick, i, mode))
@@ -111,13 +113,15 @@ func _init() -> void:
 				packed_plain_packet_bytes += int(cmp.get("packed_plain_packet", 0))
 				delta_plain_packet_bytes += int(cmp.get("delta_plain_packet", 0))
 				bitpacked_plain_packet_bytes += int(cmp.get("bitpacked_plain_packet", 0))
+				hybrid_plain_packet_bytes += int(cmp.get("hybrid_plain_packet", 0))
 				old_dict_packet_bytes += int(cmp.get("old_dict_packet", 0))
 				packed_dict_packet_bytes += int(cmp.get("packed_dict_packet", 0))
 				delta_dict_packet_bytes += int(cmp.get("delta_dict_packet", 0))
 				bitpacked_dict_packet_bytes += int(cmp.get("bitpacked_dict_packet", 0))
+				hybrid_dict_packet_bytes += int(cmp.get("hybrid_dict_packet", 0))
 			sample_count += 1
 
-	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f" % [
+	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f hybrid_dict_packet_avg=%f" % [
 		mode,
 		racers,
 		frames,
@@ -133,10 +137,12 @@ func _init() -> void:
 		float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(bitpacked_plain_packet_bytes) / float(maxi(sample_count, 1)),
+		float(hybrid_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(old_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		float(packed_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		float(delta_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		float(bitpacked_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		float(hybrid_dict_packet_bytes) / float(maxi(sample_count, 1)),
 	]
 	if !result_file.is_empty():
 		var out := FileAccess.open(result_file, FileAccess.WRITE)

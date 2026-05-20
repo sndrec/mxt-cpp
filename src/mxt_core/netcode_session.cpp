@@ -27,6 +27,8 @@ constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_PLAIN_ZSTD = 2;
 constexpr uint8_t MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD = 3;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD = 4;
 constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD = 5;
+constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DELTA_PLAIN_ZSTD = 6;
+constexpr uint8_t MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD = 7;
 constexpr uint8_t MXT_NET_AUTH_MODE_MASK = 0x07;
 constexpr uint8_t MXT_NET_AUTH_COUNT_SHIFT = 3;
 constexpr uint8_t MXT_NET_AUTH_COUNT_MASK = 0x78;
@@ -43,6 +45,7 @@ enum AuthInputLayout : uint8_t {
 	AUTH_INPUT_LAYOUT_PACKED_BUTTONS = 1,
 	AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA = 2,
 	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS = 3,
+	AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA = 4,
 };
 bool g_auth_input_sample_dump_enabled = false;
 int64_t g_auth_input_sample_dump_limit = MXT_NET_DEFAULT_AUTH_SAMPLE_LIMIT;
@@ -225,7 +228,7 @@ float axis_from_byte(uint8_t v)
 
 int auth_input_raw_size(int frame_count, int racer_count, AuthInputLayout layout)
 {
-	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS) {
+	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS || layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
 		const int input_count = frame_count * racer_count;
 		return (((input_count + 7) >> 3) * 5) + input_count * 4;
 	}
@@ -244,6 +247,9 @@ AuthInputLayout auth_input_layout_from_mode(uint8_t mode)
 	if (mode == MXT_NET_AUTH_MODE_BITPACKED_PLAIN_ZSTD || mode == MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD) {
 		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
 	}
+	if (mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_PLAIN_ZSTD || mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD) {
+		return AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
+	}
 	return AUTH_INPUT_LAYOUT_PACKED_BUTTONS;
 }
 
@@ -252,12 +258,13 @@ bool auth_input_mode_uses_dict(uint8_t mode)
 	mode &= MXT_NET_AUTH_MODE_MASK;
 	return mode == MXT_NET_AUTH_MODE_PACKED_DICT_ZSTD ||
 		mode == MXT_NET_AUTH_MODE_DELTA_DICT_ZSTD ||
-		mode == MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD;
+		mode == MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD ||
+		mode == MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD;
 }
 
 bool auth_input_mode_valid(uint8_t mode)
 {
-	return (mode & MXT_NET_AUTH_MODE_MASK) <= MXT_NET_AUTH_MODE_BITPACKED_DICT_ZSTD;
+	return (mode & MXT_NET_AUTH_MODE_MASK) <= MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD;
 }
 
 uint8_t pack_auth_mode_count_phase(uint8_t mode, int count, int race_phase)
@@ -444,7 +451,10 @@ bool NetcodeSession::write_authoritative_input_raw(
 	uint8_t* raw_bytes = raw.ptrw();
 	int raw_pos = 0;
 	const bool delta_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA;
-	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS) {
+	const bool bitpacked_layout = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS ||
+		layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
+	const bool bitpacked_analog_delta = layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
+	if (bitpacked_layout) {
 		std::memset(raw_bytes, 0, static_cast<size_t>(raw.size()));
 		const int input_count = frame_count * racer_count;
 		const int bitset_bytes = (input_count + 7) >> 3;
@@ -466,28 +476,52 @@ bool NetcodeSession::write_authoritative_input_raw(
 			const InputFrame* frame = frames[f];
 			for (int i = 0; i < racer_count; ++i) {
 				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_left);
+				uint8_t value = input_trigger_byte(input.strafe_left);
+				if (bitpacked_analog_delta && f > 0) {
+					const InputFrame* prev_frame = frames[f - 1];
+					const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+					value = zigzag_i8(wrapped_i8_delta(value, input_trigger_byte(prev.strafe_left)));
+				}
+				raw_bytes[raw_pos++] = value;
 			}
 		}
 		for (int f = 0; f < frame_count; ++f) {
 			const InputFrame* frame = frames[f];
 			for (int i = 0; i < racer_count; ++i) {
 				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input_trigger_byte(input.strafe_right);
+				uint8_t value = input_trigger_byte(input.strafe_right);
+				if (bitpacked_analog_delta && f > 0) {
+					const InputFrame* prev_frame = frames[f - 1];
+					const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+					value = zigzag_i8(wrapped_i8_delta(value, input_trigger_byte(prev.strafe_right)));
+				}
+				raw_bytes[raw_pos++] = value;
 			}
 		}
 		for (int f = 0; f < frame_count; ++f) {
 			const InputFrame* frame = frames[f];
 			for (int i = 0; i < racer_count; ++i) {
 				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input_axis_byte(input.steer_horizontal);
+				uint8_t value = input_axis_byte(input.steer_horizontal);
+				if (bitpacked_analog_delta && f > 0) {
+					const InputFrame* prev_frame = frames[f - 1];
+					const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+					value = zigzag_i8(wrapped_i8_delta(value, input_axis_byte(prev.steer_horizontal)));
+				}
+				raw_bytes[raw_pos++] = value;
 			}
 		}
 		for (int f = 0; f < frame_count; ++f) {
 			const InputFrame* frame = frames[f];
 			for (int i = 0; i < racer_count; ++i) {
 				const PlayerInput& input = frame->present[i] ? frame->inputs[i] : neutral_input;
-				raw_bytes[raw_pos++] = input_axis_byte(input.steer_vertical);
+				uint8_t value = input_axis_byte(input.steer_vertical);
+				if (bitpacked_analog_delta && f > 0) {
+					const InputFrame* prev_frame = frames[f - 1];
+					const PlayerInput& prev = prev_frame->present[i] ? prev_frame->inputs[i] : neutral_input;
+					value = zigzag_i8(wrapped_i8_delta(value, input_axis_byte(prev.steer_vertical)));
+				}
+				raw_bytes[raw_pos++] = value;
 			}
 		}
 		return raw_pos == raw.size();
@@ -1009,6 +1043,7 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 	}
 	const int packed_raw_size = auth_input_raw_size(count, racer_count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS);
 	const int bitpacked_raw_size = auth_input_raw_size(count, racer_count, AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS);
+	const int hybrid_raw_size = auth_input_raw_size(count, racer_count, AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA);
 	PackedByteArray delta_raw;
 	if (delta_raw.resize(packed_raw_size) != 0) {
 		return PackedByteArray();
@@ -1035,6 +1070,13 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		return PackedByteArray();
 	}
 	if (!write_authoritative_input_raw(bitpacked_raw, frames, count, AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS)) {
+		return PackedByteArray();
+	}
+	PackedByteArray hybrid_raw;
+	if (hybrid_raw.resize(hybrid_raw_size) != 0) {
+		return PackedByteArray();
+	}
+	if (!write_authoritative_input_raw(hybrid_raw, frames, count, AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA)) {
 		return PackedByteArray();
 	}
 	PackedByteArray compressed = delta_raw.compress(MXT_NET_COMPRESSION_ZSTD);
@@ -1076,6 +1118,20 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS;
 		selected_raw_size = bitpacked_raw_size;
 	}
+	candidate = hybrid_raw.compress(MXT_NET_COMPRESSION_ZSTD);
+	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
+		compressed = candidate;
+		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_DELTA_PLAIN_ZSTD;
+		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
+		selected_raw_size = hybrid_raw_size;
+	}
+	candidate = compress_auth_input_with_dict(hybrid_raw);
+	if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
+		compressed = candidate;
+		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_DELTA_DICT_ZSTD;
+		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
+		selected_raw_size = hybrid_raw_size;
+	}
 	if (compressed.size() <= 0 || !writer.write_bytes(compressed.ptr(), static_cast<int>(compressed.size()))) {
 		return PackedByteArray();
 	}
@@ -1083,6 +1139,8 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		dump_auth_input_sample(delta_raw, first_tick, count, racer_count);
 	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS) {
 		dump_auth_input_sample(bitpacked_raw, first_tick, count, racer_count);
+	} else if (selected_layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
+		dump_auth_input_sample(hybrid_raw, first_tick, count, racer_count);
 	} else {
 		dump_auth_input_sample(packed_raw, first_tick, count, racer_count);
 	}
@@ -1153,6 +1211,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 	const uint8_t* raw_bytes = raw.ptr();
 	int raw_pos = 0;
 	const bool delta_layout = layout == AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA;
+	const bool analog_delta_layout = delta_layout || layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
 	InputFrame* frames[MXT_NET_MAX_AUTHORITATIVE_FRAMES_PER_PACKET] = {};
 	for (int f = 0; f < static_cast<int>(count); ++f) {
 		const int tick = first_tick + f;
@@ -1165,7 +1224,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		}
 	}
 	uint8_t previous_values[MAX_RACERS] = {};
-	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS) {
+	if (layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS || layout == AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA) {
 		const int input_count = static_cast<int>(count) * racer_count;
 		const int bitset_bytes = (input_count + 7) >> 3;
 		for (int f = 0; f < static_cast<int>(count); ++f) {
@@ -1208,7 +1267,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			uint8_t value = raw_bytes[raw_pos++];
-			if (delta_layout && f > 0) {
+			if (analog_delta_layout && f > 0) {
 				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
 			}
 			previous_values[i] = value;
@@ -1220,7 +1279,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			uint8_t value = raw_bytes[raw_pos++];
-			if (delta_layout && f > 0) {
+			if (analog_delta_layout && f > 0) {
 				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
 			}
 			previous_values[i] = value;
@@ -1232,7 +1291,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			uint8_t value = raw_bytes[raw_pos++];
-			if (delta_layout && f > 0) {
+			if (analog_delta_layout && f > 0) {
 				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
 			}
 			previous_values[i] = value;
@@ -1244,7 +1303,7 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 		InputFrame* frame = frames[f];
 		for (int i = 0; i < racer_count; ++i) {
 			uint8_t value = raw_bytes[raw_pos++];
-			if (delta_layout && f > 0) {
+			if (analog_delta_layout && f > 0) {
 				value = static_cast<uint8_t>(static_cast<int>(previous_values[i]) + unzigzag_i8(value));
 			}
 			previous_values[i] = value;
@@ -1293,19 +1352,21 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 			return out;
 		}
 	}
-	const AuthInputLayout layouts[4] = {
+	const AuthInputLayout layouts[5] = {
 		AUTH_INPUT_LAYOUT_OLD_BYTE_PLANES,
 		AUTH_INPUT_LAYOUT_PACKED_BUTTONS,
 		AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA,
 		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS,
+		AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA,
 	};
-	const char* names[4] = {
+	const char* names[5] = {
 		"old",
 		"packed",
 		"delta",
 		"bitpacked",
+		"hybrid",
 	};
-	for (int l = 0; l < 4; ++l) {
+	for (int l = 0; l < 5; ++l) {
 		const AuthInputLayout layout = layouts[l];
 		const int raw_size = auth_input_raw_size(count, racer_count, layout);
 		PackedByteArray raw;
