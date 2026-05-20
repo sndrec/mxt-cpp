@@ -95,6 +95,7 @@ func _init() -> void:
 	var packet_max := 0
 	var wire_packet_min := 1 << 30
 	var wire_packet_max := 0
+	var mode_counts := {}
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
@@ -104,6 +105,8 @@ func _init() -> void:
 	var packed_dict_packet_bytes := 0
 	var delta_dict_packet_bytes := 0
 	var bitpacked_dict_packet_bytes := 0
+	var bitpacked_zero_plain_packet_bytes := 0
+	var bitpacked_zero_dict_packet_bytes := 0
 	var hybrid_dict_packet_bytes := 0
 	var old_raw_bytes := 0
 	var packed_raw_bytes := 0
@@ -122,6 +125,8 @@ func _init() -> void:
 			var size := packet.size()
 			var wire_size := _authoritative_input_wire_size(packet)
 			var sparse_wire_size := _sparse_plain_wire_size(session, tick, redundancy, player_ids)
+			var packet_mode := int(packet[0]) & 0x07 if packet.size() > 0 else -1
+			mode_counts[packet_mode] = int(mode_counts.get(packet_mode, 0)) + 1
 			packet_bytes += size
 			wire_packet_bytes += wire_size
 			sparse_plain_wire_bytes += sparse_wire_size
@@ -140,6 +145,8 @@ func _init() -> void:
 				packed_dict_packet_bytes += int(cmp.get("packed_dict_packet", 0))
 				delta_dict_packet_bytes += int(cmp.get("delta_dict_packet", 0))
 				bitpacked_dict_packet_bytes += int(cmp.get("bitpacked_dict_packet", 0))
+				bitpacked_zero_plain_packet_bytes += int(cmp.get("bitpacked_zero_plain_packet", 0))
+				bitpacked_zero_dict_packet_bytes += int(cmp.get("bitpacked_zero_dict_packet", 0))
 				hybrid_dict_packet_bytes += int(cmp.get("hybrid_dict_packet", 0))
 				old_raw_bytes += int(cmp.get("old_raw", 0))
 				packed_raw_bytes += int(cmp.get("packed_raw", 0))
@@ -166,6 +173,7 @@ func _init() -> void:
 		" wire_packet_min=", wire_packet_min,
 		" wire_packet_max=", wire_packet_max,
 		" sparse_plain_wire_avg=", float(sparse_plain_wire_bytes) / float(maxi(sample_count, 1)),
+		" mode_counts=", str(mode_counts),
 		" old_raw_avg=", float(old_raw_bytes) / float(maxi(sample_count, 1)),
 		" packed_raw_avg=", float(packed_raw_bytes) / float(maxi(sample_count, 1)),
 		" delta_raw_avg=", float(delta_raw_bytes) / float(maxi(sample_count, 1)),
@@ -179,6 +187,8 @@ func _init() -> void:
 		" packed_dict_packet_avg=", float(packed_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" delta_dict_packet_avg=", float(delta_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" bitpacked_dict_packet_avg=", float(bitpacked_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		" bitpacked_zero_plain_packet_avg=", float(bitpacked_zero_plain_packet_bytes) / float(maxi(sample_count, 1)),
+		" bitpacked_zero_dict_packet_avg=", float(bitpacked_zero_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" hybrid_dict_packet_avg=", float(hybrid_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		" auth_packets=", int(stats.get("auth_packets", 0)),
 		" auth_frames=", int(stats.get("auth_frames", 0)),

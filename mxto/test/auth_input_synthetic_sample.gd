@@ -119,6 +119,7 @@ func _init() -> void:
 	var packet_max := 0
 	var wire_packet_min := 1 << 30
 	var wire_packet_max := 0
+	var mode_counts := {}
 	var old_plain_packet_bytes := 0
 	var packed_plain_packet_bytes := 0
 	var delta_plain_packet_bytes := 0
@@ -128,6 +129,8 @@ func _init() -> void:
 	var packed_dict_packet_bytes := 0
 	var delta_dict_packet_bytes := 0
 	var bitpacked_dict_packet_bytes := 0
+	var bitpacked_zero_plain_packet_bytes := 0
+	var bitpacked_zero_dict_packet_bytes := 0
 	var hybrid_dict_packet_bytes := 0
 	for tick in range(frames):
 		for i in range(racers):
@@ -137,6 +140,8 @@ func _init() -> void:
 			var size := packet.size()
 			var wire_size := _authoritative_input_wire_size(packet)
 			var sparse_wire_size := _sparse_plain_wire_size(session, tick, redundancy, player_ids)
+			var packet_mode := int(packet[0]) & 0x07 if packet.size() > 0 else -1
+			mode_counts[packet_mode] = int(mode_counts.get(packet_mode, 0)) + 1
 			packet_bytes += size
 			wire_packet_bytes += wire_size
 			sparse_plain_wire_bytes += sparse_wire_size
@@ -155,10 +160,12 @@ func _init() -> void:
 				packed_dict_packet_bytes += int(cmp.get("packed_dict_packet", 0))
 				delta_dict_packet_bytes += int(cmp.get("delta_dict_packet", 0))
 				bitpacked_dict_packet_bytes += int(cmp.get("bitpacked_dict_packet", 0))
+				bitpacked_zero_plain_packet_bytes += int(cmp.get("bitpacked_zero_plain_packet", 0))
+				bitpacked_zero_dict_packet_bytes += int(cmp.get("bitpacked_zero_dict_packet", 0))
 				hybrid_dict_packet_bytes += int(cmp.get("hybrid_dict_packet", 0))
 			sample_count += 1
 
-	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d wire_packet_avg=%f wire_packet_min=%d wire_packet_max=%d sparse_plain_wire_avg=%f old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f hybrid_dict_packet_avg=%f" % [
+	var result := "MXT_AUTH_INPUT_SYNTHETIC_SIZE_DONE mode=%s cars=%d frames=%d sample_start=%d sample_end=%d redundancy=%d dump_dir=%s sample_packets=%d packet_avg=%f packet_min=%d packet_max=%d wire_packet_avg=%f wire_packet_min=%d wire_packet_max=%d sparse_plain_wire_avg=%f mode_counts=%s old_plain_packet_avg=%f packed_plain_packet_avg=%f delta_plain_packet_avg=%f bitpacked_plain_packet_avg=%f hybrid_plain_packet_avg=%f old_dict_packet_avg=%f packed_dict_packet_avg=%f delta_dict_packet_avg=%f bitpacked_dict_packet_avg=%f bitpacked_zero_plain_packet_avg=%f bitpacked_zero_dict_packet_avg=%f hybrid_dict_packet_avg=%f" % [
 		mode,
 		racers,
 		frames,
@@ -174,6 +181,7 @@ func _init() -> void:
 		wire_packet_min,
 		wire_packet_max,
 		float(sparse_plain_wire_bytes) / float(maxi(sample_count, 1)),
+		str(mode_counts),
 		float(old_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(packed_plain_packet_bytes) / float(maxi(sample_count, 1)),
 		float(delta_plain_packet_bytes) / float(maxi(sample_count, 1)),
@@ -183,6 +191,8 @@ func _init() -> void:
 		float(packed_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		float(delta_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		float(bitpacked_dict_packet_bytes) / float(maxi(sample_count, 1)),
+		float(bitpacked_zero_plain_packet_bytes) / float(maxi(sample_count, 1)),
+		float(bitpacked_zero_dict_packet_bytes) / float(maxi(sample_count, 1)),
 		float(hybrid_dict_packet_bytes) / float(maxi(sample_count, 1)),
 	]
 	if !result_file.is_empty():
