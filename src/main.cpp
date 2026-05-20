@@ -6633,8 +6633,6 @@ struct NetStateReader {
 	X(uint8_t, air_time) \
 	X(uint32_t, strafe_effect) \
 	X(uint8_t, frames_since_death) \
-	X(uint32_t, terrain_state_2) \
-	X(uint32_t, suspension_reset_flag) \
 	X(uint32_t, state_2) \
 	X(uint16_t, g_anim_timer) \
 	X(uint32_t, level_start_time) \
@@ -6687,13 +6685,12 @@ struct NetStateReader {
 	X(float, drift_ramp) \
 	X(float, side_attack_indicator)
 
-#define MXT_NET_CAR_VEC3_FIELDS(X)
+#define MXT_NET_CAR_VEC3_FIELDS(X) \
+	X(velocity)
 
 #define MXT_NET_CAR_VEC3_HALF_FIELDS(X) \
-	X(velocity) \
 	X(knockback_velocity) \
-	X(velocity_angular) \
-	X(track_surface_normal)
+	X(velocity_angular)
 
 #define MXT_NET_CAR_TRANSFORM_FIELDS(X)
 
@@ -6753,14 +6750,16 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			if (!spark.active) {
 				continue;
 			}
+			const uint8_t spark_flags = spark.collectable ? 1u : 0u;
 			writer.write_pod(i);
-			writer.write_pod(spark.active);
-			writer.write_pod(spark.collectable);
-			writer.write_pod(spark.animation_frame);
+			writer.write_pod(spark_flags);
 			writer.write_pod(spark.checkpoint);
-			writer.write_vec3_half(spark.start_position);
 			writer.write_vec3_half(spark.final_position);
-			writer.write_vec3_half(spark.plane_normal);
+			if (!spark.collectable) {
+				writer.write_pod(spark.animation_frame);
+				writer.write_vec3_half(spark.start_position);
+				writer.write_vec3_half(spark.plane_normal);
+			}
 		}
 	} else {
 		uint16_t cursor = 0;
@@ -7192,23 +7191,35 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		if (!reader.read_pod(spark_index) || spark_index >= SUPER_SPARK_CAPACITY) {
 			return false;
 		}
+		uint8_t spark_flags = 0;
 		SuperSpark& spark = super_spark_state->sparks[spark_index];
-		if (!reader.read_pod(spark.active) ||
-			!reader.read_pod(spark.collectable) ||
-			!reader.read_pod(spark.animation_frame) ||
+		if (!reader.read_pod(spark_flags) ||
 			!reader.read_pod(spark.checkpoint) ||
-			!reader.read_vec3_half(spark.start_position) ||
-			!reader.read_vec3_half(spark.final_position) ||
-			!reader.read_vec3_half(spark.plane_normal)) {
+			!reader.read_vec3_half(spark.final_position)) {
 			return false;
 		}
-		spark.position = mxt_super_spark_position_at_frame(
-			spark.start_position, spark.final_position, spark.plane_normal, spark.animation_frame, spark.collectable);
-		if (!spark.collectable && spark.animation_frame > 0) {
-			spark.prev_position = mxt_super_spark_position_at_frame(
-				spark.start_position, spark.final_position, spark.plane_normal, spark.animation_frame - 1, spark.collectable);
+		spark.active = 1;
+		spark.collectable = (spark_flags & 1u) != 0u ? 1u : 0u;
+		if (spark.collectable) {
+			spark.animation_frame = MXT_SUPER_SPARK_ANIMATION_FRAMES;
+			spark.start_position = spark.final_position;
+			spark.plane_normal = SimVec3(0.0f, 1.0f, 0.0f);
+			spark.position = spark.final_position;
+			spark.prev_position = spark.final_position;
 		} else {
-			spark.prev_position = spark.position;
+			if (!reader.read_pod(spark.animation_frame) ||
+				!reader.read_vec3_half(spark.start_position) ||
+				!reader.read_vec3_half(spark.plane_normal)) {
+				return false;
+			}
+			spark.position = mxt_super_spark_position_at_frame(
+				spark.start_position, spark.final_position, spark.plane_normal, spark.animation_frame, spark.collectable);
+			if (spark.animation_frame > 0) {
+				spark.prev_position = mxt_super_spark_position_at_frame(
+					spark.start_position, spark.final_position, spark.plane_normal, spark.animation_frame - 1, spark.collectable);
+			} else {
+				spark.prev_position = spark.position;
+			}
 		}
 	}
 	super_sparks = super_spark_state->sparks;
@@ -7738,6 +7749,8 @@ void GameSim::rebuild_static_state_after_network_load() {
 		soa.input_steer_yaw[lane] = 0.0f;
 		soa.input_brake[lane] = 0.0f;
 		soa.input_yaw_dupe[lane] = 0.0f;
+		soa.terrain_state_2[lane] = 0;
+		soa.suspension_reset_flag[lane] = 0;
 
 		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);
 		if (std::abs(soa.stat_weight[lane]) > 0.0001f) {
@@ -7778,11 +7791,14 @@ void GameSim::rebuild_static_state_after_network_load() {
 			soa.current_checkpoint[lane] < track->num_checkpoints) {
 			track->get_road_surface(soa.current_checkpoint[lane], position, road.road_t, road.spatial_t, road.closest_surface);
 			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, road.closest_surface.origin);
+			STORE_INDEXED_VEC3(soa, track_surface_normal, lane, road.closest_surface.basis.get_column(1));
 		} else {
 			road.closest_surface = basis;
 			road.closest_surface.origin = position;
 			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, position);
+			STORE_INDEXED_VEC3(soa, track_surface_normal, lane, SimVec3(0.0f, 1.0f, 0.0f));
 		}
+		STORE_INDEXED_VEC3(soa, track_surface_normal_prev, lane, LOAD_INDEXED_VEC3(soa, track_surface_normal, lane));
 
 		const int point_base = lane * 4;
 		const SimVec3x4 tilt_pos = transform_points_components4(
