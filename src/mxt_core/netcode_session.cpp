@@ -5,6 +5,7 @@
 #include "mxt_core/auth_input_delta_low_entropy_s1_zstd_dictionary.h"
 #include "mxt_core/auth_input_delta_low_entropy_s11_zstd_dictionary.h"
 #include "mxt_core/auth_input_delta_low_entropy_s12_zstd_dictionary.h"
+#include "mxt_core/auth_input_delta_low_entropy_s15_zstd_dictionary.h"
 #include "mxt_core/auth_input_delta_low_entropy_surface_alt_zstd_dictionary.h"
 #include "mxt_core/auth_input_delta_low_entropy_zstd_dictionary.h"
 #include "mxt_core/auth_input_delta_low_entropy_surface_fallback_alt_zstd_dictionary.h"
@@ -86,6 +87,8 @@ ZSTD_CDict* g_auth_input_delta_low_entropy_s11_zstd_cdict = nullptr;
 ZSTD_DDict* g_auth_input_delta_low_entropy_s11_zstd_ddict = nullptr;
 ZSTD_CDict* g_auth_input_delta_low_entropy_s12_zstd_cdict = nullptr;
 ZSTD_DDict* g_auth_input_delta_low_entropy_s12_zstd_ddict = nullptr;
+ZSTD_CDict* g_auth_input_delta_low_entropy_s15_zstd_cdict = nullptr;
+ZSTD_DDict* g_auth_input_delta_low_entropy_s15_zstd_ddict = nullptr;
 ZSTD_CDict* g_auth_input_delta_low_entropy_surface_zstd_cdict = nullptr;
 ZSTD_DDict* g_auth_input_delta_low_entropy_surface_zstd_ddict = nullptr;
 ZSTD_CDict* g_auth_input_delta_low_entropy_surface_alt_zstd_cdict = nullptr;
@@ -500,6 +503,19 @@ ZSTD_CDict* auth_input_delta_low_entropy_s12_zstd_cdict()
 	return g_auth_input_delta_low_entropy_s12_zstd_cdict;
 }
 
+ZSTD_CDict* auth_input_delta_low_entropy_s15_zstd_cdict()
+{
+	if (!g_auth_input_delta_low_entropy_s15_zstd_cdict) {
+		g_auth_input_delta_low_entropy_s15_zstd_cdict = create_auth_input_zstd_cdict(
+			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT,
+			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT_SIZE,
+			MXT_NET_AUTH_DELTA_PAIRS_ZSTD_LEVEL,
+			ZSTD_btopt
+		);
+	}
+	return g_auth_input_delta_low_entropy_s15_zstd_cdict;
+}
+
 ZSTD_CDict* auth_input_delta_low_entropy_surface_zstd_cdict()
 {
 	if (!g_auth_input_delta_low_entropy_surface_zstd_cdict) {
@@ -676,6 +692,17 @@ ZSTD_DDict* auth_input_delta_low_entropy_s12_zstd_ddict()
 		);
 	}
 	return g_auth_input_delta_low_entropy_s12_zstd_ddict;
+}
+
+ZSTD_DDict* auth_input_delta_low_entropy_s15_zstd_ddict()
+{
+	if (!g_auth_input_delta_low_entropy_s15_zstd_ddict) {
+		g_auth_input_delta_low_entropy_s15_zstd_ddict = ZSTD_createDDict(
+			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT,
+			MXT_AUTH_INPUT_DELTA_LOW_ENTROPY_S15_ZSTD_DICT_SIZE
+		);
+	}
+	return g_auth_input_delta_low_entropy_s15_zstd_ddict;
 }
 
 ZSTD_DDict* auth_input_delta_low_entropy_surface_zstd_ddict()
@@ -873,6 +900,11 @@ bool auth_input_low_entropy_default_s11_sublayout(uint8_t sublayout)
 bool auth_input_low_entropy_default_s12_sublayout(uint8_t sublayout)
 {
 	return sublayout == 12;
+}
+
+bool auth_input_low_entropy_default_s15_sublayout(uint8_t sublayout)
+{
+	return sublayout == 15;
 }
 
 bool auth_input_low_entropy_surface_alt_sublayout(uint8_t sublayout)
@@ -1675,7 +1707,7 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	return pos == encoded.size();
 }
 
-PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false)
+PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false, bool delta_low_entropy_s15_dict = false)
 {
 	const int raw_size = raw.size();
 	if (raw_size <= 0) {
@@ -1683,7 +1715,9 @@ PackedByteArray compress_auth_input_with_dict(const PackedByteArray& raw, bool h
 	}
 	ZSTD_CCtx* cctx = auth_input_zstd_cctx();
 	ZSTD_CDict* cdict = nullptr;
-	if (delta_low_entropy_s12_dict) {
+	if (delta_low_entropy_s15_dict) {
+		cdict = auth_input_delta_low_entropy_s15_zstd_cdict();
+	} else if (delta_low_entropy_s12_dict) {
 		cdict = auth_input_delta_low_entropy_s12_zstd_cdict();
 	} else if (delta_low_entropy_s11_dict) {
 		cdict = auth_input_delta_low_entropy_s11_zstd_cdict();
@@ -1792,14 +1826,16 @@ PackedByteArray compress_auth_input_plain(const PackedByteArray& raw)
 	return out;
 }
 
-PackedByteArray decompress_auth_input_with_dict(const PackedByteArray& compressed, int raw_size, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false)
+PackedByteArray decompress_auth_input_with_dict(const PackedByteArray& compressed, int raw_size, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false, bool delta_low_entropy_s15_dict = false)
 {
 	if (raw_size <= 0 || compressed.size() <= 0) {
 		return PackedByteArray();
 	}
 	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
 	ZSTD_DDict* ddict = nullptr;
-	if (delta_low_entropy_s12_dict) {
+	if (delta_low_entropy_s15_dict) {
+		ddict = auth_input_delta_low_entropy_s15_zstd_ddict();
+	} else if (delta_low_entropy_s12_dict) {
 		ddict = auth_input_delta_low_entropy_s12_zstd_ddict();
 	} else if (delta_low_entropy_s11_dict) {
 		ddict = auth_input_delta_low_entropy_s11_zstd_ddict();
@@ -1881,14 +1917,16 @@ PackedByteArray decompress_auth_input_plain_bound(const PackedByteArray& compres
 	return out;
 }
 
-PackedByteArray decompress_auth_input_with_dict_bound(const PackedByteArray& compressed, int raw_size_bound, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false)
+PackedByteArray decompress_auth_input_with_dict_bound(const PackedByteArray& compressed, int raw_size_bound, bool hybrid_dict = false, bool zero_bitmap_dict = false, bool hybrid_smooth_dict = false, bool delta_pairs_dict = false, bool delta_low_entropy_dict = false, bool delta_pairs_surface_dict = false, bool delta_low_entropy_surface_dict = false, bool delta_low_entropy_surface_fallback_dict = false, bool delta_low_entropy_surface_fallback_alt_dict = false, bool delta_low_entropy_alt_dict = false, bool delta_low_entropy_surface_alt_dict = false, bool delta_low_entropy_s1_dict = false, bool delta_low_entropy_s11_dict = false, bool delta_low_entropy_s12_dict = false, bool delta_low_entropy_s15_dict = false)
 {
 	if (raw_size_bound <= 0 || compressed.size() <= 0) {
 		return PackedByteArray();
 	}
 	ZSTD_DCtx* dctx = auth_input_zstd_dctx();
 	ZSTD_DDict* ddict = nullptr;
-	if (delta_low_entropy_s12_dict) {
+	if (delta_low_entropy_s15_dict) {
+		ddict = auth_input_delta_low_entropy_s15_zstd_ddict();
+	} else if (delta_low_entropy_s12_dict) {
 		ddict = auth_input_delta_low_entropy_s12_zstd_ddict();
 	} else if (delta_low_entropy_s11_dict) {
 		ddict = auth_input_delta_low_entropy_s11_zstd_ddict();
@@ -2698,7 +2736,8 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 			const bool default_s1 = auth_input_low_entropy_default_s1_sublayout(sublayout);
 			const bool default_s11 = auth_input_low_entropy_default_s11_sublayout(sublayout);
 			const bool default_s12 = auth_input_low_entropy_default_s12_sublayout(sublayout);
-			candidate = compress_auth_input_with_dict(low_entropy_candidate_raw, false, false, false, false, !default_alt && !default_s1 && !default_s11 && !default_s12, false, false, false, false, default_alt && !default_s12, false, default_s1, default_s11, default_s12);
+			const bool default_s15 = auth_input_low_entropy_default_s15_sublayout(sublayout);
+			candidate = compress_auth_input_with_dict(low_entropy_candidate_raw, false, false, false, false, !default_alt && !default_s1 && !default_s11 && !default_s12 && !default_s15, false, false, false, false, default_alt && !default_s12 && !default_s15, false, default_s1, default_s11, default_s12, default_s15);
 			if (candidate.size() > 0 && (compressed.size() <= 0 || candidate.size() < compressed.size())) {
 				compressed = candidate;
 				compression_mode = MXT_NET_AUTH_MODE_DELTA_LOW_ENTROPY_DICT_ZSTD;
@@ -2865,7 +2904,8 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 					!auth_input_low_entropy_default_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
 					!auth_input_low_entropy_default_s1_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
 					!auth_input_low_entropy_default_s11_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
+					!auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
+					!auth_input_low_entropy_default_s15_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
 				false,
 				auth_input_mode_uses_delta_low_entropy_surface_dict(compression_mode) &&
 					!auth_input_low_entropy_surface_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
@@ -2875,7 +2915,8 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 					auth_input_low_entropy_fallback_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
 				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
 					auth_input_low_entropy_default_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
-					!auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
+					!auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)) &&
+					!auth_input_low_entropy_default_s15_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
 				auth_input_mode_uses_delta_low_entropy_surface_dict(compression_mode) &&
 					auth_input_low_entropy_surface_alt_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
 				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
@@ -2883,7 +2924,9 @@ godot::Dictionary NetcodeSession::store_authoritative_input_packet(godot::Packed
 				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
 					auth_input_low_entropy_default_s11_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
 				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
-					auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout))
+					auth_input_low_entropy_default_s12_sublayout(static_cast<uint8_t>(low_entropy_sublayout)),
+				auth_input_mode_uses_delta_low_entropy_dict(compression_mode) &&
+					auth_input_low_entropy_default_s15_sublayout(static_cast<uint8_t>(low_entropy_sublayout))
 			);
 		} else {
 			raw = decompress_auth_input_with_dict(
@@ -3213,7 +3256,8 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 				const bool default_s1 = auth_input_low_entropy_default_s1_sublayout(sublayout);
 				const bool default_s11 = auth_input_low_entropy_default_s11_sublayout(sublayout);
 				const bool default_s12 = auth_input_low_entropy_default_s12_sublayout(sublayout);
-				const PackedByteArray compressed_default = compress_auth_input_with_dict(candidate_raw, false, false, false, false, !default_alt && !default_s1 && !default_s11 && !default_s12, false, false, false, false, default_alt && !default_s12, false, default_s1, default_s11, default_s12);
+				const bool default_s15 = auth_input_low_entropy_default_s15_sublayout(sublayout);
+				const PackedByteArray compressed_default = compress_auth_input_with_dict(candidate_raw, false, false, false, false, !default_alt && !default_s1 && !default_s11 && !default_s12 && !default_s15, false, false, false, false, default_alt && !default_s12 && !default_s15, false, default_s1, default_s11, default_s12, default_s15);
 				if (compressed_default.size() > 0 && (best_low_entropy_default_payload <= 0 || compressed_default.size() < best_low_entropy_default_payload)) {
 					best_low_entropy_default_payload = compressed_default.size();
 					best_low_entropy_default_sublayout = static_cast<int>(sublayout);
