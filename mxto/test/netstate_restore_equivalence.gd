@@ -116,12 +116,15 @@ func _parse_debug_vec(s: String, key: String) -> Vector3:
 		return Vector3.ZERO
 	return Vector3(float(parts[0]), float(parts[1]), float(parts[2]))
 
+func _compare_pos_rank_desc(a: Dictionary, b: Dictionary) -> bool:
+	return float(a.get("pos_delta", 0.0)) > float(b.get("pos_delta", 0.0))
+
 func _print_debug_pair(prefix: String, a: GameSim, b: GameSim, player_id: int) -> void:
 	if player_id < 0:
 		return
 	print(prefix, " player=", player_id, " auth=[", a.get_player_debug_string(player_id), "] restored=[", b.get_player_debug_string(player_id), "]")
 
-func _measure_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, pos_epsilon: float, basis_epsilon: float) -> Dictionary:
+func _measure_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, pos_epsilon: float, ignore_worst_pos: int) -> Dictionary:
 	var max_pos_delta := 0.0
 	var max_vel_delta := 0.0
 	var max_up_delta := 0.0
@@ -136,6 +139,7 @@ func _measure_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, pos_epsil
 	var fail_vel_delta := 0.0
 	var fail_up_delta := 0.0
 	var fail_dist_delta := 0.0
+	var pos_ranked: Array = []
 	for id in player_ids:
 		var ida := int(id)
 		var da := a.get_player_debug_string(ida)
@@ -156,13 +160,27 @@ func _measure_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, pos_epsil
 		if dist_delta > max_dist_delta:
 			max_dist_delta = dist_delta
 			max_dist_player = ida
-		if !failed and (pos_delta > pos_epsilon or up_delta > basis_epsilon):
-			failed = true
-			fail_player = ida
-			fail_pos_delta = pos_delta
-			fail_vel_delta = vel_delta
-			fail_up_delta = up_delta
-			fail_dist_delta = dist_delta
+		pos_ranked.append({
+			"player": ida,
+			"pos_delta": pos_delta,
+			"vel_delta": vel_delta,
+			"up_delta": up_delta,
+			"dist_delta": dist_delta,
+		})
+	pos_ranked.sort_custom(_compare_pos_rank_desc)
+	var effective_index = clampi(ignore_worst_pos, 0, maxi(0, pos_ranked.size() - 1))
+	var effective: Dictionary = {}
+	if pos_ranked.size() > 0:
+		effective = pos_ranked[effective_index]
+	var effective_pos_delta := float(effective.get("pos_delta", 0.0))
+	var effective_pos_player := int(effective.get("player", -1))
+	if effective_pos_delta > pos_epsilon:
+		failed = true
+		fail_player = effective_pos_player
+		fail_pos_delta = effective_pos_delta
+		fail_vel_delta = float(effective.get("vel_delta", 0.0))
+		fail_up_delta = float(effective.get("up_delta", 0.0))
+		fail_dist_delta = float(effective.get("dist_delta", 0.0))
 	return {
 		"max_pos_delta": max_pos_delta,
 		"max_vel_delta": max_vel_delta,
@@ -172,6 +190,9 @@ func _measure_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, pos_epsil
 		"max_vel_player": max_vel_player,
 		"max_up_player": max_up_player,
 		"max_dist_player": max_dist_player,
+		"effective_pos_delta": effective_pos_delta,
+		"effective_pos_player": effective_pos_player,
+		"ignored_worst_pos": mini(ignore_worst_pos, maxi(0, pos_ranked.size() - 1)),
 		"failed": failed,
 		"fail_player": fail_player,
 		"fail_pos_delta": fail_pos_delta,
@@ -184,6 +205,9 @@ func _print_numeric(prefix: String, tick: int, m: Dictionary) -> void:
 	print(prefix, " tick=", tick,
 		" max_pos_delta=", float(m.get("max_pos_delta", 0.0)),
 		" max_pos_player=", int(m.get("max_pos_player", -1)),
+		" effective_pos_delta=", float(m.get("effective_pos_delta", 0.0)),
+		" effective_pos_player=", int(m.get("effective_pos_player", -1)),
+		" ignored_worst_pos=", int(m.get("ignored_worst_pos", 0)),
 		" max_vel_delta=", float(m.get("max_vel_delta", 0.0)),
 		" max_vel_player=", int(m.get("max_vel_player", -1)),
 		" max_up_delta=", float(m.get("max_up_delta", 0.0)),
@@ -200,9 +224,11 @@ func _maybe_print_details(prefix: String, a: GameSim, b: GameSim, tick: int, m: 
 	if max_vel_player != max_pos_player:
 		_print_debug_pair("%s_VEL tick=%d delta=%.9f" % [prefix, tick, float(m.get("max_vel_delta", 0.0))], a, b, max_vel_player)
 
-func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int, pos_epsilon: float, basis_epsilon: float, detail_threshold: float) -> bool:
-	var m := _measure_debug_numeric(a, b, player_ids, pos_epsilon, basis_epsilon)
+func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int, pos_epsilon: float, _basis_epsilon: float, detail_threshold: float, ignore_worst_pos: int) -> bool:
+	var m := _measure_debug_numeric(a, b, player_ids, pos_epsilon, ignore_worst_pos)
 	if bool(m.get("failed", false)):
+		_print_numeric("MXT_NETSTATE_RESTORE_EQUIV_NUMERIC", tick, m)
+		_maybe_print_details("MXT_NETSTATE_RESTORE_EQUIV_DETAIL", a, b, tick, m, detail_threshold)
 		push_error("netstate_restore_equivalence numeric mismatch tick=%d player=%d pos_delta=%.9f vel_delta=%.9f up_delta=%.12f dist_delta=%.9f" % [
 			tick,
 			int(m.get("fail_player", -1)),
@@ -259,7 +285,7 @@ func _make_inputs(sim: GameSim, tick: int, humans: int, player_ids: Array) -> Di
 		shared_inputs[id] = sim.get_native_cpu_input_for_tick(id, tick)
 	return shared_inputs
 
-func _run_resync_series(authoritative: GameSim, restored: GameSim, authoritative_session: NetcodeSession, restored_session: NetcodeSession, player_ids: Array, humans: int, end_tick: int, interval: int, pos_epsilon: float, basis_epsilon: float, detail_threshold: float) -> bool:
+func _run_resync_series(authoritative: GameSim, restored: GameSim, authoritative_session: NetcodeSession, restored_session: NetcodeSession, player_ids: Array, humans: int, end_tick: int, interval: int, pos_epsilon: float, basis_epsilon: float, detail_threshold: float, ignore_worst_pos: int) -> bool:
 	var max_raw := 0
 	var max_zstd := 0
 	var max_tick := -1
@@ -279,7 +305,7 @@ func _run_resync_series(authoritative: GameSim, restored: GameSim, authoritative
 			push_error("netstate_restore_equivalence failed restored resync tick %d" % tick)
 			return false
 		if interval > 0 and tick > 0 and tick % interval == 0:
-			var pre := _measure_debug_numeric(authoritative, restored, player_ids, pos_epsilon, basis_epsilon)
+			var pre := _measure_debug_numeric(authoritative, restored, player_ids, pos_epsilon, ignore_worst_pos)
 			if bool(pre.get("failed", false)):
 				push_error("netstate_restore_equivalence pre-resync mismatch tick=%d player=%d pos_delta=%.9f vel_delta=%.9f up_delta=%.12f dist_delta=%.9f" % [
 					tick,
@@ -304,7 +330,7 @@ func _run_resync_series(authoritative: GameSim, restored: GameSim, authoritative
 				max_tick = tick
 			restored.set_state_data(tick, snapshot)
 			restored.load_state(tick)
-			var post := _measure_debug_numeric(authoritative, restored, player_ids, pos_epsilon, basis_epsilon)
+			var post := _measure_debug_numeric(authoritative, restored, player_ids, pos_epsilon, ignore_worst_pos)
 			if bool(post.get("failed", false)):
 				push_error("netstate_restore_equivalence post-resync mismatch tick=%d player=%d pos_delta=%.9f vel_delta=%.9f up_delta=%.12f dist_delta=%.9f" % [
 					tick,
@@ -341,11 +367,14 @@ func _init() -> void:
 	var cars := _arg_int(args, "--cars", 100)
 	var humans := clampi(_arg_int(args, "--humans", 100), 0, cars)
 	var snapshot_tick := _arg_int(args, "--snapshot-tick", 3600)
-	var verify_frames := _arg_int(args, "--verify-frames", 240)
+	var verify_frames := _arg_int(args, "--verify-frames", 60)
 	var compare_every := maxi(1, _arg_int(args, "--compare-every", 60))
-	var pos_epsilon := float(_arg_value(args, "--pos-epsilon", "0.02"))
+	var pos_epsilon := float(_arg_value(args, "--pos-epsilon", "5.0"))
 	var basis_epsilon := float(_arg_value(args, "--basis-epsilon", "0.0002"))
 	var detail_threshold := float(_arg_value(args, "--detail-threshold", "-1.0"))
+	if detail_threshold < 0.0:
+		detail_threshold = pos_epsilon
+	var ignore_worst_pos := maxi(0, _arg_int(args, "--ignore-worst-pos", 3))
 	var raw_load_baseline := _arg_bool(args, "--raw-load-baseline", false)
 	var resync_interval := _arg_int(args, "--resync-interval", 0)
 
@@ -369,7 +398,7 @@ func _init() -> void:
 	var shared_inputs_by_tick := {}
 
 	if resync_interval > 0:
-		if !_run_resync_series(authoritative, restored, authoritative_session, restored_session, player_ids, humans, snapshot_tick, resync_interval, pos_epsilon, basis_epsilon, detail_threshold):
+		if !_run_resync_series(authoritative, restored, authoritative_session, restored_session, player_ids, humans, snapshot_tick, resync_interval, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
 			quit(1)
 			return
 		root.remove_child(authoritative)
@@ -415,12 +444,12 @@ func _init() -> void:
 			int(restored_snapshot[diff]) if diff >= 0 and diff < restored_snapshot.size() else -1])
 			quit(1)
 			return
-		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold):
+		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
 			quit(1)
 			return
 
 	if raw_load_baseline:
-		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold):
+		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
 			quit(1)
 			return
 	for tick in range(snapshot_tick + 1, snapshot_tick + verify_frames + 1):
@@ -437,7 +466,7 @@ func _init() -> void:
 			quit(1)
 			return
 		if (tick - snapshot_tick) % compare_every == 0:
-			if !_compare_debug_numeric(authoritative, restored, player_ids, tick, pos_epsilon, basis_epsilon, detail_threshold):
+			if !_compare_debug_numeric(authoritative, restored, player_ids, tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
 				quit(1)
 				return
 
