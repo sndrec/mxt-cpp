@@ -675,6 +675,9 @@ int auth_input_delta_low_entropy_raw_size_bound(int frame_count, int p_racer_cou
 
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT = 0;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS = 1;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS = 2;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS = 3;
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT = MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS;
 constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MASK_PAIRS[10][2] = {
 	{1, 0}, {127, 127}, {0, 0}, {1, 32}, {17, 31},
 	{17, 0}, {0, 32}, {1, 17}, {0, 31}, {32, 31},
@@ -696,13 +699,62 @@ constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[3][15][2] = {
 		{137, 0}, {134, 0}, {119, 0}, {162, 0}, {161, 2},
 	},
 };
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIR_FIELDS[3][15][2] = {
+	{
+		{0, 0}, {254, 0}, {1, 1}, {0, 2}, {1, 0},
+		{6, 0}, {1, 2}, {2, 0}, {2, 3}, {3, 0},
+		{4, 0}, {5, 0}, {0, 4}, {8, 0}, {2, 1},
+	},
+	{
+		{0, 0}, {254, 0}, {1, 1}, {3, 0}, {2, 0},
+		{1, 0}, {0, 2}, {4, 0}, {6, 0}, {2, 1},
+		{7, 0}, {5, 0}, {2, 3}, {4, 1}, {8, 0},
+	},
+	{
+		{135, 0}, {161, 0}, {127, 0}, {93, 0}, {254, 0},
+		{0, 0}, {162, 0}, {161, 2}, {162, 1}, {160, 2},
+		{119, 0}, {161, 1}, {152, 0}, {93, 1}, {92, 2},
+	},
+};
+constexpr uint8_t MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIR_FIELDS[3][15][2] = {
+	{
+		{0, 0}, {254, 0}, {1, 1}, {1, 0}, {2, 0},
+		{3, 0}, {4, 0}, {5, 0}, {6, 0}, {7, 0},
+		{8, 0}, {0, 2}, {9, 0}, {10, 0}, {11, 0},
+	},
+	{
+		{0, 0}, {254, 0}, {1, 0}, {2, 0}, {3, 0},
+		{4, 0}, {5, 0}, {6, 0}, {0, 2}, {7, 0},
+		{9, 0}, {8, 0}, {1, 1}, {11, 0}, {1, 2},
+	},
+	{
+		{127, 0}, {0, 0}, {128, 0}, {126, 0}, {129, 0},
+		{254, 0}, {136, 0}, {135, 0}, {137, 0}, {134, 0},
+		{125, 0}, {123, 0}, {133, 0}, {131, 0}, {138, 0},
+	},
+};
+
+const uint8_t (*auth_input_low_entropy_table_for_sublayout(uint8_t sublayout))[15][2]
+{
+	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
+		return MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS;
+	}
+	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIRS) {
+		return MXT_AUTH_INPUT_LOW_ENTROPY_SURFACE_TABLE_PAIR_FIELDS;
+	}
+	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIRS) {
+		return MXT_AUTH_INPUT_LOW_ENTROPY_MULTIPLEX_TABLE_PAIR_FIELDS;
+	}
+	return nullptr;
+}
 
 PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_raw, int frame_count, int p_racer_count, uint8_t sublayout)
 {
 	if (frame_count != 2 || p_racer_count <= 0 || delta_pairs_raw.size() != frame_count * p_racer_count * 5) {
 		return PackedByteArray();
 	}
-	if (sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT && sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
+	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
+	if (sublayout != MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT && !pair_table) {
 		return PackedByteArray();
 	}
 	const int field_bytes = frame_count * p_racer_count;
@@ -710,7 +762,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	const int mask_code_bytes = (p_racer_count + 1) >> 1;
 	const uint8_t* src = delta_pairs_raw.ptr();
 	int escape_count = 0;
-	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
+	if (pair_table) {
 		for (int field = 0; field < 3; ++field) {
 			const int base = field * field_bytes;
 			for (int i = 0; i < p_racer_count; ++i) {
@@ -718,8 +770,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 				const uint8_t b = src[base + (i * 2) + 1];
 				bool found = false;
 				for (int p = 0; p < 15; ++p) {
-					if (MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[field][p][0] == a &&
-						MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[field][p][1] == b) {
+					if (pair_table[field][p][0] == a && pair_table[field][p][1] == b) {
 						found = true;
 						break;
 					}
@@ -755,7 +806,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	}
 	PackedByteArray out;
 	const int table_code_bytes = (p_racer_count + 1) >> 1;
-	const int first_fields_size = sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS ?
+	const int first_fields_size = pair_table ?
 		(3 * table_code_bytes) :
 		(3 * field_bytes);
 	const int out_size = 1 + first_fields_size + sv_class_bytes + mask_code_bytes + (escape_count * 2);
@@ -765,7 +816,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 	uint8_t* dst = out.ptrw();
 	int pos = 0;
 	dst[pos++] = sublayout;
-	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
+	if (pair_table) {
 		for (int field = 0; field < 3; ++field) {
 			const int base = field * field_bytes;
 			std::memset(dst + pos, 0, static_cast<size_t>(table_code_bytes));
@@ -776,8 +827,7 @@ PackedByteArray encode_delta_low_entropy_raw(const PackedByteArray& delta_pairs_
 				const uint8_t b = src[base + (i * 2) + 1];
 				uint8_t code = 15;
 				for (int p = 0; p < 15; ++p) {
-					if (MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[field][p][0] == a &&
-						MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[field][p][1] == b) {
+					if (pair_table[field][p][0] == a && pair_table[field][p][1] == b) {
 						code = static_cast<uint8_t>(p);
 						break;
 					}
@@ -855,7 +905,8 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 	uint8_t* dst = out.ptrw();
 	int pos = 0;
 	const uint8_t sublayout = src[pos++];
-	if (sublayout == MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS) {
+	const uint8_t (*pair_table)[15][2] = auth_input_low_entropy_table_for_sublayout(sublayout);
+	if (pair_table) {
 		const int table_code_bytes = (p_racer_count + 1) >> 1;
 		for (int field = 0; field < 3; ++field) {
 			const int base = field * field_bytes;
@@ -869,8 +920,8 @@ bool decode_delta_low_entropy_raw(const PackedByteArray& encoded, PackedByteArra
 				uint8_t a = 0;
 				uint8_t b = 0;
 				if (code < 15) {
-					a = MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[field][code][0];
-					b = MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIR_FIELDS[field][code][1];
+					a = pair_table[field][code][0];
+					b = pair_table[field][code][1];
 				} else {
 					if (pos + 2 > encoded.size()) {
 						return false;
@@ -1890,7 +1941,7 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		selected_raw_size = delta_pairs_raw_size;
 	}
 	PackedByteArray delta_low_entropy_raw;
-	for (uint8_t sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT; sublayout <= MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS; ++sublayout) {
+	for (uint8_t sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT; sublayout <= MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT; ++sublayout) {
 		PackedByteArray low_entropy_candidate_raw = encode_delta_low_entropy_raw(delta_pairs_raw, count, racer_count, sublayout);
 		if (low_entropy_candidate_raw.size() > 0) {
 			candidate = compress_auth_input_with_dict(low_entropy_candidate_raw, false, false, false, false, true);
@@ -2340,24 +2391,19 @@ godot::Dictionary NetcodeSession::debug_compare_authoritative_input_packet_sizes
 			if (!write_authoritative_input_raw(delta_pairs_raw, frames, count, AUTH_INPUT_LAYOUT_PACKED_BUTTONS_FRAME_DELTA_RACER_PAIRS)) {
 				return out;
 			}
-			PackedByteArray current_raw = encode_delta_low_entropy_raw(delta_pairs_raw, count, racer_count, MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT);
-			PackedByteArray table_raw = encode_delta_low_entropy_raw(delta_pairs_raw, count, racer_count, MXT_AUTH_INPUT_LOW_ENTROPY_TABLE_PAIRS);
-			const PackedByteArray current_compressed = compress_auth_input_with_dict(current_raw, false, false, false, false, true);
-			const PackedByteArray table_compressed = compress_auth_input_with_dict(table_raw, false, false, false, false, true);
-			const PackedByteArray current_surface_compressed = compress_auth_input_with_dict(current_raw, false, false, false, false, false, false, true);
-			const PackedByteArray table_surface_compressed = compress_auth_input_with_dict(table_raw, false, false, false, false, false, false, true);
-			raw = current_raw;
-			int best_compressed_size = current_compressed.size();
-			if (table_compressed.size() > 0 && (best_compressed_size <= 0 || table_compressed.size() < best_compressed_size)) {
-				raw = table_raw;
-				best_compressed_size = table_compressed.size();
-			}
-			if (current_surface_compressed.size() > 0 && (best_compressed_size <= 0 || current_surface_compressed.size() < best_compressed_size)) {
-				raw = current_raw;
-				best_compressed_size = current_surface_compressed.size();
-			}
-			if (table_surface_compressed.size() > 0 && (best_compressed_size <= 0 || table_surface_compressed.size() < best_compressed_size)) {
-				raw = table_raw;
+			int best_compressed_size = 0;
+			for (uint8_t sublayout = MXT_AUTH_INPUT_LOW_ENTROPY_CURRENT; sublayout <= MXT_AUTH_INPUT_LOW_ENTROPY_MAX_SUBLAYOUT; ++sublayout) {
+				PackedByteArray candidate_raw = encode_delta_low_entropy_raw(delta_pairs_raw, count, racer_count, sublayout);
+				const PackedByteArray compressed_default = compress_auth_input_with_dict(candidate_raw, false, false, false, false, true);
+				if (compressed_default.size() > 0 && (best_compressed_size <= 0 || compressed_default.size() < best_compressed_size)) {
+					raw = candidate_raw;
+					best_compressed_size = compressed_default.size();
+				}
+				const PackedByteArray compressed_surface = compress_auth_input_with_dict(candidate_raw, false, false, false, false, false, false, true);
+				if (compressed_surface.size() > 0 && (best_compressed_size <= 0 || compressed_surface.size() < best_compressed_size)) {
+					raw = candidate_raw;
+					best_compressed_size = compressed_surface.size();
+				}
 			}
 			raw_size = raw.size();
 		} else {
