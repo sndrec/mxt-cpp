@@ -54,7 +54,10 @@ var sticker_menu_open := false
 var sticker_input_buffer_msec := 0
 const CHECK_ICON_POOL_SIZE := 6
 const STICKER_POOL_SIZE := 30
-const STICKER_BASE_PIXEL_SIZE := 0.005
+const STICKER_BASE_PIXEL_SIZE := 0.004
+const STICKER_BASE_TEXTURE_PIXELS := 128.0
+const STICKER_BASE_HEIGHT_OFFSET := 3.0
+const STICKER_BASE_RISE_OFFSET := 0.66
 const STICKER_DISTANCE_SCALE_START := 100.0
 const STICKER_DISTANCE_SCALE_END := 600.0
 const STICKER_FAR_SCALE := 0.5
@@ -290,6 +293,15 @@ func _distance_sticker_scale(distance: float) -> float:
 	var t := clampf((distance - STICKER_DISTANCE_SCALE_START) / (STICKER_DISTANCE_SCALE_END - STICKER_DISTANCE_SCALE_START), 0.0, 1.0)
 	return lerpf(1.0, STICKER_FAR_SCALE, t)
 
+func _sticker_pixel_size_for_texture(texture: Texture2D, display_scale: float) -> float:
+	if texture == null:
+		return STICKER_BASE_PIXEL_SIZE * display_scale
+	var texture_size := texture.get_size()
+	var max_texture_axis := maxf(texture_size.x, texture_size.y)
+	if max_texture_axis <= 0.0:
+		return STICKER_BASE_PIXEL_SIZE * display_scale
+	return STICKER_BASE_PIXEL_SIZE * display_scale * (STICKER_BASE_TEXTURE_PIXELS / max_texture_axis)
+
 func _update_world_stickers(car: VisualCar) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or car.game_manager == null or car.game_manager.game_sim == null:
@@ -297,6 +309,7 @@ func _update_world_stickers(car: VisualCar) -> void:
 	var active: Dictionary = car.game_manager.active_stickers
 	var now := Time.get_ticks_msec()
 	var camera_position := camera.global_position
+	var focus_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(car.owning_id)
 	sticker_candidates.clear()
 	sticker_nodes.clear()
 	for slot in sticker_pool.size():
@@ -307,18 +320,21 @@ func _update_world_stickers(car: VisualCar) -> void:
 	for actor_id in active.keys():
 		var actor_int := int(actor_id)
 		var render_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(actor_int)
-		var world_pos := render_transform.origin + render_transform.basis.y * 3.0
+		var distance_scale := _distance_sticker_scale(camera_position.distance_to(render_transform.origin))
+		var world_pos := render_transform.origin + render_transform.basis.y * (STICKER_BASE_HEIGHT_OFFSET * distance_scale)
 		if !camera.is_position_in_frustum(world_pos):
 			continue
-		sticker_candidates.append([camera_position.distance_squared_to(world_pos), actor_int, render_transform, world_pos])
+		var owner_distance_scale := _distance_sticker_scale(focus_transform.origin.distance_to(render_transform.origin))
+		sticker_candidates.append([camera_position.distance_squared_to(world_pos), actor_int, render_transform, world_pos, distance_scale, owner_distance_scale])
 	sticker_candidates.sort_custom(func(a, b): return float(a[0]) < float(b[0]))
-	var focus_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(car.owning_id)
 	var visible_count := mini(sticker_candidates.size(), sticker_pool.size())
 	for slot in visible_count:
 		var candidate: Array = sticker_candidates[slot]
 		var actor_id := int(candidate[1])
 		var render_transform := candidate[2] as Transform3D
 		var world_pos := candidate[3] as Vector3
+		var distance_scale := float(candidate[4])
+		var owner_distance_scale := float(candidate[5])
 		var sticker_node := sticker_pool[slot]
 		sticker_pool_actor_ids[slot] = actor_id
 		sticker_nodes[actor_id] = slot
@@ -335,12 +351,10 @@ func _update_world_stickers(car: VisualCar) -> void:
 		var pop_ease := pop_t * pop_t * (3.0 - 2.0 * pop_t)
 		var fade_t := clampf(float(remaining_msec) / 420.0, 0.0, 1.0)
 		var scale := lerpf(0.45, 1.0, pop_ease)
-		var rise := lerpf(22.0, 0.0, pop_ease)
 		var life_alpha := minf(pop_ease, fade_t)
-		var distance_scale := _distance_sticker_scale(focus_transform.origin.distance_to(render_transform.origin))
 		sticker_node.visible = true
-		sticker_node.global_position = world_pos + camera.global_basis.y * (rise * 0.03)
-		var pixel_size := STICKER_BASE_PIXEL_SIZE * scale * distance_scale
+		sticker_node.global_position = world_pos + camera.global_basis.y * (STICKER_BASE_RISE_OFFSET * pop_ease * distance_scale)
+		var pixel_size := _sticker_pixel_size_for_texture(texture, scale * owner_distance_scale)
 		var xray := sticker_node.get_node_or_null("XRay") as Sprite3D
 		if xray != null:
 			xray.texture = texture
