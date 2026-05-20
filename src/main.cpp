@@ -6386,6 +6386,19 @@ struct NetStateWriter {
 		write_pod(q.w);
 	}
 
+	void write_quat_i16(const SimQuat& q) {
+		const float len_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+		const float inv_len = len_sq > 0.000001f ? 1.0f / std::sqrt(len_sq) : 1.0f;
+		const auto pack = [&](float v) -> int16_t {
+			const float clamped = std::clamp(v * inv_len, -1.0f, 1.0f);
+			return static_cast<int16_t>(std::lround(clamped * 32767.0f));
+		};
+		write_pod(pack(q.x));
+		write_pod(pack(q.y));
+		write_pod(pack(q.z));
+		write_pod(pack(q.w));
+	}
+
 	void write_basis(const SimBasis& b) {
 		for (int col = 0; col < 3; ++col) {
 			write_vec3(b.get_column(col));
@@ -6457,6 +6470,31 @@ struct NetStateReader {
 		return read_pod(out.x) && read_pod(out.y) && read_pod(out.z) && read_pod(out.w);
 	}
 
+	bool read_quat_i16(SimQuat& out) {
+		int16_t x = 0;
+		int16_t y = 0;
+		int16_t z = 0;
+		int16_t w = 0;
+		if (!read_pod(x) || !read_pod(y) || !read_pod(z) || !read_pod(w)) {
+			return false;
+		}
+		out.x = static_cast<float>(x) / 32767.0f;
+		out.y = static_cast<float>(y) / 32767.0f;
+		out.z = static_cast<float>(z) / 32767.0f;
+		out.w = static_cast<float>(w) / 32767.0f;
+		const float len_sq = out.x * out.x + out.y * out.y + out.z * out.z + out.w * out.w;
+		if (len_sq > 0.000001f) {
+			const float inv_len = 1.0f / std::sqrt(len_sq);
+			out.x *= inv_len;
+			out.y *= inv_len;
+			out.z *= inv_len;
+			out.w *= inv_len;
+		} else {
+			out = SimQuat();
+		}
+		return true;
+	}
+
 	bool read_basis(SimBasis& out) {
 		SimVec3 c0, c1, c2;
 		if (!read_vec3(c0) || !read_vec3(c1) || !read_vec3(c2)) {
@@ -6504,7 +6542,6 @@ struct NetStateReader {
 	X(uint8_t, breakdown_frame_counter) \
 	X(uint16_t, restore_wait_frames) \
 	X(uint16_t, restore_move_frames) \
-	X(int16_t, collision_old_cp) \
 	X(uint16_t, current_checkpoint) \
 	X(int16_t, current_collision_checkpoint) \
 	X(uint16_t, last_ground_checkpoint) \
@@ -6528,9 +6565,6 @@ struct NetStateReader {
 	X(bool, machine_crashed) \
 	X(bool, s_boost_active) \
 	X(bool, broken_lap_rollback_pending) \
-	X(bool, collision_old_valid) \
-	X(bool, collision_old_was_above) \
-	X(bool, collision_old_was_inside) \
 	X(float, base_speed) \
 	X(float, boost_turbo) \
 	X(float, dashplate_heat_multiplier) \
@@ -6560,10 +6594,7 @@ struct NetStateReader {
 	X(velocity) \
 	X(knockback_velocity) \
 	X(velocity_angular) \
-	X(track_surface_normal) \
-	X(track_surface_pos) \
-	X(unk_vec3_0x4e4) \
-	X(unk_vec3_0x4f0)
+	X(track_surface_normal)
 
 #define MXT_NET_CAR_TRANSFORM_FIELDS(X)
 
@@ -6761,7 +6792,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		writer.write_quat(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
+		writer.write_quat_i16(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
 	}
 	WRITE_NET_BASIS(basis_physical)
 	WRITE_NET_BASIS(basis_physical_other)
@@ -6773,7 +6804,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		writer.write_quat(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
+		writer.write_quat_i16(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
 	}
 	if (bumper_cars) { \
 		WRITE_NET_BUMPER_BASIS(basis_physical) \
@@ -6788,9 +6819,6 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		const int lane = cars[i].soa_index;
 		if (soa.collision_old_valid[lane]) {
 			++stats.car_collision_old_count;
-			writer.write_vec2(soa.collision_old_road_t[lane]);
-			writer.write_vec3(soa.collision_old_spatial_t[lane]);
-			writer.write_transform(soa.collision_old_surface[lane]);
 		}
 		if (soa.restore_state[lane] != 0) {
 			++stats.car_restore_count;
@@ -6806,9 +6834,6 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			const int lane = bumper_cars[i].soa_index;
 			if (soa.collision_old_valid[lane]) {
 				++stats.bumper_collision_old_count;
-				writer.write_vec2(soa.collision_old_road_t[lane]);
-				writer.write_vec3(soa.collision_old_spatial_t[lane]);
-				writer.write_transform(soa.collision_old_surface[lane]);
 			}
 			if (soa.restore_state[lane] != 0) {
 				++stats.bumper_restore_count;
@@ -7198,7 +7223,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
 		SimQuat q; \
-		if (!reader.read_quat(q)) return false; \
+		if (!reader.read_quat_i16(q)) return false; \
 		SimTransform t = MXT_LOAD_TRANSFORM(soa, name, lane); \
 		t.basis = SimBasis(q); \
 		MXT_STORE_TRANSFORM(soa, name, lane, t); \
@@ -7215,7 +7240,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
 		SimQuat q; \
-		if (!reader.read_quat(q)) return false; \
+		if (!reader.read_quat_i16(q)) return false; \
 		SimTransform t = MXT_LOAD_TRANSFORM(soa, name, lane); \
 		t.basis = SimBasis(q); \
 		MXT_STORE_TRANSFORM(soa, name, lane, t); \
@@ -7229,20 +7254,24 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	}
 #undef READ_NET_BUMPER_BASIS
 
+	TrackQueryScratch collision_old_scratch;
+	for (int i = 0; i < num_cars; ++i) {
+		collision_old_scratch.reset_mesh_query();
+		collision_old_scratch.debug_mesh_current_global_car_index = i;
+		cars[i].sample_old_corner_collision_surface(collision_old_scratch);
+	}
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			collision_old_scratch.reset_mesh_query();
+			collision_old_scratch.debug_mesh_current_global_car_index = num_cars + i;
+			bumper_cars[i].sample_old_corner_collision_surface(collision_old_scratch);
+		}
+	}
+	collision_old_scratch.debug_mesh_current_global_car_index = -1;
+
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-		if (soa.collision_old_valid[lane]) {
-			if (!reader.read_vec2(soa.collision_old_road_t[lane]) ||
-				!reader.read_vec3(soa.collision_old_spatial_t[lane]) ||
-				!reader.read_transform(soa.collision_old_surface[lane])) {
-				return false;
-			}
-		} else {
-			soa.collision_old_road_t[lane] = SimVec2();
-			soa.collision_old_spatial_t[lane] = SimVec3();
-			soa.collision_old_surface[lane] = SimTransform();
-		}
 		if (soa.restore_state[lane] != 0) {
 			SimTransform restore_start;
 			SimTransform restore_target;
@@ -7262,17 +7291,6 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
-			if (soa.collision_old_valid[lane]) {
-				if (!reader.read_vec2(soa.collision_old_road_t[lane]) ||
-					!reader.read_vec3(soa.collision_old_spatial_t[lane]) ||
-					!reader.read_transform(soa.collision_old_surface[lane])) {
-					return false;
-				}
-			} else {
-				soa.collision_old_road_t[lane] = SimVec2();
-				soa.collision_old_spatial_t[lane] = SimVec3();
-				soa.collision_old_surface[lane] = SimTransform();
-			}
 			if (soa.restore_state[lane] != 0) {
 				SimTransform restore_start;
 				SimTransform restore_target;
@@ -7481,6 +7499,8 @@ void GameSim::rebuild_static_state_after_network_load() {
 		STORE_INDEXED_VEC3(soa, collision_push_rail, lane, SimVec3());
 		STORE_INDEXED_VEC3(soa, collision_push_total, lane, SimVec3());
 		STORE_INDEXED_VEC3(soa, collision_response, lane, SimVec3());
+		STORE_INDEXED_VEC3(soa, unk_vec3_0x4e4, lane, SimVec3());
+		STORE_INDEXED_VEC3(soa, unk_vec3_0x4f0, lane, SimVec3());
 		soa.input_steer_pitch[lane] = 0.0f;
 		soa.input_strafe[lane] = 0.0f;
 		soa.input_steer_yaw[lane] = 0.0f;
@@ -7525,9 +7545,11 @@ void GameSim::rebuild_static_state_after_network_load() {
 			soa.current_checkpoint[lane] >= 0 &&
 			soa.current_checkpoint[lane] < track->num_checkpoints) {
 			track->get_road_surface(soa.current_checkpoint[lane], position, road.road_t, road.spatial_t, road.closest_surface);
+			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, road.closest_surface.origin);
 		} else {
 			road.closest_surface = basis;
-			road.closest_surface.origin = LOAD_INDEXED_VEC3(soa, track_surface_pos, lane);
+			road.closest_surface.origin = position;
+			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, position);
 		}
 
 		const int point_base = lane * 4;
