@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <numeric>
 #include <new>
+#include <type_traits>
 #include <vector>
 #if defined(_MSC_VER)
 #include <malloc.h>
@@ -6351,6 +6352,83 @@ void GameSim::finish_render_rollback_correction_capture()
 namespace {
 constexpr uint32_t MXT_NET_STATE_MAGIC = 0x5354584du; // "MXTS", little-endian.
 
+static uint16_t mxt_float_to_half_bits(float value) {
+	uint32_t bits = 0;
+	std::memcpy(&bits, &value, sizeof(bits));
+	const uint32_t sign = (bits >> 16) & 0x8000u;
+	int32_t exp = static_cast<int32_t>((bits >> 23) & 0xffu) - 127 + 15;
+	uint32_t mant = bits & 0x7fffffu;
+	if (exp <= 0) {
+		if (exp < -10) {
+			return static_cast<uint16_t>(sign);
+		}
+		mant |= 0x800000u;
+		const uint32_t shift = static_cast<uint32_t>(14 - exp);
+		uint32_t half_mant = mant >> shift;
+		if ((mant >> (shift - 1)) & 1u) {
+			half_mant += 1u;
+		}
+		return static_cast<uint16_t>(sign | half_mant);
+	}
+	if (exp >= 31) {
+		return static_cast<uint16_t>(sign | 0x7c00u);
+	}
+	uint32_t half = sign | (static_cast<uint32_t>(exp) << 10) | (mant >> 13);
+	if (mant & 0x1000u) {
+		half += 1u;
+	}
+	return static_cast<uint16_t>(half);
+}
+
+static float mxt_half_bits_to_float(uint16_t half) {
+	const uint32_t sign = (static_cast<uint32_t>(half & 0x8000u)) << 16;
+	uint32_t exp = (half >> 10) & 0x1fu;
+	uint32_t mant = half & 0x03ffu;
+	uint32_t bits = 0;
+	if (exp == 0) {
+		if (mant == 0) {
+			bits = sign;
+		} else {
+			exp = 1;
+			while ((mant & 0x0400u) == 0) {
+				mant <<= 1;
+				--exp;
+			}
+			mant &= 0x03ffu;
+			bits = sign | ((exp + (127 - 15)) << 23) | (mant << 13);
+		}
+	} else if (exp == 31) {
+		bits = sign | 0x7f800000u | (mant << 13);
+	} else {
+		bits = sign | ((exp + (127 - 15)) << 23) | (mant << 13);
+	}
+	float value = 0.0f;
+	std::memcpy(&value, &bits, sizeof(value));
+	return value;
+}
+
+static bool mxt_net_checkpoint_surface_at(RaceTrack* track, int cp_idx, float fraction, SimTransform& out) {
+	if (!track || cp_idx < 0 || cp_idx >= track->num_checkpoints) {
+		return false;
+	}
+	const CollisionCheckpoint& cp = track->checkpoints[cp_idx];
+	if (cp.road_segment < 0 || cp.road_segment >= track->num_segments || !track->segments[cp.road_segment].road_shape) {
+		return false;
+	}
+	const float t_y = cp.t_start + (cp.t_end - cp.t_start) * std::clamp(fraction, 0.0f, 1.0f);
+	track->segments[cp.road_segment].road_shape->get_oriented_transform_at_time(out, SimVec2(0.0f, t_y));
+	out.basis.orthonormalize();
+	return true;
+}
+
+static SimTransform mxt_net_checkpoint_surface_or_identity(RaceTrack* track, int cp_idx, float fraction) {
+	SimTransform surface;
+	if (!mxt_net_checkpoint_surface_at(track, cp_idx, fraction, surface)) {
+		surface = SimTransform();
+	}
+	return surface;
+}
+
 struct NetStateWriter {
 	std::vector<uint8_t> data;
 
@@ -6372,6 +6450,12 @@ struct NetStateWriter {
 		write_pod(v.x);
 		write_pod(v.y);
 		write_pod(v.z);
+	}
+
+	void write_vec3_half(const SimVec3& v) {
+		write_float16(v.x);
+		write_float16(v.y);
+		write_float16(v.z);
 	}
 
 	void write_vec2(const SimVec2& v) {
@@ -6397,6 +6481,10 @@ struct NetStateWriter {
 		write_pod(pack(q.y));
 		write_pod(pack(q.z));
 		write_pod(pack(q.w));
+	}
+
+	void write_float16(float value) {
+		write_pod(mxt_float_to_half_bits(value));
 	}
 
 	void write_basis(const SimBasis& b) {
@@ -6462,6 +6550,10 @@ struct NetStateReader {
 		return read_pod(out.x) && read_pod(out.y) && read_pod(out.z);
 	}
 
+	bool read_vec3_half(SimVec3& out) {
+		return read_float16(out.x) && read_float16(out.y) && read_float16(out.z);
+	}
+
 	bool read_vec2(SimVec2& out) {
 		return read_pod(out.x) && read_pod(out.y);
 	}
@@ -6495,6 +6587,15 @@ struct NetStateReader {
 		return true;
 	}
 
+	bool read_float16(float& out) {
+		uint16_t bits = 0;
+		if (!read_pod(bits)) {
+			return false;
+		}
+		out = mxt_half_bits_to_float(bits);
+		return true;
+	}
+
 	bool read_basis(SimBasis& out) {
 		SimVec3 c0, c1, c2;
 		if (!read_vec3(c0) || !read_vec3(c1) || !read_vec3(c2)) {
@@ -6523,7 +6624,6 @@ struct NetStateReader {
 	X(uint32_t, machine_state) \
 	X(uint16_t, boost_frames) \
 	X(uint16_t, boost_frames_manual) \
-	X(uint32_t, simulation_tick) \
 	X(uint32_t, last_hit_tick) \
 	X(uint8_t, spinattack_direction) \
 	X(uint8_t, brake_timer) \
@@ -6587,10 +6687,9 @@ struct NetStateReader {
 	X(float, drift_ramp) \
 	X(float, side_attack_indicator)
 
-#define MXT_NET_CAR_VEC3_FIELDS(X) \
-	X(position_current) \
-	X(position_old) \
-	X(position_old_dupe) \
+#define MXT_NET_CAR_VEC3_FIELDS(X)
+
+#define MXT_NET_CAR_VEC3_HALF_FIELDS(X) \
 	X(velocity) \
 	X(knockback_velocity) \
 	X(velocity_angular) \
@@ -6600,7 +6699,7 @@ struct NetStateReader {
 
 #define MXT_NET_TILT_SCALAR_FIELDS(X) \
 	X(float, force) \
-	X(uint32_t, state)
+	X(uint8_t, state)
 
 #define MXT_NET_TILT_VEC3_FIELDS(X)
 
@@ -6659,9 +6758,9 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			writer.write_pod(spark.collectable);
 			writer.write_pod(spark.animation_frame);
 			writer.write_pod(spark.checkpoint);
-			writer.write_vec3(spark.start_position);
-			writer.write_vec3(spark.final_position);
-			writer.write_vec3(spark.plane_normal);
+			writer.write_vec3_half(spark.start_position);
+			writer.write_vec3_half(spark.final_position);
+			writer.write_vec3_half(spark.plane_normal);
 		}
 	} else {
 		uint16_t cursor = 0;
@@ -6680,8 +6779,12 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		const type wire_value = static_cast<type>(soa.name[lane]); \
-		writer.write_pod(wire_value); \
+		if constexpr (std::is_same_v<type, float>) { \
+			writer.write_float16(soa.name[lane]); \
+		} else { \
+			const type wire_value = static_cast<type>(soa.name[lane]); \
+			writer.write_pod(wire_value); \
+		} \
 	}
 	MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_SCALAR)
 #undef WRITE_NET_SCALAR
@@ -6692,8 +6795,12 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		const type wire_value = static_cast<type>(soa.name[lane]); \
-		writer.write_pod(wire_value); \
+		if constexpr (std::is_same_v<type, float>) { \
+			writer.write_float16(soa.name[lane]); \
+		} else { \
+			const type wire_value = static_cast<type>(soa.name[lane]); \
+			writer.write_pod(wire_value); \
+		} \
 	}
 	if (bumper_cars) { \
 		MXT_NET_CAR_SCALAR_FIELDS(WRITE_NET_BUMPER_SCALAR) \
@@ -6715,6 +6822,20 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	MXT_NET_CAR_VEC3_FIELDS(WRITE_NET_VEC3)
 #undef WRITE_NET_VEC3
 #undef WRITE_NET_VEC3_COMPONENT
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
+		writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_current, lane)));
+		writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_old, lane)));
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+#define WRITE_NET_VEC3_HALF(name) writer.write_vec3_half(LOAD_INDEXED_VEC3(soa, name, lane));
+		MXT_NET_CAR_VEC3_HALF_FIELDS(WRITE_NET_VEC3_HALF)
+#undef WRITE_NET_VEC3_HALF
+	}
 	stats.car_vec3 += writer.size() - section_start;
 
 	section_start = writer.size();
@@ -6733,6 +6854,24 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	}
 #undef WRITE_NET_BUMPER_VEC3
 #undef WRITE_NET_BUMPER_VEC3_COMPONENT
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+			const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
+			writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_current, lane)));
+			writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_old, lane)));
+		}
+	}
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+#define WRITE_NET_BUMPER_VEC3_HALF(name) writer.write_vec3_half(LOAD_INDEXED_VEC3(soa, name, lane));
+			MXT_NET_CAR_VEC3_HALF_FIELDS(WRITE_NET_BUMPER_VEC3_HALF)
+#undef WRITE_NET_BUMPER_VEC3_HALF
+		}
+	}
 	stats.bumper_vec3 += writer.size() - section_start;
 
 	section_start = writer.size();
@@ -6850,7 +6989,12 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		for (int i = 0; i < num_cars; ++i) { \
 			PhysicsCarSoA& soa = *cars[i].soa; \
 			const int p = cars[i].soa_index * 4 + point; \
-			writer.write_pod(soa.tilt_##name[p]); \
+			if constexpr (std::is_same_v<type, float>) { \
+				writer.write_float16(soa.tilt_##name[p]); \
+			} else { \
+				const type wire_value = static_cast<type>(soa.tilt_##name[p]); \
+				writer.write_pod(wire_value); \
+			} \
 		} \
 	}
 	MXT_NET_TILT_SCALAR_FIELDS(WRITE_NET_TILT_SCALAR)
@@ -6863,7 +7007,12 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		for (int i = 0; i < bumper_count; ++i) { \
 			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 			const int p = bumper_cars[i].soa_index * 4 + point; \
-			writer.write_pod(soa.tilt_##name[p]); \
+			if constexpr (std::is_same_v<type, float>) { \
+				writer.write_float16(soa.tilt_##name[p]); \
+			} else { \
+				const type wire_value = static_cast<type>(soa.tilt_##name[p]); \
+				writer.write_pod(wire_value); \
+			} \
 		} \
 	}
 	if (bumper_cars) { \
@@ -7048,9 +7197,9 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			!reader.read_pod(spark.collectable) ||
 			!reader.read_pod(spark.animation_frame) ||
 			!reader.read_pod(spark.checkpoint) ||
-			!reader.read_vec3(spark.start_position) ||
-			!reader.read_vec3(spark.final_position) ||
-			!reader.read_vec3(spark.plane_normal)) {
+			!reader.read_vec3_half(spark.start_position) ||
+			!reader.read_vec3_half(spark.final_position) ||
+			!reader.read_vec3_half(spark.plane_normal)) {
 			return false;
 		}
 		spark.position = mxt_super_spark_position_at_frame(
@@ -7068,9 +7217,15 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		type wire_value; \
-		if (!reader.read_pod(wire_value)) return false; \
-		soa.name[lane] = wire_value; \
+		if constexpr (std::is_same_v<type, float>) { \
+			float wire_value = 0.0f; \
+			if (!reader.read_float16(wire_value)) return false; \
+			soa.name[lane] = wire_value; \
+		} else { \
+			type wire_value; \
+			if (!reader.read_pod(wire_value)) return false; \
+			soa.name[lane] = wire_value; \
+		} \
 	}
 	MXT_NET_CAR_SCALAR_FIELDS(READ_NET_SCALAR)
 #undef READ_NET_SCALAR
@@ -7079,9 +7234,15 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		type wire_value; \
-		if (!reader.read_pod(wire_value)) return false; \
-		soa.name[lane] = wire_value; \
+		if constexpr (std::is_same_v<type, float>) { \
+			float wire_value = 0.0f; \
+			if (!reader.read_float16(wire_value)) return false; \
+			soa.name[lane] = wire_value; \
+		} else { \
+			type wire_value; \
+			if (!reader.read_pod(wire_value)) return false; \
+			soa.name[lane] = wire_value; \
+		} \
 	}
 	if (bumper_count > 0 && !bumper_cars) { \
 		return false; \
@@ -7090,6 +7251,17 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		MXT_NET_CAR_SCALAR_FIELDS(READ_NET_BUMPER_SCALAR) \
 	}
 #undef READ_NET_BUMPER_SCALAR
+
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		soa.simulation_tick[cars[i].soa_index] = static_cast<uint32_t>(target_tick);
+	}
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			soa.simulation_tick[bumper_cars[i].soa_index] = static_cast<uint32_t>(target_tick);
+		}
+	}
 
 	if (current_track) {
 		for (int i = 0; i < num_cars; ++i) {
@@ -7140,6 +7312,25 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	MXT_NET_CAR_VEC3_FIELDS(READ_NET_VEC3)
 #undef READ_NET_VEC3
 #undef READ_NET_VEC3_COMPONENT
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
+		SimVec3 local_current;
+		SimVec3 local_old;
+		if (!reader.read_vec3_half(local_current) || !reader.read_vec3_half(local_old)) {
+			return false;
+		}
+		STORE_INDEXED_VEC3(soa, position_current, lane, surface.xform(local_current));
+		STORE_INDEXED_VEC3(soa, position_old, lane, surface.xform(local_old));
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+#define READ_NET_VEC3_HALF(name) do { SimVec3 v; if (!reader.read_vec3_half(v)) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
+		MXT_NET_CAR_VEC3_HALF_FIELDS(READ_NET_VEC3_HALF)
+#undef READ_NET_VEC3_HALF
+	}
 
 #define READ_NET_BUMPER_VEC3_COMPONENT(name, component) \
 	for (int i = 0; i < bumper_count; ++i) { \
@@ -7156,17 +7347,42 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	}
 #undef READ_NET_BUMPER_VEC3
 #undef READ_NET_BUMPER_VEC3_COMPONENT
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+			const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
+			SimVec3 local_current;
+			SimVec3 local_old;
+			if (!reader.read_vec3_half(local_current) || !reader.read_vec3_half(local_old)) {
+				return false;
+			}
+			STORE_INDEXED_VEC3(soa, position_current, lane, surface.xform(local_current));
+			STORE_INDEXED_VEC3(soa, position_old, lane, surface.xform(local_old));
+		}
+	}
+	if (bumper_cars) {
+		for (int i = 0; i < bumper_count; ++i) {
+			PhysicsCarSoA& soa = *bumper_cars[i].soa;
+			const int lane = bumper_cars[i].soa_index;
+#define READ_NET_BUMPER_VEC3_HALF(name) do { SimVec3 v; if (!reader.read_vec3_half(v)) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
+			MXT_NET_CAR_VEC3_HALF_FIELDS(READ_NET_BUMPER_VEC3_HALF)
+#undef READ_NET_BUMPER_VEC3_HALF
+		}
+	}
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		STORE_INDEXED_VEC3(soa, position_old_2, lane, LOAD_INDEXED_VEC3(soa, position_current, lane));
+		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, LOAD_INDEXED_VEC3(soa, position_old, lane));
 	}
 	if (bumper_cars) {
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
 			STORE_INDEXED_VEC3(soa, position_old_2, lane, LOAD_INDEXED_VEC3(soa, position_current, lane));
+			STORE_INDEXED_VEC3(soa, position_old_dupe, lane, LOAD_INDEXED_VEC3(soa, position_old, lane));
 		}
 	}
 
@@ -7313,7 +7529,15 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		for (int i = 0; i < num_cars; ++i) { \
 			PhysicsCarSoA& soa = *cars[i].soa; \
 			const int p = cars[i].soa_index * 4 + point; \
-			if (!reader.read_pod(soa.tilt_##name[p])) return false; \
+			if constexpr (std::is_same_v<type, float>) { \
+				float wire_value = 0.0f; \
+				if (!reader.read_float16(wire_value)) return false; \
+				soa.tilt_##name[p] = wire_value; \
+			} else { \
+				type wire_value; \
+				if (!reader.read_pod(wire_value)) return false; \
+				soa.tilt_##name[p] = wire_value; \
+			} \
 		} \
 	}
 	MXT_NET_TILT_SCALAR_FIELDS(READ_NET_TILT_SCALAR)
@@ -7324,7 +7548,15 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		for (int i = 0; i < bumper_count; ++i) { \
 			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 			const int p = bumper_cars[i].soa_index * 4 + point; \
-			if (!reader.read_pod(soa.tilt_##name[p])) return false; \
+			if constexpr (std::is_same_v<type, float>) { \
+				float wire_value = 0.0f; \
+				if (!reader.read_float16(wire_value)) return false; \
+				soa.tilt_##name[p] = wire_value; \
+			} else { \
+				type wire_value; \
+				if (!reader.read_pod(wire_value)) return false; \
+				soa.tilt_##name[p] = wire_value; \
+			} \
 		} \
 	}
 	if (bumper_cars) { \
@@ -7713,6 +7945,7 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 
 #undef MXT_NET_CAR_SCALAR_FIELDS
 #undef MXT_NET_CAR_VEC3_FIELDS
+#undef MXT_NET_CAR_VEC3_HALF_FIELDS
 #undef MXT_NET_CAR_TRANSFORM_FIELDS
 #undef MXT_NET_TILT_SCALAR_FIELDS
 #undef MXT_NET_TILT_VEC3_FIELDS
