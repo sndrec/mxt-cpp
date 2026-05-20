@@ -121,7 +121,7 @@ func _print_debug_pair(prefix: String, a: GameSim, b: GameSim, player_id: int) -
 		return
 	print(prefix, " player=", player_id, " auth=[", a.get_player_debug_string(player_id), "] restored=[", b.get_player_debug_string(player_id), "]")
 
-func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int, pos_epsilon: float, basis_epsilon: float, detail_threshold: float) -> bool:
+func _measure_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, pos_epsilon: float, basis_epsilon: float) -> Dictionary:
 	var max_pos_delta := 0.0
 	var max_vel_delta := 0.0
 	var max_up_delta := 0.0
@@ -130,6 +130,12 @@ func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int
 	var max_vel_player := -1
 	var max_up_player := -1
 	var max_dist_player := -1
+	var failed := false
+	var fail_player := -1
+	var fail_pos_delta := 0.0
+	var fail_vel_delta := 0.0
+	var fail_up_delta := 0.0
+	var fail_dist_delta := 0.0
 	for id in player_ids:
 		var ida := int(id)
 		var da := a.get_player_debug_string(ida)
@@ -150,23 +156,63 @@ func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int
 		if dist_delta > max_dist_delta:
 			max_dist_delta = dist_delta
 			max_dist_player = ida
-		if pos_delta > pos_epsilon or up_delta > basis_epsilon:
-			push_error("netstate_restore_equivalence numeric mismatch tick=%d player=%d pos_delta=%.9f vel_delta=%.9f up_delta=%.12f dist_delta=%.9f" % [
-				tick, ida, pos_delta, vel_delta, up_delta, dist_delta])
-			return false
-	print("MXT_NETSTATE_RESTORE_EQUIV_NUMERIC tick=", tick,
-		" max_pos_delta=", max_pos_delta,
-		" max_pos_player=", max_pos_player,
-		" max_vel_delta=", max_vel_delta,
-		" max_vel_player=", max_vel_player,
-		" max_up_delta=", max_up_delta,
-		" max_up_player=", max_up_player,
-		" max_dist_delta=", max_dist_delta,
-		" max_dist_player=", max_dist_player)
-	if detail_threshold >= 0.0 and max_pos_delta >= detail_threshold:
-		_print_debug_pair("MXT_NETSTATE_RESTORE_EQUIV_DETAIL_POS tick=%d delta=%.9f" % [tick, max_pos_delta], a, b, max_pos_player)
-		if max_vel_player != max_pos_player:
-			_print_debug_pair("MXT_NETSTATE_RESTORE_EQUIV_DETAIL_VEL tick=%d delta=%.9f" % [tick, max_vel_delta], a, b, max_vel_player)
+		if !failed and (pos_delta > pos_epsilon or up_delta > basis_epsilon):
+			failed = true
+			fail_player = ida
+			fail_pos_delta = pos_delta
+			fail_vel_delta = vel_delta
+			fail_up_delta = up_delta
+			fail_dist_delta = dist_delta
+	return {
+		"max_pos_delta": max_pos_delta,
+		"max_vel_delta": max_vel_delta,
+		"max_up_delta": max_up_delta,
+		"max_dist_delta": max_dist_delta,
+		"max_pos_player": max_pos_player,
+		"max_vel_player": max_vel_player,
+		"max_up_player": max_up_player,
+		"max_dist_player": max_dist_player,
+		"failed": failed,
+		"fail_player": fail_player,
+		"fail_pos_delta": fail_pos_delta,
+		"fail_vel_delta": fail_vel_delta,
+		"fail_up_delta": fail_up_delta,
+		"fail_dist_delta": fail_dist_delta,
+	}
+
+func _print_numeric(prefix: String, tick: int, m: Dictionary) -> void:
+	print(prefix, " tick=", tick,
+		" max_pos_delta=", float(m.get("max_pos_delta", 0.0)),
+		" max_pos_player=", int(m.get("max_pos_player", -1)),
+		" max_vel_delta=", float(m.get("max_vel_delta", 0.0)),
+		" max_vel_player=", int(m.get("max_vel_player", -1)),
+		" max_up_delta=", float(m.get("max_up_delta", 0.0)),
+		" max_up_player=", int(m.get("max_up_player", -1)),
+		" max_dist_delta=", float(m.get("max_dist_delta", 0.0)),
+		" max_dist_player=", int(m.get("max_dist_player", -1)))
+
+func _maybe_print_details(prefix: String, a: GameSim, b: GameSim, tick: int, m: Dictionary, detail_threshold: float) -> void:
+	if detail_threshold < 0.0 or float(m.get("max_pos_delta", 0.0)) < detail_threshold:
+		return
+	var max_pos_player := int(m.get("max_pos_player", -1))
+	var max_vel_player := int(m.get("max_vel_player", -1))
+	_print_debug_pair("%s_POS tick=%d delta=%.9f" % [prefix, tick, float(m.get("max_pos_delta", 0.0))], a, b, max_pos_player)
+	if max_vel_player != max_pos_player:
+		_print_debug_pair("%s_VEL tick=%d delta=%.9f" % [prefix, tick, float(m.get("max_vel_delta", 0.0))], a, b, max_vel_player)
+
+func _compare_debug_numeric(a: GameSim, b: GameSim, player_ids: Array, tick: int, pos_epsilon: float, basis_epsilon: float, detail_threshold: float) -> bool:
+	var m := _measure_debug_numeric(a, b, player_ids, pos_epsilon, basis_epsilon)
+	if bool(m.get("failed", false)):
+		push_error("netstate_restore_equivalence numeric mismatch tick=%d player=%d pos_delta=%.9f vel_delta=%.9f up_delta=%.12f dist_delta=%.9f" % [
+			tick,
+			int(m.get("fail_player", -1)),
+			float(m.get("fail_pos_delta", 0.0)),
+			float(m.get("fail_vel_delta", 0.0)),
+			float(m.get("fail_up_delta", 0.0)),
+			float(m.get("fail_dist_delta", 0.0))])
+		return false
+	_print_numeric("MXT_NETSTATE_RESTORE_EQUIV_NUMERIC", tick, m)
+	_maybe_print_details("MXT_NETSTATE_RESTORE_EQUIV_DETAIL", a, b, tick, m, detail_threshold)
 	return true
 
 func _make_sim(track_bytes: PackedByteArray, car_bytes: PackedByteArray, cars: int, humans: int, player_ids: Array, cpu_flags: Array) -> GameSim:
@@ -206,6 +252,88 @@ func _store_inputs(session: NetcodeSession, tick: int, inputs_by_id: Dictionary)
 	for id in inputs_by_id.keys():
 		session.store_pending_input(tick, int(id), inputs_by_id[id])
 
+func _make_inputs(sim: GameSim, tick: int, humans: int, player_ids: Array) -> Dictionary:
+	var shared_inputs := {}
+	for i in range(humans):
+		var id := int(player_ids[i])
+		shared_inputs[id] = sim.get_native_cpu_input_for_tick(id, tick)
+	return shared_inputs
+
+func _run_resync_series(authoritative: GameSim, restored: GameSim, authoritative_session: NetcodeSession, restored_session: NetcodeSession, player_ids: Array, humans: int, end_tick: int, interval: int, pos_epsilon: float, basis_epsilon: float, detail_threshold: float) -> bool:
+	var max_raw := 0
+	var max_zstd := 0
+	var max_tick := -1
+	var max_pre_pos := 0.0
+	var max_pre_tick := -1
+	var max_pre_player := -1
+	var max_post_pos := 0.0
+	var max_post_tick := -1
+	var max_post_player := -1
+	var samples := 0
+	for tick in range(end_tick + 1):
+		var shared_inputs := _make_inputs(authoritative, tick, humans, player_ids)
+		if !_tick_sim_with_inputs(authoritative, authoritative_session, tick, shared_inputs):
+			push_error("netstate_restore_equivalence failed authoritative resync tick %d" % tick)
+			return false
+		if !_tick_sim_with_inputs(restored, restored_session, tick, shared_inputs):
+			push_error("netstate_restore_equivalence failed restored resync tick %d" % tick)
+			return false
+		if interval > 0 and tick > 0 and tick % interval == 0:
+			var pre := _measure_debug_numeric(authoritative, restored, player_ids, pos_epsilon, basis_epsilon)
+			if bool(pre.get("failed", false)):
+				push_error("netstate_restore_equivalence pre-resync mismatch tick=%d player=%d pos_delta=%.9f vel_delta=%.9f up_delta=%.12f dist_delta=%.9f" % [
+					tick,
+					int(pre.get("fail_player", -1)),
+					float(pre.get("fail_pos_delta", 0.0)),
+					float(pre.get("fail_vel_delta", 0.0)),
+					float(pre.get("fail_up_delta", 0.0)),
+					float(pre.get("fail_dist_delta", 0.0))])
+				return false
+			if float(pre.get("max_pos_delta", 0.0)) > max_pre_pos:
+				max_pre_pos = float(pre.get("max_pos_delta", 0.0))
+				max_pre_tick = tick
+				max_pre_player = int(pre.get("max_pos_player", -1))
+			_maybe_print_details("MXT_NETSTATE_RESTORE_RESYNC_PRE_DETAIL", authoritative, restored, tick, pre, detail_threshold)
+			var snapshot := authoritative.get_state_data(tick)
+			var compressed := snapshot.compress(FileAccess.COMPRESSION_ZSTD)
+			var payload_size := compressed.size() if !compressed.is_empty() else snapshot.size()
+			if snapshot.size() > max_raw:
+				max_raw = snapshot.size()
+			if payload_size > max_zstd:
+				max_zstd = payload_size
+				max_tick = tick
+			restored.set_state_data(tick, snapshot)
+			restored.load_state(tick)
+			var post := _measure_debug_numeric(authoritative, restored, player_ids, pos_epsilon, basis_epsilon)
+			if bool(post.get("failed", false)):
+				push_error("netstate_restore_equivalence post-resync mismatch tick=%d player=%d pos_delta=%.9f vel_delta=%.9f up_delta=%.12f dist_delta=%.9f" % [
+					tick,
+					int(post.get("fail_player", -1)),
+					float(post.get("fail_pos_delta", 0.0)),
+					float(post.get("fail_vel_delta", 0.0)),
+					float(post.get("fail_up_delta", 0.0)),
+					float(post.get("fail_dist_delta", 0.0))])
+				return false
+			if float(post.get("max_pos_delta", 0.0)) > max_post_pos:
+				max_post_pos = float(post.get("max_pos_delta", 0.0))
+				max_post_tick = tick
+				max_post_player = int(post.get("max_pos_player", -1))
+			_maybe_print_details("MXT_NETSTATE_RESTORE_RESYNC_POST_DETAIL", authoritative, restored, tick, post, detail_threshold)
+			samples += 1
+	print("MXT_NETSTATE_RESTORE_RESYNC_OK end_tick=", end_tick,
+		" interval=", interval,
+		" samples=", samples,
+		" max_raw=", max_raw,
+		" max_zstd=", max_zstd,
+		" max_zstd_tick=", max_tick,
+		" max_pre_pos_delta=", max_pre_pos,
+		" max_pre_tick=", max_pre_tick,
+		" max_pre_player=", max_pre_player,
+		" max_post_pos_delta=", max_post_pos,
+		" max_post_tick=", max_post_tick,
+		" max_post_player=", max_post_player)
+	return true
+
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var track_path := _arg_value(args, "--track", DEFAULT_TRACK)
@@ -219,6 +347,7 @@ func _init() -> void:
 	var basis_epsilon := float(_arg_value(args, "--basis-epsilon", "0.0002"))
 	var detail_threshold := float(_arg_value(args, "--detail-threshold", "-1.0"))
 	var raw_load_baseline := _arg_bool(args, "--raw-load-baseline", false)
+	var resync_interval := _arg_int(args, "--resync-interval", 0)
 
 	var track_bytes := FileAccess.get_file_as_bytes(track_path)
 	var car_bytes := FileAccess.get_file_as_bytes(car_props_path)
@@ -239,11 +368,19 @@ func _init() -> void:
 	var restored_session := _make_session(player_ids, cpu_flags)
 	var shared_inputs_by_tick := {}
 
+	if resync_interval > 0:
+		if !_run_resync_series(authoritative, restored, authoritative_session, restored_session, player_ids, humans, snapshot_tick, resync_interval, pos_epsilon, basis_epsilon, detail_threshold):
+			quit(1)
+			return
+		root.remove_child(authoritative)
+		root.remove_child(restored)
+		authoritative.free()
+		restored.free()
+		quit()
+		return
+
 	for tick in range(snapshot_tick + 1):
-		var shared_inputs := {}
-		for i in range(humans):
-			var id := int(player_ids[i])
-			shared_inputs[id] = authoritative.get_native_cpu_input_for_tick(id, tick)
+		var shared_inputs := _make_inputs(authoritative, tick, humans, player_ids)
 		shared_inputs_by_tick[tick] = shared_inputs
 		if !_tick_sim_with_inputs(authoritative, authoritative_session, tick, shared_inputs):
 			push_error("netstate_restore_equivalence failed authoritative tick %d" % tick)
@@ -287,10 +424,7 @@ func _init() -> void:
 			quit(1)
 			return
 	for tick in range(snapshot_tick + 1, snapshot_tick + verify_frames + 1):
-		var shared_inputs := {}
-		for i in range(humans):
-			var id := int(player_ids[i])
-			shared_inputs[id] = authoritative.get_native_cpu_input_for_tick(id, tick)
+		var shared_inputs := _make_inputs(authoritative, tick, humans, player_ids)
 		shared_inputs_by_tick[tick] = shared_inputs
 		_store_inputs(authoritative_session, tick, shared_inputs)
 		_store_inputs(restored_session, tick, shared_inputs)
