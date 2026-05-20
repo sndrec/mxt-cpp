@@ -4127,7 +4127,7 @@ void NetcodeSession::recalculate_predictions_internal(GameSim* sim, int start_ti
 					frame.inputs[i] = PlayerInput::from_bytes(cpu_bytes);
 					frame.present[i] = 1;
 				} else if (previous && previous->present[i]) {
-					frame.inputs[i] = previous->inputs[i];
+					frame.inputs[i] = decay_predicted_input(previous->inputs[i]);
 					frame.present[i] = 1;
 				}
 				continue;
