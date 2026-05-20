@@ -111,6 +111,32 @@ func _init() -> void:
 		push_error("phase-matched authoritative packet should be valid, got %s" % [current_auth_stats])
 		quit(1)
 		return
+	var recv_nm := NetworkManager.new()
+	recv_nm.race_active = true
+	recv_nm.race_netplay_phase = 1
+	recv_nm.is_server = false
+	recv_nm.listen_server = false
+	recv_nm.player_ids = [1]
+	recv_nm.netcode_session.configure([1], [false], 1)
+	recv_nm._server_broadcast_flat(recv_nm._pack_authoritative_input_tick(0, -1), phase_one_auth_packet, 0)
+	if recv_nm.clients_server_tick != 1 or recv_nm.clients_target_tick != 0:
+		push_error("authoritative input broadcast should advance input tick without timing fields, server=%d target=%d" % [recv_nm.clients_server_tick, recv_nm.clients_target_tick])
+		quit(1)
+		return
+	var listen_nm := NetworkManager.new()
+	listen_nm.race_active = true
+	listen_nm.race_netplay_phase = 1
+	listen_nm.is_server = true
+	listen_nm.listen_server = true
+	listen_nm.target_tick = 7
+	listen_nm.max_ahead_from_server = 3.0
+	listen_nm.player_ids = [1]
+	listen_nm.netcode_session.configure([1], [false], 1)
+	listen_nm._server_broadcast_flat(listen_nm._pack_authoritative_input_tick(0, -1), phase_one_auth_packet, 0)
+	if listen_nm.clients_server_tick != 1 or listen_nm.clients_target_tick != 7:
+		push_error("listen authoritative input broadcast should preserve local target advancement, server=%d target=%d" % [listen_nm.clients_server_tick, listen_nm.clients_target_tick])
+		quit(1)
+		return
 	if race_started_was_connected:
 		nm.race_started.connect(race_started_callable)
 	print("MXT_GRAND_PRIX_GRID_RESULTS_SMOKE grid=", standings_grid)

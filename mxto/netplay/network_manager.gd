@@ -2314,7 +2314,7 @@ func _server_startup_sync(server_tick_value: int, this_ack: int, tgt: int, max_a
 	_apply_server_input_ack(this_ack, false)
 
 @rpc("any_peer", "unreliable_ordered", "call_local", 2)
-func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedByteArray, this_ack: int, tgt: int, max_ahead: float) -> void:
+func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedByteArray, this_ack: int) -> void:
 	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(authoritative_last_tick)):
 		return
 	var input_packet_meta := _unpack_authoritative_input_meta(authoritative_last_tick)
@@ -2343,16 +2343,18 @@ func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedBy
 				last_server_input_tick = max(last_server_input_tick, last_tick)
 			else:
 				clients_server_tick = max(clients_server_tick, authoritative_last_tick + 1)
-		clients_target_tick = max(clients_target_tick, tgt)
+		if listen_server:
+			clients_target_tick = max(clients_target_tick, target_tick)
 		if clients_server_tick > old_clients_server_tick:
 			log_client_server_tick_advances += clients_server_tick - old_clients_server_tick
 		if clients_target_tick > old_clients_target_tick:
 			log_client_target_tick_remote_advances += clients_target_tick - old_clients_target_tick
-		last_target_tick_update = Time.get_ticks_msec()
-		clients_max_ahead_from_server = max_ahead
+		if listen_server:
+			last_target_tick_update = Time.get_ticks_msec()
+			clients_max_ahead_from_server = max_ahead_from_server
 		log_flat_server_payload_in += input_packet.size()
 	_apply_server_input_ack(this_ack, false)
-	_acc_log_in(20 + input_packet.size())
+	_acc_log_in(12 + input_packet.size())
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
 
@@ -2483,8 +2485,8 @@ func post_tick() -> void:
 				input_packet_ready = true
 			log_flat_server_payload_out += input_packet.size()
 			log_auth_packets_sent += 1
-			_acc_log_out(20 + input_packet.size())
-			_server_broadcast_flat.rpc_id(id, _pack_authoritative_input_tick(server_tick, input_packet_meta), input_packet, server_netcode_session.get_peer_last_received(id), target_tick, max_ahead)
+			_acc_log_out(12 + input_packet.size())
+			_server_broadcast_flat.rpc_id(id, _pack_authoritative_input_tick(server_tick, input_packet_meta), input_packet, server_netcode_session.get_peer_last_received(id))
 			if send_state.size() > 0:
 				var chunk_count := int(ceil(float(send_state.size()) / float(STATE_CHUNK_PAYLOAD_BYTES)))
 				var state_chunks := []
