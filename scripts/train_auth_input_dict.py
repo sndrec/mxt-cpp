@@ -52,7 +52,7 @@ def _write_header(path: Path, dictionary: bytes, note: str) -> None:
             "",
         ]
     )
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def main() -> int:
@@ -93,7 +93,7 @@ def main() -> int:
             text = write_path.read_text(encoding="utf-8")
             text = text.replace("MXT_AUTH_INPUT_ZSTD_DICT_SIZE", f"{args.symbol}_SIZE")
             text = text.replace("MXT_AUTH_INPUT_ZSTD_DICT", args.symbol)
-            write_path.write_text(text, encoding="utf-8")
+            write_path.write_text(text, encoding="utf-8", newline="\n")
         print(f"wrote {args.write_header} bytes={len(trained)}")
     return 0
 
