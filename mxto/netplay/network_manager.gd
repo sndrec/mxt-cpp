@@ -2765,14 +2765,12 @@ func set_player_finished(id: int, tick: int, place: int) -> void:
 	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
 		return
 	tick = _unpack_race_tick(tick)
-	var is_new := !player_finish_times.has(id)
+	if player_finish_times.has(id):
+		return
 	player_finish_times[id] = tick
 	player_finish_placements[id] = place
-	if finish_order.size() < place:
-		finish_order.resize(place)
-	finish_order[place - 1] = id
-	if is_new:
-		race_event.emit("finish", id, -1, tick, place)
+	_rebuild_finish_order_from_placements()
+	race_event.emit("finish", id, -1, tick, place)
 
 func send_player_finished(id: int, tick: int, place_override: int = -1) -> void:
 	if player_finish_times.has(id):
@@ -2841,18 +2839,28 @@ func _rebuild_finish_order_from_placements() -> void:
 		var id := int(id_value)
 		var place := int(player_finish_placements[id_value])
 		if place > 0:
-			rows.append([place, id])
+			var finish_tick := int(player_finish_times.get(id, 2147483647))
+			rows.append([place, finish_tick, id])
 	rows.sort_custom(func(a, b):
 		if int(a[0]) != int(b[0]):
 			return int(a[0]) < int(b[0])
-		return int(a[1]) < int(b[1])
+		if int(a[1]) != int(b[1]):
+			return int(a[1]) < int(b[1])
+		return int(a[2]) < int(b[2])
 	)
+	var used_places := {}
+	var normalized_placements := {}
 	for row in rows:
 		var place := int(row[0])
-		var id := int(row[1])
+		var id := int(row[2])
+		while used_places.has(place):
+			place += 1
+		used_places[place] = true
+		normalized_placements[id] = place
 		if finish_order.size() < place:
 			finish_order.resize(place)
 		finish_order[place - 1] = id
+	player_finish_placements = normalized_placements
 
 @rpc("authority", "call_local", "reliable")
 func set_player_eliminated(id: int, tick: int) -> void:

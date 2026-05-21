@@ -236,8 +236,46 @@ func _ready() -> void:
 func save_edit_source(path : String) -> Error:
 	return track_root.save_edit_source(path)
 
+func load_edit_source(path : String) -> Error:
+	var packed := ResourceLoader.load(path) as PackedScene
+	if packed == null:
+		return ERR_CANT_OPEN
+	var loaded := packed.instantiate()
+	if !(loaded is TrackRoot):
+		if loaded != null:
+			loaded.queue_free()
+		return ERR_INVALID_DATA
+	var loaded_root := loaded as TrackRoot
+	var old_root := track_root
+	var parent := old_root.get_parent() if old_root != null else self
+	var insert_index := old_root.get_index() if old_root != null else get_child_count()
+	if FZGlobal.active_node != null:
+		FZGlobal.clear_selection_immediate()
+	if old_root != null:
+		parent.remove_child(old_root)
+		old_root.queue_free()
+	loaded_root.name = "TrackRoot"
+	parent.add_child(loaded_root)
+	parent.move_child(loaded_root, insert_index)
+	track_root = loaded_root
+	FZGlobal.current_track = track_root
+	active_path = null
+	_clear_gizmo_targets()
+	track_structure_changed.emit()
+	return OK
+
 func export_mxt_track(path : String) -> Error:
 	return track_root.export_mxt_track(path)
+
+func _clear_gizmo_targets() -> void:
+	set_active_embed(null, -1)
+	set_active_rail_path(null)
+	set_active_modulation(null, -1)
+	set_active_shape_path(null)
+	set_active_mesh_layout_path(null)
+	set_active_spiral_path(null)
+	set_active_checkpoint_path(null)
+	set_active_track_trigger(null)
 
 func update_mouse_casts(force_update := false) -> void:
 	var ray_end := edit_cam.global_position + edit_cam.project_ray_normal(get_viewport().get_mouse_position()) * 4096

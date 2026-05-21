@@ -1043,7 +1043,10 @@ namespace {
 			}
 
 			c.calced_max_energy[i] = c.car_properties[i]->max_energy + c.ko_energy_bonus[i];
-			STORE_INDEXED_VEC3(c, initial_pos, i, LOAD_INDEXED_VEC3(c, position_current, i));
+			const bool in_startup_countdown = tick_count < c.level_start_time[i];
+			if (!in_startup_countdown) {
+				STORE_INDEXED_VEC3(c, initial_pos, i, LOAD_INDEXED_VEC3(c, position_current, i));
+			}
 			c.side_attack_indicator[i] = 0.0f;
 
 			if (tick_count < c.level_start_time[i] - 180) {
@@ -1093,6 +1096,44 @@ namespace {
 
 	static void update_damage_visual_geometry_soa(PhysicsCarSoA& c, int count);
 	static void project_startup_velocity_and_speed_soa(PhysicsCarSoA& c, int count);
+
+	static inline SimVec3 normalized_or_zero(const SimVec3& v)
+	{
+		return v.length_squared() > 0.000001f ? v.normalized() : SimVec3();
+	}
+
+	static inline SimVec3 remove_axis_component(const SimVec3& v, const SimVec3& axis)
+	{
+		return v - axis * v.dot(axis);
+	}
+
+	static inline SimVec3 keep_axis_component(const SimVec3& v, const SimVec3& axis)
+	{
+		return axis * v.dot(axis);
+	}
+
+	static void translate_contact_points_soa(PhysicsCarSoA& c, int i, const SimVec3& delta)
+	{
+		if (delta.length_squared() <= 0.0000001f) {
+			return;
+		}
+		const int p = i * 4;
+		const SimFloat4 dx(delta.x);
+		const SimFloat4 dy(delta.y);
+		const SimFloat4 dz(delta.z);
+		sim_store4(c.tilt_pos_old_x + p, sim_load4(c.tilt_pos_old_x + p) + dx);
+		sim_store4(c.tilt_pos_old_y + p, sim_load4(c.tilt_pos_old_y + p) + dy);
+		sim_store4(c.tilt_pos_old_z + p, sim_load4(c.tilt_pos_old_z + p) + dz);
+		sim_store4(c.tilt_pos_x + p, sim_load4(c.tilt_pos_x + p) + dx);
+		sim_store4(c.tilt_pos_y + p, sim_load4(c.tilt_pos_y + p) + dy);
+		sim_store4(c.tilt_pos_z + p, sim_load4(c.tilt_pos_z + p) + dz);
+		sim_store4(c.wall_pos_a_x + p, sim_load4(c.wall_pos_a_x + p) + dx);
+		sim_store4(c.wall_pos_a_y + p, sim_load4(c.wall_pos_a_y + p) + dy);
+		sim_store4(c.wall_pos_a_z + p, sim_load4(c.wall_pos_a_z + p) + dz);
+		sim_store4(c.wall_pos_b_x + p, sim_load4(c.wall_pos_b_x + p) + dx);
+		sim_store4(c.wall_pos_b_y + p, sim_load4(c.wall_pos_b_y + p) + dy);
+		sim_store4(c.wall_pos_b_z + p, sim_load4(c.wall_pos_b_z + p) + dz);
+	}
 
 	static void post_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, uint8_t* pending_s_boost_sparks, int count,
 		TrackQueryScratch &scratch)
@@ -1226,12 +1267,13 @@ namespace {
 			if (has_floor) {
 				if ((c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0) {
 					bool use_analytic_floor_normal = true;
+					const bool use_corner_floor_normal = (c.machine_state[i] & MACHINESTATE::ACTIVE) != 0;
 					RaceTrack *track = c.current_track[i];
 					if (track && c.current_checkpoint[i] < track->num_checkpoints) {
 						const TrackSegment &segment = track->segments[track->checkpoints[c.current_checkpoint[i]].road_segment];
 						use_analytic_floor_normal = segment.analytic_collision_enabled;
 					}
-					if (use_analytic_floor_normal) {
+					if (use_analytic_floor_normal && use_corner_floor_normal) {
 						STORE_INDEXED_VEC3(c, track_surface_normal, i, ground_normal);
 					}
 				} else {
@@ -1484,9 +1526,6 @@ namespace {
 				continue;
 			}
 
-			if (c.machine_state[i] & MACHINESTATE::STARTINGCOUNTDOWN) {
-				c.machine_state[i] &= ~(MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL);
-			}
 			if (c.machine_state[i] & MACHINESTATE::ACTIVE) {
 				const uint32_t cd = c.frames_since_start_2[i];
 				if (cd < 30) {
@@ -1507,6 +1546,32 @@ namespace {
 			SimTransform basis = MXT_LOAD_TRANSFORM(c, basis_physical, i);
 			basis.orthonormalize();
 			MXT_STORE_TRANSFORM(c, basis_physical, i, basis);
+
+			if (c.machine_state[i] & MACHINESTATE::STARTINGCOUNTDOWN) {
+				c.machine_state[i] &= ~(MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::JUSTTAPPEDACCEL);
+				SimVec3 road_normal = normalized_or_zero(LOAD_INDEXED_VEC3(c, track_surface_normal, i));
+				if (road_normal.length_squared() <= 0.000001f) {
+					road_normal = normalized_or_zero(c.road_sample[i].closest_surface.basis.get_column(1));
+				}
+				if (road_normal.length_squared() <= 0.000001f) {
+					road_normal = normalized_or_zero(basis.basis.get_column(1));
+				}
+				if (road_normal.length_squared() > 0.000001f) {
+					const SimVec3 anchor = LOAD_INDEXED_VEC3(c, initial_pos, i);
+					const SimVec3 current = LOAD_INDEXED_VEC3(c, position_current, i);
+					const SimVec3 tangent_correction = remove_axis_component(current - anchor, road_normal);
+					if (tangent_correction.length_squared() > 0.0000001f) {
+						STORE_INDEXED_VEC3(c, position_current, i, current - tangent_correction);
+						STORE_INDEXED_VEC3(c, position_old, i, LOAD_INDEXED_VEC3(c, position_old, i) - tangent_correction);
+						STORE_INDEXED_VEC3(c, position_old_2, i, LOAD_INDEXED_VEC3(c, position_old_2, i) - tangent_correction);
+						STORE_INDEXED_VEC3(c, position_old_dupe, i, LOAD_INDEXED_VEC3(c, position_old_dupe, i) - tangent_correction);
+						STORE_INDEXED_VEC3(c, position_bottom, i, LOAD_INDEXED_VEC3(c, position_bottom, i) - tangent_correction);
+						translate_contact_points_soa(c, i, -tangent_correction);
+					}
+					STORE_INDEXED_VEC3(c, velocity, i, keep_axis_component(LOAD_INDEXED_VEC3(c, velocity, i), road_normal));
+					STORE_INDEXED_VEC3(c, knockback_velocity, i, keep_axis_component(LOAD_INDEXED_VEC3(c, knockback_velocity, i), road_normal));
+				}
+			}
 
 			if ((c.machine_state[i] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
 				c.position_bottom_x[i] += c.position_current_x[i] - c.position_old_x[i];
@@ -2760,7 +2825,7 @@ int GameSim::get_player_race_place(int player_id) const
 	if (!cars || !car_player_ids || num_cars <= 0 ||
 			!vehicle_tick_soa.placement_order_valid ||
 			!vehicle_tick_soa.placement_indices) {
-		return 1;
+		return 0;
 	}
 
 	int place = 1;
@@ -2777,7 +2842,7 @@ int GameSim::get_player_race_place(int player_id) const
 		}
 		place += 1;
 	}
-	return 1;
+	return 0;
 }
 
 godot::PackedInt32Array GameSim::get_race_leaderboard_window(int player_id, int max_entries) const
@@ -4192,6 +4257,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			STORE_INDEXED_VEC3(*cars[i].soa, position_old, cars[i].soa_index, spawn_transform.origin);
 			STORE_INDEXED_VEC3(*cars[i].soa, position_old_2, cars[i].soa_index, spawn_transform.origin);
 			STORE_INDEXED_VEC3(*cars[i].soa, position_old_dupe, cars[i].soa_index, spawn_transform.origin);
+			STORE_INDEXED_VEC3(*cars[i].soa, initial_pos, cars[i].soa_index, spawn_transform.origin);
 			STORE_INDEXED_VEC3(*cars[i].soa, position_bottom, cars[i].soa_index, spawn_transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
 
 			{ SimTransform mxt_tmp = MXT_LOAD_TRANSFORM(*cars[i].soa, basis_physical, cars[i].soa_index); mxt_tmp.basis = spawn_transform.basis; MXT_STORE_TRANSFORM(*cars[i].soa, basis_physical, cars[i].soa_index, mxt_tmp); }

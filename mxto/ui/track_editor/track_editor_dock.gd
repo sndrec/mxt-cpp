@@ -7,11 +7,23 @@ const TrackTriggerScript := preload("res://core/track_trigger.gd")
 const UI_EDGE_MARGIN := 24.0
 const TOOL_BUTTON_GAP := 16.0
 const TOOL_MIN_HEIGHT := 360.0
+const FILE_DROPDOWN_SIZE := Vector2i(180, 152)
 
 @onready var track_root: TrackRoot = $"../TrackRoot"
 @onready var track_scene: TrackEditingScene = $".."
 
 @onready var main_gui: Control = $MainGUI
+@onready var file_toolbar_margin: MarginContainer = $MainGUI/VBoxContainer/FileToolbarMargin
+@onready var file_button: Button = $MainGUI/VBoxContainer/FileToolbarMargin/FileToolbar/FileButton
+@onready var file_status: Label = $MainGUI/VBoxContainer/FileToolbarMargin/FileToolbar/FileStatus
+@onready var file_dropdown: PopupPanel = $FileDropdown
+@onready var save_document_button: Button = $FileDropdown/FileBox/SaveDocument
+@onready var save_document_as_button: Button = $FileDropdown/FileBox/SaveDocumentAs
+@onready var load_document_button: Button = $FileDropdown/FileBox/LoadDocument
+@onready var export_track_button: Button = $FileDropdown/FileBox/ExportTrack
+@onready var document_open_dialog: FileDialog = $DocumentOpenDialog
+@onready var document_save_dialog: FileDialog = $DocumentSaveDialog
+@onready var export_track_dialog: FileDialog = $ExportTrackDialog
 @onready var main_gui_margin: MarginContainer = $MainGUI/VBoxContainer/MainGUIMargin
 @onready var main_gui_hbox: HBoxContainer = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox
 @onready var main_buttons: Container = $MainGUI/VBoxContainer/MainGUIMargin/MainGUIHBox/MainButtons
@@ -45,6 +57,9 @@ const TOOL_MIN_HEIGHT := 360.0
 @onready var outliner_scroll: ScrollContainer = $MainGUI/VBoxContainer/ScrollContainer
 @onready var outliner: VBoxContainer = $MainGUI/VBoxContainer/ScrollContainer/Outliner
 
+var current_document_path := ""
+var current_export_path := ""
+
 func _is_script_path(node, script_path : String) -> bool:
 	if !is_instance_valid(node):
 		return false
@@ -71,6 +86,7 @@ func _track_object_outliner_label(track_object : Node, index : int) -> String:
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	_configure_screen_layout()
+	_configure_file_dialogs()
 	get_track_root()
 	main_buttons.visible = true
 	_enable_tool_button_toggles()
@@ -89,6 +105,14 @@ func _ready():
 	dashplate_button.pressed.connect(_on_track_object_type_pressed.bind(0))
 	jumpplate_button.pressed.connect(_on_track_object_type_pressed.bind(1))
 	mine_button.pressed.connect(_on_track_object_type_pressed.bind(2))
+	file_button.pressed.connect(_on_file_button_pressed)
+	save_document_button.pressed.connect(_on_save_document_pressed)
+	save_document_as_button.pressed.connect(_on_save_document_as_pressed)
+	load_document_button.pressed.connect(_on_load_document_pressed)
+	export_track_button.pressed.connect(_on_export_track_pressed)
+	document_save_dialog.file_selected.connect(_on_document_save_file_selected)
+	document_open_dialog.file_selected.connect(_on_document_open_file_selected)
+	export_track_dialog.file_selected.connect(_on_export_track_file_selected)
 	track_scene.track_structure_changed.connect(update_outliner)
 	FZGlobal.selection_changed.connect(_sync_active_tool_target)
 	track_scene.tool_mode_changed.connect(_sync_active_tool_target.unbind(1))
@@ -109,8 +133,12 @@ func _configure_screen_layout() -> void:
 	main_gui.set_anchors_preset(Control.PRESET_TOP_LEFT, false)
 	main_gui.position = Vector2.ZERO
 	main_gui.size = viewport_size
+	file_toolbar_margin.add_theme_constant_override("margin_left", int(UI_EDGE_MARGIN))
+	file_toolbar_margin.add_theme_constant_override("margin_top", int(UI_EDGE_MARGIN))
+	file_toolbar_margin.add_theme_constant_override("margin_right", int(UI_EDGE_MARGIN))
+	file_toolbar_margin.add_theme_constant_override("margin_bottom", 0)
 	main_gui_margin.add_theme_constant_override("margin_left", int(UI_EDGE_MARGIN))
-	main_gui_margin.add_theme_constant_override("margin_top", int(UI_EDGE_MARGIN))
+	main_gui_margin.add_theme_constant_override("margin_top", 8)
 	main_gui_margin.add_theme_constant_override("margin_right", int(UI_EDGE_MARGIN))
 	main_gui_margin.add_theme_constant_override("margin_bottom", int(UI_EDGE_MARGIN))
 	main_gui_margin.custom_minimum_size.y = available_height
@@ -126,6 +154,97 @@ func _configure_screen_layout() -> void:
 		tool_container.custom_minimum_size.y = available_height
 		tool_container.add_theme_constant_override("h_separation", int(TOOL_BUTTON_GAP))
 		tool_container.add_theme_constant_override("v_separation", int(TOOL_BUTTON_GAP))
+
+func _configure_file_dialogs() -> void:
+	document_save_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	document_save_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	document_save_dialog.filters = PackedStringArray(["*.tscn ; Track document"])
+	document_save_dialog.current_file = "track_document.tscn"
+	document_open_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	document_open_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	document_open_dialog.filters = PackedStringArray(["*.tscn ; Track document"])
+	export_track_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	export_track_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	export_track_dialog.filters = PackedStringArray(["*.mxt_track ; Runtime track"])
+	export_track_dialog.current_file = "track.mxt_track"
+
+func _show_file_status(text : String, error := false) -> void:
+	file_status.text = text
+	file_status.modulate = Color(1.0, 0.45, 0.35, 1.0) if error else Color(0.75, 0.95, 0.75, 1.0)
+
+func _ensure_extension(path : String, extension : String) -> String:
+	if path.get_extension().to_lower() == extension.trim_prefix(".").to_lower():
+		return path
+	return path + extension
+
+func _popup_file_dropdown() -> void:
+	var popup_pos := file_button.global_position + Vector2(0.0, file_button.size.y + 2.0)
+	file_dropdown.popup(Rect2i(Vector2i(int(popup_pos.x), int(popup_pos.y)), FILE_DROPDOWN_SIZE))
+
+func _hide_file_dropdown() -> void:
+	file_dropdown.hide()
+
+func _on_file_button_pressed() -> void:
+	if file_dropdown.visible:
+		_hide_file_dropdown()
+	else:
+		_popup_file_dropdown()
+
+func _on_save_document_pressed() -> void:
+	_hide_file_dropdown()
+	if current_document_path.is_empty():
+		_on_save_document_as_pressed()
+		return
+	_save_document_to_path(current_document_path)
+
+func _on_save_document_as_pressed() -> void:
+	_hide_file_dropdown()
+	if !current_document_path.is_empty():
+		document_save_dialog.current_path = current_document_path
+	document_save_dialog.popup_centered_ratio(0.75)
+
+func _on_load_document_pressed() -> void:
+	_hide_file_dropdown()
+	if !current_document_path.is_empty():
+		document_open_dialog.current_path = current_document_path
+	document_open_dialog.popup_centered_ratio(0.75)
+
+func _on_export_track_pressed() -> void:
+	_hide_file_dropdown()
+	if !current_export_path.is_empty():
+		export_track_dialog.current_path = current_export_path
+	export_track_dialog.popup_centered_ratio(0.75)
+
+func _on_document_save_file_selected(path : String) -> void:
+	_save_document_to_path(_ensure_extension(path, ".tscn"))
+
+func _on_document_open_file_selected(path : String) -> void:
+	var err := track_scene.load_edit_source(path)
+	if err != OK:
+		_show_file_status("Load failed: %s" % error_string(err), true)
+		return
+	current_document_path = path
+	track_root = track_scene.track_root
+	update_outliner()
+	_sync_active_tool_target()
+	_show_file_status("Loaded %s" % path.get_file())
+
+func _on_export_track_file_selected(path : String) -> void:
+	var export_path := _ensure_extension(path, ".mxt_track")
+	var err := track_scene.export_mxt_track(export_path)
+	if err != OK:
+		_show_file_status("Export failed: %s" % error_string(err), true)
+		return
+	current_export_path = export_path
+	_show_file_status("Exported %s" % export_path.get_file())
+
+func _save_document_to_path(path : String) -> void:
+	var err := track_scene.save_edit_source(path)
+	if err != OK:
+		_show_file_status("Save failed: %s" % error_string(err), true)
+		return
+	current_document_path = path
+	_show_file_status("Saved %s" % path.get_file())
 
 func _enable_tool_button_toggles() -> void:
 	for button in [
@@ -221,13 +340,17 @@ func _refresh_tool_button_states() -> void:
 	add_tool_status.text = status_text
 
 func get_track_root() -> void:
-	if !track_root:
-		var scene_root := get_tree().current_scene
-		if scene_root:
-			for child in scene_root.get_children():
-				if child is TrackRoot:
-					track_root = child
-					break
+	if is_instance_valid(track_root):
+		return
+	if is_instance_valid(FZGlobal.current_track):
+		track_root = FZGlobal.current_track
+		return
+	var scene_root := get_tree().current_scene
+	if scene_root:
+		for child in scene_root.get_children():
+			if child is TrackRoot:
+				track_root = child
+				break
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _process(delta):

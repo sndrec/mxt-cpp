@@ -73,6 +73,31 @@ func _init() -> void:
 		push_error("race results text did not preserve actual placement: %s" % race_text)
 		quit(1)
 		return
+	main.network_manager.set_player_finished(1, 780, 1)
+	if int(main.network_manager.player_finish_times.get(1, -1)) != 720 or int(main.network_manager.player_finish_placements.get(1, -1)) != 8:
+		push_error("duplicate finish should not rewrite official time or placement, times=%s places=%s" % [
+			main.network_manager.player_finish_times,
+			main.network_manager.player_finish_placements,
+		])
+		quit(1)
+		return
+	main.network_manager.player_finish_times = {1: 600, 2: 500}
+	main.network_manager.player_finish_placements = {1: 1, 2: 1}
+	main.network_manager._rebuild_finish_order_from_placements()
+	if int(main.network_manager.player_finish_placements.get(2, -1)) != 1 or int(main.network_manager.player_finish_placements.get(1, -1)) != 2:
+		push_error("duplicate finish placements should normalize by finish time, got %s order=%s" % [
+			main.network_manager.player_finish_placements,
+			main.network_manager.finish_order,
+		])
+		quit(1)
+		return
+	main.network_manager.player_finish_times = {1: 600, 2: 500}
+	main.network_manager.player_finish_placements = {1: 1, 2: 1}
+	var normalized_places: Dictionary = main.call("_build_final_race_place_map", main.game_sim, [1, 2, 3])
+	if int(normalized_places.get(2, -1)) != 1 or int(normalized_places.get(1, -1)) != 2:
+		push_error("final race place map should not preserve duplicate places, got %s" % [normalized_places])
+		quit(1)
+		return
 	var nm: NetworkManager = main.network_manager
 	var race_started_callable := Callable(main, "_on_network_race_started")
 	var race_started_was_connected := nm.race_started.is_connected(race_started_callable)

@@ -198,7 +198,7 @@ func _update_cross_section_visual(points : PackedVector3Array) -> void:
 	cross_section_mesh_instance.visible = true
 
 func get_runtime_track_root() -> TrackRoot:
-	if FZGlobal.current_track:
+	if is_instance_valid(FZGlobal.current_track):
 		return FZGlobal.current_track
 	var scene_root := get_tree().current_scene
 	if !scene_root:
@@ -954,10 +954,10 @@ func _process(delta: float) -> void:
 		FZGlobal.editing_scene.editor_cross_section_t = track_cross_section_slider.value
 		FZGlobal.editing_scene.draw_segment_curve = draw_curve.button_pressed
 		FZGlobal.editing_scene.draw_segment_handles = draw_handles.button_pressed
-	if !track_root:
+	if !is_instance_valid(track_root):
 		track_root = get_runtime_track_root()
 	
-	if !track_root:
+	if !is_instance_valid(track_root):
 		return
 	if track_panel.visible:
 		_refresh_track_controls()

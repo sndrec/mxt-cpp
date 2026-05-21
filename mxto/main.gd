@@ -2513,11 +2513,27 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary:
 	var place_by_id := {}
 	var used_places := {}
+	var finish_rows := []
 	for id_value in race_racers:
 		var id := int(id_value)
 		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id):
 			continue
 		var place := int(_lookup_id_value(network_manager.player_finish_placements, id, 0))
+		if place > 0:
+			var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, 2147483647))
+			finish_rows.append([place, finish_tick, id])
+	finish_rows.sort_custom(func(a, b):
+		if int(a[0]) != int(b[0]):
+			return int(a[0]) < int(b[0])
+		if int(a[1]) != int(b[1]):
+			return int(a[1]) < int(b[1])
+		return int(a[2]) < int(b[2])
+	)
+	for row in finish_rows:
+		var place := int(row[0])
+		var id := int(row[2])
+		while used_places.has(place):
+			place += 1
 		if place > 0:
 			place_by_id[id] = place
 			used_places[place] = true
@@ -2622,7 +2638,7 @@ func _check_race_finished() -> void:
 						-100000.0)
 					break
 		if finished:
-			var race_place := 1
+			var race_place := -1
 			if finish_sim != null and finish_sim.has_method("get_player_race_place"):
 				race_place = int(finish_sim.get_player_race_place(racer_id))
 			if network_manager.is_server:
