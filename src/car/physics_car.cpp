@@ -79,6 +79,8 @@ namespace {
 constexpr float kRespawnForwardDistance = 100.0f;
 constexpr float kMinCheckpointDistance = 0.01f;
 constexpr float kMaxPositiveCheckpointAdvance = 1500.0f;
+constexpr uint16_t kAttackCooldownFrames = static_cast<uint16_t>(4.0f * _TICKS_PER_SECOND);
+constexpr float kSpinAttackShortenMultiplier = 1.3f;
 
 static inline float track_lap_length(const RaceTrack *track)
 {
@@ -2497,6 +2499,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->damage_from_last_hit[soa_index] = 0.0f;
 	soa->frames_since_start[soa_index] = 0;
 	soa->side_attack_delay[soa_index] = 0;
+	soa->attack_cooldown_frames[soa_index] = 0;
 	soa->brake_timer[soa_index] = 0;
 	soa->rail_collision_timer[soa_index] = 0;
 	soa->terrain_state[soa_index] = 0;
@@ -3038,6 +3041,7 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 				break;
 			case TRIGGER_TYPE::JUMPPLATE:
 				soa->terrain_state[soa_index] |= TERRAIN::JUMP;
+				soa->attack_cooldown_frames[soa_index] = 0;
 				break;
 			case TRIGGER_TYPE::MINE:
 				collide_with_landmine(static_cast<Mine*>(trigger), trigger_p0, trigger_p1);
@@ -3073,6 +3077,7 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 
 	if (terrain_bits & TERRAIN::JUMP) {
 		soa->terrain_state[soa_index] |= TERRAIN::JUMP;
+		soa->attack_cooldown_frames[soa_index] = 0;
 	}
 
 	if (terrain_bits & TERRAIN::LAVA) {
@@ -3090,6 +3095,10 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 
 void PhysicsCar::handle_attack_states()
 {
+	if (soa->attack_cooldown_frames[soa_index] > 0) {
+		soa->attack_cooldown_frames[soa_index] -= 1;
+	}
+
 	if (soa->s_boost_active[soa_index]) {
 		soa->machine_state[soa_index] &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
 		soa->side_attack_delay[soa_index] = 0;
@@ -3111,17 +3120,22 @@ void PhysicsCar::handle_attack_states()
 	} else {
 		float cur_angle = soa->spinattack_angle[soa_index];
 		if (cur_angle == 0.0f) {
-			soa->spinattack_angle[soa_index] = Math_PI * 8.0f;
-			soa->spinattack_decrement[soa_index] = Math_PI * 0.125f;
-			if (std::abs(soa->input_steer_yaw[soa_index]) > 0.1f) {
-				soa->spinattack_direction[soa_index] = (soa->input_steer_yaw[soa_index] < 0.0f) ? 1 : 0;
+			if (soa->attack_cooldown_frames[soa_index] != 0) {
+				soa->machine_state[soa_index] &= ~MACHINESTATE::SPINATTACKING;
+			} else {
+				soa->attack_cooldown_frames[soa_index] = kAttackCooldownFrames;
+				soa->spinattack_angle[soa_index] = Math_PI * 8.0f;
+				soa->spinattack_decrement[soa_index] = Math_PI * 0.125f * kSpinAttackShortenMultiplier;
+				if (std::abs(soa->input_steer_yaw[soa_index]) > 0.1f) {
+					soa->spinattack_direction[soa_index] = (soa->input_steer_yaw[soa_index] < 0.0f) ? 1 : 0;
+				}
 			}
 		} else if (soa->spinattack_decrement[soa_index] < cur_angle) {
 			soa->spinattack_angle[soa_index] = cur_angle - soa->spinattack_decrement[soa_index];
 			if (soa->spinattack_angle[soa_index] < Math_PI * 4.0f) {
-				soa->spinattack_decrement[soa_index] -= Math_PI * 130.0f / 65536.0f;
-				if (soa->spinattack_decrement[soa_index] < Math_PI * 160.0f / 65536.0f)
-					soa->spinattack_decrement[soa_index] = Math_PI * 160.0f / 65536.0f;
+				soa->spinattack_decrement[soa_index] -= Math_PI * 130.0f / 65536.0f * kSpinAttackShortenMultiplier;
+				if (soa->spinattack_decrement[soa_index] < Math_PI * 160.0f / 65536.0f * kSpinAttackShortenMultiplier)
+					soa->spinattack_decrement[soa_index] = Math_PI * 160.0f / 65536.0f * kSpinAttackShortenMultiplier;
 			}
 		} else {
 			soa->spinattack_angle[soa_index] = 0.0f;
@@ -3136,8 +3150,13 @@ void PhysicsCar::handle_attack_states()
 	} else {
 		uint8_t cur_delay = soa->side_attack_delay[soa_index];
 		if (cur_delay == 0) {
-			soa->side_attack_delay[soa_index] = 6;
-			soa->side_attack_indicator[soa_index] = 0.4f * soa->input_steer_yaw[soa_index];
+			if (soa->attack_cooldown_frames[soa_index] != 0) {
+				soa->machine_state[soa_index] &= ~MACHINESTATE::SIDEATTACKING;
+			} else {
+				soa->attack_cooldown_frames[soa_index] = kAttackCooldownFrames;
+				soa->side_attack_delay[soa_index] = 6;
+				soa->side_attack_indicator[soa_index] = 0.4f * soa->input_steer_yaw[soa_index];
+			}
 		} else if (cur_delay == 1) {
 			soa->machine_state[soa_index] &= ~MACHINESTATE::SIDEATTACKING;
 		} else {
@@ -5068,10 +5087,12 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 		return false;
 	}
 
-	const bool this_attacking = (soa->machine_state[soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
-	const bool other_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
-	const bool this_defending = (soa->machine_state[soa_index] & MACHINESTATE::B10) != 0;
-	const bool other_defending = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::B10) != 0;
+	const bool this_spin_attacking = (soa->machine_state[soa_index] & MACHINESTATE::SPINATTACKING) != 0;
+	const bool this_side_attacking = (soa->machine_state[soa_index] & MACHINESTATE::SIDEATTACKING) != 0;
+	const bool other_spin_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::SPINATTACKING) != 0;
+	const bool other_side_attacking = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::SIDEATTACKING) != 0;
+	const bool this_attacking = this_spin_attacking || this_side_attacking;
+	const bool other_attacking = other_spin_attacking || other_side_attacking;
 	const bool this_alive_before = (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) == 0;
 	const bool other_alive_before = (other_machine.soa->machine_state[other_machine.soa_index] & MACHINESTATE::ZEROHP) == 0;
 
@@ -5082,6 +5103,7 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 
 	SimVec3 impulse = collision_normal * (-0.8f * closing_speed);
 	float impulse_strength = impulse.length();
+	const float attack_impulse_strength = impulse_strength + ((this_attacking || other_attacking) ? 1.0f : 0.0f);
 
 	float damage1 = impulse_strength;
 	float damage2 = impulse_strength;
@@ -5089,23 +5111,37 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 	SimVec3 impulse2 = -impulse;
 	bool this_bumper_slide = false;
 	bool other_bumper_slide = false;
-	if (this_attacking && !other_attacking) {
-		impulse_strength += 1.0f;
-		impulse1 = impulse * 2.0f;
-		impulse2 = collision_normal * (1.5f * impulse_strength);
+	if (this_attacking || other_attacking) {
 		damage1 = 0.0f;
-		damage2 = impulse_strength * 10.0f;
-	} else if (!this_attacking && other_attacking) {
-		impulse_strength += 1.0f;
-		impulse1 = collision_normal * (-1.5f * impulse_strength);
-		impulse2 = -impulse * 2.0f;
-		damage1 = impulse_strength * 10.0f;
 		damage2 = 0.0f;
+		if (other_attacking && !this_spin_attacking) {
+			damage1 = attack_impulse_strength * (other_side_attacking ? 20.0f : 10.0f);
+			if (this_side_attacking) {
+				damage1 *= 2.0f;
+			}
+		}
+		if (this_attacking && !other_spin_attacking) {
+			damage2 = attack_impulse_strength * (this_side_attacking ? 20.0f : 10.0f);
+			if (other_side_attacking) {
+				damage2 *= 2.0f;
+			}
+		}
+	}
+	if (this_attacking && !other_attacking) {
+		impulse1 = impulse * 2.0f;
+		impulse2 = collision_normal * (1.5f * attack_impulse_strength);
+	} else if (!this_attacking && other_attacking) {
+		impulse1 = collision_normal * (-1.5f * attack_impulse_strength);
+		impulse2 = -impulse * 2.0f;
 	} else if (this_attacking && other_attacking) {
 		impulse1 = impulse * 0.2f;
 		impulse2 = impulse * -0.2f;
-		damage1 = 0.0f;
-		damage2 = 0.0f;
+		if (!this_spin_attacking) {
+			impulse1 = collision_normal * (-1.5f * attack_impulse_strength * (this_side_attacking ? 2.0f : 1.0f));
+		}
+		if (!other_spin_attacking) {
+			impulse2 = collision_normal * (1.5f * attack_impulse_strength * (other_side_attacking ? 2.0f : 1.0f));
+		}
 	}
 	if (this_bumper != other_bumper) {
 		impulse1 = impulse1 * 1.5f;
@@ -5142,19 +5178,18 @@ static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar
 			other_machine.soa->drift_ramp[other_machine.soa_index] = 0.0f;
 		}
 	}
-	if (!this_attacking && other_attacking && !this_defending && damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
+	if (other_attacking && damage1 > 0.0f) {
 		self.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 		soa->rail_collision_timer[soa_index] = 20;
 	}
-	if (this_attacking && !other_attacking && !other_defending && damage2 > 0.0f &&
-		other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0) {
+	if (this_attacking && damage2 > 0.0f) {
 		other_machine.set_flag_on_all_tilt_corners(TILTSTATE::DRIFT);
 		other_machine.soa->rail_collision_timer[other_machine.soa_index] = 20;
 	}
-	if (damage1 > 0.0f && soa->car_hit_invincibility[soa_index] == 0) {
+	if (damage1 > 0.0f) {
 		self.apply_damage(damage1);
 	}
-	if (damage2 > 0.0f && other_machine.soa->car_hit_invincibility[other_machine.soa_index] == 0) {
+	if (damage2 > 0.0f) {
 		other_machine.apply_damage(damage2);
 	}
 	if (this_alive_before && damage1 > 0.0f && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) != 0) {

@@ -6728,6 +6728,7 @@ struct NetStateReader {
 	X(uint8_t, rail_collision_timer) \
 	X(uint8_t, grip_frames_from_accel_press) \
 	X(uint8_t, side_attack_delay) \
+	X(uint16_t, attack_cooldown_frames) \
 	X(uint8_t, machine_collision_frame_counter) \
 	X(uint8_t, car_hit_invincibility) \
 	X(uint8_t, boost_delay_frame_counter) \

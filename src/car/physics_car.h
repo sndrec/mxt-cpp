@@ -122,6 +122,7 @@ struct ImpactData {
 	X(uint32_t, frames_since_start, 0) \
 	X(uint32_t, frames_since_start_2, 0) \
 	X(uint8_t, side_attack_delay, 0) \
+	X(uint16_t, attack_cooldown_frames, 0) \
 	X(uint32_t, air_time, 0) \
 	X(float, damage_from_last_hit, 0.0f) \
 	X(uint32_t, strafe_effect, 0) \
