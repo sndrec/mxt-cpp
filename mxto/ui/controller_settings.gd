@@ -10,6 +10,8 @@ extends Control
 @onready var deadzone_label: Label = $HBoxContainer/Control/Label
 @onready var deadzone_slider: HSlider = $HBoxContainer/Control/HBoxContainer/HSlider
 @onready var deadzone_field: LineEdit = $HBoxContainer/Control/HBoxContainer/LineEdit
+@onready var strafe_left_bar = $HBoxContainer/StrafeCalibrationPanel/Bars/Left/Bar
+@onready var strafe_right_bar = $HBoxContainer/StrafeCalibrationPanel/Bars/Right/Bar
 
 @onready var btn_accelerate: Button = $HBoxContainer/VBoxContainer/HBoxContainer/Button
 @onready var btn_boost: Button = $HBoxContainer/VBoxContainer/HBoxContainer9/Button
@@ -28,6 +30,10 @@ var axis_baseline := {}
 # Calibration state
 var calibrating: bool = false
 var calib_radii: Array = [] # Sampled radii along the calibration circle
+var trigger_calibration := {
+		"StrafeLeft": Vector2(0.0, 1.0),
+		"StrafeRight": Vector2(0.0, 1.0),
+}
 const CAL_POINT_COUNT := 64
 const CAL_VERSION := 2
 var CAL_DIRS: Array = _build_cal_dirs()
@@ -70,11 +76,14 @@ func _ready() -> void:
 		deadzone_slider.value_changed.connect(_on_deadzone_changed)
 		deadzone_field.text_submitted.connect(_on_deadzone_text)
 		calibrate_button.pressed.connect(_on_calibrate_pressed)
+		strafe_left_bar.calibration_changed.connect(_on_trigger_calibration_changed)
+		strafe_right_bar.calibration_changed.connect(_on_trigger_calibration_changed)
 		input_square.resized.connect(_update_octagon_visual)
 		_load_saved_bindings()
 		_update_binding_labels()
 		_update_deadzone_ui()
 		_load_calibration()
+		_sync_trigger_calibration_bars()
 		_update_octagon_visual()
 		call_deferred("_update_octagon_visual")
 		set_process(true)
@@ -310,6 +319,7 @@ func _process(delta: float) -> void:
 		var cal := _apply_calibration(raw)
 		var pos_cal = center + cal * range
 		input_dot_calibrated.position = pos_cal - input_dot_calibrated.pivot_offset
+		_update_trigger_calibration_display()
 
 const SAVE_PATH := "user://controller_settings.json"
 const CAL_PATH := "user://controller_calibration.json"
@@ -419,6 +429,7 @@ func _save_calibration() -> void:
 		var data := {
 				"version": CAL_VERSION,
 				"radii": calib_radii,
+				"strafe_triggers": _collect_trigger_calibration(),
 		}
 		var f := FileAccess.open(CAL_PATH, FileAccess.WRITE)
 		if f:
@@ -436,6 +447,8 @@ func _load_calibration() -> void:
 								calib_radii = arr.duplicate(true)
 						elif arr.size() == 8:
 								calib_radii = _legacy_radii_to_circle(arr)
+				if typeof(data) == TYPE_DICTIONARY:
+						_load_trigger_calibration(data)
 
 func _on_calibrate_pressed() -> void:
 		if !calibrating:
@@ -511,3 +524,52 @@ func _update_octagon_visual() -> void:
 				var p = center + CAL_DIRS[i] * float(radii_to_use[i]) * range
 				pts.append(p)
 		octagon_line.points = pts
+
+func _collect_trigger_calibration() -> Dictionary:
+		var out := {}
+		for action_name in trigger_calibration.keys():
+				var trigger_range: Vector2 = trigger_calibration[action_name]
+				out[action_name] = {
+						"low": trigger_range.x,
+						"high": trigger_range.y,
+				}
+		return out
+
+func _load_trigger_calibration(data: Dictionary) -> void:
+		if !data.has("strafe_triggers"):
+				return
+		var ranges = data["strafe_triggers"]
+		if typeof(ranges) != TYPE_DICTIONARY:
+				return
+		for action_name in trigger_calibration.keys():
+				if !ranges.has(action_name):
+						continue
+				var entry = ranges[action_name]
+				if typeof(entry) != TYPE_DICTIONARY:
+						continue
+				var low := clampf(float(entry.get("low", 0.0)), 0.0, 1.0)
+				var high := clampf(float(entry.get("high", 1.0)), 0.0, 1.0)
+				if high <= low:
+						high = minf(1.0, low + 0.02)
+				trigger_calibration[action_name] = Vector2(low, high)
+
+func _sync_trigger_calibration_bars() -> void:
+		var left_range: Vector2 = trigger_calibration["StrafeLeft"]
+		var right_range: Vector2 = trigger_calibration["StrafeRight"]
+		strafe_left_bar.set_range_values(left_range.x, left_range.y)
+		strafe_right_bar.set_range_values(right_range.x, right_range.y)
+
+func _update_trigger_calibration_display() -> void:
+		var left_range: Vector2 = trigger_calibration["StrafeLeft"]
+		var right_range: Vector2 = trigger_calibration["StrafeRight"]
+		var left_raw := Input.get_action_raw_strength("StrafeLeft")
+		var right_raw := Input.get_action_raw_strength("StrafeRight")
+		strafe_left_bar.set_input_values(left_raw, InputCalibration.apply_trigger(left_raw, left_range))
+		strafe_right_bar.set_input_values(right_raw, InputCalibration.apply_trigger(right_raw, right_range))
+
+func _on_trigger_calibration_changed(action_name: String, low_value: float, high_value: float, committed: bool) -> void:
+		if !trigger_calibration.has(action_name):
+				return
+		trigger_calibration[action_name] = Vector2(low_value, high_value)
+		if committed:
+				_save_calibration()

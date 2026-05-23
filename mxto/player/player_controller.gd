@@ -11,13 +11,17 @@ func _ready() -> void:
 
 func get_input() -> PlayerInput:
 	var p := PlayerInput.new()
-	p.strafe_left = Input.get_action_strength("StrafeLeft")
-	p.strafe_right = Input.get_action_strength("StrafeRight")
+	var raw_strafe_left := Input.get_action_raw_strength("StrafeLeft")
+	var raw_strafe_right := Input.get_action_raw_strength("StrafeRight")
 	var raw_steer := Vector2(Input.get_axis("SteerLeft", "SteerRight"), Input.get_axis("SteerUp", "SteerDown"))
 	if input_calib == null:
+		p.strafe_left = raw_strafe_left
+		p.strafe_right = raw_strafe_right
 		p.steer_horizontal = raw_steer.x
 		p.steer_vertical = raw_steer.y
 	else:
+		p.strafe_left = input_calib.apply_strafe_left(raw_strafe_left)
+		p.strafe_right = input_calib.apply_strafe_right(raw_strafe_right)
 		var cal := input_calib.apply(raw_steer)
 		p.steer_horizontal = cal.x
 		p.steer_vertical = cal.y

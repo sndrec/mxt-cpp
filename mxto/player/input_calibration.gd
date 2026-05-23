@@ -5,6 +5,8 @@ const CAL_PATH := "user://controller_calibration.json"
 const CAL_POINT_COUNT := 64
 
 var radii: Array = []
+var strafe_left_range := Vector2(0.0, 1.0)
+var strafe_right_range := Vector2(0.0, 1.0)
 
 static func default_radii() -> Array:
 	var a := []
@@ -24,6 +26,8 @@ static func load_from_disk() -> InputCalibration:
 				ic.radii = arr.duplicate(true)
 			elif arr.size() == 8:
 				ic.radii = _legacy_radii_to_circle(arr)
+		if typeof(data) == TYPE_DICTIONARY:
+			ic._load_trigger_ranges(data)
 	return ic
 
 static func _legacy_radii_to_circle(legacy: Array) -> Array:
@@ -69,3 +73,34 @@ static func apply_vec(v: Vector2, radii: Array) -> Vector2:
 
 func apply(v: Vector2) -> Vector2:
 	return apply_vec(v, radii)
+
+static func apply_trigger(raw_value: float, trigger_range: Vector2) -> float:
+	var low := clampf(trigger_range.x, 0.0, 1.0)
+	var high := clampf(trigger_range.y, 0.0, 1.0)
+	if high <= low:
+		return clampf(raw_value, 0.0, 1.0)
+	return clampf((raw_value - low) / (high - low), 0.0, 1.0)
+
+func apply_strafe_left(raw_value: float) -> float:
+	return apply_trigger(raw_value, strafe_left_range)
+
+func apply_strafe_right(raw_value: float) -> float:
+	return apply_trigger(raw_value, strafe_right_range)
+
+func _load_trigger_ranges(data: Dictionary) -> void:
+	if !data.has("strafe_triggers"):
+		return
+	var ranges = data["strafe_triggers"]
+	if typeof(ranges) != TYPE_DICTIONARY:
+		return
+	strafe_left_range = _load_trigger_range(ranges.get("StrafeLeft", {}))
+	strafe_right_range = _load_trigger_range(ranges.get("StrafeRight", {}))
+
+func _load_trigger_range(entry) -> Vector2:
+	if typeof(entry) != TYPE_DICTIONARY:
+		return Vector2(0.0, 1.0)
+	var low := clampf(float(entry.get("low", 0.0)), 0.0, 1.0)
+	var high := clampf(float(entry.get("high", 1.0)), 0.0, 1.0)
+	if high <= low:
+		high = minf(1.0, low + 0.02)
+	return Vector2(low, high)

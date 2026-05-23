@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3 uid="uid://u8cuqg2ggiw8"]
+[gd_scene load_steps=4 format=3 uid="uid://u8cuqg2ggiw8"]
 
 [ext_resource type="Texture2D" uid="uid://ba5amhq17pghw" path="res://ui/circle.png" id="1_tjsn8"]
 [ext_resource type="Script" uid="uid://demarkn2b30g7" path="res://ui/controller_settings.gd" id="3_b8ycc"]
+[ext_resource type="Script" path="res://ui/trigger_calibration_bar.gd" id="4_gqiar"]
 
 [node name="ControllerSettings" type="Control"]
 layout_mode = 3
@@ -41,9 +42,10 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer"]
+custom_minimum_size = Vector2(320, 0)
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_stretch_ratio = 2.0
+size_flags_stretch_ratio = 1.25
 
 [node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
 layout_mode = 2
@@ -242,3 +244,52 @@ text = "5%"
 [node name="CalibrateButton" type="Button" parent="HBoxContainer/Control"]
 layout_mode = 2
 text = "Calibrate"
+
+[node name="StrafeCalibrationPanel" type="VBoxContainer" parent="HBoxContainer"]
+custom_minimum_size = Vector2(230, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.9
+
+[node name="Label" type="Label" parent="HBoxContainer/StrafeCalibrationPanel"]
+layout_mode = 2
+text = "Strafe Trigger Calibration"
+horizontal_alignment = 1
+
+[node name="Bars" type="HBoxContainer" parent="HBoxContainer/StrafeCalibrationPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 18
+alignment = 1
+
+[node name="Left" type="VBoxContainer" parent="HBoxContainer/StrafeCalibrationPanel/Bars"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="HBoxContainer/StrafeCalibrationPanel/Bars/Left"]
+layout_mode = 2
+text = "Left"
+horizontal_alignment = 1
+
+[node name="Bar" type="Control" parent="HBoxContainer/StrafeCalibrationPanel/Bars/Left"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("4_gqiar")
+action_name = "StrafeLeft"
+
+[node name="Right" type="VBoxContainer" parent="HBoxContainer/StrafeCalibrationPanel/Bars"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="HBoxContainer/StrafeCalibrationPanel/Bars/Right"]
+layout_mode = 2
+text = "Right"
+horizontal_alignment = 1
+
+[node name="Bar" type="Control" parent="HBoxContainer/StrafeCalibrationPanel/Bars/Right"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("4_gqiar")
+action_name = "StrafeRight"
