@@ -50,6 +50,7 @@ var stamp_catalog: CarStampCatalog = preload("res://vehicle/customization/stamp_
 var sticker_selectors: Array[OptionButton] = []
 var updating_colour_controls := false
 var updating_stamp_controls := false
+var livery_dirty := false
 var stamp_layer_buttons: Array[Button] = []
 var stamp_layer_colour_pickers: Array[ColorPickerButton] = []
 var preview_container: SubViewportContainer
@@ -58,8 +59,9 @@ var preview_root: Node3D
 var preview_camera: Camera3D
 var preview_vehicle: Node3D
 var preview_render_manager: CarRenderManager
+var preview_edit_render_manager: CarRenderManager
 var preview_yaw := deg_to_rad(25.0)
-var preview_pitch := 0.0
+var preview_pitch := deg_to_rad(-9.0)
 var preview_pan := Vector3.ZERO
 var preview_distance := 22.0
 var preview_drag_button := 0
@@ -124,6 +126,7 @@ func _build_stamp_layer_buttons() -> void:
 		var colour_picker := row.get_node_or_null("ColourPicker") as ColorPickerButton
 		if colour_picker != null:
 			colour_picker.color_changed.connect(_on_stamp_colour_changed.bind(layer))
+			colour_picker.popup_closed.connect(_on_stamp_colour_popup_closed.bind(layer))
 		button.pressed.connect(_on_stamp_layer_pressed.bind(layer))
 		stamp_layer_buttons.append(button)
 		stamp_layer_colour_pickers.append(colour_picker)
@@ -134,30 +137,6 @@ func _setup_stamp_menus() -> void:
 	stamp_action_menu.add_item("Edit", 1)
 	stamp_action_menu.add_item("Delete", 2)
 	stamp_action_menu.id_pressed.connect(_on_stamp_action_selected)
-
-func _input(event: InputEvent) -> void:
-	if !visible:
-		return
-	var mouse_event := event as InputEventMouseButton
-	if mouse_event == null or !mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_LEFT:
-		return
-	if _try_select_vehicle_at_global_position(mouse_event.position):
-		get_viewport().set_input_as_handled()
-
-func _try_select_vehicle_at_global_position(global_pos: Vector2) -> bool:
-	if vehicle_selector == null or !vehicle_selector.visible:
-		return false
-	var selector_rect := vehicle_selector.get_global_rect()
-	if !selector_rect.has_point(global_pos):
-		return false
-	var local_pos := global_pos - selector_rect.position
-	for i in range(vehicle_selector.item_count):
-		var item_rect := vehicle_selector.get_item_rect(i)
-		if item_rect.has_point(local_pos):
-			vehicle_selector.select(i)
-			_on_vehicle_selected(i)
-			return true
-	return false
 
 func _load_car_defs() -> void:
 	if game_manager != null:
@@ -176,13 +155,18 @@ func _load_settings() -> void:
 			player_settings.from_dict(data)
 
 func _save_settings() -> void:
+	if livery_dirty and !_livery_editing_locked():
+		_save_livery_for_selected_car(false)
 	_sync_livery_to_player_settings()
 	var path := "user://player_settings.json"
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	file.store_string(JSON.stringify(player_settings.to_dict()))
 	file.close()
 	if game_manager:
-		game_manager.network_manager.send_player_settings(player_settings.to_dict())
+		var settings_dict := player_settings.to_dict()
+		if _network_settings_should_exclude_livery():
+			settings_dict.erase("car_livery")
+		game_manager.network_manager.send_player_settings(settings_dict)
 
 func _populate_sticker_selectors() -> void:
 	for selector in sticker_selectors:
@@ -215,6 +199,7 @@ func _update_controls() -> void:
 		_update_livery_controls()
 		_refresh_stamp_controls()
 		_rebuild_preview_vehicle()
+	_update_livery_lock_state()
 
 func _on_slider_changed(value: float) -> void:
 	machine_setting_percent.text = str(roundi(value)) + "%"
@@ -281,6 +266,7 @@ func open_settings() -> void:
 	_load_settings()
 	_load_car_defs()
 	_update_controls()
+	_update_livery_lock_state()
 	show()
 
 func get_player_settings() -> PlayerSettings:
@@ -299,7 +285,9 @@ func _load_livery_for_selected_car() -> void:
 	current_livery = livery
 	_sync_livery_to_player_settings()
 
-func _save_livery_for_selected_car() -> void:
+func _save_livery_for_selected_car(rebuild_preview := true) -> void:
+	if _livery_editing_locked():
+		return
 	if player_settings.car_definition_path == "":
 		player_settings.car_livery = {}
 		return
@@ -309,9 +297,40 @@ func _save_livery_for_selected_car() -> void:
 	if err != OK:
 		push_warning("Failed to save car livery: %s" % err)
 	_sync_livery_to_player_settings()
-	if game_manager:
-		game_manager.network_manager.send_player_settings(player_settings.to_dict())
-	_rebuild_preview_vehicle()
+	livery_dirty = false
+	if rebuild_preview:
+		_rebuild_preview_vehicle()
+
+func _mark_livery_dirty() -> void:
+	if _livery_editing_locked():
+		return
+	livery_dirty = true
+	current_livery_enabled = true
+	_sync_livery_to_player_settings()
+
+func _livery_editing_locked() -> bool:
+	return game_manager != null and !game_manager.singleplayer_mode and game_manager.network_manager != null and game_manager.network_manager.has_network_peer()
+
+func _network_settings_should_exclude_livery() -> bool:
+	return game_manager != null and !game_manager.singleplayer_mode and game_manager.network_manager != null and game_manager.network_manager.has_network_peer()
+
+func _update_livery_lock_state() -> void:
+	var locked := _livery_editing_locked()
+	primary_colour_picker.disabled = locked
+	secondary_colour_picker.disabled = locked
+	accent_colour_picker.disabled = locked
+	if garage_panel != null:
+		garage_panel.modulate = Color(0.55, 0.55, 0.55, 1.0) if locked else Color.WHITE
+	for button in stamp_layer_buttons:
+		button.disabled = locked
+	for layer in range(stamp_layer_colour_pickers.size()):
+		var colour_picker := stamp_layer_colour_pickers[layer]
+		if colour_picker != null:
+			colour_picker.disabled = locked or _stamp_for_layer(layer) == null
+
+func _process(_delta: float) -> void:
+	if visible:
+		_update_livery_lock_state()
 
 func _sync_livery_to_player_settings() -> void:
 	if player_settings.car_definition_path == "" or !current_livery_enabled:
@@ -328,19 +347,19 @@ func _update_livery_controls() -> void:
 	updating_colour_controls = false
 
 func _on_primary_colour_changed(colour: Color) -> void:
-	if updating_colour_controls:
+	if updating_colour_controls or _livery_editing_locked():
 		return
 	current_livery.primary_colour = colour
 	_save_livery_for_selected_car()
 
 func _on_secondary_colour_changed(colour: Color) -> void:
-	if updating_colour_controls:
+	if updating_colour_controls or _livery_editing_locked():
 		return
 	current_livery.secondary_colour = colour
 	_save_livery_for_selected_car()
 
 func _on_accent_colour_changed(colour: Color) -> void:
-	if updating_colour_controls:
+	if updating_colour_controls or _livery_editing_locked():
 		return
 	current_livery.accent_colour = colour
 	_save_livery_for_selected_car()
@@ -370,10 +389,22 @@ func _setup_garage_preview() -> void:
 	preview_render_manager.name = "GaragePreviewRenderManager"
 	preview_root.add_child(preview_render_manager)
 
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(45.0, 35.0, 0.0)
-	light.light_energy = 5.0
-	preview_root.add_child(light)
+	preview_edit_render_manager = CarRenderManager.new()
+	preview_edit_render_manager.name = "GaragePreviewEditRenderManager"
+	preview_edit_render_manager.stamp_only_mode = true
+	preview_root.add_child(preview_edit_render_manager)
+
+	var environment := Environment.new()
+	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	environment.ambient_light_color = Color(0.85, 0.9, 1.0, 1.0)
+	environment.ambient_light_energy = 0.85
+	var world_environment := WorldEnvironment.new()
+	world_environment.environment = environment
+	preview_root.add_child(world_environment)
+
+	_add_preview_light(Vector3(45.0, 35.0, 0.0), 4.0)
+	_add_preview_light(Vector3(-35.0, -145.0, 0.0), 1.15)
+	_add_preview_light(Vector3(20.0, 145.0, 0.0), 0.85)
 
 	preview_camera = Camera3D.new()
 	preview_camera.current = true
@@ -381,6 +412,12 @@ func _setup_garage_preview() -> void:
 	preview_camera.fov = 38.0
 	_setup_stamp_edit_overlay()
 	_apply_preview_camera()
+
+func _add_preview_light(rotation_degrees: Vector3, energy: float) -> void:
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = rotation_degrees
+	light.light_energy = energy
+	preview_root.add_child(light)
 
 func _setup_stamp_edit_overlay() -> void:
 	stamp_edit_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -414,19 +451,38 @@ func _rebuild_preview_vehicle() -> void:
 	preview_vehicle = null
 	if preview_render_manager != null:
 		preview_render_manager.clear_renderer()
+	if preview_edit_render_manager != null:
+		preview_edit_render_manager.clear_renderer()
 	var definition := _selected_car_definition()
 	if definition == null or definition.car_scene == null:
 		return
 	preview_vehicle = definition.car_scene.instantiate()
 	preview_root.add_child(preview_vehicle)
 	_hide_preview_raycast_scene(preview_vehicle)
-	var render_settings: Array = [{}]
-	if current_livery_enabled:
-		current_livery.car_definition_path = player_settings.car_definition_path
-		player_settings.set_car_livery(current_livery)
-		render_settings[0] = player_settings.to_dict()
+	var render_settings: Array = [_preview_render_settings(_preview_confirmed_livery())]
+	preview_render_manager.stamp_visibility_masks_enabled = true
+	preview_render_manager.stamp_visibility_mask_skip_layer = -1
+	preview_render_manager.stamp_only_mode = false
 	preview_render_manager.configure_manual([definition], render_settings)
+	if stamp_ui_mode == StampUiMode.EDITING:
+		_rebuild_edit_stamp_preview(false)
 	_apply_preview_camera()
+
+func _rebuild_edit_stamp_preview(apply_camera := true) -> void:
+	if preview_edit_render_manager == null:
+		return
+	preview_edit_render_manager.clear_renderer()
+	var definition := _selected_car_definition()
+	if definition == null or definition.car_scene == null or stamp_ui_mode != StampUiMode.EDITING:
+		if apply_camera:
+			_apply_preview_camera()
+		return
+	preview_edit_render_manager.stamp_visibility_masks_enabled = false
+	preview_edit_render_manager.stamp_visibility_mask_skip_layer = -1
+	preview_edit_render_manager.stamp_only_mode = true
+	preview_edit_render_manager.configure_manual([definition], [_preview_render_settings(_preview_edit_livery())])
+	if apply_camera:
+		_apply_preview_camera()
 
 func _hide_preview_raycast_scene(root: Node) -> void:
 	for child in root.get_children():
@@ -442,10 +498,55 @@ func _preview_vehicle_transform() -> Transform3D:
 	return Transform3D.IDENTITY
 
 func _submit_preview_render() -> void:
-	if preview_render_manager == null or preview_render_manager.archetypes.is_empty():
-		return
-	preview_render_manager.begin_manual_submit()
-	preview_render_manager.submit_manual_car(0, _preview_vehicle_transform(), Color.BLACK, Vector3.ZERO, Color.BLACK, 0.0, false)
+	for manager in [preview_render_manager, preview_edit_render_manager]:
+		if manager == null or manager.archetypes.is_empty():
+			continue
+		manager.begin_manual_submit()
+		manager.submit_manual_car(0, _preview_vehicle_transform(), Color.BLACK, Vector3.ZERO, Color.BLACK, 0.0, false)
+
+func _preview_render_settings(livery: CarLivery) -> Dictionary:
+	var settings := player_settings.to_dict()
+	if livery == null:
+		settings.erase("car_livery")
+	else:
+		livery.car_definition_path = player_settings.car_definition_path
+		settings["car_livery"] = livery.to_dict()
+	return settings
+
+func _preview_confirmed_livery() -> CarLivery:
+	if !current_livery_enabled:
+		return null
+	if stamp_ui_mode == StampUiMode.EDITING:
+		return _livery_copy_excluding_layer(editing_stamp_layer)
+	return current_livery
+
+func _preview_edit_livery() -> CarLivery:
+	if stamp_ui_mode != StampUiMode.EDITING:
+		return null
+	return _livery_copy_only_layer(editing_stamp_layer)
+
+func _livery_copy_excluding_layer(layer: int) -> CarLivery:
+	var out := _livery_copy_base()
+	for stamp in current_livery.get_sorted_stamps():
+		if stamp == null or stamp.layer == layer:
+			continue
+		out.stamps.append(stamp.duplicate_stamp())
+	return out
+
+func _livery_copy_only_layer(layer: int) -> CarLivery:
+	var out := _livery_copy_base()
+	var stamp := _stamp_for_layer(layer)
+	if stamp != null:
+		out.stamps.append(stamp.duplicate_stamp())
+	return out
+
+func _livery_copy_base() -> CarLivery:
+	var out := CarLivery.new()
+	out.car_definition_path = player_settings.car_definition_path
+	out.primary_colour = current_livery.primary_colour
+	out.secondary_colour = current_livery.secondary_colour
+	out.accent_colour = current_livery.accent_colour
+	return out
 
 func _selected_car_definition() -> CarDefinition:
 	for def in car_defs:
@@ -455,11 +556,13 @@ func _selected_car_definition() -> CarDefinition:
 
 func _refresh_stamp_controls() -> void:
 	updating_stamp_controls = true
+	var locked := _livery_editing_locked()
 	for layer in range(stamp_layer_buttons.size()):
 		var button := stamp_layer_buttons[layer]
 		var colour_picker: ColorPickerButton = stamp_layer_colour_pickers[layer] if layer < stamp_layer_colour_pickers.size() else null
 		var stamp := _stamp_for_layer(layer)
 		button.modulate = Color.WHITE
+		button.disabled = locked
 		button.expand_icon = true
 		if stamp == null:
 			button.text = "EMPTY"
@@ -472,7 +575,7 @@ func _refresh_stamp_controls() -> void:
 			button.text = label
 			button.icon = _stamp_preview_texture(stamp.stamp_id)
 			if colour_picker != null:
-				colour_picker.disabled = false
+				colour_picker.disabled = locked
 				colour_picker.color = stamp.colour
 	updating_stamp_controls = false
 
@@ -489,13 +592,25 @@ func _stamp_display_name(stamp_id: String) -> String:
 	return stamp_id
 
 func _on_stamp_colour_changed(colour: Color, layer: int) -> void:
-	if updating_stamp_controls:
+	if updating_stamp_controls or _livery_editing_locked():
 		return
 	var stamp := _stamp_for_layer(layer)
 	if stamp == null:
 		return
 	stamp.colour = colour
-	_save_livery_for_selected_car()
+	_mark_livery_dirty()
+	if preview_render_manager != null:
+		preview_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
+	if preview_edit_render_manager != null:
+		preview_edit_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
+
+func _on_stamp_colour_popup_closed(layer: int) -> void:
+	if updating_stamp_controls or _livery_editing_locked():
+		return
+	var stamp := _stamp_for_layer(layer)
+	if stamp == null:
+		return
+	_save_livery_for_selected_car(false)
 	_refresh_stamp_controls()
 
 func _selected_stamp() -> CarLiveryStamp:
@@ -540,7 +655,7 @@ func _first_stamp_id() -> String:
 	return "circle"
 
 func _on_stamp_layer_pressed(layer: int) -> void:
-	if updating_stamp_controls:
+	if updating_stamp_controls or _livery_editing_locked():
 		return
 	selected_stamp_index = layer
 	var stamp := _stamp_for_layer(layer)
@@ -559,7 +674,7 @@ func _show_stamp_action_menu(layer: int) -> void:
 	stamp_action_menu.popup()
 
 func _on_stamp_action_selected(id: int) -> void:
-	if pending_stamp_layer < 0:
+	if pending_stamp_layer < 0 or _livery_editing_locked():
 		return
 	match id:
 		0:
@@ -574,7 +689,7 @@ func _on_stamp_action_selected(id: int) -> void:
 			_refresh_stamp_controls()
 
 func _show_stamp_chooser(layer: int, action: String) -> void:
-	if stamp_chooser_popup == null or stamp_chooser_list == null:
+	if stamp_chooser_popup == null or stamp_chooser_list == null or _livery_editing_locked():
 		return
 	stamp_ui_mode = StampUiMode.CHOOSING
 	pending_stamp_layer = layer
@@ -603,7 +718,7 @@ func _show_stamp_chooser(layer: int, action: String) -> void:
 
 func _on_stamp_choice_pressed(stamp_id: String) -> void:
 	stamp_chooser_popup.hide()
-	if pending_stamp_layer < 0:
+	if pending_stamp_layer < 0 or _livery_editing_locked():
 		stamp_ui_mode = StampUiMode.IDLE
 		return
 	if pending_stamp_choice_action == "change":
@@ -625,6 +740,8 @@ func _on_stamp_choice_cancel_pressed() -> void:
 	pending_stamp_choice_action = ""
 
 func _begin_stamp_edit(layer: int, stamp: CarLiveryStamp, is_new: bool) -> void:
+	if _livery_editing_locked():
+		return
 	editing_stamp_layer = layer
 	editing_stamp = stamp
 	editing_is_new = is_new
@@ -642,6 +759,7 @@ func _begin_stamp_edit(layer: int, stamp: CarLiveryStamp, is_new: bool) -> void:
 		stamp_edit_rect_size = _edit_rect_size_from_stamp(stamp)
 	stamp_edit_overlay.show()
 	_layout_stamp_edit_overlay()
+	_rebuild_preview_vehicle()
 	_apply_edit_stamp_from_camera()
 
 func _focus_preview_on_stamp(stamp: CarLiveryStamp) -> void:
@@ -654,9 +772,8 @@ func _focus_preview_on_stamp(stamp: CarLiveryStamp) -> void:
 	var view_direction := projector.basis.z.normalized()
 	preview_pan = projector.origin - Vector3(0.0, 0.5, 0.0)
 	preview_yaw = atan2(view_direction.x, view_direction.z)
-	var base_elevation := atan2(3.5, preview_distance)
 	var stamp_elevation := asin(clampf(view_direction.y, -1.0, 1.0))
-	preview_pitch = clampf(stamp_elevation - base_elevation, deg_to_rad(-55.0), deg_to_rad(55.0))
+	preview_pitch = clampf(-stamp_elevation, deg_to_rad(-55.0), deg_to_rad(55.0))
 	var plane_basis := _preview_view_plane_basis(_preview_camera_offset())
 	preview_pan = Vector3(
 		clampf(projector.origin.dot(plane_basis.x), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
@@ -791,7 +908,7 @@ func _apply_edit_stamp_from_camera() -> void:
 	editing_stamp.rotation = projection_roll
 	editing_stamp.size = _stamp_world_size_from_edit_rect(hit["position"])
 	editing_stamp.projection_depth = maxf(0.75, maxf(editing_stamp.size.x, editing_stamp.size.y) * 1.35)
-	_rebuild_preview_vehicle()
+	_rebuild_edit_stamp_preview()
 
 func _stamp_world_size_from_edit_rect(hit_position: Vector3) -> Vector2:
 	var viewport_size := car_preview_space.size
@@ -854,12 +971,12 @@ func _handle_preview_mouse_button(event: InputEventMouseButton, allow_edit_camer
 	if stamp_ui_mode == StampUiMode.EDITING and !allow_edit_camera:
 		return
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-		preview_distance = maxf(8.0, preview_distance - 1.25)
+		preview_distance = maxf(2.5, preview_distance * 0.9)
 		_apply_preview_camera()
 		preview_container.accept_event()
 		return
 	if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-		preview_distance = minf(44.0, preview_distance + 1.25)
+		preview_distance = minf(44.0, preview_distance * 1.1)
 		_apply_preview_camera()
 		preview_container.accept_event()
 		return
@@ -889,7 +1006,7 @@ func _handle_preview_mouse_motion(event: InputEventMouseMotion, allow_edit_camer
 		preview_yaw += delta.x * -0.01
 		preview_pitch = clampf(preview_pitch + delta.y * -0.008, deg_to_rad(-55.0), deg_to_rad(55.0))
 	else:
-		var pan_scale := preview_distance * 0.0015
+		var pan_scale := preview_distance * 0.0005
 		preview_pan.x -= delta.x * pan_scale
 		preview_pan.y += delta.y * pan_scale
 		_clamp_preview_pan()
@@ -908,13 +1025,23 @@ func _apply_preview_camera() -> void:
 		var camera_offset := _preview_camera_offset()
 		var target := _preview_pan_target(camera_offset)
 		preview_camera.position = target + camera_offset
-		preview_camera.look_at(target, Vector3.UP)
+		preview_camera.basis = _preview_camera_basis(camera_offset)
 	_submit_preview_render()
 
 func _preview_camera_offset() -> Vector3:
 	var yaw_basis := Basis(Vector3.UP, preview_yaw)
 	var pitch_basis := Basis(yaw_basis.x.normalized(), preview_pitch)
-	return pitch_basis * (yaw_basis * Vector3(0.0, 3.5, preview_distance))
+	return pitch_basis * (yaw_basis * Vector3(0.0, 0.0, preview_distance))
+
+func _preview_camera_basis(camera_offset: Vector3) -> Basis:
+	var view_back := camera_offset.normalized()
+	var right := Vector3.UP.cross(view_back)
+	if right.length_squared() <= 0.0001:
+		right = Vector3.RIGHT
+	else:
+		right = right.normalized()
+	var up := view_back.cross(right).normalized()
+	return Basis(right, up, view_back)
 
 func _preview_pan_target(camera_offset: Vector3) -> Vector3:
 	var plane_basis := _preview_view_plane_basis(camera_offset)

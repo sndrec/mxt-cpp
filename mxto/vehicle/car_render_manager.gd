@@ -16,6 +16,9 @@ var archetypes: Array = []
 var car_archetype_indices: PackedInt32Array = PackedInt32Array()
 var car_slots: PackedInt32Array = PackedInt32Array()
 var multimesh_render_enabled: bool = true
+var stamp_only_mode: bool = false
+var stamp_visibility_masks_enabled: bool = true
+var stamp_visibility_mask_skip_layer: int = -1
 var stamp_catalog: CarStampCatalog = null
 
 func _ready() -> void:
@@ -220,12 +223,12 @@ func _build_archetype(definition: CarDefinition, livery: CarLivery = null) -> Di
 	var archetype := {
 		"indices": [],
 		"count": 0,
-		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0, livery),
-		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
-		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2),
-		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), shadow_mesh.mesh, shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
+		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh.mesh, null if stamp_only_mode else main_mesh.material_override, root_transform * main_mesh.transform, 1, 0, livery),
+		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_mesh.mesh, null if stamp_only_mode else outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
+		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_main_mesh.mesh, null if stamp_only_mode else outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2),
+		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else shadow_mesh.mesh, null if stamp_only_mode else shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
 		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), template, livery, root_transform * main_mesh.transform, main_mesh.material_override),
-		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), thruster_data["material"], thruster_data["local_transforms"]),
+		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), null if stamp_only_mode else thruster_data["material"], [] if stamp_only_mode else thruster_data["local_transforms"]),
 	}
 	template.free()
 	return archetype
@@ -233,18 +236,51 @@ func _build_archetype(definition: CarDefinition, livery: CarLivery = null) -> Di
 func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, local_transform: Transform3D, base_material: Material) -> Dictionary:
 	var mesh: Mesh = null
 	var material: Material = null
+	var stamp_vertex_ranges := {}
 	if livery != null and !livery.stamps.is_empty():
 		var catalog := _get_stamp_catalog()
 		if catalog != null:
-			var generated_mesh := CarLiveryStampMeshBuilder.build_for_vehicle_scene(template, livery, catalog)
+			var stamp_build := CarLiveryStampMeshBuilder.build_for_vehicle_scene_with_masks(template, livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
+			var generated_mesh: Mesh = stamp_build["mesh"]
 			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
 				mesh = generated_mesh
-				material = catalog.create_stamp_material(base_material)
+				material = catalog.create_stamp_material(base_material, stamp_build["visibility_mask"])
+				stamp_vertex_ranges = stamp_build.get("stamp_vertex_ranges", {})
 	var pass_data := _create_pass(pass_name, mesh, material, local_transform, 2, 2)
+	pass_data["stamp_vertex_ranges"] = stamp_vertex_ranges
 	if mesh == null:
 		var node: MultiMeshInstance3D = pass_data["node"]
 		node.visible = false
 	return pass_data
+
+func update_stamp_layer_colour(layer: int, colour: Color) -> void:
+	for archetype in archetypes:
+		var pass_data: Dictionary = archetype[PASS_STAMP]
+		var multimesh: MultiMesh = pass_data["multimesh"]
+		if multimesh == null:
+			continue
+		var mesh := multimesh.mesh as ArrayMesh
+		if mesh == null or mesh.get_surface_count() <= 0:
+			continue
+		var ranges: Dictionary = pass_data.get("stamp_vertex_ranges", {})
+		if !ranges.has(layer):
+			continue
+		var range_data: Dictionary = ranges[layer]
+		var start := int(range_data.get("start", 0))
+		var count := int(range_data.get("count", 0))
+		if count <= 0:
+			continue
+		var arrays := mesh.surface_get_arrays(0)
+		if arrays.size() <= Mesh.ARRAY_COLOR or typeof(arrays[Mesh.ARRAY_COLOR]) != TYPE_PACKED_COLOR_ARRAY:
+			continue
+		var colours: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+		var end := mini(start + count, colours.size())
+		for i in range(start, end):
+			colours[i] = colour
+		arrays[Mesh.ARRAY_COLOR] = colours
+		mesh.clear_surfaces()
+		var format_flags := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, format_flags)
 
 func _collect_thruster_data(template: Node3D, root_transform: Transform3D) -> Dictionary:
 	var local_transforms: Array[Transform3D] = []

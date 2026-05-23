@@ -10,6 +10,7 @@ const STAMP_MULTIPLY_SHADER = preload("res://vehicle/customization/car_stamp_mul
 
 var _entry_by_id: Dictionary = {}
 var _preview_texture_by_id: Dictionary = {}
+var _white_visibility_mask: Texture2D = null
 
 func get_entry(stamp_id: String) -> CarStampEntry:
 	_ensure_index()
@@ -41,10 +42,11 @@ func get_entry_atlas_rect(entry: CarStampEntry) -> Rect2:
 func get_atlas_rect(stamp_id: String) -> Rect2:
 	return get_entry_atlas_rect(get_entry(stamp_id))
 
-func create_stamp_material(base_material: Material = null) -> ShaderMaterial:
+func create_stamp_material(base_material: Material = null, visibility_mask: Texture2D = null) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = STAMP_MULTIPLY_SHADER
 	material.set_shader_parameter("stamp_atlas", atlas_texture)
+	material.set_shader_parameter("stamp_visibility_mask", visibility_mask if visibility_mask != null else _get_white_visibility_mask())
 	var base_shader_material := base_material as ShaderMaterial
 	if base_shader_material != null:
 		for parameter in ["in_albedo", "in_normal", "in_lightwarp", "in_specwarp"]:
@@ -74,6 +76,14 @@ func _ensure_index() -> void:
 	if _entry_by_id.size() == entries.size():
 		return
 	rebuild_index()
+
+func _get_white_visibility_mask() -> Texture2D:
+	if _white_visibility_mask != null:
+		return _white_visibility_mask
+	var image := Image.create(1, 1, false, Image.FORMAT_RGF)
+	image.set_pixel(0, 0, Color(0.0, 0.0, 0.0, 1.0))
+	_white_visibility_mask = ImageTexture.create_from_image(image)
+	return _white_visibility_mask
 
 func _entry_fits_grid(entry: CarStampEntry) -> bool:
 	if atlas_grid_size.x <= 0 or atlas_grid_size.y <= 0:

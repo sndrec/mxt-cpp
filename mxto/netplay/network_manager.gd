@@ -1844,6 +1844,7 @@ func _begin_authoritative_simulation_now() -> void:
 func send_player_settings(settings: Dictionary) -> void:
 	if race_active:
 		return
+	settings = _merge_existing_livery_settings(settings, multiplayer.get_unique_id())
 	var my_id := multiplayer.get_unique_id()
 	if is_server:
 		update_player_settings(settings, my_id)
@@ -1861,10 +1862,12 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 		id = sender_id
 		if id == 0:
 			id = multiplayer.get_unique_id()
+		settings = _merge_existing_livery_settings(settings, id)
 		player_settings[id] = settings
 		if is_server and sender_id != 0:
 			update_player_settings.rpc(settings, id)
 	else:
+		settings = _merge_existing_livery_settings(settings, id)
 		player_settings[id] = settings
 	if id == multiplayer.get_unique_id():
 		if settings.get("spectator", false):
@@ -1883,6 +1886,7 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 					if cpu_ids_changed:
 						_broadcast_cpu_roster()
 				_calc_state_offsets()
+
 		else:
 			if spectator_ids.has(id):
 				spectator_ids.erase(id)
@@ -1894,6 +1898,16 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 					if cpu_ids_changed:
 						_broadcast_cpu_roster()
 				_calc_state_offsets()
+
+func _merge_existing_livery_settings(settings: Dictionary, id: int) -> Dictionary:
+	if settings.has("car_livery") or !player_settings.has(id):
+		return settings
+	var existing = player_settings[id]
+	if typeof(existing) != TYPE_DICTIONARY or !(existing as Dictionary).has("car_livery"):
+		return settings
+	var merged := settings.duplicate(true)
+	merged["car_livery"] = (existing as Dictionary)["car_livery"]
+	return merged
 
 func _get_local_player_settings_snapshot() -> Dictionary:
 	if game_manager != null and game_manager.car_settings != null:
@@ -1930,18 +1944,13 @@ func _resync_player_settings() -> void:
 		return
 	var local_settings := _get_local_player_settings_snapshot()
 	if !local_settings.is_empty():
+		local_settings.erase("car_livery")
 		var my_id := multiplayer.get_unique_id()
-		player_settings[my_id] = local_settings
+		player_settings[my_id] = _merge_existing_livery_settings(local_settings, my_id)
 		if is_server:
 			update_player_settings(local_settings, my_id)
 		else:
 			update_player_settings.rpc_id(1, local_settings)
-	if !is_server:
-		return
-	for peer_id in _settings_resync_recipients():
-		if int(peer_id) == multiplayer.get_unique_id():
-			continue
-		_rebroadcast_player_settings_to_peer(int(peer_id))
 
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input

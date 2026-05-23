@@ -4,12 +4,16 @@ render_mode depth_draw_never, ambient_light_disabled, cull_back;
 stencil_mode write, compare_always, 1;
 
 uniform sampler2D stamp_atlas : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
+uniform sampler2D stamp_visibility_mask : filter_nearest, repeat_disable;
 uniform sampler2D in_lightwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
 
+varying vec4 stamp_mask_data;
+
 void vertex() {
+	stamp_mask_data = CUSTOM0;
 	TANGENT = vec3(1.0, 0.0, 0.0);
 	BINORMAL = vec3(0.0, 0.0, -1.0);
 	NORMAL = vec3(0.0, 1.0, 0.0);
@@ -24,11 +28,13 @@ void fragment() {
 	NORMAL = normalize(TANGENT * normal_1.x + BINORMAL * normal_1.y + NORMAL * normal_1.z);
 	vec3 base_colour = texture(in_albedo, UV).rgb;
 	vec4 stamp = texture(stamp_atlas, UV2) * COLOR;
-	float stamp_alpha = clamp(stamp.a, 0.0, 1.0);
+	vec2 visibility_mask = texture(stamp_visibility_mask, stamp_mask_data.xy).rg;
+	float visibility = mix(1.0, step(visibility_mask.r - stamp_mask_data.w, stamp_mask_data.z), step(0.5, visibility_mask.g));
+	float stamp_alpha = clamp(stamp.a * visibility, 0.0, 1.0);
 	if (stamp_alpha <= 0.01) {
 		discard;
 	}
-	vec3 stamp_multiply = mix(vec3(1.0), clamp(stamp.rgb, vec3(0.0), vec3(1.0)), stamp_alpha);
+	vec3 stamp_multiply = clamp(stamp.rgb, vec3(0.0), vec3(1.0));
 	ALBEDO = base_colour * stamp_multiply;
 }
 
