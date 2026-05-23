@@ -7,30 +7,37 @@ const CarLiveryStampMeshBuilder = preload("res://vehicle/customization/car_liver
 const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
 const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
 
-@onready var machine_setting_slider: HSlider = $Container/HBoxContainer/VBoxContainer/MachineSettingSlider
-@onready var machine_setting_percent: Label = $Container/HBoxContainer/VBoxContainer/MachineSettingPercent
-@onready var vehicle_selector: ItemList = $Container/ScrollContainer/VehicleSelector
+const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
+const PREVIEW_PAN_LIMIT := 4.0
+
+@onready var machine_setting_slider: HSlider = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingSlider
+@onready var machine_setting_percent: Label = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingPercent
+@onready var vehicle_selector: ItemList = $Container/SettingsTabs/Driver/VehicleScroll/VehicleSelector
 @onready var close_settings: Button = $Container/CloseSettings
-@onready var car_preview_space: ColorRect = $Container/HBoxContainer/CarPreviewSpace
-@onready var pilot_name_input: LineEdit = $Container/HBoxContainer/VBoxContainer/PilotNameInput
-@onready var spectator_toggle: CheckBox = $Container/HBoxContainer/VBoxContainer/SpectatorToggle
-@onready var car_name_label: Label = $Container/HBoxContainer/VBoxContainer/CarName
-@onready var sticker_slot_1: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot1
-@onready var sticker_slot_2: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot2
-@onready var sticker_slot_3: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot3
-@onready var sticker_slot_4: OptionButton = $Container/HBoxContainer/VBoxContainer/StickerGrid/StickerSlot4
-@onready var primary_colour_picker: ColorPickerButton = $Container/HBoxContainer/VBoxContainer/PaintGrid/PrimaryColourPicker
-@onready var secondary_colour_picker: ColorPickerButton = $Container/HBoxContainer/VBoxContainer/PaintGrid/SecondaryColourPicker
-@onready var accent_colour_picker: ColorPickerButton = $Container/HBoxContainer/VBoxContainer/PaintGrid/AccentColourPicker
-@onready var stamp_slot_selector: OptionButton = $Container/HBoxContainer/VBoxContainer/StampGrid/StampSlotSelector
-@onready var stamp_add_button: Button = $Container/HBoxContainer/VBoxContainer/StampGrid/StampAddButton
-@onready var stamp_delete_button: Button = $Container/HBoxContainer/VBoxContainer/StampGrid/StampDeleteButton
-@onready var stamp_shape_selector: OptionButton = $Container/HBoxContainer/VBoxContainer/StampGrid/StampShapeSelector
-@onready var stamp_colour_picker: ColorPickerButton = $Container/HBoxContainer/VBoxContainer/StampGrid/StampColourPicker
-@onready var stamp_layer_spin: SpinBox = $Container/HBoxContainer/VBoxContainer/StampGrid/StampLayerSpin
-@onready var stamp_rotation_slider: HSlider = $Container/HBoxContainer/VBoxContainer/StampGrid/StampRotationSlider
-@onready var stamp_scale_slider: HSlider = $Container/HBoxContainer/VBoxContainer/StampGrid/StampScaleSlider
-@onready var stamp_depth_slider: HSlider = $Container/HBoxContainer/VBoxContainer/StampGrid/StampDepthSlider
+@onready var car_preview_space: ColorRect = $Container/SettingsTabs/Garage/CarPreviewSpace
+@onready var pilot_name_input: LineEdit = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/PilotNameInput
+@onready var spectator_toggle: CheckBox = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/SpectatorToggle
+@onready var car_name_label: Label = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/CarName
+@onready var sticker_slot_1: OptionButton = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid/StickerSlot1
+@onready var sticker_slot_2: OptionButton = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid/StickerSlot2
+@onready var sticker_slot_3: OptionButton = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid/StickerSlot3
+@onready var sticker_slot_4: OptionButton = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid/StickerSlot4
+@onready var primary_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/PrimaryColourPicker
+@onready var secondary_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/SecondaryColourPicker
+@onready var accent_colour_picker: ColorPickerButton = $Container/SettingsTabs/Garage/GaragePanel/PaintGrid/AccentColourPicker
+@onready var settings_tab_container: TabContainer = $Container/SettingsTabs
+@onready var driver_tab: VBoxContainer = $Container/SettingsTabs/Driver
+@onready var garage_tab: HBoxContainer = $Container/SettingsTabs/Garage
+@onready var garage_panel: VBoxContainer = $Container/SettingsTabs/Garage/GaragePanel
+@onready var garage_car_name_label: Label = $Container/SettingsTabs/Garage/GaragePanel/GarageCarName
+@onready var stamp_layer_list: VBoxContainer = $Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList
+@onready var stamp_action_menu: PopupMenu = $StampActionMenu
+@onready var stamp_chooser_popup: PopupPanel = $StampChooser
+@onready var stamp_chooser_list: VBoxContainer = $StampChooser/StampChooserList
+@onready var stamp_edit_overlay: Control = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay
+@onready var stamp_edit_square: Panel = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare
+@onready var stamp_edit_confirm_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Confirm
+@onready var stamp_edit_cancel_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Cancel
 
 var game_manager: GameManager
 var player_settings: PlayerSettings = PlayerSettings.new()
@@ -43,6 +50,7 @@ var stamp_catalog: CarStampCatalog = preload("res://vehicle/customization/stamp_
 var sticker_selectors: Array[OptionButton] = []
 var updating_colour_controls := false
 var updating_stamp_controls := false
+var stamp_layer_buttons: Array[Button] = []
 var preview_container: SubViewportContainer
 var preview_viewport: SubViewport
 var preview_root: Node3D
@@ -57,17 +65,36 @@ var preview_drag_button := 0
 var preview_drag_start := Vector2.ZERO
 var preview_drag_last := Vector2.ZERO
 var preview_drag_moved := false
+var preview_has_transform_override := false
+var preview_transform_override := Transform3D.IDENTITY
+var preview_has_camera_override := false
+var preview_camera_override := Transform3D.IDENTITY
+enum StampUiMode { IDLE, CHOOSING, EDITING }
+var stamp_ui_mode := StampUiMode.IDLE
+var pending_stamp_layer := -1
+var pending_stamp_choice_action := ""
+var editing_stamp_layer := -1
+var editing_stamp: CarLiveryStamp
+var editing_original_stamp: CarLiveryStamp
+var editing_is_new := false
+var editing_previous_livery_enabled := false
+var stamp_edit_rect_size := Vector2(160.0, 160.0)
+var stamp_edit_roll := 0.0
+var stamp_edit_drag_kind := ""
+var stamp_edit_drag_start_mouse := Vector2.ZERO
+var stamp_edit_drag_start_center := Vector2.ZERO
+var stamp_edit_drag_start_size := Vector2.ONE
+var stamp_edit_drag_start_roll := 0.0
 
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
-	_wrap_settings_column()
-	_prioritize_vehicle_selector_input()
+	_build_stamp_layer_buttons()
 	_load_settings()
 	_load_car_defs()
 	sticker_selectors = [sticker_slot_1, sticker_slot_2, sticker_slot_3, sticker_slot_4]
 	_populate_sticker_selectors()
-	_populate_stamp_shapes()
 	_setup_garage_preview()
+	_setup_stamp_menus()
 	_update_controls()
 	machine_setting_slider.value_changed.connect(_on_slider_changed)
 	vehicle_selector.item_selected.connect(_on_vehicle_selected)
@@ -77,49 +104,27 @@ func _ready() -> void:
 	primary_colour_picker.color_changed.connect(_on_primary_colour_changed)
 	secondary_colour_picker.color_changed.connect(_on_secondary_colour_changed)
 	accent_colour_picker.color_changed.connect(_on_accent_colour_changed)
-	stamp_slot_selector.item_selected.connect(_on_stamp_slot_selected)
-	stamp_add_button.pressed.connect(_on_stamp_add_pressed)
-	stamp_delete_button.pressed.connect(_on_stamp_delete_pressed)
-	stamp_shape_selector.item_selected.connect(_on_stamp_shape_selected)
-	stamp_colour_picker.color_changed.connect(_on_stamp_colour_changed)
-	stamp_layer_spin.value_changed.connect(_on_stamp_layer_changed)
-	stamp_rotation_slider.value_changed.connect(_on_stamp_rotation_changed)
-	stamp_scale_slider.value_changed.connect(_on_stamp_scale_changed)
-	stamp_depth_slider.value_changed.connect(_on_stamp_depth_changed)
 	for i in range(sticker_selectors.size()):
 		sticker_selectors[i].item_selected.connect(_on_sticker_selected.bind(i))
 
-func _wrap_settings_column() -> void:
-	var hbox := $Container/HBoxContainer as HBoxContainer
-	var column := $Container/HBoxContainer/VBoxContainer as VBoxContainer
-	if hbox == null or column == null or column.get_parent() is ScrollContainer:
+func _build_stamp_layer_buttons() -> void:
+	if stamp_layer_list == null:
 		return
-	var column_index := column.get_index()
-	hbox.remove_child(column)
-	var settings_scroll := ScrollContainer.new()
-	settings_scroll.name = "SettingsScroll"
-	settings_scroll.clip_contents = true
-	settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	settings_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
-	settings_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	settings_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hbox.add_child(settings_scroll)
-	hbox.move_child(settings_scroll, column_index)
-	settings_scroll.add_child(column)
-	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	stamp_layer_buttons.clear()
+	var count := mini(stamp_layer_list.get_child_count(), CarLivery.MAX_STAMPS)
+	for layer in range(count):
+		var button := stamp_layer_list.get_child(layer) as Button
+		if button == null:
+			continue
+		button.pressed.connect(_on_stamp_layer_pressed.bind(layer))
+		stamp_layer_buttons.append(button)
 
-func _prioritize_vehicle_selector_input() -> void:
-	var container := $Container as Control
-	var hbox := $Container/HBoxContainer as Control
-	var selector_scroll := $Container/ScrollContainer as ScrollContainer
-	if hbox != null:
-		hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if selector_scroll == null or container == null:
-		return
-	selector_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
-	selector_scroll.z_index = 32
-	container.move_child(selector_scroll, container.get_child_count() - 1)
+func _setup_stamp_menus() -> void:
+	stamp_action_menu.clear()
+	stamp_action_menu.add_item("Change", 0)
+	stamp_action_menu.add_item("Edit", 1)
+	stamp_action_menu.add_item("Delete", 2)
+	stamp_action_menu.id_pressed.connect(_on_stamp_action_selected)
 
 func _input(event: InputEvent) -> void:
 	if !visible:
@@ -195,6 +200,8 @@ func _update_controls() -> void:
 		vehicle_selector.select(idx)
 		player_settings.car_definition_path = car_defs[idx].resource_path
 		car_name_label.text = car_defs[idx].name
+		if garage_car_name_label != null:
+			garage_car_name_label.text = car_defs[idx].name
 		_load_livery_for_selected_car()
 		_update_livery_controls()
 		_refresh_stamp_controls()
@@ -208,6 +215,8 @@ func _on_vehicle_selected(index: int) -> void:
 	if index >= 0 and index < car_defs.size():
 		player_settings.car_definition_path = car_defs[index].resource_path
 		car_name_label.text = car_defs[index].name
+		if garage_car_name_label != null:
+			garage_car_name_label.text = car_defs[index].name
 		_load_livery_for_selected_car()
 		_update_livery_controls()
 		_refresh_stamp_controls()
@@ -327,18 +336,6 @@ func _on_accent_colour_changed(colour: Color) -> void:
 	current_livery.accent_colour = colour
 	_save_livery_for_selected_car()
 
-func _populate_stamp_shapes() -> void:
-	stamp_shape_selector.clear()
-	if stamp_catalog == null:
-		return
-	for i in range(stamp_catalog.entries.size()):
-		var entry := stamp_catalog.entries[i]
-		if entry == null or !entry.is_valid_entry():
-			continue
-		var label := entry.display_name if entry.display_name != "" else entry.stamp_id
-		stamp_shape_selector.add_item(label)
-		stamp_shape_selector.set_item_metadata(stamp_shape_selector.get_item_count() - 1, entry.stamp_id)
-
 func _setup_garage_preview() -> void:
 	car_preview_space.mouse_filter = Control.MOUSE_FILTER_STOP
 	preview_container = SubViewportContainer.new()
@@ -347,6 +344,7 @@ func _setup_garage_preview() -> void:
 	preview_container.mouse_filter = Control.MOUSE_FILTER_STOP
 	preview_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	car_preview_space.add_child(preview_container)
+	car_preview_space.move_child(preview_container, 0)
 	preview_container.gui_input.connect(_on_preview_gui_input)
 	car_preview_space.resized.connect(_on_preview_resized)
 
@@ -364,15 +362,33 @@ func _setup_garage_preview() -> void:
 	preview_root.add_child(preview_render_manager)
 
 	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-45.0, 35.0, 0.0)
-	light.light_energy = 2.0
+	light.rotation_degrees = Vector3(45.0, 35.0, 0.0)
+	light.light_energy = 5.0
 	preview_root.add_child(light)
 
 	preview_camera = Camera3D.new()
 	preview_camera.current = true
 	preview_viewport.add_child(preview_camera)
 	preview_camera.fov = 38.0
+	_setup_stamp_edit_overlay()
 	_apply_preview_camera()
+
+func _setup_stamp_edit_overlay() -> void:
+	stamp_edit_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	stamp_edit_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	stamp_edit_overlay.visible = false
+	stamp_edit_square.custom_minimum_size = Vector2.ZERO
+	stamp_edit_square.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for kind in ["edge_left", "edge_right", "edge_top", "edge_bottom", "corner_tl", "corner_tr", "corner_bl", "corner_br"]:
+		var handle := stamp_edit_square.get_node_or_null(kind) as Control
+		if handle == null:
+			continue
+		handle.mouse_filter = Control.MOUSE_FILTER_STOP
+		handle.gui_input.connect(_on_stamp_edit_handle_input.bind(kind))
+	stamp_edit_confirm_button.pressed.connect(_on_stamp_edit_confirm_pressed)
+	stamp_edit_cancel_button.pressed.connect(_on_stamp_edit_cancel_pressed)
+	stamp_edit_overlay.gui_input.connect(_on_stamp_edit_overlay_gui_input)
+	stamp_edit_overlay.resized.connect(_layout_stamp_edit_overlay)
 
 func _on_preview_resized() -> void:
 	if preview_viewport == null:
@@ -397,6 +413,8 @@ func _rebuild_preview_vehicle() -> void:
 	_hide_preview_raycast_scene(preview_vehicle)
 	var render_settings: Array = [{}]
 	if current_livery_enabled:
+		current_livery.car_definition_path = player_settings.car_definition_path
+		player_settings.set_car_livery(current_livery)
 		render_settings[0] = player_settings.to_dict()
 	preview_render_manager.configure_manual([definition], render_settings)
 	_apply_preview_camera()
@@ -410,9 +428,9 @@ func _hide_preview_raycast_scene(root: Node) -> void:
 	mesh.visible = false
 
 func _preview_vehicle_transform() -> Transform3D:
-	var yaw_basis := Basis(Vector3.UP, preview_yaw)
-	var pitch_basis := Basis(Vector3.RIGHT, preview_pitch)
-	return Transform3D(yaw_basis * pitch_basis, preview_pan)
+	if preview_has_transform_override:
+		return preview_transform_override
+	return Transform3D.IDENTITY
 
 func _submit_preview_render() -> void:
 	if preview_render_manager == null or preview_render_manager.archetypes.is_empty():
@@ -428,48 +446,58 @@ func _selected_car_definition() -> CarDefinition:
 
 func _refresh_stamp_controls() -> void:
 	updating_stamp_controls = true
-	stamp_slot_selector.clear()
-	for i in range(current_livery.stamps.size()):
-		var stamp := current_livery.stamps[i]
-		var label := "%02d %s" % [i + 1, stamp.stamp_id]
-		stamp_slot_selector.add_item(label)
-	if current_livery.stamps.is_empty():
-		selected_stamp_index = -1
-	else:
-		selected_stamp_index = clampi(selected_stamp_index, 0, current_livery.stamps.size() - 1)
-		stamp_slot_selector.select(selected_stamp_index)
-	_update_selected_stamp_controls()
+	for layer in range(stamp_layer_buttons.size()):
+		var button := stamp_layer_buttons[layer]
+		var stamp := _stamp_for_layer(layer)
+		if stamp == null:
+			button.text = "%02d  EMPTY" % [layer + 1]
+			button.modulate = Color(0.72, 0.72, 0.72, 1.0)
+		else:
+			var label := _stamp_display_name(stamp.stamp_id)
+			button.text = "%02d  %s" % [layer + 1, label]
+			button.modulate = stamp.colour
 	updating_stamp_controls = false
 
-func _update_selected_stamp_controls() -> void:
-	var stamp := _selected_stamp()
-	var has_stamp := stamp != null
-	stamp_delete_button.disabled = !has_stamp
-	stamp_shape_selector.disabled = !has_stamp
-	stamp_colour_picker.disabled = !has_stamp
-	stamp_layer_spin.editable = has_stamp
-	stamp_rotation_slider.editable = has_stamp
-	stamp_scale_slider.editable = has_stamp
-	stamp_depth_slider.editable = has_stamp
-	if !has_stamp:
-		return
-	_select_stamp_shape(stamp.stamp_id)
-	stamp_colour_picker.color = stamp.colour
-	stamp_layer_spin.value = stamp.layer
-	stamp_rotation_slider.value = rad_to_deg(stamp.rotation)
-	stamp_scale_slider.value = maxf(stamp.size.x, stamp.size.y)
-	stamp_depth_slider.value = stamp.projection_depth
+func _stamp_display_name(stamp_id: String) -> String:
+	if stamp_catalog != null:
+		var entry := stamp_catalog.get_entry(stamp_id)
+		if entry != null and entry.display_name != "":
+			return entry.display_name
+	return stamp_id
 
 func _selected_stamp() -> CarLiveryStamp:
-	if selected_stamp_index < 0 or selected_stamp_index >= current_livery.stamps.size():
-		return null
-	return current_livery.stamps[selected_stamp_index]
+	return _stamp_for_layer(selected_stamp_index)
 
-func _select_stamp_shape(stamp_id: String) -> void:
-	for i in range(stamp_shape_selector.get_item_count()):
-		if str(stamp_shape_selector.get_item_metadata(i)) == stamp_id:
-			stamp_shape_selector.select(i)
-			return
+func _stamp_for_layer(layer: int) -> CarLiveryStamp:
+	for stamp in current_livery.stamps:
+		if stamp != null and stamp.layer == layer:
+			return stamp
+	return null
+
+func _remove_stamp_layer(layer: int) -> void:
+	for i in range(current_livery.stamps.size() - 1, -1, -1):
+		var stamp := current_livery.stamps[i]
+		if stamp != null and stamp.layer == layer:
+			current_livery.stamps.remove_at(i)
+
+func _set_stamp_for_layer(layer: int, stamp: CarLiveryStamp) -> void:
+	_remove_stamp_layer(layer)
+	if stamp == null:
+		return
+	stamp.layer = layer
+	current_livery.add_stamp(stamp)
+
+func _new_stamp(layer: int, stamp_id: String) -> CarLiveryStamp:
+	var stamp := CarLiveryStamp.new()
+	stamp.stamp_id = stamp_id
+	stamp.layer = layer
+	stamp.size = Vector2.ONE
+	stamp.projection_depth = 1.5
+	stamp.colour = Color.WHITE
+	stamp.local_origin = Vector3.ZERO
+	stamp.local_basis = Basis.IDENTITY
+	stamp.rotation = 0.0
+	return stamp
 
 func _first_stamp_id() -> String:
 	if stamp_catalog != null:
@@ -478,97 +506,307 @@ func _first_stamp_id() -> String:
 				return entry.stamp_id
 	return "circle"
 
-func _on_stamp_slot_selected(index: int) -> void:
+func _on_stamp_layer_pressed(layer: int) -> void:
 	if updating_stamp_controls:
 		return
-	selected_stamp_index = index
-	updating_stamp_controls = true
-	_update_selected_stamp_controls()
-	updating_stamp_controls = false
-
-func _on_stamp_add_pressed() -> void:
-	if current_livery.stamps.size() >= CarLivery.MAX_STAMPS:
+	selected_stamp_index = layer
+	var stamp := _stamp_for_layer(layer)
+	if stamp == null:
+		_show_stamp_chooser(layer, "add")
 		return
-	var stamp := CarLiveryStamp.new()
-	stamp.stamp_id = _first_stamp_id()
-	stamp.layer = current_livery.stamps.size()
-	stamp.size = Vector2.ONE
-	stamp.projection_depth = 0.5
-	stamp.colour = Color.WHITE
-	stamp.local_origin = Vector3.ZERO
-	stamp.local_basis = Basis.IDENTITY
-	stamp.rotation = 0.0
-	current_livery.add_stamp(stamp)
-	selected_stamp_index = current_livery.stamps.size() - 1
-	_save_livery_for_selected_car()
+	_show_stamp_action_menu(layer)
+
+func _show_stamp_action_menu(layer: int) -> void:
+	if stamp_action_menu == null:
+		return
+	pending_stamp_layer = layer
+	var button := stamp_layer_buttons[layer]
+	var rect := button.get_global_rect()
+	stamp_action_menu.position = Vector2i(rect.position + Vector2(24.0, rect.size.y))
+	stamp_action_menu.popup()
+
+func _on_stamp_action_selected(id: int) -> void:
+	if pending_stamp_layer < 0:
+		return
+	match id:
+		0:
+			_show_stamp_chooser(pending_stamp_layer, "change")
+		1:
+			var stamp := _stamp_for_layer(pending_stamp_layer)
+			if stamp != null:
+				_begin_stamp_edit(pending_stamp_layer, stamp, false)
+		2:
+			_remove_stamp_layer(pending_stamp_layer)
+			_save_livery_for_selected_car()
+			_refresh_stamp_controls()
+
+func _show_stamp_chooser(layer: int, action: String) -> void:
+	if stamp_chooser_popup == null or stamp_chooser_list == null:
+		return
+	stamp_ui_mode = StampUiMode.CHOOSING
+	pending_stamp_layer = layer
+	pending_stamp_choice_action = action
+	for child in stamp_chooser_list.get_children():
+		child.queue_free()
+	var title := Label.new()
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.text = "Layer %02d" % [layer + 1]
+	stamp_chooser_list.add_child(title)
+	if stamp_catalog != null:
+		for entry in stamp_catalog.entries:
+			if entry == null or !entry.is_valid_entry():
+				continue
+			var button := Button.new()
+			button.text = entry.display_name if entry.display_name != "" else entry.stamp_id
+			button.custom_minimum_size = Vector2(0.0, 34.0)
+			button.pressed.connect(_on_stamp_choice_pressed.bind(entry.stamp_id))
+			stamp_chooser_list.add_child(button)
+	var cancel := Button.new()
+	cancel.text = "Cancel"
+	cancel.custom_minimum_size = Vector2(0.0, 34.0)
+	cancel.pressed.connect(_on_stamp_choice_cancel_pressed)
+	stamp_chooser_list.add_child(cancel)
+	stamp_chooser_popup.popup_centered(Vector2i(260, 190))
+
+func _on_stamp_choice_pressed(stamp_id: String) -> void:
+	stamp_chooser_popup.hide()
+	if pending_stamp_layer < 0:
+		stamp_ui_mode = StampUiMode.IDLE
+		return
+	if pending_stamp_choice_action == "change":
+		var existing := _stamp_for_layer(pending_stamp_layer)
+		if existing != null:
+			existing.stamp_id = stamp_id
+			_save_livery_for_selected_car()
+			_refresh_stamp_controls()
+		stamp_ui_mode = StampUiMode.IDLE
+		return
+	var stamp := _new_stamp(pending_stamp_layer, stamp_id)
+	_set_stamp_for_layer(pending_stamp_layer, stamp)
+	_begin_stamp_edit(pending_stamp_layer, stamp, true)
+
+func _on_stamp_choice_cancel_pressed() -> void:
+	stamp_chooser_popup.hide()
+	stamp_ui_mode = StampUiMode.IDLE
+	pending_stamp_layer = -1
+	pending_stamp_choice_action = ""
+
+func _begin_stamp_edit(layer: int, stamp: CarLiveryStamp, is_new: bool) -> void:
+	editing_stamp_layer = layer
+	editing_stamp = stamp
+	editing_is_new = is_new
+	editing_previous_livery_enabled = current_livery_enabled
+	editing_original_stamp = null if is_new else stamp.duplicate_stamp()
+	current_livery_enabled = true
+	stamp_ui_mode = StampUiMode.EDITING
+	stamp_edit_roll = -stamp.rotation
+	preview_has_transform_override = false
+	preview_has_camera_override = false
+	if is_new:
+		stamp_edit_rect_size = Vector2(160.0, 160.0)
+	else:
+		_focus_preview_on_stamp(stamp)
+		stamp_edit_rect_size = _edit_rect_size_from_stamp(stamp)
+	stamp_edit_overlay.show()
+	_layout_stamp_edit_overlay()
+	_apply_edit_stamp_from_camera()
+
+func _focus_preview_on_stamp(stamp: CarLiveryStamp) -> void:
+	if preview_camera == null or preview_vehicle == null:
+		return
+	if absf(stamp.local_basis.determinant()) <= 0.00001:
+		return
+	preview_vehicle.transform = _preview_vehicle_transform()
+	var projector := preview_vehicle.global_transform * Transform3D(stamp.local_basis, stamp.local_origin)
+	var view_direction := projector.basis.z.normalized()
+	preview_pan = projector.origin - Vector3(0.0, 0.5, 0.0)
+	preview_yaw = atan2(view_direction.x, view_direction.z)
+	var base_elevation := atan2(3.5, preview_distance)
+	var stamp_elevation := asin(clampf(view_direction.y, -1.0, 1.0))
+	preview_pitch = clampf(stamp_elevation - base_elevation, deg_to_rad(-55.0), deg_to_rad(55.0))
+	var plane_basis := _preview_view_plane_basis(_preview_camera_offset())
+	preview_pan = Vector3(
+		clampf(projector.origin.dot(plane_basis.x), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
+		clampf(projector.origin.dot(plane_basis.y), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
+		0.0
+	)
+	preview_has_camera_override = false
+	_apply_preview_camera()
+
+func _layout_stamp_edit_overlay() -> void:
+	if stamp_edit_overlay == null or stamp_edit_square == null:
+		return
+	var overlay_size := stamp_edit_overlay.size
+	var square_size := Vector2(maxf(STAMP_EDIT_MIN_SCREEN_SIZE, stamp_edit_rect_size.x), maxf(STAMP_EDIT_MIN_SCREEN_SIZE, stamp_edit_rect_size.y))
+	stamp_edit_square.size = square_size
+	stamp_edit_square.pivot_offset = square_size * 0.5
+	stamp_edit_square.position = overlay_size * 0.5 - square_size * 0.5
+	stamp_edit_square.rotation = stamp_edit_roll
+	var handle_size := 14.0
+	var edge_len := 36.0
+	_place_edit_handle("edge_left", Vector2(-handle_size * 0.5, square_size.y * 0.5 - edge_len * 0.5), Vector2(handle_size, edge_len))
+	_place_edit_handle("edge_right", Vector2(square_size.x - handle_size * 0.5, square_size.y * 0.5 - edge_len * 0.5), Vector2(handle_size, edge_len))
+	_place_edit_handle("edge_top", Vector2(square_size.x * 0.5 - edge_len * 0.5, -handle_size * 0.5), Vector2(edge_len, handle_size))
+	_place_edit_handle("edge_bottom", Vector2(square_size.x * 0.5 - edge_len * 0.5, square_size.y - handle_size * 0.5), Vector2(edge_len, handle_size))
+	_place_edit_handle("corner_tl", Vector2(-handle_size * 0.5, -handle_size * 0.5), Vector2(handle_size, handle_size))
+	_place_edit_handle("corner_tr", Vector2(square_size.x - handle_size * 0.5, -handle_size * 0.5), Vector2(handle_size, handle_size))
+	_place_edit_handle("corner_bl", Vector2(-handle_size * 0.5, square_size.y - handle_size * 0.5), Vector2(handle_size, handle_size))
+	_place_edit_handle("corner_br", Vector2(square_size.x - handle_size * 0.5, square_size.y - handle_size * 0.5), Vector2(handle_size, handle_size))
+	stamp_edit_confirm_button.position = Vector2(overlay_size.x - stamp_edit_confirm_button.custom_minimum_size.x - 12.0, 12.0)
+	stamp_edit_cancel_button.position = Vector2(overlay_size.x - stamp_edit_cancel_button.custom_minimum_size.x - 12.0, overlay_size.y - stamp_edit_cancel_button.custom_minimum_size.y - 12.0)
+
+func _place_edit_handle(name: String, position: Vector2, size: Vector2) -> void:
+	var handle := stamp_edit_square.get_node_or_null(name) as Control
+	if handle == null:
+		return
+	handle.position = position
+	handle.size = size
+
+func _on_stamp_edit_handle_input(event: InputEvent, kind: String) -> void:
+	var button := event as InputEventMouseButton
+	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
+		if button.pressed:
+			stamp_edit_drag_kind = kind
+			stamp_edit_drag_start_mouse = get_global_mouse_position()
+			stamp_edit_drag_start_center = stamp_edit_square.get_global_transform_with_canvas() * (stamp_edit_square.size * 0.5)
+			stamp_edit_drag_start_size = stamp_edit_rect_size
+			stamp_edit_drag_start_roll = stamp_edit_roll
+		elif stamp_edit_drag_kind == kind:
+			stamp_edit_drag_kind = ""
+		stamp_edit_overlay.accept_event()
+		return
+	var motion := event as InputEventMouseMotion
+	if motion == null or stamp_edit_drag_kind != kind:
+		return
+	var mouse_pos := get_global_mouse_position()
+	var delta := (mouse_pos - stamp_edit_drag_start_mouse).rotated(-stamp_edit_drag_start_roll)
+	if kind.begins_with("edge_"):
+		var new_size := stamp_edit_drag_start_size
+		match kind:
+			"edge_left":
+				new_size.x -= delta.x * 2.0
+			"edge_right":
+				new_size.x += delta.x * 2.0
+			"edge_top":
+				new_size.y -= delta.y * 2.0
+			"edge_bottom":
+				new_size.y += delta.y * 2.0
+		stamp_edit_rect_size = Vector2(maxf(STAMP_EDIT_MIN_SCREEN_SIZE, new_size.x), maxf(STAMP_EDIT_MIN_SCREEN_SIZE, new_size.y))
+	else:
+		var start_angle := (stamp_edit_drag_start_mouse - stamp_edit_drag_start_center).angle()
+		var current_angle := (mouse_pos - stamp_edit_drag_start_center).angle()
+		stamp_edit_roll = stamp_edit_drag_start_roll + current_angle - start_angle
+	_layout_stamp_edit_overlay()
+	_apply_edit_stamp_from_camera()
+	stamp_edit_overlay.accept_event()
+
+func _on_stamp_edit_overlay_gui_input(event: InputEvent) -> void:
+	if stamp_ui_mode != StampUiMode.EDITING:
+		return
+	var mouse_button := event as InputEventMouseButton
+	if mouse_button != null:
+		var is_camera_release := !mouse_button.pressed and preview_drag_button == mouse_button.button_index
+		if !is_camera_release and !_stamp_edit_allows_camera_input(mouse_button.position):
+			return
+		preview_has_camera_override = false
+		_handle_preview_mouse_button(mouse_button, true)
+		if mouse_button.pressed and (mouse_button.button_index == MOUSE_BUTTON_WHEEL_UP or mouse_button.button_index == MOUSE_BUTTON_WHEEL_DOWN):
+			_apply_edit_stamp_from_camera()
+		stamp_edit_overlay.accept_event()
+		return
+	var motion := event as InputEventMouseMotion
+	if motion != null:
+		if preview_drag_button == 0 and !_stamp_edit_allows_camera_input(motion.position):
+			return
+		preview_has_camera_override = false
+		var before_yaw := preview_yaw
+		var before_pitch := preview_pitch
+		var before_pan := preview_pan
+		_handle_preview_mouse_motion(motion, true)
+		if !is_equal_approx(before_yaw, preview_yaw) or !is_equal_approx(before_pitch, preview_pitch) or !before_pan.is_equal_approx(preview_pan):
+			_apply_edit_stamp_from_camera()
+		stamp_edit_overlay.accept_event()
+
+func _stamp_edit_allows_camera_input(position: Vector2) -> bool:
+	if stamp_edit_square != null and stamp_edit_square.get_rect().has_point(position):
+		return false
+	if stamp_edit_confirm_button != null and stamp_edit_confirm_button.get_rect().has_point(position):
+		return false
+	if stamp_edit_cancel_button != null and stamp_edit_cancel_button.get_rect().has_point(position):
+		return false
+	return true
+
+func _apply_edit_stamp_from_camera() -> void:
+	if editing_stamp == null or preview_camera == null or preview_vehicle == null:
+		return
+	var center := car_preview_space.size * 0.5
+	var hit := _raycast_preview_body(center)
+	if hit.is_empty():
+		return
+	var ray_dir := preview_camera.project_ray_normal(center).normalized()
+	var car_inv := preview_vehicle.global_transform.affine_inverse()
+	editing_stamp.local_origin = car_inv * hit["position"]
+	var z_axis := (car_inv.basis * -ray_dir).normalized()
+	var x_axis := (car_inv.basis * preview_camera.global_transform.basis.x).normalized()
+	x_axis = (x_axis - z_axis * x_axis.dot(z_axis)).normalized()
+	var y_axis := z_axis.cross(x_axis).normalized()
+	var projection_roll := -stamp_edit_roll
+	var roll_basis := Basis(z_axis, projection_roll)
+	x_axis = roll_basis * x_axis
+	y_axis = roll_basis * y_axis
+	editing_stamp.local_basis = Basis(x_axis, y_axis, z_axis)
+	editing_stamp.rotation = projection_roll
+	editing_stamp.size = _stamp_world_size_from_edit_rect(hit["position"])
+	editing_stamp.projection_depth = maxf(0.75, maxf(editing_stamp.size.x, editing_stamp.size.y) * 1.35)
+	_rebuild_preview_vehicle()
+
+func _stamp_world_size_from_edit_rect(hit_position: Vector3) -> Vector2:
+	var viewport_size := car_preview_space.size
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0 or preview_camera == null:
+		return Vector2.ONE
+	var distance := preview_camera.global_position.distance_to(hit_position)
+	var world_height := 2.0 * distance * tan(deg_to_rad(preview_camera.fov) * 0.5)
+	var world_width := world_height * viewport_size.x / viewport_size.y
+	return Vector2(world_width * stamp_edit_rect_size.x / viewport_size.x, world_height * stamp_edit_rect_size.y / viewport_size.y)
+
+func _edit_rect_size_from_stamp(stamp: CarLiveryStamp) -> Vector2:
+	if preview_camera == null or preview_vehicle == null:
+		return Vector2(160.0, 160.0)
+	var viewport_size := car_preview_space.size
+	var world_pos := preview_vehicle.global_transform * stamp.local_origin
+	var distance := preview_camera.global_position.distance_to(world_pos)
+	if distance <= 0.01 or viewport_size.x <= 0.0 or viewport_size.y <= 0.0:
+		return Vector2(160.0, 160.0)
+	var world_height := 2.0 * distance * tan(deg_to_rad(preview_camera.fov) * 0.5)
+	var world_width := world_height * viewport_size.x / viewport_size.y
+	return Vector2(maxf(STAMP_EDIT_MIN_SCREEN_SIZE, stamp.size.x / world_width * viewport_size.x), maxf(STAMP_EDIT_MIN_SCREEN_SIZE, stamp.size.y / world_height * viewport_size.y))
+
+func _on_stamp_edit_confirm_pressed() -> void:
+	_end_stamp_edit(true)
+
+func _on_stamp_edit_cancel_pressed() -> void:
+	_end_stamp_edit(false)
+
+func _end_stamp_edit(confirm: bool) -> void:
+	if !confirm:
+		if editing_is_new:
+			_remove_stamp_layer(editing_stamp_layer)
+		elif editing_original_stamp != null:
+			_set_stamp_for_layer(editing_stamp_layer, editing_original_stamp)
+		current_livery_enabled = editing_previous_livery_enabled
+	stamp_edit_overlay.hide()
+	stamp_ui_mode = StampUiMode.IDLE
+	preview_has_transform_override = false
+	preview_has_camera_override = false
+	editing_stamp_layer = -1
+	editing_stamp = null
+	editing_original_stamp = null
+	editing_is_new = false
 	_refresh_stamp_controls()
-
-func _on_stamp_delete_pressed() -> void:
-	if _selected_stamp() == null:
-		return
-	current_livery.remove_stamp(selected_stamp_index)
-	selected_stamp_index = mini(selected_stamp_index, current_livery.stamps.size() - 1)
-	_save_livery_for_selected_car()
-	_refresh_stamp_controls()
-
-func _on_stamp_shape_selected(index: int) -> void:
-	if updating_stamp_controls:
-		return
-	var stamp := _selected_stamp()
-	if stamp == null:
-		return
-	stamp.stamp_id = str(stamp_shape_selector.get_item_metadata(index))
-	_save_livery_for_selected_car()
-	_refresh_stamp_controls()
-
-func _on_stamp_colour_changed(colour: Color) -> void:
-	if updating_stamp_controls:
-		return
-	var stamp := _selected_stamp()
-	if stamp == null:
-		return
-	stamp.colour = colour
-	_save_livery_for_selected_car()
-
-func _on_stamp_layer_changed(value: float) -> void:
-	if updating_stamp_controls:
-		return
-	var stamp := _selected_stamp()
-	if stamp == null:
-		return
-	stamp.layer = int(value)
-	current_livery.stamps = current_livery.get_sorted_stamps()
-	selected_stamp_index = current_livery.stamps.find(stamp)
-	_save_livery_for_selected_car()
-	_refresh_stamp_controls()
-
-func _on_stamp_rotation_changed(value: float) -> void:
-	if updating_stamp_controls:
-		return
-	var stamp := _selected_stamp()
-	if stamp == null:
-		return
-	stamp.rotation = deg_to_rad(value)
-	_set_stamp_basis_from_normal(stamp, stamp.local_basis.z.normalized())
-	_save_livery_for_selected_car()
-
-func _on_stamp_scale_changed(value: float) -> void:
-	if updating_stamp_controls:
-		return
-	var stamp := _selected_stamp()
-	if stamp == null:
-		return
-	stamp.size = Vector2(value, value)
-	_save_livery_for_selected_car()
-
-func _on_stamp_depth_changed(value: float) -> void:
-	if updating_stamp_controls:
-		return
-	var stamp := _selected_stamp()
-	if stamp == null:
-		return
-	stamp.projection_depth = value
-	_save_livery_for_selected_car()
+	if confirm:
+		_save_livery_for_selected_car()
+	else:
+		_rebuild_preview_vehicle()
 
 func _on_preview_gui_input(event: InputEvent) -> void:
 	var mouse_event := event as InputEventMouseButton
@@ -579,7 +817,9 @@ func _on_preview_gui_input(event: InputEvent) -> void:
 	if motion_event != null:
 		_handle_preview_mouse_motion(motion_event)
 
-func _handle_preview_mouse_button(event: InputEventMouseButton) -> void:
+func _handle_preview_mouse_button(event: InputEventMouseButton, allow_edit_camera := false) -> void:
+	if stamp_ui_mode == StampUiMode.EDITING and !allow_edit_camera:
+		return
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 		preview_distance = maxf(8.0, preview_distance - 1.25)
 		_apply_preview_camera()
@@ -600,12 +840,12 @@ func _handle_preview_mouse_button(event: InputEventMouseButton) -> void:
 		preview_container.accept_event()
 		return
 	if preview_drag_button == event.button_index:
-		if event.button_index == MOUSE_BUTTON_LEFT and !preview_drag_moved:
-			_place_stamp_at_preview_pos(event.position)
 		preview_drag_button = 0
 		preview_container.accept_event()
 
-func _handle_preview_mouse_motion(event: InputEventMouseMotion) -> void:
+func _handle_preview_mouse_motion(event: InputEventMouseMotion, allow_edit_camera := false) -> void:
+	if stamp_ui_mode == StampUiMode.EDITING and !allow_edit_camera:
+		return
 	if preview_drag_button == 0:
 		return
 	var delta := event.position - preview_drag_last
@@ -613,12 +853,13 @@ func _handle_preview_mouse_motion(event: InputEventMouseMotion) -> void:
 	if event.position.distance_to(preview_drag_start) > 4.0:
 		preview_drag_moved = true
 	if preview_drag_button == MOUSE_BUTTON_LEFT and !event.shift_pressed:
-		preview_yaw += delta.x * 0.01
-		preview_pitch = clampf(preview_pitch + delta.y * 0.008, deg_to_rad(-55.0), deg_to_rad(55.0))
+		preview_yaw += delta.x * -0.01
+		preview_pitch = clampf(preview_pitch + delta.y * -0.008, deg_to_rad(-55.0), deg_to_rad(55.0))
 	else:
 		var pan_scale := preview_distance * 0.0015
-		preview_pan.x += delta.x * pan_scale
-		preview_pan.y -= delta.y * pan_scale
+		preview_pan.x -= delta.x * pan_scale
+		preview_pan.y += delta.y * pan_scale
+		_clamp_preview_pan()
 	_apply_preview_camera()
 	preview_container.accept_event()
 
@@ -627,27 +868,42 @@ func _apply_preview_camera() -> void:
 		preview_vehicle.transform = _preview_vehicle_transform()
 	if preview_camera == null:
 		return
-	preview_camera.position = Vector3(0.0, 4.0, preview_distance)
-	preview_camera.look_at(Vector3(0.0, 0.5, 0.0), Vector3.UP)
+	if preview_has_camera_override:
+		preview_camera.global_transform = preview_camera_override
+	else:
+		_clamp_preview_pan()
+		var camera_offset := _preview_camera_offset()
+		var target := _preview_pan_target(camera_offset)
+		preview_camera.position = target + camera_offset
+		preview_camera.look_at(target, Vector3.UP)
 	_submit_preview_render()
 
+func _preview_camera_offset() -> Vector3:
+	var yaw_basis := Basis(Vector3.UP, preview_yaw)
+	var pitch_basis := Basis(yaw_basis.x.normalized(), preview_pitch)
+	return pitch_basis * (yaw_basis * Vector3(0.0, 3.5, preview_distance))
+
+func _preview_pan_target(camera_offset: Vector3) -> Vector3:
+	var plane_basis := _preview_view_plane_basis(camera_offset)
+	return plane_basis.x * preview_pan.x + plane_basis.y * preview_pan.y
+
+func _preview_view_plane_basis(camera_offset: Vector3) -> Basis:
+	var view_back := camera_offset.normalized()
+	var right := Vector3.UP.cross(view_back)
+	if right.length_squared() <= 0.0001:
+		right = Vector3.RIGHT
+	else:
+		right = right.normalized()
+	var up := view_back.cross(right).normalized()
+	return Basis(right, up, view_back)
+
+func _clamp_preview_pan() -> void:
+	preview_pan.x = clampf(preview_pan.x, -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT)
+	preview_pan.y = clampf(preview_pan.y, -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT)
+	preview_pan.z = 0.0
+
 func _place_stamp_at_preview_pos(viewport_pos: Vector2) -> void:
-	var hit := _raycast_preview_body(viewport_pos)
-	if hit.is_empty():
-		return
-	var stamp := _selected_stamp()
-	if stamp == null:
-		_on_stamp_add_pressed()
-		stamp = _selected_stamp()
-	if stamp == null:
-		return
-	var car_inv := preview_vehicle.global_transform.affine_inverse()
-	stamp.local_origin = car_inv * hit["position"]
-	var hit_normal: Vector3 = hit["normal"]
-	var local_normal := (car_inv.basis * hit_normal).normalized()
-	_set_stamp_basis_from_normal(stamp, local_normal)
-	_save_livery_for_selected_car()
-	_refresh_stamp_controls()
+	return
 
 func _raycast_preview_body(viewport_pos: Vector2) -> Dictionary:
 	if preview_camera == null or preview_vehicle == null:

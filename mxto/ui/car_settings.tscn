@@ -11,7 +11,15 @@ border_width_left = 4
 border_width_top = 32
 border_color = Color(0, 0, 0, 0.47451)
 
-[node name="CarSettings" type="Control" unique_id=1067112108]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_stamp_edit"]
+bg_color = Color(1, 1, 1, 0.08)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(1, 1, 1, 0.9)
+
+[node name="CarSettings" type="Control" unique_id=1374061944]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -20,7 +28,7 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_c1ygr")
 
-[node name="Container" type="ColorRect" parent="." unique_id=1166652533]
+[node name="Container" type="ColorRect" parent="." unique_id=1954056367]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -29,7 +37,7 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0, 0, 0, 1)
 
-[node name="ColorRect" type="ColorRect" parent="Container" unique_id=2110296994]
+[node name="ColorRect" type="ColorRect" parent="Container" unique_id=238500444]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -38,49 +46,33 @@ grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.0627451, 0.0627451, 0.0627451, 0.466667)
 
-[node name="ScrollContainer" type="ScrollContainer" parent="Container" unique_id=2032355473]
-z_index = 8
+[node name="SettingsTabs" type="TabContainer" parent="Container" unique_id=1547311088]
 layout_mode = 1
-anchors_preset = -1
-anchor_top = 0.86
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = 8.0
-offset_right = -7.0
-offset_bottom = -9.0
+offset_left = 10.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = -10.0
 grow_horizontal = 2
 grow_vertical = 2
+current_tab = 0
 
-[node name="VehicleSelector" type="ItemList" parent="Container/ScrollContainer" unique_id=349201442]
+[node name="Driver" type="VBoxContainer" parent="Container/SettingsTabs" unique_id=1916315200]
 layout_mode = 2
-size_flags_horizontal = 3
+metadata/_tab_index = 0
+
+[node name="DriverSettingsScroll" type="ScrollContainer" parent="Container/SettingsTabs/Driver" unique_id=669207275]
+layout_mode = 2
 size_flags_vertical = 3
-max_columns = 8
-same_column_width = true
-fixed_column_width = 128
+horizontal_scroll_mode = 0
 
-[node name="HBoxContainer" type="HBoxContainer" parent="Container" unique_id=2081215662]
-clip_contents = true
-layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.126
-anchor_right = 1.0
-anchor_bottom = 0.84
-offset_left = -121.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="CarPreviewSpace" type="ColorRect" parent="Container/HBoxContainer" unique_id=628909803]
-layout_mode = 2
-size_flags_horizontal = 3
-mouse_filter = 2
-color = Color(0, 0, 0, 0.176471)
-
-[node name="VBoxContainer" type="VBoxContainer" parent="Container/HBoxContainer" unique_id=1936919731]
+[node name="DriverSettings" type="VBoxContainer" parent="Container/SettingsTabs/Driver/DriverSettingsScroll" unique_id=2088002480]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="CarName" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=436632136]
+[node name="CarName" type="Label" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=1148696215]
 layout_mode = 2
 size_flags_vertical = 6
 size_flags_stretch_ratio = 0.25
@@ -88,179 +80,304 @@ text = "This is a car."
 label_settings = SubResource("LabelSettings_car_name")
 horizontal_alignment = 1
 
-[node name="PilotNameLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=1393312980]
+[node name="PilotNameLabel" type="Label" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=152268895]
 layout_mode = 2
 text = "PILOT NAME"
 
-[node name="PilotNameInput" type="LineEdit" parent="Container/HBoxContainer/VBoxContainer" unique_id=1219149701]
+[node name="PilotNameInput" type="LineEdit" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=1278069381]
 layout_mode = 2
 placeholder_text = "Your name here..."
 max_length = 32
 
-[node name="MachineSettingName" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=2009097080]
+[node name="MachineSettingName" type="Label" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=180211897]
 layout_mode = 2
 text = "MACHINE SETTING"
 
-[node name="MachineSettingPercent" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=1626511181]
+[node name="MachineSettingPercent" type="Label" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=638674413]
 layout_mode = 2
 text = "100%"
 
-[node name="MachineSettingSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer" unique_id=375956889]
+[node name="MachineSettingSlider" type="HSlider" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=1373158310]
 layout_mode = 2
 theme_override_constants/center_grabber = 1
 theme_override_styles/slider = SubResource("StyleBoxFlat_msh7t")
 value = 50.0
 tick_count = 11
 
-[node name="SpectatorToggle" type="CheckBox" parent="Container/HBoxContainer/VBoxContainer" unique_id=181847798]
+[node name="SpectatorToggle" type="CheckBox" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=858826662]
 layout_mode = 2
 text = "Spectator"
 
-[node name="PaintSettingsLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=361841584]
-layout_mode = 2
-text = "PAINT"
-
-[node name="PaintGrid" type="GridContainer" parent="Container/HBoxContainer/VBoxContainer" unique_id=1937132789]
-layout_mode = 2
-columns = 2
-
-[node name="PrimaryColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=829537494]
-layout_mode = 2
-text = "Primary"
-
-[node name="PrimaryColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=1794441262]
-custom_minimum_size = Vector2(120, 32)
-layout_mode = 2
-
-[node name="SecondaryColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=2050061314]
-layout_mode = 2
-text = "Secondary"
-
-[node name="SecondaryColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=538460321]
-custom_minimum_size = Vector2(120, 32)
-layout_mode = 2
-
-[node name="AccentColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=1524949293]
-layout_mode = 2
-text = "Accent"
-
-[node name="AccentColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=1844248104]
-custom_minimum_size = Vector2(120, 32)
-layout_mode = 2
-
-[node name="StampSettingsLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=902809435]
-layout_mode = 2
-text = "BODY STAMPS"
-
-[node name="StampGrid" type="GridContainer" parent="Container/HBoxContainer/VBoxContainer" unique_id=979312784]
-layout_mode = 2
-columns = 2
-
-[node name="StampSlotLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1175501171]
-layout_mode = 2
-text = "Slot"
-
-[node name="StampSlotSelector" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=266939194]
-custom_minimum_size = Vector2(160, 32)
-layout_mode = 2
-fit_to_longest_item = false
-
-[node name="StampAddButton" type="Button" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=876388116]
-layout_mode = 2
-text = "Add"
-
-[node name="StampDeleteButton" type="Button" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=498426600]
-layout_mode = 2
-text = "Delete"
-
-[node name="StampShapeLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=2019201890]
-layout_mode = 2
-text = "Shape"
-
-[node name="StampShapeSelector" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=11564522]
-custom_minimum_size = Vector2(160, 32)
-layout_mode = 2
-fit_to_longest_item = false
-
-[node name="StampColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=176934337]
-layout_mode = 2
-text = "Colour"
-
-[node name="StampColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1684647654]
-custom_minimum_size = Vector2(120, 32)
-layout_mode = 2
-
-[node name="StampLayerLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1870469219]
-layout_mode = 2
-text = "Layer"
-
-[node name="StampLayerSpin" type="SpinBox" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1999247122]
-layout_mode = 2
-max_value = 15.0
-
-[node name="StampRotationLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=436142201]
-layout_mode = 2
-text = "Rotation"
-
-[node name="StampRotationSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1164571934]
-layout_mode = 2
-max_value = 360.0
-
-[node name="StampScaleLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=11387]
-layout_mode = 2
-text = "Scale"
-
-[node name="StampScaleSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=689098864]
-layout_mode = 2
-min_value = 0.2
-max_value = 4.0
-step = 0.05
-value = 1.0
-
-[node name="StampDepthLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=298676870]
-layout_mode = 2
-text = "Depth"
-
-[node name="StampDepthSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=194588461]
-layout_mode = 2
-min_value = 0.05
-max_value = 2.0
-step = 0.05
-value = 0.5
-
-[node name="StickerSettingsLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=1790290533]
+[node name="StickerSettingsLabel" type="Label" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=1960847092]
 layout_mode = 2
 text = "STICKERS"
 
-[node name="StickerGrid" type="GridContainer" parent="Container/HBoxContainer/VBoxContainer" unique_id=879631609]
+[node name="StickerGrid" type="GridContainer" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings" unique_id=525905441]
 layout_mode = 2
 columns = 4
 
-[node name="StickerSlot1" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StickerGrid" unique_id=754074884]
+[node name="StickerSlot1" type="OptionButton" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid" unique_id=1768457293]
 custom_minimum_size = Vector2(112, 82)
 layout_mode = 2
 expand_icon = true
 fit_to_longest_item = false
 
-[node name="StickerSlot2" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StickerGrid" unique_id=138678694]
+[node name="StickerSlot2" type="OptionButton" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid" unique_id=1663128926]
 custom_minimum_size = Vector2(112, 82)
 layout_mode = 2
 expand_icon = true
 fit_to_longest_item = false
 
-[node name="StickerSlot3" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StickerGrid" unique_id=1705601722]
+[node name="StickerSlot3" type="OptionButton" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid" unique_id=911031169]
 custom_minimum_size = Vector2(112, 82)
 layout_mode = 2
 expand_icon = true
 fit_to_longest_item = false
 
-[node name="StickerSlot4" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StickerGrid" unique_id=854621765]
+[node name="StickerSlot4" type="OptionButton" parent="Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/StickerGrid" unique_id=1508405678]
 custom_minimum_size = Vector2(112, 82)
 layout_mode = 2
 expand_icon = true
 fit_to_longest_item = false
 
-[node name="CloseSettings" type="Button" parent="Container" unique_id=1207945190]
+[node name="VehicleScroll" type="ScrollContainer" parent="Container/SettingsTabs/Driver" unique_id=1685047917]
+custom_minimum_size = Vector2(0, 118)
+layout_mode = 2
+size_flags_vertical = 8
+
+[node name="VehicleSelector" type="ItemList" parent="Container/SettingsTabs/Driver/VehicleScroll" unique_id=1348027109]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+max_columns = 8
+same_column_width = true
+fixed_column_width = 128
+
+[node name="Garage" type="HBoxContainer" parent="Container/SettingsTabs" unique_id=348540045]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="CarPreviewSpace" type="ColorRect" parent="Container/SettingsTabs/Garage" unique_id=755178141]
+custom_minimum_size = Vector2(620, 360)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+mouse_filter = 2
+color = Color(0, 0, 0, 0.176471)
+
+[node name="StampEditOverlay" type="Control" parent="Container/SettingsTabs/Garage/CarPreviewSpace" unique_id=1794065899]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="StampEditSquare" type="Panel" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay" unique_id=15050535]
+layout_mode = 0
+offset_right = 160.0
+offset_bottom = 160.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_stamp_edit")
+
+[node name="edge_left" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=748837864]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="edge_right" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=1537407032]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="edge_top" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=305487684]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="edge_bottom" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=640577554]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="corner_tl" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=9674051]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="corner_tr" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=2146263681]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="corner_bl" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=1132292032]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="corner_br" type="ColorRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare" unique_id=964297448]
+layout_mode = 0
+color = Color(1, 1, 1, 0.78)
+
+[node name="Confirm" type="Button" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay" unique_id=1351915025]
+custom_minimum_size = Vector2(96, 36)
+layout_mode = 0
+text = "Confirm"
+
+[node name="Cancel" type="Button" parent="Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay" unique_id=1162190471]
+custom_minimum_size = Vector2(96, 36)
+layout_mode = 0
+text = "Cancel"
+
+[node name="GaragePanel" type="VBoxContainer" parent="Container/SettingsTabs/Garage" unique_id=828395945]
+custom_minimum_size = Vector2(300, 0)
+layout_mode = 2
+size_flags_horizontal = 8
+size_flags_vertical = 3
+
+[node name="GarageCarName" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel" unique_id=987961204]
+layout_mode = 2
+text = "This is a car."
+label_settings = SubResource("LabelSettings_car_name")
+horizontal_alignment = 1
+
+[node name="PaintSettingsLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel" unique_id=1615659688]
+layout_mode = 2
+text = "PAINT"
+
+[node name="PaintGrid" type="GridContainer" parent="Container/SettingsTabs/Garage/GaragePanel" unique_id=1123365833]
+layout_mode = 2
+columns = 2
+
+[node name="PrimaryColourLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid" unique_id=353657463]
+layout_mode = 2
+text = "Primary"
+
+[node name="PrimaryColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid" unique_id=16489638]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+
+[node name="SecondaryColourLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid" unique_id=1725957144]
+layout_mode = 2
+text = "Secondary"
+
+[node name="SecondaryColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid" unique_id=1181430880]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+
+[node name="AccentColourLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid" unique_id=1283342730]
+layout_mode = 2
+text = "Accent"
+
+[node name="AccentColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/PaintGrid" unique_id=62040766]
+custom_minimum_size = Vector2(120, 32)
+layout_mode = 2
+
+[node name="StampSettingsLabel" type="Label" parent="Container/SettingsTabs/Garage/GaragePanel" unique_id=571093426]
+layout_mode = 2
+text = "BODY STAMPS"
+
+[node name="StampLayerScroll" type="ScrollContainer" parent="Container/SettingsTabs/Garage/GaragePanel" unique_id=290250057]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="StampLayerList" type="VBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll" unique_id=872419980]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="StampLayer00" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1554142415]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "01  EMPTY"
+alignment = 0
+
+[node name="StampLayer01" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1568816529]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "02  EMPTY"
+alignment = 0
+
+[node name="StampLayer02" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1086448533]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "03  EMPTY"
+alignment = 0
+
+[node name="StampLayer03" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1156753241]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "04  EMPTY"
+alignment = 0
+
+[node name="StampLayer04" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=2035295157]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "05  EMPTY"
+alignment = 0
+
+[node name="StampLayer05" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=836959197]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "06  EMPTY"
+alignment = 0
+
+[node name="StampLayer06" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1319881368]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "07  EMPTY"
+alignment = 0
+
+[node name="StampLayer07" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=149109331]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "08  EMPTY"
+alignment = 0
+
+[node name="StampLayer08" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1280597037]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "09  EMPTY"
+alignment = 0
+
+[node name="StampLayer09" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1669403388]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "10  EMPTY"
+alignment = 0
+
+[node name="StampLayer10" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1996108298]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "11  EMPTY"
+alignment = 0
+
+[node name="StampLayer11" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1756030345]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "12  EMPTY"
+alignment = 0
+
+[node name="StampLayer12" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=812102802]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "13  EMPTY"
+alignment = 0
+
+[node name="StampLayer13" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1631409685]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "14  EMPTY"
+alignment = 0
+
+[node name="StampLayer14" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=35624926]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "15  EMPTY"
+alignment = 0
+
+[node name="StampLayer15" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1806809556]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+text = "16  EMPTY"
+alignment = 0
+
+[node name="CloseSettings" type="Button" parent="Container" unique_id=487172063]
 layout_mode = 1
 anchors_preset = 1
 anchor_left = 1.0
@@ -269,3 +386,14 @@ offset_left = -113.0
 offset_bottom = 40.0
 grow_horizontal = 0
 text = "Close"
+
+[node name="StampActionMenu" type="PopupMenu" parent="." unique_id=1850059014]
+
+[node name="StampChooser" type="PopupPanel" parent="." unique_id=1182686218]
+
+[node name="StampChooserList" type="VBoxContainer" parent="StampChooser" unique_id=1604878112]
+custom_minimum_size = Vector2(240, 0)
+offset_left = 4.0
+offset_top = 4.0
+offset_right = 244.0
+offset_bottom = 96.0

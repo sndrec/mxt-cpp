@@ -28,8 +28,10 @@ func _init() -> void:
 
 	var entry := CarStampEntry.new()
 	entry.stamp_id = "smoke"
-	entry.atlas_rect = Rect2(0.25, 0.25, 0.5, 0.5)
+	entry.atlas_tile_position = Vector2i(1, 1)
+	entry.atlas_tile_size = Vector2i(2, 2)
 	var catalog := CarStampCatalog.new()
+	catalog.atlas_grid_size = Vector2i(4, 4)
 	catalog.entries.append(entry)
 
 	var decal_mesh := CarLiveryStampMeshBuilder.build_for_vehicle_scene(root, livery, catalog)

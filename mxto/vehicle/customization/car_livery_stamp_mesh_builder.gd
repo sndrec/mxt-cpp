@@ -33,7 +33,10 @@ static func build_for_body_mesh(body_mesh: MeshInstance3D, livery: CarLivery, ca
 		var entry := catalog.get_entry(stamp.stamp_id)
 		if entry == null:
 			continue
-		_append_stamp(body_mesh.mesh, body_to_car, stamp, entry, out_vertices, out_normals, out_uvs, out_colours)
+		var atlas_rect := catalog.get_entry_atlas_rect(entry)
+		if atlas_rect.size.x <= 0.0 or atlas_rect.size.y <= 0.0:
+			continue
+		_append_stamp(body_mesh.mesh, body_to_car, stamp, atlas_rect, out_vertices, out_normals, out_uvs, out_colours)
 
 	if out_vertices.is_empty():
 		return out_mesh
@@ -51,7 +54,7 @@ static func _append_stamp(
 	mesh: Mesh,
 	body_to_car: Transform3D,
 	stamp: CarLiveryStamp,
-	entry: CarStampEntry,
+	atlas_rect: Rect2,
 	out_vertices: PackedVector3Array,
 	out_normals: PackedVector3Array,
 	out_uvs: PackedVector2Array,
@@ -77,9 +80,9 @@ static func _append_stamp(
 		var normals := _surface_normals(arrays)
 		var indices := _surface_indices(arrays)
 		if indices.is_empty():
-			_append_unindexed_surface(body_to_car, car_to_projector, clip_min, clip_max, entry.atlas_rect, stamp_colour, vertices, normals, out_vertices, out_normals, out_uvs, out_colours)
+			_append_unindexed_surface(body_to_car, car_to_projector, clip_min, clip_max, atlas_rect, stamp_colour, vertices, normals, out_vertices, out_normals, out_uvs, out_colours)
 		else:
-			_append_indexed_surface(body_to_car, car_to_projector, clip_min, clip_max, entry.atlas_rect, stamp_colour, vertices, normals, indices, out_vertices, out_normals, out_uvs, out_colours)
+			_append_indexed_surface(body_to_car, car_to_projector, clip_min, clip_max, atlas_rect, stamp_colour, vertices, normals, indices, out_vertices, out_normals, out_uvs, out_colours)
 
 static func _append_indexed_surface(
 	body_to_car: Transform3D,

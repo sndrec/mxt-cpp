@@ -4,6 +4,7 @@ extends Resource
 const CarStampEntry = preload("res://vehicle/customization/car_stamp_entry.gd")
 
 @export var atlas_texture: Texture2D
+@export var atlas_grid_size: Vector2i = Vector2i.ONE
 @export var entries: Array[CarStampEntry] = []
 
 var _entry_by_id: Dictionary = {}
@@ -17,6 +18,14 @@ func get_preview_texture(stamp_id: String) -> Texture2D:
 	if entry == null:
 		return null
 	return entry.preview_texture
+
+func get_entry_atlas_rect(entry: CarStampEntry) -> Rect2:
+	if entry == null:
+		return Rect2()
+	return entry.get_atlas_rect(atlas_grid_size)
+
+func get_atlas_rect(stamp_id: String) -> Rect2:
+	return get_entry_atlas_rect(get_entry(stamp_id))
 
 func create_stamp_material() -> StandardMaterial3D:
 	var material := StandardMaterial3D.new()
@@ -35,6 +44,9 @@ func rebuild_index() -> void:
 	for entry in entries:
 		if entry == null or !entry.is_valid_entry():
 			continue
+		if !_entry_fits_grid(entry):
+			push_warning("Car stamp entry is outside the atlas grid: %s" % entry.stamp_id)
+			continue
 		if _entry_by_id.has(entry.stamp_id):
 			push_warning("Duplicate car stamp id: %s" % entry.stamp_id)
 			continue
@@ -44,3 +56,10 @@ func _ensure_index() -> void:
 	if _entry_by_id.size() == entries.size():
 		return
 	rebuild_index()
+
+func _entry_fits_grid(entry: CarStampEntry) -> bool:
+	if atlas_grid_size.x <= 0 or atlas_grid_size.y <= 0:
+		return false
+	if entry.atlas_tile_position.x < 0 or entry.atlas_tile_position.y < 0:
+		return false
+	return entry.atlas_tile_position.x + entry.atlas_tile_size.x <= atlas_grid_size.x and entry.atlas_tile_position.y + entry.atlas_tile_size.y <= atlas_grid_size.y
