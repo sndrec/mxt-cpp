@@ -312,7 +312,7 @@ func _populate_sticker_selectors() -> void:
 			selector.add_icon_item(sticker_selection.stickers[i], "", i)
 			selector.get_popup().set_item_icon_max_width(i, 96)
 
-func _update_controls() -> void:
+func _update_controls(rebuild_preview := true) -> void:
 	machine_setting_slider.value = player_settings.accel_setting * 100.0
 	machine_setting_percent.text = str(roundi(machine_setting_slider.value)) + "%"
 	pilot_name_input.text = player_settings.username
@@ -332,8 +332,16 @@ func _update_controls() -> void:
 		_load_livery_for_selected_car()
 		_update_livery_controls()
 		_refresh_stamp_controls()
-		_rebuild_preview_vehicle()
+		if rebuild_preview:
+			_rebuild_preview_vehicle()
 	_update_livery_lock_state()
+
+func refresh_after_game_manager_loaded() -> void:
+	_load_settings()
+	_load_car_defs()
+	_refresh_custom_stamp_library()
+	_update_controls(false)
+	_sync_livery_to_player_settings()
 
 func _on_slider_changed(value: float) -> void:
 	machine_setting_percent.text = str(roundi(value)) + "%"

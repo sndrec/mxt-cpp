@@ -206,6 +206,8 @@ func _ready() -> void:
 	_build_multiplayer_connect_box()
 	_load_tracks()
 	_load_car_definitions()
+	if car_settings != null and car_settings.has_method("refresh_after_game_manager_loaded"):
+		car_settings.call("refresh_after_game_manager_loaded")
 	network_manager.race_started.connect(_on_network_race_started)
 	network_manager.race_finished.connect(_on_network_race_finished)
 	network_manager.race_event.connect(_on_race_event)
