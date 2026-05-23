@@ -952,6 +952,32 @@ func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dicti
 	initialized["grand_prix_eliminated_ids"] = []
 	return initialized
 
+func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Dictionary:
+	var settings = network_manager.player_settings.get(id, null)
+	if settings == null and network_manager.cpu_player_settings.has(id):
+		settings = network_manager.cpu_player_settings[id]
+	if settings == null:
+		if network_manager.cpu_player_ids.has(id):
+			settings = build_cpu_player_settings(fallback_cpu_index)
+		else:
+			var def_path: String = car_definitions[0].resource_path if car_definitions.size() > 0 else ""
+			settings = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
+	var out := {}
+	if typeof(settings) == TYPE_DICTIONARY:
+		out = (settings as Dictionary).duplicate(true)
+	elif settings is PlayerSettings:
+		out = (settings as PlayerSettings).to_dict()
+	out["_race_player_id"] = id
+	out["_race_is_cpu"] = network_manager.cpu_player_ids.has(id)
+	return out
+
+func _apply_race_roster_options(options: Dictionary, human_ids: Array, cpu_ids: Array, spectator_ids: Array = []) -> Dictionary:
+	var out := options.duplicate(true)
+	out["race_human_ids"] = human_ids.duplicate(true)
+	out["race_cpu_ids"] = cpu_ids.duplicate(true)
+	out["race_spectator_ids"] = spectator_ids.duplicate(true)
+	return out
+
 func _local_player_id() -> int:
 	if singleplayer_mode:
 		return 0
@@ -1756,19 +1782,41 @@ func _start_race(track_index: int, settings: Array) -> void:
 					floor_mat.set_shader_parameter("texture_albedo", floor_tex)
 					
 	var chosen_defs : Array = []
-	var parsed_settings : Array = []
 	var racer_settings : Array = []
 	var racer_ids : Array = []
 	var racer_cpu_flags : Array = []
 	var roster := network_manager.get_simulation_roster()
 	var cpu_ids := network_manager.get_cpu_roster()
-	var racer_roster_index := 0
-	for i in range(settings.size()):
-		var d = settings[i]
-		if typeof(d) == TYPE_DICTIONARY:
+	var keyed_settings := {}
+	var ordered_settings := []
+	for raw_settings in settings:
+		if typeof(raw_settings) != TYPE_DICTIONARY:
+			continue
+		var settings_dict: Dictionary = raw_settings
+		if settings_dict.has("_race_player_id"):
+			keyed_settings[int(settings_dict["_race_player_id"])] = settings_dict
+		else:
+			ordered_settings.append(settings_dict)
+	if !keyed_settings.is_empty():
+		for id_value in roster:
+			var pid := int(id_value)
+			if !keyed_settings.has(pid):
+				continue
+			var d: Dictionary = keyed_settings[pid]
 			var ps := PlayerSettings.new()
 			ps.from_dict(d)
-			parsed_settings.append(ps)
+			if !ps.spectator:
+				racer_settings.append(ps)
+				var def_res := load(ps.car_definition_path)
+				if def_res != null:
+					chosen_defs.append(def_res)
+				racer_ids.append(pid)
+				racer_cpu_flags.append(cpu_ids.has(pid))
+	else:
+		var racer_roster_index := 0
+		for d in ordered_settings:
+			var ps := PlayerSettings.new()
+			ps.from_dict(d)
 			if !ps.spectator:
 				racer_settings.append(ps)
 				var def_res := load(ps.car_definition_path)
@@ -1961,15 +2009,16 @@ func _on_start_race_button_pressed() -> void:
 		_close_settings_menus_for_race_start()
 		network_manager.prepare_race_roster("start_button")
 		var settings_array : Array = []
-		var roster := network_manager.get_simulation_roster()
-		for id in roster:
-			var ps = network_manager.player_settings.get(id, null)
-			if ps == null:
-				var def_path = car_definitions[randi() % car_definitions.size()].resource_path
-				ps = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
-			settings_array.append(ps)
+		var human_ids := network_manager.player_ids.duplicate(true)
+		var cpu_ids := network_manager.cpu_player_ids.duplicate(true)
+		var roster := human_ids.duplicate(true)
+		roster.append_array(cpu_ids)
+		for id_value in roster:
+			var id := int(id_value)
+			settings_array.append(_settings_dict_for_race_id(id, cpu_ids.find(id)))
 		var race_options := _build_lobby_race_options()
 		race_options = _initialize_grand_prix_options(race_options, roster)
+		race_options = _apply_race_roster_options(race_options, human_ids, cpu_ids, network_manager.spectator_ids)
 		var track_indices: Array = race_options.get("track_indices", [lobby_track_selector.selected])
 		var first_track_index := lobby_track_selector.selected
 		if !track_indices.is_empty():
@@ -2567,6 +2616,7 @@ func _return_to_lobby() -> void:
 	lobby_control.visible = true
 	network_manager.flush_waiting_peers()
 	network_manager.reset_race_state(true)
+	network_manager.broadcast_lobby_roster()
 	singleplayer_mode = false
 	_singleplayer_tick = 0
 
@@ -2611,6 +2661,8 @@ func _transition_to_next_grand_prix_race() -> void:
 	var next_settings := network_manager.pending_next_race_settings.duplicate(true)
 	var next_options := network_manager.pending_next_race_options.duplicate(true)
 	_teardown_race_world_for_transition()
+	if network_manager.is_server:
+		network_manager.flush_waiting_peers(true)
 	network_manager.reset_race_state(true)
 	network_manager.race_options = next_options
 	_apply_grand_prix_eliminations(next_options)
@@ -2631,6 +2683,7 @@ func _apply_grand_prix_eliminations(options: Dictionary) -> void:
 		if network_manager.cpu_player_ids.has(id):
 			network_manager.cpu_player_ids.erase(id)
 			network_manager.cpu_player_settings.erase(id)
+			network_manager.player_settings.erase(id)
 
 func _lookup_id_value(dict: Dictionary, id: int, fallback):
 	if dict.has(id):
@@ -2777,14 +2830,37 @@ func _build_final_race_finish_tick_map(place_by_id: Dictionary, fallback_tick: i
 func _build_next_grand_prix_settings(options: Dictionary) -> Array:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
 	var settings := []
-	for id_value in network_manager.get_simulation_roster():
+	var active_ids := network_manager.player_ids.duplicate(true)
+	active_ids.append_array(network_manager.cpu_player_ids)
+	for id_value in active_ids:
 		var id := int(id_value)
 		if eliminated_ids.has(id):
 			continue
-		var ps = network_manager.player_settings.get(id, null)
-		if ps != null:
-			settings.append(ps)
+		settings.append(_settings_dict_for_race_id(id, network_manager.cpu_player_ids.find(id)))
 	return settings
+
+func _build_next_grand_prix_rosters(options: Dictionary) -> Dictionary:
+	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
+	var human_ids := []
+	for id_value in network_manager.player_ids:
+		var id := int(id_value)
+		if !eliminated_ids.has(id):
+			human_ids.append(id)
+	var cpu_ids := []
+	for id_value in network_manager.cpu_player_ids:
+		var id := int(id_value)
+		if !eliminated_ids.has(id):
+			cpu_ids.append(id)
+	var spectator_ids := network_manager.spectator_ids.duplicate(true)
+	for id_value in network_manager.waiting_peers:
+		var id := int(id_value)
+		if !spectator_ids.has(id):
+			spectator_ids.append(id)
+	return {
+		"human_ids": human_ids,
+		"cpu_ids": cpu_ids,
+		"spectator_ids": spectator_ids,
+	}
 
 func _has_active_human_grand_prix_racer(options: Dictionary) -> bool:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
@@ -2808,6 +2884,12 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 	options["grand_prix_current_track"] = next_index
 	var next_track_index := int(track_indices[next_index])
 	var next_settings := _build_next_grand_prix_settings(options)
+	var next_rosters := _build_next_grand_prix_rosters(options)
+	options = _apply_race_roster_options(
+		options,
+		next_rosters["human_ids"],
+		next_rosters["cpu_ids"],
+		next_rosters["spectator_ids"])
 	options = network_manager.reserve_next_race_netplay_options(options)
 	var seed := randi()
 	options["spawn_seed"] = seed

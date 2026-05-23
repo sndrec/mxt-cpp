@@ -838,6 +838,16 @@ func _get_cpu_roster() -> Array:
 func _get_human_roster() -> Array:
 	return race_player_ids.duplicate(true) if race_player_ids.size() > 0 else player_ids.duplicate(true)
 
+func _get_race_ready_roster() -> Array:
+	var roster := race_player_ids.duplicate(true) if race_player_ids.size() > 0 else player_ids.duplicate(true)
+	if _disconnected_during_race.is_empty():
+		return roster
+	var out := []
+	for id in roster:
+		if !_disconnected_during_race.has(id):
+			out.append(id)
+	return out
+
 func _get_active_human_roster() -> Array:
 	var roster := _get_human_roster()
 	if _disconnected_during_race.is_empty():
@@ -852,6 +862,16 @@ func get_simulation_roster() -> Array:
 	var roster := _get_human_roster()
 	roster.append_array(_get_cpu_roster())
 	return roster
+
+func _id_array_from_value(value) -> Array:
+	var out := []
+	if typeof(value) != TYPE_ARRAY:
+		return out
+	for raw_id in value:
+		var id := int(raw_id)
+		if !out.has(id):
+			out.append(id)
+	return out
 
 func _flush_log() -> void:
 	if !log_enabled or log_file == null:
@@ -1161,11 +1181,18 @@ func _calc_state_offsets() -> void:
 	if not is_server:
 		return
 	state_send_offsets.clear()
-	var count := player_ids.size()
+	var recipients := []
+	for source in [player_ids, spectator_ids]:
+		for id in source:
+			var int_id := int(id)
+			if recipients.has(int_id):
+				continue
+			recipients.append(int_id)
+	var count := recipients.size()
 	if count == 0:
 		return
 	for i in range(count):
-		var id = player_ids[i]
+		var id = recipients[i]
 		state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
 
 func _calc_max_ahead() -> float:
@@ -1600,8 +1627,9 @@ func _accept_peer(id: int) -> void:
 		_unverified_peers.erase(id)
 	if _version_request_time.has(id):
 		_version_request_time.erase(id)
-	if server_game_sim != null and server_game_sim.sim_started:
-		waiting_peers.append(id)
+	if race_active or (server_game_sim != null and server_game_sim.sim_started):
+		if !waiting_peers.has(id):
+			waiting_peers.append(id)
 		_update_player_ids.rpc_id(id, player_ids)
 		_send_cpu_roster_to_peer(id)
 		sync_race_options.rpc_id(id, race_options)
@@ -1645,14 +1673,24 @@ func _report_client_version(client_version: String) -> void:
 @rpc("any_peer", "reliable")
 func _version_rejected(server_version: String) -> void:
 	DebugDraw2D.set_text("Version mismatch. Server: " + server_version, null, 10, Color.RED, 10)
-func flush_waiting_peers() -> void:
+func flush_waiting_peers(force_spectator: bool = false) -> void:
 	if not is_server:
 		return
 	var new_ids: Array = []
 	for id in waiting_peers:
 		var settings = player_settings.get(id, {})
-		var spec = typeof(settings) == TYPE_DICTIONARY and settings.get("spectator", false)
+		if typeof(settings) != TYPE_DICTIONARY:
+			settings = {}
+		settings = (settings as Dictionary).duplicate(true)
+		if force_spectator:
+			settings["spectator"] = true
+			if !settings.has("username"):
+				settings["username"] = str(id)
+			player_settings[id] = settings
+		var spec = force_spectator or settings.get("spectator", false)
 		if spec:
+			if player_ids.has(id):
+				player_ids.erase(id)
 			if not spectator_ids.has(id):
 				spectator_ids.append(id)
 				new_ids.append(id)
@@ -1676,6 +1714,12 @@ func flush_waiting_peers() -> void:
 		if !race_active and player_settings.has(id):
 			update_player_settings.rpc(player_settings[id], id)
 
+func broadcast_lobby_roster() -> void:
+	if !is_server:
+		return
+	_update_player_ids.rpc(player_ids)
+	_broadcast_cpu_roster()
+
 @rpc("any_peer", "reliable")
 func _update_player_ids(ids: Array) -> void:
 	player_ids = ids
@@ -1696,13 +1740,23 @@ func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> 
 	if race_options.has("spawn_seed"):
 		set_spawn_seed(int(race_options.get("spawn_seed", spawn_seed)))
 	race_active = true
-	race_player_ids = player_ids.duplicate(true)
-	race_cpu_player_ids = cpu_player_ids.duplicate(true)
+	if race_options.has("race_human_ids"):
+		race_player_ids = _id_array_from_value(race_options.get("race_human_ids", []))
+	else:
+		race_player_ids = player_ids.duplicate(true)
+	if race_options.has("race_cpu_ids"):
+		race_cpu_player_ids = _id_array_from_value(race_options.get("race_cpu_ids", []))
+	else:
+		race_cpu_player_ids = cpu_player_ids.duplicate(true)
+	if race_options.has("race_spectator_ids"):
+		spectator_ids = _id_array_from_value(race_options.get("race_spectator_ids", []))
 	_sync_cpu_manager()
+	if is_server:
+		_calc_state_offsets()
 	emit_signal("race_started", track_index, settings)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
-		for id in player_ids + spectator_ids:
+		for id in race_player_ids + spectator_ids:
 			last_input_time[id] = now
 			server_netcode_session.set_peer_last_received(id, -1, now)
 		if listen_server:
@@ -1725,7 +1779,8 @@ func send_start_race(track_index: int, settings: Array, options: Dictionary = {}
 		race_options = options.duplicate(true)
 		start_race.rpc(track_index, settings, options)
 		start_race(track_index, settings, options)
-		if player_ids.size() > 1:
+		var race_human_ids := _id_array_from_value(options.get("race_human_ids", player_ids))
+		if race_human_ids.size() > 1:
 			if game_sim != null:
 					game_sim.set_sim_started(false)
 			if server_game_sim != null:
@@ -1768,9 +1823,11 @@ func client_ready(phase: int) -> void:
 	if id == 0:
 		id = multiplayer.get_unique_id()
 	if is_server:
+		if !_get_race_ready_roster().has(id):
+			return
 		if !ready_players.has(id):
 			ready_players.append(id)
-			if ready_players.size() == player_ids.size():
+			if ready_players.size() == _get_race_ready_roster().size():
 				_begin_start_sync()
 
 @rpc("any_peer", "reliable")
@@ -1793,7 +1850,7 @@ func _begin_start_sync() -> void:
 	_try_schedule_synced_start()
 
 func _all_start_sync_samples_ready() -> bool:
-	for id in player_ids:
+	for id in _get_race_ready_roster():
 		if is_server and listen_server and id == multiplayer.get_unique_id():
 			continue
 		if int(start_sync_sample_counts.get(id, 0)) < START_SYNC_SAMPLE_COUNT:
@@ -1803,12 +1860,13 @@ func _all_start_sync_samples_ready() -> bool:
 func _try_schedule_synced_start() -> void:
 	if !is_server or !start_sync_active or start_sync_scheduled:
 		return
-	if ready_players.size() < player_ids.size():
+	var ready_roster := _get_race_ready_roster()
+	if ready_players.size() < ready_roster.size():
 		return
 	if !_all_start_sync_samples_ready():
 		return
 	var max_ahead := _local_desired_ahead_for_shared() if listen_server else 0.0
-	for id in player_ids:
+	for id in ready_roster:
 		max_ahead = max(max_ahead, float(start_sync_peer_ahead.get(id, 0.0)))
 	start_sync_initial_max_ahead = clamp(max_ahead, 0.0, float(MAX_AHEAD_TICKS))
 	var lead_msec := int(ceil(start_sync_initial_max_ahead * 1000.0 / 60.0))
@@ -2558,7 +2616,7 @@ func _client_startup_sync(ahead: float, client_tick: int, client_rtt_s: float) -
 	if !is_server:
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
-	if !player_ids.has(sender_id):
+	if !_get_race_ready_roster().has(sender_id):
 		return
 	var now_sec := 0.001 * float(Time.get_ticks_msec())
 	var unpacked_client_tick := _unpack_race_tick(client_tick)
@@ -2578,6 +2636,8 @@ func _client_send_input_flat(packet: PackedByteArray, ahead: float, client_rtt_s
 	var __prof_t0 := Time.get_ticks_usec()
 	if is_server:
 		var sender_id := multiplayer.get_remote_sender_id()
+		if !_get_race_ready_roster().has(sender_id):
+			return
 		var now_sec := 0.001 * float(Time.get_ticks_msec())
 		var sender_seen_before: bool = server_netcode_session.peer_has_received(sender_id)
 		var recovery_cutoff := target_tick - SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS
