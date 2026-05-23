@@ -20,19 +20,14 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_c1ygr")
 
-[node name="Container" type="Control" parent="." unique_id=1264416507]
+[node name="Container" type="ColorRect" parent="." unique_id=1166652533]
 layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -500.0
-offset_top = -300.0
-offset_right = 500.0
-offset_bottom = 300.0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+color = Color(0, 0, 0, 1)
 
 [node name="ColorRect" type="ColorRect" parent="Container" unique_id=2110296994]
 layout_mode = 1
@@ -51,7 +46,6 @@ anchor_top = 0.86
 anchor_right = 1.0
 anchor_bottom = 1.0
 offset_left = 8.0
-offset_top = 0.0
 offset_right = -7.0
 offset_bottom = -9.0
 grow_horizontal = 2
@@ -122,113 +116,112 @@ tick_count = 11
 layout_mode = 2
 text = "Spectator"
 
-[node name="PaintSettingsLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer"]
+[node name="PaintSettingsLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=361841584]
 layout_mode = 2
 text = "PAINT"
 
-[node name="PaintGrid" type="GridContainer" parent="Container/HBoxContainer/VBoxContainer"]
+[node name="PaintGrid" type="GridContainer" parent="Container/HBoxContainer/VBoxContainer" unique_id=1937132789]
 layout_mode = 2
 columns = 2
 
-[node name="PrimaryColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid"]
+[node name="PrimaryColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=829537494]
 layout_mode = 2
 text = "Primary"
 
-[node name="PrimaryColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid"]
+[node name="PrimaryColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=1794441262]
 custom_minimum_size = Vector2(120, 32)
 layout_mode = 2
 
-[node name="SecondaryColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid"]
+[node name="SecondaryColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=2050061314]
 layout_mode = 2
 text = "Secondary"
 
-[node name="SecondaryColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid"]
+[node name="SecondaryColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=538460321]
 custom_minimum_size = Vector2(120, 32)
 layout_mode = 2
 
-[node name="AccentColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid"]
+[node name="AccentColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=1524949293]
 layout_mode = 2
 text = "Accent"
 
-[node name="AccentColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid"]
+[node name="AccentColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/PaintGrid" unique_id=1844248104]
 custom_minimum_size = Vector2(120, 32)
 layout_mode = 2
 
-[node name="StampSettingsLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer"]
+[node name="StampSettingsLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer" unique_id=902809435]
 layout_mode = 2
 text = "BODY STAMPS"
 
-[node name="StampGrid" type="GridContainer" parent="Container/HBoxContainer/VBoxContainer"]
+[node name="StampGrid" type="GridContainer" parent="Container/HBoxContainer/VBoxContainer" unique_id=979312784]
 layout_mode = 2
 columns = 2
 
-[node name="StampSlotLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampSlotLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1175501171]
 layout_mode = 2
 text = "Slot"
 
-[node name="StampSlotSelector" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampSlotSelector" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=266939194]
 custom_minimum_size = Vector2(160, 32)
 layout_mode = 2
 fit_to_longest_item = false
 
-[node name="StampAddButton" type="Button" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampAddButton" type="Button" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=876388116]
 layout_mode = 2
 text = "Add"
 
-[node name="StampDeleteButton" type="Button" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampDeleteButton" type="Button" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=498426600]
 layout_mode = 2
 text = "Delete"
 
-[node name="StampShapeLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampShapeLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=2019201890]
 layout_mode = 2
 text = "Shape"
 
-[node name="StampShapeSelector" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampShapeSelector" type="OptionButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=11564522]
 custom_minimum_size = Vector2(160, 32)
 layout_mode = 2
 fit_to_longest_item = false
 
-[node name="StampColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampColourLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=176934337]
 layout_mode = 2
 text = "Colour"
 
-[node name="StampColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampColourPicker" type="ColorPickerButton" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1684647654]
 custom_minimum_size = Vector2(120, 32)
 layout_mode = 2
 
-[node name="StampLayerLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampLayerLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1870469219]
 layout_mode = 2
 text = "Layer"
 
-[node name="StampLayerSpin" type="SpinBox" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampLayerSpin" type="SpinBox" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1999247122]
 layout_mode = 2
-min_value = 0.0
 max_value = 15.0
 
-[node name="StampRotationLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampRotationLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=436142201]
 layout_mode = 2
 text = "Rotation"
 
-[node name="StampRotationSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampRotationSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=1164571934]
 layout_mode = 2
 max_value = 360.0
 
-[node name="StampScaleLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampScaleLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=11387]
 layout_mode = 2
 text = "Scale"
 
-[node name="StampScaleSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampScaleSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=689098864]
 layout_mode = 2
 min_value = 0.2
 max_value = 4.0
 step = 0.05
 value = 1.0
 
-[node name="StampDepthLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampDepthLabel" type="Label" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=298676870]
 layout_mode = 2
 text = "Depth"
 
-[node name="StampDepthSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid"]
+[node name="StampDepthSlider" type="HSlider" parent="Container/HBoxContainer/VBoxContainer/StampGrid" unique_id=194588461]
 layout_mode = 2
 min_value = 0.05
 max_value = 2.0

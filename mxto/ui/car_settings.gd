@@ -60,6 +60,8 @@ var preview_drag_moved := false
 
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
+	_wrap_settings_column()
+	_prioritize_vehicle_selector_input()
 	_load_settings()
 	_load_car_defs()
 	sticker_selectors = [sticker_slot_1, sticker_slot_2, sticker_slot_3, sticker_slot_4]
@@ -86,6 +88,62 @@ func _ready() -> void:
 	stamp_depth_slider.value_changed.connect(_on_stamp_depth_changed)
 	for i in range(sticker_selectors.size()):
 		sticker_selectors[i].item_selected.connect(_on_sticker_selected.bind(i))
+
+func _wrap_settings_column() -> void:
+	var hbox := $Container/HBoxContainer as HBoxContainer
+	var column := $Container/HBoxContainer/VBoxContainer as VBoxContainer
+	if hbox == null or column == null or column.get_parent() is ScrollContainer:
+		return
+	var column_index := column.get_index()
+	hbox.remove_child(column)
+	var settings_scroll := ScrollContainer.new()
+	settings_scroll.name = "SettingsScroll"
+	settings_scroll.clip_contents = true
+	settings_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	settings_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	settings_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	settings_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.add_child(settings_scroll)
+	hbox.move_child(settings_scroll, column_index)
+	settings_scroll.add_child(column)
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+
+func _prioritize_vehicle_selector_input() -> void:
+	var container := $Container as Control
+	var hbox := $Container/HBoxContainer as Control
+	var selector_scroll := $Container/ScrollContainer as ScrollContainer
+	if hbox != null:
+		hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if selector_scroll == null or container == null:
+		return
+	selector_scroll.mouse_filter = Control.MOUSE_FILTER_STOP
+	selector_scroll.z_index = 32
+	container.move_child(selector_scroll, container.get_child_count() - 1)
+
+func _input(event: InputEvent) -> void:
+	if !visible:
+		return
+	var mouse_event := event as InputEventMouseButton
+	if mouse_event == null or !mouse_event.pressed or mouse_event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	if _try_select_vehicle_at_global_position(mouse_event.position):
+		get_viewport().set_input_as_handled()
+
+func _try_select_vehicle_at_global_position(global_pos: Vector2) -> bool:
+	if vehicle_selector == null or !vehicle_selector.visible:
+		return false
+	var selector_rect := vehicle_selector.get_global_rect()
+	if !selector_rect.has_point(global_pos):
+		return false
+	var local_pos := global_pos - selector_rect.position
+	for i in range(vehicle_selector.item_count):
+		var item_rect := vehicle_selector.get_item_rect(i)
+		if item_rect.has_point(local_pos):
+			vehicle_selector.select(i)
+			_on_vehicle_selected(i)
+			return true
+	return false
 
 func _load_car_defs() -> void:
 	if game_manager != null:
@@ -352,7 +410,9 @@ func _hide_preview_raycast_scene(root: Node) -> void:
 	mesh.visible = false
 
 func _preview_vehicle_transform() -> Transform3D:
-	return Transform3D(Basis.from_euler(Vector3(preview_pitch, preview_yaw, 0.0)), preview_pan)
+	var yaw_basis := Basis(Vector3.UP, preview_yaw)
+	var pitch_basis := Basis(Vector3.RIGHT, preview_pitch)
+	return Transform3D(yaw_basis * pitch_basis, preview_pan)
 
 func _submit_preview_render() -> void:
 	if preview_render_manager == null or preview_render_manager.archetypes.is_empty():
@@ -557,8 +617,8 @@ func _handle_preview_mouse_motion(event: InputEventMouseMotion) -> void:
 		preview_pitch = clampf(preview_pitch + delta.y * 0.008, deg_to_rad(-55.0), deg_to_rad(55.0))
 	else:
 		var pan_scale := preview_distance * 0.0015
-		preview_pan.x -= delta.x * pan_scale
-		preview_pan.y += delta.y * pan_scale
+		preview_pan.x += delta.x * pan_scale
+		preview_pan.y -= delta.y * pan_scale
 	_apply_preview_camera()
 	preview_container.accept_event()
 

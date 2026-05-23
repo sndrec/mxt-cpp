@@ -19,6 +19,23 @@ func _init() -> void:
 		push_error("car settings smoke has no selectable cars")
 		quit(1)
 		return
+	if vehicle_selector.item_count > 1:
+		vehicle_selector.select(0)
+		car_settings.call("_on_vehicle_selected", 0)
+		var first_path: String = car_settings.player_settings.car_definition_path
+		var item_rect := vehicle_selector.get_item_rect(1)
+		var click_pos := vehicle_selector.global_position + item_rect.position + item_rect.size * 0.5
+		_push_mouse_click(click_pos)
+		await process_frame
+		if car_settings.player_settings.car_definition_path == first_path:
+			push_error("car settings vehicle selector did not receive click input point=%s selector_global=%s item_rect=%s mouse=%s" % [
+				click_pos,
+				vehicle_selector.get_global_rect(),
+				item_rect,
+				vehicle_selector.get_local_mouse_position(),
+			])
+			quit(1)
+			return
 
 	var start_yaw: float = car_settings.preview_yaw
 	var press := InputEventMouseButton.new()
@@ -57,6 +74,10 @@ func _init() -> void:
 		push_error("car settings preview drag did not pan the car")
 		quit(1)
 		return
+	if car_settings.preview_pan.x <= start_pan.x or car_settings.preview_pan.y >= start_pan.y:
+		push_error("car settings preview pan direction is reversed")
+		quit(1)
+		return
 	var render_manager: CarRenderManager = car_settings.preview_render_manager
 	if render_manager == null or render_manager.archetypes.is_empty():
 		push_error("car settings preview did not build render manager")
@@ -75,3 +96,18 @@ func _init() -> void:
 
 	print("MXT_CAR_SETTINGS_PREVIEW_INPUT_SMOKE cars=", vehicle_selector.item_count)
 	quit(0)
+
+func _push_mouse_click(position: Vector2) -> void:
+	var motion := InputEventMouseMotion.new()
+	motion.position = position
+	root.get_viewport().push_input(motion)
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = position
+	root.get_viewport().push_input(press)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = position
+	root.get_viewport().push_input(release)
