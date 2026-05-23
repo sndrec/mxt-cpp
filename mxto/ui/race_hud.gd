@@ -84,6 +84,16 @@ func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fall
 	if window.size() <= 1:
 		return fallback_place
 	var focus_place := int(window[0])
+	var live_place_by_id := {}
+	var next_live_place := nm.player_finish_times.size() + 1
+	if car.game_manager.game_sim != null and car.game_manager.game_sim.has_method("get_race_order"):
+		var order: Array = car.game_manager.game_sim.get_race_order()
+		for id_value in order:
+			var ordered_id := int(id_value)
+			if nm.player_finish_times.has(ordered_id) or nm.player_eliminations.has(ordered_id):
+				continue
+			live_place_by_id[ordered_id] = next_live_place
+			next_live_place += 1
 	var visible_count := int((window.size() - 1) / 2)
 	for i in range(leaderboard_labels.size()):
 		var label := leaderboard_labels[i]
@@ -95,9 +105,13 @@ func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fall
 		var place := int(window[window_index + 1])
 		if nm.player_finish_placements.has(id):
 			place = int(nm.player_finish_placements[id])
+		elif live_place_by_id.has(id):
+			place = int(live_place_by_id[id])
 		label.text = "%d  %s" % [place, _player_name_for_id(nm, id)]
 	if nm.player_finish_placements.has(focus_id):
 		focus_place = int(nm.player_finish_placements[focus_id])
+	elif live_place_by_id.has(focus_id):
+		focus_place = int(live_place_by_id[focus_id])
 	return focus_place
 
 func _action_just_pressed_any(names: Array[String]) -> bool:

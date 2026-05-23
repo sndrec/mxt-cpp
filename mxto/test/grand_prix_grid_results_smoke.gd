@@ -52,10 +52,6 @@ func _init() -> void:
 		push_error("Grand Prix points should use all racers, got %s" % [points])
 		quit(1)
 		return
-	if int(main.network_manager.player_finish_times.get(3, -1)) != 900:
-		push_error("Grand Prix final results should synthesize CPU finish ticks at cutoff, got %s" % [main.network_manager.player_finish_times])
-		quit(1)
-		return
 	if String(main.call("_format_race_time", 900, 420)) != "0:08.000":
 		push_error("race result formatting should respect the race start tick")
 		quit(1)
@@ -63,18 +59,18 @@ func _init() -> void:
 	main.network_manager.player_finish_times.clear()
 	main.network_manager.player_finish_placements.clear()
 	main.network_manager.finish_order.clear()
-	main.network_manager.send_player_finished(1, 720, 8)
-	if int(main.network_manager.player_finish_placements.get(1, -1)) != 8:
-		push_error("finish placement override was not recorded")
+	main.network_manager.send_player_finished(1, 720)
+	if int(main.network_manager.player_finish_placements.get(1, -1)) != 1:
+		push_error("finish placement should be assigned from finish tick order")
 		quit(1)
 		return
 	var race_text: String = main.call("_format_race_results_text")
-	if race_text.find("8th") == -1:
-		push_error("race results text did not preserve actual placement: %s" % race_text)
+	if race_text.find("1st") == -1:
+		push_error("race results text did not use finish tick placement: %s" % race_text)
 		quit(1)
 		return
-	main.network_manager.set_player_finished(1, 780, 1)
-	if int(main.network_manager.player_finish_times.get(1, -1)) != 720 or int(main.network_manager.player_finish_placements.get(1, -1)) != 8:
+	main.network_manager.set_player_finished(1, 780)
+	if int(main.network_manager.player_finish_times.get(1, -1)) != 720 or int(main.network_manager.player_finish_placements.get(1, -1)) != 1:
 		push_error("duplicate finish should not rewrite official time or placement, times=%s places=%s" % [
 			main.network_manager.player_finish_times,
 			main.network_manager.player_finish_placements,
@@ -85,7 +81,7 @@ func _init() -> void:
 	main.network_manager.player_finish_placements = {1: 1, 2: 1}
 	main.network_manager._rebuild_finish_order_from_placements()
 	if int(main.network_manager.player_finish_placements.get(2, -1)) != 1 or int(main.network_manager.player_finish_placements.get(1, -1)) != 2:
-		push_error("duplicate finish placements should normalize by finish time, got %s order=%s" % [
+		push_error("finish placements should be rebuilt from finish time, got %s order=%s" % [
 			main.network_manager.player_finish_placements,
 			main.network_manager.finish_order,
 		])

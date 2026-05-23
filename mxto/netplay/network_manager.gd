@@ -3168,70 +3168,61 @@ func get_race_tick() -> int:
 	return server_tick if is_server else clients_server_tick
 
 @rpc("authority", "call_local", "reliable")
-func set_player_finished(id: int, tick: int, place: int) -> void:
+func set_player_finished(id: int, tick: int) -> void:
 	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
 		return
 	tick = _unpack_race_tick(tick)
 	if player_finish_times.has(id):
 		return
+	if player_eliminations.has(id):
+		player_eliminations.erase(id)
 	player_finish_times[id] = tick
-	player_finish_placements[id] = place
 	_rebuild_finish_order_from_placements()
-	race_event.emit("finish", id, -1, tick, place)
+	race_event.emit("finish", id, -1, tick, int(player_finish_placements.get(id, 0)))
 
-func send_player_finished(id: int, tick: int, place_override: int = -1) -> void:
+func send_player_finished(id: int, tick: int) -> void:
 	if player_finish_times.has(id):
 		return
-	var place := place_override if place_override > 0 else finish_order.size() + 1
 	if is_server:
 		var packed_tick := _pack_race_phase_tick(tick)
-		set_player_finished.rpc(id, packed_tick, place)
-		set_player_finished(id, packed_tick, place)
+		set_player_finished.rpc(id, packed_tick)
+		set_player_finished(id, packed_tick)
 
-func record_player_finished(id: int, tick: int, place_override: int = -1) -> void:
+func record_player_finished(id: int, tick: int) -> void:
 	if player_finish_times.has(id):
 		return
-	var place := place_override if place_override > 0 else finish_order.size() + 1
-	set_player_finished(id, _pack_race_phase_tick(tick), place)
-
-@rpc("authority", "call_local", "reliable")
-func set_final_race_placements(phase: int, placements: Dictionary) -> void:
-	if !_accept_race_packet_phase(phase):
-		return
-	for id_value in placements.keys():
-		var id := int(id_value)
-		var place := int(placements[id_value])
-		if place <= 0:
-			continue
-		player_finish_placements[id] = place
-		if finish_order.size() < place:
-			finish_order.resize(place)
-		finish_order[place - 1] = id
-	_rebuild_finish_order_from_placements()
-
-func send_final_race_placements(placements: Dictionary) -> void:
-	if !is_server:
-		return
-	set_final_race_placements.rpc(race_netplay_phase, placements)
-	set_final_race_placements(race_netplay_phase, placements)
+	set_player_finished(id, _pack_race_phase_tick(tick))
 
 @rpc("authority", "call_local", "reliable")
 func set_final_race_results(phase: int, placements: Dictionary, finish_ticks: Dictionary) -> void:
 	if !_accept_race_packet_phase(phase):
 		return
-	for id_value in placements.keys():
-		var id := int(id_value)
-		var place := int(placements[id_value])
-		if place <= 0:
-			continue
-		player_finish_placements[id] = place
 	for id_value in finish_ticks.keys():
 		var id := int(id_value)
 		if player_eliminations.has(id):
-			continue
+			player_eliminations.erase(id)
 		if !player_finish_times.has(id):
 			player_finish_times[id] = int(finish_ticks[id_value])
 	_rebuild_finish_order_from_placements()
+	var next_place := finish_order.size() + 1
+	var rows := []
+	for id_value in placements.keys():
+		var id := int(id_value)
+		if player_finish_placements.has(id):
+			continue
+		var place := int(placements[id_value])
+		if place > 0:
+			rows.append([place, id])
+	rows.sort_custom(func(a, b):
+		if int(a[0]) != int(b[0]):
+			return int(a[0]) < int(b[0])
+		return int(a[1]) < int(b[1])
+	)
+	for row in rows:
+		var id := int(row[1])
+		player_finish_placements[id] = next_place
+		finish_order.append(id)
+		next_place += 1
 
 func send_final_race_results(placements: Dictionary, finish_ticks: Dictionary) -> void:
 	if !is_server:
@@ -3242,31 +3233,21 @@ func send_final_race_results(placements: Dictionary, finish_ticks: Dictionary) -
 func _rebuild_finish_order_from_placements() -> void:
 	finish_order.clear()
 	var rows := []
-	for id_value in player_finish_placements.keys():
+	for id_value in player_finish_times.keys():
 		var id := int(id_value)
-		var place := int(player_finish_placements[id_value])
-		if place > 0:
-			var finish_tick := int(player_finish_times.get(id, 2147483647))
-			rows.append([place, finish_tick, id])
+		var finish_tick := int(player_finish_times[id_value])
+		rows.append([finish_tick, id])
 	rows.sort_custom(func(a, b):
 		if int(a[0]) != int(b[0]):
 			return int(a[0]) < int(b[0])
-		if int(a[1]) != int(b[1]):
-			return int(a[1]) < int(b[1])
-		return int(a[2]) < int(b[2])
+		return int(a[1]) < int(b[1])
 	)
-	var used_places := {}
 	var normalized_placements := {}
 	for row in rows:
-		var place := int(row[0])
-		var id := int(row[2])
-		while used_places.has(place):
-			place += 1
-		used_places[place] = true
+		var place := finish_order.size() + 1
+		var id := int(row[1])
 		normalized_placements[id] = place
-		if finish_order.size() < place:
-			finish_order.resize(place)
-		finish_order[place - 1] = id
+		finish_order.append(id)
 	player_finish_placements = normalized_placements
 
 @rpc("authority", "call_local", "reliable")

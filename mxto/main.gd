@@ -2753,7 +2753,7 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	var race_racers := network_manager.get_simulation_roster()
 	var racer_count := race_racers.size()
 	var place_by_id := _build_final_race_place_map(sim, race_racers)
-	var finish_tick_by_id := _build_final_race_finish_tick_map(place_by_id, network_manager.server_tick)
+	var finish_tick_by_id := _build_final_race_finish_tick_map(place_by_id)
 	network_manager.send_final_race_results(place_by_id, finish_tick_by_id)
 	for id_value in race_racers:
 		var id := int(id_value)
@@ -2777,54 +2777,41 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 
 func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary:
 	var place_by_id := {}
-	var used_places := {}
 	var finish_rows := []
 	for id_value in race_racers:
 		var id := int(id_value)
-		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id):
+		if network_manager._disconnected_during_race.has(id):
 			continue
-		var place := int(_lookup_id_value(network_manager.player_finish_placements, id, 0))
-		if place > 0:
-			var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, 2147483647))
-			finish_rows.append([place, finish_tick, id])
+		var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, -1))
+		if finish_tick >= 0:
+			finish_rows.append([finish_tick, id])
 	finish_rows.sort_custom(func(a, b):
 		if int(a[0]) != int(b[0]):
 			return int(a[0]) < int(b[0])
-		if int(a[1]) != int(b[1]):
-			return int(a[1]) < int(b[1])
-		return int(a[2]) < int(b[2])
+		return int(a[1]) < int(b[1])
 	)
 	for row in finish_rows:
-		var place := int(row[0])
-		var id := int(row[2])
-		while used_places.has(place):
-			place += 1
-		if place > 0:
-			place_by_id[id] = place
-			used_places[place] = true
+		var id := int(row[1])
+		place_by_id[id] = place_by_id.size() + 1
 	if sim == null or !sim.has_method("get_race_order"):
 		return place_by_id
 	var order: Array = sim.get_race_order()
-	var next_place := 1
 	for id_value in order:
 		var id := int(id_value)
 		if !race_racers.has(id) or place_by_id.has(id):
 			continue
 		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id):
 			continue
-		while used_places.has(next_place):
-			next_place += 1
-		place_by_id[id] = next_place
-		used_places[next_place] = true
+		place_by_id[id] = place_by_id.size() + 1
 	return place_by_id
 
-func _build_final_race_finish_tick_map(place_by_id: Dictionary, fallback_tick: int) -> Dictionary:
+func _build_final_race_finish_tick_map(place_by_id: Dictionary) -> Dictionary:
 	var finish_tick_by_id := {}
 	for id_value in place_by_id.keys():
 		var id := int(id_value)
-		if network_manager.player_eliminations.has(id):
-			continue
-		finish_tick_by_id[id] = int(_lookup_id_value(network_manager.player_finish_times, id, fallback_tick))
+		var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, -1))
+		if finish_tick >= 0:
+			finish_tick_by_id[id] = finish_tick
 	return finish_tick_by_id
 
 func _build_next_grand_prix_settings(options: Dictionary) -> Array:
@@ -2913,12 +2900,12 @@ func _check_race_finished() -> void:
 			continue
 		if network_manager.player_finish_times.has(racer_id):
 			continue
-		if network_manager.player_eliminations.has(racer_id):
-			continue
 		var finished := false
 		var eliminated := false
 		if finish_sim != null and finish_sim.has_method("is_player_race_finished"):
 			finished = finish_sim.is_player_race_finished(racer_id)
+		if !finished and network_manager.player_eliminations.has(racer_id):
+			continue
 		if !network_manager.is_vehicle_restore_enabled() and finish_sim != null and finish_sim.has_method("is_player_race_eliminated"):
 			eliminated = finish_sim.is_player_race_eliminated(racer_id)
 		else:
@@ -2932,13 +2919,10 @@ func _check_race_finished() -> void:
 						-100000.0)
 					break
 		if finished:
-			var race_place := -1
-			if finish_sim != null and finish_sim.has_method("get_player_race_place"):
-				race_place = int(finish_sim.get_player_race_place(racer_id))
 			if network_manager.is_server:
-				network_manager.send_player_finished(racer_id, network_manager.server_tick, race_place)
+				network_manager.send_player_finished(racer_id, network_manager.server_tick)
 			else:
-				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick, race_place)
+				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
 		elif eliminated:
 			if network_manager.is_server:
 				network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
