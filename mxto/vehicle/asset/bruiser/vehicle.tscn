@@ -33,6 +33,10 @@ shader_parameter/in_specwarp = SubResource("GradientTexture1D_o587m")
 shader_parameter/in_normal = ExtResource("2_q1c51")
 shader_parameter/in_albedo = ExtResource("2_faj4t")
 shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
+shader_parameter/livery_colour_strength = 0.0
+shader_parameter/livery_primary_colour = Color(1, 1, 1, 1)
+shader_parameter/livery_secondary_colour = Color(1, 1, 1, 1)
+shader_parameter/livery_accent_colour = Color(1, 1, 1, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_faj4t"]
 render_priority = 0

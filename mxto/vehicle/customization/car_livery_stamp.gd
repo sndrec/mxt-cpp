@@ -2,8 +2,15 @@ class_name CarLiveryStamp
 extends Resource
 
 const MIN_SIZE := 0.001
+const SOURCE_BASE := "base"
+const SOURCE_CUSTOM := "custom"
 
 @export var stamp_id: String = ""
+@export var source: String = SOURCE_BASE
+@export var custom_hash: String = ""
+@export var palette_id: int = 0
+@export var custom_rect: Rect2 = Rect2()
+@export var custom_rect_rotated: bool = false
 @export var enabled: bool = true
 @export var layer: int = 0
 @export var local_origin: Vector3 = Vector3.ZERO
@@ -17,6 +24,11 @@ const MIN_SIZE := 0.001
 func to_dict() -> Dictionary:
 	return {
 		"stamp_id": stamp_id,
+		"source": source,
+		"hash": custom_hash,
+		"palette_id": palette_id,
+		"rect": _rect2_to_array(custom_rect),
+		"rect_rotated": custom_rect_rotated,
 		"enabled": enabled,
 		"layer": layer,
 		"local_origin": _vector3_to_array(local_origin),
@@ -31,6 +43,16 @@ func to_dict() -> Dictionary:
 func from_dict(data: Dictionary) -> void:
 	if data.has("stamp_id"):
 		stamp_id = str(data["stamp_id"])
+	if data.has("source"):
+		source = str(data["source"])
+	if data.has("hash"):
+		custom_hash = str(data["hash"])
+	if data.has("palette_id"):
+		palette_id = int(data["palette_id"])
+	if data.has("rect"):
+		custom_rect = _array_to_rect2(data["rect"], custom_rect)
+	if data.has("rect_rotated"):
+		custom_rect_rotated = bool(data["rect_rotated"])
 	if data.has("enabled"):
 		enabled = bool(data["enabled"])
 	if data.has("layer"):
@@ -51,12 +73,32 @@ func from_dict(data: Dictionary) -> void:
 		opacity = clampf(float(data["opacity"]), 0.0, 1.0)
 	_sanitize()
 
+func is_custom() -> bool:
+	return source == SOURCE_CUSTOM
+
+func stamp_key() -> String:
+	if is_custom():
+		return custom_hash if custom_hash != "" else stamp_id
+	return stamp_id
+
 func duplicate_stamp():
 	var stamp = get_script().new()
 	stamp.from_dict(to_dict())
 	return stamp
 
 func _sanitize() -> void:
+	if source != SOURCE_CUSTOM:
+		source = SOURCE_BASE
+	if source == SOURCE_CUSTOM and custom_hash == "" and stamp_id != "":
+		custom_hash = stamp_id
+	if source == SOURCE_BASE:
+		custom_hash = ""
+		palette_id = 0
+		custom_rect = Rect2()
+		custom_rect_rotated = false
+	palette_id = maxi(0, palette_id)
+	custom_rect.size.x = maxf(0.0, custom_rect.size.x)
+	custom_rect.size.y = maxf(0.0, custom_rect.size.y)
 	size.x = maxf(MIN_SIZE, size.x)
 	size.y = maxf(MIN_SIZE, size.y)
 	projection_depth = maxf(MIN_SIZE, projection_depth)
@@ -76,6 +118,9 @@ static func _basis_to_array(value: Basis) -> Array:
 		[value.z.x, value.z.y, value.z.z],
 	]
 
+static func _rect2_to_array(value: Rect2) -> Array:
+	return [value.position.x, value.position.y, value.size.x, value.size.y]
+
 static func _array_to_vector2(value, fallback: Vector2) -> Vector2:
 	if typeof(value) != TYPE_ARRAY or value.size() < 2:
 		return fallback
@@ -85,6 +130,11 @@ static func _array_to_vector3(value, fallback: Vector3) -> Vector3:
 	if typeof(value) != TYPE_ARRAY or value.size() < 3:
 		return fallback
 	return Vector3(float(value[0]), float(value[1]), float(value[2]))
+
+static func _array_to_rect2(value, fallback: Rect2) -> Rect2:
+	if typeof(value) != TYPE_ARRAY or value.size() < 4:
+		return fallback
+	return Rect2(float(value[0]), float(value[1]), float(value[2]), float(value[3]))
 
 static func _array_to_basis(value, fallback: Basis) -> Basis:
 	if typeof(value) != TYPE_ARRAY or value.size() < 3:

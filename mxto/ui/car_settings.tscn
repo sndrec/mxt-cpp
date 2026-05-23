@@ -557,3 +557,68 @@ offset_left = 4.0
 offset_top = 4.0
 offset_right = 244.0
 offset_bottom = 96.0
+
+[node name="CustomStampImportDialog" type="FileDialog" parent="."]
+title = "Import Custom Stamp PNG"
+size = Vector2i(720, 520)
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.png ; PNG Images")
+
+[node name="CustomStampPainter" type="PopupPanel" parent="."]
+
+[node name="PainterRoot" type="VBoxContainer" parent="CustomStampPainter"]
+custom_minimum_size = Vector2(560, 640)
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 568.0
+offset_bottom = 648.0
+
+[node name="Title" type="Label" parent="CustomStampPainter/PainterRoot"]
+layout_mode = 2
+text = "CUSTOM STAMP"
+horizontal_alignment = 1
+
+[node name="SizeRow" type="HBoxContainer" parent="CustomStampPainter/PainterRoot"]
+layout_mode = 2
+
+[node name="SizeLabel" type="Label" parent="CustomStampPainter/PainterRoot/SizeRow"]
+layout_mode = 2
+text = "Size"
+
+[node name="SizeOption" type="OptionButton" parent="CustomStampPainter/PainterRoot/SizeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="Canvas" type="TextureRect" parent="CustomStampPainter/PainterRoot"]
+custom_minimum_size = Vector2(512, 512)
+layout_mode = 2
+size_flags_horizontal = 4
+stretch_mode = 5
+
+[node name="PaletteGrid" type="GridContainer" parent="CustomStampPainter/PainterRoot"]
+layout_mode = 2
+columns = 8
+
+[node name="ColourPicker" type="ColorPickerButton" parent="CustomStampPainter/PainterRoot"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+
+[node name="ButtonRow" type="HBoxContainer" parent="CustomStampPainter/PainterRoot"]
+layout_mode = 2
+
+[node name="Clear" type="Button" parent="CustomStampPainter/PainterRoot/ButtonRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Clear"
+
+[node name="Save" type="Button" parent="CustomStampPainter/PainterRoot/ButtonRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Save"
+
+[node name="Cancel" type="Button" parent="CustomStampPainter/PainterRoot/ButtonRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cancel"

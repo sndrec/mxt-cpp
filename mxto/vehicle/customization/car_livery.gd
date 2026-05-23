@@ -76,6 +76,22 @@ func get_livery_hash() -> String:
 func get_livery_key() -> String:
 	return "%s:%s" % [car_definition_path, get_livery_hash()]
 
+func get_custom_stamp_manifest() -> Array:
+	var manifest: Array = []
+	for stamp in get_sorted_stamps():
+		if stamp == null or !stamp.is_custom():
+			continue
+		manifest.append({
+			"source": CarLiveryStamp.SOURCE_CUSTOM,
+			"hash": stamp.custom_hash,
+			"id": stamp.stamp_id,
+			"palette_id": stamp.palette_id,
+			"rect": [stamp.custom_rect.position.x, stamp.custom_rect.position.y, stamp.custom_rect.size.x, stamp.custom_rect.size.y],
+			"rect_rotated": stamp.custom_rect_rotated,
+			"layer": stamp.layer,
+		})
+	return manifest
+
 func save_to_path(path: String) -> Error:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
@@ -98,5 +114,5 @@ func _sort_stamps_in_place() -> void:
 
 static func _compare_stamp_layer(a: CarLiveryStamp, b: CarLiveryStamp) -> bool:
 	if a.layer == b.layer:
-		return a.stamp_id < b.stamp_id
+		return a.stamp_key() < b.stamp_key()
 	return a.layer < b.layer

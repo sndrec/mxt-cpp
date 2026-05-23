@@ -2,15 +2,18 @@ class_name CarStampCatalog
 extends Resource
 
 const CarStampEntry = preload("res://vehicle/customization/car_stamp_entry.gd")
+const CarLiveryStamp = preload("res://vehicle/customization/car_livery_stamp.gd")
 const STAMP_MULTIPLY_SHADER = preload("res://vehicle/customization/car_stamp_multiply.gdshader")
 
 @export var atlas_texture: Texture2D
+@export var custom_atlas_texture: Texture2D
 @export var atlas_grid_size: Vector2i = Vector2i.ONE
 @export var entries: Array[CarStampEntry] = []
 
 var _entry_by_id: Dictionary = {}
 var _preview_texture_by_id: Dictionary = {}
 var _white_visibility_mask: Texture2D = null
+var _transparent_stamp_atlas: Texture2D = null
 
 func get_entry(stamp_id: String) -> CarStampEntry:
 	_ensure_index()
@@ -42,10 +45,23 @@ func get_entry_atlas_rect(entry: CarStampEntry) -> Rect2:
 func get_atlas_rect(stamp_id: String) -> Rect2:
 	return get_entry_atlas_rect(get_entry(stamp_id))
 
+func get_stamp_atlas_rect(stamp: CarLiveryStamp) -> Rect2:
+	if stamp == null:
+		return Rect2()
+	if stamp.is_custom():
+		return stamp.custom_rect
+	return get_atlas_rect(stamp.stamp_id)
+
+func get_stamp_source_flag(stamp: CarLiveryStamp) -> float:
+	if stamp != null and stamp.is_custom():
+		return 1.0
+	return 0.0
+
 func create_stamp_material(base_material: Material = null, visibility_mask: Texture2D = null) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = STAMP_MULTIPLY_SHADER
-	material.set_shader_parameter("stamp_atlas", atlas_texture)
+	material.set_shader_parameter("base_stamp_atlas", atlas_texture if atlas_texture != null else _get_transparent_stamp_atlas())
+	material.set_shader_parameter("custom_stamp_atlas", custom_atlas_texture if custom_atlas_texture != null else _get_transparent_stamp_atlas())
 	material.set_shader_parameter("stamp_visibility_mask", visibility_mask if visibility_mask != null else _get_white_visibility_mask())
 	var base_shader_material := base_material as ShaderMaterial
 	if base_shader_material != null:
@@ -84,6 +100,14 @@ func _get_white_visibility_mask() -> Texture2D:
 	image.set_pixel(0, 0, Color(0.0, 0.0, 0.0, 1.0))
 	_white_visibility_mask = ImageTexture.create_from_image(image)
 	return _white_visibility_mask
+
+func _get_transparent_stamp_atlas() -> Texture2D:
+	if _transparent_stamp_atlas != null:
+		return _transparent_stamp_atlas
+	var image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	image.set_pixel(0, 0, Color(1.0, 1.0, 1.0, 0.0))
+	_transparent_stamp_atlas = ImageTexture.create_from_image(image)
+	return _transparent_stamp_atlas
 
 func _entry_fits_grid(entry: CarStampEntry) -> bool:
 	if atlas_grid_size.x <= 0 or atlas_grid_size.y <= 0:

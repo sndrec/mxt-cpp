@@ -21,6 +21,7 @@ var stamp_render_priority: int = 2
 var stamp_visibility_masks_enabled: bool = true
 var stamp_visibility_mask_skip_layer: int = -1
 var stamp_catalog: CarStampCatalog = null
+var custom_stamp_atlas_texture: Texture2D = null
 
 func _ready() -> void:
 	process_priority = 2
@@ -51,6 +52,9 @@ func configure_manual(definitions: Array, player_settings: Array = []) -> void:
 	set_process(false)
 	cars.clear()
 	_configure_archetypes(definitions, player_settings)
+
+func set_custom_stamp_atlas(texture: Texture2D) -> void:
+	custom_stamp_atlas_texture = texture
 
 func _configure_archetypes(definitions: Array, player_settings: Array = []) -> void:
 	car_archetype_indices.resize(definitions.size())
@@ -241,6 +245,9 @@ func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, 
 	if livery != null and !livery.stamps.is_empty():
 		var catalog := _get_stamp_catalog()
 		if catalog != null:
+			if custom_stamp_atlas_texture != null:
+				catalog = catalog.duplicate() as CarStampCatalog
+				catalog.custom_atlas_texture = custom_stamp_atlas_texture
 			var stamp_build := CarLiveryStampMeshBuilder.build_for_vehicle_scene_with_masks(template, livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
 			var generated_mesh: Mesh = stamp_build["mesh"]
 			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
@@ -281,6 +288,8 @@ func update_stamp_layer_colour(layer: int, colour: Color) -> void:
 		arrays[Mesh.ARRAY_COLOR] = colours
 		mesh.clear_surfaces()
 		var format_flags := Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT
+		if arrays.size() > Mesh.ARRAY_CUSTOM1 and typeof(arrays[Mesh.ARRAY_CUSTOM1]) == TYPE_PACKED_FLOAT32_ARRAY:
+			format_flags |= Mesh.ARRAY_CUSTOM_RGBA_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM1_SHIFT
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], {}, format_flags)
 
 func _collect_thruster_data(template: Node3D, root_transform: Transform3D) -> Dictionary:
