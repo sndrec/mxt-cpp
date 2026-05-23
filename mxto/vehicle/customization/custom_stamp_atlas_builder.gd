@@ -148,12 +148,12 @@ static func _palette_for_blob(blob: CustomStampBlob, authored_palettes: Dictiona
 static func _normalized_custom_palette(source: PackedColorArray) -> PackedColorArray:
 	var out := PackedColorArray()
 	out.append(Color(1.0, 1.0, 1.0, 0.0))
-	if source.size() == 16:
+	if source.size() == 16 and source[0].a <= 0.0:
 		out = source
 		out[0] = Color(1.0, 1.0, 1.0, 0.0)
 		return out
-	var count := mini(source.size(), 15)
-	for i in range(count):
+	var start := 1 if source.size() > 0 and source[0].a <= 0.0 else 0
+	for i in range(start, mini(source.size(), start + 15)):
 		out.append(source[i])
 	while out.size() < 16:
 		out.append(Color.WHITE)

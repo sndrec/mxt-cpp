@@ -4,6 +4,7 @@ extends RefCounted
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
 const CustomStampPacker = preload("res://vehicle/customization/custom_stamp_packer.gd")
 const CustomStampPaletteCatalog = preload("res://vehicle/customization/custom_stamp_palette_catalog.gd")
+const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
 
 const CACHE_DIR := "user://custom_stamps"
 const LIBRARY_PATH := "user://custom_stamps/library.json"
@@ -96,14 +97,22 @@ static func save_blob(blob: CustomStampBlob) -> Error:
 	_add_blob_to_library(blob)
 	return OK
 
+static func delete_blob(stamp_hash: String) -> Error:
+	if stamp_hash == "":
+		return ERR_INVALID_PARAMETER
+	var hashes := _read_library_hashes()
+	if hashes.has(stamp_hash):
+		hashes.erase(stamp_hash)
+		_write_library_hashes(hashes)
+	var path := _cache_path(stamp_hash)
+	if FileAccess.file_exists(path):
+		var remove_err := DirAccess.remove_absolute(path)
+		if remove_err != OK:
+			return remove_err
+	return CarLiveryStore.remove_custom_stamp_references(stamp_hash)
+
 static func list_local_blobs() -> Array:
-	var hashes: Array = []
-	var data = JSON.parse_string(FileAccess.get_file_as_string(LIBRARY_PATH)) if FileAccess.file_exists(LIBRARY_PATH) else []
-	if typeof(data) == TYPE_ARRAY:
-		for value in data:
-			var stamp_hash := str(value)
-			if stamp_hash != "" and !hashes.has(stamp_hash):
-				hashes.append(stamp_hash)
+	var hashes := _read_library_hashes()
 	var out: Array = []
 	for stamp_hash in hashes:
 		var blob := load_blob(stamp_hash)
@@ -133,6 +142,12 @@ static func import_png(path: String, palette_id := 0) -> Dictionary:
 	return {"ok": true, "blob": blob}
 
 static func create_preview_texture(blob: CustomStampBlob) -> Texture2D:
+	var image := create_preview_image(blob)
+	if image == null:
+		return null
+	return ImageTexture.create_from_image(image)
+
+static func create_preview_image(blob: CustomStampBlob) -> Image:
 	if blob == null or blob.validate_blob() != "":
 		return null
 	var palette := blob.custom_palette if blob.bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE else CustomStampPaletteCatalog.get_palette(blob.palette_id)
@@ -148,7 +163,7 @@ static func create_preview_texture(blob: CustomStampBlob) -> Texture2D:
 			if index > 0 and index < palette.size():
 				colour = palette[index]
 			image.set_pixel(x, y, colour)
-	return ImageTexture.create_from_image(image)
+	return image
 
 static func missing_hashes(manifest: Array) -> PackedStringArray:
 	var missing := PackedStringArray()
@@ -178,7 +193,7 @@ static func _index_at(raw: PackedByteArray, pixel_index: int, bits_per_pixel: in
 static func _normalized_custom_palette(source: PackedColorArray) -> PackedColorArray:
 	var out := PackedColorArray()
 	out.append(Color(1.0, 1.0, 1.0, 0.0))
-	var start := 1 if source.size() == 16 else 0
+	var start := 1 if source.size() > 0 and source[0].a <= 0.0 else 0
 	for i in range(start, mini(source.size(), start + 15)):
 		out.append(source[i])
 	while out.size() < 16:
@@ -189,6 +204,12 @@ static func _cache_path(stamp_hash: String) -> String:
 	return "%s/%s.json" % [CACHE_DIR, _safe_hash(stamp_hash)]
 
 static func _add_blob_to_library(blob: CustomStampBlob) -> void:
+	var hashes := _read_library_hashes()
+	if !hashes.has(blob.stamp_hash):
+		hashes.append(blob.stamp_hash)
+	_write_library_hashes(hashes)
+
+static func _read_library_hashes() -> Array:
 	var hashes: Array = []
 	var data = JSON.parse_string(FileAccess.get_file_as_string(LIBRARY_PATH)) if FileAccess.file_exists(LIBRARY_PATH) else []
 	if typeof(data) == TYPE_ARRAY:
@@ -196,8 +217,9 @@ static func _add_blob_to_library(blob: CustomStampBlob) -> void:
 			var stamp_hash := str(value)
 			if stamp_hash != "" and !hashes.has(stamp_hash):
 				hashes.append(stamp_hash)
-	if !hashes.has(blob.stamp_hash):
-		hashes.append(blob.stamp_hash)
+	return hashes
+
+static func _write_library_hashes(hashes: Array) -> void:
 	var file := FileAccess.open(LIBRARY_PATH, FileAccess.WRITE)
 	if file == null:
 		return

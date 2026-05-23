@@ -166,6 +166,35 @@ size_flags_vertical = 3
 mouse_filter = 2
 color = Color(0, 0, 0, 0.176471)
 
+[node name="CustomStampBudget" type="Label" parent="Container/SettingsTabs/Garage/CarPreviewSpace"]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -218.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 92.0
+grow_horizontal = 0
+mouse_filter = 2
+text = "Custom stamps\nUncompressed: 0.0 / 32.0 KiB\nPixels: 0.0 / 32.0 KiB\nCompressed: 0.0 / 24.0 KiB"
+horizontal_alignment = 2
+
+[node name="CustomStampAtlasPreview" type="TextureRect" parent="Container/SettingsTabs/Garage/CarPreviewSpace"]
+custom_minimum_size = Vector2(128, 72)
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 10.0
+offset_top = -82.0
+offset_right = 138.0
+offset_bottom = -10.0
+grow_vertical = 0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
 [node name="StampEditOverlay" type="Control" parent="Container/SettingsTabs/Garage/CarPreviewSpace" unique_id=1794065899]
 visible = false
 layout_mode = 1
@@ -537,6 +566,48 @@ custom_minimum_size = Vector2(42, 40)
 layout_mode = 2
 disabled = true
 
+[node name="Stamp Catalog" type="VBoxContainer" parent="Container/SettingsTabs"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 2
+
+[node name="CatalogActions" type="HBoxContainer" parent="Container/SettingsTabs/Stamp Catalog"]
+layout_mode = 2
+
+[node name="ImportCustomStamp" type="Button" parent="Container/SettingsTabs/Stamp Catalog/CatalogActions"]
+custom_minimum_size = Vector2(160, 34)
+layout_mode = 2
+text = "Import PNG"
+
+[node name="ImportPaletteLabel" type="Label" parent="Container/SettingsTabs/Stamp Catalog/CatalogActions"]
+layout_mode = 2
+text = "Palette"
+vertical_alignment = 1
+
+[node name="ImportPaletteOption" type="OptionButton" parent="Container/SettingsTabs/Stamp Catalog/CatalogActions"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="PaintCustomStamp" type="Button" parent="Container/SettingsTabs/Stamp Catalog/CatalogActions"]
+custom_minimum_size = Vector2(160, 34)
+layout_mode = 2
+text = "Paint Stamp"
+
+[node name="LibraryLabel" type="Label" parent="Container/SettingsTabs/Stamp Catalog"]
+layout_mode = 2
+text = "CUSTOM STAMPS"
+
+[node name="LibraryScroll" type="ScrollContainer" parent="Container/SettingsTabs/Stamp Catalog"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="LibraryGrid" type="GridContainer" parent="Container/SettingsTabs/Stamp Catalog/LibraryScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+
 [node name="CloseSettings" type="Button" parent="Container" unique_id=487172063]
 layout_mode = 1
 anchors_preset = 1
@@ -549,14 +620,52 @@ text = "Close"
 
 [node name="StampActionMenu" type="PopupMenu" parent="." unique_id=1850059014]
 
+[node name="CustomStampCatalogMenu" type="PopupMenu" parent="."]
+
 [node name="StampChooser" type="PopupPanel" parent="." unique_id=1182686218]
 
 [node name="StampChooserList" type="VBoxContainer" parent="StampChooser" unique_id=1604878112]
-custom_minimum_size = Vector2(240, 0)
+custom_minimum_size = Vector2(360, 360)
 offset_left = 4.0
 offset_top = 4.0
-offset_right = 244.0
-offset_bottom = 96.0
+offset_right = 364.0
+offset_bottom = 364.0
+
+[node name="Title" type="Label" parent="StampChooser/StampChooserList"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="StampChooserTabs" type="TabContainer" parent="StampChooser/StampChooserList"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Base" type="ScrollContainer" parent="StampChooser/StampChooserList/StampChooserTabs"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+metadata/_tab_index = 0
+
+[node name="BaseList" type="GridContainer" parent="StampChooser/StampChooserList/StampChooserTabs/Base"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+
+[node name="Custom" type="ScrollContainer" parent="StampChooser/StampChooserList/StampChooserTabs"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+metadata/_tab_index = 1
+
+[node name="CustomList" type="GridContainer" parent="StampChooser/StampChooserList/StampChooserTabs/Custom"]
+layout_mode = 2
+size_flags_horizontal = 3
+columns = 4
+
+[node name="Cancel" type="Button" parent="StampChooser/StampChooserList"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+text = "Cancel"
 
 [node name="CustomStampImportDialog" type="FileDialog" parent="."]
 title = "Import Custom Stamp PNG"

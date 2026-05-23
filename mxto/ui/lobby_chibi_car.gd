@@ -210,7 +210,7 @@ func get_render_livery_hash() -> String:
 
 func get_render_transform() -> Transform3D:
 	return global_transform * Transform3D(
-		Basis(Vector3.UP, PI).scaled(Vector3.ONE * 0.5),
+		Basis(Vector3.UP, PI).scaled(Vector3.ONE * 1.0),
 		Vector3.ZERO)
 
 func get_render_overlay() -> Color:
