@@ -281,101 +281,261 @@ horizontal_scroll_mode = 0
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="StampLayer00" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1554142415]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampLayer00" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1554142415]
 layout_mode = 2
-text = "01  EMPTY"
-alignment = 0
 
-[node name="StampLayer01" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1568816529]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer00"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-text = "02  EMPTY"
+size_flags_horizontal = 3
+text = "EMPTY"
 alignment = 0
+expand_icon = true
 
-[node name="StampLayer02" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1086448533]
-custom_minimum_size = Vector2(0, 36)
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer00"]
+custom_minimum_size = Vector2(42, 40)
 layout_mode = 2
-text = "03  EMPTY"
-alignment = 0
+disabled = true
 
-[node name="StampLayer03" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1156753241]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampLayer01" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1568816529]
 layout_mode = 2
-text = "04  EMPTY"
-alignment = 0
 
-[node name="StampLayer04" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=2035295157]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer01"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-text = "05  EMPTY"
+size_flags_horizontal = 3
+text = "EMPTY"
 alignment = 0
+expand_icon = true
 
-[node name="StampLayer05" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=836959197]
-custom_minimum_size = Vector2(0, 36)
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer01"]
+custom_minimum_size = Vector2(42, 40)
 layout_mode = 2
-text = "06  EMPTY"
-alignment = 0
+disabled = true
 
-[node name="StampLayer06" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1319881368]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampLayer02" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1086448533]
 layout_mode = 2
-text = "07  EMPTY"
-alignment = 0
 
-[node name="StampLayer07" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=149109331]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer02"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-text = "08  EMPTY"
+size_flags_horizontal = 3
+text = "EMPTY"
 alignment = 0
+expand_icon = true
 
-[node name="StampLayer08" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1280597037]
-custom_minimum_size = Vector2(0, 36)
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer02"]
+custom_minimum_size = Vector2(42, 40)
 layout_mode = 2
-text = "09  EMPTY"
-alignment = 0
+disabled = true
 
-[node name="StampLayer09" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1669403388]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampLayer03" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1156753241]
 layout_mode = 2
-text = "10  EMPTY"
-alignment = 0
 
-[node name="StampLayer10" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1996108298]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer03"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-text = "11  EMPTY"
+size_flags_horizontal = 3
+text = "EMPTY"
 alignment = 0
+expand_icon = true
 
-[node name="StampLayer11" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1756030345]
-custom_minimum_size = Vector2(0, 36)
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer03"]
+custom_minimum_size = Vector2(42, 40)
 layout_mode = 2
-text = "12  EMPTY"
-alignment = 0
+disabled = true
 
-[node name="StampLayer12" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=812102802]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampLayer04" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=2035295157]
 layout_mode = 2
-text = "13  EMPTY"
-alignment = 0
 
-[node name="StampLayer13" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1631409685]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer04"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-text = "14  EMPTY"
+size_flags_horizontal = 3
+text = "EMPTY"
 alignment = 0
+expand_icon = true
 
-[node name="StampLayer14" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=35624926]
-custom_minimum_size = Vector2(0, 36)
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer04"]
+custom_minimum_size = Vector2(42, 40)
 layout_mode = 2
-text = "15  EMPTY"
-alignment = 0
+disabled = true
 
-[node name="StampLayer15" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1806809556]
-custom_minimum_size = Vector2(0, 36)
+[node name="StampLayer05" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=836959197]
 layout_mode = 2
-text = "16  EMPTY"
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer05"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
 alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer05"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer06" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1319881368]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer06"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer06"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer07" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=149109331]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer07"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer07"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer08" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1280597037]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer08"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer08"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer09" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1669403388]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer09"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer09"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer10" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1996108298]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer10"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer10"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer11" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1756030345]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer11"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer11"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer12" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=812102802]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer12"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer12"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer13" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1631409685]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer13"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer13"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer14" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=35624926]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer14"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer14"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
+
+[node name="StampLayer15" type="HBoxContainer" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList" unique_id=1806809556]
+layout_mode = 2
+
+[node name="StampButton" type="Button" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer15"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "EMPTY"
+alignment = 0
+expand_icon = true
+
+[node name="ColourPicker" type="ColorPickerButton" parent="Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList/StampLayer15"]
+custom_minimum_size = Vector2(42, 40)
+layout_mode = 2
+disabled = true
 
 [node name="CloseSettings" type="Button" parent="Container" unique_id=487172063]
 layout_mode = 1

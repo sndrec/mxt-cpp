@@ -224,13 +224,13 @@ func _build_archetype(definition: CarDefinition, livery: CarLivery = null) -> Di
 		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
 		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2),
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), shadow_mesh.mesh, shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
-		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), template, livery, root_transform),
+		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), template, livery, root_transform * main_mesh.transform, main_mesh.material_override),
 		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), thruster_data["material"], thruster_data["local_transforms"]),
 	}
 	template.free()
 	return archetype
 
-func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, local_transform: Transform3D) -> Dictionary:
+func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, local_transform: Transform3D, base_material: Material) -> Dictionary:
 	var mesh: Mesh = null
 	var material: Material = null
 	if livery != null and !livery.stamps.is_empty():
@@ -239,7 +239,7 @@ func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, 
 			var generated_mesh := CarLiveryStampMeshBuilder.build_for_vehicle_scene(template, livery, catalog)
 			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
 				mesh = generated_mesh
-				material = catalog.create_stamp_material()
+				material = catalog.create_stamp_material(base_material)
 	var pass_data := _create_pass(pass_name, mesh, material, local_transform, 2, 2)
 	if mesh == null:
 		var node: MultiMeshInstance3D = pass_data["node"]

@@ -42,21 +42,27 @@ func _init() -> void:
 
 	var arrays := decal_mesh.surface_get_arrays(0)
 	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var body_uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var stamp_uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
 	var colours: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
-	if vertices.size() < 3 or vertices.size() != uvs.size() or vertices.size() != colours.size():
+	if vertices.size() < 3 or vertices.size() != body_uvs.size() or vertices.size() != stamp_uvs.size() or vertices.size() != colours.size():
 		push_error("generated stamp mesh arrays are inconsistent")
 		quit(1)
 		return
 	for i in range(vertices.size()):
 		var p := vertices[i]
-		var uv := uvs[i]
+		var stamp_uv := stamp_uvs[i]
+		var body_uv := body_uvs[i]
 		if absf(p.x) > 0.506 or absf(p.y) > 0.506 or p.z < 0.005:
 			push_error("generated stamp vertex outside expected clipped projector bounds")
 			quit(1)
 			return
-		if uv.x < 0.249 or uv.x > 0.751 or uv.y < 0.249 or uv.y > 0.751:
+		if stamp_uv.x < 0.249 or stamp_uv.x > 0.751 or stamp_uv.y < 0.249 or stamp_uv.y > 0.751:
 			push_error("generated stamp uv outside atlas rect")
+			quit(1)
+			return
+		if body_uv.x < -0.001 or body_uv.x > 1.001 or body_uv.y < -0.001 or body_uv.y > 1.001:
+			push_error("generated stamp body uv outside source mesh uv range")
 			quit(1)
 			return
 	var vertex_count := vertices.size()
@@ -76,10 +82,19 @@ func _make_quad_mesh() -> ArrayMesh:
 	var normals := PackedVector3Array()
 	for i in range(vertices.size()):
 		normals.append(Vector3(0.0, 0.0, 1.0))
+	var uvs := PackedVector2Array([
+		Vector2(0.0, 0.0),
+		Vector2(1.0, 0.0),
+		Vector2(1.0, 1.0),
+		Vector2(0.0, 0.0),
+		Vector2(1.0, 1.0),
+		Vector2(0.0, 1.0),
+	])
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = vertices
 	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh

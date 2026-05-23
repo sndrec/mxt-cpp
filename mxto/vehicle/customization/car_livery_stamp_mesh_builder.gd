@@ -23,9 +23,11 @@ static func build_for_body_mesh(body_mesh: MeshInstance3D, livery: CarLivery, ca
 
 	var out_vertices := PackedVector3Array()
 	var out_normals := PackedVector3Array()
-	var out_uvs := PackedVector2Array()
+	var out_body_uvs := PackedVector2Array()
+	var out_stamp_uvs := PackedVector2Array()
 	var out_colours := PackedColorArray()
 	var body_to_car := _body_to_car_transform(body_mesh, car_root)
+	var car_to_body := body_to_car.affine_inverse()
 
 	for stamp in livery.get_sorted_stamps():
 		if stamp == null or !stamp.enabled or stamp.opacity <= 0.0:
@@ -36,7 +38,7 @@ static func build_for_body_mesh(body_mesh: MeshInstance3D, livery: CarLivery, ca
 		var atlas_rect := catalog.get_entry_atlas_rect(entry)
 		if atlas_rect.size.x <= 0.0 or atlas_rect.size.y <= 0.0:
 			continue
-		_append_stamp(body_mesh.mesh, body_to_car, stamp, atlas_rect, out_vertices, out_normals, out_uvs, out_colours)
+		_append_stamp(body_mesh.mesh, body_to_car, car_to_body, stamp, atlas_rect, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
 
 	if out_vertices.is_empty():
 		return out_mesh
@@ -45,7 +47,8 @@ static func build_for_body_mesh(body_mesh: MeshInstance3D, livery: CarLivery, ca
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = out_vertices
 	arrays[Mesh.ARRAY_NORMAL] = out_normals
-	arrays[Mesh.ARRAY_TEX_UV] = out_uvs
+	arrays[Mesh.ARRAY_TEX_UV] = out_body_uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = out_stamp_uvs
 	arrays[Mesh.ARRAY_COLOR] = out_colours
 	out_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return out_mesh
@@ -53,11 +56,13 @@ static func build_for_body_mesh(body_mesh: MeshInstance3D, livery: CarLivery, ca
 static func _append_stamp(
 	mesh: Mesh,
 	body_to_car: Transform3D,
+	car_to_body: Transform3D,
 	stamp: CarLiveryStamp,
 	atlas_rect: Rect2,
 	out_vertices: PackedVector3Array,
 	out_normals: PackedVector3Array,
-	out_uvs: PackedVector2Array,
+	out_body_uvs: PackedVector2Array,
+	out_stamp_uvs: PackedVector2Array,
 	out_colours: PackedColorArray
 ) -> void:
 	var projector := Transform3D(stamp.local_basis, stamp.local_origin)
@@ -78,14 +83,16 @@ static func _append_stamp(
 		if vertices.is_empty():
 			continue
 		var normals := _surface_normals(arrays)
+		var body_uvs := _surface_uvs(arrays)
 		var indices := _surface_indices(arrays)
 		if indices.is_empty():
-			_append_unindexed_surface(body_to_car, car_to_projector, clip_min, clip_max, atlas_rect, stamp_colour, vertices, normals, out_vertices, out_normals, out_uvs, out_colours)
+			_append_unindexed_surface(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, stamp_colour, vertices, normals, body_uvs, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
 		else:
-			_append_indexed_surface(body_to_car, car_to_projector, clip_min, clip_max, atlas_rect, stamp_colour, vertices, normals, indices, out_vertices, out_normals, out_uvs, out_colours)
+			_append_indexed_surface(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, stamp_colour, vertices, normals, body_uvs, indices, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
 
 static func _append_indexed_surface(
 	body_to_car: Transform3D,
+	car_to_body: Transform3D,
 	car_to_projector: Transform3D,
 	clip_min: Vector3,
 	clip_max: Vector3,
@@ -93,10 +100,12 @@ static func _append_indexed_surface(
 	colour: Color,
 	vertices: PackedVector3Array,
 	normals: PackedVector3Array,
+	body_uvs: PackedVector2Array,
 	indices: PackedInt32Array,
 	out_vertices: PackedVector3Array,
 	out_normals: PackedVector3Array,
-	out_uvs: PackedVector2Array,
+	out_body_uvs: PackedVector2Array,
+	out_stamp_uvs: PackedVector2Array,
 	out_colours: PackedColorArray
 ) -> void:
 	var tri_count := int(indices.size() / 3)
@@ -104,10 +113,11 @@ static func _append_indexed_surface(
 		var i0 := indices[tri * 3]
 		var i1 := indices[tri * 3 + 1]
 		var i2 := indices[tri * 3 + 2]
-		_append_triangle(body_to_car, car_to_projector, clip_min, clip_max, atlas_rect, colour, vertices, normals, i0, i1, i2, out_vertices, out_normals, out_uvs, out_colours)
+		_append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, colour, vertices, normals, body_uvs, i0, i1, i2, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
 
 static func _append_unindexed_surface(
 	body_to_car: Transform3D,
+	car_to_body: Transform3D,
 	car_to_projector: Transform3D,
 	clip_min: Vector3,
 	clip_max: Vector3,
@@ -115,18 +125,21 @@ static func _append_unindexed_surface(
 	colour: Color,
 	vertices: PackedVector3Array,
 	normals: PackedVector3Array,
+	body_uvs: PackedVector2Array,
 	out_vertices: PackedVector3Array,
 	out_normals: PackedVector3Array,
-	out_uvs: PackedVector2Array,
+	out_body_uvs: PackedVector2Array,
+	out_stamp_uvs: PackedVector2Array,
 	out_colours: PackedColorArray
 ) -> void:
 	var tri_count := int(vertices.size() / 3)
 	for tri in range(tri_count):
 		var i0 := tri * 3
-		_append_triangle(body_to_car, car_to_projector, clip_min, clip_max, atlas_rect, colour, vertices, normals, i0, i0 + 1, i0 + 2, out_vertices, out_normals, out_uvs, out_colours)
+		_append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, colour, vertices, normals, body_uvs, i0, i0 + 1, i0 + 2, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
 
 static func _append_triangle(
 	body_to_car: Transform3D,
+	car_to_body: Transform3D,
 	car_to_projector: Transform3D,
 	clip_min: Vector3,
 	clip_max: Vector3,
@@ -134,12 +147,14 @@ static func _append_triangle(
 	colour: Color,
 	vertices: PackedVector3Array,
 	normals: PackedVector3Array,
+	body_uvs: PackedVector2Array,
 	i0: int,
 	i1: int,
 	i2: int,
 	out_vertices: PackedVector3Array,
 	out_normals: PackedVector3Array,
-	out_uvs: PackedVector2Array,
+	out_body_uvs: PackedVector2Array,
+	out_stamp_uvs: PackedVector2Array,
 	out_colours: PackedColorArray
 ) -> void:
 	if i0 < 0 or i1 < 0 or i2 < 0 or i0 >= vertices.size() or i1 >= vertices.size() or i2 >= vertices.size():
@@ -151,21 +166,29 @@ static func _append_triangle(
 	if face_normal.length_squared() <= EPSILON:
 		return
 	face_normal = face_normal.normalized()
+	var body_face_normal := (vertices[i1] - vertices[i0]).cross(vertices[i2] - vertices[i0])
+	if body_face_normal.length_squared() <= EPSILON:
+		body_face_normal = Vector3(0.0, 1.0, 0.0)
+	else:
+		body_face_normal = body_face_normal.normalized()
 	var n0 := _normal_at(body_to_car, normals, i0, face_normal)
 	var n1 := _normal_at(body_to_car, normals, i1, face_normal)
 	var n2 := _normal_at(body_to_car, normals, i2, face_normal)
+	var bn0 := _body_normal_at(normals, i0, body_face_normal)
+	var bn1 := _body_normal_at(normals, i1, body_face_normal)
+	var bn2 := _body_normal_at(normals, i2, body_face_normal)
 	var polygon := [
-		{"projector_pos": car_to_projector * p0, "car_pos": p0, "normal": n0},
-		{"projector_pos": car_to_projector * p1, "car_pos": p1, "normal": n1},
-		{"projector_pos": car_to_projector * p2, "car_pos": p2, "normal": n2},
+		{"projector_pos": car_to_projector * p0, "car_pos": p0, "body_pos": vertices[i0], "normal": n0, "body_normal": bn0, "body_uv": _uv_at(body_uvs, i0)},
+		{"projector_pos": car_to_projector * p1, "car_pos": p1, "body_pos": vertices[i1], "normal": n1, "body_normal": bn1, "body_uv": _uv_at(body_uvs, i1)},
+		{"projector_pos": car_to_projector * p2, "car_pos": p2, "body_pos": vertices[i2], "normal": n2, "body_normal": bn2, "body_uv": _uv_at(body_uvs, i2)},
 	]
 	polygon = _clip_polygon_to_box(polygon, clip_min, clip_max)
 	if polygon.size() < 3:
 		return
 	for i in range(1, polygon.size() - 1):
-		_emit_vertex(polygon[0], clip_min, clip_max, atlas_rect, colour, out_vertices, out_normals, out_uvs, out_colours)
-		_emit_vertex(polygon[i], clip_min, clip_max, atlas_rect, colour, out_vertices, out_normals, out_uvs, out_colours)
-		_emit_vertex(polygon[i + 1], clip_min, clip_max, atlas_rect, colour, out_vertices, out_normals, out_uvs, out_colours)
+		_emit_vertex(polygon[0], car_to_body, clip_min, clip_max, atlas_rect, colour, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
+		_emit_vertex(polygon[i], car_to_body, clip_min, clip_max, atlas_rect, colour, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
+		_emit_vertex(polygon[i + 1], car_to_body, clip_min, clip_max, atlas_rect, colour, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours)
 
 static func _clip_polygon_to_box(polygon: Array, clip_min: Vector3, clip_max: Vector3) -> Array:
 	polygon = _clip_polygon_axis(polygon, 0, clip_min.x, true)
@@ -213,21 +236,32 @@ static func _interpolate_clip_vertex(a: Dictionary, b: Dictionary, axis: int, pl
 		normal = a_normal
 	var a_car_pos: Vector3 = a["car_pos"]
 	var b_car_pos: Vector3 = b["car_pos"]
+	var a_body_pos: Vector3 = a["body_pos"]
+	var b_body_pos: Vector3 = b["body_pos"]
+	var a_body_normal: Vector3 = a["body_normal"]
+	var b_body_normal: Vector3 = b["body_normal"]
+	var a_body_uv: Vector2 = a["body_uv"]
+	var b_body_uv: Vector2 = b["body_uv"]
 	return {
 		"projector_pos": a_pos.lerp(b_pos, t),
 		"car_pos": a_car_pos.lerp(b_car_pos, t),
+		"body_pos": a_body_pos.lerp(b_body_pos, t),
 		"normal": normal.normalized(),
+		"body_normal": a_body_normal.lerp(b_body_normal, t).normalized(),
+		"body_uv": a_body_uv.lerp(b_body_uv, t),
 	}
 
 static func _emit_vertex(
 	vertex: Dictionary,
+	car_to_body: Transform3D,
 	clip_min: Vector3,
 	clip_max: Vector3,
 	atlas_rect: Rect2,
 	colour: Color,
 	out_vertices: PackedVector3Array,
 	out_normals: PackedVector3Array,
-	out_uvs: PackedVector2Array,
+	out_body_uvs: PackedVector2Array,
+	out_stamp_uvs: PackedVector2Array,
 	out_colours: PackedColorArray
 ) -> void:
 	var normal: Vector3 = vertex["normal"]
@@ -236,9 +270,10 @@ static func _emit_vertex(
 	var u := inverse_lerp(clip_min.x, clip_max.x, projector_pos.x)
 	var v := inverse_lerp(clip_max.y, clip_min.y, projector_pos.y)
 	var atlas_uv := atlas_rect.position + Vector2(u, v) * atlas_rect.size
-	out_vertices.append(car_pos + normal * SURFACE_OFFSET)
-	out_normals.append(normal)
-	out_uvs.append(atlas_uv)
+	out_vertices.append(car_to_body * (car_pos + normal * SURFACE_OFFSET))
+	out_normals.append(vertex["body_normal"])
+	out_body_uvs.append(vertex["body_uv"])
+	out_stamp_uvs.append(atlas_uv)
 	out_colours.append(colour)
 
 static func _normal_at(body_to_car: Transform3D, normals: PackedVector3Array, index: int, fallback: Vector3) -> Vector3:
@@ -248,6 +283,19 @@ static func _normal_at(body_to_car: Transform3D, normals: PackedVector3Array, in
 	if normal.length_squared() <= EPSILON:
 		return fallback
 	return normal.normalized()
+
+static func _body_normal_at(normals: PackedVector3Array, index: int, fallback: Vector3) -> Vector3:
+	if index < 0 or index >= normals.size():
+		return fallback
+	var normal := normals[index]
+	if normal.length_squared() <= EPSILON:
+		return fallback
+	return normal.normalized()
+
+static func _uv_at(uvs: PackedVector2Array, index: int) -> Vector2:
+	if index < 0 or index >= uvs.size():
+		return Vector2.ZERO
+	return uvs[index]
 
 static func _body_to_car_transform(body_mesh: MeshInstance3D, car_root: Node3D) -> Transform3D:
 	if car_root == null:
@@ -279,6 +327,13 @@ static func _surface_normals(arrays: Array) -> PackedVector3Array:
 	if typeof(arrays[Mesh.ARRAY_NORMAL]) != TYPE_PACKED_VECTOR3_ARRAY:
 		return PackedVector3Array()
 	return arrays[Mesh.ARRAY_NORMAL]
+
+static func _surface_uvs(arrays: Array) -> PackedVector2Array:
+	if arrays.size() <= Mesh.ARRAY_TEX_UV:
+		return PackedVector2Array()
+	if typeof(arrays[Mesh.ARRAY_TEX_UV]) != TYPE_PACKED_VECTOR2_ARRAY:
+		return PackedVector2Array()
+	return arrays[Mesh.ARRAY_TEX_UV]
 
 static func _surface_indices(arrays: Array) -> PackedInt32Array:
 	if arrays.size() <= Mesh.ARRAY_INDEX:

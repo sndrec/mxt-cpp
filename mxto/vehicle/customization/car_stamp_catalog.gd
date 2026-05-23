@@ -2,12 +2,14 @@ class_name CarStampCatalog
 extends Resource
 
 const CarStampEntry = preload("res://vehicle/customization/car_stamp_entry.gd")
+const STAMP_MULTIPLY_SHADER = preload("res://vehicle/customization/car_stamp_multiply.gdshader")
 
 @export var atlas_texture: Texture2D
 @export var atlas_grid_size: Vector2i = Vector2i.ONE
 @export var entries: Array[CarStampEntry] = []
 
 var _entry_by_id: Dictionary = {}
+var _preview_texture_by_id: Dictionary = {}
 
 func get_entry(stamp_id: String) -> CarStampEntry:
 	_ensure_index()
@@ -17,7 +19,19 @@ func get_preview_texture(stamp_id: String) -> Texture2D:
 	var entry := get_entry(stamp_id)
 	if entry == null:
 		return null
-	return entry.preview_texture
+	if _preview_texture_by_id.has(stamp_id):
+		return _preview_texture_by_id[stamp_id]
+	if atlas_texture == null:
+		return null
+	var atlas_rect := get_entry_atlas_rect(entry)
+	if atlas_rect.size.x <= 0.0 or atlas_rect.size.y <= 0.0:
+		return null
+	var atlas_size := Vector2(atlas_texture.get_width(), atlas_texture.get_height())
+	var preview := AtlasTexture.new()
+	preview.atlas = atlas_texture
+	preview.region = Rect2(atlas_rect.position * atlas_size, atlas_rect.size * atlas_size)
+	_preview_texture_by_id[stamp_id] = preview
+	return preview
 
 func get_entry_atlas_rect(entry: CarStampEntry) -> Rect2:
 	if entry == null:
@@ -27,13 +41,16 @@ func get_entry_atlas_rect(entry: CarStampEntry) -> Rect2:
 func get_atlas_rect(stamp_id: String) -> Rect2:
 	return get_entry_atlas_rect(get_entry(stamp_id))
 
-func create_stamp_material() -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.albedo_texture = atlas_texture
-	material.vertex_color_use_as_albedo = true
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+func create_stamp_material(base_material: Material = null) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = STAMP_MULTIPLY_SHADER
+	material.set_shader_parameter("stamp_atlas", atlas_texture)
+	var base_shader_material := base_material as ShaderMaterial
+	if base_shader_material != null:
+		for parameter in ["in_albedo", "in_normal", "in_lightwarp", "in_specwarp"]:
+			var value = base_shader_material.get_shader_parameter(parameter)
+			if value != null:
+				material.set_shader_parameter(parameter, value)
 	return material
 
 func has_stamp(stamp_id: String) -> bool:
@@ -41,6 +58,7 @@ func has_stamp(stamp_id: String) -> bool:
 
 func rebuild_index() -> void:
 	_entry_by_id.clear()
+	_preview_texture_by_id.clear()
 	for entry in entries:
 		if entry == null or !entry.is_valid_entry():
 			continue

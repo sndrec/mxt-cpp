@@ -51,6 +51,7 @@ var sticker_selectors: Array[OptionButton] = []
 var updating_colour_controls := false
 var updating_stamp_controls := false
 var stamp_layer_buttons: Array[Button] = []
+var stamp_layer_colour_pickers: Array[ColorPickerButton] = []
 var preview_container: SubViewportContainer
 var preview_viewport: SubViewport
 var preview_root: Node3D
@@ -111,13 +112,21 @@ func _build_stamp_layer_buttons() -> void:
 	if stamp_layer_list == null:
 		return
 	stamp_layer_buttons.clear()
+	stamp_layer_colour_pickers.clear()
 	var count := mini(stamp_layer_list.get_child_count(), CarLivery.MAX_STAMPS)
 	for layer in range(count):
-		var button := stamp_layer_list.get_child(layer) as Button
+		var row := stamp_layer_list.get_child(layer)
+		var button := row as Button
+		if button == null:
+			button = row.get_node_or_null("StampButton") as Button
 		if button == null:
 			continue
+		var colour_picker := row.get_node_or_null("ColourPicker") as ColorPickerButton
+		if colour_picker != null:
+			colour_picker.color_changed.connect(_on_stamp_colour_changed.bind(layer))
 		button.pressed.connect(_on_stamp_layer_pressed.bind(layer))
 		stamp_layer_buttons.append(button)
+		stamp_layer_colour_pickers.append(colour_picker)
 
 func _setup_stamp_menus() -> void:
 	stamp_action_menu.clear()
@@ -448,15 +457,29 @@ func _refresh_stamp_controls() -> void:
 	updating_stamp_controls = true
 	for layer in range(stamp_layer_buttons.size()):
 		var button := stamp_layer_buttons[layer]
+		var colour_picker: ColorPickerButton = stamp_layer_colour_pickers[layer] if layer < stamp_layer_colour_pickers.size() else null
 		var stamp := _stamp_for_layer(layer)
+		button.modulate = Color.WHITE
+		button.expand_icon = true
 		if stamp == null:
-			button.text = "%02d  EMPTY" % [layer + 1]
-			button.modulate = Color(0.72, 0.72, 0.72, 1.0)
+			button.text = "EMPTY"
+			button.icon = null
+			if colour_picker != null:
+				colour_picker.color = Color(0.45, 0.45, 0.45, 1.0)
+				colour_picker.disabled = true
 		else:
 			var label := _stamp_display_name(stamp.stamp_id)
-			button.text = "%02d  %s" % [layer + 1, label]
-			button.modulate = stamp.colour
+			button.text = label
+			button.icon = _stamp_preview_texture(stamp.stamp_id)
+			if colour_picker != null:
+				colour_picker.disabled = false
+				colour_picker.color = stamp.colour
 	updating_stamp_controls = false
+
+func _stamp_preview_texture(stamp_id: String) -> Texture2D:
+	if stamp_catalog == null:
+		return null
+	return stamp_catalog.get_preview_texture(stamp_id)
 
 func _stamp_display_name(stamp_id: String) -> String:
 	if stamp_catalog != null:
@@ -464,6 +487,16 @@ func _stamp_display_name(stamp_id: String) -> String:
 		if entry != null and entry.display_name != "":
 			return entry.display_name
 	return stamp_id
+
+func _on_stamp_colour_changed(colour: Color, layer: int) -> void:
+	if updating_stamp_controls:
+		return
+	var stamp := _stamp_for_layer(layer)
+	if stamp == null:
+		return
+	stamp.colour = colour
+	_save_livery_for_selected_car()
+	_refresh_stamp_controls()
 
 func _selected_stamp() -> CarLiveryStamp:
 	return _stamp_for_layer(selected_stamp_index)

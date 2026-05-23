@@ -3,7 +3,6 @@ extends Resource
 
 @export var stamp_id: String = ""
 @export var display_name: String = ""
-@export var preview_texture: Texture2D
 @export var atlas_tile_position: Vector2i = Vector2i.ZERO
 @export var atlas_tile_size: Vector2i = Vector2i.ONE
 

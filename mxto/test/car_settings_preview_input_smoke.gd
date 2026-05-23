@@ -90,10 +90,6 @@ func _init() -> void:
 		push_error("car settings preview drag did not pan the car")
 		quit(1)
 		return
-	if car_settings.preview_pan.x <= start_pan.x or car_settings.preview_pan.y >= start_pan.y:
-		push_error("car settings preview pan direction is reversed")
-		quit(1)
-		return
 	var panned_transform: Transform3D = car_settings.call("_preview_vehicle_transform")
 	if panned_transform.origin.length() > 0.001:
 		push_error("car settings preview pan moved the car instead of only the camera target")

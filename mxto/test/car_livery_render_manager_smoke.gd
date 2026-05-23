@@ -44,6 +44,16 @@ func _init() -> void:
 		return
 
 	var stamp_pass: Dictionary = archetype[CarRenderManager.PASS_STAMP]
+	var stamp_node: MultiMeshInstance3D = stamp_pass["node"]
+	var stamp_material := stamp_node.material_override as ShaderMaterial
+	if stamp_material == null or stamp_material.get_shader_parameter("stamp_atlas") == null:
+		push_error("stamp pass should use the multiplicative stamp shader material")
+		quit(1)
+		return
+	if stamp_material.get_shader_parameter("in_albedo") == null or stamp_material.get_shader_parameter("in_paint_mask") != null:
+		push_error("stamp pass should sample base albedo without receiving the paint mask")
+		quit(1)
+		return
 	var stamp_multimesh: MultiMesh = stamp_pass["multimesh"]
 	if stamp_multimesh.mesh == null or stamp_multimesh.mesh.get_surface_count() != 1:
 		push_error("stamp pass should generate one combined stamp mesh surface")
