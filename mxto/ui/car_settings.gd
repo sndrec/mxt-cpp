@@ -90,6 +90,11 @@ var custom_stamp_blobs: Array = []
 var custom_stamp_preview_textures := {}
 var preview_custom_stamp_atlas: Texture2D = null
 var preview_custom_stamp_region_texture: Texture2D = null
+var preview_custom_stamp_atlas_thread: Thread = null
+var preview_custom_stamp_atlas_active_revision := 0
+var preview_custom_stamp_atlas_latest_revision := 0
+var preview_custom_stamp_atlas_queued_records: Array = []
+var preview_custom_stamp_atlas_has_queued := false
 var custom_painter_size := Vector2i(32, 32)
 var custom_painter_indices := PackedByteArray()
 var custom_painter_palette := PackedColorArray()
@@ -456,7 +461,11 @@ func _update_livery_lock_state() -> void:
 
 func _process(_delta: float) -> void:
 	if visible:
+		_poll_preview_custom_stamp_atlas_thread()
 		_update_livery_lock_state()
+
+func _exit_tree() -> void:
+	_finish_preview_custom_stamp_atlas_thread()
 
 func _sync_livery_to_player_settings() -> void:
 	if player_settings.car_definition_path == "" or !current_livery_enabled:
@@ -660,6 +669,9 @@ func _preview_render_settings(livery: CarLivery) -> Dictionary:
 func _refresh_preview_custom_stamp_atlas() -> bool:
 	preview_custom_stamp_atlas = null
 	preview_custom_stamp_region_texture = null
+	preview_custom_stamp_atlas_latest_revision += 1
+	var atlas_revision := preview_custom_stamp_atlas_latest_revision
+	_apply_preview_custom_stamp_atlas_texture()
 	if current_livery == null:
 		_update_custom_stamp_budget_overlay()
 		return true
@@ -673,17 +685,72 @@ func _refresh_preview_custom_stamp_atlas() -> bool:
 	if placements.is_empty():
 		return true
 	CustomStampPacker.apply_placements_to_livery(current_livery, placements, Vector2i.ZERO, CustomStampAtlasBuilder.ATLAS_SIZE)
-	var atlas_build := CustomStampAtlasBuilder.build_atlas([{
+	_request_preview_custom_stamp_atlas_build([{
 		"player_id": 0,
 		"region_origin": Vector2i.ZERO,
 		"placements": placements,
 		"blobs": payload.get("blobs", []),
-	}])
+	}], atlas_revision)
+	return true
+
+func _request_preview_custom_stamp_atlas_build(player_records: Array, revision: int) -> void:
+	if preview_custom_stamp_atlas_thread != null and preview_custom_stamp_atlas_thread.is_alive():
+		preview_custom_stamp_atlas_queued_records = player_records.duplicate(true)
+		preview_custom_stamp_atlas_has_queued = true
+		return
+	_start_preview_custom_stamp_atlas_thread(player_records, revision)
+
+func _start_preview_custom_stamp_atlas_thread(player_records: Array, revision: int) -> void:
+	if preview_custom_stamp_atlas_thread != null:
+		_poll_preview_custom_stamp_atlas_thread(true)
+	preview_custom_stamp_atlas_active_revision = revision
+	preview_custom_stamp_atlas_thread = Thread.new()
+	var err := preview_custom_stamp_atlas_thread.start(_build_preview_custom_stamp_atlas_image_thread.bind(player_records.duplicate(true), revision))
+	if err != OK:
+		preview_custom_stamp_atlas_thread = null
+		push_warning("Failed to start custom stamp atlas thread: %s" % err)
+		var atlas_build := CustomStampAtlasBuilder.build_atlas_image(player_records)
+		_apply_preview_custom_stamp_atlas_build_result(atlas_build, revision)
+
+func _build_preview_custom_stamp_atlas_image_thread(player_records: Array, revision: int) -> Dictionary:
+	var result := CustomStampAtlasBuilder.build_atlas_image(player_records)
+	result["revision"] = revision
+	return result
+
+func _poll_preview_custom_stamp_atlas_thread(force_wait := false) -> void:
+	if preview_custom_stamp_atlas_thread == null:
+		return
+	if !force_wait and preview_custom_stamp_atlas_thread.is_alive():
+		return
+	var result = preview_custom_stamp_atlas_thread.wait_to_finish()
+	preview_custom_stamp_atlas_thread = null
+	if typeof(result) == TYPE_DICTIONARY:
+		_apply_preview_custom_stamp_atlas_build_result(result, int(result.get("revision", preview_custom_stamp_atlas_active_revision)))
+	if preview_custom_stamp_atlas_has_queued:
+		var queued := preview_custom_stamp_atlas_queued_records
+		preview_custom_stamp_atlas_queued_records = []
+		preview_custom_stamp_atlas_has_queued = false
+		_start_preview_custom_stamp_atlas_thread(queued, preview_custom_stamp_atlas_latest_revision)
+
+func _finish_preview_custom_stamp_atlas_thread() -> void:
+	preview_custom_stamp_atlas_has_queued = false
+	preview_custom_stamp_atlas_queued_records = []
+	_poll_preview_custom_stamp_atlas_thread(true)
+
+func _apply_preview_custom_stamp_atlas_build_result(atlas_build: Dictionary, revision: int) -> void:
+	if revision != preview_custom_stamp_atlas_latest_revision:
+		return
 	if !bool(atlas_build.get("ok", false)):
 		push_warning("Failed to build garage custom stamp atlas: %s" % str(atlas_build.get("error", "unknown error")))
-		return false
-	preview_custom_stamp_atlas = atlas_build.get("texture", null) as Texture2D
-	return true
+		return
+	var image := atlas_build.get("image", null) as Image
+	preview_custom_stamp_atlas = CustomStampAtlasBuilder.texture_from_image(image)
+	_apply_preview_custom_stamp_atlas_texture()
+
+func _apply_preview_custom_stamp_atlas_texture() -> void:
+	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
+		if manager != null:
+			manager.set_custom_stamp_atlas(preview_custom_stamp_atlas)
 
 func _update_custom_stamp_budget_overlay(payload: Dictionary = {}, ok := true) -> void:
 	if custom_stamp_budget_label == null or custom_stamp_atlas_preview == null:

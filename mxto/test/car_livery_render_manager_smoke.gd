@@ -46,7 +46,7 @@ func _init() -> void:
 	var stamp_pass: Dictionary = archetype[CarRenderManager.PASS_STAMP]
 	var stamp_node: MultiMeshInstance3D = stamp_pass["node"]
 	var stamp_material := stamp_node.material_override as ShaderMaterial
-	if stamp_material == null or stamp_material.get_shader_parameter("stamp_atlas") == null:
+	if stamp_material == null or stamp_material.get_shader_parameter("base_stamp_atlas") == null or stamp_material.get_shader_parameter("custom_stamp_atlas") == null:
 		push_error("stamp pass should use the multiplicative stamp shader material")
 		quit(1)
 		return

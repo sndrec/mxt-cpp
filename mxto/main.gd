@@ -68,6 +68,7 @@ const PlayerInputClass = preload("res://player/player_input.gd")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
+const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
@@ -1498,10 +1499,20 @@ func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -
 	if racer_ids.is_empty() or racer_settings.is_empty():
 		return null
 	var manifests := {}
-	for racer_id in racer_ids:
-		var manifest := network_manager.get_custom_stamp_manifest(int(racer_id))
+	var local_payloads := {}
+	for i in range(mini(racer_ids.size(), racer_settings.size())):
+		var racer_id := int(racer_ids[i])
+		var manifest := network_manager.get_custom_stamp_manifest(racer_id)
+		if manifest.is_empty():
+			var payload := _build_local_custom_stamp_payload_for_race(racer_settings[i])
+			if bool(payload.get("ok", false)):
+				manifest = payload.get("manifest", [])
+				if !manifest.is_empty():
+					local_payloads[racer_id] = payload
+			else:
+				push_warning("Failed to prepare local custom stamps for race: %s" % str(payload.get("error", "unknown error")))
 		if !manifest.is_empty():
-			manifests[int(racer_id)] = manifest
+			manifests[racer_id] = manifest
 	if manifests.is_empty():
 		return null
 	var region_build := CustomStampAtlasBuilder.allocate_player_regions(racer_ids, manifests)
@@ -1525,7 +1536,7 @@ func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -
 			var stamp_hash: String = str(entry.get("hash", ""))
 			if stamp_hash == "":
 				continue
-			var blob := network_manager.get_custom_stamp_blob(stamp_hash)
+			var blob = _race_custom_stamp_blob_for_hash(player_id, stamp_hash, local_payloads)
 			if blob == null:
 				push_warning("Missing custom stamp blob for race atlas: %s" % stamp_hash)
 				return null
@@ -1552,11 +1563,28 @@ func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -
 		})
 	if player_records.is_empty():
 		return null
-	var atlas_build := CustomStampAtlasBuilder.build_atlas(player_records)
+	var atlas_build := CustomStampAtlasBuilder.build_atlas_image(player_records)
 	if !bool(atlas_build.get("ok", false)):
 		push_warning("Failed to build custom stamp race atlas: %s" % str(atlas_build.get("error", "unknown error")))
 		return null
-	return atlas_build.get("texture", null) as Texture2D
+	return CustomStampAtlasBuilder.texture_from_image(atlas_build.get("image", null) as Image)
+
+func _build_local_custom_stamp_payload_for_race(settings) -> Dictionary:
+	var ps := settings as PlayerSettings
+	if ps == null or ps.car_livery.is_empty():
+		return {"ok": true, "manifest": [], "blobs": []}
+	var livery := CarLivery.new()
+	livery.from_dict(ps.car_livery)
+	livery.car_definition_path = ps.car_definition_path
+	return CustomStampStore.build_livery_payload(livery)
+
+func _race_custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_payloads: Dictionary):
+	if local_payloads.has(player_id):
+		var payload: Dictionary = local_payloads[player_id]
+		for blob in payload.get("blobs", []):
+			if blob != null and blob.stamp_hash == stamp_hash:
+				return blob
+	return network_manager.get_custom_stamp_blob(stamp_hash)
 
 func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_origin: Vector2i) -> void:
 	var ps := settings as PlayerSettings

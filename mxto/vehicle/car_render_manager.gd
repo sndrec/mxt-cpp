@@ -55,6 +55,7 @@ func configure_manual(definitions: Array, player_settings: Array = []) -> void:
 
 func set_custom_stamp_atlas(texture: Texture2D) -> void:
 	custom_stamp_atlas_texture = texture
+	_update_stamp_material_custom_atlases()
 
 func _configure_archetypes(definitions: Array, player_settings: Array = []) -> void:
 	car_archetype_indices.resize(definitions.size())
@@ -260,6 +261,19 @@ func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, 
 		var node: MultiMeshInstance3D = pass_data["node"]
 		node.visible = false
 	return pass_data
+
+func _update_stamp_material_custom_atlases() -> void:
+	for archetype in archetypes:
+		if !archetype.has(PASS_STAMP):
+			continue
+		var pass_data: Dictionary = archetype[PASS_STAMP]
+		var node := pass_data.get("node", null) as MultiMeshInstance3D
+		if node == null:
+			continue
+		var material := node.material_override as ShaderMaterial
+		if material == null:
+			continue
+		material.set_shader_parameter("custom_stamp_atlas", custom_stamp_atlas_texture)
 
 func update_stamp_layer_colour(layer: int, colour: Color) -> void:
 	for archetype in archetypes:

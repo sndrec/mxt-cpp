@@ -29,7 +29,7 @@ static func allocate_player_regions(player_ids: Array, manifests: Dictionary) ->
 		}
 	return {"ok": true, "regions": regions}
 
-static func build_atlas(player_records: Array, authored_palettes: Dictionary = {}) -> Dictionary:
+static func build_atlas_image(player_records: Array, authored_palettes: Dictionary = {}) -> Dictionary:
 	var atlas := Image.create(ATLAS_SIZE.x, ATLAS_SIZE.y, false, Image.FORMAT_RGBA8)
 	atlas.fill(Color(1.0, 1.0, 1.0, 0.0))
 	var rects_by_player := {}
@@ -60,7 +60,19 @@ static func build_atlas(player_records: Array, authored_palettes: Dictionary = {
 			}
 		if player_id >= 0:
 			rects_by_player[player_id] = player_rects
-	return {"ok": true, "image": atlas, "texture": ImageTexture.create_from_image(atlas), "rects_by_player": rects_by_player}
+	return {"ok": true, "image": atlas, "rects_by_player": rects_by_player}
+
+static func texture_from_image(image: Image) -> Texture2D:
+	if image == null:
+		return null
+	return ImageTexture.create_from_image(image)
+
+static func build_atlas(player_records: Array, authored_palettes: Dictionary = {}) -> Dictionary:
+	var atlas_build := build_atlas_image(player_records, authored_palettes)
+	if !bool(atlas_build.get("ok", false)):
+		return atlas_build
+	atlas_build["texture"] = texture_from_image(atlas_build.get("image", null) as Image)
+	return atlas_build
 
 static func _region_size_for_manifest(manifest: Array) -> Vector2i:
 	var out := Vector2i.ZERO
