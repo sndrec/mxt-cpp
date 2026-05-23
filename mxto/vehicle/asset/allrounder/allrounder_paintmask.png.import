@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://hcmccr3divqe"
-path="res://.godot/imported/allrounder_normal.png-ee51b73db66c917cb63cd2c78bca4a78.ctex"
+uid="uid://y5b0x6202s7l"
+path="res://.godot/imported/allrounder_paintmask.png-498d0d58f0d0a8fcd63e9d9f4b137aa4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://vehicle/asset/allrounder/allrounder_normal.png"
-dest_files=["res://.godot/imported/allrounder_normal.png-ee51b73db66c917cb63cd2c78bca4a78.ctex"]
+source_file="res://vehicle/asset/allrounder/allrounder_paintmask.png"
+dest_files=["res://.godot/imported/allrounder_paintmask.png-498d0d58f0d0a8fcd63e9d9f4b137aa4.ctex"]
 
 [params]
 

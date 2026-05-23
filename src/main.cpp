@@ -4502,12 +4502,14 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_outline_multimeshes.clear();
 	render_outline_main_multimeshes.clear();
 	render_shadow_multimeshes.clear();
+	render_stamp_multimeshes.clear();
 	render_thruster_multimeshes.clear();
 	render_thruster_current_thrust.clear();
 	render_car_local_transforms.clear();
 	render_outline_local_transforms.clear();
 	render_outline_main_local_transforms.clear();
 	render_shadow_local_transforms.clear();
+	render_stamp_local_transforms.clear();
 	render_thruster_local_transforms.clear();
 	render_car_archetype_indices.clear();
 	render_car_slots.clear();
@@ -4546,11 +4548,13 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	godot::Array outline_multimeshes = bindings.get("outline_multimeshes", godot::Array());
 	godot::Array outline_main_multimeshes = bindings.get("outline_main_multimeshes", godot::Array());
 	godot::Array shadow_multimeshes = bindings.get("shadow_multimeshes", godot::Array());
+	godot::Array stamp_multimeshes = bindings.get("stamp_multimeshes", godot::Array());
 	godot::Array thruster_multimeshes = bindings.get("thruster_multimeshes", godot::Array());
 	godot::Array local_transforms = bindings.get("local_transforms", godot::Array());
 	godot::Array outline_local_transforms = bindings.get("outline_local_transforms", godot::Array());
 	godot::Array outline_main_local_transforms = bindings.get("outline_main_local_transforms", godot::Array());
 	godot::Array shadow_local_transforms = bindings.get("shadow_local_transforms", godot::Array());
+	godot::Array stamp_local_transforms = bindings.get("stamp_local_transforms", godot::Array());
 	godot::Array thruster_local_transforms = bindings.get("thruster_local_transforms", godot::Array());
 	godot::PackedInt32Array archetype_indices = bindings.get("archetype_indices", godot::PackedInt32Array());
 	godot::PackedInt32Array slots = bindings.get("slots", godot::PackedInt32Array());
@@ -4559,11 +4563,13 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 	render_outline_multimeshes.reserve(multimeshes.size());
 	render_outline_main_multimeshes.reserve(multimeshes.size());
 	render_shadow_multimeshes.reserve(shadow_multimeshes.size());
+	render_stamp_multimeshes.reserve(stamp_multimeshes.size());
 	render_thruster_multimeshes.reserve(thruster_multimeshes.size());
 	render_car_local_transforms.reserve(local_transforms.size());
 	render_outline_local_transforms.reserve(local_transforms.size());
 	render_outline_main_local_transforms.reserve(local_transforms.size());
 	render_shadow_local_transforms.reserve(shadow_local_transforms.size());
+	render_stamp_local_transforms.reserve(stamp_local_transforms.size());
 	render_thruster_local_transforms.reserve(thruster_local_transforms.size());
 	for (int i = 0; i < multimeshes.size(); ++i) {
 		godot::Ref<godot::MultiMesh> multimesh = multimeshes[i];
@@ -4583,6 +4589,11 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 			shadow_multimesh = shadow_multimeshes[i];
 		}
 		render_shadow_multimeshes.push_back(shadow_multimesh);
+		godot::Ref<godot::MultiMesh> stamp_multimesh;
+		if (i < stamp_multimeshes.size()) {
+			stamp_multimesh = stamp_multimeshes[i];
+		}
+		render_stamp_multimeshes.push_back(stamp_multimesh);
 		godot::Ref<godot::MultiMesh> thruster_multimesh;
 		if (i < thruster_multimeshes.size()) {
 			thruster_multimesh = thruster_multimeshes[i];
@@ -4607,6 +4618,11 @@ void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
 			render_shadow_local_transforms.push_back(sim_transform(shadow_local_transforms[i]));
 		} else {
 			render_shadow_local_transforms.push_back(SimTransform());
+		}
+		if (i < stamp_local_transforms.size() && stamp_local_transforms[i].get_type() == godot::Variant::TRANSFORM3D) {
+			render_stamp_local_transforms.push_back(sim_transform(stamp_local_transforms[i]));
+		} else {
+			render_stamp_local_transforms.push_back(SimTransform());
 		}
 		std::vector<SimTransform> local_thrusters;
 		if (i < thruster_local_transforms.size() && thruster_local_transforms[i].get_type() == godot::Variant::ARRAY) {
@@ -5140,20 +5156,6 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_final_prev_transforms[i],
 			render_final_current_transforms[i],
 			alpha);
-		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
-				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
-				render_thruster_multimeshes[archetype].is_valid()) {
-			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
-			const int thruster_count = static_cast<int>(thruster_locals.size());
-			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
-			for (int t = 0; t < thruster_count; ++t) {
-				const int thruster_slot = slot * thruster_count + t;
-				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
-				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
-				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
-				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
-			}
-		}
 		bool visible = true;
 		if (camera) {
 			const SimVec3 camera_to_car = visual_transform.origin - camera_origin;
@@ -5199,6 +5201,28 @@ void GameSim::apply_render_multimeshes(float alpha)
 			render_car_multimeshes[archetype]->set_instance_color(visible_slot, body_overlay);
 			render_car_multimeshes[archetype]->set_instance_custom_data(visible_slot, godot::Color(0, 0, 0, 1));
 			}
+		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) &&
+				archetype < static_cast<int>(render_thruster_local_transforms.size()) &&
+				render_thruster_multimeshes[archetype].is_valid()) {
+			const std::vector<SimTransform>& thruster_locals = render_thruster_local_transforms[archetype];
+			const int thruster_count = static_cast<int>(thruster_locals.size());
+			const float thrust = i < static_cast<int>(render_thruster_current_thrust.size()) ? render_thruster_current_thrust[i] : 0.0f;
+			for (int t = 0; t < thruster_count; ++t) {
+				const int thruster_slot = visible_slot * thruster_count + t;
+				const SimTransform thruster_transform = visual_transform * thruster_locals[t];
+				render_thruster_multimeshes[archetype]->set_instance_transform(thruster_slot, gd_transform(thruster_transform));
+				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
+				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
+			}
+		}
+		if (archetype < static_cast<int>(render_stamp_multimeshes.size()) &&
+				archetype < static_cast<int>(render_stamp_local_transforms.size()) &&
+				render_stamp_multimeshes[archetype].is_valid()) {
+			const SimTransform stamp_transform = visual_transform * render_stamp_local_transforms[archetype];
+			render_stamp_multimeshes[archetype]->set_instance_transform(visible_slot, gd_transform(stamp_transform));
+			render_stamp_multimeshes[archetype]->set_instance_color(visible_slot, godot::Color(1, 1, 1, 1));
+			render_stamp_multimeshes[archetype]->set_instance_custom_data(visible_slot, godot::Color(0, 0, 0, 1));
+		}
 			if (archetype < static_cast<int>(render_outline_multimeshes.size()) &&
 					archetype < static_cast<int>(render_outline_local_transforms.size()) &&
 					render_outline_multimeshes[archetype].is_valid()) {
@@ -5256,8 +5280,15 @@ void GameSim::apply_render_multimeshes(float alpha)
 		if (archetype < static_cast<int>(render_shadow_multimeshes.size()) && render_shadow_multimeshes[archetype].is_valid()) {
 			render_shadow_multimeshes[archetype]->set_visible_instance_count(visible_count);
 		}
+		if (archetype < static_cast<int>(render_stamp_multimeshes.size()) && render_stamp_multimeshes[archetype].is_valid()) {
+			render_stamp_multimeshes[archetype]->set_visible_instance_count(visible_count);
+		}
 		if (archetype < static_cast<int>(render_thruster_multimeshes.size()) && render_thruster_multimeshes[archetype].is_valid()) {
-			const int thruster_instances = render_thruster_multimeshes[archetype]->get_instance_count();
+			int thruster_count = 0;
+			if (archetype < static_cast<int>(render_thruster_local_transforms.size())) {
+				thruster_count = static_cast<int>(render_thruster_local_transforms[archetype].size());
+			}
+			const int thruster_instances = visible_count * thruster_count;
 			render_last_thruster_instances += thruster_instances;
 			render_thruster_multimeshes[archetype]->set_visible_instance_count(thruster_instances);
 		}

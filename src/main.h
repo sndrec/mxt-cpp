@@ -242,11 +242,13 @@ namespace godot {
 		std::vector<godot::Ref<godot::MultiMesh>> render_outline_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_outline_main_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_shadow_multimeshes;
+		std::vector<godot::Ref<godot::MultiMesh>> render_stamp_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_thruster_multimeshes;
 		std::vector<SimTransform> render_car_local_transforms;
 		std::vector<SimTransform> render_outline_local_transforms;
 		std::vector<SimTransform> render_outline_main_local_transforms;
 		std::vector<SimTransform> render_shadow_local_transforms;
+		std::vector<SimTransform> render_stamp_local_transforms;
 		std::vector<std::vector<SimTransform>> render_thruster_local_transforms;
 		std::vector<float> render_thruster_current_thrust;
 		std::vector<int> render_car_archetype_indices;

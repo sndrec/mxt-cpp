@@ -836,6 +836,7 @@ func _submit_lobby_chibi_render(roster: Array) -> void:
 	if lobby_chibi_render_manager == null:
 		return
 	var definitions := []
+	var settings := []
 	var render_cars := []
 	var signature_parts := []
 	for id in roster:
@@ -848,13 +849,14 @@ func _submit_lobby_chibi_render(roster: Array) -> void:
 		if definition == null:
 			continue
 		definitions.append(definition)
+		settings.append(car.player_settings)
 		render_cars.append(car)
-		signature_parts.append(str(id) + ":" + definition.resource_path)
+		signature_parts.append(str(id) + ":" + definition.resource_path + ":" + str(car.get_render_livery_hash()))
 	var signature := ""
 	for part in signature_parts:
 		signature += part + "|"
 	if signature != lobby_chibi_render_signature:
-		lobby_chibi_render_manager.configure_manual(definitions)
+		lobby_chibi_render_manager.configure_manual(definitions, settings)
 		lobby_chibi_render_signature = signature
 	lobby_chibi_render_manager.begin_manual_submit()
 	var render_root_inv := lobby_chibi_render_manager.global_transform.affine_inverse()
@@ -1575,9 +1577,11 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var bumpers_enabled := bool(network_manager.race_options.get("bumpers", false))
 	var bumper_def: CarDefinition = load(BUMPER_DEFINITION_PATH) if bumpers_enabled else null
 	var render_defs := chosen_defs.duplicate()
+	var render_settings := racer_settings.duplicate()
 	if bumper_def != null:
 		for _slot in BUMPER_POOL_SIZE:
 			render_defs.append(bumper_def)
+			render_settings.append({})
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
 	var start_grid_slots := _build_start_grid_slots(racer_ids)
@@ -1594,7 +1598,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		if is_instance_valid(car_node_container.local_visual_car.name_label):
 			car_node_container.local_visual_car.name_label.text = nametag_names[local_player_index]
 	car_render_manager.multimesh_render_enabled = !auto_disable_car_multimesh_mode
-	car_render_manager.configure(render_defs, car_node_container.get_children())
+	car_render_manager.configure(render_defs, car_node_container.get_children(), render_settings)
 	for p in players:
 		if p != null:
 			p.queue_free()

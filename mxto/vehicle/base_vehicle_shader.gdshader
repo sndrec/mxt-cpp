@@ -7,7 +7,12 @@ uniform sampler2D in_lightwarp : filter_nearest_mipmap_anisotropic, repeat_disab
 uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
+uniform sampler2D in_paint_mask : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform vec3 in_overlay_colour : source_color;
+uniform float livery_colour_strength = 0.0;
+uniform vec3 livery_primary_colour : source_color = vec3(1.0, 1.0, 1.0);
+uniform vec3 livery_secondary_colour : source_color = vec3(1.0, 1.0, 1.0);
+uniform vec3 livery_accent_colour : source_color = vec3(1.0, 1.0, 1.0);
 
 void vertex() {
 	TANGENT = vec3(1.0, 0.0, 0.0);
@@ -15,27 +20,8 @@ void vertex() {
 	NORMAL = vec3(0.0, 1.0, 0.0);
 }
 
-float fresnel(float amount, vec3 normal, vec3 view)
-{
+float fresnel(float amount, vec3 normal, vec3 view) {
 	return pow((1.0 - clamp(dot(normalize(normal), normalize(view)), 0.0, 1.0 )), amount);
-}
-
-vec3 rgb2hsv(vec3 c)
-{
-    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
-    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
-    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
-
-    float d = q.x - min(q.w, q.y);
-    float e = 1.0e-10;
-    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
-}
-
-vec3 hsv2rgb(vec3 c)
-{
-    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
-    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
 }
 
 void fragment() {
@@ -45,10 +31,18 @@ void fragment() {
 	//vec3 normal_4 = texture(in_normal, UV + vec2(-0.001, -0.002)).rgb * 2.0 - 1.0;
 	//vec3 normal_combined = normal_1 + normal_2 + normal_3 + normal_4;
 	NORMAL = normalize(TANGENT * normal_1.x + BINORMAL * normal_1.y + NORMAL * normal_1.z);
-	vec3 in_colour = texture(in_albedo, UV).rgb;
-	vec3 hsv_colour = rgb2hsv(in_colour);
-	hsv_colour.y *= 1.3;
-	vec3 final_colour = hsv2rgb(hsv_colour);
+	vec3 base_colour = texture(in_albedo, UV).rgb;
+	vec3 paint_mask = clamp(texture(in_paint_mask, UV).rgb, vec3(0.0), vec3(1.0));
+	float mask_sum = paint_mask.r + paint_mask.g + paint_mask.b;
+	vec3 mask_weights = paint_mask / max(mask_sum, 0.0001);
+	float paint_coverage = clamp(mask_sum, 0.0, 1.0);
+	float base_value = dot(base_colour, vec3(0.299, 0.587, 0.114));
+	vec3 paint_colour =
+		livery_primary_colour * mask_weights.r +
+		livery_secondary_colour * mask_weights.g +
+		livery_accent_colour * mask_weights.b;
+	vec3 painted_colour = base_value * paint_colour * 1.25;
+	vec3 final_colour = mix(base_colour, painted_colour, clamp(livery_colour_strength, 0.0, 1.0) * paint_coverage);
 	ALBEDO = final_colour;// * fres;
 	EMISSION = in_overlay_colour + COLOR.rgb;
 }

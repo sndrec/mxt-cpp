@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://hcmccr3divqe"
-path="res://.godot/imported/allrounder_normal.png-ee51b73db66c917cb63cd2c78bca4a78.ctex"
+uid="uid://dbxsie240jgnk"
+path="res://.godot/imported/stamp_atlas.png-4e892cbb29853fdfebc85ab3bd612cca.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://vehicle/asset/allrounder/allrounder_normal.png"
-dest_files=["res://.godot/imported/allrounder_normal.png-ee51b73db66c917cb63cd2c78bca4a78.ctex"]
+source_file="res://vehicle/customization/stamp_atlas.png"
+dest_files=["res://.godot/imported/stamp_atlas.png-4e892cbb29853fdfebc85ab3bd612cca.ctex"]
 
 [params]
 
@@ -23,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
@@ -37,4 +37,4 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=0
+detect_3d/compress_to=1

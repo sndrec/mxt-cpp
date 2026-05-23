@@ -3,18 +3,12 @@
 [ext_resource type="ArrayMesh" uid="uid://domr266scooed" path="res://vehicle/asset/allrounder/mesh.obj" id="1_fag7k"]
 [ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_g3l6s"]
 [ext_resource type="Texture2D" uid="uid://hcmccr3divqe" path="res://vehicle/asset/allrounder/allrounder_normal.png" id="2_g3l6s"]
+[ext_resource type="Texture2D" uid="uid://c41heyo0h6o2i" path="res://vehicle/asset/allrounder/allrounder_albedo.png" id="2_ysk1q"]
+[ext_resource type="Texture2D" uid="uid://y5b0x6202s7l" path="res://vehicle/asset/allrounder/allrounder_paintmask.png" id="3_ayfej"]
 [ext_resource type="Shader" uid="uid://dvkl5w0v8t8mq" path="res://vehicle/vehicle_shadow.gdshader" id="4_ysk1q"]
 [ext_resource type="Shader" uid="uid://bqqsd22cdmtdp" path="res://vehicle/vehicle_outline.gdshader" id="5_aiq2p"]
 [ext_resource type="Shader" uid="uid://b71ubm0xei1sp" path="res://vehicle/vehicle_outline_main.gdshader" id="6_m83ry"]
 [ext_resource type="PackedScene" uid="uid://cn4wo1jqle0j3" path="res://vehicle/particle/thruster.tscn" id="7_r07ix"]
-
-[sub_resource type="Gradient" id="Gradient_ehvh3"]
-interpolation_mode = 1
-offsets = PackedFloat32Array(0.196154, 0.74269)
-colors = PackedColorArray(1.93967e-05, 0.192626, 0.579926, 1, 0.235762, 0.71856, 1, 1)
-
-[sub_resource type="GradientTexture1D" id="GradientTexture1D_qmnnx"]
-gradient = SubResource("Gradient_ehvh3")
 
 [sub_resource type="Gradient" id="Gradient_b07xc"]
 interpolation_mode = 1
@@ -27,7 +21,6 @@ gradient = SubResource("Gradient_b07xc")
 [sub_resource type="Gradient" id="Gradient_g3l6s"]
 interpolation_mode = 1
 offsets = PackedFloat32Array(0.151852, 0.925926)
-colors = PackedColorArray(0, 0, 0, 1, 0.0456, 0.236107, 0.76, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_ayfej"]
 gradient = SubResource("Gradient_g3l6s")
@@ -38,8 +31,13 @@ shader = ExtResource("1_g3l6s")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_gog44")
 shader_parameter/in_specwarp = SubResource("GradientTexture1D_ayfej")
 shader_parameter/in_normal = ExtResource("2_g3l6s")
-shader_parameter/in_albedo = SubResource("GradientTexture1D_qmnnx")
+shader_parameter/in_albedo = ExtResource("2_ysk1q")
+shader_parameter/in_paint_mask = ExtResource("3_ayfej")
 shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
+shader_parameter/livery_colour_strength = 1.0
+shader_parameter/livery_primary_colour = Color(0, 0, 0, 1)
+shader_parameter/livery_secondary_colour = Color(0, 0, 0, 1)
+shader_parameter/livery_accent_colour = Color(0, 0, 0, 1)
 
 [sub_resource type="ShaderMaterial" id="ShaderMaterial_o0ykv"]
 render_priority = 0

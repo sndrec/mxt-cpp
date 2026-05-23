@@ -1,6 +1,8 @@
 class_name LobbyChibiCar
 extends Node3D
 
+const CarLivery = preload("res://vehicle/customization/car_livery.gd")
+
 const BOUNDS_X := 25.0
 const BOUNDS_Z := 10.0
 const CHIBI_TICK_DELTA := 1.0 / 60.0
@@ -56,9 +58,10 @@ func set_local_control(enabled: bool) -> void:
 
 func update_settings(in_settings: Dictionary) -> void:
 	var old_path := str(player_settings.get("car_definition_path", ""))
+	var old_livery_hash := get_render_livery_hash()
 	_apply_settings(in_settings)
 	_ensure_nameplate()
-	if old_path != str(player_settings.get("car_definition_path", "")):
+	if old_path != str(player_settings.get("car_definition_path", "")) or old_livery_hash != get_render_livery_hash():
 		_rebuild_visual()
 
 func apply_remote_state(in_velocity: float, in_knockback: Vector3, in_angle_velocity: float, in_position: Vector3, in_rotation: Vector3) -> void:
@@ -197,6 +200,13 @@ func _rebuild_visual() -> void:
 
 func get_render_definition() -> CarDefinition:
 	return car_definition
+
+func get_render_livery_hash() -> String:
+	if !player_settings.has("car_livery") or typeof(player_settings["car_livery"]) != TYPE_DICTIONARY:
+		return ""
+	var livery := CarLivery.new()
+	livery.from_dict(player_settings["car_livery"])
+	return livery.get_livery_hash()
 
 func get_render_transform() -> Transform3D:
 	return global_transform * Transform3D(

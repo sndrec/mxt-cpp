@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="CarStampCatalog" format=3 uid="uid://bn5cqxo36x8v4"]
+
+[ext_resource type="Script" uid="uid://cobwav8evrxbi" path="res://vehicle/customization/car_stamp_catalog.gd" id="1_stamp_catalog"]
+[ext_resource type="Texture2D" uid="uid://dbxsie240jgnk" path="res://vehicle/customization/stamp_atlas.png" id="2_stamp_atlas"]
+[ext_resource type="Script" uid="uid://4skvripfybfr" path="res://vehicle/customization/car_stamp_entry.gd" id="3_stamp_entry"]
+
+[sub_resource type="Resource" id="CarStampEntry_circle"]
+script = ExtResource("3_stamp_entry")
+stamp_id = "circle"
+display_name = "Circle"
+atlas_rect = Rect2(0, 0, 0.5, 0.5)
+
+[sub_resource type="Resource" id="CarStampEntry_star"]
+script = ExtResource("3_stamp_entry")
+stamp_id = "star"
+display_name = "Star"
+atlas_rect = Rect2(0.5, 0, 0.5, 0.5)
+
+[sub_resource type="Resource" id="CarStampEntry_cross"]
+script = ExtResource("3_stamp_entry")
+stamp_id = "cross"
+display_name = "Cross"
+atlas_rect = Rect2(0, 0.5, 0.5, 0.5)
+
+[resource]
+script = ExtResource("1_stamp_catalog")
+atlas_texture = ExtResource("2_stamp_atlas")
+entries = Array[ExtResource("3_stamp_entry")]([SubResource("CarStampEntry_circle"), SubResource("CarStampEntry_star"), SubResource("CarStampEntry_cross")])

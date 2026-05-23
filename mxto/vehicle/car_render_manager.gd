@@ -1,14 +1,22 @@
 class_name CarRenderManager extends Node3D
 
+const CarLivery = preload("res://vehicle/customization/car_livery.gd")
+const CarLiveryStampMeshBuilder = preload("res://vehicle/customization/car_livery_stamp_mesh_builder.gd")
+const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
+
 const PASS_MAIN := "main"
 const PASS_OUTLINE := "outline"
 const PASS_OUTLINE_MAIN := "outline_main"
+const PASS_STAMP := "stamp"
+const STAMP_CATALOG_PATH := "res://vehicle/customization/stamp_catalog.tres"
+const HIDDEN_INSTANCE_TRANSFORM := Transform3D(Basis.IDENTITY, Vector3(0.0, -100000.0, 0.0))
 
 var cars: Array = []
 var archetypes: Array = []
 var car_archetype_indices: PackedInt32Array = PackedInt32Array()
 var car_slots: PackedInt32Array = PackedInt32Array()
 var multimesh_render_enabled: bool = true
+var stamp_catalog: CarStampCatalog = null
 
 func _ready() -> void:
 	process_priority = 2
@@ -28,19 +36,19 @@ func clear_renderer() -> void:
 	for child in get_children():
 		child.queue_free()
 
-func configure(definitions: Array, car_nodes: Array) -> void:
+func configure(definitions: Array, car_nodes: Array, player_settings: Array = []) -> void:
 	clear_renderer()
 	set_process(false)
 	cars = car_nodes.duplicate()
-	_configure_archetypes(definitions)
+	_configure_archetypes(definitions, player_settings)
 
-func configure_manual(definitions: Array) -> void:
+func configure_manual(definitions: Array, player_settings: Array = []) -> void:
 	clear_renderer()
 	set_process(false)
 	cars.clear()
-	_configure_archetypes(definitions)
+	_configure_archetypes(definitions, player_settings)
 
-func _configure_archetypes(definitions: Array) -> void:
+func _configure_archetypes(definitions: Array, player_settings: Array = []) -> void:
 	car_archetype_indices.resize(definitions.size())
 	car_slots.resize(definitions.size())
 	if !multimesh_render_enabled:
@@ -51,14 +59,15 @@ func _configure_archetypes(definitions: Array) -> void:
 	var archetype_map := {}
 	for i in range(definitions.size()):
 		var def: CarDefinition = definitions[i]
-		var key := _definition_key(def)
+		var livery := _livery_for_index(i, def, player_settings)
+		var key := _definition_key(def, livery)
 		var archetype_index := -1
 		if archetype_map.has(key):
 			archetype_index = archetype_map[key]
 		else:
 			archetype_index = archetypes.size()
 			archetype_map[key] = archetype_index
-			archetypes.append(_build_archetype(def))
+			archetypes.append(_build_archetype(def, livery))
 		var archetype: Dictionary = archetypes[archetype_index]
 		var count: int = archetype["count"]
 		car_archetype_indices[i] = archetype_index
@@ -70,7 +79,7 @@ func _configure_archetypes(definitions: Array) -> void:
 
 func begin_manual_submit() -> void:
 	for archetype in archetypes:
-		for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow"]:
+		for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow", PASS_STAMP]:
 			var pass_data: Dictionary = archetype[pass_name]
 			var multimesh: MultiMesh = pass_data["multimesh"]
 			multimesh.visible_instance_count = 0
@@ -87,6 +96,8 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 		return
 	var archetype: Dictionary = archetypes[archetype_index]
 	_set_pass_instance(archetype[PASS_MAIN], slot, body_transform * archetype[PASS_MAIN]["local_transform"], Vector3.ZERO, body_overlay)
+	if _pass_has_mesh(archetype[PASS_STAMP]):
+		_set_pass_instance(archetype[PASS_STAMP], slot, body_transform * archetype[PASS_STAMP]["local_transform"], Vector3.ZERO, Color.WHITE)
 	if submit_outlines:
 		_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay)
 		_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK)
@@ -95,6 +106,9 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
 		multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
+	if _pass_has_mesh(archetype[PASS_STAMP]):
+		var stamp_multimesh: MultiMesh = archetype[PASS_STAMP]["multimesh"]
+		stamp_multimesh.visible_instance_count = max(stamp_multimesh.visible_instance_count, slot + 1)
 	if submit_outlines:
 		for pass_name in [PASS_OUTLINE, PASS_OUTLINE_MAIN]:
 			var pass_data: Dictionary = archetype[pass_name]
@@ -116,11 +130,13 @@ func get_native_render_bindings() -> Dictionary:
 	var outline_multimeshes: Array = []
 	var outline_main_multimeshes: Array = []
 	var shadow_multimeshes: Array = []
+	var stamp_multimeshes: Array = []
 	var thruster_multimeshes: Array = []
 	var local_transforms: Array = []
 	var outline_local_transforms: Array = []
 	var outline_main_local_transforms: Array = []
 	var shadow_local_transforms: Array = []
+	var stamp_local_transforms: Array = []
 	var thruster_local_transforms: Array = []
 	for archetype in archetypes:
 		var pass_data: Dictionary = archetype[PASS_MAIN]
@@ -135,6 +151,9 @@ func get_native_render_bindings() -> Dictionary:
 		var shadow_pass_data: Dictionary = archetype["shadow"]
 		shadow_multimeshes.append(shadow_pass_data["multimesh"])
 		shadow_local_transforms.append(shadow_pass_data["local_transform"])
+		var stamp_pass_data: Dictionary = archetype[PASS_STAMP]
+		stamp_multimeshes.append(stamp_pass_data["multimesh"] if _pass_has_mesh(stamp_pass_data) else null)
+		stamp_local_transforms.append(stamp_pass_data["local_transform"])
 		var thruster_pass_data: Dictionary = archetype["thruster"]
 		thruster_multimeshes.append(thruster_pass_data["multimesh"])
 		thruster_local_transforms.append(thruster_pass_data["local_transforms"])
@@ -143,11 +162,13 @@ func get_native_render_bindings() -> Dictionary:
 		"outline_multimeshes": outline_multimeshes,
 		"outline_main_multimeshes": outline_main_multimeshes,
 		"shadow_multimeshes": shadow_multimeshes,
+		"stamp_multimeshes": stamp_multimeshes,
 		"thruster_multimeshes": thruster_multimeshes,
 		"local_transforms": local_transforms,
 		"outline_local_transforms": outline_local_transforms,
 		"outline_main_local_transforms": outline_main_local_transforms,
 		"shadow_local_transforms": shadow_local_transforms,
+		"stamp_local_transforms": stamp_local_transforms,
 		"thruster_local_transforms": thruster_local_transforms,
 		"archetype_indices": car_archetype_indices,
 		"slots": car_slots,
@@ -175,17 +196,20 @@ func _process(_delta: float) -> void:
 			var body_overlay := Color(car.car_overlay_colour.r, car.car_overlay_colour.g, car.car_overlay_colour.b, 1.0)
 			var outline_overlay := Color(0.5, 0.7, 1.0, 1.0) * float(car.boost_frames) * 0.005
 			_set_pass_instance(archetype[PASS_MAIN], slot, body_transform * archetype[PASS_MAIN]["local_transform"], zero_custom, body_overlay)
+			if _pass_has_mesh(archetype[PASS_STAMP]):
+				_set_pass_instance(archetype[PASS_STAMP], slot, body_transform * archetype[PASS_STAMP]["local_transform"], zero_custom, Color.WHITE)
 			#_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay)
 			#_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK)
 
-func _definition_key(definition: CarDefinition) -> String:
+func _definition_key(definition: CarDefinition, livery: CarLivery = null) -> String:
 	if definition == null:
 		return ""
-	if definition.resource_path != "":
-		return definition.resource_path
-	return definition.name
+	var base_key := definition.resource_path if definition.resource_path != "" else definition.name
+	if livery == null:
+		return base_key
+	return "%s:%s" % [base_key, livery.get_livery_hash()]
 
-func _build_archetype(definition: CarDefinition) -> Dictionary:
+func _build_archetype(definition: CarDefinition, livery: CarLivery = null) -> Dictionary:
 	var template: Node3D = definition.car_scene.instantiate()
 	var root_transform := template.transform
 	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
@@ -196,14 +220,31 @@ func _build_archetype(definition: CarDefinition) -> Dictionary:
 	var archetype := {
 		"indices": [],
 		"count": 0,
-		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0),
+		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), main_mesh.mesh, main_mesh.material_override, root_transform * main_mesh.transform, 1, 0, livery),
 		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), outline_mesh.mesh, outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
 		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), outline_main_mesh.mesh, outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2),
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), shadow_mesh.mesh, shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
+		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), template, livery, root_transform),
 		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), thruster_data["material"], thruster_data["local_transforms"]),
 	}
 	template.free()
 	return archetype
+
+func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, local_transform: Transform3D) -> Dictionary:
+	var mesh: Mesh = null
+	var material: Material = null
+	if livery != null and !livery.stamps.is_empty():
+		var catalog := _get_stamp_catalog()
+		if catalog != null:
+			var generated_mesh := CarLiveryStampMeshBuilder.build_for_vehicle_scene(template, livery, catalog)
+			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
+				mesh = generated_mesh
+				material = catalog.create_stamp_material()
+	var pass_data := _create_pass(pass_name, mesh, material, local_transform, 2, 2)
+	if mesh == null:
+		var node: MultiMeshInstance3D = pass_data["node"]
+		node.visible = false
+	return pass_data
 
 func _collect_thruster_data(template: Node3D, root_transform: Transform3D) -> Dictionary:
 	var local_transforms: Array[Transform3D] = []
@@ -222,7 +263,7 @@ func _collect_thruster_data(template: Node3D, root_transform: Transform3D) -> Di
 				material = sprite.material_override
 	return {"local_transforms": local_transforms, "material": material}
 
-func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_transform: Transform3D, layers: int, render_priority: int) -> Dictionary:
+func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_transform: Transform3D, layers: int, render_priority: int, livery: CarLivery = null) -> Dictionary:
 	var node := MultiMeshInstance3D.new()
 	node.name = pass_name
 	node.layers = layers
@@ -242,6 +283,7 @@ func _create_pass(pass_name: String, mesh: Mesh, material: Material, local_trans
 	if material != null:
 		node.material_override = material.duplicate()
 		node.material_override.render_priority = render_priority
+		_apply_livery_to_material(node.material_override, livery)
 	add_child(node)
 	return {
 		"local_transform": local_transform,
@@ -275,25 +317,91 @@ func _create_thruster_pass(pass_name: String, material: Material, local_transfor
 	}
 
 func _resize_passes(archetype: Dictionary, count: int) -> void:
-	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow"]:
+	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow", PASS_STAMP]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
 		if multimesh.instance_count != count:
+			var old_count := multimesh.instance_count
 			multimesh.instance_count = count
+			_park_multimesh_instances(multimesh, old_count, count)
 		multimesh.visible_instance_count = 0
 	var thruster_pass: Dictionary = archetype["thruster"]
 	var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
 	var thruster_count: int = (thruster_pass["local_transforms"] as Array).size()
 	var total_thrusters := count * thruster_count
 	if thruster_multimesh.instance_count != total_thrusters:
+		var old_thruster_count := thruster_multimesh.instance_count
 		thruster_multimesh.instance_count = total_thrusters
+		_park_multimesh_instances(thruster_multimesh, old_thruster_count, total_thrusters)
 	thruster_multimesh.visible_instance_count = 0
+
+func _park_multimesh_instances(multimesh: MultiMesh, start: int, end: int) -> void:
+	if multimesh == null or multimesh.mesh == null:
+		return
+	for i in range(maxi(0, start), maxi(0, end)):
+		multimesh.set_instance_transform(i, HIDDEN_INSTANCE_TRANSFORM)
+		multimesh.set_instance_color(i, Color(0.0, 0.0, 0.0, 0.0))
+		multimesh.set_instance_custom_data(i, Color(0.0, 0.0, 0.0, 0.0))
 
 func _set_pass_instance(pass_data: Dictionary, slot: int, transform: Transform3D, custom_vec: Vector3, color: Color) -> void:
 	var multimesh: MultiMesh = pass_data["multimesh"]
+	if multimesh.mesh == null:
+		return
 	multimesh.set_instance_transform(slot, transform)
 	multimesh.set_instance_custom_data(slot, Color(custom_vec.x, custom_vec.y, custom_vec.z, 1.0))
 	multimesh.set_instance_color(slot, color)
+
+func _pass_has_mesh(pass_data: Dictionary) -> bool:
+	var multimesh: MultiMesh = pass_data["multimesh"]
+	return multimesh != null and multimesh.mesh != null
+
+func _apply_livery_to_material(material: Material, livery: CarLivery) -> void:
+	if material == null or livery == null:
+		return
+	var shader_material := material as ShaderMaterial
+	if shader_material != null:
+		if shader_material.get_shader_parameter("in_paint_mask") == null:
+			var fallback_mask = shader_material.get_shader_parameter("in_albedo")
+			if fallback_mask != null:
+				shader_material.set_shader_parameter("in_paint_mask", fallback_mask)
+		shader_material.set_shader_parameter("livery_colour_strength", 1.0)
+		shader_material.set_shader_parameter("livery_primary_colour", livery.primary_colour)
+		shader_material.set_shader_parameter("livery_secondary_colour", livery.secondary_colour)
+		shader_material.set_shader_parameter("livery_accent_colour", livery.accent_colour)
+		return
+	var standard_material := material as StandardMaterial3D
+	if standard_material != null:
+		standard_material.albedo_color = livery.primary_colour
+
+func _livery_for_index(index: int, definition: CarDefinition, player_settings: Array) -> CarLivery:
+	if index < 0 or index >= player_settings.size():
+		return null
+	var raw_settings = player_settings[index]
+	var livery: CarLivery = null
+	if raw_settings is PlayerSettings:
+		if raw_settings.car_livery.is_empty():
+			return null
+		livery = raw_settings.get_car_livery_resource()
+	elif typeof(raw_settings) == TYPE_DICTIONARY:
+		var settings_dict: Dictionary = raw_settings
+		if settings_dict.has("car_livery") and typeof(settings_dict["car_livery"]) == TYPE_DICTIONARY:
+			var livery_dict: Dictionary = settings_dict["car_livery"]
+			if livery_dict.is_empty():
+				return null
+			livery = CarLivery.new()
+			livery.from_dict(livery_dict)
+	if livery == null:
+		return null
+	if livery.car_definition_path == "" and definition != null:
+		livery.car_definition_path = definition.resource_path
+	return livery
+
+func _get_stamp_catalog() -> CarStampCatalog:
+	if stamp_catalog != null:
+		return stamp_catalog
+	if ResourceLoader.exists(STAMP_CATALOG_PATH):
+		stamp_catalog = load(STAMP_CATALOG_PATH) as CarStampCatalog
+	return stamp_catalog
 
 func _get_outline_velocity(car: VisualCar) -> Vector3:
 	var use_vel := car.position_old - car.position_current
