@@ -1,0 +1,81 @@
+[gd_scene format=3 uid="uid://gvbqiegx85gt"]
+
+[sub_resource type="Environment" id="Environment_garage_preview"]
+background_energy_multiplier = 0.0
+ambient_light_source = 2
+ambient_light_color = Color(0.85, 0.9, 1, 1)
+ambient_light_energy = 0.85
+
+[sub_resource type="PlaneMesh" id="PlaneMesh_garage_floor"]
+size = Vector2(128, 128)
+
+[sub_resource type="Shader" id="Shader_garage_grid"]
+code = "shader_type spatial;
+render_mode unshaded, cull_disabled, blend_add;
+
+uniform vec4 line_color : source_color = vec4(0.5, 0.5, 0.5, 1.0);
+uniform float grid_scale = 128.0;
+uniform float line_strength = 0.08;
+
+void fragment() {
+	vec2 coord = UV * grid_scale;
+	vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+	float line = 1.0 - clamp(min(grid.x, grid.y), 0.0, 1.0);
+	float dist_strength = max(0.0, 1.0 - distance(UV, vec2(0.5)) * 2.0);
+	dist_strength = pow(dist_strength, 3);
+	ALBEDO = mix(vec3(0), line_color.rgb, line * line_strength * dist_strength);
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_garage_grid"]
+render_priority = 0
+shader = SubResource("Shader_garage_grid")
+shader_parameter/line_color = Color(0.5212333, 0.7467189, 0.93347293, 1)
+shader_parameter/grid_scale = 128.0
+shader_parameter/line_strength = 0.08
+
+[sub_resource type="SphereMesh" id="SphereMesh_garage_backdrop"]
+radius = 42.0
+height = 84.0
+
+[sub_resource type="Shader" id="Shader_garage_backdrop"]
+code = "shader_type spatial;
+render_mode unshaded, cull_front, depth_draw_never, blend_add;
+
+uniform vec4 horizon_color : source_color = vec4(0.075, 0.09, 0.115, 1.0);
+uniform vec4 zenith_color : source_color = vec4(0.018, 0.022, 0.032, 1.0);
+
+void fragment() {
+	float gradient = smoothstep(-0.35, 0.95, normalize(VERTEX).y);
+	ALBEDO = mix(horizon_color.rgb, zenith_color.rgb, gradient);
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_garage_backdrop"]
+render_priority = 0
+shader = SubResource("Shader_garage_backdrop")
+shader_parameter/horizon_color = Color(0.075, 0.09, 0.115, 1)
+shader_parameter/zenith_color = Color(0.018, 0.022, 0.032, 1)
+
+[node name="GaragePreviewWorld" type="Node3D" unique_id=1874721785]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1750694143]
+environment = SubResource("Environment_garage_preview")
+
+[node name="KeyLight" type="DirectionalLight3D" parent="." unique_id=1524291590]
+transform = Transform3D(0.81915206, 0.4055798, 0.4055798, 0, 0.70710677, -0.70710677, -0.57357645, 0.579228, 0.579228, 0, 0, 0)
+light_energy = 4.0
+
+[node name="RearFillLight" type="DirectionalLight3D" parent="." unique_id=63677489]
+transform = Transform3D(-0.81915206, 0.32898995, -0.46984634, 0, 0.81915206, 0.57357645, 0.57357645, 0.46984634, -0.6710101, 0, 0, 0)
+light_energy = 1.15
+
+[node name="SideFillLight" type="DirectionalLight3D" parent="." unique_id=2137639809]
+transform = Transform3D(-0.81915206, 0.1961747, 0.53898555, 0, 0.9396926, -0.34202012, -0.57357645, -0.28016648, -0.76975113, 0, 0, 0)
+light_energy = 0.85
+
+[node name="GridFloor" type="MeshInstance3D" parent="." unique_id=2106339495]
+mesh = SubResource("PlaneMesh_garage_floor")
+surface_material_override/0 = SubResource("ShaderMaterial_garage_grid")
+
+[node name="GradientBackdrop" type="MeshInstance3D" parent="." unique_id=196721639]
+mesh = SubResource("SphereMesh_garage_backdrop")
+surface_material_override/0 = SubResource("ShaderMaterial_garage_backdrop")

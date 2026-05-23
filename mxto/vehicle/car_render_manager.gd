@@ -17,6 +17,7 @@ var car_archetype_indices: PackedInt32Array = PackedInt32Array()
 var car_slots: PackedInt32Array = PackedInt32Array()
 var multimesh_render_enabled: bool = true
 var stamp_only_mode: bool = false
+var stamp_render_priority: int = 2
 var stamp_visibility_masks_enabled: bool = true
 var stamp_visibility_mask_skip_layer: int = -1
 var stamp_catalog: CarStampCatalog = null
@@ -246,7 +247,7 @@ func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, 
 				mesh = generated_mesh
 				material = catalog.create_stamp_material(base_material, stamp_build["visibility_mask"])
 				stamp_vertex_ranges = stamp_build.get("stamp_vertex_ranges", {})
-	var pass_data := _create_pass(pass_name, mesh, material, local_transform, 2, 2)
+	var pass_data := _create_pass(pass_name, mesh, material, local_transform, 2, stamp_render_priority)
 	pass_data["stamp_vertex_ranges"] = stamp_vertex_ranges
 	if mesh == null:
 		var node: MultiMeshInstance3D = pass_data["node"]

@@ -6,6 +6,7 @@ const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd"
 const CarLiveryStampMeshBuilder = preload("res://vehicle/customization/car_livery_stamp_mesh_builder.gd")
 const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
 const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
+const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
 
 const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
 const PREVIEW_PAN_LIMIT := 4.0
@@ -51,6 +52,12 @@ var sticker_selectors: Array[OptionButton] = []
 var updating_colour_controls := false
 var updating_stamp_controls := false
 var livery_dirty := false
+var stamp_drag_source_layer := -1
+var stamp_drag_target_layer := -1
+var stamp_drag_start_position := Vector2.ZERO
+var stamp_drag_active := false
+var suppress_next_stamp_press := false
+var stamp_layer_rows: Array[Control] = []
 var stamp_layer_buttons: Array[Button] = []
 var stamp_layer_colour_pickers: Array[ColorPickerButton] = []
 var preview_container: SubViewportContainer
@@ -60,6 +67,7 @@ var preview_camera: Camera3D
 var preview_vehicle: Node3D
 var preview_render_manager: CarRenderManager
 var preview_edit_render_manager: CarRenderManager
+var preview_above_render_manager: CarRenderManager
 var preview_yaw := deg_to_rad(25.0)
 var preview_pitch := deg_to_rad(-9.0)
 var preview_pan := Vector3.ZERO
@@ -113,11 +121,14 @@ func _ready() -> void:
 func _build_stamp_layer_buttons() -> void:
 	if stamp_layer_list == null:
 		return
+	stamp_layer_rows.clear()
 	stamp_layer_buttons.clear()
 	stamp_layer_colour_pickers.clear()
 	var count := mini(stamp_layer_list.get_child_count(), CarLivery.MAX_STAMPS)
 	for layer in range(count):
-		var row := stamp_layer_list.get_child(layer)
+		var row := stamp_layer_list.get_child(layer) as Control
+		if row == null:
+			continue
 		var button := row as Button
 		if button == null:
 			button = row.get_node_or_null("StampButton") as Button
@@ -128,6 +139,8 @@ func _build_stamp_layer_buttons() -> void:
 			colour_picker.color_changed.connect(_on_stamp_colour_changed.bind(layer))
 			colour_picker.popup_closed.connect(_on_stamp_colour_popup_closed.bind(layer))
 		button.pressed.connect(_on_stamp_layer_pressed.bind(layer))
+		button.gui_input.connect(_on_stamp_layer_gui_input.bind(layer))
+		stamp_layer_rows.append(row)
 		stamp_layer_buttons.append(button)
 		stamp_layer_colour_pickers.append(colour_picker)
 
@@ -137,6 +150,28 @@ func _setup_stamp_menus() -> void:
 	stamp_action_menu.add_item("Edit", 1)
 	stamp_action_menu.add_item("Delete", 2)
 	stamp_action_menu.id_pressed.connect(_on_stamp_action_selected)
+
+func _input(event: InputEvent) -> void:
+	if !visible or stamp_drag_source_layer < 0:
+		return
+	var motion := event as InputEventMouseMotion
+	if motion != null:
+		_update_stamp_drag_target()
+		if stamp_drag_active:
+			get_viewport().set_input_as_handled()
+		return
+	var mouse_button := event as InputEventMouseButton
+	if mouse_button == null or mouse_button.button_index != MOUSE_BUTTON_LEFT or mouse_button.pressed:
+		return
+	var was_drag_active := stamp_drag_active
+	if stamp_drag_active and stamp_drag_target_layer >= 0:
+		_swap_or_move_stamp_layer(stamp_drag_source_layer, stamp_drag_target_layer)
+		suppress_next_stamp_press = true
+	_clear_stamp_drag()
+	_refresh_stamp_controls()
+	if was_drag_active:
+		call_deferred("_clear_stamp_press_suppression")
+	get_viewport().set_input_as_handled()
 
 func _load_car_defs() -> void:
 	if game_manager != null:
@@ -382,29 +417,26 @@ func _setup_garage_preview() -> void:
 	preview_viewport.size = Vector2i(maxi(1, int(car_preview_space.size.x)), maxi(1, int(car_preview_space.size.y)))
 	preview_container.add_child(preview_viewport)
 
-	preview_root = Node3D.new()
+	preview_root = GARAGE_PREVIEW_WORLD_SCENE.instantiate()
+	preview_root.name = "GaragePreviewWorld"
 	preview_viewport.add_child(preview_root)
 
 	preview_render_manager = CarRenderManager.new()
 	preview_render_manager.name = "GaragePreviewRenderManager"
+	preview_render_manager.stamp_render_priority = 2
 	preview_root.add_child(preview_render_manager)
 
 	preview_edit_render_manager = CarRenderManager.new()
 	preview_edit_render_manager.name = "GaragePreviewEditRenderManager"
 	preview_edit_render_manager.stamp_only_mode = true
+	preview_edit_render_manager.stamp_render_priority = 3
 	preview_root.add_child(preview_edit_render_manager)
 
-	var environment := Environment.new()
-	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color(0.85, 0.9, 1.0, 1.0)
-	environment.ambient_light_energy = 0.85
-	var world_environment := WorldEnvironment.new()
-	world_environment.environment = environment
-	preview_root.add_child(world_environment)
-
-	_add_preview_light(Vector3(45.0, 35.0, 0.0), 4.0)
-	_add_preview_light(Vector3(-35.0, -145.0, 0.0), 1.15)
-	_add_preview_light(Vector3(20.0, 145.0, 0.0), 0.85)
+	preview_above_render_manager = CarRenderManager.new()
+	preview_above_render_manager.name = "GaragePreviewAboveRenderManager"
+	preview_above_render_manager.stamp_only_mode = true
+	preview_above_render_manager.stamp_render_priority = 4
+	preview_root.add_child(preview_above_render_manager)
 
 	preview_camera = Camera3D.new()
 	preview_camera.current = true
@@ -412,12 +444,6 @@ func _setup_garage_preview() -> void:
 	preview_camera.fov = 38.0
 	_setup_stamp_edit_overlay()
 	_apply_preview_camera()
-
-func _add_preview_light(rotation_degrees: Vector3, energy: float) -> void:
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = rotation_degrees
-	light.light_energy = energy
-	preview_root.add_child(light)
 
 func _setup_stamp_edit_overlay() -> void:
 	stamp_edit_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -453,19 +479,23 @@ func _rebuild_preview_vehicle() -> void:
 		preview_render_manager.clear_renderer()
 	if preview_edit_render_manager != null:
 		preview_edit_render_manager.clear_renderer()
+	if preview_above_render_manager != null:
+		preview_above_render_manager.clear_renderer()
 	var definition := _selected_car_definition()
 	if definition == null or definition.car_scene == null:
 		return
 	preview_vehicle = definition.car_scene.instantiate()
 	preview_root.add_child(preview_vehicle)
 	_hide_preview_raycast_scene(preview_vehicle)
-	var render_settings: Array = [_preview_render_settings(_preview_confirmed_livery())]
+	var render_settings: Array = [_preview_render_settings(_preview_confirmed_livery_below())]
 	preview_render_manager.stamp_visibility_masks_enabled = true
 	preview_render_manager.stamp_visibility_mask_skip_layer = -1
 	preview_render_manager.stamp_only_mode = false
+	preview_render_manager.stamp_render_priority = 2
 	preview_render_manager.configure_manual([definition], render_settings)
 	if stamp_ui_mode == StampUiMode.EDITING:
 		_rebuild_edit_stamp_preview(false)
+		_rebuild_above_stamp_preview(false)
 	_apply_preview_camera()
 
 func _rebuild_edit_stamp_preview(apply_camera := true) -> void:
@@ -480,7 +510,25 @@ func _rebuild_edit_stamp_preview(apply_camera := true) -> void:
 	preview_edit_render_manager.stamp_visibility_masks_enabled = false
 	preview_edit_render_manager.stamp_visibility_mask_skip_layer = -1
 	preview_edit_render_manager.stamp_only_mode = true
+	preview_edit_render_manager.stamp_render_priority = 3
 	preview_edit_render_manager.configure_manual([definition], [_preview_render_settings(_preview_edit_livery())])
+	if apply_camera:
+		_apply_preview_camera()
+
+func _rebuild_above_stamp_preview(apply_camera := true) -> void:
+	if preview_above_render_manager == null:
+		return
+	preview_above_render_manager.clear_renderer()
+	var definition := _selected_car_definition()
+	if definition == null or definition.car_scene == null or stamp_ui_mode != StampUiMode.EDITING:
+		if apply_camera:
+			_apply_preview_camera()
+		return
+	preview_above_render_manager.stamp_visibility_masks_enabled = true
+	preview_above_render_manager.stamp_visibility_mask_skip_layer = -1
+	preview_above_render_manager.stamp_only_mode = true
+	preview_above_render_manager.stamp_render_priority = 4
+	preview_above_render_manager.configure_manual([definition], [_preview_render_settings(_preview_confirmed_livery_above())])
 	if apply_camera:
 		_apply_preview_camera()
 
@@ -498,7 +546,7 @@ func _preview_vehicle_transform() -> Transform3D:
 	return Transform3D.IDENTITY
 
 func _submit_preview_render() -> void:
-	for manager in [preview_render_manager, preview_edit_render_manager]:
+	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
 		if manager == null or manager.archetypes.is_empty():
 			continue
 		manager.begin_manual_submit()
@@ -513,22 +561,27 @@ func _preview_render_settings(livery: CarLivery) -> Dictionary:
 		settings["car_livery"] = livery.to_dict()
 	return settings
 
-func _preview_confirmed_livery() -> CarLivery:
+func _preview_confirmed_livery_below() -> CarLivery:
 	if !current_livery_enabled:
 		return null
 	if stamp_ui_mode == StampUiMode.EDITING:
-		return _livery_copy_excluding_layer(editing_stamp_layer)
+		return _livery_copy_layer_range(-INF, float(editing_stamp_layer))
 	return current_livery
+
+func _preview_confirmed_livery_above() -> CarLivery:
+	if !current_livery_enabled or stamp_ui_mode != StampUiMode.EDITING:
+		return null
+	return _livery_copy_layer_range(float(editing_stamp_layer + 1), INF)
 
 func _preview_edit_livery() -> CarLivery:
 	if stamp_ui_mode != StampUiMode.EDITING:
 		return null
 	return _livery_copy_only_layer(editing_stamp_layer)
 
-func _livery_copy_excluding_layer(layer: int) -> CarLivery:
+func _livery_copy_layer_range(min_layer: float, max_layer: float) -> CarLivery:
 	var out := _livery_copy_base()
 	for stamp in current_livery.get_sorted_stamps():
-		if stamp == null or stamp.layer == layer:
+		if stamp == null or float(stamp.layer) < min_layer or float(stamp.layer) >= max_layer:
 			continue
 		out.stamps.append(stamp.duplicate_stamp())
 	return out
@@ -558,9 +611,12 @@ func _refresh_stamp_controls() -> void:
 	updating_stamp_controls = true
 	var locked := _livery_editing_locked()
 	for layer in range(stamp_layer_buttons.size()):
+		var row: Control = stamp_layer_rows[layer] if layer < stamp_layer_rows.size() else null
 		var button := stamp_layer_buttons[layer]
 		var colour_picker: ColorPickerButton = stamp_layer_colour_pickers[layer] if layer < stamp_layer_colour_pickers.size() else null
 		var stamp := _stamp_for_layer(layer)
+		if row != null:
+			row.modulate = Color(1.0, 0.92, 0.25, 1.0) if stamp_drag_active and layer == stamp_drag_target_layer else Color.WHITE
 		button.modulate = Color.WHITE
 		button.disabled = locked
 		button.expand_icon = true
@@ -603,6 +659,8 @@ func _on_stamp_colour_changed(colour: Color, layer: int) -> void:
 		preview_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
 	if preview_edit_render_manager != null:
 		preview_edit_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
+	if preview_above_render_manager != null:
+		preview_above_render_manager.update_stamp_layer_colour(layer, Color(colour.r, colour.g, colour.b, colour.a * stamp.opacity))
 
 func _on_stamp_colour_popup_closed(layer: int) -> void:
 	if updating_stamp_controls or _livery_editing_locked():
@@ -621,6 +679,78 @@ func _stamp_for_layer(layer: int) -> CarLiveryStamp:
 		if stamp != null and stamp.layer == layer:
 			return stamp
 	return null
+
+func _on_stamp_layer_gui_input(event: InputEvent, layer: int) -> void:
+	if updating_stamp_controls or _livery_editing_locked() or stamp_ui_mode != StampUiMode.IDLE:
+		return
+	var mouse_button := event as InputEventMouseButton
+	if mouse_button != null and mouse_button.button_index == MOUSE_BUTTON_LEFT:
+		if mouse_button.pressed:
+			if _stamp_for_layer(layer) == null:
+				return
+			stamp_drag_source_layer = layer
+			stamp_drag_target_layer = layer
+			stamp_drag_start_position = get_global_mouse_position()
+			stamp_drag_active = false
+		elif stamp_drag_source_layer >= 0:
+			var was_drag_active := stamp_drag_active
+			if stamp_drag_active and stamp_drag_target_layer >= 0:
+				_swap_or_move_stamp_layer(stamp_drag_source_layer, stamp_drag_target_layer)
+				suppress_next_stamp_press = true
+			_clear_stamp_drag()
+			_refresh_stamp_controls()
+			if was_drag_active:
+				call_deferred("_clear_stamp_press_suppression")
+			accept_event()
+		return
+	var motion := event as InputEventMouseMotion
+	if motion == null or stamp_drag_source_layer < 0:
+		return
+	_update_stamp_drag_target()
+	accept_event()
+
+func _update_stamp_drag_target() -> void:
+	if stamp_drag_source_layer < 0:
+		return
+	if !stamp_drag_active and get_global_mouse_position().distance_to(stamp_drag_start_position) < 6.0:
+		return
+	if !stamp_drag_active:
+		stamp_drag_active = true
+		suppress_next_stamp_press = true
+	var target := _stamp_layer_at_global_position(get_global_mouse_position())
+	if target != stamp_drag_target_layer:
+		stamp_drag_target_layer = target
+		_refresh_stamp_controls()
+
+func _stamp_layer_at_global_position(global_position: Vector2) -> int:
+	for layer in range(stamp_layer_rows.size()):
+		var row := stamp_layer_rows[layer]
+		if row != null and row.get_global_rect().has_point(global_position):
+			return layer
+	return -1
+
+func _swap_or_move_stamp_layer(source_layer: int, target_layer: int) -> void:
+	if source_layer == target_layer:
+		return
+	var source_stamp := _stamp_for_layer(source_layer)
+	if source_stamp == null:
+		return
+	var target_stamp := _stamp_for_layer(target_layer)
+	source_stamp.layer = target_layer
+	if target_stamp != null:
+		target_stamp.layer = source_layer
+	current_livery._sort_stamps_in_place()
+	selected_stamp_index = target_layer
+	_save_livery_for_selected_car()
+	_refresh_stamp_controls()
+
+func _clear_stamp_drag() -> void:
+	stamp_drag_source_layer = -1
+	stamp_drag_target_layer = -1
+	stamp_drag_active = false
+
+func _clear_stamp_press_suppression() -> void:
+	suppress_next_stamp_press = false
 
 func _remove_stamp_layer(layer: int) -> void:
 	for i in range(current_livery.stamps.size() - 1, -1, -1):
@@ -655,6 +785,9 @@ func _first_stamp_id() -> String:
 	return "circle"
 
 func _on_stamp_layer_pressed(layer: int) -> void:
+	if suppress_next_stamp_press:
+		suppress_next_stamp_press = false
+		return
 	if updating_stamp_controls or _livery_editing_locked():
 		return
 	selected_stamp_index = layer
@@ -1003,10 +1136,10 @@ func _handle_preview_mouse_motion(event: InputEventMouseMotion, allow_edit_camer
 	if event.position.distance_to(preview_drag_start) > 4.0:
 		preview_drag_moved = true
 	if preview_drag_button == MOUSE_BUTTON_LEFT and !event.shift_pressed:
-		preview_yaw += delta.x * -0.01
-		preview_pitch = clampf(preview_pitch + delta.y * -0.008, deg_to_rad(-55.0), deg_to_rad(55.0))
+		preview_yaw += delta.x * -0.004
+		preview_pitch = clampf(preview_pitch + delta.y * -0.004, deg_to_rad(-55.0), deg_to_rad(55.0))
 	else:
-		var pan_scale := preview_distance * 0.0005
+		var pan_scale := preview_distance * 0.0008
 		preview_pan.x -= delta.x * pan_scale
 		preview_pan.y += delta.y * pan_scale
 		_clamp_preview_pan()
