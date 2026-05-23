@@ -1506,7 +1506,9 @@ func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -
 func _prepare_custom_stamp_render_payload(racer_ids: Array, racer_settings: Array, warning_context := "race") -> Dictionary:
 	var render_settings := []
 	for settings in racer_settings:
-		render_settings.append(_duplicate_stamp_render_settings(settings))
+		var normalized := _player_settings_for_stamp_render(settings)
+		if normalized != null:
+			render_settings.append(normalized)
 	if racer_ids.is_empty() or racer_settings.is_empty():
 		return {"texture": null, "settings": render_settings}
 	var manifests := {}
@@ -1587,9 +1589,12 @@ func _build_local_custom_stamp_payload_for_race(settings) -> Dictionary:
 	return _build_local_custom_stamp_payload_for_render(settings)
 
 func _build_local_custom_stamp_payload_for_render(settings) -> Dictionary:
-	var livery := _livery_from_stamp_render_settings(settings)
-	if livery == null:
+	var ps := _player_settings_for_stamp_render(settings)
+	if ps == null or ps.car_livery.is_empty():
 		return {"ok": true, "manifest": [], "blobs": []}
+	var livery := CarLivery.new()
+	livery.from_dict(ps.car_livery)
+	livery.car_definition_path = ps.car_definition_path
 	return CustomStampStore.build_livery_payload(livery)
 
 func _race_custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_payloads: Dictionary):
@@ -1601,6 +1606,9 @@ func _race_custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_
 	return network_manager.get_custom_stamp_blob(stamp_hash)
 
 func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_origin: Vector2i) -> void:
+	var ps := settings as PlayerSettings
+	if ps == null or ps.car_livery.is_empty():
+		return
 	var entry_by_hash := {}
 	for raw_entry in manifest:
 		if typeof(raw_entry) == TYPE_DICTIONARY:
@@ -1608,9 +1616,8 @@ func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_
 			entry_by_hash[str(entry.get("hash", ""))] = entry
 	if entry_by_hash.is_empty():
 		return
-	var livery := _livery_from_stamp_render_settings(settings)
-	if livery == null:
-		return
+	var livery := CarLivery.new()
+	livery.from_dict(ps.car_livery)
 	var changed := false
 	for stamp in livery.stamps:
 		if stamp == null or !stamp.is_custom():
@@ -1631,45 +1638,18 @@ func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_
 		stamp.palette_id = int(entry.get("palette_id", stamp.palette_id))
 		changed = true
 	if changed:
-		_set_livery_on_stamp_render_settings(settings, livery)
-
-func _duplicate_stamp_render_settings(settings):
-	var ps := settings as PlayerSettings
-	if ps != null:
-		var copy := PlayerSettings.new()
-		copy.from_dict(ps.to_dict())
-		return copy
-	if typeof(settings) == TYPE_DICTIONARY:
-		return (settings as Dictionary).duplicate(true)
-	return settings
-
-func _livery_from_stamp_render_settings(settings) -> CarLivery:
-	var car_path := ""
-	var livery_dict := {}
-	var ps := settings as PlayerSettings
-	if ps != null:
-		car_path = ps.car_definition_path
-		if !ps.car_livery.is_empty():
-			livery_dict = ps.car_livery
-	elif typeof(settings) == TYPE_DICTIONARY:
-		var settings_dict: Dictionary = settings
-		car_path = str(settings_dict.get("car_definition_path", ""))
-		if settings_dict.has("car_livery") and typeof(settings_dict["car_livery"]) == TYPE_DICTIONARY:
-			livery_dict = settings_dict["car_livery"]
-	if livery_dict.is_empty():
-		return null
-	var livery := CarLivery.new()
-	livery.from_dict(livery_dict)
-	if livery.car_definition_path == "":
-		livery.car_definition_path = car_path
-	return livery
-
-func _set_livery_on_stamp_render_settings(settings, livery: CarLivery) -> void:
-	var ps := settings as PlayerSettings
-	if ps != null:
 		ps.set_car_livery(livery)
+
+func _player_settings_for_stamp_render(settings) -> PlayerSettings:
+	if settings is PlayerSettings:
+		var copy := PlayerSettings.new()
+		copy.from_dict((settings as PlayerSettings).to_dict())
+		return copy
 	elif typeof(settings) == TYPE_DICTIONARY:
-		(settings as Dictionary)["car_livery"] = livery.to_dict()
+		var copy := PlayerSettings.new()
+		copy.from_dict(settings)
+		return copy
+	return null
 
 func _custom_stamp_manifest_signature(player_id: int) -> String:
 	var manifest := network_manager.get_custom_stamp_manifest(player_id)

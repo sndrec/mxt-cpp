@@ -17,6 +17,9 @@ const SOURCE_CUSTOM := "custom"
 @export var local_basis: Basis = Basis.IDENTITY
 @export var rotation: float = 0.0
 @export var size: Vector2 = Vector2.ONE
+@export var flip_horizontal: bool = false
+@export var flip_vertical: bool = false
+@export var mirror_local_x: bool = false
 @export var projection_depth: float = 0.25
 @export var colour: Color = Color.WHITE
 @export_range(0.0, 1.0, 0.01) var opacity: float = 1.0
@@ -35,6 +38,9 @@ func to_dict() -> Dictionary:
 		"local_basis": _basis_to_array(local_basis),
 		"rotation": rotation,
 		"size": _vector2_to_array(size),
+		"flip_horizontal": flip_horizontal,
+		"flip_vertical": flip_vertical,
+		"mirror_local_x": mirror_local_x,
 		"projection_depth": projection_depth,
 		"colour": colour.to_html(true),
 		"opacity": opacity,
@@ -65,6 +71,12 @@ func from_dict(data: Dictionary) -> void:
 		rotation = float(data["rotation"])
 	if data.has("size"):
 		size = _array_to_vector2(data["size"], size)
+	if data.has("flip_horizontal"):
+		flip_horizontal = bool(data["flip_horizontal"])
+	if data.has("flip_vertical"):
+		flip_vertical = bool(data["flip_vertical"])
+	if data.has("mirror_local_x"):
+		mirror_local_x = bool(data["mirror_local_x"])
 	if data.has("projection_depth"):
 		projection_depth = maxf(MIN_SIZE, float(data["projection_depth"]))
 	if data.has("colour"):

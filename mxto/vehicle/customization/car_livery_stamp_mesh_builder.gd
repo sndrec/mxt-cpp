@@ -12,7 +12,7 @@ const EPSILON := 0.00001
 const OCCLUSION_MAP_SIZE := 128
 const OCCLUSION_DEPTH_EPSILON := 0.025
 const OCCLUSION_DEPTH_EMPTY := -100000000.0
-const OCCLUSION_ATLAS_COLUMNS := 4
+const OCCLUSION_ATLAS_COLUMNS := 8
 const OCCLUSION_ATLAS_ROWS := 4
 
 static func build_for_vehicle_scene(vehicle_root: Node3D, livery: CarLivery, catalog: CarStampCatalog) -> ArrayMesh:
@@ -56,13 +56,16 @@ static func build_for_body_mesh_with_masks(body_mesh: MeshInstance3D, livery: Ca
 			continue
 		if !stamp.is_custom() and catalog.get_entry(stamp.stamp_id) == null:
 			continue
+		var stamp_mask_slots := 2 if stamp.mirror_local_x else 1
+		if mask_slot + stamp_mask_slots > OCCLUSION_ATLAS_COLUMNS * OCCLUSION_ATLAS_ROWS:
+			break
 		var vertex_start := out_vertices.size()
 		var build_stamp_visibility_mask := build_visibility_masks and stamp.layer != visibility_mask_skip_layer
 		_append_stamp(body_mesh.mesh, body_to_car, car_to_body, stamp, atlas_rect, catalog.get_stamp_source_flag(stamp), stamp.custom_rect_rotated, mask_slot, mask_image, build_stamp_visibility_mask, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
 		var vertex_count := out_vertices.size() - vertex_start
 		if vertex_count > 0:
 			stamp_vertex_ranges[stamp.layer] = {"start": vertex_start, "count": vertex_count}
-		mask_slot += 1
+		mask_slot += stamp_mask_slots
 		if mask_slot >= OCCLUSION_ATLAS_COLUMNS * OCCLUSION_ATLAS_ROWS:
 			break
 
@@ -109,6 +112,34 @@ static func _append_stamp(
 	var projector := Transform3D(stamp.local_basis, stamp.local_origin)
 	if absf(projector.basis.determinant()) <= EPSILON:
 		return
+	_append_stamp_projection(mesh, body_to_car, car_to_body, stamp, atlas_rect, source_flag, atlas_rotated, mask_slot, mask_image, build_visibility_masks, projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+	if stamp.mirror_local_x:
+		var mirror_basis := Basis(Vector3(-1.0, 0.0, 0.0), Vector3(0.0, 1.0, 0.0), Vector3(0.0, 0.0, 1.0))
+		var mirrored_projector := Transform3D(mirror_basis, Vector3.ZERO) * projector
+		_append_stamp_projection(mesh, body_to_car, car_to_body, stamp, atlas_rect, source_flag, atlas_rotated, mask_slot + 1, mask_image, build_visibility_masks, mirrored_projector, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+
+static func _append_stamp_projection(
+	mesh: Mesh,
+	body_to_car: Transform3D,
+	car_to_body: Transform3D,
+	stamp: CarLiveryStamp,
+	atlas_rect: Rect2,
+	source_flag: float,
+	atlas_rotated: bool,
+	mask_slot: int,
+	mask_image: Image,
+	build_visibility_masks: bool,
+	projector: Transform3D,
+	out_vertices: PackedVector3Array,
+	out_normals: PackedVector3Array,
+	out_body_uvs: PackedVector2Array,
+	out_stamp_uvs: PackedVector2Array,
+	out_colours: PackedColorArray,
+	out_mask_data: PackedFloat32Array,
+	out_source_data: PackedFloat32Array
+) -> void:
+	if absf(projector.basis.determinant()) <= EPSILON:
+		return
 	var car_to_projector := projector.affine_inverse()
 	var half_size := Vector2(maxf(stamp.size.x, EPSILON), maxf(stamp.size.y, EPSILON)) * 0.5
 	var half_depth := maxf(stamp.projection_depth, EPSILON) * 0.5
@@ -134,9 +165,9 @@ static func _append_stamp(
 		var body_uvs := _surface_uvs(arrays)
 		var indices := _surface_indices(arrays)
 		if indices.is_empty():
-			_append_unindexed_surface(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, mask_rect, stamp_colour, depth_epsilon_normalized, vertices, normals, body_uvs, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+			_append_unindexed_surface(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, stamp.flip_horizontal, stamp.flip_vertical, mask_rect, stamp_colour, depth_epsilon_normalized, vertices, normals, body_uvs, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
 		else:
-			_append_indexed_surface(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, mask_rect, stamp_colour, depth_epsilon_normalized, vertices, normals, body_uvs, indices, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+			_append_indexed_surface(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, stamp.flip_horizontal, stamp.flip_vertical, mask_rect, stamp_colour, depth_epsilon_normalized, vertices, normals, body_uvs, indices, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
 
 static func _append_indexed_surface(
 	body_to_car: Transform3D,
@@ -147,6 +178,8 @@ static func _append_indexed_surface(
 	atlas_rect: Rect2,
 	source_flag: float,
 	atlas_rotated: bool,
+	flip_horizontal: bool,
+	flip_vertical: bool,
 	mask_rect: Rect2,
 	colour: Color,
 	depth_epsilon_normalized: float,
@@ -167,7 +200,7 @@ static func _append_indexed_surface(
 		var i0 := indices[tri * 3]
 		var i1 := indices[tri * 3 + 1]
 		var i2 := indices[tri * 3 + 2]
-		_append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, mask_rect, colour, depth_epsilon_normalized, vertices, normals, body_uvs, i0, i1, i2, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+		_append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, flip_horizontal, flip_vertical, mask_rect, colour, depth_epsilon_normalized, vertices, normals, body_uvs, i0, i1, i2, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
 
 static func _append_unindexed_surface(
 	body_to_car: Transform3D,
@@ -178,6 +211,8 @@ static func _append_unindexed_surface(
 	atlas_rect: Rect2,
 	source_flag: float,
 	atlas_rotated: bool,
+	flip_horizontal: bool,
+	flip_vertical: bool,
 	mask_rect: Rect2,
 	colour: Color,
 	depth_epsilon_normalized: float,
@@ -195,7 +230,7 @@ static func _append_unindexed_surface(
 	var tri_count := int(vertices.size() / 3)
 	for tri in range(tri_count):
 		var i0 := tri * 3
-		_append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, mask_rect, colour, depth_epsilon_normalized, vertices, normals, body_uvs, i0, i0 + 1, i0 + 2, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+		_append_triangle(body_to_car, car_to_body, car_to_projector, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, flip_horizontal, flip_vertical, mask_rect, colour, depth_epsilon_normalized, vertices, normals, body_uvs, i0, i0 + 1, i0 + 2, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
 
 static func _append_triangle(
 	body_to_car: Transform3D,
@@ -206,6 +241,8 @@ static func _append_triangle(
 	atlas_rect: Rect2,
 	source_flag: float,
 	atlas_rotated: bool,
+	flip_horizontal: bool,
+	flip_vertical: bool,
 	mask_rect: Rect2,
 	colour: Color,
 	depth_epsilon_normalized: float,
@@ -227,9 +264,9 @@ static func _append_triangle(
 	if polygon.size() < 3:
 		return
 	for i in range(1, polygon.size() - 1):
-		_emit_vertex(polygon[0], car_to_body, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, mask_rect, colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
-		_emit_vertex(polygon[i], car_to_body, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, mask_rect, colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
-		_emit_vertex(polygon[i + 1], car_to_body, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, mask_rect, colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+		_emit_vertex(polygon[0], car_to_body, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, flip_horizontal, flip_vertical, mask_rect, colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+		_emit_vertex(polygon[i], car_to_body, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, flip_horizontal, flip_vertical, mask_rect, colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
+		_emit_vertex(polygon[i + 1], car_to_body, clip_min, clip_max, atlas_rect, source_flag, atlas_rotated, flip_horizontal, flip_vertical, mask_rect, colour, depth_epsilon_normalized, out_vertices, out_normals, out_body_uvs, out_stamp_uvs, out_colours, out_mask_data, out_source_data)
 
 static func _clipped_triangle_polygon(
 	body_to_car: Transform3D,
@@ -454,6 +491,8 @@ static func _emit_vertex(
 	atlas_rect: Rect2,
 	source_flag: float,
 	atlas_rotated: bool,
+	flip_horizontal: bool,
+	flip_vertical: bool,
 	mask_rect: Rect2,
 	colour: Color,
 	depth_epsilon_normalized: float,
@@ -469,7 +508,7 @@ static func _emit_vertex(
 	var car_pos: Vector3 = vertex["car_pos"]
 	var projector_pos: Vector3 = vertex["projector_pos"]
 	var projector_uv := _projector_uv(projector_pos, clip_min, clip_max)
-	var atlas_uv := _atlas_uv_for_projector_uv(atlas_rect, projector_uv, atlas_rotated)
+	var atlas_uv := _atlas_uv_for_projector_uv(atlas_rect, projector_uv, atlas_rotated, flip_horizontal, flip_vertical)
 	var mask_uv := _mask_uv_for_projector_uv(mask_rect, projector_uv)
 	var projector_depth := clampf(inverse_lerp(clip_min.z, clip_max.z, projector_pos.z), 0.0, 1.0)
 	out_vertices.append(car_to_body * (car_pos + normal * SURFACE_OFFSET))
@@ -486,7 +525,11 @@ static func _emit_vertex(
 	out_source_data.append(0.0)
 	out_source_data.append(0.0)
 
-static func _atlas_uv_for_projector_uv(atlas_rect: Rect2, projector_uv: Vector2, atlas_rotated: bool) -> Vector2:
+static func _atlas_uv_for_projector_uv(atlas_rect: Rect2, projector_uv: Vector2, atlas_rotated: bool, flip_horizontal: bool, flip_vertical: bool) -> Vector2:
+	if flip_horizontal:
+		projector_uv.x = 1.0 - projector_uv.x
+	if flip_vertical:
+		projector_uv.y = 1.0 - projector_uv.y
 	if atlas_rotated:
 		return atlas_rect.position + Vector2(projector_uv.y, 1.0 - projector_uv.x) * atlas_rect.size
 	return atlas_rect.position + projector_uv * atlas_rect.size

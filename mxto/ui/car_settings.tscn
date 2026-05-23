@@ -620,6 +620,83 @@ text = "Close"
 
 [node name="StampActionMenu" type="PopupMenu" parent="." unique_id=1850059014]
 
+[node name="StampPropertiesPopup" type="PopupPanel" parent="."]
+
+[node name="PropertiesRoot" type="VBoxContainer" parent="StampPropertiesPopup"]
+custom_minimum_size = Vector2(320, 0)
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 328.0
+offset_bottom = 270.0
+
+[node name="Title" type="Label" parent="StampPropertiesPopup/PropertiesRoot"]
+layout_mode = 2
+text = "STAMP PROPERTIES"
+horizontal_alignment = 1
+
+[node name="RotationRow" type="HBoxContainer" parent="StampPropertiesPopup/PropertiesRoot"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="StampPropertiesPopup/PropertiesRoot/RotationRow"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "Rotation"
+
+[node name="RotationSpin" type="SpinBox" parent="StampPropertiesPopup/PropertiesRoot/RotationRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -360.0
+max_value = 360.0
+step = 1.0
+suffix = " deg"
+
+[node name="ScaleXRow" type="HBoxContainer" parent="StampPropertiesPopup/PropertiesRoot"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="StampPropertiesPopup/PropertiesRoot/ScaleXRow"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "X Scale"
+
+[node name="ScaleXSpin" type="SpinBox" parent="StampPropertiesPopup/PropertiesRoot/ScaleXRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.001
+max_value = 16.0
+step = 0.01
+
+[node name="ScaleYRow" type="HBoxContainer" parent="StampPropertiesPopup/PropertiesRoot"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="StampPropertiesPopup/PropertiesRoot/ScaleYRow"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "Y Scale"
+
+[node name="ScaleYSpin" type="SpinBox" parent="StampPropertiesPopup/PropertiesRoot/ScaleYRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 0.001
+max_value = 16.0
+step = 0.01
+
+[node name="FlipHorizontal" type="CheckBox" parent="StampPropertiesPopup/PropertiesRoot"]
+layout_mode = 2
+text = "Horizontal Flip"
+
+[node name="FlipVertical" type="CheckBox" parent="StampPropertiesPopup/PropertiesRoot"]
+layout_mode = 2
+text = "Vertical Flip"
+
+[node name="MirrorLocalX" type="CheckBox" parent="StampPropertiesPopup/PropertiesRoot"]
+layout_mode = 2
+text = "Mirror Across Vehicle Local X"
+
+[node name="Close" type="Button" parent="StampPropertiesPopup/PropertiesRoot"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+text = "Close"
+
 [node name="CustomStampCatalogMenu" type="PopupMenu" parent="."]
 
 [node name="StampChooser" type="PopupPanel" parent="." unique_id=1182686218]

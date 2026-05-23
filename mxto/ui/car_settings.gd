@@ -41,6 +41,14 @@ const PREVIEW_PAN_LIMIT := 4.0
 @onready var stamp_layer_list: VBoxContainer = $Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList
 @onready var stamp_action_menu: PopupMenu = $StampActionMenu
 @onready var custom_stamp_catalog_menu: PopupMenu = $CustomStampCatalogMenu
+@onready var stamp_properties_popup: PopupPanel = $StampPropertiesPopup
+@onready var stamp_properties_rotation: SpinBox = $StampPropertiesPopup/PropertiesRoot/RotationRow/RotationSpin
+@onready var stamp_properties_scale_x: SpinBox = $StampPropertiesPopup/PropertiesRoot/ScaleXRow/ScaleXSpin
+@onready var stamp_properties_scale_y: SpinBox = $StampPropertiesPopup/PropertiesRoot/ScaleYRow/ScaleYSpin
+@onready var stamp_properties_flip_horizontal: CheckBox = $StampPropertiesPopup/PropertiesRoot/FlipHorizontal
+@onready var stamp_properties_flip_vertical: CheckBox = $StampPropertiesPopup/PropertiesRoot/FlipVertical
+@onready var stamp_properties_mirror_local_x: CheckBox = $StampPropertiesPopup/PropertiesRoot/MirrorLocalX
+@onready var stamp_properties_close_button: Button = $StampPropertiesPopup/PropertiesRoot/Close
 @onready var stamp_chooser_popup: PopupPanel = $StampChooser
 @onready var stamp_chooser_title: Label = $StampChooser/StampChooserList/Title
 @onready var stamp_chooser_tabs: TabContainer = $StampChooser/StampChooserList/StampChooserTabs
@@ -83,6 +91,8 @@ var stamp_drag_target_layer := -1
 var stamp_drag_start_position := Vector2.ZERO
 var stamp_drag_active := false
 var suppress_next_stamp_press := false
+var stamp_properties_layer := -1
+var updating_stamp_properties := false
 var stamp_layer_rows: Array[Control] = []
 var stamp_layer_buttons: Array[Button] = []
 var stamp_layer_colour_pickers: Array[ColorPickerButton] = []
@@ -151,6 +161,7 @@ func _ready() -> void:
 	_populate_sticker_selectors()
 	_setup_garage_preview()
 	_setup_stamp_menus()
+	_setup_stamp_properties_popup()
 	_setup_custom_stamp_catalog()
 	_setup_custom_stamp_painter()
 	_update_controls()
@@ -196,8 +207,19 @@ func _setup_stamp_menus() -> void:
 	stamp_action_menu.add_item("Change", 0)
 	stamp_action_menu.add_item("Edit", 1)
 	stamp_action_menu.add_item("Delete", 2)
+	stamp_action_menu.add_item("Properties", 3)
 	stamp_action_menu.id_pressed.connect(_on_stamp_action_selected)
 	stamp_chooser_cancel_button.pressed.connect(_on_stamp_choice_cancel_pressed)
+
+func _setup_stamp_properties_popup() -> void:
+	stamp_properties_rotation.value_changed.connect(_on_stamp_property_number_changed)
+	stamp_properties_scale_x.value_changed.connect(_on_stamp_property_number_changed)
+	stamp_properties_scale_y.value_changed.connect(_on_stamp_property_number_changed)
+	stamp_properties_flip_horizontal.toggled.connect(_on_stamp_property_toggled)
+	stamp_properties_flip_vertical.toggled.connect(_on_stamp_property_toggled)
+	stamp_properties_mirror_local_x.toggled.connect(_on_stamp_property_toggled)
+	stamp_properties_close_button.pressed.connect(func(): stamp_properties_popup.hide())
+	stamp_properties_popup.popup_hide.connect(_on_stamp_properties_popup_hidden)
 
 func _setup_custom_stamp_catalog() -> void:
 	custom_stamp_catalog_palette_option.clear()
@@ -1150,6 +1172,61 @@ func _on_stamp_action_selected(id: int) -> void:
 			_remove_stamp_layer(pending_stamp_layer)
 			_save_livery_for_selected_car()
 			_refresh_stamp_controls()
+		3:
+			_show_stamp_properties(pending_stamp_layer)
+
+func _show_stamp_properties(layer: int) -> void:
+	var stamp := _stamp_for_layer(layer)
+	if stamp == null or stamp_properties_popup == null:
+		return
+	stamp_properties_layer = layer
+	updating_stamp_properties = true
+	stamp_properties_rotation.value = rad_to_deg(stamp.rotation)
+	stamp_properties_scale_x.value = stamp.size.x
+	stamp_properties_scale_y.value = stamp.size.y
+	stamp_properties_flip_horizontal.button_pressed = stamp.flip_horizontal
+	stamp_properties_flip_vertical.button_pressed = stamp.flip_vertical
+	stamp_properties_mirror_local_x.button_pressed = stamp.mirror_local_x
+	updating_stamp_properties = false
+	stamp_properties_popup.popup_centered(Vector2i(340, 292))
+
+func _on_stamp_property_number_changed(_value: float) -> void:
+	_apply_stamp_properties_from_popup()
+
+func _on_stamp_property_toggled(_enabled: bool) -> void:
+	_apply_stamp_properties_from_popup()
+
+func _apply_stamp_properties_from_popup() -> void:
+	if updating_stamp_properties or _livery_editing_locked():
+		return
+	var stamp := _stamp_for_layer(stamp_properties_layer)
+	if stamp == null:
+		return
+	var new_rotation := deg_to_rad(float(stamp_properties_rotation.value))
+	var rotation_delta := new_rotation - stamp.rotation
+	if absf(rotation_delta) > 0.00001:
+		var z_axis := stamp.local_basis.z.normalized()
+		if z_axis.length_squared() > 0.00001:
+			stamp.local_basis = Basis(z_axis, rotation_delta) * stamp.local_basis
+		stamp.rotation = new_rotation
+	stamp.size = Vector2(
+		maxf(CarLiveryStamp.MIN_SIZE, float(stamp_properties_scale_x.value)),
+		maxf(CarLiveryStamp.MIN_SIZE, float(stamp_properties_scale_y.value))
+	)
+	stamp.flip_horizontal = stamp_properties_flip_horizontal.button_pressed
+	stamp.flip_vertical = stamp_properties_flip_vertical.button_pressed
+	stamp.mirror_local_x = stamp_properties_mirror_local_x.button_pressed
+	stamp.projection_depth = maxf(0.75, maxf(stamp.size.x, stamp.size.y) * 1.35)
+	_mark_livery_dirty()
+	_rebuild_preview_vehicle()
+	_refresh_stamp_controls()
+
+func _on_stamp_properties_popup_hidden() -> void:
+	if stamp_properties_layer < 0:
+		return
+	if !_livery_editing_locked() and livery_dirty:
+		_save_livery_for_selected_car()
+	stamp_properties_layer = -1
 
 func _show_stamp_chooser(layer: int, action: String) -> void:
 	if stamp_chooser_popup == null or stamp_chooser_base_list == null or stamp_chooser_custom_list == null or _livery_editing_locked():
