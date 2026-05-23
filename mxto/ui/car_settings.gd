@@ -373,6 +373,7 @@ func _on_sticker_selected(index: int, slot: int) -> void:
 
 func _on_close_pressed() -> void:
 	_save_settings()
+	_set_garage_preview_active(false)
 	hide()
 
 func open_settings() -> void:
@@ -382,6 +383,7 @@ func open_settings() -> void:
 	_update_controls()
 	_update_livery_lock_state()
 	show()
+	_set_garage_preview_active(true)
 
 func get_player_settings() -> PlayerSettings:
 	_sync_livery_to_player_settings()
@@ -464,6 +466,10 @@ func _process(_delta: float) -> void:
 		_poll_preview_custom_stamp_atlas_thread()
 		_update_livery_lock_state()
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED:
+		_set_garage_preview_active(visible)
+
 func _exit_tree() -> void:
 	_finish_preview_custom_stamp_atlas_thread()
 
@@ -512,8 +518,9 @@ func _setup_garage_preview() -> void:
 	car_preview_space.resized.connect(_on_preview_resized)
 
 	preview_viewport = SubViewport.new()
+	preview_viewport.own_world_3d = true
 	preview_viewport.transparent_bg = true
-	preview_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	preview_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	preview_viewport.size = Vector2i(maxi(1, int(car_preview_space.size.x)), maxi(1, int(car_preview_space.size.y)))
 	preview_container.add_child(preview_viewport)
 
@@ -544,6 +551,12 @@ func _setup_garage_preview() -> void:
 	preview_camera.fov = 38.0
 	_setup_stamp_edit_overlay()
 	_apply_preview_camera()
+	_set_garage_preview_active(visible)
+
+func _set_garage_preview_active(active: bool) -> void:
+	if preview_viewport == null:
+		return
+	preview_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
 
 func _setup_stamp_edit_overlay() -> void:
 	stamp_edit_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -780,6 +793,14 @@ func _update_custom_stamp_budget_overlay(payload: Dictionary = {}, ok := true) -
 	preview_custom_stamp_region_texture = _build_custom_stamp_region_preview_texture(payload)
 	custom_stamp_atlas_preview.texture = preview_custom_stamp_region_texture
 	custom_stamp_atlas_preview.visible = preview_custom_stamp_region_texture != null
+	if preview_custom_stamp_region_texture != null:
+		var texture_size := preview_custom_stamp_region_texture.get_size()
+		custom_stamp_atlas_preview.custom_minimum_size = texture_size
+		custom_stamp_atlas_preview.size = texture_size
+		custom_stamp_atlas_preview.offset_left = 10.0
+		custom_stamp_atlas_preview.offset_top = -texture_size.y - 10.0
+		custom_stamp_atlas_preview.offset_right = texture_size.x + 10.0
+		custom_stamp_atlas_preview.offset_bottom = -10.0
 
 func _build_custom_stamp_region_preview_texture(payload: Dictionary) -> Texture2D:
 	var placements: Dictionary = payload.get("placements", {})
