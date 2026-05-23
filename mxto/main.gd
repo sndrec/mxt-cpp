@@ -843,6 +843,7 @@ func _submit_lobby_chibi_render(roster: Array) -> void:
 		return
 	var definitions := []
 	var settings := []
+	var player_ids := []
 	var render_cars := []
 	var signature_parts := []
 	for id in roster:
@@ -856,13 +857,16 @@ func _submit_lobby_chibi_render(roster: Array) -> void:
 			continue
 		definitions.append(definition)
 		settings.append(car.player_settings)
+		player_ids.append(int(id))
 		render_cars.append(car)
-		signature_parts.append(str(id) + ":" + definition.resource_path + ":" + str(car.get_render_livery_hash()))
+		signature_parts.append(str(id) + ":" + definition.resource_path + ":" + str(car.get_render_livery_hash()) + ":" + _custom_stamp_manifest_signature(int(id)))
 	var signature := ""
 	for part in signature_parts:
 		signature += part + "|"
 	if signature != lobby_chibi_render_signature:
-		lobby_chibi_render_manager.configure_manual(definitions, settings)
+		var stamp_render := _prepare_custom_stamp_render_payload(player_ids, settings, "lobby")
+		lobby_chibi_render_manager.set_custom_stamp_atlas(stamp_render.get("texture", null))
+		lobby_chibi_render_manager.configure_manual(definitions, stamp_render.get("settings", settings))
 		lobby_chibi_render_signature = signature
 	lobby_chibi_render_manager.begin_manual_submit()
 	var render_root_inv := lobby_chibi_render_manager.global_transform.affine_inverse()
@@ -1496,32 +1500,39 @@ func _load_and_start_debug_replay(path: String) -> void:
 @onready var default_world_environment_resource: Environment = world_environment.environment
 
 func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -> Texture2D:
+	var stamp_render := _prepare_custom_stamp_render_payload(racer_ids, racer_settings, "race")
+	return stamp_render.get("texture", null)
+
+func _prepare_custom_stamp_render_payload(racer_ids: Array, racer_settings: Array, warning_context := "race") -> Dictionary:
+	var render_settings := []
+	for settings in racer_settings:
+		render_settings.append(_duplicate_stamp_render_settings(settings))
 	if racer_ids.is_empty() or racer_settings.is_empty():
-		return null
+		return {"texture": null, "settings": render_settings}
 	var manifests := {}
 	var local_payloads := {}
-	for i in range(mini(racer_ids.size(), racer_settings.size())):
+	for i in range(mini(racer_ids.size(), render_settings.size())):
 		var racer_id := int(racer_ids[i])
 		var manifest := network_manager.get_custom_stamp_manifest(racer_id)
 		if manifest.is_empty():
-			var payload := _build_local_custom_stamp_payload_for_race(racer_settings[i])
+			var payload := _build_local_custom_stamp_payload_for_render(render_settings[i])
 			if bool(payload.get("ok", false)):
 				manifest = payload.get("manifest", [])
 				if !manifest.is_empty():
 					local_payloads[racer_id] = payload
 			else:
-				push_warning("Failed to prepare local custom stamps for race: %s" % str(payload.get("error", "unknown error")))
+				push_warning("Failed to prepare local custom stamps for %s: %s" % [warning_context, str(payload.get("error", "unknown error"))])
 		if !manifest.is_empty():
 			manifests[racer_id] = manifest
 	if manifests.is_empty():
-		return null
+		return {"texture": null, "settings": render_settings}
 	var region_build := CustomStampAtlasBuilder.allocate_player_regions(racer_ids, manifests)
 	if !bool(region_build.get("ok", false)):
-		push_warning("Failed to allocate custom stamp player regions: %s" % str(region_build.get("error", "unknown error")))
-		return null
+		push_warning("Failed to allocate custom stamp player regions for %s: %s" % [warning_context, str(region_build.get("error", "unknown error"))])
+		return {"texture": null, "settings": render_settings}
 	var regions: Dictionary = region_build.get("regions", {})
 	var player_records: Array = []
-	for i in range(mini(racer_ids.size(), racer_settings.size())):
+	for i in range(mini(racer_ids.size(), render_settings.size())):
 		var player_id := int(racer_ids[i])
 		if !manifests.has(player_id) or !regions.has(player_id):
 			continue
@@ -1538,13 +1549,13 @@ func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -
 				continue
 			var blob = _race_custom_stamp_blob_for_hash(player_id, stamp_hash, local_payloads)
 			if blob == null:
-				push_warning("Missing custom stamp blob for race atlas: %s" % stamp_hash)
-				return null
+				push_warning("Missing custom stamp blob for %s atlas: %s" % [warning_context, stamp_hash])
+				return {"texture": null, "settings": render_settings}
 			var rect := _custom_stamp_manifest_rect(entry)
 			var region_size := _custom_stamp_manifest_region_size(entry)
 			if rect.size.x <= 0 or rect.size.y <= 0 or region_size == Vector2i.ZERO:
-				push_warning("Invalid custom stamp packed rect for race atlas: %s" % stamp_hash)
-				return null
+				push_warning("Invalid custom stamp packed rect for %s atlas: %s" % [warning_context, stamp_hash])
+				return {"texture": null, "settings": render_settings}
 			placements[stamp_hash] = {
 				"rect": rect,
 				"rotated": bool(entry.get("rect_rotated", false)),
@@ -1554,7 +1565,7 @@ func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -
 		if placements.is_empty():
 			continue
 		var region_origin: Vector2i = region["origin"]
-		_apply_custom_stamp_manifest_to_settings(racer_settings[i], manifest, region_origin)
+		_apply_custom_stamp_manifest_to_settings(render_settings[i], manifest, region_origin)
 		player_records.append({
 			"player_id": player_id,
 			"region_origin": region_origin,
@@ -1562,20 +1573,23 @@ func _prepare_race_custom_stamp_atlas(racer_ids: Array, racer_settings: Array) -
 			"blobs": blobs,
 		})
 	if player_records.is_empty():
-		return null
+		return {"texture": null, "settings": render_settings}
 	var atlas_build := CustomStampAtlasBuilder.build_atlas_image(player_records)
 	if !bool(atlas_build.get("ok", false)):
-		push_warning("Failed to build custom stamp race atlas: %s" % str(atlas_build.get("error", "unknown error")))
-		return null
-	return CustomStampAtlasBuilder.texture_from_image(atlas_build.get("image", null) as Image)
+		push_warning("Failed to build custom stamp %s atlas: %s" % [warning_context, str(atlas_build.get("error", "unknown error"))])
+		return {"texture": null, "settings": render_settings}
+	return {
+		"texture": CustomStampAtlasBuilder.texture_from_image(atlas_build.get("image", null) as Image),
+		"settings": render_settings,
+	}
 
 func _build_local_custom_stamp_payload_for_race(settings) -> Dictionary:
-	var ps := settings as PlayerSettings
-	if ps == null or ps.car_livery.is_empty():
+	return _build_local_custom_stamp_payload_for_render(settings)
+
+func _build_local_custom_stamp_payload_for_render(settings) -> Dictionary:
+	var livery := _livery_from_stamp_render_settings(settings)
+	if livery == null:
 		return {"ok": true, "manifest": [], "blobs": []}
-	var livery := CarLivery.new()
-	livery.from_dict(ps.car_livery)
-	livery.car_definition_path = ps.car_definition_path
 	return CustomStampStore.build_livery_payload(livery)
 
 func _race_custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_payloads: Dictionary):
@@ -1587,9 +1601,6 @@ func _race_custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_
 	return network_manager.get_custom_stamp_blob(stamp_hash)
 
 func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_origin: Vector2i) -> void:
-	var ps := settings as PlayerSettings
-	if ps == null or ps.car_livery.is_empty():
-		return
 	var entry_by_hash := {}
 	for raw_entry in manifest:
 		if typeof(raw_entry) == TYPE_DICTIONARY:
@@ -1597,8 +1608,9 @@ func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_
 			entry_by_hash[str(entry.get("hash", ""))] = entry
 	if entry_by_hash.is_empty():
 		return
-	var livery := CarLivery.new()
-	livery.from_dict(ps.car_livery)
+	var livery := _livery_from_stamp_render_settings(settings)
+	if livery == null:
+		return
 	var changed := false
 	for stamp in livery.stamps:
 		if stamp == null or !stamp.is_custom():
@@ -1619,7 +1631,70 @@ func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_
 		stamp.palette_id = int(entry.get("palette_id", stamp.palette_id))
 		changed = true
 	if changed:
+		_set_livery_on_stamp_render_settings(settings, livery)
+
+func _duplicate_stamp_render_settings(settings):
+	var ps := settings as PlayerSettings
+	if ps != null:
+		var copy := PlayerSettings.new()
+		copy.from_dict(ps.to_dict())
+		return copy
+	if typeof(settings) == TYPE_DICTIONARY:
+		return (settings as Dictionary).duplicate(true)
+	return settings
+
+func _livery_from_stamp_render_settings(settings) -> CarLivery:
+	var car_path := ""
+	var livery_dict := {}
+	var ps := settings as PlayerSettings
+	if ps != null:
+		car_path = ps.car_definition_path
+		if !ps.car_livery.is_empty():
+			livery_dict = ps.car_livery
+	elif typeof(settings) == TYPE_DICTIONARY:
+		var settings_dict: Dictionary = settings
+		car_path = str(settings_dict.get("car_definition_path", ""))
+		if settings_dict.has("car_livery") and typeof(settings_dict["car_livery"]) == TYPE_DICTIONARY:
+			livery_dict = settings_dict["car_livery"]
+	if livery_dict.is_empty():
+		return null
+	var livery := CarLivery.new()
+	livery.from_dict(livery_dict)
+	if livery.car_definition_path == "":
+		livery.car_definition_path = car_path
+	return livery
+
+func _set_livery_on_stamp_render_settings(settings, livery: CarLivery) -> void:
+	var ps := settings as PlayerSettings
+	if ps != null:
 		ps.set_car_livery(livery)
+	elif typeof(settings) == TYPE_DICTIONARY:
+		(settings as Dictionary)["car_livery"] = livery.to_dict()
+
+func _custom_stamp_manifest_signature(player_id: int) -> String:
+	var manifest := network_manager.get_custom_stamp_manifest(player_id)
+	if manifest.is_empty():
+		return ""
+	var parts := []
+	for raw_entry in manifest:
+		if typeof(raw_entry) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = raw_entry
+		var stamp_hash := str(entry.get("hash", ""))
+		var blob = network_manager.get_custom_stamp_blob(stamp_hash)
+		var cached := "1" if blob != null else "0"
+		parts.append("%s:%s:%s:%s:%s" % [
+			stamp_hash,
+			str(entry.get("rect_pixels", [])),
+			str(entry.get("region_size", [])),
+			str(entry.get("rect_rotated", false)),
+			cached,
+		])
+	parts.sort()
+	var signature := ""
+	for part in parts:
+		signature += part + ";"
+	return signature
 
 func _custom_stamp_manifest_rect(entry: Dictionary) -> Rect2i:
 	if !entry.has("rect_pixels") or typeof(entry["rect_pixels"]) != TYPE_ARRAY:
@@ -1723,10 +1798,11 @@ func _start_race(track_index: int, settings: Array) -> void:
 					racer_cpu_flags.append(cpu_ids.has(pid))
 				racer_roster_index += 1
 	var bumpers_enabled := bool(network_manager.race_options.get("bumpers", false))
-	var custom_stamp_atlas := _prepare_race_custom_stamp_atlas(racer_ids, racer_settings)
+	var custom_stamp_render := _prepare_custom_stamp_render_payload(racer_ids, racer_settings, "race")
+	var custom_stamp_atlas: Texture2D = custom_stamp_render.get("texture", null)
 	var bumper_def: CarDefinition = load(BUMPER_DEFINITION_PATH) if bumpers_enabled else null
 	var render_defs := chosen_defs.duplicate()
-	var render_settings := racer_settings.duplicate()
+	var render_settings: Array = custom_stamp_render.get("settings", racer_settings.duplicate())
 	if bumper_def != null:
 		for _slot in BUMPER_POOL_SIZE:
 			render_defs.append(bumper_def)
