@@ -182,6 +182,36 @@ size_flags_horizontal = 3
 text = "Right Analog Trigger"
 alignment = 0
 
+[node name="HBoxContainer10" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer10"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Push to Talk"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer10"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "V"
+alignment = 0
+
+[node name="HBoxContainer11" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer11"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Toggle Voice"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer11"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "T"
+alignment = 0
+
 [node name="Control" type="VBoxContainer" parent="HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
@@ -244,6 +274,27 @@ text = "5%"
 [node name="CalibrateButton" type="Button" parent="HBoxContainer/Control"]
 layout_mode = 2
 text = "Calibrate"
+
+[node name="VoiceHeader" type="Label" parent="HBoxContainer/Control"]
+layout_mode = 2
+text = "Voice Chat"
+
+[node name="VoiceModeRow" type="HBoxContainer" parent="HBoxContainer/Control"]
+layout_mode = 2
+
+[node name="VoiceModeLabel" type="Label" parent="HBoxContainer/Control/VoiceModeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Mic Mode"
+
+[node name="VoiceModeOption" type="OptionButton" parent="HBoxContainer/Control/VoiceModeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HearVoiceToggle" type="CheckBox" parent="HBoxContainer/Control"]
+layout_mode = 2
+button_pressed = true
+text = "Hear Voice Chat"
 
 [node name="StrafeCalibrationPanel" type="VBoxContainer" parent="HBoxContainer"]
 custom_minimum_size = Vector2(230, 0)

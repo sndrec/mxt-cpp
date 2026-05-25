@@ -22,6 +22,7 @@ const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
+const ProximityVoiceChatClass = preload("res://netplay/proximity_voice_chat.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
@@ -47,6 +48,7 @@ var game_sim: GameSim
 var server_game_sim: GameSim
 var netcode_session := NetcodeSession.new()
 var server_netcode_session := NetcodeSession.new()
+var proximity_voice_chat: ProximityVoiceChat
 var last_received_tick := {}
 
 func has_network_peer() -> bool:
@@ -1259,6 +1261,9 @@ func dump_state_sample(state: PackedByteArray, tick: int, racer_count: int) -> v
 	state_sample_index += 1
 
 func _ready() -> void:
+	proximity_voice_chat = ProximityVoiceChatClass.new()
+	proximity_voice_chat.name = "ProximityVoiceChat"
+	add_child(proximity_voice_chat)
 	_parse_auth_input_sample_dump_args()
 	_apply_auth_input_sample_dump_settings()
 	var lbl: Label = get_node_or_null("../VersionLabel")
@@ -1740,6 +1745,8 @@ func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> 
 	if race_options.has("spawn_seed"):
 		set_spawn_seed(int(race_options.get("spawn_seed", spawn_seed)))
 	race_active = true
+	if proximity_voice_chat != null:
+		proximity_voice_chat.reset()
 	if race_options.has("race_human_ids"):
 		race_player_ids = _id_array_from_value(race_options.get("race_human_ids", []))
 	else:
@@ -1800,6 +1807,8 @@ func end_race(phase: int, next_track_index: int = -1, next_settings: Array = [],
 	if !pending_next_race_options.is_empty():
 		race_options = pending_next_race_options.duplicate(true)
 	race_active = false
+	if proximity_voice_chat != null:
+		proximity_voice_chat.reset()
 	emit_signal("race_finished")
 
 func send_end_race(next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
@@ -3003,6 +3012,8 @@ func _recalculate_future_predictions(start_tick: int) -> void:
 
 func disconnect_from_server() -> void:
 	race_active = false
+	if proximity_voice_chat != null:
+		proximity_voice_chat.reset()
 	if multiplayer.multiplayer_peer != null:
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null

@@ -3,6 +3,7 @@
 #include "main.h"
 #include "fzgx_gameplay_camera.h"
 #include "mxt_core/netcode_session.h"
+#include "mxt_core/opus_voice_codec.h"
 #include "track/track_editor_curve.h"
 
 #include <gdextension_interface.h>
@@ -21,6 +22,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(GameSim);
 	GDREGISTER_CLASS(FzgxGameplayCamera);
 	GDREGISTER_CLASS(NetcodeSession);
+	GDREGISTER_CLASS(OpusVoiceCodec);
 }
 
 void uninitialize_gamesim_module(ModuleInitializationLevel p_level) {

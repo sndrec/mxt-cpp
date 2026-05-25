@@ -1874,6 +1874,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
 	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
 	ClassDB::bind_method(D_METHOD("get_car_render_transform", "car_index"), &GameSim::get_car_render_transform);
+	ClassDB::bind_method(D_METHOD("get_saved_player_voice_transform", "player_id", "target_tick"), &GameSim::get_saved_player_voice_transform);
+	ClassDB::bind_method(D_METHOD("get_saved_player_voice_transforms", "target_tick"), &GameSim::get_saved_player_voice_transforms);
 	ClassDB::bind_method(D_METHOD("get_check_warning_candidates", "player_id"), &GameSim::get_check_warning_candidates);
 	ClassDB::bind_method(D_METHOD("consume_race_events"), &GameSim::consume_race_events);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "sim_started"), "set_sim_started", "get_sim_started");
@@ -1911,6 +1913,8 @@ GameSim::GameSim()
 		state_buffer[i].bumper_state_count = 0;
 		state_buffer[i].bumper_scheduler_lap = 0;
 		state_buffer[i].bumper_next_sequence = 0;
+		state_buffer[i].tick = -1;
+		state_buffer[i].voice_transform_count = 0;
 	}
 	input_buffer = nullptr;
 };
@@ -1927,6 +1931,10 @@ GameSim::~GameSim()
 			::free(state_buffer[i].data);
 			state_buffer[i].data = nullptr;
 		}
+		state_buffer[i].size = 0;
+		state_buffer[i].tick = -1;
+		state_buffer[i].voice_transform_count = 0;
+		state_buffer[i].voice_transforms.clear();
 	}
 	if (input_buffer) {
 		::free(input_buffer);
@@ -2508,6 +2516,28 @@ void GameSim::save_bumper_states_to_saved_state(SavedState& state) const
 	state.bumper_next_sequence = bumper_next_sequence;
 	for (int i = 0; i < count; ++i) {
 		state.bumper_states[i] = bumper_states[i];
+	}
+}
+
+void GameSim::update_saved_voice_transforms(SavedState& state) const
+{
+	state.voice_transform_count = 0;
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return;
+	}
+	if (static_cast<int>(state.voice_transforms.size()) < num_cars) {
+		state.voice_transforms.resize(num_cars);
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		const int32_t player_id = car_player_ids[i];
+		if (player_id < 0) {
+			continue;
+		}
+		const PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		SavedVoiceTransform& dst = state.voice_transforms[state.voice_transform_count++];
+		dst.player_id = player_id;
+		dst.transform = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
 	}
 }
 
@@ -3179,6 +3209,46 @@ godot::Transform3D GameSim::get_car_render_transform(int car_index) const
 	return gd_transform(render_transform);
 }
 
+godot::Transform3D GameSim::get_saved_player_voice_transform(int player_id, int target_tick) const
+{
+	if (target_tick < 0) {
+		return godot::Transform3D();
+	}
+	const int index = target_tick % STATE_BUFFER_LEN;
+	const SavedState& state = state_buffer[index];
+	if (state.tick != target_tick || state.voice_transform_count <= 0) {
+		return godot::Transform3D();
+	}
+	const int count = std::min(state.voice_transform_count, static_cast<int>(state.voice_transforms.size()));
+	for (int i = 0; i < count; ++i) {
+		if (state.voice_transforms[i].player_id == player_id) {
+			return gd_transform(state.voice_transforms[i].transform);
+		}
+	}
+	return godot::Transform3D();
+}
+
+godot::Array GameSim::get_saved_player_voice_transforms(int target_tick) const
+{
+	godot::Array out;
+	if (target_tick < 0) {
+		return out;
+	}
+	const int index = target_tick % STATE_BUFFER_LEN;
+	const SavedState& state = state_buffer[index];
+	if (state.tick != target_tick || state.voice_transform_count <= 0) {
+		return out;
+	}
+	const int count = std::min(state.voice_transform_count, static_cast<int>(state.voice_transforms.size()));
+	for (int i = 0; i < count; ++i) {
+		godot::Dictionary item;
+		item["player_id"] = state.voice_transforms[i].player_id;
+		item["transform"] = gd_transform(state.voice_transforms[i].transform);
+		out.append(item);
+	}
+	return out;
+}
+
 godot::Array GameSim::get_check_warning_candidates(int player_id) const
 {
 	godot::Array out;
@@ -3677,6 +3747,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	{
 		state_buffer[i].data = (char*)malloc(state_capacity);
 		state_buffer[i].size = 0;
+		state_buffer[i].tick = -1;
+		state_buffer[i].voice_transform_count = 0;
+		state_buffer[i].voice_transforms.resize(requested_cars_hint);
 	}
 
 	current_track = level_data.allocate_class<RaceTrack>();
@@ -4414,6 +4487,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 					::free(state_buffer[i].data);
 					state_buffer[i].data = nullptr;
 				}
+				state_buffer[i].size = 0;
+				state_buffer[i].tick = -1;
+				state_buffer[i].voice_transform_count = 0;
+				state_buffer[i].voice_transforms.clear();
 			}
 			if (input_buffer) {
 				::free(input_buffer);
@@ -6382,7 +6459,9 @@ void GameSim::save_state()
 	int index = tick % STATE_BUFFER_LEN;
 	int size = gamestate_data.get_size();
 	state_buffer[index].size = size;
+	state_buffer[index].tick = tick;
 	save_bumper_states_to_saved_state(state_buffer[index]);
+	update_saved_voice_transforms(state_buffer[index]);
 	if (state_buffer[index].data)
 	{
 		memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
@@ -7824,7 +7903,9 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	if (state_buffer[index].data && size > 0) {
 		std::memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
 		state_buffer[index].size = size;
+		state_buffer[index].tick = target_tick;
 		save_bumper_states_to_saved_state(state_buffer[index]);
+		update_saved_voice_transforms(state_buffer[index]);
 	}
 	return true;
 }
@@ -8088,6 +8169,8 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 	if (size > 0) {
 		memcpy(state_buffer[index].data, data.ptr(), size);
 		state_buffer[index].size = size;
+		state_buffer[index].tick = target_tick;
+		state_buffer[index].voice_transform_count = 0;
 	}
 }
 

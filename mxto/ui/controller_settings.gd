@@ -22,6 +22,10 @@ extends Control
 @onready var btn_pitch: Button = $HBoxContainer/VBoxContainer/HBoxContainer6/Button
 @onready var btn_strafe_left: Button = $HBoxContainer/VBoxContainer/HBoxContainer7/Button
 @onready var btn_strafe_right: Button = $HBoxContainer/VBoxContainer/HBoxContainer8/Button
+@onready var btn_voice_chat: Button = $HBoxContainer/VBoxContainer/HBoxContainer10/Button
+@onready var btn_toggle_voice: Button = $HBoxContainer/VBoxContainer/HBoxContainer11/Button
+@onready var voice_mode_option: OptionButton = $HBoxContainer/Control/VoiceModeRow/VoiceModeOption
+@onready var hear_voice_toggle: CheckBox = $HBoxContainer/Control/HearVoiceToggle
 
 var waiting_index: int = -1
 var waiting_old_text: String = ""
@@ -34,6 +38,8 @@ var trigger_calibration := {
 		"StrafeLeft": Vector2(0.0, 1.0),
 		"StrafeRight": Vector2(0.0, 1.0),
 }
+var voice_input_mode := "push_to_talk"
+var voice_listen_enabled := true
 const CAL_POINT_COUNT := 64
 const CAL_VERSION := 2
 var CAL_DIRS: Array = _build_cal_dirs()
@@ -56,6 +62,8 @@ var bindings := [
 		{"button": Callable(self, "_get_btn_pitch"), "type": "axis_pair", "actions": ["SteerUp", "SteerDown"]},
 		{"button": Callable(self, "_get_btn_strafe_left"), "type": "axis", "actions": ["StrafeLeft"]},
 		{"button": Callable(self, "_get_btn_strafe_right"), "type": "axis", "actions": ["StrafeRight"]},
+		{"button": Callable(self, "_get_btn_voice_chat"), "type": "any", "actions": ["VoiceChat"]},
+		{"button": Callable(self, "_get_btn_toggle_voice"), "type": "any", "actions": ["ToggleVoice"]},
 ]
 
 func _get_btn_accel(): return btn_accelerate
@@ -67,12 +75,18 @@ func _get_btn_steer(): return btn_steer
 func _get_btn_pitch(): return btn_pitch
 func _get_btn_strafe_left(): return btn_strafe_left
 func _get_btn_strafe_right(): return btn_strafe_right
+func _get_btn_voice_chat(): return btn_voice_chat
+func _get_btn_toggle_voice(): return btn_toggle_voice
 
 func _ready() -> void:
+		_ensure_voice_actions()
 		close_button.pressed.connect(_on_close_pressed)
 		for i in bindings.size():
 				var b: Button = bindings[i]["button"].call()
 				b.pressed.connect(_on_binding_pressed.bind(i))
+		_configure_voice_options()
+		voice_mode_option.item_selected.connect(_on_voice_mode_selected)
+		hear_voice_toggle.toggled.connect(_on_hear_voice_toggled)
 		deadzone_slider.value_changed.connect(_on_deadzone_changed)
 		deadzone_field.text_submitted.connect(_on_deadzone_text)
 		calibrate_button.pressed.connect(_on_calibrate_pressed)
@@ -89,13 +103,57 @@ func _ready() -> void:
 		set_process(true)
 
 func open_settings() -> void:
+		_load_voice_settings()
+		_update_voice_controls()
 		_update_binding_labels()
 		_update_deadzone_ui()
 		show()
 
 func _on_close_pressed() -> void:
 		_save_bindings()
+		_save_voice_settings()
 		hide()
+
+func _ensure_voice_actions() -> void:
+		_ensure_key_action("VoiceChat", KEY_V)
+		_ensure_key_action("ToggleVoice", KEY_T)
+
+func _ensure_key_action(action: String, keycode: Key) -> void:
+		if !InputMap.has_action(action):
+				InputMap.add_action(action)
+		if !InputMap.action_get_events(action).is_empty():
+				return
+		var key := InputEventKey.new()
+		key.keycode = keycode
+		InputMap.action_add_event(action, key)
+
+func _configure_voice_options() -> void:
+		voice_mode_option.clear()
+		voice_mode_option.add_item("Push to Talk", 0)
+		voice_mode_option.set_item_metadata(0, "push_to_talk")
+		voice_mode_option.add_item("Toggle", 1)
+		voice_mode_option.set_item_metadata(1, "toggle")
+		voice_mode_option.add_item("Always On", 2)
+		voice_mode_option.set_item_metadata(2, "always_on")
+		voice_mode_option.add_item("Muted", 3)
+		voice_mode_option.set_item_metadata(3, "off")
+		_load_voice_settings()
+		_update_voice_controls()
+
+func _update_voice_controls() -> void:
+		for i in range(voice_mode_option.item_count):
+				if str(voice_mode_option.get_item_metadata(i)) == voice_input_mode:
+						voice_mode_option.select(i)
+						break
+		hear_voice_toggle.button_pressed = voice_listen_enabled
+
+func _on_voice_mode_selected(index: int) -> void:
+		voice_input_mode = str(voice_mode_option.get_item_metadata(index))
+		_save_voice_settings()
+
+func _on_hear_voice_toggled(toggled: bool) -> void:
+		voice_listen_enabled = toggled
+		_save_voice_settings()
 
 func _on_deadzone_changed(v: float) -> void:
 		deadzone_field.text = str(roundi(v * 100.0)) + "%"
@@ -323,12 +381,13 @@ func _process(delta: float) -> void:
 
 const SAVE_PATH := "user://controller_settings.json"
 const CAL_PATH := "user://controller_calibration.json"
+const VOICE_SETTINGS_PATH := "user://voice_chat_settings.json"
 
 func _collect_bindings() -> Dictionary:
 		var actions := [
 				"Accelerate", "Boost", "Brake", "SpinAttack", "SideAttack",
 				"SteerLeft", "SteerRight", "SteerUp", "SteerDown",
-				"StrafeLeft", "StrafeRight"
+				"StrafeLeft", "StrafeRight", "VoiceChat", "ToggleVoice"
 		]
 		var out := {}
 		for a in actions:
@@ -393,6 +452,31 @@ func _load_saved_bindings() -> void:
 				var data = JSON.parse_string(txt)
 				if typeof(data) == TYPE_DICTIONARY:
 						_apply_binding_dict(data)
+
+func _save_voice_settings() -> void:
+		var data := {
+				"version": 1,
+				"input_mode": voice_input_mode,
+				"listen_enabled": voice_listen_enabled,
+		}
+		var file := FileAccess.open(VOICE_SETTINGS_PATH, FileAccess.WRITE)
+		if file:
+				file.store_string(JSON.stringify(data))
+				file.close()
+
+func _load_voice_settings() -> void:
+		voice_input_mode = "push_to_talk"
+		voice_listen_enabled = true
+		if !FileAccess.file_exists(VOICE_SETTINGS_PATH):
+				return
+		var txt := FileAccess.get_file_as_string(VOICE_SETTINGS_PATH)
+		var data = JSON.parse_string(txt)
+		if typeof(data) != TYPE_DICTIONARY:
+				return
+		var mode := str(data.get("input_mode", "push_to_talk"))
+		if mode == "push_to_talk" or mode == "toggle" or mode == "always_on" or mode == "off":
+				voice_input_mode = mode
+		voice_listen_enabled = bool(data.get("listen_enabled", true))
 
 # Calibration: persistence and logic
 # Calibration: persistence and logic

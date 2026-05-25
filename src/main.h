@@ -39,6 +39,10 @@ namespace godot {
 		HeapHandler level_data;
 		HeapHandler gamestate_data;
 		static const int STATE_BUFFER_LEN = 45;
+		struct SavedVoiceTransform {
+			int32_t player_id = -1;
+			SimTransform transform;
+		};
 		struct BumperState {
 			uint8_t active = 0;
 			uint8_t spawn_lap = 0;
@@ -53,6 +57,9 @@ namespace godot {
 			uint8_t bumper_scheduler_lap;
 			uint32_t bumper_next_sequence;
 			BumperState bumper_states[BUMPER_POOL_SIZE];
+			int tick = -1;
+			int voice_transform_count = 0;
+			std::vector<SavedVoiceTransform> voice_transforms;
 		};
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		std::vector<char> network_state_live_backup;
@@ -175,6 +182,7 @@ namespace godot {
 		void collide_racers_with_bumpers();
 		void save_bumper_states_to_saved_state(SavedState& state) const;
 		void restore_bumper_states_from_saved_state(const SavedState& state);
+		void update_saved_voice_transforms(SavedState& state) const;
 		bool sample_track_transform_at_distance(float absolute_distance, float lane, SimTransform& out_transform, uint16_t& out_checkpoint, float& out_fraction) const;
 		PlayerInput generate_bumper_input_for_slot(int bumper_slot) const;
 		void process_pending_ko_events();
@@ -389,6 +397,8 @@ namespace godot {
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
 		godot::Transform3D get_car_render_transform(int car_index) const;
+		godot::Transform3D get_saved_player_voice_transform(int player_id, int target_tick) const;
+		godot::Array get_saved_player_voice_transforms(int target_tick) const;
 		godot::Array get_check_warning_candidates(int player_id) const;
 		godot::Array consume_race_events();
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);
