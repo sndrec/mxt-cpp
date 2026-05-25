@@ -144,6 +144,8 @@ script = ExtResource("3_netplay")
 script = ExtResource("22_voice")
 voice_range = 500.0
 playback_buffer_seconds = 0.05
+voice_doppler_strength = 0.5
+voice_doppler_min_pitch = 0.75
 
 [node name="CpuDriverManager" type="Node" parent="." unique_id=2002486661]
 script = ExtResource("19_cpu_manager")

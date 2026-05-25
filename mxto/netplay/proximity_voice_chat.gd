@@ -10,7 +10,7 @@ const VOICE_MODE_ALWAYS_ON := "always_on"
 const VOICE_MODE_OFF := "off"
 const CAPTURE_BUS_NAME := "VoiceCapture"
 const CAPTURE_BUS_OUTPUT_MUTE_DB := -80.0
-const VOICE_SAMPLE_RATE := 16000
+const VOICE_SAMPLE_RATE := 22050
 const VOICE_FRAME_SAMPLES := 320
 const VOICE_SETTINGS_RELOAD_MSEC := 500
 
@@ -23,6 +23,11 @@ const VOICE_SETTINGS_RELOAD_MSEC := 500
 @export var voice_position_lerp_speed := 18.0
 @export var voice_pan_strength := 1.0
 @export var voice_attenuation_exponent := 1.0
+@export var voice_doppler_enabled := true
+@export var voice_doppler_strength := 0.4
+@export var voice_doppler_speed_of_sound_kmh := 1235.0
+@export var voice_doppler_min_pitch := 0.9
+@export var voice_doppler_lerp_speed := 10.0
 
 var network_manager: NetworkManager
 var capture_player: AudioStreamPlayer
@@ -48,12 +53,18 @@ var debug_capture_status := "idle"
 var debug_voice_spatial_tick := -1
 var debug_voice_snapshot_count := 0
 var debug_voice_position_matches := 0
+var debug_voice_listener_matches := 0
+var debug_voice_min_doppler_pitch := 1.0
 var applied_playback_buffer_seconds := -1.0
 var applied_voice_bitrate := -1
 var applied_voice_codec_complexity := -1
+var voice_units_to_kmh := 260.0
 
 func _ready() -> void:
 	network_manager = get_parent() as NetworkManager
+	var fz_global := get_node_or_null("/root/FZGlobal")
+	if fz_global != null:
+		voice_units_to_kmh = float(fz_global.get("units_to_kmh"))
 	_ensure_voice_input_action()
 	_load_voice_settings()
 	applied_playback_buffer_seconds = playback_buffer_seconds
@@ -321,11 +332,16 @@ func _receive_voice_packet(sender_id: int, sequence: int, payload: PackedByteArr
 		_update_remote_source_positions()
 		if !bool(peer.get("has_voice_transform", false)):
 			return
+	if !bool(peer.get("has_listener_transform", false)):
+		return
 	var playback := peer.get("playback") as AudioStreamGeneratorPlayback
 	var codec := peer.get("codec") as OpusVoiceCodec
 	if playback == null or codec == null:
 		return
-	var pan_gains := _voice_stereo_gains(peer.get("current_origin", Vector3.ZERO))
+	var pan_gains := _voice_stereo_gains(
+		peer.get("current_origin", Vector3.ZERO),
+		peer.get("listener_origin", Vector3.ZERO)
+	)
 	codec.decode_push_stereo(payload, playback, pan_gains.x, pan_gains.y)
 
 func _play_voice_test_payload(payload: PackedByteArray) -> void:
@@ -376,23 +392,26 @@ func _ensure_remote_peer(sender_id: int) -> Dictionary:
 		"last_sequence": -1,
 		"last_packet_msec": Time.get_ticks_msec(),
 		"has_voice_transform": false,
+		"has_listener_transform": false,
 		"current_origin": Vector3.ZERO,
 		"target_origin": Vector3.ZERO,
+		"listener_origin": Vector3.ZERO,
+		"has_previous_distance": false,
+		"previous_distance": 0.0,
+		"doppler_pitch": 1.0,
 	}
 	remote_peers[sender_id] = peer
 	return peer
 
 
-func _voice_stereo_gains(source_origin: Vector3) -> Vector2:
+func _voice_stereo_gains(source_origin: Vector3, listener_origin: Vector3) -> Vector2:
 	var camera := get_viewport().get_camera_3d()
-	if camera == null:
-		return Vector2.ONE
-	var offset := source_origin - camera.global_position
+	var offset := source_origin - listener_origin
 	var distance := offset.length()
 	var attenuation := 1.0
 	if voice_range > 0.0:
 		attenuation = pow(clampf(1.0 - (distance / voice_range), 0.0, 1.0), maxf(voice_attenuation_exponent, 0.01))
-	if distance <= 0.0001:
+	if camera == null or distance <= 0.0001:
 		return Vector2(attenuation, attenuation)
 	var pan := offset.normalized().dot(camera.global_basis.x)
 	pan = clampf(pan * voice_pan_strength, -1.0, 1.0)
@@ -455,7 +474,15 @@ func _update_remote_source_positions() -> void:
 	for item in snapshot:
 		if typeof(item) == TYPE_DICTIONARY:
 			transforms[int(item.get("player_id", -1))] = item.get("transform", Transform3D.IDENTITY)
+	var local_id := multiplayer.get_unique_id()
+	var listener_has_transform := transforms.has(local_id)
+	var listener_origin := Vector3.ZERO
+	if listener_has_transform:
+		var listener_transform: Transform3D = transforms[local_id]
+		listener_origin = listener_transform.origin
 	debug_voice_position_matches = 0
+	debug_voice_listener_matches = 1 if listener_has_transform else 0
+	debug_voice_min_doppler_pitch = 1.0
 	var now := Time.get_ticks_msec()
 	for peer_id in remote_peers.keys():
 		var peer: Dictionary = remote_peers[peer_id]
@@ -466,10 +493,12 @@ func _update_remote_source_positions() -> void:
 			player.queue_free()
 			remote_peers.erase(peer_id)
 			continue
-		if transforms.has(int(peer_id)):
+		if listener_has_transform and transforms.has(int(peer_id)):
 			debug_voice_position_matches += 1
 			var t: Transform3D = transforms[int(peer_id)]
 			peer["target_origin"] = t.origin
+			peer["listener_origin"] = listener_origin
+			peer["has_listener_transform"] = true
 			if !bool(peer.get("has_voice_transform", false)):
 				peer["current_origin"] = t.origin
 				peer["has_voice_transform"] = true
@@ -477,6 +506,38 @@ func _update_remote_source_positions() -> void:
 				var alpha := clampf(voice_position_lerp_speed / maxf(Engine.physics_ticks_per_second, 1.0), 0.0, 1.0)
 				var current_origin: Vector3 = peer.get("current_origin", t.origin)
 				peer["current_origin"] = current_origin.lerp(t.origin, alpha)
+			var source_origin: Vector3 = peer.get("current_origin", t.origin)
+			var distance := source_origin.distance_to(listener_origin)
+			_update_peer_doppler(peer, player, distance)
+			debug_voice_min_doppler_pitch = minf(debug_voice_min_doppler_pitch, float(peer.get("doppler_pitch", 1.0)))
+		else:
+			peer["has_voice_transform"] = false
+			peer["has_listener_transform"] = false
+			peer["has_previous_distance"] = false
+			peer["doppler_pitch"] = 1.0
+			player.pitch_scale = 1.0
+
+func _update_peer_doppler(peer: Dictionary, player: AudioStreamPlayer, distance: float) -> void:
+	var physics_tps := maxf(Engine.physics_ticks_per_second, 1.0)
+	var target_pitch := 1.0
+	if voice_doppler_enabled:
+		var min_pitch := clampf(voice_doppler_min_pitch, 0.25, 1.0)
+		if bool(peer.get("has_previous_distance", false)):
+			var previous_distance := float(peer.get("previous_distance", distance))
+			var receding_speed_kmh := maxf((distance - previous_distance) * physics_tps * voice_units_to_kmh, 0.0)
+			if receding_speed_kmh > 0.0:
+				var speed_of_sound := maxf(voice_doppler_speed_of_sound_kmh, 1.0)
+				var strength := maxf(voice_doppler_strength, 0.0)
+				target_pitch = clampf(speed_of_sound / (speed_of_sound + receding_speed_kmh * strength), min_pitch, 1.0)
+		peer["has_previous_distance"] = true
+		peer["previous_distance"] = distance
+	else:
+		peer["has_previous_distance"] = false
+	var current_pitch := float(peer.get("doppler_pitch", player.pitch_scale))
+	var alpha := clampf(voice_doppler_lerp_speed / physics_tps, 0.0, 1.0)
+	var pitch := lerpf(current_pitch, target_pitch, alpha)
+	peer["doppler_pitch"] = pitch
+	player.pitch_scale = pitch
 
 func _voice_spatial_tick() -> int:
 	if network_manager == null:
@@ -502,4 +563,6 @@ func get_voice_debug_status() -> Dictionary:
 		"voice_spatial_tick": debug_voice_spatial_tick,
 		"voice_snapshot_count": debug_voice_snapshot_count,
 		"voice_position_matches": debug_voice_position_matches,
+		"voice_listener_matches": debug_voice_listener_matches,
+		"voice_min_doppler_pitch": debug_voice_min_doppler_pitch,
 	}
