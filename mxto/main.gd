@@ -20,7 +20,7 @@ class_name GameManager extends Node
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var cpu_driver_manager: CpuDriverManager = $CpuDriverManager
 @onready var car_settings: Control = $CarSettings
-@onready var controller_settings: Control = $ControllerSettings
+@onready var options_menu: Control = $OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
 @onready var spectator_race_button: Button = $Control/SpectatorRaceButton
@@ -52,6 +52,7 @@ class_name GameManager extends Node
 @onready var race_pause_root: Control = $RacePauseLayer/RacePauseRoot
 @onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
 @onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
+@onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
 @onready var race_pause_lobby_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/LobbyButton
 @onready var race_pause_disconnect_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/DisconnectButton
 var lobby_chibi_cars := {}
@@ -213,6 +214,7 @@ func _ready() -> void:
 	network_manager.race_event.connect(_on_race_event)
 	network_manager.race_options_changed.connect(_on_network_race_options_changed)
 	car_settings.hide()
+	options_menu.hide()
 	if !car_settings_button.pressed.is_connected(_on_car_settings_button_pressed):
 		car_settings_button.pressed.connect(_on_car_settings_button_pressed)
 	if !car_settings_button_lobby.pressed.is_connected(_on_car_settings_button_pressed):
@@ -592,6 +594,8 @@ func _build_lobby_options_controls() -> void:
 func _build_race_pause_menu() -> void:
 	if !race_pause_resume_button.pressed.is_connected(_close_race_pause_menu):
 		race_pause_resume_button.pressed.connect(_close_race_pause_menu)
+	if !race_pause_options_button.pressed.is_connected(_on_pause_options_pressed):
+		race_pause_options_button.pressed.connect(_on_pause_options_pressed)
 	if !race_pause_lobby_button.pressed.is_connected(_on_pause_lobby_pressed):
 		race_pause_lobby_button.pressed.connect(_on_pause_lobby_pressed)
 	if !race_pause_disconnect_button.pressed.is_connected(_on_pause_disconnect_pressed):
@@ -621,6 +625,9 @@ func _on_pause_lobby_pressed() -> void:
 	_close_race_pause_menu()
 	if network_manager.is_server:
 		network_manager.send_end_race()
+
+func _on_pause_options_pressed() -> void:
+	options_menu.call("open_settings")
 
 func _on_add_cpu_button_pressed() -> void:
 	if !network_manager.is_server:
@@ -1320,7 +1327,7 @@ func _on_car_settings_button_pressed() -> void:
 	car_settings.call("open_settings")
 
 func _on_controller_settings_button_pressed() -> void:
-	controller_settings.call("open_settings")
+	options_menu.call("open_settings")
 
 func _close_settings_menus_for_race_start() -> void:
 	if car_settings != null:
@@ -1328,11 +1335,11 @@ func _close_settings_menus_for_race_start() -> void:
 			car_settings.call("_on_close_pressed")
 		else:
 			car_settings.hide()
-	if controller_settings != null:
-		if controller_settings.visible and controller_settings.has_method("_on_close_pressed"):
-			controller_settings.call("_on_close_pressed")
+	if options_menu != null:
+		if options_menu.visible and options_menu.has_method("close_settings"):
+			options_menu.call("close_settings")
 		else:
-			controller_settings.hide()
+			options_menu.hide()
 
 func _generate_random_input() -> PlayerInput:
 	var p := PlayerInputClass.new()

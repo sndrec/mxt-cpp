@@ -189,12 +189,12 @@ text = "- CPU"
 [node name="CarSettingsButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=1414752797]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Car Settings"
+text = "Garage"
 
 [node name="ControllerSettingsButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=1992039734]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Controller Settings"
+text = "Options"
 
 [node name="StartRaceButton" type="Button" parent="LobbyContainer/Container/TopBox/OptionsColumn" unique_id=305305536]
 custom_minimum_size = Vector2(0, 44)

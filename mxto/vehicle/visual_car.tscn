@@ -6,7 +6,7 @@
 [ext_resource type="PackedScene" uid="uid://boy1og0xhuefn" path="res://asset/effects/particles/attack_particles.tscn" id="4_0b8fb"]
 [ext_resource type="PackedScene" uid="uid://cr0v8k0h0rb8r" path="res://asset/effect/boost_electricity.tscn" id="5_ek4m1"]
 [ext_resource type="FontFile" uid="uid://b0lon6q7rlaay" path="res://asset/font/Roboto-Condensed.ttf" id="6_hjm5e"]
-[ext_resource type="PackedScene" uid="uid://cavk4hngdamage" path="res://asset/effect/damage_electricity.tscn" id="7_fha2k"]
+[ext_resource type="PackedScene" uid="uid://c6ncgos2n6eke" path="res://asset/effect/damage_electricity.tscn" id="7_fha2k"]
 
 [sub_resource type="Curve" id="Curve_trwkr"]
 _data = [Vector2(0, 0), 0.0, 4.53242, 0, 0, Vector2(1, 0), -3.20433, 0.0, 0, 0]
@@ -88,31 +88,6 @@ cull_mask = 7
 
 [node name="CarTransform" type="Node3D" parent="." unique_id=1352159418]
 
-[node name="AudioStreamPlayer3D" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=1054674554]
-volume_db = 40.0
-unit_size = 1.0
-
-[node name="AudioStreamPlayer3D2" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=1923768595]
-volume_db = 20.0
-unit_size = 1.0
-max_polyphony = 8
-
-[node name="AudioStreamPlayer3D3" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=358860571]
-volume_db = 20.0
-unit_size = 1.0
-
-[node name="AudioStreamPlayer3D4" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=981625408]
-volume_db = 20.0
-unit_size = 1.0
-
-[node name="AudioStreamPlayer3D5" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=873710999]
-volume_db = 20.0
-unit_size = 1.0
-
-[node name="AudioStreamPlayer3D6" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=1203856330]
-volume_db = 20.0
-unit_size = 1.0
-
 [node name="AudioStreamPlayer3D7" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=364651277]
 volume_db = 25.0
 unit_size = 1.0
@@ -136,7 +111,7 @@ transform = Transform3D(-3, 2.76542e-08, -4.52142e-07, 0, 2.9944, 0.183146, 4.52
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.5, 0)
 emitting = false
 
-[node name="DamageElectricity" parent="CarTransform" instance=ExtResource("7_fha2k")]
+[node name="DamageElectricity" parent="CarTransform" unique_id=296105777 instance=ExtResource("7_fha2k")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, -0.125, 0)
 
 [node name="BoostElectricity" parent="." unique_id=1646994162 instance=ExtResource("5_ek4m1")]

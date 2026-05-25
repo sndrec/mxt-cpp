@@ -70,12 +70,6 @@ enum FZ_TC{
 	B8 = 0x80
 }
 
-@onready var terrain_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D
-@onready var thrust_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D2
-@onready var engine_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D3
-@onready var boost_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D4
-@onready var air_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D5
-@onready var strafe_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D6
 @onready var landing_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D7
 
 var owning_id : int = 0
@@ -203,18 +197,6 @@ func _ready() -> void:
 	if !local_visual_enabled:
 		return
 	await get_tree().create_timer(2.0).timeout
-	air_sound.stream = preload("res://sfx/vehicle/air_1.wav")
-	air_sound.play()
-	thrust_sound.stream = preload("res://sfx/vehicle/thrust_on.wav")
-	thrust_sound.stop()
-	engine_sound.stream = preload("res://sfx/vehicle/engine.wav")
-	engine_sound.play()
-	boost_sound.stream = preload("res://sfx/vehicle/boost/PACK1-110.wav")
-	boost_sound.stop()
-	terrain_sound.stream = preload("res://sfx/vehicle/restore.wav")
-	terrain_sound.play()
-	strafe_sound.stream = preload("res://sfx/vehicle/strafe.wav")
-	strafe_sound.play()
 	landing_sound.stream = preload("res://sfx/vehicle/landing.wav")
 	landing_sound.stop()
 
@@ -272,7 +254,7 @@ func _apply_effect_tier_state() -> void:
 	if is_instance_valid(name_label):
 		name_label.visible = !local_visual_enabled
 	if !local_visual_enabled:
-		for player in [terrain_sound, thrust_sound, engine_sound, boost_sound, air_sound, strafe_sound, landing_sound]:
+		for player in [landing_sound]:
 			player.stop()
 	if _needs_process_reset:
 		_reset_interpolation_state()
@@ -599,46 +581,6 @@ func _physics_process(delta):
 	desired_ts_normal = track_surface_normal
 	
 	var use_vy := remap(clampf(absf(velocity.y), 0, 5000), 0, 5000, 0, 1)
-	if local_visual_enabled:
-		if (machine_state & FZ_MS.AIRBORNE) != 0:
-			var target_db := remap(use_vy, 0, 1, 0, 20)
-			air_sound.volume_db = lerpf(air_sound.volume_db, target_db, delta * 8)
-			var target_pitch := remap(use_vy, 0, 1, 0.5, 1.5)
-			air_sound.pitch_scale = lerpf(air_sound.pitch_scale, target_pitch, delta * 8)
-		else:
-			air_sound.volume_db = lerpf(air_sound.volume_db, -20, delta * 8)
-		var target_engine_pitch := clampf(remap(base_speed, 2, 10, 0.9, 1.3), 0.9, 1.3)
-		var target_engine_volume := clampf(remap(base_speed, 2, 10, 15, 20), 15, 20)
-		engine_sound.pitch_scale = lerpf(engine_sound.pitch_scale, target_engine_pitch, delta * 8)
-		engine_sound.volume_db = lerpf(engine_sound.volume_db, target_engine_volume, delta * 8)
-		if (terrain_state_old & FZ_TERRAIN.RECHARGE) == 0 and (terrain_state & FZ_TERRAIN.RECHARGE) != 0:
-			terrain_sound.stream = preload("res://sfx/vehicle/restore.wav")
-			terrain_sound.play(0.0)
-		elif (terrain_state_old & FZ_TERRAIN.DIRT) == 0 and (terrain_state & FZ_TERRAIN.DIRT) != 0:
-			terrain_sound.stream = preload("res://sfx/vehicle/terrain_dirt.wav")
-			terrain_sound.play(0.0)
-		elif (terrain_state_old & FZ_TERRAIN.LAVA) == 0 and (terrain_state & FZ_TERRAIN.LAVA) != 0:
-			terrain_sound.stream = preload("res://sfx/vehicle/terrain_lava.wav")
-			terrain_sound.play(0.0)
-		elif terrain_state == 0:
-			terrain_sound.stop()
-		if (absf(input_strafe) > 0.05):
-			strafe_sound.volume_db = lerpf(strafe_sound.volume_db, 20, delta * 12)
-			if !strafe_sound.playing:
-				strafe_sound.play(0.0)
-		else:
-			strafe_sound.volume_db = lerpf(strafe_sound.volume_db, -20, delta * 12)
-			if strafe_sound.volume_db <= -10:
-				strafe_sound.stop()
-		if (Input.is_action_just_pressed("Accelerate")):
-			thrust_sound.stop()
-			thrust_sound.play(0.0)
-		if (machine_state & FZ_MS.JUST_PRESSED_BOOST):
-			boost_sound.stop()
-			boost_sound.play(0.0)
-		if (machine_state & FZ_MS.JUST_HIT_DASHPLATE):
-			boost_sound.stop()
-			boost_sound.play(0.0)
 	if effect_tier == EffectTier.FULL:
 		recharge_particles.emitting = (terrain_state & FZ_TERRAIN.RECHARGE) != 0
 		attack_particles.emitting = (machine_state & FZ_MS.SIDEATTACKING) != 0 or (machine_state & FZ_MS.SPINATTACKING) != 0

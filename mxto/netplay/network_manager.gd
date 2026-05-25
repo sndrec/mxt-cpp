@@ -1261,9 +1261,11 @@ func dump_state_sample(state: PackedByteArray, tick: int, racer_count: int) -> v
 	state_sample_index += 1
 
 func _ready() -> void:
-	proximity_voice_chat = ProximityVoiceChatClass.new()
-	proximity_voice_chat.name = "ProximityVoiceChat"
-	add_child(proximity_voice_chat)
+	proximity_voice_chat = get_node_or_null("ProximityVoiceChat") as ProximityVoiceChat
+	if proximity_voice_chat == null:
+		proximity_voice_chat = ProximityVoiceChatClass.new()
+		proximity_voice_chat.name = "ProximityVoiceChat"
+		add_child(proximity_voice_chat)
 	_parse_auth_input_sample_dump_args()
 	_apply_auth_input_sample_dump_settings()
 	var lbl: Label = get_node_or_null("../VersionLabel")

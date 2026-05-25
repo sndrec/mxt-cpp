@@ -1,0 +1,108 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://ui/options_menu.gd" id="1_options"]
+[ext_resource type="PackedScene" path="res://ui/controller_settings.tscn" id="2_controls"]
+
+[node name="OptionsMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_options")
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.772549)
+
+[node name="Center" type="CenterContainer" parent="Shade"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Shade/Center"]
+custom_minimum_size = Vector2(1020, 620)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Shade/Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="Root" type="VBoxContainer" parent="Shade/Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Header" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Shade/Center/Panel/Margin/Root/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Options"
+
+[node name="CloseButton" type="Button" parent="Shade/Center/Panel/Margin/Root/Header"]
+layout_mode = 2
+text = "Close"
+
+[node name="Tabs" type="TabContainer" parent="Shade/Center/Panel/Margin/Root"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Communication" type="MarginContainer" parent="Shade/Center/Panel/Margin/Root/Tabs"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="CommunicationBox" type="VBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="VoiceModeRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox"]
+layout_mode = 2
+
+[node name="VoiceModeLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceModeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Mic Mode"
+
+[node name="VoiceModeOption" type="OptionButton" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceModeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HearVoiceToggle" type="CheckBox" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox"]
+layout_mode = 2
+button_pressed = true
+text = "Hear Voice Chat"
+
+[node name="MicMonitorToggle" type="CheckBox" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox"]
+layout_mode = 2
+text = "Test Mic Playback"
+
+[node name="VoiceStatus" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox"]
+layout_mode = 2
+text = "Voice Status: idle"
+
+[node name="Controls" type="Control" parent="Shade/Center/Panel/Margin/Root/Tabs"]
+layout_mode = 2
+
+[node name="ControllerSettings" parent="Shade/Center/Panel/Margin/Root/Tabs/Controls" instance=ExtResource("2_controls")]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2

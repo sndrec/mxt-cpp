@@ -2537,7 +2537,8 @@ void GameSim::update_saved_voice_transforms(SavedState& state) const
 		const int lane = cars[i].soa_index;
 		SavedVoiceTransform& dst = state.voice_transforms[state.voice_transform_count++];
 		dst.player_id = player_id;
-		dst.transform = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
+		dst.transform = SimTransform();
+		dst.transform.origin = LOAD_INDEXED_VEC3(soa, position_current, lane);
 	}
 }
 

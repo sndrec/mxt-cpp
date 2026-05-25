@@ -275,27 +275,6 @@ text = "5%"
 layout_mode = 2
 text = "Calibrate"
 
-[node name="VoiceHeader" type="Label" parent="HBoxContainer/Control"]
-layout_mode = 2
-text = "Voice Chat"
-
-[node name="VoiceModeRow" type="HBoxContainer" parent="HBoxContainer/Control"]
-layout_mode = 2
-
-[node name="VoiceModeLabel" type="Label" parent="HBoxContainer/Control/VoiceModeRow"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Mic Mode"
-
-[node name="VoiceModeOption" type="OptionButton" parent="HBoxContainer/Control/VoiceModeRow"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="HearVoiceToggle" type="CheckBox" parent="HBoxContainer/Control"]
-layout_mode = 2
-button_pressed = true
-text = "Hear Voice Chat"
-
 [node name="StrafeCalibrationPanel" type="VBoxContainer" parent="HBoxContainer"]
 custom_minimum_size = Vector2(230, 0)
 layout_mode = 2

@@ -4,13 +4,14 @@
 [ext_resource type="PackedScene" uid="uid://d3fgxyahmbbxa" path="res://ui/car_settings.tscn" id="3_carsettings"]
 [ext_resource type="Script" uid="uid://odaiawvcj4yf" path="res://car_container_node.gd" id="3_h2yge"]
 [ext_resource type="Script" uid="uid://cq1kmqnd5qooc" path="res://netplay/network_manager.gd" id="3_netplay"]
-[ext_resource type="PackedScene" uid="uid://u8cuqg2ggiw8" path="res://ui/controller_settings.tscn" id="10_ctrlset"]
+[ext_resource type="PackedScene" path="res://ui/options_menu.tscn" id="10_options"]
 [ext_resource type="Texture2D" uid="uid://y5bsae4e4hkl" path="res://asset/tex/cityscape.png" id="16_yaehf"]
 [ext_resource type="Texture2D" uid="uid://tv10kddv5k24" path="res://asset/tex/clouds2.png" id="17_yaehf"]
 [ext_resource type="Script" uid="uid://dy134idknaa2x" path="res://super_spark_container.gd" id="18_spark"]
 [ext_resource type="Script" uid="uid://77we1ngt1kj5" path="res://cpu/cpu_driver_manager.gd" id="19_cpu_manager"]
 [ext_resource type="PackedScene" uid="uid://do7bo8imdv64e" path="res://ui/lobby_static.tscn" id="20_lobby_static"]
 [ext_resource type="PackedScene" uid="uid://bbe5vn5g66jbq" path="res://ui/race_pause_menu.tscn" id="21_race_pause"]
+[ext_resource type="Script" uid="uid://dyf161ibfwcno" path="res://netplay/proximity_voice_chat.gd" id="22_voice"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -138,6 +139,10 @@ script = ExtResource("1_tjhrj")
 
 [node name="NetworkManager" type="Node" parent="." unique_id=925113707]
 script = ExtResource("3_netplay")
+
+[node name="ProximityVoiceChat" type="Node" parent="NetworkManager" unique_id=1057511727]
+script = ExtResource("22_voice")
+playback_buffer_seconds = 0.04
 
 [node name="CpuDriverManager" type="Node" parent="." unique_id=2002486661]
 script = ExtResource("19_cpu_manager")
@@ -270,7 +275,7 @@ offset_right = 115.0
 offset_bottom = 119.0
 grow_horizontal = 2
 grow_vertical = 2
-text = "Car Settings"
+text = "Garage"
 
 [node name="ControllerSettingsButton" type="Button" parent="Control" unique_id=1789114676]
 layout_mode = 1
@@ -285,7 +290,7 @@ offset_right = 115.0
 offset_bottom = 154.0
 grow_horizontal = 2
 grow_vertical = 2
-text = "Controller Settings"
+text = "Options"
 
 [node name="TrackEditorButton" type="Button" parent="Control" unique_id=1937449725]
 layout_mode = 1
@@ -386,7 +391,7 @@ text = "Remove CPU Racer"
 [node name="CarSettings" parent="." unique_id=774432447 instance=ExtResource("3_carsettings")]
 visible = false
 
-[node name="ControllerSettings" parent="." unique_id=721364932 instance=ExtResource("10_ctrlset")]
+[node name="OptionsMenu" parent="." unique_id=721364932 instance=ExtResource("10_options")]
 visible = false
 
 [node name="RacePauseLayer" parent="." unique_id=1151874248 instance=ExtResource("21_race_pause")]

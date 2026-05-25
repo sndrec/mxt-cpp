@@ -22,6 +22,7 @@ config/icon="res://icon.svg"
 
 [audio]
 
+buses/default_bus_layout="uid://b481emnuga7v8"
 driver/enable_input=true
 
 [autoload]
