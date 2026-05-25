@@ -14,22 +14,20 @@ const VOICE_SAMPLE_RATE := 16000
 const VOICE_FRAME_SAMPLES := 320
 const VOICE_SETTINGS_RELOAD_MSEC := 500
 
+@export var voice_bitrate := 8000
+@export var voice_codec_complexity := 3
 @export var voice_range := 180.0
 @export var max_recipients := 6
 @export var playback_buffer_seconds := 0.08
 @export var remote_peer_timeout_msec := 2000
-@export var voice_player_unit_size := 14.4
 @export var voice_position_lerp_speed := 18.0
-@export var voice_panning_strength := 2.0
-@export var voice_global_panning_strength := 1.0
+@export var voice_pan_strength := 1.0
+@export var voice_attenuation_exponent := 1.0
 
 var network_manager: NetworkManager
 var capture_player: AudioStreamPlayer
 var capture_effect: AudioEffectCapture
 var capture_codec: OpusVoiceCodec
-var capture_resample_pos := 0.0
-var capture_samples: Array[float] = []
-var capture_sample_head := 0
 var voice_sequence := 0
 var remote_peers := {}
 var voice_input_mode := VOICE_MODE_PUSH_TO_TALK
@@ -50,11 +48,17 @@ var debug_capture_status := "idle"
 var debug_voice_spatial_tick := -1
 var debug_voice_snapshot_count := 0
 var debug_voice_position_matches := 0
+var applied_playback_buffer_seconds := -1.0
+var applied_voice_bitrate := -1
+var applied_voice_codec_complexity := -1
 
 func _ready() -> void:
 	network_manager = get_parent() as NetworkManager
 	_ensure_voice_input_action()
 	_load_voice_settings()
+	applied_playback_buffer_seconds = playback_buffer_seconds
+	applied_voice_bitrate = voice_bitrate
+	applied_voice_codec_complexity = voice_codec_complexity
 	set_physics_process(true)
 
 func _ensure_voice_input_action() -> void:
@@ -72,9 +76,6 @@ func _ensure_key_action(action: String, keycode: Key) -> void:
 
 func reset() -> void:
 	_clear_remote_peers()
-	capture_samples.clear()
-	capture_sample_head = 0
-	capture_resample_pos = 0.0
 	voice_talk_toggled = false
 	if capture_effect != null:
 		capture_effect.clear_buffer()
@@ -83,13 +84,14 @@ func reset() -> void:
 func _clear_remote_peers() -> void:
 	for peer_id in remote_peers.keys():
 		var peer: Dictionary = remote_peers[peer_id]
-		var player := peer.get("player") as AudioStreamPlayer3D
+		var player := peer.get("player") as AudioStreamPlayer
 		if player != null:
 			player.queue_free()
 	remote_peers.clear()
 
 func _physics_process(_delta: float) -> void:
 	_poll_voice_settings()
+	_apply_runtime_tuning()
 	if network_manager == null or !network_manager.race_active or !network_manager.has_network_peer():
 		if voice_test_monitor_enabled:
 			_update_test_monitor_capture()
@@ -105,6 +107,46 @@ func _physics_process(_delta: float) -> void:
 	elif !remote_peers.is_empty():
 		_clear_remote_peers()
 	_capture_and_send()
+
+func _apply_runtime_tuning() -> void:
+	if !is_equal_approx(applied_playback_buffer_seconds, playback_buffer_seconds):
+		applied_playback_buffer_seconds = playback_buffer_seconds
+		_recreate_voice_playbacks()
+	if applied_voice_bitrate != voice_bitrate or applied_voice_codec_complexity != voice_codec_complexity:
+		applied_voice_bitrate = voice_bitrate
+		applied_voice_codec_complexity = voice_codec_complexity
+		_reconfigure_voice_codecs()
+
+func _reconfigure_voice_codecs() -> void:
+	if capture_codec != null:
+		capture_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
+	if test_monitor_codec != null:
+		test_monitor_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
+	for peer_id in remote_peers.keys():
+		var peer: Dictionary = remote_peers[peer_id]
+		var codec := peer.get("codec") as OpusVoiceCodec
+		if codec != null:
+			codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
+
+func _recreate_voice_playbacks() -> void:
+	if test_monitor_player != null:
+		_clear_test_monitor()
+	for peer_id in remote_peers.keys():
+		var peer: Dictionary = remote_peers[peer_id]
+		var old_player := peer.get("player") as AudioStreamPlayer
+		if old_player != null:
+			old_player.queue_free()
+		var generator := AudioStreamGenerator.new()
+		generator.mix_rate = VOICE_SAMPLE_RATE
+		generator.buffer_length = playback_buffer_seconds
+		var player := AudioStreamPlayer.new()
+		player.name = "VoicePeer%d" % int(peer_id)
+		player.stream = generator
+		add_child(player)
+		player.play()
+		peer["player"] = player
+		peer["playback"] = player.get_stream_playback()
+		remote_peers[peer_id] = peer
 
 func _update_test_monitor_capture() -> void:
 	if network_manager == null or network_manager.game_manager == null or network_manager.game_manager.headless_mode:
@@ -150,8 +192,6 @@ func _capture_and_send() -> void:
 	if !should_send and !should_monitor:
 		if capture_effect != null:
 			capture_effect.clear_buffer()
-		capture_samples.clear()
-		capture_sample_head = 0
 		debug_capture_status = "idle"
 		return
 	_capture_voice_frames(should_send, should_monitor)
@@ -174,36 +214,18 @@ func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
 	var input_rate := float(AudioServer.get_mix_rate())
 	if input_rate <= 0.0:
 		input_rate = 48000.0
-	var step := input_rate / float(VOICE_SAMPLE_RATE)
-	var peak := 0.0
-	while capture_resample_pos < float(input_frames.size()):
-		var idx := int(capture_resample_pos)
-		var stereo := input_frames[idx]
-		var mono := clampf((stereo.x + stereo.y) * 0.5, -1.0, 1.0)
-		peak = maxf(peak, absf(mono))
-		capture_samples.append(mono)
-		capture_resample_pos += step
-	capture_resample_pos -= float(input_frames.size())
-	debug_capture_level = peak
+	var packets: Array = capture_codec.encode_stereo_mix(input_frames, input_rate)
+	debug_capture_level = capture_codec.get_last_input_peak()
 	debug_last_capture_msec = Time.get_ticks_msec()
-	while capture_samples.size() - capture_sample_head >= VOICE_FRAME_SAMPLES:
-		if capture_codec == null:
-			return
-		var frame := PackedFloat32Array()
-		frame.resize(VOICE_FRAME_SAMPLES)
-		for i in range(VOICE_FRAME_SAMPLES):
-			frame[i] = capture_samples[capture_sample_head + i]
-		capture_sample_head += VOICE_FRAME_SAMPLES
-		var payload := capture_codec.encode(frame)
-		if !payload.is_empty():
-			debug_packets_encoded += 1
-			if should_monitor:
-				_play_voice_test_payload(payload)
-			if should_send:
-				_send_voice_payload(payload)
-	if capture_sample_head > VOICE_FRAME_SAMPLES * 8:
-		capture_samples = capture_samples.slice(capture_sample_head)
-		capture_sample_head = 0
+	for packet in packets:
+		var payload := packet as PackedByteArray
+		if payload.is_empty():
+			continue
+		debug_packets_encoded += 1
+		if should_monitor:
+			_play_voice_test_payload(payload)
+		if should_send:
+			_send_voice_payload(payload)
 
 func _local_player_should_send_voice() -> bool:
 	if !_local_player_can_use_voice():
@@ -244,7 +266,7 @@ func _ensure_capture() -> void:
 	capture_output_mute.volume_db = CAPTURE_BUS_OUTPUT_MUTE_DB
 	AudioServer.add_bus_effect(bus_index, capture_output_mute, 1)
 	capture_codec = OpusVoiceCodec.new()
-	capture_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, 24000, 3)
+	capture_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
 	capture_player = AudioStreamPlayer.new()
 	capture_player.name = "VoiceCapturePlayer"
 	capture_player.stream = AudioStreamMicrophone.new()
@@ -295,41 +317,22 @@ func _receive_voice_packet(sender_id: int, sequence: int, payload: PackedByteArr
 	var peer := _ensure_remote_peer(sender_id)
 	peer["last_sequence"] = sequence
 	peer["last_packet_msec"] = Time.get_ticks_msec()
+	if !bool(peer.get("has_voice_transform", false)):
+		_update_remote_source_positions()
+		if !bool(peer.get("has_voice_transform", false)):
+			return
 	var playback := peer.get("playback") as AudioStreamGeneratorPlayback
 	var codec := peer.get("codec") as OpusVoiceCodec
 	if playback == null or codec == null:
 		return
-	var decoded := codec.decode(payload)
-	if decoded.is_empty():
-		return
-	var frames := PackedVector2Array()
-	frames.resize(decoded.size())
-	for i in range(decoded.size()):
-		var sample := decoded[i]
-		frames[i] = Vector2(sample, sample)
-	if playback.get_frames_available() >= frames.size():
-		playback.push_buffer(frames)
-	else:
-		playback.clear_buffer()
-		playback.push_buffer(frames)
+	var pan_gains := _voice_stereo_gains(peer.get("current_origin", Vector3.ZERO))
+	codec.decode_push_stereo(payload, playback, pan_gains.x, pan_gains.y)
 
 func _play_voice_test_payload(payload: PackedByteArray) -> void:
 	_ensure_test_monitor()
 	if test_monitor_playback == null or test_monitor_codec == null:
 		return
-	var decoded := test_monitor_codec.decode(payload)
-	if decoded.is_empty():
-		return
-	var frames := PackedVector2Array()
-	frames.resize(decoded.size())
-	for i in range(decoded.size()):
-		var sample := decoded[i]
-		frames[i] = Vector2(sample, sample)
-	if test_monitor_playback.get_frames_available() >= frames.size():
-		test_monitor_playback.push_buffer(frames)
-	else:
-		test_monitor_playback.clear_buffer()
-		test_monitor_playback.push_buffer(frames)
+	test_monitor_codec.decode_push_stereo(payload, test_monitor_playback, 1.0, 1.0)
 
 func _ensure_test_monitor() -> void:
 	if test_monitor_player != null:
@@ -338,7 +341,7 @@ func _ensure_test_monitor() -> void:
 	generator.mix_rate = VOICE_SAMPLE_RATE
 	generator.buffer_length = playback_buffer_seconds
 	test_monitor_codec = OpusVoiceCodec.new()
-	test_monitor_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, 24000, 3)
+	test_monitor_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
 	test_monitor_player = AudioStreamPlayer.new()
 	test_monitor_player.name = "VoiceTestMonitor"
 	test_monitor_player.stream = generator
@@ -360,21 +363,11 @@ func _ensure_remote_peer(sender_id: int) -> Dictionary:
 	generator.mix_rate = VOICE_SAMPLE_RATE
 	generator.buffer_length = playback_buffer_seconds
 	var codec := OpusVoiceCodec.new()
-	codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, 24000, 3)
-	var player := AudioStreamPlayer3D.new()
+	codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
+	var player := AudioStreamPlayer.new()
 	player.name = "VoicePeer%d" % sender_id
 	player.stream = generator
-	player.max_distance = voice_range
-	player.unit_size = maxf(voice_player_unit_size, 1.0)
-	player.panning_strength = voice_panning_strength
-	player.attenuation_filter_cutoff_hz = 20500.0
-	ProjectSettings.set_setting("audio/general/3d_panning_strength", voice_global_panning_strength)
-	var root: Node = self
-	if network_manager != null and network_manager.game_manager != null:
-		var game_world := network_manager.game_manager.get_node_or_null("GameWorld")
-		if game_world != null:
-			root = game_world
-	root.add_child(player)
+	add_child(player)
 	player.play()
 	var peer := {
 		"player": player,
@@ -383,10 +376,28 @@ func _ensure_remote_peer(sender_id: int) -> Dictionary:
 		"last_sequence": -1,
 		"last_packet_msec": Time.get_ticks_msec(),
 		"has_voice_transform": false,
+		"current_origin": Vector3.ZERO,
 		"target_origin": Vector3.ZERO,
 	}
 	remote_peers[sender_id] = peer
 	return peer
+
+
+func _voice_stereo_gains(source_origin: Vector3) -> Vector2:
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return Vector2.ONE
+	var offset := source_origin - camera.global_position
+	var distance := offset.length()
+	var attenuation := 1.0
+	if voice_range > 0.0:
+		attenuation = pow(clampf(1.0 - (distance / voice_range), 0.0, 1.0), maxf(voice_attenuation_exponent, 0.01))
+	if distance <= 0.0001:
+		return Vector2(attenuation, attenuation)
+	var pan := offset.normalized().dot(camera.global_basis.x)
+	pan = clampf(pan * voice_pan_strength, -1.0, 1.0)
+	var angle := (pan + 1.0) * PI * 0.25
+	return Vector2(cos(angle) * attenuation, sin(angle) * attenuation)
 
 func _voice_recipients_for(sender_id: int) -> Array:
 	if network_manager == null or network_manager.server_game_sim == null:
@@ -448,7 +459,7 @@ func _update_remote_source_positions() -> void:
 	var now := Time.get_ticks_msec()
 	for peer_id in remote_peers.keys():
 		var peer: Dictionary = remote_peers[peer_id]
-		var player := peer.get("player") as AudioStreamPlayer3D
+		var player := peer.get("player") as AudioStreamPlayer
 		if player == null:
 			continue
 		if now - int(peer.get("last_packet_msec", now)) > remote_peer_timeout_msec:
@@ -460,11 +471,12 @@ func _update_remote_source_positions() -> void:
 			var t: Transform3D = transforms[int(peer_id)]
 			peer["target_origin"] = t.origin
 			if !bool(peer.get("has_voice_transform", false)):
-				player.global_position = t.origin
+				peer["current_origin"] = t.origin
 				peer["has_voice_transform"] = true
 			else:
 				var alpha := clampf(voice_position_lerp_speed / maxf(Engine.physics_ticks_per_second, 1.0), 0.0, 1.0)
-				player.global_position = player.global_position.lerp(t.origin, alpha)
+				var current_origin: Vector3 = peer.get("current_origin", t.origin)
+				peer["current_origin"] = current_origin.lerp(t.origin, alpha)
 
 func _voice_spatial_tick() -> int:
 	if network_manager == null:

@@ -2,8 +2,11 @@
 
 #include "godot_cpp/core/class_db.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
+#include "godot_cpp/variant/vector2.hpp"
 #include "opus.h"
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 using namespace godot;
 
@@ -12,9 +15,13 @@ void OpusVoiceCodec::_bind_methods()
 	ClassDB::bind_method(D_METHOD("configure", "sample_rate", "frame_size", "bitrate", "complexity"), &OpusVoiceCodec::configure, DEFVAL(16000), DEFVAL(320), DEFVAL(24000), DEFVAL(3));
 	ClassDB::bind_method(D_METHOD("encode", "pcm"), &OpusVoiceCodec::encode);
 	ClassDB::bind_method(D_METHOD("decode", "packet"), &OpusVoiceCodec::decode);
+	ClassDB::bind_method(D_METHOD("encode_stereo_mix", "input_frames", "input_rate"), &OpusVoiceCodec::encode_stereo_mix);
+	ClassDB::bind_method(D_METHOD("decode_push_stereo", "packet", "playback", "left_gain", "right_gain"), &OpusVoiceCodec::decode_push_stereo, DEFVAL(1.0f), DEFVAL(1.0f));
 	ClassDB::bind_method(D_METHOD("get_sample_rate"), &OpusVoiceCodec::get_sample_rate);
 	ClassDB::bind_method(D_METHOD("get_frame_size"), &OpusVoiceCodec::get_frame_size);
 	ClassDB::bind_method(D_METHOD("get_bitrate"), &OpusVoiceCodec::get_bitrate);
+	ClassDB::bind_method(D_METHOD("get_last_input_peak"), &OpusVoiceCodec::get_last_input_peak);
+	ClassDB::bind_method(D_METHOD("get_last_packets_encoded"), &OpusVoiceCodec::get_last_packets_encoded);
 }
 
 OpusVoiceCodec::~OpusVoiceCodec()
@@ -48,6 +55,11 @@ bool OpusVoiceCodec::configure(int p_sample_rate, int p_frame_size, int p_bitrat
 	frame_size = p_frame_size;
 	bitrate = std::clamp(p_bitrate, 6000, 64000);
 	complexity = std::clamp(p_complexity, 0, 10);
+	encode_resample_pos = 0.0;
+	encode_sample_head = 0;
+	last_input_peak = 0.0f;
+	last_packets_encoded = 0;
+	encode_samples.clear();
 
 	int err = OPUS_OK;
 	encoder = opus_encoder_create(sample_rate, 1, OPUS_APPLICATION_VOIP, &err);
@@ -104,4 +116,78 @@ PackedFloat32Array OpusVoiceCodec::decode(PackedByteArray packet)
 	}
 	out.resize(decoded);
 	return out;
+}
+
+Array OpusVoiceCodec::encode_stereo_mix(PackedVector2Array input_frames, double input_rate)
+{
+	Array packets;
+	last_input_peak = 0.0f;
+	last_packets_encoded = 0;
+	if (!encoder && !configure(sample_rate, frame_size, bitrate, complexity)) {
+		return packets;
+	}
+	const int input_count = input_frames.size();
+	if (input_count <= 0) {
+		return packets;
+	}
+	if (input_rate <= 0.0) {
+		input_rate = 48000.0;
+	}
+	const double step = input_rate / static_cast<double>(sample_rate);
+	const Vector2* input = input_frames.ptr();
+	while (encode_resample_pos < static_cast<double>(input_count)) {
+		const int idx = static_cast<int>(encode_resample_pos);
+		const float mono = std::clamp((input[idx].x + input[idx].y) * 0.5f, -1.0f, 1.0f);
+		last_input_peak = std::max(last_input_peak, std::abs(mono));
+		encode_samples.push_back(mono);
+		encode_resample_pos += step;
+	}
+	encode_resample_pos -= static_cast<double>(input_count);
+
+	while (static_cast<int>(encode_samples.size()) - encode_sample_head >= frame_size) {
+		unsigned char packet[512];
+		const int written = opus_encode_float(encoder, encode_samples.data() + encode_sample_head, frame_size, packet, static_cast<opus_int32>(sizeof(packet)));
+		encode_sample_head += frame_size;
+		if (written <= 0) {
+			continue;
+		}
+		PackedByteArray out;
+		out.resize(written);
+		std::memcpy(out.ptrw(), packet, static_cast<size_t>(written));
+		packets.append(out);
+		++last_packets_encoded;
+	}
+	if (encode_sample_head > frame_size * 8) {
+		encode_samples.erase(encode_samples.begin(), encode_samples.begin() + encode_sample_head);
+		encode_sample_head = 0;
+	}
+	return packets;
+}
+
+bool OpusVoiceCodec::decode_push_stereo(PackedByteArray packet, Ref<AudioStreamGeneratorPlayback> playback, float left_gain, float right_gain)
+{
+	if (playback.is_null()) {
+		return false;
+	}
+	if (!decoder && !configure(sample_rate, frame_size, bitrate, complexity)) {
+		return false;
+	}
+	std::vector<float> decoded_pcm;
+	decoded_pcm.resize(static_cast<size_t>(frame_size));
+	const unsigned char* data = packet.size() > 0 ? packet.ptr() : nullptr;
+	const int decoded = opus_decode_float(decoder, data, packet.size(), decoded_pcm.data(), frame_size, 0);
+	if (decoded <= 0) {
+		return false;
+	}
+	PackedVector2Array frames;
+	frames.resize(decoded);
+	Vector2* out = frames.ptrw();
+	for (int i = 0; i < decoded; ++i) {
+		const float sample = decoded_pcm[static_cast<size_t>(i)];
+		out[i] = Vector2(sample * left_gain, sample * right_gain);
+	}
+	if (playback->get_frames_available() < decoded) {
+		playback->clear_buffer();
+	}
+	return playback->push_buffer(frames);
 }

@@ -142,7 +142,8 @@ script = ExtResource("3_netplay")
 
 [node name="ProximityVoiceChat" type="Node" parent="NetworkManager" unique_id=1057511727]
 script = ExtResource("22_voice")
-playback_buffer_seconds = 0.04
+voice_range = 500.0
+playback_buffer_seconds = 0.05
 
 [node name="CpuDriverManager" type="Node" parent="." unique_id=2002486661]
 script = ExtResource("19_cpu_manager")
