@@ -66,6 +66,7 @@ func _init() -> void:
 			quit(1)
 			return
 	var vertex_count := vertices.size()
+	_verify_non_identity_root_stamp_projection(catalog)
 	root.free()
 	print("MXT_CAR_LIVERY_STAMP_MESH_SMOKE vertices=", vertex_count)
 	quit(0)
@@ -98,3 +99,41 @@ func _make_quad_mesh() -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+func _verify_non_identity_root_stamp_projection(catalog: CarStampCatalog) -> void:
+	var root := Node3D.new()
+	root.transform = Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, 0.5, 0.0))
+	var body := MeshInstance3D.new()
+	body.name = "VEHICLE_MAIN"
+	body.transform = Transform3D(Basis.IDENTITY.scaled(Vector3(2.0, 2.0, 2.0)), Vector3.ZERO)
+	body.mesh = _make_quad_mesh()
+	root.add_child(body)
+	var livery := CarLivery.new()
+	var stamp := CarLiveryStamp.new()
+	stamp.stamp_id = "smoke"
+	stamp.local_origin = Vector3.ZERO
+	stamp.local_basis = Basis.IDENTITY
+	stamp.size = Vector2.ONE
+	stamp.projection_depth = 0.5
+	stamp.colour = Color.WHITE
+	if !livery.add_stamp(stamp):
+		push_error("failed to add non-identity root smoke stamp")
+		quit(1)
+		return
+	var decal_mesh := CarLiveryStampMeshBuilder.build_for_vehicle_scene(root, livery, catalog)
+	if decal_mesh.get_surface_count() != 1:
+		push_error("expected non-identity root stamp surface")
+		quit(1)
+		return
+	var arrays := decal_mesh.surface_get_arrays(0)
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	if vertices.is_empty():
+		push_error("non-identity root stamp emitted no vertices")
+		quit(1)
+		return
+	for p in vertices:
+		if absf(p.x) > 0.506 or absf(p.y) > 0.506 or p.z <= 0.0:
+			push_error("non-identity root stamp vertex outside expected body-local bounds")
+			quit(1)
+			return
+	root.free()

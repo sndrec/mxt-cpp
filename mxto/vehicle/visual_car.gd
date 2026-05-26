@@ -70,8 +70,6 @@ enum FZ_TC{
 	B8 = 0x80
 }
 
-@onready var landing_sound: AudioStreamPlayer3D = $CarTransform/AudioStreamPlayer3D7
-
 var owning_id : int = 0
 var effect_pool_slot : int = -1
 var player_settings: Resource
@@ -197,8 +195,6 @@ func _ready() -> void:
 	if !local_visual_enabled:
 		return
 	await get_tree().create_timer(2.0).timeout
-	landing_sound.stream = preload("res://sfx/vehicle/landing.wav")
-	landing_sound.stop()
 
 func set_effect_tier(in_tier: int) -> void:
 	if effect_tier == in_tier:
@@ -253,9 +249,6 @@ func _apply_effect_tier_state() -> void:
 	boost_electricity.visible = full_effects_enabled
 	if is_instance_valid(name_label):
 		name_label.visible = !local_visual_enabled
-	if !local_visual_enabled:
-		for player in [landing_sound]:
-			player.stop()
 	if _needs_process_reset:
 		_reset_interpolation_state()
 		_needs_process_reset = false
@@ -597,9 +590,6 @@ var is_predicted = true
 
 func just_rendered() -> void:
 	is_predicted = false
-	if local_visual_enabled and (machine_state & FZ_MS.JUSTLANDED) != 0:
-		landing_sound.stop()
-		landing_sound.play(0.0)
 		
 	if (machine_state & FZ_MS.JUST_PRESSED_BOOST) != 0 or (machine_state & FZ_MS.JUST_HIT_DASHPLATE) != 0:
 		car_overlay_colour += Color.SKY_BLUE * 0.75

@@ -119,6 +119,7 @@ var preview_viewport: SubViewport
 var preview_root: Node3D
 var preview_camera: Camera3D
 var preview_vehicle: Node3D
+var preview_vehicle_base_transform := Transform3D.IDENTITY
 var preview_render_manager: CarRenderManager
 var preview_edit_render_manager: CarRenderManager
 var preview_above_render_manager: CarRenderManager
@@ -629,6 +630,7 @@ func _rebuild_preview_vehicle() -> void:
 	if definition == null or definition.car_scene == null:
 		return
 	preview_vehicle = definition.car_scene.instantiate()
+	preview_vehicle_base_transform = preview_vehicle.transform
 	preview_root.add_child(preview_vehicle)
 	_hide_preview_raycast_scene(preview_vehicle)
 	_refresh_preview_custom_stamp_atlas()
@@ -692,6 +694,9 @@ func _preview_vehicle_transform() -> Transform3D:
 	if preview_has_transform_override:
 		return preview_transform_override
 	return Transform3D.IDENTITY
+
+func _preview_vehicle_scene_transform() -> Transform3D:
+	return _preview_vehicle_transform() * preview_vehicle_base_transform
 
 func _submit_preview_render() -> void:
 	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
@@ -1702,7 +1707,7 @@ func _focus_preview_on_stamp(stamp: CarLiveryStamp) -> void:
 		return
 	if absf(stamp.local_basis.determinant()) <= 0.00001:
 		return
-	preview_vehicle.transform = _preview_vehicle_transform()
+	preview_vehicle.transform = _preview_vehicle_scene_transform()
 	var projector := preview_vehicle.global_transform * Transform3D(stamp.local_basis, stamp.local_origin)
 	var view_direction := projector.basis.z.normalized()
 	preview_pan = projector.origin - Vector3(0.0, 0.5, 0.0)
@@ -1950,7 +1955,7 @@ func _handle_preview_mouse_motion(event: InputEventMouseMotion, allow_edit_camer
 
 func _apply_preview_camera() -> void:
 	if preview_vehicle != null:
-		preview_vehicle.transform = _preview_vehicle_transform()
+		preview_vehicle.transform = _preview_vehicle_scene_transform()
 	if preview_camera == null:
 		return
 	if preview_has_camera_override:

@@ -3,11 +3,18 @@
 [ext_resource type="Shader" uid="uid://nps082wntrqk" path="res://vehicle/base_vehicle_shader.gdshader" id="1_2dwnx"]
 [ext_resource type="ArrayMesh" uid="uid://p2s7s0jn58eb" path="res://vehicle/asset/bruiser/mesh.obj" id="1_42fyx"]
 [ext_resource type="Shader" uid="uid://bqqsd22cdmtdp" path="res://vehicle/vehicle_outline.gdshader" id="1_gisdj"]
-[ext_resource type="Texture2D" uid="uid://dxg8okrlvyls1" path="res://vehicle/asset/bruiser/bruiser_colour.png" id="2_faj4t"]
 [ext_resource type="Texture2D" uid="uid://y7115mvn4m70" path="res://vehicle/asset/bruiser/Bruiser_NORMAL.png" id="2_q1c51"]
+[ext_resource type="Texture2D" uid="uid://n4olvpiw5wke" path="res://vehicle/asset/bruiser/bruiser_paintmask.png" id="3_8mun4"]
 [ext_resource type="Shader" uid="uid://dvkl5w0v8t8mq" path="res://vehicle/vehicle_shadow.gdshader" id="4_6e66t"]
 [ext_resource type="Shader" uid="uid://b71ubm0xei1sp" path="res://vehicle/vehicle_outline_main.gdshader" id="4_gisdj"]
 [ext_resource type="PackedScene" uid="uid://cn4wo1jqle0j3" path="res://vehicle/particle/thruster.tscn" id="8_8mun4"]
+
+[sub_resource type="Gradient" id="Gradient_o587m"]
+offsets = PackedFloat32Array(1)
+colors = PackedColorArray(1, 1, 1, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture1D_fen8a"]
+gradient = SubResource("Gradient_o587m")
 
 [sub_resource type="Gradient" id="Gradient_2dwnx"]
 interpolation_mode = 1
@@ -20,7 +27,7 @@ gradient = SubResource("Gradient_2dwnx")
 [sub_resource type="Gradient" id="Gradient_8mun4"]
 interpolation_mode = 1
 offsets = PackedFloat32Array(0, 0.959259)
-colors = PackedColorArray(0, 0, 0, 1, 1, 0.3175, 0.09, 1)
+colors = PackedColorArray(0, 0, 0, 1, 1, 0.67, 0.56, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_o587m"]
 gradient = SubResource("Gradient_8mun4")
@@ -31,7 +38,8 @@ shader = ExtResource("1_2dwnx")
 shader_parameter/in_lightwarp = SubResource("GradientTexture1D_q1c51")
 shader_parameter/in_specwarp = SubResource("GradientTexture1D_o587m")
 shader_parameter/in_normal = ExtResource("2_q1c51")
-shader_parameter/in_albedo = ExtResource("2_faj4t")
+shader_parameter/in_albedo = SubResource("GradientTexture1D_fen8a")
+shader_parameter/in_paint_mask = ExtResource("3_8mun4")
 shader_parameter/in_overlay_colour = Color(0, 0, 0, 1)
 shader_parameter/livery_colour_strength = 0.0
 shader_parameter/livery_primary_colour = Color(1, 1, 1, 1)

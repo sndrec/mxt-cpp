@@ -44,7 +44,7 @@ void fragment() {
 	vec3 painted_colour = base_value * paint_colour * 1.25;
 	vec3 final_colour = mix(base_colour, painted_colour, clamp(livery_colour_strength, 0.0, 1.0) * paint_coverage);
 	ALBEDO = final_colour;// * fres;
-	EMISSION = in_overlay_colour + COLOR.rgb;
+	//EMISSION = in_overlay_colour + COLOR.rgb;
 }
 
 void light() {
