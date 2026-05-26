@@ -90,14 +90,36 @@ func _process(_delta: float) -> void:
 	var spatial_tick := int(status.get("voice_spatial_tick", -1))
 	var snapshot_count := int(status.get("voice_snapshot_count", 0))
 	var matches := int(status.get("voice_position_matches", 0))
-	voice_status_label.text = "Voice Status: %s | Mic %d%% | Sent %d | Heard %d | Spatial tick %d | Sources %d/%d" % [
+	var relay_local := int(status.get("voice_relay_local_deliveries", 0))
+	var relay_remote := int(status.get("voice_relay_remote_deliveries", 0))
+	var receive_attempts := int(status.get("voice_receive_attempts", 0))
+	var decode_pushes := int(status.get("voice_decode_pushes", 0))
+	var last_sender := int(status.get("voice_last_sender_id", -1))
+	var recipient_count := int(status.get("voice_last_recipient_count", 0))
+	var recipient_snapshot_count := int(status.get("voice_last_recipient_snapshot_count", 0))
+	var local_candidate := bool(status.get("voice_last_local_candidate", false))
+	var local_distance := float(status.get("voice_last_local_distance", -1.0))
+	var drop_reason := str(status.get("voice_last_drop_reason", ""))
+	if drop_reason.is_empty():
+		drop_reason = "none"
+	voice_status_label.text = "Voice Status: %s | Mic %d%% | Sent %d | Heard %d/%d | Decoded %d | Relay L/R %d/%d | Last sender %d recips %d snap %d local %s %.1f | Spatial %d src %d/%d | Drop %s" % [
 		capture_status,
 		level_pct,
 		encoded,
 		received,
+		receive_attempts,
+		decode_pushes,
+		relay_local,
+		relay_remote,
+		last_sender,
+		recipient_count,
+		recipient_snapshot_count,
+		str(local_candidate),
+		local_distance,
 		spatial_tick,
 		matches,
 		snapshot_count,
+		drop_reason,
 	]
 
 func _voice_chat_node() -> Node:

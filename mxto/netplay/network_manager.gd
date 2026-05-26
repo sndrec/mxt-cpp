@@ -2076,7 +2076,7 @@ func _accept_custom_stamp_blob(blob_data: Dictionary, expected_owner_id := -1) -
 		push_warning("Rejected custom stamp blob from wrong owner: %s" % blob.stamp_hash)
 		return false
 	custom_stamp_blob_cache[blob.stamp_hash] = blob
-	CustomStampStore.save_blob(blob)
+	CustomStampStore.save_blob(blob, false)
 	if is_server and custom_stamp_blob_waiters.has(blob.stamp_hash):
 		var waiters: Array = custom_stamp_blob_waiters[blob.stamp_hash]
 		for waiter in waiters:

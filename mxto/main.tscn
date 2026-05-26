@@ -148,7 +148,7 @@ playback_buffer_seconds = 0.5
 remote_peer_timeout_msec = 500
 voice_attenuation_exponent = 2.0
 voice_doppler_strength = 0.5
-voice_doppler_speed_of_sound_kmh = 1800.0
+voice_doppler_speed_of_sound_kmh = 3000.0
 voice_doppler_min_pitch = 0.75
 
 [node name="CpuDriverManager" type="Node" parent="." unique_id=2002486661]

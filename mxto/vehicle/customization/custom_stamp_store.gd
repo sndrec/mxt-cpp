@@ -75,7 +75,7 @@ static func load_blob(stamp_hash: String) -> CustomStampBlob:
 		return null
 	return blob
 
-static func save_blob(blob: CustomStampBlob) -> Error:
+static func save_blob(blob: CustomStampBlob, add_to_library := true) -> Error:
 	if blob == null:
 		return ERR_INVALID_PARAMETER
 	var validation_error := blob.validate_blob()
@@ -94,7 +94,8 @@ static func save_blob(blob: CustomStampBlob) -> Error:
 		return FileAccess.get_open_error()
 	file.store_string(JSON.stringify(blob.to_cache_dict()))
 	file.close()
-	_add_blob_to_library(blob)
+	if add_to_library:
+		_add_blob_to_library(blob)
 	return OK
 
 static func delete_blob(stamp_hash: String) -> Error:
