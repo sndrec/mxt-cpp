@@ -58,9 +58,10 @@ const STICKER_BASE_PIXEL_SIZE := 0.003
 const STICKER_BASE_TEXTURE_PIXELS := 128.0
 const STICKER_BASE_HEIGHT_OFFSET := 3.0
 const STICKER_BASE_RISE_OFFSET := 0.66
-const STICKER_DISTANCE_SCALE_START := 100.0
+const STICKER_DISTANCE_SCALE_START := 20.0
 const STICKER_DISTANCE_SCALE_END := 600.0
-const STICKER_FAR_SCALE := 0.25
+const STICKER_FAR_SCALE := 0.1
+const STICKER_DISTANCE_SCALE_EXPONENT := 0.3
 const STICKER_XRAY_ALPHA := 0.35
 
 @onready var real_input := $InputViewer/RealInput
@@ -308,7 +309,9 @@ func _configure_sticker_pool() -> void:
 
 func _distance_sticker_scale(distance: float) -> float:
 	var t := clampf((distance - STICKER_DISTANCE_SCALE_START) / (STICKER_DISTANCE_SCALE_END - STICKER_DISTANCE_SCALE_START), 0.0, 1.0)
+	t = pow(t, STICKER_DISTANCE_SCALE_EXPONENT)
 	return lerpf(1.0, STICKER_FAR_SCALE, t)
+
 
 func _sticker_pixel_size_for_texture(texture: Texture2D, display_scale: float) -> float:
 	if texture == null:
