@@ -26,6 +26,7 @@ class_name GameManager extends Node
 @onready var spectator_race_button: Button = $Control/SpectatorRaceButton
 @onready var controller_settings_button: Button = $Control/ControllerSettingsButton
 @onready var track_editor_button: Button = $Control/TrackEditorButton
+@onready var replays_button: Button = $Control/ReplaysButton
 @onready var car_settings_button_lobby: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CarSettingsButton
 @onready var controller_settings_button_lobby: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/ControllerSettingsButton
 @onready var race_finish_label: Label = $RaceFinishLabel
@@ -53,6 +54,7 @@ class_name GameManager extends Node
 @onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
 @onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
 @onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
+@onready var race_pause_save_replay_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton
 @onready var race_pause_lobby_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/LobbyButton
 @onready var race_pause_disconnect_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/DisconnectButton
 var lobby_chibi_cars := {}
@@ -151,10 +153,40 @@ var debug_replay_playback_inputs: Array = []
 var debug_replay_playback_index: int = 0
 var debug_replay_autoload_path: String = ""
 var debug_replay_loaded_path: String = ""
+var replay_autoload_path: String = ""
+var replay_recording_active: bool = false
+var replay_recording_saved: bool = false
+var replay_recording_source: String = ""
+var replay_recording_metadata: Dictionary = {}
+var replay_recording_racer_ids: Array = []
+var replay_recording_cpu_flags: Array = []
+var replay_recording_frames: Array = []
+var replay_playback_active: bool = false
+var replay_playback_frames: Array = []
+var replay_playback_index: int = 0
+var replay_playback_loaded_path: String = ""
+var replay_playback_focus_index: int = 0
+var replay_playback_racer_ids: Array = []
+var replay_playback_cpu_flags: Array = []
+var replay_playback_local_player_id: int = 0
+var replay_camera_mode: int = 0
+var replay_auto_camera: Camera3D
+var replay_catalog_root: Control
+var replay_catalog_list: ItemList
+var replay_catalog_metadata_label: RichTextLabel
+var replay_catalog_name_edit: LineEdit
+var replay_catalog_watch_button: Button
+var replay_catalog_rename_button: Button
+var replay_catalog_delete_button: Button
+var replay_catalog_entries: Array = []
 var _last_race_track_index: int = -1
 var _last_race_settings: Array = []
 
 const DEBUG_REPLAY_VERSION := 1
+const REPLAY_SCHEMA_VERSION := 2
+const REPLAY_CAMERA_GAME := 0
+const REPLAY_CAMERA_AUTO := 1
+const REPLAY_CAMERA_SPECTATOR := 2
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 const DIP_TRACE_MESH_FLOOR := 0x1000
@@ -225,6 +257,8 @@ func _ready() -> void:
 		controller_settings_button_lobby.pressed.connect(_on_controller_settings_button_pressed)
 	if !track_editor_button.pressed.is_connected(_on_track_editor_button_pressed):
 		track_editor_button.pressed.connect(_on_track_editor_button_pressed)
+	if replays_button != null and !replays_button.pressed.is_connected(_open_replay_catalog):
+		replays_button.pressed.connect(_open_replay_catalog)
 	# Rewire the Singleplayer button to its own handler, not the multiplayer host flow
 	if singleplayer_button.pressed.is_connected(_on_start_button_pressed):
 		singleplayer_button.pressed.disconnect(_on_start_button_pressed)
@@ -285,6 +319,13 @@ func _ready() -> void:
 		replay_args = user_args
 	if replay_idx != -1 and replay_idx + 1 < replay_args.size():
 		debug_replay_autoload_path = String(replay_args[replay_idx + 1])
+	var real_replay_idx := args.find("--replay")
+	var real_replay_args := args
+	if real_replay_idx == -1:
+		real_replay_idx = user_args.find("--replay")
+		real_replay_args = user_args
+	if real_replay_idx != -1 and real_replay_idx + 1 < real_replay_args.size():
+		replay_autoload_path = String(real_replay_args[real_replay_idx + 1])
 	debug_rail_trace_requested = args.has("--debug-rail-trace") or user_args.has("--debug-rail-trace")
 	if debug_rail_trace_requested:
 		game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
@@ -292,7 +333,9 @@ func _ready() -> void:
 	if args.has("--debug-mesh-floor-trace") or user_args.has("--debug-mesh-floor-trace"):
 		game_sim.set_dip_switch_enabled(DIP_TRACE_MESH_FLOOR, true)
 		server_game_sim.set_dip_switch_enabled(DIP_TRACE_MESH_FLOOR, true)
-	if debug_replay_autoload_path != "":
+	if replay_autoload_path != "":
+		call_deferred("_start_replay_playback_from_path", replay_autoload_path)
+	elif debug_replay_autoload_path != "":
 		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
 	elif auto_track_editor_mode:
 		call_deferred("_on_track_editor_button_pressed")
@@ -596,6 +639,8 @@ func _build_race_pause_menu() -> void:
 		race_pause_resume_button.pressed.connect(_close_race_pause_menu)
 	if !race_pause_options_button.pressed.is_connected(_on_pause_options_pressed):
 		race_pause_options_button.pressed.connect(_on_pause_options_pressed)
+	if race_pause_save_replay_button != null and !race_pause_save_replay_button.pressed.is_connected(_on_pause_save_replay_pressed):
+		race_pause_save_replay_button.pressed.connect(_on_pause_save_replay_pressed)
 	if !race_pause_lobby_button.pressed.is_connected(_on_pause_lobby_pressed):
 		race_pause_lobby_button.pressed.connect(_on_pause_lobby_pressed)
 	if !race_pause_disconnect_button.pressed.is_connected(_on_pause_disconnect_pressed):
@@ -610,6 +655,7 @@ func _open_race_pause_menu() -> void:
 	race_pause_title.text = "Host Race Menu" if host else "Race Menu"
 	race_pause_lobby_button.visible = host
 	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
+	_refresh_race_pause_replay_button()
 	race_pause_resume_button.grab_focus()
 
 func _close_race_pause_menu() -> void:
@@ -628,6 +674,12 @@ func _on_pause_lobby_pressed() -> void:
 
 func _on_pause_options_pressed() -> void:
 	options_menu.call("open_settings")
+
+func _on_pause_save_replay_pressed() -> void:
+	var saved_path := _save_replay_recording("manual")
+	if saved_path != "":
+		_show_race_notification("Replay Saved", 2200)
+	_refresh_race_pause_replay_button()
 
 func _on_add_cpu_button_pressed() -> void:
 	if !network_manager.is_server:
@@ -986,6 +1038,8 @@ func _apply_race_roster_options(options: Dictionary, human_ids: Array, cpu_ids: 
 	return out
 
 func _local_player_id() -> int:
+	if replay_playback_active:
+		return replay_playback_local_player_id
 	if singleplayer_mode:
 		return 0
 	return multiplayer.get_unique_id() if network_manager.has_network_peer() else 0
@@ -1354,6 +1408,570 @@ func _generate_random_input() -> PlayerInput:
 	p.boost = randi() % 2 == 0
 	p.apply_quantization()
 	return p
+
+func _replay_dir() -> String:
+	return ProjectSettings.globalize_path("user://replays")
+
+func _replay_make_stamp() -> String:
+	return Time.get_datetime_string_from_system(false, true).replace(":", "-").replace(" ", "_")
+
+func _replay_build_signature() -> String:
+	var game_version := network_manager.version_string.strip_edges()
+	if game_version == "":
+		game_version = str(ProjectSettings.get_setting("application/config/name", "Maxx Throttle C++"))
+	var engine_version: Dictionary = Engine.get_version_info()
+	return "%s|godot:%s|schema:%d" % [game_version, str(engine_version.get("string", "")), REPLAY_SCHEMA_VERSION]
+
+func _replay_track_name() -> String:
+	return _debug_replay_track_name()
+
+func _replay_track_path() -> String:
+	return _debug_replay_track_path()
+
+func _replay_mode_name() -> String:
+	if !singleplayer_mode:
+		return "Multiplayer"
+	if network_manager.get_cpu_roster().is_empty():
+		return "Time Attack"
+	return "CPU Race"
+
+func _replay_should_record_current_race() -> bool:
+	if replay_playback_active:
+		return false
+	if singleplayer_mode:
+		return true
+	return network_manager.is_server
+
+func _start_replay_recording(track_index: int, settings: Array, racer_ids: Array, cpu_flags: Array) -> void:
+	_stop_replay_recording(false)
+	if !_replay_should_record_current_race():
+		return
+	replay_recording_active = true
+	replay_recording_saved = false
+	replay_recording_source = "singleplayer" if singleplayer_mode else "server"
+	replay_recording_racer_ids = racer_ids.duplicate(true)
+	replay_recording_cpu_flags = cpu_flags.duplicate(true)
+	replay_recording_frames.clear()
+	var player_records: Array = []
+	for i in range(racer_ids.size()):
+		var id := int(racer_ids[i])
+		var raw_settings: Dictionary = {}
+		if i < settings.size() and typeof(settings[i]) == TYPE_DICTIONARY:
+			raw_settings = (settings[i] as Dictionary).duplicate(true)
+		elif network_manager.player_settings.has(id) and typeof(network_manager.player_settings[id]) == TYPE_DICTIONARY:
+			raw_settings = (network_manager.player_settings[id] as Dictionary).duplicate(true)
+		player_records.append({
+			"id": id,
+			"username": str(raw_settings.get("username", "Player")),
+			"cpu": i < cpu_flags.size() and bool(cpu_flags[i]),
+			"car_definition_path": str(raw_settings.get("car_definition_path", "")),
+			"sticker_1": int(raw_settings.get("sticker_1", 0)),
+			"sticker_2": int(raw_settings.get("sticker_2", 1)),
+			"sticker_3": int(raw_settings.get("sticker_3", 2)),
+			"sticker_4": int(raw_settings.get("sticker_4", 3)),
+			"car_livery": raw_settings.get("car_livery", {}).duplicate(true) if typeof(raw_settings.get("car_livery", {})) == TYPE_DICTIONARY else {},
+			"settings": raw_settings,
+		})
+	replay_recording_metadata = {
+		"schema_version": REPLAY_SCHEMA_VERSION,
+		"build": _replay_build_signature(),
+		"created_unix": Time.get_unix_time_from_system(),
+		"name": "%s %s" % [_replay_track_name(), _replay_make_stamp()],
+		"mode": _replay_mode_name(),
+		"source": replay_recording_source,
+		"track_index": track_index,
+		"track_name": _replay_track_name(),
+		"track_mxt": _replay_track_path(),
+		"settings": settings.duplicate(true),
+		"racer_ids": racer_ids.duplicate(true),
+		"cpu_flags": cpu_flags.duplicate(true),
+		"players": player_records,
+		"spawn_seed": network_manager.spawn_seed,
+		"race_options": network_manager.race_options.duplicate(true),
+	}
+	_refresh_race_pause_replay_button()
+
+func _stop_replay_recording(save_server_replay: bool) -> void:
+	if save_server_replay and replay_recording_active and !replay_recording_saved and replay_recording_source == "server":
+		_save_replay_recording("auto")
+	replay_recording_active = false
+
+func _refresh_race_pause_replay_button() -> void:
+	if race_pause_save_replay_button == null:
+		return
+	var can_save := singleplayer_mode and replay_recording_active and !replay_recording_saved and network_manager.net_race_finish_time != -1
+	race_pause_save_replay_button.visible = can_save
+	race_pause_save_replay_button.disabled = !can_save
+
+func _encoded_replay_frame(tick: int, frame_inputs: Dictionary) -> Dictionary:
+	var encoded := {}
+	for id_value in frame_inputs.keys():
+		if typeof(frame_inputs[id_value]) != TYPE_PACKED_BYTE_ARRAY:
+			continue
+		var bytes: PackedByteArray = frame_inputs[id_value]
+		encoded[str(int(id_value))] = Marshalls.raw_to_base64(bytes)
+	return {"tick": tick, "inputs": encoded}
+
+func _raw_replay_frame(tick: int, frame_inputs: Dictionary) -> Dictionary:
+	var copied := {}
+	for id_value in frame_inputs.keys():
+		if typeof(frame_inputs[id_value]) != TYPE_PACKED_BYTE_ARRAY:
+			continue
+		var bytes: PackedByteArray = frame_inputs[id_value]
+		copied[int(id_value)] = bytes.duplicate()
+	return {"tick": tick, "inputs": copied}
+
+func _record_replay_frame(tick: int, frame_inputs: Dictionary) -> void:
+	if !replay_recording_active or replay_recording_saved or frame_inputs.is_empty():
+		return
+	replay_recording_frames.append(_raw_replay_frame(tick, frame_inputs))
+
+func _build_singleplayer_replay_frame(local_input_bytes: PackedByteArray) -> Dictionary:
+	var out := {}
+	var roster := network_manager.get_simulation_roster()
+	var cpu_ids := network_manager.get_cpu_roster()
+	var local_id := _local_player_id()
+	for id_value in roster:
+		var id := int(id_value)
+		var input_bytes := network_manager.NEUTRAL_INPUT_BYTES
+		if cpu_ids.has(id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
+			input_bytes = game_sim.get_native_cpu_input_for_tick(id, _singleplayer_tick)
+		elif id == local_id:
+			input_bytes = local_input_bytes
+		out[id] = input_bytes
+	return out
+
+func _save_replay_recording(reason: String) -> String:
+	if !replay_recording_active or replay_recording_saved or replay_recording_frames.is_empty():
+		return ""
+	var replay_dir := _replay_dir()
+	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
+	if err != OK:
+		push_warning("Replay save failed: could not create %s err=%s" % [replay_dir, str(err)])
+		return ""
+	var replay := replay_recording_metadata.duplicate(true)
+	replay["saved_reason"] = reason
+	replay["duration_ticks"] = replay_recording_frames.size()
+	replay["finish_times"] = network_manager.player_finish_times.duplicate(true)
+	replay["finish_placements"] = network_manager.player_finish_placements.duplicate(true)
+	replay["eliminations"] = network_manager.player_eliminations.duplicate(true)
+	var encoded_frames: Array = []
+	for raw_frame in replay_recording_frames:
+		if typeof(raw_frame) != TYPE_DICTIONARY:
+			continue
+		var frame_dict: Dictionary = raw_frame
+		var raw_inputs = frame_dict.get("inputs", {})
+		if typeof(raw_inputs) != TYPE_DICTIONARY:
+			continue
+		encoded_frames.append(_encoded_replay_frame(int(frame_dict.get("tick", encoded_frames.size())), raw_inputs as Dictionary))
+	replay["frames"] = encoded_frames
+	var safe_track := str(replay.get("track_name", "track")).replace("/", "_").replace("\\", "_").replace(" ", "_")
+	var path := replay_dir.path_join("mxt_%s_%s.replay.json" % [safe_track, _replay_make_stamp()])
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		push_warning("Replay save failed: %s" % str(FileAccess.get_open_error()))
+		return ""
+	file.store_string(JSON.stringify(replay, "\t"))
+	file.close()
+	replay_recording_saved = true
+	replay_recording_active = false
+	print("MXT_REPLAY saved ", path, " frames=", replay_recording_frames.size())
+	return path
+
+func _load_replay_file(path: String) -> Dictionary:
+	if !FileAccess.file_exists(path):
+		push_warning("Replay load failed: file not found: %s" % path)
+		return {}
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("Replay load failed: JSON root is not a dictionary.")
+		return {}
+	if int(parsed.get("schema_version", -1)) != REPLAY_SCHEMA_VERSION:
+		push_warning("Replay load refused: schema mismatch.")
+		return {}
+	if str(parsed.get("build", "")) != _replay_build_signature():
+		push_warning("Replay load refused: build mismatch.")
+		return {}
+	return parsed
+
+func _replay_find_track_index(data: Dictionary) -> int:
+	return _debug_replay_find_track_index(data)
+
+func _decode_replay_frame(frame: Dictionary) -> Dictionary:
+	var out := {}
+	var raw_inputs = frame.get("inputs", {})
+	if typeof(raw_inputs) != TYPE_DICTIONARY:
+		return out
+	for id_value in (raw_inputs as Dictionary).keys():
+		out[int(id_value)] = Marshalls.base64_to_raw(str(raw_inputs[id_value]))
+	return out
+
+func _start_replay_playback_from_path(path: String) -> void:
+	var replay := _load_replay_file(path)
+	if replay.is_empty():
+		return
+	if game_sim.sim_started or singleplayer_mode:
+		_return_to_menu()
+	var track_index := _replay_find_track_index(replay)
+	if track_index < 0 or track_index >= tracks.size():
+		push_warning("Replay load failed: track not found for %s" % str(replay.get("track_name", "")))
+		return
+	var frames = replay.get("frames", [])
+	if typeof(frames) != TYPE_ARRAY or (frames as Array).is_empty():
+		push_warning("Replay load failed: replay has no frames.")
+		return
+	var settings = replay.get("settings", [])
+	if typeof(settings) != TYPE_ARRAY or (settings as Array).is_empty():
+		push_warning("Replay load failed: replay has no racer settings.")
+		return
+	var racer_ids: Array = replay.get("racer_ids", [])
+	var cpu_flags: Array = replay.get("cpu_flags", [])
+	if racer_ids.is_empty():
+		for i in range((settings as Array).size()):
+			racer_ids.append(i)
+			cpu_flags.append(false)
+	replay_playback_active = true
+	replay_playback_frames = (frames as Array).duplicate(true)
+	replay_playback_index = 0
+	replay_playback_loaded_path = path
+	replay_playback_racer_ids = racer_ids.duplicate(true)
+	replay_playback_cpu_flags = cpu_flags.duplicate(true)
+	replay_playback_focus_index = 0
+	replay_playback_local_player_id = int(replay_playback_racer_ids[0])
+	replay_camera_mode = REPLAY_CAMERA_GAME
+	singleplayer_mode = true
+	_singleplayer_tick = 0
+	network_manager.reset_race_state()
+	network_manager.set_spawn_seed(int(replay.get("spawn_seed", 0)))
+	network_manager.race_options = (replay.get("race_options", {}) as Dictionary).duplicate(true) if typeof(replay.get("race_options", {})) == TYPE_DICTIONARY else {}
+	network_manager.player_ids.clear()
+	network_manager.cpu_player_ids.clear()
+	for i in range(replay_playback_racer_ids.size()):
+		var id := int(replay_playback_racer_ids[i])
+		var is_cpu := i < replay_playback_cpu_flags.size() and bool(replay_playback_cpu_flags[i])
+		if is_cpu:
+			network_manager.cpu_player_ids.append(id)
+		else:
+			network_manager.player_ids.append(id)
+		if i < (settings as Array).size() and typeof(settings[i]) == TYPE_DICTIONARY:
+			network_manager.player_settings[id] = (settings[i] as Dictionary).duplicate(true)
+	_start_race(track_index, settings as Array)
+	$Control.visible = false
+	lobby_control.visible = false
+	if replay_catalog_root != null:
+		replay_catalog_root.visible = false
+	_apply_replay_camera_mode()
+	print("MXT_REPLAY playback started ", path, " frames=", replay_playback_frames.size())
+
+func _tick_replay_playback() -> void:
+	if replay_playback_index >= replay_playback_frames.size():
+		print("MXT_REPLAY playback complete ", replay_playback_loaded_path)
+		_return_to_menu()
+		return
+	var raw_frame = replay_playback_frames[replay_playback_index]
+	if typeof(raw_frame) != TYPE_DICTIONARY:
+		_return_to_menu()
+		return
+	var frame_inputs := _decode_replay_frame(raw_frame)
+	for id_value in frame_inputs.keys():
+		network_manager.netcode_session.store_pending_input(_singleplayer_tick, int(id_value), frame_inputs[id_value])
+	if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick):
+		push_warning("Replay playback failed at tick %d" % _singleplayer_tick)
+		_return_to_menu()
+		return
+	replay_playback_index += 1
+	_singleplayer_tick += 1
+	network_manager.clients_server_tick = _singleplayer_tick
+
+func _ensure_replay_auto_camera() -> Camera3D:
+	if replay_auto_camera == null or !is_instance_valid(replay_auto_camera):
+		replay_auto_camera = Camera3D.new()
+		replay_auto_camera.name = "ReplayAutoCamera"
+		replay_auto_camera.near = 0.25
+		replay_auto_camera.far = 40000.0
+		replay_auto_camera.fov = 70.0
+		$GameWorld.add_child(replay_auto_camera)
+	return replay_auto_camera
+
+func _focused_replay_player_id() -> int:
+	if replay_playback_racer_ids.is_empty():
+		return _local_player_id()
+	replay_playback_focus_index = clampi(replay_playback_focus_index, 0, replay_playback_racer_ids.size() - 1)
+	return int(replay_playback_racer_ids[replay_playback_focus_index])
+
+func _focused_replay_car() -> VisualCar:
+	var focus_id := _focused_replay_player_id()
+	for car in car_node_container.get_children():
+		if car is VisualCar and car.owning_id == focus_id:
+			return car
+	return null
+
+func _focused_replay_transform() -> Transform3D:
+	var car := _focused_replay_car()
+	if car != null:
+		return car.car_transform.global_transform
+	if game_sim != null and game_sim.has_method("get_player_render_transform"):
+		return game_sim.get_player_render_transform(_focused_replay_player_id())
+	return Transform3D.IDENTITY
+
+func _apply_replay_camera_mode() -> void:
+	if !replay_playback_active:
+		return
+	var car := _focused_replay_car()
+	if replay_camera_mode == REPLAY_CAMERA_GAME and car_node_container.local_visual_car != null:
+		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, _focused_replay_player_id())
+		car_node_container.local_visual_car.car_camera.make_current()
+	elif replay_camera_mode == REPLAY_CAMERA_AUTO:
+		_ensure_replay_auto_camera().make_current()
+	else:
+		if spectator_node == null:
+			spectator_node = spectator_scene.instantiate()
+			add_child(spectator_node)
+		var focus_transform := _focused_replay_transform()
+		spectator_node.global_position = focus_transform.origin - focus_transform.basis.z * 32.0 + focus_transform.basis.y * 12.0
+		spectator_node.look_at(focus_transform.origin + focus_transform.basis.y * 2.0, focus_transform.basis.y.normalized())
+		if spectator_node.has_method("sync_look_from_current_transform"):
+			spectator_node.call("sync_look_from_current_transform")
+		var camera := spectator_node.get_node_or_null("Camera3D") as Camera3D
+		if camera != null:
+			camera.make_current()
+
+func _cycle_replay_camera_mode() -> void:
+	replay_camera_mode = (replay_camera_mode + 1) % 3
+	_apply_replay_camera_mode()
+	_show_race_notification("Replay Camera: %s" % _replay_camera_mode_name(), 1200)
+
+func _replay_camera_mode_name() -> String:
+	match replay_camera_mode:
+		REPLAY_CAMERA_GAME:
+			return "Game"
+		REPLAY_CAMERA_AUTO:
+			return "Auto"
+		_:
+			return "Spectator"
+
+func _change_replay_focus(delta: int) -> void:
+	if !replay_playback_active or replay_playback_racer_ids.is_empty():
+		return
+	if replay_camera_mode != REPLAY_CAMERA_GAME and replay_camera_mode != REPLAY_CAMERA_AUTO:
+		return
+	replay_playback_focus_index = posmod(replay_playback_focus_index + delta, replay_playback_racer_ids.size())
+	_apply_replay_camera_mode()
+	_show_race_notification("Replay Focus: %s" % _player_display_name(_focused_replay_player_id()), 1200)
+
+func _update_replay_auto_camera(delta: float) -> void:
+	if !replay_playback_active or replay_camera_mode != REPLAY_CAMERA_AUTO:
+		return
+	var camera := _ensure_replay_auto_camera()
+	var car_transform := _focused_replay_transform()
+	var speed_scale := 0.5
+	var car := _focused_replay_car()
+	if car != null:
+		speed_scale = clampf(car.speed_kmh / 1800.0, 0.0, 1.0)
+	var target := car_transform.origin + car_transform.basis.y * 2.0
+	var desired := target - car_transform.basis.z * lerpf(24.0, 42.0, speed_scale) + car_transform.basis.y * lerpf(9.0, 15.0, speed_scale)
+	camera.global_position = camera.global_position.lerp(desired, clampf(delta * 4.0, 0.0, 1.0))
+	camera.look_at(target, car_transform.basis.y.normalized())
+
+func _build_replay_catalog() -> void:
+	if replay_catalog_root != null and is_instance_valid(replay_catalog_root):
+		return
+	replay_catalog_root = Control.new()
+	replay_catalog_root.name = "ReplayCatalog"
+	replay_catalog_root.visible = false
+	replay_catalog_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(replay_catalog_root)
+	var shade := ColorRect.new()
+	shade.color = Color(0.0, 0.0, 0.0, 0.72)
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	replay_catalog_root.add_child(shade)
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 48)
+	margin.add_theme_constant_override("margin_top", 42)
+	margin.add_theme_constant_override("margin_right", 48)
+	margin.add_theme_constant_override("margin_bottom", 42)
+	replay_catalog_root.add_child(margin)
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 18)
+	margin.add_child(columns)
+	replay_catalog_list = ItemList.new()
+	replay_catalog_list.custom_minimum_size = Vector2(430, 0)
+	replay_catalog_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	replay_catalog_list.item_selected.connect(_on_replay_catalog_selected)
+	columns.add_child(replay_catalog_list)
+	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	right.add_theme_constant_override("separation", 10)
+	columns.add_child(right)
+	var title := Label.new()
+	title.text = "Replays"
+	right.add_child(title)
+	replay_catalog_metadata_label = RichTextLabel.new()
+	replay_catalog_metadata_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	replay_catalog_metadata_label.bbcode_enabled = false
+	right.add_child(replay_catalog_metadata_label)
+	replay_catalog_name_edit = LineEdit.new()
+	replay_catalog_name_edit.placeholder_text = "Replay name"
+	right.add_child(replay_catalog_name_edit)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 8)
+	right.add_child(buttons)
+	replay_catalog_watch_button = Button.new()
+	replay_catalog_watch_button.text = "Watch"
+	replay_catalog_watch_button.pressed.connect(_on_replay_catalog_watch_pressed)
+	buttons.add_child(replay_catalog_watch_button)
+	replay_catalog_rename_button = Button.new()
+	replay_catalog_rename_button.text = "Rename"
+	replay_catalog_rename_button.pressed.connect(_on_replay_catalog_rename_pressed)
+	buttons.add_child(replay_catalog_rename_button)
+	replay_catalog_delete_button = Button.new()
+	replay_catalog_delete_button.text = "Delete"
+	replay_catalog_delete_button.pressed.connect(_on_replay_catalog_delete_pressed)
+	buttons.add_child(replay_catalog_delete_button)
+	var close_button := Button.new()
+	close_button.text = "Close"
+	close_button.pressed.connect(_close_replay_catalog)
+	buttons.add_child(close_button)
+
+func _open_replay_catalog() -> void:
+	_build_replay_catalog()
+	_refresh_replay_catalog()
+	$Control.visible = false
+	lobby_control.visible = false
+	replay_catalog_root.visible = true
+	if replay_catalog_list.item_count > 0:
+		replay_catalog_list.select(0)
+		_on_replay_catalog_selected(0)
+
+func _close_replay_catalog() -> void:
+	if replay_catalog_root != null:
+		replay_catalog_root.visible = false
+	if !game_sim.sim_started:
+		$Control.visible = true
+
+func _refresh_replay_catalog() -> void:
+	replay_catalog_entries.clear()
+	if replay_catalog_list == null:
+		return
+	replay_catalog_list.clear()
+	var replay_dir := _replay_dir()
+	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
+	if err != OK:
+		return
+	var dir := DirAccess.open(replay_dir)
+	if dir == null:
+		return
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if !dir.current_is_dir() and file_name.ends_with(".replay.json"):
+			var path := replay_dir.path_join(file_name)
+			var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+			if typeof(parsed) == TYPE_DICTIONARY:
+				var data: Dictionary = parsed
+				data["_path"] = path
+				replay_catalog_entries.append(data)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	replay_catalog_entries.sort_custom(func(a, b): return float(a.get("created_unix", 0.0)) > float(b.get("created_unix", 0.0)))
+	for entry in replay_catalog_entries:
+		var title := str(entry.get("name", entry.get("track_name", "Replay")))
+		replay_catalog_list.add_item(title)
+	_update_replay_catalog_buttons()
+
+func _selected_replay_catalog_entry() -> Dictionary:
+	if replay_catalog_list == null:
+		return {}
+	var selected := replay_catalog_list.get_selected_items()
+	if selected.is_empty():
+		return {}
+	var idx := int(selected[0])
+	if idx < 0 or idx >= replay_catalog_entries.size():
+		return {}
+	return replay_catalog_entries[idx]
+
+func _on_replay_catalog_selected(_index: int) -> void:
+	var entry := _selected_replay_catalog_entry()
+	if entry.is_empty():
+		replay_catalog_metadata_label.text = ""
+		replay_catalog_name_edit.text = ""
+		_update_replay_catalog_buttons()
+		return
+	replay_catalog_name_edit.text = str(entry.get("name", entry.get("track_name", "Replay")))
+	var player_lines: Array = []
+	for player in entry.get("players", []):
+		if typeof(player) != TYPE_DICTIONARY:
+			continue
+		var p: Dictionary = player
+		var cpu := " CPU" if bool(p.get("cpu", false)) else ""
+		var livery: Dictionary = p.get("car_livery", {}) if typeof(p.get("car_livery", {})) == TYPE_DICTIONARY else {}
+		var stamp_count := 0
+		if typeof(livery.get("stamps", [])) == TYPE_ARRAY:
+			stamp_count = (livery.get("stamps", []) as Array).size()
+		player_lines.append("%s%s - %s - %d stamps" % [
+			str(p.get("username", "Player")),
+			cpu,
+			str(p.get("car_definition_path", "")),
+			stamp_count
+		])
+	var compatible := int(entry.get("schema_version", -1)) == REPLAY_SCHEMA_VERSION and str(entry.get("build", "")) == _replay_build_signature()
+	replay_catalog_metadata_label.text = "\n".join([
+		"Track: %s" % str(entry.get("track_name", "")),
+		"Mode: %s" % str(entry.get("mode", "")),
+		"Duration: %s" % _format_race_time(int(entry.get("duration_ticks", 0)), 0),
+		"Players:",
+		"\n".join(player_lines),
+		"",
+		"Compatible: %s" % ("yes" if compatible else "no"),
+		str(entry.get("_path", "")),
+	])
+	_update_replay_catalog_buttons()
+
+func _update_replay_catalog_buttons() -> void:
+	var entry := _selected_replay_catalog_entry()
+	var has_entry := !entry.is_empty()
+	var compatible := has_entry and int(entry.get("schema_version", -1)) == REPLAY_SCHEMA_VERSION and str(entry.get("build", "")) == _replay_build_signature()
+	if replay_catalog_watch_button != null:
+		replay_catalog_watch_button.disabled = !compatible
+	if replay_catalog_rename_button != null:
+		replay_catalog_rename_button.disabled = !has_entry
+	if replay_catalog_delete_button != null:
+		replay_catalog_delete_button.disabled = !has_entry
+
+func _on_replay_catalog_watch_pressed() -> void:
+	var entry := _selected_replay_catalog_entry()
+	if entry.is_empty():
+		return
+	_start_replay_playback_from_path(str(entry.get("_path", "")))
+
+func _on_replay_catalog_rename_pressed() -> void:
+	var entry := _selected_replay_catalog_entry()
+	if entry.is_empty():
+		return
+	var path := str(entry.get("_path", ""))
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return
+	var data: Dictionary = parsed
+	data["name"] = replay_catalog_name_edit.text.strip_edges()
+	if str(data["name"]) == "":
+		data["name"] = str(data.get("track_name", "Replay"))
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_string(JSON.stringify(data, "\t"))
+	file.close()
+	_refresh_replay_catalog()
+
+func _on_replay_catalog_delete_pressed() -> void:
+	var entry := _selected_replay_catalog_entry()
+	if entry.is_empty():
+		return
+	var path := str(entry.get("_path", ""))
+	DirAccess.remove_absolute(path)
+	_refresh_replay_catalog()
 
 func _debug_replay_dir() -> String:
 	return ProjectSettings.globalize_path("user://debug_replays")
@@ -1912,6 +2530,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	_apply_grand_prix_ko_energy_bonuses(game_sim, racer_ids)
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
+	_start_replay_recording(track_index, settings, racer_ids, racer_cpu_flags)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 		var local_hud := car_node_container.local_visual_car.race_hud
@@ -2425,6 +3044,10 @@ func _physics_process(delta: float) -> void:
 
 func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray()):
 	var start_time := Time.get_ticks_usec()
+	if replay_playback_active:
+		_tick_replay_playback()
+		network_manager.rollback_frametime_us = Time.get_ticks_usec() - start_time
+		return
 	if debug_replay_playback:
 		if debug_replay_playback_index >= debug_replay_playback_inputs.size():
 			debug_replay_playback = false
@@ -2447,6 +3070,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		input_bytes = local_pi.serialize()
 	if debug_replay_recording:
 		debug_replay_inputs.append(input_bytes.duplicate())
+	if replay_recording_active:
+		_record_replay_frame(_singleplayer_tick, _build_singleplayer_replay_frame(input_bytes))
 	_dump_offline_auth_input_sample(input_bytes)
 	_dump_offline_state_sample()
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
@@ -2501,6 +3126,7 @@ func _simulate_host_frame(local_input_bytes: PackedByteArray):
 		var server_inputs := network_manager.collect_server_inputs()
 		if server_inputs.is_empty():
 			break
+		_record_replay_frame(network_manager.server_tick, server_inputs)
 		network_manager.post_tick()
 		loops += 1
 	network_manager.collect_client_inputs()
@@ -2538,6 +3164,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		if replay_path != "":
 			_load_and_start_debug_replay(replay_path)
 		get_viewport().set_input_as_handled()
+	if replay_playback_active and event.is_action_pressed("SpinAttack"):
+		_cycle_replay_camera_mode()
+		get_viewport().set_input_as_handled()
+		return
+	if replay_playback_active and event.is_action_pressed("DpadLeft"):
+		_change_replay_focus(-1)
+		get_viewport().set_input_as_handled()
+		return
+	if replay_playback_active and event.is_action_pressed("DpadRight"):
+		_change_replay_focus(1)
+		get_viewport().set_input_as_handled()
+		return
 	if lobby_control.visible and event.is_action_pressed("ui_cancel"):
 		_close_settings_menus_for_race_start()
 		_return_to_menu()
@@ -2552,7 +3190,9 @@ func _unhandled_input(event: InputEvent) -> void:
 func _return_to_menu() -> void:
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
+	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
 	debug_replay_playback = false
+	replay_playback_active = false
 	_close_race_pause_menu()
 	race_finish_label.visible = false
 	_hide_race_results_summary()
@@ -2591,7 +3231,9 @@ func _return_to_menu() -> void:
 func _return_to_lobby() -> void:
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
+	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
 	debug_replay_playback = false
+	replay_playback_active = false
 	_close_race_pause_menu()
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
@@ -2630,7 +3272,9 @@ func _return_to_lobby() -> void:
 func _teardown_race_world_for_transition() -> void:
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
+	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
 	debug_replay_playback = false
+	replay_playback_active = false
 	_close_race_pause_menu()
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
@@ -2705,6 +3349,17 @@ func _build_start_grid_slots(racer_ids: Array) -> PackedInt32Array:
 	slots.resize(racer_ids.size())
 	for i in range(racer_ids.size()):
 		slots[i] = -1
+	if singleplayer_mode and !network_manager.get_cpu_roster().is_empty():
+		var local_index := racer_ids.find(_local_player_id())
+		if local_index >= 0 and racer_ids.size() > 1:
+			var next_slot := 0
+			for i in range(racer_ids.size()):
+				if i == local_index:
+					continue
+				slots[i] = next_slot
+				next_slot += 1
+			slots[local_index] = racer_ids.size() - 1
+			return slots
 	if !network_manager.is_grand_prix_enabled():
 		return slots
 	var current_track_index := int(network_manager.race_options.get("grand_prix_current_track", 0))
@@ -2995,9 +3650,11 @@ func _process(delta: float) -> void:
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
 	if game_sim.sim_started and network_manager.net_race_finish_time != -1:
 		_show_race_results_summary()
+		_refresh_race_pause_replay_button()
 	if game_sim.sim_started:
 		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim_visuals_only(delta)
+		_update_replay_auto_camera(delta)
 		if auto_render_profile_mode:
 			render_profile_visuals_only_us += Time.get_ticks_usec() - profile_visuals_start
 			render_profile_process_us += Time.get_ticks_usec() - profile_process_start

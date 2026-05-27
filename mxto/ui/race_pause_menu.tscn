@@ -48,6 +48,10 @@ text = "Resume"
 layout_mode = 2
 text = "Options"
 
+[node name="SaveReplayButton" type="Button" parent="RacePauseRoot/Center/Panel/Box"]
+layout_mode = 2
+text = "Save Replay"
+
 [node name="LobbyButton" type="Button" parent="RacePauseRoot/Center/Panel/Box"]
 layout_mode = 2
 text = "Back To Lobby"
