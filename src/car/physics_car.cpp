@@ -37,6 +37,12 @@ static inline float landing_alignment_penalty_factor(uint32_t air_time)
 	return std::clamp(static_cast<float>(air_time) / full_penalty_frames, 0.0f, 1.0f);
 }
 
+static inline float air_steering_drag_tilt_factor(float air_tilt)
+{
+	const float limit = air_tilt < 0.0f ? 50.0f : 60.0f;
+	return std::clamp(1.0f - std::abs(air_tilt) / limit, 0.0f, 1.0f);
+}
+
 static inline bool trace_mesh_floor_for_car(const PhysicsCarSoA *soa, int soa_index)
 {
 	return soa &&
@@ -2057,18 +2063,7 @@ void PhysicsCar::handle_airborne_controls()
 		airborne_controls_active = true;
 
 	if (airborne_controls_active) {
-		float tilt_effect_base = 2.0f * std::abs(soa->input_steer_yaw[soa_index]);
-
-		if (soa->state_2[soa_index] & 0x2u)
-			tilt_effect_base = 0.0f;
-
-		float current_tilt_increment = 0.0f;
-		if (tilt_effect_base >= 0.1f) {
-			current_tilt_increment =
-			2.0f * soa->input_steer_pitch[soa_index] * std::abs(2.0f - tilt_effect_base);
-		} else {
-			current_tilt_increment = tilt_effect_base + 4.0f * soa->input_steer_pitch[soa_index];
-		}
+		float current_tilt_increment = 4.0f * soa->input_steer_pitch[soa_index];
 
 		if (soa->air_time[soa_index] > 60) {
 			float air_time_factor = static_cast<float>(soa->air_time[soa_index] - 60) / 120.0f;
@@ -2239,6 +2234,14 @@ void PhysicsCar::handle_drag_and_glide_forces()
 	bool boosting = (soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) != 0;
 	bool airborne = (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0;
 	float drag_coeff = 0.0f;
+
+	if (airborne && soa->base_speed[soa_index] > 0.0f) {
+		const float steer = std::sqrt(std::abs(soa->input_steer_yaw[soa_index]));
+		const float airtime_factor = std::clamp(static_cast<float>(soa->air_time[soa_index]) / 60.0f, 0.0f, 1.0f);
+		const float tilt_factor = air_steering_drag_tilt_factor(soa->air_tilt[soa_index]);
+		const float drag = soa->base_speed[soa_index] * steer * airtime_factor * tilt_factor * 0.015f;
+		soa->base_speed[soa_index] = std::max(soa->base_speed[soa_index] - drag, 0.0f);
+	}
 
 	if (boosting) {
 		drag_coeff = alignment_with_normal * 0.5f;
