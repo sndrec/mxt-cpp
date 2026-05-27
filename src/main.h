@@ -352,6 +352,7 @@ namespace godot {
 		bool vehicle_restore_enabled = true;
 		bool multiplayer_intro_camera_enabled = false;
 		bool bumpers_enabled = false;
+		bool s_boost_enabled = true;
 		int bumper_count = 0;
 		uint32_t bumper_track_seed = 0;
 		uint8_t bumper_scheduler_lap = 0;
@@ -371,6 +372,8 @@ namespace godot {
 		bool get_multiplayer_intro_camera_enabled() const { return multiplayer_intro_camera_enabled; }
 		void set_bumpers_enabled(bool enabled);
 		bool get_bumpers_enabled() const { return bumpers_enabled; }
+		void set_s_boost_enabled(bool enabled);
+		bool get_s_boost_enabled() const { return s_boost_enabled; }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
 		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }

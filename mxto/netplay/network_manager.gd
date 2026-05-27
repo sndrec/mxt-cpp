@@ -116,6 +116,7 @@ var race_options := {
 	"track_indices": [],
 	"vehicle_restore": true,
 	"bumpers": false,
+	"s_boost": true,
 	"race_netplay_phase": 0,
 	"grand_prix_current_track": 0,
 	"grand_prix_points": {},
@@ -3288,6 +3289,9 @@ func record_player_eliminated(id: int, tick: int) -> void:
 
 func is_vehicle_restore_enabled() -> bool:
 	return bool(race_options.get("vehicle_restore", true))
+
+func is_s_boost_enabled() -> bool:
+	return bool(race_options.get("s_boost", true))
 
 func is_grand_prix_enabled() -> bool:
 	return int(race_options.get("game_mode", 0)) == 1

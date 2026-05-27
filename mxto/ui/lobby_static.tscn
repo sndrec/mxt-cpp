@@ -166,6 +166,11 @@ text = " Vehicle Restore"
 layout_mode = 2
 text = " Bumpers"
 
+[node name="SBoostToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox"]
+layout_mode = 2
+button_pressed = true
+text = " S-BOOST"
+
 [node name="CpuControlBox" type="HBoxContainer" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=619192241]
 layout_mode = 2
 size_flags_horizontal = 3

@@ -987,14 +987,21 @@ namespace {
 		return (c.state_2[i] & 0x80u) != 0u && (state & MACHINESTATE::AIRBORNE) == 0u;
 	}
 
-	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count, bool vehicle_restore_enabled)
+	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count, bool vehicle_restore_enabled, bool s_boost_enabled)
 	{
 		for (int i = 0; i < count; ++i) {
 			PlayerInput& input = inputs[i];
 			const float accel_raw = input.accelerate;
 			c.simulation_tick[i] = tick_count;
 
-			if (!c.s_boost_active[i]) {
+			if (!s_boost_enabled) {
+				c.s_boost_charge[i] = 0;
+				c.s_boost_active[i] = false;
+				c.s_boost_frames_remaining[i] = 0;
+				c.s_boost_emit_frame_accumulator[i] = 0;
+				c.s_boost_pending_spark_spawns[i] = 0;
+				c.pending_super_sparks[i] = 0;
+			} else if (!c.s_boost_active[i]) {
 				c.s_boost_frames_remaining[i] = 0;
 				c.s_boost_emit_frame_accumulator[i] = 0;
 				c.s_boost_pending_spark_spawns[i] = 0;
@@ -1137,6 +1144,7 @@ namespace {
 	}
 
 	static void post_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, uint8_t* pending_s_boost_sparks, int count,
+		bool s_boost_enabled,
 		TrackQueryScratch &scratch)
 	{
 		for (int i = 0; i < count; ++i) {
@@ -1209,6 +1217,12 @@ namespace {
 		}
 
 		for (int i = 0; i < count; ++i) {
+			if (!s_boost_enabled) {
+				pending_s_boost_sparks[i] = 0;
+				c.s_boost_pending_spark_spawns[i] = 0;
+				c.pending_super_sparks[i] = 0;
+				continue;
+			}
 			uint16_t pending = static_cast<uint16_t>(c.s_boost_pending_spark_spawns[i]) + c.pending_super_sparks[i];
 			pending_s_boost_sparks[i] = static_cast<uint8_t>(pending > 255 ? 255 : pending);
 			c.s_boost_pending_spark_spawns[i] = 0;
@@ -1840,6 +1854,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_multiplayer_intro_camera_enabled"), &GameSim::get_multiplayer_intro_camera_enabled);
 	ClassDB::bind_method(D_METHOD("set_bumpers_enabled", "enabled"), &GameSim::set_bumpers_enabled);
 	ClassDB::bind_method(D_METHOD("get_bumpers_enabled"), &GameSim::get_bumpers_enabled);
+	ClassDB::bind_method(D_METHOD("set_s_boost_enabled", "enabled"), &GameSim::set_s_boost_enabled);
+	ClassDB::bind_method(D_METHOD("get_s_boost_enabled"), &GameSim::get_s_boost_enabled);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("load_state_data", "target_tick", "data"), &GameSim::load_state_data);
@@ -2081,6 +2097,30 @@ void GameSim::set_multiplayer_intro_camera_enabled(bool enabled)
 void GameSim::set_bumpers_enabled(bool enabled)
 {
 	bumpers_enabled = enabled;
+}
+
+void GameSim::set_s_boost_enabled(bool enabled)
+{
+	s_boost_enabled = enabled;
+	if (enabled) {
+		return;
+	}
+	if (super_spark_state && super_sparks) {
+		reset_super_sparks();
+	}
+	if (!cars) {
+		return;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		soa.s_boost_charge[lane] = 0;
+		soa.s_boost_active[lane] = false;
+		soa.s_boost_frames_remaining[lane] = 0;
+		soa.s_boost_emit_frame_accumulator[lane] = 0;
+		soa.s_boost_pending_spark_spawns[lane] = 0;
+		soa.pending_super_sparks[lane] = 0;
+	}
 }
 
 void GameSim::configure_bumper_car(int bumper_slot)
@@ -2464,7 +2504,7 @@ void GameSim::update_bumper_vehicles()
 
 		begin_vehicle_tick_soa(car_soa, bumper_cars + global_start,
 			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count,
-			false);
+			false, false);
 		group.sync();
 
 		begin_vehicle_motion_phased_soa(car_soa, bumper_cars + global_start,
@@ -2483,7 +2523,7 @@ void GameSim::update_bumper_vehicles()
 		group.sync();
 
 		post_vehicle_tick_soa(car_soa, bumper_cars + global_start,
-			soa.pending_s_boost_sparks + global_start, car_soa.count, track_scratch);
+			soa.pending_s_boost_sparks + global_start, car_soa.count, false, track_scratch);
 	});
 }
 
@@ -3519,7 +3559,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		} else if (car_is_cpu && car_is_cpu[i]) {
 			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		}
-		if (!car_soa.s_boost_active[lane] && car_soa.s_boost_charge[lane] >= car_soa.s_boost_charge_max[lane] && inp.boost) {
+		if (s_boost_enabled && !car_soa.s_boost_active[lane] && car_soa.s_boost_charge[lane] >= car_soa.s_boost_charge_max[lane] && inp.boost) {
 			float gap = lead_distance - soa.pre_distances[i];
 			if (gap < 0.0f) {
 				gap = 0.0f;
@@ -3563,7 +3603,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 
 		begin_vehicle_tick_soa(car_soa, cars + global_start,
 			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count,
-			vehicle_restore_enabled);
+			vehicle_restore_enabled, s_boost_enabled);
 		group.sync();
 
 		begin_vehicle_motion_phased_soa(car_soa, cars + global_start,
@@ -3591,10 +3631,10 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		group.sync();
 
 		post_vehicle_tick_soa(car_soa, cars + global_start,
-			soa.pending_s_boost_sparks + global_start, car_soa.count, track_scratch);
+			soa.pending_s_boost_sparks + global_start, car_soa.count, s_boost_enabled, track_scratch);
 	});
 	for (int i = 0; i < num_cars; i++) {
-		if (soa.pending_s_boost_sparks[i] > 0) {
+		if (s_boost_enabled && soa.pending_s_boost_sparks[i] > 0) {
 			emit_super_sparks_from_car(cars[i], soa.pending_s_boost_sparks[i]);
 		}
 	}
@@ -3613,7 +3653,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	});
 	soa.placement_order_valid = true;
 
-	if (super_spark_state) {
+	if (s_boost_enabled && super_spark_state) {
 		super_spark_state->placement_timer += 1;
 		while (super_spark_state->placement_timer >= 120) {
 			int top_racer_indices[3] = { -1, -1, -1 };
@@ -3638,7 +3678,9 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	}
 
 	process_pending_ko_events();
-	update_super_sparks();
+	if (s_boost_enabled) {
+		update_super_sparks();
+	}
 
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -6096,6 +6138,8 @@ void GameSim::emit_super_sparks_from_car(const PhysicsCar& car, int count)
 {
 	if (count <= 0)
 		return;
+	if (!s_boost_enabled)
+		return;
 	if (!sim_started || !super_spark_state || !super_sparks || !current_track)
 		return;
 	if ((car.soa->machine_state[car.soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) != 0)
@@ -6186,6 +6230,9 @@ static SimVec3 mxt_super_spark_position_at_frame(const SimVec3& start_position, 
 
 void GameSim::update_super_sparks()
 {
+	if (!s_boost_enabled) {
+		return;
+	}
 	if (!sim_started || !cars || !super_spark_state || !super_sparks)
 		return;
 

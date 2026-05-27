@@ -40,6 +40,7 @@ class_name GameManager extends Node
 @onready var lobby_game_mode_choice: OptionButton = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/GameModeChoice
 @onready var lobby_vehicle_restore_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/VehicleRestoreToggle
 @onready var lobby_bumpers_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/BumpersToggle
+@onready var lobby_s_boost_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/SBoostToggle
 @onready var lobby_stage_button_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer
 @onready var lobby_stage_preview_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer
 @onready var lobby_player_list_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer
@@ -179,6 +180,11 @@ var replay_catalog_watch_button: Button
 var replay_catalog_rename_button: Button
 var replay_catalog_delete_button: Button
 var replay_catalog_entries: Array = []
+var singleplayer_options_root: Control
+var singleplayer_options_restore_toggle: CheckBox
+var singleplayer_options_bumpers_toggle: CheckBox
+var singleplayer_options_s_boost_toggle: CheckBox
+var singleplayer_options_as_spectator := false
 var _last_race_track_index: int = -1
 var _last_race_settings: Array = []
 
@@ -237,6 +243,7 @@ func _ready() -> void:
 	randomize()
 	_build_lobby_options_controls()
 	_build_multiplayer_connect_box()
+	_build_singleplayer_race_options_screen()
 	_load_tracks()
 	_load_car_definitions()
 	if car_settings != null and car_settings.has_method("refresh_after_game_manager_loaded"):
@@ -516,20 +523,28 @@ func _on_start_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _on_singleplayer_button_pressed() -> void:
-	_start_singleplayer_race(false)
+	if headless_mode or auto_singleplayer_mode:
+		_start_singleplayer_race(false, _build_default_singleplayer_race_options())
+	else:
+		_open_singleplayer_race_options(false)
 
 func _on_spectator_race_button_pressed() -> void:
-	_start_singleplayer_race(true)
+	_open_singleplayer_race_options(true)
 
 func _on_track_editor_button_pressed() -> void:
 	get_tree().change_scene_to_file("res://track_editing_scene.tscn")
 
-func _start_singleplayer_race(as_spectator: bool) -> void:
+func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {}) -> void:
 	# Start a local, singleplayer race that does not touch networking at all.
 	# Prepare a minimal settings array using the current local player settings.
 	singleplayer_mode = true
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
+	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
+	options["track_indices"] = [track_selector.selected]
+	if auto_bumpers_mode:
+		options["bumpers"] = true
+	network_manager.race_options = options
 	var my_id := _local_player_id()
 	if as_spectator:
 		network_manager.player_ids = []
@@ -538,8 +553,6 @@ func _start_singleplayer_race(as_spectator: bool) -> void:
 		network_manager.player_ids = [my_id]
 		network_manager.spectator_ids = []
 	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
-	if auto_bumpers_mode:
-		network_manager.race_options["bumpers"] = true
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.car_definition_path == "" and car_definitions.size() > 0:
@@ -557,6 +570,8 @@ func _start_singleplayer_race(as_spectator: bool) -> void:
 	# Hide menus
 	$Control.visible = false
 	lobby_control.visible = false
+	if singleplayer_options_root != null:
+		singleplayer_options_root.visible = false
 
 func _on_join_button_pressed() -> void:
 	var settings_dict = car_settings.get_player_settings().to_dict()
@@ -594,6 +609,124 @@ func _build_multiplayer_connect_box() -> void:
 	if !port_field.text_submitted.is_connected(_on_multiplayer_port_submitted):
 		port_field.text_submitted.connect(_on_multiplayer_port_submitted)
 
+func _build_singleplayer_race_options_screen() -> void:
+	if singleplayer_options_root != null:
+		return
+	singleplayer_options_root = Control.new()
+	singleplayer_options_root.name = "SingleplayerRaceOptions"
+	singleplayer_options_root.visible = false
+	singleplayer_options_root.layout_mode = 1
+	singleplayer_options_root.anchor_right = 1.0
+	singleplayer_options_root.anchor_bottom = 1.0
+	add_child(singleplayer_options_root)
+
+	var shade := ColorRect.new()
+	shade.color = Color(0.0, 0.0, 0.0, 0.62)
+	shade.layout_mode = 1
+	shade.anchor_right = 1.0
+	shade.anchor_bottom = 1.0
+	singleplayer_options_root.add_child(shade)
+
+	var center := CenterContainer.new()
+	center.layout_mode = 1
+	center.anchor_right = 1.0
+	center.anchor_bottom = 1.0
+	singleplayer_options_root.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(380.0, 0.0)
+	center.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 18)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 18)
+	panel.add_child(margin)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	margin.add_child(box)
+
+	var title := Label.new()
+	title.text = "Race Options"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	box.add_child(title)
+
+	singleplayer_options_restore_toggle = CheckBox.new()
+	singleplayer_options_restore_toggle.text = " Vehicle Restore"
+	singleplayer_options_restore_toggle.button_pressed = true
+	box.add_child(singleplayer_options_restore_toggle)
+
+	singleplayer_options_bumpers_toggle = CheckBox.new()
+	singleplayer_options_bumpers_toggle.text = " Bumpers"
+	box.add_child(singleplayer_options_bumpers_toggle)
+
+	singleplayer_options_s_boost_toggle = CheckBox.new()
+	singleplayer_options_s_boost_toggle.text = " S-BOOST"
+	singleplayer_options_s_boost_toggle.button_pressed = true
+	box.add_child(singleplayer_options_s_boost_toggle)
+
+	var button_row := HBoxContainer.new()
+	button_row.add_theme_constant_override("separation", 8)
+	box.add_child(button_row)
+
+	var back_button := Button.new()
+	back_button.text = "Back"
+	back_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	back_button.pressed.connect(_on_singleplayer_options_back_pressed)
+	button_row.add_child(back_button)
+
+	var start_button_local := Button.new()
+	start_button_local.text = "Start Race"
+	start_button_local.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start_button_local.pressed.connect(_on_singleplayer_options_start_pressed)
+	button_row.add_child(start_button_local)
+
+func _build_default_singleplayer_race_options() -> Dictionary:
+	return {
+		"game_mode": 0,
+		"track_indices": [track_selector.selected],
+		"vehicle_restore": bool(network_manager.race_options.get("vehicle_restore", true)),
+		"bumpers": bool(network_manager.race_options.get("bumpers", false)) or auto_bumpers_mode,
+		"s_boost": bool(network_manager.race_options.get("s_boost", true)),
+		"grand_prix_current_track": 0,
+		"grand_prix_points": {},
+		"grand_prix_ko_energy_bonuses": {},
+		"grand_prix_eliminated_ids": [],
+	}
+
+func _open_singleplayer_race_options(as_spectator: bool) -> void:
+	_build_singleplayer_race_options_screen()
+	singleplayer_options_as_spectator = as_spectator
+	var options := _build_default_singleplayer_race_options()
+	singleplayer_options_restore_toggle.set_pressed_no_signal(bool(options.get("vehicle_restore", true)))
+	singleplayer_options_bumpers_toggle.set_pressed_no_signal(bool(options.get("bumpers", false)))
+	singleplayer_options_s_boost_toggle.set_pressed_no_signal(bool(options.get("s_boost", true)))
+	$Control.visible = false
+	lobby_control.visible = false
+	singleplayer_options_root.visible = true
+	singleplayer_options_restore_toggle.grab_focus()
+
+func _build_singleplayer_race_options_from_controls() -> Dictionary:
+	var options := _build_default_singleplayer_race_options()
+	if singleplayer_options_restore_toggle != null:
+		options["vehicle_restore"] = singleplayer_options_restore_toggle.button_pressed
+	if singleplayer_options_bumpers_toggle != null:
+		options["bumpers"] = singleplayer_options_bumpers_toggle.button_pressed or auto_bumpers_mode
+	if singleplayer_options_s_boost_toggle != null:
+		options["s_boost"] = singleplayer_options_s_boost_toggle.button_pressed
+	return options
+
+func _on_singleplayer_options_back_pressed() -> void:
+	if singleplayer_options_root != null:
+		singleplayer_options_root.visible = false
+	$Control.visible = true
+
+func _on_singleplayer_options_start_pressed() -> void:
+	_start_singleplayer_race(singleplayer_options_as_spectator, _build_singleplayer_race_options_from_controls())
+
 func _on_multiplayer_port_submitted(_text: String) -> void:
 	_on_join_button_pressed()
 
@@ -624,6 +757,8 @@ func _build_lobby_options_controls() -> void:
 		lobby_vehicle_restore_toggle.toggled.connect(_on_lobby_vehicle_restore_toggled)
 	if !lobby_bumpers_toggle.toggled.is_connected(_on_lobby_bumpers_toggled):
 		lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
+	if lobby_s_boost_toggle != null and !lobby_s_boost_toggle.toggled.is_connected(_on_lobby_s_boost_toggled):
+		lobby_s_boost_toggle.toggled.connect(_on_lobby_s_boost_toggled)
 	if !lobby_say_text.text_submitted.is_connected(_on_lobby_chat_text_submitted):
 		lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
 	if !lobby_send_text_button.pressed.is_connected(_on_lobby_chat_send_pressed):
@@ -731,6 +866,9 @@ func _on_lobby_vehicle_restore_toggled(_toggled: bool) -> void:
 func _on_lobby_bumpers_toggled(_toggled: bool) -> void:
 	_refresh_lobby_race_options()
 
+func _on_lobby_s_boost_toggled(_toggled: bool) -> void:
+	_refresh_lobby_race_options()
+
 func _build_lobby_race_options() -> Dictionary:
 	var selected_track_indices := []
 	for selected_index in lobby_grand_prix_track_sequence:
@@ -740,6 +878,7 @@ func _build_lobby_race_options() -> Dictionary:
 		"track_indices": selected_track_indices,
 		"vehicle_restore": lobby_vehicle_restore_toggle.button_pressed if lobby_vehicle_restore_toggle != null else true,
 		"bumpers": lobby_bumpers_toggle.button_pressed if lobby_bumpers_toggle != null else false,
+		"s_boost": lobby_s_boost_toggle.button_pressed if lobby_s_boost_toggle != null else true,
 		"grand_prix_current_track": 0,
 		"grand_prix_points": {},
 		"grand_prix_ko_energy_bonuses": {},
@@ -776,6 +915,8 @@ func _on_network_race_options_changed(options: Dictionary) -> void:
 		lobby_vehicle_restore_toggle.set_pressed_no_signal(bool(options.get("vehicle_restore", true)))
 	if lobby_bumpers_toggle != null:
 		lobby_bumpers_toggle.set_pressed_no_signal(bool(options.get("bumpers", false)))
+	if lobby_s_boost_toggle != null:
+		lobby_s_boost_toggle.set_pressed_no_signal(bool(options.get("s_boost", true)))
 	lobby_grand_prix_track_sequence.clear()
 	var track_indices: Array = options.get("track_indices", [])
 	for track_index in track_indices:
@@ -2524,6 +2665,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 	if game_sim.has_method("set_bumpers_enabled"):
 		game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
+	if game_sim.has_method("set_s_boost_enabled"):
+		game_sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
 	if game_sim.has_method("set_multiplayer_intro_camera_enabled"):
 		game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
@@ -2560,6 +2703,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 		if server_game_sim.has_method("set_bumpers_enabled"):
 			server_game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
+		if server_game_sim.has_method("set_s_boost_enabled"):
+			server_game_sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
 		if server_game_sim.has_method("set_multiplayer_intro_camera_enabled"):
 			server_game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
@@ -2991,6 +3136,8 @@ func _physics_process(delta: float) -> void:
 			lobby_vehicle_restore_toggle.disabled = !can_edit_cpu
 		if lobby_bumpers_toggle != null:
 			lobby_bumpers_toggle.disabled = !can_edit_cpu
+		if lobby_s_boost_toggle != null:
+			lobby_s_boost_toggle.disabled = !can_edit_cpu
 		if lobby_stage_button_container != null:
 			for child in lobby_stage_button_container.get_children():
 				var button := child as Button
@@ -3227,6 +3374,8 @@ func _return_to_menu() -> void:
 	_singleplayer_tick = 0
 	$Control.visible = true
 	lobby_control.visible = false
+	if singleplayer_options_root != null:
+		singleplayer_options_root.visible = false
 
 func _return_to_lobby() -> void:
 	if debug_replay_recording:
