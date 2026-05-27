@@ -633,6 +633,7 @@ namespace {
 		visual_args[48] = car.soa->camera_repositioning[car.soa_index];
 		visual_args[49] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index));
 		visual_args[50] = car.soa->calced_max_energy[car.soa_index];
+		visual_args[51] = static_cast<int>(car.soa->attack_cooldown_frames[car.soa_index]);
 	}
 
 	static inline float fzgx_angle_units_to_rad(float units)
@@ -6333,7 +6334,7 @@ void GameSim::update_super_spark_visuals()
 			profile_step = now;
 		}
 		godot::Array local_visual_args;
-		local_visual_args.resize(51);
+		local_visual_args.resize(52);
 		for (int i = 0; i < vis_cars.size(); i++) {
 			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
 			if (vis_car && static_cast<bool>(vis_car->get("local_visual_enabled"))) {

@@ -16,6 +16,9 @@ class_name RaceHud extends Control
 @onready var check_control: Control = $CheckControl
 @onready var sboost_meter_bg: ColorRect = %sboost_meter_bg
 @onready var sboost_meter_fill: ColorRect = %sboost_meter_fill
+@onready var attack_meter: Control = %attack_meter
+@onready var attack_meter_border: ColorRect = %attack_meter_border
+@onready var attack_meter_icon: TextureRect = %attack_meter_icon
 
 var car_max_energy: float = 100.0
 var boost_energy_use_rate: float = 1.0
@@ -23,6 +26,7 @@ var _sboost_full_width: float = 0.0
 var focus_player_id := 0
 const MAX_LEADERBOARD_ENTRIES := 5
 var leaderboard_labels: Array[Label] = []
+const ATTACK_COOLDOWN_FRAMES := 240.0
 
 @export var placement_digit_size := Vector2(96.0, 96.0)
 @export var placement_digit_kerning := -24.0
@@ -548,4 +552,14 @@ func _process( _delta:float ) -> void:
 			sboost_meter_fill.color = Color(1.0, 0.82, 0.3, 1.0)
 		else:
 			sboost_meter_fill.color = Color(0.75, 0.65, 0.25, 1.0)
+
+	if attack_meter and attack_meter_icon:
+		var attack_cooldown := clampf(float(car.attack_cooldown_frames), 0.0, ATTACK_COOLDOWN_FRAMES)
+		var attack_ready := attack_cooldown <= 0.0
+		var fill_ratio := 1.0 if attack_ready else 1.0 - attack_cooldown / ATTACK_COOLDOWN_FRAMES
+		fill_ratio = clampf(fill_ratio, 0.0, 1.0)
+		attack_meter_border.visible = attack_ready
+		var attack_meter_shader := attack_meter_icon.material as ShaderMaterial
+		if attack_meter_shader:
+			attack_meter_shader.set_shader_parameter("fill_amount", fill_ratio)
 	

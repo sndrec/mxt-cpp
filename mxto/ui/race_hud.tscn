@@ -7,6 +7,7 @@
 [ext_resource type="Texture2D" uid="uid://usop48tynaes" path="res://ui/countdown_arrow.png" id="4_prwh0"]
 [ext_resource type="Texture2D" uid="uid://ds5wavcy0prbi" path="res://ui/circle_02.png" id="8_2hfuj"]
 [ext_resource type="Texture2D" uid="uid://ba5amhq17pghw" path="res://ui/circle.png" id="9_3icfp"]
+[ext_resource type="Shader" path="res://ui/attack_meter.gdshader" id="10_xsrat"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_4jbru"]
 font_size = 32
@@ -19,6 +20,12 @@ shader_parameter/health_amount = 53.84
 shader_parameter/max_health_amount = 100.0
 shader_parameter/can_boost = false
 shader_parameter/health_to_deplete = 0.0
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_attack_meter"]
+resource_local_to_scene = true
+shader = ExtResource("10_xsrat")
+shader_parameter/fill_amount = 1.0
+shader_parameter/cooldown_modulate = Color(0.035, 0.035, 0.035, 1)
 
 [sub_resource type="LabelSettings" id="LabelSettings_cix6h"]
 font_size = 24
@@ -135,6 +142,48 @@ anchors_preset = -1
 anchor_bottom = 1.0
 mouse_filter = 2
 color = Color(1, 0.8, 0.3, 0.9)
+
+[node name="attack_meter" type="Control" parent="." unique_id=869261482]
+unique_name_in_owner = true
+process_mode = 4
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.664
+anchor_top = 0.024
+anchor_right = 0.664
+anchor_bottom = 0.024
+offset_left = -58.0
+offset_top = -1.0
+offset_right = -12.0
+offset_bottom = 45.0
+mouse_filter = 2
+
+[node name="attack_meter_border" type="ColorRect" parent="attack_meter" unique_id=589736190]
+unique_name_in_owner = true
+process_mode = 4
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(1, 0.82, 0.16, 0.95)
+
+[node name="attack_meter_icon" type="TextureRect" parent="attack_meter" unique_id=1430217678]
+unique_name_in_owner = true
+process_mode = 4
+material = SubResource("ShaderMaterial_attack_meter")
+layout_mode = 1
+anchors_preset = -1
+offset_left = 3.0
+offset_top = 3.0
+offset_right = 43.0
+offset_bottom = 43.0
+mouse_filter = 2
+texture = ExtResource("2_ifpia")
+expand_mode = 2
+stretch_mode = 5
 
 [node name="TextureRect" type="TextureRect" parent="." unique_id=2074347031]
 process_mode = 4

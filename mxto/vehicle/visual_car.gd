@@ -105,6 +105,7 @@ var checkpoint_fraction := 0.0
 var input_strafe := 0.0
 var boost_frames := 0
 var boost_frames_manual := 0
+var attack_cooldown_frames := 0
 var current_checkpoint := 0
 var lap := 1
 var air_time := 0
@@ -304,7 +305,8 @@ func apply_sim_state(
 	in_camera_reorienting: float,
 	in_camera_repositioning: float,
 	in_track_surface_pos: Vector3,
-	in_calced_max_energy: float = 100.0
+	in_calced_max_energy: float = 100.0,
+	in_attack_cooldown_frames: int = 0
 ) -> void:
 	position_current = in_position_current
 	position_old = in_position_old
@@ -357,6 +359,7 @@ func apply_sim_state(
 	camera_repositioning = in_camera_repositioning
 	track_surface_pos = in_track_surface_pos
 	calced_max_energy = in_calced_max_energy
+	attack_cooldown_frames = in_attack_cooldown_frames
 	if !is_processing():
 		_apply_low_cost_visual_state()
 
