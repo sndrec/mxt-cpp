@@ -2113,7 +2113,11 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 
 	float force_mag = 10.0f * -(0.009f * soa->stat_weight[soa_index]) * base_factor;
 
-	SimVec3 gravity_align_force = LOAD_VEC3(track_surface_normal) * force_mag;
+	const bool accel_off_airborne = accel_off && (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) != 0;
+	const bool accel_off_road_gravity =
+		!accel_off_airborne || soa->height_above_track[soa_index] >= 20.0f - 1.7f;
+	const SimVec3 gravity_normal = accel_off_road_gravity ? LOAD_VEC3(track_surface_normal) : SimVec3(0.0f, 1.0f, 0.0f);
+	SimVec3 gravity_align_force = gravity_normal * force_mag;
 	ADD_VEC3(velocity, gravity_align_force);
 
 
