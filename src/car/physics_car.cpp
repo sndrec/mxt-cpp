@@ -1326,6 +1326,12 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 	}
 	segment.road_shape->get_oriented_transform_at_time_presampled(surf, road_t_sample_raw, root, root_derivative);
 	const float surface_dist = (LOAD_VEC3(position_current) - surf.origin).dot(surf.basis[1]);
+	if (cylinder && surface_dist >= 20.0f) {
+		trace_floor("cylinder_distance_cap", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
+		soa->height_above_track[soa_index] = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		return false;
+	}
 	if (center_on_open_road_side && surface_dist < -0.001f) {
 		trace_floor("open_center_below_surface", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
 		soa->height_above_track[soa_index] = 0.0f;
