@@ -2098,8 +2098,11 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 		factor = 3.6f - factor;
 	}
 
+	const bool accel_off = soa->input_accel[soa_index] <= 0.01f;
 	float base_factor = 0.0f;
-	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
+	if (accel_off) {
+		base_factor = factor * 0.6f;
+	} else if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
 		base_factor = factor * 1.3f;
 	} else if (soa->height_above_track[soa_index] <= 0.0f) {
 		base_factor = factor * 0.6f;
@@ -2625,9 +2628,13 @@ void PhysicsCar::update_suspension_forces(
 	if (time_based_factor > 0.5f)
 		time_based_factor = 0.5f;
 
-	float dynamic_rest_offset = time_based_factor * 2.0f * soa->tilt_rest_length[p];
+	const bool accel_off = soa->input_accel[soa_index] <= 0.01f;
+	const float effective_rest_length = accel_off ? 0.75f : soa->tilt_rest_length[p];
+	float dynamic_rest_offset = time_based_factor * 2.0f * effective_rest_length;
+	const float grounded_dynamic_rest_offset = time_based_factor * 2.0f * soa->tilt_rest_length[p];
 
 	float compression_metric = 0.0f;
+	bool grounded_contact = false;
 	bool hit_found = false;
 
 	if ((soa->tilt_state[p] & TILTSTATE::B6) != 0 || (soa->height_above_track[soa_index] <= 0.0f && (soa->tilt_state[p] & TILTSTATE::AIRBORNE))) {
@@ -2672,6 +2679,7 @@ void PhysicsCar::update_suspension_forces(
 				float actual_len = hit_fraction * total_sweep_length;
 				float displacement_from_attachment_plane = -actual_len;
 				compression_metric = displacement_from_attachment_plane + dynamic_rest_offset;
+				grounded_contact = displacement_from_attachment_plane + grounded_dynamic_rest_offset > 0.0f;
 				if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA))
 				{
 					godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
@@ -2727,6 +2735,11 @@ void PhysicsCar::update_suspension_forces(
 
 		calculated_force_magnitude =
 		damping1_force_component + spring_force_comp - damping2_force_comp;
+	} else if (grounded_contact) {
+		soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::AIRBORNE);
+		soa->tilt_force[p] = 0.0f;
+		STORE_TILT_VEC3(up_vector, p, LOAD_TILT_VEC3(up_vector_2, p));
+		calculated_force_magnitude = 0.0f;
 	} else {
 		soa->tilt_state[p] |= TILTSTATE::AIRBORNE;
 		soa->tilt_force[p] = 0.0f;
