@@ -2064,11 +2064,8 @@ void PhysicsCar::handle_airborne_controls()
 
 		float current_tilt_increment = 0.0f;
 		if (tilt_effect_base >= 0.1f) {
-			current_tilt_increment = tilt_effect_base +
+			current_tilt_increment =
 			2.0f * soa->input_steer_pitch[soa_index] * std::abs(2.0f - tilt_effect_base);
-			if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) &&
-				!(soa->machine_state[soa_index] & MACHINESTATE::BOOSTING_DASHPLATE))
-				current_tilt_increment *= 2.0f;
 		} else {
 			current_tilt_increment = tilt_effect_base + 4.0f * soa->input_steer_pitch[soa_index];
 		}
@@ -2124,7 +2121,7 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
 		SimVec3 machine_world_up = LOAD_TRANSFORM(basis_physical).basis.get_column(1);
 		SimVec3 safe_track_normal =
-		normalized_safe(LOAD_VEC3(track_surface_normal), SimVec3(0, 1, 0));
+		normalized_safe(gravity_normal, SimVec3(0, 1, 0));
 		float dot = 0.0f;
 		if (machine_world_up.length_squared() > 0.0001f)
 			dot = machine_world_up.dot(safe_track_normal);
@@ -2151,7 +2148,7 @@ void PhysicsCar::orient_vehicle_from_gravity_or_road()
 		SimVec3 world_tilted_up = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), local_tilted_up);
 		SimVec3 safe_world_up = normalized_safe(world_tilted_up, SimVec3(0, 1, 0));
 		SimVec3 safe_track_normal =
-		normalized_safe(LOAD_VEC3(track_surface_normal), SimVec3(0, 1, 0));
+		normalized_safe(gravity_normal, SimVec3(0, 1, 0));
 		float dot = safe_world_up.dot(safe_track_normal);
 
 		if (dot < 0.992f) {
