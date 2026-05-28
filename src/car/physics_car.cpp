@@ -37,10 +37,32 @@ static inline float landing_alignment_penalty_factor(uint32_t air_time)
 	return std::clamp(static_cast<float>(air_time) / full_penalty_frames, 0.0f, 1.0f);
 }
 
-static inline float air_steering_drag_tilt_factor(float air_tilt)
+static inline float air_steering_drag_tilt_multiplier(float air_tilt)
 {
-	const float limit = air_tilt < 0.0f ? 50.0f : 60.0f;
-	return std::clamp(1.0f - std::abs(air_tilt) / limit, 0.0f, 1.0f);
+	if (air_tilt > 0.0f) {
+		const float down_factor = std::clamp(1.0f - air_tilt / 60.0f, 0.0f, 1.0f);
+		return down_factor * down_factor;
+	}
+	return 1.0f + 2.0f * std::clamp(-air_tilt / 50.0f, 0.0f, 1.0f);
+}
+
+static inline float airborne_pitch_drag_factor(const SimTransform& basis, const SimVec3& track_normal)
+{
+	const SimVec3 machine_up_vector_ws = basis.basis.get_column(2);
+	const float dot_prod_up_with_track_normal = machine_up_vector_ws.dot(track_normal);
+	float alignment_factor = 3.4f * (0.3f + dot_prod_up_with_track_normal);
+	alignment_factor = std::clamp(alignment_factor, 0.0f, 1.0f);
+	return 1.0f - alignment_factor * alignment_factor;
+}
+
+static inline void mark_floor_disconnected(PhysicsCarSoA *soa, int soa_index)
+{
+	soa->machine_state[soa_index] |= MACHINESTATE::HAS_DISCONNECTED;
+}
+
+static inline void clear_floor_disconnected(PhysicsCarSoA *soa, int soa_index)
+{
+	soa->machine_state[soa_index] &= ~MACHINESTATE::HAS_DISCONNECTED;
 }
 
 static inline bool trace_mesh_floor_for_car(const PhysicsCarSoA *soa, int soa_index)
@@ -1092,6 +1114,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				soa->road_sample[soa_index].closest_root = center_root;
 				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 				soa->height_above_track[soa_index] = 0.0f;
+				mark_floor_disconnected(soa, soa_index);
 				return false;
 			}
 		}
@@ -1176,6 +1199,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 				STORE_VEC3(position_bottom, p1_sweep_end_ws);
 				soa->height_above_track[soa_index] = 0.0f;
+				mark_floor_disconnected(soa, soa_index);
 				return false;
 			}
 			if (nearest_mesh_sample) {
@@ -1217,6 +1241,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 			STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 			STORE_VEC3(position_bottom, p1_sweep_end_ws);
 			soa->height_above_track[soa_index] = 0.0f;
+			mark_floor_disconnected(soa, soa_index);
 			return false;
 		}
 	}
@@ -1301,6 +1326,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 				trace_floor("orientation_ray_reject", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, 0.0f);
 				soa->height_above_track[soa_index] = 0.0f;
 				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+				mark_floor_disconnected(soa, soa_index);
 				return false;
 			}
 		}
@@ -1313,6 +1339,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		trace_floor("invalid_road_t", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		mark_floor_disconnected(soa, soa_index);
 		return false;
 	}
 
@@ -1321,6 +1348,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		trace_floor("road_t_bounds", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		mark_floor_disconnected(soa, soa_index);
 		return false;
 	}
 	if (soa->current_track[soa_index]->analytic_road_sample_has_hole(soa->current_checkpoint[soa_index], road_t_sample_raw)) {
@@ -1328,6 +1356,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		soa->road_sample[soa_index].terrain |= TERRAIN::HOLE;
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		mark_floor_disconnected(soa, soa_index);
 		return false;
 	}
 	segment.road_shape->get_oriented_transform_at_time_presampled(surf, road_t_sample_raw, root, root_derivative);
@@ -1336,12 +1365,14 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		trace_floor("cylinder_distance_cap", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		mark_floor_disconnected(soa, soa_index);
 		return false;
 	}
 	if (center_on_open_road_side && surface_dist < -0.001f) {
 		trace_floor("open_center_below_surface", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		mark_floor_disconnected(soa, soa_index);
 		return false;
 	}
 	STORE_VEC3(track_surface_normal, surf.basis[1]);
@@ -1359,6 +1390,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch)
 		trace_floor("height_above_track_too_large", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		soa->height_above_track[soa_index] = 0.0f;
+		mark_floor_disconnected(soa, soa_index);
 		return false;
 	}
 	return true;
@@ -1685,18 +1717,6 @@ void PhysicsCar::handle_linear_velocity()
 		soa->visual_rotation_x[soa_index] += 0.05f * net_fwd_accel;
 	}
 
-	float airborne_factor = 1.0f;
-	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) {
-		SimVec3 machine_up_vector_ws = LOAD_TRANSFORM(basis_physical).basis.get_column(2);
-		float dot_prod_up_with_track_normal =
-		machine_up_vector_ws.dot(LOAD_VEC3(track_surface_normal));
-
-		float alignment_factor = 3.4f * (0.3f + dot_prod_up_with_track_normal);
-		alignment_factor = std::clamp(alignment_factor, 0.0f, 1.0f);
-		airborne_factor = alignment_factor * alignment_factor;
-	}
-
-
 	float effective_steer_degrees =
 	-(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index] + soa->input_strafe[soa_index] * soa->stat_strafe[soa_index]);
 	if (soa->machine_state[soa_index] & MACHINESTATE::SIDEATTACKING)
@@ -1704,7 +1724,7 @@ void PhysicsCar::handle_linear_velocity()
 	effective_steer_degrees = std::clamp(effective_steer_degrees, -45.0f, 45.0f);
 
 	soa->turn_reaction_input[soa_index] = 0.75f * -(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index]);
-	SimVec3 local_thrust_vector(0.0f, 0.0f, -(net_fwd_accel * airborne_factor));
+	SimVec3 local_thrust_vector(0.0f, 0.0f, -net_fwd_accel);
 	SimTransform thrust_basis = LOAD_TRANSFORM(basis_physical);
 	mxt_rotate_basis_y(thrust_basis, DEG_TO_RAD * effective_steer_degrees);
 	SimVec3 world_thrust_vector = mxt_basis_rotate(thrust_basis, local_thrust_vector);
@@ -2215,7 +2235,6 @@ void PhysicsCar::handle_drag_and_glide_forces()
 	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) {
 		if (forward_normal_alignment < 0.0f)
 			base_drag_mag *= std::max(0.0f, 1.0f + forward_normal_alignment);
-		forward_normal_alignment += 1.0f; // shift to 0 -> 2 range
 	}
 
 	float drag_len = drag_vector.length();
@@ -2236,23 +2255,21 @@ void PhysicsCar::handle_drag_and_glide_forces()
 	float drag_coeff = 0.0f;
 
 	if (airborne && soa->base_speed[soa_index] > 0.0f) {
+		const float pitch_drag_factor =
+			airborne_pitch_drag_factor(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(track_surface_normal));
 		const float steer = std::sqrt(std::abs(soa->input_steer_yaw[soa_index]));
 		const float airtime_factor = std::clamp(static_cast<float>(soa->air_time[soa_index]) / 60.0f, 0.0f, 1.0f);
-		const float tilt_factor = air_steering_drag_tilt_factor(soa->air_tilt[soa_index]);
-		const float drag = soa->base_speed[soa_index] * steer * airtime_factor * tilt_factor * 0.015f;
+		const float tilt_multiplier = air_steering_drag_tilt_multiplier(soa->air_tilt[soa_index]);
+		const float drag =
+			soa->base_speed[soa_index] *
+			(pitch_drag_factor * 0.005f + steer * airtime_factor * tilt_multiplier * 0.012f);
 		soa->base_speed[soa_index] = std::max(soa->base_speed[soa_index] - drag, 0.0f);
 	}
 
 	if (boosting) {
 		drag_coeff = alignment_with_normal * 0.5f;
 	} else if (airborne) {
-		if (alignment_with_normal >= 0.0f || forward_normal_alignment <= 0.8f) {
-			drag_coeff = alignment_with_normal * 0.6f;
-		} else {
-			drag_coeff =
-			alignment_with_normal *
-			(0.6f + 4.0f * (forward_normal_alignment - 0.8f));
-		}
+		drag_coeff = alignment_with_normal * 0.6f;
 	} else {
 		drag_coeff = alignment_with_normal * 0.6f;
 	}
@@ -2543,9 +2560,9 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->boost_turbo[soa_index] = 0.0f;
 	STORE_VEC3(position_behind, SimVec3());
 
-	uint32_t state_mask_common = MACHINESTATE::B30 | MACHINESTATE::COMPLETEDRACE_2_Q |
-	MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::B10 |
-	MACHINESTATE::B9;
+	uint32_t state_mask_common = MACHINESTATE::COMPLETEDRACE_2_Q |
+		MACHINESTATE::COMPLETEDRACE_1_Q | MACHINESTATE::B10 |
+		MACHINESTATE::B9;
 	if (reset_type == 0) {
 		soa->machine_state[soa_index] &= state_mask_common;
 		soa->state_2[soa_index] &= 1u;
@@ -4069,36 +4086,35 @@ if (apply_full_response) {
 			align_machine_y_with_track_normal_immediate();
 	}
 
-} else if ((soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) &&
-	speed_over_weight >= 0.0462962962962f) {
-	SimVec3 up_dir = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0, 1, 0)); // get the vehicle's local up direction normal vector
-	float up_dot_track = normalized_safe(up_dir).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
-	float vel_dot_track = normalized_safe(LOAD_VEC3(velocity)).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
-	if (up_dot_track < 0.0f)
-		up_dot_track = 0.0f;
-	const float landing_penalty_factor = landing_alignment_penalty_factor(soa->air_time[soa_index]);
-	const float effective_up_dot_track = 1.0f - ((1.0f - up_dot_track) * landing_penalty_factor);
-	const SimVec3 velocity_before_landing_penalty = LOAD_VEC3(velocity);
-	float vel_along_track = LOAD_VEC3(velocity).length() * vel_dot_track;
-	soa->base_speed[soa_index] = soa->base_speed[soa_index] * effective_up_dot_track;
-	SimVec3 normal_vel = LOAD_VEC3(track_surface_normal) * vel_along_track;
-	float vel_align_factor = 2.0f * std::abs(0.5f + vel_dot_track);
-	SimVec3 vel_add = LOAD_VEC3(velocity) - normal_vel;
-	if (soa->air_time[soa_index] < 10 && soa->energy[soa_index] > 0.001f)
-	{
-		STORE_VEC3(velocity, LOAD_VEC3(velocity) * 1.4f);
-		soa->base_speed[soa_index] += 1.6f;
-	}else
-	{
-		vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);
-		const SimVec3 full_penalty_velocity =
-			velocity_before_landing_penalty - normal_vel * up_dot_track + vel_add;
-		STORE_VEC3(velocity,
-			velocity_before_landing_penalty +
-			(full_penalty_velocity - velocity_before_landing_penalty) * landing_penalty_factor);
+} else if ((soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) && speed_over_weight >= 0.0462962962962f) {
+		SimVec3 up_dir = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0, 1, 0)); // get the vehicle's local up direction normal vector
+		float up_dot_track = normalized_safe(up_dir).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
+		float vel_dot_track = normalized_safe(LOAD_VEC3(velocity)).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
+		if (up_dot_track < 0.0f)
+			up_dot_track = 0.0f;
+		const float landing_penalty_factor = landing_alignment_penalty_factor(soa->air_time[soa_index]);
+		const float effective_up_dot_track = 1.0f - ((1.0f - up_dot_track) * landing_penalty_factor);
+		const SimVec3 velocity_before_landing_penalty = LOAD_VEC3(velocity);
+		float vel_along_track = LOAD_VEC3(velocity).length() * vel_dot_track;
+		soa->base_speed[soa_index] = soa->base_speed[soa_index] * effective_up_dot_track * effective_up_dot_track;
+		SimVec3 normal_vel = LOAD_VEC3(track_surface_normal) * vel_along_track;
+		float vel_align_factor = 2.0f * std::abs(0.5f + vel_dot_track);
+		SimVec3 vel_add = LOAD_VEC3(velocity) - normal_vel;
+		if (vel_align_factor >= 0.8f && soa->energy[soa_index] > 0.001f && (soa->machine_state[soa_index] & MACHINESTATE::HAS_DISCONNECTED) == 0)
+		{
+			STORE_VEC3(velocity, LOAD_VEC3(velocity) * 1.4f);
+			soa->base_speed[soa_index] += 2.0f;
+		}else
+		{
+			vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);
+			const SimVec3 full_penalty_velocity =
+				velocity_before_landing_penalty - normal_vel * up_dot_track + vel_add;
+			STORE_VEC3(velocity,
+				velocity_before_landing_penalty +
+				(full_penalty_velocity - velocity_before_landing_penalty) * landing_penalty_factor);
+		}
+		soa->air_time[soa_index] = 0;
 	}
-	soa->air_time[soa_index] = 0;
-}
 
 	if (include_start_projection && soa->frames_since_start_2[soa_index] <= 90)
 	{
@@ -4106,6 +4122,7 @@ if (apply_full_response) {
 	}
 	if (soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) {
 		soa->air_time[soa_index] = 0;
+		clear_floor_disconnected(soa, soa_index);
 	}
 };
 
