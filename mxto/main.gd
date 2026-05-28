@@ -162,6 +162,7 @@ var replay_recording_metadata: Dictionary = {}
 var replay_recording_racer_ids: Array = []
 var replay_recording_cpu_flags: Array = []
 var replay_recording_frames: Array = []
+var replay_start_grid_slots: PackedInt32Array = PackedInt32Array()
 var replay_playback_active: bool = false
 var replay_playback_frames: Array = []
 var replay_playback_index: int = 0
@@ -170,6 +171,7 @@ var replay_playback_focus_index: int = 0
 var replay_playback_racer_ids: Array = []
 var replay_playback_cpu_flags: Array = []
 var replay_playback_local_player_id: int = 0
+var replay_playback_use_multiplayer_startup: bool = false
 var replay_camera_mode: int = 0
 var replay_auto_camera: Camera3D
 var replay_catalog_root: Control
@@ -252,6 +254,7 @@ func _ready() -> void:
 	network_manager.race_finished.connect(_on_network_race_finished)
 	network_manager.race_event.connect(_on_race_event)
 	network_manager.race_options_changed.connect(_on_network_race_options_changed)
+	network_manager.authoritative_server_frame.connect(_on_authoritative_server_frame)
 	car_settings.hide()
 	options_menu.hide()
 	if !car_settings_button.pressed.is_connected(_on_car_settings_button_pressed):
@@ -1583,7 +1586,7 @@ func _replay_should_record_current_race() -> bool:
 		return true
 	return network_manager.is_server
 
-func _start_replay_recording(track_index: int, settings: Array, racer_ids: Array, cpu_flags: Array) -> void:
+func _start_replay_recording(track_index: int, settings: Array, racer_ids: Array, cpu_flags: Array, start_grid_slots: PackedInt32Array) -> void:
 	_stop_replay_recording(false)
 	if !_replay_should_record_current_race():
 		return
@@ -1593,6 +1596,9 @@ func _start_replay_recording(track_index: int, settings: Array, racer_ids: Array
 	replay_recording_racer_ids = racer_ids.duplicate(true)
 	replay_recording_cpu_flags = cpu_flags.duplicate(true)
 	replay_recording_frames.clear()
+	var start_grid_slot_array := []
+	for slot in start_grid_slots:
+		start_grid_slot_array.append(int(slot))
 	var player_records: Array = []
 	for i in range(racer_ids.size()):
 		var id := int(racer_ids[i])
@@ -1626,6 +1632,7 @@ func _start_replay_recording(track_index: int, settings: Array, racer_ids: Array
 		"settings": settings.duplicate(true),
 		"racer_ids": racer_ids.duplicate(true),
 		"cpu_flags": cpu_flags.duplicate(true),
+		"start_grid_slots": start_grid_slot_array,
 		"players": player_records,
 		"spawn_seed": network_manager.spawn_seed,
 		"race_options": network_manager.race_options.duplicate(true),
@@ -1666,6 +1673,9 @@ func _record_replay_frame(tick: int, frame_inputs: Dictionary) -> void:
 	if !replay_recording_active or replay_recording_saved or frame_inputs.is_empty():
 		return
 	replay_recording_frames.append(_raw_replay_frame(tick, frame_inputs))
+
+func _on_authoritative_server_frame(tick: int, frame_inputs: Dictionary) -> void:
+	_record_replay_frame(tick, frame_inputs)
 
 func _build_singleplayer_replay_frame(local_input_bytes: PackedByteArray) -> Dictionary:
 	var out := {}
@@ -1777,8 +1787,15 @@ func _start_replay_playback_from_path(path: String) -> void:
 	replay_playback_loaded_path = path
 	replay_playback_racer_ids = racer_ids.duplicate(true)
 	replay_playback_cpu_flags = cpu_flags.duplicate(true)
+	replay_start_grid_slots = PackedInt32Array()
+	var saved_grid_slots = replay.get("start_grid_slots", [])
+	if typeof(saved_grid_slots) == TYPE_ARRAY:
+		replay_start_grid_slots.resize((saved_grid_slots as Array).size())
+		for i in range((saved_grid_slots as Array).size()):
+			replay_start_grid_slots[i] = int(saved_grid_slots[i])
 	replay_playback_focus_index = 0
 	replay_playback_local_player_id = int(replay_playback_racer_ids[0])
+	replay_playback_use_multiplayer_startup = str(replay.get("source", "")) == "server" or str(replay.get("mode", "")) == "Multiplayer"
 	replay_camera_mode = REPLAY_CAMERA_GAME
 	singleplayer_mode = true
 	_singleplayer_tick = 0
@@ -1813,7 +1830,13 @@ func _tick_replay_playback() -> void:
 	if typeof(raw_frame) != TYPE_DICTIONARY:
 		_return_to_menu()
 		return
-	var frame_inputs := _decode_replay_frame(raw_frame)
+	var frame: Dictionary = raw_frame
+	var frame_tick := int(frame.get("tick", replay_playback_index))
+	if frame_tick != _singleplayer_tick:
+		push_warning("Replay playback refused: expected tick %d, found saved tick %d" % [_singleplayer_tick, frame_tick])
+		_return_to_menu()
+		return
+	var frame_inputs := _decode_replay_frame(frame)
 	for id_value in frame_inputs.keys():
 		network_manager.netcode_session.store_pending_input(_singleplayer_tick, int(id_value), frame_inputs[id_value])
 	if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick, true):
@@ -2605,7 +2628,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 			render_settings.append({})
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
-	var start_grid_slots := _build_start_grid_slots(racer_ids)
+	var start_grid_slots := replay_start_grid_slots if replay_playback_active and replay_start_grid_slots.size() == racer_ids.size() else _build_start_grid_slots(racer_ids)
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
 	nametag_names.clear()
 	nametag_names.resize(racer_settings.size())
@@ -2668,12 +2691,12 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if game_sim.has_method("set_s_boost_enabled"):
 		game_sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
 	if game_sim.has_method("set_multiplayer_intro_camera_enabled"):
-		game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
+		game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_playback_use_multiplayer_startup)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	_apply_grand_prix_ko_energy_bonuses(game_sim, racer_ids)
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
-	_start_replay_recording(track_index, settings, racer_ids, racer_cpu_flags)
+	_start_replay_recording(track_index, settings, racer_ids, racer_cpu_flags, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 		var local_hud := car_node_container.local_visual_car.race_hud
@@ -2706,7 +2729,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		if server_game_sim.has_method("set_s_boost_enabled"):
 			server_game_sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
 		if server_game_sim.has_method("set_multiplayer_intro_camera_enabled"):
-			server_game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode)
+			server_game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_playback_use_multiplayer_startup)
 		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 		_apply_grand_prix_ko_energy_bonuses(server_game_sim, racer_ids)
@@ -3274,7 +3297,6 @@ func _simulate_host_frame(local_input_bytes: PackedByteArray):
 		var server_inputs := network_manager.collect_server_inputs()
 		if server_inputs.is_empty():
 			break
-		_record_replay_frame(network_manager.server_tick, server_inputs)
 		network_manager.post_tick()
 		loops += 1
 	network_manager.collect_client_inputs()
@@ -3341,6 +3363,8 @@ func _return_to_menu() -> void:
 	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
 	debug_replay_playback = false
 	replay_playback_active = false
+	replay_playback_use_multiplayer_startup = false
+	replay_start_grid_slots = PackedInt32Array()
 	_close_race_pause_menu()
 	race_finish_label.visible = false
 	_hide_race_results_summary()
@@ -3384,6 +3408,8 @@ func _return_to_lobby() -> void:
 	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
 	debug_replay_playback = false
 	replay_playback_active = false
+	replay_playback_use_multiplayer_startup = false
+	replay_start_grid_slots = PackedInt32Array()
 	_close_race_pause_menu()
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
@@ -3425,6 +3451,8 @@ func _teardown_race_world_for_transition() -> void:
 	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
 	debug_replay_playback = false
 	replay_playback_active = false
+	replay_playback_use_multiplayer_startup = false
+	replay_start_grid_slots = PackedInt32Array()
 	_close_race_pause_menu()
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
@@ -3499,7 +3527,7 @@ func _build_start_grid_slots(racer_ids: Array) -> PackedInt32Array:
 	slots.resize(racer_ids.size())
 	for i in range(racer_ids.size()):
 		slots[i] = -1
-	if singleplayer_mode and !network_manager.get_cpu_roster().is_empty():
+	if singleplayer_mode and !replay_playback_use_multiplayer_startup and !network_manager.get_cpu_roster().is_empty():
 		var local_index := racer_ids.find(_local_player_id())
 		if local_index >= 0 and racer_ids.size() > 1:
 			var next_slot := 0

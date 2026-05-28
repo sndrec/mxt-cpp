@@ -5,6 +5,7 @@ signal race_started(track_index, player_settings)
 signal race_finished
 signal race_event(event_type, actor_id, target_id, tick, value)
 signal race_options_changed(options)
+signal authoritative_server_frame(tick, frame_inputs)
 
 @rpc("any_peer", "reliable")
 func set_race_finish_time(phase: int, time: int) -> void:
@@ -2869,6 +2870,9 @@ func post_tick() -> void:
 		return
 	if is_server and server_game_sim != null:
 		var _t0 := Time.get_ticks_usec()
+		var authoritative_inputs: Dictionary = server_netcode_session.get_frame_as_dictionary(server_tick)
+		if !authoritative_inputs.is_empty():
+			authoritative_server_frame.emit(server_tick, authoritative_inputs)
 		var state = server_game_sim.get_state_data(server_tick)
 		var max_ahead := _calc_max_ahead()
 		max_ahead_from_server = max_ahead

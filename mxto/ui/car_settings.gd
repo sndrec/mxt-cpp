@@ -522,19 +522,27 @@ func _on_primary_colour_changed(colour: Color) -> void:
 	if updating_colour_controls or _livery_editing_locked():
 		return
 	current_livery.primary_colour = colour
-	_save_livery_for_selected_car()
+	_apply_preview_livery_colours()
+	_save_livery_for_selected_car(false)
 
 func _on_secondary_colour_changed(colour: Color) -> void:
 	if updating_colour_controls or _livery_editing_locked():
 		return
 	current_livery.secondary_colour = colour
-	_save_livery_for_selected_car()
+	_apply_preview_livery_colours()
+	_save_livery_for_selected_car(false)
 
 func _on_accent_colour_changed(colour: Color) -> void:
 	if updating_colour_controls or _livery_editing_locked():
 		return
 	current_livery.accent_colour = colour
-	_save_livery_for_selected_car()
+	_apply_preview_livery_colours()
+	_save_livery_for_selected_car(false)
+
+func _apply_preview_livery_colours() -> void:
+	for manager in [preview_render_manager, preview_edit_render_manager, preview_above_render_manager]:
+		if manager != null and manager.has_method("update_livery_colours"):
+			manager.update_livery_colours(current_livery)
 
 func _setup_garage_preview() -> void:
 	car_preview_space.mouse_filter = Control.MOUSE_FILTER_STOP
