@@ -324,6 +324,7 @@ namespace godot {
 			void ensure_render_thruster_light_capacity(int capacity);
 			void hide_unused_render_thruster_lights(int used_count);
 			godot::Camera3D* gameplay_camera_node = nullptr;
+			godot::Camera3D* render_camera_node = nullptr;
 			bool render_profile_enabled = false;
 			uint64_t render_profile_frames = 0;
 			uint64_t render_profile_total_us = 0;
@@ -380,6 +381,7 @@ namespace godot {
 		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
 		void set_car_render_manager(godot::Object* p_car_render_manager);
 		void set_gameplay_camera(godot::Camera3D* p_camera, int player_id);
+		void set_render_camera(godot::Camera3D* p_camera);
 		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
 		godot::String get_phase_profile_string() const;
 		godot::String get_render_profile_string() const;

@@ -1906,6 +1906,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_spark_node_container", "p_spark_node_container"), &GameSim::set_spark_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_render_manager", "p_car_render_manager"), &GameSim::set_car_render_manager);
 	ClassDB::bind_method(D_METHOD("set_gameplay_camera", "p_camera", "player_id"), &GameSim::set_gameplay_camera);
+	ClassDB::bind_method(D_METHOD("set_render_camera", "p_camera"), &GameSim::set_render_camera);
 	ClassDB::bind_method(D_METHOD("tick_singleplayer", "local_player_id", "local_input"), &GameSim::tick_singleplayer);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
@@ -4568,6 +4569,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		}
 		car_render_manager = nullptr;
 		gameplay_camera_node = nullptr;
+		render_camera_node = nullptr;
 		gameplay_camera.unref();
 		gameplay_camera_player_id = -1;
 		render_car_transform_nodes.clear();
@@ -4945,6 +4947,11 @@ void GameSim::set_gameplay_camera(godot::Camera3D* p_camera, int player_id)
 	}
 }
 
+void GameSim::set_render_camera(godot::Camera3D* p_camera)
+{
+	render_camera_node = p_camera;
+}
+
 void GameSim::set_cpu_driver_manager(godot::Object* manager)
 {
 	cpu_driver_manager = manager;
@@ -5245,7 +5252,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 	render_last_thruster_instances = 0;
 	std::fill(render_visible_counts.begin(), render_visible_counts.end(), 0);
 	std::fill(render_visible_thruster_counts.begin(), render_visible_thruster_counts.end(), 0);
-	Camera3D* camera = gameplay_camera_node;
+	Camera3D* camera = render_camera_node ? render_camera_node : gameplay_camera_node;
 	SimVec3 camera_origin;
 	SimVec3 camera_right;
 	SimVec3 camera_up;
@@ -5477,8 +5484,9 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 	}
 	SimVec3 camera_origin;
 	bool has_camera = false;
-	if (gameplay_camera_node) {
-		camera_origin = sim_vec3(gameplay_camera_node->get_global_transform().origin);
+	Camera3D* render_camera = render_camera_node ? render_camera_node : gameplay_camera_node;
+	if (render_camera) {
+		camera_origin = sim_vec3(render_camera->get_global_transform().origin);
 		has_camera = true;
 	}
 	for (int i = 0; i < count; ++i) {
@@ -5486,7 +5494,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			render_final_prev_transforms[i],
 			render_final_current_transforms[i],
 			alpha);
-		if (has_camera && !gameplay_camera_node->is_position_in_frustum(gd_vec3(visual_transform.origin))) {
+		if (has_camera && !render_camera->is_position_in_frustum(gd_vec3(visual_transform.origin))) {
 			continue;
 		}
 		const float dist_sq = has_camera ? (visual_transform.origin - camera_origin).length_squared() : 0.0f;

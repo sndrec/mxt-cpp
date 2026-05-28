@@ -3195,6 +3195,7 @@ func _physics_process(delta: float) -> void:
 			else:
 				_simulate_single_tick()
 		_consume_authoritative_race_events()
+		_update_native_render_camera()
 		var profile_render_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim()
 		if auto_render_profile_mode:
@@ -3787,6 +3788,11 @@ func _check_race_finished() -> void:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
 				_show_race_results_summary()
 
+func _update_native_render_camera() -> void:
+	if game_sim == null or !game_sim.has_method("set_render_camera"):
+		return
+	game_sim.set_render_camera(get_viewport().get_camera_3d())
+
 @onready var obj_camera: Camera3D = get_node_or_null("GameWorld/ObjViewport/ObjCamera") as Camera3D
 @onready var outline_camera: Camera3D = get_node_or_null("GameWorld/OutlineViewport/OutlineCamera") as Camera3D
 const FULL_EFFECT_CAR_BUDGET := 10
@@ -3831,8 +3837,9 @@ func _process(delta: float) -> void:
 		_refresh_race_pause_replay_button()
 	if game_sim.sim_started:
 		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
-		game_sim.render_gamesim_visuals_only(delta)
 		_update_replay_auto_camera(delta)
+		_update_native_render_camera()
+		game_sim.render_gamesim_visuals_only(delta)
 		if auto_render_profile_mode:
 			render_profile_visuals_only_us += Time.get_ticks_usec() - profile_visuals_start
 			render_profile_process_us += Time.get_ticks_usec() - profile_process_start
