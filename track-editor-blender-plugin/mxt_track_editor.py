@@ -1377,21 +1377,74 @@ def _curve_matrix_channel_values(pos, basis, scale):
         ("scale", 2): scale.z,
     }
 
-def _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_sample):
+def _linearize_curve_matrix_handles_with_extension(curves, t_samples):
     step = _curve_matrix_endpoint_step(t_samples)
     pre_t = min(t_samples) - step
     post_t = max(t_samples) + step
-    pre_pos, pre_rot, pre_scale = eval_sample(pre_t)
-    post_pos, post_rot, post_scale = eval_sample(post_t)
-    pre_values = _curve_matrix_channel_values(pre_pos, pre_rot.to_matrix(), pre_scale)
-    post_values = _curve_matrix_channel_values(post_pos, post_rot.to_matrix(), post_scale)
     pre_frame = pre_t * 100.0
     post_frame = post_t * 100.0
-    for key, fcu in curves.items():
+
+    for fcu in curves.values():
+        _linearize_fcurve_handles_smooth_with_end_samples(fcu)
+
+    for fcu in curves.values():
         _linearize_fcurve_handles_smooth_with_end_samples(
             fcu,
-            (pre_frame, pre_values[key]),
-            (post_frame, post_values[key]))
+            (pre_frame, _evaluate_fcurve_continued(fcu, pre_frame)),
+            (post_frame, _evaluate_fcurve_continued(fcu, post_frame)))
+
+def _cubic_bezier_value(p0, p1, p2, p3, u):
+    omt = 1.0 - u
+    return (
+        p0 * omt * omt * omt +
+        3.0 * p1 * omt * omt * u +
+        3.0 * p2 * omt * u * u +
+        p3 * u * u * u)
+
+def _cubic_bezier_derivative(p0, p1, p2, p3, u):
+    omt = 1.0 - u
+    return (
+        3.0 * (p1 - p0) * omt * omt +
+        6.0 * (p2 - p1) * omt * u +
+        3.0 * (p3 - p2) * u * u)
+
+def _evaluate_fcurve_bezier_segment_by_x(k0, k1, frame):
+    x0 = k0.co.x
+    x1 = k0.handle_right.x
+    x2 = k1.handle_left.x
+    x3 = k1.co.x
+    y0 = k0.co.y
+    y1 = k0.handle_right.y
+    y2 = k1.handle_left.y
+    y3 = k1.co.y
+
+    if abs(x3 - x0) <= 1e-8:
+        return y0
+
+    u = (frame - x0) / (x3 - x0)
+    for _i in range(12):
+        x = _cubic_bezier_value(x0, x1, x2, x3, u)
+        dx = _cubic_bezier_derivative(x0, x1, x2, x3, u)
+        if abs(dx) <= 1e-8:
+            break
+        next_u = u - (x - frame) / dx
+        if abs(next_u - u) <= 1e-8:
+            u = next_u
+            break
+        u = next_u
+    return _cubic_bezier_value(y0, y1, y2, y3, u)
+
+def _evaluate_fcurve_continued(fcu, frame):
+    kps = fcu.keyframe_points
+    if len(kps) == 0:
+        return fcu.evaluate(frame)
+    if len(kps) == 1:
+        return kps[0].co.y
+    if frame < kps[0].co.x:
+        return _evaluate_fcurve_bezier_segment_by_x(kps[0], kps[1], frame)
+    if frame > kps[-1].co.x:
+        return _evaluate_fcurve_bezier_segment_by_x(kps[-2], kps[-1], frame)
+    return fcu.evaluate(frame)
 def _update_road_segment_visual_guide_logic(road_parent_empty, report_fn=None):
     if not road_parent_empty or not hasattr(road_parent_empty, "mxt_road_overall_props"):
         if report_fn: report_fn({'WARNING'}, "Invalid road parent empty for visual update.")
@@ -3210,7 +3263,7 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         if not (ad and ad.action):
             return t_norm
         fcu = ad.action.fcurves.find(f"mxt_cp_data.{channel_name}")
-        return fcu.evaluate(t_norm * 100) if fcu else t_norm
+        return _evaluate_fcurve_continued(fcu, t_norm * 100) if fcu else t_norm
     @staticmethod
     def _bezier_pos(p0, p1, p2, p3, t):
         omt = 1.0 - t
@@ -3317,20 +3370,20 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
                 q_twist   = Quaternion(forward_dir, twist_cur)
                 final_rot = q_twist @ rot_fwd_start
             scale = a.scale.lerp(b.scale, scale_fac)
-            return pos, final_rot, scale
+            return pos, final_rot.to_matrix(), scale
 
         frames = [float(t) * 100.0 for t in t_samples]
         samples_by_channel = {key: [] for key in curves.keys()}
         for t in t_samples:
-            pos, final_rot, scale = eval_bezier_sample(t)
-            values = _curve_matrix_channel_values(pos, final_rot.to_matrix(), scale)
+            pos, basis, scale = eval_bezier_sample(t)
+            values = _curve_matrix_channel_values(pos, basis, scale)
             for key, value in values.items():
                 samples_by_channel[key].append(float(value))
         _set_curve_matrix_keys_fast(curves, frames, samples_by_channel)
         for fc in act.fcurves:
             for kp in fc.keyframe_points:
                 kp.interpolation = 'BEZIER'
-        _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_bezier_sample)
+        _linearize_curve_matrix_handles_with_extension(curves, t_samples)
         for fc in act.fcurves:
             fc.update()
         _invalidate_curve_matrix_sampler(helper)
@@ -3405,22 +3458,22 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         def eval_line_sample(t):
             frame = t * 100.0
             pos = start_loc.lerp(end_loc, t)
-            rot_t = fcu_rot_ease.evaluate(frame)
-            scl_t = fcu_scl_ease.evaluate(frame)
+            rot_t = _evaluate_fcurve_continued(fcu_rot_ease, frame)
+            scl_t = _evaluate_fcurve_continued(fcu_scl_ease, frame)
             rot = start_quat.slerp(end_quat, rot_t)
             scl = start_scl.lerp(end_scl, scl_t)
-            return pos, rot, scl
+            return pos, rot.to_matrix(), scl
 
         frames = [float(t) * 100.0 for t in t_samples]
         samples_by_channel = {key: [] for key in curves.keys()}
         for t in t_samples:
-            pos, rot, scl = eval_line_sample(t)
-            values = _curve_matrix_channel_values(pos, rot.to_matrix(), scl)
+            pos, basis, scl = eval_line_sample(t)
+            values = _curve_matrix_channel_values(pos, basis, scl)
             for key, value in values.items():
                 samples_by_channel[key].append(float(value))
         _set_curve_matrix_keys_fast(curves, frames, samples_by_channel)
 
-        _linearize_curve_matrix_handles_with_extension(curves, t_samples, eval_line_sample)
+        _linearize_curve_matrix_handles_with_extension(curves, t_samples)
         for fc in curves.values():
             fc.update()
         _invalidate_curve_matrix_sampler(helper)
@@ -3477,8 +3530,8 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
         def canon_matrix(t):
             frame = t * 100.0
             
-            r = fcu_rad.evaluate(frame)
-            h = fcu_h.evaluate(frame)
+            r = _evaluate_fcurve_continued(fcu_rad, frame)
+            h = _evaluate_fcurve_continued(fcu_h, frame)
             
             ang = math.radians(props.spiral_degrees) * t
             
@@ -3490,15 +3543,15 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             
             basis = qr.to_matrix()
             
-            q_tw = Quaternion(basis.col[2], math.radians(fcu_tw.evaluate(frame)))
+            q_tw = Quaternion(basis.col[2], math.radians(_evaluate_fcurve_continued(fcu_tw, frame)))
             basis = (q_tw.to_matrix() @ basis)
 
             
             
             eps = 0.001
             frame_eps = (t + eps) * 100.0
-            r2 = fcu_rad.evaluate(frame_eps)
-            h2 = fcu_h.evaluate(frame_eps)
+            r2 = _evaluate_fcurve_continued(fcu_rad, frame_eps)
+            h2 = _evaluate_fcurve_continued(fcu_h, frame_eps)
             ang2 = math.radians(props.spiral_degrees) * (t + eps)
             about2 = Vector((axis_vec.y, -axis_vec.x, 0.0)) * r2
             p2 = -(Quaternion(axis_vec, ang2) @ about2) + axis_vec * h2
@@ -3540,33 +3593,36 @@ class MXTRoad_OT_GenerateCurveMatrix(Operator):
             frame = t * 100.0
             trans = canon_matrix(t)
             raw_transforms.append(trans)
-            raw_s.append(Vector((fcu_sx.evaluate(frame), fcu_sy.evaluate(frame), 1.0)))
+            raw_s.append(Vector((
+                _evaluate_fcurve_continued(fcu_sx, frame),
+                _evaluate_fcurve_continued(fcu_sy, frame),
+                1.0)))
         
         Mcorr = axis_helper.matrix_local @ raw_transforms[0].inverted()
-        qcorr = Mcorr.to_quaternion()
+        basis_corr = Mcorr.to_3x3()
 
         
         def eval_spiral_sample(t):
             frame = t * 100.0
             trans = canon_matrix(t)
             pos = Mcorr @ trans.translation
-            rot = (qcorr @ trans.to_3x3().to_quaternion()).normalized()
-            scl = Vector((fcu_sx.evaluate(frame), fcu_sy.evaluate(frame), 1.0))
-            return pos, rot, scl
+            basis = basis_corr @ trans.to_3x3()
+            scl = Vector((
+                _evaluate_fcurve_continued(fcu_sx, frame),
+                _evaluate_fcurve_continued(fcu_sy, frame),
+                1.0))
+            return pos, basis, scl
 
         frames = [float(t) * 100.0 for t in ts]
         samples_by_channel = {key: [] for key in curves.keys()}
-        last_q = None
         for i, t in enumerate(ts):
-            pos, rot, scl = eval_spiral_sample(t)
-            if last_q and last_q.dot(rot) < 0: rot.negate()
-            last_q = rot.copy()
-            values = _curve_matrix_channel_values(pos, rot.to_matrix(), scl)
+            pos, basis, scl = eval_spiral_sample(t)
+            values = _curve_matrix_channel_values(pos, basis, scl)
             for key, value in values.items():
                 samples_by_channel[key].append(float(value))
         _set_curve_matrix_keys_fast(curves, frames, samples_by_channel)
 
-        _linearize_curve_matrix_handles_with_extension(curves, ts, eval_spiral_sample)
+        _linearize_curve_matrix_handles_with_extension(curves, ts)
         for fcu in curves.values():
             fcu.update()
         _invalidate_curve_matrix_sampler(cm)

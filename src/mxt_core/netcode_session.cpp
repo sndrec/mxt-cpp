@@ -2706,7 +2706,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_max_peer_desired_ahead", "peer_ids", "fallback"), &NetcodeSession::get_max_peer_desired_ahead);
 	ClassDB::bind_method(D_METHOD("get_peer_last_input_time", "peer_id"), &NetcodeSession::get_peer_last_input_time);
 	ClassDB::bind_method(D_METHOD("server_has_full_input_frame", "tick"), &NetcodeSession::server_has_full_input_frame);
-	ClassDB::bind_method(D_METHOD("tick_server_frame", "game_sim", "tick"), &NetcodeSession::tick_server_frame);
+	ClassDB::bind_method(D_METHOD("tick_server_frame", "game_sim", "tick", "use_pending_cpu_inputs"), &NetcodeSession::tick_server_frame, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("tick_client_predicted_frame", "game_sim", "tick"), &NetcodeSession::tick_client_predicted_frame);
 	ClassDB::bind_method(D_METHOD("recalculate_predictions", "start_tick", "end_tick"), &NetcodeSession::recalculate_predictions);
 	ClassDB::bind_method(D_METHOD("replay_history", "game_sim", "start_tick", "end_tick"), &NetcodeSession::replay_history);
@@ -4058,7 +4058,7 @@ bool NetcodeSession::server_has_full_input_frame(int tick) const
 	return true;
 }
 
-bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick)
+bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick, bool use_pending_cpu_inputs)
 {
 	GameSim* sim = Object::cast_to<GameSim>(game_sim_obj);
 	if (!sim || !server_has_full_input_frame(tick)) {
@@ -4068,7 +4068,13 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick)
 	InputFrame& authoritative = frame_for(authoritative_history, tick);
 	clear_frame(authoritative, tick);
 	for (int i = 0; i < racer_count; ++i) {
-		if (cpu_flags[i]) {
+		if (cpu_flags[i] && use_pending_cpu_inputs) {
+			if (!pending.present[i]) {
+				return false;
+			}
+			authoritative.inputs[i] = pending.inputs[i];
+			authoritative.present[i] = 1;
+		} else if (cpu_flags[i]) {
 			godot::PackedByteArray cpu_bytes = sim->generate_native_cpu_input_for_tick(player_ids[i], tick);
 			authoritative.inputs[i] = PlayerInput::from_bytes(cpu_bytes);
 			authoritative.present[i] = 1;

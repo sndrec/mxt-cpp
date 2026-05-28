@@ -314,7 +314,7 @@ grow_horizontal = 2
 grow_vertical = 2
 text = "Track Editor"
 
-[node name="ReplaysButton" type="Button" parent="Control"]
+[node name="ReplaysButton" type="Button" parent="Control" unique_id=1366555792]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
@@ -500,7 +500,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.22"
+text = "MaxX Throttle v0.1.23"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/ConnectHostBox/StartButton" to="." method="_on_start_button_pressed"]

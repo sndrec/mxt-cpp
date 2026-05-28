@@ -411,6 +411,7 @@ namespace godot {
 		void set_cpu_driver_manager(godot::Object* manager);
 		godot::Object* get_cpu_driver_manager() const { return cpu_driver_manager; }
 		godot::PackedByteArray get_native_cpu_input_for_tick(int player_id, int expected_tick);
+		godot::Dictionary get_input_frame_as_dictionary(int target_tick) const;
 		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);
 		void save_state();
 		void load_state(int target_tick);

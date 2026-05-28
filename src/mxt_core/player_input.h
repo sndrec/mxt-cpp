@@ -179,4 +179,11 @@ public:
                 data[0] = bitmask;
                 return idx;
         }
+
+        static PlayerInput quantized(const PlayerInput &input)
+        {
+                uint8_t data[8] = {};
+                const int size = encode_to_raw(input, data, sizeof(data));
+                return from_raw(data, size);
+        }
 };

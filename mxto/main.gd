@@ -189,7 +189,7 @@ var _last_race_track_index: int = -1
 var _last_race_settings: Array = []
 
 const DEBUG_REPLAY_VERSION := 1
-const REPLAY_SCHEMA_VERSION := 2
+const REPLAY_SCHEMA_VERSION := 3
 const REPLAY_CAMERA_GAME := 0
 const REPLAY_CAMERA_AUTO := 1
 const REPLAY_CAMERA_SPECTATOR := 2
@@ -1816,7 +1816,7 @@ func _tick_replay_playback() -> void:
 	var frame_inputs := _decode_replay_frame(raw_frame)
 	for id_value in frame_inputs.keys():
 		network_manager.netcode_session.store_pending_input(_singleplayer_tick, int(id_value), frame_inputs[id_value])
-	if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick):
+	if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick, true):
 		push_warning("Replay playback failed at tick %d" % _singleplayer_tick)
 		_return_to_menu()
 		return
@@ -3217,11 +3217,12 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		input_bytes = local_pi.serialize()
 	if debug_replay_recording:
 		debug_replay_inputs.append(input_bytes.duplicate())
-	if replay_recording_active:
-		_record_replay_frame(_singleplayer_tick, _build_singleplayer_replay_frame(input_bytes))
 	_dump_offline_auth_input_sample(input_bytes)
 	_dump_offline_state_sample()
+	var tick_to_record := _singleplayer_tick
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
+	if replay_recording_active and game_sim.has_method("get_input_frame_as_dictionary"):
+		_record_replay_frame(tick_to_record, game_sim.get_input_frame_as_dictionary(tick_to_record))
 	_singleplayer_tick += 1
 	if debug_bumper_smoke_mode and _singleplayer_tick % 120 == 0 and game_sim.has_method("get_bumper_debug_string"):
 		print("MXT_BUMPER_SMOKE tick=", _singleplayer_tick, " ", game_sim.get_bumper_debug_string())

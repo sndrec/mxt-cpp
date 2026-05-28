@@ -92,7 +92,7 @@ public:
 	double get_max_peer_desired_ahead(godot::Array peer_ids, double fallback) const;
 	double get_peer_last_input_time(int peer_id) const;
 	bool server_has_full_input_frame(int tick) const;
-	bool tick_server_frame(godot::Object* game_sim_obj, int tick);
+	bool tick_server_frame(godot::Object* game_sim_obj, int tick, bool use_pending_cpu_inputs = false);
 	bool tick_client_predicted_frame(godot::Object* game_sim_obj, int tick);
 	void recalculate_predictions(int start_tick, int end_tick);
 	bool replay_history(godot::Object* game_sim_obj, int start_tick, int end_tick);

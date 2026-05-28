@@ -1816,7 +1816,10 @@ namespace {
 		}
 
 		std::sort(indices, indices + count, [&](int a, int b) {
-			return min_x[a] < min_x[b];
+			if (min_x[a] != min_x[b]) {
+				return min_x[a] < min_x[b];
+			}
+			return a < b;
 		});
 
 		for (int sorted_i = 0; sorted_i < count; ++sorted_i) {
@@ -1871,6 +1874,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_cpu_driver_manager", "manager"), &GameSim::set_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("get_cpu_driver_manager"), &GameSim::get_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("get_native_cpu_input_for_tick", "player_id", "expected_tick"), &GameSim::get_native_cpu_input_for_tick);
+	ClassDB::bind_method(D_METHOD("get_input_frame_as_dictionary", "target_tick"), &GameSim::get_input_frame_as_dictionary);
 	ClassDB::bind_method(D_METHOD("set_player_metadata", "player_ids", "cpu_flags"), &GameSim::set_player_metadata);
 	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
 	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
@@ -3549,16 +3553,17 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		const bool completed_race = (car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u;
-		if (completed_race && player_id != -1) {
+		if (mode == InputFrameMode::DecodedCarArray && i < decoded_car_input_count && decoded_car_inputs &&
+				(!decoded_car_input_present || decoded_car_input_present[i])) {
+			inp = decoded_car_inputs[i];
+		} else if (completed_race && player_id != -1) {
 			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		} else if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
 			inp = *local_input;
-		} else if (mode == InputFrameMode::DecodedCarArray && i < decoded_car_input_count && decoded_car_inputs &&
-				(!decoded_car_input_present || decoded_car_input_present[i])) {
-			inp = decoded_car_inputs[i];
 		} else if (car_is_cpu && car_is_cpu[i]) {
 			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		}
+		inp = PlayerInput::quantized(inp);
 		if (s_boost_enabled && !car_soa.s_boost_active[lane] && car_soa.s_boost_charge[lane] >= car_soa.s_boost_charge_max[lane] && inp.boost) {
 			float gap = lead_distance - soa.pre_distances[i];
 			if (gap < 0.0f) {
@@ -5111,6 +5116,23 @@ godot::PackedByteArray GameSim::generate_native_cpu_input_for_tick(int player_id
 		}
 	}
 	return PlayerInput::to_bytes(PlayerInput::from_neutral());
+}
+
+godot::Dictionary GameSim::get_input_frame_as_dictionary(int target_tick) const
+{
+	godot::Dictionary out;
+	if (!input_buffer || !car_player_ids || num_cars <= 0 || target_tick < 0) {
+		return out;
+	}
+	if (target_tick >= tick || tick - target_tick > INPUT_BUFFER_LEN) {
+		return out;
+	}
+	const int buf_index = target_tick % INPUT_BUFFER_LEN;
+	const PlayerInput* frame = input_buffer + buf_index * num_cars;
+	for (int i = 0; i < num_cars; ++i) {
+		out[car_player_ids[i]] = PlayerInput::to_bytes(frame[i]);
+	}
+	return out;
 }
 
 void GameSim::update_render_visual_snapshots(int visual_count)
