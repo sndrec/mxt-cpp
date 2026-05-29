@@ -4105,8 +4105,15 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick, bo
 {
 	GameSim* sim = Object::cast_to<GameSim>(game_sim_obj);
 	const InputFrame* pending_frame = find_frame(pending_inputs, tick);
-	if (!sim || !pending_frame) {
+	if (!sim) {
 		return false;
+	}
+	if (!pending_frame) {
+		for (int i = 0; i < racer_count; ++i) {
+			if (!cpu_flags[i] || use_pending_cpu_inputs) {
+				return false;
+			}
+		}
 	}
 	InputFrame& authoritative = frame_for(authoritative_history, tick);
 	clear_frame(authoritative, tick);
@@ -4131,7 +4138,7 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick, bo
 				authoritative.inputs[i] = PlayerInput::from_neutral();
 				authoritative.present[i] = 1;
 			}
-		} else if (pending_frame->present[i]) {
+		} else if (pending_frame && pending_frame->present[i]) {
 			authoritative.inputs[i] = pending_frame->inputs[i];
 			authoritative.present[i] = 1;
 		} else {

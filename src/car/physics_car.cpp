@@ -272,9 +272,15 @@ static inline SimVec3 mxt_inverse_transform_point(const SimTransform& basis_tran
 static inline float checkpoint_longitudinal_t(const RaceTrack& track, int cp_idx, const SimVec3& point)
 {
 	const CollisionCheckpoint& cp = track.checkpoints[cp_idx];
-	const SimVec3 p1 = cp.start_plane.project(point);
-	const SimVec3 p2 = cp.end_plane.project(point);
-	const float cp_t = get_closest_t_on_segment(point, p1, p2);
+	const float start_dist = cp.start_plane.distance_to(point);
+	const float end_dist = cp.end_plane.distance_to(point);
+	const SimVec3 from_start = cp.start_plane.normal * start_dist;
+	const SimVec3 span = from_start - cp.end_plane.normal * end_dist;
+	const float span_len2 = span.length_squared();
+	float cp_t = 0.0f;
+	if (span_len2 > 1.0e-20f) {
+		cp_t = std::clamp(from_start.dot(span) / span_len2, 0.0f, 1.0f);
+	}
 	return remap_float(cp_t, 0.0f, 1.0f, cp.t_start, cp.t_end);
 }
 

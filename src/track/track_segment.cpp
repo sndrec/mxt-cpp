@@ -1032,6 +1032,29 @@ void RoadShape::get_oriented_transform_at_time_presampled(
 	const RoadTransform& root,
 	const RoadTransform& root_derivative) const
 {
+	if ((shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
+			shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL) &&
+			num_modulations == 0) {
+		const float scaled_pos_x = in_t.x * root.scale.x;
+		const float scaled_dy_x = in_t.x * root_derivative.scale.x;
+		out_transform.origin = root.t3d.origin + root.t3d.basis[0] * scaled_pos_x;
+		const SimVec3 tangent_x = root.t3d.basis[0] * root.scale.x;
+		const SimVec3 tangent_y =
+			root_derivative.t3d.origin +
+			root_derivative.t3d.basis[0] * scaled_pos_x +
+			root.t3d.basis[0] * scaled_dy_x;
+		out_tangent_x = tangent_x;
+		out_tangent_y = tangent_y;
+
+		const SimVec3 right = tangent_x.normalized();
+		const SimVec3 normal = tangent_y.cross(tangent_x).normalized();
+		const SimVec3 forward = right.cross(normal).normalized();
+		out_transform.basis[0] = right;
+		out_transform.basis[1] = normal;
+		out_transform.basis[2] = forward;
+		return;
+	}
+
 	SimVec3 local_pos;
 	SimVec3 local_dx;
 	SimVec3 local_dy;

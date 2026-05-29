@@ -487,6 +487,8 @@ static void precompute_mesh_triangle_projection(TrackMeshCollisionTriangle &tri,
 #define LOAD_INDEXED_VEC3(storage, name, index) SimVec3((storage).name##_x[(index)], (storage).name##_y[(index)], (storage).name##_z[(index)])
 #define STORE_INDEXED_VEC3(storage, name, index, value) do { const SimVec3 mxt_v3_tmp = (value); (storage).name##_x[(index)] = mxt_v3_tmp.x; (storage).name##_y[(index)] = mxt_v3_tmp.y; (storage).name##_z[(index)] = mxt_v3_tmp.z; } while (0)
 
+static inline float checkpoint_fraction_for_cpu_guidance(const CollisionCheckpoint& cp, const SimVec3& pos);
+
 namespace {
 	static inline uint64_t profile_now_us()
 	{
@@ -2669,15 +2671,7 @@ PlayerInput GameSim::generate_bumper_input_for_slot(int bumper_slot) const
 		if (sample_cp >= 0 && sample_cp < soa.current_track[lane]->num_checkpoints) {
 			const CollisionCheckpoint& cp = soa.current_track[lane]->checkpoints[sample_cp];
 			const SimVec3 pos = LOAD_INDEXED_VEC3(soa, position_current, lane);
-			const SimVec3 p1 = cp.start_plane.project(pos);
-			const SimVec3 p2 = cp.end_plane.project(pos);
-			const SimVec3 span = p2 - p1;
-			const float span_len2 = span.length_squared();
-			float cp_t = 0.0f;
-			if (span_len2 > 1.0e-6f) {
-				cp_t = (pos - p1).dot(span) / span_len2;
-				cp_t = std::max(0.0f, std::min(1.0f, cp_t));
-			}
+			const float cp_t = checkpoint_fraction_for_cpu_guidance(cp, pos);
 			surface[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t);
 			surface[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t);
 			surface[2] = cp.orientation_start[2].lerp(cp.orientation_end[2], cp_t);
@@ -5363,6 +5357,19 @@ static inline float native_cpu_smooth_noise_signed(uint32_t seed_base, int expec
 	return a + (b - a) * smooth;
 }
 
+static inline float checkpoint_fraction_for_cpu_guidance(const CollisionCheckpoint& cp, const SimVec3& pos)
+{
+	const float start_dist = cp.start_plane.distance_to(pos);
+	const float end_dist = cp.end_plane.distance_to(pos);
+	const SimVec3 from_start = cp.start_plane.normal * start_dist;
+	const SimVec3 span = from_start - cp.end_plane.normal * end_dist;
+	const float span_len2 = span.length_squared();
+	if (span_len2 <= 1.0e-6f) {
+		return 0.0f;
+	}
+	return std::max(0.0f, std::min(1.0f, from_start.dot(span) / span_len2));
+}
+
 static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed)
 {
 	PhysicsCarSoA& soa = *car.soa;
@@ -5378,14 +5385,11 @@ static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& ca
 		if (sample_cp >= 0 && sample_cp < soa.current_track[i]->num_checkpoints) {
 			const CollisionCheckpoint &cp = soa.current_track[i]->checkpoints[sample_cp];
 			const SimVec3 pos = LOAD_INDEXED_VEC3(soa, position_current, i);
-			const SimVec3 p1 = cp.start_plane.project(pos);
-			const SimVec3 p2 = cp.end_plane.project(pos);
-			const SimVec3 span = p2 - p1;
-			const float span_len2 = span.length_squared();
 			float cp_t = 0.0f;
-			if (span_len2 > 1.0e-6f) {
-				cp_t = (pos - p1).dot(span) / span_len2;
-				cp_t = std::max(0.0f, std::min(1.0f, cp_t));
+			if (sample_cp == static_cast<int>(soa.current_checkpoint[i])) {
+				cp_t = std::max(0.0f, std::min(1.0f, soa.checkpoint_fraction[i]));
+			} else {
+				cp_t = checkpoint_fraction_for_cpu_guidance(cp, pos);
 			}
 			surface[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t);
 			surface[1] = cp.orientation_start[1].lerp(cp.orientation_end[1], cp_t);
