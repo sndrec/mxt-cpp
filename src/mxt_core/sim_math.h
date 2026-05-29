@@ -3,12 +3,18 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#if defined(__SSE__)
+#if defined(__SSE__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 1)
+#define MXT_SIMD_SSE 1
+#else
+#define MXT_SIMD_SSE 0
+#endif
+
+#if MXT_SIMD_SSE
 #include <xmmintrin.h>
 #endif
 
 struct SimFloat4 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	__m128 v;
 	SimFloat4() : v(_mm_setzero_ps()) {}
 	explicit SimFloat4(__m128 p_v) : v(p_v) {}
@@ -24,7 +30,7 @@ struct SimFloat4 {
 
 inline SimFloat4 sim_load4(const float* p)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_loadu_ps(p));
 #else
 	return SimFloat4(p[0], p[1], p[2], p[3]);
@@ -33,7 +39,7 @@ inline SimFloat4 sim_load4(const float* p)
 
 inline void sim_store4(float* p, SimFloat4 a)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	_mm_storeu_ps(p, a.v);
 #else
 	p[0] = a.v[0]; p[1] = a.v[1]; p[2] = a.v[2]; p[3] = a.v[3];
@@ -42,7 +48,7 @@ inline void sim_store4(float* p, SimFloat4 a)
 
 inline SimFloat4 operator+(SimFloat4 a, SimFloat4 b)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_add_ps(a.v, b.v));
 #else
 	return SimFloat4(a.v[0] + b.v[0], a.v[1] + b.v[1], a.v[2] + b.v[2], a.v[3] + b.v[3]);
@@ -51,7 +57,7 @@ inline SimFloat4 operator+(SimFloat4 a, SimFloat4 b)
 
 inline SimFloat4 operator-(SimFloat4 a, SimFloat4 b)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_sub_ps(a.v, b.v));
 #else
 	return SimFloat4(a.v[0] - b.v[0], a.v[1] - b.v[1], a.v[2] - b.v[2], a.v[3] - b.v[3]);
@@ -60,7 +66,7 @@ inline SimFloat4 operator-(SimFloat4 a, SimFloat4 b)
 
 inline SimFloat4 operator*(SimFloat4 a, SimFloat4 b)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_mul_ps(a.v, b.v));
 #else
 	return SimFloat4(a.v[0] * b.v[0], a.v[1] * b.v[1], a.v[2] * b.v[2], a.v[3] * b.v[3]);
@@ -69,7 +75,7 @@ inline SimFloat4 operator*(SimFloat4 a, SimFloat4 b)
 
 inline SimFloat4 operator/(SimFloat4 a, SimFloat4 b)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_div_ps(a.v, b.v));
 #else
 	return SimFloat4(a.v[0] / b.v[0], a.v[1] / b.v[1], a.v[2] / b.v[2], a.v[3] / b.v[3]);
@@ -78,7 +84,7 @@ inline SimFloat4 operator/(SimFloat4 a, SimFloat4 b)
 
 inline SimFloat4 sim_max4(SimFloat4 a, SimFloat4 b)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_max_ps(a.v, b.v));
 #else
 	return SimFloat4(
@@ -91,7 +97,7 @@ inline SimFloat4 sim_max4(SimFloat4 a, SimFloat4 b)
 
 inline SimFloat4 sim_min4(SimFloat4 a, SimFloat4 b)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_min_ps(a.v, b.v));
 #else
 	return SimFloat4(
@@ -104,7 +110,7 @@ inline SimFloat4 sim_min4(SimFloat4 a, SimFloat4 b)
 
 inline SimFloat4 sim_sqrt4(SimFloat4 a)
 {
-#if defined(__SSE__)
+#if MXT_SIMD_SSE
 	return SimFloat4(_mm_sqrt_ps(a.v));
 #else
 	return SimFloat4(sqrtf(a.v[0]), sqrtf(a.v[1]), sqrtf(a.v[2]), sqrtf(a.v[3]));

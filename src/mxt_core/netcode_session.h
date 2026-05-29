@@ -17,6 +17,9 @@ class NetcodeSession : public Object {
 	static constexpr int MAX_RACERS = 1024;
 	static constexpr int HISTORY_LEN = 128;
 	static constexpr int MAX_PEERS = 256;
+	static constexpr int RACER_LOOKUP_SIZE = 2048;
+	static constexpr int RACER_LOOKUP_MASK = RACER_LOOKUP_SIZE - 1;
+	static constexpr int32_t RACER_LOOKUP_EMPTY = -2147483647 - 1;
 
 	struct InputFrame {
 		int32_t tick = -1;
@@ -36,6 +39,8 @@ class NetcodeSession : public Object {
 	int32_t local_player_id = -1;
 	int32_t player_ids[MAX_RACERS] = {};
 	uint8_t cpu_flags[MAX_RACERS] = {};
+	int32_t racer_lookup_ids[RACER_LOOKUP_SIZE] = {};
+	int16_t racer_lookup_indices[RACER_LOOKUP_SIZE] = {};
 	PlayerInput neutral_input = PlayerInput::from_neutral();
 	PlayerInput last_local_input = PlayerInput::from_neutral();
 	InputFrame local_input_history[HISTORY_LEN];
@@ -57,6 +62,8 @@ class NetcodeSession : public Object {
 	InputFrame& frame_for(InputFrame* frames, int32_t tick);
 	const InputFrame* find_frame(const InputFrame* frames, int32_t tick) const;
 	int find_racer_index(int32_t player_id) const;
+	void clear_racer_lookup();
+	void insert_racer_lookup(int32_t player_id, int index);
 	int find_peer_index(int32_t peer_id) const;
 	int ensure_peer_index(int32_t peer_id);
 	void clear_frame(InputFrame& frame, int32_t tick);

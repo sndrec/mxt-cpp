@@ -23,6 +23,10 @@ func _arg_int_list(args: Array, name: String) -> Array:
 		out.append(int(part))
 	return out
 
+func _fail() -> void:
+	print("MXT_NETSTATE_RESTORE_EQUIV_FAIL")
+	quit(1)
+
 func _bytes_equal(a: PackedByteArray, b: PackedByteArray) -> bool:
 	if a.size() != b.size():
 		return false
@@ -397,7 +401,7 @@ func _init() -> void:
 	var car_bytes := FileAccess.get_file_as_bytes(car_props_path)
 	if track_bytes.is_empty() or car_bytes.is_empty() or cars <= 0:
 		push_error("netstate_restore_equivalence missing track/car data or invalid car count")
-		quit(1)
+		_fail()
 		return
 
 	var player_ids: Array = []
@@ -414,7 +418,7 @@ func _init() -> void:
 
 	if resync_interval > 0:
 		if !_run_resync_series(authoritative, restored, authoritative_session, restored_session, player_ids, humans, snapshot_tick, resync_interval, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
-			quit(1)
+			_fail()
 			return
 		root.remove_child(authoritative)
 		root.remove_child(restored)
@@ -428,12 +432,12 @@ func _init() -> void:
 		shared_inputs_by_tick[tick] = shared_inputs
 		if !_tick_sim_with_inputs(authoritative, authoritative_session, tick, shared_inputs):
 			push_error("netstate_restore_equivalence failed authoritative tick %d" % tick)
-			quit(1)
+			_fail()
 			return
 		if raw_load_baseline:
 			if !_tick_sim_with_inputs(restored, restored_session, tick, shared_inputs):
 				push_error("netstate_restore_equivalence failed raw baseline tick %d" % tick)
-				quit(1)
+				_fail()
 				return
 
 	var snapshot := PackedByteArray()
@@ -457,15 +461,15 @@ func _init() -> void:
 			snapshot.size(), restored_snapshot.size(), diff,
 			int(snapshot[diff]) if diff >= 0 and diff < snapshot.size() else -1,
 			int(restored_snapshot[diff]) if diff >= 0 and diff < restored_snapshot.size() else -1])
-			quit(1)
+			_fail()
 			return
 		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
-			quit(1)
+			_fail()
 			return
 
 	if raw_load_baseline:
 		if !_compare_debug_numeric(authoritative, restored, player_ids, snapshot_tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
-			quit(1)
+			_fail()
 			return
 	if watch_players.size() > 0:
 		_print_watch_players("MXT_NETSTATE_RESTORE_WATCH tick=%d" % snapshot_tick, authoritative, restored, watch_players)
@@ -476,17 +480,17 @@ func _init() -> void:
 		_store_inputs(restored_session, tick, shared_inputs)
 		if !authoritative_session.tick_server_frame(authoritative, tick):
 			push_error("netstate_restore_equivalence failed authoritative continuation tick %d" % tick)
-			quit(1)
+			_fail()
 			return
 		if !restored_session.tick_server_frame(restored, tick):
 			push_error("netstate_restore_equivalence failed restored continuation tick %d" % tick)
-			quit(1)
+			_fail()
 			return
 		if (tick - snapshot_tick) % compare_every == 0:
 			if watch_players.size() > 0:
 				_print_watch_players("MXT_NETSTATE_RESTORE_WATCH tick=%d" % tick, authoritative, restored, watch_players)
 			if !_compare_debug_numeric(authoritative, restored, player_ids, tick, pos_epsilon, basis_epsilon, detail_threshold, ignore_worst_pos):
-				quit(1)
+				_fail()
 				return
 
 	var compressed := snapshot.compress(FileAccess.COMPRESSION_ZSTD)

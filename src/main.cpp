@@ -42,6 +42,23 @@
 
 using namespace godot;
 
+static inline float gamesim_track_lap_length(const RaceTrack* track)
+{
+	if (!track) {
+		return 0.0f;
+	}
+	float lap_length = track->lap_length;
+	if (lap_length <= 0.0f && track->num_checkpoints > 0) {
+		lap_length = track->checkpoints[track->num_checkpoints - 1].distance;
+	}
+	return lap_length;
+}
+
+static inline float gamesim_vehicle_stored_distance(const PhysicsCarSoA& soa, int lane, float lap_length)
+{
+	return soa.checkpoint_track_distance[lane] + lap_length * static_cast<float>(soa.lap[lane]);
+}
+
 struct MeshBVHBuildPrim
 {
 	SimAABB bounds;
@@ -471,6 +488,22 @@ static void precompute_mesh_triangle_projection(TrackMeshCollisionTriangle &tri,
 #define STORE_INDEXED_VEC3(storage, name, index, value) do { const SimVec3 mxt_v3_tmp = (value); (storage).name##_x[(index)] = mxt_v3_tmp.x; (storage).name##_y[(index)] = mxt_v3_tmp.y; (storage).name##_z[(index)] = mxt_v3_tmp.z; } while (0)
 
 namespace {
+	static inline uint64_t profile_now_us()
+	{
+		return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+			std::chrono::steady_clock::now().time_since_epoch()).count());
+	}
+
+	static inline void profile_mark(uint64_t* bucket, uint64_t& step)
+	{
+		if (!bucket) {
+			return;
+		}
+		const uint64_t now = profile_now_us();
+		*bucket += now - step;
+		step = now;
+	}
+
 	static inline godot::Vector3 gd_vec3(const SimVec3& v)
 	{
 		return godot::Vector3(v.x, v.y, v.z);
@@ -1090,18 +1123,6 @@ namespace {
 		}
 	}
 
-	static void finish_vehicle_tick_soa(PhysicsCarSoA& c, int count)
-	{
-		for (int i = 0; i < count; ++i) {
-			SimTransform basis = MXT_LOAD_TRANSFORM(c, basis_physical, i);
-			const SimVec3 pos(c.position_current_x[i], c.position_current_y[i], c.position_current_z[i]);
-			const SimVec3 behind = basis.basis.xform(SimVec3(0.0f, 0.5f, 0.5f)) + pos;
-			c.position_behind_x[i] = behind.x;
-			c.position_behind_y[i] = behind.y;
-			c.position_behind_z[i] = behind.z;
-		}
-	}
-
 	static void update_damage_visual_geometry_soa(PhysicsCarSoA& c, int count);
 	static void project_startup_velocity_and_speed_soa(PhysicsCarSoA& c, int count);
 
@@ -1143,22 +1164,13 @@ namespace {
 		sim_store4(c.wall_pos_b_z + p, sim_load4(c.wall_pos_b_z + p) + dz);
 	}
 
-	static void post_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, uint8_t* pending_s_boost_sparks, int count,
-		bool s_boost_enabled,
-		TrackQueryScratch &scratch)
+	static void update_machine_corners_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count,
+		TrackQueryScratch &scratch, PhysicsCarCornerProfile* profile = nullptr)
 	{
 		for (int i = 0; i < count; ++i) {
 			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
 				scratch.debug_mesh_current_global_car_index = c.global_start + i;
-				car_views[i].sample_old_corner_collision_surface(scratch);
-			}
-		}
-		scratch.debug_mesh_current_global_car_index = -1;
-
-		for (int i = 0; i < count; ++i) {
-			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
-				scratch.debug_mesh_current_global_car_index = c.global_start + i;
-				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch);
+				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch, profile);
 				const SimVec3 rail_push = LOAD_INDEXED_VEC3(c, collision_push_rail, i);
 				const SimVec3 track_push = LOAD_INDEXED_VEC3(c, collision_push_track, i);
 				const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
@@ -1189,7 +1201,10 @@ namespace {
 			}
 		}
 		scratch.debug_mesh_current_global_car_index = -1;
+	}
 
+	static void finish_vehicle_tail_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
+	{
 		project_startup_velocity_and_speed_soa(c, count);
 
 		update_damage_visual_geometry_soa(c, count);
@@ -1204,7 +1219,11 @@ namespace {
 				STORE_INDEXED_VEC3(c, position_current, i, LOAD_INDEXED_VEC3(c, initial_pos, i));
 			}
 		}
+	}
 
+	static void handle_vehicle_checkpoints_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count,
+		TrackQueryScratch &scratch)
+	{
 		for (int i = 0; i < count; ++i) {
 			if (c.restore_state[i] == 2) {
 				continue;
@@ -1215,7 +1234,11 @@ namespace {
 				c.last_ground_checkpoint[i] = c.current_checkpoint[i];
 			}
 		}
+	}
 
+	static void collect_pending_s_boost_sparks_soa(PhysicsCarSoA& c, uint8_t* pending_s_boost_sparks, int count,
+		bool s_boost_enabled)
+	{
 		for (int i = 0; i < count; ++i) {
 			if (!s_boost_enabled) {
 				pending_s_boost_sparks[i] = 0;
@@ -1228,6 +1251,33 @@ namespace {
 			c.s_boost_pending_spark_spawns[i] = 0;
 			c.pending_super_sparks[i] = 0;
 		}
+	}
+
+	static bool track_checkpoint_has_trigger_candidates(const RaceTrack* track, int checkpoint)
+	{
+		if (!track || track->num_trigger_colliders <= 0) {
+			return false;
+		}
+		if (checkpoint < 0 || checkpoint >= track->num_checkpoints ||
+				static_cast<int>(track->trigger_checkpoint_offsets.size()) != track->num_checkpoints + 1) {
+			return true;
+		}
+		return track->trigger_checkpoint_offsets[checkpoint] < track->trigger_checkpoint_offsets[checkpoint + 1];
+	}
+
+	static bool vehicles_may_emit_trigger_events(PhysicsCar* cars, int count)
+	{
+		for (int i = 0; i < count; ++i) {
+			PhysicsCarSoA& soa = *cars[i].soa;
+			const int lane = cars[i].soa_index;
+			if ((soa.machine_state[lane] & MACHINESTATE::B29) != 0u) {
+				continue;
+			}
+			if (track_checkpoint_has_trigger_candidates(soa.current_track[lane], soa.current_checkpoint[lane])) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	static inline bool vehicle_motion_active(const PhysicsCarSoA& c, int i)
@@ -1265,7 +1315,11 @@ namespace {
 		}
 	}
 
-	static void prepare_vehicle_floor_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count, TrackQueryScratch &scratch)
+	static void prepare_vehicle_floor_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count, TrackQueryScratch &scratch,
+		uint64_t* profile_prepare_frame_us = nullptr,
+		PhysicsCarFloorProfile* floor_profile = nullptr,
+		uint64_t* profile_find_floor_us = nullptr,
+		uint64_t* profile_terrain_us = nullptr)
 	{
 		scratch.reset_trigger_events();
 		for (int i = 0; i < count; ++i) {
@@ -1274,11 +1328,14 @@ namespace {
 			}
 
 			scratch.debug_mesh_current_global_car_index = c.global_start + i;
+			uint64_t profile_step = profile_prepare_frame_us ? profile_now_us() : 0;
 			const uint32_t old_terrain_state = c.terrain_state[i];
 			const SimVec3 trigger_p0 = LOAD_INDEXED_VEC3(c, position_old, i);
 			const SimVec3 trigger_p1 = LOAD_INDEXED_VEC3(c, position_current, i);
-			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch);
-			const bool has_floor = car_views[i].find_floor_beneath_machine(scratch);
+			const SimVec3 ground_normal = car_views[i].prepare_machine_frame(scratch, floor_profile);
+			profile_mark(profile_prepare_frame_us, profile_step);
+			const bool has_floor = car_views[i].find_floor_beneath_machine(scratch, floor_profile);
+			profile_mark(profile_find_floor_us, profile_step);
 			if (has_floor) {
 				if ((c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0) {
 					bool use_analytic_floor_normal = true;
@@ -1304,7 +1361,6 @@ namespace {
 					c.tilt_force_spatial_x[p] = 0.0f;
 					c.tilt_force_spatial_y[p] = 0.0f;
 					c.tilt_force_spatial_z[p] = 0.0f;
-					c.tilt_force_spatial_len[p] = 0.0f;
 					c.tilt_state[p] |= TILTSTATE::DISCONNECTED | TILTSTATE::AIRBORNE;
 				}
 			}
@@ -1314,6 +1370,7 @@ namespace {
 			if ((old_terrain_state & TERRAIN::DASH) != 0u) {
 				c.machine_state[i] &= ~MACHINESTATE::JUST_HIT_DASHPLATE;
 			}
+			profile_mark(profile_terrain_us, profile_step);
 		}
 		scratch.debug_mesh_current_global_car_index = -1;
 	}
@@ -1336,13 +1393,18 @@ namespace {
 				if (!trigger) {
 					continue;
 				}
-				PhysicsCar* car = cars + c.global_start + event.car_index;
 				if ((event.collision_flags & 0x2) != 0) {
-					trigger->start_touch(car);
-				}
-				trigger->touch(car);
-				if ((event.collision_flags & 0x4) != 0) {
-					trigger->end_touch(car);
+					PhysicsCar* car = cars + c.global_start + event.car_index;
+					switch (trigger->type) {
+					case TRIGGER_TYPE::DASHPLATE:
+						static_cast<Dashplate*>(trigger)->start_touch(car);
+						break;
+					case TRIGGER_TYPE::MINE:
+						static_cast<Mine*>(trigger)->start_touch(car);
+						break;
+					default:
+						break;
+					}
 				}
 			}
 			scratch.reset_trigger_events();
@@ -1395,49 +1457,38 @@ namespace {
 	static void steering_and_suspension_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
 	{
 		for (int i = 0; i < count; ++i) {
-			if (!vehicle_motion_active(c, i) || (c.machine_state[i] & MACHINESTATE::ACTIVE) == 0) {
-				continue;
-			}
-
-			float strafe_turn_mod = 1.0f;
-			const int base = i * 4;
-			if (c.tilt_state[base + 0] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-			if (c.tilt_state[base + 1] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-			if (c.tilt_state[base + 2] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-			if (c.tilt_state[base + 3] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-
-			float steer_strength =
-				(c.stat_turn_movement[i] + strafe_turn_mod * c.stat_strafe_turn[i] * c.input_strafe[i] *
-					c.input_steer_yaw[i]) *
-				-c.input_steer_yaw[i];
-			if (c.machine_state[i] & MACHINESTATE::SIDEATTACKING) {
-				steer_strength *= 0.3f;
-			}
-			c.velocity_angular_y[i] += 1.5f * steer_strength;
-			if (std::abs(c.velocity_angular_y[i]) < 1.0f) {
-				c.velocity_angular_y[i] = 0.0f;
-			}
-			c.input_yaw_dupe[i] = c.input_steer_yaw[i];
-		}
-
-		for (int i = 0; i < count; ++i) {
-			if (vehicle_motion_active(c, i)) {
-				car_views[i].handle_suspension_states();
-			}
-		}
-
-		for (int i = 0; i < count; ++i) {
-			if (!vehicle_motion_active(c, i) || c.frames_since_start_2[i] == 0) {
-				continue;
-			}
-			const float initial_angle_vel_y = c.velocity_angular_y[i];
-			car_views[i].handle_machine_turn_and_strafe_points4(initial_angle_vel_y);
-		}
-
-		for (int i = 0; i < count; ++i) {
 			if (!vehicle_motion_active(c, i)) {
 				continue;
 			}
+
+			if ((c.machine_state[i] & MACHINESTATE::ACTIVE) != 0) {
+				float strafe_turn_mod = 1.0f;
+				const int base = i * 4;
+				if (c.tilt_state[base + 0] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+				if (c.tilt_state[base + 1] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+				if (c.tilt_state[base + 2] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+				if (c.tilt_state[base + 3] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
+
+				float steer_strength =
+					(c.stat_turn_movement[i] + strafe_turn_mod * c.stat_strafe_turn[i] * c.input_strafe[i] *
+						c.input_steer_yaw[i]) *
+					-c.input_steer_yaw[i];
+				if (c.machine_state[i] & MACHINESTATE::SIDEATTACKING) {
+					steer_strength *= 0.3f;
+				}
+				c.velocity_angular_y[i] += 1.5f * steer_strength;
+				if (std::abs(c.velocity_angular_y[i]) < 1.0f) {
+					c.velocity_angular_y[i] = 0.0f;
+				}
+			}
+
+			car_views[i].handle_suspension_states();
+
+			const float initial_angle_vel_y = c.velocity_angular_y[i];
+			if (c.frames_since_start_2[i] != 0) {
+				car_views[i].handle_machine_turn_and_strafe_points4(initial_angle_vel_y);
+			}
+
 			if (c.machine_state[i] & MACHINESTATE::AIRBORNEMORE0_2S_Q) {
 				c.turning_related[i] *= 0.02f;
 			}
@@ -1450,29 +1501,14 @@ namespace {
 	static void linear_orientation_drag_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
 	{
 		for (int i = 0; i < count; ++i) {
-			if (vehicle_motion_active(c, i)) {
-				car_views[i].handle_linear_velocity();
+			if (!vehicle_motion_active(c, i)) {
+				continue;
 			}
-		}
-		for (int i = 0; i < count; ++i) {
-			if (vehicle_motion_active(c, i)) {
-				car_views[i].handle_angle_velocity();
-			}
-		}
-		for (int i = 0; i < count; ++i) {
-			if (vehicle_motion_active(c, i)) {
-				car_views[i].handle_airborne_controls();
-			}
-		}
-		for (int i = 0; i < count; ++i) {
-			if (vehicle_motion_active(c, i)) {
-				car_views[i].orient_vehicle_from_gravity_or_road();
-			}
-		}
-		for (int i = 0; i < count; ++i) {
-			if (vehicle_motion_active(c, i)) {
-				car_views[i].handle_drag_and_glide_forces();
-			}
+			car_views[i].handle_linear_velocity();
+			car_views[i].handle_angle_velocity();
+			car_views[i].handle_airborne_controls();
+			car_views[i].orient_vehicle_from_gravity_or_road();
+			car_views[i].handle_drag_and_glide_forces();
 		}
 	}
 
@@ -1578,7 +1614,6 @@ namespace {
 					if (tangent_correction.length_squared() > 0.0000001f) {
 						STORE_INDEXED_VEC3(c, position_current, i, current - tangent_correction);
 						STORE_INDEXED_VEC3(c, position_old, i, LOAD_INDEXED_VEC3(c, position_old, i) - tangent_correction);
-						STORE_INDEXED_VEC3(c, position_old_2, i, LOAD_INDEXED_VEC3(c, position_old_2, i) - tangent_correction);
 						STORE_INDEXED_VEC3(c, position_old_dupe, i, LOAD_INDEXED_VEC3(c, position_old_dupe, i) - tangent_correction);
 						STORE_INDEXED_VEC3(c, position_bottom, i, LOAD_INDEXED_VEC3(c, position_bottom, i) - tangent_correction);
 						translate_contact_points_soa(c, i, -tangent_correction);
@@ -1594,13 +1629,6 @@ namespace {
 				c.position_bottom_z[i] += c.position_current_z[i] - c.position_old_z[i];
 			}
 		}
-	}
-
-	static void begin_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs,
-		int count, TrackQueryScratch &scratch)
-	{
-		apply_vehicle_motion_inputs_soa(c, inputs, count);
-		prepare_vehicle_floor_phase(c, car_views, count, scratch);
 	}
 
 	static void finish_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
@@ -1793,10 +1821,17 @@ namespace {
 	}
 
 	static void collide_vehicles_broadphase(GameSim& sim, PhysicsCar* car_views, int count,
-		int* indices, float* min_x, float* max_x, float* min_y, float* max_y, float* min_z, float* max_z)
+		int* indices, int& sorted_count, float* min_x, float* max_x, float* min_y, float* max_y, float* min_z, float* max_z)
 	{
 		constexpr float kMachineCollisionRadius = 2.0f;
 		constexpr float kMutationSlop = 8.0f;
+
+		if (sorted_count != count) {
+			for (int i = 0; i < count; ++i) {
+				indices[i] = i;
+			}
+			sorted_count = count;
+		}
 
 		for (int i = 0; i < count; ++i) {
 			PhysicsCarSoA& c = *car_views[i].soa;
@@ -1806,7 +1841,6 @@ namespace {
 			c.position_collision_snapshot_z[lane] = c.position_current_z[lane];
 			const float radius = kMachineCollisionRadius;
 			const float extent = radius + c.speed_kmh[lane] / 216.0f + kMutationSlop;
-			indices[i] = i;
 			min_x[i] = c.position_current_x[lane] - extent;
 			max_x[i] = c.position_current_x[lane] + extent;
 			min_y[i] = c.position_current_y[lane] - extent;
@@ -1815,12 +1849,21 @@ namespace {
 			max_z[i] = c.position_current_z[lane] + extent;
 		}
 
-		std::sort(indices, indices + count, [&](int a, int b) {
+		auto less_for_collision_sweep = [&](int a, int b) {
 			if (min_x[a] != min_x[b]) {
 				return min_x[a] < min_x[b];
 			}
 			return a < b;
-		});
+		};
+		for (int i = 1; i < count; ++i) {
+			const int key = indices[i];
+			int j = i;
+			while (j > 0 && less_for_collision_sweep(key, indices[j - 1])) {
+				indices[j] = indices[j - 1];
+				--j;
+			}
+			indices[j] = key;
+		}
 
 		for (int sorted_i = 0; sorted_i < count; ++sorted_i) {
 			const int i = indices[sorted_i];
@@ -1873,12 +1916,11 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("get_first_lap_distance"), &GameSim::get_first_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_track_lap_length"), &GameSim::get_track_lap_length);
-	ClassDB::bind_method(D_METHOD("set_cpu_driver_manager", "manager"), &GameSim::set_cpu_driver_manager);
-	ClassDB::bind_method(D_METHOD("get_cpu_driver_manager"), &GameSim::get_cpu_driver_manager);
 	ClassDB::bind_method(D_METHOD("get_native_cpu_input_for_tick", "player_id", "expected_tick"), &GameSim::get_native_cpu_input_for_tick);
 	ClassDB::bind_method(D_METHOD("get_input_frame_as_dictionary", "target_tick"), &GameSim::get_input_frame_as_dictionary);
 	ClassDB::bind_method(D_METHOD("set_player_metadata", "player_ids", "cpu_flags"), &GameSim::set_player_metadata);
 	ClassDB::bind_method(D_METHOD("get_phase_profile_string"), &GameSim::get_phase_profile_string);
+	ClassDB::bind_method(D_METHOD("set_phase_profile_enabled", "enabled"), &GameSim::set_phase_profile_enabled);
 	ClassDB::bind_method(D_METHOD("get_render_profile_string"), &GameSim::get_render_profile_string);
 	ClassDB::bind_method(D_METHOD("set_render_profile_enabled", "enabled"), &GameSim::set_render_profile_enabled);
 	ClassDB::bind_method(D_METHOD("set_render_node_effects_enabled", "enabled"), &GameSim::set_render_node_effects_enabled);
@@ -1931,6 +1973,7 @@ GameSim::GameSim()
 	car_properties_array = nullptr;
 	bumper_cars = nullptr;
 	bumper_properties_array = nullptr;
+	clear_player_index_lookup();
 	reset_super_sparks();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
@@ -1970,10 +2013,9 @@ GameSim::~GameSim()
 
 void GameSim::VehicleLaneGroup::reset(int p_count)
 {
-	std::lock_guard<std::mutex> lock(mutex);
 	count = p_count;
-	waiting = 0;
-	generation = 0;
+	waiting.store(0, std::memory_order_relaxed);
+	generation.store(0, std::memory_order_release);
 }
 
 void GameSim::VehicleLaneGroup::sync()
@@ -1981,18 +2023,18 @@ void GameSim::VehicleLaneGroup::sync()
 	if (count <= 1) {
 		return;
 	}
-	std::unique_lock<std::mutex> lock(mutex);
-	const uint32_t local_generation = generation;
-	waiting += 1;
-	if (waiting == count) {
-		waiting = 0;
-		generation += 1;
-		cv.notify_all();
+	const uint32_t local_generation = generation.load(std::memory_order_acquire);
+	if (waiting.fetch_add(1, std::memory_order_acq_rel) + 1 == count) {
+		waiting.store(0, std::memory_order_release);
+		generation.fetch_add(1, std::memory_order_acq_rel);
 		return;
 	}
-	cv.wait(lock, [&]() {
-		return generation != local_generation;
-	});
+	int spins = 0;
+	while (generation.load(std::memory_order_acquire) == local_generation) {
+		if (++spins > 512) {
+			std::this_thread::yield();
+		}
+	}
 }
 
 void GameSim::ensure_vehicle_lane_workers()
@@ -2016,10 +2058,11 @@ void GameSim::ensure_vehicle_lane_workers()
 				seen_generation = vehicle_lane_generation;
 				const bool should_run = lane < vehicle_lane_active_count;
 				auto fn = vehicle_lane_fn;
+				void* context = vehicle_lane_context;
 				lock.unlock();
 
 				if (should_run) {
-					fn(lane, vehicle_lane_group);
+					fn(context, lane, vehicle_lane_group);
 				}
 
 				if (should_run) {
@@ -2052,19 +2095,20 @@ void GameSim::stop_vehicle_lane_workers()
 		}
 	}
 	vehicle_lane_fn = nullptr;
+	vehicle_lane_context = nullptr;
 	vehicle_lane_active_count = 0;
 	vehicle_lane_pending = 0;
 	vehicle_lane_workers_started = false;
 	vehicle_lane_stop = false;
 }
 
-void GameSim::run_vehicle_lanes(int lane_count, bool parallel, const std::function<void(int, VehicleLaneGroup&)>& fn)
+void GameSim::run_vehicle_lanes(int lane_count, bool parallel, void* context, VehicleLaneFn fn)
 {
 	if (!parallel || lane_count <= 1) {
 		VehicleLaneGroup group;
 		group.reset(1);
 		for (int lane = 0; lane < lane_count; ++lane) {
-			fn(lane, group);
+			fn(context, lane, group);
 		}
 		return;
 	}
@@ -2075,13 +2119,14 @@ void GameSim::run_vehicle_lanes(int lane_count, bool parallel, const std::functi
 	{
 		std::lock_guard<std::mutex> lock(vehicle_lane_mutex);
 		vehicle_lane_fn = fn;
+		vehicle_lane_context = context;
 		vehicle_lane_active_count = active_lanes;
 		vehicle_lane_pending = active_lanes - 1;
 		vehicle_lane_generation += 1;
 	}
 	vehicle_lane_cv.notify_all();
 
-	fn(0, vehicle_lane_group);
+	fn(context, 0, vehicle_lane_group);
 
 	if (active_lanes > 1) {
 		std::unique_lock<std::mutex> lock(vehicle_lane_mutex);
@@ -2089,10 +2134,12 @@ void GameSim::run_vehicle_lanes(int lane_count, bool parallel, const std::functi
 			return vehicle_lane_pending == 0;
 		});
 		vehicle_lane_fn = nullptr;
+		vehicle_lane_context = nullptr;
 		vehicle_lane_active_count = 0;
 	} else {
 		std::lock_guard<std::mutex> lock(vehicle_lane_mutex);
 		vehicle_lane_fn = nullptr;
+		vehicle_lane_context = nullptr;
 		vehicle_lane_active_count = 0;
 	}
 }
@@ -2238,7 +2285,6 @@ void GameSim::deactivate_bumper_car(int bumper_slot)
 	const SimVec3 hidden(0.0f, current_track ? current_track->minimum_y - 10000.0f : -10000.0f, 0.0f);
 	STORE_INDEXED_VEC3(soa, position_current, lane, hidden);
 	STORE_INDEXED_VEC3(soa, position_old, lane, hidden);
-	STORE_INDEXED_VEC3(soa, position_old_2, lane, hidden);
 	STORE_INDEXED_VEC3(soa, position_old_dupe, lane, hidden);
 	SimTransform hidden_transform = MXT_LOAD_TRANSFORM(soa, transform_visual, lane);
 	hidden_transform.origin = hidden;
@@ -2246,7 +2292,6 @@ void GameSim::deactivate_bumper_car(int bumper_slot)
 	MXT_STORE_TRANSFORM(soa, basis_physical, lane, hidden_transform);
 	MXT_STORE_TRANSFORM(soa, basis_physical_other, lane, hidden_transform);
 	STORE_INDEXED_VEC3(soa, position_bottom, lane, hidden);
-	STORE_INDEXED_VEC3(soa, position_behind, lane, hidden);
 	STORE_INDEXED_VEC3(soa, velocity, lane, SimVec3());
 	STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3());
 	STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3());
@@ -2291,7 +2336,6 @@ void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, f
 	STORE_INDEXED_VEC3(soa, position_current, lane, transform.origin);
 	if (reset_history) {
 		STORE_INDEXED_VEC3(soa, position_old, lane, transform.origin);
-		STORE_INDEXED_VEC3(soa, position_old_2, lane, transform.origin);
 		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, transform.origin);
 	}
 	STORE_INDEXED_VEC3(soa, position_bottom, lane, transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
@@ -2327,12 +2371,10 @@ void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, f
 			const int p = point_base + point;
 			soa.tilt_state[p] = 0;
 			soa.tilt_force[p] = 0.0f;
-			soa.tilt_force_spatial_len[p] = 0.0f;
 			STORE_INDEXED_VEC3(soa, tilt_force_spatial, p, SimVec3());
 			STORE_INDEXED_VEC3(soa, tilt_up_vector_2, p, transform.basis.get_column(1));
 			STORE_INDEXED_VEC3(soa, tilt_up_vector, p, transform.basis.get_column(1));
 			STORE_INDEXED_VEC3(soa, wall_pos_a, p, wall_sweep_origin);
-			STORE_INDEXED_VEC3(soa, wall_collision, p, SimVec3());
 		}
 		sim_store4(soa.tilt_pos_old_x + point_base, tilt_pos.x);
 		sim_store4(soa.tilt_pos_old_y + point_base, tilt_pos.y);
@@ -2465,7 +2507,6 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * bumper_weight));
 		STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3(0.0f, 0.0f, -(850.0f / 216.0f) * bumper_weight));
 		STORE_INDEXED_VEC3(soa, position_old, lane, spawn_position - cruise_delta);
-		STORE_INDEXED_VEC3(soa, position_old_2, lane, spawn_position - cruise_delta * 2.0f);
 		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, spawn_position - cruise_delta);
 		soa.energy[lane] = soa.calced_max_energy[lane];
 		soa.level_start_time[lane] = static_cast<uint64_t>(tick);
@@ -2497,6 +2538,7 @@ void GameSim::update_bumper_vehicles()
 	const int bumper_shard_count = first_shard.shards ? first_shard.shard_count : 1;
 	const int sim_lane_count = first_shard.total_lane_count > 0 ? first_shard.total_lane_count : first_shard.lane_count;
 	const bool parallel_vehicle_shards = bumper_count >= 16 && bumper_shard_count == VEHICLE_WORKER_COUNT;
+	const bool track_has_triggers = vehicles_may_emit_trigger_events(bumper_cars, bumper_count);
 	ensure_vehicle_tick_soa_capacity(sim_lane_count);
 	for (int i = 0; i < bumper_count; ++i) {
 		soa.inputs[i] = generate_bumper_input_for_slot(i);
@@ -2505,34 +2547,47 @@ void GameSim::update_bumper_vehicles()
 		soa.inputs[i] = PlayerInput::from_neutral();
 		soa.pending_s_boost_sparks[i] = 0;
 	}
-	run_vehicle_lanes(bumper_shard_count, parallel_vehicle_shards, [&](int lane, VehicleLaneGroup& group) {
-		PhysicsCarSoA& car_soa = bumper_shards[lane];
+	struct BumperVehicleLaneContext {
+		GameSim* sim;
+		VehicleTickSoA* tick_soa;
+		PhysicsCarSoA* bumper_shards;
+		int bumper_shard_count;
+		bool track_has_triggers;
+	};
+	BumperVehicleLaneContext lane_context{this, &soa, bumper_shards, bumper_shard_count, track_has_triggers};
+	run_vehicle_lanes(bumper_shard_count, parallel_vehicle_shards, &lane_context, [](void* raw_context, int lane, VehicleLaneGroup& group) {
+		BumperVehicleLaneContext& context = *static_cast<BumperVehicleLaneContext*>(raw_context);
+		GameSim& sim = *context.sim;
+		VehicleTickSoA& soa = *context.tick_soa;
+		PhysicsCarSoA& car_soa = context.bumper_shards[lane];
 		const int global_start = car_soa.global_start;
-		TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
+		TrackQueryScratch &track_scratch = sim.vehicle_lane_track_scratch[lane];
 		track_scratch.reset_mesh_query();
 
-		begin_vehicle_tick_soa(car_soa, bumper_cars + global_start,
-			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count,
+		begin_vehicle_tick_soa(car_soa, sim.bumper_cars + global_start,
+			soa.inputs + global_start, static_cast<uint32_t>(sim.tick), car_soa.count,
 			false, false);
-		group.sync();
 
-		begin_vehicle_motion_phased_soa(car_soa, bumper_cars + global_start,
-			soa.inputs + global_start, car_soa.count, track_scratch);
-		group.sync();
+		apply_vehicle_motion_inputs_soa(car_soa, soa.inputs + global_start, car_soa.count);
+		prepare_vehicle_floor_phase(car_soa, sim.bumper_cars + global_start, car_soa.count, track_scratch);
 
-		if (lane == 0) {
-			commit_vehicle_trigger_events(bumper_shards, bumper_cars, bumper_shard_count, vehicle_lane_track_scratch);
+		if (context.track_has_triggers) {
+			group.sync();
+			if (lane == 0) {
+				commit_vehicle_trigger_events(context.bumper_shards, sim.bumper_cars, context.bumper_shard_count, sim.vehicle_lane_track_scratch);
+			}
+			group.sync();
 		}
+
+		finish_vehicle_motion_phased_soa(car_soa, sim.bumper_cars + global_start, car_soa.count);
+
 		group.sync();
 
-		finish_vehicle_motion_phased_soa(car_soa, bumper_cars + global_start, car_soa.count);
-		group.sync();
-
-		finish_vehicle_tick_soa(car_soa, car_soa.count);
-		group.sync();
-
-		post_vehicle_tick_soa(car_soa, bumper_cars + global_start,
-			soa.pending_s_boost_sparks + global_start, car_soa.count, false, track_scratch);
+		update_machine_corners_soa(car_soa, sim.bumper_cars + global_start, car_soa.count, track_scratch);
+		finish_vehicle_tail_soa(car_soa, sim.bumper_cars + global_start, car_soa.count);
+		handle_vehicle_checkpoints_soa(car_soa, sim.bumper_cars + global_start, car_soa.count, track_scratch);
+		collect_pending_s_boost_sparks_soa(car_soa,
+			soa.pending_s_boost_sparks + global_start, car_soa.count, false);
 	});
 }
 
@@ -2587,8 +2642,7 @@ void GameSim::update_saved_voice_transforms(SavedState& state) const
 		const int lane = cars[i].soa_index;
 		SavedVoiceTransform& dst = state.voice_transforms[state.voice_transform_count++];
 		dst.player_id = player_id;
-		dst.transform = SimTransform();
-		dst.transform.origin = LOAD_INDEXED_VEC3(soa, position_current, lane);
+		dst.origin = LOAD_INDEXED_VEC3(soa, position_current, lane);
 	}
 }
 
@@ -2713,6 +2767,7 @@ void GameSim::free_vehicle_tick_soa()
 		free_cache_aligned(vehicle_tick_soa.collision_indices);
 		vehicle_tick_soa.collision_indices = nullptr;
 	}
+	vehicle_tick_soa.collision_order_count = 0;
 	if (vehicle_tick_soa.collision_min_x) {
 		free_cache_aligned(vehicle_tick_soa.collision_min_x);
 		vehicle_tick_soa.collision_min_x = nullptr;
@@ -2783,7 +2838,54 @@ bool GameSim::get_sim_started()
 
 String GameSim::get_phase_profile_string() const
 {
-	return "MXT_PHASE_PROFILE_DISABLED";
+	if (!phase_profile_enabled || phase_profile_frames == 0) {
+		return "MXT_PHASE_PROFILE_DISABLED";
+	}
+	auto avg = [](uint64_t total, uint64_t frames) -> godot::String {
+		if (frames == 0) {
+			return "0";
+		}
+		return godot::String::num_int64(static_cast<int64_t>(total / frames));
+	};
+	godot::String out = "MXT_PHASE_PROFILE frames=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_frames));
+	out += " total_us=" + avg(phase_profile_total_us, phase_profile_frames);
+	out += " pre_us=" + avg(phase_profile_pre_us, phase_profile_frames);
+	out += " input_us=" + avg(phase_profile_input_us, phase_profile_frames);
+	out += " vehicle_us=" + avg(phase_profile_vehicle_us, phase_profile_frames);
+	out += " v_begin_us=" + avg(phase_profile_vehicle_begin_us, phase_profile_frames);
+	out += " v_apply_input_us=" + avg(phase_profile_vehicle_apply_input_us, phase_profile_frames);
+	out += " v_floor_us=" + avg(phase_profile_vehicle_floor_us, phase_profile_frames);
+	out += " v_prepare_frame_us=" + avg(phase_profile_vehicle_prepare_frame_us, phase_profile_frames);
+	out += " v_floor_corner_analytic_surface_us=" + avg(phase_profile_vehicle_floor_corner_analytic_surface_us, phase_profile_frames);
+	out += " v_floor_mesh_candidate_collect_us=" + avg(phase_profile_vehicle_floor_mesh_candidate_collect_us, phase_profile_frames);
+	out += " v_floor_mesh_cast4_us=" + avg(phase_profile_vehicle_floor_mesh_cast4_us, phase_profile_frames);
+	out += " v_floor_mesh_sample_us=" + avg(phase_profile_vehicle_floor_mesh_sample_us, phase_profile_frames);
+	out += " v_find_floor_us=" + avg(phase_profile_vehicle_find_floor_us, phase_profile_frames);
+	out += " v_find_floor_cast_us=" + avg(phase_profile_vehicle_find_floor_cast_us, phase_profile_frames);
+	out += " v_find_floor_mesh_us=" + avg(phase_profile_vehicle_find_floor_mesh_us, phase_profile_frames);
+	out += " v_find_floor_analytic_us=" + avg(phase_profile_vehicle_find_floor_analytic_us, phase_profile_frames);
+	out += " v_terrain_us=" + avg(phase_profile_vehicle_terrain_us, phase_profile_frames);
+	out += " v_trigger_us=" + avg(phase_profile_vehicle_trigger_us, phase_profile_frames);
+	out += " v_motion_us=" + avg(phase_profile_vehicle_motion_us, phase_profile_frames);
+	out += " v_finish_tick_us=" + avg(phase_profile_vehicle_finish_tick_us, phase_profile_frames);
+	out += " v_collision_us=" + avg(phase_profile_vehicle_collision_us, phase_profile_frames);
+	out += " v_post_tick_us=" + avg(phase_profile_vehicle_post_tick_us, phase_profile_frames);
+	out += " v_corner_update_us=" + avg(phase_profile_vehicle_corner_update_us, phase_profile_frames);
+	out += " v_corner_old_analytic_us=" + avg(phase_profile_vehicle_corner_old_analytic_us, phase_profile_frames);
+	out += " v_corner_new_checkpoint_us=" + avg(phase_profile_vehicle_corner_new_checkpoint_us, phase_profile_frames);
+	out += " v_corner_new_analytic_us=" + avg(phase_profile_vehicle_corner_new_analytic_us, phase_profile_frames);
+	out += " v_corner_mesh_us=" + avg(phase_profile_vehicle_corner_mesh_us, phase_profile_frames);
+	out += " v_tail_us=" + avg(phase_profile_vehicle_tail_us, phase_profile_frames);
+	out += " v_checkpoint_us=" + avg(phase_profile_vehicle_checkpoint_us, phase_profile_frames);
+	out += " v_spark_collect_us=" + avg(phase_profile_vehicle_spark_collect_us, phase_profile_frames);
+	out += " post_vehicle_us=" + avg(phase_profile_post_vehicle_us, phase_profile_frames);
+	out += " placement_us=" + avg(phase_profile_placement_us, phase_profile_frames);
+	out += " post_us=" + avg(phase_profile_post_us, phase_profile_frames);
+	out += " save_us=" + avg(phase_profile_save_us, phase_profile_frames);
+	out += " save_bumper_us=" + avg(phase_profile_save_bumper_us, phase_profile_frames);
+	out += " save_voice_us=" + avg(phase_profile_save_voice_us, phase_profile_frames);
+	out += " save_memcpy_us=" + avg(phase_profile_save_memcpy_us, phase_profile_frames);
+	return out;
 }
 
 uint64_t GameSim::render_profile_now_us() const
@@ -2824,6 +2926,49 @@ String GameSim::get_render_profile_string() const
 	out += " visuals_only_thruster_instances=" + avg(render_profile_visuals_only_thruster_instances, render_profile_visuals_only_frames);
 	out += " visuals_only_camera_us=" + avg(render_profile_visuals_only_camera_us, render_profile_visuals_only_frames);
 	return out;
+}
+
+void GameSim::set_phase_profile_enabled(bool enabled)
+{
+	phase_profile_enabled = enabled;
+	phase_profile_frames = 0;
+	phase_profile_total_us = 0;
+	phase_profile_pre_us = 0;
+	phase_profile_input_us = 0;
+	phase_profile_vehicle_us = 0;
+	phase_profile_vehicle_begin_us = 0;
+	phase_profile_vehicle_apply_input_us = 0;
+	phase_profile_vehicle_floor_us = 0;
+	phase_profile_vehicle_prepare_frame_us = 0;
+	phase_profile_vehicle_floor_corner_analytic_surface_us = 0;
+	phase_profile_vehicle_floor_mesh_candidate_collect_us = 0;
+	phase_profile_vehicle_floor_mesh_cast4_us = 0;
+	phase_profile_vehicle_floor_mesh_sample_us = 0;
+	phase_profile_vehicle_find_floor_us = 0;
+	phase_profile_vehicle_find_floor_cast_us = 0;
+	phase_profile_vehicle_find_floor_mesh_us = 0;
+	phase_profile_vehicle_find_floor_analytic_us = 0;
+	phase_profile_vehicle_terrain_us = 0;
+	phase_profile_vehicle_trigger_us = 0;
+	phase_profile_vehicle_motion_us = 0;
+	phase_profile_vehicle_finish_tick_us = 0;
+	phase_profile_vehicle_collision_us = 0;
+	phase_profile_vehicle_post_tick_us = 0;
+	phase_profile_vehicle_corner_update_us = 0;
+	phase_profile_vehicle_corner_old_analytic_us = 0;
+	phase_profile_vehicle_corner_new_checkpoint_us = 0;
+	phase_profile_vehicle_corner_new_analytic_us = 0;
+	phase_profile_vehicle_corner_mesh_us = 0;
+	phase_profile_vehicle_tail_us = 0;
+	phase_profile_vehicle_checkpoint_us = 0;
+	phase_profile_vehicle_spark_collect_us = 0;
+	phase_profile_post_vehicle_us = 0;
+	phase_profile_placement_us = 0;
+	phase_profile_post_us = 0;
+	phase_profile_save_us = 0;
+	phase_profile_save_bumper_us = 0;
+	phase_profile_save_voice_us = 0;
+	phase_profile_save_memcpy_us = 0;
 }
 
 void GameSim::set_render_profile_enabled(bool enabled)
@@ -3322,7 +3467,7 @@ godot::Transform3D GameSim::get_saved_player_voice_transform(int player_id, int 
 	const int count = std::min(state.voice_transform_count, static_cast<int>(state.voice_transforms.size()));
 	for (int i = 0; i < count; ++i) {
 		if (state.voice_transforms[i].player_id == player_id) {
-			return gd_transform(state.voice_transforms[i].transform);
+			return godot::Transform3D(godot::Basis(), gd_vec3(state.voice_transforms[i].origin));
 		}
 	}
 	return godot::Transform3D();
@@ -3343,7 +3488,7 @@ godot::Array GameSim::get_saved_player_voice_transforms(int target_tick) const
 	for (int i = 0; i < count; ++i) {
 		godot::Dictionary item;
 		item["player_id"] = state.voice_transforms[i].player_id;
-		item["transform"] = gd_transform(state.voice_transforms[i].transform);
+		item["transform"] = godot::Transform3D(godot::Basis(), gd_vec3(state.voice_transforms[i].origin));
 		out.append(item);
 	}
 	return out;
@@ -3567,7 +3712,17 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 	std::fesetround(FE_TONEAREST);
-	std::feclearexcept(FE_ALL_EXCEPT);
+	const bool profile_phase = phase_profile_enabled;
+	const uint64_t phase_start = profile_phase ? render_profile_now_us() : 0;
+	uint64_t phase_step = phase_start;
+	auto phase_mark = [&](uint64_t& bucket) {
+		if (!profile_phase) {
+			return;
+		}
+		const uint64_t now = render_profile_now_us();
+		bucket += now - phase_step;
+		phase_step = now;
+	};
 
 	if (num_cars <= 0 || !cars)
 	{
@@ -3582,17 +3737,18 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	const int car_shard_count = first_shard.shards ? first_shard.shard_count : 1;
 	const int sim_lane_count = first_shard.total_lane_count > 0 ? first_shard.total_lane_count : first_shard.lane_count;
 	const bool parallel_vehicle_shards = num_cars >= 16 && car_shard_count == VEHICLE_WORKER_COUNT;
+	const bool track_has_triggers = vehicles_may_emit_trigger_events(cars, num_cars);
 	ensure_vehicle_tick_soa_capacity(sim_lane_count);
 	int buf_index = tick % INPUT_BUFFER_LEN;
 	PlayerInput* slot = input_buffer + buf_index * num_cars;
+	const float lap_length_for_distance = gamesim_track_lap_length(current_track);
 
 	float lead_distance = 0.0f;
 	int leader_lap = 0;
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-		const float distance = compute_vehicle_distance_along_track(
-			car_soa.current_checkpoint[lane], car_soa.checkpoint_fraction[lane], car_soa.lap[lane]);
+		const float distance = gamesim_vehicle_stored_distance(car_soa, lane, lap_length_for_distance);
 		soa.pre_distances[i] = distance;
 		if (distance > lead_distance) {
 			lead_distance = distance;
@@ -3600,6 +3756,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		}
 	}
 	update_bumpers(lead_distance, leader_lap);
+	phase_mark(phase_profile_pre_us);
 
 	for (int i = 0; i < num_cars; i++) {
 		PlayerInput inp = PlayerInput::from_neutral();
@@ -3653,45 +3810,111 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.inputs[i] = PlayerInput::from_neutral();
 		soa.pending_s_boost_sparks[i] = 0;
 	}
+	phase_mark(phase_profile_input_us);
 
-	run_vehicle_lanes(car_shard_count, parallel_vehicle_shards, [&](int lane, VehicleLaneGroup& group) {
-		PhysicsCarSoA& car_soa = car_shards[lane];
+	struct RacerVehicleLaneContext {
+		GameSim* sim;
+		VehicleTickSoA* tick_soa;
+		PhysicsCarSoA* car_shards;
+		int car_shard_count;
+		bool track_has_triggers;
+		bool profile_phase;
+	};
+	RacerVehicleLaneContext lane_context{this, &soa, car_shards, car_shard_count, track_has_triggers, profile_phase};
+	run_vehicle_lanes(car_shard_count, parallel_vehicle_shards, &lane_context, [](void* raw_context, int lane, VehicleLaneGroup& group) {
+		RacerVehicleLaneContext& context = *static_cast<RacerVehicleLaneContext*>(raw_context);
+		GameSim& sim = *context.sim;
+		VehicleTickSoA& soa = *context.tick_soa;
+		PhysicsCarSoA& car_soa = context.car_shards[lane];
 		const int global_start = car_soa.global_start;
-		TrackQueryScratch &track_scratch = vehicle_lane_track_scratch[lane];
+		TrackQueryScratch &track_scratch = sim.vehicle_lane_track_scratch[lane];
 		track_scratch.reset_mesh_query();
+		const bool profile_phase = context.profile_phase;
+		uint64_t vehicle_subphase_step = profile_phase && lane == 0 ? sim.render_profile_now_us() : 0;
+		auto vehicle_subphase_mark = [&](uint64_t& bucket) {
+			if (!profile_phase || lane != 0) {
+				return;
+			}
+			const uint64_t now = sim.render_profile_now_us();
+			bucket += now - vehicle_subphase_step;
+			vehicle_subphase_step = now;
+		};
 
-		begin_vehicle_tick_soa(car_soa, cars + global_start,
-			soa.inputs + global_start, static_cast<uint32_t>(tick), car_soa.count,
-			vehicle_restore_enabled, s_boost_enabled);
-		group.sync();
+		begin_vehicle_tick_soa(car_soa, sim.cars + global_start,
+			soa.inputs + global_start, static_cast<uint32_t>(sim.tick), car_soa.count,
+			sim.vehicle_restore_enabled, sim.s_boost_enabled);
+		vehicle_subphase_mark(sim.phase_profile_vehicle_begin_us);
 
-		begin_vehicle_motion_phased_soa(car_soa, cars + global_start,
-			soa.inputs + global_start, car_soa.count, track_scratch);
-		group.sync();
+		apply_vehicle_motion_inputs_soa(car_soa, soa.inputs + global_start, car_soa.count);
+		vehicle_subphase_mark(sim.phase_profile_vehicle_apply_input_us);
 
-		if (lane == 0) {
-			commit_vehicle_trigger_events(car_shards, cars, car_shard_count, vehicle_lane_track_scratch);
+		PhysicsCarFloorProfile floor_profile;
+		if (profile_phase && lane == 0) {
+			floor_profile.corner_analytic_surface_us = &sim.phase_profile_vehicle_floor_corner_analytic_surface_us;
+			floor_profile.mesh_candidate_collect_us = &sim.phase_profile_vehicle_floor_mesh_candidate_collect_us;
+			floor_profile.mesh_cast4_us = &sim.phase_profile_vehicle_floor_mesh_cast4_us;
+			floor_profile.mesh_floor_sample_us = &sim.phase_profile_vehicle_floor_mesh_sample_us;
+			floor_profile.find_floor_cast_us = &sim.phase_profile_vehicle_find_floor_cast_us;
+			floor_profile.find_floor_mesh_us = &sim.phase_profile_vehicle_find_floor_mesh_us;
+			floor_profile.find_floor_analytic_us = &sim.phase_profile_vehicle_find_floor_analytic_us;
 		}
-		group.sync();
+		prepare_vehicle_floor_phase(car_soa, sim.cars + global_start, car_soa.count, track_scratch,
+			profile_phase && lane == 0 ? &sim.phase_profile_vehicle_prepare_frame_us : nullptr,
+			profile_phase && lane == 0 ? &floor_profile : nullptr,
+			profile_phase && lane == 0 ? &sim.phase_profile_vehicle_find_floor_us : nullptr,
+			profile_phase && lane == 0 ? &sim.phase_profile_vehicle_terrain_us : nullptr);
+		if (context.track_has_triggers) {
+			group.sync();
+		}
+		vehicle_subphase_mark(sim.phase_profile_vehicle_floor_us);
 
-		finish_vehicle_motion_phased_soa(car_soa, cars + global_start, car_soa.count);
-		group.sync();
+		if (context.track_has_triggers) {
+			if (lane == 0) {
+				commit_vehicle_trigger_events(context.car_shards, sim.cars, context.car_shard_count, sim.vehicle_lane_track_scratch);
+			}
+			group.sync();
+		}
+		vehicle_subphase_mark(sim.phase_profile_vehicle_trigger_us);
 
-		finish_vehicle_tick_soa(car_soa, car_soa.count);
+		finish_vehicle_motion_phased_soa(car_soa, sim.cars + global_start, car_soa.count);
+		vehicle_subphase_mark(sim.phase_profile_vehicle_motion_us);
+
 		group.sync();
+		vehicle_subphase_mark(sim.phase_profile_vehicle_finish_tick_us);
 
 		if (lane == 0) {
-			collide_vehicles_broadphase(*this, cars, num_cars,
-				soa.collision_indices,
+			collide_vehicles_broadphase(sim, sim.cars, sim.num_cars,
+				soa.collision_indices, soa.collision_order_count,
 				soa.collision_min_x, soa.collision_max_x,
 				soa.collision_min_y, soa.collision_max_y,
 				soa.collision_min_z, soa.collision_max_z);
 		}
 		group.sync();
+		vehicle_subphase_mark(sim.phase_profile_vehicle_collision_us);
 
-		post_vehicle_tick_soa(car_soa, cars + global_start,
-			soa.pending_s_boost_sparks + global_start, car_soa.count, s_boost_enabled, track_scratch);
+		const uint64_t post_tick_start = vehicle_subphase_step;
+		PhysicsCarCornerProfile corner_profile;
+		if (profile_phase && lane == 0) {
+			corner_profile.old_analytic_us = &sim.phase_profile_vehicle_corner_old_analytic_us;
+			corner_profile.new_checkpoint_us = &sim.phase_profile_vehicle_corner_new_checkpoint_us;
+			corner_profile.new_analytic_us = &sim.phase_profile_vehicle_corner_new_analytic_us;
+			corner_profile.mesh_us = &sim.phase_profile_vehicle_corner_mesh_us;
+		}
+		update_machine_corners_soa(car_soa, sim.cars + global_start, car_soa.count, track_scratch,
+			profile_phase && lane == 0 ? &corner_profile : nullptr);
+		vehicle_subphase_mark(sim.phase_profile_vehicle_corner_update_us);
+		finish_vehicle_tail_soa(car_soa, sim.cars + global_start, car_soa.count);
+		vehicle_subphase_mark(sim.phase_profile_vehicle_tail_us);
+		handle_vehicle_checkpoints_soa(car_soa, sim.cars + global_start, car_soa.count, track_scratch);
+		vehicle_subphase_mark(sim.phase_profile_vehicle_checkpoint_us);
+		collect_pending_s_boost_sparks_soa(car_soa,
+			soa.pending_s_boost_sparks + global_start, car_soa.count, sim.s_boost_enabled);
+		vehicle_subphase_mark(sim.phase_profile_vehicle_spark_collect_us);
+		if (profile_phase && lane == 0) {
+			sim.phase_profile_vehicle_post_tick_us += vehicle_subphase_step - post_tick_start;
+		}
 	});
+	phase_mark(phase_profile_vehicle_us);
 	for (int i = 0; i < num_cars; i++) {
 		if (s_boost_enabled && soa.pending_s_boost_sparks[i] > 0) {
 			emit_super_sparks_from_car(cars[i], soa.pending_s_boost_sparks[i]);
@@ -3699,18 +3922,19 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	}
 	update_bumper_vehicles();
 	collide_racers_with_bumpers();
+	phase_mark(phase_profile_post_vehicle_us);
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-		soa.placement_distances[i] = compute_vehicle_distance_along_track(
-			car_soa.current_checkpoint[lane], car_soa.checkpoint_fraction[lane], car_soa.lap[lane]);
+		soa.placement_distances[i] = gamesim_vehicle_stored_distance(car_soa, lane, lap_length_for_distance);
 		soa.placement_indices[i] = i;
 	}
 	std::sort(soa.placement_indices, soa.placement_indices + num_cars, [&](int a, int b) {
 		return soa.placement_distances[a] > soa.placement_distances[b];
 	});
 	soa.placement_order_valid = true;
+	phase_mark(phase_profile_placement_us);
 
 	if (s_boost_enabled && super_spark_state) {
 		super_spark_state->placement_timer += 1;
@@ -3740,6 +3964,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	if (s_boost_enabled) {
 		update_super_sparks();
 	}
+	phase_mark(phase_profile_post_us);
 
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -3755,6 +3980,12 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	//	}
 	//}
 	save_state();
+	phase_mark(phase_profile_save_us);
+	if (profile_phase) {
+		const uint64_t now = render_profile_now_us();
+		phase_profile_total_us += now - phase_start;
+		phase_profile_frames += 1;
+	}
 	
 	
 	tick += 1;
@@ -4023,6 +4254,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			current_track->segments[seg].road_shape = level_data.allocate_class<RoadShape>();
 			current_track->segments[seg].road_shape->shape_type = ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL;
 		}
+		current_track->segments[seg].road_shape->embed_terrain_mask = 0;
 
 		// road modulations //
 
@@ -4066,6 +4298,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				if (desired_embed == EMBED_TYPE_TO_TERRAIN::HOLE){
 					current_track->segments[seg].road_shape->road_embeds[embed].embed_type = TERRAIN::HOLE;
 				}
+				current_track->segments[seg].road_shape->embed_terrain_mask |=
+					static_cast<uint32_t>(current_track->segments[seg].road_shape->road_embeds[embed].embed_type);
 				
 				current_track->segments[seg].road_shape->road_embeds[embed].left_border = level_data.allocate_curve_from_buffer(lvldat_buf);
 				current_track->segments[seg].road_shape->road_embeds[embed].right_border = level_data.allocate_curve_from_buffer(lvldat_buf);
@@ -4277,6 +4511,56 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			trig->half_extents = ext;
 			current_track->trigger_colliders[t] = trig;
 		}
+		if (current_track->num_checkpoints > 0) {
+			std::vector<int>& offsets = current_track->trigger_checkpoint_offsets;
+			std::vector<int>& indices = current_track->trigger_checkpoint_indices;
+			offsets.assign(static_cast<size_t>(current_track->num_checkpoints) + 1u, 0);
+			auto append_relevant_checkpoint = [&](std::vector<int>& out, int cp_idx) {
+				if (cp_idx < 0 || cp_idx >= current_track->num_checkpoints) {
+					return;
+				}
+				for (int existing : out) {
+					if (existing == cp_idx) {
+						return;
+					}
+				}
+				out.push_back(cp_idx);
+			};
+			std::vector<int> relevant_checkpoints;
+			for (int t = 0; t < current_track->num_trigger_colliders; ++t) {
+				TriggerCollider* trig = current_track->trigger_colliders[t];
+				relevant_checkpoints.clear();
+				append_relevant_checkpoint(relevant_checkpoints, trig->checkpoint_index);
+				if (trig->checkpoint_index >= 0 && trig->checkpoint_index < current_track->num_checkpoints) {
+					const CollisionCheckpoint& cp = current_track->checkpoints[trig->checkpoint_index];
+					for (int n = 0; n < cp.num_neighboring_checkpoints; ++n) {
+						append_relevant_checkpoint(relevant_checkpoints, cp.neighboring_checkpoints[n]);
+					}
+				}
+				for (int cp_idx : relevant_checkpoints) {
+					offsets[static_cast<size_t>(cp_idx) + 1u] += 1;
+				}
+			}
+			for (int cp_idx = 1; cp_idx <= current_track->num_checkpoints; ++cp_idx) {
+				offsets[cp_idx] += offsets[cp_idx - 1];
+			}
+			indices.assign(static_cast<size_t>(offsets[current_track->num_checkpoints]), 0);
+			std::vector<int> write_offsets = offsets;
+			for (int t = 0; t < current_track->num_trigger_colliders; ++t) {
+				TriggerCollider* trig = current_track->trigger_colliders[t];
+				relevant_checkpoints.clear();
+				append_relevant_checkpoint(relevant_checkpoints, trig->checkpoint_index);
+				if (trig->checkpoint_index >= 0 && trig->checkpoint_index < current_track->num_checkpoints) {
+					const CollisionCheckpoint& cp = current_track->checkpoints[trig->checkpoint_index];
+					for (int n = 0; n < cp.num_neighboring_checkpoints; ++n) {
+						append_relevant_checkpoint(relevant_checkpoints, cp.neighboring_checkpoints[n]);
+					}
+				}
+				for (int cp_idx : relevant_checkpoints) {
+					indices[static_cast<size_t>(write_offsets[cp_idx]++)] = t;
+				}
+			}
+		}
 	}
 
 	if (mesh_collision_triangle_count > 0) {
@@ -4431,7 +4715,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 			STORE_INDEXED_VEC3(*cars[i].soa, position_current, cars[i].soa_index, spawn_transform.origin);
 			STORE_INDEXED_VEC3(*cars[i].soa, position_old, cars[i].soa_index, spawn_transform.origin);
-			STORE_INDEXED_VEC3(*cars[i].soa, position_old_2, cars[i].soa_index, spawn_transform.origin);
 			STORE_INDEXED_VEC3(*cars[i].soa, position_old_dupe, cars[i].soa_index, spawn_transform.origin);
 			STORE_INDEXED_VEC3(*cars[i].soa, initial_pos, cars[i].soa_index, spawn_transform.origin);
 			STORE_INDEXED_VEC3(*cars[i].soa, position_bottom, cars[i].soa_index, spawn_transform.xform(SimVec3(0.0f, -0.1f, 0.0f)));
@@ -4505,12 +4788,10 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				const int p = point_base + point;
 				car_soa->tilt_state[p] = 0;
 				car_soa->tilt_force[p] = 0.0f;
-				car_soa->tilt_force_spatial_len[p] = 0.0f;
 				STORE_INDEXED_VEC3(*car_soa, tilt_force_spatial, p, SimVec3());
 				STORE_INDEXED_VEC3(*car_soa, tilt_up_vector_2, p, spawn_up);
 				STORE_INDEXED_VEC3(*car_soa, tilt_up_vector, p, spawn_up);
 				STORE_INDEXED_VEC3(*car_soa, wall_pos_a, p, wall_sweep_origin);
-				STORE_INDEXED_VEC3(*car_soa, wall_collision, p, SimVec3());
 			}
 			sim_store4(car_soa->tilt_pos_old_x + point_base, tilt_pos.x);
 			sim_store4(car_soa->tilt_pos_old_y + point_base, tilt_pos.y);
@@ -4569,17 +4850,25 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				current_track->trigger_colliders = nullptr;
 			}
 			if (cars) {
+				HeapHandler::free_physics_car_static_soa_arrays(cars, num_cars);
 				::free(cars);
 				cars = nullptr;
 			}
 			if (bumper_cars) {
+				HeapHandler::free_physics_car_static_soa_arrays(bumper_cars, bumper_count);
 				::free(bumper_cars);
 				bumper_cars = nullptr;
 			}
+			if (car_properties_array) {
+				::free(car_properties_array);
+				car_properties_array = nullptr;
+			}
+			if (bumper_properties_array) {
+				::free(bumper_properties_array);
+				bumper_properties_array = nullptr;
+			}
 			level_data.free_heap();
 			gamestate_data.free_heap();
-			car_properties_array = nullptr;
-			bumper_properties_array = nullptr;
 			super_spark_state = nullptr;
 			super_sparks = nullptr;
 			spark_multimesh_instance = nullptr;
@@ -4605,12 +4894,22 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			current_track = nullptr;
 		}
 		if (cars) {
+			HeapHandler::free_physics_car_static_soa_arrays(cars, num_cars);
 			::free(cars);
 			cars = nullptr;
 		}
 		if (bumper_cars) {
+			HeapHandler::free_physics_car_static_soa_arrays(bumper_cars, bumper_count);
 			::free(bumper_cars);
 			bumper_cars = nullptr;
+		}
+		if (car_properties_array) {
+			::free(car_properties_array);
+			car_properties_array = nullptr;
+		}
+		if (bumper_properties_array) {
+			::free(bumper_properties_array);
+			bumper_properties_array = nullptr;
 		}
 	if (car_player_ids) {
 		::free(car_player_ids);
@@ -4672,8 +4971,8 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		bumper_next_sequence = 0;
 		clear_render_thruster_lights();
 		native_cpu_drivers.clear();
+		clear_player_index_lookup();
 		race_events.clear();
-		cpu_driver_manager = nullptr;
 	};
 
 void GameSim::set_car_render_manager(godot::Object* p_car_render_manager)
@@ -5005,19 +5304,56 @@ void GameSim::set_render_camera(godot::Camera3D* p_camera)
 	render_camera_node = p_camera;
 }
 
-void GameSim::set_cpu_driver_manager(godot::Object* manager)
-{
-	cpu_driver_manager = manager;
-}
+static inline uint32_t native_cpu_hash_u32(uint32_t x);
 
 GameSim::NativeCpuDriverState* GameSim::find_native_cpu_driver(int32_t player_id)
 {
-	for (NativeCpuDriverState& driver : native_cpu_drivers) {
-		if (driver.active && driver.player_id == player_id) {
-			return &driver;
-		}
+	const int car_index = find_car_index_for_player(player_id);
+	if (car_index >= 0 && car_index < static_cast<int>(native_cpu_drivers.size())) {
+		NativeCpuDriverState& driver = native_cpu_drivers[car_index];
+		return driver.active ? &driver : nullptr;
 	}
 	return nullptr;
+}
+
+void GameSim::clear_player_index_lookup()
+{
+	for (int i = 0; i < PLAYER_INDEX_LOOKUP_SIZE; ++i) {
+		player_index_lookup_ids[i] = PLAYER_INDEX_LOOKUP_EMPTY;
+		player_index_lookup_indices[i] = -1;
+	}
+}
+
+void GameSim::insert_player_index_lookup(int32_t player_id, int car_index)
+{
+	uint32_t slot = native_cpu_hash_u32(static_cast<uint32_t>(player_id)) & PLAYER_INDEX_LOOKUP_MASK;
+	for (int probe = 0; probe < PLAYER_INDEX_LOOKUP_SIZE; ++probe) {
+		if (player_index_lookup_ids[slot] == player_id) {
+			return;
+		}
+		if (player_index_lookup_ids[slot] == PLAYER_INDEX_LOOKUP_EMPTY) {
+			player_index_lookup_ids[slot] = player_id;
+			player_index_lookup_indices[slot] = static_cast<int16_t>(car_index);
+			return;
+		}
+		slot = (slot + 1) & PLAYER_INDEX_LOOKUP_MASK;
+	}
+}
+
+int GameSim::find_car_index_for_player(int32_t player_id) const
+{
+	uint32_t slot = native_cpu_hash_u32(static_cast<uint32_t>(player_id)) & PLAYER_INDEX_LOOKUP_MASK;
+	for (int probe = 0; probe < PLAYER_INDEX_LOOKUP_SIZE; ++probe) {
+		const int32_t id = player_index_lookup_ids[slot];
+		if (id == player_id) {
+			return player_index_lookup_indices[slot];
+		}
+		if (id == PLAYER_INDEX_LOOKUP_EMPTY) {
+			return -1;
+		}
+		slot = (slot + 1) & PLAYER_INDEX_LOOKUP_MASK;
+	}
+	return -1;
 }
 
 void GameSim::configure_native_cpu_drivers()
@@ -5025,9 +5361,14 @@ void GameSim::configure_native_cpu_drivers()
 	native_cpu_drivers.clear();
 	native_cpu_drivers.resize(std::max(0, num_cars));
 	const godot::PackedByteArray neutral = PlayerInput::to_bytes(PlayerInput::from_neutral());
+	clear_player_index_lookup();
 	for (int i = 0; i < num_cars; ++i) {
+		const int32_t player_id = car_player_ids ? car_player_ids[i] : -1;
+		if (player_id != -1) {
+			insert_player_index_lookup(player_id, i);
+		}
 		NativeCpuDriverState& driver = native_cpu_drivers[i];
-		driver.player_id = car_player_ids ? car_player_ids[i] : -1;
+		driver.player_id = player_id;
 		driver.active = (car_is_cpu && car_is_cpu[i] && driver.player_id != -1) ? 1 : 0;
 		driver.last_generated_tick = -1;
 		driver.pending_input = neutral;
@@ -5161,19 +5502,43 @@ godot::PackedByteArray GameSim::get_native_cpu_input_for_tick(int player_id, int
 	return generate_native_cpu_input_for_tick(player_id, expected_tick);
 }
 
+PlayerInput GameSim::generate_native_cpu_player_input_for_tick(int player_id, int expected_tick)
+{
+	if (!cars || !car_player_ids) {
+		return PlayerInput::from_neutral();
+	}
+	const int car_index = find_car_index_for_player(static_cast<int32_t>(player_id));
+	if (car_index >= 0 && car_index < num_cars) {
+		return PlayerInput::quantized(native_cpu_generate_input_for_car(
+			cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed));
+	}
+	return PlayerInput::from_neutral();
+}
+
+PlayerInput GameSim::generate_native_cpu_player_input_for_car_index(int car_index, int player_id, int expected_tick)
+{
+	if (!cars || !car_player_ids || car_index < 0 || car_index >= num_cars) {
+		return PlayerInput::from_neutral();
+	}
+	if (car_player_ids[car_index] != player_id) {
+		return generate_native_cpu_player_input_for_tick(player_id, expected_tick);
+	}
+	return PlayerInput::quantized(native_cpu_generate_input_for_car(
+		cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed));
+}
+
 godot::PackedByteArray GameSim::generate_native_cpu_input_for_tick(int player_id, int expected_tick)
 {
 	NativeCpuDriverState* driver = find_native_cpu_driver(static_cast<int32_t>(player_id));
-	for (int car_index = 0; car_index < num_cars; ++car_index) {
-		if (car_player_ids && car_player_ids[car_index] == player_id) {
-			PlayerInput input = native_cpu_generate_input_for_car(cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed);
-			godot::PackedByteArray input_bytes = PlayerInput::to_bytes(input);
-			if (driver) {
-				driver->pending_input = input_bytes;
-				driver->last_generated_tick = expected_tick;
-			}
-			return input_bytes;
+	const int car_index = find_car_index_for_player(static_cast<int32_t>(player_id));
+	if (car_index >= 0 && car_index < num_cars) {
+		PlayerInput input = native_cpu_generate_input_for_car(cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed);
+		godot::PackedByteArray input_bytes = PlayerInput::to_bytes(input);
+		if (driver) {
+			driver->pending_input = input_bytes;
+			driver->last_generated_tick = expected_tick;
 		}
+		return input_bytes;
 	}
 	return PlayerInput::to_bytes(PlayerInput::from_neutral());
 }
@@ -6136,41 +6501,6 @@ void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flag
 	configure_native_cpu_drivers();
 }
 
-godot::PackedByteArray GameSim::build_cpu_observation(const PhysicsCar& car) const
-{
-	godot::Ref<godot::StreamPeerBuffer> buffer;
-	buffer.instantiate();
-	buffer->seek(0);
-	auto write_vec3 = [&](const SimVec3& v) {
-		buffer->put_float(v.x);
-		buffer->put_float(v.y);
-		buffer->put_float(v.z);
-	};
-	write_vec3(car.soa->road_sample[car.soa_index].spatial_t);
-	buffer->put_float(car.soa->road_sample[car.soa_index].road_t.x);
-	buffer->put_float(car.soa->road_sample[car.soa_index].road_t.y);
-	write_vec3(LOAD_INDEXED_VEC3(*car.soa, position_current, car.soa_index));
-	write_vec3(LOAD_INDEXED_VEC3(*car.soa, velocity, car.soa_index));
-	write_vec3(LOAD_INDEXED_VEC3(*car.soa, velocity_angular, car.soa_index));
-	const SimBasis basis = MXT_LOAD_TRANSFORM(*car.soa, basis_physical, car.soa_index).basis;
-	for (int col = 0; col < 3; ++col) {
-		write_vec3(basis.get_column(col));
-	}
-	write_vec3(MXT_LOAD_TRANSFORM(*car.soa, basis_physical, car.soa_index).origin);
-	for (int col = 0; col < 3; ++col) {
-		write_vec3(car.soa->road_sample[car.soa_index].closest_surface.basis.get_column(col));
-	}
-	buffer->put_float(car.soa->base_speed[car.soa_index]);
-	buffer->put_float(car.soa->energy[car.soa_index]);
-	buffer->put_float(car.soa->checkpoint_fraction[car.soa_index]);
-	buffer->put_u16(car.soa->current_checkpoint[car.soa_index]);
-	buffer->put_u32(car.soa->terrain_state[car.soa_index]);
-	buffer->put_u32(car.soa->machine_state[car.soa_index]);
-	buffer->put_u8(car.soa->restore_state[car.soa_index]);
-	buffer->put_u32(car.soa->tilt_state[car.soa_index * 4 + 1]);
-	return buffer->get_data_array();
-}
-
 void GameSim::reset_super_sparks()
 {
 	if (!super_spark_state || !super_sparks) {
@@ -6324,6 +6654,48 @@ void GameSim::update_super_sparks()
 		return;
 
 	const float collect_radius_sq = SUPER_SPARK_COLLECT_RADIUS * SUPER_SPARK_COLLECT_RADIUS;
+	const bool use_checkpoint_masks =
+		current_track &&
+		current_track->num_checkpoints > 0 &&
+		num_cars > 0 &&
+		num_cars <= 128;
+	if (use_checkpoint_masks) {
+		const int checkpoint_count = current_track->num_checkpoints;
+		if (static_cast<int>(super_spark_candidate_mask_lo.size()) < checkpoint_count) {
+			super_spark_candidate_mask_lo.resize(checkpoint_count);
+			super_spark_candidate_mask_hi.resize(checkpoint_count);
+		}
+		std::fill(super_spark_candidate_mask_lo.begin(), super_spark_candidate_mask_lo.begin() + checkpoint_count, 0ull);
+		std::fill(super_spark_candidate_mask_hi.begin(), super_spark_candidate_mask_hi.begin() + checkpoint_count, 0ull);
+		auto add_car_candidate = [&](int checkpoint, int car_index) {
+			if (checkpoint < 0 || checkpoint >= checkpoint_count) {
+				return;
+			}
+			if (car_index < 64) {
+				super_spark_candidate_mask_lo[checkpoint] |= 1ull << car_index;
+			} else {
+				super_spark_candidate_mask_hi[checkpoint] |= 1ull << (car_index - 64);
+			}
+		};
+		for (int car_idx = 0; car_idx < num_cars; ++car_idx) {
+			PhysicsCarSoA& car_soa = *cars[car_idx].soa;
+			const int lane = cars[car_idx].soa_index;
+			if (car_soa.s_boost_active[lane] || (car_soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0) {
+				continue;
+			}
+			const int car_checkpoint = car_soa.current_checkpoint[lane];
+			if (car_checkpoint < 0 || car_checkpoint >= checkpoint_count) {
+				continue;
+			}
+			add_car_candidate(car_checkpoint, car_idx);
+			const CollisionCheckpoint& cp = current_track->checkpoints[car_checkpoint];
+			for (int n = 0; n < cp.num_neighboring_checkpoints; ++n) {
+				if (cp.neighboring_checkpoints) {
+					add_car_candidate(cp.neighboring_checkpoints[n], car_idx);
+				}
+			}
+		}
+	}
 	auto checkpoint_matches = [&](uint16_t spark_checkpoint, uint16_t car_checkpoint) -> bool {
 		if (!current_track || car_checkpoint >= static_cast<uint16_t>(current_track->num_checkpoints))
 			return false;
@@ -6356,13 +6728,13 @@ void GameSim::update_super_sparks()
 			}
 		}
 
-		for (int car_idx = 0; car_idx < num_cars; ++car_idx) {
+		auto try_collect_car = [&](int car_idx) -> bool {
 			PhysicsCarSoA& car_soa = *cars[car_idx].soa;
 			const int lane = cars[car_idx].soa_index;
 			if (car_soa.s_boost_active[lane] || (car_soa.machine_state[lane] & MACHINESTATE::ZEROHP) != 0)
-				continue;
-			if (!checkpoint_matches(spark.checkpoint, car_soa.current_checkpoint[lane]))
-				continue;
+				return false;
+			if (!use_checkpoint_masks && !checkpoint_matches(spark.checkpoint, car_soa.current_checkpoint[lane]))
+				return false;
 			SimVec3 closest = get_closest_point_to_segment(
 				spark.position, LOAD_INDEXED_VEC3(car_soa, position_old, lane), LOAD_INDEXED_VEC3(car_soa, position_current, lane));
 			float dist_sq = spark.position.distance_squared_to(closest);
@@ -6373,7 +6745,33 @@ void GameSim::update_super_sparks()
 				car_soa.base_speed[lane] += 0.05f;
 				spark.active = 0;
 				spark.collectable = 0;
-				break;
+				return true;
+			}
+			return false;
+		};
+		if (use_checkpoint_masks && spark.checkpoint < static_cast<uint16_t>(current_track->num_checkpoints)) {
+			auto collect_candidate_mask = [&](uint64_t bits, int base_car_idx) {
+				while (bits != 0 && spark.active) {
+					uint64_t scan = bits;
+					int bit_index = 0;
+					while ((scan & 1ull) == 0ull) {
+						scan >>= 1;
+						++bit_index;
+					}
+					const int car_idx = base_car_idx + bit_index;
+					bits &= bits - 1ull;
+					if (car_idx < num_cars) {
+						try_collect_car(car_idx);
+					}
+				}
+			};
+			collect_candidate_mask(super_spark_candidate_mask_lo[spark.checkpoint], 0);
+			collect_candidate_mask(super_spark_candidate_mask_hi[spark.checkpoint], 64);
+		} else {
+			for (int car_idx = 0; car_idx < num_cars; ++car_idx) {
+				if (try_collect_car(car_idx)) {
+					break;
+				}
 			}
 		}
 	}
@@ -6606,12 +7004,16 @@ void GameSim::save_state()
 	int size = gamestate_data.get_size();
 	state_buffer[index].size = size;
 	state_buffer[index].tick = tick;
+	uint64_t profile_step = phase_profile_enabled ? render_profile_now_us() : 0;
 	save_bumper_states_to_saved_state(state_buffer[index]);
+	profile_mark(phase_profile_enabled ? &phase_profile_save_bumper_us : nullptr, profile_step);
 	update_saved_voice_transforms(state_buffer[index]);
+	profile_mark(phase_profile_enabled ? &phase_profile_save_voice_us : nullptr, profile_step);
 	if (state_buffer[index].data)
 	{
 		memcpy(state_buffer[index].data, gamestate_data.heap_start, size);
 	}
+	profile_mark(phase_profile_enabled ? &phase_profile_save_memcpy_us : nullptr, profile_step);
 }
 
 void GameSim::load_state(int target_tick)
@@ -6650,6 +7052,7 @@ void GameSim::load_state(int target_tick)
 	tick = target_tick + 1;
 	fix_pointers();
 	restore_bumper_states_from_saved_state(state_buffer[index]);
+	rebuild_road_samples_after_state_load();
 }
 
 void GameSim::finish_render_rollback_correction_capture()
@@ -6687,6 +7090,7 @@ void GameSim::finish_render_rollback_correction_capture()
 
 namespace {
 constexpr uint32_t MXT_NET_STATE_MAGIC = 0x5354584du; // "MXTS", little-endian.
+constexpr uint16_t MXT_NET_STATE_FLAG_EXACT_SIM_FLOATS = 1u << 0;
 
 static uint16_t mxt_float_to_half_bits(float value) {
 	uint32_t bits = 0;
@@ -6967,10 +7371,8 @@ struct NetStateReader {
 	X(uint32_t, frames_since_start) \
 	X(uint8_t, frames_since_start_2) \
 	X(uint8_t, air_time) \
-	X(uint32_t, strafe_effect) \
 	X(uint8_t, frames_since_death) \
 	X(uint32_t, state_2) \
-	X(uint16_t, g_anim_timer) \
 	X(uint32_t, level_start_time) \
 	X(uint16_t, some_breakdown_int) \
 	X(uint8_t, breakdown_frame_counter) \
@@ -6985,7 +7387,6 @@ struct NetStateReader {
 	X(uint8_t, grip_frames_from_accel_press) \
 	X(uint8_t, side_attack_delay) \
 	X(uint16_t, attack_cooldown_frames) \
-	X(uint8_t, machine_collision_frame_counter) \
 	X(uint8_t, car_hit_invincibility) \
 	X(uint8_t, boost_delay_frame_counter) \
 	X(int8_t, drift_sign) \
@@ -7013,14 +7414,8 @@ struct NetStateReader {
 	X(float, last_ground_distance) \
 	X(float, previous_lap_distance) \
 	X(float, checkpoint_fraction) \
-	X(float, input_strafe_32) \
-	X(float, input_strafe_1_6) \
 	X(float, input_accel) \
-	X(float, damage_from_last_hit) \
-	X(float, turn_reaction_input) \
-	X(float, turning_related) \
-	X(float, drift_ramp) \
-	X(float, side_attack_indicator)
+	X(float, drift_ramp)
 
 #define MXT_NET_CAR_VEC3_FIELDS(X) \
 	X(velocity)
@@ -7045,9 +7440,10 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	NetworkStateSizeStats stats;
 	stats.car_count = num_cars;
 	stats.bumper_count = bumper_count;
+	constexpr uint16_t net_state_flags = MXT_NET_STATE_FLAG_EXACT_SIM_FLOATS;
 	int section_start = writer.size();
 	writer.write_pod(MXT_NET_STATE_MAGIC);
-	writer.write_pod(static_cast<uint16_t>(0));
+	writer.write_pod(net_state_flags);
 	writer.write_pod(static_cast<int32_t>(target_tick));
 	writer.write_pod(static_cast<int32_t>(num_cars));
 	writer.write_pod(static_cast<int32_t>(bumper_count));
@@ -7092,11 +7488,11 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			writer.write_pod(i);
 			writer.write_pod(spark_flags);
 			writer.write_pod(spark.checkpoint);
-			writer.write_vec3_half(spark.final_position);
+			writer.write_vec3(spark.final_position);
 			if (!spark.collectable) {
 				writer.write_pod(spark.animation_frame);
-				writer.write_vec3_half(spark.start_position);
-				writer.write_vec3_half(spark.plane_normal);
+				writer.write_vec3(spark.start_position);
+				writer.write_vec3(spark.plane_normal);
 			}
 		}
 	} else {
@@ -7117,7 +7513,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
 		if constexpr (std::is_same_v<type, float>) { \
-			writer.write_float16(soa.name[lane]); \
+			writer.write_pod(soa.name[lane]); \
 		} else { \
 			const type wire_value = static_cast<type>(soa.name[lane]); \
 			writer.write_pod(wire_value); \
@@ -7133,7 +7529,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
 		if constexpr (std::is_same_v<type, float>) { \
-			writer.write_float16(soa.name[lane]); \
+			writer.write_pod(soa.name[lane]); \
 		} else { \
 			const type wire_value = static_cast<type>(soa.name[lane]); \
 			writer.write_pod(wire_value); \
@@ -7162,14 +7558,13 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-		const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
-		writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_current, lane)));
-		writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_old, lane)));
+		writer.write_vec3(LOAD_INDEXED_VEC3(soa, position_current, lane));
+		writer.write_vec3(LOAD_INDEXED_VEC3(soa, position_old, lane));
 	}
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-#define WRITE_NET_VEC3_HALF(name) writer.write_vec3_half(LOAD_INDEXED_VEC3(soa, name, lane));
+#define WRITE_NET_VEC3_HALF(name) writer.write_vec3(LOAD_INDEXED_VEC3(soa, name, lane));
 		MXT_NET_CAR_VEC3_HALF_FIELDS(WRITE_NET_VEC3_HALF)
 #undef WRITE_NET_VEC3_HALF
 	}
@@ -7195,16 +7590,15 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
-			const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
-			writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_current, lane)));
-			writer.write_vec3_half(surface.xform_inv(LOAD_INDEXED_VEC3(soa, position_old, lane)));
+			writer.write_vec3(LOAD_INDEXED_VEC3(soa, position_current, lane));
+			writer.write_vec3(LOAD_INDEXED_VEC3(soa, position_old, lane));
 		}
 	}
 	if (bumper_cars) {
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
-#define WRITE_NET_BUMPER_VEC3_HALF(name) writer.write_vec3_half(LOAD_INDEXED_VEC3(soa, name, lane));
+#define WRITE_NET_BUMPER_VEC3_HALF(name) writer.write_vec3(LOAD_INDEXED_VEC3(soa, name, lane));
 			MXT_NET_CAR_VEC3_HALF_FIELDS(WRITE_NET_BUMPER_VEC3_HALF)
 #undef WRITE_NET_BUMPER_VEC3_HALF
 		}
@@ -7268,7 +7662,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		writer.write_quat_i16(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
+		writer.write_basis(MXT_LOAD_TRANSFORM(soa, name, lane).basis); \
 	}
 	WRITE_NET_BASIS(basis_physical)
 	WRITE_NET_BASIS(basis_physical_other)
@@ -7280,7 +7674,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		writer.write_quat_i16(MXT_LOAD_TRANSFORM(soa, name, lane).basis.get_rotation_quaternion()); \
+		writer.write_basis(MXT_LOAD_TRANSFORM(soa, name, lane).basis); \
 	}
 	if (bumper_cars) { \
 		WRITE_NET_BUMPER_BASIS(basis_physical) \
@@ -7293,9 +7687,6 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-		if (soa.collision_old_valid[lane]) {
-			++stats.car_collision_old_count;
-		}
 		if (soa.restore_state[lane] != 0) {
 			++stats.car_restore_count;
 			writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_start_transform, lane));
@@ -7308,9 +7699,6 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
-			if (soa.collision_old_valid[lane]) {
-				++stats.bumper_collision_old_count;
-			}
 			if (soa.restore_state[lane] != 0) {
 				++stats.bumper_restore_count;
 				writer.write_transform(MXT_LOAD_TRANSFORM(soa, restore_start_transform, lane));
@@ -7327,7 +7715,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			PhysicsCarSoA& soa = *cars[i].soa; \
 			const int p = cars[i].soa_index * 4 + point; \
 			if constexpr (std::is_same_v<type, float>) { \
-				writer.write_float16(soa.tilt_##name[p]); \
+				writer.write_pod(soa.tilt_##name[p]); \
 			} else { \
 				const type wire_value = static_cast<type>(soa.tilt_##name[p]); \
 				writer.write_pod(wire_value); \
@@ -7345,7 +7733,7 @@ godot::PackedByteArray GameSim::serialize_network_state(int target_tick) const {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 			const int p = bumper_cars[i].soa_index * 4 + point; \
 			if constexpr (std::is_same_v<type, float>) { \
-				writer.write_float16(soa.tilt_##name[p]); \
+				writer.write_pod(soa.tilt_##name[p]); \
 			} else { \
 				const type wire_value = static_cast<type>(soa.tilt_##name[p]); \
 				writer.write_pod(wire_value); \
@@ -7479,6 +7867,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		!reader.read_pod(bumper_next_sequence)) {
 		return false;
 	}
+	const bool exact_sim_floats = (flags & MXT_NET_STATE_FLAG_EXACT_SIM_FLOATS) != 0;
 	(void)flags;
 	(void)snapshot_tick;
 	if (snapshot_cars != num_cars ||
@@ -7533,7 +7922,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		SuperSpark& spark = super_spark_state->sparks[spark_index];
 		if (!reader.read_pod(spark_flags) ||
 			!reader.read_pod(spark.checkpoint) ||
-			!reader.read_vec3_half(spark.final_position)) {
+			!(exact_sim_floats ? reader.read_vec3(spark.final_position) : reader.read_vec3_half(spark.final_position))) {
 			return false;
 		}
 		spark.active = 1;
@@ -7546,8 +7935,8 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			spark.prev_position = spark.final_position;
 		} else {
 			if (!reader.read_pod(spark.animation_frame) ||
-				!reader.read_vec3_half(spark.start_position) ||
-				!reader.read_vec3_half(spark.plane_normal)) {
+				!(exact_sim_floats ? reader.read_vec3(spark.start_position) : reader.read_vec3_half(spark.start_position)) ||
+				!(exact_sim_floats ? reader.read_vec3(spark.plane_normal) : reader.read_vec3_half(spark.plane_normal))) {
 				return false;
 			}
 			spark.position = mxt_super_spark_position_at_frame(
@@ -7568,7 +7957,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		const int lane = cars[i].soa_index; \
 		if constexpr (std::is_same_v<type, float>) { \
 			float wire_value = 0.0f; \
-			if (!reader.read_float16(wire_value)) return false; \
+			if (!(exact_sim_floats ? reader.read_pod(wire_value) : reader.read_float16(wire_value))) return false; \
 			soa.name[lane] = wire_value; \
 		} else { \
 			type wire_value; \
@@ -7585,7 +7974,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		const int lane = bumper_cars[i].soa_index; \
 		if constexpr (std::is_same_v<type, float>) { \
 			float wire_value = 0.0f; \
-			if (!reader.read_float16(wire_value)) return false; \
+			if (!(exact_sim_floats ? reader.read_pod(wire_value) : reader.read_float16(wire_value))) return false; \
 			soa.name[lane] = wire_value; \
 		} else { \
 			type wire_value; \
@@ -7667,16 +8056,17 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
 		SimVec3 local_current;
 		SimVec3 local_old;
-		if (!reader.read_vec3_half(local_current) || !reader.read_vec3_half(local_old)) {
+		if (!(exact_sim_floats ? reader.read_vec3(local_current) : reader.read_vec3_half(local_current)) ||
+				!(exact_sim_floats ? reader.read_vec3(local_old) : reader.read_vec3_half(local_old))) {
 			return false;
 		}
-		STORE_INDEXED_VEC3(soa, position_current, lane, surface.xform(local_current));
-		STORE_INDEXED_VEC3(soa, position_old, lane, surface.xform(local_old));
+		STORE_INDEXED_VEC3(soa, position_current, lane, exact_sim_floats ? local_current : surface.xform(local_current));
+		STORE_INDEXED_VEC3(soa, position_old, lane, exact_sim_floats ? local_old : surface.xform(local_old));
 	}
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-#define READ_NET_VEC3_HALF(name) do { SimVec3 v; if (!reader.read_vec3_half(v)) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
+#define READ_NET_VEC3_HALF(name) do { SimVec3 v; if (!(exact_sim_floats ? reader.read_vec3(v) : reader.read_vec3_half(v))) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
 		MXT_NET_CAR_VEC3_HALF_FIELDS(READ_NET_VEC3_HALF)
 #undef READ_NET_VEC3_HALF
 	}
@@ -7703,18 +8093,19 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			const SimTransform surface = mxt_net_checkpoint_surface_or_identity(current_track, soa.current_checkpoint[lane], soa.checkpoint_fraction[lane]);
 			SimVec3 local_current;
 			SimVec3 local_old;
-			if (!reader.read_vec3_half(local_current) || !reader.read_vec3_half(local_old)) {
+			if (!(exact_sim_floats ? reader.read_vec3(local_current) : reader.read_vec3_half(local_current)) ||
+					!(exact_sim_floats ? reader.read_vec3(local_old) : reader.read_vec3_half(local_old))) {
 				return false;
 			}
-			STORE_INDEXED_VEC3(soa, position_current, lane, surface.xform(local_current));
-			STORE_INDEXED_VEC3(soa, position_old, lane, surface.xform(local_old));
+			STORE_INDEXED_VEC3(soa, position_current, lane, exact_sim_floats ? local_current : surface.xform(local_current));
+			STORE_INDEXED_VEC3(soa, position_old, lane, exact_sim_floats ? local_old : surface.xform(local_old));
 		}
 	}
 	if (bumper_cars) {
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
-#define READ_NET_BUMPER_VEC3_HALF(name) do { SimVec3 v; if (!reader.read_vec3_half(v)) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
+#define READ_NET_BUMPER_VEC3_HALF(name) do { SimVec3 v; if (!(exact_sim_floats ? reader.read_vec3(v) : reader.read_vec3_half(v))) return false; STORE_INDEXED_VEC3(soa, name, lane, v); } while (0);
 			MXT_NET_CAR_VEC3_HALF_FIELDS(READ_NET_BUMPER_VEC3_HALF)
 #undef READ_NET_BUMPER_VEC3_HALF
 		}
@@ -7723,14 +8114,12 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
-		STORE_INDEXED_VEC3(soa, position_old_2, lane, LOAD_INDEXED_VEC3(soa, position_current, lane));
 		STORE_INDEXED_VEC3(soa, position_old_dupe, lane, LOAD_INDEXED_VEC3(soa, position_old, lane));
 	}
 	if (bumper_cars) {
 		for (int i = 0; i < bumper_count; ++i) {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
-			STORE_INDEXED_VEC3(soa, position_old_2, lane, LOAD_INDEXED_VEC3(soa, position_current, lane));
 			STORE_INDEXED_VEC3(soa, position_old_dupe, lane, LOAD_INDEXED_VEC3(soa, position_old, lane));
 		}
 	}
@@ -7787,10 +8176,14 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	for (int i = 0; i < num_cars; ++i) { \
 		PhysicsCarSoA& soa = *cars[i].soa; \
 		const int lane = cars[i].soa_index; \
-		SimQuat q; \
-		if (!reader.read_quat_i16(q)) return false; \
 		SimTransform t = MXT_LOAD_TRANSFORM(soa, name, lane); \
-		t.basis = SimBasis(q); \
+		if (exact_sim_floats) { \
+			if (!reader.read_basis(t.basis)) return false; \
+		} else { \
+			SimQuat q; \
+			if (!reader.read_quat_i16(q)) return false; \
+			t.basis = SimBasis(q); \
+		} \
 		MXT_STORE_TRANSFORM(soa, name, lane, t); \
 		soa.name##_ox[lane] = 0.0f; \
 		soa.name##_oy[lane] = 0.0f; \
@@ -7804,10 +8197,14 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	for (int i = 0; i < bumper_count; ++i) { \
 		PhysicsCarSoA& soa = *bumper_cars[i].soa; \
 		const int lane = bumper_cars[i].soa_index; \
-		SimQuat q; \
-		if (!reader.read_quat_i16(q)) return false; \
 		SimTransform t = MXT_LOAD_TRANSFORM(soa, name, lane); \
-		t.basis = SimBasis(q); \
+		if (exact_sim_floats) { \
+			if (!reader.read_basis(t.basis)) return false; \
+		} else { \
+			SimQuat q; \
+			if (!reader.read_quat_i16(q)) return false; \
+			t.basis = SimBasis(q); \
+		} \
 		MXT_STORE_TRANSFORM(soa, name, lane, t); \
 		soa.name##_ox[lane] = 0.0f; \
 		soa.name##_oy[lane] = 0.0f; \
@@ -7818,21 +8215,6 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 		READ_NET_BUMPER_BASIS(basis_physical_other) \
 	}
 #undef READ_NET_BUMPER_BASIS
-
-	TrackQueryScratch collision_old_scratch;
-	for (int i = 0; i < num_cars; ++i) {
-		collision_old_scratch.reset_mesh_query();
-		collision_old_scratch.debug_mesh_current_global_car_index = i;
-		cars[i].sample_old_corner_collision_surface(collision_old_scratch);
-	}
-	if (bumper_cars) {
-		for (int i = 0; i < bumper_count; ++i) {
-			collision_old_scratch.reset_mesh_query();
-			collision_old_scratch.debug_mesh_current_global_car_index = num_cars + i;
-			bumper_cars[i].sample_old_corner_collision_surface(collision_old_scratch);
-		}
-	}
-	collision_old_scratch.debug_mesh_current_global_car_index = -1;
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& soa = *cars[i].soa;
@@ -7880,7 +8262,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			const int p = cars[i].soa_index * 4 + point; \
 			if constexpr (std::is_same_v<type, float>) { \
 				float wire_value = 0.0f; \
-				if (!reader.read_float16(wire_value)) return false; \
+				if (!(exact_sim_floats ? reader.read_pod(wire_value) : reader.read_float16(wire_value))) return false; \
 				soa.tilt_##name[p] = wire_value; \
 			} else { \
 				type wire_value; \
@@ -7899,7 +8281,7 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 			const int p = bumper_cars[i].soa_index * 4 + point; \
 			if constexpr (std::is_same_v<type, float>) { \
 				float wire_value = 0.0f; \
-				if (!reader.read_float16(wire_value)) return false; \
+				if (!(exact_sim_floats ? reader.read_pod(wire_value) : reader.read_float16(wire_value))) return false; \
 				soa.tilt_##name[p] = wire_value; \
 			} else { \
 				type wire_value; \
@@ -8056,6 +8438,46 @@ bool GameSim::deserialize_network_state(int target_tick, const godot::PackedByte
 	return true;
 }
 
+void GameSim::rebuild_road_samples_after_state_load() {
+	const int rebuild_count = num_cars + (bumper_cars ? bumper_count : 0);
+	for (int i = 0; i < rebuild_count; ++i) {
+		PhysicsCar& car = i < num_cars ? cars[i] : bumper_cars[i - num_cars];
+		PhysicsCarSoA& soa = *car.soa;
+		const int lane = car.soa_index;
+		const SimTransform basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+		const SimVec3 position = LOAD_INDEXED_VEC3(soa, position_current, lane);
+		{
+			SimTransform visual = basis;
+			visual.origin = position;
+			MXT_STORE_TRANSFORM(soa, transform_visual, lane, visual);
+		}
+		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);
+		if (std::abs(soa.stat_weight[lane]) > 0.0001f) {
+			soa.speed_kmh[lane] = 216.0f * (velocity.length() / soa.stat_weight[lane]);
+		} else {
+			soa.speed_kmh[lane] = 0.0f;
+		}
+		STORE_INDEXED_VEC3(soa, position_bottom, lane, basis.basis.xform(SimVec3(0.0f, -0.1f, 0.0f)) + position);
+		STORE_INDEXED_VEC3(soa, track_surface_normal_prev, lane, LOAD_INDEXED_VEC3(soa, track_surface_normal, lane));
+		RaceTrack* track = soa.current_track[lane] ? soa.current_track[lane] : current_track;
+		RoadData& road = soa.road_sample[lane];
+		road = RoadData();
+		road.cp_idx = static_cast<int16_t>(soa.current_checkpoint[lane]);
+		if (track &&
+			soa.current_checkpoint[lane] >= 0 &&
+			soa.current_checkpoint[lane] < track->num_checkpoints) {
+			track->get_road_surface(soa.current_checkpoint[lane], position, road.road_t, road.spatial_t, road.closest_surface);
+			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, road.closest_surface.origin);
+			road.closest_surface.basis[1] = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+		} else {
+			road.closest_surface = basis;
+			road.closest_surface.origin = position;
+			STORE_INDEXED_VEC3(soa, track_surface_pos, lane, position);
+			road.closest_surface.basis[1] = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
+		}
+	}
+}
+
 void GameSim::rebuild_static_state_after_network_load() {
 	const int rebuild_count = num_cars + (bumper_cars ? bumper_count : 0);
 	for (int i = 0; i < rebuild_count; ++i) {
@@ -8072,9 +8494,13 @@ void GameSim::rebuild_static_state_after_network_load() {
 
 		const SimTransform basis = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
 		const SimVec3 position = LOAD_INDEXED_VEC3(soa, position_current, lane);
+		{
+			SimTransform visual = basis;
+			visual.origin = position;
+			MXT_STORE_TRANSFORM(soa, transform_visual, lane, visual);
+		}
 		STORE_INDEXED_VEC3(soa, position_collision_snapshot, lane, position);
 		STORE_INDEXED_VEC3(soa, position_bottom, lane, basis.basis.xform(SimVec3(0.0f, -0.1f, 0.0f)) + position);
-		STORE_INDEXED_VEC3(soa, position_behind, lane, basis.basis.xform(SimVec3(0.0f, 0.5f, 0.5f)) + position);
 		STORE_INDEXED_VEC3(soa, track_surface_normal_prev, lane, LOAD_INDEXED_VEC3(soa, track_surface_normal, lane));
 		STORE_INDEXED_VEC3(soa, velocity_local, lane, SimVec3());
 		STORE_INDEXED_VEC3(soa, velocity_local_flattened_and_rotated, lane, SimVec3());
@@ -8088,9 +8514,6 @@ void GameSim::rebuild_static_state_after_network_load() {
 		soa.input_strafe[lane] = 0.0f;
 		soa.input_steer_yaw[lane] = 0.0f;
 		soa.input_brake[lane] = 0.0f;
-		soa.input_yaw_dupe[lane] = 0.0f;
-		soa.terrain_state_2[lane] = 0;
-		soa.suspension_reset_flag[lane] = 0;
 
 		const SimVec3 velocity = LOAD_INDEXED_VEC3(soa, velocity, lane);
 		if (std::abs(soa.stat_weight[lane]) > 0.0001f) {
@@ -8192,9 +8615,6 @@ void GameSim::rebuild_static_state_after_network_load() {
 
 		for (int point = 0; point < 4; ++point) {
 			const int p = point_base + point;
-			soa.tilt_force_at_point[p] = 0.0f;
-			soa.tilt_force_spatial_len[p] = 0.0f;
-			STORE_INDEXED_VEC3(soa, tilt_target_dir, p, SimVec3());
 			STORE_INDEXED_VEC3(soa, tilt_force_spatial, p, SimVec3());
 			SimVec3 tilt_up = LOAD_INDEXED_VEC3(soa, track_surface_normal, lane);
 			if (tilt_up.length_squared() <= 0.0001f) {
@@ -8206,7 +8626,6 @@ void GameSim::rebuild_static_state_after_network_load() {
 			tilt_up.normalize();
 			STORE_INDEXED_VEC3(soa, tilt_up_vector, p, tilt_up);
 			STORE_INDEXED_VEC3(soa, tilt_up_vector_2, p, tilt_up);
-			STORE_INDEXED_VEC3(soa, wall_collision, p, SimVec3());
 		}
 	}
 }
@@ -8219,7 +8638,7 @@ godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
 }
 
 static constexpr uint32_t MXT_FULL_STATE_MAGIC = 0x4653544du;
-static constexpr uint32_t MXT_FULL_STATE_VERSION = 1u;
+static constexpr uint32_t MXT_FULL_STATE_VERSION = 4u;
 
 godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
 	if (!gamestate_data.heap_start || gamestate_data.get_size() <= 0) {
@@ -8240,7 +8659,7 @@ godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
 	const size_t bumper_size = static_cast<size_t>(BUMPER_POOL_SIZE) *
 		(sizeof(uint8_t) * 2u + sizeof(uint32_t) + sizeof(float));
 	const size_t voice_size = static_cast<size_t>(voice_count) *
-		(sizeof(int32_t) + sizeof(float) * 12u);
+		(sizeof(int32_t) + sizeof(float) * 3u);
 	const size_t total_size = header_size + bumper_size + voice_size + heap_size;
 	godot::PackedByteArray out;
 	out.resize(static_cast<int>(total_size));
@@ -8270,12 +8689,8 @@ godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
 	for (uint32_t i = 0; i < voice_count; ++i) {
 		const SavedVoiceTransform& voice = state.voice_transforms[i];
 		write_bytes(&voice.player_id, sizeof(voice.player_id));
-		const SimTransform& t = voice.transform;
-		const float values[12] = {
-			t.basis.c0.x, t.basis.c0.y, t.basis.c0.z,
-			t.basis.c1.x, t.basis.c1.y, t.basis.c1.z,
-			t.basis.c2.x, t.basis.c2.y, t.basis.c2.z,
-			t.origin.x, t.origin.y, t.origin.z,
+		const float values[3] = {
+			voice.origin.x, voice.origin.y, voice.origin.z,
 		};
 		write_bytes(values, sizeof(values));
 	}
@@ -8335,15 +8750,12 @@ bool GameSim::load_full_state_data(int target_tick, godot::PackedByteArray data)
 	state.voice_transform_count = static_cast<int>(voice_count);
 	for (uint32_t i = 0; i < voice_count; ++i) {
 		SavedVoiceTransform& voice = state.voice_transforms[i];
-		float values[12] = {};
+		float values[3] = {};
 		if (!read_bytes(&voice.player_id, sizeof(voice.player_id)) ||
 				!read_bytes(values, sizeof(values))) {
 			return false;
 		}
-		voice.transform.basis.c0 = SimVec3(values[0], values[1], values[2]);
-		voice.transform.basis.c1 = SimVec3(values[3], values[4], values[5]);
-		voice.transform.basis.c2 = SimVec3(values[6], values[7], values[8]);
-		voice.transform.origin = SimVec3(values[9], values[10], values[11]);
+		voice.origin = SimVec3(values[0], values[1], values[2]);
 	}
 	if (ptr + heap_size > end) {
 		return false;
@@ -8356,6 +8768,7 @@ bool GameSim::load_full_state_data(int target_tick, godot::PackedByteArray data)
 	tick = target_tick;
 	fix_pointers();
 	restore_bumper_states_from_saved_state(state);
+	rebuild_road_samples_after_state_load();
 	return true;
 }
 
@@ -8381,8 +8794,6 @@ godot::Dictionary GameSim::get_network_state_size_stats() const {
 	out["car_wall"] = stats.car_wall;
 	out["bumper_wall"] = stats.bumper_wall;
 	out["triggers"] = stats.triggers;
-	out["car_collision_old_count"] = stats.car_collision_old_count;
-	out["bumper_collision_old_count"] = stats.bumper_collision_old_count;
 	out["car_restore_count"] = stats.car_restore_count;
 	out["bumper_restore_count"] = stats.bumper_restore_count;
 	out["active_bumper_count"] = stats.active_bumper_count;
@@ -8502,61 +8913,4 @@ void GameSim::fix_pointers() {
 		}
 	}
 
-	if (current_track && current_track->trigger_colliders) {
-		for (int i = 0; i < current_track->num_trigger_colliders; ++i) {
-			TriggerCollider* trig = current_track->trigger_colliders[i];
-
-			TRIGGER_TYPE::TYPE type = trig->type;
-			SimTransform transform = trig->transform;
-			SimVec3 half_extents = trig->half_extents;
-			SimTransform inv_transform = trig->inv_transform;
-			int seg_idx = trig->segment_index;
-			int cp_idx = trig->checkpoint_index;
-			bool exploded = false;
-			float dashplate_heat = 0.0f;
-			uint32_t dashplate_last_tick = 0;
-			bool dashplate_has_last_activation = false;
-			if (type == TRIGGER_TYPE::MINE) {
-				exploded = static_cast<Mine*>(trig)->exploded;
-			}
-			if (type == TRIGGER_TYPE::DASHPLATE) {
-				Dashplate* dash = static_cast<Dashplate*>(trig);
-				dashplate_heat = dash->heat;
-				dashplate_last_tick = dash->last_activation_tick;
-				dashplate_has_last_activation = dash->has_last_activation;
-			}
-
-			switch (type) {
-			case TRIGGER_TYPE::DASHPLATE:
-				new (trig) Dashplate();
-				break;
-			case TRIGGER_TYPE::JUMPPLATE:
-				new (trig) Jumpplate();
-				break;
-			case TRIGGER_TYPE::MINE:
-				new (trig) Mine();
-				break;
-			default:
-				new (trig) TriggerCollider();
-				break;
-			}
-
-			trig->transform = transform;
-			trig->half_extents = half_extents;
-			trig->inv_transform = inv_transform;
-			trig->segment_index = seg_idx;
-			trig->checkpoint_index = cp_idx;
-			if (type == TRIGGER_TYPE::MINE) {
-				static_cast<Mine*>(trig)->exploded = exploded;
-			}
-			if (type == TRIGGER_TYPE::DASHPLATE) {
-				Dashplate* dash = static_cast<Dashplate*>(trig);
-				dash->heat = dashplate_heat;
-				dash->last_activation_tick = dashplate_last_tick;
-				dash->has_last_activation = dashplate_has_last_activation;
-			}
-
-			current_track->trigger_colliders[i] = trig;
-		}
-	}
 }

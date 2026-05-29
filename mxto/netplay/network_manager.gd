@@ -140,7 +140,6 @@ const CPU_ID_MAX := 5000
 var cpu_player_ids: Array = []
 var race_cpu_player_ids: Array = []
 var cpu_player_settings := {}
-var cpu_driver_manager: CpuDriverManager
 
 var clients_server_tick := 0
 var clients_target_tick := 0
@@ -611,11 +610,6 @@ func _init_logger() -> void:
 	add_child(_log_timer)
 	_log_timer.start()
 
-func set_cpu_driver_manager(manager: CpuDriverManager) -> void:
-	cpu_driver_manager = manager
-	if cpu_driver_manager != null:
-		cpu_driver_manager.configure_drivers(cpu_player_ids)
-
 func _allocate_cpu_id() -> int:
 	for id in range(CPU_ID_MIN, CPU_ID_MAX + 1):
 		if cpu_player_ids.has(id):
@@ -653,8 +647,6 @@ func _ensure_cpu_ids_do_not_overlap_humans(reason: String) -> bool:
 		if cpu_player_ids.has(id):
 			_remap_cpu_id(id, reason)
 			changed = true
-	if changed:
-		_sync_cpu_manager()
 	return changed
 
 func _cpu_human_overlaps() -> Array:
@@ -750,7 +742,6 @@ func set_cpu_driver_count(count: int) -> void:
 		_add_cpu_driver_internal()
 	while cpu_player_ids.size() > count:
 		_remove_cpu_driver_internal()
-	_sync_cpu_manager()
 	_broadcast_cpu_roster()
 
 func set_singleplayer_cpu_count(count: int) -> void:
@@ -811,7 +802,6 @@ func _apply_cpu_roster(ids: Array, settings_array: Array) -> void:
 			settings = settings_array[i]
 		cpu_player_settings[id] = settings
 		player_settings[id] = settings
-	_sync_cpu_manager()
 
 func _broadcast_cpu_roster() -> void:
 	if !is_server:
@@ -827,11 +817,6 @@ func _send_cpu_roster_to_peer(id: int) -> void:
 	if !is_server:
 		return
 	sync_cpu_roster.rpc_id(id, cpu_player_ids, _collect_cpu_settings_array())
-
-func _sync_cpu_manager() -> void:
-	if cpu_driver_manager != null and (is_server or !has_network_peer()):
-		var roster := _get_cpu_roster()
-		cpu_driver_manager.configure_drivers(roster)
 
 func get_cpu_roster() -> Array:
 	return _get_cpu_roster()
@@ -1179,7 +1164,6 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	netcode_session.reset()
 	server_netcode_session.reset()
 	server_netcode_session.clear_peer_state()
-	_sync_cpu_manager()
 
 func _calc_state_offsets() -> void:
 	if not is_server:
@@ -1464,7 +1448,6 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	if err != OK:
 		push_error("Failed to host: %s" % err)
 		return err
-	push_error("Host!")
 	multiplayer.multiplayer_peer = peer
 	is_server = true
 	network_active = true
@@ -1513,7 +1496,6 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	if !multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	_calc_state_offsets()
-	_sync_cpu_manager()
 	_broadcast_cpu_roster()
 	if log_file == null:
 		_init_logger()
@@ -1526,7 +1508,6 @@ func join(ip: String, port: int = 27016) -> int:
 	if err != OK:
 		push_error("Failed to join server: %s" % err)
 		return err
-	push_error("Client!")
 	multiplayer.multiplayer_peer = peer
 	is_server = false
 	network_active = true
@@ -1761,7 +1742,6 @@ func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> 
 		race_cpu_player_ids = cpu_player_ids.duplicate(true)
 	if race_options.has("race_spectator_ids"):
 		spectator_ids = _id_array_from_value(race_options.get("race_spectator_ids", []))
-	_sync_cpu_manager()
 	if is_server:
 		_calc_state_offsets()
 	emit_signal("race_started", track_index, settings)
@@ -2460,8 +2440,6 @@ func collect_server_inputs() -> Dictionary:
 	if server_tick > target_tick:
 		return {}
 	_fill_delayed_missing_inputs_for_tick(server_tick)
-	if !server_netcode_session.server_has_full_input_frame(server_tick):
-		return {}
 	if !server_netcode_session.tick_server_frame(server_game_sim, server_tick):
 		return {}
 	var frame_inputs: Dictionary = server_netcode_session.get_frame_as_dictionary(server_tick)
@@ -3117,7 +3095,6 @@ func disconnect_from_server() -> void:
 	netcode_session.reset()
 	server_netcode_session.reset()
 	_reset_start_sync_state()
-	_sync_cpu_manager()
 
 func _prune_authoritative_history() -> void:
 	var window_cutoff := server_tick - MAX_HISTORY_TICKS

@@ -19,8 +19,8 @@
 #include "mxt_core/heap_handler.h"
 #include "mxt_core/player_input.h"
 #include "car/car_properties.h"
+#include <atomic>
 #include <condition_variable>
-#include <functional>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -41,7 +41,7 @@ namespace godot {
 		static const int STATE_BUFFER_LEN = 45;
 		struct SavedVoiceTransform {
 			int32_t player_id = -1;
-			SimTransform transform;
+			SimVec3 origin;
 		};
 		struct BumperState {
 			uint8_t active = 0;
@@ -83,8 +83,6 @@ namespace godot {
 			int car_wall = 0;
 			int bumper_wall = 0;
 			int triggers = 0;
-			int car_collision_old_count = 0;
-			int bumper_collision_old_count = 0;
 			int car_restore_count = 0;
 			int bumper_restore_count = 0;
 			int active_bumper_count = 0;
@@ -96,6 +94,9 @@ namespace godot {
 		mutable NetworkStateSizeStats last_network_state_size_stats;
 		static const int INPUT_BUFFER_LEN = STATE_BUFFER_LEN;
 		PlayerInput* input_buffer = nullptr;
+		static constexpr int PLAYER_INDEX_LOOKUP_SIZE = 2048;
+		static constexpr int PLAYER_INDEX_LOOKUP_MASK = PLAYER_INDEX_LOOKUP_SIZE - 1;
+		static constexpr int32_t PLAYER_INDEX_LOOKUP_EMPTY = -2147483647 - 1;
 		struct VehicleTickSoA {
 			int capacity = 0;
 			PlayerInput* inputs = nullptr;
@@ -105,6 +106,7 @@ namespace godot {
 			bool placement_order_valid = false;
 			uint8_t* pending_s_boost_sparks = nullptr;
 			int* collision_indices = nullptr;
+			int collision_order_count = 0;
 			float* collision_min_x = nullptr;
 			float* collision_max_x = nullptr;
 			float* collision_min_y = nullptr;
@@ -142,10 +144,13 @@ namespace godot {
 		};
 		SuperSparkState* super_spark_state = nullptr;
 		SuperSpark* super_sparks = nullptr;
+		std::vector<uint64_t> super_spark_candidate_mask_lo;
+		std::vector<uint64_t> super_spark_candidate_mask_hi;
 		godot::MultiMeshInstance3D* spark_multimesh_instance = nullptr;
-		godot::Object* cpu_driver_manager = nullptr;
 		int32_t* car_player_ids = nullptr;
 		uint8_t* car_is_cpu = nullptr;
+		int32_t player_index_lookup_ids[PLAYER_INDEX_LOOKUP_SIZE] = {};
+		int16_t player_index_lookup_indices[PLAYER_INDEX_LOOKUP_SIZE] = {};
 		struct NativeCpuDriverState {
 			int32_t player_id = -1;
 			uint8_t active = 0;
@@ -168,10 +173,14 @@ namespace godot {
 		float compute_car_distance_along_track(const PhysicsCar& car) const;
 		float compute_vehicle_distance_along_track(uint16_t current_checkpoint, float checkpoint_fraction, uint8_t lap) const;
 		uint16_t compute_s_boost_duration_frames(float gap_distance) const;
-		godot::PackedByteArray build_cpu_observation(const PhysicsCar& car) const;
 		void configure_native_cpu_drivers();
+		void clear_player_index_lookup();
+		void insert_player_index_lookup(int32_t player_id, int car_index);
+		int find_car_index_for_player(int32_t player_id) const;
 		void update_native_cpu_drivers();
 		void update_native_cpu_driver(int car_index);
+		PlayerInput generate_native_cpu_player_input_for_car_index(int car_index, int player_id, int expected_tick);
+		PlayerInput generate_native_cpu_player_input_for_tick(int player_id, int expected_tick);
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
 		NativeCpuDriverState* find_native_cpu_driver(int32_t player_id);
 		void configure_bumper_car(int bumper_slot);
@@ -205,17 +214,17 @@ namespace godot {
 		godot::PackedByteArray serialize_network_state(int target_tick) const;
 		bool deserialize_network_state(int target_tick, const godot::PackedByteArray& data);
 		void rebuild_static_state_after_network_load();
-		static constexpr int VEHICLE_WORKER_COUNT = 5;
+		void rebuild_road_samples_after_state_load();
+		static constexpr int VEHICLE_WORKER_COUNT = MXT_VEHICLE_SHARD_COUNT;
 		struct VehicleLaneGroup {
 			int count = 1;
-			int waiting = 0;
-			uint32_t generation = 0;
-			std::mutex mutex;
-			std::condition_variable cv;
+			std::atomic<int> waiting{0};
+			std::atomic<uint32_t> generation{0};
 			void reset(int p_count);
 			void sync();
 		};
-		void run_vehicle_lanes(int lane_count, bool parallel, const std::function<void(int, VehicleLaneGroup&)>& fn);
+		using VehicleLaneFn = void (*)(void*, int, VehicleLaneGroup&);
+		void run_vehicle_lanes(int lane_count, bool parallel, void* context, VehicleLaneFn fn);
 		void ensure_vehicle_lane_workers();
 		void stop_vehicle_lane_workers();
 		std::thread vehicle_lane_workers[VEHICLE_WORKER_COUNT - 1];
@@ -224,7 +233,8 @@ namespace godot {
 		std::condition_variable vehicle_lane_done_cv;
 		VehicleLaneGroup vehicle_lane_group;
 		TrackQueryScratch vehicle_lane_track_scratch[VEHICLE_WORKER_COUNT];
-		std::function<void(int, VehicleLaneGroup&)> vehicle_lane_fn;
+		VehicleLaneFn vehicle_lane_fn = nullptr;
+		void* vehicle_lane_context = nullptr;
 		uint32_t vehicle_lane_generation = 0;
 		int vehicle_lane_active_count = 0;
 		int vehicle_lane_pending = 0;
@@ -326,6 +336,45 @@ namespace godot {
 			godot::Camera3D* gameplay_camera_node = nullptr;
 			godot::Camera3D* render_camera_node = nullptr;
 			bool render_profile_enabled = false;
+			bool phase_profile_enabled = false;
+			uint64_t phase_profile_frames = 0;
+			uint64_t phase_profile_total_us = 0;
+			uint64_t phase_profile_pre_us = 0;
+			uint64_t phase_profile_input_us = 0;
+			uint64_t phase_profile_vehicle_us = 0;
+			uint64_t phase_profile_vehicle_begin_us = 0;
+			uint64_t phase_profile_vehicle_apply_input_us = 0;
+			uint64_t phase_profile_vehicle_floor_us = 0;
+			uint64_t phase_profile_vehicle_prepare_frame_us = 0;
+			uint64_t phase_profile_vehicle_floor_corner_analytic_surface_us = 0;
+			uint64_t phase_profile_vehicle_floor_mesh_candidate_collect_us = 0;
+			uint64_t phase_profile_vehicle_floor_mesh_cast4_us = 0;
+			uint64_t phase_profile_vehicle_floor_mesh_sample_us = 0;
+			uint64_t phase_profile_vehicle_find_floor_us = 0;
+			uint64_t phase_profile_vehicle_find_floor_cast_us = 0;
+			uint64_t phase_profile_vehicle_find_floor_mesh_us = 0;
+			uint64_t phase_profile_vehicle_find_floor_analytic_us = 0;
+			uint64_t phase_profile_vehicle_terrain_us = 0;
+			uint64_t phase_profile_vehicle_trigger_us = 0;
+			uint64_t phase_profile_vehicle_motion_us = 0;
+			uint64_t phase_profile_vehicle_finish_tick_us = 0;
+			uint64_t phase_profile_vehicle_collision_us = 0;
+			uint64_t phase_profile_vehicle_post_tick_us = 0;
+			uint64_t phase_profile_vehicle_corner_update_us = 0;
+			uint64_t phase_profile_vehicle_corner_old_analytic_us = 0;
+			uint64_t phase_profile_vehicle_corner_new_checkpoint_us = 0;
+			uint64_t phase_profile_vehicle_corner_new_analytic_us = 0;
+			uint64_t phase_profile_vehicle_corner_mesh_us = 0;
+			uint64_t phase_profile_vehicle_tail_us = 0;
+			uint64_t phase_profile_vehicle_checkpoint_us = 0;
+			uint64_t phase_profile_vehicle_spark_collect_us = 0;
+			uint64_t phase_profile_post_vehicle_us = 0;
+			uint64_t phase_profile_placement_us = 0;
+			uint64_t phase_profile_post_us = 0;
+			uint64_t phase_profile_save_us = 0;
+			uint64_t phase_profile_save_bumper_us = 0;
+			uint64_t phase_profile_save_voice_us = 0;
+			uint64_t phase_profile_save_memcpy_us = 0;
 			uint64_t render_profile_frames = 0;
 			uint64_t render_profile_total_us = 0;
 			uint64_t render_profile_get_children_us = 0;
@@ -384,6 +433,7 @@ namespace godot {
 		void set_render_camera(godot::Camera3D* p_camera);
 		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
 		godot::String get_phase_profile_string() const;
+		void set_phase_profile_enabled(bool enabled);
 		godot::String get_render_profile_string() const;
 		void set_render_profile_enabled(bool enabled);
 		void set_render_node_effects_enabled(bool enabled);
@@ -412,8 +462,6 @@ namespace godot {
 		void destroy_gamesim();
 		void render_gamesim();
 		void render_gamesim_visuals_only(double process_delta);
-		void set_cpu_driver_manager(godot::Object* manager);
-		godot::Object* get_cpu_driver_manager() const { return cpu_driver_manager; }
 		godot::PackedByteArray get_native_cpu_input_for_tick(int player_id, int expected_tick);
 		godot::Dictionary get_input_frame_as_dictionary(int target_tick) const;
 		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);

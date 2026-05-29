@@ -2737,10 +2737,7 @@ PlayerInput NetcodeSession::decay_predicted_input(const PlayerInput& prev)
 void NetcodeSession::clear_frame(InputFrame& frame, int32_t tick)
 {
 	frame.tick = tick;
-	for (int i = 0; i < MAX_RACERS; ++i) {
-		frame.inputs[i] = neutral_input;
-		frame.present[i] = 0;
-	}
+	std::memset(frame.present, 0, static_cast<size_t>(std::max(racer_count, 0)));
 }
 
 NetcodeSession::InputFrame& NetcodeSession::frame_for(InputFrame* frames, int32_t tick)
@@ -2758,12 +2755,53 @@ const NetcodeSession::InputFrame* NetcodeSession::find_frame(const InputFrame* f
 	return frame.tick == tick ? &frame : nullptr;
 }
 
+static inline uint32_t hash_racer_player_id(int32_t player_id)
+{
+	uint32_t x = static_cast<uint32_t>(player_id);
+	x ^= x >> 16;
+	x *= 0x7feb352du;
+	x ^= x >> 15;
+	x *= 0x846ca68bu;
+	x ^= x >> 16;
+	return x;
+}
+
+void NetcodeSession::clear_racer_lookup()
+{
+	for (int i = 0; i < RACER_LOOKUP_SIZE; ++i) {
+		racer_lookup_ids[i] = RACER_LOOKUP_EMPTY;
+		racer_lookup_indices[i] = -1;
+	}
+}
+
+void NetcodeSession::insert_racer_lookup(int32_t player_id, int index)
+{
+	uint32_t slot = hash_racer_player_id(player_id) & RACER_LOOKUP_MASK;
+	for (int probe = 0; probe < RACER_LOOKUP_SIZE; ++probe) {
+		if (racer_lookup_ids[slot] == player_id) {
+			return;
+		}
+		if (racer_lookup_ids[slot] == RACER_LOOKUP_EMPTY) {
+			racer_lookup_ids[slot] = player_id;
+			racer_lookup_indices[slot] = static_cast<int16_t>(index);
+			return;
+		}
+		slot = (slot + 1) & RACER_LOOKUP_MASK;
+	}
+}
+
 int NetcodeSession::find_racer_index(int32_t player_id) const
 {
-	for (int i = 0; i < racer_count; ++i) {
-		if (player_ids[i] == player_id) {
-			return i;
+	uint32_t slot = hash_racer_player_id(player_id) & RACER_LOOKUP_MASK;
+	for (int probe = 0; probe < RACER_LOOKUP_SIZE; ++probe) {
+		const int32_t id = racer_lookup_ids[slot];
+		if (id == player_id) {
+			return racer_lookup_indices[slot];
 		}
+		if (id == RACER_LOOKUP_EMPTY) {
+			return -1;
+		}
+		slot = (slot + 1) & RACER_LOOKUP_MASK;
 	}
 	return -1;
 }
@@ -2811,6 +2849,7 @@ void NetcodeSession::reset()
 		player_ids[i] = 0;
 		cpu_flags[i] = 0;
 	}
+	clear_racer_lookup();
 	clear_peer_state();
 	for (int i = 0; i < HISTORY_LEN; ++i) {
 		clear_frame(local_input_history[i], -1);
@@ -2838,6 +2877,10 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 	for (int i = racer_count; i < MAX_RACERS; ++i) {
 		player_ids[i] = 0;
 		cpu_flags[i] = 0;
+	}
+	clear_racer_lookup();
+	for (int i = 0; i < racer_count; ++i) {
+		insert_racer_lookup(player_ids[i], i);
 	}
 	for (int i = 0; i < HISTORY_LEN; ++i) {
 		clear_frame(local_input_history[i], -1);
@@ -4061,26 +4104,27 @@ bool NetcodeSession::server_has_full_input_frame(int tick) const
 bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick, bool use_pending_cpu_inputs)
 {
 	GameSim* sim = Object::cast_to<GameSim>(game_sim_obj);
-	if (!sim || !server_has_full_input_frame(tick)) {
+	const InputFrame* pending_frame = find_frame(pending_inputs, tick);
+	if (!sim || !pending_frame) {
 		return false;
 	}
-	InputFrame& pending = frame_for(pending_inputs, tick);
 	InputFrame& authoritative = frame_for(authoritative_history, tick);
 	clear_frame(authoritative, tick);
 	for (int i = 0; i < racer_count; ++i) {
 		if (cpu_flags[i] && use_pending_cpu_inputs) {
-			if (!pending.present[i]) {
+			if (!pending_frame->present[i]) {
 				return false;
 			}
-			authoritative.inputs[i] = pending.inputs[i];
+			authoritative.inputs[i] = pending_frame->inputs[i];
 			authoritative.present[i] = 1;
 		} else if (cpu_flags[i]) {
-			godot::PackedByteArray cpu_bytes = sim->generate_native_cpu_input_for_tick(player_ids[i], tick);
-			authoritative.inputs[i] = PlayerInput::from_bytes(cpu_bytes);
+			authoritative.inputs[i] = sim->generate_native_cpu_player_input_for_car_index(i, player_ids[i], tick);
 			authoritative.present[i] = 1;
-		} else if (pending.present[i]) {
-			authoritative.inputs[i] = pending.inputs[i];
+		} else if (pending_frame->present[i]) {
+			authoritative.inputs[i] = pending_frame->inputs[i];
 			authoritative.present[i] = 1;
+		} else {
+			return false;
 		}
 	}
 	sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedCarArray,
@@ -4123,8 +4167,7 @@ void NetcodeSession::recalculate_predictions_internal(GameSim* sim, int start_ti
 					frame.inputs[i] = authoritative->inputs[i];
 					frame.present[i] = 1;
 				} else if (sim) {
-					godot::PackedByteArray cpu_bytes = sim->generate_native_cpu_input_for_tick(player_ids[i], tick);
-					frame.inputs[i] = PlayerInput::from_bytes(cpu_bytes);
+					frame.inputs[i] = sim->generate_native_cpu_player_input_for_car_index(i, player_ids[i], tick);
 					frame.present[i] = 1;
 				} else if (previous && previous->present[i]) {
 					frame.inputs[i] = previous->inputs[i];

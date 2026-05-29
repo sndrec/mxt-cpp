@@ -57,6 +57,7 @@ class RoadShape
 public:
         int num_modulations;
         int num_embeds;
+        uint32_t embed_terrain_mask;
         int shape_type;
         TrackSegment* owning_segment;
 	RoadModulation* road_modulations;

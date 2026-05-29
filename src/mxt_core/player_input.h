@@ -107,13 +107,15 @@ public:
         static uint8_t quantize_axis(float v)
         {
                 v = std::max(-1.0f, std::min(1.0f, v));
-                return static_cast<uint8_t>(std::lround(((v + 1.0f) * 0.5f) * float(RAW_BIT_PRECISION)));
+                const float scaled = ((v + 1.0f) * 0.5f) * float(RAW_BIT_PRECISION);
+                return static_cast<uint8_t>(std::floor(scaled + 0.5f));
         }
 
         static uint8_t quantize_trigger(float v)
         {
                 v = std::max(0.0f, std::min(1.0f, v));
-                return static_cast<uint8_t>(std::lround(v * float(RAW_BIT_PRECISION)));
+                const float scaled = v * float(RAW_BIT_PRECISION);
+                return static_cast<uint8_t>(std::floor(scaled + 0.5f));
         }
 
         static godot::PackedByteArray to_bytes(const PlayerInput &input)

@@ -18,6 +18,7 @@ func _init() -> void:
 	var watch_player := int(_arg_value(args, "--watch-player", "-1"))
 	var watch_every := int(_arg_value(args, "--watch-every", "300"))
 	var require_full_lap := args.has("--require-full-lap")
+	var phase_profile := args.has("--phase-profile")
 	if frames <= 0 or cars <= 0:
 		push_error("profile_gamesim requires positive --frames and --cars")
 		quit(1)
@@ -49,6 +50,8 @@ func _init() -> void:
 	sim.set_spawn_seed(1)
 	sim.instantiate_gamesim(track_buffer, car_buffers, accel_settings)
 	sim.set_player_metadata(player_ids, cpu_flags)
+	if phase_profile and sim.has_method("set_phase_profile_enabled"):
+		sim.set_phase_profile_enabled(true)
 	sim.set_sim_started(true)
 
 	var lap_length := float(sim.get_track_lap_length())
@@ -113,6 +116,8 @@ func _init() -> void:
 
 	print("MXT_PROFILE_RUN track=", track_path, " cars=", cars, " frames=", frames_run)
 	print("MXT_PROFILE_TICK_AVG_US frames=", frames_run, " total=", int(tick_total_us / maxi(frames_run, 1)))
+	if phase_profile and sim.has_method("get_phase_profile_string"):
+		print(sim.get_phase_profile_string())
 	root.remove_child(sim)
 	sim.free()
 	quit()

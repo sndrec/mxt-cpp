@@ -23,11 +23,7 @@ public:
     int segment_index = -1;
     int checkpoint_index = -1;
 
-    uint8_t intersect_segment(int cp_idx, RaceTrack *in_racetrack, const SimVec3 &p0, const SimVec3 &p1) const;
-    virtual ~TriggerCollider() = default;
-    virtual void start_touch(PhysicsCar* car);
-    virtual void touch(PhysicsCar* car);
-    virtual void end_touch(PhysicsCar* car);
+    uint8_t intersect_segment(int cp_idx, RaceTrack *in_racetrack, const SimVec3 &p0, const SimVec3 &p1, bool checkpoint_prechecked = false) const;
 };
 
 class Dashplate : public TriggerCollider {
@@ -37,9 +33,7 @@ public:
     static constexpr float kHeatMax = 10.0f;
 
     Dashplate();
-    void start_touch(PhysicsCar* car) override;
-    void touch(PhysicsCar* car) override;
-    void end_touch(PhysicsCar* car) override;
+    void start_touch(PhysicsCar* car);
 
     float heat;
     uint32_t last_activation_tick;
@@ -49,17 +43,12 @@ public:
 class Jumpplate : public TriggerCollider {
 public:
     Jumpplate();
-    void start_touch(PhysicsCar* car) override;
-    void touch(PhysicsCar* car) override;
-    void end_touch(PhysicsCar* car) override;
 };
 
 class Mine : public TriggerCollider {
 public:
     Mine();
     bool exploded;
-    void start_touch(PhysicsCar* car) override;
-    void touch(PhysicsCar* car) override;
-    void end_touch(PhysicsCar* car) override;
+    void start_touch(PhysicsCar* car);
 };
 

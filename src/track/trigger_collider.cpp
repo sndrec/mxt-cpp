@@ -44,26 +44,28 @@ static float sample_dashplate_heat_delta(float elapsed_seconds)
 }
 }
 
-uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, const SimVec3 &p0, const SimVec3 &p1) const
+uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, const SimVec3 &p0, const SimVec3 &p1, bool checkpoint_prechecked) const
 {
-	bool should_continue = false;
-	if (cp_idx == checkpoint_index)
-		should_continue = true;
+	if (!checkpoint_prechecked) {
+		bool should_continue = false;
+		if (cp_idx == checkpoint_index)
+			should_continue = true;
 
-	if (!should_continue)
-	{
-		for (int i = 0; i < in_racetrack->checkpoints[checkpoint_index].num_neighboring_checkpoints; i++)
+		if (!should_continue)
 		{
-			if (in_racetrack->checkpoints[checkpoint_index].neighboring_checkpoints[i] == cp_idx)
+			for (int i = 0; i < in_racetrack->checkpoints[checkpoint_index].num_neighboring_checkpoints; i++)
 			{
-				should_continue = true;
-				break;
+				if (in_racetrack->checkpoints[checkpoint_index].neighboring_checkpoints[i] == cp_idx)
+				{
+					should_continue = true;
+					break;
+				}
 			}
 		}
-	}
-	if (!should_continue)
-	{
-		return 0;
+		if (!should_continue)
+		{
+			return 0;
+		}
 	}
    	//DEBUG::disp_text("real test", cp_idx);
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
@@ -143,10 +145,6 @@ uint8_t TriggerCollider::intersect_segment(int cp_idx, RaceTrack *in_racetrack, 
     return result;
 }
 
-void TriggerCollider::start_touch(PhysicsCar* car) {}
-void TriggerCollider::touch(PhysicsCar* car) {}
-void TriggerCollider::end_touch(PhysicsCar* car) {}
-
 Dashplate::Dashplate()
 {
 	type = TRIGGER_TYPE::DASHPLATE;
@@ -187,13 +185,7 @@ void Dashplate::start_touch(PhysicsCar* car)
 	car->soa->dashplate_heat_multiplier[car->soa_index] = turbo_multiplier;
 }
 
-void Dashplate::touch(PhysicsCar* car) {}
-void Dashplate::end_touch(PhysicsCar* car) {}
-
 Jumpplate::Jumpplate() { type = TRIGGER_TYPE::JUMPPLATE; }
-void Jumpplate::start_touch(PhysicsCar* car) {}
-void Jumpplate::touch(PhysicsCar* car) {}
-void Jumpplate::end_touch(PhysicsCar* car) {}
 
 Mine::Mine()
 {
@@ -207,5 +199,3 @@ void Mine::start_touch(PhysicsCar* car)
 		car->queue_super_sparks(12);
 	}
 }
-void Mine::touch(PhysicsCar* car) {}
-void Mine::end_touch(PhysicsCar* car) {}

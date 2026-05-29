@@ -61,6 +61,11 @@ static inline float safe_inverse_road_scale(float scale)
 	return (fabsf(scale) > 1.0e-5f) ? (1.0f / scale) : 0.0f;
 }
 
+static inline SimVec3 mul_components(const SimVec3 &a, const SimVec3 &b)
+{
+	return SimVec3(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
 static void draw_nearest_rail_candidate(
 	const TrackEdgeRailSide sides[2],
 	const SimVec3& reference,
@@ -681,7 +686,8 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 	const SimVec3 point[4],
 	SimVec2 road_t[4],
 	SimVec3 spatial_t[4],
-	SimTransform out_transform[4])
+	SimTransform out_transform[4],
+	bool full_basis)
 {
 	if (cp_idx == -1) {
 		for (int lane = 0; lane < 4; ++lane) {
@@ -773,7 +779,38 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 			out_transform[lane] = SimTransform();
 			continue;
 		}
-		shape->get_oriented_transform_at_time_presampled(out_transform[lane], road_t[lane], root[lane], root_derivative[lane]);
+		if (full_basis) {
+			shape->get_oriented_transform_at_time_presampled(out_transform[lane], road_t[lane], root[lane], root_derivative[lane]);
+		} else {
+			SimVec3 local_pos;
+			SimVec3 local_dx;
+			SimVec3 local_dy;
+			if ((shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
+					shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL) &&
+					shape->num_modulations == 0) {
+				local_pos = SimVec3(road_t[lane].x, 0.0f, 0.0f);
+				local_dx = SimVec3(1.0f, 0.0f, 0.0f);
+				local_dy = SimVec3();
+			} else {
+				shape->get_local_surface_at_time(local_pos, local_dx, local_dy, road_t[lane]);
+			}
+
+			const SimVec3 scaled_pos = mul_components(local_pos, root[lane].scale);
+			const SimVec3 scaled_dx = mul_components(local_dx, root[lane].scale);
+			const SimVec3 scaled_dy =
+				mul_components(local_dy, root[lane].scale) +
+				mul_components(local_pos, root_derivative[lane].scale);
+
+			out_transform[lane].origin = root[lane].t3d.xform(scaled_pos);
+			const SimVec3 tangent_x = root[lane].t3d.basis.xform(scaled_dx);
+			const SimVec3 tangent_y =
+				root_derivative[lane].t3d.origin +
+				root_derivative[lane].t3d.basis.xform(scaled_pos) +
+				root[lane].t3d.basis.xform(scaled_dy);
+			out_transform[lane].basis[0] = tangent_x.length_squared() > 1.0e-12f ? SimVec3(1.0f, 0.0f, 0.0f) : SimVec3();
+			out_transform[lane].basis[1] = tangent_y.cross(tangent_x).normalized();
+			out_transform[lane].basis[2] = SimVec3();
+		}
 	}
 }
 
@@ -825,7 +862,7 @@ uint32_t RaceTrack::sample_analytic_road_embed_terrain(int cp_idx, const SimVec2
 		return 0;
 	}
 	const TrackSegment &segment = segments[checkpoints[cp_idx].road_segment];
-	if (!segment.road_shape || segment.road_shape->num_embeds <= 0) {
+	if (!segment.road_shape || segment.road_shape->embed_terrain_mask == 0 || segment.road_shape->num_embeds <= 0) {
 		return 0;
 	}
 
@@ -850,6 +887,13 @@ uint32_t RaceTrack::sample_analytic_road_embed_terrain(int cp_idx, const SimVec2
 
 bool RaceTrack::analytic_road_sample_has_hole(int cp_idx, const SimVec2 &road_t) const
 {
+	if (cp_idx < 0 || cp_idx >= num_checkpoints) {
+		return false;
+	}
+	const TrackSegment &segment = segments[checkpoints[cp_idx].road_segment];
+	if (!segment.road_shape || (segment.road_shape->embed_terrain_mask & TERRAIN::HOLE) == 0u) {
+		return false;
+	}
 	return (sample_analytic_road_embed_terrain(cp_idx, road_t) & TERRAIN::HOLE) != 0u;
 }
 
@@ -858,6 +902,7 @@ struct CastParams {
 	uint8_t mask;
 	bool smooth_mesh_hits = true;
 	bool track_only_query = false;
+	bool surface_filter_prechecked = false;
 	bool draw_cast_tests = false;
 	bool draw_collision_hits = false;
 	bool build_surface_basis = true;
@@ -975,6 +1020,13 @@ static void cast_segment_fast(const CastParams  &params,
 	if (!segment.road_shape->supports_edge_rails()) {
 		return;
 	}
+	const bool side_possible[2] = {
+		segment.left_rail_height > 0.0f && track_segment_rail_side_active(segment, 0, road_t_sample_raw.y),
+		segment.right_rail_height > 0.0f && track_segment_rail_side_active(segment, 1, road_t_sample_raw.y),
+	};
+	if (!side_possible[0] && !side_possible[1]) {
+		return;
+	}
 
 	const RoadTransform &root_t = sample_root;
 	TrackEdgeRailSide sides[2];
@@ -989,6 +1041,9 @@ static void cast_segment_fast(const CastParams  &params,
 	draw_nearest_rail_candidate(sides, sample_pt, _TICK_DELTA);
 
 	for (int side_index = 0; side_index < 2; ++side_index) {
+		if (!side_possible[side_index]) {
+			continue;
+		}
 		const TrackEdgeRailSide &side = sides[side_index];
 		const float ra = (p0 - side.pos).dot(side.rail_n);
 		const float rb = (p1 - side.pos).dot(side.rail_n);
@@ -1147,6 +1202,14 @@ static bool aabb_overlaps_aabb(const SimAABB &a, const SimAABB &b)
 	return a.position.x <= b_max.x && a_max.x >= b.position.x &&
 		a.position.y <= b_max.y && a_max.y >= b.position.y &&
 		a.position.z <= b_max.z && a_max.z >= b.position.z;
+}
+
+static inline bool aabb_overlaps_bounds(const SimAABB &bounds, const SimVec3 &query_min, const SimVec3 &query_max)
+{
+	const SimVec3 box_max = bounds.position + bounds.size;
+	return bounds.position.x <= query_max.x && box_max.x >= query_min.x &&
+		bounds.position.y <= query_max.y && box_max.y >= query_min.y &&
+		bounds.position.z <= query_max.z && box_max.z >= query_min.z;
 }
 
 static bool mesh_bvh_child_empty(const TrackMeshBVHNode &node, int slot)
@@ -1316,15 +1379,6 @@ static void mesh_bvh_child_distance2_quad(const TrackMeshBVHNode &node, const Si
 #endif
 }
 
-enum MeshCastRejectReason
-{
-	MESH_CAST_REJECT_NONE,
-	MESH_CAST_REJECT_PARALLEL,
-	MESH_CAST_REJECT_BACKSIDE,
-	MESH_CAST_REJECT_T,
-	MESH_CAST_REJECT_BARY
-};
-
 static bool triangle_ray_hit(
 	const TrackMeshCollisionTriangle &tri,
 	const SimVec3 &p0,
@@ -1336,32 +1390,22 @@ static bool triangle_ray_hit(
 	float *out_v,
 	float *out_w,
 	SimVec3 *out_face_normal,
-	bool *out_backside_hit,
-	MeshCastRejectReason *out_reject_reason = nullptr)
+	bool *out_backside_hit)
 {
 	const SimVec3 &face_normal = tri.face_normal;
 	const float denom = ray.dot(face_normal);
 	if (fabsf(denom) <= 1.0e-7f) {
-		if (out_reject_reason) {
-			*out_reject_reason = MESH_CAST_REJECT_PARALLEL;
-		}
 		return false;
 	}
 
 	const float signed_start = (side_reference_point - tri.p0).dot(face_normal);
 	const bool backside_hit = signed_start < -1.0e-4f || (fabsf(signed_start) <= 1.0e-4f && denom > 0.0f);
 	if (!allow_backface && backside_hit) {
-		if (out_reject_reason) {
-			*out_reject_reason = MESH_CAST_REJECT_BACKSIDE;
-		}
 		return false;
 	}
 
 	const float t = (tri.p0 - p0).dot(face_normal) / denom;
 	if (t < 0.0f || t > 1.0f) {
-		if (out_reject_reason) {
-			*out_reject_reason = MESH_CAST_REJECT_T;
-		}
 		return false;
 	}
 
@@ -1374,15 +1418,9 @@ static bool triangle_ray_hit(
 	const float u = 1.0f - v - w;
 	const float slop = -1.0e-4f;
 	if (u < slop || v < slop || w < slop) {
-		if (out_reject_reason) {
-			*out_reject_reason = MESH_CAST_REJECT_BARY;
-		}
 		return false;
 	}
 
-	if (out_reject_reason) {
-		*out_reject_reason = MESH_CAST_REJECT_NONE;
-	}
 	*out_t = t;
 	*out_u = u;
 	*out_v = v;
@@ -1760,13 +1798,11 @@ static bool scan_mesh_cast_triangle(
 {
 	RaceTrack *track = params.track;
 	const TrackMeshCollisionTriangle &tri = track->mesh_collision_triangles[tri_index];
-	if (params.track_only_query) {
-		if (!terrain_mesh_has_floor_response(tri.terrain)) {
-			return false;
-		}
-	} else {
-		if (!mesh_collision_mask_accepts_surface(tri.terrain, params.mask)) {
-			return false;
+	if (!params.surface_filter_prechecked) {
+		if (!params.track_only_query) {
+			if (!mesh_collision_mask_accepts_surface(tri.terrain, params.mask)) {
+				return false;
+			}
 		}
 	}
 	if (params.draw_cast_tests) {
@@ -1785,9 +1821,8 @@ static bool scan_mesh_cast_triangle(
 	SimVec3 face_normal;
 	bool backside_hit = false;
 	const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
-	MeshCastRejectReason reject_reason = MESH_CAST_REJECT_NONE;
 	const SimVec3 &side_reference_point = params.mesh_side_reference_point ? *params.mesh_side_reference_point : p0;
-	if (!triangle_ray_hit(tri, p0, ray, side_reference_point, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, &reject_reason)) {
+	if (!triangle_ray_hit(tri, p0, ray, side_reference_point, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit)) {
 		return false;
 	}
 	const float dist = hit_t * ray_len;
@@ -1929,11 +1964,7 @@ bool RaceTrack::collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask
 				for (int i = node.child[slot]; i < end; ++i) {
 					const int tri_index = bvh_triangle_indices[i];
 					const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-					if (track_only_query) {
-						if (!terrain_mesh_has_floor_response(tri.terrain)) {
-							continue;
-						}
-					} else {
+					if (!track_only_query) {
 						if (!mesh_collision_mask_accepts_surface(tri.terrain, mask)) {
 							continue;
 						}
@@ -2001,6 +2032,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 		mask,
 		smooth_mesh_hits,
 		track_only_query,
+		true,
 		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS),
 		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS),
 		build_surface_basis,
@@ -2029,7 +2061,8 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 	int start_idx,
 	TrackQueryScratch *scratch,
 	bool smooth_mesh_hits,
-	bool build_surface_basis)
+	bool build_surface_basis,
+	bool build_surface)
 {
 	for (int lane = 0; lane < 4; ++lane) {
 		out_collision[lane].collided = false;
@@ -2051,8 +2084,18 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 	}
 
 	float best_dist[4] = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX };
-	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
-		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
+	SimVec3 lane_bounds_min[4];
+	SimVec3 lane_bounds_max[4];
+	for (int lane = 0; lane < 4; ++lane) {
+		lane_bounds_min[lane] = SimVec3(
+			std::min(p0[lane].x, p1[lane].x) - 1.0e-3f,
+			std::min(p0[lane].y, p1[lane].y) - 1.0e-3f,
+			std::min(p0[lane].z, p1[lane].z) - 1.0e-3f);
+		lane_bounds_max[lane] = SimVec3(
+			std::max(p0[lane].x, p1[lane].x) + 1.0e-3f,
+			std::max(p0[lane].y, p1[lane].y) + 1.0e-3f,
+			std::max(p0[lane].z, p1[lane].z) + 1.0e-3f);
+	}
 	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
 	const bool draw_cast_tests = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS);
 	const bool draw_collision_hits = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS);
@@ -2060,15 +2103,6 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 	for (int candidate = 0; candidate < scratch->mesh_cast_candidate_count; ++candidate) {
 		const int tri_index = scratch->mesh_cast_candidate_indices[candidate];
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
-		if (track_only_query) {
-			if (!terrain_mesh_has_floor_response(tri.terrain)) {
-				continue;
-			}
-		} else {
-			if (!mesh_collision_mask_accepts_surface(tri.terrain, mask)) {
-				continue;
-			}
-		}
 		if (draw_cast_tests) {
 			const bool rail_query = (mask & CAST_FLAGS::WANTS_RAIL) != 0;
 			const bool terrain_query = (mask & CAST_FLAGS::WANTS_TERRAIN) != 0;
@@ -2078,14 +2112,37 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 			draw_mesh_debug_triangle(tri, color, _TICK_DELTA);
 		}
 		const bool allow_backside = (tri.terrain & TERRAIN::BACKSIDE) != 0;
+		const SimVec3 &face_normal = tri.face_normal;
+		const float denom = ray.dot(face_normal);
+		if (fabsf(denom) <= 1.0e-7f) {
+			return;
+		}
 		for (int lane = 0; lane < 4; ++lane) {
-			float hit_t = 0.0f;
-			float u = 0.0f;
-			float v = 0.0f;
-			float w = 0.0f;
-			SimVec3 face_normal;
-			bool backside_hit = false;
-			if (!triangle_ray_hit(tri, p0[lane], ray, p0[lane], allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit, nullptr)) {
+			if (!aabb_overlaps_bounds(tri.bounds, lane_bounds_min[lane], lane_bounds_max[lane])) {
+				continue;
+			}
+			const float signed_start = (p0[lane] - tri.p0).dot(face_normal);
+			const bool backside_hit = signed_start < -1.0e-4f || (fabsf(signed_start) <= 1.0e-4f && denom > 0.0f);
+			if (!allow_backside && backside_hit) {
+				continue;
+			}
+			const float hit_t = -signed_start / denom;
+			if (hit_t < 0.0f || hit_t > 1.0f) {
+				continue;
+			}
+			const float hit_x = p0[lane].x + ray.x * hit_t;
+			const float hit_y = p0[lane].y + ray.y * hit_t;
+			const float hit_z = p0[lane].z + ray.z * hit_t;
+			const float v2x = hit_x - tri.p0.x;
+			const float v2y = hit_y - tri.p0.y;
+			const float v2z = hit_z - tri.p0.z;
+			const float d20 = v2x * tri.edge0.x + v2y * tri.edge0.y + v2z * tri.edge0.z;
+			const float d21 = v2x * tri.edge1.x + v2y * tri.edge1.y + v2z * tri.edge1.z;
+			const float v = (tri.projection_d11 * d20 - tri.projection_d01 * d21) * tri.projection_inv_denom;
+			const float w = (tri.projection_d00 * d21 - tri.projection_d01 * d20) * tri.projection_inv_denom;
+			const float u = 1.0f - v - w;
+			const float slop = -1.0e-4f;
+			if (u < slop || v < slop || w < slop) {
 				continue;
 			}
 			const float dist = hit_t * ray_len;
@@ -2093,7 +2150,7 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 				continue;
 			}
 
-			const SimVec3 flat_point = p0[lane] + ray * hit_t;
+			const SimVec3 flat_point(hit_x, hit_y, hit_z);
 			SimVec3 hit_normal = face_normal;
 			SimVec3 hit_face_normal = face_normal;
 			SimVec3 hit_point = flat_point;
@@ -2115,7 +2172,7 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 			out_collision[lane].road_data.cp_idx = start_idx;
 			out_collision[lane].road_data.spatial_t = SimVec3();
 			out_collision[lane].road_data.road_t = SimVec2(0.0f, 0.5f);
-			out_collision[lane].road_data.closest_surface = smooth_mesh_hits
+			out_collision[lane].road_data.closest_surface = (build_surface && smooth_mesh_hits)
 				? (build_surface_basis ? mesh_collision_surface_transform(tri, hit_point, hit_normal) : mesh_collision_plane_transform(hit_point, hit_normal))
 				: SimTransform();
 			out_collision[lane].road_data.closest_root = RoadTransform();
@@ -2160,6 +2217,7 @@ void RaceTrack::cast_vs_mesh_fast(
 		mask,
 		smooth_mesh_hits,
 		track_only_query,
+		false,
 		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS),
 		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS),
 		build_surface_basis,
@@ -2168,7 +2226,7 @@ void RaceTrack::cast_vs_mesh_fast(
 	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }
 
-void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index, bool build_surface, bool build_surface_basis)
+void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch *scratch, int seed_triangle_index, bool build_surface, bool build_surface_basis, bool prime_from_scratch_candidates)
 {
 	(void)allow_global_fallback;
 	out_collision.collided = false;
@@ -2310,6 +2368,14 @@ void RaceTrack::sample_mesh_floor_fast(CollisionData &out_collision, const SimVe
 		if (seed_triangle_index >= 0) {
 			scan_triangle(seed_triangle_index);
 			if (best_tri_index == seed_triangle_index && best_dist2 <= max_dist2) {
+				return;
+			}
+		}
+		if (prime_from_scratch_candidates && scratch && scratch->mesh_cast_candidate_count > 0) {
+			for (int i = 0; i < scratch->mesh_cast_candidate_count; ++i) {
+				scan_triangle(scratch->mesh_cast_candidate_indices[i]);
+			}
+			if (best_tri_index >= 0 && best_dist2 <= max_dist2) {
 				return;
 			}
 		}
@@ -2467,6 +2533,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 		mask,
 		smooth_mesh_hits,
 		track_only_query,
+		false,
 		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS),
 		debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS),
 		build_surface_basis,

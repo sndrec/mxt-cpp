@@ -56,6 +56,7 @@ func _init() -> void:
 	var sample_start := _arg_int(args, "--sample-start", maxi(0, end_tick - 300))
 	var sample_every := _arg_int(args, "--sample-every", 60)
 	var dump_dir := _arg_value(args, "--dump-dir", "")
+	var phase_profile := args.has("--phase-profile")
 
 	var track_bytes := FileAccess.get_file_as_bytes(track_path)
 	var car_bytes := FileAccess.get_file_as_bytes(car_props_path)
@@ -86,6 +87,8 @@ func _init() -> void:
 	sim.set_bumpers_enabled(false)
 	sim.instantiate_gamesim(track_buffer, car_buffers, accel_settings)
 	sim.set_player_metadata(player_ids, cpu_flags)
+	if phase_profile and sim.has_method("set_phase_profile_enabled"):
+		sim.set_phase_profile_enabled(true)
 	sim.set_sim_started(true)
 	session.configure(player_ids, cpu_flags, int(player_ids[0]))
 
@@ -104,11 +107,13 @@ func _init() -> void:
 			_sample_state(sim, tick, dump_dir)
 
 	var total_us := Time.get_ticks_usec() - start_us
-	print("MXT_NETSTATE_LONG_DONE track=", track_path,
+	print("MXT_NETSTATE_LONG_OK track=", track_path,
 		" cars=", cars,
 		" humans_with_cpu_inputs=", humans,
 		" end_tick=", end_tick,
 		" avg_tick_us=", int(float(total_us) / float(maxi(end_tick + 1, 1))))
+	if phase_profile and sim.has_method("get_phase_profile_string"):
+		print(sim.get_phase_profile_string())
 	root.remove_child(sim)
 	sim.free()
 	quit()

@@ -9,6 +9,7 @@ var forced_begin := false
 var begin_wait_frames := 0
 var wait_frames := 0
 var race_frames := 0
+var race_start_server_tick := -1
 var max_wait_frames := 900
 var max_race_frames := 900
 var input_bytes := PackedByteArray()
@@ -56,9 +57,11 @@ func _process(_delta: float) -> bool:
 			nm.begin_simulation.rpc()
 			nm.begin_simulation()
 		return false
+	if race_start_server_tick < 0:
+		race_start_server_tick = int(nm.server_tick)
 	main.call("_simulate_host_frame", input_bytes)
-	race_frames += 1
+	race_frames = int(nm.server_tick) - race_start_server_tick
 	if race_frames >= max_race_frames:
-		print("MXT_NETPLAY_STATE_SIZE_HOST_DONE race_frames=", race_frames, " server_tick=", nm.server_tick)
+		print("MXT_NETPLAY_STATE_SIZE_HOST_DONE race_ticks=", race_frames, " server_tick=", nm.server_tick)
 		quit()
 	return false

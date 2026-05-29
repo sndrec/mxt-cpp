@@ -18,7 +18,6 @@ class_name GameManager extends Node
 @onready var debug_track_mesh_container: Node3D = $GameWorld/DebugTrackMeshContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
-@onready var cpu_driver_manager: CpuDriverManager = $CpuDriverManager
 @onready var car_settings: Control = $CarSettings
 @onready var options_menu: Control = $OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
@@ -329,7 +328,6 @@ func _ready() -> void:
 	_build_race_pause_menu()
 	singleplayer_cpu_count = int(cpu_slider.value)
 	_update_cpu_slider_label()
-	network_manager.set_cpu_driver_manager(cpu_driver_manager)
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
 	var user_args := OS.get_cmdline_user_args()
@@ -398,7 +396,7 @@ func _ready() -> void:
 		call_deferred("_on_track_editor_button_pressed")
 	elif auto_singleplayer_mode:
 		call_deferred("_on_singleplayer_button_pressed")
-	if headless_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "":
+	if headless_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "" and replay_autoload_path == "":
 		var def_path := ""
 		if car_definitions.size() > 0:
 			def_path = car_definitions[0].resource_path
@@ -458,9 +456,6 @@ func _load_tracks() -> void:
 				break
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_race_options()
-
-func get_cpu_driver_manager() -> CpuDriverManager:
-	return cpu_driver_manager
 
 func get_car_definition_paths() -> Array:
 	var paths: Array = []
@@ -2186,20 +2181,28 @@ func _update_replay_timeline_controls() -> void:
 func _start_replay_playback_from_path(path: String) -> void:
 	var replay := _load_replay_file(path)
 	if replay.is_empty():
+		if headless_mode:
+			get_tree().quit(1)
 		return
 	if game_sim.sim_started or singleplayer_mode:
 		_return_to_menu()
 	var track_index := _replay_find_track_index(replay)
 	if track_index < 0 or track_index >= tracks.size():
 		push_warning("Replay load failed: track not found for %s" % str(replay.get("track_name", "")))
+		if headless_mode:
+			get_tree().quit(1)
 		return
 	var frames = replay.get("frames", [])
 	if typeof(frames) != TYPE_ARRAY or (frames as Array).is_empty():
 		push_warning("Replay load failed: replay has no frames.")
+		if headless_mode:
+			get_tree().quit(1)
 		return
 	var settings = replay.get("settings", [])
 	if typeof(settings) != TYPE_ARRAY or (settings as Array).is_empty():
 		push_warning("Replay load failed: replay has no racer settings.")
+		if headless_mode:
+			get_tree().quit(1)
 		return
 	var racer_ids: Array = replay.get("racer_ids", [])
 	var cpu_flags: Array = replay.get("cpu_flags", [])
@@ -2258,6 +2261,19 @@ func _start_replay_playback_from_path(path: String) -> void:
 	_apply_replay_playback_clock()
 	_apply_replay_camera_mode()
 	print("MXT_REPLAY playback started ", path, " frames=", replay_playback_frames.size())
+	if headless_mode:
+		var replay_fast_forward_start_us := Time.get_ticks_usec()
+		while replay_playback_active and replay_playback_index < replay_playback_frames.size():
+			if !_tick_replay_playback(false):
+				get_tree().quit(1)
+				return
+		var replay_fast_forward_elapsed_us := Time.get_ticks_usec() - replay_fast_forward_start_us
+		var replay_frame_count := replay_playback_frames.size()
+		print("MXT_REPLAY playback complete ", replay_playback_loaded_path,
+			" frames=", replay_frame_count,
+			" avg_tick_us=", int(float(replay_fast_forward_elapsed_us) / float(maxi(replay_frame_count, 1))))
+		print("MXT_REPLAY_VERIFY_OK path=", replay_playback_loaded_path, " frames=", replay_frame_count)
+		get_tree().quit()
 
 func _capture_replay_seek_checkpoint(next_tick: int) -> void:
 	if game_sim == null or !game_sim.has_method("get_full_state_data"):
@@ -2351,19 +2367,28 @@ func _tick_replay_playback(return_to_menu_on_complete: bool = true) -> bool:
 	if replay_playback_index >= replay_playback_frames.size():
 		if return_to_menu_on_complete:
 			print("MXT_REPLAY playback complete ", replay_playback_loaded_path)
-			_return_to_menu()
+			if headless_mode:
+				get_tree().quit()
+			else:
+				_return_to_menu()
 		return false
 	var raw_frame = replay_playback_frames[replay_playback_index]
 	if typeof(raw_frame) != TYPE_DICTIONARY:
 		if return_to_menu_on_complete:
-			_return_to_menu()
+			if headless_mode:
+				get_tree().quit(1)
+			else:
+				_return_to_menu()
 		return false
 	var frame: Dictionary = raw_frame
 	var frame_tick := int(frame.get("tick", replay_playback_index))
 	if frame_tick != _singleplayer_tick:
 		push_warning("Replay playback refused: expected tick %d, found saved tick %d" % [_singleplayer_tick, frame_tick])
 		if return_to_menu_on_complete:
-			_return_to_menu()
+			if headless_mode:
+				get_tree().quit(1)
+			else:
+				_return_to_menu()
 		return false
 	var frame_inputs := _decode_replay_frame(frame)
 	for id_value in frame_inputs.keys():
@@ -2371,7 +2396,10 @@ func _tick_replay_playback(return_to_menu_on_complete: bool = true) -> bool:
 	if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick, true):
 		push_warning("Replay playback failed at tick %d" % _singleplayer_tick)
 		if return_to_menu_on_complete:
-			_return_to_menu()
+			if headless_mode:
+				get_tree().quit(1)
+			else:
+				_return_to_menu()
 		return false
 	_consume_authoritative_race_events()
 	if replay_collecting_timeline_markers:
@@ -2973,13 +3001,13 @@ func _load_debug_replay_file(path: String) -> Dictionary:
 func _debug_replay_load_failed(message: String) -> void:
 	print(message)
 	if headless_mode:
-		get_tree().quit()
+		get_tree().quit(1)
 
 func _load_and_start_debug_replay(path: String) -> void:
 	var replay := _load_debug_replay_file(path)
 	if replay.is_empty():
 		if headless_mode:
-			get_tree().quit()
+			get_tree().quit(1)
 		return
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
@@ -3462,16 +3490,6 @@ func _start_race(track_index: int, settings: Array) -> void:
 		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 		_apply_grand_prix_ko_energy_bonuses(server_game_sim, racer_ids)
 		network_manager.server_netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
-	if singleplayer_mode:
-		game_sim.set_cpu_driver_manager(null)
-		if network_manager.is_server:
-			server_game_sim.set_cpu_driver_manager(null)
-	elif network_manager.is_server:
-		game_sim.set_cpu_driver_manager(null)
-		server_game_sim.set_cpu_driver_manager(cpu_driver_manager)
-	else:
-		game_sim.set_cpu_driver_manager(null)
-		server_game_sim.set_cpu_driver_manager(null)
 	network_manager.game_sim = game_sim
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim

@@ -16,6 +16,8 @@
 #include "godot_cpp/variant/string.hpp"
 #include "godot_cpp/variant/packed_vector3_array.hpp"
 
+static constexpr int MXT_VEHICLE_SHARD_COUNT = 4;
+
 namespace godot {
 	class GameSim;
 }
@@ -46,12 +48,26 @@ struct ImpactData {
 	float speed_per_mass;
 };
 
-#define PHYSICS_CAR_SCALAR_FIELDS(X) \
+struct PhysicsCarCornerProfile {
+	uint64_t* old_analytic_us = nullptr;
+	uint64_t* new_checkpoint_us = nullptr;
+	uint64_t* new_analytic_us = nullptr;
+	uint64_t* mesh_us = nullptr;
+};
+
+struct PhysicsCarFloorProfile {
+	uint64_t* corner_analytic_surface_us = nullptr;
+	uint64_t* mesh_candidate_collect_us = nullptr;
+	uint64_t* mesh_cast4_us = nullptr;
+	uint64_t* mesh_floor_sample_us = nullptr;
+	uint64_t* find_floor_cast_us = nullptr;
+	uint64_t* find_floor_mesh_us = nullptr;
+	uint64_t* find_floor_analytic_us = nullptr;
+};
+
+#define PHYSICS_CAR_STATIC_SCALAR_FIELDS(X) \
 	X(RaceTrack*, current_track, nullptr) \
 	X(PhysicsCarProperties*, car_properties, nullptr) \
-	X(RoadData, road_sample, RoadData()) \
-	X(float, calced_max_energy, 100.0f) \
-	X(uint32_t, machine_state, 0) \
 	X(float, stat_weight, 0.0f) \
 	X(float, stat_grip_1, 0.0f) \
 	X(float, stat_grip_2, 0.0f) \
@@ -73,14 +89,23 @@ struct ImpactData {
 	X(float, camera_reorienting, 0.0f) \
 	X(float, camera_repositioning, 0.0f) \
 	X(const char*, machine_name, "") \
-	X(float, base_speed, 0.0f) \
-	X(float, boost_turbo, 0.0f) \
-	X(float, dashplate_heat_multiplier, 1.0f) \
 	X(float, weight_derived_1, 0.0f) \
 	X(float, weight_derived_2, 0.0f) \
 	X(float, weight_derived_3, 0.0f) \
+	X(float, boost_energy_use_mult, 1.0f) \
+	X(float, energy_recharge_mult, 1.0f) \
+	X(float, stat_obstacle_collision, 0.0f) \
+	X(float, stat_track_collision, 0.0f) \
+	X(float, m_accel_setting, 0.5f) \
+	X(uint16_t, s_boost_charge_max, 50)
+
+#define PHYSICS_CAR_STATE_SCALAR_FIELDS(X) \
+	X(float, calced_max_energy, 100.0f) \
+	X(uint32_t, machine_state, 0) \
+	X(float, base_speed, 0.0f) \
+	X(float, boost_turbo, 0.0f) \
+	X(float, dashplate_heat_multiplier, 1.0f) \
 	X(float, race_start_charge, 0.0f) \
-	X(float, speed_kmh, 0.0f) \
 	X(float, air_tilt, 0.0f) \
 	X(float, energy, 0.0f) \
 	X(float, ko_energy_bonus, 0.0f) \
@@ -107,44 +132,22 @@ struct ImpactData {
 	X(bool, broken_lap_rollback_pending, false) \
 	X(uint8_t, broken_lap_rollback_lap, 0) \
 	X(float, lap_progress, 0.0f) \
-	X(float, input_strafe_32, 0.0f) \
-	X(float, input_strafe_1_6, 0.0f) \
-	X(float, input_steer_pitch, 0.0f) \
-	X(float, input_strafe, 0.0f) \
-	X(float, input_steer_yaw, 0.0f) \
 	X(float, input_accel, 0.0f) \
-	X(float, input_brake, 0.0f) \
-	X(float, input_yaw_dupe, 0.0f) \
 	X(uint8_t, rail_collision_timer, 0) \
 	X(uint32_t, terrain_state, 0) \
 	X(uint8_t, grip_frames_from_accel_press, 0) \
-	X(float, visual_shake_mult, 0.0f) \
 	X(uint32_t, frames_since_start, 0) \
 	X(uint32_t, frames_since_start_2, 0) \
 	X(uint8_t, side_attack_delay, 0) \
 	X(uint16_t, attack_cooldown_frames, 0) \
 	X(uint32_t, air_time, 0) \
-	X(float, damage_from_last_hit, 0.0f) \
-	X(uint32_t, strafe_effect, 0) \
 	X(bool, machine_crashed, false) \
-	X(uint8_t, machine_collision_frame_counter, 0) \
 	X(uint8_t, car_hit_invincibility, 0) \
 	X(uint8_t, boost_delay_frame_counter, 0) \
-	X(float, turn_reaction_input, 0.0f) \
-	X(float, boost_energy_use_mult, 1.0f) \
-	X(float, energy_recharge_mult, 1.0f) \
 	X(uint32_t, frames_since_death, 0) \
-	X(uint32_t, terrain_state_2, 0) \
-	X(uint32_t, suspension_reset_flag, 0) \
-	X(float, turning_related, 0.0f) \
 	X(int8_t, drift_sign, 0) \
 	X(float, drift_ramp, 0.0f) \
-	X(float, stat_obstacle_collision, 0.0f) \
-	X(float, stat_track_collision, 0.0f) \
 	X(uint32_t, state_2, 0) \
-	X(float, side_attack_indicator, 0.0f) \
-	X(uint32_t, g_anim_timer, 0) \
-	X(float, m_accel_setting, 0.5f) \
 	X(uint64_t, level_start_time, 0) \
 	X(int, some_breakdown_int, 0) \
 	X(int, breakdown_frame_counter, 0) \
@@ -152,79 +155,113 @@ struct ImpactData {
 	X(uint32_t, restore_wait_frames, 0) \
 	X(uint32_t, restore_move_frames, 0) \
 	X(uint16_t, s_boost_charge, 0) \
-	X(uint16_t, s_boost_charge_max, 50) \
 	X(uint16_t, s_boost_frames_remaining, 0) \
 	X(uint16_t, s_boost_emit_frame_accumulator, 0) \
 	X(uint8_t, s_boost_pending_spark_spawns, 0) \
 	X(uint8_t, pending_super_sparks, 0) \
-	X(bool, s_boost_active, false) \
-	X(int, collision_old_cp, -1) \
-	X(bool, collision_old_valid, false) \
-	X(bool, collision_old_was_above, false) \
-	X(bool, collision_old_was_inside, false) \
-	X(SimVec2, collision_old_road_t, SimVec2()) \
-	X(SimVec3, collision_old_spatial_t, SimVec3()) \
-	X(SimTransform, collision_old_surface, SimTransform())
+	X(bool, s_boost_active, false)
 
-#define PHYSICS_CAR_VEC3_FIELDS(X) \
+#define PHYSICS_CAR_TRANSIENT_SCALAR_FIELDS(X) \
+	X(float, visual_shake_mult, 0.0f) \
+	X(float, speed_kmh, 0.0f) \
+	X(float, turning_related, 0.0f) \
+	X(float, side_attack_indicator, 0.0f) \
+	X(uint32_t, g_anim_timer, 0) \
+	X(float, input_strafe_32, 0.0f) \
+	X(float, input_strafe_1_6, 0.0f) \
+	X(float, turn_reaction_input, 0.0f) \
+	X(float, input_steer_pitch, 0.0f) \
+	X(float, input_strafe, 0.0f) \
+	X(float, input_steer_yaw, 0.0f) \
+	X(float, input_brake, 0.0f) \
+	X(RoadData, road_sample, RoadData())
+
+#define PHYSICS_CAR_SCALAR_FIELDS(X) \
+	PHYSICS_CAR_STATIC_SCALAR_FIELDS(X) \
+	PHYSICS_CAR_STATE_SCALAR_FIELDS(X) \
+	PHYSICS_CAR_TRANSIENT_SCALAR_FIELDS(X)
+
+#define PHYSICS_CAR_STATE_VEC3_FIELDS(X) \
 	X(position_current, SimVec3()) \
 	X(position_old, SimVec3()) \
-	X(position_old_2, SimVec3()) \
 	X(position_old_dupe, SimVec3()) \
-	X(position_collision_snapshot, SimVec3()) \
-	X(position_bottom, SimVec3()) \
-	X(position_behind, SimVec3()) \
-	X(initial_pos, SimVec3()) \
 	X(velocity, SimVec3()) \
 	X(knockback_velocity, SimVec3()) \
 	X(velocity_angular, SimVec3()) \
+	X(track_surface_normal, SimVec3())
+
+#define PHYSICS_CAR_TRANSIENT_VEC3_FIELDS(X) \
+	X(initial_pos, SimVec3()) \
+	X(visual_rotation, SimVec3()) \
+	X(track_surface_pos, SimVec3()) \
+	X(track_surface_normal_prev, SimVec3()) \
+	X(position_collision_snapshot, SimVec3()) \
+	X(position_bottom, SimVec3()) \
 	X(velocity_local, SimVec3()) \
 	X(velocity_local_flattened_and_rotated, SimVec3()) \
-	X(visual_rotation, SimVec3()) \
 	X(collision_push_track, SimVec3()) \
 	X(collision_push_rail, SimVec3()) \
 	X(collision_push_total, SimVec3()) \
 	X(collision_response, SimVec3()) \
-	X(track_surface_normal, SimVec3()) \
-	X(track_surface_normal_prev, SimVec3()) \
-	X(track_surface_pos, SimVec3()) \
 	X(unk_vec3_0x4e4, SimVec3()) \
 	X(unk_vec3_0x4f0, SimVec3())
 
-#define PHYSICS_CAR_TRANSFORM_FIELDS(X) \
+#define PHYSICS_CAR_VEC3_FIELDS(X) \
+	PHYSICS_CAR_STATE_VEC3_FIELDS(X) \
+	PHYSICS_CAR_TRANSIENT_VEC3_FIELDS(X)
+
+#define PHYSICS_CAR_STATE_TRANSFORM_FIELDS(X) \
 	X(basis_physical, SimTransform()) \
 	X(basis_physical_other, SimTransform()) \
-	X(transform_visual, SimTransform()) \
-	X(g_pitch_mtx_0x5e0, SimTransform()) \
 	X(restore_start_transform, SimTransform()) \
 	X(restore_target_transform, SimTransform())
 
-#define PHYSICS_CAR_TILT_VEC3_FIELDS(X) \
-	X(origin_point, SimVec3()) \
-	X(offset, SimVec3()) \
+#define PHYSICS_CAR_TRANSIENT_TRANSFORM_FIELDS(X) \
+	X(transform_visual, SimTransform()) \
+	X(g_pitch_mtx_0x5e0, SimTransform())
+
+#define PHYSICS_CAR_TRANSFORM_FIELDS(X) \
+	PHYSICS_CAR_STATE_TRANSFORM_FIELDS(X) \
+	PHYSICS_CAR_TRANSIENT_TRANSFORM_FIELDS(X)
+
+#define PHYSICS_CAR_TILT_STATIC_VEC3_FIELDS(X) \
+	X(offset, SimVec3())
+
+#define PHYSICS_CAR_TILT_STATE_VEC3_FIELDS(X) \
 	X(pos_old, SimVec3()) \
 	X(pos, SimVec3()) \
 	X(up_vector, SimVec3()) \
-	X(up_vector_2, SimVec3()) \
-	X(target_dir, SimVec3()) \
+	X(up_vector_2, SimVec3())
+
+#define PHYSICS_CAR_TILT_TRANSIENT_VEC3_FIELDS(X) \
 	X(force_spatial, SimVec3())
 
-#define PHYSICS_CAR_TILT_SCALAR_FIELDS(X) \
-	X(float, target_length, 0.0f) \
-	X(float, max_length, 0.0f) \
-	X(float, spring_strength, 0.0f) \
-	X(float, force_at_point, 0.0f) \
+#define PHYSICS_CAR_TILT_VEC3_FIELDS(X) \
+	PHYSICS_CAR_TILT_STATIC_VEC3_FIELDS(X) \
+	PHYSICS_CAR_TILT_STATE_VEC3_FIELDS(X) \
+	PHYSICS_CAR_TILT_TRANSIENT_VEC3_FIELDS(X)
+
+#define PHYSICS_CAR_TILT_STATIC_SCALAR_FIELDS(X)
+
+#define PHYSICS_CAR_TILT_STATE_SCALAR_FIELDS(X) \
 	X(float, force, 0.0f) \
 	X(float, rest_length, 0.0f) \
-	X(float, force_spatial_len, 0.0f) \
 	X(uint32_t, state, 0)
 
-#define PHYSICS_CAR_WALL_VEC3_FIELDS(X) \
-	X(origin_point, SimVec3()) \
-	X(offset, SimVec3()) \
+#define PHYSICS_CAR_TILT_SCALAR_FIELDS(X) \
+	PHYSICS_CAR_TILT_STATIC_SCALAR_FIELDS(X) \
+	PHYSICS_CAR_TILT_STATE_SCALAR_FIELDS(X)
+
+#define PHYSICS_CAR_WALL_STATIC_VEC3_FIELDS(X) \
+	X(offset, SimVec3())
+
+#define PHYSICS_CAR_WALL_STATE_VEC3_FIELDS(X) \
 	X(pos_a, SimVec3()) \
-	X(pos_b, SimVec3()) \
-	X(collision, SimVec3())
+	X(pos_b, SimVec3())
+
+#define PHYSICS_CAR_WALL_VEC3_FIELDS(X) \
+	PHYSICS_CAR_WALL_STATIC_VEC3_FIELDS(X) \
+	PHYSICS_CAR_WALL_STATE_VEC3_FIELDS(X)
 
 #define PHYSICS_CAR_SOA_FIELDS(X) PHYSICS_CAR_SCALAR_FIELDS(X)
 
@@ -308,7 +345,7 @@ private:
 	float scratch_float[16];
 	bool compute_respawn_target(uint16_t cp_idx, SimTransform &out_transform, float &out_distance, uint16_t *out_checkpoint, float *out_fraction) const;
 	void start_restore_to_last_ground();
-	void sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface = true);
+	void sample_mesh_floor_with_seed(CollisionData &out_collision, const SimVec3 &point, float max_distance, uint8_t mask, int start_idx, bool allow_global_fallback, TrackQueryScratch &scratch, bool build_surface = true, bool build_surface_basis = true, bool prime_from_scratch_candidates = false);
 	void trigger_mesh_fallout();
 	void trigger_mesh_kill_collision();
 public:
@@ -317,11 +354,11 @@ public:
 
 public:
 	PhysicsCar(PhysicsCarSoA* p_soa, int p_index);
-	SimVec3 prepare_machine_frame(TrackQueryScratch &scratch);
+	SimVec3 prepare_machine_frame(TrackQueryScratch &scratch, PhysicsCarFloorProfile* profile = nullptr);
 	float get_current_stage_min_y() const;
     void handle_machine_damage_and_visuals();
     void handle_machine_damage_and_visuals_tail();
-	bool find_floor_beneath_machine(TrackQueryScratch &scratch);
+	bool find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsCarFloorProfile* profile = nullptr);
 	void handle_steering();
 	void set_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
 	void remove_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
@@ -342,17 +379,12 @@ public:
 	void update_machine_stats(); // This will use car_properties (base) and m_accel_setting to derive stats
 	void reset_machine(int reset_type);
 	void update_pitch_transform_from_machine_front_back();
-	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight);
-	SimVec3 get_avg_track_normal_from_tilt_corners(TrackQueryScratch &scratch);
+	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight, float ray_start_from_attachment_len, float ray_len, bool draw_tilt_debug);
+	SimVec3 get_avg_track_normal_from_tilt_corners(TrackQueryScratch &scratch, PhysicsCarFloorProfile* profile = nullptr);
 	void set_terrain_state_from_track(TrackQueryScratch &scratch, const SimVec3 &trigger_p0, const SimVec3 &trigger_p1);
 	void handle_attack_states();
 	void apply_torque_from_force(const SimVec3& p_local_offset, const SimVec3& wf_world_force);
-	void simulate_machine_motion(PlayerInput in_input);
-	void sample_old_corner_collision_surface(TrackQueryScratch &scratch);
-	int update_machine_corners(TrackQueryScratch &scratch);
-    //void create_machine_visual_transform();
-    void test_collision_with_other_car(PhysicsCar &other_car);
-    void handle_machine_collision_response();
+	int update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCornerProfile* profile = nullptr);
     void apply_machine_collision_response_from_corners(int corner_collision_type_flag,
         float push_magnitude_rail, float push_magnitude_track, float current_world_speed,
         float speed_over_weight, bool include_start_projection);
@@ -372,8 +404,6 @@ public:
     void buildSweepForMachine(float cappedSpeedMps, SimVec3 &sweepStartOut, SimVec3 &cappedVelocityOut);
     bool handle_machine_v_machine_collision(PhysicsCar &other_machine);
     bool handle_machine_v_bumper_collision(PhysicsCar &bumper_machine);
-    void post_tick();
-    void motion_tick(PlayerInput input);
 	bool can_collect_super_spark() const;
 	void add_super_spark_charge(uint16_t amount);
 	bool can_start_s_boost() const;

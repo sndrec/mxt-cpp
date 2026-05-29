@@ -7,6 +7,7 @@ var main: Node
 var race_seen := false
 var wait_frames := 0
 var race_frames := 0
+var race_start_local_tick := -1
 var max_wait_frames := 1200
 var max_race_frames := 900
 var input_bytes := PackedByteArray()
@@ -43,10 +44,16 @@ func _process(_delta: float) -> bool:
 			push_error("MXT_NETPLAY_STATE_SIZE_CLIENT_TIMEOUT active=%s players=%s" % [str(nm.race_active), nm.player_ids.size()])
 			quit(1)
 		return false
+	if !bool(nm.has_network_peer()):
+		push_error("MXT_NETPLAY_STATE_SIZE_CLIENT_DISCONNECTED local_tick=%d race_ticks=%d" % [int(nm.local_tick), race_frames])
+		quit(1)
+		return false
+	if race_start_local_tick < 0:
+		race_start_local_tick = int(nm.local_tick)
 	nm.set_local_input(input_bytes)
 	main.call("_simulate_single_tick")
-	race_frames += 1
+	race_frames = int(nm.local_tick) - race_start_local_tick
 	if race_frames >= max_race_frames:
-		print("MXT_NETPLAY_STATE_SIZE_CLIENT_DONE race_frames=", race_frames, " local_tick=", nm.local_tick)
+		print("MXT_NETPLAY_STATE_SIZE_CLIENT_DONE race_ticks=", race_frames, " local_tick=", nm.local_tick)
 		quit()
 	return false
