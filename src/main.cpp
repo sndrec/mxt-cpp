@@ -1863,6 +1863,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("load_state_data", "target_tick", "data"), &GameSim::load_state_data);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
+	ClassDB::bind_method(D_METHOD("get_full_state_data", "target_tick"), &GameSim::get_full_state_data);
+	ClassDB::bind_method(D_METHOD("load_full_state_data", "target_tick", "data"), &GameSim::load_full_state_data);
 	ClassDB::bind_method(D_METHOD("get_network_state_size_stats"), &GameSim::get_network_state_size_stats);
 	ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
 	ClassDB::bind_method(D_METHOD("render_gamesim_visuals_only", "process_delta"), &GameSim::render_gamesim_visuals_only);
@@ -1894,6 +1896,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_bumper_debug_string"), &GameSim::get_bumper_debug_string);
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
 	ClassDB::bind_method(D_METHOD("get_player_render_transform", "player_id"), &GameSim::get_player_render_transform);
+	ClassDB::bind_method(D_METHOD("get_player_physical_render_transform", "player_id"), &GameSim::get_player_physical_render_transform);
+	ClassDB::bind_method(D_METHOD("get_player_physical_render_up", "player_id"), &GameSim::get_player_physical_render_up);
 	ClassDB::bind_method(D_METHOD("get_car_render_transform", "car_index"), &GameSim::get_car_render_transform);
 	ClassDB::bind_method(D_METHOD("get_saved_player_voice_transform", "player_id", "target_tick"), &GameSim::get_saved_player_voice_transform);
 	ClassDB::bind_method(D_METHOD("get_saved_player_voice_transforms", "target_tick"), &GameSim::get_saved_player_voice_transforms);
@@ -3237,6 +3241,55 @@ godot::Transform3D GameSim::get_player_render_transform(int player_id) const
 		return gd_transform(render_transform);
 	}
 	return godot::Transform3D();
+}
+
+godot::Transform3D GameSim::get_player_physical_render_transform(int player_id) const
+{
+	if (!car_player_ids || !cars) {
+		return godot::Transform3D();
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		Engine* engine = Engine::get_singleton();
+		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+		SimTransform prev = MXT_LOAD_TRANSFORM(soa, basis_physical_other, lane);
+		SimTransform current = MXT_LOAD_TRANSFORM(soa, basis_physical, lane);
+		prev.origin = LOAD_INDEXED_VEC3(soa, position_old, lane);
+		current.origin = LOAD_INDEXED_VEC3(soa, position_current, lane);
+		return gd_transform(interpolate_sim_transform(prev, current, alpha));
+	}
+	return godot::Transform3D();
+}
+
+godot::Vector3 GameSim::get_player_physical_render_up(int player_id) const
+{
+	if (!car_player_ids || !cars) {
+		return godot::Vector3(0.0, 1.0, 0.0);
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		Engine* engine = Engine::get_singleton();
+		const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;
+		SimVec3 up = LOAD_INDEXED_VEC3(soa, track_surface_normal_prev, lane).lerp(
+			LOAD_INDEXED_VEC3(soa, track_surface_normal, lane),
+			alpha);
+		if (up.length_squared() <= 0.0001f) {
+			up = MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis.get_column(1);
+		}
+		if (up.length_squared() <= 0.0001f) {
+			up = SimVec3(0.0f, 1.0f, 0.0f);
+		}
+		return gd_vec3(up.normalized());
+	}
+	return godot::Vector3(0.0, 1.0, 0.0);
 }
 
 godot::Transform3D GameSim::get_car_render_transform(int car_index) const
@@ -8159,6 +8212,147 @@ godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
 	if (!state_buffer[index].data)
 		return godot::PackedByteArray();
 	return serialize_network_state(target_tick);
+}
+
+static constexpr uint32_t MXT_FULL_STATE_MAGIC = 0x4653544du;
+static constexpr uint32_t MXT_FULL_STATE_VERSION = 1u;
+
+godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
+	if (!gamestate_data.heap_start || gamestate_data.get_size() <= 0) {
+		return godot::PackedByteArray();
+	}
+	SavedState state = {};
+	save_bumper_states_to_saved_state(state);
+	update_saved_voice_transforms(state);
+	const uint32_t voice_count = static_cast<uint32_t>(std::min(
+		std::max(0, state.voice_transform_count),
+		static_cast<int>(state.voice_transforms.size())));
+	const uint32_t bumper_count_u32 = static_cast<uint32_t>(BUMPER_POOL_SIZE);
+	const uint32_t heap_size = static_cast<uint32_t>(gamestate_data.get_size());
+	const size_t header_size =
+		sizeof(uint32_t) * 6u +
+		sizeof(uint8_t) +
+		sizeof(uint32_t);
+	const size_t bumper_size = static_cast<size_t>(BUMPER_POOL_SIZE) *
+		(sizeof(uint8_t) * 2u + sizeof(uint32_t) + sizeof(float));
+	const size_t voice_size = static_cast<size_t>(voice_count) *
+		(sizeof(int32_t) + sizeof(float) * 12u);
+	const size_t total_size = header_size + bumper_size + voice_size + heap_size;
+	godot::PackedByteArray out;
+	out.resize(static_cast<int>(total_size));
+	uint8_t* ptr = out.ptrw();
+	auto write_bytes = [&ptr](const void* src, size_t size) {
+		std::memcpy(ptr, src, size);
+		ptr += size;
+	};
+	const uint32_t magic = MXT_FULL_STATE_MAGIC;
+	const uint32_t version = MXT_FULL_STATE_VERSION;
+	const int32_t stored_tick = static_cast<int32_t>(target_tick);
+	write_bytes(&magic, sizeof(magic));
+	write_bytes(&version, sizeof(version));
+	write_bytes(&stored_tick, sizeof(stored_tick));
+	write_bytes(&heap_size, sizeof(heap_size));
+	write_bytes(&bumper_count_u32, sizeof(bumper_count_u32));
+	write_bytes(&voice_count, sizeof(voice_count));
+	write_bytes(&state.bumper_scheduler_lap, sizeof(state.bumper_scheduler_lap));
+	write_bytes(&state.bumper_next_sequence, sizeof(state.bumper_next_sequence));
+	for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
+		const BumperState& bumper = state.bumper_states[i];
+		write_bytes(&bumper.active, sizeof(bumper.active));
+		write_bytes(&bumper.spawn_lap, sizeof(bumper.spawn_lap));
+		write_bytes(&bumper.next_sequence, sizeof(bumper.next_sequence));
+		write_bytes(&bumper.target_lane, sizeof(bumper.target_lane));
+	}
+	for (uint32_t i = 0; i < voice_count; ++i) {
+		const SavedVoiceTransform& voice = state.voice_transforms[i];
+		write_bytes(&voice.player_id, sizeof(voice.player_id));
+		const SimTransform& t = voice.transform;
+		const float values[12] = {
+			t.basis.c0.x, t.basis.c0.y, t.basis.c0.z,
+			t.basis.c1.x, t.basis.c1.y, t.basis.c1.z,
+			t.basis.c2.x, t.basis.c2.y, t.basis.c2.z,
+			t.origin.x, t.origin.y, t.origin.z,
+		};
+		write_bytes(values, sizeof(values));
+	}
+	write_bytes(gamestate_data.heap_start, heap_size);
+	return out;
+}
+
+bool GameSim::load_full_state_data(int target_tick, godot::PackedByteArray data) {
+	const uint8_t* ptr = data.ptr();
+	const uint8_t* end = ptr + data.size();
+	auto read_bytes = [&ptr, end](void* dst, size_t size) -> bool {
+		if (ptr + size > end) {
+			return false;
+		}
+		std::memcpy(dst, ptr, size);
+		ptr += size;
+		return true;
+	};
+	uint32_t magic = 0;
+	uint32_t version = 0;
+	int32_t stored_tick = -1;
+	uint32_t heap_size = 0;
+	uint32_t bumper_count_u32 = 0;
+	uint32_t voice_count = 0;
+	if (!read_bytes(&magic, sizeof(magic)) ||
+			!read_bytes(&version, sizeof(version)) ||
+			!read_bytes(&stored_tick, sizeof(stored_tick)) ||
+			!read_bytes(&heap_size, sizeof(heap_size)) ||
+			!read_bytes(&bumper_count_u32, sizeof(bumper_count_u32)) ||
+			!read_bytes(&voice_count, sizeof(voice_count)) ||
+			magic != MXT_FULL_STATE_MAGIC ||
+			version != MXT_FULL_STATE_VERSION ||
+			stored_tick != target_tick ||
+			bumper_count_u32 != static_cast<uint32_t>(BUMPER_POOL_SIZE)) {
+		return false;
+	}
+	const int index = target_tick % STATE_BUFFER_LEN;
+	if (!state_buffer[index].data || heap_size > static_cast<uint32_t>(gamestate_data.get_capacity())) {
+		return false;
+	}
+	SavedState& state = state_buffer[index];
+	state.bumper_state_count = static_cast<int>(bumper_count_u32);
+	if (!read_bytes(&state.bumper_scheduler_lap, sizeof(state.bumper_scheduler_lap)) ||
+			!read_bytes(&state.bumper_next_sequence, sizeof(state.bumper_next_sequence))) {
+		return false;
+	}
+	for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
+		BumperState& bumper = state.bumper_states[i];
+		if (!read_bytes(&bumper.active, sizeof(bumper.active)) ||
+				!read_bytes(&bumper.spawn_lap, sizeof(bumper.spawn_lap)) ||
+				!read_bytes(&bumper.next_sequence, sizeof(bumper.next_sequence)) ||
+				!read_bytes(&bumper.target_lane, sizeof(bumper.target_lane))) {
+			return false;
+		}
+	}
+	state.voice_transforms.resize(voice_count);
+	state.voice_transform_count = static_cast<int>(voice_count);
+	for (uint32_t i = 0; i < voice_count; ++i) {
+		SavedVoiceTransform& voice = state.voice_transforms[i];
+		float values[12] = {};
+		if (!read_bytes(&voice.player_id, sizeof(voice.player_id)) ||
+				!read_bytes(values, sizeof(values))) {
+			return false;
+		}
+		voice.transform.basis.c0 = SimVec3(values[0], values[1], values[2]);
+		voice.transform.basis.c1 = SimVec3(values[3], values[4], values[5]);
+		voice.transform.basis.c2 = SimVec3(values[6], values[7], values[8]);
+		voice.transform.origin = SimVec3(values[9], values[10], values[11]);
+	}
+	if (ptr + heap_size > end) {
+		return false;
+	}
+	std::memcpy(state.data, ptr, heap_size);
+	state.size = static_cast<int>(heap_size);
+	state.tick = target_tick;
+	std::memcpy(gamestate_data.heap_start, state.data, heap_size);
+	gamestate_data.set_size(state.size);
+	tick = target_tick;
+	fix_pointers();
+	restore_bumper_states_from_saved_state(state);
+	return true;
 }
 
 godot::Dictionary GameSim::get_network_state_size_stats() const {

@@ -172,6 +172,13 @@ var replay_playback_racer_ids: Array = []
 var replay_playback_cpu_flags: Array = []
 var replay_playback_local_player_id: int = 0
 var replay_playback_use_multiplayer_startup: bool = false
+var replay_saved_finish_times: Dictionary = {}
+var replay_saved_finish_placements: Dictionary = {}
+var replay_saved_eliminations: Dictionary = {}
+var replay_playback_paused: bool = false
+var replay_playback_rate: float = 1.0
+var replay_seek_checkpoints: Array = []
+var replay_seeking_active: bool = false
 var replay_camera_mode: int = 0
 var replay_auto_camera: Camera3D
 var replay_relative_camera: Camera3D
@@ -190,6 +197,14 @@ var replay_catalog_watch_button: Button
 var replay_catalog_rename_button: Button
 var replay_catalog_delete_button: Button
 var replay_catalog_entries: Array = []
+var replay_timeline_root: Control
+var replay_timeline_panel: PanelContainer
+var replay_timeline_track: ColorRect
+var replay_timeline_fill: ColorRect
+var replay_timeline_playhead: ColorRect
+var replay_timeline_time_label: Label
+var replay_timeline_rate_label: Label
+var replay_timeline_play_button: Button
 var singleplayer_options_root: Control
 var singleplayer_options_restore_toggle: CheckBox
 var singleplayer_options_bumpers_toggle: CheckBox
@@ -210,6 +225,7 @@ const REPLAY_RELATIVE_LOOK_SPEED := 0.0025
 const REPLAY_RELATIVE_LOOK_ACTION_SPEED := 6.0
 const REPLAY_RELATIVE_MOVE_SPEED := 300.0
 const REPLAY_RELATIVE_FAST_MOVE_SPEED := 900.0
+const REPLAY_SEEK_CHECKPOINT_INTERVAL := 1800
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 const DIP_TRACE_MESH_FLOOR := 0x1000
@@ -261,6 +277,7 @@ func _ready() -> void:
 	_build_lobby_options_controls()
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
+	_build_replay_timeline_controls()
 	_load_tracks()
 	_load_car_definitions()
 	if car_settings != null and car_settings.has_method("refresh_after_game_manager_loaded"):
@@ -1772,6 +1789,161 @@ func _decode_replay_frame(frame: Dictionary) -> Dictionary:
 		out[int(id_value)] = Marshalls.base64_to_raw(str(raw_inputs[id_value]))
 	return out
 
+func _build_replay_timeline_controls() -> void:
+	if replay_timeline_root != null and is_instance_valid(replay_timeline_root):
+		return
+	replay_timeline_root = Control.new()
+	replay_timeline_root.name = "ReplayTimeline"
+	replay_timeline_root.visible = false
+	replay_timeline_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	replay_timeline_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(replay_timeline_root)
+	replay_timeline_panel = PanelContainer.new()
+	replay_timeline_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	replay_timeline_panel.anchor_left = 0.08
+	replay_timeline_panel.anchor_right = 0.92
+	replay_timeline_panel.anchor_top = 1.0
+	replay_timeline_panel.anchor_bottom = 1.0
+	replay_timeline_panel.offset_top = -92.0
+	replay_timeline_panel.offset_bottom = -18.0
+	replay_timeline_root.add_child(replay_timeline_panel)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 16)
+	margin.add_theme_constant_override("margin_right", 16)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	replay_timeline_panel.add_child(margin)
+	var rows := VBoxContainer.new()
+	rows.add_theme_constant_override("separation", 8)
+	margin.add_child(rows)
+	replay_timeline_track = ColorRect.new()
+	replay_timeline_track.color = Color(0.08, 0.09, 0.1, 0.92)
+	replay_timeline_track.custom_minimum_size = Vector2(0.0, 18.0)
+	replay_timeline_track.mouse_filter = Control.MOUSE_FILTER_STOP
+	replay_timeline_track.gui_input.connect(_on_replay_timeline_track_input)
+	rows.add_child(replay_timeline_track)
+	replay_timeline_fill = ColorRect.new()
+	replay_timeline_fill.color = Color(0.95, 0.76, 0.26, 1.0)
+	replay_timeline_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	replay_timeline_track.add_child(replay_timeline_fill)
+	replay_timeline_playhead = ColorRect.new()
+	replay_timeline_playhead.color = Color(1.0, 1.0, 1.0, 1.0)
+	replay_timeline_playhead.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	replay_timeline_track.add_child(replay_timeline_playhead)
+	var controls := HBoxContainer.new()
+	controls.add_theme_constant_override("separation", 10)
+	rows.add_child(controls)
+	replay_timeline_play_button = Button.new()
+	replay_timeline_play_button.text = "Pause"
+	replay_timeline_play_button.pressed.connect(_on_replay_timeline_play_pressed)
+	controls.add_child(replay_timeline_play_button)
+	var slower := Button.new()
+	slower.text = "-"
+	slower.pressed.connect(_on_replay_timeline_slower_pressed)
+	controls.add_child(slower)
+	replay_timeline_rate_label = Label.new()
+	replay_timeline_rate_label.custom_minimum_size.x = 70.0
+	replay_timeline_rate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	controls.add_child(replay_timeline_rate_label)
+	var faster := Button.new()
+	faster.text = "+"
+	faster.pressed.connect(_on_replay_timeline_faster_pressed)
+	controls.add_child(faster)
+	replay_timeline_time_label = Label.new()
+	replay_timeline_time_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	replay_timeline_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	controls.add_child(replay_timeline_time_label)
+
+func _format_replay_timeline_time(tick_value: int) -> String:
+	var total_msec := int(round(float(maxi(tick_value, 0)) * 1000.0 / 60.0))
+	var minutes := int(total_msec / 60000)
+	var seconds := int(total_msec / 1000) % 60
+	var milliseconds := total_msec % 1000
+	return "%d:%02d.%03d" % [minutes, seconds, milliseconds]
+
+func _set_replay_playback_rate(rate: float) -> void:
+	var rates := [0.125, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0]
+	var best := 1.0
+	var best_delta := INF
+	for value in rates:
+		var delta := absf(float(value) - rate)
+		if delta < best_delta:
+			best = float(value)
+			best_delta = delta
+	replay_playback_rate = best
+	_apply_replay_playback_clock()
+
+func _apply_replay_playback_clock() -> void:
+	if replay_playback_active and !replay_playback_paused:
+		Engine.time_scale = replay_playback_rate
+		Engine.physics_ticks_per_second = maxi(1, roundi(60.0 * replay_playback_rate))
+	else:
+		Engine.time_scale = 1.0
+		Engine.physics_ticks_per_second = 60
+
+func _format_replay_playback_rate() -> String:
+	if replay_playback_rate >= 1.0:
+		return "%dx" % roundi(replay_playback_rate)
+	return "%.3fx" % replay_playback_rate
+
+func _on_replay_timeline_play_pressed() -> void:
+	replay_playback_paused = !replay_playback_paused
+	_apply_replay_playback_clock()
+	_update_replay_timeline_controls()
+
+func _on_replay_timeline_slower_pressed() -> void:
+	_set_replay_playback_rate(replay_playback_rate * 0.5)
+	_update_replay_timeline_controls()
+
+func _on_replay_timeline_faster_pressed() -> void:
+	_set_replay_playback_rate(replay_playback_rate * 2.0)
+	_update_replay_timeline_controls()
+
+func _on_replay_timeline_track_input(event: InputEvent) -> void:
+	if !replay_playback_active:
+		return
+	var mouse_event := event as InputEventMouse
+	if mouse_event == null:
+		return
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.button_index != MOUSE_BUTTON_LEFT or !button.pressed:
+			return
+	elif !(event is InputEventMouseMotion and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)):
+		return
+	var width := maxf(replay_timeline_track.size.x, 1.0)
+	var ratio := clampf(mouse_event.position.x / width, 0.0, 1.0)
+	_seek_replay_to_tick(roundi(ratio * float(maxi(replay_playback_frames.size(), 1))))
+	_update_replay_timeline_controls()
+	get_viewport().set_input_as_handled()
+
+func _update_replay_timeline_controls() -> void:
+	if replay_timeline_root == null:
+		return
+	var should_show := false
+	if replay_playback_active:
+		var mouse_y := get_viewport().get_mouse_position().y
+		var viewport_h := get_viewport().get_visible_rect().size.y
+		should_show = mouse_y >= viewport_h - 118.0
+		if replay_timeline_panel != null:
+			should_show = should_show or replay_timeline_panel.get_global_rect().has_point(get_viewport().get_mouse_position())
+	replay_timeline_root.visible = should_show
+	var total_ticks := maxi(replay_playback_frames.size(), 1)
+	var current_tick := clampi(_singleplayer_tick, 0, total_ticks)
+	var ratio := float(current_tick) / float(total_ticks)
+	if replay_timeline_fill != null and replay_timeline_track != null:
+		replay_timeline_fill.position = Vector2.ZERO
+		replay_timeline_fill.size = Vector2(replay_timeline_track.size.x * ratio, replay_timeline_track.size.y)
+	if replay_timeline_playhead != null and replay_timeline_track != null:
+		replay_timeline_playhead.size = Vector2(4.0, replay_timeline_track.size.y + 8.0)
+		replay_timeline_playhead.position = Vector2(replay_timeline_track.size.x * ratio - 2.0, -4.0)
+	if replay_timeline_time_label != null:
+		replay_timeline_time_label.text = "%s / %s" % [_format_replay_timeline_time(current_tick), _format_replay_timeline_time(total_ticks)]
+	if replay_timeline_rate_label != null:
+		replay_timeline_rate_label.text = _format_replay_playback_rate()
+	if replay_timeline_play_button != null:
+		replay_timeline_play_button.text = "Play" if replay_playback_paused else "Pause"
+
 func _start_replay_playback_from_path(path: String) -> void:
 	var replay := _load_replay_file(path)
 	if replay.is_empty():
@@ -1802,6 +1974,9 @@ func _start_replay_playback_from_path(path: String) -> void:
 	replay_playback_loaded_path = path
 	replay_playback_racer_ids = racer_ids.duplicate(true)
 	replay_playback_cpu_flags = cpu_flags.duplicate(true)
+	replay_saved_finish_times = (replay.get("finish_times", {}) as Dictionary).duplicate(true) if typeof(replay.get("finish_times", {})) == TYPE_DICTIONARY else {}
+	replay_saved_finish_placements = (replay.get("finish_placements", {}) as Dictionary).duplicate(true) if typeof(replay.get("finish_placements", {})) == TYPE_DICTIONARY else {}
+	replay_saved_eliminations = (replay.get("eliminations", {}) as Dictionary).duplicate(true) if typeof(replay.get("eliminations", {})) == TYPE_DICTIONARY else {}
 	replay_start_grid_slots = PackedInt32Array()
 	var saved_grid_slots = replay.get("start_grid_slots", [])
 	if typeof(saved_grid_slots) == TYPE_ARRAY:
@@ -1811,6 +1986,10 @@ func _start_replay_playback_from_path(path: String) -> void:
 	replay_playback_focus_index = 0
 	replay_playback_local_player_id = int(replay_playback_racer_ids[0])
 	replay_playback_use_multiplayer_startup = str(replay.get("source", "")) == "server" or str(replay.get("mode", "")) == "Multiplayer"
+	replay_playback_paused = false
+	replay_playback_rate = 1.0
+	replay_seek_checkpoints.clear()
+	replay_seeking_active = false
 	replay_camera_mode = REPLAY_CAMERA_GAME
 	singleplayer_mode = true
 	_singleplayer_tick = 0
@@ -1833,34 +2012,133 @@ func _start_replay_playback_from_path(path: String) -> void:
 	lobby_control.visible = false
 	if replay_catalog_root != null:
 		replay_catalog_root.visible = false
+	_apply_replay_focus_to_local_visual()
+	_bake_replay_seek_checkpoints()
+	_apply_replay_playback_clock()
 	_apply_replay_camera_mode()
 	print("MXT_REPLAY playback started ", path, " frames=", replay_playback_frames.size())
 
-func _tick_replay_playback() -> void:
-	if replay_playback_index >= replay_playback_frames.size():
-		print("MXT_REPLAY playback complete ", replay_playback_loaded_path)
-		_return_to_menu()
+func _capture_replay_seek_checkpoint(next_tick: int) -> void:
+	if game_sim == null or !game_sim.has_method("get_full_state_data"):
 		return
+	for checkpoint in replay_seek_checkpoints:
+		if int((checkpoint as Dictionary).get("tick", -1)) == next_tick:
+			return
+	var state: PackedByteArray = game_sim.get_full_state_data(next_tick)
+	if state.is_empty():
+		return
+	replay_seek_checkpoints.append({
+		"tick": next_tick,
+		"index": replay_playback_index,
+		"state": state,
+		"finish_times": network_manager.player_finish_times.duplicate(true),
+		"finish_placements": network_manager.player_finish_placements.duplicate(true),
+		"eliminations": network_manager.player_eliminations.duplicate(true),
+	})
+
+func _find_replay_seek_checkpoint(target_tick: int) -> Dictionary:
+	var best: Dictionary = {}
+	var best_tick := -1
+	for checkpoint_value in replay_seek_checkpoints:
+		if typeof(checkpoint_value) != TYPE_DICTIONARY:
+			continue
+		var checkpoint: Dictionary = checkpoint_value
+		var checkpoint_tick := int(checkpoint.get("tick", -1))
+		if checkpoint_tick <= target_tick and checkpoint_tick > best_tick:
+			best = checkpoint
+			best_tick = checkpoint_tick
+	return best
+
+func _restore_replay_race_event_state(checkpoint: Dictionary) -> void:
+	network_manager.player_finish_times = (checkpoint.get("finish_times", {}) as Dictionary).duplicate(true)
+	network_manager.player_finish_placements = (checkpoint.get("finish_placements", {}) as Dictionary).duplicate(true)
+	network_manager.player_eliminations = (checkpoint.get("eliminations", {}) as Dictionary).duplicate(true)
+	network_manager._rebuild_finish_order_from_placements()
+	network_manager.net_race_finish_time = -1
+
+func _bake_replay_seek_checkpoints() -> void:
+	if game_sim == null or !game_sim.has_method("get_full_state_data") or !game_sim.has_method("load_full_state_data"):
+		return
+	replay_seeking_active = true
+	_capture_replay_seek_checkpoint(0)
+	while replay_playback_index < replay_playback_frames.size():
+		if !_tick_replay_playback(false):
+			break
+		if (_singleplayer_tick % REPLAY_SEEK_CHECKPOINT_INTERVAL) == 0:
+			_capture_replay_seek_checkpoint(_singleplayer_tick)
+	_capture_replay_seek_checkpoint(_singleplayer_tick)
+	_seek_replay_to_tick(0, false)
+	replay_seeking_active = false
+
+func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
+	if !replay_playback_active or game_sim == null or !game_sim.has_method("load_full_state_data"):
+		return false
+	target_tick = clampi(target_tick, 0, replay_playback_frames.size())
+	var checkpoint := _find_replay_seek_checkpoint(target_tick)
+	if checkpoint.is_empty():
+		return false
+	var checkpoint_tick := int(checkpoint.get("tick", 0))
+	var state: PackedByteArray = checkpoint.get("state", PackedByteArray())
+	if state.is_empty() or !game_sim.load_full_state_data(checkpoint_tick, state):
+		push_warning("Replay seek failed: could not load full checkpoint at tick %d" % checkpoint_tick)
+		return false
+	_restore_replay_race_event_state(checkpoint)
+	_singleplayer_tick = checkpoint_tick
+	replay_playback_index = int(checkpoint.get("index", checkpoint_tick))
+	replay_seeking_active = true
+	while _singleplayer_tick < target_tick and replay_playback_index < replay_playback_frames.size():
+		if !_tick_replay_playback(false):
+			break
+	replay_seeking_active = false
+	network_manager.clients_server_tick = _singleplayer_tick
+	_apply_replay_focus_to_local_visual()
+	if game_sim.sim_started:
+		_update_native_render_camera()
+		game_sim.render_gamesim()
+		if car_node_container.local_visual_car != null:
+			car_node_container.local_visual_car.just_rendered()
+	if show_notice:
+		_show_race_notification("Replay: %s" % _format_replay_timeline_time(_singleplayer_tick), 900)
+	return true
+
+func _tick_replay_playback(return_to_menu_on_complete: bool = true) -> bool:
+	if replay_playback_index >= replay_playback_frames.size():
+		if return_to_menu_on_complete:
+			print("MXT_REPLAY playback complete ", replay_playback_loaded_path)
+			_return_to_menu()
+		return false
 	var raw_frame = replay_playback_frames[replay_playback_index]
 	if typeof(raw_frame) != TYPE_DICTIONARY:
-		_return_to_menu()
-		return
+		if return_to_menu_on_complete:
+			_return_to_menu()
+		return false
 	var frame: Dictionary = raw_frame
 	var frame_tick := int(frame.get("tick", replay_playback_index))
 	if frame_tick != _singleplayer_tick:
 		push_warning("Replay playback refused: expected tick %d, found saved tick %d" % [_singleplayer_tick, frame_tick])
-		_return_to_menu()
-		return
+		if return_to_menu_on_complete:
+			_return_to_menu()
+		return false
 	var frame_inputs := _decode_replay_frame(frame)
 	for id_value in frame_inputs.keys():
 		network_manager.netcode_session.store_pending_input(_singleplayer_tick, int(id_value), frame_inputs[id_value])
 	if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick, true):
 		push_warning("Replay playback failed at tick %d" % _singleplayer_tick)
-		_return_to_menu()
-		return
+		if return_to_menu_on_complete:
+			_return_to_menu()
+		return false
+	_consume_authoritative_race_events()
 	replay_playback_index += 1
 	_singleplayer_tick += 1
 	network_manager.clients_server_tick = _singleplayer_tick
+	if !replay_seeking_active and (_singleplayer_tick % REPLAY_SEEK_CHECKPOINT_INTERVAL) == 0:
+		_capture_replay_seek_checkpoint(_singleplayer_tick)
+	return true
+
+func _simulate_replay_playback() -> void:
+	if replay_playback_paused:
+		return
+	_tick_replay_playback(true)
 
 func _ensure_replay_auto_camera() -> Camera3D:
 	if replay_auto_camera == null or !is_instance_valid(replay_auto_camera):
@@ -1890,20 +2168,47 @@ func _focused_replay_player_id() -> int:
 
 func _focused_replay_car() -> VisualCar:
 	var focus_id := _focused_replay_player_id()
+	if car_node_container.local_visual_car != null and car_node_container.local_visual_car.owning_id == focus_id:
+		return car_node_container.local_visual_car
 	for car in car_node_container.get_children():
 		if car is VisualCar and car.owning_id == focus_id:
 			return car
 	return null
 
+func _apply_replay_focus_to_local_visual() -> void:
+	if !replay_playback_active or car_node_container.local_visual_car == null:
+		return
+	var focus_id := _focused_replay_player_id()
+	var car := car_node_container.local_visual_car
+	car.owning_id = focus_id
+	car.race_hud.focus_player_id = focus_id
+	var settings = network_manager.player_settings.get(focus_id, null)
+	if settings != null:
+		var ps := _player_settings_for_stamp_render(settings)
+		if ps != null:
+			car.player_settings = ps
+	if is_instance_valid(car.name_label):
+		car.name_label.text = _player_display_name(focus_id)
+	if !auto_disable_hud_mode and !auto_hide_hud_only_mode:
+		car.race_hud.visible = true
+	if !auto_disable_hud_mode and !auto_disable_hud_process_only_mode:
+		car.race_hud.process_mode = Node.PROCESS_MODE_INHERIT
+
 func _focused_replay_transform() -> Transform3D:
+	if game_sim != null and game_sim.has_method("get_player_physical_render_transform"):
+		return game_sim.get_player_physical_render_transform(_focused_replay_player_id())
+	if game_sim != null and game_sim.has_method("get_player_render_transform"):
+		return game_sim.get_player_render_transform(_focused_replay_player_id())
 	var car := _focused_replay_car()
 	if car != null:
 		return Transform3D(car.basis_physical.basis, car.position_current)
-	if game_sim != null and game_sim.has_method("get_player_render_transform"):
-		return game_sim.get_player_render_transform(_focused_replay_player_id())
 	return Transform3D.IDENTITY
 
 func _focused_replay_up() -> Vector3:
+	if game_sim != null and game_sim.has_method("get_player_physical_render_up"):
+		var native_up: Vector3 = game_sim.get_player_physical_render_up(_focused_replay_player_id())
+		if native_up.length_squared() > 0.0001:
+			return native_up.normalized()
 	var car := _focused_replay_car()
 	if car != null and car.track_surface_normal.length_squared() > 0.0001:
 		return car.track_surface_normal.normalized()
@@ -1966,11 +2271,14 @@ func _reset_replay_relative_camera() -> void:
 func _apply_replay_camera_mode() -> void:
 	if !replay_playback_active:
 		return
+	_apply_replay_focus_to_local_visual()
 	var car := _focused_replay_car()
 	if replay_camera_mode == REPLAY_CAMERA_GAME and car_node_container.local_visual_car != null:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, _focused_replay_player_id())
 		car_node_container.local_visual_car.car_camera.make_current()
 	elif replay_camera_mode == REPLAY_CAMERA_AUTO:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_ensure_replay_auto_camera().make_current()
 	elif replay_camera_mode == REPLAY_CAMERA_RELATIVE:
 		_reset_replay_relative_camera()
@@ -1988,6 +2296,7 @@ func _apply_replay_camera_mode() -> void:
 		var camera := spectator_node.get_node_or_null("Camera3D") as Camera3D
 		if camera != null:
 			camera.make_current()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _cycle_replay_camera_mode() -> void:
 	replay_camera_mode = (replay_camera_mode + 1) % 4
@@ -2075,7 +2384,7 @@ func _update_replay_relative_camera(delta: float) -> void:
 	move_input.x += _replay_action_axis("MoveLeft", "MoveRight")
 	move_input.x += _replay_action_axis("SteerLeft", "SteerRight")
 	move_input.z += _replay_action_axis("MoveForward", "MoveBack")
-	move_input.z += _replay_action_strength("Brake") - _replay_action_strength("Accelerate")
+	move_input.z += _replay_action_axis("SteerUp", "SteerDown")
 	if move_input.length_squared() > 1.0:
 		move_input = move_input.normalized()
 	var current_speed := REPLAY_RELATIVE_FAST_MOVE_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else REPLAY_RELATIVE_MOVE_SPEED
@@ -3329,7 +3638,10 @@ func _physics_process(delta: float) -> void:
 		var input_bytes := local_pi.serialize()
 		if singleplayer_mode:
 			var profile_tick_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
-			_simulate_singleplayer_tick(input_bytes)
+			if replay_playback_active:
+				_simulate_replay_playback()
+			else:
+				_simulate_singleplayer_tick(input_bytes)
 			if auto_render_profile_mode:
 				render_profile_tick_us += Time.get_ticks_usec() - profile_tick_start
 			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
@@ -3342,7 +3654,8 @@ func _physics_process(delta: float) -> void:
 				_simulate_host_frame(input_bytes)
 			else:
 				_simulate_single_tick()
-		_consume_authoritative_race_events()
+		if !replay_playback_active:
+			_consume_authoritative_race_events()
 		_update_native_render_camera()
 		var profile_render_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim()
@@ -3530,7 +3843,16 @@ func _return_to_menu() -> void:
 	debug_replay_playback = false
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
+	replay_playback_paused = false
+	replay_playback_rate = 1.0
+	replay_seek_checkpoints.clear()
+	replay_saved_finish_times.clear()
+	replay_saved_finish_placements.clear()
+	replay_saved_eliminations.clear()
 	replay_start_grid_slots = PackedInt32Array()
+	if replay_timeline_root != null:
+		replay_timeline_root.visible = false
+	_apply_replay_playback_clock()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_close_race_pause_menu()
 	race_finish_label.visible = false
@@ -3576,7 +3898,16 @@ func _return_to_lobby() -> void:
 	debug_replay_playback = false
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
+	replay_playback_paused = false
+	replay_playback_rate = 1.0
+	replay_seek_checkpoints.clear()
+	replay_saved_finish_times.clear()
+	replay_saved_finish_placements.clear()
+	replay_saved_eliminations.clear()
 	replay_start_grid_slots = PackedInt32Array()
+	if replay_timeline_root != null:
+		replay_timeline_root.visible = false
+	_apply_replay_playback_clock()
 	_close_race_pause_menu()
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
@@ -3619,7 +3950,16 @@ func _teardown_race_world_for_transition() -> void:
 	debug_replay_playback = false
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
+	replay_playback_paused = false
+	replay_playback_rate = 1.0
+	replay_seek_checkpoints.clear()
+	replay_saved_finish_times.clear()
+	replay_saved_finish_placements.clear()
+	replay_saved_eliminations.clear()
 	replay_start_grid_slots = PackedInt32Array()
+	if replay_timeline_root != null:
+		replay_timeline_root.visible = false
+	_apply_replay_playback_clock()
 	_close_race_pause_menu()
 	_reset_nametag_pool()
 	game_sim.destroy_gamesim()
@@ -4005,6 +4345,7 @@ func _process(delta: float) -> void:
 		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		_update_replay_auto_camera(delta)
 		_update_replay_relative_camera(delta)
+		_update_replay_timeline_controls()
 		_update_native_render_camera()
 		game_sim.render_gamesim_visuals_only(delta)
 		if auto_render_profile_mode:

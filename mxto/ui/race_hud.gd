@@ -490,13 +490,18 @@ func _process( _delta:float ) -> void:
 	var use_tick := nm.get_race_tick()
 	var local_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 0
 	var place_id := focus_player_id
-	if nm.player_finish_times.has(local_id):
+	if car.game_manager != null and car.game_manager.replay_playback_active:
+		local_id = focus_player_id
+		use_tick = car.game_manager._singleplayer_tick
+	if nm.player_finish_times.has(focus_player_id):
+		use_tick = nm.player_finish_times[focus_player_id]
+	elif nm.player_finish_times.has(local_id):
 		use_tick = nm.player_finish_times[local_id]
 	elif nm.player_finish_times.has(car.owning_id):
 		use_tick = nm.player_finish_times[car.owning_id]
 	var official_start_tick := 300
 	if car.game_manager != null and car.game_manager.game_sim != null:
-		official_start_tick = int(car.game_manager.game_sim.get_player_level_start_time(car.owning_id))
+		official_start_tick = int(car.game_manager.game_sim.get_player_level_start_time(focus_player_id))
 	var time_elapsed : int = use_tick - official_start_tick
 	var time_elapsed_float : float = float(time_elapsed) / 60
 	var seconds : int = int(floor(time_elapsed_float)) % 60

@@ -401,6 +401,8 @@ namespace godot {
 		godot::String get_bumper_debug_string() const;
 		godot::Array get_race_order();
 		godot::Transform3D get_player_render_transform(int player_id) const;
+		godot::Transform3D get_player_physical_render_transform(int player_id) const;
+		godot::Vector3 get_player_physical_render_up(int player_id) const;
 		godot::Transform3D get_car_render_transform(int car_index) const;
 		godot::Transform3D get_saved_player_voice_transform(int player_id, int target_tick) const;
 		godot::Array get_saved_player_voice_transforms(int target_tick) const;
@@ -420,6 +422,8 @@ namespace godot {
 		bool load_state_data(int target_tick, godot::PackedByteArray data);
 		void finish_render_rollback_correction_capture();
 		godot::PackedByteArray get_state_data(int target_tick) const;
+		godot::PackedByteArray get_full_state_data(int target_tick);
+		bool load_full_state_data(int target_tick, godot::PackedByteArray data);
 		godot::Dictionary get_network_state_size_stats() const;
 		void set_state_data(int target_tick, godot::PackedByteArray data);
 		void fix_pointers();
