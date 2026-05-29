@@ -669,18 +669,24 @@ void RaceTrack::get_road_surface(int cp_idx, const SimVec3 &point,
 		return;
 	}
 	if (!oriented) {
+		if (road_shape_uses_base_relative_t(segment.road_shape) && segment.road_shape->num_modulations == 0) {
+			const float scaled_pos_x = road_t.x * root.scale.x;
+			const float scaled_dy_x = road_t.x * root_derivative.scale.x;
+			out_transform.origin = root.t3d.origin + root.t3d.basis[0] * scaled_pos_x;
+			const SimVec3 tangent_x = root.t3d.basis[0] * root.scale.x;
+			const SimVec3 tangent_y =
+				root_derivative.t3d.origin +
+				root_derivative.t3d.basis[0] * scaled_pos_x +
+				root.t3d.basis[0] * scaled_dy_x;
+			out_transform.basis[0] = SimVec3();
+			out_transform.basis[1] = tangent_y.cross(tangent_x).normalized();
+			out_transform.basis[2] = SimVec3();
+			return;
+		}
 		SimVec3 local_pos;
 		SimVec3 local_dx;
 		SimVec3 local_dy;
-		if ((segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
-				segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL) &&
-				segment.road_shape->num_modulations == 0) {
-			local_pos = SimVec3(road_t.x, 0.0f, 0.0f);
-			local_dx = SimVec3(1.0f, 0.0f, 0.0f);
-			local_dy = SimVec3();
-		} else {
-			segment.road_shape->get_local_surface_at_time(local_pos, local_dx, local_dy, road_t);
-		}
+		segment.road_shape->get_local_surface_at_time(local_pos, local_dx, local_dy, road_t);
 		const SimVec3 scaled_pos = mul_components(local_pos, root.scale);
 		const SimVec3 scaled_dx = mul_components(local_dx, root.scale);
 		const SimVec3 scaled_dy =
@@ -965,8 +971,7 @@ static void cast_segment_fast(const CastParams  &params,
 	SimVec3 const                        &p0,
 	SimVec3 const                        &p1,
 	int                                         use_idx,
-	SimVec3 const                        &sample_pt, // NEW
-	bool                                        oriented    = true)
+	SimVec3 const                        &sample_pt)
 {
 	out_collision.collided          = false;
 	out_collision.road_data.cp_idx  = -1;
@@ -999,14 +1004,10 @@ static void cast_segment_fast(const CastParams  &params,
 		return;
 	}
 
-	SimTransform surf;        // THE ONLY SURFACE FETCH
-	//if (oriented)
+	SimTransform surf;
 	segment.road_shape->get_oriented_transform_at_time_presampled(surf, road_t_sample_raw, sample_root, sample_root_derivative);
-	//else
-		//segment.road_shape->get_transform_at_time(surf, road_t_sample_raw);
 
 	const SimVec3 surf_n     = surf.basis[1];                    // Up/normal
-	const SimVec3 surf_fwd   = surf.basis[2];                    // Forward (needed for rails)
 
 	// ── 2) Basic plane hit against the single surface ────────────────────────
 	const SimVec3 ray        = p1 - p0;
@@ -2548,7 +2549,7 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 	SimVec3 const &p0,
 	SimVec3 const &p1,
 	uint8_t mask,
-	int start_idx, bool oriented, TrackQueryScratch *scratch, bool smooth_mesh_hits, const SimVec3 *mesh_side_reference_point, bool build_surface_basis)
+	int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits, const SimVec3 *mesh_side_reference_point, bool build_surface_basis)
 {
 	out_collision.collided = false;
 	out_collision.road_data.cp_idx = -1;
@@ -2587,6 +2588,6 @@ void RaceTrack::cast_vs_track_fast(CollisionData &out_collision,
 		build_surface_basis,
 		mesh_side_reference_point
 	};
-	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point, true);
+	cast_segment_fast(params, out_collision, p0, p1, start_idx, sample_point);
 	cast_mesh_collision_fast(params, out_collision, p0, p1, start_idx, scratch);
 }

@@ -143,7 +143,7 @@ public:
 		}
 		void collect_branch_sequence(int cp_idx, std::vector<int> &out_indices) const;
 		int find_checkpoint_recursive(const SimVec3 &pos, int cp_index, TrackQueryScratch &scratch, int iterations = 0);
-	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, bool oriented = false, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
+	void cast_vs_track_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx = -1, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
 	bool collect_mesh_cast_candidates(const SimAABB &bounds, uint8_t mask, TrackQueryScratch &scratch);
 	void cast_vs_mesh_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch = nullptr, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
 	void cast_vs_mesh_candidates_fast(CollisionData &out_collision, const SimVec3 &p0, const SimVec3 &p1, uint8_t mask, int start_idx, TrackQueryScratch *scratch, bool smooth_mesh_hits = true, const SimVec3 *mesh_side_reference_point = nullptr, bool build_surface_basis = true);
