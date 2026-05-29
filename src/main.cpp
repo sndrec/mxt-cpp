@@ -1169,29 +1169,30 @@ namespace {
 				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch, profile);
 				const SimVec3 rail_push = LOAD_INDEXED_VEC3(c, collision_push_rail, i);
 				const SimVec3 track_push = LOAD_INDEXED_VEC3(c, collision_push_track, i);
-				const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
-				const float push_magnitude_rail = rail_push.length();
-				const float push_magnitude_track = track_push.length();
-				const float current_world_speed = velocity.length();
-				float speed_over_weight = 0.0f;
-				if (std::abs(c.stat_weight[i]) > 0.0001f) {
-					speed_over_weight = current_world_speed / c.stat_weight[i];
+				const bool just_landed = (c.machine_state[i] & MACHINESTATE::JUSTLANDED) != 0;
+				if (rail_push.length_squared() > 0.0f || track_push.length_squared() > 0.0f || just_landed) {
+					const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
+					const float push_magnitude_rail = rail_push.length();
+					const float push_magnitude_track = track_push.length();
+					const float current_world_speed = velocity.length();
+					float speed_over_weight = 0.0f;
+					if (std::abs(c.stat_weight[i]) > 0.0001f) {
+						speed_over_weight = current_world_speed / c.stat_weight[i];
+					}
+					const bool significant_collision =
+						push_magnitude_rail > 0.0046296296f && speed_over_weight > 0.0046296296f;
+					const bool full_response =
+						c.frames_since_start_2[i] > 0x3c && significant_collision &&
+						(corner_collision_type_flag & 2) &&
+						(c.machine_state[i] & MACHINESTATE::LOWGRIP) == 0;
+					const bool landing_response = just_landed && speed_over_weight >= 0.0462962962962f;
+					if (push_magnitude_track > 0.0023148148f || push_magnitude_rail > 0.0023148148f ||
+						full_response || landing_response) {
+						car_views[i].apply_machine_collision_response_from_corners(corner_collision_type_flag,
+							push_magnitude_rail, push_magnitude_track, current_world_speed, speed_over_weight, false);
+					}
 				}
-				const bool significant_collision =
-					push_magnitude_rail > 0.0046296296f && speed_over_weight > 0.0046296296f;
-				const bool full_response =
-					c.frames_since_start_2[i] > 0x3c && significant_collision &&
-					(corner_collision_type_flag & 2) &&
-					(c.machine_state[i] & MACHINESTATE::LOWGRIP) == 0;
-				const bool landing_response =
-					(c.machine_state[i] & MACHINESTATE::JUSTLANDED) &&
-					speed_over_weight >= 0.0462962962962f;
-				if (push_magnitude_track > 0.0023148148f || push_magnitude_rail > 0.0023148148f ||
-					full_response || landing_response) {
-					car_views[i].apply_machine_collision_response_from_corners(corner_collision_type_flag,
-						push_magnitude_rail, push_magnitude_track, current_world_speed, speed_over_weight, false);
-				}
-				if (c.machine_state[i] & MACHINESTATE::JUSTLANDED) {
+				if (just_landed) {
 					c.air_time[i] = 0;
 				}
 			}
@@ -3669,8 +3670,28 @@ void GameSim::process_pending_ko_events()
 	}
 }
 
+struct NativeCpuTickContext {
+	int expected_tick = 0;
+	int lane_noise_t0 = 0;
+	int lane_noise_t1 = 1;
+	float lane_noise_smooth = 0.0f;
+};
+
+static inline NativeCpuTickContext native_cpu_make_tick_context(int expected_tick)
+{
+	constexpr int lane_period_ticks = 480;
+	NativeCpuTickContext out;
+	out.expected_tick = expected_tick;
+	out.lane_noise_t0 = expected_tick / lane_period_ticks;
+	out.lane_noise_t1 = out.lane_noise_t0 + 1;
+	const float frac = static_cast<float>(expected_tick - out.lane_noise_t0 * lane_period_ticks) / static_cast<float>(lane_period_ticks);
+	out.lane_noise_smooth = frac * frac * (3.0f - 2.0f * frac);
+	return out;
+}
+
 static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed);
 static inline PlayerInput native_cpu_generate_quantized_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed);
+static inline PlayerInput native_cpu_generate_quantized_input_for_car(const PhysicsCar& car, int32_t player_id, const NativeCpuTickContext& tick_context, int spawn_seed);
 
 void GameSim::tick_singleplayer(int local_player_id, godot::PackedByteArray local_input)
 {
@@ -3683,7 +3704,10 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	const PlayerInput* local_input,
 	const PlayerInput* decoded_car_inputs,
 	const uint8_t* decoded_car_input_present,
-	int decoded_car_input_count)
+	int decoded_car_input_count,
+	PlayerInput* out_authoritative_inputs,
+	uint8_t* out_authoritative_present,
+	bool store_input_history)
 {
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
@@ -3716,7 +3740,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	const bool track_has_triggers = vehicles_may_emit_trigger_events(cars, num_cars);
 	ensure_vehicle_tick_soa_capacity(sim_lane_count);
 	int buf_index = tick % INPUT_BUFFER_LEN;
-	PlayerInput* slot = input_buffer + buf_index * num_cars;
+	PlayerInput* slot = store_input_history ? input_buffer + buf_index * num_cars : nullptr;
 	const float lap_length_for_distance = gamesim_track_lap_length(current_track);
 
 	float lead_distance = 0.0f;
@@ -3734,6 +3758,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	update_bumpers(lead_distance, leader_lap);
 	phase_mark(phase_profile_pre_us);
 
+	const NativeCpuTickContext cpu_tick_context = native_cpu_make_tick_context(tick);
 	for (int i = 0; i < num_cars; i++) {
 		PlayerInput inp = PlayerInput::from_neutral();
 		bool input_already_quantized = false;
@@ -3747,17 +3772,23 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			inp = decoded_car_inputs[i];
 			input_already_quantized = mode == InputFrameMode::DecodedQuantizedCarArray;
 		} else if (completed_race && player_id != -1) {
-			inp = native_cpu_generate_quantized_input_for_car(cars[i], player_id, tick, spawn_seed);
+			inp = native_cpu_generate_quantized_input_for_car(cars[i], player_id, cpu_tick_context, spawn_seed);
 			input_already_quantized = true;
 		} else if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
 			inp = *local_input;
 			input_already_quantized = true;
 		} else if (car_is_cpu && car_is_cpu[i]) {
-			inp = native_cpu_generate_quantized_input_for_car(cars[i], player_id, tick, spawn_seed);
+			inp = native_cpu_generate_quantized_input_for_car(cars[i], player_id, cpu_tick_context, spawn_seed);
 			input_already_quantized = true;
 		}
 		if (!input_already_quantized) {
 			inp = PlayerInput::quantized(inp);
+		}
+		if (out_authoritative_inputs && i < decoded_car_input_count) {
+			out_authoritative_inputs[i] = inp;
+			if (out_authoritative_present) {
+				out_authoritative_present[i] = 1;
+			}
 		}
 		if (s_boost_enabled && !car_soa.s_boost_active[lane] && car_soa.s_boost_charge[lane] >= car_soa.s_boost_charge_max[lane] && inp.boost) {
 			float gap = lead_distance - soa.pre_distances[i];
@@ -3788,7 +3819,9 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			inp.boost = false;
 		}
 		soa.inputs[i] = inp;
-		slot[i] = inp;
+		if (slot) {
+			slot[i] = inp;
+		}
 	}
 	for (int i = num_cars; i < sim_lane_count; ++i) {
 		soa.inputs[i] = PlayerInput::from_neutral();
@@ -5359,12 +5392,8 @@ static inline float native_cpu_rand01_from_seed(uint32_t seed)
 	return static_cast<float>(native_cpu_hash_u32(seed) & 0x00FFFFFFu) * (1.0f / 16777215.0f);
 }
 
-static inline float native_cpu_smooth_noise_signed(uint32_t seed_base, int expected_tick, int period_ticks)
+static inline float native_cpu_smooth_noise_signed(uint32_t seed_base, int t0, int t1, float smooth)
 {
-	const int t0 = expected_tick / period_ticks;
-	const int t1 = t0 + 1;
-	const float frac = static_cast<float>(expected_tick - t0 * period_ticks) / static_cast<float>(period_ticks);
-	const float smooth = frac * frac * (3.0f - 2.0f * frac);
 	const float a = native_cpu_rand01_from_seed(seed_base ^ (static_cast<uint32_t>(t0) * 0x27D4EB2Du)) * 2.0f - 1.0f;
 	const float b = native_cpu_rand01_from_seed(seed_base ^ (static_cast<uint32_t>(t1) * 0x27D4EB2Du)) * 2.0f - 1.0f;
 	return a + (b - a) * smooth;
@@ -5375,10 +5404,30 @@ static inline float checkpoint_fraction_for_cpu_guidance(const CollisionCheckpoi
 	return std::max(0.0f, std::min(1.0f, checkpoint_plane_fraction_unclamped(cp, pos, 1.0e-6f)));
 }
 
-static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed)
+struct NativeCpuGuidanceInput {
+	float strafe_left = 0.0f;
+	float strafe_right = 0.0f;
+	float steer_horizontal = 0.0f;
+	bool boost = false;
+};
+
+static inline uint8_t native_cpu_quantize_unit_fast(float v)
+{
+	v = std::max(0.0f, std::min(1.0f, v));
+	return static_cast<uint8_t>(v * static_cast<float>(PlayerInput::RAW_BIT_PRECISION) + 0.5f);
+}
+
+static inline uint8_t native_cpu_quantize_axis_fast(float v)
+{
+	v = std::max(-1.0f, std::min(1.0f, v));
+	return static_cast<uint8_t>(((v + 1.0f) * 0.5f) * static_cast<float>(PlayerInput::RAW_BIT_PRECISION) + 0.5f);
+}
+
+static inline NativeCpuGuidanceInput native_cpu_generate_guidance_for_car(const PhysicsCar& car, int32_t player_id, const NativeCpuTickContext& tick_context, int spawn_seed)
 {
 	PhysicsCarSoA& soa = *car.soa;
 	const int i = car.soa_index;
+	const int expected_tick = tick_context.expected_tick;
 	const SimBasis physical_basis = MXT_LOAD_TRANSFORM(soa, basis_physical, i).basis;
 	SimBasis surface = soa.road_sample[i].closest_surface.basis;
 	float road_tx = soa.road_sample[i].road_t.x;
@@ -5415,11 +5464,14 @@ static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& ca
 		static_cast<uint32_t>(spawn_seed) * 0xC2B2AE35u ^
 		0xA341316Cu;
 
-	PlayerInput input = PlayerInput::from_neutral();
-	input.accelerate = 1.0f;
+	NativeCpuGuidanceInput input;
 
 	float desired_steer = (physical_basis.c0 + surface.c0).dot(surface.c2);
-	const float desired_lane = native_cpu_smooth_noise_signed(lane_seed, expected_tick, 480) * 0.8f;
+	const float desired_lane = native_cpu_smooth_noise_signed(
+		lane_seed,
+		tick_context.lane_noise_t0,
+		tick_context.lane_noise_t1,
+		tick_context.lane_noise_smooth) * 0.8f;
 
 	const float lane_offset = road_tx + desired_lane;
 	input.strafe_left = std::max(0.0f, std::min(1.0f, std::abs(std::min(lane_offset, 0.0f)) * 4.0f));
@@ -5443,19 +5495,36 @@ static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& ca
 	return input;
 }
 
+static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed)
+{
+	const NativeCpuGuidanceInput guidance = native_cpu_generate_guidance_for_car(car, player_id, native_cpu_make_tick_context(expected_tick), spawn_seed);
+	PlayerInput input = PlayerInput::from_neutral();
+	input.accelerate = 1.0f;
+	input.strafe_left = guidance.strafe_left;
+	input.strafe_right = guidance.strafe_right;
+	input.steer_horizontal = guidance.steer_horizontal;
+	input.boost = guidance.boost;
+	return input;
+}
+
 static inline PlayerInput native_cpu_generate_quantized_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed)
 {
-	const PlayerInput input = native_cpu_generate_input_for_car(car, player_id, expected_tick, spawn_seed);
+	return native_cpu_generate_quantized_input_for_car(car, player_id, native_cpu_make_tick_context(expected_tick), spawn_seed);
+}
+
+static inline PlayerInput native_cpu_generate_quantized_input_for_car(const PhysicsCar& car, int32_t player_id, const NativeCpuTickContext& tick_context, int spawn_seed)
+{
+	const NativeCpuGuidanceInput input = native_cpu_generate_guidance_for_car(car, player_id, tick_context, spawn_seed);
 	PlayerInput out{};
-	uint8_t q = PlayerInput::quantize_trigger(input.strafe_left);
+	uint8_t q = native_cpu_quantize_unit_fast(input.strafe_left);
 	if (q != PlayerInput::TRIGGER_NEUTRAL) {
 		out.strafe_left = static_cast<float>(q) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION);
 	}
-	q = PlayerInput::quantize_trigger(input.strafe_right);
+	q = native_cpu_quantize_unit_fast(input.strafe_right);
 	if (q != PlayerInput::TRIGGER_NEUTRAL) {
 		out.strafe_right = static_cast<float>(q) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION);
 	}
-	q = PlayerInput::quantize_axis(input.steer_horizontal);
+	q = native_cpu_quantize_axis_fast(input.steer_horizontal);
 	if (q != PlayerInput::AXIS_NEUTRAL) {
 		out.steer_horizontal = (static_cast<float>(q) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION)) * 2.0f - 1.0f;
 	}
@@ -5566,6 +5635,19 @@ void GameSim::fill_contiguous_native_cpu_player_inputs_for_frame(PlayerInput* ou
 		out_inputs[i] = native_cpu_generate_quantized_input_for_car(
 			cars[i], car_player_ids[i], expected_tick, spawn_seed);
 	}
+}
+
+bool GameSim::has_contiguous_native_cpu_player_order(const int32_t* expected_player_ids, int input_count) const
+{
+	if (!expected_player_ids || !car_player_ids || input_count < 0 || input_count > num_cars) {
+		return false;
+	}
+	for (int i = 0; i < input_count; ++i) {
+		if (expected_player_ids[i] != car_player_ids[i]) {
+			return false;
+		}
+	}
+	return true;
 }
 
 PlayerInput GameSim::generate_native_cpu_player_input_for_car_index(int car_index, int player_id, int expected_tick)

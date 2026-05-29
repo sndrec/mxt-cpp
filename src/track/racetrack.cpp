@@ -1830,12 +1830,10 @@ static bool scan_mesh_cast_triangle(
 	const CastParams &params,
 	CollisionData &out_collision,
 	const SimVec3 &p0,
-	const SimVec3 &p1,
 	const SimVec3 &ray,
-	float ray_len,
 	int start_idx,
 	int tri_index,
-	float &best_dist,
+	float &best_t,
 	TrackQueryScratch *scratch)
 {
 	RaceTrack *track = params.track;
@@ -1867,8 +1865,7 @@ static bool scan_mesh_cast_triangle(
 	if (!triangle_ray_hit(tri, p0, ray, side_reference_point, allow_backside, &hit_t, &u, &v, &w, &face_normal, &backside_hit)) {
 		return false;
 	}
-	const float dist = hit_t * ray_len;
-	if (dist >= best_dist) {
+	if (hit_t >= best_t) {
 		return false;
 	}
 
@@ -1889,7 +1886,7 @@ static bool scan_mesh_cast_triangle(
 		std::abort();
 	}
 
-	best_dist = dist;
+	best_t = hit_t;
 	if (params.draw_collision_hits) {
 		draw_mesh_debug_triangle(tri, godot::Color(0.2f, 1.0f, 0.15f, 0.95f), _TICK_DELTA);
 	}
@@ -1936,14 +1933,14 @@ static void cast_mesh_collision_fast(
 		return;
 	}
 	const SimVec3 ray = p1 - p0;
-	const float ray_len = ray.length();
-	if (ray_len <= 1.0e-6f) {
+	const float ray_len2 = ray.length_squared();
+	if (ray_len2 <= 1.0e-12f) {
 		return;
 	}
 
-	float best_dist = out_collision.collided ? p0.distance_to(out_collision.collision_point) : FLT_MAX;
+	float best_t = out_collision.collided ? (out_collision.collision_point - p0).dot(ray) / ray_len2 : FLT_MAX;
 	auto scan_triangle = [&](int tri_index) {
-		scan_mesh_cast_triangle(params, out_collision, p0, p1, ray, ray_len, start_idx, tri_index, best_dist, scratch);
+		scan_mesh_cast_triangle(params, out_collision, p0, ray, start_idx, tri_index, best_t, scratch);
 	};
 
 	int stack[256];
@@ -2060,8 +2057,8 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 		return;
 	}
 	const SimVec3 ray = p1 - p0;
-	const float ray_len = ray.length();
-	if (ray_len <= 1.0e-6f) {
+	const float ray_len2 = ray.length_squared();
+	if (ray_len2 <= 1.0e-12f) {
 		return;
 	}
 	const SimVec3 ray_bounds_min(
@@ -2073,7 +2070,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 		std::max(p0.y, p1.y) + 1.0e-3f,
 		std::max(p0.z, p1.z) + 1.0e-3f);
 
-	float best_dist = FLT_MAX;
+	float best_t = FLT_MAX;
 	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
 		(mask & CAST_FLAGS::WANTS_RAIL) == 0;
 	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
@@ -2097,12 +2094,10 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 			params,
 			out_collision,
 			p0,
-			p1,
 			ray,
-			ray_len,
 			start_idx,
 			tri_index,
-			best_dist,
+			best_t,
 			scratch);
 	}
 }
@@ -2132,12 +2127,12 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 		return;
 	}
 	const SimVec3 ray = p1[0] - p0[0];
-	const float ray_len = ray.length();
-	if (ray_len <= 1.0e-6f) {
+	const float ray_len2 = ray.length_squared();
+	if (ray_len2 <= 1.0e-12f) {
 		return;
 	}
 
-	float best_dist[4] = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX };
+	float best_t[4] = { FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX };
 	SimVec3 lane_bounds_min[4];
 	SimVec3 lane_bounds_max[4];
 	for (int lane = 0; lane < 4; ++lane) {
@@ -2198,8 +2193,7 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 			if (u < slop || v < slop || w < slop) {
 				continue;
 			}
-			const float dist = hit_t * ray_len;
-			if (dist >= best_dist[lane]) {
+			if (hit_t >= best_t[lane]) {
 				continue;
 			}
 
@@ -2216,7 +2210,7 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 				hit_face_normal *= -1.0f;
 			}
 
-			best_dist[lane] = dist;
+			best_t[lane] = hit_t;
 			out_collision[lane].collided = true;
 			out_collision[lane].collision_point = hit_point;
 			out_collision[lane].collision_normal = hit_normal;

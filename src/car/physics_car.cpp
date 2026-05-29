@@ -3290,6 +3290,16 @@ static OldCornerCollisionSurface sample_old_corner_collision_surface(
 	if (current_cp >= 0 &&
 		current_cp < soa->current_track[soa_index]->num_checkpoints &&
 		soa->current_collision_checkpoint[soa_index] == current_cp &&
+		floor_sample.cp_idx == current_cp) {
+		const TrackSegment &segment = soa->current_track[soa_index]->segments[
+			soa->current_track[soa_index]->checkpoints[current_cp].road_segment];
+		if (!segment.analytic_collision_enabled) {
+			return out;
+		}
+	}
+	if (current_cp >= 0 &&
+		current_cp < soa->current_track[soa_index]->num_checkpoints &&
+		soa->current_collision_checkpoint[soa_index] == current_cp &&
 		soa->height_above_track[soa_index] > 0.0f &&
 		floor_sample.road_t.x != -1000.0f &&
 		floor_sample.closest_surface.basis[0].length_squared() >= 0.1f) {
@@ -3351,8 +3361,16 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 	const bool center_floor_sample_valid =
 		soa->height_above_track[soa_index] > 0.0f &&
 		center_floor_sample.closest_surface.basis[0].length_squared() >= 0.1f;
+	RaceTrack* track = soa->current_track[soa_index];
+	const int current_cp = soa->current_checkpoint[soa_index];
+	const bool current_segment_analytic_collision =
+		track &&
+		current_cp >= 0 &&
+		current_cp < track->num_checkpoints &&
+		track->segments[track->checkpoints[current_cp].road_segment].analytic_collision_enabled;
 	const bool mesh_floor_depenetration_enabled =
 		!center_floor_sample_is_hole &&
+		!current_segment_analytic_collision &&
 		(((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) ||
 		center_floor_sample_valid);
 	SimVec3 wall_corner_world[4];
@@ -3380,7 +3398,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 				sim_load4(soa->wall_offset_z + point_base)));
 		wall_corner_old_world_valid = true;
 	};
-	RaceTrack* track = soa->current_track[soa_index];
 	const bool draw_rail_candidates =
 		DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES) &&
 		(soa->global_start + soa_index) == 0;

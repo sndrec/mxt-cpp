@@ -68,6 +68,7 @@ class NetcodeSession : public Object {
 	int find_peer_index(int32_t peer_id) const;
 	int ensure_peer_index(int32_t peer_id);
 	void clear_frame(InputFrame& frame, int32_t tick);
+	bool tick_server_frame_internal(GameSim* sim, int tick, bool use_pending_cpu_inputs);
 
 protected:
 	static void _bind_methods();
@@ -101,6 +102,7 @@ public:
 	double get_peer_last_input_time(int peer_id) const;
 	bool server_has_full_input_frame(int tick) const;
 	bool tick_server_frame(godot::Object* game_sim_obj, int tick, bool use_pending_cpu_inputs = false);
+	int tick_server_frames(godot::Object* game_sim_obj, int start_tick, int end_tick, bool use_pending_cpu_inputs = false);
 	bool tick_client_predicted_frame(godot::Object* game_sim_obj, int tick);
 	void recalculate_predictions(int start_tick, int end_tick);
 	bool replay_history(godot::Object* game_sim_obj, int start_tick, int end_tick);

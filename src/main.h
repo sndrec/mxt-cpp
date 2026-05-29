@@ -190,6 +190,7 @@ namespace godot {
 			const int32_t* expected_player_ids,
 			int input_count,
 			int expected_tick);
+		bool has_contiguous_native_cpu_player_order(const int32_t* expected_player_ids, int input_count) const;
 		PlayerInput generate_native_cpu_player_input_for_car_index(int car_index, int player_id, int expected_tick);
 		PlayerInput generate_native_cpu_player_input_for_tick(int player_id, int expected_tick);
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
@@ -220,7 +221,10 @@ namespace godot {
 			const PlayerInput* local_input,
 			const PlayerInput* decoded_car_inputs,
 			const uint8_t* decoded_car_input_present,
-			int decoded_car_input_count);
+			int decoded_car_input_count,
+			PlayerInput* out_authoritative_inputs = nullptr,
+			uint8_t* out_authoritative_present = nullptr,
+			bool store_input_history = true);
 		void ensure_vehicle_tick_soa_capacity(int capacity);
 		void free_vehicle_tick_soa();
 		godot::PackedByteArray serialize_network_state(int target_tick) const;

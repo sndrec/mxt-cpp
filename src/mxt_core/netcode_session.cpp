@@ -2707,6 +2707,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_peer_last_input_time", "peer_id"), &NetcodeSession::get_peer_last_input_time);
 	ClassDB::bind_method(D_METHOD("server_has_full_input_frame", "tick"), &NetcodeSession::server_has_full_input_frame);
 	ClassDB::bind_method(D_METHOD("tick_server_frame", "game_sim", "tick", "use_pending_cpu_inputs"), &NetcodeSession::tick_server_frame, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("tick_server_frames", "game_sim", "start_tick", "end_tick", "use_pending_cpu_inputs"), &NetcodeSession::tick_server_frames, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("tick_client_predicted_frame", "game_sim", "tick"), &NetcodeSession::tick_client_predicted_frame);
 	ClassDB::bind_method(D_METHOD("recalculate_predictions", "start_tick", "end_tick"), &NetcodeSession::recalculate_predictions);
 	ClassDB::bind_method(D_METHOD("replay_history", "game_sim", "start_tick", "end_tick"), &NetcodeSession::replay_history);
@@ -4110,17 +4111,59 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick, bo
 	if (!sim) {
 		return false;
 	}
+	return tick_server_frame_internal(sim, tick, use_pending_cpu_inputs);
+}
+
+int NetcodeSession::tick_server_frames(godot::Object* game_sim_obj, int start_tick, int end_tick, bool use_pending_cpu_inputs)
+{
+	GameSim* sim = Object::cast_to<GameSim>(game_sim_obj);
+	if (!sim || end_tick < start_tick) {
+		return 0;
+	}
+	if (!use_pending_cpu_inputs &&
+		cpu_racer_count == racer_count &&
+		sim->has_contiguous_native_cpu_player_order(player_ids, racer_count)) {
+		int ticked = 0;
+		for (int tick = start_tick; tick <= end_tick; ++tick) {
+			InputFrame& authoritative = authoritative_history[tick & (HISTORY_LEN - 1)];
+			authoritative.tick = tick;
+			sim->tick_gamesim_internal(GameSim::InputFrameMode::SingleLocal,
+				-1, nullptr, nullptr, nullptr, racer_count,
+				authoritative.inputs, authoritative.present, false);
+			++ticked;
+		}
+		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(end_tick));
+		return ticked;
+	}
+	int ticked = 0;
+	for (int tick = start_tick; tick <= end_tick; ++tick) {
+		if (!tick_server_frame_internal(sim, tick, use_pending_cpu_inputs)) {
+			break;
+		}
+		++ticked;
+	}
+	return ticked;
+}
+
+bool NetcodeSession::tick_server_frame_internal(GameSim* sim, int tick, bool use_pending_cpu_inputs)
+{
 	if (!use_pending_cpu_inputs && cpu_racer_count == racer_count) {
 		InputFrame& authoritative = authoritative_history[tick & (HISTORY_LEN - 1)];
 		authoritative.tick = tick;
-		sim->fill_contiguous_native_cpu_player_inputs_for_frame(
-			authoritative.inputs,
-			authoritative.present,
-			player_ids,
-			racer_count,
-			tick);
-		sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
-			-1, nullptr, authoritative.inputs, nullptr, racer_count);
+		if (sim->has_contiguous_native_cpu_player_order(player_ids, racer_count)) {
+			sim->tick_gamesim_internal(GameSim::InputFrameMode::SingleLocal,
+				-1, nullptr, nullptr, nullptr, racer_count,
+				authoritative.inputs, authoritative.present, false);
+		} else {
+			sim->fill_contiguous_native_cpu_player_inputs_for_frame(
+				authoritative.inputs,
+				authoritative.present,
+				player_ids,
+				racer_count,
+				tick);
+			sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
+				-1, nullptr, authoritative.inputs, nullptr, racer_count, nullptr, nullptr, false);
+		}
 		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 		return true;
 	}
@@ -4162,7 +4205,7 @@ bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick, bo
 		}
 	}
 	sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
-		-1, nullptr, authoritative.inputs, authoritative.present, racer_count);
+		-1, nullptr, authoritative.inputs, authoritative.present, racer_count, nullptr, nullptr, false);
 	latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 	return true;
 }

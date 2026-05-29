@@ -93,18 +93,27 @@ func _init() -> void:
 	session.configure(player_ids, cpu_flags, int(player_ids[0]))
 
 	var start_us := Time.get_ticks_usec()
-	for tick in range(end_tick + 1):
-		for i in range(humans):
-			var id := int(player_ids[i])
-			session.store_pending_input(tick, id, sim.get_native_cpu_input_for_tick(id, tick))
-		if !session.tick_server_frame(sim, tick):
-			push_error("netstate_long_size_sample failed to tick server frame %d" % tick)
+	if humans == 0 and sample_every <= 0 and session.has_method("tick_server_frames"):
+		var ticked := int(session.tick_server_frames(sim, 0, end_tick))
+		if ticked != end_tick + 1:
+			push_error("netstate_long_size_sample failed to tick server frame range ticked=%d end_tick=%d" % [ticked, end_tick])
 			root.remove_child(sim)
 			sim.free()
 			quit(1)
 			return
-		if tick >= sample_start and sample_every > 0 and (tick - sample_start) % sample_every == 0:
-			_sample_state(sim, tick, dump_dir)
+	else:
+		for tick in range(end_tick + 1):
+			for i in range(humans):
+				var id := int(player_ids[i])
+				session.store_pending_input(tick, id, sim.get_native_cpu_input_for_tick(id, tick))
+			if !session.tick_server_frame(sim, tick):
+				push_error("netstate_long_size_sample failed to tick server frame %d" % tick)
+				root.remove_child(sim)
+				sim.free()
+				quit(1)
+				return
+			if tick >= sample_start and sample_every > 0 and (tick - sample_start) % sample_every == 0:
+				_sample_state(sim, tick, dump_dir)
 
 	var total_us := Time.get_ticks_usec() - start_us
 	print("MXT_NETSTATE_LONG_OK track=", track_path,
