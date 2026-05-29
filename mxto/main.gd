@@ -189,6 +189,7 @@ var replay_relative_camera_basis_desired := Basis.IDENTITY
 var replay_relative_offset := Vector3.ZERO
 var replay_relative_velocity := Vector3.ZERO
 var replay_relative_pending_look_delta := Vector2.ZERO
+var replay_input_calib: InputCalibration
 var replay_catalog_root: Control
 var replay_catalog_list: ItemList
 var replay_catalog_metadata_label: RichTextLabel
@@ -206,8 +207,11 @@ var replay_timeline_marker_layer: Control
 var replay_timeline_time_label: Label
 var replay_timeline_rate_label: Label
 var replay_timeline_play_button: Button
+var replay_timeline_focus_prev_button: Button
+var replay_timeline_focus_next_button: Button
 var replay_timeline_markers: Dictionary = {}
 var replay_marker_last_laps: Dictionary = {}
+var replay_marker_last_places: Dictionary = {}
 var replay_collecting_timeline_markers: bool = false
 var replay_timeline_markers_dirty: bool = true
 var replay_timeline_marker_last_focus: int = -999999
@@ -305,6 +309,9 @@ func _ready() -> void:
 		controller_settings_button.pressed.connect(_on_controller_settings_button_pressed)
 	if !controller_settings_button_lobby.pressed.is_connected(_on_controller_settings_button_pressed):
 		controller_settings_button_lobby.pressed.connect(_on_controller_settings_button_pressed)
+	if !options_menu.visibility_changed.is_connected(_on_controller_settings_visibility_changed):
+		options_menu.visibility_changed.connect(_on_controller_settings_visibility_changed)
+	replay_input_calib = InputCalibration.load_from_disk()
 	if !track_editor_button.pressed.is_connected(_on_track_editor_button_pressed):
 		track_editor_button.pressed.connect(_on_track_editor_button_pressed)
 	if replays_button != null and !replays_button.pressed.is_connected(_open_replay_catalog):
@@ -1390,6 +1397,9 @@ func _format_race_results_summary() -> String:
 	return race_text + "\n\n" + grand_prix_text
 
 func _show_race_results_summary() -> void:
+	if replay_playback_active:
+		_hide_race_results_summary()
+		return
 	if race_finish_label != null:
 		race_finish_label.visible = false
 	if race_results_overlay != null:
@@ -1568,6 +1578,10 @@ func _on_car_settings_button_pressed() -> void:
 
 func _on_controller_settings_button_pressed() -> void:
 	options_menu.call("open_settings")
+
+func _on_controller_settings_visibility_changed() -> void:
+	if options_menu != null and !options_menu.visible:
+		replay_input_calib = InputCalibration.load_from_disk()
 
 func _close_settings_menus_for_race_start() -> void:
 	if car_settings != null:
@@ -1814,7 +1828,7 @@ func _build_replay_timeline_controls() -> void:
 	replay_timeline_panel.anchor_right = 0.92
 	replay_timeline_panel.anchor_top = 1.0
 	replay_timeline_panel.anchor_bottom = 1.0
-	replay_timeline_panel.offset_top = -92.0
+	replay_timeline_panel.offset_top = -132.0
 	replay_timeline_panel.offset_bottom = -18.0
 	replay_timeline_root.add_child(replay_timeline_panel)
 	var margin := MarginContainer.new()
@@ -1826,6 +1840,21 @@ func _build_replay_timeline_controls() -> void:
 	var rows := VBoxContainer.new()
 	rows.add_theme_constant_override("separation", 8)
 	margin.add_child(rows)
+	var focus_controls := HBoxContainer.new()
+	focus_controls.add_theme_constant_override("separation", 10)
+	rows.add_child(focus_controls)
+	replay_timeline_focus_prev_button = Button.new()
+	replay_timeline_focus_prev_button.text = "<"
+	replay_timeline_focus_prev_button.custom_minimum_size = Vector2(180.0, 28.0)
+	replay_timeline_focus_prev_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	replay_timeline_focus_prev_button.pressed.connect(_on_replay_focus_previous_pressed)
+	focus_controls.add_child(replay_timeline_focus_prev_button)
+	replay_timeline_focus_next_button = Button.new()
+	replay_timeline_focus_next_button.text = ">"
+	replay_timeline_focus_next_button.custom_minimum_size = Vector2(180.0, 28.0)
+	replay_timeline_focus_next_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	replay_timeline_focus_next_button.pressed.connect(_on_replay_focus_next_pressed)
+	focus_controls.add_child(replay_timeline_focus_next_button)
 	replay_timeline_track = ColorRect.new()
 	replay_timeline_track.color = Color(0.08, 0.09, 0.1, 0.92)
 	replay_timeline_track.custom_minimum_size = Vector2(0.0, 18.0)
@@ -1884,6 +1913,9 @@ func _replay_marker_bucket(player_id: int) -> Dictionary:
 			"kos": [],
 			"laps": [],
 			"finishes": [],
+			"first_overtakes": [],
+			"place_up": [],
+			"place_down": [],
 		}
 	return replay_timeline_markers[player_id]
 
@@ -1909,6 +1941,7 @@ func _lookup_replay_tick_for_id(source: Dictionary, player_id: int, fallback: in
 func _initialize_replay_timeline_markers() -> void:
 	replay_timeline_markers.clear()
 	replay_marker_last_laps.clear()
+	replay_marker_last_places.clear()
 	replay_timeline_markers_dirty = true
 	for id_value in replay_playback_racer_ids:
 		var id := int(id_value)
@@ -1947,6 +1980,33 @@ func _update_replay_lap_timeline_markers() -> void:
 					_add_replay_timeline_marker(id, "laps", _singleplayer_tick)
 		replay_marker_last_laps[id] = lap
 
+func _update_replay_placement_timeline_markers() -> void:
+	if game_sim == null or !game_sim.has_method("get_player_race_place"):
+		return
+	for id_value in replay_playback_racer_ids:
+		var id := int(id_value)
+		var place := int(game_sim.get_player_race_place(id))
+		if place <= 0:
+			continue
+		if !replay_marker_last_places.has(id):
+			replay_marker_last_places[id] = place
+			continue
+		var previous_place := int(replay_marker_last_places[id])
+		if previous_place <= 0:
+			replay_marker_last_places[id] = place
+			continue
+		if place < previous_place:
+			_add_replay_timeline_marker(id, "place_up", _singleplayer_tick)
+			if place == 1:
+				_add_replay_timeline_marker(id, "first_overtakes", _singleplayer_tick)
+		elif place > previous_place:
+			_add_replay_timeline_marker(id, "place_down", _singleplayer_tick)
+		replay_marker_last_places[id] = place
+
+func _update_replay_race_state_timeline_markers() -> void:
+	_update_replay_lap_timeline_markers()
+	_update_replay_placement_timeline_markers()
+
 func _clear_replay_timeline_marker_nodes() -> void:
 	if replay_timeline_marker_layer == null:
 		return
@@ -1959,6 +2019,7 @@ func _clear_replay_timeline_marker_nodes() -> void:
 func _reset_replay_timeline_markers() -> void:
 	replay_timeline_markers.clear()
 	replay_marker_last_laps.clear()
+	replay_marker_last_places.clear()
 	replay_collecting_timeline_markers = false
 	replay_timeline_markers_dirty = true
 	_clear_replay_timeline_marker_nodes()
@@ -2006,14 +2067,21 @@ func _redraw_replay_timeline_markers() -> void:
 	_clear_replay_timeline_marker_nodes()
 	var bucket := _replay_marker_bucket(_focused_replay_player_id())
 	var bar_h := replay_timeline_track.size.y
+	var circle_radius := maxf(2.0, (bar_h + 2.0) * 0.5)
+	for tick_value in bucket.get("place_down", []):
+		_add_timeline_line_marker(_timeline_marker_x(int(tick_value)), 1.0, bar_h, bar_h, Color(1.0, 0.48, 0.48, 1.0))
+	for tick_value in bucket.get("place_up", []):
+		_add_timeline_line_marker(_timeline_marker_x(int(tick_value)), 1.0, bar_h, bar_h, Color(0.56, 1.0, 0.62, 1.0))
 	for tick_value in bucket.get("laps", []):
 		_add_timeline_flag_marker(_timeline_marker_x(int(tick_value)), Color(0.2, 1.0, 0.28, 1.0))
 	for tick_value in bucket.get("finishes", []):
 		_add_timeline_flag_marker(_timeline_marker_x(int(tick_value)), Color.WHITE)
 	for tick_value in bucket.get("deaths", []):
 		_add_timeline_line_marker(_timeline_marker_x(int(tick_value)), 3.0, bar_h + 4.0, bar_h + 2.0, Color(1.0, 0.08, 0.05, 1.0))
+	for tick_value in bucket.get("first_overtakes", []):
+		_add_timeline_circle_marker(_timeline_marker_x(int(tick_value)), circle_radius, Color(1.0, 0.78, 0.12, 1.0))
 	for tick_value in bucket.get("kos", []):
-		_add_timeline_circle_marker(_timeline_marker_x(int(tick_value)), bar_h + 2.0, Color(1.0, 0.08, 0.05, 1.0))
+		_add_timeline_circle_marker(_timeline_marker_x(int(tick_value)), circle_radius, Color(1.0, 0.08, 0.05, 1.0))
 	replay_timeline_markers_dirty = false
 	replay_timeline_marker_last_focus = _focused_replay_player_id()
 	replay_timeline_marker_last_size = replay_timeline_track.size
@@ -2049,6 +2117,12 @@ func _format_replay_playback_rate() -> String:
 	if replay_playback_rate >= 1.0:
 		return "%dx" % roundi(replay_playback_rate)
 	return "%.3fx" % replay_playback_rate
+
+func _on_replay_focus_previous_pressed() -> void:
+	_change_replay_focus(-1)
+
+func _on_replay_focus_next_pressed() -> void:
+	_change_replay_focus(1)
 
 func _on_replay_timeline_play_pressed() -> void:
 	replay_playback_paused = !replay_playback_paused
@@ -2088,7 +2162,7 @@ func _update_replay_timeline_controls() -> void:
 	if replay_playback_active:
 		var mouse_y := get_viewport().get_mouse_position().y
 		var viewport_h := get_viewport().get_visible_rect().size.y
-		should_show = mouse_y >= viewport_h - 118.0
+		should_show = mouse_y >= viewport_h - 158.0
 		if replay_timeline_panel != null:
 			should_show = should_show or replay_timeline_panel.get_global_rect().has_point(get_viewport().get_mouse_position())
 	replay_timeline_root.visible = should_show
@@ -2229,7 +2303,8 @@ func _bake_replay_seek_checkpoints() -> void:
 	replay_seeking_active = true
 	replay_collecting_timeline_markers = true
 	replay_marker_last_laps.clear()
-	_update_replay_lap_timeline_markers()
+	replay_marker_last_places.clear()
+	_update_replay_race_state_timeline_markers()
 	_capture_replay_seek_checkpoint(0)
 	while replay_playback_index < replay_playback_frames.size():
 		if !_tick_replay_playback(false):
@@ -2300,7 +2375,7 @@ func _tick_replay_playback(return_to_menu_on_complete: bool = true) -> bool:
 		return false
 	_consume_authoritative_race_events()
 	if replay_collecting_timeline_markers:
-		_update_replay_lap_timeline_markers()
+		_update_replay_race_state_timeline_markers()
 	replay_playback_index += 1
 	_singleplayer_tick += 1
 	network_manager.clients_server_tick = _singleplayer_tick
@@ -2398,6 +2473,13 @@ func _replay_action_strength(action_name: String) -> float:
 func _replay_action_axis(negative_action: String, positive_action: String) -> float:
 	return _replay_action_strength(positive_action) - _replay_action_strength(negative_action)
 
+func _replay_calibrated_strafe_axis() -> float:
+	var raw_left := Input.get_action_raw_strength("StrafeLeft")
+	var raw_right := Input.get_action_raw_strength("StrafeRight")
+	if replay_input_calib == null:
+		replay_input_calib = InputCalibration.load_from_disk()
+	return replay_input_calib.apply_strafe_right(raw_right) - replay_input_calib.apply_strafe_left(raw_left)
+
 func _replay_relative_gravity_basis_from_up(up: Vector3, preserve_basis: Basis, fallback_basis: Basis) -> Basis:
 	if up.length_squared() <= 0.0001:
 		up = Vector3.UP
@@ -2462,7 +2544,7 @@ func _apply_replay_camera_mode() -> void:
 			spectator_node.call("set_input_enabled", false)
 		_reset_replay_relative_camera()
 		_ensure_replay_relative_camera().make_current()
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
 		if spectator_node == null:
 			spectator_node = spectator_scene.instantiate()
@@ -2477,7 +2559,7 @@ func _apply_replay_camera_mode() -> void:
 		var camera := spectator_node.get_node_or_null("Camera3D") as Camera3D
 		if camera != null:
 			camera.make_current()
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _cycle_replay_camera_mode() -> void:
 	replay_camera_mode = (replay_camera_mode + 1) % 4
@@ -2543,7 +2625,7 @@ func _update_replay_relative_camera(delta: float) -> void:
 	pitch_amount += _replay_action_axis("CamForward", "CamBack") * delta * -REPLAY_RELATIVE_LOOK_ACTION_SPEED
 	yaw_amount += _replay_action_axis("CameraLeft", "CameraRight") * delta * -REPLAY_RELATIVE_LOOK_ACTION_SPEED
 	yaw_amount += _replay_action_axis("CamLeft", "CamRight") * delta * -REPLAY_RELATIVE_LOOK_ACTION_SPEED
-	var roll_input := _replay_action_axis("StrafeLeft", "StrafeRight")
+	var roll_input := _replay_calibrated_strafe_axis()
 	if Input.is_physical_key_pressed(KEY_Q):
 		roll_input -= 1.0
 	if Input.is_physical_key_pressed(KEY_E):
@@ -3970,6 +4052,13 @@ func _simulate_single_tick():
 			return
 
 func _input(event: InputEvent) -> void:
+	if replay_playback_active and event is InputEventMouseButton:
+		var replay_mouse_button := event as InputEventMouseButton
+		if !replay_mouse_button.pressed and replay_mouse_button.button_index == MOUSE_BUTTON_RIGHT:
+			if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			get_viewport().set_input_as_handled()
+			return
 	if !replay_playback_active or replay_camera_mode != REPLAY_CAMERA_RELATIVE:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -3999,15 +4088,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	if replay_playback_active and event is InputEventMouseButton:
 		var replay_mouse_button := event as InputEventMouseButton
-		if replay_mouse_button.pressed:
-			if _replay_camera_mode_uses_mouse_capture():
+		if replay_mouse_button.button_index == MOUSE_BUTTON_RIGHT:
+			if replay_mouse_button.pressed and _replay_camera_mode_uses_mouse_capture():
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-			if replay_mouse_button.button_index == MOUSE_BUTTON_LEFT:
-				_change_replay_focus(-1)
-				get_viewport().set_input_as_handled()
-				return
-			if replay_mouse_button.button_index == MOUSE_BUTTON_RIGHT:
-				_change_replay_focus(1)
 				get_viewport().set_input_as_handled()
 				return
 	if replay_playback_active and event is InputEventKey:
@@ -4483,6 +4566,8 @@ func _check_race_finished() -> void:
 				network_manager.record_player_eliminated(racer_id, network_manager.clients_server_tick)
 		elif watch_racer:
 			all_done = false
+	if replay_playback_active:
+		return
 	if network_manager.is_server:
 		if all_done:
 			if network_manager.net_race_finish_time == -1:
@@ -4544,7 +4629,7 @@ func _process(delta: float) -> void:
 		race_notification_hide_msec = 0
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
-	if game_sim.sim_started and network_manager.net_race_finish_time != -1:
+	if game_sim.sim_started and network_manager.net_race_finish_time != -1 and !replay_playback_active:
 		_show_race_results_summary()
 		_refresh_race_pause_replay_button()
 	if game_sim.sim_started:

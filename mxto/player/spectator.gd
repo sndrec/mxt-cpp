@@ -16,10 +16,9 @@ func _ready() -> void:
 	if camera == null:
 		camera = Camera3D.new()
 		add_child(camera)
+	camera.cull_mask = 7
 	camera.current = true
 	sync_look_from_current_transform()
-	if input_enabled:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func set_input_enabled(enabled: bool) -> void:
 	input_enabled = enabled
@@ -44,8 +43,8 @@ func _input(event: InputEvent) -> void:
 		pending_look_delta += motion.relative
 	elif event is InputEventMouseButton:
 		var mouse_button: InputEventMouseButton = event
-		if mouse_button.pressed and mouse_button.button_index == MOUSE_BUTTON_LEFT:
-			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		if !mouse_button.pressed and mouse_button.button_index == MOUSE_BUTTON_RIGHT:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	elif event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 

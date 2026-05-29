@@ -5352,10 +5352,7 @@ void GameSim::apply_render_multimeshes(float alpha)
 			continue;
 		}
 		const int archetype = render_car_archetype_indices[i];
-		const int slot = render_car_slots[i];
-		if (archetype < 0 || archetype >= static_cast<int>(render_car_multimeshes.size()) ||
-				archetype >= static_cast<int>(render_car_local_transforms.size()) ||
-				render_car_multimeshes[archetype].is_null() || slot < 0) {
+		if (archetype < 0) {
 			render_visible_car_slots[i] = -1;
 			render_visible_thruster_slots[i] = -1;
 			continue;
@@ -5381,6 +5378,13 @@ void GameSim::apply_render_multimeshes(float alpha)
 				render_thruster_multimeshes[archetype]->set_instance_color(thruster_slot, godot::Color(thrust, thrust, thrust, thrust));
 				render_thruster_multimeshes[archetype]->set_instance_custom_data(thruster_slot, godot::Color(thrust * 0.2f, static_cast<float>((tick + t) & 255) * 0.0245436926f, thrust, 1.0f));
 			}
+		}
+		const int slot = render_car_slots[i];
+		if (archetype >= static_cast<int>(render_car_multimeshes.size()) ||
+				archetype >= static_cast<int>(render_car_local_transforms.size()) ||
+				render_car_multimeshes[archetype].is_null() || slot < 0) {
+			render_visible_car_slots[i] = -1;
+			continue;
 		}
 		bool visible = true;
 		if (camera) {
