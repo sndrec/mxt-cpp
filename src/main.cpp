@@ -2203,7 +2203,6 @@ void GameSim::configure_bumper_car(int bumper_slot)
 		props->wall_corners[p].x *= 1.4f;
 		props->wall_corners[p].z *= 1.4f;
 	}
-	soa.machine_name[lane] = "Bumper";
 	soa.m_accel_setting[lane] = 1.0f;
 	if (bumper_slot >= 0 && bumper_slot < bumper_count) {
 		bumper_states[bumper_slot].active = 0;
@@ -3730,21 +3729,27 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 
 	for (int i = 0; i < num_cars; i++) {
 		PlayerInput inp = PlayerInput::from_neutral();
+		bool input_already_quantized = false;
 		const int32_t player_id = car_player_ids ? car_player_ids[i] : -1;
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
 		const bool completed_race = (car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u;
-		if (mode == InputFrameMode::DecodedCarArray && i < decoded_car_input_count && decoded_car_inputs &&
+		if ((mode == InputFrameMode::DecodedCarArray || mode == InputFrameMode::DecodedQuantizedCarArray) &&
+				i < decoded_car_input_count && decoded_car_inputs &&
 				(!decoded_car_input_present || decoded_car_input_present[i])) {
 			inp = decoded_car_inputs[i];
+			input_already_quantized = mode == InputFrameMode::DecodedQuantizedCarArray;
 		} else if (completed_race && player_id != -1) {
 			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		} else if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
 			inp = *local_input;
+			input_already_quantized = true;
 		} else if (car_is_cpu && car_is_cpu[i]) {
 			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
 		}
-		inp = PlayerInput::quantized(inp);
+		if (!input_already_quantized) {
+			inp = PlayerInput::quantized(inp);
+		}
 		if (s_boost_enabled && !car_soa.s_boost_active[lane] && car_soa.s_boost_charge[lane] >= car_soa.s_boost_charge_max[lane] && inp.boost) {
 			float gap = lead_distance - soa.pre_distances[i];
 			if (gap < 0.0f) {
@@ -5470,6 +5475,41 @@ PlayerInput GameSim::generate_native_cpu_player_input_for_tick(int player_id, in
 			cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed));
 	}
 	return PlayerInput::from_neutral();
+}
+
+void GameSim::fill_native_cpu_player_inputs_for_frame(PlayerInput* out_inputs,
+	uint8_t* out_present,
+	const int32_t* expected_player_ids,
+	const uint8_t* expected_cpu_flags,
+	int input_count,
+	int expected_tick)
+{
+	if (!out_inputs || !out_present || input_count <= 0) {
+		return;
+	}
+	const int count = std::max(0, input_count);
+	if (!cars || !car_player_ids) {
+		for (int i = 0; i < count; ++i) {
+			if (!expected_cpu_flags || expected_cpu_flags[i]) {
+				out_inputs[i] = PlayerInput::from_neutral();
+				out_present[i] = 1;
+			}
+		}
+		return;
+	}
+	for (int i = 0; i < count; ++i) {
+		if (expected_cpu_flags && !expected_cpu_flags[i]) {
+			continue;
+		}
+		const int32_t player_id = expected_player_ids ? expected_player_ids[i] : (i < num_cars ? car_player_ids[i] : -1);
+		if (i >= 0 && i < num_cars && car_player_ids[i] == player_id) {
+			out_inputs[i] = PlayerInput::quantized(native_cpu_generate_input_for_car(
+				cars[i], player_id, expected_tick, spawn_seed));
+		} else {
+			out_inputs[i] = generate_native_cpu_player_input_for_tick(player_id, expected_tick);
+		}
+		out_present[i] = 1;
+	}
 }
 
 PlayerInput GameSim::generate_native_cpu_player_input_for_car_index(int car_index, int player_id, int expected_tick)
@@ -8828,8 +8868,6 @@ void GameSim::fix_pointers() {
 	const int total_lane_count = (num_cars + 3) & ~3;
 	for (int i = 0; i < total_lane_count; ++i) {
 		cars[i].soa->current_track[cars[i].soa_index] = current_track;
-		// TODO: machine_name is static metadata, not gamestate. Move it out of serialized SoA state.
-		cars[i].soa->machine_name[cars[i].soa_index] = "Blue Falcon";
 		if (car_properties_array) {
 			cars[i].soa->car_properties[cars[i].soa_index] = &car_properties_array[i];
 		}
@@ -8841,7 +8879,6 @@ void GameSim::fix_pointers() {
 			PhysicsCarSoA& soa = *bumper_cars[i].soa;
 			const int lane = bumper_cars[i].soa_index;
 			soa.current_track[lane] = (i < bumper_count && bumper_states[slot].active) ? current_track : nullptr;
-			soa.machine_name[lane] = "Bumper";
 			if (bumper_properties_array) {
 				soa.car_properties[lane] = &bumper_properties_array[i];
 			}

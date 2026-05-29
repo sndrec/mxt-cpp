@@ -204,7 +204,6 @@ static inline void clear_motion_for_restore(PhysicsCarSoA *soa, int lane)
 #define POINT_INDEX(lane) (soa_index * 4 + (lane))
 #define LOAD_TILT_VEC3(name, point_index) SimVec3(soa->tilt_##name##_x[(point_index)], soa->tilt_##name##_y[(point_index)], soa->tilt_##name##_z[(point_index)])
 #define STORE_TILT_VEC3(name, point_index, value) do { const SimVec3 mxt_v3_tmp = (value); soa->tilt_##name##_x[(point_index)] = mxt_v3_tmp.x; soa->tilt_##name##_y[(point_index)] = mxt_v3_tmp.y; soa->tilt_##name##_z[(point_index)] = mxt_v3_tmp.z; } while (0)
-#define LOAD_WALL_VEC3(name, point_index) SimVec3(soa->wall_##name##_x[(point_index)], soa->wall_##name##_y[(point_index)], soa->wall_##name##_z[(point_index)])
 #define STORE_WALL_VEC3(name, point_index, value) do { const SimVec3 mxt_v3_tmp = (value); soa->wall_##name##_x[(point_index)] = mxt_v3_tmp.x; soa->wall_##name##_y[(point_index)] = mxt_v3_tmp.y; soa->wall_##name##_z[(point_index)] = mxt_v3_tmp.z; } while (0)
 
 static inline SimVec3 mxt_basis_rotate(const SimTransform& basis_transform, const SimVec3& p)
@@ -2402,7 +2401,6 @@ void PhysicsCar::handle_startup_wobble()
 void PhysicsCar::initialize_machine()
 {
 	soa->machine_state[soa_index] = 0;
-	soa->machine_name[soa_index] = "Blue Falcon";
 
 	update_machine_stats();
 
@@ -2424,25 +2422,13 @@ void PhysicsCar::initialize_machine()
 			soa->tilt_rest_length[p] = 1.7f;
 		}
 
-		soa->stat_obstacle_collision[soa_index] = 0.0f;
-		soa->stat_track_collision[soa_index] = 1.0f;
-
 		for (int i = 0; i < 4; ++i) {
 			const int p = POINT_INDEX(i);
 			const SimVec3 wall_offset = soa->car_properties[soa_index]->wall_corners[i];
 			STORE_WALL_VEC3(offset, p, wall_offset);
-
-			float offset_len = wall_offset.length();
-			if (soa->stat_obstacle_collision[soa_index] < offset_len)
-				soa->stat_obstacle_collision[soa_index] = offset_len;
-
-			float abs_offset_x = std::abs(wall_offset.x);
-			if (soa->stat_track_collision[soa_index] < abs_offset_x)
-				soa->stat_track_collision[soa_index] = abs_offset_x;
 		}
 	}
 
-	soa->stat_obstacle_collision[soa_index] += 0.1f;
 	soa->calced_max_energy[soa_index] = soa->car_properties[soa_index]->max_energy + soa->ko_energy_bonus[soa_index];
 
 	reset_machine(1);

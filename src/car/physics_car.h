@@ -88,14 +88,11 @@ struct PhysicsCarFloorProfile {
 	X(uint8_t, stat_accel_press_grip_frames, 0) \
 	X(float, camera_reorienting, 0.0f) \
 	X(float, camera_repositioning, 0.0f) \
-	X(const char*, machine_name, "") \
 	X(float, weight_derived_1, 0.0f) \
 	X(float, weight_derived_2, 0.0f) \
 	X(float, weight_derived_3, 0.0f) \
 	X(float, boost_energy_use_mult, 1.0f) \
 	X(float, energy_recharge_mult, 1.0f) \
-	X(float, stat_obstacle_collision, 0.0f) \
-	X(float, stat_track_collision, 0.0f) \
 	X(float, m_accel_setting, 0.5f) \
 	X(uint16_t, s_boost_charge_max, 50)
 

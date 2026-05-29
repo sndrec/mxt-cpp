@@ -179,6 +179,12 @@ namespace godot {
 		int find_car_index_for_player(int32_t player_id) const;
 		void update_native_cpu_drivers();
 		void update_native_cpu_driver(int car_index);
+		void fill_native_cpu_player_inputs_for_frame(PlayerInput* out_inputs,
+			uint8_t* out_present,
+			const int32_t* expected_player_ids,
+			const uint8_t* expected_cpu_flags,
+			int input_count,
+			int expected_tick);
 		PlayerInput generate_native_cpu_player_input_for_car_index(int car_index, int player_id, int expected_tick);
 		PlayerInput generate_native_cpu_player_input_for_tick(int player_id, int expected_tick);
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
@@ -202,6 +208,7 @@ namespace godot {
 		enum class InputFrameMode : uint8_t {
 			SingleLocal,
 			DecodedCarArray,
+			DecodedQuantizedCarArray,
 		};
 		void tick_gamesim_internal(InputFrameMode mode,
 			int local_player_id,

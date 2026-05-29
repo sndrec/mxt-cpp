@@ -15,26 +15,6 @@
 #endif
 #include "mxt_core/debug.hpp"
 
-static inline SimVec3 sim_vec3_from_godot(const SimVec3& v)
-{
-	return SimVec3(v.x, v.y, v.z);
-}
-
-static inline SimVec2 sim_vec2_from_godot(const SimVec2& v)
-{
-	return SimVec2(v.x, v.y);
-}
-
-static inline SimBasis sim_basis_from_godot(const SimBasis& b)
-{
-	return SimBasis(b[0].x, b[0].y, b[0].z, b[1].x, b[1].y, b[1].z, b[2].x, b[2].y, b[2].z);
-}
-
-static inline SimTransform sim_transform_from_godot(const SimTransform& t)
-{
-	return SimTransform(sim_basis_from_godot(t.basis), sim_vec3_from_godot(t.origin));
-}
-
 static inline godot::Vector3 godot_vec3_from_sim(const SimVec3& v)
 {
 	return godot::Vector3(v.x, v.y, v.z);
@@ -195,6 +175,12 @@ static inline bool road_shape_opens_down(const RoadShape *shape)
 	return shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
 }
 
+static inline bool road_shape_uses_base_relative_t(const RoadShape *shape)
+{
+	return shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
+		shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL;
+}
+
 static inline float checkpoint_time_for_point(
 	const CollisionCheckpoint &cp,
 	const SimVec3 &point,
@@ -251,7 +237,11 @@ static bool inverse_root_point_to_road(
 		}
 	}
 
-	shape->find_t_from_relative_pos(road_t, spatial_t);
+	if (road_shape_uses_base_relative_t(shape)) {
+		road_t = SimVec2(spatial_t.x, spatial_t.z);
+	} else {
+		shape->find_t_from_relative_pos(road_t, spatial_t);
+	}
 	if (root_out) {
 		*root_out = root;
 	}
@@ -800,7 +790,11 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 				continue;
 			}
 		}
-		shape->find_t_from_relative_pos(road_t[lane], spatial_t[lane]);
+		if (road_shape_uses_base_relative_t(shape)) {
+			road_t[lane] = SimVec2(spatial_t[lane].x, spatial_t[lane].z);
+		} else {
+			shape->find_t_from_relative_pos(road_t[lane], spatial_t[lane]);
+		}
 	}
 	for (int lane = 0; lane < 4; ++lane) {
 		if (invalid_lane[lane]) {
@@ -966,7 +960,8 @@ static void cast_segment_fast(const CastParams  &params,
 		return;
 	}
 
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS)){
+	const bool draw_raycasts = DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS);
+	if (draw_raycasts){
 		godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 		dd3d->call("draw_arrow", godot_vec3_from_sim(p0), godot_vec3_from_sim(p1), godot::Color(1.0f, 1.0f, 1.0f), 0.25, true, _TICK_DELTA);
 	}
@@ -991,6 +986,7 @@ static void cast_segment_fast(const CastParams  &params,
 
 	// ── 2) Basic plane hit against the single surface ────────────────────────
 	const SimVec3 ray        = p1 - p0;
+	const float ray_len      = ray.length();
 	float best_t                    = FLT_MAX;
 
 	const float d0                  = (p0 - surf.origin).dot(surf_n);
@@ -1010,18 +1006,18 @@ static void cast_segment_fast(const CastParams  &params,
 			}
 
 			if ((road_t_hit_raw.x <= 1.0f && road_t_hit_raw.x > -1.0f) && ((params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0 || ray.dot(surf_n) <= 0.0f)) {
-				const float dist = t * ray.length();
+				const float dist = t * ray_len;
 				best_t                      = dist;
 				out_collision.collided      = true;
-				out_collision.collision_point   = sim_vec3_from_godot(hit_point);
-				out_collision.collision_normal  = sim_vec3_from_godot(surf_n);
+				out_collision.collision_point   = hit_point;
+				out_collision.collision_normal  = surf_n;
 				out_collision.collision_face_point = out_collision.collision_point;
 				out_collision.collision_face_normal = out_collision.collision_normal;
 
 				out_collision.road_data.cp_idx          = use_idx;
-				out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
-				out_collision.road_data.road_t          = sim_vec2_from_godot(road_t_hit_raw);
-				out_collision.road_data.closest_surface = sim_transform_from_godot(surf);     // reuse single transform
+				out_collision.road_data.spatial_t       = spatial_t_hit;
+				out_collision.road_data.road_t          = road_t_hit_raw;
+				out_collision.road_data.closest_surface = surf;     // reuse single transform
 				out_collision.road_data.closest_root = hit_root;
 
 				out_collision.road_data.terrain = 0;
@@ -1032,7 +1028,7 @@ static void cast_segment_fast(const CastParams  &params,
 		}
 	}
 
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS)){
+	if (draw_raycasts){
 		if (out_collision.collided){
 			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 			dd3d->call("draw_arrow",
@@ -1103,19 +1099,19 @@ static void cast_segment_fast(const CastParams  &params,
 		if ((params.mask & CAST_FLAGS::WANTS_BACKFACE) == 0 && ray.dot(side.rail_n) > 0.0f)
 			continue;
 
-		const float dist = t * ray.length();
+		const float dist = t * ray_len;
 		if (dist < best_t) {
 			best_t                          = dist;
 			out_collision.collided          = true;
-			out_collision.collision_point   = sim_vec3_from_godot(hit);
-			out_collision.collision_normal  = sim_vec3_from_godot(side.rail_n);
+			out_collision.collision_point   = hit;
+			out_collision.collision_normal  = side.rail_n;
 			out_collision.collision_face_point = out_collision.collision_point;
 			out_collision.collision_face_normal = out_collision.collision_normal;
 
 			out_collision.road_data.cp_idx          = use_idx;
-			out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
-			out_collision.road_data.road_t          = sim_vec2_from_godot(road_t_hit_raw);
-			out_collision.road_data.closest_surface = sim_transform_from_godot(surf); // reuse same transform
+			out_collision.road_data.spatial_t       = spatial_t_hit;
+			out_collision.road_data.road_t          = road_t_hit_raw;
+			out_collision.road_data.closest_surface = surf; // reuse same transform
 			out_collision.road_data.closest_root = hit_root;
 			out_collision.road_data.terrain         = 0x100;
 		}
@@ -1135,19 +1131,19 @@ static void cast_segment_fast(const CastParams  &params,
 				track_segment_rail_side_active(segment, 0, road_t_hit_raw.y) &&
 				track_segment_rail_side_active(segment, 1, road_t_hit_raw.y) &&
 				((params.mask & CAST_FLAGS::WANTS_BACKFACE) != 0 || ray.dot(tunnel_n) <= 0.0f)) {
-				const float dist = tunnel_t * ray.length();
+				const float dist = tunnel_t * ray_len;
 				if (dist < best_t) {
 					best_t                          = dist;
 					out_collision.collided          = true;
-					out_collision.collision_point   = sim_vec3_from_godot(hit);
-					out_collision.collision_normal  = sim_vec3_from_godot(tunnel_n);
+					out_collision.collision_point   = hit;
+					out_collision.collision_normal  = tunnel_n;
 					out_collision.collision_face_point = out_collision.collision_point;
 					out_collision.collision_face_normal = out_collision.collision_normal;
 
 					out_collision.road_data.cp_idx          = use_idx;
-					out_collision.road_data.spatial_t       = sim_vec3_from_godot(spatial_t_hit);
-					out_collision.road_data.road_t          = sim_vec2_from_godot(road_t_hit_raw);
-					out_collision.road_data.closest_surface = sim_transform_from_godot(surf);
+					out_collision.road_data.spatial_t       = spatial_t_hit;
+					out_collision.road_data.road_t          = road_t_hit_raw;
+					out_collision.road_data.closest_surface = surf;
 					out_collision.road_data.closest_root = hit_root;
 					out_collision.road_data.terrain         = 0x100;
 				}
@@ -1155,7 +1151,7 @@ static void cast_segment_fast(const CastParams  &params,
 		}
 	}
 
-	if (DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAYCASTS)){
+	if (draw_raycasts){
 		if (out_collision.collided && out_collision.road_data.terrain == 0x100){
 			godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 			dd3d->call("draw_arrow",
