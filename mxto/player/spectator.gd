@@ -8,6 +8,7 @@ var velocity := Vector3.ZERO
 var pitch_rad := 0.0
 var yaw_rad := 0.0
 var pending_look_delta := Vector2.ZERO
+var input_enabled := true
 
 @onready var camera: Camera3D = $Camera3D
 
@@ -17,7 +18,14 @@ func _ready() -> void:
 		add_child(camera)
 	camera.current = true
 	sync_look_from_current_transform()
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if input_enabled:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func set_input_enabled(enabled: bool) -> void:
+	input_enabled = enabled
+	pending_look_delta = Vector2.ZERO
+	if !input_enabled and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func sync_look_from_current_transform() -> void:
 	yaw_rad = rotation.y
@@ -29,6 +37,8 @@ func _exit_tree() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _input(event: InputEvent) -> void:
+	if !input_enabled:
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var motion: InputEventMouseMotion = event
 		pending_look_delta += motion.relative
@@ -40,6 +50,8 @@ func _input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _process(_delta: float) -> void:
+	if !input_enabled:
+		return
 	var current_speed : float = fast_move_speed if Input.is_physical_key_pressed(KEY_SHIFT) else move_speed
 	var move_input : Vector3 = Vector3.ZERO
 	if Input.is_physical_key_pressed(KEY_W):
