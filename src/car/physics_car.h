@@ -374,7 +374,7 @@ public:
 	void update_machine_stats(); // This will use car_properties (base) and m_accel_setting to derive stats
 	void reset_machine(int reset_type);
 	void update_pitch_transform_from_machine_front_back();
-	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight, float ray_start_from_attachment_len, float ray_len, bool draw_tilt_debug);
+	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight, float mass_fraction, float time_based_factor, bool accel_off, float ray_start_from_attachment_len, float ray_len, bool draw_tilt_debug);
 	SimVec3 get_avg_track_normal_from_tilt_corners(TrackQueryScratch &scratch, PhysicsCarFloorProfile* profile = nullptr);
 	void set_terrain_state_from_track(TrackQueryScratch &scratch, const SimVec3 &trigger_p0, const SimVec3 &trigger_p1);
 	void handle_attack_states();

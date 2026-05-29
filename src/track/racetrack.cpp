@@ -766,6 +766,30 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 	RoadTransform root_derivative[4];
 	segment.curve_matrix->sample4_with_derivative(root, root_derivative, tz_s);
 
+	if (!full_basis && road_shape_uses_base_relative_t(shape) && shape->num_modulations == 0) {
+		for (int lane = 0; lane < 4; ++lane) {
+			const SimVec3 local = root[lane].t3d.xform_inv(point[lane]);
+			spatial_t[lane] = SimVec3(
+				local.x * safe_inverse_road_scale(root[lane].scale.x),
+				local.y * safe_inverse_road_scale(root[lane].scale.y),
+				tz_s[lane]);
+			road_t[lane] = SimVec2(spatial_t[lane].x, spatial_t[lane].z);
+
+			const float scaled_pos_x = road_t[lane].x * root[lane].scale.x;
+			const float scaled_dy_x = road_t[lane].x * root_derivative[lane].scale.x;
+			out_transform[lane].origin = root[lane].t3d.origin + root[lane].t3d.basis[0] * scaled_pos_x;
+			const SimVec3 tangent_x = root[lane].t3d.basis[0] * root[lane].scale.x;
+			const SimVec3 tangent_y =
+				root_derivative[lane].t3d.origin +
+				root_derivative[lane].t3d.basis[0] * scaled_pos_x +
+				root[lane].t3d.basis[0] * scaled_dy_x;
+			out_transform[lane].basis[0] = tangent_x.length_squared() > 1.0e-12f ? SimVec3(1.0f, 0.0f, 0.0f) : SimVec3();
+			out_transform[lane].basis[1] = tangent_y.cross(tangent_x).normalized();
+			out_transform[lane].basis[2] = SimVec3();
+		}
+		return;
+	}
+
 	bool invalid_lane[4] = { false, false, false, false };
 	for (int lane = 0; lane < 4; ++lane) {
 		const SimVec3 local = root[lane].t3d.xform_inv(point[lane]);
@@ -2124,7 +2148,6 @@ void RaceTrack::cast_vs_mesh_candidates4_same_ray_fast(
 	const bool debug_current_car = mesh_debug_draw_current_car(scratch);
 	const bool draw_cast_tests = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS);
 	const bool draw_collision_hits = debug_current_car && DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS);
-
 	for (int candidate = 0; candidate < scratch->mesh_cast_candidate_count; ++candidate) {
 		const int tri_index = scratch->mesh_cast_candidate_indices[candidate];
 		const TrackMeshCollisionTriangle &tri = mesh_collision_triangles[tri_index];
