@@ -85,6 +85,19 @@ struct alignas(64) TrackQueryScratch
 	}
 };
 
+static inline float checkpoint_plane_fraction_unclamped(const CollisionCheckpoint &cp, const SimVec3 &point, float min_span_len2 = 1.0e-20f)
+{
+	const float start_dist = cp.start_plane.distance_to(point);
+	const float end_dist = cp.end_plane.distance_to(point);
+	const SimVec3 from_start = cp.start_plane.normal * start_dist;
+	const SimVec3 span = from_start - cp.end_plane.normal * end_dist;
+	const float span_len2 = span.length_squared();
+	if (span_len2 <= min_span_len2) {
+		return 0.0f;
+	}
+	return from_start.dot(span) / span_len2;
+}
+
 class RaceTrack
 {
 public:
@@ -201,10 +214,7 @@ public:
 			int idx = scratch.candidate_checkpoints[i];
 			const CollisionCheckpoint &cp = checkpoints[idx];
 
-			// project pos onto segment
-			SimVec3 p1    = cp.start_plane.project(in_point);
-			SimVec3 p2    = cp.end_plane.project(in_point);
-			float           cp_t = get_closest_t_on_segment(in_point, p1, p2);
+			float cp_t = checkpoint_plane_fraction_unclamped(cp, in_point);
 
 			// interpolate orientation
 			SimBasis basis;
@@ -324,9 +334,7 @@ public:
 			int idx = scratch.candidate_checkpoints[i];
 			const CollisionCheckpoint &cp = checkpoints[idx];
 
-			SimVec3 p1 = cp.start_plane.project(in_point);
-			SimVec3 p2 = cp.end_plane.project(in_point);
-			float cp_t = get_closest_t_on_segment(in_point, p1, p2);
+			float cp_t = checkpoint_plane_fraction_unclamped(cp, in_point);
 
 			SimBasis basis;
 			basis[0] = cp.orientation_start[0].lerp(cp.orientation_end[0], cp_t);

@@ -1824,6 +1824,15 @@ namespace {
 			c.position_collision_snapshot_x[lane] = c.position_current_x[lane];
 			c.position_collision_snapshot_y[lane] = c.position_current_y[lane];
 			c.position_collision_snapshot_z[lane] = c.position_current_z[lane];
+			if (c.s_boost_active[lane] || (c.state_2[lane] & 0x10u) != 0u) {
+				min_x[i] = FLT_MAX;
+				max_x[i] = -FLT_MAX;
+				min_y[i] = FLT_MAX;
+				max_y[i] = -FLT_MAX;
+				min_z[i] = FLT_MAX;
+				max_z[i] = -FLT_MAX;
+				continue;
+			}
 			const float radius = kMachineCollisionRadius;
 			const float extent = radius + c.speed_kmh[lane] / 216.0f + kMutationSlop;
 			min_x[i] = c.position_current_x[lane] - extent;
@@ -1852,6 +1861,9 @@ namespace {
 
 		for (int sorted_i = 0; sorted_i < count; ++sorted_i) {
 			const int i = indices[sorted_i];
+			if (min_x[i] == FLT_MAX) {
+				break;
+			}
 			const float max_i_x = max_x[i];
 			for (int sorted_j = sorted_i + 1; sorted_j < count; ++sorted_j) {
 				const int j = indices[sorted_j];
@@ -3658,6 +3670,7 @@ void GameSim::process_pending_ko_events()
 }
 
 static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed);
+static inline PlayerInput native_cpu_generate_quantized_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed);
 
 void GameSim::tick_singleplayer(int local_player_id, godot::PackedByteArray local_input)
 {
@@ -3734,12 +3747,14 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			inp = decoded_car_inputs[i];
 			input_already_quantized = mode == InputFrameMode::DecodedQuantizedCarArray;
 		} else if (completed_race && player_id != -1) {
-			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
+			inp = native_cpu_generate_quantized_input_for_car(cars[i], player_id, tick, spawn_seed);
+			input_already_quantized = true;
 		} else if (mode == InputFrameMode::SingleLocal && player_id == local_player_id && local_input) {
 			inp = *local_input;
 			input_already_quantized = true;
 		} else if (car_is_cpu && car_is_cpu[i]) {
-			inp = native_cpu_generate_input_for_car(cars[i], player_id, tick, spawn_seed);
+			inp = native_cpu_generate_quantized_input_for_car(cars[i], player_id, tick, spawn_seed);
+			input_already_quantized = true;
 		}
 		if (!input_already_quantized) {
 			inp = PlayerInput::quantized(inp);
@@ -4705,9 +4720,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			}
 			if (spawn_checkpoint >= 0 && spawn_checkpoint < current_track->num_checkpoints) {
 				const CollisionCheckpoint &cur_cp = current_track->checkpoints[spawn_checkpoint];
-				const SimVec3 p1 = cur_cp.start_plane.project(spawn_transform.origin);
-				const SimVec3 p2 = cur_cp.end_plane.project(spawn_transform.origin);
-				const float checkpoint_fraction = get_closest_t_on_segment(spawn_transform.origin, p1, p2);
+				const float checkpoint_fraction = checkpoint_plane_fraction_unclamped(cur_cp, spawn_transform.origin);
 				const float cp_length = cur_cp.local_distance;
 				const float cp_start_distance = cur_cp.distance - cur_cp.local_distance;
 				float ground_distance = cp_start_distance + cp_length * std::clamp(checkpoint_fraction, 0.0f, 1.0f);
@@ -5359,15 +5372,7 @@ static inline float native_cpu_smooth_noise_signed(uint32_t seed_base, int expec
 
 static inline float checkpoint_fraction_for_cpu_guidance(const CollisionCheckpoint& cp, const SimVec3& pos)
 {
-	const float start_dist = cp.start_plane.distance_to(pos);
-	const float end_dist = cp.end_plane.distance_to(pos);
-	const SimVec3 from_start = cp.start_plane.normal * start_dist;
-	const SimVec3 span = from_start - cp.end_plane.normal * end_dist;
-	const float span_len2 = span.length_squared();
-	if (span_len2 <= 1.0e-6f) {
-		return 0.0f;
-	}
-	return std::max(0.0f, std::min(1.0f, from_start.dot(span) / span_len2));
+	return std::max(0.0f, std::min(1.0f, checkpoint_plane_fraction_unclamped(cp, pos, 1.0e-6f)));
 }
 
 static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed)
@@ -5438,6 +5443,27 @@ static inline PlayerInput native_cpu_generate_input_for_car(const PhysicsCar& ca
 	return input;
 }
 
+static inline PlayerInput native_cpu_generate_quantized_input_for_car(const PhysicsCar& car, int32_t player_id, int expected_tick, int spawn_seed)
+{
+	const PlayerInput input = native_cpu_generate_input_for_car(car, player_id, expected_tick, spawn_seed);
+	PlayerInput out{};
+	uint8_t q = PlayerInput::quantize_trigger(input.strafe_left);
+	if (q != PlayerInput::TRIGGER_NEUTRAL) {
+		out.strafe_left = static_cast<float>(q) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION);
+	}
+	q = PlayerInput::quantize_trigger(input.strafe_right);
+	if (q != PlayerInput::TRIGGER_NEUTRAL) {
+		out.strafe_right = static_cast<float>(q) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION);
+	}
+	q = PlayerInput::quantize_axis(input.steer_horizontal);
+	if (q != PlayerInput::AXIS_NEUTRAL) {
+		out.steer_horizontal = (static_cast<float>(q) / static_cast<float>(PlayerInput::RAW_BIT_PRECISION)) * 2.0f - 1.0f;
+	}
+	out.accelerate = 1.0f;
+	out.boost = input.boost;
+	return out;
+}
+
 void GameSim::update_native_cpu_driver(int car_index)
 {
 	if (car_index < 0 || car_index >= num_cars || car_index >= static_cast<int>(native_cpu_drivers.size())) {
@@ -5475,8 +5501,8 @@ PlayerInput GameSim::generate_native_cpu_player_input_for_tick(int player_id, in
 	}
 	const int car_index = find_car_index_for_player(static_cast<int32_t>(player_id));
 	if (car_index >= 0 && car_index < num_cars) {
-		return PlayerInput::quantized(native_cpu_generate_input_for_car(
-			cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed));
+		return native_cpu_generate_quantized_input_for_car(
+			cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed);
 	}
 	return PlayerInput::from_neutral();
 }
@@ -5507,12 +5533,38 @@ void GameSim::fill_native_cpu_player_inputs_for_frame(PlayerInput* out_inputs,
 		}
 		const int32_t player_id = expected_player_ids ? expected_player_ids[i] : (i < num_cars ? car_player_ids[i] : -1);
 		if (i >= 0 && i < num_cars && car_player_ids[i] == player_id) {
-			out_inputs[i] = PlayerInput::quantized(native_cpu_generate_input_for_car(
-				cars[i], player_id, expected_tick, spawn_seed));
+			out_inputs[i] = native_cpu_generate_quantized_input_for_car(
+				cars[i], player_id, expected_tick, spawn_seed);
 		} else {
 			out_inputs[i] = generate_native_cpu_player_input_for_tick(player_id, expected_tick);
 		}
 		out_present[i] = 1;
+	}
+}
+
+void GameSim::fill_contiguous_native_cpu_player_inputs_for_frame(PlayerInput* out_inputs,
+	uint8_t* out_present,
+	const int32_t* expected_player_ids,
+	int input_count,
+	int expected_tick)
+{
+	if (!out_inputs || !out_present || input_count <= 0) {
+		return;
+	}
+	if (!cars || !car_player_ids || input_count > num_cars) {
+		fill_native_cpu_player_inputs_for_frame(out_inputs, out_present, expected_player_ids, nullptr, input_count, expected_tick);
+		return;
+	}
+	for (int i = 0; i < input_count; ++i) {
+		if (expected_player_ids && expected_player_ids[i] != car_player_ids[i]) {
+			fill_native_cpu_player_inputs_for_frame(out_inputs, out_present, expected_player_ids, nullptr, input_count, expected_tick);
+			return;
+		}
+	}
+	std::memset(out_present, 1, static_cast<size_t>(input_count));
+	for (int i = 0; i < input_count; ++i) {
+		out_inputs[i] = native_cpu_generate_quantized_input_for_car(
+			cars[i], car_player_ids[i], expected_tick, spawn_seed);
 	}
 }
 
@@ -5524,8 +5576,8 @@ PlayerInput GameSim::generate_native_cpu_player_input_for_car_index(int car_inde
 	if (car_player_ids[car_index] != player_id) {
 		return generate_native_cpu_player_input_for_tick(player_id, expected_tick);
 	}
-	return PlayerInput::quantized(native_cpu_generate_input_for_car(
-		cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed));
+	return native_cpu_generate_quantized_input_for_car(
+		cars[car_index], static_cast<int32_t>(player_id), expected_tick, spawn_seed);
 }
 
 godot::PackedByteArray GameSim::generate_native_cpu_input_for_tick(int player_id, int expected_tick)

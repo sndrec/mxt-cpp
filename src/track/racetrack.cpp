@@ -187,9 +187,7 @@ static inline float checkpoint_time_for_point(
 	bool clamp_cp_t,
 	float *out_cp_t)
 {
-	const SimVec3 p1 = cp.start_plane.project(point);
-	const SimVec3 p2 = cp.end_plane.project(point);
-	float cp_t = get_closest_t_on_segment(point, p1, p2);
+	float cp_t = checkpoint_plane_fraction_unclamped(cp, point);
 	if (clamp_cp_t) {
 		cp_t = std::clamp(cp_t, 0.0f, 1.0f);
 	}
@@ -731,28 +729,22 @@ void RaceTrack::get_road_surface4_same_checkpoint(
 	const SimFloat4 py(point[0].y, point[1].y, point[2].y, point[3].y);
 	const SimFloat4 pz(point[0].z, point[1].z, point[2].z, point[3].z);
 
-	auto plane_project4 = [&](const SimPlane& plane, SimFloat4& ox, SimFloat4& oy, SimFloat4& oz) {
-		const SimFloat4 dist =
-			SimFloat4(plane.normal.x) * px +
-			SimFloat4(plane.normal.y) * py +
-			SimFloat4(plane.normal.z) * pz -
-			SimFloat4(plane.d);
-		ox = px - SimFloat4(plane.normal.x) * dist;
-		oy = py - SimFloat4(plane.normal.y) * dist;
-		oz = pz - SimFloat4(plane.normal.z) * dist;
-	};
-
-	SimFloat4 p1x, p1y, p1z;
-	SimFloat4 p2x, p2y, p2z;
-	plane_project4(cp->start_plane, p1x, p1y, p1z);
-	plane_project4(cp->end_plane, p2x, p2y, p2z);
-
-	const SimFloat4 sx = p2x - p1x;
-	const SimFloat4 sy = p2y - p1y;
-	const SimFloat4 sz = p2z - p1z;
-	const SimFloat4 qx = px - p1x;
-	const SimFloat4 qy = py - p1y;
-	const SimFloat4 qz = pz - p1z;
+	const SimFloat4 start_dist =
+		SimFloat4(cp->start_plane.normal.x) * px +
+		SimFloat4(cp->start_plane.normal.y) * py +
+		SimFloat4(cp->start_plane.normal.z) * pz -
+		SimFloat4(cp->start_plane.d);
+	const SimFloat4 end_dist =
+		SimFloat4(cp->end_plane.normal.x) * px +
+		SimFloat4(cp->end_plane.normal.y) * py +
+		SimFloat4(cp->end_plane.normal.z) * pz -
+		SimFloat4(cp->end_plane.d);
+	const SimFloat4 qx = SimFloat4(cp->start_plane.normal.x) * start_dist;
+	const SimFloat4 qy = SimFloat4(cp->start_plane.normal.y) * start_dist;
+	const SimFloat4 qz = SimFloat4(cp->start_plane.normal.z) * start_dist;
+	const SimFloat4 sx = qx - SimFloat4(cp->end_plane.normal.x) * end_dist;
+	const SimFloat4 sy = qy - SimFloat4(cp->end_plane.normal.y) * end_dist;
+	const SimFloat4 sz = qz - SimFloat4(cp->end_plane.normal.z) * end_dist;
 	const SimFloat4 l2 = sim_max4(sx * sx + sy * sy + sz * sz, SimFloat4(1e-20f));
 	SimFloat4 cp_t = (sx * qx + sy * qy + sz * qz) / l2;
 	cp_t = sim_max4(SimFloat4(0.0f), sim_min4(cp_t, SimFloat4(1.0f)));
@@ -2072,6 +2064,14 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 	if (ray_len <= 1.0e-6f) {
 		return;
 	}
+	const SimVec3 ray_bounds_min(
+		std::min(p0.x, p1.x) - 1.0e-3f,
+		std::min(p0.y, p1.y) - 1.0e-3f,
+		std::min(p0.z, p1.z) - 1.0e-3f);
+	const SimVec3 ray_bounds_max(
+		std::max(p0.x, p1.x) + 1.0e-3f,
+		std::max(p0.y, p1.y) + 1.0e-3f,
+		std::max(p0.z, p1.z) + 1.0e-3f);
 
 	float best_dist = FLT_MAX;
 	const bool track_only_query = (mask & CAST_FLAGS::WANTS_TRACK) != 0 &&
@@ -2089,6 +2089,10 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 		mesh_side_reference_point
 	};
 	for (int i = 0; i < scratch->mesh_cast_candidate_count; ++i) {
+		const int tri_index = scratch->mesh_cast_candidate_indices[i];
+		if (!aabb_overlaps_bounds(mesh_collision_triangles[tri_index].bounds, ray_bounds_min, ray_bounds_max)) {
+			continue;
+		}
 		scan_mesh_cast_triangle(
 			params,
 			out_collision,
@@ -2097,7 +2101,7 @@ void RaceTrack::cast_vs_mesh_candidates_fast(
 			ray,
 			ray_len,
 			start_idx,
-			scratch->mesh_cast_candidate_indices[i],
+			tri_index,
 			best_dist,
 			scratch);
 	}

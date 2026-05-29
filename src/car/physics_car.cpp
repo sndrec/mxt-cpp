@@ -272,15 +272,7 @@ static inline SimVec3 mxt_inverse_transform_point(const SimTransform& basis_tran
 static inline float checkpoint_longitudinal_t(const RaceTrack& track, int cp_idx, const SimVec3& point)
 {
 	const CollisionCheckpoint& cp = track.checkpoints[cp_idx];
-	const float start_dist = cp.start_plane.distance_to(point);
-	const float end_dist = cp.end_plane.distance_to(point);
-	const SimVec3 from_start = cp.start_plane.normal * start_dist;
-	const SimVec3 span = from_start - cp.end_plane.normal * end_dist;
-	const float span_len2 = span.length_squared();
-	float cp_t = 0.0f;
-	if (span_len2 > 1.0e-20f) {
-		cp_t = std::clamp(from_start.dot(span) / span_len2, 0.0f, 1.0f);
-	}
+	const float cp_t = std::clamp(checkpoint_plane_fraction_unclamped(cp, point), 0.0f, 1.0f);
 	return remap_float(cp_t, 0.0f, 1.0f, cp.t_start, cp.t_end);
 }
 
@@ -4018,9 +4010,7 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	}
 
 	const CollisionCheckpoint &cur_cp = track->checkpoints[soa->current_checkpoint[soa_index]];
-	SimVec3 p1 = cur_cp.start_plane.project(LOAD_VEC3(position_current));
-	SimVec3 p2 = cur_cp.end_plane.project(LOAD_VEC3(position_current));
-	float t = get_closest_t_on_segment(LOAD_VEC3(position_current), p1, p2);
+	float t = checkpoint_plane_fraction_unclamped(cur_cp, LOAD_VEC3(position_current));
 	soa->checkpoint_fraction[soa_index] = t;
 	soa->lap_progress[soa_index] = (static_cast<float>(soa->current_checkpoint[soa_index]) + t) / static_cast<float>(track->num_checkpoints);
 

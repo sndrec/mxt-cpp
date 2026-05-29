@@ -2836,6 +2836,7 @@ int NetcodeSession::ensure_peer_index(int32_t peer_id)
 void NetcodeSession::reset()
 {
 	racer_count = 0;
+	cpu_racer_count = 0;
 	local_player_id = -1;
 	latest_authoritative_tick = -1;
 	stat_auth_packets = 0;
@@ -2862,6 +2863,7 @@ void NetcodeSession::reset()
 void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_flags, int p_local_player_id)
 {
 	racer_count = std::min(static_cast<int>(p_player_ids.size()), MAX_RACERS);
+	cpu_racer_count = 0;
 	local_player_id = p_local_player_id;
 	latest_authoritative_tick = -1;
 	stat_auth_packets = 0;
@@ -2873,6 +2875,7 @@ void NetcodeSession::configure(godot::Array p_player_ids, godot::Array p_cpu_fla
 	for (int i = 0; i < racer_count; ++i) {
 		player_ids[i] = static_cast<int32_t>(static_cast<int64_t>(p_player_ids[i]));
 		cpu_flags[i] = (i < p_cpu_flags.size() && static_cast<bool>(p_cpu_flags[i])) ? 1 : 0;
+		cpu_racer_count += cpu_flags[i] != 0 ? 1 : 0;
 	}
 	for (int i = racer_count; i < MAX_RACERS; ++i) {
 		player_ids[i] = 0;
@@ -4104,15 +4107,28 @@ bool NetcodeSession::server_has_full_input_frame(int tick) const
 bool NetcodeSession::tick_server_frame(godot::Object* game_sim_obj, int tick, bool use_pending_cpu_inputs)
 {
 	GameSim* sim = Object::cast_to<GameSim>(game_sim_obj);
-	const InputFrame* pending_frame = find_frame(pending_inputs, tick);
 	if (!sim) {
 		return false;
 	}
+	if (!use_pending_cpu_inputs && cpu_racer_count == racer_count) {
+		InputFrame& authoritative = authoritative_history[tick & (HISTORY_LEN - 1)];
+		authoritative.tick = tick;
+		sim->fill_contiguous_native_cpu_player_inputs_for_frame(
+			authoritative.inputs,
+			authoritative.present,
+			player_ids,
+			racer_count,
+			tick);
+		sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
+			-1, nullptr, authoritative.inputs, nullptr, racer_count);
+		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
+		return true;
+	}
+
+	const InputFrame* pending_frame = find_frame(pending_inputs, tick);
 	if (!pending_frame) {
-		for (int i = 0; i < racer_count; ++i) {
-			if (!cpu_flags[i] || use_pending_cpu_inputs) {
-				return false;
-			}
+		if (use_pending_cpu_inputs || cpu_racer_count != racer_count) {
+			return false;
 		}
 	}
 	InputFrame& authoritative = frame_for(authoritative_history, tick);

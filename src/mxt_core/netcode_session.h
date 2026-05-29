@@ -36,6 +36,7 @@ class NetcodeSession : public Object {
 	};
 
 	int racer_count = 0;
+	int cpu_racer_count = 0;
 	int32_t local_player_id = -1;
 	int32_t player_ids[MAX_RACERS] = {};
 	uint8_t cpu_flags[MAX_RACERS] = {};

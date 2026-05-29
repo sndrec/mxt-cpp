@@ -185,6 +185,11 @@ namespace godot {
 			const uint8_t* expected_cpu_flags,
 			int input_count,
 			int expected_tick);
+		void fill_contiguous_native_cpu_player_inputs_for_frame(PlayerInput* out_inputs,
+			uint8_t* out_present,
+			const int32_t* expected_player_ids,
+			int input_count,
+			int expected_tick);
 		PlayerInput generate_native_cpu_player_input_for_car_index(int car_index, int player_id, int expected_tick);
 		PlayerInput generate_native_cpu_player_input_for_tick(int player_id, int expected_tick);
 		godot::PackedByteArray generate_native_cpu_input_for_tick(int player_id, int expected_tick);
