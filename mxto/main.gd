@@ -174,6 +174,14 @@ var replay_playback_local_player_id: int = 0
 var replay_playback_use_multiplayer_startup: bool = false
 var replay_camera_mode: int = 0
 var replay_auto_camera: Camera3D
+var replay_relative_camera: Camera3D
+var replay_relative_gravity_basis := Basis.IDENTITY
+var replay_relative_gravity_basis_valid := false
+var replay_relative_camera_basis := Basis.IDENTITY
+var replay_relative_camera_basis_desired := Basis.IDENTITY
+var replay_relative_offset := Vector3.ZERO
+var replay_relative_velocity := Vector3.ZERO
+var replay_relative_pending_look_delta := Vector2.ZERO
 var replay_catalog_root: Control
 var replay_catalog_list: ItemList
 var replay_catalog_metadata_label: RichTextLabel
@@ -195,6 +203,13 @@ const REPLAY_SCHEMA_VERSION := 3
 const REPLAY_CAMERA_GAME := 0
 const REPLAY_CAMERA_AUTO := 1
 const REPLAY_CAMERA_SPECTATOR := 2
+const REPLAY_CAMERA_RELATIVE := 3
+const REPLAY_RELATIVE_DEFAULT_OFFSET := Vector3(0.0, 8.0, 28.0)
+const REPLAY_RELATIVE_LOOK_TARGET := Vector3(0.0, 2.0, 0.0)
+const REPLAY_RELATIVE_LOOK_SPEED := 0.0025
+const REPLAY_RELATIVE_LOOK_ACTION_SPEED := 6.0
+const REPLAY_RELATIVE_MOVE_SPEED := 300.0
+const REPLAY_RELATIVE_FAST_MOVE_SPEED := 900.0
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 const DIP_TRACE_MESH_FLOOR := 0x1000
@@ -1857,6 +1872,16 @@ func _ensure_replay_auto_camera() -> Camera3D:
 		$GameWorld.add_child(replay_auto_camera)
 	return replay_auto_camera
 
+func _ensure_replay_relative_camera() -> Camera3D:
+	if replay_relative_camera == null or !is_instance_valid(replay_relative_camera):
+		replay_relative_camera = Camera3D.new()
+		replay_relative_camera.name = "ReplayRelativeCamera"
+		replay_relative_camera.near = 0.25
+		replay_relative_camera.far = 40000.0
+		replay_relative_camera.fov = 72.0
+		$GameWorld.add_child(replay_relative_camera)
+	return replay_relative_camera
+
 func _focused_replay_player_id() -> int:
 	if replay_playback_racer_ids.is_empty():
 		return _local_player_id()
@@ -1873,10 +1898,70 @@ func _focused_replay_car() -> VisualCar:
 func _focused_replay_transform() -> Transform3D:
 	var car := _focused_replay_car()
 	if car != null:
-		return car.car_transform.global_transform
+		return Transform3D(car.basis_physical.basis, car.position_current)
 	if game_sim != null and game_sim.has_method("get_player_render_transform"):
 		return game_sim.get_player_render_transform(_focused_replay_player_id())
 	return Transform3D.IDENTITY
+
+func _focused_replay_up() -> Vector3:
+	var car := _focused_replay_car()
+	if car != null and car.track_surface_normal.length_squared() > 0.0001:
+		return car.track_surface_normal.normalized()
+	var transform := _focused_replay_transform()
+	if transform.basis.y.length_squared() > 0.0001:
+		return transform.basis.y.normalized()
+	return Vector3.UP
+
+func _replay_action_strength(action_name: String) -> float:
+	if InputMap.has_action(action_name):
+		return Input.get_action_strength(action_name)
+	return 0.0
+
+func _replay_action_axis(negative_action: String, positive_action: String) -> float:
+	return _replay_action_strength(positive_action) - _replay_action_strength(negative_action)
+
+func _replay_relative_gravity_basis_from_up(up: Vector3, preserve_basis: Basis, fallback_basis: Basis) -> Basis:
+	if up.length_squared() <= 0.0001:
+		up = Vector3.UP
+	else:
+		up = up.normalized()
+	var forward := -preserve_basis.z
+	forward = (forward - up * forward.dot(up))
+	if forward.length_squared() <= 0.0001:
+		forward = -fallback_basis.z
+		forward = (forward - up * forward.dot(up))
+	if forward.length_squared() <= 0.0001:
+		forward = up.cross(fallback_basis.x)
+	if forward.length_squared() <= 0.0001:
+		var seed := Vector3.FORWARD
+		if absf(up.dot(seed)) > 0.95:
+			seed = Vector3.RIGHT
+		forward = seed - up * seed.dot(up)
+	forward = forward.normalized()
+	var right := forward.cross(up).normalized()
+	forward = up.cross(right).normalized()
+	return Basis(right, up, -forward).orthonormalized()
+
+func _apply_replay_relative_camera_transform(car_transform: Transform3D) -> void:
+	var camera := _ensure_replay_relative_camera()
+	var camera_basis := (replay_relative_gravity_basis * replay_relative_camera_basis).orthonormalized()
+	var camera_position := car_transform.origin + replay_relative_gravity_basis * replay_relative_offset
+	camera.global_transform = Transform3D(camera_basis, camera_position)
+
+func _reset_replay_relative_camera() -> void:
+	replay_relative_gravity_basis_valid = false
+	replay_relative_pending_look_delta = Vector2.ZERO
+	replay_relative_velocity = Vector3.ZERO
+	replay_relative_offset = REPLAY_RELATIVE_DEFAULT_OFFSET
+	var camera := _ensure_replay_relative_camera()
+	var car_transform := _focused_replay_transform()
+	replay_relative_gravity_basis = _replay_relative_gravity_basis_from_up(_focused_replay_up(), car_transform.basis, car_transform.basis)
+	replay_relative_gravity_basis_valid = true
+	var local_look := Transform3D(Basis.IDENTITY, replay_relative_offset).looking_at(REPLAY_RELATIVE_LOOK_TARGET, Vector3.UP)
+	replay_relative_camera_basis_desired = local_look.basis.orthonormalized()
+	replay_relative_camera_basis = replay_relative_camera_basis_desired
+	_apply_replay_relative_camera_transform(car_transform)
+	camera.current = true
 
 func _apply_replay_camera_mode() -> void:
 	if !replay_playback_active:
@@ -1887,6 +1972,10 @@ func _apply_replay_camera_mode() -> void:
 		car_node_container.local_visual_car.car_camera.make_current()
 	elif replay_camera_mode == REPLAY_CAMERA_AUTO:
 		_ensure_replay_auto_camera().make_current()
+	elif replay_camera_mode == REPLAY_CAMERA_RELATIVE:
+		_reset_replay_relative_camera()
+		_ensure_replay_relative_camera().make_current()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	else:
 		if spectator_node == null:
 			spectator_node = spectator_scene.instantiate()
@@ -1901,7 +1990,7 @@ func _apply_replay_camera_mode() -> void:
 			camera.make_current()
 
 func _cycle_replay_camera_mode() -> void:
-	replay_camera_mode = (replay_camera_mode + 1) % 3
+	replay_camera_mode = (replay_camera_mode + 1) % 4
 	_apply_replay_camera_mode()
 	_show_race_notification("Replay Camera: %s" % _replay_camera_mode_name(), 1200)
 
@@ -1911,13 +2000,15 @@ func _replay_camera_mode_name() -> String:
 			return "Game"
 		REPLAY_CAMERA_AUTO:
 			return "Auto"
+		REPLAY_CAMERA_RELATIVE:
+			return "Relative Cam"
 		_:
 			return "Spectator"
 
 func _change_replay_focus(delta: int) -> void:
 	if !replay_playback_active or replay_playback_racer_ids.is_empty():
 		return
-	if replay_camera_mode != REPLAY_CAMERA_GAME and replay_camera_mode != REPLAY_CAMERA_AUTO:
+	if replay_camera_mode != REPLAY_CAMERA_GAME and replay_camera_mode != REPLAY_CAMERA_AUTO and replay_camera_mode != REPLAY_CAMERA_RELATIVE:
 		return
 	replay_playback_focus_index = posmod(replay_playback_focus_index + delta, replay_playback_racer_ids.size())
 	_apply_replay_camera_mode()
@@ -1936,6 +2027,63 @@ func _update_replay_auto_camera(delta: float) -> void:
 	var desired := target - car_transform.basis.z * lerpf(24.0, 42.0, speed_scale) + car_transform.basis.y * lerpf(9.0, 15.0, speed_scale)
 	camera.global_position = camera.global_position.lerp(desired, clampf(delta * 4.0, 0.0, 1.0))
 	camera.look_at(target, car_transform.basis.y.normalized())
+
+func _update_replay_relative_camera(delta: float) -> void:
+	if !replay_playback_active or replay_camera_mode != REPLAY_CAMERA_RELATIVE:
+		return
+	var car_transform := _focused_replay_transform()
+	var desired_gravity_basis := replay_relative_gravity_basis
+	if replay_relative_gravity_basis_valid:
+		desired_gravity_basis = _replay_relative_gravity_basis_from_up(_focused_replay_up(), replay_relative_gravity_basis, car_transform.basis)
+	else:
+		desired_gravity_basis = _replay_relative_gravity_basis_from_up(_focused_replay_up(), car_transform.basis, car_transform.basis)
+		replay_relative_gravity_basis = desired_gravity_basis
+		replay_relative_gravity_basis_valid = true
+	replay_relative_gravity_basis = replay_relative_gravity_basis.slerp(desired_gravity_basis, clampf(delta * 5.0, 0.0, 1.0)).orthonormalized()
+
+	var look_delta := replay_relative_pending_look_delta
+	replay_relative_pending_look_delta = Vector2.ZERO
+	var pitch_amount := -look_delta.y * REPLAY_RELATIVE_LOOK_SPEED
+	var yaw_amount := -look_delta.x * REPLAY_RELATIVE_LOOK_SPEED
+	pitch_amount += _replay_action_axis("CameraUp", "CameraDown") * delta * -REPLAY_RELATIVE_LOOK_ACTION_SPEED
+	pitch_amount += _replay_action_axis("CamForward", "CamBack") * delta * -REPLAY_RELATIVE_LOOK_ACTION_SPEED
+	yaw_amount += _replay_action_axis("CameraLeft", "CameraRight") * delta * -REPLAY_RELATIVE_LOOK_ACTION_SPEED
+	yaw_amount += _replay_action_axis("CamLeft", "CamRight") * delta * -REPLAY_RELATIVE_LOOK_ACTION_SPEED
+	var roll_amount := _replay_action_axis("StrafeLeft", "StrafeRight") * delta * -4.0
+	if pitch_amount != 0.0:
+		replay_relative_camera_basis_desired = replay_relative_camera_basis_desired.rotated(replay_relative_camera_basis_desired.x, pitch_amount)
+	if yaw_amount != 0.0:
+		replay_relative_camera_basis_desired = replay_relative_camera_basis_desired.rotated(replay_relative_camera_basis_desired.y, yaw_amount)
+	if roll_amount != 0.0:
+		replay_relative_camera_basis_desired = replay_relative_camera_basis_desired.rotated(replay_relative_camera_basis_desired.z, roll_amount)
+	replay_relative_camera_basis_desired = replay_relative_camera_basis_desired.orthonormalized()
+	replay_relative_camera_basis = replay_relative_camera_basis.slerp(replay_relative_camera_basis_desired, clampf(delta * 8.0, 0.0, 1.0)).orthonormalized()
+
+	var move_input := Vector3.ZERO
+	if Input.is_physical_key_pressed(KEY_W):
+		move_input.z -= 1.0
+	if Input.is_physical_key_pressed(KEY_S):
+		move_input.z += 1.0
+	if Input.is_physical_key_pressed(KEY_A):
+		move_input.x -= 1.0
+	if Input.is_physical_key_pressed(KEY_D):
+		move_input.x += 1.0
+	if Input.is_physical_key_pressed(KEY_E) or Input.is_physical_key_pressed(KEY_SPACE):
+		move_input.y += 1.0
+	if Input.is_physical_key_pressed(KEY_Q) or Input.is_physical_key_pressed(KEY_CTRL):
+		move_input.y -= 1.0
+	move_input.x += _replay_action_axis("MoveLeft", "MoveRight")
+	move_input.x += _replay_action_axis("SteerLeft", "SteerRight")
+	move_input.z += _replay_action_axis("MoveForward", "MoveBack")
+	move_input.z += _replay_action_strength("Brake") - _replay_action_strength("Accelerate")
+	if move_input.length_squared() > 1.0:
+		move_input = move_input.normalized()
+	var current_speed := REPLAY_RELATIVE_FAST_MOVE_SPEED if Input.is_physical_key_pressed(KEY_SHIFT) else REPLAY_RELATIVE_MOVE_SPEED
+	var desired_velocity := replay_relative_camera_basis * move_input * current_speed
+	var velocity_lerp := clampf(delta * (12.0 if move_input.length_squared() > 0.0 else 8.0), 0.0, 1.0)
+	replay_relative_velocity = replay_relative_velocity.lerp(desired_velocity, velocity_lerp)
+	replay_relative_offset += replay_relative_velocity * delta
+	_apply_replay_relative_camera_transform(car_transform)
 
 func _build_replay_catalog() -> void:
 	if replay_catalog_root != null and is_instance_valid(replay_catalog_root):
@@ -3319,6 +3467,23 @@ func _simulate_single_tick():
 		if network_manager.is_server or network_manager.local_tick >= network_manager.clients_target_tick:
 			return
 
+func _input(event: InputEvent) -> void:
+	if !replay_playback_active or replay_camera_mode != REPLAY_CAMERA_RELATIVE:
+		return
+	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		var motion: InputEventMouseMotion = event
+		replay_relative_pending_look_delta += motion.relative
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseButton:
+		var mouse_button: InputEventMouseButton = event
+		if mouse_button.pressed and mouse_button.button_index == MOUSE_BUTTON_LEFT:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("ui_cancel"):
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			get_viewport().set_input_as_handled()
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F3:
 		var profile := game_sim.get_phase_profile_string()
@@ -3366,6 +3531,7 @@ func _return_to_menu() -> void:
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
 	replay_start_grid_slots = PackedInt32Array()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_close_race_pause_menu()
 	race_finish_label.visible = false
 	_hide_race_results_summary()
@@ -3838,6 +4004,7 @@ func _process(delta: float) -> void:
 	if game_sim.sim_started:
 		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		_update_replay_auto_camera(delta)
+		_update_replay_relative_camera(delta)
 		_update_native_render_camera()
 		game_sim.render_gamesim_visuals_only(delta)
 		if auto_render_profile_mode:
