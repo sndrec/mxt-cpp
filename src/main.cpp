@@ -1156,12 +1156,6 @@ namespace {
 		sim_store4(c.tilt_pos_x + p, sim_load4(c.tilt_pos_x + p) + dx);
 		sim_store4(c.tilt_pos_y + p, sim_load4(c.tilt_pos_y + p) + dy);
 		sim_store4(c.tilt_pos_z + p, sim_load4(c.tilt_pos_z + p) + dz);
-		sim_store4(c.wall_pos_a_x + p, sim_load4(c.wall_pos_a_x + p) + dx);
-		sim_store4(c.wall_pos_a_y + p, sim_load4(c.wall_pos_a_y + p) + dy);
-		sim_store4(c.wall_pos_a_z + p, sim_load4(c.wall_pos_a_z + p) + dz);
-		sim_store4(c.wall_pos_b_x + p, sim_load4(c.wall_pos_b_x + p) + dx);
-		sim_store4(c.wall_pos_b_y + p, sim_load4(c.wall_pos_b_y + p) + dy);
-		sim_store4(c.wall_pos_b_z + p, sim_load4(c.wall_pos_b_z + p) + dz);
 	}
 
 	static void update_machine_corners_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count,
@@ -1704,17 +1698,6 @@ namespace {
 			sim_store4(c.tilt_pos_y + p, tilt_pos.y);
 			sim_store4(c.tilt_pos_z + p, tilt_pos.z);
 
-			sim_store4(c.wall_pos_a_x + p, sim_load4(c.wall_pos_b_x + p));
-			sim_store4(c.wall_pos_a_y + p, sim_load4(c.wall_pos_b_y + p));
-			sim_store4(c.wall_pos_a_z + p, sim_load4(c.wall_pos_b_z + p));
-			const SimVec3x4 wall_pos = transform_points_components4(
-				c0x, c0y, c0z, c1x, c1y, c1z, c2x, c2y, c2z, ox, oy, oz,
-				sim_load4(c.wall_offset_x + p),
-				sim_load4(c.wall_offset_y + p),
-				sim_load4(c.wall_offset_z + p));
-			sim_store4(c.wall_pos_b_x + p, wall_pos.x);
-			sim_store4(c.wall_pos_b_y + p, wall_pos.y);
-			sim_store4(c.wall_pos_b_z + p, wall_pos.z);
 		}
 	}
 
@@ -2358,15 +2341,6 @@ void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, f
 			sim_load4(soa.tilt_offset_x + point_base),
 			sim_load4(soa.tilt_offset_y + point_base),
 			sim_load4(soa.tilt_offset_z + point_base));
-		const SimVec3x4 wall_pos = transform_points_components4(
-			reset_basis.c0.x, reset_basis.c0.y, reset_basis.c0.z,
-			reset_basis.c1.x, reset_basis.c1.y, reset_basis.c1.z,
-			reset_basis.c2.x, reset_basis.c2.y, reset_basis.c2.z,
-			reset_position.x, reset_position.y, reset_position.z,
-			sim_load4(soa.wall_offset_x + point_base),
-			sim_load4(soa.wall_offset_y + point_base),
-			sim_load4(soa.wall_offset_z + point_base));
-		const SimVec3 wall_sweep_origin = transform.xform(SimVec3(0.0f, 0.1f, 0.0f));
 		for (int point = 0; point < 4; ++point) {
 			const int p = point_base + point;
 			soa.tilt_state[p] = 0;
@@ -2374,7 +2348,6 @@ void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, f
 			STORE_INDEXED_VEC3(soa, tilt_force_spatial, p, SimVec3());
 			STORE_INDEXED_VEC3(soa, tilt_up_vector_2, p, transform.basis.get_column(1));
 			STORE_INDEXED_VEC3(soa, tilt_up_vector, p, transform.basis.get_column(1));
-			STORE_INDEXED_VEC3(soa, wall_pos_a, p, wall_sweep_origin);
 		}
 		sim_store4(soa.tilt_pos_old_x + point_base, tilt_pos.x);
 		sim_store4(soa.tilt_pos_old_y + point_base, tilt_pos.y);
@@ -2382,9 +2355,6 @@ void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, f
 		sim_store4(soa.tilt_pos_x + point_base, tilt_pos.x);
 		sim_store4(soa.tilt_pos_y + point_base, tilt_pos.y);
 		sim_store4(soa.tilt_pos_z + point_base, tilt_pos.z);
-		sim_store4(soa.wall_pos_b_x + point_base, wall_pos.x);
-		sim_store4(soa.wall_pos_b_y + point_base, wall_pos.y);
-		sim_store4(soa.wall_pos_b_z + point_base, wall_pos.z);
 	}
 	soa.current_checkpoint[lane] = checkpoint;
 	soa.current_collision_checkpoint[lane] = checkpoint;
@@ -4775,15 +4745,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				sim_load4(car_soa->tilt_offset_x + point_base),
 				sim_load4(car_soa->tilt_offset_y + point_base),
 				sim_load4(car_soa->tilt_offset_z + point_base));
-			const SimVec3x4 wall_pos = transform_points_components4(
-				reset_basis.c0.x, reset_basis.c0.y, reset_basis.c0.z,
-				reset_basis.c1.x, reset_basis.c1.y, reset_basis.c1.z,
-				reset_basis.c2.x, reset_basis.c2.y, reset_basis.c2.z,
-				reset_position.x, reset_position.y, reset_position.z,
-				sim_load4(car_soa->wall_offset_x + point_base),
-				sim_load4(car_soa->wall_offset_y + point_base),
-				sim_load4(car_soa->wall_offset_z + point_base));
-			const SimVec3 wall_sweep_origin = spawn_transform.xform(SimVec3(0.0f, 0.1f, 0.0f));
 			for (int point = 0; point < 4; ++point) {
 				const int p = point_base + point;
 				car_soa->tilt_state[p] = 0;
@@ -4791,7 +4752,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 				STORE_INDEXED_VEC3(*car_soa, tilt_force_spatial, p, SimVec3());
 				STORE_INDEXED_VEC3(*car_soa, tilt_up_vector_2, p, spawn_up);
 				STORE_INDEXED_VEC3(*car_soa, tilt_up_vector, p, spawn_up);
-				STORE_INDEXED_VEC3(*car_soa, wall_pos_a, p, wall_sweep_origin);
 			}
 			sim_store4(car_soa->tilt_pos_old_x + point_base, tilt_pos.x);
 			sim_store4(car_soa->tilt_pos_old_y + point_base, tilt_pos.y);
@@ -4799,9 +4759,6 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			sim_store4(car_soa->tilt_pos_x + point_base, tilt_pos.x);
 			sim_store4(car_soa->tilt_pos_y + point_base, tilt_pos.y);
 			sim_store4(car_soa->tilt_pos_z + point_base, tilt_pos.z);
-			sim_store4(car_soa->wall_pos_b_x + point_base, wall_pos.x);
-			sim_store4(car_soa->wall_pos_b_y + point_base, wall_pos.y);
-			sim_store4(car_soa->wall_pos_b_z + point_base, wall_pos.z);
 			car_soa->machine_state[car_idx] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q | MACHINESTATE::JUSTLANDED);
 			car_soa->air_time[car_idx] = 0;
 		}
@@ -8590,28 +8547,6 @@ void GameSim::rebuild_static_state_after_network_load() {
 		sim_store4(soa.tilt_pos_x + point_base, tilt_pos.x);
 		sim_store4(soa.tilt_pos_y + point_base, tilt_pos.y);
 		sim_store4(soa.tilt_pos_z + point_base, tilt_pos.z);
-
-		const SimFloat4 wall_x = sim_load4(soa.wall_offset_x + point_base);
-		const SimFloat4 wall_y = sim_load4(soa.wall_offset_y + point_base);
-		const SimFloat4 wall_z = sim_load4(soa.wall_offset_z + point_base);
-		const SimVec3x4 wall_pos_old = transform_points_components4(
-			previous_basis.basis.c0.x, previous_basis.basis.c0.y, previous_basis.basis.c0.z,
-			previous_basis.basis.c1.x, previous_basis.basis.c1.y, previous_basis.basis.c1.z,
-			previous_basis.basis.c2.x, previous_basis.basis.c2.y, previous_basis.basis.c2.z,
-			previous_position.x, previous_position.y, previous_position.z,
-			wall_x, wall_y, wall_z);
-		const SimVec3x4 wall_pos = transform_points_components4(
-			basis.basis.c0.x, basis.basis.c0.y, basis.basis.c0.z,
-			basis.basis.c1.x, basis.basis.c1.y, basis.basis.c1.z,
-			basis.basis.c2.x, basis.basis.c2.y, basis.basis.c2.z,
-			position.x, position.y, position.z,
-			wall_x, wall_y, wall_z);
-		sim_store4(soa.wall_pos_a_x + point_base, wall_pos_old.x);
-		sim_store4(soa.wall_pos_a_y + point_base, wall_pos_old.y);
-		sim_store4(soa.wall_pos_a_z + point_base, wall_pos_old.z);
-		sim_store4(soa.wall_pos_b_x + point_base, wall_pos.x);
-		sim_store4(soa.wall_pos_b_y + point_base, wall_pos.y);
-		sim_store4(soa.wall_pos_b_z + point_base, wall_pos.z);
 
 		for (int point = 0; point < 4; ++point) {
 			const int p = point_base + point;

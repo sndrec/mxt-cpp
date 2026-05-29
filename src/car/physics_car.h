@@ -255,9 +255,7 @@ struct PhysicsCarFloorProfile {
 #define PHYSICS_CAR_WALL_STATIC_VEC3_FIELDS(X) \
 	X(offset, SimVec3())
 
-#define PHYSICS_CAR_WALL_STATE_VEC3_FIELDS(X) \
-	X(pos_a, SimVec3()) \
-	X(pos_b, SimVec3())
+#define PHYSICS_CAR_WALL_STATE_VEC3_FIELDS(X)
 
 #define PHYSICS_CAR_WALL_VEC3_FIELDS(X) \
 	PHYSICS_CAR_WALL_STATIC_VEC3_FIELDS(X) \

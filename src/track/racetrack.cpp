@@ -678,6 +678,35 @@ void RaceTrack::get_road_surface(int cp_idx, const SimVec3 &point,
 	if (!inverse_root_point_to_road(segment, point, road_y, road_t, spatial_t, &root, &root_derivative)) {
 		return;
 	}
+	if (!oriented) {
+		SimVec3 local_pos;
+		SimVec3 local_dx;
+		SimVec3 local_dy;
+		if ((segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
+				segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_TUNNEL) &&
+				segment.road_shape->num_modulations == 0) {
+			local_pos = SimVec3(road_t.x, 0.0f, 0.0f);
+			local_dx = SimVec3(1.0f, 0.0f, 0.0f);
+			local_dy = SimVec3();
+		} else {
+			segment.road_shape->get_local_surface_at_time(local_pos, local_dx, local_dy, road_t);
+		}
+		const SimVec3 scaled_pos = mul_components(local_pos, root.scale);
+		const SimVec3 scaled_dx = mul_components(local_dx, root.scale);
+		const SimVec3 scaled_dy =
+			mul_components(local_dy, root.scale) +
+			mul_components(local_pos, root_derivative.scale);
+		out_transform.origin = root.t3d.xform(scaled_pos);
+		const SimVec3 tangent_x = root.t3d.basis.xform(scaled_dx);
+		const SimVec3 tangent_y =
+			root_derivative.t3d.origin +
+			root_derivative.t3d.basis.xform(scaled_pos) +
+			root.t3d.basis.xform(scaled_dy);
+		out_transform.basis[0] = SimVec3();
+		out_transform.basis[1] = tangent_y.cross(tangent_x).normalized();
+		out_transform.basis[2] = SimVec3();
+		return;
+	}
 	segment.road_shape->get_oriented_transform_at_time_presampled(out_transform, road_t, root, root_derivative);
 }
 

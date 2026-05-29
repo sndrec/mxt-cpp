@@ -184,8 +184,24 @@ public:
 
         static PlayerInput quantized(const PlayerInput &input)
         {
-                uint8_t data[8] = {};
-                const int size = encode_to_raw(input, data, sizeof(data));
-                return from_raw(data, size);
+                PlayerInput out{};
+                uint8_t q = quantize_trigger(input.strafe_left);
+                if (q != TRIGGER_NEUTRAL)
+                        out.strafe_left = float(q) / float(RAW_BIT_PRECISION);
+                q = quantize_trigger(input.strafe_right);
+                if (q != TRIGGER_NEUTRAL)
+                        out.strafe_right = float(q) / float(RAW_BIT_PRECISION);
+                q = quantize_axis(input.steer_horizontal);
+                if (q != AXIS_NEUTRAL)
+                        out.steer_horizontal = (float(q) / float(RAW_BIT_PRECISION)) * 2.0f - 1.0f;
+                q = quantize_axis(input.steer_vertical);
+                if (q != AXIS_NEUTRAL)
+                        out.steer_vertical = (float(q) / float(RAW_BIT_PRECISION)) * 2.0f - 1.0f;
+                out.accelerate = input.accelerate > 0.0f ? 1.0f : 0.0f;
+                out.brake = input.brake > 0.0f ? 1.0f : 0.0f;
+                out.spinattack = input.spinattack;
+                out.boost = input.boost;
+                out.sideattack = input.sideattack;
+                return out;
         }
 };

@@ -395,7 +395,6 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch, PhysicsCar
 		if ((soa->tilt_state[p] & TILTSTATE::AIRBORNE) == 0) {
 			all_airborne = false;
 		}
-		STORE_WALL_VEC3(pos_a, p, current_position);
 	}
 
 	if (all_airborne) {
@@ -634,19 +633,6 @@ void PhysicsCar::handle_machine_damage_and_visuals()
 	sim_store4(soa->tilt_pos_x + point_base, tilt_pos.x);
 	sim_store4(soa->tilt_pos_y + point_base, tilt_pos.y);
 	sim_store4(soa->tilt_pos_z + point_base, tilt_pos.z);
-	sim_store4(soa->wall_pos_a_x + point_base, sim_load4(soa->wall_pos_b_x + point_base));
-	sim_store4(soa->wall_pos_a_y + point_base, sim_load4(soa->wall_pos_b_y + point_base));
-	sim_store4(soa->wall_pos_a_z + point_base, sim_load4(soa->wall_pos_b_z + point_base));
-	const SimVec3x4 wall_pos = mxt_transform_points4(
-		LOAD_TRANSFORM(basis_physical),
-		LOAD_VEC3(position_current),
-		sim_load4(soa->wall_offset_x + point_base),
-		sim_load4(soa->wall_offset_y + point_base),
-		sim_load4(soa->wall_offset_z + point_base));
-	sim_store4(soa->wall_pos_b_x + point_base, wall_pos.x);
-	sim_store4(soa->wall_pos_b_y + point_base, wall_pos.y);
-	sim_store4(soa->wall_pos_b_z + point_base, wall_pos.z);
-
 	if ((soa->state_2[soa_index] & 0x10u) == 0) {
 		float y_pos = soa->position_current_y[soa_index];
 		float track_min_y = -1000000.0f; // Placeholder until track data is available
@@ -2616,14 +2602,7 @@ void PhysicsCar::reset_machine(int reset_type)
 		sim_load4(soa->tilt_offset_x + point_base),
 		sim_load4(soa->tilt_offset_y + point_base),
 		sim_load4(soa->tilt_offset_z + point_base));
-	const SimVec3x4 reset_wall_pos = mxt_transform_points4(
-		reset_transform,
-		reset_position,
-		sim_load4(soa->wall_offset_x + point_base),
-		sim_load4(soa->wall_offset_y + point_base),
-		sim_load4(soa->wall_offset_z + point_base));
 	const SimVec3 reset_up = mxt_basis_rotate(reset_transform, SimVec3(0, 1, 0));
-	const SimVec3 wall_pos_a = mxt_transform_point(reset_transform, reset_position, SimVec3(0.0f, 0.1f, 0.0f));
 	for (int i = 0; i < 4; ++i) {
 		const int p = point_base + i;
 		soa->tilt_state[p] = 0;
@@ -2632,8 +2611,6 @@ void PhysicsCar::reset_machine(int reset_type)
 		STORE_TILT_VEC3(force_spatial, p, SimVec3());
 		STORE_TILT_VEC3(up_vector_2, p, reset_up);
 		STORE_TILT_VEC3(up_vector, p, reset_up);
-
-		STORE_WALL_VEC3(pos_a, p, wall_pos_a);
 	}
 	sim_store4(soa->tilt_pos_old_x + point_base, reset_tilt_pos.x);
 	sim_store4(soa->tilt_pos_old_y + point_base, reset_tilt_pos.y);
@@ -2641,9 +2618,6 @@ void PhysicsCar::reset_machine(int reset_type)
 	sim_store4(soa->tilt_pos_x + point_base, reset_tilt_pos.x);
 	sim_store4(soa->tilt_pos_y + point_base, reset_tilt_pos.y);
 	sim_store4(soa->tilt_pos_z + point_base, reset_tilt_pos.z);
-	sim_store4(soa->wall_pos_b_x + point_base, reset_wall_pos.x);
-	sim_store4(soa->wall_pos_b_y + point_base, reset_wall_pos.y);
-	sim_store4(soa->wall_pos_b_z + point_base, reset_wall_pos.z);
 };
 
 void PhysicsCar::update_pitch_transform_from_machine_front_back()
@@ -3361,7 +3335,7 @@ static OldCornerCollisionSurface sample_old_corner_collision_surface(
 	SimVec2 use_t;
 	SimVec3 use_spatial_t;
 	SimTransform use_transform;
-	soa->current_track[soa_index]->get_road_surface(use_cp_old, LOAD_VEC3(position_old), use_t, use_spatial_t, use_transform);
+	soa->current_track[soa_index]->get_road_surface(use_cp_old, LOAD_VEC3(position_old), use_t, use_spatial_t, use_transform, false);
 	if (soa->current_track[soa_index]->analytic_road_sample_has_hole(use_cp_old, use_t)) {
 		return out;
 	}
@@ -3597,7 +3571,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						use_spatial_t = center_floor_sample.spatial_t;
 						use_transform = center_floor_sample.closest_surface;
 					} else {
-						track->get_road_surface(use_cp_new, LOAD_VEC3(position_current) + depenetration, use_t, use_spatial_t, use_transform);
+						track->get_road_surface(use_cp_new, LOAD_VEC3(position_current) + depenetration, use_t, use_spatial_t, use_transform, false);
 					}
 					if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f) {
 					auto normal = use_transform.basis[1];
@@ -4385,13 +4359,6 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 		sim_load4(soa->tilt_offset_x + point_base),
 		sim_load4(soa->tilt_offset_y + point_base),
 		sim_load4(soa->tilt_offset_z + point_base));
-	const SimVec3x4 wall_pos = mxt_transform_points4(
-		restore_transform,
-		restore_position,
-		sim_load4(soa->wall_offset_x + point_base),
-		sim_load4(soa->wall_offset_y + point_base),
-		sim_load4(soa->wall_offset_z + point_base));
-	const SimVec3 wall_pos_a = mxt_transform_point(restore_transform, restore_position, SimVec3(0.0f, 0.1f, 0.0f));
 	const SimVec3 up = mxt_basis_rotate(restore_transform, SimVec3(0, 1, 0));
 	for (int lane = 0; lane < 4; ++lane) {
 		const int p = point_base + lane;
@@ -4400,7 +4367,6 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 		STORE_TILT_VEC3(force_spatial, p, SimVec3());
 		STORE_TILT_VEC3(up_vector_2, p, up);
 		STORE_TILT_VEC3(up_vector, p, up);
-		STORE_WALL_VEC3(pos_a, p, wall_pos_a);
 	}
 	sim_store4(soa->tilt_pos_old_x + point_base, tilt_pos.x);
 	sim_store4(soa->tilt_pos_old_y + point_base, tilt_pos.y);
@@ -4408,9 +4374,6 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	sim_store4(soa->tilt_pos_x + point_base, tilt_pos.x);
 	sim_store4(soa->tilt_pos_y + point_base, tilt_pos.y);
 	sim_store4(soa->tilt_pos_z + point_base, tilt_pos.z);
-	sim_store4(soa->wall_pos_b_x + point_base, wall_pos.x);
-	sim_store4(soa->wall_pos_b_y + point_base, wall_pos.y);
-	sim_store4(soa->wall_pos_b_z + point_base, wall_pos.z);
 }
 
 SimTransform PhysicsCar::calculate_respawn_transform(uint16_t cp_idx) const
