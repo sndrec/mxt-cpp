@@ -58,6 +58,13 @@ func has_network_peer() -> bool:
 	if is_server:
 		return true
 	return multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+func _can_send_rpc_to_peer(peer_id: int) -> bool:
+	if !network_active or multiplayer.multiplayer_peer == null:
+		return false
+	if listen_server and peer_id == multiplayer.get_unique_id():
+		return true
+	return multiplayer.get_peers().has(peer_id)
 var last_ack_tick: int = -1
 var target_tick: int = 0
 const MAX_AHEAD_TICKS := 30
@@ -2540,6 +2547,8 @@ func _send_server_timing_sync(peer_id: int, sync_tick: int, max_ahead: float, ec
 		return
 	if listen_server and peer_id == multiplayer.get_unique_id():
 		return
+	if !_can_send_rpc_to_peer(peer_id):
+		return
 	var ack_tick := server_netcode_session.get_peer_last_received(peer_id)
 	log_timing_sync_out += 1
 	_acc_log_out(28)
@@ -2862,6 +2871,8 @@ func post_tick() -> void:
 		var input_packet_meta := -1
 		var input_packet_ready := false
 		for id in player_ids + spectator_ids:
+			if !_can_send_rpc_to_peer(int(id)):
+				continue
 			if SERVER_TIMING_SYNC_INTERVAL_TICKS <= 1 or server_tick % SERVER_TIMING_SYNC_INTERVAL_TICKS == 0:
 				_send_server_timing_sync(int(id), server_tick, max_ahead)
 			if _startup_light_net_active(server_tick):

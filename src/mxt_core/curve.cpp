@@ -375,6 +375,7 @@ void RoadTransformCurve::sample4_with_derivative(
 		k[lane] = _road_curve_segment_for_t(*this, t[lane]);
 	}
 
+	const bool same_segment = k[0] == k[1] && k[0] == k[2] && k[0] == k[3];
 	const __m128 u = _mm_set_ps(
 		(t[3] - times[k[3]]) * inv_dt[k[3]],
 		(t[2] - times[k[2]]) * inv_dt[k[2]],
@@ -386,6 +387,46 @@ void RoadTransformCurve::sample4_with_derivative(
 
 	alignas(16) float sampled[4][16];
 	alignas(16) float sampled_derivative[4][16];
+	if (same_segment) {
+		const int same_k = k[0];
+		const __m128 deriv_scale_same = _mm_set1_ps(inv_dt[same_k]);
+		for (int c = 0; c < 16; ++c) {
+			const int base = same_k * 16 + c;
+			const __m128 a = _mm_set1_ps(coef_a[base]);
+			const __m128 b = _mm_set1_ps(coef_b[base]);
+			const __m128 cc = _mm_set1_ps(coef_c[base]);
+			const __m128 d = _mm_set1_ps(coef_d[base]);
+
+#if defined(__FMA__)
+			const __m128 r = _mm_fmadd_ps(a, u3, _mm_fmadd_ps(b, u2, _mm_fmadd_ps(cc, u, d)));
+			__m128 deriv = _mm_fmadd_ps(
+				_mm_set1_ps(3.0f), _mm_mul_ps(a, u2),
+				_mm_fmadd_ps(_mm_set1_ps(2.0f), _mm_mul_ps(b, u), cc));
+#else
+			const __m128 r = _mm_add_ps(_mm_mul_ps(a, u3),
+				_mm_add_ps(_mm_mul_ps(b, u2), _mm_add_ps(_mm_mul_ps(cc, u), d)));
+			__m128 deriv = _mm_add_ps(
+				_mm_mul_ps(_mm_set1_ps(3.0f), _mm_mul_ps(a, u2)),
+				_mm_add_ps(_mm_mul_ps(_mm_set1_ps(2.0f), _mm_mul_ps(b, u)), cc));
+#endif
+			deriv = _mm_mul_ps(deriv, deriv_scale_same);
+			alignas(16) float lanes[4];
+			alignas(16) float deriv_lanes[4];
+			_mm_store_ps(lanes, r);
+			_mm_store_ps(deriv_lanes, deriv);
+			for (int lane = 0; lane < 4; ++lane) {
+				sampled[lane][c] = lanes[lane];
+				sampled_derivative[lane][c] = deriv_lanes[lane];
+			}
+		}
+
+		for (int lane = 0; lane < 4; ++lane) {
+			_set_road_transform_from_values(out[lane], sampled[lane]);
+			_set_road_transform_from_values(derivative_out[lane], sampled_derivative[lane]);
+		}
+		return;
+	}
+
 	for (int c = 0; c < 16; ++c) {
 		const __m128 a = _mm_set_ps(
 			coef_a[k[3] * 16 + c],
