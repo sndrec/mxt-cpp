@@ -60,6 +60,9 @@ namespace godot {
 			int tick = -1;
 			int voice_transform_count = 0;
 			std::vector<SavedVoiceTransform> voice_transforms;
+			uint32_t car_local_state_size = 0;
+			uint32_t bumper_local_state_size = 0;
+			std::vector<uint8_t> vehicle_local_state;
 		};
 		SavedState state_buffer[STATE_BUFFER_LEN];
 		std::vector<char> network_state_live_backup;
@@ -231,6 +234,8 @@ namespace godot {
 		bool deserialize_network_state(int target_tick, const godot::PackedByteArray& data);
 		void rebuild_static_state_after_network_load();
 		void rebuild_road_samples_after_state_load();
+		void save_vehicle_local_state_to_saved_state(SavedState& state) const;
+		bool restore_vehicle_local_state_from_saved_state(const SavedState& state);
 		static constexpr int VEHICLE_WORKER_COUNT = MXT_VEHICLE_SHARD_COUNT;
 		struct VehicleLaneGroup {
 			int count = 1;

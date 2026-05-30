@@ -171,6 +171,9 @@ var replay_playback_racer_ids: Array = []
 var replay_playback_cpu_flags: Array = []
 var replay_playback_local_player_id: int = 0
 var replay_playback_use_multiplayer_startup: bool = false
+var replay_strict_verify_requested: bool = false
+var replay_skip_seek_bake_requested: bool = false
+var replay_playback_use_singleplayer_tick: bool = false
 var replay_saved_finish_times: Dictionary = {}
 var replay_saved_finish_placements: Dictionary = {}
 var replay_saved_eliminations: Dictionary = {}
@@ -381,6 +384,8 @@ func _ready() -> void:
 		real_replay_args = user_args
 	if real_replay_idx != -1 and real_replay_idx + 1 < real_replay_args.size():
 		replay_autoload_path = String(real_replay_args[real_replay_idx + 1])
+	replay_strict_verify_requested = args.has("--strict-replay-verify") or user_args.has("--strict-replay-verify")
+	replay_skip_seek_bake_requested = args.has("--skip-replay-seek-bake") or user_args.has("--skip-replay-seek-bake")
 	debug_rail_trace_requested = args.has("--debug-rail-trace") or user_args.has("--debug-rail-trace")
 	if debug_rail_trace_requested:
 		game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
@@ -1808,6 +1813,39 @@ func _decode_replay_frame(frame: Dictionary) -> Dictionary:
 		out[int(id_value)] = Marshalls.base64_to_raw(str(raw_inputs[id_value]))
 	return out
 
+func _replay_int_dictionary(source: Dictionary) -> Dictionary:
+	var out := {}
+	for key in source.keys():
+		out[int(key)] = int(source[key])
+	return out
+
+func _replay_compare_int_dictionary(label: String, expected_raw: Dictionary, actual_raw: Dictionary) -> bool:
+	var expected := _replay_int_dictionary(expected_raw)
+	var actual := _replay_int_dictionary(actual_raw)
+	var ok := true
+	for key in expected.keys():
+		if !actual.has(key):
+			push_warning("Replay verify %s missing id=%d expected=%d" % [label, int(key), int(expected[key])])
+			ok = false
+		elif int(actual[key]) != int(expected[key]):
+			push_warning("Replay verify %s mismatch id=%d expected=%d actual=%d" % [label, int(key), int(expected[key]), int(actual[key])])
+			ok = false
+	for key in actual.keys():
+		if !expected.has(key):
+			push_warning("Replay verify %s unexpected id=%d actual=%d" % [label, int(key), int(actual[key])])
+			ok = false
+	return ok
+
+func _verify_replay_playback_results() -> bool:
+	var ok := true
+	ok = _replay_compare_int_dictionary("finish_times", replay_saved_finish_times, network_manager.player_finish_times) and ok
+	ok = _replay_compare_int_dictionary("finish_placements", replay_saved_finish_placements, network_manager.player_finish_placements) and ok
+	ok = _replay_compare_int_dictionary("eliminations", replay_saved_eliminations, network_manager.player_eliminations) and ok
+	if !ok and game_sim != null and game_sim.has_method("get_player_debug_string"):
+		for id_value in replay_playback_racer_ids:
+			print("MXT_REPLAY_VERIFY_STATE tick=", _singleplayer_tick, " ", game_sim.get_player_debug_string(int(id_value)))
+	return ok
+
 func _build_replay_timeline_controls() -> void:
 	if replay_timeline_root != null and is_instance_valid(replay_timeline_root):
 		return
@@ -2228,6 +2266,7 @@ func _start_replay_playback_from_path(path: String) -> void:
 	replay_playback_focus_index = 0
 	replay_playback_local_player_id = int(replay_playback_racer_ids[0])
 	replay_playback_use_multiplayer_startup = str(replay.get("source", "")) == "server" or str(replay.get("mode", "")) == "Multiplayer"
+	replay_playback_use_singleplayer_tick = str(replay.get("source", "")) == "singleplayer"
 	replay_playback_paused = false
 	replay_playback_rate = 1.0
 	replay_seek_checkpoints.clear()
@@ -2257,7 +2296,8 @@ func _start_replay_playback_from_path(path: String) -> void:
 		replay_catalog_root.visible = false
 	_apply_replay_focus_to_local_visual()
 	_initialize_replay_timeline_markers()
-	_bake_replay_seek_checkpoints()
+	if !replay_skip_seek_bake_requested:
+		_bake_replay_seek_checkpoints()
 	_apply_replay_playback_clock()
 	_apply_replay_camera_mode()
 	print("MXT_REPLAY playback started ", path, " frames=", replay_playback_frames.size())
@@ -2267,11 +2307,19 @@ func _start_replay_playback_from_path(path: String) -> void:
 			if !_tick_replay_playback(false):
 				get_tree().quit(1)
 				return
+			if replay_strict_verify_requested:
+				_check_race_finished()
 		var replay_fast_forward_elapsed_us := Time.get_ticks_usec() - replay_fast_forward_start_us
 		var replay_frame_count := replay_playback_frames.size()
 		print("MXT_REPLAY playback complete ", replay_playback_loaded_path,
 			" frames=", replay_frame_count,
 			" avg_tick_us=", int(float(replay_fast_forward_elapsed_us) / float(maxi(replay_frame_count, 1))))
+		if replay_strict_verify_requested:
+			var strict_replay_ok := _verify_replay_playback_results()
+			if !strict_replay_ok:
+				print("MXT_REPLAY_VERIFY_FAIL path=", replay_playback_loaded_path, " frames=", replay_frame_count)
+				get_tree().quit(1)
+				return
 		print("MXT_REPLAY_VERIFY_OK path=", replay_playback_loaded_path, " frames=", replay_frame_count)
 		get_tree().quit()
 
@@ -2313,6 +2361,15 @@ func _restore_replay_race_event_state(checkpoint: Dictionary) -> void:
 	network_manager._rebuild_finish_order_from_placements()
 	network_manager.net_race_finish_time = -1
 
+func _reset_replay_netcode_session() -> void:
+	if !replay_playback_active:
+		return
+	network_manager.netcode_session.configure(
+		replay_playback_racer_ids,
+		replay_playback_cpu_flags,
+		_local_player_id()
+	)
+
 func _bake_replay_seek_checkpoints() -> void:
 	if game_sim == null or !game_sim.has_method("get_full_state_data") or !game_sim.has_method("load_full_state_data"):
 		return
@@ -2345,6 +2402,7 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 		push_warning("Replay seek failed: could not load full checkpoint at tick %d" % checkpoint_tick)
 		return false
 	_restore_replay_race_event_state(checkpoint)
+	_reset_replay_netcode_session()
 	_singleplayer_tick = checkpoint_tick
 	replay_playback_index = int(checkpoint.get("index", checkpoint_tick))
 	replay_seeking_active = true
@@ -2391,16 +2449,21 @@ func _tick_replay_playback(return_to_menu_on_complete: bool = true) -> bool:
 				_return_to_menu()
 		return false
 	var frame_inputs := _decode_replay_frame(frame)
-	for id_value in frame_inputs.keys():
-		network_manager.netcode_session.store_pending_input(_singleplayer_tick, int(id_value), frame_inputs[id_value])
-	if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick, true):
-		push_warning("Replay playback failed at tick %d" % _singleplayer_tick)
-		if return_to_menu_on_complete:
-			if headless_mode:
-				get_tree().quit(1)
-			else:
-				_return_to_menu()
-		return false
+	if replay_playback_use_singleplayer_tick:
+		var local_id := _local_player_id()
+		var local_input: PackedByteArray = frame_inputs.get(local_id, network_manager.NEUTRAL_INPUT_BYTES)
+		game_sim.tick_singleplayer(local_id, local_input)
+	else:
+		for id_value in frame_inputs.keys():
+			network_manager.netcode_session.store_pending_input(_singleplayer_tick, int(id_value), frame_inputs[id_value])
+		if !network_manager.netcode_session.tick_server_frame(game_sim, _singleplayer_tick, true):
+			push_warning("Replay playback failed at tick %d" % _singleplayer_tick)
+			if return_to_menu_on_complete:
+				if headless_mode:
+					get_tree().quit(1)
+				else:
+					_return_to_menu()
+			return false
 	_consume_authoritative_race_events()
 	if replay_collecting_timeline_markers:
 		_update_replay_race_state_timeline_markers()
@@ -4147,6 +4210,7 @@ func _return_to_menu() -> void:
 	debug_replay_playback = false
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
+	replay_playback_use_singleplayer_tick = false
 	replay_playback_paused = false
 	replay_playback_rate = 1.0
 	replay_seek_checkpoints.clear()
@@ -4203,6 +4267,7 @@ func _return_to_lobby() -> void:
 	debug_replay_playback = false
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
+	replay_playback_use_singleplayer_tick = false
 	replay_playback_paused = false
 	replay_playback_rate = 1.0
 	replay_seek_checkpoints.clear()
@@ -4256,6 +4321,7 @@ func _teardown_race_world_for_transition() -> void:
 	debug_replay_playback = false
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
+	replay_playback_use_singleplayer_tick = false
 	replay_playback_paused = false
 	replay_playback_rate = 1.0
 	replay_seek_checkpoints.clear()
@@ -4547,7 +4613,7 @@ func _check_race_finished() -> void:
 		human_racer_ids = network_manager.player_ids.duplicate(true)
 	var finish_watch_ids := human_racer_ids if !human_racer_ids.is_empty() else racer_ids
 	var all_done := true
-	var finish_sim := server_game_sim if network_manager.is_server and server_game_sim != null else game_sim
+	var finish_sim := server_game_sim if network_manager.is_server and !singleplayer_mode and server_game_sim != null else game_sim
 	for racer_id in racer_ids:
 		var watch_racer := finish_watch_ids.has(racer_id)
 		if network_manager._disconnected_during_race.has(racer_id):
@@ -4559,6 +4625,12 @@ func _check_race_finished() -> void:
 		if finish_sim != null and finish_sim.has_method("is_player_race_finished"):
 			finished = finish_sim.is_player_race_finished(racer_id)
 		if !finished and network_manager.player_eliminations.has(racer_id):
+			continue
+		if finished:
+			if network_manager.is_server and !singleplayer_mode:
+				network_manager.send_player_finished(racer_id, network_manager.server_tick)
+			else:
+				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
 			continue
 		if !network_manager.is_vehicle_restore_enabled() and finish_sim != null and finish_sim.has_method("is_player_race_eliminated"):
 			eliminated = finish_sim.is_player_race_eliminated(racer_id)
@@ -4572,13 +4644,8 @@ func _check_race_finished() -> void:
 						car.position_current.y,
 						-100000.0)
 					break
-		if finished:
-			if network_manager.is_server:
-				network_manager.send_player_finished(racer_id, network_manager.server_tick)
-			else:
-				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
-		elif eliminated:
-			if network_manager.is_server:
+		if eliminated:
+			if network_manager.is_server and !singleplayer_mode:
 				network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
 			elif singleplayer_mode:
 				network_manager.record_player_eliminated(racer_id, network_manager.clients_server_tick)
