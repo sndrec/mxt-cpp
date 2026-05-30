@@ -1642,6 +1642,11 @@ namespace {
 		return min_a <= max_b && min_b <= max_a;
 	}
 
+	static inline bool vehicle_is_restoring(const PhysicsCar& car)
+	{
+		return car.soa->restore_state[car.soa_index] != 0;
+	}
+
 	static inline SimVec3 transform_point_components(
 		float c0x, float c0y, float c0z,
 		float c1x, float c1y, float c1z,
@@ -1825,7 +1830,7 @@ namespace {
 			c.position_collision_snapshot_x[lane] = c.position_current_x[lane];
 			c.position_collision_snapshot_y[lane] = c.position_current_y[lane];
 			c.position_collision_snapshot_z[lane] = c.position_current_z[lane];
-			if (c.s_boost_active[lane] || (c.state_2[lane] & 0x10u) != 0u) {
+			if (c.restore_state[lane] != 0 || c.s_boost_active[lane] || (c.state_2[lane] & 0x10u) != 0u) {
 				min_x[i] = FLT_MAX;
 				max_x[i] = -FLT_MAX;
 				min_y[i] = FLT_MAX;
@@ -2591,12 +2596,18 @@ void GameSim::collide_racers_with_bumpers()
 			continue;
 		}
 		PhysicsCar& bumper = bumper_cars[slot];
+		if (vehicle_is_restoring(bumper)) {
+			continue;
+		}
 		PhysicsCarSoA& bumper_soa = *bumper.soa;
 		const int bumper_lane = bumper.soa_index;
 		bumper_soa.position_collision_snapshot_x[bumper_lane] = bumper_soa.position_current_x[bumper_lane];
 		bumper_soa.position_collision_snapshot_y[bumper_lane] = bumper_soa.position_current_y[bumper_lane];
 		bumper_soa.position_collision_snapshot_z[bumper_lane] = bumper_soa.position_current_z[bumper_lane];
 		for (int racer_index = 0; racer_index < num_cars; ++racer_index) {
+			if (vehicle_is_restoring(cars[racer_index])) {
+				continue;
+			}
 			cars[racer_index].handle_machine_v_bumper_collision(bumper);
 		}
 	}

@@ -34,6 +34,8 @@ public:
         RoadTransformCurve* curve_matrix;
 };
 
+static constexpr float TRACK_SEGMENT_LONGITUDINAL_EDGE_TOLERANCE = 0.001f;
+
 static inline bool track_segment_rail_span_contains(float start, float end, float ty)
 {
 	if (end < start) {
@@ -41,7 +43,14 @@ static inline bool track_segment_rail_span_contains(float start, float end, floa
 		start = end;
 		end = tmp;
 	}
-	return ty >= start && ty <= end;
+	return ty >= start - TRACK_SEGMENT_LONGITUDINAL_EDGE_TOLERANCE &&
+		ty <= end + TRACK_SEGMENT_LONGITUDINAL_EDGE_TOLERANCE;
+}
+
+static inline bool track_segment_longitudinal_t_in_domain(float ty)
+{
+	return ty >= -TRACK_SEGMENT_LONGITUDINAL_EDGE_TOLERANCE &&
+		ty <= 1.0f + TRACK_SEGMENT_LONGITUDINAL_EDGE_TOLERANCE;
 }
 
 static inline bool track_segment_rail_side_active(const TrackSegment &segment, int side_index, float ty)

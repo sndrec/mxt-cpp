@@ -272,7 +272,7 @@ static inline SimVec3 mxt_inverse_transform_point(const SimTransform& basis_tran
 static inline float checkpoint_longitudinal_t(const RaceTrack& track, int cp_idx, const SimVec3& point)
 {
 	const CollisionCheckpoint& cp = track.checkpoints[cp_idx];
-	const float cp_t = std::clamp(checkpoint_plane_fraction_unclamped(cp, point), 0.0f, 1.0f);
+	const float cp_t = checkpoint_plane_fraction_unclamped(cp, point);
 	return remap_float(cp_t, 0.0f, 1.0f, cp.t_start, cp.t_end);
 }
 
@@ -1118,7 +1118,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				nullptr);
 			if (center_road_t.x != -1000.0f &&
 				center_road_t.x >= -1.01f && center_road_t.x <= 1.01f &&
-				center_road_t.y >= -0.001f && center_road_t.y <= 1.001f &&
+				track_segment_longitudinal_t_in_domain(center_road_t.y) &&
 				track->analytic_road_sample_has_hole(current_cp, center_road_t)) {
 				soa->road_sample[soa_index].terrain = TERRAIN::HOLE;
 				soa->road_sample[soa_index].cp_idx = static_cast<int16_t>(current_cp);
@@ -1138,7 +1138,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P0,
 				current_cp,
 				&scratch);
-			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
+			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && track_segment_longitudinal_t_in_domain(hit.road_data.road_t.y);
 			physics_profile_mark(profile ? profile->find_floor_cast_us : nullptr, profile_step);
 		} else {
 			CollisionData nearest_hit{};
@@ -1190,7 +1190,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
 				current_cp,
 				&scratch);
-			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && hit.road_data.road_t.y > -0.001f && hit.road_data.road_t.y < 1.001f;
+			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && track_segment_longitudinal_t_in_domain(hit.road_data.road_t.y);
 			physics_profile_mark(profile ? profile->find_floor_cast_us : nullptr, profile_step);
 		}
 		if (!sweep_hit_occurred && !floor_seg->analytic_collision_enabled) {
@@ -1372,7 +1372,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 		return false;
 	}
 
-	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || road_t_sample_raw.y > 1.001f || road_t_sample_raw.y < -0.001f)
+	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || !track_segment_longitudinal_t_in_domain(road_t_sample_raw.y))
 	{
 		trace_floor("road_t_bounds", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
 		soa->height_above_track[soa_index] = 0.0f;
@@ -3276,6 +3276,13 @@ struct OldCornerCollisionSurface {
 	SimTransform surface;
 };
 
+static inline bool analytic_depenetration_t_in_surface_domain(const SimVec2 &road_t)
+{
+	return road_t.x > -1.0f &&
+		road_t.x < 1.0f &&
+		track_segment_longitudinal_t_in_domain(road_t.y);
+}
+
 static OldCornerCollisionSurface sample_old_corner_collision_surface(
 	PhysicsCarSoA *soa,
 	int soa_index,
@@ -3413,7 +3420,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 
 		const SimVec3 final_hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), new_corner);
 		const float final_t = checkpoint_longitudinal_t(*track, cp_idx, final_hit);
-		if (final_t >= 0.0f && final_t <= 1.0f && (final_hit - side.pos).dot(side.up_n) <= rail_height) {
+		if (track_segment_longitudinal_t_in_domain(final_t) && (final_hit - side.pos).dot(side.up_n) <= rail_height) {
 			return true;
 		}
 
@@ -3431,7 +3438,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 		}
 		const SimVec3 sweep_hit = old_corner + (new_corner - old_corner) * alpha;
 		const float sweep_t = checkpoint_longitudinal_t(*track, cp_idx, sweep_hit);
-		if (sweep_t < 0.0f || sweep_t > 1.0f) {
+		if (!track_segment_longitudinal_t_in_domain(sweep_t)) {
 			return false;
 		}
 		if ((sweep_hit - side.pos).dot(side.up_n) > rail_height) {
@@ -3461,7 +3468,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 				//DEBUG::disp_text("vehicle use_cp_old", use_cp_old);
 				//DEBUG::disp_text("vehicle use_t", use_t);
 				if (!center_floor_sample_is_hole) {
-				if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+				if (analytic_depenetration_t_in_surface_domain(use_t) && was_above) {
 					auto normal = use_transform.basis[1];
 					auto plane_pos = use_transform.origin;
 					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
@@ -3477,7 +3484,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 					}
 				}
 				const TrackSegment &old_segment = track->segments[track->checkpoints[use_cp_old].road_segment];
-				if (old_segment.road_shape->supports_edge_rails() && was_inside && use_t.y > 0.0f && use_t.y < 1.0f && was_above) {
+				if (old_segment.road_shape->supports_edge_rails() && was_inside && track_segment_longitudinal_t_in_domain(use_t.y) && was_above) {
 					const TrackSegment &segment = old_segment;
 					const bool side_possible[2] = {
 						segment.left_rail_height > 0.0f && track_segment_rail_side_active(segment, 0, use_t.y),
@@ -3547,6 +3554,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 				bool new_valid = false;
 				const bool old_center_floor_pass_was_duplicate =
 					old_collision.from_center_floor &&
+					analytic_depenetration_t_in_surface_domain(use_t) &&
+					was_above &&
 					depenetration.x == 0.0f &&
 					depenetration.y == 0.0f &&
 					depenetration.z == 0.0f;
@@ -3581,7 +3590,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						SimVec3 unused_spatial_t;
 						track->get_road_surface(use_cp_new, machine_position + depenetration, use_t, unused_spatial_t, use_transform, false);
 					}
-					if (use_t.x > -1.0f && use_t.x < 1.0f && use_t.y > 0.0f && use_t.y < 1.0f) {
+					if (analytic_depenetration_t_in_surface_domain(use_t)) {
 					auto normal = use_transform.basis[1];
 					auto plane_pos = use_transform.origin;
 					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
@@ -3597,7 +3606,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 					}
 				}
 				TrackSegment *new_seg = &track->segments[track->checkpoints[use_cp_new].road_segment];
-					if (new_seg->road_shape->supports_edge_rails() && was_inside && use_t.y > 0.0f && use_t.y < 1.0f) {
+					if (new_seg->road_shape->supports_edge_rails() && was_inside && track_segment_longitudinal_t_in_domain(use_t.y)) {
 					const TrackSegment &segment     = track->segments[track->checkpoints[use_cp_new].road_segment];
 					const bool side_possible[2] = {
 						segment.left_rail_height > 0.0f && track_segment_rail_side_active(segment, 0, use_t.y),
@@ -4874,10 +4883,18 @@ static void apply_car_collision_knockback(PhysicsCar& car, const SimVec3& impuls
 	STORE_CAR_VEC3(car, velocity, LOAD_CAR_VEC3(car, velocity) + impulse * weight);
 }
 
+static inline bool machine_is_restoring(const PhysicsCar& car)
+{
+	return car.soa->restore_state[car.soa_index] != 0;
+}
+
 static bool handle_machine_v_machine_collision_impl(PhysicsCar& self, PhysicsCar &other_machine, bool this_bumper, bool other_bumper)
 {
 	PhysicsCarSoA* soa = self.soa;
 	const int soa_index = self.soa_index;
+	if (machine_is_restoring(self) || machine_is_restoring(other_machine)) {
+		return false;
+	}
 	if (soa->s_boost_active[soa_index] || other_machine.soa->s_boost_active[other_machine.soa_index]) {
 		return false;
 	}
