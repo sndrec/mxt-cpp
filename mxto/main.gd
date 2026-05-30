@@ -174,6 +174,7 @@ var replay_playback_local_player_id: int = 0
 var replay_playback_use_multiplayer_startup: bool = false
 var replay_strict_verify_requested: bool = false
 var replay_skip_seek_bake_requested: bool = false
+var replay_load_profile_requested: bool = false
 var replay_playback_use_singleplayer_tick: bool = false
 var replay_saved_finish_times: Dictionary = {}
 var replay_saved_finish_placements: Dictionary = {}
@@ -388,6 +389,7 @@ func _ready() -> void:
 		replay_autoload_path = String(real_replay_args[real_replay_idx + 1])
 	replay_strict_verify_requested = args.has("--strict-replay-verify") or user_args.has("--strict-replay-verify")
 	replay_skip_seek_bake_requested = args.has("--skip-replay-seek-bake") or user_args.has("--skip-replay-seek-bake")
+	replay_load_profile_requested = args.has("--profile-replay-load") or user_args.has("--profile-replay-load")
 	debug_rail_trace_requested = args.has("--debug-rail-trace") or user_args.has("--debug-rail-trace")
 	if debug_rail_trace_requested:
 		game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
@@ -2256,7 +2258,9 @@ func _update_replay_timeline_controls() -> void:
 		replay_timeline_play_button.text = "Play" if replay_playback_paused else "Pause"
 
 func _start_replay_playback_from_path(path: String) -> void:
+	var profile_start_us := Time.get_ticks_usec()
 	var replay := _load_replay_file(path)
+	var profile_load_us := Time.get_ticks_usec() - profile_start_us
 	if replay.is_empty():
 		if headless_mode:
 			get_tree().quit(1)
@@ -2287,8 +2291,10 @@ func _start_replay_playback_from_path(path: String) -> void:
 		for i in range((settings as Array).size()):
 			racer_ids.append(i)
 			cpu_flags.append(false)
+	var profile_validate_us := Time.get_ticks_usec() - profile_start_us - profile_load_us
 	replay_playback_active = true
-	replay_playback_frames = (frames as Array).duplicate(true)
+	replay_playback_frames = frames as Array
+	var profile_frames_duplicate_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us
 	replay_playback_index = 0
 	replay_playback_loaded_path = path
 	replay_playback_racer_ids = racer_ids.duplicate(true)
@@ -2328,17 +2334,39 @@ func _start_replay_playback_from_path(path: String) -> void:
 			network_manager.player_ids.append(id)
 		if i < (settings as Array).size() and typeof(settings[i]) == TYPE_DICTIONARY:
 			network_manager.player_settings[id] = (settings[i] as Dictionary).duplicate(true)
+	var profile_setup_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us - profile_frames_duplicate_us
+	var profile_race_start_us := Time.get_ticks_usec()
 	_start_race(track_index, settings as Array)
+	profile_race_start_us = Time.get_ticks_usec() - profile_race_start_us
 	$Control.visible = false
 	lobby_control.visible = false
 	if replay_catalog_root != null:
 		replay_catalog_root.visible = false
 	_apply_replay_focus_to_local_visual()
+	var profile_timeline_us := Time.get_ticks_usec()
 	_initialize_replay_timeline_markers()
+	profile_timeline_us = Time.get_ticks_usec() - profile_timeline_us
+	var profile_bake_us := 0
 	if !replay_skip_seek_bake_requested:
+		var profile_bake_start_us := Time.get_ticks_usec()
 		_bake_replay_seek_checkpoints()
+		profile_bake_us = Time.get_ticks_usec() - profile_bake_start_us
 	_apply_replay_playback_clock()
 	_apply_replay_camera_mode()
+	if replay_load_profile_requested:
+		var total_load_us := Time.get_ticks_usec() - profile_start_us
+		print("MXT_REPLAY_LOAD_PROFILE path=", path,
+			" total_us=", total_load_us,
+			" file_parse_us=", profile_load_us,
+			" validate_us=", profile_validate_us,
+			" frames_duplicate_us=", profile_frames_duplicate_us,
+			" setup_us=", profile_setup_us,
+			" race_start_us=", profile_race_start_us,
+			" timeline_us=", profile_timeline_us,
+			" bake_us=", profile_bake_us,
+			" frames=", replay_playback_frames.size(),
+			" racers=", replay_playback_racer_ids.size(),
+			" skip_bake=", replay_skip_seek_bake_requested)
 	print("MXT_REPLAY playback started ", path, " frames=", replay_playback_frames.size())
 	if headless_mode:
 		var replay_fast_forward_start_us := Time.get_ticks_usec()
