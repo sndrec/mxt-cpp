@@ -103,6 +103,7 @@ public:
 	bool server_has_full_input_frame(int tick) const;
 	bool tick_server_frame(godot::Object* game_sim_obj, int tick, bool use_pending_cpu_inputs = false);
 	int tick_server_frames(godot::Object* game_sim_obj, int start_tick, int end_tick, bool use_pending_cpu_inputs = false);
+	int tick_server_frames_with_native_inputs(godot::Object* game_sim_obj, int start_tick, int end_tick);
 	bool tick_client_predicted_frame(godot::Object* game_sim_obj, int tick);
 	void recalculate_predictions(int start_tick, int end_tick);
 	bool replay_history(godot::Object* game_sim_obj, int start_tick, int end_tick);

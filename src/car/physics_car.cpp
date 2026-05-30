@@ -3269,6 +3269,7 @@ void PhysicsCar::apply_torque_from_force(const SimVec3& p_local_offset, const Si
 struct OldCornerCollisionSurface {
 	int cp = -1;
 	bool valid = false;
+	bool from_center_floor = false;
 	bool was_above = false;
 	bool was_inside = false;
 	SimVec2 road_t;
@@ -3309,6 +3310,7 @@ static OldCornerCollisionSurface sample_old_corner_collision_surface(
 			(floor_sample.terrain & TERRAIN::HOLE) == 0u) {
 			out.cp = current_cp;
 			out.valid = true;
+			out.from_center_floor = true;
 			out.road_t = floor_sample.road_t;
 			out.surface = floor_sample.closest_surface;
 			out.was_above = (LOAD_VEC3(position_old) - floor_sample.closest_surface.origin).dot(floor_sample.closest_surface.basis[1]) >= -5.0f;
@@ -3543,7 +3545,12 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 				physics_profile_mark(profile ? profile->old_analytic_us : nullptr, profile_step);
 				int use_cp_new = -1;
 				bool new_valid = false;
-				if (was_above && !center_floor_sample_is_hole) {
+				const bool old_center_floor_pass_was_duplicate =
+					old_collision.from_center_floor &&
+					depenetration.x == 0.0f &&
+					depenetration.y == 0.0f &&
+					depenetration.z == 0.0f;
+				if (!old_center_floor_pass_was_duplicate && was_above && !center_floor_sample_is_hole) {
 					use_cp_new = track->get_best_checkpoint(machine_position + depenetration, soa->current_collision_checkpoint[soa_index], scratch);
 					new_valid = use_cp_new != -1;
 					if (new_valid)

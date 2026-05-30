@@ -2708,6 +2708,7 @@ void NetcodeSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("server_has_full_input_frame", "tick"), &NetcodeSession::server_has_full_input_frame);
 	ClassDB::bind_method(D_METHOD("tick_server_frame", "game_sim", "tick", "use_pending_cpu_inputs"), &NetcodeSession::tick_server_frame, DEFVAL(false));
 	ClassDB::bind_method(D_METHOD("tick_server_frames", "game_sim", "start_tick", "end_tick", "use_pending_cpu_inputs"), &NetcodeSession::tick_server_frames, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("tick_server_frames_with_native_inputs", "game_sim", "start_tick", "end_tick"), &NetcodeSession::tick_server_frames_with_native_inputs);
 	ClassDB::bind_method(D_METHOD("tick_client_predicted_frame", "game_sim", "tick"), &NetcodeSession::tick_client_predicted_frame);
 	ClassDB::bind_method(D_METHOD("recalculate_predictions", "start_tick", "end_tick"), &NetcodeSession::recalculate_predictions);
 	ClassDB::bind_method(D_METHOD("replay_history", "game_sim", "start_tick", "end_tick"), &NetcodeSession::replay_history);
@@ -4123,13 +4124,16 @@ int NetcodeSession::tick_server_frames(godot::Object* game_sim_obj, int start_ti
 	if (!use_pending_cpu_inputs &&
 		cpu_racer_count == racer_count &&
 		sim->has_contiguous_native_cpu_player_order(player_ids, racer_count)) {
+		for (int i = 0; i < HISTORY_LEN; ++i) {
+			std::memset(authoritative_history[i].present, 1, static_cast<size_t>(racer_count));
+		}
 		int ticked = 0;
 		for (int tick = start_tick; tick <= end_tick; ++tick) {
 			InputFrame& authoritative = authoritative_history[tick & (HISTORY_LEN - 1)];
 			authoritative.tick = tick;
 			sim->tick_gamesim_internal(GameSim::InputFrameMode::SingleLocal,
 				-1, nullptr, nullptr, nullptr, racer_count,
-				authoritative.inputs, authoritative.present, false);
+				authoritative.inputs, nullptr, false);
 			++ticked;
 		}
 		latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(end_tick));
@@ -4142,6 +4146,40 @@ int NetcodeSession::tick_server_frames(godot::Object* game_sim_obj, int start_ti
 		}
 		++ticked;
 	}
+	return ticked;
+}
+
+int NetcodeSession::tick_server_frames_with_native_inputs(godot::Object* game_sim_obj, int start_tick, int end_tick)
+{
+	GameSim* sim = Object::cast_to<GameSim>(game_sim_obj);
+	if (!sim || end_tick < start_tick) {
+		return 0;
+	}
+
+	const bool contiguous_player_order = sim->has_contiguous_native_cpu_player_order(player_ids, racer_count);
+	int ticked = 0;
+	for (int tick = start_tick; tick <= end_tick; ++tick) {
+		InputFrame& authoritative = authoritative_history[tick & (HISTORY_LEN - 1)];
+		clear_frame(authoritative, tick);
+		if (contiguous_player_order) {
+			for (int i = 0; i < racer_count; ++i) {
+				if (!cpu_flags[i]) {
+					authoritative.inputs[i] = sim->generate_native_cpu_player_input_for_tick(player_ids[i], tick);
+					authoritative.present[i] = 1;
+				}
+			}
+		} else {
+			for (int i = 0; i < racer_count; ++i) {
+				authoritative.inputs[i] = sim->generate_native_cpu_player_input_for_tick(player_ids[i], tick);
+				authoritative.present[i] = 1;
+			}
+		}
+		sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
+			-1, nullptr, authoritative.inputs, authoritative.present, racer_count,
+			authoritative.inputs, authoritative.present, false);
+		++ticked;
+	}
+	latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(end_tick));
 	return ticked;
 }
 
@@ -4176,36 +4214,59 @@ bool NetcodeSession::tick_server_frame_internal(GameSim* sim, int tick, bool use
 	}
 	InputFrame& authoritative = frame_for(authoritative_history, tick);
 	clear_frame(authoritative, tick);
-	if (!use_pending_cpu_inputs) {
-		sim->fill_native_cpu_player_inputs_for_frame(
-			authoritative.inputs,
-			authoritative.present,
-			player_ids,
-			cpu_flags,
-			racer_count,
-			tick);
-	}
-	for (int i = 0; i < racer_count; ++i) {
-		if (cpu_flags[i] && use_pending_cpu_inputs) {
-			if (!pending_frame->present[i]) {
+	const bool contiguous_player_order =
+		!use_pending_cpu_inputs &&
+		sim->has_contiguous_native_cpu_player_order(player_ids, racer_count);
+	if (contiguous_player_order) {
+		for (int i = 0; i < racer_count; ++i) {
+			if (cpu_flags[i]) {
+				continue;
+			}
+			if (pending_frame && pending_frame->present[i]) {
+				authoritative.inputs[i] = pending_frame->inputs[i];
+				authoritative.present[i] = 1;
+			} else {
 				return false;
 			}
-			authoritative.inputs[i] = pending_frame->inputs[i];
-			authoritative.present[i] = 1;
-		} else if (cpu_flags[i]) {
-			if (!authoritative.present[i]) {
-				authoritative.inputs[i] = PlayerInput::from_neutral();
+		}
+	} else {
+		if (!use_pending_cpu_inputs) {
+			sim->fill_native_cpu_player_inputs_for_frame(
+				authoritative.inputs,
+				authoritative.present,
+				player_ids,
+				cpu_flags,
+				racer_count,
+				tick);
+		}
+		for (int i = 0; i < racer_count; ++i) {
+			if (cpu_flags[i] && use_pending_cpu_inputs) {
+				if (!pending_frame->present[i]) {
+					return false;
+				}
+				authoritative.inputs[i] = pending_frame->inputs[i];
 				authoritative.present[i] = 1;
+			} else if (cpu_flags[i]) {
+				if (!authoritative.present[i]) {
+					authoritative.inputs[i] = PlayerInput::from_neutral();
+					authoritative.present[i] = 1;
+				}
+			} else if (pending_frame && pending_frame->present[i]) {
+				authoritative.inputs[i] = pending_frame->inputs[i];
+				authoritative.present[i] = 1;
+			} else {
+				return false;
 			}
-		} else if (pending_frame && pending_frame->present[i]) {
-			authoritative.inputs[i] = pending_frame->inputs[i];
-			authoritative.present[i] = 1;
-		} else {
-			return false;
 		}
 	}
-	sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
-		-1, nullptr, authoritative.inputs, authoritative.present, racer_count, nullptr, nullptr, false);
+	if (contiguous_player_order) {
+		sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
+			-1, nullptr, authoritative.inputs, authoritative.present, racer_count,
+			authoritative.inputs, authoritative.present, false);
+	} else {
+		sim->tick_gamesim_internal(GameSim::InputFrameMode::DecodedQuantizedCarArray,
+			-1, nullptr, authoritative.inputs, authoritative.present, racer_count, nullptr, nullptr, false);
+	}
 	latest_authoritative_tick = std::max(latest_authoritative_tick, static_cast<int32_t>(tick));
 	return true;
 }

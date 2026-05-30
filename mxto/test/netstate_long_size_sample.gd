@@ -93,8 +93,12 @@ func _init() -> void:
 	session.configure(player_ids, cpu_flags, int(player_ids[0]))
 
 	var start_us := Time.get_ticks_usec()
-	if humans == 0 and sample_every <= 0 and session.has_method("tick_server_frames"):
-		var ticked := int(session.tick_server_frames(sim, 0, end_tick))
+	if sample_every <= 0 and session.has_method("tick_server_frames") and (humans == 0 or session.has_method("tick_server_frames_with_native_inputs")):
+		var ticked := 0
+		if humans == 0:
+			ticked = int(session.tick_server_frames(sim, 0, end_tick))
+		else:
+			ticked = int(session.tick_server_frames_with_native_inputs(sim, 0, end_tick))
 		if ticked != end_tick + 1:
 			push_error("netstate_long_size_sample failed to tick server frame range ticked=%d end_tick=%d" % [ticked, end_tick])
 			root.remove_child(sim)
