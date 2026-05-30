@@ -9,12 +9,18 @@ const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd"
 const CACHE_DIR := "user://custom_stamps"
 const LIBRARY_PATH := "user://custom_stamps/library.json"
 
+static var _blob_cache := {}
+static var _library_hash_cache: Array = []
+static var _library_hash_cache_valid := false
+
 static func build_livery_payload(livery) -> Dictionary:
 	if livery == null:
 		return {"ok": true, "manifest": [], "blobs": [], "placements": {}}
 	var blobs: Array = []
+	var blob_by_hash := {}
 	var seen := {}
-	for stamp in livery.get_sorted_stamps():
+	var sorted_stamps: Array = livery.get_sorted_stamps()
+	for stamp in sorted_stamps:
 		if stamp == null or !stamp.is_custom():
 			continue
 		var stamp_hash: String = stamp.custom_hash if stamp.custom_hash != "" else stamp.stamp_id
@@ -25,6 +31,7 @@ static func build_livery_payload(livery) -> Dictionary:
 			return {"ok": false, "error": "missing custom stamp blob", "hash": stamp_hash}
 		seen[stamp_hash] = true
 		blobs.append(blob)
+		blob_by_hash[stamp_hash] = blob
 	var total_compressed := 0
 	for blob in blobs:
 		var stamp_blob := blob as CustomStampBlob
@@ -38,13 +45,13 @@ static func build_livery_payload(livery) -> Dictionary:
 		return pack
 	var placements: Dictionary = pack.get("placements", {})
 	var manifest: Array = []
-	for stamp in livery.get_sorted_stamps():
+	for stamp in sorted_stamps:
 		if stamp == null or !stamp.is_custom():
 			continue
 		var stamp_hash: String = stamp.custom_hash if stamp.custom_hash != "" else stamp.stamp_id
 		if !placements.has(stamp_hash):
 			return {"ok": false, "error": "custom stamp has no packed placement", "hash": stamp_hash}
-		var blob := _blob_for_hash(blobs, stamp_hash)
+		var blob: CustomStampBlob = blob_by_hash.get(stamp_hash, null)
 		if blob == null:
 			return {"ok": false, "error": "missing custom stamp blob", "hash": stamp_hash}
 		var placement: Dictionary = placements[stamp_hash]
@@ -64,6 +71,8 @@ static func has_blob(stamp_hash: String) -> bool:
 	return stamp_hash != "" and FileAccess.file_exists(_cache_path(stamp_hash))
 
 static func load_blob(stamp_hash: String) -> CustomStampBlob:
+	if _blob_cache.has(stamp_hash):
+		return _blob_cache[stamp_hash]
 	if !has_blob(stamp_hash):
 		return null
 	var data = JSON.parse_string(FileAccess.get_file_as_string(_cache_path(stamp_hash)))
@@ -73,6 +82,7 @@ static func load_blob(stamp_hash: String) -> CustomStampBlob:
 	blob.from_cache_dict(data)
 	if blob.validate_blob() != "":
 		return null
+	_blob_cache[stamp_hash] = blob
 	return blob
 
 static func save_blob(blob: CustomStampBlob, add_to_library := true) -> Error:
@@ -94,6 +104,7 @@ static func save_blob(blob: CustomStampBlob, add_to_library := true) -> Error:
 		return FileAccess.get_open_error()
 	file.store_string(JSON.stringify(blob.to_cache_dict()))
 	file.close()
+	_blob_cache[blob.stamp_hash] = blob
 	if add_to_library:
 		_add_blob_to_library(blob)
 	return OK
@@ -110,6 +121,7 @@ static func delete_blob(stamp_hash: String) -> Error:
 		var remove_err := DirAccess.remove_absolute(path)
 		if remove_err != OK:
 			return remove_err
+	_blob_cache.erase(stamp_hash)
 	return CarLiveryStore.remove_custom_stamp_references(stamp_hash)
 
 static func list_local_blobs() -> Array:
@@ -176,13 +188,6 @@ static func missing_hashes(manifest: Array) -> PackedStringArray:
 			missing.append(stamp_hash)
 	return missing
 
-static func _blob_for_hash(blobs: Array, stamp_hash: String) -> CustomStampBlob:
-	for blob in blobs:
-		var stamp_blob := blob as CustomStampBlob
-		if stamp_blob != null and stamp_blob.stamp_hash == stamp_hash:
-			return stamp_blob
-	return null
-
 static func _index_at(raw: PackedByteArray, pixel_index: int, bits_per_pixel: int) -> int:
 	if bits_per_pixel == CustomStampBlob.BPP_CUSTOM_PALETTE:
 		var packed := int(raw[int(pixel_index / 2)])
@@ -211,6 +216,8 @@ static func _add_blob_to_library(blob: CustomStampBlob) -> void:
 	_write_library_hashes(hashes)
 
 static func _read_library_hashes() -> Array:
+	if _library_hash_cache_valid:
+		return _library_hash_cache.duplicate()
 	var hashes: Array = []
 	var data = JSON.parse_string(FileAccess.get_file_as_string(LIBRARY_PATH)) if FileAccess.file_exists(LIBRARY_PATH) else []
 	if typeof(data) == TYPE_ARRAY:
@@ -218,6 +225,8 @@ static func _read_library_hashes() -> Array:
 			var stamp_hash := str(value)
 			if stamp_hash != "" and !hashes.has(stamp_hash):
 				hashes.append(stamp_hash)
+	_library_hash_cache = hashes.duplicate()
+	_library_hash_cache_valid = true
 	return hashes
 
 static func _write_library_hashes(hashes: Array) -> void:
@@ -226,6 +235,8 @@ static func _write_library_hashes(hashes: Array) -> void:
 		return
 	file.store_string(JSON.stringify(hashes))
 	file.close()
+	_library_hash_cache = hashes.duplicate()
+	_library_hash_cache_valid = true
 
 static func _safe_hash(stamp_hash: String) -> String:
 	var out := ""

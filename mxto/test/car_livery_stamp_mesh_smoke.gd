@@ -2,7 +2,6 @@ extends SceneTree
 
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CarLiveryStamp = preload("res://vehicle/customization/car_livery_stamp.gd")
-const CarLiveryStampMeshBuilder = preload("res://vehicle/customization/car_livery_stamp_mesh_builder.gd")
 const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
 const CarStampEntry = preload("res://vehicle/customization/car_stamp_entry.gd")
 
@@ -34,7 +33,7 @@ func _init() -> void:
 	catalog.atlas_grid_size = Vector2i(4, 4)
 	catalog.entries.append(entry)
 
-	var decal_mesh := CarLiveryStampMeshBuilder.build_for_vehicle_scene(root, livery, catalog)
+	var decal_mesh := _build_stamp_mesh(body, livery, catalog)
 	if decal_mesh.get_surface_count() != 1:
 		push_error("expected one generated stamp surface")
 		quit(1)
@@ -120,7 +119,7 @@ func _verify_non_identity_root_stamp_projection(catalog: CarStampCatalog) -> voi
 		push_error("failed to add non-identity root smoke stamp")
 		quit(1)
 		return
-	var decal_mesh := CarLiveryStampMeshBuilder.build_for_vehicle_scene(root, livery, catalog)
+	var decal_mesh := _build_stamp_mesh(body, livery, catalog)
 	if decal_mesh.get_surface_count() != 1:
 		push_error("expected non-identity root stamp surface")
 		quit(1)
@@ -137,3 +136,8 @@ func _verify_non_identity_root_stamp_projection(catalog: CarStampCatalog) -> voi
 			quit(1)
 			return
 	root.free()
+
+func _build_stamp_mesh(body: MeshInstance3D, livery: CarLivery, catalog: CarStampCatalog) -> ArrayMesh:
+	var builder := NativeStampMeshBuilder.new()
+	var result: Dictionary = builder.build_for_body_mesh_with_masks(body, body.transform, livery, catalog)
+	return result["mesh"] as ArrayMesh

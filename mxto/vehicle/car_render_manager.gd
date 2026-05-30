@@ -1,7 +1,6 @@
 class_name CarRenderManager extends Node3D
 
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
-const CarLiveryStampMeshBuilder = preload("res://vehicle/customization/car_livery_stamp_mesh_builder.gd")
 const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
 
 const PASS_MAIN := "main"
@@ -22,6 +21,7 @@ var stamp_visibility_masks_enabled: bool = true
 var stamp_visibility_mask_skip_layer: int = -1
 var stamp_catalog: CarStampCatalog = null
 var custom_stamp_atlas_texture: Texture2D = null
+var stamp_mesh_builder: NativeStampMeshBuilder = NativeStampMeshBuilder.new()
 
 func _ready() -> void:
 	process_priority = 2
@@ -95,8 +95,9 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		car_slots[i] = count
 		archetype["indices"].append(i)
 		archetype["count"] = count + 1
-		_resize_passes(archetype, archetype["count"])
 		archetypes[archetype_index] = archetype
+	for archetype in archetypes:
+		_resize_passes(archetype, int(archetype["count"]))
 
 func begin_manual_submit() -> void:
 	for archetype in archetypes:
@@ -126,7 +127,8 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 	for pass_name in [PASS_MAIN, "shadow"]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
-		multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
+		if multimesh.mesh != null:
+			multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
 	if _pass_has_mesh(archetype[PASS_STAMP]):
 		var stamp_multimesh: MultiMesh = archetype[PASS_STAMP]["multimesh"]
 		stamp_multimesh.visible_instance_count = max(stamp_multimesh.visible_instance_count, slot + 1)
@@ -134,7 +136,8 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 		for pass_name in [PASS_OUTLINE, PASS_OUTLINE_MAIN]:
 			var pass_data: Dictionary = archetype[pass_name]
 			var multimesh: MultiMesh = pass_data["multimesh"]
-			multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
+			if multimesh.mesh != null:
+				multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
 	var thruster_pass: Dictionary = archetype["thruster"]
 	var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
 	var thruster_locals: Array = thruster_pass["local_transforms"]
@@ -245,13 +248,13 @@ func _build_archetype(definition: CarDefinition, livery: CarLivery = null) -> Di
 		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_mesh.mesh, null if stamp_only_mode else outline_mesh.material_override, root_transform * outline_mesh.transform, 4, -1),
 		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else outline_main_mesh.mesh, null if stamp_only_mode else outline_main_mesh.material_override, root_transform * outline_main_mesh.transform, 2, -2),
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else shadow_mesh.mesh, null if stamp_only_mode else shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
-		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), template, livery, root_transform * main_mesh.transform, main_mesh.material_override),
+		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), main_mesh, template, livery, root_transform * main_mesh.transform, main_mesh.material_override),
 		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), null if stamp_only_mode else thruster_data["material"], [] if stamp_only_mode else thruster_data["local_transforms"]),
 	}
 	template.free()
 	return archetype
 
-func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, local_transform: Transform3D, base_material: Material) -> Dictionary:
+func _create_stamp_pass(pass_name: String, body_mesh: MeshInstance3D, template: Node3D, livery: CarLivery, local_transform: Transform3D, base_material: Material) -> Dictionary:
 	var mesh: Mesh = null
 	var material: Material = null
 	var stamp_vertex_ranges := {}
@@ -261,7 +264,7 @@ func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, 
 			if custom_stamp_atlas_texture != null:
 				catalog = catalog.duplicate() as CarStampCatalog
 				catalog.custom_atlas_texture = custom_stamp_atlas_texture
-			var stamp_build := CarLiveryStampMeshBuilder.build_for_vehicle_scene_with_masks(template, livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
+			var stamp_build := stamp_mesh_builder.build_for_body_mesh_with_masks(body_mesh, _body_to_car_transform(body_mesh, template), livery, catalog, stamp_visibility_masks_enabled, stamp_visibility_mask_skip_layer)
 			var generated_mesh: Mesh = stamp_build["mesh"]
 			if generated_mesh != null and generated_mesh.get_surface_count() > 0:
 				mesh = generated_mesh
@@ -273,6 +276,23 @@ func _create_stamp_pass(pass_name: String, template: Node3D, livery: CarLivery, 
 		var node: MultiMeshInstance3D = pass_data["node"]
 		node.visible = false
 	return pass_data
+
+func _body_to_car_transform(body_mesh: MeshInstance3D, car_root: Node3D) -> Transform3D:
+	if car_root == null:
+		return body_mesh.transform
+	var node: Node = body_mesh
+	var out := Transform3D.IDENTITY
+	while node != null and node != car_root:
+		var node_3d := node as Node3D
+		if node_3d == null:
+			break
+		out = node_3d.transform * out
+		node = node.get_parent()
+	if node == car_root:
+		return out
+	if body_mesh.is_inside_tree() and car_root.is_inside_tree():
+		return car_root.global_transform.affine_inverse() * body_mesh.global_transform
+	return body_mesh.transform
 
 func _update_stamp_material_custom_atlases() -> void:
 	for archetype in archetypes:
@@ -392,6 +412,10 @@ func _resize_passes(archetype: Dictionary, count: int) -> void:
 	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow", PASS_STAMP]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
+		if multimesh.mesh == null:
+			multimesh.instance_count = 0
+			multimesh.visible_instance_count = 0
+			continue
 		if multimesh.instance_count != count:
 			var old_count := multimesh.instance_count
 			multimesh.instance_count = count

@@ -138,6 +138,7 @@ var auto_disable_hud_mode: bool = false
 var auto_hide_hud_only_mode: bool = false
 var auto_disable_hud_process_only_mode: bool = false
 var auto_disable_minimap_mode: bool = false
+var auto_replay_catalog_profile_mode: bool = false
 var auto_quit_after_frames: int = -1
 var current_track_meta: Dictionary = {}
 var current_track_ground_image: Image
@@ -359,6 +360,7 @@ func _ready() -> void:
 	auto_hide_hud_only_mode = args.has("--profile-hide-hud-only") or user_args.has("--profile-hide-hud-only")
 	auto_disable_hud_process_only_mode = args.has("--profile-disable-hud-process-only") or user_args.has("--profile-disable-hud-process-only")
 	auto_disable_minimap_mode = args.has("--profile-disable-minimap") or user_args.has("--profile-disable-minimap")
+	auto_replay_catalog_profile_mode = args.has("--profile-replay-catalog") or user_args.has("--profile-replay-catalog")
 	game_sim.set_render_profile_enabled(auto_render_profile_mode)
 	game_sim.set_render_node_effects_enabled(!auto_disable_node_effects_mode)
 	game_sim.set_render_thruster_lights_enabled(!auto_disable_thruster_lights_mode)
@@ -397,11 +399,13 @@ func _ready() -> void:
 		call_deferred("_start_replay_playback_from_path", replay_autoload_path)
 	elif debug_replay_autoload_path != "":
 		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
+	elif auto_replay_catalog_profile_mode:
+		call_deferred("_profile_replay_catalog_and_quit")
 	elif auto_track_editor_mode:
 		call_deferred("_on_track_editor_button_pressed")
 	elif auto_singleplayer_mode:
 		call_deferred("_on_singleplayer_button_pressed")
-	if headless_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and debug_replay_autoload_path == "" and replay_autoload_path == "":
+	if headless_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !auto_replay_catalog_profile_mode and debug_replay_autoload_path == "" and replay_autoload_path == "":
 		var def_path := ""
 		if car_definitions.size() > 0:
 			def_path = car_definitions[0].resource_path
@@ -1801,6 +1805,41 @@ func _load_replay_file(path: String) -> Dictionary:
 		return {}
 	return parsed
 
+func _replay_metadata_json_without_frames(text: String) -> String:
+	var key_pos := text.find("\n\t\"frames\"")
+	if key_pos < 0:
+		key_pos = text.find("\"frames\"")
+	if key_pos < 0:
+		return text
+	var colon_pos := text.find(":", key_pos)
+	if colon_pos < 0:
+		return text
+	var array_start := text.find("[", colon_pos)
+	if array_start < 0:
+		return text
+	var array_end := text.find("\n\t]", array_start)
+	if array_end < 0:
+		return text
+	var remove_start := key_pos
+	var remove_end := array_end + 3
+	if remove_start > 0 and text.substr(remove_start - 1, 1) == ",":
+		remove_start -= 1
+	elif remove_end < text.length() and text.substr(remove_end, 1) == ",":
+		remove_end += 1
+	return text.substr(0, remove_start) + text.substr(remove_end)
+
+func _load_replay_metadata_file(path: String) -> Dictionary:
+	if path == "" or !FileAccess.file_exists(path):
+		return {}
+	var text := FileAccess.get_file_as_string(path)
+	if text == "":
+		return {}
+	var metadata_text := _replay_metadata_json_without_frames(text)
+	var parsed = JSON.parse_string(metadata_text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	return parsed as Dictionary
+
 func _replay_find_track_index(data: Dictionary) -> int:
 	return _debug_replay_find_track_index(data)
 
@@ -2828,6 +2867,33 @@ func _open_replay_catalog() -> void:
 		replay_catalog_list.select(0)
 		_on_replay_catalog_selected(0)
 
+func _profile_replay_catalog_and_quit() -> void:
+	_build_replay_catalog()
+	var metadata_start := Time.get_ticks_usec()
+	_refresh_replay_catalog()
+	var metadata_us := Time.get_ticks_usec() - metadata_start
+	var full_parse_count := 0
+	var full_parse_start := Time.get_ticks_usec()
+	var replay_dir := _replay_dir()
+	var dir := DirAccess.open(replay_dir)
+	if dir != null:
+		dir.list_dir_begin()
+		var file_name := dir.get_next()
+		while file_name != "":
+			if !dir.current_is_dir() and file_name.ends_with(".replay.json"):
+				var path := replay_dir.path_join(file_name)
+				var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+				if typeof(parsed) == TYPE_DICTIONARY:
+					full_parse_count += 1
+			file_name = dir.get_next()
+		dir.list_dir_end()
+	var full_parse_us := Time.get_ticks_usec() - full_parse_start
+	print("MXT_REPLAY_CATALOG_PROFILE entries=", replay_catalog_entries.size(),
+		" metadata_us=", metadata_us,
+		" full_parse_entries=", full_parse_count,
+		" full_parse_us=", full_parse_us)
+	get_tree().quit()
+
 func _close_replay_catalog() -> void:
 	if replay_catalog_root != null:
 		replay_catalog_root.visible = false
@@ -2851,9 +2917,8 @@ func _refresh_replay_catalog() -> void:
 	while file_name != "":
 		if !dir.current_is_dir() and file_name.ends_with(".replay.json"):
 			var path := replay_dir.path_join(file_name)
-			var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
-			if typeof(parsed) == TYPE_DICTIONARY:
-				var data: Dictionary = parsed
+			var data := _load_replay_metadata_file(path)
+			if !data.is_empty():
 				data["_path"] = path
 				replay_catalog_entries.append(data)
 		file_name = dir.get_next()

@@ -3,7 +3,6 @@ extends Control
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CarLiveryStamp = preload("res://vehicle/customization/car_livery_stamp.gd")
 const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
-const CarLiveryStampMeshBuilder = preload("res://vehicle/customization/car_livery_stamp_mesh_builder.gd")
 const CarStampCatalog = preload("res://vehicle/customization/car_stamp_catalog.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
