@@ -21,6 +21,7 @@
 #include "car/car_properties.h"
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -28,6 +29,7 @@
 namespace godot {
 
 	class NetcodeSession;
+	class MxtSpatialAudioManager;
 
 	class GameSim : public Node {
 		GDCLASS(GameSim, Node)
@@ -213,6 +215,7 @@ namespace godot {
 		void update_render_visual_snapshots(int visual_count);
 		void apply_render_multimeshes(float alpha);
 		void update_native_gameplay_camera(bool step_camera);
+		void update_spatial_audio(double delta);
 		uint64_t render_profile_now_us() const;
 		enum class InputFrameMode : uint8_t {
 			SingleLocal,
@@ -356,6 +359,8 @@ namespace godot {
 			void hide_unused_render_thruster_lights(int used_count);
 			godot::Camera3D* gameplay_camera_node = nullptr;
 			godot::Camera3D* render_camera_node = nullptr;
+			MxtSpatialAudioManager* spatial_audio_manager = nullptr;
+			uint64_t spatial_audio_last_update_frame = UINT64_MAX;
 			bool render_profile_enabled = false;
 			bool phase_profile_enabled = false;
 			uint64_t phase_profile_frames = 0;
@@ -452,6 +457,11 @@ namespace godot {
 		void set_car_render_manager(godot::Object* p_car_render_manager);
 		void set_gameplay_camera(godot::Camera3D* p_camera, int player_id);
 		void set_render_camera(godot::Camera3D* p_camera);
+		void set_spatial_audio_manager(MxtSpatialAudioManager* p_manager) { spatial_audio_manager = p_manager; }
+		MxtSpatialAudioManager* get_spatial_audio_manager() const { return spatial_audio_manager; }
+		bool play_car_oneshot_sfx(int car_index, const godot::StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
+		bool play_player_oneshot_sfx(int player_id, const godot::StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
+		bool play_world_oneshot_sfx(const godot::Vector3& position, const godot::StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
 		godot::String get_phase_profile_string() const;
 		void set_phase_profile_enabled(bool enabled);

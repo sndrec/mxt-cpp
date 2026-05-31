@@ -510,6 +510,7 @@ class MXTTrackSettings(PropertyGroup):
     )
     draw_cpu_nav_route_default: BoolProperty(name="Default Route", default=True)
     draw_cpu_nav_route_safe: BoolProperty(name="Safe Route", default=True)
+    draw_cpu_nav_route_aggressive: BoolProperty(name="Aggressive Route", default=True)
     draw_cpu_nav_route_dash: BoolProperty(name="Dash Route", default=True)
     draw_cpu_nav_route_recharge: BoolProperty(name="Recharge Route", default=True)
     draw_cpu_nav_route_reachable: BoolProperty(name="Reachable Trace", default=True)
@@ -660,6 +661,34 @@ class MXTRoad_RoadSegmentOverallProperties(PropertyGroup):
         name="CPU Nav Glide Drops",
         description="Allow this segment to participate in authored higher-to-lower CPU nav drop/glide links; disable to use only spatial proximity links",
         default=True
+    )
+    cpu_nav_lateral_samples: IntProperty(
+        name="CPU Nav Lateral Samples",
+        description="Per-segment nav lanes across this road; 0 uses the global track setting",
+        default=0,
+        min=0,
+        max=65
+    )
+    cpu_nav_row_spacing_meters: FloatProperty(
+        name="CPU Nav Row Spacing",
+        description="Per-segment meters between nav rows; 0 uses the global track setting",
+        default=0.0,
+        min=0.0,
+        soft_max=250.0
+    )
+    cpu_nav_transition_distance: FloatProperty(
+        name="CPU Nav Transition Distance",
+        description="Outgoing authored transition connection distance for this segment; -1 uses the global track setting",
+        default=-1.0,
+        min=-1.0,
+        soft_max=500.0
+    )
+    cpu_nav_branch_distance: FloatProperty(
+        name="CPU Nav Branch Distance",
+        description="Physically touching branch connection distance from this segment; -1 uses the global track setting",
+        default=-1.0,
+        min=-1.0,
+        soft_max=500.0
     )
     export_preview_mesh_collision: BoolProperty(
         name="Preview Mesh Collision",
@@ -2762,6 +2791,7 @@ def mxt_draw_callback():
             route_enabled = {
                 "default": track_settings.draw_cpu_nav_route_default,
                 "safe": track_settings.draw_cpu_nav_route_safe,
+                "aggressive": track_settings.draw_cpu_nav_route_aggressive,
                 "boost_dash": track_settings.draw_cpu_nav_route_dash,
                 "dash": track_settings.draw_cpu_nav_route_dash,
                 "recharge": track_settings.draw_cpu_nav_route_recharge,
@@ -2770,6 +2800,7 @@ def mxt_draw_callback():
             route_colors = {
                 "default": (1.0, 0.9, 0.05, 0.95),
                 "safe": (0.1, 1.0, 0.35, 0.85),
+                "aggressive": (1.0, 0.15, 0.08, 0.92),
                 "boost_dash": (0.0, 0.65, 1.0, 0.9),
                 "dash": (0.0, 0.65, 1.0, 0.9),
                 "recharge": (1.0, 0.1, 0.85, 0.9),
@@ -2800,13 +2831,27 @@ def mxt_draw_callback():
                 batch.draw(shader)
             gpu.state.line_width_set(old_line_width)
         if track_settings.draw_cpu_nav:
-            edge_positions = _MXT_NAV_DRAW_CACHE.get("edge_positions", [])
+            selected_nav_segments = {
+                segment.name for segment in get_selected_mxt_road_segment_parents(bpy.context)
+            }
+            if selected_nav_segments:
+                edge_positions = []
+                for entry in _MXT_NAV_DRAW_CACHE.get("edge_entries", []):
+                    if entry.get("from_segment") in selected_nav_segments and entry.get("to_segment") in selected_nav_segments:
+                        edge_positions.extend(entry.get("positions", []))
+                node_positions = [
+                    entry["position"]
+                    for entry in _MXT_NAV_DRAW_CACHE.get("node_entries", [])
+                    if entry.get("segment") in selected_nav_segments
+                ]
+            else:
+                edge_positions = _MXT_NAV_DRAW_CACHE.get("edge_positions", [])
+                node_positions = _MXT_NAV_DRAW_CACHE.get("node_positions", [])
             if edge_positions:
                 batch = batch_for_shader(shader, 'LINES', {"pos": edge_positions})
                 shader.bind()
                 shader.uniform_float("color", (0.0, 0.75, 1.0, 0.24))
                 batch.draw(shader)
-            node_positions = _MXT_NAV_DRAW_CACHE.get("node_positions", [])
             if node_positions:
                 gpu.state.point_size_set(4.0)
                 batch = batch_for_shader(shader, 'POINTS', {"pos": node_positions})
@@ -3061,6 +3106,7 @@ class MXTRoad_PT_MainPanel(Panel):
                 route_box.enabled = bool(ts.draw_cpu_nav_routes)
                 route_box.prop(ts, "draw_cpu_nav_route_default")
                 route_box.prop(ts, "draw_cpu_nav_route_safe")
+                route_box.prop(ts, "draw_cpu_nav_route_aggressive")
                 route_box.prop(ts, "draw_cpu_nav_route_dash")
                 route_box.prop(ts, "draw_cpu_nav_route_recharge")
                 route_box.prop(ts, "draw_cpu_nav_route_reachable")
@@ -3278,6 +3324,12 @@ class MXTRoad_PT_MainPanel(Panel):
             data_box.prop(road_props, "num_checkpoints_per_segment")
             data_box.prop(road_props, "analytic_collision_enabled")
             data_box.prop(road_props, "cpu_nav_allow_glide_drops")
+            nav_settings_box = data_box.box()
+            nav_settings_box.label(text="CPU Nav Segment Overrides")
+            nav_settings_box.prop(road_props, "cpu_nav_lateral_samples")
+            nav_settings_box.prop(road_props, "cpu_nav_row_spacing_meters")
+            nav_settings_box.prop(road_props, "cpu_nav_transition_distance")
+            nav_settings_box.prop(road_props, "cpu_nav_branch_distance")
             data_box.prop(road_props, "disable_preview_mesh_generation")
             preview_collision_row = data_box.row()
             preview_collision_row.enabled = not bool(road_props.disable_preview_mesh_generation)
@@ -3287,6 +3339,7 @@ class MXTRoad_PT_MainPanel(Panel):
             data_box.operator("mxt_road.generate_curve_matrix", text="Generate CurveMatrix", icon='FCURVE')
             data_box.operator("mxt_road.generate_mesh", text="Generate/Update Mesh", icon='MESH_PLANE')
             data_box.operator("mxt_road.generate_checkpoints", text="Generate Checkpoints", icon='OUTLINER_OB_EMPTY')
+            data_box.operator("mxt_road.preview_cpu_nav_graph", text="Preview CPU Nav Graph", icon='PARTICLE_POINT')
             data_box.operator("mxt_road.bake_cpu_nav", text="Bake CPU Nav", icon='TRACKING_FORWARDS')
             data_box.operator("mxt_road.export_track", text="Export Track", icon='EXPORT')
 
@@ -6185,29 +6238,36 @@ def _mxt_nav_cost_for_node(node, route_kind):
         edge_penalty = edge_t * edge_t * 70.0
         if route_kind == "safe":
             edge_penalty *= 1.65
+        elif route_kind == "aggressive":
+            edge_penalty *= 0.55
         elif route_kind == "dash":
             edge_penalty *= 0.75
         penalty += edge_penalty
     terrain_center_offset = max(0.0, min(1.0, float(node.get("terrain_center_offset", 0.0))))
     terrain_edge_clearance = max(0.0, float(node.get("terrain_edge_clearance", 1.0)))
     if terrain & MXT_NAV_TERRAIN_BITS["recharge"]:
-        penalty += terrain_center_offset * terrain_center_offset * (95.0 if route_kind == "recharge" else 42.0)
+        penalty += terrain_center_offset * terrain_center_offset * (95.0 if route_kind == "recharge" else 24.0 if route_kind == "aggressive" else 42.0)
         if terrain_edge_clearance < 0.12:
             terrain_edge_t = (0.12 - terrain_edge_clearance) / 0.12
-            penalty += terrain_edge_t * terrain_edge_t * (75.0 if route_kind == "recharge" else 30.0)
+            penalty += terrain_edge_t * terrain_edge_t * (75.0 if route_kind == "recharge" else 14.0 if route_kind == "aggressive" else 30.0)
     if terrain & MXT_NAV_TERRAIN_BITS["lava"]:
-        penalty += 600.0
+        penalty += 150.0 if route_kind == "aggressive" else 600.0
     if flags & MXT_NAV_NODE_FLAGS["mine"]:
-        penalty += 450.0
+        penalty += 120.0 if route_kind == "aggressive" else 450.0
     if terrain & MXT_NAV_TERRAIN_BITS["dirt"]:
-        penalty += 180.0 if route_kind != "dash" else 35.0
+        penalty += 0.0 if route_kind == "aggressive" else 180.0 if route_kind != "dash" else 35.0
     if terrain & MXT_NAV_TERRAIN_BITS["ice"]:
-        penalty += 90.0
+        penalty += 0.0 if route_kind == "aggressive" else 90.0
     if route_kind == "safe":
+        penalty += float(node.get("downward_curve_risk", 0.0)) * 260.0
         if terrain & MXT_NAV_TERRAIN_BITS["dash"]:
             penalty += 80.0
         if terrain & MXT_NAV_TERRAIN_BITS["jump"]:
             penalty += 130.0
+    elif route_kind == "default":
+        penalty += float(node.get("downward_curve_risk", 0.0)) * 80.0
+    elif route_kind == "aggressive":
+        penalty += float(node.get("downward_curve_risk", 0.0)) * 30.0
     elif route_kind == "dash":
         if terrain & MXT_NAV_TERRAIN_BITS["dash"]:
             penalty -= 470.0 * max(1.0, float(node.get("dash_value_multiplier", 1.0)))
@@ -6265,7 +6325,8 @@ def _mxt_nav_route_edge_distance_cost(edge, from_node, to_node, route_kind):
     lateral_vec = delta - forward * float(np.dot(delta, forward))
     lateral_world = float(np.linalg.norm(lateral_vec))
     lateral_rate = lateral_world / forward_world
-    lateral_rate_penalty = lateral_rate * lateral_rate * distance * (0.10 if route_kind == "dash" else 0.18)
+    lateral_rate_scale = 0.10 if route_kind == "dash" else 0.30 if route_kind == "aggressive" else 0.18
+    lateral_rate_penalty = lateral_rate * lateral_rate * distance * lateral_rate_scale
     if (flags & MXT_NAV_EDGE_FLAGS["lookahead"]) != 0:
         if lateral_rate < 0.55:
             lateral_rate_penalty *= 0.55
@@ -6284,9 +6345,32 @@ def _mxt_nav_route_outgoing(nodes, edges):
     return nodes_by_id, outgoing
 
 
+def _mxt_nav_edge_cache_key(edge):
+    return int(edge["from"]), int(edge["to"]), int(edge.get("flags", 0))
+
+
+def _mxt_nav_route_cost_cache(nodes, edges, route_kind, nodes_by_id=None, route_outgoing=None):
+    by_id = nodes_by_id or {int(n["id"]): n for n in nodes}
+    outgoing = route_outgoing
+    if outgoing is None:
+        _by_id, outgoing = _mxt_nav_route_outgoing(nodes, edges)
+    node_costs = {int(node["id"]): _mxt_nav_cost_for_node(node, route_kind) for node in nodes}
+    edge_costs = {}
+    for edge_list in outgoing.values():
+        for edge in edge_list:
+            from_node = by_id.get(int(edge["from"]))
+            to_node = by_id.get(int(edge["to"]))
+            edge_costs[_mxt_nav_edge_cache_key(edge)] = (
+                _mxt_nav_route_edge_distance_cost(edge, from_node, to_node, route_kind)
+                if from_node is not None and to_node is not None else float(edge["cost"])
+            )
+    return node_costs, edge_costs
+
+
 def _mxt_nav_shortest_route(nodes, edges, start_node_id, finish_node_ids, route_kind,
                             extra_node_penalties=None, extra_edge_penalties=None,
-                            nodes_by_id=None, route_outgoing=None):
+                            nodes_by_id=None, route_outgoing=None, route_node_costs=None,
+                            route_edge_costs=None):
     if start_node_id is None or not finish_node_ids:
         return []
     import heapq
@@ -6314,12 +6398,15 @@ def _mxt_nav_shortest_route(nodes, edges, start_node_id, finish_node_ids, route_
             to_node = by_id.get(to_id)
             if to_node is None:
                 continue
-            extra = _mxt_nav_cost_for_node(to_node, route_kind)
+            extra = float(route_node_costs.get(to_id, 0.0)) if route_node_costs is not None else _mxt_nav_cost_for_node(to_node, route_kind)
             edge_key = (int(edge["from"]), int(edge["to"]))
             extra += float(extra_node_penalties.get(to_id, 0.0))
             extra += float(extra_edge_penalties.get(edge_key, 0.0))
-            from_node = by_id.get(int(edge["from"]))
-            edge_cost = _mxt_nav_route_edge_distance_cost(edge, from_node, to_node, route_kind) if from_node else float(edge["cost"])
+            if route_edge_costs is not None:
+                edge_cost = float(route_edge_costs.get(_mxt_nav_edge_cache_key(edge), edge["cost"]))
+            else:
+                from_node = by_id.get(int(edge["from"]))
+                edge_cost = _mxt_nav_route_edge_distance_cost(edge, from_node, to_node, route_kind) if from_node else float(edge["cost"])
             cost = max(0.001, edge_cost + extra)
             next_dist = cur_dist + cost
             if next_dist < dist.get(to_id, float("inf")):
@@ -6339,8 +6426,79 @@ def _mxt_nav_shortest_route(nodes, edges, start_node_id, finish_node_ids, route_
     return path
 
 
+def _mxt_nav_path_length(nodes_by_id, path):
+    length = 0.0
+    for i in range(len(path) - 1):
+        a = nodes_by_id.get(int(path[i]))
+        b = nodes_by_id.get(int(path[i + 1]))
+        if a is None or b is None:
+            continue
+        pa = np.asarray(a["position"], dtype=np.float64)
+        pb = np.asarray(b["position"], dtype=np.float64)
+        length += float(np.linalg.norm(pb - pa))
+    return length
+
+
+def _mxt_nav_prefix_anchor_index(nodes_by_id, path, prefix_meters):
+    if len(path) < 3:
+        return -1
+    length = 0.0
+    for i in range(1, len(path)):
+        a = nodes_by_id.get(int(path[i - 1]))
+        b = nodes_by_id.get(int(path[i]))
+        if a is None or b is None:
+            continue
+        pa = np.asarray(a["position"], dtype=np.float64)
+        pb = np.asarray(b["position"], dtype=np.float64)
+        length += float(np.linalg.norm(pb - pa))
+        if length >= prefix_meters:
+            return i
+    return min(len(path) - 2, max(1, len(path) // 4))
+
+
+def _mxt_nav_rebuild_wrap_prefix(nodes, edges, path, route_kind, extra_node_penalties,
+                                 extra_edge_penalties, nodes_by_id, route_outgoing,
+                                 start_node_ids, prefix_meters,
+                                 route_node_costs=None, route_edge_costs=None):
+    if len(path) < 4 or not start_node_ids:
+        return path
+    anchor_index = _mxt_nav_prefix_anchor_index(nodes_by_id, path, prefix_meters)
+    if anchor_index <= 1:
+        return path
+    finish_id = int(path[-1])
+    anchor_id = int(path[anchor_index])
+    start_set = set(int(node_id) for node_id in start_node_ids)
+    wrap_candidates = []
+    for edge in edges:
+        if int(edge["from"]) == finish_id and int(edge["to"]) in start_set:
+            wrap_candidates.append((int(edge["to"]), float(edge["cost"])))
+    if not wrap_candidates:
+        return path
+    wrap_candidates.sort(key=lambda item: item[1])
+    candidate_id, _wrap_cost = wrap_candidates[0]
+    best_prefix = _mxt_nav_shortest_route(
+        nodes,
+        edges,
+        candidate_id,
+        [anchor_id],
+        route_kind,
+        extra_node_penalties,
+        extra_edge_penalties,
+        nodes_by_id,
+        route_outgoing,
+        route_node_costs,
+        route_edge_costs,
+    )
+    if len(best_prefix) < 2 or int(best_prefix[-1]) != anchor_id:
+        return path
+    if not best_prefix:
+        return path
+    return best_prefix + path[anchor_index + 1:]
+
+
 def _mxt_nav_route_alternatives(nodes, edges, start_node_id, finish_node_ids, route_kind, max_routes=4,
-                                nodes_by_id=None, route_outgoing=None, seed_paths=None):
+                                nodes_by_id=None, route_outgoing=None, seed_paths=None,
+                                start_node_ids=None, wrap_prefix_meters=0.0):
     alternatives = []
     seen_paths = set()
     node_penalties = {}
@@ -6486,6 +6644,10 @@ def _mxt_nav_route_alternatives(nodes, edges, start_node_id, finish_node_ids, ro
     for seed_path in seed_paths or []:
         add_corridor_penalties(seed_path, 0.35)
 
+    route_node_costs, route_edge_costs = _mxt_nav_route_cost_cache(
+        nodes, edges, route_kind, by_id, route_outgoing
+    )
+
     for route_index in range(max_routes):
         route_node_penalties = node_penalties
         lane_penalties = lane_target_penalties(route_index)
@@ -6509,7 +6671,24 @@ def _mxt_nav_route_alternatives(nodes, edges, start_node_id, finish_node_ids, ro
             route_edge_penalties,
             nodes_by_id,
             route_outgoing,
+            route_node_costs,
+            route_edge_costs,
         )
+        if wrap_prefix_meters > 0.0:
+            path = _mxt_nav_rebuild_wrap_prefix(
+                nodes,
+                edges,
+                path,
+                route_kind,
+                route_node_penalties,
+                route_edge_penalties,
+                by_id,
+                route_outgoing,
+                start_node_ids,
+                wrap_prefix_meters,
+                route_node_costs,
+                route_edge_costs,
+            )
         if len(path) < 2:
             break
         path_key = tuple(int(node_id) for node_id in path)
@@ -6735,6 +6914,168 @@ def _mxt_nav_choice_points(nodes, edges, route_alternatives, nodes_by_id=None, r
     return choices
 
 
+def _mxt_nav_runtime_route_anchor_nodes(nodes_by_id, path, route_kind, choice_node_ids=None):
+    anchors = set()
+    choice_node_ids = choice_node_ids or set()
+    for idx, node_id in enumerate(path):
+        node = nodes_by_id.get(int(node_id))
+        if node is None:
+            continue
+        terrain = int(node.get("terrain", 0))
+        flags = int(node.get("flags", 0))
+        source = str(node.get("source", ""))
+        is_feature = source.startswith("trigger:") or source.startswith("embed:") or source.startswith("mesh:")
+        if route_kind in ("dash", "boost_dash") and is_feature and (terrain & MXT_NAV_TERRAIN_BITS["dash"]):
+            anchors.add(idx)
+        if is_feature and (terrain & MXT_NAV_TERRAIN_BITS["jump"] or flags & MXT_NAV_NODE_FLAGS["jump"]):
+            anchors.add(idx)
+    return anchors
+
+
+def _mxt_nav_runtime_route_samples(nodes_by_id, path, route_kind, choice_node_ids=None,
+                                   spacing_meters=10.0, iterations=6):
+    if len(path) < 2:
+        return []
+    route_nodes = [nodes_by_id.get(int(node_id)) for node_id in path]
+    if any(node is None for node in route_nodes):
+        return []
+    positions = [np.asarray(node["position"], dtype=np.float64) for node in route_nodes]
+    collapsed_nodes = []
+    collapsed_positions = []
+    for node, pos in zip(route_nodes, positions):
+        if collapsed_positions and float(np.linalg.norm(pos - collapsed_positions[-1])) < 0.05:
+            continue
+        collapsed_nodes.append(node)
+        collapsed_positions.append(pos)
+    route_nodes = collapsed_nodes
+    positions = collapsed_positions
+    if len(positions) < 2:
+        return []
+    cumulative = [0.0]
+    for i in range(1, len(positions)):
+        cumulative.append(cumulative[-1] + float(np.linalg.norm(positions[i] - positions[i - 1])))
+    total = cumulative[-1]
+    if total <= 1.0e-5:
+        return []
+
+    spacing_meters = max(3.0, float(spacing_meters))
+    collapsed_path = [int(node["id"]) for node in route_nodes]
+    source_anchors = _mxt_nav_runtime_route_anchor_nodes(nodes_by_id, collapsed_path, route_kind, choice_node_ids)
+    closed_loop = float(np.linalg.norm(positions[-1] - positions[0])) <= max(1.0, spacing_meters * 1.5)
+    targets = [(0.0, False), (total, False)]
+    dist = spacing_meters
+    while dist < total:
+        targets.append((dist, False))
+        dist += spacing_meters
+    for anchor_index in source_anchors:
+        if 0 <= anchor_index < len(cumulative):
+            targets.append((float(cumulative[anchor_index]), True))
+    targets.sort(key=lambda item: item[0])
+
+    merged = []
+    for dist, anchor in targets:
+        dist = max(0.0, min(total, float(dist)))
+        if merged and abs(dist - merged[-1][0]) < 0.75:
+            merged[-1] = (dist if anchor else merged[-1][0], merged[-1][1] or anchor)
+        else:
+            merged.append((dist, anchor))
+
+    def sample_at(distance):
+        if distance <= 0.0:
+            return positions[0].copy(), 0
+        if distance >= total:
+            return positions[-1].copy(), len(positions) - 1
+        hi = 1
+        while hi < len(cumulative) and cumulative[hi] < distance:
+            hi += 1
+        lo = max(0, hi - 1)
+        span = max(1.0e-6, cumulative[hi] - cumulative[lo])
+        t = (distance - cumulative[lo]) / span
+        pos = positions[lo] * (1.0 - t) + positions[hi] * t
+        nearest = lo if t < 0.5 else hi
+        return pos, nearest
+
+    sample_positions = []
+    sample_nearest_indices = []
+    locked = []
+    for dist, anchor in merged:
+        pos, nearest_index = sample_at(dist)
+        sample_positions.append(pos)
+        sample_nearest_indices.append(nearest_index)
+        locked.append(bool(anchor))
+
+    if len(sample_positions) > 3:
+        for _ in range(max(0, int(iterations))):
+            next_positions = [p.copy() for p in sample_positions]
+            start_i = 0 if closed_loop else 1
+            end_i = len(sample_positions) if closed_loop else len(sample_positions) - 1
+            for i in range(start_i, end_i):
+                if locked[i]:
+                    continue
+                prev_i = (i - 1) % len(sample_positions)
+                next_i = (i + 1) % len(sample_positions)
+                if not closed_loop and (prev_i < 0 or next_i >= len(sample_positions)):
+                    continue
+                midpoint = (sample_positions[prev_i] + sample_positions[next_i]) * 0.5
+                candidate = sample_positions[i] + (midpoint - sample_positions[i]) * 0.42
+                next_positions[i] = candidate
+            sample_positions = next_positions
+
+    result = []
+    for i, pos in enumerate(sample_positions):
+        nearest_index = min(max(0, int(sample_nearest_indices[i])), len(route_nodes) - 1)
+        node = route_nodes[nearest_index]
+        if 0 < i < len(sample_positions) - 1:
+            forward = _mxt_nav_normalized(sample_positions[i + 1] - sample_positions[i - 1], node.get("forward", [0.0, 0.0, 1.0]))
+        elif i + 1 < len(sample_positions):
+            forward = _mxt_nav_normalized(sample_positions[i + 1] - sample_positions[i], node.get("forward", [0.0, 0.0, 1.0]))
+        else:
+            forward = _mxt_nav_normalized(sample_positions[i] - sample_positions[i - 1], node.get("forward", [0.0, 0.0, 1.0]))
+        result.append({
+            "node": int(node["id"]),
+            "segment": int(node.get("segment", 0)),
+            "checkpoint": int(node.get("checkpoint", 0)),
+            "position": _mxt_nav_json_vec3(pos),
+            "normal": node.get("normal", [0.0, 1.0, 0.0]),
+            "forward": _mxt_nav_json_vec3(forward),
+            "terrain": int(node.get("terrain", 0)),
+            "edge_clearance": round(float(node.get("edge_clearance", 1.0)), 6),
+            "downward_curve_risk": round(float(node.get("downward_curve_risk", 0.0)), 6),
+            "anchor": bool(locked[i]),
+        })
+    return result
+
+
+def _mxt_nav_runtime_routes(nodes_by_id, routes, route_alternatives, route_kind_map, choice_points,
+                            spacing_meters=14.0, iterations=4):
+    choice_node_ids = {int(choice.get("node", -1)) for choice in choice_points}
+    relaxed_cache = {}
+    runtime_routes = {}
+    runtime_alternatives = {}
+    for route_name, alternatives in route_alternatives.items():
+        kind = route_kind_map.get(route_name, route_name)
+        relaxed_alts = []
+        for path in alternatives:
+            path_key = tuple(int(node_id) for node_id in path)
+            cache_key = (kind, path_key)
+            relaxed = relaxed_cache.get(cache_key)
+            if relaxed is None:
+                relaxed = _mxt_nav_runtime_route_samples(
+                    nodes_by_id, path, kind, choice_node_ids, spacing_meters, iterations
+                )
+                relaxed_cache[cache_key] = relaxed
+            if relaxed:
+                relaxed_alts.append(relaxed)
+        runtime_alternatives[route_name] = relaxed_alts
+        primary = runtime_alternatives[route_name][0] if runtime_alternatives[route_name] else []
+        if not primary and routes.get(route_name):
+            primary = _mxt_nav_runtime_route_samples(
+                nodes_by_id, routes[route_name], kind, choice_node_ids, spacing_meters, iterations
+            )
+        runtime_routes[route_name] = primary
+    return runtime_routes, runtime_alternatives
+
+
 def _mxt_nav_ty_samples_by_spacing(helper, spacing_meters):
     spacing_meters = max(1.0, float(spacing_meters))
     probe_t = np.linspace(0.0, 1.0, 129, dtype=np.float64)
@@ -6790,6 +7131,8 @@ def _mxt_nav_unique_sorted_tx(values):
 def _mxt_nav_segment_ty_samples(helper, props, triggers, spacing_meters):
     samples = list(_mxt_nav_ty_samples_by_spacing(helper, spacing_meters))
     for embed in getattr(props, "embeds", []):
+        if embed.embed_type != 'HOLE':
+            continue
         start_t = max(0.0, min(1.0, float(embed.start_t)))
         end_t = max(0.0, min(1.0, float(embed.end_t)))
         if end_t < start_t:
@@ -6811,21 +7154,63 @@ def _mxt_nav_segment_ty_samples(helper, props, triggers, spacing_meters):
     return np.array(MXTRoad_OT_GenerateMesh._unique_sorted_ty(samples), dtype=np.float64)
 
 
-def _mxt_nav_segment_tx_samples(base_tx_1d, props, triggers, ty_1d):
-    samples = [float(v) for v in base_tx_1d]
-    for embed in getattr(props, "embeds", []):
-        for ty in ty_1d:
-            bounds = _mxt_nav_embed_bounds(embed, float(ty))
-            if not bounds:
+def _mxt_nav_embed_ty_samples(embed, base_ty_1d, include_epsilon=False):
+    start_t = max(0.0, min(1.0, float(embed.start_t)))
+    end_t = max(0.0, min(1.0, float(embed.end_t)))
+    if end_t < start_t:
+        start_t, end_t = end_t, start_t
+    samples = [start_t, end_t]
+    for ty in base_ty_1d:
+        ty = float(ty)
+        if start_t <= ty <= end_t:
+            samples.append(ty)
+    if embed.helper and embed.helper.animation_data and embed.helper.animation_data.action:
+        act = embed.helper.animation_data.action
+        for fcu in (act.fcurves.find("location", index=1), act.fcurves.find("location", index=2)):
+            if not fcu:
                 continue
-            left, right = bounds
-            samples.append(left)
-            samples.append(right)
-            samples.append((left + right) * 0.5)
-    return np.array(_mxt_nav_unique_sorted_tx(samples), dtype=np.float64)
+            for kfp in fcu.keyframe_points:
+                t = max(start_t, min(end_t, float(kfp.co.x) / 100.0))
+                samples.append(t)
+                if include_epsilon and start_t < t < end_t:
+                    eps = 0.0005
+                    samples.append(max(start_t, t - eps))
+                    samples.append(min(end_t, t + eps))
+    return np.array(MXTRoad_OT_GenerateMesh._unique_sorted_ty(samples), dtype=np.float64)
 
 
-def _mxt_nav_generate(context, filepath, seg_order, seg_index):
+def _mxt_nav_segment_tx_samples(base_tx_1d, props, triggers, ty_1d):
+    shape_type = getattr(props, "road_shape_type", "FLAT")
+    count = max(3, len(base_tx_1d))
+    if shape_type in ('CYLINDER', 'PIPE', 'ROUNDED_SQUARE'):
+        return np.linspace(-1.0, 1.0, count, endpoint=False, dtype=np.float64)
+    if shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
+        return np.linspace(-1.0, 1.0, count, endpoint=True, dtype=np.float64)
+    return np.array(_mxt_nav_unique_sorted_tx(float(v) for v in base_tx_1d), dtype=np.float64)
+
+
+def _mxt_nav_open_values_for_rows(props, ty_1d):
+    if getattr(props, "road_shape_type", "FLAT") not in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
+        return np.ones(len(ty_1d), dtype=np.float64)
+    values = np.ones(len(ty_1d), dtype=np.float64)
+    helper = getattr(props, "openness_helper", None)
+    if helper and helper.animation_data and helper.animation_data.action:
+        fcu = helper.animation_data.action.fcurves.find("location", index=0)
+        if fcu:
+            values = np.array([fcu.evaluate(float(ty) * 100.0) for ty in ty_1d], dtype=np.float64)
+    return values
+
+
+def _mxt_nav_row_laterally_cyclic(props, open_value):
+    shape_type = getattr(props, "road_shape_type", "FLAT")
+    if shape_type in ('CYLINDER', 'PIPE', 'ROUNDED_SQUARE'):
+        return True
+    if shape_type in ('CYLINDER_OPEN', 'PIPE_OPEN', 'ROUNDED_SQUARE_OPEN'):
+        return abs(float(open_value)) <= 1.0e-5
+    return False
+
+
+def _mxt_nav_generate(context, filepath, seg_order, seg_index, include_routes=True):
     ts = context.scene.mxt_track_settings
     lateral_count = max(3, int(getattr(ts, "cpu_nav_lateral_samples", 9)))
     row_spacing_meters = max(1.0, float(getattr(ts, "cpu_nav_row_spacing_meters", 30.0)))
@@ -6834,6 +7219,27 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
     mesh_spacing_meters = max(2.0, float(getattr(ts, "cpu_nav_mesh_sample_spacing_meters", 35.0)))
 
     base_tx_1d = np.linspace(-0.92, 0.92, lateral_count, dtype=np.float64)
+
+    def segment_lateral_base_samples(props):
+        override = int(getattr(props, "cpu_nav_lateral_samples", 0))
+        if override >= 3:
+            return np.linspace(-0.92, 0.92, override, dtype=np.float64)
+        return base_tx_1d
+
+    def segment_row_spacing(props):
+        override = float(getattr(props, "cpu_nav_row_spacing_meters", 0.0))
+        return max(1.0, override) if override > 0.0 else row_spacing_meters
+
+    def segment_transition_distance(seg):
+        props = seg.mxt_road_overall_props
+        override = float(getattr(props, "cpu_nav_transition_distance", -1.0))
+        return max(0.0, override) if override >= 0.0 else transition_distance
+
+    def segment_branch_distance(seg):
+        props = seg.mxt_road_overall_props
+        override = float(getattr(props, "cpu_nav_branch_distance", -1.0))
+        return max(0.0, override) if override >= 0.0 else branch_distance
+
     nodes = []
     edges = []
     edge_keys = set()
@@ -6896,19 +7302,29 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
         cp_count = max(1, len(cps))
         segment_triggers = triggers_by_segment.get(seg, [])
         segment_dash_targets = dash_targets_by_segment.get(seg, [])
-        ty_1d = _mxt_nav_segment_ty_samples(helper, props, segment_triggers, row_spacing_meters)
-        tx_1d = _mxt_nav_segment_tx_samples(base_tx_1d, props, segment_triggers, ty_1d)
+        segment_row_spacing_meters = segment_row_spacing(props)
+        segment_base_tx_1d = segment_lateral_base_samples(props)
+        ty_1d = _mxt_nav_segment_ty_samples(helper, props, segment_triggers, segment_row_spacing_meters)
+        tx_1d = _mxt_nav_segment_tx_samples(segment_base_tx_1d, props, segment_triggers, ty_1d)
         row_count = len(ty_1d)
         segment_lateral_count = len(tx_1d)
         tx_grid, ty_grid = np.meshgrid(tx_1d, ty_1d)
         centerline_pos, centerline_basis, centerline_scl = _sample_curve_matrix_numpy(helper, ty_1d)
         positions_local = _calculate_vertex_positions_numpy(props, centerline_pos, centerline_basis, centerline_scl, tx_grid, ty_grid)
+        open_values = _mxt_nav_open_values_for_rows(props, ty_1d)
+        row_cyclic = [
+            _mxt_nav_row_laterally_cyclic(props, open_values[row])
+            for row in range(row_count)
+        ]
 
         row_nodes = [[None for _ in range(segment_lateral_count)] for _ in range(row_count)]
         for row in range(row_count):
             for col in range(segment_lateral_count):
                 tx = float(tx_grid[row, col])
                 ty = float(ty_grid[row, col])
+                if row_cyclic[row] and col == segment_lateral_count - 1 and abs(tx - 1.0) <= 1.0e-6:
+                    row_nodes[row][col] = row_nodes[row][0]
+                    continue
                 if _mxt_nav_sample_is_hole(props, tx, ty):
                     continue
                 pos_local = positions_local[row, col]
@@ -6920,8 +7336,16 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                     fwd = positions_local[row, col] - positions_local[row - 1, col]
                 else:
                     fwd = positions_local[row + 1, col] - positions_local[row - 1, col]
-                left_col = max(0, col - 1)
-                right_col = min(segment_lateral_count - 1, col + 1)
+                if row_cyclic[row]:
+                    left_col = (col - 1) % segment_lateral_count
+                    right_col = (col + 1) % segment_lateral_count
+                    if left_col == segment_lateral_count - 1 and row_nodes[row][left_col] == row_nodes[row][0]:
+                        left_col = max(0, segment_lateral_count - 2)
+                    if right_col == segment_lateral_count - 1 and row_nodes[row][right_col] == row_nodes[row][0]:
+                        right_col = 0
+                else:
+                    left_col = max(0, col - 1)
+                    right_col = min(segment_lateral_count - 1, col + 1)
                 lateral = positions_local[row, right_col] - positions_local[row, left_col]
                 fwd_n = _mxt_nav_normalized(fwd, (0.0, 0.0, 1.0))
                 normal_n = _mxt_nav_normalized(np.cross(fwd_n, lateral), (0.0, 1.0, 0.0))
@@ -6950,17 +7374,69 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                     "dash_approach_scores": {target_id: round(float(score), 6) for target_id, score in dash_scores.items()},
                     "dash_approach_score": round(max(dash_scores.values()) if dash_scores else 0.0, 6),
                     "dash_value_multiplier": 1.0,
+                    "downward_curve_risk": 0.0,
                     "author_weight": 1.0,
                     "flags": int(flags),
                 }
                 nodes.append(node)
                 row_nodes[row][col] = node_id
 
+        row_centers_local = []
+        for row in range(row_count):
+            valid_cols = [col for col in range(segment_lateral_count) if row_nodes[row][col] is not None]
+            if not valid_cols:
+                row_centers_local.append(None)
+                continue
+            if row_cyclic[row]:
+                unique_cols = []
+                seen_node_ids = set()
+                for col in valid_cols:
+                    node_id = row_nodes[row][col]
+                    if node_id in seen_node_ids:
+                        continue
+                    seen_node_ids.add(node_id)
+                    unique_cols.append(col)
+                row_centers_local.append(np.mean(positions_local[row, unique_cols], axis=0))
+            else:
+                left = positions_local[row, valid_cols[0]]
+                right = positions_local[row, valid_cols[-1]]
+                row_centers_local.append((left + right) * 0.5)
+        for row in range(1, row_count - 1):
+            prev_center = row_centers_local[row - 1]
+            center = row_centers_local[row]
+            next_center = row_centers_local[row + 1]
+            if prev_center is None or center is None or next_center is None:
+                continue
+            incoming = _mxt_nav_normalized(center - prev_center, (0.0, 0.0, 1.0))
+            outgoing = _mxt_nav_normalized(next_center - center, (0.0, 0.0, 1.0))
+            turn_vec = outgoing - incoming
+            turn_len = float(np.linalg.norm(turn_vec))
+            if turn_len <= 1.0e-6:
+                continue
+            turn_dir = turn_vec / turn_len
+            turn_strength = min(1.0, turn_len / 0.28)
+            for col in range(segment_lateral_count):
+                node_id = row_nodes[row][col]
+                if node_id is None:
+                    continue
+                normal = _mxt_nav_normalized(np.asarray(nodes[node_id]["normal"], dtype=np.float64), (0.0, 1.0, 0.0))
+                risk = max(0.0, -float(np.dot(normal, turn_dir))) * turn_strength
+                nodes[node_id]["downward_curve_risk"] = round(float(risk), 6)
+
         for row in range(row_count):
             for col in range(segment_lateral_count - 1):
                 a = row_nodes[row][col]
                 b = row_nodes[row][col + 1]
                 if a is not None and b is not None:
+                    pa = np.asarray(nodes[a]["position"], dtype=np.float64)
+                    pb = np.asarray(nodes[b]["position"], dtype=np.float64)
+                    cost = float(np.linalg.norm(pb - pa))
+                    add_edge(a, b, cost, MXT_NAV_EDGE_FLAGS["lateral"])
+                    add_edge(b, a, cost, MXT_NAV_EDGE_FLAGS["lateral"])
+            if row_cyclic[row]:
+                a = row_nodes[row][segment_lateral_count - 1]
+                b = row_nodes[row][0]
+                if a is not None and b is not None and a != b:
                     pa = np.asarray(nodes[a]["position"], dtype=np.float64)
                     pb = np.asarray(nodes[b]["position"], dtype=np.float64)
                     cost = float(np.linalg.norm(pb - pa))
@@ -6973,7 +7449,9 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                 if a is None:
                     continue
                 for next_col in (col - 1, col, col + 1):
-                    if next_col < 0 or next_col >= segment_lateral_count:
+                    if row_cyclic[row + 1]:
+                        next_col = next_col % segment_lateral_count
+                    elif next_col < 0 or next_col >= segment_lateral_count:
                         continue
                     b = row_nodes[row + 1][next_col]
                     if b is None:
@@ -6992,12 +7470,22 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                 return True
             tx0 = float(tx_1d[col0])
             tx1 = float(tx_1d[col1])
+            if row_cyclic[row0] or row_cyclic[row1]:
+                delta = tx1 - tx0
+                if delta > 1.0:
+                    tx1 -= 2.0
+                elif delta < -1.0:
+                    tx1 += 2.0
             ty0 = float(ty_1d[row0])
             ty1 = float(ty_1d[row1])
             for mid_row in range(row0 + 1, row1):
                 denom = max(1.0e-6, ty1 - ty0)
                 alpha = (float(ty_1d[mid_row]) - ty0) / denom
                 tx_mid = tx0 + (tx1 - tx0) * alpha
+                if tx_mid > 1.0:
+                    tx_mid -= 2.0
+                elif tx_mid < -1.0:
+                    tx_mid += 2.0
                 if _mxt_nav_sample_is_hole(props, tx_mid, float(ty_1d[mid_row])):
                     return False
             return True
@@ -7013,7 +7501,14 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                     if next_row >= row_count:
                         break
                     max_col_delta = min(segment_lateral_count - 1, row_skip)
-                    for next_col in range(max(0, col - max_col_delta), min(segment_lateral_count, col + max_col_delta + 1)):
+                    if row_cyclic[next_row]:
+                        next_cols = [
+                            (col + delta) % segment_lateral_count
+                            for delta in range(-max_col_delta, max_col_delta + 1)
+                        ]
+                    else:
+                        next_cols = range(max(0, col - max_col_delta), min(segment_lateral_count, col + max_col_delta + 1))
+                    for next_col in next_cols:
                         b = row_nodes[next_row][next_col]
                         if b is None:
                             continue
@@ -7076,9 +7571,58 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                 "dash_approach_score": round(max(dash_scores.values()) if dash_scores else 0.0, 6),
                 "dash_target": dash_target["id"] if dash_target else "",
                 "dash_value_multiplier": round(float(dash_value_multiplier), 6),
+                "downward_curve_risk": 0.0,
                 "author_weight": 1.0,
                 "flags": int(flags),
                 "source": f"trigger:{trig.label}",
+            })
+            return node_id
+
+        def append_embed_node(embed, tx, ty):
+            if embed.embed_type == 'HOLE':
+                return None
+            if _mxt_nav_sample_is_hole(props, tx, ty):
+                return None
+            pos_local = surface_point(tx, ty)
+            pos_world_v = seg.matrix_world @ Vector((float(pos_local[0]), float(pos_local[1]), float(pos_local[2])))
+            pos_world = np.array((pos_world_v.x, pos_world_v.y, pos_world_v.z), dtype=np.float64)
+            eps = 0.002
+            pos_fwd = surface_point(tx, min(1.0, ty + eps))
+            if ty + eps > 1.0:
+                pos_fwd = pos_local + (pos_local - surface_point(tx, max(0.0, ty - eps)))
+            pos_side = surface_point(min(1.0, tx + eps), ty)
+            if tx + eps > 1.0:
+                pos_side = pos_local + (pos_local - surface_point(max(-1.0, tx - eps), ty))
+            fwd_n = _mxt_nav_normalized(pos_fwd - pos_local, (0.0, 0.0, 1.0))
+            lateral_n = _mxt_nav_normalized(pos_side - pos_local, (1.0, 0.0, 0.0))
+            normal_n = _mxt_nav_normalized(np.cross(fwd_n, lateral_n), (0.0, 1.0, 0.0))
+            terrain, flags = _mxt_nav_terrain_and_flags(props, tx, ty, pos_world, [])
+            terrain_lane = _mxt_nav_terrain_lane_metrics(props, tx, ty)
+            dash_scores = _mxt_nav_dash_approach_scores(pos_world, fwd_n, segment_dash_targets)
+            node_id = len(nodes)
+            checkpoint = min(cp_count - 1, int(math.floor(ty * cp_count)))
+            nodes.append({
+                "id": int(node_id),
+                "segment": int(seg_index[seg]),
+                "segment_name": seg.name,
+                "checkpoint": int(checkpoint),
+                "tx": round(float(tx), 6),
+                "ty": round(float(ty), 6),
+                "position": _mxt_nav_json_vec3(pos_world),
+                "normal": _mxt_nav_json_vec3(normal_n),
+                "forward": _mxt_nav_json_vec3(fwd_n),
+                "terrain": int(terrain),
+                "edge_clearance": round(_mxt_nav_edge_clearance_tx(props, tx, ty), 6),
+                "terrain_edge_clearance": round(float(terrain_lane["terrain_edge_clearance"]), 6),
+                "terrain_center_offset": round(float(terrain_lane["terrain_center_offset"]), 6),
+                "terrain_span_width": round(float(terrain_lane["terrain_span_width"]), 6),
+                "dash_approach_scores": {target_id: round(float(score), 6) for target_id, score in dash_scores.items()},
+                "dash_approach_score": round(max(dash_scores.values()) if dash_scores else 0.0, 6),
+                "dash_value_multiplier": 1.0,
+                "downward_curve_risk": 0.0,
+                "author_weight": 1.0,
+                "flags": int(flags),
+                "source": f"embed:{embed.label}",
             })
             return node_id
 
@@ -7103,7 +7647,7 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                     other_node = nodes[other_id]
                     other_pos = np.asarray(other_node["position"], dtype=np.float64)
                     dist = float(np.linalg.norm(feature_pos - other_pos))
-                    if dist > row_spacing_meters * 3.5:
+                    if dist > segment_row_spacing_meters * 3.5:
                         continue
                     other_forward = _mxt_nav_normalized(np.asarray(other_node["forward"], dtype=np.float64), (0.0, 0.0, 1.0))
                     other_to_feature = feature_pos - other_pos
@@ -7113,7 +7657,64 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                     if float(np.dot(feature_to_other, feature_forward)) >= -1.0:
                         add_edge(feature_id, other_id, dist, edge_flags)
 
+        def connect_embed_node(feature_id):
+            feature_node = nodes[feature_id]
+            feature_pos = np.asarray(feature_node["position"], dtype=np.float64)
+            feature_forward = _mxt_nav_normalized(np.asarray(feature_node["forward"], dtype=np.float64), (0.0, 0.0, 1.0))
+            feature_ty = float(feature_node["ty"])
+            nearest_row = int(np.searchsorted(ty_1d, feature_ty))
+            nearest_row = max(0, min(row_count - 1, nearest_row))
+            if nearest_row > 0 and abs(float(ty_1d[nearest_row - 1]) - feature_ty) < abs(float(ty_1d[nearest_row]) - feature_ty):
+                nearest_row -= 1
+            row_indices = [nearest_row]
+            if nearest_row > 0:
+                row_indices.append(nearest_row - 1)
+            if nearest_row + 1 < row_count:
+                row_indices.append(nearest_row + 1)
+            max_secondary_dist = max(18.0, segment_row_spacing_meters * 1.8)
+            for row in row_indices:
+                row_candidates = []
+                for other_id in row_nodes[row]:
+                    if other_id is None:
+                        continue
+                    other_node = nodes[other_id]
+                    other_pos = np.asarray(other_node["position"], dtype=np.float64)
+                    dist = float(np.linalg.norm(feature_pos - other_pos))
+                    row_candidates.append((dist, other_id, other_node, other_pos))
+                row_candidates.sort(key=lambda item: item[0])
+                for rank, (dist, other_id, other_node, other_pos) in enumerate(row_candidates[:3]):
+                    if row != nearest_row and dist > max_secondary_dist:
+                        continue
+                    if row == nearest_row and rank > 0 and dist > max_secondary_dist:
+                        continue
+                    edge_flags = MXT_NAV_EDGE_FLAGS["normal"]
+                    if int(feature_node["terrain"]) & MXT_NAV_TERRAIN_BITS["jump"]:
+                        edge_flags |= MXT_NAV_EDGE_FLAGS["jump"]
+                    other_forward = _mxt_nav_normalized(np.asarray(other_node["forward"], dtype=np.float64), (0.0, 0.0, 1.0))
+                    other_to_feature = feature_pos - other_pos
+                    feature_to_other = other_pos - feature_pos
+                    if float(np.dot(other_to_feature, other_forward)) >= -1.0:
+                        add_edge(other_id, feature_id, dist, edge_flags)
+                    if float(np.dot(feature_to_other, feature_forward)) >= -1.0:
+                        add_edge(feature_id, other_id, dist, edge_flags)
+
         trigger_node_count = 0
+        embed_node_count = 0
+        for embed in getattr(props, "embeds", []):
+            if embed.embed_type == 'HOLE':
+                continue
+            for ty in _mxt_nav_embed_ty_samples(embed, ty_1d, include_epsilon=False):
+                bounds = _mxt_nav_embed_bounds(embed, float(ty))
+                if not bounds:
+                    continue
+                left = max(-1.0, min(1.0, float(bounds[0])))
+                right = max(-1.0, min(1.0, float(bounds[1])))
+                center = max(-1.0, min(1.0, (left + right) * 0.5))
+                for tx in _mxt_nav_unique_sorted_tx((left, center, right)):
+                    embed_node = append_embed_node(embed, tx, float(ty))
+                    if embed_node is not None:
+                        embed_node_count += 1
+                        connect_embed_node(embed_node)
         for trig_idx, trig in enumerate(segment_triggers):
             dash_target = None
             if trig.obj_type == 'DASHPLATE':
@@ -7133,6 +7734,7 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
             "row_count": row_count,
             "lateral_count": segment_lateral_count,
             "trigger_node_count": trigger_node_count,
+            "embed_node_count": embed_node_count,
         }
         segment_records.append({
             "id": int(seg_index[seg]),
@@ -7141,7 +7743,9 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
             "node_count": int(sum(1 for row in row_nodes for n in row if n is not None)),
             "rows": int(row_count),
             "lateral_samples": int(segment_lateral_count),
+            "row_spacing_meters": float(segment_row_spacing_meters),
             "trigger_nodes": int(trigger_node_count),
+            "embed_nodes": int(embed_node_count),
         })
 
     analytic_node_count = len(nodes)
@@ -7223,6 +7827,7 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                 "dash_approach_scores": {},
                 "dash_approach_score": 0.0,
                 "dash_value_multiplier": 1.0,
+                "downward_curve_risk": 0.0,
                 "author_weight": 1.0,
                 "flags": int(flags),
                 "source": tri["source"],
@@ -7345,29 +7950,33 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
             flags = MXT_NAV_EDGE_FLAGS["transition"]
             if len(next_refs) > 1 or len(getattr(nxt.mxt_road_overall_props, "prev_segments", [])) > 1:
                 flags |= MXT_NAV_EDGE_FLAGS["branch"]
-            connect_boundary_rows(seg, -1, nxt, 0, transition_distance, flags)
+            connect_boundary_rows(seg, -1, nxt, 0, segment_transition_distance(seg), flags)
             if segment_has_prev(nxt, seg):
                 connect_glide_drop_rows(seg, nxt, flags)
 
     branch_edges = 0
-    if branch_distance > 0.0:
+    if branch_distance > 0.0 or any(segment_branch_distance(seg) > 0.0 for seg in segment_grids.keys()):
         before = len(edges)
         segs_with_grids = list(segment_grids.keys())
         for seg_a in segs_with_grids:
             for seg_b in segs_with_grids:
                 if seg_a == seg_b or (seg_a, seg_b) in authored_pairs:
                     continue
-                connect_boundary_rows(seg_a, -1, seg_b, 0, branch_distance, MXT_NAV_EDGE_FLAGS["transition"] | MXT_NAV_EDGE_FLAGS["branch"])
+                physical_branch_distance = segment_branch_distance(seg_a)
+                if physical_branch_distance > 0.0:
+                    connect_boundary_rows(seg_a, -1, seg_b, 0, physical_branch_distance, MXT_NAV_EDGE_FLAGS["transition"] | MXT_NAV_EDGE_FLAGS["branch"])
         branch_edges = max(0, len(edges) - before)
 
     nav_segments = [seg for seg in seg_order if seg in segment_grids]
     first_seg = nav_segments[0] if nav_segments else None
     last_seg = nav_segments[-1] if nav_segments else None
     start_node = None
+    start_nodes = []
     finish_nodes = []
     if first_seg in segment_grids:
         first_row = segment_grids[first_seg]["rows"][0]
         candidates = [n for n in first_row if n is not None]
+        start_nodes = candidates
         if candidates:
             start_node = min(candidates, key=lambda n: abs(float(nodes[n]["tx"])))
     if last_seg in segment_grids:
@@ -7376,30 +7985,48 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
     route_kind_map = {
         "default": "default",
         "safe": "safe",
+        "aggressive": "aggressive",
         "boost_dash": "dash",
         "dash": "dash",
         "recharge": "recharge",
     }
     nodes_by_id, route_outgoing = _mxt_nav_route_outgoing(nodes, edges)
-    alternatives_by_kind = {}
     route_alternatives = {}
-    for name, kind in route_kind_map.items():
-        if kind not in alternatives_by_kind:
-            seed_paths = route_alternatives.get("default", []) if kind == "safe" else None
-            alternatives_by_kind[kind] = _mxt_nav_route_alternatives(
-                nodes, edges, start_node, finish_nodes, kind, 4, nodes_by_id, route_outgoing, seed_paths
-            )
-        route_alternatives[name] = alternatives_by_kind[kind]
-    routes = {
-        name: alternatives[0] if alternatives else []
-        for name, alternatives in route_alternatives.items()
-    }
-    choice_points = _mxt_nav_choice_points(nodes, edges, route_alternatives, nodes_by_id, route_outgoing)
-    diagnostic_routes = {
-        "reachable": _mxt_nav_reachable_trace(nodes, edges, start_node, "default", nodes_by_id, route_outgoing),
-    }
+    routes = {}
+    runtime_routes = {}
+    runtime_route_alternatives = {}
+    choice_points = []
+    diagnostic_routes = {}
+    if include_routes:
+        alternatives_by_kind = {}
+        for name, kind in route_kind_map.items():
+            if kind not in alternatives_by_kind:
+                seed_paths = route_alternatives.get("default", []) if kind == "safe" else None
+                alternatives_by_kind[kind] = _mxt_nav_route_alternatives(
+                    nodes, edges, start_node, finish_nodes, kind, 4, nodes_by_id, route_outgoing,
+                    seed_paths, start_nodes, 100.0
+                )
+            route_alternatives[name] = alternatives_by_kind[kind]
+        routes = {
+            name: alternatives[0] if alternatives else []
+            for name, alternatives in route_alternatives.items()
+        }
+        choice_points = _mxt_nav_choice_points(nodes, edges, route_alternatives, nodes_by_id, route_outgoing)
+        runtime_route_spacing_meters = 14.0
+        runtime_route_relax_iterations = 4
+        runtime_routes, runtime_route_alternatives = _mxt_nav_runtime_routes(
+            nodes_by_id, routes, route_alternatives, route_kind_map, choice_points,
+            runtime_route_spacing_meters, runtime_route_relax_iterations
+        )
+        diagnostic_routes = {
+            "reachable": _mxt_nav_reachable_trace(nodes, edges, start_node, "default", nodes_by_id, route_outgoing),
+        }
+    else:
+        runtime_route_spacing_meters = 14.0
+        runtime_route_relax_iterations = 4
     route_lengths = {name: len(path) for name, path in routes.items()}
     route_alternative_counts = {name: len(paths) for name, paths in route_alternatives.items()}
+    runtime_route_lengths = {name: len(points) for name, points in runtime_routes.items()}
     diagnostic_route_lengths = {name: len(path) for name, path in diagnostic_routes.items()}
 
     connected_nodes = set()
@@ -7418,6 +8045,8 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
             "transition_distance": float(transition_distance),
             "branch_distance": float(branch_distance),
             "mesh_sample_spacing_meters": float(mesh_spacing_meters),
+            "runtime_route_spacing_meters": float(runtime_route_spacing_meters),
+            "runtime_route_relax_iterations": int(runtime_route_relax_iterations),
         },
         "terrain_bits": MXT_NAV_TERRAIN_BITS,
         "node_flags": MXT_NAV_NODE_FLAGS,
@@ -7427,6 +8056,8 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
         "edges": edges,
         "routes": routes,
         "route_alternatives": route_alternatives,
+        "runtime_routes": runtime_routes,
+        "runtime_route_alternatives": runtime_route_alternatives,
         "choice_points": choice_points,
         "dash_targets": all_dash_targets,
         "diagnostic_routes": diagnostic_routes,
@@ -7445,6 +8076,7 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
             "finish_node_count": int(len(finish_nodes)),
             "route_lengths": route_lengths,
             "route_alternative_counts": route_alternative_counts,
+            "runtime_route_lengths": runtime_route_lengths,
             "choice_point_count": int(len(choice_points)),
             "diagnostic_route_lengths": diagnostic_route_lengths,
             "skipped_segments": skipped_segments,
@@ -7453,14 +8085,29 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
 
     global _MXT_NAV_DRAW_CACHE
     draw_edges = []
+    edge_entries = []
     for edge in edges:
-        a = nodes[int(edge["from"])]["position"]
-        b = nodes[int(edge["to"])]["position"]
-        draw_edges.append(Vector((a[0], a[1], a[2])))
-        draw_edges.append(Vector((b[0], b[1], b[2])))
+        from_node = nodes[int(edge["from"])]
+        to_node = nodes[int(edge["to"])]
+        a = from_node["position"]
+        b = to_node["position"]
+        edge_positions = [Vector((a[0], a[1], a[2])), Vector((b[0], b[1], b[2]))]
+        draw_edges.extend(edge_positions)
+        edge_entries.append({
+            "from_segment": from_node.get("segment_name", ""),
+            "to_segment": to_node.get("segment_name", ""),
+            "positions": edge_positions,
+        })
     route_positions = {}
-    for route_name, route_nodes in routes.items():
+    for route_name, route_points in runtime_routes.items():
         if route_name == "dash":
+            continue
+        route_positions[route_name] = [
+            Vector(tuple(point["position"]))
+            for point in route_points
+        ]
+    for route_name, route_nodes in routes.items():
+        if route_name == "dash" or route_name in route_positions:
             continue
         route_positions[route_name] = [
             Vector(tuple(nodes[int(node_id)]["position"]))
@@ -7468,16 +8115,15 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
             if 0 <= int(node_id) < len(nodes)
         ]
     route_alternative_positions = []
-    for route_name, alternatives in route_alternatives.items():
+    for route_name, alternatives in runtime_route_alternatives.items():
         if route_name == "dash":
             continue
-        for alt_index, route_nodes in enumerate(alternatives):
+        for alt_index, route_points in enumerate(alternatives):
             if alt_index == 0:
                 continue
             positions = [
-                Vector(tuple(nodes[int(node_id)]["position"]))
-                for node_id in route_nodes
-                if 0 <= int(node_id) < len(nodes)
+                Vector(tuple(point["position"]))
+                for point in route_points
             ]
             if len(positions) >= 2:
                 route_alternative_positions.append({
@@ -7485,6 +8131,24 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
                     "index": int(alt_index),
                     "positions": positions,
                 })
+    if not route_alternative_positions:
+        for route_name, alternatives in route_alternatives.items():
+            if route_name == "dash":
+                continue
+            for alt_index, route_nodes in enumerate(alternatives):
+                if alt_index == 0:
+                    continue
+                positions = [
+                    Vector(tuple(nodes[int(node_id)]["position"]))
+                    for node_id in route_nodes
+                    if 0 <= int(node_id) < len(nodes)
+                ]
+                if len(positions) >= 2:
+                    route_alternative_positions.append({
+                        "route": route_name,
+                        "index": int(alt_index),
+                        "positions": positions,
+                    })
     if not any(len(points) >= 2 for points in route_positions.values()):
         for route_name, route_nodes in diagnostic_routes.items():
             route_positions[route_name] = [
@@ -7494,7 +8158,15 @@ def _mxt_nav_generate(context, filepath, seg_order, seg_index):
             ]
     _MXT_NAV_DRAW_CACHE = {
         "node_positions": [Vector(tuple(node["position"])) for node in nodes],
+        "node_entries": [
+            {
+                "segment": node.get("segment_name", ""),
+                "position": Vector(tuple(node["position"])),
+            }
+            for node in nodes
+        ],
         "edge_positions": draw_edges,
+        "edge_entries": edge_entries,
         "route_positions": route_positions,
         "route_alternative_positions": route_alternative_positions,
         "mesh_node_positions": [Vector(tuple(nodes[node_id]["position"])) for node_id in mesh_node_ids],
@@ -7571,6 +8243,60 @@ def _mxt_bake_cpu_nav_preview(context):
     context.view_layer.update()
     seg_index = {s: i for i, s in enumerate(seg_order)}
     return _mxt_nav_generate(context, "", seg_order, seg_index)
+
+
+def _mxt_preview_cpu_nav_graph(context):
+    ts = context.scene.mxt_track_settings
+    first = ts.first_segment
+    if not first:
+        raise RuntimeError("First segment not set")
+    seg_order, visited = _mxt_track_reachable_segment_order(first)
+    with _mxt_profile_scope("nav_graph_preview_curvematrix_checkpoints"):
+        for seg in seg_order:
+            _bake_curve_matrix_direct(seg)
+            _generate_checkpoints_for_segment(seg)
+    for trig in ts.trigger_objects:
+        if trig.segment in visited:
+            _update_trigger_helper(trig)
+    context.view_layer.update()
+    seg_index = {s: i for i, s in enumerate(seg_order)}
+    return _mxt_nav_generate(context, "", seg_order, seg_index, include_routes=False)
+
+
+def _mxt_store_cpu_nav_bake(context, nav):
+    import base64
+    import json
+    import zlib
+
+    raw = json.dumps(nav, separators=(",", ":")).encode("utf-8")
+    packed = base64.b64encode(zlib.compress(raw, 6)).decode("ascii")
+    context.scene["mxt_cpu_nav_bake_zlib_b64"] = packed
+    context.scene["mxt_cpu_nav_bake_encoding"] = "json+zlib+base64"
+    context.scene["mxt_cpu_nav_bake_format_version"] = int(MXT_NAV_FORMAT_VERSION)
+    context.scene["mxt_cpu_nav_bake_byte_count"] = int(len(raw))
+    context.scene["mxt_cpu_nav_bake_packed_char_count"] = int(len(packed))
+    diag = nav.get("diagnostics", {})
+    context.scene["mxt_cpu_nav_bake_node_count"] = int(diag.get("node_count", 0))
+    context.scene["mxt_cpu_nav_bake_edge_count"] = int(diag.get("edge_count", 0))
+    context.scene["mxt_cpu_nav_bake_choice_count"] = int(diag.get("choice_point_count", 0))
+
+
+def _mxt_load_cpu_nav_bake(context):
+    import base64
+    import json
+    import zlib
+
+    packed = context.scene.get("mxt_cpu_nav_bake_zlib_b64", "")
+    if not packed:
+        return None
+    encoding = context.scene.get("mxt_cpu_nav_bake_encoding", "")
+    if encoding != "json+zlib+base64":
+        return None
+    raw = zlib.decompress(base64.b64decode(packed.encode("ascii")))
+    nav = json.loads(raw.decode("utf-8"))
+    if nav.get("format") != "mxt_nav":
+        return None
+    return nav
 
 
 def _export_stage(context, filepath):
@@ -7920,8 +8646,11 @@ def _export_stage(context, filepath):
 
     if getattr(ts, "export_cpu_nav", True):
         nav_path = base_path + ".mxt_nav"
-        with _mxt_profile_scope("export_cpu_nav"):
-            nav = _mxt_nav_generate(context, filepath, seg_order, seg_index)
+        nav = _mxt_load_cpu_nav_bake(context)
+        if nav is None:
+            with _mxt_profile_scope("export_cpu_nav"):
+                nav = _mxt_nav_generate(context, filepath, seg_order, seg_index)
+        nav["source_track"] = filepath
         with open(nav_path, "w", encoding="utf-8") as nf:
             json.dump(nav, nf, indent=2, separators=(",", ": "))
         metadata["cpu_nav"] = {
@@ -7930,6 +8659,7 @@ def _export_stage(context, filepath):
             "nodes": int(nav["diagnostics"]["node_count"]),
             "edges": int(nav["diagnostics"]["edge_count"]),
             "routes": {name: len(path) for name, path in nav["routes"].items()},
+            "runtime_routes": {name: len(path) for name, path in nav.get("runtime_routes", {}).items()},
             "route_alternatives": {name: len(paths) for name, paths in nav.get("route_alternatives", {}).items()},
             "choice_points": int(nav["diagnostics"].get("choice_point_count", 0)),
             "diagnostic_routes": {name: len(path) for name, path in nav.get("diagnostic_routes", {}).items()},
@@ -7940,8 +8670,34 @@ def _export_stage(context, filepath):
         json.dump(metadata, jf, indent=2)
 
 
+class MXTRoad_OT_PreviewCpuNavGraph(Operator):
+    """Build the CPU navigation graph overlay without generating full routes"""
+
+    bl_idname = "mxt_road.preview_cpu_nav_graph"
+    bl_label = "Preview CPU Nav Graph"
+    bl_options = {'REGISTER'}
+
+    @classmethod
+    def poll(cls, ctx):
+        ts = getattr(ctx.scene, "mxt_track_settings", None)
+        return ts and ts.first_segment is not None
+
+    def execute(self, context):
+        try:
+            nav = _mxt_preview_cpu_nav_graph(context)
+        except Exception as e:
+            self.report({'ERROR'}, f"CPU nav graph preview failed: {e}")
+            return {'CANCELLED'}
+        diag = nav.get("diagnostics", {})
+        self.report(
+            {'INFO'},
+            f"CPU nav graph preview: {diag.get('node_count', 0)} nodes, {diag.get('edge_count', 0)} edges"
+        )
+        return {'FINISHED'}
+
+
 class MXTRoad_OT_BakeCpuNav(Operator):
-    """Bake the CPU navigation graph into the viewport overlay without writing track files"""
+    """Bake the CPU navigation graph and routes into the viewport overlay and .blend"""
 
     bl_idname = "mxt_road.bake_cpu_nav"
     bl_label = "Bake CPU Nav"
@@ -7955,7 +8711,7 @@ class MXTRoad_OT_BakeCpuNav(Operator):
     def execute(self, context):
         try:
             nav = _mxt_bake_cpu_nav_preview(context)
-            context.scene.mxt_track_settings.draw_cpu_nav = True
+            _mxt_store_cpu_nav_bake(context, nav)
         except Exception as e:
             self.report({'ERROR'}, f"CPU nav bake failed: {e}")
             return {'CANCELLED'}
@@ -8042,6 +8798,7 @@ classes_to_register = (
     MXTRoad_OT_GenerateCurveMatrix,
     MXTRoad_OT_GenerateMesh,
     MXTRoad_OT_GenerateCheckpoints,
+    MXTRoad_OT_PreviewCpuNavGraph,
     MXTRoad_OT_BakeCpuNav,
     MXTRoad_OT_ExportTrack,
 )

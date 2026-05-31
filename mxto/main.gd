@@ -78,6 +78,31 @@ const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
+const SPATIAL_AUDIO_SFX := {
+	&"air_1": "res://sfx/vehicle/air_1.wav",
+	&"air_2": "res://sfx/vehicle/air_2.wav",
+	&"air_3": "res://sfx/vehicle/air_3.wav",
+	&"boom": "res://sfx/vehicle/boom.wav",
+	&"brake": "res://sfx/vehicle/brake.wav",
+	&"dash_plate": "res://sfx/vehicle/dash_plate.wav",
+	&"drift_fire": "res://sfx/vehicle/drift_fire.wav",
+	&"engine": "res://sfx/vehicle/engine.wav",
+	&"landing": "res://sfx/vehicle/landing.wav",
+	&"mine": "res://sfx/vehicle/mine.wav",
+	&"restore": "res://sfx/vehicle/restore.wav",
+	&"sideattack": "res://sfx/vehicle/sideattack.wav",
+	&"strafe": "res://sfx/vehicle/strafe.wav",
+	&"terrain_dirt": "res://sfx/vehicle/terrain_dirt.wav",
+	&"terrain_lava": "res://sfx/vehicle/terrain_lava.wav",
+	&"thrust_on": "res://sfx/vehicle/thrust_on.wav",
+	&"ufo": "res://sfx/vehicle/ufo.wav",
+	&"announcer_boost_power": "res://sfx/announcer/boost_power.wav",
+	&"announcer_final_lap": "res://sfx/announcer/final_lap.wav",
+	&"announcer_go": "res://sfx/announcer/go.wav",
+	&"announcer_one": "res://sfx/announcer/one.wav",
+	&"announcer_three": "res://sfx/announcer/three.wav",
+	&"announcer_two": "res://sfx/announcer/two.wav",
+}
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -89,6 +114,7 @@ var headless_mode: bool = false
 var trigger_objects: Array = []
 var track_visual_scene_instance: Node
 var spectator_node: Node3D
+var spatial_audio: Node
 var local_elimination_spectator_active := false
 const TRIGGER_SCENES = {
 			 0: preload("res://asset/obj_dashplate.tscn"),
@@ -283,6 +309,7 @@ func _ready() -> void:
 	car_render_manager = CarRenderManagerClass.new()
 	car_render_manager.name = "CarRenderManager"
 	$GameWorld.add_child(car_render_manager)
+	_setup_spatial_audio()
 	race_results_overlay = RaceResultsOverlayScene.instantiate() as RaceResultsOverlay
 	add_child(race_results_overlay)
 	lobby_chibi_render_manager = CarRenderManagerClass.new()
@@ -339,6 +366,7 @@ func _ready() -> void:
 	launch_cpu_driver_count = _parse_cpu_driver_count_arg(args)
 	if launch_cpu_driver_count < 0:
 		launch_cpu_driver_count = _parse_cpu_driver_count_arg(user_args)
+
 	if launch_cpu_driver_count >= 0:
 		singleplayer_cpu_count = launch_cpu_driver_count
 		if cpu_slider != null:
@@ -427,6 +455,34 @@ func _ready() -> void:
 		join_timer.start()
 		$Control.visible = false
 		lobby_control.visible = true
+
+func _setup_spatial_audio() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if spatial_audio != null or !ClassDB.class_exists("MxtSpatialAudioManager"):
+		return
+	var audio_node := ClassDB.instantiate("MxtSpatialAudioManager") as Node
+	if audio_node == null:
+		return
+	audio_node.name = "SpatialAudioManager"
+	$GameWorld.add_child(audio_node)
+	spatial_audio = audio_node
+	spatial_audio.call("configure", 30, 16, 16, 8)
+	spatial_audio.call("set_reassignment_fade_seconds", 0.05)
+	for sfx_id in SPATIAL_AUDIO_SFX.keys():
+		spatial_audio.call("register_sfx", sfx_id, SPATIAL_AUDIO_SFX[sfx_id])
+	if game_sim != null and game_sim.has_method("set_spatial_audio_manager"):
+		game_sim.call("set_spatial_audio_manager", spatial_audio)
+
+func _play_vehicle_oneshot_sfx(car_index: int, sfx_id: StringName, volume_db: float = 0.0, pitch_scale: float = 1.0) -> bool:
+	if game_sim == null or !game_sim.has_method("play_car_oneshot_sfx"):
+		return false
+	return bool(game_sim.call("play_car_oneshot_sfx", car_index, sfx_id, volume_db, pitch_scale))
+
+func _play_world_oneshot_sfx(position: Vector3, sfx_id: StringName, volume_db: float = 0.0, pitch_scale: float = 1.0) -> bool:
+	if game_sim == null or !game_sim.has_method("play_world_oneshot_sfx"):
+		return false
+	return bool(game_sim.call("play_world_oneshot_sfx", position, sfx_id, volume_db, pitch_scale))
 
 func _parse_cpu_driver_count_arg(args: Array) -> int:
 	var cpu_idx := args.find("-cpu-drivers")

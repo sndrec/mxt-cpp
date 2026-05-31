@@ -9,6 +9,7 @@
 #include "godot_cpp/core/math.hpp"
 #include "mxt_core/curve.h"
 #include "mxt_core/enums.h"
+#include "mxt_core/spatial_audio_manager.h"
 #include "track/racetrack.h"
 #include "track/trigger_collider.h"
 #include "track/road_modulation.h"
@@ -1956,9 +1957,15 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_car_render_manager", "p_car_render_manager"), &GameSim::set_car_render_manager);
 	ClassDB::bind_method(D_METHOD("set_gameplay_camera", "p_camera", "player_id"), &GameSim::set_gameplay_camera);
 	ClassDB::bind_method(D_METHOD("set_render_camera", "p_camera"), &GameSim::set_render_camera);
+	ClassDB::bind_method(D_METHOD("set_spatial_audio_manager", "p_manager"), &GameSim::set_spatial_audio_manager);
+	ClassDB::bind_method(D_METHOD("get_spatial_audio_manager"), &GameSim::get_spatial_audio_manager);
+	ClassDB::bind_method(D_METHOD("play_car_oneshot_sfx", "car_index", "sfx_id", "volume_db", "pitch_scale"), &GameSim::play_car_oneshot_sfx, DEFVAL(0.0), DEFVAL(1.0));
+	ClassDB::bind_method(D_METHOD("play_player_oneshot_sfx", "player_id", "sfx_id", "volume_db", "pitch_scale"), &GameSim::play_player_oneshot_sfx, DEFVAL(0.0), DEFVAL(1.0));
+	ClassDB::bind_method(D_METHOD("play_world_oneshot_sfx", "position", "sfx_id", "volume_db", "pitch_scale"), &GameSim::play_world_oneshot_sfx, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("tick_singleplayer", "local_player_id", "local_input"), &GameSim::tick_singleplayer);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spatial_audio_manager", PROPERTY_HINT_NODE_TYPE, "MxtSpatialAudioManager"), "set_spatial_audio_manager", "get_spatial_audio_manager");
 };
 
 GameSim::GameSim()
@@ -2822,6 +2829,10 @@ void GameSim::ensure_vehicle_tick_soa_capacity(int capacity)
 void GameSim::set_sim_started(const bool p_sim_started)
 {
 	sim_started = p_sim_started;
+	spatial_audio_last_update_frame = UINT64_MAX;
+	if (!sim_started && spatial_audio_manager) {
+		spatial_audio_manager->clear_all();
+	}
 }
 
 bool GameSim::get_sim_started()
@@ -6618,12 +6629,52 @@ void GameSim::render_gamesim_visuals_only(double process_delta)
 		profile_step = now;
 	}
 	update_native_gameplay_camera(false);
+	update_spatial_audio(effect_delta);
 	if (render_profile_enabled) {
 		const uint64_t now = render_profile_now_us();
 		render_profile_visuals_only_camera_us += now - profile_step;
 		render_profile_visuals_only_total_us += now - profile_start;
 		render_profile_visuals_only_frames += 1;
 	}
+}
+
+void GameSim::update_spatial_audio(double delta)
+{
+	if (!spatial_audio_manager || !sim_started || !cars) {
+		return;
+	}
+	Engine* engine = Engine::get_singleton();
+	const uint64_t process_frame = engine ? engine->get_process_frames() : 0;
+	if (spatial_audio_last_update_frame == process_frame) {
+		return;
+	}
+	spatial_audio_last_update_frame = process_frame;
+	spatial_audio_manager->update_from_gamesim(this, gameplay_camera_player_id, delta);
+}
+
+bool GameSim::play_car_oneshot_sfx(int car_index, const godot::StringName& sfx_id, double volume_db, double pitch_scale)
+{
+	if (!spatial_audio_manager || car_index < 0) {
+		return false;
+	}
+	return spatial_audio_manager->play_vehicle_oneshot(car_index, sfx_id, volume_db, pitch_scale);
+}
+
+bool GameSim::play_player_oneshot_sfx(int player_id, const godot::StringName& sfx_id, double volume_db, double pitch_scale)
+{
+	const int car_index = find_car_index_for_player(player_id);
+	if (car_index < 0) {
+		return false;
+	}
+	return play_car_oneshot_sfx(car_index, sfx_id, volume_db, pitch_scale);
+}
+
+bool GameSim::play_world_oneshot_sfx(const godot::Vector3& position, const godot::StringName& sfx_id, double volume_db, double pitch_scale)
+{
+	if (!spatial_audio_manager) {
+		return false;
+	}
+	return spatial_audio_manager->play_world_oneshot(position, sfx_id, volume_db, pitch_scale);
 }
 
 void GameSim::set_player_metadata(godot::Array player_ids, godot::Array cpu_flags)
@@ -7018,6 +7069,7 @@ void GameSim::update_super_spark_visuals()
 			profile_step = now;
 		}
 		update_native_gameplay_camera(true);
+		update_spatial_audio(1.0 / 60.0);
 		if (render_profile_enabled) {
 			const uint64_t now = render_profile_now_us();
 			render_profile_camera_us += now - profile_step;
