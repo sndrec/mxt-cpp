@@ -113,6 +113,7 @@ private:
 	Ref<AudioStream> active_music_intro;
 	Ref<AudioStream> active_music_loop;
 	StringName audio_bus = StringName("Master");
+	StringName remote_vehicle_audio_bus;
 	StringName music_bus = StringName("Master");
 	StringName announcer_bus = StringName("Master");
 	float reassignment_fade_seconds = 0.05f;
@@ -143,6 +144,10 @@ private:
 	void refresh_playback(Emitter& emitter);
 	void prune_stopped_streams(Emitter& emitter);
 	void apply_emitter_attenuation(Emitter& emitter, bool local_vehicle);
+	void apply_emitter_bus(Emitter& emitter);
+	bool is_local_vehicle_emitter(const Emitter& emitter) const;
+	StringName bus_for_emitter(const Emitter& emitter) const;
+	float effective_emitter_volume_db(const Emitter& emitter, float volume_db) const;
 	void stop_all_streams(Emitter& emitter);
 	int find_loop_stream(const Emitter& emitter, const StringName& key) const;
 	bool set_loop_on_emitter(Emitter& emitter, const StringName& key, const StringName& sfx_id, float volume_db, float pitch_scale);
@@ -182,6 +187,8 @@ public:
 	void clear_sfx();
 	void set_audio_bus(const StringName& bus);
 	StringName get_audio_bus() const { return audio_bus; }
+	void set_remote_vehicle_audio_bus(const StringName& bus);
+	StringName get_remote_vehicle_audio_bus() const { return remote_vehicle_audio_bus == StringName() ? audio_bus : remote_vehicle_audio_bus; }
 	void set_music_bus(const StringName& bus);
 	StringName get_music_bus() const { return music_bus; }
 	void set_announcer_bus(const StringName& bus);

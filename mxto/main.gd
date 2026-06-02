@@ -114,7 +114,6 @@ const SPATIAL_AUDIO_SFX := {
 	&"landing_b10": "res://sfx/vehicle/landing_b10.wav",
 	&"spinattack": "res://sfx/vehicle/spinattack.wav",
 	&"mine": "res://sfx/vehicle/mine.wav",
-	&"race_start": "res://sfx/vehicle/race_start.wav",
 	&"sideattack": "res://sfx/vehicle/sideattack.wav",
 	&"strafe": "res://sfx/vehicle/strafe.wav",
 	&"suspension_contact": "res://sfx/vehicle/suspension_contact.wav",
@@ -507,6 +506,7 @@ func _setup_spatial_audio() -> void:
 	spatial_audio = audio_node
 	spatial_audio.call("configure", 30, 16, 16, 8)
 	spatial_audio.call("set_audio_bus", &"SFX")
+	spatial_audio.call("set_remote_vehicle_audio_bus", &"RemoteVehicleSFX")
 	spatial_audio.call("set_music_bus", &"Music")
 	spatial_audio.call("set_announcer_bus", &"Announcer")
 	spatial_audio.call("set_reassignment_fade_seconds", 0.05)

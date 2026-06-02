@@ -466,14 +466,14 @@ Current MaxX:
 - Plays `spinattack` on `SPINATTACKING` rising edge.
 - Plays `sideattack` on `SIDEATTACKING` rising edge.
 - Plays `zero_hp` on `ZEROHP` rising edge when not `B10`.
-- Plays `race_start` while `RACEJUSTBEGAN_Q` is set.
+- Does not play/register `race_start`; current `race_start.wav` is an explosion
+  sample and is considered wrong/unmapped.
+- Plays `active_start` on `ACTIVE` rising edge.
 - Plays `thrust_on` on `JUSTTAPPEDACCEL` rising edge unless race-start is active.
 
 Risks:
 
-- Race-start is currently checked as level rather than rising edge. GX code plays
-  while the bit is observed inside this per-tick function, but the source bit may
-  itself be a one-frame flag.
+- GX `0xa9091300` race-start sample still needs a correct extraction/mapping.
 - `0xa9091c00` appears in several stop/clear paths and should not be guessed as
   a normal user-facing sample until decoded.
 
@@ -616,6 +616,16 @@ Current MaxX:
 
 - Energy restore loop ramps with the existing pitstop volume behavior plus
   `+8 dB` final gain.
+- Every stream played by the local player's vehicle emitter gets an additional
+  `+8 dB` effective gain at playback time. This applies to vehicle loops and
+  one-shots without changing the stored per-sound base volumes or remote vehicle
+  emitters.
+- Non-local vehicle emitters route to `RemoteVehicleSFX`, which sends into `SFX`
+  and defaults to `-12 dB`. Local vehicle and world SFX continue to use the normal
+  `SFX` bus.
+- `active_start` remains enabled on `ACTIVE` rising. `race_start` is not
+  registered or played because the current `race_start.wav` is wrong. `thrust_on`
+  is suppressed while the race-start flag is active.
 
 ## Dash Plate, Jump Plate, Mine, Terrain
 
