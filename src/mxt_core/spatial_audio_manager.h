@@ -86,10 +86,10 @@ private:
 		uint32_t previous_manual_boost_tick = 0;
 		uint32_t previous_last_hit_tick = 0;
 		uint8_t gx_engine_speed_control = 0;
-		uint8_t gx_suspension_contact_control = 0;
+		uint8_t gx_drift_contact_control = 0;
 		bool previous_manual_boost_initialized = false;
 		bool previous_last_hit_initialized = false;
-		bool previous_suspension_contact_active = false;
+		bool previous_drift_contact_active = false;
 		bool previous_strafe_roll_active = false;
 		bool event_state_initialized = false;
 		bool gx_engine_speed_initialized = false;

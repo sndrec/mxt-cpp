@@ -136,15 +136,14 @@ static bool mxt_audio_is_loop_sfx(const StringName& id)
 	static const StringName air_1("air_1");
 	static const StringName brake("brake");
 	static const StringName energy_restore("energy_restore");
-	static const StringName engine("engine");
 	static const StringName strafe("strafe");
-	static const StringName suspension_contact_loop("suspension_contact_loop");
+	static const StringName drift_loop("drift_loop");
 	static const StringName terrain_dirt("terrain_dirt");
 	static const StringName terrain_lava("terrain_lava");
 	static const StringName terrain_lava_secondary("terrain_lava_secondary");
 
 	if (id == air_0 || id == air_1 || id == brake || id == energy_restore ||
-		id == engine || id == strafe || id == suspension_contact_loop ||
+		id == strafe || id == drift_loop ||
 		id == terrain_dirt || id == terrain_lava || id == terrain_lava_secondary) {
 		return true;
 	}
@@ -187,30 +186,88 @@ static float mxt_audio_gx_terrain_pitch(uint8_t speed_control)
 	return 0.65f + control * 0.85f;
 }
 
-static float mxt_audio_gx_suspension_contact_pitch(uint8_t pitch_control)
+static float mxt_audio_gx_drift_contact_pitch(uint8_t pitch_control)
 {
 	static constexpr MxtMusyxPitchRatioPoint pitch_curve[1] = { { 0x7f, 0x0b52, 0x01c4 } };
 	return mxt_audio_eval_musyx_pitch_ratio(pitch_control, 0u, pitch_curve, 1);
 }
 
-static float mxt_audio_gx_suspension_contact_volume_db(uint8_t contact_control)
+static float mxt_audio_gx_drift_contact_volume_db(uint8_t volume_control)
 {
 	static constexpr MxtMusyxCurvePoint volume_curve[1] = { { 0x7f, 0x40, 0x0000 } };
-	const int musyx_volume = mxt_audio_eval_musyx_curve(contact_control, 0u, volume_curve, 1);
+	const int musyx_volume = mxt_audio_eval_musyx_curve(volume_control, 0u, volume_curve, 1);
 	return mxt_audio_musyx_volume_to_db(musyx_volume, -7.0f);
 }
 
-static uint8_t mxt_audio_gx_suspension_contact_count(const PhysicsCarSoA& soa, int lane)
+static uint8_t mxt_audio_gx_drift_contact_count(const PhysicsCarSoA& soa, int lane)
 {
 	uint8_t contact_count = 0;
 	const int base = lane * 4;
 	for (int corner = 0; corner < 4; ++corner) {
 		const uint32_t state = soa.tilt_state[base + corner];
-		if ((state & (TILTSTATE::AIRBORNE | TILTSTATE::DISCONNECTED)) == 0u) {
+		if ((state & TILTSTATE::DRIFT) != 0u) {
 			++contact_count;
 		}
 	}
 	return contact_count;
+}
+
+static uint8_t mxt_audio_gx_drift_target_control(const PhysicsCarSoA& soa, int lane)
+{
+	const float forward_x = -soa.basis_physical_c2x[lane];
+	const float forward_y = -soa.basis_physical_c2y[lane];
+	const float forward_z = -soa.basis_physical_c2z[lane];
+	float normal_x = soa.track_surface_normal_x[lane];
+	float normal_y = soa.track_surface_normal_y[lane];
+	float normal_z = soa.track_surface_normal_z[lane];
+	float normal_len_sq = normal_x * normal_x + normal_y * normal_y + normal_z * normal_z;
+	if (normal_len_sq <= 0.000001f) {
+		normal_x = soa.basis_physical_c1x[lane];
+		normal_y = soa.basis_physical_c1y[lane];
+		normal_z = soa.basis_physical_c1z[lane];
+		normal_len_sq = normal_x * normal_x + normal_y * normal_y + normal_z * normal_z;
+		if (normal_len_sq <= 0.000001f) {
+			return 0;
+		}
+	}
+
+	const float normal_inv_len = 1.0f / std::sqrt(normal_len_sq);
+	normal_x *= normal_inv_len;
+	normal_y *= normal_inv_len;
+	normal_z *= normal_inv_len;
+
+	float lateral_x = -(forward_y * normal_z - forward_z * normal_y);
+	float lateral_y = -(forward_z * normal_x - forward_x * normal_z);
+	float lateral_z = -(forward_x * normal_y - forward_y * normal_x);
+	const float lateral_len_sq = lateral_x * lateral_x + lateral_y * lateral_y + lateral_z * lateral_z;
+	if (lateral_len_sq <= 0.000001f) {
+		return 0;
+	}
+	const float lateral_inv_len = 1.0f / std::sqrt(lateral_len_sq);
+	lateral_x *= lateral_inv_len;
+	lateral_y *= lateral_inv_len;
+	lateral_z *= lateral_inv_len;
+
+	float control_sum = 0.0f;
+	const int base = lane * 4;
+	for (int corner = 0; corner < 4; ++corner) {
+		const int point = base + corner;
+		if ((soa.tilt_state[point] & TILTSTATE::DRIFT) == 0u) {
+			continue;
+		}
+		const float delta_x = soa.tilt_pos_x[point] - soa.tilt_pos_old_x[point];
+		const float delta_y = soa.tilt_pos_y[point] - soa.tilt_pos_old_y[point];
+		const float delta_z = soa.tilt_pos_z[point] - soa.tilt_pos_old_z[point];
+		const float lateral_delta = delta_x * lateral_x + delta_y * lateral_y + delta_z * lateral_z;
+		const bool positive_side_corner = corner == 0 || corner == 2;
+		const float same_side_delta = positive_side_corner ? lateral_delta : -lateral_delta;
+		if (same_side_delta > 1.0f) {
+			control_sum += std::min(same_side_delta - 1.0f, 1.0f);
+		}
+	}
+
+	const float drift_intensity = 0.5f * control_sum;
+	return static_cast<uint8_t>(mxt_audio_clamp_float(127.0f * drift_intensity, 0.0f, 127.0f));
 }
 
 static uint8_t mxt_audio_gx_air_tilt_control(float air_tilt)
@@ -261,12 +318,11 @@ static const MxtGxEngineProgram& mxt_audio_select_gx_engine_program(float stat_w
 		}
 	};
 	static constexpr MxtGxEngineProgram heavy_program = {
-		4,
+		3,
 		{
 			{ 250, 2, { { 0x21, 0x14, 0x00cb }, { 0x7f, 0x2f, 0x0008 } }, 1, { { 0x7f, 0x0c12, 0x050a } }, -13.0f },
 			{ 251, 2, { { 0x15, 0x32, -267 }, { 0x7f, 0x1b, 0x0050 } }, 1, { { 0x7f, 0x09e0, 0x050a } }, -13.0f },
 			{ 188, 2, { { 0x0e, 0x00, 0x02aa }, { 0x7f, 0x28, 0x0016 } }, 1, { { 0x7f, 0x0a92, 0x03c8 } }, -13.0f },
-			{ 191, 3, { { 0x50, 0x00, 0x0019 }, { 0x5a, 0x08, 0x024c }, { 0x7f, 0x1f, 0x00ce } }, 1, { { 0x7f, 0x0cb2, 0x0143 } }, -13.0f },
 		}
 	};
 	static constexpr float gx_engine_mid_weight_threshold_kg = 1400.0f;
@@ -289,7 +345,6 @@ static const StringName& mxt_audio_gx_engine_sfx_id(int sample_id)
 	static const StringName gx_engine_188("gx_engine_188");
 	static const StringName gx_engine_189("gx_engine_189");
 	static const StringName gx_engine_190("gx_engine_190");
-	static const StringName gx_engine_191("gx_engine_191");
 	static const StringName gx_engine_236("gx_engine_236");
 	static const StringName gx_engine_237("gx_engine_237");
 	static const StringName gx_engine_240("gx_engine_240");
@@ -302,7 +357,6 @@ static const StringName& mxt_audio_gx_engine_sfx_id(int sample_id)
 		case 188: return gx_engine_188;
 		case 189: return gx_engine_189;
 		case 190: return gx_engine_190;
-		case 191: return gx_engine_191;
 		case 236: return gx_engine_236;
 		case 237: return gx_engine_237;
 		case 240: return gx_engine_240;
@@ -960,11 +1014,9 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	static const StringName air_sfx[2] = { StringName("air_0"), StringName("air_1") };
 	static const StringName brake_key("brake");
 	static const StringName brake_sfx("brake");
-	static const StringName engine_key("engine");
-	static const StringName engine_sfx("engine");
-	static const StringName suspension_contact_key("suspension_contact");
 	static const StringName suspension_contact_sfx("suspension_contact");
-	static const StringName suspension_contact_loop_sfx("suspension_contact_loop");
+	static const StringName drift_loop_key("drift_loop");
+	static const StringName drift_loop_sfx("drift_loop");
 	static const StringName terrain_dirt_key("terrain_dirt");
 	static const StringName terrain_lava_key("terrain_lava");
 	static const StringName terrain_lava_secondary_key("terrain_lava_secondary");
@@ -1051,8 +1103,8 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		const uint32_t terrain_state = soa.terrain_state[lane];
 		const bool car_audible =
 			(machine_state & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::RETIRED)) == 0u;
-		const uint8_t suspension_contact_count = mxt_audio_gx_suspension_contact_count(soa, lane);
-		const bool suspension_contact_active = car_audible && suspension_contact_count != 0u;
+		const uint8_t drift_contact_count = mxt_audio_gx_drift_contact_count(soa, lane);
+		const bool drift_contact_active = car_audible && drift_contact_count != 0u;
 
 		if (step_events) {
 			if (!loop_state.event_state_initialized) {
@@ -1062,7 +1114,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
 				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
-				loop_state.previous_suspension_contact_active = suspension_contact_active;
+				loop_state.previous_drift_contact_active = drift_contact_active;
 				loop_state.previous_strafe_roll_active = false;
 				loop_state.event_state_initialized = true;
 			} else {
@@ -1098,7 +1150,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 						play_on_emitter(emitter, vehicle_manual_boost_sfx[boost_sfx_index], -5.0f, 1.0f);
 					}
 				}
-				if (suspension_contact_active && !loop_state.previous_suspension_contact_active) {
+				if (drift_contact_active && !loop_state.previous_drift_contact_active) {
 					play_on_emitter(emitter, suspension_contact_sfx, 0.0f, 1.0f);
 				}
 				if (car_audible && (rising_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u) {
@@ -1131,7 +1183,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
 				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
-				loop_state.previous_suspension_contact_active = suspension_contact_active;
+				loop_state.previous_drift_contact_active = drift_contact_active;
 			}
 		}
 
@@ -1161,30 +1213,25 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			stop_loop_on_emitter(emitter, brake_key);
 		}
 
-		if (suspension_contact_active) {
-			uint8_t contact_target_control = mxt_audio_gx_engine_speed_control(soa.speed_kmh[lane]);
-			if (contact_target_control == 0u) {
-				contact_target_control = 1u;
-			}
-			loop_state.gx_suspension_contact_control =
-				mxt_audio_step_gx_control(loop_state.gx_suspension_contact_control, contact_target_control, 1u);
-			const uint8_t contact_control = loop_state.gx_suspension_contact_control;
-			const uint8_t contact_pitch_control = static_cast<uint8_t>(
-				std::min(127u, static_cast<uint32_t>(contact_target_control) + 0x32u));
-			const float contact_volume_db = mxt_audio_gx_suspension_contact_volume_db(contact_control);
-			const float contact_pitch = clamped_pitch(mxt_audio_gx_suspension_contact_pitch(contact_pitch_control));
-			set_loop_on_emitter(emitter, suspension_contact_key, suspension_contact_loop_sfx, contact_volume_db, contact_pitch);
+		if (drift_contact_active) {
+			uint8_t contact_target_control = mxt_audio_gx_drift_target_control(soa, lane);
+			loop_state.gx_drift_contact_control =
+				mxt_audio_step_gx_control(loop_state.gx_drift_contact_control, contact_target_control, 1u);
+			const uint8_t contact_control = loop_state.gx_drift_contact_control;
+			const uint8_t volume_control = 0x7f;
+			const float contact_volume_db = mxt_audio_gx_drift_contact_volume_db(volume_control);
+			const float contact_pitch = clamped_pitch(mxt_audio_gx_drift_contact_pitch(contact_control));
+			set_loop_on_emitter(emitter, drift_loop_key, drift_loop_sfx, contact_volume_db, contact_pitch);
 		} else {
-			loop_state.gx_suspension_contact_control = 0;
-			if (find_loop_stream(emitter, suspension_contact_key) >= 0) {
-				stop_loop_on_emitter(emitter, suspension_contact_key);
+			loop_state.gx_drift_contact_control = 0;
+			if (find_loop_stream(emitter, drift_loop_key) >= 0) {
+				stop_loop_on_emitter(emitter, drift_loop_key);
 			}
 		}
 
 		const bool engine_active =
 			car_audible &&
-			(machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0u &&
-			soa.speed_kmh[lane] > 4.0f;
+			(machine_state & MACHINESTATE::STARTINGCOUNTDOWN) == 0u;
 		const uint8_t engine_target_speed_control = mxt_audio_gx_engine_speed_control(soa.speed_kmh[lane]);
 		if (!loop_state.gx_engine_speed_initialized) {
 			loop_state.gx_engine_speed_control = engine_target_speed_control;
@@ -1195,9 +1242,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		}
 		const uint8_t engine_speed_control = loop_state.gx_engine_speed_control;
 		if (engine_active) {
-			if (find_loop_stream(emitter, engine_key) >= 0) {
-				stop_loop_on_emitter(emitter, engine_key);
-			}
 			const MxtGxEngineProgram& engine_program = mxt_audio_select_gx_engine_program(soa.stat_weight[lane]);
 			for (uint8_t tone_index = 0; tone_index < 5; ++tone_index) {
 				if (tone_index < engine_program.tone_count) {
@@ -1210,13 +1254,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 						continue;
 					}
 				}
-				if (find_loop_stream(emitter, gx_engine_keys[tone_index]) >= 0) {
-					stop_loop_on_emitter(emitter, gx_engine_keys[tone_index]);
-				}
-			}
-		} else if (find_loop_stream(emitter, engine_key) >= 0) {
-			stop_loop_on_emitter(emitter, engine_key);
-			for (uint8_t tone_index = 0; tone_index < 5; ++tone_index) {
 				if (find_loop_stream(emitter, gx_engine_keys[tone_index]) >= 0) {
 					stop_loop_on_emitter(emitter, gx_engine_keys[tone_index]);
 				}
@@ -1320,7 +1357,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				String(" air="), gx_air_enabled,
 				String(" strafe="), strafe_roll_active,
 				String(" brake="), brake_scrub_active,
-				String(" contact="), suspension_contact_active,
+				String(" drift_contact="), drift_contact_active,
 				String(" loops="), loop_text);
 			++debug_status_printed;
 		}
