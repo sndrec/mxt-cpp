@@ -85,7 +85,6 @@ const SPATIAL_AUDIO_BOOST_PACK1_IDS := [
 	140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
 	150, 219, 220, 221, 222, 223, 244, 247,
 ]
-const SPATIAL_AUDIO_DEBUG_LOOPS := true
 const SPATIAL_AUDIO_SFX := {
 	&"active_start": "res://sfx/vehicle/active_start.wav",
 	&"air_0": "res://sfx/vehicle/air_0.wav",
@@ -512,8 +511,6 @@ func _setup_spatial_audio() -> void:
 	spatial_audio.call("set_announcer_bus", &"Announcer")
 	spatial_audio.call("set_reassignment_fade_seconds", 0.05)
 	spatial_audio.call("set_max_announcer_queue", 16)
-	if spatial_audio.has_method("set_vehicle_loop_debug_enabled"):
-		spatial_audio.call("set_vehicle_loop_debug_enabled", SPATIAL_AUDIO_DEBUG_LOOPS)
 	for sfx_id in SPATIAL_AUDIO_SFX.keys():
 		spatial_audio.call("register_sfx", sfx_id, SPATIAL_AUDIO_SFX[sfx_id])
 	for pack1_id in SPATIAL_AUDIO_BOOST_PACK1_IDS:

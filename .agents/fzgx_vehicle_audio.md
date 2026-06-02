@@ -330,6 +330,7 @@ Current MaxX:
 - Sends the ramped control to pitch/speed, and sends a full local volume control
   to volume. This fixes an earlier MaxX mistake where the `+0x32`-style volume
   behavior was effectively applied to pitch instead.
+- Applies a current MaxX mix gain of `+2 dB` on the drift/contact loop.
 - `PACK1-191.wav` has been removed from the heavy-engine table so it only plays
   through this drift/contact layer.
 
@@ -521,12 +522,18 @@ Primary sources:
 - Finds active slot for entrant.
 - Requires slot attenuation byte nonzero.
 - Ignores machines with state bit `0x800`.
-- Scales input strength by `FLOAT_80307a4c` (`0.25f`), clamps it, and chooses one of:
+- Scales input strength by `FLOAT_80307a4c` (`0.25f`), clamps to
+  `FLOAT_8030798c` (`1.0f`), and chooses one of:
   - `0xa9090000`
+    - `strength < FLOAT_80307a50` (`0.125f`)
   - `0xa9090200`
+    - `strength < FLOAT_80307a54` (`0.4f`)
   - `0xa9090500`
+    - `strength < FLOAT_80307a58` (`0.75f`)
   - `0xa9090600`
 - Prior verified extraction names describe these as collision tiers.
+- Because MaxX stores the raw value before the GX `0.25f` scale, the effective
+  raw tier breakpoints are `0.5`, `1.6`, and `3.0`.
 
 `FUN_802494a4`:
 
@@ -543,6 +550,7 @@ Primary sources:
 Current MaxX:
 
 - Uses `last_hit_tick` and `last_hit_sfx_strength` to select four collision samples.
+- Applies the GX strength scale and thresholds above before choosing the sample.
 - Plays `collision_light_secondary` additionally for tier 0.
 - This is an approximation; GX has more state-specific collision/damage events
   than the current four-tier mapping.
@@ -559,7 +567,7 @@ Current MaxX:
 
 - Dash plate:
   - Plays `dash_plate_secondary` and `dash_plate` on `JUST_HIT_DASHPLATE` rising
-    edge, both at `-5 dB`.
+    edge, both at `-3 dB`.
   - `dash_plate.wav` is confirmed.
 - Jump plate:
   - Plays `jump_plate` on rising `TERRAIN::JUMP` if speed > `850 km/h`.
@@ -582,7 +590,7 @@ Current MaxX:
 - Plays `energy_restore` while `TERRAIN::RECHARGE` is active and fades/ramp-stops
   after leaving the strip.
 - Pitch ramps from `pitstop_time`.
-- Final volume is currently `energy_volume_base + 15 dB`.
+- Final volume is currently `energy_volume_base` with no extra gain.
 
 User instruction:
 
@@ -603,14 +611,19 @@ Architecture:
 - `MxtSpatialAudioManager` owns vehicle and world emitters.
 - One-shots use each emitter's `AudioStreamPlayer3D` with
   `AudioStreamPolyphonic`.
-- Loops use dedicated child `AudioStreamPlayer3D` instances stored as
-  `LoopStream`, keyed by logical loop id.
+- Loops use the same emitter `AudioStreamPolyphonic` playback as one-shots.
+  `LoopStream` stores the logical key and active polyphonic stream id.
 - Loop metadata is not mutated in C++; streams are played as imported Godot audio
   resources. This fixed the previously inaudible loop bug.
 - `mxto/main.gd` registers SFX resources and assigns per-vehicle manual boost
-  SFX from `CarDefinition.manual_boost_sfx`.
+  SFX from `CarDefinition.manual_boost_sfx`; manual boost one-shots currently
+  play at `-3 dB`.
 - Local player has an `AudioListener3D` on the vehicle so local vehicle SFX do not
   vary with chase camera distance.
+- Vehicle emitter slot `0` is reserved for the local car. The remaining 29
+  vehicle emitters stay assigned to remote cars until an unassigned remote car is
+  closer to the local car than the furthest currently assigned remote car; that
+  furthest assigned emitter is the one reassigned.
 
 Important current MaxX SFX registrations:
 

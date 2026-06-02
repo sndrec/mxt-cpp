@@ -98,7 +98,6 @@ private:
 	std::vector<Emitter> world_emitters;
 	std::vector<SfxEntry> sfx_entries;
 	std::vector<VehicleCandidate> vehicle_candidates;
-	std::vector<int> vehicle_candidate_slots;
 	std::vector<VehicleLoopState> vehicle_loop_states;
 	std::vector<StringName> vehicle_manual_boost_sfx;
 	std::vector<float> final_lap_music_timestamps;
@@ -127,13 +126,10 @@ private:
 	int world_polyphony = 8;
 	int max_announcer_queue = 16;
 	int local_vehicle_car_index = -1;
-	int vehicle_loop_debug_status_counter = 0;
-	int vehicle_loop_debug_status_interval = 60;
 	bool music_playing = false;
 	bool final_lap_requested = false;
 	bool final_lap_active = false;
 	bool music_stop_pending = false;
-	bool vehicle_loop_debug_enabled = false;
 
 	static float clamped_pitch(float pitch_scale);
 	static float fade_volume_db(float base_volume_db, float fade_ratio);
@@ -162,7 +158,7 @@ private:
 	int find_world_steal_emitter() const;
 	void assign_vehicle_emitter(Emitter& emitter, int car_index, const Transform3D& transform);
 	void assign_world_emitter(Emitter& emitter, const Vector3& position);
-	void collect_vehicle_candidates(GameSim* sim, int local_player_id);
+	void collect_vehicle_candidates(GameSim* sim);
 	void assign_vehicle_candidates();
 	void update_vehicle_loop_audio(GameSim* sim, double delta, bool step_events);
 	void start_music_streams(const Ref<AudioStream>& intro, const Ref<AudioStream>& loop);
@@ -198,8 +194,6 @@ public:
 	double get_reassignment_fade_seconds() const { return reassignment_fade_seconds; }
 	void set_vehicle_max_distance(double distance);
 	double get_vehicle_max_distance() const { return vehicle_max_distance; }
-	void set_vehicle_loop_debug_enabled(bool enabled);
-	bool get_vehicle_loop_debug_enabled() const { return vehicle_loop_debug_enabled; }
 	bool play_music_paths(const String& loop_path, const String& intro_path, const String& final_loop_path, const String& final_intro_path, const PackedFloat32Array& final_lap_timestamps);
 	void stop_music(double fade_seconds = 0.0);
 	bool request_final_lap_music();
