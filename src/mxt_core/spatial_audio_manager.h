@@ -33,7 +33,7 @@ private:
 	struct LoopStream {
 		StringName key;
 		StringName sfx_id;
-		AudioStreamPlayer3D* player = nullptr;
+		int64_t id = AudioStreamPlaybackPolyphonic::INVALID_ID;
 		float volume_db = 0.0f;
 		float pitch_scale = 1.0f;
 	};
@@ -127,6 +127,7 @@ private:
 	int vehicle_polyphony = 16;
 	int world_polyphony = 8;
 	int max_announcer_queue = 16;
+	int local_vehicle_car_index = -1;
 	int vehicle_loop_debug_status_counter = 0;
 	int vehicle_loop_debug_status_interval = 60;
 	bool music_playing = false;
@@ -144,7 +145,7 @@ private:
 	void create_emitters(std::vector<Emitter>& emitters, int count, int polyphony, const char* name_prefix);
 	void refresh_playback(Emitter& emitter);
 	void prune_stopped_streams(Emitter& emitter);
-	void apply_loop_player_settings(AudioStreamPlayer3D* player, float volume_db, float pitch_scale) const;
+	void apply_emitter_attenuation(Emitter& emitter, bool local_vehicle);
 	void stop_all_streams(Emitter& emitter);
 	int find_loop_stream(const Emitter& emitter, const StringName& key) const;
 	bool set_loop_on_emitter(Emitter& emitter, const StringName& key, const StringName& sfx_id, float volume_db, float pitch_scale);

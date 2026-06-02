@@ -482,6 +482,7 @@ namespace godot {
 		godot::String get_player_debug_string(int player_id) const;
 		godot::String get_bumper_debug_string() const;
 		godot::Array get_race_order();
+		int get_car_index_for_player(int32_t player_id) const { return player_id < 0 ? -1 : find_car_index_for_player(player_id); }
 		godot::Transform3D get_player_render_transform(int player_id) const;
 		godot::Transform3D get_player_physical_render_transform(int player_id) const;
 		godot::Vector3 get_player_physical_render_up(int player_id) const;

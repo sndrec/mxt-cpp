@@ -7074,7 +7074,6 @@ void GameSim::update_super_spark_visuals()
 			profile_step = now;
 		}
 		update_native_gameplay_camera(true);
-		update_spatial_audio(1.0 / 60.0);
 		if (render_profile_enabled) {
 			const uint64_t now = render_profile_now_us();
 			render_profile_camera_us += now - profile_step;

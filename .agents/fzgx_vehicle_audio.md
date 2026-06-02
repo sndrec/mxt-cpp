@@ -130,6 +130,11 @@ for slots 0..15:
   volume/speed controls are zeroed
 ```
 
+Verified constants:
+
+- `FLOAT_80304388 = 1100.0f`
+- `FLOAT_8030438c = 1900.0f`
+
 Interpretation:
 
 - Slots `0..3`: nearest/camera machine primary engine program.
@@ -174,6 +179,24 @@ Runtime flow:
    - Program `10` (`SND_PACK1_DIRT_ZONE`) on slot `4` is driven only when
      `FUN_8022cbe4(entrant) >> 0x1d & 1` is set and machine state does not have
      `0x80`.
+
+Implementation note: MaxX should not port GX's distance attenuation/pan math for
+vehicle SFX. Use Godot spatial audio for distance/spatialization, and use the GX
+helper only to understand base control routing and one-shot volume intent.
+
+Verified `FUN_8024a3a4` constants for reference only:
+
+- `FLOAT_80307a6c = 90000.0f`
+- `FLOAT_80307a70 = -1.0f`
+- `FLOAT_80307a74 = 0.001f`
+- `FLOAT_80307a78 = 0.5f`
+- `FLOAT_80307a7c = 32768.0f`
+- `FLOAT_80307a84 = 5625.0f`
+- `FLOAT_80307a88 = 0.9f`
+- `FLOAT_80307a8c = 0.85f`
+- `FLOAT_80307a90 = 0.8f`
+- `FLOAT_80307a94 = 0.0039f`
+- `DOUBLE_80307a9c = 0.0039`
    - Program `9` (`SND_PACK1_REVERSE_GRAVITY`) on slot `5` is driven only when
      `FUN_8022cbe4(entrant) >> 0x19 & 1` is set and machine state does not have
      `0x80`.
@@ -297,9 +320,10 @@ Current MaxX:
   corner, half-summed, and scaled by `127.0`.
 - Ignores MaxX corners that also have `TILTSTATE::AIRBORNE`, matching the
   producer's `(state & 2) == 0` condition.
-- Because MaxX's `TILTSTATE::DRIFT` is broader/stickier than GX's exact
-  suspension bit, the loop only plays while the computed target control or the
-  ramped control is nonzero.
+- GX keeps slot `7` active from contact count and sends zero as a valid
+  speed/pitch control. Current MaxX still gates audibility on nonzero computed
+  or ramped control because MaxX `TILTSTATE::DRIFT` is broader than GX's exact
+  suspension bit and otherwise plays drift in non-drift cases.
 - Ramps the loop control byte by `1` per update toward that target.
 - Sends the ramped control to pitch/speed, and sends a full local volume control
   to volume. This fixes an earlier MaxX mistake where the `+0x32`-style volume
@@ -387,7 +411,7 @@ Gate:
 
 - Active audible slot must have nonzero attenuation byte.
 - `abs(machine->strafe_visual_roll_angle) >= 100`.
-- `speed > FLOAT_80307a5c` (same low-speed-ish threshold family as `5 km/h` checks).
+- `speed > FLOAT_80307a5c`; verified as `100.0f`.
 - Previous stored roll state for that audio slot must be zero.
 
 Events:
@@ -494,7 +518,7 @@ Primary sources:
 - Finds active slot for entrant.
 - Requires slot attenuation byte nonzero.
 - Ignores machines with state bit `0x800`.
-- Scales input strength by `FLOAT_80307a4c`, clamps it, and chooses one of:
+- Scales input strength by `FLOAT_80307a4c` (`0.25f`), clamps it, and chooses one of:
   - `0xa9090000`
   - `0xa9090200`
   - `0xa9090500`
