@@ -1167,7 +1167,8 @@ namespace {
 		for (int i = 0; i < count; ++i) {
 			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
 				scratch.debug_mesh_current_global_car_index = c.global_start + i;
-				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch, profile);
+				float max_rail_contact_push = 0.0f;
+				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch, profile, &max_rail_contact_push);
 				const SimVec3 rail_push = LOAD_INDEXED_VEC3(c, collision_push_rail, i);
 				const SimVec3 track_push = LOAD_INDEXED_VEC3(c, collision_push_track, i);
 				const bool just_landed = (c.machine_state[i] & MACHINESTATE::JUSTLANDED) != 0;
@@ -1189,8 +1190,11 @@ namespace {
 					const bool landing_response = just_landed && speed_over_weight >= 0.0462962962962f;
 					if (push_magnitude_track > 0.0023148148f || push_magnitude_rail > 0.0023148148f ||
 						full_response || landing_response) {
+						constexpr float gx_rail_collision_sfx_strength_scale = 4.0f;
+						const float rail_hit_sfx_strength = gx_rail_collision_sfx_strength_scale * max_rail_contact_push;
 						car_views[i].apply_machine_collision_response_from_corners(corner_collision_type_flag,
-							push_magnitude_rail, push_magnitude_track, current_world_speed, speed_over_weight, false);
+							push_magnitude_rail, push_magnitude_track, rail_hit_sfx_strength,
+							current_world_speed, speed_over_weight, false);
 					}
 				}
 				if (just_landed) {
@@ -1777,15 +1781,18 @@ namespace {
 		const int lane_b = car_views[j].soa_index;
 		const uint32_t current_tick = static_cast<uint32_t>(car_a.simulation_tick[lane_a]);
 		constexpr uint32_t kCollisionSparkCooldownFrames = 30;
-		auto is_recent_hit = [&](PhysicsCarSoA& c, int lane) -> bool {
+		constexpr uint32_t kCollisionSfxCooldownFrames = 15;
+		auto is_recent_machine_hit = [&](PhysicsCarSoA& c, int lane, uint32_t cooldown_frames) -> bool {
 			if (!c.has_last_machine_hit_tick[lane]) {
 				return false;
 			}
 			const uint32_t delta = current_tick - c.last_machine_hit_tick[lane];
-			return delta < kCollisionSparkCooldownFrames;
+			return delta < cooldown_frames;
 		};
 
-		const bool recently_hit = is_recent_hit(car_a, lane_a) || is_recent_hit(car_b, lane_b);
+		const bool recently_hit =
+			is_recent_machine_hit(car_a, lane_a, kCollisionSparkCooldownFrames) ||
+			is_recent_machine_hit(car_b, lane_b, kCollisionSparkCooldownFrames);
 		const bool a_attacking = (car_a.machine_state[lane_a] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
 		const bool b_attacking = (car_b.machine_state[lane_b] & (MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING)) != 0;
 		int sparks_a = 3;
@@ -1817,9 +1824,15 @@ namespace {
 		const float sfx_strength = std::min(gx_machine_collision_strength_max,
 			std::max(gx_machine_collision_strength_min,
 				relative_motion_sq * gx_machine_collision_strength_scale));
-		car_a.last_machine_hit_tick[lane_a] = current_tick;
-		car_a.last_machine_hit_sfx_strength[lane_a] = sfx_strength;
-		car_a.has_last_machine_hit_tick[lane_a] = true;
+		if (!is_recent_machine_hit(car_a, lane_a, kCollisionSfxCooldownFrames)) {
+			car_a.last_machine_hit_tick[lane_a] = current_tick;
+			car_a.last_machine_hit_sfx_strength[lane_a] = sfx_strength;
+			car_a.has_last_machine_hit_tick[lane_a] = true;
+		} else if (!is_recent_machine_hit(car_b, lane_b, kCollisionSfxCooldownFrames)) {
+			car_b.last_machine_hit_tick[lane_b] = current_tick;
+			car_b.last_machine_hit_sfx_strength[lane_b] = sfx_strength;
+			car_b.has_last_machine_hit_tick[lane_b] = true;
+		}
 	}
 
 	static void collide_vehicles_broadphase(GameSim& sim, PhysicsCar* car_views, int count,

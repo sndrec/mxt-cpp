@@ -139,7 +139,7 @@ private:
 	Ref<AudioStream> find_sfx(const StringName& id) const;
 	void ensure_global_players();
 	void clear_emitters(std::vector<Emitter>& emitters);
-	void create_emitters(std::vector<Emitter>& emitters, int count, int polyphony, const char* name_prefix);
+	void create_emitters(std::vector<Emitter>& emitters, int count, int polyphony, const char* name_prefix, float unit_size);
 	void refresh_playback(Emitter& emitter);
 	void prune_stopped_streams(Emitter& emitter);
 	void apply_emitter_attenuation(Emitter& emitter, bool local_vehicle);

@@ -3358,14 +3358,19 @@ static OldCornerCollisionSurface sample_old_corner_collision_surface(
 	return out;
 }
 
-int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCornerProfile* profile) {
+int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCornerProfile* profile,
+	float* out_max_rail_contact_push) {
 	uint64_t profile_step = profile ? physics_profile_now_us() : 0;
 	STORE_VEC3(collision_push_track, SimVec3());
 	STORE_VEC3(collision_push_rail, SimVec3());
 	STORE_VEC3(collision_push_total, SimVec3());
+	if (out_max_rail_contact_push) {
+		*out_max_rail_contact_push = 0.0f;
+	}
 	//godot::Object* dd3d = godot::Engine::get_singleton()->get_singleton("DebugDraw3D");
 
 	int overall_hit_detected_flag = 0;
+	float max_rail_contact_push = 0.0f;
 
 	SimVec3 depenetration = SimVec3();
 	const int point_base = soa_index * 4;
@@ -3551,6 +3556,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 							depenetration += d;
 							overall_hit_detected_flag |= 2;
 							ADD_VEC3(collision_push_rail, d);
+							max_rail_contact_push = std::max(max_rail_contact_push, d.length());
 						}
 					}
 					}
@@ -3674,6 +3680,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 							depenetration += d;
 							overall_hit_detected_flag |= 2;
 							ADD_VEC3(collision_push_rail, d);
+							max_rail_contact_push = std::max(max_rail_contact_push, d.length());
 						}
 						}
 					}
@@ -3750,6 +3757,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 									ADD_VEC3(collision_push_total, d);
 									if (rail_hit) {
 										ADD_VEC3(collision_push_rail, d);
+										max_rail_contact_push = std::max(max_rail_contact_push, d.length());
 										overall_hit_detected_flag |= 2;
 									} else {
 										ADD_VEC3(collision_push_track, d);
@@ -3777,11 +3785,15 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 				ADD_VEC3(position_current, depenetration);
 				depenetration = SimVec3();
 			}
+			if (out_max_rail_contact_push) {
+				*out_max_rail_contact_push = max_rail_contact_push;
+			}
 			return overall_hit_detected_flag;
 	}
 }
 void PhysicsCar::apply_machine_collision_response_from_corners(int corner_collision_type_flag,
-	float push_magnitude_rail, float push_magnitude_track, float current_world_speed,
+	float push_magnitude_rail, float push_magnitude_track, float rail_hit_sfx_strength,
+	float current_world_speed,
 	float speed_over_weight, bool include_start_projection)
 {
 	if (push_magnitude_track > 0.0023148148f) {
@@ -3853,7 +3865,7 @@ if (apply_full_response) {
 
 		if ((soa->machine_state[soa_index] & MACHINESTATE::TOOKDAMAGE) && soa->breakdown_frame_counter[soa_index] == 0) {
 			soa->last_hit_tick[soa_index] = soa->frames_since_start[soa_index];
-			soa->last_hit_sfx_strength[soa_index] = response_intensity_factor;
+			soa->last_hit_sfx_strength[soa_index] = rail_hit_sfx_strength;
 			soa->has_last_hit_tick[soa_index] = true;
 
 			float damage_base = response_intensity_factor * soa->stat_body[soa_index];

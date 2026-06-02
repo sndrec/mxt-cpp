@@ -385,10 +385,12 @@ public:
 	void set_terrain_state_from_track(TrackQueryScratch &scratch, const SimVec3 &trigger_p0, const SimVec3 &trigger_p1);
 	void handle_attack_states();
 	void apply_torque_from_force(const SimVec3& p_local_offset, const SimVec3& wf_world_force);
-	int update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCornerProfile* profile = nullptr);
+	int update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCornerProfile* profile = nullptr,
+		float* out_max_rail_contact_push = nullptr);
     void apply_machine_collision_response_from_corners(int corner_collision_type_flag,
-        float push_magnitude_rail, float push_magnitude_track, float current_world_speed,
-        float speed_over_weight, bool include_start_projection);
+	float push_magnitude_rail, float push_magnitude_track, float rail_hit_sfx_strength,
+	float current_world_speed,
+	float speed_over_weight, bool include_start_projection);
     void align_machine_y_with_track_normal_immediate();
     void handle_checkpoints(TrackQueryScratch &scratch);
     void collide_with_landmine(Mine* in_mine, const SimVec3 &travel_start, const SimVec3 &travel_end);

@@ -583,6 +583,10 @@ Vehicle-vs-vehicle collision:
 - The player feedback path (`801d98a4 -> 802fa7dc`) is easy to misread: it copies
   a byte where bit `0x10` means `JUSTHITVEHICLE_Q | TOOKDAMAGE`, but the downstream
   `8006b...` functions are controller motor/rumble scheduling, not vehicle SFX.
+- Verified rail/contact presentation constant:
+  `FLOAT_80306350 = 4.0f`. GX computes wall/collision sound strength as this
+  constant times the relevant contact vector length before passing it to
+  `FUN_80249610`.
 - Unknown GX constants still needed for exact car-hit strength selection:
   `FLOAT_80307a60`, `FLOAT_80307a64`, `FLOAT_803062f0`, `FLOAT_803062f4`, and
   `FLOAT_803062f8`.
@@ -593,13 +597,25 @@ Current MaxX:
   collision samples.
 - Applies the GX strength scale and thresholds above before choosing the sample.
 - Plays `collision_light_secondary` additionally for wall tier 0.
+- `last_hit_sfx_strength` is now stamped as `4.0f * max_individual_rail_contact_push`,
+  not the damage response scalar. GX calls `FUN_80249610` from the
+  collision-effect path with `dVar23 = FLOAT_80306350 * length(contact_vector)`;
+  using MaxX's damage scalar made high tiers trigger too eagerly because that
+  value is speed-amplified for damage.
 - Machine-machine collisions use separate `last_machine_hit_tick` and
   `last_machine_hit_sfx_strength` fields. `handle_vehicle_collision_result`
   stamps one event per pair collision on the first car in the pair, mirroring
   `FUN_8020f2f8`'s one-entrant audio call, and the audio manager plays
   `collision_medium` or `collision_heavy`.
+- Machine-machine collision audio has a 15-frame per-vehicle debounce. Collision
+  spark debounce remains 30 frames.
 - Current car-hit strength constants are placeholders until the GX constants
   above are retrieved from Ghidra.
+
+## Current MaxX Volume Tunings
+
+- Energy restore loop ramps with the existing pitstop volume behavior plus
+  `+8 dB` final gain.
 
 ## Dash Plate, Jump Plate, Mine, Terrain
 

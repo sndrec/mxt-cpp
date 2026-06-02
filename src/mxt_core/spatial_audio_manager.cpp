@@ -514,7 +514,7 @@ void MxtSpatialAudioManager::clear_emitters(std::vector<Emitter>& emitters)
 	emitters.clear();
 }
 
-void MxtSpatialAudioManager::create_emitters(std::vector<Emitter>& emitters, int count, int polyphony, const char* name_prefix)
+void MxtSpatialAudioManager::create_emitters(std::vector<Emitter>& emitters, int count, int polyphony, const char* name_prefix, float unit_size)
 {
 	if (count <= 0) {
 		return;
@@ -530,7 +530,7 @@ void MxtSpatialAudioManager::create_emitters(std::vector<Emitter>& emitters, int
 		player->set_stream(emitter.stream);
 		player->set_max_polyphony(polyphony);
 		player->set_bus(audio_bus);
-		player->set_unit_size(24.0);
+		player->set_unit_size(unit_size);
 		player->set_max_distance(2200.0);
 		player->set_attenuation_model(AudioStreamPlayer3D::ATTENUATION_INVERSE_DISTANCE);
 		player->set_doppler_tracking(AudioStreamPlayer3D::DOPPLER_TRACKING_DISABLED);
@@ -1268,7 +1268,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			loop_state.pitstop_time = mxt_audio_lerp(loop_state.pitstop_time, 0.0f, pitstop_lerp_weight);
 		}
 		const float energy_volume_base = mxt_audio_clamp_float((loop_state.pitstop_time / 0.25f) * 60.0f - 60.0f, -60.0f, 0.0f);
-		const float energy_volume = energy_volume_base;
+		const float energy_volume = energy_volume_base + 8.0f;
 		if (recharging || energy_volume_base > -59.5f || find_loop_stream(emitter, energy_key) >= 0) {
 			set_loop_on_emitter(emitter, energy_key, energy_sfx, energy_volume, energy_pitch);
 			if (!recharging && energy_volume_base <= -59.5f) {
@@ -1428,8 +1428,8 @@ void MxtSpatialAudioManager::configure(int vehicle_emitter_count, int world_emit
 	clear_emitters(world_emitters);
 	vehicle_polyphony = std::max(1, p_vehicle_polyphony);
 	world_polyphony = std::max(1, p_world_polyphony);
-	create_emitters(vehicle_emitters, std::max(0, vehicle_emitter_count), vehicle_polyphony, "VehicleAudioEmitter");
-	create_emitters(world_emitters, std::max(0, world_emitter_count), world_polyphony, "WorldAudioEmitter");
+	create_emitters(vehicle_emitters, std::max(0, vehicle_emitter_count), vehicle_polyphony, "VehicleAudioEmitter", 120.0f);
+	create_emitters(world_emitters, std::max(0, world_emitter_count), world_polyphony, "WorldAudioEmitter", 120.0f);
 	vehicle_candidates.reserve(vehicle_emitters.size());
 }
 
