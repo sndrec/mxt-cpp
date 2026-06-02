@@ -184,6 +184,29 @@ Implementation note: MaxX should not port GX's distance attenuation/pan math for
 vehicle SFX. Use Godot spatial audio for distance/spatialization, and use the GX
 helper only to understand base control routing and one-shot volume intent.
 
+## GX Rear-Approaching Machine State
+
+Primary sources:
+
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\line129819__update_machine_approach_vector.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\line124902__g_handle_machine_v_machine_collision.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\line125499__g_handle_machine_damage_and_visuals.c`
+
+`g_handle_machine_v_machine_collision` calls
+`update_machine_approach_vector(distance, machine_a, machine_b)` in both
+directions. While `machine_approach_frame_counter == 0`, GX keeps the nearest
+candidate whose position transforms into the machine's local space with
+`local.z < -0.1`, stores it in `last_machine_approached`, and normalizes
+`approach_dir`. If the same machine remains tracked while the counter is active,
+the vector keeps updating, clamped so `approach_dir.z <= -0.1`.
+
+Later frame logic checks that the machine is not fallout/zero-HP and, if
+`length(approach_dir) < 200.0f`, sets `machine_approach_frame_counter = 0x3c`
+(60 frames). This is solid evidence that GX tracks rear-approaching machines as
+a gameplay/audio-adjacent state. It is not yet proof of a distinct high-volume
+approach engine sample; no separate PACK sample mapping has been confirmed for
+this behavior yet.
+
 Verified `FUN_8024a3a4` constants for reference only:
 
 - `FLOAT_80307a6c = 90000.0f`

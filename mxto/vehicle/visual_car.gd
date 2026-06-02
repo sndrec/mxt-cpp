@@ -191,6 +191,7 @@ func _ready() -> void:
 	car_visual = Node3D.new()
 	car_visual.name = "CarVisualProxy"
 	car_transform.add_child(car_visual)
+	_disable_builtin_audio_doppler()
 	if local_visual_enabled:
 		car_camera.make_current()
 		make_vehicle_audio_listener_current()
@@ -201,7 +202,19 @@ func _ready() -> void:
 
 func make_vehicle_audio_listener_current() -> void:
 	if is_instance_valid(vehicle_audio_listener):
+		vehicle_audio_listener.set("doppler_tracking", AudioListener3D.DOPPLER_TRACKING_DISABLED)
 		vehicle_audio_listener.make_current()
+
+func _disable_builtin_audio_doppler() -> void:
+	if is_instance_valid(vehicle_audio_listener):
+		vehicle_audio_listener.set("doppler_tracking", AudioListener3D.DOPPLER_TRACKING_DISABLED)
+	_set_audio_player_doppler_tracking(car_transform, AudioStreamPlayer3D.DOPPLER_TRACKING_DISABLED)
+
+func _set_audio_player_doppler_tracking(root: Node, tracking: int) -> void:
+	for child in root.get_children():
+		if child is AudioStreamPlayer3D:
+			(child as AudioStreamPlayer3D).doppler_tracking = tracking
+		_set_audio_player_doppler_tracking(child, tracking)
 
 func set_effect_tier(in_tier: int) -> void:
 	if effect_tier == in_tier:

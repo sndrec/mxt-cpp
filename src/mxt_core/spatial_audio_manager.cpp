@@ -20,6 +20,13 @@ namespace {
 static constexpr float MXT_AUDIO_MIN_FADE_SECONDS = 0.001f;
 static constexpr float MXT_AUDIO_SILENCE_DB = -80.0f;
 static constexpr float MXT_LOCAL_VEHICLE_VOLUME_GAIN_DB = 8.0f;
+static constexpr float MXT_ENGINE_DOPPLER_SPEED_OF_SOUND = 343.0f;
+static constexpr float MXT_ENGINE_DOPPLER_STRENGTH = 0.08f;
+static constexpr float MXT_ENGINE_DOPPLER_MIN_PITCH = 0.92f;
+static constexpr float MXT_ENGINE_DOPPLER_MAX_PITCH = 1.08f;
+static constexpr float MXT_ENGINE_REAR_APPROACH_MAX_GAIN_DB = 6.0f;
+static constexpr float MXT_ENGINE_REAR_APPROACH_FULL_CLOSING_SPEED = 60.0f;
+static constexpr float MXT_ENGINE_REAR_APPROACH_MIN_BEHIND_DOT = 0.15f;
 
 static float mxt_audio_clamp_float(float value, float min_value, float max_value)
 {
@@ -364,6 +371,104 @@ static const StringName& mxt_audio_gx_engine_sfx_id(int sample_id)
 		default: return empty;
 	}
 }
+
+static Vector3 mxt_audio_car_position(const PhysicsCar& car)
+{
+	const PhysicsCarSoA& soa = *car.soa;
+	const int lane = car.soa_index;
+	return Vector3(
+		soa.position_current_x[lane],
+		soa.position_current_y[lane],
+		soa.position_current_z[lane]);
+}
+
+static Vector3 mxt_audio_car_frame_velocity(const PhysicsCar& car)
+{
+	const PhysicsCarSoA& soa = *car.soa;
+	const int lane = car.soa_index;
+	return Vector3(
+		soa.position_current_x[lane] - soa.position_old_x[lane],
+		soa.position_current_y[lane] - soa.position_old_y[lane],
+		soa.position_current_z[lane] - soa.position_old_z[lane]);
+}
+
+static float mxt_audio_engine_doppler_pitch(const GameSim* sim, int source_car_index, int listener_car_index)
+{
+	if (!sim || !sim->cars ||
+		source_car_index < 0 || listener_car_index < 0 ||
+		source_car_index == listener_car_index ||
+		source_car_index >= sim->num_cars || listener_car_index >= sim->num_cars) {
+		return 1.0f;
+	}
+
+	const PhysicsCar& source_car = sim->cars[source_car_index];
+	const PhysicsCar& listener_car = sim->cars[listener_car_index];
+	if (!source_car.soa || !listener_car.soa) {
+		return 1.0f;
+	}
+
+	const Vector3 listener_to_source = mxt_audio_car_position(source_car) - mxt_audio_car_position(listener_car);
+	const real_t distance_sq = listener_to_source.length_squared();
+	if (!std::isfinite(static_cast<double>(distance_sq)) || distance_sq <= 0.0001) {
+		return 1.0f;
+	}
+
+	const Vector3 relative_velocity = mxt_audio_car_frame_velocity(source_car) - mxt_audio_car_frame_velocity(listener_car);
+	const float radial_velocity = static_cast<float>(listener_to_source.normalized().dot(relative_velocity));
+	const float denominator = MXT_ENGINE_DOPPLER_SPEED_OF_SOUND + radial_velocity * MXT_ENGINE_DOPPLER_STRENGTH;
+	if (!std::isfinite(denominator) || denominator <= 1.0f) {
+		return MXT_ENGINE_DOPPLER_MAX_PITCH;
+	}
+
+	const float pitch = MXT_ENGINE_DOPPLER_SPEED_OF_SOUND / denominator;
+	return mxt_audio_clamp_float(pitch, MXT_ENGINE_DOPPLER_MIN_PITCH, MXT_ENGINE_DOPPLER_MAX_PITCH);
+}
+
+static float mxt_audio_engine_rear_approach_gain_db(const GameSim* sim, int source_car_index, int listener_car_index)
+{
+	if (!sim || !sim->cars ||
+		source_car_index < 0 || listener_car_index < 0 ||
+		source_car_index == listener_car_index ||
+		source_car_index >= sim->num_cars || listener_car_index >= sim->num_cars) {
+		return 0.0f;
+	}
+
+	const PhysicsCar& source_car = sim->cars[source_car_index];
+	const PhysicsCar& listener_car = sim->cars[listener_car_index];
+	if (!source_car.soa || !listener_car.soa) {
+		return 0.0f;
+	}
+
+	const Vector3 listener_to_source = mxt_audio_car_position(source_car) - mxt_audio_car_position(listener_car);
+	const real_t distance_sq = listener_to_source.length_squared();
+	if (!std::isfinite(static_cast<double>(distance_sq)) || distance_sq <= 0.0001) {
+		return 0.0f;
+	}
+
+	const PhysicsCarSoA& listener_soa = *listener_car.soa;
+	const int listener_lane = listener_car.soa_index;
+	const Vector3 listener_forward(
+		-listener_soa.basis_physical_c2x[listener_lane],
+		-listener_soa.basis_physical_c2y[listener_lane],
+		-listener_soa.basis_physical_c2z[listener_lane]);
+	const Vector3 direction_to_source = listener_to_source.normalized();
+	const float behind_dot = static_cast<float>(-listener_forward.normalized().dot(direction_to_source));
+	const float behind_factor = mxt_audio_clamp_float(
+		(behind_dot - MXT_ENGINE_REAR_APPROACH_MIN_BEHIND_DOT) / (1.0f - MXT_ENGINE_REAR_APPROACH_MIN_BEHIND_DOT),
+		0.0f,
+		1.0f);
+	if (behind_factor <= 0.0f) {
+		return 0.0f;
+	}
+
+	const Vector3 relative_velocity = mxt_audio_car_frame_velocity(source_car) - mxt_audio_car_frame_velocity(listener_car);
+	const float closing_speed = std::max(0.0f, -static_cast<float>(direction_to_source.dot(relative_velocity)));
+	const float closing_factor = mxt_audio_clamp_float(
+		closing_speed / MXT_ENGINE_REAR_APPROACH_FULL_CLOSING_SPEED,
+		0.0f,
+		1.0f);
+	return MXT_ENGINE_REAR_APPROACH_MAX_GAIN_DB * behind_factor * closing_factor;
+}
 }
 
 MxtSpatialAudioManager::MxtSpatialAudioManager()
@@ -581,6 +686,7 @@ void MxtSpatialAudioManager::apply_emitter_attenuation(Emitter& emitter, bool lo
 		local_vehicle ? AudioStreamPlayer3D::ATTENUATION_DISABLED : AudioStreamPlayer3D::ATTENUATION_INVERSE_DISTANCE;
 	if (emitter.player) {
 		emitter.player->set_attenuation_model(attenuation_model);
+		emitter.player->set_doppler_tracking(AudioStreamPlayer3D::DOPPLER_TRACKING_DISABLED);
 	}
 }
 
@@ -1204,7 +1310,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			std::abs(static_cast<int>(gx_strafe_visual_roll)) >= 100 &&
 			soa.speed_kmh[lane] > gx_strafe_min_speed_kmh;
 		if (strafe_roll_active) {
-			set_loop_on_emitter(emitter, strafe_sfx, strafe_sfx, -10.0f, 1.0f);
+			set_loop_on_emitter(emitter, strafe_sfx, strafe_sfx, -6.0f, 1.0f);
 		} else if (loop_state.previous_strafe_roll_active || find_loop_stream(emitter, strafe_sfx) >= 0) {
 			stop_loop_on_emitter(emitter, strafe_sfx);
 		}
@@ -1249,13 +1355,16 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		const uint8_t engine_speed_control = loop_state.gx_engine_speed_control;
 		if (engine_active) {
 			const MxtGxEngineProgram& engine_program = mxt_audio_select_gx_engine_program(soa.stat_weight[lane]);
+			const float engine_doppler_pitch = mxt_audio_engine_doppler_pitch(sim, emitter.car_index, local_vehicle_car_index);
+			const float engine_approach_gain_db = mxt_audio_engine_rear_approach_gain_db(sim, emitter.car_index, local_vehicle_car_index);
 			for (uint8_t tone_index = 0; tone_index < 5; ++tone_index) {
 				if (tone_index < engine_program.tone_count) {
 					const MxtGxEngineTone& tone = engine_program.tones[tone_index];
 					const StringName& tone_sfx = mxt_audio_gx_engine_sfx_id(tone.sample_id);
 					if (tone_sfx != StringName()) {
-						const float tone_volume_db = mxt_audio_gx_engine_volume(engine_speed_control, tone) + engine_layer_volume_gain_db;
-						const float tone_pitch = clamped_pitch(mxt_audio_gx_engine_pitch(engine_speed_control, tone));
+						const float tone_volume_db = mxt_audio_gx_engine_volume(engine_speed_control, tone) +
+							engine_layer_volume_gain_db + engine_approach_gain_db;
+						const float tone_pitch = clamped_pitch(mxt_audio_gx_engine_pitch(engine_speed_control, tone) * engine_doppler_pitch);
 						set_loop_on_emitter(emitter, gx_engine_keys[tone_index], tone_sfx, tone_volume_db, tone_pitch);
 						continue;
 					}
