@@ -1,0 +1,11 @@
+codec = NGC_DSP
+codec_mode = 2
+channels = 1
+sample_rate = 44100
+start_offset = 0x44
+data_size = 0xe3a0
+num_samples = 101962
+coef_offset = 0x0c
+coef_spacing = 0x20
+coef_endianness = BE
+loop_flag = 0

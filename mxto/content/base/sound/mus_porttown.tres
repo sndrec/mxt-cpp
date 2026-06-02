@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=3 format=3 uid="uid://d3ws5gqles6cs"]
+
+[ext_resource type="AudioStream" uid="uid://bwbnt4g6cjk2v" path="res://content/base/music/port_town_loop.wav" id="1_fb808"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="5_6xn5q"]
+
+[resource]
+script = ExtResource("5_6xn5q")
+musicLoop = ExtResource("1_fb808")
+finalLapTimeStamps = []
+wait_for_race_start = true

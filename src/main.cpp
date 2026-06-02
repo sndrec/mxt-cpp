@@ -2829,6 +2829,7 @@ void GameSim::ensure_vehicle_tick_soa_capacity(int capacity)
 void GameSim::set_sim_started(const bool p_sim_started)
 {
 	sim_started = p_sim_started;
+	spatial_audio_last_assignment_tick = -1;
 	spatial_audio_last_update_frame = UINT64_MAX;
 	if (!sim_started && spatial_audio_manager) {
 		spatial_audio_manager->clear_all();
@@ -6643,13 +6644,18 @@ void GameSim::update_spatial_audio(double delta)
 	if (!spatial_audio_manager || !sim_started || !cars) {
 		return;
 	}
-	Engine* engine = Engine::get_singleton();
-	const uint64_t process_frame = engine ? engine->get_process_frames() : 0;
-	if (spatial_audio_last_update_frame == process_frame) {
-		return;
+	const bool update_assignments = spatial_audio_last_assignment_tick != tick;
+	if (update_assignments) {
+		spatial_audio_last_assignment_tick = tick;
 	}
-	spatial_audio_last_update_frame = process_frame;
-	spatial_audio_manager->update_from_gamesim(this, gameplay_camera_player_id, delta);
+
+	Engine* engine = Engine::get_singleton();
+	const uint64_t process_frame = engine ? engine->get_process_frames() : spatial_audio_last_update_frame + 1;
+	const bool update_time = spatial_audio_last_update_frame != process_frame;
+	if (update_time) {
+		spatial_audio_last_update_frame = process_frame;
+	}
+	spatial_audio_manager->update_from_gamesim(this, gameplay_camera_player_id, update_time ? delta : 0.0, update_assignments);
 }
 
 bool GameSim::play_car_oneshot_sfx(int car_index, const godot::StringName& sfx_id, double volume_db, double pitch_scale)

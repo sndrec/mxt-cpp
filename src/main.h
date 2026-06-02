@@ -360,6 +360,7 @@ namespace godot {
 			godot::Camera3D* gameplay_camera_node = nullptr;
 			godot::Camera3D* render_camera_node = nullptr;
 			MxtSpatialAudioManager* spatial_audio_manager = nullptr;
+			int spatial_audio_last_assignment_tick = -1;
 			uint64_t spatial_audio_last_update_frame = UINT64_MAX;
 			bool render_profile_enabled = false;
 			bool phase_profile_enabled = false;

@@ -132,12 +132,13 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="GameSim" type="GameSim" parent="." unique_id=614228088]
+[node name="GameSim" type="GameSim" parent="." unique_id=1869907880]
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=514302190]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=237497272]
 
-[node name="NetworkManager" type="Node" parent="." unique_id=925113707]
+[node name="NetworkManager" type="Node" parent="." unique_id=940245028]
 script = ExtResource("3_netplay")
+metadata/_custom_type_script = "uid://cq1kmqnd5qooc"
 
 [node name="ProximityVoiceChat" type="Node" parent="NetworkManager" unique_id=1057511727]
 script = ExtResource("22_voice")

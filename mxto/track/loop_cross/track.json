@@ -1,5 +1,6 @@
 {
   "name": "Lightning - Loop Cross",
+  "music": "res://content/base/sound/mus_lightning.tres",
   "description": "Loose analytic conversion from F-ZERO GX COLI_COURSE data.",
   "difficulty": 5,
   "fog_distance": 1200.0,

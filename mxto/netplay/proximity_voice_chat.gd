@@ -8,6 +8,7 @@ const VOICE_MODE_PUSH_TO_TALK := "push_to_talk"
 const VOICE_MODE_TOGGLE := "toggle"
 const VOICE_MODE_ALWAYS_ON := "always_on"
 const VOICE_MODE_OFF := "off"
+const VOICECHAT_BUS_NAME := "Voicechat"
 const CAPTURE_BUS_NAME := "VoiceCapture"
 const CAPTURE_BUS_OUTPUT_MUTE_DB := -80.0
 const VOICE_SAMPLE_RATE := 48000
@@ -316,6 +317,7 @@ func _recreate_voice_playbacks() -> void:
 		var player := AudioStreamPlayer.new()
 		player.name = "VoicePeer%d" % int(peer_id)
 		player.stream = generator
+		player.bus = VOICECHAT_BUS_NAME
 		add_child(player)
 		player.play()
 		peer["player"] = player
@@ -552,6 +554,7 @@ func _ensure_test_monitor() -> void:
 	test_monitor_player = AudioStreamPlayer.new()
 	test_monitor_player.name = "VoiceTestMonitor"
 	test_monitor_player.stream = generator
+	test_monitor_player.bus = VOICECHAT_BUS_NAME
 	add_child(test_monitor_player)
 	test_monitor_player.play()
 	test_monitor_playback = test_monitor_player.get_stream_playback() as AudioStreamGeneratorPlayback
@@ -574,6 +577,7 @@ func _ensure_remote_peer(sender_id: int) -> Dictionary:
 	var player := AudioStreamPlayer.new()
 	player.name = "VoicePeer%d" % sender_id
 	player.stream = generator
+	player.bus = VOICECHAT_BUS_NAME
 	add_child(player)
 	player.play()
 	var peer := {

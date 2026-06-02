@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=6 format=3 uid="uid://dvp31ittgqnx4"]
+
+[ext_resource type="AudioStream" uid="uid://og600jreegyi" path="res://content/base/music/mutecity_intro.wav" id="1_jr8f6"]
+[ext_resource type="AudioStream" uid="uid://cfegxqy8c4r05" path="res://content/base/music/mutecity_finallap_intro.wav" id="2_qvkdv"]
+[ext_resource type="AudioStream" uid="uid://bjqhwrdmvqyu0" path="res://content/base/music/mutecity_loop.wav" id="3_bk0yb"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="3_v11cx"]
+[ext_resource type="AudioStream" uid="uid://cgy23p5b88i5i" path="res://content/base/music/mutecity_finallap_loop.wav" id="4_dqtgj"]
+
+[resource]
+script = ExtResource("3_v11cx")
+musicIntro = ExtResource("1_jr8f6")
+musicLoop = ExtResource("3_bk0yb")
+musicIntroFinalLap = ExtResource("2_qvkdv")
+musicLoopFinalLap = ExtResource("4_dqtgj")
+finalLapTimeStamps = [0.0, 3.243, 6.487, 9.73, 12.973, 16.216, 19.46, 22.703, 25.946, 29.189, 32.433, 35.676, 38.919, 42.162, 45.406, 48.649]
+wait_for_race_start = false

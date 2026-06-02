@@ -79,6 +79,8 @@ const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_over
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const SPATIAL_AUDIO_SFX := {
+	&"active_start": "res://sfx/vehicle/active_start.wav",
+	&"air_0": "res://sfx/vehicle/air_0.wav",
 	&"air_1": "res://sfx/vehicle/air_1.wav",
 	&"air_2": "res://sfx/vehicle/air_2.wav",
 	&"air_3": "res://sfx/vehicle/air_3.wav",
@@ -87,8 +89,24 @@ const SPATIAL_AUDIO_SFX := {
 	&"dash_plate": "res://sfx/vehicle/dash_plate.wav",
 	&"drift_fire": "res://sfx/vehicle/drift_fire.wav",
 	&"engine": "res://sfx/vehicle/engine.wav",
+	&"energy_restore": "res://sfx/vehicle/energy_restore.wav",
+	&"gx_engine_185": "res://sfx/vehicle/thrust/PACK1-185.wav",
+	&"gx_engine_186": "res://sfx/vehicle/thrust/PACK1-186.wav",
+	&"gx_engine_187": "res://sfx/vehicle/thrust/PACK1-187.wav",
+	&"gx_engine_188": "res://sfx/vehicle/thrust/PACK1-188.wav",
+	&"gx_engine_189": "res://sfx/vehicle/thrust/PACK1-189.wav",
+	&"gx_engine_190": "res://sfx/vehicle/thrust/PACK1-190.wav",
+	&"gx_engine_191": "res://sfx/vehicle/thrust/PACK1-191.wav",
+	&"gx_engine_236": "res://sfx/vehicle/thrust/PACK1-236.wav",
+	&"gx_engine_237": "res://sfx/vehicle/thrust/PACK1-237.wav",
+	&"gx_engine_240": "res://sfx/vehicle/thrust/PACK1-240.wav",
+	&"gx_engine_250": "res://sfx/vehicle/thrust/PACK1-250.wav",
+	&"gx_engine_251": "res://sfx/vehicle/thrust/PACK1-251.wav",
 	&"landing": "res://sfx/vehicle/landing.wav",
+	&"landing_b10": "res://sfx/vehicle/landing_b10.wav",
+	&"maybe_spin": "res://sfx/vehicle/maybe_spin.wav",
 	&"mine": "res://sfx/vehicle/mine.wav",
+	&"race_start": "res://sfx/vehicle/race_start.wav",
 	&"restore": "res://sfx/vehicle/restore.wav",
 	&"sideattack": "res://sfx/vehicle/sideattack.wav",
 	&"strafe": "res://sfx/vehicle/strafe.wav",
@@ -103,6 +121,9 @@ const SPATIAL_AUDIO_SFX := {
 	&"announcer_three": "res://sfx/announcer/three.wav",
 	&"announcer_two": "res://sfx/announcer/two.wav",
 }
+const RACE_BOOST_POWER_LAP_INDEX := 2
+const RACE_FINAL_LAP_INDEX := 3
+const RACE_MUSIC_START_LEAD_TICKS := 360
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -246,6 +267,13 @@ var replay_collecting_timeline_markers: bool = false
 var replay_timeline_markers_dirty: bool = true
 var replay_timeline_marker_last_focus: int = -999999
 var replay_timeline_marker_last_size := Vector2(-1.0, -1.0)
+var race_audio_last_tick: int = -1
+var race_audio_last_local_lap: int = -1
+var race_audio_boost_power_announced: bool = false
+var race_audio_final_lap_requested: bool = false
+var race_audio_waiting_music_start: bool = false
+var race_audio_pending_music_wait_for_race_start: bool = false
+var race_audio_pending_music: Dictionary = {}
 var singleplayer_options_root: Control
 var singleplayer_options_restore_toggle: CheckBox
 var singleplayer_options_bumpers_toggle: CheckBox
@@ -468,7 +496,11 @@ func _setup_spatial_audio() -> void:
 	$GameWorld.add_child(audio_node)
 	spatial_audio = audio_node
 	spatial_audio.call("configure", 30, 16, 16, 8)
+	spatial_audio.call("set_audio_bus", &"SFX")
+	spatial_audio.call("set_music_bus", &"Music")
+	spatial_audio.call("set_announcer_bus", &"Announcer")
 	spatial_audio.call("set_reassignment_fade_seconds", 0.05)
+	spatial_audio.call("set_max_announcer_queue", 16)
 	for sfx_id in SPATIAL_AUDIO_SFX.keys():
 		spatial_audio.call("register_sfx", sfx_id, SPATIAL_AUDIO_SFX[sfx_id])
 	if game_sim != null and game_sim.has_method("set_spatial_audio_manager"):
@@ -483,6 +515,174 @@ func _play_world_oneshot_sfx(position: Vector3, sfx_id: StringName, volume_db: f
 	if game_sim == null or !game_sim.has_method("play_world_oneshot_sfx"):
 		return false
 	return bool(game_sim.call("play_world_oneshot_sfx", position, sfx_id, volume_db, pitch_scale))
+
+func _queue_announcer_sfx(sfx_id: StringName, volume_db: float = 0.0, pitch_scale: float = 1.0) -> bool:
+	if spatial_audio == null or !spatial_audio.has_method("queue_announcer"):
+		return false
+	return bool(spatial_audio.call("queue_announcer", sfx_id, volume_db, pitch_scale))
+
+func _reset_race_audio_state() -> void:
+	race_audio_last_tick = -1
+	race_audio_last_local_lap = -1
+	race_audio_boost_power_announced = false
+	race_audio_final_lap_requested = false
+	race_audio_waiting_music_start = false
+	race_audio_pending_music_wait_for_race_start = false
+	race_audio_pending_music.clear()
+	if spatial_audio != null:
+		if spatial_audio.has_method("clear_announcer_queue"):
+			spatial_audio.call("clear_announcer_queue")
+		if spatial_audio.has_method("stop_music"):
+			spatial_audio.call("stop_music")
+
+func _resolve_track_audio_path(track_dir: String, path_value) -> String:
+	var path := str(path_value)
+	if path.is_empty():
+		return ""
+	if path.begins_with("res://") or path.begins_with("user://"):
+		return path
+	return track_dir.path_join(path)
+
+func _play_music_from_definition(definition: Dictionary) -> bool:
+	if spatial_audio == null or !spatial_audio.has_method("play_music_paths"):
+		return false
+	var timestamps := PackedFloat32Array()
+	var raw_timestamps = definition.get("final_lap_timestamps", [])
+	if typeof(raw_timestamps) == TYPE_PACKED_FLOAT32_ARRAY:
+		timestamps = raw_timestamps
+	elif typeof(raw_timestamps) == TYPE_ARRAY:
+		timestamps = PackedFloat32Array(raw_timestamps)
+	return bool(spatial_audio.call(
+		"play_music_paths",
+		str(definition.get("loop", "")),
+		str(definition.get("intro", "")),
+		str(definition.get("final_loop", "")),
+		str(definition.get("final_intro", "")),
+		timestamps))
+
+func _audio_stream_resource_path(stream_value) -> String:
+	if stream_value is Resource:
+		return str(stream_value.resource_path)
+	return ""
+
+func _music_definition_from_resource(resource_path: String) -> Dictionary:
+	if resource_path.is_empty() or !ResourceLoader.exists(resource_path):
+		return {}
+	var music_res := load(resource_path)
+	if music_res == null:
+		return {}
+	return {
+		"loop": _audio_stream_resource_path(music_res.get("musicLoop")),
+		"intro": _audio_stream_resource_path(music_res.get("musicIntro")),
+		"final_loop": _audio_stream_resource_path(music_res.get("musicLoopFinalLap")),
+		"final_intro": _audio_stream_resource_path(music_res.get("musicIntroFinalLap")),
+		"final_lap_timestamps": music_res.get("finalLapTimeStamps"),
+		"wait_for_race_start": bool(music_res.get("wait_for_race_start")),
+	}
+
+func play_music_resource(resource_path: String) -> bool:
+	var definition := _music_definition_from_resource(resource_path)
+	if definition.is_empty():
+		return false
+	return _play_music_from_definition(definition)
+
+func stop_music(fade_seconds: float = 0.0) -> void:
+	if spatial_audio != null and spatial_audio.has_method("stop_music"):
+		spatial_audio.call("stop_music", fade_seconds)
+
+func _configure_track_music(track_dir: String) -> void:
+	race_audio_waiting_music_start = false
+	race_audio_pending_music.clear()
+	if spatial_audio == null:
+		return
+	var music_def = current_track_meta.get("music", {})
+	if typeof(music_def) == TYPE_STRING:
+		music_def = _resolve_track_audio_path(track_dir, music_def)
+	if typeof(music_def) == TYPE_STRING_NAME:
+		music_def = _resolve_track_audio_path(track_dir, str(music_def))
+	if typeof(music_def) == TYPE_STRING and !str(music_def).is_empty():
+		music_def = _music_definition_from_resource(str(music_def))
+	elif current_track_meta.has("music_resource"):
+		music_def = _music_definition_from_resource(_resolve_track_audio_path(track_dir, current_track_meta.get("music_resource", "")))
+	if typeof(music_def) != TYPE_DICTIONARY:
+		if spatial_audio.has_method("stop_music"):
+			spatial_audio.call("stop_music")
+		return
+	var music: Dictionary = music_def
+	if music.has("resource"):
+		var resource_def := _music_definition_from_resource(_resolve_track_audio_path(track_dir, music.get("resource", "")))
+		if resource_def.is_empty():
+			if spatial_audio.has_method("stop_music"):
+				spatial_audio.call("stop_music")
+			return
+		music = resource_def
+	var loop_path := _resolve_track_audio_path(track_dir, music.get("loop", ""))
+	if loop_path.is_empty():
+		if spatial_audio.has_method("stop_music"):
+			spatial_audio.call("stop_music")
+		return
+	var native_def := {
+		"loop": loop_path,
+		"intro": _resolve_track_audio_path(track_dir, music.get("intro", "")),
+		"final_loop": _resolve_track_audio_path(track_dir, music.get("final_loop", "")),
+		"final_intro": _resolve_track_audio_path(track_dir, music.get("final_intro", "")),
+		"final_lap_timestamps": music.get("final_lap_timestamps", []),
+	}
+	race_audio_pending_music = native_def
+	race_audio_pending_music_wait_for_race_start = bool(music.get("wait_for_race_start", false))
+	race_audio_waiting_music_start = true
+
+func _race_audio_focus_player_id() -> int:
+	var local_id := _local_player_id()
+	if local_id != 0 and network_manager.get_simulation_roster().has(local_id):
+		return local_id
+	var roster := network_manager.get_simulation_roster()
+	if !roster.is_empty():
+		return int(roster[0])
+	return local_id
+
+func _update_race_audio_events_after_actual_tick() -> void:
+	if spatial_audio == null or replay_playback_active or game_sim == null or !game_sim.sim_started:
+		return
+	var player_id := _race_audio_focus_player_id()
+	var current_tick := network_manager.get_race_tick()
+	if current_tick < 0:
+		return
+	var previous_tick := race_audio_last_tick
+	race_audio_last_tick = current_tick
+	if game_sim.has_method("get_player_level_start_time"):
+		var start_tick := int(game_sim.call("get_player_level_start_time", player_id))
+		if race_audio_waiting_music_start:
+			var music_start_tick := start_tick
+			if !race_audio_pending_music_wait_for_race_start:
+				music_start_tick = maxi(0, start_tick - RACE_MUSIC_START_LEAD_TICKS)
+			if previous_tick < music_start_tick and current_tick >= music_start_tick:
+				race_audio_waiting_music_start = false
+				race_audio_pending_music_wait_for_race_start = false
+				_play_music_from_definition(race_audio_pending_music)
+				race_audio_pending_music.clear()
+		var countdown_marks := [
+			[start_tick - 180, &"announcer_three"],
+			[start_tick - 120, &"announcer_two"],
+			[start_tick - 60, &"announcer_one"],
+			[start_tick, &"announcer_go"],
+		]
+		for mark in countdown_marks:
+			var mark_tick := int(mark[0])
+			if previous_tick < mark_tick and current_tick >= mark_tick:
+				_queue_announcer_sfx(mark[1])
+	if game_sim.has_method("get_player_lap"):
+		var lap := int(game_sim.call("get_player_lap", player_id))
+		if race_audio_last_local_lap >= 0:
+			if !race_audio_boost_power_announced and race_audio_last_local_lap < RACE_BOOST_POWER_LAP_INDEX and lap >= RACE_BOOST_POWER_LAP_INDEX:
+				race_audio_boost_power_announced = true
+				_queue_announcer_sfx(&"announcer_boost_power")
+			if !race_audio_final_lap_requested and race_audio_last_local_lap < RACE_FINAL_LAP_INDEX and lap >= RACE_FINAL_LAP_INDEX:
+				race_audio_final_lap_requested = true
+				_queue_announcer_sfx(&"announcer_final_lap")
+				if spatial_audio.has_method("request_final_lap_music"):
+					spatial_audio.call("request_final_lap_music")
+		race_audio_last_local_lap = lap
 
 func _parse_cpu_driver_count_arg(args: Array) -> int:
 	var cpu_idx := args.find("-cpu-drivers")
@@ -1975,12 +2175,14 @@ func _build_replay_timeline_controls() -> void:
 	rows.add_child(focus_controls)
 	replay_timeline_focus_prev_button = Button.new()
 	replay_timeline_focus_prev_button.text = "<"
+	replay_timeline_focus_prev_button.focus_mode = Control.FOCUS_NONE
 	replay_timeline_focus_prev_button.custom_minimum_size = Vector2(180.0, 28.0)
 	replay_timeline_focus_prev_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	replay_timeline_focus_prev_button.pressed.connect(_on_replay_focus_previous_pressed)
 	focus_controls.add_child(replay_timeline_focus_prev_button)
 	replay_timeline_focus_next_button = Button.new()
 	replay_timeline_focus_next_button.text = ">"
+	replay_timeline_focus_next_button.focus_mode = Control.FOCUS_NONE
 	replay_timeline_focus_next_button.custom_minimum_size = Vector2(180.0, 28.0)
 	replay_timeline_focus_next_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	replay_timeline_focus_next_button.pressed.connect(_on_replay_focus_next_pressed)
@@ -2010,10 +2212,12 @@ func _build_replay_timeline_controls() -> void:
 	rows.add_child(controls)
 	replay_timeline_play_button = Button.new()
 	replay_timeline_play_button.text = "Pause"
+	replay_timeline_play_button.focus_mode = Control.FOCUS_NONE
 	replay_timeline_play_button.pressed.connect(_on_replay_timeline_play_pressed)
 	controls.add_child(replay_timeline_play_button)
 	var slower := Button.new()
 	slower.text = "-"
+	slower.focus_mode = Control.FOCUS_NONE
 	slower.pressed.connect(_on_replay_timeline_slower_pressed)
 	controls.add_child(slower)
 	replay_timeline_rate_label = Label.new()
@@ -2022,6 +2226,7 @@ func _build_replay_timeline_controls() -> void:
 	controls.add_child(replay_timeline_rate_label)
 	var faster := Button.new()
 	faster.text = "+"
+	faster.focus_mode = Control.FOCUS_NONE
 	faster.pressed.connect(_on_replay_timeline_faster_pressed)
 	controls.add_child(faster)
 	replay_timeline_time_label = Label.new()
@@ -2285,6 +2490,31 @@ func _on_replay_timeline_track_input(event: InputEvent) -> void:
 	_update_replay_timeline_controls()
 	get_viewport().set_input_as_handled()
 
+func _step_replay_by_ticks(delta_ticks: int) -> void:
+	if !replay_playback_active:
+		return
+	if delta_ticks == 0:
+		return
+	replay_playback_paused = true
+	_apply_replay_playback_clock()
+	var target_tick := clampi(_singleplayer_tick + delta_ticks, 0, replay_playback_frames.size())
+	if target_tick == _singleplayer_tick:
+		_update_replay_timeline_controls()
+		return
+	if target_tick < _singleplayer_tick:
+		_seek_replay_to_tick(target_tick, false)
+	else:
+		while _singleplayer_tick < target_tick and replay_playback_index < replay_playback_frames.size():
+			if !_tick_replay_playback(false):
+				break
+		_apply_replay_focus_to_local_visual()
+		if game_sim.sim_started:
+			_update_native_render_camera()
+			game_sim.render_gamesim()
+			if car_node_container.local_visual_car != null:
+				car_node_container.local_visual_car.just_rendered()
+	_update_replay_timeline_controls()
+
 func _update_replay_timeline_controls() -> void:
 	if replay_timeline_root == null:
 		return
@@ -2307,7 +2537,12 @@ func _update_replay_timeline_controls() -> void:
 		replay_timeline_playhead.position = Vector2(replay_timeline_track.size.x * ratio - 2.0, -4.0)
 	_update_replay_timeline_marker_nodes()
 	if replay_timeline_time_label != null:
-		replay_timeline_time_label.text = "%s / %s" % [_format_replay_timeline_time(current_tick), _format_replay_timeline_time(total_ticks)]
+		replay_timeline_time_label.text = "%s / %s    tick %d / %d" % [
+			_format_replay_timeline_time(current_tick),
+			_format_replay_timeline_time(total_ticks),
+			current_tick,
+			total_ticks
+		]
 	if replay_timeline_rate_label != null:
 		replay_timeline_rate_label.text = _format_replay_playback_rate()
 	if replay_timeline_play_button != null:
@@ -2407,6 +2642,8 @@ func _start_replay_playback_from_path(path: String) -> void:
 		var profile_bake_start_us := Time.get_ticks_usec()
 		_bake_replay_seek_checkpoints()
 		profile_bake_us = Time.get_ticks_usec() - profile_bake_start_us
+	else:
+		_capture_replay_seek_checkpoint(0)
 	_apply_replay_playback_clock()
 	_apply_replay_camera_mode()
 	if replay_load_profile_requested:
@@ -3498,11 +3735,13 @@ func _start_race(track_index: int, settings: Array) -> void:
 	obj_container.visible = !auto_hide_track_visuals_mode
 	var json_path: String = String(info["mxt"]).get_basename() + ".json"
 	var track_dir: String = json_path.get_base_dir()
+	_reset_race_audio_state()
 	if FileAccess.file_exists(json_path):
 		var json_text := FileAccess.get_file_as_string(json_path)
 		var parsed = JSON.parse_string(json_text)
 		if typeof(parsed) == TYPE_DICTIONARY:
 			current_track_meta = parsed
+	_configure_track_music(track_dir)
 	var visual_scene_path_for_race := _resolve_track_visual_scene_path(track_dir, current_track_meta)
 	var has_track_visual_scene := visual_scene_path_for_race != "" and ResourceLoader.exists(visual_scene_path_for_race)
 	_set_builtin_track_visuals_enabled(!has_track_visual_scene)
@@ -4160,6 +4399,7 @@ func _physics_process(delta: float) -> void:
 		_update_native_render_camera()
 		var profile_render_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim()
+		_update_race_audio_events_after_actual_tick()
 		if auto_render_profile_mode:
 			render_profile_render_us += Time.get_ticks_usec() - profile_render_start
 		var profile_nametag_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
@@ -4282,6 +4522,18 @@ func _simulate_single_tick():
 			return
 
 func _input(event: InputEvent) -> void:
+	if replay_playback_active and event is InputEventKey:
+		var replay_key := event as InputEventKey
+		if replay_key.pressed and !replay_key.echo:
+			match replay_key.keycode:
+				KEY_LEFT:
+					_step_replay_by_ticks(-1)
+					get_viewport().set_input_as_handled()
+					return
+				KEY_RIGHT:
+					_step_replay_by_ticks(1)
+					get_viewport().set_input_as_handled()
+					return
 	if replay_playback_active and event is InputEventMouseButton:
 		var replay_mouse_button := event as InputEventMouseButton
 		if !replay_mouse_button.pressed and replay_mouse_button.button_index == MOUSE_BUTTON_RIGHT:
@@ -4325,10 +4577,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				return
 	if replay_playback_active and event is InputEventKey:
 		var replay_key := event as InputEventKey
-		if replay_key.pressed and !replay_key.echo and replay_key.keycode == KEY_SPACE:
-			_cycle_replay_camera_mode()
-			get_viewport().set_input_as_handled()
-			return
+		if replay_key.pressed and !replay_key.echo:
+			match replay_key.keycode:
+				KEY_SPACE:
+					_cycle_replay_camera_mode()
+					get_viewport().set_input_as_handled()
+					return
 	if replay_playback_active and event.is_action_pressed("SpinAttack"):
 		_cycle_replay_camera_mode()
 		get_viewport().set_input_as_handled()
@@ -4353,6 +4607,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _return_to_menu() -> void:
+	stop_music(0.5)
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
 	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
@@ -4410,6 +4665,7 @@ func _return_to_menu() -> void:
 		singleplayer_options_root.visible = false
 
 func _return_to_lobby() -> void:
+	stop_music(0.5)
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
 	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)

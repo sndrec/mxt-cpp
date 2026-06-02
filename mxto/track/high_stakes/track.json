@@ -1,5 +1,6 @@
 {
   "name": "Story 3 - High Stakes in Mute City",
+  "music": "res://content/base/sound/mus_mutecity.tres",
   "description": "Loose analytic conversion from F-ZERO GX COLI_COURSE data.",
   "difficulty": 5,
   "fog_distance": 2000.0,

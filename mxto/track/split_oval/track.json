@@ -1,5 +1,6 @@
 {
   "name": "Casino Palace - Split Oval",
+  "music": "res://content/base/sound/mus_casino.tres",
   "description": "Loose analytic conversion from F-ZERO GX COLI_COURSE data.",
   "difficulty": 5,
   "fog_distance": 2000.0,

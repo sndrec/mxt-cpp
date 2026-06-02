@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=6 format=3 uid="uid://davw3j5eov6rx"]
+
+[ext_resource type="AudioStream" uid="uid://74oipsieuvyy" path="res://content/base/music/lightning_intro.wav" id="1_c7s8d"]
+[ext_resource type="AudioStream" uid="uid://xt6tohhho41t" path="res://content/base/music/lightning_finallap_intro.wav" id="2_4ihmk"]
+[ext_resource type="AudioStream" uid="uid://3ywoku2alwye" path="res://content/base/music/lightning_loop.wav" id="3_fa7ge"]
+[ext_resource type="AudioStream" uid="uid://bkcywakdgo4g3" path="res://content/base/music/lightning_finallap_loop.wav" id="4_xw1sy"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="5_i2jga"]
+
+[resource]
+script = ExtResource("5_i2jga")
+musicIntro = ExtResource("1_c7s8d")
+musicLoop = ExtResource("3_fa7ge")
+musicIntroFinalLap = ExtResource("2_4ihmk")
+musicLoopFinalLap = ExtResource("4_xw1sy")
+finalLapTimeStamps = [6.424, 13.642, 20.86, 28.078, 35.296, 42.514, 49.732, 56.95, 64.168, 71.386, 78.604, 85.822, 93.041]
+wait_for_race_start = false

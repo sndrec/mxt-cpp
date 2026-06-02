@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=6 format=3 uid="uid://bwghey71hokct"]
+
+[ext_resource type="AudioStream" uid="uid://rxxg2qsc1hbd" path="res://content/base/music/aeropolis_intro.wav" id="1_cerhy"]
+[ext_resource type="AudioStream" uid="uid://uypus3nd45ef" path="res://content/base/music/aeropolis_finallap_intro.wav" id="2_epa6e"]
+[ext_resource type="AudioStream" uid="uid://deooram2gk8a5" path="res://content/base/music/aeropolis_loop.wav" id="3_erhog"]
+[ext_resource type="AudioStream" uid="uid://c0ue3mhrcfxl5" path="res://content/base/music/aeropolis_finallap_loop.wav" id="4_u8ahf"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="5_lnq50"]
+
+[resource]
+script = ExtResource("5_lnq50")
+musicIntro = ExtResource("1_cerhy")
+musicLoop = ExtResource("3_erhog")
+musicIntroFinalLap = ExtResource("2_epa6e")
+musicLoopFinalLap = ExtResource("4_u8ahf")
+finalLapTimeStamps = [11.201, 24.001, 36.801, 49.601, 62.401, 75.201, 88.001, 100.801, 113.601, 126.401, 139.201, 152.001]
+wait_for_race_start = false

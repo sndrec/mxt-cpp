@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=4 format=3 uid="uid://cr8norhevsu00"]
+
+[ext_resource type="AudioStream" uid="uid://i8ijey7xbleo" path="res://content/base/music/casino_loop.wav" id="1_ghhqu"]
+[ext_resource type="AudioStream" uid="uid://gpq2tult0et3" path="res://content/base/music/casino_loop_finallap.wav" id="2_3ro3r"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="5_eva8p"]
+
+[resource]
+script = ExtResource("5_eva8p")
+musicLoop = ExtResource("1_ghhqu")
+musicLoopFinalLap = ExtResource("2_3ro3r")
+finalLapTimeStamps = [0.0, 10.105, 20.211, 30.316, 40.421, 50.527, 60.632, 70.737]
+wait_for_race_start = false

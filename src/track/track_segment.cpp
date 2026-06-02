@@ -1175,7 +1175,11 @@ void RoadShape::get_edge_rail_sides(
 		if (rail_n.length_squared() <= 0.0f) {
 			rail_n = _normalized_or(edge_surface.basis[0], root.t3d.basis[0]);
 		}
-		if (rail_n.dot(interior_reference - edge_surface.origin) < 0.0f) {
+		const SimVec3 inward_n = _normalized_or_zero(edge_surface.basis[0] * -edge_x[i]);
+		const SimVec3 orient_n = inward_n.length_squared() > 0.0f ?
+			inward_n :
+			_normalized_or_zero(interior_reference - edge_surface.origin);
+		if (orient_n.length_squared() > 0.0f && rail_n.dot(orient_n) < 0.0f) {
 			rail_n = -rail_n;
 		}
 
