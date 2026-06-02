@@ -268,6 +268,7 @@ slot 7 volume control = volume_control
   - `param_2 = normalize(-cross(local_94, track_normal))`.
 - `802116fc` walks `machine.suspension_FR/FL/BR/BL` (`machine + 0x244`,
   stride `0x5c`) and only processes corners whose state has bit `4`.
+  It explicitly skips corners whose state has bit `2`.
 - For each active corner, it computes:
   - `corner_delta = corner.pos - corner.pos_old`
   - `lateral_delta = dot(corner_delta, param_2)`
@@ -294,6 +295,11 @@ Current MaxX:
   `DAT_803cb6e4`: per-drift-corner lateral displacement along the machine/track
   lateral tangent, side-filtered by corner, thresholded at `1.0`, capped per
   corner, half-summed, and scaled by `127.0`.
+- Ignores MaxX corners that also have `TILTSTATE::AIRBORNE`, matching the
+  producer's `(state & 2) == 0` condition.
+- Because MaxX's `TILTSTATE::DRIFT` is broader/stickier than GX's exact
+  suspension bit, the loop only plays while the computed target control or the
+  ramped control is nonzero.
 - Ramps the loop control byte by `1` per update toward that target.
 - Sends the ramped control to pitch/speed, and sends a full local volume control
   to volume. This fixes an earlier MaxX mistake where the `+0x32`-style volume

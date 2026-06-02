@@ -252,7 +252,8 @@ static uint8_t mxt_audio_gx_drift_target_control(const PhysicsCarSoA& soa, int l
 	const int base = lane * 4;
 	for (int corner = 0; corner < 4; ++corner) {
 		const int point = base + corner;
-		if ((soa.tilt_state[point] & TILTSTATE::DRIFT) == 0u) {
+		if ((soa.tilt_state[point] & TILTSTATE::DRIFT) == 0u ||
+			(soa.tilt_state[point] & TILTSTATE::AIRBORNE) != 0u) {
 			continue;
 		}
 		const float delta_x = soa.tilt_pos_x[point] - soa.tilt_pos_old_x[point];
@@ -1213,10 +1214,10 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			stop_loop_on_emitter(emitter, brake_key);
 		}
 
-		if (drift_contact_active) {
-			uint8_t contact_target_control = mxt_audio_gx_drift_target_control(soa, lane);
+		const uint8_t drift_target_control = mxt_audio_gx_drift_target_control(soa, lane);
+		if (drift_contact_active && (drift_target_control != 0u || loop_state.gx_drift_contact_control != 0u)) {
 			loop_state.gx_drift_contact_control =
-				mxt_audio_step_gx_control(loop_state.gx_drift_contact_control, contact_target_control, 1u);
+				mxt_audio_step_gx_control(loop_state.gx_drift_contact_control, drift_target_control, 1u);
 			const uint8_t contact_control = loop_state.gx_drift_contact_control;
 			const uint8_t volume_control = 0x7f;
 			const float contact_volume_db = mxt_audio_gx_drift_contact_volume_db(volume_control);
