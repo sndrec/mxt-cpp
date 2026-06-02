@@ -114,6 +114,7 @@ const SPATIAL_AUDIO_SFX := {
 	&"terrain_lava": "res://sfx/vehicle/terrain_lava.wav",
 	&"thrust_on": "res://sfx/vehicle/thrust_on.wav",
 	&"ufo": "res://sfx/vehicle/ufo.wav",
+	&"zero_hp": "res://sfx/vehicle/zero_hp.wav",
 	&"announcer_boost_power": "res://sfx/announcer/boost_power.wav",
 	&"announcer_final_lap": "res://sfx/announcer/final_lap.wav",
 	&"announcer_go": "res://sfx/announcer/go.wav",

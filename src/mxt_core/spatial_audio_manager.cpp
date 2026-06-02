@@ -871,7 +871,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	static const StringName sideattack_sfx("sideattack");
 	static const StringName active_start_sfx("active_start");
 	static const StringName thrust_on_sfx("thrust_on");
-	static const StringName boom_sfx("boom");
+	static const StringName zero_hp_sfx("zero_hp");
 	static const StringName gx_engine_keys[5] = {
 		StringName("gx_engine_0"),
 		StringName("gx_engine_1"),
@@ -918,13 +918,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		VehicleLoopState& loop_state = vehicle_loop_states[static_cast<size_t>(emitter.car_index)];
 		const uint32_t machine_state = soa.machine_state[lane];
 		const uint32_t terrain_state = soa.terrain_state[lane];
-		const int point_base = lane * 4;
-		uint8_t contact_count = 0;
-		for (int point_index = 0; point_index < 4; ++point_index) {
-			if ((soa.tilt_state[point_base + point_index] & TILTSTATE::AIRBORNE) == 0u) {
-				++contact_count;
-			}
-		}
 		const bool car_audible =
 			(machine_state & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::RETIRED)) == 0u;
 
@@ -932,7 +925,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			if (!loop_state.event_state_initialized) {
 				loop_state.previous_machine_state = machine_state;
 				loop_state.previous_terrain_state = terrain_state;
-				loop_state.previous_contact_count = contact_count;
 				loop_state.previous_strafe_roll_active = false;
 				loop_state.event_state_initialized = true;
 			} else {
@@ -973,15 +965,12 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 					play_on_emitter(emitter, active_start_sfx, 0.0f, 1.0f);
 				}
 				if ((rising_machine_state & MACHINESTATE::ZEROHP) != 0u && (machine_state & MACHINESTATE::B10) == 0u) {
-					play_on_emitter(emitter, boom_sfx, 0.0f, 1.0f);
+					play_on_emitter(emitter, zero_hp_sfx, 0.0f, 1.0f);
 				}
 				if ((machine_state & MACHINESTATE::RACEJUSTBEGAN_Q) != 0u) {
 					play_on_emitter(emitter, race_start_sfx, 0.0f, 1.0f);
 				} else if ((rising_machine_state & MACHINESTATE::JUSTTAPPEDACCEL) != 0u) {
 					play_on_emitter(emitter, thrust_on_sfx, -3.0f, 1.0f);
-				}
-				if (car_audible && contact_count > 0 && loop_state.previous_contact_count == 0) {
-					play_on_emitter(emitter, landing_sfx, -6.0f, 1.0f);
 				}
 				if ((rising_machine_state & MACHINESTATE::SPINATTACKING) != 0u) {
 					play_on_emitter(emitter, spin_sfx, 0.0f, 1.0f);
@@ -991,7 +980,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				}
 				loop_state.previous_machine_state = machine_state;
 				loop_state.previous_terrain_state = terrain_state;
-				loop_state.previous_contact_count = contact_count;
 			}
 		}
 

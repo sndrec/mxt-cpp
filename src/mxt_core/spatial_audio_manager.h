@@ -86,7 +86,6 @@ private:
 		uint8_t gx_engine_speed_control = 0;
 		uint8_t landing_sound_frame = 0;
 		uint8_t landing_reset_frames = 60;
-		uint8_t previous_contact_count = 0;
 		bool previous_strafe_roll_active = false;
 		bool event_state_initialized = false;
 		bool gx_engine_speed_initialized = false;
