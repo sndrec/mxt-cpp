@@ -1035,7 +1035,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	static const StringName air_sfx[2] = { StringName("air_0"), StringName("air_1") };
 	static const StringName brake_key("brake");
 	static const StringName brake_sfx("brake");
-	static const StringName suspension_contact_sfx("suspension_contact");
 	static const StringName drift_loop_key("drift_loop");
 	static const StringName drift_loop_sfx("drift_loop");
 	static const StringName terrain_dirt_key("terrain_dirt");
@@ -1080,6 +1079,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		{ { 0x7f, 0x0b32, 0x0453 } },
 	};
 	static constexpr float terrain_layer_volume_db = -12.0f;
+	static constexpr float engine_layer_volume_gain_db = 5.0f;
 	static constexpr uint32_t terrain_hit_mine = 0x40000000u;
 	static constexpr float gx_strafe_min_speed_kmh = 100.0f;
 	static constexpr float gx_jump_plate_min_speed_kmh = 850.0f;
@@ -1136,7 +1136,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
 				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
-				loop_state.previous_drift_contact_active = drift_contact_active;
 				loop_state.previous_strafe_roll_active = false;
 				loop_state.event_state_initialized = true;
 			} else {
@@ -1172,9 +1171,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 						play_on_emitter(emitter, vehicle_manual_boost_sfx[boost_sfx_index], -5.0f, 1.0f);
 					}
 				}
-				if (drift_contact_active && !loop_state.previous_drift_contact_active) {
-					play_on_emitter(emitter, suspension_contact_sfx, 0.0f, 1.0f);
-				}
 				if (car_audible && (rising_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u) {
 					play_on_emitter(emitter, dash_plate_secondary_sfx, -5.0f, 1.0f);
 					play_on_emitter(emitter, dash_plate_sfx, -5.0f, 1.0f);
@@ -1205,7 +1201,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
 				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
-				loop_state.previous_drift_contact_active = drift_contact_active;
 			}
 		}
 
@@ -1270,7 +1265,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 					const MxtGxEngineTone& tone = engine_program.tones[tone_index];
 					const StringName& tone_sfx = mxt_audio_gx_engine_sfx_id(tone.sample_id);
 					if (tone_sfx != StringName()) {
-						const float tone_volume_db = mxt_audio_gx_engine_volume(engine_speed_control, tone);
+						const float tone_volume_db = mxt_audio_gx_engine_volume(engine_speed_control, tone) + engine_layer_volume_gain_db;
 						const float tone_pitch = clamped_pitch(mxt_audio_gx_engine_pitch(engine_speed_control, tone));
 						set_loop_on_emitter(emitter, gx_engine_keys[tone_index], tone_sfx, tone_volume_db, tone_pitch);
 						continue;
@@ -1361,7 +1356,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 						engine_text += String(",");
 					}
 					engine_text += String::num_int64(static_cast<int64_t>(tone.sample_id)) +
-						String(":vol=") + String::num(mxt_audio_gx_engine_volume(engine_speed_control, tone)) +
+						String(":vol=") + String::num(mxt_audio_gx_engine_volume(engine_speed_control, tone) + engine_layer_volume_gain_db) +
 						String(":pitch=") + String::num(clamped_pitch(mxt_audio_gx_engine_pitch(engine_speed_control, tone)));
 				}
 			}

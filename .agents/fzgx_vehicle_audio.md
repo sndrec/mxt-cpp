@@ -312,7 +312,9 @@ Current MaxX:
 
 - Treats drift/contact as any corner with `TILTSTATE::DRIFT` (`0x4`), matching
   the GX suspension-state bit used by `FUN_8024a8b0`.
-- Plays `suspension_contact.wav` one-shot on drift/contact rising edge.
+- Does not play the `suspension_contact.wav` one-shot on drift/contact rising
+  edge in the current port; it read as a manual-drift entry sound in MaxX and
+  was removed for now.
 - Plays `drift_loop` as `PACK1-191.wav`.
 - Computes the target control from the MaxX equivalent of GX's
   `DAT_803cb6e4`: per-drift-corner lateral displacement along the machine/track
@@ -358,7 +360,8 @@ Current MaxX:
   - light: `PACK1-189`, `PACK1-190`, `PACK1-237`, `PACK1-185`
   - mid: `PACK1-185`, `PACK1-186`, `PACK1-187`, `PACK1-236`, `PACK1-240`
   - heavy: `PACK1-250`, `PACK1-251`, `PACK1-188`
-- Applies decoded-looking Musyx volume/pitch curves and a `-13 dB` trim per layer.
+- Applies decoded-looking Musyx volume/pitch curves, a `-13 dB` trim per layer,
+  and a current MaxX mix gain of `+5 dB` on primary engine layers only.
 - Starts engine when car is audible and not in starting countdown. GX source does
   not show a separate low-speed start gate for the primary engine program.
 - Does not currently model GX terrain/state slots `4`/`5` as separately gated
