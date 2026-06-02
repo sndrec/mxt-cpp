@@ -37,4 +37,5 @@ func instantiate_cars(definitions: Array, peer_ids: Array, local_player_id: int 
 		add_child(new_car)
 		new_car.race_hud.focus_player_id = local_player_id
 		new_car.car_camera.make_current()
+		new_car.make_vehicle_audio_listener_current()
 		local_visual_car = new_car

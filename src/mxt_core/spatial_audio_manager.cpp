@@ -130,36 +130,25 @@ static float mxt_audio_musyx_volume_to_db(int volume, float trim_db)
 	return std::max(MXT_AUDIO_SILENCE_DB, trim_db + 20.0f * std::log10(gain));
 }
 
-static bool mxt_audio_should_force_loop_sfx(const StringName& id)
+static bool mxt_audio_is_loop_sfx(const StringName& id)
 {
 	static const StringName air_0("air_0");
 	static const StringName air_1("air_1");
+	static const StringName brake("brake");
 	static const StringName energy_restore("energy_restore");
 	static const StringName engine("engine");
-	static const StringName restore("restore");
 	static const StringName strafe("strafe");
+	static const StringName suspension_contact_loop("suspension_contact_loop");
 	static const StringName terrain_dirt("terrain_dirt");
 	static const StringName terrain_lava("terrain_lava");
+	static const StringName terrain_lava_secondary("terrain_lava_secondary");
 
-	if (id == air_0 || id == air_1 || id == energy_restore ||
-		id == engine || id == restore || id == strafe || id == terrain_dirt || id == terrain_lava) {
+	if (id == air_0 || id == air_1 || id == brake || id == energy_restore ||
+		id == engine || id == strafe || id == suspension_contact_loop ||
+		id == terrain_dirt || id == terrain_lava || id == terrain_lava_secondary) {
 		return true;
 	}
 	return String(id).begins_with("gx_engine_");
-}
-
-static void mxt_audio_force_loop_if_needed(const StringName& id, const Ref<AudioStream>& stream)
-{
-	if (!mxt_audio_should_force_loop_sfx(id)) {
-		return;
-	}
-	AudioStreamWAV* wav = Object::cast_to<AudioStreamWAV>(stream.ptr());
-	if (!wav) {
-		return;
-	}
-	wav->set_loop_mode(AudioStreamWAV::LOOP_FORWARD);
-	wav->set_loop_begin(0);
-	wav->set_loop_end(-1);
 }
 
 static float mxt_audio_speed_kmh_to_gx_visual_speed_norm(float speed_kmh)
@@ -196,6 +185,58 @@ static float mxt_audio_gx_terrain_pitch(uint8_t speed_control)
 {
 	const float control = static_cast<float>(speed_control) * (1.0f / 127.0f);
 	return 0.65f + control * 0.85f;
+}
+
+static float mxt_audio_gx_suspension_contact_pitch(uint8_t pitch_control)
+{
+	static constexpr MxtMusyxPitchRatioPoint pitch_curve[1] = { { 0x7f, 0x0b52, 0x01c4 } };
+	return mxt_audio_eval_musyx_pitch_ratio(pitch_control, 0u, pitch_curve, 1);
+}
+
+static float mxt_audio_gx_suspension_contact_volume_db(uint8_t contact_control)
+{
+	static constexpr MxtMusyxCurvePoint volume_curve[1] = { { 0x7f, 0x40, 0x0000 } };
+	const int musyx_volume = mxt_audio_eval_musyx_curve(contact_control, 0u, volume_curve, 1);
+	return mxt_audio_musyx_volume_to_db(musyx_volume, -7.0f);
+}
+
+static uint8_t mxt_audio_gx_suspension_contact_count(const PhysicsCarSoA& soa, int lane)
+{
+	uint8_t contact_count = 0;
+	const int base = lane * 4;
+	for (int corner = 0; corner < 4; ++corner) {
+		const uint32_t state = soa.tilt_state[base + corner];
+		if ((state & (TILTSTATE::AIRBORNE | TILTSTATE::DISCONNECTED)) == 0u) {
+			++contact_count;
+		}
+	}
+	return contact_count;
+}
+
+static uint8_t mxt_audio_gx_air_tilt_control(float air_tilt)
+{
+	float control = 30.0f;
+	if (air_tilt >= 0.0f) {
+		control += 1.6166667f * air_tilt;
+	} else {
+		control += 0.6f * air_tilt;
+	}
+	return static_cast<uint8_t>(mxt_audio_clamp_float(control, 0.0f, 127.0f));
+}
+
+static uint8_t mxt_audio_gx_collision_tier(float hit_strength)
+{
+	const float strength = mxt_audio_clamp_float(hit_strength, 0.0f, 1.0f);
+	if (strength < 0.12f) {
+		return 0;
+	}
+	if (strength < 0.28f) {
+		return 1;
+	}
+	if (strength < 0.55f) {
+		return 2;
+	}
+	return 3;
 }
 
 static const MxtGxEngineProgram& mxt_audio_select_gx_engine_program(float stat_weight)
@@ -303,6 +344,8 @@ void MxtSpatialAudioManager::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_reassignment_fade_seconds"), &MxtSpatialAudioManager::get_reassignment_fade_seconds);
 	ClassDB::bind_method(D_METHOD("set_vehicle_max_distance", "distance"), &MxtSpatialAudioManager::set_vehicle_max_distance);
 	ClassDB::bind_method(D_METHOD("get_vehicle_max_distance"), &MxtSpatialAudioManager::get_vehicle_max_distance);
+	ClassDB::bind_method(D_METHOD("set_vehicle_loop_debug_enabled", "enabled"), &MxtSpatialAudioManager::set_vehicle_loop_debug_enabled);
+	ClassDB::bind_method(D_METHOD("get_vehicle_loop_debug_enabled"), &MxtSpatialAudioManager::get_vehicle_loop_debug_enabled);
 	ClassDB::bind_method(D_METHOD("play_music_paths", "loop_path", "intro_path", "final_loop_path", "final_intro_path", "final_lap_timestamps"), &MxtSpatialAudioManager::play_music_paths, DEFVAL(String()), DEFVAL(String()), DEFVAL(String()), DEFVAL(PackedFloat32Array()));
 	ClassDB::bind_method(D_METHOD("stop_music", "fade_seconds"), &MxtSpatialAudioManager::stop_music, DEFVAL(0.0));
 	ClassDB::bind_method(D_METHOD("request_final_lap_music"), &MxtSpatialAudioManager::request_final_lap_music);
@@ -314,6 +357,7 @@ void MxtSpatialAudioManager::_bind_methods()
 	ClassDB::bind_method(D_METHOD("clear_announcer_queue"), &MxtSpatialAudioManager::clear_announcer_queue);
 	ClassDB::bind_method(D_METHOD("get_announcer_queue_size"), &MxtSpatialAudioManager::get_announcer_queue_size);
 	ClassDB::bind_method(D_METHOD("update_from_gamesim", "game_sim", "local_player_id", "delta", "update_assignments"), &MxtSpatialAudioManager::update_from_gamesim, DEFVAL(true));
+	ClassDB::bind_method(D_METHOD("set_vehicle_manual_boost_sfx", "car_index", "sfx_id"), &MxtSpatialAudioManager::set_vehicle_manual_boost_sfx);
 	ClassDB::bind_method(D_METHOD("play_vehicle_oneshot", "car_index", "sfx_id", "volume_db", "pitch_scale"), &MxtSpatialAudioManager::play_vehicle_oneshot, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("set_vehicle_loop", "car_index", "key", "sfx_id", "volume_db", "pitch_scale"), &MxtSpatialAudioManager::set_vehicle_loop, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("stop_vehicle_loop", "car_index", "key"), &MxtSpatialAudioManager::stop_vehicle_loop);
@@ -329,6 +373,7 @@ void MxtSpatialAudioManager::_bind_methods()
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_announcer_queue"), "set_max_announcer_queue", "get_max_announcer_queue");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "reassignment_fade_seconds"), "set_reassignment_fade_seconds", "get_reassignment_fade_seconds");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "vehicle_max_distance"), "set_vehicle_max_distance", "get_vehicle_max_distance");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "vehicle_loop_debug_enabled"), "set_vehicle_loop_debug_enabled", "get_vehicle_loop_debug_enabled");
 }
 
 void MxtSpatialAudioManager::_notification(int p_what)
@@ -464,7 +509,6 @@ void MxtSpatialAudioManager::prune_stopped_streams(Emitter& emitter)
 	refresh_playback(emitter);
 	if (emitter.playback.is_null()) {
 		emitter.active_streams.clear();
-		emitter.loop_streams.clear();
 		return;
 	}
 	size_t write = 0;
@@ -478,6 +522,20 @@ void MxtSpatialAudioManager::prune_stopped_streams(Emitter& emitter)
 
 }
 
+void MxtSpatialAudioManager::apply_loop_player_settings(AudioStreamPlayer3D* player, float volume_db, float pitch_scale) const
+{
+	if (!player) {
+		return;
+	}
+	player->set_bus(audio_bus);
+	player->set_unit_size(24.0);
+	player->set_max_distance(2200.0);
+	player->set_attenuation_model(AudioStreamPlayer3D::ATTENUATION_INVERSE_DISTANCE);
+	player->set_doppler_tracking(AudioStreamPlayer3D::DOPPLER_TRACKING_DISABLED);
+	player->set_volume_db(volume_db);
+	player->set_pitch_scale(pitch_scale);
+}
+
 void MxtSpatialAudioManager::stop_all_streams(Emitter& emitter)
 {
 	refresh_playback(emitter);
@@ -487,10 +545,12 @@ void MxtSpatialAudioManager::stop_all_streams(Emitter& emitter)
 				emitter.playback->stop_stream(active.id);
 			}
 		}
-		for (const LoopStream& loop : emitter.loop_streams) {
-			if (loop.id != AudioStreamPlaybackPolyphonic::INVALID_ID) {
-				emitter.playback->stop_stream(loop.id);
-			}
+	}
+	for (LoopStream& loop : emitter.loop_streams) {
+		if (loop.player) {
+			loop.player->stop();
+			loop.player->queue_free();
+			loop.player = nullptr;
 		}
 	}
 	emitter.active_streams.clear();
@@ -510,37 +570,69 @@ int MxtSpatialAudioManager::find_loop_stream(const Emitter& emitter, const Strin
 bool MxtSpatialAudioManager::set_loop_on_emitter(Emitter& emitter, const StringName& key, const StringName& sfx_id, float volume_db, float pitch_scale)
 {
 	if (key == StringName() || sfx_id == StringName()) {
+		if (vehicle_loop_debug_enabled) {
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_FAIL empty key_or_sfx key="), String(key), String(" sfx="), String(sfx_id));
+		}
 		return false;
 	}
 	Ref<AudioStream> stream = find_sfx(sfx_id);
 	if (stream.is_null()) {
+		if (vehicle_loop_debug_enabled) {
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_FAIL missing_sfx key="), String(key), String(" sfx="), String(sfx_id));
+		}
 		return false;
 	}
-	refresh_playback(emitter);
-	if (emitter.playback.is_null()) {
+	if (!emitter.player) {
+		if (vehicle_loop_debug_enabled) {
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_FAIL no_player car="), static_cast<int64_t>(emitter.car_index),
+				String(" key="), String(key), String(" sfx="), String(sfx_id),
+				String(" playback="), emitter.playback.is_valid());
+		}
 		return false;
 	}
 
-	const float next_volume_db = mxt_audio_clamp_float(volume_db, -80.0f, 24.0f);
+	const float next_volume_db = mxt_audio_clamp_float(volume_db, -80.0f, 48.0f);
 	const float next_pitch_scale = clamped_pitch(pitch_scale);
 	const int loop_index = find_loop_stream(emitter, key);
 	if (loop_index >= 0) {
 		LoopStream& loop = emitter.loop_streams[static_cast<size_t>(loop_index)];
-		if (loop.id != AudioStreamPlaybackPolyphonic::INVALID_ID && loop.sfx_id == sfx_id) {
+		if (loop.player && loop.sfx_id == sfx_id) {
 			loop.volume_db = next_volume_db;
 			loop.pitch_scale = next_pitch_scale;
-			emitter.playback->set_stream_volume(loop.id, next_volume_db);
-			emitter.playback->set_stream_pitch_scale(loop.id, next_pitch_scale);
+			apply_loop_player_settings(loop.player, next_volume_db, next_pitch_scale);
+			if (!loop.player->is_playing()) {
+				loop.player->play(0.0);
+				if (vehicle_loop_debug_enabled) {
+					UtilityFunctions::print(String("MXT_AUDIO_LOOP_RESTART car="), static_cast<int64_t>(emitter.car_index),
+						String(" key="), String(key), String(" sfx="), String(sfx_id),
+						String(" vol="), next_volume_db, String(" pitch="), next_pitch_scale,
+						String(" playing="), loop.player->is_playing());
+				}
+			}
 			return true;
 		}
-		if (loop.id != AudioStreamPlaybackPolyphonic::INVALID_ID) {
-			emitter.playback->stop_stream(loop.id);
+		if (loop.player) {
+			loop.player->stop();
+			loop.player->queue_free();
 		}
+		loop.player = memnew(AudioStreamPlayer3D);
+		loop.player->set_name(String("Loop_") + String(key));
+		loop.player->set_stream(stream);
+		loop.player->set_position(Vector3());
+		apply_loop_player_settings(loop.player, next_volume_db, next_pitch_scale);
+		emitter.player->add_child(loop.player);
+		loop.player->play(0.0);
 		loop.sfx_id = sfx_id;
 		loop.volume_db = next_volume_db;
 		loop.pitch_scale = next_pitch_scale;
-		loop.id = emitter.playback->play_stream(stream, 0.0, next_volume_db, next_pitch_scale, AudioServer::PLAYBACK_TYPE_DEFAULT, audio_bus);
-		return loop.id != AudioStreamPlaybackPolyphonic::INVALID_ID;
+		if (vehicle_loop_debug_enabled) {
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_SWAP car="), static_cast<int64_t>(emitter.car_index),
+				String(" key="), String(key), String(" sfx="), String(sfx_id),
+				String(" vol="), next_volume_db,
+				String(" pitch="), next_pitch_scale,
+				String(" playing="), loop.player->is_playing());
+		}
+		return true;
 	}
 
 	LoopStream loop;
@@ -548,9 +640,19 @@ bool MxtSpatialAudioManager::set_loop_on_emitter(Emitter& emitter, const StringN
 	loop.sfx_id = sfx_id;
 	loop.volume_db = next_volume_db;
 	loop.pitch_scale = next_pitch_scale;
-	loop.id = emitter.playback->play_stream(stream, 0.0, next_volume_db, next_pitch_scale, AudioServer::PLAYBACK_TYPE_DEFAULT, audio_bus);
-	if (loop.id == AudioStreamPlaybackPolyphonic::INVALID_ID) {
-		return false;
+	loop.player = memnew(AudioStreamPlayer3D);
+	loop.player->set_name(String("Loop_") + String(key));
+	loop.player->set_stream(stream);
+	loop.player->set_position(Vector3());
+	apply_loop_player_settings(loop.player, next_volume_db, next_pitch_scale);
+	emitter.player->add_child(loop.player);
+	loop.player->play(0.0);
+	if (vehicle_loop_debug_enabled) {
+		UtilityFunctions::print(String("MXT_AUDIO_LOOP_START car="), static_cast<int64_t>(emitter.car_index),
+			String(" key="), String(key), String(" sfx="), String(sfx_id),
+			String(" vol="), next_volume_db,
+			String(" pitch="), next_pitch_scale,
+			String(" playing="), loop.player->is_playing());
 	}
 	emitter.loop_streams.push_back(loop);
 	return true;
@@ -558,14 +660,15 @@ bool MxtSpatialAudioManager::set_loop_on_emitter(Emitter& emitter, const StringN
 
 bool MxtSpatialAudioManager::stop_loop_on_emitter(Emitter& emitter, const StringName& key)
 {
-	refresh_playback(emitter);
 	const int loop_index = find_loop_stream(emitter, key);
 	if (loop_index < 0) {
 		return false;
 	}
 	LoopStream& loop = emitter.loop_streams[static_cast<size_t>(loop_index)];
-	if (emitter.playback.is_valid() && loop.id != AudioStreamPlaybackPolyphonic::INVALID_ID) {
-		emitter.playback->stop_stream(loop.id);
+	if (loop.player) {
+		loop.player->stop();
+		loop.player->queue_free();
+		loop.player = nullptr;
 	}
 	const size_t last = emitter.loop_streams.size() - 1;
 	emitter.loop_streams[static_cast<size_t>(loop_index)] = emitter.loop_streams[last];
@@ -651,10 +754,10 @@ void MxtSpatialAudioManager::advance_fade(Emitter& emitter, double delta, bool v
 				emitter.playback->set_stream_volume(active.id, fade_volume_db(active.volume_db, fade_ratio));
 			}
 		}
-		for (const LoopStream& loop : emitter.loop_streams) {
-			if (loop.id != AudioStreamPlaybackPolyphonic::INVALID_ID) {
-				emitter.playback->set_stream_volume(loop.id, fade_volume_db(loop.volume_db, fade_ratio));
-			}
+	}
+	for (const LoopStream& loop : emitter.loop_streams) {
+		if (loop.player) {
+			loop.player->set_volume_db(fade_volume_db(loop.volume_db, fade_ratio));
 		}
 	}
 	if (emitter.fade_remaining > 0.0f) {
@@ -855,18 +958,34 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	static const StringName energy_sfx("energy_restore");
 	static const StringName air_keys[2] = { StringName("air_0"), StringName("air_1") };
 	static const StringName air_sfx[2] = { StringName("air_0"), StringName("air_1") };
+	static const StringName brake_key("brake");
+	static const StringName brake_sfx("brake");
 	static const StringName engine_key("engine");
 	static const StringName engine_sfx("engine");
+	static const StringName suspension_contact_key("suspension_contact");
+	static const StringName suspension_contact_sfx("suspension_contact");
+	static const StringName suspension_contact_loop_sfx("suspension_contact_loop");
 	static const StringName terrain_dirt_key("terrain_dirt");
 	static const StringName terrain_lava_key("terrain_lava");
+	static const StringName terrain_lava_secondary_key("terrain_lava_secondary");
 	static const StringName terrain_dirt_sfx("terrain_dirt");
 	static const StringName terrain_lava_sfx("terrain_lava");
+	static const StringName terrain_lava_secondary_sfx("terrain_lava_secondary");
 	static const StringName dash_plate_sfx("dash_plate");
+	static const StringName dash_plate_secondary_sfx("dash_plate_secondary");
+	static const StringName jump_plate_sfx("jump_plate");
 	static const StringName landing_sfx("landing");
 	static const StringName landing_b10_sfx("landing_b10");
 	static const StringName mine_sfx("mine");
+	static const StringName collision_light_secondary_sfx("collision_light_secondary");
+	static const StringName collision_sfx[4] = {
+		StringName("collision_light"),
+		StringName("collision_medium"),
+		StringName("collision_hard"),
+		StringName("collision_heavy"),
+	};
 	static const StringName race_start_sfx("race_start");
-	static const StringName spin_sfx("maybe_spin");
+	static const StringName spin_sfx("spinattack");
 	static const StringName strafe_sfx("strafe");
 	static const StringName sideattack_sfx("sideattack");
 	static const StringName active_start_sfx("active_start");
@@ -887,8 +1006,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		{ { 0x7f, 0x0cb2, 0x01c4 } },
 		{ { 0x7f, 0x0b32, 0x0453 } },
 	};
-	static constexpr float air_layer_volume_db = -13.0f;
-	static constexpr float air_neutral_pitch_scale = 0.4f;
 	static constexpr float terrain_layer_volume_db = -12.0f;
 	static constexpr uint32_t terrain_hit_mine = 0x40000000u;
 	static constexpr float gx_jump_plate_min_speed_kmh = 850.0f;
@@ -903,6 +1020,20 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	const float delta_f = mxt_audio_clamp_float(static_cast<float>(delta), 0.0f, 1.0f);
 	const float pitstop_lerp_weight = std::min(1.0f, delta_f * 10.0f);
 	const float vehicle_loop_lerp_weight = std::min(1.0f, delta_f * 12.0f);
+	bool debug_status_due = false;
+	int debug_status_printed = 0;
+	if (vehicle_loop_debug_enabled) {
+		++vehicle_loop_debug_status_counter;
+		if (vehicle_loop_debug_status_counter >= vehicle_loop_debug_status_interval) {
+			vehicle_loop_debug_status_counter = 0;
+			debug_status_due = true;
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_TICK assigned="), static_cast<int64_t>(get_assigned_vehicle_count()),
+				String(" emitters="), static_cast<int64_t>(vehicle_emitters.size()),
+				String(" sfx_entries="), static_cast<int64_t>(sfx_entries.size()),
+				String(" update_assignments="), step_events,
+				String(" delta="), delta_f);
+		}
+	}
 
 	for (Emitter& emitter : vehicle_emitters) {
 		if (emitter.fade_remaining > 0.0f || emitter.car_index < 0 || emitter.car_index >= sim->num_cars) {
@@ -920,11 +1051,18 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		const uint32_t terrain_state = soa.terrain_state[lane];
 		const bool car_audible =
 			(machine_state & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::RETIRED)) == 0u;
+		const uint8_t suspension_contact_count = mxt_audio_gx_suspension_contact_count(soa, lane);
+		const bool suspension_contact_active = car_audible && suspension_contact_count != 0u;
 
 		if (step_events) {
 			if (!loop_state.event_state_initialized) {
 				loop_state.previous_machine_state = machine_state;
 				loop_state.previous_terrain_state = terrain_state;
+				loop_state.previous_manual_boost_tick = soa.last_manual_boost_tick[lane];
+				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
+				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
+				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
+				loop_state.previous_suspension_contact_active = suspension_contact_active;
 				loop_state.previous_strafe_roll_active = false;
 				loop_state.event_state_initialized = true;
 			} else {
@@ -935,31 +1073,40 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 					(machine_state & MACHINESTATE::JUSTLANDED) != 0u &&
 					soa.speed_kmh[lane] > 5.0f;
 				if (landing_active) {
-					if (loop_state.landing_sound_frame == 0) {
-						const StringName& selected_landing_sfx =
-							((machine_state & MACHINESTATE::B10) != 0u) ? landing_b10_sfx : landing_sfx;
-						play_on_emitter(emitter, selected_landing_sfx, 0.0f, 1.0f);
-					}
-					++loop_state.landing_sound_frame;
-					loop_state.landing_reset_frames = 0;
-					if (loop_state.landing_sound_frame > 6) {
-						loop_state.landing_sound_frame = 0;
-					}
-				} else {
-					if (loop_state.landing_reset_frames < 60) {
-						++loop_state.landing_reset_frames;
-					} else {
-						loop_state.landing_sound_frame = 0;
-					}
+					const StringName& selected_landing_sfx =
+						((machine_state & MACHINESTATE::B10) != 0u) ? landing_b10_sfx : landing_sfx;
+					play_on_emitter(emitter, selected_landing_sfx, 0.0f, 1.0f);
 				}
 				if ((rising_terrain_state & terrain_hit_mine) != 0u) {
 					play_on_emitter(emitter, mine_sfx, 0.0f, 1.0f);
 				}
+				if (car_audible && soa.has_last_hit_tick[lane] &&
+					(!loop_state.previous_last_hit_initialized ||
+						soa.last_hit_tick[lane] != loop_state.previous_last_hit_tick)) {
+					const uint8_t collision_tier = mxt_audio_gx_collision_tier(soa.last_hit_sfx_strength[lane]);
+					play_on_emitter(emitter, collision_sfx[collision_tier], 0.0f, 1.0f);
+					if (collision_tier == 0u) {
+						play_on_emitter(emitter, collision_light_secondary_sfx, 0.0f, 1.0f);
+					}
+				}
+				if (car_audible && soa.has_last_manual_boost_tick[lane] &&
+					(!loop_state.previous_manual_boost_initialized ||
+						soa.last_manual_boost_tick[lane] != loop_state.previous_manual_boost_tick)) {
+					const size_t boost_sfx_index = static_cast<size_t>(emitter.car_index);
+					if (boost_sfx_index < vehicle_manual_boost_sfx.size() &&
+						!String(vehicle_manual_boost_sfx[boost_sfx_index]).is_empty()) {
+						play_on_emitter(emitter, vehicle_manual_boost_sfx[boost_sfx_index], -5.0f, 1.0f);
+					}
+				}
+				if (suspension_contact_active && !loop_state.previous_suspension_contact_active) {
+					play_on_emitter(emitter, suspension_contact_sfx, 0.0f, 1.0f);
+				}
 				if (car_audible && (rising_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u) {
-					play_on_emitter(emitter, dash_plate_sfx, 0.0f, 1.0f);
+					play_on_emitter(emitter, dash_plate_secondary_sfx, -5.0f, 1.0f);
+					play_on_emitter(emitter, dash_plate_sfx, -5.0f, 1.0f);
 				}
 				if (car_audible && (rising_terrain_state & TERRAIN::JUMP) != 0u && soa.speed_kmh[lane] > gx_jump_plate_min_speed_kmh) {
-					play_on_emitter(emitter, dash_plate_sfx, 0.0f, 1.0f);
+					play_on_emitter(emitter, jump_plate_sfx, 0.0f, 1.0f);
 				}
 				if ((rising_machine_state & MACHINESTATE::ACTIVE) != 0u) {
 					play_on_emitter(emitter, active_start_sfx, 0.0f, 1.0f);
@@ -980,6 +1127,11 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				}
 				loop_state.previous_machine_state = machine_state;
 				loop_state.previous_terrain_state = terrain_state;
+				loop_state.previous_manual_boost_tick = soa.last_manual_boost_tick[lane];
+				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
+				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
+				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
+				loop_state.previous_suspension_contact_active = suspension_contact_active;
 			}
 		}
 
@@ -992,11 +1144,42 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			std::abs(static_cast<int>(gx_strafe_visual_roll)) >= 100 &&
 			soa.speed_kmh[lane] > 5.0f;
 		if (strafe_roll_active) {
-			set_loop_on_emitter(emitter, strafe_sfx, strafe_sfx, -5.0f, 1.0f);
+			set_loop_on_emitter(emitter, strafe_sfx, strafe_sfx, -10.0f, 1.0f);
 		} else if (loop_state.previous_strafe_roll_active || find_loop_stream(emitter, strafe_sfx) >= 0) {
 			stop_loop_on_emitter(emitter, strafe_sfx);
 		}
 		loop_state.previous_strafe_roll_active = strafe_roll_active;
+
+		const bool brake_scrub_active =
+			car_audible &&
+			(machine_state & MACHINESTATE::B10) == 0u &&
+			soa.speed_kmh[lane] > 5.0f &&
+			soa.input_brake[lane] > 0.1f;
+		if (brake_scrub_active) {
+			set_loop_on_emitter(emitter, brake_key, brake_sfx, -4.0f, 1.0f);
+		} else if (find_loop_stream(emitter, brake_key) >= 0) {
+			stop_loop_on_emitter(emitter, brake_key);
+		}
+
+		if (suspension_contact_active) {
+			uint8_t contact_target_control = mxt_audio_gx_engine_speed_control(soa.speed_kmh[lane]);
+			if (contact_target_control == 0u) {
+				contact_target_control = 1u;
+			}
+			loop_state.gx_suspension_contact_control =
+				mxt_audio_step_gx_control(loop_state.gx_suspension_contact_control, contact_target_control, 1u);
+			const uint8_t contact_control = loop_state.gx_suspension_contact_control;
+			const uint8_t contact_pitch_control = static_cast<uint8_t>(
+				std::min(127u, static_cast<uint32_t>(contact_target_control) + 0x32u));
+			const float contact_volume_db = mxt_audio_gx_suspension_contact_volume_db(contact_control);
+			const float contact_pitch = clamped_pitch(mxt_audio_gx_suspension_contact_pitch(contact_pitch_control));
+			set_loop_on_emitter(emitter, suspension_contact_key, suspension_contact_loop_sfx, contact_volume_db, contact_pitch);
+		} else {
+			loop_state.gx_suspension_contact_control = 0;
+			if (find_loop_stream(emitter, suspension_contact_key) >= 0) {
+				stop_loop_on_emitter(emitter, suspension_contact_key);
+			}
+		}
 
 		const bool engine_active =
 			car_audible &&
@@ -1048,14 +1231,22 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 
 		const float terrain_pitch = clamped_pitch(mxt_audio_gx_terrain_pitch(engine_speed_control));
 		if (car_audible && (terrain_state & TERRAIN::DIRT) != 0u) {
-			set_loop_on_emitter(emitter, terrain_dirt_key, terrain_dirt_sfx, terrain_layer_volume_db, terrain_pitch);
+			set_loop_on_emitter(emitter, terrain_dirt_key, terrain_dirt_sfx,
+				terrain_layer_volume_db, terrain_pitch);
 		} else if (find_loop_stream(emitter, terrain_dirt_key) >= 0) {
 			stop_loop_on_emitter(emitter, terrain_dirt_key);
 		}
 		if (car_audible && (terrain_state & TERRAIN::LAVA) != 0u) {
-			set_loop_on_emitter(emitter, terrain_lava_key, terrain_lava_sfx, terrain_layer_volume_db, terrain_pitch);
+			const float terrain_volume_db = terrain_layer_volume_db;
+			set_loop_on_emitter(emitter, terrain_lava_key, terrain_lava_sfx, terrain_volume_db, terrain_pitch);
+			set_loop_on_emitter(emitter, terrain_lava_secondary_key, terrain_lava_secondary_sfx, terrain_volume_db, terrain_pitch);
 		} else if (find_loop_stream(emitter, terrain_lava_key) >= 0) {
 			stop_loop_on_emitter(emitter, terrain_lava_key);
+			if (find_loop_stream(emitter, terrain_lava_secondary_key) >= 0) {
+				stop_loop_on_emitter(emitter, terrain_lava_secondary_key);
+			}
+		} else if (find_loop_stream(emitter, terrain_lava_secondary_key) >= 0) {
+			stop_loop_on_emitter(emitter, terrain_lava_secondary_key);
 		}
 
 		const bool recharging = (terrain_state & TERRAIN::RECHARGE) != 0u;
@@ -1065,10 +1256,11 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		} else {
 			loop_state.pitstop_time = mxt_audio_lerp(loop_state.pitstop_time, 0.0f, pitstop_lerp_weight);
 		}
-		const float energy_volume = mxt_audio_clamp_float((loop_state.pitstop_time / 0.25f) * 60.0f - 60.0f, -60.0f, 0.0f);
-		if (recharging || energy_volume > -59.5f || find_loop_stream(emitter, energy_key) >= 0) {
+		const float energy_volume_base = mxt_audio_clamp_float((loop_state.pitstop_time / 0.25f) * 60.0f - 60.0f, -60.0f, 0.0f);
+		const float energy_volume = energy_volume_base + 15.0f;
+		if (recharging || energy_volume_base > -59.5f || find_loop_stream(emitter, energy_key) >= 0) {
 			set_loop_on_emitter(emitter, energy_key, energy_sfx, energy_volume, energy_pitch);
-			if (!recharging && energy_volume <= -59.5f) {
+			if (!recharging && energy_volume_base <= -59.5f) {
 				stop_loop_on_emitter(emitter, energy_key);
 			}
 		}
@@ -1078,21 +1270,16 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			(machine_state & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT)) == 0u &&
 			soa.speed_kmh[lane] > 5.0f;
 		if (gx_air_enabled) {
-			const float air_tilt = soa.air_tilt[lane];
-			float gx_air_control = 30.0f;
-			if (air_tilt >= 0.0f) {
-				gx_air_control += 1.6166667f * air_tilt;
-			} else {
-				gx_air_control += 0.6f * air_tilt;
-			}
-			gx_air_control = mxt_audio_clamp_float(gx_air_control, 0.0f, 127.0f);
-			const uint8_t gx_air_control_byte = static_cast<uint8_t>(gx_air_control);
-			const float air_tilt_pitch_scale = mxt_audio_lerp(air_neutral_pitch_scale, 1.0f, mxt_audio_clamp_float(air_tilt / 60.0f, 0.0f, 1.0f));
+			const uint8_t gx_air_tilt_control = mxt_audio_gx_air_tilt_control(soa.air_tilt[lane]);
+			const uint8_t gx_air_speed_control = mxt_audio_gx_engine_speed_control(soa.speed_kmh[lane]);
 			for (int air_index = 0; air_index < 2; ++air_index) {
-				const float pitch_lookup_scale = mxt_audio_eval_musyx_pitch_lookup_scale(gx_air_control_byte, air_pitch_lookup_curves[air_index], 2);
-				const float pitch_ratio_scale = mxt_audio_eval_musyx_pitch_ratio(gx_air_control_byte, 0u, air_pitch_ratio_curves[air_index], 1);
-				const float target_pitch = clamped_pitch(pitch_lookup_scale * pitch_ratio_scale * air_tilt_pitch_scale);
-				loop_state.air_volume_db[air_index] = air_layer_volume_db;
+				const float pitch_lookup_scale = mxt_audio_eval_musyx_pitch_lookup_scale(
+					gx_air_tilt_control, air_pitch_lookup_curves[air_index], 2);
+				const float pitch_ratio_scale =
+					mxt_audio_eval_musyx_pitch_ratio(gx_air_speed_control, 0u, air_pitch_ratio_curves[air_index], 1);
+				const float target_pitch = clamped_pitch(
+					pitch_lookup_scale * pitch_ratio_scale);
+				loop_state.air_volume_db[air_index] = 0.0f;
 				loop_state.air_pitch_scale[air_index] = target_pitch;
 				set_loop_on_emitter(emitter, air_keys[air_index], air_sfx[air_index], loop_state.air_volume_db[air_index], loop_state.air_pitch_scale[air_index]);
 			}
@@ -1104,6 +1291,40 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.air_volume_db[air_index] = -20.0f;
 			}
 		}
+
+		if (debug_status_due && debug_status_printed < 3) {
+			String loop_text;
+			for (size_t loop_index = 0; loop_index < emitter.loop_streams.size(); ++loop_index) {
+				const LoopStream& loop = emitter.loop_streams[loop_index];
+				const bool loop_playing = loop.player && loop.player->is_playing();
+				if (!loop_text.is_empty()) {
+					loop_text += String(",");
+				}
+				loop_text += String(loop.key) + String("/") + String(loop.sfx_id) +
+					String("#") + String::num_int64(static_cast<int64_t>(loop_index)) +
+					String(loop_playing ? ":playing" : ":stopped") +
+					String("@") + String::num(loop.volume_db);
+			}
+			if (loop_text.is_empty()) {
+				loop_text = String("none");
+			}
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_STATUS car="), static_cast<int64_t>(emitter.car_index),
+				String(" player="), emitter.player != nullptr,
+				String(" player_playing="), emitter.player ? emitter.player->is_playing() : false,
+				String(" playback="), emitter.playback.is_valid(),
+				String(" speed="), soa.speed_kmh[lane],
+				String(" state=0x"), String::num_int64(static_cast<int64_t>(machine_state), 16),
+				String(" terrain=0x"), String::num_int64(static_cast<int64_t>(terrain_state), 16),
+				String(" audible="), car_audible,
+				String(" engine="), engine_active,
+				String(" air="), gx_air_enabled,
+				String(" strafe="), strafe_roll_active,
+				String(" brake="), brake_scrub_active,
+				String(" contact="), suspension_contact_active,
+				String(" loops="), loop_text);
+			++debug_status_printed;
+		}
+
 	}
 }
 
@@ -1244,7 +1465,20 @@ bool MxtSpatialAudioManager::register_sfx(const StringName& id, const String& pa
 	if (stream.is_null()) {
 		return false;
 	}
-	mxt_audio_force_loop_if_needed(id, stream);
+	if (vehicle_loop_debug_enabled && mxt_audio_is_loop_sfx(id)) {
+		AudioStreamWAV* wav = Object::cast_to<AudioStreamWAV>(stream.ptr());
+		if (wav) {
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_REGISTER sfx="), String(id),
+				String(" mode="), static_cast<int64_t>(wav->get_loop_mode()),
+				String(" begin="), static_cast<int64_t>(wav->get_loop_begin()),
+				String(" end="), static_cast<int64_t>(wav->get_loop_end()),
+				String(" length="), wav->get_length(),
+				String(" mix_rate="), static_cast<int64_t>(wav->get_mix_rate()),
+				String(" format="), static_cast<int64_t>(wav->get_format()));
+		} else {
+			UtilityFunctions::print(String("MXT_AUDIO_LOOP_REGISTER sfx="), String(id), String(" stream_not_wav"));
+		}
+	}
 	for (SfxEntry& entry : sfx_entries) {
 		if (entry.id == id) {
 			entry.stream = stream;
@@ -1276,10 +1510,20 @@ void MxtSpatialAudioManager::set_audio_bus(const StringName& bus)
 		if (emitter.player) {
 			emitter.player->set_bus(audio_bus);
 		}
+		for (LoopStream& loop : emitter.loop_streams) {
+			if (loop.player) {
+				loop.player->set_bus(audio_bus);
+			}
+		}
 	}
 	for (Emitter& emitter : world_emitters) {
 		if (emitter.player) {
 			emitter.player->set_bus(audio_bus);
+		}
+		for (LoopStream& loop : emitter.loop_streams) {
+			if (loop.player) {
+				loop.player->set_bus(audio_bus);
+			}
 		}
 	}
 }
@@ -1345,6 +1589,13 @@ void MxtSpatialAudioManager::set_vehicle_max_distance(double distance)
 		return;
 	}
 	vehicle_max_distance = std::max(0.0f, static_cast<float>(distance));
+}
+
+void MxtSpatialAudioManager::set_vehicle_loop_debug_enabled(bool enabled)
+{
+	vehicle_loop_debug_enabled = enabled;
+	vehicle_loop_debug_status_counter = 0;
+	UtilityFunctions::print(String("MXT_AUDIO_LOOP_DEBUG enabled="), vehicle_loop_debug_enabled);
 }
 
 bool MxtSpatialAudioManager::play_music_paths(const String& loop_path, const String& intro_path, const String& final_loop_path, const String& final_intro_path, const PackedFloat32Array& final_lap_timestamps)
@@ -1471,6 +1722,18 @@ void MxtSpatialAudioManager::update_from_gamesim(GameSim* sim, int local_player_
 	update_vehicle_loop_audio(sim, delta, update_assignments);
 }
 
+void MxtSpatialAudioManager::set_vehicle_manual_boost_sfx(int car_index, const StringName& sfx_id)
+{
+	if (car_index < 0) {
+		return;
+	}
+	const size_t index = static_cast<size_t>(car_index);
+	if (index >= vehicle_manual_boost_sfx.size()) {
+		vehicle_manual_boost_sfx.resize(index + 1u);
+	}
+	vehicle_manual_boost_sfx[index] = sfx_id;
+}
+
 bool MxtSpatialAudioManager::play_vehicle_oneshot(int car_index, const StringName& sfx_id, double volume_db, double pitch_scale)
 {
 	const int slot = find_vehicle_emitter_for_car(car_index);
@@ -1540,6 +1803,8 @@ void MxtSpatialAudioManager::clear_all()
 		emitter.fade_remaining = 0.0f;
 		emitter.fade_total = 0.0f;
 	}
+	vehicle_loop_states.clear();
+	vehicle_manual_boost_sfx.clear();
 	clear_announcer_queue();
 }
 

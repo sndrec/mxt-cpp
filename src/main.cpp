@@ -1965,7 +1965,6 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("tick_singleplayer", "local_player_id", "local_input"), &GameSim::tick_singleplayer);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
-	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spatial_audio_manager", PROPERTY_HINT_NODE_TYPE, "MxtSpatialAudioManager"), "set_spatial_audio_manager", "get_spatial_audio_manager");
 };
 
 GameSim::GameSim()

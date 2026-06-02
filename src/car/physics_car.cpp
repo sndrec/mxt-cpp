@@ -1898,6 +1898,8 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 					int boost_duration_frames = static_cast<int>(60.0f * soa->stat_boost_length[soa_index]);
 					soa->boost_frames[soa_index] = boost_duration_frames;
 					soa->boost_frames_manual[soa_index] = boost_duration_frames;
+					soa->last_manual_boost_tick[soa_index] = soa->frames_since_start[soa_index];
+					soa->has_last_manual_boost_tick[soa_index] = true;
 					soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING;
 					soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING_DASHPLATE;
 
@@ -2523,7 +2525,10 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->frames_since_start_2[soa_index] = 0;
 	soa->speed_kmh[soa_index] = 0.0f;
 	soa->race_start_charge[soa_index] = 0.0f;
+	soa->last_manual_boost_tick[soa_index] = 0;
 	soa->last_hit_tick[soa_index] = 0;
+	soa->last_hit_sfx_strength[soa_index] = 0.0f;
+	soa->has_last_manual_boost_tick[soa_index] = false;
 	soa->has_last_hit_tick[soa_index] = false;
 
 	soa->grip_frames_from_accel_press[soa_index] = 0;
@@ -3844,6 +3849,10 @@ if (apply_full_response) {
 		}
 
 		if ((soa->machine_state[soa_index] & MACHINESTATE::TOOKDAMAGE) && soa->breakdown_frame_counter[soa_index] == 0) {
+			soa->last_hit_tick[soa_index] = soa->frames_since_start[soa_index];
+			soa->last_hit_sfx_strength[soa_index] = response_intensity_factor;
+			soa->has_last_hit_tick[soa_index] = true;
+
 			float damage_base = response_intensity_factor * soa->stat_body[soa_index];
 			if ((soa->machine_state[soa_index] & MACHINESTATE::B10) == 0 && damage_base > 20.0f)
 				damage_base = 20.0f;

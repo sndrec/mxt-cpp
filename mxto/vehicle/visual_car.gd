@@ -7,6 +7,7 @@ enum EffectTier {
 
 @onready var car_visual : Node3D
 @onready var car_camera: Camera3D = $CarCamera
+@onready var vehicle_audio_listener: AudioListener3D = $CarTransform/VehicleAudioListener
 var car_definition : CarDefinition
 @onready var recharge_particles: GPUParticles3D = $CarTransform/RechargeParticles
 @onready var name_label: Label = $NameLabel
@@ -192,10 +193,15 @@ func _ready() -> void:
 	car_transform.add_child(car_visual)
 	if local_visual_enabled:
 		car_camera.make_current()
+		make_vehicle_audio_listener_current()
 	_apply_effect_tier_state()
 	if !local_visual_enabled:
 		return
 	await get_tree().create_timer(2.0).timeout
+
+func make_vehicle_audio_listener_current() -> void:
+	if is_instance_valid(vehicle_audio_listener):
+		vehicle_audio_listener.make_current()
 
 func set_effect_tier(in_tier: int) -> void:
 	if effect_tier == in_tier:

@@ -33,7 +33,7 @@ private:
 	struct LoopStream {
 		StringName key;
 		StringName sfx_id;
-		int64_t id = -1;
+		AudioStreamPlayer3D* player = nullptr;
 		float volume_db = 0.0f;
 		float pitch_scale = 1.0f;
 	};
@@ -83,9 +83,13 @@ private:
 		float air_pitch_scale[2] = { 1.0f, 1.0f };
 		uint32_t previous_machine_state = 0;
 		uint32_t previous_terrain_state = 0;
+		uint32_t previous_manual_boost_tick = 0;
+		uint32_t previous_last_hit_tick = 0;
 		uint8_t gx_engine_speed_control = 0;
-		uint8_t landing_sound_frame = 0;
-		uint8_t landing_reset_frames = 60;
+		uint8_t gx_suspension_contact_control = 0;
+		bool previous_manual_boost_initialized = false;
+		bool previous_last_hit_initialized = false;
+		bool previous_suspension_contact_active = false;
 		bool previous_strafe_roll_active = false;
 		bool event_state_initialized = false;
 		bool gx_engine_speed_initialized = false;
@@ -97,6 +101,7 @@ private:
 	std::vector<VehicleCandidate> vehicle_candidates;
 	std::vector<int> vehicle_candidate_slots;
 	std::vector<VehicleLoopState> vehicle_loop_states;
+	std::vector<StringName> vehicle_manual_boost_sfx;
 	std::vector<float> final_lap_music_timestamps;
 	std::vector<QueuedAnnouncer> announcer_queue;
 	AudioStreamPlayer* music_player = nullptr;
@@ -122,10 +127,13 @@ private:
 	int vehicle_polyphony = 16;
 	int world_polyphony = 8;
 	int max_announcer_queue = 16;
+	int vehicle_loop_debug_status_counter = 0;
+	int vehicle_loop_debug_status_interval = 60;
 	bool music_playing = false;
 	bool final_lap_requested = false;
 	bool final_lap_active = false;
 	bool music_stop_pending = false;
+	bool vehicle_loop_debug_enabled = false;
 
 	static float clamped_pitch(float pitch_scale);
 	static float fade_volume_db(float base_volume_db, float fade_ratio);
@@ -136,6 +144,7 @@ private:
 	void create_emitters(std::vector<Emitter>& emitters, int count, int polyphony, const char* name_prefix);
 	void refresh_playback(Emitter& emitter);
 	void prune_stopped_streams(Emitter& emitter);
+	void apply_loop_player_settings(AudioStreamPlayer3D* player, float volume_db, float pitch_scale) const;
 	void stop_all_streams(Emitter& emitter);
 	int find_loop_stream(const Emitter& emitter, const StringName& key) const;
 	bool set_loop_on_emitter(Emitter& emitter, const StringName& key, const StringName& sfx_id, float volume_db, float pitch_scale);
@@ -189,6 +198,8 @@ public:
 	double get_reassignment_fade_seconds() const { return reassignment_fade_seconds; }
 	void set_vehicle_max_distance(double distance);
 	double get_vehicle_max_distance() const { return vehicle_max_distance; }
+	void set_vehicle_loop_debug_enabled(bool enabled);
+	bool get_vehicle_loop_debug_enabled() const { return vehicle_loop_debug_enabled; }
 	bool play_music_paths(const String& loop_path, const String& intro_path, const String& final_loop_path, const String& final_intro_path, const PackedFloat32Array& final_lap_timestamps);
 	void stop_music(double fade_seconds = 0.0);
 	bool request_final_lap_music();
@@ -200,6 +211,7 @@ public:
 	void clear_announcer_queue();
 	int get_announcer_queue_size() const { return static_cast<int>(announcer_queue.size()); }
 	void update_from_gamesim(GameSim* sim, int local_player_id, double delta, bool update_assignments);
+	void set_vehicle_manual_boost_sfx(int car_index, const StringName& sfx_id);
 	bool play_vehicle_oneshot(int car_index, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 	bool set_vehicle_loop(int car_index, const StringName& key, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 	bool stop_vehicle_loop(int car_index, const StringName& key);

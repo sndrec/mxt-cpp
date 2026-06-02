@@ -88,6 +88,8 @@ cull_mask = 7
 
 [node name="CarTransform" type="Node3D" parent="." unique_id=1352159418]
 
+[node name="VehicleAudioListener" type="AudioListener3D" parent="CarTransform"]
+
 [node name="AudioStreamPlayer3D7" type="AudioStreamPlayer3D" parent="CarTransform" unique_id=364651277]
 volume_db = 25.0
 unit_size = 1.0

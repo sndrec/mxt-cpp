@@ -78,16 +78,26 @@ const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
+const SPATIAL_AUDIO_BOOST_PACK1_IDS := [
+	110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
+	120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
+	130, 131, 132, 133, 134, 135, 136, 137, 138, 139,
+	140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
+	150, 219, 220, 221, 222, 223, 244, 247,
+]
+const SPATIAL_AUDIO_DEBUG_LOOPS := true
 const SPATIAL_AUDIO_SFX := {
 	&"active_start": "res://sfx/vehicle/active_start.wav",
 	&"air_0": "res://sfx/vehicle/air_0.wav",
 	&"air_1": "res://sfx/vehicle/air_1.wav",
-	&"air_2": "res://sfx/vehicle/air_2.wav",
-	&"air_3": "res://sfx/vehicle/air_3.wav",
-	&"boom": "res://sfx/vehicle/boom.wav",
 	&"brake": "res://sfx/vehicle/brake.wav",
+	&"collision_light": "res://sfx/vehicle/collision_light.wav",
+	&"collision_light_secondary": "res://sfx/vehicle/collision/PACK1-152.wav",
+	&"collision_medium": "res://sfx/vehicle/collision_medium.wav",
+	&"collision_hard": "res://sfx/vehicle/collision_hard.wav",
+	&"collision_heavy": "res://sfx/vehicle/collision_heavy.wav",
 	&"dash_plate": "res://sfx/vehicle/dash_plate.wav",
-	&"drift_fire": "res://sfx/vehicle/drift_fire.wav",
+	&"dash_plate_secondary": "res://sfx/vehicle/boost/PACK1-245.wav",
 	&"engine": "res://sfx/vehicle/engine.wav",
 	&"energy_restore": "res://sfx/vehicle/energy_restore.wav",
 	&"gx_engine_185": "res://sfx/vehicle/thrust/PACK1-185.wav",
@@ -102,18 +112,20 @@ const SPATIAL_AUDIO_SFX := {
 	&"gx_engine_240": "res://sfx/vehicle/thrust/PACK1-240.wav",
 	&"gx_engine_250": "res://sfx/vehicle/thrust/PACK1-250.wav",
 	&"gx_engine_251": "res://sfx/vehicle/thrust/PACK1-251.wav",
+	&"jump_plate": "res://sfx/vehicle/boost/PACK1-242.wav",
 	&"landing": "res://sfx/vehicle/landing.wav",
 	&"landing_b10": "res://sfx/vehicle/landing_b10.wav",
-	&"maybe_spin": "res://sfx/vehicle/maybe_spin.wav",
+	&"spinattack": "res://sfx/vehicle/spinattack.wav",
 	&"mine": "res://sfx/vehicle/mine.wav",
 	&"race_start": "res://sfx/vehicle/race_start.wav",
-	&"restore": "res://sfx/vehicle/restore.wav",
 	&"sideattack": "res://sfx/vehicle/sideattack.wav",
 	&"strafe": "res://sfx/vehicle/strafe.wav",
-	&"terrain_dirt": "res://sfx/vehicle/terrain_dirt.wav",
-	&"terrain_lava": "res://sfx/vehicle/terrain_lava.wav",
+	&"suspension_contact": "res://sfx/vehicle/suspension_contact.wav",
+	&"suspension_contact_loop": "res://sfx/vehicle/thrust/PACK1-191.wav",
+	&"terrain_dirt": "res://sfx/vehicle/thrust/PACK1-197.wav",
+	&"terrain_lava": "res://sfx/vehicle/thrust/PACK1-197.wav",
+	&"terrain_lava_secondary": "res://sfx/vehicle/thrust/PACK1-196.wav",
 	&"thrust_on": "res://sfx/vehicle/thrust_on.wav",
-	&"ufo": "res://sfx/vehicle/ufo.wav",
 	&"zero_hp": "res://sfx/vehicle/zero_hp.wav",
 	&"announcer_boost_power": "res://sfx/announcer/boost_power.wav",
 	&"announcer_final_lap": "res://sfx/announcer/final_lap.wav",
@@ -502,10 +514,27 @@ func _setup_spatial_audio() -> void:
 	spatial_audio.call("set_announcer_bus", &"Announcer")
 	spatial_audio.call("set_reassignment_fade_seconds", 0.05)
 	spatial_audio.call("set_max_announcer_queue", 16)
+	if spatial_audio.has_method("set_vehicle_loop_debug_enabled"):
+		spatial_audio.call("set_vehicle_loop_debug_enabled", SPATIAL_AUDIO_DEBUG_LOOPS)
 	for sfx_id in SPATIAL_AUDIO_SFX.keys():
 		spatial_audio.call("register_sfx", sfx_id, SPATIAL_AUDIO_SFX[sfx_id])
+	for pack1_id in SPATIAL_AUDIO_BOOST_PACK1_IDS:
+		spatial_audio.call(
+			"register_sfx",
+			StringName("boost_pack1_%d" % pack1_id),
+			"res://sfx/vehicle/boost/PACK1-%d.wav" % pack1_id)
 	if game_sim != null and game_sim.has_method("set_spatial_audio_manager"):
 		game_sim.call("set_spatial_audio_manager", spatial_audio)
+
+func _configure_vehicle_audio_properties(definitions: Array) -> void:
+	if spatial_audio == null or !spatial_audio.has_method("set_vehicle_manual_boost_sfx"):
+		return
+	for i in definitions.size():
+		var definition := definitions[i] as CarDefinition
+		var boost_sfx: StringName = &""
+		if definition != null:
+			boost_sfx = definition.manual_boost_sfx
+		spatial_audio.call("set_vehicle_manual_boost_sfx", i, boost_sfx)
 
 func _play_vehicle_oneshot_sfx(car_index: int, sfx_id: StringName, volume_db: float = 0.0, pitch_scale: float = 1.0) -> bool:
 	if game_sim == null or !game_sim.has_method("play_car_oneshot_sfx"):
@@ -2986,6 +3015,7 @@ func _apply_replay_camera_mode() -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, _focused_replay_player_id())
 		car_node_container.local_visual_car.car_camera.make_current()
+		car_node_container.local_visual_car.make_vehicle_audio_listener_current()
 	elif replay_camera_mode == REPLAY_CAMERA_AUTO:
 		if spectator_node != null and spectator_node.has_method("set_input_enabled"):
 			spectator_node.call("set_input_enabled", false)
@@ -3901,6 +3931,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if game_sim.has_method("set_multiplayer_intro_camera_enabled"):
 		game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_playback_use_multiplayer_startup)
 	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
+	_configure_vehicle_audio_properties(chosen_defs)
 	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
 	_apply_grand_prix_ko_energy_bonuses(game_sim, racer_ids)
 	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
