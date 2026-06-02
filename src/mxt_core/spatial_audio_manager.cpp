@@ -410,7 +410,7 @@ void MxtSpatialAudioManager::_bind_methods()
 	ClassDB::bind_method(D_METHOD("clear_announcer_queue"), &MxtSpatialAudioManager::clear_announcer_queue);
 	ClassDB::bind_method(D_METHOD("get_announcer_queue_size"), &MxtSpatialAudioManager::get_announcer_queue_size);
 	ClassDB::bind_method(D_METHOD("update_from_gamesim", "game_sim", "local_player_id", "delta", "update_assignments"), &MxtSpatialAudioManager::update_from_gamesim, DEFVAL(true));
-	ClassDB::bind_method(D_METHOD("set_vehicle_manual_boost_sfx", "car_index", "sfx_id"), &MxtSpatialAudioManager::set_vehicle_manual_boost_sfx);
+	ClassDB::bind_method(D_METHOD("set_vehicle_manual_boost_stream", "car_index", "stream"), &MxtSpatialAudioManager::set_vehicle_manual_boost_stream);
 	ClassDB::bind_method(D_METHOD("play_vehicle_oneshot", "car_index", "sfx_id", "volume_db", "pitch_scale"), &MxtSpatialAudioManager::play_vehicle_oneshot, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("set_vehicle_loop", "car_index", "key", "sfx_id", "volume_db", "pitch_scale"), &MxtSpatialAudioManager::set_vehicle_loop, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("stop_vehicle_loop", "car_index", "key"), &MxtSpatialAudioManager::stop_vehicle_loop);
@@ -829,6 +829,11 @@ void MxtSpatialAudioManager::advance_fade(Emitter& emitter, double delta, bool v
 bool MxtSpatialAudioManager::play_on_emitter(Emitter& emitter, const StringName& sfx_id, float volume_db, float pitch_scale)
 {
 	Ref<AudioStream> stream = find_sfx(sfx_id);
+	return play_stream_on_emitter(emitter, stream, volume_db, pitch_scale);
+}
+
+bool MxtSpatialAudioManager::play_stream_on_emitter(Emitter& emitter, const Ref<AudioStream>& stream, float volume_db, float pitch_scale)
+{
 	if (stream.is_null()) {
 		return false;
 	}
@@ -1145,20 +1150,20 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 					const StringName& selected_machine_hit_sfx =
 						mxt_audio_gx_machine_collision_heavy(soa.last_machine_hit_sfx_strength[lane]) ?
 						machine_collision_heavy_sfx : machine_collision_medium_sfx;
-					play_on_emitter(emitter, selected_machine_hit_sfx, 0.0f, 1.0f);
+					play_on_emitter(emitter, selected_machine_hit_sfx, -5.0f, 1.0f);
 				}
 				if (car_audible && soa.has_last_manual_boost_tick[lane] &&
 					(!loop_state.previous_manual_boost_initialized ||
 						soa.last_manual_boost_tick[lane] != loop_state.previous_manual_boost_tick)) {
 					const size_t boost_sfx_index = static_cast<size_t>(emitter.car_index);
-					if (boost_sfx_index < vehicle_manual_boost_sfx.size() &&
-						!String(vehicle_manual_boost_sfx[boost_sfx_index]).is_empty()) {
-						play_on_emitter(emitter, vehicle_manual_boost_sfx[boost_sfx_index], -3.0f, 1.0f);
+					if (boost_sfx_index < vehicle_manual_boost_streams.size() &&
+						vehicle_manual_boost_streams[boost_sfx_index].is_valid()) {
+						play_stream_on_emitter(emitter, vehicle_manual_boost_streams[boost_sfx_index], -3.0f, 1.0f);
 					}
 				}
 				if (car_audible && (rising_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u) {
-					play_on_emitter(emitter, dash_plate_secondary_sfx, -3.0f, 1.0f);
-					play_on_emitter(emitter, dash_plate_sfx, -3.0f, 1.0f);
+					play_on_emitter(emitter, dash_plate_secondary_sfx, 0.0f, 1.0f);
+					play_on_emitter(emitter, dash_plate_sfx, 0.0f, 1.0f);
 				}
 				if (car_audible && (rising_terrain_state & TERRAIN::JUMP) != 0u && soa.speed_kmh[lane] > gx_jump_plate_min_speed_kmh) {
 					play_on_emitter(emitter, jump_plate_sfx, 0.0f, 1.0f);
@@ -1174,10 +1179,10 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 					play_on_emitter(emitter, thrust_on_sfx, -3.0f, 1.0f);
 				}
 				if ((rising_machine_state & MACHINESTATE::SPINATTACKING) != 0u) {
-					play_on_emitter(emitter, spin_sfx, 0.0f, 1.0f);
+					play_on_emitter(emitter, spin_sfx, -2.0f, 1.0f);
 				}
 				if ((rising_machine_state & MACHINESTATE::SIDEATTACKING) != 0u) {
-					play_on_emitter(emitter, sideattack_sfx, 0.0f, 1.0f);
+					play_on_emitter(emitter, sideattack_sfx, -2.0f, 1.0f);
 				}
 				loop_state.previous_machine_state = machine_state;
 				loop_state.previous_terrain_state = terrain_state;
@@ -1730,16 +1735,16 @@ void MxtSpatialAudioManager::update_from_gamesim(GameSim* sim, int local_player_
 	}
 }
 
-void MxtSpatialAudioManager::set_vehicle_manual_boost_sfx(int car_index, const StringName& sfx_id)
+void MxtSpatialAudioManager::set_vehicle_manual_boost_stream(int car_index, const Ref<AudioStream>& stream)
 {
 	if (car_index < 0) {
 		return;
 	}
 	const size_t index = static_cast<size_t>(car_index);
-	if (index >= vehicle_manual_boost_sfx.size()) {
-		vehicle_manual_boost_sfx.resize(index + 1u);
+	if (index >= vehicle_manual_boost_streams.size()) {
+		vehicle_manual_boost_streams.resize(index + 1u);
 	}
-	vehicle_manual_boost_sfx[index] = sfx_id;
+	vehicle_manual_boost_streams[index] = stream;
 }
 
 bool MxtSpatialAudioManager::play_vehicle_oneshot(int car_index, const StringName& sfx_id, double volume_db, double pitch_scale)
@@ -1829,7 +1834,7 @@ void MxtSpatialAudioManager::clear_all()
 		announcer_player->stop();
 	}
 	stop_emitters();
-	vehicle_manual_boost_sfx.clear();
+	vehicle_manual_boost_streams.clear();
 	clear_announcer_queue();
 }
 

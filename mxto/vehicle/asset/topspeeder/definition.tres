@@ -1,12 +1,13 @@
-[gd_resource type="Resource" script_class="CarDefinition" load_steps=3 format=3 uid="uid://dmb482tp0ew5x"]
+[gd_resource type="Resource" script_class="CarDefinition" format=3 uid="uid://dmb482tp0ew5x"]
 
 [ext_resource type="PackedScene" uid="uid://djx62co8herii" path="res://vehicle/asset/topspeeder/vehicle.tscn" id="1_crjrx"]
 [ext_resource type="Script" uid="uid://b1wgg7ehpe0d1" path="res://vehicle/car_definition.gd" id="2_34ps7"]
+[ext_resource type="AudioStream" uid="uid://byhoupwwy2shk" path="res://sfx/vehicle/boost/newboost_33.wav" id="2_ncrln"]
 
 [resource]
 script = ExtResource("2_34ps7")
 name = "Top Speeder"
 car_definition = "res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props"
 car_scene = ExtResource("1_crjrx")
-manual_boost_sfx = &"boost_pack1_113"
+manual_boost_sfx = ExtResource("2_ncrln")
 metadata/_custom_type_script = "uid://b1wgg7ehpe0d1"

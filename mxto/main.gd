@@ -78,13 +78,6 @@ const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
-const SPATIAL_AUDIO_BOOST_PACK1_IDS := [
-	110, 111, 112, 113, 114, 115, 116, 117, 118, 119,
-	120, 121, 122, 123, 124, 125, 126, 127, 128, 129,
-	130, 131, 132, 133, 134, 135, 136, 137, 138, 139,
-	140, 141, 142, 143, 144, 145, 146, 147, 148, 149,
-	150, 219, 220, 221, 222, 223, 244, 247,
-]
 const SPATIAL_AUDIO_SFX := {
 	&"active_start": "res://sfx/vehicle/active_start.wav",
 	&"air_0": "res://sfx/vehicle/air_0.wav",
@@ -513,23 +506,18 @@ func _setup_spatial_audio() -> void:
 	spatial_audio.call("set_max_announcer_queue", 16)
 	for sfx_id in SPATIAL_AUDIO_SFX.keys():
 		spatial_audio.call("register_sfx", sfx_id, SPATIAL_AUDIO_SFX[sfx_id])
-	for pack1_id in SPATIAL_AUDIO_BOOST_PACK1_IDS:
-		spatial_audio.call(
-			"register_sfx",
-			StringName("boost_pack1_%d" % pack1_id),
-			"res://sfx/vehicle/boost/PACK1-%d.wav" % pack1_id)
 	if game_sim != null and game_sim.has_method("set_spatial_audio_manager"):
 		game_sim.call("set_spatial_audio_manager", spatial_audio)
 
 func _configure_vehicle_audio_properties(definitions: Array) -> void:
-	if spatial_audio == null or !spatial_audio.has_method("set_vehicle_manual_boost_sfx"):
+	if spatial_audio == null or !spatial_audio.has_method("set_vehicle_manual_boost_stream"):
 		return
 	for i in definitions.size():
 		var definition := definitions[i] as CarDefinition
-		var boost_sfx: StringName = &""
+		var boost_sfx: AudioStream = null
 		if definition != null:
 			boost_sfx = definition.manual_boost_sfx
-		spatial_audio.call("set_vehicle_manual_boost_sfx", i, boost_sfx)
+		spatial_audio.call("set_vehicle_manual_boost_stream", i, boost_sfx)
 
 func _play_vehicle_oneshot_sfx(car_index: int, sfx_id: StringName, volume_db: float = 0.0, pitch_scale: float = 1.0) -> bool:
 	if game_sim == null or !game_sim.has_method("play_car_oneshot_sfx"):

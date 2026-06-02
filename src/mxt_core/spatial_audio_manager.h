@@ -101,7 +101,7 @@ private:
 	std::vector<SfxEntry> sfx_entries;
 	std::vector<VehicleCandidate> vehicle_candidates;
 	std::vector<VehicleLoopState> vehicle_loop_states;
-	std::vector<StringName> vehicle_manual_boost_sfx;
+	std::vector<Ref<AudioStream>> vehicle_manual_boost_streams;
 	std::vector<float> final_lap_music_timestamps;
 	std::vector<QueuedAnnouncer> announcer_queue;
 	AudioStreamPlayer* music_player = nullptr;
@@ -158,6 +158,7 @@ private:
 	void begin_world_reassignment(Emitter& emitter, const Vector3& position, const StringName& sfx_id, float volume_db, float pitch_scale);
 	void advance_fade(Emitter& emitter, double delta, bool vehicle_emitter);
 	bool play_on_emitter(Emitter& emitter, const StringName& sfx_id, float volume_db, float pitch_scale);
+	bool play_stream_on_emitter(Emitter& emitter, const Ref<AudioStream>& stream, float volume_db, float pitch_scale);
 	int find_vehicle_emitter_for_car(int car_index) const;
 	int find_idle_vehicle_emitter() const;
 	int find_idle_world_emitter() const;
@@ -214,7 +215,7 @@ public:
 	void clear_announcer_queue();
 	int get_announcer_queue_size() const { return static_cast<int>(announcer_queue.size()); }
 	void update_from_gamesim(GameSim* sim, int local_player_id, double delta, bool update_assignments);
-	void set_vehicle_manual_boost_sfx(int car_index, const StringName& sfx_id);
+	void set_vehicle_manual_boost_stream(int car_index, const Ref<AudioStream>& stream);
 	bool play_vehicle_oneshot(int car_index, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 	bool set_vehicle_loop(int car_index, const StringName& key, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 	bool stop_vehicle_loop(int car_index, const StringName& key);
