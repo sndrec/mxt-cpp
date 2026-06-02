@@ -2,7 +2,7 @@
 
 [ext_resource type="PackedScene" uid="uid://djx62co8herii" path="res://vehicle/asset/topspeeder/vehicle.tscn" id="1_crjrx"]
 [ext_resource type="Script" uid="uid://b1wgg7ehpe0d1" path="res://vehicle/car_definition.gd" id="2_34ps7"]
-[ext_resource type="AudioStream" uid="uid://byhoupwwy2shk" path="res://sfx/vehicle/boost/newboost_33.wav" id="2_ncrln"]
+[ext_resource type="AudioStream" uid="uid://dq1gnmwrorn0" path="res://sfx/vehicle/boost/PACK1-139.wav" id="2_ncrln"]
 
 [resource]
 script = ExtResource("2_34ps7")
