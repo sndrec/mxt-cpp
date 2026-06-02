@@ -1795,23 +1795,40 @@ bool MxtSpatialAudioManager::play_world_oneshot(const Vector3& position, const S
 	return true;
 }
 
-void MxtSpatialAudioManager::clear_all()
+void MxtSpatialAudioManager::stop_emitters()
 {
 	for (Emitter& emitter : vehicle_emitters) {
 		stop_all_streams(emitter);
 		emitter.car_index = -1;
 		emitter.pending_car_index = -1;
-		emitter.pending_sound.active = false;
+		emitter.pending_transform = Transform3D();
+		emitter.pending_world_position = Vector3();
+		emitter.pending_sound = PendingSound();
 		emitter.fade_remaining = 0.0f;
 		emitter.fade_total = 0.0f;
 	}
 	for (Emitter& emitter : world_emitters) {
 		stop_all_streams(emitter);
-		emitter.pending_sound.active = false;
+		emitter.car_index = -1;
+		emitter.pending_car_index = -1;
+		emitter.pending_transform = Transform3D();
+		emitter.pending_world_position = Vector3();
+		emitter.pending_sound = PendingSound();
 		emitter.fade_remaining = 0.0f;
 		emitter.fade_total = 0.0f;
 	}
+	local_vehicle_car_index = -1;
+	vehicle_candidates.clear();
 	vehicle_loop_states.clear();
+}
+
+void MxtSpatialAudioManager::clear_all()
+{
+	finish_music_stop();
+	if (announcer_player) {
+		announcer_player->stop();
+	}
+	stop_emitters();
 	vehicle_manual_boost_sfx.clear();
 	clear_announcer_queue();
 }

@@ -2854,7 +2854,7 @@ void GameSim::set_sim_started(const bool p_sim_started)
 	spatial_audio_last_assignment_tick = -1;
 	spatial_audio_last_update_frame = UINT64_MAX;
 	if (!sim_started && spatial_audio_manager) {
-		spatial_audio_manager->clear_all();
+		spatial_audio_manager->stop_emitters();
 	}
 }
 
@@ -4899,6 +4899,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	void GameSim::destroy_gamesim()
 	{
+		spatial_audio_last_assignment_tick = -1;
+		spatial_audio_last_update_frame = UINT64_MAX;
+		if (spatial_audio_manager) {
+			spatial_audio_manager->clear_all();
+		}
 		if (sim_started)
 		{
 			if (current_track) {

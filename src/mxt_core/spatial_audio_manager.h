@@ -219,6 +219,7 @@ public:
 	bool set_vehicle_loop(int car_index, const StringName& key, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 	bool stop_vehicle_loop(int car_index, const StringName& key);
 	bool play_world_oneshot(const Vector3& position, const StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
+	void stop_emitters();
 	void clear_all();
 	int get_assigned_vehicle_count() const;
 };
