@@ -1,5 +1,6 @@
 {
   "name": "Construction",
+  "music": "res://content/base/sound/mus_dream_chaser.tres",
   "description": "",
   "difficulty": 1,
   "fog_distance": 1000.0,

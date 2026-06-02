@@ -12,5 +12,5 @@ musicIntro = ExtResource("1_d8ue4")
 musicLoop = ExtResource("3_lvvhh")
 musicIntroFinalLap = ExtResource("2_7omic")
 musicLoopFinalLap = ExtResource("4_5256e")
-finalLapTimeStamps = [4.523, 9.856, 15.19, 20.523, 25.856, 31.19, 36.523, 41.856, 47.19, 52.523, 57.856, 63.19, 68.523, 73.856]
+finalLapTimeStamps = [9.819, 20.485, 31.151, 41.817, 52.483, 63.149, 73.815]
 wait_for_race_start = false

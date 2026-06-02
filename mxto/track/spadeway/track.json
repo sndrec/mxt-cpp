@@ -1,5 +1,6 @@
 {
   "name": "SPADE WAY",
+  "music": "res://content/base/sound/mus_ptown.tres",
   "description": "",
   "difficulty": 1,
   "fog_distance": 1000.0,

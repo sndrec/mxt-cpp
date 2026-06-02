@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=5 format=3]
+
+[ext_resource type="AudioStream" uid="uid://cbq8miorsd8t0" path="res://content/base/music/green_plant_loop.ogg" id="1_loop"]
+[ext_resource type="AudioStream" uid="uid://ot23dp5pjdhr" path="res://content/base/music/green_plant_finallap_intro.ogg" id="2_final_intro"]
+[ext_resource type="AudioStream" uid="uid://ywkwxvg7dg70" path="res://content/base/music/green_plant_finallap_loop.ogg" id="3_final_loop"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="4_script"]
+
+[resource]
+script = ExtResource("4_script")
+musicLoop = ExtResource("1_loop")
+musicIntroFinalLap = ExtResource("2_final_intro")
+musicLoopFinalLap = ExtResource("3_final_loop")
+finalLapTimeStamps = [0.0, 6.704, 13.417, 20.13, 26.843, 33.556, 40.269, 46.982, 53.695, 60.408, 67.121, 73.834]
+wait_for_race_start = false

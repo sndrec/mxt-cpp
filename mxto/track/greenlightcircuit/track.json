@@ -1,5 +1,6 @@
 {
   "name": "GREEN LIGHT CIRCUIT",
+  "music": "res://content/base/sound/mus_green_plant.tres",
   "description": "",
   "difficulty": 1,
   "fog_distance": 1400.0,

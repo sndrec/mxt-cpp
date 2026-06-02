@@ -1,5 +1,6 @@
 {
   "name": "RODEO",
+  "music": "res://content/base/sound/mus_rainbow.tres",
   "description": "",
   "difficulty": 1,
   "fog_distance": 2000.0,

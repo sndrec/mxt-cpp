@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=6 format=3]
+
+[ext_resource type="AudioStream" uid="uid://d4c2aayawh04" path="res://content/base/music/rainbow_intro.ogg" id="1_intro"]
+[ext_resource type="AudioStream" uid="uid://u4ovcv8u45hp" path="res://content/base/music/rainbow_loop.ogg" id="2_loop"]
+[ext_resource type="AudioStream" uid="uid://dnphwad4m5kcs" path="res://content/base/music/rainbow_finallap_intro.ogg" id="3_final_intro"]
+[ext_resource type="AudioStream" uid="uid://c0eulwhvhtlyh" path="res://content/base/music/rainbow_finallap_loop.ogg" id="4_final_loop"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="5_script"]
+
+[resource]
+script = ExtResource("5_script")
+musicIntro = ExtResource("1_intro")
+musicLoop = ExtResource("2_loop")
+musicIntroFinalLap = ExtResource("3_final_intro")
+musicLoopFinalLap = ExtResource("4_final_loop")
+finalLapTimeStamps = [6.225, 12.845, 19.466, 26.086, 32.707, 39.327, 45.948, 52.568, 59.189, 65.809, 72.43, 79.05, 85.671, 92.291]
+wait_for_race_start = false

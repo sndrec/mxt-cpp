@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MXMusic" load_steps=6 format=3]
+
+[ext_resource type="AudioStream" uid="uid://dqn7dxrrcwx3s" path="res://content/base/music/ptown_intro.ogg" id="1_intro"]
+[ext_resource type="AudioStream" uid="uid://dyr3hc8vqqafw" path="res://content/base/music/ptown_loop.ogg" id="2_loop"]
+[ext_resource type="AudioStream" uid="uid://dsejhj0q6tyya" path="res://content/base/music/ptown_finallap_intro.ogg" id="3_final_intro"]
+[ext_resource type="AudioStream" uid="uid://dj7pdjgoc5del" path="res://content/base/music/ptown_finallap_loop.ogg" id="4_final_loop"]
+[ext_resource type="Script" uid="uid://cxlvfa72h6qtk" path="res://core/stage/music_definition.gd" id="5_script"]
+
+[resource]
+script = ExtResource("5_script")
+musicIntro = ExtResource("1_intro")
+musicLoop = ExtResource("2_loop")
+musicIntroFinalLap = ExtResource("3_final_intro")
+musicLoopFinalLap = ExtResource("4_final_loop")
+finalLapTimeStamps = [2.779, 9.636, 16.493, 23.35, 30.207, 37.064, 43.921, 50.779, 57.636, 64.493, 66.207, 73.064, 79.921, 86.779, 93.636, 100.493, 107.35, 109.064, 115.921, 122.779, 129.636, 136.493]
+wait_for_race_start = false

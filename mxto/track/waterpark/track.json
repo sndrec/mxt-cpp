@@ -1,5 +1,6 @@
 {
   "name": "WATERPARK",
+  "music": "res://content/base/sound/mus_big_blue.tres",
   "description": "",
   "difficulty": 1,
   "fog_distance": 2000.0,

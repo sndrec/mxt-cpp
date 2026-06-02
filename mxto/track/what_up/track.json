@@ -1,5 +1,6 @@
 {
   "name": "WHAT UP",
+  "music": "res://content/base/sound/mus_scream.tres",
   "description": "",
   "difficulty": 1,
   "fog_distance": 2000.0,
