@@ -112,9 +112,12 @@ struct PhysicsCarFloorProfile {
 	X(uint32_t, last_manual_boost_tick, 0) \
 	X(uint32_t, last_hit_tick, 0) \
 	X(float, last_hit_sfx_strength, 0.0f) \
+	X(uint32_t, last_machine_hit_tick, 0) \
+	X(float, last_machine_hit_sfx_strength, 0.0f) \
 	X(int, pending_ko_attacker_car_index, -1) \
 	X(bool, has_last_manual_boost_tick, false) \
 	X(bool, has_last_hit_tick, false) \
+	X(bool, has_last_machine_hit_tick, false) \
 	X(uint32_t, spinattack_direction, 0) \
 	X(float, spinattack_angle, 0.0f) \
 	X(float, spinattack_decrement, 0.0f) \

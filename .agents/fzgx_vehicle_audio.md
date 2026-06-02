@@ -516,6 +516,12 @@ Primary sources:
 - `A:\programs\smb1-decomp\src-fzgx\slices\functions\80249610__FUN_80249610.c`
 - `A:\programs\smb1-decomp\src-fzgx\slices\functions\802494a4__FUN_802494a4.c`
 - `A:\programs\smb1-decomp\src-fzgx\slices\functions\8024a2c0__FUN_8024a2c0.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\line124902__g_handle_machine_v_machine_collision.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\8020f2f8__FUN_8020f2f8.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\line205381__unk_replay_related_func.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\801e6648__FUN_801e6648.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\line127848__prepare_machine_frame.c`
+- `A:\programs\smb1-decomp\src-fzgx\slices\functions\80249c9c__FUN_80249c9c.c`
 
 `FUN_80249610`:
 
@@ -547,13 +553,53 @@ Primary sources:
 - If active, non-`0x280` machine, active slot attenuation nonzero, and `param_2 == 0`,
   plays `0xa9090f00`.
 
+Vehicle-vs-vehicle collision:
+
+- `line124902__g_handle_machine_v_machine_collision.c` does not call
+  `FUN_80249610`.
+- Its only direct sound event inside the collision physics function is `0xa9092100`, and only when a
+  machine kills another machine through the car-hit path.
+- Normal machine-machine collision applies knockback, damage, rumble, and sets
+  `FZ_MS_JUSTHITVEHICLE_Q | FZ_MS_ACTIVE` on both machines.
+- `line127848__prepare_machine_frame.c` converts `JUSTHITVEHICLE_Q` into a
+  six-frame `car_hit_invincibility` gate.
+- `damage_machine` used by the car-hit path does not set `FZ_MS_TOOKDAMAGE`.
+  Wall/rail collision response sets `TOOKDAMAGE`, then the damage/collision
+  selector can play the four-tier `0xa9090000/0200/0500/0600` family.
+- `80249c9c` tracks rising machine-state one-shots, but no observed branch keys
+  directly on `JUSTHITVEHICLE_Q`.
+- `line186642__fz_g_car_update.c` calls `FUN_8020f2f8(entrant_id_1, entrant_id_2)`
+  after a successful machine-machine collision. `FUN_8020f2f8` is the presentation
+  path for sparks/debris/etc. and calls `unk_replay_related_func(strength,
+  entrant_id_1)`.
+- `unk_replay_related_func` is the normal car-car collision audio source found so
+  far. If `FUN_801e6648() != 0`, it finds the active audio slot for the entrant,
+  sets volume from that slot's attenuation byte, and plays only `0xa9090200` or
+  `0xa9090600`. It does not use `0xa9090000`, `0xa9090500`, or the light
+  secondary collision sound.
+- `FUN_801e6648()` returns true only when global flag `DAT_8035ff70 & 0x100000`
+  is set or the mode is replay. This appears to gate the presentation/replay
+  collision effect path; MaxX currently does not model this global flag.
+- The player feedback path (`801d98a4 -> 802fa7dc`) is easy to misread: it copies
+  a byte where bit `0x10` means `JUSTHITVEHICLE_Q | TOOKDAMAGE`, but the downstream
+  `8006b...` functions are controller motor/rumble scheduling, not vehicle SFX.
+- Unknown GX constants still needed for exact car-hit strength selection:
+  `FLOAT_80307a60`, `FLOAT_80307a64`, `FLOAT_803062f0`, `FLOAT_803062f4`, and
+  `FLOAT_803062f8`.
+
 Current MaxX:
 
-- Uses `last_hit_tick` and `last_hit_sfx_strength` to select four collision samples.
+- Wall/rail damage uses `last_hit_tick` and `last_hit_sfx_strength` to select four
+  collision samples.
 - Applies the GX strength scale and thresholds above before choosing the sample.
-- Plays `collision_light_secondary` additionally for tier 0.
-- This is an approximation; GX has more state-specific collision/damage events
-  than the current four-tier mapping.
+- Plays `collision_light_secondary` additionally for wall tier 0.
+- Machine-machine collisions use separate `last_machine_hit_tick` and
+  `last_machine_hit_sfx_strength` fields. `handle_vehicle_collision_result`
+  stamps one event per pair collision on the first car in the pair, mirroring
+  `FUN_8020f2f8`'s one-entrant audio call, and the audio manager plays
+  `collision_medium` or `collision_heavy`.
+- Current car-hit strength constants are placeholders until the GX constants
+  above are retrieved from Ghidra.
 
 ## Dash Plate, Jump Plate, Mine, Terrain
 

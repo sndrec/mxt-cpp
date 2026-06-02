@@ -288,6 +288,12 @@ static uint8_t mxt_audio_gx_collision_tier(float hit_strength)
 	return 3;
 }
 
+static bool mxt_audio_gx_machine_collision_heavy(float strength)
+{
+	static constexpr float gx_machine_collision_heavy_threshold = 0.75f;
+	return strength > gx_machine_collision_heavy_threshold;
+}
+
 static const MxtGxEngineProgram& mxt_audio_select_gx_engine_program(float stat_weight)
 {
 	static constexpr MxtGxEngineProgram light_program = {
@@ -1000,6 +1006,8 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	static const StringName landing_b10_sfx("landing_b10");
 	static const StringName mine_sfx("mine");
 	static const StringName collision_light_secondary_sfx("collision_light_secondary");
+	static const StringName machine_collision_medium_sfx("collision_medium");
+	static const StringName machine_collision_heavy_sfx("collision_heavy");
 	static const StringName collision_sfx[4] = {
 		StringName("collision_light"),
 		StringName("collision_medium"),
@@ -1073,6 +1081,8 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
 				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
+				loop_state.previous_last_machine_hit_tick = soa.last_machine_hit_tick[lane];
+				loop_state.previous_last_machine_hit_initialized = soa.has_last_machine_hit_tick[lane];
 				loop_state.previous_strafe_roll_active = false;
 				loop_state.event_state_initialized = true;
 			} else {
@@ -1098,6 +1108,14 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 					if (collision_tier == 0u) {
 						play_on_emitter(emitter, collision_light_secondary_sfx, 0.0f, 1.0f);
 					}
+				}
+				if (car_audible && soa.has_last_machine_hit_tick[lane] &&
+					(!loop_state.previous_last_machine_hit_initialized ||
+						soa.last_machine_hit_tick[lane] != loop_state.previous_last_machine_hit_tick)) {
+					const StringName& selected_machine_hit_sfx =
+						mxt_audio_gx_machine_collision_heavy(soa.last_machine_hit_sfx_strength[lane]) ?
+						machine_collision_heavy_sfx : machine_collision_medium_sfx;
+					play_on_emitter(emitter, selected_machine_hit_sfx, 0.0f, 1.0f);
 				}
 				if (car_audible && soa.has_last_manual_boost_tick[lane] &&
 					(!loop_state.previous_manual_boost_initialized ||
@@ -1138,6 +1156,8 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_manual_boost_initialized = soa.has_last_manual_boost_tick[lane];
 				loop_state.previous_last_hit_tick = soa.last_hit_tick[lane];
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
+				loop_state.previous_last_machine_hit_tick = soa.last_machine_hit_tick[lane];
+				loop_state.previous_last_machine_hit_initialized = soa.has_last_machine_hit_tick[lane];
 			}
 		}
 

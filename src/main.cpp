@@ -1778,10 +1778,10 @@ namespace {
 		const uint32_t current_tick = static_cast<uint32_t>(car_a.simulation_tick[lane_a]);
 		constexpr uint32_t kCollisionSparkCooldownFrames = 30;
 		auto is_recent_hit = [&](PhysicsCarSoA& c, int lane) -> bool {
-			if (!c.has_last_hit_tick[lane]) {
+			if (!c.has_last_machine_hit_tick[lane]) {
 				return false;
 			}
-			const uint32_t delta = current_tick - c.last_hit_tick[lane];
+			const uint32_t delta = current_tick - c.last_machine_hit_tick[lane];
 			return delta < kCollisionSparkCooldownFrames;
 		};
 
@@ -1806,10 +1806,20 @@ namespace {
 				sim.emit_super_sparks_from_car(car_views[j], sparks_b);
 			}
 		}
-		car_a.last_hit_tick[lane_a] = current_tick;
-		car_b.last_hit_tick[lane_b] = current_tick;
-		car_a.has_last_hit_tick[lane_a] = true;
-		car_b.has_last_hit_tick[lane_b] = true;
+		const SimVec3 delta_a = LOAD_INDEXED_VEC3(car_a, position_current, lane_a) -
+			LOAD_INDEXED_VEC3(car_a, position_old_dupe, lane_a);
+		const SimVec3 delta_b = LOAD_INDEXED_VEC3(car_b, position_current, lane_b) -
+			LOAD_INDEXED_VEC3(car_b, position_old_dupe, lane_b);
+		const float relative_motion_sq = (delta_b - delta_a).length_squared();
+		constexpr float gx_machine_collision_strength_scale = 0.01f;
+		constexpr float gx_machine_collision_strength_min = 0.1f;
+		constexpr float gx_machine_collision_strength_max = 1.0f;
+		const float sfx_strength = std::min(gx_machine_collision_strength_max,
+			std::max(gx_machine_collision_strength_min,
+				relative_motion_sq * gx_machine_collision_strength_scale));
+		car_a.last_machine_hit_tick[lane_a] = current_tick;
+		car_a.last_machine_hit_sfx_strength[lane_a] = sfx_strength;
+		car_a.has_last_machine_hit_tick[lane_a] = true;
 	}
 
 	static void collide_vehicles_broadphase(GameSim& sim, PhysicsCar* car_views, int count,
@@ -7583,6 +7593,7 @@ struct NetStateReader {
 	X(uint16_t, boost_frames) \
 	X(uint16_t, boost_frames_manual) \
 	X(uint32_t, last_hit_tick) \
+	X(uint32_t, last_machine_hit_tick) \
 	X(uint8_t, spinattack_direction) \
 	X(uint8_t, brake_timer) \
 	X(uint32_t, terrain_state) \
@@ -7616,6 +7627,7 @@ struct NetStateReader {
 	X(uint8_t, s_boost_pending_spark_spawns) \
 	X(uint8_t, pending_super_sparks) \
 	X(bool, has_last_hit_tick) \
+	X(bool, has_last_machine_hit_tick) \
 	X(bool, machine_crashed) \
 	X(bool, s_boost_active) \
 	X(bool, broken_lap_rollback_pending) \
@@ -7633,6 +7645,7 @@ struct NetStateReader {
 	X(float, previous_lap_distance) \
 	X(float, checkpoint_fraction) \
 	X(float, input_accel) \
+	X(float, last_machine_hit_sfx_strength) \
 	X(float, drift_ramp)
 
 #define MXT_NET_CAR_VEC3_FIELDS(X) \

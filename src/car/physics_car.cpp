@@ -2528,8 +2528,11 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->last_manual_boost_tick[soa_index] = 0;
 	soa->last_hit_tick[soa_index] = 0;
 	soa->last_hit_sfx_strength[soa_index] = 0.0f;
+	soa->last_machine_hit_tick[soa_index] = 0;
+	soa->last_machine_hit_sfx_strength[soa_index] = 0.0f;
 	soa->has_last_manual_boost_tick[soa_index] = false;
 	soa->has_last_hit_tick[soa_index] = false;
+	soa->has_last_machine_hit_tick[soa_index] = false;
 
 	soa->grip_frames_from_accel_press[soa_index] = 0;
 	soa->air_time[soa_index] = 0;
