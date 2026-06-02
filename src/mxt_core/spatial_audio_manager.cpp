@@ -1343,7 +1343,8 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			std::abs(static_cast<int>(gx_strafe_visual_roll)) >= 100 &&
 			soa.speed_kmh[lane] > gx_strafe_min_speed_kmh;
 		if (strafe_roll_active) {
-			set_loop_on_emitter(emitter, strafe_sfx, strafe_sfx, -6.0f, 1.0f);
+			const float strafe_volume_db = is_local_vehicle_emitter(emitter) ? -6.0f : -16.0f;
+			set_loop_on_emitter(emitter, strafe_sfx, strafe_sfx, strafe_volume_db, 1.0f);
 		} else if (loop_state.previous_strafe_roll_active || find_loop_stream(emitter, strafe_sfx) >= 0) {
 			stop_loop_on_emitter(emitter, strafe_sfx);
 		}
