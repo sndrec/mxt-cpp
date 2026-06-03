@@ -67,15 +67,6 @@ struct MxtGxEngineProgram {
 	MxtGxEngineTone tones[5];
 };
 
-struct MxtEngineRearApproachDebug {
-	float distance = 0.0f;
-	float behind_dot = 0.0f;
-	float behind_factor = 0.0f;
-	float closing_speed = 0.0f;
-	float closing_factor = 0.0f;
-	float gain_db = 0.0f;
-};
-
 static int mxt_audio_eval_musyx_curve(uint8_t control, uint8_t base_control, const MxtMusyxCurvePoint* points, int count)
 {
 	if (!points || count <= 0) {
@@ -436,8 +427,7 @@ static float mxt_audio_engine_doppler_pitch(const GameSim* sim, int source_car_i
 static float mxt_audio_engine_rear_approach_gain_db(
 	const GameSim* sim,
 	int source_car_index,
-	int listener_car_index,
-	MxtEngineRearApproachDebug* debug)
+	int listener_car_index)
 {
 	if (!sim || !sim->cars ||
 		source_car_index < 0 || listener_car_index < 0 ||
@@ -457,9 +447,6 @@ static float mxt_audio_engine_rear_approach_gain_db(
 	if (!std::isfinite(static_cast<double>(distance_sq)) || distance_sq <= 0.0001) {
 		return 0.0f;
 	}
-	if (debug) {
-		debug->distance = static_cast<float>(std::sqrt(static_cast<double>(distance_sq)));
-	}
 
 	const PhysicsCarSoA& listener_soa = *listener_car.soa;
 	const int listener_lane = listener_car.soa_index;
@@ -469,35 +456,21 @@ static float mxt_audio_engine_rear_approach_gain_db(
 		-listener_soa.basis_physical_c2z[listener_lane]);
 	const Vector3 direction_to_source = listener_to_source.normalized();
 	const float behind_dot = static_cast<float>(-listener_forward.normalized().dot(direction_to_source));
-	if (debug) {
-		debug->behind_dot = behind_dot;
-	}
 	const float behind_factor = mxt_audio_clamp_float(
 		(behind_dot - MXT_ENGINE_REAR_APPROACH_MIN_BEHIND_DOT) / (1.0f - MXT_ENGINE_REAR_APPROACH_MIN_BEHIND_DOT),
 		0.0f,
 		1.0f);
-	if (debug) {
-		debug->behind_factor = behind_factor;
-	}
 	if (behind_factor <= 0.0f) {
 		return 0.0f;
 	}
 
 	const Vector3 relative_velocity = mxt_audio_car_frame_velocity(source_car) - mxt_audio_car_frame_velocity(listener_car);
 	const float closing_speed = std::max(0.0f, -static_cast<float>(direction_to_source.dot(relative_velocity)));
-	if (debug) {
-		debug->closing_speed = closing_speed;
-	}
 	const float closing_factor = mxt_audio_clamp_float(
 		closing_speed / MXT_ENGINE_REAR_APPROACH_FULL_CLOSING_SPEED,
 		0.0f,
 		1.0f);
-	const float gain_db = MXT_ENGINE_REAR_APPROACH_MAX_GAIN_DB * behind_factor * closing_factor;
-	if (debug) {
-		debug->closing_factor = closing_factor;
-		debug->gain_db = gain_db;
-	}
-	return gain_db;
+	return MXT_ENGINE_REAR_APPROACH_MAX_GAIN_DB * behind_factor * closing_factor;
 }
 }
 
@@ -1243,9 +1216,6 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	const float delta_f = mxt_audio_clamp_float(static_cast<float>(delta), 0.0f, 1.0f);
 	const float pitstop_lerp_weight = std::min(1.0f, delta_f * 10.0f);
 	const float vehicle_loop_lerp_weight = std::min(1.0f, delta_f * 12.0f);
-	static uint32_t rear_approach_debug_tick = 0;
-	const bool print_rear_approach_debug = (rear_approach_debug_tick++ % 30u) == 0u;
-	int rear_approach_debug_lines = 0;
 
 	for (Emitter& emitter : vehicle_emitters) {
 		if (emitter.fade_remaining > 0.0f || emitter.car_index < 0 || emitter.car_index >= sim->num_cars) {
@@ -1429,29 +1399,10 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		if (engine_active) {
 			const MxtGxEngineProgram& engine_program = mxt_audio_select_gx_engine_program(soa.stat_weight[lane]);
 			const float engine_doppler_pitch = mxt_audio_engine_doppler_pitch(sim, emitter.car_index, local_vehicle_car_index);
-			MxtEngineRearApproachDebug approach_debug;
 			const float engine_approach_gain_db = mxt_audio_engine_rear_approach_gain_db(
 				sim,
 				emitter.car_index,
-				local_vehicle_car_index,
-				print_rear_approach_debug ? &approach_debug : nullptr);
-			if (print_rear_approach_debug &&
-				emitter.car_index != local_vehicle_car_index &&
-				rear_approach_debug_lines < 8) {
-				UtilityFunctions::print(
-					String("MXT_APPROACH_ENGINE car="), static_cast<int64_t>(emitter.car_index),
-					String(" local="), static_cast<int64_t>(local_vehicle_car_index),
-					String(" dist="), approach_debug.distance,
-					String(" behind_dot="), approach_debug.behind_dot,
-					String(" behind_factor="), approach_debug.behind_factor,
-					String(" closing_speed="), approach_debug.closing_speed,
-					String(" closing_factor="), approach_debug.closing_factor,
-					String(" gain_db="), approach_debug.gain_db,
-					String(" doppler_pitch="), engine_doppler_pitch,
-					String(" speed_kmh="), soa.speed_kmh[lane],
-					String(" base_speed="), soa.base_speed[lane]);
-				++rear_approach_debug_lines;
-			}
+				local_vehicle_car_index);
 			for (uint8_t tone_index = 0; tone_index < 5; ++tone_index) {
 				if (tone_index < engine_program.tone_count) {
 					const MxtGxEngineTone& tone = engine_program.tones[tone_index];

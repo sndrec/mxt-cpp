@@ -484,6 +484,8 @@ func _relay_voice_from(sender_id: int, sequence: int, _source_tick: int, payload
 			debug_voice_relay_local_deliveries += 1
 			_receive_voice_packet(sender_id, sequence, payload)
 		else:
+			if !_can_send_voice_rpc_to(int(recipient)):
+				continue
 			debug_voice_relay_remote_deliveries += 1
 			_receive_voice_packet.rpc_id(int(recipient), sender_id, sequence, payload)
 
@@ -649,6 +651,8 @@ func _voice_recipients_for(sender_id: int) -> Array:
 		var player_id := int(item.get("player_id", -1))
 		if player_id == sender_id or player_id < 0:
 			continue
+		if !_can_send_voice_rpc_to(player_id):
+			continue
 		var t: Transform3D = item.get("transform", Transform3D.IDENTITY)
 		var dist_sq := source_pos.distance_squared_to(t.origin)
 		if dist_sq <= max_dist_sq:
@@ -662,6 +666,17 @@ func _voice_recipients_for(sender_id: int) -> Array:
 	for i in range(count):
 		recipients.append(int(candidates[i]["id"]))
 	return recipients
+
+func _can_send_voice_rpc_to(peer_id: int) -> bool:
+	if network_manager == null:
+		return false
+	if network_manager.get_cpu_roster().has(peer_id):
+		return false
+	if peer_id == multiplayer.get_unique_id():
+		return true
+	if multiplayer.multiplayer_peer == null:
+		return false
+	return multiplayer.get_peers().has(peer_id)
 
 func _update_remote_source_positions() -> void:
 	if remote_peers.is_empty() or network_manager == null:

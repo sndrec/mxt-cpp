@@ -133,7 +133,8 @@ const RACE_RESULTS_MUSIC_LOOP := "res://content/base/music/raceresults_loop.ogg"
 const RACE_FINISH_WHOOSH_STREAM := preload("res://sfx/whoosh.wav")
 const RACE_FINISH_SFX_DUCK_BUS := &"SFX"
 const RACE_FINISH_SFX_DUCK_DB := -8.0
-const RACE_FINISH_SFX_DUCK_FADE_SECONDS := 1.0
+const RACE_FINISH_SFX_DUCK_DELAY_SECONDS := 1.0
+const RACE_FINISH_SFX_DUCK_FADE_SECONDS := 2.0
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -632,9 +633,18 @@ func _begin_local_race_finish_audio() -> void:
 	race_finish_audio_started = true
 	var generation := race_finish_audio_generation
 	_play_ui_sfx(RACE_FINISH_WHOOSH_STREAM, 10.0)
-	_begin_race_finish_sfx_duck()
+	_begin_race_finish_sfx_duck_after_delay(generation)
 	stop_music(RACE_FINISH_MUSIC_FADE_SECONDS)
 	_play_race_results_music_after_delay(generation)
+
+func _begin_race_finish_sfx_duck_after_delay(generation: int) -> void:
+	if RACE_FINISH_SFX_DUCK_DELAY_SECONDS > 0.0:
+		await get_tree().create_timer(RACE_FINISH_SFX_DUCK_DELAY_SECONDS).timeout
+	if generation != race_finish_audio_generation or !race_finish_audio_started:
+		return
+	if replay_playback_active or game_sim == null or !game_sim.sim_started:
+		return
+	_begin_race_finish_sfx_duck()
 
 func _play_race_results_music_after_delay(generation: int) -> void:
 	await get_tree().create_timer(RACE_RESULTS_MUSIC_DELAY_SECONDS).timeout

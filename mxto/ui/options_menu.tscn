@@ -96,6 +96,122 @@ text = "Test Mic Playback"
 layout_mode = 2
 text = "Voice Status: idle"
 
+[node name="Audio" type="MarginContainer" parent="Shade/Center/Panel/Margin/Root/Tabs"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="AudioBox" type="VBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="MasterVolumeRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox"]
+layout_mode = 2
+
+[node name="MasterVolumeLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/MasterVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Master"
+
+[node name="MasterVolumeSlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/MasterVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+step = 1.0
+value = 100.0
+
+[node name="MasterVolumeValue" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/MasterVolumeRow"]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
+[node name="AnnouncerVolumeRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox"]
+layout_mode = 2
+
+[node name="AnnouncerVolumeLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/AnnouncerVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Announcer"
+
+[node name="AnnouncerVolumeSlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/AnnouncerVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+step = 1.0
+value = 100.0
+
+[node name="AnnouncerVolumeValue" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/AnnouncerVolumeRow"]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
+[node name="SFXVolumeRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox"]
+layout_mode = 2
+
+[node name="SFXVolumeLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/SFXVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "SFX"
+
+[node name="SFXVolumeSlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/SFXVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+step = 1.0
+value = 100.0
+
+[node name="SFXVolumeValue" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/SFXVolumeRow"]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
+[node name="MusicVolumeRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox"]
+layout_mode = 2
+
+[node name="MusicVolumeLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/MusicVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Music"
+
+[node name="MusicVolumeSlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/MusicVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+step = 1.0
+value = 100.0
+
+[node name="MusicVolumeValue" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/MusicVolumeRow"]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
+[node name="VoicechatVolumeRow" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox"]
+layout_mode = 2
+
+[node name="VoicechatVolumeLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/VoicechatVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Voicechat"
+
+[node name="VoicechatVolumeSlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/VoicechatVolumeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+step = 1.0
+value = 100.0
+
+[node name="VoicechatVolumeValue" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/VoicechatVolumeRow"]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "100%"
+horizontal_alignment = 2
+
 [node name="Controls" type="Control" parent="Shade/Center/Panel/Margin/Root/Tabs"]
 layout_mode = 2
 
