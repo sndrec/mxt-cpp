@@ -77,15 +77,20 @@ private:
 		float pitch_scale = 1.0f;
 	};
 
+	static constexpr int REMOTE_INPUT_ONESHOT_RING_SIZE = 32;
+
 	struct VehicleLoopState {
 		float pitstop_time = 0.0f;
 		float air_volume_db[2] = { -20.0f, -20.0f };
 		float air_pitch_scale[2] = { 1.0f, 1.0f };
+		float previous_input_accel = 0.0f;
+		uint32_t remote_input_oneshot_tick_keys[REMOTE_INPUT_ONESHOT_RING_SIZE] = {};
 		uint32_t previous_machine_state = 0;
 		uint32_t previous_terrain_state = 0;
 		uint32_t previous_manual_boost_tick = 0;
 		uint32_t previous_last_hit_tick = 0;
 		uint32_t previous_last_machine_hit_tick = 0;
+		uint8_t remote_input_oneshot_masks[REMOTE_INPUT_ONESHOT_RING_SIZE] = {};
 		uint8_t gx_engine_speed_control = 0;
 		uint8_t gx_drift_contact_control = 0;
 		bool previous_manual_boost_initialized = false;
@@ -168,6 +173,7 @@ private:
 	void assign_world_emitter(Emitter& emitter, const Vector3& position);
 	void collect_vehicle_candidates(GameSim* sim);
 	void assign_vehicle_candidates();
+	bool claim_remote_input_oneshot(VehicleLoopState& state, uint32_t tick, uint8_t cue_mask);
 	void update_vehicle_loop_audio(GameSim* sim, double delta, bool step_events);
 	void start_music_streams(const Ref<AudioStream>& intro, const Ref<AudioStream>& loop);
 	void finish_music_stop();

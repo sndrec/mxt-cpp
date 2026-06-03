@@ -1155,6 +1155,21 @@ void MxtSpatialAudioManager::assign_vehicle_candidates()
 	}
 }
 
+bool MxtSpatialAudioManager::claim_remote_input_oneshot(VehicleLoopState& state, uint32_t tick, uint8_t cue_mask)
+{
+	const uint32_t tick_key = tick + 1u;
+	const size_t slot = static_cast<size_t>(tick & static_cast<uint32_t>(REMOTE_INPUT_ONESHOT_RING_SIZE - 1));
+	if (state.remote_input_oneshot_tick_keys[slot] != tick_key) {
+		state.remote_input_oneshot_tick_keys[slot] = tick_key;
+		state.remote_input_oneshot_masks[slot] = 0u;
+	}
+	if ((state.remote_input_oneshot_masks[slot] & cue_mask) != 0u) {
+		return false;
+	}
+	state.remote_input_oneshot_masks[slot] |= cue_mask;
+	return true;
+}
+
 void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delta, bool step_events)
 {
 	static const StringName energy_key("energy_restore");
@@ -1213,6 +1228,10 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 	static constexpr uint32_t terrain_hit_mine = 0x40000000u;
 	static constexpr float gx_strafe_min_speed_kmh = 100.0f;
 	static constexpr float gx_jump_plate_min_speed_kmh = 850.0f;
+	static constexpr uint8_t remote_input_sfx_manual_boost = 0x01u;
+	static constexpr uint8_t remote_input_sfx_thrust_tap = 0x02u;
+	static constexpr uint8_t remote_input_sfx_spinattack = 0x04u;
+	static constexpr uint8_t remote_input_sfx_sideattack = 0x08u;
 
 	if (!sim || !sim->cars || sim->num_cars <= 0) {
 		return;
@@ -1246,6 +1265,8 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 			(machine_state & (MACHINESTATE::ZEROHP | MACHINESTATE::FALLOUT | MACHINESTATE::RETIRED)) == 0u;
 		const uint8_t drift_contact_count = mxt_audio_gx_drift_contact_count(soa, lane);
 		const bool drift_contact_active = car_audible && drift_contact_count != 0u;
+		const uint32_t car_sim_tick = static_cast<uint32_t>(soa.simulation_tick[lane]);
+		const bool remote_input_sfx_guarded = emitter.car_index != local_vehicle_car_index;
 
 		if (step_events) {
 			if (!loop_state.event_state_initialized) {
@@ -1257,11 +1278,14 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
 				loop_state.previous_last_machine_hit_tick = soa.last_machine_hit_tick[lane];
 				loop_state.previous_last_machine_hit_initialized = soa.has_last_machine_hit_tick[lane];
+				loop_state.previous_input_accel = soa.input_accel[lane];
 				loop_state.previous_strafe_roll_active = false;
 				loop_state.event_state_initialized = true;
 			} else {
 				const uint32_t rising_machine_state = machine_state & ~loop_state.previous_machine_state;
 				const uint32_t rising_terrain_state = terrain_state & ~loop_state.previous_terrain_state;
+				const bool accel_just_pressed =
+					soa.input_accel[lane] > 0.5f && loop_state.previous_input_accel <= 0.5f;
 				const bool landing_active =
 					car_audible &&
 					(machine_state & MACHINESTATE::JUSTLANDED) != 0u &&
@@ -1294,10 +1318,13 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				if (car_audible && soa.has_last_manual_boost_tick[lane] &&
 					(!loop_state.previous_manual_boost_initialized ||
 						soa.last_manual_boost_tick[lane] != loop_state.previous_manual_boost_tick)) {
-					const size_t boost_sfx_index = static_cast<size_t>(emitter.car_index);
-					if (boost_sfx_index < vehicle_manual_boost_streams.size() &&
-						vehicle_manual_boost_streams[boost_sfx_index].is_valid()) {
-						play_stream_on_emitter(emitter, vehicle_manual_boost_streams[boost_sfx_index], -3.0f, 1.0f);
+					if (!remote_input_sfx_guarded ||
+						claim_remote_input_oneshot(loop_state, soa.last_manual_boost_tick[lane], remote_input_sfx_manual_boost)) {
+						const size_t boost_sfx_index = static_cast<size_t>(emitter.car_index);
+						if (boost_sfx_index < vehicle_manual_boost_streams.size() &&
+							vehicle_manual_boost_streams[boost_sfx_index].is_valid()) {
+							play_stream_on_emitter(emitter, vehicle_manual_boost_streams[boost_sfx_index], -3.0f, 1.0f);
+						}
 					}
 				}
 				if (car_audible && (rising_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u) {
@@ -1313,15 +1340,24 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				if ((rising_machine_state & MACHINESTATE::ACTIVE) != 0u) {
 					play_on_emitter(emitter, active_start_sfx, 0.0f, 1.0f);
 				}
-				if ((machine_state & MACHINESTATE::RACEJUSTBEGAN_Q) == 0u &&
-					(rising_machine_state & MACHINESTATE::JUSTTAPPEDACCEL) != 0u) {
-					play_on_emitter(emitter, thrust_on_sfx, -3.0f, 1.0f);
+				if ((machine_state & (MACHINESTATE::RACEJUSTBEGAN_Q | MACHINESTATE::STARTINGCOUNTDOWN)) == 0u &&
+					accel_just_pressed) {
+					if (!remote_input_sfx_guarded ||
+						claim_remote_input_oneshot(loop_state, car_sim_tick, remote_input_sfx_thrust_tap)) {
+						play_on_emitter(emitter, thrust_on_sfx, -3.0f, 1.0f);
+					}
 				}
 				if ((rising_machine_state & MACHINESTATE::SPINATTACKING) != 0u) {
-					play_on_emitter(emitter, spin_sfx, -2.0f, 1.0f);
+					if (!remote_input_sfx_guarded ||
+						claim_remote_input_oneshot(loop_state, car_sim_tick, remote_input_sfx_spinattack)) {
+						play_on_emitter(emitter, spin_sfx, -2.0f, 1.0f);
+					}
 				}
 				if ((rising_machine_state & MACHINESTATE::SIDEATTACKING) != 0u) {
-					play_on_emitter(emitter, sideattack_sfx, -2.0f, 1.0f);
+					if (!remote_input_sfx_guarded ||
+						claim_remote_input_oneshot(loop_state, car_sim_tick, remote_input_sfx_sideattack)) {
+						play_on_emitter(emitter, sideattack_sfx, -2.0f, 1.0f);
+					}
 				}
 				loop_state.previous_machine_state = machine_state;
 				loop_state.previous_terrain_state = terrain_state;
@@ -1331,6 +1367,7 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 				loop_state.previous_last_hit_initialized = soa.has_last_hit_tick[lane];
 				loop_state.previous_last_machine_hit_tick = soa.last_machine_hit_tick[lane];
 				loop_state.previous_last_machine_hit_initialized = soa.has_last_machine_hit_tick[lane];
+				loop_state.previous_input_accel = soa.input_accel[lane];
 			}
 		}
 
