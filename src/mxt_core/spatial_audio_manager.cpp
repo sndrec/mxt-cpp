@@ -1415,7 +1415,9 @@ void MxtSpatialAudioManager::update_vehicle_loop_audio(GameSim* sim, double delt
 		}
 
 		const bool engine_active = car_audible;
-		const uint8_t engine_target_speed_control = mxt_audio_gx_engine_base_speed_control(soa.base_speed[lane]);
+		const float engine_base_speed = (machine_state & MACHINESTATE::STARTINGCOUNTDOWN) != 0u ?
+			std::min(soa.base_speed[lane], 1.0f) : soa.base_speed[lane];
+		const uint8_t engine_target_speed_control = mxt_audio_gx_engine_base_speed_control(engine_base_speed);
 		if (!loop_state.gx_engine_speed_initialized) {
 			loop_state.gx_engine_speed_control = engine_target_speed_control;
 			loop_state.gx_engine_speed_initialized = true;
