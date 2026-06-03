@@ -126,6 +126,14 @@ const SPATIAL_AUDIO_SFX := {
 const RACE_BOOST_POWER_LAP_INDEX := 2
 const RACE_FINAL_LAP_INDEX := 3
 const RACE_MUSIC_START_LEAD_TICKS := 360
+const RACE_FINISH_MUSIC_FADE_SECONDS := 0.5
+const RACE_RESULTS_MUSIC_DELAY_SECONDS := 2.0
+const RACE_RESULTS_MUSIC_INTRO := "res://content/base/music/raceresults_intro.ogg"
+const RACE_RESULTS_MUSIC_LOOP := "res://content/base/music/raceresults_loop.ogg"
+const RACE_FINISH_WHOOSH_STREAM := preload("res://sfx/whoosh.wav")
+const RACE_FINISH_SFX_DUCK_BUS := &"SFX"
+const RACE_FINISH_SFX_DUCK_DB := -8.0
+const RACE_FINISH_SFX_DUCK_FADE_SECONDS := 1.0
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -138,6 +146,7 @@ var trigger_objects: Array = []
 var track_visual_scene_instance: Node
 var spectator_node: Node3D
 var spatial_audio: Node
+var ui_sfx_player: AudioStreamPlayer
 var local_elimination_spectator_active := false
 const TRIGGER_SCENES = {
 			 0: preload("res://asset/obj_dashplate.tscn"),
@@ -276,6 +285,13 @@ var race_audio_final_lap_requested: bool = false
 var race_audio_waiting_music_start: bool = false
 var race_audio_pending_music_wait_for_race_start: bool = false
 var race_audio_pending_music: Dictionary = {}
+var race_finish_audio_started: bool = false
+var race_finish_audio_generation: int = 0
+var race_finish_sfx_duck_active: bool = false
+var race_finish_sfx_duck_releasing: bool = false
+var race_finish_sfx_duck_current_db: float = 0.0
+var race_finish_sfx_duck_target_db: float = 0.0
+var race_finish_sfx_duck_base_volume_db: float = 0.0
 var singleplayer_options_root: Control
 var singleplayer_options_restore_toggle: CheckBox
 var singleplayer_options_bumpers_toggle: CheckBox
@@ -340,6 +356,7 @@ func _ready() -> void:
 	car_render_manager.name = "CarRenderManager"
 	$GameWorld.add_child(car_render_manager)
 	_setup_spatial_audio()
+	_setup_ui_audio()
 	race_results_overlay = RaceResultsOverlayScene.instantiate() as RaceResultsOverlay
 	add_child(race_results_overlay)
 	lobby_chibi_render_manager = CarRenderManagerClass.new()
@@ -509,6 +526,14 @@ func _setup_spatial_audio() -> void:
 	if game_sim != null and game_sim.has_method("set_spatial_audio_manager"):
 		game_sim.call("set_spatial_audio_manager", spatial_audio)
 
+func _setup_ui_audio() -> void:
+	if DisplayServer.get_name() == "headless" or ui_sfx_player != null:
+		return
+	ui_sfx_player = AudioStreamPlayer.new()
+	ui_sfx_player.name = "UiSfxPlayer"
+	ui_sfx_player.bus = &"SFX"
+	add_child(ui_sfx_player)
+
 func _configure_vehicle_audio_properties(definitions: Array) -> void:
 	if spatial_audio == null or !spatial_audio.has_method("set_vehicle_manual_boost_stream"):
 		return
@@ -534,7 +559,99 @@ func _queue_announcer_sfx(sfx_id: StringName, volume_db: float = 0.0, pitch_scal
 		return false
 	return bool(spatial_audio.call("queue_announcer", sfx_id, volume_db, pitch_scale))
 
+func _play_ui_sfx(stream: AudioStream, volume_db: float = 0.0, pitch_scale: float = 1.0) -> void:
+	if stream == null or DisplayServer.get_name() == "headless":
+		return
+	if ui_sfx_player == null:
+		_setup_ui_audio()
+	if ui_sfx_player == null:
+		return
+	ui_sfx_player.stream = stream
+	ui_sfx_player.volume_db = volume_db
+	ui_sfx_player.pitch_scale = pitch_scale
+	ui_sfx_player.play()
+
+func _race_finish_sfx_duck_bus_index() -> int:
+	return AudioServer.get_bus_index(RACE_FINISH_SFX_DUCK_BUS)
+
+func _apply_race_finish_sfx_duck() -> void:
+	var bus_index := _race_finish_sfx_duck_bus_index()
+	if bus_index < 0:
+		return
+	AudioServer.set_bus_volume_db(bus_index, race_finish_sfx_duck_base_volume_db + race_finish_sfx_duck_current_db)
+
+func _begin_race_finish_sfx_duck() -> void:
+	var bus_index := _race_finish_sfx_duck_bus_index()
+	if bus_index < 0:
+		return
+	if !race_finish_sfx_duck_active:
+		race_finish_sfx_duck_current_db = 0.0
+		race_finish_sfx_duck_base_volume_db = AudioServer.get_bus_volume_db(bus_index)
+	else:
+		race_finish_sfx_duck_base_volume_db = AudioServer.get_bus_volume_db(bus_index) - race_finish_sfx_duck_current_db
+	race_finish_sfx_duck_target_db = RACE_FINISH_SFX_DUCK_DB
+	race_finish_sfx_duck_active = true
+	race_finish_sfx_duck_releasing = false
+	_apply_race_finish_sfx_duck()
+
+func _release_race_finish_sfx_duck() -> void:
+	if !race_finish_sfx_duck_active:
+		return
+	race_finish_sfx_duck_target_db = 0.0
+	race_finish_sfx_duck_releasing = true
+
+func _update_race_finish_sfx_duck(delta: float) -> void:
+	if !race_finish_sfx_duck_active:
+		return
+	var step := 0.0
+	if RACE_FINISH_SFX_DUCK_FADE_SECONDS > 0.0:
+		step = absf(RACE_FINISH_SFX_DUCK_DB) * maxf(delta, 0.0) / RACE_FINISH_SFX_DUCK_FADE_SECONDS
+	else:
+		step = absf(race_finish_sfx_duck_target_db - race_finish_sfx_duck_current_db)
+	race_finish_sfx_duck_current_db = move_toward(race_finish_sfx_duck_current_db, race_finish_sfx_duck_target_db, step)
+	_apply_race_finish_sfx_duck()
+	if race_finish_sfx_duck_releasing and is_equal_approx(race_finish_sfx_duck_current_db, 0.0):
+		var bus_index := _race_finish_sfx_duck_bus_index()
+		if bus_index >= 0:
+			AudioServer.set_bus_volume_db(bus_index, race_finish_sfx_duck_base_volume_db)
+		race_finish_sfx_duck_active = false
+		race_finish_sfx_duck_releasing = false
+		race_finish_sfx_duck_current_db = 0.0
+		race_finish_sfx_duck_target_db = 0.0
+
+func _cancel_race_finish_audio(stop_ui_sfx: bool = false) -> void:
+	race_finish_audio_generation += 1
+	race_finish_audio_started = false
+	_release_race_finish_sfx_duck()
+	if stop_ui_sfx and ui_sfx_player != null:
+		ui_sfx_player.stop()
+
+func _begin_local_race_finish_audio() -> void:
+	if race_finish_audio_started or replay_playback_active:
+		return
+	race_finish_audio_started = true
+	var generation := race_finish_audio_generation
+	_play_ui_sfx(RACE_FINISH_WHOOSH_STREAM, 10.0)
+	_begin_race_finish_sfx_duck()
+	stop_music(RACE_FINISH_MUSIC_FADE_SECONDS)
+	_play_race_results_music_after_delay(generation)
+
+func _play_race_results_music_after_delay(generation: int) -> void:
+	await get_tree().create_timer(RACE_RESULTS_MUSIC_DELAY_SECONDS).timeout
+	if generation != race_finish_audio_generation or !race_finish_audio_started:
+		return
+	if replay_playback_active or game_sim == null or !game_sim.sim_started:
+		return
+	_play_music_from_definition({
+		"loop": RACE_RESULTS_MUSIC_LOOP,
+		"intro": RACE_RESULTS_MUSIC_INTRO,
+		"final_loop": "",
+		"final_intro": "",
+		"final_lap_timestamps": [],
+	})
+
 func _reset_race_audio_state() -> void:
+	_cancel_race_finish_audio(true)
 	race_audio_last_tick = -1
 	race_audio_last_local_lap = -1
 	race_audio_boost_power_announced = false
@@ -1724,6 +1841,8 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 		_show_ko_medal(actor_id, target_id)
 		return
 	if event_type == "finish":
+		if actor_id == _local_player_id():
+			_begin_local_race_finish_audio()
 		_show_finish_medal(actor_id, tick_value)
 
 func _show_sticker(actor_id: int, sticker_index: int) -> void:
@@ -4622,6 +4741,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _return_to_menu() -> void:
+	_cancel_race_finish_audio(true)
 	stop_music(0.5)
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
@@ -4680,6 +4800,7 @@ func _return_to_menu() -> void:
 		singleplayer_options_root.visible = false
 
 func _return_to_lobby() -> void:
+	_cancel_race_finish_audio(true)
 	stop_music(0.5)
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
@@ -4735,6 +4856,7 @@ func _return_to_lobby() -> void:
 	_singleplayer_tick = 0
 
 func _teardown_race_world_for_transition() -> void:
+	_cancel_race_finish_audio(true)
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
 	_stop_replay_recording(network_manager.is_server and !singleplayer_mode)
@@ -5124,6 +5246,7 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 
 func _process(delta: float) -> void:
 	var profile_process_start := Time.get_ticks_usec() if auto_render_profile_mode and game_sim.sim_started else 0
+	_update_race_finish_sfx_duck(delta)
 	var now_msec := Time.get_ticks_msec()
 	for id in active_stickers.keys():
 		var data: Dictionary = active_stickers[id]
