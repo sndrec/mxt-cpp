@@ -9,4 +9,4 @@ script = ExtResource("3_script")
 musicIntro = ExtResource("1_intro")
 musicLoop = ExtResource("2_loop")
 finalLapTimeStamps = []
-wait_for_race_start = false
+wait_for_race_start = true
