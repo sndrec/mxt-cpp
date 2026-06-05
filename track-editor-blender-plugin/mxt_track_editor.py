@@ -147,6 +147,24 @@ ROAD_SHAPE_TYPE_ITEMS = [
     ('TUNNEL', "Tunnel", "Flat road with side rails and a half-pipe ceiling"),
 ]
 
+MXT_SONG_ITEMS = [
+    ('res://content/base/sound/mus_aeropolis.tres', "Aeropolis", "res://content/base/sound/mus_aeropolis.tres"),
+    ('res://content/base/sound/mus_big_blue.tres', "Big Blue", "res://content/base/sound/mus_big_blue.tres"),
+    ('res://content/base/sound/mus_casino.tres', "Casino", "res://content/base/sound/mus_casino.tres"),
+    ('res://content/base/sound/mus_chance.tres', "Chance", "res://content/base/sound/mus_chance.tres"),
+    ('res://content/base/sound/mus_dream_chaser.tres', "Dream Chaser", "res://content/base/sound/mus_dream_chaser.tres"),
+    ('res://content/base/sound/mus_green_plant.tres', "Green Plant", "res://content/base/sound/mus_green_plant.tres"),
+    ('res://content/base/sound/mus_lightning.tres', "Lightning", "res://content/base/sound/mus_lightning.tres"),
+    ('res://content/base/sound/mus_mutecity.tres', "Mute City", "res://content/base/sound/mus_mutecity.tres"),
+    ('res://content/base/sound/mus_porttown.tres', "Port Town", "res://content/base/sound/mus_porttown.tres"),
+    ('res://content/base/sound/mus_ptown.tres', "P Town", "res://content/base/sound/mus_ptown.tres"),
+    ('res://content/base/sound/mus_rainbow.tres', "Rainbow", "res://content/base/sound/mus_rainbow.tres"),
+    ('res://content/base/sound/mus_sandocean.tres', "Sand Ocean", "res://content/base/sound/mus_sandocean.tres"),
+    ('res://content/base/sound/mus_scream.tres', "Scream", "res://content/base/sound/mus_scream.tres"),
+    ('res://content/base/sound/mus_virtualreality.tres', "Virtual Reality", "res://content/base/sound/mus_virtualreality.tres"),
+    ('CUSTOM', "Custom", "Use a track-local or explicit MXMusic resource path"),
+]
+
 class MXTEmbed(bpy.types.PropertyGroup):
     label:          StringProperty(name="Label", default="Embed")
     helper:         PointerProperty(type=bpy.types.Object)
@@ -373,6 +391,19 @@ class MXTTrackSettings(PropertyGroup):
         name="Visual Scene",
         description="Optional track-local Godot scene path to load for visuals, e.g. track.tscn",
         default=""
+    )
+
+    song: EnumProperty(
+        name="Song",
+        description="Music resource used by this track",
+        items=MXT_SONG_ITEMS,
+        default='res://content/base/sound/mus_mutecity.tres'
+    )
+
+    song_custom_resource: StringProperty(
+        name="Custom Song Resource",
+        description="Track-local MXMusic resource filename/path, e.g. music.tres. Relative paths resolve from the exported track JSON folder",
+        default="music.tres"
     )
 
     track_difficulty: IntProperty(
@@ -3077,6 +3108,9 @@ class MXTRoad_PT_MainPanel(Panel):
                 track_box.prop(ts, "track_name")
                 track_box.prop(ts, "track_description")
                 track_box.prop(ts, "visual_scene_path")
+                track_box.prop(ts, "song")
+                if ts.song == 'CUSTOM':
+                    track_box.prop(ts, "song_custom_resource")
                 track_box.prop(ts, "track_difficulty")
             # Global track parameters
             global_box = self.section(layout, ui_state, "show_global_params", "Global Track Params", icon='WORLD_DATA')
@@ -8331,6 +8365,12 @@ def _export_stage(context, filepath):
     }
     if ts.visual_scene_path.strip():
         metadata["visual_scene"] = ts.visual_scene_path.strip()
+    if ts.song == 'CUSTOM':
+        song_path = ts.song_custom_resource.strip()
+    else:
+        song_path = ts.song.strip()
+    if song_path:
+        metadata["song"] = song_path
 
     seg_order, visited = _mxt_track_reachable_segment_order(first)
 

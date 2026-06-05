@@ -91,6 +91,11 @@ var applied_playback_buffer_seconds := -1.0
 var applied_voice_bitrate := -1
 var applied_voice_codec_complexity := -1
 
+func _local_peer_id() -> int:
+	if network_manager == null or !network_manager.has_network_peer():
+		return 0
+	return multiplayer.get_unique_id()
+
 func _ready() -> void:
 	network_manager = get_parent() as NetworkManager
 	_ensure_voice_input_action()
@@ -167,7 +172,7 @@ func _ensure_voice_debug_log() -> void:
 	var role := "client"
 	if network_manager != null and network_manager.is_server:
 		role = "listen" if network_manager.listen_server else "server"
-	var uid := multiplayer.get_unique_id()
+	var uid := _local_peer_id()
 	var file_name := "logs/voice-" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(uid) + ".log"
 	debug_voice_log_path = "user://" + file_name
 	debug_voice_log_file = FileAccess.open(debug_voice_log_path, FileAccess.WRITE)
@@ -212,7 +217,7 @@ func _write_voice_debug_line(event: String, sender_id: int, sequence: int, flush
 		debug_voice_log_file.flush()
 
 func _voice_debug_snapshot(event: String, sender_id: int, sequence: int) -> Dictionary:
-	var local_id := multiplayer.get_unique_id()
+	var local_id := _local_peer_id()
 	var is_server := false
 	var listen_server := false
 	var race_active := false
@@ -481,7 +486,9 @@ func _local_player_should_send_voice() -> bool:
 	return InputMap.has_action(VOICE_ACTION) and Input.is_action_pressed(VOICE_ACTION)
 
 func _local_player_can_use_voice() -> bool:
-	var local_id := multiplayer.get_unique_id()
+	var local_id := _local_peer_id()
+	if local_id <= 0:
+		return false
 	var settings = network_manager.player_settings.get(local_id, {})
 	if typeof(settings) == TYPE_DICTIONARY and bool(settings.get("spectator", false)):
 		return false
@@ -522,7 +529,7 @@ func _send_voice_payload(payload: PackedByteArray) -> void:
 	voice_sequence = (voice_sequence + 1) & 0x7fffffff
 	var source_tick := _voice_spatial_tick()
 	if network_manager.is_server:
-		_relay_voice_from(multiplayer.get_unique_id(), voice_sequence, source_tick, payload)
+		_relay_voice_from(_local_peer_id(), voice_sequence, source_tick, payload)
 	else:
 		_client_voice_packet.rpc_id(1, voice_sequence, source_tick, payload)
 
@@ -537,7 +544,7 @@ func _client_voice_packet(sequence: int, source_tick: int, payload: PackedByteAr
 
 func _relay_voice_from(sender_id: int, sequence: int, _source_tick: int, payload: PackedByteArray) -> void:
 	var recipients := _voice_recipients_for(sender_id)
-	var local_id := multiplayer.get_unique_id()
+	var local_id := _local_peer_id()
 	debug_voice_relay_packets += 1
 	debug_voice_last_sender_id = sender_id
 	debug_voice_last_recipient_count = recipients.size()
@@ -568,7 +575,7 @@ func _receive_voice_packet(sender_id: int, sequence: int, payload: PackedByteArr
 		debug_voice_last_drop_reason = "listen disabled"
 		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
-	if sender_id == multiplayer.get_unique_id():
+	if sender_id == _local_peer_id():
 		debug_voice_last_drop_reason = "self packet"
 		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
@@ -720,7 +727,7 @@ func _voice_recipients_for(sender_id: int) -> Array:
 	debug_voice_last_source_found = true
 	var candidates := []
 	var max_dist_sq := voice_range * voice_range
-	var local_id := multiplayer.get_unique_id()
+	var local_id := _local_peer_id()
 	for item in snapshot:
 		if typeof(item) != TYPE_DICTIONARY:
 			continue
@@ -763,7 +770,7 @@ func _voice_finished_recipients_for(sender_id: int) -> Array:
 func _voice_should_play_finished_nonspatial(sender_id: int) -> bool:
 	if network_manager == null:
 		return false
-	return _voice_player_finished(sender_id) and _voice_player_finished(multiplayer.get_unique_id())
+	return _voice_player_finished(sender_id) and _voice_player_finished(_local_peer_id())
 
 func _voice_player_finished(player_id: int) -> bool:
 	if network_manager == null:
@@ -777,7 +784,7 @@ func _can_send_voice_rpc_to(peer_id: int) -> bool:
 		return false
 	if network_manager.get_cpu_roster().has(peer_id):
 		return false
-	if peer_id == multiplayer.get_unique_id():
+	if peer_id == _local_peer_id():
 		return true
 	if multiplayer.multiplayer_peer == null:
 		return false
@@ -802,7 +809,7 @@ func _update_remote_source_positions() -> void:
 	for item in snapshot:
 		if typeof(item) == TYPE_DICTIONARY:
 			transforms[int(item.get("player_id", -1))] = item.get("transform", Transform3D.IDENTITY)
-	var local_id := multiplayer.get_unique_id()
+	var local_id := _local_peer_id()
 	var listener_has_transform := transforms.has(local_id)
 	var listener_origin := Vector3.ZERO
 	if listener_has_transform:
@@ -889,7 +896,7 @@ func get_voice_debug_status() -> Dictionary:
 			"age_msec": age,
 		})
 	return {
-		"local_id": multiplayer.get_unique_id(),
+		"local_id": _local_peer_id(),
 		"race_active": network_manager != null and network_manager.race_active,
 		"mode": voice_input_mode,
 		"listen_enabled": voice_listen_enabled,

@@ -746,7 +746,7 @@ func _configure_track_music(track_dir: String) -> void:
 	race_audio_pending_music.clear()
 	if spatial_audio == null:
 		return
-	var music_def = current_track_meta.get("music", {})
+	var music_def = current_track_meta.get("song", current_track_meta.get("music", {}))
 	if typeof(music_def) == TYPE_STRING:
 		music_def = _resolve_track_audio_path(track_dir, music_def)
 	if typeof(music_def) == TYPE_STRING_NAME:
@@ -5453,8 +5453,12 @@ func _update_lobby_debug_label_visibility() -> void:
 func _update_race_communication_overlay() -> void:
 	if race_communication_overlay == null:
 		return
+	if !game_sim.sim_started or replay_playback_active or !network_manager.has_network_peer():
+		race_communication_overlay.set_voice_status({"race_active": false}, {})
+		return
 	var voice_node := network_manager.get_node_or_null("ProximityVoiceChat")
 	if voice_node == null or !voice_node.has_method("get_voice_debug_status"):
+		race_communication_overlay.set_voice_status({"race_active": false}, {})
 		return
 	var status: Dictionary = voice_node.call("get_voice_debug_status")
 	var player_names := {}
