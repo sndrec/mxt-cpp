@@ -2889,6 +2889,7 @@ func _start_replay_playback_from_path(path: String) -> void:
 	var profile_setup_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us - profile_frames_duplicate_us
 	var profile_race_start_us := Time.get_ticks_usec()
 	_start_race(track_index, settings as Array)
+	game_sim.set_sim_started(true)
 	profile_race_start_us = Time.get_ticks_usec() - profile_race_start_us
 	$Control.visible = false
 	lobby_control.visible = false
@@ -2928,6 +2929,8 @@ func _start_replay_playback_from_path(path: String) -> void:
 			if !_tick_replay_playback(false):
 				get_tree().quit(1)
 				return
+			if _singleplayer_tick >= 2965 and _singleplayer_tick <= 2967:
+				push_warning("MXT_RAIL_VERIFY state tick=" + str(_singleplayer_tick) + " " + game_sim.get_player_debug_string(replay_playback_local_player_id))
 			if replay_strict_verify_requested:
 				_check_race_finished()
 		var replay_fast_forward_elapsed_us := Time.get_ticks_usec() - replay_fast_forward_start_us
@@ -4597,7 +4600,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if headless_mode:
 		if singleplayer_mode and game_sim.sim_started:
-			_simulate_singleplayer_tick()
+			if replay_playback_active:
+				_simulate_replay_playback()
+			else:
+				_simulate_singleplayer_tick()
 			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
 				get_tree().quit()
 			return

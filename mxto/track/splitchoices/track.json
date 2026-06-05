@@ -47,6 +47,7 @@
     0.8179487586021423,
     0.5258473753929138
   ],
+  "song": "res://content/base/sound/mus_chance.tres",
   "segments": [
     {
       "seg_index": 0,

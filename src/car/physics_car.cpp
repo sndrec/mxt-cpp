@@ -3430,17 +3430,18 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 		if (new_depth >= 0.0f) {
 			return false;
 		}
-
-		const SimVec3 final_hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), new_corner);
-		const float final_t = checkpoint_longitudinal_t(*track, cp_idx, final_hit);
-		if (track_segment_longitudinal_t_in_domain(final_t) && (final_hit - side.pos).dot(side.up_n) <= rail_height) {
-			return true;
-		}
-
 		const float old_depth = (old_corner - side.pos).dot(side.rail_n);
 		if (old_depth < 0.0f) {
 			return false;
 		}
+
+		const SimVec3 final_hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), new_corner);
+		const float final_t = checkpoint_longitudinal_t(*track, cp_idx, final_hit);
+		const float final_height = (final_hit - side.pos).dot(side.up_n);
+		if (track_segment_longitudinal_t_in_domain(final_t) && final_height >= 0.0f && final_height <= rail_height) {
+			return true;
+		}
+
 		const float denom = old_depth - new_depth;
 		if (denom <= 0.000001f) {
 			return false;
@@ -3454,7 +3455,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 		if (!track_segment_longitudinal_t_in_domain(sweep_t)) {
 			return false;
 		}
-		if ((sweep_hit - side.pos).dot(side.up_n) > rail_height) {
+		const float sweep_height = (sweep_hit - side.pos).dot(side.up_n);
+		if (sweep_height < 0.0f || sweep_height > rail_height) {
 			return false;
 		}
 		return true;
@@ -4054,9 +4056,20 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 			soa->broken_lap_rollback_pending[soa_index] = false;
 			soa->broken_lap_rollback_lap[soa_index] = 0;
 		}
-		if (lap_delta > 0 && (soa->machine_state[soa_index] & MACHINESTATE::ZEROHP) != 0) {
-			soa->broken_lap_rollback_pending[soa_index] = true;
-			soa->broken_lap_rollback_lap[soa_index] = proposed_lap;
+		if (lap_delta > 0 && proposed_lap <= 3) {
+			const uint32_t unsafe_lap_cross_state = MACHINESTATE::AIRBORNE |
+				MACHINESTATE::FALLOUT |
+				MACHINESTATE::ZEROHP;
+			if ((soa->machine_state[soa_index] & unsafe_lap_cross_state) != 0) {
+				soa->broken_lap_rollback_pending[soa_index] = true;
+				soa->broken_lap_rollback_lap[soa_index] = proposed_lap;
+			} else {
+				soa->broken_lap_rollback_pending[soa_index] = false;
+				soa->broken_lap_rollback_lap[soa_index] = 0;
+			}
+		} else if (lap_delta > 0) {
+			soa->broken_lap_rollback_pending[soa_index] = false;
+			soa->broken_lap_rollback_lap[soa_index] = 0;
 		}
 	}
 
@@ -4081,6 +4094,15 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 			ground_distance += lap_length;
 	}
 	soa->checkpoint_track_distance[soa_index] = ground_distance;
+	const bool safe_grounded_after_lap_line =
+		soa->broken_lap_rollback_pending[soa_index] &&
+		soa->lap[soa_index] == soa->broken_lap_rollback_lap[soa_index] &&
+		(soa->machine_state[soa_index] & (MACHINESTATE::AIRBORNE | MACHINESTATE::FALLOUT | MACHINESTATE::ZEROHP)) == 0 &&
+		!track_distance_is_before_lap_line(ground_distance, lap_length);
+	if (safe_grounded_after_lap_line) {
+		soa->broken_lap_rollback_pending[soa_index] = false;
+		soa->broken_lap_rollback_lap[soa_index] = 0;
+	}
 
 	const float current_lap_distance = track->compute_lap_distance(
 		soa->current_checkpoint[soa_index],
