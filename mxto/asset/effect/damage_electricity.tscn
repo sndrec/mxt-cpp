@@ -133,6 +133,7 @@ draw_pass_1 = SubResource("RibbonTrailMesh_120qn")
 [node name="DamageSmoke" type="GPUParticles3D" parent="." unique_id=463099325]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.466821, 0)
 amount = 48
+preprocess = 1.0
 visibility_aabb = AABB(-4.136, -1.9722, -4.21883, 8.3208, 10.788, 8.35393)
 local_coords = true
 process_material = SubResource("ParticleProcessMaterial_q3l0e")
