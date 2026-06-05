@@ -1,0 +1,123 @@
+[gd_scene format=3 uid="uid://bjbc8l0xmtg0t"]
+
+[ext_resource type="Script" uid="uid://datbo4ufea1kk" path="res://ui/race_communication_overlay.gd" id="1_comm"]
+[ext_resource type="Texture2D" uid="uid://d2oce6yhv6lwe" path="res://asset/tex/voice_icon_particle.png" id="2_voice_icon"]
+
+[sub_resource type="SystemFont" id="SystemFont_fcmcy"]
+font_names = PackedStringArray("Arial")
+font_weight = 800
+
+[sub_resource type="LabelSettings" id="LabelSettings_chat"]
+font = SubResource("SystemFont_fcmcy")
+font_size = 14
+outline_color = Color(0, 0, 0, 1)
+
+[node name="RaceCommunicationOverlay" type="Control" unique_id=2117317327]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1_comm")
+chat_label_settings = SubResource("LabelSettings_chat")
+voice_box_size = Vector2(220, 36)
+
+[node name="ChatArea" type="Control" parent="." unique_id=114046942]
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 32.0
+offset_top = -313.0
+offset_right = 353.0
+offset_bottom = -75.0
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="HistoryPanel" type="PanelContainer" parent="ChatArea" unique_id=770775003]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="ChatArea/HistoryPanel" unique_id=1159631028]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 8
+
+[node name="HistoryBox" type="VBoxContainer" parent="ChatArea/HistoryPanel/Margin" unique_id=2114452350]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="HistoryScroll" type="ScrollContainer" parent="ChatArea/HistoryPanel/Margin/HistoryBox" unique_id=143898503]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="HistoryMessages" type="VBoxContainer" parent="ChatArea/HistoryPanel/Margin/HistoryBox/HistoryScroll" unique_id=1329468997]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 2
+
+[node name="ChatInput" type="LineEdit" parent="ChatArea/HistoryPanel/Margin/HistoryBox" unique_id=1532321250]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Press ENTER to chat"
+max_length = 220
+flat = true
+
+[node name="VoiceArea" type="Control" parent="." unique_id=1254132898]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -232.0
+offset_top = -316.0
+offset_right = -24.0
+offset_bottom = -28.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+
+[node name="VoiceBoxes" type="VBoxContainer" parent="VoiceArea" unique_id=1644114074]
+layout_mode = 1
+anchors_preset = -1
+anchor_top = -0.201
+anchor_right = 1.0
+anchor_bottom = 0.799
+offset_top = -0.11199951
+offset_bottom = -0.11199951
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 8
+alignment = 2
+
+[node name="LocalVoiceIcon" type="TextureRect" parent="VoiceArea" unique_id=365756742]
+modulate = Color(1, 0.78431374, 0.13725491, 1)
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -336.0
+offset_top = -58.0
+offset_right = -296.0
+offset_bottom = -18.0
+grow_horizontal = 0
+grow_vertical = 0
+scale = Vector2(2, 2)
+mouse_filter = 2
+texture = ExtResource("2_voice_icon")
+expand_mode = 1
+stretch_mode = 5

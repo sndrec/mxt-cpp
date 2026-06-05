@@ -76,6 +76,7 @@ const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
+const RaceCommunicationOverlayScene: PackedScene = preload("res://ui/race_communication_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const SPATIAL_AUDIO_SFX := {
@@ -326,6 +327,7 @@ var active_stickers := {}
 var race_notification_hide_msec := 0
 var race_medals: Array[Control] = []
 var race_results_overlay: RaceResultsOverlay
+var race_communication_overlay: RaceCommunicationOverlay
 var race_results_next_accel_setting: float = -1.0
 var render_profile_frames := 0
 var render_profile_physics_us := 0
@@ -363,6 +365,9 @@ func _ready() -> void:
 	race_results_overlay = RaceResultsOverlayScene.instantiate() as RaceResultsOverlay
 	add_child(race_results_overlay)
 	race_results_overlay.machine_setting_changed.connect(_on_race_results_machine_setting_changed)
+	race_communication_overlay = RaceCommunicationOverlayScene.instantiate() as RaceCommunicationOverlay
+	add_child(race_communication_overlay)
+	race_communication_overlay.message_submitted.connect(_submit_lobby_chat_message)
 	lobby_chibi_render_manager = CarRenderManagerClass.new()
 	lobby_chibi_render_manager.name = "LobbyChibiRenderManager"
 	if lobby_chibi_root != null:
@@ -1448,15 +1453,16 @@ func _broadcast_lobby_chat_message(sender_id: int, text: String) -> void:
 	_append_lobby_chat_message(sender_id, text)
 
 func _append_lobby_chat_message(sender_id: int, text: String) -> void:
-	if lobby_chat_box == null:
-		return
 	var color := Color(1.0, 1.0, 0.4, 1.0) if sender_id == _local_player_id() else Color(0.78, 0.84, 1.0, 1.0)
 	var name := _player_display_name(sender_id)
-	lobby_chat_box.add_text("\n")
-	lobby_chat_box.push_color(color)
-	lobby_chat_box.add_text(name)
-	lobby_chat_box.pop()
-	lobby_chat_box.add_text(": " + text)
+	if race_communication_overlay != null:
+		race_communication_overlay.append_message(sender_id, name, text)
+	if lobby_chat_box != null:
+		lobby_chat_box.add_text("\n")
+		lobby_chat_box.push_color(color)
+		lobby_chat_box.add_text(name)
+		lobby_chat_box.pop()
+		lobby_chat_box.add_text(": " + text)
 
 func _on_lobby_chibi_view_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and lobby_say_text != null:
@@ -4233,6 +4239,8 @@ func _on_start_race_button_pressed() -> void:
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
 	race_results_next_accel_setting = -1.0
+	if race_communication_overlay != null:
+		race_communication_overlay.close_chat()
 	_close_settings_menus_for_race_start()
 	if headless_mode:
 		_start_race(track_index, settings)
@@ -4308,6 +4316,8 @@ func _on_lobby_kick_player_pressed(player_id: int) -> void:
 
 func _window_accepts_input() -> bool:
 	if race_pause_open:
+		return false
+	if race_communication_overlay != null and race_communication_overlay.is_chat_open():
 		return false
 	var window := get_window()
 	return window == null or window.has_focus()
@@ -4769,6 +4779,8 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _handle_race_chat_unhandled_input(event):
+		return
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F3:
 		var profile := game_sim.get_phase_profile_string()
 		var render_profile := game_sim.get_render_profile_string()
@@ -4822,7 +4834,37 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_race_pause_menu()
 		get_viewport().set_input_as_handled()
 
+func _handle_race_chat_unhandled_input(event: InputEvent) -> bool:
+	if race_communication_overlay == null or !(event is InputEventKey):
+		return false
+	var key := event as InputEventKey
+	if !key.pressed or key.echo:
+		return false
+	var is_enter := key.keycode == KEY_ENTER or key.keycode == KEY_KP_ENTER
+	var is_escape := key.keycode == KEY_ESCAPE
+	if race_communication_overlay.is_chat_open():
+		if is_enter or is_escape:
+			get_viewport().set_input_as_handled()
+			return true
+		return false
+	if !is_enter:
+		return false
+	if !game_sim.sim_started or lobby_control.visible or race_pause_open:
+		return false
+	if car_settings != null and car_settings.visible:
+		return false
+	if options_menu != null and options_menu.visible:
+		return false
+	var window := get_window()
+	if window != null and !window.has_focus():
+		return false
+	race_communication_overlay.open_chat()
+	get_viewport().set_input_as_handled()
+	return true
+
 func _return_to_menu() -> void:
+	if race_communication_overlay != null:
+		race_communication_overlay.close_chat()
 	_cancel_race_finish_audio(true)
 	stop_music(0.5)
 	if debug_replay_recording:
@@ -4882,6 +4924,8 @@ func _return_to_menu() -> void:
 		singleplayer_options_root.visible = false
 
 func _return_to_lobby() -> void:
+	if race_communication_overlay != null:
+		race_communication_overlay.close_chat()
 	_cancel_race_finish_audio(true)
 	stop_music(0.5)
 	if debug_replay_recording:
@@ -5329,6 +5373,7 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 func _process(delta: float) -> void:
 	var profile_process_start := Time.get_ticks_usec() if auto_render_profile_mode and game_sim.sim_started else 0
 	_update_race_finish_sfx_duck(delta)
+	_update_race_communication_overlay()
 	var now_msec := Time.get_ticks_msec()
 	for id in active_stickers.keys():
 		var data: Dictionary = active_stickers[id]
@@ -5352,3 +5397,22 @@ func _process(delta: float) -> void:
 		if auto_render_profile_mode:
 			render_profile_visuals_only_us += Time.get_ticks_usec() - profile_visuals_start
 			render_profile_process_us += Time.get_ticks_usec() - profile_process_start
+
+func _update_race_communication_overlay() -> void:
+	if race_communication_overlay == null:
+		return
+	var voice_node := network_manager.get_node_or_null("ProximityVoiceChat")
+	if voice_node == null or !voice_node.has_method("get_voice_debug_status"):
+		return
+	var status: Dictionary = voice_node.call("get_voice_debug_status")
+	var player_names := {}
+	var local_id := int(status.get("local_id", _local_player_id()))
+	player_names[local_id] = _player_display_name(local_id)
+	var remote_peers: Array = status.get("remote_voice_peers", [])
+	for peer_data in remote_peers:
+		if typeof(peer_data) != TYPE_DICTIONARY:
+			continue
+		var peer_id := int(peer_data.get("id", -1))
+		if peer_id >= 0:
+			player_names[peer_id] = _player_display_name(peer_id)
+	race_communication_overlay.set_voice_status(status, player_names)

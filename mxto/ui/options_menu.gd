@@ -8,9 +8,14 @@ const AUDIO_MULTIPLIER_MIN := 0.0
 const AUDIO_MULTIPLIER_MAX := 1.0
 const AUDIO_MULTIPLIER_DEFAULT := 1.0
 const AUDIO_MULTIPLIER_MUTE_DB := -80.0
+const VOICE_SENSITIVITY_DEFAULT := 0.08
 
 @onready var close_button: Button = $Shade/Center/Panel/Margin/Root/Header/CloseButton
 @onready var voice_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceModeRow/VoiceModeOption
+@onready var voice_sensitivity_slider: HSlider = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/VoiceSensitivityStack/VoiceSensitivitySlider
+@onready var voice_sensitivity_value: Label = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/TopLine/VoiceSensitivityValue
+@onready var voice_sensitivity_meter_track: ColorRect = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/VoiceSensitivityStack/VoiceSensitivityMeterTrack
+@onready var voice_sensitivity_meter_fill: ColorRect = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/VoiceSensitivityStack/VoiceSensitivityMeterTrack/VoiceSensitivityMeterFill
 @onready var hear_voice_toggle: CheckBox = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/HearVoiceToggle
 @onready var mic_monitor_toggle: CheckBox = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/MicMonitorToggle
 @onready var voice_status_label: Label = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceStatus
@@ -29,6 +34,8 @@ const AUDIO_MULTIPLIER_MUTE_DB := -80.0
 var voice_input_mode := "push_to_talk"
 var voice_listen_enabled := true
 var voice_test_monitor_enabled := false
+var voice_always_on_threshold := VOICE_SENSITIVITY_DEFAULT
+var voice_controls_loading := false
 var audio_bus_base_volume_db := {}
 var audio_bus_multipliers := {}
 var audio_multiplier_sliders := {}
@@ -41,6 +48,7 @@ func _ready() -> void:
 	_configure_audio_controls()
 	_configure_voice_options()
 	voice_mode_option.item_selected.connect(_on_voice_mode_selected)
+	voice_sensitivity_slider.value_changed.connect(_on_voice_sensitivity_changed)
 	hear_voice_toggle.toggled.connect(_on_hear_voice_toggled)
 	mic_monitor_toggle.toggled.connect(_on_mic_monitor_toggled)
 	if controller_settings != null and controller_settings.has_method("set_embedded_mode"):
@@ -59,11 +67,13 @@ func open_settings() -> void:
 	_update_voice_controls()
 	_update_audio_controls()
 	_apply_audio_bus_multipliers()
+	_set_voice_level_meter_enabled(true)
 	if controller_settings != null and controller_settings.has_method("open_settings"):
 		controller_settings.call("open_settings")
 	show()
 
 func close_settings() -> void:
+	_set_voice_level_meter_enabled(false)
 	_save_voice_settings()
 	_save_audio_settings()
 	if controller_settings != null and controller_settings.has_method("save_settings"):
@@ -85,16 +95,42 @@ func _configure_voice_options() -> void:
 	voice_mode_option.set_item_metadata(3, "off")
 
 func _update_voice_controls() -> void:
+	voice_controls_loading = true
 	for i in range(voice_mode_option.item_count):
 		if str(voice_mode_option.get_item_metadata(i)) == voice_input_mode:
 			voice_mode_option.select(i)
 			break
+	voice_sensitivity_slider.value = voice_always_on_threshold * 100.0
+	_update_voice_sensitivity_label()
 	hear_voice_toggle.button_pressed = voice_listen_enabled
 	mic_monitor_toggle.button_pressed = voice_test_monitor_enabled
+	voice_controls_loading = false
 
 func _on_voice_mode_selected(index: int) -> void:
 	voice_input_mode = str(voice_mode_option.get_item_metadata(index))
 	_save_voice_settings()
+
+func _on_voice_sensitivity_changed(value: float) -> void:
+	if voice_controls_loading:
+		return
+	voice_always_on_threshold = clampf(value * 0.01, 0.0, 1.0)
+	_update_voice_sensitivity_label()
+	_apply_voice_sensitivity_to_runtime()
+	_save_voice_settings()
+
+func _update_voice_sensitivity_label() -> void:
+	if voice_sensitivity_value != null:
+		voice_sensitivity_value.text = "%d%%" % roundi(voice_always_on_threshold * 100.0)
+
+func _apply_voice_sensitivity_to_runtime() -> void:
+	var voice_node := _voice_chat_node()
+	if voice_node != null and voice_node.has_method("set_always_on_threshold"):
+		voice_node.call("set_always_on_threshold", voice_always_on_threshold)
+
+func _set_voice_level_meter_enabled(enabled: bool) -> void:
+	var voice_node := _voice_chat_node()
+	if voice_node != null and voice_node.has_method("set_level_meter_enabled"):
+		voice_node.call("set_level_meter_enabled", enabled)
 
 func _on_hear_voice_toggled(toggled: bool) -> void:
 	voice_listen_enabled = toggled
@@ -181,6 +217,8 @@ func _process(_delta: float) -> void:
 		return
 	var status: Dictionary = voice_node.call("get_voice_debug_status")
 	var level := float(status.get("capture_level", 0.0))
+	var smoothed_level := float(status.get("smoothed_capture_level", level))
+	_update_voice_sensitivity_meter(smoothed_level)
 	var level_pct := roundi(clampf(level, 0.0, 1.0) * 100.0)
 	var encoded := int(status.get("packets_encoded", 0))
 	var received := int(status.get("packets_received", 0))
@@ -229,12 +267,19 @@ func _voice_chat_node() -> Node:
 		return null
 	return network_manager.get_node_or_null("ProximityVoiceChat")
 
+func _update_voice_sensitivity_meter(level: float) -> void:
+	if voice_sensitivity_meter_track == null or voice_sensitivity_meter_fill == null:
+		return
+	var width := voice_sensitivity_meter_track.size.x
+	voice_sensitivity_meter_fill.offset_right = maxf(1.0, width * clampf(level, 0.0, 1.0))
+
 func _save_voice_settings() -> void:
 	var data := {
 		"version": 1,
 		"input_mode": voice_input_mode,
 		"listen_enabled": voice_listen_enabled,
 		"test_monitor_enabled": voice_test_monitor_enabled,
+		"always_on_threshold": voice_always_on_threshold,
 	}
 	var file := FileAccess.open(VOICE_SETTINGS_PATH, FileAccess.WRITE)
 	if file:
@@ -245,6 +290,7 @@ func _load_voice_settings() -> void:
 	voice_input_mode = "push_to_talk"
 	voice_listen_enabled = true
 	voice_test_monitor_enabled = false
+	voice_always_on_threshold = VOICE_SENSITIVITY_DEFAULT
 	if !FileAccess.file_exists(VOICE_SETTINGS_PATH):
 		return
 	var txt := FileAccess.get_file_as_string(VOICE_SETTINGS_PATH)
@@ -256,6 +302,8 @@ func _load_voice_settings() -> void:
 		voice_input_mode = mode
 	voice_listen_enabled = bool(data.get("listen_enabled", true))
 	voice_test_monitor_enabled = bool(data.get("test_monitor_enabled", false))
+	voice_always_on_threshold = clampf(float(data.get("always_on_threshold", VOICE_SENSITIVITY_DEFAULT)), 0.0, 1.0)
+	_apply_voice_sensitivity_to_runtime()
 
 func _save_audio_settings() -> void:
 	var multipliers := {}

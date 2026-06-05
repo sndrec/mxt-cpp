@@ -26,6 +26,7 @@ class OpusVoiceCodec : public RefCounted {
 	double encode_resample_pos = 0.0;
 	int encode_sample_head = 0;
 	float last_input_peak = 0.0f;
+	float last_decoded_peak = 0.0f;
 	int last_packets_encoded = 0;
 	std::vector<float> encode_samples;
 
@@ -47,6 +48,7 @@ public:
 	int get_frame_size() const { return frame_size; }
 	int get_bitrate() const { return bitrate; }
 	float get_last_input_peak() const { return last_input_peak; }
+	float get_last_decoded_peak() const { return last_decoded_peak; }
 	int get_last_packets_encoded() const { return last_packets_encoded; }
 };
 

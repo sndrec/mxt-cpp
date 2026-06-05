@@ -21,6 +21,7 @@ void OpusVoiceCodec::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_frame_size"), &OpusVoiceCodec::get_frame_size);
 	ClassDB::bind_method(D_METHOD("get_bitrate"), &OpusVoiceCodec::get_bitrate);
 	ClassDB::bind_method(D_METHOD("get_last_input_peak"), &OpusVoiceCodec::get_last_input_peak);
+	ClassDB::bind_method(D_METHOD("get_last_decoded_peak"), &OpusVoiceCodec::get_last_decoded_peak);
 	ClassDB::bind_method(D_METHOD("get_last_packets_encoded"), &OpusVoiceCodec::get_last_packets_encoded);
 }
 
@@ -58,6 +59,7 @@ bool OpusVoiceCodec::configure(int p_sample_rate, int p_frame_size, int p_bitrat
 	encode_resample_pos = 0.0;
 	encode_sample_head = 0;
 	last_input_peak = 0.0f;
+	last_decoded_peak = 0.0f;
 	last_packets_encoded = 0;
 	encode_samples.clear();
 
@@ -104,6 +106,7 @@ PackedByteArray OpusVoiceCodec::encode(PackedFloat32Array pcm)
 PackedFloat32Array OpusVoiceCodec::decode(PackedByteArray packet)
 {
 	PackedFloat32Array out;
+	last_decoded_peak = 0.0f;
 	if (!decoder && !configure(sample_rate, frame_size, bitrate, complexity)) {
 		return out;
 	}
@@ -113,6 +116,10 @@ PackedFloat32Array OpusVoiceCodec::decode(PackedByteArray packet)
 	if (decoded <= 0) {
 		out.resize(0);
 		return out;
+	}
+	const float* samples = out.ptr();
+	for (int i = 0; i < decoded; ++i) {
+		last_decoded_peak = std::max(last_decoded_peak, std::abs(samples[i]));
 	}
 	out.resize(decoded);
 	return out;
@@ -166,6 +173,7 @@ Array OpusVoiceCodec::encode_stereo_mix(PackedVector2Array input_frames, double 
 
 bool OpusVoiceCodec::decode_push_stereo(PackedByteArray packet, Ref<AudioStreamGeneratorPlayback> playback, float left_gain, float right_gain)
 {
+	last_decoded_peak = 0.0f;
 	if (playback.is_null()) {
 		return false;
 	}
@@ -184,6 +192,7 @@ bool OpusVoiceCodec::decode_push_stereo(PackedByteArray packet, Ref<AudioStreamG
 	Vector2* out = frames.ptrw();
 	for (int i = 0; i < decoded; ++i) {
 		const float sample = decoded_pcm[static_cast<size_t>(i)];
+		last_decoded_peak = std::max(last_decoded_peak, std::abs(sample));
 		out[i] = Vector2(sample * left_gain, sample * right_gain);
 	}
 	if (playback->get_frames_available() < decoded) {

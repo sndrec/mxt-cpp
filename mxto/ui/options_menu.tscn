@@ -83,6 +83,58 @@ text = "Mic Mode"
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="VoiceSensitivityRow" type="VBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TopLine" type="HBoxContainer" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow"]
+layout_mode = 2
+
+[node name="VoiceSensitivityLabel" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/TopLine"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Always On Sensitivity"
+
+[node name="VoiceSensitivityValue" type="Label" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/TopLine"]
+custom_minimum_size = Vector2(56, 0)
+layout_mode = 2
+text = "8%"
+horizontal_alignment = 2
+
+[node name="VoiceSensitivityStack" type="Control" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="VoiceSensitivitySlider" type="HSlider" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/VoiceSensitivityStack"]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 24.0
+grow_horizontal = 2
+max_value = 100.0
+step = 1.0
+value = 8.0
+
+[node name="VoiceSensitivityMeterTrack" type="ColorRect" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/VoiceSensitivityStack"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -8.0
+grow_horizontal = 2
+grow_vertical = 0
+color = Color(0, 0, 0, 0.65)
+
+[node name="VoiceSensitivityMeterFill" type="ColorRect" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceSensitivityRow/VoiceSensitivityStack/VoiceSensitivityMeterTrack"]
+layout_mode = 1
+anchors_preset = 9
+anchor_bottom = 1.0
+offset_right = 1.0
+grow_vertical = 2
+color = Color(0.58, 1, 0.46, 0.9)
+
 [node name="HearVoiceToggle" type="CheckBox" parent="Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox"]
 layout_mode = 2
 button_pressed = true

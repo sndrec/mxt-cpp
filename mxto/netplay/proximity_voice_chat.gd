@@ -16,6 +16,9 @@ const VOICE_FRAME_SAMPLES := 240
 const VOICE_SETTINGS_RELOAD_MSEC := 500
 const VOICE_DISTANCE_DELTA_TO_KMH := 216.0
 const VOICE_DEBUG_LOG_INTERVAL_MSEC := 1000
+const VOICE_ALWAYS_ON_THRESHOLD_DEFAULT := 0.08
+const VOICE_LEVEL_SMOOTH_SECONDS := 0.05
+const VOICE_ALWAYS_ON_RELEASE_MSEC := 150
 
 @export var voice_bitrate := 8000
 @export var voice_codec_complexity := 3
@@ -41,7 +44,13 @@ var remote_peers := {}
 var voice_input_mode := VOICE_MODE_PUSH_TO_TALK
 var voice_listen_enabled := true
 var voice_test_monitor_enabled := false
+var voice_always_on_threshold := VOICE_ALWAYS_ON_THRESHOLD_DEFAULT
+var voice_level_meter_enabled := false
 var voice_talk_toggled := false
+var local_voice_broadcasting := false
+var smoothed_capture_level := 0.0
+var last_capture_level_msec := 0
+var always_on_below_threshold_msec := 0
 var last_voice_settings_load_msec := -VOICE_SETTINGS_RELOAD_MSEC
 var test_monitor_player: AudioStreamPlayer
 var test_monitor_playback: AudioStreamGeneratorPlayback
@@ -107,6 +116,10 @@ func _ensure_key_action(action: String, keycode: Key) -> void:
 func reset() -> void:
 	_clear_remote_peers()
 	voice_talk_toggled = false
+	local_voice_broadcasting = false
+	smoothed_capture_level = 0.0
+	last_capture_level_msec = 0
+	always_on_below_threshold_msec = 0
 	if capture_effect != null:
 		capture_effect.clear_buffer()
 	_clear_test_monitor()
@@ -267,7 +280,7 @@ func _physics_process(_delta: float) -> void:
 	_poll_voice_settings()
 	_apply_runtime_tuning()
 	if network_manager == null or !network_manager.race_active or !network_manager.has_network_peer():
-		if voice_test_monitor_enabled:
+		if voice_test_monitor_enabled or voice_level_meter_enabled:
 			_update_test_monitor_capture()
 		else:
 			reset()
@@ -328,7 +341,7 @@ func _update_test_monitor_capture() -> void:
 	if network_manager == null or network_manager.game_manager == null or network_manager.game_manager.headless_mode:
 		debug_capture_status = "blocked: headless"
 		return
-	_capture_voice_frames(false, true)
+	_capture_voice_frames(false, voice_test_monitor_enabled)
 
 func _poll_voice_settings() -> void:
 	var now := Time.get_ticks_msec()
@@ -340,6 +353,7 @@ func _poll_voice_settings() -> void:
 func _load_voice_settings() -> void:
 	voice_input_mode = VOICE_MODE_PUSH_TO_TALK
 	voice_listen_enabled = true
+	voice_always_on_threshold = VOICE_ALWAYS_ON_THRESHOLD_DEFAULT
 	if !FileAccess.file_exists(VOICE_SETTINGS_PATH):
 		return
 	var txt := FileAccess.get_file_as_string(VOICE_SETTINGS_PATH)
@@ -351,6 +365,14 @@ func _load_voice_settings() -> void:
 		voice_input_mode = mode
 	voice_listen_enabled = bool(data.get("listen_enabled", true))
 	voice_test_monitor_enabled = bool(data.get("test_monitor_enabled", false))
+	voice_always_on_threshold = clampf(float(data.get("always_on_threshold", VOICE_ALWAYS_ON_THRESHOLD_DEFAULT)), 0.0, 1.0)
+
+func set_always_on_threshold(value: float) -> void:
+	voice_always_on_threshold = clampf(value, 0.0, 1.0)
+	last_voice_settings_load_msec = Time.get_ticks_msec()
+
+func set_level_meter_enabled(enabled: bool) -> void:
+	voice_level_meter_enabled = enabled
 
 func _update_toggle_voice_state() -> void:
 	if voice_input_mode != VOICE_MODE_TOGGLE:
@@ -363,11 +385,14 @@ func _capture_and_send() -> void:
 	if network_manager == null or network_manager.game_manager == null or network_manager.game_manager.headless_mode:
 		debug_capture_status = "blocked: headless"
 		return
+	var wants_always_on_level := _local_player_can_use_voice() and voice_input_mode == VOICE_MODE_ALWAYS_ON
+	var wants_level_meter := voice_level_meter_enabled
 	var should_send := _local_player_should_send_voice()
 	var should_monitor := voice_test_monitor_enabled
-	if !should_send and !should_monitor:
+	if !should_send and !should_monitor and !wants_always_on_level and !wants_level_meter:
 		if capture_effect != null:
 			capture_effect.clear_buffer()
+		local_voice_broadcasting = false
 		debug_capture_status = "idle"
 		return
 	_capture_voice_frames(should_send, should_monitor)
@@ -387,12 +412,23 @@ func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
 		debug_capture_status = "waiting for mic frames"
 		return
 	debug_capture_status = "capturing"
+	debug_capture_level = _stereo_mix_peak(input_frames)
+	var now := Time.get_ticks_msec()
+	_update_smoothed_capture_level(debug_capture_level, now)
+	var effective_should_send := should_send
+	if voice_input_mode == VOICE_MODE_ALWAYS_ON:
+		effective_should_send = _update_always_on_broadcasting(now)
+	else:
+		local_voice_broadcasting = should_send
+	debug_last_capture_msec = now
+	if voice_input_mode == VOICE_MODE_ALWAYS_ON and !effective_should_send and !should_monitor:
+		debug_capture_status = "below threshold"
+	if !effective_should_send and !should_monitor:
+		return
 	var input_rate := float(AudioServer.get_mix_rate())
 	if input_rate <= 0.0:
 		input_rate = 48000.0
 	var packets: Array = capture_codec.encode_stereo_mix(input_frames, input_rate)
-	debug_capture_level = capture_codec.get_last_input_peak()
-	debug_last_capture_msec = Time.get_ticks_msec()
 	for packet in packets:
 		var payload := packet as PackedByteArray
 		if payload.is_empty():
@@ -400,8 +436,38 @@ func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
 		debug_packets_encoded += 1
 		if should_monitor:
 			_play_voice_test_payload(payload)
-		if should_send:
+		if effective_should_send:
 			_send_voice_payload(payload)
+
+func _stereo_mix_peak(input_frames: PackedVector2Array) -> float:
+	var peak := 0.0
+	for i in range(input_frames.size()):
+		var frame: Vector2 = input_frames[i]
+		peak = maxf(peak, absf(clampf((frame.x + frame.y) * 0.5, -1.0, 1.0)))
+	return peak
+
+func _update_smoothed_capture_level(level: float, now_msec: int) -> void:
+	if last_capture_level_msec <= 0:
+		smoothed_capture_level = level
+	else:
+		var elapsed := maxf(float(now_msec - last_capture_level_msec) * 0.001, 0.0)
+		var alpha := 1.0 - exp(-elapsed / VOICE_LEVEL_SMOOTH_SECONDS)
+		smoothed_capture_level = lerpf(smoothed_capture_level, level, clampf(alpha, 0.0, 1.0))
+	last_capture_level_msec = now_msec
+
+func _update_always_on_broadcasting(now_msec: int) -> bool:
+	if smoothed_capture_level >= voice_always_on_threshold:
+		local_voice_broadcasting = true
+		always_on_below_threshold_msec = 0
+		return true
+	if local_voice_broadcasting:
+		if always_on_below_threshold_msec <= 0:
+			always_on_below_threshold_msec = now_msec
+		elif now_msec - always_on_below_threshold_msec >= VOICE_ALWAYS_ON_RELEASE_MSEC:
+			local_voice_broadcasting = false
+	else:
+		always_on_below_threshold_msec = now_msec
+	return local_voice_broadcasting
 
 func _local_player_should_send_voice() -> bool:
 	if !_local_player_can_use_voice():
@@ -409,7 +475,7 @@ func _local_player_should_send_voice() -> bool:
 	if voice_input_mode == VOICE_MODE_OFF:
 		return false
 	if voice_input_mode == VOICE_MODE_ALWAYS_ON:
-		return true
+		return local_voice_broadcasting
 	if voice_input_mode == VOICE_MODE_TOGGLE:
 		return voice_talk_toggled
 	return InputMap.has_action(VOICE_ACTION) and Input.is_action_pressed(VOICE_ACTION)
@@ -533,6 +599,7 @@ func _receive_voice_packet(sender_id: int, sequence: int, payload: PackedByteArr
 	)
 	if codec.decode_push_stereo(payload, playback, pan_gains.x, pan_gains.y):
 		debug_voice_decode_pushes += 1
+		peer["level"] = clampf(codec.get_last_decoded_peak() * maxf(absf(pan_gains.x), absf(pan_gains.y)), 0.0, 1.0)
 		debug_voice_last_drop_reason = ""
 		_write_voice_debug_event("decode", sender_id, sequence)
 	else:
@@ -596,6 +663,7 @@ func _ensure_remote_peer(sender_id: int) -> Dictionary:
 		"has_previous_distance": false,
 		"previous_distance": 0.0,
 		"doppler_pitch": 1.0,
+		"level": 0.0,
 	}
 	remote_peers[sender_id] = peer
 	return peer
@@ -770,10 +838,28 @@ func _voice_spatial_tick() -> int:
 	return maxi(network_manager.local_tick - runahead, 0)
 
 func get_voice_debug_status() -> Dictionary:
+	var now := Time.get_ticks_msec()
+	var remote_voice_peers := []
+	for peer_id in remote_peers.keys():
+		var peer: Dictionary = remote_peers[peer_id]
+		var age := now - int(peer.get("last_packet_msec", now))
+		if age > remote_peer_timeout_msec:
+			continue
+		var age_alpha := 1.0 - clampf(float(age) / maxf(float(remote_peer_timeout_msec), 1.0), 0.0, 1.0)
+		remote_voice_peers.append({
+			"id": int(peer_id),
+			"level": clampf(float(peer.get("level", 0.0)) * age_alpha, 0.0, 1.0),
+			"age_msec": age,
+		})
 	return {
+		"local_id": multiplayer.get_unique_id(),
+		"race_active": network_manager != null and network_manager.race_active,
 		"mode": voice_input_mode,
 		"listen_enabled": voice_listen_enabled,
 		"test_monitor_enabled": voice_test_monitor_enabled,
+		"always_on_threshold": voice_always_on_threshold,
+		"smoothed_capture_level": smoothed_capture_level,
+		"local_voice_broadcasting": local_voice_broadcasting,
 		"capture_active": capture_effect != null and capture_player != null and capture_player.playing,
 		"capture_status": debug_capture_status,
 		"capture_frames_available": debug_capture_frames_available,
@@ -803,4 +889,5 @@ func get_voice_debug_status() -> Dictionary:
 		"voice_last_receive_sequence": debug_voice_last_receive_sequence,
 		"voice_last_drop_reason": debug_voice_last_drop_reason,
 		"voice_debug_log_path": debug_voice_log_path,
+		"remote_voice_peers": remote_voice_peers,
 	}
