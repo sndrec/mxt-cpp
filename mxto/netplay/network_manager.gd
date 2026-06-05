@@ -2248,6 +2248,41 @@ func send_player_settings(settings: Dictionary) -> void:
 		update_player_settings.rpc_id(1, settings)
 		player_settings[my_id] = settings
 
+func _set_next_race_accel_setting(id: int, accel_setting: float) -> void:
+	accel_setting = clampf(accel_setting, 0.0, 1.0)
+	var settings = player_settings.get(id, {})
+	if typeof(settings) == TYPE_DICTIONARY:
+		settings = (settings as Dictionary).duplicate(true)
+	else:
+		settings = {}
+	settings["accel_setting"] = accel_setting
+	player_settings[id] = settings
+
+func send_next_race_accel_setting(accel_setting: float) -> void:
+	var my_id := multiplayer.get_unique_id()
+	_set_next_race_accel_setting(my_id, accel_setting)
+	if !has_network_peer():
+		return
+	if is_server:
+		update_next_race_accel_setting.rpc(accel_setting, my_id)
+	else:
+		update_next_race_accel_setting.rpc_id(1, accel_setting)
+
+@rpc("any_peer", "reliable")
+func update_next_race_accel_setting(accel_setting: float, id: int = -1) -> void:
+	var sender_id := multiplayer.get_remote_sender_id()
+	if is_server and sender_id != 0:
+		id = sender_id
+	elif id == -1:
+		id = sender_id
+		if id == 0:
+			id = multiplayer.get_unique_id()
+	elif !is_server and sender_id != 1:
+		return
+	_set_next_race_accel_setting(id, accel_setting)
+	if is_server:
+		update_next_race_accel_setting.rpc(accel_setting, id)
+
 @rpc("any_peer", "reliable")
 func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 	if race_active:

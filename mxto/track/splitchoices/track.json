@@ -1,6 +1,5 @@
 {
   "name": "SPLIT CHOICES",
-  "music": "res://content/base/sound/mus_chance.tres",
   "description": "",
   "difficulty": 1,
   "fog_distance": 1000.0,
@@ -65,7 +64,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 1,
@@ -83,7 +83,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 2,
@@ -101,7 +102,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 3,
@@ -119,7 +121,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 4,
@@ -137,7 +140,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 5,
@@ -155,7 +159,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 6,
@@ -173,7 +178,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 7,
@@ -191,7 +197,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 8,
@@ -209,7 +216,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 9,
@@ -227,7 +235,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 10,
@@ -245,7 +254,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 11,
@@ -263,7 +273,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 12,
@@ -281,7 +292,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 13,
@@ -299,7 +311,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 14,
@@ -317,7 +330,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 15,
@@ -335,7 +349,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 16,
@@ -353,7 +368,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 17,
@@ -371,7 +387,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 18,
@@ -389,7 +406,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 19,
@@ -407,7 +425,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 20,
@@ -425,7 +444,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 21,
@@ -443,7 +463,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 22,
@@ -461,7 +482,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 23,
@@ -479,7 +501,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 24,
@@ -497,7 +520,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 25,
@@ -515,7 +539,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 26,
@@ -533,7 +558,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 27,
@@ -551,7 +577,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 28,
@@ -569,7 +596,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 29,
@@ -587,7 +615,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 30,
@@ -605,7 +634,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 31,
@@ -623,7 +653,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     },
     {
       "seg_index": 32,
@@ -641,7 +672,8 @@
       "rail_start_left": 0.0,
       "rail_end_left": 1.0,
       "rail_start_right": 0.0,
-      "rail_end_right": 1.0
+      "rail_end_right": 1.0,
+      "cpu_nav_allow_glide_drops": true
     }
   ]
 }

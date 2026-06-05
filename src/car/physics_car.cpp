@@ -4469,7 +4469,10 @@ void PhysicsCar::update_restore(float accel_input)
 	if (!soa->current_track[soa_index])
 		return;
 
-	bool crashed = soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y || soa->energy[soa_index] <= 0.0f;
+	bool crashed =
+		soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y ||
+		soa->energy[soa_index] <= 0.0f ||
+		(soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) != 0;
 
 	if (soa->restore_state[soa_index] == 0 && crashed) {
 		soa->restore_state[soa_index] = 1;

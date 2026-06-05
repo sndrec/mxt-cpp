@@ -135,6 +135,7 @@ const RACE_FINISH_SFX_DUCK_BUS := &"SFX"
 const RACE_FINISH_SFX_DUCK_DB := -8.0
 const RACE_FINISH_SFX_DUCK_DELAY_SECONDS := 1.0
 const RACE_FINISH_SFX_DUCK_FADE_SECONDS := 2.0
+const RACE_RESULTS_SCREEN_MSEC := 15000
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -325,6 +326,7 @@ var active_stickers := {}
 var race_notification_hide_msec := 0
 var race_medals: Array[Control] = []
 var race_results_overlay: RaceResultsOverlay
+var race_results_next_accel_setting: float = -1.0
 var render_profile_frames := 0
 var render_profile_physics_us := 0
 var render_profile_tick_us := 0
@@ -360,6 +362,7 @@ func _ready() -> void:
 	_setup_ui_audio()
 	race_results_overlay = RaceResultsOverlayScene.instantiate() as RaceResultsOverlay
 	add_child(race_results_overlay)
+	race_results_overlay.machine_setting_changed.connect(_on_race_results_machine_setting_changed)
 	lobby_chibi_render_manager = CarRenderManagerClass.new()
 	lobby_chibi_render_manager.name = "LobbyChibiRenderManager"
 	if lobby_chibi_root != null:
@@ -1798,6 +1801,66 @@ func _format_race_results_summary() -> String:
 		return race_text
 	return race_text + "\n\n" + grand_prix_text
 
+func _race_results_countdown_seconds() -> int:
+	if network_manager.net_race_finish_time < 0:
+		return -1
+	var remaining_msec := maxi(0, RACE_RESULTS_SCREEN_MSEC - (Time.get_ticks_msec() - network_manager.net_race_finish_time))
+	return ceili(float(remaining_msec) / 1000.0)
+
+func _next_grand_prix_track_index_for_results() -> int:
+	if !network_manager.is_grand_prix_enabled():
+		return -1
+	var track_indices: Array = network_manager.race_options.get("track_indices", [])
+	var next_index := int(network_manager.race_options.get("grand_prix_current_track", 0)) + 1
+	if next_index < 0 or next_index >= track_indices.size():
+		return -1
+	return int(track_indices[next_index])
+
+func _track_name_for_index(track_index: int) -> String:
+	if track_index >= 0 and track_index < tracks.size():
+		return str(tracks[track_index].get("name", "Track"))
+	return "Track"
+
+func _local_player_accel_setting_for_results() -> float:
+	if race_results_next_accel_setting >= 0.0:
+		return race_results_next_accel_setting
+	var local_id := _local_player_id()
+	var settings = network_manager.player_settings.get(local_id, {})
+	if typeof(settings) == TYPE_DICTIONARY and (settings as Dictionary).has("accel_setting"):
+		return clampf(float((settings as Dictionary)["accel_setting"]), 0.0, 1.0)
+	if car_settings != null:
+		var player_settings = car_settings.get("player_settings")
+		if player_settings is PlayerSettings:
+			return clampf((player_settings as PlayerSettings).accel_setting, 0.0, 1.0)
+	return 1.0
+
+func _apply_local_next_race_accel_setting(accel_setting: float) -> void:
+	accel_setting = clampf(accel_setting, 0.0, 1.0)
+	var local_id := _local_player_id()
+	var settings = network_manager.player_settings.get(local_id, {})
+	if typeof(settings) == TYPE_DICTIONARY:
+		settings = (settings as Dictionary).duplicate(true)
+	else:
+		settings = {}
+	if settings.is_empty() and car_settings != null:
+		var player_settings = car_settings.get("player_settings")
+		if player_settings is PlayerSettings:
+			settings = (player_settings as PlayerSettings).to_dict()
+	settings["accel_setting"] = accel_setting
+	network_manager.player_settings[local_id] = settings
+	if car_settings != null:
+		var player_settings = car_settings.get("player_settings")
+		if player_settings is PlayerSettings:
+			(player_settings as PlayerSettings).accel_setting = accel_setting
+
+func _on_race_results_machine_setting_changed(accel_setting: float) -> void:
+	if _next_grand_prix_track_index_for_results() < 0:
+		return
+	race_results_next_accel_setting = clampf(accel_setting, 0.0, 1.0)
+	_apply_local_next_race_accel_setting(race_results_next_accel_setting)
+	if network_manager.has_method("send_next_race_accel_setting"):
+		network_manager.call("send_next_race_accel_setting", race_results_next_accel_setting)
+
 func _show_race_results_summary() -> void:
 	if replay_playback_active:
 		_hide_race_results_summary()
@@ -1806,12 +1869,20 @@ func _show_race_results_summary() -> void:
 		race_finish_label.visible = false
 	if race_results_overlay != null:
 		race_results_overlay.set_results(_format_race_results_text(), _format_grand_prix_results_text())
+		race_results_overlay.set_countdown_seconds(_race_results_countdown_seconds())
+		var next_track_index := _next_grand_prix_track_index_for_results()
+		race_results_overlay.set_next_race(
+			_track_name_for_index(next_track_index),
+			_local_player_accel_setting_for_results(),
+			next_track_index >= 0)
 		race_results_overlay.visible = true
 	race_notification_hide_msec = 0
 
 func _hide_race_results_summary() -> void:
 	if race_results_overlay != null:
 		race_results_overlay.visible = false
+		race_results_overlay.set_countdown_seconds(-1)
+		race_results_overlay.set_next_race("", 1.0, false)
 
 func _show_finish_medal(actor_id: int, tick_value: int) -> void:
 	var medal := FinishMedalScene.instantiate() as Control
@@ -4161,6 +4232,7 @@ func _on_start_race_button_pressed() -> void:
 		network_manager.send_start_race(first_track_index, settings_array, race_options)
 
 func _on_network_race_started(track_index: int, settings: Array) -> void:
+	race_results_next_accel_setting = -1.0
 	_close_settings_menus_for_race_start()
 	if headless_mode:
 		_start_race(track_index, settings)
@@ -5212,7 +5284,7 @@ func _check_race_finished() -> void:
 				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
 				_record_grand_prix_race_results(finish_sim)
 				_show_race_results_summary()
-			if Time.get_ticks_msec() > network_manager.net_race_finish_time + 10000:
+			if Time.get_ticks_msec() > network_manager.net_race_finish_time + RACE_RESULTS_SCREEN_MSEC:
 				_finish_or_advance_grand_prix(finish_sim)
 				race_finish_label.visible = false
 				_hide_race_results_summary()

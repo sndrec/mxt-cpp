@@ -13,6 +13,21 @@ grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1_results")
 
+[node name="CountdownLabel" type="Label" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -104.0
+offset_top = 18.0
+offset_right = -18.0
+offset_bottom = 58.0
+grow_horizontal = 0
+theme_override_font_sizes/font_size = 32
+horizontal_alignment = 2
+text = "15s"
+
 [node name="Center" type="CenterContainer" parent="."]
 layout_mode = 1
 anchors_preset = 15
@@ -33,28 +48,32 @@ theme_override_constants/margin_top = 12
 theme_override_constants/margin_right = 14
 theme_override_constants/margin_bottom = 12
 
-[node name="Columns" type="HBoxContainer" parent="Center/Panel/Margin"]
+[node name="Content" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Columns" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="RaceResultsPanel" type="PanelContainer" parent="Center/Panel/Margin/Columns"]
+[node name="RaceResultsPanel" type="PanelContainer" parent="Center/Panel/Margin/Content/Columns"]
 custom_minimum_size = Vector2(400, 320)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Margin" type="MarginContainer" parent="Center/Panel/Margin/Columns/RaceResultsPanel"]
+[node name="Margin" type="MarginContainer" parent="Center/Panel/Margin/Content/Columns/RaceResultsPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 8
 
-[node name="Scroll" type="ScrollContainer" parent="Center/Panel/Margin/Columns/RaceResultsPanel/Margin"]
+[node name="Scroll" type="ScrollContainer" parent="Center/Panel/Margin/Content/Columns/RaceResultsPanel/Margin"]
 custom_minimum_size = Vector2(0, 300)
 layout_mode = 2
 horizontal_scroll_mode = 0
 
-[node name="RaceResultsText" type="RichTextLabel" parent="Center/Panel/Margin/Columns/RaceResultsPanel/Margin/Scroll"]
+[node name="RaceResultsText" type="RichTextLabel" parent="Center/Panel/Margin/Content/Columns/RaceResultsPanel/Margin/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -63,24 +82,24 @@ fit_content = true
 scroll_active = false
 text = "Race Results"
 
-[node name="GrandPrixPanel" type="PanelContainer" parent="Center/Panel/Margin/Columns"]
+[node name="GrandPrixPanel" type="PanelContainer" parent="Center/Panel/Margin/Content/Columns"]
 custom_minimum_size = Vector2(400, 320)
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Margin" type="MarginContainer" parent="Center/Panel/Margin/Columns/GrandPrixPanel"]
+[node name="Margin" type="MarginContainer" parent="Center/Panel/Margin/Content/Columns/GrandPrixPanel"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 8
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 8
 
-[node name="Scroll" type="ScrollContainer" parent="Center/Panel/Margin/Columns/GrandPrixPanel/Margin"]
+[node name="Scroll" type="ScrollContainer" parent="Center/Panel/Margin/Content/Columns/GrandPrixPanel/Margin"]
 custom_minimum_size = Vector2(0, 300)
 layout_mode = 2
 horizontal_scroll_mode = 0
 
-[node name="GrandPrixText" type="RichTextLabel" parent="Center/Panel/Margin/Columns/GrandPrixPanel/Margin/Scroll"]
+[node name="GrandPrixText" type="RichTextLabel" parent="Center/Panel/Margin/Content/Columns/GrandPrixPanel/Margin/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -88,3 +107,43 @@ bbcode_enabled = false
 fit_content = true
 scroll_active = false
 text = "Grand Prix Standings"
+
+[node name="NextRacePanel" type="PanelContainer" parent="Center/Panel/Margin/Content"]
+visible = false
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel/Margin/Content/NextRacePanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Row" type="HBoxContainer" parent="Center/Panel/Margin/Content/NextRacePanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="NextTrackLabel" type="Label" parent="Center/Panel/Margin/Content/NextRacePanel/Margin/Row"]
+custom_minimum_size = Vector2(280, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Next Track: Track"
+
+[node name="MachineSettingLabel" type="Label" parent="Center/Panel/Margin/Content/NextRacePanel/Margin/Row"]
+layout_mode = 2
+text = "Machine Setting"
+
+[node name="MachineSettingSlider" type="HSlider" parent="Center/Panel/Margin/Content/NextRacePanel/Margin/Row"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 100.0
+step = 1.0
+value = 100.0
+
+[node name="MachineSettingPercent" type="Label" parent="Center/Panel/Margin/Content/NextRacePanel/Margin/Row"]
+custom_minimum_size = Vector2(48, 0)
+layout_mode = 2
+horizontal_alignment = 2
+text = "100%"
