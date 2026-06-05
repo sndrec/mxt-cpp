@@ -577,26 +577,33 @@ func _receive_voice_packet(sender_id: int, sequence: int, payload: PackedByteArr
 	var peer := _ensure_remote_peer(sender_id)
 	peer["last_sequence"] = sequence
 	peer["last_packet_msec"] = Time.get_ticks_msec()
-	if !bool(peer.get("has_voice_transform", false)):
-		_update_remote_source_positions()
-		if !bool(peer.get("has_voice_transform", false)):
-			debug_voice_last_drop_reason = "missing source transform"
-			_write_voice_debug_event("receive_drop", sender_id, sequence)
-			return
-	if !bool(peer.get("has_listener_transform", false)):
-		debug_voice_last_drop_reason = "missing listener transform"
-		_write_voice_debug_event("receive_drop", sender_id, sequence)
-		return
 	var playback := peer.get("playback") as AudioStreamGeneratorPlayback
 	var codec := peer.get("codec") as OpusVoiceCodec
 	if playback == null or codec == null:
 		debug_voice_last_drop_reason = "missing playback"
 		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
-	var pan_gains := _voice_stereo_gains(
-		peer.get("current_origin", Vector3.ZERO),
-		peer.get("listener_origin", Vector3.ZERO)
-	)
+	var pan_gains := Vector2.ONE
+	if _voice_should_play_finished_nonspatial(sender_id):
+		var player := peer.get("player") as AudioStreamPlayer
+		if player != null:
+			player.pitch_scale = 1.0
+		peer["has_previous_distance"] = false
+	else:
+		if !bool(peer.get("has_voice_transform", false)):
+			_update_remote_source_positions()
+			if !bool(peer.get("has_voice_transform", false)):
+				debug_voice_last_drop_reason = "missing source transform"
+				_write_voice_debug_event("receive_drop", sender_id, sequence)
+				return
+		if !bool(peer.get("has_listener_transform", false)):
+			debug_voice_last_drop_reason = "missing listener transform"
+			_write_voice_debug_event("receive_drop", sender_id, sequence)
+			return
+		pan_gains = _voice_stereo_gains(
+			peer.get("current_origin", Vector3.ZERO),
+			peer.get("listener_origin", Vector3.ZERO)
+		)
 	if codec.decode_push_stereo(payload, playback, pan_gains.x, pan_gains.y):
 		debug_voice_decode_pushes += 1
 		peer["level"] = clampf(codec.get_last_decoded_peak() * maxf(absf(pan_gains.x), absf(pan_gains.y)), 0.0, 1.0)
@@ -688,15 +695,16 @@ func _voice_recipients_for(sender_id: int) -> Array:
 	debug_voice_last_source_found = false
 	debug_voice_last_local_candidate = false
 	debug_voice_last_local_distance = -1.0
+	var finished_recipients := _voice_finished_recipients_for(sender_id)
 	if network_manager == null or network_manager.server_game_sim == null:
-		return []
+		return finished_recipients
 	var sim := network_manager.server_game_sim
 	if !sim.has_method("get_saved_player_voice_transforms"):
-		return []
+		return finished_recipients
 	var snapshot: Array = sim.get_saved_player_voice_transforms(maxi(network_manager.server_tick - 1, 0))
 	debug_voice_last_recipient_snapshot_count = snapshot.size()
 	if snapshot.is_empty():
-		return []
+		return finished_recipients
 	var source_pos := Vector3.ZERO
 	var found_source := false
 	for item in snapshot:
@@ -708,7 +716,7 @@ func _voice_recipients_for(sender_id: int) -> Array:
 			found_source = true
 			break
 	if !found_source:
-		return []
+		return finished_recipients
 	debug_voice_last_source_found = true
 	var candidates := []
 	var max_dist_sq := voice_range * voice_range
@@ -718,6 +726,8 @@ func _voice_recipients_for(sender_id: int) -> Array:
 			continue
 		var player_id := int(item.get("player_id", -1))
 		if player_id == sender_id or player_id < 0:
+			continue
+		if finished_recipients.has(player_id):
 			continue
 		if !_can_send_voice_rpc_to(player_id):
 			continue
@@ -729,11 +739,38 @@ func _voice_recipients_for(sender_id: int) -> Array:
 				debug_voice_last_local_candidate = true
 				debug_voice_last_local_distance = sqrt(dist_sq)
 	candidates.sort_custom(func(a, b): return float(a["dist_sq"]) < float(b["dist_sq"]))
-	var recipients := []
+	var recipients := finished_recipients.duplicate()
 	var count = mini(candidates.size(), max_recipients)
 	for i in range(count):
 		recipients.append(int(candidates[i]["id"]))
 	return recipients
+
+func _voice_finished_recipients_for(sender_id: int) -> Array:
+	var recipients := []
+	if network_manager == null or !_voice_player_finished(sender_id):
+		return recipients
+	for id_value in network_manager.get_simulation_roster():
+		var player_id := int(id_value)
+		if player_id == sender_id or player_id < 0:
+			continue
+		if !_voice_player_finished(player_id):
+			continue
+		if !_can_send_voice_rpc_to(player_id):
+			continue
+		recipients.append(player_id)
+	return recipients
+
+func _voice_should_play_finished_nonspatial(sender_id: int) -> bool:
+	if network_manager == null:
+		return false
+	return _voice_player_finished(sender_id) and _voice_player_finished(multiplayer.get_unique_id())
+
+func _voice_player_finished(player_id: int) -> bool:
+	if network_manager == null:
+		return false
+	if network_manager.player_finish_times.has(player_id):
+		return true
+	return network_manager.player_finish_times.has(str(player_id))
 
 func _can_send_voice_rpc_to(peer_id: int) -> bool:
 	if network_manager == null:

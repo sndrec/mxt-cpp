@@ -252,9 +252,11 @@ theme_override_constants/separation = 6
 layout_mode = 2
 size_flags_horizontal = 3
 placeholder_text = "Say..."
+keep_editing_on_text_submit = true
 
 [node name="LobbySendTextButton" type="Button" parent="LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox" unique_id=1689184039]
 layout_mode = 2
+focus_mode = 0
 text = "Send"
 
 [node name="ViewportStack" type="Control" parent="LobbyContainer/BottomBox" unique_id=895817764]

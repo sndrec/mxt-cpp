@@ -31,6 +31,7 @@ class_name GameManager extends Node
 @onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
 @onready var rtt_label: Label = $RTTLabel
+@onready var version_label: Label = $VersionLabel
 @onready var cpu_slider: HSlider = $Control/CpuSlider
 @onready var cpu_slider_label: Label = $Control/CpuSliderLabel
 @onready var lobby_cpu_count_label: Label = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox/CpuCountLabel
@@ -329,6 +330,8 @@ var race_medals: Array[Control] = []
 var race_results_overlay: RaceResultsOverlay
 var race_communication_overlay: RaceCommunicationOverlay
 var race_results_next_accel_setting: float = -1.0
+var race_results_hid_race_hud := false
+var race_results_saved_race_hud_visible := false
 var render_profile_frames := 0
 var render_profile_physics_us := 0
 var render_profile_tick_us := 0
@@ -1221,8 +1224,10 @@ func _build_lobby_options_controls() -> void:
 		lobby_s_boost_toggle.toggled.connect(_on_lobby_s_boost_toggled)
 	if !lobby_say_text.text_submitted.is_connected(_on_lobby_chat_text_submitted):
 		lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
+	lobby_say_text.keep_editing_on_text_submit = true
 	if !lobby_send_text_button.pressed.is_connected(_on_lobby_chat_send_pressed):
 		lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
+	lobby_send_text_button.focus_mode = Control.FOCUS_NONE
 	var viewport_stack := $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack as Control
 	if viewport_stack != null and !viewport_stack.gui_input.is_connected(_on_lobby_chibi_view_gui_input):
 		viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
@@ -1414,12 +1419,22 @@ func _on_lobby_chat_send_pressed() -> void:
 		return
 	_submit_lobby_chat_message(lobby_say_text.text)
 	lobby_say_text.clear()
+	_refocus_lobby_chat_deferred()
 
 func _on_lobby_chat_text_submitted(text: String) -> void:
 	_submit_lobby_chat_message(text)
 	if lobby_say_text != null:
 		lobby_say_text.clear()
-		lobby_say_text.release_focus()
+		_refocus_lobby_chat_deferred()
+
+func _refocus_lobby_chat_deferred() -> void:
+	call_deferred("_refocus_lobby_chat")
+
+func _refocus_lobby_chat() -> void:
+	if lobby_say_text == null or !lobby_control.visible:
+		return
+	lobby_say_text.grab_focus()
+	lobby_say_text.caret_column = lobby_say_text.text.length()
 
 func _submit_lobby_chat_message(text: String) -> void:
 	var clean := text.strip_edges()
@@ -1455,7 +1470,7 @@ func _broadcast_lobby_chat_message(sender_id: int, text: String) -> void:
 func _append_lobby_chat_message(sender_id: int, text: String) -> void:
 	var color := Color(1.0, 1.0, 0.4, 1.0) if sender_id == _local_player_id() else Color(0.78, 0.84, 1.0, 1.0)
 	var name := _player_display_name(sender_id)
-	if race_communication_overlay != null:
+	if race_communication_overlay != null and _race_chat_overlay_accepts_messages():
 		race_communication_overlay.append_message(sender_id, name, text)
 	if lobby_chat_box != null:
 		lobby_chat_box.add_text("\n")
@@ -1463,6 +1478,9 @@ func _append_lobby_chat_message(sender_id: int, text: String) -> void:
 		lobby_chat_box.add_text(name)
 		lobby_chat_box.pop()
 		lobby_chat_box.add_text(": " + text)
+
+func _race_chat_overlay_accepts_messages() -> bool:
+	return game_sim != null and game_sim.sim_started and !lobby_control.visible
 
 func _on_lobby_chibi_view_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and lobby_say_text != null:
@@ -1873,6 +1891,7 @@ func _show_race_results_summary() -> void:
 		return
 	if race_finish_label != null:
 		race_finish_label.visible = false
+	_set_race_results_hud_hidden(true)
 	if race_results_overlay != null:
 		race_results_overlay.set_results(_format_race_results_text(), _format_grand_prix_results_text())
 		race_results_overlay.set_countdown_seconds(_race_results_countdown_seconds())
@@ -1889,6 +1908,29 @@ func _hide_race_results_summary() -> void:
 		race_results_overlay.visible = false
 		race_results_overlay.set_countdown_seconds(-1)
 		race_results_overlay.set_next_race("", 1.0, false)
+	_set_race_results_hud_hidden(false)
+
+func _set_race_results_hud_hidden(hidden: bool) -> void:
+	var race_hud := _local_race_hud()
+	if hidden:
+		if race_results_hid_race_hud:
+			return
+		if race_hud == null:
+			return
+		race_results_saved_race_hud_visible = race_hud.visible
+		race_results_hid_race_hud = true
+		race_hud.visible = false
+		return
+	if !race_results_hid_race_hud:
+		return
+	race_results_hid_race_hud = false
+	if race_hud != null:
+		race_hud.visible = race_results_saved_race_hud_visible
+
+func _local_race_hud() -> Control:
+	if car_node_container == null or car_node_container.local_visual_car == null:
+		return null
+	return car_node_container.local_visual_car.race_hud as Control
 
 func _show_finish_medal(actor_id: int, tick_value: int) -> void:
 	var medal := FinishMedalScene.instantiate() as Control
@@ -5382,6 +5424,7 @@ func _process(delta: float) -> void:
 	if race_finish_label.visible and race_notification_hide_msec > 0 and now_msec > race_notification_hide_msec and network_manager.net_race_finish_time == -1:
 		race_finish_label.visible = false
 		race_notification_hide_msec = 0
+	_update_lobby_debug_label_visibility()
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
 	if game_sim.sim_started and network_manager.net_race_finish_time != -1 and !replay_playback_active:
@@ -5397,6 +5440,15 @@ func _process(delta: float) -> void:
 		if auto_render_profile_mode:
 			render_profile_visuals_only_us += Time.get_ticks_usec() - profile_visuals_start
 			render_profile_process_us += Time.get_ticks_usec() - profile_process_start
+
+func _update_lobby_debug_label_visibility() -> void:
+	var in_lobby := lobby_control.visible
+	if frame_time_label != null:
+		frame_time_label.visible = !in_lobby and !auto_disable_hud_mode
+	if rtt_label != null:
+		rtt_label.visible = !in_lobby and !auto_disable_hud_mode
+	if version_label != null:
+		version_label.visible = !in_lobby
 
 func _update_race_communication_overlay() -> void:
 	if race_communication_overlay == null:
