@@ -6,7 +6,7 @@ const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const BOUNDS_X := 25.0
 const BOUNDS_Z := 10.0
 const CHIBI_TICK_DELTA := 1.0 / 60.0
-const SYNC_INTERVAL_MSEC := 15
+const SYNC_INTERVAL_MSEC := 100
 const NAMEPLATE_PANEL_OFFSET := Vector2(48.0, -87.0)
 const NAMEPLATE_POINTER_OFFSET := Vector2(36.0, -46.0)
 const NAMEPLATE_POINTER_POINTS := [
@@ -259,12 +259,19 @@ func _configure_visual_meshes(root: Node) -> void:
 		mesh.visible = false
 
 func _physics_process(delta: float) -> void:
+	if !_is_lobby_chibi_active():
+		return
 	if local_control and _can_accept_input():
 		_update_local_drive(delta)
 	_update_motion(delta)
 	_update_nameplate()
 	if local_control:
 		_sync_state_if_needed()
+
+func _is_lobby_chibi_active() -> bool:
+	if game_manager != null and game_manager.has_method("_lobby_chibi_active"):
+		return bool(game_manager.call("_lobby_chibi_active"))
+	return true
 
 func _can_accept_input() -> bool:
 	if game_manager != null and game_manager.has_method("_lobby_accepts_chibi_input"):

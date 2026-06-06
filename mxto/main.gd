@@ -48,6 +48,7 @@ class_name GameManager extends Node
 @onready var lobby_chibi_camera: Camera3D = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiCamera
 @onready var lobby_chibi_root: Node3D = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiRoot
 @onready var lobby_chibi_nameplates: Control = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiNameplates
+@onready var lobby_chat_panel: PanelContainer = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel
 @onready var lobby_chat_box: RichTextLabel = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/LobbyChatBox
 @onready var lobby_say_text: LineEdit = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySayText
 @onready var lobby_send_text_button: Button = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySendTextButton
@@ -59,6 +60,8 @@ class_name GameManager extends Node
 @onready var race_pause_lobby_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/LobbyButton
 @onready var race_pause_disconnect_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/DisconnectButton
 var lobby_chibi_cars := {}
+var lobby_chibi_pending_states := {}
+var lobby_chibi_last_broadcast_msec := 0
 var lobby_grand_prix_track_sequence: Array[int] = []
 var lobby_applying_race_options := false
 var lobby_player_list_signature := ""
@@ -207,6 +210,9 @@ var current_track_ground_image: Image
 var car_render_manager: CarRenderManager
 var lobby_chibi_render_manager: CarRenderManager
 var lobby_chibi_render_signature := ""
+const LOBBY_CHIBI_BROADCAST_INTERVAL_MSEC := 100
+# Temporary kill switch while text chat is causing frame-time spikes.
+const TEXT_CHAT_DISABLED := true
 var debug_replay_recording: bool = false
 var debug_replay_playback: bool = false
 var debug_replay_inputs: Array = []
@@ -324,6 +330,9 @@ const DIP_TRACE_MESH_FLOOR := 0x1000
 
 var race_pause_open := false
 var debug_rail_trace_requested := false
+var debug_rail_trace_car_index := -1
+var debug_rail_trace_tick_start := -1
+var debug_rail_trace_tick_end := -1
 var active_stickers := {}
 var race_notification_hide_msec := 0
 var race_medals: Array[Control] = []
@@ -357,6 +366,16 @@ const TOP_PLACE_BADGE_TEXTURES: Array[Texture2D] = [
 const NAMETAG_VISIBLE_BUDGET := 30
 const NAMETAG_MAX_DISTANCE_SQ := 12000.0
 
+func _read_int_arg(args: Array, user_args: Array, flag: String, default_value: int) -> int:
+	var idx := args.find(flag)
+	var source_args := args
+	if idx == -1:
+		idx = user_args.find(flag)
+		source_args = user_args
+	if idx == -1 or idx + 1 >= source_args.size():
+		return default_value
+	return int(source_args[idx + 1])
+
 func _ready() -> void:
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -370,7 +389,9 @@ func _ready() -> void:
 	race_results_overlay.machine_setting_changed.connect(_on_race_results_machine_setting_changed)
 	race_communication_overlay = RaceCommunicationOverlayScene.instantiate() as RaceCommunicationOverlay
 	add_child(race_communication_overlay)
-	race_communication_overlay.message_submitted.connect(_submit_lobby_chat_message)
+	race_communication_overlay.set_text_chat_enabled(!TEXT_CHAT_DISABLED)
+	if !TEXT_CHAT_DISABLED:
+		race_communication_overlay.message_submitted.connect(_submit_lobby_chat_message)
 	lobby_chibi_render_manager = CarRenderManagerClass.new()
 	lobby_chibi_render_manager.name = "LobbyChibiRenderManager"
 	if lobby_chibi_root != null:
@@ -479,8 +500,13 @@ func _ready() -> void:
 	replay_load_profile_requested = args.has("--profile-replay-load") or user_args.has("--profile-replay-load")
 	debug_rail_trace_requested = args.has("--debug-rail-trace") or user_args.has("--debug-rail-trace")
 	if debug_rail_trace_requested:
+		debug_rail_trace_car_index = _read_int_arg(args, user_args, "--debug-rail-trace-car-index", -1)
+		debug_rail_trace_tick_start = _read_int_arg(args, user_args, "--debug-rail-trace-from", -1)
+		debug_rail_trace_tick_end = _read_int_arg(args, user_args, "--debug-rail-trace-to", -1)
 		game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
 		server_game_sim.set_dip_switch_enabled(DIP_TRACE_RAIL_SAMPLING, true)
+		game_sim.set_rail_trace_filter(debug_rail_trace_car_index, debug_rail_trace_tick_start, debug_rail_trace_tick_end)
+		server_game_sim.set_rail_trace_filter(debug_rail_trace_car_index, debug_rail_trace_tick_start, debug_rail_trace_tick_end)
 	if args.has("--debug-mesh-floor-trace") or user_args.has("--debug-mesh-floor-trace"):
 		game_sim.set_dip_switch_enabled(DIP_TRACE_MESH_FLOOR, true)
 		server_game_sim.set_dip_switch_enabled(DIP_TRACE_MESH_FLOOR, true)
@@ -1222,12 +1248,14 @@ func _build_lobby_options_controls() -> void:
 		lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
 	if lobby_s_boost_toggle != null and !lobby_s_boost_toggle.toggled.is_connected(_on_lobby_s_boost_toggled):
 		lobby_s_boost_toggle.toggled.connect(_on_lobby_s_boost_toggled)
-	if !lobby_say_text.text_submitted.is_connected(_on_lobby_chat_text_submitted):
-		lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
-	lobby_say_text.keep_editing_on_text_submit = true
-	if !lobby_send_text_button.pressed.is_connected(_on_lobby_chat_send_pressed):
-		lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
-	lobby_send_text_button.focus_mode = Control.FOCUS_NONE
+	_set_lobby_text_chat_visible(!TEXT_CHAT_DISABLED)
+	if !TEXT_CHAT_DISABLED:
+		if !lobby_say_text.text_submitted.is_connected(_on_lobby_chat_text_submitted):
+			lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
+		lobby_say_text.keep_editing_on_text_submit = true
+		if !lobby_send_text_button.pressed.is_connected(_on_lobby_chat_send_pressed):
+			lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
+		lobby_send_text_button.focus_mode = Control.FOCUS_NONE
 	var viewport_stack := $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack as Control
 	if viewport_stack != null and !viewport_stack.gui_input.is_connected(_on_lobby_chibi_view_gui_input):
 		viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
@@ -1414,7 +1442,22 @@ func _refresh_lobby_stage_preview() -> void:
 		label.pressed.connect(_on_lobby_stage_preview_pressed.bind(i))
 		lobby_stage_preview_container.add_child(label)
 
+func _set_lobby_text_chat_visible(enabled: bool) -> void:
+	if lobby_chat_panel != null:
+		lobby_chat_panel.visible = enabled
+	if lobby_chat_box != null:
+		lobby_chat_box.visible = enabled
+	if lobby_say_text != null:
+		lobby_say_text.visible = enabled
+		if !enabled:
+			lobby_say_text.release_focus()
+	if lobby_send_text_button != null:
+		lobby_send_text_button.visible = enabled
+		lobby_send_text_button.disabled = !enabled
+
 func _on_lobby_chat_send_pressed() -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	if lobby_say_text == null:
 		return
 	_submit_lobby_chat_message(lobby_say_text.text)
@@ -1422,21 +1465,29 @@ func _on_lobby_chat_send_pressed() -> void:
 	_refocus_lobby_chat_deferred()
 
 func _on_lobby_chat_text_submitted(text: String) -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	_submit_lobby_chat_message(text)
 	if lobby_say_text != null:
 		lobby_say_text.clear()
 		_refocus_lobby_chat_deferred()
 
 func _refocus_lobby_chat_deferred() -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	call_deferred("_refocus_lobby_chat")
 
 func _refocus_lobby_chat() -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	if lobby_say_text == null or !lobby_control.visible:
 		return
 	lobby_say_text.grab_focus()
 	lobby_say_text.caret_column = lobby_say_text.text.length()
 
 func _submit_lobby_chat_message(text: String) -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	var clean := text.strip_edges()
 	if clean == "":
 		return
@@ -1451,6 +1502,8 @@ func _submit_lobby_chat_message(text: String) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func _send_lobby_chat_message_to_server(text: String) -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	if !network_manager.is_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
@@ -1465,9 +1518,13 @@ func _send_lobby_chat_message_to_server(text: String) -> void:
 
 @rpc("any_peer", "call_local", "reliable")
 func _broadcast_lobby_chat_message(sender_id: int, text: String) -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	_append_lobby_chat_message(sender_id, text)
 
 func _append_lobby_chat_message(sender_id: int, text: String) -> void:
+	if TEXT_CHAT_DISABLED:
+		return
 	var color := Color(1.0, 1.0, 0.4, 1.0) if sender_id == _local_player_id() else Color(0.78, 0.84, 1.0, 1.0)
 	var name := _player_display_name(sender_id)
 	if race_communication_overlay != null and _race_chat_overlay_accepts_messages():
@@ -1480,18 +1537,57 @@ func _append_lobby_chat_message(sender_id: int, text: String) -> void:
 		lobby_chat_box.add_text(": " + text)
 
 func _race_chat_overlay_accepts_messages() -> bool:
+	if TEXT_CHAT_DISABLED:
+		return false
 	return game_sim != null and game_sim.sim_started and !lobby_control.visible
 
 func _on_lobby_chibi_view_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and lobby_say_text != null:
+	if !TEXT_CHAT_DISABLED and event is InputEventMouseButton and lobby_say_text != null:
 		lobby_say_text.release_focus()
 
 func _lobby_accepts_chibi_input() -> bool:
+	if !_lobby_chibi_active():
+		return false
 	if !_window_accepts_input():
 		return false
 	return lobby_say_text == null or !lobby_say_text.has_focus()
 
+func _lobby_chibi_active() -> bool:
+	return lobby_control != null and lobby_control.visible and network_manager != null and !network_manager.race_active
+
+func _lobby_chibi_accepts_network_state() -> bool:
+	if network_manager == null or network_manager.race_active:
+		return false
+	return network_manager.is_server or _lobby_chibi_active()
+
+func _clear_lobby_chibi_cars() -> void:
+	var had_state := !lobby_chibi_cars.is_empty() or !lobby_chibi_pending_states.is_empty() or lobby_chibi_render_signature != ""
+	if !had_state:
+		if lobby_chibi_viewport != null and lobby_chibi_viewport.render_target_update_mode != SubViewport.UPDATE_DISABLED:
+			lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		return
+	for id in lobby_chibi_cars.keys():
+		var car = lobby_chibi_cars[id]
+		if car != null and is_instance_valid(car):
+			car.queue_free()
+	if lobby_chibi_nameplates != null:
+		for child in lobby_chibi_nameplates.get_children():
+			child.queue_free()
+	lobby_chibi_cars.clear()
+	lobby_chibi_pending_states.clear()
+	lobby_chibi_last_broadcast_msec = 0
+	lobby_chibi_render_signature = ""
+	if lobby_chibi_render_manager != null:
+		lobby_chibi_render_manager.clear_renderer()
+	if lobby_chibi_viewport != null:
+		lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+
 func _update_lobby_chibi_cars(_delta: float) -> void:
+	if !_lobby_chibi_active():
+		_clear_lobby_chibi_cars()
+		return
+	if lobby_chibi_viewport != null:
+		lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	if lobby_chibi_root == null:
 		return
 	var roster := _get_lobby_human_roster()
@@ -1518,6 +1614,8 @@ func _update_lobby_chibi_cars(_delta: float) -> void:
 				stale_car.queue_free()
 			lobby_chibi_cars.erase(id)
 	_submit_lobby_chibi_render(roster)
+	if network_manager.is_server:
+		_broadcast_lobby_chibi_states_if_needed()
 
 func _submit_lobby_chibi_render(roster: Array) -> void:
 	if lobby_chibi_render_manager == null:
@@ -1579,25 +1677,64 @@ func _lobby_chibi_spawn_position(index: int) -> Vector3:
 	var z := -3.0 + float(index / 4) * 3.0
 	return Vector3(x, 0.6, z)
 
+func _pack_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> Array:
+	return [player_id, velocity, knockback_velocity, angle_velocity, position, rotation]
+
+func _store_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
+	lobby_chibi_pending_states[player_id] = _pack_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+
+func _broadcast_lobby_chibi_states_if_needed() -> void:
+	if !_lobby_chibi_accepts_network_state() or !network_manager.is_server or lobby_chibi_pending_states.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	if now < lobby_chibi_last_broadcast_msec + LOBBY_CHIBI_BROADCAST_INTERVAL_MSEC:
+		return
+	lobby_chibi_last_broadcast_msec = now
+	var batch := []
+	for id in lobby_chibi_pending_states.keys():
+		batch.append(lobby_chibi_pending_states[id])
+	lobby_chibi_pending_states.clear()
+	_apply_lobby_chibi_state_batch.rpc(batch)
+
 func _send_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
+	if !_lobby_chibi_active():
+		return
 	if !network_manager.has_network_peer():
 		_apply_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
 	elif network_manager.is_server:
-		_apply_lobby_chibi_state.rpc(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+		_store_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
 	else:
 		_submit_lobby_chibi_state.rpc_id(1, player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
 
 @rpc("any_peer", "call_local", "unreliable_ordered")
 func _submit_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
-	if !network_manager.is_server:
+	if !_lobby_chibi_accepts_network_state() or !network_manager.is_server:
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	if sender != 0:
 		player_id = sender
-	_apply_lobby_chibi_state.rpc(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+	_store_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+	_apply_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+	_broadcast_lobby_chibi_states_if_needed()
+
+@rpc("authority", "call_local", "unreliable_ordered")
+func _apply_lobby_chibi_state_batch(states: Array) -> void:
+	if !_lobby_chibi_active():
+		return
+	for state in states:
+		if typeof(state) != TYPE_ARRAY:
+			continue
+		var values: Array = state
+		if values.size() < 6:
+			continue
+		if typeof(values[2]) != TYPE_VECTOR3 or typeof(values[4]) != TYPE_VECTOR3 or typeof(values[5]) != TYPE_VECTOR3:
+			continue
+		_apply_lobby_chibi_state(int(values[0]), float(values[1]), values[2], float(values[3]), values[4], values[5])
 
 @rpc("any_peer", "call_local", "unreliable_ordered")
 func _apply_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
+	if !_lobby_chibi_active():
+		return
 	if !lobby_chibi_cars.has(player_id):
 		return
 	var car = lobby_chibi_cars[player_id]
@@ -2929,8 +3066,6 @@ func _start_replay_playback_from_path(path: String) -> void:
 			if !_tick_replay_playback(false):
 				get_tree().quit(1)
 				return
-			if _singleplayer_tick >= 2965 and _singleplayer_tick <= 2967:
-				push_warning("MXT_RAIL_VERIFY state tick=" + str(_singleplayer_tick) + " " + game_sim.get_player_debug_string(replay_playback_local_player_id))
 			if replay_strict_verify_requested:
 				_check_race_finished()
 		var replay_fast_forward_elapsed_us := Time.get_ticks_usec() - replay_fast_forward_start_us
@@ -3985,6 +4120,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	_close_settings_menus_for_race_start()
 	$Control.visible = false
 	lobby_control.visible = false
+	_clear_lobby_chibi_cars()
 	_last_race_track_index = track_index
 	_last_race_settings = settings.duplicate(true)
 	active_stickers.clear()
@@ -4362,7 +4498,7 @@ func _on_lobby_kick_player_pressed(player_id: int) -> void:
 func _window_accepts_input() -> bool:
 	if race_pause_open:
 		return false
-	if race_communication_overlay != null and race_communication_overlay.is_chat_open():
+	if !TEXT_CHAT_DISABLED and race_communication_overlay != null and race_communication_overlay.is_chat_open():
 		return false
 	var window := get_window()
 	return window == null or window.has_focus()
@@ -4642,6 +4778,8 @@ func _physics_process(delta: float) -> void:
 				var button := child as Button
 				if button != null:
 					button.disabled = !can_edit_cpu
+	else:
+		_clear_lobby_chibi_cars()
 	if game_sim.sim_started:
 		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var local_pi := PlayerInputClass.new()
@@ -4883,6 +5021,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _handle_race_chat_unhandled_input(event: InputEvent) -> bool:
+	if TEXT_CHAT_DISABLED:
+		return false
 	if race_communication_overlay == null or !(event is InputEventKey):
 		return false
 	var key := event as InputEventKey

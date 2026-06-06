@@ -1023,38 +1023,6 @@ namespace {
 		return (c.state_2[i] & 0x80u) != 0u && (state & MACHINESTATE::AIRBORNE) == 0u;
 	}
 
-	static constexpr float FLAT_ANALYTIC_FALLOUT_LOCAL_Y_WORLD_UNITS = -200.0f;
-
-	static bool vehicle_below_flat_analytic_checkpoint_surface(const PhysicsCarSoA& c, int i)
-	{
-		RaceTrack* track = c.current_track[i];
-		if (!track || track->num_checkpoints <= 0) {
-			return false;
-		}
-		const int checkpoint = static_cast<int>(c.current_checkpoint[i]);
-		if (checkpoint < 0 || checkpoint >= track->num_checkpoints) {
-			return false;
-		}
-		const CollisionCheckpoint& cp = track->checkpoints[checkpoint];
-		if (cp.road_segment < 0 || cp.road_segment >= track->num_segments) {
-			return false;
-		}
-		const TrackSegment& segment = track->segments[cp.road_segment];
-		if (!segment.analytic_collision_enabled ||
-				!segment.road_shape ||
-				segment.road_shape->shape_type != ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT) {
-			return false;
-		}
-		const SimVec3 position = LOAD_INDEXED_VEC3(c, position_current, i);
-		SimVec2 road_t;
-		SimVec3 spatial_t;
-		RoadTransform root;
-		track->convert_point_to_road(checkpoint, position, road_t, spatial_t, nullptr, &root, nullptr);
-		const float local_y_world_units = root.t3d.xform_inv(position).y;
-		return std::isfinite(local_y_world_units) &&
-			local_y_world_units <= FLAT_ANALYTIC_FALLOUT_LOCAL_Y_WORLD_UNITS;
-	}
-
 	static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, PlayerInput* inputs, uint32_t tick_count, int count, bool vehicle_restore_enabled, bool s_boost_enabled)
 	{
 		for (int i = 0; i < count; ++i) {
@@ -1095,8 +1063,7 @@ namespace {
 
 			const bool completed_race = (c.machine_state[i] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0;
 			const bool fell_out = c.current_track[i] &&
-				(c.position_current_y[i] < c.current_track[i]->minimum_y ||
-				vehicle_below_flat_analytic_checkpoint_surface(c, i));
+				c.position_current_y[i] < c.current_track[i]->minimum_y;
 			const bool zero_hp = c.energy[i] <= 0.0f;
 			const bool restore_allowed = vehicle_restore_enabled || completed_race;
 			if (fell_out) {
@@ -1975,6 +1942,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_dip_switches"), &GameSim::get_dip_switches);
 	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
+	ClassDB::bind_method(D_METHOD("set_rail_trace_filter", "car_index", "tick_start", "tick_end"), &GameSim::set_rail_trace_filter);
 	ClassDB::bind_method(D_METHOD("get_first_lap_distance"), &GameSim::get_first_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_track_lap_length"), &GameSim::get_track_lap_length);
 	ClassDB::bind_method(D_METHOD("get_native_cpu_input_for_tick", "player_id", "expected_tick"), &GameSim::get_native_cpu_input_for_tick);
@@ -4132,6 +4100,11 @@ void GameSim::set_dip_switch_enabled(int flag, bool enabled)
 	} else {
 		DEBUG::disable_dip(flag);
 	}
+}
+
+void GameSim::set_rail_trace_filter(int car_index, int tick_start, int tick_end)
+{
+	DEBUG::set_rail_trace_filter(car_index, tick_start, tick_end);
 }
 
 double GameSim::get_first_lap_distance() const

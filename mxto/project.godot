@@ -27,9 +27,7 @@ driver/enable_input=true
 
 [autoload]
 
-DipDebugMenu="*res://ui/dip_debug_menu.gd"
 FZGlobal="*res://fz_global.gd"
-ImGuiRoot="*uid://dugmpnsxaagba"
 
 [debug]
 
@@ -60,10 +58,6 @@ movie_writer/movie_file="B:/programming/mxt-cpp/movie/movie.avi"
 movie_writer/disable_vsync=true
 movie_writer/fps=120
 movie_writer/mjpeg_quality=1.0
-
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/imgui-godot/plugin.cfg")
 
 [filesystem]
 

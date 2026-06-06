@@ -25,6 +25,7 @@ const VOICE_LOUD_COLOR := Color(0.58, 1.0, 0.46, 0.82)
 @export_group("Voice")
 @export var voice_box_size := Vector2(200.0, 64.0)
 
+@onready var chat_area: Control = $ChatArea
 @onready var history_panel: PanelContainer = $ChatArea/HistoryPanel
 @onready var history_messages: VBoxContainer = $ChatArea/HistoryPanel/Margin/HistoryBox/HistoryScroll/HistoryMessages
 @onready var history_scroll: ScrollContainer = $ChatArea/HistoryPanel/Margin/HistoryBox/HistoryScroll
@@ -40,9 +41,11 @@ var _voice_boxes := {}
 var _voice_box_styles := {}
 var _panel_style: StyleBoxFlat
 var _input_style: StyleBoxFlat
+var text_chat_enabled := true
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chat_area.visible = text_chat_enabled
 	_configure_chat_panel()
 	history_panel.visible = true
 	history_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -51,6 +54,35 @@ func _ready() -> void:
 	local_voice_icon.visible = false
 	_set_chat_chrome_alpha(0.0)
 	set_process(true)
+
+func set_text_chat_enabled(enabled: bool) -> void:
+	text_chat_enabled = enabled
+	if text_chat_enabled:
+		set_process(true)
+		if chat_area != null:
+			chat_area.visible = true
+		if history_panel != null:
+			history_panel.visible = true
+		return
+	_chat_open = false
+	if _chat_tween != null:
+		_chat_tween.kill()
+		_chat_tween = null
+	_messages.clear()
+	set_process(false)
+	if chat_area != null:
+		chat_area.visible = false
+	if history_panel != null:
+		history_panel.visible = false
+		history_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if history_scroll != null:
+		history_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	if chat_input != null:
+		chat_input.visible = false
+		chat_input.release_focus()
+	if history_messages != null:
+		for child in history_messages.get_children():
+			child.queue_free()
 
 func _configure_chat_panel() -> void:
 	_panel_style = StyleBoxFlat.new()
@@ -69,9 +101,11 @@ func _configure_chat_panel() -> void:
 	_apply_chat_input_style()
 
 func is_chat_open() -> bool:
-	return _chat_open
+	return text_chat_enabled and _chat_open
 
 func open_chat() -> void:
+	if !text_chat_enabled:
+		return
 	if _chat_open:
 		return
 	_chat_open = true
@@ -86,6 +120,8 @@ func open_chat() -> void:
 	_fade_chat_chrome(1.0)
 
 func close_chat() -> void:
+	if !text_chat_enabled:
+		return
 	if !_chat_open:
 		return
 	_chat_open = false
@@ -96,6 +132,8 @@ func close_chat() -> void:
 	_refresh_history_messages()
 
 func append_message(sender_id: int, sender_name: String, text: String) -> void:
+	if !text_chat_enabled:
+		return
 	var clean_text := text.strip_edges()
 	if clean_text == "":
 		return
@@ -132,6 +170,8 @@ func set_voice_status(status: Dictionary, player_names: Dictionary) -> void:
 	_sync_voice_boxes(active)
 
 func _input(event: InputEvent) -> void:
+	if !text_chat_enabled:
+		return
 	if !_chat_open:
 		return
 	if !(event is InputEventKey):
@@ -150,11 +190,15 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _process(_delta: float) -> void:
+	if !text_chat_enabled:
+		return
 	if !_chat_open:
 		_refresh_history_messages()
 		_scroll_history_to_bottom_deferred()
 
 func _fade_chat_chrome(target_alpha: float) -> void:
+	if !text_chat_enabled:
+		return
 	if _chat_tween != null:
 		_chat_tween.kill()
 	_chat_tween = create_tween()
@@ -180,6 +224,8 @@ func _set_chat_chrome_alpha(alpha: float) -> void:
 		chat_input.modulate.a = _chat_chrome_alpha
 
 func _refresh_history_messages() -> void:
+	if !text_chat_enabled:
+		return
 	if history_messages == null:
 		return
 	_sync_chat_labels(history_messages, _messages, _chat_open)

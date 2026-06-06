@@ -511,6 +511,7 @@ namespace godot {
 		godot::Array get_dip_switches() const;
 		bool is_dip_switch_enabled(int flag) const;
 		void set_dip_switch_enabled(int flag, bool enabled);
+		void set_rail_trace_filter(int car_index, int tick_start, int tick_end);
 		double get_first_lap_distance() const;
 		double get_track_lap_length() const;
 		void emit_super_sparks_from_car(const PhysicsCar& car, int count);

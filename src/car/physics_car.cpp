@@ -89,6 +89,15 @@ static inline bool trace_mesh_floor_for_car(const PhysicsCarSoA *soa, int soa_in
 		(soa->global_start + soa_index) == 0;
 }
 
+static inline bool trace_rail_for_car(const PhysicsCarSoA *soa, int soa_index)
+{
+	return soa &&
+		DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING) &&
+		DEBUG::rail_trace_filter_matches(soa->global_start + soa_index, soa->simulation_tick[soa_index]);
+}
+
+static constexpr float rail_depenetration_epsilon = 0.01f;
+
 static inline SimTransform mesh_hit_plane_transform(const SimVec3 &point, const SimVec3 &normal)
 {
 	SimBasis basis;
@@ -133,6 +142,7 @@ namespace {
 constexpr float kRespawnForwardDistance = 100.0f;
 constexpr float kMinCheckpointDistance = 0.01f;
 constexpr float kMaxPositiveCheckpointAdvance = 1500.0f;
+constexpr float kAnalyticRoadBelowCenterlineFalloutWorldY = 500.0f;
 constexpr uint16_t kAttackCooldownFrames = static_cast<uint16_t>(4.0f * _TICKS_PER_SECOND);
 constexpr float kSpinAttackShortenMultiplier = 1.3f;
 
@@ -274,6 +284,37 @@ static inline float checkpoint_longitudinal_t(const RaceTrack& track, int cp_idx
 	const CollisionCheckpoint& cp = track.checkpoints[cp_idx];
 	const float cp_t = checkpoint_plane_fraction_unclamped(cp, point);
 	return remap_float(cp_t, 0.0f, 1.0f, cp.t_start, cp.t_end);
+}
+
+static inline bool road_shape_uses_below_centerline_fallout(const RoadShape *shape)
+{
+	if (!shape) {
+		return false;
+	}
+	return shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_FLAT ||
+		shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN ||
+		shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN ||
+		shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_ROUNDED_RECT_OPEN;
+}
+
+static bool analytic_road_world_below_centerline_fallout(
+	const RaceTrack &track,
+	int cp_idx,
+	const TrackSegment &segment,
+	const SimVec3 &point)
+{
+	if (cp_idx < 0 || cp_idx >= track.num_checkpoints) {
+		return false;
+	}
+
+	const float road_t = checkpoint_longitudinal_t(track, cp_idx, point);
+	if (!track_segment_longitudinal_t_in_domain(road_t)) {
+		return false;
+	}
+
+	RoadTransform centerline_root;
+	segment.curve_matrix->sample(centerline_root, road_t);
+	return point.y <= centerline_root.t3d.origin.y - kAnalyticRoadBelowCenterlineFalloutWorldY;
 }
 
 static inline void mxt_rotate_basis_x(SimTransform& t, float angle_rad)
@@ -1083,6 +1124,16 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
         pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
 	stay_on = floor_seg->analytic_collision_enabled && (pipe || cylinder || rect);
 	const bool trace_mesh_floor = trace_mesh_floor_for_car(soa, soa_index);
+	if ((soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) == 0 &&
+		floor_seg->analytic_collision_enabled &&
+		road_shape_uses_below_centerline_fallout(floor_seg->road_shape) &&
+		analytic_road_world_below_centerline_fallout(*track, current_cp, *floor_seg, current_position)) {
+		soa->height_above_track[soa_index] = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		mark_floor_disconnected(soa, soa_index);
+		trigger_mesh_fallout();
+		return false;
+	}
 
 	if (!stay_on)
 	{
@@ -3423,43 +3474,98 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 	const bool draw_rail_candidates =
 		DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES) &&
 		(soa->global_start + soa_index) == 0;
-	auto analytic_rail_corner_hit_valid = [&](int cp_idx, const TrackEdgeRailSide &side,
-		const SimVec3 &old_corner, const SimVec3 &new_corner, float rail_height, float *out_new_depth) {
+	const bool trace_rail = trace_rail_for_car(soa, soa_index);
+	auto trace_analytic_rail_context = [&](const char *pass_name, int cp_idx, const SimVec2 &sample_t,
+		bool was_inside_check, bool was_above_check, const bool side_possible[2]) {
+		if (!trace_rail) {
+			return;
+		}
+		godot::UtilityFunctions::print(
+			godot::String("MXT_RAIL_CONTEXT tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" pass="), godot::String(pass_name),
+			godot::String(" cp="), static_cast<int64_t>(cp_idx),
+			godot::String(" cur_cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+			godot::String(" coll_cp="), static_cast<int64_t>(soa->current_collision_checkpoint[soa_index]),
+			godot::String(" t=("), sample_t.x, godot::String(","), sample_t.y, godot::String(")"),
+			godot::String(" was_inside="), was_inside_check,
+			godot::String(" was_above="), was_above_check,
+			godot::String(" side_possible=("), side_possible[0], godot::String(","), side_possible[1], godot::String(")"),
+			godot::String(" pos=("), machine_position.x, godot::String(","), machine_position.y, godot::String(","), machine_position.z, godot::String(")"),
+			godot::String(" old_pos=("), old_machine_position.x, godot::String(","), old_machine_position.y, godot::String(","), old_machine_position.z, godot::String(")"));
+	};
+	auto analytic_rail_corner_hit_valid = [&](const char *pass_name, int cp_idx, int wc_idx, int side_index,
+		const TrackEdgeRailSide &side, const SimVec3 &new_corner, float rail_height, float *out_new_depth) {
 		const float new_depth = (new_corner - side.pos).dot(side.rail_n);
 		*out_new_depth = new_depth;
-		if (new_depth >= 0.0f) {
-			return false;
-		}
-		const float old_depth = (old_corner - side.pos).dot(side.rail_n);
-		if (old_depth < 0.0f) {
-			return false;
-		}
-
+		const SimVec3 old_center_probe = old_machine_position + depenetration;
+		const float old_depth = (old_center_probe - side.pos).dot(side.rail_n);
+		const bool old_center_to_new_corner_crosses = old_depth >= 0.0f && new_depth < 0.0f;
 		const SimVec3 final_hit = project_to_plane(side.rail_n, side.rail_n.dot(side.pos), new_corner);
 		const float final_t = checkpoint_longitudinal_t(*track, cp_idx, final_hit);
 		const float final_height = (final_hit - side.pos).dot(side.up_n);
-		if (track_segment_longitudinal_t_in_domain(final_t) && final_height >= 0.0f && final_height <= rail_height) {
-			return true;
+		const float denom = old_depth - new_depth;
+		float alpha = -1.0f;
+		SimVec3 sweep_hit;
+		float sweep_t = -1000.0f;
+		float sweep_height = -1000.0f;
+		const char *reason = "sweep_hit";
+		bool valid = false;
+		if (new_depth >= 0.0f) {
+			reason = "new_corner_not_behind";
+		} else if (old_depth < 0.0f) {
+			reason = "old_center_already_behind";
+		} else if (track_segment_longitudinal_t_in_domain(final_t) && final_height >= 0.0f && final_height <= rail_height) {
+			reason = "final_project_hit";
+			valid = true;
+		} else if (denom <= 0.000001f) {
+			reason = "sweep_degenerate";
+		} else {
+			alpha = old_depth / denom;
+			if (alpha < 0.0f || alpha > 1.0f) {
+				reason = "alpha_outside";
+			} else {
+				sweep_hit = old_center_probe + (new_corner - old_center_probe) * alpha;
+				sweep_t = checkpoint_longitudinal_t(*track, cp_idx, sweep_hit);
+				if (!track_segment_longitudinal_t_in_domain(sweep_t)) {
+					reason = "sweep_t_outside";
+				} else {
+					sweep_height = (sweep_hit - side.pos).dot(side.up_n);
+					if (sweep_height < 0.0f || sweep_height > rail_height) {
+						reason = "sweep_height_outside";
+					} else {
+						valid = true;
+					}
+				}
+			}
 		}
 
-		const float denom = old_depth - new_depth;
-		if (denom <= 0.000001f) {
-			return false;
+		if (trace_rail) {
+			godot::UtilityFunctions::print(
+				godot::String("MXT_RAIL_ANALYTIC tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+				godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+				godot::String(" pass="), godot::String(pass_name),
+				godot::String(" cp="), static_cast<int64_t>(cp_idx),
+				godot::String(" wc="), static_cast<int64_t>(wc_idx),
+				godot::String(" side="), static_cast<int64_t>(side_index),
+				godot::String(" valid="), valid,
+				godot::String(" reason="), godot::String(reason),
+				godot::String(" old_center_depth="), old_depth,
+				godot::String(" new_corner_depth="), new_depth,
+				godot::String(" center_to_new_corner_cross="), old_center_to_new_corner_crosses,
+				godot::String(" final_t="), final_t,
+				godot::String(" final_height="), final_height,
+				godot::String(" sweep_alpha="), alpha,
+				godot::String(" sweep_t="), sweep_t,
+				godot::String(" sweep_height="), sweep_height,
+				godot::String(" rail_height="), rail_height,
+				godot::String(" old_start=old_center"),
+				godot::String(" new_corner=("), new_corner.x, godot::String(","), new_corner.y, godot::String(","), new_corner.z, godot::String(")"),
+				godot::String(" old_center=("), old_center_probe.x, godot::String(","), old_center_probe.y, godot::String(","), old_center_probe.z, godot::String(")"),
+				godot::String(" rail_pos=("), side.pos.x, godot::String(","), side.pos.y, godot::String(","), side.pos.z, godot::String(")"),
+				godot::String(" rail_n=("), side.rail_n.x, godot::String(","), side.rail_n.y, godot::String(","), side.rail_n.z, godot::String(")"));
 		}
-		const float alpha = old_depth / denom;
-		if (alpha < 0.0f || alpha > 1.0f) {
-			return false;
-		}
-		const SimVec3 sweep_hit = old_corner + (new_corner - old_corner) * alpha;
-		const float sweep_t = checkpoint_longitudinal_t(*track, cp_idx, sweep_hit);
-		if (!track_segment_longitudinal_t_in_domain(sweep_t)) {
-			return false;
-		}
-		const float sweep_height = (sweep_hit - side.pos).dot(side.up_n);
-		if (sweep_height < 0.0f || sweep_height > rail_height) {
-			return false;
-		}
-		return true;
+		return valid;
 	};
 
 	const OldCornerCollisionSurface old_collision =
@@ -3505,6 +3611,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						segment.left_rail_height > 0.0f && track_segment_rail_side_active(segment, 0, use_t.y),
 						segment.right_rail_height > 0.0f && track_segment_rail_side_active(segment, 1, use_t.y),
 					};
+					trace_analytic_rail_context("old", use_cp_old, use_t, was_inside, was_above, side_possible);
 					if (side_possible[0] || side_possible[1]) {
 					RoadTransform root_t;
 					RoadTransform root_derivative;
@@ -3529,9 +3636,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						sides[0].height * root_t.scale.y,
 						sides[1].height * root_t.scale.y,
 					};
-					if (side_active[0] || side_active[1]) {
-						ensure_wall_corner_old_world();
-					}
 					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 						for (int i = 0; i < 2; i++) {
@@ -3549,11 +3653,22 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 								continue;
 							}
 							float depth = 0.0f;
-							if (!analytic_rail_corner_hit_valid(use_cp_old, side, wall_corner_old_world[wc_idx] + depenetration, p0, side_height[i], &depth)) {
+							if (!analytic_rail_corner_hit_valid("old", use_cp_old, wc_idx, i, side, p0, side_height[i], &depth)) {
 								continue;
 							}
 							//DEBUG::disp_text("use_hit_t old", use_hit_t);
-							SimVec3 d = side.rail_n * (-depth);
+							SimVec3 d = side.rail_n * (-depth + rail_depenetration_epsilon);
+							if (trace_rail) {
+								godot::UtilityFunctions::print(
+									godot::String("MXT_RAIL_APPLY tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+									godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+									godot::String(" pass=old cp="), static_cast<int64_t>(use_cp_old),
+									godot::String(" wc="), static_cast<int64_t>(wc_idx),
+									godot::String(" side="), static_cast<int64_t>(i),
+									godot::String(" depth="), depth,
+									godot::String(" bias="), rail_depenetration_epsilon,
+									godot::String(" push=("), d.x, godot::String(","), d.y, godot::String(","), d.z, godot::String(")"));
+							}
 							ADD_VEC3(collision_push_total, d);
 							depenetration += d;
 							overall_hit_detected_flag |= 2;
@@ -3628,6 +3743,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						segment.left_rail_height > 0.0f && track_segment_rail_side_active(segment, 0, use_t.y),
 						segment.right_rail_height > 0.0f && track_segment_rail_side_active(segment, 1, use_t.y),
 					};
+					trace_analytic_rail_context("new", use_cp_new, use_t, was_inside, true, side_possible);
 					if (side_possible[0] || side_possible[1]) {
 					RoadTransform root_t;
 					RoadTransform root_derivative;
@@ -3652,9 +3768,6 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						sides[0].height * root_t.scale.y,
 						sides[1].height * root_t.scale.y,
 					};
-					if (side_active[0] || side_active[1]) {
-						ensure_wall_corner_old_world();
-					}
 					for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 						SimVec3 p0 = wall_corner_world[wc_idx] + depenetration;
 
@@ -3673,11 +3786,22 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 								continue;
 							}
 							float depth = 0.0f;
-							if (!analytic_rail_corner_hit_valid(use_cp_new, side, wall_corner_old_world[wc_idx] + depenetration, p0, side_height[i], &depth)) {
+							if (!analytic_rail_corner_hit_valid("new", use_cp_new, wc_idx, i, side, p0, side_height[i], &depth)) {
 								continue;
 							}
 							//DEBUG::disp_text("use_hit_t new", use_hit_t);
-							SimVec3 d = side.rail_n * (-depth);
+							SimVec3 d = side.rail_n * (-depth + rail_depenetration_epsilon);
+							if (trace_rail) {
+								godot::UtilityFunctions::print(
+									godot::String("MXT_RAIL_APPLY tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+									godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+									godot::String(" pass=new cp="), static_cast<int64_t>(use_cp_new),
+									godot::String(" wc="), static_cast<int64_t>(wc_idx),
+									godot::String(" side="), static_cast<int64_t>(i),
+									godot::String(" depth="), depth,
+									godot::String(" bias="), rail_depenetration_epsilon,
+									godot::String(" push=("), d.x, godot::String(","), d.y, godot::String(","), d.z, godot::String(")"));
+							}
 							ADD_VEC3(collision_push_total, d);
 							depenetration += d;
 							overall_hit_detected_flag |= 2;
@@ -3711,7 +3835,19 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 							const bool skip_empty_candidate_casts =
 								use_mesh_cast_candidates && scratch.mesh_cast_candidate_count == 0;
 							const SimVec3 mesh_side_reference_point = old_machine_position;
-							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1) {
+							if (trace_rail) {
+								godot::UtilityFunctions::print(
+									godot::String("MXT_RAIL_MESH_CONTEXT tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+									godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+									godot::String(" cp="), static_cast<int64_t>(mesh_wall_cp),
+									godot::String(" candidates_used="), use_mesh_cast_candidates,
+									godot::String(" candidate_count="), static_cast<int64_t>(scratch.mesh_cast_candidate_count),
+									godot::String(" skip_empty="), skip_empty_candidate_casts,
+									godot::String(" mask="), static_cast<int64_t>(mesh_cast_mask),
+									godot::String(" bounds_pos=("), mesh_cast_bounds.position.x, godot::String(","), mesh_cast_bounds.position.y, godot::String(","), mesh_cast_bounds.position.z, godot::String(")"),
+									godot::String(" bounds_size=("), mesh_cast_bounds.size.x, godot::String(","), mesh_cast_bounds.size.y, godot::String(","), mesh_cast_bounds.size.z, godot::String(")"));
+							}
+							auto sweep_mesh_plane_and_depenetrate = [&](const SimVec3 &p0, const SimVec3 &p1, const char *sweep_name, int sweep_corner) {
 								CollisionData hit;
 								const bool original_bounds_ray =
 									depenetration.x == 0.0f &&
@@ -3742,6 +3878,16 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 										&mesh_side_reference_point);
 								}
 								if (!hit.collided) {
+									if (trace_rail) {
+										godot::UtilityFunctions::print(
+											godot::String("MXT_RAIL_MESH_CAST tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+											godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+											godot::String(" sweep="), godot::String(sweep_name),
+											godot::String(" wc="), static_cast<int64_t>(sweep_corner),
+											godot::String(" used_candidates="), use_collected_candidates,
+											godot::String(" hit=false p0=("), p0.x, godot::String(","), p0.y, godot::String(","), p0.z, godot::String(")"),
+											godot::String(" p1=("), p1.x, godot::String(","), p1.y, godot::String(","), p1.z, godot::String(")"));
+									}
 									return;
 								}
 								const bool kill_hit = (hit.road_data.terrain & TERRAIN::KILL) != 0;
@@ -3749,13 +3895,42 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 									trigger_mesh_kill_collision();
 								}
 								const bool rail_hit = terrain_mesh_blocks_like_rail(hit.road_data.terrain);
+								if (trace_rail) {
+									godot::UtilityFunctions::print(
+										godot::String("MXT_RAIL_MESH_CAST tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+										godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+										godot::String(" sweep="), godot::String(sweep_name),
+										godot::String(" wc="), static_cast<int64_t>(sweep_corner),
+										godot::String(" used_candidates="), use_collected_candidates,
+										godot::String(" hit=true rail_hit="), rail_hit,
+										godot::String(" terrain="), static_cast<int64_t>(hit.road_data.terrain),
+										godot::String(" hit_cp="), static_cast<int64_t>(hit.road_data.cp_idx),
+										godot::String(" hit_t=("), hit.road_data.road_t.x, godot::String(","), hit.road_data.road_t.y, godot::String(")"),
+										godot::String(" point=("), hit.collision_point.x, godot::String(","), hit.collision_point.y, godot::String(","), hit.collision_point.z, godot::String(")"),
+										godot::String(" normal=("), hit.collision_face_normal.x, godot::String(","), hit.collision_face_normal.y, godot::String(","), hit.collision_face_normal.z, godot::String(")"),
+										godot::String(" p0=("), p0.x, godot::String(","), p0.y, godot::String(","), p0.z, godot::String(")"),
+										godot::String(" p1=("), p1.x, godot::String(","), p1.y, godot::String(","), p1.z, godot::String(")"));
+								}
 								for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 									const SimVec3 p = wall_corner_world[wc_idx] + depenetration;
 									const float depth = (p - hit.collision_face_point).dot(hit.collision_face_normal);
 									if (depth > 0.0f) {
 										continue;
 									}
-									const SimVec3 d = hit.collision_face_normal * (-depth);
+									const float push_bias = rail_hit ? rail_depenetration_epsilon : 0.0f;
+									const SimVec3 d = hit.collision_face_normal * (-depth + push_bias);
+									if (trace_rail) {
+										godot::UtilityFunctions::print(
+											godot::String("MXT_RAIL_MESH_APPLY tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+											godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+											godot::String(" sweep="), godot::String(sweep_name),
+											godot::String(" cast_wc="), static_cast<int64_t>(sweep_corner),
+											godot::String(" apply_wc="), static_cast<int64_t>(wc_idx),
+											godot::String(" rail_hit="), rail_hit,
+											godot::String(" depth="), depth,
+											godot::String(" bias="), push_bias,
+											godot::String(" push=("), d.x, godot::String(","), d.y, godot::String(","), d.z, godot::String(")"));
+									}
 									ADD_VEC3(collision_push_total, d);
 									if (rail_hit) {
 										ADD_VEC3(collision_push_rail, d);
@@ -3772,12 +3947,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 								for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
 									const SimVec3 p0 = old_machine_position + depenetration;
 									const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
-									sweep_mesh_plane_and_depenetrate(p0, p1);
-								}
-								for (int wc_idx = 0; wc_idx < 4; ++wc_idx) {
-									const SimVec3 p0 = wall_corner_old_world[wc_idx] + depenetration;
-									const SimVec3 p1 = wall_corner_world[wc_idx] + depenetration;
-									sweep_mesh_plane_and_depenetrate(p0, p1);
+									sweep_mesh_plane_and_depenetrate(p0, p1, "old_center_to_current_corner", wc_idx);
 								}
 							}
 						}

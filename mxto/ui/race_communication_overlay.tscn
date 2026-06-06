@@ -25,6 +25,7 @@ chat_label_settings = SubResource("LabelSettings_chat")
 voice_box_size = Vector2(220, 36)
 
 [node name="ChatArea" type="Control" parent="." unique_id=114046942]
+visible = false
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
