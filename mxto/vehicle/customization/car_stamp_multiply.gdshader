@@ -10,9 +10,11 @@ uniform sampler2D in_lightwarp : filter_nearest_mipmap_anisotropic, repeat_disab
 uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
+uniform sampler2D cross_hatch : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 
 varying vec4 stamp_mask_data;
 varying float stamp_source_flag;
+varying vec2 use_screen_uv;
 
 void vertex() {
 	stamp_mask_data = CUSTOM0;
@@ -27,6 +29,7 @@ float fresnel(float amount, vec3 normal, vec3 view) {
 }
 
 void fragment() {
+	use_screen_uv = SCREEN_UV;
 	vec3 normal_1 = texture(in_normal, UV).rgb * 2.0 - 1.0;
 	NORMAL = normalize(TANGENT * normal_1.x + BINORMAL * normal_1.y + NORMAL * normal_1.z);
 	vec3 base_colour = texture(in_albedo, UV).rgb;
@@ -44,6 +47,7 @@ void fragment() {
 }
 
 void light() {
+	float cross_hatch_float = (texture(cross_hatch, use_screen_uv).r - 0.5) * 0.05;
 	float light_val = (dot(NORMAL, LIGHT) * ATTENUATION) * 0.5 + 0.5;
 	vec3 H = normalize(LIGHT * 2.0 + VIEW);
 	float ndoth = max(dot(NORMAL, H), 0.0);
@@ -53,7 +57,7 @@ void light() {
 	float fres_outline = fresnel(16.0, NORMAL, VIEW);
 	light_val = clamp(light_val - fres * 0.1, 0.0, 1.0);
 	light_val = clamp(light_val + fres_outline * 2.0, 0.0, 1.0);
-	vec3 final_light_val = texture(in_lightwarp, vec2(light_val, 0.0)).rgb;
+	vec3 final_light_val = texture(in_lightwarp, vec2(clamp(light_val + cross_hatch_float, 0.0, 1.0), 0.0)).rgb;
 	DIFFUSE_LIGHT += final_light_val * LIGHT_COLOR * 0.333;
-	SPECULAR_LIGHT += texture(in_specwarp, vec2(spec, 0.0)).rgb;
+	SPECULAR_LIGHT += texture(in_specwarp, vec2(clamp(spec + cross_hatch_float, 0.0, 1.0), 0.0)).rgb;
 }
