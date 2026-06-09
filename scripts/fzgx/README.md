@@ -7,7 +7,7 @@ analytic road data into MXT track-editor files.
    sample the primary analytic driveable road surface.
 2. `gx_samples_to_mxt_blend.py` runs inside Blender, creates MXT road-segment
    empties with baked curve-matrix fcurves, saves a `.blend`, and calls the
-   existing MXT plugin exporter to write `.mxt_track`, `.obj`, and `.json`.
+   existing MXT plugin exporter to write `.mxt_track`, `.glb`, and `.json`.
 
 Example:
 

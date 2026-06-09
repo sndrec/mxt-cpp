@@ -238,7 +238,7 @@ class MXTMeshCollisionProperties(PropertyGroup):
     is_mxt_collision_mesh: BoolProperty(name="Export Mesh Collision", default=False)
     is_mxt_visual_mesh: BoolProperty(
         name="Export Visual Mesh",
-        description="Include this mesh in the exported OBJ without using it as track collision",
+        description="Include this mesh in the exported glTF visual without using it as track collision",
         default=False)
     surface_type: EnumProperty(
         name="Surface",
@@ -5572,7 +5572,7 @@ class MXTRoad_OT_GenerateMesh(Operator):
                             vcol[base + 2] = use[2]
                             vcol[base + 3] = use[3]
                     point_layer.data.foreach_set('color', vcol)
-                    # Prefer the vertex color layer as active for OBJ export
+                    # Prefer the vertex color layer as active for glTF export
                     mesh.color_attributes.active_color = point_layer
                 except Exception:
                     pass
@@ -5715,18 +5715,76 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
             return name[:-4]
         return name
 
+    skipped_bad_triangles = {}
+    skipped_bad_triangle_indices = []
+    candidate_triangle_index = [0]
+
+    def note_skipped_triangle(source_name, tri_index):
+        skipped_bad_triangles[source_name] = skipped_bad_triangles.get(source_name, 0) + 1
+        if len(skipped_bad_triangle_indices) < 32:
+            skipped_bad_triangle_indices.append(tri_index)
+
+    def f32(v):
+        return struct.unpack('<f', struct.pack('<f', float(v)))[0]
+
+    def quantize_vec3_for_track(v):
+        if not (math.isfinite(v.x) and math.isfinite(v.y) and math.isfinite(v.z)):
+            return None
+        try:
+            return struct.unpack('<3f', struct.pack('<3f', v.x, v.y, v.z))
+        except (OverflowError, struct.error):
+            return None
+
+    def sub3(a, b):
+        return (f32(a[0] - b[0]), f32(a[1] - b[1]), f32(a[2] - b[2]))
+
+    def cross3(a, b):
+        return (
+            f32(f32(a[1] * b[2]) - f32(a[2] * b[1])),
+            f32(f32(a[2] * b[0]) - f32(a[0] * b[2])),
+            f32(f32(a[0] * b[1]) - f32(a[1] * b[0])),
+        )
+
+    def dot3(a, b):
+        return f32(f32(f32(a[0] * b[0]) + f32(a[1] * b[1])) + f32(a[2] * b[2]))
+
     def append_triangle_record(records, terrain_key, positions, normals, source_name, terrain_flags=0):
+        tri_index = candidate_triangle_index[0]
+        candidate_triangle_index[0] += 1
         if terrain_key not in terrain_map:
             raise RuntimeError(f"{source_name} has unsupported mesh collision surface {terrain_key}")
         if len(positions) != 3 or len(normals) != 3:
             raise RuntimeError(f"{source_name} produced an invalid mesh collision triangle")
+        quantized_positions = [quantize_vec3_for_track(v) for v in positions]
+        quantized_normals = [quantize_vec3_for_track(v) for v in normals]
+        if any(v is None for v in quantized_positions + quantized_normals):
+            note_skipped_triangle(source_name, tri_index)
+            return False
+        edge0 = sub3(quantized_positions[1], quantized_positions[0])
+        edge1 = sub3(quantized_positions[2], quantized_positions[0])
+        face = cross3(edge0, edge1)
+        if dot3(face, face) <= 1.0e-8:
+            note_skipped_triangle(source_name, tri_index)
+            return False
+        d00 = dot3(edge0, edge0)
+        d01 = dot3(edge0, edge1)
+        d11 = dot3(edge1, edge1)
+        denom = f32(f32(d00 * d11) - f32(d01 * d01))
+        if abs(denom) <= 1.0e-8:
+            note_skipped_triangle(source_name, tri_index)
+            return False
+        for n in quantized_normals:
+            if dot3(n, n) <= 1.0e-8:
+                note_skipped_triangle(source_name, tri_index)
+                return False
         record = bytearray()
         record += struct.pack('<I', terrain_map[terrain_key] | terrain_flags)
-        for p in positions:
-            record += struct.pack('<3f', p.x, p.y, p.z)
-        for n in normals:
-            record += struct.pack('<3f', n.x, n.y, n.z)
+        for p in quantized_positions:
+            record += struct.pack('<3f', p[0], p[1], p[2])
+        for n in quantized_normals:
+            record += struct.pack('<3f', n[0], n[1], n[2])
         records.append(record)
+        return True
 
     def append_object_triangles(records, obj, surface_for_polygon, depsgraph, required, terrain_flags=0):
         eval_obj = obj.evaluated_get(depsgraph)
@@ -5749,8 +5807,8 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                     vert = mesh.vertices[loop.vertex_index]
                     positions.append(obj.matrix_world @ vert.co)
                     normals.append((normal_matrix @ loop.normal).normalized())
-                append_triangle_record(records, terrain_key, positions, normals, obj.name, terrain_flags)
-                object_tri_count += 1
+                if append_triangle_record(records, terrain_key, positions, normals, obj.name, terrain_flags):
+                    object_tri_count += 1
             if required and object_tri_count == 0:
                 raise RuntimeError(f"{obj.name} is marked for mesh collision but has no triangles")
             return object_tri_count
@@ -5839,13 +5897,13 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
                     for tri in tris:
                         tri_positions = [Vector(tuple(points[r, c])) for r, c in tri]
                         tri_normals = [Vector(tuple(normals[r, c])).normalized() for r, c in tri]
-                        append_triangle_record(
+                        if append_triangle_record(
                             records,
                             terrain_key,
                             tri_positions,
                             tri_normals,
-                            f"{seg.name} embed {embed.label}")
-                        emitted += 1
+                            f"{seg.name} embed {embed.label}"):
+                            emitted += 1
         return emitted
 
     depsgraph = context.evaluated_depsgraph_get()
@@ -5899,6 +5957,11 @@ def _pack_mesh_collision_triangles(context, seg_index, seg_cp_start, cp_counts):
     for record in records:
         mesh_data += record
         tri_count += 1
+    if skipped_bad_triangles:
+        summary = ", ".join(
+            f"{name}: {count}" for name, count in sorted(skipped_bad_triangles.items()))
+        index_summary = ", ".join(str(i) for i in skipped_bad_triangle_indices)
+        print(f"MXT exporter skipped degenerate mesh collision triangles: {summary}; first indices: {index_summary}")
     return tri_count, mesh_data
 
 
@@ -8608,8 +8671,9 @@ def _export_stage(context, filepath):
         f.write(trigger_data)
         f.write(mesh_collision_data)
 
-    # Export preview meshes as OBJ
-    obj_path = base_path + ".obj"
+    # Export preview meshes as glTF so runtime builds can load visuals without
+    # Godot editor import sidecars.
+    gltf_path = base_path + ".glb"
     preview_meshes = []
     for seg in seg_order:
         props = seg.mxt_road_overall_props
@@ -8627,60 +8691,63 @@ def _export_stage(context, filepath):
 
     if preview_meshes:
         prev_mode = None
-        if bpy.context.object and bpy.context.object.mode != 'OBJECT':
-            prev_mode = bpy.context.object.mode
-            bpy.ops.object.mode_set(mode='OBJECT')
-
         orig_active = bpy.context.view_layer.objects.active
         orig_sel = [obj for obj in bpy.context.selected_objects]
-        bpy.ops.object.select_all(action='DESELECT')
-        for obj in preview_meshes:
-            obj.select_set(True)
-        bpy.context.view_layer.objects.active = preview_meshes[0]
-        # Blender 4.0 renamed the OBJ export operator. Try the new name first
-        if hasattr(bpy.ops.wm, "obj_export"):
-            # Attempt to include vertex colors, UVs and normals
-            try:
-                bpy.ops.wm.obj_export(filepath=obj_path,
-                                       export_selected_objects=True,
-                                       export_uv=True,
-                                       export_normals=True,
-                                       export_colors=True)
-            except TypeError:
-                bpy.ops.wm.obj_export(filepath=obj_path, export_selected_objects=True)
-        elif hasattr(bpy.ops.export_scene, "obj"):
-            # Legacy exporter; try vertex-color flag name if available
+        try:
+            if bpy.context.object and bpy.context.object.mode != 'OBJECT':
+                prev_mode = bpy.context.object.mode
+                bpy.ops.object.mode_set(mode='OBJECT')
+
+            bpy.ops.object.select_all(action='DESELECT')
+            for obj in preview_meshes:
+                obj.select_set(True)
+            bpy.context.view_layer.objects.active = preview_meshes[0]
+            if not hasattr(bpy.ops.export_scene, "gltf"):
+                raise RuntimeError("glTF export operator not found")
             ok = False
             try:
-                bpy.ops.export_scene.obj(filepath=obj_path,
-                                         use_selection=True,
-                                         use_mesh_modifiers=True,
-                                         use_uvs=True,
-                                         use_normals=True,
-                                         export_vertex_colors=True)
+                bpy.ops.export_scene.gltf(
+                    filepath=gltf_path,
+                    export_format='GLB',
+                    use_selection=True,
+                    export_apply=True,
+                    export_yup=False,
+                    export_materials='EXPORT',
+                    export_vertex_color='ACTIVE',
+                    export_all_vertex_colors=True,
+                    export_active_vertex_color_when_no_material=True,
+                )
                 ok = True
             except TypeError:
                 pass
             if not ok:
                 try:
-                    bpy.ops.export_scene.obj(filepath=obj_path,
-                                             use_selection=True,
-                                             use_mesh_modifiers=True,
-                                             use_uvs=True,
-                                             use_normals=True)
+                    bpy.ops.export_scene.gltf(
+                        filepath=gltf_path,
+                        export_format='GLB',
+                        use_selection=True,
+                        export_yup=False,
+                    )
                     ok = True
                 except TypeError:
                     pass
             if not ok:
-                raise RuntimeError("OBJ export failed: unsupported parameters")
-        else:
-            raise RuntimeError("OBJ export operator not found")
-        bpy.ops.object.select_all(action='DESELECT')
-        for obj in orig_sel:
-            obj.select_set(True)
-        bpy.context.view_layer.objects.active = orig_active
-        if prev_mode:
-            bpy.ops.object.mode_set(mode=prev_mode)
+                try:
+                    bpy.ops.export_scene.gltf(filepath=gltf_path, export_format='GLB', use_selection=True)
+                    ok = True
+                except TypeError:
+                    pass
+            if not ok:
+                raise RuntimeError("glTF export failed: unsupported parameters")
+        finally:
+            bpy.ops.object.select_all(action='DESELECT')
+            for obj in orig_sel:
+                if obj.name in bpy.data.objects:
+                    obj.select_set(True)
+            if orig_active and orig_active.name in bpy.data.objects:
+                bpy.context.view_layer.objects.active = orig_active
+            if prev_mode and bpy.context.object:
+                bpy.ops.object.mode_set(mode=prev_mode)
 
     import json
 

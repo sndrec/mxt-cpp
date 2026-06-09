@@ -141,6 +141,7 @@ const RACE_FINISH_SFX_DUCK_DB := -8.0
 const RACE_FINISH_SFX_DUCK_DELAY_SECONDS := 1.0
 const RACE_FINISH_SFX_DUCK_FADE_SECONDS := 2.0
 const RACE_RESULTS_SCREEN_MSEC := 15000
+const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
 
 var tracks: Array = []
 var car_definitions: Array = []
@@ -874,7 +875,8 @@ func _load_tracks() -> void:
 	track_selector.clear()
 	lobby_track_selector.clear()
 	lobby_grand_prix_track_sequence.clear()
-	_scan_dir("res://track")
+	_scan_track_dir("res://track", false)
+	_scan_external_track_dirs()
 	for t in tracks:
 		track_selector.add_item(t["name"])
 		lobby_track_selector.add_item(t["name"])
@@ -900,6 +902,56 @@ func _load_tracks() -> void:
 				break
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_race_options()
+
+func _read_arg_value(args: Array, user_args: Array, flag: String) -> String:
+	var idx := args.find(flag)
+	var value_args := args
+	if idx == -1:
+		idx = user_args.find(flag)
+		value_args = user_args
+	if idx == -1 or idx + 1 >= value_args.size():
+		return ""
+	return String(value_args[idx + 1])
+
+func _external_tracks_dir_candidates() -> PackedStringArray:
+	var out := PackedStringArray()
+	var args := OS.get_cmdline_args()
+	var user_args := OS.get_cmdline_user_args()
+	var arg_dir := _read_arg_value(args, user_args, "--tracks-dir")
+	if arg_dir != "":
+		out.append(arg_dir)
+	var exe_dir := OS.get_executable_path().get_base_dir()
+	if exe_dir != "":
+		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
+			out.append(exe_dir.path_join(dir_name))
+	var project_dir := ProjectSettings.globalize_path("res://")
+	if project_dir != "":
+		out.append(project_dir.path_join("tracks"))
+		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
+			out.append(project_dir.get_base_dir().path_join(dir_name))
+	var cwd := OS.get_environment("PWD")
+	if cwd != "":
+		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
+			out.append(cwd.path_join(dir_name))
+	cwd = OS.get_environment("CD")
+	if cwd != "":
+		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
+			out.append(cwd.path_join(dir_name))
+	return out
+
+func _scan_external_track_dirs() -> void:
+	var seen := {}
+	for raw_dir in _external_tracks_dir_candidates():
+		var dir_path := String(raw_dir).replace("\\", "/")
+		if dir_path.is_empty():
+			continue
+		if !DirAccess.dir_exists_absolute(dir_path):
+			continue
+		var key := dir_path.to_lower()
+		if seen.has(key):
+			continue
+		seen[key] = true
+		_scan_track_dir(dir_path, true)
 
 func get_car_definition_paths() -> Array:
 	var paths: Array = []
@@ -928,21 +980,76 @@ func _clear_track_visual_scene() -> void:
 			track_visual_scene_instance.queue_free()
 		track_visual_scene_instance = null
 
-func _resolve_track_visual_scene_path(track_dir: String, meta: Dictionary) -> String:
-	var scene_path := String(meta.get("visual_scene", "")).strip_edges()
-	if scene_path != "":
-		if scene_path.begins_with("res://") or scene_path.begins_with("user://"):
-			return scene_path
-		return track_dir.path_join(scene_path)
-	var default_path := track_dir.path_join("track.tscn")
-	if ResourceLoader.exists(default_path):
-		return default_path
+func _resolve_track_local_path(track_dir: String, path_value) -> String:
+	var path := String(path_value).strip_edges()
+	if path.is_empty():
+		return ""
+	if path.begins_with("res://") or path.begins_with("user://"):
+		return path
+	if path.is_absolute_path():
+		return path.replace("\\", "/")
+	return track_dir.path_join(path).replace("\\", "/")
+
+func _track_runtime_file_exists(path: String) -> bool:
+	if path.is_empty():
+		return false
+	if ResourceLoader.exists(path):
+		return true
+	return FileAccess.file_exists(path)
+
+func _resolve_track_visual_path(track_dir: String, meta: Dictionary, mxt_path: String = "") -> String:
+	var explicit_path := _resolve_track_local_path(track_dir, meta.get("visual_scene", ""))
+	if _track_runtime_file_exists(explicit_path):
+		return explicit_path
+	var base_names := PackedStringArray(["track"])
+	if !mxt_path.is_empty():
+		var mxt_base_name := mxt_path.get_basename().get_file()
+		if !base_names.has(mxt_base_name):
+			base_names.append(mxt_base_name)
+	for base_name in base_names:
+		for ext in ["tscn", "scn", "glb", "gltf"]:
+			var candidate := track_dir.path_join("%s.%s" % [base_name, ext])
+			if _track_runtime_file_exists(candidate):
+				return candidate
 	return ""
 
-func _load_track_visual_scene(scene_path: String) -> bool:
-	if scene_path == "" or !ResourceLoader.exists(scene_path):
-		return false
-	var packed := load(scene_path) as PackedScene
+func _track_visual_replaces_debug_environment(visual_path: String) -> bool:
+	var ext := visual_path.get_extension().to_lower()
+	return ext == "tscn" or ext == "scn"
+
+func _track_material_for_name(mat_name: String) -> Material:
+	if mat_name == "track_surface":
+		return preload("res://asset/debug_track_mat.tres")
+	if mat_name == "track_rail":
+		return preload("res://asset/debug_rail_mat.tres")
+	if mat_name == "embed_dirt":
+		return preload("res://asset/dirt_mat.tres")
+	if mat_name == "embed_recharge":
+		return preload("res://asset/recharge_mat.tres")
+	if mat_name == "embed_ice":
+		return preload("res://asset/ice_mat.tres")
+	return null
+
+func _apply_track_visual_materials_to_mesh_instance(mesh_instance: MeshInstance3D) -> void:
+	var mesh := mesh_instance.mesh
+	if mesh == null:
+		return
+	for i in mesh.get_surface_count():
+		var mat := mesh.surface_get_material(i)
+		if mat == null:
+			continue
+		var replacement := _track_material_for_name(mat.resource_name)
+		if replacement != null:
+			mesh_instance.set_surface_override_material(i, replacement)
+
+func _apply_track_visual_materials(root: Node) -> void:
+	if root is MeshInstance3D:
+		_apply_track_visual_materials_to_mesh_instance(root as MeshInstance3D)
+	for child in root.get_children():
+		_apply_track_visual_materials(child)
+
+func _load_track_resource_scene(scene_path: String) -> bool:
+	var packed := ResourceLoader.load(scene_path) as PackedScene
 	if packed == null:
 		push_warning("Track visual scene is not a PackedScene: %s" % scene_path)
 		return false
@@ -951,7 +1058,45 @@ func _load_track_visual_scene(scene_path: String) -> bool:
 		push_warning("Failed to instantiate track visual scene: %s" % scene_path)
 		return false
 	track_visual_scene_instance = inst
+	_apply_track_visual_materials(inst)
 	obj_container.add_child(inst)
+	return true
+
+func _load_track_gltf_scene(scene_path: String) -> bool:
+	var gltf_doc := GLTFDocument.new()
+	var gltf_state := GLTFState.new()
+	gltf_state.base_path = scene_path.get_base_dir()
+	var err := gltf_doc.append_from_file(scene_path, gltf_state)
+	if err != OK:
+		push_warning("Failed to load track glTF scene %s: %s" % [scene_path, error_string(err)])
+		return false
+	var inst := gltf_doc.generate_scene(gltf_state)
+	if inst == null:
+		push_warning("Failed to generate track glTF scene: %s" % scene_path)
+		return false
+	track_visual_scene_instance = inst
+	_apply_track_visual_materials(inst)
+	obj_container.add_child(inst)
+	return true
+
+func _load_track_visual_scene(scene_path: String) -> bool:
+	if scene_path == "" or !_track_runtime_file_exists(scene_path):
+		return false
+	var ext := scene_path.get_extension().to_lower()
+	if ext == "glb" or ext == "gltf":
+		return _load_track_gltf_scene(scene_path)
+	return _load_track_resource_scene(scene_path)
+
+func _load_track_imported_mesh(mesh_path: String) -> bool:
+	if mesh_path == "" or !ResourceLoader.exists(mesh_path):
+		return false
+	var loaded_mesh: Mesh = ResourceLoader.load(mesh_path) as Mesh
+	if loaded_mesh == null:
+		return false
+	var runtime_mesh: Mesh = loaded_mesh.duplicate(true)
+	debug_track_mesh.mesh = runtime_mesh
+	lobby_control.visible = false
+	_apply_track_visual_materials_to_mesh_instance(debug_track_mesh)
 	return true
 
 func _set_builtin_track_visuals_enabled(enabled: bool) -> void:
@@ -962,7 +1107,7 @@ func _set_builtin_track_visuals_enabled(enabled: bool) -> void:
 	if world_environment != null:
 		world_environment.environment = default_world_environment_resource if enabled else null
 
-func _scan_dir(path: String) -> void:
+func _scan_track_dir(path: String, external: bool) -> void:
 	var dir := DirAccess.open(path)
 	if dir == null:
 		return
@@ -970,7 +1115,7 @@ func _scan_dir(path: String) -> void:
 	var file := dir.get_next()
 	while file != "":
 		if dir.current_is_dir() and !file.begins_with("."):
-			_scan_dir(path + "/" + file)
+			_scan_track_dir(path + "/" + file, external)
 		elif file.get_extension() == "json":
 			var json_path := path + "/" + file
 			var mxt_path := json_path.get_basename() + ".mxt_track"
@@ -978,7 +1123,13 @@ func _scan_dir(path: String) -> void:
 				var json_data := FileAccess.get_file_as_string(json_path)
 				var parsed = JSON.parse_string(json_data)
 				if typeof(parsed) == TYPE_DICTIONARY and parsed.has("name"):
-					tracks.append({"name": parsed["name"], "mxt": mxt_path})
+					tracks.append({
+						"name": parsed["name"],
+						"mxt": mxt_path,
+						"json": json_path,
+						"dir": json_path.get_base_dir(),
+						"external": external,
+					})
 		file = dir.get_next()
 	dir.list_dir_end()
 
@@ -4134,8 +4285,8 @@ func _start_race(track_index: int, settings: Array) -> void:
 	_clear_track_visual_scene()
 	debug_track_mesh.mesh = null
 	obj_container.visible = !auto_hide_track_visuals_mode
-	var json_path: String = String(info["mxt"]).get_basename() + ".json"
-	var track_dir: String = json_path.get_base_dir()
+	var json_path: String = String(info.get("json", String(info["mxt"]).get_basename() + ".json"))
+	var track_dir: String = String(info.get("dir", json_path.get_base_dir()))
 	_reset_race_audio_state()
 	if FileAccess.file_exists(json_path):
 		var json_text := FileAccess.get_file_as_string(json_path)
@@ -4143,13 +4294,13 @@ func _start_race(track_index: int, settings: Array) -> void:
 		if typeof(parsed) == TYPE_DICTIONARY:
 			current_track_meta = parsed
 	_configure_track_music(track_dir)
-	var visual_scene_path_for_race := _resolve_track_visual_scene_path(track_dir, current_track_meta)
-	var has_track_visual_scene := visual_scene_path_for_race != "" and ResourceLoader.exists(visual_scene_path_for_race)
-	_set_builtin_track_visuals_enabled(!has_track_visual_scene)
-	if !has_track_visual_scene:
-		debug_track_mesh.visible = !auto_hide_track_visuals_mode
-		track_floor.visible = !auto_hide_track_visuals_mode
-		track_clouds.visible = !auto_hide_track_visuals_mode
+	var visual_scene_path_for_race := _resolve_track_visual_path(track_dir, current_track_meta, String(info["mxt"]))
+	var has_track_visual := visual_scene_path_for_race != ""
+	var visual_replaces_debug_environment := _track_visual_replaces_debug_environment(visual_scene_path_for_race)
+	_set_builtin_track_visuals_enabled(!visual_replaces_debug_environment)
+	debug_track_mesh.visible = !has_track_visual and !auto_hide_track_visuals_mode
+	track_floor.visible = !visual_replaces_debug_environment and !auto_hide_track_visuals_mode
+	track_clouds.visible = !visual_replaces_debug_environment and !auto_hide_track_visuals_mode
 	if !current_track_meta.is_empty() and world_environment.environment != null:
 		RenderingServer.global_shader_parameter_set("fog_dist", current_track_meta.fog_distance)
 		var floor_mat : ShaderMaterial = track_floor.get_active_material(0)
@@ -4167,7 +4318,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 		directional_light_3d.light_energy = current_track_meta.light_intensity
 		world_environment.environment.ambient_light_color = Color(current_track_meta.ambient_color[0], current_track_meta.ambient_color[1], current_track_meta.ambient_color[2])
 		world_environment.environment.ambient_light_energy = current_track_meta.ambient_intensity
-		if !has_track_visual_scene:
+		if !visual_replaces_debug_environment:
 			var ground_path = track_dir.path_join("ground.png")
 			if FileAccess.file_exists(ground_path):
 				var bytes := FileAccess.get_file_as_bytes(ground_path)
@@ -4348,39 +4499,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 		network_manager.server_game_sim = server_game_sim
 	if !headless_mode:
 		var visual_scene_loaded := _load_track_visual_scene(visual_scene_path_for_race)
-		var obj_path: String = String(info["mxt"]).get_basename() + ".obj"
-		if !visual_scene_loaded and ResourceLoader.exists(obj_path):
-			var loaded_mesh: Mesh = load(obj_path)
-			if loaded_mesh != null:
-				var runtime_mesh: Mesh = loaded_mesh.duplicate(true)
-				debug_track_mesh.mesh = runtime_mesh
-				lobby_control.visible = false
-				for i in runtime_mesh.get_surface_count():
-					var mat := runtime_mesh.surface_get_material(i)
-					if mat == null:
-						continue
-					var mat_name := mat.resource_name
-					if mat_name == "track_surface":
-						var new_road : ShaderMaterial = preload("res://asset/debug_track_mat.tres")
-						runtime_mesh.surface_set_material(i, new_road)
-					if mat_name == "track_rail":
-						var new_road : ShaderMaterial = preload("res://asset/debug_rail_mat.tres")
-						runtime_mesh.surface_set_material(i, new_road)
-					if mat_name == "embed_dirt":
-						var new_road : ShaderMaterial = preload("res://asset/dirt_mat.tres")
-						runtime_mesh.surface_set_material(i, new_road)
-					if mat_name == "embed_recharge":
-						var new_road : ShaderMaterial = preload("res://asset/recharge_mat.tres")
-						runtime_mesh.surface_set_material(i, new_road)
-					if mat_name == "embed_ice":
-						var new_road : ShaderMaterial = preload("res://asset/ice_mat.tres")
-						runtime_mesh.surface_set_material(i, new_road)
-				#elif mat.resource_name.find("track_surface") != -1:
-					#var index := mat.resource_name.substr(14, -1).to_int()
-					#var new_road : ShaderMaterial = preload("res://asset/debug_track_mat.tres")
-					#new_road = new_road.duplicate()
-					#new_road.set_shader_parameter("texture_albedo", ROAD_MATS.get(index - 1))
-					#debug_track_mesh.mesh.surface_set_material(i, new_road)
+		if !visual_scene_loaded:
+			var obj_path: String = String(info["mxt"]).get_basename() + ".obj"
+			_load_track_imported_mesh(obj_path)
 		trigger_objects.clear()
 		for trig in _parse_level_triggers(level_buffer.data_array):
 			var scene = TRIGGER_SCENES.get(trig["type"], null)
