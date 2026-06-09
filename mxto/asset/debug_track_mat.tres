@@ -28,7 +28,7 @@ void fragment() {
 	{
 		use_color = vec3(0.1, 0.0, 0.0);
 	}
-	ALBEDO = albedo.rgb * albedo_tex.rgb * COLOR.rgb + use_color;
+	ALBEDO = albedo.rgb * albedo_tex.rgb * COLOR.rgb * 3.0 + use_color;
 	METALLIC = 0.0;
 	SPECULAR = 0.0;
 	ROUGHNESS = 1.0;
@@ -66,9 +66,8 @@ void light() {
 }"
 
 [sub_resource type="Gradient" id="Gradient_uybpi"]
-interpolation_mode = 1
-offsets = PackedFloat32Array(0.210526, 0.457237, 0.805921)
-colors = PackedColorArray(0.0430392, 0.0430392, 0.0430392, 1, 0.176419, 0.176419, 0.176419, 1, 0.435192, 0.435192, 0.435192, 1)
+offsets = PackedFloat32Array(0.16666667, 0.210526, 0.4308176, 0.4716981, 0.7389937, 0.805921)
+colors = PackedColorArray(0.0430392, 0.0430392, 0.0430392, 1, 0.0430392, 0.0430392, 0.0430392, 1, 0.0430392, 0.0430392, 0.0430392, 1, 0.176419, 0.176419, 0.176419, 1, 0.176419, 0.176419, 0.176419, 1, 0.435192, 0.435192, 0.435192, 1)
 
 [sub_resource type="GradientTexture1D" id="GradientTexture1D_8yl70"]
 gradient = SubResource("Gradient_uybpi")

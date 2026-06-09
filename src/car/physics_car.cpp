@@ -3435,17 +3435,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 		soa->height_above_track[soa_index] > 0.0f &&
 		center_floor_sample.closest_surface.basis[0].length_squared() >= 0.1f;
 	RaceTrack* track = soa->current_track[soa_index];
-	const int current_cp = soa->current_checkpoint[soa_index];
-	const bool current_segment_analytic_collision =
-		track &&
-		current_cp >= 0 &&
-		current_cp < track->num_checkpoints &&
-		track->segments[track->checkpoints[current_cp].road_segment].analytic_collision_enabled;
 	const bool mesh_floor_depenetration_enabled =
-		!center_floor_sample_is_hole &&
-		!current_segment_analytic_collision &&
-		(((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) ||
-		center_floor_sample_valid);
+		!center_floor_sample_is_hole;
 	SimVec3 wall_corner_world[4];
 	mxt_store_points4(
 		wall_corner_world,
