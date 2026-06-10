@@ -57,6 +57,7 @@ window/stretch/aspect="expand"
 movie_writer/movie_file="B:/programming/mxt-cpp/movie/movie.avi"
 movie_writer/disable_vsync=true
 movie_writer/fps=120
+run/main_run_args="--tracks-dir B:/programming/mxt-cpp/export-bin/track"
 movie_writer/mjpeg_quality=1.0
 
 [filesystem]
