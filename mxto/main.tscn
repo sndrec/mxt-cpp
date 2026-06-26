@@ -132,9 +132,9 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=171867855]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=830147406]
 
-[node name="GameSim" type="GameSim" parent="." unique_id=1405205592]
+[node name="GameSim" type="GameSim" parent="." unique_id=2036699480]
 
 [node name="NetworkManager" type="Node" parent="." unique_id=2069070107]
 script = ExtResource("3_netplay")
@@ -497,7 +497,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.29"
+text = "MaxX Throttle v0.1.32"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/ConnectHostBox/StartButton" to="." method="_on_start_button_pressed"]

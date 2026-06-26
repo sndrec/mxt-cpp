@@ -1233,6 +1233,22 @@ namespace {
 			}
 			car_views[i].handle_checkpoints(scratch);
 			if ((c.machine_state[i] & MACHINESTATE::AIRBORNE) == 0 && (c.machine_state[i] & MACHINESTATE::ZEROHP) == 0) {
+				if (DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING) &&
+					DEBUG::rail_trace_filter_matches(c.global_start + i, c.simulation_tick[i])) {
+					SimVec3 pos = LOAD_INDEXED_VEC3(c, position_current, i);
+					godot::UtilityFunctions::print(
+						godot::String("MXT_LAST_GROUND_TRACE tick="), static_cast<int64_t>(c.simulation_tick[i]),
+						godot::String(" car="), static_cast<int64_t>(c.global_start + i),
+						godot::String(" old_cp="), static_cast<int64_t>(c.last_ground_checkpoint[i]),
+						godot::String(" old_dist="), c.last_ground_distance[i],
+						godot::String(" new_cp="), static_cast<int64_t>(c.current_checkpoint[i]),
+						godot::String(" new_dist="), c.checkpoint_track_distance[i],
+						godot::String(" frac="), c.checkpoint_fraction[i],
+						godot::String(" lap="), static_cast<int64_t>(c.lap[i]),
+						godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(c.machine_state[i]), 16),
+						godot::String(" restore="), static_cast<int64_t>(c.restore_state[i]),
+						godot::String(" pos=("), pos.x, godot::String(","), pos.y, godot::String(","), pos.z, godot::String(")"));
+				}
 				c.last_ground_distance[i] = c.checkpoint_track_distance[i];
 				c.last_ground_checkpoint[i] = c.current_checkpoint[i];
 			}

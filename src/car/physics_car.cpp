@@ -1124,6 +1124,15 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
         pipe = floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE || floor_seg->road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_PIPE_OPEN;
 	stay_on = floor_seg->analytic_collision_enabled && (pipe || cylinder || rect);
 	const bool trace_mesh_floor = trace_mesh_floor_for_car(soa, soa_index);
+	const SimVec3 machine_up_ws = mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f));
+	auto orient_mesh_floor_hit = [&](CollisionData &mesh_hit) {
+		if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) < 0.0f) {
+			mesh_hit.collision_normal *= -1.0f;
+			mesh_hit.collision_face_normal *= -1.0f;
+			mesh_hit.road_data.closest_surface.basis[1] *= -1.0f;
+			mesh_hit.road_data.closest_surface.basis[2] *= -1.0f;
+		}
+	};
 	if ((soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) == 0 &&
 		floor_seg->analytic_collision_enabled &&
 		road_shape_uses_below_centerline_fallout(floor_seg->road_shape) &&
@@ -1143,15 +1152,6 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 		CollisionData hit{};
 		hit.road_data.cp_idx = -1;
 		hit.mesh_triangle_index = -1;
-		const SimVec3 machine_up_ws = mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f));
-		auto orient_mesh_floor_hit = [&](CollisionData &mesh_hit) {
-			if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) < 0.0f) {
-				mesh_hit.collision_normal *= -1.0f;
-				mesh_hit.collision_face_normal *= -1.0f;
-				mesh_hit.road_data.closest_surface.basis[1] *= -1.0f;
-				mesh_hit.road_data.closest_surface.basis[2] *= -1.0f;
-			}
-		};
 		SimVec3 p0_sweep_start_ws = mxt_transform_point(machine_transform, current_position, SimVec3(0.0f, 1.0f, 0.0f));
 		SimVec3 p1_sweep_end_ws = mxt_transform_point(machine_transform, current_position, SimVec3(0.0f, -20.0f, 0.0f));
 		STORE_VEC3(position_bottom, p1_sweep_end_ws);
@@ -1362,6 +1362,67 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 			godot::String(" in_arc="), trace ? trace->center_in_road_arc : false,
 			godot::String(" on_open_road="), trace ? trace->center_on_open_road_side : false);
 	};
+	auto try_stay_on_mesh_floor = [&](const char *reason) {
+		CollisionData mesh_hit{};
+		mesh_hit.road_data.cp_idx = -1;
+		mesh_hit.mesh_triangle_index = -1;
+		sample_mesh_floor_with_seed(
+			mesh_hit,
+			current_position,
+			8.0f,
+			CAST_FLAGS::WANTS_TRACK,
+			current_cp,
+			true,
+			scratch,
+			true,
+			false,
+			true);
+		physics_profile_mark(profile ? profile->find_floor_mesh_us : nullptr, profile_step);
+		if (mesh_hit.collided) {
+			orient_mesh_floor_hit(mesh_hit);
+		}
+		float contact_dist_metric = 0.0f;
+		if (mesh_hit.collided) {
+			const float signed_surface_distance = (current_position - mesh_hit.collision_point).dot(mesh_hit.collision_normal);
+			contact_dist_metric = 20.0f - fabsf(signed_surface_distance);
+		}
+		if (trace_mesh_floor) {
+			const SimVec3 pos = current_position;
+			godot::UtilityFunctions::print(
+				godot::String("MXT_MESH_FLOOR_CENTER tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+				godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+				godot::String(" coll_cp="), static_cast<int64_t>(soa->current_collision_checkpoint[soa_index]),
+				godot::String(" analytic="), floor_seg->analytic_collision_enabled,
+				godot::String(" stay_on="), stay_on,
+				godot::String(" reason="), godot::String(reason),
+				godot::String(" sweep="), mesh_hit.collided,
+				godot::String(" nearest="), mesh_hit.collided,
+				godot::String(" local="), mesh_hit.collided,
+				godot::String(" hit="), mesh_hit.collided,
+				godot::String(" mesh_tri="), static_cast<int64_t>(mesh_hit.mesh_triangle_index),
+				godot::String(" contact="), contact_dist_metric,
+				godot::String(" terrain=0x"), godot::String::num_int64(mesh_hit.road_data.terrain, 16),
+				godot::String(" pos=("), pos.x, godot::String(","), pos.y, godot::String(","), pos.z, godot::String(")"),
+				godot::String(" n=("), mesh_hit.collision_normal.x, godot::String(","), mesh_hit.collision_normal.y, godot::String(","), mesh_hit.collision_normal.z, godot::String(")"),
+				godot::String(" road_t=("), mesh_hit.road_data.road_t.x, godot::String(","), mesh_hit.road_data.road_t.y, godot::String(")"));
+		}
+		if (!mesh_hit.collided || contact_dist_metric <= 0.0f) {
+			return false;
+		}
+		if ((mesh_hit.road_data.terrain & TERRAIN::HOLE) != 0u ||
+			(mesh_hit.road_data.cp_idx >= 0 && track->analytic_road_sample_has_hole(mesh_hit.road_data.cp_idx, mesh_hit.road_data.road_t))) {
+			return false;
+		}
+		soa->road_sample[soa_index].terrain = mesh_hit.road_data.terrain;
+		soa->road_sample[soa_index].cp_idx = mesh_hit.road_data.cp_idx;
+		soa->road_sample[soa_index].road_t = mesh_hit.road_data.road_t;
+		soa->road_sample[soa_index].spatial_t = mesh_hit.road_data.spatial_t;
+		soa->road_sample[soa_index].closest_surface = mesh_hit.road_data.closest_surface;
+		STORE_VEC3(track_surface_pos, mesh_hit.collision_point);
+		STORE_VEC3(track_surface_normal, mesh_hit.collision_normal);
+		soa->height_above_track[soa_index] = contact_dist_metric;
+		return true;
+	};
 	track->convert_point_to_road(
 		current_cp,
 		current_position,
@@ -1404,6 +1465,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				center_on_open_road_side,
 				pipe_trace_ptr)) {
 				trace_floor("orientation_ray_reject", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, 0.0f);
+				if (try_stay_on_mesh_floor("orientation_ray_reject")) {
+					return true;
+				}
 				soa->height_above_track[soa_index] = 0.0f;
 				STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 				mark_floor_disconnected(soa, soa_index);
@@ -1417,6 +1481,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 	if (road_t_sample_raw.x == -1000.0)
 	{
 		trace_floor("invalid_road_t", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
+		if (try_stay_on_mesh_floor("invalid_road_t")) {
+			return true;
+		}
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		mark_floor_disconnected(soa, soa_index);
@@ -1426,6 +1493,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 	if (road_t_sample_raw.x > 1.01f || road_t_sample_raw.x < -1.01f || !track_segment_longitudinal_t_in_domain(road_t_sample_raw.y))
 	{
 		trace_floor("road_t_bounds", nullptr, road_t_sample_raw, spatial_t_sample, 0.0f);
+		if (try_stay_on_mesh_floor("road_t_bounds")) {
+			return true;
+		}
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		mark_floor_disconnected(soa, soa_index);
@@ -1444,6 +1514,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 	const float surface_dist = (current_position - surf.origin).dot(surf.basis[1]);
 	if (cylinder && surface_dist >= 20.0f) {
 		trace_floor("cylinder_distance_cap", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
+		if (try_stay_on_mesh_floor("cylinder_distance_cap")) {
+			return true;
+		}
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		mark_floor_disconnected(soa, soa_index);
@@ -1451,6 +1524,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 	}
 	if (center_on_open_road_side && surface_dist < -0.001f) {
 		trace_floor("open_center_below_surface", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
+		if (try_stay_on_mesh_floor("open_center_below_surface")) {
+			return true;
+		}
 		soa->height_above_track[soa_index] = 0.0f;
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		mark_floor_disconnected(soa, soa_index);
@@ -1469,6 +1545,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 	if (soa->height_above_track[soa_index] > 20.1f)
 	{
 		trace_floor("height_above_track_too_large", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
+		if (try_stay_on_mesh_floor("height_above_track_too_large")) {
+			return true;
+		}
 		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
 		soa->height_above_track[soa_index] = 0.0f;
 		mark_floor_disconnected(soa, soa_index);
@@ -4178,6 +4257,13 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 
 	RaceTrack *track = soa->current_track[soa_index];
 	uint8_t prev_lap = soa->lap[soa_index];
+	const bool trace_restore = trace_rail_for_car(soa, soa_index);
+	const int old_cp = soa->current_checkpoint[soa_index];
+	const int old_coll_cp = soa->current_collision_checkpoint[soa_index];
+	const float old_fraction = soa->checkpoint_fraction[soa_index];
+	const float old_track_distance = soa->checkpoint_track_distance[soa_index];
+	const float old_previous_lap_distance = soa->previous_lap_distance[soa_index];
+	const uint32_t old_machine_state = soa->machine_state[soa_index];
 
 	int found = track->get_best_checkpoint(LOAD_VEC3(position_current), soa->current_checkpoint[soa_index], scratch);
 	int collision = found;
@@ -4269,9 +4355,98 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 		soa->current_checkpoint[soa_index],
 		soa->checkpoint_fraction[soa_index],
 		soa->lap[soa_index]);
+	const float checkpoint_advance = current_lap_distance - soa->previous_lap_distance[soa_index];
+	auto trace_checkpoint_graph = [&](const char *label, int cp_idx) {
+		if (cp_idx < 0 || cp_idx >= track->num_checkpoints) {
+			return;
+		}
+		const CollisionCheckpoint &cp = track->checkpoints[cp_idx];
+		const int branch_id = (cp_idx < static_cast<int>(track->checkpoint_branch_id.size())) ? track->checkpoint_branch_id[cp_idx] : -1;
+		const int canonical_next = (cp_idx < static_cast<int>(track->canonical_next.size())) ? track->canonical_next[cp_idx] : -1;
+		const int canonical_prev = (cp_idx < static_cast<int>(track->canonical_prev.size())) ? track->canonical_prev[cp_idx] : -1;
+		godot::String neighbors;
+		for (int i = 0; i < cp.num_neighboring_checkpoints; ++i) {
+			if (i > 0) {
+				neighbors += godot::String(",");
+			}
+			neighbors += godot::String::num_int64(cp.neighboring_checkpoints[i]);
+		}
+		godot::UtilityFunctions::print(
+			godot::String("MXT_CHECKPOINT_GRAPH_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" label="), godot::String(label),
+			godot::String(" cp="), static_cast<int64_t>(cp_idx),
+			godot::String(" distance="), cp.distance,
+			godot::String(" local="), cp.local_distance,
+			godot::String(" start_distance="), cp.distance - cp.local_distance,
+			godot::String(" segment="), static_cast<int64_t>(cp.road_segment),
+			godot::String(" branch_id="), static_cast<int64_t>(branch_id),
+			godot::String(" canonical_prev="), static_cast<int64_t>(canonical_prev),
+			godot::String(" canonical_next="), static_cast<int64_t>(canonical_next),
+			godot::String(" neighbors="), neighbors);
+	};
+	if (trace_restore) {
+		const SimVec3 pos = LOAD_VEC3(position_current);
+		godot::UtilityFunctions::print(
+			godot::String("MXT_CHECKPOINT_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" old_cp="), static_cast<int64_t>(old_cp),
+			godot::String(" old_coll="), static_cast<int64_t>(old_coll_cp),
+			godot::String(" found="), static_cast<int64_t>(found),
+			godot::String(" collision="), static_cast<int64_t>(collision),
+			godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+			godot::String(" coll="), static_cast<int64_t>(soa->current_collision_checkpoint[soa_index]),
+			godot::String(" old_frac="), old_fraction,
+			godot::String(" frac="), soa->checkpoint_fraction[soa_index],
+			godot::String(" old_track_dist="), old_track_distance,
+			godot::String(" track_dist="), soa->checkpoint_track_distance[soa_index],
+			godot::String(" prev_lap_dist_old="), old_previous_lap_distance,
+			godot::String(" lap_dist="), current_lap_distance,
+			godot::String(" advance="), checkpoint_advance,
+			godot::String(" threshold="), kMaxPositiveCheckpointAdvance,
+			godot::String(" lap="), static_cast<int64_t>(soa->lap[soa_index]),
+			godot::String(" state_old=0x"), godot::String::num_int64(static_cast<int64_t>(old_machine_state), 16),
+			godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16),
+			godot::String(" restore="), static_cast<int64_t>(soa->restore_state[soa_index]),
+			godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+			godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index],
+			godot::String(" pos=("), pos.x, godot::String(","), pos.y, godot::String(","), pos.z, godot::String(")"));
+	}
 	if (soa->restore_state[soa_index] == 0 &&
 		(soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0) {
-		if (current_lap_distance - soa->previous_lap_distance[soa_index] > kMaxPositiveCheckpointAdvance) {
+		if (checkpoint_advance > kMaxPositiveCheckpointAdvance) {
+			if (trace_restore) {
+				godot::UtilityFunctions::print(
+					godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+					godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+					godot::String(" event=shortcut_advance"),
+					godot::String(" advance="), checkpoint_advance,
+					godot::String(" prev_lap_dist="), soa->previous_lap_distance[soa_index],
+					godot::String(" lap_dist="), current_lap_distance,
+					godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+					godot::String(" old_cp="), static_cast<int64_t>(old_cp),
+					godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+					godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index],
+					godot::String(" lap_length="), track_lap_length(track),
+					godot::String(" num_checkpoints="), static_cast<int64_t>(track->num_checkpoints),
+					godot::String(" canonical_start="), static_cast<int64_t>(track->canonical_start_index),
+					godot::String(" branch_count="), static_cast<int64_t>(track->branch_infos.size()));
+				trace_checkpoint_graph("old", old_cp);
+				trace_checkpoint_graph("old_prev_linear", old_cp - 1);
+				trace_checkpoint_graph("old_next_linear", old_cp + 1);
+				trace_checkpoint_graph("current", soa->current_checkpoint[soa_index]);
+				trace_checkpoint_graph("collision", soa->current_collision_checkpoint[soa_index]);
+				if (soa->current_checkpoint[soa_index] >= 0 &&
+					soa->current_checkpoint[soa_index] < static_cast<int>(track->canonical_prev.size())) {
+					trace_checkpoint_graph("current_canonical_prev", track->canonical_prev[soa->current_checkpoint[soa_index]]);
+				}
+				if (soa->current_checkpoint[soa_index] >= 0 &&
+					soa->current_checkpoint[soa_index] < static_cast<int>(track->canonical_next.size())) {
+					trace_checkpoint_graph("current_canonical_next", track->canonical_next[soa->current_checkpoint[soa_index]]);
+				}
+				trace_checkpoint_graph("last_ground", soa->last_ground_checkpoint[soa_index]);
+				trace_checkpoint_graph("last_ground_next_linear", soa->last_ground_checkpoint[soa_index] + 1);
+			}
 			start_restore_to_last_ground();
 		}
 	}
@@ -4408,6 +4583,7 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, SimTransform &out_trans
 		lap_length = soa->current_track[soa_index]->checkpoints[num_checkpoints - 1].distance;
 	}
 	const bool has_lap_length = lap_length > 0.0f;
+	const bool trace_restore = trace_rail_for_car(soa, soa_index);
 
 	auto normalize_distance = [&](float dist) -> float {
 		if (!has_lap_length)
@@ -4491,6 +4667,23 @@ bool PhysicsCar::compute_respawn_target(uint16_t cp_idx, SimTransform &out_trans
 	if (out_fraction) {
 		*out_fraction = target_fraction;
 	}
+	if (trace_restore) {
+		godot::UtilityFunctions::print(
+			godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" event=compute_respawn_target"),
+			godot::String(" cp_arg="), static_cast<int64_t>(cp_idx),
+			godot::String(" target_cp="), static_cast<int64_t>(target_cp_idx),
+			godot::String(" target_fraction="), target_fraction,
+			godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index],
+			godot::String(" normalized_ground="), normalized_ground,
+			godot::String(" cp_start_dist="), cp_start_distance,
+			godot::String(" normalized_cp_start="), normalized_cp_start,
+			godot::String(" distance_into_cp="), distance_into_cp,
+			godot::String(" respawn_distance="), out_distance,
+			godot::String(" lap_length="), lap_length,
+			godot::String(" target_pos=("), out_transform.origin.x, godot::String(","), out_transform.origin.y, godot::String(","), out_transform.origin.z, godot::String(")"));
+	}
 
 	return true;
 }
@@ -4506,6 +4699,22 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	float respawn_fraction = 0.0f;
 	if (!compute_respawn_target(cp_idx, spawn_transform, respawn_distance, &respawn_checkpoint, &respawn_fraction))
 		return;
+	const bool trace_restore = trace_rail_for_car(soa, soa_index);
+	if (trace_restore) {
+		const SimVec3 pos = LOAD_VEC3(position_current);
+		godot::UtilityFunctions::print(
+			godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" event=respawn_at_checkpoint"),
+			godot::String(" cp_arg="), static_cast<int64_t>(cp_idx),
+			godot::String(" respawn_cp="), static_cast<int64_t>(respawn_checkpoint),
+			godot::String(" respawn_fraction="), respawn_fraction,
+			godot::String(" respawn_distance="), respawn_distance,
+			godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+			godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index],
+			godot::String(" pos_before=("), pos.x, godot::String(","), pos.y, godot::String(","), pos.z, godot::String(")"),
+			godot::String(" spawn=("), spawn_transform.origin.x, godot::String(","), spawn_transform.origin.y, godot::String(","), spawn_transform.origin.z, godot::String(")"));
+	}
 
 	if (soa->broken_lap_rollback_pending[soa_index] &&
 		(soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0) {
@@ -4612,6 +4821,24 @@ void PhysicsCar::start_restore_to_last_ground()
 	if (!soa->current_track[soa_index]) {
 		return;
 	}
+	const bool trace_restore = trace_rail_for_car(soa, soa_index);
+	if (trace_restore) {
+		const SimVec3 pos = LOAD_VEC3(position_current);
+		godot::UtilityFunctions::print(
+			godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" event=start_restore"),
+			godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+			godot::String(" coll="), static_cast<int64_t>(soa->current_collision_checkpoint[soa_index]),
+			godot::String(" frac="), soa->checkpoint_fraction[soa_index],
+			godot::String(" track_dist="), soa->checkpoint_track_distance[soa_index],
+			godot::String(" previous_lap_dist="), soa->previous_lap_distance[soa_index],
+			godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+			godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index],
+			godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16),
+			godot::String(" restore="), static_cast<int64_t>(soa->restore_state[soa_index]),
+			godot::String(" pos=("), pos.x, godot::String(","), pos.y, godot::String(","), pos.z, godot::String(")"));
+	}
 	soa->restore_state[soa_index] = 2;
 	soa->restore_wait_frames[soa_index] = 0;
 	soa->restore_move_frames[soa_index] = 0;
@@ -4623,6 +4850,15 @@ void PhysicsCar::start_restore_to_last_ground()
 
 void PhysicsCar::trigger_mesh_fallout()
 {
+	if (trace_rail_for_car(soa, soa_index)) {
+		godot::UtilityFunctions::print(
+			godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+			godot::String(" event=trigger_mesh_fallout"),
+			godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+			godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+			godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index]);
+	}
 	soa->machine_state[soa_index] |= MACHINESTATE::FALLOUT |
 		MACHINESTATE::AIRBORNE |
 		MACHINESTATE::DIEDTHISFRAMEOOB_Q;
@@ -4658,6 +4894,18 @@ void PhysicsCar::update_restore(float accel_input)
 		(soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) != 0;
 
 	if (soa->restore_state[soa_index] == 0 && crashed) {
+		if (trace_rail_for_car(soa, soa_index)) {
+			godot::UtilityFunctions::print(
+				godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+				godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+				godot::String(" event=restore_crashed"),
+				godot::String(" fell_y="), soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y,
+				godot::String(" zero_hp="), soa->energy[soa_index] <= 0.0f,
+				godot::String(" fallout="), (soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) != 0,
+				godot::String(" cp="), static_cast<int64_t>(soa->current_checkpoint[soa_index]),
+				godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+				godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index]);
+		}
 		soa->restore_state[soa_index] = 1;
 		soa->restore_wait_frames[soa_index] = 0;
 		if (soa->position_current_y[soa_index] < soa->current_track[soa_index]->minimum_y)
@@ -4669,6 +4917,17 @@ void PhysicsCar::update_restore(float accel_input)
 	if (soa->restore_state[soa_index] == 1) {
 		soa->restore_wait_frames[soa_index]++;
 		if ((soa->restore_wait_frames[soa_index] >= 60 && accel_input > 0.1f) || (soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) != 0) {
+			if (trace_rail_for_car(soa, soa_index)) {
+				godot::UtilityFunctions::print(
+					godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+					godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+					godot::String(" event=restore_wait_to_move"),
+					godot::String(" wait_frames="), static_cast<int64_t>(soa->restore_wait_frames[soa_index]),
+					godot::String(" accel="), accel_input,
+					godot::String(" fallout="), (soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) != 0,
+					godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+					godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index]);
+			}
 			soa->restore_state[soa_index] = 2;
 			soa->restore_move_frames[soa_index] = 0;
 			{ SimTransform mxt_tmp = LOAD_TRANSFORM(restore_start_transform); mxt_tmp.origin = LOAD_VEC3(position_current); mxt_tmp.basis = LOAD_TRANSFORM(basis_physical).basis; STORE_TRANSFORM(restore_start_transform, mxt_tmp); }
@@ -4700,6 +4959,15 @@ void PhysicsCar::update_restore(float accel_input)
 		STORE_VEC3(position_bottom, mxt_transform_point(LOAD_TRANSFORM(basis_physical), pos, SimVec3(0.0f, -0.1f, 0.0f)));
 
 		if (soa->restore_move_frames[soa_index] >= restore_total_frames) {
+			if (trace_rail_for_car(soa, soa_index)) {
+				godot::UtilityFunctions::print(
+					godot::String("MXT_RESTORE_TRACE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+					godot::String(" car="), static_cast<int64_t>(soa->global_start + soa_index),
+					godot::String(" event=restore_finish"),
+					godot::String(" move_frames="), static_cast<int64_t>(soa->restore_move_frames[soa_index]),
+					godot::String(" last_ground_cp="), static_cast<int64_t>(soa->last_ground_checkpoint[soa_index]),
+					godot::String(" last_ground_dist="), soa->last_ground_distance[soa_index]);
+			}
 			soa->state_2[soa_index] &= ~0x20;
 			respawn_at_checkpoint(soa->last_ground_checkpoint[soa_index]);
 			soa->energy[soa_index] = std::max(soa->energy[soa_index], soa->calced_max_energy[soa_index] * 0.5f);
