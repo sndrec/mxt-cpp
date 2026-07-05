@@ -2538,7 +2538,7 @@ void PhysicsCar::initialize_machine()
 
 	soa->boost_turbo[soa_index] = 0.0f;
 
-	soa->s_boost_charge_max[soa_index] = 30;
+	soa->s_boost_charge_max[soa_index] = 60;
 
 	if (soa->car_properties[soa_index] != nullptr) {
 		for (int i = 0; i < 4; ++i) {
@@ -2671,7 +2671,7 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->spinattack_direction[soa_index] = 0;
 	soa->frames_since_start[soa_index] = 0;
 	soa->side_attack_delay[soa_index] = 0;
-	soa->attack_cooldown_frames[soa_index] = 0;
+	soa->attack_cooldown_frames[soa_index] = kAttackCooldownFrames;
 	soa->brake_timer[soa_index] = 0;
 	soa->rail_collision_timer[soa_index] = 0;
 	soa->terrain_state[soa_index] = 0;
@@ -3319,7 +3319,8 @@ void PhysicsCar::set_terrain_state_from_track(TrackQueryScratch &scratch, const 
 
 void PhysicsCar::handle_attack_states()
 {
-	if (soa->attack_cooldown_frames[soa_index] > 0) {
+	if (soa->attack_cooldown_frames[soa_index] > 0 &&
+			(soa->machine_state[soa_index] & MACHINESTATE::STARTINGCOUNTDOWN) == 0) {
 		soa->attack_cooldown_frames[soa_index] -= 1;
 	}
 

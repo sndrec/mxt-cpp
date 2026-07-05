@@ -16,8 +16,8 @@ func _init() -> void:
 	await process_frame
 	main.call("_physics_process", 1.0 / 60.0)
 
-	var track_indices: Array = main.network_manager.race_options.get("track_indices", [])
-	if !track_indices.is_empty():
+	var track_ids: Array = main.network_manager.race_options.get("track_ids", [])
+	if !track_ids.is_empty():
 		push_error("empty lobby sequence should not fall back to selected track")
 		quit(1)
 		return

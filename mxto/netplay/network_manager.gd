@@ -1,7 +1,7 @@
 class_name NetworkManager
 extends Node
 
-signal race_started(track_index, player_settings)
+signal race_started(track_id, player_settings)
 signal race_finished
 signal race_event(event_type, actor_id, target_id, tick, value)
 signal race_options_changed(options)
@@ -87,6 +87,8 @@ const SHARED_AHEAD_CAP_TICKS := 10.0
 const START_SYNC_SAMPLE_COUNT := 4
 const START_SYNC_PING_INTERVAL_MS := 50
 const START_SYNC_START_DELAY_MS := 750
+const START_SYNC_DROP_DELAY_SEC := 5.0
+const START_SYNC_DROP_STATUS_INTERVAL_MS := 250
 const RACE_PHASE_TICK_BIT := 0x80000000
 const RACE_PHASE_TICK_MASK := 0x7fffffff
 const AUTH_INPUT_MODE_MASK := 0x07
@@ -119,9 +121,11 @@ var player_finish_times := {}
 var player_finish_placements := {}
 var finish_order : Array = []
 var player_eliminations := {}
+var player_dnfs := {}
+var race_force_end_deadline_tick := -1
 var race_options := {
 	"game_mode": 0,
-	"track_indices": [],
+	"track_ids": [],
 	"vehicle_restore": true,
 	"bumpers": false,
 	"s_boost": true,
@@ -131,7 +135,7 @@ var race_options := {
 	"grand_prix_ko_energy_bonuses": {},
 }
 var race_netplay_phase := 0
-var pending_next_race_track_index := -1
+var pending_next_race_track_id := ""
 var pending_next_race_settings: Array = []
 var pending_next_race_options: Dictionary = {}
 var sticker_cooldown_msec := {}
@@ -177,6 +181,9 @@ var start_sync_first_authoritative_first_tick := -1
 var start_sync_first_authoritative_last_tick := -1
 var start_sync_first_authoritative_count := 0
 var start_sync_debug_prints := 0
+var start_sync_remote_stalled_ids: Array = []
+var start_sync_remote_drop_remaining_sec := 0.0
+var start_sync_last_drop_status_msec := 0
 
 var use_state_compression := true
 var dump_auth_input_samples := false
@@ -693,6 +700,121 @@ func _reset_start_sync_state() -> void:
 	start_sync_first_authoritative_last_tick = -1
 	start_sync_first_authoritative_count = 0
 	start_sync_debug_prints = 0
+	start_sync_remote_stalled_ids.clear()
+	start_sync_remote_drop_remaining_sec = 0.0
+	start_sync_last_drop_status_msec = 0
+
+func username_for_player(id: int) -> String:
+	var settings = player_settings.get(id, null)
+	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
+		return str(settings["username"])
+	return str(id)
+
+func start_sync_drop_info() -> Dictionary:
+	var active := race_active and !start_sync_scheduled
+	if is_server:
+		active = active and (server_game_sim == null or !server_game_sim.sim_started)
+		var stalled_ids := []
+		var stalled_names := PackedStringArray()
+		var max_elapsed_sec := 0.0
+		var drop_remaining_sec := START_SYNC_DROP_DELAY_SEC
+		if active:
+			var now_sec := 0.001 * float(Time.get_ticks_msec())
+			for id_value in _get_human_roster():
+				var id := int(id_value)
+				if _disconnected_during_race.has(id):
+					continue
+				if listen_server and id == multiplayer.get_unique_id():
+					continue
+				var last_sec := float(last_input_time.get(id, now_sec))
+				var elapsed_sec := maxf(0.0, now_sec - last_sec)
+				max_elapsed_sec = maxf(max_elapsed_sec, elapsed_sec)
+				drop_remaining_sec = minf(drop_remaining_sec, maxf(0.0, START_SYNC_DROP_DELAY_SEC - elapsed_sec))
+				if elapsed_sec >= START_SYNC_DROP_DELAY_SEC:
+					stalled_ids.append(id)
+					stalled_names.append(username_for_player(id))
+		return {
+			"active": active,
+			"visible": active and !stalled_ids.is_empty(),
+			"stalled_peer_ids": stalled_ids,
+			"stalled_names": stalled_names,
+			"elapsed_sec": max_elapsed_sec,
+			"can_drop": active and !stalled_ids.is_empty(),
+			"drop_remaining_sec": drop_remaining_sec,
+		}
+	active = active and !start_sync_authoritative_started and !start_sync_client_started
+	var remote_names := PackedStringArray()
+	for id_value in start_sync_remote_stalled_ids:
+		remote_names.append(username_for_player(int(id_value)))
+	return {
+		"active": active,
+		"visible": active and !start_sync_remote_stalled_ids.is_empty(),
+		"stalled_peer_ids": start_sync_remote_stalled_ids.duplicate(true),
+		"stalled_names": remote_names,
+		"elapsed_sec": START_SYNC_DROP_DELAY_SEC,
+		"can_drop": active and !start_sync_remote_stalled_ids.is_empty() and start_sync_remote_drop_remaining_sec <= 0.0,
+		"drop_remaining_sec": maxf(0.0, start_sync_remote_drop_remaining_sec),
+	}
+
+func request_drop_start_sync_stalled_players() -> bool:
+	var info := start_sync_drop_info()
+	if !bool(info.get("can_drop", false)):
+		return false
+	if is_server:
+		_drop_start_sync_stalled_players(_id_array_from_value(info.get("stalled_peer_ids", [])))
+		return true
+	if race_active and has_network_peer():
+		_request_drop_start_sync_stalled_players.rpc_id(1, race_netplay_phase)
+		return true
+	return false
+
+func _broadcast_start_sync_drop_status() -> void:
+	if !is_server or !race_active or !has_network_peer():
+		return
+	var now_msec := Time.get_ticks_msec()
+	if now_msec < start_sync_last_drop_status_msec + START_SYNC_DROP_STATUS_INTERVAL_MS:
+		return
+	start_sync_last_drop_status_msec = now_msec
+	var info := start_sync_drop_info()
+	_sync_start_sync_drop_status.rpc(race_netplay_phase, _id_array_from_value(info.get("stalled_peer_ids", [])), float(info.get("drop_remaining_sec", 0.0)))
+
+func _drop_start_sync_stalled_players(ids: Array) -> void:
+	if !is_server or !race_active:
+		return
+	var connected_peers: PackedInt32Array = multiplayer.get_peers() if multiplayer.multiplayer_peer != null else PackedInt32Array()
+	for id_value in ids:
+		var id := int(id_value)
+		if id <= 0:
+			continue
+		if _disconnected_during_race.has(id):
+			continue
+		if listen_server and id == multiplayer.get_unique_id():
+			continue
+		if connected_peers.has(id):
+			multiplayer.disconnect_peer(id)
+		_on_peer_disconnected(id)
+	var kept_ready: Array[int] = []
+	for id_value in ready_players:
+		if !_disconnected_during_race.has(int(id_value)):
+			kept_ready.append(int(id_value))
+	ready_players = kept_ready
+	_try_schedule_synced_start()
+
+@rpc("any_peer", "reliable")
+func _request_drop_start_sync_stalled_players(phase: int) -> void:
+	if !is_server or !race_active or !_accept_race_packet_phase(phase):
+		return
+	var info := start_sync_drop_info()
+	if !bool(info.get("can_drop", false)):
+		return
+	_drop_start_sync_stalled_players(_id_array_from_value(info.get("stalled_peer_ids", [])))
+
+@rpc("authority", "call_remote", "reliable")
+func _sync_start_sync_drop_status(phase: int, stalled_ids: Array, drop_remaining_sec: float) -> void:
+	if !_accept_race_packet_phase(phase):
+		return
+	start_sync_remote_stalled_ids = _id_array_from_value(stalled_ids)
+	start_sync_remote_drop_remaining_sec = drop_remaining_sec
 
 func reserve_next_race_netplay_options(options: Dictionary) -> Dictionary:
 	var out := options.duplicate(true)
@@ -853,6 +975,9 @@ func _get_active_human_roster() -> Array:
 		if !_disconnected_during_race.has(id):
 			out.append(id)
 	return out
+
+func _human_racer_uses_native_cpu_input(id: int) -> bool:
+	return player_finish_times.has(id) or player_dnfs.has(id) or _disconnected_during_race.has(id)
 
 func get_simulation_roster() -> Array:
 	var roster := _get_human_roster()
@@ -1102,8 +1227,10 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	player_finish_placements.clear()
 	finish_order.clear()
 	player_eliminations.clear()
+	player_dnfs.clear()
+	race_force_end_deadline_tick = -1
 	ready_players.clear()
-	pending_next_race_track_index = -1
+	pending_next_race_track_id = ""
 	pending_next_race_settings.clear()
 	pending_next_race_options.clear()
 	sticker_cooldown_msec.clear()
@@ -1341,6 +1468,8 @@ func _process_start_sync() -> void:
 	if !race_active:
 		return
 	var now := Time.get_ticks_msec()
+	if is_server and !start_sync_scheduled:
+		_broadcast_start_sync_drop_status()
 	if !is_server and !listen_server and game_sim != null and !game_sim.sim_started:
 		if now >= start_sync_last_ping_msec + START_SYNC_PING_INTERVAL_MS and !start_sync_scheduled:
 			start_sync_last_ping_msec = now
@@ -1724,7 +1853,7 @@ func _update_player_ids(ids: Array) -> void:
 		_calc_state_offsets()
 
 @rpc("any_peer", "reliable")
-func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> void:
+func start_race(track_id: String, settings: Array, options: Dictionary = {}) -> void:
 	prepare_race_roster("start_race")
 	var incoming_phase := _race_phase_from_options(options)
 	if !_accept_race_start_phase(incoming_phase):
@@ -1751,7 +1880,7 @@ func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> 
 		spectator_ids = _id_array_from_value(race_options.get("race_spectator_ids", []))
 	if is_server:
 		_calc_state_offsets()
-	emit_signal("race_started", track_index, settings)
+	emit_signal("race_started", track_id, settings)
 	if is_server:
 		var now := 0.001 * float(Time.get_ticks_msec())
 		for id in race_player_ids + spectator_ids:
@@ -1762,7 +1891,7 @@ func start_race(track_index: int, settings: Array, options: Dictionary = {}) -> 
 			start_sync_sample_counts[local_id] = START_SYNC_SAMPLE_COUNT
 			start_sync_peer_ahead[local_id] = _local_desired_ahead_for_shared()
 
-func send_start_race(track_index: int, settings: Array, options: Dictionary = {}) -> void:
+func send_start_race(track_id: String, settings: Array, options: Dictionary = {}) -> void:
 	if is_server:
 		ready_players.clear()
 		if options.is_empty():
@@ -1775,8 +1904,8 @@ func send_start_race(track_index: int, settings: Array, options: Dictionary = {}
 		var seed := randi()
 		options["spawn_seed"] = seed
 		race_options = options.duplicate(true)
-		start_race.rpc(track_index, settings, options)
-		start_race(track_index, settings, options)
+		start_race.rpc(track_id, settings, options)
+		start_race(track_id, settings, options)
 		var race_human_ids := _id_array_from_value(options.get("race_human_ids", player_ids))
 		if race_human_ids.size() > 1:
 			if game_sim != null:
@@ -1786,13 +1915,13 @@ func send_start_race(track_index: int, settings: Array, options: Dictionary = {}
 		else:
 			begin_simulation()
 	else:
-		start_race.rpc_id(1, track_index, settings, options)
+		start_race.rpc_id(1, track_id, settings, options)
 
 @rpc("any_peer", "reliable")
-func end_race(phase: int, next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
+func end_race(phase: int, next_track_id: String = "", next_settings: Array = [], next_options: Dictionary = {}) -> void:
 	if !_accept_race_packet_phase(phase):
 		return
-	pending_next_race_track_index = next_track_index
+	pending_next_race_track_id = next_track_id
 	pending_next_race_settings = next_settings.duplicate(true)
 	pending_next_race_options = next_options.duplicate(true)
 	if !pending_next_race_options.is_empty():
@@ -1802,10 +1931,10 @@ func end_race(phase: int, next_track_index: int = -1, next_settings: Array = [],
 		proximity_voice_chat.reset()
 	emit_signal("race_finished")
 
-func send_end_race(next_track_index: int = -1, next_settings: Array = [], next_options: Dictionary = {}) -> void:
+func send_end_race(next_track_id: String = "", next_settings: Array = [], next_options: Dictionary = {}) -> void:
 	if is_server:
-		end_race.rpc(race_netplay_phase, next_track_index, next_settings, next_options)
-		end_race(race_netplay_phase, next_track_index, next_settings, next_options)
+		end_race.rpc(race_netplay_phase, next_track_id, next_settings, next_options)
+		end_race(race_netplay_phase, next_track_id, next_settings, next_options)
 
 @rpc("any_peer", "reliable")
 func set_spawn_seed(seed: int) -> void:
@@ -2475,7 +2604,7 @@ func collect_server_inputs() -> Dictionary:
 			if player_eliminations.has(id):
 				pending_inputs[server_tick][id] = NEUTRAL_INPUT_BYTES
 				server_netcode_session.store_pending_input(server_tick, int(id), NEUTRAL_INPUT_BYTES)
-			elif player_finish_times.has(id):
+			elif _human_racer_uses_native_cpu_input(int(id)):
 				var cpu_input: PackedByteArray = server_game_sim.get_native_cpu_input_for_tick(int(id), server_tick)
 				pending_inputs[server_tick][id] = cpu_input
 				server_netcode_session.store_pending_input(server_tick, int(id), cpu_input)
@@ -2539,7 +2668,7 @@ func collect_client_inputs() -> Dictionary:
 	var local_player_id := multiplayer.get_unique_id()
 	if player_eliminations.has(local_player_id):
 		local_input_for_tick = NEUTRAL_INPUT_BYTES
-	elif player_finish_times.has(local_player_id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
+	elif _human_racer_uses_native_cpu_input(local_player_id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
 		local_input_for_tick = game_sim.get_native_cpu_input_for_tick(local_player_id, local_tick)
 	sent_inputs_bytes[local_tick] = local_input_for_tick
 	sent_input_times[local_tick] = 0.001 * float(Time.get_ticks_msec())
@@ -3061,7 +3190,8 @@ func disconnect_from_server() -> void:
 	cpu_player_ids.clear()
 	cpu_player_settings.clear()
 	player_eliminations.clear()
-	pending_next_race_track_index = -1
+	player_dnfs.clear()
+	pending_next_race_track_id = ""
 	pending_next_race_settings.clear()
 	pending_next_race_options.clear()
 	_disconnected_during_race.clear()
@@ -3084,6 +3214,7 @@ func disconnect_from_server() -> void:
 	_version_request_time.clear()
 	state_send_offsets.clear()
 	net_race_finish_time = -1
+	race_force_end_deadline_tick = -1
 	player_finish_times.clear()
 	player_finish_placements.clear()
 	finish_order.clear()
@@ -3208,12 +3339,32 @@ func _adjust_time_scale() -> void:
 func get_race_tick() -> int:
 	return server_tick if is_server else clients_server_tick
 
+func force_end_countdown_seconds_for(player_id: int) -> int:
+	if race_force_end_deadline_tick < 0:
+		return -1
+	if player_finish_times.has(player_id) or _disconnected_during_race.has(player_id) or player_eliminations.has(player_id):
+		return -1
+	var human_roster := _get_human_roster()
+	var human_count := human_roster.size()
+	if human_count <= 0:
+		return -1
+	var finished_count := 0
+	for id_value in human_roster:
+		if player_finish_times.has(int(id_value)):
+			finished_count += 1
+	if finished_count * 2 <= human_count:
+		return -1
+	var remaining_ticks := maxi(0, race_force_end_deadline_tick - get_race_tick())
+	return ceili(float(remaining_ticks) / 60.0)
+
 @rpc("authority", "call_local", "reliable")
 func set_player_finished(id: int, tick: int) -> void:
 	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
 		return
 	tick = _unpack_race_tick(tick)
 	if player_finish_times.has(id):
+		return
+	if player_dnfs.has(id):
 		return
 	if player_eliminations.has(id):
 		player_eliminations.erase(id)
@@ -3235,11 +3386,58 @@ func record_player_finished(id: int, tick: int) -> void:
 	set_player_finished(id, _pack_race_phase_tick(tick))
 
 @rpc("authority", "call_local", "reliable")
+func set_player_dnf(id: int, tick: int, reason: String = "") -> void:
+	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
+		return
+	tick = _unpack_race_tick(tick)
+	if player_finish_times.has(id):
+		return
+	var is_new := !player_dnfs.has(id)
+	player_dnfs[id] = {
+		"tick": tick,
+		"reason": reason,
+	}
+	_disconnected_during_race[id] = true
+	if player_eliminations.has(id):
+		player_eliminations.erase(id)
+	if delayed_peer_ids.has(id):
+		delayed_peer_ids.erase(id)
+	if is_new:
+		race_event.emit("dnf", id, -1, tick, 0)
+
+func send_player_dnf(id: int, tick: int, reason: String = "") -> void:
+	if player_finish_times.has(id) or player_dnfs.has(id):
+		return
+	if is_server:
+		var packed_tick := _pack_race_phase_tick(tick)
+		set_player_dnf.rpc(id, packed_tick, reason)
+		set_player_dnf(id, packed_tick, reason)
+
+func record_player_dnf(id: int, tick: int, reason: String = "") -> void:
+	if player_finish_times.has(id) or player_dnfs.has(id):
+		return
+	set_player_dnf(id, _pack_race_phase_tick(tick), reason)
+
+@rpc("authority", "call_local", "reliable")
+func set_race_force_end_deadline(phase: int, deadline_tick: int) -> void:
+	if !_accept_race_packet_phase(phase):
+		return
+	race_force_end_deadline_tick = deadline_tick
+
+func send_race_force_end_deadline(deadline_tick: int) -> void:
+	if !is_server:
+		return
+	race_force_end_deadline_tick = deadline_tick
+	set_race_force_end_deadline.rpc(race_netplay_phase, deadline_tick)
+
+@rpc("authority", "call_local", "reliable")
 func set_final_race_results(phase: int, placements: Dictionary, finish_ticks: Dictionary) -> void:
 	if !_accept_race_packet_phase(phase):
 		return
 	for id_value in finish_ticks.keys():
 		var id := int(id_value)
+		if player_dnfs.has(id):
+			continue
 		if player_eliminations.has(id):
 			player_eliminations.erase(id)
 		if !player_finish_times.has(id):

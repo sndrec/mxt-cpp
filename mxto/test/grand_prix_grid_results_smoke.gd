@@ -105,7 +105,7 @@ func _init() -> void:
 	nm.ready_players.assign([1, 2, 3])
 	nm.start_sync_active = true
 	nm.start_sync_scheduled = true
-	nm.start_race(0, [], {})
+	nm.start_race("sha256:test", [], {})
 	if !nm.ready_players.is_empty():
 		push_error("Grand Prix next race start must clear stale ready players, got %s" % [nm.ready_players])
 		quit(1)

@@ -12,13 +12,15 @@ const VOICECHAT_BUS_NAME := "Voicechat"
 const CAPTURE_BUS_NAME := "VoiceCapture"
 const CAPTURE_BUS_OUTPUT_MUTE_DB := -80.0
 const VOICE_SAMPLE_RATE := 48000
-const VOICE_FRAME_SAMPLES := 240
+const VOICE_FRAME_SAMPLES := 480
 const VOICE_SETTINGS_RELOAD_MSEC := 500
 const VOICE_DISTANCE_DELTA_TO_KMH := 216.0
 const VOICE_DEBUG_LOG_INTERVAL_MSEC := 1000
 const VOICE_ALWAYS_ON_THRESHOLD_DEFAULT := 0.08
 const VOICE_LEVEL_SMOOTH_SECONDS := 0.05
 const VOICE_ALWAYS_ON_RELEASE_MSEC := 150
+const VOICE_CAPTURE_MAX_BACKLOG_MSEC := 50
+const VOICE_STALE_PACKET_TICKS := 30
 
 @export var voice_bitrate := 8000
 @export var voice_codec_complexity := 3
@@ -57,6 +59,7 @@ var test_monitor_playback: AudioStreamGeneratorPlayback
 var test_monitor_codec: OpusVoiceCodec
 var debug_capture_level := 0.0
 var debug_capture_frames_available := 0
+var debug_capture_frames_discarded := 0
 var debug_packets_encoded := 0
 var debug_packets_received := 0
 var debug_last_capture_msec := 0
@@ -134,6 +137,7 @@ func reset() -> void:
 func _reset_voice_debug_counters() -> void:
 	debug_capture_level = 0.0
 	debug_capture_frames_available = 0
+	debug_capture_frames_discarded = 0
 	debug_packets_encoded = 0
 	debug_packets_received = 0
 	debug_last_capture_msec = 0
@@ -248,6 +252,7 @@ func _voice_debug_snapshot(event: String, sender_id: int, sequence: int) -> Dict
 		"sequence": sequence,
 		"capture_status": debug_capture_status,
 		"capture_level": debug_capture_level,
+		"capture_frames_discarded": debug_capture_frames_discarded,
 		"packets_encoded": debug_packets_encoded,
 		"packets_received": debug_packets_received,
 		"receive_attempts": debug_voice_receive_attempts,
@@ -409,6 +414,16 @@ func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
 		return
 	var available := capture_effect.get_frames_available()
 	debug_capture_frames_available = available
+	var input_rate := float(AudioServer.get_mix_rate())
+	if input_rate <= 0.0:
+		input_rate = 48000.0
+	var max_fresh_frames := maxi(VOICE_FRAME_SAMPLES, roundi(input_rate * float(VOICE_CAPTURE_MAX_BACKLOG_MSEC) * 0.001))
+	if available > max_fresh_frames:
+		var discard_count := available - max_fresh_frames
+		capture_effect.get_buffer(discard_count)
+		debug_capture_frames_discarded += discard_count
+		available = capture_effect.get_frames_available()
+		debug_capture_frames_available = available
 	if available <= 0:
 		debug_capture_status = "waiting for mic frames"
 		return
@@ -430,9 +445,6 @@ func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
 		debug_capture_status = "below threshold"
 	if !effective_should_send and !should_monitor:
 		return
-	var input_rate := float(AudioServer.get_mix_rate())
-	if input_rate <= 0.0:
-		input_rate = 48000.0
 	var packets: Array = capture_codec.encode_stereo_mix(input_frames, input_rate)
 	for packet in packets:
 		var payload := packet as PackedByteArray
@@ -542,7 +554,11 @@ func _client_voice_packet(sequence: int, source_tick: int, payload: PackedByteAr
 		return
 	_relay_voice_from(sender_id, sequence, source_tick, payload)
 
-func _relay_voice_from(sender_id: int, sequence: int, _source_tick: int, payload: PackedByteArray) -> void:
+func _relay_voice_from(sender_id: int, sequence: int, source_tick: int, payload: PackedByteArray) -> void:
+	if _voice_packet_is_stale(source_tick):
+		debug_voice_last_drop_reason = "stale relay packet"
+		_write_voice_debug_event("receive_drop", sender_id, sequence)
+		return
 	var recipients := _voice_recipients_for(sender_id)
 	var local_id := _local_peer_id()
 	debug_voice_relay_packets += 1
@@ -555,15 +571,15 @@ func _relay_voice_from(sender_id: int, sequence: int, _source_tick: int, payload
 			continue
 		if int(recipient) == local_id:
 			debug_voice_relay_local_deliveries += 1
-			_receive_voice_packet(sender_id, sequence, payload)
+			_receive_voice_packet(sender_id, sequence, source_tick, payload)
 		else:
 			if !_can_send_voice_rpc_to(int(recipient)):
 				continue
 			debug_voice_relay_remote_deliveries += 1
-			_receive_voice_packet.rpc_id(int(recipient), sender_id, sequence, payload)
+			_receive_voice_packet.rpc_id(int(recipient), sender_id, sequence, source_tick, payload)
 
 @rpc("authority", "unreliable_ordered", "call_remote", 6)
-func _receive_voice_packet(sender_id: int, sequence: int, payload: PackedByteArray) -> void:
+func _receive_voice_packet(sender_id: int, sequence: int, source_tick: int, payload: PackedByteArray) -> void:
 	debug_voice_receive_attempts += 1
 	debug_voice_last_receive_sender_id = sender_id
 	debug_voice_last_receive_sequence = sequence
@@ -577,6 +593,10 @@ func _receive_voice_packet(sender_id: int, sequence: int, payload: PackedByteArr
 		return
 	if sender_id == _local_peer_id():
 		debug_voice_last_drop_reason = "self packet"
+		_write_voice_debug_event("receive_drop", sender_id, sequence)
+		return
+	if _voice_packet_is_stale(source_tick):
+		debug_voice_last_drop_reason = "stale packet"
 		_write_voice_debug_event("receive_drop", sender_id, sequence)
 		return
 	debug_packets_received += 1
@@ -790,6 +810,18 @@ func _can_send_voice_rpc_to(peer_id: int) -> bool:
 		return false
 	return multiplayer.get_peers().has(peer_id)
 
+func _voice_packet_reference_tick() -> int:
+	if network_manager == null:
+		return 0
+	if network_manager.is_server:
+		return maxi(network_manager.server_tick - 1, 0)
+	return _voice_spatial_tick()
+
+func _voice_packet_is_stale(source_tick: int) -> bool:
+	if source_tick < 0:
+		return false
+	return _voice_packet_reference_tick() - source_tick > VOICE_STALE_PACKET_TICKS
+
 func _update_remote_source_positions() -> void:
 	if remote_peers.is_empty() or network_manager == null:
 		return
@@ -907,6 +939,7 @@ func get_voice_debug_status() -> Dictionary:
 		"capture_active": capture_effect != null and capture_player != null and capture_player.playing,
 		"capture_status": debug_capture_status,
 		"capture_frames_available": debug_capture_frames_available,
+		"capture_frames_discarded": debug_capture_frames_discarded,
 		"capture_level": debug_capture_level,
 		"packets_encoded": debug_packets_encoded,
 		"packets_received": debug_packets_received,

@@ -94,7 +94,7 @@ struct PhysicsCarFloorProfile {
 	X(float, boost_energy_use_mult, 1.0f) \
 	X(float, energy_recharge_mult, 1.0f) \
 	X(float, m_accel_setting, 0.5f) \
-	X(uint16_t, s_boost_charge_max, 50)
+	X(uint16_t, s_boost_charge_max, 60)
 
 #define PHYSICS_CAR_STATE_SCALAR_FIELDS(X) \
 	X(float, calced_max_energy, 100.0f) \
@@ -167,6 +167,7 @@ struct PhysicsCarFloorProfile {
 #define PHYSICS_CAR_TRANSIENT_SCALAR_FIELDS(X) \
 	X(float, visual_shake_mult, 0.0f) \
 	X(float, speed_kmh, 0.0f) \
+	X(float, dashplate_heat_reward_scale, 1.0f) \
 	X(float, turning_related, 0.0f) \
 	X(float, side_attack_indicator, 0.0f) \
 	X(uint32_t, g_anim_timer, 0) \

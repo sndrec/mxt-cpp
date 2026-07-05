@@ -60,6 +60,12 @@ static inline float gamesim_vehicle_stored_distance(const PhysicsCarSoA& soa, in
 	return soa.checkpoint_track_distance[lane] + lap_length * static_cast<float>(soa.lap[lane]);
 }
 
+static inline float gamesim_dashplate_heat_reward_scale(float leader_gap)
+{
+	const float clamped_gap = std::clamp(leader_gap, 0.0f, 1000.0f);
+	return 0.1f + clamped_gap * 0.0009f;
+}
+
 struct MeshBVHBuildPrim
 {
 	SimAABB bounds;
@@ -1979,6 +1985,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_player_lap_distance", "player_id"), &GameSim::get_player_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
 	ClassDB::bind_method(D_METHOD("get_player_level_start_time", "player_id"), &GameSim::get_player_level_start_time);
+	ClassDB::bind_method(D_METHOD("get_player_speed_kmh", "player_id"), &GameSim::get_player_speed_kmh);
 	ClassDB::bind_method(D_METHOD("get_player_debug_string", "player_id"), &GameSim::get_player_debug_string);
 	ClassDB::bind_method(D_METHOD("get_bumper_debug_string"), &GameSim::get_bumper_debug_string);
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);
@@ -3291,6 +3298,22 @@ int GameSim::get_player_level_start_time(int player_id) const
 	return 300;
 }
 
+double GameSim::get_player_speed_kmh(int player_id) const
+{
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return 0.0;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		if (car_player_ids[i] != player_id) {
+			continue;
+		}
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		return static_cast<double>(car_soa.speed_kmh[lane]);
+	}
+	return 0.0;
+}
+
 godot::String GameSim::get_player_debug_string(int player_id) const
 {
 	if (!cars || !car_player_ids || num_cars <= 0) {
@@ -3833,6 +3856,12 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			lead_distance = distance;
 			leader_lap = static_cast<int>(car_soa.lap[lane]);
 		}
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		car_soa.dashplate_heat_reward_scale[lane] =
+			gamesim_dashplate_heat_reward_scale(lead_distance - soa.pre_distances[i]);
 	}
 	update_bumpers(lead_distance, leader_lap);
 	phase_mark(phase_profile_pre_us);

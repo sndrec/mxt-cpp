@@ -98,6 +98,23 @@ grow_horizontal = 2
 text = "02:34.30"
 label_settings = SubResource("LabelSettings_4jbru")
 
+[node name="forceendtimer" type="Label" parent="."]
+unique_name_in_owner = true
+visible = false
+process_mode = 4
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -125.0
+offset_top = 58.0
+offset_right = 125.0
+offset_bottom = 94.0
+grow_horizontal = 2
+text = "FORCE END 60"
+label_settings = SubResource("LabelSettings_4jbru")
+horizontal_alignment = 1
+
 [node name="healthmeter" type="TextureRect" parent="." unique_id=1823787846]
 unique_name_in_owner = true
 process_mode = 4

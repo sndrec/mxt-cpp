@@ -3,6 +3,7 @@ class_name RaceHud extends Control
 @onready var speedometer := %speedometer
 @onready var lapcounter := %lapcounter
 @onready var racetimer := %racetimer
+@onready var forceendtimer := %forceendtimer
 @onready var healthmeter := %healthmeter
 @onready var countdowncontrol := $countdowncontrol as Control
 @onready var countdown_arrow := $countdowncontrol/countdown_arrow as TextureRect
@@ -508,6 +509,12 @@ func _process( _delta:float ) -> void:
 	var milliseconds : int = int(floor(time_elapsed_float * 1000)) % 1000
 	var minutes : int = floor(time_elapsed_float / 60)
 	racetimer.text = "%d:%02d.%03d" % [minutes, seconds, milliseconds]
+	var force_end_seconds := nm.force_end_countdown_seconds_for(focus_player_id)
+	forceendtimer.visible = force_end_seconds >= 0
+	if forceendtimer.visible:
+		forceendtimer.text = "FORCE END %02d" % force_end_seconds
+		var flash := 0.35 + 0.65 * absf(sin(float(Time.get_ticks_msec()) * 0.012))
+		forceendtimer.modulate = Color(1.0, 0.05, 0.05, flash)
 	car_max_energy = maxf(car.calced_max_energy, 1.0)
 	healthmeter.scale.x = car_max_energy * 0.01
 	var health_meter_shader := healthmeter.material as ShaderMaterial

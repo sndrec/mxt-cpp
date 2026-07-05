@@ -144,6 +144,7 @@ const RACE_RESULTS_SCREEN_MSEC := 15000
 const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
 
 var tracks: Array = []
+var track_id_to_index: Dictionary = {}
 var car_definitions: Array = []
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
@@ -310,6 +311,12 @@ var singleplayer_options_s_boost_toggle: CheckBox
 var singleplayer_options_as_spectator := false
 var _last_race_track_index: int = -1
 var _last_race_settings: Array = []
+var race_dnf_low_speed_ticks := {}
+var start_sync_drop_root: PanelContainer
+var start_sync_drop_label: Label
+var start_sync_drop_button: Button
+var live_spectate_focus_id := -1
+var live_spectate_strafe_dir := 0
 
 const DEBUG_REPLAY_VERSION := 1
 const REPLAY_SCHEMA_VERSION := 3
@@ -325,6 +332,10 @@ const REPLAY_RELATIVE_ROLL_SPEED := 4.0
 const REPLAY_RELATIVE_MOVE_SPEED := 300.0
 const REPLAY_RELATIVE_FAST_MOVE_SPEED := 900.0
 const REPLAY_SEEK_CHECKPOINT_INTERVAL := 1800
+const DNF_SPEED_THRESHOLD_KMH := 400.0
+const DNF_LOW_SPEED_TICKS := 60 * 10
+const FORCE_END_WINDOW_TICKS := 60 * 60
+const LIVE_SPECTATE_STRAFE_THRESHOLD := 0.65
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 const DIP_TRACE_MESH_FLOOR := 0x1000
@@ -402,6 +413,7 @@ func _ready() -> void:
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
 	_build_replay_timeline_controls()
+	_build_start_sync_drop_panel()
 	_load_tracks()
 	_load_car_definitions()
 	if car_settings != null and car_settings.has_method("refresh_after_game_manager_loaded"):
@@ -877,6 +889,7 @@ func _load_tracks() -> void:
 	lobby_grand_prix_track_sequence.clear()
 	_scan_track_dir("res://track", false)
 	_scan_external_track_dirs()
+	_rebuild_track_id_index()
 	for t in tracks:
 		track_selector.add_item(t["name"])
 		lobby_track_selector.add_item(t["name"])
@@ -1107,6 +1120,34 @@ func _set_builtin_track_visuals_enabled(enabled: bool) -> void:
 	if world_environment != null:
 		world_environment.environment = default_world_environment_resource if enabled else null
 
+func _track_id_for_mxt_path(mxt_path: String) -> String:
+	var file := FileAccess.open(mxt_path, FileAccess.READ)
+	if file == null:
+		return ""
+	var bytes := file.get_buffer(file.get_length())
+	file.close()
+	var context := HashingContext.new()
+	context.start(HashingContext.HASH_SHA256)
+	context.update(bytes)
+	return "sha256:" + context.finish().hex_encode()
+
+func _rebuild_track_id_index() -> void:
+	track_id_to_index.clear()
+	for i in range(tracks.size()):
+		var track_id := String(tracks[i].get("id", ""))
+		if track_id != "" and !track_id_to_index.has(track_id):
+			track_id_to_index[track_id] = i
+
+func _track_id_for_index(track_index: int) -> String:
+	if track_index >= 0 and track_index < tracks.size():
+		return String(tracks[track_index].get("id", ""))
+	return ""
+
+func _track_index_for_id(track_id: String) -> int:
+	if track_id_to_index.has(track_id):
+		return int(track_id_to_index[track_id])
+	return -1
+
 func _scan_track_dir(path: String, external: bool) -> void:
 	var dir := DirAccess.open(path)
 	if dir == null:
@@ -1123,7 +1164,12 @@ func _scan_track_dir(path: String, external: bool) -> void:
 				var json_data := FileAccess.get_file_as_string(json_path)
 				var parsed = JSON.parse_string(json_data)
 				if typeof(parsed) == TYPE_DICTIONARY and parsed.has("name"):
+					var track_id := _track_id_for_mxt_path(mxt_path)
+					if track_id == "":
+						file = dir.get_next()
+						continue
 					tracks.append({
+						"id": track_id,
 						"name": parsed["name"],
 						"mxt": mxt_path,
 						"json": json_path,
@@ -1181,7 +1227,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
 	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
-	options["track_indices"] = [track_selector.selected]
+	options["track_ids"] = [_track_id_for_index(track_selector.selected)]
 	if auto_bumpers_mode:
 		options["bumpers"] = true
 	network_manager.race_options = options
@@ -1327,7 +1373,7 @@ func _build_singleplayer_race_options_screen() -> void:
 func _build_default_singleplayer_race_options() -> Dictionary:
 	return {
 		"game_mode": 0,
-		"track_indices": [track_selector.selected],
+		"track_ids": [_track_id_for_index(track_selector.selected)],
 		"vehicle_restore": bool(network_manager.race_options.get("vehicle_restore", true)),
 		"bumpers": bool(network_manager.race_options.get("bumpers", false)) or auto_bumpers_mode,
 		"s_boost": bool(network_manager.race_options.get("s_boost", true)),
@@ -1514,12 +1560,14 @@ func _on_lobby_s_boost_toggled(_toggled: bool) -> void:
 	_refresh_lobby_race_options()
 
 func _build_lobby_race_options() -> Dictionary:
-	var selected_track_indices := []
+	var selected_track_ids := []
 	for selected_index in lobby_grand_prix_track_sequence:
-		selected_track_indices.append(int(selected_index))
+		var track_id := _track_id_for_index(int(selected_index))
+		if track_id != "":
+			selected_track_ids.append(track_id)
 	return {
 		"game_mode": lobby_game_mode_choice.selected if lobby_game_mode_choice != null else 0,
-		"track_indices": selected_track_indices,
+		"track_ids": selected_track_ids,
 		"vehicle_restore": lobby_vehicle_restore_toggle.button_pressed if lobby_vehicle_restore_toggle != null else true,
 		"bumpers": lobby_bumpers_toggle.button_pressed if lobby_bumpers_toggle != null else false,
 		"s_boost": lobby_s_boost_toggle.button_pressed if lobby_s_boost_toggle != null else true,
@@ -1562,13 +1610,13 @@ func _on_network_race_options_changed(options: Dictionary) -> void:
 	if lobby_s_boost_toggle != null:
 		lobby_s_boost_toggle.set_pressed_no_signal(bool(options.get("s_boost", true)))
 	lobby_grand_prix_track_sequence.clear()
-	var track_indices: Array = options.get("track_indices", [])
-	for track_index in track_indices:
-		var idx := int(track_index)
+	var track_ids: Array = options.get("track_ids", [])
+	for track_id_value in track_ids:
+		var idx := _track_index_for_id(String(track_id_value))
 		if idx >= 0 and idx < tracks.size():
 			lobby_grand_prix_track_sequence.append(idx)
-	if track_indices.size() > 0:
-		var first_index := int(track_indices[0])
+	if track_ids.size() > 0:
+		var first_index := _track_index_for_id(String(track_ids[0]))
 		if first_index >= 0 and first_index < tracks.size():
 			lobby_track_selector.selected = first_index
 	lobby_applying_race_options = false
@@ -1579,10 +1627,11 @@ func _refresh_lobby_stage_preview() -> void:
 		return
 	for child in lobby_stage_preview_container.get_children():
 		child.queue_free()
-	var options := _build_lobby_race_options()
-	var track_indices: Array = options.get("track_indices", [])
-	for i in range(track_indices.size()):
-		var track_index := int(track_indices[i])
+	var options := network_manager.race_options
+	var track_ids: Array = options.get("track_ids", [])
+	for i in range(track_ids.size()):
+		var track_id := String(track_ids[i])
+		var track_index := _track_index_for_id(track_id)
 		var label := Button.new()
 		label.disabled = !network_manager.is_server
 		if track_index >= 0 and track_index < tracks.size():
@@ -1970,11 +2019,78 @@ func _show_race_notification(text: String, duration_msec: int = 2200) -> void:
 	race_finish_label.visible = true
 	race_notification_hide_msec = Time.get_ticks_msec() + duration_msec
 
+func _build_start_sync_drop_panel() -> void:
+	start_sync_drop_root = PanelContainer.new()
+	start_sync_drop_root.name = "StartSyncDropPanel"
+	start_sync_drop_root.visible = false
+	start_sync_drop_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	start_sync_drop_root.custom_minimum_size = Vector2(420.0, 0.0)
+	start_sync_drop_root.anchor_left = 0.5
+	start_sync_drop_root.anchor_right = 0.5
+	start_sync_drop_root.anchor_top = 0.18
+	start_sync_drop_root.anchor_bottom = 0.18
+	start_sync_drop_root.offset_left = -210.0
+	start_sync_drop_root.offset_right = 210.0
+	add_child(start_sync_drop_root)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 14)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 14)
+	start_sync_drop_root.add_child(margin)
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	margin.add_child(box)
+
+	start_sync_drop_label = Label.new()
+	start_sync_drop_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	start_sync_drop_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	start_sync_drop_label.add_theme_font_size_override("font_size", 18)
+	box.add_child(start_sync_drop_label)
+
+	start_sync_drop_button = Button.new()
+	start_sync_drop_button.text = "Drop Stalled Players"
+	start_sync_drop_button.focus_mode = Control.FOCUS_NONE
+	start_sync_drop_button.pressed.connect(_on_start_sync_drop_pressed)
+	box.add_child(start_sync_drop_button)
+
+func _update_start_sync_drop_panel() -> void:
+	if start_sync_drop_root == null:
+		return
+	if network_manager == null or !network_manager.race_active or game_sim.sim_started:
+		start_sync_drop_root.visible = false
+		return
+	var info := network_manager.start_sync_drop_info()
+	if !bool(info.get("visible", false)):
+		start_sync_drop_root.visible = false
+		return
+	var names: PackedStringArray = info.get("stalled_names", PackedStringArray())
+	var remaining := float(info.get("drop_remaining_sec", 0.0))
+	var title := "Waiting for network traffic"
+	if names.size() > 0:
+		title += " from " + ", ".join(names)
+	if bool(info.get("can_drop", false)):
+		start_sync_drop_label.text = title + "."
+		start_sync_drop_button.disabled = false
+	else:
+		start_sync_drop_label.text = title + ". Drop available in %.1fs." % remaining
+		start_sync_drop_button.disabled = true
+	start_sync_drop_root.visible = true
+
+func _on_start_sync_drop_pressed() -> void:
+	if network_manager != null and network_manager.request_drop_start_sync_stalled_players():
+		start_sync_drop_root.visible = false
+
 func _local_player_is_eliminated() -> bool:
 	return !network_manager.is_vehicle_restore_enabled() and network_manager.player_eliminations.has(_local_player_id())
 
+func _local_player_is_dnf() -> bool:
+	return network_manager.player_dnfs.has(_local_player_id())
+
 func _should_suppress_local_race_input() -> bool:
-	return _local_player_is_eliminated()
+	return _local_player_is_eliminated() or _local_player_is_dnf()
 
 func _vehicle_restore_off_state_is_eliminated(machine_state: int, state_2: int, position_y: float, minimum_y: float) -> bool:
 	if (machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0:
@@ -2015,6 +2131,82 @@ func _activate_local_elimination_spectator() -> void:
 	if car_node_container.local_visual_car != null:
 		car_node_container.local_visual_car.race_hud.visible = false
 	_show_race_notification("Eliminated - Spectating", 3000)
+
+func _local_player_can_live_spectate() -> bool:
+	var local_id := _local_player_id()
+	return network_manager.player_finish_times.has(local_id) or network_manager.player_dnfs.has(local_id)
+
+func _live_spectate_targets() -> Array:
+	var targets := []
+	for id_value in network_manager.get_simulation_roster():
+		var id := int(id_value)
+		if network_manager.player_finish_times.has(id):
+			continue
+		if network_manager.player_dnfs.has(id):
+			continue
+		if network_manager._disconnected_during_race.has(id):
+			continue
+		if network_manager.player_eliminations.has(id):
+			continue
+		targets.append(id)
+	return targets
+
+func _apply_live_spectate_focus(focus_id: int) -> void:
+	if car_node_container.local_visual_car == null:
+		return
+	live_spectate_focus_id = focus_id
+	var car := car_node_container.local_visual_car
+	car.owning_id = focus_id
+	car.race_hud.focus_player_id = focus_id
+	var settings = network_manager.player_settings.get(focus_id, null)
+	if settings != null:
+		var ps := _player_settings_for_stamp_render(settings)
+		if ps != null:
+			car.player_settings = ps
+	if is_instance_valid(car.name_label):
+		car.name_label.text = _player_display_name(focus_id)
+	if game_sim != null:
+		game_sim.set_gameplay_camera(car.car_camera, focus_id)
+	car.car_camera.make_current()
+	car.make_vehicle_audio_listener_current()
+
+func _change_live_spectate_focus(delta: int) -> void:
+	if !_local_player_can_live_spectate():
+		return
+	var targets := _live_spectate_targets()
+	if targets.is_empty():
+		return
+	var current_id := live_spectate_focus_id
+	if current_id < 0 and car_node_container.local_visual_car != null:
+		current_id = car_node_container.local_visual_car.owning_id
+	var current_index := targets.find(current_id)
+	var next_index := 0
+	if current_index >= 0:
+		next_index = posmod(current_index + delta, targets.size())
+	elif delta < 0:
+		next_index = targets.size() - 1
+	_apply_live_spectate_focus(int(targets[next_index]))
+	_show_race_notification("Spectating: %s" % _player_display_name(int(targets[next_index])), 1200)
+
+func _update_live_finished_spectate_input() -> void:
+	if !_local_player_can_live_spectate():
+		live_spectate_strafe_dir = 0
+		live_spectate_focus_id = -1
+		return
+	var left := Input.get_action_raw_strength("StrafeLeft")
+	var right := Input.get_action_raw_strength("StrafeRight")
+	var dir := 0
+	if right >= LIVE_SPECTATE_STRAFE_THRESHOLD and right >= left:
+		dir = 1
+	elif left >= LIVE_SPECTATE_STRAFE_THRESHOLD:
+		dir = -1
+	if dir == 0:
+		live_spectate_strafe_dir = 0
+		return
+	if live_spectate_strafe_dir == dir:
+		return
+	live_spectate_strafe_dir = dir
+	_change_live_spectate_focus(dir)
 
 func _race_results_sim() -> GameSim:
 	if network_manager.is_server and server_game_sim != null:
@@ -2083,6 +2275,11 @@ func _format_race_results_text() -> String:
 		lines.append("Eliminated")
 		for id_value in network_manager.player_eliminations.keys():
 			lines.append(_player_display_name(int(id_value)))
+	if !network_manager.player_dnfs.is_empty():
+		lines.append("")
+		lines.append("DNF")
+		for id_value in network_manager.player_dnfs.keys():
+			lines.append(_player_display_name(int(id_value)))
 	return "\n".join(lines)
 
 func _format_grand_prix_results_text() -> String:
@@ -2119,19 +2316,25 @@ func _race_results_countdown_seconds() -> int:
 	var remaining_msec := maxi(0, RACE_RESULTS_SCREEN_MSEC - (Time.get_ticks_msec() - network_manager.net_race_finish_time))
 	return ceili(float(remaining_msec) / 1000.0)
 
-func _next_grand_prix_track_index_for_results() -> int:
+func _next_grand_prix_track_id_for_results() -> String:
 	if !network_manager.is_grand_prix_enabled():
-		return -1
-	var track_indices: Array = network_manager.race_options.get("track_indices", [])
+		return ""
+	var track_ids: Array = network_manager.race_options.get("track_ids", [])
 	var next_index := int(network_manager.race_options.get("grand_prix_current_track", 0)) + 1
-	if next_index < 0 or next_index >= track_indices.size():
-		return -1
-	return int(track_indices[next_index])
+	if next_index < 0 or next_index >= track_ids.size():
+		return ""
+	return String(track_ids[next_index])
 
 func _track_name_for_index(track_index: int) -> String:
 	if track_index >= 0 and track_index < tracks.size():
 		return str(tracks[track_index].get("name", "Track"))
 	return "Track"
+
+func _track_name_for_id(track_id: String) -> String:
+	var track_index := _track_index_for_id(track_id)
+	if track_index >= 0:
+		return _track_name_for_index(track_index)
+	return "Missing Track"
 
 func _local_player_accel_setting_for_results() -> float:
 	if race_results_next_accel_setting >= 0.0:
@@ -2166,7 +2369,7 @@ func _apply_local_next_race_accel_setting(accel_setting: float) -> void:
 			(player_settings as PlayerSettings).accel_setting = accel_setting
 
 func _on_race_results_machine_setting_changed(accel_setting: float) -> void:
-	if _next_grand_prix_track_index_for_results() < 0:
+	if _next_grand_prix_track_id_for_results() == "":
 		return
 	race_results_next_accel_setting = clampf(accel_setting, 0.0, 1.0)
 	_apply_local_next_race_accel_setting(race_results_next_accel_setting)
@@ -2183,11 +2386,11 @@ func _show_race_results_summary() -> void:
 	if race_results_overlay != null:
 		race_results_overlay.set_results(_format_race_results_text(), _format_grand_prix_results_text())
 		race_results_overlay.set_countdown_seconds(_race_results_countdown_seconds())
-		var next_track_index := _next_grand_prix_track_index_for_results()
+		var next_track_id := _next_grand_prix_track_id_for_results()
 		race_results_overlay.set_next_race(
-			_track_name_for_index(next_track_index),
+			_track_name_for_id(next_track_id),
 			_local_player_accel_setting_for_results(),
-			next_track_index >= 0)
+			next_track_id != "")
 		race_results_overlay.visible = true
 	race_notification_hide_msec = 0
 
@@ -2253,6 +2456,11 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 	if event_type == "eliminated":
 		if actor_id == _local_player_id():
 			_activate_local_elimination_spectator()
+		return
+	if event_type == "dnf":
+		if actor_id == _local_player_id():
+			_show_race_notification("DNF - Spectating", 3000)
+			_change_live_spectate_focus(1)
 		return
 	if event_type == "ko":
 		_show_ko_medal(actor_id, target_id)
@@ -2494,6 +2702,7 @@ func _start_replay_recording(track_index: int, settings: Array, racer_ids: Array
 		"mode": _replay_mode_name(),
 		"source": replay_recording_source,
 		"track_index": track_index,
+		"track_id": _track_id_for_index(track_index),
 		"track_name": _replay_track_name(),
 		"track_mxt": _replay_track_path(),
 		"settings": settings.duplicate(true),
@@ -2552,7 +2761,7 @@ func _build_singleplayer_replay_frame(local_input_bytes: PackedByteArray) -> Dic
 	for id_value in roster:
 		var id := int(id_value)
 		var input_bytes := network_manager.NEUTRAL_INPUT_BYTES
-		if cpu_ids.has(id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
+		if (cpu_ids.has(id) or network_manager.player_dnfs.has(id) or network_manager._disconnected_during_race.has(id)) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(id, _singleplayer_tick)
 		elif id == local_id:
 			input_bytes = local_input_bytes
@@ -3909,7 +4118,17 @@ func _debug_replay_track_path() -> String:
 		return String(tracks[_last_race_track_index].get("mxt", ""))
 	return ""
 
+func _debug_replay_track_id() -> String:
+	if _last_race_track_index >= 0 and _last_race_track_index < tracks.size():
+		return String(tracks[_last_race_track_index].get("id", ""))
+	return ""
+
 func _debug_replay_find_track_index(data: Dictionary) -> int:
+	var replay_track_id := String(data.get("track_id", ""))
+	if replay_track_id != "":
+		var track_index := _track_index_for_id(replay_track_id)
+		if track_index >= 0:
+			return track_index
 	var replay_track_path := String(data.get("track_mxt", ""))
 	if replay_track_path != "":
 		for i in range(tracks.size()):
@@ -3954,6 +4173,7 @@ func _stop_and_save_debug_replay_recording() -> void:
 		"version": DEBUG_REPLAY_VERSION,
 		"created_unix": Time.get_unix_time_from_system(),
 		"track_index": _last_race_track_index,
+		"track_id": _debug_replay_track_id(),
 		"track_name": _debug_replay_track_name(),
 		"track_mxt": _debug_replay_track_path(),
 		"settings": _last_race_settings.duplicate(true),
@@ -4277,6 +4497,9 @@ func _start_race(track_index: int, settings: Array) -> void:
 	active_stickers.clear()
 	race_notification_hide_msec = 0
 	local_elimination_spectator_active = false
+	live_spectate_focus_id = -1
+	live_spectate_strafe_dir = 0
+	race_dnf_low_speed_ticks.clear()
 	var info : Dictionary = tracks[track_index]
 	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
 	current_track_meta = {}
@@ -4533,14 +4756,27 @@ func _on_start_race_button_pressed() -> void:
 		var race_options := _build_lobby_race_options()
 		race_options = _initialize_grand_prix_options(race_options, roster)
 		race_options = _apply_race_roster_options(race_options, human_ids, cpu_ids, network_manager.spectator_ids)
-		var track_indices: Array = race_options.get("track_indices", [lobby_track_selector.selected])
-		var first_track_index := lobby_track_selector.selected
-		if !track_indices.is_empty():
-			first_track_index = int(track_indices[0])
-		network_manager.send_start_race(first_track_index, settings_array, race_options)
+		var track_ids: Array = race_options.get("track_ids", [_track_id_for_index(lobby_track_selector.selected)])
+		var first_track_id := _track_id_for_index(lobby_track_selector.selected)
+		if !track_ids.is_empty():
+			first_track_id = String(track_ids[0])
+		network_manager.send_start_race(first_track_id, settings_array, race_options)
 
-func _on_network_race_started(track_index: int, settings: Array) -> void:
+func _on_network_race_started(track_id: String, settings: Array) -> void:
+	var track_index := _track_index_for_id(track_id)
+	if track_index < 0:
+		var message := "Missing race track %s" % track_id
+		push_error(message)
+		_show_race_notification(message, 5000)
+		if headless_mode:
+			get_tree().quit(1)
+		return
 	race_results_next_accel_setting = -1.0
+	race_dnf_low_speed_ticks.clear()
+	live_spectate_focus_id = -1
+	live_spectate_strafe_dir = 0
+	if start_sync_drop_root != null:
+		start_sync_drop_root.visible = false
 	if race_communication_overlay != null:
 		race_communication_overlay.close_chat()
 	_close_settings_menus_for_race_start()
@@ -4553,12 +4789,12 @@ func _on_network_race_started(track_index: int, settings: Array) -> void:
 		server_game_sim.set_sim_started(false)
 
 func _on_network_race_finished() -> void:
-	if headless_mode and network_manager.pending_next_race_track_index < 0:
+	if headless_mode and network_manager.pending_next_race_track_id == "":
 		return
 	race_finish_label.visible = false
 	_hide_race_results_summary()
 	active_stickers.clear()
-	if network_manager.pending_next_race_track_index >= 0:
+	if network_manager.pending_next_race_track_id != "":
 		_transition_to_next_grand_prix_race()
 	else:
 		_return_to_lobby()
@@ -4909,6 +5145,8 @@ func _physics_process(delta: float) -> void:
 			if controller != null:
 				local_pi = controller.get_input()
 		var input_bytes := local_pi.serialize()
+		if singleplayer_mode and _local_player_is_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
+			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
 		if singleplayer_mode:
 			var profile_tick_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 			if replay_playback_active:
@@ -4974,6 +5212,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 			if controller != null:
 				local_pi = controller.get_input()
 		input_bytes = local_pi.serialize()
+		if _local_player_is_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
+			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
 	if debug_replay_recording:
 		debug_replay_inputs.append(input_bytes.duplicate())
 	_dump_offline_auth_input_sample(input_bytes)
@@ -5001,7 +5241,7 @@ func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void
 	var local_id := _local_player_id()
 	for id in roster:
 		var input_bytes := network_manager.NEUTRAL_INPUT_BYTES
-		if cpu_ids.has(id):
+		if cpu_ids.has(id) or network_manager.player_dnfs.has(int(id)) or network_manager._disconnected_during_race.has(int(id)):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(int(id), _singleplayer_tick)
 		elif int(id) == local_id:
 			input_bytes = local_input_bytes
@@ -5223,6 +5463,9 @@ func _return_to_menu() -> void:
 		spectator_node.queue_free()
 		spectator_node = null
 	local_elimination_spectator_active = false
+	live_spectate_focus_id = -1
+	live_spectate_strafe_dir = 0
+	race_dnf_low_speed_ticks.clear()
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	singleplayer_mode = false
@@ -5281,6 +5524,9 @@ func _return_to_lobby() -> void:
 		spectator_node.queue_free()
 		spectator_node = null
 	local_elimination_spectator_active = false
+	live_spectate_focus_id = -1
+	live_spectate_strafe_dir = 0
+	race_dnf_low_speed_ticks.clear()
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	lobby_control.visible = true
@@ -5336,6 +5582,9 @@ func _teardown_race_world_for_transition() -> void:
 		spectator_node.queue_free()
 		spectator_node = null
 	local_elimination_spectator_active = false
+	live_spectate_focus_id = -1
+	live_spectate_strafe_dir = 0
+	race_dnf_low_speed_ticks.clear()
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
 	lobby_control.visible = false
@@ -5343,7 +5592,7 @@ func _teardown_race_world_for_transition() -> void:
 	_singleplayer_tick = 0
 
 func _transition_to_next_grand_prix_race() -> void:
-	var next_track_index := network_manager.pending_next_race_track_index
+	var next_track_id := network_manager.pending_next_race_track_id
 	var next_settings := network_manager.pending_next_race_settings.duplicate(true)
 	var next_options := network_manager.pending_next_race_options.duplicate(true)
 	_teardown_race_world_for_transition()
@@ -5352,7 +5601,7 @@ func _transition_to_next_grand_prix_race() -> void:
 	network_manager.reset_race_state(true)
 	network_manager.race_options = next_options
 	_apply_grand_prix_eliminations(next_options)
-	network_manager.start_race(next_track_index, next_settings, next_options)
+	network_manager.start_race(next_track_id, next_settings, next_options)
 	if network_manager.is_server and network_manager.player_ids.size() <= 1:
 		network_manager.begin_simulation()
 
@@ -5474,10 +5723,29 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 
 func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary:
 	var place_by_id := {}
+	var placement_rows := []
+	for id_value in race_racers:
+		var id := int(id_value)
+		if network_manager.player_dnfs.has(id):
+			continue
+		var place := int(_lookup_id_value(network_manager.player_finish_placements, id, 0))
+		if place > 0:
+			var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, 0x7fffffff))
+			placement_rows.append([place, finish_tick, id])
+	placement_rows.sort_custom(func(a, b):
+		if int(a[0]) != int(b[0]):
+			return int(a[0]) < int(b[0])
+		if int(a[1]) != int(b[1]):
+			return int(a[1]) < int(b[1])
+		return int(a[2]) < int(b[2])
+	)
+	for row in placement_rows:
+		var id := int(row[2])
+		place_by_id[id] = place_by_id.size() + 1
 	var finish_rows := []
 	for id_value in race_racers:
 		var id := int(id_value)
-		if network_manager._disconnected_during_race.has(id):
+		if place_by_id.has(id) or network_manager.player_dnfs.has(id):
 			continue
 		var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, -1))
 		if finish_tick >= 0:
@@ -5497,7 +5765,7 @@ func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary
 		var id := int(id_value)
 		if !race_racers.has(id) or place_by_id.has(id):
 			continue
-		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id):
+		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id) or network_manager.player_dnfs.has(id):
 			continue
 		place_by_id[id] = place_by_id.size() + 1
 	return place_by_id
@@ -5559,14 +5827,14 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 		network_manager.send_end_race()
 		return
 	var options := network_manager.race_options.duplicate(true)
-	var track_indices: Array = options.get("track_indices", [])
+	var track_ids: Array = options.get("track_ids", [])
 	var current_index := int(options.get("grand_prix_current_track", 0))
 	var next_index := current_index + 1
-	if next_index >= track_indices.size() or !_has_active_human_grand_prix_racer(options):
+	if next_index >= track_ids.size() or !_has_active_human_grand_prix_racer(options):
 		network_manager.send_end_race()
 		return
 	options["grand_prix_current_track"] = next_index
-	var next_track_index := int(track_indices[next_index])
+	var next_track_id := String(track_ids[next_index])
 	var next_settings := _build_next_grand_prix_settings(options)
 	var next_rosters := _build_next_grand_prix_rosters(options)
 	options = _apply_race_roster_options(
@@ -5577,7 +5845,81 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 	options = network_manager.reserve_next_race_netplay_options(options)
 	var seed := randi()
 	options["spawn_seed"] = seed
-	network_manager.send_end_race(next_track_index, next_settings, options)
+	network_manager.send_end_race(next_track_id, next_settings, options)
+
+func _race_control_start_tick(sim: GameSim, racer_ids: Array) -> int:
+	if sim == null:
+		return 300
+	var start_tick := 0
+	for id_value in racer_ids:
+		var tick := int(sim.get_player_level_start_time(int(id_value)))
+		start_tick = maxi(start_tick, tick)
+	return start_tick if start_tick > 0 else 300
+
+func _race_control_has_started(sim: GameSim, racer_ids: Array) -> bool:
+	return network_manager.get_race_tick() >= _race_control_start_tick(sim, racer_ids)
+
+func _mark_racer_dnf(racer_id: int, reason: String) -> void:
+	var tick := network_manager.get_race_tick()
+	if network_manager.is_server and !singleplayer_mode:
+		network_manager.send_player_dnf(racer_id, tick, reason)
+	else:
+		network_manager.record_player_dnf(racer_id, tick, reason)
+
+func _update_low_speed_dnf(racer_id: int, finish_sim: GameSim, race_control_started: bool) -> bool:
+	if finish_sim == null:
+		return false
+	if !race_control_started:
+		race_dnf_low_speed_ticks.erase(racer_id)
+		return false
+	if network_manager.player_finish_times.has(racer_id) or network_manager.player_dnfs.has(racer_id):
+		race_dnf_low_speed_ticks.erase(racer_id)
+		return false
+	var speed_kmh := float(finish_sim.get_player_speed_kmh(racer_id))
+	if speed_kmh > DNF_SPEED_THRESHOLD_KMH:
+		race_dnf_low_speed_ticks.erase(racer_id)
+		return false
+	var ticks := int(race_dnf_low_speed_ticks.get(racer_id, 0)) + 1
+	race_dnf_low_speed_ticks[racer_id] = ticks
+	if ticks < DNF_LOW_SPEED_TICKS:
+		return false
+	_mark_racer_dnf(racer_id, "low_speed")
+	race_dnf_low_speed_ticks.erase(racer_id)
+	return true
+
+func _human_finish_count(human_racer_ids: Array) -> int:
+	var count := 0
+	for id_value in human_racer_ids:
+		if network_manager.player_finish_times.has(int(id_value)):
+			count += 1
+	return count
+
+func _update_force_end_dnf(human_racer_ids: Array) -> void:
+	var human_count := human_racer_ids.size()
+	if human_count <= 0:
+		return
+	var finished_count := _human_finish_count(human_racer_ids)
+	if network_manager.race_force_end_deadline_tick < 0 and finished_count * 4 >= human_count:
+		var deadline_tick := network_manager.get_race_tick() + FORCE_END_WINDOW_TICKS
+		if network_manager.is_server and !singleplayer_mode:
+			network_manager.send_race_force_end_deadline(deadline_tick)
+		else:
+			network_manager.race_force_end_deadline_tick = deadline_tick
+	if network_manager.race_force_end_deadline_tick < 0:
+		return
+	if network_manager.get_race_tick() < network_manager.race_force_end_deadline_tick:
+		return
+	for id_value in human_racer_ids:
+		var id := int(id_value)
+		if network_manager.player_finish_times.has(id):
+			continue
+		if network_manager.player_dnfs.has(id):
+			continue
+		if network_manager._disconnected_during_race.has(id):
+			continue
+		if network_manager.player_eliminations.has(id):
+			continue
+		_mark_racer_dnf(id, "force_end")
 
 func _check_race_finished() -> void:
 	if !game_sim.sim_started:
@@ -5591,6 +5933,8 @@ func _check_race_finished() -> void:
 	var finish_watch_ids := human_racer_ids if !human_racer_ids.is_empty() else racer_ids
 	var all_done := true
 	var finish_sim := server_game_sim if network_manager.is_server and !singleplayer_mode and server_game_sim != null else game_sim
+	var race_control_started := _race_control_has_started(finish_sim, racer_ids)
+	_update_force_end_dnf(finish_watch_ids)
 	for racer_id in racer_ids:
 		var watch_racer := finish_watch_ids.has(racer_id)
 		if network_manager._disconnected_during_race.has(racer_id):
@@ -5602,6 +5946,8 @@ func _check_race_finished() -> void:
 		if finish_sim != null and finish_sim.has_method("is_player_race_finished"):
 			finished = finish_sim.is_player_race_finished(racer_id)
 		if !finished and network_manager.player_eliminations.has(racer_id):
+			continue
+		if watch_racer and _update_low_speed_dnf(racer_id, finish_sim, race_control_started):
 			continue
 		if finished:
 			if network_manager.is_server and !singleplayer_mode:
@@ -5683,6 +6029,7 @@ func _process(delta: float) -> void:
 	var profile_process_start := Time.get_ticks_usec() if auto_render_profile_mode and game_sim.sim_started else 0
 	_update_race_finish_sfx_duck(delta)
 	_update_race_communication_overlay()
+	_update_start_sync_drop_panel()
 	var now_msec := Time.get_ticks_msec()
 	for id in active_stickers.keys():
 		var data: Dictionary = active_stickers[id]
@@ -5698,6 +6045,7 @@ func _process(delta: float) -> void:
 		_show_race_results_summary()
 		_refresh_race_pause_replay_button()
 	if game_sim.sim_started:
+		_update_live_finished_spectate_input()
 		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		_update_replay_auto_camera(delta)
 		_update_replay_relative_camera(delta)
