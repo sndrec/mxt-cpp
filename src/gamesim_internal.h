@@ -2,10 +2,85 @@
 
 #include "main.h"
 #include "car/physics_car.h"
+#include "mxt_core/enums.h"
 #include "track/racetrack.h"
 
 #include <algorithm>
 #include <cstdint>
+
+static inline godot::Vector3 gd_vec3(const SimVec3& value)
+{
+	return godot::Vector3(value.x, value.y, value.z);
+}
+
+static inline godot::Basis gd_basis(const SimBasis& value)
+{
+	godot::Basis out;
+	out.set_column(0, gd_vec3(value.c0));
+	out.set_column(1, gd_vec3(value.c1));
+	out.set_column(2, gd_vec3(value.c2));
+	return out;
+}
+
+static inline godot::Transform3D gd_transform(const SimTransform& value)
+{
+	return godot::Transform3D(gd_basis(value.basis), gd_vec3(value.origin));
+}
+
+static inline SimVec3 sim_vec3(const godot::Vector3& value)
+{
+	return SimVec3(value.x, value.y, value.z);
+}
+
+static inline SimBasis sim_basis(const godot::Basis& value)
+{
+	const godot::Vector3 c0 = value.get_column(0);
+	const godot::Vector3 c1 = value.get_column(1);
+	const godot::Vector3 c2 = value.get_column(2);
+	return SimBasis(c0.x, c0.y, c0.z, c1.x, c1.y, c1.z, c2.x, c2.y, c2.z);
+}
+
+static inline SimTransform sim_transform(const godot::Transform3D& value)
+{
+	return SimTransform(sim_basis(value.basis), sim_vec3(value.origin));
+}
+
+static inline SimTransform interpolate_sim_transform(const SimTransform& a, const SimTransform& b, float alpha)
+{
+	alpha = std::clamp(alpha, 0.0f, 1.0f);
+	SimTransform out;
+	out.origin = a.origin.lerp(b.origin, alpha);
+	const SimQuat qa = a.basis.get_rotation_quaternion();
+	const SimQuat qb = b.basis.get_rotation_quaternion();
+	out.basis = SimBasis(qa.slerp(qb, alpha));
+	return out;
+}
+
+static inline float gamesim_vehicle_stored_distance(const PhysicsCarSoA& soa, int lane, float lap_length)
+{
+	return soa.checkpoint_track_distance[lane] + lap_length * static_cast<float>(soa.lap[lane]);
+}
+
+static inline bool vehicle_restore_off_eliminated(const PhysicsCarSoA& soa, int lane)
+{
+	const uint32_t state = soa.machine_state[lane];
+	if ((state & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
+		return false;
+	}
+	if ((state & MACHINESTATE::FALLOUT) != 0u) {
+		return true;
+	}
+	if (soa.current_track[lane] && soa.position_current_y[lane] < soa.current_track[lane]->minimum_y) {
+		return true;
+	}
+	if ((state & MACHINESTATE::ZEROHP) == 0u) {
+		return false;
+	}
+	if ((state & MACHINESTATE::RETIRED) != 0u) {
+		return true;
+	}
+	return (soa.state_2[lane] & 0x80u) != 0u && (state & MACHINESTATE::AIRBORNE) == 0u;
+}
 
 #define LOAD_INDEXED_VEC3(storage, name, index) SimVec3((storage).name##_x[(index)], (storage).name##_y[(index)], (storage).name##_z[(index)])
 #define STORE_INDEXED_VEC3(storage, name, index, value) do { const SimVec3 mxt_v3_tmp = (value); (storage).name##_x[(index)] = mxt_v3_tmp.x; (storage).name##_y[(index)] = mxt_v3_tmp.y; (storage).name##_z[(index)] = mxt_v3_tmp.z; } while (0)
