@@ -822,3 +822,81 @@ godot::Array GameSim::consume_race_events()
 	race_events.clear();
 	return out;
 }
+
+namespace {
+struct DipSwitchDefinition {
+		const char* key;
+		const char* label;
+		int flag;
+	};
+
+	const DipSwitchDefinition DIP_SWITCH_DEFINITIONS[] = {
+		{"DIP_DRAW_RAYCASTS", "Draw Raycasts", DIP_SWITCH::DIP_DRAW_RAYCASTS},
+		{"DIP_DRAW_CHECKPOINTS", "Draw Checkpoints", DIP_SWITCH::DIP_DRAW_CHECKPOINTS},
+		{"DIP_DRAW_SEGMENT_SURF", "Draw Segment Surface", DIP_SWITCH::DIP_DRAW_SEGMENT_SURF},
+		{"DIP_DRAW_TILT_CORNER_DATA", "Draw Tilt Corner Data", DIP_SWITCH::DIP_DRAW_TILT_CORNER_DATA},
+		{"DIP_DRAW_SEG_BOUNDS", "Draw Segment Bounds", DIP_SWITCH::DIP_DRAW_SEG_BOUNDS},
+		{"DIP_DRAW_BRANCH_CENTERLINE", "Draw Branch Centerline", DIP_SWITCH::DIP_DRAW_BRANCH_CENTERLINE},
+		{"DIP_TRACE_RAIL_SAMPLING", "Trace Rail Sampling", DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING},
+		{"DIP_DRAW_RAIL_CANDIDATES", "Draw Rail Candidates", DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES},
+		{"DIP_TRACE_PIPE_FLOOR", "Trace Pipe Floor", DIP_SWITCH::DIP_TRACE_PIPE_FLOOR},
+		{"DIP_DRAW_MESH_FLOOR_TESTS", "Draw Mesh Floor Tests", DIP_SWITCH::DIP_DRAW_MESH_FLOOR_TESTS},
+		{"DIP_DRAW_MESH_CAST_TESTS", "Draw Mesh Cast Tests", DIP_SWITCH::DIP_DRAW_MESH_CAST_TESTS},
+		{"DIP_DRAW_MESH_COLLISION_HITS", "Draw Mesh Collision Hits", DIP_SWITCH::DIP_DRAW_MESH_COLLISION_HITS},
+		{"DIP_TRACE_MESH_FLOOR", "Trace Mesh Floor", DIP_SWITCH::DIP_TRACE_MESH_FLOOR},
+	};
+}
+
+Array GameSim::get_dip_switches() const
+{
+	Array switches;
+	for (const auto& def : DIP_SWITCH_DEFINITIONS) {
+		Dictionary entry;
+		entry["key"] = String(def.key);
+		entry["label"] = String(def.label);
+		entry["flag"] = def.flag;
+		entry["enabled"] = DEBUG::dip_enabled(def.flag);
+		switches.push_back(entry);
+	}
+	return switches;
+}
+
+bool GameSim::is_dip_switch_enabled(int flag) const
+{
+	return DEBUG::dip_enabled(flag);
+}
+
+void GameSim::set_dip_switch_enabled(int flag, bool enabled)
+{
+	if (enabled) {
+		DEBUG::enable_dip(flag);
+	} else {
+		DEBUG::disable_dip(flag);
+	}
+}
+
+void GameSim::set_rail_trace_filter(int car_index, int tick_start, int tick_end)
+{
+	DEBUG::set_rail_trace_filter(car_index, tick_start, tick_end);
+}
+
+double GameSim::get_first_lap_distance() const
+{
+	if (!sim_started || !cars || num_cars <= 0 || !current_track)
+	{
+		return 0.0;
+	}
+	return static_cast<double>(compute_car_distance_along_track(cars[0]));
+}
+
+double GameSim::get_track_lap_length() const
+{
+	if (!current_track) {
+		return 0.0;
+	}
+	float lap_length = current_track->lap_length;
+	if (lap_length <= 0.0f && current_track->num_checkpoints > 0) {
+		lap_length = current_track->checkpoints[current_track->num_checkpoints - 1].distance;
+	}
+	return static_cast<double>(lap_length);
+}
