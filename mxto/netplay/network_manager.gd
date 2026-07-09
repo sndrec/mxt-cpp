@@ -19,14 +19,11 @@ func send_race_finish_time(time: int) -> void:
 		set_race_finish_time(race_netplay_phase, time)
 
 const PlayerInputClass = preload("res://player/player_input.gd")
-const CarLivery = preload("res://vehicle/customization/car_livery.gd")
-const CarLiveryStore = preload("res://vehicle/customization/car_livery_store.gd")
-const CustomStampBlob = preload("res://vehicle/customization/custom_stamp_blob.gd")
-const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 const ProximityVoiceChatClass = preload("res://netplay/proximity_voice_chat.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
+@onready var custom_stamp_network: CustomStampNetworkController = $CustomStampNetwork
 
 var is_server: bool = false
 var listen_server: bool = false
@@ -108,9 +105,6 @@ var player_settings := {}
 var ready_players : Array[int] = []
 const PLAYER_SETTINGS_RESYNC_INTERVAL_SEC := 1.0
 var _settings_resync_timer: Timer
-var custom_stamp_manifests := {}
-var custom_stamp_blob_cache := {}
-var custom_stamp_blob_waiters := {}
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 const STATE_CHUNK_PAYLOAD_BYTES := 1000
 const STATE_CHUNK_SEND_COPIES := 2
@@ -1609,7 +1603,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	player_ids = [multiplayer.get_unique_id()]
 	_ensure_cpu_ids_do_not_overlap_humans("host")
 	player_settings.clear()
-	_clear_custom_stamp_network_state()
+	custom_stamp_network.clear()
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
 		player_settings[id] = settings
@@ -1675,7 +1669,7 @@ func join(ip: String, port: int = 27016) -> int:
 	_reset_start_sync_state()
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
-	_clear_custom_stamp_network_state()
+	custom_stamp_network.clear()
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
 		player_settings[id] = settings
@@ -1722,9 +1716,7 @@ func _on_peer_disconnected(id: int) -> void:
 			delayed_peer_ids.erase(id)
 		if player_settings.has(id):
 			player_settings.erase(id)
-		if custom_stamp_manifests.has(id):
-			custom_stamp_manifests.erase(id)
-		_clear_custom_stamp_waiters_for_peer(id)
+		custom_stamp_network.remove_peer(id)
 		if last_received_tick.has(id):
 			last_received_tick.erase(id)
 		server_netcode_session.remove_peer(id)
@@ -1775,8 +1767,7 @@ func _accept_peer(id: int) -> void:
 		sync_race_options.rpc_id(id, race_options)
 	for pid in player_settings.keys():
 		update_player_settings.rpc_id(id, player_settings[pid], pid)
-	for pid in custom_stamp_manifests.keys():
-		_receive_custom_stamp_manifest.rpc_id(id, int(pid), custom_stamp_manifests[pid])
+	custom_stamp_network.send_manifests_to_peer(id)
 	_calc_state_offsets()
 
 @rpc("any_peer", "reliable")
@@ -1830,8 +1821,7 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 		if !race_active:
 			for pid in player_settings.keys():
 				update_player_settings.rpc_id(id, player_settings[pid], pid)
-			for pid in custom_stamp_manifests.keys():
-				_receive_custom_stamp_manifest.rpc_id(id, int(pid), custom_stamp_manifests[pid])
+			custom_stamp_network.send_manifests_to_peer(id)
 	waiting_peers.clear()
 	_update_player_ids.rpc(player_ids)
 	_calc_state_offsets()
@@ -2043,327 +2033,6 @@ func _begin_authoritative_simulation_now() -> void:
 	target_tick = 0
 	server_game_sim.set_sim_started(true)
 	start_sync_authoritative_started = true
-
-func send_active_custom_stamp_manifest() -> void:
-	if race_active or !has_network_peer():
-		return
-	var payload := _build_local_custom_stamp_payload()
-	if !bool(payload.get("ok", false)):
-		push_warning("Custom stamp manifest not sent: %s" % str(payload.get("error", "unknown error")))
-		return
-	var manifest: Array = payload.get("manifest", [])
-	var my_id := multiplayer.get_unique_id()
-	_cache_custom_stamp_payload_blobs(payload)
-	custom_stamp_manifests[my_id] = manifest.duplicate(true)
-	if is_server:
-		_receive_custom_stamp_manifest(my_id, manifest)
-		_receive_custom_stamp_manifest.rpc(my_id, manifest)
-	else:
-		_submit_custom_stamp_manifest.rpc_id(1, manifest)
-
-func _build_local_custom_stamp_payload() -> Dictionary:
-	var settings := _get_local_player_settings_snapshot()
-	var car_path := str(settings.get("car_definition_path", ""))
-	if car_path == "":
-		return {"ok": true, "manifest": [], "blobs": []}
-	var livery: CarLivery = null
-	if settings.has("car_livery") and typeof(settings["car_livery"]) == TYPE_DICTIONARY and !(settings["car_livery"] as Dictionary).is_empty():
-		livery = CarLivery.new()
-		livery.from_dict(settings["car_livery"])
-	else:
-		livery = CarLiveryStore.load_for_car(car_path)
-	livery.car_definition_path = car_path
-	return CustomStampStore.build_livery_payload(livery)
-
-func _cache_custom_stamp_payload_blobs(payload: Dictionary) -> void:
-	for item in payload.get("blobs", []):
-		var blob := item as CustomStampBlob
-		if blob == null:
-			continue
-		custom_stamp_blob_cache[blob.stamp_hash] = blob
-		CustomStampStore.save_blob(blob)
-
-@rpc("any_peer", "reliable")
-func _submit_custom_stamp_manifest(manifest: Array) -> void:
-	if !is_server or race_active:
-		return
-	var sender_id := multiplayer.get_remote_sender_id()
-	if sender_id == 0:
-		sender_id = multiplayer.get_unique_id()
-	if !_accept_custom_stamp_manifest(sender_id, manifest):
-		return
-	_receive_custom_stamp_manifest.rpc(sender_id, manifest)
-	_request_missing_custom_stamp_blobs_from_owner(sender_id, manifest)
-
-@rpc("any_peer", "reliable")
-func _receive_custom_stamp_manifest(player_id: int, manifest: Array) -> void:
-	if race_active:
-		return
-	var sender_id := multiplayer.get_remote_sender_id()
-	if is_server and sender_id != 0:
-		return
-	if !is_server and sender_id != 0 and sender_id != 1:
-		return
-	if !_accept_custom_stamp_manifest(player_id, manifest):
-		return
-	var missing := CustomStampStore.missing_hashes(manifest)
-	if missing.is_empty():
-		return
-	if is_server:
-		_queue_custom_stamp_blob_waiters(player_id, missing, multiplayer.get_unique_id())
-		_request_missing_custom_stamp_blobs_from_owner(player_id, manifest)
-	else:
-		_request_custom_stamp_blobs.rpc_id(1, player_id, Array(missing))
-
-func _accept_custom_stamp_manifest(player_id: int, manifest: Array) -> bool:
-	var validation_error := _validate_custom_stamp_manifest(manifest)
-	if validation_error != "":
-		push_warning("Rejected custom stamp manifest from %s: %s" % [str(player_id), validation_error])
-		return false
-	custom_stamp_manifests[player_id] = manifest.duplicate(true)
-	return true
-
-@rpc("any_peer", "reliable")
-func _request_custom_stamp_blobs(owner_id: int, hashes: Array) -> void:
-	if !is_server or race_active:
-		return
-	var requester_id := multiplayer.get_remote_sender_id()
-	if requester_id == 0:
-		requester_id = multiplayer.get_unique_id()
-	var filtered := _filter_manifest_hashes(owner_id, hashes)
-	if filtered.is_empty():
-		return
-	var missing_for_server: Array = []
-	for hash_value in filtered:
-		var stamp_hash := str(hash_value)
-		var cached := _custom_stamp_blob_for_hash(stamp_hash)
-		if cached != null:
-			_receive_custom_stamp_blob.rpc_id(requester_id, cached.to_cache_dict())
-		else:
-			_add_custom_stamp_blob_waiter(stamp_hash, requester_id)
-			missing_for_server.append(stamp_hash)
-	if !missing_for_server.is_empty():
-		_request_custom_stamp_blobs_from_owner(owner_id, missing_for_server)
-
-@rpc("any_peer", "reliable")
-func _provide_custom_stamp_blobs(hashes: Array) -> void:
-	if race_active:
-		return
-	var sender_id := multiplayer.get_remote_sender_id()
-	if !is_server and sender_id != 0 and sender_id != 1:
-		return
-	for hash_value in hashes:
-		var stamp_hash := str(hash_value)
-		var blob := _custom_stamp_blob_for_hash(stamp_hash)
-		if blob == null:
-			continue
-		if is_server:
-			_accept_custom_stamp_blob(blob.to_cache_dict())
-		else:
-			_submit_custom_stamp_blob.rpc_id(1, blob.to_cache_dict())
-
-@rpc("any_peer", "reliable")
-func _submit_custom_stamp_blob(blob_data: Dictionary) -> void:
-	if !is_server or race_active:
-		return
-	var sender_id := multiplayer.get_remote_sender_id()
-	if sender_id == 0:
-		sender_id = multiplayer.get_unique_id()
-	_accept_custom_stamp_blob(blob_data, sender_id)
-
-@rpc("any_peer", "reliable")
-func _receive_custom_stamp_blob(blob_data: Dictionary) -> void:
-	if race_active:
-		return
-	var sender_id := multiplayer.get_remote_sender_id()
-	if !is_server and sender_id != 0 and sender_id != 1:
-		return
-	_accept_custom_stamp_blob(blob_data)
-
-func _accept_custom_stamp_blob(blob_data: Dictionary, expected_owner_id := -1) -> bool:
-	var blob := CustomStampBlob.new()
-	blob.from_cache_dict(blob_data)
-	var validation_error := blob.validate_blob()
-	if validation_error != "":
-		push_warning("Rejected custom stamp blob: %s" % validation_error)
-		return false
-	if !_custom_stamp_hash_is_manifested(blob.stamp_hash):
-		push_warning("Rejected unmanifested custom stamp blob: %s" % blob.stamp_hash)
-		return false
-	if expected_owner_id >= 0 and !_custom_stamp_manifest_has_hash(expected_owner_id, blob.stamp_hash):
-		push_warning("Rejected custom stamp blob from wrong owner: %s" % blob.stamp_hash)
-		return false
-	custom_stamp_blob_cache[blob.stamp_hash] = blob
-	CustomStampStore.save_blob(blob, false)
-	if is_server and custom_stamp_blob_waiters.has(blob.stamp_hash):
-		var waiters: Array = custom_stamp_blob_waiters[blob.stamp_hash]
-		for waiter in waiters:
-			var waiter_id := int(waiter)
-			if waiter_id == multiplayer.get_unique_id():
-				continue
-			_receive_custom_stamp_blob.rpc_id(waiter_id, blob.to_cache_dict())
-		custom_stamp_blob_waiters.erase(blob.stamp_hash)
-	return true
-
-func _validate_custom_stamp_manifest(manifest: Array) -> String:
-	if manifest.size() > CarLivery.MAX_STAMPS:
-		return "too many custom stamp entries"
-	var total_compressed := 0
-	var hashes := {}
-	var custom_palette_count := 0
-	var blob_sizes := {}
-	for raw_entry in manifest:
-		if typeof(raw_entry) != TYPE_DICTIONARY:
-			return "manifest entry is not a dictionary"
-		var entry: Dictionary = raw_entry
-		if str(entry.get("source", "custom")) != "custom":
-			return "manifest entry source is not custom"
-		var stamp_hash := str(entry.get("hash", ""))
-		if stamp_hash == "":
-			return "manifest entry is missing hash"
-		hashes[stamp_hash] = true
-		var width := int(entry.get("width", 0))
-		var height := int(entry.get("height", 0))
-		var dimension_error := CustomStampBlob.validate_dimensions(width, height)
-		if dimension_error != "":
-			return dimension_error
-		var bpp := int(entry.get("bits_per_pixel", CustomStampBlob.BPP_AUTHORED_PALETTE))
-		if bpp != CustomStampBlob.BPP_CUSTOM_PALETTE and bpp != CustomStampBlob.BPP_AUTHORED_PALETTE:
-			return "unsupported bits_per_pixel"
-		var expected_size := CustomStampBlob.index_byte_size(width, height, bpp)
-		if int(entry.get("uncompressed_size", -1)) != expected_size:
-			return "manifest uncompressed size does not match dimensions"
-		var compressed_size := int(entry.get("compressed_size", -1))
-		if compressed_size <= 0 or compressed_size > CustomStampBlob.COMPRESSED_BYTE_CAP:
-			return "manifest compressed size exceeds cap"
-		if blob_sizes.has(stamp_hash):
-			if int(blob_sizes[stamp_hash]) != compressed_size:
-				return "manifest repeats hash with different compressed size"
-		else:
-			blob_sizes[stamp_hash] = compressed_size
-			total_compressed += compressed_size
-			if total_compressed > CustomStampBlob.COMPRESSED_BYTE_CAP:
-				return "manifest exceeds per-player compressed byte cap"
-		if int(entry.get("palette_id", 0)) < 0 or int(entry.get("palette_id", 0)) > 255:
-			return "palette_id outside supported range"
-		if bpp == CustomStampBlob.BPP_CUSTOM_PALETTE:
-			custom_palette_count += 1
-			if custom_palette_count > CarLivery.MAX_STAMPS:
-				return "too many custom palettes"
-			if !entry.has("custom_palette") or typeof(entry["custom_palette"]) != TYPE_ARRAY:
-				return "custom palette entry is missing palette"
-			if (entry["custom_palette"] as Array).size() > 16:
-				return "custom palette exceeds 16 colours"
-		if !_manifest_rect_is_valid(entry, width, height, bool(entry.get("rect_rotated", false))):
-			return "custom stamp packed rect is invalid"
-	if hashes.size() > CarLivery.MAX_STAMPS:
-		return "too many unique custom stamp hashes"
-	return ""
-
-func _manifest_rect_is_valid(entry: Dictionary, width: int, height: int, rotated: bool) -> bool:
-	if !entry.has("rect_pixels") or typeof(entry["rect_pixels"]) != TYPE_ARRAY:
-		return false
-	if !entry.has("region_size") or typeof(entry["region_size"]) != TYPE_ARRAY:
-		return false
-	var rect_values: Array = entry["rect_pixels"]
-	var region_values: Array = entry["region_size"]
-	if rect_values.size() < 4 or region_values.size() < 2:
-		return false
-	var rect := Rect2i(int(rect_values[0]), int(rect_values[1]), int(rect_values[2]), int(rect_values[3]))
-	var region := Vector2i(int(region_values[0]), int(region_values[1]))
-	if region != Vector2i(256, 128) and region != Vector2i(128, 256):
-		return false
-	if rect.position.x < 0 or rect.position.y < 0 or rect.size.x <= 0 or rect.size.y <= 0:
-		return false
-	var expected_size := Vector2i(height, width) if rotated else Vector2i(width, height)
-	if rect.size != expected_size:
-		return false
-	return rect.position.x + rect.size.x <= region.x and rect.position.y + rect.size.y <= region.y
-
-func _filter_manifest_hashes(owner_id: int, hashes: Array) -> Array:
-	var out: Array = []
-	if !custom_stamp_manifests.has(owner_id):
-		return out
-	var allowed := {}
-	for entry in custom_stamp_manifests[owner_id]:
-		if typeof(entry) == TYPE_DICTIONARY:
-			allowed[str((entry as Dictionary).get("hash", ""))] = true
-	for hash_value in hashes:
-		var stamp_hash := str(hash_value)
-		if stamp_hash != "" and allowed.has(stamp_hash) and !out.has(stamp_hash):
-			out.append(stamp_hash)
-	return out
-
-func _request_missing_custom_stamp_blobs_from_owner(owner_id: int, manifest: Array) -> void:
-	var missing := CustomStampStore.missing_hashes(manifest)
-	if missing.is_empty():
-		return
-	_queue_custom_stamp_blob_waiters(owner_id, missing, multiplayer.get_unique_id())
-	_request_custom_stamp_blobs_from_owner(owner_id, Array(missing))
-
-func _request_custom_stamp_blobs_from_owner(owner_id: int, hashes: Array) -> void:
-	if hashes.is_empty():
-		return
-	if owner_id == multiplayer.get_unique_id():
-		_provide_custom_stamp_blobs(hashes)
-	else:
-		_provide_custom_stamp_blobs.rpc_id(owner_id, hashes)
-
-func _queue_custom_stamp_blob_waiters(_owner_id: int, hashes: Array, waiter_id: int) -> void:
-	for hash_value in hashes:
-		_add_custom_stamp_blob_waiter(str(hash_value), waiter_id)
-
-func _add_custom_stamp_blob_waiter(stamp_hash: String, waiter_id: int) -> void:
-	if stamp_hash == "" or waiter_id <= 0:
-		return
-	var waiters: Array = custom_stamp_blob_waiters.get(stamp_hash, [])
-	if !waiters.has(waiter_id):
-		waiters.append(waiter_id)
-	custom_stamp_blob_waiters[stamp_hash] = waiters
-
-func _clear_custom_stamp_waiters_for_peer(peer_id: int) -> void:
-	for stamp_hash in custom_stamp_blob_waiters.keys():
-		var waiters: Array = custom_stamp_blob_waiters[stamp_hash]
-		if waiters.has(peer_id):
-			waiters.erase(peer_id)
-		if waiters.is_empty():
-			custom_stamp_blob_waiters.erase(stamp_hash)
-		else:
-			custom_stamp_blob_waiters[stamp_hash] = waiters
-
-func _custom_stamp_blob_for_hash(stamp_hash: String) -> CustomStampBlob:
-	if custom_stamp_blob_cache.has(stamp_hash):
-		return custom_stamp_blob_cache[stamp_hash]
-	var blob := CustomStampStore.load_blob(stamp_hash)
-	if blob != null:
-		custom_stamp_blob_cache[stamp_hash] = blob
-	return blob
-
-func get_custom_stamp_blob(stamp_hash: String) -> CustomStampBlob:
-	return _custom_stamp_blob_for_hash(stamp_hash)
-
-func get_custom_stamp_manifest(player_id: int) -> Array:
-	return custom_stamp_manifests.get(player_id, []).duplicate(true)
-
-func _custom_stamp_hash_is_manifested(stamp_hash: String) -> bool:
-	for manifest in custom_stamp_manifests.values():
-		for raw_entry in manifest:
-			if typeof(raw_entry) == TYPE_DICTIONARY and str((raw_entry as Dictionary).get("hash", "")) == stamp_hash:
-				return true
-	return false
-
-func _custom_stamp_manifest_has_hash(player_id: int, stamp_hash: String) -> bool:
-	if !custom_stamp_manifests.has(player_id):
-		return false
-	for raw_entry in custom_stamp_manifests[player_id]:
-		if typeof(raw_entry) == TYPE_DICTIONARY and str((raw_entry as Dictionary).get("hash", "")) == stamp_hash:
-			return true
-	return false
-
-func _clear_custom_stamp_network_state() -> void:
-	custom_stamp_manifests.clear()
-	custom_stamp_blob_cache.clear()
-	custom_stamp_blob_waiters.clear()
 
 func send_player_settings(settings: Dictionary) -> void:
 	if race_active:
@@ -3208,7 +2877,7 @@ func disconnect_from_server() -> void:
 	last_ack_tick = -1
 	rtt_s = 0.0
 	player_settings.clear()
-	_clear_custom_stamp_network_state()
+	custom_stamp_network.clear()
 	ready_players.clear()
 	_unverified_peers.clear()
 	_version_request_time.clear()

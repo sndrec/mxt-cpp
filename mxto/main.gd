@@ -432,7 +432,7 @@ func _on_start_button_pressed() -> void:
 	if launch_cpu_driver_count >= 0:
 		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
 	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
-	network_manager.send_active_custom_stamp_manifest()
+	network_manager.custom_stamp_network.send_active_custom_stamp_manifest()
 	start_race_button.disabled = false
 	$Control.visible = false
 	lobby_control.visible = true
@@ -502,7 +502,7 @@ func _on_join_button_pressed() -> void:
 
 func _send_connected_player_settings(settings_dict: Dictionary) -> void:
 	network_manager.send_player_settings(settings_dict)
-	network_manager.send_active_custom_stamp_manifest()
+	network_manager.custom_stamp_network.send_active_custom_stamp_manifest()
 
 func _auto_host() -> void:
 	_on_start_button_pressed()
@@ -1860,7 +1860,7 @@ func _prepare_custom_stamp_render_payload(racer_ids: Array, racer_settings: Arra
 	var local_payloads := {}
 	for i in range(mini(racer_ids.size(), render_settings.size())):
 		var racer_id := int(racer_ids[i])
-		var manifest := network_manager.get_custom_stamp_manifest(racer_id)
+		var manifest := network_manager.custom_stamp_network.get_custom_stamp_manifest(racer_id)
 		if manifest.is_empty():
 			var payload := _build_local_custom_stamp_payload_for_render(render_settings[i])
 			if bool(payload.get("ok", false)):
@@ -1948,7 +1948,7 @@ func _race_custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_
 		for blob in payload.get("blobs", []):
 			if blob != null and blob.stamp_hash == stamp_hash:
 				return blob
-	return network_manager.get_custom_stamp_blob(stamp_hash)
+	return network_manager.custom_stamp_network.get_custom_stamp_blob(stamp_hash)
 
 func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_origin: Vector2i) -> void:
 	var ps := settings as PlayerSettings
@@ -1997,7 +1997,7 @@ func _player_settings_for_stamp_render(settings) -> PlayerSettings:
 	return null
 
 func _custom_stamp_manifest_signature(player_id: int) -> String:
-	var manifest := network_manager.get_custom_stamp_manifest(player_id)
+	var manifest := network_manager.custom_stamp_network.get_custom_stamp_manifest(player_id)
 	if manifest.is_empty():
 		return ""
 	var parts := []
@@ -2006,7 +2006,7 @@ func _custom_stamp_manifest_signature(player_id: int) -> String:
 			continue
 		var entry: Dictionary = raw_entry
 		var stamp_hash := str(entry.get("hash", ""))
-		var blob = network_manager.get_custom_stamp_blob(stamp_hash)
+		var blob = network_manager.custom_stamp_network.get_custom_stamp_blob(stamp_hash)
 		var cached := "1" if blob != null else "0"
 		parts.append("%s:%s:%s:%s:%s" % [
 			stamp_hash,
