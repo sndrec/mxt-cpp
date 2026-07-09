@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 
 static inline godot::Vector3 gd_vec3(const SimVec3& value)
 {
@@ -80,6 +81,70 @@ static inline bool vehicle_restore_off_eliminated(const PhysicsCarSoA& soa, int 
 		return true;
 	}
 	return (soa.state_2[lane] & 0x80u) != 0u && (state & MACHINESTATE::AIRBORNE) == 0u;
+}
+
+static inline uint32_t bumper_hash_u32(uint32_t value)
+{
+	value ^= value >> 16;
+	value *= 0x7feb352du;
+	value ^= value >> 15;
+	value *= 0x846ca68bu;
+	value ^= value >> 16;
+	return value;
+}
+
+static inline uint32_t bumper_mix_u32(uint32_t state, uint32_t value)
+{
+	return bumper_hash_u32(state ^ (value + 0x9E3779B9u + (state << 6) + (state >> 2)));
+}
+
+static inline uint32_t bumper_float_bits(float value)
+{
+	uint32_t bits = 0;
+	std::memcpy(&bits, &value, sizeof(bits));
+	return bits;
+}
+
+static inline uint32_t bumper_track_seed_from_track(const RaceTrack* track)
+{
+	if (!track) {
+		return 0xB62A1C3Du;
+	}
+	uint32_t seed = 0xB62A1C3Du;
+	seed = bumper_mix_u32(seed, static_cast<uint32_t>(track->num_checkpoints));
+	seed = bumper_mix_u32(seed, static_cast<uint32_t>(track->num_segments));
+	seed = bumper_mix_u32(seed, bumper_float_bits(track->lap_length));
+	for (int i = 0; i < track->num_checkpoints; ++i) {
+		const CollisionCheckpoint& checkpoint = track->checkpoints[i];
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.position_start.x));
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.position_start.y));
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.position_start.z));
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.position_end.x));
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.position_end.y));
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.position_end.z));
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.distance));
+		seed = bumper_mix_u32(seed, bumper_float_bits(checkpoint.local_distance));
+	}
+	return seed ? seed : 0xB62A1C3Du;
+}
+
+static inline float bumper_sequence_trigger_distance(
+	uint32_t spawn_seed,
+	int leader_lap,
+	uint32_t sequence,
+	float interval,
+	float lap_length)
+{
+	const uint32_t hash = bumper_hash_u32(
+		spawn_seed ^
+		(static_cast<uint32_t>(leader_lap) * 0x27D4EB2Du) ^
+		(sequence * 0x9E3779B9u) ^
+		0xA341316Cu);
+	const float jitter =
+		(static_cast<float>(hash & 0xffffu) * (1.0f / 65535.0f) - 0.5f) * interval * 0.35f;
+	const float first_trigger = leader_lap == 2 ? 680.0f : 360.0f;
+	(void)lap_length;
+	return first_trigger + static_cast<float>(sequence) * interval + jitter;
 }
 
 #define LOAD_INDEXED_VEC3(storage, name, index) SimVec3((storage).name##_x[(index)], (storage).name##_y[(index)], (storage).name##_z[(index)])
