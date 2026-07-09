@@ -4,6 +4,7 @@ class_name GameManager extends Node
 @onready var server_game_sim: GameSim = $ServerGameSim
 @onready var replay_controller: ReplayController = $ReplayController
 @onready var race_audio_controller: RaceAudioController = $RaceAudioController
+@onready var track_content_controller: TrackContentController = $TrackContentController
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
 @onready var join_button: Button = $Control/ConnectHostBox/JoinButton
@@ -84,10 +85,7 @@ const RaceCommunicationOverlayScene: PackedScene = preload("res://ui/race_commun
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const RACE_RESULTS_SCREEN_MSEC := 15000
-const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
 
-var tracks: Array = []
-var track_id_to_index: Dictionary = {}
 var car_definitions: Array = []
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
@@ -95,7 +93,6 @@ var spectator_scene := preload("res://player/spectator.tscn")
 var local_player_index: int = 0
 var headless_mode: bool = false
 var trigger_objects: Array = []
-var track_visual_scene_instance: Node
 var spectator_node: Node3D
 var local_elimination_spectator_active := false
 const TRIGGER_SCENES = {
@@ -147,8 +144,6 @@ var auto_hide_hud_only_mode: bool = false
 var auto_disable_hud_process_only_mode: bool = false
 var auto_disable_minimap_mode: bool = false
 var auto_quit_after_frames: int = -1
-var current_track_meta: Dictionary = {}
-var current_track_ground_image: Image
 var car_render_manager: CarRenderManager
 var lobby_chibi_render_manager: CarRenderManager
 var lobby_chibi_render_signature := ""
@@ -372,88 +367,25 @@ func _parse_cpu_driver_count_arg(args: Array) -> int:
 	return int(clamp(float(args[cpu_idx + 1]), 0.0, 5000.0))
 
 func _load_tracks() -> void:
-	tracks.clear()
+	track_content_controller.scan_catalog()
 	track_selector.clear()
 	lobby_track_selector.clear()
 	lobby_grand_prix_track_sequence.clear()
-	_scan_track_dir("res://track", false)
-	_scan_external_track_dirs()
-	_rebuild_track_id_index()
-	for t in tracks:
+	for t in track_content_controller.tracks:
 		track_selector.add_item(t["name"])
 		lobby_track_selector.add_item(t["name"])
-	if tracks.size() > 0:
+	if !track_content_controller.tracks.is_empty():
 		track_selector.selected = 0
 		lobby_track_selector.selected = 0
 		lobby_grand_prix_track_sequence.append(0)
-	var args := OS.get_cmdline_args()
-	var user_args := OS.get_cmdline_user_args()
-	var track_name_idx := args.find("--track-name")
-	var track_args := args
-	if track_name_idx == -1:
-		track_name_idx = user_args.find("--track-name")
-		track_args = user_args
-	if track_name_idx != -1 and track_name_idx + 1 < track_args.size():
-		var desired_track := String(track_args[track_name_idx + 1]).to_lower()
-		for i in range(tracks.size()):
-			if String(tracks[i].get("name", "")).to_lower() == desired_track:
-				track_selector.selected = i
-				lobby_track_selector.selected = i
-				if !lobby_grand_prix_track_sequence.is_empty():
-					lobby_grand_prix_track_sequence[0] = i
-				break
+	var command_line_track_index := track_content_controller.command_line_track_index()
+	if command_line_track_index >= 0:
+		track_selector.selected = command_line_track_index
+		lobby_track_selector.selected = command_line_track_index
+		if !lobby_grand_prix_track_sequence.is_empty():
+			lobby_grand_prix_track_sequence[0] = command_line_track_index
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_race_options()
-
-func _read_arg_value(args: Array, user_args: Array, flag: String) -> String:
-	var idx := args.find(flag)
-	var value_args := args
-	if idx == -1:
-		idx = user_args.find(flag)
-		value_args = user_args
-	if idx == -1 or idx + 1 >= value_args.size():
-		return ""
-	return String(value_args[idx + 1])
-
-func _external_tracks_dir_candidates() -> PackedStringArray:
-	var out := PackedStringArray()
-	var args := OS.get_cmdline_args()
-	var user_args := OS.get_cmdline_user_args()
-	var arg_dir := _read_arg_value(args, user_args, "--tracks-dir")
-	if arg_dir != "":
-		out.append(arg_dir)
-	var exe_dir := OS.get_executable_path().get_base_dir()
-	if exe_dir != "":
-		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
-			out.append(exe_dir.path_join(dir_name))
-	var project_dir := ProjectSettings.globalize_path("res://")
-	if project_dir != "":
-		out.append(project_dir.path_join("tracks"))
-		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
-			out.append(project_dir.get_base_dir().path_join(dir_name))
-	var cwd := OS.get_environment("PWD")
-	if cwd != "":
-		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
-			out.append(cwd.path_join(dir_name))
-	cwd = OS.get_environment("CD")
-	if cwd != "":
-		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
-			out.append(cwd.path_join(dir_name))
-	return out
-
-func _scan_external_track_dirs() -> void:
-	var seen := {}
-	for raw_dir in _external_tracks_dir_candidates():
-		var dir_path := String(raw_dir).replace("\\", "/")
-		if dir_path.is_empty():
-			continue
-		if !DirAccess.dir_exists_absolute(dir_path):
-			continue
-		var key := dir_path.to_lower()
-		if seen.has(key):
-			continue
-		seen[key] = true
-		_scan_track_dir(dir_path, true)
 
 func get_car_definition_paths() -> Array:
 	var paths: Array = []
@@ -475,198 +407,6 @@ func build_cpu_player_settings(index: int) -> Dictionary:
 	ps.accel_setting = 1.0
 	ps.spectator = false
 	return ps.to_dict()
-
-func _clear_track_visual_scene() -> void:
-	if track_visual_scene_instance != null:
-		if is_instance_valid(track_visual_scene_instance):
-			track_visual_scene_instance.queue_free()
-		track_visual_scene_instance = null
-
-func _resolve_track_local_path(track_dir: String, path_value) -> String:
-	var path := String(path_value).strip_edges()
-	if path.is_empty():
-		return ""
-	if path.begins_with("res://") or path.begins_with("user://"):
-		return path
-	if path.is_absolute_path():
-		return path.replace("\\", "/")
-	return track_dir.path_join(path).replace("\\", "/")
-
-func _track_runtime_file_exists(path: String) -> bool:
-	if path.is_empty():
-		return false
-	if ResourceLoader.exists(path):
-		return true
-	return FileAccess.file_exists(path)
-
-func _resolve_track_visual_path(track_dir: String, meta: Dictionary, mxt_path: String = "") -> String:
-	var explicit_path := _resolve_track_local_path(track_dir, meta.get("visual_scene", ""))
-	if _track_runtime_file_exists(explicit_path):
-		return explicit_path
-	var base_names := PackedStringArray(["track"])
-	if !mxt_path.is_empty():
-		var mxt_base_name := mxt_path.get_basename().get_file()
-		if !base_names.has(mxt_base_name):
-			base_names.append(mxt_base_name)
-	for base_name in base_names:
-		for ext in ["tscn", "scn", "glb", "gltf"]:
-			var candidate := track_dir.path_join("%s.%s" % [base_name, ext])
-			if _track_runtime_file_exists(candidate):
-				return candidate
-	return ""
-
-func _track_visual_replaces_debug_environment(visual_path: String) -> bool:
-	var ext := visual_path.get_extension().to_lower()
-	return ext == "tscn" or ext == "scn"
-
-func _track_material_for_name(mat_name: String) -> Material:
-	if mat_name == "track_surface":
-		return preload("res://asset/debug_track_mat.tres")
-	if mat_name == "track_rail":
-		return preload("res://asset/debug_rail_mat.tres")
-	if mat_name == "embed_dirt":
-		return preload("res://asset/dirt_mat.tres")
-	if mat_name == "embed_recharge":
-		return preload("res://asset/recharge_mat.tres")
-	if mat_name == "embed_ice":
-		return preload("res://asset/ice_mat.tres")
-	return null
-
-func _apply_track_visual_materials_to_mesh_instance(mesh_instance: MeshInstance3D) -> void:
-	var mesh := mesh_instance.mesh
-	if mesh == null:
-		return
-	for i in mesh.get_surface_count():
-		var mat := mesh.surface_get_material(i)
-		if mat == null:
-			continue
-		var replacement := _track_material_for_name(mat.resource_name)
-		if replacement != null:
-			mesh_instance.set_surface_override_material(i, replacement)
-
-func _apply_track_visual_materials(root: Node) -> void:
-	if root is MeshInstance3D:
-		_apply_track_visual_materials_to_mesh_instance(root as MeshInstance3D)
-	for child in root.get_children():
-		_apply_track_visual_materials(child)
-
-func _load_track_resource_scene(scene_path: String) -> bool:
-	var packed := ResourceLoader.load(scene_path) as PackedScene
-	if packed == null:
-		push_warning("Track visual scene is not a PackedScene: %s" % scene_path)
-		return false
-	var inst := packed.instantiate()
-	if inst == null:
-		push_warning("Failed to instantiate track visual scene: %s" % scene_path)
-		return false
-	track_visual_scene_instance = inst
-	_apply_track_visual_materials(inst)
-	obj_container.add_child(inst)
-	return true
-
-func _load_track_gltf_scene(scene_path: String) -> bool:
-	var gltf_doc := GLTFDocument.new()
-	var gltf_state := GLTFState.new()
-	gltf_state.base_path = scene_path.get_base_dir()
-	var err := gltf_doc.append_from_file(scene_path, gltf_state)
-	if err != OK:
-		push_warning("Failed to load track glTF scene %s: %s" % [scene_path, error_string(err)])
-		return false
-	var inst := gltf_doc.generate_scene(gltf_state)
-	if inst == null:
-		push_warning("Failed to generate track glTF scene: %s" % scene_path)
-		return false
-	track_visual_scene_instance = inst
-	_apply_track_visual_materials(inst)
-	obj_container.add_child(inst)
-	return true
-
-func _load_track_visual_scene(scene_path: String) -> bool:
-	if scene_path == "" or !_track_runtime_file_exists(scene_path):
-		return false
-	var ext := scene_path.get_extension().to_lower()
-	if ext == "glb" or ext == "gltf":
-		return _load_track_gltf_scene(scene_path)
-	return _load_track_resource_scene(scene_path)
-
-func _load_track_imported_mesh(mesh_path: String) -> bool:
-	if mesh_path == "" or !ResourceLoader.exists(mesh_path):
-		return false
-	var loaded_mesh: Mesh = ResourceLoader.load(mesh_path) as Mesh
-	if loaded_mesh == null:
-		return false
-	var runtime_mesh: Mesh = loaded_mesh.duplicate(true)
-	debug_track_mesh.mesh = runtime_mesh
-	lobby_control.visible = false
-	_apply_track_visual_materials_to_mesh_instance(debug_track_mesh)
-	return true
-
-func _set_builtin_track_visuals_enabled(enabled: bool) -> void:
-	if debug_track_mesh_container != null:
-		debug_track_mesh_container.visible = enabled and !auto_hide_track_visuals_mode
-	if directional_light_3d != null:
-		directional_light_3d.visible = enabled
-	if world_environment != null:
-		world_environment.environment = default_world_environment_resource if enabled else null
-
-func _track_id_for_mxt_path(mxt_path: String) -> String:
-	var file := FileAccess.open(mxt_path, FileAccess.READ)
-	if file == null:
-		return ""
-	var bytes := file.get_buffer(file.get_length())
-	file.close()
-	var context := HashingContext.new()
-	context.start(HashingContext.HASH_SHA256)
-	context.update(bytes)
-	return "sha256:" + context.finish().hex_encode()
-
-func _rebuild_track_id_index() -> void:
-	track_id_to_index.clear()
-	for i in range(tracks.size()):
-		var track_id := String(tracks[i].get("id", ""))
-		if track_id != "" and !track_id_to_index.has(track_id):
-			track_id_to_index[track_id] = i
-
-func _track_id_for_index(track_index: int) -> String:
-	if track_index >= 0 and track_index < tracks.size():
-		return String(tracks[track_index].get("id", ""))
-	return ""
-
-func _track_index_for_id(track_id: String) -> int:
-	if track_id_to_index.has(track_id):
-		return int(track_id_to_index[track_id])
-	return -1
-
-func _scan_track_dir(path: String, external: bool) -> void:
-	var dir := DirAccess.open(path)
-	if dir == null:
-		return
-	dir.list_dir_begin()
-	var file := dir.get_next()
-	while file != "":
-		if dir.current_is_dir() and !file.begins_with("."):
-			_scan_track_dir(path + "/" + file, external)
-		elif file.get_extension() == "json":
-			var json_path := path + "/" + file
-			var mxt_path := json_path.get_basename() + ".mxt_track"
-			if FileAccess.file_exists(mxt_path):
-				var json_data := FileAccess.get_file_as_string(json_path)
-				var parsed = JSON.parse_string(json_data)
-				if typeof(parsed) == TYPE_DICTIONARY and parsed.has("name"):
-					var track_id := _track_id_for_mxt_path(mxt_path)
-					if track_id == "":
-						file = dir.get_next()
-						continue
-					tracks.append({
-						"id": track_id,
-						"name": parsed["name"],
-						"mxt": mxt_path,
-						"json": json_path,
-						"dir": json_path.get_base_dir(),
-						"external": external,
-					})
-		file = dir.get_next()
-	dir.list_dir_end()
 
 func _load_car_definitions() -> void:
 	car_definitions.clear()
@@ -716,7 +456,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
 	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
-	options["track_ids"] = [_track_id_for_index(track_selector.selected)]
+	options["track_ids"] = [track_content_controller.track_id_for_index(track_selector.selected)]
 	if auto_bumpers_mode:
 		options["bumpers"] = true
 	network_manager.race_options = options
@@ -862,7 +602,7 @@ func _build_singleplayer_race_options_screen() -> void:
 func _build_default_singleplayer_race_options() -> Dictionary:
 	return {
 		"game_mode": 0,
-		"track_ids": [_track_id_for_index(track_selector.selected)],
+		"track_ids": [track_content_controller.track_id_for_index(track_selector.selected)],
 		"vehicle_restore": bool(network_manager.race_options.get("vehicle_restore", true)),
 		"bumpers": bool(network_manager.race_options.get("bumpers", false)) or auto_bumpers_mode,
 		"s_boost": bool(network_manager.race_options.get("s_boost", true)),
@@ -1008,9 +748,9 @@ func _populate_lobby_stage_buttons() -> void:
 		return
 	for child in lobby_stage_button_container.get_children():
 		child.queue_free()
-	for i in range(tracks.size()):
+	for i in range(track_content_controller.tracks.size()):
 		var button := Button.new()
-		button.text = str(tracks[i].get("name", "Track"))
+		button.text = str(track_content_controller.tracks[i].get("name", "Track"))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.pressed.connect(_on_lobby_stage_button_pressed.bind(i))
 		lobby_stage_button_container.add_child(button)
@@ -1018,7 +758,7 @@ func _populate_lobby_stage_buttons() -> void:
 func _on_lobby_stage_button_pressed(track_index: int) -> void:
 	if !network_manager.is_server:
 		return
-	if track_index < 0 or track_index >= tracks.size():
+	if track_index < 0 or track_index >= track_content_controller.tracks.size():
 		return
 	lobby_grand_prix_track_sequence.append(track_index)
 	_refresh_lobby_race_options()
@@ -1043,7 +783,7 @@ func _on_lobby_s_boost_toggled(_toggled: bool) -> void:
 func _build_lobby_race_options() -> Dictionary:
 	var selected_track_ids := []
 	for selected_index in lobby_grand_prix_track_sequence:
-		var track_id := _track_id_for_index(int(selected_index))
+		var track_id := track_content_controller.track_id_for_index(int(selected_index))
 		if track_id != "":
 			selected_track_ids.append(track_id)
 	return {
@@ -1075,7 +815,7 @@ func _update_lobby_start_race_button() -> void:
 	if start_race_button == null:
 		return
 	var can_edit_cpu := network_manager.is_server and !network_manager.race_active
-	start_race_button.disabled = !can_edit_cpu or tracks.is_empty() or lobby_grand_prix_track_sequence.is_empty()
+	start_race_button.disabled = !can_edit_cpu or track_content_controller.tracks.is_empty() or lobby_grand_prix_track_sequence.is_empty()
 
 func _on_network_race_options_changed(options: Dictionary) -> void:
 	if lobby_game_mode_choice == null:
@@ -1093,12 +833,12 @@ func _on_network_race_options_changed(options: Dictionary) -> void:
 	lobby_grand_prix_track_sequence.clear()
 	var track_ids: Array = options.get("track_ids", [])
 	for track_id_value in track_ids:
-		var idx := _track_index_for_id(String(track_id_value))
-		if idx >= 0 and idx < tracks.size():
+		var idx := track_content_controller.track_index_for_id(String(track_id_value))
+		if idx >= 0 and idx < track_content_controller.tracks.size():
 			lobby_grand_prix_track_sequence.append(idx)
 	if track_ids.size() > 0:
-		var first_index := _track_index_for_id(String(track_ids[0]))
-		if first_index >= 0 and first_index < tracks.size():
+		var first_index := track_content_controller.track_index_for_id(String(track_ids[0]))
+		if first_index >= 0 and first_index < track_content_controller.tracks.size():
 			lobby_track_selector.selected = first_index
 	lobby_applying_race_options = false
 	_refresh_lobby_stage_preview()
@@ -1112,11 +852,11 @@ func _refresh_lobby_stage_preview() -> void:
 	var track_ids: Array = options.get("track_ids", [])
 	for i in range(track_ids.size()):
 		var track_id := String(track_ids[i])
-		var track_index := _track_index_for_id(track_id)
+		var track_index := track_content_controller.track_index_for_id(track_id)
 		var label := Button.new()
 		label.disabled = !network_manager.is_server
-		if track_index >= 0 and track_index < tracks.size():
-			label.text = "%d. %s" % [i + 1, str(tracks[track_index].get("name", "Track"))]
+		if track_index >= 0 and track_index < track_content_controller.tracks.size():
+			label.text = "%d. %s" % [i + 1, str(track_content_controller.tracks[track_index].get("name", "Track"))]
 		else:
 			label.text = "%d. Missing Track" % (i + 1)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1806,17 +1546,6 @@ func _next_grand_prix_track_id_for_results() -> String:
 		return ""
 	return String(track_ids[next_index])
 
-func _track_name_for_index(track_index: int) -> String:
-	if track_index >= 0 and track_index < tracks.size():
-		return str(tracks[track_index].get("name", "Track"))
-	return "Track"
-
-func _track_name_for_id(track_id: String) -> String:
-	var track_index := _track_index_for_id(track_id)
-	if track_index >= 0:
-		return _track_name_for_index(track_index)
-	return "Missing Track"
-
 func _local_player_accel_setting_for_results() -> float:
 	if race_results_next_accel_setting >= 0.0:
 		return race_results_next_accel_setting
@@ -1869,7 +1598,7 @@ func _show_race_results_summary() -> void:
 		race_results_overlay.set_countdown_seconds(_race_results_countdown_seconds())
 		var next_track_id := _next_grand_prix_track_id_for_results()
 		race_results_overlay.set_next_race(
-			_track_name_for_id(next_track_id),
+			track_content_controller.track_name_for_id(next_track_id),
 			_local_player_accel_setting_for_results(),
 			next_track_id != "")
 		race_results_overlay.visible = true
@@ -2309,7 +2038,7 @@ func _custom_stamp_manifest_region_size(entry: Dictionary) -> Vector2i:
 	return Vector2i(int(values[0]), int(values[1]))
 
 func _start_race(track_index: int, settings: Array) -> void:
-	if track_index < 0 or track_index >= tracks.size():
+	if track_index < 0 or track_index >= track_content_controller.tracks.size():
 		return
 	_close_settings_menus_for_race_start()
 	$Control.visible = false
@@ -2323,57 +2052,14 @@ func _start_race(track_index: int, settings: Array) -> void:
 	live_spectate_focus_id = -1
 	live_spectate_strafe_dir = 0
 	race_dnf_low_speed_ticks.clear()
-	var info : Dictionary = tracks[track_index]
-	# Load track metadata JSON and optional ground texture (ground.png) from the same folder
-	current_track_meta = {}
-	current_track_ground_image = null
+	var info: Dictionary = track_content_controller.tracks[track_index]
 	_hide_race_results_summary()
-	_clear_track_visual_scene()
-	debug_track_mesh.mesh = null
-	obj_container.visible = !auto_hide_track_visuals_mode
-	var json_path: String = String(info.get("json", String(info["mxt"]).get_basename() + ".json"))
-	var track_dir: String = String(info.get("dir", json_path.get_base_dir()))
+	if !track_content_controller.prepare_race(track_index):
+		return
 	race_audio_controller.reset_for_race()
-	if FileAccess.file_exists(json_path):
-		var json_text := FileAccess.get_file_as_string(json_path)
-		var parsed = JSON.parse_string(json_text)
-		if typeof(parsed) == TYPE_DICTIONARY:
-			current_track_meta = parsed
-	race_audio_controller.configure_track_music(track_dir, current_track_meta)
-	var visual_scene_path_for_race := _resolve_track_visual_path(track_dir, current_track_meta, String(info["mxt"]))
-	var has_track_visual := visual_scene_path_for_race != ""
-	var visual_replaces_debug_environment := _track_visual_replaces_debug_environment(visual_scene_path_for_race)
-	_set_builtin_track_visuals_enabled(!visual_replaces_debug_environment)
-	debug_track_mesh.visible = !has_track_visual and !auto_hide_track_visuals_mode
-	track_floor.visible = !visual_replaces_debug_environment and !auto_hide_track_visuals_mode
-	track_clouds.visible = !visual_replaces_debug_environment and !auto_hide_track_visuals_mode
-	if !current_track_meta.is_empty() and world_environment.environment != null:
-		RenderingServer.global_shader_parameter_set("fog_dist", current_track_meta.fog_distance)
-		var floor_mat : ShaderMaterial = track_floor.get_active_material(0)
-		var cloud_mat : ShaderMaterial = track_clouds.get_active_material(0)
-		floor_mat.set_shader_parameter("albedo", current_track_meta.ground_color)
-		cloud_mat.set_shader_parameter("albedo", current_track_meta.cloud_color)
-		track_floor.position.z = -current_track_meta.ground_height
-		track_clouds.position.z = -current_track_meta.cloud_height
-		var sky_mat : ProceduralSkyMaterial = world_environment.environment.sky.sky_material
-		sky_mat.sky_top_color = Color(current_track_meta.sky_top_color[0], current_track_meta.sky_top_color[1], current_track_meta.sky_top_color[2])
-		sky_mat.sky_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
-		sky_mat.ground_horizon_color = Color(current_track_meta.sky_horizon_color[0], current_track_meta.sky_horizon_color[1], current_track_meta.sky_horizon_color[2])
-		sky_mat.ground_bottom_color = Color(current_track_meta.sky_ground_color[0], current_track_meta.sky_ground_color[1], current_track_meta.sky_ground_color[2])
-		directional_light_3d.light_color = Color(current_track_meta.light_color[0], current_track_meta.light_color[1], current_track_meta.light_color[2])
-		directional_light_3d.light_energy = current_track_meta.light_intensity
-		world_environment.environment.ambient_light_color = Color(current_track_meta.ambient_color[0], current_track_meta.ambient_color[1], current_track_meta.ambient_color[2])
-		world_environment.environment.ambient_light_energy = current_track_meta.ambient_intensity
-		if !visual_replaces_debug_environment:
-			var ground_path = track_dir.path_join("ground.png")
-			if FileAccess.file_exists(ground_path):
-				var bytes := FileAccess.get_file_as_bytes(ground_path)
-				if bytes.size() > 0:
-					var img := Image.load_from_file(ground_path)
-					current_track_ground_image = img
-					var floor_tex := ImageTexture.new()
-					floor_tex.set_image(img)
-					floor_mat.set_shader_parameter("texture_albedo", floor_tex)
+	race_audio_controller.configure_track_music(
+		track_content_controller.current_track_dir,
+		track_content_controller.current_metadata)
 					
 	var chosen_defs : Array = []
 	var racer_settings : Array = []
@@ -2544,10 +2230,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim
 	if !headless_mode:
-		var visual_scene_loaded := _load_track_visual_scene(visual_scene_path_for_race)
-		if !visual_scene_loaded:
-			var obj_path: String = String(info["mxt"]).get_basename() + ".obj"
-			_load_track_imported_mesh(obj_path)
+		track_content_controller.load_runtime_visuals()
 		trigger_objects.clear()
 		for trig in _parse_level_triggers(level_buffer.data_array):
 			var scene = TRIGGER_SCENES.get(trig["type"], null)
@@ -2579,14 +2262,14 @@ func _on_start_race_button_pressed() -> void:
 		var race_options := _build_lobby_race_options()
 		race_options = _initialize_grand_prix_options(race_options, roster)
 		race_options = _apply_race_roster_options(race_options, human_ids, cpu_ids, network_manager.spectator_ids)
-		var track_ids: Array = race_options.get("track_ids", [_track_id_for_index(lobby_track_selector.selected)])
-		var first_track_id := _track_id_for_index(lobby_track_selector.selected)
+		var track_ids: Array = race_options.get("track_ids", [track_content_controller.track_id_for_index(lobby_track_selector.selected)])
+		var first_track_id := track_content_controller.track_id_for_index(lobby_track_selector.selected)
 		if !track_ids.is_empty():
 			first_track_id = String(track_ids[0])
 		network_manager.send_start_race(first_track_id, settings_array, race_options)
 
 func _on_network_race_started(track_id: String, settings: Array) -> void:
-	var track_index := _track_index_for_id(track_id)
+	var track_index := track_content_controller.track_index_for_id(track_id)
 	if track_index < 0:
 		var message := "Missing race track %s" % track_id
 		push_error(message)
@@ -3177,9 +2860,7 @@ func _return_to_menu() -> void:
 		server_game_sim.destroy_gamesim()
 	network_manager.game_sim = null
 	network_manager.server_game_sim = null
-	_clear_track_visual_scene()
-	debug_track_mesh.mesh = null
-	_set_builtin_track_visuals_enabled(true)
+	track_content_controller.teardown_runtime()
 	for child in car_node_container.get_children():
 		child.queue_free()
 	for obj in trigger_objects:
@@ -3218,9 +2899,7 @@ func _return_to_lobby() -> void:
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
-	_clear_track_visual_scene()
-	debug_track_mesh.mesh = null
-	_set_builtin_track_visuals_enabled(true)
+	track_content_controller.teardown_runtime()
 	for child in car_node_container.get_children():
 		if child != null:
 			child.queue_free()
@@ -3259,9 +2938,7 @@ func _teardown_race_world_for_transition() -> void:
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
-	_clear_track_visual_scene()
-	debug_track_mesh.mesh = null
-	_set_builtin_track_visuals_enabled(true)
+	track_content_controller.teardown_runtime()
 	for child in car_node_container.get_children():
 		if child != null:
 			child.queue_free()

@@ -13,6 +13,7 @@
 [ext_resource type="Script" uid="uid://dyf161ibfwcno" path="res://netplay/proximity_voice_chat.gd" id="22_voice"]
 [ext_resource type="Script" path="res://replay/replay_controller.gd" id="23_replay"]
 [ext_resource type="Script" path="res://audio/race_audio_controller.gd" id="24_audio"]
+[ext_resource type="Script" path="res://track/track_content_controller.gd" id="25_track"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -143,6 +144,9 @@ script = ExtResource("23_replay")
 
 [node name="RaceAudioController" type="Node" parent="."]
 script = ExtResource("24_audio")
+
+[node name="TrackContentController" type="Node" parent="."]
+script = ExtResource("25_track")
 
 [node name="NetworkManager" type="Node" parent="." unique_id=2069070107]
 script = ExtResource("3_netplay")

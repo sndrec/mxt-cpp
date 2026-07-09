@@ -18,7 +18,7 @@ func _init() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	_log_line("MXT_LOBBY_BUMPER_SETUP loaded tracks=%s" % main.tracks.size())
+	_log_line("MXT_LOBBY_BUMPER_SETUP loaded tracks=%s" % main.track_content_controller.tracks.size())
 	if main.port_field != null:
 		main.port_field.text = "27161"
 
@@ -30,8 +30,8 @@ func _init() -> void:
 			child.stop()
 	_log_line("MXT_LOBBY_BUMPER_SETUP host is_server=%s ids=%s" % [main.network_manager.is_server, main.network_manager.player_ids])
 
-	for i in range(main.tracks.size()):
-		if String(main.tracks[i].get("name", "")) == TRACK_NAME:
+	for i in range(main.track_content_controller.tracks.size()):
+		if String(main.track_content_controller.tracks[i].get("name", "")) == TRACK_NAME:
 			main.lobby_track_selector.select(i)
 			main.lobby_grand_prix_track_sequence.clear()
 			main.lobby_grand_prix_track_sequence.append(i)

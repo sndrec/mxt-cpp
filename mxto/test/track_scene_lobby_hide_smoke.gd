@@ -12,8 +12,8 @@ func _init() -> void:
 		quit(1)
 		return
 	var track_index := -1
-	for i in range(main.tracks.size()):
-		if String(main.tracks[i].get("name", "")) == "Mute City - Serial Gaps":
+	for i in range(main.track_content_controller.tracks.size()):
+		if String(main.track_content_controller.tracks[i].get("name", "")) == "Mute City - Serial Gaps":
 			track_index = i
 			break
 	if track_index < 0:

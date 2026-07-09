@@ -325,7 +325,7 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		"mode": _replay_mode_name(),
 		"source": replay_recording_source,
 		"track_index": track_index,
-		"track_id": game_manager._track_id_for_index(track_index),
+		"track_id": game_manager.track_content_controller.track_id_for_index(track_index),
 		"track_name": _current_track_name(),
 		"track_mxt": _current_track_path(),
 		"settings": settings.duplicate(true),
@@ -909,7 +909,7 @@ func _start_replay_playback_from_path(path: String) -> void:
 	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
 		game_manager._return_to_menu()
 	var track_index := _find_track_index(replay)
-	if track_index < 0 or track_index >= game_manager.tracks.size():
+	if track_index < 0 or track_index >= game_manager.track_content_controller.tracks.size():
 		push_warning("Replay load failed: track not found for %s" % str(replay.get("track_name", "")))
 		if game_manager.headless_mode:
 			get_tree().quit(1)
@@ -1697,35 +1697,35 @@ func _debug_replay_dir() -> String:
 	return ProjectSettings.globalize_path("user://debug_replays")
 
 func _current_track_name() -> String:
-	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.tracks.size():
-		return String(game_manager.tracks[game_manager._last_race_track_index].get("name", "track"))
+	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
+		return String(game_manager.track_content_controller.tracks[game_manager._last_race_track_index].get("name", "track"))
 	return "track"
 
 func _current_track_path() -> String:
-	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.tracks.size():
-		return String(game_manager.tracks[game_manager._last_race_track_index].get("mxt", ""))
+	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
+		return String(game_manager.track_content_controller.tracks[game_manager._last_race_track_index].get("mxt", ""))
 	return ""
 
 func _current_track_id() -> String:
-	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.tracks.size():
-		return String(game_manager.tracks[game_manager._last_race_track_index].get("id", ""))
+	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
+		return String(game_manager.track_content_controller.tracks[game_manager._last_race_track_index].get("id", ""))
 	return ""
 
 func _find_track_index(data: Dictionary) -> int:
 	var replay_track_id := String(data.get("track_id", ""))
 	if replay_track_id != "":
-		var track_index := game_manager._track_index_for_id(replay_track_id)
+		var track_index := game_manager.track_content_controller.track_index_for_id(replay_track_id)
 		if track_index >= 0:
 			return track_index
 	var replay_track_path := String(data.get("track_mxt", ""))
 	if replay_track_path != "":
-		for i in range(game_manager.tracks.size()):
-			if String(game_manager.tracks[i].get("mxt", "")) == replay_track_path:
+		for i in range(game_manager.track_content_controller.tracks.size()):
+			if String(game_manager.track_content_controller.tracks[i].get("mxt", "")) == replay_track_path:
 				return i
 	var replay_track_name := String(data.get("track_name", ""))
 	if replay_track_name != "":
-		for i in range(game_manager.tracks.size()):
-			if String(game_manager.tracks[i].get("name", "")) == replay_track_name:
+		for i in range(game_manager.track_content_controller.tracks.size()):
+			if String(game_manager.track_content_controller.tracks[i].get("name", "")) == replay_track_name:
 				return i
 	return int(data.get("track_index", -1))
 
@@ -1822,7 +1822,7 @@ func _load_and_start_debug_replay(path: String) -> void:
 	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
 		game_manager._return_to_menu()
 	var track_index := _find_track_index(replay)
-	if track_index < 0 or track_index >= game_manager.tracks.size():
+	if track_index < 0 or track_index >= game_manager.track_content_controller.tracks.size():
 		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: track not found for %s" % replay.get("track_name", ""))
 		return
 	var settings = replay.get("settings", [])
