@@ -53,12 +53,16 @@ godot::Dictionary NetcodeSession::consume_authoritative_packet_stats()
 	stats["auth_unchanged_inputs"] = static_cast<int64_t>(stat_auth_unchanged_inputs);
 	stats["auth_raw_bytes"] = static_cast<int64_t>(stat_auth_raw_bytes);
 	stats["auth_payload_bytes"] = static_cast<int64_t>(stat_auth_payload_bytes);
+	stats["auth_compression_candidates"] = static_cast<int64_t>(stat_auth_compression_candidates);
+	stats["auth_build_usec"] = static_cast<int64_t>(stat_auth_build_usec);
 	stat_auth_packets = 0;
 	stat_auth_frames = 0;
 	stat_auth_encoded_inputs = 0;
 	stat_auth_unchanged_inputs = 0;
 	stat_auth_raw_bytes = 0;
 	stat_auth_payload_bytes = 0;
+	stat_auth_compression_candidates = 0;
+	stat_auth_build_usec = 0;
 	return stats;
 }
 

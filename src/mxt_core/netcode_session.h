@@ -56,6 +56,8 @@ class NetcodeSession : public Object {
 	mutable uint64_t stat_auth_unchanged_inputs = 0;
 	mutable uint64_t stat_auth_raw_bytes = 0;
 	mutable uint64_t stat_auth_payload_bytes = 0;
+	mutable uint64_t stat_auth_compression_candidates = 0;
+	mutable uint64_t stat_auth_build_usec = 0;
 
 	static PlayerInput decay_predicted_input(const PlayerInput& prev);
 	bool write_authoritative_input_raw(godot::PackedByteArray& raw, const InputFrame* const* frames, int frame_count, uint8_t layout) const;
