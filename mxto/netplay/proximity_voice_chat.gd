@@ -550,7 +550,7 @@ func _client_voice_packet(sequence: int, source_tick: int, payload: PackedByteAr
 	if network_manager == null or !network_manager.is_server or !network_manager.race_active:
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
-	if sender_id <= 0 or !network_manager.get_simulation_roster().has(sender_id):
+	if sender_id <= 0 or !network_manager.state_send_peer_ids.has(sender_id):
 		return
 	_relay_voice_from(sender_id, sequence, source_tick, payload)
 
@@ -726,57 +726,31 @@ func _voice_recipients_for(sender_id: int) -> Array:
 	if network_manager == null or network_manager.server_game_sim == null:
 		return finished_recipients
 	var sim := network_manager.server_game_sim
-	if !sim.has_method("get_saved_player_voice_transforms"):
+	if !sim.has_method("select_saved_voice_recipients"):
 		return finished_recipients
-	var snapshot: Array = sim.get_saved_player_voice_transforms(maxi(network_manager.server_tick - 1, 0))
-	debug_voice_last_recipient_snapshot_count = snapshot.size()
-	if snapshot.is_empty():
-		return finished_recipients
-	var source_pos := Vector3.ZERO
-	var found_source := false
-	for item in snapshot:
-		if typeof(item) != TYPE_DICTIONARY:
-			continue
-		if int(item.get("player_id", -1)) == sender_id:
-			var t: Transform3D = item.get("transform", Transform3D.IDENTITY)
-			source_pos = t.origin
-			found_source = true
-			break
-	if !found_source:
-		return finished_recipients
-	debug_voice_last_source_found = true
-	var candidates := []
-	var max_dist_sq := voice_range * voice_range
 	var local_id := _local_peer_id()
-	for item in snapshot:
-		if typeof(item) != TYPE_DICTIONARY:
-			continue
-		var player_id := int(item.get("player_id", -1))
-		if player_id == sender_id or player_id < 0:
-			continue
-		if finished_recipients.has(player_id):
-			continue
-		if !_can_send_voice_rpc_to(player_id):
-			continue
-		var t: Transform3D = item.get("transform", Transform3D.IDENTITY)
-		var dist_sq := source_pos.distance_squared_to(t.origin)
-		if dist_sq <= max_dist_sq:
-			candidates.append({"id": player_id, "dist_sq": dist_sq})
-			if player_id == local_id:
-				debug_voice_last_local_candidate = true
-				debug_voice_last_local_distance = sqrt(dist_sq)
-	candidates.sort_custom(func(a, b): return float(a["dist_sq"]) < float(b["dist_sq"]))
+	var selection: Dictionary = sim.select_saved_voice_recipients(
+		sender_id,
+		local_id,
+		maxi(network_manager.server_tick - 1, 0),
+		network_manager.state_send_peer_ids,
+		finished_recipients,
+		voice_range,
+		max_recipients)
+	debug_voice_last_recipient_snapshot_count = int(selection.get("snapshot_count", 0))
+	debug_voice_last_source_found = bool(selection.get("source_found", false))
+	debug_voice_last_local_candidate = bool(selection.get("local_candidate", false))
+	debug_voice_last_local_distance = float(selection.get("local_distance", -1.0))
 	var recipients := finished_recipients.duplicate()
-	var count = mini(candidates.size(), max_recipients)
-	for i in range(count):
-		recipients.append(int(candidates[i]["id"]))
+	for player_id in selection.get("recipients", PackedInt32Array()):
+		recipients.append(int(player_id))
 	return recipients
 
 func _voice_finished_recipients_for(sender_id: int) -> Array:
 	var recipients := []
 	if network_manager == null or !_voice_player_finished(sender_id):
 		return recipients
-	for id_value in network_manager.get_simulation_roster():
+	for id_value in network_manager.state_send_peer_ids:
 		var player_id := int(id_value)
 		if player_id == sender_id or player_id < 0:
 			continue
@@ -802,7 +776,7 @@ func _voice_player_finished(player_id: int) -> bool:
 func _can_send_voice_rpc_to(peer_id: int) -> bool:
 	if network_manager == null:
 		return false
-	if network_manager.get_cpu_roster().has(peer_id):
+	if !network_manager.state_send_peer_ids.has(peer_id):
 		return false
 	if peer_id == _local_peer_id():
 		return true

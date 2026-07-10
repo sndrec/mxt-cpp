@@ -713,6 +713,85 @@ godot::Array GameSim::get_saved_player_voice_transforms(int target_tick) const
 	return out;
 }
 
+godot::Dictionary GameSim::select_saved_voice_recipients(int sender_id, int local_id, int target_tick, godot::Array eligible_peer_ids, godot::Array excluded_peer_ids, double voice_range, int max_recipients) const
+{
+	Dictionary out;
+	PackedInt32Array recipients;
+	out["recipients"] = recipients;
+	out["snapshot_count"] = 0;
+	out["source_found"] = false;
+	out["local_candidate"] = false;
+	out["local_distance"] = -1.0;
+	if (target_tick < 0 || max_recipients <= 0 || voice_range <= 0.0 || eligible_peer_ids.is_empty()) {
+		return out;
+	}
+	const SavedState& state = state_buffer[target_tick % STATE_BUFFER_LEN];
+	if (state.tick != target_tick || state.voice_transform_count <= 0) {
+		return out;
+	}
+	const int transform_count = std::min(state.voice_transform_count, static_cast<int>(state.voice_transforms.size()));
+	out["snapshot_count"] = transform_count;
+	SimVec3 source_origin;
+	bool source_found = false;
+	for (int i = 0; i < transform_count; ++i) {
+		if (state.voice_transforms[i].player_id == sender_id) {
+			source_origin = state.voice_transforms[i].origin;
+			source_found = true;
+			break;
+		}
+	}
+	out["source_found"] = source_found;
+	if (!source_found) {
+		return out;
+	}
+
+	struct VoiceCandidate {
+		int32_t player_id = -1;
+		float distance_sq = 0.0f;
+	};
+	constexpr int MAX_NATIVE_VOICE_RECIPIENTS = 64;
+	VoiceCandidate nearest[MAX_NATIVE_VOICE_RECIPIENTS];
+	const int recipient_limit = std::min(max_recipients, MAX_NATIVE_VOICE_RECIPIENTS);
+	const float max_distance_sq = static_cast<float>(voice_range * voice_range);
+	int nearest_count = 0;
+	for (int i = 0; i < transform_count; ++i) {
+		const SavedVoiceTransform& voice = state.voice_transforms[i];
+		const int32_t player_id = voice.player_id;
+		if (player_id < 0 || player_id == sender_id || !eligible_peer_ids.has(player_id) || excluded_peer_ids.has(player_id)) {
+			continue;
+		}
+		const SimVec3 delta = voice.origin - source_origin;
+		const float distance_sq = delta.length_squared();
+		if (distance_sq > max_distance_sq) {
+			continue;
+		}
+		if (player_id == local_id) {
+			out["local_candidate"] = true;
+			out["local_distance"] = std::sqrt(distance_sq);
+		}
+		int insert_at = nearest_count;
+		while (insert_at > 0 && nearest[insert_at - 1].distance_sq > distance_sq) {
+			--insert_at;
+		}
+		if (insert_at >= recipient_limit) {
+			continue;
+		}
+		const int shift_end = std::min(nearest_count, recipient_limit - 1);
+		for (int shift = shift_end; shift > insert_at; --shift) {
+			nearest[shift] = nearest[shift - 1];
+		}
+		nearest[insert_at].player_id = player_id;
+		nearest[insert_at].distance_sq = distance_sq;
+		nearest_count = std::min(nearest_count + 1, recipient_limit);
+	}
+	recipients.resize(nearest_count);
+	for (int i = 0; i < nearest_count; ++i) {
+		recipients.set(i, nearest[i].player_id);
+	}
+	out["recipients"] = recipients;
+	return out;
+}
+
 godot::Array GameSim::get_check_warning_candidates(int player_id) const
 {
 	godot::Array out;

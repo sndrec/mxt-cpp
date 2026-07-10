@@ -490,6 +490,7 @@ namespace godot {
 		godot::Transform3D get_car_render_transform(int car_index) const;
 		godot::Transform3D get_saved_player_voice_transform(int player_id, int target_tick) const;
 		godot::Array get_saved_player_voice_transforms(int target_tick) const;
+		godot::Dictionary select_saved_voice_recipients(int sender_id, int local_id, int target_tick, godot::Array eligible_peer_ids, godot::Array excluded_peer_ids, double voice_range, int max_recipients) const;
 		godot::Array get_check_warning_candidates(int player_id) const;
 		godot::Array consume_race_events();
 		void instantiate_gamesim(StreamPeerBuffer* in_buffer, godot::Array car_prop_buffers, godot::Array accel_settings);

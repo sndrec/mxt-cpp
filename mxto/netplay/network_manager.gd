@@ -1629,10 +1629,7 @@ func server_process() -> void:
 			prof_collect_server_inputs_us_interval += _collect_t1 - _collect_t0
 			if server_inputs.is_empty():
 				break
-			var _net_t0 := Time.get_ticks_usec()
 			post_tick()
-			var _net_t1 := Time.get_ticks_usec()
-			log_net_cpu_us_interval += _net_t1 - _net_t0
 			loops += 1
 		if server_tick < target_tick:
 			var _stall_t0 := Time.get_ticks_usec()
@@ -2449,7 +2446,10 @@ func collect_server_inputs() -> Dictionary:
 	if server_tick > target_tick:
 		return {}
 	_fill_delayed_missing_inputs_for_tick(server_tick)
-	if !server_netcode_session.tick_server_frame(server_game_sim, server_tick):
+	var sim_t0 := Time.get_ticks_usec()
+	var ticked := server_netcode_session.tick_server_frame(server_game_sim, server_tick)
+	log_sim_cpu_us_interval += Time.get_ticks_usec() - sim_t0
+	if !ticked:
 		return {}
 	var frame_inputs: Dictionary = server_netcode_session.get_frame_as_dictionary(server_tick)
 	authoritative_history[server_tick] = frame_inputs
