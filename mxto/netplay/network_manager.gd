@@ -114,9 +114,14 @@ const PLAYER_SETTINGS_RESYNC_INTERVAL_SEC := 1.0
 var _settings_resync_timer: Timer
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 const STATE_CHUNK_PAYLOAD_BYTES := 1000
-const STATE_CHUNK_SEND_COPIES := 2
+const STATE_MAX_PAYLOAD_BYTES := 16 * 1024 * 1024
+const STATE_FEC_DATA_CHUNKS := 8
+const STATE_CHUNKS_PER_PEER_PER_SEND := 3
 var state_send_offsets := {}
+var state_send_peer_ids := []
+var outgoing_state_transfers := {}
 var pending_state_chunks := {}
+var latest_pending_state_tick := -1
 var net_race_finish_time := -1
 var player_finish_times := {}
 var player_finish_placements := {}
@@ -277,6 +282,9 @@ var log_state_chunk_stale_drops := 0
 var log_state_chunk_bad_meta_drops := 0
 var log_state_chunk_completed := 0
 var log_state_chunk_completed_count_max := 0
+var log_state_parity_chunks_out := 0
+var log_state_fec_recovered_chunks := 0
+var log_state_fec_abandoned := 0
 var log_state_payload_in := 0
 var log_state_raw_in := 0
 var log_state_recv_count := 0
@@ -420,9 +428,14 @@ func _reset_state_chunk_log_counters() -> void:
 	log_state_chunk_bad_meta_drops = 0
 	log_state_chunk_completed = 0
 	log_state_chunk_completed_count_max = 0
+	log_state_parity_chunks_out = 0
+	log_state_fec_recovered_chunks = 0
+	log_state_fec_abandoned = 0
 
 func _clear_state_chunk_buffers() -> void:
+	outgoing_state_transfers.clear()
 	pending_state_chunks.clear()
+	latest_pending_state_tick = -1
 
 func _prune_state_chunk_buffers() -> void:
 	for tick in pending_state_chunks.keys():
@@ -623,7 +636,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -1248,7 +1261,7 @@ func _flush_log() -> void:
 	line += "," + str(log_client_sim_ticks) + "," + str(log_client_target_tick_advances) + "," + str(log_client_target_tick_remote_advances) + "," + str(log_client_server_tick_advances) + "," + str(log_client_ahead_samples) + "," + str(client_current_ahead_min) + "," + str(client_current_ahead_max) + "," + str(client_current_ahead_avg) + "," + str(client_target_ahead_avg) + "," + str(client_ahead_error_min) + "," + str(client_ahead_error_max) + "," + str(client_ahead_error_avg) + "," + str(log_client_pre_auth_adjust_samples)
 	line += "," + str(peer_fields["server_peer_lag_max"]) + "," + str(peer_fields["server_peer_lag_avg"]) + "," + str(peer_fields["target_peer_lag_max"]) + "," + str(peer_fields["target_peer_lag_avg"]) + "," + str(peer_fields["peer_ahead_min"]) + "," + str(peer_fields["peer_ahead_max"]) + "," + str(peer_fields["peer_ahead_avg"]) + "," + str(peer_fields["peer_rtt_max_ms"]) + "," + str(peer_fields["peer_rtt_avg_ms"]) + "," + str(peer_fields["peer_inputs_accepted"]) + "," + str(peer_fields["peer_inputs_dropped"]) + "," + str(peer_fields["peer_replacements"]) + "," + str(peer_fields["peer_input_server_lead_min"]) + "," + str(peer_fields["peer_input_server_lead_max"]) + "," + str(peer_fields["peer_input_server_lead_avg"]) + "," + str(peer_fields["peer_input_target_lead_min"]) + "," + str(peer_fields["peer_input_target_lead_max"]) + "," + str(peer_fields["peer_input_target_lead_avg"]) + "," + str(peer_fields["peer_snapshot"])
 	line += "," + str(log_timing_ping_out) + "," + str(log_timing_ping_in) + "," + str(log_timing_sync_out) + "," + str(log_timing_sync_in) + "," + str(timing_sync_rtt_avg) + "," + str(log_timing_sync_rtt_ms_max) + "," + str(log_timing_server_gap_max) + "," + str(log_timing_target_gap_max) + "," + str(log_timing_ack_advance)
-	line += "," + str(log_state_chunk_msgs_out) + "," + str(log_state_chunk_msgs_in) + "," + str(log_state_chunk_dups_in) + "," + str(log_state_chunk_stale_drops) + "," + str(log_state_chunk_bad_meta_drops) + "," + str(log_state_chunk_completed) + "," + str(log_state_chunk_completed_count_max) + "," + str(state_pending["records"]) + "," + str(state_pending["best_recv_pct"]) + "," + str(state_pending["best_missing"]) + "," + str(state_pending["oldest_tick"]) + "," + str(state_pending["newest_tick"])
+	line += "," + str(log_state_chunk_msgs_out) + "," + str(log_state_chunk_msgs_in) + "," + str(log_state_chunk_dups_in) + "," + str(log_state_chunk_stale_drops) + "," + str(log_state_chunk_bad_meta_drops) + "," + str(log_state_chunk_completed) + "," + str(log_state_chunk_completed_count_max) + "," + str(log_state_parity_chunks_out) + "," + str(log_state_fec_recovered_chunks) + "," + str(log_state_fec_abandoned) + "," + str(state_pending["records"]) + "," + str(state_pending["best_recv_pct"]) + "," + str(state_pending["best_missing"]) + "," + str(state_pending["oldest_tick"]) + "," + str(state_pending["newest_tick"])
 	line += "," + str(log_state_sec_header) + "," + str(log_state_sec_bumper_meta) + "," + str(log_state_sec_sparks) + "," + str(log_state_sec_car_scalars) + "," + str(log_state_sec_car_vec3) + "," + str(log_state_sec_car_basis) + "," + str(log_state_sec_car_conditionals) + "," + str(log_state_sec_car_tilt) + "," + str(log_state_sec_car_wall) + "," + str(log_state_sec_bumper_total) + "," + str(log_state_sec_triggers) + "," + str(log_state_sec_total) + "," + str(log_state_stat_car_count) + "," + str(log_state_stat_bumper_count) + "," + str(log_state_stat_active_bumpers) + "," + str(log_state_stat_active_sparks) + "," + str(log_state_stat_trigger_count) + "," + str(log_state_stat_car_collision_old) + "," + str(log_state_stat_car_restore)
 	var admission_fields := _race_admission_log_fields()
 	line += "," + str(admission_fields["ready"]) + "," + str(admission_fields["roster"]) + "," + str(admission_fields["blocked"]) + "," + str(admission_fields["snapshot"])
@@ -1480,6 +1493,7 @@ func _calc_state_offsets() -> void:
 	if not is_server:
 		return
 	state_send_offsets.clear()
+	state_send_peer_ids.clear()
 	var recipients := []
 	for source in [player_ids, spectator_ids]:
 		for id in source:
@@ -1490,6 +1504,7 @@ func _calc_state_offsets() -> void:
 	var count := recipients.size()
 	if count == 0:
 		return
+	state_send_peer_ids = recipients
 	for i in range(count):
 		var id = recipients[i]
 		state_send_offsets[id] = int(round(float(STATE_BROADCAST_INTERVAL_TICKS) * float(i) / float(count)))
@@ -1619,6 +1634,8 @@ func server_process() -> void:
 			_check_client_stalls()
 			var _stall_t1 := Time.get_ticks_usec()
 			prof_check_client_stalls_us_interval += _stall_t1 - _stall_t0
+	if is_server:
+		_send_outgoing_state_chunks()
 	if !is_server and !listen_server and Time.get_ticks_msec() > last_target_tick_update + 17 and game_sim != null and game_sim.sim_started:
 		var old_clients_target_tick : int = clients_target_tick
 		clients_target_tick += 1
@@ -1913,6 +1930,7 @@ func _on_peer_disconnected(id: int) -> void:
 		start_sync_sample_counts.erase(id)
 		start_sync_peer_ahead.erase(id)
 		race_admission_states.erase(id)
+		outgoing_state_transfers.erase(id)
 		server_netcode_session.remove_peer(id)
 		for key in pending_inputs:
 			if pending_inputs[key].has(id):
@@ -2782,7 +2800,62 @@ func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedBy
 	var __prof_t1 := Time.get_ticks_usec()
 	prof_server_broadcast_recv_us_interval += __prof_t1 - __prof_t0
 
-@rpc("any_peer", "unreliable", "call_local", 4)
+func _queue_state_transfer(id: int, state_tick: int, uncompressed_size: int, payload: PackedByteArray) -> void:
+	if payload.is_empty():
+		return
+	var data_chunk_count := int(ceil(float(payload.size()) / float(STATE_CHUNK_PAYLOAD_BYTES)))
+	var chunks: Array = server_netcode_session.build_state_fec_chunks(payload, STATE_CHUNK_PAYLOAD_BYTES, STATE_FEC_DATA_CHUNKS)
+	if chunks.is_empty():
+		return
+	outgoing_state_transfers[id] = {
+		"tick": state_tick,
+		"raw_size": uncompressed_size,
+		"payload_size": payload.size(),
+		"data_chunk_count": data_chunk_count,
+		"chunks": chunks,
+		"next_chunk": 0,
+	}
+
+func _send_outgoing_state_chunks() -> void:
+	if !is_server or !race_active:
+		return
+	for id_value in state_send_peer_ids:
+		var id := int(id_value)
+		if !_can_send_rpc_to_peer(id):
+			continue
+		var transfer = outgoing_state_transfers.get(id)
+		if typeof(transfer) != TYPE_DICTIONARY:
+			continue
+		var chunks: Array = transfer.get("chunks", [])
+		if chunks.is_empty():
+			continue
+		var data_chunk_count := int(transfer.get("data_chunk_count", 0))
+		var next_chunk := int(transfer.get("next_chunk", 0))
+		var sent := 0
+		while sent < STATE_CHUNKS_PER_PEER_PER_SEND and next_chunk < chunks.size():
+			var chunk_index := next_chunk
+			next_chunk += 1
+			var chunk: PackedByteArray = chunks[chunk_index]
+			log_state_chunk_msgs_out += 1
+			var chunk_group := chunk_index / (STATE_FEC_DATA_CHUNKS + 1)
+			var chunk_local_index := chunk_index % (STATE_FEC_DATA_CHUNKS + 1)
+			var group_data_count := mini(STATE_FEC_DATA_CHUNKS, data_chunk_count - chunk_group * STATE_FEC_DATA_CHUNKS)
+			if chunk_local_index == group_data_count:
+				log_state_parity_chunks_out += 1
+			_acc_log_out(20 + chunk.size())
+			_server_state_chunk.rpc_id(
+				id,
+				_pack_race_phase_tick(int(transfer["tick"])),
+				int(transfer["raw_size"]),
+				int(transfer["payload_size"]),
+				chunk_index,
+				chunks.size(),
+				chunk)
+			sent += 1
+		transfer["next_chunk"] = next_chunk
+		outgoing_state_transfers[id] = transfer
+
+@rpc("authority", "call_remote", "unreliable", 4)
 func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_payload_size: int, chunk_index: int, chunk_count: int, chunk: PackedByteArray) -> void:
 	if !race_active or !_accept_race_packet_phase(_unpack_race_phase(state_tick)):
 		return
@@ -2792,12 +2865,33 @@ func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_pa
 	if state_tick <= latest_state_tick:
 		log_state_chunk_stale_drops += 1
 		return
-	if state_payload_size <= 0 or chunk_count <= 0 or chunk_index < 0 or chunk_index >= chunk_count:
+	var data_chunk_count := int(ceil(float(state_payload_size) / float(STATE_CHUNK_PAYLOAD_BYTES)))
+	var fec_group_count := int(ceil(float(data_chunk_count) / float(STATE_FEC_DATA_CHUNKS)))
+	var expected_chunk_count := data_chunk_count + fec_group_count
+	if state_payload_size <= 0 or state_payload_size > STATE_MAX_PAYLOAD_BYTES or chunk_count != expected_chunk_count or chunk_count > 4096 or chunk_index < 0 or chunk_index >= chunk_count or chunk.size() > STATE_CHUNK_PAYLOAD_BYTES:
+		log_state_chunk_bad_meta_drops += 1
+		return
+	var chunk_group := chunk_index / (STATE_FEC_DATA_CHUNKS + 1)
+	var chunk_local_index := chunk_index % (STATE_FEC_DATA_CHUNKS + 1)
+	var group_first_data := chunk_group * STATE_FEC_DATA_CHUNKS
+	var group_data_count := mini(STATE_FEC_DATA_CHUNKS, data_chunk_count - group_first_data)
+	var is_parity_chunk := chunk_local_index == group_data_count
+	var data_index := group_first_data + chunk_local_index
+	var expected_chunk_size := STATE_CHUNK_PAYLOAD_BYTES if is_parity_chunk else mini(STATE_CHUNK_PAYLOAD_BYTES, state_payload_size - data_index * STATE_CHUNK_PAYLOAD_BYTES)
+	if chunk_local_index > group_data_count or chunk.size() != expected_chunk_size:
 		log_state_chunk_bad_meta_drops += 1
 		return
 	var __prof_t0 := Time.get_ticks_usec()
 	log_state_chunk_msgs_in += 1
 	_acc_log_in(20 + chunk.size())
+	if latest_pending_state_tick > state_tick:
+		log_state_chunk_stale_drops += 1
+		return
+	if state_tick > latest_pending_state_tick:
+		if !pending_state_chunks.is_empty():
+			log_state_fec_abandoned += 1
+		pending_state_chunks.clear()
+		latest_pending_state_tick = state_tick
 	var record = pending_state_chunks.get(state_tick)
 	if typeof(record) != TYPE_DICTIONARY:
 		var chunks := []
@@ -2810,13 +2904,14 @@ func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_pa
 			"raw_size": state_uncompressed_size,
 			"payload_size": state_payload_size,
 			"chunk_count": chunk_count,
+			"data_chunk_count": data_chunk_count,
 			"chunks": chunks,
 			"received": received,
 			"received_count": 0,
 		}
 		pending_state_chunks[state_tick] = record
 	else:
-		if int(record.get("payload_size", -1)) != state_payload_size or int(record.get("chunk_count", -1)) != chunk_count:
+		if int(record.get("raw_size", -2)) != state_uncompressed_size or int(record.get("payload_size", -1)) != state_payload_size or int(record.get("chunk_count", -1)) != chunk_count:
 			pending_state_chunks.erase(state_tick)
 			log_state_chunk_bad_meta_drops += 1
 			var __prof_t_bad := Time.get_ticks_usec()
@@ -2832,26 +2927,63 @@ func _server_state_chunk(state_tick: int, state_uncompressed_size: int, state_pa
 	var chunks_arr: Array = record["chunks"]
 	chunks_arr[chunk_index] = chunk
 	record["received_count"] = int(record["received_count"]) + 1
-	if int(record["received_count"]) < chunk_count:
+	if int(record["received_count"]) < data_chunk_count:
 		var __prof_t_wait := Time.get_ticks_usec()
 		prof_server_broadcast_recv_us_interval += __prof_t_wait - __prof_t0
 		return
-	log_state_chunk_completed += 1
-	log_state_chunk_completed_count_max = maxi(log_state_chunk_completed_count_max, chunk_count)
+	var recovered_chunks := 0
+	for group_index in range(fec_group_count):
+		var first_data_index := group_index * STATE_FEC_DATA_CHUNKS
+		var this_group_data_count := mini(STATE_FEC_DATA_CHUNKS, data_chunk_count - first_data_index)
+		var first_wire_index := group_index * (STATE_FEC_DATA_CHUNKS + 1)
+		var missing_local_index := -1
+		var missing_count := 0
+		for local_index in range(this_group_data_count):
+			if !bool(received_arr[first_wire_index + local_index]):
+				missing_local_index = local_index
+				missing_count += 1
+		if missing_count == 0:
+			continue
+		var parity_index := first_wire_index + this_group_data_count
+		if missing_count > 1 or !bool(received_arr[parity_index]):
+			var __prof_t_fec_wait := Time.get_ticks_usec()
+			prof_server_broadcast_recv_us_interval += __prof_t_fec_wait - __prof_t0
+			return
+		var recovered: PackedByteArray = (chunks_arr[parity_index] as PackedByteArray).duplicate()
+		for local_index in range(this_group_data_count):
+			if local_index == missing_local_index:
+				continue
+			var source: PackedByteArray = chunks_arr[first_wire_index + local_index]
+			for byte_index in range(source.size()):
+				recovered[byte_index] = recovered[byte_index] ^ source[byte_index]
+		var missing_data_index := first_data_index + missing_local_index
+		var recovered_size := mini(STATE_CHUNK_PAYLOAD_BYTES, state_payload_size - missing_data_index * STATE_CHUNK_PAYLOAD_BYTES)
+		chunks_arr[first_wire_index + missing_local_index] = recovered.slice(0, recovered_size)
+		received_arr[first_wire_index + missing_local_index] = true
+		recovered_chunks += 1
 	var state := PackedByteArray()
 	state.resize(state_payload_size)
 	var offset := 0
-	for i in range(chunk_count):
-		var part: PackedByteArray = chunks_arr[i]
+	for state_data_index in range(data_chunk_count):
+		var group_index := state_data_index / STATE_FEC_DATA_CHUNKS
+		var local_index := state_data_index % STATE_FEC_DATA_CHUNKS
+		var wire_index := group_index * (STATE_FEC_DATA_CHUNKS + 1) + local_index
+		var part: PackedByteArray = chunks_arr[wire_index]
 		for j in range(part.size()):
 			state[offset + j] = part[j]
 		offset += part.size()
 	pending_state_chunks.erase(state_tick)
-	var raw_state_size := state_uncompressed_size if state_uncompressed_size > 0 else state_payload_size
-	_log_state_received(raw_state_size, state_payload_size)
 	var state_to_use := state
 	if state_uncompressed_size > 0:
 		state_to_use = state.decompress(state_uncompressed_size, FileAccess.COMPRESSION_ZSTD)
+		if state_to_use.size() != state_uncompressed_size:
+			log_state_chunk_bad_meta_drops += 1
+			return
+	var raw_state_size := state_uncompressed_size if state_uncompressed_size > 0 else state_payload_size
+	_log_state_received(raw_state_size, state_payload_size)
+	log_state_chunk_completed += 1
+	log_state_chunk_completed_count_max = maxi(log_state_chunk_completed_count_max, chunk_count)
+	log_state_fec_recovered_chunks += recovered_chunks
 	_handle_state(state_tick, state_to_use)
 	_prune_state_chunk_buffers()
 	var __prof_t1 := Time.get_ticks_usec()
@@ -2865,17 +2997,34 @@ func post_tick() -> void:
 		var authoritative_inputs: Dictionary = server_netcode_session.get_frame_as_dictionary(server_tick)
 		if !authoritative_inputs.is_empty():
 			authoritative_server_frame.emit(server_tick, authoritative_inputs)
-		var state = server_game_sim.get_state_data(server_tick)
 		var max_ahead := _calc_max_ahead()
 		max_ahead_from_server = max_ahead
-		# Prepare compressed snapshot lazily and reuse for all recipients this tick
-		var compressed_ready := false
-		var compressed_state : PackedByteArray = PackedByteArray()
-		var uncompressed_size := 0
+		var recipients := state_send_peer_ids
+		var snapshot_recipients := []
+		if !_startup_light_net_active(server_tick):
+			for id_value in recipients:
+				var recipient_id := int(id_value)
+				if _can_send_rpc_to_peer(recipient_id) and state_send_offsets.has(recipient_id) and int(state_send_offsets[recipient_id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
+					snapshot_recipients.append(recipient_id)
+		if !snapshot_recipients.is_empty():
+			# Snapshot serialization and compression only run when at least one peer is
+			# due. The resulting chunks are paced independently of gameplay ticks.
+			var state: PackedByteArray = server_game_sim.get_state_data(server_tick)
+			dump_state_sample(state, server_tick, get_simulation_roster().size())
+			var send_state := state
+			var uncompressed_size := -1
+			if !state.is_empty() and use_state_compression:
+				send_state = state.compress(FileAccess.COMPRESSION_ZSTD)
+				uncompressed_size = state.size()
+			for recipient_id in snapshot_recipients:
+				_queue_state_transfer(recipient_id, server_tick, uncompressed_size, send_state)
+				_log_state_sent(uncompressed_size if uncompressed_size > 0 else send_state.size(), send_state.size())
+				if server_game_sim.has_method("get_network_state_size_stats"):
+					_log_state_size_stats(server_game_sim.get_network_state_size_stats())
 		var input_packet: PackedByteArray = PackedByteArray()
 		var input_packet_meta := -1
 		var input_packet_ready := false
-		for id in player_ids + spectator_ids:
+		for id in recipients:
 			if !_can_send_rpc_to_peer(int(id)):
 				continue
 			if SERVER_TIMING_SYNC_INTERVAL_TICKS <= 1 or server_tick % SERVER_TIMING_SYNC_INTERVAL_TICKS == 0:
@@ -2885,23 +3034,6 @@ func post_tick() -> void:
 				_acc_log_out(12)
 				_server_startup_sync.rpc_id(id, _pack_race_phase_tick(server_tick), startup_ack, target_tick, max_ahead)
 				continue
-			var send_state : PackedByteArray = PackedByteArray()
-			var send_state_uncomp_size := 0
-			if state_send_offsets.has(id) and int(state_send_offsets[id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
-				if not compressed_ready:
-					dump_state_sample(state, server_tick, get_simulation_roster().size())
-					if state.size() > 0 and use_state_compression:
-						compressed_state = state.compress(FileAccess.COMPRESSION_ZSTD)
-						uncompressed_size = state.size()
-					else:
-						compressed_state = state
-						uncompressed_size = -1
-					compressed_ready = true
-				send_state = compressed_state
-				send_state_uncomp_size = uncompressed_size
-				_log_state_sent(uncompressed_size if uncompressed_size > 0 else send_state.size(), send_state.size())
-				if server_game_sim.has_method("get_network_state_size_stats"):
-					_log_state_size_stats(server_game_sim.get_network_state_size_stats())
 			if not input_packet_ready:
 				input_packet = server_netcode_session.build_authoritative_input_packet(server_tick, AUTH_INPUT_REDUNDANCY_FRAMES, race_netplay_phase)
 				if input_packet.size() > 0:
@@ -2915,20 +3047,6 @@ func post_tick() -> void:
 			log_auth_packets_sent += 1
 			_acc_log_out(12 + input_packet.size())
 			_server_broadcast_flat.rpc_id(id, _pack_authoritative_input_tick(server_tick, input_packet_meta), input_packet, server_netcode_session.get_peer_last_received(id))
-			if send_state.size() > 0:
-				var chunk_count := int(ceil(float(send_state.size()) / float(STATE_CHUNK_PAYLOAD_BYTES)))
-				var state_chunks := []
-				state_chunks.resize(chunk_count)
-				for chunk_index in range(chunk_count):
-					var chunk_start := chunk_index * STATE_CHUNK_PAYLOAD_BYTES
-					var chunk_end = mini(chunk_start + STATE_CHUNK_PAYLOAD_BYTES, send_state.size())
-					state_chunks[chunk_index] = send_state.slice(chunk_start, chunk_end)
-				for copy_index in range(STATE_CHUNK_SEND_COPIES):
-					for chunk_index in range(chunk_count):
-						var chunk: PackedByteArray = state_chunks[chunk_index]
-						log_state_chunk_msgs_out += 1
-						_acc_log_out(20 + chunk.size())
-						_server_state_chunk.rpc_id(id, _pack_race_phase_tick(server_tick), send_state_uncomp_size, send_state.size(), chunk_index, chunk_count, chunk)
 		server_tick += 1
 		if listen_server:
 			_prune_authoritative_history()
@@ -3053,6 +3171,7 @@ func disconnect_from_server() -> void:
 	_unverified_peers.clear()
 	_version_request_time.clear()
 	state_send_offsets.clear()
+	state_send_peer_ids.clear()
 	net_race_finish_time = -1
 	race_force_end_deadline_tick = -1
 	player_finish_times.clear()

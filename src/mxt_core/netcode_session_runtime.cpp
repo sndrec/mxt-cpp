@@ -6,6 +6,44 @@
 #include <cstring>
 
 using namespace godot;
+
+godot::Array NetcodeSession::build_state_fec_chunks(godot::PackedByteArray payload, int chunk_size, int data_chunks_per_group) const
+{
+	Array chunks;
+	const int payload_size = payload.size();
+	if (payload_size <= 0 || chunk_size <= 0 || data_chunks_per_group <= 0) {
+		return chunks;
+	}
+
+	const int data_chunk_count = (payload_size + chunk_size - 1) / chunk_size;
+	const int group_count = (data_chunk_count + data_chunks_per_group - 1) / data_chunks_per_group;
+	chunks.resize(data_chunk_count + group_count);
+	const uint8_t* source = payload.ptr();
+	int wire_index = 0;
+	for (int group_index = 0; group_index < group_count; ++group_index) {
+		const int first_data_index = group_index * data_chunks_per_group;
+		const int group_data_count = std::min(data_chunks_per_group, data_chunk_count - first_data_index);
+		PackedByteArray parity;
+		parity.resize(chunk_size);
+		uint8_t* parity_bytes = parity.ptrw();
+		std::memset(parity_bytes, 0, static_cast<size_t>(chunk_size));
+		for (int local_index = 0; local_index < group_data_count; ++local_index) {
+			const int data_index = first_data_index + local_index;
+			const int source_offset = data_index * chunk_size;
+			const int data_size = std::min(chunk_size, payload_size - source_offset);
+			PackedByteArray data_chunk;
+			data_chunk.resize(data_size);
+			std::memcpy(data_chunk.ptrw(), source + source_offset, static_cast<size_t>(data_size));
+			chunks[wire_index++] = data_chunk;
+			for (int byte_index = 0; byte_index < data_size; ++byte_index) {
+				parity_bytes[byte_index] ^= source[source_offset + byte_index];
+			}
+		}
+		chunks[wire_index++] = parity;
+	}
+	return chunks;
+}
+
 godot::Dictionary NetcodeSession::consume_authoritative_packet_stats()
 {
 	Dictionary stats;
