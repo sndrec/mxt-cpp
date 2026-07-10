@@ -66,18 +66,21 @@ var last_ack_tick: int = -1
 var target_tick: int = 0
 const MAX_AHEAD_TICKS := 30
 const MAX_HISTORY_TICKS := 60
-const INPUT_RETRANSMIT_RECENT_TICKS := 5
-const INPUT_RETRANSMIT_STARTUP_TICKS := 64
+const INPUT_FORWARD_REDUNDANCY_TICKS := 12
 const STARTUP_LIGHT_NET_TICKS := 120
 const SERVER_INPUT_REPLACEMENT_BACKLOG_TICKS := 5
 const AUTH_INPUT_REDUNDANCY_FRAMES := 2
 const AUTH_INPUT_ROLLBACK_WINDOW_TICKS := 20
 var sent_input_times := {}
 var rtt_s: float = 0.0
+var rtt_variance_s: float = 0.0
 var desired_ahead_ticks: float = 2.0
 var base_wait_time: float = 1.0 / 60.0
-const JITTER_BUFFER := 0.016
+const MIN_JITTER_BUFFER_SEC := 0.016
+const RTT_VARIANCE_MULTIPLIER := 2.5
+const MAX_JITTER_BUFFER_SEC := 0.150
 const RTT_SMOOTHING := 0.1
+const RTT_VARIANCE_SMOOTHING := 0.2
 const SPEED_ADJUST_STEP := 0.0003
 const SHARED_AHEAD_EXTRA_TICKS := 3.0
 const SHARED_AHEAD_CAP_TICKS := 10.0
@@ -325,7 +328,6 @@ var prof_recalc_pred_us_interval := 0
 var prof_adjust_time_scale_us_interval := 0
 var prof_car_store_old_pos_us_interval := 0
 var prof_car_post_render_us_interval := 0
-var _log_sent_counts := {}
 var _log_timer: Timer
 var rollback_frametime_us := 0
 var net_input_debug_prints := 0
@@ -636,7 +638,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,rtt_variance,input_forward_redundancy,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -1256,7 +1258,7 @@ func _flush_log() -> void:
 		timing_sync_rtt_avg = log_timing_sync_rtt_ms_sum / float(log_timing_sync_rtt_samples)
 	var peer_fields := _build_server_peer_log_fields()
 	var state_pending := _state_pending_log_fields()
-	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(server_behind_ticks) + "," + str(server_behind_avg) + "," + str(log_server_behind_ticks_max) + "," + str(delayed_peers) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(log_state_raw_out) + "," + str(log_state_payload_out) + "," + str(log_state_sent_count) + "," + str(log_state_max_fragments_out) + "," + str(state_success) + "," + str(log_state_payload_in) + "," + str(log_state_raw_in) + "," + str(log_state_recv_count) + "," + str(log_state_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
+	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(server_behind_ticks) + "," + str(server_behind_avg) + "," + str(log_server_behind_ticks_max) + "," + str(delayed_peers) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(rtt_variance_s) + "," + str(INPUT_FORWARD_REDUNDANCY_TICKS) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(log_state_raw_out) + "," + str(log_state_payload_out) + "," + str(log_state_sent_count) + "," + str(log_state_max_fragments_out) + "," + str(state_success) + "," + str(log_state_payload_in) + "," + str(log_state_raw_in) + "," + str(log_state_recv_count) + "," + str(log_state_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	line += "," + str(client_current_ahead) + "," + str(client_target_ahead) + "," + str(client_ahead_error) + "," + str(client_server_gap) + "," + str(client_unacked["count"]) + "," + str(client_unacked["oldest"]) + "," + str(client_unacked["newest"]) + "," + str(last_ack_tick) + "," + str(client_ack_lag) + "," + str(log_client_ahead_throttle_frames) + "," + str(use_physics_ticks)
 	line += "," + str(log_client_sim_ticks) + "," + str(log_client_target_tick_advances) + "," + str(log_client_target_tick_remote_advances) + "," + str(log_client_server_tick_advances) + "," + str(log_client_ahead_samples) + "," + str(client_current_ahead_min) + "," + str(client_current_ahead_max) + "," + str(client_current_ahead_avg) + "," + str(client_target_ahead_avg) + "," + str(client_ahead_error_min) + "," + str(client_ahead_error_max) + "," + str(client_ahead_error_avg) + "," + str(log_client_pre_auth_adjust_samples)
 	line += "," + str(peer_fields["server_peer_lag_max"]) + "," + str(peer_fields["server_peer_lag_avg"]) + "," + str(peer_fields["target_peer_lag_max"]) + "," + str(peer_fields["target_peer_lag_avg"]) + "," + str(peer_fields["peer_ahead_min"]) + "," + str(peer_fields["peer_ahead_max"]) + "," + str(peer_fields["peer_ahead_avg"]) + "," + str(peer_fields["peer_rtt_max_ms"]) + "," + str(peer_fields["peer_rtt_avg_ms"]) + "," + str(peer_fields["peer_inputs_accepted"]) + "," + str(peer_fields["peer_inputs_dropped"]) + "," + str(peer_fields["peer_replacements"]) + "," + str(peer_fields["peer_input_server_lead_min"]) + "," + str(peer_fields["peer_input_server_lead_max"]) + "," + str(peer_fields["peer_input_server_lead_avg"]) + "," + str(peer_fields["peer_input_target_lead_min"]) + "," + str(peer_fields["peer_input_target_lead_max"]) + "," + str(peer_fields["peer_input_target_lead_avg"]) + "," + str(peer_fields["peer_snapshot"])
@@ -1413,6 +1415,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	last_received_tick.clear()
 	last_ack_tick = -1
 	rtt_s = 0.0
+	rtt_variance_s = 0.0
 	net_race_finish_time = -1
 	player_finish_times.clear()
 	player_finish_placements.clear()
@@ -1716,7 +1719,7 @@ func _lobby_latency_pong(sent_msec: int) -> void:
 		peer_client_rtt_s[sender] = sample
 		lobby_latency_rtt_s[sender] = sample
 	else:
-		rtt_s = sample if rtt_s == 0.0 else lerp(rtt_s, sample, RTT_SMOOTHING)
+		_record_rtt_sample(sample)
 		lobby_latency_rtt_s[multiplayer.get_unique_id()] = rtt_s
 	lobby_latency_pending_msec.erase(sender)
 
@@ -1743,10 +1746,7 @@ func _start_sync_pong(client_send_msec: int, server_recv_msec: int, packed_sampl
 		return
 	var now := Time.get_ticks_msec()
 	var sample_rtt_s: float = max(0.0, 0.001 * float(now - client_send_msec))
-	if rtt_s == 0.0:
-		rtt_s = sample_rtt_s
-	else:
-		rtt_s = lerp(rtt_s, sample_rtt_s, RTT_SMOOTHING)
+	_record_rtt_sample(sample_rtt_s)
 	var midpoint := 0.5 * float(client_send_msec + now)
 	var sample_offset := float(server_recv_msec) - midpoint
 	if start_sync_client_sample_count == 0:
@@ -1758,7 +1758,6 @@ func _start_sync_pong(client_send_msec: int, server_recv_msec: int, packed_sampl
 		local_race_admission_stage = RACE_ADMISSION_TIMING
 		local_race_admission_detail = "timing sample %d/%d" % [mini(start_sync_client_sample_count, START_SYNC_SAMPLE_COUNT), START_SYNC_SAMPLE_COUNT]
 		local_race_admission_progress_msec = now
-	_update_desired_ahead()
 	_client_start_sync_sample.rpc_id(1, packed_sample_seq, rtt_s, desired_ahead_ticks)
 
 @rpc("any_peer", "call_remote", "unreliable", 5)
@@ -1795,6 +1794,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	target_tick = 0
 	last_ack_tick = -1
 	rtt_s = 0.0
+	rtt_variance_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	peer_client_rtt_s.clear()
@@ -1854,6 +1854,7 @@ func join(ip: String, port: int = 27016) -> int:
 	target_tick = 0
 	last_ack_tick = -1
 	rtt_s = 0.0
+	rtt_variance_s = 0.0
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	peer_client_rtt_s.clear()
@@ -2414,30 +2415,6 @@ func _fill_delayed_missing_inputs_for_tick(tick: int) -> void:
 		_log_add_int(log_peer_replacements, pid, 1)
 	pending_inputs[tick] = waiting
 
-func _recent_unacked_input_keys(keys: Array) -> Array:
-	var out: Array = []
-	if keys.is_empty():
-		return out
-	keys.sort()
-	var first_unacked := last_ack_tick + 1
-	var max_count := INPUT_RETRANSMIT_RECENT_TICKS
-	if last_ack_tick < 0:
-		first_unacked = int(keys[0])
-		max_count = INPUT_RETRANSMIT_STARTUP_TICKS
-	var start_index := keys.size()
-	for i in range(keys.size()):
-		if int(keys[i]) >= first_unacked:
-			start_index = i
-			break
-	if start_index >= keys.size():
-		start_index = max(keys.size() - INPUT_RETRANSMIT_RECENT_TICKS, 0)
-	var end_index = keys.size()
-	if end_index - start_index > max_count:
-		start_index = end_index - max_count
-	for i in range(start_index, end_index):
-		out.append(keys[i])
-	return out
-
 func collect_server_inputs() -> Dictionary:
 	if not is_server:
 		return {}
@@ -2477,6 +2454,12 @@ func collect_server_inputs() -> Dictionary:
 	pending_inputs.erase(server_tick)
 	return frame_inputs
 
+func _input_forward_window(last_tick: int) -> Vector2i:
+	if last_tick < STARTUP_LIGHT_NET_TICKS:
+		return Vector2i(-1, 0)
+	var first_tick := maxi(STARTUP_LIGHT_NET_TICKS, last_tick - INPUT_FORWARD_REDUNDANCY_TICKS + 1)
+	return Vector2i(first_tick, last_tick - first_tick + 1)
+
 func collect_client_inputs() -> Dictionary:
 	if game_sim != null and !game_sim.sim_started:
 		return {}
@@ -2513,11 +2496,10 @@ func collect_client_inputs() -> Dictionary:
 	if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
 		log_client_ahead_throttle_frames += 1
 		if !is_server:
-			var old_keys := sent_inputs_bytes.keys()
-			if old_keys.size() > 0:
-				var recent_keys := _recent_unacked_input_keys(old_keys)
-				var start := int(recent_keys[0])
-				var packet: PackedByteArray = netcode_session.build_local_input_packet(start, recent_keys.size(), race_netplay_phase)
+			var last_forward_tick := local_tick - 1
+			var window := _input_forward_window(last_forward_tick)
+			if window.y > 0:
+				var packet: PackedByteArray = netcode_session.build_local_input_packet(window.x, window.y, race_netplay_phase)
 				log_flat_client_payload_out += packet.size()
 				_acc_log_out(12 + packet.size())
 				_client_send_input_flat.rpc_id(1, packet, desired_ahead_ticks, rtt_s)
@@ -2540,19 +2522,13 @@ func collect_client_inputs() -> Dictionary:
 		last_input_time[local_player_id] = 0.001 * float(Time.get_ticks_msec())
 		last_received_tick[local_player_id] = local_tick
 		server_netcode_session.set_peer_last_received(local_player_id, local_tick, last_input_time[local_player_id])
-	var all_keys := sent_inputs_bytes.keys()
-	if !is_server and all_keys.size() > 0:
-		var recent_keys := _recent_unacked_input_keys(all_keys)
-		var first_tick := int(recent_keys[0])
-		var input_packet: PackedByteArray = netcode_session.build_local_input_packet(first_tick, recent_keys.size(), race_netplay_phase)
+	if !is_server:
+		var window := _input_forward_window(local_tick)
+		var input_packet: PackedByteArray = netcode_session.build_local_input_packet(window.x, window.y, race_netplay_phase)
 		log_flat_client_payload_out += input_packet.size()
 		_acc_log_out(12 + input_packet.size())
-		for k in recent_keys:
-			var prev := int(_log_sent_counts.get(k, 0))
-			_log_sent_counts[k] = prev + 1
-			if prev > 0:
-				log_inputs_retransmitted += 1
-			log_inputs_sent += 1
+		log_inputs_sent += window.y
+		log_inputs_retransmitted += maxi(window.y - 1, 0)
 		_client_send_input_flat.rpc_id(1, input_packet, desired_ahead_ticks, rtt_s)
 		last_input_time[multiplayer.get_unique_id()] = 0.001 * float(Time.get_ticks_msec())
 	netcode_session.tick_client_predicted_frame(game_sim, local_tick)
@@ -2622,11 +2598,7 @@ func _server_timing_sync(packed_server_tick: int, tgt: int, this_ack: int, max_a
 			log_timing_sync_rtt_ms_max = maxf(log_timing_sync_rtt_ms_max, sample_ms)
 			log_timing_sync_rtt_samples += 1
 			var sample: float = 0.001 * sample_ms
-			if rtt_s == 0.0:
-				rtt_s = sample
-			else:
-				rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
-			_update_desired_ahead()
+			_record_rtt_sample(sample)
 	var old_ack := last_ack_tick
 	_apply_server_input_ack(this_ack, false)
 	log_timing_ack_advance += max(0, last_ack_tick - max(old_ack, -1))
@@ -2714,20 +2686,14 @@ func _apply_server_input_ack(ack_tick: int, update_rtt_from_input: bool = true) 
 	last_ack_tick = max(last_ack_tick, ack_tick)
 	var newly = max(0, last_ack_tick - max(old_ack, -1))
 	log_inputs_acked += newly
-	for key in _log_sent_counts.keys():
-		if int(key) <= last_ack_tick:
-			_log_sent_counts.erase(key)
 	if update_rtt_from_input and sent_input_times.has(ack_tick):
 		if is_server and listen_server:
 			rtt_s = 0.0
+			rtt_variance_s = 0.0
 			desired_ahead_ticks = 0.0
 		else:
 			var sample : float = 0.001 * float(Time.get_ticks_msec()) - sent_input_times[ack_tick]
-			if rtt_s == 0.0:
-				rtt_s = sample
-			else:
-				rtt_s = lerp(rtt_s, sample, RTT_SMOOTHING)
-			_update_desired_ahead()
+			_record_rtt_sample(sample)
 		sent_input_times.erase(ack_tick)
 	for key in sent_inputs_bytes.keys():
 		if key <= last_ack_tick:
@@ -3166,6 +3132,7 @@ func disconnect_from_server() -> void:
 	last_received_tick.clear()
 	last_ack_tick = -1
 	rtt_s = 0.0
+	rtt_variance_s = 0.0
 	player_settings.clear()
 	custom_stamp_network.clear()
 	_unverified_peers.clear()
@@ -3240,11 +3207,23 @@ func _prune_authoritative_history() -> void:
 		if key <= window_cutoff:
 			authoritative_history.erase(key)
 
+func _record_rtt_sample(sample_s: float) -> void:
+	sample_s = maxf(sample_s, 0.0)
+	if rtt_s <= 0.0:
+		rtt_s = sample_s
+		rtt_variance_s = 0.0
+	else:
+		var deviation := absf(sample_s - rtt_s)
+		rtt_variance_s = lerp(rtt_variance_s, deviation, RTT_VARIANCE_SMOOTHING)
+		rtt_s = lerp(rtt_s, sample_s, RTT_SMOOTHING)
+	_update_desired_ahead()
+
 func _update_desired_ahead() -> void:
 	if is_server and listen_server:
 		desired_ahead_ticks = 0.0
 		return
-	desired_ahead_ticks = ((rtt_s) + JITTER_BUFFER) / base_wait_time
+	var jitter_buffer := clampf(rtt_variance_s * RTT_VARIANCE_MULTIPLIER, MIN_JITTER_BUFFER_SEC, MAX_JITTER_BUFFER_SEC)
+	desired_ahead_ticks = clampf((rtt_s + jitter_buffer) / base_wait_time, 2.0, float(MAX_AHEAD_TICKS))
 
 var use_physics_ticks := 1.0
 
