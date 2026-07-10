@@ -1288,10 +1288,18 @@ func _update_start_sync_drop_panel() -> void:
 		start_sync_drop_root.visible = false
 		return
 	var names: PackedStringArray = info.get("stalled_names", PackedStringArray())
+	var stages: PackedStringArray = info.get("stalled_stages", PackedStringArray())
+	var details: PackedStringArray = info.get("stalled_details", PackedStringArray())
 	var remaining := float(info.get("drop_remaining_sec", 0.0))
-	var title := "Waiting for network traffic"
-	if names.size() > 0:
-		title += " from " + ", ".join(names)
+	var entries := PackedStringArray()
+	for i in range(names.size()):
+		var entry := names[i]
+		if i < stages.size() and !stages[i].is_empty():
+			entry += " (%s)" % stages[i]
+		if i < details.size() and !details[i].is_empty():
+			entry += ": %s" % details[i]
+		entries.append(entry)
+	var title := "Waiting for " + ", ".join(entries)
 	if bool(info.get("can_drop", false)):
 		start_sync_drop_label.text = title + "."
 		start_sync_drop_button.disabled = false
@@ -2037,9 +2045,9 @@ func _custom_stamp_manifest_region_size(entry: Dictionary) -> Vector2i:
 		return Vector2i.ZERO
 	return Vector2i(int(values[0]), int(values[1]))
 
-func _start_race(track_index: int, settings: Array) -> void:
+func _start_race(track_index: int, settings: Array) -> bool:
 	if track_index < 0 or track_index >= track_content_controller.tracks.size():
-		return
+		return false
 	_close_settings_menus_for_race_start()
 	$Control.visible = false
 	lobby_control.visible = false
@@ -2055,7 +2063,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 	var info: Dictionary = track_content_controller.tracks[track_index]
 	_hide_race_results_summary()
 	if !track_content_controller.prepare_race(track_index):
-		return
+		return false
 	race_audio_controller.reset_for_race()
 	race_audio_controller.configure_track_music(
 		track_content_controller.current_track_dir,
@@ -2239,11 +2247,7 @@ func _start_race(track_index: int, settings: Array) -> void:
 				inst.transform = trig["transform"]
 				obj_container.add_child(inst)
 				trigger_objects.append(inst)
-	if !singleplayer_mode:
-		if network_manager.is_server:
-			network_manager.client_ready(network_manager.race_netplay_phase)
-		else:
-			network_manager.client_ready.rpc_id(1, network_manager.race_netplay_phase)
+	return true
 
 func _on_start_race_button_pressed() -> void:
 	if network_manager.is_server:
@@ -2272,10 +2276,18 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 	var track_index := track_content_controller.track_index_for_id(track_id)
 	if track_index < 0:
 		var message := "Missing race track %s" % track_id
+		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, message)
 		push_error(message)
 		_show_race_notification(message, 5000)
 		if headless_mode:
 			get_tree().quit(1)
+		return
+	var admission_phase := network_manager.race_netplay_phase
+	network_manager.report_race_admission(network_manager.RACE_ADMISSION_LOADING, "loading %s" % track_id)
+	# Return to the multiplayer loop once before beginning the synchronous load so
+	# the server receives the explicit loading acknowledgement.
+	await get_tree().process_frame
+	if !network_manager.race_active or network_manager.race_netplay_phase != admission_phase:
 		return
 	race_results_next_accel_setting = -1.0
 	race_dnf_low_speed_ticks.clear()
@@ -2286,13 +2298,13 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 	if race_communication_overlay != null:
 		race_communication_overlay.close_chat()
 	_close_settings_menus_for_race_start()
-	if headless_mode:
-		_start_race(track_index, settings)
+	if !_start_race(track_index, settings):
+		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, "race initialization failed")
 		return
-	_start_race(track_index, settings)
 	game_sim.set_sim_started(false)
 	if network_manager.is_server:
 		server_game_sim.set_sim_started(false)
+	network_manager.report_race_admission(network_manager.RACE_ADMISSION_READY, "race initialized")
 
 func _on_network_race_finished() -> void:
 	if headless_mode and network_manager.pending_next_race_track_id == "":
@@ -2974,8 +2986,6 @@ func _transition_to_next_grand_prix_race() -> void:
 	network_manager.race_options = next_options
 	_apply_grand_prix_eliminations(next_options)
 	network_manager.start_race(next_track_id, next_settings, next_options)
-	if network_manager.is_server and network_manager.player_ids.size() <= 1:
-		network_manager.begin_simulation()
 
 func _apply_grand_prix_eliminations(options: Dictionary) -> void:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])

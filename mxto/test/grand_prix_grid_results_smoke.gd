@@ -102,14 +102,19 @@ func _init() -> void:
 	nm.is_server = true
 	nm.listen_server = false
 	nm.player_ids = [1, 2, 3]
-	nm.ready_players.assign([1, 2, 3])
+	nm.race_admission_states = {
+		1: {"stage": nm.RACE_ADMISSION_SCHEDULED, "progress_msec": 1, "detail": "stale"},
+		2: {"stage": nm.RACE_ADMISSION_SCHEDULED, "progress_msec": 1, "detail": "stale"},
+		3: {"stage": nm.RACE_ADMISSION_SCHEDULED, "progress_msec": 1, "detail": "stale"},
+	}
 	nm.start_sync_active = true
 	nm.start_sync_scheduled = true
 	nm.start_race("sha256:test", [], {})
-	if !nm.ready_players.is_empty():
-		push_error("Grand Prix next race start must clear stale ready players, got %s" % [nm.ready_players])
-		quit(1)
-		return
+	for id in [1, 2, 3]:
+		if nm._race_admission_stage(id) != nm.RACE_ADMISSION_START_SENT:
+			push_error("Grand Prix next race start must reset stale admission state, got %s" % [nm.race_admission_states])
+			quit(1)
+			return
 	if nm.start_sync_active or nm.start_sync_scheduled:
 		push_error("Grand Prix next race start must reset stale start-sync state")
 		quit(1)
