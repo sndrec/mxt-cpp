@@ -3157,6 +3157,12 @@ godot::PackedByteArray NetcodeSession::build_authoritative_input_packet(int last
 		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ANALOG_DELTA;
 		selected_raw_size = hybrid_raw_size;
 	}
+	if (compressed.size() <= 0) {
+		compressed = compress_auth_input_plain(bitpacked_zero_raw);
+		compression_mode = MXT_NET_AUTH_MODE_BITPACKED_ZERO_BITMAP_STRAFE_SPARSE_DICT_ZSTD;
+		selected_layout = AUTH_INPUT_LAYOUT_BITPACKED_BUTTONS_ZERO_BITMAP;
+		selected_raw_size = bitpacked_zero_raw.size();
+	}
 	if (compressed.size() <= 0 || !writer.write_bytes(compressed.ptr(), static_cast<int>(compressed.size()))) {
 		return PackedByteArray();
 	}
