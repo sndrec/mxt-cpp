@@ -5,6 +5,7 @@
 #include "godot_cpp/classes/image_texture.hpp"
 #include "godot_cpp/classes/mesh.hpp"
 #include "godot_cpp/classes/object.hpp"
+#include "godot_cpp/classes/rendering_server.hpp"
 #include "godot_cpp/core/class_db.hpp"
 #include "godot_cpp/variant/packed_color_array.hpp"
 #include "godot_cpp/variant/packed_float32_array.hpp"
@@ -699,6 +700,10 @@ Dictionary NativeStampMeshBuilder::build_for_body_mesh_with_masks(
 	Ref<Texture2D> visibility_mask;
 	if (mask_image.is_valid()) {
 		visibility_mask = ImageTexture::create_from_image(mask_image);
+		RenderingServer *rendering_server = RenderingServer::get_singleton();
+		if (rendering_server != nullptr) {
+			rendering_server->force_sync();
+		}
 	}
 	result["mesh"] = out_mesh;
 	result["visibility_mask"] = visibility_mask;

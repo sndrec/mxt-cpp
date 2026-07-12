@@ -186,6 +186,28 @@ var car_outline_material : ShaderMaterial
 var vehicle_main : MeshInstance3D
 var vehicle_shadow : MeshInstance3D
 var _needs_process_reset := false
+var render_profile_process_frames := 0
+var render_profile_process_us := 0
+var render_profile_process_max_us := 0
+var render_profile_electricity_us := 0
+var render_profile_electricity_max_us := 0
+var render_profile_physics_frames := 0
+var render_profile_physics_us := 0
+var render_profile_physics_max_us := 0
+
+func get_render_profile_string() -> String:
+	var process_frames := maxi(render_profile_process_frames, 1)
+	var physics_frames := maxi(render_profile_physics_frames, 1)
+	return "MXT_VISUAL_CAR_PROFILE process_frames=%d process_us=%d process_max_us=%d electricity_us=%d electricity_max_us=%d physics_frames=%d physics_us=%d physics_max_us=%d" % [
+		render_profile_process_frames,
+		int(render_profile_process_us / process_frames),
+		render_profile_process_max_us,
+		int(render_profile_electricity_us / process_frames),
+		render_profile_electricity_max_us,
+		render_profile_physics_frames,
+		int(render_profile_physics_us / physics_frames),
+		render_profile_physics_max_us,
+	]
 
 func _ready() -> void:
 	car_visual = Node3D.new()
@@ -570,6 +592,8 @@ func _apply_gameplay_camera(ratio: float) -> void:
 @onready var boost_electricity: BoostElectricity = $BoostElectricity
 
 func _physics_process(delta):
+	var profile_enabled := game_manager != null and game_manager.auto_render_profile_mode
+	var profile_start := Time.get_ticks_usec() if profile_enabled else 0
 	rollback_offset_error_prev = rollback_offset_error
 	rollback_rot_error_prev    = rollback_rot_error
 
@@ -607,6 +631,11 @@ func _physics_process(delta):
 		attack_particles.emitting = false
 		landing_particles.emitting = false
 	terrain_state_old = terrain_state
+	if profile_enabled:
+		var profile_us := Time.get_ticks_usec() - profile_start
+		render_profile_physics_us += profile_us
+		render_profile_physics_max_us = maxi(render_profile_physics_max_us, profile_us)
+		render_profile_physics_frames += 1
 
 var is_predicted = true
 
@@ -630,6 +659,8 @@ func just_rendered() -> void:
 var track_surface_smoothed := Vector3.UP
 
 func _process(delta: float) -> void:
+	var profile_enabled := game_manager != null and game_manager.auto_render_profile_mode
+	var profile_start := Time.get_ticks_usec() if profile_enabled else 0
 	frame_accumulation += delta
 	delta = minf(1.0, delta)
 	var ratio := frame_accumulation * Engine.physics_ticks_per_second
@@ -679,6 +710,16 @@ func _process(delta: float) -> void:
 		boost_electricity.boosting = false
 	if effect_tier == EffectTier.FULL:
 		boost_electricity.tendril_lifetime = remap(speed_kmh, 0, 3000, 0.3, 0.1)
+		var profile_electricity_start := Time.get_ticks_usec() if profile_enabled else 0
 		boost_electricity.calculate_electricity(delta, car_transform.global_transform)
+		if profile_enabled:
+			var profile_electricity_us := Time.get_ticks_usec() - profile_electricity_start
+			render_profile_electricity_us += profile_electricity_us
+			render_profile_electricity_max_us = maxi(render_profile_electricity_max_us, profile_electricity_us)
 	is_predicted = true
 	#DebugDraw2D.set_text("current_checkpoint", current_checkpoint)
+	if profile_enabled:
+		var profile_us := Time.get_ticks_usec() - profile_start
+		render_profile_process_us += profile_us
+		render_profile_process_max_us = maxi(render_profile_process_max_us, profile_us)
+		render_profile_process_frames += 1

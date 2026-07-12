@@ -136,6 +136,7 @@ var auto_bumpers_mode: bool = false
 var debug_bumper_smoke_mode: bool = false
 var auto_render_profile_mode: bool = false
 var auto_disable_car_multimesh_mode: bool = false
+var auto_render_all_car_bodies_mode: bool = false
 var auto_disable_node_effects_mode: bool = false
 var auto_disable_thruster_lights_mode: bool = false
 var auto_hide_track_visuals_mode: bool = false
@@ -186,13 +187,60 @@ var race_results_next_accel_setting: float = -1.0
 var race_results_hid_race_hud := false
 var race_results_saved_race_hud_visible := false
 var render_profile_frames := 0
+var render_profile_process_frames := 0
 var render_profile_physics_us := 0
 var render_profile_tick_us := 0
 var render_profile_render_us := 0
 var render_profile_nametag_us := 0
 var render_profile_local_visual_us := 0
+var render_profile_input_us := 0
+var render_profile_events_us := 0
+var render_profile_camera_us := 0
+var render_profile_audio_tick_us := 0
+var render_profile_finish_check_us := 0
 var render_profile_process_us := 0
 var render_profile_visuals_only_us := 0
+var render_profile_physics_max_us := 0
+var render_profile_tick_max_us := 0
+var render_profile_render_max_us := 0
+var render_profile_nametag_max_us := 0
+var render_profile_local_visual_max_us := 0
+var render_profile_input_max_us := 0
+var render_profile_events_max_us := 0
+var render_profile_camera_max_us := 0
+var render_profile_audio_tick_max_us := 0
+var render_profile_finish_check_max_us := 0
+var render_profile_process_max_us := 0
+var render_profile_visuals_only_max_us := 0
+var render_profile_last_process_start_us := 0
+var render_profile_frame_gap_max_us := 0
+var render_profile_frame_gap_over_16ms := 0
+var render_profile_frame_gap_over_20ms := 0
+var render_profile_frame_gap_over_25ms := 0
+var render_profile_frame_gap_over_33ms := 0
+var render_profile_frame_gap_over_50ms := 0
+var render_profile_last_physics_sample_us := 0
+var render_profile_last_process_sample_us := 0
+var render_profile_last_pipeline_draw := -1
+var render_profile_last_pipeline_surface := -1
+var render_profile_last_pipeline_mesh := -1
+var render_profile_top_gap_us := PackedInt64Array()
+var render_profile_top_gap_tick := PackedInt64Array()
+var render_profile_top_gap_physics_us := PackedInt64Array()
+var render_profile_top_gap_process_us := PackedInt64Array()
+var render_profile_top_gap_pipeline_draw := PackedInt64Array()
+var render_profile_top_gap_pipeline_surface := PackedInt64Array()
+var render_profile_top_gap_pipeline_mesh := PackedInt64Array()
+var render_profile_top_gap_native_total_us := PackedInt64Array()
+var render_profile_top_gap_native_vehicle_us := PackedInt64Array()
+var render_profile_top_gap_native_collision_us := PackedInt64Array()
+var render_profile_top_gap_native_save_us := PackedInt64Array()
+var render_profile_top_gap_body_instances := PackedInt64Array()
+var render_profile_top_gap_draw_calls := PackedInt64Array()
+var render_profile_top_gap_primitives := PackedInt64Array()
+var render_profile_top_gap_engine_process_us := PackedInt64Array()
+var render_profile_top_gap_engine_physics_us := PackedInt64Array()
+const RENDER_PROFILE_TOP_GAP_COUNT := 24
 var nametag_pool: Array[Label] = []
 var nametag_pool_car_indices: Array[int] = []
 var nametag_pool_pending_indices: Array[int] = []
@@ -290,7 +338,7 @@ func _ready() -> void:
 	if launch_cpu_driver_count >= 0:
 		singleplayer_cpu_count = launch_cpu_driver_count
 		if cpu_slider != null:
-			cpu_slider.value = singleplayer_cpu_count
+			cpu_slider.set_value_no_signal(mini(singleplayer_cpu_count, int(cpu_slider.max_value)))
 		_update_cpu_slider_label()
 		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
 	auto_host_mode = args.has("--host") or user_args.has("--host")
@@ -302,6 +350,7 @@ func _ready() -> void:
 	debug_bumper_smoke_mode = args.has("--debug-bumper-smoke") or user_args.has("--debug-bumper-smoke")
 	auto_render_profile_mode = args.has("--render-profile") or user_args.has("--render-profile")
 	auto_disable_car_multimesh_mode = args.has("--profile-disable-car-multimesh") or user_args.has("--profile-disable-car-multimesh")
+	auto_render_all_car_bodies_mode = args.has("--render-all-car-bodies") or user_args.has("--render-all-car-bodies")
 	auto_disable_node_effects_mode = args.has("--profile-disable-node-effects") or user_args.has("--profile-disable-node-effects")
 	auto_disable_thruster_lights_mode = args.has("--profile-disable-thruster-lights") or user_args.has("--profile-disable-thruster-lights")
 	auto_hide_track_visuals_mode = args.has("--profile-hide-track-visuals") or user_args.has("--profile-hide-track-visuals")
@@ -310,8 +359,43 @@ func _ready() -> void:
 	auto_disable_hud_process_only_mode = args.has("--profile-disable-hud-process-only") or user_args.has("--profile-disable-hud-process-only")
 	auto_disable_minimap_mode = args.has("--profile-disable-minimap") or user_args.has("--profile-disable-minimap")
 	game_sim.set_render_profile_enabled(auto_render_profile_mode)
+	game_sim.set_phase_profile_enabled(auto_render_profile_mode)
+	if auto_render_profile_mode:
+		render_profile_top_gap_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_tick.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_physics_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_process_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_pipeline_draw.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_pipeline_surface.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_pipeline_mesh.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_native_total_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_native_vehicle_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_native_collision_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_native_save_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_body_instances.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_draw_calls.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_primitives.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_engine_process_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_engine_physics_us.resize(RENDER_PROFILE_TOP_GAP_COUNT)
+		render_profile_top_gap_us.fill(0)
+		render_profile_top_gap_tick.fill(0)
+		render_profile_top_gap_physics_us.fill(0)
+		render_profile_top_gap_process_us.fill(0)
+		render_profile_top_gap_pipeline_draw.fill(0)
+		render_profile_top_gap_pipeline_surface.fill(0)
+		render_profile_top_gap_pipeline_mesh.fill(0)
+		render_profile_top_gap_native_total_us.fill(0)
+		render_profile_top_gap_native_vehicle_us.fill(0)
+		render_profile_top_gap_native_collision_us.fill(0)
+		render_profile_top_gap_native_save_us.fill(0)
+		render_profile_top_gap_body_instances.fill(0)
+		render_profile_top_gap_draw_calls.fill(0)
+		render_profile_top_gap_primitives.fill(0)
+		render_profile_top_gap_engine_process_us.fill(0)
+		render_profile_top_gap_engine_physics_us.fill(0)
 	game_sim.set_render_node_effects_enabled(!auto_disable_node_effects_mode)
 	game_sim.set_render_thruster_lights_enabled(!auto_disable_thruster_lights_mode)
+	game_sim.set_render_all_car_bodies(auto_render_all_car_bodies_mode)
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var quit_idx := args.find("--quit-after-frames")
 	var quit_args := args
@@ -357,6 +441,9 @@ func _ready() -> void:
 		join_timer.start()
 		$Control.visible = false
 		lobby_control.visible = true
+
+func _exit_tree() -> void:
+	RenderingServer.force_sync()
 
 func _parse_cpu_driver_count_arg(args: Array) -> int:
 	var cpu_idx := args.find("-cpu-drivers")
@@ -2596,15 +2683,146 @@ func _update_nametags(active_camera: Camera3D, delta: float) -> void:
 func _print_render_profile_summary() -> void:
 	if !auto_render_profile_mode or render_profile_frames <= 0:
 		return
+	var process_frames := maxi(render_profile_process_frames, 1)
 	print("MXT_RENDER_PROFILE frames=", render_profile_frames,
+		" process_frames=", render_profile_process_frames,
 		" physics_us=", int(render_profile_physics_us / render_profile_frames),
+		" physics_max_us=", render_profile_physics_max_us,
 		" tick_us=", int(render_profile_tick_us / render_profile_frames),
+		" tick_max_us=", render_profile_tick_max_us,
 		" render_us=", int(render_profile_render_us / render_profile_frames),
+		" render_max_us=", render_profile_render_max_us,
 		" nametag_us=", int(render_profile_nametag_us / render_profile_frames),
+		" nametag_max_us=", render_profile_nametag_max_us,
 		" local_visual_us=", int(render_profile_local_visual_us / render_profile_frames),
-		" process_us=", int(render_profile_process_us / render_profile_frames),
-		" visuals_only_us=", int(render_profile_visuals_only_us / render_profile_frames))
+		" local_visual_max_us=", render_profile_local_visual_max_us,
+		" input_us=", int(render_profile_input_us / render_profile_frames),
+		" input_max_us=", render_profile_input_max_us,
+		" events_us=", int(render_profile_events_us / render_profile_frames),
+		" events_max_us=", render_profile_events_max_us,
+		" camera_us=", int(render_profile_camera_us / render_profile_frames),
+		" camera_max_us=", render_profile_camera_max_us,
+		" audio_tick_us=", int(render_profile_audio_tick_us / render_profile_frames),
+		" audio_tick_max_us=", render_profile_audio_tick_max_us,
+		" finish_check_us=", int(render_profile_finish_check_us / render_profile_frames),
+		" finish_check_max_us=", render_profile_finish_check_max_us,
+		" process_us=", int(render_profile_process_us / process_frames),
+		" process_max_us=", render_profile_process_max_us,
+		" visuals_only_us=", int(render_profile_visuals_only_us / process_frames),
+		" visuals_only_max_us=", render_profile_visuals_only_max_us,
+		" frame_gap_max_us=", render_profile_frame_gap_max_us,
+		" frame_gap_over_16ms=", render_profile_frame_gap_over_16ms,
+		" frame_gap_over_20ms=", render_profile_frame_gap_over_20ms,
+		" frame_gap_over_25ms=", render_profile_frame_gap_over_25ms,
+		" frame_gap_over_33ms=", render_profile_frame_gap_over_33ms,
+		" frame_gap_over_50ms=", render_profile_frame_gap_over_50ms)
+	print("MXT_RACER_COUNTS configured_cpus=", singleplayer_cpu_count,
+		" requested_cpus=", launch_cpu_driver_count)
+	var top_gap_parts := PackedStringArray()
+	for i in RENDER_PROFILE_TOP_GAP_COUNT:
+		if render_profile_top_gap_us[i] <= 0:
+			break
+		top_gap_parts.append("%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d:%d" % [
+			render_profile_top_gap_us[i],
+			render_profile_top_gap_tick[i],
+			render_profile_top_gap_physics_us[i],
+			render_profile_top_gap_process_us[i],
+			render_profile_top_gap_pipeline_draw[i],
+			render_profile_top_gap_pipeline_surface[i],
+			render_profile_top_gap_pipeline_mesh[i],
+			render_profile_top_gap_native_total_us[i],
+			render_profile_top_gap_native_vehicle_us[i],
+			render_profile_top_gap_native_collision_us[i],
+			render_profile_top_gap_native_save_us[i],
+			render_profile_top_gap_body_instances[i],
+			render_profile_top_gap_draw_calls[i],
+			render_profile_top_gap_primitives[i],
+			render_profile_top_gap_engine_process_us[i],
+			render_profile_top_gap_engine_physics_us[i],
+		])
+	print("MXT_RENDER_PROFILE_TOP_GAPS gap_us:tick:physics_us:process_us:pipeline_draw:pipeline_surface:pipeline_mesh:native_total_us:native_vehicle_us:native_collision_us:native_save_us:body_instances:draw_calls:primitives:engine_process_us:engine_physics_us=", "|".join(top_gap_parts))
+	var profile_hud := _local_race_hud() as RaceHud
+	if profile_hud != null:
+		print(profile_hud.get_render_profile_string())
+	var profile_visual_car := car_node_container.local_visual_car
+	if profile_visual_car != null:
+		print(profile_visual_car.get_render_profile_string())
+	_print_active_script_profile_counts()
+	print(game_sim.get_phase_profile_string())
 	print(game_sim.get_render_profile_string())
+
+func _print_active_script_profile_counts() -> void:
+	var process_counts := {}
+	var physics_counts := {}
+	var nodes := get_tree().root.find_children("*", "", true, false)
+	nodes.append(get_tree().root)
+	for node_value in nodes:
+		var node := node_value as Node
+		if node == null:
+			continue
+		var script = node.get_script()
+		if script == null:
+			continue
+		var script_path := str(script.resource_path)
+		if script_path.is_empty():
+			script_path = str(script)
+		if node.is_processing():
+			process_counts[script_path] = int(process_counts.get(script_path, 0)) + 1
+		if node.is_physics_processing():
+			physics_counts[script_path] = int(physics_counts.get(script_path, 0)) + 1
+	var process_parts := PackedStringArray()
+	for script_path in process_counts:
+		process_parts.append("%s=%d" % [script_path, process_counts[script_path]])
+	process_parts.sort()
+	var physics_parts := PackedStringArray()
+	for script_path in physics_counts:
+		physics_parts.append("%s=%d" % [script_path, physics_counts[script_path]])
+	physics_parts.sort()
+	print("MXT_ACTIVE_PROCESS_SCRIPTS ", "|".join(process_parts))
+	print("MXT_ACTIVE_PHYSICS_SCRIPTS ", "|".join(physics_parts))
+
+func _record_render_profile_gap(gap_us: int, pipeline_draw: int, pipeline_surface: int, pipeline_mesh: int, draw_calls: int, primitives: int, engine_process_us: int, engine_physics_us: int) -> void:
+	if gap_us <= render_profile_top_gap_us[RENDER_PROFILE_TOP_GAP_COUNT - 1]:
+		return
+	var insert_at := RENDER_PROFILE_TOP_GAP_COUNT - 1
+	while insert_at > 0 and gap_us > render_profile_top_gap_us[insert_at - 1]:
+		render_profile_top_gap_us[insert_at] = render_profile_top_gap_us[insert_at - 1]
+		render_profile_top_gap_tick[insert_at] = render_profile_top_gap_tick[insert_at - 1]
+		render_profile_top_gap_physics_us[insert_at] = render_profile_top_gap_physics_us[insert_at - 1]
+		render_profile_top_gap_process_us[insert_at] = render_profile_top_gap_process_us[insert_at - 1]
+		render_profile_top_gap_pipeline_draw[insert_at] = render_profile_top_gap_pipeline_draw[insert_at - 1]
+		render_profile_top_gap_pipeline_surface[insert_at] = render_profile_top_gap_pipeline_surface[insert_at - 1]
+		render_profile_top_gap_pipeline_mesh[insert_at] = render_profile_top_gap_pipeline_mesh[insert_at - 1]
+		render_profile_top_gap_native_total_us[insert_at] = render_profile_top_gap_native_total_us[insert_at - 1]
+		render_profile_top_gap_native_vehicle_us[insert_at] = render_profile_top_gap_native_vehicle_us[insert_at - 1]
+		render_profile_top_gap_native_collision_us[insert_at] = render_profile_top_gap_native_collision_us[insert_at - 1]
+		render_profile_top_gap_native_save_us[insert_at] = render_profile_top_gap_native_save_us[insert_at - 1]
+		render_profile_top_gap_body_instances[insert_at] = render_profile_top_gap_body_instances[insert_at - 1]
+		render_profile_top_gap_draw_calls[insert_at] = render_profile_top_gap_draw_calls[insert_at - 1]
+		render_profile_top_gap_primitives[insert_at] = render_profile_top_gap_primitives[insert_at - 1]
+		render_profile_top_gap_engine_process_us[insert_at] = render_profile_top_gap_engine_process_us[insert_at - 1]
+		render_profile_top_gap_engine_physics_us[insert_at] = render_profile_top_gap_engine_physics_us[insert_at - 1]
+		insert_at -= 1
+	var native_phase_sample := game_sim.get_phase_profile_last_sample()
+	var native_render_sample := game_sim.get_render_profile_last_sample()
+	render_profile_top_gap_us[insert_at] = gap_us
+	render_profile_top_gap_tick[insert_at] = _singleplayer_tick
+	render_profile_top_gap_physics_us[insert_at] = render_profile_last_physics_sample_us
+	render_profile_top_gap_process_us[insert_at] = render_profile_last_process_sample_us
+	render_profile_top_gap_pipeline_draw[insert_at] = pipeline_draw
+	render_profile_top_gap_pipeline_surface[insert_at] = pipeline_surface
+	render_profile_top_gap_pipeline_mesh[insert_at] = pipeline_mesh
+	if native_phase_sample.size() >= 9:
+		render_profile_top_gap_native_total_us[insert_at] = native_phase_sample[0]
+		render_profile_top_gap_native_vehicle_us[insert_at] = native_phase_sample[3]
+		render_profile_top_gap_native_collision_us[insert_at] = native_phase_sample[4]
+		render_profile_top_gap_native_save_us[insert_at] = native_phase_sample[8]
+	if native_render_sample.size() >= 2:
+		render_profile_top_gap_body_instances[insert_at] = native_render_sample[0]
+	render_profile_top_gap_draw_calls[insert_at] = draw_calls
+	render_profile_top_gap_primitives[insert_at] = primitives
+	render_profile_top_gap_engine_process_us[insert_at] = engine_process_us
+	render_profile_top_gap_engine_physics_us[insert_at] = engine_physics_us
 
 func _physics_process(delta: float) -> void:
 	if auto_track_editor_mode:
@@ -2657,12 +2875,17 @@ func _physics_process(delta: float) -> void:
 		_clear_lobby_chibi_cars()
 	if game_sim.sim_started:
 		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
+		var profile_input_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var local_pi := PlayerInputClass.new()
 		if !_should_suppress_local_race_input() and _window_accepts_input() and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
 		var input_bytes := local_pi.serialize()
+		if auto_render_profile_mode:
+			var profile_input_us := Time.get_ticks_usec() - profile_input_start
+			render_profile_input_us += profile_input_us
+			render_profile_input_max_us = maxi(render_profile_input_max_us, profile_input_us)
 		if singleplayer_mode and _local_player_is_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
 		if singleplayer_mode:
@@ -2672,9 +2895,12 @@ func _physics_process(delta: float) -> void:
 			else:
 				_simulate_singleplayer_tick(input_bytes)
 			if auto_render_profile_mode:
-				render_profile_tick_us += Time.get_ticks_usec() - profile_tick_start
+				var profile_tick_us := Time.get_ticks_usec() - profile_tick_start
+				render_profile_tick_us += profile_tick_us
+				render_profile_tick_max_us = maxi(render_profile_tick_max_us, profile_tick_us)
 			if auto_quit_after_frames >= 0 and _singleplayer_tick >= auto_quit_after_frames:
 				_print_render_profile_summary()
+				RenderingServer.force_sync()
 				get_tree().quit()
 				return
 		else:
@@ -2683,26 +2909,55 @@ func _physics_process(delta: float) -> void:
 				_simulate_host_frame(input_bytes)
 			else:
 				_simulate_single_tick()
+		var profile_events_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		if !replay_controller.replay_playback_active:
 			_consume_authoritative_race_events()
+		if auto_render_profile_mode:
+			var profile_events_us := Time.get_ticks_usec() - profile_events_start
+			render_profile_events_us += profile_events_us
+			render_profile_events_max_us = maxi(render_profile_events_max_us, profile_events_us)
+		var profile_camera_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		_update_native_render_camera()
+		if auto_render_profile_mode:
+			var profile_camera_us := Time.get_ticks_usec() - profile_camera_start
+			render_profile_camera_us += profile_camera_us
+			render_profile_camera_max_us = maxi(render_profile_camera_max_us, profile_camera_us)
 		var profile_render_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		game_sim.render_gamesim()
+		if auto_render_profile_mode:
+			var profile_render_us := Time.get_ticks_usec() - profile_render_start
+			render_profile_render_us += profile_render_us
+			render_profile_render_max_us = maxi(render_profile_render_max_us, profile_render_us)
+		var profile_audio_tick_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		race_audio_controller.after_simulation_tick()
 		if auto_render_profile_mode:
-			render_profile_render_us += Time.get_ticks_usec() - profile_render_start
+			var profile_audio_tick_us := Time.get_ticks_usec() - profile_audio_tick_start
+			render_profile_audio_tick_us += profile_audio_tick_us
+			render_profile_audio_tick_max_us = maxi(render_profile_audio_tick_max_us, profile_audio_tick_us)
 		var profile_nametag_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		_update_nametags(get_viewport().get_camera_3d(), delta)
 		if auto_render_profile_mode:
-			render_profile_nametag_us += Time.get_ticks_usec() - profile_nametag_start
+			var profile_nametag_us := Time.get_ticks_usec() - profile_nametag_start
+			render_profile_nametag_us += profile_nametag_us
+			render_profile_nametag_max_us = maxi(render_profile_nametag_max_us, profile_nametag_us)
 		var profile_local_visual_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		if car_node_container.local_visual_car != null:
 			car_node_container.local_visual_car.just_rendered()
 		if auto_render_profile_mode:
-			render_profile_local_visual_us += Time.get_ticks_usec() - profile_local_visual_start
-			render_profile_physics_us += Time.get_ticks_usec() - profile_physics_start
-			render_profile_frames += 1
+			var profile_local_visual_us := Time.get_ticks_usec() - profile_local_visual_start
+			render_profile_local_visual_us += profile_local_visual_us
+			render_profile_local_visual_max_us = maxi(render_profile_local_visual_max_us, profile_local_visual_us)
+		var profile_finish_check_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		_check_race_finished()
+		if auto_render_profile_mode:
+			var profile_finish_check_us := Time.get_ticks_usec() - profile_finish_check_start
+			var profile_physics_us := Time.get_ticks_usec() - profile_physics_start
+			render_profile_finish_check_us += profile_finish_check_us
+			render_profile_finish_check_max_us = maxi(render_profile_finish_check_max_us, profile_finish_check_us)
+			render_profile_physics_us += profile_physics_us
+			render_profile_physics_max_us = maxi(render_profile_physics_max_us, profile_physics_us)
+			render_profile_last_physics_sample_us = profile_physics_us
+			render_profile_frames += 1
 
 func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray()):
 	var start_time := Time.get_ticks_usec()
@@ -3229,17 +3484,10 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 	options["spawn_seed"] = seed
 	network_manager.send_end_race(next_track_id, next_settings, options)
 
-func _race_control_start_tick(sim: GameSim, racer_ids: Array) -> int:
+func _race_control_has_started(sim: GameSim) -> bool:
 	if sim == null:
-		return 300
-	var start_tick := 0
-	for id_value in racer_ids:
-		var tick := int(sim.get_player_level_start_time(int(id_value)))
-		start_tick = maxi(start_tick, tick)
-	return start_tick if start_tick > 0 else 300
-
-func _race_control_has_started(sim: GameSim, racer_ids: Array) -> bool:
-	return network_manager.get_race_tick() >= _race_control_start_tick(sim, racer_ids)
+		return network_manager.get_race_tick() >= 300
+	return network_manager.get_race_tick() >= sim.get_race_control_start_tick()
 
 func _mark_racer_dnf(racer_id: int, reason: String) -> void:
 	var tick := network_manager.get_race_tick()
@@ -3313,48 +3561,41 @@ func _check_race_finished() -> void:
 	if human_racer_ids.is_empty():
 		human_racer_ids = network_manager.player_ids.duplicate(true)
 	var finish_watch_ids := human_racer_ids if !human_racer_ids.is_empty() else racer_ids
-	var all_done := true
 	var finish_sim := server_game_sim if network_manager.is_server and !singleplayer_mode and server_game_sim != null else game_sim
-	var race_control_started := _race_control_has_started(finish_sim, racer_ids)
+	var race_control_started := _race_control_has_started(finish_sim)
 	_update_force_end_dnf(finish_watch_ids)
-	for racer_id in racer_ids:
-		var watch_racer := finish_watch_ids.has(racer_id)
-		if network_manager._disconnected_during_race.has(racer_id):
-			continue
-		if network_manager.player_finish_times.has(racer_id):
-			continue
-		var finished := false
-		var eliminated := false
-		if finish_sim != null and finish_sim.has_method("is_player_race_finished"):
-			finished = finish_sim.is_player_race_finished(racer_id)
-		if !finished and network_manager.player_eliminations.has(racer_id):
-			continue
-		if watch_racer and _update_low_speed_dnf(racer_id, finish_sim, race_control_started):
-			continue
-		if finished:
+	if finish_sim != null:
+		for id_value in finish_sim.get_finished_player_ids():
+			var racer_id := int(id_value)
+			if network_manager._disconnected_during_race.has(racer_id):
+				continue
+			if network_manager.player_finish_times.has(racer_id) or network_manager.player_eliminations.has(racer_id):
+				continue
 			if network_manager.is_server and !singleplayer_mode:
 				network_manager.send_player_finished(racer_id, network_manager.server_tick)
 			else:
 				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
+		if !network_manager.is_vehicle_restore_enabled():
+			for id_value in finish_sim.get_eliminated_player_ids():
+				var racer_id := int(id_value)
+				if network_manager._disconnected_during_race.has(racer_id):
+					continue
+				if network_manager.player_finish_times.has(racer_id) or network_manager.player_eliminations.has(racer_id):
+					continue
+				if network_manager.is_server and !singleplayer_mode:
+					network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
+				elif singleplayer_mode:
+					network_manager.record_player_eliminated(racer_id, network_manager.clients_server_tick)
+	var all_done := true
+	for id_value in finish_watch_ids:
+		var racer_id := int(id_value)
+		if network_manager._disconnected_during_race.has(racer_id):
 			continue
-		if !network_manager.is_vehicle_restore_enabled() and finish_sim != null and finish_sim.has_method("is_player_race_eliminated"):
-			eliminated = finish_sim.is_player_race_eliminated(racer_id)
-		else:
-			for car in car_node_container.get_children():
-				if car is VisualCar and car.owning_id == racer_id:
-					finished = (car.machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0
-					eliminated = !network_manager.is_vehicle_restore_enabled() and _vehicle_restore_off_state_is_eliminated(
-						car.machine_state,
-						car.state_2,
-						car.position_current.y,
-						-100000.0)
-					break
-		if eliminated:
-			if network_manager.is_server and !singleplayer_mode:
-				network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
-			elif singleplayer_mode:
-				network_manager.record_player_eliminated(racer_id, network_manager.clients_server_tick)
-		elif watch_racer:
+		if network_manager.player_finish_times.has(racer_id) or network_manager.player_eliminations.has(racer_id) or network_manager.player_dnfs.has(racer_id):
+			continue
+		if _update_low_speed_dnf(racer_id, finish_sim, race_control_started):
+			continue
+		if !network_manager.player_dnfs.has(racer_id):
 			all_done = false
 	if replay_controller.replay_playback_active:
 		return
@@ -3409,6 +3650,35 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 
 func _process(delta: float) -> void:
 	var profile_process_start := Time.get_ticks_usec() if auto_render_profile_mode and game_sim.sim_started else 0
+	if profile_process_start > 0:
+		var profile_pipeline_draw := int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_DRAW))
+		var profile_pipeline_surface := int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SURFACE))
+		var profile_pipeline_mesh := int(Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_MESH))
+		var profile_draw_calls := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+		var profile_primitives := int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+		var profile_engine_process_us := roundi(Performance.get_monitor(Performance.TIME_PROCESS) * 1000000.0)
+		var profile_engine_physics_us := roundi(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000000.0)
+		var profile_pipeline_draw_delta := 0 if render_profile_last_pipeline_draw < 0 else maxi(0, profile_pipeline_draw - render_profile_last_pipeline_draw)
+		var profile_pipeline_surface_delta := 0 if render_profile_last_pipeline_surface < 0 else maxi(0, profile_pipeline_surface - render_profile_last_pipeline_surface)
+		var profile_pipeline_mesh_delta := 0 if render_profile_last_pipeline_mesh < 0 else maxi(0, profile_pipeline_mesh - render_profile_last_pipeline_mesh)
+		if render_profile_last_process_start_us > 0 and render_profile_frames > 120:
+			var profile_frame_gap_us := profile_process_start - render_profile_last_process_start_us
+			render_profile_frame_gap_max_us = maxi(render_profile_frame_gap_max_us, profile_frame_gap_us)
+			if profile_frame_gap_us > 16667:
+				render_profile_frame_gap_over_16ms += 1
+				_record_render_profile_gap(profile_frame_gap_us, profile_pipeline_draw_delta, profile_pipeline_surface_delta, profile_pipeline_mesh_delta, profile_draw_calls, profile_primitives, profile_engine_process_us, profile_engine_physics_us)
+			if profile_frame_gap_us > 20000:
+				render_profile_frame_gap_over_20ms += 1
+			if profile_frame_gap_us > 25000:
+				render_profile_frame_gap_over_25ms += 1
+			if profile_frame_gap_us > 33333:
+				render_profile_frame_gap_over_33ms += 1
+			if profile_frame_gap_us > 50000:
+				render_profile_frame_gap_over_50ms += 1
+		render_profile_last_process_start_us = profile_process_start
+		render_profile_last_pipeline_draw = profile_pipeline_draw
+		render_profile_last_pipeline_surface = profile_pipeline_surface
+		render_profile_last_pipeline_mesh = profile_pipeline_mesh
 	race_audio_controller.update(delta)
 	_update_race_communication_overlay()
 	_update_start_sync_drop_panel()
@@ -3433,8 +3703,14 @@ func _process(delta: float) -> void:
 		_update_native_render_camera()
 		game_sim.render_gamesim_visuals_only(delta)
 		if auto_render_profile_mode:
-			render_profile_visuals_only_us += Time.get_ticks_usec() - profile_visuals_start
-			render_profile_process_us += Time.get_ticks_usec() - profile_process_start
+			var profile_visuals_only_us := Time.get_ticks_usec() - profile_visuals_start
+			var profile_process_us := Time.get_ticks_usec() - profile_process_start
+			render_profile_visuals_only_us += profile_visuals_only_us
+			render_profile_visuals_only_max_us = maxi(render_profile_visuals_only_max_us, profile_visuals_only_us)
+			render_profile_process_us += profile_process_us
+			render_profile_process_max_us = maxi(render_profile_process_max_us, profile_process_us)
+			render_profile_last_process_sample_us = profile_process_us
+			render_profile_process_frames += 1
 
 func _update_lobby_debug_label_visibility() -> void:
 	var in_lobby := lobby_control.visible

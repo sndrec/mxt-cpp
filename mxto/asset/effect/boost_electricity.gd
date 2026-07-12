@@ -21,6 +21,7 @@ var array_mesh: ArrayMesh
 var electricity_material: ShaderMaterial
 
 func _ready() -> void:
+	set_process(Engine.is_editor_hint())
 	tendrils.resize(32)
 	tendril_start_times.resize(32)
 	mesh_instance.mesh = mesh_instance.mesh.duplicate(true)

@@ -11,10 +11,10 @@
 [ext_resource type="PackedScene" uid="uid://do7bo8imdv64e" path="res://ui/lobby_static.tscn" id="20_lobby_static"]
 [ext_resource type="PackedScene" uid="uid://bbe5vn5g66jbq" path="res://ui/race_pause_menu.tscn" id="21_race_pause"]
 [ext_resource type="Script" uid="uid://dyf161ibfwcno" path="res://netplay/proximity_voice_chat.gd" id="22_voice"]
-[ext_resource type="Script" path="res://replay/replay_controller.gd" id="23_replay"]
-[ext_resource type="Script" path="res://audio/race_audio_controller.gd" id="24_audio"]
-[ext_resource type="Script" path="res://track/track_content_controller.gd" id="25_track"]
-[ext_resource type="Script" path="res://netplay/custom_stamp_network_controller.gd" id="26_stamps"]
+[ext_resource type="Script" uid="uid://cpt5qenuy0jws" path="res://replay/replay_controller.gd" id="23_replay"]
+[ext_resource type="Script" uid="uid://ci4gxdo86qgxd" path="res://audio/race_audio_controller.gd" id="24_audio"]
+[ext_resource type="Script" uid="uid://berp7plvet1og" path="res://track/track_content_controller.gd" id="25_track"]
+[ext_resource type="Script" uid="uid://bqlqeat5xvksx" path="res://netplay/custom_stamp_network_controller.gd" id="26_stamps"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -136,24 +136,25 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=830147406]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=1145900115]
 
-[node name="GameSim" type="GameSim" parent="." unique_id=2036699480]
+[node name="GameSim" type="GameSim" parent="." unique_id=1275117965]
 
-[node name="ReplayController" type="Node" parent="."]
+[node name="ReplayController" type="Node" parent="." unique_id=1464332657]
 script = ExtResource("23_replay")
+metadata/_custom_type_script = "uid://cpt5qenuy0jws"
 
-[node name="RaceAudioController" type="Node" parent="."]
+[node name="RaceAudioController" type="Node" parent="." unique_id=2027856418]
 script = ExtResource("24_audio")
 
-[node name="TrackContentController" type="Node" parent="."]
+[node name="TrackContentController" type="Node" parent="." unique_id=910439580]
 script = ExtResource("25_track")
 
 [node name="NetworkManager" type="Node" parent="." unique_id=2069070107]
 script = ExtResource("3_netplay")
 metadata/_custom_type_script = "uid://cq1kmqnd5qooc"
 
-[node name="CustomStampNetwork" type="Node" parent="NetworkManager"]
+[node name="CustomStampNetwork" type="Node" parent="NetworkManager" unique_id=1799615501]
 script = ExtResource("26_stamps")
 
 [node name="ProximityVoiceChat" type="Node" parent="NetworkManager" unique_id=1057511727]
@@ -513,7 +514,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.33"
+text = "MaxX Throttle v0.1.35"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/ConnectHostBox/StartButton" to="." method="_on_start_button_pressed"]

@@ -1186,7 +1186,7 @@ func _id_array_from_value(value) -> Array:
 	return out
 
 func _flush_log() -> void:
-	if !log_enabled or log_file == null:
+	if !log_enabled or log_file == null or !has_network_peer():
 		return
 	var up_kbps := (log_bytes_out_interval * 8.0) / 1000.0
 	var down_kbps := (log_bytes_in_interval * 8.0) / 1000.0
@@ -2968,27 +2968,35 @@ func post_tick() -> void:
 		var max_ahead := _calc_max_ahead()
 		max_ahead_from_server = max_ahead
 		var recipients := state_send_peer_ids
-		var snapshot_recipients := []
+		var remote_snapshot_recipients := []
+		var sync_listen_host := false
+		var local_id := multiplayer.get_unique_id()
 		if !_startup_light_net_active(server_tick):
 			for id_value in recipients:
 				var recipient_id := int(id_value)
 				if _can_send_rpc_to_peer(recipient_id) and state_send_offsets.has(recipient_id) and int(state_send_offsets[recipient_id]) == server_tick % STATE_BROADCAST_INTERVAL_TICKS:
-					snapshot_recipients.append(recipient_id)
-		if !snapshot_recipients.is_empty():
+					if listen_server and recipient_id == local_id:
+						sync_listen_host = true
+					else:
+						remote_snapshot_recipients.append(recipient_id)
+		if sync_listen_host or !remote_snapshot_recipients.is_empty():
 			# Snapshot serialization and compression only run when at least one peer is
 			# due. The resulting chunks are paced independently of gameplay ticks.
 			var state: PackedByteArray = server_game_sim.get_state_data(server_tick)
 			dump_state_sample(state, server_tick, get_simulation_roster().size())
-			var send_state := state
-			var uncompressed_size := -1
-			if !state.is_empty() and use_state_compression:
-				send_state = state.compress(FileAccess.COMPRESSION_ZSTD)
-				uncompressed_size = state.size()
-			for recipient_id in snapshot_recipients:
-				_queue_state_transfer(recipient_id, server_tick, uncompressed_size, send_state)
-				_log_state_sent(uncompressed_size if uncompressed_size > 0 else send_state.size(), send_state.size())
-				if server_game_sim.has_method("get_network_state_size_stats"):
-					_log_state_size_stats(server_game_sim.get_network_state_size_stats())
+			if sync_listen_host and !state.is_empty():
+				_handle_state(server_tick, state)
+			if !remote_snapshot_recipients.is_empty():
+				var send_state := state
+				var uncompressed_size := -1
+				if !state.is_empty() and use_state_compression:
+					send_state = state.compress(FileAccess.COMPRESSION_ZSTD)
+					uncompressed_size = state.size()
+				for recipient_id in remote_snapshot_recipients:
+					_queue_state_transfer(recipient_id, server_tick, uncompressed_size, send_state)
+					_log_state_sent(uncompressed_size if uncompressed_size > 0 else send_state.size(), send_state.size())
+					if server_game_sim.has_method("get_network_state_size_stats"):
+						_log_state_size_stats(server_game_sim.get_network_state_size_stats())
 		var input_packet: PackedByteArray = PackedByteArray()
 		var input_packet_meta := -1
 		var input_packet_ready := false
@@ -3079,7 +3087,7 @@ func _handle_input_update_flat(tick: int) -> void:
 	if tick < 0:
 		return
 	var __prof_t0 := Time.get_ticks_usec()
-	if tick == 0 or latest_state_tick == -1:
+	if tick == 0:
 		return
 	if tick >= local_tick:
 		return

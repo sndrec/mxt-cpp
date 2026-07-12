@@ -1327,14 +1327,18 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	const bool profile_phase = phase_profile_enabled;
 	const uint64_t phase_start = profile_phase ? render_profile_now_us() : 0;
 	uint64_t phase_step = phase_start;
-	auto phase_mark = [&](uint64_t& bucket) {
+	auto phase_mark = [&](uint64_t& bucket, uint64_t& max_bucket) -> uint64_t {
 		if (!profile_phase) {
-			return;
+			return 0;
 		}
 		const uint64_t now = render_profile_now_us();
-		bucket += now - phase_step;
+		const uint64_t elapsed = now - phase_step;
+		bucket += elapsed;
+		max_bucket = std::max(max_bucket, elapsed);
 		phase_step = now;
+		return elapsed;
 	};
+	phase_profile_last_vehicle_collision_us = 0;
 
 	if (num_cars <= 0 || !cars)
 	{
@@ -1374,7 +1378,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			gamesim_dashplate_heat_reward_scale(lead_distance - soa.pre_distances[i]);
 	}
 	update_bumpers(lead_distance, leader_lap);
-	phase_mark(phase_profile_pre_us);
+	phase_profile_last_pre_us = phase_mark(phase_profile_pre_us, phase_profile_pre_max_us);
 
 	const NativeCpuTickContext cpu_tick_context = native_cpu_make_tick_context(tick);
 	for (int i = 0; i < num_cars; i++) {
@@ -1445,7 +1449,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.inputs[i] = PlayerInput::from_neutral();
 		soa.pending_s_boost_sparks[i] = 0;
 	}
-	phase_mark(phase_profile_input_us);
+	phase_profile_last_input_us = phase_mark(phase_profile_input_us, phase_profile_input_max_us);
 
 	struct RacerVehicleLaneContext {
 		GameSim* sim;
@@ -1466,13 +1470,15 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		track_scratch.reset_mesh_query();
 		const bool profile_phase = context.profile_phase;
 		uint64_t vehicle_subphase_step = profile_phase && lane == 0 ? sim.render_profile_now_us() : 0;
-		auto vehicle_subphase_mark = [&](uint64_t& bucket) {
+		auto vehicle_subphase_mark = [&](uint64_t& bucket) -> uint64_t {
 			if (!profile_phase || lane != 0) {
-				return;
+				return 0;
 			}
 			const uint64_t now = sim.render_profile_now_us();
-			bucket += now - vehicle_subphase_step;
+			const uint64_t elapsed = now - vehicle_subphase_step;
+			bucket += elapsed;
 			vehicle_subphase_step = now;
+			return elapsed;
 		};
 
 		begin_vehicle_tick_soa(car_soa, sim.cars + global_start,
@@ -1525,7 +1531,10 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 				soa.collision_min_z, soa.collision_max_z);
 		}
 		group.sync();
-		vehicle_subphase_mark(sim.phase_profile_vehicle_collision_us);
+		const uint64_t collision_elapsed = vehicle_subphase_mark(sim.phase_profile_vehicle_collision_us);
+		if (profile_phase && lane == 0) {
+			sim.phase_profile_last_vehicle_collision_us = collision_elapsed;
+		}
 
 		const uint64_t post_tick_start = vehicle_subphase_step;
 		PhysicsCarCornerProfile corner_profile;
@@ -1549,7 +1558,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			sim.phase_profile_vehicle_post_tick_us += vehicle_subphase_step - post_tick_start;
 		}
 	});
-	phase_mark(phase_profile_vehicle_us);
+	phase_profile_last_vehicle_us = phase_mark(phase_profile_vehicle_us, phase_profile_vehicle_max_us);
 	for (int i = 0; i < num_cars; i++) {
 		if (s_boost_enabled && soa.pending_s_boost_sparks[i] > 0) {
 			emit_super_sparks_from_car(cars[i], soa.pending_s_boost_sparks[i]);
@@ -1557,7 +1566,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	}
 	update_bumper_vehicles();
 	collide_racers_with_bumpers();
-	phase_mark(phase_profile_post_vehicle_us);
+	phase_profile_last_post_vehicle_us = phase_mark(phase_profile_post_vehicle_us, phase_profile_post_vehicle_max_us);
 
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
@@ -1569,7 +1578,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		return soa.placement_distances[a] > soa.placement_distances[b];
 	});
 	soa.placement_order_valid = true;
-	phase_mark(phase_profile_placement_us);
+	phase_profile_last_placement_us = phase_mark(phase_profile_placement_us, phase_profile_placement_max_us);
 
 	if (s_boost_enabled && super_spark_state) {
 		super_spark_state->placement_timer += 1;
@@ -1599,7 +1608,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	if (s_boost_enabled) {
 		update_super_sparks();
 	}
-	phase_mark(phase_profile_post_us);
+	phase_profile_last_post_us = phase_mark(phase_profile_post_us, phase_profile_post_max_us);
 
 	//for (int i = 0; i < num_cars; i++)
 	//{
@@ -1615,10 +1624,13 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	//	}
 	//}
 	save_state();
-	phase_mark(phase_profile_save_us);
+	phase_profile_last_save_us = phase_mark(phase_profile_save_us, phase_profile_save_max_us);
 	if (profile_phase) {
 		const uint64_t now = render_profile_now_us();
-		phase_profile_total_us += now - phase_start;
+		const uint64_t elapsed = now - phase_start;
+		phase_profile_total_us += elapsed;
+		phase_profile_total_max_us = std::max(phase_profile_total_max_us, elapsed);
+		phase_profile_last_total_us = elapsed;
 		phase_profile_frames += 1;
 	}
 	

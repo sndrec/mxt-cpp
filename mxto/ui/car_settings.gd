@@ -465,7 +465,7 @@ func _send_online_vehicle_selection_update() -> void:
 		return
 	var settings_dict := player_settings.to_dict()
 	game_manager.network_manager.send_player_settings(settings_dict)
-	game_manager.network_manager.send_active_custom_stamp_manifest()
+	game_manager.network_manager.custom_stamp_network.send_active_custom_stamp_manifest()
 
 func _update_livery_lock_state() -> void:
 	var locked := _livery_editing_locked()

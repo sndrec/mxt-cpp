@@ -42,9 +42,13 @@ String GameSim::get_phase_profile_string() const
 	};
 	godot::String out = "MXT_PHASE_PROFILE frames=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_frames));
 	out += " total_us=" + avg(phase_profile_total_us, phase_profile_frames);
+	out += " total_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_total_max_us));
 	out += " pre_us=" + avg(phase_profile_pre_us, phase_profile_frames);
+	out += " pre_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_pre_max_us));
 	out += " input_us=" + avg(phase_profile_input_us, phase_profile_frames);
+	out += " input_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_input_max_us));
 	out += " vehicle_us=" + avg(phase_profile_vehicle_us, phase_profile_frames);
+	out += " vehicle_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_vehicle_max_us));
 	out += " v_begin_us=" + avg(phase_profile_vehicle_begin_us, phase_profile_frames);
 	out += " v_apply_input_us=" + avg(phase_profile_vehicle_apply_input_us, phase_profile_frames);
 	out += " v_floor_us=" + avg(phase_profile_vehicle_floor_us, phase_profile_frames);
@@ -72,13 +76,33 @@ String GameSim::get_phase_profile_string() const
 	out += " v_checkpoint_us=" + avg(phase_profile_vehicle_checkpoint_us, phase_profile_frames);
 	out += " v_spark_collect_us=" + avg(phase_profile_vehicle_spark_collect_us, phase_profile_frames);
 	out += " post_vehicle_us=" + avg(phase_profile_post_vehicle_us, phase_profile_frames);
+	out += " post_vehicle_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_post_vehicle_max_us));
 	out += " placement_us=" + avg(phase_profile_placement_us, phase_profile_frames);
+	out += " placement_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_placement_max_us));
 	out += " post_us=" + avg(phase_profile_post_us, phase_profile_frames);
+	out += " post_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_post_max_us));
 	out += " save_us=" + avg(phase_profile_save_us, phase_profile_frames);
+	out += " save_max_us=" + godot::String::num_int64(static_cast<int64_t>(phase_profile_save_max_us));
 	out += " save_bumper_us=" + avg(phase_profile_save_bumper_us, phase_profile_frames);
 	out += " save_voice_us=" + avg(phase_profile_save_voice_us, phase_profile_frames);
 	out += " save_memcpy_us=" + avg(phase_profile_save_memcpy_us, phase_profile_frames);
 	return out;
+}
+
+godot::PackedInt64Array GameSim::get_phase_profile_last_sample() const
+{
+	godot::PackedInt64Array sample;
+	sample.resize(9);
+	sample.set(0, static_cast<int64_t>(phase_profile_last_total_us));
+	sample.set(1, static_cast<int64_t>(phase_profile_last_pre_us));
+	sample.set(2, static_cast<int64_t>(phase_profile_last_input_us));
+	sample.set(3, static_cast<int64_t>(phase_profile_last_vehicle_us));
+	sample.set(4, static_cast<int64_t>(phase_profile_last_vehicle_collision_us));
+	sample.set(5, static_cast<int64_t>(phase_profile_last_post_vehicle_us));
+	sample.set(6, static_cast<int64_t>(phase_profile_last_placement_us));
+	sample.set(7, static_cast<int64_t>(phase_profile_last_post_us));
+	sample.set(8, static_cast<int64_t>(phase_profile_last_save_us));
+	return sample;
 }
 
 uint64_t GameSim::render_profile_now_us() const
@@ -100,25 +124,42 @@ String GameSim::get_render_profile_string() const
 	};
 	godot::String out = "MXT_RENDER_PROFILE_CPP frames=" + godot::String::num_int64(static_cast<int64_t>(render_profile_frames));
 	out += " total_us=" + avg(render_profile_total_us, render_profile_frames);
+	out += " total_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_total_max_us));
 	out += " get_children_us=" + avg(render_profile_get_children_us, render_profile_frames);
 	out += " cache_us=" + avg(render_profile_cache_us, render_profile_frames);
 	out += " snapshots_us=" + avg(render_profile_snapshots_us, render_profile_frames);
+	out += " snapshots_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_snapshots_max_us));
 	out += " effects_us=" + avg(render_profile_effects_us, render_profile_frames);
+	out += " effects_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_effects_max_us));
 	out += " multimesh_us=" + avg(render_profile_multimesh_us, render_profile_frames);
+	out += " multimesh_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_multimesh_max_us));
 	out += " body_instances=" + avg(render_profile_body_instances, render_profile_frames);
 	out += " thruster_instances=" + avg(render_profile_thruster_instances, render_profile_frames);
 	out += " camera_us=" + avg(render_profile_camera_us, render_profile_frames);
 	out += " local_visual_us=" + avg(render_profile_local_visual_us, render_profile_frames);
 	out += " cpu_driver_us=" + avg(render_profile_cpu_driver_us, render_profile_frames);
+	out += " cpu_driver_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_cpu_driver_max_us));
 	out += " spark_us=" + avg(render_profile_spark_us, render_profile_frames);
 	out += " visuals_only_frames=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_frames));
 	out += " visuals_only_total_us=" + avg(render_profile_visuals_only_total_us, render_profile_visuals_only_frames);
+	out += " visuals_only_total_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_total_max_us));
 	out += " visuals_only_effects_us=" + avg(render_profile_visuals_only_effects_us, render_profile_visuals_only_frames);
+	out += " visuals_only_effects_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_effects_max_us));
 	out += " visuals_only_multimesh_us=" + avg(render_profile_visuals_only_multimesh_us, render_profile_visuals_only_frames);
+	out += " visuals_only_multimesh_max_us=" + godot::String::num_int64(static_cast<int64_t>(render_profile_visuals_only_multimesh_max_us));
 	out += " visuals_only_body_instances=" + avg(render_profile_visuals_only_body_instances, render_profile_visuals_only_frames);
 	out += " visuals_only_thruster_instances=" + avg(render_profile_visuals_only_thruster_instances, render_profile_visuals_only_frames);
 	out += " visuals_only_camera_us=" + avg(render_profile_visuals_only_camera_us, render_profile_visuals_only_frames);
 	return out;
+}
+
+godot::PackedInt64Array GameSim::get_render_profile_last_sample() const
+{
+	godot::PackedInt64Array sample;
+	sample.resize(2);
+	sample.set(0, static_cast<int64_t>(std::max(render_last_body_instances, 0)));
+	sample.set(1, static_cast<int64_t>(std::max(render_last_thruster_instances, 0)));
+	return sample;
 }
 
 void GameSim::set_phase_profile_enabled(bool enabled)
@@ -126,9 +167,13 @@ void GameSim::set_phase_profile_enabled(bool enabled)
 	phase_profile_enabled = enabled;
 	phase_profile_frames = 0;
 	phase_profile_total_us = 0;
+	phase_profile_total_max_us = 0;
 	phase_profile_pre_us = 0;
+	phase_profile_pre_max_us = 0;
 	phase_profile_input_us = 0;
+	phase_profile_input_max_us = 0;
 	phase_profile_vehicle_us = 0;
+	phase_profile_vehicle_max_us = 0;
 	phase_profile_vehicle_begin_us = 0;
 	phase_profile_vehicle_apply_input_us = 0;
 	phase_profile_vehicle_floor_us = 0;
@@ -156,12 +201,25 @@ void GameSim::set_phase_profile_enabled(bool enabled)
 	phase_profile_vehicle_checkpoint_us = 0;
 	phase_profile_vehicle_spark_collect_us = 0;
 	phase_profile_post_vehicle_us = 0;
+	phase_profile_post_vehicle_max_us = 0;
 	phase_profile_placement_us = 0;
+	phase_profile_placement_max_us = 0;
 	phase_profile_post_us = 0;
+	phase_profile_post_max_us = 0;
 	phase_profile_save_us = 0;
+	phase_profile_save_max_us = 0;
 	phase_profile_save_bumper_us = 0;
 	phase_profile_save_voice_us = 0;
 	phase_profile_save_memcpy_us = 0;
+	phase_profile_last_total_us = 0;
+	phase_profile_last_pre_us = 0;
+	phase_profile_last_input_us = 0;
+	phase_profile_last_vehicle_us = 0;
+	phase_profile_last_vehicle_collision_us = 0;
+	phase_profile_last_post_vehicle_us = 0;
+	phase_profile_last_placement_us = 0;
+	phase_profile_last_post_us = 0;
+	phase_profile_last_save_us = 0;
 }
 
 void GameSim::set_render_profile_enabled(bool enabled)
@@ -169,21 +227,29 @@ void GameSim::set_render_profile_enabled(bool enabled)
 	render_profile_enabled = enabled;
 	render_profile_frames = 0;
 	render_profile_total_us = 0;
+	render_profile_total_max_us = 0;
 	render_profile_get_children_us = 0;
 	render_profile_cache_us = 0;
 	render_profile_snapshots_us = 0;
+	render_profile_snapshots_max_us = 0;
 	render_profile_effects_us = 0;
+	render_profile_effects_max_us = 0;
 	render_profile_multimesh_us = 0;
+	render_profile_multimesh_max_us = 0;
 	render_profile_body_instances = 0;
 	render_profile_thruster_instances = 0;
 	render_profile_camera_us = 0;
 	render_profile_local_visual_us = 0;
 	render_profile_cpu_driver_us = 0;
+	render_profile_cpu_driver_max_us = 0;
 	render_profile_spark_us = 0;
 	render_profile_visuals_only_frames = 0;
 	render_profile_visuals_only_total_us = 0;
+	render_profile_visuals_only_total_max_us = 0;
 	render_profile_visuals_only_effects_us = 0;
+	render_profile_visuals_only_effects_max_us = 0;
 	render_profile_visuals_only_multimesh_us = 0;
+	render_profile_visuals_only_multimesh_max_us = 0;
 	render_profile_visuals_only_body_instances = 0;
 	render_profile_visuals_only_thruster_instances = 0;
 	render_profile_visuals_only_camera_us = 0;
@@ -230,6 +296,16 @@ void GameSim::set_render_thruster_lights_enabled(bool enabled)
 	}
 }
 
+void GameSim::set_render_all_car_bodies(bool enabled)
+{
+	render_all_car_bodies = enabled;
+}
+
+void GameSim::set_render_car_body_view_distance(double distance)
+{
+	render_car_body_view_distance = std::max(0.0f, static_cast<float>(distance));
+}
+
 void GameSim::set_start_grid_slots(godot::PackedInt32Array p_slots)
 {
 	start_grid_slots.clear();
@@ -264,7 +340,7 @@ int GameSim::get_player_race_place(int player_id) const
 	return 0;
 }
 
-godot::PackedInt32Array GameSim::get_race_leaderboard_window(int player_id, int max_entries) const
+godot::PackedInt32Array GameSim::get_race_leaderboard_window(int player_id, int max_entries, const godot::Dictionary& finished_players, const godot::Dictionary& eliminated_players) const
 {
 	godot::PackedInt32Array window;
 	if (!cars || !car_player_ids || num_cars <= 0 ||
@@ -272,33 +348,28 @@ godot::PackedInt32Array GameSim::get_race_leaderboard_window(int player_id, int 
 			!vehicle_tick_soa.placement_indices) {
 		return window;
 	}
-	std::vector<int> ranked_cars;
-	ranked_cars.reserve(num_cars);
+	int ranked_count = 0;
+	int focus_rank = -1;
 	for (int i = 0; i < num_cars; ++i) {
 		const int car_index = vehicle_tick_soa.placement_indices[i];
 		if (car_index >= 0 && car_index < num_cars && car_player_ids[car_index] >= 0) {
-			ranked_cars.push_back(car_index);
+			if (car_player_ids[car_index] == player_id) {
+				focus_rank = ranked_count;
+			}
+			ranked_count += 1;
 		}
 	}
-	if (ranked_cars.empty()) {
+	if (ranked_count == 0) {
 		return window;
 	}
-	const int entry_count = std::max(1, std::min(max_entries, static_cast<int>(ranked_cars.size())));
-	int focus_rank = -1;
-	for (int i = 0; i < static_cast<int>(ranked_cars.size()); ++i) {
-		const int car_index = ranked_cars[i];
-		if (car_player_ids[car_index] == player_id) {
-			focus_rank = i;
-			break;
-		}
-	}
+	const int entry_count = std::max(1, std::min(max_entries, ranked_count));
 	if (focus_rank < 0) {
 		focus_rank = 0;
 	}
 
 	const int half = entry_count >> 1;
 	int start = focus_rank - half;
-	const int max_start = static_cast<int>(ranked_cars.size()) - entry_count;
+	const int max_start = ranked_count - entry_count;
 	if (start < 0) {
 		start = 0;
 	}
@@ -307,20 +378,84 @@ godot::PackedInt32Array GameSim::get_race_leaderboard_window(int player_id, int 
 	}
 
 	window.resize(1 + entry_count * 2);
-	window.set(0, focus_rank + 1);
 	int out_index = 1;
-	for (int i = 0; i < entry_count; ++i) {
-		const int rank = start + i;
-		const int car_index = ranked_cars[rank];
+	int live_place = finished_players.size() + 1;
+	int ranked_index = 0;
+	int focus_place = focus_rank + 1;
+	for (int i = 0; i < num_cars; ++i) {
+		const int car_index = vehicle_tick_soa.placement_indices[i];
 		if (car_index < 0 || car_index >= num_cars) {
-			window.set(out_index++, -1);
-			window.set(out_index++, rank + 1);
 			continue;
 		}
-		window.set(out_index++, car_player_ids[car_index]);
-		window.set(out_index++, rank + 1);
+		const int ranked_player_id = car_player_ids[car_index];
+		if (ranked_player_id < 0) {
+			continue;
+		}
+		int displayed_place = ranked_index + 1;
+		if (!finished_players.has(ranked_player_id) && !eliminated_players.has(ranked_player_id)) {
+			displayed_place = live_place;
+			live_place += 1;
+		}
+		if (ranked_player_id == player_id) {
+			focus_place = displayed_place;
+		}
+		if (ranked_index >= start && ranked_index < start + entry_count) {
+			window.set(out_index++, ranked_player_id);
+			window.set(out_index++, displayed_place);
+		}
+		ranked_index += 1;
 	}
+	window.set(0, focus_place);
 	return window;
+}
+
+int GameSim::get_race_control_start_tick() const
+{
+	if (!cars || num_cars <= 0) {
+		return 300;
+	}
+	uint64_t start_tick = 0;
+	for (int i = 0; i < num_cars; ++i) {
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		start_tick = std::max(start_tick, car_soa.level_start_time[lane]);
+	}
+	if (start_tick == 0) {
+		return 300;
+	}
+	return static_cast<int>(std::min<uint64_t>(start_tick, static_cast<uint64_t>(INT32_MAX)));
+}
+
+godot::PackedInt32Array GameSim::get_finished_player_ids() const
+{
+	godot::PackedInt32Array result;
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return result;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		if ((car_soa.machine_state[lane] & MACHINESTATE::COMPLETEDRACE_1_Q) != 0u) {
+			result.push_back(car_player_ids[i]);
+		}
+	}
+	return result;
+}
+
+godot::PackedInt32Array GameSim::get_eliminated_player_ids() const
+{
+	godot::PackedInt32Array result;
+	if (vehicle_restore_enabled || !cars || !car_player_ids || num_cars <= 0) {
+		return result;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		if (vehicle_restore_off_eliminated(car_soa, lane)) {
+			result.push_back(car_player_ids[i]);
+		}
+	}
+	return result;
 }
 
 bool GameSim::is_player_race_finished(int player_id) const

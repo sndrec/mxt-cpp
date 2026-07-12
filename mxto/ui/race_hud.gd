@@ -28,6 +28,17 @@ var focus_player_id := 0
 const MAX_LEADERBOARD_ENTRIES := 5
 var leaderboard_labels: Array[Label] = []
 const ATTACK_COOLDOWN_FRAMES := 240.0
+var render_profile_frames := 0
+var render_profile_total_us := 0
+var render_profile_total_max_us := 0
+var render_profile_leaderboard_us := 0
+var render_profile_leaderboard_max_us := 0
+var render_profile_check_us := 0
+var render_profile_check_max_us := 0
+var render_profile_sticker_input_us := 0
+var render_profile_sticker_input_max_us := 0
+var render_profile_world_stickers_us := 0
+var render_profile_world_stickers_max_us := 0
 
 @export var placement_digit_size := Vector2(96.0, 96.0)
 @export var placement_digit_kerning := -24.0
@@ -79,27 +90,44 @@ func _player_name_for_id(nm: NetworkManager, id: int) -> String:
 	var settings = nm.player_settings.get(id, null)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
 		name = str(settings["username"])
-	if nm.get_cpu_roster().has(id):
+	var is_cpu := nm.cpu_player_settings.has(id)
+	if !is_cpu and typeof(settings) == TYPE_DICTIONARY:
+		is_cpu = bool(settings.get("_race_is_cpu", false))
+	if !is_cpu and nm.cpu_player_settings.is_empty():
+		is_cpu = nm.cpu_player_ids.has(id)
+	if is_cpu:
 		name = "[CPU] " + name
 	return name
+
+func get_render_profile_string() -> String:
+	if render_profile_frames <= 0:
+		return "MXT_RACE_HUD_PROFILE frames=0"
+	return "MXT_RACE_HUD_PROFILE frames=%d total_us=%d total_max_us=%d leaderboard_us=%d leaderboard_max_us=%d check_us=%d check_max_us=%d sticker_input_us=%d sticker_input_max_us=%d world_stickers_us=%d world_stickers_max_us=%d" % [
+		render_profile_frames,
+		int(render_profile_total_us / render_profile_frames),
+		render_profile_total_max_us,
+		int(render_profile_leaderboard_us / render_profile_frames),
+		render_profile_leaderboard_max_us,
+		int(render_profile_check_us / render_profile_frames),
+		render_profile_check_max_us,
+		int(render_profile_sticker_input_us / render_profile_frames),
+		render_profile_sticker_input_max_us,
+		int(render_profile_world_stickers_us / render_profile_frames),
+		render_profile_world_stickers_max_us,
+	]
 
 func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fallback_place: int) -> int:
 	if leaderboard_container == null:
 		return fallback_place
-	var window: PackedInt32Array = car.game_manager.game_sim.get_race_leaderboard_window(focus_id, MAX_LEADERBOARD_ENTRIES)
+	var window: PackedInt32Array = car.game_manager.game_sim.get_race_leaderboard_window(
+		focus_id,
+		MAX_LEADERBOARD_ENTRIES,
+		nm.player_finish_times,
+		nm.player_eliminations
+	)
 	if window.size() <= 1:
 		return fallback_place
 	var focus_place := int(window[0])
-	var live_place_by_id := {}
-	var next_live_place := nm.player_finish_times.size() + 1
-	if car.game_manager.game_sim != null and car.game_manager.game_sim.has_method("get_race_order"):
-		var order: Array = car.game_manager.game_sim.get_race_order()
-		for id_value in order:
-			var ordered_id := int(id_value)
-			if nm.player_finish_times.has(ordered_id) or nm.player_eliminations.has(ordered_id):
-				continue
-			live_place_by_id[ordered_id] = next_live_place
-			next_live_place += 1
 	var visible_count := int((window.size() - 1) / 2)
 	for i in range(leaderboard_labels.size()):
 		var label := leaderboard_labels[i]
@@ -111,13 +139,11 @@ func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fall
 		var place := int(window[window_index + 1])
 		if nm.player_finish_placements.has(id):
 			place = int(nm.player_finish_placements[id])
-		elif live_place_by_id.has(id):
-			place = int(live_place_by_id[id])
-		label.text = "%d  %s" % [place, _player_name_for_id(nm, id)]
+		var text := "%d  %s" % [place, _player_name_for_id(nm, id)]
+		if label.text != text:
+			label.text = text
 	if nm.player_finish_placements.has(focus_id):
 		focus_place = int(nm.player_finish_placements[focus_id])
-	elif live_place_by_id.has(focus_id):
-		focus_place = int(live_place_by_id[focus_id])
 	return focus_place
 
 func _action_just_pressed_any(names: Array[String]) -> bool:
@@ -480,11 +506,28 @@ func _process( _delta:float ) -> void:
 		#pl = car.get_parent()
 	if car == null:
 		return
+	var profile_enabled := car.game_manager != null and car.game_manager.auto_render_profile_mode
+	var profile_total_start := Time.get_ticks_usec() if profile_enabled else 0
 	if focus_player_id == 0:
 		focus_player_id = car.owning_id
+	var profile_phase_start := Time.get_ticks_usec() if profile_enabled else 0
 	_update_sticker_input(car)
+	if profile_enabled:
+		var profile_phase_us := Time.get_ticks_usec() - profile_phase_start
+		render_profile_sticker_input_us += profile_phase_us
+		render_profile_sticker_input_max_us = maxi(render_profile_sticker_input_max_us, profile_phase_us)
+		profile_phase_start = Time.get_ticks_usec()
 	_update_check_warnings(car)
+	if profile_enabled:
+		var profile_phase_us := Time.get_ticks_usec() - profile_phase_start
+		render_profile_check_us += profile_phase_us
+		render_profile_check_max_us = maxi(render_profile_check_max_us, profile_phase_us)
+		profile_phase_start = Time.get_ticks_usec()
 	_update_world_stickers(car)
+	if profile_enabled:
+		var profile_phase_us := Time.get_ticks_usec() - profile_phase_start
+		render_profile_world_stickers_us += profile_phase_us
+		render_profile_world_stickers_max_us = maxi(render_profile_world_stickers_max_us, profile_phase_us)
 	speedometer.text = str(roundi(car.speed_kmh)) + " km/h"
 	lapcounter.text = "LAP " + str(car.lap) + "/3"
 	var nm := car.game_manager.network_manager
@@ -535,7 +578,12 @@ func _process( _delta:float ) -> void:
 	if nm.player_finish_placements.has(place_id):
 		our_place = nm.player_finish_placements[place_id]
 	
+	var profile_leaderboard_start := Time.get_ticks_usec() if profile_enabled else 0
 	our_place = _update_leaderboard(car, nm, place_id, our_place)
+	if profile_enabled:
+		var profile_leaderboard_us := Time.get_ticks_usec() - profile_leaderboard_start
+		render_profile_leaderboard_us += profile_leaderboard_us
+		render_profile_leaderboard_max_us = maxi(render_profile_leaderboard_max_us, profile_leaderboard_us)
 	_set_place_badge(our_place)
 	
 	var move_vec := Vector2(Input.get_axis("SteerLeft", "SteerRight"), Input.get_axis("SteerUp", "SteerDown"))
@@ -574,4 +622,9 @@ func _process( _delta:float ) -> void:
 		var attack_meter_shader := attack_meter_icon.material as ShaderMaterial
 		if attack_meter_shader:
 			attack_meter_shader.set_shader_parameter("fill_amount", fill_ratio)
+	if profile_enabled:
+		var profile_total_us := Time.get_ticks_usec() - profile_total_start
+		render_profile_total_us += profile_total_us
+		render_profile_total_max_us = maxi(render_profile_total_max_us, profile_total_us)
+		render_profile_frames += 1
 	

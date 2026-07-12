@@ -13,6 +13,7 @@
 #include "godot_cpp/variant/rid.hpp"
 #include "godot_cpp/variant/array.hpp"
 #include "godot_cpp/variant/dictionary.hpp"
+#include "godot_cpp/variant/packed_float32_array.hpp"
 #include "godot_cpp/variant/packed_int32_array.hpp"
 #include "fzgx_gameplay_camera.h"
 #include "track/racetrack.h"
@@ -286,6 +287,21 @@ namespace godot {
 		std::vector<godot::Ref<godot::MultiMesh>> render_shadow_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_stamp_multimeshes;
 		std::vector<godot::Ref<godot::MultiMesh>> render_thruster_multimeshes;
+		struct RenderBodyMultimeshBuffers {
+			godot::PackedFloat32Array main;
+			godot::PackedFloat32Array outline;
+			godot::PackedFloat32Array outline_main;
+			godot::PackedFloat32Array shadow;
+			godot::PackedFloat32Array stamp;
+			float* main_write = nullptr;
+			float* outline_write = nullptr;
+			float* outline_main_write = nullptr;
+			float* shadow_write = nullptr;
+			float* stamp_write = nullptr;
+		};
+		std::vector<RenderBodyMultimeshBuffers> render_body_buffers;
+		std::vector<godot::PackedFloat32Array> render_thruster_buffers;
+		std::vector<float*> render_thruster_buffer_write_ptrs;
 		std::vector<SimTransform> render_car_local_transforms;
 		std::vector<SimTransform> render_outline_local_transforms;
 		std::vector<SimTransform> render_outline_main_local_transforms;
@@ -301,6 +317,8 @@ namespace godot {
 		std::vector<int> render_visible_thruster_counts;
 		int render_last_body_instances = 0;
 		int render_last_thruster_instances = 0;
+		bool render_all_car_bodies = false;
+		float render_car_body_view_distance = 360.0f;
 			std::vector<SimTransform> render_visual_prev_transforms;
 			std::vector<SimTransform> render_visual_current_transforms;
 			std::vector<SimTransform> render_final_prev_transforms;
@@ -366,9 +384,13 @@ namespace godot {
 			bool phase_profile_enabled = false;
 			uint64_t phase_profile_frames = 0;
 			uint64_t phase_profile_total_us = 0;
+			uint64_t phase_profile_total_max_us = 0;
 			uint64_t phase_profile_pre_us = 0;
+			uint64_t phase_profile_pre_max_us = 0;
 			uint64_t phase_profile_input_us = 0;
+			uint64_t phase_profile_input_max_us = 0;
 			uint64_t phase_profile_vehicle_us = 0;
+			uint64_t phase_profile_vehicle_max_us = 0;
 			uint64_t phase_profile_vehicle_begin_us = 0;
 			uint64_t phase_profile_vehicle_apply_input_us = 0;
 			uint64_t phase_profile_vehicle_floor_us = 0;
@@ -396,29 +418,50 @@ namespace godot {
 			uint64_t phase_profile_vehicle_checkpoint_us = 0;
 			uint64_t phase_profile_vehicle_spark_collect_us = 0;
 			uint64_t phase_profile_post_vehicle_us = 0;
+			uint64_t phase_profile_post_vehicle_max_us = 0;
 			uint64_t phase_profile_placement_us = 0;
+			uint64_t phase_profile_placement_max_us = 0;
 			uint64_t phase_profile_post_us = 0;
+			uint64_t phase_profile_post_max_us = 0;
 			uint64_t phase_profile_save_us = 0;
+			uint64_t phase_profile_save_max_us = 0;
 			uint64_t phase_profile_save_bumper_us = 0;
 			uint64_t phase_profile_save_voice_us = 0;
 			uint64_t phase_profile_save_memcpy_us = 0;
+			uint64_t phase_profile_last_total_us = 0;
+			uint64_t phase_profile_last_pre_us = 0;
+			uint64_t phase_profile_last_input_us = 0;
+			uint64_t phase_profile_last_vehicle_us = 0;
+			uint64_t phase_profile_last_vehicle_collision_us = 0;
+			uint64_t phase_profile_last_post_vehicle_us = 0;
+			uint64_t phase_profile_last_placement_us = 0;
+			uint64_t phase_profile_last_post_us = 0;
+			uint64_t phase_profile_last_save_us = 0;
 			uint64_t render_profile_frames = 0;
 			uint64_t render_profile_total_us = 0;
+			uint64_t render_profile_total_max_us = 0;
 			uint64_t render_profile_get_children_us = 0;
 			uint64_t render_profile_cache_us = 0;
 			uint64_t render_profile_snapshots_us = 0;
+			uint64_t render_profile_snapshots_max_us = 0;
 			uint64_t render_profile_effects_us = 0;
+			uint64_t render_profile_effects_max_us = 0;
 			uint64_t render_profile_multimesh_us = 0;
+			uint64_t render_profile_multimesh_max_us = 0;
 			uint64_t render_profile_body_instances = 0;
 			uint64_t render_profile_thruster_instances = 0;
 			uint64_t render_profile_camera_us = 0;
 			uint64_t render_profile_local_visual_us = 0;
 			uint64_t render_profile_cpu_driver_us = 0;
+			uint64_t render_profile_cpu_driver_max_us = 0;
 			uint64_t render_profile_spark_us = 0;
 			uint64_t render_profile_visuals_only_frames = 0;
 			uint64_t render_profile_visuals_only_total_us = 0;
+			uint64_t render_profile_visuals_only_total_max_us = 0;
 			uint64_t render_profile_visuals_only_effects_us = 0;
+			uint64_t render_profile_visuals_only_effects_max_us = 0;
 			uint64_t render_profile_visuals_only_multimesh_us = 0;
+			uint64_t render_profile_visuals_only_multimesh_max_us = 0;
 			uint64_t render_profile_visuals_only_body_instances = 0;
 			uint64_t render_profile_visuals_only_thruster_instances = 0;
 			uint64_t render_profile_visuals_only_camera_us = 0;
@@ -465,13 +508,20 @@ namespace godot {
 		bool play_world_oneshot_sfx(const godot::Vector3& position, const godot::StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
 		godot::String get_phase_profile_string() const;
+		godot::PackedInt64Array get_phase_profile_last_sample() const;
 		void set_phase_profile_enabled(bool enabled);
 		godot::String get_render_profile_string() const;
+		godot::PackedInt64Array get_render_profile_last_sample() const;
 		void set_render_profile_enabled(bool enabled);
 		void set_render_node_effects_enabled(bool enabled);
 		void set_render_thruster_lights_enabled(bool enabled);
+		void set_render_all_car_bodies(bool enabled);
+		void set_render_car_body_view_distance(double distance);
 		int get_player_race_place(int player_id) const;
-		godot::PackedInt32Array get_race_leaderboard_window(int player_id, int max_entries) const;
+		godot::PackedInt32Array get_race_leaderboard_window(int player_id, int max_entries, const godot::Dictionary& finished_players, const godot::Dictionary& eliminated_players) const;
+		int get_race_control_start_tick() const;
+		godot::PackedInt32Array get_finished_player_ids() const;
+		godot::PackedInt32Array get_eliminated_player_ids() const;
 		bool is_player_race_finished(int player_id) const;
 		bool is_player_race_eliminated(int player_id) const;
 		double get_player_ko_energy_bonus(int player_id) const;
