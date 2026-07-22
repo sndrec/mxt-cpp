@@ -2,6 +2,7 @@
 
 #include "godot_cpp/core/class_db.hpp"
 #include "mxt_core/spatial_audio_manager.h"
+#include "track/finish_line_display.h"
 
 using namespace godot;
 void GameSim::_bind_methods()
@@ -129,6 +130,8 @@ GameSim::~GameSim()
 {
 	stop_vehicle_lane_workers();
 	destroy_gamesim();
+	delete finish_line_display;
+	finish_line_display = nullptr;
 	free_vehicle_tick_soa();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{

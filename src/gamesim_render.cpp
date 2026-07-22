@@ -10,6 +10,7 @@
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "mxt_core/debug.hpp"
 #include "mxt_core/spatial_audio_manager.h"
+#include "track/finish_line_display.h"
 
 #include <algorithm>
 #include <cmath>
@@ -492,11 +493,31 @@ void GameSim::set_gameplay_camera(godot::Camera3D* p_camera, int player_id)
 		gameplay_camera_node->set_near(0.25f);
 		gameplay_camera_node->set_far(40000.0f);
 	}
+	update_finish_line_visual();
 }
 
 void GameSim::set_render_camera(godot::Camera3D* p_camera)
 {
 	render_camera_node = p_camera;
+	update_finish_line_visual();
+}
+
+void GameSim::update_finish_line_visual()
+{
+	if (!current_track || (!render_camera_node && !gameplay_camera_node)) {
+		return;
+	}
+	if (!finish_line_display) {
+		finish_line_display = new FinishLineDisplay;
+	}
+	finish_line_display->configure(this, *current_track);
+}
+
+void GameSim::hide_finish_line_visual()
+{
+	if (finish_line_display) {
+		finish_line_display->hide();
+	}
 }
 
 void GameSim::update_render_visual_snapshots(int visual_count)

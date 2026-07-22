@@ -136,9 +136,9 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=1145900115]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=1159054455]
 
-[node name="GameSim" type="GameSim" parent="." unique_id=1275117965]
+[node name="GameSim" type="GameSim" parent="." unique_id=1848260445]
 
 [node name="ReplayController" type="Node" parent="." unique_id=1464332657]
 script = ExtResource("23_replay")
@@ -514,7 +514,7 @@ offset_left = 72.0
 offset_top = -23.0
 offset_right = 263.0
 grow_vertical = 0
-text = "MaxX Throttle v0.1.35"
+text = "MaxX Throttle v0.1.38"
 
 [connection signal="pressed" from="Control/SingleplayerButton" to="." method="_on_start_button_pressed"]
 [connection signal="pressed" from="Control/ConnectHostBox/StartButton" to="." method="_on_start_button_pressed"]

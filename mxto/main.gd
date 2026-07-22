@@ -1450,7 +1450,7 @@ func _activate_local_elimination_spectator() -> void:
 
 func _local_player_can_live_spectate() -> bool:
 	var local_id := _local_player_id()
-	return network_manager.player_finish_times.has(local_id) or network_manager.player_dnfs.has(local_id)
+	return network_manager.spectator_ids.has(local_id) or network_manager.player_finish_times.has(local_id) or network_manager.player_dnfs.has(local_id)
 
 func _live_spectate_targets() -> Array:
 	var targets := []
@@ -1483,8 +1483,36 @@ func _apply_live_spectate_focus(focus_id: int) -> void:
 		car.name_label.text = _player_display_name(focus_id)
 	if game_sim != null:
 		game_sim.set_gameplay_camera(car.car_camera, focus_id)
+	if spectator_node != null and spectator_node.has_method("set_input_enabled"):
+		spectator_node.call("set_input_enabled", false)
 	car.car_camera.make_current()
 	car.make_vehicle_audio_listener_current()
+
+func _toggle_live_spectate_camera() -> void:
+	if !_local_player_can_live_spectate() or spectator_node == null:
+		return
+	var free_camera := spectator_node.get_node_or_null("Camera3D") as Camera3D
+	if free_camera == null:
+		return
+	var current_camera := get_viewport().get_camera_3d()
+	if current_camera == free_camera:
+		var targets := _live_spectate_targets()
+		if targets.is_empty():
+			return
+		var focus_id := live_spectate_focus_id
+		if !targets.has(focus_id):
+			focus_id = int(targets[0])
+		_apply_live_spectate_focus(focus_id)
+		_show_race_notification("Gameplay Camera: %s" % _player_display_name(focus_id), 1200)
+		return
+	if current_camera != null:
+		spectator_node.global_transform = current_camera.global_transform
+	if spectator_node.has_method("sync_look_from_current_transform"):
+		spectator_node.call("sync_look_from_current_transform")
+	if spectator_node.has_method("set_input_enabled"):
+		spectator_node.call("set_input_enabled", true)
+	free_camera.make_current()
+	_show_race_notification("Free Camera", 1200)
 
 func _change_live_spectate_focus(delta: int) -> void:
 	if !_local_player_can_live_spectate():
@@ -2215,7 +2243,10 @@ func _start_race(track_index: int, settings: Array) -> bool:
 	var local_id := _local_player_id()
 	local_player_index = racer_ids.find(local_id)
 	var start_grid_slots := replay_controller.replay_start_grid_slots if replay_controller.replay_playback_active and replay_controller.replay_start_grid_slots.size() == racer_ids.size() else _build_start_grid_slots(racer_ids)
-	car_node_container.instantiate_cars(chosen_defs, racer_ids, local_id)
+	var visual_focus_id := local_id
+	if local_player_index == -1 and !racer_ids.is_empty():
+		visual_focus_id = int(racer_ids[0])
+	car_node_container.instantiate_cars(chosen_defs, racer_ids, visual_focus_id)
 	nametag_names.clear()
 	nametag_names.resize(racer_settings.size())
 	for idx in racer_settings.size():
@@ -2223,10 +2254,12 @@ func _start_race(track_index: int, settings: Array) -> bool:
 		nametag_names[idx] = nametag_text
 	for car: VisualCar in car_node_container.get_children():
 		car.game_manager = self
-	if car_node_container.local_visual_car != null and local_player_index >= 0 and local_player_index < racer_settings.size():
-		car_node_container.local_visual_car.player_settings = racer_settings[local_player_index]
-		if is_instance_valid(car_node_container.local_visual_car.name_label):
-			car_node_container.local_visual_car.name_label.text = nametag_names[local_player_index]
+	if car_node_container.local_visual_car != null:
+		var visual_player_index := racer_ids.find(car_node_container.local_visual_car.owning_id)
+		if visual_player_index >= 0 and visual_player_index < racer_settings.size():
+			car_node_container.local_visual_car.player_settings = racer_settings[visual_player_index]
+			if is_instance_valid(car_node_container.local_visual_car.name_label):
+				car_node_container.local_visual_car.name_label.text = nametag_names[visual_player_index]
 	car_render_manager.multimesh_render_enabled = !auto_disable_car_multimesh_mode
 	car_render_manager.set_custom_stamp_atlas(custom_stamp_atlas)
 	car_render_manager.configure(render_defs, car_node_container.get_children(), render_settings)
@@ -2286,6 +2319,8 @@ func _start_race(track_index: int, settings: Array) -> bool:
 	replay_controller.start_recording(track_index, settings, racer_ids, racer_cpu_flags, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
+		if local_player_index == -1:
+			live_spectate_focus_id = car_node_container.local_visual_car.owning_id
 		var local_hud := car_node_container.local_visual_car.race_hud
 		if auto_disable_minimap_mode:
 			var minimap_control := local_hud.get_node_or_null("MinimapControl") as Control
@@ -3068,6 +3103,19 @@ func _unhandled_input(event: InputEvent) -> void:
 	if replay_controller.handle_unhandled_input(event):
 		get_viewport().set_input_as_handled()
 		return
+	if game_sim.sim_started and _local_player_can_live_spectate():
+		if event.is_action_pressed("DpadLeft"):
+			_change_live_spectate_focus(-1)
+			get_viewport().set_input_as_handled()
+			return
+		if event.is_action_pressed("DpadRight"):
+			_change_live_spectate_focus(1)
+			get_viewport().set_input_as_handled()
+			return
+		if event.is_action_pressed("SpinAttack") or (event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_TAB):
+			_toggle_live_spectate_camera()
+			get_viewport().set_input_as_handled()
+			return
 	if lobby_control.visible and event.is_action_pressed("ui_cancel"):
 		_close_settings_menus_for_race_start()
 		_return_to_menu()
@@ -3497,6 +3545,9 @@ func _mark_racer_dnf(racer_id: int, reason: String) -> void:
 		network_manager.record_player_dnf(racer_id, tick, reason)
 
 func _update_low_speed_dnf(racer_id: int, finish_sim: GameSim, race_control_started: bool) -> bool:
+	if singleplayer_mode:
+		race_dnf_low_speed_ticks.erase(racer_id)
+		return false
 	if finish_sim == null:
 		return false
 	if !race_control_started:
@@ -3525,6 +3576,8 @@ func _human_finish_count(human_racer_ids: Array) -> int:
 	return count
 
 func _update_force_end_dnf(human_racer_ids: Array) -> void:
+	if singleplayer_mode:
+		return
 	var human_count := human_racer_ids.size()
 	if human_count <= 0:
 		return

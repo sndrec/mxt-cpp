@@ -5,9 +5,10 @@
 [ext_resource type="Texture2D" uid="uid://c12nhn05is6ov" path="res://ui/placeholder.png" id="2_ifpia"]
 [ext_resource type="Texture2D" uid="uid://d3xfb8wko2v52" path="res://ui/countdown_back.png" id="3_qb5k8"]
 [ext_resource type="Texture2D" uid="uid://usop48tynaes" path="res://ui/countdown_arrow.png" id="4_prwh0"]
+[ext_resource type="Texture2D" uid="uid://eoj7owc2f8gj" path="res://ui/sword.png" id="5_23dyb"]
 [ext_resource type="Texture2D" uid="uid://ds5wavcy0prbi" path="res://ui/circle_02.png" id="8_2hfuj"]
 [ext_resource type="Texture2D" uid="uid://ba5amhq17pghw" path="res://ui/circle.png" id="9_3icfp"]
-[ext_resource type="Shader" path="res://ui/attack_meter.gdshader" id="10_xsrat"]
+[ext_resource type="Shader" uid="uid://bimv2yofetvh3" path="res://ui/attack_meter.gdshader" id="10_xsrat"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_4jbru"]
 font_size = 32
@@ -98,10 +99,10 @@ grow_horizontal = 2
 text = "02:34.30"
 label_settings = SubResource("LabelSettings_4jbru")
 
-[node name="forceendtimer" type="Label" parent="."]
+[node name="forceendtimer" type="Label" parent="." unique_id=1089643638]
 unique_name_in_owner = true
-visible = false
 process_mode = 4
+visible = false
 layout_mode = 1
 anchors_preset = 5
 anchor_left = 0.5
@@ -164,15 +165,14 @@ color = Color(1, 0.8, 0.3, 0.9)
 unique_name_in_owner = true
 process_mode = 4
 layout_mode = 1
-anchors_preset = -1
 anchor_left = 0.664
-anchor_top = 0.024
+anchor_top = 0.091000006
 anchor_right = 0.664
-anchor_bottom = 0.024
-offset_left = -58.0
-offset_top = -1.0
-offset_right = -12.0
-offset_bottom = 45.0
+anchor_bottom = 0.091000006
+offset_left = -52.0
+offset_top = -0.2400055
+offset_right = -6.0
+offset_bottom = 45.759995
 mouse_filter = 2
 
 [node name="attack_meter_border" type="ColorRect" parent="attack_meter" unique_id=589736190]
@@ -198,7 +198,7 @@ offset_top = 3.0
 offset_right = 43.0
 offset_bottom = 43.0
 mouse_filter = 2
-texture = ExtResource("2_ifpia")
+texture = ExtResource("5_23dyb")
 expand_mode = 2
 stretch_mode = 5
 

@@ -31,6 +31,7 @@ namespace godot {
 
 	class NetcodeSession;
 	class MxtSpatialAudioManager;
+	class FinishLineDisplay;
 
 	class GameSim : public Node {
 		GDCLASS(GameSim, Node)
@@ -217,6 +218,8 @@ namespace godot {
 		void apply_render_multimeshes(float alpha);
 		void update_native_gameplay_camera(bool step_camera);
 		void update_spatial_audio(double delta);
+		void update_finish_line_visual();
+		void hide_finish_line_visual();
 		uint64_t render_profile_now_us() const;
 		enum class InputFrameMode : uint8_t {
 			SingleLocal,
@@ -377,6 +380,7 @@ namespace godot {
 			void hide_unused_render_thruster_lights(int used_count);
 			godot::Camera3D* gameplay_camera_node = nullptr;
 			godot::Camera3D* render_camera_node = nullptr;
+			FinishLineDisplay* finish_line_display = nullptr;
 			MxtSpatialAudioManager* spatial_audio_manager = nullptr;
 			int spatial_audio_last_assignment_tick = -1;
 			uint64_t spatial_audio_last_update_frame = UINT64_MAX;

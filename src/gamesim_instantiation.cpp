@@ -1269,6 +1269,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 	void GameSim::destroy_gamesim()
 	{
+		hide_finish_line_visual();
 		spatial_audio_last_assignment_tick = -1;
 		spatial_audio_last_update_frame = UINT64_MAX;
 		if (spatial_audio_manager) {

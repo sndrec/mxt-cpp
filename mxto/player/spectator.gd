@@ -43,10 +43,12 @@ func _input(event: InputEvent) -> void:
 		pending_look_delta += motion.relative
 	elif event is InputEventMouseButton:
 		var mouse_button: InputEventMouseButton = event
-		if !mouse_button.pressed and mouse_button.button_index == MOUSE_BUTTON_RIGHT:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	elif event.is_action_pressed("ui_cancel"):
+		if mouse_button.button_index == MOUSE_BUTTON_RIGHT:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if mouse_button.pressed else Input.MOUSE_MODE_VISIBLE
+			get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("ui_cancel") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		get_viewport().set_input_as_handled()
 
 func _process(_delta: float) -> void:
 	if !input_enabled:

@@ -18,6 +18,7 @@ const REPLAY_RELATIVE_ROLL_SPEED := 4.0
 const REPLAY_RELATIVE_MOVE_SPEED := 300.0
 const REPLAY_RELATIVE_FAST_MOVE_SPEED := 900.0
 const REPLAY_SEEK_CHECKPOINT_INTERVAL := 1800
+const REPLAY_INTERFACE_CANVAS_LAYER := 90
 
 var auto_replay_catalog_profile_mode: bool = false
 var debug_replay_recording: bool = false
@@ -69,6 +70,7 @@ var replay_relative_offset := Vector3.ZERO
 var replay_relative_velocity := Vector3.ZERO
 var replay_relative_pending_look_delta := Vector2.ZERO
 var replay_input_calib: InputCalibration
+var replay_interface_layer: CanvasLayer
 var replay_catalog_root: Control
 var replay_catalog_list: ItemList
 var replay_catalog_metadata_label: RichTextLabel
@@ -106,6 +108,15 @@ func initialize() -> void:
 	if !game_manager.network_manager.authoritative_server_frame.is_connected(record_frame):
 		game_manager.network_manager.authoritative_server_frame.connect(record_frame)
 	refresh_pause_button()
+
+func _ensure_replay_interface_layer() -> CanvasLayer:
+	if replay_interface_layer != null and is_instance_valid(replay_interface_layer):
+		return replay_interface_layer
+	replay_interface_layer = CanvasLayer.new()
+	replay_interface_layer.name = "ReplayInterfaceLayer"
+	replay_interface_layer.layer = REPLAY_INTERFACE_CANVAS_LAYER
+	add_child(replay_interface_layer)
+	return replay_interface_layer
 
 func configure_command_line(args: Array, user_args: Array) -> bool:
 	auto_replay_catalog_profile_mode = args.has("--profile-replay-catalog") or user_args.has("--profile-replay-catalog")
@@ -511,7 +522,7 @@ func _build_replay_timeline_controls() -> void:
 	replay_timeline_root.visible = false
 	replay_timeline_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	replay_timeline_root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(replay_timeline_root)
+	_ensure_replay_interface_layer().add_child(replay_timeline_root)
 	replay_timeline_panel = PanelContainer.new()
 	replay_timeline_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	replay_timeline_panel.anchor_left = 0.08
@@ -1474,7 +1485,7 @@ func _build_replay_catalog() -> void:
 	replay_catalog_root.name = "ReplayCatalog"
 	replay_catalog_root.visible = false
 	replay_catalog_root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(replay_catalog_root)
+	_ensure_replay_interface_layer().add_child(replay_catalog_root)
 	var shade := ColorRect.new()
 	shade.color = Color(0.0, 0.0, 0.0, 0.72)
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
