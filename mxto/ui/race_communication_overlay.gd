@@ -7,6 +7,8 @@ const MESSAGE_VISIBLE_MSEC := 8000
 const MESSAGE_FADE_MSEC := 2000
 const CHAT_FADE_SECONDS := 0.5
 const MAX_CHAT_HISTORY := 96
+const CLOSED_CHAT_MESSAGE_LIMIT := 8
+const CLOSED_CHAT_FADE_STEP_SECONDS := 0.05
 const DEFAULT_CHAT_FONT_SIZE := 18
 const DEFAULT_CHAT_OUTLINE_SIZE := 1
 const DEFAULT_CHAT_TEXT_COLOR := Color.WHITE
@@ -30,6 +32,7 @@ const VOICE_LOUD_COLOR := Color(0.58, 1.0, 0.46, 0.82)
 @onready var history_messages: VBoxContainer = $ChatArea/HistoryPanel/Margin/HistoryBox/HistoryScroll/HistoryMessages
 @onready var history_scroll: ScrollContainer = $ChatArea/HistoryPanel/Margin/HistoryBox/HistoryScroll
 @onready var chat_input: LineEdit = $ChatArea/HistoryPanel/Margin/HistoryBox/ChatInput
+@onready var chat_fade_timer: Timer = $ChatFadeTimer
 @onready var voice_boxes_root: VBoxContainer = $VoiceArea/VoiceBoxes
 @onready var local_voice_icon: TextureRect = $VoiceArea/LocalVoiceIcon
 
@@ -41,48 +44,19 @@ var _voice_boxes := {}
 var _voice_box_styles := {}
 var _panel_style: StyleBoxFlat
 var _input_style: StyleBoxFlat
-var text_chat_enabled := true
+var _scroll_to_bottom_pending := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	chat_area.visible = text_chat_enabled
+	chat_area.visible = true
 	_configure_chat_panel()
 	history_panel.visible = true
 	history_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	history_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	chat_input.visible = false
 	local_voice_icon.visible = false
+	chat_fade_timer.timeout.connect(_on_chat_fade_timer_timeout)
 	_set_chat_chrome_alpha(0.0)
-	set_process(true)
-
-func set_text_chat_enabled(enabled: bool) -> void:
-	text_chat_enabled = enabled
-	if text_chat_enabled:
-		set_process(true)
-		if chat_area != null:
-			chat_area.visible = true
-		if history_panel != null:
-			history_panel.visible = true
-		return
-	_chat_open = false
-	if _chat_tween != null:
-		_chat_tween.kill()
-		_chat_tween = null
-	_messages.clear()
-	set_process(false)
-	if chat_area != null:
-		chat_area.visible = false
-	if history_panel != null:
-		history_panel.visible = false
-		history_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if history_scroll != null:
-		history_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	if chat_input != null:
-		chat_input.visible = false
-		chat_input.release_focus()
-	if history_messages != null:
-		for child in history_messages.get_children():
-			child.queue_free()
 
 func _configure_chat_panel() -> void:
 	_panel_style = StyleBoxFlat.new()
@@ -101,11 +75,9 @@ func _configure_chat_panel() -> void:
 	_apply_chat_input_style()
 
 func is_chat_open() -> bool:
-	return text_chat_enabled and _chat_open
+	return _chat_open
 
 func open_chat() -> void:
-	if !text_chat_enabled:
-		return
 	if _chat_open:
 		return
 	_chat_open = true
@@ -116,12 +88,9 @@ func open_chat() -> void:
 	chat_input.clear()
 	chat_input.grab_focus()
 	_refresh_history_messages()
-	_scroll_history_to_bottom_next_frame()
 	_fade_chat_chrome(1.0)
 
 func close_chat() -> void:
-	if !text_chat_enabled:
-		return
 	if !_chat_open:
 		return
 	_chat_open = false
@@ -132,20 +101,36 @@ func close_chat() -> void:
 	_refresh_history_messages()
 
 func append_message(sender_id: int, sender_name: String, text: String) -> void:
-	if !text_chat_enabled:
-		return
 	var clean_text := text.strip_edges()
 	if clean_text == "":
 		return
+	var recycled_label: RichTextLabel
+	if _messages.size() >= MAX_CHAT_HISTORY:
+		_messages.remove_at(0)
+		if history_messages.get_child_count() > 0:
+			recycled_label = history_messages.get_child(0) as RichTextLabel
+			if recycled_label != null:
+				history_messages.move_child(recycled_label, history_messages.get_child_count() - 1)
 	_messages.append({
 		"id": sender_id,
 		"name": sender_name,
 		"text": clean_text,
 		"msec": Time.get_ticks_msec(),
 	})
-	while _messages.size() > MAX_CHAT_HISTORY:
-		_messages.remove_at(0)
-	_refresh_history_messages()
+	var label := recycled_label
+	if label == null:
+		label = _new_chat_label()
+		history_messages.add_child(label)
+	_set_chat_label_message(label, _messages.back())
+	_refresh_chat_label_visibility()
+	_scroll_history_to_bottom_next_frame()
+
+func clear_messages() -> void:
+	_messages.clear()
+	chat_fade_timer.stop()
+	for child in history_messages.get_children():
+		history_messages.remove_child(child)
+		child.queue_free()
 
 func set_voice_status(status: Dictionary, player_names: Dictionary) -> void:
 	var local_id := int(status.get("local_id", -1))
@@ -170,8 +155,6 @@ func set_voice_status(status: Dictionary, player_names: Dictionary) -> void:
 	_sync_voice_boxes(active)
 
 func _input(event: InputEvent) -> void:
-	if !text_chat_enabled:
-		return
 	if !_chat_open:
 		return
 	if !(event is InputEventKey):
@@ -189,16 +172,7 @@ func _input(event: InputEvent) -> void:
 		close_chat()
 		get_viewport().set_input_as_handled()
 
-func _process(_delta: float) -> void:
-	if !text_chat_enabled:
-		return
-	if !_chat_open:
-		_refresh_history_messages()
-		_scroll_history_to_bottom_deferred()
-
 func _fade_chat_chrome(target_alpha: float) -> void:
-	if !text_chat_enabled:
-		return
 	if _chat_tween != null:
 		_chat_tween.kill()
 	_chat_tween = create_tween()
@@ -224,20 +198,17 @@ func _set_chat_chrome_alpha(alpha: float) -> void:
 		chat_input.modulate.a = _chat_chrome_alpha
 
 func _refresh_history_messages() -> void:
-	if !text_chat_enabled:
-		return
 	if history_messages == null:
 		return
-	_sync_chat_labels(history_messages, _messages, _chat_open)
-	if !_chat_open:
-		_scroll_history_to_bottom_deferred()
-
-func _scroll_history_to_bottom_deferred() -> void:
-	if history_scroll != null:
-		call_deferred("_scroll_history_to_bottom")
+	_refresh_chat_label_visibility()
+	_scroll_history_to_bottom_next_frame()
 
 func _scroll_history_to_bottom_next_frame() -> void:
+	if _scroll_to_bottom_pending:
+		return
+	_scroll_to_bottom_pending = true
 	await get_tree().process_frame
+	_scroll_to_bottom_pending = false
 	_scroll_history_to_bottom()
 
 func _scroll_history_to_bottom() -> void:
@@ -247,21 +218,52 @@ func _scroll_history_to_bottom() -> void:
 	if scroll_bar != null:
 		scroll_bar.value = scroll_bar.max_value
 
-func _sync_chat_labels(parent: VBoxContainer, source_messages: Array, force_alpha: bool) -> void:
-	while parent.get_child_count() > source_messages.size():
-		var child := parent.get_child(parent.get_child_count() - 1)
-		parent.remove_child(child)
-		child.queue_free()
-	while parent.get_child_count() < source_messages.size():
-		parent.add_child(_new_chat_label())
-	for i in range(source_messages.size()):
-		var label := parent.get_child(i) as RichTextLabel
+func _set_chat_label_message(label: RichTextLabel, message: Dictionary) -> void:
+	label.text = _format_chat_line(str(message.get("name", "")), str(message.get("text", "")))
+
+func _refresh_chat_label_visibility() -> void:
+	var count := mini(_messages.size(), history_messages.get_child_count())
+	var first_closed_index := maxi(count - CLOSED_CHAT_MESSAGE_LIMIT, 0)
+	var now_msec := Time.get_ticks_msec()
+	for i in range(count):
+		var label := history_messages.get_child(i) as RichTextLabel
 		if label == null:
 			continue
-		var message: Dictionary = source_messages[i]
-		_apply_chat_label_style(label)
-		label.text = _format_chat_line(str(message.get("name", "")), str(message.get("text", "")))
-		label.modulate.a = 1.0 if force_alpha else _message_alpha(message, Time.get_ticks_msec())
+		if _chat_open:
+			label.visible = true
+			label.modulate.a = 1.0
+		elif i < first_closed_index:
+			label.visible = false
+		else:
+			var alpha := _message_alpha(_messages[i], now_msec)
+			label.visible = alpha > 0.0
+			label.modulate.a = alpha
+	_schedule_closed_fade_update(now_msec)
+
+func _schedule_closed_fade_update(now_msec: int = -1) -> void:
+	chat_fade_timer.stop()
+	if _chat_open or _messages.is_empty():
+		return
+	if now_msec < 0:
+		now_msec = Time.get_ticks_msec()
+	var first_index := maxi(_messages.size() - CLOSED_CHAT_MESSAGE_LIMIT, 0)
+	var next_update_msec := -1
+	for i in range(first_index, _messages.size()):
+		var age_msec := now_msec - int(_messages[i].get("msec", now_msec))
+		if age_msec < MESSAGE_VISIBLE_MSEC:
+			var fade_start_delay := MESSAGE_VISIBLE_MSEC - age_msec
+			if next_update_msec < 0 or fade_start_delay < next_update_msec:
+				next_update_msec = fade_start_delay
+		elif age_msec < MESSAGE_VISIBLE_MSEC + MESSAGE_FADE_MSEC:
+			next_update_msec = roundi(CLOSED_CHAT_FADE_STEP_SECONDS * 1000.0)
+			break
+	if next_update_msec >= 0:
+		chat_fade_timer.start(maxf(float(next_update_msec) * 0.001, CLOSED_CHAT_FADE_STEP_SECONDS))
+
+func _on_chat_fade_timer_timeout() -> void:
+	if _chat_open:
+		return
+	_refresh_chat_label_visibility()
 
 func _new_chat_label() -> RichTextLabel:
 	var label := RichTextLabel.new()

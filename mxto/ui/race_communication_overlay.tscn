@@ -25,7 +25,6 @@ chat_label_settings = SubResource("LabelSettings_chat")
 voice_box_size = Vector2(220, 36)
 
 [node name="ChatArea" type="Control" parent="." unique_id=114046942]
-visible = false
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
@@ -73,6 +72,9 @@ size_flags_horizontal = 3
 placeholder_text = "Press ENTER to chat"
 max_length = 220
 flat = true
+
+[node name="ChatFadeTimer" type="Timer" parent="."]
+one_shot = true
 
 [node name="VoiceArea" type="Control" parent="." unique_id=1254132898]
 layout_mode = 1

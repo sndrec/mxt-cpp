@@ -3,12 +3,16 @@ extends Control
 
 const VOICE_SETTINGS_PATH := "user://voice_chat_settings.json"
 const AUDIO_SETTINGS_PATH := "user://audio_settings.json"
+const GRAPHICS_SETTINGS_PATH := "user://graphics_settings.json"
 const AUDIO_BUS_NAMES := [&"Master", &"Announcer", &"SFX", &"Music", &"Voicechat"]
 const AUDIO_MULTIPLIER_MIN := 0.0
 const AUDIO_MULTIPLIER_MAX := 1.0
 const AUDIO_MULTIPLIER_DEFAULT := 1.0
 const AUDIO_MULTIPLIER_MUTE_DB := -80.0
 const VOICE_SENSITIVITY_DEFAULT := 0.08
+const FPS_LIMIT_MIN := 30
+const FPS_LIMIT_MAX := 1000
+const FPS_LIMIT_DEFAULT := 360
 
 @onready var close_button: Button = $Shade/Center/Panel/Margin/Root/Header/CloseButton
 @onready var voice_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Communication/CommunicationBox/VoiceModeRow/VoiceModeOption
@@ -29,6 +33,10 @@ const VOICE_SENSITIVITY_DEFAULT := 0.08
 @onready var audio_music_value: Label = $Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/MusicVolumeRow/MusicVolumeValue
 @onready var audio_voicechat_slider: HSlider = $Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/VoicechatVolumeRow/VoicechatVolumeSlider
 @onready var audio_voicechat_value: Label = $Shade/Center/Panel/Margin/Root/Tabs/Audio/AudioBox/VoicechatVolumeRow/VoicechatVolumeValue
+@onready var graphics_window_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/WindowModeRow/WindowModeOption
+@onready var graphics_vsync_mode_option: OptionButton = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/VSyncModeRow/VSyncModeOption
+@onready var graphics_fps_limit_spin_box: SpinBox = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/FPSLimitRow/FPSLimitSpinBox
+@onready var graphics_current_display_label: Label = $Shade/Center/Panel/Margin/Root/Tabs/Graphics/GraphicsBox/CurrentDisplayLabel
 @onready var controller_settings: Control = $Shade/Center/Panel/Margin/Root/Tabs/Controls/ControllerSettings
 
 var voice_input_mode := "push_to_talk"
@@ -41,32 +49,46 @@ var audio_bus_multipliers := {}
 var audio_multiplier_sliders := {}
 var audio_multiplier_value_labels := {}
 var audio_controls_loading := false
+var graphics_window_mode := DisplayServer.WINDOW_MODE_WINDOWED
+var graphics_vsync_mode := DisplayServer.VSYNC_ENABLED
+var graphics_fps_limit := FPS_LIMIT_DEFAULT
+var graphics_controls_loading := false
 
 func _ready() -> void:
 	close_button.pressed.connect(_on_close_pressed)
 	_capture_audio_bus_base_volumes()
 	_configure_audio_controls()
 	_configure_voice_options()
+	_configure_graphics_options()
 	voice_mode_option.item_selected.connect(_on_voice_mode_selected)
 	voice_sensitivity_slider.value_changed.connect(_on_voice_sensitivity_changed)
 	hear_voice_toggle.toggled.connect(_on_hear_voice_toggled)
 	mic_monitor_toggle.toggled.connect(_on_mic_monitor_toggled)
+	graphics_window_mode_option.item_selected.connect(_on_graphics_window_mode_selected)
+	graphics_vsync_mode_option.item_selected.connect(_on_graphics_vsync_mode_selected)
+	graphics_fps_limit_spin_box.value_changed.connect(_on_graphics_fps_limit_changed)
 	if controller_settings != null and controller_settings.has_method("set_embedded_mode"):
 		controller_settings.call("set_embedded_mode", true)
 	_load_voice_settings()
 	_load_audio_settings()
+	_load_graphics_settings()
 	_update_voice_controls()
 	_update_audio_controls()
+	_update_graphics_controls()
 	_apply_audio_bus_multipliers()
+	_apply_graphics_settings()
 	set_process(true)
 	hide()
 
 func open_settings() -> void:
 	_load_voice_settings()
 	_load_audio_settings()
+	_load_graphics_settings()
 	_update_voice_controls()
 	_update_audio_controls()
+	_update_graphics_controls()
 	_apply_audio_bus_multipliers()
+	_apply_graphics_settings()
 	_set_voice_level_meter_enabled(true)
 	if controller_settings != null and controller_settings.has_method("open_settings"):
 		controller_settings.call("open_settings")
@@ -76,6 +98,7 @@ func close_settings() -> void:
 	_set_voice_level_meter_enabled(false)
 	_save_voice_settings()
 	_save_audio_settings()
+	_save_graphics_settings()
 	if controller_settings != null and controller_settings.has_method("save_settings"):
 		controller_settings.call("save_settings")
 	hide()
@@ -139,6 +162,98 @@ func _on_hear_voice_toggled(toggled: bool) -> void:
 func _on_mic_monitor_toggled(toggled: bool) -> void:
 	voice_test_monitor_enabled = toggled
 	_save_voice_settings()
+
+func _configure_graphics_options() -> void:
+	graphics_window_mode_option.clear()
+	graphics_window_mode_option.add_item("Windowed")
+	graphics_window_mode_option.set_item_metadata(0, DisplayServer.WINDOW_MODE_WINDOWED)
+	graphics_window_mode_option.add_item("Borderless Fullscreen")
+	graphics_window_mode_option.set_item_metadata(1, DisplayServer.WINDOW_MODE_FULLSCREEN)
+	graphics_window_mode_option.add_item("Exclusive Fullscreen")
+	graphics_window_mode_option.set_item_metadata(2, DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN)
+
+	graphics_vsync_mode_option.clear()
+	graphics_vsync_mode_option.add_item("Disabled")
+	graphics_vsync_mode_option.set_item_metadata(0, DisplayServer.VSYNC_DISABLED)
+	graphics_vsync_mode_option.add_item("Enabled")
+	graphics_vsync_mode_option.set_item_metadata(1, DisplayServer.VSYNC_ENABLED)
+	graphics_vsync_mode_option.add_item("Adaptive")
+	graphics_vsync_mode_option.set_item_metadata(2, DisplayServer.VSYNC_ADAPTIVE)
+	graphics_vsync_mode_option.add_item("Mailbox")
+	graphics_vsync_mode_option.set_item_metadata(3, DisplayServer.VSYNC_MAILBOX)
+
+func _update_graphics_controls() -> void:
+	graphics_controls_loading = true
+	for i in range(graphics_window_mode_option.item_count):
+		if int(graphics_window_mode_option.get_item_metadata(i)) == graphics_window_mode:
+			graphics_window_mode_option.select(i)
+			break
+	for i in range(graphics_vsync_mode_option.item_count):
+		if int(graphics_vsync_mode_option.get_item_metadata(i)) == graphics_vsync_mode:
+			graphics_vsync_mode_option.select(i)
+			break
+	graphics_fps_limit_spin_box.value = graphics_fps_limit
+	_update_current_display_label()
+	graphics_controls_loading = false
+
+func _on_graphics_window_mode_selected(index: int) -> void:
+	if graphics_controls_loading:
+		return
+	graphics_window_mode = int(graphics_window_mode_option.get_item_metadata(index))
+	_apply_graphics_window_mode()
+	_update_current_display_label()
+	_save_graphics_settings()
+
+func _on_graphics_vsync_mode_selected(index: int) -> void:
+	if graphics_controls_loading:
+		return
+	graphics_vsync_mode = int(graphics_vsync_mode_option.get_item_metadata(index))
+	_apply_graphics_vsync_mode()
+	_save_graphics_settings()
+
+func _on_graphics_fps_limit_changed(value: float) -> void:
+	if graphics_controls_loading:
+		return
+	graphics_fps_limit = clampi(roundi(value), FPS_LIMIT_MIN, FPS_LIMIT_MAX)
+	Engine.max_fps = graphics_fps_limit
+	_save_graphics_settings()
+
+func _apply_graphics_settings() -> void:
+	Engine.max_fps = graphics_fps_limit
+	if DisplayServer.get_name() == "headless":
+		_update_current_display_label()
+		return
+	_apply_graphics_window_mode()
+	_apply_graphics_vsync_mode()
+	_update_current_display_label()
+
+func _apply_graphics_window_mode() -> void:
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_mode(graphics_window_mode)
+
+func _apply_graphics_vsync_mode() -> void:
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_vsync_mode(graphics_vsync_mode)
+
+func _update_current_display_label() -> void:
+	if DisplayServer.get_name() == "headless":
+		graphics_current_display_label.text = "Current monitor mode is unavailable in headless mode."
+		return
+	var screen := DisplayServer.window_get_current_screen()
+	var screen_size := DisplayServer.screen_get_size(screen)
+	var refresh_rate := DisplayServer.screen_get_refresh_rate(screen)
+	var refresh_text := "unknown refresh rate"
+	if refresh_rate > 0.0:
+		var rounded_refresh_rate := roundi(refresh_rate)
+		if absf(refresh_rate - float(rounded_refresh_rate)) < 0.01:
+			refresh_text = "%d Hz" % rounded_refresh_rate
+		else:
+			refresh_text = "%.2f Hz" % refresh_rate
+	graphics_current_display_label.text = "Current monitor mode: %d x %d @ %s\nBorderless and exclusive fullscreen use this resolution and refresh rate." % [
+		screen_size.x,
+		screen_size.y,
+		refresh_text,
+	]
 
 func _capture_audio_bus_base_volumes() -> void:
 	audio_bus_base_volume_db.clear()
@@ -337,3 +452,41 @@ func _load_audio_settings() -> void:
 		var key := str(bus_name)
 		if multipliers.has(key):
 			audio_bus_multipliers[bus_name] = clampf(float(multipliers[key]), AUDIO_MULTIPLIER_MIN, AUDIO_MULTIPLIER_MAX)
+
+func _save_graphics_settings() -> void:
+	var data := {
+		"window_mode": graphics_window_mode,
+		"vsync_mode": graphics_vsync_mode,
+		"fps_limit": graphics_fps_limit,
+	}
+	var file := FileAccess.open(GRAPHICS_SETTINGS_PATH, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(data))
+		file.close()
+
+func _load_graphics_settings() -> void:
+	graphics_window_mode = DisplayServer.WINDOW_MODE_WINDOWED
+	graphics_vsync_mode = DisplayServer.VSYNC_ENABLED
+	graphics_fps_limit = Engine.max_fps
+	if graphics_fps_limit < FPS_LIMIT_MIN or graphics_fps_limit > FPS_LIMIT_MAX:
+		graphics_fps_limit = FPS_LIMIT_DEFAULT
+	if DisplayServer.get_name() != "headless":
+		var current_window_mode := DisplayServer.window_get_mode()
+		if current_window_mode == DisplayServer.WINDOW_MODE_FULLSCREEN or current_window_mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+			graphics_window_mode = current_window_mode
+		var current_vsync_mode := DisplayServer.window_get_vsync_mode()
+		if current_vsync_mode >= DisplayServer.VSYNC_DISABLED and current_vsync_mode <= DisplayServer.VSYNC_MAILBOX:
+			graphics_vsync_mode = current_vsync_mode
+	if !FileAccess.file_exists(GRAPHICS_SETTINGS_PATH):
+		return
+	var txt := FileAccess.get_file_as_string(GRAPHICS_SETTINGS_PATH)
+	var data = JSON.parse_string(txt)
+	if typeof(data) != TYPE_DICTIONARY:
+		return
+	var loaded_window_mode := int(data.get("window_mode", graphics_window_mode))
+	if loaded_window_mode == DisplayServer.WINDOW_MODE_WINDOWED or loaded_window_mode == DisplayServer.WINDOW_MODE_FULLSCREEN or loaded_window_mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
+		graphics_window_mode = loaded_window_mode
+	var loaded_vsync_mode := int(data.get("vsync_mode", graphics_vsync_mode))
+	if loaded_vsync_mode >= DisplayServer.VSYNC_DISABLED and loaded_vsync_mode <= DisplayServer.VSYNC_MAILBOX:
+		graphics_vsync_mode = loaded_vsync_mode
+	graphics_fps_limit = clampi(int(data.get("fps_limit", graphics_fps_limit)), FPS_LIMIT_MIN, FPS_LIMIT_MAX)

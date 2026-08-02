@@ -18,6 +18,7 @@ func _ready() -> void:
 		add_child(camera)
 	camera.cull_mask = 7
 	camera.current = true
+	camera.far = 30000
 	sync_look_from_current_transform()
 
 func set_input_enabled(enabled: bool) -> void:

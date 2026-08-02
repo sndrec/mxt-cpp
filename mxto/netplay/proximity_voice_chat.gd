@@ -9,8 +9,6 @@ const VOICE_MODE_TOGGLE := "toggle"
 const VOICE_MODE_ALWAYS_ON := "always_on"
 const VOICE_MODE_OFF := "off"
 const VOICECHAT_BUS_NAME := "Voicechat"
-const CAPTURE_BUS_NAME := "VoiceCapture"
-const CAPTURE_BUS_OUTPUT_MUTE_DB := -80.0
 const VOICE_SAMPLE_RATE := 48000
 const VOICE_FRAME_SAMPLES := 480
 const VOICE_SETTINGS_RELOAD_MSEC := 500
@@ -38,9 +36,8 @@ const VOICE_STALE_PACKET_TICKS := 30
 @export var voice_doppler_lerp_speed := 10.0
 
 var network_manager: NetworkManager
-var capture_player: AudioStreamPlayer
-var capture_effect: AudioEffectCapture
 var capture_codec: OpusVoiceCodec
+var capture_input_active := false
 var voice_sequence := 0
 var remote_peers := {}
 var voice_input_mode := VOICE_MODE_PUSH_TO_TALK
@@ -60,6 +57,8 @@ var test_monitor_codec: OpusVoiceCodec
 var debug_capture_level := 0.0
 var debug_capture_frames_available := 0
 var debug_capture_frames_discarded := 0
+var debug_capture_buffer_frames := 0
+var debug_capture_input_rate := 0.0
 var debug_packets_encoded := 0
 var debug_packets_received := 0
 var debug_last_capture_msec := 0
@@ -108,6 +107,9 @@ func _ready() -> void:
 	applied_voice_codec_complexity = voice_codec_complexity
 	set_physics_process(true)
 
+func _exit_tree() -> void:
+	_stop_capture()
+
 func _ensure_voice_input_action() -> void:
 	_ensure_key_action(VOICE_ACTION, KEY_V)
 	_ensure_key_action(VOICE_TOGGLE_ACTION, KEY_T)
@@ -128,8 +130,8 @@ func reset() -> void:
 	smoothed_capture_level = 0.0
 	last_capture_level_msec = 0
 	always_on_below_threshold_msec = 0
-	if capture_effect != null:
-		capture_effect.clear_buffer()
+	_stop_capture()
+	capture_codec = null
 	_clear_test_monitor()
 	_reset_voice_debug_counters()
 	_close_voice_debug_log()
@@ -138,6 +140,8 @@ func _reset_voice_debug_counters() -> void:
 	debug_capture_level = 0.0
 	debug_capture_frames_available = 0
 	debug_capture_frames_discarded = 0
+	debug_capture_buffer_frames = 0
+	debug_capture_input_rate = 0.0
 	debug_packets_encoded = 0
 	debug_packets_received = 0
 	debug_last_capture_msec = 0
@@ -251,8 +255,12 @@ func _voice_debug_snapshot(event: String, sender_id: int, sequence: int) -> Dict
 		"sender_id": sender_id,
 		"sequence": sequence,
 		"capture_status": debug_capture_status,
+		"capture_backend": "audio_server_direct",
 		"capture_level": debug_capture_level,
+		"capture_frames_available": debug_capture_frames_available,
 		"capture_frames_discarded": debug_capture_frames_discarded,
+		"capture_buffer_frames": debug_capture_buffer_frames,
+		"capture_input_rate": debug_capture_input_rate,
 		"packets_encoded": debug_packets_encoded,
 		"packets_received": debug_packets_received,
 		"receive_attempts": debug_voice_receive_attempts,
@@ -400,34 +408,32 @@ func _capture_and_send() -> void:
 	var should_send := _local_player_should_send_voice()
 	var should_monitor := voice_test_monitor_enabled
 	if !should_send and !should_monitor and !wants_always_on_level and !wants_level_meter:
-		if capture_effect != null:
-			capture_effect.clear_buffer()
+		_drain_idle_capture_frames()
 		local_voice_broadcasting = false
 		debug_capture_status = "idle"
 		return
 	_capture_voice_frames(should_send, should_monitor)
 
 func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
-	_ensure_capture()
-	if capture_effect == null:
-		debug_capture_status = "blocked: no capture effect"
+	if !_ensure_capture():
 		return
-	var available := capture_effect.get_frames_available()
+	var available := AudioServer.get_input_frames_available()
 	debug_capture_frames_available = available
-	var input_rate := float(AudioServer.get_mix_rate())
+	var input_rate := float(AudioServer.get_input_mix_rate())
 	if input_rate <= 0.0:
 		input_rate = 48000.0
+	debug_capture_input_rate = input_rate
 	var max_fresh_frames := maxi(VOICE_FRAME_SAMPLES, roundi(input_rate * float(VOICE_CAPTURE_MAX_BACKLOG_MSEC) * 0.001))
 	if available > max_fresh_frames:
 		var discard_count := available - max_fresh_frames
-		capture_effect.get_buffer(discard_count)
-		debug_capture_frames_discarded += discard_count
-		available = capture_effect.get_frames_available()
+		var discarded_frames := AudioServer.get_input_frames(discard_count)
+		debug_capture_frames_discarded += discarded_frames.size()
+		available = AudioServer.get_input_frames_available()
 		debug_capture_frames_available = available
 	if available <= 0:
 		debug_capture_status = "waiting for mic frames"
 		return
-	var input_frames := capture_effect.get_buffer(available)
+	var input_frames := AudioServer.get_input_frames(available)
 	if input_frames.is_empty():
 		debug_capture_status = "waiting for mic frames"
 		return
@@ -506,34 +512,35 @@ func _local_player_can_use_voice() -> bool:
 		return false
 	return network_manager.get_simulation_roster().has(local_id)
 
-func _ensure_capture() -> void:
-	if capture_effect != null:
-		if capture_player != null and !capture_player.playing:
-			capture_player.play()
+func _ensure_capture() -> bool:
+	if capture_codec == null:
+		capture_codec = OpusVoiceCodec.new()
+		capture_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
+	if capture_input_active:
+		return true
+	var error := AudioServer.set_input_device_active(true)
+	if error != OK:
+		debug_capture_status = "blocked: mic input error %d" % int(error)
+		return false
+	capture_input_active = true
+	debug_capture_buffer_frames = AudioServer.get_input_buffer_length_frames()
+	debug_capture_input_rate = float(AudioServer.get_input_mix_rate())
+	return true
+
+func _stop_capture() -> void:
+	if !capture_input_active:
 		return
-	var bus_index := AudioServer.get_bus_index(CAPTURE_BUS_NAME)
-	if bus_index < 0:
-		AudioServer.add_bus(AudioServer.get_bus_count())
-		bus_index = AudioServer.get_bus_count() - 1
-		AudioServer.set_bus_name(bus_index, CAPTURE_BUS_NAME)
-	AudioServer.set_bus_send(bus_index, "Master")
-	AudioServer.set_bus_volume_db(bus_index, 0.0)
-	while AudioServer.get_bus_effect_count(bus_index) > 0:
-		AudioServer.remove_bus_effect(bus_index, 0)
-	capture_effect = AudioEffectCapture.new()
-	capture_effect.buffer_length = 0.08
-	AudioServer.add_bus_effect(bus_index, capture_effect, 0)
-	var capture_output_mute := AudioEffectAmplify.new()
-	capture_output_mute.volume_db = CAPTURE_BUS_OUTPUT_MUTE_DB
-	AudioServer.add_bus_effect(bus_index, capture_output_mute, 1)
-	capture_codec = OpusVoiceCodec.new()
-	capture_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
-	capture_player = AudioStreamPlayer.new()
-	capture_player.name = "VoiceCapturePlayer"
-	capture_player.stream = AudioStreamMicrophone.new()
-	capture_player.bus = CAPTURE_BUS_NAME
-	add_child(capture_player)
-	capture_player.play()
+	AudioServer.set_input_device_active(false)
+	capture_input_active = false
+	debug_capture_frames_available = 0
+
+func _drain_idle_capture_frames() -> void:
+	if !capture_input_active:
+		return
+	var available := AudioServer.get_input_frames_available()
+	if available > 0:
+		AudioServer.get_input_frames(available)
+	debug_capture_frames_available = 0
 
 func _send_voice_payload(payload: PackedByteArray) -> void:
 	if payload.is_empty() or network_manager == null:
@@ -910,10 +917,13 @@ func get_voice_debug_status() -> Dictionary:
 		"always_on_threshold": voice_always_on_threshold,
 		"smoothed_capture_level": smoothed_capture_level,
 		"local_voice_broadcasting": local_voice_broadcasting,
-		"capture_active": capture_effect != null and capture_player != null and capture_player.playing,
+		"capture_active": capture_input_active,
+		"capture_backend": "audio_server_direct",
 		"capture_status": debug_capture_status,
 		"capture_frames_available": debug_capture_frames_available,
 		"capture_frames_discarded": debug_capture_frames_discarded,
+		"capture_buffer_frames": debug_capture_buffer_frames,
+		"capture_input_rate": debug_capture_input_rate,
 		"capture_level": debug_capture_level,
 		"packets_encoded": debug_packets_encoded,
 		"packets_received": debug_packets_received,
