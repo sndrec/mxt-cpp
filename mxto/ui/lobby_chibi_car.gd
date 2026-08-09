@@ -7,13 +7,6 @@ const BOUNDS_X := 25.0
 const BOUNDS_Z := 10.0
 const CHIBI_TICK_DELTA := 1.0 / 60.0
 const SYNC_INTERVAL_MSEC := 100
-const NAMEPLATE_PANEL_OFFSET := Vector2(48.0, -87.0)
-const NAMEPLATE_POINTER_OFFSET := Vector2(36.0, -46.0)
-const NAMEPLATE_POINTER_POINTS := [
-	Vector2(-19.0, 13.0),
-	Vector2(-5.0, -1.0),
-	Vector2(12.0, -1.0),
-]
 
 var player_id := 0
 var player_settings: Dictionary = {}
@@ -37,16 +30,20 @@ var nameplate: Control
 var nameplate_panel: PanelContainer
 var username_label: Label
 var ping_label: Label
-var pointer_line: Line2D
 var last_sync_msec := 0
 var car_definition: CarDefinition
+var hovered := false
+var nameplate_attachment := Vector2.ZERO
+var settings_revision := -1
+var render_livery_hash := ""
 
-func setup(in_player_id: int, in_settings: Dictionary, in_game_manager: Node, in_camera: Camera3D, in_nameplate_parent: Control, in_local_control: bool) -> void:
+func setup(in_player_id: int, in_settings: Dictionary, in_game_manager: Node, in_camera: Camera3D, in_nameplate_parent: Control, in_local_control: bool, in_settings_revision: int = 0) -> void:
 	player_id = in_player_id
 	game_manager = in_game_manager
 	lobby_camera = in_camera
 	nameplate_parent = in_nameplate_parent
 	local_control = in_local_control
+	settings_revision = in_settings_revision
 	_apply_settings(in_settings)
 	_ensure_nameplate()
 	_rebuild_visual()
@@ -56,12 +53,16 @@ func set_local_control(enabled: bool) -> void:
 	if nameplate != null:
 		nameplate.modulate = Color(1.0, 0.75, 0.25) if local_control else Color.WHITE
 
-func update_settings(in_settings: Dictionary) -> void:
+func update_settings(in_settings: Dictionary, in_settings_revision: int = -1) -> void:
+	if in_settings_revision >= 0 and in_settings_revision == settings_revision:
+		return
 	var old_path := str(player_settings.get("car_definition_path", ""))
-	var old_livery_hash := get_render_livery_hash()
+	var old_livery_hash := render_livery_hash
+	if in_settings_revision >= 0:
+		settings_revision = in_settings_revision
 	_apply_settings(in_settings)
 	_ensure_nameplate()
-	if old_path != str(player_settings.get("car_definition_path", "")) or old_livery_hash != get_render_livery_hash():
+	if old_path != str(player_settings.get("car_definition_path", "")) or old_livery_hash != render_livery_hash:
 		_rebuild_visual()
 
 func apply_remote_state(in_velocity: float, in_knockback: Vector3, in_angle_velocity: float, in_position: Vector3, in_rotation: Vector3) -> void:
@@ -70,17 +71,23 @@ func apply_remote_state(in_velocity: float, in_knockback: Vector3, in_angle_velo
 	velocity = in_velocity
 	knockback_velocity = in_knockback
 	angle_velocity = in_angle_velocity
-	position = in_position
-	rotation = in_rotation
+	position = Vector3(in_position.x, position.y, in_position.z)
+	rotation = Vector3(rotation.x, in_rotation.y, rotation.z)
 
 func _exit_tree() -> void:
 	if nameplate != null and is_instance_valid(nameplate):
 		nameplate.queue_free()
 
 func _apply_settings(in_settings: Dictionary) -> void:
-	player_settings = in_settings.duplicate(true) if typeof(in_settings) == TYPE_DICTIONARY else {}
+	player_settings = in_settings if typeof(in_settings) == TYPE_DICTIONARY else {}
+	render_livery_hash = _calculate_render_livery_hash()
 	if username_label != null:
-		username_label.text = str(player_settings.get("username", str(player_id)))
+		var next_username := str(player_settings.get("username", str(player_id)))
+		if username_label.text != next_username:
+			username_label.text = next_username
+			username_label.reset_size()
+			if nameplate_panel != null:
+				nameplate_panel.reset_size()
 
 func _ensure_nameplate() -> void:
 	if nameplate != null:
@@ -90,11 +97,11 @@ func _ensure_nameplate() -> void:
 	nameplate = Control.new()
 	nameplate.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	nameplate.custom_minimum_size = Vector2(70.0, 52.0)
+	nameplate.visible = false
 	nameplate_parent.add_child(nameplate)
 
 	nameplate_panel = PanelContainer.new()
 	nameplate_panel.clip_contents = true
-	nameplate_panel.position = NAMEPLATE_PANEL_OFFSET
 	nameplate.add_child(nameplate_panel)
 
 	var style := StyleBoxFlat.new()
@@ -125,53 +132,15 @@ func _ensure_nameplate() -> void:
 	ping_label.modulate = Color(0.75, 0.85, 1.0, 0.9)
 	labels.add_child(ping_label)
 
-	pointer_line = Line2D.new()
-	pointer_line.position = NAMEPLATE_POINTER_OFFSET
-	pointer_line.points = PackedVector2Array([Vector2(-19.0, 13.0), Vector2(-5.0, -1.0), Vector2(12.0, -1.0)])
-	pointer_line.width = 4.0
-	pointer_line.default_color = Color(0.0, 0.0, 0.0, 0.26)
-	pointer_line.begin_cap_mode = Line2D.LINE_CAP_ROUND
-	pointer_line.antialiased = true
-	nameplate.add_child(pointer_line)
 	set_local_control(local_control)
 
-func _nameplate_parent_size() -> Vector2:
-	if nameplate_parent != null:
-		var parent_size := nameplate_parent.size
-		if parent_size.x > 0.0 and parent_size.y > 0.0:
-			return parent_size
-	if lobby_camera != null and lobby_camera.get_viewport() != null:
-		return lobby_camera.get_viewport().get_visible_rect().size
-	return Vector2.ZERO
-
 func _update_nameplate_layout(anchor: Vector2) -> void:
-	if nameplate_panel == null or pointer_line == null:
+	if nameplate == null or nameplate_panel == null:
 		return
-	var parent_size := _nameplate_parent_size()
-	var panel_size := nameplate_panel.size
 	var panel_min_size := nameplate_panel.get_combined_minimum_size()
-	panel_size.x = maxf(panel_size.x, panel_min_size.x)
-	panel_size.y = maxf(panel_size.y, panel_min_size.y)
-
-	var flip_x := parent_size.x > 0.0 and anchor.x + NAMEPLATE_PANEL_OFFSET.x + panel_size.x > parent_size.x
-	var flip_y := anchor.y + NAMEPLATE_PANEL_OFFSET.y < 0.0
-	var x_sign := -1.0 if flip_x else 1.0
-	var y_sign := -1.0 if flip_y else 1.0
-
-	var panel_offset := NAMEPLATE_PANEL_OFFSET
-	if flip_x:
-		panel_offset.x = -NAMEPLATE_PANEL_OFFSET.x - panel_size.x
-	if flip_y:
-		panel_offset.y = -NAMEPLATE_PANEL_OFFSET.y - panel_size.y
-	nameplate_panel.position = panel_offset
-
-	pointer_line.position = Vector2(NAMEPLATE_POINTER_OFFSET.x * x_sign, NAMEPLATE_POINTER_OFFSET.y * y_sign)
-	var points := PackedVector2Array()
-	points.resize(NAMEPLATE_POINTER_POINTS.size())
-	for i in range(NAMEPLATE_POINTER_POINTS.size()):
-		var point: Vector2 = NAMEPLATE_POINTER_POINTS[i]
-		points[i] = Vector2(point.x * x_sign, point.y * y_sign)
-	pointer_line.points = points
+	nameplate_panel.size = panel_min_size
+	nameplate.position = anchor
+	nameplate_panel.position = Vector2(-panel_min_size.x * 0.5, -panel_min_size.y)
 
 func _rebuild_visual() -> void:
 	if visual_root != null and is_instance_valid(visual_root):
@@ -202,6 +171,9 @@ func get_render_definition() -> CarDefinition:
 	return car_definition
 
 func get_render_livery_hash() -> String:
+	return render_livery_hash
+
+func _calculate_render_livery_hash() -> String:
 	if !player_settings.has("car_livery") or typeof(player_settings["car_livery"]) != TYPE_DICTIONARY:
 		return ""
 	var livery := CarLivery.new()
@@ -225,27 +197,38 @@ func get_render_outline_velocity() -> Vector3:
 func get_render_thrust() -> float:
 	return clampf(velocity / 220.0, 0.0, 1.0)
 
+func set_hovered(enabled: bool) -> void:
+	if hovered == enabled:
+		return
+	hovered = enabled
+	_update_nameplate()
+
+func set_nameplate_attachment(anchor: Vector2) -> void:
+	nameplate_attachment = anchor
+	if hovered:
+		_update_nameplate_layout(nameplate_attachment)
+
+func get_hover_anchor() -> Vector2:
+	if lobby_camera == null or lobby_camera.is_position_behind(global_position):
+		return Vector2(-100000.0, -100000.0)
+	return lobby_camera.unproject_position(global_position)
+
 func _load_chibi_stats(definition: CarDefinition) -> void:
 	var prop_path := definition.car_definition
-	if prop_path == "" or !FileAccess.file_exists(prop_path):
+	if prop_path == "" or !FileAccess.file_exists(prop_path) or game_manager == null or game_manager.game_sim == null:
 		return
 	var bytes := FileAccess.get_file_as_bytes(prop_path)
-	if bytes.size() < 48:
+	var machine_setting := clampf(float(player_settings.get("accel_setting", 0.5)), 0.0, 1.0)
+	var sampled: Dictionary = game_manager.game_sim.sample_car_properties(bytes, machine_setting)
+	var stats = sampled.get("base_stats", {})
+	if typeof(stats) != TYPE_DICTIONARY or stats.is_empty():
 		return
-	var buffer := StreamPeerBuffer.new()
-	buffer.big_endian = false
-	buffer.data_array = bytes
-	chibi_weight = buffer.get_float()
-	chibi_acceleration = buffer.get_float() * 40.0
-	chibi_top_speed = buffer.get_float()
-	chibi_friction = buffer.get_float()
-	buffer.get_float()
-	buffer.get_float()
-	buffer.get_float()
-	buffer.get_float()
-	chibi_steer_power = buffer.get_float() / 7.0
-	buffer.get_float()
-	chibi_strafe_power = buffer.get_float()
+	chibi_weight = float(stats.get("weight_kg", chibi_weight))
+	chibi_acceleration = float(stats.get("acceleration", chibi_acceleration / 40.0)) * 40.0
+	chibi_top_speed = float(stats.get("max_speed", chibi_top_speed))
+	chibi_friction = float(stats.get("grip_1", chibi_friction))
+	chibi_steer_power = float(stats.get("turn_movement", chibi_steer_power * 7.0)) / 7.0
+	chibi_strafe_power = float(stats.get("strafe", chibi_strafe_power))
 
 func _configure_visual_meshes(root: Node) -> void:
 	for child in root.get_children():
@@ -318,15 +301,15 @@ func _update_motion(delta: float) -> void:
 func _update_nameplate() -> void:
 	if nameplate == null or lobby_camera == null:
 		return
-	if lobby_camera.is_position_behind(global_position):
+	if !hovered or lobby_camera.is_position_behind(global_position):
 		nameplate.visible = false
 		return
-	nameplate.visible = true
-	var anchor := lobby_camera.unproject_position(global_position)
-	nameplate.position = anchor
-	_update_nameplate_layout(anchor)
 	if ping_label != null and game_manager != null and game_manager.has_method("_lobby_latency_text_for_player"):
-		ping_label.text = str(game_manager.call("_lobby_latency_text_for_player", player_id))
+		var next_ping := str(game_manager.call("_lobby_latency_text_for_player", player_id))
+		if ping_label.text != next_ping:
+			ping_label.text = next_ping
+	nameplate.visible = true
+	_update_nameplate_layout(nameplate_attachment)
 
 func _sync_state_if_needed() -> void:
 	if game_manager == null or !game_manager.has_method("_send_lobby_chibi_state"):

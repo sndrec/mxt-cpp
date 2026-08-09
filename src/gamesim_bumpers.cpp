@@ -45,30 +45,37 @@ void GameSim::configure_bumper_car(int bumper_slot)
 	if (!props) {
 		return;
 	}
-	props->weight_kg = 1800.0f;
-	props->acceleration = 0.55f;
-	props->max_speed = 0.14f;
-	props->grip_1 = 1.2f;
-	props->grip_2 = 1.0f;
-	props->grip_3 = 0.35f;
-	props->turn_tension = 0.02f;
-	props->drift_accel = 1.8f;
-	props->turn_movement = 240.0f;
-	props->strafe_turn = 160.0f;
-	props->strafe = 120.0f;
-	props->turn_reaction = 45.0f;
-	props->boost_strength = 0.0f;
-	props->boost_length = 0.1f;
-	props->turn_decel = 0.0f;
-	props->drag = 0.0065f;
-	props->body = 1.0f;
-	props->camera_reorienting = 1.0f;
-	props->camera_repositioning = 1.0f;
-	props->track_collision = 2.0f;
-	props->obstacle_collision = 3.5f;
-	props->max_energy = 50.0f;
-	props->boost_energy_use_rate = 999.0f;
-	props->energy_recharge_rate = 0.0f;
+	props->base_stats[CAR_STAT_WEIGHT_KG] = 1800.0f;
+	props->base_stats[CAR_STAT_ACCELERATION] = 0.55f;
+	props->base_stats[CAR_STAT_MAX_SPEED] = 0.14f;
+	props->base_stats[CAR_STAT_GRIP_1] = 1.2f;
+	props->base_stats[CAR_STAT_GRIP_2] = 1.0f;
+	props->base_stats[CAR_STAT_GRIP_3] = 0.35f;
+	props->base_stats[CAR_STAT_TURN_TENSION] = 0.02f;
+	props->base_stats[CAR_STAT_DRIFT_ACCEL] = 1.8f;
+	props->base_stats[CAR_STAT_TURN_MOVEMENT] = 240.0f;
+	props->base_stats[CAR_STAT_STRAFE_TURN] = 160.0f;
+	props->base_stats[CAR_STAT_STRAFE] = 120.0f;
+	props->base_stats[CAR_STAT_TURN_REACTION] = 45.0f;
+	props->base_stats[CAR_STAT_MANUAL_TURBO_GAIN] = 0.0f;
+	props->base_stats[CAR_STAT_DASHPLATE_TURBO_GAIN] = 0.0f;
+	props->base_stats[CAR_STAT_MANUAL_BOOST_DURATION_SECONDS] = 0.1f;
+	props->base_stats[CAR_STAT_DASHPLATE_BOOST_DURATION_SECONDS] = 0.05f;
+	props->base_stats[CAR_STAT_TURN_DECEL] = 0.0f;
+	props->base_stats[CAR_STAT_DRAG] = 0.0065f;
+	props->base_stats[CAR_STAT_BODY] = 1.0f;
+	props->base_stats[CAR_STAT_CAMERA_REORIENTING] = 1.0f;
+	props->base_stats[CAR_STAT_CAMERA_REPOSITIONING] = 1.0f;
+	props->base_stats[CAR_STAT_TRACK_COLLISION] = 2.0f;
+	props->base_stats[CAR_STAT_OBSTACLE_COLLISION] = 3.5f;
+	props->base_stats[CAR_STAT_MAX_ENERGY] = 50.0f;
+	props->base_stats[CAR_STAT_BOOST_ENERGY_USE_RATE] = 999.0f;
+	props->base_stats[CAR_STAT_ENERGY_RECHARGE_RATE] = 0.0f;
+	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+		if (PhysicsCarProperties::stat_supports_live_modifiers(static_cast<CarStatId>(stat))) {
+			props->s_boost_stats[stat] = props->base_stats[stat];
+		}
+	}
 	for (int p = 0; p < 4; ++p) {
 		props->tilt_corners[p].x *= 1.4f;
 		props->tilt_corners[p].z *= 1.4f;
@@ -356,8 +363,10 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		soa.frames_since_start_2[lane] = 91;
 		soa.speed_kmh[lane] = 850.0f;
 		soa.base_speed[lane] = 850.0f / 216.0f;
-		soa.boost_frames[lane] = 0;
 		soa.boost_frames_manual[lane] = 0;
+		soa.boost_frames_dash[lane] = 0;
+		soa.boost_duration_manual_frames[lane] = 0;
+		soa.boost_duration_dash_frames[lane] = 0;
 		soa.s_boost_active[lane] = false;
 		soa.height_above_track[lane] = 19.5f;
 		state.active = 1;

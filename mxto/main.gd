@@ -48,10 +48,17 @@ class_name GameManager extends Node
 @onready var lobby_stage_button_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer
 @onready var lobby_stage_preview_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer
 @onready var lobby_player_list_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer
+@onready var lobby_chibi_viewport_stack: Control = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack
 @onready var lobby_chibi_viewport: SubViewport = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport
 @onready var lobby_chibi_camera: Camera3D = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiCamera
 @onready var lobby_chibi_root: Node3D = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiRoot
-@onready var lobby_chibi_nameplates: Control = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport/LobbyChibiNameplates
+@onready var lobby_chibi_nameplates: Control = $Lobby/LobbyStatic/LobbyChibiNameplates
+@onready var lobby_chibi_magnifier: Control = $Lobby/LobbyStatic/LobbyChibiMagnifier
+@onready var lobby_chibi_magnifier_viewport: SubViewport = $Lobby/LobbyStatic/LobbyChibiMagnifier/MagnifierViewport
+@onready var lobby_chibi_magnifier_camera: Camera3D = $Lobby/LobbyStatic/LobbyChibiMagnifier/MagnifierViewport/MagnifierCamera
+@onready var lobby_chibi_magnifier_root: Node3D = $Lobby/LobbyStatic/LobbyChibiMagnifier/MagnifierViewport/MagnifierRoot
+@onready var lobby_chibi_magnifier_floor: MeshInstance3D = $Lobby/LobbyStatic/LobbyChibiMagnifier/MagnifierViewport/MagnifierRoot/MagnifierFloor
+@onready var lobby_chibi_magnifier_texture: TextureRect = $Lobby/LobbyStatic/LobbyChibiMagnifier/LensTexture
 @onready var lobby_chat_box: RichTextLabel = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/LobbyChatBox
 @onready var lobby_say_text: LineEdit = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySayText
 @onready var lobby_send_text_button: Button = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySendTextButton
@@ -64,6 +71,9 @@ class_name GameManager extends Node
 var lobby_chibi_cars := {}
 var lobby_chibi_pending_states := {}
 var lobby_chibi_last_broadcast_msec := 0
+var lobby_chibi_render_indices := {}
+var lobby_chibi_hovered_player_id := -1
+var lobby_chibi_magnifier_tween: Tween
 var lobby_grand_prix_track_sequence: Array[int] = []
 var lobby_applying_race_options := false
 var lobby_player_list_signature := ""
@@ -148,8 +158,19 @@ var auto_disable_minimap_mode: bool = false
 var auto_quit_after_frames: int = -1
 var car_render_manager: CarRenderManager
 var lobby_chibi_render_manager: CarRenderManager
+var lobby_chibi_magnifier_render_manager: CarRenderManager
 var lobby_chibi_render_signature := ""
 const LOBBY_CHIBI_BROADCAST_INTERVAL_MSEC := 100
+const LOBBY_CHIBI_RENDER_REBUILD_DEBOUNCE_MSEC := 250
+const LOBBY_CHIBI_STATE_RECORD_BYTES := 18
+const LOBBY_CHIBI_VELOCITY_SCALE := 16.0
+const LOBBY_CHIBI_KNOCKBACK_SCALE := 32.0
+const LOBBY_CHIBI_ANGLE_SCALE := 256.0
+const LOBBY_CHIBI_POSITION_SCALE := 512.0
+const LOBBY_CHIBI_YAW_SCALE := 10000.0
+const LOBBY_CHIBI_HOVER_RADIUS_PIXELS := 64.0
+const LOBBY_CHIBI_MAGNIFICATION := 2.5
+const LOBBY_CHIBI_MAGNIFIER_FOCUS_HEIGHT := 0.4
 const MAX_LOBBY_CHAT_HISTORY := 128
 const CHAT_MAX_MESSAGE_CHARACTERS := 220
 const CHAT_RATE_WINDOW_MSEC := 5000
@@ -162,6 +183,13 @@ var text_chat_rate_state := {}
 var text_chat_global_tokens := CHAT_GLOBAL_BURST_MESSAGES
 var text_chat_global_refill_msec := 0
 var lobby_chat_rendered_history_size := 0
+var lobby_chibi_roster_cache: Array = []
+var lobby_chibi_applied_settings_revision := -1
+var lobby_chibi_pending_render_signature := ""
+var lobby_chibi_render_rebuild_due_msec := 0
+var lobby_chibi_render_cars: Array = []
+var lobby_chibi_render_settings_by_id := {}
+var lobby_chibi_magnifier_render_signature := ""
 var singleplayer_options_root: Control
 var singleplayer_options_restore_toggle: CheckBox
 var singleplayer_options_bumpers_toggle: CheckBox
@@ -300,6 +328,12 @@ func _ready() -> void:
 	lobby_chibi_render_manager.name = "LobbyChibiRenderManager"
 	if lobby_chibi_root != null:
 		lobby_chibi_root.add_child(lobby_chibi_render_manager)
+	lobby_chibi_magnifier_render_manager = CarRenderManagerClass.new()
+	lobby_chibi_magnifier_render_manager.name = "LobbyChibiMagnifierRenderManager"
+	if lobby_chibi_magnifier_root != null:
+		lobby_chibi_magnifier_root.add_child(lobby_chibi_magnifier_render_manager)
+	if lobby_chibi_magnifier_texture != null and lobby_chibi_magnifier_viewport != null:
+		lobby_chibi_magnifier_texture.texture = lobby_chibi_magnifier_viewport.get_texture()
 	randomize()
 	_build_lobby_options_controls()
 	_build_multiplayer_connect_box()
@@ -348,6 +382,7 @@ func _ready() -> void:
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
 	var user_args := OS.get_cmdline_user_args()
+	var lobby_load_peer_mode := args.has("--lobby-load-peer") or user_args.has("--lobby-load-peer")
 	launch_cpu_driver_count = _parse_cpu_driver_count_arg(args)
 	if launch_cpu_driver_count < 0:
 		launch_cpu_driver_count = _parse_cpu_driver_count_arg(user_args)
@@ -438,7 +473,7 @@ func _ready() -> void:
 		call_deferred("_on_track_editor_button_pressed")
 	elif !replay_launch_requested and auto_singleplayer_mode:
 		call_deferred("_on_singleplayer_button_pressed")
-	if headless_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
+	if headless_mode and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
 		var def_path := ""
 		if car_definitions.size() > 0:
 			def_path = car_definitions[0].resource_path
@@ -820,9 +855,8 @@ func _build_lobby_options_controls() -> void:
 	lobby_send_text_button.focus_mode = Control.FOCUS_NONE
 	if !lobby_control.visibility_changed.is_connected(_on_lobby_visibility_changed):
 		lobby_control.visibility_changed.connect(_on_lobby_visibility_changed)
-	var viewport_stack := $Lobby/LobbyStatic/LobbyContainer/BottomBox/ViewportStack as Control
-	if viewport_stack != null and !viewport_stack.gui_input.is_connected(_on_lobby_chibi_view_gui_input):
-		viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
+	if lobby_chibi_viewport_stack != null and !lobby_chibi_viewport_stack.gui_input.is_connected(_on_lobby_chibi_view_gui_input):
+		lobby_chibi_viewport_stack.gui_input.connect(_on_lobby_chibi_view_gui_input)
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_stage_preview()
 
@@ -1199,10 +1233,15 @@ func _lobby_chibi_accepts_network_state() -> bool:
 	return network_manager.is_server or _lobby_chibi_active()
 
 func _clear_lobby_chibi_cars() -> void:
-	var had_state := !lobby_chibi_cars.is_empty() or !lobby_chibi_pending_states.is_empty() or lobby_chibi_render_signature != ""
+	var had_state := (
+		!lobby_chibi_cars.is_empty()
+		or !lobby_chibi_pending_states.is_empty()
+		or lobby_chibi_render_signature != ""
+		or lobby_chibi_hovered_player_id >= 0)
 	if !had_state:
 		if lobby_chibi_viewport != null and lobby_chibi_viewport.render_target_update_mode != SubViewport.UPDATE_DISABLED:
 			lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		_hide_lobby_chibi_magnifier()
 		return
 	for id in lobby_chibi_cars.keys():
 		var car = lobby_chibi_cars[id]
@@ -1213,82 +1252,135 @@ func _clear_lobby_chibi_cars() -> void:
 			child.queue_free()
 	lobby_chibi_cars.clear()
 	lobby_chibi_pending_states.clear()
+	lobby_chibi_render_indices.clear()
+	lobby_chibi_roster_cache.clear()
+	lobby_chibi_applied_settings_revision = -1
+	lobby_chibi_hovered_player_id = -1
 	lobby_chibi_last_broadcast_msec = 0
 	lobby_chibi_render_signature = ""
+	lobby_chibi_pending_render_signature = ""
+	lobby_chibi_render_rebuild_due_msec = 0
+	lobby_chibi_render_cars.clear()
+	lobby_chibi_render_settings_by_id.clear()
+	lobby_chibi_magnifier_render_signature = ""
 	if lobby_chibi_render_manager != null:
 		lobby_chibi_render_manager.clear_renderer()
+	if lobby_chibi_magnifier_render_manager != null:
+		lobby_chibi_magnifier_render_manager.clear_renderer()
 	if lobby_chibi_viewport != null:
 		lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	_hide_lobby_chibi_magnifier()
+
+func _hide_lobby_chibi_magnifier() -> void:
+	if lobby_chibi_magnifier_tween != null and lobby_chibi_magnifier_tween.is_valid():
+		lobby_chibi_magnifier_tween.kill()
+	lobby_chibi_magnifier_tween = null
+	if lobby_chibi_magnifier != null:
+		lobby_chibi_magnifier.visible = false
+	if lobby_chibi_magnifier_viewport != null:
+		lobby_chibi_magnifier_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
 
 func _update_lobby_chibi_cars(_delta: float) -> void:
 	if !_lobby_chibi_active():
 		_clear_lobby_chibi_cars()
 		return
-	if lobby_chibi_viewport != null:
+	if lobby_chibi_viewport != null and lobby_chibi_viewport.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
 		lobby_chibi_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	if lobby_chibi_root == null:
 		return
 	var roster := _get_lobby_human_roster()
-	var live := {}
-	for i in range(roster.size()):
-		var id := int(roster[i])
-		live[id] = true
-		var settings = network_manager.player_settings.get(id, {})
-		if !lobby_chibi_cars.has(id) or !is_instance_valid(lobby_chibi_cars[id]):
-			var new_car = LobbyChibiCarClass.new()
-			new_car.name = "ChibiCar%d" % id
-			new_car.position = _lobby_chibi_spawn_position(i)
-			lobby_chibi_root.add_child(new_car)
-			new_car.setup(id, settings, self, lobby_chibi_camera, lobby_chibi_nameplates, id == _local_player_id())
-			lobby_chibi_cars[id] = new_car
-		else:
-			var existing_car = lobby_chibi_cars[id]
-			existing_car.update_settings(settings)
-			existing_car.set_local_control(id == _local_player_id())
-	for id in lobby_chibi_cars.keys():
-		if !live.has(id):
-			var stale_car = lobby_chibi_cars[id]
-			if is_instance_valid(stale_car):
-				stale_car.queue_free()
-			lobby_chibi_cars.erase(id)
+	var roster_changed := roster != lobby_chibi_roster_cache
+	if roster_changed:
+		var live := {}
+		for i in range(roster.size()):
+			var id := int(roster[i])
+			live[id] = true
+			if !lobby_chibi_cars.has(id) or !is_instance_valid(lobby_chibi_cars[id]):
+				var settings = network_manager.player_settings.get(id, {})
+				var new_car = LobbyChibiCarClass.new()
+				new_car.name = "ChibiCar%d" % id
+				new_car.position = _lobby_chibi_spawn_position(i)
+				lobby_chibi_root.add_child(new_car)
+				new_car.setup(
+					id,
+					settings,
+					self,
+					lobby_chibi_camera,
+					lobby_chibi_nameplates,
+					id == _local_player_id(),
+					network_manager.get_player_settings_revision(id))
+				lobby_chibi_cars[id] = new_car
+		for id in lobby_chibi_cars.keys():
+			if !live.has(id):
+				var stale_car = lobby_chibi_cars[id]
+				if is_instance_valid(stale_car):
+					stale_car.queue_free()
+				lobby_chibi_cars.erase(id)
+		lobby_chibi_roster_cache = roster.duplicate()
+	var settings_revision := network_manager.lobby_settings_revision
+	if roster_changed or settings_revision != lobby_chibi_applied_settings_revision:
+		var local_id := _local_player_id()
+		for id in roster:
+			var player_id := int(id)
+			var existing_car = lobby_chibi_cars.get(player_id, null)
+			if existing_car == null or !is_instance_valid(existing_car):
+				continue
+			existing_car.update_settings(
+				network_manager.player_settings.get(player_id, {}),
+				network_manager.get_player_settings_revision(player_id))
+			existing_car.set_local_control(player_id == local_id)
+		lobby_chibi_applied_settings_revision = settings_revision
 	_submit_lobby_chibi_render(roster)
+	_update_lobby_chibi_hover_and_magnifier()
 	if network_manager.is_server:
 		_broadcast_lobby_chibi_states_if_needed()
 
 func _submit_lobby_chibi_render(roster: Array) -> void:
 	if lobby_chibi_render_manager == null:
 		return
-	var definitions := []
-	var settings := []
-	var player_ids := []
-	var render_cars := []
-	var signature_parts := []
-	for id in roster:
-		if !lobby_chibi_cars.has(id):
-			continue
-		var car = lobby_chibi_cars[id]
-		if car == null or !is_instance_valid(car):
-			continue
-		var definition: CarDefinition = car.get_render_definition()
-		if definition == null:
-			continue
-		definitions.append(definition)
-		settings.append(car.player_settings)
-		player_ids.append(int(id))
-		render_cars.append(car)
-		signature_parts.append(str(id) + ":" + definition.resource_path + ":" + str(car.get_render_livery_hash()) + ":" + _custom_stamp_manifest_signature(int(id)))
-	var signature := ""
-	for part in signature_parts:
-		signature += part + "|"
-	if signature != lobby_chibi_render_signature:
+	var signature := _lobby_chibi_render_source_signature(roster)
+	var now_msec := Time.get_ticks_msec()
+	if signature != lobby_chibi_pending_render_signature:
+		lobby_chibi_pending_render_signature = signature
+		lobby_chibi_render_rebuild_due_msec = now_msec + LOBBY_CHIBI_RENDER_REBUILD_DEBOUNCE_MSEC
+	var renderer_empty := lobby_chibi_render_manager.archetypes.is_empty()
+	if signature != lobby_chibi_render_signature and (renderer_empty or now_msec >= lobby_chibi_render_rebuild_due_msec):
+		var rebuild_start_usec := Time.get_ticks_usec()
+		lobby_chibi_render_indices.clear()
+		var definitions := []
+		var settings := []
+		var player_ids := []
+		var render_cars := []
+		for id in roster:
+			var player_id := int(id)
+			var car = lobby_chibi_cars.get(player_id, null)
+			if car == null or !is_instance_valid(car):
+				continue
+			var definition: CarDefinition = car.get_render_definition()
+			if definition == null:
+				continue
+			definitions.append(definition)
+			settings.append(car.player_settings)
+			player_ids.append(player_id)
+			lobby_chibi_render_indices[player_id] = render_cars.size()
+			render_cars.append(car)
 		var stamp_render := _prepare_custom_stamp_render_payload(player_ids, settings, "lobby")
 		lobby_chibi_render_manager.set_custom_stamp_atlas(stamp_render.get("texture", null))
-		lobby_chibi_render_manager.configure_manual(definitions, stamp_render.get("settings", settings))
+		var render_settings: Array = stamp_render.get("settings", settings)
+		lobby_chibi_render_manager.reconfigure_manual(definitions, render_settings)
+		lobby_chibi_render_cars = render_cars
+		lobby_chibi_render_settings_by_id.clear()
+		for i in range(mini(player_ids.size(), render_settings.size())):
+			lobby_chibi_render_settings_by_id[int(player_ids[i])] = render_settings[i]
 		lobby_chibi_render_signature = signature
+		lobby_chibi_magnifier_render_signature = ""
+		network_manager.record_lobby_render_rebuild(Time.get_ticks_usec() - rebuild_start_usec)
 	lobby_chibi_render_manager.begin_manual_submit()
 	var render_root_inv := lobby_chibi_render_manager.global_transform.affine_inverse()
-	for i in range(render_cars.size()):
-		var car = render_cars[i]
+	for i in range(lobby_chibi_render_cars.size()):
+		var car = lobby_chibi_render_cars[i]
+		if car == null or !is_instance_valid(car):
+			continue
 		lobby_chibi_render_manager.submit_manual_car(
 			i,
 			render_root_inv * car.get_render_transform(),
@@ -1298,15 +1390,166 @@ func _submit_lobby_chibi_render(roster: Array) -> void:
 			car.get_render_thrust(),
 			false)
 
+func _lobby_chibi_render_source_signature(roster: Array) -> String:
+	var roster_ids := PackedStringArray()
+	for id in roster:
+		roster_ids.append(str(int(id)))
+	return "%s:%d:%d" % [
+		",".join(roster_ids),
+		network_manager.lobby_settings_revision,
+		network_manager.custom_stamp_network.revision,
+	]
+
+func _update_lobby_chibi_hover_and_magnifier() -> void:
+	if lobby_chibi_viewport_stack == null or lobby_chibi_viewport == null or lobby_chibi_camera == null:
+		_set_lobby_chibi_hover(-1)
+		return
+	var stack_size := lobby_chibi_viewport_stack.size
+	var viewport_size := Vector2(lobby_chibi_viewport.size)
+	var cursor_stack := lobby_chibi_viewport_stack.get_local_mouse_position()
+	if (
+		stack_size.x <= 0.0
+		or stack_size.y <= 0.0
+		or viewport_size.x <= 0.0
+		or viewport_size.y <= 0.0
+		or !Rect2(Vector2.ZERO, stack_size).has_point(cursor_stack)
+	):
+		_set_lobby_chibi_hover(-1)
+		return
+
+	var cursor_viewport := Vector2(
+		cursor_stack.x * viewport_size.x / stack_size.x,
+		cursor_stack.y * viewport_size.y / stack_size.y)
+	var closest_player_id := -1
+	var closest_distance_squared := LOBBY_CHIBI_HOVER_RADIUS_PIXELS * LOBBY_CHIBI_HOVER_RADIUS_PIXELS
+	for id in lobby_chibi_cars.keys():
+		var car = lobby_chibi_cars[id]
+		if car == null or !is_instance_valid(car):
+			continue
+		var anchor: Vector2 = car.get_hover_anchor()
+		var distance_squared := cursor_viewport.distance_squared_to(anchor)
+		if distance_squared <= closest_distance_squared:
+			closest_distance_squared = distance_squared
+			closest_player_id = int(id)
+	_set_lobby_chibi_hover(closest_player_id)
+
+func _set_lobby_chibi_hover(player_id: int) -> void:
+	var selection_changed := player_id != lobby_chibi_hovered_player_id
+	if selection_changed:
+		var old_car = lobby_chibi_cars.get(lobby_chibi_hovered_player_id, null)
+		if old_car != null and is_instance_valid(old_car):
+			old_car.set_hovered(false)
+		var new_car = lobby_chibi_cars.get(player_id, null)
+		if new_car != null and is_instance_valid(new_car):
+			new_car.set_hovered(true)
+	lobby_chibi_hovered_player_id = player_id
+	if player_id < 0:
+		if selection_changed and lobby_chibi_magnifier_render_manager != null:
+			lobby_chibi_magnifier_render_manager.begin_manual_submit()
+		_hide_lobby_chibi_magnifier()
+		return
+	_show_lobby_chibi_magnifier(player_id, selection_changed)
+
+func _show_lobby_chibi_magnifier(player_id: int, selection_changed: bool) -> void:
+	if (
+		lobby_chibi_magnifier == null
+		or lobby_chibi_magnifier_viewport == null
+		or lobby_chibi_magnifier_camera == null
+		or lobby_chibi_magnifier_render_manager == null
+		or !lobby_chibi_cars.has(player_id)
+		or !lobby_chibi_render_settings_by_id.has(player_id)
+	):
+		_hide_lobby_chibi_magnifier()
+		return
+	var car = lobby_chibi_cars[player_id]
+	if car == null or !is_instance_valid(car):
+		_hide_lobby_chibi_magnifier()
+		return
+
+	var viewport_size := Vector2(lobby_chibi_viewport.size)
+	var stack_size := lobby_chibi_viewport_stack.size
+	if viewport_size.x <= 0.0 or viewport_size.y <= 0.0 or stack_size.x <= 0.0 or stack_size.y <= 0.0:
+		_hide_lobby_chibi_magnifier()
+		return
+	var car_viewport_anchor: Vector2 = car.get_hover_anchor()
+	var car_stack_anchor := Vector2(
+		car_viewport_anchor.x * stack_size.x / viewport_size.x,
+		car_viewport_anchor.y * stack_size.y / viewport_size.y)
+	var car_canvas: Vector2 = lobby_chibi_viewport_stack.get_global_transform_with_canvas() * car_stack_anchor
+	var magnifier_parent := lobby_chibi_magnifier.get_parent() as Control
+	if magnifier_parent == null:
+		_hide_lobby_chibi_magnifier()
+		return
+	var car_parent: Vector2 = magnifier_parent.get_global_transform_with_canvas().affine_inverse() * car_canvas
+	var desired_position := car_parent - lobby_chibi_magnifier.pivot_offset
+	desired_position.x = clampf(
+		desired_position.x,
+		0.0,
+		maxf(0.0, magnifier_parent.size.x - lobby_chibi_magnifier.size.x))
+	desired_position.y = clampf(
+		desired_position.y,
+		0.0,
+		maxf(0.0, magnifier_parent.size.y - lobby_chibi_magnifier.size.y))
+	lobby_chibi_magnifier.position = desired_position
+
+	var focus_position: Vector3 = car.global_position
+	var camera_transform := lobby_chibi_camera.global_transform
+	camera_transform.origin += focus_position + Vector3.UP * LOBBY_CHIBI_MAGNIFIER_FOCUS_HEIGHT
+	lobby_chibi_magnifier_camera.global_transform = camera_transform
+	lobby_chibi_magnifier_camera.size = lobby_chibi_camera.size / LOBBY_CHIBI_MAGNIFICATION
+
+	var magnifier_signature := "%d:%s" % [player_id, lobby_chibi_render_signature]
+	if magnifier_signature != lobby_chibi_magnifier_render_signature:
+		var definition: CarDefinition = car.get_render_definition()
+		if definition == null:
+			_hide_lobby_chibi_magnifier()
+			return
+		lobby_chibi_magnifier_render_manager.set_custom_stamp_atlas(lobby_chibi_render_manager.custom_stamp_atlas_texture)
+		lobby_chibi_magnifier_render_manager.reconfigure_manual(
+			[definition],
+			[lobby_chibi_render_settings_by_id[player_id]])
+		lobby_chibi_magnifier_render_signature = magnifier_signature
+	lobby_chibi_magnifier_render_manager.begin_manual_submit()
+	var render_root_inv := lobby_chibi_magnifier_render_manager.global_transform.affine_inverse()
+	lobby_chibi_magnifier_render_manager.submit_manual_car(
+		0,
+		render_root_inv * car.get_render_transform(),
+		car.get_render_overlay(),
+		car.get_render_outline_velocity(),
+		car.get_render_outline_overlay(),
+		car.get_render_thrust(),
+		false)
+	lobby_chibi_magnifier_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	if selection_changed or !lobby_chibi_magnifier.visible:
+		if lobby_chibi_magnifier_tween != null and lobby_chibi_magnifier_tween.is_valid():
+			lobby_chibi_magnifier_tween.kill()
+		lobby_chibi_magnifier.scale = Vector2(0.25, 0.25)
+		lobby_chibi_magnifier.visible = true
+		lobby_chibi_magnifier_tween = create_tween()
+		lobby_chibi_magnifier_tween.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		lobby_chibi_magnifier_tween.tween_property(lobby_chibi_magnifier, "scale", Vector2.ONE, 0.14)
+	if lobby_chibi_nameplates != null:
+		var circle_bottom_canvas: Vector2 = lobby_chibi_magnifier.get_global_transform_with_canvas() * Vector2(
+			lobby_chibi_magnifier.pivot_offset.x,
+			lobby_chibi_magnifier.size.y)
+		var nameplate_anchor: Vector2 = lobby_chibi_nameplates.get_global_transform_with_canvas().affine_inverse() * circle_bottom_canvas
+		car.set_nameplate_attachment(nameplate_anchor)
+
 func _get_lobby_human_roster() -> Array:
 	var out := []
+	var seen := {}
+	var cpu_ids := network_manager.get_cpu_roster()
+	var cpu_lookup := {}
+	for cpu_id in cpu_ids:
+		cpu_lookup[int(cpu_id)] = true
 	for source in [network_manager.player_ids, network_manager.spectator_ids, network_manager.waiting_peers]:
 		for id in source:
 			var int_id := int(id)
-			if network_manager.get_cpu_roster().has(int_id):
+			if cpu_lookup.has(int_id):
 				continue
-			if out.has(int_id):
+			if seen.has(int_id):
 				continue
+			seen[int_id] = true
 			out.append(int_id)
 	return out
 
@@ -1315,8 +1558,38 @@ func _lobby_chibi_spawn_position(index: int) -> Vector3:
 	var z := -3.0 + float(index / 4) * 3.0
 	return Vector3(x, 0.6, z)
 
-func _pack_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> Array:
-	return [player_id, velocity, knockback_velocity, angle_velocity, position, rotation]
+func _pack_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> PackedByteArray:
+	var state := PackedByteArray()
+	state.resize(LOBBY_CHIBI_STATE_RECORD_BYTES)
+	state.encode_s32(0, player_id)
+	state.encode_s16(4, _quantize_lobby_chibi_value(velocity, LOBBY_CHIBI_VELOCITY_SCALE))
+	state.encode_s16(6, _quantize_lobby_chibi_value(knockback_velocity.x, LOBBY_CHIBI_KNOCKBACK_SCALE))
+	state.encode_s16(8, _quantize_lobby_chibi_value(knockback_velocity.z, LOBBY_CHIBI_KNOCKBACK_SCALE))
+	state.encode_s16(10, _quantize_lobby_chibi_value(angle_velocity, LOBBY_CHIBI_ANGLE_SCALE))
+	state.encode_s16(12, _quantize_lobby_chibi_value(position.x, LOBBY_CHIBI_POSITION_SCALE))
+	state.encode_s16(14, _quantize_lobby_chibi_value(position.z, LOBBY_CHIBI_POSITION_SCALE))
+	state.encode_s16(16, _quantize_lobby_chibi_value(wrapf(rotation.y, -PI, PI), LOBBY_CHIBI_YAW_SCALE))
+	return state
+
+func _quantize_lobby_chibi_value(value: float, scale: float) -> int:
+	return clampi(roundi(value * scale), -32768, 32767)
+
+func _apply_packed_lobby_chibi_state(state: PackedByteArray, offset: int = 0) -> void:
+	if offset < 0 or offset + LOBBY_CHIBI_STATE_RECORD_BYTES > state.size():
+		return
+	var player_id := state.decode_s32(offset)
+	var velocity := float(state.decode_s16(offset + 4)) / LOBBY_CHIBI_VELOCITY_SCALE
+	var knockback := Vector3(
+		float(state.decode_s16(offset + 6)) / LOBBY_CHIBI_KNOCKBACK_SCALE,
+		0.0,
+		float(state.decode_s16(offset + 8)) / LOBBY_CHIBI_KNOCKBACK_SCALE)
+	var angle_velocity := float(state.decode_s16(offset + 10)) / LOBBY_CHIBI_ANGLE_SCALE
+	var position := Vector3(
+		float(state.decode_s16(offset + 12)) / LOBBY_CHIBI_POSITION_SCALE,
+		0.0,
+		float(state.decode_s16(offset + 14)) / LOBBY_CHIBI_POSITION_SCALE)
+	var yaw := float(state.decode_s16(offset + 16)) / LOBBY_CHIBI_YAW_SCALE
+	_apply_lobby_chibi_state(player_id, velocity, knockback, angle_velocity, position, Vector3(0.0, yaw, 0.0))
 
 func _store_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
 	lobby_chibi_pending_states[player_id] = _pack_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
@@ -1328,11 +1601,18 @@ func _broadcast_lobby_chibi_states_if_needed() -> void:
 	if now < lobby_chibi_last_broadcast_msec + LOBBY_CHIBI_BROADCAST_INTERVAL_MSEC:
 		return
 	lobby_chibi_last_broadcast_msec = now
-	var batch := []
+	var batch := PackedByteArray()
+	batch.resize(lobby_chibi_pending_states.size() * LOBBY_CHIBI_STATE_RECORD_BYTES)
+	var offset := 0
 	for id in lobby_chibi_pending_states.keys():
-		batch.append(lobby_chibi_pending_states[id])
+		var state: PackedByteArray = lobby_chibi_pending_states[id]
+		for byte_index in range(LOBBY_CHIBI_STATE_RECORD_BYTES):
+			batch[offset + byte_index] = state[byte_index]
+		offset += LOBBY_CHIBI_STATE_RECORD_BYTES
 	lobby_chibi_pending_states.clear()
 	_apply_lobby_chibi_state_batch.rpc(batch)
+	var recipients := multiplayer.get_peers().size()
+	network_manager.record_lobby_chibi_network(0, 0, recipients, batch.size() * recipients)
 
 func _send_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
 	if !_lobby_chibi_active():
@@ -1342,32 +1622,35 @@ func _send_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity
 	elif network_manager.is_server:
 		_store_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
 	else:
-		_submit_lobby_chibi_state.rpc_id(1, player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+		var state := _pack_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+		_submit_lobby_chibi_state.rpc_id(1, state)
+		network_manager.record_lobby_chibi_network(0, 0, 1, state.size())
 
-@rpc("any_peer", "call_local", "unreliable_ordered")
-func _submit_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
+@rpc("any_peer", "call_local", "unreliable_ordered", 9)
+func _submit_lobby_chibi_state(state: PackedByteArray) -> void:
 	if !_lobby_chibi_accepts_network_state() or !network_manager.is_server:
+		return
+	if state.size() != LOBBY_CHIBI_STATE_RECORD_BYTES:
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	if sender != 0:
-		player_id = sender
-	_store_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
-	_apply_lobby_chibi_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+		network_manager.record_lobby_chibi_network(1, state.size(), 0, 0)
+	if sender != 0:
+		state.encode_s32(0, sender)
+	lobby_chibi_pending_states[state.decode_s32(0)] = state
+	_apply_packed_lobby_chibi_state(state)
 	_broadcast_lobby_chibi_states_if_needed()
 
-@rpc("authority", "call_local", "unreliable_ordered")
-func _apply_lobby_chibi_state_batch(states: Array) -> void:
+@rpc("authority", "call_local", "unreliable_ordered", 9)
+func _apply_lobby_chibi_state_batch(states: PackedByteArray) -> void:
 	if !_lobby_chibi_active():
 		return
-	for state in states:
-		if typeof(state) != TYPE_ARRAY:
-			continue
-		var values: Array = state
-		if values.size() < 6:
-			continue
-		if typeof(values[2]) != TYPE_VECTOR3 or typeof(values[4]) != TYPE_VECTOR3 or typeof(values[5]) != TYPE_VECTOR3:
-			continue
-		_apply_lobby_chibi_state(int(values[0]), float(values[1]), values[2], float(values[3]), values[4], values[5])
+	if states.size() % LOBBY_CHIBI_STATE_RECORD_BYTES != 0:
+		return
+	if multiplayer.get_remote_sender_id() != 0:
+		network_manager.record_lobby_chibi_network(1, states.size(), 0, 0)
+	for offset in range(0, states.size(), LOBBY_CHIBI_STATE_RECORD_BYTES):
+		_apply_packed_lobby_chibi_state(states, offset)
 
 @rpc("any_peer", "call_local", "unreliable_ordered")
 func _apply_lobby_chibi_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
@@ -1917,7 +2200,7 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 		_show_sticker(actor_id, value)
 		return
 	if event_type == "eliminated":
-		if actor_id == _local_player_id():
+		if actor_id == _local_player_id() and replay_controller.should_enqueue_replay_race_notification():
 			_activate_local_elimination_spectator()
 		return
 	if event_type == "dnf":
@@ -1926,12 +2209,14 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 			_change_live_spectate_focus(1)
 		return
 	if event_type == "ko":
-		_show_ko_medal(actor_id, target_id)
+		if replay_controller.should_enqueue_replay_race_notification():
+			_show_ko_medal(actor_id, target_id)
 		return
 	if event_type == "finish":
 		if actor_id == _local_player_id():
 			race_audio_controller.begin_local_finish()
-		_show_finish_medal(actor_id, tick_value)
+		if replay_controller.should_enqueue_replay_race_notification():
+			_show_finish_medal(actor_id, tick_value)
 
 func _show_sticker(actor_id: int, sticker_index: int) -> void:
 	var now := Time.get_ticks_msec()
@@ -3092,9 +3377,14 @@ func _physics_process(delta: float) -> void:
 		return
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if lobby_control.visible:
+		var lobby_frame_start_usec := Time.get_ticks_usec()
 		network_manager.process_lobby_latency()
+		var player_list_start_usec := Time.get_ticks_usec()
 		_update_player_list()
+		var player_list_usec := Time.get_ticks_usec() - player_list_start_usec
+		var chibi_start_usec := Time.get_ticks_usec()
 		_update_lobby_chibi_cars(delta)
+		var chibi_usec := Time.get_ticks_usec() - chibi_start_usec
 		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
 		if lobby_cpu_count_label != null:
 			lobby_cpu_count_label.text = "CPU Drivers: %d" % network_manager.get_cpu_roster().size()
@@ -3120,6 +3410,10 @@ func _physics_process(delta: float) -> void:
 				var button := child as Button
 				if button != null:
 					button.disabled = !can_edit_cpu
+		network_manager.record_lobby_frame(
+			Time.get_ticks_usec() - lobby_frame_start_usec,
+			player_list_usec,
+			chibi_usec)
 	else:
 		_clear_lobby_chibi_cars()
 	if game_sim.sim_started:
@@ -3197,7 +3491,8 @@ func _physics_process(delta: float) -> void:
 			render_profile_local_visual_us += profile_local_visual_us
 			render_profile_local_visual_max_us = maxi(render_profile_local_visual_max_us, profile_local_visual_us)
 		var profile_finish_check_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
-		_check_race_finished()
+		if !replay_controller.replay_playback_active:
+			_check_race_finished()
 		if auto_render_profile_mode:
 			var profile_finish_check_us := Time.get_ticks_usec() - profile_finish_check_start
 			var profile_physics_us := Time.get_ticks_usec() - profile_physics_start

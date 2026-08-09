@@ -24,7 +24,8 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch, PhysicsCar
 
 	soa->state_2[soa_index] &= 0xfffffcff;
 	soa->terrain_state[soa_index] = 0;
-	soa->dashplate_heat_multiplier[soa_index] = 1.0f;
+	soa->pending_dashplate_heat[soa_index] = 0.0f;
+	soa->pending_dashplate_heat_reward_scale[soa_index] = 1.0f;
 
 	const SimTransform previous_physical = LOAD_TRANSFORM(basis_physical_other);
 	const SimVec3 previous_position = LOAD_VEC3(position_old);

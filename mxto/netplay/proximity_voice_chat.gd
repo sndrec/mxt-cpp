@@ -19,6 +19,12 @@ const VOICE_LEVEL_SMOOTH_SECONDS := 0.05
 const VOICE_ALWAYS_ON_RELEASE_MSEC := 150
 const VOICE_CAPTURE_MAX_BACKLOG_MSEC := 50
 const VOICE_STALE_PACKET_TICKS := 30
+const VOICE_CAPTURE_MAKEUP_DB := 10.0
+const VOICE_CAPTURE_COMPRESSOR_THRESHOLD_DB := -18.0
+const VOICE_CAPTURE_COMPRESSOR_RATIO := 4.0
+const VOICE_CAPTURE_LIMITER_CEILING_DB := -1.0
+const VOICE_CAPTURE_COMPRESSOR_ATTACK_MSEC := 5.0
+const VOICE_CAPTURE_COMPRESSOR_RELEASE_MSEC := 140.0
 
 @export var voice_bitrate := 8000
 @export var voice_codec_complexity := 3
@@ -55,6 +61,8 @@ var test_monitor_player: AudioStreamPlayer
 var test_monitor_playback: AudioStreamGeneratorPlayback
 var test_monitor_codec: OpusVoiceCodec
 var debug_capture_level := 0.0
+var debug_capture_output_level := 0.0
+var debug_capture_gain_db := 0.0
 var debug_capture_frames_available := 0
 var debug_capture_frames_discarded := 0
 var debug_capture_buffer_frames := 0
@@ -138,6 +146,8 @@ func reset() -> void:
 
 func _reset_voice_debug_counters() -> void:
 	debug_capture_level = 0.0
+	debug_capture_output_level = 0.0
+	debug_capture_gain_db = 0.0
 	debug_capture_frames_available = 0
 	debug_capture_frames_discarded = 0
 	debug_capture_buffer_frames = 0
@@ -257,6 +267,8 @@ func _voice_debug_snapshot(event: String, sender_id: int, sequence: int) -> Dict
 		"capture_status": debug_capture_status,
 		"capture_backend": "audio_server_direct",
 		"capture_level": debug_capture_level,
+		"capture_output_level": debug_capture_output_level,
+		"capture_gain_db": debug_capture_gain_db,
 		"capture_frames_available": debug_capture_frames_available,
 		"capture_frames_discarded": debug_capture_frames_discarded,
 		"capture_buffer_frames": debug_capture_buffer_frames,
@@ -300,6 +312,7 @@ func _physics_process(_delta: float) -> void:
 	if network_manager == null or !network_manager.race_active or !network_manager.has_network_peer():
 		if voice_test_monitor_enabled or voice_level_meter_enabled:
 			_update_test_monitor_capture()
+			_write_voice_debug_summary()
 		else:
 			reset()
 			debug_capture_status = "idle"
@@ -326,6 +339,14 @@ func _apply_runtime_tuning() -> void:
 func _reconfigure_voice_codecs() -> void:
 	if capture_codec != null:
 		capture_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
+		capture_codec.set_capture_dynamics(
+			true,
+			VOICE_CAPTURE_MAKEUP_DB,
+			VOICE_CAPTURE_COMPRESSOR_THRESHOLD_DB,
+			VOICE_CAPTURE_COMPRESSOR_RATIO,
+			VOICE_CAPTURE_LIMITER_CEILING_DB,
+			VOICE_CAPTURE_COMPRESSOR_ATTACK_MSEC,
+			VOICE_CAPTURE_COMPRESSOR_RELEASE_MSEC)
 	if test_monitor_codec != null:
 		test_monitor_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
 	for peer_id in remote_peers.keys():
@@ -440,10 +461,16 @@ func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
 	debug_capture_status = "capturing"
 	debug_capture_level = _stereo_mix_peak(input_frames)
 	var now := Time.get_ticks_msec()
-	_update_smoothed_capture_level(debug_capture_level, now)
+	var dynamics_detection_level := minf(
+		debug_capture_level * db_to_linear(VOICE_CAPTURE_MAKEUP_DB),
+		db_to_linear(VOICE_CAPTURE_LIMITER_CEILING_DB))
+	debug_capture_output_level = dynamics_detection_level
+	debug_capture_gain_db = VOICE_CAPTURE_MAKEUP_DB
+	_update_smoothed_capture_level(dynamics_detection_level, now)
 	var effective_should_send := should_send
 	if voice_input_mode == VOICE_MODE_ALWAYS_ON:
-		effective_should_send = _update_always_on_broadcasting(now)
+		var threshold_broadcasting := _update_always_on_broadcasting(now)
+		effective_should_send = should_send and threshold_broadcasting
 	else:
 		local_voice_broadcasting = should_send
 	debug_last_capture_msec = now
@@ -452,6 +479,8 @@ func _capture_voice_frames(should_send: bool, should_monitor: bool) -> void:
 	if !effective_should_send and !should_monitor:
 		return
 	var packets: Array = capture_codec.encode_stereo_mix(input_frames, input_rate)
+	debug_capture_output_level = capture_codec.get_last_output_peak()
+	debug_capture_gain_db = capture_codec.get_last_capture_gain_db()
 	for packet in packets:
 		var payload := packet as PackedByteArray
 		if payload.is_empty():
@@ -498,7 +527,7 @@ func _local_player_should_send_voice() -> bool:
 	if voice_input_mode == VOICE_MODE_OFF:
 		return false
 	if voice_input_mode == VOICE_MODE_ALWAYS_ON:
-		return local_voice_broadcasting
+		return true
 	if voice_input_mode == VOICE_MODE_TOGGLE:
 		return voice_talk_toggled
 	return InputMap.has_action(VOICE_ACTION) and Input.is_action_pressed(VOICE_ACTION)
@@ -516,6 +545,14 @@ func _ensure_capture() -> bool:
 	if capture_codec == null:
 		capture_codec = OpusVoiceCodec.new()
 		capture_codec.configure(VOICE_SAMPLE_RATE, VOICE_FRAME_SAMPLES, voice_bitrate, voice_codec_complexity)
+		capture_codec.set_capture_dynamics(
+			true,
+			VOICE_CAPTURE_MAKEUP_DB,
+			VOICE_CAPTURE_COMPRESSOR_THRESHOLD_DB,
+			VOICE_CAPTURE_COMPRESSOR_RATIO,
+			VOICE_CAPTURE_LIMITER_CEILING_DB,
+			VOICE_CAPTURE_COMPRESSOR_ATTACK_MSEC,
+			VOICE_CAPTURE_COMPRESSOR_RELEASE_MSEC)
 	if capture_input_active:
 		return true
 	var error := AudioServer.set_input_device_active(true)
@@ -925,6 +962,8 @@ func get_voice_debug_status() -> Dictionary:
 		"capture_buffer_frames": debug_capture_buffer_frames,
 		"capture_input_rate": debug_capture_input_rate,
 		"capture_level": debug_capture_level,
+		"capture_output_level": debug_capture_output_level,
+		"capture_gain_db": debug_capture_gain_db,
 		"packets_encoded": debug_packets_encoded,
 		"packets_received": debug_packets_received,
 		"last_capture_msec": debug_last_capture_msec,

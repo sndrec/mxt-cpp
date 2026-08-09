@@ -81,10 +81,24 @@ struct PhysicsCarFloorProfile {
 	X(float, stat_body, 0.0f) \
 	X(float, stat_acceleration, 0.0f) \
 	X(float, stat_max_speed, 0.0f) \
-	X(float, stat_boost_strength, 0.0f) \
-	X(float, stat_boost_length, 0.0f) \
 	X(float, stat_turn_decel, 0.0f) \
 	X(float, stat_drag, 0.0f) \
+	X(float, stat_track_collision, 0.0f) \
+	X(float, stat_obstacle_collision, 0.0f) \
+	X(float, stat_manual_turbo_gain, 0.0f) \
+	X(float, stat_dashplate_turbo_gain, 0.0f) \
+	X(float, stat_jumpplate_turbo_gain, 0.0f) \
+	X(float, stat_dashplate_turbo_heat_multiplier, 0.0f) \
+	X(float, stat_turbo_flat_loss_per_second, 0.0f) \
+	X(float, stat_turbo_percent_loss_per_second, 0.0f) \
+	X(float, stat_turbo_top_speed_effect, 0.0f) \
+	X(float, stat_manual_boost_duration_seconds, 0.0f) \
+	X(float, stat_dashplate_boost_duration_seconds, 0.0f) \
+	X(float, stat_s_boost_base_speed_add_per_second, 0.0f) \
+	X(float, stat_shift_boost_base_speed_add, 0.0f) \
+	X(float, stat_shift_boost_velocity_multiplier, 1.0f) \
+	X(float, stat_air_pitch_up_speed_loss_factor, 0.0f) \
+	X(float, stat_air_glide_steering_speed_loss_factor, 0.0f) \
 	X(uint8_t, stat_accel_press_grip_frames, 0) \
 	X(float, camera_reorienting, 0.0f) \
 	X(float, camera_repositioning, 0.0f) \
@@ -101,13 +115,16 @@ struct PhysicsCarFloorProfile {
 	X(uint32_t, machine_state, 0) \
 	X(float, base_speed, 0.0f) \
 	X(float, boost_turbo, 0.0f) \
-	X(float, dashplate_heat_multiplier, 1.0f) \
+	X(float, pending_dashplate_heat, 0.0f) \
+	X(float, pending_dashplate_heat_reward_scale, 1.0f) \
 	X(float, race_start_charge, 0.0f) \
 	X(float, air_tilt, 0.0f) \
 	X(float, energy, 0.0f) \
 	X(float, ko_energy_bonus, 0.0f) \
-	X(uint32_t, boost_frames, 0) \
 	X(uint32_t, boost_frames_manual, 0) \
+	X(uint32_t, boost_frames_dash, 0) \
+	X(uint32_t, boost_duration_manual_frames, 0) \
+	X(uint32_t, boost_duration_dash_frames, 0) \
 	X(uint32_t, simulation_tick, 0) \
 	X(uint32_t, last_manual_boost_tick, 0) \
 	X(uint32_t, last_hit_tick, 0) \
@@ -165,6 +182,7 @@ struct PhysicsCarFloorProfile {
 	X(bool, s_boost_active, false)
 
 #define PHYSICS_CAR_TRANSIENT_SCALAR_FIELDS(X) \
+	X(int16_t, checkpoint_before_floor_contact, -1) \
 	X(float, visual_shake_mult, 0.0f) \
 	X(float, speed_kmh, 0.0f) \
 	X(float, dashplate_heat_reward_scale, 1.0f) \
@@ -365,7 +383,9 @@ public:
 	void set_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
 	void remove_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
 	void handle_suspension_states();
-	void handle_machine_turn_and_strafe(int point_lane, float in_angle_vel, const SimVec3& corner_delta_local, float speed_factor, const SimTransform& steer_basis);
+	float classify_machine_drift(int point_lane, const SimVec3& corner_delta_local, bool& out_was_drifting);
+	void apply_machine_turn_and_strafe(int point_lane, float in_angle_vel, float drift_delta,
+		bool was_drifting, float speed_factor, const SimTransform& steer_basis);
 	void handle_machine_turn_and_strafe_points4(float in_angle_vel);
 	void project_velocity_to_local_frame();
 	void handle_linear_velocity();
@@ -378,7 +398,15 @@ public:
 	void rotate_machine_from_angle_velocity();
 	void handle_startup_wobble();
 	void initialize_machine();
-	void update_machine_stats(); // This will use car_properties (base) and m_accel_setting to derive stats
+	void update_machine_stats();
+	void update_effective_machine_stats(bool include_technique = true);
+	void compute_technique_modifier(bool include_technique,
+		CarStatModifierLayer &out_layer, float &out_intensity) const;
+	float evaluate_effective_stat_with_context(CarStatId stat,
+		CarStatModifierLayer technique_layer, float technique_intensity,
+		CarStatModifierLayer boost_layer, bool s_boost_active) const;
+	float evaluate_effective_stat(CarStatId stat, bool include_technique,
+		bool manual_boost_active, bool dashplate_boost_active, bool s_boost_active) const;
 	void reset_machine(int reset_type);
 	void update_pitch_transform_from_machine_front_back();
 	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight, float mass_fraction, float time_based_factor, bool accel_off, float ray_start_from_attachment_len, float ray_len, bool draw_tilt_debug);

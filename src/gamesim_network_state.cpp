@@ -285,8 +285,10 @@ struct NetStateReader {
 
 #define MXT_NET_CAR_SCALAR_FIELDS(X) \
 	X(uint32_t, machine_state) \
-	X(uint16_t, boost_frames) \
 	X(uint16_t, boost_frames_manual) \
+	X(uint16_t, boost_frames_dash) \
+	X(uint16_t, boost_duration_manual_frames) \
+	X(uint16_t, boost_duration_dash_frames) \
 	X(uint32_t, last_hit_tick) \
 	X(uint32_t, last_machine_hit_tick) \
 	X(uint8_t, spinattack_direction) \
@@ -328,7 +330,8 @@ struct NetStateReader {
 	X(bool, broken_lap_rollback_pending) \
 	X(float, base_speed) \
 	X(float, boost_turbo) \
-	X(float, dashplate_heat_multiplier) \
+	X(float, pending_dashplate_heat) \
+	X(float, pending_dashplate_heat_reward_scale) \
 	X(float, race_start_charge) \
 	X(float, air_tilt) \
 	X(float, energy) \

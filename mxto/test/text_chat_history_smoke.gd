@@ -69,6 +69,17 @@ func _run() -> void:
 	if _chat_label_ids(overlay) != pooled_label_ids:
 		_fail("opening and closing chat churned label nodes")
 		return
+	if overlay.history_scroll.get_mouse_filter_with_override() != Control.MOUSE_FILTER_IGNORE:
+		_fail("closed chat history still receives mouse input")
+		return
+	overlay.open_chat()
+	if overlay.chat_input.get_mouse_filter_with_override() == Control.MOUSE_FILTER_IGNORE:
+		_fail("open chat input did not restore mouse input")
+		return
+	overlay.close_chat()
+	if overlay.chat_input.get_mouse_filter_with_override() != Control.MOUSE_FILTER_IGNORE:
+		_fail("closed chat input still receives mouse input")
+		return
 	var visible_closed_labels := 0
 	for child in overlay.history_messages.get_children():
 		if child.visible:

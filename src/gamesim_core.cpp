@@ -8,6 +8,10 @@ using namespace godot;
 void GameSim::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("instantiate_gamesim", "lvldat_buf", "car_prop_buffers", "accel_settings"), &GameSim::instantiate_gamesim);
+	ClassDB::bind_method(D_METHOD("sample_car_properties", "bytes", "machine_setting"), &GameSim::sample_car_properties);
+	ClassDB::bind_method(D_METHOD("evaluate_car_properties", "bytes", "machine_setting",
+		"genuinely_drifting", "strafe_input", "signed_slip", "manual_boost_active",
+		"dashplate_boost_active", "s_boost_active"), &GameSim::evaluate_car_properties);
 	ClassDB::bind_method(D_METHOD("destroy_gamesim"), &GameSim::destroy_gamesim);
 	ClassDB::bind_method(D_METHOD("render_gamesim"), &GameSim::render_gamesim);
 	ClassDB::bind_method(D_METHOD("get_sim_started"), &GameSim::get_sim_started);

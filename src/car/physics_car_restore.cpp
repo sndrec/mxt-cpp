@@ -25,7 +25,12 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	RaceTrack *track = soa->current_track[soa_index];
 	uint8_t prev_lap = soa->lap[soa_index];
 	const bool trace_restore = trace_rail_for_car(soa, soa_index);
-	const int old_cp = soa->current_checkpoint[soa_index];
+	// Floor depenetration may resynchronize current_checkpoint before lap processing, so retain its pre-contact value for transition direction.
+	const int checkpoint_before_floor_contact = soa->checkpoint_before_floor_contact[soa_index];
+	soa->checkpoint_before_floor_contact[soa_index] = -1;
+	const int old_cp = checkpoint_before_floor_contact >= 0
+		? checkpoint_before_floor_contact
+		: soa->current_checkpoint[soa_index];
 	const int old_coll_cp = soa->current_collision_checkpoint[soa_index];
 	const float old_fraction = soa->checkpoint_fraction[soa_index];
 	const float old_track_distance = soa->checkpoint_track_distance[soa_index];
@@ -43,14 +48,14 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	//	found = collision;
 	//}
 	soa->current_collision_checkpoint[soa_index] = static_cast<int16_t>(collision);
-	if (found >= 0 && found < track->num_checkpoints && found != soa->current_checkpoint[soa_index]) {
+	if (found >= 0 && found < track->num_checkpoints && found != old_cp) {
 		uint8_t proposed_lap = soa->lap[soa_index];
 		int lap_delta = 0;
 		const int lap_line_window = std::max(1, track->num_checkpoints / 8);
 		const bool found_after_lap_line = found < lap_line_window;
 		const bool found_before_lap_line = found >= track->num_checkpoints - lap_line_window;
-		const bool current_after_lap_line = soa->current_checkpoint[soa_index] < lap_line_window;
-		const bool current_before_lap_line = soa->current_checkpoint[soa_index] >= track->num_checkpoints - lap_line_window;
+		const bool current_after_lap_line = old_cp < lap_line_window;
+		const bool current_before_lap_line = old_cp >= track->num_checkpoints - lap_line_window;
 		if ((soa->machine_state[soa_index] & MACHINESTATE::ACTIVE) != 0 && (soa->machine_state[soa_index] & MACHINESTATE::COMPLETEDRACE_1_Q) == 0)
 		{
 			if (found_after_lap_line && current_before_lap_line) {
@@ -535,8 +540,10 @@ void PhysicsCar::respawn_at_checkpoint(uint16_t cp_idx)
 	soa->state_2[soa_index] &= ~(0x2u | 0x20u | 0x80u | 0x100u);
 	soa->air_time[soa_index] = 0;
 	soa->grip_frames_from_accel_press[soa_index] = 0;
-	soa->boost_frames[soa_index] = 0;
 	soa->boost_frames_manual[soa_index] = 0;
+	soa->boost_frames_dash[soa_index] = 0;
+	soa->boost_duration_manual_frames[soa_index] = 0;
+	soa->boost_duration_dash_frames[soa_index] = 0;
 
 	soa->machine_state[soa_index] &= ~(MACHINESTATE::ZEROHP |
 		MACHINESTATE::AIRBORNE |
@@ -791,10 +798,13 @@ void PhysicsCar::start_s_boost(uint16_t duration_frames)
 	soa->s_boost_charge[soa_index] = 0;
 	soa->s_boost_emit_frame_accumulator[soa_index] = 0;
 	soa->s_boost_pending_spark_spawns[soa_index] = 0;
-	soa->boost_frames[soa_index] = 0;
 	soa->boost_frames_manual[soa_index] = 0;
+	soa->boost_frames_dash[soa_index] = 0;
+	soa->boost_duration_manual_frames[soa_index] = 0;
+	soa->boost_duration_dash_frames[soa_index] = 0;
 	soa->boost_turbo[soa_index] = 0.0f;
-	soa->dashplate_heat_multiplier[soa_index] = 1.0f;
+	soa->pending_dashplate_heat[soa_index] = 0.0f;
+	soa->pending_dashplate_heat_reward_scale[soa_index] = 1.0f;
 	soa->boost_delay_frame_counter[soa_index] = 0;
 	soa->car_hit_invincibility[soa_index] = 0;
 	soa->machine_state[soa_index] &= ~(MACHINESTATE::JUST_PRESSED_BOOST |

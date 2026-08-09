@@ -440,16 +440,8 @@ func _ready() -> void:
 				leaderboard_labels.append(child as Label)
 	if get_parent() is VisualCar:
 		var car: VisualCar = get_parent()
-		var path: String = car.car_definition.car_definition
-		if path != "" and FileAccess.file_exists(path):
-			var f := FileAccess.open(path, FileAccess.READ)
-			if f:
-				f.seek(84)
-				car_max_energy = f.get_float()
-				if f.get_length() >= 196:
-					f.seek(192)
-					boost_energy_use_rate = f.get_float()
-				f.close()
+		car_max_energy = car.calced_max_energy
+		boost_energy_use_rate = car.boost_energy_use_rate
 	if sboost_meter_bg:
 		_sboost_full_width = sboost_meter_bg.size.x
 	_set_place_badge(1)
@@ -559,6 +551,7 @@ func _process( _delta:float ) -> void:
 		var flash := 0.35 + 0.65 * absf(sin(float(Time.get_ticks_msec()) * 0.012))
 		forceendtimer.modulate = Color(1.0, 0.05, 0.05, flash)
 	car_max_energy = maxf(car.calced_max_energy, 1.0)
+	boost_energy_use_rate = car.boost_energy_use_rate
 	healthmeter.scale.x = car_max_energy * 0.01
 	var health_meter_shader := healthmeter.material as ShaderMaterial
 	health_meter_shader.set_shader_parameter("health_amount", car.energy)

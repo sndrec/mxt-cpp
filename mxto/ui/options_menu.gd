@@ -332,9 +332,12 @@ func _process(_delta: float) -> void:
 		return
 	var status: Dictionary = voice_node.call("get_voice_debug_status")
 	var level := float(status.get("capture_level", 0.0))
+	var output_level := float(status.get("capture_output_level", level))
+	var capture_gain_db := float(status.get("capture_gain_db", 0.0))
 	var smoothed_level := float(status.get("smoothed_capture_level", level))
 	_update_voice_sensitivity_meter(smoothed_level)
 	var level_pct := roundi(clampf(level, 0.0, 1.0) * 100.0)
+	var output_level_pct := roundi(clampf(output_level, 0.0, 1.0) * 100.0)
 	var encoded := int(status.get("packets_encoded", 0))
 	var received := int(status.get("packets_received", 0))
 	var capture_discarded := int(status.get("capture_frames_discarded", 0))
@@ -354,9 +357,11 @@ func _process(_delta: float) -> void:
 	var drop_reason := str(status.get("voice_last_drop_reason", ""))
 	if drop_reason.is_empty():
 		drop_reason = "none"
-	voice_status_label.text = "Voice Status: %s | Mic %d%% | Sent %d | Heard %d/%d | Decoded %d | Discard %d | Relay L/R %d/%d | Last sender %d recips %d snap %d local %s %.1f | Spatial %d src %d/%d | Drop %s" % [
+	voice_status_label.text = "Voice Status: %s | Mic %d%%>%d%% %.1fdB | Sent %d | Heard %d/%d | Decoded %d | Discard %d | Relay L/R %d/%d | Last sender %d recips %d snap %d local %s %.1f | Spatial %d src %d/%d | Drop %s" % [
 		capture_status,
 		level_pct,
+		output_level_pct,
+		capture_gain_db,
 		encoded,
 		received,
 		receive_attempts,

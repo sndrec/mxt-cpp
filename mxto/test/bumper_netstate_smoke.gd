@@ -9,11 +9,15 @@ func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var frames := 720
 	var bumpers_enabled := !args.has("--no-bumpers")
+	var track_path := DEFAULT_TRACK
 	var idx := args.find("--frames")
 	if idx >= 0 and idx + 1 < args.size():
 		frames = int(args[idx + 1])
+	idx = args.find("--track")
+	if idx >= 0 and idx + 1 < args.size():
+		track_path = String(args[idx + 1])
 
-	var track_bytes := FileAccess.get_file_as_bytes(DEFAULT_TRACK)
+	var track_bytes := FileAccess.get_file_as_bytes(track_path)
 	var racer_bytes := FileAccess.get_file_as_bytes(DEFAULT_RACER_PROPS)
 	if track_bytes.is_empty() or racer_bytes.is_empty():
 		push_error("bumper_netstate_smoke missing track or car data")
@@ -58,7 +62,8 @@ func _init() -> void:
 	root.remove_child(client)
 	server.free()
 	client.free()
-	quit()
+	print("MXT_BUMPER_NETSTATE_SMOKE_OK frames=", frames, " track=", track_path)
+	quit(0)
 
 func _log_line(path: String, text: String) -> void:
 	var f := FileAccess.open(path, FileAccess.READ_WRITE)

@@ -45,6 +45,33 @@ uv1_scale = Vector3(0.5, 6, 1)
 material = SubResource("StandardMaterial3D_chibi_checker")
 size = Vector2(2.425, 48)
 
+[sub_resource type="Shader" id="Shader_chibi_magnifier_mask"]
+code = "shader_type canvas_item;
+
+void fragment() {
+	vec2 centered = UV * 2.0 - 1.0;
+	float radius = length(centered);
+	float edge = fwidth(radius) * 1.5;
+	float mask = 1.0 - smoothstep(0.97 - edge, 0.97 + edge, radius);
+	vec4 sample_color = texture(TEXTURE, UV);
+	COLOR = vec4(sample_color.rgb, sample_color.a * mask);
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_chibi_magnifier"]
+shader = SubResource("Shader_chibi_magnifier_mask")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_chibi_magnifier_border"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 6
+border_width_top = 6
+border_width_right = 6
+border_width_bottom = 6
+border_color = Color(1, 0.82, 0.22, 0.98)
+corner_radius_top_left = 88
+corner_radius_top_right = 88
+corner_radius_bottom_right = 88
+corner_radius_bottom_left = 88
+
 [node name="LobbyStatic" type="Control" unique_id=774706989]
 layout_mode = 3
 anchors_preset = 15
@@ -166,7 +193,7 @@ text = " Vehicle Restore"
 layout_mode = 2
 text = " Bumpers"
 
-[node name="SBoostToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox"]
+[node name="SBoostToggle" type="CheckBox" parent="LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox" unique_id=1421622172]
 layout_mode = 2
 button_pressed = true
 text = " S-BOOST"
@@ -313,11 +340,67 @@ size = 12.0
 near = 0.1
 far = 30000.0
 
-[node name="LobbyChibiNameplates" type="Control" parent="LobbyContainer/BottomBox/ViewportStack/ViewportContainer/LobbyChibiViewport" unique_id=265398332]
-layout_mode = 3
+[node name="LobbyChibiNameplates" type="Control" parent="." unique_id=265398332]
+z_index = 11
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+
+[node name="LobbyChibiMagnifier" type="Control" parent="." unique_id=232018708]
+visible = false
+z_index = 10
+anchors_preset = 0
+offset_right = 176.0
+offset_bottom = 176.0
+pivot_offset = Vector2(88, 88)
+mouse_filter = 2
+
+[node name="MagnifierViewport" type="SubViewport" parent="LobbyChibiMagnifier" unique_id=687954593]
+own_world_3d = true
+handle_input_locally = false
+size = Vector2i(176, 176)
+render_target_update_mode = 0
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="LobbyChibiMagnifier/MagnifierViewport" unique_id=168835990]
+environment = SubResource("Environment_chibi")
+
+[node name="MagnifierRoot" type="Node3D" parent="LobbyChibiMagnifier/MagnifierViewport" unique_id=2118929256]
+
+[node name="MagnifierFloor" type="MeshInstance3D" parent="LobbyChibiMagnifier/MagnifierViewport/MagnifierRoot" unique_id=1188996993]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -30, -51.95)
+mesh = SubResource("PlaneMesh_chibi_floor")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="LobbyChibiMagnifier/MagnifierViewport" unique_id=541867490]
+transform = Transform3D(-0.70710695, 0.64085644, -0.29883626, 0, 0.4226183, 0.90630794, 0.70710695, 0.64085644, -0.29883626, 0, 0, 0)
+light_energy = 0.5
+directional_shadow_mode = 0
+directional_shadow_fade_start = 1.0
+directional_shadow_max_distance = 0.1
+
+[node name="MagnifierCamera" type="Camera3D" parent="LobbyChibiMagnifier/MagnifierViewport" unique_id=1601785839]
+transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 124.5, 215.64)
+projection = 1
+current = true
+size = 10.0
+near = 0.1
+far = 30000.0
+
+[node name="LensTexture" type="TextureRect" parent="LobbyChibiMagnifier" unique_id=1460240223]
+material = SubResource("ShaderMaterial_chibi_magnifier")
+layout_mode = 0
+offset_right = 176.0
+offset_bottom = 176.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Border" type="Panel" parent="LobbyChibiMagnifier" unique_id=759912103]
+layout_mode = 0
+offset_right = 176.0
+offset_bottom = 176.0
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_chibi_magnifier_border")

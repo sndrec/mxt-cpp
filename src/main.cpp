@@ -155,7 +155,8 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 				car_views[i].update_restore(accel_raw);
 			}
 
-			c.calced_max_energy[i] = c.car_properties[i]->max_energy + c.ko_energy_bonus[i];
+			c.calced_max_energy[i] =
+				c.car_properties[i]->base_stats[CAR_STAT_MAX_ENERGY] + c.ko_energy_bonus[i];
 			const bool in_startup_countdown = tick_count < c.level_start_time[i];
 			if (!in_startup_countdown) {
 				STORE_INDEXED_VEC3(c, initial_pos, i, LOAD_INDEXED_VEC3(c, position_current, i));
@@ -435,10 +436,6 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 					if (use_analytic_floor_normal && use_corner_floor_normal) {
 						STORE_INDEXED_VEC3(c, track_surface_normal, i, ground_normal);
 					}
-				} else {
-					if (c.height_above_track[i] >= 16.0f) {
-						c.machine_state[i] &= ~(MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
-					}
 				}
 			} else {
 				const int base = i * 4;
@@ -548,33 +545,16 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 				continue;
 			}
 
-			if ((c.machine_state[i] & MACHINESTATE::ACTIVE) != 0) {
-				float strafe_turn_mod = 1.0f;
-				const int base = i * 4;
-				if (c.tilt_state[base + 0] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-				if (c.tilt_state[base + 1] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-				if (c.tilt_state[base + 2] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-				if (c.tilt_state[base + 3] & TILTSTATE::DRIFT) strafe_turn_mod -= 0.25f;
-
-				float steer_strength =
-					(c.stat_turn_movement[i] + strafe_turn_mod * c.stat_strafe_turn[i] * c.input_strafe[i] *
-						c.input_steer_yaw[i]) *
-					-c.input_steer_yaw[i];
-				if (c.machine_state[i] & MACHINESTATE::SIDEATTACKING) {
-					steer_strength *= 0.3f;
-				}
-				c.velocity_angular_y[i] += 1.5f * steer_strength;
-				if (std::abs(c.velocity_angular_y[i]) < 1.0f) {
-					c.velocity_angular_y[i] = 0.0f;
-				}
-			}
-
+			car_views[i].update_effective_machine_stats(false);
 			car_views[i].handle_suspension_states();
 
 			const float initial_angle_vel_y = c.velocity_angular_y[i];
 			if (c.frames_since_start_2[i] != 0) {
 				car_views[i].handle_machine_turn_and_strafe_points4(initial_angle_vel_y);
+			} else {
+				car_views[i].update_effective_machine_stats(true);
 			}
+			car_views[i].handle_steering();
 
 			if (c.machine_state[i] & MACHINESTATE::AIRBORNEMORE0_2S_Q) {
 				c.turning_related[i] *= 0.02f;
@@ -1232,13 +1212,13 @@ void GameSim::process_pending_ko_events()
 		PhysicsCarSoA& attacker_soa = *cars[attacker_index].soa;
 		const int attacker_lane = cars[attacker_index].soa_index;
 		const float boost_cost = std::max(1.0f,
-			10.0f * attacker_soa.stat_boost_length[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
+			10.0f * attacker_soa.stat_manual_boost_duration_seconds[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
 		const float energy_gain = boost_cost * 0.6666666667f;
 		if (car_player_ids[attacker_index] >= 0) {
 			attacker_soa.ko_energy_bonus[attacker_lane] += energy_gain;
 			if (attacker_soa.car_properties[attacker_lane]) {
 				attacker_soa.calced_max_energy[attacker_lane] =
-					attacker_soa.car_properties[attacker_lane]->max_energy + attacker_soa.ko_energy_bonus[attacker_lane];
+					attacker_soa.car_properties[attacker_lane]->base_stats[CAR_STAT_MAX_ENERGY] + attacker_soa.ko_energy_bonus[attacker_lane];
 			}
 			attacker_soa.energy[attacker_lane] = attacker_soa.calced_max_energy[attacker_lane];
 			attacker_soa.machine_state[attacker_lane] &= ~(MACHINESTATE::ZEROHP |
@@ -1281,13 +1261,13 @@ void GameSim::process_pending_ko_events()
 		PhysicsCarSoA& attacker_soa = *cars[attacker_index].soa;
 		const int attacker_lane = cars[attacker_index].soa_index;
 		const float boost_cost = std::max(1.0f,
-			10.0f * attacker_soa.stat_boost_length[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
+			10.0f * attacker_soa.stat_manual_boost_duration_seconds[attacker_lane] * attacker_soa.boost_energy_use_mult[attacker_lane]);
 		const float energy_gain = boost_cost * 0.75f;
 		if (car_player_ids[attacker_index] >= 0) {
 			attacker_soa.ko_energy_bonus[attacker_lane] += energy_gain;
 			if (attacker_soa.car_properties[attacker_lane]) {
 				attacker_soa.calced_max_energy[attacker_lane] =
-					attacker_soa.car_properties[attacker_lane]->max_energy + attacker_soa.ko_energy_bonus[attacker_lane];
+					attacker_soa.car_properties[attacker_lane]->base_stats[CAR_STAT_MAX_ENERGY] + attacker_soa.ko_energy_bonus[attacker_lane];
 			}
 			attacker_soa.energy[attacker_lane] = std::min(
 				attacker_soa.energy[attacker_lane] + energy_gain,
@@ -1425,10 +1405,13 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			car_soa.s_boost_charge[lane] = 0;
 			car_soa.s_boost_emit_frame_accumulator[lane] = 0;
 			car_soa.s_boost_pending_spark_spawns[lane] = 0;
-			car_soa.boost_frames[lane] = 0;
 			car_soa.boost_frames_manual[lane] = 0;
+			car_soa.boost_frames_dash[lane] = 0;
+			car_soa.boost_duration_manual_frames[lane] = 0;
+			car_soa.boost_duration_dash_frames[lane] = 0;
 			car_soa.boost_turbo[lane] = 0.0f;
-			car_soa.dashplate_heat_multiplier[lane] = 1.0f;
+			car_soa.pending_dashplate_heat[lane] = 0.0f;
+			car_soa.pending_dashplate_heat_reward_scale[lane] = 1.0f;
 			car_soa.boost_delay_frame_counter[lane] = 0;
 			car_soa.car_hit_invincibility[lane] = 0;
 			car_soa.machine_state[lane] &= ~(MACHINESTATE::JUST_PRESSED_BOOST |

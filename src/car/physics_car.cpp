@@ -137,41 +137,66 @@ void PhysicsCar::handle_suspension_states()
 void PhysicsCar::handle_machine_turn_and_strafe_points4(float in_angle_vel)
 {
 	const int point_base = soa_index * 4;
-	float steer_deg =
+	float neutral_steer_deg =
 		-(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index] + soa->input_strafe[soa_index] * soa->stat_strafe[soa_index]);
-	steer_deg = std::clamp(steer_deg, -45.0f, 45.0f);
-	SimTransform steer_basis = LOAD_TRANSFORM(basis_physical);
-	mxt_rotate_basis_y(steer_basis, DEG_TO_RAD * steer_deg * 0.5f);
+	neutral_steer_deg = std::clamp(neutral_steer_deg, -45.0f, 45.0f);
+	SimTransform neutral_steer_basis = LOAD_TRANSFORM(basis_physical);
+	mxt_rotate_basis_y(neutral_steer_basis, DEG_TO_RAD * neutral_steer_deg * 0.5f);
 
 	const SimFloat4 dx = sim_load4(soa->tilt_pos_old_x + point_base) - sim_load4(soa->tilt_pos_x + point_base);
 	const SimFloat4 dy = sim_load4(soa->tilt_pos_old_y + point_base) - sim_load4(soa->tilt_pos_y + point_base);
 	const SimFloat4 dz = sim_load4(soa->tilt_pos_old_z + point_base) - sim_load4(soa->tilt_pos_z + point_base);
-	const SimBasis& b = steer_basis.basis;
-	const SimFloat4 lx = SimFloat4(b[0].x) * dx + SimFloat4(b[0].y) * dy + SimFloat4(b[0].z) * dz;
-	const SimFloat4 ly = SimFloat4(b[1].x) * dx + SimFloat4(b[1].y) * dy + SimFloat4(b[1].z) * dz;
-	const SimFloat4 lz = SimFloat4(b[2].x) * dx + SimFloat4(b[2].y) * dy + SimFloat4(b[2].z) * dz;
-	const SimFloat4 speed = sim_sqrt4(lx * lx + ly * ly + lz * lz) * SimFloat4(216.0f / 1000.0f);
+	const SimBasis& neutral_basis = neutral_steer_basis.basis;
+	const SimFloat4 neutral_lx = SimFloat4(neutral_basis[0].x) * dx + SimFloat4(neutral_basis[0].y) * dy + SimFloat4(neutral_basis[0].z) * dz;
+	const SimFloat4 neutral_ly = SimFloat4(neutral_basis[1].x) * dx + SimFloat4(neutral_basis[1].y) * dy + SimFloat4(neutral_basis[1].z) * dz;
+	const SimFloat4 neutral_lz = SimFloat4(neutral_basis[2].x) * dx + SimFloat4(neutral_basis[2].y) * dy + SimFloat4(neutral_basis[2].z) * dz;
 
-	float local_x[4];
-	float local_y[4];
-	float local_z[4];
+	float neutral_local_x[4];
+	float neutral_local_y[4];
+	float neutral_local_z[4];
+	float drift_delta[4];
+	bool was_drifting[4];
+	sim_store4(neutral_local_x, neutral_lx);
+	sim_store4(neutral_local_y, neutral_ly);
+	sim_store4(neutral_local_z, neutral_lz);
+	for (int lane = 0; lane < 4; ++lane) {
+		drift_delta[lane] = classify_machine_drift(lane,
+			SimVec3(neutral_local_x[lane], neutral_local_y[lane], neutral_local_z[lane]),
+			was_drifting[lane]);
+	}
+
+	// Technique multipliers are enabled only after neutral grip has fixed this
+	// tick's drift state, so those multipliers cannot enable themselves.
+	update_effective_machine_stats(true);
+
+	float effective_steer_deg =
+		-(soa->input_steer_yaw[soa_index] * soa->stat_turn_reaction[soa_index] +
+		  soa->input_strafe[soa_index] * soa->stat_strafe[soa_index]);
+	effective_steer_deg = std::clamp(effective_steer_deg, -45.0f, 45.0f);
+	SimTransform effective_steer_basis = LOAD_TRANSFORM(basis_physical);
+	mxt_rotate_basis_y(effective_steer_basis, DEG_TO_RAD * effective_steer_deg * 0.5f);
+	const SimBasis& effective_basis = effective_steer_basis.basis;
+	const SimFloat4 effective_lx = SimFloat4(effective_basis[0].x) * dx + SimFloat4(effective_basis[0].y) * dy + SimFloat4(effective_basis[0].z) * dz;
+	const SimFloat4 effective_ly = SimFloat4(effective_basis[1].x) * dx + SimFloat4(effective_basis[1].y) * dy + SimFloat4(effective_basis[1].z) * dz;
+	const SimFloat4 effective_lz = SimFloat4(effective_basis[2].x) * dx + SimFloat4(effective_basis[2].y) * dy + SimFloat4(effective_basis[2].z) * dz;
+	const SimFloat4 speed = sim_sqrt4(
+		effective_lx * effective_lx + effective_ly * effective_ly + effective_lz * effective_lz) *
+		SimFloat4(216.0f / 1000.0f);
 	float speed_factor[4];
-	sim_store4(local_x, lx);
-	sim_store4(local_y, ly);
-	sim_store4(local_z, lz);
 	sim_store4(speed_factor, speed);
 	for (int lane = 0; lane < 4; ++lane) {
-		handle_machine_turn_and_strafe(lane, in_angle_vel, SimVec3(local_x[lane], local_y[lane], local_z[lane]), speed_factor[lane], steer_basis);
+		apply_machine_turn_and_strafe(lane, in_angle_vel, drift_delta[lane],
+			was_drifting[lane], speed_factor[lane], effective_steer_basis);
 	}
 }
 
-void PhysicsCar::handle_machine_turn_and_strafe(
-    int point_lane, float in_angle_vel, const SimVec3& corner_delta_local, float speed_factor, const SimTransform& steer_basis) {
+float PhysicsCar::classify_machine_drift(
+	int point_lane, const SimVec3& corner_delta_local, bool& out_was_drifting)
+{
 	const int p = POINT_INDEX(point_lane);
     // ───────────── Corner movement & steering matrix ─────────────
-    SimVec3 corner_delta = corner_delta_local;
-
-    bool is_drifting = (soa->tilt_state[p] & TILTSTATE::DRIFT) != 0;
+    const bool is_drifting = (soa->tilt_state[p] & TILTSTATE::DRIFT) != 0;
+	out_was_drifting = is_drifting;
     bool is_strafing = (soa->tilt_state[p] & TILTSTATE::STRAFING) != 0;
 
     // ───────────── Grip / drift threshold ─────────────
@@ -193,7 +218,7 @@ void PhysicsCar::handle_machine_turn_and_strafe(
         }
     }
 
-    if (std::abs(corner_delta.x) < soa->stat_grip_3[soa_index]) {
+    if (std::abs(corner_delta_local.x) < soa->stat_grip_3[soa_index]) {
         soa->drift_ramp[soa_index] = 0.0f;
         soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
     }
@@ -203,7 +228,7 @@ void PhysicsCar::handle_machine_turn_and_strafe(
         drift_allowed = false;
     }
 
-    float lateral_delta = corner_delta.x;
+    float lateral_delta = corner_delta_local.x;
     float drift_delta = lateral_delta;
 
     if (std::abs(lateral_delta) <= grip_threshold || !drift_allowed) {
@@ -216,6 +241,14 @@ void PhysicsCar::handle_machine_turn_and_strafe(
         soa->tilt_state[p] |= TILTSTATE::DRIFT;
         drift_delta = (lateral_delta < 0.0f) ? -grip_threshold : grip_threshold;
     }
+	return drift_delta;
+}
+
+void PhysicsCar::apply_machine_turn_and_strafe(
+	int point_lane, float in_angle_vel, float drift_delta, bool was_drifting,
+	float speed_factor, const SimTransform& steer_basis)
+{
+	const int p = POINT_INDEX(point_lane);
 
     // ───────────── Global state modifiers ─────────────
     if (soa->machine_state[soa_index] & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::SIDEATTACKING))
@@ -295,7 +328,7 @@ void PhysicsCar::handle_machine_turn_and_strafe(
         apply_torque_from_force(LOAD_TILT_VEC3(offset, p), LOAD_TILT_VEC3(force_spatial, p));
     }
 
-    if (is_drifting && (soa->machine_state[soa_index] & MACHINESTATE::JUSTHITVEHICLE_Q) == 0) {
+    if (was_drifting && (soa->machine_state[soa_index] & MACHINESTATE::JUSTHITVEHICLE_Q) == 0) {
         in_angle_vel *= soa->stat_grip_2[soa_index];
     }
 
@@ -393,6 +426,7 @@ void PhysicsCar::handle_linear_velocity()
 		SimVec3 world_jump_boost = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), local_jump_boost);
 
 		ADD_VEC3(velocity, world_jump_boost);
+		soa->boost_turbo[soa_index] += soa->stat_jumpplate_turbo_gain[soa_index];
 		soa->state_2[soa_index] |= 2u;
 		soa->velocity_angular_x[soa_index] = 0.0f;
 		soa->velocity_angular_z[soa_index] = 0.0f;
@@ -476,146 +510,117 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		}
 
 		current_machine_state = soa->machine_state[soa_index];
+		const bool dashplate_hit = (current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u;
 		if (sboostActive) {
 			soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
 			soa->boost_frames_manual[soa_index] = 0;
-			if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
-				if (soa->boost_frames[soa_index] > 0) {
-					soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE;
-				} else {
-					soa->machine_state[soa_index] &= ~(MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
-					soa->dashplate_heat_multiplier[soa_index] = 1.0f;
-				}
-			} else {
-				float boost_strength_factor = 1.0f - soa->boost_turbo[soa_index] / (9.0f * soa->stat_boost_strength[soa_index]);
-				int target_dash_boost_frames = static_cast<int>(0.5f * 60.0f * soa->stat_boost_length[soa_index]);
+		}
 
-				if (soa->boost_frames[soa_index] < static_cast<uint32_t>(target_dash_boost_frames))
-					soa->boost_frames[soa_index] = target_dash_boost_frames;
+		if (dashplate_hit) {
+			const bool manual_active_after_hit = !sboostActive && soa->boost_frames_manual[soa_index] > 0;
+			const float duration_seconds = evaluate_effective_stat(
+				CAR_STAT_DASHPLATE_BOOST_DURATION_SECONDS, true,
+				manual_active_after_hit, true, sboostActive);
+			const uint32_t duration_frames = static_cast<uint32_t>(std::max(
+				0l, std::lround(duration_seconds * 60.0f)));
+			const bool extending_dash_boost = soa->boost_frames_dash[soa_index] > 0;
+			soa->boost_frames_dash[soa_index] = std::max(soa->boost_frames_dash[soa_index], duration_frames);
+			soa->boost_duration_dash_frames[soa_index] = extending_dash_boost
+				? std::max(soa->boost_duration_dash_frames[soa_index], duration_frames)
+				: duration_frames;
 
-				float min_boost_strength_factor = 0.2f;
-				soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE;
-
-				boost_strength_factor = std::max(boost_strength_factor, min_boost_strength_factor);
-				float dashplate_multiplier = soa->dashplate_heat_multiplier[soa_index];
-				if (dashplate_multiplier < 1.0f)
-					dashplate_multiplier = 1.0f;
-				soa->boost_turbo[soa_index] += dashplate_multiplier * (2.0f * soa->stat_boost_strength[soa_index]) * boost_strength_factor;
-				soa->dashplate_heat_multiplier[soa_index] = 1.0f;
-			}
-		} else if ((current_machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) == 0) {
-			if (soa->boost_frames[soa_index] == 0) {
-				bool do_manual_boost = (current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) &&
-				soa->energy[soa_index] > 1.0f && effective_accel_input > 0.0f;
-				if (!do_manual_boost) {
-					soa->machine_state[soa_index] &= ~(MACHINESTATE::BOOSTING_DASHPLATE |
-						MACHINESTATE::JUST_PRESSED_BOOST |
-						MACHINESTATE::BOOSTING);
-					// soa->boost_turbo[soa_index] -= (2.0f + 0.01f * soa->boost_turbo[soa_index]) / 60.0f * soa->stat_acceleration[soa_index];
-				} else {
-					float boost_strength_factor = 1.0f - soa->boost_turbo[soa_index] / (9.0f * soa->stat_boost_strength[soa_index]);
-					float min_boost_strength_factor = 0.2f;
-					int boost_duration_frames = static_cast<int>(60.0f * soa->stat_boost_length[soa_index]);
-					soa->boost_frames[soa_index] = boost_duration_frames;
-					soa->boost_frames_manual[soa_index] = boost_duration_frames;
-					soa->last_manual_boost_tick[soa_index] = soa->frames_since_start[soa_index];
-					soa->has_last_manual_boost_tick[soa_index] = true;
-					soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING;
-					soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING_DASHPLATE;
-
-					boost_strength_factor = std::max(boost_strength_factor, min_boost_strength_factor);
-					soa->boost_turbo[soa_index] += soa->stat_boost_strength[soa_index] * boost_strength_factor;
-				}
-			} else {
-				soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
-				soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING;
-			}
-		} else {
-			float boost_strength_factor = 1.0f - soa->boost_turbo[soa_index] / (9.0f * soa->stat_boost_strength[soa_index]);
-			int target_dash_boost_frames = static_cast<int>(0.5f * 60.0f * soa->stat_boost_length[soa_index]);
-
-			if (soa->boost_frames[soa_index] < static_cast<uint32_t>(target_dash_boost_frames))
-				soa->boost_frames[soa_index] = target_dash_boost_frames;
-
-			float min_boost_strength_factor = 0.2f;
+			const float heat_coefficient = evaluate_effective_stat(
+				CAR_STAT_DASHPLATE_TURBO_HEAT_MULTIPLIER, true,
+				manual_active_after_hit, true, sboostActive);
+			const float heat_factor = 1.0f +
+				soa->pending_dashplate_heat[soa_index] * heat_coefficient *
+				soa->pending_dashplate_heat_reward_scale[soa_index];
+			const float dash_gain = evaluate_effective_stat(
+				CAR_STAT_DASHPLATE_TURBO_GAIN, true,
+				manual_active_after_hit, true, sboostActive);
+			soa->boost_turbo[soa_index] += dash_gain * heat_factor;
+			soa->pending_dashplate_heat[soa_index] = 0.0f;
+			soa->pending_dashplate_heat_reward_scale[soa_index] = 1.0f;
 			soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
+		}
+
+		const bool any_boost_active_before_manual =
+			soa->boost_frames_manual[soa_index] > 0 || soa->boost_frames_dash[soa_index] > 0;
+		const bool start_manual_boost = !sboostActive && !dashplate_hit && !any_boost_active_before_manual &&
+			(current_machine_state & MACHINESTATE::JUST_PRESSED_BOOST) != 0u &&
+			soa->energy[soa_index] > 1.0f && effective_accel_input > 0.0f;
+		if (start_manual_boost) {
+			const float duration_seconds = evaluate_effective_stat(
+				CAR_STAT_MANUAL_BOOST_DURATION_SECONDS, true, true, false, false);
+			soa->boost_frames_manual[soa_index] = static_cast<uint32_t>(std::max(
+				0l, std::lround(duration_seconds * 60.0f)));
+			soa->boost_duration_manual_frames[soa_index] = soa->boost_frames_manual[soa_index];
+			soa->last_manual_boost_tick[soa_index] = soa->frames_since_start[soa_index];
+			soa->has_last_manual_boost_tick[soa_index] = true;
+			soa->boost_turbo[soa_index] += evaluate_effective_stat(
+				CAR_STAT_MANUAL_TURBO_GAIN, true, true, false, false);
+		}
+		soa->machine_state[soa_index] &= ~MACHINESTATE::JUST_PRESSED_BOOST;
+
+		bool manual_active = !sboostActive && soa->boost_frames_manual[soa_index] > 0;
+		bool dashplate_active = soa->boost_frames_dash[soa_index] > 0;
+		if (manual_active || dashplate_active) {
 			soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING;
-
-			boost_strength_factor = std::max(boost_strength_factor, min_boost_strength_factor);
-			float dashplate_multiplier = soa->dashplate_heat_multiplier[soa_index];
-			if (dashplate_multiplier < 1.0f)
-				dashplate_multiplier = 1.0f;
-			soa->boost_turbo[soa_index] += dashplate_multiplier * (2.0f * soa->stat_boost_strength[soa_index]) * boost_strength_factor;
-			soa->dashplate_heat_multiplier[soa_index] = 1.0f;
+		} else {
+			soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING;
+		}
+		if (dashplate_active) {
+			soa->machine_state[soa_index] |= MACHINESTATE::BOOSTING_DASHPLATE;
+		} else {
+			soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING_DASHPLATE;
 		}
 
-		if (soa->boost_frames[soa_index] > 0 || soa->boost_frames_manual[soa_index] > 0)
-		{
-			soa->boost_turbo[soa_index] -= ((3.0f + 0.03f * soa->boost_turbo[soa_index]) * soa->stat_acceleration[soa_index] * soa->stat_boost_strength[soa_index] * 0.5f) / 60.0f;
-		}else
-		{
-			soa->boost_turbo[soa_index] -= ((6.0f + 0.05f * soa->boost_turbo[soa_index]) * soa->stat_acceleration[soa_index] * soa->stat_boost_strength[soa_index] * 0.5f) / 60.0f;
-		}
+		update_effective_machine_stats(true);
+		soa->boost_turbo[soa_index] -=
+			(soa->stat_turbo_flat_loss_per_second[soa_index] +
+			 soa->boost_turbo[soa_index] * soa->stat_turbo_percent_loss_per_second[soa_index]) / 60.0f;
 		soa->boost_turbo[soa_index] = std::max(soa->boost_turbo[soa_index], 0.0f);
 
-		if (soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) {
-			if (!sboostActive && soa->boost_frames_manual[soa_index] > 0) {
-				soa->energy[soa_index] -= 0.1666666667f * soa->boost_energy_use_mult[soa_index];
-				soa->boost_frames_manual[soa_index] -= 1;
-			}
+		if (manual_active) {
+			soa->energy[soa_index] -= 0.1666666667f * soa->boost_energy_use_mult[soa_index];
+			soa->boost_frames_manual[soa_index] -= 1;
+		}
+		if (dashplate_active) {
+			soa->boost_frames_dash[soa_index] -= 1;
+		}
 
-			if (soa->boost_frames[soa_index] > 0)
-				soa->boost_frames[soa_index] -= 1;
+		if (!sboostActive && soa->energy[soa_index] < 0.01f) {
+			soa->energy[soa_index] = 0.01f;
+			soa->boost_frames_manual[soa_index] = 0;
+		}
 
-			if (!sboostActive && soa->boost_frames[soa_index] == 0 && soa->speed_kmh[soa_index] > 1200.0f) {
-				float cooldown_duration = (soa->speed_kmh[soa_index] - 1200.0f) / 60.0f;
-				cooldown_duration = std::min(cooldown_duration, 10.0f);
-				if (static_cast<float>(soa->boost_delay_frame_counter[soa_index]) < cooldown_duration)
-					soa->boost_delay_frame_counter[soa_index] = static_cast<uint8_t>(cooldown_duration);
+		manual_active = !sboostActive && soa->boost_frames_manual[soa_index] > 0;
+		dashplate_active = soa->boost_frames_dash[soa_index] > 0;
+		if (!sboostActive && !manual_active && !dashplate_active && soa->speed_kmh[soa_index] > 1200.0f) {
+			float cooldown_duration = std::min((soa->speed_kmh[soa_index] - 1200.0f) / 60.0f, 10.0f);
+			if (static_cast<float>(soa->boost_delay_frame_counter[soa_index]) < cooldown_duration) {
+				soa->boost_delay_frame_counter[soa_index] = static_cast<uint8_t>(cooldown_duration);
 			}
-
-			if (!sboostActive && soa->energy[soa_index] < 0.01f) {
-				soa->energy[soa_index] = 0.01f;
-				soa->boost_frames_manual[soa_index] = 0;
-				if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING_DASHPLATE) == 0) {
-					soa->boost_frames[soa_index] = 0;
-				} else {
-					int half_dash_boost_frames = static_cast<int>(0.5f * 60.0f * soa->stat_boost_length[soa_index]);
-					if (half_dash_boost_frames < static_cast<int>(soa->boost_frames[soa_index]))
-						soa->boost_frames[soa_index] = half_dash_boost_frames;
-				}
-			}
-
-			if (soa->boost_frames[soa_index] <= 0) {
-				soa->boost_frames[soa_index] = 0;
-				soa->machine_state[soa_index] &= ~(MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
-			}
+		}
+		if (!manual_active && !dashplate_active) {
+			soa->machine_state[soa_index] &= ~(MACHINESTATE::BOOSTING | MACHINESTATE::BOOSTING_DASHPLATE);
+		} else if (!dashplate_active) {
+			soa->machine_state[soa_index] &= ~MACHINESTATE::BOOSTING_DASHPLATE;
 		}
 
 		float accel_stat_scaled = 40.0f * soa->stat_acceleration[soa_index];
 		float target_speed_component = (effective_accel_input * accel_stat_scaled) / 348.0f;
-		if (soa->boost_frames[soa_index] > 0 || soa->boost_frames_manual[soa_index] > 0 || sboostActive)
-		{
-			target_speed_component *= 1.0f + soa->stat_boost_strength[soa_index] * soa->stat_acceleration[soa_index] * 0.038f;
-		}
 		target_speed_component += soa->base_speed[soa_index];
 		float speed_difference = target_speed_component - normalized_fwd_speed;
 
-		float speed_factor_denom = 36.0f + 40.0f * soa->stat_max_speed[soa_index] + soa->boost_turbo[soa_index] * 3.0f;
+		float speed_factor_denom = 36.0f + 40.0f * soa->stat_max_speed[soa_index] +
+			soa->boost_turbo[soa_index] * soa->stat_turbo_top_speed_effect[soa_index];
 		float speed_factor = 0.0f;
 		if (std::abs(speed_factor_denom) > 0.0001f)
 			speed_factor = target_speed_component / speed_factor_denom;
 		speed_factor = std::max(speed_factor, 0.0f);
 
 		float current_accel_magnitude = speed_factor * 4.0f * (soa->stat_acceleration[soa_index] * (0.6f + soa->stat_acceleration[soa_index]));
-
-		if ((soa->machine_state[soa_index] & (MACHINESTATE::JUST_HIT_DASHPLATE | MACHINESTATE::JUST_PRESSED_BOOST)) == 0) {
-			if ((soa->machine_state[soa_index] & MACHINESTATE::BOOSTING) || sboostActive) {
-				current_accel_magnitude *= (soa->stat_weight[soa_index] <= 1000.0f) ? 0.3f : 0.5f;
-			}
-		} else {
-			current_accel_magnitude = 0.0f;
-		}
 
 		if (speed_difference > 0.0f &&
 			(normalized_fwd_speed < 0.0f || (soa->terrain_state[soa_index] & TERRAIN::DIRT))) {
@@ -655,7 +660,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 
 	if (sboostActive)
 	{
-		soa->base_speed[soa_index] += 0.025f;
+		soa->base_speed[soa_index] += soa->stat_s_boost_base_speed_add_per_second[soa_index] / 60.0f;
 	}
 
 	float final_output_thrust_factor = speed_difference;
@@ -673,13 +678,7 @@ float PhysicsCar::handle_machine_accel_and_boost(float neg_local_fwd_speed, floa
 		final_output_thrust_factor *= (0.2f - 0.15f * speed_ratio_for_0hp);
 	}
 
-	if ((soa->machine_state[soa_index] & (MACHINESTATE::BOOSTING_DASHPLATE | MACHINESTATE::BOOSTING)) == 0) {
-		final_thrust_output = 1000.0f * final_output_thrust_factor;
-	} else if (soa->stat_weight[soa_index] <= 1000.0f) {
-		final_thrust_output = 1200.0f * final_output_thrust_factor;
-	} else {
-		final_thrust_output = 1600.0f * final_output_thrust_factor;
-	}
+	final_thrust_output = 1000.0f * final_output_thrust_factor;
 } else {
 	final_thrust_output = -neg_local_fwd_speed;
 	soa->base_speed[soa_index] = 0.014f * soa->race_start_charge[soa_index];
@@ -905,7 +904,9 @@ void PhysicsCar::handle_drag_and_glide_forces()
 		const float tilt_multiplier = air_steering_drag_tilt_multiplier(soa->air_tilt[soa_index]);
 		const float drag =
 			soa->base_speed[soa_index] *
-			(pitch_drag_factor * 0.005f + steer * airtime_factor * tilt_multiplier * 0.012f);
+			(pitch_drag_factor * soa->stat_air_pitch_up_speed_loss_factor[soa_index] +
+			 steer * airtime_factor * tilt_multiplier *
+			 soa->stat_air_glide_steering_speed_loss_factor[soa_index]);
 		soa->base_speed[soa_index] = std::max(soa->base_speed[soa_index] - drag, 0.0f);
 	}
 
@@ -1046,7 +1047,8 @@ void PhysicsCar::initialize_machine()
 		}
 	}
 
-	soa->calced_max_energy[soa_index] = soa->car_properties[soa_index]->max_energy + soa->ko_energy_bonus[soa_index];
+	soa->calced_max_energy[soa_index] =
+		soa->car_properties[soa_index]->base_stats[CAR_STAT_MAX_ENERGY] + soa->ko_energy_bonus[soa_index];
 
 	reset_machine(1);
 };
@@ -1056,42 +1058,157 @@ void PhysicsCar::update_machine_stats()
 	if (soa->car_properties[soa_index] == nullptr)
 		return;
 
-	PhysicsCarProperties def_stats =
-	soa->car_properties[soa_index]->derive_machine_base_stat_values(soa->m_accel_setting[soa_index]);
-
-	soa->stat_weight[soa_index] = def_stats.weight_kg;
-	soa->stat_grip_1[soa_index] = def_stats.grip_1;
-	soa->stat_grip_3[soa_index] = def_stats.grip_3;
-	soa->stat_turn_movement[soa_index] = def_stats.turn_movement;
-	soa->stat_strafe[soa_index] = def_stats.strafe;
-	soa->stat_turn_reaction[soa_index] = def_stats.turn_reaction;
-	soa->stat_grip_2[soa_index] = def_stats.grip_2;
-	soa->stat_body[soa_index] = def_stats.body;
-	soa->stat_turn_tension[soa_index] = def_stats.turn_tension;
-	soa->stat_drift_accel[soa_index] = def_stats.drift_accel;
-	soa->stat_accel_press_grip_frames[soa_index] = def_stats.unk_byte_0x48;
-	soa->camera_reorienting[soa_index] = def_stats.camera_reorienting;
-	soa->camera_repositioning[soa_index] = def_stats.camera_repositioning;
-	soa->stat_strafe_turn[soa_index] = def_stats.strafe_turn;
-	soa->stat_acceleration[soa_index] = def_stats.acceleration;
-	soa->stat_max_speed[soa_index] = def_stats.max_speed;
-	soa->stat_boost_strength[soa_index] = 0.57f * def_stats.boost_strength;
-	soa->stat_boost_length[soa_index] = def_stats.boost_length;
-	soa->stat_turn_decel[soa_index] = def_stats.turn_decel;
-	soa->stat_drag[soa_index] = def_stats.drag;
-	soa->boost_energy_use_mult[soa_index] = def_stats.boost_energy_use_rate;
-	soa->energy_recharge_mult[soa_index] = def_stats.energy_recharge_rate;
-	if ((def_stats.state_flags & 1u) == 0u) {
+	const PhysicsCarProperties &properties = *soa->car_properties[soa_index];
+	update_effective_machine_stats(false);
+	if ((properties.state_flags & 1u) == 0u) {
 		soa->machine_state[soa_index] &= ~MACHINESTATE::B9;
 	} else {
 		soa->machine_state[soa_index] |= MACHINESTATE::B9;
 	}
-	if ((def_stats.state_flags & 2u) != 0u) {
+	if ((properties.state_flags & 2u) != 0u) {
 		soa->machine_state[soa_index] |= MACHINESTATE::VEHICLEACTIVE_Q;
 	} else {
 		soa->machine_state[soa_index] &= ~MACHINESTATE::B1;
 	}
 };
+
+void PhysicsCar::compute_technique_modifier(
+	bool include_technique,
+	CarStatModifierLayer &out_layer,
+	float &out_intensity) const
+{
+	out_layer = CAR_MODIFIER_LAYER_COUNT;
+	out_intensity = 0.0f;
+	if (!include_technique) {
+		return;
+	}
+
+	bool genuinely_drifting = false;
+	for (int corner = 0; corner < 4; ++corner) {
+		if ((soa->tilt_state[POINT_INDEX(corner)] & TILTSTATE::DRIFT) != 0u) {
+			genuinely_drifting = true;
+			break;
+		}
+	}
+	const float strafe = soa->input_strafe[soa_index];
+	if (!genuinely_drifting || std::abs(strafe) <= 0.0001f) {
+		return;
+	}
+
+	SimVec3 up = LOAD_VEC3(track_surface_normal);
+	if (up.length_squared() <= 0.000001f) {
+		up = LOAD_TRANSFORM(basis_physical).basis.get_column(1);
+	}
+	if (up.length_squared() <= 0.000001f) {
+		return;
+	}
+
+	up.normalize();
+	const SimVec3 velocity = LOAD_VEC3(velocity);
+	SimVec3 travel = velocity - up * velocity.dot(up);
+	SimVec3 forward = -LOAD_TRANSFORM(basis_physical).basis.get_column(2);
+	forward -= up * forward.dot(up);
+	if (travel.length_squared() <= 0.000001f || forward.length_squared() <= 0.000001f) {
+		return;
+	}
+
+	travel.normalize();
+	forward.normalize();
+	const float signed_slip = up.dot(travel.cross(forward));
+	out_layer = classify_car_technique_modifier(
+		genuinely_drifting, strafe, signed_slip, out_intensity);
+}
+
+float PhysicsCar::evaluate_effective_stat_with_context(
+	CarStatId stat,
+	CarStatModifierLayer technique_layer,
+	float technique_intensity,
+	CarStatModifierLayer boost_layer,
+	bool s_boost_active) const
+{
+	if (soa->car_properties[soa_index] == nullptr || stat >= CAR_STAT_COUNT) {
+		return 0.0f;
+	}
+
+	return evaluate_car_stat(*soa->car_properties[soa_index], stat,
+		technique_layer, technique_intensity, boost_layer, s_boost_active);
+}
+
+float PhysicsCar::evaluate_effective_stat(
+	CarStatId stat,
+	bool include_technique,
+	bool manual_boost_active,
+	bool dashplate_boost_active,
+	bool s_boost_active) const
+{
+	CarStatModifierLayer technique_layer = CAR_MODIFIER_LAYER_COUNT;
+	float technique_intensity = 0.0f;
+	compute_technique_modifier(include_technique, technique_layer, technique_intensity);
+
+	const CarStatModifierLayer boost_layer = classify_car_boost_modifier(
+		manual_boost_active, dashplate_boost_active, s_boost_active);
+	return evaluate_effective_stat_with_context(stat, technique_layer, technique_intensity,
+		boost_layer, s_boost_active);
+}
+
+void PhysicsCar::update_effective_machine_stats(bool include_technique)
+{
+	if (soa->car_properties[soa_index] == nullptr) {
+		return;
+	}
+
+	const bool s_boost_active = soa->s_boost_active[soa_index];
+	const bool manual_boost_active = !s_boost_active && soa->boost_frames_manual[soa_index] > 0;
+	const bool dashplate_boost_active = soa->boost_frames_dash[soa_index] > 0 ||
+		(soa->machine_state[soa_index] & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u;
+	CarStatModifierLayer technique_layer = CAR_MODIFIER_LAYER_COUNT;
+	float technique_intensity = 0.0f;
+	compute_technique_modifier(include_technique, technique_layer, technique_intensity);
+	const CarStatModifierLayer boost_layer = classify_car_boost_modifier(
+		manual_boost_active, dashplate_boost_active, s_boost_active);
+	auto stat = [&](CarStatId id) {
+		return evaluate_effective_stat_with_context(id, technique_layer, technique_intensity,
+			boost_layer, s_boost_active);
+	};
+
+	soa->stat_weight[soa_index] = stat(CAR_STAT_WEIGHT_KG);
+	soa->stat_acceleration[soa_index] = stat(CAR_STAT_ACCELERATION);
+	soa->stat_max_speed[soa_index] = stat(CAR_STAT_MAX_SPEED);
+	soa->stat_grip_1[soa_index] = stat(CAR_STAT_GRIP_1);
+	soa->stat_grip_2[soa_index] = stat(CAR_STAT_GRIP_2);
+	soa->stat_grip_3[soa_index] = stat(CAR_STAT_GRIP_3);
+	soa->stat_turn_tension[soa_index] = stat(CAR_STAT_TURN_TENSION);
+	soa->stat_drift_accel[soa_index] = stat(CAR_STAT_DRIFT_ACCEL);
+	soa->stat_turn_movement[soa_index] = stat(CAR_STAT_TURN_MOVEMENT);
+	soa->stat_strafe_turn[soa_index] = stat(CAR_STAT_STRAFE_TURN);
+	soa->stat_strafe[soa_index] = stat(CAR_STAT_STRAFE);
+	soa->stat_turn_reaction[soa_index] = stat(CAR_STAT_TURN_REACTION);
+	soa->stat_turn_decel[soa_index] = stat(CAR_STAT_TURN_DECEL);
+	soa->stat_drag[soa_index] = stat(CAR_STAT_DRAG);
+	soa->stat_body[soa_index] = stat(CAR_STAT_BODY);
+	soa->camera_reorienting[soa_index] = stat(CAR_STAT_CAMERA_REORIENTING);
+	soa->camera_repositioning[soa_index] = stat(CAR_STAT_CAMERA_REPOSITIONING);
+	soa->stat_track_collision[soa_index] = stat(CAR_STAT_TRACK_COLLISION);
+	soa->stat_obstacle_collision[soa_index] = stat(CAR_STAT_OBSTACLE_COLLISION);
+	soa->boost_energy_use_mult[soa_index] = stat(CAR_STAT_BOOST_ENERGY_USE_RATE);
+	soa->energy_recharge_mult[soa_index] = stat(CAR_STAT_ENERGY_RECHARGE_RATE);
+	soa->stat_accel_press_grip_frames[soa_index] = static_cast<uint8_t>(
+		std::clamp(std::lround(stat(CAR_STAT_ACCEL_PRESS_GRIP_FRAMES)), 0l, 255l));
+	soa->stat_manual_turbo_gain[soa_index] = stat(CAR_STAT_MANUAL_TURBO_GAIN);
+	soa->stat_dashplate_turbo_gain[soa_index] = stat(CAR_STAT_DASHPLATE_TURBO_GAIN);
+	soa->stat_jumpplate_turbo_gain[soa_index] = stat(CAR_STAT_JUMPPLATE_TURBO_GAIN);
+	soa->stat_dashplate_turbo_heat_multiplier[soa_index] = stat(CAR_STAT_DASHPLATE_TURBO_HEAT_MULTIPLIER);
+	soa->stat_turbo_flat_loss_per_second[soa_index] = stat(CAR_STAT_TURBO_FLAT_LOSS_PER_SECOND);
+	soa->stat_turbo_percent_loss_per_second[soa_index] = stat(CAR_STAT_TURBO_PERCENT_LOSS_PER_SECOND);
+	soa->stat_turbo_top_speed_effect[soa_index] = stat(CAR_STAT_TURBO_TOP_SPEED_EFFECT);
+	soa->stat_manual_boost_duration_seconds[soa_index] = stat(CAR_STAT_MANUAL_BOOST_DURATION_SECONDS);
+	soa->stat_dashplate_boost_duration_seconds[soa_index] = stat(CAR_STAT_DASHPLATE_BOOST_DURATION_SECONDS);
+	soa->stat_s_boost_base_speed_add_per_second[soa_index] = stat(CAR_STAT_S_BOOST_BASE_SPEED_ADD_PER_SECOND);
+	soa->stat_shift_boost_base_speed_add[soa_index] = stat(CAR_STAT_SHIFT_BOOST_BASE_SPEED_ADD);
+	soa->stat_shift_boost_velocity_multiplier[soa_index] = stat(CAR_STAT_SHIFT_BOOST_VELOCITY_MULTIPLIER);
+	soa->stat_air_pitch_up_speed_loss_factor[soa_index] = stat(CAR_STAT_AIR_PITCH_UP_SPEED_LOSS_FACTOR);
+	soa->stat_air_glide_steering_speed_loss_factor[soa_index] = stat(CAR_STAT_AIR_GLIDE_STEERING_SPEED_LOSS_FACTOR);
+}
 
 void PhysicsCar::reset_machine(int reset_type)
 {
@@ -1138,7 +1255,9 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->energy[soa_index] = soa->calced_max_energy[soa_index];
 	soa->boost_frames_manual[soa_index] = 0;
 	soa->air_tilt[soa_index] = 0.0f;
-	soa->boost_frames[soa_index] = 0;
+	soa->boost_frames_dash[soa_index] = 0;
+	soa->boost_duration_manual_frames[soa_index] = 0;
+	soa->boost_duration_dash_frames[soa_index] = 0;
 	soa->input_strafe_32[soa_index] = 0.0f;
 	soa->input_strafe_1_6[soa_index] = 0.0f;
 	soa->frames_since_start_2[soa_index] = 0;
@@ -1170,8 +1289,10 @@ void PhysicsCar::reset_machine(int reset_type)
 	soa->boost_delay_frame_counter[soa_index] = 0;
 	soa->car_hit_invincibility[soa_index] = 0;
 	soa->turn_reaction_input[soa_index] = 0.0f;
-	soa->boost_energy_use_mult[soa_index] = soa->car_properties[soa_index] ? soa->car_properties[soa_index]->boost_energy_use_rate : 1.0f;
-	soa->energy_recharge_mult[soa_index] = soa->car_properties[soa_index] ? soa->car_properties[soa_index]->energy_recharge_rate : 1.0f;
+	soa->boost_energy_use_mult[soa_index] = soa->car_properties[soa_index] ?
+		soa->car_properties[soa_index]->base_stats[CAR_STAT_BOOST_ENERGY_USE_RATE] : 1.0f;
+	soa->energy_recharge_mult[soa_index] = soa->car_properties[soa_index] ?
+		soa->car_properties[soa_index]->base_stats[CAR_STAT_ENERGY_RECHARGE_RATE] : 1.0f;
 	soa->breakdown_frame_counter[soa_index] = 0;
 	soa->some_breakdown_int[soa_index] = 0;
 	soa->drift_sign[soa_index] = 1;
@@ -1981,6 +2102,7 @@ static OldCornerCollisionSurface sample_old_corner_collision_surface(
 int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCornerProfile* profile,
 	float* out_max_rail_contact_push) {
 	uint64_t profile_step = profile ? physics_profile_now_us() : 0;
+	soa->checkpoint_before_floor_contact[soa_index] = -1;
 	STORE_VEC3(collision_push_track, SimVec3());
 	STORE_VEC3(collision_push_rail, SimVec3());
 	STORE_VEC3(collision_push_total, SimVec3());
@@ -2035,6 +2157,8 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 		DEBUG::dip_enabled(DIP_SWITCH::DIP_DRAW_RAIL_CANDIDATES) &&
 		(soa->global_start + soa_index) == 0;
 	const bool trace_rail = trace_rail_for_car(soa, soa_index);
+	// A hit beyond this segment remains invalid here; it only requests a separate test against the segment now under the car.
+	bool old_rail_sweep_exited_longitudinal_domain = false;
 	auto trace_analytic_rail_context = [&](const char *pass_name, int cp_idx, const SimVec2 &sample_t,
 		bool was_inside_check, bool was_above_check, const bool side_possible[2]) {
 		if (!trace_rail) {
@@ -2054,7 +2178,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 			godot::String(" pos=("), machine_position.x, godot::String(","), machine_position.y, godot::String(","), machine_position.z, godot::String(")"),
 			godot::String(" old_pos=("), old_machine_position.x, godot::String(","), old_machine_position.y, godot::String(","), old_machine_position.z, godot::String(")"));
 	};
-	auto analytic_rail_corner_hit_valid = [&](const char *pass_name, int cp_idx, int wc_idx, int side_index,
+	auto analytic_rail_corner_hit_valid = [&](const char *pass_name, bool old_pass, int cp_idx, int wc_idx, int side_index,
 		const TrackEdgeRailSide &side, const SimVec3 &new_corner, float rail_height, float *out_new_depth) {
 		const float new_depth = (new_corner - side.pos).dot(side.rail_n);
 		*out_new_depth = new_depth;
@@ -2089,6 +2213,9 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 				sweep_t = checkpoint_longitudinal_t(*track, cp_idx, sweep_hit);
 				if (!track_segment_longitudinal_t_in_domain(sweep_t)) {
 					reason = "sweep_t_outside";
+					if (old_pass) {
+						old_rail_sweep_exited_longitudinal_domain = true;
+					}
 				} else {
 					sweep_height = (sweep_hit - side.pos).dot(side.up_n);
 					if (sweep_height < 0.0f || sweep_height > rail_height) {
@@ -2161,7 +2288,10 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						overall_hit_detected_flag |= 1;
 						depenetration += d;
 						ADD_VEC3(collision_push_track, d);
-						soa->current_checkpoint[soa_index] = use_cp_old;
+						if (soa->checkpoint_before_floor_contact[soa_index] < 0) {
+							soa->checkpoint_before_floor_contact[soa_index] = static_cast<int16_t>(soa->current_checkpoint[soa_index]);
+						}
+						soa->current_checkpoint[soa_index] = static_cast<uint16_t>(use_cp_old);
 					}
 				}
 				const TrackSegment &old_segment = track->segments[track->checkpoints[use_cp_old].road_segment];
@@ -2213,7 +2343,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 								continue;
 							}
 							float depth = 0.0f;
-							if (!analytic_rail_corner_hit_valid("old", use_cp_old, wc_idx, i, side, p0, side_height[i], &depth)) {
+							if (!analytic_rail_corner_hit_valid("old", true, use_cp_old, wc_idx, i, side, p0, side_height[i], &depth)) {
 								continue;
 							}
 							//DEBUG::disp_text("use_hit_t old", use_hit_t);
@@ -2250,13 +2380,17 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 					depenetration.x == 0.0f &&
 					depenetration.y == 0.0f &&
 					depenetration.z == 0.0f;
-				if (!old_center_floor_pass_was_duplicate && was_above && !center_floor_sample_is_hole) {
+				if ((!old_center_floor_pass_was_duplicate || old_rail_sweep_exited_longitudinal_domain) &&
+					was_above && !center_floor_sample_is_hole) {
 					use_cp_new = track->get_best_checkpoint(machine_position + depenetration, soa->current_collision_checkpoint[soa_index], scratch);
 					new_valid = use_cp_new != -1;
 					if (new_valid)
 					{
 						const TrackSegment &new_segment = track->segments[track->checkpoints[use_cp_new].road_segment];
 						if (!new_segment.analytic_collision_enabled) {
+							new_valid = false;
+						} else if (old_center_floor_pass_was_duplicate && old_valid &&
+							track->checkpoints[use_cp_old].road_segment == track->checkpoints[use_cp_new].road_segment) {
 							new_valid = false;
 						}
 					}
@@ -2293,7 +2427,10 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 						overall_hit_detected_flag |= 1;
 						depenetration += d;
 						ADD_VEC3(collision_push_track, d);
-						soa->current_checkpoint[soa_index] = use_cp_new;
+						if (soa->checkpoint_before_floor_contact[soa_index] < 0) {
+							soa->checkpoint_before_floor_contact[soa_index] = static_cast<int16_t>(soa->current_checkpoint[soa_index]);
+						}
+						soa->current_checkpoint[soa_index] = static_cast<uint16_t>(use_cp_new);
 					}
 				}
 				TrackSegment *new_seg = &track->segments[track->checkpoints[use_cp_new].road_segment];
@@ -2346,7 +2483,7 @@ int PhysicsCar::update_machine_corners(TrackQueryScratch &scratch, PhysicsCarCor
 								continue;
 							}
 							float depth = 0.0f;
-							if (!analytic_rail_corner_hit_valid("new", use_cp_new, wc_idx, i, side, p0, side_height[i], &depth)) {
+							if (!analytic_rail_corner_hit_valid("new", false, use_cp_new, wc_idx, i, side, p0, side_height[i], &depth)) {
 								continue;
 							}
 							//DEBUG::disp_text("use_hit_t new", use_hit_t);
@@ -2536,7 +2673,7 @@ void PhysicsCar::apply_machine_collision_response_from_corners(int corner_collis
 	}
 
 	if (push_magnitude_rail > 0.0023148148f) {
-		if ((corner_collision_type_flag & 2) && (soa->machine_state[soa_index] & MACHINESTATE::LOWGRIP) == 0)
+		if (corner_collision_type_flag & 2)
 			soa->machine_state[soa_index] |= MACHINESTATE::TOOKDAMAGE;
 	}
 
@@ -2591,8 +2728,8 @@ if (apply_full_response) {
 				MACHINESTATE::JUST_PRESSED_BOOST |
 				MACHINESTATE::BOOSTING);
 			soa->machine_state[soa_index] &= ~(MACHINESTATE::SIDEATTACKING | MACHINESTATE::SPINATTACKING);
-			soa->boost_frames[soa_index] = 0;
 			soa->boost_frames_manual[soa_index] = 0;
+			soa->boost_frames_dash[soa_index] = 0;
 		}
 
 		if ((soa->machine_state[soa_index] & MACHINESTATE::TOOKDAMAGE) && soa->breakdown_frame_counter[soa_index] == 0) {
@@ -2699,8 +2836,8 @@ if (apply_full_response) {
 		SimVec3 vel_add = LOAD_VEC3(velocity) - normal_vel;
 		if (vel_align_factor >= 0.8f && soa->energy[soa_index] > 0.001f && (soa->machine_state[soa_index] & MACHINESTATE::HAS_DISCONNECTED) == 0)
 		{
-			STORE_VEC3(velocity, LOAD_VEC3(velocity) * 1.4f);
-			soa->base_speed[soa_index] += 2.0f;
+			STORE_VEC3(velocity, LOAD_VEC3(velocity) * soa->stat_shift_boost_velocity_multiplier[soa_index]);
+			soa->base_speed[soa_index] += soa->stat_shift_boost_base_speed_add[soa_index];
 		}else
 		{
 			vel_add = set_vec3_length(vel_add, 0.9f * (1.0f - 1.11f * vel_align_factor) * up_dot_track);

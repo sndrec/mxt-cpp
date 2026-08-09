@@ -28,8 +28,13 @@ func _run() -> void:
 		_fail("manifest reads did not preserve owner isolation")
 		return
 	owner.custom_stamp_blob_waiters["probe"] = [7, 8]
+	owner._queue_custom_stamp_blob(7, {"hash": "probe", "compressed_indices_base64": "AA=="}, false)
+	owner._queue_custom_stamp_blob(7, {"hash": "probe", "compressed_indices_base64": "AA=="}, false)
+	if owner.outgoing_blob_queue.size() != 1 or owner.outgoing_blob_queue_bytes <= 0:
+		_fail("outgoing blob queue did not dedupe a peer/hash pair")
+		return
 	owner.remove_peer(7)
-	if owner.custom_stamp_manifests.has(7) or owner.custom_stamp_blob_waiters["probe"].has(7):
+	if owner.custom_stamp_manifests.has(7) or owner.custom_stamp_blob_waiters["probe"].has(7) or !owner.outgoing_blob_queue.is_empty():
 		_fail("peer removal did not clear manifest and waiter state")
 		return
 	owner.clear()

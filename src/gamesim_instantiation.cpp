@@ -485,6 +485,30 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 {
 	if (Engine::get_singleton()->is_editor_hint()) return;
 
+	const int property_count = car_prop_buffers.size();
+	std::vector<PhysicsCarProperties> sampled_car_properties(static_cast<size_t>(property_count));
+	std::vector<float> sampled_machine_settings(static_cast<size_t>(property_count), 1.0f);
+	for (int i = 0; i < property_count; ++i) {
+		if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
+			sampled_machine_settings[static_cast<size_t>(i)] =
+				std::clamp(static_cast<float>(accel_settings[i]), 0.0f, 1.0f);
+		}
+		const godot::PackedByteArray bytes = car_prop_buffers[i];
+		godot::String parse_error;
+		if (!PhysicsCarProperties::deserialize_and_sample(
+				bytes,
+				sampled_machine_settings[static_cast<size_t>(i)],
+				sampled_car_properties[static_cast<size_t>(i)],
+				parse_error)) {
+			UtilityFunctions::printerr(
+				String("MXT car properties rejected for racer "),
+				static_cast<int64_t>(i),
+				String(": "),
+				parse_error);
+			return;
+		}
+	}
+
 	tick = 0;
 	race_events.clear();
 
@@ -1105,16 +1129,11 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		for (int i = 0; i < num_cars; i++)
 		{
 			cars[i].soa->current_track[cars[i].soa_index] = current_track;
-			if (i < car_prop_buffers.size()) {
-				godot::PackedByteArray arr = car_prop_buffers[i];
-               // StreamPeerBuffer inherits Reference; using Ref ensures
-               // the object is freed when 'pb' goes out of scope.
-				godot::Ref<godot::StreamPeerBuffer> pb = godot::Ref<godot::StreamPeerBuffer>(memnew(godot::StreamPeerBuffer));
-				pb->set_data_array(arr);
-				*(cars[i].soa->car_properties[cars[i].soa_index]) = PhysicsCarProperties::deserialize(*pb);
-			}
-			if (i < accel_settings.size() && accel_settings[i].get_type() == godot::Variant::FLOAT) {
-				cars[i].soa->m_accel_setting[cars[i].soa_index] = accel_settings[i];
+			if (i < property_count) {
+				*(cars[i].soa->car_properties[cars[i].soa_index]) =
+					sampled_car_properties[static_cast<size_t>(i)];
+				cars[i].soa->m_accel_setting[cars[i].soa_index] =
+					sampled_machine_settings[static_cast<size_t>(i)];
 			}
 			cars[i].initialize_machine();
 			cars[i].soa->level_start_time[cars[i].soa_index] += start_countdown_extra_frames;

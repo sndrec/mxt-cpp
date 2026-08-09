@@ -53,6 +53,11 @@ func configure_manual(definitions: Array, player_settings: Array = []) -> void:
 	cars.clear()
 	_configure_archetypes(definitions, player_settings)
 
+func reconfigure_manual(definitions: Array, player_settings: Array = []) -> void:
+	set_process(false)
+	cars.clear()
+	_reconfigure_archetypes(definitions, player_settings)
+
 func set_custom_stamp_atlas(texture: Texture2D) -> void:
 	custom_stamp_atlas_texture = texture
 	_update_stamp_material_custom_atlases()
@@ -88,7 +93,7 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		else:
 			archetype_index = archetypes.size()
 			archetype_map[key] = archetype_index
-			archetypes.append(_build_archetype(def, livery))
+			archetypes.append(_build_archetype(def, livery, key))
 		var archetype: Dictionary = archetypes[archetype_index]
 		var count: int = archetype["count"]
 		car_archetype_indices[i] = archetype_index
@@ -98,6 +103,65 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		archetypes[archetype_index] = archetype
 	for archetype in archetypes:
 		_resize_passes(archetype, int(archetype["count"]))
+
+func _reconfigure_archetypes(definitions: Array, player_settings: Array = []) -> void:
+	car_archetype_indices.resize(definitions.size())
+	car_slots.resize(definitions.size())
+	if !multimesh_render_enabled:
+		clear_renderer()
+		car_archetype_indices.resize(definitions.size())
+		car_slots.resize(definitions.size())
+		for i in range(definitions.size()):
+			car_archetype_indices[i] = -1
+			car_slots[i] = -1
+		return
+	var reusable := {}
+	for archetype in archetypes:
+		var existing_key := str(archetype.get("key", ""))
+		if existing_key != "":
+			reusable[existing_key] = archetype
+	var next_archetypes: Array = []
+	var archetype_map := {}
+	for i in range(definitions.size()):
+		var definition: CarDefinition = definitions[i]
+		var livery := _livery_for_index(i, definition, player_settings)
+		var key := _definition_key(definition, livery)
+		var archetype_index := -1
+		if archetype_map.has(key):
+			archetype_index = int(archetype_map[key])
+		else:
+			archetype_index = next_archetypes.size()
+			archetype_map[key] = archetype_index
+			var archetype: Dictionary
+			if reusable.has(key):
+				archetype = reusable[key]
+				reusable.erase(key)
+				archetype["indices"] = []
+				archetype["count"] = 0
+			else:
+				archetype = _build_archetype(definition, livery, key)
+			next_archetypes.append(archetype)
+		var target: Dictionary = next_archetypes[archetype_index]
+		var count := int(target["count"])
+		car_archetype_indices[i] = archetype_index
+		car_slots[i] = count
+		target["indices"].append(i)
+		target["count"] = count + 1
+		next_archetypes[archetype_index] = target
+	for obsolete in reusable.values():
+		_free_archetype_nodes(obsolete)
+	archetypes = next_archetypes
+	for archetype in archetypes:
+		_resize_passes(archetype, int(archetype["count"]))
+
+func _free_archetype_nodes(archetype: Dictionary) -> void:
+	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, "shadow", PASS_STAMP, "thruster"]:
+		if !archetype.has(pass_name):
+			continue
+		var pass_data: Dictionary = archetype[pass_name]
+		var node := pass_data.get("node", null) as Node
+		if node != null and is_instance_valid(node):
+			node.queue_free()
 
 func begin_manual_submit() -> void:
 	for archetype in archetypes:
@@ -109,11 +173,11 @@ func begin_manual_submit() -> void:
 		var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
 		thruster_multimesh.visible_instance_count = 0
 
-func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Color, outline_velocity: Vector3, outline_overlay: Color, thrust: float, submit_outlines: bool = true) -> void:
+func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Color, outline_velocity: Vector3, outline_overlay: Color, thrust: float, submit_outlines: bool = true, isolated: bool = false) -> void:
 	if index < 0 or index >= car_archetype_indices.size() or index >= car_slots.size():
 		return
 	var archetype_index := car_archetype_indices[index]
-	var slot := car_slots[index]
+	var slot := 0 if isolated else car_slots[index]
 	if archetype_index < 0 or archetype_index >= archetypes.size() or slot < 0:
 		return
 	var archetype: Dictionary = archetypes[archetype_index]
@@ -233,7 +297,7 @@ func _definition_key(definition: CarDefinition, livery: CarLivery = null) -> Str
 		return base_key
 	return "%s:%s" % [base_key, livery.get_livery_hash()]
 
-func _build_archetype(definition: CarDefinition, livery: CarLivery = null) -> Dictionary:
+func _build_archetype(definition: CarDefinition, livery: CarLivery = null, key := "") -> Dictionary:
 	var template: Node3D = definition.car_scene.instantiate()
 	var root_transform := template.transform
 	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
@@ -242,6 +306,7 @@ func _build_archetype(definition: CarDefinition, livery: CarLivery = null) -> Di
 	var outline_main_mesh: MeshInstance3D = template.get_node("VEHICLE_OUTLINE_MAIN")
 	var thruster_data := _collect_thruster_data(template, root_transform)
 	var archetype := {
+		"key": key if key != "" else _definition_key(definition, livery),
 		"indices": [],
 		"count": 0,
 		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh.mesh, null if stamp_only_mode else main_mesh.material_override, root_transform * main_mesh.transform, 1, 0, livery),

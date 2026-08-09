@@ -65,7 +65,8 @@ static godot::Transform3D build_camera_transform(const godot::Vector3& position,
 		visual_args[9] = car.soa->speed_kmh[car.soa_index];
 		visual_args[10] = car.soa->energy[car.soa_index];
 		visual_args[11] = car.soa->lap_progress[car.soa_index];
-		visual_args[12] = car.soa->boost_frames[car.soa_index];
+		visual_args[12] = std::max(car.soa->boost_frames_manual[car.soa_index],
+			car.soa->boost_frames_dash[car.soa_index]);
 		visual_args[13] = car.soa->boost_frames_manual[car.soa_index];
 		visual_args[14] = car.soa->lap[car.soa_index];
 		visual_args[15] = car.soa->machine_state[car.soa_index];
@@ -105,6 +106,7 @@ static godot::Transform3D build_camera_transform(const godot::Vector3& position,
 		visual_args[49] = gd_vec3(LOAD_INDEXED_VEC3(*car.soa, track_surface_pos, car.soa_index));
 		visual_args[50] = car.soa->calced_max_energy[car.soa_index];
 		visual_args[51] = static_cast<int>(car.soa->attack_cooldown_frames[car.soa_index]);
+		visual_args[52] = car.soa->boost_energy_use_mult[car.soa_index];
 	}
 
 static inline godot::AABB gd_aabb(const SimAABB& b)
@@ -854,7 +856,8 @@ void GameSim::apply_render_multimeshes(float alpha)
 				archetype < static_cast<int>(render_outline_local_transforms.size()) &&
 				render_outline_multimeshes[archetype].is_valid() && body_buffers.outline_write) {
 			const SimTransform outline_transform = visual_transform * render_outline_local_transforms[archetype];
-			const float boost_outline = std::max(0.0f, std::min(1.0f, soa.boost_frames[lane] * 0.005f));
+			const float boost_outline = std::max(0.0f, std::min(1.0f,
+				static_cast<float>(std::max(soa.boost_frames_manual[lane], soa.boost_frames_dash[lane])) * 0.005f));
 			write_multimesh_buffer_instance(body_buffers.outline_write, visible_slot, outline_transform,
 				godot::Color(0.5f * boost_outline, 0.7f * boost_outline, 1.0f * boost_outline, 1.0f),
 				godot::Color(outline_velocity.x, outline_velocity.y, outline_velocity.z, 1.0f));
@@ -1104,9 +1107,11 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 		const float energy_ratio = std::clamp(soa.energy[lane] / max_energy, 0.0f, 1.0f);
 		const float health_effect_ratio = std::min(1.0f, energy_ratio * 4.0f);
 		const float low_energy_ratio = std::max(0.0f, 1.0f - health_effect_ratio);
-		const float boost_frames = static_cast<float>(std::max(soa.boost_frames[lane], soa.boost_frames_manual[lane]));
-		const float boost_duration_frames = std::max(1.0f, soa.stat_boost_length[lane] * 60.0f);
-		const float boost_ratio = boost_frames / boost_duration_frames;
+		const float manual_boost_ratio = static_cast<float>(soa.boost_frames_manual[lane]) /
+			static_cast<float>(std::max(1u, soa.boost_duration_manual_frames[lane]));
+		const float dash_boost_ratio = static_cast<float>(soa.boost_frames_dash[lane]) /
+			static_cast<float>(std::max(1u, soa.boost_duration_dash_frames[lane]));
+		const float boost_ratio = std::max(manual_boost_ratio, dash_boost_ratio);
 		const float low_energy_flash = (std::sin(static_cast<float>(tick) * 0.25f) * 0.5f + 0.5f) * low_energy_ratio;
 		refs.energy_overlay = godot::Color(0.8f * low_energy_flash, -0.2f * low_energy_flash, -0.2f * low_energy_flash, 1.0f);
 		const float thrust = std::max(0.0f, (soa.input_accel[lane] + std::sqrt(std::max(0.0f, soa.boost_turbo[lane])) * 0.1f) * soa.input_accel[lane]);
@@ -1246,7 +1251,7 @@ void GameSim::update_native_visual_effects(int visual_count, float alpha, bool s
 			const SimVec3 track_surface_pos = LOAD_INDEXED_VEC3(soa, position_current, lane) - track_up * ground_distance;
 			const bool boosting =
 				full &&
-				((soa.boost_frames[lane] > 0u || soa.boost_frames_manual[lane] > 0u) &&
+				((soa.boost_frames_dash[lane] > 0u || soa.boost_frames_manual[lane] > 0u) &&
 					(machine_state & MACHINESTATE::AIRBORNE) == 0u);
 			pool_slot->boost_electricity->set("boosting", boosting);
 			pool_slot->boost_electricity->set("visible", true);
@@ -1668,7 +1673,7 @@ void GameSim::update_super_spark_visuals()
 			profile_step = now;
 		}
 		godot::Array local_visual_args;
-		local_visual_args.resize(52);
+		local_visual_args.resize(53);
 		for (int i = 0; i < vis_cars.size(); i++) {
 			godot::Object *vis_car = Object::cast_to<godot::Object>(vis_cars[i]);
 			if (vis_car && static_cast<bool>(vis_car->get("local_visual_enabled"))) {

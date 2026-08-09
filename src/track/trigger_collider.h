@@ -28,7 +28,6 @@ public:
 
 class Dashplate : public TriggerCollider {
 public:
-    static constexpr float kHeatTurboMultiplier = 0.2f;
     static constexpr float kHeatMin = 0.0f;
     static constexpr float kHeatMax = 10.0f;
 

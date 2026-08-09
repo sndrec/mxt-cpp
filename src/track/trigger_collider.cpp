@@ -183,8 +183,8 @@ void Dashplate::start_touch(PhysicsCar* car)
 
 	last_activation_tick = current_tick;
 
-	float turbo_multiplier = 1.0f + heat * kHeatTurboMultiplier * reward_scale;
-	car->soa->dashplate_heat_multiplier[car->soa_index] = turbo_multiplier;
+	car->soa->pending_dashplate_heat[car->soa_index] = heat;
+	car->soa->pending_dashplate_heat_reward_scale[car->soa_index] = reward_scale;
 }
 
 Jumpplate::Jumpplate() { type = TRIGGER_TYPE::JUMPPLATE; }

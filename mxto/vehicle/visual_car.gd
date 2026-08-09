@@ -97,6 +97,7 @@ var speed_kmh := 0.0
 var air_tilt := 0.0
 var energy := 0.0
 var calced_max_energy := 100.0
+var boost_energy_use_rate := 1.0
 var s_boost_charge := 0
 var s_boost_charge_max := 60
 var s_boost_active := false
@@ -347,7 +348,8 @@ func apply_sim_state(
 	in_camera_repositioning: float,
 	in_track_surface_pos: Vector3,
 	in_calced_max_energy: float = 100.0,
-	in_attack_cooldown_frames: int = 0
+	in_attack_cooldown_frames: int = 0,
+	in_boost_energy_use_rate: float = 1.0
 ) -> void:
 	position_current = in_position_current
 	position_old = in_position_old
@@ -401,6 +403,7 @@ func apply_sim_state(
 	track_surface_pos = in_track_surface_pos
 	calced_max_energy = in_calced_max_energy
 	attack_cooldown_frames = in_attack_cooldown_frames
+	boost_energy_use_rate = in_boost_energy_use_rate
 	if !is_processing():
 		_apply_low_cost_visual_state()
 
@@ -685,11 +688,7 @@ func _process(delta: float) -> void:
 	#DebugDraw2D.set_text("rollback offset error", interp_err)
 	#car_transform.global_transform.origin += interp_err
 	#car_transform.global_transform.basis = car_transform.global_transform.basis * interp_rerr
-	var calced_max_energy := 100.0
 	var energy_ratio : float = minf(1.0, (energy / calced_max_energy) * 4.0)
-	#var manual_boost_visual := float(boost_frames_manual) / (car_definition.boost_length * Engine.physics_ticks_per_second)
-	#var dashplate_visual := float(boost_frames) / (car_definition.boost_length * Engine.physics_ticks_per_second * 0.5)
-	#var boost_ratio : float = dashplate_visual if (machine_state & FZ_MS.BOOSTING_DASHPLATE) else manual_boost_visual
 	var energy_flash := Color(0.04, -0.01, -0.01) * (sin(0.015 * Time.get_ticks_msec()) * 0.5 + 0.5) * (1.0 - energy_ratio)
 	#var boost_flash := Color(0, 0.03, 0.075) * (boost_ratio)
 	#var final_overlay := energy_flash + boost_flash + Color(1, 1, 1) * damage * 0.1

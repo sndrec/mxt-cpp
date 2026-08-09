@@ -112,9 +112,10 @@ const AUTH_INPUT_META_PRESENT_BIT := 1 << 40
 const SERVER_TIMING_SYNC_INTERVAL_TICKS := 1
 const CLIENT_TIMING_PING_INTERVAL_MS := 250
 const LOBBY_LATENCY_SAMPLE_INTERVAL_MS := 1000
+const LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES := 16 * 1024 * 1024
 var player_settings := {}
-const PLAYER_SETTINGS_RESYNC_INTERVAL_SEC := 1.0
-var _settings_resync_timer: Timer
+var player_settings_revisions := {}
+var lobby_settings_revision := 0
 const STATE_BROADCAST_INTERVAL_TICKS := 60
 const STATE_CHUNK_PAYLOAD_BYTES := 1000
 const STATE_MAX_PAYLOAD_BYTES := 16 * 1024 * 1024
@@ -154,6 +155,28 @@ var delayed_peer_ids := {}
 var lobby_latency_rtt_s := {}
 var lobby_latency_pending_msec := {}
 var lobby_latency_last_sample_msec := 0
+var log_lobby_frame_samples := 0
+var log_lobby_frame_us := 0
+var log_lobby_frame_max_us := 0
+var log_lobby_player_list_us := 0
+var log_lobby_player_list_max_us := 0
+var log_lobby_chibi_us := 0
+var log_lobby_chibi_max_us := 0
+var log_lobby_render_rebuilds := 0
+var log_lobby_render_rebuild_us := 0
+var log_lobby_render_rebuild_max_us := 0
+var log_lobby_settings_in := 0
+var log_lobby_settings_out := 0
+var log_lobby_settings_bytes_in := 0
+var log_lobby_settings_bytes_out := 0
+var log_lobby_settings_accepted := 0
+var log_lobby_settings_deduped := 0
+var log_lobby_chibi_in := 0
+var log_lobby_chibi_out := 0
+var log_lobby_chibi_bytes_in := 0
+var log_lobby_chibi_bytes_out := 0
+var log_lobby_peer_connects := 0
+var log_lobby_peer_disconnects := 0
 
 const CPU_ID_MIN := 1
 const CPU_ID_MAX := 5000
@@ -638,7 +661,7 @@ func _init_logger() -> void:
 	var fname := "logs/" + role + "-" + str(Time.get_unix_time_from_system()) + "-" + str(multiplayer.get_unique_id()) + ".log"
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
-		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,rtt_variance,input_forward_redundancy,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_compression_candidates,auth_build_ms,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot")
+		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,rtt_variance,input_forward_redundancy,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_compression_candidates,auth_build_ms,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot,lobby_frame_samples,lobby_frame_avg_ms,lobby_frame_max_ms,lobby_player_list_avg_ms,lobby_player_list_max_ms,lobby_chibi_avg_ms,lobby_chibi_max_ms,lobby_render_rebuilds,lobby_render_rebuild_avg_ms,lobby_render_rebuild_max_ms,lobby_settings_in,lobby_settings_out,lobby_settings_bytes_in,lobby_settings_bytes_out,lobby_settings_accepted,lobby_settings_deduped,lobby_chibi_in,lobby_chibi_out,lobby_chibi_bytes_in,lobby_chibi_bytes_out,lobby_peer_connects,lobby_peer_disconnects,stamp_manifest_in,stamp_manifest_out,stamp_manifest_bytes_in,stamp_manifest_bytes_out,stamp_manifest_accepted,stamp_manifest_deduped,stamp_blob_in,stamp_blob_out,stamp_blob_bytes_in,stamp_blob_bytes_out,stamp_blob_accepted,stamp_blob_deduped,stamp_blob_queue_messages,stamp_blob_queue_bytes,engine_process_ms,engine_physics_ms,draw_calls")
 	_log_timer = Timer.new()
 	_log_timer.wait_time = 1.0
 	_log_timer.one_shot = false
@@ -1185,6 +1208,26 @@ func _id_array_from_value(value) -> Array:
 			out.append(id)
 	return out
 
+func record_lobby_frame(frame_us: int, player_list_us: int, chibi_us: int) -> void:
+	log_lobby_frame_samples += 1
+	log_lobby_frame_us += frame_us
+	log_lobby_frame_max_us = maxi(log_lobby_frame_max_us, frame_us)
+	log_lobby_player_list_us += player_list_us
+	log_lobby_player_list_max_us = maxi(log_lobby_player_list_max_us, player_list_us)
+	log_lobby_chibi_us += chibi_us
+	log_lobby_chibi_max_us = maxi(log_lobby_chibi_max_us, chibi_us)
+
+func record_lobby_render_rebuild(rebuild_us: int) -> void:
+	log_lobby_render_rebuilds += 1
+	log_lobby_render_rebuild_us += rebuild_us
+	log_lobby_render_rebuild_max_us = maxi(log_lobby_render_rebuild_max_us, rebuild_us)
+
+func record_lobby_chibi_network(in_messages: int, in_bytes: int, out_messages: int, out_bytes: int) -> void:
+	log_lobby_chibi_in += in_messages
+	log_lobby_chibi_bytes_in += in_bytes
+	log_lobby_chibi_out += out_messages
+	log_lobby_chibi_bytes_out += out_bytes
+
 func _flush_log() -> void:
 	if !log_enabled or log_file == null or !has_network_peer():
 		return
@@ -1269,10 +1312,78 @@ func _flush_log() -> void:
 	line += "," + str(log_state_sec_header) + "," + str(log_state_sec_bumper_meta) + "," + str(log_state_sec_sparks) + "," + str(log_state_sec_car_scalars) + "," + str(log_state_sec_car_vec3) + "," + str(log_state_sec_car_basis) + "," + str(log_state_sec_car_conditionals) + "," + str(log_state_sec_car_tilt) + "," + str(log_state_sec_car_wall) + "," + str(log_state_sec_bumper_total) + "," + str(log_state_sec_triggers) + "," + str(log_state_sec_total) + "," + str(log_state_stat_car_count) + "," + str(log_state_stat_bumper_count) + "," + str(log_state_stat_active_bumpers) + "," + str(log_state_stat_active_sparks) + "," + str(log_state_stat_trigger_count) + "," + str(log_state_stat_car_collision_old) + "," + str(log_state_stat_car_restore)
 	var admission_fields := _race_admission_log_fields()
 	line += "," + str(admission_fields["ready"]) + "," + str(admission_fields["roster"]) + "," + str(admission_fields["blocked"]) + "," + str(admission_fields["snapshot"])
+	var lobby_samples := maxi(log_lobby_frame_samples, 1)
+	var rebuild_samples := maxi(log_lobby_render_rebuilds, 1)
+	var stamp_log := custom_stamp_network.consume_log_interval()
+	var lobby_fields := [
+		log_lobby_frame_samples,
+		float(log_lobby_frame_us) / float(lobby_samples) / 1000.0,
+		float(log_lobby_frame_max_us) / 1000.0,
+		float(log_lobby_player_list_us) / float(lobby_samples) / 1000.0,
+		float(log_lobby_player_list_max_us) / 1000.0,
+		float(log_lobby_chibi_us) / float(lobby_samples) / 1000.0,
+		float(log_lobby_chibi_max_us) / 1000.0,
+		log_lobby_render_rebuilds,
+		float(log_lobby_render_rebuild_us) / float(rebuild_samples) / 1000.0,
+		float(log_lobby_render_rebuild_max_us) / 1000.0,
+		log_lobby_settings_in,
+		log_lobby_settings_out,
+		log_lobby_settings_bytes_in,
+		log_lobby_settings_bytes_out,
+		log_lobby_settings_accepted,
+		log_lobby_settings_deduped,
+		log_lobby_chibi_in,
+		log_lobby_chibi_out,
+		log_lobby_chibi_bytes_in,
+		log_lobby_chibi_bytes_out,
+		log_lobby_peer_connects,
+		log_lobby_peer_disconnects,
+		stamp_log["manifest_in"],
+		stamp_log["manifest_out"],
+		stamp_log["manifest_bytes_in"],
+		stamp_log["manifest_bytes_out"],
+		stamp_log["manifest_accepted"],
+		stamp_log["manifest_deduped"],
+		stamp_log["blob_in"],
+		stamp_log["blob_out"],
+		stamp_log["blob_bytes_in"],
+		stamp_log["blob_bytes_out"],
+		stamp_log["blob_accepted"],
+		stamp_log["blob_deduped"],
+		stamp_log["blob_queue_messages"],
+		stamp_log["blob_queue_bytes"],
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+	]
+	for value in lobby_fields:
+		line += "," + str(value)
 	log_file.store_line(line)
 	log_file.flush()
 	log_bytes_out_interval = 0
 	log_bytes_in_interval = 0
+	log_lobby_frame_samples = 0
+	log_lobby_frame_us = 0
+	log_lobby_frame_max_us = 0
+	log_lobby_player_list_us = 0
+	log_lobby_player_list_max_us = 0
+	log_lobby_chibi_us = 0
+	log_lobby_chibi_max_us = 0
+	log_lobby_render_rebuilds = 0
+	log_lobby_render_rebuild_us = 0
+	log_lobby_render_rebuild_max_us = 0
+	log_lobby_settings_in = 0
+	log_lobby_settings_out = 0
+	log_lobby_settings_bytes_in = 0
+	log_lobby_settings_bytes_out = 0
+	log_lobby_settings_accepted = 0
+	log_lobby_settings_deduped = 0
+	log_lobby_chibi_in = 0
+	log_lobby_chibi_out = 0
+	log_lobby_chibi_bytes_in = 0
+	log_lobby_chibi_bytes_out = 0
+	log_lobby_peer_connects = 0
+	log_lobby_peer_disconnects = 0
 	log_net_cpu_us_interval = 0
 	log_rollback_us_sum = 0
 	log_rollback_us_count = 0
@@ -1485,8 +1596,11 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	player_settings.clear()
+	player_settings_revisions.clear()
+	lobby_settings_revision += 1
 	for id in preserved_player_settings.keys():
 		player_settings[id] = preserved_player_settings[id]
+		player_settings_revisions[id] = 1
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
 		player_settings[id] = settings
@@ -1595,13 +1709,6 @@ func _ready() -> void:
 	add_child(server_process_timer)
 	server_process_timer.timeout.connect(server_process)
 	server_process_timer.start(1.0 / 60.0)
-	_settings_resync_timer = Timer.new()
-	_settings_resync_timer.ignore_time_scale = true
-	_settings_resync_timer.wait_time = PLAYER_SETTINGS_RESYNC_INTERVAL_SEC
-	_settings_resync_timer.one_shot = false
-	_settings_resync_timer.timeout.connect(_resync_player_settings)
-	add_child(_settings_resync_timer)
-	_settings_resync_timer.start()
 	multiplayer.server_disconnected.connect(on_disconnect)
 
 func on_disconnect() -> void:
@@ -1810,6 +1917,8 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	player_ids = [multiplayer.get_unique_id()]
 	_ensure_cpu_ids_do_not_overlap_humans("host")
 	player_settings.clear()
+	player_settings_revisions.clear()
+	lobby_settings_revision += 1
 	custom_stamp_network.clear()
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
@@ -1877,6 +1986,8 @@ func join(ip: String, port: int = 27016) -> int:
 	_reset_start_sync_state()
 	player_ids = [multiplayer.get_unique_id()]
 	player_settings.clear()
+	player_settings_revisions.clear()
+	lobby_settings_revision += 1
 	custom_stamp_network.clear()
 	for id in cpu_player_ids:
 		var settings = cpu_player_settings.get(id, {})
@@ -1890,12 +2001,14 @@ func join(ip: String, port: int = 27016) -> int:
 	return OK
 
 func _on_peer_connected(id: int) -> void:
+	log_lobby_peer_connects += 1
 	if is_server:
 		if !_unverified_peers.has(id):
 			_unverified_peers.append(id)
 		_version_request_time[id] = 0.001 * float(Time.get_ticks_msec())
 		_request_client_version.rpc_id(id, version_string)
 func _on_peer_disconnected(id: int) -> void:
+	log_lobby_peer_disconnects += 1
 	if is_server:
 		if _unverified_peers.has(id):
 			_unverified_peers.erase(id)
@@ -1924,6 +2037,8 @@ func _on_peer_disconnected(id: int) -> void:
 			delayed_peer_ids.erase(id)
 		if player_settings.has(id):
 			player_settings.erase(id)
+			player_settings_revisions.erase(id)
+			lobby_settings_revision += 1
 		custom_stamp_network.remove_peer(id)
 		if last_received_tick.has(id):
 			last_received_tick.erase(id)
@@ -1979,8 +2094,7 @@ func _accept_peer(id: int) -> void:
 			_broadcast_cpu_roster()
 		_send_cpu_roster_to_peer(id)
 		sync_race_options.rpc_id(id, race_options)
-	for pid in player_settings.keys():
-		update_player_settings.rpc_id(id, player_settings[pid], pid)
+	_send_player_settings_snapshot_to_peer(id)
 	custom_stamp_network.send_manifests_to_peer(id)
 	_calc_state_offsets()
 
@@ -2033,8 +2147,7 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 		server_netcode_session.set_peer_last_received(id, -1, last_input_time[id])
 		server_netcode_session.set_peer_desired_ahead(id, 0.0)
 		if !race_active:
-			for pid in player_settings.keys():
-				update_player_settings.rpc_id(id, player_settings[pid], pid)
+			_send_player_settings_snapshot_to_peer(id)
 			custom_stamp_network.send_manifests_to_peer(id)
 	waiting_peers.clear()
 	_update_player_ids.rpc(player_ids)
@@ -2042,7 +2155,7 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 	for id in new_ids:
 		_send_cpu_roster_to_peer(id)
 		if !race_active and player_settings.has(id):
-			update_player_settings.rpc(player_settings[id], id)
+			_send_player_settings_update(player_settings[id], id)
 
 func broadcast_lobby_roster() -> void:
 	if !is_server:
@@ -2230,11 +2343,66 @@ func send_player_settings(settings: Dictionary) -> void:
 	settings = _merge_existing_livery_settings(settings, multiplayer.get_unique_id())
 	var my_id := multiplayer.get_unique_id()
 	if is_server:
-		update_player_settings(settings, my_id)
-		update_player_settings.rpc(settings, my_id)
+		_apply_player_settings_update(settings, my_id, 0)
+		_send_player_settings_update(settings, my_id)
 	else:
-		update_player_settings.rpc_id(1, settings)
-		player_settings[my_id] = settings
+		_send_player_settings_update(settings, -1, 1)
+		_store_player_settings(my_id, settings)
+
+func _send_player_settings_update(settings: Dictionary, id: int, peer_id: int = 0) -> void:
+	var raw := var_to_bytes(settings)
+	if raw.is_empty() or raw.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
+		return
+	var payload := raw.compress(FileAccess.COMPRESSION_ZSTD)
+	if payload.is_empty():
+		payload = raw
+	if peer_id > 0:
+		_receive_player_settings_update.rpc_id(peer_id, raw.size(), payload, id)
+		log_lobby_settings_out += 1
+		log_lobby_settings_bytes_out += payload.size()
+	else:
+		_receive_player_settings_update.rpc(raw.size(), payload, id)
+		var recipients := multiplayer.get_peers().size()
+		log_lobby_settings_out += recipients
+		log_lobby_settings_bytes_out += payload.size() * recipients
+
+func _send_player_settings_snapshot_to_peer(peer_id: int) -> void:
+	if !is_server or race_active or player_settings.is_empty() or !_can_send_rpc_to_peer(peer_id):
+		return
+	var raw := var_to_bytes(player_settings)
+	if raw.is_empty() or raw.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
+		push_warning("Lobby settings snapshot rejected before send: %d bytes" % raw.size())
+		return
+	var compressed := raw.compress(FileAccess.COMPRESSION_ZSTD)
+	if compressed.is_empty():
+		compressed = raw
+	_receive_player_settings_snapshot.rpc_id(peer_id, raw.size(), compressed)
+	log_lobby_settings_out += 1
+	log_lobby_settings_bytes_out += compressed.size()
+
+@rpc("authority", "call_remote", "reliable", 10)
+func _receive_player_settings_snapshot(raw_size: int, payload: PackedByteArray) -> void:
+	if is_server or race_active or raw_size <= 0 or raw_size > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
+		return
+	if payload.is_empty() or payload.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
+		return
+	log_lobby_settings_in += 1
+	log_lobby_settings_bytes_in += payload.size()
+	var raw := payload.decompress(raw_size, FileAccess.COMPRESSION_ZSTD)
+	if raw.is_empty() and payload.size() == raw_size:
+		raw = payload
+	if raw.size() != raw_size:
+		push_warning("Rejected malformed lobby settings snapshot")
+		return
+	var decoded = bytes_to_var(raw)
+	if typeof(decoded) != TYPE_DICTIONARY:
+		return
+	for raw_id in (decoded as Dictionary).keys():
+		var id := int(raw_id)
+		var settings = (decoded as Dictionary)[raw_id]
+		if id <= 0 or typeof(settings) != TYPE_DICTIONARY:
+			continue
+		_store_player_settings(id, settings)
 
 func _set_next_race_accel_setting(id: int, accel_setting: float) -> void:
 	accel_setting = clampf(accel_setting, 0.0, 1.0)
@@ -2244,7 +2412,7 @@ func _set_next_race_accel_setting(id: int, accel_setting: float) -> void:
 	else:
 		settings = {}
 	settings["accel_setting"] = accel_setting
-	player_settings[id] = settings
+	_store_player_settings(id, settings)
 
 func send_next_race_accel_setting(accel_setting: float) -> void:
 	var my_id := multiplayer.get_unique_id()
@@ -2256,7 +2424,7 @@ func send_next_race_accel_setting(accel_setting: float) -> void:
 	else:
 		update_next_race_accel_setting.rpc_id(1, accel_setting)
 
-@rpc("any_peer", "reliable")
+@rpc("any_peer", "call_remote", "reliable", 10)
 func update_next_race_accel_setting(accel_setting: float, id: int = -1) -> void:
 	var sender_id := multiplayer.get_remote_sender_id()
 	if is_server and sender_id != 0:
@@ -2271,22 +2439,44 @@ func update_next_race_accel_setting(accel_setting: float, id: int = -1) -> void:
 	if is_server:
 		update_next_race_accel_setting.rpc(accel_setting, id)
 
-@rpc("any_peer", "reliable")
-func update_player_settings(settings: Dictionary, id: int = -1) -> void:
+@rpc("any_peer", "call_remote", "reliable", 10)
+func _receive_player_settings_update(raw_size: int, payload: PackedByteArray, id: int = -1) -> void:
 	if race_active:
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
-	if id == -1:
+	if sender_id != 0:
+		log_lobby_settings_in += 1
+		log_lobby_settings_bytes_in += payload.size()
+	if raw_size <= 0 or raw_size > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES or payload.is_empty() or payload.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
+		return
+	if !is_server and sender_id != 1:
+		return
+	var raw := payload.decompress(raw_size, FileAccess.COMPRESSION_ZSTD)
+	if raw.is_empty() and payload.size() == raw_size:
+		raw = payload
+	if raw.size() != raw_size:
+		return
+	var decoded = bytes_to_var(raw)
+	if typeof(decoded) != TYPE_DICTIONARY:
+		return
+	_apply_player_settings_update(decoded, id, sender_id)
+
+func _apply_player_settings_update(settings: Dictionary, id: int, sender_id: int) -> void:
+	if is_server and sender_id != 0:
+		id = sender_id
+		settings = _merge_existing_livery_settings(settings, id)
+	elif id == -1:
 		id = sender_id
 		if id == 0:
 			id = multiplayer.get_unique_id()
 		settings = _merge_existing_livery_settings(settings, id)
-		player_settings[id] = settings
-		if is_server and sender_id != 0:
-			update_player_settings.rpc(settings, id)
 	else:
 		settings = _merge_existing_livery_settings(settings, id)
-		player_settings[id] = settings
+	if !_store_player_settings(id, settings):
+		return
+	settings = player_settings[id]
+	if is_server and sender_id != 0:
+		_send_player_settings_update(settings, id)
 	if id == multiplayer.get_unique_id():
 		if settings.get("spectator", false):
 			desired_ahead_ticks = 1.0
@@ -2304,7 +2494,6 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 					if cpu_ids_changed:
 						_broadcast_cpu_roster()
 				_calc_state_offsets()
-
 		else:
 			if spectator_ids.has(id):
 				spectator_ids.erase(id)
@@ -2316,6 +2505,22 @@ func update_player_settings(settings: Dictionary, id: int = -1) -> void:
 					if cpu_ids_changed:
 						_broadcast_cpu_roster()
 				_calc_state_offsets()
+
+func _store_player_settings(id: int, settings: Dictionary) -> bool:
+	if id <= 0:
+		return false
+	var existing = player_settings.get(id, null)
+	if typeof(existing) == TYPE_DICTIONARY and existing == settings:
+		log_lobby_settings_deduped += 1
+		return false
+	player_settings[id] = settings.duplicate(true)
+	player_settings_revisions[id] = int(player_settings_revisions.get(id, 0)) + 1
+	lobby_settings_revision += 1
+	log_lobby_settings_accepted += 1
+	return true
+
+func get_player_settings_revision(id: int) -> int:
+	return int(player_settings_revisions.get(id, 0))
 
 func _merge_existing_livery_settings(settings: Dictionary, id: int) -> Dictionary:
 	if settings.has("car_livery") or !player_settings.has(id):
@@ -2337,38 +2542,6 @@ func _get_local_player_settings_snapshot() -> Dictionary:
 	if typeof(settings) == TYPE_DICTIONARY:
 		return settings
 	return {}
-
-func _settings_resync_recipients() -> Array:
-	var recipients := []
-	for source in [player_ids, spectator_ids, waiting_peers]:
-		for id in source:
-			if cpu_player_ids.has(id):
-				continue
-			if recipients.has(id):
-				continue
-			recipients.append(id)
-	return recipients
-
-func _rebroadcast_player_settings_to_peer(peer_id: int) -> void:
-	for pid in player_settings.keys():
-		update_player_settings.rpc_id(peer_id, player_settings[pid], pid)
-
-func _resync_player_settings() -> void:
-	if game_manager != null and game_manager.singleplayer_mode:
-		return
-	if !has_network_peer():
-		return
-	if race_active:
-		return
-	var local_settings := _get_local_player_settings_snapshot()
-	if !local_settings.is_empty():
-		local_settings.erase("car_livery")
-		var my_id := multiplayer.get_unique_id()
-		player_settings[my_id] = _merge_existing_livery_settings(local_settings, my_id)
-		if is_server:
-			update_player_settings(local_settings, my_id)
-		else:
-			update_player_settings.rpc_id(1, local_settings)
 
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input
@@ -3144,6 +3317,8 @@ func disconnect_from_server() -> void:
 	rtt_s = 0.0
 	rtt_variance_s = 0.0
 	player_settings.clear()
+	player_settings_revisions.clear()
+	lobby_settings_revision += 1
 	custom_stamp_network.clear()
 	_unverified_peers.clear()
 	_version_request_time.clear()

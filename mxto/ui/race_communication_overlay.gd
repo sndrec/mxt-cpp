@@ -49,6 +49,7 @@ var _scroll_to_bottom_pending := false
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	chat_area.visible = true
+	chat_area.mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED
 	_configure_chat_panel()
 	history_panel.visible = true
 	history_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -81,6 +82,7 @@ func open_chat() -> void:
 	if _chat_open:
 		return
 	_chat_open = true
+	chat_area.mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_ENABLED
 	history_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	history_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	chat_input.visible = true
@@ -95,6 +97,7 @@ func close_chat() -> void:
 		return
 	_chat_open = false
 	chat_input.release_focus()
+	chat_area.mouse_behavior_recursive = Control.MOUSE_BEHAVIOR_DISABLED
 	history_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	history_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_fade_chat_chrome(0.0)

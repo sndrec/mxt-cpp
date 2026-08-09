@@ -283,7 +283,8 @@ void GameSim::rebuild_static_state_after_network_load() {
 		const int lane = car.soa_index;
 		car.update_machine_stats();
 		if (soa.car_properties[lane]) {
-			soa.calced_max_energy[lane] = soa.car_properties[lane]->max_energy + soa.ko_energy_bonus[lane];
+			soa.calced_max_energy[lane] =
+				soa.car_properties[lane]->base_stats[CAR_STAT_MAX_ENERGY] + soa.ko_energy_bonus[lane];
 		}
 		soa.weight_derived_1[lane] = 52.0f * soa.stat_weight[lane] * 0.0625f;
 		soa.weight_derived_2[lane] = 45.0f * soa.stat_weight[lane] * 0.0625f;

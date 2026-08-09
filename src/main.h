@@ -518,6 +518,10 @@ namespace godot {
 		godot::PackedInt64Array get_render_profile_last_sample() const;
 		void set_render_profile_enabled(bool enabled);
 		void set_render_node_effects_enabled(bool enabled);
+		godot::Dictionary sample_car_properties(const godot::PackedByteArray& bytes, double machine_setting) const;
+		godot::Dictionary evaluate_car_properties(const godot::PackedByteArray& bytes, double machine_setting,
+			bool genuinely_drifting, double strafe_input, double signed_slip,
+			bool manual_boost_active, bool dashplate_boost_active, bool s_boost_active) const;
 		void set_render_thruster_lights_enabled(bool enabled);
 		void set_render_all_car_bodies(bool enabled);
 		void set_render_car_body_view_distance(double distance);

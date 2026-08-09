@@ -59,6 +59,7 @@ var replay_playback_paused: bool = false
 var replay_playback_rate: float = 1.0
 var replay_seek_checkpoints: Array = []
 var replay_seeking_active: bool = false
+var replay_normal_playback_tick_active: bool = false
 var replay_camera_mode: int = REPLAY_CAMERA_GAME
 var replay_auto_camera: Camera3D
 var replay_relative_camera: Camera3D
@@ -247,6 +248,7 @@ func reset_for_transition(save_server_replay: bool) -> void:
 	replay_playback_use_singleplayer_tick = false
 	replay_playback_paused = false
 	replay_playback_rate = 1.0
+	replay_normal_playback_tick_active = false
 	replay_seek_checkpoints.clear()
 	replay_saved_finish_times.clear()
 	replay_saved_finish_placements.clear()
@@ -866,7 +868,7 @@ func _step_replay_by_ticks(delta_ticks: int) -> void:
 		_seek_replay_to_tick(target_tick, false)
 	else:
 		while game_manager._singleplayer_tick < target_tick and replay_playback_index < replay_playback_frames.size():
-			if !simulate_playback(false, false):
+			if !simulate_playback(false, false, false):
 				break
 		_apply_replay_focus_to_local_visual()
 		if game_manager.game_sim.sim_started:
@@ -969,6 +971,7 @@ func _start_replay_playback_from_path(path: String) -> void:
 	replay_seek_checkpoints.clear()
 	replay_collecting_timeline_markers = false
 	replay_seeking_active = false
+	replay_normal_playback_tick_active = false
 	replay_camera_mode = REPLAY_CAMERA_GAME
 	game_manager.singleplayer_mode = true
 	game_manager._singleplayer_tick = 0
@@ -1026,7 +1029,7 @@ func _start_replay_playback_from_path(path: String) -> void:
 	if game_manager.headless_mode:
 		var replay_fast_forward_start_us := Time.get_ticks_usec()
 		while replay_playback_active and replay_playback_index < replay_playback_frames.size():
-			if !simulate_playback(false, false):
+			if !simulate_playback(false, false, false):
 				get_tree().quit(1)
 				return
 			if replay_strict_verify_requested:
@@ -1103,7 +1106,7 @@ func _bake_replay_seek_checkpoints() -> void:
 	_update_replay_placement_timeline_markers()
 	_capture_replay_seek_checkpoint(0)
 	while replay_playback_index < replay_playback_frames.size():
-		if !simulate_playback(false, false):
+		if !simulate_playback(false, false, false):
 			break
 		if (game_manager._singleplayer_tick % REPLAY_SEEK_CHECKPOINT_INTERVAL) == 0:
 			_capture_replay_seek_checkpoint(game_manager._singleplayer_tick)
@@ -1130,7 +1133,7 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 	replay_playback_index = int(checkpoint.get("index", checkpoint_tick))
 	replay_seeking_active = true
 	while game_manager._singleplayer_tick < target_tick and replay_playback_index < replay_playback_frames.size():
-		if !simulate_playback(false, false):
+		if !simulate_playback(false, false, false):
 			break
 	replay_seeking_active = false
 	game_manager.network_manager.clients_server_tick = game_manager._singleplayer_tick
@@ -1144,7 +1147,10 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 		game_manager._show_race_notification("Replay: %s" % _format_replay_timeline_time(game_manager._singleplayer_tick), 900)
 	return true
 
-func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: bool = true) -> bool:
+func should_enqueue_replay_race_notification() -> bool:
+	return !replay_playback_active or replay_normal_playback_tick_active
+
+func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: bool = true, enqueue_event_notifications: bool = true) -> bool:
 	if respect_pause and replay_playback_paused:
 		return true
 	if replay_playback_index >= replay_playback_frames.size():
@@ -1174,6 +1180,7 @@ func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: b
 				game_manager._return_to_menu()
 		return false
 	var frame_inputs := _decode_replay_frame(frame)
+	replay_normal_playback_tick_active = enqueue_event_notifications
 	if replay_playback_use_singleplayer_tick:
 		var local_id := game_manager._local_player_id()
 		var local_input: PackedByteArray = frame_inputs.get(local_id, game_manager.network_manager.NEUTRAL_INPUT_BYTES)
@@ -1182,6 +1189,7 @@ func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: b
 		for id_value in frame_inputs.keys():
 			game_manager.network_manager.netcode_session.store_pending_input(game_manager._singleplayer_tick, int(id_value), frame_inputs[id_value])
 		if !game_manager.network_manager.netcode_session.tick_server_frame(game_manager.game_sim, game_manager._singleplayer_tick, true):
+			replay_normal_playback_tick_active = false
 			push_warning("Replay playback failed at tick %d" % game_manager._singleplayer_tick)
 			if return_to_menu_on_complete:
 				if game_manager.headless_mode:
@@ -1196,6 +1204,8 @@ func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: b
 	replay_playback_index += 1
 	game_manager._singleplayer_tick += 1
 	game_manager.network_manager.clients_server_tick = game_manager._singleplayer_tick
+	game_manager._check_race_finished()
+	replay_normal_playback_tick_active = false
 	if !replay_seeking_active and (game_manager._singleplayer_tick % REPLAY_SEEK_CHECKPOINT_INTERVAL) == 0:
 		_capture_replay_seek_checkpoint(game_manager._singleplayer_tick)
 	return true

@@ -29,6 +29,93 @@ bool GameSim::get_sim_started()
 	return sim_started;
 }
 
+Dictionary GameSim::sample_car_properties(const PackedByteArray& bytes, double machine_setting) const
+{
+	PhysicsCarProperties properties;
+	String error;
+	Dictionary result;
+	if (!PhysicsCarProperties::deserialize_and_sample(
+			bytes, static_cast<float>(std::clamp(machine_setting, 0.0, 1.0)), properties, error)) {
+		result[StringName("error")] = error;
+		return result;
+	}
+
+	Dictionary base_stats;
+	Dictionary s_boost_stats;
+	for (uint16_t stat_index = 0; stat_index < CAR_STAT_COUNT; ++stat_index) {
+		const CarStatId stat = static_cast<CarStatId>(stat_index);
+		const StringName name(PhysicsCarProperties::stat_name(stat));
+		base_stats[name] = properties.base_stats[stat_index];
+		if (PhysicsCarProperties::stat_supports_live_modifiers(stat)) {
+			s_boost_stats[name] = properties.s_boost_stats[stat_index];
+		}
+	}
+
+	static constexpr const char* MODIFIER_NAMES[CAR_MODIFIER_LAYER_COUNT] = {
+		"mts", "quickturn", "no_boost", "manual_boost", "dashplate_boost", "stacked_boost"
+	};
+	Dictionary modifier_stats;
+	for (uint8_t layer = 0; layer < CAR_MODIFIER_LAYER_COUNT; ++layer) {
+		Dictionary layer_stats;
+		for (uint16_t stat_index = 0; stat_index < CAR_STAT_COUNT; ++stat_index) {
+			const CarStatId stat = static_cast<CarStatId>(stat_index);
+			if (PhysicsCarProperties::stat_supports_live_modifiers(stat)) {
+				layer_stats[StringName(PhysicsCarProperties::stat_name(stat))] =
+					properties.modifier_stats[layer][stat_index];
+			}
+		}
+		modifier_stats[StringName(MODIFIER_NAMES[layer])] = layer_stats;
+	}
+
+	result[StringName("base_stats")] = base_stats;
+	result[StringName("modifier_stats")] = modifier_stats;
+	result[StringName("s_boost_stats")] = s_boost_stats;
+	result[StringName("state_flags")] = static_cast<int64_t>(properties.state_flags);
+	return result;
+}
+
+Dictionary GameSim::evaluate_car_properties(
+	const PackedByteArray& bytes,
+	double machine_setting,
+	bool genuinely_drifting,
+	double strafe_input,
+	double signed_slip,
+	bool manual_boost_active,
+	bool dashplate_boost_active,
+	bool s_boost_active) const
+{
+	PhysicsCarProperties properties;
+	String error;
+	Dictionary result;
+	if (!PhysicsCarProperties::deserialize_and_sample(
+			bytes, static_cast<float>(std::clamp(machine_setting, 0.0, 1.0)), properties, error)) {
+		result[StringName("error")] = error;
+		return result;
+	}
+
+	float technique_intensity = 0.0f;
+	const CarStatModifierLayer technique_layer = classify_car_technique_modifier(
+		genuinely_drifting, static_cast<float>(strafe_input), static_cast<float>(signed_slip),
+		technique_intensity);
+	const CarStatModifierLayer boost_layer = classify_car_boost_modifier(
+		manual_boost_active, dashplate_boost_active, s_boost_active);
+	Dictionary effective_stats;
+	for (uint16_t stat_index = 0; stat_index < CAR_STAT_COUNT; ++stat_index) {
+		const CarStatId stat = static_cast<CarStatId>(stat_index);
+		effective_stats[StringName(PhysicsCarProperties::stat_name(stat))] = evaluate_car_stat(
+			properties, stat, technique_layer, technique_intensity, boost_layer, s_boost_active);
+	}
+	result[StringName("effective_stats")] = effective_stats;
+	result[StringName("technique_layer")] = technique_layer < CAR_MODIFIER_LAYER_COUNT
+		? static_cast<int64_t>(technique_layer)
+		: static_cast<int64_t>(-1);
+	result[StringName("technique_intensity")] = technique_intensity;
+	result[StringName("boost_layer")] = boost_layer < CAR_MODIFIER_LAYER_COUNT
+		? static_cast<int64_t>(boost_layer)
+		: static_cast<int64_t>(-1);
+	return result;
+}
+
 String GameSim::get_phase_profile_string() const
 {
 	if (!phase_profile_enabled || phase_profile_frames == 0) {
@@ -521,7 +608,7 @@ void GameSim::set_player_ko_energy_bonus(int player_id, double bonus)
 		car_soa.ko_energy_bonus[lane] = clamped_bonus;
 		if (car_soa.car_properties[lane]) {
 			car_soa.calced_max_energy[lane] =
-				car_soa.car_properties[lane]->max_energy + car_soa.ko_energy_bonus[lane];
+				car_soa.car_properties[lane]->base_stats[CAR_STAT_MAX_ENERGY] + car_soa.ko_energy_bonus[lane];
 		}
 		car_soa.energy[lane] = car_soa.calced_max_energy[lane];
 		return;
