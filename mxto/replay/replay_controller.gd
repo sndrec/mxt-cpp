@@ -21,6 +21,8 @@ const REPLAY_RELATIVE_FAST_MOVE_SPEED := 900.0
 const REPLAY_SEEK_CHECKPOINT_INTERVAL := 1800
 const REPLAY_INTERFACE_CANVAS_LAYER := 90
 const REPLAY_INPUT_DISPLAY_SCRIPT := preload("res://replay/replay_input_display.gd")
+const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const LeaderboardReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
 const REPLAY_DEATH_KO_TEXTURE: Texture2D = preload("res://asset/tex/ui/replay_death_ko.png")
 const REPLAY_DEATH_FALL_TEXTURE: Texture2D = preload("res://asset/tex/ui/replay_death_fall.png")
 const REPLAY_DEATH_EXPLOSION_TEXTURE: Texture2D = preload("res://asset/tex/ui/replay_death_explosion.png")
@@ -57,6 +59,8 @@ var replay_playback_cpu_flags: Array = []
 var replay_playback_local_player_id: int = 0
 var replay_playback_use_multiplayer_startup: bool = false
 var replay_strict_verify_requested: bool = false
+var replay_leaderboard_verify_requested: bool = false
+var replay_leaderboard_validation: Dictionary = {}
 var replay_skip_seek_bake_requested: bool = false
 var replay_load_profile_requested: bool = false
 var replay_playback_use_singleplayer_tick: bool = false
@@ -151,7 +155,8 @@ func configure_command_line(args: Array, user_args: Array) -> bool:
 		real_replay_args = user_args
 	if real_replay_idx != -1 and real_replay_idx + 1 < real_replay_args.size():
 		replay_autoload_path = String(real_replay_args[real_replay_idx + 1])
-	replay_strict_verify_requested = args.has("--strict-replay-verify") or user_args.has("--strict-replay-verify")
+	replay_leaderboard_verify_requested = args.has("--leaderboard-replay-verify") or user_args.has("--leaderboard-replay-verify")
+	replay_strict_verify_requested = replay_leaderboard_verify_requested or args.has("--strict-replay-verify") or user_args.has("--strict-replay-verify")
 	replay_skip_seek_bake_requested = args.has("--skip-replay-seek-bake") or user_args.has("--skip-replay-seek-bake")
 	replay_load_profile_requested = args.has("--profile-replay-load") or user_args.has("--profile-replay-load")
 	if replay_autoload_path != "":
@@ -424,6 +429,12 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		"players": player_records,
 		"spawn_seed": game_manager.network_manager.spawn_seed,
 		"race_options": game_manager.network_manager.race_options.duplicate(true),
+		"runtime_flags": {
+			"auto_accelerate": game_manager.auto_accelerate_mode,
+			"auto_bumpers": game_manager.auto_bumpers_mode,
+			"debug_bumper_smoke": game_manager.debug_bumper_smoke_mode,
+			"debug_rail_trace": game_manager.debug_rail_trace_requested,
+		},
 	}
 	refresh_pause_button()
 
@@ -637,6 +648,21 @@ func _verify_replay_playback_results() -> bool:
 		for id_value in replay_playback_racer_ids:
 			print("MXT_REPLAY_VERIFY_STATE tick=", game_manager._singleplayer_tick, " ", game_manager.game_sim.get_player_debug_string(int(id_value)))
 	return ok
+
+func _leaderboard_verified_result() -> Dictionary:
+	if !bool(replay_leaderboard_validation.get("valid", false)) or replay_playback_racer_ids.size() != 1:
+		return {"valid": false, "reason": "missing_leaderboard_validation"}
+	var racer_id := int(replay_playback_racer_ids[0])
+	var finish_tick := _lookup_replay_tick_for_id(game_manager.network_manager.player_finish_times, racer_id)
+	var start_tick := int(game_manager._race_results_start_tick())
+	if finish_tick <= start_tick:
+		return {"valid": false, "reason": "invalid_resimulated_finish_time"}
+	var result := replay_leaderboard_validation.duplicate(true)
+	result["finish_tick"] = finish_tick
+	result["start_tick"] = start_tick
+	result["score_milliseconds"] = TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
+	result["replay_schema_version"] = REPLAY_SCHEMA_VERSION
+	return result
 
 func _build_replay_timeline_controls() -> void:
 	if replay_timeline_root != null and is_instance_valid(replay_timeline_root):
@@ -1128,6 +1154,13 @@ func _start_replay_playback_from_path(path: String) -> void:
 		if game_manager.headless_mode:
 			get_tree().quit(1)
 		return
+	if replay_leaderboard_verify_requested:
+		replay_leaderboard_validation = LeaderboardReplayValidatorClass.validate(game_manager, replay)
+		if !bool(replay_leaderboard_validation.get("valid", false)):
+			print("MXT_LEADERBOARD_VERIFY_FAIL ", JSON.stringify(replay_leaderboard_validation))
+			if game_manager.headless_mode:
+				get_tree().quit(1)
+			return
 	if game_manager.game_sim.sim_started or game_manager.singleplayer_mode:
 		game_manager._return_to_menu()
 	var track_index := _find_track_index(replay)
@@ -1264,6 +1297,13 @@ func _start_replay_playback_from_path(path: String) -> void:
 				get_tree().quit(1)
 				return
 		print("MXT_REPLAY_VERIFY_OK path=", replay_playback_loaded_path, " frames=", replay_frame_count)
+		if replay_leaderboard_verify_requested:
+			var leaderboard_result := _leaderboard_verified_result()
+			if !bool(leaderboard_result.get("valid", false)):
+				print("MXT_LEADERBOARD_VERIFY_FAIL ", JSON.stringify(leaderboard_result))
+				get_tree().quit(1)
+				return
+			print("MXT_LEADERBOARD_VERIFY_RESULT ", JSON.stringify(leaderboard_result))
 		get_tree().quit()
 
 func _capture_replay_seek_checkpoint(next_tick: int) -> void:
