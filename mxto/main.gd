@@ -92,6 +92,8 @@ const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stam
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 const SessionMemoryTelemetryClass = preload("res://core/session_memory_telemetry.gd")
 const GameVersionData = preload("res://core/game_version.gd")
+const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
@@ -155,6 +157,8 @@ var vehicle_test_drive_saved_cpu_count := 0
 var vehicle_test_drive_last_track := 0
 var vehicle_test_drive_picker: ConfirmationDialog
 var vehicle_test_drive_track_option: OptionButton
+var time_attack_eligibility: Dictionary = {}
+var time_attack_finalized := false
 var launch_cpu_driver_count: int = -1
 var auto_host_mode: bool = false
 var auto_singleplayer_mode: bool = false
@@ -823,10 +827,7 @@ func _on_start_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _on_singleplayer_button_pressed() -> void:
-	if headless_mode or auto_singleplayer_mode:
-		_start_singleplayer_race(false, _build_default_singleplayer_race_options())
-	else:
-		_open_singleplayer_race_options(false)
+	_start_singleplayer_race(false, TimeAttackRulesClass.build_options())
 
 func begin_vehicle_test_drive(snapshot: Dictionary) -> void:
 	if vehicle_test_drive_active:
@@ -928,7 +929,6 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	_set_track_content_evidence(options, [track_selector.selected])
 	if auto_bumpers_mode:
 		options["bumpers"] = true
-	network_manager.race_options = options
 	var my_id := _local_player_id()
 	if as_spectator:
 		network_manager.player_ids = []
@@ -936,12 +936,22 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	else:
 		network_manager.player_ids = [my_id]
 		network_manager.spectator_ids = []
-	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
+	var race_cpu_count := int(options.get("cpu_count", singleplayer_cpu_count))
+	network_manager.set_singleplayer_cpu_count(race_cpu_count)
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.vehicle_content_id == "" and car_definitions.size() > 0:
 		ps.vehicle_content_id = car_definitions[0].content_id
 	apply_vehicle_content_evidence(ps)
+	if String(options.get("session_kind", "")) == "time_attack":
+		time_attack_eligibility = LeaderboardEligibilityClass.evaluate_start(self, options, ps)
+		time_attack_finalized = false
+		options["leaderboard_eligible"] = bool(time_attack_eligibility.get("eligible", false))
+		options["leaderboard_ineligible_reason"] = String(time_attack_eligibility.get("reason", ""))
+	else:
+		time_attack_eligibility.clear()
+		time_attack_finalized = false
+	network_manager.race_options = options
 	ps.spectator = as_spectator
 	network_manager.player_settings[my_id] = ps.to_dict()
 	# Invoke the normal race startup, but driven entirely by local state
@@ -2351,8 +2361,7 @@ func _race_results_start_tick() -> int:
 func _format_race_time(tick_value: int, official_start_tick: int = -1) -> String:
 	if official_start_tick < 0:
 		official_start_tick = _race_results_start_tick()
-	var race_tick := maxi(0, tick_value - official_start_tick)
-	var total_msec := int(round(float(race_tick) * 1000.0 / 60.0))
+	var total_msec := TimeAttackRulesClass.finish_ticks_to_milliseconds(tick_value, official_start_tick)
 	var minutes := int(total_msec / 60000)
 	var seconds := int(total_msec / 1000) % 60
 	var milliseconds := total_msec % 1000
@@ -4091,6 +4100,8 @@ func _return_to_menu() -> void:
 	local_player_index = 0
 	singleplayer_mode = false
 	_singleplayer_tick = 0
+	time_attack_eligibility.clear()
+	time_attack_finalized = false
 	$Control.visible = true
 	lobby_control.visible = false
 	if singleplayer_options_root != null:
@@ -4574,6 +4585,25 @@ func _check_race_finished() -> void:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
 				_show_race_results_summary()
+				_finalize_time_attack()
+
+func _finalize_time_attack() -> void:
+	if time_attack_finalized or String(network_manager.race_options.get("session_kind", "")) != "time_attack":
+		return
+	time_attack_finalized = true
+	var local_id := _local_player_id()
+	var finish_tick := int(network_manager.player_finish_times.get(local_id, -1))
+	var start_tick := _race_results_start_tick()
+	var replay_path := replay_controller.save_completed_time_attack_replay()
+	time_attack_eligibility = LeaderboardEligibilityClass.finalize(
+		time_attack_eligibility,
+		finish_tick,
+		start_tick,
+		replay_path)
+	if bool(time_attack_eligibility.get("eligible", false)):
+		_show_race_notification("Time Attack verified locally; submission pending", 5000)
+	else:
+		_show_race_notification("Unranked: %s" % String(time_attack_eligibility.get("reason", "ineligible")).replace("_", " "), 5000)
 
 func _update_native_render_camera() -> void:
 	if game_sim == null or !game_sim.has_method("set_render_camera"):

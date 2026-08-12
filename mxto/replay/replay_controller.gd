@@ -324,6 +324,11 @@ func _on_pause_save_replay_pressed() -> void:
 		game_manager._show_race_notification("Replay Saved", 2200)
 	refresh_pause_button()
 
+func save_completed_time_attack_replay() -> String:
+	if String(game_manager.network_manager.race_options.get("session_kind", "")) != "time_attack":
+		return ""
+	return _save_replay_recording("time_attack_submission")
+
 func _replay_dir() -> String:
 	return ProjectSettings.globalize_path("user://replays")
 
