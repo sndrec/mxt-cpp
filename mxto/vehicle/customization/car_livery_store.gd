@@ -25,6 +25,18 @@ static func get_path_for_car(vehicle_content_id: String) -> String:
 static func has_for_car(vehicle_content_id: String) -> bool:
 	return FileAccess.file_exists(get_path_for_car(vehicle_content_id))
 
+static func migrate_legacy_for_car(vehicle_content_id: String, legacy_definition_path: String) -> Error:
+	if vehicle_content_id == "" or legacy_definition_path == "":
+		return ERR_INVALID_PARAMETER
+	if has_for_car(vehicle_content_id):
+		return OK
+	var legacy_path := get_path_for_car(legacy_definition_path)
+	if !FileAccess.file_exists(legacy_path):
+		return OK
+	var livery: CarLivery = CarLivery.load_from_path(legacy_path)
+	livery.vehicle_content_id = vehicle_content_id
+	return save_for_car(livery)
+
 static func remove_custom_stamp_references(stamp_hash: String) -> Error:
 	if stamp_hash == "":
 		return ERR_INVALID_PARAMETER

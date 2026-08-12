@@ -151,6 +151,7 @@ var stamp_edit_drag_start_mouse := Vector2.ZERO
 var stamp_edit_drag_start_center := Vector2.ZERO
 var stamp_edit_drag_start_size := Vector2.ONE
 var stamp_edit_drag_start_roll := 0.0
+var legacy_selected_car_definition_path := ""
 
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
@@ -283,13 +284,37 @@ func _load_car_defs() -> void:
 	vehicle_selector.clear()
 	for def in car_defs:
 		vehicle_selector.add_item(def.name)
+	_migrate_legacy_vehicle_settings()
 
 func _load_settings() -> void:
+	legacy_selected_car_definition_path = ""
 	var path := "user://player_settings.json"
 	if FileAccess.file_exists(path):
 		var data = JSON.parse_string(FileAccess.get_file_as_string(path))
 		if typeof(data) == TYPE_DICTIONARY:
 			player_settings.from_dict(data)
+			legacy_selected_car_definition_path = str(data.get("car_definition_path", ""))
+
+func _migrate_legacy_vehicle_settings() -> void:
+	if car_defs.is_empty():
+		return
+	var selected_vehicle_migrated := false
+	for def in car_defs:
+		if !(def is CarDefinition) or def.content_id == "" or def.resource_path == "":
+			continue
+		var err := CarLiveryStore.migrate_legacy_for_car(def.content_id, def.resource_path)
+		if err != OK:
+			push_warning("Failed to migrate legacy livery for %s: %s" % [def.content_id, error_string(err)])
+		if player_settings.vehicle_content_id == "" and def.resource_path == legacy_selected_car_definition_path:
+			player_settings.vehicle_content_id = def.content_id
+			selected_vehicle_migrated = true
+	if selected_vehicle_migrated:
+		var file := FileAccess.open("user://player_settings.json", FileAccess.WRITE)
+		if file == null:
+			push_warning("Failed to save migrated player settings: %s" % error_string(FileAccess.get_open_error()))
+			return
+		file.store_string(JSON.stringify(player_settings.to_dict()))
+		file.close()
 
 func _save_settings() -> void:
 	if livery_dirty and !_livery_editing_locked():
