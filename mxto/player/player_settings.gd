@@ -4,7 +4,7 @@ extends Resource
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 
 @export var username: String = "Player"
-@export var car_definition_path: String = ""
+@export var vehicle_content_id: String = ""
 @export var accel_setting: float = 1.0
 @export var spectator: bool = false
 @export var sticker_1: int = 0
@@ -16,7 +16,7 @@ const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 func to_dict() -> Dictionary:
 		return {
 				"username": username,
-				"car_definition_path": car_definition_path,
+				"vehicle_content_id": vehicle_content_id,
 				"accel_setting": accel_setting,
 				"spectator": spectator,
 				"sticker_1": sticker_1,
@@ -29,8 +29,8 @@ func to_dict() -> Dictionary:
 func from_dict(data: Dictionary) -> void:
 		if data.has("username"):
 				username = str(data["username"])
-		if data.has("car_definition_path"):
-				car_definition_path = str(data["car_definition_path"])
+		if data.has("vehicle_content_id"):
+				vehicle_content_id = str(data["vehicle_content_id"])
 		if data.has("accel_setting"):
 				accel_setting = float(data["accel_setting"])
 		if data.has("spectator"):

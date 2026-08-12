@@ -7,7 +7,8 @@
 [resource]
 script = ExtResource("2_bnt6y")
 name = "Bruiser"
-car_definition = "res://vehicle/asset/bruiser/wild_goose.mxt_car_props"
+content_id = "mxt:vehicle:official:bruiser"
+properties_path = "res://vehicle/asset/bruiser/wild_goose.mxt_car_props"
 car_scene = ExtResource("1_pptv1")
 manual_boost_sfx = ExtResource("2_hakcx")
 metadata/_custom_type_script = "uid://b1wgg7ehpe0d1"

@@ -19,7 +19,7 @@ The runtime target is the 100-car case. Customization must not turn into 16 dyna
 Save livery data per car definition, not as one global player setting. A simple layout is:
 
 - `user://garage_liveries/<safe_car_id>.json`
-- `car_definition_path`
+- `vehicle_content_id`
 - `primary_colour`
 - `secondary_colour`
 - `accent_colour`
@@ -63,7 +63,7 @@ Use one combined stamp mesh per unique livery/car archetype:
 The renderer archetype key should include livery identity:
 
 ```text
-car_definition_path + ":" + livery_hash
+vehicle_content_id + ":" + livery_hash
 ```
 
 That keeps identical liveries batched. In the worst case of 100 unique liveries, there can be 100 extra stamp mesh draws, but there should not be 1600 decal draws or per-pixel loops over 16 projectors.

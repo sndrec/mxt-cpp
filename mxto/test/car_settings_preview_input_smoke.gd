@@ -22,12 +22,12 @@ func _init() -> void:
 	if vehicle_selector.item_count > 1:
 		vehicle_selector.select(0)
 		car_settings.call("_on_vehicle_selected", 0)
-		var first_path: String = car_settings.player_settings.car_definition_path
+		var first_content_id: String = car_settings.player_settings.vehicle_content_id
 		var item_rect := vehicle_selector.get_item_rect(1)
 		var click_pos := vehicle_selector.global_position + item_rect.position + item_rect.size * 0.5
 		car_settings.call("_try_select_vehicle_at_global_position", click_pos)
 		await process_frame
-		if car_settings.player_settings.car_definition_path == first_path:
+		if car_settings.player_settings.vehicle_content_id == first_content_id:
 			push_error("car settings vehicle selector did not receive click input point=%s selector_global=%s item_rect=%s mouse=%s" % [
 				click_pos,
 				vehicle_selector.get_global_rect(),

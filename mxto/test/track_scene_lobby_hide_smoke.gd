@@ -24,7 +24,7 @@ func _init() -> void:
 	var def: CarDefinition = main.car_definitions[0]
 	var settings := {
 		"username": "Smoke",
-		"car_definition_path": def.resource_path,
+		"vehicle_content_id": def.content_id,
 		"accel_setting": 1.0,
 	}
 	main.singleplayer_mode = false

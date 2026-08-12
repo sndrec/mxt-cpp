@@ -56,13 +56,13 @@ func set_local_control(enabled: bool) -> void:
 func update_settings(in_settings: Dictionary, in_settings_revision: int = -1) -> void:
 	if in_settings_revision >= 0 and in_settings_revision == settings_revision:
 		return
-	var old_path := str(player_settings.get("car_definition_path", ""))
+	var old_content_id := str(player_settings.get("vehicle_content_id", ""))
 	var old_livery_hash := render_livery_hash
 	if in_settings_revision >= 0:
 		settings_revision = in_settings_revision
 	_apply_settings(in_settings)
 	_ensure_nameplate()
-	if old_path != str(player_settings.get("car_definition_path", "")) or old_livery_hash != render_livery_hash:
+	if old_content_id != str(player_settings.get("vehicle_content_id", "")) or old_livery_hash != render_livery_hash:
 		_rebuild_visual()
 
 func apply_remote_state(in_velocity: float, in_knockback: Vector3, in_angle_velocity: float, in_position: Vector3, in_rotation: Vector3) -> void:
@@ -148,9 +148,9 @@ func _rebuild_visual() -> void:
 	visual_root = null
 	car_definition = null
 
-	var def_path := str(player_settings.get("car_definition_path", ""))
-	if def_path != "" and ResourceLoader.exists(def_path):
-		var definition := load(def_path) as CarDefinition
+	var vehicle_content_id := str(player_settings.get("vehicle_content_id", ""))
+	if vehicle_content_id != "" and game_manager != null:
+		var definition: CarDefinition = game_manager.get_car_definition(vehicle_content_id)
 		if definition != null and definition.car_scene != null:
 			car_definition = definition
 			_load_chibi_stats(definition)
@@ -214,7 +214,7 @@ func get_hover_anchor() -> Vector2:
 	return lobby_camera.unproject_position(global_position)
 
 func _load_chibi_stats(definition: CarDefinition) -> void:
-	var prop_path := definition.car_definition
+	var prop_path := definition.properties_path
 	if prop_path == "" or !FileAccess.file_exists(prop_path) or game_manager == null or game_manager.game_sim == null:
 		return
 	var bytes := FileAccess.get_file_as_bytes(prop_path)

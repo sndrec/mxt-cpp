@@ -6,7 +6,7 @@ const PlayerSettings = preload("res://player/player_settings.gd")
 
 func _init() -> void:
 	var livery := CarLivery.new()
-	livery.car_definition_path = "res://vehicle/test_car_definition.tres"
+	livery.vehicle_content_id = "mxt:vehicle:official:test"
 	livery.primary_colour = Color(0.2, 0.4, 0.8, 1.0)
 	livery.secondary_colour = Color(0.9, 0.8, 0.7, 1.0)
 	livery.accent_colour = Color(0.1, 0.2, 0.3, 1.0)
@@ -51,7 +51,7 @@ func _init() -> void:
 
 	var settings := PlayerSettings.new()
 	settings.username = "LiverySmoke"
-	settings.car_definition_path = livery.car_definition_path
+	settings.vehicle_content_id = livery.vehicle_content_id
 	settings.set_car_livery(livery)
 	var restored_settings := PlayerSettings.new()
 	restored_settings.from_dict(settings.to_dict())

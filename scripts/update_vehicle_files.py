@@ -79,8 +79,10 @@ for folder in sorted(os.listdir(BASE)):
             lines[i] = f'[ext_resource type="PackedScene" uid="{scene_uid}" path="res://vehicle/asset/{folder}/vehicle.tscn" id="{ext_id}"]\n'
         elif line.startswith('name = '):
             lines[i] = f'name = "{to_display(folder)}"\n'
-        elif line.startswith('car_definition = '):
+        elif line.startswith('content_id = '):
+            lines[i] = f'content_id = "mxt:vehicle:official:{folder}"\n'
+        elif line.startswith('properties_path = '):
             prop_name = os.path.basename(props_path)
-            lines[i] = f'car_definition = "res://vehicle/asset/{folder}/{prop_name}"\n'
+            lines[i] = f'properties_path = "res://vehicle/asset/{folder}/{prop_name}"\n'
     with open(def_path, 'w') as f:
         f.writelines(lines)

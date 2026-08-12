@@ -18,7 +18,12 @@ namespace mxt::content {
 
 String content_source_name(ContentSource source)
 {
-	return source == ContentSource::WORKSHOP ? String("workshop") : String("local_package");
+	switch (source) {
+		case ContentSource::OFFICIAL: return String("official");
+		case ContentSource::LOCAL_PACKAGE: return String("local_package");
+		case ContentSource::WORKSHOP: return String("workshop");
+	}
+	return String();
 }
 
 Dictionary content_record_to_dictionary(const ContentRecord &record)
@@ -113,10 +118,23 @@ static bool decimal_u64(int64_t input, uint64_t &output)
 	return true;
 }
 
+static bool valid_official_slug(const String &slug)
+{
+	if (slug.is_empty() || slug.length() > 64) return false;
+	for (int64_t i = 0; i < slug.length(); ++i) {
+		const char32_t c = slug[i];
+		if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
+	}
+	return true;
+}
+
 } // namespace
 
 void MxtContentCatalog::_bind_methods()
 {
+	ClassDB::bind_method(
+			D_METHOD("add_official_vehicle", "slug", "title", "properties_path", "definition_path"),
+			&MxtContentCatalog::add_official_vehicle);
 	ClassDB::bind_method(D_METHOD("add_local_package", "package_root"), &MxtContentCatalog::add_local_package);
 	ClassDB::bind_method(D_METHOD("add_workshop_package", "package_root", "published_file_id"), &MxtContentCatalog::add_workshop_package);
 	ClassDB::bind_method(D_METHOD("scan_local_library", "library_root"), &MxtContentCatalog::scan_local_library);
@@ -128,6 +146,53 @@ void MxtContentCatalog::_bind_methods()
 	ClassDB::bind_method(D_METHOD("find_gameplay", "content_type", "gameplay_digest"), &MxtContentCatalog::find_gameplay);
 	ClassDB::bind_method(D_METHOD("get_generation"), &MxtContentCatalog::get_generation);
 	ADD_SIGNAL(MethodInfo("catalog_changed", PropertyInfo(Variant::INT, "generation")));
+}
+
+Dictionary MxtContentCatalog::add_official_vehicle(
+		const String &slug,
+		const String &title,
+		const String &properties_path,
+		const String &definition_path)
+{
+	Dictionary result;
+	std::vector<String> errors;
+	if (!valid_official_slug(slug)) {
+		errors.push_back("official content slug must contain only lowercase letters, digits, and hyphens");
+	}
+	if (title.is_empty() || title.length() > 128) {
+		errors.push_back("official vehicle title must contain 1 to 128 characters");
+	}
+	if (properties_path.is_empty() || definition_path.is_empty()) {
+		errors.push_back("official vehicle paths must not be empty");
+	}
+	String gameplay_digest;
+	if (errors.empty()) {
+		mxt::content::validate_authoritative_gameplay_file(
+				mxt::content::ContentType::VEHICLE,
+				global_path(properties_path),
+				gameplay_digest,
+				errors);
+	}
+	if (!errors.empty()) {
+		result["valid"] = false;
+		result["errors"] = error_array(errors);
+		return result;
+	}
+
+	mxt::content::ContentRecord record;
+	record.content_type = mxt::content::ContentType::VEHICLE;
+	record.source = mxt::content::ContentSource::OFFICIAL;
+	record.content_id = "mxt:vehicle:official:" + slug;
+	record.gameplay_digest = gameplay_digest;
+	record.authoritative_path = properties_path;
+	record.visual_path = definition_path;
+	record.title = title;
+	record.author_name = "MaxX Throttle";
+	replace_record(record);
+	result["valid"] = true;
+	result["errors"] = PackedStringArray();
+	result["record"] = mxt::content::content_record_to_dictionary(record);
+	return result;
 }
 
 void MxtContentCatalog::publish_change()

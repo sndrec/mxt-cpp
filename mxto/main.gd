@@ -100,6 +100,8 @@ const BUMPER_POOL_SIZE := 60
 const RACE_RESULTS_SCREEN_MSEC := 15000
 
 var car_definitions: Array = []
+var car_definitions_by_content_id: Dictionary = {}
+var content_catalog: MxtContentCatalog
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
 var spectator_scene := preload("res://player/spectator.tscn")
@@ -320,6 +322,7 @@ func _ready() -> void:
 	steam_service = MxtSteamService.new()
 	steam_service.name = "SteamService"
 	add_child(steam_service)
+	content_catalog = MxtContentCatalog.new()
 	version_label.text = GameVersionData.display_string()
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -485,12 +488,12 @@ func _ready() -> void:
 	elif !replay_launch_requested and auto_singleplayer_mode:
 		call_deferred("_on_singleplayer_button_pressed")
 	if headless_mode and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
-		var def_path := ""
+		var vehicle_content_id := ""
 		if car_definitions.size() > 0:
-			def_path = car_definitions[0].resource_path
+			vehicle_content_id = car_definitions[0].content_id
 		var settings_dict = {
 			"username": "Headless",
-			"car_definition_path": def_path,
+			"vehicle_content_id": vehicle_content_id,
 			"accel_setting": 1.0,
 		}
 		network_manager.multiplayer.connected_to_server.connect(
@@ -537,29 +540,32 @@ func _load_tracks() -> void:
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_race_options()
 
-func get_car_definition_paths() -> Array:
-	var paths: Array = []
+func get_vehicle_content_ids() -> Array:
+	var content_ids: Array = []
 	for def in car_definitions:
-		if def is Resource:
-			var path = def.resource_path
-			if path != "":
-				paths.append(path)
-	return paths
+		if def is CarDefinition and def.content_id != "":
+			content_ids.append(def.content_id)
+	return content_ids
+
+func get_car_definition(vehicle_content_id: String) -> CarDefinition:
+	return car_definitions_by_content_id.get(vehicle_content_id) as CarDefinition
 
 func build_cpu_player_settings(index: int) -> Dictionary:
 	var ps := PlayerSettings.new()
 	ps.username = "CPU %03d" % (index + 1)
-	var defs := get_car_definition_paths()
-	if defs.size() > 0:
-		ps.car_definition_path = defs[index % defs.size()]
+	var content_ids := get_vehicle_content_ids()
+	if content_ids.size() > 0:
+		ps.vehicle_content_id = content_ids[index % content_ids.size()]
 	else:
-		ps.car_definition_path = ""
+		ps.vehicle_content_id = ""
 	ps.accel_setting = 1.0
 	ps.spectator = false
 	return ps.to_dict()
 
 func _load_car_definitions() -> void:
+	const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
 	car_definitions.clear()
+	car_definitions_by_content_id.clear()
 	var dir = DirAccess.open("res://vehicle/asset")
 	if dir == null:
 		return
@@ -569,11 +575,31 @@ func _load_car_definitions() -> void:
 		if dir.current_is_dir() and !folder.begins_with(".") and folder != "bumper":
 			var def_path := "res://vehicle/asset/%s/definition.tres" % folder
 			if ResourceLoader.exists(def_path):
-				var def_res := load(def_path)
-				if def_res != null:
-					car_definitions.append(def_res)
+				var def_res := load(def_path) as CarDefinition
+				if def_res == null:
+					push_error("Invalid vehicle definition resource: %s" % def_path)
+				elif def_res.content_id == "":
+					push_error("Vehicle definition has no content ID: %s" % def_path)
+				elif !def_res.content_id.begins_with(OFFICIAL_VEHICLE_PREFIX):
+					push_error("Selectable built-in vehicle has invalid official content ID: %s" % def_res.content_id)
+				elif car_definitions_by_content_id.has(def_res.content_id):
+					push_error("Duplicate vehicle content ID: %s" % def_res.content_id)
+				elif !FileAccess.file_exists(def_res.properties_path):
+					push_error("Vehicle properties file is missing: %s" % def_res.properties_path)
+				else:
+					var catalog_result: Dictionary = content_catalog.add_official_vehicle(
+						def_res.content_id.trim_prefix(OFFICIAL_VEHICLE_PREFIX),
+						def_res.name,
+						def_res.properties_path,
+						def_res.resource_path)
+					if !bool(catalog_result.get("valid", false)):
+						push_error("Official vehicle catalog registration failed for %s: %s" % [def_res.content_id, str(catalog_result.get("errors", []))])
+					else:
+						car_definitions.append(def_res)
+						car_definitions_by_content_id[def_res.content_id] = def_res
 		folder = dir.get_next()
 	dir.list_dir_end()
+	car_definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
 
 func _on_start_button_pressed() -> void:
 	var err := network_manager.host(_multiplayer_lobby_port())
@@ -621,8 +647,8 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	network_manager.set_singleplayer_cpu_count(singleplayer_cpu_count)
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
-	if ps.car_definition_path == "" and car_definitions.size() > 0:
-		ps.car_definition_path = car_definitions[0].resource_path
+	if ps.vehicle_content_id == "" and car_definitions.size() > 0:
+		ps.vehicle_content_id = car_definitions[0].content_id
 	ps.spectator = as_spectator
 	network_manager.player_settings[my_id] = ps.to_dict()
 	# Invoke the normal race startup, but driven entirely by local state
@@ -1710,8 +1736,8 @@ func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Diction
 		if network_manager.cpu_player_ids.has(id):
 			settings = build_cpu_player_settings(fallback_cpu_index)
 		else:
-			var def_path: String = car_definitions[0].resource_path if car_definitions.size() > 0 else ""
-			settings = {"car_definition_path": def_path, "accel_setting": 1.0, "username": str(id)}
+			var vehicle_content_id: String = car_definitions[0].content_id if car_definitions.size() > 0 else ""
+			settings = {"vehicle_content_id": vehicle_content_id, "accel_setting": 1.0, "username": str(id)}
 	var out := {}
 	if typeof(settings) == TYPE_DICTIONARY:
 		out = (settings as Dictionary).duplicate(true)
@@ -2490,7 +2516,7 @@ func _build_local_custom_stamp_payload_for_render(settings) -> Dictionary:
 		return {"ok": true, "manifest": [], "blobs": []}
 	var livery := CarLivery.new()
 	livery.from_dict(ps.car_livery)
-	livery.car_definition_path = ps.car_definition_path
+	livery.vehicle_content_id = ps.vehicle_content_id
 	return CustomStampStore.build_livery_payload(livery)
 
 func _race_custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_payloads: Dictionary):
@@ -2638,9 +2664,11 @@ func _start_race(track_index: int, settings: Array) -> bool:
 			ps.from_dict(d)
 			if !ps.spectator:
 				racer_settings.append(ps)
-				var def_res := load(ps.car_definition_path)
-				if def_res != null:
-					chosen_defs.append(def_res)
+				var def_res := get_car_definition(ps.vehicle_content_id)
+				if def_res == null:
+					push_error("Race references unavailable vehicle content: %s" % ps.vehicle_content_id)
+					return false
+				chosen_defs.append(def_res)
 				racer_ids.append(pid)
 				racer_cpu_flags.append(cpu_ids.has(pid))
 	else:
@@ -2650,9 +2678,11 @@ func _start_race(track_index: int, settings: Array) -> bool:
 			ps.from_dict(d)
 			if !ps.spectator:
 				racer_settings.append(ps)
-				var def_res := load(ps.car_definition_path)
-				if def_res != null:
-					chosen_defs.append(def_res)
+				var def_res := get_car_definition(ps.vehicle_content_id)
+				if def_res == null:
+					push_error("Race references unavailable vehicle content: %s" % ps.vehicle_content_id)
+					return false
+				chosen_defs.append(def_res)
 				if racer_roster_index < roster.size():
 					var pid = roster[racer_roster_index]
 					racer_ids.append(pid)
@@ -2716,7 +2746,7 @@ func _start_race(track_index: int, settings: Array) -> bool:
 		add_child(spectator_node)
 	for n in chosen_defs.size():
 		var def = chosen_defs[n]
-		var bytes := FileAccess.get_file_as_bytes(def.car_definition)
+		var bytes := FileAccess.get_file_as_bytes(def.properties_path)
 		car_props.append(bytes)
 		if n < racer_settings.size():
 			accel_settings_arr.append(racer_settings[n].accel_setting)

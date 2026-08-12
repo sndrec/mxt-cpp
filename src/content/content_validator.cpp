@@ -424,6 +424,34 @@ static bool append_file(
 	return true;
 }
 
+static bool calculate_gameplay_digest(
+		ContentType content_type,
+		const String &authoritative_path,
+		const DiskEntry &authoritative,
+		String &out_gameplay_digest,
+		std::vector<String> &errors)
+{
+	Ref<HashingContext> gameplay_hash;
+	gameplay_hash.instantiate();
+	if (gameplay_hash->start(HashingContext::HASH_SHA256) != OK) {
+		add_error(errors, "could not initialize gameplay SHA-256");
+		return false;
+	}
+	PackedByteArray domain;
+	domain.resize(13);
+	std::memcpy(domain.ptrw(), "MXT_GAMEPLAY\0", 13);
+	gameplay_hash->update(domain);
+	append_u32_be(gameplay_hash, GAMEPLAY_DIGEST_REVISION);
+	append_utf8(gameplay_hash, content_type_name(content_type));
+	append_utf8(gameplay_hash, authoritative_path);
+	append_u64_be(gameplay_hash, authoritative.size);
+	if (!append_file(gameplay_hash, authoritative, errors)) {
+		return false;
+	}
+	out_gameplay_digest = "sha256:" + gameplay_hash->finish().hex_encode();
+	return true;
+}
+
 static bool calculate_digests(
 		const ContentManifest &manifest,
 		std::vector<DiskEntry> entries,
@@ -459,24 +487,12 @@ static bool calculate_digests(
 		add_error(errors, "authoritative gameplay payload is missing");
 		return false;
 	}
-	Ref<HashingContext> gameplay_hash;
-	gameplay_hash.instantiate();
-	if (gameplay_hash->start(HashingContext::HASH_SHA256) != OK) {
-		add_error(errors, "could not initialize gameplay SHA-256");
-		return false;
-	}
-	domain.resize(13);
-	std::memcpy(domain.ptrw(), "MXT_GAMEPLAY\0", 13);
-	gameplay_hash->update(domain);
-	append_u32_be(gameplay_hash, GAMEPLAY_DIGEST_REVISION);
-	append_utf8(gameplay_hash, content_type_name(manifest.content_type));
-	append_utf8(gameplay_hash, manifest.authoritative_path);
-	append_u64_be(gameplay_hash, authoritative->size);
-	if (!append_file(gameplay_hash, *authoritative, errors)) {
-		return false;
-	}
-	out_gameplay_digest = "sha256:" + gameplay_hash->finish().hex_encode();
-	return true;
+	return calculate_gameplay_digest(
+			manifest.content_type,
+			manifest.authoritative_path,
+			*authoritative,
+			out_gameplay_digest,
+			errors);
 }
 
 static bool validate_declared_hashes(
@@ -546,6 +562,54 @@ static bool validate_payloads(
 }
 
 } // namespace
+
+bool validate_authoritative_gameplay_file(
+		ContentType content_type,
+		const String &path,
+		String &out_gameplay_digest,
+		std::vector<String> &out_errors)
+{
+	out_gameplay_digest = String();
+	if (content_type != ContentType::VEHICLE && content_type != ContentType::TRACK) {
+		add_error(out_errors, "invalid authoritative gameplay content type");
+		return false;
+	}
+	const uint64_t max_bytes = content_type == ContentType::VEHICLE
+			? VEHICLE_PROPERTIES_MAX_BYTES
+			: TRACK_PAYLOAD_MAX_BYTES;
+	PackedByteArray bytes;
+	if (!read_file_limited(path, max_bytes, bytes, out_errors)) {
+		return false;
+	}
+	if (content_type == ContentType::VEHICLE) {
+		PhysicsCarProperties sampled;
+		String parse_error;
+		if (!PhysicsCarProperties::deserialize_and_sample(bytes, 0.5f, sampled, parse_error)) {
+			add_error(out_errors, "vehicle properties rejected: " + parse_error);
+			return false;
+		}
+	} else {
+		String parse_error;
+		if (!validate_track_payload(bytes, parse_error)) {
+			add_error(out_errors, "track payload rejected: " + parse_error);
+			return false;
+		}
+	}
+
+	const String authoritative_path = content_type == ContentType::VEHICLE
+			? String("vehicle/properties.mxt_car_props")
+			: String("track/track.mxt_track");
+	DiskEntry authoritative;
+	authoritative.relative_path = authoritative_path;
+	authoritative.absolute_path = path;
+	authoritative.size = static_cast<uint64_t>(bytes.size());
+	return calculate_gameplay_digest(
+			content_type,
+			authoritative_path,
+			authoritative,
+			out_gameplay_digest,
+			out_errors);
+}
 
 bool validate_package_directory_internal(
 		const String &root_path,

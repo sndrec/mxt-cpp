@@ -16,12 +16,12 @@ func _init() -> void:
 	main.network_manager.player_ids = [42, 43]
 	main.network_manager.player_settings[42] = {
 		"username": "Smoke",
-		"car_definition_path": def.resource_path,
+		"vehicle_content_id": def.content_id,
 		"accel_setting": 1.0,
 	}
 	main.network_manager.player_settings[43] = {
 		"username": "Smoke Two",
-		"car_definition_path": def.resource_path,
+		"vehicle_content_id": def.content_id,
 		"accel_setting": 1.0,
 	}
 	main.network_manager.lobby_latency_rtt_s[42] = 0.042

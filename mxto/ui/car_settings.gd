@@ -320,12 +320,12 @@ func _update_controls(rebuild_preview := true) -> void:
 	_update_sticker_controls()
 	var idx := 0
 	for i in car_defs.size():
-		if car_defs[i].resource_path == player_settings.car_definition_path:
+		if car_defs[i].content_id == player_settings.vehicle_content_id:
 			idx = i
 			break
 	if car_defs.size() > 0:
 		vehicle_selector.select(idx)
-		player_settings.car_definition_path = car_defs[idx].resource_path
+		player_settings.vehicle_content_id = car_defs[idx].content_id
 		car_name_label.text = car_defs[idx].name
 		if garage_car_name_label != null:
 			garage_car_name_label.text = car_defs[idx].name
@@ -349,7 +349,7 @@ func _on_slider_changed(value: float) -> void:
 
 func _on_vehicle_selected(index: int) -> void:
 	if index >= 0 and index < car_defs.size():
-		player_settings.car_definition_path = car_defs[index].resource_path
+		player_settings.vehicle_content_id = car_defs[index].content_id
 		car_name_label.text = car_defs[index].name
 		if garage_car_name_label != null:
 			garage_car_name_label.text = car_defs[index].name
@@ -420,25 +420,25 @@ func get_player_settings() -> PlayerSettings:
 	return player_settings
 
 func _load_livery_for_selected_car() -> void:
-	if player_settings.car_definition_path == "":
+	if player_settings.vehicle_content_id == "":
 		current_livery = CarLivery.new()
 		current_livery_enabled = false
 		player_settings.car_livery = {}
 		return
-	current_livery_enabled = CarLiveryStore.has_for_car(player_settings.car_definition_path)
-	var livery: CarLivery = CarLiveryStore.load_for_car(player_settings.car_definition_path)
-	livery.car_definition_path = player_settings.car_definition_path
+	current_livery_enabled = CarLiveryStore.has_for_car(player_settings.vehicle_content_id)
+	var livery: CarLivery = CarLiveryStore.load_for_car(player_settings.vehicle_content_id)
+	livery.vehicle_content_id = player_settings.vehicle_content_id
 	current_livery = livery
 	_sync_livery_to_player_settings()
 
 func _save_livery_for_selected_car(rebuild_preview := true) -> void:
 	if _livery_editing_locked():
 		return
-	if player_settings.car_definition_path == "":
+	if player_settings.vehicle_content_id == "":
 		player_settings.car_livery = {}
 		return
 	current_livery_enabled = true
-	current_livery.car_definition_path = player_settings.car_definition_path
+	current_livery.vehicle_content_id = player_settings.vehicle_content_id
 	var err := CarLiveryStore.save_for_car(current_livery)
 	if err != OK:
 		push_warning("Failed to save car livery: %s" % err)
@@ -504,10 +504,10 @@ func _exit_tree() -> void:
 	_finish_preview_custom_stamp_atlas_thread()
 
 func _sync_livery_to_player_settings() -> void:
-	if player_settings.car_definition_path == "" or !current_livery_enabled:
+	if player_settings.vehicle_content_id == "" or !current_livery_enabled:
 		player_settings.car_livery = {}
 		return
-	current_livery.car_definition_path = player_settings.car_definition_path
+	current_livery.vehicle_content_id = player_settings.vehicle_content_id
 	player_settings.set_car_livery(current_livery)
 
 func _update_livery_controls() -> void:
@@ -717,7 +717,7 @@ func _preview_render_settings(livery: CarLivery) -> Dictionary:
 	if livery == null:
 		settings.erase("car_livery")
 	else:
-		livery.car_definition_path = player_settings.car_definition_path
+		livery.vehicle_content_id = player_settings.vehicle_content_id
 		settings["car_livery"] = livery.to_dict()
 	return settings
 
@@ -914,7 +914,7 @@ func _livery_copy_only_layer(layer: int) -> CarLivery:
 
 func _livery_copy_base() -> CarLivery:
 	var out := CarLivery.new()
-	out.car_definition_path = player_settings.car_definition_path
+	out.vehicle_content_id = player_settings.vehicle_content_id
 	out.primary_colour = current_livery.primary_colour
 	out.secondary_colour = current_livery.secondary_colour
 	out.accent_colour = current_livery.accent_colour
@@ -922,7 +922,7 @@ func _livery_copy_base() -> CarLivery:
 
 func _selected_car_definition() -> CarDefinition:
 	for def in car_defs:
-		if def.resource_path == player_settings.car_definition_path:
+		if def.content_id == player_settings.vehicle_content_id:
 			return def
 	return car_defs[0] if !car_defs.is_empty() else null
 

@@ -22,6 +22,12 @@ bool validate_package_directory_internal(
 		ValidatedPackage &out_package,
 		std::vector<godot::String> &out_errors);
 
+bool validate_authoritative_gameplay_file(
+		ContentType content_type,
+		const godot::String &path,
+		godot::String &out_gameplay_digest,
+		std::vector<godot::String> &out_errors);
+
 } // namespace mxt::content
 
 namespace godot {

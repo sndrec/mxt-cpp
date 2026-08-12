@@ -6,7 +6,7 @@ const CarLiveryStamp = preload("res://vehicle/customization/car_livery_stamp.gd"
 const VERSION := 1
 const MAX_STAMPS := 16
 
-@export var car_definition_path: String = ""
+@export var vehicle_content_id: String = ""
 @export var primary_colour: Color = Color(0.1, 0.35, 1.0, 1.0)
 @export var secondary_colour: Color = Color(1.0, 1.0, 1.0, 1.0)
 @export var accent_colour: Color = Color(0.05, 0.05, 0.06, 1.0)
@@ -21,7 +21,7 @@ func to_dict() -> Dictionary:
 		stamp_dicts.append(stamp.to_dict())
 	return {
 		"version": VERSION,
-		"car_definition_path": car_definition_path,
+		"vehicle_content_id": vehicle_content_id,
 		"primary_colour": primary_colour.to_html(true),
 		"secondary_colour": secondary_colour.to_html(true),
 		"accent_colour": accent_colour.to_html(true),
@@ -29,8 +29,8 @@ func to_dict() -> Dictionary:
 	}
 
 func from_dict(data: Dictionary) -> void:
-	if data.has("car_definition_path"):
-		car_definition_path = str(data["car_definition_path"])
+	if data.has("vehicle_content_id"):
+		vehicle_content_id = str(data["vehicle_content_id"])
 	if data.has("primary_colour"):
 		primary_colour = Color.html(str(data["primary_colour"]))
 	if data.has("secondary_colour"):
@@ -74,7 +74,7 @@ func get_livery_hash() -> String:
 	return str(json.hash()).replace("-", "n")
 
 func get_livery_key() -> String:
-	return "%s:%s" % [car_definition_path, get_livery_hash()]
+	return "%s:%s" % [vehicle_content_id, get_livery_hash()]
 
 func get_custom_stamp_manifest() -> Array:
 	var manifest: Array = []

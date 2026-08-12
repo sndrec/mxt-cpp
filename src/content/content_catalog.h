@@ -14,7 +14,8 @@
 namespace mxt::content {
 
 enum class ContentSource : uint8_t {
-	LOCAL_PACKAGE = 0,
+	OFFICIAL = 0,
+	LOCAL_PACKAGE,
 	WORKSHOP,
 };
 
@@ -60,6 +61,11 @@ protected:
 	static void _bind_methods();
 
 public:
+	Dictionary add_official_vehicle(
+			const String &slug,
+			const String &title,
+			const String &properties_path,
+			const String &definition_path);
 	Dictionary add_local_package(const String &package_root);
 	Dictionary add_workshop_package(const String &package_root, int64_t published_file_id);
 	Dictionary scan_local_library(const String &library_root);

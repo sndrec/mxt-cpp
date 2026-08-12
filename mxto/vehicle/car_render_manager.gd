@@ -292,7 +292,7 @@ func _process(_delta: float) -> void:
 func _definition_key(definition: CarDefinition, livery: CarLivery = null) -> String:
 	if definition == null:
 		return ""
-	var base_key := definition.resource_path if definition.resource_path != "" else definition.name
+	var base_key := definition.content_id
 	if livery == null:
 		return base_key
 	return "%s:%s" % [base_key, livery.get_livery_hash()]
@@ -553,8 +553,8 @@ func _livery_for_index(index: int, definition: CarDefinition, player_settings: A
 			livery.from_dict(livery_dict)
 	if livery == null:
 		return null
-	if livery.car_definition_path == "" and definition != null:
-		livery.car_definition_path = definition.resource_path
+	if livery.vehicle_content_id == "" and definition != null:
+		livery.vehicle_content_id = definition.content_id
 	return livery
 
 func _get_stamp_catalog() -> CarStampCatalog:

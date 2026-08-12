@@ -8,7 +8,7 @@ func _fail(message: String) -> void:
 	push_error("MXT_LOBBY_SCALE_SMOKE_FAIL " + message)
 	quit(1)
 
-func _synthetic_livery(car_path: String, player_index: int) -> Dictionary:
+func _synthetic_livery(vehicle_content_id: String, player_index: int) -> Dictionary:
 	var stamps: Array = []
 	var stamp_ids := ["circle", "star", "cross"]
 	for layer in range(STAMPS_PER_LIVERY):
@@ -36,7 +36,7 @@ func _synthetic_livery(car_path: String, player_index: int) -> Dictionary:
 		})
 	return {
 		"version": 1,
-		"car_definition_path": car_path,
+		"vehicle_content_id": vehicle_content_id,
 		"primary_colour": Color.from_hsv(float(player_index) / float(PLAYER_COUNT), 0.75, 0.9).to_html(true),
 		"secondary_colour": Color.from_hsv(float(player_index + 11) / float(PLAYER_COUNT), 0.55, 1.0).to_html(true),
 		"accent_colour": Color.from_hsv(float(player_index + 23) / float(PLAYER_COUNT), 0.85, 0.45).to_html(true),
@@ -66,8 +66,8 @@ func _run() -> void:
 		roster.append(player_id)
 		game_manager.network_manager.player_settings[player_id] = {
 			"username": "Load Player %02d" % i,
-			"car_definition_path": definition.resource_path,
-			"car_livery": _synthetic_livery(definition.resource_path, i),
+			"vehicle_content_id": definition.content_id,
+			"car_livery": _synthetic_livery(definition.content_id, i),
 			"accel_setting": 1.0,
 		}
 	game_manager.network_manager.player_ids = roster

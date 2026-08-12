@@ -28,7 +28,7 @@ func _arg_value(name: String, fallback: String) -> String:
 			return str(args[i + 1])
 	return fallback
 
-func _synthetic_livery(car_path: String) -> Dictionary:
+func _synthetic_livery(vehicle_content_id: String) -> Dictionary:
 	var stamps: Array = []
 	var stamp_ids := ["circle", "star", "cross"]
 	for layer in range(STAMPS_PER_LIVERY):
@@ -54,7 +54,7 @@ func _synthetic_livery(car_path: String) -> Dictionary:
 		})
 	return {
 		"version": 1,
-		"car_definition_path": car_path,
+		"vehicle_content_id": vehicle_content_id,
 		"primary_colour": Color.from_hsv(float(player_index % target_players) / float(target_players), 0.75, 0.9).to_html(true),
 		"secondary_colour": Color.from_hsv(float((player_index + 11) % target_players) / float(target_players), 0.55, 1.0).to_html(true),
 		"accent_colour": Color.from_hsv(float((player_index + 23) % target_players) / float(target_players), 0.85, 0.45).to_html(true),
@@ -62,13 +62,13 @@ func _synthetic_livery(car_path: String) -> Dictionary:
 	}
 
 func _settings() -> Dictionary:
-	var car_path := ""
+	var vehicle_content_id := ""
 	if !game_manager.car_definitions.is_empty():
-		car_path = game_manager.car_definitions[player_index % game_manager.car_definitions.size()].resource_path
+		vehicle_content_id = game_manager.car_definitions[player_index % game_manager.car_definitions.size()].content_id
 	return {
 		"username": "Load Player %02d" % player_index,
-		"car_definition_path": car_path,
-		"car_livery": _synthetic_livery(car_path),
+		"vehicle_content_id": vehicle_content_id,
+		"car_livery": _synthetic_livery(vehicle_content_id),
 		"accel_setting": 1.0,
 		"spectator": false,
 	}

@@ -105,16 +105,16 @@ func send_active_custom_stamp_manifest() -> void:
 
 func _build_local_custom_stamp_payload() -> Dictionary:
 	var settings := network_manager._get_local_player_settings_snapshot()
-	var car_path := str(settings.get("car_definition_path", ""))
-	if car_path == "":
+	var vehicle_content_id := str(settings.get("vehicle_content_id", ""))
+	if vehicle_content_id == "":
 		return {"ok": true, "manifest": [], "blobs": []}
 	var livery: CarLivery = null
 	if settings.has("car_livery") and typeof(settings["car_livery"]) == TYPE_DICTIONARY and !(settings["car_livery"] as Dictionary).is_empty():
 		livery = CarLivery.new()
 		livery.from_dict(settings["car_livery"])
 	else:
-		livery = CarLiveryStore.load_for_car(car_path)
-	livery.car_definition_path = car_path
+		livery = CarLiveryStore.load_for_car(vehicle_content_id)
+	livery.vehicle_content_id = vehicle_content_id
 	return CustomStampStore.build_livery_payload(livery)
 
 func _cache_custom_stamp_payload_blobs(payload: Dictionary) -> void:

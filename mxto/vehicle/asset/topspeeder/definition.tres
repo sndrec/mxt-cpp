@@ -7,7 +7,8 @@
 [resource]
 script = ExtResource("2_34ps7")
 name = "Top Speeder"
-car_definition = "res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props"
+content_id = "mxt:vehicle:official:topspeeder"
+properties_path = "res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props"
 car_scene = ExtResource("1_crjrx")
 manual_boost_sfx = ExtResource("2_ncrln")
 metadata/_custom_type_script = "uid://b1wgg7ehpe0d1"

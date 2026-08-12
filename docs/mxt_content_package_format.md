@@ -129,10 +129,10 @@ Paths are locators, never identities. The native catalog assigns colon-delimited
 ```text
 mxt:<vehicle|track>:package:<package-digest-hex>
 mxt:<vehicle|track>:workshop:<published-file-id>
-mxt:<vehicle|track>:official:<checked-in-slug>   (reserved for built-in migration)
+mxt:<vehicle|track>:official:<checked-in-slug>
 ```
 
-A local package ID names one immutable package revision. A Workshop ID names the logical mutable listing and resolves to the exact currently validated package record. Race admission and replay headers must therefore store the content ID together with both the package and gameplay digests; a Workshop ID by itself is never exact gameplay evidence.
+A local package ID names one immutable package revision. A Workshop ID names the logical mutable listing and resolves to the exact currently validated package record. An official ID names a trusted asset shipped with the game; official records have a gameplay digest but no package digest because their resources are not distributed as `.mxtpkg` archives. Race admission and replay headers must therefore store the content ID and gameplay digest, plus the package digest whenever the source is a package. A Workshop ID by itself is never exact gameplay evidence.
 
 Catalog records expose validated absolute paths for the preview, visual payload, authoritative gameplay payload, and track metadata. Settings, replay data, multiplayer negotiation, and selection UI consume the content ID and resolved record rather than persisting those paths.
 

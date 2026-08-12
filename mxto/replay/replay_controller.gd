@@ -384,7 +384,7 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 			"id": id,
 			"username": str(raw_settings.get("username", "Player")),
 			"cpu": i < cpu_flags.size() and bool(cpu_flags[i]),
-			"car_definition_path": str(raw_settings.get("car_definition_path", "")),
+			"vehicle_content_id": str(raw_settings.get("vehicle_content_id", "")),
 			"sticker_1": int(raw_settings.get("sticker_1", 0)),
 			"sticker_2": int(raw_settings.get("sticker_2", 1)),
 			"sticker_3": int(raw_settings.get("sticker_3", 2)),
@@ -1845,7 +1845,7 @@ func _on_replay_catalog_selected(_index: int) -> void:
 		player_lines.append("%s%s - %s - %d stamps" % [
 			str(p.get("username", "Player")),
 			cpu,
-			str(p.get("car_definition_path", "")),
+			str(p.get("vehicle_content_id", "")),
 			stamp_count
 		])
 	var compatible := _replay_is_compatible(entry)
