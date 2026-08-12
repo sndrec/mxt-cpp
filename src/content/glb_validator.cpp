@@ -655,6 +655,10 @@ bool validate_glb_file(const String &path, ContentType content_type, std::vector
 		add_error(out_errors, path, "scene contains no mesh instances");
 		return false;
 	}
+	if (content_type == ContentType::VEHICLE && (meshes.size() != 1 || mesh_reference_count != 1)) {
+		add_error(out_errors, path, "vehicle scene must contain exactly one mesh and one mesh instance");
+		return false;
+	}
 
 	uint64_t total_pixels = 0;
 	for (int64_t image_index = 0; image_index < images.size(); ++image_index) {

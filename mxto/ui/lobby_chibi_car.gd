@@ -151,7 +151,7 @@ func _rebuild_visual() -> void:
 	var vehicle_content_id := str(player_settings.get("vehicle_content_id", ""))
 	if vehicle_content_id != "" and game_manager != null:
 		var definition: CarDefinition = game_manager.get_car_definition(vehicle_content_id)
-		if definition != null and definition.car_scene != null:
+		if definition != null and definition.has_visual():
 			car_definition = definition
 			_load_chibi_stats(definition)
 	if visual_root == null:

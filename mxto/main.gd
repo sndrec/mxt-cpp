@@ -96,6 +96,7 @@ const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
 const RaceCommunicationOverlayScene: PackedScene = preload("res://ui/race_communication_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
+const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const BUMPER_POOL_SIZE := 60
 const RACE_RESULTS_SCREEN_MSEC := 15000
 
@@ -323,6 +324,7 @@ func _ready() -> void:
 	steam_service.name = "SteamService"
 	add_child(steam_service)
 	content_catalog = MxtContentCatalog.new()
+	_scan_local_content_library()
 	version_label.text = GameVersionData.display_string()
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -632,7 +634,79 @@ func _load_car_definitions() -> void:
 						car_definitions_by_content_id[def_res.content_id] = def_res
 		folder = dir.get_next()
 	dir.list_dir_end()
+	_load_packaged_car_definitions()
 	car_definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
+
+func _scan_local_content_library() -> void:
+	var library_path := ProjectSettings.globalize_path(LOCAL_CONTENT_LIBRARY_PATH)
+	var directory_error := DirAccess.make_dir_recursive_absolute(library_path)
+	if directory_error != OK:
+		push_error("Could not create the local content library: %s" % error_string(directory_error))
+		return
+	var result: Dictionary = content_catalog.scan_local_library(library_path)
+	for diagnostic_value in result.get("diagnostics", []):
+		var diagnostic: Dictionary = diagnostic_value
+		push_warning("Skipped local content package %s: %s" % [
+			String(diagnostic.get("path", "")),
+			str(diagnostic.get("errors", [])),
+		])
+
+func _load_packaged_car_definitions() -> void:
+	for record_value in content_catalog.get_records("vehicle"):
+		var record: Dictionary = record_value
+		if String(record.get("source", "")) == "official":
+			continue
+		var definition := _car_definition_from_package_record(record)
+		if definition == null:
+			continue
+		if car_definitions_by_content_id.has(definition.content_id):
+			push_error("Duplicate packaged vehicle content ID: %s" % definition.content_id)
+			continue
+		car_definitions.append(definition)
+		car_definitions_by_content_id[definition.content_id] = definition
+
+func _car_definition_from_package_record(record: Dictionary) -> CarDefinition:
+	var visual_path := String(record.get("visual_path", ""))
+	var gltf_document := GLTFDocument.new()
+	var gltf_state := GLTFState.new()
+	gltf_state.base_path = visual_path.get_base_dir()
+	var error := gltf_document.append_from_file(visual_path, gltf_state)
+	if error != OK:
+		push_error("Could not load packaged vehicle visual %s: %s" % [visual_path, error_string(error)])
+		return null
+	var instance := gltf_document.generate_scene(gltf_state) as Node3D
+	if instance == null:
+		push_error("Could not generate packaged vehicle visual: %s" % visual_path)
+		return null
+	var mesh_data := _find_packaged_vehicle_mesh(instance, Transform3D.IDENTITY)
+	if mesh_data.is_empty():
+		push_error("Packaged vehicle visual has no runtime mesh: %s" % visual_path)
+		instance.free()
+		return null
+	var mesh_instance: MeshInstance3D = mesh_data["instance"]
+	var definition := CarDefinition.new()
+	definition.name = String(record.get("title", "Vehicle"))
+	definition.content_id = String(record.get("content_id", ""))
+	definition.properties_path = String(record.get("authoritative_path", ""))
+	definition.runtime_mesh = mesh_instance.mesh
+	definition.runtime_material = mesh_instance.material_override
+	definition.runtime_transform = mesh_data["transform"]
+	instance.free()
+	return definition
+
+func _find_packaged_vehicle_mesh(node: Node, parent_transform: Transform3D) -> Dictionary:
+	var local_transform := parent_transform
+	var node_3d := node as Node3D
+	if node_3d != null:
+		local_transform *= node_3d.transform
+	var mesh_instance := node as MeshInstance3D
+	if mesh_instance != null and mesh_instance.mesh != null:
+		return {"instance": mesh_instance, "transform": local_transform}
+	for child in node.get_children():
+		var found := _find_packaged_vehicle_mesh(child, local_transform)
+		if !found.is_empty():
+			return found
+	return {}
 
 func _on_start_button_pressed() -> void:
 	var err := network_manager.host(_multiplayer_lobby_port())

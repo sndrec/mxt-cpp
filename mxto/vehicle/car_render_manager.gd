@@ -8,6 +8,9 @@ const PASS_OUTLINE := "outline"
 const PASS_OUTLINE_MAIN := "outline_main"
 const PASS_STAMP := "stamp"
 const STAMP_CATALOG_PATH := "res://vehicle/customization/stamp_catalog.tres"
+const OUTLINE_SHADER: Shader = preload("res://vehicle/vehicle_outline.gdshader")
+const OUTLINE_MAIN_SHADER: Shader = preload("res://vehicle/vehicle_outline_main.gdshader")
+const SHADOW_SHADER: Shader = preload("res://vehicle/vehicle_shadow.gdshader")
 const HIDDEN_INSTANCE_TRANSFORM := Transform3D(Basis.IDENTITY, Vector3(0.0, -100000.0, 0.0))
 
 var cars: Array = []
@@ -298,6 +301,8 @@ func _definition_key(definition: CarDefinition, livery: CarLivery = null) -> Str
 	return "%s:%s" % [base_key, livery.get_livery_hash()]
 
 func _build_archetype(definition: CarDefinition, livery: CarLivery = null, key := "") -> Dictionary:
+	if definition.car_scene == null:
+		return _build_runtime_mesh_archetype(definition, livery, key)
 	var template: Node3D = definition.car_scene.instantiate()
 	var root_transform := template.transform
 	var main_mesh: MeshInstance3D = template.get_node("VEHICLE_MAIN")
@@ -315,6 +320,39 @@ func _build_archetype(definition: CarDefinition, livery: CarLivery = null, key :
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else shadow_mesh.mesh, null if stamp_only_mode else shadow_mesh.material_override, root_transform * shadow_mesh.transform, 1, 96),
 		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), main_mesh, template, livery, root_transform * main_mesh.transform, main_mesh.material_override),
 		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), null if stamp_only_mode else thruster_data["material"], [] if stamp_only_mode else thruster_data["local_transforms"]),
+	}
+	template.free()
+	return archetype
+
+func _build_runtime_mesh_archetype(definition: CarDefinition, livery: CarLivery, key: String) -> Dictionary:
+	var main_mesh := definition.runtime_mesh
+	var local_transform := definition.runtime_transform
+	var outline_material := ShaderMaterial.new()
+	outline_material.shader = OUTLINE_SHADER
+	outline_material.set_shader_parameter("base_outline_width", 1.0)
+	outline_material.set_shader_parameter("trail_colour", Color(0.25, 0.55, 1.0))
+	var outline_main_material := ShaderMaterial.new()
+	outline_main_material.shader = OUTLINE_MAIN_SHADER
+	outline_main_material.set_shader_parameter("base_outline_width", 1.0)
+	outline_main_material.set_shader_parameter("outline_color", Color(0.25, 0.55, 1.0))
+	var shadow_material := ShaderMaterial.new()
+	shadow_material.shader = SHADOW_SHADER
+	var template := Node3D.new()
+	var body_mesh := MeshInstance3D.new()
+	body_mesh.mesh = main_mesh
+	body_mesh.material_override = definition.runtime_material
+	body_mesh.transform = local_transform
+	template.add_child(body_mesh)
+	var archetype := {
+		"key": key if key != "" else _definition_key(definition, livery),
+		"indices": [],
+		"count": 0,
+		PASS_MAIN: _create_pass("Main_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else definition.runtime_material, local_transform, 1, 0, livery),
+		PASS_OUTLINE: _create_pass("Outline_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_material, local_transform, 4, -1),
+		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_main_material, local_transform, 2, -2),
+		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else shadow_material, local_transform, 1, 96),
+		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), body_mesh, template, livery, local_transform, definition.runtime_material),
+		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), null, []),
 	}
 	template.free()
 	return archetype

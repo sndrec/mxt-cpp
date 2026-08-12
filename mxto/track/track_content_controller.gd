@@ -19,6 +19,7 @@ var visual_scene_instance: Node
 func scan_catalog() -> void:
 	tracks.clear()
 	_scan_official_tracks()
+	_scan_installed_tracks()
 	track_id_to_index.clear()
 	for i in range(tracks.size()):
 		var track_id := String(tracks[i].get("content_id", ""))
@@ -253,6 +254,22 @@ func _register_official_track(entry: Dictionary, roots: PackedStringArray) -> vo
 			"source": "official",
 		})
 		return
+
+func _scan_installed_tracks() -> void:
+	for record_value in game_manager.content_catalog.get_records("track"):
+		var record: Dictionary = record_value
+		if String(record.get("source", "")) == "official":
+			continue
+		tracks.append({
+			"content_id": String(record.get("content_id", "")),
+			"gameplay_digest": String(record.get("gameplay_digest", "")),
+			"name": String(record.get("title", "Track")),
+			"mxt": String(record.get("authoritative_path", "")),
+			"json": String(record.get("metadata_path", "")),
+			"dir": String(record.get("root_path", "")),
+			"visual": String(record.get("visual_path", "")),
+			"source": String(record.get("source", "")),
+		})
 
 func _clear_visual_scene() -> void:
 	if visual_scene_instance != null:

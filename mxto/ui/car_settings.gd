@@ -641,9 +641,17 @@ func _rebuild_preview_vehicle() -> void:
 	if preview_above_render_manager != null:
 		preview_above_render_manager.clear_renderer()
 	var definition := _selected_car_definition()
-	if definition == null or definition.car_scene == null:
+	if definition == null or !definition.has_visual():
 		return
-	preview_vehicle = definition.car_scene.instantiate()
+	if definition.car_scene != null:
+		preview_vehicle = definition.car_scene.instantiate()
+	else:
+		preview_vehicle = Node3D.new()
+		var mesh_instance := MeshInstance3D.new()
+		mesh_instance.mesh = definition.runtime_mesh
+		mesh_instance.material_override = definition.runtime_material
+		mesh_instance.transform = definition.runtime_transform
+		preview_vehicle.add_child(mesh_instance)
 	preview_vehicle_base_transform = preview_vehicle.transform
 	preview_root.add_child(preview_vehicle)
 	_hide_preview_raycast_scene(preview_vehicle)
@@ -665,7 +673,7 @@ func _rebuild_edit_stamp_preview(apply_camera := true) -> void:
 		return
 	preview_edit_render_manager.clear_renderer()
 	var definition := _selected_car_definition()
-	if definition == null or definition.car_scene == null or stamp_ui_mode != StampUiMode.EDITING:
+	if definition == null or !definition.has_visual() or stamp_ui_mode != StampUiMode.EDITING:
 		if apply_camera:
 			_apply_preview_camera()
 		return
@@ -683,7 +691,7 @@ func _rebuild_above_stamp_preview(apply_camera := true) -> void:
 		return
 	preview_above_render_manager.clear_renderer()
 	var definition := _selected_car_definition()
-	if definition == null or definition.car_scene == null or stamp_ui_mode != StampUiMode.EDITING:
+	if definition == null or !definition.has_visual() or stamp_ui_mode != StampUiMode.EDITING:
 		if apply_camera:
 			_apply_preview_camera()
 		return
