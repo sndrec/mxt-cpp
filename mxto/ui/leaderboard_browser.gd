@@ -34,7 +34,7 @@ func _initialize_client() -> void:
 	track_option.clear()
 	for value in boards:
 		var board: Dictionary = value
-		track_option.add_item(String(board.get("track_slug", "Track")).replace("-", " ").capitalize())
+		track_option.add_item(String(board.get("track_title", String(board.get("track_slug", "Track")).replace("-", " ").capitalize())))
 		track_option.set_item_metadata(track_option.item_count - 1, String(board.get("steam_name", "")))
 	_show_submission_status(client.status())
 	if !boards.is_empty():

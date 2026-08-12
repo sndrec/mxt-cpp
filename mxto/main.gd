@@ -349,6 +349,7 @@ func _ready() -> void:
 	leaderboard_client.initialize(steam_service)
 	_scan_local_content_library()
 	_scan_test_drive_snapshot_library()
+	_scan_trusted_verifier_workshop_packages()
 	version_label.text = GameVersionData.display_string()
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -535,6 +536,27 @@ func _ready() -> void:
 		join_timer.start()
 		$Control.visible = false
 		lobby_control.visible = true
+
+func _scan_trusted_verifier_workshop_packages() -> void:
+	var args := OS.get_cmdline_args()
+	var user_args := OS.get_cmdline_user_args()
+	if !(args.has("--leaderboard-replay-verify") or user_args.has("--leaderboard-replay-verify")):
+		return
+	for source_args in [args, user_args]:
+		var index := 0
+		while index < source_args.size():
+			if String(source_args[index]) != "--trusted-workshop-package":
+				index += 1
+				continue
+			if index + 2 >= source_args.size():
+				push_error("--trusted-workshop-package requires a Workshop ID and package path")
+				return
+			var published_file_id := int(source_args[index + 1])
+			var package_path := String(source_args[index + 2])
+			var result: Dictionary = content_catalog.add_workshop_package(package_path, published_file_id)
+			if !bool(result.get("valid", false)):
+				push_error("Trusted verifier package %d failed validation: %s" % [published_file_id, str(result.get("errors", []))])
+			index += 3
 
 func _exit_tree() -> void:
 	RenderingServer.force_sync()

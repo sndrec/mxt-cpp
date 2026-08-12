@@ -48,3 +48,14 @@ static func board_for_track_digest(gameplay_digest: String) -> Dictionary:
 		if typeof(value) == TYPE_DICTIONARY and String(value.get("track_gameplay_digest", "")) == gameplay_digest:
 			return (value as Dictionary).duplicate(true)
 	return {}
+
+static func track_record_matches_board(record: Dictionary, board: Dictionary) -> bool:
+	if String(record.get("gameplay_digest", "")) != String(board.get("track_gameplay_digest", "")):
+		return false
+	var track_source := String(board.get("track_source", "official"))
+	if track_source == "official":
+		return String(record.get("source", "")) == "official"
+	if track_source == "curated_workshop":
+		return String(record.get("source", "")) == "workshop" \
+			and String(record.get("published_file_id", "")) == String(board.get("published_file_id", ""))
+	return false

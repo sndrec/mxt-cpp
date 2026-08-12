@@ -217,6 +217,42 @@ def _load_board_ids(path: Path, app_id: int) -> dict[str, int]:
     return {str(name): int(value) for name, value in boards.items() if int(value) > 0}
 
 
+def _load_trusted_workshop_packages(
+    path_text: str,
+    manifest_boards: dict[str, dict[str, Any]],
+) -> tuple[tuple[str, int, Path], ...]:
+    expected_digests = {
+        str(board["track_gameplay_digest"])
+        for board in manifest_boards.values()
+        if str(board.get("track_source", "official")) == "curated_workshop"
+    }
+    if not expected_digests:
+        return ()
+    if not path_text:
+        raise RuntimeError("MXT_CURATED_WORKSHOP_PACKAGES is required for curated boards")
+    path = Path(path_text).resolve()
+    parsed = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise RuntimeError("curated Workshop package map must be a JSON object")
+    package_paths: dict[str, Path] = {}
+    for gameplay_digest, package_path_text in parsed.items():
+        if not str(gameplay_digest).startswith("sha256:"):
+            raise RuntimeError("curated Workshop package map keys must be gameplay digests")
+        package_path = Path(str(package_path_text)).resolve()
+        if not package_path.is_dir():
+            raise RuntimeError(f"curated Workshop package directory does not exist: {package_path}")
+        package_paths[str(gameplay_digest)] = package_path
+    if set(package_paths) != expected_digests:
+        raise RuntimeError("curated Workshop package map must exactly match curated manifest gameplay digests")
+    output: list[tuple[str, int, Path]] = []
+    for board_name, board in manifest_boards.items():
+        if str(board.get("track_source", "official")) != "curated_workshop":
+            continue
+        digest = str(board["track_gameplay_digest"])
+        output.append((board_name, int(board["published_file_id"]), package_paths[digest]))
+    return tuple(sorted(output))
+
+
 def load_config() -> ServiceConfig:
     service_root = Path(__file__).resolve().parent
     repository_root = service_root.parents[1]
@@ -249,16 +285,29 @@ def load_config() -> ServiceConfig:
     steam_base_url = os.environ.get("MXT_STEAM_API_BASE", "https://partner.steam-api.com").strip()
     timeout_seconds = float(os.environ.get("MXT_REPLAY_VERIFY_TIMEOUT_SECONDS", "120"))
     board_ids = _load_board_ids(board_ids_path, app_id)
-    replay_verifier = ReplayVerifier(
+    manifest_reader = ReplayVerifier(
         manifest_path=manifest_path,
         game_executable=game_executable,
         godot_executable=godot_executable,
         godot_project=godot_project,
         timeout_seconds=timeout_seconds,
     )
-    manifest_board_names = set(replay_verifier.manifest_boards())
+    manifest_boards = manifest_reader.manifest_boards()
+    manifest_board_names = set(manifest_boards)
     if set(board_ids) != manifest_board_names:
         raise RuntimeError("leaderboard ID file must contain exactly the boards in the checked-in manifest")
+    trusted_workshop_packages = _load_trusted_workshop_packages(
+        os.environ.get("MXT_CURATED_WORKSHOP_PACKAGES", "").strip(),
+        manifest_boards,
+    )
+    replay_verifier = ReplayVerifier(
+        manifest_path=manifest_path,
+        game_executable=game_executable,
+        godot_executable=godot_executable,
+        godot_project=godot_project,
+        timeout_seconds=timeout_seconds,
+        trusted_workshop_packages=trusted_workshop_packages,
+    )
     return ServiceConfig(
         listen_host=os.environ.get("MXT_LEADERBOARD_LISTEN_HOST", "127.0.0.1"),
         listen_port=_positive_integer_environment("MXT_LEADERBOARD_LISTEN_PORT", 8787),

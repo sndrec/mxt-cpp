@@ -69,3 +69,27 @@ X-MXT-Claimed-Score-Milliseconds: <integer>
 ```
 
 Successful responses contain the authenticated Steam ID, verified board name, and verified score. Tickets are single-use within one service process. For horizontal deployment, replace the in-process replay guard with a shared atomic TTL store before adding a second instance.
+
+## Curate a community track revision
+
+Run the curation script against the exact validated Workshop package directory. It emits a reviewed copy of the leaderboard manifest; it never edits the checked-in manifest implicitly.
+
+```powershell
+Godot_console.exe --headless --path mxto --script res://steam/curate_workshop_track.gd -- `
+  --package 'C:\Steam\workshop\content\<app id>\<item id>' `
+  --workshop-id '<item id>' `
+  --slug 'community-track-slug' `
+  --output 'C:\review\leaderboards.json'
+```
+
+Review the new `curated_workshop` record and replace `mxto/steam/leaderboards.json` with the reviewed output. Provision again to create its trusted board. The record binds the Workshop ID to the exact validated gameplay digest; updating the Workshop item does not update or qualify for the board.
+
+The verifier deployment must retain every curated package revision. Set `MXT_CURATED_WORKSHOP_PACKAGES` to a JSON file mapping each curated gameplay digest to its archived canonical package directory:
+
+```json
+{
+  "sha256:0123456789abcdef...": "C:\\mxt-verifier\\curated\\1234567890\\sha256-package-directory"
+}
+```
+
+The service refuses to start unless this map exactly covers the curated gameplay digests in the manifest. It passes only the requested board's archived revision into the isolated verifier, so multiple historical digests from one mutable Workshop listing remain independently verifiable.

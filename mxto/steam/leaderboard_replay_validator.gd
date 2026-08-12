@@ -111,12 +111,18 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 		or String(track_ids[0]) != track_id or String(track_digests[0]) != track_digest:
 		return reject("track_identity_mismatch")
 	var track_record: Dictionary = game_manager.content_catalog.resolve_content(track_id)
-	if String(track_record.get("source", "")) != "official" \
-		or String(track_record.get("gameplay_digest", "")) != track_digest:
-		return reject("unofficial_or_mismatched_track")
 	var board := TimeAttackRulesClass.board_for_track_digest(track_digest)
 	if board.is_empty():
-		return reject("track_has_no_official_board")
+		return reject("track_has_no_ranked_board")
+	if !TimeAttackRulesClass.track_record_matches_board(track_record, board):
+		return reject("uncurated_or_mismatched_track")
+	var expected_workshop_id := String(board.get("published_file_id", ""))
+	if String(replay.get("track_workshop_id", "")) != expected_workshop_id:
+		return reject("track_workshop_identity_mismatch")
+	var option_workshop_ids_value = options.get("track_workshop_ids", [])
+	if typeof(option_workshop_ids_value) != TYPE_ARRAY or (option_workshop_ids_value as Array).size() != 1 \
+		or String((option_workshop_ids_value as Array)[0]) != expected_workshop_id:
+		return reject("track_workshop_identity_mismatch")
 
 	var player_settings: Dictionary = settings[0]
 	var vehicle_id := String(player_settings.get("vehicle_content_id", ""))
