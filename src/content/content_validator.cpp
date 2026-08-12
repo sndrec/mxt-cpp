@@ -1,0 +1,644 @@
+#include "content/content_validator.h"
+
+#include "car/car_properties.h"
+#include "content/glb_validator.h"
+#include "content/track_payload_validator.h"
+
+#include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/hashing_context.hpp>
+#include <godot_cpp/classes/json.hpp>
+#include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/array.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <vector>
+
+using namespace godot;
+
+namespace mxt::content {
+namespace {
+
+static constexpr uint64_t VEHICLE_MODEL_MAX_BYTES = 48u * 1024u * 1024u;
+static constexpr uint64_t VEHICLE_PROPERTIES_MAX_BYTES = 4u * 1024u * 1024u;
+static constexpr uint64_t TRACK_PAYLOAD_MAX_BYTES = 256u * 1024u * 1024u;
+static constexpr uint64_t TRACK_VISUAL_MAX_BYTES = 256u * 1024u * 1024u;
+static constexpr uint64_t TRACK_METADATA_MAX_BYTES = 1u * 1024u * 1024u;
+static constexpr uint32_t PREVIEW_MAX_DIMENSION = 4096;
+static constexpr uint64_t HASH_CHUNK_BYTES = 1024u * 1024u;
+
+struct DiskEntry {
+	String relative_path;
+	String absolute_path;
+	uint64_t size = 0;
+};
+
+static void add_error(std::vector<String> &errors, const String &message)
+{
+	errors.push_back(message);
+}
+
+static PackedStringArray make_error_array(const std::vector<String> &errors)
+{
+	PackedStringArray output;
+	output.resize(static_cast<int64_t>(errors.size()));
+	for (size_t i = 0; i < errors.size(); ++i) {
+		output.set(static_cast<int64_t>(i), errors[i]);
+	}
+	return output;
+}
+
+static Dictionary make_result(
+		bool valid,
+		const std::vector<String> &errors,
+		const ContentManifest *manifest = nullptr)
+{
+	Dictionary result;
+	result["valid"] = valid;
+	result["errors"] = make_error_array(errors);
+	if (manifest) {
+		result["manifest"] = manifest_to_dictionary(*manifest);
+	}
+	return result;
+}
+
+static bool read_file_limited(
+		const String &path,
+		uint64_t max_bytes,
+		PackedByteArray &out_bytes,
+		std::vector<String> &errors)
+{
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
+	if (file.is_null()) {
+		add_error(errors, "could not open '" + path + "'");
+		return false;
+	}
+	const uint64_t length = file->get_length();
+	if (length > max_bytes) {
+		add_error(errors, "file exceeds its size limit: '" + path + "'");
+		return false;
+	}
+	out_bytes = file->get_buffer(static_cast<int64_t>(length));
+	if (static_cast<uint64_t>(out_bytes.size()) != length || file->get_error() != OK) {
+		add_error(errors, "could not read complete file '" + path + "'");
+		return false;
+	}
+	return true;
+}
+
+static bool is_allowed_directory(const String &relative_path, ContentType type)
+{
+	if (type == ContentType::VEHICLE) {
+		return relative_path == "vehicle";
+	}
+	if (type == ContentType::TRACK) {
+		return relative_path == "track";
+	}
+	return false;
+}
+
+static bool enumerate_directory(
+		const String &root_path,
+		const String &relative_directory,
+		ContentType type,
+		std::vector<DiskEntry> &out_files,
+		std::vector<String> &out_directories,
+		std::vector<String> &errors)
+{
+	const String disk_path = relative_directory.is_empty()
+			? root_path
+			: root_path.path_join(relative_directory);
+	Ref<DirAccess> directory = DirAccess::open(disk_path);
+	if (directory.is_null()) {
+		add_error(errors, "could not open package directory '" + disk_path + "'");
+		return false;
+	}
+	directory->set_include_hidden(true);
+	directory->set_include_navigational(false);
+	if (directory->list_dir_begin() != OK) {
+		add_error(errors, "could not enumerate package directory '" + disk_path + "'");
+		return false;
+	}
+	bool valid = true;
+	for (;;) {
+		const String name = directory->get_next();
+		if (name.is_empty()) {
+			break;
+		}
+		const String relative_path = relative_directory.is_empty()
+				? name
+				: relative_directory.path_join(name);
+		if (name == "." || name == ".." || name.begins_with(".")) {
+			add_error(errors, "hidden or navigational package entry is not allowed: '" + relative_path + "'");
+			valid = false;
+			continue;
+		}
+		if (directory->is_link(name)) {
+			add_error(errors, "symbolic links are not allowed in packages: '" + relative_path + "'");
+			valid = false;
+			continue;
+		}
+		if (directory->current_is_dir()) {
+			out_directories.push_back(relative_path);
+			if (!is_allowed_directory(relative_path, type)) {
+				add_error(errors, "undeclared package directory is not allowed: '" + relative_path + "'");
+				valid = false;
+				continue;
+			}
+			if (!enumerate_directory(root_path, relative_path, type, out_files, out_directories, errors)) {
+				valid = false;
+			}
+		} else {
+			Ref<FileAccess> file = FileAccess::open(root_path.path_join(relative_path), FileAccess::READ);
+			if (file.is_null()) {
+				add_error(errors, "could not open package file '" + relative_path + "'");
+				valid = false;
+				continue;
+			}
+			out_files.push_back({relative_path, root_path.path_join(relative_path), file->get_length()});
+		}
+	}
+	directory->list_dir_end();
+	return valid;
+}
+
+static std::string utf8_bytes(const String &value)
+{
+	const CharString encoded = value.utf8();
+	return std::string(encoded.get_data(), static_cast<size_t>(encoded.length()));
+}
+
+static bool validate_disk_entries(
+		const ContentManifest &manifest,
+		const std::vector<DiskEntry> &files,
+		std::vector<String> &errors)
+{
+	if (files.size() > PACKAGE_MAX_FILE_COUNT) {
+		add_error(errors, "package contains more than 8 files");
+	}
+	std::vector<String> expected;
+	expected.reserve(manifest.files.size() + 1);
+	expected.push_back("manifest.json");
+	for (const ManifestFile &file : manifest.files) {
+		expected.push_back(file.path);
+	}
+	std::vector<std::string> folded;
+	for (const DiskEntry &entry : files) {
+		const std::string folded_path = utf8_bytes(entry.relative_path.to_lower());
+		if (std::find(folded.begin(), folded.end(), folded_path) != folded.end()) {
+			add_error(errors, "package contains duplicate case-folded path '" + entry.relative_path + "'");
+		} else {
+			folded.push_back(folded_path);
+		}
+		if (std::find(expected.begin(), expected.end(), entry.relative_path) == expected.end()) {
+			add_error(errors, "undeclared package file is not allowed: '" + entry.relative_path + "'");
+		}
+	}
+	for (const String &path : expected) {
+		const auto found = std::find_if(files.begin(), files.end(), [&](const DiskEntry &entry) {
+			return entry.relative_path == path;
+		});
+		if (found == files.end()) {
+			add_error(errors, "package is missing required file '" + path + "'");
+		}
+	}
+	return errors.empty();
+}
+
+static uint64_t file_limit_for(const ContentManifest &manifest, const String &path)
+{
+	if (path == "manifest.json") return MANIFEST_MAX_BYTES;
+	if (path == "preview.png") return PREVIEW_MAX_BYTES;
+	if (path == "vehicle/model.glb") return VEHICLE_MODEL_MAX_BYTES;
+	if (path == "vehicle/properties.mxt_car_props") return VEHICLE_PROPERTIES_MAX_BYTES;
+	if (path == "track/track.mxt_track") return TRACK_PAYLOAD_MAX_BYTES;
+	if (path == "track/visual.glb") return TRACK_VISUAL_MAX_BYTES;
+	if (path == "track/metadata.json") return TRACK_METADATA_MAX_BYTES;
+	return manifest.content_type == ContentType::VEHICLE
+			? VEHICLE_PACKAGE_MAX_BYTES
+			: TRACK_PACKAGE_MAX_BYTES;
+}
+
+static const DiskEntry *find_disk_entry(const std::vector<DiskEntry> &entries, const String &path)
+{
+	for (const DiskEntry &entry : entries) {
+		if (entry.relative_path == path) {
+			return &entry;
+		}
+	}
+	return nullptr;
+}
+
+static uint32_t read_be_u32(const uint8_t *bytes)
+{
+	return (static_cast<uint32_t>(bytes[0]) << 24) |
+			(static_cast<uint32_t>(bytes[1]) << 16) |
+			(static_cast<uint32_t>(bytes[2]) << 8) |
+			static_cast<uint32_t>(bytes[3]);
+}
+
+static bool validate_preview_png(const DiskEntry &entry, std::vector<String> &errors)
+{
+	PackedByteArray header;
+	Ref<FileAccess> file = FileAccess::open(entry.absolute_path, FileAccess::READ);
+	if (file.is_null() || entry.size < 33) {
+		add_error(errors, "preview.png is missing or too short");
+		return false;
+	}
+	header = file->get_buffer(33);
+	static const uint8_t PNG_SIGNATURE[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+	if (header.size() != 33 || std::memcmp(header.ptr(), PNG_SIGNATURE, 8) != 0 ||
+			read_be_u32(header.ptr() + 8) != 13 || std::memcmp(header.ptr() + 12, "IHDR", 4) != 0) {
+		add_error(errors, "preview.png does not have a valid PNG IHDR header");
+		return false;
+	}
+	const uint32_t width = read_be_u32(header.ptr() + 16);
+	const uint32_t height = read_be_u32(header.ptr() + 20);
+	if (width == 0 || height == 0 || width > PREVIEW_MAX_DIMENSION || height > PREVIEW_MAX_DIMENSION) {
+		add_error(errors, "preview.png dimensions must be between 1 and 4096 pixels");
+		return false;
+	}
+	return true;
+}
+
+static bool json_number_in_range(const Variant &value, double minimum, double maximum)
+{
+	double number = 0.0;
+	if (value.get_type() == Variant::FLOAT) {
+		number = static_cast<double>(value);
+	} else if (value.get_type() == Variant::INT) {
+		number = static_cast<double>(static_cast<int64_t>(value));
+	} else {
+		return false;
+	}
+	return std::isfinite(number) && number >= minimum && number <= maximum;
+}
+
+static bool json_vec3_in_range(const Variant &value, double minimum, double maximum, double *out_length_squared = nullptr)
+{
+	if (value.get_type() != Variant::ARRAY) {
+		return false;
+	}
+	const Array values = value;
+	if (values.size() != 3) {
+		return false;
+	}
+	double length_squared = 0.0;
+	for (int64_t i = 0; i < 3; ++i) {
+		if (!json_number_in_range(values[i], minimum, maximum)) {
+			return false;
+		}
+		const double component = values[i].get_type() == Variant::FLOAT
+				? static_cast<double>(values[i])
+				: static_cast<double>(static_cast<int64_t>(values[i]));
+		length_squared += component * component;
+	}
+	if (out_length_squared) {
+		*out_length_squared = length_squared;
+	}
+	return true;
+}
+
+static bool validate_track_metadata(
+		const DiskEntry &entry,
+		std::vector<String> &errors)
+{
+	PackedByteArray bytes;
+	if (!read_file_limited(entry.absolute_path, TRACK_METADATA_MAX_BYTES, bytes, errors)) {
+		return false;
+	}
+	if (!audit_json_members(bytes, errors)) {
+		add_error(errors, "track metadata contains duplicate JSON members");
+		return false;
+	}
+	Ref<JSON> json;
+	json.instantiate();
+	const String text = String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size());
+	if (json->parse(text) != OK || json->get_data().get_type() != Variant::DICTIONARY) {
+		add_error(errors, "track metadata must contain one valid JSON object");
+		return false;
+	}
+	const Dictionary metadata = json->get_data();
+	static const char *REQUIRED_KEYS[] = {
+		"difficulty", "fog_distance", "sky_top_color", "sky_horizon_color", "sky_ground_color",
+		"ground_color", "ground_height", "cloud_color", "cloud_height", "light_color",
+		"light_intensity", "ambient_intensity", "ambient_color", "light_direction"
+	};
+	if (metadata.size() != static_cast<int64_t>(std::size(REQUIRED_KEYS))) {
+		add_error(errors, "track metadata must contain exactly the revision 1 environment fields");
+		return false;
+	}
+	for (const char *key : REQUIRED_KEYS) {
+		if (!metadata.has(key)) {
+			add_error(errors, String("track metadata is missing '") + key + String("'"));
+			return false;
+		}
+	}
+	double difficulty = -1.0;
+	if (metadata["difficulty"].get_type() == Variant::INT) {
+		difficulty = static_cast<double>(static_cast<int64_t>(metadata["difficulty"]));
+	} else if (metadata["difficulty"].get_type() == Variant::FLOAT) {
+		difficulty = static_cast<double>(metadata["difficulty"]);
+	}
+	if (difficulty < 0.0 || difficulty > 10.0 || difficulty != std::floor(difficulty) ||
+			!json_number_in_range(metadata["fog_distance"], 10.0, 1'000'000.0) ||
+			!json_number_in_range(metadata["ground_height"], -100'000.0, 100'000.0) ||
+			!json_number_in_range(metadata["cloud_height"], -100'000.0, 100'000.0) ||
+			!json_number_in_range(metadata["light_intensity"], 0.0, 100.0) ||
+			!json_number_in_range(metadata["ambient_intensity"], 0.0, 100.0)) {
+		add_error(errors, "track metadata contains an out-of-range scalar field");
+		return false;
+	}
+	for (const char *color_key : {
+			 "sky_top_color", "sky_horizon_color", "sky_ground_color", "ground_color",
+			 "cloud_color", "light_color", "ambient_color"}) {
+		if (!json_vec3_in_range(metadata[color_key], 0.0, 1.0)) {
+			add_error(errors, String("track metadata color '") + color_key + String("' must contain three values from 0 through 1"));
+			return false;
+		}
+	}
+	double direction_length_squared = 0.0;
+	if (!json_vec3_in_range(metadata["light_direction"], -1.0, 1.0, &direction_length_squared) ||
+			direction_length_squared <= 1.0e-8) {
+		add_error(errors, "track metadata light_direction must be a non-zero three-component vector");
+		return false;
+	}
+	return true;
+}
+
+static void append_u32_be(const Ref<HashingContext> &hash, uint32_t value)
+{
+	PackedByteArray bytes;
+	bytes.resize(4);
+	uint8_t *out = bytes.ptrw();
+	out[0] = static_cast<uint8_t>(value >> 24);
+	out[1] = static_cast<uint8_t>(value >> 16);
+	out[2] = static_cast<uint8_t>(value >> 8);
+	out[3] = static_cast<uint8_t>(value);
+	hash->update(bytes);
+}
+
+static void append_u64_be(const Ref<HashingContext> &hash, uint64_t value)
+{
+	PackedByteArray bytes;
+	bytes.resize(8);
+	uint8_t *out = bytes.ptrw();
+	for (uint32_t i = 0; i < 8; ++i) {
+		out[i] = static_cast<uint8_t>(value >> (56u - i * 8u));
+	}
+	hash->update(bytes);
+}
+
+static void append_utf8(const Ref<HashingContext> &hash, const String &value)
+{
+	const PackedByteArray bytes = value.to_utf8_buffer();
+	append_u32_be(hash, static_cast<uint32_t>(bytes.size()));
+	hash->update(bytes);
+}
+
+static bool append_file(
+		const Ref<HashingContext> &hash,
+		const DiskEntry &entry,
+		std::vector<String> &errors)
+{
+	Ref<FileAccess> file = FileAccess::open(entry.absolute_path, FileAccess::READ);
+	if (file.is_null()) {
+		add_error(errors, "could not open package file while hashing '" + entry.relative_path + "'");
+		return false;
+	}
+	uint64_t remaining = entry.size;
+	while (remaining > 0) {
+		const int64_t request = static_cast<int64_t>(std::min<uint64_t>(remaining, HASH_CHUNK_BYTES));
+		const PackedByteArray chunk = file->get_buffer(request);
+		if (chunk.size() != request) {
+			add_error(errors, "package file changed or failed while hashing '" + entry.relative_path + "'");
+			return false;
+		}
+		hash->update(chunk);
+		remaining -= static_cast<uint64_t>(request);
+	}
+	return true;
+}
+
+static bool calculate_digests(
+		const ContentManifest &manifest,
+		std::vector<DiskEntry> entries,
+		String &out_package_digest,
+		String &out_gameplay_digest,
+		std::vector<String> &errors)
+{
+	std::sort(entries.begin(), entries.end(), [](const DiskEntry &a, const DiskEntry &b) {
+		return utf8_bytes(a.relative_path) < utf8_bytes(b.relative_path);
+	});
+	Ref<HashingContext> package_hash;
+	package_hash.instantiate();
+	if (package_hash->start(HashingContext::HASH_SHA256) != OK) {
+		add_error(errors, "could not initialize package SHA-256");
+		return false;
+	}
+	PackedByteArray domain;
+	domain.resize(12);
+	std::memcpy(domain.ptrw(), "MXT_PACKAGE\0", 12);
+	package_hash->update(domain);
+	append_u32_be(package_hash, PACKAGE_FORMAT_REVISION);
+	for (const DiskEntry &entry : entries) {
+		append_utf8(package_hash, entry.relative_path);
+		append_u64_be(package_hash, entry.size);
+		if (!append_file(package_hash, entry, errors)) {
+			return false;
+		}
+	}
+	out_package_digest = "sha256:" + package_hash->finish().hex_encode();
+
+	const DiskEntry *authoritative = find_disk_entry(entries, manifest.authoritative_path);
+	if (!authoritative) {
+		add_error(errors, "authoritative gameplay payload is missing");
+		return false;
+	}
+	Ref<HashingContext> gameplay_hash;
+	gameplay_hash.instantiate();
+	if (gameplay_hash->start(HashingContext::HASH_SHA256) != OK) {
+		add_error(errors, "could not initialize gameplay SHA-256");
+		return false;
+	}
+	domain.resize(13);
+	std::memcpy(domain.ptrw(), "MXT_GAMEPLAY\0", 13);
+	gameplay_hash->update(domain);
+	append_u32_be(gameplay_hash, GAMEPLAY_DIGEST_REVISION);
+	append_utf8(gameplay_hash, content_type_name(manifest.content_type));
+	append_utf8(gameplay_hash, manifest.authoritative_path);
+	append_u64_be(gameplay_hash, authoritative->size);
+	if (!append_file(gameplay_hash, *authoritative, errors)) {
+		return false;
+	}
+	out_gameplay_digest = "sha256:" + gameplay_hash->finish().hex_encode();
+	return true;
+}
+
+static bool validate_declared_hashes(
+		const ContentManifest &manifest,
+		const std::vector<DiskEntry> &entries,
+		std::vector<String> &errors)
+{
+	for (const ManifestFile &manifest_file : manifest.files) {
+		const DiskEntry *entry = find_disk_entry(entries, manifest_file.path);
+		if (!entry) {
+			continue;
+		}
+		const String actual = FileAccess::get_sha256(entry->absolute_path);
+		if (actual.is_empty() || actual != manifest_file.declared_sha256) {
+			add_error(errors, "SHA-256 mismatch for '" + manifest_file.path + "'");
+		}
+	}
+	return errors.empty();
+}
+
+static bool validate_payloads(
+		const ContentManifest &manifest,
+		const std::vector<DiskEntry> &entries,
+		std::vector<String> &errors)
+{
+	const DiskEntry *preview = find_disk_entry(entries, "preview.png");
+	if (preview) {
+		validate_preview_png(*preview, errors);
+	}
+	if (manifest.content_type == ContentType::VEHICLE) {
+		const DiskEntry *model = find_disk_entry(entries, "vehicle/model.glb");
+		const DiskEntry *properties = find_disk_entry(entries, "vehicle/properties.mxt_car_props");
+		if (model) {
+			validate_glb_file(model->absolute_path, manifest.content_type, errors);
+		}
+		if (properties) {
+			PackedByteArray bytes;
+			if (read_file_limited(properties->absolute_path, VEHICLE_PROPERTIES_MAX_BYTES, bytes, errors)) {
+				PhysicsCarProperties sampled;
+				String parse_error;
+				if (!PhysicsCarProperties::deserialize_and_sample(bytes, 0.5f, sampled, parse_error)) {
+					add_error(errors, "vehicle properties rejected: " + parse_error);
+				}
+			}
+		}
+	} else if (manifest.content_type == ContentType::TRACK) {
+		const DiskEntry *track = find_disk_entry(entries, "track/track.mxt_track");
+		const DiskEntry *visual = find_disk_entry(entries, "track/visual.glb");
+		const DiskEntry *metadata = find_disk_entry(entries, "track/metadata.json");
+		if (track) {
+			PackedByteArray bytes;
+			if (read_file_limited(track->absolute_path, TRACK_PAYLOAD_MAX_BYTES, bytes, errors)) {
+				String parse_error;
+				if (!validate_track_payload(bytes, parse_error)) {
+					add_error(errors, "track payload rejected: " + parse_error);
+				}
+			}
+		}
+		if (visual) {
+			validate_glb_file(visual->absolute_path, manifest.content_type, errors);
+		}
+		if (metadata) {
+			validate_track_metadata(*metadata, errors);
+		}
+	}
+	return errors.empty();
+}
+
+} // namespace
+
+bool validate_package_directory_internal(
+		const String &root_path,
+		ValidatedPackage &out_package,
+		std::vector<String> &out_errors)
+{
+	out_package = ValidatedPackage();
+	if (root_path.is_empty() || DirAccess::open(root_path).is_null()) {
+		add_error(out_errors, "package root is not an existing directory");
+		return false;
+	}
+
+	const String manifest_path = root_path.path_join("manifest.json");
+	PackedByteArray manifest_bytes;
+	if (!read_file_limited(manifest_path, MANIFEST_MAX_BYTES, manifest_bytes, out_errors)) {
+		return false;
+	}
+	if (!parse_manifest(manifest_bytes, out_package.manifest, out_errors)) {
+		return false;
+	}
+
+	std::vector<DiskEntry> entries;
+	std::vector<String> directories;
+	enumerate_directory(root_path, String(), out_package.manifest.content_type, entries, directories, out_errors);
+	validate_disk_entries(out_package.manifest, entries, out_errors);
+	if (!out_errors.empty()) {
+		return false;
+	}
+
+	const uint64_t package_limit = out_package.manifest.content_type == ContentType::VEHICLE
+			? VEHICLE_PACKAGE_MAX_BYTES
+			: TRACK_PACKAGE_MAX_BYTES;
+	uint64_t total_bytes = 0;
+	for (const DiskEntry &entry : entries) {
+		const uint64_t limit = file_limit_for(out_package.manifest, entry.relative_path);
+		if (entry.size > limit) {
+			add_error(out_errors, "file exceeds its size limit: '" + entry.relative_path + "'");
+		}
+		if (entry.size > package_limit - std::min(total_bytes, package_limit)) {
+			add_error(out_errors, "package exceeds its total uncompressed size limit");
+			break;
+		}
+		total_bytes += entry.size;
+	}
+	out_package.total_bytes = total_bytes;
+	if (!out_errors.empty()) {
+		return false;
+	}
+
+	validate_declared_hashes(out_package.manifest, entries, out_errors);
+	validate_payloads(out_package.manifest, entries, out_errors);
+	if (!out_errors.empty()) {
+		return false;
+	}
+	if (!calculate_digests(
+			out_package.manifest,
+			entries,
+			out_package.package_digest,
+			out_package.gameplay_digest,
+			out_errors)) {
+		return false;
+	}
+	out_package.root_path = root_path;
+	return true;
+}
+
+} // namespace mxt::content
+
+void MxtContentValidator::_bind_methods()
+{
+	ClassDB::bind_method(D_METHOD("validate_manifest_bytes", "manifest_bytes"), &MxtContentValidator::validate_manifest_bytes);
+	ClassDB::bind_method(D_METHOD("validate_package_directory", "root_path"), &MxtContentValidator::validate_package_directory);
+}
+
+Dictionary MxtContentValidator::validate_manifest_bytes(const PackedByteArray &manifest_bytes) const
+{
+	mxt::content::ContentManifest manifest;
+	std::vector<String> errors;
+	const bool valid = mxt::content::parse_manifest(manifest_bytes, manifest, errors);
+	return mxt::content::make_result(valid, errors, valid ? &manifest : nullptr);
+}
+
+Dictionary MxtContentValidator::validate_package_directory(const String &root_path) const
+{
+	mxt::content::ValidatedPackage package;
+	std::vector<String> errors;
+	const bool valid = mxt::content::validate_package_directory_internal(root_path, package, errors);
+	Dictionary result = mxt::content::make_result(valid, errors, package.manifest.content_type == mxt::content::ContentType::INVALID ? nullptr : &package.manifest);
+	if (valid) {
+		result["root_path"] = package.root_path;
+		result["package_digest"] = package.package_digest;
+		result["gameplay_digest"] = package.gameplay_digest;
+		result["total_bytes"] = static_cast<int64_t>(package.total_bytes);
+	}
+	return result;
+}

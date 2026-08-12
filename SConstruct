@@ -86,6 +86,7 @@ sources.append(Glob("src/*.cpp"))
 mxt_core_sources = Glob("src/mxt_core/*.cpp")
 mxt_core_sources = [source for source in mxt_core_sources if not str(source).replace("\\", "/").endswith("/steam_service.cpp")]
 sources.append(mxt_core_sources)
+sources.append(Glob("src/content/*.cpp"))
 sources.append(Glob("src/track/*.cpp"))
 sources.append(Glob("src/car/*.cpp"))
 steam_service_env = env.Clone()
