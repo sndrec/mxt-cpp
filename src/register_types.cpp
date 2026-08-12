@@ -1,6 +1,7 @@
 #include "register_types.h"
 
 #include "content/content_validator.h"
+#include "content/content_package_io.h"
 #include "main.h"
 #include "fzgx_gameplay_camera.h"
 #include "mxt_core/netcode_session.h"
@@ -31,6 +32,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MxtSpatialAudioManager);
 	GDREGISTER_CLASS(MxtSteamService);
 	GDREGISTER_CLASS(MxtContentValidator);
+	GDREGISTER_CLASS(MxtContentPackageIO);
 }
 
 void uninitialize_gamesim_module(ModuleInitializationLevel p_level) {

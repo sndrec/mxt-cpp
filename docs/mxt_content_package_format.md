@@ -138,4 +138,18 @@ Vehicle properties must pass the native `.mxt_car_props` schema, CRC, curve, and
 
 ## `.mxtpkg`
 
-A `.mxtpkg` is a ZIP transport for exactly one canonical package directory. Archive import/export will be specified and implemented as a separate layer: archive limits and path validation must run before extraction, and successful extraction must reproduce the canonical directory byte-for-byte. The unpacked directory and its digests remain authoritative; ZIP container metadata is not part of either digest.
+A `.mxtpkg` is a ZIP32 transport for exactly one canonical package directory. It contains the exact package files plus one empty `vehicle/` or `track/` directory entry. Entry names use the canonical ASCII paths above.
+
+Revision 1 archives:
+
+- contain no preamble, comment, trailing data, hidden local records, extra fields, ZIP64 records, or multi-disk data;
+- contain no encryption, data descriptors, symlinks, or unsupported compression methods;
+- use stored or Deflate compression and contain matching local/central headers;
+- contain at most eight entries and no duplicate case-folded paths;
+- obey the package and per-file uncompressed limits before any entry is extracted;
+- reject entries larger than 1 MiB whose declared compression ratio exceeds 200:1; and
+- must contain exactly the files declared by the successfully parsed manifest.
+
+Import first preflights the raw central directory and local headers, then decompresses into a private staging directory, applies the full package validator, and atomically installs the result under its package-digest hex string. Reimporting identical bytes reuses the valid content-addressed installation. Export validates the source directory, writes sorted canonical paths to a temporary archive, preflights that archive, and only then moves it to the requested output path.
+
+The unpacked directory and its digests remain authoritative. ZIP compression, timestamps, and other container metadata are not part of either digest.

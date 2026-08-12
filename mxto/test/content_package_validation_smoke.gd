@@ -28,6 +28,22 @@ func _initialize() -> void:
 	var vehicle_result: Dictionary = validator.validate_package_directory(vehicle_root)
 	_expect(bool(vehicle_result.get("valid", false)), "representative vehicle package should validate: %s" % [vehicle_result.get("errors", [])])
 
+	var package_io := MxtContentPackageIO.new()
+	var archive_path := ProjectSettings.globalize_path("user://" + ROOT_NAME + ".mxtpkg")
+	var export_result: Dictionary = package_io.export_mxtpkg(root, archive_path)
+	_expect(bool(export_result.get("valid", false)), "validated directory should export as .mxtpkg: %s" % [export_result.get("errors", [])])
+	var inspect_result: Dictionary = package_io.inspect_mxtpkg(archive_path)
+	_expect(bool(inspect_result.get("valid", false)), "exported .mxtpkg should pass archive preflight: %s" % [inspect_result.get("errors", [])])
+	var library_root := ProjectSettings.globalize_path("user://" + ROOT_NAME + "_library")
+	var import_result: Dictionary = package_io.import_mxtpkg(archive_path, library_root)
+	_expect(bool(import_result.get("valid", false)), "exported .mxtpkg should import: %s" % [import_result.get("errors", [])])
+	if bool(import_result.get("valid", false)):
+		_expect(import_result.get("package_digest", "") == export_result.get("package_digest", ""), "archive round trip must preserve package digest")
+		var installed: Dictionary = validator.validate_package_directory(import_result["package_path"])
+		_expect(bool(installed.get("valid", false)), "installed package should pass the directory validator")
+		var repeated_import: Dictionary = package_io.import_mxtpkg(archive_path, library_root)
+		_expect(bool(repeated_import.get("valid", false)) and bool(repeated_import.get("reused_existing", false)), "reimport should reuse the content-addressed installation")
+
 	var extra_path := root.path_join("undeclared.txt")
 	var extra := FileAccess.open(extra_path, FileAccess.WRITE)
 	extra.store_string("not declared")
@@ -41,6 +57,13 @@ func _initialize() -> void:
 	changed_preview.close()
 	var hash_mismatch: Dictionary = validator.validate_package_directory(root)
 	_expect(!bool(hash_mismatch.get("valid", true)), "payload hash mismatches must be rejected")
+	var changed_archive := FileAccess.open(archive_path, FileAccess.READ_WRITE)
+	if changed_archive != null:
+		changed_archive.seek_end()
+		changed_archive.store_8(0)
+		changed_archive.close()
+		var trailing_archive_data: Dictionary = package_io.inspect_mxtpkg(archive_path)
+		_expect(!bool(trailing_archive_data.get("valid", true)), "archives with hidden trailing data must be rejected")
 
 	var duplicate_manifest := (
 		'{"format_revision":1,"format_revision":1,"content_type":"vehicle",' +
