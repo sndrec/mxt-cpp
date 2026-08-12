@@ -122,6 +122,20 @@ authoritative_file_bytes
 
 Both revision fields are currently `1`. The authoritative file is `vehicle/properties.mxt_car_props` for a vehicle and `track/track.mxt_track` for a track. Presentation edits therefore change the package digest without changing gameplay identity.
 
+## Catalog content IDs
+
+Paths are locators, never identities. The native catalog assigns colon-delimited stable IDs:
+
+```text
+mxt:<vehicle|track>:package:<package-digest-hex>
+mxt:<vehicle|track>:workshop:<published-file-id>
+mxt:<vehicle|track>:official:<checked-in-slug>   (reserved for built-in migration)
+```
+
+A local package ID names one immutable package revision. A Workshop ID names the logical mutable listing and resolves to the exact currently validated package record. Race admission and replay headers must therefore store the content ID together with both the package and gameplay digests; a Workshop ID by itself is never exact gameplay evidence.
+
+Catalog records expose validated absolute paths for the preview, visual payload, authoritative gameplay payload, and track metadata. Settings, replay data, multiplayer negotiation, and selection UI consume the content ID and resolved record rather than persisting those paths.
+
 ## Initial limits and accepted payloads
 
 - Vehicle package: 64 MiB total; model 48 MiB; properties 4 MiB.
