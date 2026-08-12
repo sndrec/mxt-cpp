@@ -161,6 +161,12 @@ func _prepare_vehicle_package(root: String) -> void:
 			"rotation_degrees": [0.0, 0.0, 0.0],
 			"scale": [1.0, 1.0, 1.0],
 		},
+		"body_surfaces": [0],
+		"material_inputs": {
+			"albedo_surface": -1,
+			"normal_surface": -1,
+			"paint_mask_surface": -1,
+		},
 		"thrusters": [],
 	}, "  ", true))
 	visual.close()

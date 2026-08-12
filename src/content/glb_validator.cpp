@@ -253,8 +253,13 @@ static uint32_t type_component_count(const String &type)
 
 } // namespace
 
-bool validate_glb_file(const String &path, ContentType content_type, std::vector<String> &out_errors)
+bool validate_glb_file(
+		const String &path,
+		ContentType content_type,
+		std::vector<String> &out_errors,
+		VehicleGlbInfo *out_vehicle_info)
 {
+	if (out_vehicle_info) out_vehicle_info->surfaces.clear();
 	const GlbBudgets budget = budgets_for(content_type);
 	Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
 	if (file.is_null() || file->get_length() < 20) {
@@ -342,9 +347,19 @@ bool validate_glb_file(const String &path, ContentType content_type, std::vector
 	Array extensions_used;
 	Array extensions_required;
 	if (!get_optional_array(root, "extensionsUsed", extensions_used) ||
-			!get_optional_array(root, "extensionsRequired", extensions_required) ||
-			!extensions_used.is_empty() || !extensions_required.is_empty()) {
-		add_error(out_errors, path, "extensionsUsed and extensionsRequired must be absent or empty");
+			!get_optional_array(root, "extensionsRequired", extensions_required)) {
+		add_error(out_errors, path, "extensionsUsed and extensionsRequired must be arrays");
+		return false;
+	}
+	for (int64_t i = 0; i < extensions_used.size(); ++i) {
+		if (extensions_used[i].get_type() != Variant::STRING ||
+				static_cast<String>(extensions_used[i]) != "GODOT_single_root") {
+			add_error(out_errors, path, "extensionsUsed contains an unsupported extension");
+			return false;
+		}
+	}
+	if (!extensions_required.is_empty()) {
+		add_error(out_errors, path, "required glTF extensions are unsupported");
 		return false;
 	}
 	for (const char *unsupported : {"animations", "skins", "cameras"}) {
@@ -469,6 +484,39 @@ bool validate_glb_file(const String &path, ContentType content_type, std::vector
 			static_cast<uint64_t>(count), static_cast<uint32_t>(component_type), components
 		};
 	}
+	for (int64_t material_index = 0; material_index < materials.size(); ++material_index) {
+		if (materials[material_index].get_type() != Variant::DICTIONARY) {
+			add_error(out_errors, path, "material entry must be an object");
+			return false;
+		}
+		const Dictionary material = materials[material_index];
+		auto validate_texture_info = [&](const Dictionary &owner, const char *key) {
+			if (!owner.has(key)) return true;
+			if (owner[key].get_type() != Variant::DICTIONARY) return false;
+			const Dictionary info = owner[key];
+			const int64_t texture_index = info.has("index") ? json_integer(info["index"]) : -1;
+			const int64_t texcoord = info.has("texCoord") ? json_integer(info["texCoord"]) : 0;
+			return texture_index >= 0 && texture_index < textures.size() && texcoord >= 0 && texcoord <= 1;
+		};
+		if (material.has("pbrMetallicRoughness")) {
+			if (material["pbrMetallicRoughness"].get_type() != Variant::DICTIONARY) {
+				add_error(out_errors, path, "material pbrMetallicRoughness must be an object");
+				return false;
+			}
+			const Dictionary pbr = material["pbrMetallicRoughness"];
+			if (!validate_texture_info(pbr, "baseColorTexture") ||
+					!validate_texture_info(pbr, "metallicRoughnessTexture")) {
+				add_error(out_errors, path, "material PBR texture input is invalid");
+				return false;
+			}
+		}
+		if (!validate_texture_info(material, "normalTexture") ||
+				!validate_texture_info(material, "occlusionTexture") ||
+				!validate_texture_info(material, "emissiveTexture")) {
+			add_error(out_errors, path, "material texture input is invalid");
+			return false;
+		}
+	}
 
 	uint64_t total_vertices = 0;
 	uint64_t total_triangles = 0;
@@ -547,12 +595,36 @@ bool validate_glb_file(const String &path, ContentType content_type, std::vector
 				return false;
 			}
 			total_triangles += index_count / 3;
+			int64_t material_index = -1;
 			if (primitive.has("material")) {
-				const int64_t material = json_integer(primitive["material"]);
-				if (material < 0 || material >= materials.size()) {
+				material_index = json_integer(primitive["material"]);
+				if (material_index < 0 || material_index >= materials.size()) {
 					add_error(out_errors, path, "primitive references an invalid material");
 					return false;
 				}
+			}
+			if (content_type == ContentType::VEHICLE && out_vehicle_info) {
+				VehicleGlbSurface info;
+				info.name = String("Surface ") + String::num_int64(primitive_index + 1);
+				if (material_index >= 0) {
+					info.material_index = static_cast<uint32_t>(material_index);
+					const Dictionary material = materials[material_index];
+					if (material.has("name") && material["name"].get_type() == Variant::STRING &&
+							!static_cast<String>(material["name"]).is_empty()) {
+						info.name += String(" - ") + static_cast<String>(material["name"]);
+					}
+					if (material.has("pbrMetallicRoughness") &&
+							material["pbrMetallicRoughness"].get_type() == Variant::DICTIONARY) {
+						const Dictionary pbr = material["pbrMetallicRoughness"];
+						info.has_albedo_texture = pbr.has("baseColorTexture") &&
+								pbr["baseColorTexture"].get_type() == Variant::DICTIONARY;
+					}
+					info.has_normal_texture = material.has("normalTexture") &&
+							material["normalTexture"].get_type() == Variant::DICTIONARY;
+					info.has_paint_mask_texture = material.has("occlusionTexture") &&
+							material["occlusionTexture"].get_type() == Variant::DICTIONARY;
+				}
+				out_vehicle_info->surfaces.push_back(info);
 			}
 		}
 	}

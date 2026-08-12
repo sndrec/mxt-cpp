@@ -579,6 +579,7 @@ static bool read_bounded_vector3(
 
 static bool validate_vehicle_visual_metadata(
 		const DiskEntry &entry,
+		const VehicleGlbInfo *model_info,
 		Dictionary &out_metadata,
 		std::vector<String> &errors)
 {
@@ -591,7 +592,9 @@ static bool validate_vehicle_visual_metadata(
 		return false;
 	}
 	const Dictionary root = parsed;
-	static const char *ROOT_KEYS[] = {"format_revision", "model_transform", "thrusters"};
+	static const char *ROOT_KEYS[] = {
+		"format_revision", "model_transform", "body_surfaces", "material_inputs", "thrusters"
+	};
 	has_only_keys(root, ROOT_KEYS, std::size(ROOT_KEYS), "vehicle visual metadata", errors);
 	const Variant revision_value = root.get("format_revision", Variant());
 	const bool valid_revision =
@@ -616,6 +619,72 @@ static bool validate_vehicle_visual_metadata(
 			(scale.x <= 0.0 || scale.y <= 0.0 || scale.z <= 0.0)) {
 		add_error(errors, "vehicle visual model scale must be positive");
 	}
+	if (!root.has("body_surfaces") || root["body_surfaces"].get_type() != Variant::ARRAY) {
+		add_error(errors, "vehicle visual body_surfaces must be an array");
+		return false;
+	}
+	const Array body_surfaces = root["body_surfaces"];
+	if (body_surfaces.is_empty() || body_surfaces.size() > 1024) {
+		add_error(errors, "vehicle visual must select between one and 1024 body surfaces");
+	}
+	Array normalized_body_surfaces;
+	std::vector<uint8_t> selected(model_info ? model_info->surfaces.size() : 0, 0);
+	auto read_json_integer = [](const Variant &value, int64_t &out) {
+		if (value.get_type() == Variant::INT) {
+			out = static_cast<int64_t>(value);
+			return true;
+		}
+		if (value.get_type() != Variant::FLOAT) return false;
+		const double number = static_cast<double>(value);
+		if (!std::isfinite(number) || number != std::floor(number) ||
+				number < -1.0 || number > 9.0e15) return false;
+		out = static_cast<int64_t>(number);
+		return true;
+	};
+	for (int64_t i = 0; i < body_surfaces.size(); ++i) {
+		int64_t surface = -1;
+		if (!read_json_integer(body_surfaces[i], surface)) {
+			add_error(errors, "vehicle visual body surface indices must be integers");
+			continue;
+		}
+		if (!model_info || surface < 0 || surface >= static_cast<int64_t>(model_info->surfaces.size())) {
+			add_error(errors, "vehicle visual body surface index is outside the model");
+			continue;
+		}
+		if (selected[static_cast<size_t>(surface)] != 0) {
+			add_error(errors, "vehicle visual body surface indices must be unique");
+			continue;
+		}
+		selected[static_cast<size_t>(surface)] = 1;
+		normalized_body_surfaces.push_back(surface);
+	}
+	if (!root.has("material_inputs") || root["material_inputs"].get_type() != Variant::DICTIONARY) {
+		add_error(errors, "vehicle visual material_inputs must be an object");
+		return false;
+	}
+	const Dictionary material_inputs = root["material_inputs"];
+	static const char *MATERIAL_KEYS[] = {"albedo_surface", "normal_surface", "paint_mask_surface"};
+	has_only_keys(material_inputs, MATERIAL_KEYS, std::size(MATERIAL_KEYS), "vehicle visual material_inputs", errors);
+	auto read_material_surface = [&](const char *key, bool VehicleGlbSurface::*texture_member) {
+		int64_t surface = -2;
+		if (!material_inputs.has(key) || !read_json_integer(material_inputs[key], surface)) {
+			add_error(errors, String("vehicle visual material input '") + key + "' must be an integer");
+			return int64_t(-2);
+		}
+		if (surface == -1) return surface;
+		if (!model_info || surface < 0 || surface >= static_cast<int64_t>(model_info->surfaces.size())) {
+			add_error(errors, String("vehicle visual material input '") + key + "' is outside the model");
+			return int64_t(-2);
+		}
+		if (!(model_info->surfaces[static_cast<size_t>(surface)].*texture_member)) {
+			add_error(errors, String("vehicle visual material input '") + key + "' selects a surface without that texture");
+			return int64_t(-2);
+		}
+		return surface;
+	};
+	const int64_t albedo_surface = read_material_surface("albedo_surface", &VehicleGlbSurface::has_albedo_texture);
+	const int64_t normal_surface = read_material_surface("normal_surface", &VehicleGlbSurface::has_normal_texture);
+	const int64_t paint_mask_surface = read_material_surface("paint_mask_surface", &VehicleGlbSurface::has_paint_mask_texture);
 	if (!root.has("thrusters") || root["thrusters"].get_type() != Variant::ARRAY) {
 		add_error(errors, "vehicle visual thrusters must be an array");
 		return false;
@@ -660,6 +729,12 @@ static bool validate_vehicle_visual_metadata(
 	normalized_transform["scale"] = scale;
 	out_metadata["format_revision"] = 1;
 	out_metadata["model_transform"] = normalized_transform;
+	out_metadata["body_surfaces"] = normalized_body_surfaces;
+	Dictionary normalized_material_inputs;
+	normalized_material_inputs["albedo_surface"] = albedo_surface;
+	normalized_material_inputs["normal_surface"] = normal_surface;
+	normalized_material_inputs["paint_mask_surface"] = paint_mask_surface;
+	out_metadata["material_inputs"] = normalized_material_inputs;
 	out_metadata["thrusters"] = normalized_thrusters;
 	return true;
 }
@@ -678,8 +753,10 @@ static bool validate_payloads(
 		const DiskEntry *model = find_disk_entry(entries, "vehicle/model.glb");
 		const DiskEntry *properties = find_disk_entry(entries, "vehicle/properties.mxt_car_props");
 		const DiskEntry *visual_metadata = find_disk_entry(entries, "vehicle/visual.json");
+		VehicleGlbInfo model_info;
+		bool model_valid = false;
 		if (model) {
-			validate_glb_file(model->absolute_path, manifest.content_type, errors);
+			model_valid = validate_glb_file(model->absolute_path, manifest.content_type, errors, &model_info);
 		}
 		if (properties) {
 			PackedByteArray bytes;
@@ -691,7 +768,8 @@ static bool validate_payloads(
 				}
 			}
 		}
-		if (visual_metadata) validate_vehicle_visual_metadata(*visual_metadata, out_visual_metadata, errors);
+		if (visual_metadata) validate_vehicle_visual_metadata(
+				*visual_metadata, model_valid ? &model_info : nullptr, out_visual_metadata, errors);
 	} else if (manifest.content_type == ContentType::TRACK) {
 		const DiskEntry *track = find_disk_entry(entries, "track/track.mxt_track");
 		const DiskEntry *visual = find_disk_entry(entries, "track/visual.glb");

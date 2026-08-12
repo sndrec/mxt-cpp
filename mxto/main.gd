@@ -96,6 +96,8 @@ const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
 const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
+const COMMUNITY_VEHICLE_SHADER: Shader = preload("res://vehicle/base_vehicle_shader.gdshader")
+const COMMUNITY_VEHICLE_CROSS_HATCH: Texture2D = preload("res://asset/tex/crosshatch/1.png")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
@@ -795,19 +797,78 @@ func _car_definition_from_package_record(record: Dictionary) -> CarDefinition:
 		instance.free()
 		return null
 	var mesh_instance: MeshInstance3D = mesh_data["instance"]
+	var visual_metadata: Dictionary = record.get("visual_metadata", {})
+	var body_surfaces: Array = visual_metadata.get("body_surfaces", [])
+	var runtime_mesh := _build_packaged_vehicle_body_mesh(mesh_instance.mesh, body_surfaces)
+	if runtime_mesh == null:
+		push_error("Packaged vehicle has no selected runtime body surfaces: %s" % visual_path)
+		instance.free()
+		return null
 	var definition := CarDefinition.new()
 	definition.name = String(record.get("title", "Vehicle"))
 	definition.content_id = String(record.get("content_id", ""))
 	definition.properties_path = String(record.get("authoritative_path", ""))
-	definition.runtime_mesh = mesh_instance.mesh
-	definition.runtime_material = mesh_instance.material_override
-	var visual_metadata: Dictionary = record.get("visual_metadata", {})
+	definition.runtime_mesh = runtime_mesh
+	definition.runtime_material = _build_packaged_vehicle_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}))
 	var model_transform: Dictionary = visual_metadata.get("model_transform", {})
 	definition.runtime_transform = _transform_from_vehicle_metadata(model_transform) * mesh_data["transform"]
 	for thruster_value in visual_metadata.get("thrusters", []):
 		definition.runtime_thruster_transforms.append(_thruster_transform_from_vehicle_metadata(thruster_value))
 	instance.free()
 	return definition
+
+func _build_packaged_vehicle_body_mesh(source: Mesh, selected_surfaces: Array) -> ArrayMesh:
+	if source == null or selected_surfaces.is_empty():
+		return null
+	var body := ArrayMesh.new()
+	for surface_value in selected_surfaces:
+		var surface := int(surface_value)
+		if surface < 0 or surface >= source.get_surface_count():
+			return null
+		body.add_surface_from_arrays(source.surface_get_primitive_type(surface), source.surface_get_arrays(surface))
+	return body
+
+func _build_packaged_vehicle_material(source: Mesh, inputs: Dictionary) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = COMMUNITY_VEHICLE_SHADER
+	material.set_shader_parameter("in_lightwarp", _community_vehicle_lightwarp())
+	material.set_shader_parameter("in_specwarp", _community_vehicle_specwarp())
+	material.set_shader_parameter("cross_hatch", COMMUNITY_VEHICLE_CROSS_HATCH)
+	material.set_shader_parameter("in_overlay_colour", Color.BLACK)
+	material.set_shader_parameter("in_albedo", _packaged_vehicle_texture(source, int(inputs.get("albedo_surface", -1)), "albedo_texture", Color.WHITE))
+	material.set_shader_parameter("in_normal", _packaged_vehicle_texture(source, int(inputs.get("normal_surface", -1)), "normal_texture", Color(0.5, 0.5, 1.0, 1.0)))
+	material.set_shader_parameter("in_paint_mask", _packaged_vehicle_texture(source, int(inputs.get("paint_mask_surface", -1)), "ao_texture", Color.BLACK))
+	material.set_shader_parameter("livery_colour_strength", 1.0)
+	return material
+
+func _packaged_vehicle_texture(source: Mesh, surface: int, property: StringName, fallback: Color) -> Texture2D:
+	if source != null and surface >= 0 and surface < source.get_surface_count():
+		var source_material := source.surface_get_material(surface)
+		if source_material != null:
+			var candidate = source_material.get(property)
+			if candidate is Texture2D:
+				return candidate
+	var image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
+	image.fill(fallback)
+	return ImageTexture.create_from_image(image)
+
+func _community_vehicle_lightwarp() -> GradientTexture1D:
+	var gradient := Gradient.new()
+	gradient.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
+	gradient.offsets = PackedFloat32Array([0.0, 0.318519, 0.788889, 0.979532])
+	gradient.colors = PackedColorArray([Color(0.1, 0.1, 0.1), Color.BLACK, Color(0.521, 0.521, 0.521), Color.WHITE])
+	var texture := GradientTexture1D.new()
+	texture.gradient = gradient
+	return texture
+
+func _community_vehicle_specwarp() -> GradientTexture1D:
+	var gradient := Gradient.new()
+	gradient.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
+	gradient.offsets = PackedFloat32Array([0.151852, 0.925926])
+	gradient.colors = PackedColorArray([Color.BLACK, Color.WHITE])
+	var texture := GradientTexture1D.new()
+	texture.gradient = gradient
+	return texture
 
 func _transform_from_vehicle_metadata(value: Dictionary) -> Transform3D:
 	var rotation_degrees_value: Vector3 = value.get("rotation_degrees", Vector3.ZERO)

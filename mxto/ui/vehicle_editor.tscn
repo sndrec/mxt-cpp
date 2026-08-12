@@ -147,6 +147,64 @@ text = "Model transform"
 [node name="Rows" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Transform"]
 layout_mode = 2
 
+[node name="Materials" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs"]
+visible = false
+layout_mode = 2
+
+[node name="Hint" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
+layout_mode = 2
+text = "MaxX Throttle material inputs from embedded glTF textures"
+autowrap_mode = 2
+
+[node name="BodyLabel" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
+layout_mode = 2
+text = "Rendered body surfaces"
+
+[node name="BodySurfaces" type="ItemList" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
+custom_minimum_size = Vector2(0, 88)
+layout_mode = 2
+size_flags_vertical = 3
+select_mode = 1
+
+[node name="AlbedoRow" type="HBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+text = "Albedo"
+
+[node name="Source" type="OptionButton" parent="Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="NormalRow" type="HBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+text = "Normal"
+
+[node name="Source" type="OptionButton" parent="Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="PaintMaskRow" type="HBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+text = "Paint mask"
+
+[node name="Source" type="OptionButton" parent="Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
 [node name="Corners" type="ScrollContainer" parent="Workspace/VisualColumn/PhysicalTabs"]
 visible = false
 layout_mode = 2

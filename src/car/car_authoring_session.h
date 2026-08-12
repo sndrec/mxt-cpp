@@ -42,6 +42,10 @@ private:
 	Vector3 model_translation = Vector3();
 	Vector3 model_rotation_degrees = Vector3();
 	Vector3 model_scale = Vector3(1.0, 1.0, 1.0);
+	std::vector<int32_t> body_surfaces;
+	int32_t albedo_surface = -1;
+	int32_t normal_surface = -1;
+	int32_t paint_mask_surface = -1;
 	struct Thruster {
 		Vector3 position;
 		Vector3 rotation_degrees;
@@ -106,6 +110,9 @@ public:
 	String get_model_path() const;
 	Dictionary get_model_transform() const;
 	bool set_model_transform(const Dictionary &value);
+	Array get_model_surfaces() const;
+	Dictionary get_material_setup() const;
+	bool set_material_setup(const Dictionary &value);
 	Array get_thrusters() const;
 	bool set_thrusters(const Array &value);
 	Dictionary sample_effective_stats(

@@ -313,6 +313,9 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_model_path"), &MxtCarAuthoringSession::get_model_path);
 	ClassDB::bind_method(D_METHOD("get_model_transform"), &MxtCarAuthoringSession::get_model_transform);
 	ClassDB::bind_method(D_METHOD("set_model_transform", "value"), &MxtCarAuthoringSession::set_model_transform);
+	ClassDB::bind_method(D_METHOD("get_model_surfaces"), &MxtCarAuthoringSession::get_model_surfaces);
+	ClassDB::bind_method(D_METHOD("get_material_setup"), &MxtCarAuthoringSession::get_material_setup);
+	ClassDB::bind_method(D_METHOD("set_material_setup", "value"), &MxtCarAuthoringSession::set_material_setup);
 	ClassDB::bind_method(D_METHOD("get_thrusters"), &MxtCarAuthoringSession::get_thrusters);
 	ClassDB::bind_method(D_METHOD("set_thrusters", "value"), &MxtCarAuthoringSession::set_thrusters);
 	ClassDB::bind_method(D_METHOD("sample_effective_stats", "machine_setting", "technique", "technique_intensity", "boost_state"), &MxtCarAuthoringSession::sample_effective_stats);
@@ -880,8 +883,10 @@ Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const
 	const String temporary = root.path_join("package/vehicle/model.importing.glb");
 	DirAccess::remove_absolute(temporary);
 	std::vector<String> validation_errors;
+	mxt::content::VehicleGlbInfo model_info;
 	if (extension == "glb") {
-		if (!mxt::content::validate_glb_file(source, mxt::content::ContentType::VEHICLE, validation_errors)) {
+		if (!mxt::content::validate_glb_file(
+				source, mxt::content::ContentType::VEHICLE, validation_errors, &model_info)) {
 			PackedStringArray errors;
 			for (const String &error : validation_errors) errors.push_back(error);
 			return result_dictionary(false, errors, {});
@@ -904,7 +909,8 @@ Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const
 			DirAccess::remove_absolute(temporary);
 			return result_dictionary(false, single_error("could not normalize glTF source into a self-contained GLB"), {});
 		}
-		if (!mxt::content::validate_glb_file(temporary, mxt::content::ContentType::VEHICLE, validation_errors)) {
+		if (!mxt::content::validate_glb_file(
+				temporary, mxt::content::ContentType::VEHICLE, validation_errors, &model_info)) {
 			DirAccess::remove_absolute(temporary);
 			PackedStringArray errors;
 			for (const String &error : validation_errors) errors.push_back(error);
@@ -917,6 +923,17 @@ Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const
 		return result_dictionary(false, single_error("could not install normalized vehicle GLB into the draft"), {});
 	}
 	model_path = destination;
+	body_surfaces.clear();
+	body_surfaces.reserve(model_info.surfaces.size());
+	albedo_surface = -1;
+	normal_surface = -1;
+	paint_mask_surface = -1;
+	for (size_t i = 0; i < model_info.surfaces.size(); ++i) {
+		body_surfaces.push_back(static_cast<int32_t>(i));
+		if (albedo_surface < 0 && model_info.surfaces[i].has_albedo_texture) albedo_surface = static_cast<int32_t>(i);
+		if (normal_surface < 0 && model_info.surfaces[i].has_normal_texture) normal_surface = static_cast<int32_t>(i);
+		if (paint_mask_surface < 0 && model_info.surfaces[i].has_paint_mask_texture) paint_mask_surface = static_cast<int32_t>(i);
+	}
 	dirty = true;
 	return result_dictionary(true, {}, {});
 }
@@ -937,6 +954,9 @@ Dictionary MxtCarAuthoringSession::load_vehicle_package(const String &package_ro
 	if (!static_cast<bool>(loaded.get("valid", false))) return loaded;
 	model_path = root.path_join("vehicle/model.glb");
 	set_model_transform(package.visual_metadata.get("model_transform", Dictionary()));
+	Dictionary material_setup = package.visual_metadata.get("material_inputs", Dictionary());
+	material_setup["body_surfaces"] = package.visual_metadata.get("body_surfaces", Array());
+	set_material_setup(material_setup);
 	set_thrusters(package.visual_metadata.get("thrusters", Array()));
 	undo_history.clear();
 	redo_history.clear();
@@ -990,6 +1010,14 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	Dictionary visual;
 	visual["format_revision"] = 1;
 	visual["model_transform"] = transform;
+	Array body_surface_values;
+	for (const int32_t surface : body_surfaces) body_surface_values.push_back(surface);
+	visual["body_surfaces"] = body_surface_values;
+	Dictionary material_inputs;
+	material_inputs["albedo_surface"] = albedo_surface;
+	material_inputs["normal_surface"] = normal_surface;
+	material_inputs["paint_mask_surface"] = paint_mask_surface;
+	visual["material_inputs"] = material_inputs;
 	visual["thrusters"] = thruster_values;
 	if (!write_text_file(root.path_join("vehicle/visual.json"), JSON::stringify(visual, "  ", true, true))) {
 		return result_dictionary(false, single_error("could not write vehicle visual metadata"), {});
@@ -1053,6 +1081,80 @@ bool MxtCarAuthoringSession::set_model_transform(const Dictionary &value)
 	model_translation = translation;
 	model_rotation_degrees = rotation;
 	model_scale = scale;
+	dirty = true;
+	return true;
+}
+
+Array MxtCarAuthoringSession::get_model_surfaces() const
+{
+	Array result;
+	if (model_path.is_empty()) return result;
+	mxt::content::VehicleGlbInfo model_info;
+	std::vector<String> errors;
+	if (!mxt::content::validate_glb_file(
+			model_path, mxt::content::ContentType::VEHICLE, errors, &model_info)) return result;
+	for (size_t i = 0; i < model_info.surfaces.size(); ++i) {
+		const mxt::content::VehicleGlbSurface &surface = model_info.surfaces[i];
+		Dictionary value;
+		value["index"] = static_cast<int64_t>(i);
+		value["name"] = surface.name;
+		value["has_albedo_texture"] = surface.has_albedo_texture;
+		value["has_normal_texture"] = surface.has_normal_texture;
+		value["has_paint_mask_texture"] = surface.has_paint_mask_texture;
+		result.push_back(value);
+	}
+	return result;
+}
+
+Dictionary MxtCarAuthoringSession::get_material_setup() const
+{
+	Dictionary result;
+	Array surfaces;
+	for (const int32_t surface : body_surfaces) surfaces.push_back(surface);
+	result["body_surfaces"] = surfaces;
+	result["albedo_surface"] = albedo_surface;
+	result["normal_surface"] = normal_surface;
+	result["paint_mask_surface"] = paint_mask_surface;
+	return result;
+}
+
+bool MxtCarAuthoringSession::set_material_setup(const Dictionary &value)
+{
+	if (!value.has("body_surfaces") || value["body_surfaces"].get_type() != Variant::ARRAY ||
+			!value.has("albedo_surface") || value["albedo_surface"].get_type() != Variant::INT ||
+			!value.has("normal_surface") || value["normal_surface"].get_type() != Variant::INT ||
+			!value.has("paint_mask_surface") || value["paint_mask_surface"].get_type() != Variant::INT) return false;
+	mxt::content::VehicleGlbInfo model_info;
+	std::vector<String> errors;
+	if (!mxt::content::validate_glb_file(
+			model_path, mxt::content::ContentType::VEHICLE, errors, &model_info)) return false;
+	const Array input_surfaces = value["body_surfaces"];
+	if (input_surfaces.is_empty() || input_surfaces.size() > static_cast<int64_t>(model_info.surfaces.size())) return false;
+	std::vector<uint8_t> selected(model_info.surfaces.size(), 0);
+	std::vector<int32_t> replacement;
+	replacement.reserve(input_surfaces.size());
+	for (int64_t i = 0; i < input_surfaces.size(); ++i) {
+		if (input_surfaces[i].get_type() != Variant::INT) return false;
+		const int64_t surface = static_cast<int64_t>(input_surfaces[i]);
+		if (surface < 0 || surface >= static_cast<int64_t>(model_info.surfaces.size()) ||
+				selected[static_cast<size_t>(surface)] != 0) return false;
+		selected[static_cast<size_t>(surface)] = 1;
+		replacement.push_back(static_cast<int32_t>(surface));
+	}
+	auto valid_input = [&](int64_t surface, bool mxt::content::VehicleGlbSurface::*texture_member) {
+		return surface == -1 || (surface >= 0 && surface < static_cast<int64_t>(model_info.surfaces.size()) &&
+				(model_info.surfaces[static_cast<size_t>(surface)].*texture_member));
+	};
+	const int64_t new_albedo = static_cast<int64_t>(value["albedo_surface"]);
+	const int64_t new_normal = static_cast<int64_t>(value["normal_surface"]);
+	const int64_t new_paint_mask = static_cast<int64_t>(value["paint_mask_surface"]);
+	if (!valid_input(new_albedo, &mxt::content::VehicleGlbSurface::has_albedo_texture) ||
+			!valid_input(new_normal, &mxt::content::VehicleGlbSurface::has_normal_texture) ||
+			!valid_input(new_paint_mask, &mxt::content::VehicleGlbSurface::has_paint_mask_texture)) return false;
+	body_surfaces = std::move(replacement);
+	albedo_surface = static_cast<int32_t>(new_albedo);
+	normal_surface = static_cast<int32_t>(new_normal);
+	paint_mask_surface = static_cast<int32_t>(new_paint_mask);
 	dirty = true;
 	return true;
 }

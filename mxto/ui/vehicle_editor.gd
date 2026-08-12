@@ -19,6 +19,10 @@ const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 @onready var visual_status: Label = $Workspace/VisualColumn/VisualStatus
 @onready var physical_tabs: TabContainer = $Workspace/VisualColumn/PhysicalTabs
 @onready var transform_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Transform/Rows
+@onready var body_surface_list: ItemList = $Workspace/VisualColumn/PhysicalTabs/Materials/BodySurfaces
+@onready var albedo_surface_option: OptionButton = $Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow/Source
+@onready var normal_surface_option: OptionButton = $Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow/Source
+@onready var paint_mask_surface_option: OptionButton = $Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow/Source
 @onready var corner_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Corners/Rows
 @onready var thruster_selector: OptionButton = $Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Selector
 @onready var thruster_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Thrusters/Rows
@@ -235,6 +239,10 @@ func _connect_controls() -> void:
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Add.pressed.connect(_add_thruster)
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Remove.pressed.connect(_remove_thruster)
 	thruster_selector.item_selected.connect(func(_index): _refresh_thruster_controls())
+	body_surface_list.multi_selected.connect(func(_index, _selected): _apply_material_controls())
+	albedo_surface_option.item_selected.connect(func(_index): _apply_material_controls())
+	normal_surface_option.item_selected.connect(func(_index): _apply_material_controls())
+	paint_mask_surface_option.item_selected.connect(func(_index): _apply_material_controls())
 	physical_tabs.tab_changed.connect(func(_index): _refresh_gizmos())
 	for key in vector_controls:
 		var controls_value = vector_controls[key]
@@ -433,6 +441,7 @@ func _import_model(path: String) -> void:
 	_show_diagnostics(result)
 	if bool(result.get("valid", false)):
 		visual_status.text = "Imported %s" % path.get_file()
+		_refresh_visual_controls()
 		_refresh_preview()
 
 
@@ -692,8 +701,65 @@ func _refresh_visual_controls() -> void:
 	for i in range(4):
 		_set_vector_value("tilt_%d" % i, tilt[i])
 		_set_vector_value("wall_%d" % i, wall[i])
+	_refresh_material_controls()
 	_refresh_thruster_options()
 	updating_controls = false
+
+
+func _refresh_material_controls() -> void:
+	var surfaces: Array = session.get_model_surfaces()
+	var setup: Dictionary = session.get_material_setup()
+	var selected_surfaces: Array = setup.get("body_surfaces", [])
+	body_surface_list.clear()
+	for surface_value in surfaces:
+		var surface: Dictionary = surface_value
+		var surface_index := int(surface.get("index", -1))
+		body_surface_list.add_item(String(surface.get("name", "Surface %d" % (surface_index + 1))))
+		body_surface_list.set_item_metadata(body_surface_list.item_count - 1, surface_index)
+		if selected_surfaces.has(surface_index):
+			body_surface_list.select(body_surface_list.item_count - 1, false)
+	_populate_texture_sources(albedo_surface_option, surfaces, "has_albedo_texture", "Flat white", int(setup.get("albedo_surface", -1)))
+	_populate_texture_sources(normal_surface_option, surfaces, "has_normal_texture", "Flat normal", int(setup.get("normal_surface", -1)))
+	_populate_texture_sources(paint_mask_surface_option, surfaces, "has_paint_mask_texture", "No paint mask", int(setup.get("paint_mask_surface", -1)))
+
+
+func _populate_texture_sources(option: OptionButton, surfaces: Array, capability: String, none_label: String, selected_surface: int) -> void:
+	option.clear()
+	option.add_item(none_label)
+	option.set_item_metadata(0, -1)
+	option.select(0)
+	for surface_value in surfaces:
+		var surface: Dictionary = surface_value
+		if !bool(surface.get(capability, false)):
+			continue
+		var surface_index := int(surface.get("index", -1))
+		option.add_item(String(surface.get("name", "Surface %d" % (surface_index + 1))))
+		option.set_item_metadata(option.item_count - 1, surface_index)
+		if surface_index == selected_surface:
+			option.select(option.item_count - 1)
+
+
+func _apply_material_controls() -> void:
+	if updating_controls:
+		return
+	var selected: Array = []
+	for item_index in body_surface_list.get_selected_items():
+		selected.append(int(body_surface_list.get_item_metadata(item_index)))
+	if selected.is_empty():
+		_refresh_visual_controls()
+		return
+	var applied := session.set_material_setup({
+		"body_surfaces": selected,
+		"albedo_surface": _selected_texture_surface(albedo_surface_option),
+		"normal_surface": _selected_texture_surface(normal_surface_option),
+		"paint_mask_surface": _selected_texture_surface(paint_mask_surface_option),
+	})
+	if applied:
+		_refresh_preview()
+
+
+func _selected_texture_surface(option: OptionButton) -> int:
+	return -1 if option.selected < 0 else int(option.get_item_metadata(option.selected))
 
 
 func _apply_visual_controls() -> void:
@@ -783,6 +849,8 @@ func _refresh_preview() -> void:
 		"visual_path": model_path,
 		"visual_metadata": {
 			"model_transform": session.get_model_transform(),
+			"body_surfaces": session.get_material_setup().get("body_surfaces", []),
+			"material_inputs": session.get_material_setup(),
 			"thrusters": session.get_thrusters(),
 		},
 	}

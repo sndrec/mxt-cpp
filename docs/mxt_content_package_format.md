@@ -71,7 +71,7 @@ String limits are 128 Unicode code points for `title`, 8,000 for `description`, 
 
 ## Vehicle visual metadata
 
-`vehicle/visual.json` is strict data interpreted only by MaxX Throttle's renderer. It cannot name resources or provide shaders. Revision 1 contains the model transform and zero to eight game-owned thruster instances:
+`vehicle/visual.json` is strict data interpreted only by MaxX Throttle's renderer. It cannot name resources or provide shaders. Revision 1 selects body surfaces and conventional embedded glTF texture inputs in addition to the model transform and zero to eight game-owned thruster instances. The optional paint mask is sourced from the selected glTF material's occlusion texture; its RGB channels map to primary, secondary, and accent livery colours.
 
 ```json
 {
@@ -80,6 +80,12 @@ String limits are 128 Unicode code points for `title`, 8,000 for `description`, 
     "translation": [0.0, 0.0, 0.0],
     "rotation_degrees": [0.0, 0.0, 0.0],
     "scale": [1.0, 1.0, 1.0]
+  },
+  "body_surfaces": [0],
+  "material_inputs": {
+    "albedo_surface": 0,
+    "normal_surface": 0,
+    "paint_mask_surface": -1
   },
   "thrusters": [
     {
@@ -91,7 +97,7 @@ String limits are 128 Unicode code points for `title`, 8,000 for `description`, 
 }
 ```
 
-All components must be finite. Model translation is limited to +/-1000 units, rotation to +/-3600 degrees, and positive scale to 0.001 through 100. Thruster position is limited to +/-100 units, rotation to +/-3600 degrees, and scale to 0.01 through 10. Unknown fields are rejected.
+At least one unique body-surface index is required. Each material input is either `-1` for the game-owned flat fallback or a surface whose imported glTF material contains the corresponding conventional texture. All components must be finite. Model translation is limited to +/-1000 units, rotation to +/-3600 degrees, and positive scale to 0.001 through 100. Thruster position is limited to +/-100 units, rotation to +/-3600 degrees, and scale to 0.01 through 10. Unknown fields are rejected.
 
 ## Track metadata
 
@@ -177,7 +183,7 @@ Replay schema 4 and debug-replay schema 2 store `track_content_id` plus `track_g
 - Track visual: at most 2,000,000 triangles.
 - Embedded GLB textures: PNG or JPEG, maximum 4096 by 4096, with type-specific aggregate pixel budgets.
 
-GLB 2.0 is required. Revision 1 accepts static triangle meshes with embedded buffers and embedded images. It rejects external/data URIs, extensions, animations, skins, cameras, morph targets, unsupported vertex attributes, malformed accessors, over-deep/cyclic node hierarchies, and resource counts over the native budgets. After structural and resource-budget validation, Godot's GLB parser must also accept the document before the package is valid.
+GLB 2.0 is required. Revision 1 accepts static triangle meshes with embedded buffers and embedded images. It rejects external/data URIs, unknown or required extensions, animations, skins, cameras, morph targets, unsupported vertex attributes, malformed accessors, over-deep/cyclic node hierarchies, and resource counts over the native budgets. The non-required `GODOT_single_root` marker emitted by Godot's canonical GLB writer is the sole accepted extension name. After structural and resource-budget validation, Godot's GLB parser must also accept the document before the package is valid.
 
 Vehicle properties must pass the native `.mxt_car_props` schema, CRC, curve, and required-stat validator. Track gameplay data must be the current `v0.9` `.mxt_track` format and pass complete bounded parsing, index checks, finite-number checks, strictly ordered curve checks, and collision-triangle checks before the runtime loader can receive it.
 
