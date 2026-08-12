@@ -13,6 +13,46 @@ This service is the only score-writing component. The game client can read Steam
 
 The publisher key is read only by this process and is removed from the child verifier process environment.
 
+## Build a pinned Windows deployment bundle
+
+Build the release GDExtension first, then assemble one verifier directory. The
+bundle contains a release-exported verifier executable and PCK, its raw
+authoritative track/vehicle data, the Python service, operational scripts, and a
+SHA-256 identity record. It intentionally does not contain the publisher key,
+numeric leaderboard IDs, curated-package
+archive, or `steam_appid.txt`.
+
+```powershell
+scons target=template_release -j4
+.\services\leaderboard_verifier\build_windows_bundle.ps1 `
+  -Destination C:\mxt-verifier\bundle
+```
+
+By default, the builder takes the authoritative base track and vehicle files
+from the sibling Steam ContentBuilder tree. Pass `-BaseContentDirectory` when
+building from a different depot staging directory.
+
+Create the bundle from a clean committed checkout for production. Start it with
+external deployment files:
+
+```powershell
+C:\mxt-verifier\bundle\start_windows_bundle.ps1 `
+  -PublisherKeyFile C:\secure\steam_publisher_key.txt `
+  -LeaderboardIdsFile C:\secure\mxt-leaderboard-ids-5001310.json `
+  -CuratedWorkshopPackagesFile C:\secure\curated-workshop-packages.json
+```
+
+Run `health_check.ps1` locally after startup. The launcher validates required
+files and key shape, supplies only absolute deployment paths, and clears its
+publisher-key environment variable when the service exits.
+
+For the public edge, create a named Cloudflare Tunnel and adapt
+`cloudflared.example.yml`. Its ingress rules send only the exact submission path
+to the loopback service and return 404 for every other public request. Keep
+`/healthz` loopback-only. A Quick Tunnel is suitable for a disposable acceptance
+run but has no stable hostname or uptime commitment and is not the production
+deployment.
+
 ## Provision the Steam boards
 
 Set credentials in the process environment. Never put the publisher key in a file inside the game repository or a client depot. Prefer reading it from a restricted temporary file outside the repository and remove the environment variable after the process exits; do not paste it into a shell history or chat.

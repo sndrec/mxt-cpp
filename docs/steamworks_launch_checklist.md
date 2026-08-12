@@ -73,7 +73,7 @@ try {
 }
 ```
 
-Inspect the generated file and confirm it contains exactly the 31 checked-in board names and positive numeric IDs. Re-running provisioning is safe: it finds existing names before creating missing ones.
+Inspect the generated file and confirm it contains exactly the 32 checked-in board names and positive numeric IDs. Re-running provisioning is safe: it finds existing names before creating missing ones.
 
 ## Start a local trusted verifier
 
@@ -94,6 +94,14 @@ python services/leaderboard_verifier/server.py
 ```
 
 For public deployment, pin the verifier executable/project and manifest together, terminate TLS at a reverse proxy, expose only `POST /v1/time-attack/submit`, keep `/healthz` private, impose a 64 MiB request limit, and never log `Authorization`. Do not put the publisher key, numeric board-ID file, or curated package archive in the client depot.
+
+On the current Windows deployment path, build the release-exported, pinned runtime with
+`services/leaderboard_verifier/build_windows_bundle.ps1`, start it through the
+bundle's `start_windows_bundle.ps1`, and expose it with a named Cloudflare Tunnel
+using `cloudflared.example.yml`. Store the tunnel credential, publisher key,
+leaderboard-ID map, and curated-package map outside both the repository and the
+bundle. Install the verifier and tunnel as restricted service-account processes,
+restart them automatically, and alert on failure of the loopback health check.
 
 Set `mxto/steam/leaderboard_service.json` `base_url` only to the final public HTTPS origin. Localhost HTTP remains accepted for local integration testing; non-local cleartext HTTP is rejected by the client.
 
