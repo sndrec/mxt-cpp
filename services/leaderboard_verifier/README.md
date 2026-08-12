@@ -13,6 +13,33 @@ This service is the only score-writing component. The game client can read Steam
 
 The publisher key is read only by this process and is removed from the child verifier process environment.
 
+## One-button Windows manager
+
+For an ordinary Steam game release, the human procedure is:
+
+1. Export, upload, and set the new Steam build live as usual.
+2. Double-click `manage_steam_backend.bat` in the repository root.
+3. Click **DEPLOY VERIFIER**.
+4. Wait for the verifier, tunnel, local health, and public route tiles to turn green.
+
+The manager performs the release native build, builds a fresh pinned verifier
+bundle beside the live one, briefly swaps the bundles, restarts the background
+services, and checks both the local verifier and public Cloudflare route. If the
+new verifier does not become healthy, it restores the previous bundle.
+
+Use the **Leaderboards** tab only after changing
+`mxto/steam/leaderboards.json`. **SYNC BOARDS TO STEAM + DEPLOY** creates any
+missing Steam boards, safely replaces the private numeric-ID map, and deploys a
+matching verifier bundle. Steam leaderboard identities are permanent, so this
+button does not rename or delete existing boards. An ordinary verifier deploy
+does not modify anything in Steam's leaderboard configuration.
+
+The manager automatically uses the private publisher key, leaderboard ID map,
+curated-package map, and Cloudflare token under
+`%LOCALAPPDATA%\MaxXThrottle\server`. It never displays or writes the publisher
+key to its log. **REPAIR BACKGROUND TASKS** recreates the verifier and tunnel
+Scheduled Tasks if Windows loses their configuration.
+
 ## Build a pinned Windows deployment bundle
 
 Build the release GDExtension first, then assemble one verifier directory. The
