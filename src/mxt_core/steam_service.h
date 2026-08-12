@@ -24,15 +24,17 @@ private:
 	uint32_t app_id = 0;
 	bool initialized = false;
 	bool init_attempted = false;
-	int64_t next_workshop_request_id = 1;
+	int64_t next_request_id = 1;
 	Array workshop_items;
 	SteamWorkshopState *workshop_state = nullptr;
 
 	void clear_account_state();
 	void publish_status();
 	void shutdown_steam_internal(bool publish_change);
-	int64_t allocate_workshop_request_id();
+	int64_t allocate_request_id();
 	void complete_workshop_request(int64_t request_id, const String &operation, const Dictionary &result);
+	void complete_leaderboard_request(int64_t request_id, const Dictionary &result);
+	void complete_web_api_ticket_request(int64_t request_id, const Dictionary &result);
 	void publish_workshop_items();
 
 protected:
@@ -70,6 +72,14 @@ public:
 	bool open_workshop_item_page(int64_t published_file_id);
 	Dictionary get_workshop_update_progress() const;
 	Array get_workshop_items() const { return workshop_items.duplicate(true); }
+
+	int64_t request_leaderboard_entries(
+			const String &leaderboard_name,
+			const String &request_type,
+			int32_t range_start = 1,
+			int32_t range_end = 100);
+	int64_t request_web_api_auth_ticket(const String &identity);
+	bool cancel_web_api_auth_ticket(int64_t ticket_handle);
 };
 
 } // namespace godot
