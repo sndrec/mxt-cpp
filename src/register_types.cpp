@@ -3,6 +3,7 @@
 #include "content/content_validator.h"
 #include "content/content_package_io.h"
 #include "content/content_catalog.h"
+#include "content/track_package_builder.h"
 #include "car/car_authoring_session.h"
 #include "main.h"
 #include "fzgx_gameplay_camera.h"
@@ -36,6 +37,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MxtContentValidator);
 	GDREGISTER_CLASS(MxtContentPackageIO);
 	GDREGISTER_CLASS(MxtContentCatalog);
+	GDREGISTER_CLASS(MxtTrackPackageBuilder);
 	GDREGISTER_CLASS(MxtCarAuthoringSession);
 }
 

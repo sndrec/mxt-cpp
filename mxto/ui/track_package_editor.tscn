@@ -1,0 +1,176 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/track_package_editor.gd" id="1_editor"]
+
+[node name="Track Packages" type="VBoxContainer"]
+layout_mode = 2
+script = ExtResource("1_editor")
+
+[node name="Toolbar" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="New" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "New Draft"
+
+[node name="Draft" type="OptionButton" parent="Toolbar"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="Open" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Open Draft"
+
+[node name="Build" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Build & Install"
+
+[node name="Export" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Export .mxtpkg"
+
+[node name="Publish" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Publish Workshop"
+
+[node name="OpenPage" type="Button" parent="Toolbar"]
+layout_mode = 2
+disabled = true
+text = "Open Item Page"
+
+[node name="Metadata" type="GridContainer" parent="."]
+layout_mode = 2
+columns = 2
+
+[node name="TitleLabel" type="Label" parent="Metadata"]
+layout_mode = 2
+text = "Title"
+
+[node name="Title" type="LineEdit" parent="Metadata"]
+layout_mode = 2
+max_length = 128
+
+[node name="AuthorLabel" type="Label" parent="Metadata"]
+layout_mode = 2
+text = "Author"
+
+[node name="Author" type="LineEdit" parent="Metadata"]
+layout_mode = 2
+max_length = 64
+
+[node name="DescriptionLabel" type="Label" parent="Metadata"]
+layout_mode = 2
+text = "Description"
+
+[node name="Description" type="LineEdit" parent="Metadata"]
+layout_mode = 2
+max_length = 8000
+
+[node name="Sources" type="GridContainer" parent="."]
+layout_mode = 2
+columns = 3
+
+[node name="TrackLabel" type="Label" parent="Sources"]
+layout_mode = 2
+text = "Track export"
+
+[node name="TrackPath" type="LineEdit" parent="Sources"]
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+
+[node name="ChooseTrack" type="Button" parent="Sources"]
+layout_mode = 2
+text = "Choose .mxt_track"
+
+[node name="VisualLabel" type="Label" parent="Sources"]
+layout_mode = 2
+text = "Visual"
+
+[node name="VisualPath" type="LineEdit" parent="Sources"]
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+
+[node name="ChooseVisual" type="Button" parent="Sources"]
+layout_mode = 2
+text = "Choose GLB"
+
+[node name="EnvironmentLabel" type="Label" parent="Sources"]
+layout_mode = 2
+text = "Environment"
+
+[node name="EnvironmentPath" type="LineEdit" parent="Sources"]
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+
+[node name="ChooseEnvironment" type="Button" parent="Sources"]
+layout_mode = 2
+text = "Choose JSON"
+
+[node name="PreviewLabel" type="Label" parent="Sources"]
+layout_mode = 2
+text = "Preview"
+
+[node name="PreviewPath" type="LineEdit" parent="Sources"]
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+
+[node name="ChoosePreview" type="Button" parent="Sources"]
+layout_mode = 2
+text = "Choose PNG"
+
+[node name="Workshop" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="VisibilityLabel" type="Label" parent="Workshop"]
+layout_mode = 2
+text = "Workshop visibility"
+
+[node name="Visibility" type="OptionButton" parent="Workshop"]
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="Status" type="Label" parent="Workshop"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Not published"
+
+[node name="Diagnostics" type="RichTextLabel" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+
+[node name="TrackDialog" type="FileDialog" parent="."]
+title = "Choose exported track"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.mxt_track ; MaxX Throttle Track")
+
+[node name="VisualDialog" type="FileDialog" parent="."]
+title = "Choose track GLB"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.glb ; Binary glTF")
+
+[node name="EnvironmentDialog" type="FileDialog" parent="."]
+title = "Choose track environment JSON"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.json ; JSON")
+
+[node name="PreviewDialog" type="FileDialog" parent="."]
+title = "Choose preview PNG"
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.png ; PNG Image")
+
+[node name="ExportDialog" type="FileDialog" parent="."]
+title = "Export track package"
+file_mode = 4
+access = 2
+filters = PackedStringArray("*.mxtpkg ; MaxX Throttle Package")
