@@ -16,6 +16,7 @@ const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
 @onready var preview_container: SubViewportContainer = $Workspace/VisualColumn/Preview
 @onready var preview_viewport: SubViewport = $Workspace/VisualColumn/Preview/Viewport
 @onready var visual_status: Label = $Workspace/VisualColumn/VisualStatus
+@onready var physical_tabs: TabContainer = $Workspace/VisualColumn/PhysicalTabs
 @onready var transform_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Transform/Rows
 @onready var corner_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Corners/Rows
 @onready var thruster_selector: OptionButton = $Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Selector
@@ -54,6 +55,14 @@ var preview_root: Node3D
 var preview_camera: Camera3D
 var preview_render_manager: CarRenderManager
 var preview_definition: CarDefinition
+var preview_gizmo_root: Node3D
+var preview_gizmo_line: MeshInstance3D
+var preview_gizmo_markers: Array[MeshInstance3D] = []
+var preview_gizmo_entries: Array[Dictionary] = []
+var preview_gizmo_sphere: SphereMesh
+var preview_gizmo_materials: Array[StandardMaterial3D] = []
+var dragged_gizmo := -1
+var dragged_gizmo_plane := Plane()
 var vector_controls: Dictionary = {}
 var updating_controls := false
 
@@ -155,11 +164,28 @@ func _setup_preview() -> void:
 	world.add_child(preview_root)
 	preview_render_manager = CarRenderManagerClass.new()
 	preview_root.add_child(preview_render_manager)
+	preview_gizmo_root = Node3D.new()
+	preview_gizmo_root.name = "AuthoringGizmos"
+	preview_root.add_child(preview_gizmo_root)
+	preview_gizmo_line = MeshInstance3D.new()
+	preview_gizmo_root.add_child(preview_gizmo_line)
+	preview_gizmo_sphere = SphereMesh.new()
+	preview_gizmo_sphere.radius = 0.11
+	preview_gizmo_sphere.height = 0.22
+	preview_gizmo_sphere.radial_segments = 12
+	preview_gizmo_sphere.rings = 6
+	for colour in [Color(0.1, 0.9, 1.0), Color(1.0, 0.2, 0.75), Color(1.0, 0.75, 0.08)]:
+		var material := StandardMaterial3D.new()
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.albedo_color = colour
+		material.no_depth_test = true
+		preview_gizmo_materials.append(material)
 	preview_camera = Camera3D.new()
 	preview_camera.position = Vector3(7.0, 3.7, 9.0)
 	preview_root.add_child(preview_camera)
 	preview_camera.look_at(Vector3.ZERO, Vector3.UP)
 	preview_camera.current = true
+	preview_container.gui_input.connect(_on_preview_gui_input)
 
 
 func _connect_controls() -> void:
@@ -195,6 +221,7 @@ func _connect_controls() -> void:
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Add.pressed.connect(_add_thruster)
 	$Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions/Remove.pressed.connect(_remove_thruster)
 	thruster_selector.item_selected.connect(func(_index): _refresh_thruster_controls())
+	physical_tabs.tab_changed.connect(func(_index): _refresh_gizmos())
 	for key in vector_controls:
 		var controls_value = vector_controls[key]
 		if controls_value is Array:
@@ -572,6 +599,7 @@ func _refresh_thruster_controls() -> void:
 	_set_vector_value("thruster_rotation", value.get("rotation_degrees", Vector3.ZERO))
 	vector_controls["thruster_scale"].set_value_no_signal(float(value.get("scale", 1.0)))
 	updating_controls = false
+	_refresh_gizmos()
 
 
 func _add_thruster() -> void:
@@ -617,6 +645,142 @@ func _refresh_preview() -> void:
 		preview_render_manager.configure_manual([preview_definition])
 		preview_render_manager.begin_manual_submit()
 		preview_render_manager.submit_manual_car(0, Transform3D.IDENTITY, Color.WHITE, Vector3.ZERO, Color.WHITE, 1.0, false)
+	_refresh_gizmos()
+
+
+func _refresh_gizmos() -> void:
+	if preview_gizmo_root == null:
+		return
+	preview_gizmo_entries.clear()
+	var tab_name := physical_tabs.get_tab_title(physical_tabs.current_tab)
+	if tab_name == "Corners":
+		var tilt := session.get_tilt_corners()
+		var wall := session.get_wall_corners()
+		for i in range(4):
+			preview_gizmo_entries.append({"kind": "tilt", "index": i, "position": tilt[i], "material": 0})
+		for i in range(4):
+			preview_gizmo_entries.append({"kind": "wall", "index": i, "position": wall[i], "material": 1})
+	elif tab_name == "Thrusters":
+		var thrusters: Array = session.get_thrusters()
+		for i in range(thrusters.size()):
+			preview_gizmo_entries.append({
+				"kind": "thruster",
+				"index": i,
+				"position": Vector3(thrusters[i].get("position", Vector3.ZERO)),
+				"material": 2,
+			})
+	while preview_gizmo_markers.size() < preview_gizmo_entries.size():
+		var marker := MeshInstance3D.new()
+		marker.mesh = preview_gizmo_sphere
+		preview_gizmo_root.add_child(marker)
+		preview_gizmo_markers.append(marker)
+	for i in range(preview_gizmo_markers.size()):
+		var marker := preview_gizmo_markers[i]
+		marker.visible = i < preview_gizmo_entries.size()
+		if marker.visible:
+			var entry: Dictionary = preview_gizmo_entries[i]
+			marker.position = entry["position"]
+			marker.material_override = preview_gizmo_materials[int(entry["material"])]
+	_refresh_gizmo_lines(tab_name)
+
+
+func _refresh_gizmo_lines(tab_name: String) -> void:
+	var lines := ImmediateMesh.new()
+	if tab_name == "Corners":
+		var tilt := session.get_tilt_corners()
+		var wall := session.get_wall_corners()
+		lines.surface_begin(Mesh.PRIMITIVE_LINES, preview_gizmo_materials[0])
+		for i in range(4):
+			lines.surface_add_vertex(tilt[i])
+			lines.surface_add_vertex(tilt[(i + 1) % 4])
+		lines.surface_end()
+		lines.surface_begin(Mesh.PRIMITIVE_LINES, preview_gizmo_materials[1])
+		for i in range(4):
+			lines.surface_add_vertex(wall[i])
+			lines.surface_add_vertex(wall[(i + 1) % 4])
+		lines.surface_end()
+	elif tab_name == "Thrusters":
+		lines.surface_begin(Mesh.PRIMITIVE_LINES, preview_gizmo_materials[2])
+		for value in session.get_thrusters():
+			var thruster: Dictionary = value
+			var position := Vector3(thruster.get("position", Vector3.ZERO))
+			var rotation := Vector3(thruster.get("rotation_degrees", Vector3.ZERO))
+			var direction := Basis.from_euler(rotation * PI / 180.0) * Vector3(0.0, 0.0, -1.0)
+			lines.surface_add_vertex(position)
+			lines.surface_add_vertex(position + direction * maxf(0.25, float(thruster.get("scale", 1.0))))
+		lines.surface_end()
+	preview_gizmo_line.mesh = lines
+
+
+func _on_preview_gui_input(event: InputEvent) -> void:
+	if preview_camera == null or preview_gizmo_entries.is_empty():
+		return
+	var button := event as InputEventMouseButton
+	var motion := event as InputEventMouseMotion
+	if button == null and motion == null:
+		return
+	var pointer := (button.position if button != null else motion.position) * Vector2(preview_viewport.size) / preview_container.size
+	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
+		if button.pressed:
+			dragged_gizmo = _pick_preview_gizmo(pointer)
+			if dragged_gizmo >= 0:
+				var point := Vector3(preview_gizmo_entries[dragged_gizmo]["position"])
+				dragged_gizmo_plane = Plane(preview_camera.global_basis.z.normalized(), point)
+				preview_container.accept_event()
+		else:
+			if dragged_gizmo >= 0:
+				_refresh_preview()
+				preview_container.accept_event()
+			dragged_gizmo = -1
+		return
+	if motion == null or dragged_gizmo < 0:
+		return
+	var origin := preview_camera.project_ray_origin(pointer)
+	var direction := preview_camera.project_ray_normal(pointer)
+	var intersection = dragged_gizmo_plane.intersects_ray(origin, direction)
+	if intersection != null:
+		_set_dragged_gizmo_position(intersection)
+		preview_container.accept_event()
+
+
+func _pick_preview_gizmo(pointer: Vector2) -> int:
+	var best := -1
+	var best_distance := 18.0
+	for i in range(preview_gizmo_entries.size()):
+		var position := Vector3(preview_gizmo_entries[i]["position"])
+		if preview_camera.is_position_behind(position):
+			continue
+		var distance := pointer.distance_to(preview_camera.unproject_position(position))
+		if distance < best_distance:
+			best_distance = distance
+			best = i
+	return best
+
+
+func _set_dragged_gizmo_position(position: Vector3) -> void:
+	var entry: Dictionary = preview_gizmo_entries[dragged_gizmo]
+	var index := int(entry["index"])
+	match String(entry["kind"]):
+		"tilt":
+			var tilt := session.get_tilt_corners()
+			tilt[index] = position
+			session.set_tilt_corners(tilt)
+			_set_vector_value("tilt_%d" % index, position)
+		"wall":
+			var wall := session.get_wall_corners()
+			wall[index] = position
+			session.set_wall_corners(wall)
+			_set_vector_value("wall_%d" % index, position)
+		"thruster":
+			var thrusters: Array = session.get_thrusters()
+			var thruster: Dictionary = thrusters[index]
+			thruster["position"] = position
+			thrusters[index] = thruster
+			session.set_thrusters(thrusters)
+			if index == thruster_selector.selected:
+				_set_vector_value("thruster_position", position)
+	preview_gizmo_entries[dragged_gizmo]["position"] = position
+	_refresh_gizmos()
 
 
 func _show_diagnostics(result: Dictionary) -> void:
