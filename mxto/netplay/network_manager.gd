@@ -137,6 +137,9 @@ var race_force_end_deadline_tick := -1
 var race_options := {
 	"game_mode": 0,
 	"track_ids": [],
+	"track_gameplay_digests": [],
+	"track_package_digests": [],
+	"track_workshop_ids": [],
 	"vehicle_restore": true,
 	"bumpers": false,
 	"s_boost": true,

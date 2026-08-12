@@ -65,13 +65,15 @@ func _settings() -> Dictionary:
 	var vehicle_content_id := ""
 	if !game_manager.car_definitions.is_empty():
 		vehicle_content_id = game_manager.car_definitions[player_index % game_manager.car_definitions.size()].content_id
-	return {
+	var settings := {
 		"username": "Load Player %02d" % player_index,
 		"vehicle_content_id": vehicle_content_id,
 		"car_livery": _synthetic_livery(vehicle_content_id),
 		"accel_setting": 1.0,
 		"spectator": false,
 	}
+	settings.merge(game_manager._vehicle_content_evidence(vehicle_content_id), true)
+	return settings
 
 func _wait_for_client_connection(timeout_msec: int) -> bool:
 	var deadline := Time.get_ticks_msec() + timeout_msec

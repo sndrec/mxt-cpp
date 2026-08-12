@@ -4,8 +4,8 @@ class_name ReplayController extends Node
 @onready var replays_button: Button = get_node("../Control/ReplaysButton") as Button
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
-const DEBUG_REPLAY_VERSION := 1
-const REPLAY_SCHEMA_VERSION := 3
+const DEBUG_REPLAY_VERSION := 2
+const REPLAY_SCHEMA_VERSION := 4
 const GameVersionData = preload("res://core/game_version.gd")
 const REPLAY_CAMERA_GAME := 0
 const REPLAY_CAMERA_AUTO := 1
@@ -373,6 +373,10 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 	for slot in start_grid_slots:
 		start_grid_slot_array.append(int(slot))
 	var player_records: Array = []
+	var replay_settings: Array = []
+	for settings_value in settings:
+		if typeof(settings_value) == TYPE_DICTIONARY:
+			replay_settings.append(_settings_with_vehicle_content_evidence(settings_value as Dictionary))
 	for i in range(racer_ids.size()):
 		var id := int(racer_ids[i])
 		var raw_settings: Dictionary = {}
@@ -380,11 +384,13 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 			raw_settings = (settings[i] as Dictionary).duplicate(true)
 		elif game_manager.network_manager.player_settings.has(id) and typeof(game_manager.network_manager.player_settings[id]) == TYPE_DICTIONARY:
 			raw_settings = (game_manager.network_manager.player_settings[id] as Dictionary).duplicate(true)
+		raw_settings = _settings_with_vehicle_content_evidence(raw_settings)
 		player_records.append({
 			"id": id,
 			"username": str(raw_settings.get("username", "Player")),
 			"cpu": i < cpu_flags.size() and bool(cpu_flags[i]),
 			"vehicle_content_id": str(raw_settings.get("vehicle_content_id", "")),
+			"vehicle_gameplay_digest": str(raw_settings.get("vehicle_gameplay_digest", "")),
 			"sticker_1": int(raw_settings.get("sticker_1", 0)),
 			"sticker_2": int(raw_settings.get("sticker_2", 1)),
 			"sticker_3": int(raw_settings.get("sticker_3", 2)),
@@ -401,11 +407,12 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		"name": "%s %s" % [_current_track_name(), _replay_make_stamp()],
 		"mode": _replay_mode_name(),
 		"source": replay_recording_source,
-		"track_index": track_index,
-		"track_id": game_manager.track_content_controller.track_id_for_index(track_index),
+		"track_content_id": game_manager.track_content_controller.track_id_for_index(track_index),
+		"track_gameplay_digest": game_manager.track_content_controller.track_gameplay_digest_for_index(track_index),
+		"track_package_digest": String(game_manager.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("package_digest", "")),
+		"track_workshop_id": String(game_manager.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("published_file_id", "")),
 		"track_name": _current_track_name(),
-		"track_mxt": _current_track_path(),
-		"settings": settings.duplicate(true),
+		"settings": replay_settings,
 		"racer_ids": racer_ids.duplicate(true),
 		"cpu_flags": cpu_flags.duplicate(true),
 		"start_grid_slots": start_grid_slot_array,
@@ -414,6 +421,26 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		"race_options": game_manager.network_manager.race_options.duplicate(true),
 	}
 	refresh_pause_button()
+
+func _settings_with_vehicle_content_evidence(settings: Dictionary) -> Dictionary:
+	var output := settings.duplicate(true)
+	var content_id := String(output.get("vehicle_content_id", ""))
+	var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+	output["vehicle_gameplay_digest"] = String(record.get("gameplay_digest", ""))
+	var package_digest := String(record.get("package_digest", ""))
+	if !package_digest.is_empty():
+		output["vehicle_package_digest"] = package_digest
+	var published_file_id := String(record.get("published_file_id", ""))
+	if !published_file_id.is_empty():
+		output["vehicle_workshop_id"] = published_file_id
+	return output
+
+func _settings_array_with_vehicle_content_evidence(settings: Array) -> Array:
+	var output: Array = []
+	for settings_value in settings:
+		if typeof(settings_value) == TYPE_DICTIONARY:
+			output.append(_settings_with_vehicle_content_evidence(settings_value as Dictionary))
+	return output
 
 func stop_recording(save_server_replay: bool) -> void:
 	if save_server_replay and replay_recording_active and !replay_recording_saved and replay_recording_source == "server":
@@ -1113,6 +1140,11 @@ func _start_replay_playback_from_path(path: String) -> void:
 	var settings = replay.get("settings", [])
 	if typeof(settings) != TYPE_ARRAY or (settings as Array).is_empty():
 		push_warning("Replay load failed: replay has no racer settings.")
+		if game_manager.headless_mode:
+			get_tree().quit(1)
+		return
+	if !_replay_vehicle_content_available(settings as Array):
+		push_warning("Replay load failed: exact vehicle gameplay content is unavailable.")
 		if game_manager.headless_mode:
 			get_tree().quit(1)
 		return
@@ -1915,33 +1947,56 @@ func _current_track_name() -> String:
 		return String(game_manager.track_content_controller.tracks[game_manager._last_race_track_index].get("name", "track"))
 	return "track"
 
-func _current_track_path() -> String:
-	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return String(game_manager.track_content_controller.tracks[game_manager._last_race_track_index].get("mxt", ""))
-	return ""
-
 func _current_track_id() -> String:
 	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return String(game_manager.track_content_controller.tracks[game_manager._last_race_track_index].get("id", ""))
+		return game_manager.track_content_controller.track_id_for_index(game_manager._last_race_track_index)
+	return ""
+
+func _current_track_gameplay_digest() -> String:
+	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
+		return game_manager.track_content_controller.track_gameplay_digest_for_index(game_manager._last_race_track_index)
 	return ""
 
 func _find_track_index(data: Dictionary) -> int:
-	var replay_track_id := String(data.get("track_id", ""))
-	if replay_track_id != "":
-		var track_index := game_manager.track_content_controller.track_index_for_id(replay_track_id)
-		if track_index >= 0:
-			return track_index
-	var replay_track_path := String(data.get("track_mxt", ""))
-	if replay_track_path != "":
-		for i in range(game_manager.track_content_controller.tracks.size()):
-			if String(game_manager.track_content_controller.tracks[i].get("mxt", "")) == replay_track_path:
-				return i
-	var replay_track_name := String(data.get("track_name", ""))
-	if replay_track_name != "":
-		for i in range(game_manager.track_content_controller.tracks.size()):
-			if String(game_manager.track_content_controller.tracks[i].get("name", "")) == replay_track_name:
-				return i
-	return int(data.get("track_index", -1))
+	var replay_track_id := String(data.get("track_content_id", ""))
+	var replay_gameplay_digest := String(data.get("track_gameplay_digest", ""))
+	if replay_track_id.is_empty() or replay_gameplay_digest.is_empty():
+		return -1
+	var track_index := game_manager.track_content_controller.track_index_for_id(replay_track_id)
+	if track_index < 0:
+		return -1
+	if game_manager.track_content_controller.track_gameplay_digest_for_index(track_index) != replay_gameplay_digest:
+		return -1
+	var record: Dictionary = game_manager.content_catalog.resolve_content(replay_track_id)
+	if record.is_empty():
+		return -1
+	var record_package_digest := String(record.get("package_digest", ""))
+	if !record_package_digest.is_empty() and String(data.get("track_package_digest", "")) != record_package_digest:
+		return -1
+	var record_workshop_id := String(record.get("published_file_id", ""))
+	if !record_workshop_id.is_empty() and String(data.get("track_workshop_id", "")) != record_workshop_id:
+		return -1
+	return track_index
+
+func _replay_vehicle_content_available(settings: Array) -> bool:
+	for settings_value in settings:
+		if typeof(settings_value) != TYPE_DICTIONARY:
+			return false
+		var player_settings: Dictionary = settings_value
+		var content_id := String(player_settings.get("vehicle_content_id", ""))
+		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
+		if content_id.is_empty() or gameplay_digest.is_empty():
+			return false
+		var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+		if record.is_empty() or String(record.get("gameplay_digest", "")) != gameplay_digest:
+			return false
+		var record_package_digest := String(record.get("package_digest", ""))
+		if !record_package_digest.is_empty() and String(player_settings.get("vehicle_package_digest", "")) != record_package_digest:
+			return false
+		var record_workshop_id := String(record.get("published_file_id", ""))
+		if !record_workshop_id.is_empty() and String(player_settings.get("vehicle_workshop_id", "")) != record_workshop_id:
+			return false
+	return true
 
 func _start_debug_replay_recording() -> void:
 	if !game_manager.singleplayer_mode or !game_manager.game_sim.sim_started:
@@ -1974,11 +2029,12 @@ func _stop_and_save_debug_replay_recording() -> void:
 	var replay := {
 		"version": DEBUG_REPLAY_VERSION,
 		"created_unix": Time.get_unix_time_from_system(),
-		"track_index": game_manager._last_race_track_index,
-		"track_id": _current_track_id(),
+		"track_content_id": _current_track_id(),
+		"track_gameplay_digest": _current_track_gameplay_digest(),
+		"track_package_digest": String(game_manager.content_catalog.resolve_content(_current_track_id()).get("package_digest", "")),
+		"track_workshop_id": String(game_manager.content_catalog.resolve_content(_current_track_id()).get("published_file_id", "")),
 		"track_name": _current_track_name(),
-		"track_mxt": _current_track_path(),
-		"settings": game_manager._last_race_settings.duplicate(true),
+		"settings": _settings_array_with_vehicle_content_evidence(game_manager._last_race_settings),
 		"singleplayer_cpu_count": game_manager.singleplayer_cpu_count,
 		"spawn_seed": game_manager.network_manager.spawn_seed,
 		"snapshot_tick": debug_replay_snapshot_tick,
@@ -2042,6 +2098,9 @@ func _load_and_start_debug_replay(path: String) -> void:
 	var settings = replay.get("settings", [])
 	if typeof(settings) != TYPE_ARRAY or settings.is_empty():
 		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: replay has no racer settings.")
+		return
+	if !_replay_vehicle_content_available(settings as Array):
+		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: exact vehicle gameplay content is unavailable.")
 		return
 	var snapshot_tick := int(replay.get("snapshot_tick", -1))
 	var snapshot_state := Marshalls.base64_to_raw(String(replay.get("snapshot_state_b64", "")))

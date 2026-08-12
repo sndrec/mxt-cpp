@@ -292,6 +292,7 @@ func _save_settings() -> void:
 	if livery_dirty and !_livery_editing_locked():
 		_save_livery_for_selected_car(false)
 	_sync_livery_to_player_settings()
+	_sync_vehicle_content_evidence()
 	var path := "user://player_settings.json"
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	file.store_string(JSON.stringify(player_settings.to_dict()))
@@ -326,6 +327,7 @@ func _update_controls(rebuild_preview := true) -> void:
 	if car_defs.size() > 0:
 		vehicle_selector.select(idx)
 		player_settings.vehicle_content_id = car_defs[idx].content_id
+		_sync_vehicle_content_evidence()
 		car_name_label.text = car_defs[idx].name
 		if garage_car_name_label != null:
 			garage_car_name_label.text = car_defs[idx].name
@@ -350,6 +352,7 @@ func _on_slider_changed(value: float) -> void:
 func _on_vehicle_selected(index: int) -> void:
 	if index >= 0 and index < car_defs.size():
 		player_settings.vehicle_content_id = car_defs[index].content_id
+		_sync_vehicle_content_evidence()
 		car_name_label.text = car_defs[index].name
 		if garage_car_name_label != null:
 			garage_car_name_label.text = car_defs[index].name
@@ -361,6 +364,10 @@ func _on_vehicle_selected(index: int) -> void:
 
 func _on_name_changed(new_text: String) -> void:
 	player_settings.username = new_text
+
+func _sync_vehicle_content_evidence() -> void:
+	if game_manager != null:
+		game_manager.apply_vehicle_content_evidence(player_settings)
 
 func _on_spectator_toggled(toggled: bool) -> void:
 	player_settings.spectator = toggled

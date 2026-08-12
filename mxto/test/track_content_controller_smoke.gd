@@ -19,8 +19,12 @@ func _run() -> void:
 		_fail("catalog is empty")
 		return
 	var first_id := content.track_id_for_index(0)
-	if !first_id.begins_with("sha256:") or first_id.length() != 71:
+	if !first_id.begins_with("mxt:track:official:"):
 		_fail("first track has invalid content identity")
+		return
+	var first_digest := content.track_gameplay_digest_for_index(0)
+	if !first_digest.begins_with("sha256:") or first_digest.length() != 71:
+		_fail("first track has invalid gameplay digest")
 		return
 	if content.track_index_for_id(first_id) < 0:
 		_fail("content identity index did not resolve")

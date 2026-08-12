@@ -25,6 +25,7 @@ bool validate_package_directory_internal(
 bool validate_authoritative_gameplay_file(
 		ContentType content_type,
 		const godot::String &path,
+		bool validate_payload,
 		godot::String &out_gameplay_digest,
 		std::vector<godot::String> &out_errors);
 

@@ -136,6 +136,10 @@ A local package ID names one immutable package revision. A Workshop ID names the
 
 Catalog records expose validated absolute paths for the preview, visual payload, authoritative gameplay payload, and track metadata. Settings, replay data, multiplayer negotiation, and selection UI consume the content ID and resolved record rather than persisting those paths.
 
+Official vehicles declare their IDs in their `CarDefinition` resources. Official tracks are declared in `res://track/official_tracks.json`, which binds each checked-in slug to its shipped directory/files and expected gameplay digest. Existing trusted tracks are hashed but are not subjected to the stricter hostile-package structural validator; community and Workshop tracks always are. Changing an official track's authoritative bytes therefore requires an intentional manifest digest update.
+
+Replay schema 4 and debug-replay schema 2 store `track_content_id` plus `track_gameplay_digest`, and store `vehicle_content_id` plus `vehicle_gameplay_digest` in every racer setting. Package digests and Workshop IDs are also required when the resolved source has them. Track paths, display names, and array positions are not identity fallbacks. Multiplayer race options carry parallel exact-digest/package/Workshop arrays for every advertised track, while player settings carry the same evidence for vehicles.
+
 ## Initial limits and accepted payloads
 
 - Vehicle package: 64 MiB total; model 48 MiB; properties 4 MiB.

@@ -496,6 +496,7 @@ func _ready() -> void:
 			"vehicle_content_id": vehicle_content_id,
 			"accel_setting": 1.0,
 		}
+		settings_dict.merge(_vehicle_content_evidence(vehicle_content_id), true)
 		network_manager.multiplayer.connected_to_server.connect(
 			_send_connected_player_settings.bind(settings_dict),
 			Object.CONNECT_ONE_SHOT)
@@ -550,6 +551,37 @@ func get_vehicle_content_ids() -> Array:
 func get_car_definition(vehicle_content_id: String) -> CarDefinition:
 	return car_definitions_by_content_id.get(vehicle_content_id) as CarDefinition
 
+func _vehicle_content_evidence(vehicle_content_id: String) -> Dictionary:
+	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)
+	return {
+		"vehicle_gameplay_digest": String(record.get("gameplay_digest", "")),
+		"vehicle_package_digest": String(record.get("package_digest", "")),
+		"vehicle_workshop_id": String(record.get("published_file_id", "")),
+	}
+
+func apply_vehicle_content_evidence(settings: PlayerSettings) -> bool:
+	if settings == null:
+		return false
+	var evidence := _vehicle_content_evidence(settings.vehicle_content_id)
+	settings.vehicle_gameplay_digest = String(evidence.get("vehicle_gameplay_digest", ""))
+	settings.vehicle_package_digest = String(evidence.get("vehicle_package_digest", ""))
+	settings.vehicle_workshop_id = String(evidence.get("vehicle_workshop_id", ""))
+	return !settings.vehicle_gameplay_digest.is_empty()
+
+func _vehicle_content_evidence_matches(settings: PlayerSettings) -> bool:
+	if settings == null:
+		return false
+	var record: Dictionary = content_catalog.resolve_content(settings.vehicle_content_id)
+	if record.is_empty() or String(record.get("gameplay_digest", "")) != settings.vehicle_gameplay_digest:
+		return false
+	var package_digest := String(record.get("package_digest", ""))
+	if !package_digest.is_empty() and package_digest != settings.vehicle_package_digest:
+		return false
+	var workshop_id := String(record.get("published_file_id", ""))
+	if !workshop_id.is_empty() and workshop_id != settings.vehicle_workshop_id:
+		return false
+	return true
+
 func build_cpu_player_settings(index: int) -> Dictionary:
 	var ps := PlayerSettings.new()
 	ps.username = "CPU %03d" % (index + 1)
@@ -558,6 +590,7 @@ func build_cpu_player_settings(index: int) -> Dictionary:
 		ps.vehicle_content_id = content_ids[index % content_ids.size()]
 	else:
 		ps.vehicle_content_id = ""
+	apply_vehicle_content_evidence(ps)
 	ps.accel_setting = 1.0
 	ps.spectator = false
 	return ps.to_dict()
@@ -633,7 +666,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
 	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
-	options["track_ids"] = [track_content_controller.track_id_for_index(track_selector.selected)]
+	_set_track_content_evidence(options, [track_selector.selected])
 	if auto_bumpers_mode:
 		options["bumpers"] = true
 	network_manager.race_options = options
@@ -649,6 +682,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.vehicle_content_id == "" and car_definitions.size() > 0:
 		ps.vehicle_content_id = car_definitions[0].content_id
+	apply_vehicle_content_evidence(ps)
 	ps.spectator = as_spectator
 	network_manager.player_settings[my_id] = ps.to_dict()
 	# Invoke the normal race startup, but driven entirely by local state
@@ -810,9 +844,8 @@ func _build_singleplayer_race_options_screen() -> void:
 	button_row.add_child(start_button_local)
 
 func _build_default_singleplayer_race_options() -> Dictionary:
-	return {
+	var options := {
 		"game_mode": 0,
-		"track_ids": [track_content_controller.track_id_for_index(track_selector.selected)],
 		"vehicle_restore": bool(network_manager.race_options.get("vehicle_restore", true)),
 		"bumpers": bool(network_manager.race_options.get("bumpers", false)) or auto_bumpers_mode,
 		"s_boost": bool(network_manager.race_options.get("s_boost", true)),
@@ -821,6 +854,42 @@ func _build_default_singleplayer_race_options() -> Dictionary:
 		"grand_prix_ko_energy_bonuses": {},
 		"grand_prix_eliminated_ids": [],
 	}
+	_set_track_content_evidence(options, [track_selector.selected])
+	return options
+
+func _set_track_content_evidence(options: Dictionary, track_indices: Array) -> void:
+	var content_ids: Array = []
+	var gameplay_digests: Array = []
+	var package_digests: Array = []
+	var workshop_ids: Array = []
+	for index_value in track_indices:
+		var evidence := track_content_controller.track_content_evidence_for_index(int(index_value))
+		if String(evidence.get("content_id", "")).is_empty():
+			continue
+		content_ids.append(String(evidence.get("content_id", "")))
+		gameplay_digests.append(String(evidence.get("gameplay_digest", "")))
+		package_digests.append(String(evidence.get("package_digest", "")))
+		workshop_ids.append(String(evidence.get("workshop_id", "")))
+	options["track_ids"] = content_ids
+	options["track_gameplay_digests"] = gameplay_digests
+	options["track_package_digests"] = package_digests
+	options["track_workshop_ids"] = workshop_ids
+
+func _race_options_track_content_matches(options: Dictionary) -> bool:
+	var content_ids: Array = options.get("track_ids", [])
+	var gameplay_digests: Array = options.get("track_gameplay_digests", [])
+	var package_digests: Array = options.get("track_package_digests", [])
+	var workshop_ids: Array = options.get("track_workshop_ids", [])
+	if content_ids.is_empty() or gameplay_digests.size() != content_ids.size() or package_digests.size() != content_ids.size() or workshop_ids.size() != content_ids.size():
+		return false
+	for i in range(content_ids.size()):
+		if !track_content_controller.track_content_evidence_matches(
+			String(content_ids[i]),
+			String(gameplay_digests[i]),
+			String(package_digests[i]),
+			String(workshop_ids[i])):
+			return false
+	return true
 
 func _open_singleplayer_race_options(as_spectator: bool) -> void:
 	_build_singleplayer_race_options_screen()
@@ -990,14 +1059,8 @@ func _on_lobby_s_boost_toggled(_toggled: bool) -> void:
 	_refresh_lobby_race_options()
 
 func _build_lobby_race_options() -> Dictionary:
-	var selected_track_ids := []
-	for selected_index in lobby_grand_prix_track_sequence:
-		var track_id := track_content_controller.track_id_for_index(int(selected_index))
-		if track_id != "":
-			selected_track_ids.append(track_id)
-	return {
+	var options := {
 		"game_mode": lobby_game_mode_choice.selected if lobby_game_mode_choice != null else 0,
-		"track_ids": selected_track_ids,
 		"vehicle_restore": lobby_vehicle_restore_toggle.button_pressed if lobby_vehicle_restore_toggle != null else true,
 		"bumpers": lobby_bumpers_toggle.button_pressed if lobby_bumpers_toggle != null else false,
 		"s_boost": lobby_s_boost_toggle.button_pressed if lobby_s_boost_toggle != null else true,
@@ -1006,6 +1069,8 @@ func _build_lobby_race_options() -> Dictionary:
 		"grand_prix_ko_energy_bonuses": {},
 		"grand_prix_eliminated_ids": [],
 	}
+	_set_track_content_evidence(options, lobby_grand_prix_track_sequence)
+	return options
 
 func _refresh_lobby_race_options() -> void:
 	if lobby_applying_race_options:
@@ -1738,6 +1803,7 @@ func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Diction
 		else:
 			var vehicle_content_id: String = car_definitions[0].content_id if car_definitions.size() > 0 else ""
 			settings = {"vehicle_content_id": vehicle_content_id, "accel_setting": 1.0, "username": str(id)}
+			settings.merge(_vehicle_content_evidence(vehicle_content_id), true)
 	var out := {}
 	if typeof(settings) == TYPE_DICTIONARY:
 		out = (settings as Dictionary).duplicate(true)
@@ -2663,6 +2729,9 @@ func _start_race(track_index: int, settings: Array) -> bool:
 			var ps := PlayerSettings.new()
 			ps.from_dict(d)
 			if !ps.spectator:
+				if !_vehicle_content_evidence_matches(ps):
+					push_error("Race vehicle content evidence mismatch: %s" % ps.vehicle_content_id)
+					return false
 				racer_settings.append(ps)
 				var def_res := get_car_definition(ps.vehicle_content_id)
 				if def_res == null:
@@ -2677,6 +2746,9 @@ func _start_race(track_index: int, settings: Array) -> bool:
 			var ps := PlayerSettings.new()
 			ps.from_dict(d)
 			if !ps.spectator:
+				if !_vehicle_content_evidence_matches(ps):
+					push_error("Race vehicle content evidence mismatch: %s" % ps.vehicle_content_id)
+					return false
 				racer_settings.append(ps)
 				var def_res := get_car_definition(ps.vehicle_content_id)
 				if def_res == null:
@@ -2853,6 +2925,15 @@ func _on_start_race_button_pressed() -> void:
 		network_manager.send_start_race(first_track_id, settings_array, race_options)
 
 func _on_network_race_started(track_id: String, settings: Array) -> void:
+	var advertised_track_ids: Array = network_manager.race_options.get("track_ids", [])
+	if !_race_options_track_content_matches(network_manager.race_options) or !advertised_track_ids.has(track_id):
+		var evidence_message := "Race track content evidence mismatch for %s" % track_id
+		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, evidence_message)
+		push_error(evidence_message)
+		_show_race_notification(evidence_message, 5000)
+		if headless_mode:
+			get_tree().quit(1)
+		return
 	var track_index := track_content_controller.track_index_for_id(track_id)
 	if track_index < 0:
 		var message := "Missing race track %s" % track_id

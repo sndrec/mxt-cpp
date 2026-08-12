@@ -1,6 +1,8 @@
 class_name TrackContentController extends Node
 
 const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
+const OFFICIAL_TRACK_MANIFEST_PATH := "res://track/official_tracks.json"
+const OFFICIAL_TRACK_MANIFEST_REVISION := 1
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 
@@ -16,11 +18,10 @@ var visual_scene_instance: Node
 
 func scan_catalog() -> void:
 	tracks.clear()
-	_scan_track_dir("res://track", false)
-	_scan_external_track_dirs()
+	_scan_official_tracks()
 	track_id_to_index.clear()
 	for i in range(tracks.size()):
-		var track_id := String(tracks[i].get("id", ""))
+		var track_id := String(tracks[i].get("content_id", ""))
 		if track_id != "" and !track_id_to_index.has(track_id):
 			track_id_to_index[track_id] = i
 
@@ -37,8 +38,39 @@ func command_line_track_index() -> int:
 
 func track_id_for_index(track_index: int) -> String:
 	if track_index >= 0 and track_index < tracks.size():
-		return String(tracks[track_index].get("id", ""))
+		return String(tracks[track_index].get("content_id", ""))
 	return ""
+
+func track_gameplay_digest_for_index(track_index: int) -> String:
+	if track_index >= 0 and track_index < tracks.size():
+		return String(tracks[track_index].get("gameplay_digest", ""))
+	return ""
+
+func track_content_evidence_for_index(track_index: int) -> Dictionary:
+	var content_id := track_id_for_index(track_index)
+	var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+	return {
+		"content_id": content_id,
+		"gameplay_digest": String(record.get("gameplay_digest", "")),
+		"package_digest": String(record.get("package_digest", "")),
+		"workshop_id": String(record.get("published_file_id", "")),
+	}
+
+func track_content_evidence_matches(
+		content_id: String,
+		gameplay_digest: String,
+		package_digest: String,
+		workshop_id: String) -> bool:
+	var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+	if record.is_empty() or String(record.get("gameplay_digest", "")) != gameplay_digest:
+		return false
+	var record_package_digest := String(record.get("package_digest", ""))
+	if !record_package_digest.is_empty() and record_package_digest != package_digest:
+		return false
+	var record_workshop_id := String(record.get("published_file_id", ""))
+	if !record_workshop_id.is_empty() and record_workshop_id != workshop_id:
+		return false
+	return true
 
 func track_index_for_id(track_id: String) -> int:
 	if track_id_to_index.has(track_id):
@@ -69,7 +101,7 @@ func prepare_race(track_index: int) -> bool:
 		if typeof(parsed) == TYPE_DICTIONARY:
 			current_metadata = parsed
 
-	current_visual_path = _resolve_visual_path(current_track_dir, current_metadata, String(info["mxt"]))
+	current_visual_path = String(info.get("visual", ""))
 	current_visual_replaces_debug_environment = _visual_replaces_debug_environment(current_visual_path)
 	_set_builtin_visuals_enabled(!current_visual_replaces_debug_environment)
 	var has_track_visual := !current_visual_path.is_empty()
@@ -121,8 +153,10 @@ func _external_tracks_dir_candidates() -> PackedStringArray:
 	var project_dir := ProjectSettings.globalize_path("res://")
 	if !project_dir.is_empty():
 		out.append(project_dir.path_join("tracks"))
+		var repo_dir := project_dir.trim_suffix("/").trim_suffix("\\").get_base_dir()
+		out.append(repo_dir.path_join("export-bin/track"))
 		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
-			out.append(project_dir.get_base_dir().path_join(dir_name))
+			out.append(repo_dir.path_join(dir_name))
 	var cwd := OS.get_environment("PWD")
 	if !cwd.is_empty():
 		for dir_name in EXTERNAL_TRACKS_DIR_NAMES:
@@ -133,7 +167,8 @@ func _external_tracks_dir_candidates() -> PackedStringArray:
 			out.append(cwd.path_join(dir_name))
 	return out
 
-func _scan_external_track_dirs() -> void:
+func _existing_track_roots() -> PackedStringArray:
+	var roots := PackedStringArray()
 	var seen := {}
 	for raw_dir in _external_tracks_dir_candidates():
 		var dir_path := String(raw_dir).replace("\\", "/")
@@ -143,46 +178,81 @@ func _scan_external_track_dirs() -> void:
 		if seen.has(key):
 			continue
 		seen[key] = true
-		_scan_track_dir(dir_path, true)
+		roots.append(dir_path)
+	return roots
 
-func _scan_track_dir(path: String, external: bool) -> void:
-	var dir := DirAccess.open(path)
-	if dir == null:
+func _scan_official_tracks() -> void:
+	var manifest_value = JSON.parse_string(FileAccess.get_file_as_string(OFFICIAL_TRACK_MANIFEST_PATH))
+	if typeof(manifest_value) != TYPE_DICTIONARY:
+		push_error("Official track manifest is not a JSON object")
 		return
-	dir.list_dir_begin()
-	var file := dir.get_next()
-	while !file.is_empty():
-		if dir.current_is_dir() and !file.begins_with("."):
-			_scan_track_dir(path.path_join(file), external)
-		elif file.get_extension() == "json":
-			var json_path := path.path_join(file)
-			var mxt_path := json_path.get_basename() + ".mxt_track"
-			if FileAccess.file_exists(mxt_path):
-				var parsed = JSON.parse_string(FileAccess.get_file_as_string(json_path))
-				if typeof(parsed) == TYPE_DICTIONARY and parsed.has("name"):
-					var track_id := _track_id_for_mxt_path(mxt_path)
-					if !track_id.is_empty():
-						tracks.append({
-							"id": track_id,
-							"name": parsed["name"],
-							"mxt": mxt_path,
-							"json": json_path,
-							"dir": json_path.get_base_dir(),
-							"external": external,
-						})
-		file = dir.get_next()
-	dir.list_dir_end()
+	var manifest: Dictionary = manifest_value
+	if int(manifest.get("format_revision", -1)) != OFFICIAL_TRACK_MANIFEST_REVISION:
+		push_error("Official track manifest has an unsupported format revision")
+		return
+	var entries_value = manifest.get("tracks", [])
+	if typeof(entries_value) != TYPE_ARRAY:
+		push_error("Official track manifest tracks field is not an array")
+		return
+	var roots := _existing_track_roots()
+	var seen_content_ids := {}
+	for entry_value in entries_value:
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			push_error("Official track manifest contains a non-object entry")
+			continue
+		var entry: Dictionary = entry_value
+		var slug := String(entry.get("slug", ""))
+		var content_id := "mxt:track:official:" + slug
+		if slug.is_empty() or seen_content_ids.has(content_id):
+			push_error("Official track manifest contains an empty or duplicate slug: %s" % slug)
+			continue
+		seen_content_ids[content_id] = true
+		_register_official_track(entry, roots)
 
-func _track_id_for_mxt_path(mxt_path: String) -> String:
-	var file := FileAccess.open(mxt_path, FileAccess.READ)
-	if file == null:
-		return ""
-	var bytes := file.get_buffer(file.get_length())
-	file.close()
-	var context := HashingContext.new()
-	context.start(HashingContext.HASH_SHA256)
-	context.update(bytes)
-	return "sha256:" + context.finish().hex_encode()
+func _register_official_track(entry: Dictionary, roots: PackedStringArray) -> void:
+	var directory := String(entry.get("directory", ""))
+	var mxt_file := String(entry.get("mxt_file", ""))
+	var metadata_file := String(entry.get("metadata_file", ""))
+	var title := String(entry.get("title", ""))
+	var slug := String(entry.get("slug", ""))
+	var expected_digest := String(entry.get("gameplay_digest", ""))
+	for root in roots:
+		var track_dir := String(root).path_join(directory)
+		var mxt_path := track_dir.path_join(mxt_file)
+		var metadata_path := track_dir.path_join(metadata_file)
+		if !FileAccess.file_exists(mxt_path) or !FileAccess.file_exists(metadata_path):
+			continue
+		var metadata_value = JSON.parse_string(FileAccess.get_file_as_string(metadata_path))
+		if typeof(metadata_value) != TYPE_DICTIONARY:
+			push_error("Official track metadata is invalid JSON: %s" % metadata_path)
+			return
+		var metadata: Dictionary = metadata_value
+		var visual_path := _resolve_visual_path(track_dir, metadata, mxt_path)
+		if visual_path.is_empty():
+			push_error("Official track visual is missing: %s" % track_dir)
+			return
+		var result: Dictionary = game_manager.content_catalog.add_official_track(
+			slug,
+			title,
+			mxt_path,
+			visual_path,
+			metadata_path,
+			expected_digest)
+		if !bool(result.get("valid", false)):
+			push_error("Official track catalog registration failed for %s: %s" % [slug, str(result.get("errors", []))])
+			return
+		var record: Dictionary = result.get("record", {})
+		tracks.append({
+			"content_id": String(record.get("content_id", "")),
+			"gameplay_digest": String(record.get("gameplay_digest", "")),
+			"name": title,
+			"mxt": mxt_path,
+			"json": metadata_path,
+			"dir": track_dir,
+			"visual": visual_path,
+			"source": "official",
+		})
+		return
 
 func _clear_visual_scene() -> void:
 	if visual_scene_instance != null:

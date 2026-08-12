@@ -27,6 +27,7 @@ func _init() -> void:
 		"vehicle_content_id": def.content_id,
 		"accel_setting": 1.0,
 	}
+	settings.merge(main._vehicle_content_evidence(def.content_id), true)
 	main.singleplayer_mode = false
 	main.network_manager.is_server = true
 	main.network_manager.listen_server = true

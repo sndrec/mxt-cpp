@@ -64,12 +64,14 @@ func _run() -> void:
 		var player_id := 1000 + i
 		var definition: CarDefinition = game_manager.car_definitions[i % game_manager.car_definitions.size()]
 		roster.append(player_id)
-		game_manager.network_manager.player_settings[player_id] = {
+		var settings := {
 			"username": "Load Player %02d" % i,
 			"vehicle_content_id": definition.content_id,
 			"car_livery": _synthetic_livery(definition.content_id, i),
 			"accel_setting": 1.0,
 		}
+		settings.merge(game_manager._vehicle_content_evidence(definition.content_id), true)
+		game_manager.network_manager.player_settings[player_id] = settings
 	game_manager.network_manager.player_ids = roster
 	game_manager.lobby_control.visible = true
 

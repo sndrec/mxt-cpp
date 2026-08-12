@@ -566,6 +566,7 @@ static bool validate_payloads(
 bool validate_authoritative_gameplay_file(
 		ContentType content_type,
 		const String &path,
+		bool validate_payload,
 		String &out_gameplay_digest,
 		std::vector<String> &out_errors)
 {
@@ -581,14 +582,14 @@ bool validate_authoritative_gameplay_file(
 	if (!read_file_limited(path, max_bytes, bytes, out_errors)) {
 		return false;
 	}
-	if (content_type == ContentType::VEHICLE) {
+	if (validate_payload && content_type == ContentType::VEHICLE) {
 		PhysicsCarProperties sampled;
 		String parse_error;
 		if (!PhysicsCarProperties::deserialize_and_sample(bytes, 0.5f, sampled, parse_error)) {
 			add_error(out_errors, "vehicle properties rejected: " + parse_error);
 			return false;
 		}
-	} else {
+	} else if (validate_payload) {
 		String parse_error;
 		if (!validate_track_payload(bytes, parse_error)) {
 			add_error(out_errors, "track payload rejected: " + parse_error);

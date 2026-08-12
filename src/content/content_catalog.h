@@ -66,6 +66,13 @@ public:
 			const String &title,
 			const String &properties_path,
 			const String &definition_path);
+	Dictionary add_official_track(
+			const String &slug,
+			const String &title,
+			const String &track_path,
+			const String &visual_path,
+			const String &metadata_path,
+			const String &expected_gameplay_digest);
 	Dictionary add_local_package(const String &package_root);
 	Dictionary add_workshop_package(const String &package_root, int64_t published_file_id);
 	Dictionary scan_local_library(const String &library_root);

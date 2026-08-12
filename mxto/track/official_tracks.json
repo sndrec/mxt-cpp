@@ -1,0 +1,253 @@
+{
+  "format_revision": 1,
+  "tracks": [
+    {
+      "slug": "another-one",
+      "directory": "another_one",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "another one",
+      "gameplay_digest": "sha256:85284b2c80024cac90a0ba80fd81489f2619959c18a1ff995f6963fe78877276"
+    },
+    {
+      "slug": "azure",
+      "directory": "azure",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Azure",
+      "gameplay_digest": "sha256:54980daf8351d87d335cd752b2be098cfa29e596093018174ca8ebfbc8fc37f2"
+    },
+    {
+      "slug": "beepers",
+      "directory": "beepers",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "what if beepers was a racetrack",
+      "gameplay_digest": "sha256:0f4acac46880ecc211690f4b38876338d20d93f08b513131f8f5843de5c80523"
+    },
+    {
+      "slug": "cliffside-drops",
+      "directory": "cliffside_drops",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "CLIFFSIDE DROP",
+      "gameplay_digest": "sha256:5fe38d10011f91a39baef8e77d32209bed0f075867949316695a33c13020c626"
+    },
+    {
+      "slug": "construction",
+      "directory": "Construction",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Construction",
+      "gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50"
+    },
+    {
+      "slug": "dariacore",
+      "directory": "dariacore",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Dariacore",
+      "gameplay_digest": "sha256:6829ed34dc3747c5c43676797621c969cf8a5bf115d91b378ee24e17972b8bb2"
+    },
+    {
+      "slug": "daytime-coaster",
+      "directory": "daytime_coaster",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Daytime Coaster",
+      "gameplay_digest": "sha256:1deb7937e92e39236601423ac6bde7946b2d07121333a0afc16c52594be869b4"
+    },
+    {
+      "slug": "freefall",
+      "directory": "freefall",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Freefall",
+      "gameplay_digest": "sha256:8de9f5f2b4effff58f608f4acf96a102ec193f804ce984e5fbbde8307c48bcad"
+    },
+    {
+      "slug": "fuckghead",
+      "directory": "fuckghead",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "FuckgHead",
+      "gameplay_digest": "sha256:7d1b9d41e784741019189d1e37b74aff8928245b784ffd6072525718ef8def34"
+    },
+    {
+      "slug": "green-light-circuit",
+      "directory": "green_light_circuit",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "GREEN LIGHT CIRCUIT",
+      "gameplay_digest": "sha256:0602715919bbc89d505fd824b1e3173390ffaa955b692a0aab51d5d9f36a6c0e"
+    },
+    {
+      "slug": "loop-cross",
+      "directory": "loop_cross",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Lightning - Loop Cross",
+      "gameplay_digest": "sha256:735eb0cdb54921bfa300ddf4bf722cb6fef7c3dd1ac32f671ce89e2b7a8cfdab"
+    },
+    {
+      "slug": "multiplex",
+      "directory": "multiplex",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Aeropolis - Multiplex",
+      "gameplay_digest": "sha256:f9b64a975d2ebfaab77981c4fca1730a7188765e559a892ecc5567309b7d0494"
+    },
+    {
+      "slug": "rodeo",
+      "directory": "rodeo",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "RODEO",
+      "gameplay_digest": "sha256:beaa95adea05d1198731f92208a5f6cfb11a51bc68d99f4028d103a648fadedf"
+    },
+    {
+      "slug": "runoff",
+      "directory": "runoff",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Runoff",
+      "gameplay_digest": "sha256:3bc9a5935145ac4216716b6ca77ddc752bd209411dff109d764ed38bf939913e"
+    },
+    {
+      "slug": "secret-lab",
+      "directory": "secret_lab",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "SECRET LAB",
+      "gameplay_digest": "sha256:a87a2a612d287456dd5cf4a28e890d94099b286072d23f1fa8b87ca3e4061e09"
+    },
+    {
+      "slug": "similar-pain-device",
+      "directory": "similar_pain_device",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Similar Pain Device",
+      "gameplay_digest": "sha256:a61a58316d8dec990f401a304ee94575a33b5223e913f52678442a1c1649fbdd"
+    },
+    {
+      "slug": "smokestack",
+      "directory": "smokestack",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "SMOKESTACK",
+      "gameplay_digest": "sha256:b8f5b28090723e76658775fa53394207657e9b4e1324be5aac30fe79f114fe1e"
+    },
+    {
+      "slug": "spade-way",
+      "directory": "spade_way",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "SPADE WAY",
+      "gameplay_digest": "sha256:4defbc29b71af8e037907200d4e0f63c29ab7ddb67ab5c3a23881f23a8c8a873"
+    },
+    {
+      "slug": "split-choices",
+      "directory": "split_choices",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "SPLIT CHOICES",
+      "gameplay_digest": "sha256:e80ce0bdb3516d636f2d49d053399d2d436934cc383916d501e9b9278f219b43"
+    },
+    {
+      "slug": "split-oval",
+      "directory": "split_oval",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Casino Palace - Split Oval",
+      "gameplay_digest": "sha256:e11d5b8a35f8bf000624b333cb9d5cbaefb183d111e8d5be30dd8e4dca8e96ba"
+    },
+    {
+      "slug": "squirvy",
+      "directory": "squirvy",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Squirvy",
+      "gameplay_digest": "sha256:51ccf112b693bdeba1bb7ef12e0748e1bf1ec2bbfbac04577bd09602b3c76e49"
+    },
+    {
+      "slug": "surface-slide",
+      "directory": "surface_slide",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Sand Ocean - Surface Slide",
+      "gameplay_digest": "sha256:9f470cc3200534e7aaa9d9119a5f556ca6826f57fc23c55254a0c35d8ade14da"
+    },
+    {
+      "slug": "surfacejumps",
+      "directory": "surfacejumps",
+      "mxt_file": "surface_jumps.blend.mxt_track",
+      "metadata_file": "surface_jumps.blend.json",
+      "title": "Surface Jumps",
+      "gameplay_digest": "sha256:7065a9ec46ab3a1e651b41db313fd71f1e81a99f0ef7ba35279023424481df55"
+    },
+    {
+      "slug": "tube-pipe",
+      "directory": "Tube_Pipe",
+      "mxt_file": "Tube Pipe.mxt_track",
+      "metadata_file": "Tube Pipe.json",
+      "title": "Tube & Pipe",
+      "gameplay_digest": "sha256:7054e70423fd89383da963adf142cd92c9c324af46de03dc879a536c720fa236"
+    },
+    {
+      "slug": "turnpike",
+      "directory": "turnpike",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "TURNPIKE",
+      "gameplay_digest": "sha256:19cd4923fc978cf4e0d4248aabbdbec63a9a411bda8e57f1848e1ab8cf705bc3"
+    },
+    {
+      "slug": "twist-road",
+      "directory": "twist_road",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Mute City - Twist Road",
+      "gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0"
+    },
+    {
+      "slug": "urban-lot",
+      "directory": "urban_lot",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "Urban Lot",
+      "gameplay_digest": "sha256:ddba6b15348b37b0e32635dead6b21acce9cd4fbe1818236acfb1c38d09854aa"
+    },
+    {
+      "slug": "waterpark",
+      "directory": "waterpark",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "WATERPARK",
+      "gameplay_digest": "sha256:a0e15c6b5c927dd71a73a659e1c9ab75344beadd2e3aa17808d45ba8bf7553d5"
+    },
+    {
+      "slug": "what-up",
+      "directory": "what_up",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "WHAT UP",
+      "gameplay_digest": "sha256:b61c9b4b2cac5606706e3e8934494954954ca8ec4fd2433ca801bdcbcff4fd89"
+    },
+    {
+      "slug": "whitewater",
+      "directory": "whitewater",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "WHITE X WATER",
+      "gameplay_digest": "sha256:0a97d8a584adcd8c263ad56102a4ce8f81e369bd3c9e707e3952b80fdf0a56c0"
+    },
+    {
+      "slug": "worlds-end",
+      "directory": "worlds_end",
+      "mxt_file": "track.mxt_track",
+      "metadata_file": "track.json",
+      "title": "World's End Tempest",
+      "gameplay_digest": "sha256:d63923d677626f85f14063ae5505b7e49069609d6969fd64ab0bfdb55ecb26da"
+    }
+  ]
+}

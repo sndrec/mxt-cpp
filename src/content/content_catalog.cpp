@@ -3,6 +3,7 @@
 #include "content/content_validator.h"
 
 #include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/property_info.hpp>
@@ -135,6 +136,9 @@ void MxtContentCatalog::_bind_methods()
 	ClassDB::bind_method(
 			D_METHOD("add_official_vehicle", "slug", "title", "properties_path", "definition_path"),
 			&MxtContentCatalog::add_official_vehicle);
+	ClassDB::bind_method(
+			D_METHOD("add_official_track", "slug", "title", "track_path", "visual_path", "metadata_path", "expected_gameplay_digest"),
+			&MxtContentCatalog::add_official_track);
 	ClassDB::bind_method(D_METHOD("add_local_package", "package_root"), &MxtContentCatalog::add_local_package);
 	ClassDB::bind_method(D_METHOD("add_workshop_package", "package_root", "published_file_id"), &MxtContentCatalog::add_workshop_package);
 	ClassDB::bind_method(D_METHOD("scan_local_library", "library_root"), &MxtContentCatalog::scan_local_library);
@@ -170,6 +174,7 @@ Dictionary MxtContentCatalog::add_official_vehicle(
 		mxt::content::validate_authoritative_gameplay_file(
 				mxt::content::ContentType::VEHICLE,
 				global_path(properties_path),
+				true,
 				gameplay_digest,
 				errors);
 	}
@@ -186,6 +191,67 @@ Dictionary MxtContentCatalog::add_official_vehicle(
 	record.gameplay_digest = gameplay_digest;
 	record.authoritative_path = properties_path;
 	record.visual_path = definition_path;
+	record.title = title;
+	record.author_name = "MaxX Throttle";
+	replace_record(record);
+	result["valid"] = true;
+	result["errors"] = PackedStringArray();
+	result["record"] = mxt::content::content_record_to_dictionary(record);
+	return result;
+}
+
+Dictionary MxtContentCatalog::add_official_track(
+		const String &slug,
+		const String &title,
+		const String &track_path,
+		const String &visual_path,
+		const String &metadata_path,
+		const String &expected_gameplay_digest)
+{
+	Dictionary result;
+	std::vector<String> errors;
+	if (!valid_official_slug(slug)) {
+		errors.push_back("official content slug must contain only lowercase letters, digits, and hyphens");
+	}
+	if (title.is_empty() || title.length() > 128) {
+		errors.push_back("official track title must contain 1 to 128 characters");
+	}
+	if (track_path.is_empty() || visual_path.is_empty() || metadata_path.is_empty()) {
+		errors.push_back("official track paths must not be empty");
+	}
+	if (!FileAccess::file_exists(global_path(visual_path))) {
+		errors.push_back("official track visual file does not exist");
+	}
+	if (!FileAccess::file_exists(global_path(metadata_path))) {
+		errors.push_back("official track metadata file does not exist");
+	}
+	String gameplay_digest;
+	if (errors.empty()) {
+		mxt::content::validate_authoritative_gameplay_file(
+				mxt::content::ContentType::TRACK,
+				global_path(track_path),
+				false,
+				gameplay_digest,
+				errors);
+	}
+	if (errors.empty() && gameplay_digest != expected_gameplay_digest) {
+		errors.push_back("official track gameplay digest does not match the checked-in catalog");
+	}
+	if (!errors.empty()) {
+		result["valid"] = false;
+		result["errors"] = error_array(errors);
+		return result;
+	}
+
+	mxt::content::ContentRecord record;
+	record.content_type = mxt::content::ContentType::TRACK;
+	record.source = mxt::content::ContentSource::OFFICIAL;
+	record.content_id = "mxt:track:official:" + slug;
+	record.gameplay_digest = gameplay_digest;
+	record.authoritative_path = track_path;
+	record.visual_path = visual_path;
+	record.metadata_path = metadata_path;
+	record.root_path = track_path.get_base_dir();
 	record.title = title;
 	record.author_name = "MaxX Throttle";
 	replace_record(record);
