@@ -38,6 +38,6 @@
     {"track_slug":"what-up","track_gameplay_digest":"sha256:b61c9b4b2cac5606706e3e8934494954954ca8ec4fd2433ca801bdcbcff4fd89","steam_name":"mxt_ta_what-up_b61c9b4b_r1"},
     {"track_slug":"whitewater","track_gameplay_digest":"sha256:0a97d8a584adcd8c263ad56102a4ce8f81e369bd3c9e707e3952b80fdf0a56c0","steam_name":"mxt_ta_whitewater_0a97d8a5_r1"},
     {"track_slug":"worlds-end","track_gameplay_digest":"sha256:d63923d677626f85f14063ae5505b7e49069609d6969fd64ab0bfdb55ecb26da","steam_name":"mxt_ta_worlds-end_d63923d6_r1"},
-    {"track_slug":"test-track","track_title":"Test Track","track_source":"curated_workshop","published_file_id":"3782026858","track_gameplay_digest":"sha256:24c715a246fe43ce0a6e537a0524fd19461560461158792e9f84bab82ddddf4b","steam_name":"mxt_ta_curated_test-track_24c715a2_r1"}
+    {"track_slug":"test-track","track_title":"Test Track","track_source":"curated_workshop","published_file_id":"3782026858","track_gameplay_digest":"sha256:471892713106a88fcd3cb5dddbb1466716c13d9dc52eff92f1bc2b494fd86de7","steam_name":"mxt_ta_curated_test-track_47189271_r1"}
   ]
 }
