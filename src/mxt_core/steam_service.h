@@ -2,6 +2,7 @@
 #define MXT_STEAM_SERVICE_H
 
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
 
@@ -9,20 +10,30 @@
 
 namespace godot {
 
+struct SteamWorkshopState;
+
 class MxtSteamService : public Node {
 	GDCLASS(MxtSteamService, Node)
 
 private:
+	friend struct SteamWorkshopState;
+
 	String status_message;
 	String persona_name;
 	uint64_t steam_id = 0;
 	uint32_t app_id = 0;
 	bool initialized = false;
 	bool init_attempted = false;
+	int64_t next_workshop_request_id = 1;
+	Array workshop_items;
+	SteamWorkshopState *workshop_state = nullptr;
 
 	void clear_account_state();
 	void publish_status();
 	void shutdown_steam_internal(bool publish_change);
+	int64_t allocate_workshop_request_id();
+	void complete_workshop_request(int64_t request_id, const String &operation, const Dictionary &result);
+	void publish_workshop_items();
 
 protected:
 	static void _bind_methods();
@@ -42,6 +53,23 @@ public:
 	String get_persona_name() const { return persona_name; }
 	String get_status_message() const { return status_message; }
 	Dictionary get_status() const;
+
+	int64_t create_workshop_item();
+	int64_t submit_workshop_item_update(
+			int64_t published_file_id,
+			const String &title,
+			const String &description,
+			const String &content_path,
+			const String &preview_path,
+			const Array &tags,
+			const String &metadata,
+			const String &visibility,
+			const String &change_note);
+	bool refresh_subscribed_workshop_items();
+	bool download_workshop_item(int64_t published_file_id, bool high_priority = true);
+	bool open_workshop_item_page(int64_t published_file_id);
+	Dictionary get_workshop_update_progress() const;
+	Array get_workshop_items() const { return workshop_items.duplicate(true); }
 };
 
 } // namespace godot
