@@ -1,0 +1,71 @@
+# MaxX Throttle trusted leaderboard verifier
+
+This service is the only score-writing component. The game client can read Steam leaderboards and obtain a Web API authentication ticket, but it has no score-upload binding. A submission is accepted only after the service:
+
+1. authenticates the ticket against the configured identity;
+2. confirms that the returned Steam account owns the game;
+3. rejects reuse of that authentication ticket;
+4. runs the shipped game headlessly with `--leaderboard-replay-verify`;
+5. checks the re-simulated board tuple and millisecond score against the request and checked-in manifest;
+6. calls Steam's publisher-only `SetLeaderboardScore` endpoint with `KeepBest`.
+
+The publisher key is read only by this process and is removed from the child verifier process environment.
+
+## Provision the Steam boards
+
+Set credentials in the process environment. Never put the publisher key in a file inside the game repository or a client depot.
+
+```powershell
+$env:MXT_STEAM_APP_ID = '<main game app id>'
+$env:MXT_STEAM_AUTH_APP_IDS = '<main game app id>,<optional playtest app id>'
+$env:MXT_STEAM_PUBLISHER_KEY = '<publisher web api key>'
+python services/leaderboard_verifier/provision_leaderboards.py `
+  --output C:\secure\mxt-leaderboard-ids.json
+```
+
+The command creates every board in `mxto/steam/leaderboards.json` as ascending, millisecond-display, public-read, trusted-write-only and then records Steam's numeric IDs. Keep that generated file with the deployed service, not in a client build.
+
+## Run the service
+
+Use either an exported dedicated verifier build:
+
+```powershell
+$env:MXT_GAME_EXECUTABLE = 'C:\mxt-verifier\MaxXThrottle.exe'
+```
+
+or a pinned Godot executable and project tree:
+
+```powershell
+$env:MXT_GODOT_EXE = 'C:\Godot\Godot_console.exe'
+$env:MXT_GODOT_PROJECT = 'C:\mxt-verifier\mxto'
+```
+
+Then configure and start the process:
+
+```powershell
+$env:MXT_STEAM_APP_ID = '<main game app id>'
+$env:MXT_STEAM_PUBLISHER_KEY = '<publisher web api key>'
+$env:MXT_STEAM_LEADERBOARD_IDS = 'C:\secure\mxt-leaderboard-ids.json'
+$env:MXT_STEAM_TICKET_IDENTITY = 'mxt-leaderboard-v1'
+$env:MXT_LEADERBOARD_LISTEN_HOST = '127.0.0.1'
+$env:MXT_LEADERBOARD_LISTEN_PORT = '8787'
+python services/leaderboard_verifier/server.py
+```
+
+Terminate TLS at a reverse proxy and expose only `POST /v1/time-attack/submit`. Keep `/healthz` available to the local health checker. The service intentionally listens on loopback by default. Set reverse-proxy request limits at or below `MXT_MAX_REPLAY_BYTES` (default 64 MiB), do not log `Authorization` headers, and run only the exact game build associated with the checked-in manifest.
+
+The submission request is:
+
+```text
+POST /v1/time-attack/submit
+Content-Type: application/vnd.mxt.replay+json
+Authorization: SteamTicket <hex ticket>
+X-MXT-Ticket-Identity: mxt-leaderboard-v1
+X-MXT-Steam-App-ID: <the client Steam App ID>
+X-MXT-Board: <manifest steam_name>
+X-MXT-Claimed-Score-Milliseconds: <integer>
+
+<raw .replay.json bytes>
+```
+
+Successful responses contain the authenticated Steam ID, verified board name, and verified score. Tickets are single-use within one service process. For horizontal deployment, replace the in-process replay guard with a shared atomic TTL store before adding a second instance.

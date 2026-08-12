@@ -158,4 +158,5 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 		"vehicle_content_id": vehicle_id,
 		"vehicle_gameplay_digest": vehicle_digest,
 		"ruleset_revision": TimeAttackRulesClass.RULESET_REVISION,
+		"game_version": replay.get("game_version", {}).duplicate(true) if typeof(replay.get("game_version", {})) == TYPE_DICTIONARY else {},
 	}
