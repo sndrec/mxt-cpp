@@ -26,6 +26,7 @@ public:
 		float perspective = 55.0f;
 		float clearance_ratio = 0.0f;
 		float boost_perspective_target = 0.0f;
+		bool boost_was_active = false;
 		float vertical_offset_state = 0.0f;
 		float interest_vertical_offset_state = 0.0f;
 		float previous_speed_kmh = 0.0f;

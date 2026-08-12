@@ -192,6 +192,37 @@ godot::PackedInt64Array GameSim::get_phase_profile_last_sample() const
 	return sample;
 }
 
+godot::Dictionary GameSim::get_memory_usage_stats() const
+{
+	const int64_t level_capacity = level_data.get_capacity();
+	const int64_t gamestate_capacity = gamestate_data.get_capacity();
+	int64_t rollback_bytes = 0;
+	int rollback_buffer_count = 0;
+	for (int i = 0; i < STATE_BUFFER_LEN; ++i) {
+		if (state_buffer[i].data) {
+			rollback_bytes += gamestate_capacity;
+			++rollback_buffer_count;
+		}
+	}
+	const int64_t input_bytes = input_buffer
+		? static_cast<int64_t>(sizeof(PlayerInput)) * INPUT_BUFFER_LEN * num_cars
+		: 0;
+
+	godot::Dictionary out;
+	out["sim_started"] = sim_started;
+	out["car_count"] = num_cars;
+	out["bumper_count"] = bumper_count;
+	out["level_heap_used_bytes"] = static_cast<int64_t>(level_data.get_size());
+	out["level_heap_capacity_bytes"] = level_capacity;
+	out["gamestate_heap_used_bytes"] = static_cast<int64_t>(gamestate_data.get_size());
+	out["gamestate_heap_capacity_bytes"] = gamestate_capacity;
+	out["rollback_buffer_count"] = rollback_buffer_count;
+	out["rollback_buffer_bytes"] = rollback_bytes;
+	out["input_buffer_bytes"] = input_bytes;
+	out["tracked_native_bytes"] = level_capacity + gamestate_capacity + rollback_bytes + input_bytes;
+	return out;
+}
+
 uint64_t GameSim::render_profile_now_us() const
 {
 	return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
@@ -425,6 +456,43 @@ int GameSim::get_player_race_place(int player_id) const
 		place += 1;
 	}
 	return 0;
+}
+
+godot::PackedInt32Array GameSim::get_vehicle_death_states() const
+{
+	static constexpr int DEATH_STATE_ZERO_HP = 1;
+	static constexpr int DEATH_STATE_FALLOUT = 2;
+	godot::PackedInt32Array result;
+	if (!cars || !car_player_ids || num_cars <= 0) {
+		return result;
+	}
+
+	int player_count = 0;
+	for (int i = 0; i < num_cars; ++i) {
+		player_count += car_player_ids[i] >= 0 ? 1 : 0;
+	}
+	result.resize(player_count * 2);
+	int out_index = 0;
+	for (int i = 0; i < num_cars; ++i) {
+		const int player_id = car_player_ids[i];
+		if (player_id < 0) {
+			continue;
+		}
+		const PhysicsCarSoA& car_soa = *cars[i].soa;
+		const int lane = cars[i].soa_index;
+		const uint32_t machine_state = car_soa.machine_state[lane];
+		int death_state = 0;
+		if ((machine_state & MACHINESTATE::ZEROHP) != 0u) {
+			death_state |= DEATH_STATE_ZERO_HP;
+		}
+		if ((machine_state & MACHINESTATE::FALLOUT) != 0u ||
+				(car_soa.current_track[lane] && car_soa.position_current_y[lane] < car_soa.current_track[lane]->minimum_y)) {
+			death_state |= DEATH_STATE_FALLOUT;
+		}
+		result.set(out_index++, player_id);
+		result.set(out_index++, death_state);
+	}
+	return result;
 }
 
 godot::PackedInt32Array GameSim::get_race_leaderboard_window(int player_id, int max_entries, const godot::Dictionary& finished_players, const godot::Dictionary& eliminated_players) const

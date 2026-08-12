@@ -20,6 +20,7 @@ func send_race_finish_time(time: int) -> void:
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 const ProximityVoiceChatClass = preload("res://netplay/proximity_voice_chat.gd")
+const GameVersionData = preload("res://core/game_version.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
@@ -467,7 +468,7 @@ func _prune_state_chunk_buffers() -> void:
 		if int(tick) <= latest_state_tick:
 			pending_state_chunks.erase(tick)
 
-var version_string: String = ""
+var version_string: String = GameVersionData.display_string()
 var _unverified_peers: Array = []
 var _version_request_time := {}
 
@@ -662,12 +663,6 @@ func _init_logger() -> void:
 	log_file = FileAccess.open("user://" + fname, FileAccess.WRITE)
 	if log_file:
 		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,rtt_variance,input_forward_redundancy,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_compression_candidates,auth_build_ms,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot,lobby_frame_samples,lobby_frame_avg_ms,lobby_frame_max_ms,lobby_player_list_avg_ms,lobby_player_list_max_ms,lobby_chibi_avg_ms,lobby_chibi_max_ms,lobby_render_rebuilds,lobby_render_rebuild_avg_ms,lobby_render_rebuild_max_ms,lobby_settings_in,lobby_settings_out,lobby_settings_bytes_in,lobby_settings_bytes_out,lobby_settings_accepted,lobby_settings_deduped,lobby_chibi_in,lobby_chibi_out,lobby_chibi_bytes_in,lobby_chibi_bytes_out,lobby_peer_connects,lobby_peer_disconnects,stamp_manifest_in,stamp_manifest_out,stamp_manifest_bytes_in,stamp_manifest_bytes_out,stamp_manifest_accepted,stamp_manifest_deduped,stamp_blob_in,stamp_blob_out,stamp_blob_bytes_in,stamp_blob_bytes_out,stamp_blob_accepted,stamp_blob_deduped,stamp_blob_queue_messages,stamp_blob_queue_bytes,engine_process_ms,engine_physics_ms,draw_calls")
-	_log_timer = Timer.new()
-	_log_timer.wait_time = 1.0
-	_log_timer.one_shot = false
-	_log_timer.timeout.connect(_flush_log)
-	add_child(_log_timer)
-	_log_timer.start()
 
 func _allocate_cpu_id() -> int:
 	for id in range(CPU_ID_MIN, CPU_ID_MAX + 1):
@@ -1229,6 +1224,7 @@ func record_lobby_chibi_network(in_messages: int, in_bytes: int, out_messages: i
 	log_lobby_chibi_bytes_out += out_bytes
 
 func _flush_log() -> void:
+	game_manager.record_memory_sample("interval")
 	if !log_enabled or log_file == null or !has_network_peer():
 		return
 	var up_kbps := (log_bytes_out_interval * 8.0) / 1000.0
@@ -1699,17 +1695,18 @@ func _ready() -> void:
 		add_child(proximity_voice_chat)
 	_parse_auth_input_sample_dump_args()
 	_apply_auth_input_sample_dump_settings()
-	var lbl: Label = get_node_or_null("../VersionLabel")
-	if lbl != null:
-		version_string = str(lbl.text)
-	else:
-		version_string = ""
 	var server_process_timer = Timer.new()
 	server_process_timer.ignore_time_scale = true
 	add_child(server_process_timer)
 	server_process_timer.timeout.connect(server_process)
 	server_process_timer.start(1.0 / 60.0)
 	multiplayer.server_disconnected.connect(on_disconnect)
+	_log_timer = Timer.new()
+	_log_timer.wait_time = 1.0
+	_log_timer.one_shot = false
+	_log_timer.timeout.connect(_flush_log)
+	add_child(_log_timer)
+	_log_timer.start()
 
 func on_disconnect() -> void:
 	DebugDraw2D.set_text("DISCONNECTED!", null, 10, Color.RED, 10)

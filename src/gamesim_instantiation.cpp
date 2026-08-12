@@ -1294,58 +1294,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		if (spatial_audio_manager) {
 			spatial_audio_manager->clear_all();
 		}
-		if (sim_started)
-		{
-			if (current_track) {
-				current_track->num_trigger_colliders = 0;
-				current_track->trigger_colliders = nullptr;
-			}
-			if (cars) {
-				HeapHandler::free_physics_car_static_soa_arrays(cars, num_cars);
-				::free(cars);
-				cars = nullptr;
-			}
-			if (bumper_cars) {
-				HeapHandler::free_physics_car_static_soa_arrays(bumper_cars, bumper_count);
-				::free(bumper_cars);
-				bumper_cars = nullptr;
-			}
-			if (car_properties_array) {
-				::free(car_properties_array);
-				car_properties_array = nullptr;
-			}
-			if (bumper_properties_array) {
-				::free(bumper_properties_array);
-				bumper_properties_array = nullptr;
-			}
-			level_data.free_heap();
-			gamestate_data.free_heap();
-			super_spark_state = nullptr;
-			super_sparks = nullptr;
-			spark_multimesh_instance = nullptr;
-			for (int i = 0; i < STATE_BUFFER_LEN; i++)
-			{
-				if (state_buffer[i].data)
-				{
-					::free(state_buffer[i].data);
-					state_buffer[i].data = nullptr;
-				}
-				state_buffer[i].size = 0;
-				state_buffer[i].tick = -1;
-				state_buffer[i].voice_transform_count = 0;
-				state_buffer[i].voice_transforms.clear();
-				state_buffer[i].car_local_state_size = 0;
-				state_buffer[i].bumper_local_state_size = 0;
-				state_buffer[i].vehicle_local_state.clear();
-			}
-			if (input_buffer) {
-				::free(input_buffer);
-				input_buffer = nullptr;
-			}
-			free_vehicle_tick_soa();
-			sim_started = false;
-			tick = 0;
-			current_track = nullptr;
+		if (current_track) {
+			current_track->num_trigger_colliders = 0;
+			current_track->trigger_colliders = nullptr;
 		}
 		if (cars) {
 			HeapHandler::free_physics_car_static_soa_arrays(cars, num_cars);
@@ -1365,14 +1316,51 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 			::free(bumper_properties_array);
 			bumper_properties_array = nullptr;
 		}
-	if (car_player_ids) {
-		::free(car_player_ids);
-		car_player_ids = nullptr;
-	}
+		if (level_data.is_live()) {
+			level_data.free_heap();
+		}
+		if (gamestate_data.is_live()) {
+			gamestate_data.free_heap();
+		}
+		super_spark_state = nullptr;
+		super_sparks = nullptr;
+		spark_multimesh_instance = nullptr;
+		for (int i = 0; i < STATE_BUFFER_LEN; i++)
+		{
+			if (state_buffer[i].data)
+			{
+				::free(state_buffer[i].data);
+				state_buffer[i].data = nullptr;
+			}
+			state_buffer[i].size = 0;
+			state_buffer[i].tick = -1;
+			state_buffer[i].voice_transform_count = 0;
+			state_buffer[i].voice_transforms.clear();
+			state_buffer[i].voice_transforms.shrink_to_fit();
+			state_buffer[i].car_local_state_size = 0;
+			state_buffer[i].bumper_local_state_size = 0;
+			state_buffer[i].vehicle_local_state.clear();
+			state_buffer[i].vehicle_local_state.shrink_to_fit();
+		}
+		if (input_buffer) {
+			::free(input_buffer);
+			input_buffer = nullptr;
+		}
+		free_vehicle_tick_soa();
+		network_state_live_backup.clear();
+		network_state_live_backup.shrink_to_fit();
+		sim_started = false;
+		tick = 0;
+		current_track = nullptr;
+		if (car_player_ids) {
+			::free(car_player_ids);
+			car_player_ids = nullptr;
+		}
 		if (car_is_cpu) {
 			::free(car_is_cpu);
 			car_is_cpu = nullptr;
 		}
+		num_cars = 0;
 		car_render_manager = nullptr;
 		gameplay_camera_node = nullptr;
 		render_camera_node = nullptr;

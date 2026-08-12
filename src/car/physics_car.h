@@ -99,6 +99,9 @@ struct PhysicsCarFloorProfile {
 	X(float, stat_shift_boost_velocity_multiplier, 1.0f) \
 	X(float, stat_air_pitch_up_speed_loss_factor, 0.0f) \
 	X(float, stat_air_glide_steering_speed_loss_factor, 0.0f) \
+	X(float, stat_drive_target_speed_multiplier, 1.0f) \
+	X(float, stat_acceleration_response_multiplier, 1.0f) \
+	X(float, stat_forward_thrust_multiplier, 1.0f) \
 	X(uint8_t, stat_accel_press_grip_frames, 0) \
 	X(float, camera_reorienting, 0.0f) \
 	X(float, camera_repositioning, 0.0f) \
@@ -163,7 +166,6 @@ struct PhysicsCarFloorProfile {
 	X(uint32_t, air_time, 0) \
 	X(bool, machine_crashed, false) \
 	X(uint8_t, car_hit_invincibility, 0) \
-	X(uint8_t, boost_delay_frame_counter, 0) \
 	X(uint32_t, frames_since_death, 0) \
 	X(int8_t, drift_sign, 0) \
 	X(float, drift_ramp, 0.0f) \
@@ -383,14 +385,16 @@ public:
 	void set_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
 	void remove_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
 	void handle_suspension_states();
-	float classify_machine_drift(int point_lane, const SimVec3& corner_delta_local, bool& out_was_drifting);
+	float classify_machine_drift(int point_lane, const SimVec3& corner_delta_local,
+		float grip_1, float grip_3, bool& out_was_drifting);
 	void apply_machine_turn_and_strafe(int point_lane, float in_angle_vel, float drift_delta,
 		bool was_drifting, float speed_factor, const SimTransform& steer_basis);
 	void handle_machine_turn_and_strafe_points4(float in_angle_vel);
 	void project_velocity_to_local_frame();
 	void handle_linear_velocity();
 	void apply_initial_accel_activation(float effective_accel_input);
-	float handle_machine_accel_and_boost(float neg_local_fwd_speed, float abs_local_lateral_speed, float drift_accel_factor);
+	float handle_machine_accel_and_boost(float neg_local_fwd_speed,
+		float abs_local_lateral_speed, float drift_accel_factor);
 	void handle_angle_velocity();
 	void handle_airborne_controls();
 	void orient_vehicle_from_gravity_or_road();
@@ -409,7 +413,7 @@ public:
 		bool manual_boost_active, bool dashplate_boost_active, bool s_boost_active) const;
 	void reset_machine(int reset_type);
 	void update_pitch_transform_from_machine_front_back();
-	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, float stat_weight, float mass_fraction, float time_based_factor, bool accel_off, float ray_start_from_attachment_len, float ray_len, bool draw_tilt_debug);
+	void update_suspension_forces(int point_lane, const SimVec3& p0_ray_start_ws, const SimVec3& p0, const SimVec3& p1_ray_end_ws, const SimVec2& road_t, const SimTransform& surf, const SimVec3& vehicle_up_ws, float stat_weight, float mass_fraction, float time_based_factor, bool accel_off, float ray_start_from_attachment_len, float ray_len, bool draw_tilt_debug);
 	SimVec3 get_avg_track_normal_from_tilt_corners(TrackQueryScratch &scratch, PhysicsCarFloorProfile* profile = nullptr);
 	void set_terrain_state_from_track(TrackQueryScratch &scratch, const SimVec3 &trigger_p0, const SimVec3 &trigger_p1);
 	void handle_attack_states();

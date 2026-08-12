@@ -805,7 +805,6 @@ void PhysicsCar::start_s_boost(uint16_t duration_frames)
 	soa->boost_turbo[soa_index] = 0.0f;
 	soa->pending_dashplate_heat[soa_index] = 0.0f;
 	soa->pending_dashplate_heat_reward_scale[soa_index] = 1.0f;
-	soa->boost_delay_frame_counter[soa_index] = 0;
 	soa->car_hit_invincibility[soa_index] = 0;
 	soa->machine_state[soa_index] &= ~(MACHINESTATE::JUST_PRESSED_BOOST |
 		MACHINESTATE::BOOSTING |

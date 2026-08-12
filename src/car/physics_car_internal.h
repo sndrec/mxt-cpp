@@ -87,7 +87,8 @@ static inline bool trace_mesh_floor_for_car(const PhysicsCarSoA *soa, int soa_in
 {
 	return soa &&
 		DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_MESH_FLOOR) &&
-		(soa->global_start + soa_index) == 0;
+		DEBUG::rail_trace_filter_matches(
+			soa->global_start + soa_index, soa->simulation_tick[soa_index]);
 }
 
 static inline bool trace_rail_for_car(const PhysicsCarSoA *soa, int soa_index)

@@ -83,6 +83,26 @@ SimVec3 PhysicsCar::prepare_machine_frame(TrackQueryScratch &scratch, PhysicsCar
 		soa->machine_state[soa_index] &= ~MACHINESTATE::AIRBORNEMORE0_2S_Q;
 		soa->state_2[soa_index] &= ~2u;
 	}
+	if (trace_mesh_floor_for_car(soa, soa_index)) {
+		const SimVec3 machine_up =
+			mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0.0f, 1.0f, 0.0f));
+		const SimVec3 velocity = LOAD_VEC3(velocity);
+		godot::UtilityFunctions::print(
+			godot::String("MXT_SUSPENSION_SUMMARY tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" all_airborne="), all_airborne,
+			godot::String(" just_landed="), (soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) != 0u,
+			godot::String(" air_time="), static_cast<int64_t>(soa->air_time[soa_index]),
+			godot::String(" machine_state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16),
+			godot::String(" tilt=(0x"), godot::String::num_int64(static_cast<int64_t>(soa->tilt_state[POINT_INDEX(0)]), 16),
+			godot::String(",0x"), godot::String::num_int64(static_cast<int64_t>(soa->tilt_state[POINT_INDEX(1)]), 16),
+			godot::String(",0x"), godot::String::num_int64(static_cast<int64_t>(soa->tilt_state[POINT_INDEX(2)]), 16),
+			godot::String(",0x"), godot::String::num_int64(static_cast<int64_t>(soa->tilt_state[POINT_INDEX(3)]), 16), godot::String(")"),
+			godot::String(" prev_pos=("), previous_position.x, godot::String(","), previous_position.y, godot::String(","), previous_position.z, godot::String(")"),
+			godot::String(" pos=("), current_position.x, godot::String(","), current_position.y, godot::String(","), current_position.z, godot::String(")"),
+			godot::String(" vel=("), velocity.x, godot::String(","), velocity.y, godot::String(","), velocity.z, godot::String(")"),
+			godot::String(" machine_up=("), machine_up.x, godot::String(","), machine_up.y, godot::String(","), machine_up.z, godot::String(")"),
+			godot::String(" ground_n=("), ground_normal.x, godot::String(","), ground_normal.y, godot::String(","), ground_normal.z, godot::String(")"));
+	}
 
 	soa->turning_related[soa_index] = 0.0f;
 	soa->visual_rotation_z[soa_index] *= 0.8f;
@@ -761,12 +781,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 	stay_on = floor_seg->analytic_collision_enabled && (pipe || cylinder || rect);
 	const bool trace_mesh_floor = trace_mesh_floor_for_car(soa, soa_index);
 	const SimVec3 machine_up_ws = mxt_basis_rotate(machine_transform, SimVec3(0.0f, 1.0f, 0.0f));
-	auto orient_mesh_floor_hit = [&](CollisionData &mesh_hit) {
-		if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) < 0.0f) {
-			mesh_hit.collision_normal *= -1.0f;
-			mesh_hit.collision_face_normal *= -1.0f;
-			mesh_hit.road_data.closest_surface.basis[1] *= -1.0f;
-			mesh_hit.road_data.closest_surface.basis[2] *= -1.0f;
+	auto reject_backfacing_mesh_floor_hit = [&](CollisionData &mesh_hit) {
+		if (mesh_hit.collided && mesh_hit.collision_normal.dot(machine_up_ws) <= 0.0f) {
+			mesh_hit.collided = false;
 		}
 	};
 	if ((soa->machine_state[soa_index] & MACHINESTATE::FALLOUT) == 0 &&
@@ -825,6 +842,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::WANTS_TERRAIN | CAST_FLAGS::SAMPLE_FROM_P0,
 				current_cp,
 				&scratch);
+			if (hit.collided && hit.collision_normal.dot(machine_up_ws) <= 0.0f) {
+				hit.collided = false;
+			}
 			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && track_segment_longitudinal_t_in_domain(hit.road_data.road_t.y);
 			physics_profile_mark(profile ? profile->find_floor_cast_us : nullptr, profile_step);
 		} else {
@@ -841,8 +861,8 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				false,
 				true);
 			physics_profile_mark(profile ? profile->find_floor_mesh_us : nullptr, profile_step);
+			reject_backfacing_mesh_floor_hit(nearest_hit);
 			if (nearest_hit.collided) {
-				orient_mesh_floor_hit(nearest_hit);
 				hit = nearest_hit;
 				sweep_hit_occurred = true;
 				nearest_mesh_sample = true;
@@ -863,8 +883,8 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				false,
 				true);
 			physics_profile_mark(profile ? profile->find_floor_mesh_us : nullptr, profile_step);
+			reject_backfacing_mesh_floor_hit(mesh_hit);
 			if (mesh_hit.collided) {
-				orient_mesh_floor_hit(mesh_hit);
 				hit = mesh_hit;
 				sweep_hit_occurred = true;
 				nearest_mesh_sample = true;
@@ -877,6 +897,9 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 				CAST_FLAGS::WANTS_TRACK | CAST_FLAGS::WANTS_BACKFACE | CAST_FLAGS::SAMPLE_FROM_P0,
 				current_cp,
 				&scratch);
+			if (hit.collided && hit.collision_normal.dot(machine_up_ws) <= 0.0f) {
+				hit.collided = false;
+			}
 			sweep_hit_occurred = hit.collided && hit.road_data.road_t.x >= -1.0f && hit.road_data.road_t.x <= 1.0f && track_segment_longitudinal_t_in_domain(hit.road_data.road_t.y);
 			physics_profile_mark(profile ? profile->find_floor_cast_us : nullptr, profile_step);
 		}
@@ -897,7 +920,8 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 			physics_profile_mark(profile ? profile->find_floor_mesh_us : nullptr, profile_step);
 		}
 		if (!floor_seg->analytic_collision_enabled) {
-			orient_mesh_floor_hit(hit);
+			reject_backfacing_mesh_floor_hit(hit);
+			sweep_hit_occurred = sweep_hit_occurred && hit.collided;
 		}
 		soa->road_sample[soa_index].terrain = hit.road_data.terrain;
 		soa->road_sample[soa_index].cp_idx = hit.road_data.cp_idx;
@@ -1014,9 +1038,7 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 			false,
 			true);
 		physics_profile_mark(profile ? profile->find_floor_mesh_us : nullptr, profile_step);
-		if (mesh_hit.collided) {
-			orient_mesh_floor_hit(mesh_hit);
-		}
+		reject_backfacing_mesh_floor_hit(mesh_hit);
 		float contact_dist_metric = 0.0f;
 		if (mesh_hit.collided) {
 			const float signed_surface_distance = (current_position - mesh_hit.collision_point).dot(mesh_hit.collision_normal);
@@ -1148,6 +1170,13 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 	segment.road_shape->get_oriented_transform_at_time_presampled(surf, road_t_sample_raw, root, root_derivative);
 	physics_profile_mark(profile ? profile->find_floor_analytic_us : nullptr, profile_step);
 	const float surface_dist = (current_position - surf.origin).dot(surf.basis[1]);
+	if (surf.basis[1].dot(machine_up_ws) <= 0.0f) {
+		trace_floor("surface_faces_away", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
+		soa->height_above_track[soa_index] = 0.0f;
+		STORE_VEC3(track_surface_normal, SimVec3(0, 1, 0));
+		mark_floor_disconnected(soa, soa_index);
+		return false;
+	}
 	if (cylinder && surface_dist >= 20.0f) {
 		trace_floor("cylinder_distance_cap", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
 		if (try_stay_on_mesh_floor("cylinder_distance_cap")) {

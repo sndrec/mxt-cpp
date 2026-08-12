@@ -33,6 +33,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_full_state_data", "target_tick"), &GameSim::get_full_state_data);
 	ClassDB::bind_method(D_METHOD("load_full_state_data", "target_tick", "data"), &GameSim::load_full_state_data);
 	ClassDB::bind_method(D_METHOD("get_network_state_size_stats"), &GameSim::get_network_state_size_stats);
+	ClassDB::bind_method(D_METHOD("get_memory_usage_stats"), &GameSim::get_memory_usage_stats);
 	ClassDB::bind_method(D_METHOD("set_state_data", "target_tick", "data"), &GameSim::set_state_data);
 	ClassDB::bind_method(D_METHOD("render_gamesim_visuals_only", "process_delta"), &GameSim::render_gamesim_visuals_only);
 	ClassDB::bind_method(D_METHOD("get_dip_switches"), &GameSim::get_dip_switches);
@@ -55,6 +56,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_render_all_car_bodies", "enabled"), &GameSim::set_render_all_car_bodies);
 	ClassDB::bind_method(D_METHOD("set_render_car_body_view_distance", "distance"), &GameSim::set_render_car_body_view_distance);
 	ClassDB::bind_method(D_METHOD("get_player_race_place", "player_id"), &GameSim::get_player_race_place);
+	ClassDB::bind_method(D_METHOD("get_vehicle_death_states"), &GameSim::get_vehicle_death_states);
 	ClassDB::bind_method(D_METHOD("get_race_leaderboard_window", "player_id", "max_entries", "finished_players", "eliminated_players"), &GameSim::get_race_leaderboard_window);
 	ClassDB::bind_method(D_METHOD("get_race_control_start_tick"), &GameSim::get_race_control_start_tick);
 	ClassDB::bind_method(D_METHOD("get_finished_player_ids"), &GameSim::get_finished_player_ids);
@@ -102,6 +104,7 @@ GameSim::GameSim()
 	tick = 0;
 	tick_delta = 1.0f / 60.0f;
 	sim_started = false;
+	current_track = nullptr;
 	car_node_container = nullptr;
 	spark_node_container = nullptr;
 	super_spark_state = nullptr;

@@ -14,18 +14,16 @@
 class HeapHandler
 {
 private:
-	void* heap;
-	char* heap_end;
-	bool live;
+	void* heap = nullptr;
+	char* heap_end = nullptr;
+	bool live = false;
 public:
 
-	char* heap_allocation;
-	char* heap_start;
+	char* heap_allocation = nullptr;
+	char* heap_start = nullptr;
 
 	HeapHandler()
-	{
-		live = false;
-	};
+	{};
 
 	HeapHandler(size_t size)
 	{
@@ -53,7 +51,9 @@ public:
 
 	void free_heap()
 	{
-		free(heap);
+		if (heap) {
+			free(heap);
+		}
 		heap = nullptr;
 		heap_allocation = nullptr;
 		heap_start = nullptr;
@@ -61,13 +61,24 @@ public:
 		live = false;
 	};
 
-		int get_size()
+	bool is_live() const
 	{
+		return live;
+	}
+
+	int get_size() const
+	{
+		if (!live) {
+			return 0;
+		}
 		return (int)(heap_allocation - reinterpret_cast<char*>(heap));
 	}
 
-	int get_capacity()
+	int get_capacity() const
 	{
+		if (!live) {
+			return 0;
+		}
 		return (int)(heap_end - reinterpret_cast<char*>(heap));
 	}
 

@@ -314,7 +314,6 @@ struct NetStateReader {
 	X(uint8_t, side_attack_delay) \
 	X(uint16_t, attack_cooldown_frames) \
 	X(uint8_t, car_hit_invincibility) \
-	X(uint8_t, boost_delay_frame_counter) \
 	X(int8_t, drift_sign) \
 	X(uint8_t, restore_state) \
 	X(uint16_t, s_boost_charge) \

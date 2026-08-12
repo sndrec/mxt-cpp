@@ -274,7 +274,7 @@ namespace godot {
 
 	public:
 		bool sim_started;
-		RaceTrack* current_track;
+		RaceTrack* current_track = nullptr;
 		int num_cars;
 		PhysicsCar* cars;
 		PhysicsCarProperties* car_properties_array = nullptr;
@@ -526,6 +526,7 @@ namespace godot {
 		void set_render_all_car_bodies(bool enabled);
 		void set_render_car_body_view_distance(double distance);
 		int get_player_race_place(int player_id) const;
+		godot::PackedInt32Array get_vehicle_death_states() const;
 		godot::PackedInt32Array get_race_leaderboard_window(int player_id, int max_entries, const godot::Dictionary& finished_players, const godot::Dictionary& eliminated_players) const;
 		int get_race_control_start_tick() const;
 		godot::PackedInt32Array get_finished_player_ids() const;
@@ -566,6 +567,7 @@ namespace godot {
 		godot::PackedByteArray get_full_state_data(int target_tick);
 		bool load_full_state_data(int target_tick, godot::PackedByteArray data);
 		godot::Dictionary get_network_state_size_stats() const;
+		godot::Dictionary get_memory_usage_stats() const;
 		void set_state_data(int target_tick, godot::PackedByteArray data);
 		void fix_pointers();
 		godot::Array get_dip_switches() const;

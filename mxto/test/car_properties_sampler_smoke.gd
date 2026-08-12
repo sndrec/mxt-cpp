@@ -6,8 +6,8 @@ const CAR_PATHS := [
 	"res://vehicle/asset/bruiser/wild_goose.mxt_car_props",
 	"res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props",
 ]
-const STAT_COUNT := 37
-const LIVE_STAT_COUNT := 35
+const STAT_COUNT := 40
+const LIVE_STAT_COUNT := 38
 const MODIFIER_LAYER_COUNT := 6
 
 

@@ -237,11 +237,32 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 		for (int i = 0; i < count; ++i) {
 			if ((c.state_2[i] & 0x8u) && c.restore_state[i] != 2) {
 				scratch.debug_mesh_current_global_car_index = c.global_start + i;
+				const SimVec3 position_before_corner_collision = LOAD_INDEXED_VEC3(c, position_current, i);
 				float max_rail_contact_push = 0.0f;
 				const int corner_collision_type_flag = car_views[i].update_machine_corners(scratch, profile, &max_rail_contact_push);
 				const SimVec3 rail_push = LOAD_INDEXED_VEC3(c, collision_push_rail, i);
 				const SimVec3 track_push = LOAD_INDEXED_VEC3(c, collision_push_track, i);
 				const bool just_landed = (c.machine_state[i] & MACHINESTATE::JUSTLANDED) != 0;
+				const bool trace_corner_collision =
+					DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_RAIL_SAMPLING) &&
+					DEBUG::rail_trace_filter_matches(c.global_start + i, c.simulation_tick[i]);
+				if (trace_corner_collision) {
+					const SimVec3 position_after_corner_collision = LOAD_INDEXED_VEC3(c, position_current, i);
+					const SimVec3 machine_up(
+						c.basis_physical_c1x[i], c.basis_physical_c1y[i], c.basis_physical_c1z[i]);
+					const SimVec3 track_normal = LOAD_INDEXED_VEC3(c, track_surface_normal, i);
+					godot::UtilityFunctions::print(
+						godot::String("MXT_CORNER_COLLISION_SUMMARY tick="), static_cast<int64_t>(c.simulation_tick[i]),
+						godot::String(" car="), static_cast<int64_t>(c.global_start + i),
+						godot::String(" flags="), static_cast<int64_t>(corner_collision_type_flag),
+						godot::String(" just_landed="), just_landed,
+						godot::String(" pos_before=("), position_before_corner_collision.x, godot::String(","), position_before_corner_collision.y, godot::String(","), position_before_corner_collision.z, godot::String(")"),
+						godot::String(" pos_after=("), position_after_corner_collision.x, godot::String(","), position_after_corner_collision.y, godot::String(","), position_after_corner_collision.z, godot::String(")"),
+						godot::String(" delta=("), position_after_corner_collision.x - position_before_corner_collision.x, godot::String(","), position_after_corner_collision.y - position_before_corner_collision.y, godot::String(","), position_after_corner_collision.z - position_before_corner_collision.z, godot::String(")"),
+						godot::String(" track_push=("), track_push.x, godot::String(","), track_push.y, godot::String(","), track_push.z, godot::String(")"),
+						godot::String(" rail_push=("), rail_push.x, godot::String(","), rail_push.y, godot::String(","), rail_push.z, godot::String(")"),
+						godot::String(" up_dot_track_n="), machine_up.dot(track_normal));
+				}
 				if (rail_push.length_squared() > 0.0f || track_push.length_squared() > 0.0f || just_landed) {
 					const SimVec3 velocity = LOAD_INDEXED_VEC3(c, velocity, i);
 					const float push_magnitude_rail = rail_push.length();
@@ -262,9 +283,25 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 						full_response || landing_response) {
 						constexpr float gx_rail_collision_sfx_strength_scale = 4.0f;
 						const float rail_hit_sfx_strength = gx_rail_collision_sfx_strength_scale * max_rail_contact_push;
+						const SimVec3 velocity_before_response = LOAD_INDEXED_VEC3(c, velocity, i);
 						car_views[i].apply_machine_collision_response_from_corners(corner_collision_type_flag,
 							push_magnitude_rail, push_magnitude_track, rail_hit_sfx_strength,
 							current_world_speed, speed_over_weight, false);
+						if (trace_corner_collision) {
+							const SimVec3 velocity_after_response = LOAD_INDEXED_VEC3(c, velocity, i);
+							const SimVec3 total_push = LOAD_INDEXED_VEC3(c, collision_push_total, i);
+							godot::UtilityFunctions::print(
+								godot::String("MXT_COLLISION_RESPONSE_SUMMARY tick="), static_cast<int64_t>(c.simulation_tick[i]),
+								godot::String(" car="), static_cast<int64_t>(c.global_start + i),
+								godot::String(" flags="), static_cast<int64_t>(corner_collision_type_flag),
+								godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(c.machine_state[i]), 16),
+								godot::String(" rail_timer="), static_cast<int64_t>(c.rail_collision_timer[i]),
+								godot::String(" speed="), current_world_speed,
+								godot::String(" speed_over_weight="), speed_over_weight,
+								godot::String(" total_push=("), total_push.x, godot::String(","), total_push.y, godot::String(","), total_push.z, godot::String(")"),
+								godot::String(" vel_before=("), velocity_before_response.x, godot::String(","), velocity_before_response.y, godot::String(","), velocity_before_response.z, godot::String(")"),
+								godot::String(" vel_after=("), velocity_after_response.x, godot::String(","), velocity_after_response.y, godot::String(","), velocity_after_response.z, godot::String(")"));
+						}
 					}
 				}
 				if (just_landed) {
@@ -546,6 +583,7 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 			}
 
 			car_views[i].update_effective_machine_stats(false);
+			car_views[i].handle_steering();
 			car_views[i].handle_suspension_states();
 
 			const float initial_angle_vel_y = c.velocity_angular_y[i];
@@ -554,7 +592,6 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 			} else {
 				car_views[i].update_effective_machine_stats(true);
 			}
-			car_views[i].handle_steering();
 
 			if (c.machine_state[i] & MACHINESTATE::AIRBORNEMORE0_2S_Q) {
 				c.turning_related[i] *= 0.02f;
@@ -1412,7 +1449,6 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 			car_soa.boost_turbo[lane] = 0.0f;
 			car_soa.pending_dashplate_heat[lane] = 0.0f;
 			car_soa.pending_dashplate_heat_reward_scale[lane] = 1.0f;
-			car_soa.boost_delay_frame_counter[lane] = 0;
 			car_soa.car_hit_invincibility[lane] = 0;
 			car_soa.machine_state[lane] &= ~(MACHINESTATE::JUST_PRESSED_BOOST |
 				MACHINESTATE::BOOSTING |

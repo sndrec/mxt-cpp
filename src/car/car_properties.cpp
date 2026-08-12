@@ -48,7 +48,10 @@ static constexpr float DEFAULT_BASE_STATS[CAR_STAT_COUNT] = {
 	2.0f,          // shift_boost_base_speed_add
 	1.4f,          // shift_boost_velocity_multiplier
 	0.005f,        // air_pitch_up_speed_loss_factor
-	0.012f         // air_glide_steering_speed_loss_factor
+	0.012f,        // air_glide_steering_speed_loss_factor
+	1.0f,          // drive_target_speed_multiplier
+	1.0f,          // acceleration_response_multiplier
+	1.0f           // forward_thrust_multiplier
 };
 
 static constexpr const char *CAR_STAT_NAMES[CAR_STAT_COUNT] = {
@@ -88,7 +91,10 @@ static constexpr const char *CAR_STAT_NAMES[CAR_STAT_COUNT] = {
 	"shift_boost_base_speed_add",
 	"shift_boost_velocity_multiplier",
 	"air_pitch_up_speed_loss_factor",
-	"air_glide_steering_speed_loss_factor"
+	"air_glide_steering_speed_loss_factor",
+	"drive_target_speed_multiplier",
+	"acceleration_response_multiplier",
+	"forward_thrust_multiplier"
 };
 
 struct ByteReader {
@@ -297,7 +303,9 @@ CarStatModifierLayer classify_car_technique_modifier(
 		return CAR_MODIFIER_LAYER_COUNT;
 	}
 	out_intensity = strafe_amount;
-	return parity > 0.0f ? CAR_MODIFIER_QUICKTURN : CAR_MODIFIER_MTS;
+	// Lateral slip normally points away from the direction the nose is turning.
+	// Strafing with that slip is an MTS; strafing against it is a quick turn.
+	return parity > 0.0f ? CAR_MODIFIER_MTS : CAR_MODIFIER_QUICKTURN;
 }
 
 CarStatModifierLayer classify_car_boost_modifier(

@@ -366,9 +366,14 @@ Dictionary FzgxGameplayCamera::step(
 		target_pitch = preset.triplets[0].pitch_angle16;
 	}
 
+	const uint32_t machine_state_bits = (uint32_t)machine_state;
+	const bool boost_active = (machine_state_bits & FZGX_MS_BOOSTING) != 0u;
+	const bool boost_started =
+		(machine_state_bits & (FZGX_MS_JUSTPRESSEDBOOST | FZGX_MS_B23)) != 0u ||
+		(boost_active && !camera.boost_was_active);
 	float perspective_step = clamp_exact(0.05f - 0.00004f * clamped_speed, 0.01f, 0.05f);
-	if ((((uint32_t)machine_state & (FZGX_MS_JUSTPRESSEDBOOST | FZGX_MS_B23)) == 0u)) {
-		if ((((uint32_t)machine_state & FZGX_MS_BOOSTING) == 0u) || camera.zoom_mode == ZOOM_FAR) {
+	if (!boost_started) {
+		if (!boost_active || camera.zoom_mode == ZOOM_FAR) {
 			if (camera.perspective_transition_counter > 0) {
 				camera.perspective_transition_counter -= 1;
 			}
@@ -396,6 +401,7 @@ Dictionary FzgxGameplayCamera::step(
 	} else {
 		camera.boost_perspective_target = clamp_exact(camera.perspective * 1.35f, 80.0f, 108.0f);
 	}
+	camera.boost_was_active = boost_active;
 
 	camera.local_follow_offset.y += 0.15f * (target_local_y - camera.local_follow_offset.y);
 	camera.local_follow_offset.z += 0.15f * (target_local_z - camera.local_follow_offset.z);

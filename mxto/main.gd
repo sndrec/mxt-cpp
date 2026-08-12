@@ -88,6 +88,8 @@ const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
+const SessionMemoryTelemetryClass = preload("res://core/session_memory_telemetry.gd")
+const GameVersionData = preload("res://core/game_version.gd")
 const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
@@ -187,9 +189,11 @@ var lobby_chibi_roster_cache: Array = []
 var lobby_chibi_applied_settings_revision := -1
 var lobby_chibi_pending_render_signature := ""
 var lobby_chibi_render_rebuild_due_msec := 0
+var lobby_chibi_render_rebuild_count_total := 0
 var lobby_chibi_render_cars: Array = []
 var lobby_chibi_render_settings_by_id := {}
 var lobby_chibi_magnifier_render_signature := ""
+var memory_telemetry: SessionMemoryTelemetry
 var singleplayer_options_root: Control
 var singleplayer_options_restore_toggle: CheckBox
 var singleplayer_options_bumpers_toggle: CheckBox
@@ -312,6 +316,7 @@ func _read_int_arg(args: Array, user_args: Array, flag: String, default_value: i
 	return int(source_args[idx + 1])
 
 func _ready() -> void:
+	version_label.text = GameVersionData.display_string()
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
 	car_render_manager = CarRenderManagerClass.new()
@@ -339,6 +344,8 @@ func _ready() -> void:
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
 	replay_controller.initialize()
+	memory_telemetry = SessionMemoryTelemetryClass.new()
+	memory_telemetry.initialize(self)
 	_build_start_sync_drop_panel()
 	_load_tracks()
 	_load_car_definitions()
@@ -1374,7 +1381,9 @@ func _submit_lobby_chibi_render(roster: Array) -> void:
 			lobby_chibi_render_settings_by_id[int(player_ids[i])] = render_settings[i]
 		lobby_chibi_render_signature = signature
 		lobby_chibi_magnifier_render_signature = ""
+		lobby_chibi_render_rebuild_count_total += 1
 		network_manager.record_lobby_render_rebuild(Time.get_ticks_usec() - rebuild_start_usec)
+		record_memory_sample("lobby_render_rebuild")
 	lobby_chibi_render_manager.begin_manual_submit()
 	var render_root_inv := lobby_chibi_render_manager.global_transform.affine_inverse()
 	for i in range(lobby_chibi_render_cars.size()):
@@ -3669,6 +3678,7 @@ func _handle_race_chat_unhandled_input(event: InputEvent) -> bool:
 	return true
 
 func _return_to_menu() -> void:
+	record_memory_sample("return_to_menu_begin")
 	if race_communication_overlay != null:
 		race_communication_overlay.close_chat()
 	race_audio_controller.leave_race(0.5)
@@ -3711,8 +3721,10 @@ func _return_to_menu() -> void:
 	lobby_control.visible = false
 	if singleplayer_options_root != null:
 		singleplayer_options_root.visible = false
+	record_memory_sample("return_to_menu_complete")
 
 func _return_to_lobby() -> void:
+	record_memory_sample("return_to_lobby_begin")
 	if race_communication_overlay != null:
 		race_communication_overlay.close_chat()
 	race_audio_controller.leave_race(0.5)
@@ -3752,8 +3764,10 @@ func _return_to_lobby() -> void:
 	network_manager.broadcast_lobby_roster()
 	singleplayer_mode = false
 	_singleplayer_tick = 0
+	record_memory_sample("return_to_lobby_complete")
 
 func _teardown_race_world_for_transition() -> void:
+	record_memory_sample("race_transition_teardown_begin")
 	race_audio_controller.leave_race()
 	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
 	_close_race_pause_menu()
@@ -3788,6 +3802,11 @@ func _teardown_race_world_for_transition() -> void:
 	lobby_control.visible = false
 	singleplayer_mode = false
 	_singleplayer_tick = 0
+	record_memory_sample("race_transition_teardown_complete")
+
+func record_memory_sample(event_name: String) -> void:
+	if memory_telemetry != null:
+		memory_telemetry.sample(event_name)
 
 func _transition_to_next_grand_prix_race() -> void:
 	var next_track_id := network_manager.pending_next_race_track_id
