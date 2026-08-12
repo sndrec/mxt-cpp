@@ -20,6 +20,11 @@ struct VehicleGlbSurface {
 
 struct VehicleGlbInfo {
 	std::vector<VehicleGlbSurface> surfaces;
+	uint64_t file_bytes = 0;
+	uint64_t vertices = 0;
+	uint64_t triangles = 0;
+	uint64_t texture_pixels = 0;
+	uint32_t images = 0;
 };
 
 bool validate_glb_file(

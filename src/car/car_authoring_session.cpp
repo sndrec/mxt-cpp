@@ -314,6 +314,7 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_model_transform"), &MxtCarAuthoringSession::get_model_transform);
 	ClassDB::bind_method(D_METHOD("set_model_transform", "value"), &MxtCarAuthoringSession::set_model_transform);
 	ClassDB::bind_method(D_METHOD("get_model_surfaces"), &MxtCarAuthoringSession::get_model_surfaces);
+	ClassDB::bind_method(D_METHOD("get_model_resource_usage"), &MxtCarAuthoringSession::get_model_resource_usage);
 	ClassDB::bind_method(D_METHOD("get_material_setup"), &MxtCarAuthoringSession::get_material_setup);
 	ClassDB::bind_method(D_METHOD("set_material_setup", "value"), &MxtCarAuthoringSession::set_material_setup);
 	ClassDB::bind_method(D_METHOD("get_thrusters"), &MxtCarAuthoringSession::get_thrusters);
@@ -1103,6 +1104,34 @@ Array MxtCarAuthoringSession::get_model_surfaces() const
 		value["has_paint_mask_texture"] = surface.has_paint_mask_texture;
 		result.push_back(value);
 	}
+	return result;
+}
+
+Dictionary MxtCarAuthoringSession::get_model_resource_usage() const
+{
+	Dictionary result;
+	result["valid"] = false;
+	result["file_bytes"] = 0;
+	result["file_byte_limit"] = static_cast<int64_t>(mxt::content::VEHICLE_MODEL_MAX_BYTES);
+	result["vertices"] = 0;
+	result["vertex_limit"] = static_cast<int64_t>(mxt::content::VEHICLE_MODEL_MAX_VERTICES);
+	result["triangles"] = 0;
+	result["triangle_limit"] = static_cast<int64_t>(mxt::content::VEHICLE_MODEL_MAX_TRIANGLES);
+	result["images"] = 0;
+	result["image_limit"] = static_cast<int64_t>(mxt::content::VEHICLE_MODEL_MAX_IMAGES);
+	result["texture_pixels"] = 0;
+	result["texture_pixel_limit"] = static_cast<int64_t>(mxt::content::VEHICLE_MODEL_MAX_TEXTURE_PIXELS);
+	if (model_path.is_empty()) return result;
+	mxt::content::VehicleGlbInfo model_info;
+	std::vector<String> errors;
+	if (!mxt::content::validate_glb_file(
+			model_path, mxt::content::ContentType::VEHICLE, errors, &model_info)) return result;
+	result["valid"] = true;
+	result["file_bytes"] = static_cast<int64_t>(model_info.file_bytes);
+	result["vertices"] = static_cast<int64_t>(model_info.vertices);
+	result["triangles"] = static_cast<int64_t>(model_info.triangles);
+	result["images"] = static_cast<int64_t>(model_info.images);
+	result["texture_pixels"] = static_cast<int64_t>(model_info.texture_pixels);
 	return result;
 }
 

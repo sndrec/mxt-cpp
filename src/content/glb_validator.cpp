@@ -51,7 +51,8 @@ struct AccessorInfo {
 static GlbBudgets budgets_for(ContentType type)
 {
 	if (type == ContentType::VEHICLE) {
-		return {1024, 256, 1024, 256, 64, 1'000'000, 250'000, 64u * 1024u * 1024u};
+		return {1024, 256, 1024, 256, VEHICLE_MODEL_MAX_IMAGES,
+			VEHICLE_MODEL_MAX_VERTICES, VEHICLE_MODEL_MAX_TRIANGLES, VEHICLE_MODEL_MAX_TEXTURE_PIXELS};
 	}
 	return {65'536, 8192, 32'768, 2048, 512, 8'000'000, 2'000'000, 256u * 1024u * 1024u};
 }
@@ -259,7 +260,7 @@ bool validate_glb_file(
 		std::vector<String> &out_errors,
 		VehicleGlbInfo *out_vehicle_info)
 {
-	if (out_vehicle_info) out_vehicle_info->surfaces.clear();
+	if (out_vehicle_info) *out_vehicle_info = VehicleGlbInfo();
 	const GlbBudgets budget = budgets_for(content_type);
 	Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
 	if (file.is_null() || file->get_length() < 20) {
@@ -267,6 +268,7 @@ bool validate_glb_file(
 		return false;
 	}
 	const uint64_t file_size = file->get_length();
+	if (out_vehicle_info) out_vehicle_info->file_bytes = file_size;
 	const PackedByteArray header = file->get_buffer(12);
 	if (header.size() != 12 || std::memcmp(header.ptr(), "glTF", 4) != 0 ||
 			read_le_u32(header.ptr() + 4) != 2 || read_le_u32(header.ptr() + 8) != file_size) {
@@ -632,6 +634,10 @@ bool validate_glb_file(
 		add_error(out_errors, path, "vertex or triangle count exceeds its content budget");
 		return false;
 	}
+	if (out_vehicle_info) {
+		out_vehicle_info->vertices = total_vertices;
+		out_vehicle_info->triangles = total_triangles;
+	}
 
 	std::vector<int32_t> parent(static_cast<size_t>(nodes.size()), -1);
 	uint32_t mesh_reference_count = 0;
@@ -787,6 +793,10 @@ bool validate_glb_file(
 			add_error(out_errors, path, "texture references an invalid image");
 			return false;
 		}
+	}
+	if (out_vehicle_info) {
+		out_vehicle_info->images = static_cast<uint32_t>(images.size());
+		out_vehicle_info->texture_pixels = total_pixels;
 	}
 	Ref<GLTFDocument> document;
 	document.instantiate();

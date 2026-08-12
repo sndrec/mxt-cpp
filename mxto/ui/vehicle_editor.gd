@@ -522,9 +522,25 @@ func _test_drive() -> void:
 func _refresh_all() -> void:
 	_refresh_stat_options()
 	_refresh_visual_controls()
+	_refresh_resource_usage()
 	_refresh_preview()
 	_refresh_samples()
 	_show_diagnostics(session.validate())
+
+
+func _refresh_resource_usage() -> void:
+	var usage: Dictionary = session.get_model_resource_usage()
+	if !bool(usage.get("valid", false)):
+		visual_status.text = "Import a static GLB or glTF vehicle model."
+		return
+	visual_status.text = "Model: %.2f / %.0f MiB   %d / %d triangles   %d / %d vertices   %d / %d texture pixels (%d / %d images)" % [
+		float(usage["file_bytes"]) / (1024.0 * 1024.0),
+		float(usage["file_byte_limit"]) / (1024.0 * 1024.0),
+		int(usage["triangles"]), int(usage["triangle_limit"]),
+		int(usage["vertices"]), int(usage["vertex_limit"]),
+		int(usage["texture_pixels"]), int(usage["texture_pixel_limit"]),
+		int(usage["images"]), int(usage["image_limit"]),
+	]
 
 
 func _refresh_stat_options() -> void:

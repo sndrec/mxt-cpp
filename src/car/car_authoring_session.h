@@ -111,6 +111,7 @@ public:
 	Dictionary get_model_transform() const;
 	bool set_model_transform(const Dictionary &value);
 	Array get_model_surfaces() const;
+	Dictionary get_model_resource_usage() const;
 	Dictionary get_material_setup() const;
 	bool set_material_setup(const Dictionary &value);
 	Array get_thrusters() const;

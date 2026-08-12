@@ -23,7 +23,6 @@ using namespace godot;
 namespace mxt::content {
 namespace {
 
-static constexpr uint64_t VEHICLE_MODEL_MAX_BYTES = 48u * 1024u * 1024u;
 static constexpr uint64_t VEHICLE_PROPERTIES_MAX_BYTES = 4u * 1024u * 1024u;
 static constexpr uint64_t VEHICLE_VISUAL_METADATA_MAX_BYTES = 64u * 1024u;
 static constexpr uint64_t TRACK_PAYLOAD_MAX_BYTES = 256u * 1024u * 1024u;
