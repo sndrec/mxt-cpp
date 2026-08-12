@@ -19,6 +19,8 @@ using namespace godot;
 
 namespace {
 
+static constexpr uint64_t WORKSHOP_PREVIEW_MAX_BYTES = 1'000'000;
+
 static Dictionary request_result(bool success, const String &message)
 {
 	Dictionary result;
@@ -643,6 +645,11 @@ int64_t MxtSteamService::submit_workshop_item_update(
 	const String use_preview_path = absolute_path(preview_path);
 	if (!DirAccess::open(use_content_path).is_valid() || !FileAccess::file_exists(use_preview_path)) {
 		complete_workshop_request(request_id, "submit_update", request_result(false, "Workshop content or preview path does not exist."));
+		return request_id;
+	}
+	const Ref<FileAccess> preview_file = FileAccess::open(use_preview_path, FileAccess::READ);
+	if (preview_file.is_null() || preview_file->get_length() >= WORKSHOP_PREVIEW_MAX_BYTES) {
+		complete_workshop_request(request_id, "submit_update", request_result(false, "Steam Workshop preview images must be smaller than 1 MB."));
 		return request_id;
 	}
 	ERemoteStoragePublishedFileVisibility steam_visibility = k_ERemoteStoragePublishedFileVisibilityPublic;

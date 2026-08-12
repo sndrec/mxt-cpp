@@ -33,6 +33,7 @@ func _ready() -> void:
 	game_manager = ancestor as GameManager
 	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
 		visibility_option.add_item(visibility)
+	visibility_option.selected = 1
 	$Toolbar/New.pressed.connect(_new_draft)
 	$Toolbar/Open.pressed.connect(_open_selected_draft)
 	$Toolbar/Build.pressed.connect(_build_and_install)
@@ -209,8 +210,11 @@ func _on_workshop_completed(request_id: int, operation: String, result: Dictiona
 		_save_draft_sidecar()
 		_submit_update()
 		return
-	workshop_status.text = "Workshop upload complete.%s" % (" Accept the Workshop agreement." if bool(result.get("legal_agreement_required", false)) else "")
+	var agreement_required := bool(result.get("legal_agreement_required", false))
+	workshop_status.text = "Workshop upload complete.%s" % (" Accept the Workshop agreement." if agreement_required else "")
 	_refresh_workshop_status()
+	if agreement_required:
+		game_manager.steam_service.open_workshop_item_page(published_file_id)
 
 func _refresh_workshop_status() -> void:
 	workshop_page_button.disabled = published_file_id <= 0

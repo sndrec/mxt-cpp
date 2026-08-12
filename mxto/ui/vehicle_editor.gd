@@ -101,6 +101,7 @@ func _ready() -> void:
 func _setup_options() -> void:
 	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
 		workshop_visibility.add_item(visibility)
+	workshop_visibility.selected = 1
 	category_option.add_item("All")
 	var categories := {}
 	for entry_value in stat_schema:
@@ -414,6 +415,8 @@ func _on_workshop_request_completed(request_id: int, operation: String, result: 
 	var agreement := " Accept the Steam Workshop agreement." if bool(result.get("legal_agreement_required", false)) else ""
 	workshop_status.text = "Workshop upload complete.%s" % agreement
 	_refresh_workshop_controls()
+	if bool(result.get("legal_agreement_required", false)):
+		game_manager.steam_service.open_workshop_item_page(workshop_published_file_id)
 
 
 func _open_workshop_page() -> void:
