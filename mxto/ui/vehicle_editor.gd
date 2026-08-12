@@ -47,6 +47,8 @@ const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 @onready var diagnostics: RichTextLabel = $Workspace/StatsColumn/Diagnostics
 @onready var import_model_dialog: FileDialog = $ImportModelDialog
 @onready var export_package_dialog: FileDialog = $ExportPackageDialog
+@onready var template_vehicle_dialog: ConfirmationDialog = $TemplateVehicleDialog
+@onready var template_vehicle_option: OptionButton = $TemplateVehicleDialog/Rows/VehicleOption
 @onready var workshop_visibility: OptionButton = $Workshop/Visibility
 @onready var workshop_status: Label = $Workshop/Status
 @onready var workshop_page_button: Button = $Workshop/OpenPage
@@ -208,6 +210,7 @@ func _setup_preview() -> void:
 func _connect_controls() -> void:
 	$Toolbar/NewDraft.pressed.connect(_new_draft)
 	$Toolbar/OpenDraft.pressed.connect(_open_selected_draft)
+	$Toolbar/ImportTemplate.pressed.connect(_open_template_vehicle_dialog)
 	$Toolbar/ImportModel.pressed.connect(func(): import_model_dialog.popup_centered())
 	$Toolbar/SaveDraft.pressed.connect(_save_draft)
 	$Toolbar/InstallVehicle.pressed.connect(_install_vehicle)
@@ -219,6 +222,7 @@ func _connect_controls() -> void:
 	$Toolbar/Redo.pressed.connect(func(): session.redo(); _refresh_all())
 	import_model_dialog.file_selected.connect(_import_model)
 	export_package_dialog.file_selected.connect(_export_package)
+	template_vehicle_dialog.confirmed.connect(_import_selected_vehicle_template)
 	search_input.text_changed.connect(func(_value): _refresh_stat_options())
 	category_option.item_selected.connect(func(_index): _refresh_stat_options())
 	layer_option.item_selected.connect(_on_layer_selected)
@@ -306,6 +310,191 @@ func _open_selected_draft() -> void:
 	_load_workshop_sidecar()
 	visual_status.text = session.get_model_path()
 	_refresh_all()
+
+
+func _open_template_vehicle_dialog() -> void:
+	template_vehicle_option.clear()
+	if game_manager == null:
+		return
+	for definition_value in game_manager.car_definitions:
+		var definition := definition_value as CarDefinition
+		if definition == null or !definition.has_visual() or definition.properties_path.is_empty():
+			continue
+		template_vehicle_option.add_item(definition.name)
+		template_vehicle_option.set_item_metadata(template_vehicle_option.item_count - 1, definition.content_id)
+	if template_vehicle_option.item_count == 0:
+		var unavailable := {"valid": false, "errors": PackedStringArray(["No editable garage vehicles are available as templates"]), "warnings": PackedStringArray()}
+		_show_diagnostics(unavailable)
+		return
+	template_vehicle_option.select(0)
+	template_vehicle_dialog.popup_centered()
+
+
+func _import_selected_vehicle_template() -> void:
+	if game_manager == null or template_vehicle_option.selected < 0:
+		return
+	var content_id := String(template_vehicle_option.get_item_metadata(template_vehicle_option.selected))
+	var definition := game_manager.car_definitions_by_content_id.get(content_id) as CarDefinition
+	if definition == null:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The selected vehicle is no longer available"]), "warnings": PackedStringArray()})
+		return
+	_new_draft()
+	var result := _copy_vehicle_template(definition)
+	_show_diagnostics(result)
+	if !bool(result.get("valid", false)):
+		return
+	title_input.text = "%s Template" % definition.name
+	description_input.text = "Based on %s." % definition.name
+	visual_status.text = "Template copied from %s" % definition.name
+	_refresh_all()
+
+
+func _copy_vehicle_template(definition: CarDefinition) -> Dictionary:
+	var properties_result: Dictionary = session.load_file(definition.properties_path)
+	if !bool(properties_result.get("valid", false)):
+		return properties_result
+	var visual_result: Dictionary
+	if definition.car_scene != null:
+		visual_result = _copy_official_vehicle_visual(definition)
+	else:
+		var record: Dictionary = game_manager.content_catalog.resolve_content(definition.content_id)
+		visual_result = _copy_packaged_vehicle_visual(record)
+	if !bool(visual_result.get("valid", false)):
+		return visual_result
+	return session.validate()
+
+
+func _copy_packaged_vehicle_visual(record: Dictionary) -> Dictionary:
+	var source_path := String(record.get("visual_path", ""))
+	if source_path.is_empty() or !FileAccess.file_exists(source_path):
+		return {"valid": false, "errors": PackedStringArray(["The selected vehicle package has no readable model"]), "warnings": PackedStringArray()}
+	var imported: Dictionary = session.import_model(source_path, _draft_root())
+	if !bool(imported.get("valid", false)):
+		return imported
+	var visual_metadata: Dictionary = record.get("visual_metadata", {})
+	if !session.set_model_transform(visual_metadata.get("model_transform", {})):
+		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid model-transform metadata"]), "warnings": PackedStringArray()}
+	var material_setup: Dictionary = visual_metadata.get("material_inputs", {}).duplicate(true)
+	material_setup["body_surfaces"] = visual_metadata.get("body_surfaces", [])
+	if !session.set_material_setup(material_setup):
+		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid material metadata"]), "warnings": PackedStringArray()}
+	if !session.set_thrusters(visual_metadata.get("thrusters", [])):
+		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid thruster metadata"]), "warnings": PackedStringArray()}
+	return {"valid": true, "errors": PackedStringArray(), "warnings": PackedStringArray()}
+
+
+func _copy_official_vehicle_visual(definition: CarDefinition) -> Dictionary:
+	var source := definition.car_scene.instantiate() as Node3D
+	if source == null:
+		return {"valid": false, "errors": PackedStringArray(["The selected built-in vehicle visual could not be loaded"]), "warnings": PackedStringArray()}
+	var body := source.get_node_or_null("VEHICLE_MAIN") as MeshInstance3D
+	if body == null or body.mesh == null:
+		source.free()
+		return {"valid": false, "errors": PackedStringArray(["The selected built-in vehicle has no body mesh"]), "warnings": PackedStringArray()}
+	var export_root := Node3D.new()
+	var export_body := MeshInstance3D.new()
+	export_body.name = "VehicleBody"
+	export_body.mesh = body.mesh
+	export_body.material_override = _gltf_material_from_official_body(body.material_override)
+	export_root.add_child(export_body)
+	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	if DirAccess.make_dir_recursive_absolute(draft_path) != OK:
+		export_root.free()
+		source.free()
+		return {"valid": false, "errors": PackedStringArray(["The new vehicle draft directory could not be created"]), "warnings": PackedStringArray()}
+	var gltf_document := GLTFDocument.new()
+	var gltf_state := GLTFState.new()
+	var append_error := gltf_document.append_from_scene(export_root, gltf_state)
+	var source_path := _draft_root() + "/template-source.glb"
+	var write_error := FAILED if append_error != OK else gltf_document.write_to_filesystem(gltf_state, source_path)
+	export_root.free()
+	if append_error != OK or write_error != OK:
+		source.free()
+		return {"valid": false, "errors": PackedStringArray(["The selected built-in vehicle could not be converted into an editable GLB"]), "warnings": PackedStringArray()}
+	var imported: Dictionary = session.import_model(source_path, _draft_root())
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(source_path))
+	if !bool(imported.get("valid", false)):
+		source.free()
+		return imported
+	var root_transform := source.transform
+	var body_transform := root_transform * body.transform
+	var transform_result := {
+		"translation": body_transform.origin,
+		"rotation_degrees": body_transform.basis.get_euler() * (180.0 / PI),
+		"scale": body_transform.basis.get_scale(),
+	}
+	if !session.set_model_transform(transform_result):
+		source.free()
+		return {"valid": false, "errors": PackedStringArray(["The built-in vehicle model transform could not be imported"]), "warnings": PackedStringArray()}
+	var surfaces := session.get_model_surfaces()
+	var body_surfaces: Array = []
+	for surface_value in surfaces:
+		body_surfaces.append(int((surface_value as Dictionary).get("index", -1)))
+	var material_setup := {
+		"body_surfaces": body_surfaces,
+		"albedo_surface": _first_surface_with_texture(surfaces, "has_albedo_texture"),
+		"normal_surface": _first_surface_with_texture(surfaces, "has_normal_texture"),
+		"paint_mask_surface": _first_surface_with_texture(surfaces, "has_paint_mask_texture"),
+	}
+	if !session.set_material_setup(material_setup):
+		source.free()
+		return {"valid": false, "errors": PackedStringArray(["The built-in vehicle materials could not be imported"]), "warnings": PackedStringArray()}
+	var thrusters: Array = []
+	var thruster_root := source.get_node_or_null("THRUSTERS") as Node3D
+	if thruster_root != null:
+		for child in thruster_root.get_children():
+			var thruster := child as Node3D
+			if thruster == null:
+				continue
+			var transform := root_transform * thruster_root.transform * thruster.transform
+			var scale := transform.basis.get_scale()
+			thrusters.append({
+				"position": transform.origin,
+				"rotation_degrees": transform.basis.get_euler() * (180.0 / PI),
+				"scale": (scale.x + scale.y + scale.z) / 3.0,
+			})
+	source.free()
+	if !session.set_thrusters(thrusters):
+		return {"valid": false, "errors": PackedStringArray(["The built-in vehicle thrusters could not be imported"]), "warnings": PackedStringArray()}
+	return {"valid": true, "errors": PackedStringArray(), "warnings": PackedStringArray()}
+
+
+func _gltf_material_from_official_body(source: Material) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	var shader_material := source as ShaderMaterial
+	if shader_material == null:
+		return material
+	var albedo = shader_material.get_shader_parameter("in_albedo")
+	if albedo is Texture2D:
+		material.albedo_texture = _gltf_exportable_texture(albedo)
+	var normal = shader_material.get_shader_parameter("in_normal")
+	if normal is Texture2D:
+		material.normal_enabled = true
+		material.normal_texture = _gltf_exportable_texture(normal)
+	var paint_mask = shader_material.get_shader_parameter("in_paint_mask")
+	if paint_mask is Texture2D:
+		material.ao_enabled = true
+		material.ao_texture = _gltf_exportable_texture(paint_mask)
+	return material
+
+
+func _gltf_exportable_texture(source: Texture2D) -> ImageTexture:
+	var image := source.get_image()
+	if image == null or image.is_empty():
+		image = Image.create(1, 1, false, Image.FORMAT_RGBA8)
+		image.fill(Color.WHITE)
+	elif image.is_compressed():
+		image = image.duplicate()
+		image.decompress()
+	return ImageTexture.create_from_image(image)
+
+
+func _first_surface_with_texture(surfaces: Array, key: String) -> int:
+	for surface_value in surfaces:
+		var surface: Dictionary = surface_value
+		if bool(surface.get(key, false)):
+			return int(surface.get("index", -1))
+	return -1
 
 
 func _connect_steam_service() -> void:

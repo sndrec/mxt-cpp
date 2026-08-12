@@ -24,6 +24,10 @@ fit_to_longest_item = false
 layout_mode = 2
 text = "Open Draft"
 
+[node name="ImportTemplate" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Use Vehicle Template"
+
 [node name="ImportModel" type="Button" parent="Toolbar"]
 layout_mode = 2
 text = "Import GLB / glTF"
@@ -425,6 +429,26 @@ title = "Import Vehicle Model"
 size = Vector2i(840, 600)
 access = 2
 filters = PackedStringArray("*.glb, *.gltf ; glTF Vehicle Models")
+
+[node name="TemplateVehicleDialog" type="ConfirmationDialog" parent="."]
+title = "Use Existing Vehicle as Template"
+size = Vector2i(560, 150)
+ok_button_text = "Create New Draft"
+
+[node name="Rows" type="VBoxContainer" parent="TemplateVehicleDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 552.0
+offset_bottom = 82.0
+
+[node name="Hint" type="Label" parent="TemplateVehicleDialog/Rows"]
+layout_mode = 2
+text = "Choose a garage vehicle to copy into a separate, editable draft."
+
+[node name="VehicleOption" type="OptionButton" parent="TemplateVehicleDialog/Rows"]
+custom_minimum_size = Vector2(520, 0)
+layout_mode = 2
+fit_to_longest_item = false
 
 [node name="ExportPackageDialog" type="FileDialog" parent="."]
 title = "Export Vehicle Package"
