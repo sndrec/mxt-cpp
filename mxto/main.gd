@@ -107,6 +107,7 @@ const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
 const BUMPER_POOL_SIZE := 60
 const RACE_RESULTS_SCREEN_MSEC := 15000
+const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
 
 var car_definitions: Array = []
 var car_definitions_by_content_id: Dictionary = {}
@@ -634,11 +635,9 @@ func _vehicle_content_evidence_matches(settings: PlayerSettings) -> bool:
 	var record: Dictionary = content_catalog.resolve_content(settings.vehicle_content_id)
 	if record.is_empty() or String(record.get("gameplay_digest", "")) != settings.vehicle_gameplay_digest:
 		return false
-	var package_digest := String(record.get("package_digest", ""))
-	if !package_digest.is_empty() and package_digest != settings.vehicle_package_digest:
+	if String(record.get("package_digest", "")) != settings.vehicle_package_digest:
 		return false
-	var workshop_id := String(record.get("published_file_id", ""))
-	if !workshop_id.is_empty() and workshop_id != settings.vehicle_workshop_id:
+	if String(record.get("published_file_id", "")) != settings.vehicle_workshop_id:
 		return false
 	return true
 
@@ -1233,21 +1232,75 @@ func _set_track_content_evidence(options: Dictionary, track_indices: Array) -> v
 	options["track_package_digests"] = package_digests
 	options["track_workshop_ids"] = workshop_ids
 
-func _race_options_track_content_matches(options: Dictionary) -> bool:
+func _race_content_readiness(track_id: String, settings: Array, options: Dictionary) -> Dictionary:
+	var missing_workshop_ids: Array = []
+	var problems := PackedStringArray()
 	var content_ids: Array = options.get("track_ids", [])
 	var gameplay_digests: Array = options.get("track_gameplay_digests", [])
 	var package_digests: Array = options.get("track_package_digests", [])
 	var workshop_ids: Array = options.get("track_workshop_ids", [])
-	if content_ids.is_empty() or gameplay_digests.size() != content_ids.size() or package_digests.size() != content_ids.size() or workshop_ids.size() != content_ids.size():
-		return false
-	for i in range(content_ids.size()):
-		if !track_content_controller.track_content_evidence_matches(
-			String(content_ids[i]),
-			String(gameplay_digests[i]),
-			String(package_digests[i]),
-			String(workshop_ids[i])):
-			return false
-	return true
+	if content_ids.is_empty() or !content_ids.has(track_id) or gameplay_digests.size() != content_ids.size() or package_digests.size() != content_ids.size() or workshop_ids.size() != content_ids.size():
+		problems.append("race track content records are malformed")
+	else:
+		for i in range(content_ids.size()):
+			if track_content_controller.track_content_evidence_matches(
+					String(content_ids[i]), String(gameplay_digests[i]), String(package_digests[i]), String(workshop_ids[i])):
+				continue
+			problems.append("missing exact track %s" % String(content_ids[i]))
+			_append_workshop_id(missing_workshop_ids, String(workshop_ids[i]))
+	for settings_value in settings:
+		if typeof(settings_value) != TYPE_DICTIONARY:
+			problems.append("race vehicle settings are malformed")
+			continue
+		var player_settings := PlayerSettings.new()
+		player_settings.from_dict(settings_value)
+		if player_settings.spectator or _vehicle_content_evidence_matches(player_settings):
+			continue
+		problems.append("missing exact vehicle %s" % player_settings.vehicle_content_id)
+		_append_workshop_id(missing_workshop_ids, player_settings.vehicle_workshop_id)
+	return {
+		"ready": problems.is_empty(),
+		"workshop_ids": missing_workshop_ids,
+		"detail": "; ".join(problems),
+	}
+
+func _append_workshop_id(ids: Array, value: String) -> void:
+	if value.is_valid_int():
+		var published_file_id := value.to_int()
+		if published_file_id > 0 and !ids.has(published_file_id):
+			ids.append(published_file_id)
+
+func _acquire_race_workshop_content(track_id: String, settings: Array, options: Dictionary) -> Dictionary:
+	var readiness := _race_content_readiness(track_id, settings, options)
+	if bool(readiness.get("ready", false)):
+		return readiness
+	var workshop_ids: Array = readiness.get("workshop_ids", [])
+	if workshop_ids.is_empty() or steam_service == null or !steam_service.is_initialized():
+		return readiness
+	network_manager.report_race_admission(
+		network_manager.RACE_ADMISSION_LOADING,
+		"acquiring %d Workshop package%s" % [workshop_ids.size(), "" if workshop_ids.size() == 1 else "s"])
+	var request_started := false
+	for published_file_id_value in workshop_ids:
+		var published_file_id := int(published_file_id_value)
+		request_started = steam_service.subscribe_workshop_item(published_file_id) or request_started
+		request_started = steam_service.download_workshop_item(published_file_id, true) or request_started
+	if !request_started:
+		return readiness
+	steam_service.refresh_subscribed_workshop_items()
+	var deadline := Time.get_ticks_msec() + RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC
+	var next_refresh_msec := Time.get_ticks_msec() + 1000
+	while network_manager.race_active and Time.get_ticks_msec() < deadline:
+		await get_tree().create_timer(0.1).timeout
+		readiness = _race_content_readiness(track_id, settings, options)
+		if bool(readiness.get("ready", false)):
+			return readiness
+		var now := Time.get_ticks_msec()
+		if now >= next_refresh_msec:
+			steam_service.refresh_subscribed_workshop_items()
+			next_refresh_msec = now + 1000
+	readiness["detail"] = "%s after Workshop download timeout" % String(readiness.get("detail", "content unavailable"))
+	return readiness
 
 func _open_singleplayer_race_options(as_spectator: bool) -> void:
 	_build_singleplayer_race_options_screen()
@@ -3282,9 +3335,12 @@ func _on_start_race_button_pressed() -> void:
 		network_manager.send_start_race(first_track_id, settings_array, race_options)
 
 func _on_network_race_started(track_id: String, settings: Array) -> void:
-	var advertised_track_ids: Array = network_manager.race_options.get("track_ids", [])
-	if !_race_options_track_content_matches(network_manager.race_options) or !advertised_track_ids.has(track_id):
-		var evidence_message := "Race track content evidence mismatch for %s" % track_id
+	var admission_phase := network_manager.race_netplay_phase
+	var readiness: Dictionary = await _acquire_race_workshop_content(track_id, settings, network_manager.race_options)
+	if !network_manager.race_active or network_manager.race_netplay_phase != admission_phase:
+		return
+	if !bool(readiness.get("ready", false)):
+		var evidence_message := String(readiness.get("detail", "Race content evidence mismatch for %s" % track_id))
 		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, evidence_message)
 		push_error(evidence_message)
 		_show_race_notification(evidence_message, 5000)
@@ -3300,7 +3356,6 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 		if headless_mode:
 			get_tree().quit(1)
 		return
-	var admission_phase := network_manager.race_netplay_phase
 	network_manager.report_race_admission(network_manager.RACE_ADMISSION_LOADING, "loading %s" % track_id)
 	# Return to the multiplayer loop once before beginning the synchronous load so
 	# the server receives the explicit loading acknowledgement.

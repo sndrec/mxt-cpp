@@ -65,11 +65,9 @@ func track_content_evidence_matches(
 	var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
 	if record.is_empty() or String(record.get("gameplay_digest", "")) != gameplay_digest:
 		return false
-	var record_package_digest := String(record.get("package_digest", ""))
-	if !record_package_digest.is_empty() and record_package_digest != package_digest:
+	if String(record.get("package_digest", "")) != package_digest:
 		return false
-	var record_workshop_id := String(record.get("published_file_id", ""))
-	if !record_workshop_id.is_empty() and record_workshop_id != workshop_id:
+	if String(record.get("published_file_id", "")) != workshop_id:
 		return false
 	return true
 

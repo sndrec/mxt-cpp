@@ -372,6 +372,7 @@ void MxtSteamService::_bind_methods()
 			D_METHOD("submit_workshop_item_update", "published_file_id", "title", "description", "content_path", "preview_path", "tags", "metadata", "visibility", "change_note"),
 			&MxtSteamService::submit_workshop_item_update);
 	ClassDB::bind_method(D_METHOD("refresh_subscribed_workshop_items"), &MxtSteamService::refresh_subscribed_workshop_items);
+	ClassDB::bind_method(D_METHOD("subscribe_workshop_item", "published_file_id"), &MxtSteamService::subscribe_workshop_item);
 	ClassDB::bind_method(D_METHOD("download_workshop_item", "published_file_id", "high_priority"), &MxtSteamService::download_workshop_item, DEFVAL(true));
 	ClassDB::bind_method(D_METHOD("open_workshop_item_page", "published_file_id"), &MxtSteamService::open_workshop_item_page);
 	ClassDB::bind_method(D_METHOD("get_workshop_update_progress"), &MxtSteamService::get_workshop_update_progress);
@@ -734,6 +735,16 @@ bool MxtSteamService::refresh_subscribed_workshop_items()
 	}
 	publish_workshop_items();
 	return true;
+#else
+	return false;
+#endif
+}
+
+bool MxtSteamService::subscribe_workshop_item(int64_t published_file_id)
+{
+#if defined(MXT_STEAMWORKS_ENABLED)
+	return initialized && published_file_id > 0 && SteamUGC() &&
+			SteamUGC()->SubscribeItem(static_cast<PublishedFileId_t>(published_file_id)) != k_uAPICallInvalid;
 #else
 	return false;
 #endif
