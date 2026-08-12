@@ -96,6 +96,14 @@ python services/leaderboard_verifier/server.py
 
 Terminate TLS at a reverse proxy and expose only `POST /v1/time-attack/submit`. Keep `/healthz` available to the local health checker. The service intentionally listens on loopback by default. Set reverse-proxy request limits at or below `MXT_MAX_REPLAY_BYTES` (default 64 MiB), do not log `Authorization` headers, and run only the exact game build associated with the checked-in manifest.
 
+The production client origin is `https://mxt-leaderboards.rolledoutgame.com`. Its remotely managed Cloudflare Tunnel route matches only `^/v1/time-attack/submit$` and forwards to `http://127.0.0.1:8787`; the fallback route returns 404. Run that connector without placing the token on the command line:
+
+```powershell
+cloudflared tunnel --no-autoupdate run --token-file C:\secure\mxt-leaderboard-tunnel-token.txt
+```
+
+`cloudflared.example.yml` documents the equivalent locally managed tunnel configuration.
+
 The submission request is:
 
 ```text
