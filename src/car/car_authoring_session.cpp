@@ -1,6 +1,15 @@
 #include "car/car_authoring_session.h"
 
+#include "content/content_manifest.h"
+#include "content/content_validator.h"
+#include "content/glb_validator.h"
+
+#include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/gltf_document.hpp>
+#include <godot_cpp/classes/gltf_state.hpp>
+#include <godot_cpp/classes/json.hpp>
+#include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
 
 #include <algorithm>
@@ -115,6 +124,132 @@ static Dictionary result_dictionary(bool valid, const PackedStringArray &errors,
 	return result;
 }
 
+static String global_path(const String &path)
+{
+	if (path.begins_with("res://") || path.begins_with("user://")) {
+		return ProjectSettings::get_singleton()->globalize_path(path).replace("\\", "/").simplify_path();
+	}
+	return path.replace("\\", "/").simplify_path();
+}
+
+static bool write_text_file(const String &path, const String &text)
+{
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+	if (file.is_null()) return false;
+	file->store_string(text);
+	return file->get_error() == OK;
+}
+
+static bool is_valid_text_field(const String &value, int64_t maximum_length, bool allow_empty)
+{
+	if ((!allow_empty && value.is_empty()) || value.length() > maximum_length) return false;
+	for (int64_t i = 0; i < value.length(); ++i) {
+		if (value[i] == 0 || value[i] < 0x20 || value[i] == 0x7f) return false;
+	}
+	return true;
+}
+
+static Array vector3_array(const Vector3 &value)
+{
+	Array output;
+	output.push_back(value.x);
+	output.push_back(value.y);
+	output.push_back(value.z);
+	return output;
+}
+
+static bool dictionary_vector3(
+		const Dictionary &value,
+		const char *key,
+		double minimum,
+		double maximum,
+		Vector3 &out)
+{
+	if (!value.has(key)) return false;
+	if (value[key].get_type() == Variant::VECTOR3) {
+		out = value[key];
+	} else if (value[key].get_type() == Variant::ARRAY) {
+		const Array array = value[key];
+		if (array.size() != 3) return false;
+		double components[3];
+		for (int64_t i = 0; i < 3; ++i) {
+			if (array[i].get_type() != Variant::INT && array[i].get_type() != Variant::FLOAT) return false;
+			components[i] = array[i].get_type() == Variant::INT
+					? static_cast<double>(static_cast<int64_t>(array[i]))
+					: static_cast<double>(array[i]);
+		}
+		out = Vector3(components[0], components[1], components[2]);
+	} else {
+		return false;
+	}
+	return out.is_finite() && out.x >= minimum && out.x <= maximum &&
+			out.y >= minimum && out.y <= maximum && out.z >= minimum && out.z <= maximum;
+}
+
+static bool preflight_gltf_source(const String &path, String &out_error)
+{
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::READ);
+	if (file.is_null() || file->get_length() > 48u * 1024u * 1024u) {
+		out_error = "glTF source is missing or exceeds 48 MiB";
+		return false;
+	}
+	const PackedByteArray bytes = file->get_buffer(file->get_length());
+	std::vector<String> audit_errors;
+	if (!mxt::content::audit_json_members(bytes, audit_errors)) {
+		out_error = audit_errors.empty() ? String("glTF JSON is invalid") : audit_errors.front();
+		return false;
+	}
+	const Variant parsed = JSON::parse_string(String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size()));
+	if (parsed.get_type() != Variant::DICTIONARY) {
+		out_error = "glTF root must be an object";
+		return false;
+	}
+	const Dictionary root = parsed;
+	if (root.has("extensionsUsed") && root["extensionsUsed"].get_type() == Variant::ARRAY &&
+			!static_cast<Array>(root["extensionsUsed"]).is_empty()) {
+		out_error = "glTF source extensions are unsupported";
+		return false;
+	}
+	const String base = path.get_base_dir().replace("\\", "/").simplify_path();
+	uint64_t total_dependency_bytes = static_cast<uint64_t>(bytes.size());
+	for (const char *collection_name : {"buffers", "images"}) {
+		if (!root.has(collection_name)) continue;
+		if (root[collection_name].get_type() != Variant::ARRAY) {
+			out_error = String("glTF ") + collection_name + " must be an array";
+			return false;
+		}
+		const Array collection = root[collection_name];
+		for (int64_t i = 0; i < collection.size(); ++i) {
+			if (collection[i].get_type() != Variant::DICTIONARY) continue;
+			const Dictionary entry = collection[i];
+			if (!entry.has("uri")) continue;
+			if (entry["uri"].get_type() != Variant::STRING) {
+				out_error = "glTF dependency URI must be a string";
+				return false;
+			}
+			const String uri = entry["uri"];
+			if (uri.begins_with("data:")) continue;
+			if (uri.is_empty() || uri.is_absolute_path() || uri.contains("\\") || uri.contains(":") ||
+					uri.contains("?") || uri.contains("#")) {
+				out_error = "glTF dependency URI is not a local canonical relative path";
+				return false;
+			}
+			const String dependency = base.path_join(uri).simplify_path();
+			if (!dependency.begins_with(base + String("/")) || !FileAccess::file_exists(dependency)) {
+				out_error = "glTF dependency escapes the import root or is missing";
+				return false;
+			}
+			Ref<FileAccess> dependency_file = FileAccess::open(dependency, FileAccess::READ);
+			if (dependency_file.is_null() || dependency_file->get_length() > 48u * 1024u * 1024u - std::min<uint64_t>(total_dependency_bytes, 48u * 1024u * 1024u)) {
+				out_error = "glTF source dependencies exceed 48 MiB";
+				return false;
+			}
+			total_dependency_bytes += dependency_file->get_length();
+		}
+	}
+	return true;
+}
+
 static String stat_category(uint16_t stat)
 {
 	if (stat == CAR_STAT_WEIGHT_KG || stat == CAR_STAT_BODY || stat == CAR_STAT_MAX_ENERGY) return "Machine";
@@ -171,6 +306,14 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("can_redo"), &MxtCarAuthoringSession::can_redo);
 	ClassDB::bind_method(D_METHOD("undo"), &MxtCarAuthoringSession::undo);
 	ClassDB::bind_method(D_METHOD("redo"), &MxtCarAuthoringSession::redo);
+	ClassDB::bind_method(D_METHOD("import_model", "source_path", "draft_root"), &MxtCarAuthoringSession::import_model);
+	ClassDB::bind_method(D_METHOD("load_vehicle_package", "package_root"), &MxtCarAuthoringSession::load_vehicle_package);
+	ClassDB::bind_method(D_METHOD("build_vehicle_package", "package_root", "preview_png_path", "title", "description", "author_name"), &MxtCarAuthoringSession::build_vehicle_package);
+	ClassDB::bind_method(D_METHOD("get_model_path"), &MxtCarAuthoringSession::get_model_path);
+	ClassDB::bind_method(D_METHOD("get_model_transform"), &MxtCarAuthoringSession::get_model_transform);
+	ClassDB::bind_method(D_METHOD("set_model_transform", "value"), &MxtCarAuthoringSession::set_model_transform);
+	ClassDB::bind_method(D_METHOD("get_thrusters"), &MxtCarAuthoringSession::get_thrusters);
+	ClassDB::bind_method(D_METHOD("set_thrusters", "value"), &MxtCarAuthoringSession::set_thrusters);
 }
 
 MxtCarAuthoringSession::Curve &MxtCarAuthoringSession::curve_at(uint8_t layer, uint16_t stat)
@@ -707,4 +850,244 @@ bool MxtCarAuthoringSession::redo()
 	const PackedByteArray snapshot = redo_history.back();
 	redo_history.pop_back();
 	return restore_history_snapshot(snapshot);
+}
+
+bool MxtCarAuthoringSession::is_safe_draft_root(const String &path, String &out_global_path)
+{
+	const String allowed_root = global_path("user://vehicle_drafts");
+	out_global_path = global_path(path);
+	return !out_global_path.is_empty() && out_global_path.begins_with(allowed_root + String("/"));
+}
+
+Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const String &draft_root)
+{
+	String root;
+	if (!is_safe_draft_root(draft_root, root)) {
+		return result_dictionary(false, single_error("vehicle draft root must be below user://vehicle_drafts"), {});
+	}
+	const String source = global_path(source_path);
+	const String extension = source.get_extension().to_lower();
+	if (extension != "glb" && extension != "gltf") {
+		return result_dictionary(false, single_error("vehicle model source must be .glb or .gltf"), {});
+	}
+	if (DirAccess::make_dir_recursive_absolute(root.path_join("package/vehicle")) != OK) {
+		return result_dictionary(false, single_error("could not create vehicle draft directory"), {});
+	}
+	const String destination = root.path_join("package/vehicle/model.glb");
+	const String temporary = root.path_join("package/vehicle/model.importing.glb");
+	DirAccess::remove_absolute(temporary);
+	std::vector<String> validation_errors;
+	if (extension == "glb") {
+		if (!mxt::content::validate_glb_file(source, mxt::content::ContentType::VEHICLE, validation_errors)) {
+			PackedStringArray errors;
+			for (const String &error : validation_errors) errors.push_back(error);
+			return result_dictionary(false, errors, {});
+		}
+		if (DirAccess::copy_absolute(source, temporary) != OK) {
+			return result_dictionary(false, single_error("could not copy vehicle GLB into the draft"), {});
+		}
+	} else {
+		String source_error;
+		if (!preflight_gltf_source(source, source_error)) {
+			return result_dictionary(false, single_error(source_error), {});
+		}
+		Ref<GLTFDocument> document;
+		document.instantiate();
+		Ref<GLTFState> state;
+		state.instantiate();
+		state->set_base_path(source.get_base_dir());
+		const Error load_error = document->append_from_file(source, state, 0, source.get_base_dir());
+		if (load_error != OK || document->write_to_filesystem(state, temporary) != OK) {
+			DirAccess::remove_absolute(temporary);
+			return result_dictionary(false, single_error("could not normalize glTF source into a self-contained GLB"), {});
+		}
+		if (!mxt::content::validate_glb_file(temporary, mxt::content::ContentType::VEHICLE, validation_errors)) {
+			DirAccess::remove_absolute(temporary);
+			PackedStringArray errors;
+			for (const String &error : validation_errors) errors.push_back(error);
+			return result_dictionary(false, errors, {});
+		}
+	}
+	DirAccess::remove_absolute(destination);
+	if (DirAccess::rename_absolute(temporary, destination) != OK) {
+		DirAccess::remove_absolute(temporary);
+		return result_dictionary(false, single_error("could not install normalized vehicle GLB into the draft"), {});
+	}
+	model_path = destination;
+	dirty = true;
+	return result_dictionary(true, {}, {});
+}
+
+Dictionary MxtCarAuthoringSession::load_vehicle_package(const String &package_root)
+{
+	const String root = global_path(package_root);
+	mxt::content::ValidatedPackage package;
+	std::vector<String> validation_errors;
+	if (!mxt::content::validate_package_directory_internal(root, package, validation_errors) ||
+			package.manifest.content_type != mxt::content::ContentType::VEHICLE) {
+		PackedStringArray errors;
+		for (const String &error : validation_errors) errors.push_back(error);
+		if (errors.is_empty()) errors.push_back("package is not a vehicle package");
+		return result_dictionary(false, errors, {});
+	}
+	Dictionary loaded = load_file(root.path_join("vehicle/properties.mxt_car_props"));
+	if (!static_cast<bool>(loaded.get("valid", false))) return loaded;
+	model_path = root.path_join("vehicle/model.glb");
+	set_model_transform(package.visual_metadata.get("model_transform", Dictionary()));
+	set_thrusters(package.visual_metadata.get("thrusters", Array()));
+	undo_history.clear();
+	redo_history.clear();
+	dirty = false;
+	loaded["title"] = package.manifest.title;
+	loaded["description"] = package.manifest.description;
+	loaded["author_name"] = package.manifest.author_name;
+	loaded["package_digest"] = package.package_digest;
+	loaded["gameplay_digest"] = package.gameplay_digest;
+	return loaded;
+}
+
+Dictionary MxtCarAuthoringSession::build_vehicle_package(
+		const String &package_root,
+		const String &preview_png_path,
+		const String &title,
+		const String &description,
+		const String &author_name)
+{
+	String root;
+	const String draft_root = package_root.trim_suffix("/package").trim_suffix("\\package");
+	if (!is_safe_draft_root(draft_root, root) || global_path(package_root) != root.path_join("package")) {
+		return result_dictionary(false, single_error("vehicle package output must be the package directory of a user draft"), {});
+	}
+	root = root.path_join("package");
+	if (!is_valid_text_field(title, 128, false) || !is_valid_text_field(description, 8000, true) ||
+			!is_valid_text_field(author_name, 64, false)) {
+		return result_dictionary(false, single_error("vehicle title, description, or author text is invalid"), {});
+	}
+	const String use_model_path = root.path_join("vehicle/model.glb");
+	if (!FileAccess::file_exists(use_model_path)) {
+		return result_dictionary(false, single_error("vehicle draft has no imported model"), {});
+	}
+	if (DirAccess::make_dir_recursive_absolute(root.path_join("vehicle")) != OK) {
+		return result_dictionary(false, single_error("could not create vehicle package directory"), {});
+	}
+	Dictionary properties_result = save_file(root.path_join("vehicle/properties.mxt_car_props"));
+	if (!static_cast<bool>(properties_result.get("valid", false))) return properties_result;
+	Dictionary transform;
+	transform["translation"] = vector3_array(model_translation);
+	transform["rotation_degrees"] = vector3_array(model_rotation_degrees);
+	transform["scale"] = vector3_array(model_scale);
+	Array thruster_values;
+	for (const Thruster &thruster : thrusters) {
+		Dictionary value;
+		value["position"] = vector3_array(thruster.position);
+		value["rotation_degrees"] = vector3_array(thruster.rotation_degrees);
+		value["scale"] = thruster.scale;
+		thruster_values.push_back(value);
+	}
+	Dictionary visual;
+	visual["format_revision"] = 1;
+	visual["model_transform"] = transform;
+	visual["thrusters"] = thruster_values;
+	if (!write_text_file(root.path_join("vehicle/visual.json"), JSON::stringify(visual, "  ", true, true))) {
+		return result_dictionary(false, single_error("could not write vehicle visual metadata"), {});
+	}
+	if (DirAccess::copy_absolute(global_path(preview_png_path), root.path_join("preview.png")) != OK) {
+		return result_dictionary(false, single_error("could not copy vehicle preview PNG"), {});
+	}
+	Dictionary payload;
+	payload["model"] = "vehicle/model.glb";
+	payload["properties"] = "vehicle/properties.mxt_car_props";
+	payload["visual_metadata"] = "vehicle/visual.json";
+	Dictionary hashes;
+	for (const String &path : {String("vehicle/model.glb"), String("vehicle/properties.mxt_car_props"), String("vehicle/visual.json"), String("preview.png")}) {
+		hashes[path] = FileAccess::get_sha256(root.path_join(path));
+	}
+	Dictionary manifest;
+	manifest["format_revision"] = static_cast<int64_t>(mxt::content::PACKAGE_FORMAT_REVISION);
+	manifest["content_type"] = "vehicle";
+	manifest["title"] = title;
+	manifest["description"] = description;
+	manifest["author_name"] = author_name;
+	manifest["payload"] = payload;
+	manifest["payload_sha256"] = hashes;
+	if (!write_text_file(root.path_join("manifest.json"), JSON::stringify(manifest, "  ", true, true))) {
+		return result_dictionary(false, single_error("could not write vehicle package manifest"), {});
+	}
+	mxt::content::ValidatedPackage package;
+	std::vector<String> validation_errors;
+	if (!mxt::content::validate_package_directory_internal(root, package, validation_errors)) {
+		PackedStringArray errors;
+		for (const String &error : validation_errors) errors.push_back(error);
+		return result_dictionary(false, errors, {});
+	}
+	Dictionary result = result_dictionary(true, {}, properties_result.get("warnings", PackedStringArray()));
+	result["package_path"] = root;
+	result["package_digest"] = package.package_digest;
+	result["gameplay_digest"] = package.gameplay_digest;
+	dirty = false;
+	return result;
+}
+
+String MxtCarAuthoringSession::get_model_path() const { return model_path; }
+
+Dictionary MxtCarAuthoringSession::get_model_transform() const
+{
+	Dictionary result;
+	result["translation"] = model_translation;
+	result["rotation_degrees"] = model_rotation_degrees;
+	result["scale"] = model_scale;
+	return result;
+}
+
+bool MxtCarAuthoringSession::set_model_transform(const Dictionary &value)
+{
+	Vector3 translation;
+	Vector3 rotation;
+	Vector3 scale;
+	if (!dictionary_vector3(value, "translation", -1000.0, 1000.0, translation) ||
+			!dictionary_vector3(value, "rotation_degrees", -3600.0, 3600.0, rotation) ||
+			!dictionary_vector3(value, "scale", 0.001, 100.0, scale)) return false;
+	model_translation = translation;
+	model_rotation_degrees = rotation;
+	model_scale = scale;
+	dirty = true;
+	return true;
+}
+
+Array MxtCarAuthoringSession::get_thrusters() const
+{
+	Array result;
+	for (const Thruster &thruster : thrusters) {
+		Dictionary value;
+		value["position"] = thruster.position;
+		value["rotation_degrees"] = thruster.rotation_degrees;
+		value["scale"] = thruster.scale;
+		result.push_back(value);
+	}
+	return result;
+}
+
+bool MxtCarAuthoringSession::set_thrusters(const Array &value)
+{
+	if (value.size() > 8) return false;
+	std::vector<Thruster> replacement;
+	replacement.reserve(value.size());
+	for (int64_t i = 0; i < value.size(); ++i) {
+		if (value[i].get_type() != Variant::DICTIONARY) return false;
+		const Dictionary input = value[i];
+		Thruster thruster;
+		if (!dictionary_vector3(input, "position", -100.0, 100.0, thruster.position) ||
+				!dictionary_vector3(input, "rotation_degrees", -3600.0, 3600.0, thruster.rotation_degrees) ||
+				!input.has("scale") ||
+				(input["scale"].get_type() != Variant::INT && input["scale"].get_type() != Variant::FLOAT)) return false;
+		const double scale_value = input["scale"].get_type() == Variant::INT
+				? static_cast<double>(static_cast<int64_t>(input["scale"]))
+				: static_cast<double>(input["scale"]);
+		if (!std::isfinite(scale_value) || scale_value < 0.01 || scale_value > 10.0) return false;
+		thruster.scale = static_cast<float>(scale_value);
+		replacement.push_back(thruster);
+	}
+	thrusters = std::move(replacement);
+	dirty = true;
+	return true;
 }

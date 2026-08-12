@@ -38,6 +38,16 @@ private:
 	bool dirty = false;
 	std::vector<PackedByteArray> undo_history;
 	std::vector<PackedByteArray> redo_history;
+	String model_path;
+	Vector3 model_translation = Vector3();
+	Vector3 model_rotation_degrees = Vector3();
+	Vector3 model_scale = Vector3(1.0, 1.0, 1.0);
+	struct Thruster {
+		Vector3 position;
+		Vector3 rotation_degrees;
+		float scale = 1.0f;
+	};
+	std::vector<Thruster> thrusters;
 
 	static int32_t stat_index(const String &stat_name);
 	static int32_t layer_index(const String &layer_name);
@@ -49,6 +59,7 @@ private:
 	bool serialize_document(PackedByteArray &out_bytes, String &out_error) const;
 	void push_undo_snapshot();
 	bool restore_history_snapshot(const PackedByteArray &bytes);
+	static bool is_safe_draft_root(const String &path, String &out_global_path);
 	Curve &curve_at(uint8_t layer, uint16_t stat);
 	const Curve &curve_at(uint8_t layer, uint16_t stat) const;
 
@@ -84,6 +95,19 @@ public:
 	bool can_redo() const;
 	bool undo();
 	bool redo();
+	Dictionary import_model(const String &source_path, const String &draft_root);
+	Dictionary load_vehicle_package(const String &package_root);
+	Dictionary build_vehicle_package(
+			const String &package_root,
+			const String &preview_png_path,
+			const String &title,
+			const String &description,
+			const String &author_name);
+	String get_model_path() const;
+	Dictionary get_model_transform() const;
+	bool set_model_transform(const Dictionary &value);
+	Array get_thrusters() const;
+	bool set_thrusters(const Array &value);
 };
 
 } // namespace godot

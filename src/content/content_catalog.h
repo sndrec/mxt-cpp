@@ -33,6 +33,7 @@ struct ContentRecord {
 	godot::String title;
 	godot::String description;
 	godot::String author_name;
+	godot::Dictionary visual_metadata;
 	uint64_t published_file_id = 0;
 };
 

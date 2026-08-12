@@ -15,6 +15,7 @@ struct ValidatedPackage {
 	godot::String package_digest;
 	godot::String gameplay_digest;
 	uint64_t total_bytes = 0;
+	godot::Dictionary visual_metadata;
 };
 
 bool validate_package_directory_internal(

@@ -14,6 +14,7 @@ preview.png
 vehicle/
   model.glb
   properties.mxt_car_props
+  visual.json
 ```
 
 Track package:
@@ -42,11 +43,13 @@ Every entry must be a regular file or one of the single type-specific directorie
   "author_name": "Example Creator",
   "payload": {
     "model": "vehicle/model.glb",
-    "properties": "vehicle/properties.mxt_car_props"
+    "properties": "vehicle/properties.mxt_car_props",
+    "visual_metadata": "vehicle/visual.json"
   },
   "payload_sha256": {
     "vehicle/model.glb": "64 lowercase hexadecimal characters",
     "vehicle/properties.mxt_car_props": "64 lowercase hexadecimal characters",
+    "vehicle/visual.json": "64 lowercase hexadecimal characters",
     "preview.png": "64 lowercase hexadecimal characters"
   }
 }
@@ -65,6 +68,30 @@ For `content_type: "track"`, `payload` is exactly:
 The track hash table contains those three paths and `preview.png`. `payload_sha256` does not include `manifest.json`, because the complete raw manifest is already an input to `package_digest`.
 
 String limits are 128 Unicode code points for `title`, 8,000 for `description`, and 64 for `author_name`. Title and author must be non-empty; description may be empty. Control characters are rejected.
+
+## Vehicle visual metadata
+
+`vehicle/visual.json` is strict data interpreted only by MaxX Throttle's renderer. It cannot name resources or provide shaders. Revision 1 contains the model transform and zero to eight game-owned thruster instances:
+
+```json
+{
+  "format_revision": 1,
+  "model_transform": {
+    "translation": [0.0, 0.0, 0.0],
+    "rotation_degrees": [0.0, 0.0, 0.0],
+    "scale": [1.0, 1.0, 1.0]
+  },
+  "thrusters": [
+    {
+      "position": [0.0, 0.25, -1.5],
+      "rotation_degrees": [0.0, 0.0, 0.0],
+      "scale": 0.5
+    }
+  ]
+}
+```
+
+All components must be finite. Model translation is limited to +/-1000 units, rotation to +/-3600 degrees, and positive scale to 0.001 through 100. Thruster position is limited to +/-100 units, rotation to +/-3600 degrees, and scale to 0.01 through 10. Unknown fields are rejected.
 
 ## Track metadata
 
@@ -142,7 +169,7 @@ Replay schema 4 and debug-replay schema 2 store `track_content_id` plus `track_g
 
 ## Initial limits and accepted payloads
 
-- Vehicle package: 64 MiB total; model 48 MiB; properties 4 MiB.
+- Vehicle package: 64 MiB total; model 48 MiB; properties 4 MiB; visual metadata 64 KiB.
 - Track package: 512 MiB total; collision payload 256 MiB; visual GLB 256 MiB; metadata 1 MiB.
 - Preview: PNG, 8 MiB, maximum 4096 by 4096 pixels.
 - At most eight files, including `manifest.json`.

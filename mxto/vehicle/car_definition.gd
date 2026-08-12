@@ -9,6 +9,7 @@ class_name CarDefinition extends Resource
 var runtime_mesh: Mesh
 var runtime_material: Material
 var runtime_transform := Transform3D.IDENTITY
+var runtime_thruster_transforms: Array[Transform3D] = []
 
 func has_visual() -> bool:
 	return car_scene != null or runtime_mesh != null

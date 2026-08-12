@@ -142,6 +142,7 @@ preview.png
 vehicle/
   model.glb
   properties.mxt_car_props
+  visual.json
 ```
 
 Textures should normally be embedded in `model.glb`. If independent paint-mask or normal-map slots prove necessary, add them as explicit manifest fields rather than permitting arbitrary files to influence rendering.

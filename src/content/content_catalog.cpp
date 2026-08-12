@@ -43,6 +43,7 @@ Dictionary content_record_to_dictionary(const ContentRecord &record)
 	output["title"] = record.title;
 	output["description"] = record.description;
 	output["author_name"] = record.author_name;
+	output["visual_metadata"] = record.visual_metadata;
 	output["published_file_id"] = record.published_file_id == 0
 			? String()
 			: String::num_uint64(record.published_file_id);
@@ -96,6 +97,7 @@ static mxt::content::ContentRecord make_record(
 	record.title = package.manifest.title;
 	record.description = package.manifest.description;
 	record.author_name = package.manifest.author_name;
+	record.visual_metadata = package.visual_metadata;
 	record.published_file_id = published_file_id;
 	const String type_name = mxt::content::content_type_name(record.content_type);
 	if (source == mxt::content::ContentSource::WORKSHOP) {
@@ -105,6 +107,7 @@ static mxt::content::ContentRecord make_record(
 	}
 	if (record.content_type == mxt::content::ContentType::VEHICLE) {
 		record.visual_path = package.root_path.path_join("vehicle/model.glb");
+		record.metadata_path = package.root_path.path_join("vehicle/visual.json");
 	} else {
 		record.visual_path = package.root_path.path_join("track/visual.glb");
 		record.metadata_path = package.root_path.path_join("track/metadata.json");

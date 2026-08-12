@@ -690,9 +690,31 @@ func _car_definition_from_package_record(record: Dictionary) -> CarDefinition:
 	definition.properties_path = String(record.get("authoritative_path", ""))
 	definition.runtime_mesh = mesh_instance.mesh
 	definition.runtime_material = mesh_instance.material_override
-	definition.runtime_transform = mesh_data["transform"]
+	var visual_metadata: Dictionary = record.get("visual_metadata", {})
+	var model_transform: Dictionary = visual_metadata.get("model_transform", {})
+	definition.runtime_transform = _transform_from_vehicle_metadata(model_transform) * mesh_data["transform"]
+	for thruster_value in visual_metadata.get("thrusters", []):
+		definition.runtime_thruster_transforms.append(_thruster_transform_from_vehicle_metadata(thruster_value))
 	instance.free()
 	return definition
+
+func _transform_from_vehicle_metadata(value: Dictionary) -> Transform3D:
+	var rotation_degrees_value: Vector3 = value.get("rotation_degrees", Vector3.ZERO)
+	var rotation := Vector3(
+		deg_to_rad(rotation_degrees_value.x),
+		deg_to_rad(rotation_degrees_value.y),
+		deg_to_rad(rotation_degrees_value.z))
+	var scale_value: Vector3 = value.get("scale", Vector3.ONE)
+	return Transform3D(Basis.from_euler(rotation).scaled(scale_value), value.get("translation", Vector3.ZERO))
+
+func _thruster_transform_from_vehicle_metadata(value: Dictionary) -> Transform3D:
+	var rotation_degrees_value: Vector3 = value.get("rotation_degrees", Vector3.ZERO)
+	var rotation := Vector3(
+		deg_to_rad(rotation_degrees_value.x),
+		deg_to_rad(rotation_degrees_value.y),
+		deg_to_rad(rotation_degrees_value.z))
+	var scale_value := float(value.get("scale", 1.0))
+	return Transform3D(Basis.from_euler(rotation).scaled(Vector3.ONE * scale_value), value.get("position", Vector3.ZERO))
 
 func _find_packaged_vehicle_mesh(node: Node, parent_transform: Transform3D) -> Dictionary:
 	var local_transform := parent_transform

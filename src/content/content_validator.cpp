@@ -25,6 +25,7 @@ namespace {
 
 static constexpr uint64_t VEHICLE_MODEL_MAX_BYTES = 48u * 1024u * 1024u;
 static constexpr uint64_t VEHICLE_PROPERTIES_MAX_BYTES = 4u * 1024u * 1024u;
+static constexpr uint64_t VEHICLE_VISUAL_METADATA_MAX_BYTES = 64u * 1024u;
 static constexpr uint64_t TRACK_PAYLOAD_MAX_BYTES = 256u * 1024u * 1024u;
 static constexpr uint64_t TRACK_VISUAL_MAX_BYTES = 256u * 1024u * 1024u;
 static constexpr uint64_t TRACK_METADATA_MAX_BYTES = 1u * 1024u * 1024u;
@@ -215,6 +216,7 @@ static uint64_t file_limit_for(const ContentManifest &manifest, const String &pa
 	if (path == "preview.png") return PREVIEW_MAX_BYTES;
 	if (path == "vehicle/model.glb") return VEHICLE_MODEL_MAX_BYTES;
 	if (path == "vehicle/properties.mxt_car_props") return VEHICLE_PROPERTIES_MAX_BYTES;
+	if (path == "vehicle/visual.json") return VEHICLE_VISUAL_METADATA_MAX_BYTES;
 	if (path == "track/track.mxt_track") return TRACK_PAYLOAD_MAX_BYTES;
 	if (path == "track/visual.glb") return TRACK_VISUAL_MAX_BYTES;
 	if (path == "track/metadata.json") return TRACK_METADATA_MAX_BYTES;
@@ -513,9 +515,159 @@ static bool validate_declared_hashes(
 	return errors.empty();
 }
 
+static bool has_only_keys(
+		const Dictionary &value,
+		const char *const *keys,
+		size_t key_count,
+		const String &scope,
+		std::vector<String> &errors)
+{
+	bool valid = true;
+	const Array dictionary_keys = value.keys();
+	for (int64_t key_index = 0; key_index < dictionary_keys.size(); ++key_index) {
+		const Variant key_value = dictionary_keys[key_index];
+		if (key_value.get_type() != Variant::STRING) {
+			add_error(errors, scope + String(" contains a non-string member"));
+			valid = false;
+			continue;
+		}
+		const String key = key_value;
+		bool recognized = false;
+		for (size_t i = 0; i < key_count; ++i) recognized |= key == keys[i];
+		if (!recognized) {
+			add_error(errors, scope + String(" contains unrecognized member '") + key + String("'"));
+			valid = false;
+		}
+	}
+	return valid;
+}
+
+static bool read_bounded_vector3(
+		const Dictionary &object,
+		const char *key,
+		double minimum,
+		double maximum,
+		Vector3 &out,
+		std::vector<String> &errors)
+{
+	if (!object.has(key) || object[key].get_type() != Variant::ARRAY) {
+		add_error(errors, String("vehicle visual member '") + key + "' must be a three-number array");
+		return false;
+	}
+	const Array values = object[key];
+	if (values.size() != 3) {
+		add_error(errors, String("vehicle visual member '") + key + "' must have three elements");
+		return false;
+	}
+	double components[3] = {};
+	for (int64_t i = 0; i < 3; ++i) {
+		if (values[i].get_type() != Variant::INT && values[i].get_type() != Variant::FLOAT) {
+			add_error(errors, String("vehicle visual member '") + key + "' must contain only numbers");
+			return false;
+		}
+		components[i] = values[i].get_type() == Variant::INT
+				? static_cast<double>(static_cast<int64_t>(values[i]))
+				: static_cast<double>(values[i]);
+		if (!std::isfinite(components[i]) || components[i] < minimum || components[i] > maximum) {
+			add_error(errors, String("vehicle visual member '") + key + "' is outside its supported range");
+			return false;
+		}
+	}
+	out = Vector3(components[0], components[1], components[2]);
+	return true;
+}
+
+static bool validate_vehicle_visual_metadata(
+		const DiskEntry &entry,
+		Dictionary &out_metadata,
+		std::vector<String> &errors)
+{
+	PackedByteArray bytes;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_VISUAL_METADATA_MAX_BYTES, bytes, errors)) return false;
+	if (!audit_json_members(bytes, errors)) return false;
+	const Variant parsed = JSON::parse_string(String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size()));
+	if (parsed.get_type() != Variant::DICTIONARY) {
+		add_error(errors, "vehicle/visual.json root must be an object");
+		return false;
+	}
+	const Dictionary root = parsed;
+	static const char *ROOT_KEYS[] = {"format_revision", "model_transform", "thrusters"};
+	has_only_keys(root, ROOT_KEYS, std::size(ROOT_KEYS), "vehicle visual metadata", errors);
+	const Variant revision_value = root.get("format_revision", Variant());
+	const bool valid_revision =
+			(revision_value.get_type() == Variant::INT && static_cast<int64_t>(revision_value) == 1) ||
+			(revision_value.get_type() == Variant::FLOAT && static_cast<double>(revision_value) == 1.0);
+	if (!valid_revision) {
+		add_error(errors, "vehicle visual format_revision must be integer 1");
+	}
+	if (!root.has("model_transform") || root["model_transform"].get_type() != Variant::DICTIONARY) {
+		add_error(errors, "vehicle visual model_transform must be an object");
+		return false;
+	}
+	const Dictionary model_transform = root["model_transform"];
+	static const char *TRANSFORM_KEYS[] = {"translation", "rotation_degrees", "scale"};
+	has_only_keys(model_transform, TRANSFORM_KEYS, std::size(TRANSFORM_KEYS), "vehicle visual model_transform", errors);
+	Vector3 translation;
+	Vector3 rotation_degrees;
+	Vector3 scale;
+	read_bounded_vector3(model_transform, "translation", -1000.0, 1000.0, translation, errors);
+	read_bounded_vector3(model_transform, "rotation_degrees", -3600.0, 3600.0, rotation_degrees, errors);
+	if (read_bounded_vector3(model_transform, "scale", 0.001, 100.0, scale, errors) &&
+			(scale.x <= 0.0 || scale.y <= 0.0 || scale.z <= 0.0)) {
+		add_error(errors, "vehicle visual model scale must be positive");
+	}
+	if (!root.has("thrusters") || root["thrusters"].get_type() != Variant::ARRAY) {
+		add_error(errors, "vehicle visual thrusters must be an array");
+		return false;
+	}
+	const Array thrusters = root["thrusters"];
+	if (thrusters.size() > 8) add_error(errors, "vehicle visual supports at most eight thrusters");
+	Array normalized_thrusters;
+	for (int64_t i = 0; i < thrusters.size(); ++i) {
+		if (thrusters[i].get_type() != Variant::DICTIONARY) {
+			add_error(errors, "vehicle visual thruster must be an object");
+			continue;
+		}
+		const Dictionary thruster = thrusters[i];
+		static const char *THRUSTER_KEYS[] = {"position", "rotation_degrees", "scale"};
+		has_only_keys(thruster, THRUSTER_KEYS, std::size(THRUSTER_KEYS), "vehicle visual thruster", errors);
+		Vector3 position;
+		Vector3 rotation;
+		read_bounded_vector3(thruster, "position", -100.0, 100.0, position, errors);
+		read_bounded_vector3(thruster, "rotation_degrees", -3600.0, 3600.0, rotation, errors);
+		if (!thruster.has("scale") ||
+				(thruster["scale"].get_type() != Variant::INT && thruster["scale"].get_type() != Variant::FLOAT)) {
+			add_error(errors, "vehicle visual thruster scale must be a number");
+			continue;
+		}
+		const double scale_value = thruster["scale"].get_type() == Variant::INT
+				? static_cast<double>(static_cast<int64_t>(thruster["scale"]))
+				: static_cast<double>(thruster["scale"]);
+		if (!std::isfinite(scale_value) || scale_value < 0.01 || scale_value > 10.0) {
+			add_error(errors, "vehicle visual thruster scale is outside [0.01, 10]");
+			continue;
+		}
+		Dictionary normalized;
+		normalized["position"] = position;
+		normalized["rotation_degrees"] = rotation;
+		normalized["scale"] = scale_value;
+		normalized_thrusters.push_back(normalized);
+	}
+	if (!errors.empty()) return false;
+	Dictionary normalized_transform;
+	normalized_transform["translation"] = translation;
+	normalized_transform["rotation_degrees"] = rotation_degrees;
+	normalized_transform["scale"] = scale;
+	out_metadata["format_revision"] = 1;
+	out_metadata["model_transform"] = normalized_transform;
+	out_metadata["thrusters"] = normalized_thrusters;
+	return true;
+}
+
 static bool validate_payloads(
 		const ContentManifest &manifest,
 		const std::vector<DiskEntry> &entries,
+		Dictionary &out_visual_metadata,
 		std::vector<String> &errors)
 {
 	const DiskEntry *preview = find_disk_entry(entries, "preview.png");
@@ -525,6 +677,7 @@ static bool validate_payloads(
 	if (manifest.content_type == ContentType::VEHICLE) {
 		const DiskEntry *model = find_disk_entry(entries, "vehicle/model.glb");
 		const DiskEntry *properties = find_disk_entry(entries, "vehicle/properties.mxt_car_props");
+		const DiskEntry *visual_metadata = find_disk_entry(entries, "vehicle/visual.json");
 		if (model) {
 			validate_glb_file(model->absolute_path, manifest.content_type, errors);
 		}
@@ -538,6 +691,7 @@ static bool validate_payloads(
 				}
 			}
 		}
+		if (visual_metadata) validate_vehicle_visual_metadata(*visual_metadata, out_visual_metadata, errors);
 	} else if (manifest.content_type == ContentType::TRACK) {
 		const DiskEntry *track = find_disk_entry(entries, "track/track.mxt_track");
 		const DiskEntry *visual = find_disk_entry(entries, "track/visual.glb");
@@ -661,7 +815,7 @@ bool validate_package_directory_internal(
 	}
 
 	validate_declared_hashes(out_package.manifest, entries, out_errors);
-	validate_payloads(out_package.manifest, entries, out_errors);
+	validate_payloads(out_package.manifest, entries, out_package.visual_metadata, out_errors);
 	if (!out_errors.empty()) {
 		return false;
 	}

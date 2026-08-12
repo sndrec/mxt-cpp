@@ -153,6 +153,17 @@ func _prepare_vehicle_package(root: String) -> void:
 		root.path_join("vehicle/properties.mxt_car_props")
 	)
 	_copy(ProjectSettings.globalize_path("res://asset/CAUTION.png"), root.path_join("preview.png"))
+	var visual := FileAccess.open(root.path_join("vehicle/visual.json"), FileAccess.WRITE)
+	visual.store_string(JSON.stringify({
+		"format_revision": 1,
+		"model_transform": {
+			"translation": [0.0, 0.0, 0.0],
+			"rotation_degrees": [0.0, 0.0, 0.0],
+			"scale": [1.0, 1.0, 1.0],
+		},
+		"thrusters": [],
+	}, "  ", true))
+	visual.close()
 	var manifest := {
 		"format_revision": 1,
 		"content_type": "vehicle",
@@ -162,10 +173,12 @@ func _prepare_vehicle_package(root: String) -> void:
 		"payload": {
 			"model": "vehicle/model.glb",
 			"properties": "vehicle/properties.mxt_car_props",
+			"visual_metadata": "vehicle/visual.json",
 		},
 		"payload_sha256": {
 			"vehicle/model.glb": FileAccess.get_sha256(root.path_join("vehicle/model.glb")),
 			"vehicle/properties.mxt_car_props": FileAccess.get_sha256(root.path_join("vehicle/properties.mxt_car_props")),
+			"vehicle/visual.json": FileAccess.get_sha256(root.path_join("vehicle/visual.json")),
 			"preview.png": FileAccess.get_sha256(root.path_join("preview.png")),
 		},
 	}

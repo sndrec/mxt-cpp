@@ -11,6 +11,7 @@ const STAMP_CATALOG_PATH := "res://vehicle/customization/stamp_catalog.tres"
 const OUTLINE_SHADER: Shader = preload("res://vehicle/vehicle_outline.gdshader")
 const OUTLINE_MAIN_SHADER: Shader = preload("res://vehicle/vehicle_outline_main.gdshader")
 const SHADOW_SHADER: Shader = preload("res://vehicle/vehicle_shadow.gdshader")
+const THRUSTER_SCENE: PackedScene = preload("res://vehicle/particle/thruster.tscn")
 const HIDDEN_INSTANCE_TRANSFORM := Transform3D(Basis.IDENTITY, Vector3(0.0, -100000.0, 0.0))
 
 var cars: Array = []
@@ -352,10 +353,17 @@ func _build_runtime_mesh_archetype(definition: CarDefinition, livery: CarLivery,
 		PASS_OUTLINE_MAIN: _create_pass("OutlineMain_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else outline_main_material, local_transform, 2, -2),
 		"shadow": _create_pass("Shadow_%s" % _safe_name(definition.name), null if stamp_only_mode else main_mesh, null if stamp_only_mode else shadow_material, local_transform, 1, 96),
 		PASS_STAMP: _create_stamp_pass("Stamp_%s" % _safe_name(definition.name), body_mesh, template, livery, local_transform, definition.runtime_material),
-		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), null, []),
+		"thruster": _create_thruster_pass("Thruster_%s" % _safe_name(definition.name), _runtime_thruster_material(), [] if stamp_only_mode else definition.runtime_thruster_transforms),
 	}
 	template.free()
 	return archetype
+
+func _runtime_thruster_material() -> Material:
+	var template := THRUSTER_SCENE.instantiate() as Node3D
+	var sprite := template.get_node("Sprite3D") as Sprite3D
+	var material := sprite.material_override
+	template.free()
+	return material
 
 func _create_stamp_pass(pass_name: String, body_mesh: MeshInstance3D, template: Node3D, livery: CarLivery, local_transform: Transform3D, base_material: Material) -> Dictionary:
 	var mesh: Mesh = null
