@@ -149,6 +149,7 @@ void MxtContentCatalog::_bind_methods()
 	ClassDB::bind_method(D_METHOD("add_draft_package", "package_root"), &MxtContentCatalog::add_draft_package);
 	ClassDB::bind_method(D_METHOD("add_workshop_package", "package_root", "published_file_id"), &MxtContentCatalog::add_workshop_package);
 	ClassDB::bind_method(D_METHOD("scan_local_library", "library_root"), &MxtContentCatalog::scan_local_library);
+	ClassDB::bind_method(D_METHOD("clear_workshop_packages"), &MxtContentCatalog::clear_workshop_packages);
 	ClassDB::bind_method(D_METHOD("remove_content", "content_id"), &MxtContentCatalog::remove_content);
 	ClassDB::bind_method(D_METHOD("clear"), &MxtContentCatalog::clear);
 	ClassDB::bind_method(D_METHOD("has_content", "content_id"), &MxtContentCatalog::has_content);
@@ -400,6 +401,15 @@ Dictionary MxtContentCatalog::scan_local_library(const String &library_root)
 	result["diagnostics"] = diagnostics;
 	result["registered_count"] = static_cast<int64_t>(candidates.size());
 	return result;
+}
+
+void MxtContentCatalog::clear_workshop_packages()
+{
+	const size_t previous_size = records.size();
+	records.erase(std::remove_if(records.begin(), records.end(), [](const auto &record) {
+		return record.source == mxt::content::ContentSource::WORKSHOP;
+	}), records.end());
+	if (records.size() != previous_size) publish_change();
 }
 
 bool MxtContentCatalog::remove_content(const String &content_id)

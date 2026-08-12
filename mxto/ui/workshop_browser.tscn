@@ -1,0 +1,41 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/workshop_browser.gd" id="1_browser"]
+
+[node name="Workshop" type="VBoxContainer"]
+layout_mode = 2
+script = ExtResource("1_browser")
+
+[node name="Status" type="Label" parent="."]
+layout_mode = 2
+text = "Steam Workshop"
+
+[node name="Actions" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Refresh" type="Button" parent="Actions"]
+layout_mode = 2
+text = "Refresh Subscriptions"
+
+[node name="Download" type="Button" parent="Actions"]
+layout_mode = 2
+disabled = true
+text = "Download / Update"
+
+[node name="OpenPage" type="Button" parent="Actions"]
+layout_mode = 2
+disabled = true
+text = "Open Item Page"
+
+[node name="Items" type="ItemList" parent="."]
+custom_minimum_size = Vector2(0, 260)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Details" type="RichTextLabel" parent="."]
+custom_minimum_size = Vector2(0, 180)
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+text = "No subscribed Workshop content."

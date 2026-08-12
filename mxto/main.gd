@@ -1,5 +1,7 @@
 class_name GameManager extends Node
 
+signal workshop_content_changed(items: Array)
+
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
 @onready var replay_controller: ReplayController = $ReplayController
@@ -104,6 +106,8 @@ const RACE_RESULTS_SCREEN_MSEC := 15000
 var car_definitions: Array = []
 var car_definitions_by_content_id: Dictionary = {}
 var content_catalog: MxtContentCatalog
+var workshop_content_items: Array = []
+var runtime_content_loaded := false
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
 var spectator_scene := preload("res://player/spectator.tscn")
@@ -328,10 +332,11 @@ func _read_int_arg(args: Array, user_args: Array, flag: String, default_value: i
 	return int(source_args[idx + 1])
 
 func _ready() -> void:
+	content_catalog = MxtContentCatalog.new()
 	steam_service = MxtSteamService.new()
 	steam_service.name = "SteamService"
+	steam_service.workshop_items_changed.connect(_on_workshop_items_changed)
 	add_child(steam_service)
-	content_catalog = MxtContentCatalog.new()
 	_scan_local_content_library()
 	_scan_test_drive_snapshot_library()
 	version_label.text = GameVersionData.display_string()
@@ -367,6 +372,7 @@ func _ready() -> void:
 	_build_start_sync_drop_panel()
 	_load_tracks()
 	_load_car_definitions()
+	runtime_content_loaded = true
 	if car_settings != null and car_settings.has_method("refresh_after_game_manager_loaded"):
 		car_settings.call("refresh_after_game_manager_loaded")
 	network_manager.race_started.connect(_on_network_race_started)
@@ -692,6 +698,36 @@ func refresh_installed_content() -> void:
 	_scan_test_drive_snapshot_library()
 	_load_car_definitions()
 	_load_tracks()
+
+func refresh_workshop_content() -> bool:
+	return steam_service != null and steam_service.refresh_subscribed_workshop_items()
+
+func get_workshop_content_items() -> Array:
+	return workshop_content_items.duplicate(true)
+
+func _on_workshop_items_changed(items: Array) -> void:
+	content_catalog.clear_workshop_packages()
+	workshop_content_items.clear()
+	for value in items:
+		var item: Dictionary = value.duplicate(true)
+		if String(item.get("status", "")) == "installed" and !bool(item.get("needs_update", false)):
+			var install_path := String(item.get("install_path", ""))
+			var published_file_id := int(item.get("published_file_id", 0))
+			var registered: Dictionary = content_catalog.add_workshop_package(install_path, published_file_id)
+			if bool(registered.get("valid", false)):
+				item["status"] = "ready"
+				item["record"] = registered.get("record", {})
+			else:
+				var errors = registered.get("errors", [])
+				item["status"] = "outdated_format" if str(errors).contains("format revision") else "invalid"
+				item["errors"] = errors
+		workshop_content_items.append(item)
+	if runtime_content_loaded:
+		_load_car_definitions()
+		_load_tracks()
+		if car_settings != null:
+			car_settings.call("refresh_after_game_manager_loaded")
+	workshop_content_changed.emit(get_workshop_content_items())
 
 func _load_packaged_car_definitions() -> void:
 	for record_value in content_catalog.get_records("vehicle"):

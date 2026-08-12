@@ -44,6 +44,10 @@ text = "Export .mxtpkg"
 layout_mode = 2
 text = "Test Drive"
 
+[node name="PublishWorkshop" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Publish Workshop"
+
 [node name="Undo" type="Button" parent="Toolbar"]
 layout_mode = 2
 text = "Undo"
@@ -81,6 +85,27 @@ text = "Description"
 layout_mode = 2
 size_flags_horizontal = 3
 max_length = 8000
+
+[node name="Workshop" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="VisibilityLabel" type="Label" parent="Workshop"]
+layout_mode = 2
+text = "Workshop visibility"
+
+[node name="Visibility" type="OptionButton" parent="Workshop"]
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="Status" type="Label" parent="Workshop"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Not published"
+
+[node name="OpenPage" type="Button" parent="Workshop"]
+layout_mode = 2
+disabled = true
+text = "Open Item Page"
 
 [node name="Workspace" type="HSplitContainer" parent="."]
 layout_mode = 2

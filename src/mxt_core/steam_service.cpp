@@ -395,7 +395,7 @@ void MxtSteamService::complete_workshop_request(
 		const String &operation,
 		const Dictionary &result)
 {
-	emit_signal("workshop_request_completed", request_id, operation, result);
+	call_deferred("emit_signal", StringName("workshop_request_completed"), request_id, operation, result);
 }
 
 void MxtSteamService::publish_workshop_items()

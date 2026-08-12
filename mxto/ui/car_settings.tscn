@@ -1,7 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://d3fgxyahmbbxa"]
+[gd_scene load_steps=6 format=3 uid="uid://d3fgxyahmbbxa"]
 
 [ext_resource type="Script" uid="uid://cow6mqit4ansg" path="res://ui/car_settings.gd" id="1_c1ygr"]
 [ext_resource type="PackedScene" path="res://ui/vehicle_editor.tscn" id="2_vehicle_editor"]
+[ext_resource type="PackedScene" path="res://ui/workshop_browser.tscn" id="3_workshop"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_car_name"]
 font_size = 32
@@ -163,6 +164,11 @@ metadata/_tab_index = 1
 visible = false
 layout_mode = 2
 metadata/_tab_index = 2
+
+[node name="Workshop" parent="Container/SettingsTabs" instance=ExtResource("3_workshop")]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 3
 
 [node name="CarPreviewSpace" type="ColorRect" parent="Container/SettingsTabs/Garage" unique_id=755178141]
 custom_minimum_size = Vector2(620, 360)

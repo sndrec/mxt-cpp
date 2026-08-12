@@ -8,6 +8,7 @@ const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
 const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
+const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 
 @onready var draft_option: OptionButton = $Toolbar/DraftOption
 @onready var title_input: LineEdit = $Metadata/Title
@@ -42,6 +43,9 @@ const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
 @onready var diagnostics: RichTextLabel = $Workspace/StatsColumn/Diagnostics
 @onready var import_model_dialog: FileDialog = $ImportModelDialog
 @onready var export_package_dialog: FileDialog = $ExportPackageDialog
+@onready var workshop_visibility: OptionButton = $Workshop/Visibility
+@onready var workshop_status: Label = $Workshop/Status
+@onready var workshop_page_button: Button = $Workshop/OpenPage
 
 var game_manager: GameManager
 var session := MxtCarAuthoringSession.new()
@@ -63,6 +67,11 @@ var preview_gizmo_sphere: SphereMesh
 var preview_gizmo_materials: Array[StandardMaterial3D] = []
 var dragged_gizmo := -1
 var dragged_gizmo_plane := Plane()
+var workshop_request_id := 0
+var workshop_operation := ""
+var workshop_published_file_id := 0
+var workshop_pending_package: Dictionary = {}
+var workshop_progress_update_msec := 0
 var vector_controls: Dictionary = {}
 var updating_controls := false
 
@@ -82,9 +91,12 @@ func _ready() -> void:
 	_connect_controls()
 	_refresh_draft_options()
 	_new_draft()
+	call_deferred("_connect_steam_service")
 
 
 func _setup_options() -> void:
+	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
+		workshop_visibility.add_item(visibility)
 	category_option.add_item("All")
 	var categories := {}
 	for entry_value in stat_schema:
@@ -196,6 +208,8 @@ func _connect_controls() -> void:
 	$Toolbar/InstallVehicle.pressed.connect(_install_vehicle)
 	$Toolbar/ExportPackage.pressed.connect(func(): export_package_dialog.popup_centered())
 	$Toolbar/TestDrive.pressed.connect(_test_drive)
+	$Toolbar/PublishWorkshop.pressed.connect(_publish_workshop)
+	workshop_page_button.pressed.connect(_open_workshop_page)
 	$Toolbar/Undo.pressed.connect(func(): session.undo(); _refresh_all())
 	$Toolbar/Redo.pressed.connect(func(): session.redo(); _refresh_all())
 	import_model_dialog.file_selected.connect(_import_model)
@@ -243,6 +257,8 @@ func _new_draft() -> void:
 		steam_name = game_manager.steam_service.get_persona_name()
 	author_input.text = steam_name if !steam_name.is_empty() else "Creator"
 	description_input.text = ""
+	workshop_published_file_id = 0
+	_refresh_workshop_controls()
 	_refresh_all()
 	visual_status.text = "New draft. Import a static GLB or glTF vehicle model."
 
@@ -278,8 +294,138 @@ func _open_selected_draft() -> void:
 	title_input.text = String(result.get("title", selected_id))
 	description_input.text = String(result.get("description", ""))
 	author_input.text = String(result.get("author_name", "Creator"))
+	_load_workshop_sidecar()
 	visual_status.text = session.get_model_path()
 	_refresh_all()
+
+
+func _connect_steam_service() -> void:
+	if game_manager == null or game_manager.steam_service == null:
+		return
+	var service := game_manager.steam_service
+	if !service.workshop_request_completed.is_connected(_on_workshop_request_completed):
+		service.workshop_request_completed.connect(_on_workshop_request_completed)
+	_refresh_workshop_controls()
+
+
+func _workshop_sidecar_path() -> String:
+	return _draft_root() + "/workshop.json"
+
+
+func _load_workshop_sidecar() -> void:
+	workshop_published_file_id = 0
+	var path := _workshop_sidecar_path()
+	if FileAccess.file_exists(path):
+		var value = JSON.parse_string(FileAccess.get_file_as_string(path))
+		if typeof(value) == TYPE_DICTIONARY:
+			workshop_published_file_id = int(value.get("published_file_id", 0))
+	_refresh_workshop_controls()
+
+
+func _save_workshop_sidecar() -> void:
+	var file := FileAccess.open(_workshop_sidecar_path(), FileAccess.WRITE)
+	if file != null:
+		file.store_string(JSON.stringify({"published_file_id": workshop_published_file_id}, "  "))
+
+
+func _refresh_workshop_controls() -> void:
+	workshop_page_button.disabled = workshop_published_file_id <= 0
+	if workshop_request_id != 0:
+		return
+	if workshop_published_file_id > 0:
+		workshop_status.text = "Workshop item %d" % workshop_published_file_id
+	else:
+		workshop_status.text = "Not published"
+
+
+func _publish_workshop() -> void:
+	if workshop_request_id != 0:
+		return
+	if game_manager == null or game_manager.steam_service == null or !game_manager.steam_service.is_initialized():
+		workshop_status.text = "Steam Workshop is unavailable"
+		return
+	var built := _save_draft()
+	if !bool(built.get("valid", false)):
+		return
+	var package_io := MxtContentPackageIO.new()
+	var archive_path := _draft_root() + "/workshop-upload.mxtpkg"
+	var exported: Dictionary = package_io.export_mxtpkg(String(built["package_path"]), archive_path)
+	if !bool(exported.get("valid", false)):
+		_show_diagnostics(exported)
+		return
+	var imported: Dictionary = package_io.import_mxtpkg(
+		archive_path,
+		ProjectSettings.globalize_path(WORKSHOP_STAGING_ROOT))
+	if !bool(imported.get("valid", false)):
+		_show_diagnostics(imported)
+		return
+	workshop_pending_package = imported
+	if workshop_published_file_id <= 0:
+		workshop_operation = "create_item"
+		workshop_status.text = "Creating Workshop item..."
+		workshop_request_id = game_manager.steam_service.create_workshop_item()
+	else:
+		_submit_workshop_update()
+
+
+func _submit_workshop_update() -> void:
+	var metadata := JSON.stringify({
+		"content_type": "vehicle",
+		"format_revision": 1,
+		"gameplay_digest": String(workshop_pending_package.get("gameplay_digest", "")),
+	})
+	var visibility: String = ["public", "friends_only", "private", "unlisted"][workshop_visibility.selected]
+	workshop_operation = "submit_update"
+	workshop_status.text = "Preparing Workshop upload..."
+	workshop_request_id = game_manager.steam_service.submit_workshop_item_update(
+		workshop_published_file_id,
+		title_input.text,
+		description_input.text,
+		String(workshop_pending_package.get("package_path", "")),
+		String(workshop_pending_package.get("package_path", "")).path_join("preview.png"),
+		["Vehicle", "Format Revision 1"],
+		metadata,
+		visibility,
+		"Updated from the in-game Car Creator")
+
+
+func _on_workshop_request_completed(request_id: int, operation: String, result: Dictionary) -> void:
+	if request_id != workshop_request_id or operation != workshop_operation:
+		return
+	workshop_request_id = 0
+	workshop_operation = ""
+	if !bool(result.get("success", false)):
+		workshop_status.text = "Workshop failed: %s" % String(result.get("message", "Unknown error"))
+		return
+	if operation == "create_item":
+		workshop_published_file_id = int(result.get("published_file_id", 0))
+		_save_workshop_sidecar()
+		_refresh_workshop_controls()
+		_submit_workshop_update()
+		return
+	var agreement := " Accept the Steam Workshop agreement." if bool(result.get("legal_agreement_required", false)) else ""
+	workshop_status.text = "Workshop upload complete.%s" % agreement
+	_refresh_workshop_controls()
+
+
+func _open_workshop_page() -> void:
+	if workshop_published_file_id > 0 and game_manager != null and game_manager.steam_service != null:
+		game_manager.steam_service.open_workshop_item_page(workshop_published_file_id)
+
+
+func _process(_delta: float) -> void:
+	if workshop_request_id == 0 or workshop_operation != "submit_update" or game_manager == null or game_manager.steam_service == null:
+		return
+	var now := Time.get_ticks_msec()
+	if now < workshop_progress_update_msec + 200:
+		return
+	workshop_progress_update_msec = now
+	var progress: Dictionary = game_manager.steam_service.get_workshop_update_progress()
+	if bool(progress.get("active", false)):
+		var total := int(progress.get("total_bytes", 0))
+		var processed := int(progress.get("processed_bytes", 0))
+		var percent := 0.0 if total <= 0 else 100.0 * float(processed) / float(total)
+		workshop_status.text = "%s  %.1f%%" % [String(progress.get("status", "uploading")).replace("_", " ").capitalize(), percent]
 
 
 func _import_model(path: String) -> void:
