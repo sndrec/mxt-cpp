@@ -94,6 +94,7 @@ const SessionMemoryTelemetryClass = preload("res://core/session_memory_telemetry
 const GameVersionData = preload("res://core/game_version.gd")
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
+const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
 const LobbyChibiCarClass = preload("res://ui/lobby_chibi_car.gd")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
@@ -324,6 +325,7 @@ const CLEAN_SCREENSHOT_DIRECTORY := "user://screenshots"
 
 var clean_screenshot_in_progress := false
 var steam_service: MxtSteamService
+var leaderboard_client: LeaderboardClient
 
 func _read_int_arg(args: Array, user_args: Array, flag: String, default_value: int) -> int:
 	var idx := args.find(flag)
@@ -341,6 +343,10 @@ func _ready() -> void:
 	steam_service.name = "SteamService"
 	steam_service.workshop_items_changed.connect(_on_workshop_items_changed)
 	add_child(steam_service)
+	leaderboard_client = LeaderboardClientClass.new()
+	leaderboard_client.name = "LeaderboardClient"
+	add_child(leaderboard_client)
+	leaderboard_client.initialize(steam_service)
 	_scan_local_content_library()
 	_scan_test_drive_snapshot_library()
 	version_label.text = GameVersionData.display_string()
@@ -4601,7 +4607,10 @@ func _finalize_time_attack() -> void:
 		start_tick,
 		replay_path)
 	if bool(time_attack_eligibility.get("eligible", false)):
-		_show_race_notification("Time Attack verified locally; submission pending", 5000)
+		if leaderboard_client.enqueue_submission(time_attack_eligibility):
+			_show_race_notification("Time Attack queued for trusted verification", 5000)
+		else:
+			_show_race_notification("Time Attack replay could not be queued", 5000)
 	else:
 		_show_race_notification("Unranked: %s" % String(time_attack_eligibility.get("reason", "ineligible")).replace("_", " "), 5000)
 

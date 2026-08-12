@@ -1,0 +1,50 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/leaderboard_browser.gd" id="1_browser"]
+
+[node name="Leaderboards" type="VBoxContainer"]
+layout_mode = 2
+script = ExtResource("1_browser")
+
+[node name="Status" type="Label" parent="."]
+layout_mode = 2
+text = "Steam Leaderboards"
+
+[node name="Controls" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Track" type="OptionButton" parent="Controls"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+
+[node name="Global" type="Button" parent="Controls"]
+layout_mode = 2
+text = "Global Top 100"
+
+[node name="AroundMe" type="Button" parent="Controls"]
+layout_mode = 2
+text = "Around Me"
+
+[node name="Friends" type="Button" parent="Controls"]
+layout_mode = 2
+text = "Friends"
+
+[node name="RetryPending" type="Button" parent="Controls"]
+layout_mode = 2
+text = "Retry Pending"
+
+[node name="Entries" type="ItemList" parent="."]
+custom_minimum_size = Vector2(0, 320)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Details" type="RichTextLabel" parent="."]
+custom_minimum_size = Vector2(0, 160)
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+
+[node name="ClearRejected" type="Button" parent="."]
+layout_mode = 2
+text = "Clear Rejected History"
