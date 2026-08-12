@@ -22,6 +22,11 @@ layout_mode = 2
 disabled = true
 text = "Download / Update"
 
+[node name="Unsubscribe" type="Button" parent="Actions"]
+layout_mode = 2
+disabled = true
+text = "Unsubscribe"
+
 [node name="OpenPage" type="Button" parent="Actions"]
 layout_mode = 2
 disabled = true

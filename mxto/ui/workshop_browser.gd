@@ -5,6 +5,7 @@ class_name WorkshopBrowser extends VBoxContainer
 @onready var details: RichTextLabel = $Details
 @onready var refresh_button: Button = $Actions/Refresh
 @onready var download_button: Button = $Actions/Download
+@onready var unsubscribe_button: Button = $Actions/Unsubscribe
 @onready var open_button: Button = $Actions/OpenPage
 
 var game_manager: GameManager
@@ -17,6 +18,7 @@ func _ready() -> void:
 	game_manager = ancestor as GameManager
 	refresh_button.pressed.connect(_refresh)
 	download_button.pressed.connect(_download_selected)
+	unsubscribe_button.pressed.connect(_unsubscribe_selected)
 	open_button.pressed.connect(_open_selected)
 	item_list.item_selected.connect(func(_index): _refresh_details())
 	if game_manager != null:
@@ -58,6 +60,7 @@ func _refresh_details() -> void:
 	if item.is_empty():
 		details.text = "No subscribed Workshop content."
 		download_button.disabled = true
+		unsubscribe_button.disabled = true
 		open_button.disabled = true
 		return
 	var record: Dictionary = item.get("record", {})
@@ -75,12 +78,18 @@ func _refresh_details() -> void:
 		lines.append("[color=#ff6961]ERROR: %s[/color]" % error)
 	details.text = "\n".join(lines)
 	download_button.disabled = String(item.get("status", "")) == "ready"
+	unsubscribe_button.disabled = int(item.get("published_file_id", 0)) <= 0
 	open_button.disabled = int(item.get("published_file_id", 0)) <= 0
 
 func _download_selected() -> void:
 	var item := _selected_item()
 	if !item.is_empty() and game_manager.steam_service.download_workshop_item(int(item.get("published_file_id", 0)), true):
 		status_label.text = "Workshop download requested..."
+
+func _unsubscribe_selected() -> void:
+	var item := _selected_item()
+	if !item.is_empty() and game_manager.steam_service.unsubscribe_workshop_item(int(item.get("published_file_id", 0))):
+		status_label.text = "Workshop unsubscribe requested..."
 
 func _open_selected() -> void:
 	var item := _selected_item()

@@ -69,6 +69,7 @@ public:
 			const String &change_note);
 	bool refresh_subscribed_workshop_items();
 	bool subscribe_workshop_item(int64_t published_file_id);
+	bool unsubscribe_workshop_item(int64_t published_file_id);
 	bool download_workshop_item(int64_t published_file_id, bool high_priority = true);
 	bool open_workshop_item_page(int64_t published_file_id);
 	Dictionary get_workshop_update_progress() const;
