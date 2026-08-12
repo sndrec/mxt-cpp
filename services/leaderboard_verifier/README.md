@@ -1,5 +1,7 @@
 # MaxX Throttle trusted leaderboard verifier
 
+The full Partner configuration, credential-handling, provisioning, deployment, and live acceptance procedure is in `docs/steamworks_launch_checklist.md`.
+
 This service is the only score-writing component. The game client can read Steam leaderboards and obtain a Web API authentication ticket, but it has no score-upload binding. A submission is accepted only after the service:
 
 1. authenticates the ticket against the configured identity;
@@ -13,7 +15,7 @@ The publisher key is read only by this process and is removed from the child ver
 
 ## Provision the Steam boards
 
-Set credentials in the process environment. Never put the publisher key in a file inside the game repository or a client depot.
+Set credentials in the process environment. Never put the publisher key in a file inside the game repository or a client depot. Prefer reading it from a restricted temporary file outside the repository and remove the environment variable after the process exits; do not paste it into a shell history or chat.
 
 ```powershell
 $env:MXT_STEAM_APP_ID = '<main game app id>'
