@@ -2,6 +2,8 @@
 import os
 import sys
 
+from SCons.Errors import UserError
+
 env = SConscript("godot-cpp/SConstruct")
 # For reference:
 # - CCFLAGS are compilation flags shared between C and C++
@@ -16,6 +18,40 @@ env.Append(CPPPATH=["src/"])
 env.Append(CPPPATH=["src/mathfu/include"])
 env.Append(CPPPATH=["thirdparty/zstd/lib"])
 env.Append(CPPPATH=["thirdparty/opus/include"])
+steamworks_runtime_targets = []
+steamworks_enabled = False
+steamworks_public_dir = ""
+steamworks_sdk_root = ARGUMENTS.get("steamworks_sdk", os.environ.get("STEAMWORKS_SDK_ROOT", ""))
+steamworks_sdk_explicit = bool(steamworks_sdk_root)
+if not steamworks_sdk_root:
+    sibling_sdk = os.path.abspath(os.path.join(os.getcwd(), "..", "steamworks-sdk"))
+    if os.path.isfile(os.path.join(sibling_sdk, "public", "steam", "steam_api.h")):
+        steamworks_sdk_root = sibling_sdk
+
+if steamworks_sdk_root:
+    steamworks_sdk_root = os.path.abspath(steamworks_sdk_root)
+    steamworks_header = os.path.join(steamworks_sdk_root, "public", "steam", "steam_api.h")
+    if not os.path.isfile(steamworks_header):
+        if steamworks_sdk_explicit:
+            raise UserError("Steamworks SDK does not contain public/steam/steam_api.h: {}".format(steamworks_sdk_root))
+        steamworks_sdk_root = ""
+
+if steamworks_sdk_root and env["platform"] == "windows":
+    steamworks_lib_dir = os.path.join(steamworks_sdk_root, "redistributable_bin", "win64")
+    steamworks_lib = os.path.join(steamworks_lib_dir, "steam_api64.lib")
+    steamworks_dll = os.path.join(steamworks_lib_dir, "steam_api64.dll")
+    if not os.path.isfile(steamworks_lib) or not os.path.isfile(steamworks_dll):
+        raise UserError("Steamworks Windows x64 redistributables are missing under {}".format(steamworks_lib_dir))
+    steamworks_enabled = True
+    steamworks_public_dir = os.path.join(steamworks_sdk_root, "public")
+    env.Append(LIBPATH=[steamworks_lib_dir])
+    env.Append(LIBS=["steam_api64"])
+    steamworks_runtime_targets.append(
+        env.Command("mxto/bin/steam_api64.dll", steamworks_dll, Copy("$TARGET", "$SOURCE"))
+    )
+    print("Steamworks enabled from {}".format(steamworks_sdk_root))
+else:
+    print("Steamworks SDK not linked for this build; MxtSteamService will report unavailable")
 if env["platform"] == "windows":
     env.Append(CXXFLAGS=[
         '/fp:precise',  # Ensure safe floating-point math optimizations
@@ -47,9 +83,18 @@ def opus_sources_from_mk(path, var_name):
 
 sources = []
 sources.append(Glob("src/*.cpp"))
-sources.append(Glob("src/mxt_core/*.cpp"))
+mxt_core_sources = Glob("src/mxt_core/*.cpp")
+mxt_core_sources = [source for source in mxt_core_sources if not str(source).replace("\\", "/").endswith("/steam_service.cpp")]
+sources.append(mxt_core_sources)
 sources.append(Glob("src/track/*.cpp"))
 sources.append(Glob("src/car/*.cpp"))
+steam_service_env = env.Clone()
+if steamworks_enabled:
+    steam_service_env.Append(CPPPATH=[steamworks_public_dir])
+    steam_service_env.Append(CPPDEFINES=["MXT_STEAMWORKS_ENABLED"])
+    if env["platform"] == "windows":
+        steam_service_env.Append(CXXFLAGS=["/wd4828"])
+sources += steam_service_env.SharedObject("src/mxt_core/steam_service.cpp")
 sources.append(Glob("thirdparty/zstd/lib/common/*.c"))
 sources.append(Glob("thirdparty/zstd/lib/compress/*.c"))
 sources.append(Glob("thirdparty/zstd/lib/decompress/*.c"))
@@ -93,4 +138,4 @@ else:
 
 
 db = env.CompilationDatabase()
-Default([library, db])
+Default([library, db] + steamworks_runtime_targets)

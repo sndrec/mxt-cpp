@@ -6,6 +6,7 @@
 #include "mxt_core/native_stamp_mesh_builder.h"
 #include "mxt_core/opus_voice_codec.h"
 #include "mxt_core/spatial_audio_manager.h"
+#include "mxt_core/steam_service.h"
 #include "track/track_editor_curve.h"
 
 #include <gdextension_interface.h>
@@ -27,6 +28,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(NativeStampMeshBuilder);
 	GDREGISTER_CLASS(OpusVoiceCodec);
 	GDREGISTER_CLASS(MxtSpatialAudioManager);
+	GDREGISTER_CLASS(MxtSteamService);
 }
 
 void uninitialize_gamesim_module(ModuleInitializationLevel p_level) {

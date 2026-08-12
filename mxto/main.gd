@@ -304,6 +304,7 @@ const CLEAN_SCREENSHOT_SIZE := Vector2i(3840, 2160)
 const CLEAN_SCREENSHOT_DIRECTORY := "user://screenshots"
 
 var clean_screenshot_in_progress := false
+var steam_service: MxtSteamService
 
 func _read_int_arg(args: Array, user_args: Array, flag: String, default_value: int) -> int:
 	var idx := args.find(flag)
@@ -316,6 +317,9 @@ func _read_int_arg(args: Array, user_args: Array, flag: String, default_value: i
 	return int(source_args[idx + 1])
 
 func _ready() -> void:
+	steam_service = MxtSteamService.new()
+	steam_service.name = "SteamService"
+	add_child(steam_service)
 	version_label.text = GameVersionData.display_string()
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
