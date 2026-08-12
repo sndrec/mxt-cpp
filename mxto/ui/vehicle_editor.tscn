@@ -427,6 +427,7 @@ scroll_active = false
 [node name="ImportModelDialog" type="FileDialog" parent="."]
 title = "Import Vehicle Model"
 size = Vector2i(840, 600)
+file_mode = 0
 access = 2
 filters = PackedStringArray("*.glb, *.gltf ; glTF Vehicle Models")
 
