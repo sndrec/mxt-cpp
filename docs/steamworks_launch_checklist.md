@@ -97,6 +97,8 @@ For public deployment, pin the verifier executable/project and manifest together
 
 Set `mxto/steam/leaderboard_service.json` `base_url` only to the final public HTTPS origin. Localhost HTTP remains accepted for local integration testing; non-local cleartext HTTP is rejected by the client.
 
+For a local Steam-client acceptance run, set `MXT_LEADERBOARD_BASE_URL=http://127.0.0.1:8787` in the game process environment. This overrides the checked-in URL for that process only, so a localhost endpoint never needs to enter a depot.
+
 ## Live Workshop acceptance matrix
 
 Use two ordinary Steam accounts. Do not use local file copying as a substitute for any step.

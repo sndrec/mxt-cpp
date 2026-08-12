@@ -53,6 +53,9 @@ func _load_config() -> void:
 		config = value as Dictionary
 	else:
 		config = {}
+	var environment_base_url := OS.get_environment("MXT_LEADERBOARD_BASE_URL").strip_edges()
+	if !environment_base_url.is_empty():
+		config["base_url"] = environment_base_url
 
 func _allowed_replay_path(path: String) -> bool:
 	if path.is_empty() or !FileAccess.file_exists(path):
