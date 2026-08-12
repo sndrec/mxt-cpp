@@ -1,12 +1,13 @@
 class_name VehicleEditor extends VBoxContainer
 
 signal content_changed
-signal test_drive_requested(content_id: String)
+signal test_drive_requested(snapshot: Dictionary)
 
 const PREVIEW_WORLD_SCENE: PackedScene = preload("res://ui/garage_preview_world.tscn")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
+const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
 
 @onready var draft_option: OptionButton = $Toolbar/DraftOption
 @onready var title_input: LineEdit = $Metadata/Title
@@ -311,9 +312,26 @@ func _export_package(path: String) -> void:
 
 
 func _test_drive() -> void:
-	var content_id := _install_vehicle()
-	if !content_id.is_empty():
-		test_drive_requested.emit(content_id)
+	var built := _save_draft()
+	if !bool(built.get("valid", false)):
+		return
+	var package_io := MxtContentPackageIO.new()
+	var archive_path := _draft_root() + "/test-drive.mxtpkg"
+	var exported: Dictionary = package_io.export_mxtpkg(_draft_root() + "/package", archive_path)
+	if !bool(exported.get("valid", false)):
+		_show_diagnostics(exported)
+		return
+	var imported: Dictionary = package_io.import_mxtpkg(
+		archive_path,
+		ProjectSettings.globalize_path(TEST_DRIVE_LIBRARY_ROOT))
+	_show_diagnostics(imported)
+	if !bool(imported.get("valid", false)):
+		return
+	test_drive_requested.emit({
+		"draft_id": draft_id,
+		"package_path": String(imported.get("package_path", "")),
+		"package_digest": String(imported.get("package_digest", "")),
+	})
 
 
 func _refresh_all() -> void:

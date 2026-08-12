@@ -177,6 +177,7 @@ func _ready() -> void:
 	for i in range(sticker_selectors.size()):
 		sticker_selectors[i].item_selected.connect(_on_sticker_selected.bind(i))
 	vehicle_editor.content_changed.connect(_on_vehicle_editor_content_changed)
+	vehicle_editor.test_drive_requested.connect(_on_vehicle_editor_test_drive_requested)
 
 func _build_stamp_layer_buttons() -> void:
 	if stamp_layer_list == null:
@@ -354,6 +355,10 @@ func _on_vehicle_editor_content_changed() -> void:
 	_load_car_defs()
 	_update_controls()
 
+func _on_vehicle_editor_test_drive_requested(snapshot: Dictionary) -> void:
+	if game_manager != null:
+		game_manager.begin_vehicle_test_drive(snapshot)
+
 func _on_slider_changed(value: float) -> void:
 	machine_setting_percent.text = str(roundi(value)) + "%"
 	player_settings.accel_setting = value / 100.0
@@ -434,6 +439,21 @@ func open_settings() -> void:
 func get_player_settings() -> PlayerSettings:
 	_sync_livery_to_player_settings()
 	return player_settings
+
+func set_test_drive_vehicle(content_id: String) -> void:
+	player_settings.vehicle_content_id = content_id
+	player_settings.car_livery = {}
+	_sync_vehicle_content_evidence()
+	_set_garage_preview_active(false)
+	hide()
+
+func restore_after_test_drive(saved_settings: Dictionary) -> void:
+	player_settings.from_dict(saved_settings)
+	_load_car_defs()
+	_update_controls()
+	settings_tab_container.current_tab = vehicle_editor.get_index()
+	show()
+	_set_garage_preview_active(true)
 
 func _load_livery_for_selected_car() -> void:
 	if player_settings.vehicle_content_id == "":

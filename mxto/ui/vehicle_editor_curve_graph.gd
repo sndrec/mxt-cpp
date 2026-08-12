@@ -76,8 +76,8 @@ func _draw() -> void:
 		var key: Dictionary = keys[i]
 		var point := _graph_point(rect, float(key.get("time", 0.0)), float(key.get("value", 0.0)))
 		draw_circle(point, 7.0 if i == selected_key else 5.0, Color(1.0, 0.72, 0.18) if i == selected_key else Color(0.95, 0.3, 0.25))
-	draw_string(get_theme_default_font(), Vector2(4.0, rect.position.y + 10.0), "%.4g" % y_max, HORIZONTAL_ALIGNMENT_LEFT, 38.0, 12)
-	draw_string(get_theme_default_font(), Vector2(4.0, rect.end.y), "%.4g" % y_min, HORIZONTAL_ALIGNMENT_LEFT, 38.0, 12)
+	draw_string(get_theme_default_font(), Vector2(4.0, rect.position.y + 10.0), str(snappedf(y_max, 0.0001)), HORIZONTAL_ALIGNMENT_LEFT, 38.0, 12)
+	draw_string(get_theme_default_font(), Vector2(4.0, rect.end.y), str(snappedf(y_min, 0.0001)), HORIZONTAL_ALIGNMENT_LEFT, 38.0, 12)
 	draw_string(get_theme_default_font(), Vector2(rect.position.x, size.y - 8.0), "0.0", HORIZONTAL_ALIGNMENT_LEFT, 40.0, 12)
 	draw_string(get_theme_default_font(), Vector2(rect.end.x - 36.0, size.y - 8.0), "1.0", HORIZONTAL_ALIGNMENT_RIGHT, 36.0, 12)
 

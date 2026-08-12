@@ -97,6 +97,7 @@ const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_over
 const RaceCommunicationOverlayScene: PackedScene = preload("res://ui/race_communication_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
+const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
 const BUMPER_POOL_SIZE := 60
 const RACE_RESULTS_SCREEN_MSEC := 15000
 
@@ -143,6 +144,13 @@ const ROAD_MATS = {
 var singleplayer_mode: bool = false
 var _singleplayer_tick: int = 0
 var singleplayer_cpu_count: int = 0
+var vehicle_test_drive_active := false
+var vehicle_test_drive_content_id := ""
+var vehicle_test_drive_saved_settings: Dictionary = {}
+var vehicle_test_drive_saved_cpu_count := 0
+var vehicle_test_drive_last_track := 0
+var vehicle_test_drive_picker: ConfirmationDialog
+var vehicle_test_drive_track_option: OptionButton
 var launch_cpu_driver_count: int = -1
 var auto_host_mode: bool = false
 var auto_singleplayer_mode: bool = false
@@ -325,6 +333,7 @@ func _ready() -> void:
 	add_child(steam_service)
 	content_catalog = MxtContentCatalog.new()
 	_scan_local_content_library()
+	_scan_test_drive_snapshot_library()
 	version_label.text = GameVersionData.display_string()
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -551,7 +560,16 @@ func get_vehicle_content_ids() -> Array:
 	return content_ids
 
 func get_car_definition(vehicle_content_id: String) -> CarDefinition:
-	return car_definitions_by_content_id.get(vehicle_content_id) as CarDefinition
+	var definition := car_definitions_by_content_id.get(vehicle_content_id) as CarDefinition
+	if definition != null:
+		return definition
+	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)
+	if String(record.get("source", "")) != "local_draft" or String(record.get("content_type", "")) != "vehicle":
+		return null
+	definition = _car_definition_from_package_record(record)
+	if definition != null:
+		car_definitions_by_content_id[vehicle_content_id] = definition
+	return definition
 
 func _vehicle_content_evidence(vehicle_content_id: String) -> Dictionary:
 	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)
@@ -651,15 +669,35 @@ func _scan_local_content_library() -> void:
 			str(diagnostic.get("errors", [])),
 		])
 
+func _scan_test_drive_snapshot_library() -> void:
+	var library_path := ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH)
+	if DirAccess.make_dir_recursive_absolute(library_path) != OK:
+		push_error("Could not create the test-drive snapshot library")
+		return
+	var directory := DirAccess.open(library_path)
+	if directory == null:
+		return
+	directory.list_dir_begin()
+	var folder := directory.get_next()
+	while !folder.is_empty():
+		if directory.current_is_dir() and !directory.is_link(folder) and !folder.begins_with("."):
+			var result: Dictionary = content_catalog.add_draft_package(library_path.path_join(folder))
+			if !bool(result.get("valid", false)):
+				push_warning("Skipped test-drive snapshot %s: %s" % [folder, str(result.get("errors", []))])
+		folder = directory.get_next()
+	directory.list_dir_end()
+
 func refresh_installed_content() -> void:
 	_scan_local_content_library()
+	_scan_test_drive_snapshot_library()
 	_load_car_definitions()
 	_load_tracks()
 
 func _load_packaged_car_definitions() -> void:
 	for record_value in content_catalog.get_records("vehicle"):
 		var record: Dictionary = record_value
-		if String(record.get("source", "")) == "official":
+		var source := String(record.get("source", ""))
+		if source == "official" or source == "local_draft":
 			continue
 		var definition := _car_definition_from_package_record(record)
 		if definition == null:
@@ -753,6 +791,90 @@ func _on_singleplayer_button_pressed() -> void:
 		_start_singleplayer_race(false, _build_default_singleplayer_race_options())
 	else:
 		_open_singleplayer_race_options(false)
+
+func begin_vehicle_test_drive(snapshot: Dictionary) -> void:
+	if vehicle_test_drive_active:
+		return
+	var package_path := String(snapshot.get("package_path", ""))
+	if package_path.is_empty():
+		push_error("Vehicle test-drive snapshot has no package path")
+		return
+	var added: Dictionary = content_catalog.add_draft_package(package_path)
+	if !bool(added.get("valid", false)):
+		push_error("Could not register vehicle test-drive snapshot: %s" % str(added.get("errors", [])))
+		return
+	var record: Dictionary = added.get("record", {})
+	var content_id := String(record.get("content_id", ""))
+	var definition := _car_definition_from_package_record(record)
+	if content_id.is_empty() or definition == null:
+		if !content_id.is_empty():
+			content_catalog.remove_content(content_id)
+		push_error("Could not create the vehicle test-drive definition")
+		return
+	vehicle_test_drive_active = true
+	vehicle_test_drive_content_id = content_id
+	vehicle_test_drive_saved_settings = car_settings.get_player_settings().to_dict()
+	vehicle_test_drive_saved_cpu_count = singleplayer_cpu_count
+	car_definitions_by_content_id[content_id] = definition
+	car_settings.call("set_test_drive_vehicle", content_id)
+	_open_vehicle_test_drive_track_picker()
+
+func _open_vehicle_test_drive_track_picker() -> void:
+	if vehicle_test_drive_picker == null:
+		vehicle_test_drive_picker = ConfirmationDialog.new()
+		vehicle_test_drive_picker.title = "Test Drive Track"
+		vehicle_test_drive_picker.ok_button_text = "Start Test Drive"
+		vehicle_test_drive_picker.cancel_button_text = "Back to Car Creator"
+		vehicle_test_drive_picker.exclusive = true
+		vehicle_test_drive_track_option = OptionButton.new()
+		vehicle_test_drive_track_option.custom_minimum_size = Vector2(420.0, 0.0)
+		vehicle_test_drive_picker.add_child(vehicle_test_drive_track_option)
+		vehicle_test_drive_picker.confirmed.connect(_start_vehicle_test_drive)
+		vehicle_test_drive_picker.canceled.connect(_cancel_vehicle_test_drive)
+		add_child(vehicle_test_drive_picker)
+	vehicle_test_drive_track_option.clear()
+	for track_value in track_content_controller.tracks:
+		var track: Dictionary = track_value
+		vehicle_test_drive_track_option.add_item(String(track.get("name", "Track")))
+	if vehicle_test_drive_track_option.item_count == 0:
+		_cancel_vehicle_test_drive()
+		return
+	vehicle_test_drive_last_track = clampi(vehicle_test_drive_last_track, 0, vehicle_test_drive_track_option.item_count - 1)
+	vehicle_test_drive_track_option.select(vehicle_test_drive_last_track)
+	vehicle_test_drive_picker.popup_centered()
+
+func _start_vehicle_test_drive() -> void:
+	if !vehicle_test_drive_active or vehicle_test_drive_track_option == null:
+		return
+	vehicle_test_drive_last_track = vehicle_test_drive_track_option.selected
+	track_selector.select(vehicle_test_drive_last_track)
+	singleplayer_cpu_count = 0
+	network_manager.set_singleplayer_cpu_count(0)
+	var options := _build_default_singleplayer_race_options()
+	options["session_kind"] = "vehicle_test_drive"
+	options["leaderboard_eligible"] = false
+	options["leaderboard_ineligible_reason"] = "draft_vehicle"
+	options["custom_content"] = true
+	_start_singleplayer_race(false, options)
+
+func _cancel_vehicle_test_drive() -> void:
+	if !vehicle_test_drive_active:
+		return
+	_finish_vehicle_test_drive_return()
+
+func _finish_vehicle_test_drive_return() -> void:
+	var saved_settings := vehicle_test_drive_saved_settings.duplicate(true)
+	var old_content_id := vehicle_test_drive_content_id
+	vehicle_test_drive_active = false
+	vehicle_test_drive_content_id = ""
+	vehicle_test_drive_saved_settings.clear()
+	singleplayer_cpu_count = vehicle_test_drive_saved_cpu_count
+	if cpu_slider != null:
+		cpu_slider.set_value_no_signal(singleplayer_cpu_count)
+	_update_cpu_slider_label()
+	if !old_content_id.is_empty():
+		car_definitions_by_content_id.erase(old_content_id)
+	car_settings.call("restore_after_test_drive", saved_settings)
 
 func _on_spectator_race_button_pressed() -> void:
 	_open_singleplayer_race_options(true)
@@ -3937,6 +4059,8 @@ func _return_to_menu() -> void:
 	lobby_control.visible = false
 	if singleplayer_options_root != null:
 		singleplayer_options_root.visible = false
+	if vehicle_test_drive_active:
+		_finish_vehicle_test_drive_return()
 	record_memory_sample("return_to_menu_complete")
 
 func _return_to_lobby() -> void:

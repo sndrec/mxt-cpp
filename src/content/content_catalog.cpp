@@ -22,6 +22,7 @@ String content_source_name(ContentSource source)
 	switch (source) {
 		case ContentSource::OFFICIAL: return String("official");
 		case ContentSource::LOCAL_PACKAGE: return String("local_package");
+		case ContentSource::LOCAL_DRAFT: return String("local_draft");
 		case ContentSource::WORKSHOP: return String("workshop");
 	}
 	return String();
@@ -102,6 +103,8 @@ static mxt::content::ContentRecord make_record(
 	const String type_name = mxt::content::content_type_name(record.content_type);
 	if (source == mxt::content::ContentSource::WORKSHOP) {
 		record.content_id = String("mxt:") + type_name + String(":workshop:") + String::num_uint64(published_file_id);
+	} else if (source == mxt::content::ContentSource::LOCAL_DRAFT) {
+		record.content_id = String("mxt:") + type_name + String(":draft:") + package.package_digest.substr(7);
 	} else {
 		record.content_id = String("mxt:") + type_name + String(":package:") + package.package_digest.substr(7);
 	}
@@ -143,6 +146,7 @@ void MxtContentCatalog::_bind_methods()
 			D_METHOD("add_official_track", "slug", "title", "track_path", "visual_path", "metadata_path", "expected_gameplay_digest"),
 			&MxtContentCatalog::add_official_track);
 	ClassDB::bind_method(D_METHOD("add_local_package", "package_root"), &MxtContentCatalog::add_local_package);
+	ClassDB::bind_method(D_METHOD("add_draft_package", "package_root"), &MxtContentCatalog::add_draft_package);
 	ClassDB::bind_method(D_METHOD("add_workshop_package", "package_root", "published_file_id"), &MxtContentCatalog::add_workshop_package);
 	ClassDB::bind_method(D_METHOD("scan_local_library", "library_root"), &MxtContentCatalog::scan_local_library);
 	ClassDB::bind_method(D_METHOD("remove_content", "content_id"), &MxtContentCatalog::remove_content);
@@ -315,6 +319,11 @@ Dictionary MxtContentCatalog::add_package_internal(
 Dictionary MxtContentCatalog::add_local_package(const String &package_root)
 {
 	return add_package_internal(package_root, mxt::content::ContentSource::LOCAL_PACKAGE, 0);
+}
+
+Dictionary MxtContentCatalog::add_draft_package(const String &package_root)
+{
+	return add_package_internal(package_root, mxt::content::ContentSource::LOCAL_DRAFT, 0);
 }
 
 Dictionary MxtContentCatalog::add_workshop_package(const String &package_root, int64_t published_file_id)
