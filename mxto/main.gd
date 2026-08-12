@@ -651,6 +651,11 @@ func _scan_local_content_library() -> void:
 			str(diagnostic.get("errors", [])),
 		])
 
+func refresh_installed_content() -> void:
+	_scan_local_content_library()
+	_load_car_definitions()
+	_load_tracks()
+
 func _load_packaged_car_definitions() -> void:
 	for record_value in content_catalog.get_records("vehicle"):
 		var record: Dictionary = record_value

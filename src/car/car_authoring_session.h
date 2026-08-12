@@ -108,6 +108,18 @@ public:
 	bool set_model_transform(const Dictionary &value);
 	Array get_thrusters() const;
 	bool set_thrusters(const Array &value);
+	Dictionary sample_effective_stats(
+			double machine_setting,
+			const String &technique,
+			double technique_intensity,
+			const String &boost_state) const;
+	Dictionary simulate_speed_preview(
+			double machine_setting,
+			double starting_speed_kmh,
+			bool frame_perfect_boosting,
+			const String &technique,
+			double technique_intensity,
+			const String &boost_state) const;
 };
 
 } // namespace godot

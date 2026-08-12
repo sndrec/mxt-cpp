@@ -11,6 +11,7 @@
 #include <godot_cpp/classes/json.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/packed_float32_array.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -314,6 +315,8 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_model_transform", "value"), &MxtCarAuthoringSession::set_model_transform);
 	ClassDB::bind_method(D_METHOD("get_thrusters"), &MxtCarAuthoringSession::get_thrusters);
 	ClassDB::bind_method(D_METHOD("set_thrusters", "value"), &MxtCarAuthoringSession::set_thrusters);
+	ClassDB::bind_method(D_METHOD("sample_effective_stats", "machine_setting", "technique", "technique_intensity", "boost_state"), &MxtCarAuthoringSession::sample_effective_stats);
+	ClassDB::bind_method(D_METHOD("simulate_speed_preview", "machine_setting", "starting_speed_kmh", "frame_perfect_boosting", "technique", "technique_intensity", "boost_state"), &MxtCarAuthoringSession::simulate_speed_preview);
 }
 
 MxtCarAuthoringSession::Curve &MxtCarAuthoringSession::curve_at(uint8_t layer, uint16_t stat)
@@ -1090,4 +1093,160 @@ bool MxtCarAuthoringSession::set_thrusters(const Array &value)
 	thrusters = std::move(replacement);
 	dirty = true;
 	return true;
+}
+
+Dictionary MxtCarAuthoringSession::sample_effective_stats(
+		double machine_setting,
+		const String &technique,
+		double technique_intensity,
+		const String &boost_state) const
+{
+	const double setting = std::clamp(machine_setting, 0.0, 1.0);
+	const double intensity = std::clamp(technique_intensity, 0.0, 1.0);
+	const int32_t technique_layer = technique == "mts"
+			? CAR_CURVE_MTS
+			: (technique == "quickturn" ? CAR_CURVE_QUICKTURN : -1);
+	int32_t boost_layer = -1;
+	if (boost_state == "none") boost_layer = CAR_CURVE_NO_BOOST;
+	else if (boost_state == "manual") boost_layer = CAR_CURVE_MANUAL_BOOST;
+	else if (boost_state == "dashplate" || boost_state == "s_boost_dashplate") boost_layer = CAR_CURVE_DASHPLATE_BOOST;
+	else if (boost_state == "stacked") boost_layer = CAR_CURVE_STACKED_BOOST;
+	const bool s_boost = boost_state == "s_boost" || boost_state == "s_boost_dashplate";
+	Dictionary output;
+	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+		const String name = PhysicsCarProperties::stat_name(static_cast<CarStatId>(stat));
+		const bool live = PhysicsCarProperties::stat_supports_live_modifiers(static_cast<CarStatId>(stat));
+		double value = s_boost && live ? s_boost_values[stat] : sample_curve("base", name, setting);
+		if (live && technique_layer >= 0) {
+			const double authored = sample_curve(LAYER_NAMES[technique_layer], name, setting);
+			value *= 1.0 + (authored - 1.0) * intensity;
+		}
+		if (live && boost_layer >= 0) value *= sample_curve(LAYER_NAMES[boost_layer], name, setting);
+		output[name] = value;
+	}
+	return output;
+}
+
+Dictionary MxtCarAuthoringSession::simulate_speed_preview(
+		double machine_setting,
+		double starting_speed_kmh,
+		bool frame_perfect_boosting,
+		const String &technique,
+		double technique_intensity,
+		const String &boost_state) const
+{
+	Dictionary no_boost_stats = sample_effective_stats(
+			machine_setting, technique, technique_intensity,
+			frame_perfect_boosting ? String("none") : boost_state);
+	Dictionary manual_boost_stats = frame_perfect_boosting
+			? sample_effective_stats(machine_setting, technique, technique_intensity, "manual")
+			: no_boost_stats;
+	const bool s_boost_active = !frame_perfect_boosting &&
+			(boost_state == "s_boost" || boost_state == "s_boost_dashplate");
+	const double tick_rate = 60.0;
+	const double weight = no_boost_stats["weight_kg"];
+	Dictionary result;
+	if (!std::isfinite(weight) || std::abs(weight) < 0.0001 || !std::isfinite(starting_speed_kmh)) {
+		result["error"] = "speed preview requires finite nonzero weight and starting speed";
+		return result;
+	}
+	double speed = starting_speed_kmh * weight / 216.0;
+	double base_speed = speed / weight;
+	double turbo = 0.0;
+	int32_t manual_frames = 0;
+	int32_t boost_count = 0;
+	PackedFloat32Array times;
+	PackedFloat32Array speeds;
+	PackedFloat32Array turbos;
+	times.resize(1800);
+	speeds.resize(1800);
+	turbos.resize(1800);
+	double peak_speed = 0.0;
+	double peak_turbo = 0.0;
+	for (int32_t frame = 0; frame < 1800; ++frame) {
+		bool started_manual_boost = false;
+		if (frame_perfect_boosting && manual_frames == 0) {
+			const double duration = std::max(static_cast<double>(manual_boost_stats["manual_boost_duration_seconds"]), 0.0);
+			manual_frames = std::max(static_cast<int32_t>(duration * tick_rate + 0.5), 0);
+			if (manual_frames > 0) {
+				turbo += static_cast<double>(manual_boost_stats["manual_turbo_gain"]);
+				++boost_count;
+				started_manual_boost = true;
+			}
+		}
+		const bool manual_active = manual_frames > 0;
+		const Dictionary stats = manual_active ? manual_boost_stats : no_boost_stats;
+		turbo -= (static_cast<double>(stats["turbo_flat_loss_per_second"]) +
+				turbo * static_cast<double>(stats["turbo_percent_loss_per_second"])) / tick_rate;
+		turbo = std::max(turbo, 0.0);
+		double target_speed = 40.0 * static_cast<double>(stats["acceleration"]) / 348.0;
+		target_speed *= static_cast<double>(stats["drive_target_speed_multiplier"]);
+		target_speed += base_speed;
+		const double normalized_speed = speed / weight;
+		double speed_difference = target_speed - normalized_speed;
+		const double denominator = 36.0 + 40.0 * static_cast<double>(stats["max_speed"]) +
+				turbo * static_cast<double>(stats["turbo_top_speed_effect"]);
+		double speed_factor = std::abs(denominator) > 0.0001 ? std::max(target_speed / denominator, 0.0) : 0.0;
+		double accel_magnitude = speed_factor * 4.0 * static_cast<double>(stats["acceleration"]) *
+				(0.6 + static_cast<double>(stats["acceleration"])) *
+				static_cast<double>(stats["acceleration_response_multiplier"]);
+		if (started_manual_boost) accel_magnitude = 0.0;
+		double new_base_speed = target_speed - speed_difference * accel_magnitude;
+		const double released_target_speed = base_speed;
+		const double released_difference = released_target_speed - normalized_speed;
+		const double released_factor = std::abs(denominator) > 0.0001 ? std::max(released_target_speed / denominator, 0.0) : 0.0;
+		double released_magnitude = released_factor * 4.0 * static_cast<double>(stats["acceleration"]) *
+				(0.6 + static_cast<double>(stats["acceleration"])) *
+				static_cast<double>(stats["acceleration_response_multiplier"]);
+		if (started_manual_boost) released_magnitude = 0.0;
+		const double released_new_base_speed = released_target_speed - released_difference * released_magnitude * 0.05;
+		if (released_new_base_speed > new_base_speed) {
+			target_speed = released_target_speed;
+			speed_difference = released_difference;
+			new_base_speed = released_new_base_speed;
+		}
+		base_speed = std::max(new_base_speed - static_cast<double>(stats["drag"]), 0.0);
+		if (s_boost_active) base_speed += static_cast<double>(stats["s_boost_base_speed_add_per_second"]) / tick_rate;
+		double thrust = 1000.0 * static_cast<double>(stats["forward_thrust_multiplier"]) * speed_difference;
+		if (normalized_speed < 0.0 || speed_difference < 0.0) thrust *= 0.15;
+		speed += thrust;
+		const double speed_weight_ratio = speed / weight;
+		double speed_kmh = 216.0 * speed_weight_ratio;
+		if (speed_kmh < 2.0) {
+			speed = 0.0;
+			speed_kmh = 0.0;
+		} else {
+			speed -= speed_weight_ratio * speed_weight_ratio * 8.0;
+			speed_kmh = 216.0 * speed / weight;
+		}
+		if (!std::isfinite(speed_kmh) || !std::isfinite(turbo)) {
+			result["error"] = "speed preview diverged to a non-finite value";
+			return result;
+		}
+		times.set(frame, static_cast<float>(frame / tick_rate));
+		speeds.set(frame, static_cast<float>(speed_kmh));
+		turbos.set(frame, static_cast<float>(turbo));
+		peak_speed = std::max(peak_speed, speed_kmh);
+		peak_turbo = std::max(peak_turbo, turbo);
+		if (manual_active) --manual_frames;
+	}
+	const double terminal_speed = speeds[speeds.size() - 1];
+	const double tolerance = std::max(std::abs(terminal_speed) * 0.001, 0.01);
+	int64_t settle_index = speeds.size() - 1;
+	for (int64_t i = speeds.size() - 1; i >= 0; --i) {
+		if (std::abs(speeds[i] - terminal_speed) > tolerance) {
+			settle_index = std::min<int64_t>(i + 1, speeds.size() - 1);
+			break;
+		}
+		settle_index = i;
+	}
+	result["times"] = times;
+	result["speeds_kmh"] = speeds;
+	result["turbos"] = turbos;
+	result["terminal_speed_kmh"] = terminal_speed;
+	result["peak_speed_kmh"] = peak_speed;
+	result["peak_turbo"] = peak_turbo;
+	result["settle_time_seconds"] = static_cast<double>(times[settle_index]);
+	result["boost_count"] = boost_count;
+	return result;
 }

@@ -72,6 +72,7 @@ const PREVIEW_PAN_LIMIT := 4.0
 @onready var stamp_edit_square: Panel = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare
 @onready var stamp_edit_confirm_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Confirm
 @onready var stamp_edit_cancel_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Cancel
+@onready var vehicle_editor: VehicleEditor = get_node("Container/SettingsTabs/Car Creator")
 
 var game_manager: GameManager
 var player_settings: PlayerSettings = PlayerSettings.new()
@@ -175,6 +176,7 @@ func _ready() -> void:
 	accent_colour_picker.color_changed.connect(_on_accent_colour_changed)
 	for i in range(sticker_selectors.size()):
 		sticker_selectors[i].item_selected.connect(_on_sticker_selected.bind(i))
+	vehicle_editor.content_changed.connect(_on_vehicle_editor_content_changed)
 
 func _build_stamp_layer_buttons() -> void:
 	if stamp_layer_list == null:
@@ -344,6 +346,13 @@ func refresh_after_game_manager_loaded() -> void:
 	_refresh_custom_stamp_library()
 	_update_controls(false)
 	_sync_livery_to_player_settings()
+
+func _on_vehicle_editor_content_changed() -> void:
+	if game_manager == null:
+		return
+	game_manager.refresh_installed_content()
+	_load_car_defs()
+	_update_controls()
 
 func _on_slider_changed(value: float) -> void:
 	machine_setting_percent.text = str(roundi(value)) + "%"

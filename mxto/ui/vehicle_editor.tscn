@@ -1,0 +1,351 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://ui/vehicle_editor.gd" id="1_editor"]
+[ext_resource type="Script" path="res://ui/vehicle_editor_curve_graph.gd" id="2_curve"]
+[ext_resource type="Script" path="res://ui/vehicle_editor_speed_graph.gd" id="3_speed"]
+
+[node name="Car Creator" type="VBoxContainer"]
+layout_mode = 2
+script = ExtResource("1_editor")
+
+[node name="Toolbar" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="NewDraft" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "New Draft"
+
+[node name="DraftOption" type="OptionButton" parent="Toolbar"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="OpenDraft" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Open Draft"
+
+[node name="ImportModel" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Import GLB / glTF"
+
+[node name="SaveDraft" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Save Draft"
+
+[node name="InstallVehicle" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Install in Garage"
+
+[node name="ExportPackage" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Export .mxtpkg"
+
+[node name="TestDrive" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Test Drive"
+
+[node name="Undo" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Undo"
+
+[node name="Redo" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Redo"
+
+[node name="Metadata" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="Metadata"]
+layout_mode = 2
+text = "Title"
+
+[node name="Title" type="LineEdit" parent="Metadata"]
+custom_minimum_size = Vector2(220, 0)
+layout_mode = 2
+max_length = 128
+
+[node name="AuthorLabel" type="Label" parent="Metadata"]
+layout_mode = 2
+text = "Author"
+
+[node name="Author" type="LineEdit" parent="Metadata"]
+custom_minimum_size = Vector2(180, 0)
+layout_mode = 2
+max_length = 64
+
+[node name="DescriptionLabel" type="Label" parent="Metadata"]
+layout_mode = 2
+text = "Description"
+
+[node name="Description" type="LineEdit" parent="Metadata"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_length = 8000
+
+[node name="Workspace" type="HSplitContainer" parent="."]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 455
+
+[node name="VisualColumn" type="VBoxContainer" parent="Workspace"]
+custom_minimum_size = Vector2(430, 0)
+layout_mode = 2
+
+[node name="Preview" type="SubViewportContainer" parent="Workspace/VisualColumn"]
+custom_minimum_size = Vector2(420, 320)
+layout_mode = 2
+size_flags_vertical = 3
+stretch = true
+
+[node name="Viewport" type="SubViewport" parent="Workspace/VisualColumn/Preview"]
+handle_input_locally = false
+size = Vector2i(640, 420)
+render_target_update_mode = 4
+
+[node name="VisualStatus" type="Label" parent="Workspace/VisualColumn"]
+layout_mode = 2
+text = "Import a static GLB or glTF vehicle model. Embedded materials are preserved."
+autowrap_mode = 2
+
+[node name="PhysicalTabs" type="TabContainer" parent="Workspace/VisualColumn"]
+custom_minimum_size = Vector2(420, 260)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Transform" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs"]
+layout_mode = 2
+
+[node name="Hint" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Transform"]
+layout_mode = 2
+text = "Model transform"
+
+[node name="Rows" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Transform"]
+layout_mode = 2
+
+[node name="Corners" type="ScrollContainer" parent="Workspace/VisualColumn/PhysicalTabs"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Rows" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Corners"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Thrusters" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs"]
+visible = false
+layout_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Thrusters"]
+layout_mode = 2
+
+[node name="Selector" type="OptionButton" parent="Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="Add" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions"]
+layout_mode = 2
+text = "Add"
+
+[node name="Remove" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Thrusters/Actions"]
+layout_mode = 2
+text = "Remove"
+
+[node name="Rows" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Thrusters"]
+layout_mode = 2
+
+[node name="StatsColumn" type="VBoxContainer" parent="Workspace"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="StatFilters" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="Search" type="LineEdit" parent="Workspace/StatsColumn/StatFilters"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+placeholder_text = "Search stats..."
+
+[node name="Category" type="OptionButton" parent="Workspace/StatsColumn/StatFilters"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="Layer" type="OptionButton" parent="Workspace/StatsColumn/StatFilters"]
+custom_minimum_size = Vector2(145, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="Stat" type="OptionButton" parent="Workspace/StatsColumn/StatFilters"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="CurveGraph" type="Control" parent="Workspace/StatsColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("2_curve")
+
+[node name="KeyEditor" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="TimeLabel" type="Label" parent="Workspace/StatsColumn/KeyEditor"]
+layout_mode = 2
+text = "Time"
+
+[node name="Time" type="SpinBox" parent="Workspace/StatsColumn/KeyEditor"]
+custom_minimum_size = Vector2(105, 0)
+layout_mode = 2
+step = 0.001
+allow_greater = false
+allow_lesser = false
+
+[node name="ValueLabel" type="Label" parent="Workspace/StatsColumn/KeyEditor"]
+layout_mode = 2
+text = "Value"
+
+[node name="Value" type="SpinBox" parent="Workspace/StatsColumn/KeyEditor"]
+custom_minimum_size = Vector2(125, 0)
+layout_mode = 2
+min_value = -1000000.0
+max_value = 1000000.0
+step = 0.001
+allow_greater = true
+allow_lesser = true
+
+[node name="TangentInLabel" type="Label" parent="Workspace/StatsColumn/KeyEditor"]
+layout_mode = 2
+text = "In"
+
+[node name="TangentIn" type="SpinBox" parent="Workspace/StatsColumn/KeyEditor"]
+custom_minimum_size = Vector2(105, 0)
+layout_mode = 2
+min_value = -1000000.0
+max_value = 1000000.0
+step = 0.001
+allow_greater = true
+allow_lesser = true
+
+[node name="TangentOutLabel" type="Label" parent="Workspace/StatsColumn/KeyEditor"]
+layout_mode = 2
+text = "Out"
+
+[node name="TangentOut" type="SpinBox" parent="Workspace/StatsColumn/KeyEditor"]
+custom_minimum_size = Vector2(105, 0)
+layout_mode = 2
+min_value = -1000000.0
+max_value = 1000000.0
+step = 0.001
+allow_greater = true
+allow_lesser = true
+
+[node name="CurveActions" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="Apply" type="Button" parent="Workspace/StatsColumn/CurveActions"]
+layout_mode = 2
+text = "Apply Key"
+
+[node name="Add" type="Button" parent="Workspace/StatsColumn/CurveActions"]
+layout_mode = 2
+text = "Add Key at Sample"
+
+[node name="Remove" type="Button" parent="Workspace/StatsColumn/CurveActions"]
+layout_mode = 2
+text = "Remove Key"
+
+[node name="Copy" type="Button" parent="Workspace/StatsColumn/CurveActions"]
+layout_mode = 2
+text = "Copy Curve"
+
+[node name="Paste" type="Button" parent="Workspace/StatsColumn/CurveActions"]
+layout_mode = 2
+text = "Paste Curve"
+
+[node name="Reset" type="Button" parent="Workspace/StatsColumn/CurveActions"]
+layout_mode = 2
+text = "Reset"
+
+[node name="SampleControls" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="MachineLabel" type="Label" parent="Workspace/StatsColumn/SampleControls"]
+layout_mode = 2
+text = "Machine"
+
+[node name="MachineSetting" type="HSlider" parent="Workspace/StatsColumn/SampleControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.001
+value = 0.5
+
+[node name="MachineValue" type="Label" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(48, 0)
+layout_mode = 2
+text = "0.500"
+
+[node name="Technique" type="OptionButton" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="TechniqueIntensity" type="HSlider" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+value = 1.0
+
+[node name="BoostState" type="OptionButton" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(145, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="SpeedControls" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="StartLabel" type="Label" parent="Workspace/StatsColumn/SpeedControls"]
+layout_mode = 2
+text = "Start km/h"
+
+[node name="StartSpeed" type="SpinBox" parent="Workspace/StatsColumn/SpeedControls"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+min_value = -10000.0
+max_value = 10000.0
+allow_greater = true
+allow_lesser = true
+
+[node name="FramePerfect" type="CheckBox" parent="Workspace/StatsColumn/SpeedControls"]
+layout_mode = 2
+text = "Frame-perfect boosting"
+
+[node name="SpeedSummary" type="Label" parent="Workspace/StatsColumn/SpeedControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
+
+[node name="SpeedGraph" type="Control" parent="Workspace/StatsColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("3_speed")
+
+[node name="Diagnostics" type="RichTextLabel" parent="Workspace/StatsColumn"]
+custom_minimum_size = Vector2(0, 64)
+layout_mode = 2
+fit_content = true
+scroll_active = false
+
+[node name="ImportModelDialog" type="FileDialog" parent="."]
+title = "Import Vehicle Model"
+size = Vector2i(840, 600)
+access = 2
+filters = PackedStringArray("*.glb, *.gltf ; glTF Vehicle Models")
+
+[node name="ExportPackageDialog" type="FileDialog" parent="."]
+title = "Export Vehicle Package"
+size = Vector2i(840, 600)
+file_mode = 4
+access = 2
+filters = PackedStringArray("*.mxtpkg ; MaxX Throttle Package")
