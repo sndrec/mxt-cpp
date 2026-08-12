@@ -91,7 +91,7 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 	if racer_ids.size() != 1 or cpu_flags.size() != 1 or settings.size() != 1 or players.size() != 1:
 		return reject("time_attack_requires_one_racer")
 	var racer_id := int(racer_ids[0])
-	if racer_id <= 0 or bool(cpu_flags[0]):
+	if racer_id < 0 or bool(cpu_flags[0]):
 		return reject("time_attack_requires_one_human")
 	if typeof(settings[0]) != TYPE_DICTIONARY or typeof(players[0]) != TYPE_DICTIONARY:
 		return reject("invalid_player_settings")
