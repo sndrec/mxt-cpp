@@ -200,6 +200,7 @@ func _setup_preview() -> void:
 		material.no_depth_test = true
 		preview_gizmo_materials.append(material)
 	preview_camera = Camera3D.new()
+	preview_camera.near = 0.05
 	preview_camera.position = Vector3(7.0, 3.7, 9.0)
 	preview_root.add_child(preview_camera)
 	preview_camera.look_at(Vector3.ZERO, Vector3.UP)
@@ -629,12 +630,100 @@ func _process(_delta: float) -> void:
 
 
 func _import_model(path: String) -> void:
-	var result: Dictionary = session.import_model(path, _draft_root())
+	visual_status.text = "Importing %s..." % path.get_file()
+	var normalized := _normalize_imported_vehicle_model(path)
+	if !bool(normalized.get("valid", false)):
+		_show_model_import_failure(normalized)
+		return
+	var normalized_path := String(normalized.get("path", ""))
+	var result: Dictionary = session.import_model(normalized_path, _draft_root())
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(normalized_path))
 	_show_diagnostics(result)
 	if bool(result.get("valid", false)):
 		visual_status.text = "Imported %s" % path.get_file()
 		_refresh_visual_controls()
 		_refresh_preview()
+	else:
+		_show_model_import_failure(result)
+
+
+func _normalize_imported_vehicle_model(path: String) -> Dictionary:
+	var source := FileAccess.open(path, FileAccess.READ)
+	if source == null:
+		return _model_import_error("The selected model could not be opened")
+	if source.get_length() > 48 * 1024 * 1024:
+		return _model_import_error("The selected model exceeds the 48 MiB vehicle-model limit")
+	source.close()
+	var document := GLTFDocument.new()
+	var state := GLTFState.new()
+	state.base_path = path.get_base_dir()
+	var load_error := document.append_from_file(path, state)
+	if load_error != OK:
+		return _model_import_error("Godot could not read the selected model: %s" % error_string(load_error))
+	var imported_scene := document.generate_scene(state) as Node3D
+	if imported_scene == null:
+		return _model_import_error("Godot could not create a scene from the selected model")
+	var merged_mesh := ArrayMesh.new()
+	var surface_count := _append_imported_mesh_surfaces(imported_scene, Transform3D.IDENTITY, merged_mesh)
+	imported_scene.free()
+	if surface_count == 0:
+		return _model_import_error("The selected model contains no static mesh surfaces")
+	var export_root := Node3D.new()
+	var export_body := MeshInstance3D.new()
+	export_body.name = "VehicleBody"
+	export_body.mesh = merged_mesh
+	export_root.add_child(export_body)
+	var normalized_document := GLTFDocument.new()
+	var normalized_state := GLTFState.new()
+	var append_error := normalized_document.append_from_scene(export_root, normalized_state)
+	var normalized_path := _draft_root() + "/normalized-model-import.glb"
+	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	var directory_error := DirAccess.make_dir_recursive_absolute(draft_path)
+	var write_error := FAILED if append_error != OK or directory_error != OK else normalized_document.write_to_filesystem(normalized_state, normalized_path)
+	export_root.free()
+	if append_error != OK or write_error != OK:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(normalized_path))
+		return _model_import_error("The selected model could not be converted into an editable vehicle mesh")
+	return {"valid": true, "errors": PackedStringArray(), "warnings": PackedStringArray(), "path": normalized_path}
+
+
+func _append_imported_mesh_surfaces(node: Node, parent_transform: Transform3D, target: ArrayMesh) -> int:
+	var transform := parent_transform
+	var node_3d := node as Node3D
+	if node_3d != null:
+		transform *= node_3d.transform
+	var appended := 0
+	var mesh_instance := node as MeshInstance3D
+	if mesh_instance != null and mesh_instance.mesh != null:
+		var mesh := mesh_instance.mesh
+		for surface in range(mesh.get_surface_count()):
+			var surface_tool := SurfaceTool.new()
+			surface_tool.append_from(mesh, surface, transform)
+			var material := mesh_instance.material_override
+			if material == null:
+				material = mesh_instance.get_surface_override_material(surface)
+			if material == null:
+				material = mesh.surface_get_material(surface)
+			surface_tool.set_material(material)
+			var previous_count := target.get_surface_count()
+			if surface_tool.commit(target) != null and target.get_surface_count() > previous_count:
+				var surface_name: String = mesh.surface_get_name(surface)
+				if !surface_name.is_empty():
+					target.surface_set_name(previous_count, surface_name)
+				appended += 1
+	for child in node.get_children():
+		appended += _append_imported_mesh_surfaces(child, transform, target)
+	return appended
+
+
+func _model_import_error(message: String) -> Dictionary:
+	return {"valid": false, "errors": PackedStringArray([message]), "warnings": PackedStringArray()}
+
+
+func _show_model_import_failure(result: Dictionary) -> void:
+	_show_diagnostics(result)
+	var errors: Array = result.get("errors", [])
+	visual_status.text = "Import failed" if errors.is_empty() else "Import failed: %s" % String(errors[0])
 
 
 func _save_draft() -> Dictionary:
@@ -1067,7 +1156,33 @@ func _refresh_preview() -> void:
 		preview_render_manager.configure_manual([preview_definition])
 		preview_render_manager.begin_manual_submit()
 		preview_render_manager.submit_manual_car(0, Transform3D.IDENTITY, Color.WHITE, Vector3.ZERO, Color.WHITE, 1.0, false)
+		_frame_preview_camera()
 	_refresh_gizmos()
+
+
+func _frame_preview_camera() -> void:
+	if preview_camera == null or preview_definition == null or preview_definition.runtime_mesh == null:
+		return
+	var bounds := preview_definition.runtime_mesh.get_aabb()
+	if bounds.size.is_zero_approx():
+		return
+	var model_transform := preview_definition.runtime_transform
+	var center := model_transform * bounds.get_center()
+	var radius := 0.0
+	for x in range(2):
+		for y in range(2):
+			for z in range(2):
+				var corner := bounds.position + Vector3(bounds.size.x * x, bounds.size.y * y, bounds.size.z * z)
+				radius = maxf(radius, center.distance_to(model_transform * corner))
+	var viewport_aspect := float(preview_viewport.size.x) / maxf(1.0, float(preview_viewport.size.y))
+	var half_vertical_fov := deg_to_rad(preview_camera.fov * 0.5)
+	var half_horizontal_fov := atan(tan(half_vertical_fov) * viewport_aspect)
+	var limiting_fov := minf(half_vertical_fov, half_horizontal_fov)
+	var distance := maxf(4.0, radius * 1.15 / maxf(0.1, sin(limiting_fov)))
+	var direction := Vector3(7.0, 3.7, 9.0).normalized()
+	preview_camera.position = center + direction * distance
+	preview_camera.far = maxf(1000.0, distance + radius * 4.0)
+	preview_camera.look_at(center, Vector3.UP)
 
 
 func _refresh_gizmos() -> void:
