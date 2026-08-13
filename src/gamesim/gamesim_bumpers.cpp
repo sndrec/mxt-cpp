@@ -1,4 +1,4 @@
-#include "gamesim_internal.h"
+#include "gamesim/gamesim_internal.h"
 
 #include <algorithm>
 #include <cmath>

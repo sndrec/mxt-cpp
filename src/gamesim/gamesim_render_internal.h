@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gamesim_internal.h"
+#include "gamesim/gamesim_internal.h"
 
 #include <cmath>
 #include <cstdint>

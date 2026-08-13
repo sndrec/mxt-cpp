@@ -1,6 +1,6 @@
-#include "gamesim_cpu_internal.h"
-#include "gamesim_internal.h"
-#include "gamesim_render_internal.h"
+#include "gamesim/gamesim_cpu_internal.h"
+#include "gamesim/gamesim_internal.h"
+#include "gamesim/gamesim_render_internal.h"
 
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/input.hpp"

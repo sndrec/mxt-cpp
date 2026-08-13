@@ -5,7 +5,7 @@
 #include "content/content_catalog.h"
 #include "content/track_package_builder.h"
 #include "car/car_authoring_session.h"
-#include "main.h"
+#include "gamesim/gamesim.h"
 #include "fzgx_gameplay_camera.h"
 #include "mxt_core/netcode_session.h"
 #include "mxt_core/native_stamp_mesh_builder.h"

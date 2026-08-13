@@ -1,6 +1,6 @@
 #include "mxt_core/netcode_session.h"
 
-#include "main.h"
+#include "gamesim/gamesim.h"
 #include "mxt_core/auth_input_delta_low_entropy_alt_zstd_dictionary.h"
 #include "mxt_core/auth_input_delta_low_entropy_s1_zstd_dictionary.h"
 #include "mxt_core/auth_input_delta_low_entropy_s11_zstd_dictionary.h"

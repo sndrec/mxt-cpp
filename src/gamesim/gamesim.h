@@ -1,5 +1,5 @@
-#ifndef GAME_SIM
-#define GAME_SIM
+#ifndef MXT_GAMESIM_GAMESIM_H
+#define MXT_GAMESIM_GAMESIM_H
 
 #include "godot_cpp/classes/node.hpp"
 #include "godot_cpp/classes/node3d.hpp"

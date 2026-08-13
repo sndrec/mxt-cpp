@@ -1,4 +1,4 @@
-#include "gamesim_cpu_internal.h"
+#include "gamesim/gamesim_cpu_internal.h"
 
 using namespace godot;
 GameSim::NativeCpuDriverState* GameSim::find_native_cpu_driver(int32_t player_id)

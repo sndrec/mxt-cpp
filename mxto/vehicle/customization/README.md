@@ -11,7 +11,7 @@ The runtime target is the 100-car case. Customization must not turn into 16 dyna
 - Car selection and player settings live in `mxto/player/player_settings.gd` and `mxto/ui/car_settings.gd`.
 - Car assets are `CarDefinition` resources pointing to a scene with `VEHICLE_MAIN`, `VEHICLE_SHADOW`, `VEHICLE_OUTLINE`, `VEHICLE_OUTLINE_MAIN`, and `THRUSTERS`.
 - Race/lobby bodies are batched by `mxto/vehicle/car_render_manager.gd` into `MultiMeshInstance3D` archetypes.
-- Native render submission in `src/main.cpp` updates multimesh transforms/colours per visible car.
+- Native render submission in `src/gamesim/gamesim.cpp` updates multimesh transforms/colours per visible car.
 - Existing emote sticker resources under `mxto/ui/emote_sticker/` are transient HUD/social effects and should stay unrelated to body stamps.
 
 ## Saved data

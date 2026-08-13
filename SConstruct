@@ -82,7 +82,11 @@ def opus_sources_from_mk(path, var_name):
     return out
 
 sources = []
-sources.append(Glob("src/*.cpp"))
+sources.append([
+    "src/register_types.cpp",
+    "src/fzgx_gameplay_camera.cpp",
+])
+sources.append(Glob("src/gamesim/*.cpp"))
 mxt_core_sources = Glob("src/mxt_core/*.cpp")
 mxt_core_sources = [source for source in mxt_core_sources if not str(source).replace("\\", "/").endswith("/steam_service.cpp")]
 sources.append(mxt_core_sources)

@@ -1,6 +1,6 @@
 #include "mxt_core/spatial_audio_manager.h"
 
-#include "main.h"
+#include "gamesim/gamesim.h"
 
 #include <godot_cpp/classes/audio_server.hpp>
 #include <godot_cpp/classes/audio_stream_playback.hpp>

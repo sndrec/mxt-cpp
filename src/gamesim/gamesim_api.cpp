@@ -1,4 +1,4 @@
-#include "gamesim_internal.h"
+#include "gamesim/gamesim_internal.h"
 
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/core/math.hpp"

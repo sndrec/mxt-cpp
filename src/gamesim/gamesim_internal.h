@@ -1,6 +1,6 @@
 #pragma once
 
-#include "main.h"
+#include "gamesim/gamesim.h"
 #include "car/physics_car.h"
 #include "mxt_core/enums.h"
 #include "track/racetrack.h"

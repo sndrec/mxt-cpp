@@ -1,6 +1,6 @@
 #include "mxt_core/netcode_session.h"
 
-#include "main.h"
+#include "gamesim/gamesim.h"
 
 #include <algorithm>
 #include <cstring>

@@ -1,7 +1,7 @@
 
 #include "physics_car.h"
 #include "physics_car_internal.h"
-#include "main.h"
+#include "gamesim/gamesim.h"
 #include "godot_cpp/variant/plane.hpp"
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/object.hpp"
