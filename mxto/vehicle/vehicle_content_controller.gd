@@ -9,16 +9,21 @@ const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
 const COMMUNITY_VEHICLE_SHADER: Shader = preload("res://vehicle/base_vehicle_shader.gdshader")
 const COMMUNITY_VEHICLE_CROSS_HATCH: Texture2D = preload("res://asset/tex/crosshatch/1.png")
+const CarLivery = preload("res://vehicle/customization/car_livery.gd")
+const CustomStampAtlasBuilder = preload("res://vehicle/customization/custom_stamp_atlas_builder.gd")
+const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 
 var content_catalog: MxtContentCatalog = MxtContentCatalog.new()
 var definitions: Array = []
 var definitions_by_content_id: Dictionary = {}
 var workshop_content_items: Array = []
 var steam_service: MxtSteamService
+var custom_stamp_network: CustomStampNetworkController
 var runtime_content_loaded := false
 
-func initialize(in_steam_service: MxtSteamService) -> void:
+func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: CustomStampNetworkController) -> void:
 	steam_service = in_steam_service
+	custom_stamp_network = in_custom_stamp_network
 	steam_service.workshop_items_changed.connect(_on_workshop_items_changed)
 	_scan_local_content_library()
 	_scan_test_drive_snapshot_library()
@@ -47,6 +52,165 @@ func get_definition(vehicle_content_id: String) -> CarDefinition:
 
 func create_runtime_definition(record: Dictionary) -> CarDefinition:
 	return _definition_from_package_record(record)
+
+func prepare_custom_stamp_render_payload(racer_ids: Array, racer_settings: Array, warning_context := "race") -> Dictionary:
+	var render_settings := []
+	for settings in racer_settings:
+		var normalized := player_settings_for_stamp_render(settings)
+		if normalized != null:
+			render_settings.append(normalized)
+	if racer_ids.is_empty() or racer_settings.is_empty():
+		return {"texture": null, "settings": render_settings}
+	var manifests := {}
+	var local_payloads := {}
+	for i in range(mini(racer_ids.size(), render_settings.size())):
+		var racer_id := int(racer_ids[i])
+		var manifest := custom_stamp_network.get_custom_stamp_manifest(racer_id)
+		if manifest.is_empty():
+			var payload := _build_local_custom_stamp_payload(render_settings[i])
+			if bool(payload.get("ok", false)):
+				manifest = payload.get("manifest", [])
+				if !manifest.is_empty():
+					local_payloads[racer_id] = payload
+			else:
+				push_warning("Failed to prepare local custom stamps for %s: %s" % [warning_context, str(payload.get("error", "unknown error"))])
+		if !manifest.is_empty():
+			manifests[racer_id] = manifest
+	if manifests.is_empty():
+		return {"texture": null, "settings": render_settings}
+	var region_build := CustomStampAtlasBuilder.allocate_player_regions(racer_ids, manifests)
+	if !bool(region_build.get("ok", false)):
+		push_warning("Failed to allocate custom stamp player regions for %s: %s" % [warning_context, str(region_build.get("error", "unknown error"))])
+		return {"texture": null, "settings": render_settings}
+	var regions: Dictionary = region_build.get("regions", {})
+	var player_records: Array = []
+	for i in range(mini(racer_ids.size(), render_settings.size())):
+		var player_id := int(racer_ids[i])
+		if !manifests.has(player_id) or !regions.has(player_id):
+			continue
+		var manifest: Array = manifests[player_id]
+		var region: Dictionary = regions[player_id]
+		var placements := {}
+		var blobs: Array = []
+		for raw_entry in manifest:
+			if typeof(raw_entry) != TYPE_DICTIONARY:
+				continue
+			var entry: Dictionary = raw_entry
+			var stamp_hash: String = str(entry.get("hash", ""))
+			if stamp_hash == "":
+				continue
+			var blob = _custom_stamp_blob_for_hash(player_id, stamp_hash, local_payloads)
+			if blob == null:
+				push_warning("Missing custom stamp blob for %s atlas: %s" % [warning_context, stamp_hash])
+				return {"texture": null, "settings": render_settings}
+			var rect := _custom_stamp_manifest_rect(entry)
+			var region_size := _custom_stamp_manifest_region_size(entry)
+			if rect.size.x <= 0 or rect.size.y <= 0 or region_size == Vector2i.ZERO:
+				push_warning("Invalid custom stamp packed rect for %s atlas: %s" % [warning_context, stamp_hash])
+				return {"texture": null, "settings": render_settings}
+			placements[stamp_hash] = {
+				"rect": rect,
+				"rotated": bool(entry.get("rect_rotated", false)),
+				"region_size": region_size,
+			}
+			blobs.append(blob)
+		if placements.is_empty():
+			continue
+		var region_origin: Vector2i = region["origin"]
+		_apply_custom_stamp_manifest_to_settings(render_settings[i], manifest, region_origin)
+		player_records.append({
+			"player_id": player_id,
+			"region_origin": region_origin,
+			"placements": placements,
+			"blobs": blobs,
+		})
+	if player_records.is_empty():
+		return {"texture": null, "settings": render_settings}
+	var atlas_build := CustomStampAtlasBuilder.build_atlas_image(player_records)
+	if !bool(atlas_build.get("ok", false)):
+		push_warning("Failed to build custom stamp %s atlas: %s" % [warning_context, str(atlas_build.get("error", "unknown error"))])
+		return {"texture": null, "settings": render_settings}
+	return {
+		"texture": CustomStampAtlasBuilder.texture_from_image(atlas_build.get("image", null) as Image),
+		"settings": render_settings,
+	}
+
+func player_settings_for_stamp_render(settings) -> PlayerSettings:
+	if settings is PlayerSettings:
+		var copy := PlayerSettings.new()
+		copy.from_dict((settings as PlayerSettings).to_dict())
+		return copy
+	elif typeof(settings) == TYPE_DICTIONARY:
+		var copy := PlayerSettings.new()
+		copy.from_dict(settings)
+		return copy
+	return null
+
+func _build_local_custom_stamp_payload(settings) -> Dictionary:
+	var player_settings := player_settings_for_stamp_render(settings)
+	if player_settings == null or player_settings.car_livery.is_empty():
+		return {"ok": true, "manifest": [], "blobs": []}
+	var livery := CarLivery.new()
+	livery.from_dict(player_settings.car_livery)
+	livery.vehicle_content_id = player_settings.vehicle_content_id
+	return CustomStampStore.build_livery_payload(livery)
+
+func _custom_stamp_blob_for_hash(player_id: int, stamp_hash: String, local_payloads: Dictionary):
+	if local_payloads.has(player_id):
+		var payload: Dictionary = local_payloads[player_id]
+		for blob in payload.get("blobs", []):
+			if blob != null and blob.stamp_hash == stamp_hash:
+				return blob
+	return custom_stamp_network.get_custom_stamp_blob(stamp_hash)
+
+func _apply_custom_stamp_manifest_to_settings(settings, manifest: Array, region_origin: Vector2i) -> void:
+	var player_settings := settings as PlayerSettings
+	if player_settings == null or player_settings.car_livery.is_empty():
+		return
+	var entry_by_hash := {}
+	for raw_entry in manifest:
+		if typeof(raw_entry) == TYPE_DICTIONARY:
+			var entry: Dictionary = raw_entry
+			entry_by_hash[str(entry.get("hash", ""))] = entry
+	if entry_by_hash.is_empty():
+		return
+	var livery := CarLivery.new()
+	livery.from_dict(player_settings.car_livery)
+	var changed := false
+	for stamp in livery.stamps:
+		if stamp == null or !stamp.is_custom():
+			continue
+		var stamp_hash: String = stamp.custom_hash if stamp.custom_hash != "" else stamp.stamp_id
+		if !entry_by_hash.has(stamp_hash):
+			continue
+		var entry: Dictionary = entry_by_hash[stamp_hash]
+		var rect := _custom_stamp_manifest_rect(entry)
+		stamp.custom_rect = Rect2(
+			float(region_origin.x + rect.position.x) / float(CustomStampAtlasBuilder.ATLAS_SIZE.x),
+			float(region_origin.y + rect.position.y) / float(CustomStampAtlasBuilder.ATLAS_SIZE.y),
+			float(rect.size.x) / float(CustomStampAtlasBuilder.ATLAS_SIZE.x),
+			float(rect.size.y) / float(CustomStampAtlasBuilder.ATLAS_SIZE.y))
+		stamp.custom_rect_rotated = bool(entry.get("rect_rotated", false))
+		stamp.palette_id = int(entry.get("palette_id", stamp.palette_id))
+		changed = true
+	if changed:
+		player_settings.set_car_livery(livery)
+
+func _custom_stamp_manifest_rect(entry: Dictionary) -> Rect2i:
+	if !entry.has("rect_pixels") or typeof(entry["rect_pixels"]) != TYPE_ARRAY:
+		return Rect2i()
+	var values: Array = entry["rect_pixels"]
+	if values.size() < 4:
+		return Rect2i()
+	return Rect2i(int(values[0]), int(values[1]), int(values[2]), int(values[3]))
+
+func _custom_stamp_manifest_region_size(entry: Dictionary) -> Vector2i:
+	if !entry.has("region_size") or typeof(entry["region_size"]) != TYPE_ARRAY:
+		return Vector2i.ZERO
+	var values: Array = entry["region_size"]
+	if values.size() < 2:
+		return Vector2i.ZERO
+	return Vector2i(int(values[0]), int(values[1]))
 
 func get_evidence(vehicle_content_id: String) -> Dictionary:
 	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)

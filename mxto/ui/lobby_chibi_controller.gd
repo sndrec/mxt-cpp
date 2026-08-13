@@ -224,7 +224,7 @@ func _submit_render(roster: Array) -> void:
 			player_ids.append(player_id)
 			render_indices[player_id] = next_render_cars.size()
 			next_render_cars.append(car)
-		var stamp_render: Dictionary = game_manager._prepare_custom_stamp_render_payload(player_ids, settings, "lobby")
+		var stamp_render: Dictionary = vehicle_content_controller.prepare_custom_stamp_render_payload(player_ids, settings, "lobby")
 		render_manager.set_custom_stamp_atlas(stamp_render.get("texture", null))
 		var render_settings: Array = stamp_render.get("settings", settings)
 		render_manager.reconfigure_manual(definitions, render_settings)

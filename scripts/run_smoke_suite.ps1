@@ -40,6 +40,7 @@ $stableScripts = @(
     'text_chat_history_smoke.gd'
     'track_content_controller_smoke.gd'
     'track_scene_lobby_hide_smoke.gd'
+    'vehicle_content_controller_smoke.gd'
     'vehicle_restore_elimination_smoke.gd'
     'voice_capture_dynamics_smoke.gd'
 )

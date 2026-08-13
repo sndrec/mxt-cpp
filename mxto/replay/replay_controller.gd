@@ -1524,7 +1524,7 @@ func _apply_replay_focus_to_local_visual() -> void:
 	car.race_hud.focus_player_id = focus_id
 	var settings = game_manager.network_manager.player_settings.get(focus_id, null)
 	if settings != null:
-		var ps := game_manager._player_settings_for_stamp_render(settings)
+		var ps := vehicle_content_controller.player_settings_for_stamp_render(settings)
 		if ps != null:
 			car.player_settings = ps
 	if is_instance_valid(car.name_label):
