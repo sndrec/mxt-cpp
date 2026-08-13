@@ -4,7 +4,7 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 4 are complete; Milestone 5
+- Implementation is active. Milestones 0 through 5 are complete; Milestone 6
   is in progress.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
@@ -410,19 +410,19 @@ lookup plus content tests are recorded for Milestone 11.
 
 Complete this milestone as multiple commits, one owner at a time.
 
-- [ ] Move lobby option controls, stage selection/preview, roster presentation,
+- [x] Move lobby option controls, stage selection/preview, roster presentation,
       CPU buttons, and lobby-only transition presentation into a cohesive lobby
       owner.
-- [ ] Prefer static `.tscn` nodes for stable controls that are currently built
+- [x] Prefer static `.tscn` nodes for stable controls that are currently built
       dynamically, preserving exact appearance and behavior.
-- [ ] Move race-results overlay, result formatting, machine-setting selection,
+- [x] Move race-results overlay, result formatting, machine-setting selection,
       notifications, medals, nametags, and placement badges into a race
       presentation owner.
-- [ ] Move elimination and finished-racer spectator selection/input into a
+- [x] Move elimination and finished-racer spectator selection/input into a
       spectator owner.
-- [ ] Keep race rules and authoritative results in their existing simulation or
+- [x] Keep race rules and authoritative results in their existing simulation or
       network owners; presentation reads those results without redefining them.
-- [ ] Remove old `GameManager` state and direct node-field sprawl after each
+- [x] Remove old `GameManager` state and direct node-field sprawl after each
       cutover.
 
 Completion condition: each owner has an explicit lifecycle, the release compile
@@ -868,3 +868,43 @@ Append entries; do not rewrite old evidence.
   replay camera coverage.
 - Commit: `a3f7a64a` (`Extract spectator controller`).
 - Remaining Milestone 5 work: race presentation ownership.
+
+### Milestone 5c — race presentation ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `RacePresentationController` in
+  `mxto/ui/race_presentation_controller.gd`, with the stable
+  `RaceResultsOverlay` authored as its scene child.
+- Moved out of `GameManager`: result formatting and countdown, Grand Prix next-
+  race machine setting, notifications, finish/KO medal feed, world stickers,
+  nametag pooling, and placement badges.
+- Direct consumers: `GameManager`, `ReplayController`, and `RaceHud` use the
+  typed owner; no forwarding presentation API remains on `GameManager`.
+- Authority boundary: finish placements, race times, eliminations, DNFs, Grand
+  Prix points, and synchronized finish timing remain owned by the existing
+  network and simulation systems. The new owner only formats and displays them.
+- Source result: `mxto/main.gd` is 2,443 lines, down from roughly 4,900 at the
+  start of the Godot ownership refactor; the cohesive presentation owner is 458
+  lines.
+- Static checks: the old `GameManager` presentation methods and state are gone,
+  all callers target the new owner directly, and `git diff --check` passed.
+- Verification: `scons target=template_release -j4` passed. A normal Godot 4.7.1
+  launch reached the menu, and an automated single-player launch exercised race
+  setup without native load, script parse/load, scene, access, or startup
+  errors. Existing empty-texture, Steam-without-app-ID, and forced-shutdown
+  diagnostics remain.
+- Deferred to Milestone 11: Grand Prix results, replay presentation, stickers,
+  nametags, medals, and related UI smoke coverage.
+- Commit: `d9eaccd7` (`Extract race presentation controller`).
+
+### Milestone 5 — UI ownership separation complete
+
+- Lobby, spectator, and race-presentation behavior now have explicit scene-
+  owned controllers and direct lifecycles.
+- Stable lobby and race-results controls are scene-authored; dynamic creation is
+  limited to data-driven roster rows, stage rows, medals, nametag pool entries,
+  and placement badges.
+- Milestone commits: `e590e479`, `a3f7a64a`, and `d9eaccd7`, with directly
+  adjacent plan-status commits recording each verified slice.
+- All affected tests remain deferred to Milestone 11 under the user-directed
+  validation cadence.
