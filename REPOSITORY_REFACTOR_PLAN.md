@@ -459,7 +459,7 @@ stable and the network smoke matrix is reliable.
 - [x] Map every RPC, authority rule, transfer mode, channel, sender validation,
       and call site before editing.
 - [x] Separate connection/version/peer lifecycle from lobby roster/settings.
-- [ ] Separate race admission and synchronized-start state.
+- [x] Separate race admission and synchronized-start state.
 - [ ] Separate authoritative input transport, timing, acknowledgement, state
       transfer/FEC, rollback coordination, results/events, and telemetry where
       their state and lifecycles are distinct.
@@ -1140,3 +1140,38 @@ Append entries; do not rewrite old evidence.
   without-app-ID, forced audio disconnect, and render-thread shutdown
   diagnostics remain.
 - Commit: `4593a5dc` (`Extract network lobby settings controller`).
+
+### Milestone 7d — race admission and synchronized-start ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `RaceAdmissionController` in
+  `mxto/netplay/race_admission_controller.gd`, beneath `NetworkManager` at the
+  same deterministic path on every peer.
+- Moved out of `NetworkManager`: admission stages and progress evidence,
+  stalled-peer reporting/drop policy, clock-sample state, start scheduling,
+  synchronized client/authoritative start state, and first-authoritative-input
+  startup telemetry.
+- Protocol preservation: admission submission and stalled-player requests
+  remain any-peer call-remote reliable channel 7; stalled status remains
+  authority call-remote unreliable channel 7; clock ping/pong/sample remains
+  call-remote unreliable channel 5 with the same authority and sender checks;
+  immediate and scheduled start remain authority call-remote reliable channel
+  7. Race-phase packing and stale-phase rejection remain local to the owner.
+- Ownership handoffs: narrow synchronous signals update RTT smoothing, native
+  peer-ahead state, transport clocks/ticks, simulation start flags, and peer
+  disconnection. Race setup/teardown refreshes direct simulation and roster
+  context; no manager back-reference or forwarding RPC remains.
+- Direct consumers: race setup, the stalled-player UI, lifecycle/session code,
+  load and state-size harnesses, Grand Prix transition coverage, and admission
+  smoke coverage target the real owner directly.
+- Source result: `mxto/netplay/network_manager.gd` is 2,251 lines; the cohesive
+  admission/start owner is 478 lines.
+- Deferred coverage: `netplay_admission_state_smoke.gd` now exercises the real
+  owner directly. Admission, lobby-load, state-size, Grand Prix transition, and
+  multi-process start/RPC groups remain queued for Milestone 11.
+- Verification: `scons target=template_release -j4` passed. A normal bounded
+  launch parsed and loaded the scene, and a post-build automated headless
+  single-player launch initialized the race and exited 0 without native load,
+  script parse/load, scene, or access errors. Existing Steam-without-app-ID and
+  render-thread diagnostics remain.
+- Commit: `b68e4749` (`Extract network race admission controller`).
