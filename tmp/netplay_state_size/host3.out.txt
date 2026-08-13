@@ -1,5 +1,0 @@
-Godot Engine v4.6.1.stable.official.14d19694e - https://godotengine.org
-
-MXT_NETPLAY_STATE_SIZE_HOST_START players=2 cpus=98
-MXT_NETPLAY_STATE_SIZE_HOST_FORCE_BEGIN
-MXT_NETPLAY_STATE_SIZE_HOST_DONE race_frames=900 server_tick=373

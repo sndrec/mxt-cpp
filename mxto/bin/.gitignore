@@ -1,0 +1,5 @@
+# First-party GDExtension build products. Descriptors and Steam runtime stay tracked.
+libgamesim.windows.*.dll
+libgamesim.windows.*.exp
+libgamesim.windows.*.lib
+~*.TMP

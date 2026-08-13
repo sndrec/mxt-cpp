@@ -1,0 +1,6 @@
+# SCons intermediates belong under tmp/build; ignore legacy/local remnants.
+*.obj
+*.os
+~*.dll
+.vs/
+.codex
