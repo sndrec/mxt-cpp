@@ -4,7 +4,7 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 7 are complete; Milestone 8
+- Implementation is active. Milestones 0 through 8 are complete; Milestone 9
   is next.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
@@ -483,22 +483,22 @@ Milestone 11.
 
 Perform literal source moves one domain at a time.
 
-- [ ] Move `GameSim` sources and internal headers into `src/gamesim`.
-- [ ] Rename generic `src/main.cpp`/`src/main.h` to names that identify
+- [x] Move `GameSim` sources and internal headers into `src/gamesim`.
+- [x] Rename generic `src/main.cpp`/`src/main.h` to names that identify
       `GameSim`, updating all includes and build paths directly.
-- [ ] Split the current mixed `src/mxt_core` directory into validated `core`,
+- [x] Split the current mixed `src/mxt_core` directory into validated `core`,
       `netcode`, `audio`, `platform/steam`, and `render` domains.
-- [ ] Move generated netcode dictionaries beneath their real netcode owner and
+- [x] Move generated netcode dictionaries beneath their real netcode owner and
       document how they are produced.
-- [ ] Decide camera ownership from the live dependency graph and place it under
+- [x] Decide camera ownership from the live dependency graph and place it under
       `camera` or `gamesim`.
-- [ ] Move `src/fzgx-reference` out of production `src` into `reference/fzgx`,
+- [x] Move `src/fzgx-reference` out of production `src` into `reference/fzgx`,
       updating every real script/tool reference.
-- [ ] Replace broad source globs with explicit domain globs or lists that make
+- [x] Replace broad source globs with explicit domain globs or lists that make
       production membership obvious.
-- [ ] Reassess large native implementation files by data ownership and hot-path
+- [x] Reassess large native implementation files by data ownership and hot-path
       constraints; split only where direct implementation-unit boundaries exist.
-- [ ] Keep headers narrow and remove stale includes after each move.
+- [x] Keep headers narrow and remove stale includes after each move.
 
 Completion condition: the native tree communicates domain ownership at a glance,
 reference code is outside production source, direct includes and build entries
@@ -1244,3 +1244,37 @@ Append entries; do not rewrite old evidence.
   parse/load, scene, or access errors. Existing Steam-without-app-ID and
   render-thread diagnostics remain.
 - Commit: `cd074000` (`Extract network telemetry controller`).
+
+### Milestone 8 — native source domains complete
+
+- Date: 2026-08-13
+- `GameSim` now lives under `src/gamesim`; generic `main.cpp`/`main.h` became
+  `gamesim.cpp`/`gamesim.h`, and every implementation unit and direct include
+  names the real owner.
+- The mixed `src/mxt_core` production source was divided into `src/core`,
+  `src/netcode`, `src/audio`, `src/render`, and `src/platform/steam`. Generated
+  zstd input dictionaries now live under `src/netcode/generated`, alongside a
+  generation note; the trainer's default path points to that owner.
+- The gameplay camera has an independent `src/camera` owner because it is a
+  reusable Godot-facing component consumed by `GameSim`, not a private
+  simulation implementation detail.
+- The F-Zero reference implementations and port snapshot moved intact from
+  production `src` to `reference/fzgx`. No live source, script, or build entry
+  referenced the old location.
+- `SConstruct` now admits production C/C++ through explicit domain lists/globs;
+  Steam retains its deliberately separate build environment. No compatibility
+  include, wrapper, or forwarding translation unit was added.
+- Large implementation review: packet codecs remain co-located with the
+  packet-critical `NetcodeSession` data they encode; car/track physics files
+  remain organized around their existing hot-path data boundaries. Splitting
+  those further would create cross-unit private machinery without clarifying
+  ownership. Existing `GameSim` boundaries were the useful direct split and
+  are all below 2,000 lines.
+- Verification: each native move passed `scons target=template_release -j4` and
+  a bounded Godot 4.7.1 project launch. One extended automated race run opened
+  and remained responsive but advanced too slowly to reach its 120-frame exit,
+  so it was stopped; it emitted no native-load, parse, or scene errors. Tests
+  remain deferred to Milestone 11.
+- Commits: `80440e1c` (`Organize GameSim native sources`), `f5a0904f`
+  (`Split native source domains`), `6dc35944` (`Place gameplay camera in camera
+  domain`), and `649e9624` (`Move F-Zero reference code out of source tree`).
