@@ -4,8 +4,8 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 6 are complete; Milestone 7
-  is in progress.
+- Implementation is active. Milestones 0 through 7 are complete; Milestone 8
+  is next.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -460,17 +460,17 @@ stable and the network smoke matrix is reliable.
       and call site before editing.
 - [x] Separate connection/version/peer lifecycle from lobby roster/settings.
 - [x] Separate race admission and synchronized-start state.
-- [ ] Separate authoritative input transport, timing, acknowledgement, state
+- [x] Separate authoritative input transport, timing, acknowledgement, state
       transfer/FEC, rollback coordination, results/events, and telemetry where
       their state and lifecycles are distinct.
-- [ ] Keep RPC methods on their real owning nodes and migrate every caller/path
+- [x] Keep RPC methods on their real owning nodes and migrate every caller/path
       in one cutover per slice.
-- [ ] Move packet/history work into native `NetcodeSession` only when that
+- [x] Move packet/history work into native `NetcodeSession` only when that
       reduces GDScript hot-path work without adding cross-language chatter or
       allocations.
-- [ ] Keep diagnostic aggregation outside protocol-critical loops when possible.
-- [ ] Remove duplicated dictionaries/state after native ownership is proven.
-- [ ] Record affected single-process and multi-process netplay groups after each
+- [x] Keep diagnostic aggregation outside protocol-critical loops when possible.
+- [x] Remove duplicated dictionaries/state after native ownership is proven.
+- [x] Record affected single-process and multi-process netplay groups after each
       protocol slice, but do not run them until Milestone 11.
 
 Completion condition: network responsibilities have explicit owners,
@@ -1212,3 +1212,35 @@ Append entries; do not rewrite old evidence.
   parse/load, scene, or access errors. Existing Steam-without-app-ID and
   render-thread diagnostics remain.
 - Commit: `01881521` (`Extract network input transport controller`).
+
+### Milestone 7f — network telemetry ownership and milestone completion
+
+- Date: 2026-08-13
+- New owner: the scene-owned `NetworkTelemetryController` in
+  `mxto/netplay/network_telemetry_controller.gd`.
+- Moved out of `NetworkManager`: interval timer and CSV construction, aggregate
+  packet/timing/rollback/state/admission/lobby/stamp metrics, per-peer snapshots,
+  byte accounting, lobby render/network instrumentation, command-line packet
+  and state-sample settings, and sample-file output.
+- Critical-loop boundary: input and state owners increment their compact
+  counters directly; the telemetry owner reads and resets them once per second.
+  State-transfer byte/sample signals terminate at telemetry rather than routing
+  through the lifecycle coordinator.
+- Native ownership decision: packet packing, pending/authoritative input frames,
+  acknowledgement state, peer timestamps, prediction replay, and state
+  compression statistics already live in `NetcodeSession`/`GameSim`. No further
+  native move was made because it would add cross-language calls or duplicate
+  state without reducing the existing GDScript protocol loop.
+- Final responsibility boundary: `NetworkManager` is 682 lines and retains
+  connection/version admission, peer membership, race phase/options/lifecycle,
+  owner initialization, and narrow cross-owner consequences. Telemetry is 567
+  lines and executes outside packet-critical loops.
+- Deferred coverage: the complete admission, phase isolation, input resilience,
+  state size/transfer/FEC, timing, rollback, replay, result, lobby load, and
+  multi-process network matrix is recorded for Milestone 11 and was not run.
+- Verification: `scons target=template_release -j4` passed. The post-build
+  automated headless single-player launch parsed the scene, initialized the
+  race, simulated 120 frames, and exited 0 without native load, script
+  parse/load, scene, or access errors. Existing Steam-without-app-ID and
+  render-thread diagnostics remain.
+- Commit: `cd074000` (`Extract network telemetry controller`).
