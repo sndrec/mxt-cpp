@@ -76,7 +76,7 @@ func build_race_options() -> Dictionary:
 
 func process_lobby(delta: float) -> void:
 	var lobby_frame_start_usec := Time.get_ticks_usec()
-	network_manager.process_lobby_latency()
+	network_manager.lobby_settings.process_latency(network_manager.waiting_peers)
 	var player_list_start_usec := Time.get_ticks_usec()
 	_update_player_list()
 	var player_list_usec := Time.get_ticks_usec() - player_list_start_usec
@@ -97,9 +97,9 @@ func refresh_controls() -> void:
 	if network_manager == null:
 		return
 	var can_edit := network_manager.is_server and !network_manager.race_active
-	cpu_count_label.text = "CPU Drivers: %d" % network_manager.get_cpu_roster().size()
+	cpu_count_label.text = "CPU Drivers: %d" % network_manager.lobby_settings.get_cpu_roster().size()
 	add_cpu_button.disabled = !can_edit
-	remove_cpu_button.disabled = !can_edit or network_manager.get_cpu_roster().is_empty()
+	remove_cpu_button.disabled = !can_edit or network_manager.lobby_settings.get_cpu_roster().is_empty()
 	start_race_button.disabled = !can_edit or track_content_controller.tracks.is_empty() or grand_prix_track_sequence.is_empty()
 	game_mode_choice.disabled = !can_edit
 	vehicle_restore_toggle.disabled = !can_edit
@@ -188,11 +188,11 @@ func _refresh_stage_preview() -> void:
 
 func _on_add_cpu_pressed() -> void:
 	if network_manager.is_server:
-		network_manager.add_cpu_driver()
+		network_manager.lobby_settings.add_cpu_driver()
 
 func _on_remove_cpu_pressed() -> void:
 	if network_manager.is_server:
-		network_manager.remove_cpu_driver()
+		network_manager.lobby_settings.remove_cpu_driver()
 
 func request_start_race() -> void:
 	if network_manager.is_server and !grand_prix_track_sequence.is_empty():
@@ -200,7 +200,7 @@ func request_start_race() -> void:
 
 func _update_player_list() -> void:
 	var roster := network_manager.get_simulation_roster()
-	var cpu_ids := network_manager.get_cpu_roster()
+	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
 	var signature_parts := []
 	for id in roster:
 		signature_parts.append("%d:%s:%s:%s" % [int(id), _player_display_name(int(id)), str(cpu_ids.has(id)), str(network_manager.is_server)])
@@ -233,9 +233,9 @@ func _on_kick_player_pressed(player_id: int) -> void:
 
 func _player_display_name(player_id: int) -> String:
 	var player_name := str(player_id)
-	var settings = network_manager.player_settings.get(player_id, null)
+	var settings = network_manager.lobby_settings.player_settings.get(player_id, null)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
 		player_name = str(settings["username"])
-	if network_manager.get_cpu_roster().has(player_id):
+	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
 		player_name = "[CPU] " + player_name
 	return player_name

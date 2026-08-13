@@ -15,17 +15,17 @@ func _init() -> void:
 	var def: CarDefinition = main.vehicle_content_controller.definitions[0]
 	main.lobby_control.visible = true
 	main.network_manager.player_ids = [42, 43]
-	main.network_manager.player_settings[42] = {
+	main.network_manager.lobby_settings.player_settings[42] = {
 		"username": "Smoke",
 		"vehicle_content_id": def.content_id,
 		"accel_setting": 1.0,
 	}
-	main.network_manager.player_settings[43] = {
+	main.network_manager.lobby_settings.player_settings[43] = {
 		"username": "Smoke Two",
 		"vehicle_content_id": def.content_id,
 		"accel_setting": 1.0,
 	}
-	main.network_manager.lobby_latency_rtt_s[42] = 0.042
+	main.network_manager.lobby_settings.latency_rtt_s[42] = 0.042
 	var controller: LobbyChibiControllerClass = main.lobby_chibi_controller
 	if main.has_method("_update_lobby_chibi_cars") or main.has_method("_submit_lobby_chibi_state"):
 		push_error("GameManager should not retain lobby chibi implementation")

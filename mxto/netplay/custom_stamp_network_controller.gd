@@ -104,7 +104,7 @@ func send_active_custom_stamp_manifest() -> void:
 		log_manifest_bytes_out += manifest_bytes
 
 func _build_local_custom_stamp_payload() -> Dictionary:
-	var settings := network_manager._get_local_player_settings_snapshot()
+	var settings := network_manager.lobby_settings.get_local_player_settings_snapshot()
 	var vehicle_content_id := str(settings.get("vehicle_content_id", ""))
 	if vehicle_content_id == "":
 		return {"ok": true, "manifest": [], "blobs": []}

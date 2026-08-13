@@ -536,7 +536,7 @@ func _local_player_can_use_voice() -> bool:
 	var local_id := _local_peer_id()
 	if local_id <= 0:
 		return false
-	var settings = network_manager.player_settings.get(local_id, {})
+	var settings = network_manager.lobby_settings.player_settings.get(local_id, {})
 	if typeof(settings) == TYPE_DICTIONARY and bool(settings.get("spectator", false)):
 		return false
 	return network_manager.get_simulation_roster().has(local_id)

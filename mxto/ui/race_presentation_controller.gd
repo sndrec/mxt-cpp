@@ -195,10 +195,10 @@ func player_display_name(player_id: int) -> String:
 	if player_id < 0:
 		return "Bumper"
 	var player_name := str(player_id)
-	var settings = network_manager.player_settings.get(player_id, null)
+	var settings = network_manager.lobby_settings.player_settings.get(player_id, null)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
 		player_name = str(settings["username"])
-	if network_manager.get_cpu_roster().has(player_id):
+	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
 		player_name = "[CPU] " + player_name
 	return player_name
 
@@ -339,7 +339,7 @@ func _results_countdown_seconds() -> int:
 func _local_player_accel_setting() -> float:
 	if next_accel_setting >= 0.0:
 		return next_accel_setting
-	var settings = network_manager.player_settings.get(local_player_id, {})
+	var settings = network_manager.lobby_settings.player_settings.get(local_player_id, {})
 	if typeof(settings) == TYPE_DICTIONARY and (settings as Dictionary).has("accel_setting"):
 		return clampf(float((settings as Dictionary)["accel_setting"]), 0.0, 1.0)
 	return clampf(car_settings.player_settings.accel_setting, 0.0, 1.0) if car_settings != null else 1.0
@@ -348,15 +348,15 @@ func _on_machine_setting_changed(accel_setting: float) -> void:
 	if _next_grand_prix_track_id().is_empty():
 		return
 	next_accel_setting = clampf(accel_setting, 0.0, 1.0)
-	var settings = network_manager.player_settings.get(local_player_id, {})
+	var settings = network_manager.lobby_settings.player_settings.get(local_player_id, {})
 	settings = (settings as Dictionary).duplicate(true) if typeof(settings) == TYPE_DICTIONARY else {}
 	if settings.is_empty() and car_settings != null:
 		settings = car_settings.player_settings.to_dict()
 	settings["accel_setting"] = next_accel_setting
-	network_manager.player_settings[local_player_id] = settings
+	network_manager.lobby_settings.player_settings[local_player_id] = settings
 	if car_settings != null:
 		car_settings.player_settings.accel_setting = next_accel_setting
-	network_manager.send_next_race_accel_setting(next_accel_setting)
+	network_manager.lobby_settings.send_next_race_accel_setting(next_accel_setting)
 
 func _set_results_hud_hidden(hidden: bool) -> void:
 	var race_hud := local_race_hud()

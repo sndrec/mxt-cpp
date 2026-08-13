@@ -332,7 +332,7 @@ func _save_settings() -> void:
 		var settings_dict := player_settings.to_dict()
 		if _network_settings_should_exclude_livery():
 			settings_dict.erase("car_livery")
-		game_manager.network_manager.send_player_settings(settings_dict)
+		game_manager.network_manager.lobby_settings.send_player_settings(settings_dict)
 
 func _populate_sticker_selectors() -> void:
 	for selector in sticker_selectors:
@@ -528,7 +528,7 @@ func _send_online_vehicle_selection_update() -> void:
 	if !_network_settings_should_exclude_livery():
 		return
 	var settings_dict := player_settings.to_dict()
-	game_manager.network_manager.send_player_settings(settings_dict)
+	game_manager.network_manager.lobby_settings.send_player_settings(settings_dict)
 	game_manager.network_manager.custom_stamp_network.send_active_custom_stamp_manifest()
 
 func _update_livery_lock_state() -> void:

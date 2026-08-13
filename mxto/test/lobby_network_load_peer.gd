@@ -129,7 +129,7 @@ func _run() -> void:
 		push_error("MXT_LOBBY_NETWORK_LOAD_FAIL role=client index=%d connect_timeout" % player_index)
 		quit(1)
 		return
-	manager.send_player_settings(_settings())
+	manager.lobby_settings.send_player_settings(_settings())
 	manager.custom_stamp_network.send_active_custom_stamp_manifest()
 
 	var deadline := Time.get_ticks_msec() + duration_sec * 1000
@@ -139,9 +139,9 @@ func _run() -> void:
 	var max_settings := 0
 	while Time.get_ticks_msec() < deadline:
 		max_players = maxi(max_players, manager.player_ids.size())
-		max_settings = maxi(max_settings, manager.player_settings.size())
+		max_settings = maxi(max_settings, manager.lobby_settings.player_settings.size())
 		if role == "host" and !race_requested:
-			if manager.player_ids.size() >= target_players and manager.player_settings.size() >= target_players:
+			if manager.player_ids.size() >= target_players and manager.lobby_settings.player_settings.size() >= target_players:
 				if full_roster_msec == 0:
 					full_roster_msec = Time.get_ticks_msec()
 				elif Time.get_ticks_msec() - full_roster_msec >= 2000:

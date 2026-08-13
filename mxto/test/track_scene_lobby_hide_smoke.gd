@@ -33,7 +33,7 @@ func _init() -> void:
 	main.network_manager.listen_server = true
 	main.network_manager.player_ids = [player_id]
 	main.network_manager.spectator_ids = []
-	main.network_manager.player_settings[player_id] = settings
+	main.network_manager.lobby_settings.player_settings[player_id] = settings
 	main.get_node("Control").visible = true
 	main.lobby_control.visible = true
 	if main.has_method("_start_race"):

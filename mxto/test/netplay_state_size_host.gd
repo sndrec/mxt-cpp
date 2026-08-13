@@ -38,12 +38,12 @@ func _process(_delta: float) -> bool:
 		return false
 	if !started:
 		wait_frames += 1
-		if bool(nm.is_server) and nm.player_ids.size() >= 2 and nm.player_settings.size() >= nm.player_ids.size():
-			print("MXT_NETPLAY_STATE_SIZE_HOST_START players=", nm.player_ids.size(), " cpus=", nm.get_cpu_roster().size())
+		if bool(nm.is_server) and nm.player_ids.size() >= 2 and nm.lobby_settings.player_settings.size() >= nm.player_ids.size():
+			print("MXT_NETPLAY_STATE_SIZE_HOST_START players=", nm.player_ids.size(), " cpus=", nm.lobby_settings.get_cpu_roster().size())
 			main.lobby_controller.request_start_race()
 			started = true
 		elif wait_frames >= max_wait_frames:
-			push_error("MXT_NETPLAY_STATE_SIZE_HOST_TIMEOUT players=%s settings=%s" % [nm.player_ids.size(), nm.player_settings.size()])
+			push_error("MXT_NETPLAY_STATE_SIZE_HOST_TIMEOUT players=%s settings=%s" % [nm.player_ids.size(), nm.lobby_settings.player_settings.size()])
 			quit(1)
 		return false
 	var sim = main.get("game_sim")

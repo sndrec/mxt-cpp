@@ -367,7 +367,7 @@ func _replay_is_compatible(data: Dictionary) -> bool:
 func _replay_mode_name() -> String:
 	if !game_manager.singleplayer_mode:
 		return "Multiplayer"
-	if game_manager.network_manager.get_cpu_roster().is_empty():
+	if game_manager.network_manager.lobby_settings.get_cpu_roster().is_empty():
 		return "Time Attack"
 	return "CPU Race"
 
@@ -403,8 +403,8 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		var raw_settings: Dictionary = {}
 		if i < settings.size() and typeof(settings[i]) == TYPE_DICTIONARY:
 			raw_settings = (settings[i] as Dictionary).duplicate(true)
-		elif game_manager.network_manager.player_settings.has(id) and typeof(game_manager.network_manager.player_settings[id]) == TYPE_DICTIONARY:
-			raw_settings = (game_manager.network_manager.player_settings[id] as Dictionary).duplicate(true)
+		elif game_manager.network_manager.lobby_settings.player_settings.has(id) and typeof(game_manager.network_manager.lobby_settings.player_settings[id]) == TYPE_DICTIONARY:
+			raw_settings = (game_manager.network_manager.lobby_settings.player_settings[id] as Dictionary).duplicate(true)
 		raw_settings = _settings_with_vehicle_content_evidence(raw_settings)
 		player_records.append({
 			"id": id,
@@ -1239,16 +1239,16 @@ func _start_replay_playback_from_path(path: String) -> void:
 	game_manager.network_manager.set_spawn_seed(int(replay.get("spawn_seed", 0)))
 	game_manager.network_manager.race_options = (replay.get("race_options", {}) as Dictionary).duplicate(true) if typeof(replay.get("race_options", {})) == TYPE_DICTIONARY else {}
 	game_manager.network_manager.player_ids.clear()
-	game_manager.network_manager.cpu_player_ids.clear()
+	game_manager.network_manager.lobby_settings.cpu_player_ids.clear()
 	for i in range(replay_playback_racer_ids.size()):
 		var id := int(replay_playback_racer_ids[i])
 		var is_cpu := i < replay_playback_cpu_flags.size() and bool(replay_playback_cpu_flags[i])
 		if is_cpu:
-			game_manager.network_manager.cpu_player_ids.append(id)
+			game_manager.network_manager.lobby_settings.cpu_player_ids.append(id)
 		else:
 			game_manager.network_manager.player_ids.append(id)
 		if i < (settings as Array).size() and typeof(settings[i]) == TYPE_DICTIONARY:
-			game_manager.network_manager.player_settings[id] = (settings[i] as Dictionary).duplicate(true)
+			game_manager.network_manager.lobby_settings.player_settings[id] = (settings[i] as Dictionary).duplicate(true)
 	var profile_setup_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us - profile_frames_duplicate_us
 	var profile_race_start_us := Time.get_ticks_usec()
 	game_manager._close_settings_menus_for_race_start()
@@ -1532,7 +1532,7 @@ func _apply_replay_focus_to_local_visual() -> void:
 	var car := game_manager.car_node_container.local_visual_car
 	car.owning_id = focus_id
 	car.race_hud.focus_player_id = focus_id
-	var settings = game_manager.network_manager.player_settings.get(focus_id, null)
+	var settings = game_manager.network_manager.lobby_settings.player_settings.get(focus_id, null)
 	if settings != null:
 		var ps := vehicle_content_controller.player_settings_for_stamp_render(settings)
 		if ps != null:
@@ -2169,12 +2169,12 @@ func _load_and_start_debug_replay(path: String) -> void:
 	game_manager.network_manager.player_ids = [local_id]
 	game_manager.network_manager.spectator_ids = []
 	game_manager.singleplayer_cpu_count = maxi(0, settings.size() - 1)
-	game_manager.network_manager.set_singleplayer_cpu_count(game_manager.singleplayer_cpu_count)
-	game_manager.network_manager.player_settings[local_id] = settings[0]
-	var cpu_ids := game_manager.network_manager.get_cpu_roster()
+	game_manager.network_manager.lobby_settings.set_cpu_driver_count(game_manager.singleplayer_cpu_count)
+	game_manager.network_manager.lobby_settings.player_settings[local_id] = settings[0]
+	var cpu_ids := game_manager.network_manager.lobby_settings.get_cpu_roster()
 	for i in range(cpu_ids.size()):
 		if i + 1 < settings.size():
-			game_manager.network_manager.player_settings[cpu_ids[i]] = settings[i + 1]
+			game_manager.network_manager.lobby_settings.player_settings[cpu_ids[i]] = settings[i + 1]
 
 	game_manager._close_settings_menus_for_race_start()
 	game_manager.race_dnf_low_speed_ticks.clear()

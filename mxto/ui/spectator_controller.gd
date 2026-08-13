@@ -194,7 +194,7 @@ func _apply_live_focus(focus_id: int) -> void:
 	var car := car_node_container.local_visual_car
 	car.owning_id = focus_id
 	car.race_hud.focus_player_id = focus_id
-	var settings = network_manager.player_settings.get(focus_id, null)
+	var settings = network_manager.lobby_settings.player_settings.get(focus_id, null)
 	if settings != null:
 		var player_settings := vehicle_content_controller.player_settings_for_stamp_render(settings)
 		if player_settings != null:
@@ -208,9 +208,9 @@ func _apply_live_focus(focus_id: int) -> void:
 
 func _player_display_name(player_id: int) -> String:
 	var player_name := str(player_id)
-	var settings = network_manager.player_settings.get(player_id, null)
+	var settings = network_manager.lobby_settings.player_settings.get(player_id, null)
 	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
 		player_name = str(settings["username"])
-	if network_manager.get_cpu_roster().has(player_id):
+	if network_manager.lobby_settings.get_cpu_roster().has(player_id):
 		player_name = "[CPU] " + player_name
 	return player_name

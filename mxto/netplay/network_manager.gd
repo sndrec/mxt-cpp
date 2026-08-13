@@ -11,12 +11,14 @@ const ProximityVoiceChatClass = preload("res://netplay/proximity_voice_chat.gd")
 const GameVersionData = preload("res://core/game_version.gd")
 const StateTransferControllerClass = preload("res://netplay/state_transfer_controller.gd")
 const RaceResultsControllerClass = preload("res://netplay/race_results_controller.gd")
+const LobbySettingsControllerClass = preload("res://netplay/lobby_settings_controller.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
 @onready var custom_stamp_network: CustomStampNetworkController = $CustomStampNetwork
 @onready var state_transfer: StateTransferControllerClass = $StateTransferController
 @onready var race_results: RaceResultsControllerClass = $RaceResultsController
+@onready var lobby_settings: LobbySettingsControllerClass = $LobbySettingsController
 
 var is_server: bool = false
 var listen_server: bool = false
@@ -104,11 +106,6 @@ const AUTH_INPUT_META_BYTE_MASK := 0xff
 const AUTH_INPUT_META_PRESENT_BIT := 1 << 40
 const SERVER_TIMING_SYNC_INTERVAL_TICKS := 1
 const CLIENT_TIMING_PING_INTERVAL_MS := 250
-const LOBBY_LATENCY_SAMPLE_INTERVAL_MS := 1000
-const LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES := 16 * 1024 * 1024
-var player_settings := {}
-var player_settings_revisions := {}
-var lobby_settings_revision := 0
 var race_options := {
 	"game_mode": 0,
 	"track_ids": [],
@@ -130,9 +127,6 @@ var pending_next_race_options: Dictionary = {}
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
 var delayed_peer_ids := {}
-var lobby_latency_rtt_s := {}
-var lobby_latency_pending_msec := {}
-var lobby_latency_last_sample_msec := 0
 var log_lobby_frame_samples := 0
 var log_lobby_frame_us := 0
 var log_lobby_frame_max_us := 0
@@ -143,12 +137,6 @@ var log_lobby_chibi_max_us := 0
 var log_lobby_render_rebuilds := 0
 var log_lobby_render_rebuild_us := 0
 var log_lobby_render_rebuild_max_us := 0
-var log_lobby_settings_in := 0
-var log_lobby_settings_out := 0
-var log_lobby_settings_bytes_in := 0
-var log_lobby_settings_bytes_out := 0
-var log_lobby_settings_accepted := 0
-var log_lobby_settings_deduped := 0
 var log_lobby_chibi_in := 0
 var log_lobby_chibi_out := 0
 var log_lobby_chibi_bytes_in := 0
@@ -156,11 +144,6 @@ var log_lobby_chibi_bytes_out := 0
 var log_lobby_peer_connects := 0
 var log_lobby_peer_disconnects := 0
 
-const CPU_ID_MIN := 1
-const CPU_ID_MAX := 5000
-var cpu_player_ids: Array = []
-var race_cpu_player_ids: Array = []
-var cpu_player_settings := {}
 
 var clients_server_tick := 0
 var clients_target_tick := 0
@@ -495,60 +478,13 @@ func _init_logger() -> void:
 	if log_file:
 		log_file.store_line("time,role,uid,is_server,listen,players,server_tick,target_tick,server_behind_ticks,server_behind_avg,server_behind_max,delayed_peers,local_tick,clients_server_tick,clients_target_tick,rtt,rtt_variance,input_forward_redundancy,desired_ahead,server_max_ahead,physics_tps,start_server_ms,start_local_ms,actual_client_start_ms,actual_server_start_ms,first_auth_ms,first_auth_first_tick,first_auth_last_tick,first_auth_count,up_kbps,down_kbps,up_total_kb,down_total_kb,inputs_sent,inputs_acked,retrans,flat_client_out,flat_client_in,flat_server_out,flat_server_in,late_drops,replacements,state_raw_out,state_payload_out,state_sent,state_max_frags_out,state_min_success_2pct,state_payload_in,state_raw_in,state_recv,state_max_recv_gap_ms,auth_packets,auth_packet_builds,auth_compression_candidates,auth_build_ms,auth_frames,auth_encoded_inputs,auth_unchanged_inputs,auth_payload_per_packet,auth_raw_per_packet,auth_compression_ratio,auth_redundancy_frames,auth_rollback_window,net_cpu_ms,sim_cpu_ms,rollback_avg_ms,rollback_max_ms,collect_inputs_ms,idle_broadcast_ms,check_client_stalls_ms,client_send_input_ms,server_broadcast_recv_ms,handle_state_ms,handle_input_update_ms,recalc_pred_ms,adjust_time_scale_ms,car_store_old_pos_ms,car_post_render_ms,client_current_ahead,client_target_ahead,client_ahead_error,client_server_gap,client_sent_buffer,client_unacked_oldest,client_unacked_newest,client_last_ack_tick,client_ack_lag,client_throttle_frames,use_physics_ticks,client_sim_ticks,client_target_tick_advances,client_target_tick_remote_advances,client_server_tick_advances,client_ahead_samples,client_current_ahead_min,client_current_ahead_max,client_current_ahead_avg,client_target_ahead_avg,client_ahead_error_min,client_ahead_error_max,client_ahead_error_avg,client_pre_auth_adjust_samples,server_peer_lag_max,server_peer_lag_avg,target_peer_lag_max,target_peer_lag_avg,peer_ahead_min,peer_ahead_max,peer_ahead_avg,peer_rtt_max_ms,peer_rtt_avg_ms,peer_inputs_accepted,peer_inputs_dropped,peer_replacements,peer_input_server_lead_min,peer_input_server_lead_max,peer_input_server_lead_avg,peer_input_target_lead_min,peer_input_target_lead_max,peer_input_target_lead_avg,peer_snapshot,timing_ping_out,timing_ping_in,timing_sync_out,timing_sync_in,timing_sync_rtt_ms_avg,timing_sync_rtt_ms_max,timing_sync_server_gap_max,timing_sync_target_gap_max,timing_ack_advance,state_chunk_out,state_chunk_in,state_chunk_dup_in,state_chunk_stale_drop,state_chunk_bad_meta_drop,state_chunk_complete,state_chunk_complete_max_chunks,state_parity_chunks_out,state_fec_recovered_chunks,state_fec_abandoned,state_pending_records,state_pending_best_recv_pct,state_pending_best_missing,state_pending_oldest_tick,state_pending_newest_tick,state_sec_header,state_sec_bumper_meta,state_sec_sparks,state_sec_car_scalars,state_sec_car_vec3,state_sec_car_basis,state_sec_car_conditionals,state_sec_car_tilt,state_sec_car_wall,state_sec_bumper_total,state_sec_triggers,state_sec_total,state_car_count,state_bumper_count,state_active_bumpers,state_active_sparks,state_trigger_count,state_car_collision_old,state_car_restore,admission_ready,admission_roster,admission_blocked,admission_snapshot,lobby_frame_samples,lobby_frame_avg_ms,lobby_frame_max_ms,lobby_player_list_avg_ms,lobby_player_list_max_ms,lobby_chibi_avg_ms,lobby_chibi_max_ms,lobby_render_rebuilds,lobby_render_rebuild_avg_ms,lobby_render_rebuild_max_ms,lobby_settings_in,lobby_settings_out,lobby_settings_bytes_in,lobby_settings_bytes_out,lobby_settings_accepted,lobby_settings_deduped,lobby_chibi_in,lobby_chibi_out,lobby_chibi_bytes_in,lobby_chibi_bytes_out,lobby_peer_connects,lobby_peer_disconnects,stamp_manifest_in,stamp_manifest_out,stamp_manifest_bytes_in,stamp_manifest_bytes_out,stamp_manifest_accepted,stamp_manifest_deduped,stamp_blob_in,stamp_blob_out,stamp_blob_bytes_in,stamp_blob_bytes_out,stamp_blob_accepted,stamp_blob_deduped,stamp_blob_queue_messages,stamp_blob_queue_bytes,engine_process_ms,engine_physics_ms,draw_calls")
 
-func _allocate_cpu_id() -> int:
-	for id in range(CPU_ID_MIN, CPU_ID_MAX + 1):
-		if cpu_player_ids.has(id):
-			continue
-		if player_ids.has(id):
-			continue
-		if spectator_ids.has(id):
-			continue
-		return id
-	return -1
-
-func _remap_cpu_id(old_id: int, reason: String) -> int:
-	if !cpu_player_ids.has(old_id):
-		return old_id
-	var settings = cpu_player_settings.get(old_id, player_settings.get(old_id, {}))
-	cpu_player_ids.erase(old_id)
-	cpu_player_settings.erase(old_id)
-	player_settings.erase(old_id)
-	var new_id := _allocate_cpu_id()
-	if new_id == -1:
-		return -1
-	cpu_player_ids.append(new_id)
-	cpu_player_settings[new_id] = settings
-	player_settings[new_id] = settings
-	if race_cpu_player_ids.has(old_id):
-		race_cpu_player_ids.erase(old_id)
-		race_cpu_player_ids.append(new_id)
-	return new_id
-
-func _ensure_cpu_ids_do_not_overlap_humans(reason: String) -> bool:
-	var changed := false
-	var reserved := player_ids.duplicate(true)
-	reserved.append_array(spectator_ids)
-	for id in reserved:
-		if cpu_player_ids.has(id):
-			_remap_cpu_id(id, reason)
-			changed = true
-	return changed
-
-func _cpu_human_overlaps() -> Array:
-	var overlaps: Array = []
-	var reserved := player_ids.duplicate(true)
-	reserved.append_array(spectator_ids)
-	for id in reserved:
-		if cpu_player_ids.has(id):
-			overlaps.append(id)
-	return overlaps
-
 func prepare_race_roster(reason: String) -> void:
 	var changed := false
+	_sync_lobby_settings_context()
 	if is_server or !has_network_peer():
-		changed = _ensure_cpu_ids_do_not_overlap_humans(reason)
+		changed = lobby_settings.ensure_cpu_ids_do_not_overlap_humans()
 	if changed and is_server and !race_active:
-		_broadcast_cpu_roster()
+		lobby_settings.broadcast_cpu_roster()
 
 func _reset_start_sync_state() -> void:
 	start_sync_active = false
@@ -580,12 +516,6 @@ func _reset_start_sync_state() -> void:
 	start_sync_remote_stalled_details.clear()
 	start_sync_remote_drop_remaining_sec = 0.0
 	start_sync_last_drop_status_msec = 0
-
-func username_for_player(id: int) -> String:
-	var settings = player_settings.get(id, null)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
-		return str(settings["username"])
-	return str(id)
 
 func _race_admission_stage_name(stage: int) -> String:
 	match stage:
@@ -764,7 +694,7 @@ func start_sync_drop_info() -> Dictionary:
 				var stalled := stage == RACE_ADMISSION_FAILED or elapsed_sec >= timeout_sec
 				if stalled:
 					stalled_ids.append(id)
-					stalled_names.append(username_for_player(id))
+					stalled_names.append(lobby_settings.username_for_player(id))
 					stalled_stages.append(_race_admission_stage_name(stage))
 					stalled_details.append(detail)
 		return {
@@ -781,7 +711,7 @@ func start_sync_drop_info() -> Dictionary:
 	active = active and !start_sync_authoritative_started and !start_sync_client_started
 	var remote_names := PackedStringArray()
 	for id_value in start_sync_remote_stalled_ids:
-		remote_names.append(username_for_player(int(id_value)))
+		remote_names.append(lobby_settings.username_for_player(int(id_value)))
 	return {
 		"active": active,
 		"visible": active and !start_sync_remote_stalled_ids.is_empty(),
@@ -907,94 +837,6 @@ func _unpack_race_phase(packed_tick: int) -> int:
 func _unpack_race_tick(packed_tick: int) -> int:
 	return packed_tick & RACE_PHASE_TICK_MASK
 
-func set_cpu_driver_count(count: int) -> void:
-	count = clamp(count, 0, CPU_ID_MAX - CPU_ID_MIN + 1)
-	while cpu_player_ids.size() < count:
-		_add_cpu_driver_internal()
-	while cpu_player_ids.size() > count:
-		_remove_cpu_driver_internal()
-	_broadcast_cpu_roster()
-
-func set_singleplayer_cpu_count(count: int) -> void:
-	set_cpu_driver_count(count)
-
-func add_cpu_driver() -> void:
-	set_cpu_driver_count(cpu_player_ids.size() + 1)
-
-func remove_cpu_driver() -> void:
-	if cpu_player_ids.size() == 0:
-		return
-	set_cpu_driver_count(cpu_player_ids.size() - 1)
-
-func _add_cpu_driver_internal() -> void:
-	var new_id := _allocate_cpu_id()
-	if new_id == -1:
-		return
-	cpu_player_ids.append(new_id)
-	var index := cpu_player_ids.size() - 1
-	var settings := game_manager.build_cpu_player_settings(index)
-	cpu_player_settings[new_id] = settings
-	player_settings[new_id] = settings
-
-func _remove_cpu_driver_internal() -> void:
-	if cpu_player_ids.is_empty():
-		return
-	var removed_id = cpu_player_ids.pop_back()
-	cpu_player_settings.erase(removed_id)
-	player_settings.erase(removed_id)
-	if race_cpu_player_ids.has(removed_id):
-		race_cpu_player_ids.erase(removed_id)
-	if pending_inputs.has(server_tick):
-		pending_inputs[server_tick].erase(removed_id)
-	for key in pending_inputs.keys():
-		pending_inputs[key].erase(removed_id)
-
-func _collect_cpu_settings_array() -> Array:
-	var arr: Array = []
-	for id in cpu_player_ids:
-		arr.append(cpu_player_settings.get(id, {}))
-	return arr
-
-@rpc("authority", "call_remote", "reliable")
-func sync_cpu_roster(ids: Array, settings_array: Array) -> void:
-	_apply_cpu_roster(ids, settings_array)
-
-func _apply_cpu_roster(ids: Array, settings_array: Array) -> void:
-	var previous := cpu_player_ids.duplicate(true)
-	cpu_player_ids = ids.duplicate(true)
-	cpu_player_settings.clear()
-	for old_id in previous:
-		if !cpu_player_ids.has(old_id):
-			player_settings.erase(old_id)
-	for i in range(ids.size()):
-		var id = ids[i]
-		var settings = {}
-		if i < settings_array.size():
-			settings = settings_array[i]
-		cpu_player_settings[id] = settings
-		player_settings[id] = settings
-
-func _broadcast_cpu_roster() -> void:
-	if !is_server:
-		return
-	var settings_array := _collect_cpu_settings_array()
-	_apply_cpu_roster(cpu_player_ids, settings_array)
-	if cpu_player_ids.size() == 0:
-		sync_cpu_roster.rpc([], [])
-	else:
-		sync_cpu_roster.rpc(cpu_player_ids, settings_array)
-
-func _send_cpu_roster_to_peer(id: int) -> void:
-	if !is_server:
-		return
-	sync_cpu_roster.rpc_id(id, cpu_player_ids, _collect_cpu_settings_array())
-
-func get_cpu_roster() -> Array:
-	return _get_cpu_roster()
-
-func _get_cpu_roster() -> Array:
-	return race_cpu_player_ids.duplicate(true) if race_cpu_player_ids.size() > 0 else cpu_player_ids.duplicate(true)
-
 func _get_human_roster() -> Array:
 	return race_player_ids.duplicate(true) if race_player_ids.size() > 0 else player_ids.duplicate(true)
 
@@ -1023,7 +865,7 @@ func _human_racer_uses_native_cpu_input(id: int) -> bool:
 
 func get_simulation_roster() -> Array:
 	var roster := _get_human_roster()
-	roster.append_array(_get_cpu_roster())
+	roster.append_array(lobby_settings.get_cpu_roster())
 	return roster
 
 func _id_array_from_value(value) -> Array:
@@ -1155,12 +997,12 @@ func _flush_log() -> void:
 		log_lobby_render_rebuilds,
 		float(log_lobby_render_rebuild_us) / float(rebuild_samples) / 1000.0,
 		float(log_lobby_render_rebuild_max_us) / 1000.0,
-		log_lobby_settings_in,
-		log_lobby_settings_out,
-		log_lobby_settings_bytes_in,
-		log_lobby_settings_bytes_out,
-		log_lobby_settings_accepted,
-		log_lobby_settings_deduped,
+		lobby_settings.log_messages_in,
+		lobby_settings.log_messages_out,
+		lobby_settings.log_bytes_in,
+		lobby_settings.log_bytes_out,
+		lobby_settings.log_accepted,
+		lobby_settings.log_deduped,
 		log_lobby_chibi_in,
 		log_lobby_chibi_out,
 		log_lobby_chibi_bytes_in,
@@ -1201,12 +1043,7 @@ func _flush_log() -> void:
 	log_lobby_render_rebuilds = 0
 	log_lobby_render_rebuild_us = 0
 	log_lobby_render_rebuild_max_us = 0
-	log_lobby_settings_in = 0
-	log_lobby_settings_out = 0
-	log_lobby_settings_bytes_in = 0
-	log_lobby_settings_bytes_out = 0
-	log_lobby_settings_accepted = 0
-	log_lobby_settings_deduped = 0
+	lobby_settings.reset_interval_counters()
 	log_lobby_chibi_in = 0
 	log_lobby_chibi_out = 0
 	log_lobby_chibi_bytes_in = 0
@@ -1311,13 +1148,14 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 		preserve_ids.append_array(spectator_ids)
 		preserve_ids.append_array(waiting_peers)
 		for id in preserve_ids:
-			if player_settings.has(id):
-				preserved_player_settings[id] = player_settings[id]
+			if lobby_settings.player_settings.has(id):
+				preserved_player_settings[id] = lobby_settings.player_settings[id]
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
+	_sync_lobby_settings_context()
 	race_player_ids.clear()
-	race_cpu_player_ids.clear()
+	lobby_settings.clear_race_cpu_roster()
 	_disconnected_during_race.clear()
 	pending_inputs.clear()
 	input_history.clear()
@@ -1339,9 +1177,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	peer_client_rtt_s.clear()
-	lobby_latency_rtt_s.clear()
-	lobby_latency_pending_msec.clear()
-	lobby_latency_last_sample_msec = 0
+	lobby_settings.reset_latency()
 	delayed_peer_ids.clear()
 	log_peer_inputs_accepted.clear()
 	log_peer_inputs_dropped.clear()
@@ -1389,15 +1225,8 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	desired_ahead_ticks = 0.0 if is_server else 2.0
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
-	player_settings.clear()
-	player_settings_revisions.clear()
-	lobby_settings_revision += 1
-	for id in preserved_player_settings.keys():
-		player_settings[id] = preserved_player_settings[id]
-		player_settings_revisions[id] = 1
-	for id in cpu_player_ids:
-		var settings = cpu_player_settings.get(id, {})
-		player_settings[id] = settings
+	lobby_settings.reset_settings(preserved_player_settings)
+	_sync_lobby_settings_context()
 	netcode_session.reset()
 	server_netcode_session.reset()
 	server_netcode_session.clear_peer_state()
@@ -1469,7 +1298,53 @@ func _on_player_dnf_recorded(player_id: int) -> void:
 	_disconnected_during_race[player_id] = true
 	delayed_peer_ids.erase(player_id)
 
+func _sync_lobby_settings_context() -> void:
+	lobby_settings.set_context(is_server, race_active, network_active, player_ids, spectator_ids)
+
+func _on_lobby_cpu_removed(player_id: int) -> void:
+	for tick in pending_inputs.keys():
+		pending_inputs[tick].erase(player_id)
+
+func _on_lobby_latency_sample_received(peer_id: int, sample_rtt_s: float) -> void:
+	if is_server:
+		peer_client_rtt_s[peer_id] = sample_rtt_s
+	else:
+		_record_rtt_sample(sample_rtt_s)
+		lobby_settings.set_local_latency(rtt_s)
+
+func _on_lobby_player_role_changed(player_id: int, spectator: bool) -> void:
+	if player_id == multiplayer.get_unique_id():
+		desired_ahead_ticks = 1.0 if spectator else (0.0 if is_server else 2.0)
+	if !is_server:
+		return
+	var roster_changed := false
+	if spectator:
+		if player_ids.has(player_id):
+			player_ids.erase(player_id)
+			spectator_ids.append(player_id)
+			roster_changed = true
+	else:
+		if spectator_ids.has(player_id):
+			spectator_ids.erase(player_id)
+		if !player_ids.has(player_id):
+			player_ids.append(player_id)
+			roster_changed = true
+	if !roster_changed:
+		return
+	_sync_lobby_settings_context()
+	var cpu_ids_changed := lobby_settings.ensure_cpu_ids_do_not_overlap_humans()
+	if !race_active:
+		_update_player_ids.rpc(player_ids)
+		if cpu_ids_changed:
+			lobby_settings.broadcast_cpu_roster()
+	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
+
 func _ready() -> void:
+	lobby_settings.initialize(game_manager)
+	lobby_settings.player_role_changed.connect(_on_lobby_player_role_changed)
+	lobby_settings.cpu_removed.connect(_on_lobby_cpu_removed)
+	lobby_settings.latency_sample_received.connect(_on_lobby_latency_sample_received)
+	_sync_lobby_settings_context()
 	state_transfer.initialize(server_netcode_session)
 	state_transfer.state_received.connect(_handle_state)
 	state_transfer.state_sample_generated.connect(dump_state_sample)
@@ -1571,58 +1446,6 @@ func _process_start_sync() -> void:
 		if is_server and !start_sync_authoritative_started and server_game_sim != null and !server_game_sim.sim_started and now >= start_sync_server_start_msec:
 			_begin_authoritative_simulation_now()
 
-func process_lobby_latency() -> void:
-	if race_active or !has_network_peer():
-		return
-	var now := Time.get_ticks_msec()
-	if now < lobby_latency_last_sample_msec + LOBBY_LATENCY_SAMPLE_INTERVAL_MS:
-		return
-	lobby_latency_last_sample_msec = now
-	if is_server:
-		lobby_latency_rtt_s[multiplayer.get_unique_id()] = 0.0
-		for id in player_ids + spectator_ids + waiting_peers:
-			if int(id) == multiplayer.get_unique_id() or cpu_player_ids.has(id):
-				continue
-			lobby_latency_pending_msec[id] = now
-			_lobby_latency_ping.rpc_id(id, now)
-		_lobby_latency_snapshot.rpc(lobby_latency_rtt_s)
-	else:
-		lobby_latency_pending_msec[1] = now
-		_lobby_latency_ping.rpc_id(1, now)
-
-@rpc("any_peer", "unreliable")
-func _lobby_latency_ping(sent_msec: int) -> void:
-	if race_active:
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	if sender == 0:
-		sender = multiplayer.get_unique_id()
-	_lobby_latency_pong.rpc_id(sender, sent_msec)
-
-@rpc("any_peer", "unreliable")
-func _lobby_latency_pong(sent_msec: int) -> void:
-	if race_active:
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	if sender == 0:
-		sender = multiplayer.get_unique_id()
-	var sample := maxf(0.0, 0.001 * float(Time.get_ticks_msec() - sent_msec))
-	if is_server:
-		peer_client_rtt_s[sender] = sample
-		lobby_latency_rtt_s[sender] = sample
-	else:
-		_record_rtt_sample(sample)
-		lobby_latency_rtt_s[multiplayer.get_unique_id()] = rtt_s
-	lobby_latency_pending_msec.erase(sender)
-
-@rpc("authority", "unreliable")
-func _lobby_latency_snapshot(latencies: Dictionary) -> void:
-	if race_active:
-		return
-	lobby_latency_rtt_s = latencies.duplicate(true)
-	if !is_server:
-		lobby_latency_rtt_s[multiplayer.get_unique_id()] = rtt_s
-
 @rpc("any_peer", "call_remote", "unreliable", 5)
 func _start_sync_ping(client_send_msec: int, packed_sample_seq: int) -> void:
 	if !race_active or !is_server or !start_sync_active or start_sync_scheduled or !_accept_race_packet_phase(_unpack_race_phase(packed_sample_seq)):
@@ -1701,14 +1524,10 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	sent_inputs_bytes.clear()
 	last_local_input_bytes = NEUTRAL_INPUT_BYTES.duplicate()
 	player_ids = [multiplayer.get_unique_id()]
-	_ensure_cpu_ids_do_not_overlap_humans("host")
-	player_settings.clear()
-	player_settings_revisions.clear()
-	lobby_settings_revision += 1
+	_sync_lobby_settings_context()
+	lobby_settings.ensure_cpu_ids_do_not_overlap_humans()
+	lobby_settings.reset_settings()
 	custom_stamp_network.clear()
-	for id in cpu_player_ids:
-		var settings = cpu_player_settings.get(id, {})
-		player_settings[id] = settings
 	clients_server_tick = 0
 	clients_target_tick = 0
 	last_client_timing_ping_msec = 0
@@ -1720,14 +1539,14 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
-	race_cpu_player_ids.clear()
+	lobby_settings.clear_race_cpu_roster()
 	get_window().title = "Host"
 	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
 		multiplayer.peer_connected.connect(_on_peer_connected)
 	if !multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
-	_broadcast_cpu_roster()
+	lobby_settings.broadcast_cpu_roster()
 	if log_file == null:
 		_init_logger()
 	return OK
@@ -1769,16 +1588,9 @@ func join(ip: String, port: int = 27016) -> int:
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	player_ids = [multiplayer.get_unique_id()]
-	player_settings.clear()
-	player_settings_revisions.clear()
-	lobby_settings_revision += 1
+	_sync_lobby_settings_context()
+	lobby_settings.reset_all()
 	custom_stamp_network.clear()
-	for id in cpu_player_ids:
-		var settings = cpu_player_settings.get(id, {})
-		player_settings[id] = settings
-	cpu_player_ids.clear()
-	cpu_player_settings.clear()
-	race_cpu_player_ids.clear()
 	get_window().title = "Client " + str(multiplayer.get_unique_id())
 	if log_file == null:
 		_init_logger()
@@ -1807,22 +1619,16 @@ func _on_peer_disconnected(id: int) -> void:
 				_disconnected_during_race[id] = true
 		if spectator_ids.has(id):
 			spectator_ids.erase(id)
+		_sync_lobby_settings_context()
 		if last_input_time.has(id):
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
 			peer_desired_ahead.erase(id)
 		if peer_client_rtt_s.has(id):
 			peer_client_rtt_s.erase(id)
-		if lobby_latency_rtt_s.has(id):
-			lobby_latency_rtt_s.erase(id)
-		if lobby_latency_pending_msec.has(id):
-			lobby_latency_pending_msec.erase(id)
 		if delayed_peer_ids.has(id):
 			delayed_peer_ids.erase(id)
-		if player_settings.has(id):
-			player_settings.erase(id)
-			player_settings_revisions.erase(id)
-			lobby_settings_revision += 1
+		lobby_settings.remove_player(id)
 		custom_stamp_network.remove_peer(id)
 		if last_received_tick.has(id):
 			last_received_tick.erase(id)
@@ -1843,7 +1649,7 @@ func _on_peer_disconnected(id: int) -> void:
 func kick_human_player(id: int) -> void:
 	if !is_server or race_active:
 		return
-	if id == multiplayer.get_unique_id() or cpu_player_ids.has(id):
+	if id == multiplayer.get_unique_id() or lobby_settings.cpu_player_ids.has(id):
 		return
 	if !player_ids.has(id) and !spectator_ids.has(id) and !waiting_peers.has(id):
 		return
@@ -1862,12 +1668,13 @@ func _accept_peer(id: int) -> void:
 		if !waiting_peers.has(id):
 			waiting_peers.append(id)
 		_update_player_ids.rpc_id(id, player_ids)
-		_send_cpu_roster_to_peer(id)
+		lobby_settings.send_cpu_roster_to_peer(id)
 		sync_race_options.rpc_id(id, race_options)
 		return
 	if !player_ids.has(id):
 		player_ids.append(id)
-	var cpu_ids_changed := _ensure_cpu_ids_do_not_overlap_humans("peer_accept")
+	_sync_lobby_settings_context()
+	var cpu_ids_changed := lobby_settings.ensure_cpu_ids_do_not_overlap_humans()
 	last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
 	peer_desired_ahead[id] = 0.0
 	server_netcode_session.set_peer_last_received(id, -1, last_input_time[id])
@@ -1875,10 +1682,10 @@ func _accept_peer(id: int) -> void:
 	if !race_active:
 		_update_player_ids.rpc(player_ids)
 		if cpu_ids_changed:
-			_broadcast_cpu_roster()
-		_send_cpu_roster_to_peer(id)
+			lobby_settings.broadcast_cpu_roster()
+		lobby_settings.send_cpu_roster_to_peer(id)
 		sync_race_options.rpc_id(id, race_options)
-	_send_player_settings_snapshot_to_peer(id)
+	lobby_settings.send_player_settings_snapshot_to_peer(id)
 	custom_stamp_network.send_manifests_to_peer(id)
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 
@@ -1907,7 +1714,7 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 		return
 	var new_ids: Array = []
 	for id in waiting_peers:
-		var settings = player_settings.get(id, {})
+		var settings = lobby_settings.player_settings.get(id, {})
 		if typeof(settings) != TYPE_DICTIONARY:
 			settings = {}
 		settings = (settings as Dictionary).duplicate(true)
@@ -1915,7 +1722,7 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 			settings["spectator"] = true
 			if !settings.has("username"):
 				settings["username"] = str(id)
-			player_settings[id] = settings
+			lobby_settings.player_settings[id] = settings
 		var spec = force_spectator or settings.get("spectator", false)
 		if spec:
 			if player_ids.has(id):
@@ -1931,25 +1738,27 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 		server_netcode_session.set_peer_last_received(id, -1, last_input_time[id])
 		server_netcode_session.set_peer_desired_ahead(id, 0.0)
 		if !race_active:
-			_send_player_settings_snapshot_to_peer(id)
+			lobby_settings.send_player_settings_snapshot_to_peer(id)
 			custom_stamp_network.send_manifests_to_peer(id)
 	waiting_peers.clear()
+	_sync_lobby_settings_context()
 	_update_player_ids.rpc(player_ids)
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 	for id in new_ids:
-		_send_cpu_roster_to_peer(id)
-		if !race_active and player_settings.has(id):
-			_send_player_settings_update(player_settings[id], id)
+		lobby_settings.send_cpu_roster_to_peer(id)
+		if !race_active and lobby_settings.player_settings.has(id):
+			lobby_settings.send_player_settings_to_all(lobby_settings.player_settings[id], id)
 
 func broadcast_lobby_roster() -> void:
 	if !is_server:
 		return
 	_update_player_ids.rpc(player_ids)
-	_broadcast_cpu_roster()
+	lobby_settings.broadcast_cpu_roster()
 
 @rpc("authority", "call_remote", "reliable", 7)
 func _update_player_ids(ids: Array) -> void:
 	player_ids = ids
+	_sync_lobby_settings_context()
 	if is_server:
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 
@@ -1967,6 +1776,7 @@ func start_race(track_id: String, settings: Array, options: Dictionary = {}) -> 
 	race_active = true
 	state_transfer.set_race_context(true, race_netplay_phase)
 	race_results.set_context(true, race_netplay_phase, is_server, network_active)
+	_sync_lobby_settings_context()
 	if proximity_voice_chat != null:
 		proximity_voice_chat.reset()
 	if race_options.has("race_human_ids"):
@@ -1974,11 +1784,12 @@ func start_race(track_id: String, settings: Array, options: Dictionary = {}) -> 
 	else:
 		race_player_ids = player_ids.duplicate(true)
 	if race_options.has("race_cpu_ids"):
-		race_cpu_player_ids = _id_array_from_value(race_options.get("race_cpu_ids", []))
+		lobby_settings.set_race_cpu_roster(_id_array_from_value(race_options.get("race_cpu_ids", [])))
 	else:
-		race_cpu_player_ids = cpu_player_ids.duplicate(true)
+		lobby_settings.set_race_cpu_roster(lobby_settings.cpu_player_ids)
 	if race_options.has("race_spectator_ids"):
 		spectator_ids = _id_array_from_value(race_options.get("race_spectator_ids", []))
+	_sync_lobby_settings_context()
 	if is_server:
 		_initialize_race_admission_states()
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
@@ -2016,6 +1827,7 @@ func end_race(phase: int, next_track_id: String = "", next_settings: Array = [],
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
+	_sync_lobby_settings_context()
 	if proximity_voice_chat != null:
 		proximity_voice_chat.reset()
 	emit_signal("race_finished")
@@ -2125,212 +1937,6 @@ func _begin_authoritative_simulation_now() -> void:
 	server_game_sim.set_sim_started(true)
 	start_sync_authoritative_started = true
 
-func send_player_settings(settings: Dictionary) -> void:
-	if race_active:
-		return
-	settings = _merge_existing_livery_settings(settings, multiplayer.get_unique_id())
-	var my_id := multiplayer.get_unique_id()
-	if is_server:
-		_apply_player_settings_update(settings, my_id, 0)
-		_send_player_settings_update(settings, my_id)
-	else:
-		_send_player_settings_update(settings, -1, 1)
-		_store_player_settings(my_id, settings)
-
-func _send_player_settings_update(settings: Dictionary, id: int, peer_id: int = 0) -> void:
-	var raw := var_to_bytes(settings)
-	if raw.is_empty() or raw.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
-		return
-	var payload := raw.compress(FileAccess.COMPRESSION_ZSTD)
-	if payload.is_empty():
-		payload = raw
-	if peer_id > 0:
-		_receive_player_settings_update.rpc_id(peer_id, raw.size(), payload, id)
-		log_lobby_settings_out += 1
-		log_lobby_settings_bytes_out += payload.size()
-	else:
-		_receive_player_settings_update.rpc(raw.size(), payload, id)
-		var recipients := multiplayer.get_peers().size()
-		log_lobby_settings_out += recipients
-		log_lobby_settings_bytes_out += payload.size() * recipients
-
-func _send_player_settings_snapshot_to_peer(peer_id: int) -> void:
-	if !is_server or race_active or player_settings.is_empty() or !_can_send_rpc_to_peer(peer_id):
-		return
-	var raw := var_to_bytes(player_settings)
-	if raw.is_empty() or raw.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
-		push_warning("Lobby settings snapshot rejected before send: %d bytes" % raw.size())
-		return
-	var compressed := raw.compress(FileAccess.COMPRESSION_ZSTD)
-	if compressed.is_empty():
-		compressed = raw
-	_receive_player_settings_snapshot.rpc_id(peer_id, raw.size(), compressed)
-	log_lobby_settings_out += 1
-	log_lobby_settings_bytes_out += compressed.size()
-
-@rpc("authority", "call_remote", "reliable", 10)
-func _receive_player_settings_snapshot(raw_size: int, payload: PackedByteArray) -> void:
-	if is_server or race_active or raw_size <= 0 or raw_size > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
-		return
-	if payload.is_empty() or payload.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
-		return
-	log_lobby_settings_in += 1
-	log_lobby_settings_bytes_in += payload.size()
-	var raw := payload.decompress(raw_size, FileAccess.COMPRESSION_ZSTD)
-	if raw.is_empty() and payload.size() == raw_size:
-		raw = payload
-	if raw.size() != raw_size:
-		push_warning("Rejected malformed lobby settings snapshot")
-		return
-	var decoded = bytes_to_var(raw)
-	if typeof(decoded) != TYPE_DICTIONARY:
-		return
-	for raw_id in (decoded as Dictionary).keys():
-		var id := int(raw_id)
-		var settings = (decoded as Dictionary)[raw_id]
-		if id <= 0 or typeof(settings) != TYPE_DICTIONARY:
-			continue
-		_store_player_settings(id, settings)
-
-func _set_next_race_accel_setting(id: int, accel_setting: float) -> void:
-	accel_setting = clampf(accel_setting, 0.0, 1.0)
-	var settings = player_settings.get(id, {})
-	if typeof(settings) == TYPE_DICTIONARY:
-		settings = (settings as Dictionary).duplicate(true)
-	else:
-		settings = {}
-	settings["accel_setting"] = accel_setting
-	_store_player_settings(id, settings)
-
-func send_next_race_accel_setting(accel_setting: float) -> void:
-	var my_id := multiplayer.get_unique_id()
-	_set_next_race_accel_setting(my_id, accel_setting)
-	if !has_network_peer():
-		return
-	if is_server:
-		update_next_race_accel_setting.rpc(accel_setting, my_id)
-	else:
-		update_next_race_accel_setting.rpc_id(1, accel_setting)
-
-@rpc("any_peer", "call_remote", "reliable", 10)
-func update_next_race_accel_setting(accel_setting: float, id: int = -1) -> void:
-	var sender_id := multiplayer.get_remote_sender_id()
-	if is_server and sender_id != 0:
-		id = sender_id
-	elif id == -1:
-		id = sender_id
-		if id == 0:
-			id = multiplayer.get_unique_id()
-	elif !is_server and sender_id != 1:
-		return
-	_set_next_race_accel_setting(id, accel_setting)
-	if is_server:
-		update_next_race_accel_setting.rpc(accel_setting, id)
-
-@rpc("any_peer", "call_remote", "reliable", 10)
-func _receive_player_settings_update(raw_size: int, payload: PackedByteArray, id: int = -1) -> void:
-	if race_active:
-		return
-	var sender_id := multiplayer.get_remote_sender_id()
-	if sender_id != 0:
-		log_lobby_settings_in += 1
-		log_lobby_settings_bytes_in += payload.size()
-	if raw_size <= 0 or raw_size > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES or payload.is_empty() or payload.size() > LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES:
-		return
-	if !is_server and sender_id != 1:
-		return
-	var raw := payload.decompress(raw_size, FileAccess.COMPRESSION_ZSTD)
-	if raw.is_empty() and payload.size() == raw_size:
-		raw = payload
-	if raw.size() != raw_size:
-		return
-	var decoded = bytes_to_var(raw)
-	if typeof(decoded) != TYPE_DICTIONARY:
-		return
-	_apply_player_settings_update(decoded, id, sender_id)
-
-func _apply_player_settings_update(settings: Dictionary, id: int, sender_id: int) -> void:
-	if is_server and sender_id != 0:
-		id = sender_id
-		settings = _merge_existing_livery_settings(settings, id)
-	elif id == -1:
-		id = sender_id
-		if id == 0:
-			id = multiplayer.get_unique_id()
-		settings = _merge_existing_livery_settings(settings, id)
-	else:
-		settings = _merge_existing_livery_settings(settings, id)
-	if !_store_player_settings(id, settings):
-		return
-	settings = player_settings[id]
-	if is_server and sender_id != 0:
-		_send_player_settings_update(settings, id)
-	if id == multiplayer.get_unique_id():
-		if settings.get("spectator", false):
-			desired_ahead_ticks = 1.0
-		else:
-			desired_ahead_ticks = 2.0 if !is_server else 0.0
-	if is_server:
-		var spec = settings.get("spectator", false)
-		if spec:
-			if player_ids.has(id):
-				player_ids.erase(id)
-				spectator_ids.append(id)
-				var cpu_ids_changed := _ensure_cpu_ids_do_not_overlap_humans("settings_spectator")
-				if !race_active:
-					_update_player_ids.rpc(player_ids)
-					if cpu_ids_changed:
-						_broadcast_cpu_roster()
-				state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
-		else:
-			if spectator_ids.has(id):
-				spectator_ids.erase(id)
-			if !player_ids.has(id):
-				player_ids.append(id)
-				var cpu_ids_changed := _ensure_cpu_ids_do_not_overlap_humans("settings_player")
-				if !race_active:
-					_update_player_ids.rpc(player_ids)
-					if cpu_ids_changed:
-						_broadcast_cpu_roster()
-				state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
-
-func _store_player_settings(id: int, settings: Dictionary) -> bool:
-	if id <= 0:
-		return false
-	var existing = player_settings.get(id, null)
-	if typeof(existing) == TYPE_DICTIONARY and existing == settings:
-		log_lobby_settings_deduped += 1
-		return false
-	player_settings[id] = settings.duplicate(true)
-	player_settings_revisions[id] = int(player_settings_revisions.get(id, 0)) + 1
-	lobby_settings_revision += 1
-	log_lobby_settings_accepted += 1
-	return true
-
-func get_player_settings_revision(id: int) -> int:
-	return int(player_settings_revisions.get(id, 0))
-
-func _merge_existing_livery_settings(settings: Dictionary, id: int) -> Dictionary:
-	if settings.has("car_livery") or !player_settings.has(id):
-		return settings
-	var existing = player_settings[id]
-	if typeof(existing) != TYPE_DICTIONARY or !(existing as Dictionary).has("car_livery"):
-		return settings
-	var merged := settings.duplicate(true)
-	merged["car_livery"] = (existing as Dictionary)["car_livery"]
-	return merged
-
-func _get_local_player_settings_snapshot() -> Dictionary:
-	if game_manager != null and game_manager.car_settings != null:
-		var ps = game_manager.car_settings.get_player_settings()
-		if ps != null:
-			return ps.to_dict()
-	var my_id := multiplayer.get_unique_id()
-	var settings = player_settings.get(my_id, {})
-	if typeof(settings) == TYPE_DICTIONARY:
-		return settings
-	return {}
-
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input
 	netcode_session.set_local_input(input)
@@ -2426,7 +2032,7 @@ func _input_forward_window(last_tick: int) -> Vector2i:
 func collect_client_inputs() -> Dictionary:
 	if game_sim != null and !game_sim.sim_started:
 		return {}
-	var my_settings = player_settings.get(multiplayer.get_unique_id(), {})
+	var my_settings = lobby_settings.player_settings.get(multiplayer.get_unique_id(), {})
 	var is_spec = typeof(my_settings) == TYPE_DICTIONARY and my_settings.get("spectator", false)
 	if is_spec:
 		if local_tick >= clients_target_tick + MAX_AHEAD_TICKS:
@@ -2862,6 +2468,7 @@ func disconnect_from_server() -> void:
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
+	_sync_lobby_settings_context()
 	if proximity_voice_chat != null:
 		proximity_voice_chat.reset()
 	if multiplayer.multiplayer_peer != null:
@@ -2871,15 +2478,14 @@ func disconnect_from_server() -> void:
 	network_active = false
 	listen_server = false
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
+	_sync_lobby_settings_context()
 	game_sim = null
 	server_game_sim = null
 	player_ids.clear()
 	spectator_ids.clear()
 	waiting_peers.clear()
 	race_player_ids.clear()
-	race_cpu_player_ids.clear()
-	cpu_player_ids.clear()
-	cpu_player_settings.clear()
+	lobby_settings.reset_all()
 	pending_next_race_track_id = ""
 	pending_next_race_settings.clear()
 	pending_next_race_options.clear()
@@ -2897,9 +2503,6 @@ func disconnect_from_server() -> void:
 	last_ack_tick = -1
 	rtt_s = 0.0
 	rtt_variance_s = 0.0
-	player_settings.clear()
-	player_settings_revisions.clear()
-	lobby_settings_revision += 1
 	custom_stamp_network.clear()
 	_unverified_peers.clear()
 	_version_request_time.clear()

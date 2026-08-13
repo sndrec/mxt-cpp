@@ -223,7 +223,7 @@ func _ready() -> void:
 		if cpu_slider != null:
 			cpu_slider.set_value_no_signal(mini(singleplayer_cpu_count, int(cpu_slider.max_value)))
 		_update_cpu_slider_label()
-		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
+		network_manager.lobby_settings.set_cpu_driver_count(launch_cpu_driver_count)
 	auto_host_mode = args.has("--host") or user_args.has("--host")
 	if auto_host_mode:
 		call_deferred("_auto_host")
@@ -305,8 +305,8 @@ func _on_start_button_pressed() -> void:
 		return
 	communication_controller.reset()
 	if launch_cpu_driver_count >= 0:
-		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
-	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
+		network_manager.lobby_settings.set_cpu_driver_count(launch_cpu_driver_count)
+	network_manager.lobby_settings.send_player_settings(car_settings.get_player_settings().to_dict())
 	network_manager.custom_stamp_network.send_active_custom_stamp_manifest()
 	lobby_controller.refresh_controls()
 	$Control.visible = false
@@ -372,7 +372,7 @@ func _start_vehicle_test_drive() -> void:
 	vehicle_test_drive_last_track = vehicle_test_drive_track_option.selected
 	track_selector.select(vehicle_test_drive_last_track)
 	singleplayer_cpu_count = 0
-	network_manager.set_singleplayer_cpu_count(0)
+	network_manager.lobby_settings.set_cpu_driver_count(0)
 	var options := _build_default_singleplayer_race_options()
 	options["session_kind"] = "vehicle_test_drive"
 	options["leaderboard_eligible"] = false
@@ -423,7 +423,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 		network_manager.player_ids = [my_id]
 		network_manager.spectator_ids = []
 	var race_cpu_count := int(options.get("cpu_count", singleplayer_cpu_count))
-	network_manager.set_singleplayer_cpu_count(race_cpu_count)
+	network_manager.lobby_settings.set_cpu_driver_count(race_cpu_count)
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
 	if ps.vehicle_content_id == "" and vehicle_content_controller.definitions.size() > 0:
@@ -439,13 +439,13 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 		time_attack_finalized = false
 	network_manager.race_options = options
 	ps.spectator = as_spectator
-	network_manager.player_settings[my_id] = ps.to_dict()
+	network_manager.lobby_settings.player_settings[my_id] = ps.to_dict()
 	# Invoke the normal race startup, but driven entirely by local state
 	var settings_array: Array = [ps.to_dict()]
-	var cpu_ids := network_manager.get_cpu_roster()
+	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
 	for i in range(cpu_ids.size()):
 		var cpu_id = cpu_ids[i]
-		var cpu_settings = network_manager.player_settings.get(cpu_id, build_cpu_player_settings(i))
+		var cpu_settings = network_manager.lobby_settings.player_settings.get(cpu_id, build_cpu_player_settings(i))
 		settings_array.append(cpu_settings)
 	_close_settings_menus_for_race_start()
 	race_dnf_low_speed_ticks.clear()
@@ -502,7 +502,7 @@ func _update_playtest_lobby_probe() -> void:
 		join_playtest_button.visible = false
 
 func _send_connected_player_settings(settings_dict: Dictionary) -> void:
-	network_manager.send_player_settings(settings_dict)
+	network_manager.lobby_settings.send_player_settings(settings_dict)
 	network_manager.custom_stamp_network.send_active_custom_stamp_manifest()
 
 func _auto_host() -> void:
@@ -778,11 +778,11 @@ func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dicti
 	return initialized
 
 func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Dictionary:
-	var settings = network_manager.player_settings.get(id, null)
-	if settings == null and network_manager.cpu_player_settings.has(id):
-		settings = network_manager.cpu_player_settings[id]
+	var settings = network_manager.lobby_settings.player_settings.get(id, null)
+	if settings == null and network_manager.lobby_settings.cpu_player_settings.has(id):
+		settings = network_manager.lobby_settings.cpu_player_settings[id]
 	if settings == null:
-		if network_manager.cpu_player_ids.has(id):
+		if network_manager.lobby_settings.cpu_player_ids.has(id):
 			settings = build_cpu_player_settings(fallback_cpu_index)
 		else:
 			var vehicle_content_id: String = vehicle_content_controller.definitions[0].content_id if vehicle_content_controller.definitions.size() > 0 else ""
@@ -794,7 +794,7 @@ func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Diction
 	elif settings is PlayerSettings:
 		out = (settings as PlayerSettings).to_dict()
 	out["_race_player_id"] = id
-	out["_race_is_cpu"] = network_manager.cpu_player_ids.has(id)
+	out["_race_is_cpu"] = network_manager.lobby_settings.cpu_player_ids.has(id)
 	return out
 
 func _apply_race_roster_options(options: Dictionary, human_ids: Array, cpu_ids: Array, spectator_ids: Array = []) -> Dictionary:
@@ -968,7 +968,7 @@ func _on_lobby_start_race_requested(requested_options: Dictionary) -> void:
 	network_manager.prepare_race_roster("start_button")
 	var settings_array: Array = []
 	var human_ids := network_manager.player_ids.duplicate(true)
-	var cpu_ids := network_manager.cpu_player_ids.duplicate(true)
+	var cpu_ids := network_manager.lobby_settings.cpu_player_ids.duplicate(true)
 	var roster := human_ids.duplicate(true)
 	roster.append_array(cpu_ids)
 	for id_value in roster:
@@ -1170,7 +1170,7 @@ func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void
 	var roster := network_manager.get_simulation_roster()
 	if roster.is_empty():
 		return
-	var cpu_ids := network_manager.get_cpu_roster()
+	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
 	var local_id := _local_player_id()
 	for id in roster:
 		var input_bytes := network_manager.NEUTRAL_INPUT_BYTES
@@ -1325,10 +1325,10 @@ func _apply_grand_prix_eliminations(options: Dictionary) -> void:
 			network_manager.player_ids.erase(id)
 			if !network_manager.spectator_ids.has(id):
 				network_manager.spectator_ids.append(id)
-		if network_manager.cpu_player_ids.has(id):
-			network_manager.cpu_player_ids.erase(id)
-			network_manager.cpu_player_settings.erase(id)
-			network_manager.player_settings.erase(id)
+		if network_manager.lobby_settings.cpu_player_ids.has(id):
+			network_manager.lobby_settings.cpu_player_ids.erase(id)
+			network_manager.lobby_settings.cpu_player_settings.erase(id)
+			network_manager.lobby_settings.player_settings.erase(id)
 
 func _lookup_id_value(dict: Dictionary, id: int, fallback):
 	if dict.has(id):
@@ -1442,12 +1442,12 @@ func _build_next_grand_prix_settings(options: Dictionary) -> Array:
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
 	var settings := []
 	var active_ids := network_manager.player_ids.duplicate(true)
-	active_ids.append_array(network_manager.cpu_player_ids)
+	active_ids.append_array(network_manager.lobby_settings.cpu_player_ids)
 	for id_value in active_ids:
 		var id := int(id_value)
 		if eliminated_ids.has(id):
 			continue
-		settings.append(_settings_dict_for_race_id(id, network_manager.cpu_player_ids.find(id)))
+		settings.append(_settings_dict_for_race_id(id, network_manager.lobby_settings.cpu_player_ids.find(id)))
 	return settings
 
 func _build_next_grand_prix_rosters(options: Dictionary) -> Dictionary:
@@ -1458,7 +1458,7 @@ func _build_next_grand_prix_rosters(options: Dictionary) -> Dictionary:
 		if !eliminated_ids.has(id):
 			human_ids.append(id)
 	var cpu_ids := []
-	for id_value in network_manager.cpu_player_ids:
+	for id_value in network_manager.lobby_settings.cpu_player_ids:
 		var id := int(id_value)
 		if !eliminated_ids.has(id):
 			cpu_ids.append(id)

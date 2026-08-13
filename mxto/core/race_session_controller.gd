@@ -104,7 +104,7 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	var racer_ids: Array = []
 	var racer_cpu_flags: Array = []
 	var roster := network_manager.get_simulation_roster()
-	var cpu_ids := network_manager.get_cpu_roster()
+	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
 	var keyed_settings := {}
 	var ordered_settings := []
 	for raw_settings in settings:
@@ -276,7 +276,7 @@ func _build_start_grid_slots(racer_ids: Array, singleplayer_mode: bool) -> Packe
 	var slots := PackedInt32Array()
 	slots.resize(racer_ids.size())
 	slots.fill(-1)
-	if singleplayer_mode and !replay_controller.replay_playback_use_multiplayer_startup and !network_manager.get_cpu_roster().is_empty():
+	if singleplayer_mode and !replay_controller.replay_playback_use_multiplayer_startup and !network_manager.lobby_settings.get_cpu_roster().is_empty():
 		var local_index := racer_ids.find(_local_player_id())
 		if local_index >= 0 and racer_ids.size() > 1:
 			var next_slot := 0

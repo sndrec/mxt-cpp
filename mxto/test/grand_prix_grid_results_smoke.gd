@@ -35,7 +35,7 @@ func _init() -> void:
 		quit(1)
 		return
 	main.network_manager.race_player_ids = [1, 2]
-	main.network_manager.race_cpu_player_ids = [3]
+	main.network_manager.lobby_settings.race_cpu_player_ids = [3]
 	main.network_manager.is_server = true
 	main.network_manager.race_results.set_context(false, main.network_manager.race_netplay_phase, true, false)
 	main.network_manager.race_results.player_finish_placements = {1: 2, 2: 3, 3: 1}

@@ -150,12 +150,12 @@ func process_lobby(_delta: float) -> void:
 			var id := int(roster[i])
 			live[id] = true
 			if !cars.has(id) or !is_instance_valid(cars[id]):
-				var settings: Dictionary = network_manager.player_settings.get(id, {})
+				var settings: Dictionary = network_manager.lobby_settings.player_settings.get(id, {})
 				var new_car = load(LOBBY_CHIBI_CAR_SCRIPT).new()
 				new_car.name = "ChibiCar%d" % id
 				new_car.position = _spawn_position(i)
 				car_root.add_child(new_car)
-				_configure_car(new_car, id, settings, id == game_manager._local_player_id(), network_manager.get_player_settings_revision(id), true)
+				_configure_car(new_car, id, settings, id == game_manager._local_player_id(), network_manager.lobby_settings.get_player_settings_revision(id), true)
 				cars[id] = new_car
 		for id in cars.keys():
 			if !live.has(id):
@@ -164,7 +164,7 @@ func process_lobby(_delta: float) -> void:
 					stale_car.queue_free()
 				cars.erase(id)
 		roster_cache = roster.duplicate()
-	var settings_revision := network_manager.lobby_settings_revision
+	var settings_revision := network_manager.lobby_settings.revision
 	if roster_changed or settings_revision != applied_settings_revision:
 		var local_id: int = game_manager._local_player_id()
 		for id in roster:
@@ -172,7 +172,7 @@ func process_lobby(_delta: float) -> void:
 			var existing_car = cars.get(player_id, null)
 			if existing_car == null or !is_instance_valid(existing_car):
 				continue
-			_configure_car(existing_car, player_id, network_manager.player_settings.get(player_id, {}), player_id == local_id, network_manager.get_player_settings_revision(player_id), false)
+			_configure_car(existing_car, player_id, network_manager.lobby_settings.player_settings.get(player_id, {}), player_id == local_id, network_manager.lobby_settings.get_player_settings_revision(player_id), false)
 		applied_settings_revision = settings_revision
 	_submit_render(roster)
 	_update_hover_and_magnifier()
@@ -249,7 +249,7 @@ func _render_source_signature(roster: Array) -> String:
 	var roster_ids := PackedStringArray()
 	for id in roster:
 		roster_ids.append(str(int(id)))
-	return "%s:%d:%d" % [",".join(roster_ids), network_manager.lobby_settings_revision, network_manager.custom_stamp_network.revision]
+	return "%s:%d:%d" % [",".join(roster_ids), network_manager.lobby_settings.revision, network_manager.custom_stamp_network.revision]
 
 func _update_hover_and_magnifier() -> void:
 	var stack_size := viewport_stack.size
@@ -343,7 +343,7 @@ func _human_roster() -> Array:
 	var out := []
 	var seen := {}
 	var cpu_lookup := {}
-	for cpu_id in network_manager.get_cpu_roster():
+	for cpu_id in network_manager.lobby_settings.get_cpu_roster():
 		cpu_lookup[int(cpu_id)] = true
 	for source in [network_manager.player_ids, network_manager.spectator_ids, network_manager.waiting_peers]:
 		for id in source:
@@ -448,8 +448,8 @@ func latency_text_for_player(player_id: int) -> String:
 	if player_id == game_manager._local_player_id():
 		return "0ms"
 	var value := -1.0
-	if network_manager.lobby_latency_rtt_s.has(player_id):
-		value = float(network_manager.lobby_latency_rtt_s[player_id])
+	if network_manager.lobby_settings.latency_rtt_s.has(player_id):
+		value = float(network_manager.lobby_settings.latency_rtt_s[player_id])
 	elif network_manager.peer_client_rtt_s.has(player_id):
 		value = float(network_manager.peer_client_rtt_s[player_id])
 	elif !network_manager.is_server and player_id == 1:

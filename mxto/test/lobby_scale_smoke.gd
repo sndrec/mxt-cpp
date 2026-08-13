@@ -71,7 +71,7 @@ func _run() -> void:
 			"accel_setting": 1.0,
 		}
 		settings.merge(game_manager.vehicle_content_controller.get_evidence(definition.content_id), true)
-		game_manager.network_manager.player_settings[player_id] = settings
+		game_manager.network_manager.lobby_settings.player_settings[player_id] = settings
 	game_manager.network_manager.player_ids = roster
 	game_manager.lobby_control.visible = true
 
