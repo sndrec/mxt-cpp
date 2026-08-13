@@ -1,4 +1,4 @@
-#include "mxt_core/netcode_session.h"
+#include "netcode/netcode_session.h"
 
 #include "godot_cpp/core/class_db.hpp"
 

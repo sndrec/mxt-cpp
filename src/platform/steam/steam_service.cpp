@@ -1,4 +1,4 @@
-#include "mxt_core/steam_service.h"
+#include "platform/steam/steam_service.h"
 
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>

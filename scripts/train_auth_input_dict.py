@@ -59,7 +59,7 @@ def _write_header(path: Path, dictionary: bytes, note: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--samples", required=True)
-    parser.add_argument("--current-header", default="src/mxt_core/auth_input_zstd_dictionary.h")
+    parser.add_argument("--current-header", default="src/netcode/generated/auth_input_zstd_dictionary.h")
     parser.add_argument("--write-header", default="")
     parser.add_argument("--symbol", default="MXT_AUTH_INPUT_ZSTD_DICT")
     parser.add_argument("--dict-size", type=int, default=4096)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mxt_core/sim_math.h"
+#include "core/sim_math.h"
 
 #include "godot_cpp/variant/packed_byte_array.hpp"
 #include "godot_cpp/variant/string.hpp"

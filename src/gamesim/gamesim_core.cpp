@@ -1,7 +1,7 @@
 #include "gamesim/gamesim_internal.h"
 
 #include "godot_cpp/core/class_db.hpp"
-#include "mxt_core/spatial_audio_manager.h"
+#include "audio/spatial_audio_manager.h"
 #include "track/finish_line_display.h"
 
 using namespace godot;

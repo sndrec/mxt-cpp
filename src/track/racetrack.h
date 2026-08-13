@@ -3,7 +3,7 @@
 #include "track/track_segment.h"
 #include "track/collision_checkpoint.h"
 #include "track/trigger_collider.h"
-#include "mxt_core/math_utils.h"
+#include "core/math_utils.h"
 #include <algorithm>
 #include <vector>
 #include <cstdint>

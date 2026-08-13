@@ -1,4 +1,4 @@
-#include "mxt_core/native_stamp_mesh_builder.h"
+#include "render/native_stamp_mesh_builder.h"
 
 #include "godot_cpp/classes/array_mesh.hpp"
 #include "godot_cpp/classes/image.hpp"

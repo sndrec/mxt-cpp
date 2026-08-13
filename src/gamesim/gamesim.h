@@ -17,8 +17,8 @@
 #include "godot_cpp/variant/packed_int32_array.hpp"
 #include "fzgx_gameplay_camera.h"
 #include "track/racetrack.h"
-#include "mxt_core/heap_handler.h"
-#include "mxt_core/player_input.h"
+#include "core/heap_handler.h"
+#include "core/player_input.h"
 #include "car/car_properties.h"
 #include <atomic>
 #include <condition_variable>

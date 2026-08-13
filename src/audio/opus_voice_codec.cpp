@@ -1,4 +1,4 @@
-#include "mxt_core/opus_voice_codec.h"
+#include "audio/opus_voice_codec.h"
 
 #include "godot_cpp/core/class_db.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"

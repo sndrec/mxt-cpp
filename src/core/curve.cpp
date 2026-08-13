@@ -1,5 +1,5 @@
-#include "mxt_core/curve.h"
-#include "mxt_core/math_utils.h"
+#include "core/curve.h"
+#include "core/math_utils.h"
 #include <immintrin.h>
 #include <algorithm>
 

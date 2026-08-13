@@ -5,15 +5,15 @@
 #include <algorithm>
 #include <chrono>
 #include "godot_cpp/variant/utility_functions.hpp"
-#include "mxt_core/curve.h"
-#include "mxt_core/enums.h"
+#include "core/curve.h"
+#include "core/enums.h"
 #include <queue>
 #include <vector>
 #include <limits>
 #if defined(__SSE__)
 #include <xmmintrin.h>
 #endif
-#include "mxt_core/debug.hpp"
+#include "core/debug.hpp"
 
 static inline godot::Vector3 godot_vec3_from_sim(const SimVec3& v)
 {

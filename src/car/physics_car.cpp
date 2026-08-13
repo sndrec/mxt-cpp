@@ -7,17 +7,17 @@
 #include "godot_cpp/classes/object.hpp"
 #include "godot_cpp/core/math.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
-#include "mxt_core/curve.h"
-#include "mxt_core/enums.h"
+#include "core/curve.h"
+#include "core/enums.h"
 #include <cmath>
 #include <algorithm>
 #include <chrono>
 #include <cfloat>
 #include <cstdint>
 #include <cstring>
-#include "mxt_core/debug.hpp"
-#include "mxt_core/math_utils.h"
-#include "mxt_core/player_input.h"
+#include "core/debug.hpp"
+#include "core/math_utils.h"
+#include "core/player_input.h"
 #include "track/track_segment.h"
 #include "track/trigger_collider.h"
 

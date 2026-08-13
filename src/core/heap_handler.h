@@ -3,8 +3,8 @@
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
-#include "mxt_core/curve.h"
-#include "mxt_core/math_utils.h"
+#include "core/curve.h"
+#include "core/math_utils.h"
 #include "track/road_modulation.h"
 #include "car/physics_car.h"
 #include <algorithm>

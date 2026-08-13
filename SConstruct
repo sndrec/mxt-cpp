@@ -87,9 +87,10 @@ sources.append([
     "src/fzgx_gameplay_camera.cpp",
 ])
 sources.append(Glob("src/gamesim/*.cpp"))
-mxt_core_sources = Glob("src/mxt_core/*.cpp")
-mxt_core_sources = [source for source in mxt_core_sources if not str(source).replace("\\", "/").endswith("/steam_service.cpp")]
-sources.append(mxt_core_sources)
+sources.append(Glob("src/core/*.cpp"))
+sources.append(Glob("src/netcode/*.cpp"))
+sources.append(Glob("src/audio/*.cpp"))
+sources.append(Glob("src/render/*.cpp"))
 sources.append(Glob("src/content/*.cpp"))
 sources.append(Glob("src/track/*.cpp"))
 sources.append(Glob("src/car/*.cpp"))
@@ -99,7 +100,7 @@ if steamworks_enabled:
     steam_service_env.Append(CPPDEFINES=["MXT_STEAMWORKS_ENABLED"])
     if env["platform"] == "windows":
         steam_service_env.Append(CXXFLAGS=["/wd4828"])
-sources += steam_service_env.SharedObject("src/mxt_core/steam_service.cpp")
+sources += steam_service_env.SharedObject("src/platform/steam/steam_service.cpp")
 sources.append(Glob("thirdparty/zstd/lib/common/*.c"))
 sources.append(Glob("thirdparty/zstd/lib/compress/*.c"))
 sources.append(Glob("thirdparty/zstd/lib/decompress/*.c"))

@@ -10,9 +10,9 @@
 #include "godot_cpp/variant/utility_functions.hpp"
 #include "godot_cpp/variant/string_name.hpp"
 #include "godot_cpp/core/math.hpp"
-#include "mxt_core/curve.h"
-#include "mxt_core/enums.h"
-#include "mxt_core/spatial_audio_manager.h"
+#include "core/curve.h"
+#include "core/enums.h"
+#include "audio/spatial_audio_manager.h"
 #include "track/racetrack.h"
 #include "track/trigger_collider.h"
 #include "track/road_modulation.h"
@@ -23,7 +23,7 @@
 #include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/string.hpp"
 #include "godot_cpp/classes/stream_peer_buffer.hpp"
-#include "mxt_core/math_utils.h"
+#include "core/math_utils.h"
 #include <chrono>
 #include <cfloat>
 #include <cfenv>
@@ -42,7 +42,7 @@
 #if defined(__SSE__)
 #include <xmmintrin.h>
 #endif
-#include "mxt_core/debug.hpp"
+#include "core/debug.hpp"
 
 using namespace godot;
 

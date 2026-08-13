@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mxt_core/sim_math.h"
+#include "core/sim_math.h"
 #include "godot_cpp/variant/vector3.hpp"
 #include "godot_cpp/variant/color.hpp"
 #include "godot_cpp/classes/object.hpp"

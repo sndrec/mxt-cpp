@@ -7,11 +7,11 @@
 #include "car/car_authoring_session.h"
 #include "gamesim/gamesim.h"
 #include "fzgx_gameplay_camera.h"
-#include "mxt_core/netcode_session.h"
-#include "mxt_core/native_stamp_mesh_builder.h"
-#include "mxt_core/opus_voice_codec.h"
-#include "mxt_core/spatial_audio_manager.h"
-#include "mxt_core/steam_service.h"
+#include "netcode/netcode_session.h"
+#include "render/native_stamp_mesh_builder.h"
+#include "audio/opus_voice_codec.h"
+#include "audio/spatial_audio_manager.h"
+#include "platform/steam/steam_service.h"
 #include "track/track_editor_curve.h"
 
 #include <gdextension_interface.h>

@@ -2,7 +2,7 @@
 #include "car/physics_car.h"
 #include <cmath>
 #include <algorithm>
-#include "mxt_core/debug.hpp"
+#include "core/debug.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
 
 namespace {

@@ -1,8 +1,8 @@
 #include "gamesim/gamesim_internal.h"
 
 #include "godot_cpp/variant/utility_functions.hpp"
-#include "mxt_core/math_utils.h"
-#include "mxt_core/spatial_audio_manager.h"
+#include "core/math_utils.h"
+#include "audio/spatial_audio_manager.h"
 #include "track/road_embed.h"
 #include "track/road_modulation.h"
 #include "track/trigger_collider.h"

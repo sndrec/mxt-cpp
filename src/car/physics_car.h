@@ -2,12 +2,12 @@
 
 #include "car/car_points.h"
 #include "car/car_properties.h"
-#include "mxt_core/curve.h"
-#include "mxt_core/player_input.h"
+#include "core/curve.h"
+#include "core/player_input.h"
 #include "track/racetrack.h"
-#include "mxt_core/math_utils.h"
-#include "mxt_core/enums.h"
-#include "mxt_core/sim_math.h"
+#include "core/math_utils.h"
+#include "core/enums.h"
+#include "core/sim_math.h"
 
 #include <cmath>
 #include <cstdint>

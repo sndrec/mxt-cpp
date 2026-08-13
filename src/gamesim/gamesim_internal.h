@@ -2,7 +2,7 @@
 
 #include "gamesim/gamesim.h"
 #include "car/physics_car.h"
-#include "mxt_core/enums.h"
+#include "core/enums.h"
 #include "track/racetrack.h"
 
 #include <algorithm>

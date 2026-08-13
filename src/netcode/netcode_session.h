@@ -4,7 +4,7 @@
 #include "godot_cpp/variant/array.hpp"
 #include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/packed_byte_array.hpp"
-#include "mxt_core/player_input.h"
+#include "core/player_input.h"
 #include <cstdint>
 
 namespace godot {

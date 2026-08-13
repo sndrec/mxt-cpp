@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mxt_core/curve.h"
+#include "core/curve.h"
 
 class RoadModulation
 {

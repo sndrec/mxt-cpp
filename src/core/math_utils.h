@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mxt_core/deterministic_fp.hpp"
-#include "mxt_core/sim_math.h"
+#include "core/deterministic_fp.hpp"
+#include "core/sim_math.h"
 #include <cmath>
 #include <cstdint>
 

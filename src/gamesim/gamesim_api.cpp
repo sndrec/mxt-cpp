@@ -3,8 +3,8 @@
 #include "godot_cpp/classes/engine.hpp"
 #include "godot_cpp/core/math.hpp"
 #include "godot_cpp/variant/utility_functions.hpp"
-#include "mxt_core/debug.hpp"
-#include "mxt_core/spatial_audio_manager.h"
+#include "core/debug.hpp"
+#include "audio/spatial_audio_manager.h"
 
 #include <algorithm>
 #include <array>

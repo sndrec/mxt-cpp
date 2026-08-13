@@ -1,9 +1,9 @@
 #pragma once
 
-#include "mxt_core/curve.h"
+#include "core/curve.h"
 #include "track/road_modulation.h"
 #include "track/road_embed.h"
-#include "mxt_core/enums.h"
+#include "core/enums.h"
 
 class RoadShape;
 
