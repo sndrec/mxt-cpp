@@ -659,8 +659,8 @@ func _acquire_race_workshop_content(track_id: String, settings: Array, options: 
 	var workshop_ids: Array = readiness.get("workshop_ids", [])
 	if workshop_ids.is_empty() or steam_service == null or !steam_service.is_initialized():
 		return readiness
-	network_manager.report_race_admission(
-		network_manager.RACE_ADMISSION_LOADING,
+	network_manager.race_admission.report(
+		network_manager.race_admission.LOADING,
 		"acquiring %d Workshop package%s" % [workshop_ids.size(), "" if workshop_ids.size() == 1 else "s"])
 	var request_started := false
 	for published_file_id_value in workshop_ids:
@@ -854,7 +854,7 @@ func _update_start_sync_drop_panel() -> void:
 	if network_manager == null or !network_manager.race_active or game_sim.sim_started:
 		start_sync_drop_root.visible = false
 		return
-	var info := network_manager.start_sync_drop_info()
+	var info := network_manager.race_admission.drop_info()
 	if !bool(info.get("visible", false)):
 		start_sync_drop_root.visible = false
 		return
@@ -880,7 +880,7 @@ func _update_start_sync_drop_panel() -> void:
 	start_sync_drop_root.visible = true
 
 func _on_start_sync_drop_pressed() -> void:
-	if network_manager != null and network_manager.request_drop_start_sync_stalled_players():
+	if network_manager != null and network_manager.race_admission.request_drop_stalled_players():
 		start_sync_drop_root.visible = false
 
 func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_value: int, value: int) -> void:
@@ -988,7 +988,7 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 		return
 	if !bool(readiness.get("ready", false)):
 		var evidence_message := String(readiness.get("detail", "Race content evidence mismatch for %s" % track_id))
-		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, evidence_message)
+		network_manager.race_admission.report(network_manager.race_admission.FAILED, evidence_message)
 		push_error(evidence_message)
 		race_presentation_controller.show_notification(evidence_message, 5000)
 		if headless_mode:
@@ -997,13 +997,13 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 	var track_index := track_content_controller.track_index_for_id(track_id)
 	if track_index < 0:
 		var message := "Missing race track %s" % track_id
-		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, message)
+		network_manager.race_admission.report(network_manager.race_admission.FAILED, message)
 		push_error(message)
 		race_presentation_controller.show_notification(message, 5000)
 		if headless_mode:
 			get_tree().quit(1)
 		return
-	network_manager.report_race_admission(network_manager.RACE_ADMISSION_LOADING, "loading %s" % track_id)
+	network_manager.race_admission.report(network_manager.race_admission.LOADING, "loading %s" % track_id)
 	# Return to the multiplayer loop once before beginning the synchronous load so
 	# the server receives the explicit loading acknowledgement.
 	await get_tree().process_frame
@@ -1015,12 +1015,12 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 	communication_controller.close_race_chat()
 	_close_settings_menus_for_race_start()
 	if !race_session_controller.start_race(track_index, settings, singleplayer_mode, headless_mode):
-		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, "race initialization failed")
+		network_manager.race_admission.report(network_manager.race_admission.FAILED, "race initialization failed")
 		return
 	game_sim.set_sim_started(false)
 	if network_manager.is_server:
 		server_game_sim.set_sim_started(false)
-	network_manager.report_race_admission(network_manager.RACE_ADMISSION_READY, "race initialized")
+	network_manager.race_admission.report(network_manager.race_admission.READY, "race initialized")
 
 func _on_network_race_finished() -> void:
 	if headless_mode and network_manager.pending_next_race_track_id == "":

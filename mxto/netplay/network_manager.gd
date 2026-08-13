@@ -12,6 +12,7 @@ const GameVersionData = preload("res://core/game_version.gd")
 const StateTransferControllerClass = preload("res://netplay/state_transfer_controller.gd")
 const RaceResultsControllerClass = preload("res://netplay/race_results_controller.gd")
 const LobbySettingsControllerClass = preload("res://netplay/lobby_settings_controller.gd")
+const RaceAdmissionControllerClass = preload("res://netplay/race_admission_controller.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
@@ -19,6 +20,7 @@ var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 @onready var state_transfer: StateTransferControllerClass = $StateTransferController
 @onready var race_results: RaceResultsControllerClass = $RaceResultsController
 @onready var lobby_settings: LobbySettingsControllerClass = $LobbySettingsController
+@onready var race_admission: RaceAdmissionControllerClass = $RaceAdmissionController
 
 var is_server: bool = false
 var listen_server: bool = false
@@ -79,19 +81,6 @@ const RTT_VARIANCE_SMOOTHING := 0.2
 const SPEED_ADJUST_STEP := 0.0003
 const SHARED_AHEAD_EXTRA_TICKS := 3.0
 const SHARED_AHEAD_CAP_TICKS := 10.0
-const START_SYNC_SAMPLE_COUNT := 4
-const START_SYNC_PING_INTERVAL_MS := 50
-const START_SYNC_START_DELAY_MS := 750
-const RACE_ADMISSION_START_STALL_SEC := 5.0
-const RACE_ADMISSION_LOAD_STALL_SEC := 30.0
-const RACE_ADMISSION_TIMING_STALL_SEC := 5.0
-const START_SYNC_DROP_STATUS_INTERVAL_MS := 250
-const RACE_ADMISSION_START_SENT := 0
-const RACE_ADMISSION_LOADING := 1
-const RACE_ADMISSION_READY := 2
-const RACE_ADMISSION_TIMING := 3
-const RACE_ADMISSION_SCHEDULED := 4
-const RACE_ADMISSION_FAILED := 5
 const RACE_PHASE_TICK_BIT := 0x80000000
 const RACE_PHASE_TICK_MASK := 0x7fffffff
 const AUTH_INPUT_MODE_MASK := 0x07
@@ -153,35 +142,6 @@ var clients_max_ahead_from_server := 2.0
 var authoritative_history := {}
 var last_server_input_tick := -1
 var race_active: bool = false
-var start_sync_active := false
-var start_sync_scheduled := false
-var start_sync_server_start_msec := 0
-var start_sync_local_start_msec := 0
-var start_sync_authoritative_started := false
-var start_sync_client_started := false
-var start_sync_last_ping_msec := 0
-var start_sync_seq := 0
-var start_sync_client_sample_count := 0
-var start_sync_server_offset_msec := 0.0
-var start_sync_sample_counts := {}
-var start_sync_peer_ahead := {}
-var start_sync_initial_max_ahead := 2.0
-var start_sync_actual_client_start_msec := -1
-var start_sync_actual_server_start_msec := -1
-var start_sync_first_authoritative_input_msec := -1
-var start_sync_first_authoritative_first_tick := -1
-var start_sync_first_authoritative_last_tick := -1
-var start_sync_first_authoritative_count := 0
-var start_sync_debug_prints := 0
-var race_admission_states := {}
-var local_race_admission_stage := RACE_ADMISSION_START_SENT
-var local_race_admission_detail := ""
-var local_race_admission_progress_msec := 0
-var start_sync_remote_stalled_ids: Array = []
-var start_sync_remote_stalled_stages := PackedStringArray()
-var start_sync_remote_stalled_details := PackedStringArray()
-var start_sync_remote_drop_remaining_sec := 0.0
-var start_sync_last_drop_status_msec := 0
 
 var use_state_compression := true
 var dump_auth_input_samples := false
@@ -486,306 +446,6 @@ func prepare_race_roster(reason: String) -> void:
 	if changed and is_server and !race_active:
 		lobby_settings.broadcast_cpu_roster()
 
-func _reset_start_sync_state() -> void:
-	start_sync_active = false
-	start_sync_scheduled = false
-	start_sync_server_start_msec = 0
-	start_sync_local_start_msec = 0
-	start_sync_authoritative_started = false
-	start_sync_client_started = false
-	start_sync_last_ping_msec = 0
-	start_sync_seq = 0
-	start_sync_client_sample_count = 0
-	start_sync_server_offset_msec = 0.0
-	start_sync_sample_counts.clear()
-	start_sync_peer_ahead.clear()
-	start_sync_initial_max_ahead = 2.0
-	start_sync_actual_client_start_msec = -1
-	start_sync_actual_server_start_msec = -1
-	start_sync_first_authoritative_input_msec = -1
-	start_sync_first_authoritative_first_tick = -1
-	start_sync_first_authoritative_last_tick = -1
-	start_sync_first_authoritative_count = 0
-	start_sync_debug_prints = 0
-	race_admission_states.clear()
-	local_race_admission_stage = RACE_ADMISSION_START_SENT
-	local_race_admission_detail = ""
-	local_race_admission_progress_msec = Time.get_ticks_msec()
-	start_sync_remote_stalled_ids.clear()
-	start_sync_remote_stalled_stages.clear()
-	start_sync_remote_stalled_details.clear()
-	start_sync_remote_drop_remaining_sec = 0.0
-	start_sync_last_drop_status_msec = 0
-
-func _race_admission_stage_name(stage: int) -> String:
-	match stage:
-		RACE_ADMISSION_START_SENT:
-			return "waiting for start acknowledgement"
-		RACE_ADMISSION_LOADING:
-			return "loading the race"
-		RACE_ADMISSION_READY:
-			return "ready"
-		RACE_ADMISSION_TIMING:
-			return "synchronizing clocks"
-		RACE_ADMISSION_SCHEDULED:
-			return "scheduled"
-		RACE_ADMISSION_FAILED:
-			return "load failed"
-	return "unknown"
-
-func _race_admission_stall_timeout_sec(stage: int) -> float:
-	if stage == RACE_ADMISSION_LOADING:
-		return RACE_ADMISSION_LOAD_STALL_SEC
-	if stage == RACE_ADMISSION_TIMING or stage == RACE_ADMISSION_READY:
-		return RACE_ADMISSION_TIMING_STALL_SEC
-	return RACE_ADMISSION_START_STALL_SEC
-
-func _initialize_race_admission_states() -> void:
-	race_admission_states.clear()
-	var now_msec := Time.get_ticks_msec()
-	for id_value in _get_race_ready_roster():
-		var id := int(id_value)
-		race_admission_states[id] = {
-			"stage": RACE_ADMISSION_START_SENT,
-			"progress_msec": now_msec,
-			"detail": "",
-		}
-
-func _set_race_admission_stage(id: int, stage: int, detail: String = "") -> bool:
-	if !is_server or !_get_race_ready_roster().has(id):
-		return false
-	if stage < RACE_ADMISSION_START_SENT or stage > RACE_ADMISSION_FAILED:
-		return false
-	var current = race_admission_states.get(id, {})
-	if typeof(current) == TYPE_DICTIONARY:
-		var current_stage := int((current as Dictionary).get("stage", RACE_ADMISSION_START_SENT))
-		if current_stage == RACE_ADMISSION_FAILED and stage != RACE_ADMISSION_FAILED:
-			return false
-		if stage != RACE_ADMISSION_FAILED and stage < current_stage:
-			return false
-	race_admission_states[id] = {
-		"stage": stage,
-		"progress_msec": Time.get_ticks_msec(),
-		"detail": detail,
-	}
-	return true
-
-func _race_admission_stage(id: int) -> int:
-	var state = race_admission_states.get(id, {})
-	if typeof(state) != TYPE_DICTIONARY:
-		return RACE_ADMISSION_START_SENT
-	return int((state as Dictionary).get("stage", RACE_ADMISSION_START_SENT))
-
-func _all_race_admission_ready() -> bool:
-	var roster := _get_race_ready_roster()
-	if roster.is_empty():
-		return false
-	for id_value in roster:
-		var stage := _race_admission_stage(int(id_value))
-		if stage < RACE_ADMISSION_READY or stage == RACE_ADMISSION_FAILED:
-			return false
-	return true
-
-func _race_admission_log_fields() -> Dictionary:
-	var roster := _get_race_ready_roster()
-	var ready_count := 0
-	var blocked_count := 0
-	var snapshot_parts := PackedStringArray()
-	var now_msec := Time.get_ticks_msec()
-	if is_server:
-		for id_value in roster:
-			var id := int(id_value)
-			var state = race_admission_states.get(id, {})
-			var stage := _race_admission_stage(id)
-			var progress_msec := now_msec
-			var detail := ""
-			if typeof(state) == TYPE_DICTIONARY:
-				progress_msec = int((state as Dictionary).get("progress_msec", now_msec))
-				detail = str((state as Dictionary).get("detail", ""))
-			if stage >= RACE_ADMISSION_READY and stage != RACE_ADMISSION_FAILED:
-				ready_count += 1
-			if stage != RACE_ADMISSION_SCHEDULED:
-				blocked_count += 1
-			detail = detail.replace(",", ";").replace(":", ";").replace("|", "/")
-			snapshot_parts.append("%d:%d:%d:%d:%s" % [
-				id,
-				stage,
-				maxi(0, now_msec - progress_msec),
-				int(start_sync_sample_counts.get(id, 0)),
-				detail,
-			])
-	else:
-		var detail := local_race_admission_detail.replace(",", ";").replace(":", ";").replace("|", "/")
-		snapshot_parts.append("%d:%d:%d:%d:%s" % [
-			multiplayer.get_unique_id(),
-			local_race_admission_stage,
-			maxi(0, now_msec - local_race_admission_progress_msec),
-			start_sync_client_sample_count,
-			detail,
-		])
-		if local_race_admission_stage >= RACE_ADMISSION_READY and local_race_admission_stage != RACE_ADMISSION_FAILED:
-			ready_count = 1
-		if local_race_admission_stage != RACE_ADMISSION_SCHEDULED:
-			blocked_count = 1
-	return {
-		"ready": ready_count,
-		"roster": roster.size(),
-		"blocked": blocked_count,
-		"snapshot": "|".join(snapshot_parts),
-	}
-
-func _evaluate_race_admission() -> void:
-	if !is_server or !race_active or start_sync_scheduled:
-		return
-	if !_all_race_admission_ready():
-		return
-	if !start_sync_active:
-		_begin_start_sync()
-	else:
-		_try_schedule_synced_start()
-
-func report_race_admission(stage: int, detail: String = "") -> void:
-	if !race_active:
-		return
-	local_race_admission_stage = stage
-	local_race_admission_detail = detail
-	local_race_admission_progress_msec = Time.get_ticks_msec()
-	if is_server:
-		var local_id := multiplayer.get_unique_id()
-		if _set_race_admission_stage(local_id, stage, detail):
-			_evaluate_race_admission()
-	elif has_network_peer():
-		_submit_race_admission.rpc_id(1, race_netplay_phase, stage, detail)
-
-@rpc("any_peer", "call_remote", "reliable", 7)
-func _submit_race_admission(phase: int, stage: int, detail: String) -> void:
-	if !is_server or !race_active or !_accept_race_packet_phase(phase):
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	if _set_race_admission_stage(sender, stage, detail):
-		_evaluate_race_admission()
-
-func start_sync_drop_info() -> Dictionary:
-	var active := race_active and !start_sync_scheduled
-	if is_server:
-		active = active and (server_game_sim == null or !server_game_sim.sim_started)
-		var stalled_ids := []
-		var stalled_names := PackedStringArray()
-		var stalled_stages := PackedStringArray()
-		var stalled_details := PackedStringArray()
-		var max_elapsed_sec := 0.0
-		var drop_remaining_sec := 0.0
-		if active:
-			var now_msec := Time.get_ticks_msec()
-			for id_value in _get_race_ready_roster():
-				var id := int(id_value)
-				if listen_server and id == multiplayer.get_unique_id():
-					continue
-				var state = race_admission_states.get(id, {})
-				var stage := _race_admission_stage(id)
-				var progress_msec := now_msec
-				var detail := ""
-				if typeof(state) == TYPE_DICTIONARY:
-					progress_msec = int((state as Dictionary).get("progress_msec", now_msec))
-					detail = str((state as Dictionary).get("detail", ""))
-				var elapsed_sec := maxf(0.0, 0.001 * float(now_msec - progress_msec))
-				var timeout_sec := _race_admission_stall_timeout_sec(stage)
-				max_elapsed_sec = maxf(max_elapsed_sec, elapsed_sec)
-				var stalled := stage == RACE_ADMISSION_FAILED or elapsed_sec >= timeout_sec
-				if stalled:
-					stalled_ids.append(id)
-					stalled_names.append(lobby_settings.username_for_player(id))
-					stalled_stages.append(_race_admission_stage_name(stage))
-					stalled_details.append(detail)
-		return {
-			"active": active,
-			"visible": active and !stalled_ids.is_empty(),
-			"stalled_peer_ids": stalled_ids,
-			"stalled_names": stalled_names,
-			"stalled_stages": stalled_stages,
-			"stalled_details": stalled_details,
-			"elapsed_sec": max_elapsed_sec,
-			"can_drop": active and !stalled_ids.is_empty(),
-			"drop_remaining_sec": drop_remaining_sec,
-		}
-	active = active and !start_sync_authoritative_started and !start_sync_client_started
-	var remote_names := PackedStringArray()
-	for id_value in start_sync_remote_stalled_ids:
-		remote_names.append(lobby_settings.username_for_player(int(id_value)))
-	return {
-		"active": active,
-		"visible": active and !start_sync_remote_stalled_ids.is_empty(),
-		"stalled_peer_ids": start_sync_remote_stalled_ids.duplicate(true),
-		"stalled_names": remote_names,
-		"stalled_stages": start_sync_remote_stalled_stages.duplicate(),
-		"stalled_details": start_sync_remote_stalled_details.duplicate(),
-		"elapsed_sec": RACE_ADMISSION_START_STALL_SEC,
-		"can_drop": active and !start_sync_remote_stalled_ids.is_empty() and start_sync_remote_drop_remaining_sec <= 0.0,
-		"drop_remaining_sec": maxf(0.0, start_sync_remote_drop_remaining_sec),
-	}
-
-func request_drop_start_sync_stalled_players() -> bool:
-	var info := start_sync_drop_info()
-	if !bool(info.get("can_drop", false)):
-		return false
-	if is_server:
-		_drop_start_sync_stalled_players(_id_array_from_value(info.get("stalled_peer_ids", [])))
-		return true
-	if race_active and has_network_peer():
-		_request_drop_start_sync_stalled_players.rpc_id(1, race_netplay_phase)
-		return true
-	return false
-
-func _broadcast_start_sync_drop_status() -> void:
-	if !is_server or !race_active or !has_network_peer():
-		return
-	var now_msec := Time.get_ticks_msec()
-	if now_msec < start_sync_last_drop_status_msec + START_SYNC_DROP_STATUS_INTERVAL_MS:
-		return
-	start_sync_last_drop_status_msec = now_msec
-	var info := start_sync_drop_info()
-	_sync_start_sync_drop_status.rpc(
-		race_netplay_phase,
-		_id_array_from_value(info.get("stalled_peer_ids", [])),
-		info.get("stalled_stages", PackedStringArray()),
-		info.get("stalled_details", PackedStringArray()),
-		float(info.get("drop_remaining_sec", 0.0)))
-
-func _drop_start_sync_stalled_players(ids: Array) -> void:
-	if !is_server or !race_active:
-		return
-	var connected_peers: PackedInt32Array = multiplayer.get_peers() if multiplayer.multiplayer_peer != null else PackedInt32Array()
-	for id_value in ids:
-		var id := int(id_value)
-		if id <= 0:
-			continue
-		if _disconnected_during_race.has(id):
-			continue
-		if listen_server and id == multiplayer.get_unique_id():
-			continue
-		if connected_peers.has(id):
-			multiplayer.disconnect_peer(id)
-		_on_peer_disconnected(id)
-	_evaluate_race_admission()
-
-@rpc("any_peer", "call_remote", "reliable", 7)
-func _request_drop_start_sync_stalled_players(phase: int) -> void:
-	if !is_server or !race_active or !_accept_race_packet_phase(phase):
-		return
-	var info := start_sync_drop_info()
-	if !bool(info.get("can_drop", false)):
-		return
-	_drop_start_sync_stalled_players(_id_array_from_value(info.get("stalled_peer_ids", [])))
-
-@rpc("authority", "call_remote", "unreliable", 7)
-func _sync_start_sync_drop_status(phase: int, stalled_ids: Array, stalled_stages: PackedStringArray, stalled_details: PackedStringArray, drop_remaining_sec: float) -> void:
-	if !_accept_race_packet_phase(phase):
-		return
-	start_sync_remote_stalled_ids = _id_array_from_value(stalled_ids)
-	start_sync_remote_stalled_stages = stalled_stages.duplicate()
-	start_sync_remote_stalled_details = stalled_details.duplicate()
-	start_sync_remote_drop_remaining_sec = drop_remaining_sec
-
 func reserve_next_race_netplay_options(options: Dictionary) -> Dictionary:
 	var out := options.duplicate(true)
 	if !is_server:
@@ -803,6 +463,7 @@ func _accept_race_start_phase(phase: int) -> bool:
 	race_netplay_phase = phase
 	state_transfer.set_race_context(race_active, race_netplay_phase)
 	race_results.set_context(race_active, race_netplay_phase, is_server, network_active)
+	refresh_race_admission_context()
 	return true
 
 func _accept_race_packet_phase(phase: int) -> bool:
@@ -974,14 +635,14 @@ func _flush_log() -> void:
 		timing_sync_rtt_avg = log_timing_sync_rtt_ms_sum / float(log_timing_sync_rtt_samples)
 	var peer_fields := _build_server_peer_log_fields()
 	var state_pending := state_transfer.pending_log_fields()
-	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(server_behind_ticks) + "," + str(server_behind_avg) + "," + str(log_server_behind_ticks_max) + "," + str(delayed_peers) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(rtt_variance_s) + "," + str(INPUT_FORWARD_REDUNDANCY_TICKS) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(start_sync_server_start_msec) + "," + str(start_sync_local_start_msec) + "," + str(start_sync_actual_client_start_msec) + "," + str(start_sync_actual_server_start_msec) + "," + str(start_sync_first_authoritative_input_msec) + "," + str(start_sync_first_authoritative_first_tick) + "," + str(start_sync_first_authoritative_last_tick) + "," + str(start_sync_first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(state_transfer.log_raw_out) + "," + str(state_transfer.log_payload_out) + "," + str(state_transfer.log_sent_count) + "," + str(state_transfer.log_max_fragments_out) + "," + str(state_success) + "," + str(state_transfer.log_payload_in) + "," + str(state_transfer.log_raw_in) + "," + str(state_transfer.log_recv_count) + "," + str(state_transfer.log_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_compression_candidates) + "," + str(auth_build_ms) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
+	var line := str(Time.get_ticks_msec()) + "," + role + "," + str(multiplayer.get_unique_id()) + "," + str(is_server) + "," + str(listen_server) + "," + str(player_ids.size()) + "," + str(server_tick) + "," + str(target_tick) + "," + str(server_behind_ticks) + "," + str(server_behind_avg) + "," + str(log_server_behind_ticks_max) + "," + str(delayed_peers) + "," + str(local_tick) + "," + str(clients_server_tick) + "," + str(clients_target_tick) + "," + str(rtt_s) + "," + str(rtt_variance_s) + "," + str(INPUT_FORWARD_REDUNDANCY_TICKS) + "," + str(desired_ahead_ticks) + "," + str(logged_max_ahead) + "," + str(physics_tps) + "," + str(race_admission.server_start_msec) + "," + str(race_admission.local_start_msec) + "," + str(race_admission.actual_client_start_msec) + "," + str(race_admission.actual_server_start_msec) + "," + str(race_admission.first_authoritative_input_msec) + "," + str(race_admission.first_authoritative_first_tick) + "," + str(race_admission.first_authoritative_last_tick) + "," + str(race_admission.first_authoritative_count) + "," + str(up_kbps) + "," + str(down_kbps) + "," + str(log_bytes_out_total / 1000.0) + "," + str(log_bytes_in_total / 1000.0) + "," + str(log_inputs_sent) + "," + str(log_inputs_acked) + "," + str(log_inputs_retransmitted) + "," + str(log_flat_client_payload_out) + "," + str(log_flat_client_payload_in) + "," + str(log_flat_server_payload_out) + "," + str(log_flat_server_payload_in) + "," + str(log_server_late_drops) + "," + str(log_server_replacements) + "," + str(state_transfer.log_raw_out) + "," + str(state_transfer.log_payload_out) + "," + str(state_transfer.log_sent_count) + "," + str(state_transfer.log_max_fragments_out) + "," + str(state_success) + "," + str(state_transfer.log_payload_in) + "," + str(state_transfer.log_raw_in) + "," + str(state_transfer.log_recv_count) + "," + str(state_transfer.log_max_recv_gap_ms) + "," + str(auth_packets) + "," + str(auth_packet_builds) + "," + str(auth_compression_candidates) + "," + str(auth_build_ms) + "," + str(auth_frames) + "," + str(auth_encoded_inputs) + "," + str(auth_unchanged_inputs) + "," + str(auth_payload_per_packet) + "," + str(auth_raw_per_packet) + "," + str(auth_compression_ratio) + "," + str(AUTH_INPUT_REDUNDANCY_FRAMES) + "," + str(AUTH_INPUT_ROLLBACK_WINDOW_TICKS) + "," + str(net_cpu_ms) + "," + str(sim_cpu_ms) + "," + str(rollback_avg_ms) + "," + str(rollback_max_ms) + "," + str(collect_inputs_ms) + "," + str(idle_broadcast_ms) + "," + str(check_client_stalls_ms) + "," + str(client_send_input_ms) + "," + str(server_broadcast_recv_ms) + "," + str(handle_state_ms) + "," + str(handle_input_update_ms) + "," + str(recalc_pred_ms) + "," + str(adjust_time_scale_ms) + "," + str(car_store_old_pos_ms) + "," + str(car_post_render_ms)
 	line += "," + str(client_current_ahead) + "," + str(client_target_ahead) + "," + str(client_ahead_error) + "," + str(client_server_gap) + "," + str(client_unacked["count"]) + "," + str(client_unacked["oldest"]) + "," + str(client_unacked["newest"]) + "," + str(last_ack_tick) + "," + str(client_ack_lag) + "," + str(log_client_ahead_throttle_frames) + "," + str(use_physics_ticks)
 	line += "," + str(log_client_sim_ticks) + "," + str(log_client_target_tick_advances) + "," + str(log_client_target_tick_remote_advances) + "," + str(log_client_server_tick_advances) + "," + str(log_client_ahead_samples) + "," + str(client_current_ahead_min) + "," + str(client_current_ahead_max) + "," + str(client_current_ahead_avg) + "," + str(client_target_ahead_avg) + "," + str(client_ahead_error_min) + "," + str(client_ahead_error_max) + "," + str(client_ahead_error_avg) + "," + str(log_client_pre_auth_adjust_samples)
 	line += "," + str(peer_fields["server_peer_lag_max"]) + "," + str(peer_fields["server_peer_lag_avg"]) + "," + str(peer_fields["target_peer_lag_max"]) + "," + str(peer_fields["target_peer_lag_avg"]) + "," + str(peer_fields["peer_ahead_min"]) + "," + str(peer_fields["peer_ahead_max"]) + "," + str(peer_fields["peer_ahead_avg"]) + "," + str(peer_fields["peer_rtt_max_ms"]) + "," + str(peer_fields["peer_rtt_avg_ms"]) + "," + str(peer_fields["peer_inputs_accepted"]) + "," + str(peer_fields["peer_inputs_dropped"]) + "," + str(peer_fields["peer_replacements"]) + "," + str(peer_fields["peer_input_server_lead_min"]) + "," + str(peer_fields["peer_input_server_lead_max"]) + "," + str(peer_fields["peer_input_server_lead_avg"]) + "," + str(peer_fields["peer_input_target_lead_min"]) + "," + str(peer_fields["peer_input_target_lead_max"]) + "," + str(peer_fields["peer_input_target_lead_avg"]) + "," + str(peer_fields["peer_snapshot"])
 	line += "," + str(log_timing_ping_out) + "," + str(log_timing_ping_in) + "," + str(log_timing_sync_out) + "," + str(log_timing_sync_in) + "," + str(timing_sync_rtt_avg) + "," + str(log_timing_sync_rtt_ms_max) + "," + str(log_timing_server_gap_max) + "," + str(log_timing_target_gap_max) + "," + str(log_timing_ack_advance)
 	line += "," + str(state_transfer.log_chunk_msgs_out) + "," + str(state_transfer.log_chunk_msgs_in) + "," + str(state_transfer.log_chunk_dups_in) + "," + str(state_transfer.log_chunk_stale_drops) + "," + str(state_transfer.log_chunk_bad_meta_drops) + "," + str(state_transfer.log_chunk_completed) + "," + str(state_transfer.log_chunk_completed_count_max) + "," + str(state_transfer.log_parity_chunks_out) + "," + str(state_transfer.log_fec_recovered_chunks) + "," + str(state_transfer.log_fec_abandoned) + "," + str(state_pending["records"]) + "," + str(state_pending["best_recv_pct"]) + "," + str(state_pending["best_missing"]) + "," + str(state_pending["oldest_tick"]) + "," + str(state_pending["newest_tick"])
 	line += "," + str(state_transfer.log_sec_header) + "," + str(state_transfer.log_sec_bumper_meta) + "," + str(state_transfer.log_sec_sparks) + "," + str(state_transfer.log_sec_car_scalars) + "," + str(state_transfer.log_sec_car_vec3) + "," + str(state_transfer.log_sec_car_basis) + "," + str(state_transfer.log_sec_car_conditionals) + "," + str(state_transfer.log_sec_car_tilt) + "," + str(state_transfer.log_sec_car_wall) + "," + str(state_transfer.log_sec_bumper_total) + "," + str(state_transfer.log_sec_triggers) + "," + str(state_transfer.log_sec_total) + "," + str(state_transfer.log_stat_car_count) + "," + str(state_transfer.log_stat_bumper_count) + "," + str(state_transfer.log_stat_active_bumpers) + "," + str(state_transfer.log_stat_active_sparks) + "," + str(state_transfer.log_stat_trigger_count) + "," + str(state_transfer.log_stat_car_collision_old) + "," + str(state_transfer.log_stat_car_restore)
-	var admission_fields := _race_admission_log_fields()
+	var admission_fields := race_admission.log_fields()
 	line += "," + str(admission_fields["ready"]) + "," + str(admission_fields["roster"]) + "," + str(admission_fields["blocked"]) + "," + str(admission_fields["snapshot"])
 	var lobby_samples := maxi(log_lobby_frame_samples, 1)
 	var rebuild_samples := maxi(log_lobby_render_rebuilds, 1)
@@ -1224,9 +885,10 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	last_target_tick_update = Time.get_ticks_msec()
 	desired_ahead_ticks = 0.0 if is_server else 2.0
 	net_input_debug_prints = 0
-	_reset_start_sync_state()
+	race_admission.reset()
 	lobby_settings.reset_settings(preserved_player_settings)
 	_sync_lobby_settings_context()
+	refresh_race_admission_context()
 	netcode_session.reset()
 	server_netcode_session.reset()
 	server_netcode_session.clear_peer_state()
@@ -1301,6 +963,20 @@ func _on_player_dnf_recorded(player_id: int) -> void:
 func _sync_lobby_settings_context() -> void:
 	lobby_settings.set_context(is_server, race_active, network_active, player_ids, spectator_ids)
 
+func refresh_race_admission_context() -> void:
+	race_admission.set_context(
+		is_server,
+		listen_server,
+		network_active,
+		race_active,
+		race_netplay_phase,
+		player_ids,
+		_get_race_ready_roster(),
+		rtt_s,
+		desired_ahead_ticks,
+		game_sim,
+		server_game_sim)
+
 func _on_lobby_cpu_removed(player_id: int) -> void:
 	for tick in pending_inputs.keys():
 		pending_inputs[tick].erase(player_id)
@@ -1311,6 +987,44 @@ func _on_lobby_latency_sample_received(peer_id: int, sample_rtt_s: float) -> voi
 	else:
 		_record_rtt_sample(sample_rtt_s)
 		lobby_settings.set_local_latency(rtt_s)
+
+func _on_admission_local_rtt_sample_received(sample_rtt_s: float) -> void:
+	_record_rtt_sample(sample_rtt_s)
+	race_admission.set_local_timing(rtt_s, desired_ahead_ticks)
+
+func _on_admission_peer_timing_sample_received(peer_id: int, peer_rtt_s: float, ahead_ticks: float) -> void:
+	peer_desired_ahead[peer_id] = ahead_ticks
+	peer_client_rtt_s[peer_id] = peer_rtt_s
+	server_netcode_session.set_peer_desired_ahead(peer_id, ahead_ticks)
+
+func _on_admission_disconnect_peer_requested(peer_id: int) -> void:
+	if multiplayer.multiplayer_peer != null and multiplayer.get_peers().has(peer_id):
+		multiplayer.disconnect_peer(peer_id)
+		_on_peer_disconnected(peer_id)
+		refresh_race_admission_context()
+
+func _on_admission_start_schedule_received(initial_max_ahead: float) -> void:
+	clients_max_ahead_from_server = initial_max_ahead
+	clients_server_tick = 0
+	last_client_timing_ping_msec = 0
+	last_target_tick_update = Time.get_ticks_msec()
+
+func _on_admission_client_simulation_start_requested(initial_target_tick: int) -> void:
+	if game_sim == null or game_sim.sim_started:
+		return
+	game_sim.set_sim_started(true)
+	local_tick = 0
+	clients_server_tick = 0
+	clients_target_tick = clampi(initial_target_tick, 0, MAX_AHEAD_TICKS)
+	last_client_timing_ping_msec = 0
+	last_target_tick_update = Time.get_ticks_msec()
+
+func _on_admission_authoritative_simulation_start_requested() -> void:
+	if !is_server or server_game_sim == null or server_game_sim.sim_started:
+		return
+	server_tick = 0
+	target_tick = 0
+	server_game_sim.set_sim_started(true)
 
 func _on_lobby_player_role_changed(player_id: int, spectator: bool) -> void:
 	if player_id == multiplayer.get_unique_id():
@@ -1333,6 +1047,7 @@ func _on_lobby_player_role_changed(player_id: int, spectator: bool) -> void:
 		return
 	_sync_lobby_settings_context()
 	var cpu_ids_changed := lobby_settings.ensure_cpu_ids_do_not_overlap_humans()
+	refresh_race_admission_context()
 	if !race_active:
 		_update_player_ids.rpc(player_ids)
 		if cpu_ids_changed:
@@ -1345,6 +1060,14 @@ func _ready() -> void:
 	lobby_settings.cpu_removed.connect(_on_lobby_cpu_removed)
 	lobby_settings.latency_sample_received.connect(_on_lobby_latency_sample_received)
 	_sync_lobby_settings_context()
+	race_admission.initialize(lobby_settings)
+	race_admission.disconnect_peer_requested.connect(_on_admission_disconnect_peer_requested)
+	race_admission.local_rtt_sample_received.connect(_on_admission_local_rtt_sample_received)
+	race_admission.peer_timing_sample_received.connect(_on_admission_peer_timing_sample_received)
+	race_admission.start_schedule_received.connect(_on_admission_start_schedule_received)
+	race_admission.client_simulation_start_requested.connect(_on_admission_client_simulation_start_requested)
+	race_admission.authoritative_simulation_start_requested.connect(_on_admission_authoritative_simulation_start_requested)
+	refresh_race_admission_context()
 	state_transfer.initialize(server_netcode_session)
 	state_transfer.state_received.connect(_handle_state)
 	state_transfer.state_sample_generated.connect(dump_state_sample)
@@ -1379,7 +1102,7 @@ func server_process() -> void:
 	race_results.set_race_tick(get_race_tick())
 	if !race_active:
 		return
-	_process_start_sync()
+	race_admission.process()
 	if is_server and server_game_sim != null and server_game_sim.sim_started:
 		target_tick += 1
 		if target_tick > server_tick + MAX_AHEAD_TICKS:
@@ -1428,71 +1151,6 @@ func _process_client_timing_ping() -> void:
 	_acc_log_out(8)
 	_client_timing_ping.rpc_id(1, now, _pack_race_phase_tick(local_tick))
 
-func _process_start_sync() -> void:
-	if !race_active:
-		return
-	var now := Time.get_ticks_msec()
-	if is_server and !start_sync_scheduled:
-		_broadcast_start_sync_drop_status()
-	if !is_server and !listen_server and game_sim != null and !game_sim.sim_started:
-		if now >= start_sync_last_ping_msec + START_SYNC_PING_INTERVAL_MS and !start_sync_scheduled:
-			start_sync_last_ping_msec = now
-			start_sync_seq += 1
-			_start_sync_ping.rpc_id(1, now, _pack_race_phase_tick(start_sync_seq))
-	if start_sync_scheduled:
-		if !start_sync_client_started and game_sim != null and !game_sim.sim_started and now >= start_sync_local_start_msec:
-			var initial_target := int(ceil(clamp(_local_desired_ahead_for_shared(), 0.0, float(MAX_AHEAD_TICKS))))
-			_begin_client_simulation_now(initial_target)
-		if is_server and !start_sync_authoritative_started and server_game_sim != null and !server_game_sim.sim_started and now >= start_sync_server_start_msec:
-			_begin_authoritative_simulation_now()
-
-@rpc("any_peer", "call_remote", "unreliable", 5)
-func _start_sync_ping(client_send_msec: int, packed_sample_seq: int) -> void:
-	if !race_active or !is_server or !start_sync_active or start_sync_scheduled or !_accept_race_packet_phase(_unpack_race_phase(packed_sample_seq)):
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	if !player_ids.has(sender):
-		return
-	_start_sync_pong.rpc_id(sender, client_send_msec, Time.get_ticks_msec(), packed_sample_seq)
-
-@rpc("authority", "call_remote", "unreliable", 5)
-func _start_sync_pong(client_send_msec: int, server_recv_msec: int, packed_sample_seq: int) -> void:
-	if !race_active or is_server or !_accept_race_packet_phase(_unpack_race_phase(packed_sample_seq)):
-		return
-	var now := Time.get_ticks_msec()
-	var sample_rtt_s: float = max(0.0, 0.001 * float(now - client_send_msec))
-	_record_rtt_sample(sample_rtt_s)
-	var midpoint := 0.5 * float(client_send_msec + now)
-	var sample_offset := float(server_recv_msec) - midpoint
-	if start_sync_client_sample_count == 0:
-		start_sync_server_offset_msec = sample_offset
-	else:
-		start_sync_server_offset_msec = lerp(start_sync_server_offset_msec, sample_offset, 0.35)
-	start_sync_client_sample_count += 1
-	if local_race_admission_stage >= RACE_ADMISSION_READY and local_race_admission_stage < RACE_ADMISSION_SCHEDULED:
-		local_race_admission_stage = RACE_ADMISSION_TIMING
-		local_race_admission_detail = "timing sample %d/%d" % [mini(start_sync_client_sample_count, START_SYNC_SAMPLE_COUNT), START_SYNC_SAMPLE_COUNT]
-		local_race_admission_progress_msec = now
-	_client_start_sync_sample.rpc_id(1, packed_sample_seq, rtt_s, desired_ahead_ticks)
-
-@rpc("any_peer", "call_remote", "unreliable", 5)
-func _client_start_sync_sample(packed_sample_seq: int, client_rtt_s: float, client_ahead: float) -> void:
-	if !race_active or !is_server or !start_sync_active or start_sync_scheduled or !_accept_race_packet_phase(_unpack_race_phase(packed_sample_seq)):
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	if !player_ids.has(sender):
-		return
-	start_sync_sample_counts[sender] = int(start_sync_sample_counts.get(sender, 0)) + 1
-	start_sync_peer_ahead[sender] = clamp(client_ahead, 0.0, float(MAX_AHEAD_TICKS))
-	_set_race_admission_stage(
-		sender,
-		RACE_ADMISSION_TIMING,
-		"timing sample %d/%d" % [mini(int(start_sync_sample_counts[sender]), START_SYNC_SAMPLE_COUNT), START_SYNC_SAMPLE_COUNT])
-	peer_desired_ahead[sender] = start_sync_peer_ahead[sender]
-	peer_client_rtt_s[sender] = client_rtt_s
-	server_netcode_session.set_peer_desired_ahead(sender, start_sync_peer_ahead[sender])
-	_try_schedule_synced_start()
-
 func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> int:
 	disconnect_from_server()
 	var peer := ENetMultiplayerPeer.new()
@@ -1538,7 +1196,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	state_transfer.reset()
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	net_input_debug_prints = 0
-	_reset_start_sync_state()
+	race_admission.reset()
 	lobby_settings.clear_race_cpu_roster()
 	get_window().title = "Host"
 	if !multiplayer.peer_connected.is_connected(_on_peer_connected):
@@ -1546,6 +1204,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	if !multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
 		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
+	refresh_race_admission_context()
 	lobby_settings.broadcast_cpu_roster()
 	if log_file == null:
 		_init_logger()
@@ -1586,11 +1245,12 @@ func join(ip: String, port: int = 27016) -> int:
 	state_transfer.reset()
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	net_input_debug_prints = 0
-	_reset_start_sync_state()
+	race_admission.reset()
 	player_ids = [multiplayer.get_unique_id()]
 	_sync_lobby_settings_context()
 	lobby_settings.reset_all()
 	custom_stamp_network.clear()
+	refresh_race_admission_context()
 	get_window().title = "Client " + str(multiplayer.get_unique_id())
 	if log_file == null:
 		_init_logger()
@@ -1620,6 +1280,7 @@ func _on_peer_disconnected(id: int) -> void:
 		if spectator_ids.has(id):
 			spectator_ids.erase(id)
 		_sync_lobby_settings_context()
+		refresh_race_admission_context()
 		if last_input_time.has(id):
 			last_input_time.erase(id)
 		if peer_desired_ahead.has(id):
@@ -1632,9 +1293,7 @@ func _on_peer_disconnected(id: int) -> void:
 		custom_stamp_network.remove_peer(id)
 		if last_received_tick.has(id):
 			last_received_tick.erase(id)
-		start_sync_sample_counts.erase(id)
-		start_sync_peer_ahead.erase(id)
-		race_admission_states.erase(id)
+		race_admission.remove_peer(id)
 		state_transfer.remove_peer(id)
 		server_netcode_session.remove_peer(id)
 		for key in pending_inputs:
@@ -1644,7 +1303,7 @@ func _on_peer_disconnected(id: int) -> void:
 			_update_player_ids.rpc(player_ids)
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 		if race_active:
-			_evaluate_race_admission()
+			race_admission.evaluate()
 
 func kick_human_player(id: int) -> void:
 	if !is_server or race_active:
@@ -1675,6 +1334,7 @@ func _accept_peer(id: int) -> void:
 		player_ids.append(id)
 	_sync_lobby_settings_context()
 	var cpu_ids_changed := lobby_settings.ensure_cpu_ids_do_not_overlap_humans()
+	refresh_race_admission_context()
 	last_input_time[id] = 0.001 * float(Time.get_ticks_msec())
 	peer_desired_ahead[id] = 0.0
 	server_netcode_session.set_peer_last_received(id, -1, last_input_time[id])
@@ -1743,6 +1403,7 @@ func flush_waiting_peers(force_spectator: bool = false) -> void:
 	waiting_peers.clear()
 	_sync_lobby_settings_context()
 	_update_player_ids.rpc(player_ids)
+	refresh_race_admission_context()
 	state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 	for id in new_ids:
 		lobby_settings.send_cpu_roster_to_peer(id)
@@ -1759,6 +1420,7 @@ func broadcast_lobby_roster() -> void:
 func _update_player_ids(ids: Array) -> void:
 	player_ids = ids
 	_sync_lobby_settings_context()
+	refresh_race_admission_context()
 	if is_server:
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 
@@ -1768,7 +1430,7 @@ func start_race(track_id: String, settings: Array, options: Dictionary = {}) -> 
 	var incoming_phase := _race_phase_from_options(options)
 	if !_accept_race_start_phase(incoming_phase):
 		return
-	_reset_start_sync_state()
+	race_admission.reset()
 	if !options.is_empty():
 		race_options = options.duplicate(true)
 	if race_options.has("spawn_seed"):
@@ -1790,8 +1452,9 @@ func start_race(track_id: String, settings: Array, options: Dictionary = {}) -> 
 	if race_options.has("race_spectator_ids"):
 		spectator_ids = _id_array_from_value(race_options.get("race_spectator_ids", []))
 	_sync_lobby_settings_context()
+	refresh_race_admission_context()
 	if is_server:
-		_initialize_race_admission_states()
+		race_admission.initialize_states()
 		state_transfer.rebuild_peer_schedule(is_server, player_ids, spectator_ids)
 	emit_signal("race_started", track_id, settings)
 	if is_server:
@@ -1828,6 +1491,7 @@ func end_race(phase: int, next_track_id: String = "", next_settings: Array = [],
 	state_transfer.set_race_context(false, race_netplay_phase)
 	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	_sync_lobby_settings_context()
+	refresh_race_admission_context()
 	if proximity_voice_chat != null:
 		proximity_voice_chat.reset()
 	emit_signal("race_finished")
@@ -1844,98 +1508,6 @@ func set_spawn_seed(seed: int) -> void:
 		game_sim.set_spawn_seed(seed)
 	if is_server and server_game_sim != null:
 		server_game_sim.set_spawn_seed(seed)
-
-@rpc("authority", "call_remote", "reliable", 7)
-func begin_simulation() -> void:
-	if !race_active:
-		return
-	_begin_client_simulation_now(0)
-	_begin_authoritative_simulation_now()
-
-func _begin_start_sync() -> void:
-	if !is_server or start_sync_active or start_sync_scheduled:
-		return
-	start_sync_active = true
-	start_sync_sample_counts.clear()
-	start_sync_peer_ahead.clear()
-	for id_value in _get_race_ready_roster():
-		_set_race_admission_stage(int(id_value), RACE_ADMISSION_TIMING, "waiting for timing samples")
-	if listen_server:
-		var local_id := multiplayer.get_unique_id()
-		start_sync_sample_counts[local_id] = START_SYNC_SAMPLE_COUNT
-		start_sync_peer_ahead[local_id] = _local_desired_ahead_for_shared()
-	_try_schedule_synced_start()
-
-func _all_start_sync_samples_ready() -> bool:
-	for id in _get_race_ready_roster():
-		if is_server and listen_server and id == multiplayer.get_unique_id():
-			continue
-		if int(start_sync_sample_counts.get(id, 0)) < START_SYNC_SAMPLE_COUNT:
-			return false
-	return true
-
-func _try_schedule_synced_start() -> void:
-	if !is_server or !start_sync_active or start_sync_scheduled:
-		return
-	var ready_roster := _get_race_ready_roster()
-	if !_all_race_admission_ready():
-		return
-	if !_all_start_sync_samples_ready():
-		return
-	var max_ahead := _local_desired_ahead_for_shared() if listen_server else 0.0
-	for id in ready_roster:
-		max_ahead = max(max_ahead, float(start_sync_peer_ahead.get(id, 0.0)))
-	start_sync_initial_max_ahead = clamp(max_ahead, 0.0, float(MAX_AHEAD_TICKS))
-	var lead_msec := int(ceil(start_sync_initial_max_ahead * 1000.0 / 60.0))
-	var start_delay_msec: int = max(START_SYNC_START_DELAY_MS, lead_msec + 250)
-	start_sync_server_start_msec = Time.get_ticks_msec() + start_delay_msec
-	start_sync_scheduled = true
-	for id_value in ready_roster:
-		_set_race_admission_stage(int(id_value), RACE_ADMISSION_SCHEDULED, "start scheduled")
-	begin_simulation_at.rpc(race_netplay_phase, start_sync_server_start_msec, start_sync_initial_max_ahead)
-	begin_simulation_at(race_netplay_phase, start_sync_server_start_msec, start_sync_initial_max_ahead)
-
-@rpc("authority", "call_remote", "reliable", 7)
-func begin_simulation_at(phase: int, server_start_msec: int, initial_max_ahead: float) -> void:
-	if !race_active or !_accept_race_packet_phase(phase):
-		return
-	start_sync_active = true
-	start_sync_scheduled = true
-	local_race_admission_stage = RACE_ADMISSION_SCHEDULED
-	local_race_admission_detail = "start scheduled"
-	local_race_admission_progress_msec = Time.get_ticks_msec()
-	start_sync_server_start_msec = server_start_msec
-	start_sync_initial_max_ahead = initial_max_ahead
-	clients_max_ahead_from_server = initial_max_ahead
-	clients_server_tick = 0
-	last_client_timing_ping_msec = 0
-	last_target_tick_update = Time.get_ticks_msec()
-	var client_lead_msec := int(ceil(clamp(_local_desired_ahead_for_shared(), 0.0, float(MAX_AHEAD_TICKS)) * 1000.0 / 60.0))
-	if is_server:
-		start_sync_local_start_msec = server_start_msec - client_lead_msec
-	else:
-		start_sync_local_start_msec = int(round(float(server_start_msec) - start_sync_server_offset_msec))
-
-func _begin_client_simulation_now(initial_target_tick: int) -> void:
-	if game_sim == null or game_sim.sim_started:
-		return
-	start_sync_actual_client_start_msec = Time.get_ticks_msec()
-	game_sim.set_sim_started(true)
-	local_tick = 0
-	clients_server_tick = 0
-	clients_target_tick = clamp(initial_target_tick, 0, MAX_AHEAD_TICKS)
-	last_client_timing_ping_msec = 0
-	last_target_tick_update = Time.get_ticks_msec()
-	start_sync_client_started = true
-
-func _begin_authoritative_simulation_now() -> void:
-	if !is_server or server_game_sim == null or server_game_sim.sim_started:
-		return
-	start_sync_actual_server_start_msec = Time.get_ticks_msec()
-	server_tick = 0
-	target_tick = 0
-	server_game_sim.set_sim_started(true)
-	start_sync_authoritative_started = true
 
 func set_local_input(input: PackedByteArray) -> void:
 	last_local_input_bytes = input
@@ -2308,11 +1880,11 @@ func _server_broadcast_flat(authoritative_last_tick: int, input_packet: PackedBy
 			if count > 0:
 				var first_tick := int(stats.get("first_tick", -1))
 				var last_tick := int(stats.get("last_tick", -1))
-				if start_sync_first_authoritative_input_msec < 0:
-					start_sync_first_authoritative_input_msec = Time.get_ticks_msec()
-					start_sync_first_authoritative_first_tick = first_tick
-					start_sync_first_authoritative_last_tick = last_tick
-					start_sync_first_authoritative_count = count
+				if race_admission.first_authoritative_input_msec < 0:
+					race_admission.first_authoritative_input_msec = Time.get_ticks_msec()
+					race_admission.first_authoritative_first_tick = first_tick
+					race_admission.first_authoritative_last_tick = last_tick
+					race_admission.first_authoritative_count = count
 				clients_server_tick = max(clients_server_tick, last_tick + 1)
 				var rollback_start := maxi(first_tick, local_tick - AUTH_INPUT_ROLLBACK_WINDOW_TICKS)
 				if last_tick >= rollback_start:
@@ -2557,7 +2129,9 @@ func disconnect_from_server() -> void:
 	server_netcode_session.clear_peer_state()
 	netcode_session.reset()
 	server_netcode_session.reset()
-	_reset_start_sync_state()
+	_sync_lobby_settings_context()
+	refresh_race_admission_context()
+	race_admission.reset()
 
 func _prune_authoritative_history() -> void:
 	var window_cutoff := server_tick - MAX_HISTORY_TICKS
@@ -2596,7 +2170,7 @@ func _adjust_time_scale() -> void:
 		#DebugDraw2D.set_text("target_tick", target_tick)
 	if is_server and !listen_server:
 		return
-	if !is_server and start_sync_first_authoritative_input_msec < 0:
+	if !is_server and race_admission.first_authoritative_input_msec < 0:
 		log_client_pre_auth_adjust_samples += 1
 		use_physics_ticks = 1.0
 		Engine.physics_ticks_per_second = 60

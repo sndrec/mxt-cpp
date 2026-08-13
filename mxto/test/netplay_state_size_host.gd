@@ -54,8 +54,8 @@ func _process(_delta: float) -> bool:
 		if !forced_begin and begin_wait_frames >= 30:
 			forced_begin = true
 			print("MXT_NETPLAY_STATE_SIZE_HOST_FORCE_BEGIN")
-			nm.begin_simulation.rpc()
-			nm.begin_simulation()
+			nm.race_admission.begin_simulation.rpc()
+			nm.race_admission.begin_simulation()
 		return false
 	if race_start_server_tick < 0:
 		race_start_server_tick = int(nm.server_tick)

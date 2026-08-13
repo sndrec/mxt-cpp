@@ -87,9 +87,9 @@ func _wait_for_client_connection(timeout_msec: int) -> bool:
 func _on_lightweight_race_started(_track_id: String, _settings: Array) -> void:
 	var manager := game_manager.network_manager
 	manager.game_sim = game_manager.game_sim
-	manager.report_race_admission(manager.RACE_ADMISSION_LOADING, "load-test client loading")
+	manager.race_admission.report(manager.race_admission.LOADING, "load-test client loading")
 	await process_frame
-	manager.report_race_admission(manager.RACE_ADMISSION_READY, "load-test client ready")
+	manager.race_admission.report(manager.race_admission.READY, "load-test client ready")
 
 func _run() -> void:
 	role = _arg_value("--lobby-load-role", "client")
@@ -152,12 +152,12 @@ func _run() -> void:
 						str(manager.is_server),
 					])
 					game_manager.lobby_controller.request_start_race()
-		if role == "host" and race_requested and manager.start_sync_scheduled:
+		if role == "host" and race_requested and manager.race_admission.scheduled:
 			break
 		await create_timer(0.1).timeout
 
 	if role == "host":
-		var admission := manager._race_admission_log_fields()
+		var admission := manager.race_admission.log_fields()
 		var ready := int(admission.get("ready", 0))
 		var roster := int(admission.get("roster", 0))
 		var passed := max_players >= target_players and max_settings >= target_players and race_requested and ready >= target_players and roster >= target_players and int(admission.get("blocked", 0)) == 0

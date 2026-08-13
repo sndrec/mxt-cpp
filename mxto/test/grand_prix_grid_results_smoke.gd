@@ -103,20 +103,20 @@ func _init() -> void:
 	nm.is_server = true
 	nm.listen_server = false
 	nm.player_ids = [1, 2, 3]
-	nm.race_admission_states = {
-		1: {"stage": nm.RACE_ADMISSION_SCHEDULED, "progress_msec": 1, "detail": "stale"},
-		2: {"stage": nm.RACE_ADMISSION_SCHEDULED, "progress_msec": 1, "detail": "stale"},
-		3: {"stage": nm.RACE_ADMISSION_SCHEDULED, "progress_msec": 1, "detail": "stale"},
+	nm.race_admission.admission_states = {
+		1: {"stage": nm.race_admission.SCHEDULED, "progress_msec": 1, "detail": "stale"},
+		2: {"stage": nm.race_admission.SCHEDULED, "progress_msec": 1, "detail": "stale"},
+		3: {"stage": nm.race_admission.SCHEDULED, "progress_msec": 1, "detail": "stale"},
 	}
-	nm.start_sync_active = true
-	nm.start_sync_scheduled = true
+	nm.race_admission.active = true
+	nm.race_admission.scheduled = true
 	nm.start_race("sha256:test", [], {})
 	for id in [1, 2, 3]:
-		if nm._race_admission_stage(id) != nm.RACE_ADMISSION_START_SENT:
-			push_error("Grand Prix next race start must reset stale admission state, got %s" % [nm.race_admission_states])
+		if nm.race_admission.stage_for(id) != nm.race_admission.START_SENT:
+			push_error("Grand Prix next race start must reset stale admission state, got %s" % [nm.race_admission.admission_states])
 			quit(1)
 			return
-	if nm.start_sync_active or nm.start_sync_scheduled:
+	if nm.race_admission.active or nm.race_admission.scheduled:
 		push_error("Grand Prix next race start must reset stale start-sync state")
 		quit(1)
 		return

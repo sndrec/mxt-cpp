@@ -199,6 +199,7 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	network_manager.game_sim = game_sim
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim
+	network_manager.refresh_race_admission_context()
 	if !headless_mode:
 		track_content_controller.load_runtime_visuals()
 		_clear_triggers()
@@ -226,6 +227,7 @@ func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -
 	if clear_client_sim_reference:
 		network_manager.game_sim = null
 	network_manager.server_game_sim = null
+	network_manager.refresh_race_admission_context()
 	track_content_controller.teardown_runtime()
 	for child in car_node_container.get_children():
 		if child != null:
