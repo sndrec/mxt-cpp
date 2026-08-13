@@ -29,8 +29,8 @@ func _init() -> void:
 		return
 	main.network_manager.finish_order = [2, 1, 3]
 	main.network_manager.player_finish_times = {2: 420, 1: 480, 3: 600}
-	main.call("_show_race_results_summary")
-	if main.race_results_overlay == null or !main.race_results_overlay.visible:
+	main.race_presentation_controller.show_results()
+	if main.race_presentation_controller.results_overlay == null or !main.race_presentation_controller.results_overlay.visible:
 		push_error("race results overlay did not become visible")
 		quit(1)
 		return
@@ -52,7 +52,7 @@ func _init() -> void:
 		push_error("Grand Prix points should use all racers, got %s" % [points])
 		quit(1)
 		return
-	if String(main.call("_format_race_time", 900, 420)) != "0:08.000":
+	if main.race_presentation_controller.format_race_time(900, 420) != "0:08.000":
 		push_error("race result formatting should respect the race start tick")
 		quit(1)
 		return
@@ -64,7 +64,7 @@ func _init() -> void:
 		push_error("finish placement should be assigned from finish tick order")
 		quit(1)
 		return
-	var race_text: String = main.call("_format_race_results_text")
+	var race_text: String = main.race_presentation_controller.format_race_results_text()
 	if race_text.find("1st") == -1:
 		push_error("race results text did not use finish tick placement: %s" % race_text)
 		quit(1)

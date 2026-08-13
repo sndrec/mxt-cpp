@@ -1,5 +1,7 @@
 class_name RaceHud extends Control
 
+const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
+
 @onready var speedometer := %speedometer
 @onready var lapcounter := %lapcounter
 @onready var racetimer := %racetimer
@@ -22,6 +24,7 @@ class_name RaceHud extends Control
 @onready var attack_meter_icon: TextureRect = %attack_meter_icon
 
 var car_max_energy: float = 100.0
+var race_presentation_controller: RacePresentationControllerClass
 var boost_energy_use_rate: float = 1.0
 var _sboost_full_width: float = 0.0
 var focus_player_id := 0
@@ -238,7 +241,7 @@ func _send_sticker(car: VisualCar, slot: int) -> void:
 	var sticker_index := _sticker_slot_value(car, slot)
 	if stickers != null and stickers.stickers.size() > 0:
 		sticker_index = wrapi(sticker_index, 0, stickers.stickers.size())
-	car.game_manager.send_local_sticker(sticker_index)
+	race_presentation_controller.send_local_sticker(sticker_index)
 	sticker_menu_open = false
 	sticker_menu.visible = false
 	sticker_input_buffer_msec = Time.get_ticks_msec() + 50
@@ -377,7 +380,7 @@ func _update_world_stickers(car: VisualCar) -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or car.game_manager == null or car.game_manager.game_sim == null:
 		return
-	var active: Dictionary = car.game_manager.active_stickers
+	var active: Dictionary = race_presentation_controller.active_stickers
 	var now := Time.get_ticks_msec()
 	var camera_position := camera.global_position
 	var focus_transform: Transform3D = car.game_manager.game_sim.get_player_render_transform(car.owning_id)
@@ -440,6 +443,11 @@ func _ready() -> void:
 				leaderboard_labels.append(child as Label)
 	if get_parent() is VisualCar:
 		var car: VisualCar = get_parent()
+		var ancestor := car.get_parent()
+		while ancestor != null and !(ancestor is GameManager):
+			ancestor = ancestor.get_parent()
+		if ancestor != null:
+			race_presentation_controller = ancestor.get_node("RacePresentationController") as RacePresentationControllerClass
 		car_max_energy = car.calced_max_energy
 		boost_energy_use_rate = car.boost_energy_use_rate
 	if sboost_meter_bg:

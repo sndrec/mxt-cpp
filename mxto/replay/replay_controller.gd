@@ -2,10 +2,12 @@ class_name ReplayController extends Node
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
+const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
 @onready var spectator_controller: SpectatorControllerClass = get_node("../SpectatorController") as SpectatorControllerClass
+@onready var race_presentation_controller: RacePresentationControllerClass = get_node("../RacePresentationController") as RacePresentationControllerClass
 @onready var replays_button: Button = get_node("../Control/ReplaysButton") as Button
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
@@ -331,7 +333,7 @@ func update(delta: float) -> void:
 func _on_pause_save_replay_pressed() -> void:
 	var saved_path := _save_replay_recording("manual")
 	if saved_path != "":
-		game_manager._show_race_notification("Replay Saved", 2200)
+		race_presentation_controller.show_notification("Replay Saved", 2200)
 	refresh_pause_button()
 
 func save_completed_time_attack_replay() -> String:
@@ -659,7 +661,7 @@ func _leaderboard_verified_result() -> Dictionary:
 		return {"valid": false, "reason": "missing_leaderboard_validation"}
 	var racer_id := int(replay_playback_racer_ids[0])
 	var finish_tick := _lookup_replay_tick_for_id(game_manager.network_manager.player_finish_times, racer_id)
-	var start_tick := int(game_manager._race_results_start_tick())
+	var start_tick := race_presentation_controller.race_results_start_tick()
 	if finish_tick <= start_tick:
 		return {"valid": false, "reason": "invalid_resimulated_finish_time"}
 	var result := replay_leaderboard_validation.duplicate(true)
@@ -1412,7 +1414,7 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 		if game_manager.car_node_container.local_visual_car != null:
 			game_manager.car_node_container.local_visual_car.just_rendered()
 	if show_notice:
-		game_manager._show_race_notification("Replay: %s" % _format_replay_timeline_time(game_manager._singleplayer_tick), 900)
+		race_presentation_controller.show_notification("Replay: %s" % _format_replay_timeline_time(game_manager._singleplayer_tick), 900)
 	return true
 
 func should_enqueue_replay_race_notification() -> bool:
@@ -1530,7 +1532,7 @@ func _apply_replay_focus_to_local_visual() -> void:
 		if ps != null:
 			car.player_settings = ps
 	if is_instance_valid(car.name_label):
-		car.name_label.text = game_manager._player_display_name(focus_id)
+		car.name_label.text = race_presentation_controller.player_display_name(focus_id)
 	if !game_manager.auto_disable_hud_mode and !game_manager.auto_hide_hud_only_mode:
 		car.race_hud.visible = true
 	if !game_manager.auto_disable_hud_mode and !game_manager.auto_disable_hud_process_only_mode:
@@ -1644,7 +1646,7 @@ func _apply_replay_camera_mode() -> void:
 func _cycle_replay_camera_mode() -> void:
 	replay_camera_mode = (replay_camera_mode + 1) % 4
 	_apply_replay_camera_mode()
-	game_manager._show_race_notification("Replay Camera: %s" % _replay_camera_mode_name(), 1200)
+	race_presentation_controller.show_notification("Replay Camera: %s" % _replay_camera_mode_name(), 1200)
 
 func _replay_camera_mode_name() -> String:
 	match replay_camera_mode:
@@ -1669,7 +1671,7 @@ func _change_replay_focus(delta: int) -> void:
 	_apply_replay_camera_mode()
 	_refresh_replay_input_display()
 	replay_timeline_markers_dirty = true
-	game_manager._show_race_notification("Replay Focus: %s" % game_manager._player_display_name(_focused_replay_player_id()), 1200)
+	race_presentation_controller.show_notification("Replay Focus: %s" % race_presentation_controller.player_display_name(_focused_replay_player_id()), 1200)
 
 func _update_replay_auto_camera(delta: float) -> void:
 	if !replay_playback_active or replay_camera_mode != REPLAY_CAMERA_AUTO:
@@ -1921,7 +1923,7 @@ func _on_replay_catalog_selected(_index: int) -> void:
 		"Mode: %s" % str(entry.get("mode", "")),
 		"Game version: %s" % str(entry.get("build", "")),
 		"Godot version: %s" % str(entry.get("engine_version", "")),
-		"Duration: %s" % game_manager._format_race_time(int(entry.get("duration_ticks", 0)), 0),
+		"Duration: %s" % race_presentation_controller.format_race_time(int(entry.get("duration_ticks", 0)), 0),
 		"Players:",
 		"\n".join(player_lines),
 		"",

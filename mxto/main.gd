@@ -3,6 +3,8 @@ class_name GameManager extends Node
 const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 const LobbyControllerClass = preload("res://ui/lobby_controller.gd")
 const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
+const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
+const CarSettingsClass = preload("res://ui/car_settings.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 
@@ -14,6 +16,7 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var lobby_chibi_controller: LobbyChibiControllerClass = $LobbyChibiController
 @onready var lobby_controller: LobbyControllerClass = $LobbyController
 @onready var spectator_controller: SpectatorControllerClass = $SpectatorController
+@onready var race_presentation_controller: RacePresentationControllerClass = $RacePresentationController
 @onready var communication_controller: CommunicationControllerClass = $CommunicationController
 @onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
@@ -31,14 +34,13 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var debug_track_mesh_container: Node3D = $GameWorld/DebugTrackMeshContainer
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
-@onready var car_settings: Control = $CarSettings
+@onready var car_settings: CarSettingsClass = $CarSettings
 @onready var options_menu: Control = $OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
 @onready var spectator_race_button: Button = $Control/SpectatorRaceButton
 @onready var controller_settings_button: Button = $Control/ControllerSettingsButton
 @onready var track_editor_button: Button = $Control/TrackEditorButton
-@onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
 @onready var rtt_label: Label = $RTTLabel
 @onready var version_label: Label = $VersionLabel
@@ -63,12 +65,8 @@ const GameVersionData = preload("res://core/game_version.gd")
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
-const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
-const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
-const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
-const RACE_RESULTS_SCREEN_MSEC := 15000
 const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
 
 var players: Array = []
@@ -161,13 +159,6 @@ var debug_rail_trace_requested := false
 var debug_rail_trace_car_index := -1
 var debug_rail_trace_tick_start := -1
 var debug_rail_trace_tick_end := -1
-var active_stickers := {}
-var race_notification_hide_msec := 0
-var race_medals: Array[Control] = []
-var race_results_overlay: RaceResultsOverlay
-var race_results_next_accel_setting: float = -1.0
-var race_results_hid_race_hud := false
-var race_results_saved_race_hud_visible := false
 var render_profile_frames := 0
 var render_profile_process_frames := 0
 var render_profile_physics_us := 0
@@ -223,22 +214,6 @@ var render_profile_top_gap_primitives := PackedInt64Array()
 var render_profile_top_gap_engine_process_us := PackedInt64Array()
 var render_profile_top_gap_engine_physics_us := PackedInt64Array()
 const RENDER_PROFILE_TOP_GAP_COUNT := 24
-var nametag_pool: Array[Label] = []
-var nametag_pool_car_indices: Array[int] = []
-var nametag_pool_pending_indices: Array[int] = []
-var nametag_names: Array[String] = []
-var nametag_best_distances: Array[float] = []
-var nametag_best_indices: Array[int] = []
-var placement_badge_pool: Array[TextureRect] = []
-
-const TOP_PLACE_BADGE_TEXTURES: Array[Texture2D] = [
-	preload("res://ui/placements/mxt-1.png"),
-	preload("res://ui/placements/mxt-2.png"),
-	preload("res://ui/placements/mxt-3.png"),
-]
-
-const NAMETAG_VISIBLE_BUDGET := 30
-const NAMETAG_MAX_DISTANCE_SQ := 12000.0
 const CLEAN_SCREENSHOT_SIZE := Vector2i(3840, 2160)
 const CLEAN_SCREENSHOT_DIRECTORY := "user://screenshots"
 
@@ -273,9 +248,6 @@ func _ready() -> void:
 	car_render_manager.name = "CarRenderManager"
 	$GameWorld.add_child(car_render_manager)
 	race_audio_controller.initialize()
-	race_results_overlay = RaceResultsOverlayScene.instantiate() as RaceResultsOverlay
-	add_child(race_results_overlay)
-	race_results_overlay.machine_setting_changed.connect(_on_race_results_machine_setting_changed)
 	communication_controller.initialize(self, network_manager, game_sim, replay_controller)
 	lobby_chibi_controller.initialize(self, network_manager, game_sim, communication_controller.lobby_input, vehicle_content_controller)
 	lobby_controller.initialize(network_manager, track_content_controller, lobby_chibi_controller)
@@ -283,7 +255,15 @@ func _ready() -> void:
 	lobby_controller.car_settings_requested.connect(_on_car_settings_button_pressed)
 	lobby_controller.controller_settings_requested.connect(_on_controller_settings_button_pressed)
 	spectator_controller.initialize(network_manager, game_sim, car_node_container, vehicle_content_controller)
-	spectator_controller.notification_requested.connect(_show_race_notification)
+	race_presentation_controller.initialize(
+		network_manager,
+		game_sim,
+		server_game_sim,
+		replay_controller,
+		track_content_controller,
+		car_node_container,
+		car_settings)
+	spectator_controller.notification_requested.connect(race_presentation_controller.show_notification)
 	randomize()
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
@@ -987,24 +967,6 @@ func _local_player_id() -> int:
 		return 0
 	return multiplayer.get_unique_id() if network_manager.has_network_peer() else 0
 
-func _player_display_name(id: int) -> String:
-	if id < 0:
-		return "Bumper"
-	var name := str(id)
-	var settings = network_manager.player_settings.get(id, null)
-	if typeof(settings) == TYPE_DICTIONARY and settings.has("username"):
-		name = str(settings["username"])
-	if network_manager.get_cpu_roster().has(id):
-		name = "[CPU] " + name
-	return name
-
-func _show_race_notification(text: String, duration_msec: int = 2200) -> void:
-	if race_finish_label == null:
-		return
-	race_finish_label.text = text
-	race_finish_label.visible = true
-	race_notification_hide_msec = Time.get_ticks_msec() + duration_msec
-
 func _build_start_sync_drop_panel() -> void:
 	start_sync_drop_root = PanelContainer.new()
 	start_sync_drop_root.name = "StartSyncDropPanel"
@@ -1077,238 +1039,9 @@ func _on_start_sync_drop_pressed() -> void:
 	if network_manager != null and network_manager.request_drop_start_sync_stalled_players():
 		start_sync_drop_root.visible = false
 
-func _race_results_sim() -> GameSim:
-	if network_manager.is_server and server_game_sim != null:
-		return server_game_sim
-	return game_sim
-
-func _race_results_start_tick() -> int:
-	var sim := _race_results_sim()
-	if sim != null and sim.has_method("get_player_level_start_time"):
-		var local_id := _local_player_id()
-		if local_id != 0:
-			var local_start := int(sim.get_player_level_start_time(local_id))
-			if local_start > 0:
-				return local_start
-		for id_value in network_manager.get_simulation_roster():
-			var start_tick := int(sim.get_player_level_start_time(int(id_value)))
-			if start_tick > 0:
-				return start_tick
-	return 300
-
-func _format_race_time(tick_value: int, official_start_tick: int = -1) -> String:
-	if official_start_tick < 0:
-		official_start_tick = _race_results_start_tick()
-	var total_msec := TimeAttackRulesClass.finish_ticks_to_milliseconds(tick_value, official_start_tick)
-	var minutes := int(total_msec / 60000)
-	var seconds := int(total_msec / 1000) % 60
-	var milliseconds := total_msec % 1000
-	return "%d:%02d.%03d" % [minutes, seconds, milliseconds]
-
-func _format_ordinal(value: int) -> String:
-	var mod_100 := value % 100
-	if mod_100 >= 11 and mod_100 <= 13:
-		return "%dth" % value
-	match value % 10:
-		1:
-			return "%dst" % value
-		2:
-			return "%dnd" % value
-		3:
-			return "%drd" % value
-		_:
-			return "%dth" % value
-
-func _format_race_results_text() -> String:
-	var lines := ["Race Results"]
-	var finish_rows := []
-	for id_value in network_manager.player_finish_placements.keys():
-		var id := int(id_value)
-		finish_rows.append([int(network_manager.player_finish_placements[id_value]), id])
-	finish_rows.sort_custom(func(a, b):
-		if int(a[0]) != int(b[0]):
-			return int(a[0]) < int(b[0])
-		return int(a[1]) < int(b[1])
-	)
-	for row in finish_rows:
-		var place := int(row[0])
-		var id := int(row[1])
-		var time_text := ""
-		var tick_value := int(_lookup_id_value(network_manager.player_finish_times, id, -1))
-		if tick_value >= 0:
-			time_text = "  " + _format_race_time(tick_value)
-		lines.append("%s  %s%s" % [_format_ordinal(place), _player_display_name(id), time_text])
-	if !network_manager.player_eliminations.is_empty():
-		lines.append("")
-		lines.append("Eliminated")
-		for id_value in network_manager.player_eliminations.keys():
-			lines.append(_player_display_name(int(id_value)))
-	if !network_manager.player_dnfs.is_empty():
-		lines.append("")
-		lines.append("DNF")
-		for id_value in network_manager.player_dnfs.keys():
-			lines.append(_player_display_name(int(id_value)))
-	return "\n".join(lines)
-
-func _format_grand_prix_results_text() -> String:
-	if network_manager.is_grand_prix_enabled():
-		var lines := ["Grand Prix Standings"]
-		var points: Dictionary = network_manager.race_options.get("grand_prix_points", {})
-		var standings := []
-		for id_value in points.keys():
-			standings.append([int(_lookup_id_value(points, int(id_value), 0)), int(id_value)])
-		standings.sort_custom(func(a, b):
-			if int(a[0]) != int(b[0]):
-				return int(a[0]) > int(b[0])
-			return int(a[1]) < int(b[1])
-		)
-		for i in range(standings.size()):
-			lines.append("%s  %s  %d" % [
-				_format_ordinal(i + 1),
-				_player_display_name(int(standings[i][1])),
-				int(standings[i][0])
-			])
-		return "\n".join(lines)
-	return ""
-
-func _format_race_results_summary() -> String:
-	var race_text := _format_race_results_text()
-	var grand_prix_text := _format_grand_prix_results_text()
-	if grand_prix_text == "":
-		return race_text
-	return race_text + "\n\n" + grand_prix_text
-
-func _race_results_countdown_seconds() -> int:
-	if network_manager.net_race_finish_time < 0:
-		return -1
-	var remaining_msec := maxi(0, RACE_RESULTS_SCREEN_MSEC - (Time.get_ticks_msec() - network_manager.net_race_finish_time))
-	return ceili(float(remaining_msec) / 1000.0)
-
-func _next_grand_prix_track_id_for_results() -> String:
-	if !network_manager.is_grand_prix_enabled():
-		return ""
-	var track_ids: Array = network_manager.race_options.get("track_ids", [])
-	var next_index := int(network_manager.race_options.get("grand_prix_current_track", 0)) + 1
-	if next_index < 0 or next_index >= track_ids.size():
-		return ""
-	return String(track_ids[next_index])
-
-func _local_player_accel_setting_for_results() -> float:
-	if race_results_next_accel_setting >= 0.0:
-		return race_results_next_accel_setting
-	var local_id := _local_player_id()
-	var settings = network_manager.player_settings.get(local_id, {})
-	if typeof(settings) == TYPE_DICTIONARY and (settings as Dictionary).has("accel_setting"):
-		return clampf(float((settings as Dictionary)["accel_setting"]), 0.0, 1.0)
-	if car_settings != null:
-		var player_settings = car_settings.get("player_settings")
-		if player_settings is PlayerSettings:
-			return clampf((player_settings as PlayerSettings).accel_setting, 0.0, 1.0)
-	return 1.0
-
-func _apply_local_next_race_accel_setting(accel_setting: float) -> void:
-	accel_setting = clampf(accel_setting, 0.0, 1.0)
-	var local_id := _local_player_id()
-	var settings = network_manager.player_settings.get(local_id, {})
-	if typeof(settings) == TYPE_DICTIONARY:
-		settings = (settings as Dictionary).duplicate(true)
-	else:
-		settings = {}
-	if settings.is_empty() and car_settings != null:
-		var player_settings = car_settings.get("player_settings")
-		if player_settings is PlayerSettings:
-			settings = (player_settings as PlayerSettings).to_dict()
-	settings["accel_setting"] = accel_setting
-	network_manager.player_settings[local_id] = settings
-	if car_settings != null:
-		var player_settings = car_settings.get("player_settings")
-		if player_settings is PlayerSettings:
-			(player_settings as PlayerSettings).accel_setting = accel_setting
-
-func _on_race_results_machine_setting_changed(accel_setting: float) -> void:
-	if _next_grand_prix_track_id_for_results() == "":
-		return
-	race_results_next_accel_setting = clampf(accel_setting, 0.0, 1.0)
-	_apply_local_next_race_accel_setting(race_results_next_accel_setting)
-	if network_manager.has_method("send_next_race_accel_setting"):
-		network_manager.call("send_next_race_accel_setting", race_results_next_accel_setting)
-
-func _show_race_results_summary() -> void:
-	if replay_controller.replay_playback_active:
-		_hide_race_results_summary()
-		return
-	if race_finish_label != null:
-		race_finish_label.visible = false
-	_set_race_results_hud_hidden(true)
-	if race_results_overlay != null:
-		race_results_overlay.set_results(_format_race_results_text(), _format_grand_prix_results_text())
-		race_results_overlay.set_countdown_seconds(_race_results_countdown_seconds())
-		var next_track_id := _next_grand_prix_track_id_for_results()
-		race_results_overlay.set_next_race(
-			track_content_controller.track_name_for_id(next_track_id),
-			_local_player_accel_setting_for_results(),
-			next_track_id != "")
-		race_results_overlay.visible = true
-	race_notification_hide_msec = 0
-
-func _hide_race_results_summary() -> void:
-	if race_results_overlay != null:
-		race_results_overlay.visible = false
-		race_results_overlay.set_countdown_seconds(-1)
-		race_results_overlay.set_next_race("", 1.0, false)
-	_set_race_results_hud_hidden(false)
-
-func _set_race_results_hud_hidden(hidden: bool) -> void:
-	var race_hud := _local_race_hud()
-	if hidden:
-		if race_results_hid_race_hud:
-			return
-		if race_hud == null:
-			return
-		race_results_saved_race_hud_visible = race_hud.visible
-		race_results_hid_race_hud = true
-		race_hud.visible = false
-		return
-	if !race_results_hid_race_hud:
-		return
-	race_results_hid_race_hud = false
-	if race_hud != null:
-		race_hud.visible = race_results_saved_race_hud_visible
-
-func _local_race_hud() -> Control:
-	if car_node_container == null or car_node_container.local_visual_car == null:
-		return null
-	return car_node_container.local_visual_car.race_hud as Control
-
-func _show_finish_medal(actor_id: int, tick_value: int) -> void:
-	var medal := FinishMedalScene.instantiate() as Control
-	_add_race_medal(medal)
-	medal.call("set_finisher_name", _player_display_name(actor_id), _format_race_time(tick_value))
-
-func _show_ko_medal(actor_id: int, target_id: int) -> void:
-	var medal := KoMedalScene.instantiate() as Control
-	_add_race_medal(medal)
-	var target_name := "Obstacle" if target_id < 0 else _player_display_name(target_id)
-	medal.call("set_names", _player_display_name(actor_id), target_name)
-
-func _add_race_medal(medal: Control) -> void:
-	add_child(medal)
-	medal.tree_exited.connect(_refresh_race_medal_feed)
-	race_medals.insert(0, medal)
-	while race_medals.size() > 3:
-		var oldest := race_medals.pop_back() as Control
-		if is_instance_valid(oldest) and oldest.is_inside_tree():
-			oldest.call("dismiss")
-	_refresh_race_medal_feed()
-
-func _refresh_race_medal_feed() -> void:
-	race_medals = race_medals.filter(func(existing): return is_instance_valid(existing) and existing.is_inside_tree())
-	for i in range(race_medals.size()):
-		race_medals[i].call("set_feed_index", i)
-
 func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_value: int, value: int) -> void:
 	if event_type == "sticker":
-		_show_sticker(actor_id, value)
+		race_presentation_controller.show_sticker(actor_id, value)
 		return
 	if event_type == "eliminated":
 		if actor_id == _local_player_id() and replay_controller.should_enqueue_replay_race_notification():
@@ -1316,32 +1049,18 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 		return
 	if event_type == "dnf":
 		if actor_id == _local_player_id():
-			_show_race_notification("DNF - Spectating", 3000)
+			race_presentation_controller.show_notification("DNF - Spectating", 3000)
 			spectator_controller.change_focus(1)
 		return
 	if event_type == "ko":
 		if replay_controller.should_enqueue_replay_race_notification():
-			_show_ko_medal(actor_id, target_id)
+			race_presentation_controller.show_ko_medal(actor_id, target_id)
 		return
 	if event_type == "finish":
 		if actor_id == _local_player_id():
 			race_audio_controller.begin_local_finish()
 		if replay_controller.should_enqueue_replay_race_notification():
-			_show_finish_medal(actor_id, tick_value)
-
-func _show_sticker(actor_id: int, sticker_index: int) -> void:
-	var now := Time.get_ticks_msec()
-	active_stickers[actor_id] = {
-		"sticker": sticker_index,
-		"started": now,
-		"expires": now + 2200,
-	}
-
-func send_local_sticker(sticker_index: int) -> void:
-	if singleplayer_mode or !network_manager.has_network_peer():
-		_show_sticker(_local_player_id(), sticker_index)
-	else:
-		network_manager.send_sticker(sticker_index)
+			race_presentation_controller.show_finish_medal(actor_id, tick_value)
 
 func _consume_authoritative_race_events() -> void:
 	if singleplayer_mode:
@@ -1502,12 +1221,10 @@ func _start_race(track_index: int, settings: Array) -> bool:
 	lobby_chibi_controller.clear()
 	_last_race_track_index = track_index
 	_last_race_settings = settings.duplicate(true)
-	active_stickers.clear()
-	race_notification_hide_msec = 0
+	race_presentation_controller.reset()
 	spectator_controller.reset()
 	race_dnf_low_speed_ticks.clear()
 	var info: Dictionary = track_content_controller.tracks[track_index]
-	_hide_race_results_summary()
 	if !track_content_controller.prepare_race(track_index):
 		return false
 	race_audio_controller.reset_for_race()
@@ -1588,11 +1305,11 @@ func _start_race(track_index: int, settings: Array) -> bool:
 	if local_player_index == -1 and !racer_ids.is_empty():
 		visual_focus_id = int(racer_ids[0])
 	car_node_container.instantiate_cars(chosen_defs, racer_ids, visual_focus_id)
-	nametag_names.clear()
-	nametag_names.resize(racer_settings.size())
+	var race_nametag_names: Array[String] = []
+	race_nametag_names.resize(racer_settings.size())
 	for idx in racer_settings.size():
 		var nametag_text: String = " " + racer_settings[idx].username + " "
-		nametag_names[idx] = nametag_text
+		race_nametag_names[idx] = nametag_text
 	for car: VisualCar in car_node_container.get_children():
 		car.game_manager = self
 	if car_node_container.local_visual_car != null:
@@ -1600,7 +1317,7 @@ func _start_race(track_index: int, settings: Array) -> bool:
 		if visual_player_index >= 0 and visual_player_index < racer_settings.size():
 			car_node_container.local_visual_car.player_settings = racer_settings[visual_player_index]
 			if is_instance_valid(car_node_container.local_visual_car.name_label):
-				car_node_container.local_visual_car.name_label.text = nametag_names[visual_player_index]
+				car_node_container.local_visual_car.name_label.text = race_nametag_names[visual_player_index]
 	car_render_manager.multimesh_render_enabled = !auto_disable_car_multimesh_mode
 	car_render_manager.set_custom_stamp_atlas(custom_stamp_atlas)
 	car_render_manager.configure(render_defs, car_node_container.get_children(), render_settings)
@@ -1672,7 +1389,7 @@ func _start_race(track_index: int, settings: Array) -> bool:
 			car_node_container.local_visual_car.race_hud.process_mode = Node.PROCESS_MODE_DISABLED
 			frame_time_label.visible = false
 			rtt_label.visible = false
-	_configure_nametag_pool()
+	race_presentation_controller.configure_race(_local_player_id(), local_player_index, singleplayer_mode, race_nametag_names)
 	if network_manager.is_server:
 		server_game_sim.car_node_container = car_node_container
 		server_game_sim.spark_node_container = spark_node_container
@@ -1734,7 +1451,7 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 		var evidence_message := String(readiness.get("detail", "Race content evidence mismatch for %s" % track_id))
 		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, evidence_message)
 		push_error(evidence_message)
-		_show_race_notification(evidence_message, 5000)
+		race_presentation_controller.show_notification(evidence_message, 5000)
 		if headless_mode:
 			get_tree().quit(1)
 		return
@@ -1743,7 +1460,7 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 		var message := "Missing race track %s" % track_id
 		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, message)
 		push_error(message)
-		_show_race_notification(message, 5000)
+		race_presentation_controller.show_notification(message, 5000)
 		if headless_mode:
 			get_tree().quit(1)
 		return
@@ -1753,7 +1470,6 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 	await get_tree().process_frame
 	if !network_manager.race_active or network_manager.race_netplay_phase != admission_phase:
 		return
-	race_results_next_accel_setting = -1.0
 	race_dnf_low_speed_ticks.clear()
 	if start_sync_drop_root != null:
 		start_sync_drop_root.visible = false
@@ -1770,9 +1486,8 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 func _on_network_race_finished() -> void:
 	if headless_mode and network_manager.pending_next_race_track_id == "":
 		return
-	race_finish_label.visible = false
-	_hide_race_results_summary()
-	active_stickers.clear()
+	race_presentation_controller.hide_results()
+	race_presentation_controller.clear_stickers()
 	if network_manager.pending_next_race_track_id != "":
 		_transition_to_next_grand_prix_race()
 	else:
@@ -1802,7 +1517,7 @@ func _take_clean_4k_screenshot() -> void:
 	var original_window_screen := window.current_screen
 	var original_canvas_cull_mask := viewport.get_canvas_cull_mask()
 
-	var race_hud := _local_race_hud()
+	var race_hud := race_presentation_controller.local_race_hud()
 	var race_hud_process_mode := Node.PROCESS_MODE_INHERIT
 	var world_sticker_nodes: Array[Node3D] = []
 	var world_sticker_visibility: Array[bool] = []
@@ -1870,221 +1585,6 @@ func _take_clean_4k_screenshot() -> void:
 		push_error("Failed to save clean 4K screenshot: %s" % error_string(save_error))
 	clean_screenshot_in_progress = false
 
-func _reset_nametag_pool() -> void:
-	for label in nametag_pool:
-		if is_instance_valid(label):
-			label.queue_free()
-	for badge in placement_badge_pool:
-		if is_instance_valid(badge):
-			badge.queue_free()
-	nametag_pool.clear()
-	nametag_pool_car_indices.clear()
-	nametag_pool_pending_indices.clear()
-	nametag_best_distances.clear()
-	nametag_best_indices.clear()
-	placement_badge_pool.clear()
-
-func _configure_nametag_pool() -> void:
-	_reset_nametag_pool()
-	var template_label: Label = null
-	for car: VisualCar in car_node_container.get_children():
-		if car != null and is_instance_valid(car.name_label):
-			template_label = car.name_label
-			break
-	if template_label == null:
-		return
-	for slot in NAMETAG_VISIBLE_BUDGET:
-		var label := template_label.duplicate() as Label
-		label.name = "NametagPool%d" % slot
-		label.visible = false
-		label.modulate.a = 1.0
-		add_child(label)
-		nametag_pool.append(label)
-		nametag_pool_car_indices.append(-1)
-		nametag_pool_pending_indices.append(-1)
-		nametag_best_distances.append(INF)
-		nametag_best_indices.append(-1)
-	for car: VisualCar in car_node_container.get_children():
-		if car != null and is_instance_valid(car.name_label):
-			car.name_label.queue_free()
-	for place in TOP_PLACE_BADGE_TEXTURES.size():
-		var badge := TextureRect.new()
-		badge.name = "TopPlaceBadge%d" % (place + 1)
-		badge.texture = TOP_PLACE_BADGE_TEXTURES[place]
-		badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		badge.custom_minimum_size = Vector2(56.0, 56.0)
-		badge.size = Vector2(56.0, 56.0)
-		badge.pivot_offset = badge.size * 0.5
-		badge.visible = false
-		add_child(badge)
-		placement_badge_pool.append(badge)
-
-func _nametag_best_contains(car_index: int) -> bool:
-	for slot in NAMETAG_VISIBLE_BUDGET:
-		if nametag_best_indices[slot] == car_index:
-			return true
-	return false
-
-func _nametag_pool_has_car(car_index: int) -> bool:
-	for slot in NAMETAG_VISIBLE_BUDGET:
-		if nametag_pool_car_indices[slot] == car_index or nametag_pool_pending_indices[slot] == car_index:
-			return true
-	return false
-
-func _nametag_assign(label: Label, slot: int, car_index: int) -> void:
-	label.text = nametag_names[car_index] if car_index < nametag_names.size() else ""
-	label.size = label.get_combined_minimum_size()
-	label.modulate.a = 0.0
-	label.visible = true
-	nametag_pool_car_indices[slot] = car_index
-	nametag_pool_pending_indices[slot] = -1
-
-func _car_index_for_player_id(player_id: int) -> int:
-	var car_index := 0
-	for car in car_node_container.get_children():
-		if car is VisualCar:
-			if car.owning_id == player_id:
-				return car_index
-			car_index += 1
-	return -1
-
-func _update_top_place_badges(active_camera: Camera3D, camera_position: Vector3, camera_right: Vector3, camera_up: Vector3) -> void:
-	for badge in placement_badge_pool:
-		badge.visible = false
-	if singleplayer_mode or game_sim == null or placement_badge_pool.is_empty():
-		return
-	var local_id := _local_player_id()
-	var top_players := []
-	for car in car_node_container.get_children():
-		var visual_car := car as VisualCar
-		if visual_car == null:
-			continue
-		var player_id := visual_car.owning_id
-		if player_id == local_id:
-			continue
-		var place := int(game_sim.get_player_race_place(player_id))
-		if place >= 1 and place <= TOP_PLACE_BADGE_TEXTURES.size():
-			top_players.append([place, player_id])
-	top_players.sort_custom(func(a, b): return int(a[0]) < int(b[0]))
-	var badge_slot := 0
-	for entry in top_players:
-		var place := int(entry[0])
-		var player_id := int(entry[1])
-		var render_transform: Transform3D = game_sim.get_player_render_transform(player_id)
-		var world_pos := render_transform.origin
-		if camera_position.distance_squared_to(world_pos) > NAMETAG_MAX_DISTANCE_SQ or !active_camera.is_position_in_frustum(world_pos):
-			continue
-		var badge := placement_badge_pool[badge_slot]
-		badge.texture = TOP_PLACE_BADGE_TEXTURES[place - 1]
-		badge.visible = true
-		badge.position = active_camera.unproject_position(
-			world_pos + camera_right * 1.5 + camera_up * 2.35
-		) + Vector2(42.0, -132.0)
-		badge_slot += 1
-		if badge_slot >= placement_badge_pool.size():
-			return
-
-func _update_nametags(active_camera: Camera3D, delta: float) -> void:
-	if auto_disable_hud_mode or active_camera == null or nametag_pool.is_empty():
-		return
-	var camera_position := active_camera.global_position
-	var camera_right := active_camera.global_basis.x
-	var camera_up := active_camera.global_basis.y
-	var car_count := nametag_names.size()
-	for slot in NAMETAG_VISIBLE_BUDGET:
-		nametag_best_distances[slot] = INF
-		nametag_best_indices[slot] = -1
-	for car_index in car_count:
-		if car_index == local_player_index:
-			continue
-		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
-		var world_pos: Vector3 = render_transform.origin
-		var distance_sq := camera_position.distance_squared_to(world_pos)
-		if distance_sq > NAMETAG_MAX_DISTANCE_SQ or !active_camera.is_position_in_frustum(world_pos):
-			continue
-		if distance_sq >= nametag_best_distances[NAMETAG_VISIBLE_BUDGET - 1]:
-			continue
-		var insert_at := NAMETAG_VISIBLE_BUDGET - 1
-		while insert_at > 0 and distance_sq < nametag_best_distances[insert_at - 1]:
-			nametag_best_distances[insert_at] = nametag_best_distances[insert_at - 1]
-			nametag_best_indices[insert_at] = nametag_best_indices[insert_at - 1]
-			insert_at -= 1
-		nametag_best_distances[insert_at] = distance_sq
-		nametag_best_indices[insert_at] = car_index
-	for slot in NAMETAG_VISIBLE_BUDGET:
-		var label := nametag_pool[slot]
-		var car_index := nametag_pool_car_indices[slot]
-		if car_index < 0:
-			label.visible = false
-			label.modulate.a = 0.0
-			continue
-		if car_index >= car_count:
-			label.visible = false
-			label.modulate.a = 0.0
-			nametag_pool_car_indices[slot] = -1
-			nametag_pool_pending_indices[slot] = -1
-			continue
-		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
-		var world_pos: Vector3 = render_transform.origin
-		if !active_camera.is_position_in_frustum(world_pos) or camera_position.distance_squared_to(world_pos) > NAMETAG_MAX_DISTANCE_SQ:
-			label.visible = false
-			label.modulate.a = 0.0
-			nametag_pool_car_indices[slot] = -1
-			nametag_pool_pending_indices[slot] = -1
-			continue
-		if !_nametag_best_contains(car_index):
-			label.modulate.a = maxf(0.0, label.modulate.a - delta * 12.0)
-			if label.modulate.a <= 0.0:
-				label.visible = false
-				nametag_pool_car_indices[slot] = -1
-			continue
-		label.visible = true
-		label.modulate.a = minf(1.0, label.modulate.a + delta * 20.0)
-		label.position = active_camera.unproject_position(
-			world_pos + camera_right * 1.5 + camera_up * 1.5
-		) + Vector2(72, -90)
-	_update_top_place_badges(active_camera, camera_position, camera_right, camera_up)
-	for desired_slot in NAMETAG_VISIBLE_BUDGET:
-		var desired_car_index := nametag_best_indices[desired_slot]
-		if desired_car_index < 0 or _nametag_pool_has_car(desired_car_index):
-			continue
-		var target_pool_slot := -1
-		for slot in NAMETAG_VISIBLE_BUDGET:
-			if nametag_pool_car_indices[slot] == -1:
-				target_pool_slot = slot
-				break
-		if target_pool_slot == -1:
-			for slot in NAMETAG_VISIBLE_BUDGET:
-				if nametag_pool_pending_indices[slot] == -1 and !_nametag_best_contains(nametag_pool_car_indices[slot]):
-					nametag_pool_pending_indices[slot] = desired_car_index
-					target_pool_slot = slot
-					break
-		if target_pool_slot == -1:
-			continue
-		var label := nametag_pool[target_pool_slot]
-		if nametag_pool_car_indices[target_pool_slot] == -1 or label.modulate.a <= 0.0:
-			_nametag_assign(label, target_pool_slot, desired_car_index)
-	for slot in NAMETAG_VISIBLE_BUDGET:
-		var pending_index := nametag_pool_pending_indices[slot]
-		if pending_index < 0:
-			continue
-		var label := nametag_pool[slot]
-		label.modulate.a = maxf(0.0, label.modulate.a - delta * 12.0)
-		if label.modulate.a <= 0.0:
-			_nametag_assign(label, slot, pending_index)
-	for slot in NAMETAG_VISIBLE_BUDGET:
-		var car_index := nametag_pool_car_indices[slot]
-		if car_index < 0:
-			continue
-		var label := nametag_pool[slot]
-		var render_transform: Transform3D = game_sim.get_car_render_transform(car_index)
-		var world_pos: Vector3 = render_transform.origin
-		label.visible = true
-		label.position = active_camera.unproject_position(
-			world_pos + camera_right * 1.5 + camera_up * 1.5
-		) + Vector2(72, -90)
-
 func _print_render_profile_summary() -> void:
 	if !auto_render_profile_mode or render_profile_frames <= 0:
 		return
@@ -2146,7 +1646,7 @@ func _print_render_profile_summary() -> void:
 			render_profile_top_gap_engine_physics_us[i],
 		])
 	print("MXT_RENDER_PROFILE_TOP_GAPS gap_us:tick:physics_us:process_us:pipeline_draw:pipeline_surface:pipeline_mesh:native_total_us:native_vehicle_us:native_collision_us:native_save_us:body_instances:draw_calls:primitives:engine_process_us:engine_physics_us=", "|".join(top_gap_parts))
-	var profile_hud := _local_race_hud() as RaceHud
+	var profile_hud := race_presentation_controller.local_race_hud() as RaceHud
 	if profile_hud != null:
 		print(profile_hud.get_render_profile_string())
 	var profile_visual_car := car_node_container.local_visual_car
@@ -2313,7 +1813,7 @@ func _physics_process(delta: float) -> void:
 			render_profile_audio_tick_us += profile_audio_tick_us
 			render_profile_audio_tick_max_us = maxi(render_profile_audio_tick_max_us, profile_audio_tick_us)
 		var profile_nametag_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
-		_update_nametags(get_viewport().get_camera_3d(), delta)
+		race_presentation_controller.update_nametags(get_viewport().get_camera_3d(), delta, auto_disable_hud_mode)
 		if auto_render_profile_mode:
 			var profile_nametag_us := Time.get_ticks_usec() - profile_nametag_start
 			render_profile_nametag_us += profile_nametag_us
@@ -2472,10 +1972,7 @@ func _return_to_menu() -> void:
 	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_close_race_pause_menu()
-	race_finish_label.visible = false
-	_hide_race_results_summary()
-	active_stickers.clear()
-	_reset_nametag_pool()
+	race_presentation_controller.reset()
 	var was_server := network_manager.is_server
 	network_manager.disconnect_from_server()
 	game_sim.destroy_gamesim()
@@ -2515,10 +2012,8 @@ func _return_to_lobby() -> void:
 	race_audio_controller.leave_race(0.5)
 	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
 	_close_race_pause_menu()
-	_reset_nametag_pool()
+	race_presentation_controller.reset()
 	game_sim.destroy_gamesim()
-	race_finish_label.visible = false
-	_hide_race_results_summary()
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
@@ -2551,10 +2046,8 @@ func _teardown_race_world_for_transition() -> void:
 	race_audio_controller.leave_race()
 	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
 	_close_race_pause_menu()
-	_reset_nametag_pool()
+	race_presentation_controller.reset()
 	game_sim.destroy_gamesim()
-	race_finish_label.visible = false
-	_hide_race_results_summary()
 	if network_manager.is_server:
 		server_game_sim.destroy_gamesim()
 		network_manager.server_game_sim = null
@@ -2963,16 +2456,15 @@ func _check_race_finished() -> void:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
 				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
 				_record_grand_prix_race_results(finish_sim)
-				_show_race_results_summary()
-			if Time.get_ticks_msec() > network_manager.net_race_finish_time + RACE_RESULTS_SCREEN_MSEC:
+				race_presentation_controller.show_results()
+			if Time.get_ticks_msec() > network_manager.net_race_finish_time + RacePresentationControllerClass.RESULTS_SCREEN_MSEC:
 				_finish_or_advance_grand_prix(finish_sim)
-				race_finish_label.visible = false
-				_hide_race_results_summary()
+				race_presentation_controller.hide_results()
 	else:
 		if singleplayer_mode and all_done:
 			if network_manager.net_race_finish_time == -1:
 				network_manager.net_race_finish_time = Time.get_ticks_msec()
-				_show_race_results_summary()
+				race_presentation_controller.show_results()
 				_finalize_time_attack()
 
 func _finalize_time_attack() -> void:
@@ -2981,7 +2473,7 @@ func _finalize_time_attack() -> void:
 	time_attack_finalized = true
 	var local_id := _local_player_id()
 	var finish_tick := int(network_manager.player_finish_times.get(local_id, -1))
-	var start_tick := _race_results_start_tick()
+	var start_tick := race_presentation_controller.race_results_start_tick()
 	var replay_path := replay_controller.save_completed_time_attack_replay()
 	time_attack_eligibility = LeaderboardEligibilityClass.finalize(
 		time_attack_eligibility,
@@ -2990,11 +2482,11 @@ func _finalize_time_attack() -> void:
 		replay_path)
 	if bool(time_attack_eligibility.get("eligible", false)):
 		if leaderboard_client.enqueue_submission(time_attack_eligibility):
-			_show_race_notification("Time Attack queued for trusted verification", 5000)
+			race_presentation_controller.show_notification("Time Attack queued for trusted verification", 5000)
 		else:
-			_show_race_notification("Time Attack replay could not be queued", 5000)
+			race_presentation_controller.show_notification("Time Attack replay could not be queued", 5000)
 	else:
-		_show_race_notification("Unranked: %s" % String(time_attack_eligibility.get("reason", "ineligible")).replace("_", " "), 5000)
+		race_presentation_controller.show_notification("Unranked: %s" % String(time_attack_eligibility.get("reason", "ineligible")).replace("_", " "), 5000)
 
 func _update_native_render_camera() -> void:
 	if game_sim == null or !game_sim.has_method("set_render_camera"):
@@ -3063,19 +2555,11 @@ func _process(delta: float) -> void:
 	race_audio_controller.update(delta)
 	communication_controller.update_race_overlay()
 	_update_start_sync_drop_panel()
-	var now_msec := Time.get_ticks_msec()
-	for id in active_stickers.keys():
-		var data: Dictionary = active_stickers[id]
-		if now_msec > int(data.get("expires", 0)):
-			active_stickers.erase(id)
-	if race_finish_label.visible and race_notification_hide_msec > 0 and now_msec > race_notification_hide_msec and network_manager.net_race_finish_time == -1:
-		race_finish_label.visible = false
-		race_notification_hide_msec = 0
+	race_presentation_controller.update()
 	_update_lobby_debug_label_visibility()
 	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
 	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
 	if game_sim.sim_started and network_manager.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
-		_show_race_results_summary()
 		replay_controller.refresh_pause_button()
 	if game_sim.sim_started:
 		spectator_controller.update_finished_input()
