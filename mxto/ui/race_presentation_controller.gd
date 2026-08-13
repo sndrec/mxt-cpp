@@ -93,10 +93,10 @@ func update() -> void:
 		var data: Dictionary = active_stickers[player_id]
 		if now_msec > int(data.get("expires", 0)):
 			active_stickers.erase(player_id)
-	if notification_label.visible and notification_hide_msec > 0 and now_msec > notification_hide_msec and network_manager.net_race_finish_time == -1:
+	if notification_label.visible and notification_hide_msec > 0 and now_msec > notification_hide_msec and network_manager.race_results.net_race_finish_time == -1:
 		notification_label.visible = false
 		notification_hide_msec = 0
-	if game_sim.sim_started and network_manager.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
+	if game_sim.sim_started and network_manager.race_results.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
 		show_results()
 
 func show_notification(text: String, duration_msec := 2200) -> void:
@@ -149,8 +149,8 @@ func format_race_time(tick_value: int, official_start_tick := -1) -> String:
 func format_race_results_text() -> String:
 	var lines := ["Race Results"]
 	var finish_rows := []
-	for id_value in network_manager.player_finish_placements.keys():
-		finish_rows.append([int(network_manager.player_finish_placements[id_value]), int(id_value)])
+	for id_value in network_manager.race_results.player_finish_placements.keys():
+		finish_rows.append([int(network_manager.race_results.player_finish_placements[id_value]), int(id_value)])
 	finish_rows.sort_custom(func(a, b):
 		if int(a[0]) != int(b[0]):
 			return int(a[0]) < int(b[0])
@@ -159,19 +159,19 @@ func format_race_results_text() -> String:
 		var place := int(row[0])
 		var player_id := int(row[1])
 		var time_text := ""
-		var tick_value := int(_lookup_id_value(network_manager.player_finish_times, player_id, -1))
+		var tick_value := int(_lookup_id_value(network_manager.race_results.player_finish_times, player_id, -1))
 		if tick_value >= 0:
 			time_text = "  " + format_race_time(tick_value)
 		lines.append("%s  %s%s" % [_format_ordinal(place), player_display_name(player_id), time_text])
-	if !network_manager.player_eliminations.is_empty():
+	if !network_manager.race_results.player_eliminations.is_empty():
 		lines.append("")
 		lines.append("Eliminated")
-		for id_value in network_manager.player_eliminations.keys():
+		for id_value in network_manager.race_results.player_eliminations.keys():
 			lines.append(player_display_name(int(id_value)))
-	if !network_manager.player_dnfs.is_empty():
+	if !network_manager.race_results.player_dnfs.is_empty():
 		lines.append("")
 		lines.append("DNF")
-		for id_value in network_manager.player_dnfs.keys():
+		for id_value in network_manager.race_results.player_dnfs.keys():
 			lines.append(player_display_name(int(id_value)))
 	return "\n".join(lines)
 
@@ -223,7 +223,7 @@ func send_local_sticker(sticker_index: int) -> void:
 	if singleplayer_mode or !network_manager.has_network_peer():
 		show_sticker(local_player_id, sticker_index)
 	else:
-		network_manager.send_sticker(sticker_index)
+		network_manager.race_results.send_sticker(sticker_index)
 
 func update_nametags(active_camera: Camera3D, delta: float, hud_disabled: bool) -> void:
 	if hud_disabled or active_camera == null or nametag_pool.is_empty():
@@ -332,9 +332,9 @@ func _next_grand_prix_track_id() -> String:
 	return String(track_ids[next_index]) if next_index >= 0 and next_index < track_ids.size() else ""
 
 func _results_countdown_seconds() -> int:
-	if network_manager.net_race_finish_time < 0:
+	if network_manager.race_results.net_race_finish_time < 0:
 		return -1
-	return ceili(float(maxi(0, RESULTS_SCREEN_MSEC - (Time.get_ticks_msec() - network_manager.net_race_finish_time))) / 1000.0)
+	return ceili(float(maxi(0, RESULTS_SCREEN_MSEC - (Time.get_ticks_msec() - network_manager.race_results.net_race_finish_time))) / 1000.0)
 
 func _local_player_accel_setting() -> float:
 	if next_accel_setting >= 0.0:

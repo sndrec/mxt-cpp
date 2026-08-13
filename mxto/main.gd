@@ -186,7 +186,7 @@ func _ready() -> void:
 		car_settings.call("refresh_after_game_manager_loaded")
 	network_manager.race_started.connect(_on_network_race_started)
 	network_manager.race_finished.connect(_on_network_race_finished)
-	network_manager.race_event.connect(_on_race_event)
+	network_manager.race_results.race_event.connect(_on_race_event)
 	car_settings.hide()
 	options_menu.hide()
 	if !car_settings_button.pressed.is_connected(_on_car_settings_button_pressed):
@@ -915,7 +915,7 @@ func _consume_authoritative_race_events() -> void:
 		return
 	if network_manager.is_server and server_game_sim != null:
 		for event in server_game_sim.consume_race_events():
-			network_manager.send_race_event("ko", int(event["actor_id"]), int(event["target_id"]), int(event["tick"]), int(event["value"]))
+			network_manager.race_results.send_race_event("ko", int(event["actor_id"]), int(event["target_id"]), int(event["tick"]), int(event["value"]))
 	else:
 		game_sim.consume_race_events()
 
@@ -1174,7 +1174,7 @@ func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void
 	var local_id := _local_player_id()
 	for id in roster:
 		var input_bytes := network_manager.NEUTRAL_INPUT_BYTES
-		if cpu_ids.has(id) or network_manager.player_dnfs.has(int(id)) or network_manager._disconnected_during_race.has(int(id)):
+		if cpu_ids.has(id) or network_manager.race_results.player_dnfs.has(int(id)) or network_manager._disconnected_during_race.has(int(id)):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(int(id), _singleplayer_tick)
 		elif int(id) == local_id:
 			input_bytes = local_input_bytes
@@ -1359,7 +1359,7 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 	var racer_count := race_racers.size()
 	var place_by_id := _build_final_race_place_map(sim, race_racers)
 	var finish_tick_by_id := _build_final_race_finish_tick_map(place_by_id)
-	network_manager.send_final_race_results(place_by_id, finish_tick_by_id)
+	network_manager.race_results.send_final_race_results(place_by_id, finish_tick_by_id)
 	for id_value in race_racers:
 		var id := int(id_value)
 		var total := int(_lookup_id_value(points, id, 0))
@@ -1369,7 +1369,7 @@ func _record_grand_prix_race_results(sim: GameSim) -> void:
 		points[id] = total
 	var eliminated_ids: Array = options.get("grand_prix_eliminated_ids", [])
 	if !network_manager.is_vehicle_restore_enabled():
-		for id_value in network_manager.player_eliminations.keys():
+		for id_value in network_manager.race_results.player_eliminations.keys():
 			var id := int(id_value)
 			if !eliminated_ids.has(id):
 				eliminated_ids.append(id)
@@ -1385,11 +1385,11 @@ func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary
 	var placement_rows := []
 	for id_value in race_racers:
 		var id := int(id_value)
-		if network_manager.player_dnfs.has(id):
+		if network_manager.race_results.player_dnfs.has(id):
 			continue
-		var place := int(_lookup_id_value(network_manager.player_finish_placements, id, 0))
+		var place := int(_lookup_id_value(network_manager.race_results.player_finish_placements, id, 0))
 		if place > 0:
-			var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, 0x7fffffff))
+			var finish_tick := int(_lookup_id_value(network_manager.race_results.player_finish_times, id, 0x7fffffff))
 			placement_rows.append([place, finish_tick, id])
 	placement_rows.sort_custom(func(a, b):
 		if int(a[0]) != int(b[0]):
@@ -1404,9 +1404,9 @@ func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary
 	var finish_rows := []
 	for id_value in race_racers:
 		var id := int(id_value)
-		if place_by_id.has(id) or network_manager.player_dnfs.has(id):
+		if place_by_id.has(id) or network_manager.race_results.player_dnfs.has(id):
 			continue
-		var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, -1))
+		var finish_tick := int(_lookup_id_value(network_manager.race_results.player_finish_times, id, -1))
 		if finish_tick >= 0:
 			finish_rows.append([finish_tick, id])
 	finish_rows.sort_custom(func(a, b):
@@ -1424,7 +1424,7 @@ func _build_final_race_place_map(sim: GameSim, race_racers: Array) -> Dictionary
 		var id := int(id_value)
 		if !race_racers.has(id) or place_by_id.has(id):
 			continue
-		if network_manager._disconnected_during_race.has(id) or network_manager.player_eliminations.has(id) or network_manager.player_dnfs.has(id):
+		if network_manager._disconnected_during_race.has(id) or network_manager.race_results.player_eliminations.has(id) or network_manager.race_results.player_dnfs.has(id):
 			continue
 		place_by_id[id] = place_by_id.size() + 1
 	return place_by_id
@@ -1433,7 +1433,7 @@ func _build_final_race_finish_tick_map(place_by_id: Dictionary) -> Dictionary:
 	var finish_tick_by_id := {}
 	for id_value in place_by_id.keys():
 		var id := int(id_value)
-		var finish_tick := int(_lookup_id_value(network_manager.player_finish_times, id, -1))
+		var finish_tick := int(_lookup_id_value(network_manager.race_results.player_finish_times, id, -1))
 		if finish_tick >= 0:
 			finish_tick_by_id[id] = finish_tick
 	return finish_tick_by_id
@@ -1514,9 +1514,9 @@ func _race_control_has_started(sim: GameSim) -> bool:
 func _mark_racer_dnf(racer_id: int, reason: String) -> void:
 	var tick := network_manager.get_race_tick()
 	if network_manager.is_server and !singleplayer_mode:
-		network_manager.send_player_dnf(racer_id, tick, reason)
+		network_manager.race_results.send_player_dnf(racer_id, tick, reason)
 	else:
-		network_manager.record_player_dnf(racer_id, tick, reason)
+		network_manager.race_results.record_player_dnf(racer_id, tick, reason)
 
 func _update_low_speed_dnf(racer_id: int, finish_sim: GameSim, race_control_started: bool) -> bool:
 	if singleplayer_mode:
@@ -1527,7 +1527,7 @@ func _update_low_speed_dnf(racer_id: int, finish_sim: GameSim, race_control_star
 	if !race_control_started:
 		race_dnf_low_speed_ticks.erase(racer_id)
 		return false
-	if network_manager.player_finish_times.has(racer_id) or network_manager.player_dnfs.has(racer_id):
+	if network_manager.race_results.player_finish_times.has(racer_id) or network_manager.race_results.player_dnfs.has(racer_id):
 		race_dnf_low_speed_ticks.erase(racer_id)
 		return false
 	var speed_kmh := float(finish_sim.get_player_speed_kmh(racer_id))
@@ -1545,7 +1545,7 @@ func _update_low_speed_dnf(racer_id: int, finish_sim: GameSim, race_control_star
 func _human_finish_count(human_racer_ids: Array) -> int:
 	var count := 0
 	for id_value in human_racer_ids:
-		if network_manager.player_finish_times.has(int(id_value)):
+		if network_manager.race_results.player_finish_times.has(int(id_value)):
 			count += 1
 	return count
 
@@ -1556,25 +1556,25 @@ func _update_force_end_dnf(human_racer_ids: Array) -> void:
 	if human_count <= 0:
 		return
 	var finished_count := _human_finish_count(human_racer_ids)
-	if network_manager.race_force_end_deadline_tick < 0 and finished_count * 4 >= human_count:
+	if network_manager.race_results.race_force_end_deadline_tick < 0 and finished_count * 4 >= human_count:
 		var deadline_tick := network_manager.get_race_tick() + FORCE_END_WINDOW_TICKS
 		if network_manager.is_server and !singleplayer_mode:
-			network_manager.send_race_force_end_deadline(deadline_tick)
+			network_manager.race_results.send_race_force_end_deadline(deadline_tick)
 		else:
-			network_manager.race_force_end_deadline_tick = deadline_tick
-	if network_manager.race_force_end_deadline_tick < 0:
+			network_manager.race_results.race_force_end_deadline_tick = deadline_tick
+	if network_manager.race_results.race_force_end_deadline_tick < 0:
 		return
-	if network_manager.get_race_tick() < network_manager.race_force_end_deadline_tick:
+	if network_manager.get_race_tick() < network_manager.race_results.race_force_end_deadline_tick:
 		return
 	for id_value in human_racer_ids:
 		var id := int(id_value)
-		if network_manager.player_finish_times.has(id):
+		if network_manager.race_results.player_finish_times.has(id):
 			continue
-		if network_manager.player_dnfs.has(id):
+		if network_manager.race_results.player_dnfs.has(id):
 			continue
 		if network_manager._disconnected_during_race.has(id):
 			continue
-		if network_manager.player_eliminations.has(id):
+		if network_manager.race_results.player_eliminations.has(id):
 			continue
 		_mark_racer_dnf(id, "force_end")
 
@@ -1596,50 +1596,50 @@ func _check_race_finished() -> void:
 			var racer_id := int(id_value)
 			if network_manager._disconnected_during_race.has(racer_id):
 				continue
-			if network_manager.player_finish_times.has(racer_id) or network_manager.player_eliminations.has(racer_id):
+			if network_manager.race_results.player_finish_times.has(racer_id) or network_manager.race_results.player_eliminations.has(racer_id):
 				continue
 			if network_manager.is_server and !singleplayer_mode:
-				network_manager.send_player_finished(racer_id, network_manager.server_tick)
+				network_manager.race_results.send_player_finished(racer_id, network_manager.server_tick)
 			else:
-				network_manager.record_player_finished(racer_id, network_manager.clients_server_tick)
+				network_manager.race_results.record_player_finished(racer_id, network_manager.clients_server_tick)
 		if !network_manager.is_vehicle_restore_enabled():
 			for id_value in finish_sim.get_eliminated_player_ids():
 				var racer_id := int(id_value)
 				if network_manager._disconnected_during_race.has(racer_id):
 					continue
-				if network_manager.player_finish_times.has(racer_id) or network_manager.player_eliminations.has(racer_id):
+				if network_manager.race_results.player_finish_times.has(racer_id) or network_manager.race_results.player_eliminations.has(racer_id):
 					continue
 				if network_manager.is_server and !singleplayer_mode:
-					network_manager.send_player_eliminated(racer_id, network_manager.server_tick)
+					network_manager.race_results.send_player_eliminated(racer_id, network_manager.server_tick)
 				elif singleplayer_mode:
-					network_manager.record_player_eliminated(racer_id, network_manager.clients_server_tick)
+					network_manager.race_results.record_player_eliminated(racer_id, network_manager.clients_server_tick)
 	var all_done := true
 	for id_value in finish_watch_ids:
 		var racer_id := int(id_value)
 		if network_manager._disconnected_during_race.has(racer_id):
 			continue
-		if network_manager.player_finish_times.has(racer_id) or network_manager.player_eliminations.has(racer_id) or network_manager.player_dnfs.has(racer_id):
+		if network_manager.race_results.player_finish_times.has(racer_id) or network_manager.race_results.player_eliminations.has(racer_id) or network_manager.race_results.player_dnfs.has(racer_id):
 			continue
 		if _update_low_speed_dnf(racer_id, finish_sim, race_control_started):
 			continue
-		if !network_manager.player_dnfs.has(racer_id):
+		if !network_manager.race_results.player_dnfs.has(racer_id):
 			all_done = false
 	if replay_controller.replay_playback_active:
 		return
 	if network_manager.is_server:
 		if all_done:
-			if network_manager.net_race_finish_time == -1:
-				network_manager.net_race_finish_time = Time.get_ticks_msec()
-				network_manager.send_race_finish_time(network_manager.net_race_finish_time)
+			if network_manager.race_results.net_race_finish_time == -1:
+				network_manager.race_results.net_race_finish_time = Time.get_ticks_msec()
+				network_manager.race_results.send_race_finish_time(network_manager.race_results.net_race_finish_time)
 				_record_grand_prix_race_results(finish_sim)
 				race_presentation_controller.show_results()
-			if Time.get_ticks_msec() > network_manager.net_race_finish_time + RacePresentationControllerClass.RESULTS_SCREEN_MSEC:
+			if Time.get_ticks_msec() > network_manager.race_results.net_race_finish_time + RacePresentationControllerClass.RESULTS_SCREEN_MSEC:
 				_finish_or_advance_grand_prix(finish_sim)
 				race_presentation_controller.hide_results()
 	else:
 		if singleplayer_mode and all_done:
-			if network_manager.net_race_finish_time == -1:
-				network_manager.net_race_finish_time = Time.get_ticks_msec()
+			if network_manager.race_results.net_race_finish_time == -1:
+				network_manager.race_results.net_race_finish_time = Time.get_ticks_msec()
 				race_presentation_controller.show_results()
 				_finalize_time_attack()
 
@@ -1648,7 +1648,7 @@ func _finalize_time_attack() -> void:
 		return
 	time_attack_finalized = true
 	var local_id := _local_player_id()
-	var finish_tick := int(network_manager.player_finish_times.get(local_id, -1))
+	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_id, -1))
 	var start_tick := race_presentation_controller.race_results_start_tick()
 	var replay_path := replay_controller.save_completed_time_attack_replay()
 	time_attack_eligibility = LeaderboardEligibilityClass.finalize(
@@ -1705,7 +1705,7 @@ func _process(delta: float) -> void:
 	_update_start_sync_drop_panel()
 	race_presentation_controller.update()
 	debug_runtime_controller.update_labels(lobby_control.visible)
-	if game_sim.sim_started and network_manager.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
+	if game_sim.sim_started and network_manager.race_results.net_race_finish_time != -1 and !replay_controller.replay_playback_active:
 		replay_controller.refresh_pause_button()
 	if game_sim.sim_started:
 		spectator_controller.update_finished_input()

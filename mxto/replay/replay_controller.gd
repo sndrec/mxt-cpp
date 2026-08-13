@@ -477,7 +477,7 @@ func stop_recording(save_server_replay: bool) -> void:
 func refresh_pause_button() -> void:
 	if race_pause_save_replay_button == null:
 		return
-	var can_save := game_manager.singleplayer_mode and replay_recording_active and !replay_recording_saved and game_manager.network_manager.net_race_finish_time != -1
+	var can_save := game_manager.singleplayer_mode and replay_recording_active and !replay_recording_saved and game_manager.network_manager.race_results.net_race_finish_time != -1
 	race_pause_save_replay_button.visible = can_save
 	race_pause_save_replay_button.disabled = !can_save
 
@@ -516,9 +516,9 @@ func _save_replay_recording(reason: String) -> String:
 	var metadata := replay_recording_metadata.duplicate(true)
 	metadata["saved_reason"] = reason
 	metadata["duration_ticks"] = replay_recording_frames.size()
-	metadata["finish_times"] = game_manager.network_manager.player_finish_times.duplicate(true)
-	metadata["finish_placements"] = game_manager.network_manager.player_finish_placements.duplicate(true)
-	metadata["eliminations"] = game_manager.network_manager.player_eliminations.duplicate(true)
+	metadata["finish_times"] = game_manager.network_manager.race_results.player_finish_times.duplicate(true)
+	metadata["finish_placements"] = game_manager.network_manager.race_results.player_finish_placements.duplicate(true)
+	metadata["eliminations"] = game_manager.network_manager.race_results.player_eliminations.duplicate(true)
 	var safe_track := str(metadata.get("track_name", "track")).replace("/", "_").replace("\\", "_").replace(" ", "_")
 	var path := replay_dir.path_join("mxt_%s_%s.replay.json" % [safe_track, _replay_make_stamp()])
 	var file := FileAccess.open(path, FileAccess.WRITE)
@@ -652,9 +652,9 @@ func _replay_compare_int_dictionary(label: String, expected_raw: Dictionary, act
 
 func _verify_replay_playback_results() -> bool:
 	var ok := true
-	ok = _replay_compare_int_dictionary("finish_times", replay_saved_finish_times, game_manager.network_manager.player_finish_times) and ok
-	ok = _replay_compare_int_dictionary("finish_placements", replay_saved_finish_placements, game_manager.network_manager.player_finish_placements) and ok
-	ok = _replay_compare_int_dictionary("eliminations", replay_saved_eliminations, game_manager.network_manager.player_eliminations) and ok
+	ok = _replay_compare_int_dictionary("finish_times", replay_saved_finish_times, game_manager.network_manager.race_results.player_finish_times) and ok
+	ok = _replay_compare_int_dictionary("finish_placements", replay_saved_finish_placements, game_manager.network_manager.race_results.player_finish_placements) and ok
+	ok = _replay_compare_int_dictionary("eliminations", replay_saved_eliminations, game_manager.network_manager.race_results.player_eliminations) and ok
 	if !ok and game_manager.game_sim != null and game_manager.game_sim.has_method("get_player_debug_string"):
 		for id_value in replay_playback_racer_ids:
 			print("MXT_REPLAY_VERIFY_STATE tick=", game_manager._singleplayer_tick, " ", game_manager.game_sim.get_player_debug_string(int(id_value)))
@@ -664,7 +664,7 @@ func _leaderboard_verified_result() -> Dictionary:
 	if !bool(replay_leaderboard_validation.get("valid", false)) or replay_playback_racer_ids.size() != 1:
 		return {"valid": false, "reason": "missing_leaderboard_validation"}
 	var racer_id := int(replay_playback_racer_ids[0])
-	var finish_tick := _lookup_replay_tick_for_id(game_manager.network_manager.player_finish_times, racer_id)
+	var finish_tick := _lookup_replay_tick_for_id(game_manager.network_manager.race_results.player_finish_times, racer_id)
 	var start_tick := race_presentation_controller.race_results_start_tick()
 	if finish_tick <= start_tick:
 		return {"valid": false, "reason": "invalid_resimulated_finish_time"}
@@ -1332,9 +1332,9 @@ func _capture_replay_seek_checkpoint(next_tick: int) -> void:
 		"tick": next_tick,
 		"index": replay_playback_index,
 		"state": state,
-		"finish_times": game_manager.network_manager.player_finish_times.duplicate(true),
-		"finish_placements": game_manager.network_manager.player_finish_placements.duplicate(true),
-		"eliminations": game_manager.network_manager.player_eliminations.duplicate(true),
+		"finish_times": game_manager.network_manager.race_results.player_finish_times.duplicate(true),
+		"finish_placements": game_manager.network_manager.race_results.player_finish_placements.duplicate(true),
+		"eliminations": game_manager.network_manager.race_results.player_eliminations.duplicate(true),
 	})
 	replay_seek_checkpoint_bytes += state.size()
 
@@ -1352,11 +1352,11 @@ func _find_replay_seek_checkpoint(target_tick: int) -> Dictionary:
 	return best
 
 func _restore_replay_race_event_state(checkpoint: Dictionary) -> void:
-	game_manager.network_manager.player_finish_times = (checkpoint.get("finish_times", {}) as Dictionary).duplicate(true)
-	game_manager.network_manager.player_finish_placements = (checkpoint.get("finish_placements", {}) as Dictionary).duplicate(true)
-	game_manager.network_manager.player_eliminations = (checkpoint.get("eliminations", {}) as Dictionary).duplicate(true)
-	game_manager.network_manager._rebuild_finish_order_from_placements()
-	game_manager.network_manager.net_race_finish_time = -1
+	game_manager.network_manager.race_results.player_finish_times = (checkpoint.get("finish_times", {}) as Dictionary).duplicate(true)
+	game_manager.network_manager.race_results.player_finish_placements = (checkpoint.get("finish_placements", {}) as Dictionary).duplicate(true)
+	game_manager.network_manager.race_results.player_eliminations = (checkpoint.get("eliminations", {}) as Dictionary).duplicate(true)
+	game_manager.network_manager.race_results.rebuild_finish_order()
+	game_manager.network_manager.race_results.net_race_finish_time = -1
 
 func _reset_replay_netcode_session() -> void:
 	if !replay_playback_active:

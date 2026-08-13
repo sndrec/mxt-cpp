@@ -27,8 +27,8 @@ func _init() -> void:
 		push_error("Grand Prix standings grid mismatch, got %s" % [standings_grid])
 		quit(1)
 		return
-	main.network_manager.finish_order = [2, 1, 3]
-	main.network_manager.player_finish_times = {2: 420, 1: 480, 3: 600}
+	main.network_manager.race_results.finish_order = [2, 1, 3]
+	main.network_manager.race_results.player_finish_times = {2: 420, 1: 480, 3: 600}
 	main.race_presentation_controller.show_results()
 	if main.race_presentation_controller.results_overlay == null or !main.race_presentation_controller.results_overlay.visible:
 		push_error("race results overlay did not become visible")
@@ -37,9 +37,10 @@ func _init() -> void:
 	main.network_manager.race_player_ids = [1, 2]
 	main.network_manager.race_cpu_player_ids = [3]
 	main.network_manager.is_server = true
-	main.network_manager.player_finish_placements = {1: 2, 2: 3, 3: 1}
-	main.network_manager.player_finish_times = {1: 480}
-	main.network_manager.finish_order = [3, 1, 2]
+	main.network_manager.race_results.set_context(false, main.network_manager.race_netplay_phase, true, false)
+	main.network_manager.race_results.player_finish_placements = {1: 2, 2: 3, 3: 1}
+	main.network_manager.race_results.player_finish_times = {1: 480}
+	main.network_manager.race_results.finish_order = [3, 1, 2]
 	main.network_manager.server_tick = 900
 	main.network_manager.race_options = {
 		"game_mode": 1,
@@ -56,11 +57,11 @@ func _init() -> void:
 		push_error("race result formatting should respect the race start tick")
 		quit(1)
 		return
-	main.network_manager.player_finish_times.clear()
-	main.network_manager.player_finish_placements.clear()
-	main.network_manager.finish_order.clear()
-	main.network_manager.send_player_finished(1, 720)
-	if int(main.network_manager.player_finish_placements.get(1, -1)) != 1:
+	main.network_manager.race_results.player_finish_times.clear()
+	main.network_manager.race_results.player_finish_placements.clear()
+	main.network_manager.race_results.finish_order.clear()
+	main.network_manager.race_results.send_player_finished(1, 720)
+	if int(main.network_manager.race_results.player_finish_placements.get(1, -1)) != 1:
 		push_error("finish placement should be assigned from finish tick order")
 		quit(1)
 		return
@@ -69,26 +70,26 @@ func _init() -> void:
 		push_error("race results text did not use finish tick placement: %s" % race_text)
 		quit(1)
 		return
-	main.network_manager.set_player_finished(1, 780)
-	if int(main.network_manager.player_finish_times.get(1, -1)) != 720 or int(main.network_manager.player_finish_placements.get(1, -1)) != 1:
+	main.network_manager.race_results.set_player_finished(1, 780)
+	if int(main.network_manager.race_results.player_finish_times.get(1, -1)) != 720 or int(main.network_manager.race_results.player_finish_placements.get(1, -1)) != 1:
 		push_error("duplicate finish should not rewrite official time or placement, times=%s places=%s" % [
-			main.network_manager.player_finish_times,
-			main.network_manager.player_finish_placements,
+			main.network_manager.race_results.player_finish_times,
+			main.network_manager.race_results.player_finish_placements,
 		])
 		quit(1)
 		return
-	main.network_manager.player_finish_times = {1: 600, 2: 500}
-	main.network_manager.player_finish_placements = {1: 1, 2: 1}
-	main.network_manager._rebuild_finish_order_from_placements()
-	if int(main.network_manager.player_finish_placements.get(2, -1)) != 1 or int(main.network_manager.player_finish_placements.get(1, -1)) != 2:
+	main.network_manager.race_results.player_finish_times = {1: 600, 2: 500}
+	main.network_manager.race_results.player_finish_placements = {1: 1, 2: 1}
+	main.network_manager.race_results.rebuild_finish_order()
+	if int(main.network_manager.race_results.player_finish_placements.get(2, -1)) != 1 or int(main.network_manager.race_results.player_finish_placements.get(1, -1)) != 2:
 		push_error("finish placements should be rebuilt from finish time, got %s order=%s" % [
-			main.network_manager.player_finish_placements,
-			main.network_manager.finish_order,
+			main.network_manager.race_results.player_finish_placements,
+			main.network_manager.race_results.finish_order,
 		])
 		quit(1)
 		return
-	main.network_manager.player_finish_times = {1: 600, 2: 500}
-	main.network_manager.player_finish_placements = {1: 1, 2: 1}
+	main.network_manager.race_results.player_finish_times = {1: 600, 2: 500}
+	main.network_manager.race_results.player_finish_placements = {1: 1, 2: 1}
 	var normalized_places: Dictionary = main.call("_build_final_race_place_map", main.game_sim, [1, 2, 3])
 	if int(normalized_places.get(2, -1)) != 1 or int(normalized_places.get(1, -1)) != 2:
 		push_error("final race place map should not preserve duplicate places, got %s" % [normalized_places])

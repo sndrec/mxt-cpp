@@ -125,8 +125,8 @@ func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fall
 	var window: PackedInt32Array = car.game_manager.game_sim.get_race_leaderboard_window(
 		focus_id,
 		MAX_LEADERBOARD_ENTRIES,
-		nm.player_finish_times,
-		nm.player_eliminations
+		nm.race_results.player_finish_times,
+		nm.race_results.player_eliminations
 	)
 	if window.size() <= 1:
 		return fallback_place
@@ -140,13 +140,13 @@ func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fall
 		var window_index := 1 + i * 2
 		var id := int(window[window_index])
 		var place := int(window[window_index + 1])
-		if nm.player_finish_placements.has(id):
-			place = int(nm.player_finish_placements[id])
+		if nm.race_results.player_finish_placements.has(id):
+			place = int(nm.race_results.player_finish_placements[id])
 		var text := "%d  %s" % [place, _player_name_for_id(nm, id)]
 		if label.text != text:
 			label.text = text
-	if nm.player_finish_placements.has(focus_id):
-		focus_place = int(nm.player_finish_placements[focus_id])
+	if nm.race_results.player_finish_placements.has(focus_id):
+		focus_place = int(nm.race_results.player_finish_placements[focus_id])
 	return focus_place
 
 func _action_just_pressed_any(names: Array[String]) -> bool:
@@ -537,12 +537,12 @@ func _process( _delta:float ) -> void:
 	if car.game_manager != null and car.game_manager.replay_controller.replay_playback_active:
 		local_id = focus_player_id
 		use_tick = car.game_manager._singleplayer_tick
-	if nm.player_finish_times.has(focus_player_id):
-		use_tick = nm.player_finish_times[focus_player_id]
-	elif nm.player_finish_times.has(local_id):
-		use_tick = nm.player_finish_times[local_id]
-	elif nm.player_finish_times.has(car.owning_id):
-		use_tick = nm.player_finish_times[car.owning_id]
+	if nm.race_results.player_finish_times.has(focus_player_id):
+		use_tick = nm.race_results.player_finish_times[focus_player_id]
+	elif nm.race_results.player_finish_times.has(local_id):
+		use_tick = nm.race_results.player_finish_times[local_id]
+	elif nm.race_results.player_finish_times.has(car.owning_id):
+		use_tick = nm.race_results.player_finish_times[car.owning_id]
 	var official_start_tick := 300
 	if car.game_manager != null and car.game_manager.game_sim != null:
 		official_start_tick = int(car.game_manager.game_sim.get_player_level_start_time(focus_player_id))
@@ -576,8 +576,8 @@ func _process( _delta:float ) -> void:
 	
 	var our_place := 1
 
-	if nm.player_finish_placements.has(place_id):
-		our_place = nm.player_finish_placements[place_id]
+	if nm.race_results.player_finish_placements.has(place_id):
+		our_place = nm.race_results.player_finish_placements[place_id]
 	
 	var profile_leaderboard_start := Time.get_ticks_usec() if profile_enabled else 0
 	our_place = _update_leaderboard(car, nm, place_id, our_place)

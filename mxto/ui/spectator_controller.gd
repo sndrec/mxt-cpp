@@ -46,10 +46,10 @@ func reset() -> void:
 	live_strafe_direction = 0
 
 func is_local_eliminated() -> bool:
-	return local_player_id >= 0 and !network_manager.is_vehicle_restore_enabled() and network_manager.player_eliminations.has(local_player_id)
+	return local_player_id >= 0 and !network_manager.is_vehicle_restore_enabled() and network_manager.race_results.player_eliminations.has(local_player_id)
 
 func is_local_dnf() -> bool:
-	return local_player_id >= 0 and network_manager.player_dnfs.has(local_player_id)
+	return local_player_id >= 0 and network_manager.race_results.player_dnfs.has(local_player_id)
 
 func should_suppress_local_race_input() -> bool:
 	return is_local_eliminated() or is_local_dnf()
@@ -57,8 +57,8 @@ func should_suppress_local_race_input() -> bool:
 func can_live_spectate() -> bool:
 	return local_player_id >= 0 and (
 		network_manager.spectator_ids.has(local_player_id)
-		or network_manager.player_finish_times.has(local_player_id)
-		or network_manager.player_dnfs.has(local_player_id))
+		or network_manager.race_results.player_finish_times.has(local_player_id)
+		or network_manager.race_results.player_dnfs.has(local_player_id))
 
 func activate_local_elimination() -> void:
 	if local_elimination_active or !is_local_eliminated():
@@ -176,13 +176,13 @@ func _live_targets() -> Array:
 	var targets := []
 	for id_value in network_manager.get_simulation_roster():
 		var player_id := int(id_value)
-		if network_manager.player_finish_times.has(player_id):
+		if network_manager.race_results.player_finish_times.has(player_id):
 			continue
-		if network_manager.player_dnfs.has(player_id):
+		if network_manager.race_results.player_dnfs.has(player_id):
 			continue
 		if network_manager._disconnected_during_race.has(player_id):
 			continue
-		if network_manager.player_eliminations.has(player_id):
+		if network_manager.race_results.player_eliminations.has(player_id):
 			continue
 		targets.append(player_id)
 	return targets

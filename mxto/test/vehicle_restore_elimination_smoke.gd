@@ -18,12 +18,12 @@ func _init() -> void:
 	var spectator = main.spectator_controller
 	spectator.configure_race(42, true)
 	main.network_manager.race_options["vehicle_restore"] = false
-	main.network_manager.player_eliminations[42] = 120
+	main.network_manager.race_results.player_eliminations[42] = 120
 	ok = _expect(spectator.is_local_eliminated(), true, "restore-off elimination") and ok
 	ok = _expect(spectator.should_suppress_local_race_input(), true, "elimination input suppression") and ok
 	main.network_manager.race_options["vehicle_restore"] = true
 	ok = _expect(spectator.is_local_eliminated(), false, "restore-on elimination") and ok
-	main.network_manager.player_dnfs[42] = "low_speed"
+	main.network_manager.race_results.player_dnfs[42] = "low_speed"
 	ok = _expect(spectator.is_local_dnf(), true, "local DNF") and ok
 	ok = _expect(spectator.should_suppress_local_race_input(), true, "DNF input suppression") and ok
 	spectator.reset()

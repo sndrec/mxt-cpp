@@ -813,9 +813,9 @@ func _voice_should_play_finished_nonspatial(sender_id: int) -> bool:
 func _voice_player_finished(player_id: int) -> bool:
 	if network_manager == null:
 		return false
-	if network_manager.player_finish_times.has(player_id):
+	if network_manager.race_results.player_finish_times.has(player_id):
 		return true
-	return network_manager.player_finish_times.has(str(player_id))
+	return network_manager.race_results.player_finish_times.has(str(player_id))
 
 func _can_send_voice_rpc_to(peer_id: int) -> bool:
 	if network_manager == null:

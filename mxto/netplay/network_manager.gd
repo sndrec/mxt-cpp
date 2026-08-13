@@ -3,30 +3,20 @@ extends Node
 
 signal race_started(track_id, player_settings)
 signal race_finished
-signal race_event(event_type, actor_id, target_id, tick, value)
 signal race_options_changed(options)
 signal authoritative_server_frame(tick, frame_inputs)
-
-@rpc("authority", "call_remote", "reliable", 7)
-func set_race_finish_time(phase: int, time: int) -> void:
-	if !race_active or !_accept_race_packet_phase(phase):
-		return
-	net_race_finish_time = time
-
-func send_race_finish_time(time: int) -> void:
-	if is_server:
-		set_race_finish_time.rpc(race_netplay_phase, time)
-		set_race_finish_time(race_netplay_phase, time)
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 const ProximityVoiceChatClass = preload("res://netplay/proximity_voice_chat.gd")
 const GameVersionData = preload("res://core/game_version.gd")
 const StateTransferControllerClass = preload("res://netplay/state_transfer_controller.gd")
+const RaceResultsControllerClass = preload("res://netplay/race_results_controller.gd")
 var NEUTRAL_INPUT_BYTES : PackedByteArray = PlayerInputClass.new().serialize()
 
 @onready var game_manager: GameManager = $".."
 @onready var custom_stamp_network: CustomStampNetworkController = $CustomStampNetwork
 @onready var state_transfer: StateTransferControllerClass = $StateTransferController
+@onready var race_results: RaceResultsControllerClass = $RaceResultsController
 
 var is_server: bool = false
 var listen_server: bool = false
@@ -119,13 +109,6 @@ const LOBBY_SETTINGS_SNAPSHOT_MAX_BYTES := 16 * 1024 * 1024
 var player_settings := {}
 var player_settings_revisions := {}
 var lobby_settings_revision := 0
-var net_race_finish_time := -1
-var player_finish_times := {}
-var player_finish_placements := {}
-var finish_order : Array = []
-var player_eliminations := {}
-var player_dnfs := {}
-var race_force_end_deadline_tick := -1
 var race_options := {
 	"game_mode": 0,
 	"track_ids": [],
@@ -144,7 +127,6 @@ var race_netplay_phase := 0
 var pending_next_race_track_id := ""
 var pending_next_race_settings: Array = []
 var pending_next_race_options: Dictionary = {}
-var sticker_cooldown_msec := {}
 var max_ahead_from_server: float = 0.0
 var peer_desired_ahead := {}
 var delayed_peer_ids := {}
@@ -890,6 +872,7 @@ func _accept_race_start_phase(phase: int) -> bool:
 		return false
 	race_netplay_phase = phase
 	state_transfer.set_race_context(race_active, race_netplay_phase)
+	race_results.set_context(race_active, race_netplay_phase, is_server, network_active)
 	return true
 
 func _accept_race_packet_phase(phase: int) -> bool:
@@ -1036,7 +1019,7 @@ func _get_active_human_roster() -> Array:
 	return out
 
 func _human_racer_uses_native_cpu_input(id: int) -> bool:
-	return player_finish_times.has(id) or player_dnfs.has(id) or _disconnected_during_race.has(id)
+	return race_results.player_finish_times.has(id) or race_results.player_dnfs.has(id) or _disconnected_during_race.has(id)
 
 func get_simulation_roster() -> Array:
 	var roster := _get_human_roster()
@@ -1332,6 +1315,7 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 				preserved_player_settings[id] = player_settings[id]
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
+	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	race_player_ids.clear()
 	race_cpu_player_ids.clear()
 	_disconnected_during_race.clear()
@@ -1348,17 +1332,10 @@ func reset_race_state(preserve_player_settings: bool = false) -> void:
 	last_ack_tick = -1
 	rtt_s = 0.0
 	rtt_variance_s = 0.0
-	net_race_finish_time = -1
-	player_finish_times.clear()
-	player_finish_placements.clear()
-	finish_order.clear()
-	player_eliminations.clear()
-	player_dnfs.clear()
-	race_force_end_deadline_tick = -1
+	race_results.reset()
 	pending_next_race_track_id = ""
 	pending_next_race_settings.clear()
 	pending_next_race_options.clear()
-	sticker_cooldown_msec.clear()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	peer_client_rtt_s.clear()
@@ -1488,12 +1465,17 @@ func dump_state_sample(state: PackedByteArray, tick: int, racer_count: int) -> v
 	file.close()
 	state_sample_index += 1
 
+func _on_player_dnf_recorded(player_id: int) -> void:
+	_disconnected_during_race[player_id] = true
+	delayed_peer_ids.erase(player_id)
+
 func _ready() -> void:
 	state_transfer.initialize(server_netcode_session)
 	state_transfer.state_received.connect(_handle_state)
 	state_transfer.state_sample_generated.connect(dump_state_sample)
 	state_transfer.wire_bytes_sent.connect(_acc_log_out)
 	state_transfer.wire_bytes_received.connect(_acc_log_in)
+	race_results.player_dnf_recorded.connect(_on_player_dnf_recorded)
 	proximity_voice_chat = get_node_or_null("ProximityVoiceChat") as ProximityVoiceChat
 	if proximity_voice_chat == null:
 		proximity_voice_chat = ProximityVoiceChatClass.new()
@@ -1519,6 +1501,7 @@ func on_disconnect() -> void:
 	disconnect_from_server()
 
 func server_process() -> void:
+	race_results.set_race_tick(get_race_tick())
 	if !race_active:
 		return
 	_process_start_sync()
@@ -1734,6 +1717,7 @@ func host(port: int = 27016, max_players: int = 64, dedicated: bool = false) -> 
 	server_netcode_session.clear_peer_state()
 	last_server_input_tick = -1
 	state_transfer.reset()
+	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	race_cpu_player_ids.clear()
@@ -1781,6 +1765,7 @@ func join(ip: String, port: int = 27016) -> int:
 	authoritative_history.clear()
 	last_server_input_tick = -1
 	state_transfer.reset()
+	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	net_input_debug_prints = 0
 	_reset_start_sync_state()
 	player_ids = [multiplayer.get_unique_id()]
@@ -1981,6 +1966,7 @@ func start_race(track_id: String, settings: Array, options: Dictionary = {}) -> 
 		set_spawn_seed(int(race_options.get("spawn_seed", spawn_seed)))
 	race_active = true
 	state_transfer.set_race_context(true, race_netplay_phase)
+	race_results.set_context(true, race_netplay_phase, is_server, network_active)
 	if proximity_voice_chat != null:
 		proximity_voice_chat.reset()
 	if race_options.has("race_human_ids"):
@@ -2029,6 +2015,7 @@ func end_race(phase: int, next_track_id: String = "", next_settings: Array = [],
 		race_options = pending_next_race_options.duplicate(true)
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
+	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	if proximity_voice_chat != null:
 		proximity_voice_chat.reset()
 	emit_signal("race_finished")
@@ -2410,7 +2397,7 @@ func collect_server_inputs() -> Dictionary:
 		server_netcode_session.set_peer_last_received(local_id, server_tick, last_input_time[local_id])
 	if server_game_sim != null and server_game_sim.has_method("get_native_cpu_input_for_tick"):
 		for id in _get_human_roster():
-			if player_eliminations.has(id):
+			if race_results.player_eliminations.has(id):
 				pending_inputs[server_tick][id] = NEUTRAL_INPUT_BYTES
 				server_netcode_session.store_pending_input(server_tick, int(id), NEUTRAL_INPUT_BYTES)
 			elif _human_racer_uses_native_cpu_input(int(id)):
@@ -2483,7 +2470,7 @@ func collect_client_inputs() -> Dictionary:
 		return {}
 	var local_input_for_tick: PackedByteArray = last_local_input_bytes
 	var local_player_id := multiplayer.get_unique_id()
-	if player_eliminations.has(local_player_id):
+	if race_results.player_eliminations.has(local_player_id):
 		local_input_for_tick = NEUTRAL_INPUT_BYTES
 	elif _human_racer_uses_native_cpu_input(local_player_id) and game_sim != null and game_sim.has_method("get_native_cpu_input_for_tick"):
 		local_input_for_tick = game_sim.get_native_cpu_input_for_tick(local_player_id, local_tick)
@@ -2789,6 +2776,7 @@ func post_tick() -> void:
 			_acc_log_out(12 + input_packet.size())
 			_server_broadcast_flat.rpc_id(id, _pack_authoritative_input_tick(server_tick, input_packet_meta), input_packet, server_netcode_session.get_peer_last_received(id))
 		server_tick += 1
+		race_results.set_race_tick(server_tick)
 		if listen_server:
 			_prune_authoritative_history()
 		var _t1 := Time.get_ticks_usec()
@@ -2873,6 +2861,7 @@ func _recalculate_future_predictions(start_tick: int) -> void:
 func disconnect_from_server() -> void:
 	race_active = false
 	state_transfer.set_race_context(false, race_netplay_phase)
+	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	if proximity_voice_chat != null:
 		proximity_voice_chat.reset()
 	if multiplayer.multiplayer_peer != null:
@@ -2881,6 +2870,7 @@ func disconnect_from_server() -> void:
 	is_server = false
 	network_active = false
 	listen_server = false
+	race_results.set_context(false, race_netplay_phase, is_server, network_active)
 	game_sim = null
 	server_game_sim = null
 	player_ids.clear()
@@ -2890,8 +2880,6 @@ func disconnect_from_server() -> void:
 	race_cpu_player_ids.clear()
 	cpu_player_ids.clear()
 	cpu_player_settings.clear()
-	player_eliminations.clear()
-	player_dnfs.clear()
 	pending_next_race_track_id = ""
 	pending_next_race_settings.clear()
 	pending_next_race_options.clear()
@@ -2916,12 +2904,7 @@ func disconnect_from_server() -> void:
 	_unverified_peers.clear()
 	_version_request_time.clear()
 	state_transfer.reset()
-	net_race_finish_time = -1
-	race_force_end_deadline_tick = -1
-	player_finish_times.clear()
-	player_finish_placements.clear()
-	finish_order.clear()
-	sticker_cooldown_msec.clear()
+	race_results.reset()
 	max_ahead_from_server = 0.0
 	peer_desired_ahead.clear()
 	peer_client_rtt_s.clear()
@@ -3052,9 +3035,9 @@ func get_race_tick() -> int:
 	return server_tick if is_server else clients_server_tick
 
 func force_end_countdown_seconds_for(player_id: int) -> int:
-	if race_force_end_deadline_tick < 0:
+	if race_results.race_force_end_deadline_tick < 0:
 		return -1
-	if player_finish_times.has(player_id) or _disconnected_during_race.has(player_id) or player_eliminations.has(player_id):
+	if race_results.player_finish_times.has(player_id) or _disconnected_during_race.has(player_id) or race_results.player_eliminations.has(player_id):
 		return -1
 	var human_roster := _get_human_roster()
 	var human_count := human_roster.size()
@@ -3062,167 +3045,12 @@ func force_end_countdown_seconds_for(player_id: int) -> int:
 		return -1
 	var finished_count := 0
 	for id_value in human_roster:
-		if player_finish_times.has(int(id_value)):
+		if race_results.player_finish_times.has(int(id_value)):
 			finished_count += 1
 	if finished_count * 2 <= human_count:
 		return -1
-	var remaining_ticks := maxi(0, race_force_end_deadline_tick - get_race_tick())
+	var remaining_ticks := maxi(0, race_results.race_force_end_deadline_tick - get_race_tick())
 	return ceili(float(remaining_ticks) / 60.0)
-
-@rpc("authority", "call_local", "reliable")
-func set_player_finished(id: int, tick: int) -> void:
-	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
-		return
-	tick = _unpack_race_tick(tick)
-	if player_finish_times.has(id):
-		return
-	if player_dnfs.has(id):
-		return
-	if player_eliminations.has(id):
-		player_eliminations.erase(id)
-	player_finish_times[id] = tick
-	_rebuild_finish_order_from_placements()
-	race_event.emit("finish", id, -1, tick, int(player_finish_placements.get(id, 0)))
-
-func send_player_finished(id: int, tick: int) -> void:
-	if player_finish_times.has(id):
-		return
-	if is_server:
-		var packed_tick := _pack_race_phase_tick(tick)
-		set_player_finished.rpc(id, packed_tick)
-		set_player_finished(id, packed_tick)
-
-func record_player_finished(id: int, tick: int) -> void:
-	if player_finish_times.has(id):
-		return
-	set_player_finished(id, _pack_race_phase_tick(tick))
-
-@rpc("authority", "call_local", "reliable")
-func set_player_dnf(id: int, tick: int, reason: String = "") -> void:
-	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
-		return
-	tick = _unpack_race_tick(tick)
-	if player_finish_times.has(id):
-		return
-	var is_new := !player_dnfs.has(id)
-	player_dnfs[id] = {
-		"tick": tick,
-		"reason": reason,
-	}
-	_disconnected_during_race[id] = true
-	if player_eliminations.has(id):
-		player_eliminations.erase(id)
-	if delayed_peer_ids.has(id):
-		delayed_peer_ids.erase(id)
-	if is_new:
-		race_event.emit("dnf", id, -1, tick, 0)
-
-func send_player_dnf(id: int, tick: int, reason: String = "") -> void:
-	if player_finish_times.has(id) or player_dnfs.has(id):
-		return
-	if is_server:
-		var packed_tick := _pack_race_phase_tick(tick)
-		set_player_dnf.rpc(id, packed_tick, reason)
-		set_player_dnf(id, packed_tick, reason)
-
-func record_player_dnf(id: int, tick: int, reason: String = "") -> void:
-	if player_finish_times.has(id) or player_dnfs.has(id):
-		return
-	set_player_dnf(id, _pack_race_phase_tick(tick), reason)
-
-@rpc("authority", "call_local", "reliable")
-func set_race_force_end_deadline(phase: int, deadline_tick: int) -> void:
-	if !_accept_race_packet_phase(phase):
-		return
-	race_force_end_deadline_tick = deadline_tick
-
-func send_race_force_end_deadline(deadline_tick: int) -> void:
-	if !is_server:
-		return
-	race_force_end_deadline_tick = deadline_tick
-	set_race_force_end_deadline.rpc(race_netplay_phase, deadline_tick)
-
-@rpc("authority", "call_local", "reliable")
-func set_final_race_results(phase: int, placements: Dictionary, finish_ticks: Dictionary) -> void:
-	if !_accept_race_packet_phase(phase):
-		return
-	for id_value in finish_ticks.keys():
-		var id := int(id_value)
-		if player_dnfs.has(id):
-			continue
-		if player_eliminations.has(id):
-			player_eliminations.erase(id)
-		if !player_finish_times.has(id):
-			player_finish_times[id] = int(finish_ticks[id_value])
-	_rebuild_finish_order_from_placements()
-	var next_place := finish_order.size() + 1
-	var rows := []
-	for id_value in placements.keys():
-		var id := int(id_value)
-		if player_finish_placements.has(id):
-			continue
-		var place := int(placements[id_value])
-		if place > 0:
-			rows.append([place, id])
-	rows.sort_custom(func(a, b):
-		if int(a[0]) != int(b[0]):
-			return int(a[0]) < int(b[0])
-		return int(a[1]) < int(b[1])
-	)
-	for row in rows:
-		var id := int(row[1])
-		player_finish_placements[id] = next_place
-		finish_order.append(id)
-		next_place += 1
-
-func send_final_race_results(placements: Dictionary, finish_ticks: Dictionary) -> void:
-	if !is_server:
-		return
-	set_final_race_results.rpc(race_netplay_phase, placements, finish_ticks)
-	set_final_race_results(race_netplay_phase, placements, finish_ticks)
-
-func _rebuild_finish_order_from_placements() -> void:
-	finish_order.clear()
-	var rows := []
-	for id_value in player_finish_times.keys():
-		var id := int(id_value)
-		var finish_tick := int(player_finish_times[id_value])
-		rows.append([finish_tick, id])
-	rows.sort_custom(func(a, b):
-		if int(a[0]) != int(b[0]):
-			return int(a[0]) < int(b[0])
-		return int(a[1]) < int(b[1])
-	)
-	var normalized_placements := {}
-	for row in rows:
-		var place := finish_order.size() + 1
-		var id := int(row[1])
-		normalized_placements[id] = place
-		finish_order.append(id)
-	player_finish_placements = normalized_placements
-
-@rpc("authority", "call_local", "reliable")
-func set_player_eliminated(id: int, tick: int) -> void:
-	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
-		return
-	tick = _unpack_race_tick(tick)
-	var is_new := !player_eliminations.has(id)
-	player_eliminations[id] = tick
-	if is_new:
-		race_event.emit("eliminated", id, -1, tick, 0)
-
-func send_player_eliminated(id: int, tick: int) -> void:
-	if player_eliminations.has(id):
-		return
-	if is_server:
-		var packed_tick := _pack_race_phase_tick(tick)
-		set_player_eliminated.rpc(id, packed_tick)
-		set_player_eliminated(id, packed_tick)
-
-func record_player_eliminated(id: int, tick: int) -> void:
-	if player_eliminations.has(id):
-		return
-	set_player_eliminated(id, _pack_race_phase_tick(tick))
 
 func is_vehicle_restore_enabled() -> bool:
 	return bool(race_options.get("vehicle_restore", true))
@@ -3244,35 +3072,3 @@ func send_race_options(options: Dictionary) -> void:
 	if is_server:
 		sync_race_options.rpc(options)
 		sync_race_options(options)
-
-@rpc("authority", "call_local", "reliable")
-func receive_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:
-	if race_active and !_accept_race_packet_phase(_unpack_race_phase(tick)):
-		return
-	tick = _unpack_race_tick(tick)
-	race_event.emit(event_type, actor_id, target_id, tick, value)
-
-func send_race_event(event_type: String, actor_id: int, target_id: int, tick: int, value: int) -> void:
-	if is_server:
-		receive_race_event.rpc(event_type, actor_id, target_id, _pack_race_phase_tick(tick), value)
-
-@rpc("any_peer", "reliable")
-func request_sticker(sticker_index: int) -> void:
-	if !race_active:
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	if sender == 0:
-		sender = multiplayer.get_unique_id()
-	var now := Time.get_ticks_msec()
-	var last := int(sticker_cooldown_msec.get(sender, 0))
-	if now < last + 500:
-		return
-	sticker_cooldown_msec[sender] = now
-	if is_server:
-		send_race_event("sticker", sender, -1, get_race_tick(), sticker_index)
-
-func send_sticker(sticker_index: int) -> void:
-	if is_server or !has_network_peer():
-		request_sticker(sticker_index)
-	else:
-		request_sticker.rpc_id(1, sticker_index)
