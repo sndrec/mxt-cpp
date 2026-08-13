@@ -983,3 +983,52 @@ Append entries; do not rewrite old evidence.
 - Milestone commits: `c983a5ec` and `af457a5f`, with directly adjacent status
   commits recording the verified slices.
 - All test suites remain deferred to Milestone 11 as directed.
+
+### Milestone 7 — live protocol ownership map before edits
+
+- Date: 2026-08-13
+- Current source: `mxto/netplay/network_manager.gd`, approximately 3,700
+  physical lines and 3,489 nonblank/content lines.
+- Session/peer owner candidate: host/join/disconnect, peer callbacks, waiting-
+  peer admission, kick/accept, and version negotiation. Version request/report/
+  rejection currently use reliable default-channel RPCs. Human roster snapshots
+  use authority reliable channel 7.
+- Lobby owner candidate: human/CPU roster, CPU-ID collision repair, player-
+  settings revisions and compressed snapshots, next-race acceleration setting,
+  and lobby latency. CPU roster uses authority reliable default-channel RPC;
+  player-settings snapshot/update and next-race acceleration use reliable
+  channel 10; lobby latency ping/pong/snapshot use unreliable default-channel
+  RPCs.
+- Race-admission owner candidate: race phase acceptance, content-loading stages,
+  stalled-peer status/drop policy, synchronized-start samples/scheduling, race
+  start/end, spawn seed, and begin-simulation scheduling. Admission submission
+  and drop request use reliable channel 7; stalled status uses unreliable
+  channel 7; start-sync ping/pong/sample use unreliable channel 5; race
+  start/end/begin-simulation use authority reliable channel 7.
+- Input/timing transport owner candidate: local/pending/history input state,
+  authoritative history, tick/ahead/RTT control, packet encoding, ack handling,
+  prediction correction, and native `NetcodeSession` use. Client timing ping and
+  server timing sync use unreliable channel 5; startup sync and client input use
+  unreliable-ordered channel 1; server startup uses unreliable call-local
+  channel 3; authoritative input broadcast uses unreliable-ordered call-local
+  channel 2.
+- State-transfer owner candidate: outgoing snapshot queue, chunk scheduling,
+  incoming/FEC assembly, compression, restore handoff, and state-size evidence.
+  State chunks currently use authority call-remote unreliable channel 4.
+- Race-results/event owner candidate: synchronized finish time, finish/DNF/
+  elimination state, force-end deadline, final placements, race options,
+  presentation events, and sticker request cooldown. Finish time uses authority
+  reliable channel 7; result/options/event RPCs are authority call-local
+  reliable on the default channel; sticker request is any-peer reliable on the
+  default channel.
+- Telemetry owner candidate: CSV lifetime, interval counters, protocol byte and
+  packet counts, timing/state/admission fields, lobby UI/network counters, and
+  process-cost aggregation. It has no RPC authority and should read protocol
+  owners one-way without driving their behavior.
+- Cutover rule: move one complete RPC/state owner at a time, preserve every
+  decorator and sender/phase check, change all node paths/callers in the same
+  commit, and leave no forwarding endpoint on `NetworkManager`.
+- First implementation slice: state transfer. Its state and channel-4 RPC are
+  cohesive, it has a narrow restore handoff back to authoritative transport,
+  and its packet format can remain unchanged while telemetry reads its counters
+  directly.
