@@ -2,6 +2,7 @@ class_name LobbyChibiCar
 extends Node3D
 
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
+const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 
 const BOUNDS_X := 25.0
 const BOUNDS_Z := 10.0
@@ -10,7 +11,7 @@ const SYNC_INTERVAL_MSEC := 100
 
 var player_id := 0
 var player_settings: Dictionary = {}
-var game_manager: Node
+var controller: LobbyChibiControllerClass
 var lobby_camera: Camera3D
 var nameplate_parent: Control
 var local_control := false
@@ -37,14 +38,24 @@ var nameplate_attachment := Vector2.ZERO
 var settings_revision := -1
 var render_livery_hash := ""
 
-func setup(in_player_id: int, in_settings: Dictionary, in_game_manager: Node, in_camera: Camera3D, in_nameplate_parent: Control, in_local_control: bool, in_settings_revision: int = 0) -> void:
+func setup(
+	in_player_id: int,
+	in_settings: Dictionary,
+	in_controller: LobbyChibiControllerClass,
+	in_camera: Camera3D,
+	in_nameplate_parent: Control,
+	in_local_control: bool,
+	in_settings_revision: int,
+	in_definition: CarDefinition,
+	in_sampled_stats: Dictionary
+) -> void:
 	player_id = in_player_id
-	game_manager = in_game_manager
+	controller = in_controller
 	lobby_camera = in_camera
 	nameplate_parent = in_nameplate_parent
 	local_control = in_local_control
 	settings_revision = in_settings_revision
-	_apply_settings(in_settings)
+	_apply_settings(in_settings, in_definition, in_sampled_stats)
 	_ensure_nameplate()
 	_rebuild_visual()
 
@@ -53,14 +64,14 @@ func set_local_control(enabled: bool) -> void:
 	if nameplate != null:
 		nameplate.modulate = Color(1.0, 0.75, 0.25) if local_control else Color.WHITE
 
-func update_settings(in_settings: Dictionary, in_settings_revision: int = -1) -> void:
+func update_settings(in_settings: Dictionary, in_definition: CarDefinition, in_sampled_stats: Dictionary, in_settings_revision: int = -1) -> void:
 	if in_settings_revision >= 0 and in_settings_revision == settings_revision:
 		return
 	var old_content_id := str(player_settings.get("vehicle_content_id", ""))
 	var old_livery_hash := render_livery_hash
 	if in_settings_revision >= 0:
 		settings_revision = in_settings_revision
-	_apply_settings(in_settings)
+	_apply_settings(in_settings, in_definition, in_sampled_stats)
 	_ensure_nameplate()
 	if old_content_id != str(player_settings.get("vehicle_content_id", "")) or old_livery_hash != render_livery_hash:
 		_rebuild_visual()
@@ -78,8 +89,10 @@ func _exit_tree() -> void:
 	if nameplate != null and is_instance_valid(nameplate):
 		nameplate.queue_free()
 
-func _apply_settings(in_settings: Dictionary) -> void:
+func _apply_settings(in_settings: Dictionary, in_definition: CarDefinition, in_sampled_stats: Dictionary) -> void:
 	player_settings = in_settings if typeof(in_settings) == TYPE_DICTIONARY else {}
+	car_definition = in_definition
+	_load_chibi_stats(in_sampled_stats)
 	render_livery_hash = _calculate_render_livery_hash()
 	if username_label != null:
 		var next_username := str(player_settings.get("username", str(player_id)))
@@ -146,14 +159,9 @@ func _rebuild_visual() -> void:
 	if visual_root != null and is_instance_valid(visual_root):
 		visual_root.queue_free()
 	visual_root = null
-	car_definition = null
 
-	var vehicle_content_id := str(player_settings.get("vehicle_content_id", ""))
-	if vehicle_content_id != "" and game_manager != null:
-		var definition: CarDefinition = game_manager.get_car_definition(vehicle_content_id)
-		if definition != null and definition.has_visual():
-			car_definition = definition
-			_load_chibi_stats(definition)
+	if car_definition != null and !car_definition.has_visual():
+		car_definition = null
 	if visual_root == null:
 		if car_definition != null:
 			return
@@ -213,15 +221,8 @@ func get_hover_anchor() -> Vector2:
 		return Vector2(-100000.0, -100000.0)
 	return lobby_camera.unproject_position(global_position)
 
-func _load_chibi_stats(definition: CarDefinition) -> void:
-	var prop_path := definition.properties_path
-	if prop_path == "" or !FileAccess.file_exists(prop_path) or game_manager == null or game_manager.game_sim == null:
-		return
-	var bytes := FileAccess.get_file_as_bytes(prop_path)
-	var machine_setting := clampf(float(player_settings.get("accel_setting", 0.5)), 0.0, 1.0)
-	var sampled: Dictionary = game_manager.game_sim.sample_car_properties(bytes, machine_setting)
-	var stats = sampled.get("base_stats", {})
-	if typeof(stats) != TYPE_DICTIONARY or stats.is_empty():
+func _load_chibi_stats(stats: Dictionary) -> void:
+	if stats.is_empty():
 		return
 	chibi_weight = float(stats.get("weight_kg", chibi_weight))
 	chibi_acceleration = float(stats.get("acceleration", chibi_acceleration / 40.0)) * 40.0
@@ -242,7 +243,7 @@ func _configure_visual_meshes(root: Node) -> void:
 		mesh.visible = false
 
 func _physics_process(delta: float) -> void:
-	if !_is_lobby_chibi_active():
+	if controller == null or !controller.is_active():
 		return
 	if local_control and _can_accept_input():
 		_update_local_drive(delta)
@@ -251,15 +252,8 @@ func _physics_process(delta: float) -> void:
 	if local_control:
 		_sync_state_if_needed()
 
-func _is_lobby_chibi_active() -> bool:
-	if game_manager != null and game_manager.has_method("_lobby_chibi_active"):
-		return bool(game_manager.call("_lobby_chibi_active"))
-	return true
-
 func _can_accept_input() -> bool:
-	if game_manager != null and game_manager.has_method("_lobby_accepts_chibi_input"):
-		return bool(game_manager.call("_lobby_accepts_chibi_input"))
-	return true
+	return controller != null and controller.accepts_input()
 
 func _update_local_drive(delta: float) -> void:
 	var steer := Input.get_axis("SteerLeft", "SteerRight")
@@ -304,18 +298,18 @@ func _update_nameplate() -> void:
 	if !hovered or lobby_camera.is_position_behind(global_position):
 		nameplate.visible = false
 		return
-	if ping_label != null and game_manager != null and game_manager.has_method("_lobby_latency_text_for_player"):
-		var next_ping := str(game_manager.call("_lobby_latency_text_for_player", player_id))
+	if ping_label != null and controller != null:
+		var next_ping := controller.latency_text_for_player(player_id)
 		if ping_label.text != next_ping:
 			ping_label.text = next_ping
 	nameplate.visible = true
 	_update_nameplate_layout(nameplate_attachment)
 
 func _sync_state_if_needed() -> void:
-	if game_manager == null or !game_manager.has_method("_send_lobby_chibi_state"):
+	if controller == null:
 		return
 	var now := Time.get_ticks_msec()
 	if now < last_sync_msec + SYNC_INTERVAL_MSEC:
 		return
-	game_manager.call("_send_lobby_chibi_state", player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
+	controller.send_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
 	last_sync_msec = now

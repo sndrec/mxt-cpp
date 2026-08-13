@@ -353,16 +353,16 @@ Milestone 11.
 
 ### Milestone 2 — Extract lobby chibi ownership
 
-- [ ] Create a scene-owned, typed `LobbyChibiController`.
-- [ ] Move chibi constants, state, renderer setup/teardown, roster lifecycle,
+- [x] Create a scene-owned, typed `LobbyChibiController`.
+- [x] Move chibi constants, state, renderer setup/teardown, roster lifecycle,
       hover, magnifier, packing, batching, and RPC endpoints out of
       `GameManager`.
-- [ ] Make `LobbyChibiCar` refer directly to its typed controller and explicit
+- [x] Make `LobbyChibiCar` refer directly to its typed controller and explicit
       data providers.
-- [ ] Remove its `game_manager` pseudo-interface and all associated
+- [x] Remove its `game_manager` pseudo-interface and all associated
       `has_method()`/string `call()` dispatch.
-- [ ] Update every input, process, network, and teardown call site directly.
-- [ ] Update the lobby-chibi smoke test to assert the new owner and absence of
+- [x] Update every input, process, network, and teardown call site directly.
+- [x] Update the lobby-chibi smoke test to assert the new owner and absence of
       the old methods on `GameManager`.
 
 Completion condition: `GameManager` contains no lobby-chibi implementation or
@@ -701,3 +701,35 @@ Append entries; do not rewrite old evidence.
 - Deferred to Milestone 11: every stable, simulation, replay, lobby-load,
   Steam-dependent, Blender, export, and runner self-check invocation.
 - Commit: `5d0703f0` (`Add deferred verification runner`).
+
+### Milestone 2 — lobby chibi ownership complete
+
+- Date: 2026-08-13
+- Old owner: `GameManager` in `mxto/main.gd` (UI-node fields, constants,
+  render managers, roster/cache state, hover/magnifier behavior, packed state,
+  batching, latency display, and RPC endpoints).
+- New owner: the scene-owned `LobbyChibiController` node implemented by
+  `mxto/ui/lobby_chibi_controller.gd`.
+- Direct providers: `GameManager`, `NetworkManager`, `GameSim`, and the lobby
+  chat input are passed once during initialization. `LobbyChibiCar` receives its
+  controller, `CarDefinition`, and sampled stats directly; it no longer stores a
+  `game_manager` pseudo-interface or uses dynamic method dispatch.
+- Lifecycle: `GameManager` calls `process_lobby()` from the lobby physics path
+  and `clear()` when leaving lobby ownership. The controller owns renderer
+  creation, roster creation/removal, hover/magnifier state, and teardown.
+- RPC paths: unreliable ordered channel 9 submission and authority batch
+  application now resolve on `/root/Main/LobbyChibiController`; the direct state
+  endpoint preserves its previous RPC mode on the same owner.
+- Callers updated: `GameManager`, `SessionMemoryTelemetry`,
+  `lobby_chibi_render_smoke.gd`, and `lobby_scale_smoke.gd`.
+- Source result: `mxto/main.gd` fell from roughly 4,900 lines to 4,369 lines;
+  the cohesive controller is 453 lines.
+- Static checks: no lobby-chibi implementation method remains in `main.gd`, and
+  `LobbyChibiCar` contains no `game_manager`, `has_method()`, or string `call()`
+  use. `git diff --check` passed.
+- Verification: `scons target=template_release -j4` passed; Godot 4.7.1 opened
+  the project and exited 0 without native load, script parse/load, scene, or
+  startup errors. The known empty-texture and forced render-thread shutdown
+  diagnostics remain.
+- Deferred to Milestone 11: lobby-chibi render and lobby-scale smoke tests.
+- Commit: pending.

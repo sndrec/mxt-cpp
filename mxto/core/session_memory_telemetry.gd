@@ -48,7 +48,7 @@ func sample(event_name: String) -> void:
 		_monitor_int(Performance.OBJECT_COUNT), _monitor_int(Performance.OBJECT_RESOURCE_COUNT), _monitor_int(Performance.OBJECT_NODE_COUNT), _monitor_int(Performance.OBJECT_ORPHAN_NODE_COUNT),
 		str(replay_stats.get("recording_frames", 0)), str(replay_stats.get("recording_input_bytes", 0)), str(replay_stats.get("playback_frames", 0)), str(replay_stats.get("playback_source_bytes", 0)),
 		str(replay_stats.get("seek_checkpoint_count", 0)), str(replay_stats.get("seek_checkpoint_bytes", 0)), str(replay_stats.get("debug_recording_frames", 0)), str(replay_stats.get("debug_playback_frames", 0)),
-		_archetype_count(game_manager.car_render_manager), _archetype_count(game_manager.lobby_chibi_render_manager), _archetype_count(game_manager.lobby_chibi_magnifier_render_manager), str(game_manager.lobby_chibi_render_rebuild_count_total),
+		_archetype_count(game_manager.car_render_manager), _archetype_count(game_manager.lobby_chibi_controller.render_manager), _archetype_count(game_manager.lobby_chibi_controller.magnifier_render_manager), str(game_manager.lobby_chibi_controller.render_rebuild_count_total),
 		str(game_sim_stats.get("sim_started", false)), str(game_sim_stats.get("tracked_native_bytes", 0)), str(game_sim_stats.get("level_heap_capacity_bytes", 0)), str(game_sim_stats.get("gamestate_heap_capacity_bytes", 0)), str(game_sim_stats.get("rollback_buffer_bytes", 0)),
 		str(server_sim_stats.get("sim_started", false)), str(server_sim_stats.get("tracked_native_bytes", 0)), str(server_sim_stats.get("level_heap_capacity_bytes", 0)), str(server_sim_stats.get("gamestate_heap_capacity_bytes", 0)), str(server_sim_stats.get("rollback_buffer_bytes", 0)),
 	])

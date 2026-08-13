@@ -76,15 +76,15 @@ func _run() -> void:
 	game_manager.lobby_control.visible = true
 
 	var initial_start := Time.get_ticks_usec()
-	game_manager._update_lobby_chibi_cars(1.0 / 60.0)
+	game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
 	var initial_usec := Time.get_ticks_usec() - initial_start
-	if game_manager.lobby_chibi_cars.size() != PLAYER_COUNT:
+	if game_manager.lobby_chibi_controller.cars.size() != PLAYER_COUNT:
 		_fail("did not create all synthetic lobby cars")
 		return
 
 	var steady_start := Time.get_ticks_usec()
 	for _frame in range(STEADY_FRAMES):
-		game_manager._update_lobby_chibi_cars(1.0 / 60.0)
+		game_manager.lobby_chibi_controller.process_lobby(1.0 / 60.0)
 	var steady_usec := Time.get_ticks_usec() - steady_start
 	var steady_avg_usec := float(steady_usec) / float(STEADY_FRAMES)
 	var sample_state := [1000, 120.0, Vector3(1.0, 0.0, -1.0), 3.0, Vector3(4.0, 0.05, -2.0), Vector3(0.0, 1.5, 0.1)]
@@ -94,7 +94,7 @@ func _run() -> void:
 		" stamps_per_livery=", STAMPS_PER_LIVERY,
 		" initial_ms=", snappedf(float(initial_usec) * 0.001, 0.001),
 		" steady_avg_us=", snappedf(steady_avg_usec, 0.1),
-		" archetypes=", game_manager.lobby_chibi_render_manager.archetypes.size(),
+		" archetypes=", game_manager.lobby_chibi_controller.render_manager.archetypes.size(),
 		" variant_state_bytes=", variant_state_bytes,
 		" draw_calls=", int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)))
 	game_manager.queue_free()

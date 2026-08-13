@@ -16,6 +16,7 @@
 [ext_resource type="Script" uid="uid://berp7plvet1og" path="res://track/track_content_controller.gd" id="25_track"]
 [ext_resource type="Script" uid="uid://bqlqeat5xvksx" path="res://netplay/custom_stamp_network_controller.gd" id="26_stamps"]
 [ext_resource type="Script" uid="uid://cprwg1uhsl2b5" path="res://netplay/playtest_lobby_probe.gd" id="27_playtest_probe"]
+[ext_resource type="Script" path="res://ui/lobby_chibi_controller.gd" id="28_lobby_chibi"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -150,6 +151,9 @@ script = ExtResource("24_audio")
 
 [node name="TrackContentController" type="Node" parent="." unique_id=910439580]
 script = ExtResource("25_track")
+
+[node name="LobbyChibiController" type="Node" parent="."]
+script = ExtResource("28_lobby_chibi")
 
 [node name="PlaytestLobbyProbe" type="Node" parent="." unique_id=2105027119]
 script = ExtResource("27_playtest_probe")
