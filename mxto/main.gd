@@ -5,6 +5,7 @@ const LobbyControllerClass = preload("res://ui/lobby_controller.gd")
 const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
 const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
+const RaceSessionControllerClass = preload("res://core/race_session_controller.gd")
 const CarSettingsClass = preload("res://ui/car_settings.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
@@ -19,6 +20,7 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var spectator_controller: SpectatorControllerClass = $SpectatorController
 @onready var race_presentation_controller: RacePresentationControllerClass = $RacePresentationController
 @onready var debug_runtime_controller: DebugRuntimeControllerClass = $DebugRuntimeController
+@onready var race_session_controller: RaceSessionControllerClass = $RaceSessionController
 @onready var communication_controller: CommunicationControllerClass = $CommunicationController
 @onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
@@ -70,38 +72,8 @@ const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
 
-var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
-var local_player_index: int = 0
 var headless_mode: bool = false
-var trigger_objects: Array = []
-const TRIGGER_SCENES = {
-			 0: preload("res://asset/obj_dashplate.tscn"),
-			 1: preload("res://asset/obj_jumpplate.tscn"),
-			 2: preload("res://asset/obj_mine.tscn"),
-}
-
-const ROAD_MATS = {
-	0: preload("res://asset/tex/track/tracktex (1).png"),
-	1: preload("res://asset/tex/track/tracktex (2).png"),
-	2: preload("res://asset/tex/track/tracktex (3).png"),
-	3: preload("res://asset/tex/track/tracktex (4).png"),
-	4: preload("res://asset/tex/track/tracktex (5).png"),
-	5: preload("res://asset/tex/track/tracktex (6).png"),
-	6: preload("res://asset/tex/track/tracktex (7).png"),
-	7: preload("res://asset/tex/track/tracktex (8).png"),
-	8: preload("res://asset/tex/track/tracktex (9).png"),
-	9: preload("res://asset/tex/track/tracktex (10).png"),
-	10: preload("res://asset/tex/track/tracktex (11).png"),
-	11: preload("res://asset/tex/track/tracktex (12).png"),
-	12: preload("res://asset/tex/track/tracktex (13).png"),
-	13: preload("res://asset/tex/track/tracktex (14).png"),
-	14: preload("res://asset/tex/track/tracktex (15).png"),
-	15: preload("res://asset/tex/track/tracktex (16).png"),
-	16: preload("res://asset/tex/track/tracktex (17).png"),
-	17: preload("res://asset/tex/track/tracktex (18).png"),
-	18: preload("res://asset/tex/track/tracktex (19).png"),
-}
 
 # Singleplayer state
 var singleplayer_mode: bool = false
@@ -128,8 +100,6 @@ var singleplayer_options_restore_toggle: CheckBox
 var singleplayer_options_bumpers_toggle: CheckBox
 var singleplayer_options_s_boost_toggle: CheckBox
 var singleplayer_options_as_spectator := false
-var _last_race_track_index: int = -1
-var _last_race_settings: Array = []
 var race_dnf_low_speed_ticks := {}
 var start_sync_drop_root: PanelContainer
 var start_sync_drop_label: Label
@@ -138,7 +108,6 @@ var start_sync_drop_button: Button
 const DNF_SPEED_THRESHOLD_KMH := 400.0
 const DNF_LOW_SPEED_TICKS := 60 * 10
 const FORCE_END_WINDOW_TICKS := 60 * 60
-const DIP_TRACE_PIPE_FLOOR := 0x100
 
 var race_pause_open := false
 var steam_service: MxtSteamService
@@ -184,6 +153,26 @@ func _ready() -> void:
 		frame_time_label,
 		rtt_label,
 		version_label)
+	race_session_controller.initialize(
+		self,
+		game_sim,
+		server_game_sim,
+		network_manager,
+		replay_controller,
+		race_audio_controller,
+		track_content_controller,
+		lobby_chibi_controller,
+		spectator_controller,
+		race_presentation_controller,
+		vehicle_content_controller,
+		debug_runtime_controller,
+		car_node_container,
+		spark_node_container,
+		obj_container,
+		car_render_manager,
+		$Control,
+		lobby_control,
+		player_scene)
 	spectator_controller.notification_requested.connect(race_presentation_controller.show_notification)
 	randomize()
 	_build_multiplayer_connect_box()
@@ -458,7 +447,9 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 		var cpu_id = cpu_ids[i]
 		var cpu_settings = network_manager.player_settings.get(cpu_id, build_cpu_player_settings(i))
 		settings_array.append(cpu_settings)
-	_start_race(track_selector.selected, settings_array)
+	_close_settings_menus_for_race_start()
+	race_dnf_low_speed_ticks.clear()
+	race_session_controller.start_race(track_selector.selected, settings_array, singleplayer_mode, headless_mode)
 	# Hide menus
 	$Control.visible = false
 	lobby_control.visible = false
@@ -928,101 +919,6 @@ func _consume_authoritative_race_events() -> void:
 	else:
 		game_sim.consume_race_events()
 
-func _parse_level_triggers(bytes: PackedByteArray) -> Array:
-	var pb := StreamPeerBuffer.new()
-	pb.data_array = bytes
-	pb.big_endian = false
-	var header_size := pb.get_u32()
-	var version := pb.get_string(4)
-	if version != "v0.9":
-		push_error("MXT track format hard-cutover failure: expected v0.9, got %s" % version)
-		return []
-	var cp_count := pb.get_u32()
-	var seg_count := pb.get_u32()
-	var trig_count := pb.get_u32()
-	var mesh_collision_triangle_count := pb.get_u32()
-
-	for i in range(cp_count):
-		pb.get_float() # pos start x
-		pb.get_float(); pb.get_float()
-		pb.get_float(); pb.get_float(); pb.get_float() # pos end
-		for j in range(9):
-			pb.get_float()
-		for j in range(9):
-			pb.get_float()
-		for j in range(7):
-			pb.get_float()
-		pb.get_u32()
-		for j in range(3):
-			pb.get_float()
-		pb.get_float()
-		for j in range(3):
-			pb.get_float()
-		pb.get_float()
-		var conn := pb.get_u32()
-		for j in range(conn):
-			pb.get_u32()
-
-	var _skip_curve = func():
-		var point_count := pb.get_u32()
-		pb.seek(pb.get_position() + point_count * 16)
-
-	for i in range(seg_count):
-		pb.get_u32()
-		var road_type := pb.get_u32()
-		pb.get_u32()
-		if road_type == 5 or road_type == 6:
-			_skip_curve.call(); _skip_curve.call(); _skip_curve.call()
-		if road_type == 2 or road_type == 4 or road_type == 6:
-			_skip_curve.call()
-		if road_type == 6:
-			_skip_curve.call()
-		var mod_count := pb.get_u32()
-		for m in range(mod_count):
-			_skip_curve.call(); _skip_curve.call()
-		var embed_count := pb.get_u32()
-		for e in range(embed_count):
-			pb.get_float(); pb.get_float(); pb.get_u32(); _skip_curve.call(); _skip_curve.call()
-		for j in range(3):
-			_skip_curve.call()
-		for j in range(9):
-			_skip_curve.call()
-		for j in range(3):
-			_skip_curve.call()
-		pb.get_float(); pb.get_float()
-		pb.get_float(); pb.get_float()
-		pb.get_float(); pb.get_float()
-
-	var out := []
-	for i in range(trig_count):
-		var t_type := pb.get_u32()
-		pb.get_u32()
-		pb.get_u32()
-		var b := Basis()
-		b.x.x = pb.get_float()
-		b.x.y = pb.get_float()
-		b.x.z = pb.get_float()
-		b.y.x = pb.get_float()
-		b.y.y = pb.get_float()
-		b.y.z = pb.get_float()
-		b.z.x = pb.get_float()
-		b.z.y = pb.get_float()
-		b.z.z = pb.get_float()
-		var origin := Vector3.ZERO
-		origin.x = pb.get_float()
-		origin.y = pb.get_float()
-		origin.z = pb.get_float()
-		var inv_t := Transform3D(b, origin)
-		var tform := inv_t.affine_inverse()
-		var ext := Vector3.ZERO
-		ext.x = pb.get_float()
-		ext.y = pb.get_float()
-		ext.z = pb.get_float()
-		out.append({"type": t_type, "transform": tform, "extents": ext})
-	if mesh_collision_triangle_count > 0:
-		pb.seek(pb.get_position() + mesh_collision_triangle_count * (4 + 18 * 4))
-	return out
-
 func _on_car_settings_button_pressed() -> void:
 	car_settings.call("open_settings")
 
@@ -1064,198 +960,6 @@ func _generate_random_input() -> PlayerInput:
 @onready var track_clouds: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/TrackClouds
 @onready var directional_light_3d: DirectionalLight3D = $GameWorld/DirectionalLight3D
 @onready var default_world_environment_resource: Environment = world_environment.environment
-
-func _start_race(track_index: int, settings: Array) -> bool:
-	if track_index < 0 or track_index >= track_content_controller.tracks.size():
-		return false
-	_close_settings_menus_for_race_start()
-	$Control.visible = false
-	lobby_control.visible = false
-	lobby_chibi_controller.clear()
-	_last_race_track_index = track_index
-	_last_race_settings = settings.duplicate(true)
-	race_presentation_controller.reset()
-	spectator_controller.reset()
-	race_dnf_low_speed_ticks.clear()
-	var info: Dictionary = track_content_controller.tracks[track_index]
-	if !track_content_controller.prepare_race(track_index):
-		return false
-	race_audio_controller.reset_for_race()
-	race_audio_controller.configure_track_music(
-		track_content_controller.current_track_dir,
-		track_content_controller.current_metadata)
-					
-	var chosen_defs : Array = []
-	var racer_settings : Array = []
-	var racer_ids : Array = []
-	var racer_cpu_flags : Array = []
-	var roster := network_manager.get_simulation_roster()
-	var cpu_ids := network_manager.get_cpu_roster()
-	var keyed_settings := {}
-	var ordered_settings := []
-	for raw_settings in settings:
-		if typeof(raw_settings) != TYPE_DICTIONARY:
-			continue
-		var settings_dict: Dictionary = raw_settings
-		if settings_dict.has("_race_player_id"):
-			keyed_settings[int(settings_dict["_race_player_id"])] = settings_dict
-		else:
-			ordered_settings.append(settings_dict)
-	if !keyed_settings.is_empty():
-		for id_value in roster:
-			var pid := int(id_value)
-			if !keyed_settings.has(pid):
-				continue
-			var d: Dictionary = keyed_settings[pid]
-			var ps := PlayerSettings.new()
-			ps.from_dict(d)
-			if !ps.spectator:
-				if !vehicle_content_controller.evidence_matches(ps):
-					push_error("Race vehicle content evidence mismatch: %s" % ps.vehicle_content_id)
-					return false
-				racer_settings.append(ps)
-				var def_res := vehicle_content_controller.get_definition(ps.vehicle_content_id)
-				if def_res == null:
-					push_error("Race references unavailable vehicle content: %s" % ps.vehicle_content_id)
-					return false
-				chosen_defs.append(def_res)
-				racer_ids.append(pid)
-				racer_cpu_flags.append(cpu_ids.has(pid))
-	else:
-		var racer_roster_index := 0
-		for d in ordered_settings:
-			var ps := PlayerSettings.new()
-			ps.from_dict(d)
-			if !ps.spectator:
-				if !vehicle_content_controller.evidence_matches(ps):
-					push_error("Race vehicle content evidence mismatch: %s" % ps.vehicle_content_id)
-					return false
-				racer_settings.append(ps)
-				var def_res := vehicle_content_controller.get_definition(ps.vehicle_content_id)
-				if def_res == null:
-					push_error("Race references unavailable vehicle content: %s" % ps.vehicle_content_id)
-					return false
-				chosen_defs.append(def_res)
-				if racer_roster_index < roster.size():
-					var pid = roster[racer_roster_index]
-					racer_ids.append(pid)
-					racer_cpu_flags.append(cpu_ids.has(pid))
-				racer_roster_index += 1
-	var bumpers_enabled := bool(network_manager.race_options.get("bumpers", false))
-	var custom_stamp_render := vehicle_content_controller.prepare_custom_stamp_render_payload(racer_ids, racer_settings, "race")
-	var custom_stamp_atlas: Texture2D = custom_stamp_render.get("texture", null)
-	var bumper_def: CarDefinition = load(BUMPER_DEFINITION_PATH) if bumpers_enabled else null
-	var render_defs := chosen_defs.duplicate()
-	var render_settings: Array = custom_stamp_render.get("settings", racer_settings.duplicate())
-	if bumper_def != null:
-		for _slot in BUMPER_POOL_SIZE:
-			render_defs.append(bumper_def)
-			render_settings.append({})
-	var local_id := _local_player_id()
-	local_player_index = racer_ids.find(local_id)
-	var start_grid_slots := replay_controller.replay_start_grid_slots if replay_controller.replay_playback_active and replay_controller.replay_start_grid_slots.size() == racer_ids.size() else _build_start_grid_slots(racer_ids)
-	var visual_focus_id := local_id
-	if local_player_index == -1 and !racer_ids.is_empty():
-		visual_focus_id = int(racer_ids[0])
-	car_node_container.instantiate_cars(chosen_defs, racer_ids, visual_focus_id)
-	var race_nametag_names: Array[String] = []
-	race_nametag_names.resize(racer_settings.size())
-	for idx in racer_settings.size():
-		var nametag_text: String = " " + racer_settings[idx].username + " "
-		race_nametag_names[idx] = nametag_text
-	for car: VisualCar in car_node_container.get_children():
-		car.game_manager = self
-		car.render_profile_enabled = debug_runtime_controller.render_profile_enabled
-	if car_node_container.local_visual_car != null:
-		var visual_player_index := racer_ids.find(car_node_container.local_visual_car.owning_id)
-		if visual_player_index >= 0 and visual_player_index < racer_settings.size():
-			car_node_container.local_visual_car.player_settings = racer_settings[visual_player_index]
-			if is_instance_valid(car_node_container.local_visual_car.name_label):
-				car_node_container.local_visual_car.name_label.text = race_nametag_names[visual_player_index]
-	debug_runtime_controller.apply_race_render_options(car_render_manager, car_node_container.local_visual_car)
-	car_render_manager.set_custom_stamp_atlas(custom_stamp_atlas)
-	car_render_manager.configure(render_defs, car_node_container.get_children(), render_settings)
-	for p in players:
-		if p != null:
-			p.queue_free()
-	players.clear()
-	spectator_controller.configure_race(_local_player_id(), local_player_index != -1)
-	var car_props : Array = []
-	var accel_settings_arr : Array = []
-	for i in racer_settings.size():
-		var is_cpu_racer = i < racer_cpu_flags.size() and racer_cpu_flags[i]
-		if is_cpu_racer:
-			players.append(null)
-			continue
-		var pc := player_scene.instantiate()
-		pc.car_definition = chosen_defs[i]
-		pc.accel_setting = racer_settings[i].accel_setting
-		pc.player_settings = racer_settings[i]
-		add_child(pc)
-		players.append(pc)
-	for n in chosen_defs.size():
-		var def = chosen_defs[n]
-		var bytes := FileAccess.get_file_as_bytes(def.properties_path)
-		car_props.append(bytes)
-		if n < racer_settings.size():
-			accel_settings_arr.append(racer_settings[n].accel_setting)
-		else:
-			accel_settings_arr.append(1.0)
-	var level_buffer := StreamPeerBuffer.new()
-	level_buffer.data_array = FileAccess.get_file_as_bytes(info["mxt"])
-	game_sim.car_node_container = car_node_container
-	game_sim.spark_node_container = spark_node_container
-	game_sim.set_car_render_manager(car_render_manager)
-	# Ensure the C++ sim sees the shared spawn seed before instantiation
-	game_sim.set_spawn_seed(network_manager.spawn_seed)
-	game_sim.set_start_grid_slots(start_grid_slots)
-	game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
-	if game_sim.has_method("set_bumpers_enabled"):
-		game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
-	if game_sim.has_method("set_s_boost_enabled"):
-		game_sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
-	if game_sim.has_method("set_multiplayer_intro_camera_enabled"):
-		game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_controller.replay_playback_use_multiplayer_startup)
-	game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
-	race_audio_controller.configure_vehicle_properties(chosen_defs)
-	game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
-	_apply_grand_prix_ko_energy_bonuses(game_sim, racer_ids)
-	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
-	replay_controller.start_recording(track_index, settings, racer_ids, racer_cpu_flags, start_grid_slots)
-	if car_node_container.local_visual_car != null:
-		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
-	race_presentation_controller.configure_race(_local_player_id(), local_player_index, singleplayer_mode, race_nametag_names)
-	if network_manager.is_server:
-		server_game_sim.car_node_container = car_node_container
-		server_game_sim.spark_node_container = spark_node_container
-		server_game_sim.set_car_render_manager(car_render_manager)
-		server_game_sim.set_spawn_seed(network_manager.spawn_seed)
-		server_game_sim.set_start_grid_slots(start_grid_slots)
-		server_game_sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
-		if server_game_sim.has_method("set_bumpers_enabled"):
-			server_game_sim.set_bumpers_enabled(bumpers_enabled and bumper_def != null)
-		if server_game_sim.has_method("set_s_boost_enabled"):
-			server_game_sim.set_s_boost_enabled(network_manager.is_s_boost_enabled())
-		if server_game_sim.has_method("set_multiplayer_intro_camera_enabled"):
-			server_game_sim.set_multiplayer_intro_camera_enabled(!singleplayer_mode or replay_controller.replay_playback_use_multiplayer_startup)
-		server_game_sim.instantiate_gamesim(level_buffer.duplicate(), car_props.duplicate(true), accel_settings_arr)
-		server_game_sim.set_player_metadata(racer_ids, racer_cpu_flags)
-		_apply_grand_prix_ko_energy_bonuses(server_game_sim, racer_ids)
-		network_manager.server_netcode_session.configure(racer_ids, racer_cpu_flags, _local_player_id())
-	network_manager.game_sim = game_sim
-	if network_manager.is_server:
-		network_manager.server_game_sim = server_game_sim
-	if !headless_mode:
-		track_content_controller.load_runtime_visuals()
-		trigger_objects.clear()
-		for trig in _parse_level_triggers(level_buffer.data_array):
-			var scene = TRIGGER_SCENES.get(trig["type"], null)
-			if scene:
-				var inst:Node3D = scene.instantiate()
-				inst.transform = trig["transform"]
-				obj_container.add_child(inst)
-				trigger_objects.append(inst)
-	return true
 
 func _on_lobby_start_race_requested(requested_options: Dictionary) -> void:
 	if !network_manager.is_server:
@@ -1310,7 +1014,7 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 		start_sync_drop_root.visible = false
 	communication_controller.close_race_chat()
 	_close_settings_menus_for_race_start()
-	if !_start_race(track_index, settings):
+	if !race_session_controller.start_race(track_index, settings, singleplayer_mode, headless_mode):
 		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, "race initialization failed")
 		return
 	game_sim.set_sim_started(false)
@@ -1363,8 +1067,8 @@ func _physics_process(delta: float) -> void:
 		var profile_physics_start := Time.get_ticks_usec() if profile_enabled else 0
 		var profile_input_start := Time.get_ticks_usec() if profile_enabled else 0
 		var local_pi := PlayerInputClass.new()
-		if !spectator_controller.should_suppress_local_race_input() and _window_accepts_input() and players.size() > local_player_index:
-			var controller = players[local_player_index]
+		if !spectator_controller.should_suppress_local_race_input() and _window_accepts_input() and race_session_controller.players.size() > race_session_controller.local_player_index:
+			var controller = race_session_controller.players[race_session_controller.local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
 		var input_bytes := local_pi.serialize()
@@ -1438,8 +1142,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		if debug_runtime_controller.auto_accelerate:
 			local_pi.accelerate = 1.0
 		var accepts_input := _window_accepts_input()
-		if !debug_runtime_controller.auto_accelerate and !spectator_controller.should_suppress_local_race_input() and accepts_input and players.size() > local_player_index:
-			var controller = players[local_player_index]
+		if !debug_runtime_controller.auto_accelerate and !spectator_controller.should_suppress_local_race_input() and accepts_input and race_session_controller.players.size() > race_session_controller.local_player_index:
+			var controller = race_session_controller.players[race_session_controller.local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
 		input_bytes = local_pi.serialize()
@@ -1552,32 +1256,11 @@ func _unhandled_input(event: InputEvent) -> void:
 func _return_to_menu() -> void:
 	record_memory_sample("return_to_menu_begin")
 	communication_controller.close_race_chat()
-	race_audio_controller.leave_race(0.5)
-	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
+	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_close_race_pause_menu()
-	race_presentation_controller.reset()
-	var was_server := network_manager.is_server
-	network_manager.disconnect_from_server()
-	game_sim.destroy_gamesim()
-	if was_server:
-		server_game_sim.destroy_gamesim()
-	network_manager.game_sim = null
-	network_manager.server_game_sim = null
-	track_content_controller.teardown_runtime()
-	for child in car_node_container.get_children():
-		child.queue_free()
-	for obj in trigger_objects:
-		obj.queue_free()
-	trigger_objects.clear()
-	for p in players:
-		if p != null:
-			p.queue_free()
-	players.clear()
-	spectator_controller.reset()
+	race_session_controller.destroy_world(true, true)
 	race_dnf_low_speed_ticks.clear()
-	Engine.physics_ticks_per_second = 60
-	local_player_index = 0
 	singleplayer_mode = false
 	_singleplayer_tick = 0
 	time_attack_eligibility.clear()
@@ -1593,30 +1276,10 @@ func _return_to_menu() -> void:
 func _return_to_lobby() -> void:
 	record_memory_sample("return_to_lobby_begin")
 	communication_controller.close_race_chat()
-	race_audio_controller.leave_race(0.5)
-	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
+	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	_close_race_pause_menu()
-	race_presentation_controller.reset()
-	game_sim.destroy_gamesim()
-	if network_manager.is_server:
-		server_game_sim.destroy_gamesim()
-		network_manager.server_game_sim = null
-	track_content_controller.teardown_runtime()
-	for child in car_node_container.get_children():
-		if child != null:
-			child.queue_free()
-	for obj in trigger_objects:
-		if obj != null:
-			obj.queue_free()
-	trigger_objects.clear()
-	for p in players:
-		if p != null:
-			p.queue_free()
-	players.clear()
-	spectator_controller.reset()
+	race_session_controller.destroy_world(false, false)
 	race_dnf_low_speed_ticks.clear()
-	Engine.physics_ticks_per_second = 60
-	local_player_index = 0
 	lobby_control.visible = true
 	network_manager.flush_waiting_peers()
 	network_manager.reset_race_state(true)
@@ -1627,30 +1290,10 @@ func _return_to_lobby() -> void:
 
 func _teardown_race_world_for_transition() -> void:
 	record_memory_sample("race_transition_teardown_begin")
-	race_audio_controller.leave_race()
-	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
+	race_session_controller.begin_transition(singleplayer_mode)
 	_close_race_pause_menu()
-	race_presentation_controller.reset()
-	game_sim.destroy_gamesim()
-	if network_manager.is_server:
-		server_game_sim.destroy_gamesim()
-		network_manager.server_game_sim = null
-	track_content_controller.teardown_runtime()
-	for child in car_node_container.get_children():
-		if child != null:
-			child.queue_free()
-	for obj in trigger_objects:
-		if obj != null:
-			obj.queue_free()
-	trigger_objects.clear()
-	for p in players:
-		if p != null:
-			p.queue_free()
-	players.clear()
-	spectator_controller.reset()
+	race_session_controller.destroy_world(false, false)
 	race_dnf_low_speed_ticks.clear()
-	Engine.physics_ticks_per_second = 60
-	local_player_index = 0
 	lobby_control.visible = false
 	singleplayer_mode = false
 	_singleplayer_tick = 0
@@ -1694,57 +1337,6 @@ func _lookup_id_value(dict: Dictionary, id: int, fallback):
 	if dict.has(id_string):
 		return dict[id_string]
 	return fallback
-
-func _build_start_grid_slots(racer_ids: Array) -> PackedInt32Array:
-	var slots := PackedInt32Array()
-	slots.resize(racer_ids.size())
-	for i in range(racer_ids.size()):
-		slots[i] = -1
-	if singleplayer_mode and !replay_controller.replay_playback_use_multiplayer_startup and !network_manager.get_cpu_roster().is_empty():
-		var local_index := racer_ids.find(_local_player_id())
-		if local_index >= 0 and racer_ids.size() > 1:
-			var next_slot := 0
-			for i in range(racer_ids.size()):
-				if i == local_index:
-					continue
-				slots[i] = next_slot
-				next_slot += 1
-			slots[local_index] = racer_ids.size() - 1
-			return slots
-	if !network_manager.is_grand_prix_enabled():
-		return slots
-	var current_track_index := int(network_manager.race_options.get("grand_prix_current_track", 0))
-	if current_track_index <= 0:
-		return slots
-	var points: Dictionary = network_manager.race_options.get("grand_prix_points", {})
-	var standings := []
-	for i in range(racer_ids.size()):
-		var id := int(racer_ids[i])
-		standings.append([int(_lookup_id_value(points, id, 0)), i, id])
-	standings.sort_custom(func(a, b):
-		if int(a[0]) != int(b[0]):
-			return int(a[0]) > int(b[0])
-		return int(a[1]) < int(b[1])
-	)
-	var racer_count := racer_ids.size()
-	for rank in range(standings.size()):
-		var racer_index := int(standings[rank][1])
-		slots[racer_index] = racer_count - 1 - rank
-	return slots
-
-func _apply_grand_prix_ko_energy_bonuses(sim: GameSim, racer_ids: Array) -> void:
-	if sim == null or !network_manager.is_grand_prix_enabled():
-		return
-	if !sim.has_method("set_player_ko_energy_bonus"):
-		return
-	var bonuses: Dictionary = network_manager.race_options.get("grand_prix_ko_energy_bonuses", {})
-	if bonuses.is_empty():
-		return
-	for id_value in racer_ids:
-		var id := int(id_value)
-		var bonus := float(_lookup_id_value(bonuses, id, 0.0))
-		if bonus > 0.0:
-			sim.set_player_ko_energy_bonus(id, bonus)
 
 func _capture_grand_prix_ko_energy_bonuses(sim: GameSim) -> Dictionary:
 	var bonuses := {}

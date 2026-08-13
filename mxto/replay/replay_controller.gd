@@ -4,12 +4,14 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
 const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
+const RaceSessionControllerClass = preload("res://core/race_session_controller.gd")
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
 @onready var spectator_controller: SpectatorControllerClass = get_node("../SpectatorController") as SpectatorControllerClass
 @onready var race_presentation_controller: RacePresentationControllerClass = get_node("../RacePresentationController") as RacePresentationControllerClass
 @onready var debug_runtime_controller: DebugRuntimeControllerClass = get_node("../DebugRuntimeController") as DebugRuntimeControllerClass
+@onready var race_session_controller: RaceSessionControllerClass = get_node("../RaceSessionController") as RaceSessionControllerClass
 @onready var replays_button: Button = get_node("../Control/ReplaysButton") as Button
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
@@ -1249,7 +1251,9 @@ func _start_replay_playback_from_path(path: String) -> void:
 			game_manager.network_manager.player_settings[id] = (settings[i] as Dictionary).duplicate(true)
 	var profile_setup_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us - profile_frames_duplicate_us
 	var profile_race_start_us := Time.get_ticks_usec()
-	game_manager._start_race(track_index, settings as Array)
+	game_manager._close_settings_menus_for_race_start()
+	game_manager.race_dnf_low_speed_ticks.clear()
+	race_session_controller.start_race(track_index, settings as Array, game_manager.singleplayer_mode, game_manager.headless_mode)
 	game_manager.game_sim.set_sim_started(true)
 	profile_race_start_us = Time.get_ticks_usec() - profile_race_start_us
 	game_manager.get_node("Control").visible = false
@@ -1982,18 +1986,18 @@ func _debug_replay_dir() -> String:
 	return ProjectSettings.globalize_path("user://debug_replays")
 
 func _current_track_name() -> String:
-	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return String(game_manager.track_content_controller.tracks[game_manager._last_race_track_index].get("name", "track"))
+	if race_session_controller.last_race_track_index >= 0 and race_session_controller.last_race_track_index < game_manager.track_content_controller.tracks.size():
+		return String(game_manager.track_content_controller.tracks[race_session_controller.last_race_track_index].get("name", "track"))
 	return "track"
 
 func _current_track_id() -> String:
-	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return game_manager.track_content_controller.track_id_for_index(game_manager._last_race_track_index)
+	if race_session_controller.last_race_track_index >= 0 and race_session_controller.last_race_track_index < game_manager.track_content_controller.tracks.size():
+		return game_manager.track_content_controller.track_id_for_index(race_session_controller.last_race_track_index)
 	return ""
 
 func _current_track_gameplay_digest() -> String:
-	if game_manager._last_race_track_index >= 0 and game_manager._last_race_track_index < game_manager.track_content_controller.tracks.size():
-		return game_manager.track_content_controller.track_gameplay_digest_for_index(game_manager._last_race_track_index)
+	if race_session_controller.last_race_track_index >= 0 and race_session_controller.last_race_track_index < game_manager.track_content_controller.tracks.size():
+		return game_manager.track_content_controller.track_gameplay_digest_for_index(race_session_controller.last_race_track_index)
 	return ""
 
 func _find_track_index(data: Dictionary) -> int:
@@ -2073,7 +2077,7 @@ func _stop_and_save_debug_replay_recording() -> void:
 		"track_package_digest": String(vehicle_content_controller.content_catalog.resolve_content(_current_track_id()).get("package_digest", "")),
 		"track_workshop_id": String(vehicle_content_controller.content_catalog.resolve_content(_current_track_id()).get("published_file_id", "")),
 		"track_name": _current_track_name(),
-		"settings": _settings_array_with_vehicle_content_evidence(game_manager._last_race_settings),
+		"settings": _settings_array_with_vehicle_content_evidence(race_session_controller.last_race_settings),
 		"singleplayer_cpu_count": game_manager.singleplayer_cpu_count,
 		"spawn_seed": game_manager.network_manager.spawn_seed,
 		"snapshot_tick": debug_replay_snapshot_tick,
@@ -2172,7 +2176,9 @@ func _load_and_start_debug_replay(path: String) -> void:
 		if i + 1 < settings.size():
 			game_manager.network_manager.player_settings[cpu_ids[i]] = settings[i + 1]
 
-	game_manager._start_race(track_index, settings)
+	game_manager._close_settings_menus_for_race_start()
+	game_manager.race_dnf_low_speed_ticks.clear()
+	race_session_controller.start_race(track_index, settings, game_manager.singleplayer_mode, game_manager.headless_mode)
 	if !game_manager.game_sim.load_state_data(snapshot_tick, snapshot_state):
 		game_manager._return_to_menu()
 		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: native snapshot could not be applied.")

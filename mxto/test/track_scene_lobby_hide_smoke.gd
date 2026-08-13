@@ -36,13 +36,25 @@ func _init() -> void:
 	main.network_manager.player_settings[player_id] = settings
 	main.get_node("Control").visible = true
 	main.lobby_control.visible = true
-	main.call("_start_race", track_index, [settings])
+	if main.has_method("_start_race"):
+		push_error("GameManager should not retain race-session setup")
+		quit(1)
+		return
+	if !main.race_session_controller.start_race(track_index, [settings], false, false):
+		push_error("race-session owner rejected valid smoke setup")
+		quit(1)
+		return
 	if main.get_node("Control").visible:
 		push_error("main menu should be hidden after race start")
 		quit(1)
 		return
 	if main.lobby_control.visible:
 		push_error("multiplayer lobby should be hidden after track-scene race start")
+		quit(1)
+		return
+	main.call("_return_to_lobby")
+	if !main.lobby_control.visible or !main.race_session_controller.players.is_empty():
+		push_error("race-session teardown did not restore the lobby and clear players")
 		quit(1)
 		return
 	print("MXT_TRACK_SCENE_LOBBY_HIDE_SMOKE track_index=", track_index)
