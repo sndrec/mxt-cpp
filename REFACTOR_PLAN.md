@@ -1,5 +1,8 @@
 # Maxx Throttle subsystem refactor plan
 
+> Superseded by `REPOSITORY_REFACTOR_PLAN.md`. This document is retained only as
+> historical context and is not an active implementation plan.
+
 ## Objective
 
 Break the largest source files into cohesive, domain-owned subsystems without
