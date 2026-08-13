@@ -84,8 +84,8 @@ def opus_sources_from_mk(path, var_name):
 sources = []
 sources.append([
     "src/register_types.cpp",
-    "src/fzgx_gameplay_camera.cpp",
 ])
+sources.append(Glob("src/camera/*.cpp"))
 sources.append(Glob("src/gamesim/*.cpp"))
 sources.append(Glob("src/core/*.cpp"))
 sources.append(Glob("src/netcode/*.cpp"))

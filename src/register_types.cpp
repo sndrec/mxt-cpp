@@ -6,7 +6,7 @@
 #include "content/track_package_builder.h"
 #include "car/car_authoring_session.h"
 #include "gamesim/gamesim.h"
-#include "fzgx_gameplay_camera.h"
+#include "camera/fzgx_gameplay_camera.h"
 #include "netcode/netcode_session.h"
 #include "render/native_stamp_mesh_builder.h"
 #include "audio/opus_voice_codec.h"

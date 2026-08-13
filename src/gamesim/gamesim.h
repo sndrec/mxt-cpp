@@ -15,7 +15,7 @@
 #include "godot_cpp/variant/dictionary.hpp"
 #include "godot_cpp/variant/packed_float32_array.hpp"
 #include "godot_cpp/variant/packed_int32_array.hpp"
-#include "fzgx_gameplay_camera.h"
+#include "camera/fzgx_gameplay_camera.h"
 #include "track/racetrack.h"
 #include "core/heap_handler.h"
 #include "core/player_input.h"

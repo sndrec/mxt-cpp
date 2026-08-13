@@ -1,4 +1,4 @@
-#include "fzgx_gameplay_camera.h"
+#include "camera/fzgx_gameplay_camera.h"
 
 #include "godot_cpp/core/class_db.hpp"
 
