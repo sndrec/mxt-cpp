@@ -1175,3 +1175,40 @@ Append entries; do not rewrite old evidence.
   script parse/load, scene, or access errors. Existing Steam-without-app-ID and
   render-thread diagnostics remain.
 - Commit: `b68e4749` (`Extract network race admission controller`).
+
+### Milestone 7e — input transport, timing, and rollback ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `InputTransportController` in
+  `mxto/netplay/input_transport_controller.gd`.
+- Moved out of `NetworkManager`: both native `NetcodeSession` instances,
+  pending/local/authoritative input histories, server/client/target ticks,
+  acknowledgements and retransmission windows, RTT/jitter/ahead control,
+  delayed-input replacement, timing sync, authoritative input broadcast,
+  client prediction, state-restore replay, and rollback timing.
+- Protocol preservation: client startup/input traffic remains any-peer
+  call-remote unreliable-ordered channel 1; authoritative input remains
+  any-peer call-local unreliable-ordered channel 2; startup sync remains
+  any-peer call-local unreliable channel 3; timing ping/sync remains
+  call-remote unreliable channel 5. Phase packing, sender/roster validation,
+  startup neutral frames, redundancy, acknowledgement, and rollback windows
+  remain on the real RPC owner.
+- Hot-path boundary: simulation/session calls, replay capture, voice timing,
+  HUD/audio timing, and debug labels access the transport owner directly.
+  Synchronous signals are limited to authoritative replay frames and peer
+  disconnect requests; no forwarding packet method remains on
+  `NetworkManager`.
+- Lifecycle: host/join/disconnect and race/session transitions refresh the
+  transport's direct roster/simulation context and reset its state in one call.
+  State transfer restores feed the transport rollback path directly.
+- Source result: `mxto/netplay/network_manager.gd` is 1,191 lines; the cohesive
+  input/timing/rollback owner is 1,067 lines.
+- Deferred coverage: the input-resilience smoke now targets the real owner;
+  phase-isolation, state-size, replay, timing, packet, rollback, and
+  multi-process groups remain queued for Milestone 11.
+- Verification: `scons target=template_release -j4` passed. The post-build
+  automated headless single-player launch parsed the full scene, initialized a
+  race, simulated 120 frames, and exited 0 without native load, script
+  parse/load, scene, or access errors. Existing Steam-without-app-ID and
+  render-thread diagnostics remain.
+- Commit: `01881521` (`Extract network input transport controller`).
