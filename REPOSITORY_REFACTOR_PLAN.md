@@ -5,7 +5,7 @@
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
 - Implementation is active. Milestones 0 through 4 are complete; Milestone 5
-  is next.
+  is in progress.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -813,3 +813,33 @@ Append entries; do not rewrite old evidence.
   content/package, lobby, replay, and rendering tests.
 - Commits: `d32347a7` (`Extract vehicle content catalog`) and `f61c4bed`
   (`Move vehicle render content ownership`).
+
+### Milestone 5a — lobby ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `LobbyController` in
+  `mxto/ui/lobby_controller.gd`.
+- Moved out of `GameManager`: Grand Prix stage queue and preview, lobby race
+  options, CPU controls, roster rows and kick actions, start-button state, and
+  the timed lobby update loop.
+- Lifecycle: the owner is initialized once with `NetworkManager`,
+  `TrackContentController`, and `LobbyChibiController`; it reloads after catalog
+  scans, processes only while the lobby is visible, and clears presentation
+  caches when the lobby closes.
+- Static scene cleanup: removed the obsolete hidden `LobbyTrackSelector`,
+  `PlayerList`, `StartRaceButton`, `AddCpuButton`, and `RemoveCpuButton` nodes
+  from `main.tscn`. The real stable controls remain authored in
+  `ui/lobby_static.tscn`; only data-driven roster and stage rows are created at
+  runtime.
+- Ownership support: reusable track-content evidence assembly moved to
+  `TrackContentController`, serving both lobby and single-player options.
+- Source result: `mxto/main.gd` lost 361 lines in this slice and contains no
+  lobby widget fields or lobby presentation implementation.
+- Verification: `scons target=template_release -j4` passed; Godot 4.7.1 opened
+  the project and exited 0 without native load, script parse/load, scene, or
+  startup errors. The known empty-texture and forced render-thread shutdown
+  diagnostics remain.
+- Deferred to Milestone 11: lobby empty-sequence, bumper, chibi, network-load,
+  and netplay state-size tests updated for the direct owner.
+- Commit: `e590e479` (`Extract lobby controller`).
+- Remaining Milestone 5 work: race presentation and spectator ownership.
