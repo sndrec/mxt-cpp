@@ -908,3 +908,35 @@ Append entries; do not rewrite old evidence.
   adjacent plan-status commits recording each verified slice.
 - All affected tests remain deferred to Milestone 11 under the user-directed
   validation cadence.
+
+### Milestone 6a — debug runtime ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `DebugRuntimeController` in
+  `mxto/core/debug_runtime_controller.gd`.
+- Moved out of `GameManager`: render/phase profiling counters, top frame-gap
+  samples, reports, active-script diagnostics, profiling CLI flags, rail and
+  mesh trace configuration, bumper-smoke state, clean 4K screenshots, and
+  diagnostic label visibility/text.
+- Hot-path integration: `GameManager` retains the fixed process and physics
+  order and records explicitly named phases into the owner only when profiling
+  is enabled. Each `VisualCar` receives one race-start boolean so its profiling
+  branches do not traverse the scene tree or controller graph per frame.
+- Direct consumers: replay metadata, leaderboard eligibility, track visual
+  profiling options, race HUD, and vehicle rendering read the new owner or the
+  race-start boolean directly; old debug fields are absent from `GameManager`.
+- Disabled behavior: the owner defines no `_process` or `_physics_process`; its
+  profiling monitor reads and aggregation are skipped unless `--render-profile`
+  is active.
+- Source result: `mxto/main.gd` is 1,992 lines; the cohesive debug owner is 433
+  lines.
+- Verification: a normal bounded launch passed, automated single-player race
+  setup passed, and an automated `--render-profile` race produced the expected
+  native/GDScript profile summaries without access or parse errors. The exact
+  `scons target=template_release -j4` build and post-build menu launch passed.
+  Existing empty-texture, Steam-without-app-ID, audio forced-exit, and render-
+  thread shutdown diagnostics remain.
+- Deferred to Milestone 11: smoke and test suites, including transition and
+  replay metadata coverage.
+- Commit: `c983a5ec` (`Extract debug runtime controller`).
+- Remaining Milestone 6 work: race-session setup/teardown and transitions.
