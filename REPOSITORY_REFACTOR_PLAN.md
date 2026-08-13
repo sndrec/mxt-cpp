@@ -4,8 +4,9 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 8 are complete; Milestone 9
-  is next.
+- Implementation is active. Milestones 0 through 8 and Milestone 10 are
+  complete. Milestone 9's car-tool move is waiting on protected user edits;
+  Milestone 11 documentation is next, with final tests still deferred.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -509,16 +510,16 @@ or compatibility header remains.
 
 Do not touch a tool while overlapping pre-existing user edits are unresolved.
 
-- [ ] Turn `track-editor-blender-plugin/mxt_track_editor.py` into a package with
+- [x] Turn `track-editor-blender-plugin/mxt_track_editor.py` into a package with
       modules for data/format handling, geometry, import/export operators,
       validation, UI panels, and Blender registration.
-- [ ] Keep Blender-required registration entry points thin and direct; do not
+- [x] Keep Blender-required registration entry points thin and direct; do not
       preserve the old monolith as a forwarding shell.
 - [ ] Organize car-property codec/editor/graph tooling under `tools/car` with one
       authoritative format implementation and focused tests.
-- [ ] Organize F-Zero/track sampling and conversion utilities under
+- [x] Organize F-Zero/track sampling and conversion utilities under
       `tools/track`.
-- [ ] Update imports and documented invocations directly.
+- [x] Update imports and documented invocations directly.
 - [ ] Add non-Blender unit tests for pure format/geometry helpers and perform an
       actual Blender add-on enable/import/export smoke when Blender is available.
 
@@ -530,23 +531,23 @@ tool workflows remain directly executable.
 
 This milestone cleans the current tree without rewriting history.
 
-- [ ] Inventory every tracked `.obj`, `.pdb`, DLL, temporary replacement file,
+- [x] Inventory every tracked `.obj`, `.pdb`, DLL, temporary replacement file,
       log, generated database, archive, and decoded scratch asset.
-- [ ] Distinguish reproducible first-party build outputs from required vendored
+- [x] Distinguish reproducible first-party build outputs from required vendored
       runtime binaries. Do not blanket-ignore or remove all DLLs.
-- [ ] Prove first-party outputs can be regenerated from a fresh checkout before
+- [x] Prove first-party outputs can be regenerated from a fresh checkout before
       removing them from the index.
-- [ ] Update `.gitignore` for first-party objects, PDBs, SCons outputs, Godot
+- [x] Update `.gitignore` for first-party objects, PDBs, SCons outputs, Godot
       replacement files, logs, Python caches, and local scratch roots.
-- [ ] Remove reproducible generated outputs from tracking in an additive cleanup
+- [x] Remove reproducible generated outputs from tracking in an additive cleanup
       commit; do not purge old history.
-- [ ] Establish a documented top-level home for marketing assets, source art,
+- [x] Establish a documented top-level home for marketing assets, source art,
       track source files, local exports, references, and temporary investigations.
-- [ ] Do not delete or move untracked user assets without explicit confirmation.
+- [x] Do not delete or move untracked user assets without explicit confirmation.
       When confirmation is unavailable, preserve them and ignore them locally.
-- [ ] Remove empty, obsolete, or duplicate tracked directories only after their
+- [x] Remove empty, obsolete, or duplicate tracked directories only after their
       contents and references are proven unnecessary.
-- [ ] Ensure validation builds no longer dirty the source tree except for the
+- [x] Ensure validation builds no longer dirty the source tree except for the
       intentionally produced runtime library if that remains the documented
       policy.
 
@@ -1278,3 +1279,54 @@ Append entries; do not rewrite old evidence.
 - Commits: `80440e1c` (`Organize GameSim native sources`), `f5a0904f`
   (`Split native source domains`), `6dc35944` (`Place gameplay camera in camera
   domain`), and `649e9624` (`Move F-Zero reference code out of source tree`).
+
+### Milestone 9a — standalone tool organization progress
+
+- Date: 2026-08-13
+- The 8,960-line Blender add-on became the `mxt_track_editor` package with
+  direct modules for foundation/editing, shapes, UI, curve matrices, mesh and
+  collision baking, navigation data/routes/generation, and export. The largest
+  module is 2,596 lines; the Blender-required `__init__.py` is 18 lines.
+- Syntax compilation and a stubbed Blender API import resolved all 40
+  registration classes. Focused pure-geometry tests were added but remain
+  deferred with the rest of the suite. Blender was not found in PATH or the
+  checked standard install paths, so the real enable/import/export smoke is a
+  recorded final-verification skip unless that prerequisite becomes available.
+- F-Zero sampling/conversion utilities moved to `tools/track/fzgx`; their
+  documented commands and package loader use the new direct paths, and sampler
+  builds now go to `tmp/tools/fzgx`.
+- The car codec/editor/graph group remains untouched because
+  `scripts/mtpoint_graph.py` and `scripts/mxt_car_creator.py` contain protected
+  user modifications while the authoritative codec and its tests are protected
+  untracked files. Moving or committing them would violate this milestone's
+  overlap rule.
+- Verification: both tool slices passed `scons target=template_release -j4` and
+  bounded Godot startup launches. No test suite was run.
+- Commits: `3804643d` (`Modularize Blender track editor add-on`) and
+  `14f47bc5` (`Organize F-Zero track conversion tools`).
+
+### Milestone 10 — repository hygiene complete
+
+- Date: 2026-08-13
+- SCons now sends first-party, Steam, zstd, and Opus intermediate objects to
+  the already-ignored `tmp/build/objects` tree instead of placing them beside
+  sources. A complete release rebuild populated that new tree and linked the
+  runtime library successfully before old artifacts left the index.
+- Removed from current tracking without rewriting history: 91 native objects,
+  eight `.os` intermediates, first-party DLL/import-library outputs, replacement
+  temp files, Visual Studio databases, Python caches, compiler PDB residue,
+  five root smoke logs, the generated F-Zero sampler executable, and 162
+  ignored `tmp` captures. Index-only removal preserved every working file on
+  disk.
+- Required vendored Steam, debug-draw, ImGui, texture-tool, QuickBMS, and F-Zero
+  reference binaries remain tracked. Scoped `.gitignore` files distinguish
+  their required binaries from generated replacements and first-party outputs.
+- `docs/repository_layout.md` establishes tracked and local homes for source,
+  tools, references, track source art, exports, marketing work, and temporary
+  investigations. Pre-existing untracked user assets were neither moved nor
+  deleted and are locally excluded.
+- Cleanliness verification: the exact release build and bounded game launch
+  passed after cleanup; `git status --short` remained limited to the four
+  protected pre-existing modifications.
+- Commits: `aad2c6e1` (`Centralize native build intermediates`) and `888364b6`
+  (`Remove generated artifacts from tracking`).
