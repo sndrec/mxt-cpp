@@ -19,6 +19,7 @@
 [ext_resource type="Script" path="res://ui/lobby_chibi_controller.gd" id="28_lobby_chibi"]
 [ext_resource type="Script" path="res://ui/communication_controller.gd" id="29_communication"]
 [ext_resource type="PackedScene" path="res://ui/race_communication_overlay.tscn" id="30_communication_overlay"]
+[ext_resource type="Script" path="res://vehicle/vehicle_content_controller.gd" id="31_vehicle_content"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -161,6 +162,9 @@ script = ExtResource("28_lobby_chibi")
 script = ExtResource("29_communication")
 
 [node name="RaceCommunicationOverlay" parent="CommunicationController" instance=ExtResource("30_communication_overlay")]
+
+[node name="VehicleContentController" type="Node" parent="."]
+script = ExtResource("31_vehicle_content")
 
 [node name="PlaytestLobbyProbe" type="Node" parent="." unique_id=2105027119]
 script = ExtResource("27_playtest_probe")

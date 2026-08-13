@@ -63,8 +63,8 @@ func _synthetic_livery(vehicle_content_id: String) -> Dictionary:
 
 func _settings() -> Dictionary:
 	var vehicle_content_id := ""
-	if !game_manager.car_definitions.is_empty():
-		vehicle_content_id = game_manager.car_definitions[player_index % game_manager.car_definitions.size()].content_id
+	if !game_manager.vehicle_content_controller.definitions.is_empty():
+		vehicle_content_id = game_manager.vehicle_content_controller.definitions[player_index % game_manager.vehicle_content_controller.definitions.size()].content_id
 	var settings := {
 		"username": "Load Player %02d" % player_index,
 		"vehicle_content_id": vehicle_content_id,
@@ -72,7 +72,7 @@ func _settings() -> Dictionary:
 		"accel_setting": 1.0,
 		"spectator": false,
 	}
-	settings.merge(game_manager._vehicle_content_evidence(vehicle_content_id), true)
+	settings.merge(game_manager.vehicle_content_controller.get_evidence(vehicle_content_id), true)
 	return settings
 
 func _wait_for_client_connection(timeout_msec: int) -> bool:

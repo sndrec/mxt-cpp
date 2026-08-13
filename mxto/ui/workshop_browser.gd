@@ -1,5 +1,7 @@
 class_name WorkshopBrowser extends VBoxContainer
 
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+
 @onready var status_label: Label = $Status
 @onready var item_list: ItemList = $Items
 @onready var details: RichTextLabel = $Details
@@ -9,6 +11,7 @@ class_name WorkshopBrowser extends VBoxContainer
 @onready var open_button: Button = $Actions/OpenPage
 
 var game_manager: GameManager
+var vehicle_content_controller: VehicleContentControllerClass
 var items: Array = []
 
 func _ready() -> void:
@@ -16,13 +19,15 @@ func _ready() -> void:
 	while ancestor != null and !(ancestor is GameManager):
 		ancestor = ancestor.get_parent()
 	game_manager = ancestor as GameManager
+	if game_manager != null:
+		vehicle_content_controller = game_manager.get_node("VehicleContentController") as VehicleContentControllerClass
 	refresh_button.pressed.connect(_refresh)
 	download_button.pressed.connect(_download_selected)
 	unsubscribe_button.pressed.connect(_unsubscribe_selected)
 	open_button.pressed.connect(_open_selected)
 	item_list.item_selected.connect(func(_index): _refresh_details())
-	if game_manager != null:
-		game_manager.workshop_content_changed.connect(_show_items)
+	if vehicle_content_controller != null:
+		vehicle_content_controller.workshop_content_changed.connect(_show_items)
 	call_deferred("_refresh")
 
 func _refresh() -> void:
@@ -34,7 +39,7 @@ func _refresh() -> void:
 		_show_items([])
 		return
 	status_label.text = "Refreshing subscribed Workshop items..."
-	game_manager.refresh_workshop_content()
+	vehicle_content_controller.refresh_workshop_content()
 
 func _show_items(new_items: Array) -> void:
 	items = new_items.duplicate(true)

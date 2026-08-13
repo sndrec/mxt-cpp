@@ -10,6 +10,7 @@ const CustomStampPacker = preload("res://vehicle/customization/custom_stamp_pack
 const CustomStampPaletteCatalog = preload("res://vehicle/customization/custom_stamp_palette_catalog.gd")
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
 
 const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
@@ -75,6 +76,7 @@ const PREVIEW_PAN_LIMIT := 4.0
 @onready var vehicle_editor: VehicleEditor = get_node("Container/SettingsTabs/Car Creator")
 
 var game_manager: GameManager
+var vehicle_content_controller: VehicleContentControllerClass
 var player_settings: PlayerSettings = PlayerSettings.new()
 var current_livery: CarLivery = CarLivery.new()
 var current_livery_enabled := false
@@ -155,6 +157,7 @@ var legacy_selected_car_definition_path := ""
 
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
+	vehicle_content_controller = get_node("../VehicleContentController") as VehicleContentControllerClass
 	_build_stamp_layer_buttons()
 	_load_settings()
 	_load_car_defs()
@@ -277,8 +280,8 @@ func _input(event: InputEvent) -> void:
 	get_viewport().set_input_as_handled()
 
 func _load_car_defs() -> void:
-	if game_manager != null:
-		car_defs = game_manager.car_definitions
+	if vehicle_content_controller != null:
+		car_defs = vehicle_content_controller.definitions
 	else:
 		car_defs = []
 	vehicle_selector.clear()
@@ -376,7 +379,7 @@ func refresh_after_game_manager_loaded() -> void:
 func _on_vehicle_editor_content_changed() -> void:
 	if game_manager == null:
 		return
-	game_manager.refresh_installed_content()
+	vehicle_content_controller.refresh_installed_content()
 	_load_car_defs()
 	_update_controls()
 
@@ -406,7 +409,7 @@ func _on_name_changed(new_text: String) -> void:
 
 func _sync_vehicle_content_evidence() -> void:
 	if game_manager != null:
-		game_manager.apply_vehicle_content_evidence(player_settings)
+		vehicle_content_controller.apply_evidence(player_settings)
 
 func _on_spectator_toggled(toggled: bool) -> void:
 	player_settings.spectator = toggled

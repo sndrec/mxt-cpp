@@ -1,6 +1,9 @@
 class_name ReplayController extends Node
 
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+
 @onready var game_manager: GameManager = get_parent() as GameManager
+@onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
 @onready var replays_button: Button = get_node("../Control/ReplaysButton") as Button
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
@@ -419,8 +422,8 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		"source": replay_recording_source,
 		"track_content_id": game_manager.track_content_controller.track_id_for_index(track_index),
 		"track_gameplay_digest": game_manager.track_content_controller.track_gameplay_digest_for_index(track_index),
-		"track_package_digest": String(game_manager.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("package_digest", "")),
-		"track_workshop_id": String(game_manager.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("published_file_id", "")),
+		"track_package_digest": String(vehicle_content_controller.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("package_digest", "")),
+		"track_workshop_id": String(vehicle_content_controller.content_catalog.resolve_content(game_manager.track_content_controller.track_id_for_index(track_index)).get("published_file_id", "")),
 		"track_name": _current_track_name(),
 		"settings": replay_settings,
 		"racer_ids": racer_ids.duplicate(true),
@@ -441,7 +444,7 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 func _settings_with_vehicle_content_evidence(settings: Dictionary) -> Dictionary:
 	var output := settings.duplicate(true)
 	var content_id := String(output.get("vehicle_content_id", ""))
-	var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
 	output["vehicle_gameplay_digest"] = String(record.get("gameplay_digest", ""))
 	var package_digest := String(record.get("package_digest", ""))
 	if !package_digest.is_empty():
@@ -2012,7 +2015,7 @@ func _find_track_index(data: Dictionary) -> int:
 		return -1
 	if game_manager.track_content_controller.track_gameplay_digest_for_index(track_index) != replay_gameplay_digest:
 		return -1
-	var record: Dictionary = game_manager.content_catalog.resolve_content(replay_track_id)
+	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(replay_track_id)
 	if record.is_empty():
 		return -1
 	var record_package_digest := String(record.get("package_digest", ""))
@@ -2032,7 +2035,7 @@ func _replay_vehicle_content_available(settings: Array) -> bool:
 		var gameplay_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
 		if content_id.is_empty() or gameplay_digest.is_empty():
 			return false
-		var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+		var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
 		if record.is_empty() or String(record.get("gameplay_digest", "")) != gameplay_digest:
 			return false
 		var record_package_digest := String(record.get("package_digest", ""))
@@ -2076,8 +2079,8 @@ func _stop_and_save_debug_replay_recording() -> void:
 		"created_unix": Time.get_unix_time_from_system(),
 		"track_content_id": _current_track_id(),
 		"track_gameplay_digest": _current_track_gameplay_digest(),
-		"track_package_digest": String(game_manager.content_catalog.resolve_content(_current_track_id()).get("package_digest", "")),
-		"track_workshop_id": String(game_manager.content_catalog.resolve_content(_current_track_id()).get("published_file_id", "")),
+		"track_package_digest": String(vehicle_content_controller.content_catalog.resolve_content(_current_track_id()).get("package_digest", "")),
+		"track_workshop_id": String(vehicle_content_controller.content_catalog.resolve_content(_current_track_id()).get("published_file_id", "")),
 		"track_name": _current_track_name(),
 		"settings": _settings_array_with_vehicle_content_evidence(game_manager._last_race_settings),
 		"singleplayer_cpu_count": game_manager.singleplayer_cpu_count,

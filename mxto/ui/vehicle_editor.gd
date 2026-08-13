@@ -5,6 +5,7 @@ signal test_drive_requested(snapshot: Dictionary)
 
 const PREVIEW_WORLD_SCENE: PackedScene = preload("res://ui/garage_preview_world.tscn")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
 const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
@@ -54,6 +55,7 @@ const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 @onready var workshop_page_button: Button = $Workshop/OpenPage
 
 var game_manager: GameManager
+var vehicle_content_controller: VehicleContentControllerClass
 var session := MxtCarAuthoringSession.new()
 var draft_id := ""
 var stat_schema: Array = []
@@ -87,6 +89,8 @@ func _ready() -> void:
 	while ancestor != null and !(ancestor is GameManager):
 		ancestor = ancestor.get_parent()
 	game_manager = ancestor as GameManager
+	if game_manager != null:
+		vehicle_content_controller = game_manager.get_node("VehicleContentController") as VehicleContentControllerClass
 	stat_schema = session.get_stat_schema()
 	for entry_value in stat_schema:
 		var entry: Dictionary = entry_value
@@ -317,7 +321,7 @@ func _open_template_vehicle_dialog() -> void:
 	template_vehicle_option.clear()
 	if game_manager == null:
 		return
-	for definition_value in game_manager.car_definitions:
+	for definition_value in vehicle_content_controller.definitions:
 		var definition := definition_value as CarDefinition
 		if definition == null or !definition.has_visual() or definition.properties_path.is_empty():
 			continue
@@ -335,7 +339,7 @@ func _import_selected_vehicle_template() -> void:
 	if game_manager == null or template_vehicle_option.selected < 0:
 		return
 	var content_id := String(template_vehicle_option.get_item_metadata(template_vehicle_option.selected))
-	var definition := game_manager.car_definitions_by_content_id.get(content_id) as CarDefinition
+	var definition := vehicle_content_controller.definitions_by_content_id.get(content_id) as CarDefinition
 	if definition == null:
 		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The selected vehicle is no longer available"]), "warnings": PackedStringArray()})
 		return
@@ -358,7 +362,7 @@ func _copy_vehicle_template(definition: CarDefinition) -> Dictionary:
 	if definition.car_scene != null:
 		visual_result = _copy_official_vehicle_visual(definition)
 	else:
-		var record: Dictionary = game_manager.content_catalog.resolve_content(definition.content_id)
+		var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(definition.content_id)
 		visual_result = _copy_packaged_vehicle_visual(record)
 	if !bool(visual_result.get("valid", false)):
 		return visual_result
@@ -1151,7 +1155,7 @@ func _refresh_preview() -> void:
 			"thrusters": session.get_thrusters(),
 		},
 	}
-	preview_definition = game_manager._car_definition_from_package_record(record)
+	preview_definition = vehicle_content_controller.create_runtime_definition(record)
 	if preview_definition != null:
 		preview_render_manager.configure_manual([preview_definition])
 		preview_render_manager.begin_manual_submit()

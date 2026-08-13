@@ -2,6 +2,7 @@ class_name LobbyChibiController
 extends Node
 
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const LOBBY_CHIBI_CAR_SCRIPT := "res://ui/lobby_chibi_car.gd"
 
 const BROADCAST_INTERVAL_MSEC := 100
@@ -33,6 +34,7 @@ var game_manager
 var network_manager: NetworkManager
 var game_sim: GameSim
 var input_blocker: LineEdit
+var vehicle_content_controller: VehicleContentControllerClass
 
 var cars := {}
 var pending_states := {}
@@ -66,12 +68,14 @@ func initialize(
 	in_game_manager,
 	in_network_manager: NetworkManager,
 	in_game_sim: GameSim,
-	in_input_blocker: LineEdit
+	in_input_blocker: LineEdit,
+	in_vehicle_content_controller: VehicleContentControllerClass
 ) -> void:
 	game_manager = in_game_manager
 	network_manager = in_network_manager
 	game_sim = in_game_sim
 	input_blocker = in_input_blocker
+	vehicle_content_controller = in_vehicle_content_controller
 
 func _on_view_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and input_blocker != null:
@@ -176,7 +180,7 @@ func process_lobby(_delta: float) -> void:
 		_broadcast_states_if_needed()
 
 func _configure_car(car, player_id: int, settings: Dictionary, local_control: bool, settings_revision: int, initial: bool) -> void:
-	var definition: CarDefinition = game_manager.get_car_definition(str(settings.get("vehicle_content_id", "")))
+	var definition: CarDefinition = vehicle_content_controller.get_definition(str(settings.get("vehicle_content_id", "")))
 	var sampled_stats := _sample_stats(settings, definition)
 	if initial:
 		car.setup(player_id, settings, self, camera, nameplates, local_control, settings_revision, definition, sampled_stats)

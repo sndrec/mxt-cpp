@@ -1,5 +1,6 @@
 class_name TrackPackageEditor extends VBoxContainer
 
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const DRAFTS_ROOT := "user://track_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
 const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
@@ -18,6 +19,7 @@ const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 @onready var workshop_page_button: Button = $Toolbar/OpenPage
 
 var game_manager: GameManager
+var vehicle_content_controller: VehicleContentControllerClass
 var builder := MxtTrackPackageBuilder.new()
 var draft_id := ""
 var published_file_id := 0
@@ -31,6 +33,8 @@ func _ready() -> void:
 	while ancestor != null and !(ancestor is GameManager):
 		ancestor = ancestor.get_parent()
 	game_manager = ancestor as GameManager
+	if game_manager != null:
+		vehicle_content_controller = game_manager.get_node("VehicleContentController") as VehicleContentControllerClass
 	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
 		visibility_option.add_item(visibility)
 	visibility_option.selected = 1
@@ -146,8 +150,8 @@ func _build_and_install() -> void:
 		return
 	var imported := _archive_and_import(built, LOCAL_LIBRARY_ROOT, "track.mxtpkg")
 	_show_diagnostics(imported)
-	if bool(imported.get("valid", false)) and game_manager != null:
-		game_manager.refresh_installed_content()
+	if bool(imported.get("valid", false)) and vehicle_content_controller != null:
+		vehicle_content_controller.refresh_installed_content()
 
 func _export_package(path: String) -> void:
 	var built := _build_package()

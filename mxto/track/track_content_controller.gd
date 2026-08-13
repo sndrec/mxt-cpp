@@ -1,10 +1,13 @@
 class_name TrackContentController extends Node
 
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+
 const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
 const OFFICIAL_TRACK_MANIFEST_PATH := "res://track/official_tracks.json"
 const OFFICIAL_TRACK_MANIFEST_REVISION := 1
 
 @onready var game_manager: GameManager = get_parent() as GameManager
+@onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
 
 var tracks: Array = []
 var track_id_to_index: Dictionary = {}
@@ -49,7 +52,7 @@ func track_gameplay_digest_for_index(track_index: int) -> String:
 
 func track_content_evidence_for_index(track_index: int) -> Dictionary:
 	var content_id := track_id_for_index(track_index)
-	var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
 	return {
 		"content_id": content_id,
 		"gameplay_digest": String(record.get("gameplay_digest", "")),
@@ -62,7 +65,7 @@ func track_content_evidence_matches(
 		gameplay_digest: String,
 		package_digest: String,
 		workshop_id: String) -> bool:
-	var record: Dictionary = game_manager.content_catalog.resolve_content(content_id)
+	var record: Dictionary = vehicle_content_controller.content_catalog.resolve_content(content_id)
 	if record.is_empty() or String(record.get("gameplay_digest", "")) != gameplay_digest:
 		return false
 	if String(record.get("package_digest", "")) != package_digest:
@@ -230,7 +233,7 @@ func _register_official_track(entry: Dictionary, roots: PackedStringArray) -> vo
 		if visual_path.is_empty():
 			push_error("Official track visual is missing: %s" % track_dir)
 			return
-		var result: Dictionary = game_manager.content_catalog.add_official_track(
+		var result: Dictionary = vehicle_content_controller.content_catalog.add_official_track(
 			slug,
 			title,
 			mxt_path,
@@ -254,7 +257,7 @@ func _register_official_track(entry: Dictionary, roots: PackedStringArray) -> vo
 		return
 
 func _scan_installed_tracks() -> void:
-	for record_value in game_manager.content_catalog.get_records("track"):
+	for record_value in vehicle_content_controller.content_catalog.get_records("track"):
 		var record: Dictionary = record_value
 		if String(record.get("source", "")) == "official":
 			continue

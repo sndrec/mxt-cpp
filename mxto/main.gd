@@ -1,9 +1,8 @@
 class_name GameManager extends Node
 
-signal workshop_content_changed(items: Array)
-
 const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
+const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -12,6 +11,7 @@ const CommunicationControllerClass = preload("res://ui/communication_controller.
 @onready var track_content_controller: TrackContentController = $TrackContentController
 @onready var lobby_chibi_controller: LobbyChibiControllerClass = $LobbyChibiController
 @onready var communication_controller: CommunicationControllerClass = $CommunicationController
+@onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -80,23 +80,14 @@ const GameVersionData = preload("res://core/game_version.gd")
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
-const COMMUNITY_VEHICLE_SHADER: Shader = preload("res://vehicle/base_vehicle_shader.gdshader")
-const COMMUNITY_VEHICLE_CROSS_HATCH: Texture2D = preload("res://asset/tex/crosshatch/1.png")
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
-const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
-const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
 const BUMPER_POOL_SIZE := 60
 const RACE_RESULTS_SCREEN_MSEC := 15000
 const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
 
-var car_definitions: Array = []
-var car_definitions_by_content_id: Dictionary = {}
-var content_catalog: MxtContentCatalog
-var workshop_content_items: Array = []
-var runtime_content_loaded := false
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
 var spectator_scene := preload("res://player/spectator.tscn")
@@ -289,18 +280,15 @@ func _read_int_arg(args: Array, user_args: Array, flag: String, default_value: i
 	return int(source_args[idx + 1])
 
 func _ready() -> void:
-	content_catalog = MxtContentCatalog.new()
 	steam_service = MxtSteamService.new()
 	steam_service.name = "SteamService"
-	steam_service.workshop_items_changed.connect(_on_workshop_items_changed)
 	add_child(steam_service)
 	leaderboard_client = LeaderboardClientClass.new()
 	leaderboard_client.name = "LeaderboardClient"
 	add_child(leaderboard_client)
 	leaderboard_client.initialize(steam_service)
-	_scan_local_content_library()
-	_scan_test_drive_snapshot_library()
-	_scan_trusted_verifier_workshop_packages()
+	vehicle_content_controller.initialize(steam_service)
+	vehicle_content_controller.catalog_changed.connect(_on_vehicle_content_catalog_changed)
 	version_label.text = GameVersionData.display_string()
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
 	#outline_viewport_texture.texture = outline_viewport.get_texture()
@@ -312,7 +300,7 @@ func _ready() -> void:
 	add_child(race_results_overlay)
 	race_results_overlay.machine_setting_changed.connect(_on_race_results_machine_setting_changed)
 	communication_controller.initialize(self, network_manager, game_sim, replay_controller)
-	lobby_chibi_controller.initialize(self, network_manager, game_sim, communication_controller.lobby_input)
+	lobby_chibi_controller.initialize(self, network_manager, game_sim, communication_controller.lobby_input, vehicle_content_controller)
 	randomize()
 	_build_lobby_options_controls()
 	_build_multiplayer_connect_box()
@@ -322,8 +310,6 @@ func _ready() -> void:
 	memory_telemetry.initialize(self)
 	_build_start_sync_drop_panel()
 	_load_tracks()
-	_load_car_definitions()
-	runtime_content_loaded = true
 	if car_settings != null and car_settings.has_method("refresh_after_game_manager_loaded"):
 		car_settings.call("refresh_after_game_manager_loaded")
 	network_manager.race_started.connect(_on_network_race_started)
@@ -457,14 +443,14 @@ func _ready() -> void:
 		call_deferred("_on_singleplayer_button_pressed")
 	if headless_mode and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
 		var vehicle_content_id := ""
-		if car_definitions.size() > 0:
-			vehicle_content_id = car_definitions[0].content_id
+		if vehicle_content_controller.definitions.size() > 0:
+			vehicle_content_id = vehicle_content_controller.definitions[0].content_id
 		var settings_dict = {
 			"username": "Headless",
 			"vehicle_content_id": vehicle_content_id,
 			"accel_setting": 1.0,
 		}
-		settings_dict.merge(_vehicle_content_evidence(vehicle_content_id), true)
+		settings_dict.merge(vehicle_content_controller.get_evidence(vehicle_content_id), true)
 		network_manager.multiplayer.connected_to_server.connect(
 			_send_connected_player_settings.bind(settings_dict),
 			Object.CONNECT_ONE_SHOT)
@@ -476,27 +462,6 @@ func _ready() -> void:
 		join_timer.start()
 		$Control.visible = false
 		lobby_control.visible = true
-
-func _scan_trusted_verifier_workshop_packages() -> void:
-	var args := OS.get_cmdline_args()
-	var user_args := OS.get_cmdline_user_args()
-	if !(args.has("--leaderboard-replay-verify") or user_args.has("--leaderboard-replay-verify")):
-		return
-	for source_args in [args, user_args]:
-		var index := 0
-		while index < source_args.size():
-			if String(source_args[index]) != "--trusted-workshop-package":
-				index += 1
-				continue
-			if index + 2 >= source_args.size():
-				push_error("--trusted-workshop-package requires a Workshop ID and package path")
-				return
-			var published_file_id := int(source_args[index + 1])
-			var package_path := String(source_args[index + 2])
-			var result: Dictionary = content_catalog.add_workshop_package(package_path, published_file_id)
-			if !bool(result.get("valid", false)):
-				push_error("Trusted verifier package %d failed validation: %s" % [published_file_id, str(result.get("errors", []))])
-			index += 3
 
 func _exit_tree() -> void:
 	RenderingServer.force_sync()
@@ -530,313 +495,23 @@ func _load_tracks() -> void:
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_race_options()
 
-func get_vehicle_content_ids() -> Array:
-	var content_ids: Array = []
-	for def in car_definitions:
-		if def is CarDefinition and def.content_id != "":
-			content_ids.append(def.content_id)
-	return content_ids
-
-func get_car_definition(vehicle_content_id: String) -> CarDefinition:
-	var definition := car_definitions_by_content_id.get(vehicle_content_id) as CarDefinition
-	if definition != null:
-		return definition
-	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)
-	if String(record.get("source", "")) != "local_draft" or String(record.get("content_type", "")) != "vehicle":
-		return null
-	definition = _car_definition_from_package_record(record)
-	if definition != null:
-		car_definitions_by_content_id[vehicle_content_id] = definition
-	return definition
-
-func _vehicle_content_evidence(vehicle_content_id: String) -> Dictionary:
-	var record: Dictionary = content_catalog.resolve_content(vehicle_content_id)
-	return {
-		"vehicle_gameplay_digest": String(record.get("gameplay_digest", "")),
-		"vehicle_package_digest": String(record.get("package_digest", "")),
-		"vehicle_workshop_id": String(record.get("published_file_id", "")),
-	}
-
-func apply_vehicle_content_evidence(settings: PlayerSettings) -> bool:
-	if settings == null:
-		return false
-	var evidence := _vehicle_content_evidence(settings.vehicle_content_id)
-	settings.vehicle_gameplay_digest = String(evidence.get("vehicle_gameplay_digest", ""))
-	settings.vehicle_package_digest = String(evidence.get("vehicle_package_digest", ""))
-	settings.vehicle_workshop_id = String(evidence.get("vehicle_workshop_id", ""))
-	return !settings.vehicle_gameplay_digest.is_empty()
-
-func _vehicle_content_evidence_matches(settings: PlayerSettings) -> bool:
-	if settings == null:
-		return false
-	var record: Dictionary = content_catalog.resolve_content(settings.vehicle_content_id)
-	if record.is_empty() or String(record.get("gameplay_digest", "")) != settings.vehicle_gameplay_digest:
-		return false
-	if String(record.get("package_digest", "")) != settings.vehicle_package_digest:
-		return false
-	if String(record.get("published_file_id", "")) != settings.vehicle_workshop_id:
-		return false
-	return true
+func _on_vehicle_content_catalog_changed() -> void:
+	_load_tracks()
+	if car_settings != null:
+		car_settings.call("refresh_after_game_manager_loaded")
 
 func build_cpu_player_settings(index: int) -> Dictionary:
 	var ps := PlayerSettings.new()
 	ps.username = "CPU %03d" % (index + 1)
-	var content_ids := get_vehicle_content_ids()
+	var content_ids := vehicle_content_controller.get_vehicle_content_ids()
 	if content_ids.size() > 0:
 		ps.vehicle_content_id = content_ids[index % content_ids.size()]
 	else:
 		ps.vehicle_content_id = ""
-	apply_vehicle_content_evidence(ps)
+	vehicle_content_controller.apply_evidence(ps)
 	ps.accel_setting = 1.0
 	ps.spectator = false
 	return ps.to_dict()
-
-func _load_car_definitions() -> void:
-	const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
-	car_definitions.clear()
-	car_definitions_by_content_id.clear()
-	var dir = DirAccess.open("res://vehicle/asset")
-	if dir == null:
-		return
-	dir.list_dir_begin()
-	var folder := dir.get_next()
-	while folder != "":
-		if dir.current_is_dir() and !folder.begins_with(".") and folder != "bumper":
-			var def_path := "res://vehicle/asset/%s/definition.tres" % folder
-			if ResourceLoader.exists(def_path):
-				var def_res := load(def_path) as CarDefinition
-				if def_res == null:
-					push_error("Invalid vehicle definition resource: %s" % def_path)
-				elif def_res.content_id == "":
-					push_error("Vehicle definition has no content ID: %s" % def_path)
-				elif !def_res.content_id.begins_with(OFFICIAL_VEHICLE_PREFIX):
-					push_error("Selectable built-in vehicle has invalid official content ID: %s" % def_res.content_id)
-				elif car_definitions_by_content_id.has(def_res.content_id):
-					push_error("Duplicate vehicle content ID: %s" % def_res.content_id)
-				elif !FileAccess.file_exists(def_res.properties_path):
-					push_error("Vehicle properties file is missing: %s" % def_res.properties_path)
-				else:
-					var catalog_result: Dictionary = content_catalog.add_official_vehicle(
-						def_res.content_id.trim_prefix(OFFICIAL_VEHICLE_PREFIX),
-						def_res.name,
-						def_res.properties_path,
-						def_res.resource_path)
-					if !bool(catalog_result.get("valid", false)):
-						push_error("Official vehicle catalog registration failed for %s: %s" % [def_res.content_id, str(catalog_result.get("errors", []))])
-					else:
-						car_definitions.append(def_res)
-						car_definitions_by_content_id[def_res.content_id] = def_res
-		folder = dir.get_next()
-	dir.list_dir_end()
-	_load_packaged_car_definitions()
-	car_definitions.sort_custom(func(a: CarDefinition, b: CarDefinition): return a.content_id < b.content_id)
-
-func _scan_local_content_library() -> void:
-	var library_path := ProjectSettings.globalize_path(LOCAL_CONTENT_LIBRARY_PATH)
-	var directory_error := DirAccess.make_dir_recursive_absolute(library_path)
-	if directory_error != OK:
-		push_error("Could not create the local content library: %s" % error_string(directory_error))
-		return
-	var result: Dictionary = content_catalog.scan_local_library(library_path)
-	for diagnostic_value in result.get("diagnostics", []):
-		var diagnostic: Dictionary = diagnostic_value
-		push_warning("Skipped local content package %s: %s" % [
-			String(diagnostic.get("path", "")),
-			str(diagnostic.get("errors", [])),
-		])
-
-func _scan_test_drive_snapshot_library() -> void:
-	var library_path := ProjectSettings.globalize_path(TEST_DRIVE_SNAPSHOT_LIBRARY_PATH)
-	if DirAccess.make_dir_recursive_absolute(library_path) != OK:
-		push_error("Could not create the test-drive snapshot library")
-		return
-	var directory := DirAccess.open(library_path)
-	if directory == null:
-		return
-	directory.list_dir_begin()
-	var folder := directory.get_next()
-	while !folder.is_empty():
-		if directory.current_is_dir() and !directory.is_link(folder) and !folder.begins_with("."):
-			var result: Dictionary = content_catalog.add_draft_package(library_path.path_join(folder))
-			if !bool(result.get("valid", false)):
-				push_warning("Skipped test-drive snapshot %s: %s" % [folder, str(result.get("errors", []))])
-		folder = directory.get_next()
-	directory.list_dir_end()
-
-func refresh_installed_content() -> void:
-	_scan_local_content_library()
-	_scan_test_drive_snapshot_library()
-	_load_car_definitions()
-	_load_tracks()
-
-func refresh_workshop_content() -> bool:
-	return steam_service != null and steam_service.refresh_subscribed_workshop_items()
-
-func get_workshop_content_items() -> Array:
-	return workshop_content_items.duplicate(true)
-
-func _on_workshop_items_changed(items: Array) -> void:
-	content_catalog.clear_workshop_packages()
-	workshop_content_items.clear()
-	for value in items:
-		var item: Dictionary = value.duplicate(true)
-		if String(item.get("status", "")) == "installed" and !bool(item.get("needs_update", false)):
-			var install_path := String(item.get("install_path", ""))
-			var published_file_id := int(item.get("published_file_id", 0))
-			var registered: Dictionary = content_catalog.add_workshop_package(install_path, published_file_id)
-			if bool(registered.get("valid", false)):
-				item["status"] = "ready"
-				item["record"] = registered.get("record", {})
-			else:
-				var errors = registered.get("errors", [])
-				item["status"] = "outdated_format" if str(errors).contains("format revision") else "invalid"
-				item["errors"] = errors
-		workshop_content_items.append(item)
-	if runtime_content_loaded:
-		_load_car_definitions()
-		_load_tracks()
-		if car_settings != null:
-			car_settings.call("refresh_after_game_manager_loaded")
-	workshop_content_changed.emit(get_workshop_content_items())
-
-func _load_packaged_car_definitions() -> void:
-	for record_value in content_catalog.get_records("vehicle"):
-		var record: Dictionary = record_value
-		var source := String(record.get("source", ""))
-		if source == "official" or source == "local_draft":
-			continue
-		var definition := _car_definition_from_package_record(record)
-		if definition == null:
-			continue
-		if car_definitions_by_content_id.has(definition.content_id):
-			push_error("Duplicate packaged vehicle content ID: %s" % definition.content_id)
-			continue
-		car_definitions.append(definition)
-		car_definitions_by_content_id[definition.content_id] = definition
-
-func _car_definition_from_package_record(record: Dictionary) -> CarDefinition:
-	var visual_path := String(record.get("visual_path", ""))
-	var gltf_document := GLTFDocument.new()
-	var gltf_state := GLTFState.new()
-	gltf_state.base_path = visual_path.get_base_dir()
-	var error := gltf_document.append_from_file(visual_path, gltf_state)
-	if error != OK:
-		push_error("Could not load packaged vehicle visual %s: %s" % [visual_path, error_string(error)])
-		return null
-	var instance := gltf_document.generate_scene(gltf_state) as Node3D
-	if instance == null:
-		push_error("Could not generate packaged vehicle visual: %s" % visual_path)
-		return null
-	var mesh_data := _find_packaged_vehicle_mesh(instance, Transform3D.IDENTITY)
-	if mesh_data.is_empty():
-		push_error("Packaged vehicle visual has no runtime mesh: %s" % visual_path)
-		instance.free()
-		return null
-	var mesh_instance: MeshInstance3D = mesh_data["instance"]
-	var visual_metadata: Dictionary = record.get("visual_metadata", {})
-	var body_surfaces: Array = visual_metadata.get("body_surfaces", [])
-	var runtime_mesh := _build_packaged_vehicle_body_mesh(mesh_instance.mesh, body_surfaces)
-	if runtime_mesh == null:
-		push_error("Packaged vehicle has no selected runtime body surfaces: %s" % visual_path)
-		instance.free()
-		return null
-	var definition := CarDefinition.new()
-	definition.name = String(record.get("title", "Vehicle"))
-	definition.content_id = String(record.get("content_id", ""))
-	definition.properties_path = String(record.get("authoritative_path", ""))
-	definition.runtime_mesh = runtime_mesh
-	definition.runtime_material = _build_packaged_vehicle_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}))
-	var model_transform: Dictionary = visual_metadata.get("model_transform", {})
-	definition.runtime_transform = _transform_from_vehicle_metadata(model_transform) * mesh_data["transform"]
-	for thruster_value in visual_metadata.get("thrusters", []):
-		definition.runtime_thruster_transforms.append(_thruster_transform_from_vehicle_metadata(thruster_value))
-	instance.free()
-	return definition
-
-func _build_packaged_vehicle_body_mesh(source: Mesh, selected_surfaces: Array) -> ArrayMesh:
-	if source == null or selected_surfaces.is_empty():
-		return null
-	var body := ArrayMesh.new()
-	for surface_value in selected_surfaces:
-		var surface := int(surface_value)
-		if surface < 0 or surface >= source.get_surface_count():
-			return null
-		body.add_surface_from_arrays(source.surface_get_primitive_type(surface), source.surface_get_arrays(surface))
-	return body
-
-func _build_packaged_vehicle_material(source: Mesh, inputs: Dictionary) -> ShaderMaterial:
-	var material := ShaderMaterial.new()
-	material.shader = COMMUNITY_VEHICLE_SHADER
-	material.set_shader_parameter("in_lightwarp", _community_vehicle_lightwarp())
-	material.set_shader_parameter("in_specwarp", _community_vehicle_specwarp())
-	material.set_shader_parameter("cross_hatch", COMMUNITY_VEHICLE_CROSS_HATCH)
-	material.set_shader_parameter("in_overlay_colour", Color.BLACK)
-	material.set_shader_parameter("in_albedo", _packaged_vehicle_texture(source, int(inputs.get("albedo_surface", -1)), "albedo_texture", Color.WHITE))
-	material.set_shader_parameter("in_normal", _packaged_vehicle_texture(source, int(inputs.get("normal_surface", -1)), "normal_texture", Color(0.5, 0.5, 1.0, 1.0)))
-	material.set_shader_parameter("in_paint_mask", _packaged_vehicle_texture(source, int(inputs.get("paint_mask_surface", -1)), "ao_texture", Color.BLACK))
-	material.set_shader_parameter("livery_colour_strength", 1.0)
-	return material
-
-func _packaged_vehicle_texture(source: Mesh, surface: int, property: StringName, fallback: Color) -> Texture2D:
-	if source != null and surface >= 0 and surface < source.get_surface_count():
-		var source_material := source.surface_get_material(surface)
-		if source_material != null:
-			var candidate = source_material.get(property)
-			if candidate is Texture2D:
-				return candidate
-	var image := Image.create(1, 1, false, Image.FORMAT_RGBA8)
-	image.fill(fallback)
-	return ImageTexture.create_from_image(image)
-
-func _community_vehicle_lightwarp() -> GradientTexture1D:
-	var gradient := Gradient.new()
-	gradient.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
-	gradient.offsets = PackedFloat32Array([0.0, 0.318519, 0.788889, 0.979532])
-	gradient.colors = PackedColorArray([Color(0.1, 0.1, 0.1), Color.BLACK, Color(0.521, 0.521, 0.521), Color.WHITE])
-	var texture := GradientTexture1D.new()
-	texture.gradient = gradient
-	return texture
-
-func _community_vehicle_specwarp() -> GradientTexture1D:
-	var gradient := Gradient.new()
-	gradient.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
-	gradient.offsets = PackedFloat32Array([0.151852, 0.925926])
-	gradient.colors = PackedColorArray([Color.BLACK, Color.WHITE])
-	var texture := GradientTexture1D.new()
-	texture.gradient = gradient
-	return texture
-
-func _transform_from_vehicle_metadata(value: Dictionary) -> Transform3D:
-	var rotation_degrees_value: Vector3 = value.get("rotation_degrees", Vector3.ZERO)
-	var rotation := Vector3(
-		deg_to_rad(rotation_degrees_value.x),
-		deg_to_rad(rotation_degrees_value.y),
-		deg_to_rad(rotation_degrees_value.z))
-	var scale_value: Vector3 = value.get("scale", Vector3.ONE)
-	return Transform3D(Basis.from_euler(rotation).scaled(scale_value), value.get("translation", Vector3.ZERO))
-
-func _thruster_transform_from_vehicle_metadata(value: Dictionary) -> Transform3D:
-	var rotation_degrees_value: Vector3 = value.get("rotation_degrees", Vector3.ZERO)
-	var rotation := Vector3(
-		deg_to_rad(rotation_degrees_value.x),
-		deg_to_rad(rotation_degrees_value.y),
-		deg_to_rad(rotation_degrees_value.z))
-	var scale_value := float(value.get("scale", 1.0))
-	return Transform3D(Basis.from_euler(rotation).scaled(Vector3.ONE * scale_value), value.get("position", Vector3.ZERO))
-
-func _find_packaged_vehicle_mesh(node: Node, parent_transform: Transform3D) -> Dictionary:
-	var local_transform := parent_transform
-	var node_3d := node as Node3D
-	if node_3d != null:
-		local_transform *= node_3d.transform
-	var mesh_instance := node as MeshInstance3D
-	if mesh_instance != null and mesh_instance.mesh != null:
-		return {"instance": mesh_instance, "transform": local_transform}
-	for child in node.get_children():
-		var found := _find_packaged_vehicle_mesh(child, local_transform)
-		if !found.is_empty():
-			return found
-	return {}
 
 func _on_start_button_pressed() -> void:
 	var err := network_manager.host(_multiplayer_lobby_port())
@@ -861,23 +536,23 @@ func begin_vehicle_test_drive(snapshot: Dictionary) -> void:
 	if package_path.is_empty():
 		push_error("Vehicle test-drive snapshot has no package path")
 		return
-	var added: Dictionary = content_catalog.add_draft_package(package_path)
+	var added: Dictionary = vehicle_content_controller.content_catalog.add_draft_package(package_path)
 	if !bool(added.get("valid", false)):
 		push_error("Could not register vehicle test-drive snapshot: %s" % str(added.get("errors", [])))
 		return
 	var record: Dictionary = added.get("record", {})
 	var content_id := String(record.get("content_id", ""))
-	var definition := _car_definition_from_package_record(record)
+	var definition: CarDefinition = vehicle_content_controller.get_definition(content_id)
 	if content_id.is_empty() or definition == null:
 		if !content_id.is_empty():
-			content_catalog.remove_content(content_id)
+			vehicle_content_controller.content_catalog.remove_content(content_id)
 		push_error("Could not create the vehicle test-drive definition")
 		return
 	vehicle_test_drive_active = true
 	vehicle_test_drive_content_id = content_id
 	vehicle_test_drive_saved_settings = car_settings.get_player_settings().to_dict()
 	vehicle_test_drive_saved_cpu_count = singleplayer_cpu_count
-	car_definitions_by_content_id[content_id] = definition
+	vehicle_content_controller.definitions_by_content_id[content_id] = definition
 	car_settings.call("set_test_drive_vehicle", content_id)
 	_open_vehicle_test_drive_track_picker()
 
@@ -935,7 +610,7 @@ func _finish_vehicle_test_drive_return() -> void:
 		cpu_slider.set_value_no_signal(singleplayer_cpu_count)
 	_update_cpu_slider_label()
 	if !old_content_id.is_empty():
-		car_definitions_by_content_id.erase(old_content_id)
+		vehicle_content_controller.definitions_by_content_id.erase(old_content_id)
 	car_settings.call("restore_after_test_drive", saved_settings)
 
 func _on_spectator_race_button_pressed() -> void:
@@ -965,9 +640,9 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	network_manager.set_singleplayer_cpu_count(race_cpu_count)
 	var ps = car_settings.get_player_settings()
 	# Ensure we have a sensible car selection; fall back if needed
-	if ps.vehicle_content_id == "" and car_definitions.size() > 0:
-		ps.vehicle_content_id = car_definitions[0].content_id
-	apply_vehicle_content_evidence(ps)
+	if ps.vehicle_content_id == "" and vehicle_content_controller.definitions.size() > 0:
+		ps.vehicle_content_id = vehicle_content_controller.definitions[0].content_id
+	vehicle_content_controller.apply_evidence(ps)
 	if String(options.get("session_kind", "")) == "time_attack":
 		time_attack_eligibility = LeaderboardEligibilityClass.evaluate_start(self, options, ps)
 		time_attack_finalized = false
@@ -1191,7 +866,7 @@ func _race_content_readiness(track_id: String, settings: Array, options: Diction
 			continue
 		var player_settings := PlayerSettings.new()
 		player_settings.from_dict(settings_value)
-		if player_settings.spectator or _vehicle_content_evidence_matches(player_settings):
+		if player_settings.spectator or vehicle_content_controller.evidence_matches(player_settings):
 			continue
 		problems.append("missing exact vehicle %s" % player_settings.vehicle_content_id)
 		_append_workshop_id(missing_workshop_ids, player_settings.vehicle_workshop_id)
@@ -1496,9 +1171,9 @@ func _settings_dict_for_race_id(id: int, fallback_cpu_index: int = 0) -> Diction
 		if network_manager.cpu_player_ids.has(id):
 			settings = build_cpu_player_settings(fallback_cpu_index)
 		else:
-			var vehicle_content_id: String = car_definitions[0].content_id if car_definitions.size() > 0 else ""
+			var vehicle_content_id: String = vehicle_content_controller.definitions[0].content_id if vehicle_content_controller.definitions.size() > 0 else ""
 			settings = {"vehicle_content_id": vehicle_content_id, "accel_setting": 1.0, "username": str(id)}
-			settings.merge(_vehicle_content_evidence(vehicle_content_id), true)
+			settings.merge(vehicle_content_controller.get_evidence(vehicle_content_id), true)
 	var out := {}
 	if typeof(settings) == TYPE_DICTIONARY:
 		out = (settings as Dictionary).duplicate(true)
@@ -2423,11 +2098,11 @@ func _start_race(track_index: int, settings: Array) -> bool:
 			var ps := PlayerSettings.new()
 			ps.from_dict(d)
 			if !ps.spectator:
-				if !_vehicle_content_evidence_matches(ps):
+				if !vehicle_content_controller.evidence_matches(ps):
 					push_error("Race vehicle content evidence mismatch: %s" % ps.vehicle_content_id)
 					return false
 				racer_settings.append(ps)
-				var def_res := get_car_definition(ps.vehicle_content_id)
+				var def_res := vehicle_content_controller.get_definition(ps.vehicle_content_id)
 				if def_res == null:
 					push_error("Race references unavailable vehicle content: %s" % ps.vehicle_content_id)
 					return false
@@ -2440,11 +2115,11 @@ func _start_race(track_index: int, settings: Array) -> bool:
 			var ps := PlayerSettings.new()
 			ps.from_dict(d)
 			if !ps.spectator:
-				if !_vehicle_content_evidence_matches(ps):
+				if !vehicle_content_controller.evidence_matches(ps):
 					push_error("Race vehicle content evidence mismatch: %s" % ps.vehicle_content_id)
 					return false
 				racer_settings.append(ps)
-				var def_res := get_car_definition(ps.vehicle_content_id)
+				var def_res := vehicle_content_controller.get_definition(ps.vehicle_content_id)
 				if def_res == null:
 					push_error("Race references unavailable vehicle content: %s" % ps.vehicle_content_id)
 					return false

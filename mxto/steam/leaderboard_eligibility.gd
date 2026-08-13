@@ -14,13 +14,13 @@ static func evaluate_start(game_manager: GameManager, options: Dictionary, setti
 	var track_digests: Array = options.get("track_gameplay_digests", [])
 	if track_ids.size() != 1 or track_digests.size() != 1:
 		return reject("invalid_track_identity")
-	var track_record: Dictionary = game_manager.content_catalog.resolve_content(String(track_ids[0]))
+	var track_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(String(track_ids[0]))
 	var board := TimeAttackRulesClass.board_for_track_digest(String(track_digests[0]))
 	if board.is_empty():
 		return reject("track_has_no_ranked_board")
 	if !TimeAttackRulesClass.track_record_matches_board(track_record, board):
 		return reject("uncurated_or_mismatched_track")
-	var vehicle_record: Dictionary = game_manager.content_catalog.resolve_content(settings.vehicle_content_id)
+	var vehicle_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(settings.vehicle_content_id)
 	if String(vehicle_record.get("source", "")) != "official" or String(vehicle_record.get("gameplay_digest", "")) != settings.vehicle_gameplay_digest:
 		return reject("unofficial_or_mismatched_vehicle")
 	return {

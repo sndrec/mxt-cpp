@@ -7,7 +7,7 @@ func _init() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	if main.car_definitions.is_empty():
+	if main.vehicle_content_controller.definitions.is_empty():
 		push_error("track scene lobby hide smoke has no car definitions")
 		quit(1)
 		return
@@ -21,13 +21,13 @@ func _init() -> void:
 		quit(1)
 		return
 	var player_id := 1
-	var def: CarDefinition = main.car_definitions[0]
+	var def: CarDefinition = main.vehicle_content_controller.definitions[0]
 	var settings := {
 		"username": "Smoke",
 		"vehicle_content_id": def.content_id,
 		"accel_setting": 1.0,
 	}
-	settings.merge(main._vehicle_content_evidence(def.content_id), true)
+	settings.merge(main.vehicle_content_controller.get_evidence(def.content_id), true)
 	main.singleplayer_mode = false
 	main.network_manager.is_server = true
 	main.network_manager.listen_server = true

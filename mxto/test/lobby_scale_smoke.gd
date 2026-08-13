@@ -55,14 +55,14 @@ func _run() -> void:
 	root.add_child(game_manager)
 	await process_frame
 	await process_frame
-	if game_manager.car_definitions.is_empty():
+	if game_manager.vehicle_content_controller.definitions.is_empty():
 		_fail("no car definitions were loaded")
 		return
 
 	var roster: Array = []
 	for i in range(PLAYER_COUNT):
 		var player_id := 1000 + i
-		var definition: CarDefinition = game_manager.car_definitions[i % game_manager.car_definitions.size()]
+		var definition: CarDefinition = game_manager.vehicle_content_controller.definitions[i % game_manager.vehicle_content_controller.definitions.size()]
 		roster.append(player_id)
 		var settings := {
 			"username": "Load Player %02d" % i,
@@ -70,7 +70,7 @@ func _run() -> void:
 			"car_livery": _synthetic_livery(definition.content_id, i),
 			"accel_setting": 1.0,
 		}
-		settings.merge(game_manager._vehicle_content_evidence(definition.content_id), true)
+		settings.merge(game_manager.vehicle_content_controller.get_evidence(definition.content_id), true)
 		game_manager.network_manager.player_settings[player_id] = settings
 	game_manager.network_manager.player_ids = roster
 	game_manager.lobby_control.visible = true

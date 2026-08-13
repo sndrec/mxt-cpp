@@ -110,7 +110,7 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 	if track_ids.size() != 1 or track_digests.size() != 1 \
 		or String(track_ids[0]) != track_id or String(track_digests[0]) != track_digest:
 		return reject("track_identity_mismatch")
-	var track_record: Dictionary = game_manager.content_catalog.resolve_content(track_id)
+	var track_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(track_id)
 	var board := TimeAttackRulesClass.board_for_track_digest(track_digest)
 	if board.is_empty():
 		return reject("track_has_no_ranked_board")
@@ -127,7 +127,7 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 	var player_settings: Dictionary = settings[0]
 	var vehicle_id := String(player_settings.get("vehicle_content_id", ""))
 	var vehicle_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
-	var vehicle_record: Dictionary = game_manager.content_catalog.resolve_content(vehicle_id)
+	var vehicle_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(vehicle_id)
 	if String(vehicle_record.get("source", "")) != "official" \
 		or String(vehicle_record.get("gameplay_digest", "")) != vehicle_digest:
 		return reject("unofficial_or_mismatched_vehicle")

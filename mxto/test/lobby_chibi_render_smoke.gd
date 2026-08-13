@@ -8,11 +8,11 @@ func _init() -> void:
 	root.add_child(main)
 	await process_frame
 	await process_frame
-	if main.car_definitions.is_empty():
+	if main.vehicle_content_controller.definitions.is_empty():
 		push_error("lobby_chibi_render_smoke has no car definitions")
 		quit(1)
 		return
-	var def: CarDefinition = main.car_definitions[0]
+	var def: CarDefinition = main.vehicle_content_controller.definitions[0]
 	main.lobby_control.visible = true
 	main.network_manager.player_ids = [42, 43]
 	main.network_manager.player_settings[42] = {
