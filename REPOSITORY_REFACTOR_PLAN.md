@@ -4,8 +4,8 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 and 1 are complete; Milestone 2 is
-  next.
+- Implementation is active. Milestones 0 through 2 are complete; Milestone 3
+  is next.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -732,4 +732,4 @@ Append entries; do not rewrite old evidence.
   startup errors. The known empty-texture and forced render-thread shutdown
   diagnostics remain.
 - Deferred to Milestone 11: lobby-chibi render and lobby-scale smoke tests.
-- Commit: pending.
+- Commit: `787c9627` (`Extract lobby chibi controller`).
