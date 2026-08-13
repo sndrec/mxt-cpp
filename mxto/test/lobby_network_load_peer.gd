@@ -148,10 +148,10 @@ func _run() -> void:
 					race_requested = true
 					print("MXT_LOBBY_NETWORK_LOAD_START tracks=%d sequence=%s is_server=%s" % [
 						game_manager.track_content_controller.tracks.size(),
-						str(game_manager.lobby_grand_prix_track_sequence),
+						str(game_manager.lobby_controller.grand_prix_track_sequence),
 						str(manager.is_server),
 					])
-					game_manager._on_start_race_button_pressed()
+					game_manager.lobby_controller.request_start_race()
 		if role == "host" and race_requested and manager.start_sync_scheduled:
 			break
 		await create_timer(0.1).timeout

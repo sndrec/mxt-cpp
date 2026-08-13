@@ -32,19 +32,17 @@ func _init() -> void:
 
 	for i in range(main.track_content_controller.tracks.size()):
 		if String(main.track_content_controller.tracks[i].get("name", "")) == TRACK_NAME:
-			main.lobby_track_selector.select(i)
-			main.lobby_grand_prix_track_sequence.clear()
-			main.lobby_grand_prix_track_sequence.append(i)
+			main.lobby_controller.selected_track_index = i
+			main.lobby_controller.grand_prix_track_sequence.clear()
+			main.lobby_controller.grand_prix_track_sequence.append(i)
 			break
-	if main.lobby_game_mode_choice != null:
-		main.lobby_game_mode_choice.select(0)
-	if main.lobby_bumpers_toggle != null:
-		main.lobby_bumpers_toggle.button_pressed = true
-	main.call("_refresh_lobby_race_options")
+	main.lobby_controller.game_mode_choice.select(0)
+	main.lobby_controller.bumpers_toggle.button_pressed = true
+	main.lobby_controller.refresh_race_options()
 	await process_frame
 	_log_line("MXT_LOBBY_BUMPER_SETUP options=%s" % main.network_manager.race_options)
 
-	main.call("_on_start_race_button_pressed")
+	main.lobby_controller.request_start_race()
 	_log_line("MXT_LOBBY_BUMPER_SETUP start pressed race_active=%s" % main.network_manager.race_active)
 	main.set_physics_process(false)
 	var accel_input := PlayerInputClass.new()

@@ -1,6 +1,7 @@
 class_name GameManager extends Node
 
 const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
+const LobbyControllerClass = preload("res://ui/lobby_controller.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 
@@ -10,6 +11,7 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var race_audio_controller: RaceAudioController = $RaceAudioController
 @onready var track_content_controller: TrackContentController = $TrackContentController
 @onready var lobby_chibi_controller: LobbyChibiControllerClass = $LobbyChibiController
+@onready var lobby_controller: LobbyControllerClass = $LobbyController
 @onready var communication_controller: CommunicationControllerClass = $CommunicationController
 @onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
@@ -21,9 +23,6 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var port_field: LineEdit = $Control/ConnectHostBox/Port
 @onready var track_selector: OptionButton = $Control/TrackSelector
 @onready var lobby_control: Control = $Lobby
-@onready var lobby_track_selector: OptionButton = $Lobby/LobbyTrackSelector
-@onready var start_race_button: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/StartRaceButton
-@onready var player_list: ItemList = $Lobby/PlayerList
 @onready var car_node_container: CarNodeContainer = $GameWorld/CarNodeContainer
 @onready var spark_node_container: SuperSparkContainer = $GameWorld/SuperSparkContainer
 @onready var obj_container: Node3D = $GameWorld/ObjContainer
@@ -37,33 +36,18 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var spectator_race_button: Button = $Control/SpectatorRaceButton
 @onready var controller_settings_button: Button = $Control/ControllerSettingsButton
 @onready var track_editor_button: Button = $Control/TrackEditorButton
-@onready var car_settings_button_lobby: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CarSettingsButton
-@onready var controller_settings_button_lobby: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/ControllerSettingsButton
 @onready var race_finish_label: Label = $RaceFinishLabel
 @onready var frame_time_label: Label = $FrameTimeLabel
 @onready var rtt_label: Label = $RTTLabel
 @onready var version_label: Label = $VersionLabel
 @onready var cpu_slider: HSlider = $Control/CpuSlider
 @onready var cpu_slider_label: Label = $Control/CpuSliderLabel
-@onready var lobby_cpu_count_label: Label = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox/CpuCountLabel
-@onready var add_cpu_button: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox/AddCpuButton
-@onready var remove_cpu_button: Button = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/CpuControlBox/RemoveCpuButton
-@onready var lobby_game_mode_choice: OptionButton = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/GameModeChoice
-@onready var lobby_vehicle_restore_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/VehicleRestoreToggle
-@onready var lobby_bumpers_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/BumpersToggle
-@onready var lobby_s_boost_toggle: CheckBox = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/SBoostToggle
-@onready var lobby_stage_button_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer
-@onready var lobby_stage_preview_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer
-@onready var lobby_player_list_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer
 @onready var race_pause_root: Control = $RacePauseLayer/RacePauseRoot
 @onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
 @onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
 @onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
 @onready var race_pause_lobby_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/LobbyButton
 @onready var race_pause_disconnect_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/DisconnectButton
-var lobby_grand_prix_track_sequence: Array[int] = []
-var lobby_applying_race_options := false
-var lobby_player_list_signature := ""
 
 @onready var obj_viewport: SubViewport = get_node_or_null("GameWorld/ObjViewport") as SubViewport
 @onready var outline_viewport: SubViewport = get_node_or_null("GameWorld/OutlineViewport") as SubViewport
@@ -298,8 +282,11 @@ func _ready() -> void:
 	race_results_overlay.machine_setting_changed.connect(_on_race_results_machine_setting_changed)
 	communication_controller.initialize(self, network_manager, game_sim, replay_controller)
 	lobby_chibi_controller.initialize(self, network_manager, game_sim, communication_controller.lobby_input, vehicle_content_controller)
+	lobby_controller.initialize(network_manager, track_content_controller, lobby_chibi_controller)
+	lobby_controller.start_race_requested.connect(_on_lobby_start_race_requested)
+	lobby_controller.car_settings_requested.connect(_on_car_settings_button_pressed)
+	lobby_controller.controller_settings_requested.connect(_on_controller_settings_button_pressed)
 	randomize()
-	_build_lobby_options_controls()
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
 	replay_controller.initialize()
@@ -312,17 +299,12 @@ func _ready() -> void:
 	network_manager.race_started.connect(_on_network_race_started)
 	network_manager.race_finished.connect(_on_network_race_finished)
 	network_manager.race_event.connect(_on_race_event)
-	network_manager.race_options_changed.connect(_on_network_race_options_changed)
 	car_settings.hide()
 	options_menu.hide()
 	if !car_settings_button.pressed.is_connected(_on_car_settings_button_pressed):
 		car_settings_button.pressed.connect(_on_car_settings_button_pressed)
-	if !car_settings_button_lobby.pressed.is_connected(_on_car_settings_button_pressed):
-		car_settings_button_lobby.pressed.connect(_on_car_settings_button_pressed)
 	if !controller_settings_button.pressed.is_connected(_on_controller_settings_button_pressed):
 		controller_settings_button.pressed.connect(_on_controller_settings_button_pressed)
-	if !controller_settings_button_lobby.pressed.is_connected(_on_controller_settings_button_pressed):
-		controller_settings_button_lobby.pressed.connect(_on_controller_settings_button_pressed)
 	if !options_menu.visibility_changed.is_connected(_on_controller_settings_visibility_changed):
 		options_menu.visibility_changed.connect(_on_controller_settings_visibility_changed)
 	if !track_editor_button.pressed.is_connected(_on_track_editor_button_pressed):
@@ -333,10 +315,6 @@ func _ready() -> void:
 	singleplayer_button.pressed.connect(_on_singleplayer_button_pressed)
 	spectator_race_button.pressed.connect(_on_spectator_race_button_pressed)
 	cpu_slider.value_changed.connect(_on_singleplayer_cpu_slider_changed)
-	add_cpu_button.pressed.connect(_on_add_cpu_button_pressed)
-	remove_cpu_button.pressed.connect(_on_remove_cpu_button_pressed)
-	if !start_race_button.pressed.is_connected(_on_start_race_button_pressed):
-		start_race_button.pressed.connect(_on_start_race_button_pressed)
 	if !join_playtest_button.pressed.is_connected(_on_join_playtest_button_pressed):
 		join_playtest_button.pressed.connect(_on_join_playtest_button_pressed)
 	if !playtest_lobby_probe.availability_changed.is_connected(_on_playtest_lobby_availability_changed):
@@ -474,23 +452,14 @@ func _parse_cpu_driver_count_arg(args: Array) -> int:
 func _load_tracks() -> void:
 	track_content_controller.scan_catalog()
 	track_selector.clear()
-	lobby_track_selector.clear()
-	lobby_grand_prix_track_sequence.clear()
 	for t in track_content_controller.tracks:
 		track_selector.add_item(t["name"])
-		lobby_track_selector.add_item(t["name"])
 	if !track_content_controller.tracks.is_empty():
 		track_selector.selected = 0
-		lobby_track_selector.selected = 0
-		lobby_grand_prix_track_sequence.append(0)
 	var command_line_track_index := track_content_controller.command_line_track_index()
 	if command_line_track_index >= 0:
 		track_selector.selected = command_line_track_index
-		lobby_track_selector.selected = command_line_track_index
-		if !lobby_grand_prix_track_sequence.is_empty():
-			lobby_grand_prix_track_sequence[0] = command_line_track_index
-	_populate_lobby_stage_buttons()
-	_refresh_lobby_race_options()
+	lobby_controller.reload_tracks(command_line_track_index)
 
 func _on_vehicle_content_catalog_changed() -> void:
 	_load_tracks()
@@ -519,7 +488,7 @@ func _on_start_button_pressed() -> void:
 		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
 	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
 	network_manager.custom_stamp_network.send_active_custom_stamp_manifest()
-	start_race_button.disabled = false
+	lobby_controller.refresh_controls()
 	$Control.visible = false
 	lobby_control.visible = true
 
@@ -623,7 +592,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
 	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
-	_set_track_content_evidence(options, [track_selector.selected])
+	track_content_controller.set_track_content_evidence(options, [track_selector.selected])
 	if auto_bumpers_mode:
 		options["bumpers"] = true
 	var my_id := _local_player_id()
@@ -677,7 +646,7 @@ func _join_multiplayer_lobby(address: String, port: int) -> void:
 	network_manager.multiplayer.connected_to_server.connect(
 		_send_connected_player_settings.bind(settings_dict),
 		Object.CONNECT_ONE_SHOT)
-	start_race_button.disabled = true
+	lobby_controller.refresh_controls()
 	$Control.visible = false
 	lobby_control.visible = true
 
@@ -820,26 +789,8 @@ func _build_default_singleplayer_race_options() -> Dictionary:
 		"grand_prix_ko_energy_bonuses": {},
 		"grand_prix_eliminated_ids": [],
 	}
-	_set_track_content_evidence(options, [track_selector.selected])
+	track_content_controller.set_track_content_evidence(options, [track_selector.selected])
 	return options
-
-func _set_track_content_evidence(options: Dictionary, track_indices: Array) -> void:
-	var content_ids: Array = []
-	var gameplay_digests: Array = []
-	var package_digests: Array = []
-	var workshop_ids: Array = []
-	for index_value in track_indices:
-		var evidence := track_content_controller.track_content_evidence_for_index(int(index_value))
-		if String(evidence.get("content_id", "")).is_empty():
-			continue
-		content_ids.append(String(evidence.get("content_id", "")))
-		gameplay_digests.append(String(evidence.get("gameplay_digest", "")))
-		package_digests.append(String(evidence.get("package_digest", "")))
-		workshop_ids.append(String(evidence.get("workshop_id", "")))
-	options["track_ids"] = content_ids
-	options["track_gameplay_digests"] = gameplay_digests
-	options["track_package_digests"] = package_digests
-	options["track_workshop_ids"] = workshop_ids
 
 func _race_content_readiness(track_id: String, settings: Array, options: Dictionary) -> Dictionary:
 	var missing_workshop_ids: Array = []
@@ -952,30 +903,6 @@ func _multiplayer_lobby_port() -> int:
 		return 27016
 	return int(clamp(parsed_port, 1, 65535))
 
-func _build_lobby_options_controls() -> void:
-	player_list.visible = false
-	player_list.custom_minimum_size = Vector2(220.0, 320.0)
-	player_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	player_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	lobby_track_selector.visible = false
-	lobby_track_selector.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if !lobby_track_selector.item_selected.is_connected(_on_lobby_track_selected):
-		lobby_track_selector.item_selected.connect(_on_lobby_track_selected)
-
-	car_settings_button_lobby.visible = true
-	controller_settings_button_lobby.visible = true
-	if !lobby_game_mode_choice.item_selected.is_connected(_on_lobby_game_mode_selected):
-		lobby_game_mode_choice.item_selected.connect(_on_lobby_game_mode_selected)
-	if !lobby_vehicle_restore_toggle.toggled.is_connected(_on_lobby_vehicle_restore_toggled):
-		lobby_vehicle_restore_toggle.toggled.connect(_on_lobby_vehicle_restore_toggled)
-	if !lobby_bumpers_toggle.toggled.is_connected(_on_lobby_bumpers_toggled):
-		lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
-	if lobby_s_boost_toggle != null and !lobby_s_boost_toggle.toggled.is_connected(_on_lobby_s_boost_toggled):
-		lobby_s_boost_toggle.toggled.connect(_on_lobby_s_boost_toggled)
-	_populate_lobby_stage_buttons()
-	_refresh_lobby_stage_preview()
-
 func _build_race_pause_menu() -> void:
 	if !race_pause_resume_button.pressed.is_connected(_close_race_pause_menu):
 		race_pause_resume_button.pressed.connect(_close_race_pause_menu)
@@ -1014,138 +941,6 @@ func _on_pause_lobby_pressed() -> void:
 
 func _on_pause_options_pressed() -> void:
 	options_menu.call("open_settings")
-
-func _on_add_cpu_button_pressed() -> void:
-	if !network_manager.is_server:
-		return
-	network_manager.add_cpu_driver()
-
-func _on_remove_cpu_button_pressed() -> void:
-	if !network_manager.is_server:
-		return
-	network_manager.remove_cpu_driver()
-
-func _on_lobby_game_mode_selected(_index: int) -> void:
-	_refresh_lobby_race_options()
-
-func _on_lobby_track_selected(_index: int) -> void:
-	_refresh_lobby_race_options()
-
-func _populate_lobby_stage_buttons() -> void:
-	if lobby_stage_button_container == null:
-		return
-	for child in lobby_stage_button_container.get_children():
-		child.queue_free()
-	for i in range(track_content_controller.tracks.size()):
-		var button := Button.new()
-		button.text = str(track_content_controller.tracks[i].get("name", "Track"))
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.pressed.connect(_on_lobby_stage_button_pressed.bind(i))
-		lobby_stage_button_container.add_child(button)
-
-func _on_lobby_stage_button_pressed(track_index: int) -> void:
-	if !network_manager.is_server:
-		return
-	if track_index < 0 or track_index >= track_content_controller.tracks.size():
-		return
-	lobby_grand_prix_track_sequence.append(track_index)
-	_refresh_lobby_race_options()
-
-func _on_lobby_stage_preview_pressed(sequence_index: int) -> void:
-	if !network_manager.is_server:
-		return
-	if sequence_index < 0 or sequence_index >= lobby_grand_prix_track_sequence.size():
-		return
-	lobby_grand_prix_track_sequence.remove_at(sequence_index)
-	_refresh_lobby_race_options()
-
-func _on_lobby_vehicle_restore_toggled(_toggled: bool) -> void:
-	_refresh_lobby_race_options()
-
-func _on_lobby_bumpers_toggled(_toggled: bool) -> void:
-	_refresh_lobby_race_options()
-
-func _on_lobby_s_boost_toggled(_toggled: bool) -> void:
-	_refresh_lobby_race_options()
-
-func _build_lobby_race_options() -> Dictionary:
-	var options := {
-		"game_mode": lobby_game_mode_choice.selected if lobby_game_mode_choice != null else 0,
-		"vehicle_restore": lobby_vehicle_restore_toggle.button_pressed if lobby_vehicle_restore_toggle != null else true,
-		"bumpers": lobby_bumpers_toggle.button_pressed if lobby_bumpers_toggle != null else false,
-		"s_boost": lobby_s_boost_toggle.button_pressed if lobby_s_boost_toggle != null else true,
-		"grand_prix_current_track": 0,
-		"grand_prix_points": {},
-		"grand_prix_ko_energy_bonuses": {},
-		"grand_prix_eliminated_ids": [],
-	}
-	_set_track_content_evidence(options, lobby_grand_prix_track_sequence)
-	return options
-
-func _refresh_lobby_race_options() -> void:
-	if lobby_applying_race_options:
-		_refresh_lobby_stage_preview()
-		_update_lobby_start_race_button()
-		return
-	var options := _build_lobby_race_options()
-	if network_manager.is_server:
-		network_manager.send_race_options(options)
-	else:
-		network_manager.race_options = options
-	_refresh_lobby_stage_preview()
-	_update_lobby_start_race_button()
-
-func _update_lobby_start_race_button() -> void:
-	if start_race_button == null:
-		return
-	var can_edit_cpu := network_manager.is_server and !network_manager.race_active
-	start_race_button.disabled = !can_edit_cpu or track_content_controller.tracks.is_empty() or lobby_grand_prix_track_sequence.is_empty()
-
-func _on_network_race_options_changed(options: Dictionary) -> void:
-	if lobby_game_mode_choice == null:
-		return
-	lobby_applying_race_options = true
-	var mode := int(options.get("game_mode", 0))
-	if mode >= 0 and mode < lobby_game_mode_choice.item_count:
-		lobby_game_mode_choice.select(mode)
-	if lobby_vehicle_restore_toggle != null:
-		lobby_vehicle_restore_toggle.set_pressed_no_signal(bool(options.get("vehicle_restore", true)))
-	if lobby_bumpers_toggle != null:
-		lobby_bumpers_toggle.set_pressed_no_signal(bool(options.get("bumpers", false)))
-	if lobby_s_boost_toggle != null:
-		lobby_s_boost_toggle.set_pressed_no_signal(bool(options.get("s_boost", true)))
-	lobby_grand_prix_track_sequence.clear()
-	var track_ids: Array = options.get("track_ids", [])
-	for track_id_value in track_ids:
-		var idx := track_content_controller.track_index_for_id(String(track_id_value))
-		if idx >= 0 and idx < track_content_controller.tracks.size():
-			lobby_grand_prix_track_sequence.append(idx)
-	if track_ids.size() > 0:
-		var first_index := track_content_controller.track_index_for_id(String(track_ids[0]))
-		if first_index >= 0 and first_index < track_content_controller.tracks.size():
-			lobby_track_selector.selected = first_index
-	lobby_applying_race_options = false
-	_refresh_lobby_stage_preview()
-
-func _refresh_lobby_stage_preview() -> void:
-	if lobby_stage_preview_container == null:
-		return
-	for child in lobby_stage_preview_container.get_children():
-		child.queue_free()
-	var options := network_manager.race_options
-	var track_ids: Array = options.get("track_ids", [])
-	for i in range(track_ids.size()):
-		var track_id := String(track_ids[i])
-		var track_index := track_content_controller.track_index_for_id(track_id)
-		var label := Button.new()
-		label.disabled = !network_manager.is_server
-		if track_index >= 0 and track_index < track_content_controller.tracks.size():
-			label.text = "%d. %s" % [i + 1, str(track_content_controller.tracks[track_index].get("name", "Track"))]
-		else:
-			label.text = "%d. Missing Track" % (i + 1)
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.pressed.connect(_on_lobby_stage_preview_pressed.bind(i))
-		lobby_stage_preview_container.add_child(label)
 
 func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dictionary:
 	var initialized := options.duplicate(true)
@@ -2074,28 +1869,25 @@ func _start_race(track_index: int, settings: Array) -> bool:
 				trigger_objects.append(inst)
 	return true
 
-func _on_start_race_button_pressed() -> void:
-	if network_manager.is_server:
-		if lobby_grand_prix_track_sequence.is_empty():
-			return
-		_close_settings_menus_for_race_start()
-		network_manager.prepare_race_roster("start_button")
-		var settings_array : Array = []
-		var human_ids := network_manager.player_ids.duplicate(true)
-		var cpu_ids := network_manager.cpu_player_ids.duplicate(true)
-		var roster := human_ids.duplicate(true)
-		roster.append_array(cpu_ids)
-		for id_value in roster:
-			var id := int(id_value)
-			settings_array.append(_settings_dict_for_race_id(id, cpu_ids.find(id)))
-		var race_options := _build_lobby_race_options()
-		race_options = _initialize_grand_prix_options(race_options, roster)
-		race_options = _apply_race_roster_options(race_options, human_ids, cpu_ids, network_manager.spectator_ids)
-		var track_ids: Array = race_options.get("track_ids", [track_content_controller.track_id_for_index(lobby_track_selector.selected)])
-		var first_track_id := track_content_controller.track_id_for_index(lobby_track_selector.selected)
-		if !track_ids.is_empty():
-			first_track_id = String(track_ids[0])
-		network_manager.send_start_race(first_track_id, settings_array, race_options)
+func _on_lobby_start_race_requested(requested_options: Dictionary) -> void:
+	if !network_manager.is_server:
+		return
+	_close_settings_menus_for_race_start()
+	network_manager.prepare_race_roster("start_button")
+	var settings_array: Array = []
+	var human_ids := network_manager.player_ids.duplicate(true)
+	var cpu_ids := network_manager.cpu_player_ids.duplicate(true)
+	var roster := human_ids.duplicate(true)
+	roster.append_array(cpu_ids)
+	for id_value in roster:
+		var id := int(id_value)
+		settings_array.append(_settings_dict_for_race_id(id, cpu_ids.find(id)))
+	var race_options := _initialize_grand_prix_options(requested_options, roster)
+	race_options = _apply_race_roster_options(race_options, human_ids, cpu_ids, network_manager.spectator_ids)
+	var track_ids: Array = race_options.get("track_ids", [])
+	if track_ids.is_empty():
+		return
+	network_manager.send_start_race(String(track_ids[0]), settings_array, race_options)
 
 func _on_network_race_started(track_id: String, settings: Array) -> void:
 	var admission_phase := network_manager.race_netplay_phase
@@ -2151,59 +1943,6 @@ func _on_network_race_finished() -> void:
 		_transition_to_next_grand_prix_race()
 	else:
 		_return_to_lobby()
-
-func _update_player_list() -> void:
-	var roster := network_manager.get_simulation_roster()
-	var cpu_ids := network_manager.get_cpu_roster()
-	if lobby_player_list_container != null:
-		var signature_parts := []
-		for id in roster:
-			signature_parts.append("%d:%s:%s:%s" % [
-				int(id),
-				_player_display_name(int(id)),
-				str(cpu_ids.has(id)),
-				str(network_manager.is_server)
-			])
-		var signature := "|".join(signature_parts)
-		if signature == lobby_player_list_signature:
-			return
-		lobby_player_list_signature = signature
-		for child in lobby_player_list_container.get_children():
-			child.queue_free()
-		for id in roster:
-			var id_int := int(id)
-			var row := HBoxContainer.new()
-			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_theme_constant_override("separation", 6)
-			lobby_player_list_container.add_child(row)
-			var name_label := Label.new()
-			name_label.text = _player_display_name(id_int)
-			if cpu_ids.has(id):
-				name_label.text = "[CPU] " + name_label.text
-			name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_child(name_label)
-			var can_kick := network_manager.is_server and !cpu_ids.has(id) and id_int != _local_player_id()
-			if can_kick:
-				var kick_button := Button.new()
-				kick_button.text = "Kick"
-				kick_button.pressed.connect(_on_lobby_kick_player_pressed.bind(id_int))
-				row.add_child(kick_button)
-		return
-	player_list.clear()
-	for id in roster:
-		var name := str(id)
-		if network_manager.player_settings.has(id):
-			var ps = network_manager.player_settings[id]
-			if typeof(ps) == TYPE_DICTIONARY and ps.has("username"):
-				name = ps["username"]
-		if cpu_ids.has(id):
-			name = "[CPU] " + name
-		player_list.add_item(name)
-
-func _on_lobby_kick_player_pressed(player_id: int) -> void:
-	network_manager.kick_human_player(player_id)
-	lobby_player_list_signature = ""
-	_update_player_list()
 
 func _window_accepts_input() -> bool:
 	if race_pause_open:
@@ -2675,45 +2414,9 @@ func _physics_process(delta: float) -> void:
 		return
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if lobby_control.visible:
-		var lobby_frame_start_usec := Time.get_ticks_usec()
-		network_manager.process_lobby_latency()
-		var player_list_start_usec := Time.get_ticks_usec()
-		_update_player_list()
-		var player_list_usec := Time.get_ticks_usec() - player_list_start_usec
-		var chibi_start_usec := Time.get_ticks_usec()
-		lobby_chibi_controller.process_lobby(delta)
-		var chibi_usec := Time.get_ticks_usec() - chibi_start_usec
-		var can_edit_cpu := network_manager.is_server and !network_manager.race_active
-		if lobby_cpu_count_label != null:
-			lobby_cpu_count_label.text = "CPU Drivers: %d" % network_manager.get_cpu_roster().size()
-		add_cpu_button.disabled = !can_edit_cpu
-		remove_cpu_button.disabled = !can_edit_cpu or network_manager.get_cpu_roster().is_empty()
-		_update_lobby_start_race_button()
-		lobby_track_selector.disabled = !can_edit_cpu
-		if lobby_game_mode_choice != null:
-			lobby_game_mode_choice.disabled = !can_edit_cpu
-		if lobby_vehicle_restore_toggle != null:
-			lobby_vehicle_restore_toggle.disabled = !can_edit_cpu
-		if lobby_bumpers_toggle != null:
-			lobby_bumpers_toggle.disabled = !can_edit_cpu
-		if lobby_s_boost_toggle != null:
-			lobby_s_boost_toggle.disabled = !can_edit_cpu
-		if lobby_stage_button_container != null:
-			for child in lobby_stage_button_container.get_children():
-				var button := child as Button
-				if button != null:
-					button.disabled = !can_edit_cpu
-		if lobby_stage_preview_container != null:
-			for child in lobby_stage_preview_container.get_children():
-				var button := child as Button
-				if button != null:
-					button.disabled = !can_edit_cpu
-		network_manager.record_lobby_frame(
-			Time.get_ticks_usec() - lobby_frame_start_usec,
-			player_list_usec,
-			chibi_usec)
+		lobby_controller.process_lobby(delta)
 	else:
-		lobby_chibi_controller.clear()
+		lobby_controller.clear()
 	if game_sim.sim_started:
 		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var profile_input_start := Time.get_ticks_usec() if auto_render_profile_mode else 0

@@ -20,6 +20,7 @@
 [ext_resource type="Script" path="res://ui/communication_controller.gd" id="29_communication"]
 [ext_resource type="PackedScene" path="res://ui/race_communication_overlay.tscn" id="30_communication_overlay"]
 [ext_resource type="Script" path="res://vehicle/vehicle_content_controller.gd" id="31_vehicle_content"]
+[ext_resource type="Script" path="res://ui/lobby_controller.gd" id="32_lobby"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -157,6 +158,9 @@ script = ExtResource("25_track")
 
 [node name="LobbyChibiController" type="Node" parent="."]
 script = ExtResource("28_lobby_chibi")
+
+[node name="LobbyController" type="Node" parent="."]
+script = ExtResource("32_lobby")
 
 [node name="CommunicationController" type="Node" parent="."]
 script = ExtResource("29_communication")
@@ -392,75 +396,6 @@ grow_vertical = 2
 [node name="LobbyStatic" parent="Lobby" unique_id=1170698986 instance=ExtResource("20_lobby_static")]
 layout_mode = 1
 
-[node name="LobbyTrackSelector" type="OptionButton" parent="Lobby" unique_id=562261124]
-visible = false
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -150.0
-offset_top = -74.0
-offset_right = 150.0
-offset_bottom = -44.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="PlayerList" type="ItemList" parent="Lobby" unique_id=950518910]
-visible = false
-layout_mode = 1
-offset_right = 300.0
-offset_bottom = 647.0
-
-[node name="StartRaceButton" type="Button" parent="Lobby" unique_id=252745000]
-visible = false
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -115.0
-offset_top = 44.0
-offset_right = 115.0
-offset_bottom = 74.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "Start Race"
-
-[node name="AddCpuButton" type="Button" parent="Lobby" unique_id=66707038]
-visible = false
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = 125.0
-offset_top = 44.0
-offset_right = 355.0
-offset_bottom = 74.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "Add CPU Racer"
-
-[node name="RemoveCpuButton" type="Button" parent="Lobby" unique_id=256690200]
-visible = false
-layout_mode = 1
-anchors_preset = 8
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = 125.0
-offset_top = 76.0
-offset_right = 355.0
-offset_bottom = 106.0
-grow_horizontal = 2
-grow_vertical = 2
-text = "Remove CPU Racer"
-
 [node name="CarSettings" parent="." unique_id=774432447 instance=ExtResource("3_carsettings")]
 visible = false
 
@@ -557,4 +492,3 @@ grow_vertical = 0
 [connection signal="pressed" from="Control/ConnectHostBox/JoinButton" to="." method="_on_join_button_pressed"]
 [connection signal="pressed" from="Control/CarSettingsButton" to="." method="_on_car_settings_button_pressed"]
 [connection signal="pressed" from="Control/ControllerSettingsButton" to="." method="_on_controller_settings_button_pressed"]
-[connection signal="pressed" from="Lobby/StartRaceButton" to="." method="_on_start_race_button_pressed"]

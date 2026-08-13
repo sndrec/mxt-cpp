@@ -11,8 +11,8 @@ func _init() -> void:
 	main.lobby_control.visible = true
 	main.network_manager.is_server = true
 	main.network_manager.race_active = false
-	main.lobby_grand_prix_track_sequence.clear()
-	main.call("_refresh_lobby_race_options")
+	main.lobby_controller.grand_prix_track_sequence.clear()
+	main.lobby_controller.refresh_race_options()
 	await process_frame
 	main.call("_physics_process", 1.0 / 60.0)
 
@@ -21,15 +21,15 @@ func _init() -> void:
 		push_error("empty lobby sequence should not fall back to selected track")
 		quit(1)
 		return
-	if main.lobby_stage_preview_container == null or !(main.lobby_stage_preview_container is VBoxContainer):
+	if main.lobby_controller.stage_preview_container == null or !(main.lobby_controller.stage_preview_container is VBoxContainer):
 		push_error("lobby stage preview container should be a VBoxContainer")
 		quit(1)
 		return
-	if main.lobby_stage_preview_container.get_child_count() != 0:
+	if main.lobby_controller.stage_preview_container.get_child_count() != 0:
 		push_error("empty lobby sequence should render no preview rows")
 		quit(1)
 		return
-	if main.start_race_button == null or !main.start_race_button.disabled:
+	if main.lobby_controller.start_race_button == null or !main.lobby_controller.start_race_button.disabled:
 		push_error("Play button should be disabled with no queued races")
 		quit(1)
 		return

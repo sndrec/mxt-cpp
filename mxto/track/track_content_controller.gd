@@ -60,6 +60,24 @@ func track_content_evidence_for_index(track_index: int) -> Dictionary:
 		"workshop_id": String(record.get("published_file_id", "")),
 	}
 
+func set_track_content_evidence(options: Dictionary, track_indices: Array) -> void:
+	var content_ids: Array = []
+	var gameplay_digests: Array = []
+	var package_digests: Array = []
+	var workshop_ids: Array = []
+	for index_value in track_indices:
+		var evidence := track_content_evidence_for_index(int(index_value))
+		if String(evidence.get("content_id", "")).is_empty():
+			continue
+		content_ids.append(String(evidence.get("content_id", "")))
+		gameplay_digests.append(String(evidence.get("gameplay_digest", "")))
+		package_digests.append(String(evidence.get("package_digest", "")))
+		workshop_ids.append(String(evidence.get("workshop_id", "")))
+	options["track_ids"] = content_ids
+	options["track_gameplay_digests"] = gameplay_digests
+	options["track_package_digests"] = package_digests
+	options["track_workshop_ids"] = workshop_ids
+
 func track_content_evidence_matches(
 		content_id: String,
 		gameplay_digest: String,

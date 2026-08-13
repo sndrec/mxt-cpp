@@ -49,7 +49,7 @@ func _init() -> void:
 		push_error("lobby chibi latency label mismatch")
 		quit(1)
 		return
-	if !main.car_settings_button_lobby.visible or !main.controller_settings_button_lobby.visible:
+	if !main.lobby_controller.car_settings_button.visible or !main.lobby_controller.controller_settings_button.visible:
 		push_error("lobby settings buttons should be visible")
 		quit(1)
 		return
