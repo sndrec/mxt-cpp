@@ -1,7 +1,9 @@
 import os
 import re
+from pathlib import Path
 
-BASE = 'mxto/vehicle/asset'
+REPO_ROOT = Path(__file__).resolve().parents[2]
+BASE = str(REPO_ROOT / 'mxto' / 'vehicle' / 'asset')
 
 # directories to skip (no car props)
 SKIP = {'common_a', 'common_b', 'tex_common'}
