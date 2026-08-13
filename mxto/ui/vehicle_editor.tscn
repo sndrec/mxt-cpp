@@ -129,6 +129,7 @@ stretch = true
 [node name="Viewport" type="SubViewport" parent="Workspace/VisualColumn/Preview"]
 handle_input_locally = false
 size = Vector2i(640, 420)
+own_world_3d = true
 render_target_update_mode = 4
 
 [node name="VisualStatus" type="Label" parent="Workspace/VisualColumn"]
