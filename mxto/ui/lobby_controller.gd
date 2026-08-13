@@ -84,7 +84,7 @@ func process_lobby(delta: float) -> void:
 	lobby_chibi_controller.process_lobby(delta)
 	var chibi_usec := Time.get_ticks_usec() - chibi_start_usec
 	refresh_controls()
-	network_manager.record_lobby_frame(
+	network_manager.telemetry.record_lobby_frame(
 		Time.get_ticks_usec() - lobby_frame_start_usec,
 		player_list_usec,
 		chibi_usec)

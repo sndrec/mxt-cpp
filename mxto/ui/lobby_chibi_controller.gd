@@ -235,7 +235,7 @@ func _submit_render(roster: Array) -> void:
 		render_signature = signature
 		magnifier_render_signature = ""
 		render_rebuild_count_total += 1
-		network_manager.record_lobby_render_rebuild(Time.get_ticks_usec() - rebuild_start_usec)
+		network_manager.telemetry.record_lobby_render_rebuild(Time.get_ticks_usec() - rebuild_start_usec)
 		game_manager.record_memory_sample("lobby_render_rebuild")
 	render_manager.begin_manual_submit()
 	var render_root_inv := render_manager.global_transform.affine_inverse()
@@ -401,7 +401,7 @@ func _broadcast_states_if_needed() -> void:
 	pending_states.clear()
 	_apply_state_batch.rpc(batch)
 	var recipients := multiplayer.get_peers().size()
-	network_manager.record_lobby_chibi_network(0, 0, recipients, batch.size() * recipients)
+	network_manager.telemetry.record_lobby_chibi_network(0, 0, recipients, batch.size() * recipients)
 
 func send_state(player_id: int, velocity: float, knockback_velocity: Vector3, angle_velocity: float, position: Vector3, rotation: Vector3) -> void:
 	if !is_active():
@@ -413,7 +413,7 @@ func send_state(player_id: int, velocity: float, knockback_velocity: Vector3, an
 	else:
 		var state := _pack_state(player_id, velocity, knockback_velocity, angle_velocity, position, rotation)
 		_submit_state.rpc_id(1, state)
-		network_manager.record_lobby_chibi_network(0, 0, 1, state.size())
+		network_manager.telemetry.record_lobby_chibi_network(0, 0, 1, state.size())
 
 @rpc("any_peer", "call_local", "unreliable_ordered", 9)
 func _submit_state(state: PackedByteArray) -> void:
@@ -421,7 +421,7 @@ func _submit_state(state: PackedByteArray) -> void:
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	if sender != 0:
-		network_manager.record_lobby_chibi_network(1, state.size(), 0, 0)
+		network_manager.telemetry.record_lobby_chibi_network(1, state.size(), 0, 0)
 		state.encode_s32(0, sender)
 	pending_states[state.decode_s32(0)] = state
 	_apply_packed_state(state)
@@ -432,7 +432,7 @@ func _apply_state_batch(states: PackedByteArray) -> void:
 	if !is_active() or states.size() % STATE_RECORD_BYTES != 0:
 		return
 	if multiplayer.get_remote_sender_id() != 0:
-		network_manager.record_lobby_chibi_network(1, states.size(), 0, 0)
+		network_manager.telemetry.record_lobby_chibi_network(1, states.size(), 0, 0)
 	for offset in range(0, states.size(), STATE_RECORD_BYTES):
 		_apply_packed_state(states, offset)
 

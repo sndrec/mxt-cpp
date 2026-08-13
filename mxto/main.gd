@@ -1163,7 +1163,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	network_manager.input_transport.rollback_frametime_us = Time.get_ticks_usec() - start_time
 
 func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
-	if !network_manager.dump_auth_input_samples:
+	if !network_manager.telemetry.dump_auth_input_samples:
 		return
 	if game_sim == null:
 		return
@@ -1185,14 +1185,14 @@ func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void
 	)
 
 func _dump_offline_state_sample() -> void:
-	if !network_manager.dump_state_samples:
+	if !network_manager.telemetry.dump_state_samples:
 		return
 	if game_sim == null:
 		return
 	if _singleplayer_tick % network_manager.state_transfer.BROADCAST_INTERVAL_TICKS != 0:
 		return
 	var state := game_sim.get_state_data(_singleplayer_tick)
-	network_manager.dump_state_sample(
+	network_manager.telemetry.dump_state_sample(
 		state,
 		_singleplayer_tick,
 		network_manager.get_simulation_roster().size()
