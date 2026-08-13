@@ -843,3 +843,28 @@ Append entries; do not rewrite old evidence.
   and netplay state-size tests updated for the direct owner.
 - Commit: `e590e479` (`Extract lobby controller`).
 - Remaining Milestone 5 work: race presentation and spectator ownership.
+
+### Milestone 5b — spectator ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `SpectatorController` in
+  `mxto/ui/spectator_controller.gd`.
+- Moved out of `GameManager`: eliminated/DNF input suppression, free-camera
+  lifetime, eliminated-racer transition, live focus selection, controller
+  strafe edge handling, camera toggling, and spectator notifications.
+- Replay integration: `ReplayController` now uses the typed spectator owner to
+  disable or position the shared free camera; it no longer creates or mutates a
+  `GameManager` spectator node through dynamic calls.
+- Lifecycle: race setup configures the local identity and racer/spectator role;
+  menu, lobby, race-transition, and new-race paths reset the owner directly.
+- Dead code removed: the uncalled visual-state elimination helper and its test-
+  only production path were removed. The deferred vehicle-restore smoke now
+  verifies the actual owner state used for elimination/DNF input suppression.
+- Verification: `scons target=template_release -j4` passed; Godot 4.7.1 opened
+  the project and exited 0 without native load, script parse/load, scene, or
+  startup errors. The known empty-texture and forced render-thread shutdown
+  diagnostics remain.
+- Deferred to Milestone 11: the updated vehicle-restore/elimination smoke and
+  replay camera coverage.
+- Commit: `a3f7a64a` (`Extract spectator controller`).
+- Remaining Milestone 5 work: race presentation ownership.
