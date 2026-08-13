@@ -4,8 +4,8 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 3 are complete; Milestone 4
-  is in progress.
+- Implementation is active. Milestones 0 through 4 are complete; Milestone 5
+  is next.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -389,17 +389,17 @@ succeed, and chat plus voice-adjacent tests are recorded for Milestone 11.
 
 ### Milestone 4 — Extract vehicle content ownership
 
-- [ ] Create or consolidate a typed vehicle-content owner.
-- [ ] Move official, local package, test-drive snapshot, and Workshop vehicle
+- [x] Create or consolidate a typed vehicle-content owner.
+- [x] Move official, local package, test-drive snapshot, and Workshop vehicle
       discovery out of `GameManager`.
-- [ ] Move car-definition indexing, content evidence, packaged mesh/material
+- [x] Move car-definition indexing, content evidence, packaged mesh/material
       construction, texture resolution, and vehicle metadata transforms.
-- [ ] Give UI, lobby chibis, car rendering, test drive, and race setup direct
+- [x] Give UI, lobby chibis, car rendering, test drive, and race setup direct
       typed access to the vehicle-content owner.
-- [ ] Keep generic package parsing/validation in the existing native content
+- [x] Keep generic package parsing/validation in the existing native content
       APIs.
-- [ ] Remove duplicate content lookup and material-building paths.
-- [ ] Add focused content/vehicle smoke coverage where existing package tests do
+- [x] Remove duplicate content lookup and material-building paths.
+- [x] Add focused content/vehicle smoke coverage where existing package tests do
       not prove runtime definition and render lookup.
 
 Completion condition: `GameManager` does not scan or construct vehicle content;
@@ -788,3 +788,28 @@ Append entries; do not rewrite old evidence.
 - Remaining Milestone 4 work: transfer custom-stamp render payload ownership,
   remove its obsolete `GameManager` paths, and add focused deferred smoke
   coverage before marking the milestone complete.
+
+### Milestone 4 — vehicle content ownership complete
+
+- Date: 2026-08-13
+- Render ownership: custom-stamp manifest resolution, local payload fallback,
+  atlas-region construction, livery UV rewriting, and render-settings
+  normalization now live in `VehicleContentController`.
+- Direct render consumers: race setup, lobby chibis, live spectator focus, and
+  replay focus use the typed owner. `GameManager` retains only orchestration.
+- Dead code removed: the unused race-atlas wrapper, race-only local-payload
+  alias, and unused manifest-signature helper were not transferred.
+- Focused deferred coverage: added
+  `mxto/test/vehicle_content_controller_smoke.gd` to the stable runner. It checks
+  owner population, definition identity/render lookup, catalog evidence,
+  render-settings normalization, and absence of the old `GameManager` methods.
+- Source result: `mxto/main.gd` is now approximately 3,381 lines, down from
+  roughly 4,112 at the start of Milestone 4.
+- Verification: `scons target=template_release -j4` passed; Godot 4.7.1 opened
+  the project and exited 0 without native load, script parse/load, scene, or
+  startup errors. The known empty-texture and forced render-thread shutdown
+  diagnostics remain.
+- Deferred to Milestone 11: the new vehicle-content smoke plus all other
+  content/package, lobby, replay, and rendering tests.
+- Commits: `d32347a7` (`Extract vehicle content catalog`) and `f61c4bed`
+  (`Move vehicle render content ownership`).
