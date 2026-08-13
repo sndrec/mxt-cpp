@@ -458,7 +458,7 @@ stable and the network smoke matrix is reliable.
 
 - [x] Map every RPC, authority rule, transfer mode, channel, sender validation,
       and call site before editing.
-- [ ] Separate connection/version/peer lifecycle from lobby roster/settings.
+- [x] Separate connection/version/peer lifecycle from lobby roster/settings.
 - [ ] Separate race admission and synchronized-start state.
 - [ ] Separate authoritative input transport, timing, acknowledgement, state
       transfer/FEC, rollback coordination, results/events, and telemetry where
@@ -1103,3 +1103,40 @@ Append entries; do not rewrite old evidence.
   Existing empty-texture, Steam-without-app-ID, forced audio disconnect, and
   render-thread shutdown diagnostics remain.
 - Commit: `7805c95b` (`Extract network race results controller`).
+
+### Milestone 7c — lobby settings and CPU roster ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `LobbySettingsController` in
+  `mxto/netplay/lobby_settings_controller.gd`.
+- Moved out of `NetworkManager`: player-settings storage/revisions, compressed
+  settings snapshots and updates, next-race acceleration updates, CPU-ID
+  allocation/remapping, CPU settings and lobby/race CPU rosters, CPU roster
+  synchronization, lobby latency sampling/snapshots, and their interval
+  counters.
+- Protocol preservation: CPU roster sync remains authority call-remote reliable
+  on the default channel. Settings snapshot/update and next-race acceleration
+  remain reliable channel 10 with the same authority/sender checks, compression,
+  size bounds, and livery merge behavior. Lobby latency ping/pong/snapshot
+  remains unreliable on the default channel.
+- Ownership handoffs: synchronous role-change and CPU-removal signals leave
+  human player/spectator membership, desired-ahead transport state, pending-
+  input cleanup, and snapshot scheduling with `NetworkManager`. A latency-
+  sample signal preserves the existing transport RTT smoothing/peer RTT update
+  without giving the lobby owner a manager back-reference.
+- Direct consumers: lobby UI/chibis, car settings, replay, race setup/HUD,
+  presentation, spectator, communication, proximity voice, custom stamps, and
+  deferred load smokes target the real owner. No settings/CPU/latency forwarding
+  methods remain on `NetworkManager`.
+- Source result: `mxto/netplay/network_manager.gd` is 2,677 lines; the cohesive
+  lobby settings owner is 452 lines.
+- Deferred coverage: lobby chibi/render/scale/load, settings snapshot, CPU
+  roster, latency, race setup, replay, and multi-process groups remain queued
+  for Milestone 11.
+- Verification: `scons target=template_release -j4` passed and a menu launch
+  parsed/loaded the scene. The first automated race launch hit one intermittent
+  native access violation during startup; two immediate identical reruns opened
+  the game, initialized the race, and exited 0. Existing empty-texture, Steam-
+  without-app-ID, forced audio disconnect, and render-thread shutdown
+  diagnostics remain.
+- Commit: `4593a5dc` (`Extract network lobby settings controller`).
