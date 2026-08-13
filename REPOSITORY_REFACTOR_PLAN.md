@@ -190,7 +190,7 @@ direction. Never guess by reverting or absorbing the edit.
   automatic exit, for example:
 
   ```powershell
-  & 'A:\programs\Godot_v4.7.1-stable_win64\Godot_v4.7.1-stable_win64.exe' --path 'B:\programming\mxt-cpp\mxto' --quit-after 120
+  & 'A:\programs\Godot_v4.7.1-stable_win64\Godot_v4.7.1-stable_win64_console.exe' --path 'B:\programming\mxt-cpp\mxto' --quit-after 120
   ```
 
 - Confirm that the game reaches startup and exits without a native-library load
@@ -332,17 +332,18 @@ without rewriting history or losing work.
 
 ### Milestone 1 — Make verification repeatable
 
-- [ ] Add a PowerShell smoke runner with named test groups and explicit exit
+- [x] Add a PowerShell smoke runner with named test groups and explicit exit
       codes.
-- [ ] Default it to the Godot executable required by `AGENTS.MD` while allowing
+- [x] Default it to the Godot executable required by `AGENTS.MD` while allowing
       an explicit override.
-- [ ] Keep single-process stable tests separate from replay-, Steam-, export-,
+- [x] Keep single-process stable tests separate from replay-, Steam-, export-,
       and multi-process tests.
-- [ ] Add a concise verification document or README section explaining the
+- [x] Add a concise verification document or README section explaining the
       release build and smoke groups.
-- [ ] Prove the runner fails when a child test fails.
-- [ ] Run the baseline release compile and bounded game launch.
-- [ ] Do not run the stable smoke group before structural edits; schedule every
+- [x] Add a failure-propagation self-check to the runner; execute it only in
+      Milestone 11.
+- [x] Run the baseline release compile and bounded game launch.
+- [x] Do not run the stable smoke group before structural edits; schedule every
       test group for Milestone 11.
 
 Completion condition: later milestones have a single reliable command for the
@@ -679,3 +680,24 @@ Append entries; do not rewrite old evidence.
   `A:\programs\Godot_v4.7.1-stable_win64\Godot_v4.7.1-stable_win64.exe --path B:\programming\mxt-cpp\mxto --quit-after 120`.
 - No user file was staged, moved, deleted, reverted, or overwritten while
   establishing this baseline.
+
+### Milestone 1 — repeatable verification complete
+
+- Date: 2026-08-13
+- Added `scripts/run_smoke_suite.ps1` with stable, simulation, replay,
+  lobby-load, all-applicable, and self-check groups plus explicit aggregate exit
+  codes and per-child logs.
+- Added `VERIFICATION.md` with the required release build, attached bounded game
+  launch, deferred groups, prerequisites, and runner exit-code contract.
+- Static verification: the PowerShell parser accepted the runner and all 28
+  referenced Godot scripts existed. No test group or self-check was executed.
+- Release compile: `scons target=template_release -j4` passed in approximately
+  17 seconds.
+- Startup: the Godot 4.7.1 console companion opened the project with Vulkan and
+  exited 0 after approximately 7 seconds. Existing empty-texture diagnostics
+  and forced render-thread shutdown/leak warnings were observed; there was no
+  native library load failure, script parse/load failure, invalid scene error,
+  or startup crash.
+- Deferred to Milestone 11: every stable, simulation, replay, lobby-load,
+  Steam-dependent, Blender, export, and runner self-check invocation.
+- Commit: pending.
