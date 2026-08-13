@@ -4,7 +4,7 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 5 are complete; Milestone 6
+- Implementation is active. Milestones 0 through 6 are complete; Milestone 7
   is in progress.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
@@ -432,17 +432,17 @@ than a presentation implementation.
 
 ### Milestone 6 — Separate race lifecycle and debug runtime work
 
-- [ ] Isolate race-world setup/teardown and menu/lobby/race transitions in a
+- [x] Isolate race-world setup/teardown and menu/lobby/race transitions in a
       cohesive race-session owner while keeping native simulation calls direct.
-- [ ] Preserve replay, audio, track, network, and content lifecycle ordering.
-- [ ] Move clean 4K screenshot behavior, render-profile counters/reporting,
+- [x] Preserve replay, audio, track, network, and content lifecycle ordering.
+- [x] Move clean 4K screenshot behavior, render-profile counters/reporting,
       diagnostic CLI modes, and debug-label visibility into a debug runtime
       owner.
-- [ ] Ensure debug owners do not allocate or process during normal gameplay when
+- [x] Ensure debug owners do not allocate or process during normal gameplay when
       disabled.
-- [ ] Consolidate duplicated transition cleanup without creating a forwarding
+- [x] Consolidate duplicated transition cleanup without creating a forwarding
       facade.
-- [ ] Add transition smoke coverage for menu, lobby, single-player, multiplayer,
+- [x] Add transition smoke coverage for menu, lobby, single-player, multiplayer,
       replay, and test-drive exits where feasible.
 
 Completion condition: `GameManager` retains top-level state coordination and the
@@ -940,3 +940,46 @@ Append entries; do not rewrite old evidence.
   replay metadata coverage.
 - Commit: `c983a5ec` (`Extract debug runtime controller`).
 - Remaining Milestone 6 work: race-session setup/teardown and transitions.
+
+### Milestone 6b — race session ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `RaceSessionController` in
+  `mxto/core/race_session_controller.gd`.
+- Moved out of `GameManager`: race-world construction, player-controller and
+  trigger lifetime, racer/content assembly, start-grid slots, native simulation
+  instantiation, render-manager setup, Grand Prix start bonuses, and shared
+  world destruction.
+- State ownership: active player controllers, local racer index, trigger nodes,
+  and last-race replay metadata now live with the session owner. Replay setup
+  and restart paths call that owner directly; no `_start_race` compatibility
+  method remains on `GameManager`.
+- Transition ordering: `GameManager` still chooses menu, lobby, or next Grand
+  Prix state. It calls the session owner's explicit audio/replay transition
+  phase before pause/UI changes, then its world-destruction phase at the same
+  point where the original code reset presentation, disconnected when needed,
+  destroyed simulations, removed visuals/controllers, and restored 60 Hz.
+- Duplication removed: menu, lobby, and next-race paths share the same actual
+  destruction implementation while retaining their distinct network and UI
+  state changes.
+- Source result: `mxto/main.gd` is 1,592 lines, down from roughly 4,900 at the
+  start of the Godot runtime refactor; the cohesive session owner is 396 lines.
+- Deferred coverage: `track_scene_lobby_hide_smoke.gd` now asserts the new
+  owner, absence of the old GameManager setup method, successful race setup,
+  and lobby teardown. Existing replay, lobby-load, netplay, vehicle test-drive,
+  and main-scene paths remain scheduled for Milestone 11.
+- Verification: `scons target=template_release -j4` passed; the post-build
+  automated single-player launch instantiated the race and exited 0 without
+  native load, script parse/load, scene, or access errors. Baseline texture,
+  Steam-without-app-ID, forced audio disconnect, and render-thread shutdown
+  diagnostics remain.
+- Commit: `af457a5f` (`Extract race session controller`).
+
+### Milestone 6 — race lifecycle and debug ownership complete
+
+- `GameManager` is now below the approximate 2,000-line target and retains
+  application/race-state coordination plus the fixed tick/process entry points,
+  rather than presentation, debug, content, or race-world implementations.
+- Milestone commits: `c983a5ec` and `af457a5f`, with directly adjacent status
+  commits recording the verified slices.
+- All test suites remain deferred to Milestone 11 as directed.
