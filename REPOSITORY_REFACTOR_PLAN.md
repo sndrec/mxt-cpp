@@ -4,8 +4,8 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation has started. Milestone 0 established the protected baseline;
-  Milestone 1 is next.
+- Implementation is active. Milestones 0 and 1 are complete; Milestone 2 is
+  next.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -700,4 +700,4 @@ Append entries; do not rewrite old evidence.
   or startup crash.
 - Deferred to Milestone 11: every stable, simulation, replay, lobby-load,
   Steam-dependent, Blender, export, and runner self-check invocation.
-- Commit: pending.
+- Commit: `5d0703f0` (`Add deferred verification runner`).
