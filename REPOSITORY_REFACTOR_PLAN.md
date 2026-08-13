@@ -371,16 +371,16 @@ succeed, and the lobby-chibi/lobby-scale tests are recorded for Milestone 11.
 
 ### Milestone 3 — Extract chat and communication ownership
 
-- [ ] Create a typed chat owner for lobby and in-race text communication.
-- [ ] Move sanitization, per-sender/global rate limiting, bounded history,
+- [x] Create a typed chat owner for lobby and in-race text communication.
+- [x] Move sanitization, per-sender/global rate limiting, bounded history,
       submission, lobby rendering, race-overlay handoff, focus behavior, and RPC
       endpoints out of `GameManager`.
-- [ ] Keep voice capture/playback in its existing voice owner; expose only the
+- [x] Keep voice capture/playback in its existing voice owner; expose only the
       minimal typed status needed by the communication overlay.
-- [ ] Replace dynamic `get_node_or_null()`/`has_method()` voice-status polling
+- [x] Replace dynamic `get_node_or_null()`/`has_method()` voice-status polling
       with a typed direct boundary where practical.
-- [ ] Update all RPC paths directly without compatibility aliases.
-- [ ] Strengthen the existing chat smoke test around ownership, bounded memory,
+- [x] Update all RPC paths directly without compatibility aliases.
+- [x] Strengthen the existing chat smoke test around ownership, bounded memory,
       channels, and lifecycle reset.
 
 Completion condition: `GameManager` owns no chat history, rate limiter, chat RPC,
@@ -733,3 +733,33 @@ Append entries; do not rewrite old evidence.
   diagnostics remain.
 - Deferred to Milestone 11: lobby-chibi render and lobby-scale smoke tests.
 - Commit: `787c9627` (`Extract lobby chibi controller`).
+
+### Milestone 3 — communication ownership complete
+
+- Date: 2026-08-13
+- Old owner: `GameManager` (lobby widget references, sanitization, sender and
+  global rate limits, history/render tracking, focus flow, race-overlay
+  lifecycle, input handling, voice polling, and reliable chat RPCs).
+- New owner: the scene-owned `CommunicationController` node implemented by
+  `mxto/ui/communication_controller.gd`, with the existing
+  `RaceCommunicationOverlay` authored as its static scene child.
+- Direct providers: `GameManager`, `NetworkManager`, `GameSim`, and
+  `ReplayController` are initialized once. The existing scene-owned
+  `ProximityVoiceChat` remains responsible for capture/playback and is accessed
+  through a typed node reference and direct `get_voice_debug_status()` call.
+- RPC paths: reliable channel 8 client submission and authority broadcast now
+  resolve on `/root/Main/CommunicationController`; there are no aliases on
+  `GameManager`.
+- Lifecycle/callers: host/join reset, lobby rendering and focus, race input,
+  transition close, per-frame overlay update, and chibi input blocking all call
+  the new owner directly.
+- Source result: `mxto/main.gd` fell from 4,369 to 4,112 lines; the communication
+  controller is 252 lines.
+- Static checks: no chat implementation, race communication overlay field, or
+  dynamic voice-node lookup remains in `main.gd`; `git diff --check` passed.
+- Verification: `scons target=template_release -j4` passed; Godot 4.7.1 opened
+  the project and exited 0 without native load, script parse/load, scene, or
+  startup errors. The known empty-texture and forced render-thread shutdown
+  diagnostics remain.
+- Deferred to Milestone 11: text-chat history and voice-adjacent smoke tests.
+- Commit: pending.

@@ -3,6 +3,7 @@ class_name GameManager extends Node
 signal workshop_content_changed(items: Array)
 
 const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
+const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -10,6 +11,7 @@ const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 @onready var race_audio_controller: RaceAudioController = $RaceAudioController
 @onready var track_content_controller: TrackContentController = $TrackContentController
 @onready var lobby_chibi_controller: LobbyChibiControllerClass = $LobbyChibiController
+@onready var communication_controller: CommunicationControllerClass = $CommunicationController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
 @onready var connect_host_box: HBoxContainer = $Control/ConnectHostBox
 @onready var start_button: Button = $Control/ConnectHostBox/StartButton
@@ -53,9 +55,6 @@ const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 @onready var lobby_stage_button_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer
 @onready var lobby_stage_preview_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer
 @onready var lobby_player_list_container: VBoxContainer = $Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer
-@onready var lobby_chat_box: RichTextLabel = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/LobbyChatBox
-@onready var lobby_say_text: LineEdit = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySayText
-@onready var lobby_send_text_button: Button = $Lobby/LobbyStatic/LobbyContainer/BottomBox/ChatPanel/ChatMargin/ChatBox/ChatInputBox/LobbySendTextButton
 @onready var race_pause_root: Control = $RacePauseLayer/RacePauseRoot
 @onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
 @onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
@@ -86,7 +85,6 @@ const COMMUNITY_VEHICLE_CROSS_HATCH: Texture2D = preload("res://asset/tex/crossh
 const FinishMedalScene: PackedScene = preload("res://ui/finish_medal.tscn")
 const KoMedalScene: PackedScene = preload("res://ui/ko_medal.tscn")
 const RaceResultsOverlayScene: PackedScene = preload("res://ui/race_results_overlay.tscn")
-const RaceCommunicationOverlayScene: PackedScene = preload("res://ui/race_communication_overlay.tscn")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
@@ -167,18 +165,6 @@ var auto_disable_hud_process_only_mode: bool = false
 var auto_disable_minimap_mode: bool = false
 var auto_quit_after_frames: int = -1
 var car_render_manager: CarRenderManager
-const MAX_LOBBY_CHAT_HISTORY := 128
-const CHAT_MAX_MESSAGE_CHARACTERS := 220
-const CHAT_RATE_WINDOW_MSEC := 5000
-const CHAT_RATE_MAX_MESSAGES := 8
-const CHAT_RATE_STATE_PRUNE_THRESHOLD := 128
-const CHAT_GLOBAL_BURST_MESSAGES := 48.0
-const CHAT_GLOBAL_REFILL_PER_SECOND := 8.0
-var lobby_chat_history: Array[Dictionary] = []
-var text_chat_rate_state := {}
-var text_chat_global_tokens := CHAT_GLOBAL_BURST_MESSAGES
-var text_chat_global_refill_msec := 0
-var lobby_chat_rendered_history_size := 0
 var memory_telemetry: SessionMemoryTelemetry
 var singleplayer_options_root: Control
 var singleplayer_options_restore_toggle: CheckBox
@@ -211,7 +197,6 @@ var active_stickers := {}
 var race_notification_hide_msec := 0
 var race_medals: Array[Control] = []
 var race_results_overlay: RaceResultsOverlay
-var race_communication_overlay: RaceCommunicationOverlay
 var race_results_next_accel_setting: float = -1.0
 var race_results_hid_race_hud := false
 var race_results_saved_race_hud_visible := false
@@ -326,10 +311,8 @@ func _ready() -> void:
 	race_results_overlay = RaceResultsOverlayScene.instantiate() as RaceResultsOverlay
 	add_child(race_results_overlay)
 	race_results_overlay.machine_setting_changed.connect(_on_race_results_machine_setting_changed)
-	race_communication_overlay = RaceCommunicationOverlayScene.instantiate() as RaceCommunicationOverlay
-	add_child(race_communication_overlay)
-	race_communication_overlay.message_submitted.connect(_submit_text_chat_message)
-	lobby_chibi_controller.initialize(self, network_manager, game_sim, lobby_say_text)
+	communication_controller.initialize(self, network_manager, game_sim, replay_controller)
+	lobby_chibi_controller.initialize(self, network_manager, game_sim, communication_controller.lobby_input)
 	randomize()
 	_build_lobby_options_controls()
 	_build_multiplayer_connect_box()
@@ -859,7 +842,7 @@ func _on_start_button_pressed() -> void:
 	var err := network_manager.host(_multiplayer_lobby_port())
 	if err != OK:
 		return
-	_reset_text_chat_history()
+	communication_controller.reset()
 	if launch_cpu_driver_count >= 0:
 		network_manager.set_cpu_driver_count(launch_cpu_driver_count)
 	network_manager.send_player_settings(car_settings.get_player_settings().to_dict())
@@ -1018,7 +1001,7 @@ func _join_multiplayer_lobby(address: String, port: int) -> void:
 	var err := network_manager.join(address, port)
 	if err != OK:
 		return
-	_reset_text_chat_history()
+	communication_controller.reset()
 	network_manager.multiplayer.connected_to_server.connect(
 		_send_connected_player_settings.bind(settings_dict),
 		Object.CONNECT_ONE_SHOT)
@@ -1318,14 +1301,6 @@ func _build_lobby_options_controls() -> void:
 		lobby_bumpers_toggle.toggled.connect(_on_lobby_bumpers_toggled)
 	if lobby_s_boost_toggle != null and !lobby_s_boost_toggle.toggled.is_connected(_on_lobby_s_boost_toggled):
 		lobby_s_boost_toggle.toggled.connect(_on_lobby_s_boost_toggled)
-	if !lobby_say_text.text_submitted.is_connected(_on_lobby_chat_text_submitted):
-		lobby_say_text.text_submitted.connect(_on_lobby_chat_text_submitted)
-	lobby_say_text.keep_editing_on_text_submit = true
-	if !lobby_send_text_button.pressed.is_connected(_on_lobby_chat_send_pressed):
-		lobby_send_text_button.pressed.connect(_on_lobby_chat_send_pressed)
-	lobby_send_text_button.focus_mode = Control.FOCUS_NONE
-	if !lobby_control.visibility_changed.is_connected(_on_lobby_visibility_changed):
-		lobby_control.visibility_changed.connect(_on_lobby_visibility_changed)
 	_populate_lobby_stage_buttons()
 	_refresh_lobby_stage_preview()
 
@@ -1499,184 +1474,6 @@ func _refresh_lobby_stage_preview() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.pressed.connect(_on_lobby_stage_preview_pressed.bind(i))
 		lobby_stage_preview_container.add_child(label)
-
-func _on_lobby_visibility_changed() -> void:
-	if lobby_control.visible:
-		_refresh_lobby_chat_box()
-
-func _on_lobby_chat_send_pressed() -> void:
-	if lobby_say_text == null:
-		return
-	_submit_text_chat_message(lobby_say_text.text)
-	lobby_say_text.clear()
-	_refocus_lobby_chat_deferred()
-
-func _on_lobby_chat_text_submitted(text: String) -> void:
-	_submit_text_chat_message(text)
-	if lobby_say_text != null:
-		lobby_say_text.clear()
-		_refocus_lobby_chat_deferred()
-
-func _refocus_lobby_chat_deferred() -> void:
-	call_deferred("_refocus_lobby_chat")
-
-func _refocus_lobby_chat() -> void:
-	if lobby_say_text == null or !lobby_control.visible:
-		return
-	lobby_say_text.grab_focus()
-	lobby_say_text.caret_column = lobby_say_text.text.length()
-
-func _submit_text_chat_message(text: String) -> void:
-	var clean := _sanitize_chat_message(text)
-	if clean == "":
-		return
-	if !network_manager.has_network_peer():
-		_append_text_chat_message(_local_player_id(), clean)
-	elif network_manager.is_server:
-		_server_publish_chat_message(_local_player_id(), clean)
-	else:
-		_send_text_chat_message_to_server.rpc_id(1, clean)
-
-@rpc("any_peer", "call_remote", "reliable", 8)
-func _send_text_chat_message_to_server(text: String) -> void:
-	if !network_manager.is_server:
-		return
-	var sender := multiplayer.get_remote_sender_id()
-	var clean := _sanitize_chat_message(text)
-	if clean == "":
-		return
-	_server_publish_chat_message(sender, clean)
-
-@rpc("authority", "call_local", "reliable", 8)
-func _broadcast_text_chat_message(sender_id: int, text: String) -> void:
-	var clean := _sanitize_chat_message(text)
-	if clean == "":
-		return
-	_append_text_chat_message(sender_id, clean)
-
-func _server_publish_chat_message(sender_id: int, text: String) -> void:
-	if !network_manager.is_server or !_server_chat_sender_is_valid(sender_id):
-		return
-	if !_server_chat_rate_limit_allows(sender_id):
-		return
-	_broadcast_text_chat_message.rpc(sender_id, text)
-
-func _server_chat_sender_is_valid(sender_id: int) -> bool:
-	if sender_id <= 0:
-		return false
-	if sender_id == _local_player_id():
-		return true
-	return (
-		network_manager.player_ids.has(sender_id)
-		or network_manager.spectator_ids.has(sender_id)
-		or network_manager.waiting_peers.has(sender_id)
-	)
-
-func _server_chat_rate_limit_allows(sender_id: int) -> bool:
-	var now_msec := Time.get_ticks_msec()
-	if text_chat_rate_state.size() >= CHAT_RATE_STATE_PRUNE_THRESHOLD:
-		_prune_stale_chat_rate_state(now_msec)
-	var state: Dictionary = text_chat_rate_state.get(sender_id, {})
-	var window_start_msec := int(state.get("window_start_msec", now_msec))
-	var message_count := int(state.get("message_count", 0))
-	if now_msec - window_start_msec >= CHAT_RATE_WINDOW_MSEC:
-		window_start_msec = now_msec
-		message_count = 0
-	if message_count >= CHAT_RATE_MAX_MESSAGES:
-		return false
-	_refill_global_chat_tokens(now_msec)
-	if text_chat_global_tokens < 1.0:
-		return false
-	text_chat_global_tokens -= 1.0
-	text_chat_rate_state[sender_id] = {
-		"window_start_msec": window_start_msec,
-		"message_count": message_count + 1,
-	}
-	return true
-
-func _refill_global_chat_tokens(now_msec: int) -> void:
-	if text_chat_global_refill_msec <= 0:
-		text_chat_global_refill_msec = now_msec
-		return
-	var elapsed_msec := now_msec - text_chat_global_refill_msec
-	if elapsed_msec <= 0:
-		return
-	text_chat_global_tokens = minf(
-		CHAT_GLOBAL_BURST_MESSAGES,
-		text_chat_global_tokens + float(elapsed_msec) * 0.001 * CHAT_GLOBAL_REFILL_PER_SECOND)
-	text_chat_global_refill_msec = now_msec
-
-func _prune_stale_chat_rate_state(now_msec: int) -> void:
-	for sender_id in text_chat_rate_state.keys():
-		var state: Dictionary = text_chat_rate_state[sender_id]
-		if now_msec - int(state.get("window_start_msec", 0)) >= CHAT_RATE_WINDOW_MSEC * 2:
-			text_chat_rate_state.erase(sender_id)
-
-func _sanitize_chat_message(text: String) -> String:
-	var clean := text.replace("\r", " ").replace("\n", " ").replace("\t", " ").strip_edges()
-	if clean.length() > CHAT_MAX_MESSAGE_CHARACTERS:
-		clean = clean.substr(0, CHAT_MAX_MESSAGE_CHARACTERS)
-	return clean
-
-func _append_text_chat_message(sender_id: int, text: String) -> void:
-	var name := _player_display_name(sender_id)
-	var removed_oldest := lobby_chat_history.size() >= MAX_LOBBY_CHAT_HISTORY
-	if lobby_chat_history.size() >= MAX_LOBBY_CHAT_HISTORY:
-		lobby_chat_history.remove_at(0)
-	var message := {
-		"id": sender_id,
-		"name": name,
-		"text": text,
-	}
-	lobby_chat_history.append(message)
-	if race_communication_overlay != null and _race_chat_overlay_accepts_messages():
-		race_communication_overlay.append_message(sender_id, name, text)
-	if lobby_control.visible:
-		_append_lobby_chat_box_message(message, removed_oldest)
-
-func _refresh_lobby_chat_box() -> void:
-	if lobby_chat_box == null or !lobby_control.visible:
-		return
-	lobby_chat_box.clear()
-	lobby_chat_box.push_color(Color(0.33, 0.33, 0.33, 1.0))
-	lobby_chat_box.add_text("Never tell your password to anyone.")
-	lobby_chat_box.pop()
-	for message in lobby_chat_history:
-		_append_lobby_chat_box_line(message)
-	lobby_chat_rendered_history_size = lobby_chat_history.size()
-
-func _append_lobby_chat_box_message(message: Dictionary, removed_oldest: bool) -> void:
-	var expected_previous_size := lobby_chat_history.size() if removed_oldest else lobby_chat_history.size() - 1
-	if lobby_chat_rendered_history_size != expected_previous_size:
-		_refresh_lobby_chat_box()
-		return
-	if removed_oldest:
-		lobby_chat_box.remove_paragraph(1, true)
-	_append_lobby_chat_box_line(message)
-	lobby_chat_rendered_history_size = lobby_chat_history.size()
-
-func _append_lobby_chat_box_line(message: Dictionary) -> void:
-	var sender_id := int(message.get("id", -1))
-	var color := Color(1.0, 1.0, 0.4, 1.0) if sender_id == _local_player_id() else Color(0.78, 0.84, 1.0, 1.0)
-	lobby_chat_box.add_text("\n")
-	lobby_chat_box.push_color(color)
-	lobby_chat_box.add_text(str(message.get("name", str(sender_id))))
-	lobby_chat_box.pop()
-	lobby_chat_box.add_text(": " + str(message.get("text", "")))
-
-func _reset_text_chat_history() -> void:
-	lobby_chat_history.clear()
-	text_chat_rate_state.clear()
-	text_chat_global_tokens = CHAT_GLOBAL_BURST_MESSAGES
-	text_chat_global_refill_msec = 0
-	lobby_chat_rendered_history_size = 0
-	if lobby_chat_box != null and lobby_control.visible:
-		_refresh_lobby_chat_box()
-	if race_communication_overlay != null:
-		race_communication_overlay.clear_messages()
-
-func _race_chat_overlay_accepts_messages() -> bool:
-	return game_sim != null and game_sim.sim_started and !lobby_control.visible
 
 func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dictionary:
 	var initialized := options.duplicate(true)
@@ -2855,8 +2652,7 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 	live_spectate_strafe_dir = 0
 	if start_sync_drop_root != null:
 		start_sync_drop_root.visible = false
-	if race_communication_overlay != null:
-		race_communication_overlay.close_chat()
+	communication_controller.close_race_chat()
 	_close_settings_menus_for_race_start()
 	if !_start_race(track_index, settings):
 		network_manager.report_race_admission(network_manager.RACE_ADMISSION_FAILED, "race initialization failed")
@@ -2933,7 +2729,7 @@ func _on_lobby_kick_player_pressed(player_id: int) -> void:
 func _window_accepts_input() -> bool:
 	if race_pause_open:
 		return false
-	if race_communication_overlay != null and race_communication_overlay.is_chat_open():
+	if communication_controller.is_race_chat_open():
 		return false
 	var window := get_window()
 	return window == null or window.has_focus()
@@ -3626,7 +3422,7 @@ func _simulate_single_tick():
 			return
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _handle_race_chat_unhandled_input(event):
+	if communication_controller.handle_unhandled_input(event):
 		return
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F3:
 		var profile := game_sim.get_phase_profile_string()
@@ -3663,38 +3459,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_open_race_pause_menu()
 		get_viewport().set_input_as_handled()
 
-func _handle_race_chat_unhandled_input(event: InputEvent) -> bool:
-	if race_communication_overlay == null or !(event is InputEventKey):
-		return false
-	var key := event as InputEventKey
-	if !key.pressed or key.echo:
-		return false
-	var is_enter := key.keycode == KEY_ENTER or key.keycode == KEY_KP_ENTER
-	var is_escape := key.keycode == KEY_ESCAPE
-	if race_communication_overlay.is_chat_open():
-		if is_enter or is_escape:
-			get_viewport().set_input_as_handled()
-			return true
-		return false
-	if !is_enter:
-		return false
-	if !game_sim.sim_started or lobby_control.visible or race_pause_open:
-		return false
-	if car_settings != null and car_settings.visible:
-		return false
-	if options_menu != null and options_menu.visible:
-		return false
-	var window := get_window()
-	if window != null and !window.has_focus():
-		return false
-	race_communication_overlay.open_chat()
-	get_viewport().set_input_as_handled()
-	return true
-
 func _return_to_menu() -> void:
 	record_memory_sample("return_to_menu_begin")
-	if race_communication_overlay != null:
-		race_communication_overlay.close_chat()
+	communication_controller.close_race_chat()
 	race_audio_controller.leave_race(0.5)
 	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -3743,8 +3510,7 @@ func _return_to_menu() -> void:
 
 func _return_to_lobby() -> void:
 	record_memory_sample("return_to_lobby_begin")
-	if race_communication_overlay != null:
-		race_communication_overlay.close_chat()
+	communication_controller.close_race_chat()
 	race_audio_controller.leave_race(0.5)
 	replay_controller.reset_for_transition(network_manager.is_server and !singleplayer_mode)
 	_close_race_pause_menu()
@@ -4304,7 +4070,7 @@ func _process(delta: float) -> void:
 		render_profile_last_pipeline_surface = profile_pipeline_surface
 		render_profile_last_pipeline_mesh = profile_pipeline_mesh
 	race_audio_controller.update(delta)
-	_update_race_communication_overlay()
+	communication_controller.update_race_overlay()
 	_update_start_sync_drop_panel()
 	var now_msec := Time.get_ticks_msec()
 	for id in active_stickers.keys():
@@ -4344,26 +4110,3 @@ func _update_lobby_debug_label_visibility() -> void:
 		rtt_label.visible = !in_lobby and !auto_disable_hud_mode
 	if version_label != null:
 		version_label.visible = !in_lobby
-
-func _update_race_communication_overlay() -> void:
-	if race_communication_overlay == null:
-		return
-	if !game_sim.sim_started or replay_controller.replay_playback_active or !network_manager.has_network_peer():
-		race_communication_overlay.set_voice_status({"race_active": false}, {})
-		return
-	var voice_node := network_manager.get_node_or_null("ProximityVoiceChat")
-	if voice_node == null or !voice_node.has_method("get_voice_debug_status"):
-		race_communication_overlay.set_voice_status({"race_active": false}, {})
-		return
-	var status: Dictionary = voice_node.call("get_voice_debug_status")
-	var player_names := {}
-	var local_id := int(status.get("local_id", _local_player_id()))
-	player_names[local_id] = _player_display_name(local_id)
-	var remote_peers: Array = status.get("remote_voice_peers", [])
-	for peer_data in remote_peers:
-		if typeof(peer_data) != TYPE_DICTIONARY:
-			continue
-		var peer_id := int(peer_data.get("id", -1))
-		if peer_id >= 0:
-			player_names[peer_id] = _player_display_name(peer_id)
-	race_communication_overlay.set_voice_status(status, player_names)

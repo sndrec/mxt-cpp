@@ -1,5 +1,7 @@
 extends SceneTree
 
+const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
+
 func _fail(message: String) -> void:
 	push_error("MXT_TEXT_CHAT_HISTORY_SMOKE_FAIL " + message)
 	quit(1)
@@ -21,33 +23,37 @@ func _run() -> void:
 		return
 	var game_manager := packed.instantiate() as GameManager
 	root.add_child(game_manager)
+	var controller: CommunicationControllerClass = game_manager.communication_controller
+	if game_manager.has_method("_append_text_chat_message") or game_manager.has_method("_send_text_chat_message_to_server"):
+		_fail("GameManager should not retain text chat implementation")
+		return
 
 	game_manager.lobby_control.visible = false
 	for i in range(512):
-		game_manager._append_text_chat_message(1, "hidden message %d" % i)
-	if game_manager.lobby_chat_history.size() != game_manager.MAX_LOBBY_CHAT_HISTORY:
+		controller.append_message(1, "hidden message %d" % i)
+	if controller.lobby_history.size() != controller.MAX_LOBBY_HISTORY:
 		_fail("hidden lobby history was not bounded")
 		return
 	game_manager.lobby_control.visible = true
-	var lobby_text := game_manager.lobby_chat_box.get_parsed_text()
+	var lobby_text := controller.lobby_box.get_parsed_text()
 	if !lobby_text.contains("hidden message 511") or lobby_text.contains("hidden message 0\n"):
 		_fail("hidden lobby history did not rebuild to the retained window")
 		return
 
 	for i in range(512, 1024):
-		game_manager._append_text_chat_message(1, "visible message %d" % i)
-	if game_manager.lobby_chat_history.size() != game_manager.MAX_LOBBY_CHAT_HISTORY:
+		controller.append_message(1, "visible message %d" % i)
+	if controller.lobby_history.size() != controller.MAX_LOBBY_HISTORY:
 		_fail("visible lobby history was not bounded")
 		return
-	if game_manager.lobby_chat_rendered_history_size != game_manager.MAX_LOBBY_CHAT_HISTORY:
+	if controller.lobby_rendered_history_size != controller.MAX_LOBBY_HISTORY:
 		_fail("visible lobby document fell out of sync")
 		return
-	lobby_text = game_manager.lobby_chat_box.get_parsed_text()
+	lobby_text = controller.lobby_box.get_parsed_text()
 	if !lobby_text.contains("visible message 1023") or lobby_text.contains("visible message 512\n"):
 		_fail("visible lobby document retained evicted messages")
 		return
 
-	var overlay := game_manager.race_communication_overlay
+	var overlay := controller.race_overlay
 	overlay.clear_messages()
 	for i in range(overlay.MAX_CHAT_HISTORY):
 		overlay.append_message(1, "Smoke", "race message %d" % i)
@@ -91,32 +97,39 @@ func _run() -> void:
 		_fail("race chat re-enabled per-frame processing")
 		return
 
-	var sanitized := game_manager._sanitize_chat_message("  first\nsecond\tthird  ")
+	var sanitized := controller.sanitize_message("  first\nsecond\tthird  ")
 	if sanitized != "first second third":
 		_fail("chat sanitizer did not collapse line controls")
 		return
-	game_manager.text_chat_rate_state.clear()
-	game_manager.text_chat_global_tokens = game_manager.CHAT_GLOBAL_BURST_MESSAGES
-	game_manager.text_chat_global_refill_msec = 0
-	for i in range(game_manager.CHAT_RATE_MAX_MESSAGES):
-		if !game_manager._server_chat_rate_limit_allows(1):
+	controller.rate_state.clear()
+	controller.global_tokens = controller.GLOBAL_BURST_MESSAGES
+	controller.global_refill_msec = 0
+	for i in range(controller.RATE_MAX_MESSAGES):
+		if !controller.rate_limit_allows(1):
 			_fail("rate limiter rejected an allowed burst")
 			return
-	if game_manager._server_chat_rate_limit_allows(1):
+	if controller.rate_limit_allows(1):
 		_fail("rate limiter accepted a message beyond the burst cap")
 		return
-	game_manager.text_chat_rate_state.clear()
-	game_manager.text_chat_global_tokens = game_manager.CHAT_GLOBAL_BURST_MESSAGES
-	game_manager.text_chat_global_refill_msec = Time.get_ticks_msec() + 1_000_000
-	for sender_id in range(100, 100 + int(game_manager.CHAT_GLOBAL_BURST_MESSAGES)):
-		if !game_manager._server_chat_rate_limit_allows(sender_id):
+	controller.rate_state.clear()
+	controller.global_tokens = controller.GLOBAL_BURST_MESSAGES
+	controller.global_refill_msec = Time.get_ticks_msec() + 1_000_000
+	for sender_id in range(100, 100 + int(controller.GLOBAL_BURST_MESSAGES)):
+		if !controller.rate_limit_allows(sender_id):
 			_fail("global rate limiter rejected its allowed burst")
 			return
-	if game_manager._server_chat_rate_limit_allows(999):
+	if controller.rate_limit_allows(999):
 		_fail("global rate limiter accepted a message beyond its token budget")
 		return
 
-	print("MXT_TEXT_CHAT_HISTORY_SMOKE_PASS lobby_history=", game_manager.lobby_chat_history.size(),
+	var rpc_config := controller.get_rpc_config()
+	for method_name in ["_send_to_server", "_broadcast_message"]:
+		var config: Dictionary = rpc_config.get(method_name, {})
+		if int(config.get("channel", -1)) != 8 or int(config.get("transfer_mode", -1)) != MultiplayerPeer.TRANSFER_MODE_RELIABLE:
+			_fail("chat RPC channel or reliability changed for %s" % method_name)
+			return
+
+	print("MXT_TEXT_CHAT_HISTORY_SMOKE_PASS lobby_history=", controller.lobby_history.size(),
 		" race_history=", overlay._messages.size(), " pooled_labels=", pooled_label_ids.size())
 	game_manager.queue_free()
 	await process_frame
