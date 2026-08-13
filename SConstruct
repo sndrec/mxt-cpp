@@ -81,29 +81,41 @@ def opus_sources_from_mk(path, var_name):
                 break
     return out
 
-sources = []
-sources.append([
+def shared_objects(build_env, source_nodes):
+    objects = []
+    for source in source_nodes:
+        source_path = str(source).replace("\\", "/")
+        target_stem = os.path.splitext(source_path)[0]
+        target = os.path.join("tmp", "build", "objects", target_stem)
+        objects += build_env.SharedObject(target=target, source=source)
+    return objects
+
+
+first_party_sources = [
     "src/register_types.cpp",
-])
-sources.append(Glob("src/camera/*.cpp"))
-sources.append(Glob("src/gamesim/*.cpp"))
-sources.append(Glob("src/core/*.cpp"))
-sources.append(Glob("src/netcode/*.cpp"))
-sources.append(Glob("src/audio/*.cpp"))
-sources.append(Glob("src/render/*.cpp"))
-sources.append(Glob("src/content/*.cpp"))
-sources.append(Glob("src/track/*.cpp"))
-sources.append(Glob("src/car/*.cpp"))
+]
+first_party_sources += Glob("src/camera/*.cpp")
+first_party_sources += Glob("src/gamesim/*.cpp")
+first_party_sources += Glob("src/core/*.cpp")
+first_party_sources += Glob("src/netcode/*.cpp")
+first_party_sources += Glob("src/audio/*.cpp")
+first_party_sources += Glob("src/render/*.cpp")
+first_party_sources += Glob("src/content/*.cpp")
+first_party_sources += Glob("src/track/*.cpp")
+first_party_sources += Glob("src/car/*.cpp")
+sources = shared_objects(env, first_party_sources)
 steam_service_env = env.Clone()
 if steamworks_enabled:
     steam_service_env.Append(CPPPATH=[steamworks_public_dir])
     steam_service_env.Append(CPPDEFINES=["MXT_STEAMWORKS_ENABLED"])
     if env["platform"] == "windows":
         steam_service_env.Append(CXXFLAGS=["/wd4828"])
-sources += steam_service_env.SharedObject("src/platform/steam/steam_service.cpp")
-sources.append(Glob("thirdparty/zstd/lib/common/*.c"))
-sources.append(Glob("thirdparty/zstd/lib/compress/*.c"))
-sources.append(Glob("thirdparty/zstd/lib/decompress/*.c"))
+sources += shared_objects(steam_service_env, ["src/platform/steam/steam_service.cpp"])
+zstd_sources = []
+zstd_sources += Glob("thirdparty/zstd/lib/common/*.c")
+zstd_sources += Glob("thirdparty/zstd/lib/compress/*.c")
+zstd_sources += Glob("thirdparty/zstd/lib/decompress/*.c")
+sources += shared_objects(env, zstd_sources)
 opus_sources = []
 opus_sources += opus_sources_from_mk("thirdparty/opus/celt_sources.mk", "CELT_SOURCES")
 opus_sources += opus_sources_from_mk("thirdparty/opus/silk_sources.mk", "SILK_SOURCES")
@@ -117,7 +129,7 @@ opus_env.Prepend(CPPPATH=["thirdparty/opus/celt"])
 opus_env.Prepend(CPPPATH=["thirdparty/opus/silk"])
 opus_env.Prepend(CPPPATH=["thirdparty/opus/silk/float"])
 opus_env.Append(CPPDEFINES=["OPUS_BUILD", "USE_ALLOCA", "HAVE_LRINT", "HAVE_LRINTF"])
-sources += opus_env.SharedObject(opus_sources)
+sources += shared_objects(opus_env, opus_sources)
 
 env['PDB'] = 'symbols.pdb'
 
