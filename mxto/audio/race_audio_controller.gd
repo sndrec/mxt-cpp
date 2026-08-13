@@ -335,7 +335,7 @@ func after_simulation_tick() -> void:
 	if spatial_audio == null or game_manager.replay_controller.replay_playback_active or game_manager.game_sim == null or !game_manager.game_sim.sim_started:
 		return
 	var player_id := _race_audio_focus_player_id()
-	var current_tick := game_manager.network_manager.get_race_tick()
+	var current_tick := game_manager.network_manager.input_transport.get_race_tick()
 	if current_tick < 0:
 		return
 	var previous_tick := race_audio_last_tick

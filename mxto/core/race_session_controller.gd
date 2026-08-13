@@ -188,18 +188,18 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	level_buffer.data_array = FileAccess.get_file_as_bytes(track_info["mxt"])
 	_configure_game_sim(game_sim, level_buffer, car_properties, acceleration_settings, racer_ids, racer_cpu_flags, start_grid_slots, bumpers_enabled, bumper_definition, singleplayer_mode)
 	race_audio_controller.configure_vehicle_properties(chosen_definitions)
-	network_manager.netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
+	network_manager.input_transport.netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
 	replay_controller.start_recording(track_index, settings, racer_ids, racer_cpu_flags, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
 	race_presentation_controller.configure_race(local_player_id, local_player_index, singleplayer_mode, nametag_names)
 	if network_manager.is_server:
 		_configure_game_sim(server_game_sim, level_buffer, car_properties, acceleration_settings, racer_ids, racer_cpu_flags, start_grid_slots, bumpers_enabled, bumper_definition, singleplayer_mode)
-		network_manager.server_netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
+		network_manager.input_transport.server_netcode_session.configure(racer_ids, racer_cpu_flags, local_player_id)
 	network_manager.game_sim = game_sim
 	if network_manager.is_server:
 		network_manager.server_game_sim = server_game_sim
-	network_manager.refresh_race_admission_context()
+	network_manager.refresh_protocol_contexts()
 	if !headless_mode:
 		track_content_controller.load_runtime_visuals()
 		_clear_triggers()
@@ -227,7 +227,7 @@ func destroy_world(disconnect_network: bool, clear_client_sim_reference: bool) -
 	if clear_client_sim_reference:
 		network_manager.game_sim = null
 	network_manager.server_game_sim = null
-	network_manager.refresh_race_admission_context()
+	network_manager.refresh_protocol_contexts()
 	track_content_controller.teardown_runtime()
 	for child in car_node_container.get_children():
 		if child != null:

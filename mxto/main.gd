@@ -1054,8 +1054,8 @@ func _physics_process(delta: float) -> void:
 			return
 		if network_manager.has_network_peer():
 			var pi := _generate_random_input()
-			network_manager.set_local_input(pi.serialize())
-			network_manager.collect_client_inputs()
+			network_manager.input_transport.set_local_input(pi.serialize())
+			network_manager.input_transport.collect_client_inputs()
 		return
 	DebugDraw3D.scoped_config().set_no_depth_test(true)
 	if lobby_control.visible:
@@ -1090,7 +1090,7 @@ func _physics_process(delta: float) -> void:
 				get_tree().quit()
 				return
 		else:
-			network_manager.set_local_input(input_bytes)
+			network_manager.input_transport.set_local_input(input_bytes)
 			if network_manager.is_server:
 				_simulate_host_frame(input_bytes)
 			else:
@@ -1132,7 +1132,7 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	var start_time := Time.get_ticks_usec()
 	if replay_controller.replay_playback_active:
 		replay_controller.simulate_playback()
-		network_manager.rollback_frametime_us = Time.get_ticks_usec() - start_time
+		network_manager.input_transport.rollback_frametime_us = Time.get_ticks_usec() - start_time
 		return
 	input_bytes = replay_controller.consume_debug_playback_input(input_bytes)
 	if !game_sim.sim_started:
@@ -1159,8 +1159,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	if debug_runtime_controller.bumper_smoke_enabled and _singleplayer_tick % 120 == 0 and game_sim.has_method("get_bumper_debug_string"):
 		print("MXT_BUMPER_SMOKE tick=", _singleplayer_tick, " ", game_sim.get_bumper_debug_string())
 	# Update HUD timing using the same field clients use
-	network_manager.clients_server_tick = _singleplayer_tick
-	network_manager.rollback_frametime_us = Time.get_ticks_usec() - start_time
+	network_manager.input_transport.clients_server_tick = _singleplayer_tick
+	network_manager.input_transport.rollback_frametime_us = Time.get_ticks_usec() - start_time
 
 func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
 	if !network_manager.dump_auth_input_samples:
@@ -1173,15 +1173,15 @@ func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void
 	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
 	var local_id := _local_player_id()
 	for id in roster:
-		var input_bytes := network_manager.NEUTRAL_INPUT_BYTES
+		var input_bytes := network_manager.input_transport.NEUTRAL_INPUT_BYTES
 		if cpu_ids.has(id) or network_manager.race_results.player_dnfs.has(int(id)) or network_manager._disconnected_during_race.has(int(id)):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(int(id), _singleplayer_tick)
 		elif int(id) == local_id:
 			input_bytes = local_input_bytes
-		network_manager.netcode_session.store_authoritative_input(_singleplayer_tick, int(id), input_bytes)
-	network_manager.netcode_session.build_authoritative_input_packet(
+		network_manager.input_transport.netcode_session.store_authoritative_input(_singleplayer_tick, int(id), input_bytes)
+	network_manager.input_transport.netcode_session.build_authoritative_input_packet(
 		_singleplayer_tick,
-		network_manager.AUTH_INPUT_REDUNDANCY_FRAMES
+		network_manager.input_transport.AUTH_INPUT_REDUNDANCY_FRAMES
 	)
 
 func _dump_offline_state_sample() -> void:
@@ -1189,7 +1189,7 @@ func _dump_offline_state_sample() -> void:
 		return
 	if game_sim == null:
 		return
-	if _singleplayer_tick % network_manager.STATE_BROADCAST_INTERVAL_TICKS != 0:
+	if _singleplayer_tick % network_manager.state_transfer.BROADCAST_INTERVAL_TICKS != 0:
 		return
 	var state := game_sim.get_state_data(_singleplayer_tick)
 	network_manager.dump_state_sample(
@@ -1202,29 +1202,29 @@ func _simulate_host_frame(local_input_bytes: PackedByteArray):
 	var loops := 0
 	const MAX_TICKS_PER_FRAME := 120
 	while loops < MAX_TICKS_PER_FRAME:
-		network_manager.set_local_input(local_input_bytes)
-		var server_inputs := network_manager.collect_server_inputs()
+		network_manager.input_transport.set_local_input(local_input_bytes)
+		var server_inputs := network_manager.input_transport.collect_server_inputs()
 		if server_inputs.is_empty():
 			break
-		network_manager.post_tick()
+		network_manager.input_transport.post_tick()
 		loops += 1
-	network_manager.collect_client_inputs()
+	network_manager.input_transport.collect_client_inputs()
 
 func _simulate_single_tick():
 	var loops := 0
 	const MAX_TICKS_PER_FRAME := 120
 	while loops < MAX_TICKS_PER_FRAME:
-		var frame_inputs := network_manager.collect_client_inputs()
+		var frame_inputs := network_manager.input_transport.collect_client_inputs()
 		if frame_inputs.is_empty():
 			return
 		if network_manager.is_server:
-			var server_inputs := network_manager.collect_server_inputs()
+			var server_inputs := network_manager.input_transport.collect_server_inputs()
 			if !server_inputs.is_empty():
-				network_manager.post_tick()
+				network_manager.input_transport.post_tick()
 		else:
-			network_manager.post_tick()
+			network_manager.input_transport.post_tick()
 		loops += 1
-		if network_manager.is_server or network_manager.local_tick >= network_manager.clients_target_tick:
+		if network_manager.is_server or network_manager.input_transport.local_tick >= network_manager.input_transport.clients_target_tick:
 			return
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1508,11 +1508,11 @@ func _finish_or_advance_grand_prix(finish_sim: GameSim) -> void:
 
 func _race_control_has_started(sim: GameSim) -> bool:
 	if sim == null:
-		return network_manager.get_race_tick() >= 300
-	return network_manager.get_race_tick() >= sim.get_race_control_start_tick()
+		return network_manager.input_transport.get_race_tick() >= 300
+	return network_manager.input_transport.get_race_tick() >= sim.get_race_control_start_tick()
 
 func _mark_racer_dnf(racer_id: int, reason: String) -> void:
-	var tick := network_manager.get_race_tick()
+	var tick := network_manager.input_transport.get_race_tick()
 	if network_manager.is_server and !singleplayer_mode:
 		network_manager.race_results.send_player_dnf(racer_id, tick, reason)
 	else:
@@ -1557,14 +1557,14 @@ func _update_force_end_dnf(human_racer_ids: Array) -> void:
 		return
 	var finished_count := _human_finish_count(human_racer_ids)
 	if network_manager.race_results.race_force_end_deadline_tick < 0 and finished_count * 4 >= human_count:
-		var deadline_tick := network_manager.get_race_tick() + FORCE_END_WINDOW_TICKS
+		var deadline_tick := network_manager.input_transport.get_race_tick() + FORCE_END_WINDOW_TICKS
 		if network_manager.is_server and !singleplayer_mode:
 			network_manager.race_results.send_race_force_end_deadline(deadline_tick)
 		else:
 			network_manager.race_results.race_force_end_deadline_tick = deadline_tick
 	if network_manager.race_results.race_force_end_deadline_tick < 0:
 		return
-	if network_manager.get_race_tick() < network_manager.race_results.race_force_end_deadline_tick:
+	if network_manager.input_transport.get_race_tick() < network_manager.race_results.race_force_end_deadline_tick:
 		return
 	for id_value in human_racer_ids:
 		var id := int(id_value)
@@ -1599,9 +1599,9 @@ func _check_race_finished() -> void:
 			if network_manager.race_results.player_finish_times.has(racer_id) or network_manager.race_results.player_eliminations.has(racer_id):
 				continue
 			if network_manager.is_server and !singleplayer_mode:
-				network_manager.race_results.send_player_finished(racer_id, network_manager.server_tick)
+				network_manager.race_results.send_player_finished(racer_id, network_manager.input_transport.server_tick)
 			else:
-				network_manager.race_results.record_player_finished(racer_id, network_manager.clients_server_tick)
+				network_manager.race_results.record_player_finished(racer_id, network_manager.input_transport.clients_server_tick)
 		if !network_manager.is_vehicle_restore_enabled():
 			for id_value in finish_sim.get_eliminated_player_ids():
 				var racer_id := int(id_value)
@@ -1610,9 +1610,9 @@ func _check_race_finished() -> void:
 				if network_manager.race_results.player_finish_times.has(racer_id) or network_manager.race_results.player_eliminations.has(racer_id):
 					continue
 				if network_manager.is_server and !singleplayer_mode:
-					network_manager.race_results.send_player_eliminated(racer_id, network_manager.server_tick)
+					network_manager.race_results.send_player_eliminated(racer_id, network_manager.input_transport.server_tick)
 				elif singleplayer_mode:
-					network_manager.race_results.record_player_eliminated(racer_id, network_manager.clients_server_tick)
+					network_manager.race_results.record_player_eliminated(racer_id, network_manager.input_transport.clients_server_tick)
 	var all_done := true
 	for id_value in finish_watch_ids:
 		var racer_id := int(id_value)

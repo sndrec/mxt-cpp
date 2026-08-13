@@ -247,9 +247,9 @@ func _voice_debug_snapshot(event: String, sender_id: int, sequence: int) -> Dict
 		is_server = network_manager.is_server
 		listen_server = network_manager.listen_server
 		race_active = network_manager.race_active
-		server_tick = network_manager.server_tick
-		local_tick = network_manager.local_tick
-		desired_ahead = network_manager.desired_ahead_ticks
+		server_tick = network_manager.input_transport.server_tick
+		local_tick = network_manager.input_transport.local_tick
+		desired_ahead = network_manager.input_transport.desired_ahead_ticks
 		roster_size = network_manager.get_simulation_roster().size()
 	return {
 		"time_msec": Time.get_ticks_msec(),
@@ -594,7 +594,7 @@ func _client_voice_packet(sequence: int, source_tick: int, payload: PackedByteAr
 	if network_manager == null or !network_manager.is_server or !network_manager.race_active:
 		return
 	var sender_id := multiplayer.get_remote_sender_id()
-	if sender_id <= 0 or !network_manager.state_send_peer_ids.has(sender_id):
+	if sender_id <= 0 or !network_manager.state_transfer.peer_ids.has(sender_id):
 		return
 	_relay_voice_from(sender_id, sequence, source_tick, payload)
 
@@ -776,8 +776,8 @@ func _voice_recipients_for(sender_id: int) -> Array:
 	var selection: Dictionary = sim.select_saved_voice_recipients(
 		sender_id,
 		local_id,
-		maxi(network_manager.server_tick - 1, 0),
-		network_manager.state_send_peer_ids,
+		maxi(network_manager.input_transport.server_tick - 1, 0),
+		network_manager.state_transfer.peer_ids,
 		finished_recipients,
 		voice_range,
 		max_recipients)
@@ -794,7 +794,7 @@ func _voice_finished_recipients_for(sender_id: int) -> Array:
 	var recipients := []
 	if network_manager == null or !_voice_player_finished(sender_id):
 		return recipients
-	for id_value in network_manager.state_send_peer_ids:
+	for id_value in network_manager.state_transfer.peer_ids:
 		var player_id := int(id_value)
 		if player_id == sender_id or player_id < 0:
 			continue
@@ -820,7 +820,7 @@ func _voice_player_finished(player_id: int) -> bool:
 func _can_send_voice_rpc_to(peer_id: int) -> bool:
 	if network_manager == null:
 		return false
-	if !network_manager.state_send_peer_ids.has(peer_id):
+	if !network_manager.state_transfer.peer_ids.has(peer_id):
 		return false
 	if peer_id == _local_peer_id():
 		return true
@@ -832,7 +832,7 @@ func _voice_packet_reference_tick() -> int:
 	if network_manager == null:
 		return 0
 	if network_manager.is_server:
-		return maxi(network_manager.server_tick - 1, 0)
+		return maxi(network_manager.input_transport.server_tick - 1, 0)
 	return _voice_spatial_tick()
 
 func _voice_packet_is_stale(source_tick: int) -> bool:
@@ -848,7 +848,7 @@ func _update_remote_source_positions() -> void:
 	debug_voice_transform_sim_kind = "client"
 	if network_manager.listen_server:
 		sim = network_manager.server_game_sim
-		target_tick = maxi(network_manager.server_tick - 1, 0)
+		target_tick = maxi(network_manager.input_transport.server_tick - 1, 0)
 		debug_voice_transform_sim_kind = "server"
 	if sim == null or !sim.has_method("get_saved_player_voice_transforms"):
 		return
@@ -927,9 +927,9 @@ func _voice_spatial_tick() -> int:
 	if network_manager == null:
 		return 0
 	if network_manager.is_server and !network_manager.listen_server:
-		return maxi(network_manager.server_tick - 1, 0)
-	var runahead := int(round(network_manager.desired_ahead_ticks))
-	return maxi(network_manager.local_tick - runahead, 0)
+		return maxi(network_manager.input_transport.server_tick - 1, 0)
+	var runahead := int(round(network_manager.input_transport.desired_ahead_ticks))
+	return maxi(network_manager.input_transport.local_tick - runahead, 0)
 
 func get_voice_debug_status() -> Dictionary:
 	var now := Time.get_ticks_msec()

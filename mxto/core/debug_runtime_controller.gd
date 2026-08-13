@@ -160,8 +160,8 @@ func apply_race_render_options(car_render_manager: CarRenderManager, local_visua
 		rtt_label.visible = false
 
 func update_labels(in_lobby: bool) -> void:
-	frame_time_label.text = str(network_manager.rollback_frametime_us) + "us"
-	rtt_label.text = str(roundi(network_manager.rtt_s * 1000.0)) + "ms"
+	frame_time_label.text = str(network_manager.input_transport.rollback_frametime_us) + "us"
+	rtt_label.text = str(roundi(network_manager.input_transport.rtt_s * 1000.0)) + "ms"
 	frame_time_label.visible = !in_lobby and !disable_hud
 	rtt_label.visible = !in_lobby and !disable_hud
 	version_label.visible = !in_lobby

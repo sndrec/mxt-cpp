@@ -531,7 +531,7 @@ func _process( _delta:float ) -> void:
 	speedometer.text = str(roundi(car.speed_kmh)) + " km/h"
 	lapcounter.text = "LAP " + str(car.lap) + "/3"
 	var nm := car.game_manager.network_manager
-	var use_tick := nm.get_race_tick()
+	var use_tick := nm.input_transport.get_race_tick()
 	var local_id := multiplayer.get_unique_id() if multiplayer.multiplayer_peer else 0
 	var place_id := focus_player_id
 	if car.game_manager != null and car.game_manager.replay_controller.replay_playback_active:

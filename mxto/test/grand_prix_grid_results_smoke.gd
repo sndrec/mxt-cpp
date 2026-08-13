@@ -41,7 +41,7 @@ func _init() -> void:
 	main.network_manager.race_results.player_finish_placements = {1: 2, 2: 3, 3: 1}
 	main.network_manager.race_results.player_finish_times = {1: 480}
 	main.network_manager.race_results.finish_order = [3, 1, 2]
-	main.network_manager.server_tick = 900
+	main.network_manager.input_transport.server_tick = 900
 	main.network_manager.race_options = {
 		"game_mode": 1,
 		"grand_prix_current_track": 2,
@@ -120,30 +120,30 @@ func _init() -> void:
 		push_error("Grand Prix next race start must reset stale start-sync state")
 		quit(1)
 		return
-	nm.netcode_session.configure([1], [false], 1)
-	nm.netcode_session.store_local_input(0, nm.NEUTRAL_INPUT_BYTES)
-	var phase_zero_packet: PackedByteArray = nm.netcode_session.build_local_input_packet(0, 1, 0)
-	nm.server_netcode_session.configure([1], [false], 1)
-	var stale_input_stats: Dictionary = nm.server_netcode_session.store_pending_input_packet(1, 0, phase_zero_packet, 0.0, 0.0, 1)
+	nm.input_transport.netcode_session.configure([1], [false], 1)
+	nm.input_transport.netcode_session.store_local_input(0, nm.input_transport.NEUTRAL_INPUT_BYTES)
+	var phase_zero_packet: PackedByteArray = nm.input_transport.netcode_session.build_local_input_packet(0, 1, 0)
+	nm.input_transport.server_netcode_session.configure([1], [false], 1)
+	var stale_input_stats: Dictionary = nm.input_transport.server_netcode_session.store_pending_input_packet(1, 0, phase_zero_packet, 0.0, 0.0, 1)
 	if !bool(stale_input_stats.get("stale", false)):
 		push_error("phase-mismatched client input packet should be dropped as stale")
 		quit(1)
 		return
-	var current_input_stats: Dictionary = nm.server_netcode_session.store_pending_input_packet(1, 0, phase_zero_packet, 0.0, 0.0, 0)
+	var current_input_stats: Dictionary = nm.input_transport.server_netcode_session.store_pending_input_packet(1, 0, phase_zero_packet, 0.0, 0.0, 0)
 	if bool(current_input_stats.get("stale", false)) or !bool(current_input_stats.get("valid", false)):
 		push_error("phase-matched client input packet should be valid, got %s" % [current_input_stats])
 		quit(1)
 		return
-	nm.server_netcode_session.configure([1], [false], 1)
-	nm.server_netcode_session.store_authoritative_input(0, 1, nm.NEUTRAL_INPUT_BYTES)
-	var phase_one_auth_packet: PackedByteArray = nm.server_netcode_session.build_authoritative_input_packet(0, 1, 1)
-	nm.netcode_session.configure([1], [false], 1)
-	var stale_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 0, 0)
+	nm.input_transport.server_netcode_session.configure([1], [false], 1)
+	nm.input_transport.server_netcode_session.store_authoritative_input(0, 1, nm.input_transport.NEUTRAL_INPUT_BYTES)
+	var phase_one_auth_packet: PackedByteArray = nm.input_transport.server_netcode_session.build_authoritative_input_packet(0, 1, 1)
+	nm.input_transport.netcode_session.configure([1], [false], 1)
+	var stale_auth_stats: Dictionary = nm.input_transport.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 0, 0)
 	if !bool(stale_auth_stats.get("stale", false)):
 		push_error("phase-mismatched authoritative packet should be dropped as stale, packet=%s stats=%s" % [phase_one_auth_packet, stale_auth_stats])
 		quit(1)
 		return
-	var current_auth_stats: Dictionary = nm.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 1, 0)
+	var current_auth_stats: Dictionary = nm.input_transport.netcode_session.store_authoritative_input_packet(phase_one_auth_packet, 1, 0)
 	if bool(current_auth_stats.get("stale", false)) or !bool(current_auth_stats.get("valid", false)):
 		push_error("phase-matched authoritative packet should be valid, got %s" % [current_auth_stats])
 		quit(1)

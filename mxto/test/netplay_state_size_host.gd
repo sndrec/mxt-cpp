@@ -58,10 +58,10 @@ func _process(_delta: float) -> bool:
 			nm.race_admission.begin_simulation()
 		return false
 	if race_start_server_tick < 0:
-		race_start_server_tick = int(nm.server_tick)
+		race_start_server_tick = int(nm.input_transport.server_tick)
 	main.call("_simulate_host_frame", input_bytes)
-	race_frames = int(nm.server_tick) - race_start_server_tick
+	race_frames = int(nm.input_transport.server_tick) - race_start_server_tick
 	if race_frames >= max_race_frames:
-		print("MXT_NETPLAY_STATE_SIZE_HOST_DONE race_ticks=", race_frames, " server_tick=", nm.server_tick)
+		print("MXT_NETPLAY_STATE_SIZE_HOST_DONE race_ticks=", race_frames, " server_tick=", nm.input_transport.server_tick)
 		quit()
 	return false

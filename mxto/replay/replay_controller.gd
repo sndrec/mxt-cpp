@@ -137,8 +137,8 @@ func initialize() -> void:
 		replays_button.pressed.connect(_open_replay_catalog)
 	if race_pause_save_replay_button != null and !race_pause_save_replay_button.pressed.is_connected(_on_pause_save_replay_pressed):
 		race_pause_save_replay_button.pressed.connect(_on_pause_save_replay_pressed)
-	if !game_manager.network_manager.authoritative_server_frame.is_connected(record_frame):
-		game_manager.network_manager.authoritative_server_frame.connect(record_frame)
+	if !game_manager.network_manager.input_transport.authoritative_server_frame.is_connected(record_frame):
+		game_manager.network_manager.input_transport.authoritative_server_frame.connect(record_frame)
 	refresh_pause_button()
 
 func _ensure_replay_interface_layer() -> CanvasLayer:
@@ -1361,7 +1361,7 @@ func _restore_replay_race_event_state(checkpoint: Dictionary) -> void:
 func _reset_replay_netcode_session() -> void:
 	if !replay_playback_active:
 		return
-	game_manager.network_manager.netcode_session.configure(
+	game_manager.network_manager.input_transport.netcode_session.configure(
 		replay_playback_racer_ids,
 		replay_playback_cpu_flags,
 		game_manager._local_player_id()
@@ -1412,7 +1412,7 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 			break
 	replay_seeking_active = false
 	_refresh_replay_input_display()
-	game_manager.network_manager.clients_server_tick = game_manager._singleplayer_tick
+	game_manager.network_manager.input_transport.clients_server_tick = game_manager._singleplayer_tick
 	_apply_replay_focus_to_local_visual()
 	if game_manager.game_sim.sim_started:
 		game_manager._update_native_render_camera()
@@ -1462,12 +1462,12 @@ func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: b
 	replay_normal_playback_tick_active = enqueue_event_notifications
 	if replay_playback_use_singleplayer_tick:
 		var local_id := game_manager._local_player_id()
-		var local_input: PackedByteArray = frame_inputs.get(local_id, game_manager.network_manager.NEUTRAL_INPUT_BYTES)
+		var local_input: PackedByteArray = frame_inputs.get(local_id, game_manager.network_manager.input_transport.NEUTRAL_INPUT_BYTES)
 		game_manager.game_sim.tick_singleplayer(local_id, local_input)
 	else:
 		for id_value in frame_inputs.keys():
-			game_manager.network_manager.netcode_session.store_pending_input(game_manager._singleplayer_tick, int(id_value), frame_inputs[id_value])
-		if !game_manager.network_manager.netcode_session.tick_server_frame(game_manager.game_sim, game_manager._singleplayer_tick, true):
+			game_manager.network_manager.input_transport.netcode_session.store_pending_input(game_manager._singleplayer_tick, int(id_value), frame_inputs[id_value])
+		if !game_manager.network_manager.input_transport.netcode_session.tick_server_frame(game_manager.game_sim, game_manager._singleplayer_tick, true):
 			replay_normal_playback_tick_active = false
 			push_warning("Replay playback failed at tick %d" % game_manager._singleplayer_tick)
 			if return_to_menu_on_complete:
@@ -1483,7 +1483,7 @@ func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: b
 		_update_replay_death_timeline_markers()
 	replay_playback_index += 1
 	game_manager._singleplayer_tick += 1
-	game_manager.network_manager.clients_server_tick = game_manager._singleplayer_tick
+	game_manager.network_manager.input_transport.clients_server_tick = game_manager._singleplayer_tick
 	game_manager._check_race_finished()
 	replay_normal_playback_tick_active = false
 	if !replay_seeking_active and (game_manager._singleplayer_tick % REPLAY_SEEK_CHECKPOINT_INTERVAL) == 0:
@@ -2184,7 +2184,7 @@ func _load_and_start_debug_replay(path: String) -> void:
 		_debug_replay_load_failed("MXT_DEBUG_REPLAY load failed: native snapshot could not be applied.")
 		return
 	game_manager._singleplayer_tick = snapshot_tick + 1
-	game_manager.network_manager.clients_server_tick = game_manager._singleplayer_tick
+	game_manager.network_manager.input_transport.clients_server_tick = game_manager._singleplayer_tick
 	debug_replay_playback_index = 0
 	debug_replay_playback = true
 	debug_replay_loaded_path = path

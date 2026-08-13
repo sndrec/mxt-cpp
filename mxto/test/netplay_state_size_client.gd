@@ -45,15 +45,15 @@ func _process(_delta: float) -> bool:
 			quit(1)
 		return false
 	if !bool(nm.has_network_peer()):
-		push_error("MXT_NETPLAY_STATE_SIZE_CLIENT_DISCONNECTED local_tick=%d race_ticks=%d" % [int(nm.local_tick), race_frames])
+		push_error("MXT_NETPLAY_STATE_SIZE_CLIENT_DISCONNECTED local_tick=%d race_ticks=%d" % [int(nm.input_transport.local_tick), race_frames])
 		quit(1)
 		return false
 	if race_start_local_tick < 0:
-		race_start_local_tick = int(nm.local_tick)
-	nm.set_local_input(input_bytes)
+		race_start_local_tick = int(nm.input_transport.local_tick)
+	nm.input_transport.set_local_input(input_bytes)
 	main.call("_simulate_single_tick")
-	race_frames = int(nm.local_tick) - race_start_local_tick
+	race_frames = int(nm.input_transport.local_tick) - race_start_local_tick
 	if race_frames >= max_race_frames:
-		print("MXT_NETPLAY_STATE_SIZE_CLIENT_DONE race_ticks=", race_frames, " local_tick=", nm.local_tick)
+		print("MXT_NETPLAY_STATE_SIZE_CLIENT_DONE race_ticks=", race_frames, " local_tick=", nm.input_transport.local_tick)
 		quit()
 	return false

@@ -30,6 +30,7 @@
 [ext_resource type="Script" path="res://netplay/race_results_controller.gd" id="39_race_results"]
 [ext_resource type="Script" path="res://netplay/lobby_settings_controller.gd" id="40_lobby_settings"]
 [ext_resource type="Script" path="res://netplay/race_admission_controller.gd" id="41_race_admission"]
+[ext_resource type="Script" path="res://netplay/input_transport_controller.gd" id="42_input_transport"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -214,6 +215,9 @@ script = ExtResource("40_lobby_settings")
 
 [node name="RaceAdmissionController" type="Node" parent="NetworkManager"]
 script = ExtResource("41_race_admission")
+
+[node name="InputTransportController" type="Node" parent="NetworkManager"]
+script = ExtResource("42_input_transport")
 
 [node name="ProximityVoiceChat" type="Node" parent="NetworkManager" unique_id=1057511727]
 script = ExtResource("22_voice")
