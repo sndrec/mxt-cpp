@@ -558,12 +558,12 @@ forward commits.
 
 ### Milestone 11 — Documentation, final testing, and repair loop
 
-- [ ] Replace the nearly empty README with a concise repository map, prerequisites,
+- [x] Replace the nearly empty README with a concise repository map, prerequisites,
       release build, test commands, tool entry points, service entry points, and
       generated/local asset policy.
-- [ ] Document each runtime owner and its lifecycle at the level needed to find
+- [x] Document each runtime owner and its lifecycle at the level needed to find
       code, not as redundant implementation prose.
-- [ ] Remove stale planning documents or mark them superseded without deleting
+- [x] Remove stale planning documents or mark them superseded without deleting
       user history.
 - [ ] Finish all planned structural, tooling, and hygiene work before starting
       the expensive validation sequence.

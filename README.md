@@ -17,7 +17,8 @@ leaderboard verification service.
 - `docs/` — maintained formats, workflows, and repository policy
 
 See [docs/repository_layout.md](docs/repository_layout.md) for the generated and
-local-asset policy.
+local-asset policy and [docs/runtime_ownership.md](docs/runtime_ownership.md) for
+the scene-owner lifecycle map.
 
 ## Runtime ownership
 
