@@ -5,7 +5,7 @@
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
 - Implementation is active. Milestones 0 through 3 are complete; Milestone 4
-  is next.
+  is in progress.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -763,3 +763,28 @@ Append entries; do not rewrite old evidence.
   diagnostics remain.
 - Deferred to Milestone 11: text-chat history and voice-adjacent smoke tests.
 - Commit: `5fc9727e` (`Extract communication controller`).
+
+### Milestone 4a — vehicle catalog and definition ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `VehicleContentController` in
+  `mxto/vehicle/vehicle_content_controller.gd`.
+- Moved out of `GameManager`: official/local/test-drive/Workshop discovery,
+  definition indexing, package evidence, GLTF mesh construction, material and
+  texture resolution, and vehicle metadata transforms.
+- Direct consumers: car settings, vehicle and track package editors, Workshop
+  browser, lobby chibis, track content, and replay content lookup now retain
+  typed references to the owner where their lifecycle allows it.
+- Source result: `mxto/main.gd` lost 383 lines in this slice; the cohesive
+  vehicle-content owner is approximately 330 lines.
+- Static checks: stale `GameManager` discovery/construction helpers are absent
+  and `git diff --check` passed.
+- Verification: `scons target=template_release -j4` passed; Godot 4.7.1 opened
+  the project and exited 0 without native load, script parse/load, scene, or
+  startup errors. The known empty-texture and forced render-thread shutdown
+  diagnostics remain.
+- Deferred to Milestone 11: content/package and runtime vehicle smoke tests.
+- Commit: `d32347a7` (`Extract vehicle content catalog`).
+- Remaining Milestone 4 work: transfer custom-stamp render payload ownership,
+  remove its obsolete `GameManager` paths, and add focused deferred smoke
+  coverage before marking the milestone complete.
