@@ -4,7 +4,7 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 2 are complete; Milestone 3
+- Implementation is active. Milestones 0 through 3 are complete; Milestone 4
   is next.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
@@ -754,7 +754,7 @@ Append entries; do not rewrite old evidence.
   transition close, per-frame overlay update, and chibi input blocking all call
   the new owner directly.
 - Source result: `mxto/main.gd` fell from 4,369 to 4,112 lines; the communication
-  controller is 252 lines.
+  controller is 249 lines.
 - Static checks: no chat implementation, race communication overlay field, or
   dynamic voice-node lookup remains in `main.gd`; `git diff --check` passed.
 - Verification: `scons target=template_release -j4` passed; Godot 4.7.1 opened
@@ -762,4 +762,4 @@ Append entries; do not rewrite old evidence.
   startup errors. The known empty-texture and forced render-thread shutdown
   diagnostics remain.
 - Deferred to Milestone 11: text-chat history and voice-adjacent smoke tests.
-- Commit: pending.
+- Commit: `5fc9727e` (`Extract communication controller`).
