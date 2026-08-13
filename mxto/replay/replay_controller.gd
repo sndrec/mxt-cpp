@@ -3,11 +3,13 @@ class_name ReplayController extends Node
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 const RacePresentationControllerClass = preload("res://ui/race_presentation_controller.gd")
+const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
 @onready var spectator_controller: SpectatorControllerClass = get_node("../SpectatorController") as SpectatorControllerClass
 @onready var race_presentation_controller: RacePresentationControllerClass = get_node("../RacePresentationController") as RacePresentationControllerClass
+@onready var debug_runtime_controller: DebugRuntimeControllerClass = get_node("../DebugRuntimeController") as DebugRuntimeControllerClass
 @onready var replays_button: Button = get_node("../Control/ReplaysButton") as Button
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
@@ -437,10 +439,10 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		"spawn_seed": game_manager.network_manager.spawn_seed,
 		"race_options": game_manager.network_manager.race_options.duplicate(true),
 		"runtime_flags": {
-			"auto_accelerate": game_manager.auto_accelerate_mode,
+			"auto_accelerate": debug_runtime_controller.auto_accelerate,
 			"auto_bumpers": game_manager.auto_bumpers_mode,
-			"debug_bumper_smoke": game_manager.debug_bumper_smoke_mode,
-			"debug_rail_trace": game_manager.debug_rail_trace_requested,
+			"debug_bumper_smoke": debug_runtime_controller.bumper_smoke_enabled,
+			"debug_rail_trace": debug_runtime_controller.rail_trace_enabled,
 		},
 	}
 	refresh_pause_button()
@@ -1533,9 +1535,9 @@ func _apply_replay_focus_to_local_visual() -> void:
 			car.player_settings = ps
 	if is_instance_valid(car.name_label):
 		car.name_label.text = race_presentation_controller.player_display_name(focus_id)
-	if !game_manager.auto_disable_hud_mode and !game_manager.auto_hide_hud_only_mode:
+	if !debug_runtime_controller.disable_hud and !debug_runtime_controller.hide_hud_only:
 		car.race_hud.visible = true
-	if !game_manager.auto_disable_hud_mode and !game_manager.auto_disable_hud_process_only_mode:
+	if !debug_runtime_controller.disable_hud and !debug_runtime_controller.disable_hud_process_only:
 		car.race_hud.process_mode = Node.PROCESS_MODE_INHERIT
 
 func _focused_replay_transform() -> Transform3D:

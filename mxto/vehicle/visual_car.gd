@@ -75,6 +75,7 @@ var owning_id : int = 0
 var effect_pool_slot : int = -1
 var player_settings: Resource
 var game_manager : GameManager
+var render_profile_enabled := false
 @onready var race_hud: RaceHud = $race_hud
 @onready var car_transform: Node3D = $CarTransform
 var local_visual_enabled := false
@@ -595,7 +596,7 @@ func _apply_gameplay_camera(ratio: float) -> void:
 @onready var boost_electricity: BoostElectricity = $BoostElectricity
 
 func _physics_process(delta):
-	var profile_enabled := game_manager != null and game_manager.auto_render_profile_mode
+	var profile_enabled := render_profile_enabled
 	var profile_start := Time.get_ticks_usec() if profile_enabled else 0
 	rollback_offset_error_prev = rollback_offset_error
 	rollback_rot_error_prev    = rollback_rot_error
@@ -662,7 +663,7 @@ func just_rendered() -> void:
 var track_surface_smoothed := Vector3.UP
 
 func _process(delta: float) -> void:
-	var profile_enabled := game_manager != null and game_manager.auto_render_profile_mode
+	var profile_enabled := render_profile_enabled
 	var profile_start := Time.get_ticks_usec() if profile_enabled else 0
 	frame_accumulation += delta
 	delta = minf(1.0, delta)

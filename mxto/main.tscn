@@ -24,6 +24,7 @@
 [ext_resource type="Script" path="res://ui/spectator_controller.gd" id="33_spectator"]
 [ext_resource type="Script" path="res://ui/race_presentation_controller.gd" id="34_race_presentation"]
 [ext_resource type="PackedScene" path="res://ui/race_results_overlay.tscn" id="35_race_results"]
+[ext_resource type="Script" path="res://core/debug_runtime_controller.gd" id="36_debug_runtime"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -172,6 +173,9 @@ script = ExtResource("33_spectator")
 script = ExtResource("34_race_presentation")
 
 [node name="RaceResultsOverlay" parent="RacePresentationController" instance=ExtResource("35_race_results")]
+
+[node name="DebugRuntimeController" type="Node" parent="."]
+script = ExtResource("36_debug_runtime")
 
 [node name="CommunicationController" type="Node" parent="."]
 script = ExtResource("29_communication")

@@ -1,6 +1,7 @@
 class_name TrackContentController extends Node
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const DebugRuntimeControllerClass = preload("res://core/debug_runtime_controller.gd")
 
 const EXTERNAL_TRACKS_DIR_NAMES := ["tracks", "track"]
 const OFFICIAL_TRACK_MANIFEST_PATH := "res://track/official_tracks.json"
@@ -8,6 +9,7 @@ const OFFICIAL_TRACK_MANIFEST_REVISION := 1
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
+@onready var debug_runtime_controller: DebugRuntimeControllerClass = get_node("../DebugRuntimeController") as DebugRuntimeControllerClass
 
 var tracks: Array = []
 var track_id_to_index: Dictionary = {}
@@ -111,7 +113,7 @@ func prepare_race(track_index: int) -> bool:
 	current_ground_image = null
 	_clear_visual_scene()
 	game_manager.debug_track_mesh.mesh = null
-	game_manager.obj_container.visible = !game_manager.auto_hide_track_visuals_mode
+	game_manager.obj_container.visible = !debug_runtime_controller.hide_track_visuals
 
 	var info: Dictionary = tracks[track_index]
 	var json_path := String(info.get("json", String(info["mxt"]).get_basename() + ".json"))
@@ -125,9 +127,9 @@ func prepare_race(track_index: int) -> bool:
 	current_visual_replaces_debug_environment = _visual_replaces_debug_environment(current_visual_path)
 	_set_builtin_visuals_enabled(!current_visual_replaces_debug_environment)
 	var has_track_visual := !current_visual_path.is_empty()
-	game_manager.debug_track_mesh.visible = !has_track_visual and !game_manager.auto_hide_track_visuals_mode
-	game_manager.track_floor.visible = !current_visual_replaces_debug_environment and !game_manager.auto_hide_track_visuals_mode
-	game_manager.track_clouds.visible = !current_visual_replaces_debug_environment and !game_manager.auto_hide_track_visuals_mode
+	game_manager.debug_track_mesh.visible = !has_track_visual and !debug_runtime_controller.hide_track_visuals
+	game_manager.track_floor.visible = !current_visual_replaces_debug_environment and !debug_runtime_controller.hide_track_visuals
+	game_manager.track_clouds.visible = !current_visual_replaces_debug_environment and !debug_runtime_controller.hide_track_visuals
 	_apply_environment()
 	return true
 
@@ -414,7 +416,7 @@ func _load_imported_mesh(mesh_path: String) -> bool:
 
 func _set_builtin_visuals_enabled(enabled: bool) -> void:
 	if game_manager.debug_track_mesh_container != null:
-		game_manager.debug_track_mesh_container.visible = enabled and !game_manager.auto_hide_track_visuals_mode
+		game_manager.debug_track_mesh_container.visible = enabled and !debug_runtime_controller.hide_track_visuals
 	if game_manager.directional_light_3d != null:
 		game_manager.directional_light_3d.visible = enabled
 	if game_manager.world_environment != null:

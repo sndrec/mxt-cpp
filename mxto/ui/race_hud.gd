@@ -506,7 +506,7 @@ func _process( _delta:float ) -> void:
 		#pl = car.get_parent()
 	if car == null:
 		return
-	var profile_enabled := car.game_manager != null and car.game_manager.auto_render_profile_mode
+	var profile_enabled := car.render_profile_enabled
 	var profile_total_start := Time.get_ticks_usec() if profile_enabled else 0
 	if focus_player_id == 0:
 		focus_player_id = car.owning_id

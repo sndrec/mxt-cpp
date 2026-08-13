@@ -8,7 +8,7 @@ static func reject(reason: String) -> Dictionary:
 static func evaluate_start(game_manager: GameManager, options: Dictionary, settings: PlayerSettings) -> Dictionary:
 	if !TimeAttackRulesClass.options_match(options):
 		return reject("modified_time_attack_rules")
-	if game_manager.auto_accelerate_mode or game_manager.auto_bumpers_mode or game_manager.debug_bumper_smoke_mode or game_manager.debug_rail_trace_requested:
+	if game_manager.debug_runtime_controller.auto_accelerate or game_manager.auto_bumpers_mode or game_manager.debug_runtime_controller.bumper_smoke_enabled or game_manager.debug_runtime_controller.rail_trace_enabled:
 		return reject("debug_or_automation_enabled")
 	var track_ids: Array = options.get("track_ids", [])
 	var track_digests: Array = options.get("track_gameplay_digests", [])
