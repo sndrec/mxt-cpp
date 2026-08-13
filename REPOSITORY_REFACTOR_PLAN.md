@@ -1067,3 +1067,39 @@ Append entries; do not rewrite old evidence.
   Existing empty-texture, Steam-without-app-ID, forced audio disconnect, and
   render-thread shutdown diagnostics remain.
 - Commit: `ed342019` (`Extract network state transfer controller`).
+
+### Milestone 7b — race-result and event ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `RaceResultsController` in
+  `mxto/netplay/race_results_controller.gd`, beneath `NetworkManager` with the
+  same deterministic node path on every peer.
+- Moved out of `NetworkManager`: synchronized race-finish time, finish/DNF/
+  elimination records, placement normalization, final-result merge, force-end
+  deadline, race presentation events, sticker request cooldown, and the related
+  RPC endpoints.
+- Protocol preservation: race-finish time remains authority call-remote
+  reliable channel 7. Finish, DNF, elimination, final-result, deadline, and
+  presentation-event RPCs remain authority call-local reliable on the default
+  channel. Sticker requests remain any-peer reliable on the default channel.
+  Phase-bit packing and stale-phase rejection are unchanged.
+- Ownership handoff: a synchronous `player_dnf_recorded` signal leaves only the
+  transport consequence—disconnected-racer input replacement and delayed-peer
+  removal—with `NetworkManager`. Result state never calls back through a broad
+  manager interface.
+- Direct consumers: `GameManager`, replay capture/restore, race HUD,
+  presentation, spectator behavior, and proximity voice read or mutate the real
+  result owner. The old state, RPCs, methods, and race-event signal are absent
+  from `NetworkManager`; no forwarding aliases remain.
+- Source result: `mxto/netplay/network_manager.gd` is 3,074 lines; the cohesive
+  result/event owner is 250 lines.
+- Deferred coverage: Grand Prix/result normalization and vehicle-restore/
+  elimination smokes now target the new owner directly. They and the affected
+  replay, presentation, sticker, DNF, and multi-process RPC groups remain
+  deferred to Milestone 11.
+- Verification: `scons target=template_release -j4` passed. A post-build
+  automated single-player launch opened the game, initialized a race, and
+  exited 0 without native load, script parse/load, scene, or access errors.
+  Existing empty-texture, Steam-without-app-ID, forced audio disconnect, and
+  render-thread shutdown diagnostics remain.
+- Commit: `7805c95b` (`Extract network race results controller`).
