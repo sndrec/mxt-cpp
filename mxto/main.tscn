@@ -137,9 +137,9 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=1159054455]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=1048572747]
 
-[node name="GameSim" type="GameSim" parent="." unique_id=1848260445]
+[node name="GameSim" type="GameSim" parent="." unique_id=1751820828]
 
 [node name="ReplayController" type="Node" parent="." unique_id=1464332657]
 script = ExtResource("23_replay")
