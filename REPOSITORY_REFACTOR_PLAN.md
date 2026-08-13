@@ -456,7 +456,7 @@ cohesive.
 This is the highest-risk GDScript phase. Do not start until Milestones 1–6 are
 stable and the network smoke matrix is reliable.
 
-- [ ] Map every RPC, authority rule, transfer mode, channel, sender validation,
+- [x] Map every RPC, authority rule, transfer mode, channel, sender validation,
       and call site before editing.
 - [ ] Separate connection/version/peer lifecycle from lobby roster/settings.
 - [ ] Separate race admission and synchronized-start state.
@@ -1032,3 +1032,38 @@ Append entries; do not rewrite old evidence.
   cohesive, it has a narrow restore handoff back to authoritative transport,
   and its packet format can remain unchanged while telemetry reads its counters
   directly.
+
+### Milestone 7a — state-transfer ownership complete
+
+- Date: 2026-08-13
+- New owner: the scene-owned `StateTransferController` in
+  `mxto/netplay/state_transfer_controller.gd`, beneath `NetworkManager` so the
+  authority RPC resolves at the same stable node path on every peer.
+- Moved out of `NetworkManager`: snapshot-recipient scheduling, compression,
+  outgoing chunk pacing, channel-4 RPC receive, bounded metadata validation,
+  FEC recovery, state assembly, pending/latest state tracking, and all state-
+  transfer interval counters.
+- Protocol preservation: state chunks remain authority, call-remote,
+  unreliable channel 4. The phase bit, tick mask, 1,000-byte chunk payload,
+  eight-data-chunk parity groups, three-chunk pacing, and 16 MiB payload bound
+  are unchanged.
+- Direct handoff: the owner signals completed snapshots to the existing
+  authoritative restore path and exposes its latest restored tick directly to
+  rollback coordination. Byte and sample signals feed existing telemetry and
+  dump sinks; no forwarding RPC or compatibility alias remains on
+  `NetworkManager`.
+- Lifecycle: peer schedule rebuild, peer removal, race phase/activity, resets,
+  interval logging, server snapshot creation, and outgoing sends now call the
+  owner directly. The old transfer dictionaries and counters are gone.
+- Source result: `mxto/netplay/network_manager.gd` is 3,278 lines, down from
+  approximately 3,700 before Milestone 7; the cohesive state-transfer owner is
+  459 lines.
+- Deferred coverage: `netplay_state_transfer_smoke.gd` now targets the real
+  owner and its state directly. The smoke and multi-process netplay matrix
+  remain deferred to Milestone 11.
+- Verification: `scons target=template_release -j4` passed. A post-build
+  automated single-player launch opened the game, initialized a race, and
+  exited 0 without native load, script parse/load, scene, or access errors.
+  Existing empty-texture, Steam-without-app-ID, forced audio disconnect, and
+  render-thread shutdown diagnostics remain.
+- Commit: `ed342019` (`Extract network state transfer controller`).
