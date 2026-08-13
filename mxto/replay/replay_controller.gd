@@ -1,9 +1,11 @@
 class_name ReplayController extends Node
 
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 
 @onready var game_manager: GameManager = get_parent() as GameManager
 @onready var vehicle_content_controller: VehicleContentControllerClass = get_node("../VehicleContentController") as VehicleContentControllerClass
+@onready var spectator_controller: SpectatorControllerClass = get_node("../SpectatorController") as SpectatorControllerClass
 @onready var replays_button: Button = get_node("../Control/ReplaysButton") as Button
 @onready var race_pause_save_replay_button: Button = get_node("../RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton") as Button
 
@@ -1619,39 +1621,24 @@ func _apply_replay_camera_mode() -> void:
 	if !replay_playback_active:
 		return
 	_apply_replay_focus_to_local_visual()
-	var car := _focused_replay_car()
 	if replay_camera_mode == REPLAY_CAMERA_GAME and game_manager.car_node_container.local_visual_car != null:
-		if game_manager.spectator_node != null and game_manager.spectator_node.has_method("set_input_enabled"):
-			game_manager.spectator_node.call("set_input_enabled", false)
+		spectator_controller.disable_free_camera()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		game_manager.game_sim.set_gameplay_camera(game_manager.car_node_container.local_visual_car.car_camera, _focused_replay_player_id())
 		game_manager.car_node_container.local_visual_car.car_camera.make_current()
 		game_manager.car_node_container.local_visual_car.make_vehicle_audio_listener_current()
 	elif replay_camera_mode == REPLAY_CAMERA_AUTO:
-		if game_manager.spectator_node != null and game_manager.spectator_node.has_method("set_input_enabled"):
-			game_manager.spectator_node.call("set_input_enabled", false)
+		spectator_controller.disable_free_camera()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_ensure_replay_auto_camera().make_current()
 	elif replay_camera_mode == REPLAY_CAMERA_RELATIVE:
-		if game_manager.spectator_node != null and game_manager.spectator_node.has_method("set_input_enabled"):
-			game_manager.spectator_node.call("set_input_enabled", false)
+		spectator_controller.disable_free_camera()
 		_reset_replay_relative_camera()
 		_ensure_replay_relative_camera().make_current()
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	else:
-		if game_manager.spectator_node == null:
-			game_manager.spectator_node = game_manager.spectator_scene.instantiate()
-			add_child(game_manager.spectator_node)
 		var focus_transform := _focused_replay_transform()
-		game_manager.spectator_node.global_position = focus_transform.origin - focus_transform.basis.z * 32.0 + focus_transform.basis.y * 12.0
-		game_manager.spectator_node.look_at(focus_transform.origin + focus_transform.basis.y * 2.0, focus_transform.basis.y.normalized())
-		if game_manager.spectator_node.has_method("sync_look_from_current_transform"):
-			game_manager.spectator_node.call("sync_look_from_current_transform")
-		if game_manager.spectator_node.has_method("set_input_enabled"):
-			game_manager.spectator_node.call("set_input_enabled", true)
-		var camera := game_manager.spectator_node.get_node_or_null("Camera3D") as Camera3D
-		if camera != null:
-			camera.make_current()
+		spectator_controller.show_free_camera_at(focus_transform)
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _cycle_replay_camera_mode() -> void:

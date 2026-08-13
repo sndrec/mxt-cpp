@@ -15,19 +15,19 @@ func _init() -> void:
 	await process_frame
 
 	var ok := true
-	var zero_hp := VisualCar.FZ_MS.ZEROHP
-	var completed := VisualCar.FZ_MS.COMPLETEDRACE_1_Q
-	var fallout := VisualCar.FZ_MS.FALLOUT
-	var retired := VisualCar.FZ_MS.RETIRED
-	var airborne := VisualCar.FZ_MS.AIRBORNE
-
-	ok = _expect(main.call("_vehicle_restore_off_state_is_eliminated", zero_hp, 0, 0.0, -1000.0), false, "zero hp grace") and ok
-	ok = _expect(main.call("_vehicle_restore_off_state_is_eliminated", zero_hp, 0x80, 0.0, -1000.0), true, "settled breakdown") and ok
-	ok = _expect(main.call("_vehicle_restore_off_state_is_eliminated", zero_hp | airborne, 0x80, 0.0, -1000.0), false, "airborne breakdown") and ok
-	ok = _expect(main.call("_vehicle_restore_off_state_is_eliminated", zero_hp | retired, 0, 0.0, -1000.0), true, "retired breakdown") and ok
-	ok = _expect(main.call("_vehicle_restore_off_state_is_eliminated", fallout, 0, 0.0, -1000.0), true, "fallout") and ok
-	ok = _expect(main.call("_vehicle_restore_off_state_is_eliminated", zero_hp, 0, -1001.0, -1000.0), true, "below minimum y") and ok
-	ok = _expect(main.call("_vehicle_restore_off_state_is_eliminated", completed | fallout | zero_hp | retired, 0x80, -1001.0, -1000.0), false, "completed race wins") and ok
+	var spectator = main.spectator_controller
+	spectator.configure_race(42, true)
+	main.network_manager.race_options["vehicle_restore"] = false
+	main.network_manager.player_eliminations[42] = 120
+	ok = _expect(spectator.is_local_eliminated(), true, "restore-off elimination") and ok
+	ok = _expect(spectator.should_suppress_local_race_input(), true, "elimination input suppression") and ok
+	main.network_manager.race_options["vehicle_restore"] = true
+	ok = _expect(spectator.is_local_eliminated(), false, "restore-on elimination") and ok
+	main.network_manager.player_dnfs[42] = "low_speed"
+	ok = _expect(spectator.is_local_dnf(), true, "local DNF") and ok
+	ok = _expect(spectator.should_suppress_local_race_input(), true, "DNF input suppression") and ok
+	spectator.reset()
+	ok = _expect(spectator.should_suppress_local_race_input(), false, "reset input suppression") and ok
 
 	if !ok:
 		quit(1)

@@ -2,6 +2,7 @@ class_name GameManager extends Node
 
 const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 const LobbyControllerClass = preload("res://ui/lobby_controller.gd")
+const SpectatorControllerClass = preload("res://ui/spectator_controller.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 
@@ -12,6 +13,7 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var track_content_controller: TrackContentController = $TrackContentController
 @onready var lobby_chibi_controller: LobbyChibiControllerClass = $LobbyChibiController
 @onready var lobby_controller: LobbyControllerClass = $LobbyController
+@onready var spectator_controller: SpectatorControllerClass = $SpectatorController
 @onready var communication_controller: CommunicationControllerClass = $CommunicationController
 @onready var vehicle_content_controller: VehicleContentControllerClass = $VehicleContentController
 @onready var playtest_lobby_probe = $PlaytestLobbyProbe
@@ -71,12 +73,9 @@ const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
 
 var players: Array = []
 var player_scene := preload("res://player/player_controller.tscn")
-var spectator_scene := preload("res://player/spectator.tscn")
 var local_player_index: int = 0
 var headless_mode: bool = false
 var trigger_objects: Array = []
-var spectator_node: Node3D
-var local_elimination_spectator_active := false
 const TRIGGER_SCENES = {
 			 0: preload("res://asset/obj_dashplate.tscn"),
 			 1: preload("res://asset/obj_jumpplate.tscn"),
@@ -149,13 +148,10 @@ var race_dnf_low_speed_ticks := {}
 var start_sync_drop_root: PanelContainer
 var start_sync_drop_label: Label
 var start_sync_drop_button: Button
-var live_spectate_focus_id := -1
-var live_spectate_strafe_dir := 0
 
 const DNF_SPEED_THRESHOLD_KMH := 400.0
 const DNF_LOW_SPEED_TICKS := 60 * 10
 const FORCE_END_WINDOW_TICKS := 60 * 60
-const LIVE_SPECTATE_STRAFE_THRESHOLD := 0.65
 const DIP_TRACE_RAIL_SAMPLING := 0x40
 const DIP_TRACE_PIPE_FLOOR := 0x100
 const DIP_TRACE_MESH_FLOOR := 0x1000
@@ -286,6 +282,8 @@ func _ready() -> void:
 	lobby_controller.start_race_requested.connect(_on_lobby_start_race_requested)
 	lobby_controller.car_settings_requested.connect(_on_car_settings_button_pressed)
 	lobby_controller.controller_settings_requested.connect(_on_controller_settings_button_pressed)
+	spectator_controller.initialize(network_manager, game_sim, car_node_container, vehicle_content_controller)
+	spectator_controller.notification_requested.connect(_show_race_notification)
 	randomize()
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
@@ -1079,159 +1077,6 @@ func _on_start_sync_drop_pressed() -> void:
 	if network_manager != null and network_manager.request_drop_start_sync_stalled_players():
 		start_sync_drop_root.visible = false
 
-func _local_player_is_eliminated() -> bool:
-	return !network_manager.is_vehicle_restore_enabled() and network_manager.player_eliminations.has(_local_player_id())
-
-func _local_player_is_dnf() -> bool:
-	return network_manager.player_dnfs.has(_local_player_id())
-
-func _should_suppress_local_race_input() -> bool:
-	return _local_player_is_eliminated() or _local_player_is_dnf()
-
-func _vehicle_restore_off_state_is_eliminated(machine_state: int, state_2: int, position_y: float, minimum_y: float) -> bool:
-	if (machine_state & VisualCar.FZ_MS.COMPLETEDRACE_1_Q) != 0:
-		return false
-	if (machine_state & VisualCar.FZ_MS.FALLOUT) != 0:
-		return true
-	if position_y < minimum_y:
-		return true
-	if (machine_state & VisualCar.FZ_MS.ZEROHP) == 0:
-		return false
-	if (machine_state & VisualCar.FZ_MS.RETIRED) != 0:
-		return true
-	return (state_2 & 0x80) != 0 and (machine_state & VisualCar.FZ_MS.AIRBORNE) == 0
-
-func _activate_local_elimination_spectator() -> void:
-	if local_elimination_spectator_active:
-		return
-	if !_local_player_is_eliminated():
-		return
-	local_elimination_spectator_active = true
-	var current_camera := get_viewport().get_camera_3d()
-	var start_transform := Transform3D.IDENTITY
-	if current_camera != null:
-		start_transform = current_camera.global_transform
-	elif car_node_container.local_visual_car != null:
-		var car := car_node_container.local_visual_car
-		var car_transform := car.car_transform.global_transform
-		var interest := car_transform.origin + car_transform.basis.y * 2.0
-		var position := interest - car_transform.basis.z * 26.0 + car_transform.basis.y * 10.0 + car_transform.basis.x * 10.0
-		start_transform.origin = position
-		start_transform = start_transform.looking_at(interest, car_transform.basis.y.normalized())
-	if spectator_node == null:
-		spectator_node = spectator_scene.instantiate()
-		add_child(spectator_node)
-	spectator_node.global_transform = start_transform
-	if spectator_node.has_method("sync_look_from_current_transform"):
-		spectator_node.call("sync_look_from_current_transform")
-	if car_node_container.local_visual_car != null:
-		car_node_container.local_visual_car.race_hud.visible = false
-	_show_race_notification("Eliminated - Spectating", 3000)
-
-func _local_player_can_live_spectate() -> bool:
-	var local_id := _local_player_id()
-	return network_manager.spectator_ids.has(local_id) or network_manager.player_finish_times.has(local_id) or network_manager.player_dnfs.has(local_id)
-
-func _live_spectate_targets() -> Array:
-	var targets := []
-	for id_value in network_manager.get_simulation_roster():
-		var id := int(id_value)
-		if network_manager.player_finish_times.has(id):
-			continue
-		if network_manager.player_dnfs.has(id):
-			continue
-		if network_manager._disconnected_during_race.has(id):
-			continue
-		if network_manager.player_eliminations.has(id):
-			continue
-		targets.append(id)
-	return targets
-
-func _apply_live_spectate_focus(focus_id: int) -> void:
-	if car_node_container.local_visual_car == null:
-		return
-	live_spectate_focus_id = focus_id
-	var car := car_node_container.local_visual_car
-	car.owning_id = focus_id
-	car.race_hud.focus_player_id = focus_id
-	var settings = network_manager.player_settings.get(focus_id, null)
-	if settings != null:
-		var ps := vehicle_content_controller.player_settings_for_stamp_render(settings)
-		if ps != null:
-			car.player_settings = ps
-	if is_instance_valid(car.name_label):
-		car.name_label.text = _player_display_name(focus_id)
-	if game_sim != null:
-		game_sim.set_gameplay_camera(car.car_camera, focus_id)
-	if spectator_node != null and spectator_node.has_method("set_input_enabled"):
-		spectator_node.call("set_input_enabled", false)
-	car.car_camera.make_current()
-	car.make_vehicle_audio_listener_current()
-
-func _toggle_live_spectate_camera() -> void:
-	if !_local_player_can_live_spectate() or spectator_node == null:
-		return
-	var free_camera := spectator_node.get_node_or_null("Camera3D") as Camera3D
-	if free_camera == null:
-		return
-	var current_camera := get_viewport().get_camera_3d()
-	if current_camera == free_camera:
-		var targets := _live_spectate_targets()
-		if targets.is_empty():
-			return
-		var focus_id := live_spectate_focus_id
-		if !targets.has(focus_id):
-			focus_id = int(targets[0])
-		_apply_live_spectate_focus(focus_id)
-		_show_race_notification("Gameplay Camera: %s" % _player_display_name(focus_id), 1200)
-		return
-	if current_camera != null:
-		spectator_node.global_transform = current_camera.global_transform
-	if spectator_node.has_method("sync_look_from_current_transform"):
-		spectator_node.call("sync_look_from_current_transform")
-	if spectator_node.has_method("set_input_enabled"):
-		spectator_node.call("set_input_enabled", true)
-	free_camera.make_current()
-	_show_race_notification("Free Camera", 1200)
-
-func _change_live_spectate_focus(delta: int) -> void:
-	if !_local_player_can_live_spectate():
-		return
-	var targets := _live_spectate_targets()
-	if targets.is_empty():
-		return
-	var current_id := live_spectate_focus_id
-	if current_id < 0 and car_node_container.local_visual_car != null:
-		current_id = car_node_container.local_visual_car.owning_id
-	var current_index := targets.find(current_id)
-	var next_index := 0
-	if current_index >= 0:
-		next_index = posmod(current_index + delta, targets.size())
-	elif delta < 0:
-		next_index = targets.size() - 1
-	_apply_live_spectate_focus(int(targets[next_index]))
-	_show_race_notification("Spectating: %s" % _player_display_name(int(targets[next_index])), 1200)
-
-func _update_live_finished_spectate_input() -> void:
-	if !_local_player_can_live_spectate():
-		live_spectate_strafe_dir = 0
-		live_spectate_focus_id = -1
-		return
-	var left := Input.get_action_raw_strength("StrafeLeft")
-	var right := Input.get_action_raw_strength("StrafeRight")
-	var dir := 0
-	if right >= LIVE_SPECTATE_STRAFE_THRESHOLD and right >= left:
-		dir = 1
-	elif left >= LIVE_SPECTATE_STRAFE_THRESHOLD:
-		dir = -1
-	if dir == 0:
-		live_spectate_strafe_dir = 0
-		return
-	if live_spectate_strafe_dir == dir:
-		return
-	live_spectate_strafe_dir = dir
-	_change_live_spectate_focus(dir)
-
 func _race_results_sim() -> GameSim:
 	if network_manager.is_server and server_game_sim != null:
 		return server_game_sim
@@ -1467,12 +1312,12 @@ func _on_race_event(event_type: String, actor_id: int, target_id: int, tick_valu
 		return
 	if event_type == "eliminated":
 		if actor_id == _local_player_id() and replay_controller.should_enqueue_replay_race_notification():
-			_activate_local_elimination_spectator()
+			spectator_controller.activate_local_elimination()
 		return
 	if event_type == "dnf":
 		if actor_id == _local_player_id():
 			_show_race_notification("DNF - Spectating", 3000)
-			_change_live_spectate_focus(1)
+			spectator_controller.change_focus(1)
 		return
 	if event_type == "ko":
 		if replay_controller.should_enqueue_replay_race_notification():
@@ -1659,9 +1504,7 @@ func _start_race(track_index: int, settings: Array) -> bool:
 	_last_race_settings = settings.duplicate(true)
 	active_stickers.clear()
 	race_notification_hide_msec = 0
-	local_elimination_spectator_active = false
-	live_spectate_focus_id = -1
-	live_spectate_strafe_dir = 0
+	spectator_controller.reset()
 	race_dnf_low_speed_ticks.clear()
 	var info: Dictionary = track_content_controller.tracks[track_index]
 	_hide_race_results_summary()
@@ -1765,9 +1608,7 @@ func _start_race(track_index: int, settings: Array) -> bool:
 		if p != null:
 			p.queue_free()
 	players.clear()
-	if spectator_node:
-		spectator_node.queue_free()
-		spectator_node = null
+	spectator_controller.configure_race(_local_player_id(), local_player_index != -1)
 	var car_props : Array = []
 	var accel_settings_arr : Array = []
 	for i in racer_settings.size():
@@ -1781,9 +1622,6 @@ func _start_race(track_index: int, settings: Array) -> bool:
 		pc.player_settings = racer_settings[i]
 		add_child(pc)
 		players.append(pc)
-	if local_player_index == -1:
-		spectator_node = spectator_scene.instantiate()
-		add_child(spectator_node)
 	for n in chosen_defs.size():
 		var def = chosen_defs[n]
 		var bytes := FileAccess.get_file_as_bytes(def.properties_path)
@@ -1817,8 +1655,6 @@ func _start_race(track_index: int, settings: Array) -> bool:
 	replay_controller.start_recording(track_index, settings, racer_ids, racer_cpu_flags, start_grid_slots)
 	if car_node_container.local_visual_car != null:
 		game_sim.set_gameplay_camera(car_node_container.local_visual_car.car_camera, car_node_container.local_visual_car.owning_id)
-		if local_player_index == -1:
-			live_spectate_focus_id = car_node_container.local_visual_car.owning_id
 		var local_hud := car_node_container.local_visual_car.race_hud
 		if auto_disable_minimap_mode:
 			var minimap_control := local_hud.get_node_or_null("MinimapControl") as Control
@@ -1919,8 +1755,6 @@ func _on_network_race_started(track_id: String, settings: Array) -> void:
 		return
 	race_results_next_accel_setting = -1.0
 	race_dnf_low_speed_ticks.clear()
-	live_spectate_focus_id = -1
-	live_spectate_strafe_dir = 0
 	if start_sync_drop_root != null:
 		start_sync_drop_root.visible = false
 	communication_controller.close_race_chat()
@@ -2421,7 +2255,7 @@ func _physics_process(delta: float) -> void:
 		var profile_physics_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var profile_input_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		var local_pi := PlayerInputClass.new()
-		if !_should_suppress_local_race_input() and _window_accepts_input() and players.size() > local_player_index:
+		if !spectator_controller.should_suppress_local_race_input() and _window_accepts_input() and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
@@ -2430,7 +2264,7 @@ func _physics_process(delta: float) -> void:
 			var profile_input_us := Time.get_ticks_usec() - profile_input_start
 			render_profile_input_us += profile_input_us
 			render_profile_input_max_us = maxi(render_profile_input_max_us, profile_input_us)
-		if singleplayer_mode and _local_player_is_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
+		if singleplayer_mode and spectator_controller.is_local_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
 		if singleplayer_mode:
 			var profile_tick_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
@@ -2518,12 +2352,12 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 		if auto_accelerate_mode:
 			local_pi.accelerate = 1.0
 		var accepts_input := _window_accepts_input()
-		if !auto_accelerate_mode and !_should_suppress_local_race_input() and accepts_input and players.size() > local_player_index:
+		if !auto_accelerate_mode and !spectator_controller.should_suppress_local_race_input() and accepts_input and players.size() > local_player_index:
 			var controller = players[local_player_index]
 			if controller != null:
 				local_pi = controller.get_input()
 		input_bytes = local_pi.serialize()
-		if _local_player_is_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
+		if spectator_controller.is_local_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
 			input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
 	replay_controller.record_debug_input(input_bytes)
 	_dump_offline_auth_input_sample(input_bytes)
@@ -2617,19 +2451,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if replay_controller.handle_unhandled_input(event):
 		get_viewport().set_input_as_handled()
 		return
-	if game_sim.sim_started and _local_player_can_live_spectate():
-		if event.is_action_pressed("DpadLeft"):
-			_change_live_spectate_focus(-1)
-			get_viewport().set_input_as_handled()
-			return
-		if event.is_action_pressed("DpadRight"):
-			_change_live_spectate_focus(1)
-			get_viewport().set_input_as_handled()
-			return
-		if event.is_action_pressed("SpinAttack") or (event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_TAB):
-			_toggle_live_spectate_camera()
-			get_viewport().set_input_as_handled()
-			return
+	if game_sim.sim_started and spectator_controller.handle_unhandled_input(event):
+		get_viewport().set_input_as_handled()
+		return
 	if lobby_control.visible and event.is_action_pressed("ui_cancel"):
 		_close_settings_menus_for_race_start()
 		_return_to_menu()
@@ -2669,12 +2493,7 @@ func _return_to_menu() -> void:
 		if p != null:
 			p.queue_free()
 	players.clear()
-	if spectator_node:
-		spectator_node.queue_free()
-		spectator_node = null
-	local_elimination_spectator_active = false
-	live_spectate_focus_id = -1
-	live_spectate_strafe_dir = 0
+	spectator_controller.reset()
 	race_dnf_low_speed_ticks.clear()
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
@@ -2715,12 +2534,7 @@ func _return_to_lobby() -> void:
 		if p != null:
 			p.queue_free()
 	players.clear()
-	if spectator_node:
-		spectator_node.queue_free()
-		spectator_node = null
-	local_elimination_spectator_active = false
-	live_spectate_focus_id = -1
-	live_spectate_strafe_dir = 0
+	spectator_controller.reset()
 	race_dnf_low_speed_ticks.clear()
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
@@ -2756,12 +2570,7 @@ func _teardown_race_world_for_transition() -> void:
 		if p != null:
 			p.queue_free()
 	players.clear()
-	if spectator_node:
-		spectator_node.queue_free()
-		spectator_node = null
-	local_elimination_spectator_active = false
-	live_spectate_focus_id = -1
-	live_spectate_strafe_dir = 0
+	spectator_controller.reset()
 	race_dnf_low_speed_ticks.clear()
 	Engine.physics_ticks_per_second = 60
 	local_player_index = 0
@@ -3269,7 +3078,7 @@ func _process(delta: float) -> void:
 		_show_race_results_summary()
 		replay_controller.refresh_pause_button()
 	if game_sim.sim_started:
-		_update_live_finished_spectate_input()
+		spectator_controller.update_finished_input()
 		var profile_visuals_start := Time.get_ticks_usec() if auto_render_profile_mode else 0
 		replay_controller.update(delta)
 		_update_native_render_camera()
