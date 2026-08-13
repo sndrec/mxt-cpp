@@ -515,7 +515,7 @@ Do not touch a tool while overlapping pre-existing user edits are unresolved.
       validation, UI panels, and Blender registration.
 - [x] Keep Blender-required registration entry points thin and direct; do not
       preserve the old monolith as a forwarding shell.
-- [ ] Organize car-property codec/editor/graph tooling under `tools/car` with one
+- [x] Organize car-property codec/editor/graph tooling under `tools/car` with one
       authoritative format implementation and focused tests.
 - [x] Organize F-Zero/track sampling and conversion utilities under
       `tools/track`.
@@ -565,7 +565,7 @@ forward commits.
       code, not as redundant implementation prose.
 - [x] Remove stale planning documents or mark them superseded without deleting
       user history.
-- [ ] Finish all planned structural, tooling, and hygiene work before starting
+- [x] Finish all planned structural, tooling, and hygiene work before starting
       the expensive validation sequence.
 - [ ] Run the full stable smoke suite once.
 - [ ] Run applicable optional replay, multi-process, Steam, Blender, and export
@@ -1330,3 +1330,18 @@ Append entries; do not rewrite old evidence.
   protected pre-existing modifications.
 - Commits: `aad2c6e1` (`Centralize native build intermediates`) and `888364b6`
   (`Remove generated artifacts from tracking`).
+
+### Milestone 9b â€” car authoring tools organized
+
+- Date: 2026-08-13
+- After explicit authorization to include the four overlapping worktree files,
+  the car-properties codec, editor, curve graph, and regression tests moved
+  together from `scripts` to `tools/car`.
+- `mxt_car_props_format.py` remains the only Python owner of the binary and JSON
+  formats. Both interactive tools import it directly from their own directory;
+  the tests resolve that same implementation without a wrapper or compatibility
+  module.
+- README commands now name the new direct entry points and focused test suite.
+- Verification before commit: Python syntax compilation, the exact release
+  build, and an eight-second Godot project launch all passed. The regression
+  tests remain part of the now-starting final validation sequence.

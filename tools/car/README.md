@@ -3,6 +3,15 @@
 This directory is the home for standalone vehicle authoring and inspection
 tools. Repository build and packaging entry points remain under `scripts/`.
 
+`mxt_car_props_format.py` is the single authoritative Python implementation of
+the `.mxt_car_props` binary and JSON formats. The two interactive programs use
+that module directly:
+
+```powershell
+python tools/car/mxt_car_creator.py
+python tools/car/mtpoint_graph.py
+```
+
 `update_vehicle_files.py` repairs official vehicle scene/definition references
 from the assets currently present under `mxto/vehicle/asset`. Run it from any
 working directory:
@@ -11,5 +20,8 @@ working directory:
 python tools/car/update_vehicle_files.py
 ```
 
-The car-properties codec, editor, graph, and focused codec tests must move here
-together so the binary format retains one authoritative implementation.
+Run the focused codec regression tests from the repository root:
+
+```powershell
+python -m unittest discover tools/car/tests
+```

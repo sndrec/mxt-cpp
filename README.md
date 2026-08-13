@@ -86,12 +86,14 @@ logs default to a timestamped system temporary directory rather than the repo.
 The Blender add-on's pure helper tests are:
 
 ```powershell
+python -m unittest discover tools/car/tests
 python -m unittest discover track-editor-blender-plugin/tests
 ```
 
 ## Tool and service entry points
 
 - Blender add-on setup: [track-editor-blender-plugin/README.md](track-editor-blender-plugin/README.md)
+- car property authoring: [tools/car/README.md](tools/car/README.md)
 - F-Zero track conversion: [tools/track/fzgx/README.md](tools/track/fzgx/README.md)
 - auth-input dictionary training: `scripts/train_auth_input_dict.py --help`
 - playtester export packaging: `scripts/build_playtester_exports.ps1`
