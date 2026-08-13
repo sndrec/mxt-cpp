@@ -12,7 +12,7 @@ analytic road data into MXT track-editor files.
 Example:
 
 ```powershell
-.\scripts\fzgx\convert_gx_track.ps1 `
+.\tools\track\fzgx\convert_gx_track.ps1 `
   -CoursePath A:\programs\smb1-decomp\src-fzgx\fzgx-iso\files\stage\COLI_COURSE01.lz
 ```
 

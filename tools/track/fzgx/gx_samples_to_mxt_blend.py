@@ -2,7 +2,7 @@
 """Create an MXT track-editor .blend and .mxt_track from GX sampler JSON.
 
 Run through Blender:
-  blender --background --python scripts/fzgx/gx_samples_to_mxt_blend.py -- samples.json out.blend --export out.mxt_track
+  blender --background --python tools/track/fzgx/gx_samples_to_mxt_blend.py -- samples.json out.blend --export out.mxt_track
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import bpy
 from mathutils import Matrix, Quaternion, Vector
 
 
-DEFAULT_PLUGIN = Path(r"B:\programming\mxt-cpp\track-editor-blender-plugin\mxt_track_editor.py")
+DEFAULT_PLUGIN = Path(__file__).resolve().parents[3] / "track-editor-blender-plugin" / "mxt_track_editor"
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,9 +41,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_plugin(path: Path):
-    spec = importlib.util.spec_from_file_location("mxt_track_editor", str(path))
+    package_path = path.resolve()
+    init_path = package_path / "__init__.py"
+    spec = importlib.util.spec_from_file_location(
+        "mxt_track_editor",
+        str(init_path),
+        submodule_search_locations=[str(package_path)],
+    )
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"could not load plugin from {path}")
+        raise RuntimeError(f"could not load plugin package from {package_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.register()

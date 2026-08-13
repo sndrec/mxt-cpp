@@ -13,9 +13,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
+$RepoRoot = Resolve-Path (Join-Path $ScriptDir "..\..\..")
 $SamplerSource = Join-Path $ScriptDir "gx_track_sampler.cpp"
-$SamplerExe = Join-Path $ScriptDir "gx_track_sampler.exe"
+$SamplerBuildDir = Join-Path $RepoRoot "tmp\tools\fzgx"
+$SamplerExe = Join-Path $SamplerBuildDir "gx_track_sampler.exe"
 $ContentInclude = Join-Path $FzgxRoot "content_c\include"
 $ContentLib = Join-Path $FzgxRoot "build-fzgx-win-native\content_c\libfzgx_content.a"
 $BlenderScript = Join-Path $ScriptDir "gx_samples_to_mxt_blend.py"
@@ -33,6 +34,7 @@ if ([string]::IsNullOrWhiteSpace($TrackName)) {
 }
 
 New-Item -ItemType Directory -Force $OutDir | Out-Null
+New-Item -ItemType Directory -Force $SamplerBuildDir | Out-Null
 $Base = Join-Path $OutDir ("fzgx_course{0:D2}" -f $CourseId)
 $SamplesJson = "$Base`_samples.json"
 $BlendOut = "$Base.blend"
