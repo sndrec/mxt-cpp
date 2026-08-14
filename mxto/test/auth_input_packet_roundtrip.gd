@@ -137,10 +137,10 @@ func _run_case(mode: String, frame_count := 6, expected_packet_mode := -1, input
 	return true
 
 func _init() -> void:
-	var nm := NetworkManager.new()
-	nm.race_netplay_phase = 1
-	var packed_auth_tick := nm._pack_authoritative_input_tick(12345, 0x2a)
-	if nm._unpack_race_phase(packed_auth_tick) != 1 or nm._unpack_race_tick(packed_auth_tick) != 12345 or nm._unpack_authoritative_input_meta(packed_auth_tick) != 0x2a:
+	var input_transport := InputTransportController.new()
+	input_transport.race_netplay_phase = 1
+	var packed_auth_tick: int = input_transport._pack_authoritative_input_tick(12345, 0x2a)
+	if input_transport._unpack_race_phase(packed_auth_tick) != 1 or input_transport._unpack_race_tick(packed_auth_tick) != 12345 or input_transport._unpack_authoritative_input_meta(packed_auth_tick) != 0x2a:
 		push_error("MXT_AUTH_INPUT_ROUNDTRIP auth tick metadata packing failed")
 		quit(1)
 		return

@@ -1,7 +1,10 @@
 extends SceneTree
 
-const DEFAULT_TRACK := "res://track/high_stakes/track.mxt_track"
+const DEFAULT_TRACK_RELATIVE := "../export-bin/track/multiplex/track.mxt_track"
 const DEFAULT_CAR_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+
+func _default_track_path() -> String:
+	return ProjectSettings.globalize_path("res://").path_join(DEFAULT_TRACK_RELATIVE).simplify_path()
 
 func _arg_value(args: Array, name: String, fallback: String) -> String:
 	var idx := args.find(name)
@@ -54,7 +57,7 @@ func _free_sim(sim: GameSim) -> void:
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
-	var track_path := _arg_value(args, "--track", DEFAULT_TRACK)
+	var track_path := _arg_value(args, "--track", _default_track_path())
 	var car_props_path := _arg_value(args, "--car-props", DEFAULT_CAR_PROPS)
 	var cars := _arg_int(args, "--cars", 100)
 	var humans := clampi(_arg_int(args, "--humans", 20), 0, cars)

@@ -2,14 +2,17 @@ extends SceneTree
 
 const PlayerInputClass := preload("res://player/player_input.gd")
 
-const DEFAULT_TRACK := "res://track/multiplex/track.mxt_track"
+const DEFAULT_TRACK_RELATIVE := "../export-bin/track/multiplex/track.mxt_track"
 const DEFAULT_RACER_PROPS := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+
+func _default_track_path() -> String:
+	return ProjectSettings.globalize_path("res://").path_join(DEFAULT_TRACK_RELATIVE).simplify_path()
 
 func _init() -> void:
 	var args := OS.get_cmdline_user_args()
 	var frames := 720
 	var bumpers_enabled := !args.has("--no-bumpers")
-	var track_path := DEFAULT_TRACK
+	var track_path := _default_track_path()
 	var idx := args.find("--frames")
 	if idx >= 0 and idx + 1 < args.size():
 		frames = int(args[idx + 1])

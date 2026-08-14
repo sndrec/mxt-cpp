@@ -122,11 +122,13 @@ func _run() -> void:
 		_fail("global rate limiter accepted a message beyond its token budget")
 		return
 
-	var rpc_config := controller.get_rpc_config()
-	for method_name in ["_send_to_server", "_broadcast_message"]:
-		var config: Dictionary = rpc_config.get(method_name, {})
-		if int(config.get("channel", -1)) != 8 or int(config.get("transfer_mode", -1)) != MultiplayerPeer.TRANSFER_MODE_RELIABLE:
-			_fail("chat RPC channel or reliability changed for %s" % method_name)
+	var controller_source := FileAccess.get_file_as_string("res://ui/communication_controller.gd").replace("\r\n", "\n")
+	for declaration in [
+		'@rpc("any_peer", "call_remote", "reliable", 8)\nfunc _send_to_server',
+		'@rpc("authority", "call_local", "reliable", 8)\nfunc _broadcast_message',
+	]:
+		if !controller_source.contains(declaration):
+			_fail("chat RPC channel or reliability declaration changed: %s" % declaration)
 			return
 
 	print("MXT_TEXT_CHAT_HISTORY_SMOKE_PASS lobby_history=", controller.lobby_history.size(),

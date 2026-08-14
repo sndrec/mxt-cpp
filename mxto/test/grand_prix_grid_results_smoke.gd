@@ -16,13 +16,15 @@ func _init() -> void:
 		"grand_prix_current_track": 0,
 		"grand_prix_points": {1: 10, 2: 7, 3: 2},
 	}
-	var first_grid: PackedInt32Array = main.call("_build_start_grid_slots", [1, 2, 3])
+	var first_grid: PackedInt32Array = main.race_session_controller.call(
+		"_build_start_grid_slots", [1, 2, 3], false)
 	if first_grid != PackedInt32Array([-1, -1, -1]):
 		push_error("first Grand Prix race should use randomized grid, got %s" % [first_grid])
 		quit(1)
 		return
 	main.network_manager.race_options["grand_prix_current_track"] = 1
-	var standings_grid: PackedInt32Array = main.call("_build_start_grid_slots", [1, 2, 3])
+	var standings_grid: PackedInt32Array = main.race_session_controller.call(
+		"_build_start_grid_slots", [1, 2, 3], false)
 	if standings_grid != PackedInt32Array([2, 1, 0]):
 		push_error("Grand Prix standings grid mismatch, got %s" % [standings_grid])
 		quit(1)
@@ -148,30 +150,32 @@ func _init() -> void:
 		push_error("phase-matched authoritative packet should be valid, got %s" % [current_auth_stats])
 		quit(1)
 		return
-	var recv_nm := NetworkManager.new()
-	recv_nm.race_active = true
-	recv_nm.race_netplay_phase = 1
-	recv_nm.is_server = false
-	recv_nm.listen_server = false
-	recv_nm.player_ids = [1]
-	recv_nm.netcode_session.configure([1], [false], 1)
-	recv_nm._server_broadcast_flat(recv_nm._pack_authoritative_input_tick(0, -1), phase_one_auth_packet, 0)
-	if recv_nm.clients_server_tick != 1 or recv_nm.clients_target_tick != 0:
-		push_error("authoritative input broadcast should advance input tick without timing fields, server=%d target=%d" % [recv_nm.clients_server_tick, recv_nm.clients_target_tick])
+	var recv_transport := InputTransportController.new()
+	recv_transport.race_admission = RaceAdmissionController.new()
+	recv_transport.race_active = true
+	recv_transport.race_netplay_phase = 1
+	recv_transport.is_server = false
+	recv_transport.listen_server = false
+	recv_transport.player_ids = [1]
+	recv_transport.netcode_session.configure([1], [false], 1)
+	recv_transport._server_broadcast_flat(recv_transport._pack_authoritative_input_tick(0, -1), phase_one_auth_packet, 0)
+	if recv_transport.clients_server_tick != 1 or recv_transport.clients_target_tick != 0:
+		push_error("authoritative input broadcast should advance input tick without timing fields, server=%d target=%d" % [recv_transport.clients_server_tick, recv_transport.clients_target_tick])
 		quit(1)
 		return
-	var listen_nm := NetworkManager.new()
-	listen_nm.race_active = true
-	listen_nm.race_netplay_phase = 1
-	listen_nm.is_server = true
-	listen_nm.listen_server = true
-	listen_nm.target_tick = 7
-	listen_nm.max_ahead_from_server = 3.0
-	listen_nm.player_ids = [1]
-	listen_nm.netcode_session.configure([1], [false], 1)
-	listen_nm._server_broadcast_flat(listen_nm._pack_authoritative_input_tick(0, -1), phase_one_auth_packet, 0)
-	if listen_nm.clients_server_tick != 1 or listen_nm.clients_target_tick != 7:
-		push_error("listen authoritative input broadcast should preserve local target advancement, server=%d target=%d" % [listen_nm.clients_server_tick, listen_nm.clients_target_tick])
+	var listen_transport := InputTransportController.new()
+	listen_transport.race_admission = RaceAdmissionController.new()
+	listen_transport.race_active = true
+	listen_transport.race_netplay_phase = 1
+	listen_transport.is_server = true
+	listen_transport.listen_server = true
+	listen_transport.target_tick = 7
+	listen_transport.max_ahead_from_server = 3.0
+	listen_transport.player_ids = [1]
+	listen_transport.netcode_session.configure([1], [false], 1)
+	listen_transport._server_broadcast_flat(listen_transport._pack_authoritative_input_tick(0, -1), phase_one_auth_packet, 0)
+	if listen_transport.clients_server_tick != 1 or listen_transport.clients_target_tick != 7:
+		push_error("listen authoritative input broadcast should preserve local target advancement, server=%d target=%d" % [listen_transport.clients_server_tick, listen_transport.clients_target_tick])
 		quit(1)
 		return
 	if race_started_was_connected:

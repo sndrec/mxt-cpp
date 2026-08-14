@@ -303,9 +303,9 @@ CarStatModifierLayer classify_car_technique_modifier(
 		return CAR_MODIFIER_LAYER_COUNT;
 	}
 	out_intensity = strafe_amount;
-	// Lateral slip normally points away from the direction the nose is turning.
-	// Strafing with that slip is an MTS; strafing against it is a quick turn.
-	return parity > 0.0f ? CAR_MODIFIER_MTS : CAR_MODIFIER_QUICKTURN;
+	// Matching the strafe and signed-slip directions is a quick turn; opposing
+	// them is an MTS, as in the original actual-slip classifier.
+	return parity > 0.0f ? CAR_MODIFIER_QUICKTURN : CAR_MODIFIER_MTS;
 }
 
 CarStatModifierLayer classify_car_boost_modifier(

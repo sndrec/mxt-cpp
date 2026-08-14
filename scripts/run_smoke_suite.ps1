@@ -18,6 +18,15 @@ if (Test-Path -LiteralPath 'variable:PSNativeCommandUseErrorActionPreference') {
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $repoRoot 'mxto'
 $lobbyLoadRunner = Join-Path $PSScriptRoot 'run_lobby_load_test.ps1'
+$godotCommandPath = $GodotPath
+if ($GodotPath.EndsWith('.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
+    -not $GodotPath.EndsWith('_console.exe', [System.StringComparison]::OrdinalIgnoreCase)) {
+    $consoleName = [System.IO.Path]::GetFileNameWithoutExtension($GodotPath) + '_console.exe'
+    $consolePath = Join-Path ([System.IO.Path]::GetDirectoryName($GodotPath)) $consoleName
+    if (Test-Path -LiteralPath $consolePath -PathType Leaf) {
+        $godotCommandPath = $consolePath
+    }
+}
 
 $stableScripts = @(
     'car_livery_render_manager_smoke.gd'
@@ -100,6 +109,8 @@ function Invoke-GodotScript {
 
     $arguments = @(
         '--headless'
+        '--quit-after'
+        '600'
         '--path'
         $projectPath
         '--script'
@@ -112,8 +123,15 @@ function Invoke-GodotScript {
 
     $logPath = Join-Path $OutputDirectory ($ScriptName + '.log')
     Write-Output "RUN $ScriptName"
-    & $GodotPath @arguments *> $logPath
-    $exitCode = $LASTEXITCODE
+    $savedErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $godotCommandPath @arguments *> $logPath
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $savedErrorActionPreference
+    }
     $logLines = @(Get-Content -LiteralPath $logPath)
     $logLines | Write-Output
     if (($exitCode -ne 0) -or (Test-LogForEngineFailure -Lines $logLines)) {
@@ -163,7 +181,7 @@ function Invoke-LobbyLoadGroup {
         '-Clients'
         $LobbyClients
         '-GodotPath'
-        $GodotPath
+        $godotCommandPath
     )
     if ($TracksDirectory -ne '') {
         $arguments += '-TracksDirectory'
@@ -196,6 +214,10 @@ if ($Group -contains 'list') {
 
 if (-not (Test-Path -LiteralPath $GodotPath -PathType Leaf)) {
     Write-Error "Godot executable not found: $GodotPath"
+    exit 2
+}
+if (-not (Test-Path -LiteralPath $godotCommandPath -PathType Leaf)) {
+    Write-Error "Godot command executable not found: $godotCommandPath"
     exit 2
 }
 if (-not (Test-Path -LiteralPath $projectPath -PathType Container)) {

@@ -450,8 +450,8 @@ func latency_text_for_player(player_id: int) -> String:
 	var value := -1.0
 	if network_manager.lobby_settings.latency_rtt_s.has(player_id):
 		value = float(network_manager.lobby_settings.latency_rtt_s[player_id])
-	elif network_manager.peer_client_rtt_s.has(player_id):
-		value = float(network_manager.peer_client_rtt_s[player_id])
+	elif network_manager.input_transport.peer_client_rtt_s.has(player_id):
+		value = float(network_manager.input_transport.peer_client_rtt_s[player_id])
 	elif !network_manager.is_server and player_id == 1:
 		value = network_manager.input_transport.rtt_s
 	return "--ms" if value < 0.0 else "%dms" % roundi(value * 1000.0)

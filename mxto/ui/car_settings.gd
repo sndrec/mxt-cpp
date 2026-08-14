@@ -15,6 +15,7 @@ const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
 
 const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
 const PREVIEW_PAN_LIMIT := 4.0
+const PREVIEW_TARGET_HEIGHT := 0.5
 
 @onready var machine_setting_slider: HSlider = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingSlider
 @onready var machine_setting_percent: Label = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingPercent
@@ -1789,14 +1790,14 @@ func _focus_preview_on_stamp(stamp: CarLiveryStamp) -> void:
 	preview_vehicle.transform = _preview_vehicle_scene_transform()
 	var projector := preview_vehicle.global_transform * Transform3D(stamp.local_basis, stamp.local_origin)
 	var view_direction := projector.basis.z.normalized()
-	preview_pan = projector.origin - Vector3(0.0, 0.5, 0.0)
 	preview_yaw = atan2(view_direction.x, view_direction.z)
 	var stamp_elevation := asin(clampf(view_direction.y, -1.0, 1.0))
 	preview_pitch = clampf(-stamp_elevation, deg_to_rad(-90.0), deg_to_rad(55.0))
 	var plane_basis := _preview_view_plane_basis(_preview_camera_offset())
+	var relative_origin := projector.origin - Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0)
 	preview_pan = Vector3(
-		clampf(projector.origin.dot(plane_basis.x), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
-		clampf(projector.origin.dot(plane_basis.y), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
+		clampf(relative_origin.dot(plane_basis.x), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
+		clampf(relative_origin.dot(plane_basis.y), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
 		0.0
 	)
 	preview_has_camera_override = false
@@ -2064,7 +2065,8 @@ func _preview_camera_basis(camera_offset: Vector3) -> Basis:
 
 func _preview_pan_target(camera_offset: Vector3) -> Vector3:
 	var plane_basis := _preview_view_plane_basis(camera_offset)
-	return plane_basis.x * preview_pan.x + plane_basis.y * preview_pan.y
+	return Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0) \
+		+ plane_basis.x * preview_pan.x + plane_basis.y * preview_pan.y
 
 func _preview_view_plane_basis(camera_offset: Vector3) -> Basis:
 	var view_back := camera_offset.normalized()

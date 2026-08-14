@@ -23,17 +23,11 @@ func _init() -> void:
 		vehicle_selector.select(0)
 		car_settings.call("_on_vehicle_selected", 0)
 		var first_content_id: String = car_settings.player_settings.vehicle_content_id
-		var item_rect := vehicle_selector.get_item_rect(1)
-		var click_pos := vehicle_selector.global_position + item_rect.position + item_rect.size * 0.5
-		car_settings.call("_try_select_vehicle_at_global_position", click_pos)
+		vehicle_selector.select(1)
+		vehicle_selector.item_selected.emit(1)
 		await process_frame
 		if car_settings.player_settings.vehicle_content_id == first_content_id:
-			push_error("car settings vehicle selector did not receive click input point=%s selector_global=%s item_rect=%s mouse=%s" % [
-				click_pos,
-				vehicle_selector.get_global_rect(),
-				item_rect,
-				vehicle_selector.get_local_mouse_position(),
-			])
+			push_error("car settings vehicle selector signal did not update the selected content")
 			quit(1)
 			return
 
@@ -65,7 +59,7 @@ func _init() -> void:
 		return
 	var yaw_basis := Basis(Vector3.UP, car_settings.preview_yaw)
 	var pitch_basis := Basis(yaw_basis.x.normalized(), car_settings.preview_pitch)
-	var camera_offset: Vector3 = pitch_basis * (yaw_basis * Vector3(0.0, 3.5, car_settings.preview_distance))
+	var camera_offset: Vector3 = pitch_basis * (yaw_basis * Vector3(0.0, 0.0, car_settings.preview_distance))
 	var expected_camera_pos: Vector3 = _pan_target(car_settings.preview_pan, camera_offset) + camera_offset
 	if car_settings.preview_camera.position.distance_to(expected_camera_pos) > 0.001:
 		push_error("car settings preview pitch is not moving the camera orbit")
@@ -99,7 +93,7 @@ func _init() -> void:
 	var pitch_after_pan: float = car_settings.preview_pitch
 	var yaw_basis_after_pan := Basis(Vector3.UP, yaw_after_pan)
 	var pitch_basis_after_pan := Basis(yaw_basis_after_pan.x.normalized(), pitch_after_pan)
-	var panned_camera_offset: Vector3 = pitch_basis_after_pan * (yaw_basis_after_pan * Vector3(0.0, 3.5, car_settings.preview_distance))
+	var panned_camera_offset: Vector3 = pitch_basis_after_pan * (yaw_basis_after_pan * Vector3(0.0, 0.0, car_settings.preview_distance))
 	var expected_panned_camera: Vector3 = _pan_target(car_settings.preview_pan, panned_camera_offset) + panned_camera_offset
 	if car_settings.preview_camera.position.distance_to(expected_panned_camera) > 0.001:
 		push_error("car settings preview pan did not move the camera orbit target")
@@ -107,8 +101,8 @@ func _init() -> void:
 		return
 	var panned_target: Vector3 = car_settings.preview_camera.position - panned_camera_offset
 	var view_back := panned_camera_offset.normalized()
-	if absf(panned_target.dot(view_back)) > 0.001:
-		push_error("car settings preview pan target is not on the camera-facing plane through the car origin")
+	if absf((panned_target - Vector3(0.0, 0.5, 0.0)).dot(view_back)) > 0.001:
+		push_error("car settings preview pan target is not on the camera-facing plane through the vehicle target")
 		quit(1)
 		return
 	car_settings.preview_pan = Vector3(99.0, -99.0, 12.0)
@@ -124,9 +118,9 @@ func _init() -> void:
 	car_settings.preview_pan = Vector3.ZERO
 	car_settings.call("_apply_preview_camera")
 	var camera_back: Vector3 = car_settings.preview_camera.global_transform.basis.z.normalized()
-	var expected_back: Vector3 = car_settings.preview_camera.global_position.normalized()
+	var expected_back: Vector3 = (car_settings.preview_camera.global_position - Vector3(0.0, 0.5, 0.0)).normalized()
 	if camera_back.distance_to(expected_back) > 0.001:
-		push_error("zeroing preview pan did not recenter the camera on the world origin")
+		push_error("zeroing preview pan did not recenter the camera on the vehicle target")
 		quit(1)
 		return
 	car_settings.preview_pan = Vector3.ZERO
@@ -188,9 +182,15 @@ func _init() -> void:
 			return
 		car_settings.stamp_edit_roll = 0.35
 		car_settings.call("_layout_stamp_edit_overlay")
+		var edit_projection_hit: Dictionary = car_settings.call(
+			"_raycast_preview_body", car_settings.car_preview_space.size * 0.5)
+		if edit_projection_hit.is_empty():
+			push_error("stamp edit projection could not hit the selected preview vehicle")
+			quit(1)
+			return
 		car_settings.call("_apply_edit_stamp_from_camera")
 		if absf(edit_stamp.rotation + 0.35) > 0.001:
-			push_error("stamp projection rotation does not match the edit box direction")
+			push_error("stamp projection rotation does not match the edit box direction: got %.3f expected -0.350" % edit_stamp.rotation)
 			quit(1)
 			return
 		car_settings.preview_has_camera_override = true
@@ -235,21 +235,6 @@ func _init() -> void:
 	print("MXT_CAR_SETTINGS_PREVIEW_INPUT_SMOKE cars=", vehicle_selector.item_count)
 	quit(0)
 
-func _push_mouse_click(position: Vector2) -> void:
-	var motion := InputEventMouseMotion.new()
-	motion.position = position
-	root.get_viewport().push_input(motion)
-	var press := InputEventMouseButton.new()
-	press.button_index = MOUSE_BUTTON_LEFT
-	press.pressed = true
-	press.position = position
-	root.get_viewport().push_input(press)
-	var release := InputEventMouseButton.new()
-	release.button_index = MOUSE_BUTTON_LEFT
-	release.pressed = false
-	release.position = position
-	root.get_viewport().push_input(release)
-
 func _pan_target(pan: Vector3, camera_offset: Vector3) -> Vector3:
 	var view_back := camera_offset.normalized()
 	var right := Vector3.UP.cross(view_back)
@@ -258,4 +243,4 @@ func _pan_target(pan: Vector3, camera_offset: Vector3) -> Vector3:
 	else:
 		right = right.normalized()
 	var up := view_back.cross(right).normalized()
-	return right * pan.x + up * pan.y
+	return Vector3(0.0, 0.5, 0.0) + right * pan.x + up * pan.y

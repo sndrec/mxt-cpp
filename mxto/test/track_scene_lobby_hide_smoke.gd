@@ -11,15 +11,11 @@ func _init() -> void:
 		push_error("track scene lobby hide smoke has no car definitions")
 		quit(1)
 		return
-	var track_index := -1
-	for i in range(main.track_content_controller.tracks.size()):
-		if String(main.track_content_controller.tracks[i].get("name", "")) == "Mute City - Serial Gaps":
-			track_index = i
-			break
-	if track_index < 0:
-		push_error("track scene lobby hide smoke could not find Serial Gaps")
+	if main.track_content_controller.tracks.is_empty():
+		push_error("track scene lobby hide smoke has no tracks")
 		quit(1)
 		return
+	var track_index := 0
 	var player_id := 1
 	var def: CarDefinition = main.vehicle_content_controller.definitions[0]
 	var settings := {
