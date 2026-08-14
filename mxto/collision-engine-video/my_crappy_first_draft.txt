@@ -1,9 +1,0 @@
-Most 3D videogames use triangles for collision. They’re simple to implement, compatible with all commonly used 3D workflows. and with good spatial acceleration structures, you can test against millions of triangles pretty quickly.
-
-However, triangles are discrete. They’re the portion of a flat plane that is cut out by the boundary of three points. If you want to represent a smooth surface, you can only ever approximate it. No matter how finely you subdivide, it only approaches the real surface. Even if you do that, it leaves an enormous memory footprint - you have to store all of that data, and you pay for it in performance through memory access times.
-
-I’m making an anti-gravity racing game that is heavily inspired by the F-ZERO series, GX in particular. These roads can curve, twist, and spin in any direction. More importantly, the game supports online multiplayer with rollback, which means I could be simulating dozens of vehicles, dozens of times per frame, which adds up fast. The vehicle physics tick could potentially run upwards of 40,000 times per second!
-
-There are ever more tricks you can pull to make triangles work, but I didn’t want tricks. I wanted something better. Something that would always be perfectly smooth, with miniscule memory usage. Something that could be evaluated quickly, and provide me with useful contextual data about the road being driven on.
-
-I decided to use cubic bezier splines to represent the road transform and shape.

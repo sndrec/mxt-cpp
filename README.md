@@ -14,11 +14,6 @@ leaderboard verification service.
 - `services/leaderboard_verifier/` — separately deployed leaderboard service
 - `reference/` — non-production reference implementations and snapshots
 - `track_source_files/` — tracked source `.blend` files for official tracks
-- `docs/` — maintained formats, workflows, and repository policy
-
-See [docs/repository_layout.md](docs/repository_layout.md) for the generated and
-local-asset policy and [docs/runtime_ownership.md](docs/runtime_ownership.md) for
-the scene-owner lifecycle map.
 
 ## Runtime ownership
 
@@ -83,7 +78,7 @@ The stable single-process suite and deterministic simulation suite are:
 
 Replay and lobby-load groups require their documented inputs/helpers. Smoke
 logs default to a timestamped system temporary directory rather than the repo.
-The Blender add-on's pure helper tests are:
+The lightweight Python tool tests are:
 
 ```powershell
 python -m unittest discover tools/car/tests
@@ -98,6 +93,3 @@ python -m unittest discover track-editor-blender-plugin/tests
 - auth-input dictionary training: `scripts/train_auth_input_dict.py --help`
 - playtester export packaging: `scripts/build_playtester_exports.ps1`
 - leaderboard service: [services/leaderboard_verifier/README.md](services/leaderboard_verifier/README.md)
-
-`REPOSITORY_REFACTOR_PLAN.md` is the execution record for the repository-scale
-cleanup. The older `REFACTOR_PLAN.md` is retained only as historical context.

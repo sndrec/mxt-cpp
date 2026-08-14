@@ -1,7 +1,5 @@
 # MaxX Throttle trusted leaderboard verifier
 
-The full Partner configuration, credential-handling, provisioning, deployment, and live acceptance procedure is in `docs/steamworks_launch_checklist.md`.
-
 This service is the only score-writing component. The game client can read Steam leaderboards and obtain a Web API authentication ticket, but it has no score-upload binding. A submission is accepted only after the service:
 
 1. authenticates the ticket against the configured identity;

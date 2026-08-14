@@ -40,3 +40,16 @@ mxt-cpp.7z
 /asset/
 /music/
 /quickbms/
+
+# Retired local notes, drafts, and completed execution records
+/REFACTOR_PLAN.md
+/REPOSITORY_REFACTOR_PLAN.md
+/VERIFICATION.md
+/carprop_spec.txt
+/lvldat_spec.txt
+/rollback_pseudocode.txt
+/todo_performance_improvements.txt
+/mxto/MIRACLE-HINACLE.txt
+/mxto/auth_random_strategy.txt
+/mxto/collision-engine-video/
+/src/car/car_vs_car_collision_reference.txt
