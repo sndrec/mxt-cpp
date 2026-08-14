@@ -33,3 +33,10 @@ RolledOut-Source/
 tmp-probes/
 car_base.gd
 mxt-cpp.7z
+
+# Local research, profiling, extraction, and source-asset workspaces
+/.agents/
+/.tmp_*/
+/asset/
+/music/
+/quickbms/
