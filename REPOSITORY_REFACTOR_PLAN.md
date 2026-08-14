@@ -4,9 +4,9 @@
 
 - Authoritative plan: this file.
 - The older `REFACTOR_PLAN.md` is not an input to this effort and must be ignored.
-- Implementation is active. Milestones 0 through 8 and Milestone 10 are
-  complete. Milestone 9's car-tool move is waiting on protected user edits;
-  Milestone 11 documentation is next, with final tests still deferred.
+- Implementation is complete. All structural, tooling, hygiene, documentation,
+  and final validation milestones are finished; unavailable external checks are
+  recorded in the progress log.
 - Existing commit history must be preserved. Do not squash, rebase, filter, or
   otherwise rewrite the 64 commits currently ahead of `origin/before-cpu-driver`.
 - Repository-artifact cleanup is intentionally scheduled after the architectural
@@ -520,7 +520,7 @@ Do not touch a tool while overlapping pre-existing user edits are unresolved.
 - [x] Organize F-Zero/track sampling and conversion utilities under
       `tools/track`.
 - [x] Update imports and documented invocations directly.
-- [ ] Add non-Blender unit tests for pure format/geometry helpers and perform an
+- [x] Add non-Blender unit tests for pure format/geometry helpers and perform an
       actual Blender add-on enable/import/export smoke when Blender is available.
 
 Completion condition: no hand-written tool source file exceeds 4,000 lines,
@@ -567,19 +567,19 @@ forward commits.
       user history.
 - [x] Finish all planned structural, tooling, and hygiene work before starting
       the expensive validation sequence.
-- [ ] Run the full stable smoke suite once.
-- [ ] Run applicable optional replay, multi-process, Steam, Blender, and export
+- [x] Run the full stable smoke suite once.
+- [x] Run applicable optional replay, multi-process, Steam, Blender, and export
       groups when prerequisites exist; record skipped prerequisites honestly.
-- [ ] Run the required release build from a clean source state.
-- [ ] Run Python/tool tests.
-- [ ] Diagnose every failure and make focused repair commits without backing out
+- [x] Run the required release build from a clean source state.
+- [x] Run Python/tool tests.
+- [x] Diagnose every failure and make focused repair commits without backing out
       valid architectural ownership.
-- [ ] Rerun only failing groups while repairing them.
-- [ ] After repairs pass, run one final full applicable validation matrix.
-- [ ] Run `git diff --check` and inspect final status.
-- [ ] Confirm there are no goal-owned uncommitted changes.
-- [ ] Confirm pre-existing unrelated files remain intact.
-- [ ] Add the final commit/test summary to the progress log.
+- [x] Rerun only failing groups while repairing them.
+- [x] After repairs pass, run one final full applicable validation matrix.
+- [x] Run `git diff --check` and inspect final status.
+- [x] Confirm there are no goal-owned uncommitted changes.
+- [x] Confirm pre-existing unrelated files remain intact.
+- [x] Add the final commit/test summary to the progress log.
 
 Completion condition: every milestone is checked, every slice is committed,
 the final verification matrix passes or has explicitly documented unavailable
@@ -1345,3 +1345,35 @@ Append entries; do not rewrite old evidence.
 - Verification before commit: Python syntax compilation, the exact release
   build, and an eight-second Godot project launch all passed. The regression
   tests remain part of the now-starting final validation sequence.
+
+### Milestone 11 — final validation and repair complete
+
+- Date: 2026-08-13
+- The stable smoke group passed all 23 scripts. The simulation group passed all
+  5 scripts, including 100-car native range and restore-equivalence coverage.
+- Focused repairs updated stale test ownership after the runtime refactors,
+  corrected the car technique classifier's original quick-turn/MTS polarity,
+  fixed the lobby latency lookup, and recentered the garage preview camera on
+  the vehicle body. The smoke runner now uses the attached Godot console binary
+  and has a bounded per-script exit.
+- Final lightweight tool coverage passed: 9 car format tests and 3 pure Blender
+  helper tests. Blender itself was not installed, so add-on enable/import/export
+  validation was unavailable.
+- Optional external coverage was evaluated honestly. The only local replay used
+  legacy schema `-1` rather than required schema `4`; Steam had no app ID or live
+  session; and Blender-dependent export validation was unavailable. Current
+  local exported tracks were loaded successfully by the simulation tests.
+- The lobby-load helper defaults to 40 local clients. Its stress run was stopped
+  at the user's direction and was not repeated; all spawned Godot processes were
+  confirmed gone. Multi-process stress is not part of the accepted final gate.
+- Final required verification passed: `scons target=template_release -j4`, an
+  ordinary bounded Godot 4.7.1 Vulkan launch with exit code 0,
+  `git diff --check`, and final status inspection. Existing shutdown-only
+  render-thread, ObjectDB, missing-Steam-app-ID, and property-info diagnostics
+  remain recorded.
+- Protected local material remains present, including the lobby-load helper,
+  `vc140.pdb`, root artwork and playtest capture, the custom stamp,
+  `track_exports_old/`, and `track_ground/`. The remaining worktree changes are
+  the pre-existing user-owned `.gitignore` and `AGENTS.MD` edits.
+- Commits: `2d2aa328` (`Organize car authoring tools`) and `0985f351`
+  (`Repair deferred refactor validation`).
