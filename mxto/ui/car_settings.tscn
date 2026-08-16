@@ -59,8 +59,8 @@ offset_left = 10.0
 offset_top = 10.0
 offset_right = -10.0
 offset_bottom = -10.0
-grow_horizontal = 2
-grow_vertical = 2
+grow_horizontal = 1
+grow_vertical = 1
 current_tab = 0
 
 [node name="Driver" type="VBoxContainer" parent="Container/SettingsTabs" unique_id=1916315200]
