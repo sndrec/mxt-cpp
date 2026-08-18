@@ -20,9 +20,9 @@ static constexpr CarStatMetadata CAR_STAT_METADATA[CAR_STAT_COUNT] = {
 	 "values resist breakaway longer.",
 	 "scalar", "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_HIGHER_BENEFIT,
 	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT},
-	{"grip_2", "Drift Rotation Coupling",
+	{"grip_2", "Drift Rotation Strength",
 	 "Scales the angular correction applied while a tilt point is drifting. "
-	 "Its practical value depends on the maneuver.",
+	 "Higher values make drift forces rotate the machine's facing direction more strongly.",
 	 "scalar", "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, false, CAR_STAT_DIRECTION_CONTEXT_DEPENDENT,
 	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT},
 	{"grip_3", "Re-grip Tendency",
@@ -60,7 +60,9 @@ static constexpr CarStatMetadata CAR_STAT_METADATA[CAR_STAT_COUNT] = {
 	 "benefit depends on the surrounding handling values.",
 	 "scalar", "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, false, CAR_STAT_DIRECTION_CONTEXT_DEPENDENT,
 	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT},
-	{"drag", "Rolling Drag", "Flat base-speed loss applied every simulation tick.", "speed/tick",
+	{"drag", "Drag",
+	 "Constant base-speed loss applied every simulation tick, separate from the automatic "
+	 "speed-squared air resistance shared by every machine.", "speed/tick",
 	 "Drive", CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_LOWER_BENEFIT,
 	 CAR_STAT_DIRECTION_LOWER_BENEFIT},
 	{"body", "Damage Multiplier",

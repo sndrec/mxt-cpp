@@ -68,6 +68,20 @@ func _test_performance_grades() -> void:
 	for category_value in categories:
 		var category: Dictionary = category_value
 		_expect(String(category.get("grade", "")) == "C", "All Rounder should anchor %s at C" % String(category.get("name", "category")))
+		for component_value in category.get("components", []):
+			var component: Dictionary = component_value
+			_expect(not String(component.get("explanation", "")).is_empty(), "%s benchmark should explain what it measures" % String(component.get("name", "benchmark")))
+	var cornering: Dictionary = categories[2]
+	var cornering_components: Array = cornering.get("components", [])
+	_expect(String((cornering_components[0] as Dictionary).get("name", "")) == "Normal Steering Strength", "ordinary turn authority should use a player-facing name")
+	_expect(String((cornering_components[2] as Dictionary).get("name", "")) == "Turbo-Slide Steering", "MTS benchmark should identify the maneuver it measures")
+	var acceleration_components: Array = (categories[1] as Dictionary).get("components", [])
+	_expect(String((acceleration_components[2] as Dictionary).get("unit", "")) == "meters", "first-five-second benchmark should be displayed as distance")
+	for stat_value in first.get("advanced_stats", []):
+		var stat_data: Dictionary = stat_value
+		if String(stat_data.get("name", "")) == "drag":
+			_expect(String(stat_data.get("friendly_name", "")) == "Drag", "raw drag should not be mislabeled as Rolling Drag")
+			_expect(String(stat_data.get("explanation", "")).contains("air resistance"), "Drag help should distinguish its constant loss from automatic air resistance")
 
 	for trait_value in first.get("traits", []):
 		var trait_data: Dictionary = trait_value
@@ -108,7 +122,13 @@ func _test_performance_grades() -> void:
 	for key_value in irrelevant_energy_curve:
 		(key_value as Dictionary)["value"] = 5.0
 	_expect(bool(custom.set_curve("no_boost", "boost_energy_use_rate", irrelevant_energy_curve).get("valid", false)), "custom no-boost energy-use curve should validate")
+	_expect(bool(custom.make_special_custom("mts", "acceleration").get("valid", false)), "Turbo Slide acceleration should become custom")
+	var mts_acceleration_curve: Array = custom.get_curve("mts", "acceleration")
+	for key_value in mts_acceleration_curve:
+		(key_value as Dictionary)["value"] = 0.4
+	_expect(bool(custom.set_curve("mts", "acceleration", mts_acceleration_curve).get("valid", false)), "custom Turbo Slide acceleration should validate")
 	var filtered_analysis: Dictionary = analyzer.analyze_session(custom, 0.5)
+	var found_mts_acceleration := false
 	for trait_value in filtered_analysis.get("traits", []):
 		var trait_data: Dictionary = trait_value
 		_expect(String(trait_data.get("context", "")) != "During S-Boost", "S-Boost overrides must not appear as traits")
@@ -116,6 +136,12 @@ func _test_performance_grades() -> void:
 		var impossible_energy_use := String(trait_data.get("stat_name", "")) == "boost_energy_use_rate" \
 				and String(trait_data.get("context", "")) == "Without Boost"
 		_expect(not impossible_energy_use, "boost energy use without an active manual boost must not appear as a trait")
+		if String(trait_data.get("stat_name", "")) == "acceleration" \
+				and String(trait_data.get("context", "")) == "While Turbo Sliding":
+			found_mts_acceleration = true
+			_expect(String(trait_data.get("kind", "")) == "strength", "lower Turbo Slide acceleration should be classified as an advantage")
+			_expect(String(trait_data.get("explanation", "")).contains("pull back down"), "Turbo Slide acceleration should explain its inverted interpretation")
+	_expect(found_mts_acceleration, "custom Turbo Slide acceleration should produce a contextual trait")
 
 
 func _test_trusted_leaderboard_details() -> void:

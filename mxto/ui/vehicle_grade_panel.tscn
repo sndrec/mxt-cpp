@@ -12,7 +12,7 @@ text = "PERFORMANCE"
 
 [node name="CategoryGrid" type="GridContainer" parent="."]
 layout_mode = 2
-columns = 4
+columns = 6
 
 [node name="Summary" type="Label" parent="."]
 layout_mode = 2
@@ -48,4 +48,3 @@ horizontal_scroll_mode = 0
 [node name="Rows" type="VBoxContainer" parent="Details/Traits"]
 layout_mode = 2
 size_flags_horizontal = 3
-

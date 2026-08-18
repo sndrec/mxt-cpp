@@ -11,7 +11,7 @@ var category_value_labels: Dictionary = {}
 const CATEGORY_HELP := {
 	"Speed": "Settled straight-line speed without boost.",
 	"Acceleration": "Early speed, fixed-speed milestones, and early distance—not merely time to the machine's own top speed.",
-	"Cornering": "Turn authority and speed retention in ordinary and intentional drifting turns.",
+	"Cornering": "Steering strength and speed retention in normal turns and full Turbo Slides.",
 	"Grip": "How long the machine stays planted and how readily it settles and re-grips after a slide. Higher is more stable.",
 	"Booster": "Manual-boost burst and sustained advantage from one full energy reserve.",
 	"Body": "Effective durability and stability in a fixed collision with the All Rounder reference.",
@@ -28,6 +28,7 @@ func _ready() -> void:
 		name_label.tooltip_text = String(CATEGORY_HELP[category])
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		category_grid.add_child(name_label)
+		category_grid.add_child(_make_help_button(String(CATEGORY_HELP[category])))
 		var grade_label := Label.new()
 		grade_label.text = "—"
 		grade_label.custom_minimum_size.x = 42.0
@@ -84,10 +85,13 @@ func show_analysis(result: Dictionary) -> void:
 
 func _add_benchmark_row(category: String, component: Dictionary) -> void:
 	var row := HBoxContainer.new()
+	var explanation := String(component.get("explanation", "No explanation is available for this benchmark."))
+	row.tooltip_text = explanation
 	var label := Label.new()
 	label.text = "%s · %s" % [category, String(component.get("name", "Metric"))]
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
+	row.add_child(_make_help_button(explanation))
 	var value := Label.new()
 	value.text = "%s %s" % [_format_value(float(component.get("value", 0.0))), String(component.get("unit", ""))]
 	value.custom_minimum_size.x = 118.0
@@ -110,6 +114,7 @@ func _add_advanced_row(stat_value: Dictionary) -> void:
 	name_label.text = String(stat_value.get("friendly_name", stat_value.get("name", "Stat")))
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(name_label)
+	header.add_child(_make_help_button(String(stat_value.get("explanation", "No explanation is available for this stat."))))
 	var exact := Label.new()
 	exact.text = "%s %s" % [_format_value(float(stat_value.get("value", 0.0))), String(stat_value.get("unit", ""))]
 	exact.custom_minimum_size.x = 135.0
@@ -134,21 +139,39 @@ func _add_advanced_row(stat_value: Dictionary) -> void:
 
 
 func _add_trait_row(trait_value: Dictionary) -> void:
+	var row := HBoxContainer.new()
 	var label := Label.new()
 	label.text = String(trait_value.get("text", "Special-state difference"))
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	var reference_name := "Roster baseline" if bool(trait_value.get("uses_roster_baseline", false)) else "Ordinary"
-	label.tooltip_text = "%s %s; special %s %s" % [
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var reference_name := "Roster baseline" if bool(trait_value.get("uses_roster_baseline", false)) else "Normal-state value"
+	var explanation := String(trait_value.get("explanation", "No explanation is available for this trait."))
+	var details := "%s\n\n%s %s; special %s %s" % [
+		explanation,
 		reference_name,
 		_format_value(float(trait_value.get("base_value", 0.0))),
 		_format_value(float(trait_value.get("effective_value", 0.0))),
 		String(trait_value.get("unit", "")),
 	]
+	label.tooltip_text = details
 	match String(trait_value.get("kind", "distinctive")):
 		"strength": label.modulate = Color(0.45, 0.82, 1.0)
 		"drawback": label.modulate = Color(1.0, 0.56, 0.46)
 		_: label.modulate = Color(0.82, 0.72, 1.0)
-	trait_rows.add_child(label)
+	row.add_child(label)
+	row.add_child(_make_help_button(details))
+	trait_rows.add_child(row)
+
+
+func _make_help_button(help_text: String) -> Button:
+	var button := Button.new()
+	button.text = "?"
+	button.tooltip_text = help_text
+	button.flat = true
+	button.focus_mode = Control.FOCUS_NONE
+	button.mouse_default_cursor_shape = Control.CURSOR_HELP
+	button.custom_minimum_size = Vector2(24.0, 24.0)
+	return button
 
 
 func _add_message(parent: VBoxContainer, text: String) -> void:

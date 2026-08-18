@@ -34,6 +34,7 @@ const char *car_performance_category_name(CarPerformanceCategory category);
 uint8_t car_performance_component_count(CarPerformanceCategory category);
 const char *car_performance_component_name(CarPerformanceCategory category, uint8_t component);
 const char *car_performance_component_unit(CarPerformanceCategory category, uint8_t component);
+const char *car_performance_component_explanation(CarPerformanceCategory category, uint8_t component);
 
 bool analyze_car_performance(
 		const PhysicsCarProperties &properties,

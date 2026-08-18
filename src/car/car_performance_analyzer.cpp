@@ -132,6 +132,47 @@ static bool trait_context_can_use_stat(uint8_t layer, CarStatId stat) {
 	}
 }
 
+static CarStatDirection trait_direction(
+		uint8_t layer, CarStatId stat, const CarStatMetadata &metadata) {
+	if (layer == CAR_MODIFIER_MTS) {
+		switch (stat) {
+		case CAR_STAT_ACCELERATION:
+		case CAR_STAT_GRIP_1:
+		case CAR_STAT_GRIP_3:
+		case CAR_STAT_TURN_TENSION:
+		case CAR_STAT_ACCEL_PRESS_GRIP_FRAMES:
+			return CAR_STAT_DIRECTION_LOWER_BENEFIT;
+		case CAR_STAT_DRIFT_ACCEL:
+			return CAR_STAT_DIRECTION_HIGHER_BENEFIT;
+		default:
+			break;
+		}
+	}
+	return metadata.special_direction;
+}
+
+static String trait_interpretation(
+		uint8_t layer, CarStatId stat, CarStatDirection direction) {
+	if (layer == CAR_MODIFIER_MTS && stat == CAR_STAT_ACCELERATION) {
+		return "Lower acceleration is advantageous during a Turbo Slide because it reduces the pull back down toward the normal drive-speed target while the machine is above it.";
+	}
+	if (layer == CAR_MODIFIER_MTS &&
+		(stat == CAR_STAT_GRIP_1 || stat == CAR_STAT_GRIP_3 ||
+		 stat == CAR_STAT_TURN_TENSION || stat == CAR_STAT_ACCEL_PRESS_GRIP_FRAMES)) {
+		return "Lower restoring grip is advantageous during a Turbo Slide because it lets the machine remain loose and carry a stronger sideways slide.";
+	}
+	if (layer == CAR_MODIFIER_MTS && stat == CAR_STAT_DRIFT_ACCEL) {
+		return "Higher drift acceleration directly adds more forward drive during a Turbo Slide.";
+	}
+	if (direction == CAR_STAT_DIRECTION_HIGHER_BENEFIT) {
+		return "A higher value is treated as advantageous in this state.";
+	}
+	if (direction == CAR_STAT_DIRECTION_LOWER_BENEFIT) {
+		return "A lower value is treated as advantageous in this state.";
+	}
+	return "Its advantage depends on the maneuver, so this is shown as a distinctive difference rather than a buff or drawback.";
+}
+
 static String signed_percent(float value) {
 	return String(value >= 0.0f ? "+" : "") + String::num(value, 1) + "%";
 }
@@ -281,7 +322,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 3;
+	result["benchmark_version"] = 4;
 	result["machine_setting"] = setting;
 	result["weight_kg"] = properties.base_stats[CAR_STAT_WEIGHT_KG];
 	result["terminal_speed_kmh"] = raw.terminal_speed_kmh;
@@ -309,6 +350,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			score_sum += component_score;
 			Dictionary component_result;
 			component_result["name"] = car_performance_component_name(category, component);
+			component_result["explanation"] = car_performance_component_explanation(category, component);
 			component_result["unit"] = car_performance_component_unit(category, component);
 			component_result["value"] = display_component_value(category, component, value);
 			component_result["score"] = component_score;
@@ -381,10 +423,11 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			const float denominator = std::max(std::abs(baseline_adjustment), 0.00001f);
 			const float percent = 100.0f * (adjustment - baseline_adjustment) / denominator;
 			if (std::abs(percent) < 5.0f) continue;
+			const CarStatDirection direction = trait_direction(special, stat, metadata);
 			String kind = "distinctive";
-			if (metadata.special_direction == CAR_STAT_DIRECTION_HIGHER_BENEFIT) {
+			if (direction == CAR_STAT_DIRECTION_HIGHER_BENEFIT) {
 				kind = delta > 0.0f ? "strength" : "drawback";
-			} else if (metadata.special_direction == CAR_STAT_DIRECTION_LOWER_BENEFIT) {
+			} else if (direction == CAR_STAT_DIRECTION_LOWER_BENEFIT) {
 				kind = delta < 0.0f ? "strength" : "drawback";
 			}
 			const String arrow = kind == "strength" ? String::utf8("↑")
@@ -393,6 +436,8 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			trait["context"] = trait_context(special);
 			trait["stat_name"] = metadata.name;
 			trait["friendly_name"] = metadata.friendly_name;
+			trait["explanation"] = String(metadata.explanation) + String(" ") +
+				trait_interpretation(special, stat, direction);
 			trait["kind"] = kind;
 			trait["percent"] = percent;
 			trait["base_value"] = baseline;

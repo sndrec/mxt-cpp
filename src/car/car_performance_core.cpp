@@ -285,13 +285,13 @@ uint8_t car_performance_component_count(CarPerformanceCategory category) {
 
 const char *car_performance_component_name(CarPerformanceCategory category, uint8_t component) {
 	static constexpr const char *NAMES[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS] = {
-		{"Settled terminal speed", nullptr, nullptr, nullptr, nullptr, nullptr},
-		{"Speed after 1 second", "Speed after 3 seconds", "Five-second speed area", "Time to 300 km/h", "Time to 500 km/h", nullptr},
-		{"Ordinary turn authority", "Ordinary speed retention", "Drift turn authority", "Drift speed retention", nullptr, nullptr},
-		{"Breakaway resistance", "Unwanted slide", "Re-grip tendency", "Drift release", nullptr, nullptr},
-		{"Initial speed advantage", "Peak speed advantage", "One-reserve distance advantage", "Energy efficiency", nullptr, nullptr},
-		{"Effective durability", "Energy after reference impact", "Impact stability", "Rotation stability", nullptr, nullptr},
-		{"Airborne speed retention", "Controlled heading change", nullptr, nullptr, nullptr, nullptr}};
+		{"Top Speed", nullptr, nullptr, nullptr, nullptr, nullptr},
+		{"Speed After 1 Second", "Speed After 3 Seconds", "Distance in First 5 Seconds", "Time to 300 km/h", "Time to 500 km/h", nullptr},
+		{"Normal Steering Strength", "Normal Cornering Speed", "Turbo-Slide Steering", "Turbo-Slide Speed", nullptr, nullptr},
+		{"Resistance to Sliding", "Unwanted Slide Tendency", "Re-grip Strength", "Drift Recovery", nullptr, nullptr},
+		{"1-Second Boost Gain", "Peak Boost Speed Gain", "Full-Energy Boost Distance", "Full-Energy Boost Time", nullptr, nullptr},
+		{"Damage Capacity", "Energy After Standard Crash", "Knockback Taken", "Spin Resistance", nullptr, nullptr},
+		{"Airborne Speed Retained", "Air Turning", nullptr, nullptr, nullptr, nullptr}};
 	return category < CAR_PERFORMANCE_CATEGORY_COUNT && component < CAR_PERFORMANCE_MAX_COMPONENTS
 		? NAMES[category][component] : nullptr;
 }
@@ -299,14 +299,44 @@ const char *car_performance_component_name(CarPerformanceCategory category, uint
 const char *car_performance_component_unit(CarPerformanceCategory category, uint8_t component) {
 	static constexpr const char *UNITS[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS] = {
 		{"km/h", nullptr, nullptr, nullptr, nullptr, nullptr},
-		{"km/h", "km/h", "km/h*s", "seconds", "seconds", nullptr},
+		{"km/h", "km/h", "meters", "seconds", "seconds", nullptr},
 		{"yaw/tick", "ratio", "yaw/tick", "ratio", nullptr, nullptr},
 		{"threshold", "inverse", "response", "response", nullptr, nullptr},
-		{"km/h", "km/h", "meters", "energy/tick", nullptr, nullptr},
-		{"effective energy", "energy", "stability", "inertia", nullptr, nullptr},
+		{"km/h", "km/h", "meters", "seconds", nullptr, nullptr},
+		{"effective energy", "energy", "km/h", "inertia", nullptr, nullptr},
 		{"ratio", "heading", nullptr, nullptr, nullptr, nullptr}};
 	return category < CAR_PERFORMANCE_CATEGORY_COUNT && component < CAR_PERFORMANCE_MAX_COMPONENTS
 		? UNITS[category][component] : "scalar";
+}
+
+const char *car_performance_component_explanation(CarPerformanceCategory category, uint8_t component) {
+	static constexpr const char *EXPLANATIONS[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS] = {
+		{"Average straight-line speed over the final two seconds of a 30-second no-boost run.", nullptr, nullptr, nullptr, nullptr, nullptr},
+		{"Straight-line speed one second after launch without boosting.",
+		 "Straight-line speed three seconds after launch without boosting.",
+		 "Ground covered during the first five seconds after launch without boosting.",
+		 "Time needed to reach 300 km/h without boosting. Less time earns a higher grade.",
+		 "Time needed to reach 500 km/h without boosting. Less time earns a higher grade.", nullptr},
+		{"Steering response outside a drift, combining steering force, steering angle, and weight.",
+		 "How much speed the machine preserves while cornering normally at the benchmark speed.",
+		 "Steering response during a full Turbo Slide, including its special handling modifiers.",
+		 "How much speed the machine preserves during a full Turbo Slide at the benchmark speed.", nullptr, nullptr},
+		{"How strongly the machine resists entering a slide, including accelerator-triggered grip.",
+		 "How readily steering can overpower the machine's restoring grip. Less unwanted sliding earns a higher grade.",
+		 "How strongly the machine settles back into a planted state after sliding.",
+		 "How decisively the machine exits a drift instead of remaining loose.", nullptr, nullptr},
+		{"Speed gained after one second by repeatedly manual boosting instead of driving normally.",
+		 "Extra peak speed reached while spending one full energy reserve on manual boosts.",
+		 "Extra distance covered while spending one full energy reserve on manual boosts.",
+		 "Approximate seconds of manual boost supplied by a full energy reserve.", nullptr, nullptr},
+		{"Maximum energy adjusted for the amount of damage the machine takes.",
+		 "Energy remaining after a fixed 600 km/h collision with the All Rounder benchmark machine.",
+		 "Speed imparted to this machine by the standard collision. Less knockback earns a higher grade.",
+		 "Resistance to being spun by an off-center impact, accounting for weight and body width.", nullptr, nullptr},
+		{"Fraction of 600 km/h retained through a fixed three-second pitched and steered jump.",
+		 "Heading change achieved during the same fixed three-second jump.", nullptr, nullptr, nullptr, nullptr}};
+	return category < CAR_PERFORMANCE_CATEGORY_COUNT && component < CAR_PERFORMANCE_MAX_COMPONENTS
+		? EXPLANATIONS[category][component] : "No explanation is available for this benchmark.";
 }
 
 bool analyze_car_performance(
@@ -324,7 +354,7 @@ bool analyze_car_performance(
 	out_analysis.components[CAR_PERFORMANCE_SPEED][0].value = ordinary.terminal_speed;
 	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][0].value = ordinary.speed_1s;
 	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][1].value = ordinary.speed_3s;
-	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][2].value = ordinary.area_5s;
+	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][2].value = ordinary.area_5s / 3.6f;
 	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][3].value = -ordinary.time_300;
 	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][4].value = -ordinary.time_500;
 	out_analysis.components[CAR_PERFORMANCE_BOOSTER][0].value = boosted.speed_1s - ordinary.speed_1s;
@@ -332,7 +362,7 @@ bool analyze_car_performance(
 	out_analysis.components[CAR_PERFORMANCE_BOOSTER][2].value = boosted.distance - ordinary.distance;
 	out_analysis.components[CAR_PERFORMANCE_BOOSTER][3].value =
 		properties.base_stats[CAR_STAT_MAX_ENERGY] /
-		safe_positive(properties.base_stats[CAR_STAT_BOOST_ENERGY_USE_RATE]);
+		(10.0f * safe_positive(properties.base_stats[CAR_STAT_BOOST_ENERGY_USE_RATE]));
 	analyze_handling(properties, out_analysis);
 	analyze_body(properties, all_rounder_reference, out_analysis);
 	analyze_air(properties, out_analysis);
