@@ -398,7 +398,7 @@ Dictionary MxtCarDraftStore::save_draft(const String &draft_id,
 		session->get_model_path().is_empty() ? String() : String("source/model.glb");
 	manifest["visual"] = visual_dictionary(*session.ptr());
 	manifest["workshop_published_file_id"] = metadata.get("workshop_published_file_id", 0);
-	manifest["authoring_intent"] = metadata.get("authoring_intent", Dictionary());
+	manifest["authoring_intent"] = session->get_authoring_intent();
 	manifest["preview_livery"] = metadata.get("preview_livery", Dictionary());
 
 	const String temporary_manifest = root.path_join("draft.json.tmp");
@@ -455,8 +455,15 @@ Dictionary MxtCarDraftStore::load_draft(const String &draft_id,
 		return result_dictionary(false, "draft visual metadata is invalid");
 	}
 	Dictionary loaded_properties = session->load_bytes(bytes);
-	if (!static_cast<bool>(loaded_properties.get("valid", false)) ||
-		!parse_visual_dictionary(manifest["visual"], *session.ptr(),
+	if (!static_cast<bool>(loaded_properties.get("valid", false))) {
+		return result_dictionary(false, "draft state could not be applied to the authoring session");
+	}
+	const Dictionary intent = manifest.get("authoring_intent", session->get_authoring_intent());
+	Dictionary intent_result = session->set_authoring_intent(intent);
+	if (!static_cast<bool>(intent_result.get("valid", false))) {
+		return result_dictionary(false, "draft authoring intent is invalid");
+	}
+	if (!parse_visual_dictionary(manifest["visual"], *session.ptr(),
 								 draft_root(draft_id).path_join("source/model.glb"))) {
 		return result_dictionary(false,
 								 "draft state could not be applied to the authoring session");
@@ -466,7 +473,7 @@ Dictionary MxtCarDraftStore::load_draft(const String &draft_id,
 	Dictionary result = result_dictionary(true);
 	result.merge(public_metadata(draft_id, manifest), true);
 	result["properties_path"] = draft_root(draft_id).path_join(properties_name);
-	result["authoring_intent"] = manifest.get("authoring_intent", Dictionary());
+	result["authoring_intent"] = session->get_authoring_intent();
 	return result;
 }
 

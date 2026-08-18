@@ -148,10 +148,14 @@ func _prepare_track_package(root: String, fog_distance: float) -> void:
 func _prepare_vehicle_package(root: String) -> void:
 	DirAccess.make_dir_recursive_absolute(root.path_join("vehicle"))
 	_copy(ProjectSettings.globalize_path("res://asset/test_track_2.glb"), root.path_join("vehicle/model.glb"))
-	_copy(
-		ProjectSettings.globalize_path("res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"),
-		root.path_join("vehicle/properties.mxt_car_props")
-	)
+	var authoring_session := MxtCarAuthoringSession.new()
+	var loaded: Dictionary = authoring_session.load_file("res://vehicle/asset/allrounder/blue_falcon.mxt_car_props")
+	_expect(bool(loaded.get("valid", false)), "official vehicle properties must load")
+	var intent: Dictionary = authoring_session.get_authoring_intent()
+	var applied: Dictionary = authoring_session.set_authoring_intent(intent)
+	_expect(bool(applied.get("valid", false)), "inferred vehicle authoring intent must materialize")
+	var saved: Dictionary = authoring_session.save_file(root.path_join("vehicle/properties.mxt_car_props"))
+	_expect(bool(saved.get("valid", false)), "vehicle properties fixture must save")
 	_copy(ProjectSettings.globalize_path("res://asset/CAUTION.png"), root.path_join("preview.png"))
 	var visual := FileAccess.open(root.path_join("vehicle/visual.json"), FileAccess.WRITE)
 	visual.store_string(JSON.stringify({
@@ -170,6 +174,9 @@ func _prepare_vehicle_package(root: String) -> void:
 		"thrusters": [],
 	}, "  ", true))
 	visual.close()
+	var authoring := FileAccess.open(root.path_join("vehicle/authoring.json"), FileAccess.WRITE)
+	authoring.store_string(JSON.stringify(intent, "  ", true))
+	authoring.close()
 	var manifest := {
 		"format_revision": 1,
 		"content_type": "vehicle",
@@ -180,11 +187,13 @@ func _prepare_vehicle_package(root: String) -> void:
 			"model": "vehicle/model.glb",
 			"properties": "vehicle/properties.mxt_car_props",
 			"visual_metadata": "vehicle/visual.json",
+			"authoring": "vehicle/authoring.json",
 		},
 		"payload_sha256": {
 			"vehicle/model.glb": FileAccess.get_sha256(root.path_join("vehicle/model.glb")),
 			"vehicle/properties.mxt_car_props": FileAccess.get_sha256(root.path_join("vehicle/properties.mxt_car_props")),
 			"vehicle/visual.json": FileAccess.get_sha256(root.path_join("vehicle/visual.json")),
+			"vehicle/authoring.json": FileAccess.get_sha256(root.path_join("vehicle/authoring.json")),
 			"preview.png": FileAccess.get_sha256(root.path_join("preview.png")),
 		},
 	}

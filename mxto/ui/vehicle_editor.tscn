@@ -311,7 +311,12 @@ custom_minimum_size = Vector2(120, 0)
 layout_mode = 2
 fit_to_longest_item = false
 
+[node name="AdvancedMode" type="CheckBox" parent="Workspace/StatsColumn/StatFilters"]
+layout_mode = 2
+text = "Advanced"
+
 [node name="Layer" type="OptionButton" parent="Workspace/StatsColumn/StatFilters"]
+visible = false
 custom_minimum_size = Vector2(145, 0)
 layout_mode = 2
 fit_to_longest_item = false
@@ -325,6 +330,31 @@ fit_to_longest_item = false
 layout_mode = 2
 size_flags_vertical = 3
 script = ExtResource("2_curve")
+
+[node name="AuthoringMode" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="Indicator" type="Label" parent="Workspace/StatsColumn/AuthoringMode"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Base curve"
+
+[node name="MakeCustom" type="Button" parent="Workspace/StatsColumn/AuthoringMode"]
+visible = false
+layout_mode = 2
+text = "Make Custom"
+
+[node name="RevertDerived" type="Button" parent="Workspace/StatsColumn/AuthoringMode"]
+visible = false
+layout_mode = 2
+text = "Revert to Derived"
+
+[node name="StatHelp" type="RichTextLabel" parent="Workspace/StatsColumn"]
+custom_minimum_size = Vector2(0, 92)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
 
 [node name="KeyEditor" type="HBoxContainer" parent="Workspace/StatsColumn"]
 layout_mode = 2

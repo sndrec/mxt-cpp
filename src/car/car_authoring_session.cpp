@@ -37,6 +37,9 @@ static constexpr size_t CAR_PROPS_HEADER_SIZE = 24;
 static constexpr const char *LAYER_NAMES[CAR_CURVE_LAYER_COUNT] = {
 	"base", "mts", "quickturn", "no_boost", "manual_boost", "dashplate_boost", "stacked_boost"
 };
+static constexpr const char *SPECIAL_LAYER_NAMES[CAR_AUTHORING_SPECIAL_LAYER_COUNT] = {
+	"mts", "quickturn", "no_boost", "manual_boost", "dashplate_boost", "stacked_boost", "s_boost"
+};
 
 struct ByteReader {
 	const uint8_t *data = nullptr;
@@ -297,6 +300,11 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("sample_curve", "layer_name", "stat_name", "machine_setting"), &MxtCarAuthoringSession::sample_curve);
 	ClassDB::bind_method(D_METHOD("get_s_boost_value", "stat_name"), &MxtCarAuthoringSession::get_s_boost_value);
 	ClassDB::bind_method(D_METHOD("set_s_boost_value", "stat_name", "value"), &MxtCarAuthoringSession::set_s_boost_value);
+	ClassDB::bind_method(D_METHOD("is_special_derived", "layer_name", "stat_name"), &MxtCarAuthoringSession::is_special_derived);
+	ClassDB::bind_method(D_METHOD("make_special_custom", "layer_name", "stat_name"), &MxtCarAuthoringSession::make_special_custom);
+	ClassDB::bind_method(D_METHOD("revert_special_derived", "layer_name", "stat_name"), &MxtCarAuthoringSession::revert_special_derived);
+	ClassDB::bind_method(D_METHOD("get_authoring_intent"), &MxtCarAuthoringSession::get_authoring_intent);
+	ClassDB::bind_method(D_METHOD("set_authoring_intent", "value"), &MxtCarAuthoringSession::set_authoring_intent);
 	ClassDB::bind_method(D_METHOD("get_tilt_corners"), &MxtCarAuthoringSession::get_tilt_corners);
 	ClassDB::bind_method(D_METHOD("get_wall_corners"), &MxtCarAuthoringSession::get_wall_corners);
 	ClassDB::bind_method(D_METHOD("get_collision_measurements"), &MxtCarAuthoringSession::get_collision_measurements);
@@ -353,11 +361,137 @@ int32_t MxtCarAuthoringSession::layer_index(const String &layer_name)
 	return -1;
 }
 
+int32_t MxtCarAuthoringSession::special_layer_index(const String &layer_name)
+{
+	for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
+		if (layer_name == SPECIAL_LAYER_NAMES[layer]) return layer;
+	}
+	return -1;
+}
+
+double MxtCarAuthoringSession::sample_curve_at(uint8_t layer, uint16_t stat, float machine_setting) const
+{
+	const Curve &curve = curve_at(layer, stat);
+	if (curve.empty()) return 0.0;
+	if (curve.size() == 1) return curve[0].value;
+	const float setting = std::clamp(machine_setting, 0.0f, 1.0f);
+	if (setting <= curve.front().time) return curve.front().value;
+	for (size_t i = 0; i + 1 < curve.size(); ++i) {
+		const CurveKey &left = curve[i];
+		const CurveKey &right = curve[i + 1];
+		if (setting > right.time) continue;
+		const float duration = right.time - left.time;
+		const float u = (setting - left.time) / duration;
+		const float outgoing = left.value + duration * left.tangent_out / 3.0f;
+		const float incoming = right.value - duration * right.tangent_in / 3.0f;
+		const float inverse = 1.0f - u;
+		return left.value * inverse * inverse * inverse + 3.0f * outgoing * inverse * inverse * u +
+			3.0f * incoming * inverse * u * u + right.value * u * u * u;
+	}
+	return curve.back().value;
+}
+
+bool MxtCarAuthoringSession::is_pair_derived(uint8_t special_layer, uint16_t stat) const
+{
+	if (special_layer >= CAR_AUTHORING_SPECIAL_LAYER_COUNT || stat >= CAR_STAT_COUNT) return false;
+	const uint32_t bit = static_cast<uint32_t>(special_layer) * CAR_STAT_COUNT + stat;
+	return (derived_pair_mask[bit / 64u] & (UINT64_C(1) << (bit % 64u))) != 0;
+}
+
+void MxtCarAuthoringSession::set_pair_derived(uint8_t special_layer, uint16_t stat, bool derived)
+{
+	if (special_layer >= CAR_AUTHORING_SPECIAL_LAYER_COUNT || stat >= CAR_STAT_COUNT) return;
+	const uint32_t bit = static_cast<uint32_t>(special_layer) * CAR_STAT_COUNT + stat;
+	const uint64_t mask = UINT64_C(1) << (bit % 64u);
+	if (derived) derived_pair_mask[bit / 64u] |= mask;
+	else derived_pair_mask[bit / 64u] &= ~mask;
+}
+
+void MxtCarAuthoringSession::sample_base_stats(float machine_setting, float out_stats[CAR_STAT_COUNT]) const
+{
+	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+		out_stats[stat] = static_cast<float>(sample_curve_at(CAR_CURVE_BASE, stat, machine_setting));
+	}
+}
+
+float MxtCarAuthoringSession::derived_special_value(uint8_t special_layer, uint16_t stat, float machine_setting) const
+{
+	float base_stats[CAR_STAT_COUNT];
+	const float setting = special_layer == CAR_AUTHORING_S_BOOST ? 0.5f : machine_setting;
+	sample_base_stats(setting, base_stats);
+	return derive_car_special_value(
+			static_cast<CarAuthoringSpecialLayer>(special_layer), static_cast<CarStatId>(stat), base_stats);
+}
+
+void MxtCarAuthoringSession::regenerate_derived_pair(uint8_t special_layer, uint16_t stat)
+{
+	if (!car_special_pair_is_supported(
+			static_cast<CarAuthoringSpecialLayer>(special_layer), static_cast<CarStatId>(stat))) return;
+	if (special_layer == CAR_AUTHORING_S_BOOST) {
+		s_boost_values[stat] = derived_special_value(special_layer, stat, 0.5f);
+		return;
+	}
+	Curve &curve = curve_at(static_cast<uint8_t>(special_layer + 1u), stat);
+	const bool sampled_formula = special_layer >= CAR_AUTHORING_MANUAL_BOOST &&
+		(stat == CAR_STAT_DRIVE_TARGET_SPEED_MULTIPLIER ||
+		 stat == CAR_STAT_ACCELERATION_RESPONSE_MULTIPLIER ||
+		 stat == CAR_STAT_FORWARD_THRUST_MULTIPLIER);
+	curve.clear();
+	if (!sampled_formula) {
+		curve.push_back({0.0f, derived_special_value(special_layer, stat, 0.5f), 0.0f, 0.0f});
+		return;
+	}
+	curve.reserve(101);
+	for (uint32_t sample = 0; sample <= 100; ++sample) {
+		const float setting = static_cast<float>(sample) * 0.01f;
+		curve.push_back({setting, derived_special_value(special_layer, stat, setting), 0.0f, 0.0f});
+	}
+}
+
+void MxtCarAuthoringSession::regenerate_all_derived_pairs()
+{
+	for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
+		for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+			if (is_pair_derived(layer, stat)) regenerate_derived_pair(layer, stat);
+		}
+	}
+}
+
+void MxtCarAuthoringSession::infer_authoring_intent()
+{
+	derived_pair_mask.fill(0);
+	for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
+		for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+			if (!car_special_pair_is_supported(
+					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) continue;
+			bool matches = true;
+			if (layer == CAR_AUTHORING_S_BOOST) {
+				const float expected = derived_special_value(layer, stat, 0.5f);
+				const float tolerance = 1.0e-5f * std::max(1.0f, std::abs(expected));
+				matches = std::abs(s_boost_values[stat] - expected) <= tolerance;
+			} else {
+				for (uint32_t sample = 0; sample <= 100; ++sample) {
+					const float setting = static_cast<float>(sample) * 0.01f;
+					const float expected = derived_special_value(layer, stat, setting);
+					const float actual = static_cast<float>(sample_curve_at(layer + 1u, stat, setting));
+					const float tolerance = 1.0e-4f * std::max(1.0f, std::abs(expected));
+					if (std::abs(actual - expected) > tolerance) {
+						matches = false;
+						break;
+					}
+				}
+			}
+			set_pair_derived(layer, stat, matches);
+		}
+	}
+}
+
 void MxtCarAuthoringSession::reset_to_defaults()
 {
 	if (!curves[0].empty()) push_undo_snapshot();
 	PhysicsCarProperties defaults;
 	for (Curve &curve : curves) curve.clear();
+	derived_pair_mask.fill(0);
 	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
 		curve_at(CAR_CURVE_BASE, stat).push_back({0.0f, defaults.base_stats[stat], 0.0f, 0.0f});
 		s_boost_values[stat] = defaults.s_boost_stats[stat];
@@ -365,7 +499,11 @@ void MxtCarAuthoringSession::reset_to_defaults()
 		for (uint8_t layer = CAR_CURVE_MTS; layer < CAR_CURVE_LAYER_COUNT; ++layer) {
 			curve_at(layer, stat).push_back({0.0f, defaults.modifier_stats[layer - 1][stat], 0.0f, 0.0f});
 		}
+		for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
+			set_pair_derived(layer, stat, true);
+		}
 	}
+	regenerate_all_derived_pairs();
 	for (uint8_t i = 0; i < 4; ++i) {
 		tilt_corners[i] = defaults.tilt_corners[i];
 		wall_corners[i] = defaults.wall_corners[i];
@@ -463,6 +601,7 @@ Dictionary MxtCarAuthoringSession::load_bytes(const PackedByteArray &bytes)
 	tilt_corners = parsed->tilt_corners;
 	wall_corners = parsed->wall_corners;
 	state_flags = parsed->state_flags;
+	infer_authoring_intent();
 	undo_history.clear();
 	redo_history.clear();
 	dirty = false;
@@ -706,6 +845,9 @@ Dictionary MxtCarAuthoringSession::set_curve(const String &layer_name, const Str
 	if (layer != CAR_CURVE_BASE && !PhysicsCarProperties::stat_supports_live_modifiers(static_cast<CarStatId>(stat))) {
 		return result_dictionary(false, single_error("stat does not support live modifier curves"), {});
 	}
+	if (layer != CAR_CURVE_BASE && is_pair_derived(static_cast<uint8_t>(layer - 1), static_cast<uint16_t>(stat))) {
+		return result_dictionary(false, single_error("derived special-state values must be made custom before editing"), {});
+	}
 	if (keys.is_empty() || keys.size() > MAX_CURVE_KEYS) return result_dictionary(false, single_error("curve key count is outside the supported range"), {});
 	Curve replacement;
 	replacement.reserve(keys.size());
@@ -727,6 +869,7 @@ Dictionary MxtCarAuthoringSession::set_curve(const String &layer_name, const Str
 	}
 	push_undo_snapshot();
 	curve_at(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat)) = std::move(replacement);
+	if (layer == CAR_CURVE_BASE) regenerate_all_derived_pairs();
 	redo_history.clear();
 	dirty = true;
 	return validate();
@@ -737,24 +880,9 @@ double MxtCarAuthoringSession::sample_curve(const String &layer_name, const Stri
 	const int32_t layer = layer_index(layer_name);
 	const int32_t stat = stat_index(stat_name);
 	if (layer < 0 || stat < 0) return 0.0;
-	const Curve &curve = curve_at(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat));
-	if (curve.empty()) return 0.0;
-	if (curve.size() == 1) return curve[0].value;
-	const float setting = static_cast<float>(std::clamp(machine_setting, 0.0, 1.0));
-	if (setting <= curve.front().time) return curve.front().value;
-	for (size_t i = 0; i + 1 < curve.size(); ++i) {
-		const CurveKey &left = curve[i];
-		const CurveKey &right = curve[i + 1];
-		if (setting > right.time) continue;
-		const float duration = right.time - left.time;
-		const float u = (setting - left.time) / duration;
-		const float outgoing = left.value + duration * left.tangent_out / 3.0f;
-		const float incoming = right.value - duration * right.tangent_in / 3.0f;
-		const float inverse = 1.0f - u;
-		return left.value * inverse * inverse * inverse + 3.0f * outgoing * inverse * inverse * u +
-			3.0f * incoming * inverse * u * u + right.value * u * u * u;
-	}
-	return curve.back().value;
+	return sample_curve_at(
+			static_cast<uint8_t>(layer), static_cast<uint16_t>(stat),
+			static_cast<float>(std::clamp(machine_setting, 0.0, 1.0)));
 }
 
 double MxtCarAuthoringSession::get_s_boost_value(const String &stat_name) const
@@ -768,11 +896,116 @@ bool MxtCarAuthoringSession::set_s_boost_value(const String &stat_name, double v
 {
 	const int32_t stat = stat_index(stat_name);
 	if (stat < 0 || !std::isfinite(value) || !PhysicsCarProperties::stat_supports_live_modifiers(static_cast<CarStatId>(stat))) return false;
+	if (is_pair_derived(CAR_AUTHORING_S_BOOST, static_cast<uint16_t>(stat))) return false;
 	push_undo_snapshot();
 	s_boost_values[stat] = static_cast<float>(value);
 	redo_history.clear();
 	dirty = true;
 	return true;
+}
+
+bool MxtCarAuthoringSession::is_special_derived(const String &layer_name, const String &stat_name) const
+{
+	const int32_t layer = special_layer_index(layer_name);
+	const int32_t stat = stat_index(stat_name);
+	return layer >= 0 && stat >= 0 && is_pair_derived(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat));
+}
+
+Dictionary MxtCarAuthoringSession::make_special_custom(const String &layer_name, const String &stat_name)
+{
+	const int32_t layer = special_layer_index(layer_name);
+	const int32_t stat = stat_index(stat_name);
+	if (layer < 0 || stat < 0 || !car_special_pair_is_supported(
+			static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) {
+		return result_dictionary(false, single_error("unknown or unsupported special-state/stat pair"), {});
+	}
+	if (!is_pair_derived(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat))) return validate();
+	push_undo_snapshot();
+	set_pair_derived(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat), false);
+	redo_history.clear();
+	dirty = true;
+	return validate();
+}
+
+Dictionary MxtCarAuthoringSession::revert_special_derived(const String &layer_name, const String &stat_name)
+{
+	const int32_t layer = special_layer_index(layer_name);
+	const int32_t stat = stat_index(stat_name);
+	if (layer < 0 || stat < 0 || !car_special_pair_is_supported(
+			static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) {
+		return result_dictionary(false, single_error("unknown or unsupported special-state/stat pair"), {});
+	}
+	push_undo_snapshot();
+	set_pair_derived(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat), true);
+	regenerate_derived_pair(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat));
+	redo_history.clear();
+	dirty = true;
+	return validate();
+}
+
+Dictionary MxtCarAuthoringSession::get_authoring_intent() const
+{
+	static constexpr char HEX[] = "0123456789abcdef";
+	String encoded;
+	for (uint64_t word : derived_pair_mask) {
+		char digits[17];
+		for (int32_t digit = 15; digit >= 0; --digit) {
+			digits[digit] = HEX[word & 0xfu];
+			word >>= 4;
+		}
+		digits[16] = '\0';
+		encoded += String(digits);
+	}
+	Dictionary result;
+	result["format_revision"] = 1;
+	result["derived_mask_hex"] = encoded;
+	return result;
+}
+
+bool MxtCarAuthoringSession::parse_authoring_intent(
+		const Dictionary &value,
+		std::array<uint64_t, AUTHORING_MASK_WORD_COUNT> &out_mask) const
+{
+	if (value.size() != 2 || static_cast<int64_t>(value.get("format_revision", 0)) != 1 ||
+		!value.has("derived_mask_hex") || value["derived_mask_hex"].get_type() != Variant::STRING) return false;
+	const String encoded = value["derived_mask_hex"];
+	if (encoded.length() != static_cast<int64_t>(AUTHORING_MASK_WORD_COUNT * 16u)) return false;
+	out_mask.fill(0);
+	for (uint32_t word = 0; word < AUTHORING_MASK_WORD_COUNT; ++word) {
+		uint64_t decoded = 0;
+		for (uint32_t digit = 0; digit < 16; ++digit) {
+			const char32_t c = encoded[static_cast<int64_t>(word * 16u + digit)];
+			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+			decoded = (decoded << 4) | static_cast<uint64_t>(c <= '9' ? c - '0' : c - 'a' + 10);
+		}
+		out_mask[word] = decoded;
+	}
+	for (uint8_t layer = 0; layer < CAR_AUTHORING_SPECIAL_LAYER_COUNT; ++layer) {
+		for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+			const uint32_t bit = static_cast<uint32_t>(layer) * CAR_STAT_COUNT + stat;
+			if ((out_mask[bit / 64u] & (UINT64_C(1) << (bit % 64u))) != 0 &&
+				!car_special_pair_is_supported(
+					static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) return false;
+		}
+	}
+	for (uint32_t bit = AUTHORING_PAIR_COUNT; bit < AUTHORING_MASK_WORD_COUNT * 64u; ++bit) {
+		if ((out_mask[bit / 64u] & (UINT64_C(1) << (bit % 64u))) != 0) return false;
+	}
+	return true;
+}
+
+Dictionary MxtCarAuthoringSession::set_authoring_intent(const Dictionary &value)
+{
+	std::array<uint64_t, AUTHORING_MASK_WORD_COUNT> parsed;
+	if (!parse_authoring_intent(value, parsed)) {
+		return result_dictionary(false, single_error("vehicle authoring intent is malformed"), {});
+	}
+	push_undo_snapshot();
+	derived_pair_mask = parsed;
+	regenerate_all_derived_pairs();
+	redo_history.clear();
+	dirty = true;
+	return validate();
 }
 
 PackedVector3Array MxtCarAuthoringSession::get_tilt_corners() const
@@ -889,6 +1122,7 @@ bool MxtCarAuthoringSession::capture_history_snapshot(HistorySnapshot &out_snaps
 {
 	String error;
 	if (!serialize_document(out_snapshot.properties, error)) return false;
+	out_snapshot.derived_pair_mask = derived_pair_mask;
 	out_snapshot.model_path = model_path;
 	out_snapshot.model_translation = model_translation;
 	out_snapshot.model_rotation_degrees = model_rotation_degrees;
@@ -932,6 +1166,7 @@ bool MxtCarAuthoringSession::restore_history_snapshot(const HistorySnapshot &sna
 	tilt_corners = parsed->tilt_corners;
 	wall_corners = parsed->wall_corners;
 	state_flags = parsed->state_flags;
+	derived_pair_mask = snapshot.derived_pair_mask;
 	model_path = snapshot.model_path;
 	model_translation = snapshot.model_translation;
 	model_rotation_degrees = snapshot.model_rotation_degrees;
@@ -1078,6 +1313,8 @@ Dictionary MxtCarAuthoringSession::load_vehicle_package(const String &package_ro
 	}
 	Dictionary loaded = load_file(root.path_join("vehicle/properties.mxt_car_props"));
 	if (!static_cast<bool>(loaded.get("valid", false))) return loaded;
+	Dictionary intent_result = set_authoring_intent(package.authoring_metadata);
+	if (!static_cast<bool>(intent_result.get("valid", false))) return intent_result;
 	model_path = root.path_join("vehicle/model.glb");
 	set_model_transform(package.visual_metadata.get("model_transform", Dictionary()));
 	Dictionary material_setup = package.visual_metadata.get("material_inputs", Dictionary());
@@ -1119,6 +1356,7 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	if (DirAccess::make_dir_recursive_absolute(root.path_join("vehicle")) != OK) {
 		return result_dictionary(false, single_error("could not create vehicle package directory"), {});
 	}
+	regenerate_all_derived_pairs();
 	const String packaged_model_path = root.path_join("vehicle/model.glb");
 	const String temporary_model_path = root.path_join("vehicle/model.packaging.glb");
 	DirAccess::remove_absolute(temporary_model_path);
@@ -1158,6 +1396,9 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	if (!write_text_file(root.path_join("vehicle/visual.json"), JSON::stringify(visual, "  ", true, true))) {
 		return result_dictionary(false, single_error("could not write vehicle visual metadata"), {});
 	}
+	if (!write_text_file(root.path_join("vehicle/authoring.json"), JSON::stringify(get_authoring_intent(), "  ", true, true))) {
+		return result_dictionary(false, single_error("could not write vehicle authoring metadata"), {});
+	}
 	if (DirAccess::copy_absolute(global_path(preview_png_path), root.path_join("preview.png")) != OK) {
 		return result_dictionary(false, single_error("could not copy vehicle preview PNG"), {});
 	}
@@ -1165,8 +1406,9 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	payload["model"] = "vehicle/model.glb";
 	payload["properties"] = "vehicle/properties.mxt_car_props";
 	payload["visual_metadata"] = "vehicle/visual.json";
+	payload["authoring"] = "vehicle/authoring.json";
 	Dictionary hashes;
-	for (const String &path : {String("vehicle/model.glb"), String("vehicle/properties.mxt_car_props"), String("vehicle/visual.json"), String("preview.png")}) {
+	for (const String &path : {String("vehicle/model.glb"), String("vehicle/properties.mxt_car_props"), String("vehicle/visual.json"), String("vehicle/authoring.json"), String("preview.png")}) {
 		hashes[path] = FileAccess::get_sha256(root.path_join(path));
 	}
 	Dictionary manifest;

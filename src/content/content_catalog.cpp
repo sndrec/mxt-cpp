@@ -45,6 +45,7 @@ Dictionary content_record_to_dictionary(const ContentRecord &record)
 	output["description"] = record.description;
 	output["author_name"] = record.author_name;
 	output["visual_metadata"] = record.visual_metadata;
+	output["authoring_metadata"] = record.authoring_metadata;
 	output["published_file_id"] = record.published_file_id == 0
 			? String()
 			: String::num_uint64(record.published_file_id);
@@ -99,6 +100,7 @@ static mxt::content::ContentRecord make_record(
 	record.description = package.manifest.description;
 	record.author_name = package.manifest.author_name;
 	record.visual_metadata = package.visual_metadata;
+	record.authoring_metadata = package.authoring_metadata;
 	record.published_file_id = published_file_id;
 	const String type_name = mxt::content::content_type_name(record.content_type);
 	if (source == mxt::content::ContentSource::WORKSHOP) {

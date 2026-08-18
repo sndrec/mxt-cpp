@@ -448,14 +448,16 @@ bool parse_manifest(
 	const Dictionary hashes = root["payload_sha256"];
 
 	if (out_manifest.content_type == ContentType::VEHICLE) {
-		static const char *VEHICLE_KEYS[] = {"model", "properties", "visual_metadata"};
+		static const char *VEHICLE_KEYS[] = {"model", "properties", "visual_metadata", "authoring"};
 		dictionary_has_only(payload, VEHICLE_KEYS, std::size(VEHICLE_KEYS), "payload", out_errors);
 		require_exact_payload_path(payload, "model", "vehicle/model.glb", true, out_errors);
 		require_exact_payload_path(payload, "properties", "vehicle/properties.mxt_car_props", true, out_errors);
 		require_exact_payload_path(payload, "visual_metadata", "vehicle/visual.json", true, out_errors);
+		require_exact_payload_path(payload, "authoring", "vehicle/authoring.json", true, out_errors);
 		add_payload_file(hashes, "vehicle/model.glb", out_manifest, out_errors);
 		add_payload_file(hashes, "vehicle/properties.mxt_car_props", out_manifest, out_errors);
 		add_payload_file(hashes, "vehicle/visual.json", out_manifest, out_errors);
+		add_payload_file(hashes, "vehicle/authoring.json", out_manifest, out_errors);
 		out_manifest.authoritative_path = "vehicle/properties.mxt_car_props";
 	} else if (out_manifest.content_type == ContentType::TRACK) {
 		static const char *TRACK_KEYS[] = {"track", "visual", "metadata"};

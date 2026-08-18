@@ -40,9 +40,14 @@ const AUTOSAVE_RETRY_MSEC := 5000
 @onready var thruster_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Thrusters/Rows
 @onready var search_input: LineEdit = $Workspace/StatsColumn/StatFilters/Search
 @onready var category_option: OptionButton = $Workspace/StatsColumn/StatFilters/Category
+@onready var advanced_mode: CheckBox = $Workspace/StatsColumn/StatFilters/AdvancedMode
 @onready var layer_option: OptionButton = $Workspace/StatsColumn/StatFilters/Layer
 @onready var stat_option: OptionButton = $Workspace/StatsColumn/StatFilters/Stat
 @onready var curve_graph: VehicleEditorCurveGraph = $Workspace/StatsColumn/CurveGraph
+@onready var authoring_mode_indicator: Label = $Workspace/StatsColumn/AuthoringMode/Indicator
+@onready var make_custom_button: Button = $Workspace/StatsColumn/AuthoringMode/MakeCustom
+@onready var revert_derived_button: Button = $Workspace/StatsColumn/AuthoringMode/RevertDerived
+@onready var stat_help: RichTextLabel = $Workspace/StatsColumn/StatHelp
 @onready var key_time: SpinBox = $Workspace/StatsColumn/KeyEditor/Time
 @onready var key_value: SpinBox = $Workspace/StatsColumn/KeyEditor/Value
 @onready var key_tangent_in: SpinBox = $Workspace/StatsColumn/KeyEditor/TangentIn
@@ -78,7 +83,6 @@ var metadata_dirty := false
 var draft_initialized := false
 var autosave_due_msec := 0
 var autosave_error := ""
-var authoring_intent: Dictionary = {}
 var stat_schema: Array = []
 var schema_by_name: Dictionary = {}
 var current_layer := "base"
@@ -285,6 +289,7 @@ func _connect_controls() -> void:
 	archive_draft_dialog.confirmed.connect(_archive_current_draft)
 	search_input.text_changed.connect(func(_value): _refresh_stat_options())
 	category_option.item_selected.connect(func(_index): _refresh_stat_options())
+	advanced_mode.toggled.connect(_on_advanced_mode_toggled)
 	layer_option.item_selected.connect(_on_layer_selected)
 	stat_option.item_selected.connect(_on_stat_selected)
 	curve_graph.curve_committed.connect(_commit_curve)
@@ -295,6 +300,8 @@ func _connect_controls() -> void:
 	$Workspace/StatsColumn/CurveActions/Copy.pressed.connect(func(): curve_clipboard = curve_graph.get_keys())
 	$Workspace/StatsColumn/CurveActions/Paste.pressed.connect(_paste_curve)
 	$Workspace/StatsColumn/CurveActions/Reset.pressed.connect(_reset_curve)
+	make_custom_button.pressed.connect(_make_selected_special_custom)
+	revert_derived_button.pressed.connect(_revert_selected_special_derived)
 	machine_setting.value_changed.connect(func(_value): _refresh_samples())
 	technique_option.item_selected.connect(func(_index): _refresh_samples())
 	technique_intensity.value_changed.connect(func(_value): _refresh_samples())
@@ -333,7 +340,6 @@ func _new_draft() -> bool:
 	session = MxtCarAuthoringSession.new()
 	draft_initialized = true
 	current_properties_path = ""
-	authoring_intent = {}
 	preview_livery = CarLivery.new()
 	updating_controls = true
 	title_input.text = "New Machine"
@@ -401,7 +407,6 @@ func _open_selected_draft() -> void:
 	draft_id = selected_id
 	draft_initialized = true
 	current_properties_path = String(result.get("properties_path", ""))
-	authoring_intent = result.get("authoring_intent", {})
 	preview_livery = CarLivery.new()
 	preview_livery.from_dict(result.get("preview_livery", {}))
 	updating_controls = true
@@ -528,6 +533,9 @@ func _copy_packaged_vehicle_visual(record: Dictionary) -> Dictionary:
 		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid material metadata"]), "warnings": PackedStringArray()}
 	if !session.set_thrusters(visual_metadata.get("thrusters", [])):
 		return {"valid": false, "errors": PackedStringArray(["The selected vehicle has invalid thruster metadata"]), "warnings": PackedStringArray()}
+	var intent_result: Dictionary = session.set_authoring_intent(record.get("authoring_metadata", {}))
+	if !bool(intent_result.get("valid", false)):
+		return intent_result
 	return {"valid": true, "errors": PackedStringArray(), "warnings": PackedStringArray()}
 
 
@@ -900,7 +908,7 @@ func _draft_metadata() -> Dictionary:
 		"author_name": author_input.text,
 		"description": description_input.text,
 		"workshop_published_file_id": workshop_published_file_id,
-		"authoring_intent": authoring_intent,
+		"authoring_intent": session.get_authoring_intent(),
 		"preview_livery": preview_livery.to_dict(),
 	}
 
@@ -1146,13 +1154,16 @@ func _refresh_stat_options() -> void:
 	for entry_value in stat_schema:
 		var entry: Dictionary = entry_value
 		var name := String(entry["name"])
+		var friendly_name := String(entry.get("friendly_name", name.replace("_", " ").capitalize()))
 		if current_layer != "base" and !bool(entry["supports_live_modifiers"]):
 			continue
 		if category != "All" and String(entry["category"]) != category:
 			continue
-		if !search.is_empty() and !name.to_lower().contains(search):
+		if !search.is_empty() and !name.to_lower().contains(search) \
+				and !friendly_name.to_lower().contains(search) \
+				and !String(entry.get("explanation", "")).to_lower().contains(search):
 			continue
-		stat_option.add_item(name.replace("_", " ").capitalize())
+		stat_option.add_item(friendly_name)
 		stat_option.set_item_metadata(stat_option.item_count - 1, name)
 		if name == previous:
 			stat_option.select(stat_option.item_count - 1)
@@ -1162,6 +1173,15 @@ func _refresh_stat_options() -> void:
 		stat_option.select(0)
 	current_stat = String(stat_option.get_item_metadata(stat_option.selected))
 	curve_graph.show_curve(session, current_layer, current_stat)
+	_refresh_selected_stat_ui()
+
+
+func _on_advanced_mode_toggled(enabled: bool) -> void:
+	layer_option.visible = enabled
+	if !enabled:
+		current_layer = "base"
+		layer_option.select(0)
+	_refresh_stat_options()
 
 
 func _on_layer_selected(index: int) -> void:
@@ -1172,11 +1192,81 @@ func _on_layer_selected(index: int) -> void:
 func _on_stat_selected(index: int) -> void:
 	current_stat = String(stat_option.get_item_metadata(index))
 	curve_graph.show_curve(session, current_layer, current_stat)
+	_refresh_selected_stat_ui()
+	_refresh_samples()
+
+
+func _selected_special_is_derived() -> bool:
+	return current_layer != "base" and session.is_special_derived(current_layer, current_stat)
+
+
+func _refresh_selected_stat_ui() -> void:
+	var schema: Dictionary = schema_by_name.get(current_stat, {})
+	var special := current_layer != "base"
+	var derived := special and _selected_special_is_derived()
+	authoring_mode_indicator.text = "Derived — follows base machine stats" if derived else ("Custom special-state value" if special else "Base machine-setting curve")
+	make_custom_button.visible = derived
+	revert_derived_button.visible = special and !derived
+	curve_graph.mouse_filter = Control.MOUSE_FILTER_IGNORE if derived else Control.MOUSE_FILTER_STOP
+	var editable := !derived
+	$Workspace/StatsColumn/CurveActions/Apply.disabled = !editable
+	$Workspace/StatsColumn/CurveActions/Add.disabled = !editable or current_layer == "s_boost"
+	$Workspace/StatsColumn/CurveActions/Remove.disabled = !editable or current_layer == "s_boost"
+	$Workspace/StatsColumn/CurveActions/Paste.disabled = !editable or current_layer == "s_boost"
+	$Workspace/StatsColumn/CurveActions/Reset.disabled = !editable
+	key_value.editable = editable
+	key_time.editable = editable and current_layer != "s_boost"
+	key_tangent_in.editable = editable and current_layer != "s_boost"
+	key_tangent_out.editable = editable and current_layer != "s_boost"
+	var unit := String(schema.get("unit", "scalar"))
+	var activity := String(schema.get("activity", "always")).replace("_", " ").capitalize()
+	var reference := float(schema.get("default_value", 0.0))
+	var context := "Base values are sampled from the 0–1 machine-setting curve."
+	if special:
+		context = _special_derivation_help()
+	stat_help.text = "[b]%s[/b]  [color=#91a8c7]%s · %s · reference %s[/color]\n%s\n[color=#b9c9dc]%s[/color]" % [
+		String(schema.get("friendly_name", current_stat)), unit, activity, str(reference),
+		String(schema.get("explanation", "")), context,
+	]
+
+
+func _special_derivation_help() -> String:
+	if current_layer == "s_boost":
+		return "Derived S-BOOST values are absolute snapshots of the base curve at 50% machine setting."
+	if current_layer in ["mts", "quickturn", "no_boost"]:
+		return "The derived value is an identity multiplier (1.0); make it custom only for a deliberate state-specific trait."
+	if current_stat == "drive_target_speed_multiplier":
+		return "Derived from acceleration and manual turbo gain across machine setting using the original boost target-speed formula."
+	if current_stat == "acceleration_response_multiplier":
+		return "Derived from weight: 0.3 at 1000 kg or lighter, otherwise 0.5."
+	if current_stat == "forward_thrust_multiplier":
+		return "Derived from weight: 1.2 at 1000 kg or lighter, otherwise 1.6."
+	if current_stat == "turbo_flat_loss_per_second":
+		return "Derived boosted-state multiplier: 0.5 of the base flat turbo loss."
+	if current_stat == "turbo_percent_loss_per_second":
+		return "Derived boosted-state multiplier: 0.6 of the base percentage turbo loss."
+	return "The derived value is an identity multiplier (1.0)."
+
+
+func _make_selected_special_custom() -> void:
+	var result: Dictionary = session.make_special_custom(current_layer, current_stat)
+	_show_diagnostics(result)
+	curve_graph.show_curve(session, current_layer, current_stat)
+	_refresh_selected_stat_ui()
+	_refresh_history_buttons()
+
+
+func _revert_selected_special_derived() -> void:
+	var result: Dictionary = session.revert_special_derived(current_layer, current_stat)
+	_show_diagnostics(result)
+	curve_graph.show_curve(session, current_layer, current_stat)
+	_refresh_selected_stat_ui()
+	_refresh_history_buttons()
 	_refresh_samples()
 
 
 func _commit_curve(keys: Array) -> void:
-	if current_layer == "s_boost":
+	if current_layer == "s_boost" or _selected_special_is_derived():
 		return
 	var result: Dictionary = session.set_curve(current_layer, current_stat, keys)
 	_show_diagnostics(result)
@@ -1195,14 +1285,17 @@ func _show_selected_key(index: int) -> void:
 	key_value.value = float(key["value"])
 	key_tangent_in.value = float(key["tangent_in"])
 	key_tangent_out.value = float(key["tangent_out"])
-	key_time.editable = current_layer != "s_boost"
-	key_tangent_in.editable = current_layer != "s_boost"
-	key_tangent_out.editable = current_layer != "s_boost"
+	key_time.editable = current_layer != "s_boost" and !_selected_special_is_derived()
+	key_tangent_in.editable = current_layer != "s_boost" and !_selected_special_is_derived()
+	key_tangent_out.editable = current_layer != "s_boost" and !_selected_special_is_derived()
+	key_value.editable = !_selected_special_is_derived()
 	updating_controls = false
 
 
 func _apply_selected_key() -> void:
 	if updating_controls:
+		return
+	if _selected_special_is_derived():
 		return
 	if current_layer == "s_boost":
 		session.set_s_boost_value(current_stat, key_value.value)

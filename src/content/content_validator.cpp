@@ -1,6 +1,8 @@
 #include "content/content_validator.h"
 
 #include "car/car_properties.h"
+#include "car/car_authoring_session.h"
+#include "car/car_special_state_derivation.h"
 #include "content/glb_validator.h"
 #include "content/track_payload_validator.h"
 
@@ -25,6 +27,7 @@ namespace {
 
 static constexpr uint64_t VEHICLE_PROPERTIES_MAX_BYTES = 4u * 1024u * 1024u;
 static constexpr uint64_t VEHICLE_VISUAL_METADATA_MAX_BYTES = 64u * 1024u;
+static constexpr uint64_t VEHICLE_AUTHORING_METADATA_MAX_BYTES = 4u * 1024u;
 static constexpr uint64_t TRACK_PAYLOAD_MAX_BYTES = 256u * 1024u * 1024u;
 static constexpr uint64_t TRACK_VISUAL_MAX_BYTES = 256u * 1024u * 1024u;
 static constexpr uint64_t TRACK_METADATA_MAX_BYTES = 1u * 1024u * 1024u;
@@ -216,6 +219,7 @@ static uint64_t file_limit_for(const ContentManifest &manifest, const String &pa
 	if (path == "vehicle/model.glb") return VEHICLE_MODEL_MAX_BYTES;
 	if (path == "vehicle/properties.mxt_car_props") return VEHICLE_PROPERTIES_MAX_BYTES;
 	if (path == "vehicle/visual.json") return VEHICLE_VISUAL_METADATA_MAX_BYTES;
+	if (path == "vehicle/authoring.json") return VEHICLE_AUTHORING_METADATA_MAX_BYTES;
 	if (path == "track/track.mxt_track") return TRACK_PAYLOAD_MAX_BYTES;
 	if (path == "track/visual.glb") return TRACK_VISUAL_MAX_BYTES;
 	if (path == "track/metadata.json") return TRACK_METADATA_MAX_BYTES;
@@ -738,10 +742,75 @@ static bool validate_vehicle_visual_metadata(
 	return true;
 }
 
+static bool validate_vehicle_authoring_metadata(
+		const DiskEntry &entry,
+		Dictionary &out_metadata,
+		std::vector<String> &errors)
+{
+	PackedByteArray bytes;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_AUTHORING_METADATA_MAX_BYTES, bytes, errors)) return false;
+	if (!audit_json_members(bytes, errors)) return false;
+	const Variant parsed = JSON::parse_string(String::utf8(reinterpret_cast<const char *>(bytes.ptr()), bytes.size()));
+	if (parsed.get_type() != Variant::DICTIONARY) {
+		add_error(errors, "vehicle/authoring.json root must be an object");
+		return false;
+	}
+	const Dictionary root = parsed;
+	static const char *ROOT_KEYS[] = {"format_revision", "derived_mask_hex"};
+	has_only_keys(root, ROOT_KEYS, std::size(ROOT_KEYS), "vehicle authoring metadata", errors);
+	const Variant revision_value = root.get("format_revision", Variant());
+	const bool valid_revision =
+			(revision_value.get_type() == Variant::INT && static_cast<int64_t>(revision_value) == 1) ||
+			(revision_value.get_type() == Variant::FLOAT && static_cast<double>(revision_value) == 1.0);
+	if (!valid_revision) add_error(errors, "vehicle authoring format_revision must be integer 1");
+	if (!root.has("derived_mask_hex") || root["derived_mask_hex"].get_type() != Variant::STRING) {
+		add_error(errors, "vehicle authoring derived_mask_hex must be a string");
+		return false;
+	}
+	const String encoded = root["derived_mask_hex"];
+	static constexpr uint32_t MASK_WORDS =
+			(CAR_AUTHORING_SPECIAL_LAYER_COUNT * CAR_STAT_COUNT + 63u) / 64u;
+	if (encoded.length() != static_cast<int64_t>(MASK_WORDS * 16u)) {
+		add_error(errors, "vehicle authoring derived_mask_hex has the wrong length");
+		return false;
+	}
+	uint64_t words[MASK_WORDS] = {};
+	for (uint32_t word = 0; word < MASK_WORDS; ++word) {
+		for (uint32_t digit = 0; digit < 16; ++digit) {
+			const char32_t c = encoded[static_cast<int64_t>(word * 16u + digit)];
+			if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+				add_error(errors, "vehicle authoring derived_mask_hex must use lowercase hexadecimal");
+				return false;
+			}
+			words[word] = (words[word] << 4) |
+				static_cast<uint64_t>(c <= '9' ? c - '0' : c - 'a' + 10);
+		}
+	}
+	const uint32_t pair_count = CAR_AUTHORING_SPECIAL_LAYER_COUNT * CAR_STAT_COUNT;
+	for (uint32_t bit = 0; bit < MASK_WORDS * 64u; ++bit) {
+		if ((words[bit / 64u] & (UINT64_C(1) << (bit % 64u))) == 0) continue;
+		if (bit >= pair_count) {
+			add_error(errors, "vehicle authoring derived mask has nonzero padding bits");
+			continue;
+		}
+		const uint8_t layer = static_cast<uint8_t>(bit / CAR_STAT_COUNT);
+		const uint16_t stat = static_cast<uint16_t>(bit % CAR_STAT_COUNT);
+		if (!car_special_pair_is_supported(
+				static_cast<CarAuthoringSpecialLayer>(layer), static_cast<CarStatId>(stat))) {
+			add_error(errors, "vehicle authoring derived mask enables an unsupported pair");
+		}
+	}
+	if (!errors.empty()) return false;
+	out_metadata["format_revision"] = 1;
+	out_metadata["derived_mask_hex"] = encoded;
+	return true;
+}
+
 static bool validate_payloads(
 		const ContentManifest &manifest,
 		const std::vector<DiskEntry> &entries,
 		Dictionary &out_visual_metadata,
+		Dictionary &out_authoring_metadata,
 		std::vector<String> &errors)
 {
 	const DiskEntry *preview = find_disk_entry(entries, "preview.png");
@@ -752,6 +821,7 @@ static bool validate_payloads(
 		const DiskEntry *model = find_disk_entry(entries, "vehicle/model.glb");
 		const DiskEntry *properties = find_disk_entry(entries, "vehicle/properties.mxt_car_props");
 		const DiskEntry *visual_metadata = find_disk_entry(entries, "vehicle/visual.json");
+		const DiskEntry *authoring_metadata = find_disk_entry(entries, "vehicle/authoring.json");
 		VehicleGlbInfo model_info;
 		bool model_valid = false;
 		if (model) {
@@ -765,6 +835,23 @@ static bool validate_payloads(
 				if (!PhysicsCarProperties::deserialize_and_sample(bytes, 0.5f, sampled, parse_error)) {
 					add_error(errors, "vehicle properties rejected: " + parse_error);
 				}
+			}
+		}
+		if (authoring_metadata) validate_vehicle_authoring_metadata(
+				*authoring_metadata, out_authoring_metadata, errors);
+		if (properties && !out_authoring_metadata.is_empty() && errors.empty()) {
+			Ref<FileAccess> file = FileAccess::open(properties->absolute_path, FileAccess::READ);
+			const PackedByteArray original = file->get_buffer(file->get_length());
+			Ref<MxtCarAuthoringSession> session;
+			session.instantiate();
+			Dictionary loaded = session->load_bytes(original);
+			Dictionary applied = session->set_authoring_intent(out_authoring_metadata);
+			Dictionary serialized = session->serialize();
+			const PackedByteArray canonical = serialized.get("bytes", PackedByteArray());
+			if (!static_cast<bool>(loaded.get("valid", false)) ||
+				!static_cast<bool>(applied.get("valid", false)) ||
+				!static_cast<bool>(serialized.get("valid", false)) || canonical != original) {
+				add_error(errors, "vehicle authoring intent does not match the materialized properties");
 			}
 		}
 		if (visual_metadata) validate_vehicle_visual_metadata(
@@ -892,7 +979,9 @@ bool validate_package_directory_internal(
 	}
 
 	validate_declared_hashes(out_package.manifest, entries, out_errors);
-	validate_payloads(out_package.manifest, entries, out_package.visual_metadata, out_errors);
+	validate_payloads(
+			out_package.manifest, entries, out_package.visual_metadata,
+			out_package.authoring_metadata, out_errors);
 	if (!out_errors.empty()) {
 		return false;
 	}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "car/car_properties.h"
+#include "car/car_special_state_derivation.h"
 
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -32,6 +33,9 @@ private:
 
 	std::array<Curve, CAR_CURVE_LAYER_COUNT * CAR_STAT_COUNT> curves;
 	std::array<float, CAR_STAT_COUNT> s_boost_values{};
+	static constexpr uint32_t AUTHORING_PAIR_COUNT = CAR_AUTHORING_SPECIAL_LAYER_COUNT * CAR_STAT_COUNT;
+	static constexpr uint32_t AUTHORING_MASK_WORD_COUNT = (AUTHORING_PAIR_COUNT + 63u) / 64u;
+	std::array<uint64_t, AUTHORING_MASK_WORD_COUNT> derived_pair_mask{};
 	std::array<SimVec3, 4> tilt_corners{};
 	std::array<SimVec3, 4> wall_corners{};
 	uint32_t state_flags = 0;
@@ -52,6 +56,7 @@ private:
 	std::vector<Thruster> thrusters;
 	struct HistorySnapshot {
 		PackedByteArray properties;
+		std::array<uint64_t, AUTHORING_MASK_WORD_COUNT> derived_pair_mask{};
 		String model_path;
 		Vector3 model_translation;
 		Vector3 model_rotation_degrees;
@@ -70,6 +75,7 @@ private:
 
 	static int32_t stat_index(const String &stat_name);
 	static int32_t layer_index(const String &layer_name);
+	static int32_t special_layer_index(const String &layer_name);
 	static bool read_document(
 			const PackedByteArray &bytes,
 			MxtCarAuthoringSession &target,
@@ -83,6 +89,15 @@ private:
 	static bool is_safe_draft_root(const String &path, String &out_global_path);
 	Curve &curve_at(uint8_t layer, uint16_t stat);
 	const Curve &curve_at(uint8_t layer, uint16_t stat) const;
+	double sample_curve_at(uint8_t layer, uint16_t stat, float machine_setting) const;
+	bool is_pair_derived(uint8_t special_layer, uint16_t stat) const;
+	void set_pair_derived(uint8_t special_layer, uint16_t stat, bool derived);
+	void sample_base_stats(float machine_setting, float out_stats[CAR_STAT_COUNT]) const;
+	float derived_special_value(uint8_t special_layer, uint16_t stat, float machine_setting) const;
+	void regenerate_derived_pair(uint8_t special_layer, uint16_t stat);
+	void regenerate_all_derived_pairs();
+	void infer_authoring_intent();
+	bool parse_authoring_intent(const Dictionary &value, std::array<uint64_t, AUTHORING_MASK_WORD_COUNT> &out_mask) const;
 
 protected:
 	static void _bind_methods();
@@ -104,6 +119,11 @@ public:
 	double sample_curve(const String &layer_name, const String &stat_name, double machine_setting) const;
 	double get_s_boost_value(const String &stat_name) const;
 	bool set_s_boost_value(const String &stat_name, double value);
+	bool is_special_derived(const String &layer_name, const String &stat_name) const;
+	Dictionary make_special_custom(const String &layer_name, const String &stat_name);
+	Dictionary revert_special_derived(const String &layer_name, const String &stat_name);
+	Dictionary get_authoring_intent() const;
+	Dictionary set_authoring_intent(const Dictionary &value);
 	PackedVector3Array get_tilt_corners() const;
 	PackedVector3Array get_wall_corners() const;
 	Dictionary get_collision_measurements() const;
