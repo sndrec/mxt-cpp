@@ -1,4 +1,5 @@
 .cache/
+*.pdb
 .sconsign.dblite
 .tmpfile
 .vs/
@@ -53,3 +54,7 @@ mxt-cpp.7z
 /mxto/auth_random_strategy.txt
 /mxto/collision-engine-video/
 /src/car/car_vs_car_collision_reference.txt
+
+# Godot/GDExtension hot-reload copies and locked-DLL replacement files
+/mxto/bin/~*
+/mxto/addons/debug_draw_3d/libs/~*
