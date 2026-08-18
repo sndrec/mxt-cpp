@@ -39,8 +39,12 @@ private:
 		CarPerformanceRaw center_raw;
 		float component_best[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS]{};
 		float component_worst[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS]{};
+		float component_official_best[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS]{};
+		float component_official_worst[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS]{};
 		float stat_min[CAR_STAT_COUNT]{};
 		float stat_max[CAR_STAT_COUNT]{};
+		float stat_official_min[CAR_STAT_COUNT]{};
+		float stat_official_max[CAR_STAT_COUNT]{};
 	};
 
 	PackedByteArray official_documents[OFFICIAL_COUNT];

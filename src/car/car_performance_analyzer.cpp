@@ -47,17 +47,34 @@ static uint64_t hash_string(const String &value) {
 	return hash;
 }
 
-static float score_against_anchors(float value, float center, float best, float worst) {
-	const float scale = std::max({std::abs(center), std::abs(best), std::abs(worst), 1.0f});
+static float score_against_anchors(
+		float value,
+		float center,
+		float grade_a,
+		float grade_e,
+		float grade_s,
+		float grade_f) {
+	const float scale = std::max({std::abs(center), std::abs(grade_a), std::abs(grade_e),
+		std::abs(grade_s), std::abs(grade_f), 1.0f});
 	const float epsilon = scale * 0.000001f;
 	if (std::abs(value - center) <= epsilon) return 2.0f;
 	if (value > center) {
-		const float range = best - center;
-		if (range > epsilon) return 2.0f + 2.0f * (value - center) / range;
+		const float c_to_a = grade_a - center;
+		if (value <= grade_a && c_to_a > epsilon) {
+			return 2.0f + 2.0f * (value - center) / c_to_a;
+		}
+		const float a_to_s = grade_s - grade_a;
+		if (a_to_s > epsilon) return 4.0f + (value - grade_a) / a_to_s;
+		if (c_to_a > epsilon) return 4.0f + 2.0f * (value - grade_a) / c_to_a;
 		return 4.0f + (value - center) / scale;
 	}
-	const float range = center - worst;
-	if (range > epsilon) return 2.0f - 2.0f * (center - value) / range;
+	const float c_to_e = center - grade_e;
+	if (value >= grade_e && c_to_e > epsilon) {
+		return 2.0f - 2.0f * (center - value) / c_to_e;
+	}
+	const float e_to_f = grade_e - grade_f;
+	if (e_to_f > epsilon) return -(grade_e - value) / e_to_f;
+	if (c_to_e > epsilon) return -2.0f * (grade_e - value) / c_to_e;
 	return -(center - value) / scale;
 }
 
@@ -75,13 +92,28 @@ static String nonnegative_grade_stem(float anchor) {
 	return label;
 }
 
+static String negative_grade_stem(float distance) {
+	if (distance < 1.0f) return "E";
+	if (distance > 8.0f) {
+		return String::utf8("F×") + String::num(distance, 0);
+	}
+	String label;
+	for (int i = 0; i < static_cast<int>(distance); ++i) label += "F";
+	return label;
+}
+
 static String grade_label(float score) {
 	if (!std::isfinite(score)) return "?";
 	if (score < -0.00001f) {
-		const int extra = std::max(0, static_cast<int>(std::floor((-score) / 0.5f)));
-		String label = "F";
-		for (int i = 0; i < extra; ++i) label += "-";
-		return label;
+		const float distance = -score;
+		const float lower = std::floor(distance);
+		const float fraction = distance - lower;
+		const String lower_label = negative_grade_stem(lower);
+		if (fraction < 1.0f / 3.0f) return lower_label;
+		if (fraction < 0.5f) return lower_label + String("-");
+		const String upper_label = negative_grade_stem(lower + 1.0f);
+		if (fraction < 2.0f / 3.0f) return upper_label + String("+");
+		return upper_label;
 	}
 	const float lower = std::floor(std::max(score, 0.0f));
 	const float fraction = score - lower;
@@ -289,33 +321,60 @@ bool MxtCarPerformanceAnalyzer::ensure_grade_calibration() {
 	for (uint8_t category = 0; category < CAR_PERFORMANCE_CATEGORY_COUNT; ++category) {
 		for (uint8_t component = 0; component < car_performance_component_count(
 				static_cast<CarPerformanceCategory>(category)); ++component) {
-			const float initial = samples[0]->raw[0].components[category][component].value;
-			float best = initial;
-			float worst = initial;
+			const float center = calibration.center_raw.components[category][component].value;
+			float grade_a = center;
+			float grade_e = center;
+			float grade_s = center;
+			float grade_f = center;
 			for (uint8_t setting_index = 0; setting_index < 3; ++setting_index) {
+				const float all_rounder_value = samples[setting_index]->raw[ALL_ROUNDER_INDEX]
+					.components[category][component].value;
+				grade_a = std::max(grade_a, all_rounder_value);
+				grade_e = std::min(grade_e, all_rounder_value);
 				for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
 					const float value = samples[setting_index]->raw[official]
 						.components[category][component].value;
-					best = std::max(best, value);
-					worst = std::min(worst, value);
+					grade_s = std::max(grade_s, value);
+					grade_f = std::min(grade_f, value);
 				}
 			}
-			calibration.component_best[category][component] = best;
-			calibration.component_worst[category][component] = worst;
+			const float scale = std::max({std::abs(center), std::abs(grade_a),
+				std::abs(grade_e), 1.0f});
+			const float epsilon = scale * 0.000001f;
+			if (grade_a - center <= epsilon) grade_a = grade_s;
+			if (center - grade_e <= epsilon) grade_e = grade_f;
+			calibration.component_best[category][component] = grade_a;
+			calibration.component_worst[category][component] = grade_e;
+			calibration.component_official_best[category][component] = grade_s;
+			calibration.component_official_worst[category][component] = grade_f;
 		}
 	}
 	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
-		float minimum = samples[0]->properties[0].base_stats[stat];
-		float maximum = minimum;
+		const float center = calibration.center_properties.base_stats[stat];
+		float grade_e_minimum = center;
+		float grade_a_maximum = center;
+		float official_minimum = center;
+		float official_maximum = center;
 		for (uint8_t setting_index = 0; setting_index < 3; ++setting_index) {
+			const float all_rounder_value =
+				samples[setting_index]->properties[ALL_ROUNDER_INDEX].base_stats[stat];
+			grade_e_minimum = std::min(grade_e_minimum, all_rounder_value);
+			grade_a_maximum = std::max(grade_a_maximum, all_rounder_value);
 			for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
 				const float value = samples[setting_index]->properties[official].base_stats[stat];
-				minimum = std::min(minimum, value);
-				maximum = std::max(maximum, value);
+				official_minimum = std::min(official_minimum, value);
+				official_maximum = std::max(official_maximum, value);
 			}
 		}
-		calibration.stat_min[stat] = minimum;
-		calibration.stat_max[stat] = maximum;
+		const float scale = std::max({std::abs(center), std::abs(grade_e_minimum),
+			std::abs(grade_a_maximum), 1.0f});
+		const float epsilon = scale * 0.000001f;
+		if (center - grade_e_minimum <= epsilon) grade_e_minimum = official_minimum;
+		if (grade_a_maximum - center <= epsilon) grade_a_maximum = official_maximum;
+		calibration.stat_min[stat] = grade_e_minimum;
+		calibration.stat_max[stat] = grade_a_maximum;
+		calibration.stat_official_min[stat] = official_minimum;
+		calibration.stat_official_max[stat] = official_maximum;
 	}
 	calibration.valid = true;
 	grade_calibration = calibration;
@@ -375,10 +434,10 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 8;
+	result["benchmark_version"] = 10;
 	result["machine_setting"] = setting;
 	result["benchmark_machine_setting"] = 0.5f;
-	result["benchmark_reference"] = "All Rounder at 50%; official extrema sampled at 0%, 50%, and 100%";
+	result["benchmark_reference"] = "All Rounder at 50%; All Rounder range sampled at 0%, 50%, and 100% defines A and E; official extrema define S and F, with fallback for setting-invariant metrics";
 	result["weight_kg"] = properties.base_stats[CAR_STAT_WEIGHT_KG];
 	result["terminal_speed_kmh"] = raw.terminal_speed_kmh;
 	result["peak_boost_speed_kmh"] = raw.peak_boost_speed_kmh;
@@ -392,11 +451,14 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float score_sum = 0.0f;
 		const uint8_t count = car_performance_component_count(category);
 		for (uint8_t component = 0; component < count; ++component) {
-			const float best = grade_calibration.component_best[category][component];
-			const float worst = grade_calibration.component_worst[category][component];
+			const float grade_a = grade_calibration.component_best[category][component];
+			const float grade_e = grade_calibration.component_worst[category][component];
+			const float grade_s = grade_calibration.component_official_best[category][component];
+			const float grade_f = grade_calibration.component_official_worst[category][component];
 			const float center = grade_calibration.center_raw.components[category][component].value;
 			const float value = raw.components[category][component].value;
-			const float component_score = score_against_anchors(value, center, best, worst);
+			const float component_score = score_against_anchors(
+				value, center, grade_a, grade_e, grade_s, grade_f);
 			score_sum += component_score;
 			Dictionary component_result;
 			component_result["name"] = car_performance_component_name(category, component);
@@ -427,12 +489,18 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			continue;
 		}
 		const float direction = metadata.base_direction == CAR_STAT_DIRECTION_LOWER_BENEFIT ? -1.0f : 1.0f;
-		const float best = direction > 0.0f
+		const float grade_a = direction > 0.0f
 			? grade_calibration.stat_max[stat] : -grade_calibration.stat_min[stat];
-		const float worst = direction > 0.0f
+		const float grade_e = direction > 0.0f
 			? grade_calibration.stat_min[stat] : -grade_calibration.stat_max[stat];
+		const float grade_s = direction > 0.0f
+			? grade_calibration.stat_official_max[stat] : -grade_calibration.stat_official_min[stat];
+		const float grade_f = direction > 0.0f
+			? grade_calibration.stat_official_min[stat] : -grade_calibration.stat_official_max[stat];
 		const float center = direction * grade_calibration.center_properties.base_stats[stat];
-		const float score = score_against_anchors(direction * properties.base_stats[stat], center, best, worst);
+		const float score = score_against_anchors(
+			direction * properties.base_stats[stat], center,
+			grade_a, grade_e, grade_s, grade_f);
 		Dictionary stat_result;
 		stat_result["name"] = metadata.name;
 		stat_result["friendly_name"] = metadata.friendly_name;
