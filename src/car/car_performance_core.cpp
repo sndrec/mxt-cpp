@@ -10,6 +10,8 @@ static constexpr float TICK_RATE = 60.0f;
 static constexpr uint32_t DRIVE_FRAMES = 1800;
 static constexpr float STANDARD_SPEED_KMH = 600.0f;
 static constexpr float DEGREES_PER_RADIAN = 57.2957795131f;
+static constexpr uint32_t FLAT_TURN_FRAMES = 360;
+static constexpr uint32_t FLAT_TURN_MEASURE_FRAMES = 120;
 
 struct DriveResult {
 	float speed_1s = 0.0f;
@@ -24,6 +26,114 @@ struct DriveResult {
 	float time_95 = 30.0f;
 	float settlement_confidence = 0.0f;
 };
+
+struct FlatVec2 {
+	float x;
+	float z;
+};
+
+static FlatVec2 rotate_flat(const FlatVec2 value, float angle) {
+	const float cosine = std::cos(angle);
+	const float sine = std::sin(angle);
+	return {
+		value.x * cosine + value.z * sine,
+		-value.x * sine + value.z * cosine};
+}
+
+static float run_flat_turn(
+		const PhysicsCarProperties &properties,
+		const float stats[CAR_STAT_COUNT],
+		bool drift) {
+	const float weight = std::max(std::abs(stats[CAR_STAT_WEIGHT_KG]), 1.0f);
+	const float angular_inertia_y = std::max(45.0f * weight * 0.0625f, 1.0f);
+	const float target_velocity = STANDARD_SPEED_KMH * weight / 216.0f;
+	FlatVec2 velocity{0.0f, -target_velocity};
+	FlatVec2 previous_position{0.0f, 0.0f};
+	FlatVec2 position{0.0f, 0.0f};
+	float previous_heading = 0.0f;
+	float heading = 0.0f;
+	float angular_velocity_y = 0.0f;
+	float measurement_start_heading = 0.0f;
+
+	for (uint32_t frame = 0; frame < FLAT_TURN_FRAMES; ++frame) {
+		const float steer_input = 1.0f;
+		// Holding both drift inputs starts a manual drift while their opposing
+		// strafe values cancel, leaving the stick as the steering input.
+		const float strafe_input = 0.0f;
+		const float steering_strength = stats[CAR_STAT_TURN_MOVEMENT] * -steer_input;
+		angular_velocity_y += 1.5f * steering_strength;
+		const float initial_angular_velocity_y = angular_velocity_y;
+
+		float steer_degrees = -(steer_input * stats[CAR_STAT_TURN_REACTION] +
+			strafe_input * stats[CAR_STAT_STRAFE]);
+		steer_degrees = std::clamp(steer_degrees, -45.0f, 45.0f);
+		const float steer_angle = steer_degrees / DEGREES_PER_RADIAN * 0.5f;
+		const float speed_factor = std::clamp(STANDARD_SPEED_KMH / 1000.0f, 0.2f, 0.8f);
+
+		for (uint8_t corner = 0; corner < 4; ++corner) {
+			const FlatVec2 offset{
+				properties.tilt_corners[corner].x,
+				properties.tilt_corners[corner].z};
+			const FlatVec2 old_offset = rotate_flat(offset, previous_heading);
+			const FlatVec2 current_offset = rotate_flat(offset, heading);
+			const FlatVec2 old_world{
+				previous_position.x + old_offset.x,
+				previous_position.z + old_offset.z};
+			const FlatVec2 current_world{
+				position.x + current_offset.x,
+				position.z + current_offset.z};
+			const FlatVec2 delta_world{
+				old_world.x - current_world.x,
+				old_world.z - current_world.z};
+			const FlatVec2 delta_steered = rotate_flat(
+				delta_world, -(heading + steer_angle));
+			const float grip_threshold = drift
+				? stats[CAR_STAT_GRIP_3]
+				: stats[CAR_STAT_GRIP_1];
+			const float drift_delta = std::clamp(
+				delta_steered.x, -std::abs(grip_threshold), std::abs(grip_threshold));
+
+			float force_scale = stats[CAR_STAT_TURN_TENSION];
+			if (force_scale < 0.1f) {
+				const float steering_scale = drift ? 0.0f :
+					((speed_factor - 0.2f) / 0.6f) * (force_scale - 0.1f);
+				force_scale = 0.1f + steering_scale;
+			}
+			const float applied_force = drift_delta * weight * force_scale;
+			const FlatVec2 force_local = rotate_flat({applied_force, 0.0f}, steer_angle);
+			const FlatVec2 force_world = rotate_flat(force_local, heading);
+			velocity.x += force_world.x;
+			velocity.z += force_world.z;
+			angular_velocity_y += offset.z * force_local.x - offset.x * force_local.z;
+			angular_velocity_y -= 0.125f * initial_angular_velocity_y *
+				(drift ? stats[CAR_STAT_GRIP_2] : 1.0f);
+		}
+
+		const float ground_limit = 0.05f * angular_inertia_y;
+		angular_velocity_y = std::clamp(
+			angular_velocity_y, -ground_limit, ground_limit);
+		const float heading_step = angular_velocity_y / angular_inertia_y;
+		if (frame == FLAT_TURN_FRAMES - FLAT_TURN_MEASURE_FRAMES) {
+			measurement_start_heading = heading;
+		}
+
+		previous_position = position;
+		previous_heading = heading;
+		position.x += velocity.x / weight;
+		position.z += velocity.z / weight;
+		heading += heading_step;
+
+		const float speed = std::sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+		if (speed > 0.0001f) {
+			const float speed_correction = target_velocity / speed;
+			velocity.x *= speed_correction;
+			velocity.z *= speed_correction;
+		}
+	}
+
+	return std::abs(heading - measurement_start_heading) * DEGREES_PER_RADIAN *
+		(TICK_RATE / static_cast<float>(FLAT_TURN_MEASURE_FRAMES));
+}
 
 static float finite_or(float value, float fallback = 0.0f) {
 	return std::isfinite(value) ? value : fallback;
@@ -185,17 +295,8 @@ static void analyze_handling(
 		CAR_MODIFIER_NO_BOOST, false, normal);
 	const float *drift = normal;
 	const float weight = safe_positive(normal[CAR_STAT_WEIGHT_KG], 1.0f);
-	const float angular_inertia_y = std::max(45.0f * weight * 0.0625f, 1.0f);
-	const float ordinary_steer = normal[CAR_STAT_TURN_MOVEMENT] +
-		0.35f * normal[CAR_STAT_STRAFE_TURN];
-	const float drift_steer = drift[CAR_STAT_TURN_MOVEMENT] +
-		0.35f * drift[CAR_STAT_STRAFE_TURN];
-	const float yaw_scale = TICK_RATE * DEGREES_PER_RADIAN;
-	const float ordinary_yaw = yaw_scale * 1.5f * ordinary_steer *
-		std::abs(normal[CAR_STAT_TURN_REACTION]) / angular_inertia_y;
-	const float drift_yaw = yaw_scale * 1.5f * drift_steer *
-		std::abs(drift[CAR_STAT_TURN_REACTION]) *
-		safe_positive(drift[CAR_STAT_GRIP_2]) / angular_inertia_y;
+	const float ordinary_yaw = run_flat_turn(properties, normal, false);
+	const float drift_yaw = run_flat_turn(properties, drift, true);
 	const float ordinary_retention = 1.0f /
 		(1.0f + std::abs(normal[CAR_STAT_TURN_DECEL]) * STANDARD_SPEED_KMH * 0.02f);
 	const float drift_retention = (1.0f + std::max(drift[CAR_STAT_DRIFT_ACCEL], 0.0f)) /
@@ -304,9 +405,9 @@ const char *car_performance_component_explanation(CarPerformanceCategory categor
 		 "Ground covered during the first five seconds of an unboosted launch.",
 		 "Time needed to reach 300 km/h during an unboosted launch. Less time earns a higher grade.",
 		 "Time needed to reach 500 km/h during an unboosted launch. Less time earns a higher grade.", nullptr},
-		{"Estimated turning rate during planted driving, combining steering force, steering angle, and weight.",
+		{"Sustained turning rate at 600 km/h on flat ground with full steering input.",
 		 "How much speed the machine preserves while cornering normally at the benchmark speed.",
-		 "Estimated turning rate during an ordinary drift.",
+		 "Sustained turning rate at 600 km/h during a full-input drift on flat ground.",
 		 "How much speed the machine preserves during a normal drift at the benchmark speed.", nullptr, nullptr},
 		{"How strongly the machine's base grip resists entering a slide.",
 		 "How readily steering can overpower the machine's restoring grip. Less unwanted sliding earns a higher grade.",
