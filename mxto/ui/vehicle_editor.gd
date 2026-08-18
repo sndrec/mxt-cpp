@@ -10,6 +10,8 @@ const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
 const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
 const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
+const WORKSHOP_PREVIEW_TARGET_MAX_BYTES := 950_000
+const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
 
 @onready var draft_option: OptionButton = $Toolbar/DraftOption
 @onready var title_input: LineEdit = $Metadata/Title
@@ -53,6 +55,7 @@ const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 @onready var workshop_visibility: OptionButton = $Workshop/Visibility
 @onready var workshop_status: Label = $Workshop/Status
 @onready var workshop_page_button: Button = $Workshop/OpenPage
+@onready var workshop_publish_button: Button = $Toolbar/PublishWorkshop
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
@@ -508,6 +511,16 @@ func _connect_steam_service() -> void:
 	var service := game_manager.steam_service
 	if !service.workshop_request_completed.is_connected(_on_workshop_request_completed):
 		service.workshop_request_completed.connect(_on_workshop_request_completed)
+	if !service.status_changed.is_connected(_on_steam_status_changed):
+		service.status_changed.connect(_on_steam_status_changed)
+	_on_steam_status_changed(service.get_status())
+
+
+func _on_steam_status_changed(status: Dictionary) -> void:
+	if bool(status.get("initialized", false)) and author_input.text == "Creator":
+		var persona_name := String(status.get("persona_name", ""))
+		if !persona_name.is_empty():
+			author_input.text = persona_name
 	_refresh_workshop_controls()
 
 
@@ -532,8 +545,15 @@ func _save_workshop_sidecar() -> void:
 
 
 func _refresh_workshop_controls() -> void:
-	workshop_page_button.disabled = workshop_published_file_id <= 0
+	var steam_available := game_manager != null \
+		and game_manager.steam_service != null \
+		and game_manager.steam_service.is_initialized()
+	workshop_publish_button.disabled = workshop_request_id != 0 or !steam_available
+	workshop_page_button.disabled = workshop_request_id != 0 or workshop_published_file_id <= 0
 	if workshop_request_id != 0:
+		return
+	if !steam_available:
+		workshop_status.text = "Steam Workshop is unavailable"
 		return
 	if workshop_published_file_id > 0:
 		workshop_status.text = "Workshop item %d" % workshop_published_file_id
@@ -567,6 +587,7 @@ func _publish_workshop() -> void:
 		workshop_operation = "create_item"
 		workshop_status.text = "Creating Workshop item..."
 		workshop_request_id = game_manager.steam_service.create_workshop_item()
+		_refresh_workshop_controls()
 	else:
 		_submit_workshop_update()
 
@@ -590,6 +611,7 @@ func _submit_workshop_update() -> void:
 		metadata,
 		visibility,
 		"Updated from the in-game Car Creator")
+	_refresh_workshop_controls()
 
 
 func _on_workshop_request_completed(request_id: int, operation: String, result: Dictionary) -> void:
@@ -598,6 +620,7 @@ func _on_workshop_request_completed(request_id: int, operation: String, result: 
 	workshop_request_id = 0
 	workshop_operation = ""
 	if !bool(result.get("success", false)):
+		_refresh_workshop_controls()
 		workshop_status.text = "Workshop failed: %s" % String(result.get("message", "Unknown error"))
 		return
 	if operation == "create_item":
@@ -606,9 +629,9 @@ func _on_workshop_request_completed(request_id: int, operation: String, result: 
 		_refresh_workshop_controls()
 		_submit_workshop_update()
 		return
+	_refresh_workshop_controls()
 	var agreement := " Accept the Steam Workshop agreement." if bool(result.get("legal_agreement_required", false)) else ""
 	workshop_status.text = "Workshop upload complete.%s" % agreement
-	_refresh_workshop_controls()
 	if bool(result.get("legal_agreement_required", false)):
 		game_manager.steam_service.open_workshop_item_page(workshop_published_file_id)
 
@@ -734,8 +757,7 @@ func _save_draft() -> Dictionary:
 	_apply_visual_controls()
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_draft_root()))
 	var preview_path := _draft_root() + "/preview.png"
-	var preview_image := preview_viewport.get_texture().get_image()
-	if preview_image == null or preview_image.save_png(preview_path) != OK:
+	if !_save_preview_png(preview_path):
 		var failed := {"valid": false, "errors": PackedStringArray(["Could not capture the vehicle preview image"]), "warnings": PackedStringArray()}
 		_show_diagnostics(failed)
 		return failed
@@ -749,6 +771,31 @@ func _save_draft() -> Dictionary:
 	if bool(result.get("valid", false)):
 		_refresh_draft_options()
 	return result
+
+
+func _save_preview_png(preview_path: String) -> bool:
+	var preview_image := preview_viewport.get_texture().get_image()
+	if preview_image == null or preview_image.is_empty():
+		return false
+	while true:
+		if preview_image.save_png(preview_path) != OK:
+			return false
+		var preview_file := FileAccess.open(preview_path, FileAccess.READ)
+		if preview_file == null:
+			return false
+		var preview_bytes := preview_file.get_length()
+		preview_file.close()
+		if preview_bytes < WORKSHOP_PREVIEW_TARGET_MAX_BYTES:
+			return true
+		var longest_edge := maxi(preview_image.get_width(), preview_image.get_height())
+		if longest_edge <= WORKSHOP_PREVIEW_MIN_LONGEST_EDGE:
+			return false
+		var scale := maxf(0.75, float(WORKSHOP_PREVIEW_MIN_LONGEST_EDGE) / float(longest_edge))
+		preview_image.resize(
+			maxi(1, int(floor(float(preview_image.get_width()) * scale))),
+			maxi(1, int(floor(float(preview_image.get_height()) * scale))),
+			Image.INTERPOLATE_LANCZOS)
+	return false
 
 
 func _install_vehicle() -> String:

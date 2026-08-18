@@ -148,7 +148,7 @@ func clear_rejected() -> void:
 	_emit_status()
 
 func request_entries(board_name: String, request_type: String) -> int:
-	if steam_service == null:
+	if steam_service == null or !steam_service.is_initialized():
 		entries_received.emit(board_name, request_type, {"success": false, "message": "Steam is unavailable."})
 		return 0
 	var range_start := 1

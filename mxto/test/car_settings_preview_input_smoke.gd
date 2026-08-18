@@ -146,6 +146,10 @@ func _init() -> void:
 		push_error("car settings did not build separate driver/garage tabs")
 		quit(1)
 		return
+	if !car_settings.settings_tab_container.is_tab_hidden(car_settings.track_package_editor_tab.get_index()):
+		push_error("track Workshop authoring tab should be hidden")
+		quit(1)
+		return
 	if car_settings.stamp_layer_buttons.size() != 16:
 		push_error("car settings did not build the 16 stamp layer buttons")
 		quit(1)

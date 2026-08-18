@@ -37,6 +37,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var settings_tab_container: TabContainer = $Container/SettingsTabs
 @onready var driver_tab: VBoxContainer = $Container/SettingsTabs/Driver
 @onready var garage_tab: HBoxContainer = $Container/SettingsTabs/Garage
+@onready var track_package_editor_tab: Control = get_node("Container/SettingsTabs/Track Packages")
 @onready var garage_panel: VBoxContainer = $Container/SettingsTabs/Garage/GaragePanel
 @onready var garage_car_name_label: Label = $Container/SettingsTabs/Garage/GaragePanel/GarageCarName
 @onready var stamp_layer_list: VBoxContainer = $Container/SettingsTabs/Garage/GaragePanel/StampLayerScroll/StampLayerList
@@ -159,6 +160,7 @@ var legacy_selected_car_definition_path := ""
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
 	vehicle_content_controller = get_node("../VehicleContentController") as VehicleContentControllerClass
+	settings_tab_container.set_tab_hidden(track_package_editor_tab.get_index(), true)
 	_build_stamp_layer_buttons()
 	_load_settings()
 	_load_car_defs()

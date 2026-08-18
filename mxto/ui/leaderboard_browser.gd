@@ -10,6 +10,8 @@ const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 var game_manager: GameManager
 var client: LeaderboardClient
 var boards: Array = []
+var active_board_name := ""
+var active_request_type := "global"
 
 func _ready() -> void:
 	var ancestor := get_parent()
@@ -21,6 +23,7 @@ func _ready() -> void:
 	$Controls/Friends.pressed.connect(_request.bind("friends"))
 	$Controls/RetryPending.pressed.connect(_retry_pending)
 	$ClearRejected.pressed.connect(_clear_rejected)
+	track_option.item_selected.connect(_on_track_selected)
 	call_deferred("_initialize_client")
 
 func _initialize_client() -> void:
@@ -48,9 +51,14 @@ func _selected_board() -> String:
 func _request(request_type: String) -> void:
 	if client == null or _selected_board().is_empty():
 		return
+	active_board_name = _selected_board()
+	active_request_type = request_type
 	entry_list.clear()
 	entry_list.add_item("Loading...")
-	client.request_entries(_selected_board(), request_type)
+	client.request_entries(active_board_name, active_request_type)
+
+func _on_track_selected(_index: int) -> void:
+	_request(active_request_type)
 
 func _retry_pending() -> void:
 	if client != null:
@@ -67,7 +75,7 @@ func _format_score(score_milliseconds: int) -> String:
 	return "%d:%02d.%03d" % [minutes, seconds, milliseconds]
 
 func _show_entries(board_name: String, request_type: String, result: Dictionary) -> void:
-	if board_name != _selected_board():
+	if board_name != active_board_name or request_type != active_request_type:
 		return
 	entry_list.clear()
 	if !bool(result.get("success", false)):
