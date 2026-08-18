@@ -12,6 +12,8 @@ const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
 const WORKSHOP_STAGING_ROOT := "user://content/workshop_staging"
 const WORKSHOP_PREVIEW_TARGET_MAX_BYTES := 950_000
 const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
+const AUTOSAVE_DEBOUNCE_MSEC := 900
+const AUTOSAVE_RETRY_MSEC := 5000
 
 @onready var draft_option: OptionButton = $Toolbar/DraftOption
 @onready var title_input: LineEdit = $Metadata/Title
@@ -56,11 +58,20 @@ const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
 @onready var workshop_status: Label = $Workshop/Status
 @onready var workshop_page_button: Button = $Workshop/OpenPage
 @onready var workshop_publish_button: Button = $Toolbar/PublishWorkshop
+@onready var autosave_status: Label = $Toolbar/AutosaveStatus
+@onready var archive_draft_dialog: ConfirmationDialog = $ArchiveDraftDialog
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
 var session := MxtCarAuthoringSession.new()
+var draft_store := MxtCarDraftStore.new()
 var draft_id := ""
+var current_properties_path := ""
+var metadata_dirty := false
+var draft_initialized := false
+var autosave_due_msec := 0
+var autosave_error := ""
+var authoring_intent: Dictionary = {}
 var stat_schema: Array = []
 var schema_by_name: Dictionary = {}
 var current_layer := "base"
@@ -103,7 +114,10 @@ func _ready() -> void:
 	_setup_preview()
 	_connect_controls()
 	_refresh_draft_options()
-	_new_draft()
+	if draft_option.item_count > 0:
+		_open_selected_draft()
+	else:
+		_new_draft()
 	call_deferred("_connect_steam_service")
 
 
@@ -216,21 +230,25 @@ func _setup_preview() -> void:
 
 
 func _connect_controls() -> void:
+	visibility_changed.connect(_on_visibility_changed)
 	$Toolbar/NewDraft.pressed.connect(_new_draft)
 	$Toolbar/OpenDraft.pressed.connect(_open_selected_draft)
+	$Toolbar/DuplicateDraft.pressed.connect(_duplicate_current_draft)
+	$Toolbar/ArchiveDraft.pressed.connect(func(): archive_draft_dialog.popup_centered())
 	$Toolbar/ImportTemplate.pressed.connect(_open_template_vehicle_dialog)
 	$Toolbar/ImportModel.pressed.connect(func(): import_model_dialog.popup_centered())
-	$Toolbar/SaveDraft.pressed.connect(_save_draft)
+	$Toolbar/SaveDraft.pressed.connect(_manual_save_draft)
 	$Toolbar/InstallVehicle.pressed.connect(_install_vehicle)
 	$Toolbar/ExportPackage.pressed.connect(func(): export_package_dialog.popup_centered())
 	$Toolbar/TestDrive.pressed.connect(_test_drive)
 	$Toolbar/PublishWorkshop.pressed.connect(_publish_workshop)
 	workshop_page_button.pressed.connect(_open_workshop_page)
-	$Toolbar/Undo.pressed.connect(func(): session.undo(); _refresh_all())
-	$Toolbar/Redo.pressed.connect(func(): session.redo(); _refresh_all())
+	$Toolbar/Undo.pressed.connect(_undo)
+	$Toolbar/Redo.pressed.connect(_redo)
 	import_model_dialog.file_selected.connect(_import_model)
 	export_package_dialog.file_selected.connect(_export_package)
 	template_vehicle_dialog.confirmed.connect(_import_selected_vehicle_template)
+	archive_draft_dialog.confirmed.connect(_archive_current_draft)
 	search_input.text_changed.connect(func(_value): _refresh_stat_options())
 	category_option.item_selected.connect(func(_index): _refresh_stat_options())
 	layer_option.item_selected.connect(_on_layer_selected)
@@ -269,19 +287,31 @@ func _connect_controls() -> void:
 	description_input.text_changed.connect(func(_value): _mark_dirty())
 
 
-func _new_draft() -> void:
+func _new_draft() -> bool:
+	if draft_initialized and !_flush_autosave():
+		return false
 	draft_id = "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
 	session = MxtCarAuthoringSession.new()
+	draft_initialized = true
+	current_properties_path = ""
+	authoring_intent = {}
+	updating_controls = true
 	title_input.text = "New Machine"
 	var steam_name := ""
 	if game_manager != null and game_manager.steam_service != null:
 		steam_name = game_manager.steam_service.get_persona_name()
 	author_input.text = steam_name if !steam_name.is_empty() else "Creator"
 	description_input.text = ""
+	updating_controls = false
 	workshop_published_file_id = 0
+	metadata_dirty = true
+	autosave_error = ""
 	_refresh_workshop_controls()
 	_refresh_all()
 	visual_status.text = "New draft. Import a static GLB or glTF vehicle model."
+	if !_autosave_draft():
+		return false
+	return true
 
 
 func _draft_root() -> String:
@@ -289,35 +319,95 @@ func _draft_root() -> String:
 
 
 func _refresh_draft_options() -> void:
+	var selected_id := draft_id
 	draft_option.clear()
-	var root := DirAccess.open(DRAFTS_ROOT)
-	if root == null:
-		return
-	root.list_dir_begin()
-	var entry := root.get_next()
-	while !entry.is_empty():
-		if root.current_is_dir() and !entry.begins_with(".") and FileAccess.file_exists("%s/%s/package/manifest.json" % [DRAFTS_ROOT, entry]):
-			draft_option.add_item(entry)
-			draft_option.set_item_metadata(draft_option.item_count - 1, entry)
-		entry = root.get_next()
-	root.list_dir_end()
+	var drafts: Array = draft_store.list_drafts()
+	drafts.sort_custom(func(a, b): return int(a.get("modified_unix", 0)) > int(b.get("modified_unix", 0)))
+	for draft_value in drafts:
+		var draft: Dictionary = draft_value
+		var modified := Time.get_datetime_string_from_unix_time(int(draft.get("modified_unix", 0)), true)
+		var status := String(draft.get("status", "invalid")).replace("_", " ")
+		var label := "%s — %s [%s]" % [String(draft.get("title", "Untitled Machine")), modified, status]
+		var thumbnail := String(draft.get("thumbnail_path", ""))
+		if !thumbnail.is_empty():
+			var image := Image.load_from_file(thumbnail)
+			if image != null and !image.is_empty():
+				image.resize(48, 32, Image.INTERPOLATE_LANCZOS)
+				draft_option.add_icon_item(ImageTexture.create_from_image(image), label)
+			else:
+				draft_option.add_item(label)
+		else:
+			draft_option.add_item(label)
+		var index := draft_option.item_count - 1
+		draft_option.set_item_metadata(index, String(draft["draft_id"]))
+		if String(draft["draft_id"]) == selected_id:
+			draft_option.select(index)
 
 
 func _open_selected_draft() -> void:
 	if draft_option.selected < 0:
 		return
 	var selected_id := String(draft_option.get_item_metadata(draft_option.selected))
-	var result: Dictionary = session.load_vehicle_package("%s/%s/package" % [DRAFTS_ROOT, selected_id])
+	if draft_initialized and selected_id == draft_id:
+		return
+	if draft_initialized and !_flush_autosave():
+		return
+	var candidate := MxtCarAuthoringSession.new()
+	var result: Dictionary = draft_store.load_draft(selected_id, candidate)
 	if !bool(result.get("valid", false)):
 		_show_diagnostics(result)
 		return
+	session = candidate
 	draft_id = selected_id
+	draft_initialized = true
+	current_properties_path = String(result.get("properties_path", ""))
+	authoring_intent = result.get("authoring_intent", {})
+	updating_controls = true
 	title_input.text = String(result.get("title", selected_id))
 	description_input.text = String(result.get("description", ""))
 	author_input.text = String(result.get("author_name", "Creator"))
-	_load_workshop_sidecar()
+	updating_controls = false
+	workshop_published_file_id = int(result.get("workshop_published_file_id", 0))
+	metadata_dirty = false
+	autosave_error = ""
+	_refresh_workshop_controls()
 	visual_status.text = session.get_model_path()
 	_refresh_all()
+	_update_autosave_status("Saved")
+
+
+func _duplicate_current_draft() -> void:
+	if !draft_initialized or !_flush_autosave():
+		return
+	var new_id := "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
+	var result: Dictionary = draft_store.duplicate_draft(draft_id, new_id, title_input.text + " Copy")
+	_show_diagnostics(result)
+	if !bool(result.get("valid", false)):
+		return
+	_refresh_draft_options()
+	for i in range(draft_option.item_count):
+		if String(draft_option.get_item_metadata(i)) == new_id:
+			draft_option.select(i)
+			break
+	_open_selected_draft()
+
+
+func _archive_current_draft() -> void:
+	if !draft_initialized or !_flush_autosave():
+		return
+	var archived_id := draft_id
+	var result: Dictionary = draft_store.archive_draft(archived_id)
+	_show_diagnostics(result)
+	if !bool(result.get("valid", false)):
+		return
+	draft_initialized = false
+	draft_id = ""
+	_refresh_draft_options()
+	if draft_option.item_count > 0:
+		draft_option.select(0)
+		_open_selected_draft()
+	else:
+		_new_draft()
 
 
 func _open_template_vehicle_dialog() -> void:
@@ -346,7 +436,8 @@ func _import_selected_vehicle_template() -> void:
 	if definition == null:
 		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The selected vehicle is no longer available"]), "warnings": PackedStringArray()})
 		return
-	_new_draft()
+	if !_new_draft():
+		return
 	var result := _copy_vehicle_template(definition)
 	_show_diagnostics(result)
 	if !bool(result.get("valid", false)):
@@ -524,26 +615,6 @@ func _on_steam_status_changed(status: Dictionary) -> void:
 	_refresh_workshop_controls()
 
 
-func _workshop_sidecar_path() -> String:
-	return _draft_root() + "/workshop.json"
-
-
-func _load_workshop_sidecar() -> void:
-	workshop_published_file_id = 0
-	var path := _workshop_sidecar_path()
-	if FileAccess.file_exists(path):
-		var value = JSON.parse_string(FileAccess.get_file_as_string(path))
-		if typeof(value) == TYPE_DICTIONARY:
-			workshop_published_file_id = int(value.get("published_file_id", 0))
-	_refresh_workshop_controls()
-
-
-func _save_workshop_sidecar() -> void:
-	var file := FileAccess.open(_workshop_sidecar_path(), FileAccess.WRITE)
-	if file != null:
-		file.store_string(JSON.stringify({"published_file_id": workshop_published_file_id}, "  "))
-
-
 func _refresh_workshop_controls() -> void:
 	var steam_available := game_manager != null \
 		and game_manager.steam_service != null \
@@ -567,7 +638,7 @@ func _publish_workshop() -> void:
 	if game_manager == null or game_manager.steam_service == null or !game_manager.steam_service.is_initialized():
 		workshop_status.text = "Steam Workshop is unavailable"
 		return
-	var built := _save_draft()
+	var built := _build_package()
 	if !bool(built.get("valid", false)):
 		return
 	var package_io := MxtContentPackageIO.new()
@@ -625,7 +696,8 @@ func _on_workshop_request_completed(request_id: int, operation: String, result: 
 		return
 	if operation == "create_item":
 		workshop_published_file_id = int(result.get("published_file_id", 0))
-		_save_workshop_sidecar()
+		_mark_dirty()
+		_flush_autosave()
 		_refresh_workshop_controls()
 		_submit_workshop_update()
 		return
@@ -642,18 +714,37 @@ func _open_workshop_page() -> void:
 
 
 func _process(_delta: float) -> void:
-	if workshop_request_id == 0 or workshop_operation != "submit_update" or game_manager == null or game_manager.steam_service == null:
-		return
 	var now := Time.get_ticks_msec()
-	if now < workshop_progress_update_msec + 200:
-		return
-	workshop_progress_update_msec = now
-	var progress: Dictionary = game_manager.steam_service.get_workshop_update_progress()
-	if bool(progress.get("active", false)):
-		var total := int(progress.get("total_bytes", 0))
-		var processed := int(progress.get("processed_bytes", 0))
-		var percent := 0.0 if total <= 0 else 100.0 * float(processed) / float(total)
-		workshop_status.text = "%s  %.1f%%" % [String(progress.get("status", "uploading")).replace("_", " ").capitalize(), percent]
+	if draft_initialized and (metadata_dirty or session.is_dirty()):
+		if autosave_due_msec == 0:
+			autosave_due_msec = now + AUTOSAVE_DEBOUNCE_MSEC
+			_update_autosave_status("Unsaved changes")
+		elif now >= autosave_due_msec:
+			_autosave_draft()
+	if workshop_request_id != 0 and workshop_operation == "submit_update" \
+			and game_manager != null and game_manager.steam_service != null \
+			and now >= workshop_progress_update_msec + 200:
+		workshop_progress_update_msec = now
+		var progress: Dictionary = game_manager.steam_service.get_workshop_update_progress()
+		if bool(progress.get("active", false)):
+			var total := int(progress.get("total_bytes", 0))
+			var processed := int(progress.get("processed_bytes", 0))
+			var percent := 0.0 if total <= 0 else 100.0 * float(processed) / float(total)
+			workshop_status.text = "%s  %.1f%%" % [String(progress.get("status", "uploading")).replace("_", " ").capitalize(), percent]
+
+
+func _exit_tree() -> void:
+	if draft_initialized:
+		_flush_autosave()
+
+
+func _on_visibility_changed() -> void:
+	if draft_initialized and !is_visible_in_tree():
+		_flush_autosave()
+
+
+func flush_pending_changes() -> bool:
+	return _flush_autosave()
 
 
 func _import_model(path: String) -> void:
@@ -753,10 +844,59 @@ func _show_model_import_failure(result: Dictionary) -> void:
 	visual_status.text = "Import failed" if errors.is_empty() else "Import failed: %s" % String(errors[0])
 
 
-func _save_draft() -> Dictionary:
-	_apply_visual_controls()
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(_draft_root()))
-	var preview_path := _draft_root() + "/preview.png"
+func _draft_metadata() -> Dictionary:
+	return {
+		"title": title_input.text,
+		"author_name": author_input.text,
+		"description": description_input.text,
+		"workshop_published_file_id": workshop_published_file_id,
+		"authoring_intent": authoring_intent,
+	}
+
+
+func _autosave_draft() -> bool:
+	if !draft_initialized:
+		return true
+	var result: Dictionary = draft_store.save_draft(draft_id, session, _draft_metadata())
+	if !bool(result.get("valid", false)):
+		var errors: PackedStringArray = result.get("errors", PackedStringArray(["Unknown autosave error"]))
+		autosave_error = "Unknown autosave error" if errors.is_empty() else String(errors[0])
+		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_RETRY_MSEC
+		_update_autosave_status("Autosave failed: %s" % autosave_error, true)
+		_show_diagnostics(result)
+		return false
+	metadata_dirty = false
+	autosave_error = ""
+	autosave_due_msec = 0
+	current_properties_path = String(result.get("properties_path", ""))
+	_update_autosave_status("Saved")
+	_refresh_draft_options()
+	return true
+
+
+func _flush_autosave() -> bool:
+	if !draft_initialized:
+		return true
+	if metadata_dirty or session.is_dirty() or !autosave_error.is_empty():
+		return _autosave_draft()
+	return true
+
+
+func _manual_save_draft() -> void:
+	if !_flush_autosave():
+		return
+	var thumbnail_path := _draft_root() + "/thumbnail.png"
+	if _save_preview_png(thumbnail_path):
+		_refresh_draft_options()
+		_update_autosave_status("Saved with thumbnail")
+	else:
+		_update_autosave_status("Saved; previous thumbnail kept")
+
+
+func _build_package() -> Dictionary:
+	if !_flush_autosave():
+		return {"valid": false, "errors": PackedStringArray([autosave_error]), "warnings": PackedStringArray()}
+	var preview_path := _draft_root() + "/thumbnail.png"
 	if !_save_preview_png(preview_path):
 		var failed := {"valid": false, "errors": PackedStringArray(["Could not capture the vehicle preview image"]), "warnings": PackedStringArray()}
 		_show_diagnostics(failed)
@@ -799,7 +939,7 @@ func _save_preview_png(preview_path: String) -> bool:
 
 
 func _install_vehicle() -> String:
-	var built := _save_draft()
+	var built := _build_package()
 	if !bool(built.get("valid", false)):
 		return ""
 	var package_io := MxtContentPackageIO.new()
@@ -818,7 +958,7 @@ func _install_vehicle() -> String:
 
 
 func _export_package(path: String) -> void:
-	var built := _save_draft()
+	var built := _build_package()
 	if !bool(built.get("valid", false)):
 		return
 	var destination := path if path.to_lower().ends_with(".mxtpkg") else path + ".mxtpkg"
@@ -826,7 +966,7 @@ func _export_package(path: String) -> void:
 
 
 func _test_drive() -> void:
-	var built := _save_draft()
+	var built := _build_package()
 	if !bool(built.get("valid", false)):
 		return
 	var package_io := MxtContentPackageIO.new()
@@ -855,6 +995,29 @@ func _refresh_all() -> void:
 	_refresh_preview()
 	_refresh_samples()
 	_show_diagnostics(session.validate())
+	_refresh_history_buttons()
+
+
+func _refresh_history_buttons() -> void:
+	$Toolbar/Undo.disabled = !session.can_undo()
+	$Toolbar/Redo.disabled = !session.can_redo()
+
+
+func _undo() -> void:
+	if session.undo():
+		_refresh_all()
+		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_DEBOUNCE_MSEC
+
+
+func _redo() -> void:
+	if session.redo():
+		_refresh_all()
+		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_DEBOUNCE_MSEC
+
+
+func _update_autosave_status(message: String, failed := false) -> void:
+	autosave_status.text = message
+	autosave_status.modulate = Color(1.0, 0.42, 0.35) if failed else Color.WHITE
 
 
 func _refresh_resource_usage() -> void:
@@ -915,6 +1078,7 @@ func _commit_curve(keys: Array) -> void:
 	var result: Dictionary = session.set_curve(current_layer, current_stat, keys)
 	_show_diagnostics(result)
 	curve_graph.show_curve(session, current_layer, current_stat)
+	_refresh_history_buttons()
 	_refresh_samples()
 
 
@@ -940,6 +1104,7 @@ func _apply_selected_key() -> void:
 	if current_layer == "s_boost":
 		session.set_s_boost_value(current_stat, key_value.value)
 		curve_graph.show_curve(session, current_layer, current_stat)
+		_refresh_history_buttons()
 		_refresh_samples()
 		return
 	var keys := curve_graph.get_keys()
@@ -989,6 +1154,7 @@ func _reset_curve() -> void:
 	if current_layer == "s_boost":
 		session.set_s_boost_value(current_stat, value)
 		curve_graph.show_curve(session, current_layer, current_stat)
+		_refresh_history_buttons()
 	else:
 		_commit_curve([{"time": 0.0, "value": value, "tangent_in": 0.0, "tangent_out": 0.0}])
 
@@ -1103,6 +1269,7 @@ func _apply_material_controls() -> void:
 		"paint_mask_surface": _selected_texture_surface(paint_mask_surface_option),
 	})
 	if applied:
+		_refresh_history_buttons()
 		_refresh_preview()
 
 
@@ -1113,6 +1280,7 @@ func _selected_texture_surface(option: OptionButton) -> int:
 func _apply_visual_controls() -> void:
 	if updating_controls:
 		return
+	session.begin_edit_transaction()
 	session.set_model_transform({
 		"translation": _vector_value("translation"),
 		"rotation_degrees": _vector_value("rotation"),
@@ -1133,6 +1301,8 @@ func _apply_visual_controls() -> void:
 			"scale": vector_controls["thruster_scale"].value,
 		}
 		session.set_thrusters(thrusters)
+	session.end_edit_transaction()
+	_refresh_history_buttons()
 	_refresh_preview()
 
 
@@ -1168,6 +1338,7 @@ func _add_thruster() -> void:
 		return
 	thrusters.append({"position": Vector3(0.0, 0.0, -1.5), "rotation_degrees": Vector3.ZERO, "scale": 0.5})
 	session.set_thrusters(thrusters)
+	_refresh_history_buttons()
 	_refresh_thruster_options()
 	thruster_selector.select(thrusters.size() - 1)
 	_refresh_thruster_controls()
@@ -1180,6 +1351,7 @@ func _remove_thruster() -> void:
 		return
 	thrusters.remove_at(thruster_selector.selected)
 	session.set_thrusters(thrusters)
+	_refresh_history_buttons()
 	_refresh_thruster_options()
 	_refresh_preview()
 
@@ -1193,7 +1365,7 @@ func _refresh_preview() -> void:
 	var record := {
 		"content_id": "mxt:vehicle:draft:%s" % draft_id,
 		"title": title_input.text,
-		"authoritative_path": _draft_root() + "/package/vehicle/properties.mxt_car_props",
+		"authoritative_path": current_properties_path,
 		"visual_path": model_path,
 		"visual_metadata": {
 			"model_transform": session.get_model_transform(),
@@ -1312,11 +1484,14 @@ func _on_preview_gui_input(event: InputEvent) -> void:
 		if button.pressed:
 			dragged_gizmo = _pick_preview_gizmo(pointer)
 			if dragged_gizmo >= 0:
+				session.begin_edit_transaction()
 				var point := Vector3(preview_gizmo_entries[dragged_gizmo]["position"])
 				dragged_gizmo_plane = Plane(preview_camera.global_basis.z.normalized(), point)
 				preview_container.accept_event()
 		else:
 			if dragged_gizmo >= 0:
+				session.end_edit_transaction()
+				_refresh_history_buttons()
 				_refresh_preview()
 				preview_container.accept_event()
 			dragged_gizmo = -1
@@ -1384,4 +1559,7 @@ func _show_diagnostics(result: Dictionary) -> void:
 
 func _mark_dirty() -> void:
 	if !updating_controls:
+		metadata_dirty = true
+		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_DEBOUNCE_MSEC
+		_update_autosave_status("Unsaved changes")
 		diagnostics.text = "[color=#ffd166]Unsaved draft changes[/color]"

@@ -36,8 +36,6 @@ private:
 	std::array<SimVec3, 4> wall_corners{};
 	uint32_t state_flags = 0;
 	bool dirty = false;
-	std::vector<PackedByteArray> undo_history;
-	std::vector<PackedByteArray> redo_history;
 	String model_path;
 	Vector3 model_translation = Vector3();
 	Vector3 model_rotation_degrees = Vector3();
@@ -52,6 +50,23 @@ private:
 		float scale = 1.0f;
 	};
 	std::vector<Thruster> thrusters;
+	struct HistorySnapshot {
+		PackedByteArray properties;
+		String model_path;
+		Vector3 model_translation;
+		Vector3 model_rotation_degrees;
+		Vector3 model_scale;
+		std::vector<int32_t> body_surfaces;
+		int32_t albedo_surface = -1;
+		int32_t normal_surface = -1;
+		int32_t paint_mask_surface = -1;
+		std::vector<Thruster> thrusters;
+	};
+	std::vector<HistorySnapshot> undo_history;
+	std::vector<HistorySnapshot> redo_history;
+	HistorySnapshot transaction_snapshot;
+	uint32_t edit_transaction_depth = 0;
+	bool transaction_snapshot_valid = false;
 
 	static int32_t stat_index(const String &stat_name);
 	static int32_t layer_index(const String &layer_name);
@@ -61,8 +76,10 @@ private:
 			String &out_error);
 	bool validate_document(PackedStringArray &out_errors, PackedStringArray &out_warnings) const;
 	bool serialize_document(PackedByteArray &out_bytes, String &out_error) const;
+	bool capture_history_snapshot(HistorySnapshot &out_snapshot) const;
+	void append_undo_snapshot(HistorySnapshot &&snapshot);
 	void push_undo_snapshot();
-	bool restore_history_snapshot(const PackedByteArray &bytes);
+	bool restore_history_snapshot(const HistorySnapshot &snapshot);
 	static bool is_safe_draft_root(const String &path, String &out_global_path);
 	Curve &curve_at(uint8_t layer, uint16_t stat);
 	const Curve &curve_at(uint8_t layer, uint16_t stat) const;
@@ -97,6 +114,8 @@ public:
 	void clear_dirty();
 	bool can_undo() const;
 	bool can_redo() const;
+	void begin_edit_transaction();
+	void end_edit_transaction();
 	bool undo();
 	bool redo();
 	Dictionary import_model(const String &source_path, const String &draft_root);
@@ -108,6 +127,11 @@ public:
 			const String &description,
 			const String &author_name);
 	String get_model_path() const;
+	bool load_draft_visual_state(
+			const String &draft_model_path,
+			const Dictionary &model_transform,
+			const Dictionary &material_setup,
+			const Array &draft_thrusters);
 	Dictionary get_model_transform() const;
 	bool set_model_transform(const Dictionary &value);
 	Array get_model_surfaces() const;

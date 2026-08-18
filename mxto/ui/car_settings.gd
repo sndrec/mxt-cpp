@@ -156,6 +156,8 @@ var stamp_edit_drag_start_center := Vector2.ZERO
 var stamp_edit_drag_start_size := Vector2.ONE
 var stamp_edit_drag_start_roll := 0.0
 var legacy_selected_car_definition_path := ""
+var previous_settings_tab := 0
+var restoring_settings_tab := false
 
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
@@ -185,6 +187,8 @@ func _ready() -> void:
 		sticker_selectors[i].item_selected.connect(_on_sticker_selected.bind(i))
 	vehicle_editor.content_changed.connect(_on_vehicle_editor_content_changed)
 	vehicle_editor.test_drive_requested.connect(_on_vehicle_editor_test_drive_requested)
+	previous_settings_tab = settings_tab_container.current_tab
+	settings_tab_container.tab_changed.connect(_on_settings_tab_changed)
 
 func _build_stamp_layer_buttons() -> void:
 	if stamp_layer_list == null:
@@ -454,6 +458,8 @@ func _on_sticker_selected(index: int, slot: int) -> void:
 	_set_sticker_slot_value(slot, index)
 
 func _on_close_pressed() -> void:
+	if settings_tab_container.current_tab == vehicle_editor.get_index() and !vehicle_editor.flush_pending_changes():
+		return
 	_save_settings()
 	_set_garage_preview_active(false)
 	hide()
@@ -466,6 +472,19 @@ func open_settings() -> void:
 	_update_livery_lock_state()
 	show()
 	_set_garage_preview_active(true)
+
+
+func _on_settings_tab_changed(tab: int) -> void:
+	if restoring_settings_tab:
+		restoring_settings_tab = false
+		previous_settings_tab = tab
+		return
+	if previous_settings_tab == vehicle_editor.get_index() and tab != previous_settings_tab \
+			and !vehicle_editor.flush_pending_changes():
+		restoring_settings_tab = true
+		settings_tab_container.current_tab = previous_settings_tab
+		return
+	previous_settings_tab = tab
 
 func get_player_settings() -> PlayerSettings:
 	_sync_livery_to_player_settings()

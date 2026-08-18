@@ -24,6 +24,14 @@ fit_to_longest_item = false
 layout_mode = 2
 text = "Open Draft"
 
+[node name="DuplicateDraft" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Duplicate"
+
+[node name="ArchiveDraft" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Archive"
+
 [node name="ImportTemplate" type="Button" parent="Toolbar"]
 layout_mode = 2
 text = "Use Vehicle Template"
@@ -34,7 +42,7 @@ text = "Import GLB / glTF"
 
 [node name="SaveDraft" type="Button" parent="Toolbar"]
 layout_mode = 2
-text = "Save Draft"
+text = "Save Now"
 
 [node name="InstallVehicle" type="Button" parent="Toolbar"]
 layout_mode = 2
@@ -59,6 +67,12 @@ text = "Undo"
 [node name="Redo" type="Button" parent="Toolbar"]
 layout_mode = 2
 text = "Redo"
+
+[node name="AutosaveStatus" type="Label" parent="Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
+text = "Autosave ready"
 
 [node name="Metadata" type="HBoxContainer" parent="."]
 layout_mode = 2
@@ -458,3 +472,8 @@ size = Vector2i(840, 600)
 file_mode = 4
 access = 2
 filters = PackedStringArray("*.mxtpkg ; MaxX Throttle Package")
+
+[node name="ArchiveDraftDialog" type="ConfirmationDialog" parent="."]
+title = "Archive Draft"
+dialog_text = "Move this draft into the local archive? It will no longer appear in the active draft list."
+ok_button_text = "Archive Draft"

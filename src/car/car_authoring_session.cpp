@@ -19,9 +19,14 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 using namespace godot;
 
@@ -116,6 +121,22 @@ static PackedStringArray single_error(const String &message)
 	PackedStringArray errors;
 	errors.push_back(message);
 	return errors;
+}
+
+static bool replace_file(const String &temporary, const String &destination)
+{
+#ifdef _WIN32
+	const Char16String temporary_utf16 = temporary.utf16();
+	const Char16String destination_utf16 = destination.utf16();
+	return MoveFileExW(
+			reinterpret_cast<const wchar_t *>(temporary_utf16.get_data()),
+			reinterpret_cast<const wchar_t *>(destination_utf16.get_data()),
+			MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+	const CharString temporary_utf8 = temporary.utf8();
+	const CharString destination_utf8 = destination.utf8();
+	return std::rename(temporary_utf8.get_data(), destination_utf8.get_data()) == 0;
+#endif
 }
 
 static Dictionary result_dictionary(bool valid, const PackedStringArray &errors, const PackedStringArray &warnings)
@@ -286,6 +307,8 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("clear_dirty"), &MxtCarAuthoringSession::clear_dirty);
 	ClassDB::bind_method(D_METHOD("can_undo"), &MxtCarAuthoringSession::can_undo);
 	ClassDB::bind_method(D_METHOD("can_redo"), &MxtCarAuthoringSession::can_redo);
+	ClassDB::bind_method(D_METHOD("begin_edit_transaction"), &MxtCarAuthoringSession::begin_edit_transaction);
+	ClassDB::bind_method(D_METHOD("end_edit_transaction"), &MxtCarAuthoringSession::end_edit_transaction);
 	ClassDB::bind_method(D_METHOD("undo"), &MxtCarAuthoringSession::undo);
 	ClassDB::bind_method(D_METHOD("redo"), &MxtCarAuthoringSession::redo);
 	ClassDB::bind_method(D_METHOD("import_model", "source_path", "draft_root"), &MxtCarAuthoringSession::import_model);
@@ -797,54 +820,102 @@ void MxtCarAuthoringSession::clear_dirty() { dirty = false; }
 bool MxtCarAuthoringSession::can_undo() const { return !undo_history.empty(); }
 bool MxtCarAuthoringSession::can_redo() const { return !redo_history.empty(); }
 
-void MxtCarAuthoringSession::push_undo_snapshot()
+bool MxtCarAuthoringSession::capture_history_snapshot(HistorySnapshot &out_snapshot) const
 {
-	PackedByteArray bytes;
 	String error;
-	if (!serialize_document(bytes, error)) return;
-	if (undo_history.size() == MAX_HISTORY) undo_history.erase(undo_history.begin());
-	undo_history.push_back(bytes);
+	if (!serialize_document(out_snapshot.properties, error)) return false;
+	out_snapshot.model_path = model_path;
+	out_snapshot.model_translation = model_translation;
+	out_snapshot.model_rotation_degrees = model_rotation_degrees;
+	out_snapshot.model_scale = model_scale;
+	out_snapshot.body_surfaces = body_surfaces;
+	out_snapshot.albedo_surface = albedo_surface;
+	out_snapshot.normal_surface = normal_surface;
+	out_snapshot.paint_mask_surface = paint_mask_surface;
+	out_snapshot.thrusters = thrusters;
+	return true;
 }
 
-bool MxtCarAuthoringSession::restore_history_snapshot(const PackedByteArray &bytes)
+void MxtCarAuthoringSession::append_undo_snapshot(HistorySnapshot &&snapshot)
+{
+	if (undo_history.size() == MAX_HISTORY) undo_history.erase(undo_history.begin());
+	undo_history.push_back(std::move(snapshot));
+}
+
+void MxtCarAuthoringSession::push_undo_snapshot()
+{
+	if (edit_transaction_depth > 0) {
+		if (!transaction_snapshot_valid) {
+			transaction_snapshot_valid = capture_history_snapshot(transaction_snapshot);
+		}
+		return;
+	}
+	HistorySnapshot snapshot;
+	if (capture_history_snapshot(snapshot)) append_undo_snapshot(std::move(snapshot));
+}
+
+bool MxtCarAuthoringSession::restore_history_snapshot(const HistorySnapshot &snapshot)
 {
 	Ref<MxtCarAuthoringSession> parsed;
 	parsed.instantiate();
 	parsed->undo_history.clear();
 	parsed->redo_history.clear();
 	String error;
-	if (!read_document(bytes, *parsed.ptr(), error)) return false;
+	if (!read_document(snapshot.properties, *parsed.ptr(), error)) return false;
 	curves = std::move(parsed->curves);
 	s_boost_values = parsed->s_boost_values;
 	tilt_corners = parsed->tilt_corners;
 	wall_corners = parsed->wall_corners;
 	state_flags = parsed->state_flags;
+	model_path = snapshot.model_path;
+	model_translation = snapshot.model_translation;
+	model_rotation_degrees = snapshot.model_rotation_degrees;
+	model_scale = snapshot.model_scale;
+	body_surfaces = snapshot.body_surfaces;
+	albedo_surface = snapshot.albedo_surface;
+	normal_surface = snapshot.normal_surface;
+	paint_mask_surface = snapshot.paint_mask_surface;
+	thrusters = snapshot.thrusters;
 	dirty = true;
 	return true;
 }
 
+void MxtCarAuthoringSession::begin_edit_transaction()
+{
+	if (edit_transaction_depth++ == 0) transaction_snapshot_valid = false;
+}
+
+void MxtCarAuthoringSession::end_edit_transaction()
+{
+	if (edit_transaction_depth == 0) return;
+	if (--edit_transaction_depth == 0 && transaction_snapshot_valid) {
+		append_undo_snapshot(std::move(transaction_snapshot));
+		transaction_snapshot = HistorySnapshot();
+		transaction_snapshot_valid = false;
+	}
+}
+
 bool MxtCarAuthoringSession::undo()
 {
+	if (edit_transaction_depth > 0) return false;
 	if (undo_history.empty()) return false;
-	PackedByteArray current;
-	String error;
-	if (!serialize_document(current, error)) return false;
+	HistorySnapshot current;
+	if (!capture_history_snapshot(current)) return false;
 	if (redo_history.size() == MAX_HISTORY) redo_history.erase(redo_history.begin());
-	redo_history.push_back(current);
-	const PackedByteArray snapshot = undo_history.back();
+	redo_history.push_back(std::move(current));
+	const HistorySnapshot snapshot = std::move(undo_history.back());
 	undo_history.pop_back();
 	return restore_history_snapshot(snapshot);
 }
 
 bool MxtCarAuthoringSession::redo()
 {
+	if (edit_transaction_depth > 0) return false;
 	if (redo_history.empty()) return false;
-	PackedByteArray current;
-	String error;
-	if (!serialize_document(current, error)) return false;
-	if (undo_history.size() == MAX_HISTORY) undo_history.erase(undo_history.begin());
-	undo_history.push_back(current);
-	const PackedByteArray snapshot = redo_history.back();
+	HistorySnapshot current;
+	if (!capture_history_snapshot(current)) return false;
+	append_undo_snapshot(std::move(current));
+	const HistorySnapshot snapshot = std::move(redo_history.back());
 	redo_history.pop_back();
 	return restore_history_snapshot(snapshot);
 }
@@ -867,11 +938,11 @@ Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const
 	if (extension != "glb" && extension != "gltf") {
 		return result_dictionary(false, single_error("vehicle model source must be .glb or .gltf"), {});
 	}
-	if (DirAccess::make_dir_recursive_absolute(root.path_join("package/vehicle")) != OK) {
+	if (DirAccess::make_dir_recursive_absolute(root.path_join("source")) != OK) {
 		return result_dictionary(false, single_error("could not create vehicle draft directory"), {});
 	}
-	const String destination = root.path_join("package/vehicle/model.glb");
-	const String temporary = root.path_join("package/vehicle/model.importing.glb");
+	const String destination = root.path_join("source/model.glb");
+	const String temporary = root.path_join("source/model.importing.glb");
 	DirAccess::remove_absolute(temporary);
 	std::vector<String> validation_errors;
 	mxt::content::VehicleGlbInfo model_info;
@@ -908,8 +979,7 @@ Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const
 			return result_dictionary(false, errors, {});
 		}
 	}
-	DirAccess::remove_absolute(destination);
-	if (DirAccess::rename_absolute(temporary, destination) != OK) {
+	if (!replace_file(temporary, destination)) {
 		DirAccess::remove_absolute(temporary);
 		return result_dictionary(false, single_error("could not install normalized vehicle GLB into the draft"), {});
 	}
@@ -977,12 +1047,22 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 			!is_valid_text_field(author_name, 64, false)) {
 		return result_dictionary(false, single_error("vehicle title, description, or author text is invalid"), {});
 	}
-	const String use_model_path = root.path_join("vehicle/model.glb");
-	if (!FileAccess::file_exists(use_model_path)) {
+	const String use_model_path = model_path;
+	if (use_model_path.is_empty() || !FileAccess::file_exists(use_model_path)) {
 		return result_dictionary(false, single_error("vehicle draft has no imported model"), {});
 	}
 	if (DirAccess::make_dir_recursive_absolute(root.path_join("vehicle")) != OK) {
 		return result_dictionary(false, single_error("could not create vehicle package directory"), {});
+	}
+	const String packaged_model_path = root.path_join("vehicle/model.glb");
+	const String temporary_model_path = root.path_join("vehicle/model.packaging.glb");
+	DirAccess::remove_absolute(temporary_model_path);
+	if (use_model_path != packaged_model_path) {
+		if (DirAccess::copy_absolute(use_model_path, temporary_model_path) != OK ||
+				!replace_file(temporary_model_path, packaged_model_path)) {
+			DirAccess::remove_absolute(temporary_model_path);
+			return result_dictionary(false, single_error("could not copy the draft model into the package"), {});
+		}
 	}
 	Dictionary properties_result = save_file(root.path_join("vehicle/properties.mxt_car_props"));
 	if (!static_cast<bool>(properties_result.get("valid", false))) return properties_result;
@@ -1052,6 +1132,39 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 
 String MxtCarAuthoringSession::get_model_path() const { return model_path; }
 
+bool MxtCarAuthoringSession::load_draft_visual_state(
+		const String &draft_model_path,
+		const Dictionary &model_transform,
+		const Dictionary &material_setup,
+		const Array &draft_thrusters)
+{
+	Ref<MxtCarAuthoringSession> parsed;
+	parsed.instantiate();
+	parsed->model_path = draft_model_path;
+	if (!parsed->set_model_transform(model_transform) || !parsed->set_thrusters(draft_thrusters)) return false;
+	if (draft_model_path.is_empty()) {
+		const Array surfaces = material_setup.get("body_surfaces", Array());
+		if (!surfaces.is_empty() || static_cast<int64_t>(material_setup.get("albedo_surface", -1)) != -1 ||
+				static_cast<int64_t>(material_setup.get("normal_surface", -1)) != -1 ||
+				static_cast<int64_t>(material_setup.get("paint_mask_surface", -1)) != -1) {
+			return false;
+		}
+	} else if (!parsed->set_material_setup(material_setup)) {
+		return false;
+	}
+	model_path = parsed->model_path;
+	model_translation = parsed->model_translation;
+	model_rotation_degrees = parsed->model_rotation_degrees;
+	model_scale = parsed->model_scale;
+	body_surfaces = std::move(parsed->body_surfaces);
+	albedo_surface = parsed->albedo_surface;
+	normal_surface = parsed->normal_surface;
+	paint_mask_surface = parsed->paint_mask_surface;
+	thrusters = std::move(parsed->thrusters);
+	dirty = true;
+	return true;
+}
+
 Dictionary MxtCarAuthoringSession::get_model_transform() const
 {
 	Dictionary result;
@@ -1069,9 +1182,11 @@ bool MxtCarAuthoringSession::set_model_transform(const Dictionary &value)
 	if (!dictionary_vector3(value, "translation", -1000.0, 1000.0, translation) ||
 			!dictionary_vector3(value, "rotation_degrees", -3600.0, 3600.0, rotation) ||
 			!dictionary_vector3(value, "scale", 0.001, 100.0, scale)) return false;
+	push_undo_snapshot();
 	model_translation = translation;
 	model_rotation_degrees = rotation;
 	model_scale = scale;
+	redo_history.clear();
 	dirty = true;
 	return true;
 }
@@ -1170,10 +1285,12 @@ bool MxtCarAuthoringSession::set_material_setup(const Dictionary &value)
 	if (!valid_input(new_albedo, &mxt::content::VehicleGlbSurface::has_albedo_texture) ||
 			!valid_input(new_normal, &mxt::content::VehicleGlbSurface::has_normal_texture) ||
 			!valid_input(new_paint_mask, &mxt::content::VehicleGlbSurface::has_paint_mask_texture)) return false;
+	push_undo_snapshot();
 	body_surfaces = std::move(replacement);
 	albedo_surface = static_cast<int32_t>(new_albedo);
 	normal_surface = static_cast<int32_t>(new_normal);
 	paint_mask_surface = static_cast<int32_t>(new_paint_mask);
+	redo_history.clear();
 	dirty = true;
 	return true;
 }
@@ -1211,7 +1328,9 @@ bool MxtCarAuthoringSession::set_thrusters(const Array &value)
 		thruster.scale = static_cast<float>(scale_value);
 		replacement.push_back(thruster);
 	}
+	push_undo_snapshot();
 	thrusters = std::move(replacement);
+	redo_history.clear();
 	dirty = true;
 	return true;
 }

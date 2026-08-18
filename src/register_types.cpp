@@ -5,6 +5,7 @@
 #include "content/content_catalog.h"
 #include "content/track_package_builder.h"
 #include "car/car_authoring_session.h"
+#include "car/car_draft_store.h"
 #include "gamesim/gamesim.h"
 #include "camera/fzgx_gameplay_camera.h"
 #include "netcode/netcode_session.h"
@@ -39,6 +40,7 @@ void initialize_gamesim_module(ModuleInitializationLevel p_level) {
 	GDREGISTER_CLASS(MxtContentCatalog);
 	GDREGISTER_CLASS(MxtTrackPackageBuilder);
 	GDREGISTER_CLASS(MxtCarAuthoringSession);
+	GDREGISTER_CLASS(MxtCarDraftStore);
 }
 
 void uninitialize_gamesim_module(ModuleInitializationLevel p_level) {
