@@ -1,4 +1,6 @@
 #include "car/car_authoring_session.h"
+#include "car/car_property_derivation.h"
+#include "car/car_stat_metadata.h"
 
 #include "content/content_manifest.h"
 #include "content/content_validator.h"
@@ -249,27 +251,6 @@ static bool preflight_gltf_source(const String &path, String &out_error)
 		}
 	}
 	return true;
-}
-
-static String stat_category(uint16_t stat)
-{
-	if (stat == CAR_STAT_WEIGHT_KG || stat == CAR_STAT_BODY || stat == CAR_STAT_MAX_ENERGY) return "Machine";
-	if (stat == CAR_STAT_ACCELERATION || stat == CAR_STAT_MAX_SPEED || stat == CAR_STAT_DRAG ||
-			stat >= CAR_STAT_DRIVE_TARGET_SPEED_MULTIPLIER) return "Drive";
-	if (stat >= CAR_STAT_GRIP_1 && stat <= CAR_STAT_TURN_DECEL) return "Handling";
-	if (stat == CAR_STAT_CAMERA_REORIENTING || stat == CAR_STAT_CAMERA_REPOSITIONING) return "Camera";
-	if (stat == CAR_STAT_TRACK_COLLISION || stat == CAR_STAT_OBSTACLE_COLLISION) return "Collision";
-	if (stat >= CAR_STAT_BOOST_ENERGY_USE_RATE && stat <= CAR_STAT_SHIFT_BOOST_VELOCITY_MULTIPLIER) return "Boost";
-	if (stat == CAR_STAT_AIR_PITCH_UP_SPEED_LOSS_FACTOR || stat == CAR_STAT_AIR_GLIDE_STEERING_SPEED_LOSS_FACTOR) return "Air";
-	return "Other";
-}
-
-static String stat_unit(uint16_t stat)
-{
-	if (stat == CAR_STAT_WEIGHT_KG) return "kg";
-	if (stat == CAR_STAT_MANUAL_BOOST_DURATION_SECONDS || stat == CAR_STAT_DASHPLATE_BOOST_DURATION_SECONDS) return "seconds";
-	if (stat == CAR_STAT_MAX_ENERGY) return "energy";
-	return "scalar";
 }
 
 } // namespace
@@ -641,13 +622,22 @@ Array MxtCarAuthoringSession::get_stat_schema() const
 	Array output;
 	PhysicsCarProperties defaults;
 	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+		const CarStatId stat_id = static_cast<CarStatId>(stat);
+		const CarStatMetadata &metadata = get_car_stat_metadata(stat_id);
 		Dictionary entry;
 		entry["id"] = stat;
-		entry["name"] = PhysicsCarProperties::stat_name(static_cast<CarStatId>(stat));
-		entry["category"] = stat_category(stat);
-		entry["unit"] = stat_unit(stat);
+		entry["name"] = metadata.name;
+		entry["friendly_name"] = metadata.friendly_name;
+		entry["explanation"] = metadata.explanation;
+		entry["category"] = metadata.authoring_category;
+		entry["unit"] = metadata.unit;
 		entry["default_value"] = defaults.base_stats[stat];
-		entry["supports_live_modifiers"] = PhysicsCarProperties::stat_supports_live_modifiers(static_cast<CarStatId>(stat));
+		entry["supports_live_modifiers"] = PhysicsCarProperties::stat_supports_live_modifiers(stat_id);
+		entry["activity"] = car_stat_activity_name(metadata.activity);
+		entry["raw_gradeable"] = metadata.raw_gradeable;
+		entry["base_direction"] = car_stat_direction_name(metadata.base_direction);
+		entry["special_direction"] = car_stat_direction_name(metadata.special_direction);
+		entry["historically_derived"] = historical_machine_setting_derives_stat(stat_id);
 		entry["minimum"] = -static_cast<double>(std::numeric_limits<float>::max());
 		entry["maximum"] = static_cast<double>(std::numeric_limits<float>::max());
 		output.push_back(entry);

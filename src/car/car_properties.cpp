@@ -1,4 +1,5 @@
 #include "car/car_properties.h"
+#include "car/car_stat_metadata.h"
 
 #include <algorithm>
 #include <cmath>
@@ -52,49 +53,6 @@ static constexpr float DEFAULT_BASE_STATS[CAR_STAT_COUNT] = {
 	1.0f,          // drive_target_speed_multiplier
 	1.0f,          // acceleration_response_multiplier
 	1.0f           // forward_thrust_multiplier
-};
-
-static constexpr const char *CAR_STAT_NAMES[CAR_STAT_COUNT] = {
-	"weight_kg",
-	"acceleration",
-	"max_speed",
-	"grip_1",
-	"grip_2",
-	"grip_3",
-	"turn_tension",
-	"drift_accel",
-	"turn_movement",
-	"strafe_turn",
-	"strafe",
-	"turn_reaction",
-	"turn_decel",
-	"drag",
-	"body",
-	"camera_reorienting",
-	"camera_repositioning",
-	"track_collision",
-	"obstacle_collision",
-	"max_energy",
-	"boost_energy_use_rate",
-	"energy_recharge_rate",
-	"accel_press_grip_frames",
-	"manual_turbo_gain",
-	"dashplate_turbo_gain",
-	"jumpplate_turbo_gain",
-	"dashplate_turbo_heat_multiplier",
-	"turbo_flat_loss_per_second",
-	"turbo_percent_loss_per_second",
-	"turbo_top_speed_effect",
-	"manual_boost_duration_seconds",
-	"dashplate_boost_duration_seconds",
-	"s_boost_base_speed_add_per_second",
-	"shift_boost_base_speed_add",
-	"shift_boost_velocity_multiplier",
-	"air_pitch_up_speed_loss_factor",
-	"air_glide_steering_speed_loss_factor",
-	"drive_target_speed_multiplier",
-	"acceleration_response_multiplier",
-	"forward_thrust_multiplier"
 };
 
 struct ByteReader {
@@ -284,7 +242,7 @@ bool PhysicsCarProperties::stat_supports_live_modifiers(CarStatId stat)
 
 const char *PhysicsCarProperties::stat_name(CarStatId stat)
 {
-	return stat < CAR_STAT_COUNT ? CAR_STAT_NAMES[stat] : "unknown";
+	return get_car_stat_metadata(stat).name;
 }
 
 CarStatModifierLayer classify_car_technique_modifier(

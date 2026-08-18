@@ -20,6 +20,15 @@ working directory:
 python tools/car/update_vehicle_files.py
 ```
 
+`report_official_car_properties.py` emits a deterministic Markdown audit of
+every official property document on a fixed machine-setting grid, including
+non-identity special-state values and source hashes:
+
+```powershell
+python tools/car/report_official_car_properties.py
+python tools/car/report_official_car_properties.py --output car-property-audit.md
+```
+
 Run the focused codec regression tests from the repository root:
 
 ```powershell
