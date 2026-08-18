@@ -1,0 +1,395 @@
+#include "car/car_performance_analyzer.h"
+
+#include "car/car_stat_metadata.h"
+
+#include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/core/class_db.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+
+namespace godot {
+
+namespace {
+
+static constexpr const char *OFFICIAL_PATHS[4] = {
+	"res://vehicle/asset/accelerator/golden_fox.mxt_car_props",
+	"res://vehicle/asset/allrounder/blue_falcon.mxt_car_props",
+	"res://vehicle/asset/bruiser/wild_goose.mxt_car_props",
+	"res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props"};
+static constexpr const char *OFFICIAL_NAMES[4] = {
+	"Golden Fox", "Blue Falcon", "Wild Goose", "Fire Stingray"};
+static constexpr uint8_t ALL_ROUNDER_INDEX = 1;
+
+static uint32_t float_bits(float value) {
+	uint32_t bits = 0;
+	std::memcpy(&bits, &value, sizeof(bits));
+	return bits;
+}
+
+static uint64_t hash_bytes(const PackedByteArray &bytes) {
+	uint64_t hash = UINT64_C(1469598103934665603);
+	for (int64_t i = 0; i < bytes.size(); ++i) {
+		hash ^= bytes[i];
+		hash *= UINT64_C(1099511628211);
+	}
+	return hash;
+}
+
+static uint64_t hash_string(const String &value) {
+	const CharString utf8 = value.utf8();
+	uint64_t hash = UINT64_C(1469598103934665603);
+	for (int64_t i = 0; i < utf8.length(); ++i) {
+		hash ^= static_cast<uint8_t>(utf8[i]);
+		hash *= UINT64_C(1099511628211);
+	}
+	return hash;
+}
+
+static float score_against_anchors(float value, float center, float best, float worst) {
+	const float scale = std::max({std::abs(center), std::abs(best), std::abs(worst), 1.0f});
+	const float epsilon = scale * 0.000001f;
+	if (std::abs(value - center) <= epsilon) return 2.0f;
+	if (value > center) {
+		const float range = best - center;
+		if (range > epsilon) return 2.0f + 2.0f * (value - center) / range;
+		return 4.0f + (value - center) / scale;
+	}
+	const float range = center - worst;
+	if (range > epsilon) return 2.0f - 2.0f * (center - value) / range;
+	return -(center - value) / scale;
+}
+
+static String grade_label(float score) {
+	if (!std::isfinite(score)) return "?";
+	if (score > 4.00001f) {
+		const int extra = std::max(0, static_cast<int>(std::floor((score - 4.0f) / 0.5f)));
+		String label = "S";
+		for (int i = 0; i < extra; ++i) label += "+";
+		return label;
+	}
+	if (score < -0.00001f) {
+		const int extra = std::max(0, static_cast<int>(std::floor((-score) / 0.5f)));
+		String label = "F";
+		for (int i = 0; i < extra; ++i) label += "-";
+		return label;
+	}
+	const float clamped = std::clamp(score, 0.0f, 4.0f);
+	const int lower = std::min(static_cast<int>(std::floor(clamped)), 4);
+	static constexpr const char *LETTERS[5] = {"E", "D", "C", "B", "A"};
+	if (lower == 4) return "A";
+	const float fraction = clamped - static_cast<float>(lower);
+	if (fraction < 1.0f / 3.0f) return LETTERS[lower];
+	if (fraction < 0.5f) return String(LETTERS[lower]) + "+";
+	if (fraction < 2.0f / 3.0f) return String(LETTERS[lower + 1]) + "-";
+	return LETTERS[lower + 1];
+}
+
+static float display_component_value(
+		CarPerformanceCategory category, uint8_t component, float value) {
+	if ((category == CAR_PERFORMANCE_ACCELERATION && (component == 3 || component == 4)) ||
+		(category == CAR_PERFORMANCE_GRIP && component == 1) ||
+		(category == CAR_PERFORMANCE_BODY && component == 2)) {
+		return -value;
+	}
+	return value;
+}
+
+static String trait_context(uint8_t layer) {
+	static constexpr const char *NAMES[7] = {
+		"While Turbo Sliding", "While Quick Turning", "Without Boost",
+		"While Manual Boosting", "While Dashplate Boosting",
+		"While Stacking Boosts", "During S-Boost"};
+	return layer < 7 ? NAMES[layer] : "In a Special State";
+}
+
+static String signed_percent(float value) {
+	return String(value >= 0.0f ? "+" : "") + String::num(value, 1) + "%";
+}
+
+} // namespace
+
+void MxtCarPerformanceAnalyzer::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("analyze_file", "properties_path", "machine_setting", "gameplay_digest"),
+		&MxtCarPerformanceAnalyzer::analyze_file, DEFVAL(String()));
+	ClassDB::bind_method(D_METHOD("analyze_session", "session", "machine_setting"),
+		&MxtCarPerformanceAnalyzer::analyze_session);
+	ClassDB::bind_method(D_METHOD("get_official_calibration_table"),
+		&MxtCarPerformanceAnalyzer::get_official_calibration_table);
+	ClassDB::bind_method(D_METHOD("clear_result_cache"),
+		&MxtCarPerformanceAnalyzer::clear_result_cache);
+}
+
+bool MxtCarPerformanceAnalyzer::ensure_official_documents() {
+	if (official_documents_loaded) return official_error.is_empty();
+	official_documents_loaded = true;
+	for (uint8_t index = 0; index < OFFICIAL_COUNT; ++index) {
+		if (!FileAccess::file_exists(OFFICIAL_PATHS[index])) {
+			official_error = String("official benchmark properties are missing: ") + OFFICIAL_PATHS[index];
+			return false;
+		}
+		official_documents[index] = FileAccess::get_file_as_bytes(OFFICIAL_PATHS[index]);
+		if (official_documents[index].is_empty()) {
+			official_error = String("official benchmark properties could not be read: ") + OFFICIAL_PATHS[index];
+			return false;
+		}
+	}
+	return true;
+}
+
+MxtCarPerformanceAnalyzer::AnchorEntry *MxtCarPerformanceAnalyzer::get_anchor(float setting) {
+	if (!ensure_official_documents()) return nullptr;
+	const uint32_t bits = float_bits(setting);
+	for (AnchorEntry &entry : anchor_cache) {
+		if (entry.valid && entry.setting_bits == bits) return &entry;
+	}
+	AnchorEntry &entry = anchor_cache[next_anchor_slot++ % ANCHOR_CACHE_SIZE];
+	entry = AnchorEntry{};
+	entry.setting_bits = bits;
+	String error;
+	for (uint8_t index = 0; index < OFFICIAL_COUNT; ++index) {
+		if (!PhysicsCarProperties::deserialize_and_sample(
+				official_documents[index], setting, entry.properties[index], error)) {
+			official_error = String("official benchmark properties are invalid: ") + error;
+			return nullptr;
+		}
+	}
+	for (uint8_t index = 0; index < OFFICIAL_COUNT; ++index) {
+		if (!analyze_car_performance(
+				entry.properties[index], entry.properties[ALL_ROUNDER_INDEX], entry.raw[index])) {
+			official_error = "official benchmark analysis produced a non-finite result";
+			return nullptr;
+		}
+	}
+	entry.valid = true;
+	return &entry;
+}
+
+Dictionary MxtCarPerformanceAnalyzer::analyze_document(
+		const PackedByteArray &bytes,
+		float setting,
+		uint64_t source_hash,
+		bool allow_result_cache) {
+	Dictionary failed;
+	failed["valid"] = false;
+	if (bytes.is_empty()) {
+		failed["error"] = "car properties document is empty";
+		return failed;
+	}
+	AnchorEntry *anchors = get_anchor(setting);
+	if (anchors == nullptr) {
+		failed["error"] = official_error;
+		return failed;
+	}
+	const uint32_t bits = float_bits(setting);
+	if (allow_result_cache) {
+		for (const ResultEntry &entry : result_cache) {
+			if (entry.valid && entry.source_hash == source_hash && entry.setting_bits == bits) {
+				return build_result(entry.properties, entry.raw, *anchors, setting);
+			}
+		}
+	}
+	PhysicsCarProperties properties;
+	String error;
+	if (!PhysicsCarProperties::deserialize_and_sample(bytes, setting, properties, error)) {
+		failed["error"] = error;
+		return failed;
+	}
+	CarPerformanceRaw raw;
+	if (!analyze_car_performance(properties, anchors->properties[ALL_ROUNDER_INDEX], raw)) {
+		failed["error"] = "performance analysis produced a non-finite result";
+		return failed;
+	}
+	if (allow_result_cache) {
+		ResultEntry &entry = result_cache[next_result_slot++ % RESULT_CACHE_SIZE];
+		entry.valid = true;
+		entry.source_hash = source_hash;
+		entry.setting_bits = bits;
+		entry.properties = properties;
+		entry.raw = raw;
+	}
+	return build_result(properties, raw, *anchors, setting);
+}
+
+Dictionary MxtCarPerformanceAnalyzer::build_result(
+		const PhysicsCarProperties &properties,
+		const CarPerformanceRaw &raw,
+		const AnchorEntry &anchors,
+		float setting) const {
+	Dictionary result;
+	result["valid"] = true;
+	result["benchmark_version"] = 1;
+	result["machine_setting"] = setting;
+	result["weight_kg"] = properties.base_stats[CAR_STAT_WEIGHT_KG];
+	result["terminal_speed_kmh"] = raw.terminal_speed_kmh;
+	result["peak_boost_speed_kmh"] = raw.peak_boost_speed_kmh;
+	result["time_to_95_seconds"] = raw.time_to_95_seconds;
+	result["settlement_confidence"] = raw.settlement_confidence;
+
+	Array categories;
+	for (uint8_t category_raw = 0; category_raw < CAR_PERFORMANCE_CATEGORY_COUNT; ++category_raw) {
+		const CarPerformanceCategory category = static_cast<CarPerformanceCategory>(category_raw);
+		Array components;
+		float score_sum = 0.0f;
+		const uint8_t count = car_performance_component_count(category);
+		for (uint8_t component = 0; component < count; ++component) {
+			float best = anchors.raw[0].components[category][component].value;
+			float worst = best;
+			for (uint8_t official = 1; official < OFFICIAL_COUNT; ++official) {
+				const float anchor = anchors.raw[official].components[category][component].value;
+				best = std::max(best, anchor);
+				worst = std::min(worst, anchor);
+			}
+			const float center = anchors.raw[ALL_ROUNDER_INDEX].components[category][component].value;
+			const float value = raw.components[category][component].value;
+			const float component_score = score_against_anchors(value, center, best, worst);
+			score_sum += component_score;
+			Dictionary component_result;
+			component_result["name"] = car_performance_component_name(category, component);
+			component_result["unit"] = car_performance_component_unit(category, component);
+			component_result["value"] = display_component_value(category, component, value);
+			component_result["score"] = component_score;
+			component_result["grade"] = grade_label(component_score);
+			components.push_back(component_result);
+		}
+		const float category_score = count > 0 ? score_sum / static_cast<float>(count) : 2.0f;
+		Dictionary category_result;
+		category_result["name"] = car_performance_category_name(category);
+		category_result["score"] = category_score;
+		category_result["grade"] = grade_label(category_score);
+		category_result["components"] = components;
+		categories.push_back(category_result);
+	}
+	result["categories"] = categories;
+
+	Array advanced;
+	for (uint16_t stat_raw = 0; stat_raw < CAR_STAT_COUNT; ++stat_raw) {
+		const CarStatId stat = static_cast<CarStatId>(stat_raw);
+		const CarStatMetadata &metadata = get_car_stat_metadata(stat);
+		if (metadata.activity != CAR_STAT_ACTIVITY_GAMEPLAY || !metadata.raw_gradeable ||
+			(metadata.base_direction != CAR_STAT_DIRECTION_HIGHER_BENEFIT &&
+			 metadata.base_direction != CAR_STAT_DIRECTION_LOWER_BENEFIT)) {
+			continue;
+		}
+		const float direction = metadata.base_direction == CAR_STAT_DIRECTION_LOWER_BENEFIT ? -1.0f : 1.0f;
+		float best = direction * anchors.properties[0].base_stats[stat];
+		float worst = best;
+		for (uint8_t official = 1; official < OFFICIAL_COUNT; ++official) {
+			const float anchor = direction * anchors.properties[official].base_stats[stat];
+			best = std::max(best, anchor);
+			worst = std::min(worst, anchor);
+		}
+		const float center = direction * anchors.properties[ALL_ROUNDER_INDEX].base_stats[stat];
+		const float score = score_against_anchors(direction * properties.base_stats[stat], center, best, worst);
+		Dictionary stat_result;
+		stat_result["name"] = metadata.name;
+		stat_result["friendly_name"] = metadata.friendly_name;
+		stat_result["explanation"] = metadata.explanation;
+		stat_result["unit"] = metadata.unit;
+		stat_result["value"] = properties.base_stats[stat];
+		stat_result["score"] = score;
+		stat_result["grade"] = grade_label(score);
+		advanced.push_back(stat_result);
+	}
+	result["advanced_stats"] = advanced;
+
+	Array traits;
+	for (uint8_t special = 0; special < 7; ++special) {
+		for (uint16_t stat_raw = 0; stat_raw < CAR_STAT_COUNT; ++stat_raw) {
+			const CarStatId stat = static_cast<CarStatId>(stat_raw);
+			if (!PhysicsCarProperties::stat_supports_live_modifiers(stat)) continue;
+			const CarStatMetadata &metadata = get_car_stat_metadata(stat);
+			if (metadata.activity != CAR_STAT_ACTIVITY_GAMEPLAY) continue;
+			const float ordinary = properties.base_stats[stat];
+			const float effective = special == 6
+				? properties.s_boost_stats[stat]
+				: ordinary * properties.modifier_stats[special][stat];
+			const float delta = effective - ordinary;
+			const float denominator = std::max(std::abs(ordinary), 0.00001f);
+			const float percent = 100.0f * delta / denominator;
+			if (std::abs(percent) < 5.0f) continue;
+			String kind = "distinctive";
+			if (metadata.special_direction == CAR_STAT_DIRECTION_HIGHER_BENEFIT) {
+				kind = delta > 0.0f ? "strength" : "drawback";
+			} else if (metadata.special_direction == CAR_STAT_DIRECTION_LOWER_BENEFIT) {
+				kind = delta < 0.0f ? "strength" : "drawback";
+			}
+			const String arrow = kind == "strength" ? String::utf8("↑")
+				: (kind == "drawback" ? String::utf8("↓") : String::utf8("◆"));
+			Dictionary trait;
+			trait["context"] = trait_context(special);
+			trait["stat_name"] = metadata.name;
+			trait["friendly_name"] = metadata.friendly_name;
+			trait["kind"] = kind;
+			trait["percent"] = percent;
+			trait["base_value"] = ordinary;
+			trait["effective_value"] = effective;
+			trait["unit"] = metadata.unit;
+			trait["text"] = arrow + String(" ") + trait_context(special) + String(": ") +
+				signed_percent(percent) + String(" ") + String(metadata.friendly_name);
+			traits.push_back(trait);
+		}
+	}
+	result["traits"] = traits;
+	return result;
+}
+
+Dictionary MxtCarPerformanceAnalyzer::analyze_file(
+		const String &properties_path,
+		double machine_setting,
+		const String &gameplay_digest) {
+	Dictionary failed;
+	failed["valid"] = false;
+	if (!FileAccess::file_exists(properties_path)) {
+		failed["error"] = "car properties file does not exist";
+		return failed;
+	}
+	const PackedByteArray bytes = FileAccess::get_file_as_bytes(properties_path);
+	const uint64_t source_hash = gameplay_digest.is_empty()
+		? hash_bytes(bytes) : hash_string(gameplay_digest);
+	return analyze_document(bytes, std::clamp(static_cast<float>(machine_setting), 0.0f, 1.0f),
+		source_hash, true);
+}
+
+Dictionary MxtCarPerformanceAnalyzer::analyze_session(
+		const Ref<MxtCarAuthoringSession> &session,
+		double machine_setting) {
+	Dictionary failed;
+	failed["valid"] = false;
+	if (session.is_null()) {
+		failed["error"] = "car authoring session is missing";
+		return failed;
+	}
+	const Dictionary serialized = session->serialize();
+	if (!static_cast<bool>(serialized.get("valid", false))) {
+		failed["error"] = "car authoring session is not valid";
+		return failed;
+	}
+	const PackedByteArray bytes = serialized.get("bytes", PackedByteArray());
+	return analyze_document(bytes, std::clamp(static_cast<float>(machine_setting), 0.0f, 1.0f),
+		hash_bytes(bytes), true);
+}
+
+Array MxtCarPerformanceAnalyzer::get_official_calibration_table() {
+	Array table;
+	for (int setting_index = 0; setting_index <= 100; ++setting_index) {
+		const float setting = static_cast<float>(setting_index) / 100.0f;
+		AnchorEntry *anchors = get_anchor(setting);
+		if (anchors == nullptr) return Array();
+		for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
+			Dictionary row = build_result(
+				anchors->properties[official], anchors->raw[official], *anchors, setting);
+			row["machine"] = OFFICIAL_NAMES[official];
+			table.push_back(row);
+		}
+	}
+	return table;
+}
+
+void MxtCarPerformanceAnalyzer::clear_result_cache() {
+	for (ResultEntry &entry : result_cache) entry = ResultEntry{};
+	next_result_slot = 0;
+}
+
+} // namespace godot

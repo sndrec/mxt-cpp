@@ -1,10 +1,11 @@
-[gd_scene load_steps=8 format=3 uid="uid://d3fgxyahmbbxa"]
+[gd_scene load_steps=9 format=3 uid="uid://d3fgxyahmbbxa"]
 
 [ext_resource type="Script" uid="uid://cow6mqit4ansg" path="res://ui/car_settings.gd" id="1_c1ygr"]
 [ext_resource type="PackedScene" path="res://ui/vehicle_editor.tscn" id="2_vehicle_editor"]
 [ext_resource type="PackedScene" path="res://ui/workshop_browser.tscn" id="3_workshop"]
 [ext_resource type="PackedScene" path="res://ui/track_package_editor.tscn" id="4_track_packages"]
 [ext_resource type="PackedScene" path="res://ui/leaderboard_browser.tscn" id="5_leaderboards"]
+[ext_resource type="PackedScene" path="res://ui/vehicle_grade_panel.tscn" id="6_grade_panel"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_car_name"]
 font_size = 32
@@ -143,6 +144,10 @@ custom_minimum_size = Vector2(112, 82)
 layout_mode = 2
 expand_icon = true
 fit_to_longest_item = false
+
+[node name="Performance" parent="Container/SettingsTabs/Driver" instance=ExtResource("6_grade_panel")]
+custom_minimum_size = Vector2(0, 330)
+layout_mode = 2
 
 [node name="VehicleScroll" type="ScrollContainer" parent="Container/SettingsTabs/Driver" unique_id=1685047917]
 custom_minimum_size = Vector2(0, 118)

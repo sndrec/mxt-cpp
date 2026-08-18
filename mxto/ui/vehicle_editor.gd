@@ -16,6 +16,7 @@ const WORKSHOP_PREVIEW_TARGET_MAX_BYTES := 950_000
 const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
 const AUTOSAVE_DEBOUNCE_MSEC := 900
 const AUTOSAVE_RETRY_MSEC := 5000
+const PERFORMANCE_DEBOUNCE_MSEC := 120
 
 @onready var draft_option: OptionButton = $Toolbar/DraftOption
 @onready var title_input: LineEdit = $Metadata/Title
@@ -62,6 +63,7 @@ const AUTOSAVE_RETRY_MSEC := 5000
 @onready var speed_summary: Label = $Workspace/StatsColumn/SpeedControls/SpeedSummary
 @onready var speed_graph: VehicleEditorSpeedGraph = $Workspace/StatsColumn/SpeedGraph
 @onready var diagnostics: RichTextLabel = $Workspace/StatsColumn/Diagnostics
+@onready var vehicle_grade_panel: VehicleGradePanel = $Workspace/VisualColumn/PhysicalTabs/Performance
 @onready var import_model_dialog: FileDialog = $ImportModelDialog
 @onready var export_package_dialog: FileDialog = $ExportPackageDialog
 @onready var template_vehicle_dialog: ConfirmationDialog = $TemplateVehicleDialog
@@ -111,6 +113,8 @@ var workshop_progress_update_msec := 0
 var vector_controls: Dictionary = {}
 var updating_controls := false
 var curve_gesture_active := false
+var performance_analyzer := MxtCarPerformanceAnalyzer.new()
+var performance_due_msec := 0
 
 
 func _ready() -> void:
@@ -776,6 +780,9 @@ func _open_workshop_page() -> void:
 
 func _process(_delta: float) -> void:
 	var now := Time.get_ticks_msec()
+	if performance_due_msec != 0 and now >= performance_due_msec:
+		performance_due_msec = 0
+		vehicle_grade_panel.show_analysis(performance_analyzer.analyze_session(session, machine_setting.value))
 	if draft_initialized and !curve_gesture_active and (metadata_dirty or session.is_dirty()):
 		if autosave_due_msec == 0:
 			autosave_due_msec = now + AUTOSAVE_DEBOUNCE_MSEC
@@ -1392,6 +1399,7 @@ func _reset_curve() -> void:
 func _refresh_samples() -> void:
 	machine_value.text = "%.3f" % machine_setting.value
 	curve_graph.set_sample_setting(machine_setting.value)
+	performance_due_msec = Time.get_ticks_msec() + PERFORMANCE_DEBOUNCE_MSEC
 	_refresh_speed_preview()
 
 

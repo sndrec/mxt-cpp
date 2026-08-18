@@ -1,8 +1,9 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://ui/vehicle_editor.gd" id="1_editor"]
 [ext_resource type="Script" path="res://ui/vehicle_editor_curve_graph.gd" id="2_curve"]
 [ext_resource type="Script" path="res://ui/vehicle_editor_speed_graph.gd" id="3_speed"]
+[ext_resource type="PackedScene" path="res://ui/vehicle_grade_panel.tscn" id="4_grade_panel"]
 
 [node name="Car Creator" type="VBoxContainer"]
 layout_mode = 2
@@ -292,6 +293,10 @@ layout_mode = 2
 text = "Remove"
 
 [node name="Rows" type="VBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Thrusters"]
+layout_mode = 2
+
+[node name="Performance" parent="Workspace/VisualColumn/PhysicalTabs" instance=ExtResource("4_grade_panel")]
+visible = false
 layout_mode = 2
 
 [node name="StatsColumn" type="VBoxContainer" parent="Workspace"]

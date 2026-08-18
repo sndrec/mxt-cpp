@@ -20,6 +20,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var machine_setting_slider: HSlider = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingSlider
 @onready var machine_setting_percent: Label = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingPercent
 @onready var vehicle_selector: ItemList = $Container/SettingsTabs/Driver/VehicleScroll/VehicleSelector
+@onready var vehicle_grade_panel: VehicleGradePanel = $Container/SettingsTabs/Driver/Performance
 @onready var close_settings: Button = $Container/CloseSettings
 @onready var car_preview_space: ColorRect = $Container/SettingsTabs/Garage/CarPreviewSpace
 @onready var custom_stamp_budget_label: Label = $Container/SettingsTabs/Garage/CarPreviewSpace/CustomStampBudget
@@ -151,6 +152,7 @@ var stamp_edit_drag_start_roll := 0.0
 var legacy_selected_car_definition_path := ""
 var previous_settings_tab := 0
 var restoring_settings_tab := false
+var performance_analyzer := MxtCarPerformanceAnalyzer.new()
 
 func _ready() -> void:
 	game_manager = get_parent() as GameManager
@@ -368,6 +370,7 @@ func _update_controls(rebuild_preview := true) -> void:
 		if rebuild_preview:
 			_rebuild_preview_vehicle()
 	_update_livery_lock_state()
+	_refresh_vehicle_grades()
 
 func refresh_after_game_manager_loaded() -> void:
 	_load_settings()
@@ -390,6 +393,7 @@ func _on_vehicle_editor_test_drive_requested(snapshot: Dictionary) -> void:
 func _on_slider_changed(value: float) -> void:
 	machine_setting_percent.text = str(roundi(value)) + "%"
 	player_settings.accel_setting = value / 100.0
+	_refresh_vehicle_grades()
 
 func _on_vehicle_selected(index: int) -> void:
 	if index >= 0 and index < car_defs.size():
@@ -403,6 +407,19 @@ func _on_vehicle_selected(index: int) -> void:
 		_refresh_stamp_controls()
 		_rebuild_preview_vehicle()
 		_send_online_vehicle_selection_update()
+		_refresh_vehicle_grades()
+
+
+func _refresh_vehicle_grades() -> void:
+	if vehicle_grade_panel == null:
+		return
+	var definition := _selected_car_definition()
+	if definition == null or definition.properties_path.is_empty():
+		vehicle_grade_panel.show_analysis({"valid": false, "error": "Selected machine has no performance data."})
+		return
+	vehicle_grade_panel.show_analysis(performance_analyzer.analyze_file(
+		definition.properties_path,
+		player_settings.accel_setting))
 
 func _on_name_changed(new_text: String) -> void:
 	player_settings.username = new_text

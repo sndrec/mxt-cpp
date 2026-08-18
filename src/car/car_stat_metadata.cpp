@@ -15,17 +15,17 @@ static constexpr CarStatMetadata CAR_STAT_METADATA[CAR_STAT_COUNT] = {
 	{"max_speed", "Top Speed", "Extends the speed range in the drive-speed response calculation.",
 	 "scalar", "Drive", CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_HIGHER_BENEFIT,
 	 CAR_STAT_DIRECTION_HIGHER_BENEFIT},
-	{"grip_1", "Breakaway Grip (Provisional)",
+	{"grip_1", "Breakaway Resistance",
 	 "Lateral-slip threshold used before a machine begins drifting. Higher "
 	 "values resist breakaway longer.",
 	 "scalar", "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_HIGHER_BENEFIT,
 	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT},
-	{"grip_2", "Drift Rotation Coupling (Provisional)",
+	{"grip_2", "Drift Rotation Coupling",
 	 "Scales the angular correction applied while a tilt point is drifting. "
 	 "Its practical value depends on the maneuver.",
 	 "scalar", "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, false, CAR_STAT_DIRECTION_CONTEXT_DEPENDENT,
 	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT},
-	{"grip_3", "Re-grip Threshold (Provisional)",
+	{"grip_3", "Re-grip Tendency",
 	 "Lateral-slip threshold used while drifting and when deciding to re-grip. "
 	 "Higher values favor a planted machine.",
 	 "scalar", "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_HIGHER_BENEFIT,
