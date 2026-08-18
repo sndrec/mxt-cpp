@@ -139,6 +139,7 @@ custom_minimum_size = Vector2(420, 320)
 layout_mode = 2
 size_flags_vertical = 3
 stretch = true
+tooltip_text = "Left drag: orbit. Right, middle, or Shift+left drag: pan. Wheel: zoom. Double-click: reset view."
 
 [node name="Viewport" type="SubViewport" parent="Workspace/VisualColumn/Preview"]
 handle_input_locally = false
@@ -150,6 +151,43 @@ render_target_update_mode = 4
 layout_mode = 2
 text = "Import a static GLB or glTF vehicle model. Embedded materials are preserved."
 autowrap_mode = 2
+
+[node name="PaintPreview" type="HBoxContainer" parent="Workspace/VisualColumn"]
+layout_mode = 2
+
+[node name="PrimaryLabel" type="Label" parent="Workspace/VisualColumn/PaintPreview"]
+layout_mode = 2
+text = "Primary"
+
+[node name="Primary" type="ColorPickerButton" parent="Workspace/VisualColumn/PaintPreview"]
+custom_minimum_size = Vector2(42, 28)
+layout_mode = 2
+
+[node name="SecondaryLabel" type="Label" parent="Workspace/VisualColumn/PaintPreview"]
+layout_mode = 2
+text = "Secondary"
+
+[node name="Secondary" type="ColorPickerButton" parent="Workspace/VisualColumn/PaintPreview"]
+custom_minimum_size = Vector2(42, 28)
+layout_mode = 2
+
+[node name="AccentLabel" type="Label" parent="Workspace/VisualColumn/PaintPreview"]
+layout_mode = 2
+text = "Accent"
+
+[node name="Accent" type="ColorPickerButton" parent="Workspace/VisualColumn/PaintPreview"]
+custom_minimum_size = Vector2(42, 28)
+layout_mode = 2
+
+[node name="Preset" type="OptionButton" parent="Workspace/VisualColumn/PaintPreview"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
+
+[node name="Diagnostic" type="OptionButton" parent="Workspace/VisualColumn/PaintPreview"]
+layout_mode = 2
+size_flags_horizontal = 3
+fit_to_longest_item = false
 
 [node name="PhysicalTabs" type="TabContainer" parent="Workspace/VisualColumn"]
 custom_minimum_size = Vector2(420, 260)

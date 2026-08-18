@@ -289,6 +289,7 @@ static Dictionary public_metadata(const String &draft_id, const Dictionary &mani
 	output["modified_unix"] = manifest.get("modified_unix", 0);
 	output["status"] = manifest.get("status", "invalid");
 	output["workshop_published_file_id"] = manifest.get("workshop_published_file_id", 0);
+	output["preview_livery"] = manifest.get("preview_livery", Dictionary());
 	const String thumbnail = draft_root(draft_id).path_join("thumbnail.png");
 	output["thumbnail_path"] = FileAccess::file_exists(thumbnail) ? thumbnail : String();
 	output["has_model"] =
@@ -398,6 +399,7 @@ Dictionary MxtCarDraftStore::save_draft(const String &draft_id,
 	manifest["visual"] = visual_dictionary(*session.ptr());
 	manifest["workshop_published_file_id"] = metadata.get("workshop_published_file_id", 0);
 	manifest["authoring_intent"] = metadata.get("authoring_intent", Dictionary());
+	manifest["preview_livery"] = metadata.get("preview_livery", Dictionary());
 
 	const String temporary_manifest = root.path_join("draft.json.tmp");
 	const String manifest_path = root.path_join("draft.json");
@@ -486,6 +488,7 @@ Dictionary MxtCarDraftStore::duplicate_draft(const String &source_draft_id,
 	metadata["description"] = loaded.get("description", "");
 	metadata["workshop_published_file_id"] = 0;
 	metadata["authoring_intent"] = loaded.get("authoring_intent", Dictionary());
+	metadata["preview_livery"] = loaded.get("preview_livery", Dictionary());
 	Dictionary saved = save_draft(new_draft_id, session, metadata);
 	if (!static_cast<bool>(saved.get("valid", false)))
 		return saved;

@@ -6,6 +6,8 @@ signal test_drive_requested(snapshot: Dictionary)
 const PREVIEW_WORLD_SCENE: PackedScene = preload("res://ui/garage_preview_world.tscn")
 const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
+const CarLivery = preload("res://vehicle/customization/car_livery.gd")
 const DRAFTS_ROOT := "user://vehicle_drafts"
 const LOCAL_LIBRARY_ROOT := "user://content/packages"
 const TEST_DRIVE_LIBRARY_ROOT := "user://content/test_drive_snapshots"
@@ -22,6 +24,11 @@ const AUTOSAVE_RETRY_MSEC := 5000
 @onready var preview_container: SubViewportContainer = $Workspace/VisualColumn/Preview
 @onready var preview_viewport: SubViewport = $Workspace/VisualColumn/Preview/Viewport
 @onready var visual_status: Label = $Workspace/VisualColumn/VisualStatus
+@onready var preview_primary: ColorPickerButton = $Workspace/VisualColumn/PaintPreview/Primary
+@onready var preview_secondary: ColorPickerButton = $Workspace/VisualColumn/PaintPreview/Secondary
+@onready var preview_accent: ColorPickerButton = $Workspace/VisualColumn/PaintPreview/Accent
+@onready var preview_preset: OptionButton = $Workspace/VisualColumn/PaintPreview/Preset
+@onready var preview_diagnostic: OptionButton = $Workspace/VisualColumn/PaintPreview/Diagnostic
 @onready var physical_tabs: TabContainer = $Workspace/VisualColumn/PhysicalTabs
 @onready var transform_rows: VBoxContainer = $Workspace/VisualColumn/PhysicalTabs/Transform/Rows
 @onready var body_surface_list: ItemList = $Workspace/VisualColumn/PhysicalTabs/Materials/BodySurfaces
@@ -79,6 +86,9 @@ var current_stat := "weight_kg"
 var curve_clipboard: Array = []
 var preview_root: Node3D
 var preview_camera: Camera3D
+var preview_camera_controller := GaragePreviewCameraControllerClass.new()
+var preview_framed_model_path := ""
+var preview_livery: CarLivery = CarLivery.new()
 var preview_render_manager: CarRenderManager
 var preview_definition: CarDefinition
 var preview_gizmo_root: Node3D
@@ -122,6 +132,10 @@ func _ready() -> void:
 
 
 func _setup_options() -> void:
+	for preset in ["Saved / Custom", "Default Blue", "Neutral White", "High Contrast", "Warm"]:
+		preview_preset.add_item(preset)
+	for diagnostic in ["Rendered", "Albedo", "Normal Map", "Paint Mask", "Selected Surfaces"]:
+		preview_diagnostic.add_item(diagnostic)
 	for visibility in ["Public", "Friends Only", "Private", "Unlisted"]:
 		workshop_visibility.add_item(visibility)
 	workshop_visibility.selected = 1
@@ -152,10 +166,10 @@ func _setup_vector_controls() -> void:
 	_add_vector_row(transform_rows, "translation", "Translation", Vector3.ZERO, -1000.0, 1000.0)
 	_add_vector_row(transform_rows, "rotation", "Rotation deg", Vector3.ZERO, -3600.0, 3600.0)
 	_add_vector_row(transform_rows, "scale", "Scale", Vector3.ONE, 0.001, 100.0)
-	for i in range(4):
-		_add_vector_row(corner_rows, "tilt_%d" % i, "Tilt %d" % i, Vector3.ZERO, -1000.0, 1000.0)
-	for i in range(4):
-		_add_vector_row(corner_rows, "wall_%d" % i, "Wall %d" % i, Vector3.ZERO, -1000.0, 1000.0)
+	_add_scalar_row(corner_rows, "front_width", "Front Width", 1.6, 0.01, 1000.0)
+	_add_scalar_row(corner_rows, "rear_width", "Rear Width", 2.2, 0.01, 1000.0)
+	_add_scalar_row(corner_rows, "front_forward_extent", "Front Forward Extent", 1.5, 0.01, 1000.0)
+	_add_scalar_row(corner_rows, "rear_backward_extent", "Rear Backward Extent", 1.7, 0.01, 1000.0)
 	_add_vector_row(thruster_rows, "thruster_position", "Position", Vector3.ZERO, -100.0, 100.0)
 	_add_vector_row(thruster_rows, "thruster_rotation", "Rotation deg", Vector3.ZERO, -3600.0, 3600.0)
 	var scale_row := HBoxContainer.new()
@@ -172,6 +186,24 @@ func _setup_vector_controls() -> void:
 	scale_row.add_child(scale_control)
 	thruster_rows.add_child(scale_row)
 	vector_controls["thruster_scale"] = scale_control
+
+
+func _add_scalar_row(parent: VBoxContainer, key: String, label_text: String, value: float, minimum: float, maximum: float) -> void:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = label_text
+	label.custom_minimum_size.x = 150.0
+	row.add_child(label)
+	var control := SpinBox.new()
+	control.min_value = minimum
+	control.max_value = maximum
+	control.step = 0.01
+	control.allow_greater = true
+	control.value = value
+	control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(control)
+	parent.add_child(row)
+	vector_controls[key] = control
 
 
 func _add_vector_row(parent: VBoxContainer, key: String, label_text: String, value: Vector3, minimum: float, maximum: float) -> void:
@@ -222,10 +254,12 @@ func _setup_preview() -> void:
 		preview_gizmo_materials.append(material)
 	preview_camera = Camera3D.new()
 	preview_camera.near = 0.05
+	preview_camera.fov = 38.0
 	preview_camera.position = Vector3(7.0, 3.7, 9.0)
 	preview_root.add_child(preview_camera)
 	preview_camera.look_at(Vector3.ZERO, Vector3.UP)
 	preview_camera.current = true
+	preview_camera_controller.configure_frame(Vector3(0.0, 0.5, 0.0), 12.0, true)
 	preview_container.gui_input.connect(_on_preview_gui_input)
 
 
@@ -275,6 +309,11 @@ func _connect_controls() -> void:
 	normal_surface_option.item_selected.connect(func(_index): _apply_material_controls())
 	paint_mask_surface_option.item_selected.connect(func(_index): _apply_material_controls())
 	physical_tabs.tab_changed.connect(func(_index): _refresh_gizmos())
+	preview_primary.color_changed.connect(func(_colour): _on_preview_colours_changed())
+	preview_secondary.color_changed.connect(func(_colour): _on_preview_colours_changed())
+	preview_accent.color_changed.connect(func(_colour): _on_preview_colours_changed())
+	preview_preset.item_selected.connect(_apply_preview_preset)
+	preview_diagnostic.item_selected.connect(_apply_preview_diagnostic)
 	for key in vector_controls:
 		var controls_value = vector_controls[key]
 		if controls_value is Array:
@@ -295,6 +334,7 @@ func _new_draft() -> bool:
 	draft_initialized = true
 	current_properties_path = ""
 	authoring_intent = {}
+	preview_livery = CarLivery.new()
 	updating_controls = true
 	title_input.text = "New Machine"
 	var steam_name := ""
@@ -362,6 +402,8 @@ func _open_selected_draft() -> void:
 	draft_initialized = true
 	current_properties_path = String(result.get("properties_path", ""))
 	authoring_intent = result.get("authoring_intent", {})
+	preview_livery = CarLivery.new()
+	preview_livery.from_dict(result.get("preview_livery", {}))
 	updating_controls = true
 	title_input.text = String(result.get("title", selected_id))
 	description_input.text = String(result.get("description", ""))
@@ -452,6 +494,13 @@ func _copy_vehicle_template(definition: CarDefinition) -> Dictionary:
 	var properties_result: Dictionary = session.load_file(definition.properties_path)
 	if !bool(properties_result.get("valid", false)):
 		return properties_result
+	var measurements: Dictionary = session.get_collision_measurements()
+	if !bool(measurements.get("valid", false)):
+		return {
+			"valid": false,
+			"errors": PackedStringArray(["The template has unsupported asymmetric collision geometry: %s" % String(measurements.get("error", "unknown geometry error"))]),
+			"warnings": PackedStringArray(),
+		}
 	var visual_result: Dictionary
 	if definition.car_scene != null:
 		visual_result = _copy_official_vehicle_visual(definition)
@@ -759,6 +808,7 @@ func _import_model(path: String) -> void:
 	_show_diagnostics(result)
 	if bool(result.get("valid", false)):
 		visual_status.text = "Imported %s" % path.get_file()
+		preview_framed_model_path = ""
 		_refresh_visual_controls()
 		_refresh_preview()
 	else:
@@ -851,6 +901,7 @@ func _draft_metadata() -> Dictionary:
 		"description": description_input.text,
 		"workshop_published_file_id": workshop_published_file_id,
 		"authoring_intent": authoring_intent,
+		"preview_livery": preview_livery.to_dict(),
 	}
 
 
@@ -991,6 +1042,7 @@ func _test_drive() -> void:
 func _refresh_all() -> void:
 	_refresh_stat_options()
 	_refresh_visual_controls()
+	_refresh_preview_paint_controls()
 	_refresh_resource_usage()
 	_refresh_preview()
 	_refresh_samples()
@@ -1033,6 +1085,57 @@ func _refresh_resource_usage() -> void:
 		int(usage["texture_pixels"]), int(usage["texture_pixel_limit"]),
 		int(usage["images"]), int(usage["image_limit"]),
 	]
+
+
+func _refresh_preview_paint_controls() -> void:
+	updating_controls = true
+	preview_preset.select(0)
+	preview_primary.color = preview_livery.primary_colour
+	preview_secondary.color = preview_livery.secondary_colour
+	preview_accent.color = preview_livery.accent_colour
+	updating_controls = false
+
+
+func _on_preview_colours_changed() -> void:
+	if updating_controls:
+		return
+	preview_livery.primary_colour = preview_primary.color
+	preview_livery.secondary_colour = preview_secondary.color
+	preview_livery.accent_colour = preview_accent.color
+	preview_preset.select(0)
+	preview_render_manager.update_livery_colours(preview_livery)
+	_mark_dirty()
+
+
+func _apply_preview_preset(index: int) -> void:
+	if updating_controls:
+		return
+	match index:
+		0:
+			return
+		1:
+			preview_livery.primary_colour = Color(0.1, 0.35, 1.0, 1.0)
+			preview_livery.secondary_colour = Color.WHITE
+			preview_livery.accent_colour = Color(0.05, 0.05, 0.06, 1.0)
+		2:
+			preview_livery.primary_colour = Color.WHITE
+			preview_livery.secondary_colour = Color(0.7, 0.7, 0.7, 1.0)
+			preview_livery.accent_colour = Color(0.15, 0.15, 0.15, 1.0)
+		3:
+			preview_livery.primary_colour = Color(1.0, 0.08, 0.05, 1.0)
+			preview_livery.secondary_colour = Color(0.05, 0.9, 0.15, 1.0)
+			preview_livery.accent_colour = Color(0.05, 0.2, 1.0, 1.0)
+		4:
+			preview_livery.primary_colour = Color(1.0, 0.35, 0.04, 1.0)
+			preview_livery.secondary_colour = Color(1.0, 0.85, 0.3, 1.0)
+			preview_livery.accent_colour = Color(0.25, 0.03, 0.02, 1.0)
+	_refresh_preview_paint_controls()
+	preview_render_manager.update_livery_colours(preview_livery)
+	_mark_dirty()
+
+
+func _apply_preview_diagnostic(index: int) -> void:
+	preview_render_manager.set_material_diagnostic(index)
 
 
 func _refresh_stat_options() -> void:
@@ -1210,11 +1313,10 @@ func _refresh_visual_controls() -> void:
 	_set_vector_value("translation", model_transform.get("translation", Vector3.ZERO))
 	_set_vector_value("rotation", model_transform.get("rotation_degrees", Vector3.ZERO))
 	_set_vector_value("scale", model_transform.get("scale", Vector3.ONE))
-	var tilt := session.get_tilt_corners()
-	var wall := session.get_wall_corners()
-	for i in range(4):
-		_set_vector_value("tilt_%d" % i, tilt[i])
-		_set_vector_value("wall_%d" % i, wall[i])
+	var measurements: Dictionary = session.get_collision_measurements()
+	if bool(measurements.get("valid", false)):
+		for key in ["front_width", "rear_width", "front_forward_extent", "rear_backward_extent"]:
+			vector_controls[key].set_value_no_signal(float(measurements[key]))
 	_refresh_material_controls()
 	_refresh_thruster_options()
 	updating_controls = false
@@ -1286,13 +1388,12 @@ func _apply_visual_controls() -> void:
 		"rotation_degrees": _vector_value("rotation"),
 		"scale": _vector_value("scale"),
 	})
-	var tilt := PackedVector3Array()
-	var wall := PackedVector3Array()
-	for i in range(4):
-		tilt.push_back(_vector_value("tilt_%d" % i))
-		wall.push_back(_vector_value("wall_%d" % i))
-	session.set_tilt_corners(tilt)
-	session.set_wall_corners(wall)
+	session.set_collision_measurements({
+		"front_width": vector_controls["front_width"].value,
+		"rear_width": vector_controls["rear_width"].value,
+		"front_forward_extent": vector_controls["front_forward_extent"].value,
+		"rear_backward_extent": vector_controls["rear_backward_extent"].value,
+	})
 	var thrusters: Array = session.get_thrusters()
 	if thruster_selector.selected >= 0 and thruster_selector.selected < thrusters.size():
 		thrusters[thruster_selector.selected] = {
@@ -1361,6 +1462,7 @@ func _refresh_preview() -> void:
 	preview_definition = null
 	var model_path := session.get_model_path()
 	if model_path.is_empty() or !FileAccess.file_exists(model_path):
+		preview_framed_model_path = ""
 		return
 	var record := {
 		"content_id": "mxt:vehicle:draft:%s" % draft_id,
@@ -1376,14 +1478,16 @@ func _refresh_preview() -> void:
 	}
 	preview_definition = vehicle_content_controller.create_runtime_definition(record)
 	if preview_definition != null:
-		preview_render_manager.configure_manual([preview_definition])
+		preview_render_manager.configure_manual([preview_definition], [{"car_livery": preview_livery.to_dict()}])
 		preview_render_manager.begin_manual_submit()
-		preview_render_manager.submit_manual_car(0, Transform3D.IDENTITY, Color.WHITE, Vector3.ZERO, Color.WHITE, 1.0, false)
-		_frame_preview_camera()
+		preview_render_manager.submit_manual_car(0, Transform3D.IDENTITY, Color.BLACK, Vector3.ZERO, Color.BLACK, 0.0, false)
+		preview_render_manager.set_material_diagnostic(preview_diagnostic.selected)
+		_frame_preview_camera(model_path != preview_framed_model_path)
+		preview_framed_model_path = model_path
 	_refresh_gizmos()
 
 
-func _frame_preview_camera() -> void:
+func _frame_preview_camera(reset_view := false) -> void:
 	if preview_camera == null or preview_definition == null or preview_definition.runtime_mesh == null:
 		return
 	var bounds := preview_definition.runtime_mesh.get_aabb()
@@ -1402,10 +1506,9 @@ func _frame_preview_camera() -> void:
 	var half_horizontal_fov := atan(tan(half_vertical_fov) * viewport_aspect)
 	var limiting_fov := minf(half_vertical_fov, half_horizontal_fov)
 	var distance := maxf(4.0, radius * 1.15 / maxf(0.1, sin(limiting_fov)))
-	var direction := Vector3(7.0, 3.7, 9.0).normalized()
-	preview_camera.position = center + direction * distance
+	preview_camera_controller.configure_frame(center, distance, reset_view)
 	preview_camera.far = maxf(1000.0, distance + radius * 4.0)
-	preview_camera.look_at(center, Vector3.UP)
+	preview_camera_controller.apply(preview_camera)
 
 
 func _refresh_gizmos() -> void:
@@ -1473,36 +1576,45 @@ func _refresh_gizmo_lines(tab_name: String) -> void:
 
 
 func _on_preview_gui_input(event: InputEvent) -> void:
-	if preview_camera == null or preview_gizmo_entries.is_empty():
+	if preview_camera == null:
 		return
 	var button := event as InputEventMouseButton
 	var motion := event as InputEventMouseMotion
 	if button == null and motion == null:
 		return
 	var pointer := (button.position if button != null else motion.position) * Vector2(preview_viewport.size) / preview_container.size
-	if button != null and button.button_index == MOUSE_BUTTON_LEFT:
-		if button.pressed:
+	if button != null:
+		if button.button_index == MOUSE_BUTTON_LEFT and button.pressed and !button.double_click:
 			dragged_gizmo = _pick_preview_gizmo(pointer)
 			if dragged_gizmo >= 0:
 				session.begin_edit_transaction()
 				var point := Vector3(preview_gizmo_entries[dragged_gizmo]["position"])
 				dragged_gizmo_plane = Plane(preview_camera.global_basis.z.normalized(), point)
 				preview_container.accept_event()
-		else:
-			if dragged_gizmo >= 0:
-				session.end_edit_transaction()
-				_refresh_history_buttons()
-				_refresh_preview()
-				preview_container.accept_event()
+				return
+		if button.button_index == MOUSE_BUTTON_LEFT and !button.pressed and dragged_gizmo >= 0:
+			session.end_edit_transaction()
+			_refresh_history_buttons()
+			_refresh_preview()
+			preview_container.accept_event()
 			dragged_gizmo = -1
+			return
+		if preview_camera_controller.handle_mouse_button(button):
+			preview_camera_controller.apply(preview_camera)
+			preview_container.accept_event()
 		return
-	if motion == null or dragged_gizmo < 0:
+	if motion == null:
 		return
-	var origin := preview_camera.project_ray_origin(pointer)
-	var direction := preview_camera.project_ray_normal(pointer)
-	var intersection = dragged_gizmo_plane.intersects_ray(origin, direction)
-	if intersection != null:
-		_set_dragged_gizmo_position(intersection)
+	if dragged_gizmo >= 0:
+		var origin := preview_camera.project_ray_origin(pointer)
+		var direction := preview_camera.project_ray_normal(pointer)
+		var intersection = dragged_gizmo_plane.intersects_ray(origin, direction)
+		if intersection != null:
+			_set_dragged_gizmo_position(intersection)
+			preview_container.accept_event()
+		return
+	if preview_camera_controller.handle_mouse_motion(motion):
+		preview_camera_controller.apply(preview_camera)
 		preview_container.accept_event()
 
 
@@ -1510,6 +1622,8 @@ func _pick_preview_gizmo(pointer: Vector2) -> int:
 	var best := -1
 	var best_distance := 18.0
 	for i in range(preview_gizmo_entries.size()):
+		if String(preview_gizmo_entries[i]["kind"]) != "thruster":
+			continue
 		var position := Vector3(preview_gizmo_entries[i]["position"])
 		if preview_camera.is_position_behind(position):
 			continue
@@ -1524,16 +1638,6 @@ func _set_dragged_gizmo_position(position: Vector3) -> void:
 	var entry: Dictionary = preview_gizmo_entries[dragged_gizmo]
 	var index := int(entry["index"])
 	match String(entry["kind"]):
-		"tilt":
-			var tilt := session.get_tilt_corners()
-			tilt[index] = position
-			session.set_tilt_corners(tilt)
-			_set_vector_value("tilt_%d" % index, position)
-		"wall":
-			var wall := session.get_wall_corners()
-			wall[index] = position
-			session.set_wall_corners(wall)
-			_set_vector_value("wall_%d" % index, position)
 		"thruster":
 			var thrusters: Array = session.get_thrusters()
 			var thruster: Dictionary = thrusters[index]

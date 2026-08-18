@@ -299,8 +299,8 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_s_boost_value", "stat_name", "value"), &MxtCarAuthoringSession::set_s_boost_value);
 	ClassDB::bind_method(D_METHOD("get_tilt_corners"), &MxtCarAuthoringSession::get_tilt_corners);
 	ClassDB::bind_method(D_METHOD("get_wall_corners"), &MxtCarAuthoringSession::get_wall_corners);
-	ClassDB::bind_method(D_METHOD("set_tilt_corners", "value"), &MxtCarAuthoringSession::set_tilt_corners);
-	ClassDB::bind_method(D_METHOD("set_wall_corners", "value"), &MxtCarAuthoringSession::set_wall_corners);
+	ClassDB::bind_method(D_METHOD("get_collision_measurements"), &MxtCarAuthoringSession::get_collision_measurements);
+	ClassDB::bind_method(D_METHOD("set_collision_measurements", "value"), &MxtCarAuthoringSession::set_collision_measurements);
 	ClassDB::bind_method(D_METHOD("get_state_flags"), &MxtCarAuthoringSession::get_state_flags);
 	ClassDB::bind_method(D_METHOD("set_state_flags", "value"), &MxtCarAuthoringSession::set_state_flags);
 	ClassDB::bind_method(D_METHOD("is_dirty"), &MxtCarAuthoringSession::is_dirty);
@@ -512,6 +512,12 @@ bool MxtCarAuthoringSession::validate_document(PackedStringArray &out_errors, Pa
 	}
 	for (const SimVec3 &corner : wall_corners) {
 		if (!std::isfinite(corner.x) || !std::isfinite(corner.y) || !std::isfinite(corner.z)) out_errors.push_back("wall corner is not finite");
+	}
+	if (out_errors.is_empty()) {
+		const Dictionary measurements = get_collision_measurements();
+		if (!static_cast<bool>(measurements.get("valid", false))) {
+			out_errors.push_back(measurements.get("error", "collision geometry is unsupported"));
+		}
 	}
 	if (!out_errors.is_empty()) return false;
 
@@ -783,26 +789,85 @@ PackedVector3Array MxtCarAuthoringSession::get_wall_corners() const
 	return output;
 }
 
-bool MxtCarAuthoringSession::set_tilt_corners(const PackedVector3Array &value)
+Dictionary MxtCarAuthoringSession::get_collision_measurements() const
 {
-	if (value.size() != 4) return false;
-	for (int64_t i = 0; i < value.size(); ++i) if (!value[i].is_finite()) return false;
-	push_undo_snapshot();
-	for (uint8_t i = 0; i < 4; ++i) tilt_corners[i] = SimVec3(value[i].x, value[i].y, value[i].z);
-	redo_history.clear();
-	dirty = true;
-	return true;
+	static constexpr float EPSILON = 0.0001f;
+	Dictionary result;
+	auto invalid = [&](const String &message) {
+		result["valid"] = false;
+		result["error"] = message;
+		return result;
+	};
+	for (uint8_t i = 0; i < 4; ++i) {
+		const SimVec3 &tilt = tilt_corners[i];
+		const SimVec3 &wall = wall_corners[i];
+		if (!std::isfinite(tilt.x) || !std::isfinite(tilt.y) || !std::isfinite(tilt.z) ||
+				!std::isfinite(wall.x) || !std::isfinite(wall.y) || !std::isfinite(wall.z)) {
+			return invalid("collision corners contain non-finite values");
+		}
+		const float x_sign = tilt.x < 0.0f ? -1.0f : 1.0f;
+		const float z_sign = tilt.z < 0.0f ? -1.0f : 1.0f;
+		if (std::abs(tilt.y) > EPSILON ||
+				std::abs(wall.x - (tilt.x + x_sign * 0.2f)) > EPSILON ||
+				std::abs(wall.y + 0.1f) > EPSILON ||
+				std::abs(wall.z - (tilt.z + z_sign * 0.2f)) > EPSILON) {
+			return invalid("wall corners do not use the fixed tilt-corner offset");
+		}
+	}
+	if (tilt_corners[0].z >= 0.0f || tilt_corners[1].z >= 0.0f ||
+			tilt_corners[2].z <= 0.0f || tilt_corners[3].z <= 0.0f ||
+			std::abs(tilt_corners[0].z - tilt_corners[1].z) > EPSILON ||
+			std::abs(tilt_corners[2].z - tilt_corners[3].z) > EPSILON ||
+			std::abs(std::abs(tilt_corners[0].x) - std::abs(tilt_corners[1].x)) > EPSILON ||
+			std::abs(std::abs(tilt_corners[2].x) - std::abs(tilt_corners[3].x)) > EPSILON ||
+			tilt_corners[0].x * tilt_corners[1].x >= 0.0f ||
+			tilt_corners[2].x * tilt_corners[3].x >= 0.0f) {
+		return invalid("tilt corners are not symmetric front and rear pairs");
+	}
+	result["valid"] = true;
+	result["front_width"] = std::abs(tilt_corners[0].x) * 2.0f;
+	result["rear_width"] = std::abs(tilt_corners[2].x) * 2.0f;
+	result["front_forward_extent"] = -tilt_corners[0].z;
+	result["rear_backward_extent"] = tilt_corners[2].z;
+	return result;
 }
 
-bool MxtCarAuthoringSession::set_wall_corners(const PackedVector3Array &value)
+Dictionary MxtCarAuthoringSession::set_collision_measurements(const Dictionary &value)
 {
-	if (value.size() != 4) return false;
-	for (int64_t i = 0; i < value.size(); ++i) if (!value[i].is_finite()) return false;
+	const double front_width = value.get("front_width", 0.0);
+	const double rear_width = value.get("rear_width", 0.0);
+	const double front_extent = value.get("front_forward_extent", 0.0);
+	const double rear_extent = value.get("rear_backward_extent", 0.0);
+	if (!std::isfinite(front_width) || !std::isfinite(rear_width) ||
+			!std::isfinite(front_extent) || !std::isfinite(rear_extent) ||
+			front_width <= 0.0 || rear_width <= 0.0 || front_extent <= 0.0 || rear_extent <= 0.0) {
+		return result_dictionary(false, single_error("collision measurements must be finite positive values"), {});
+	}
+	const double max_component = static_cast<double>(std::numeric_limits<float>::max()) - 0.2;
+	if (front_width * 0.5 > max_component || rear_width * 0.5 > max_component ||
+			front_extent > max_component || rear_extent > max_component) {
+		return result_dictionary(false, single_error("collision measurements exceed the runtime numeric format"), {});
+	}
 	push_undo_snapshot();
-	for (uint8_t i = 0; i < 4; ++i) wall_corners[i] = SimVec3(value[i].x, value[i].y, value[i].z);
+	const float front_half_width = static_cast<float>(front_width * 0.5);
+	const float rear_half_width = static_cast<float>(rear_width * 0.5);
+	const float front_z = static_cast<float>(-front_extent);
+	const float rear_z = static_cast<float>(rear_extent);
+	tilt_corners[0] = SimVec3(front_half_width, 0.0f, front_z);
+	tilt_corners[1] = SimVec3(-front_half_width, 0.0f, front_z);
+	tilt_corners[2] = SimVec3(rear_half_width, 0.0f, rear_z);
+	tilt_corners[3] = SimVec3(-rear_half_width, 0.0f, rear_z);
+	for (uint8_t i = 0; i < 4; ++i) {
+		const float x_sign = tilt_corners[i].x < 0.0f ? -1.0f : 1.0f;
+		const float z_sign = tilt_corners[i].z < 0.0f ? -1.0f : 1.0f;
+		wall_corners[i] = SimVec3(
+				tilt_corners[i].x + x_sign * 0.2f,
+				-0.1f,
+				tilt_corners[i].z + z_sign * 0.2f);
+	}
 	redo_history.clear();
 	dirty = true;
-	return true;
+	return result_dictionary(true, {}, {});
 }
 
 int64_t MxtCarAuthoringSession::get_state_flags() const { return state_flags; }

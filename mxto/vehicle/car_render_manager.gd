@@ -78,6 +78,18 @@ func update_livery_colours(livery: CarLivery) -> void:
 			continue
 		_apply_livery_to_material(node.material_override, livery)
 
+func set_material_diagnostic(mode: int) -> void:
+	for archetype in archetypes:
+		if !archetype.has(PASS_MAIN):
+			continue
+		var pass_data: Dictionary = archetype[PASS_MAIN]
+		var node := pass_data.get("node", null) as MultiMeshInstance3D
+		if node == null:
+			continue
+		var material := node.material_override as ShaderMaterial
+		if material != null:
+			material.set_shader_parameter("diagnostic_mode", clampi(mode, 0, 4))
+
 func _configure_archetypes(definitions: Array, player_settings: Array = []) -> void:
 	car_archetype_indices.resize(definitions.size())
 	car_slots.resize(definitions.size())

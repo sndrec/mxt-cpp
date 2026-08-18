@@ -14,6 +14,7 @@ uniform float livery_colour_strength = 0.0;
 uniform vec3 livery_primary_colour : source_color = vec3(1.0, 1.0, 1.0);
 uniform vec3 livery_secondary_colour : source_color = vec3(1.0, 1.0, 1.0);
 uniform vec3 livery_accent_colour : source_color = vec3(1.0, 1.0, 1.0);
+uniform int diagnostic_mode = 0;
 
 varying vec2 use_screen_pixel;
 varying vec3 hatch_normal;
@@ -87,8 +88,17 @@ void fragment() {
 		livery_accent_colour * mask_weights.b;
 	vec3 painted_colour = base_value * paint_colour * 1.25;
 	vec3 final_colour = mix(base_colour, painted_colour, clamp(livery_colour_strength, 0.0, 1.0) * paint_coverage);
-	ALBEDO = final_colour;// * fres;
-	EMISSION = in_overlay_colour + COLOR.rgb;
+	if (diagnostic_mode > 0) {
+		if (diagnostic_mode == 1) final_colour = base_colour;
+		else if (diagnostic_mode == 2) final_colour = normal_1 * 0.5 + 0.5;
+		else if (diagnostic_mode == 3) final_colour = paint_mask;
+		else final_colour = vec3(1.0, 0.1, 0.75);
+		ALBEDO = vec3(0.0);
+		EMISSION = final_colour;
+	} else {
+		ALBEDO = final_colour;// * fres;
+		EMISSION = in_overlay_colour + COLOR.rgb;
+	}
 }
 
 void light() {

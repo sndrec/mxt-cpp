@@ -106,8 +106,8 @@ public:
 	bool set_s_boost_value(const String &stat_name, double value);
 	PackedVector3Array get_tilt_corners() const;
 	PackedVector3Array get_wall_corners() const;
-	bool set_tilt_corners(const PackedVector3Array &value);
-	bool set_wall_corners(const PackedVector3Array &value);
+	Dictionary get_collision_measurements() const;
+	Dictionary set_collision_measurements(const Dictionary &value);
 	int64_t get_state_flags() const;
 	void set_state_flags(int64_t value);
 	bool is_dirty() const;

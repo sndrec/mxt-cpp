@@ -11,10 +11,10 @@ const CustomStampPaletteCatalog = preload("res://vehicle/customization/custom_st
 const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store.gd")
 const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
 const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
 
 const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
-const PREVIEW_PAN_LIMIT := 4.0
 const PREVIEW_TARGET_HEIGHT := 0.5
 
 @onready var machine_setting_slider: HSlider = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingSlider
@@ -127,14 +127,7 @@ var preview_vehicle_base_transform := Transform3D.IDENTITY
 var preview_render_manager: CarRenderManager
 var preview_edit_render_manager: CarRenderManager
 var preview_above_render_manager: CarRenderManager
-var preview_yaw := deg_to_rad(25.0)
-var preview_pitch := deg_to_rad(-9.0)
-var preview_pan := Vector3.ZERO
-var preview_distance := 22.0
-var preview_drag_button := 0
-var preview_drag_start := Vector2.ZERO
-var preview_drag_last := Vector2.ZERO
-var preview_drag_moved := false
+var preview_camera_controller := GaragePreviewCameraControllerClass.new()
 var preview_has_transform_override := false
 var preview_transform_override := Transform3D.IDENTITY
 var preview_has_camera_override := false
@@ -635,6 +628,7 @@ func _setup_garage_preview() -> void:
 	preview_container.name = "GaragePreviewViewport"
 	preview_container.stretch = true
 	preview_container.mouse_filter = Control.MOUSE_FILTER_STOP
+	preview_container.tooltip_text = "Left drag: orbit. Right, middle, or Shift+left drag: pan. Wheel: zoom. Double-click: reset view."
 	preview_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	car_preview_space.add_child(preview_container)
 	car_preview_space.move_child(preview_container, 0)
@@ -673,6 +667,7 @@ func _setup_garage_preview() -> void:
 	preview_camera.current = true
 	preview_viewport.add_child(preview_camera)
 	preview_camera.fov = 38.0
+	preview_camera_controller.configure_frame(Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0), 22.0, true)
 	_setup_stamp_edit_overlay()
 	_apply_preview_camera()
 	_set_garage_preview_active(visible)
@@ -1811,14 +1806,14 @@ func _focus_preview_on_stamp(stamp: CarLiveryStamp) -> void:
 	preview_vehicle.transform = _preview_vehicle_scene_transform()
 	var projector := preview_vehicle.global_transform * Transform3D(stamp.local_basis, stamp.local_origin)
 	var view_direction := projector.basis.z.normalized()
-	preview_yaw = atan2(view_direction.x, view_direction.z)
+	preview_camera_controller.yaw = atan2(view_direction.x, view_direction.z)
 	var stamp_elevation := asin(clampf(view_direction.y, -1.0, 1.0))
-	preview_pitch = clampf(-stamp_elevation, deg_to_rad(-90.0), deg_to_rad(55.0))
-	var plane_basis := _preview_view_plane_basis(_preview_camera_offset())
+	preview_camera_controller.pitch = clampf(-stamp_elevation, deg_to_rad(-90.0), deg_to_rad(55.0))
+	var plane_basis := preview_camera_controller.view_plane_basis(preview_camera_controller.camera_offset())
 	var relative_origin := projector.origin - Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0)
-	preview_pan = Vector3(
-		clampf(relative_origin.dot(plane_basis.x), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
-		clampf(relative_origin.dot(plane_basis.y), -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT),
+	preview_camera_controller.pan = Vector3(
+		clampf(relative_origin.dot(plane_basis.x), -GaragePreviewCameraControllerClass.PAN_LIMIT, GaragePreviewCameraControllerClass.PAN_LIMIT),
+		clampf(relative_origin.dot(plane_basis.y), -GaragePreviewCameraControllerClass.PAN_LIMIT, GaragePreviewCameraControllerClass.PAN_LIMIT),
 		0.0
 	)
 	preview_has_camera_override = false
@@ -1896,7 +1891,7 @@ func _on_stamp_edit_overlay_gui_input(event: InputEvent) -> void:
 		return
 	var mouse_button := event as InputEventMouseButton
 	if mouse_button != null:
-		var is_camera_release := !mouse_button.pressed and preview_drag_button == mouse_button.button_index
+		var is_camera_release := !mouse_button.pressed and preview_camera_controller.drag_button == mouse_button.button_index
 		if !is_camera_release and !_stamp_edit_allows_camera_input(mouse_button.position):
 			return
 		preview_has_camera_override = false
@@ -1907,14 +1902,14 @@ func _on_stamp_edit_overlay_gui_input(event: InputEvent) -> void:
 		return
 	var motion := event as InputEventMouseMotion
 	if motion != null:
-		if preview_drag_button == 0 and !_stamp_edit_allows_camera_input(motion.position):
+		if preview_camera_controller.drag_button == 0 and !_stamp_edit_allows_camera_input(motion.position):
 			return
 		preview_has_camera_override = false
-		var before_yaw := preview_yaw
-		var before_pitch := preview_pitch
-		var before_pan := preview_pan
+		var before_yaw := preview_camera_controller.yaw
+		var before_pitch := preview_camera_controller.pitch
+		var before_pan := preview_camera_controller.pan
 		_handle_preview_mouse_motion(motion, true)
-		if !is_equal_approx(before_yaw, preview_yaw) or !is_equal_approx(before_pitch, preview_pitch) or !before_pan.is_equal_approx(preview_pan):
+		if !is_equal_approx(before_yaw, preview_camera_controller.yaw) or !is_equal_approx(before_pitch, preview_camera_controller.pitch) or !before_pan.is_equal_approx(preview_camera_controller.pan):
 			_apply_edit_stamp_from_camera()
 		stamp_edit_overlay.accept_event()
 
@@ -2011,48 +2006,16 @@ func _on_preview_gui_input(event: InputEvent) -> void:
 func _handle_preview_mouse_button(event: InputEventMouseButton, allow_edit_camera := false) -> void:
 	if stamp_ui_mode == StampUiMode.EDITING and !allow_edit_camera:
 		return
-	if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-		preview_distance = maxf(2.5, preview_distance * 0.9)
+	if preview_camera_controller.handle_mouse_button(event):
 		_apply_preview_camera()
-		preview_container.accept_event()
-		return
-	if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-		preview_distance = minf(44.0, preview_distance * 1.1)
-		_apply_preview_camera()
-		preview_container.accept_event()
-		return
-	if event.button_index != MOUSE_BUTTON_LEFT and event.button_index != MOUSE_BUTTON_RIGHT and event.button_index != MOUSE_BUTTON_MIDDLE:
-		return
-	if event.pressed:
-		preview_drag_button = event.button_index
-		preview_drag_start = event.position
-		preview_drag_last = event.position
-		preview_drag_moved = false
-		preview_container.accept_event()
-		return
-	if preview_drag_button == event.button_index:
-		preview_drag_button = 0
 		preview_container.accept_event()
 
 func _handle_preview_mouse_motion(event: InputEventMouseMotion, allow_edit_camera := false) -> void:
 	if stamp_ui_mode == StampUiMode.EDITING and !allow_edit_camera:
 		return
-	if preview_drag_button == 0:
-		return
-	var delta := event.position - preview_drag_last
-	preview_drag_last = event.position
-	if event.position.distance_to(preview_drag_start) > 4.0:
-		preview_drag_moved = true
-	if preview_drag_button == MOUSE_BUTTON_LEFT and !event.shift_pressed:
-		preview_yaw += delta.x * -0.004
-		preview_pitch = clampf(preview_pitch + delta.y * -0.004, deg_to_rad(-89.0), deg_to_rad(55.0))
-	else:
-		var pan_scale := preview_distance * 0.0008
-		preview_pan.x -= delta.x * pan_scale
-		preview_pan.y += delta.y * pan_scale
-		_clamp_preview_pan()
-	_apply_preview_camera()
-	preview_container.accept_event()
+	if preview_camera_controller.handle_mouse_motion(event):
+		_apply_preview_camera()
+		preview_container.accept_event()
 
 func _apply_preview_camera() -> void:
 	if preview_vehicle != null:
@@ -2062,47 +2025,8 @@ func _apply_preview_camera() -> void:
 	if preview_has_camera_override:
 		preview_camera.global_transform = preview_camera_override
 	else:
-		_clamp_preview_pan()
-		var camera_offset := _preview_camera_offset()
-		var target := _preview_pan_target(camera_offset)
-		preview_camera.position = target + camera_offset
-		preview_camera.basis = _preview_camera_basis(camera_offset)
+		preview_camera_controller.apply(preview_camera)
 	_submit_preview_render()
-
-func _preview_camera_offset() -> Vector3:
-	var yaw_basis := Basis(Vector3.UP, preview_yaw)
-	var pitch_basis := Basis(yaw_basis.x.normalized(), preview_pitch)
-	return pitch_basis * (yaw_basis * Vector3(0.0, 0.0, preview_distance))
-
-func _preview_camera_basis(camera_offset: Vector3) -> Basis:
-	var view_back := camera_offset.normalized()
-	var right := Vector3.UP.cross(view_back)
-	if right.length_squared() <= 0.0001:
-		right = Vector3.RIGHT
-	else:
-		right = right.normalized()
-	var up := view_back.cross(right).normalized()
-	return Basis(right, up, view_back)
-
-func _preview_pan_target(camera_offset: Vector3) -> Vector3:
-	var plane_basis := _preview_view_plane_basis(camera_offset)
-	return Vector3(0.0, PREVIEW_TARGET_HEIGHT, 0.0) \
-		+ plane_basis.x * preview_pan.x + plane_basis.y * preview_pan.y
-
-func _preview_view_plane_basis(camera_offset: Vector3) -> Basis:
-	var view_back := camera_offset.normalized()
-	var right := Vector3.UP.cross(view_back)
-	if right.length_squared() <= 0.0001:
-		right = Vector3.RIGHT
-	else:
-		right = right.normalized()
-	var up := view_back.cross(right).normalized()
-	return Basis(right, up, view_back)
-
-func _clamp_preview_pan() -> void:
-	preview_pan.x = clampf(preview_pan.x, -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT)
-	preview_pan.y = clampf(preview_pan.y, -PREVIEW_PAN_LIMIT, PREVIEW_PAN_LIMIT)
-	preview_pan.z = 0.0
 
 func _place_stamp_at_preview_pos(viewport_pos: Vector2) -> void:
 	return
