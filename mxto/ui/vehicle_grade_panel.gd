@@ -9,12 +9,12 @@ class_name VehicleGradePanel extends VBoxContainer
 
 var category_value_labels: Dictionary = {}
 const CATEGORY_HELP := {
-	"Speed": "Settled straight-line speed without boost.",
-	"Acceleration": "Early speed, fixed-speed milestones, and early distance—not merely time to the machine's own top speed.",
-	"Cornering": "Steering strength and speed retention in normal turns and ordinary drifts. Turbo Slide modifiers are not used.",
-	"Grip": "Base resistance to sliding and ability to re-grip. The temporary grip caused by pressing the accelerator is deliberately excluded.",
+	"Speed": "Settled unboosted straight-line speed.",
+	"Acceleration": "Early-launch speed, fixed-speed milestones, and distance covered during the first five seconds.",
+	"Cornering": "Steering strength and speed retention in normal turns and ordinary drifts.",
+	"Grip": "Base resistance to entering a slide and the ability to settle and re-grip afterward.",
 	"Booster": "Absolute manual-boost speed and sustained advantage when boosting from settled top speed.",
-	"Body": "Base maximum energy and damage resistance. Collision geometry and knockback are not folded into this grade.",
+	"Body": "Base maximum energy and resistance to incoming damage.",
 	"Air Control": "Speed retention and controlled heading change during a fixed jump.",
 }
 
