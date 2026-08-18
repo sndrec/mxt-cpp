@@ -110,6 +110,7 @@ var workshop_pending_package: Dictionary = {}
 var workshop_progress_update_msec := 0
 var vector_controls: Dictionary = {}
 var updating_controls := false
+var curve_gesture_active := false
 
 
 func _ready() -> void:
@@ -292,6 +293,9 @@ func _connect_controls() -> void:
 	advanced_mode.toggled.connect(_on_advanced_mode_toggled)
 	layer_option.item_selected.connect(_on_layer_selected)
 	stat_option.item_selected.connect(_on_stat_selected)
+	curve_graph.edit_started.connect(_begin_curve_gesture)
+	curve_graph.curve_preview_changed.connect(_preview_curve_gesture)
+	curve_graph.edit_cancelled.connect(_cancel_curve_gesture)
 	curve_graph.curve_committed.connect(_commit_curve)
 	curve_graph.key_selected.connect(_show_selected_key)
 	$Workspace/StatsColumn/CurveActions/Apply.pressed.connect(_apply_selected_key)
@@ -772,7 +776,7 @@ func _open_workshop_page() -> void:
 
 func _process(_delta: float) -> void:
 	var now := Time.get_ticks_msec()
-	if draft_initialized and (metadata_dirty or session.is_dirty()):
+	if draft_initialized and !curve_gesture_active and (metadata_dirty or session.is_dirty()):
 		if autosave_due_msec == 0:
 			autosave_due_msec = now + AUTOSAVE_DEBOUNCE_MSEC
 			_update_autosave_status("Unsaved changes")
@@ -934,6 +938,8 @@ func _autosave_draft() -> bool:
 
 
 func _flush_autosave() -> bool:
+	if curve_gesture_active:
+		curve_graph.cancel_active_edit()
 	if !draft_initialized:
 		return true
 	if metadata_dirty or session.is_dirty() or !autosave_error.is_empty():
@@ -1207,7 +1213,7 @@ func _refresh_selected_stat_ui() -> void:
 	authoring_mode_indicator.text = "Derived — follows base machine stats" if derived else ("Custom special-state value" if special else "Base machine-setting curve")
 	make_custom_button.visible = derived
 	revert_derived_button.visible = special and !derived
-	curve_graph.mouse_filter = Control.MOUSE_FILTER_IGNORE if derived else Control.MOUSE_FILTER_STOP
+	curve_graph.set_display_context(derived or current_layer == "s_boost", derived, String(schema.get("unit", "scalar")))
 	var editable := !derived
 	$Workspace/StatsColumn/CurveActions/Apply.disabled = !editable
 	$Workspace/StatsColumn/CurveActions/Add.disabled = !editable or current_layer == "s_boost"
@@ -1269,8 +1275,36 @@ func _commit_curve(keys: Array) -> void:
 	if current_layer == "s_boost" or _selected_special_is_derived():
 		return
 	var result: Dictionary = session.set_curve(current_layer, current_stat, keys)
+	if bool(result.get("valid", false)):
+		session.end_edit_transaction()
+	else:
+		session.cancel_edit_transaction()
+	curve_gesture_active = false
 	_show_diagnostics(result)
 	curve_graph.show_curve(session, current_layer, current_stat)
+	_refresh_selected_stat_ui()
+	_refresh_history_buttons()
+	_refresh_samples()
+
+
+func _begin_curve_gesture() -> void:
+	curve_gesture_active = true
+	session.begin_edit_transaction()
+
+
+func _preview_curve_gesture(keys: Array) -> void:
+	if current_layer == "s_boost" or _selected_special_is_derived():
+		return
+	var result: Dictionary = session.set_curve(current_layer, current_stat, keys)
+	if bool(result.get("valid", false)):
+		_refresh_samples()
+
+
+func _cancel_curve_gesture() -> void:
+	session.cancel_edit_transaction()
+	curve_gesture_active = false
+	curve_graph.show_curve(session, current_layer, current_stat)
+	_refresh_selected_stat_ui()
 	_refresh_history_buttons()
 	_refresh_samples()
 

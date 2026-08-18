@@ -317,6 +317,7 @@ void MxtCarAuthoringSession::_bind_methods()
 	ClassDB::bind_method(D_METHOD("can_redo"), &MxtCarAuthoringSession::can_redo);
 	ClassDB::bind_method(D_METHOD("begin_edit_transaction"), &MxtCarAuthoringSession::begin_edit_transaction);
 	ClassDB::bind_method(D_METHOD("end_edit_transaction"), &MxtCarAuthoringSession::end_edit_transaction);
+	ClassDB::bind_method(D_METHOD("cancel_edit_transaction"), &MxtCarAuthoringSession::cancel_edit_transaction);
 	ClassDB::bind_method(D_METHOD("undo"), &MxtCarAuthoringSession::undo);
 	ClassDB::bind_method(D_METHOD("redo"), &MxtCarAuthoringSession::redo);
 	ClassDB::bind_method(D_METHOD("import_model", "source_path", "draft_root"), &MxtCarAuthoringSession::import_model);
@@ -870,7 +871,7 @@ Dictionary MxtCarAuthoringSession::set_curve(const String &layer_name, const Str
 	push_undo_snapshot();
 	curve_at(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat)) = std::move(replacement);
 	if (layer == CAR_CURVE_BASE) regenerate_all_derived_pairs();
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return validate();
 }
@@ -899,7 +900,7 @@ bool MxtCarAuthoringSession::set_s_boost_value(const String &stat_name, double v
 	if (is_pair_derived(CAR_AUTHORING_S_BOOST, static_cast<uint16_t>(stat))) return false;
 	push_undo_snapshot();
 	s_boost_values[stat] = static_cast<float>(value);
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return true;
 }
@@ -922,7 +923,7 @@ Dictionary MxtCarAuthoringSession::make_special_custom(const String &layer_name,
 	if (!is_pair_derived(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat))) return validate();
 	push_undo_snapshot();
 	set_pair_derived(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat), false);
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return validate();
 }
@@ -938,7 +939,7 @@ Dictionary MxtCarAuthoringSession::revert_special_derived(const String &layer_na
 	push_undo_snapshot();
 	set_pair_derived(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat), true);
 	regenerate_derived_pair(static_cast<uint8_t>(layer), static_cast<uint16_t>(stat));
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return validate();
 }
@@ -1003,7 +1004,7 @@ Dictionary MxtCarAuthoringSession::set_authoring_intent(const Dictionary &value)
 	push_undo_snapshot();
 	derived_pair_mask = parsed;
 	regenerate_all_derived_pairs();
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return validate();
 }
@@ -1098,7 +1099,7 @@ Dictionary MxtCarAuthoringSession::set_collision_measurements(const Dictionary &
 				-0.1f,
 				tilt_corners[i].z + z_sign * 0.2f);
 	}
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return result_dictionary(true, {}, {});
 }
@@ -1109,7 +1110,7 @@ void MxtCarAuthoringSession::set_state_flags(int64_t value)
 {
 	push_undo_snapshot();
 	state_flags = static_cast<uint32_t>(value);
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 }
 
@@ -1123,6 +1124,7 @@ bool MxtCarAuthoringSession::capture_history_snapshot(HistorySnapshot &out_snaps
 	String error;
 	if (!serialize_document(out_snapshot.properties, error)) return false;
 	out_snapshot.derived_pair_mask = derived_pair_mask;
+	out_snapshot.dirty = dirty;
 	out_snapshot.model_path = model_path;
 	out_snapshot.model_translation = model_translation;
 	out_snapshot.model_rotation_degrees = model_rotation_degrees;
@@ -1153,7 +1155,12 @@ void MxtCarAuthoringSession::push_undo_snapshot()
 	if (capture_history_snapshot(snapshot)) append_undo_snapshot(std::move(snapshot));
 }
 
-bool MxtCarAuthoringSession::restore_history_snapshot(const HistorySnapshot &snapshot)
+void MxtCarAuthoringSession::clear_redo_after_mutation()
+{
+	if (edit_transaction_depth == 0) redo_history.clear();
+}
+
+bool MxtCarAuthoringSession::restore_history_snapshot(const HistorySnapshot &snapshot, bool mark_dirty)
 {
 	Ref<MxtCarAuthoringSession> parsed;
 	parsed.instantiate();
@@ -1176,7 +1183,7 @@ bool MxtCarAuthoringSession::restore_history_snapshot(const HistorySnapshot &sna
 	normal_surface = snapshot.normal_surface;
 	paint_mask_surface = snapshot.paint_mask_surface;
 	thrusters = snapshot.thrusters;
-	dirty = true;
+	dirty = mark_dirty ? true : snapshot.dirty;
 	return true;
 }
 
@@ -1190,9 +1197,19 @@ void MxtCarAuthoringSession::end_edit_transaction()
 	if (edit_transaction_depth == 0) return;
 	if (--edit_transaction_depth == 0 && transaction_snapshot_valid) {
 		append_undo_snapshot(std::move(transaction_snapshot));
+		redo_history.clear();
 		transaction_snapshot = HistorySnapshot();
 		transaction_snapshot_valid = false;
 	}
+}
+
+void MxtCarAuthoringSession::cancel_edit_transaction()
+{
+	if (edit_transaction_depth == 0) return;
+	if (transaction_snapshot_valid) restore_history_snapshot(transaction_snapshot, false);
+	transaction_snapshot = HistorySnapshot();
+	transaction_snapshot_valid = false;
+	edit_transaction_depth = 0;
 }
 
 bool MxtCarAuthoringSession::undo()
@@ -1493,7 +1510,7 @@ bool MxtCarAuthoringSession::set_model_transform(const Dictionary &value)
 	model_translation = translation;
 	model_rotation_degrees = rotation;
 	model_scale = scale;
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return true;
 }
@@ -1597,7 +1614,7 @@ bool MxtCarAuthoringSession::set_material_setup(const Dictionary &value)
 	albedo_surface = static_cast<int32_t>(new_albedo);
 	normal_surface = static_cast<int32_t>(new_normal);
 	paint_mask_surface = static_cast<int32_t>(new_paint_mask);
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return true;
 }
@@ -1637,7 +1654,7 @@ bool MxtCarAuthoringSession::set_thrusters(const Array &value)
 	}
 	push_undo_snapshot();
 	thrusters = std::move(replacement);
-	redo_history.clear();
+	clear_redo_after_mutation();
 	dirty = true;
 	return true;
 }

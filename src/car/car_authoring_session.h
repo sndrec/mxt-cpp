@@ -57,6 +57,7 @@ private:
 	struct HistorySnapshot {
 		PackedByteArray properties;
 		std::array<uint64_t, AUTHORING_MASK_WORD_COUNT> derived_pair_mask{};
+		bool dirty = false;
 		String model_path;
 		Vector3 model_translation;
 		Vector3 model_rotation_degrees;
@@ -85,7 +86,8 @@ private:
 	bool capture_history_snapshot(HistorySnapshot &out_snapshot) const;
 	void append_undo_snapshot(HistorySnapshot &&snapshot);
 	void push_undo_snapshot();
-	bool restore_history_snapshot(const HistorySnapshot &snapshot);
+	void clear_redo_after_mutation();
+	bool restore_history_snapshot(const HistorySnapshot &snapshot, bool mark_dirty = true);
 	static bool is_safe_draft_root(const String &path, String &out_global_path);
 	Curve &curve_at(uint8_t layer, uint16_t stat);
 	const Curve &curve_at(uint8_t layer, uint16_t stat) const;
@@ -136,6 +138,7 @@ public:
 	bool can_redo() const;
 	void begin_edit_transaction();
 	void end_edit_transaction();
+	void cancel_edit_transaction();
 	bool undo();
 	bool redo();
 	Dictionary import_model(const String &source_path, const String &draft_root);
