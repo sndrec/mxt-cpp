@@ -77,7 +77,8 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var stamp_edit_square: Panel = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/StampEditSquare
 @onready var stamp_edit_confirm_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Confirm
 @onready var stamp_edit_cancel_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Cancel
-@onready var vehicle_editor: VehicleEditor = get_node("Container/SettingsTabs/Car Creator")
+@onready var vehicle_editor_tab: ScrollContainer = get_node("Container/SettingsTabs/Car Creator")
+@onready var vehicle_editor: VehicleEditor = get_node("Container/SettingsTabs/Car Creator/Editor")
 @onready var leaderboard_browser: LeaderboardBrowser = $Container/SettingsTabs/Leaderboards
 
 var game_manager: GameManager
@@ -470,7 +471,7 @@ func _on_sticker_selected(index: int, slot: int) -> void:
 	_set_sticker_slot_value(slot, index)
 
 func _on_close_pressed() -> void:
-	if settings_tab_container.current_tab == vehicle_editor.get_index() and !vehicle_editor.flush_pending_changes():
+	if settings_tab_container.current_tab == vehicle_editor_tab.get_index() and !vehicle_editor.flush_pending_changes():
 		return
 	_save_settings()
 	_set_garage_preview_active(false)
@@ -491,7 +492,7 @@ func _on_settings_tab_changed(tab: int) -> void:
 		restoring_settings_tab = false
 		previous_settings_tab = tab
 		return
-	if previous_settings_tab == vehicle_editor.get_index() and tab != previous_settings_tab \
+	if previous_settings_tab == vehicle_editor_tab.get_index() and tab != previous_settings_tab \
 			and !vehicle_editor.flush_pending_changes():
 		restoring_settings_tab = true
 		settings_tab_container.current_tab = previous_settings_tab
@@ -531,7 +532,7 @@ func restore_after_test_drive(saved_settings: Dictionary) -> void:
 	player_settings.from_dict(saved_settings)
 	_load_car_defs()
 	_update_controls()
-	settings_tab_container.current_tab = vehicle_editor.get_index()
+	settings_tab_container.current_tab = vehicle_editor_tab.get_index()
 	show()
 	_set_garage_preview_active(true)
 

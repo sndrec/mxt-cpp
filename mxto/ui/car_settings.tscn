@@ -167,10 +167,16 @@ visible = false
 layout_mode = 2
 metadata/_tab_index = 1
 
-[node name="Car Creator" parent="Container/SettingsTabs" instance=ExtResource("2_vehicle_editor")]
+[node name="Car Creator" type="ScrollContainer" parent="Container/SettingsTabs"]
 visible = false
 layout_mode = 2
+horizontal_scroll_mode = 0
+follow_focus = true
 metadata/_tab_index = 2
+
+[node name="Editor" parent="Container/SettingsTabs/Car Creator" instance=ExtResource("2_vehicle_editor")]
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="Subscribed Content" parent="Container/SettingsTabs" instance=ExtResource("3_workshop")]
 visible = false

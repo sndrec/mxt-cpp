@@ -9,7 +9,7 @@
 layout_mode = 2
 script = ExtResource("1_editor")
 
-[node name="Toolbar" type="HBoxContainer" parent="."]
+[node name="Toolbar" type="HFlowContainer" parent="."]
 layout_mode = 2
 
 [node name="NewDraft" type="Button" parent="Toolbar"]
