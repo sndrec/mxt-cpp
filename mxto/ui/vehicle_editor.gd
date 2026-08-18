@@ -22,7 +22,7 @@ const PERFORMANCE_DEBOUNCE_MSEC := 120
 @onready var draft_option: OptionButton = $Toolbar/DraftOption
 @onready var title_input: LineEdit = $Metadata/Title
 @onready var author_input: LineEdit = $Metadata/Author
-@onready var description_input: LineEdit = $Metadata/Description
+@onready var description_input: TextEdit = $Metadata/Description
 @onready var preview_container: SubViewportContainer = $Workspace/VisualColumn/Preview
 @onready var preview_viewport: SubViewport = $Workspace/VisualColumn/Preview/Viewport
 @onready var visual_status: Label = $Workspace/VisualColumn/VisualStatus
@@ -75,6 +75,11 @@ const PERFORMANCE_DEBOUNCE_MSEC := 120
 @onready var workshop_publish_button: Button = $Toolbar/PublishWorkshop
 @onready var autosave_status: Label = $Toolbar/AutosaveStatus
 @onready var archive_draft_dialog: ConfirmationDialog = $ArchiveDraftDialog
+@onready var workshop_capture_button: Button = $Workshop/CapturePreview
+@onready var publish_review_dialog: ConfirmationDialog = $PublishReviewDialog
+@onready var publish_review_summary: RichTextLabel = $PublishReviewDialog/Review/Summary
+@onready var publish_review_preview: TextureRect = $PublishReviewDialog/Review/Preview
+@onready var publish_changelog: TextEdit = $PublishReviewDialog/Review/Changelog
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
@@ -116,6 +121,7 @@ var updating_controls := false
 var curve_gesture_active := false
 var performance_analyzer := MxtCarPerformanceAnalyzer.new()
 var performance_due_msec := 0
+var workshop_preview_captured := false
 
 
 func _ready() -> void:
@@ -293,6 +299,9 @@ func _connect_controls() -> void:
 	export_package_dialog.file_selected.connect(_export_package)
 	template_vehicle_dialog.confirmed.connect(_import_selected_vehicle_template)
 	archive_draft_dialog.confirmed.connect(_archive_current_draft)
+	workshop_capture_button.pressed.connect(_capture_workshop_preview)
+	publish_review_dialog.confirmed.connect(_confirm_publish_workshop)
+	diagnostics.meta_clicked.connect(_focus_diagnostic_category)
 	search_input.text_changed.connect(func(_value): _refresh_stat_options())
 	category_option.item_selected.connect(func(_index): _refresh_stat_options())
 	advanced_mode.toggled.connect(_on_advanced_mode_toggled)
@@ -339,7 +348,7 @@ func _connect_controls() -> void:
 			controls_value.value_changed.connect(func(_value): _apply_visual_controls())
 	title_input.text_changed.connect(func(_value): _mark_dirty())
 	author_input.text_changed.connect(func(_value): _mark_dirty())
-	description_input.text_changed.connect(func(_value): _mark_dirty())
+	description_input.text_changed.connect(_mark_dirty)
 
 
 func _new_draft() -> bool:
@@ -359,6 +368,7 @@ func _new_draft() -> bool:
 	description_input.text = ""
 	updating_controls = false
 	workshop_published_file_id = 0
+	workshop_preview_captured = false
 	metadata_dirty = true
 	autosave_error = ""
 	_refresh_workshop_controls()
@@ -424,6 +434,7 @@ func _open_selected_draft() -> void:
 	author_input.text = String(result.get("author_name", "Creator"))
 	updating_controls = false
 	workshop_published_file_id = int(result.get("workshop_published_file_id", 0))
+	workshop_preview_captured = FileAccess.file_exists(_workshop_preview_path())
 	metadata_dirty = false
 	autosave_error = ""
 	_refresh_workshop_controls()
@@ -687,15 +698,16 @@ func _refresh_workshop_controls() -> void:
 		and game_manager.steam_service.is_initialized()
 	workshop_publish_button.disabled = workshop_request_id != 0 or !steam_available
 	workshop_page_button.disabled = workshop_request_id != 0 or workshop_published_file_id <= 0
+	workshop_capture_button.disabled = workshop_request_id != 0
 	if workshop_request_id != 0:
 		return
 	if !steam_available:
 		workshop_status.text = "Steam Workshop is unavailable"
 		return
 	if workshop_published_file_id > 0:
-		workshop_status.text = "Workshop item %d" % workshop_published_file_id
+		workshop_status.text = "Workshop item %d · %s" % [workshop_published_file_id, "preview captured" if workshop_preview_captured else "capture preview before update"]
 	else:
-		workshop_status.text = "Not published"
+		workshop_status.text = "Not published · %s" % ("preview captured" if workshop_preview_captured else "capture preview before publishing")
 
 
 func _publish_workshop() -> void:
@@ -704,7 +716,10 @@ func _publish_workshop() -> void:
 	if game_manager == null or game_manager.steam_service == null or !game_manager.steam_service.is_initialized():
 		workshop_status.text = "Steam Workshop is unavailable"
 		return
-	var built := _build_package()
+	if !workshop_preview_captured or !FileAccess.file_exists(_workshop_preview_path()):
+		workshop_status.text = "Capture the Workshop preview after framing and painting the machine."
+		return
+	var built := _build_package(_workshop_preview_path())
 	if !bool(built.get("valid", false)):
 		return
 	var package_io := MxtContentPackageIO.new()
@@ -720,6 +735,12 @@ func _publish_workshop() -> void:
 		_show_diagnostics(imported)
 		return
 	workshop_pending_package = imported
+	_show_publish_review(built)
+
+
+func _confirm_publish_workshop() -> void:
+	if workshop_pending_package.is_empty() or workshop_request_id != 0:
+		return
 	if workshop_published_file_id <= 0:
 		workshop_operation = "create_item"
 		workshop_status.text = "Creating Workshop item..."
@@ -727,6 +748,49 @@ func _publish_workshop() -> void:
 		_refresh_workshop_controls()
 	else:
 		_submit_workshop_update()
+
+
+func _show_publish_review(validation: Dictionary) -> void:
+	var visibility: String = ["Public", "Friends Only", "Private", "Unlisted"][workshop_visibility.selected]
+	var intent_counts := _authoring_intent_counts()
+	var warnings_value = validation.get("warnings", [])
+	var warning_type := typeof(warnings_value)
+	var warning_count: int = warnings_value.size() if warning_type == TYPE_ARRAY or warning_type == TYPE_PACKED_STRING_ARRAY else 0
+	publish_review_summary.text = "%s Workshop item\n\nTitle: %s\nAuthor: %s\nVisibility: %s\nDescription:\n%s\n\nSpecial adjustments: %d Derived · %d Custom\nValidation: Ready%s" % [
+		"Update" if workshop_published_file_id > 0 else "New",
+		title_input.text,
+		author_input.text,
+		visibility,
+		description_input.text,
+		int(intent_counts.get("derived", 0)),
+		int(intent_counts.get("custom", 0)),
+		" · %d warning(s)" % warning_count if warning_count > 0 else "",
+	]
+	var image := Image.load_from_file(_workshop_preview_path())
+	publish_review_preview.texture = ImageTexture.create_from_image(image) if image != null and !image.is_empty() else null
+	publish_review_dialog.ok_button_text = "Update Workshop Item" if workshop_published_file_id > 0 else "Create Workshop Item"
+	publish_changelog.text = ""
+	publish_review_dialog.popup_centered(Vector2i(720, 650))
+
+
+func _authoring_intent_counts() -> Dictionary:
+	var derived := 0
+	var custom := 0
+	var layers: Array[String] = []
+	for layer in session.get_layer_names():
+		if String(layer) != "base":
+			layers.append(String(layer))
+	layers.append("s_boost")
+	for layer in layers:
+		for schema_value in stat_schema:
+			var schema: Dictionary = schema_value
+			if !bool(schema.get("supports_live_modifiers", false)):
+				continue
+			if session.is_special_derived(layer, String(schema.get("name", ""))):
+				derived += 1
+			else:
+				custom += 1
+	return {"derived": derived, "custom": custom}
 
 
 func _submit_workshop_update() -> void:
@@ -747,7 +811,7 @@ func _submit_workshop_update() -> void:
 		["Vehicle", "Format Revision 1"],
 		metadata,
 		visibility,
-		"Updated from the in-game Car Creator")
+		publish_changelog.text.strip_edges())
 	_refresh_workshop_controls()
 
 
@@ -966,11 +1030,17 @@ func _manual_save_draft() -> void:
 		_update_autosave_status("Saved; previous thumbnail kept")
 
 
-func _build_package() -> Dictionary:
+func _build_package(preview_override := "") -> Dictionary:
 	if !_flush_autosave():
 		return {"valid": false, "errors": PackedStringArray([autosave_error]), "warnings": PackedStringArray()}
-	var preview_path := _draft_root() + "/thumbnail.png"
-	if !_save_preview_png(preview_path):
+	var preview_path := String(preview_override)
+	var preview_ready := false
+	if preview_path.is_empty():
+		preview_path = _draft_root() + "/thumbnail.png"
+		preview_ready = _save_preview_png(preview_path)
+	else:
+		preview_ready = FileAccess.file_exists(preview_path)
+	if !preview_ready:
 		var failed := {"valid": false, "errors": PackedStringArray(["Could not capture the vehicle preview image"]), "warnings": PackedStringArray()}
 		_show_diagnostics(failed)
 		return failed
@@ -984,6 +1054,18 @@ func _build_package() -> Dictionary:
 	if bool(result.get("valid", false)):
 		_refresh_draft_options()
 	return result
+
+
+func _workshop_preview_path() -> String:
+	return _draft_root() + "/workshop-preview.png"
+
+
+func _capture_workshop_preview() -> void:
+	if !draft_initialized:
+		return
+	workshop_preview_captured = _save_preview_png(_workshop_preview_path())
+	workshop_status.text = "Workshop preview captured from the current camera and paint." if workshop_preview_captured else "Workshop preview capture failed."
+	_refresh_workshop_controls()
 
 
 func _save_preview_png(preview_path: String) -> bool:
@@ -1788,13 +1870,56 @@ func _set_dragged_gizmo_position(position: Vector3) -> void:
 
 func _show_diagnostics(result: Dictionary) -> void:
 	var lines: Array[String] = []
+	var grouped := {}
 	for error in result.get("errors", []):
-		lines.append("[color=#ff6961]ERROR: %s[/color]" % error)
+		var category := _diagnostic_category(String(error))
+		if !grouped.has(category): grouped[category] = []
+		(grouped[category] as Array).append("[color=#ff6961]ERROR: %s[/color]" % error)
 	for warning in result.get("warnings", []):
-		lines.append("[color=#ffd166]WARNING: %s[/color]" % warning)
+		var category := _diagnostic_category(String(warning))
+		if !grouped.has(category): grouped[category] = []
+		(grouped[category] as Array).append("[color=#ffd166]WARNING: %s[/color]" % warning)
+	for category in ["Metadata", "Model", "Materials", "Geometry", "Physics", "Publishing"]:
+		if grouped.has(category):
+			lines.append("[url=%s][b]%s[/b][/url]" % [category, category])
+			for message in grouped[category]:
+				lines.append(String(message))
 	if lines.is_empty() and bool(result.get("valid", false)):
 		lines.append("[color=#73e2a7]Ready[/color]")
 	diagnostics.text = "\n".join(lines)
+
+
+func _diagnostic_category(message: String) -> String:
+	var lower := message.to_lower()
+	if "title" in lower or "author" in lower or "description" in lower:
+		return "Metadata"
+	if "material" in lower or "surface" in lower or "texture" in lower or "paint" in lower:
+		return "Materials"
+	if "corner" in lower or "geometry" in lower or "thruster" in lower:
+		return "Geometry"
+	if "model" in lower or "mesh" in lower or "gltf" in lower or "glb" in lower:
+		return "Model"
+	if "preview" in lower or "workshop" in lower or "publish" in lower or "package" in lower:
+		return "Publishing"
+	return "Physics"
+
+
+func _focus_diagnostic_category(category_value) -> void:
+	var category := String(category_value)
+	match category:
+		"Metadata": title_input.grab_focus()
+		"Model": import_model_dialog.popup_centered()
+		"Materials": _select_physical_tab("Materials")
+		"Geometry": _select_physical_tab("Corners")
+		"Publishing": workshop_visibility.grab_focus()
+		_: stat_option.grab_focus()
+
+
+func _select_physical_tab(title: String) -> void:
+	for index in range(physical_tabs.get_tab_count()):
+		if physical_tabs.get_tab_title(index) == title:
+			physical_tabs.current_tab = index
+			return
 
 
 func _mark_dirty() -> void:

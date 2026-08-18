@@ -100,10 +100,12 @@ max_length = 64
 layout_mode = 2
 text = "Description"
 
-[node name="Description" type="LineEdit" parent="Metadata"]
+[node name="Description" type="TextEdit" parent="Metadata"]
+custom_minimum_size = Vector2(320, 72)
 layout_mode = 2
 size_flags_horizontal = 3
-max_length = 8000
+wrap_mode = 1
+placeholder_text = "Describe the machine, its handling, and any notable authoring choices."
 
 [node name="Workshop" type="HBoxContainer" parent="."]
 layout_mode = 2
@@ -115,6 +117,10 @@ text = "Workshop visibility"
 [node name="Visibility" type="OptionButton" parent="Workshop"]
 layout_mode = 2
 fit_to_longest_item = false
+
+[node name="CapturePreview" type="Button" parent="Workshop"]
+layout_mode = 2
+text = "Capture Workshop Preview"
 
 [node name="Status" type="Label" parent="Workshop"]
 layout_mode = 2
@@ -550,3 +556,37 @@ filters = PackedStringArray("*.mxtpkg ; MaxX Throttle Package")
 title = "Archive Draft"
 dialog_text = "Move this draft into the local archive? It will no longer appear in the active draft list."
 ok_button_text = "Archive Draft"
+
+[node name="PublishReviewDialog" type="ConfirmationDialog" parent="."]
+title = "Review Workshop Publication"
+size = Vector2i(720, 650)
+ok_button_text = "Publish"
+
+[node name="Review" type="VBoxContainer" parent="PublishReviewDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 712.0
+offset_bottom = 580.0
+theme_override_constants/separation = 8
+
+[node name="Summary" type="RichTextLabel" parent="PublishReviewDialog/Review"]
+custom_minimum_size = Vector2(680, 220)
+layout_mode = 2
+fit_content = false
+scroll_active = true
+
+[node name="Preview" type="TextureRect" parent="PublishReviewDialog/Review"]
+custom_minimum_size = Vector2(680, 230)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="ChangelogLabel" type="Label" parent="PublishReviewDialog/Review"]
+layout_mode = 2
+text = "Workshop update changelog (optional for first publication)"
+
+[node name="Changelog" type="TextEdit" parent="PublishReviewDialog/Review"]
+custom_minimum_size = Vector2(680, 80)
+layout_mode = 2
+wrap_mode = 1
+placeholder_text = "Explain what changed in this update."

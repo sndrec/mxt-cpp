@@ -2,13 +2,13 @@
 
 [ext_resource type="Script" path="res://ui/workshop_browser.gd" id="1_browser"]
 
-[node name="Workshop" type="VBoxContainer"]
+[node name="Subscribed Content" type="VBoxContainer"]
 layout_mode = 2
 script = ExtResource("1_browser")
 
 [node name="Status" type="Label" parent="."]
 layout_mode = 2
-text = "Steam Workshop"
+text = "Subscribed Workshop Content"
 
 [node name="Actions" type="HBoxContainer" parent="."]
 layout_mode = 2

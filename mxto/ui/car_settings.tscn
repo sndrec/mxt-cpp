@@ -172,7 +172,7 @@ visible = false
 layout_mode = 2
 metadata/_tab_index = 2
 
-[node name="Workshop" parent="Container/SettingsTabs" instance=ExtResource("3_workshop")]
+[node name="Subscribed Content" parent="Container/SettingsTabs" instance=ExtResource("3_workshop")]
 visible = false
 layout_mode = 2
 metadata/_tab_index = 3
