@@ -33,16 +33,27 @@ private:
 		PhysicsCarProperties properties;
 		CarPerformanceRaw raw;
 	};
+	struct GradeCalibration {
+		bool valid = false;
+		PhysicsCarProperties center_properties;
+		CarPerformanceRaw center_raw;
+		float component_best[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS]{};
+		float component_worst[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS]{};
+		float stat_min[CAR_STAT_COUNT]{};
+		float stat_max[CAR_STAT_COUNT]{};
+	};
 
 	PackedByteArray official_documents[OFFICIAL_COUNT];
 	std::array<AnchorEntry, ANCHOR_CACHE_SIZE> anchor_cache{};
 	std::array<ResultEntry, RESULT_CACHE_SIZE> result_cache{};
+	GradeCalibration grade_calibration;
 	uint16_t next_anchor_slot = 0;
 	uint16_t next_result_slot = 0;
 	bool official_documents_loaded = false;
 	String official_error;
 
 	bool ensure_official_documents();
+	bool ensure_grade_calibration();
 	AnchorEntry *get_anchor(float setting);
 	Dictionary analyze_document(
 			const PackedByteArray &bytes,
@@ -52,7 +63,7 @@ private:
 	Dictionary build_result(
 			const PhysicsCarProperties &properties,
 			const CarPerformanceRaw &raw,
-			const AnchorEntry &anchors,
+			const AnchorEntry &trait_anchors,
 			float setting) const;
 
 protected:
@@ -71,4 +82,3 @@ public:
 };
 
 } // namespace godot
-

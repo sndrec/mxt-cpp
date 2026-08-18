@@ -11,10 +11,10 @@ var category_value_labels: Dictionary = {}
 const CATEGORY_HELP := {
 	"Speed": "Settled straight-line speed without boost.",
 	"Acceleration": "Early speed, fixed-speed milestones, and early distance—not merely time to the machine's own top speed.",
-	"Cornering": "Steering strength and speed retention in normal turns and full Turbo Slides.",
-	"Grip": "How long the machine stays planted and how readily it settles and re-grips after a slide. Higher is more stable.",
-	"Booster": "Manual-boost burst and sustained advantage from one full energy reserve.",
-	"Body": "Effective durability and stability in a fixed collision with the All Rounder reference.",
+	"Cornering": "Steering strength and speed retention in normal turns and ordinary drifts. Turbo Slide modifiers are not used.",
+	"Grip": "Base resistance to sliding and ability to re-grip. The temporary grip caused by pressing the accelerator is deliberately excluded.",
+	"Booster": "Absolute manual-boost speed and sustained advantage when boosting from settled top speed.",
+	"Body": "Base maximum energy and damage resistance. Collision geometry and knockback are not folded into this grade.",
 	"Air Control": "Speed retention and controlled heading change during a fixed jump.",
 }
 
@@ -50,12 +50,14 @@ func show_analysis(result: Dictionary) -> void:
 		label.modulate = Color.WHITE
 	if !bool(result.get("valid", false)):
 		status.text = String(result.get("error", "Performance analysis pending"))
+		status.tooltip_text = ""
 		summary.text = ""
 		_add_message(benchmark_rows, "Select a machine to analyze it.")
 		_add_message(advanced_rows, "Raw grades will appear here.")
 		_add_message(trait_rows, "Special-state traits will appear here.")
 		return
-	status.text = "PERFORMANCE AT %d%% MACHINE SETTING" % roundi(float(result.get("machine_setting", 0.5)) * 100.0)
+	status.text = "PERFORMANCE AT %d%% · GRADES VS 50%% ALL ROUNDER" % roundi(float(result.get("machine_setting", 0.5)) * 100.0)
+	status.tooltip_text = "C is the All Rounder at 50%. A and E are the best and worst official results sampled at 0%, 50%, and 100%."
 	for category_value in result.get("categories", []):
 		var category: Dictionary = category_value
 		var name := String(category.get("name", ""))

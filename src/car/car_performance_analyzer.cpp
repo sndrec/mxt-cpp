@@ -89,8 +89,7 @@ static String grade_label(float score) {
 static float display_component_value(
 		CarPerformanceCategory category, uint8_t component, float value) {
 	if ((category == CAR_PERFORMANCE_ACCELERATION && (component == 3 || component == 4)) ||
-		(category == CAR_PERFORMANCE_GRIP && component == 1) ||
-		(category == CAR_PERFORMANCE_BODY && component == 2)) {
+		(category == CAR_PERFORMANCE_GRIP && component == 1)) {
 		return -value;
 	}
 	return value;
@@ -259,14 +258,61 @@ MxtCarPerformanceAnalyzer::AnchorEntry *MxtCarPerformanceAnalyzer::get_anchor(fl
 		}
 	}
 	for (uint8_t index = 0; index < OFFICIAL_COUNT; ++index) {
-		if (!analyze_car_performance(
-				entry.properties[index], entry.properties[ALL_ROUNDER_INDEX], entry.raw[index])) {
+		if (!analyze_car_performance(entry.properties[index], entry.raw[index])) {
 			official_error = "official benchmark analysis produced a non-finite result";
 			return nullptr;
 		}
 	}
 	entry.valid = true;
 	return &entry;
+}
+
+bool MxtCarPerformanceAnalyzer::ensure_grade_calibration() {
+	if (grade_calibration.valid) return true;
+	static constexpr float SETTINGS[3] = {0.0f, 0.5f, 1.0f};
+	AnchorEntry *samples[3];
+	for (uint8_t setting_index = 0; setting_index < 3; ++setting_index) {
+		samples[setting_index] = get_anchor(SETTINGS[setting_index]);
+		if (samples[setting_index] == nullptr) return false;
+	}
+
+	GradeCalibration calibration;
+	calibration.center_properties = samples[1]->properties[ALL_ROUNDER_INDEX];
+	calibration.center_raw = samples[1]->raw[ALL_ROUNDER_INDEX];
+	for (uint8_t category = 0; category < CAR_PERFORMANCE_CATEGORY_COUNT; ++category) {
+		for (uint8_t component = 0; component < car_performance_component_count(
+				static_cast<CarPerformanceCategory>(category)); ++component) {
+			const float initial = samples[0]->raw[0].components[category][component].value;
+			float best = initial;
+			float worst = initial;
+			for (uint8_t setting_index = 0; setting_index < 3; ++setting_index) {
+				for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
+					const float value = samples[setting_index]->raw[official]
+						.components[category][component].value;
+					best = std::max(best, value);
+					worst = std::min(worst, value);
+				}
+			}
+			calibration.component_best[category][component] = best;
+			calibration.component_worst[category][component] = worst;
+		}
+	}
+	for (uint16_t stat = 0; stat < CAR_STAT_COUNT; ++stat) {
+		float minimum = samples[0]->properties[0].base_stats[stat];
+		float maximum = minimum;
+		for (uint8_t setting_index = 0; setting_index < 3; ++setting_index) {
+			for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
+				const float value = samples[setting_index]->properties[official].base_stats[stat];
+				minimum = std::min(minimum, value);
+				maximum = std::max(maximum, value);
+			}
+		}
+		calibration.stat_min[stat] = minimum;
+		calibration.stat_max[stat] = maximum;
+	}
+	calibration.valid = true;
+	grade_calibration = calibration;
+	return true;
 }
 
 Dictionary MxtCarPerformanceAnalyzer::analyze_document(
@@ -280,8 +326,8 @@ Dictionary MxtCarPerformanceAnalyzer::analyze_document(
 		failed["error"] = "car properties document is empty";
 		return failed;
 	}
-	AnchorEntry *anchors = get_anchor(setting);
-	if (anchors == nullptr) {
+	AnchorEntry *trait_anchors = get_anchor(setting);
+	if (trait_anchors == nullptr || !ensure_grade_calibration()) {
 		failed["error"] = official_error;
 		return failed;
 	}
@@ -289,7 +335,7 @@ Dictionary MxtCarPerformanceAnalyzer::analyze_document(
 	if (allow_result_cache) {
 		for (const ResultEntry &entry : result_cache) {
 			if (entry.valid && entry.source_hash == source_hash && entry.setting_bits == bits) {
-				return build_result(entry.properties, entry.raw, *anchors, setting);
+				return build_result(entry.properties, entry.raw, *trait_anchors, setting);
 			}
 		}
 	}
@@ -300,7 +346,7 @@ Dictionary MxtCarPerformanceAnalyzer::analyze_document(
 		return failed;
 	}
 	CarPerformanceRaw raw;
-	if (!analyze_car_performance(properties, anchors->properties[ALL_ROUNDER_INDEX], raw)) {
+	if (!analyze_car_performance(properties, raw)) {
 		failed["error"] = "performance analysis produced a non-finite result";
 		return failed;
 	}
@@ -312,18 +358,20 @@ Dictionary MxtCarPerformanceAnalyzer::analyze_document(
 		entry.properties = properties;
 		entry.raw = raw;
 	}
-	return build_result(properties, raw, *anchors, setting);
+	return build_result(properties, raw, *trait_anchors, setting);
 }
 
 Dictionary MxtCarPerformanceAnalyzer::build_result(
 		const PhysicsCarProperties &properties,
 		const CarPerformanceRaw &raw,
-		const AnchorEntry &anchors,
+		const AnchorEntry &trait_anchors,
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 4;
+	result["benchmark_version"] = 5;
 	result["machine_setting"] = setting;
+	result["benchmark_machine_setting"] = 0.5f;
+	result["benchmark_reference"] = "All Rounder at 50%; official extrema sampled at 0%, 50%, and 100%";
 	result["weight_kg"] = properties.base_stats[CAR_STAT_WEIGHT_KG];
 	result["terminal_speed_kmh"] = raw.terminal_speed_kmh;
 	result["peak_boost_speed_kmh"] = raw.peak_boost_speed_kmh;
@@ -337,14 +385,9 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float score_sum = 0.0f;
 		const uint8_t count = car_performance_component_count(category);
 		for (uint8_t component = 0; component < count; ++component) {
-			float best = anchors.raw[0].components[category][component].value;
-			float worst = best;
-			for (uint8_t official = 1; official < OFFICIAL_COUNT; ++official) {
-				const float anchor = anchors.raw[official].components[category][component].value;
-				best = std::max(best, anchor);
-				worst = std::min(worst, anchor);
-			}
-			const float center = anchors.raw[ALL_ROUNDER_INDEX].components[category][component].value;
+			const float best = grade_calibration.component_best[category][component];
+			const float worst = grade_calibration.component_worst[category][component];
+			const float center = grade_calibration.center_raw.components[category][component].value;
 			const float value = raw.components[category][component].value;
 			const float component_score = score_against_anchors(value, center, best, worst);
 			score_sum += component_score;
@@ -377,14 +420,11 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			continue;
 		}
 		const float direction = metadata.base_direction == CAR_STAT_DIRECTION_LOWER_BENEFIT ? -1.0f : 1.0f;
-		float best = direction * anchors.properties[0].base_stats[stat];
-		float worst = best;
-		for (uint8_t official = 1; official < OFFICIAL_COUNT; ++official) {
-			const float anchor = direction * anchors.properties[official].base_stats[stat];
-			best = std::max(best, anchor);
-			worst = std::min(worst, anchor);
-		}
-		const float center = direction * anchors.properties[ALL_ROUNDER_INDEX].base_stats[stat];
+		const float best = direction > 0.0f
+			? grade_calibration.stat_max[stat] : -grade_calibration.stat_min[stat];
+		const float worst = direction > 0.0f
+			? grade_calibration.stat_min[stat] : -grade_calibration.stat_max[stat];
+		const float center = direction * grade_calibration.center_properties.base_stats[stat];
 		const float score = score_against_anchors(direction * properties.base_stats[stat], center, best, worst);
 		Dictionary stat_result;
 		stat_result["name"] = metadata.name;
@@ -411,7 +451,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			float official_adjustments[OFFICIAL_COUNT];
 			for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
 				official_adjustments[official] = trait_adjustment(
-					anchors.properties[official], special, stat);
+					trait_anchors.properties[official], special, stat);
 			}
 			float baseline_adjustment = 1.0f;
 			const bool uses_roster_baseline = find_trait_majority_baseline(
@@ -493,13 +533,14 @@ Dictionary MxtCarPerformanceAnalyzer::analyze_session(
 
 Array MxtCarPerformanceAnalyzer::get_official_calibration_table() {
 	Array table;
+	if (!ensure_grade_calibration()) return table;
 	for (int setting_index = 0; setting_index <= 100; ++setting_index) {
 		const float setting = static_cast<float>(setting_index) / 100.0f;
-		AnchorEntry *anchors = get_anchor(setting);
-		if (anchors == nullptr) return Array();
+		AnchorEntry *sampled = get_anchor(setting);
+		if (sampled == nullptr) return Array();
 		for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
 			Dictionary row = build_result(
-				anchors->properties[official], anchors->raw[official], *anchors, setting);
+				sampled->properties[official], sampled->raw[official], *sampled, setting);
 			row["machine"] = OFFICIAL_NAMES[official];
 			table.push_back(row);
 		}

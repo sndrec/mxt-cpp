@@ -38,5 +38,4 @@ const char *car_performance_component_explanation(CarPerformanceCategory categor
 
 bool analyze_car_performance(
 		const PhysicsCarProperties &properties,
-		const PhysicsCarProperties &all_rounder_reference,
 		CarPerformanceRaw &out_analysis);

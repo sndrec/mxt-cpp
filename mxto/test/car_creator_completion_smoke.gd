@@ -3,6 +3,7 @@ extends SceneTree
 const CurveGraphClass = preload("res://ui/vehicle_editor_curve_graph.gd")
 const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
 const ALL_ROUNDER_PATH := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+const TOP_SPEEDER_PATH := "res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props"
 
 var failures: Array[String] = []
 
@@ -63,6 +64,8 @@ func _test_performance_grades() -> void:
 	var second: Dictionary = analyzer.analyze_file(ALL_ROUNDER_PATH, 0.5)
 	_expect(bool(first.get("valid", false)), "All Rounder performance analysis should succeed")
 	_expect(first == second, "performance analysis should be deterministic and cache-stable")
+	_expect(is_equal_approx(float(first.get("benchmark_machine_setting", -1.0)), 0.5), "performance grades should use a fixed 50% center")
+	_expect(String(first.get("benchmark_reference", "")).contains("0%, 50%, and 100%"), "performance grades should disclose their fixed official extrema")
 	var categories: Array = first.get("categories", [])
 	_expect(categories.size() == 7, "performance analysis should expose exactly seven headline categories")
 	for category_value in categories:
@@ -73,15 +76,48 @@ func _test_performance_grades() -> void:
 			_expect(not String(component.get("explanation", "")).is_empty(), "%s benchmark should explain what it measures" % String(component.get("name", "benchmark")))
 	var cornering: Dictionary = categories[2]
 	var cornering_components: Array = cornering.get("components", [])
-	_expect(String((cornering_components[0] as Dictionary).get("name", "")) == "Normal Steering Strength", "ordinary turn authority should use a player-facing name")
-	_expect(String((cornering_components[2] as Dictionary).get("name", "")) == "Turbo-Slide Steering", "MTS benchmark should identify the maneuver it measures")
+	_expect(String((cornering_components[0] as Dictionary).get("name", "")) == "Normal Steering", "normal steering benchmark should use a player-facing name")
+	_expect(String((cornering_components[0] as Dictionary).get("unit", "")) == "degrees/second", "steering benchmark should use degrees per second")
+	_expect(String((cornering_components[2] as Dictionary).get("name", "")) == "Drift Steering", "drift benchmark should not substitute Turbo Slide handling")
+	_expect(String((cornering_components[2] as Dictionary).get("unit", "")) == "degrees/second", "drift steering should use degrees per second")
 	var acceleration_components: Array = (categories[1] as Dictionary).get("components", [])
 	_expect(String((acceleration_components[2] as Dictionary).get("unit", "")) == "meters", "first-five-second benchmark should be displayed as distance")
+	var body_components: Array = (categories[5] as Dictionary).get("components", [])
+	_expect(body_components.size() == 2, "Body should contain only max energy and damage resistance")
+	_expect(String((body_components[0] as Dictionary).get("name", "")) == "Max Energy", "Body should expose base max energy directly")
+	_expect(String((body_components[1] as Dictionary).get("name", "")) == "Damage Resistance", "Body should expose reciprocal damage resistance")
+
+	var all_rounder_zero: Dictionary = analyzer.analyze_file(ALL_ROUNDER_PATH, 0.0)
+	var zero_has_non_c := false
+	for category_value in all_rounder_zero.get("categories", []):
+		zero_has_non_c = zero_has_non_c or String((category_value as Dictionary).get("grade", "")) != "C"
+	_expect(zero_has_non_c, "changing machine setting should move grades against the fixed 50% calibration")
+
+	var top_speeder: Dictionary = analyzer.analyze_file(TOP_SPEEDER_PATH, 1.0)
+	var top_booster: Array = ((top_speeder.get("categories", []) as Array)[4] as Dictionary).get("components", [])
+	var top_terminal := float(top_speeder.get("terminal_speed_kmh", 0.0))
+	_expect(float((top_booster[0] as Dictionary).get("value", 0.0)) > top_terminal, "one-second boost speed should be absolute speed above settled top speed")
+	_expect(float((top_booster[1] as Dictionary).get("value", 0.0)) >= float((top_booster[0] as Dictionary).get("value", 0.0)), "peak boost speed should be an absolute peak reached after boosting from settled speed")
 	for stat_value in first.get("advanced_stats", []):
 		var stat_data: Dictionary = stat_value
 		if String(stat_data.get("name", "")) == "drag":
 			_expect(String(stat_data.get("friendly_name", "")) == "Drag", "raw drag should not be mislabeled as Rolling Drag")
 			_expect(String(stat_data.get("explanation", "")).contains("air resistance"), "Drag help should distinguish its constant loss from automatic air resistance")
+
+	var grip_session := MxtCarAuthoringSession.new()
+	var grip_before: Dictionary = analyzer.analyze_session(grip_session, 0.5)
+	var press_grip_curve: Array = grip_session.get_curve("base", "accel_press_grip_frames")
+	for key_value in press_grip_curve:
+		(key_value as Dictionary)["value"] = 250.0
+	_expect(bool(grip_session.set_curve("base", "accel_press_grip_frames", press_grip_curve).get("valid", false)), "accelerator grip curve should validate")
+	var grip_after: Dictionary = analyzer.analyze_session(grip_session, 0.5)
+	var grip_before_components: Array = (((grip_before.get("categories", []) as Array)[3]) as Dictionary).get("components", [])
+	var grip_after_components: Array = (((grip_after.get("categories", []) as Array)[3]) as Dictionary).get("components", [])
+	for component_index in grip_before_components.size():
+		_expect(is_equal_approx(
+			float((grip_before_components[component_index] as Dictionary).get("value", 0.0)),
+			float((grip_after_components[component_index] as Dictionary).get("value", 0.0))),
+			"accelerator-induced grip must not affect Grip benchmark component %d" % component_index)
 
 	for trait_value in first.get("traits", []):
 		var trait_data: Dictionary = trait_value

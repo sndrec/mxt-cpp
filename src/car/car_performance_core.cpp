@@ -9,12 +9,14 @@ namespace {
 static constexpr float TICK_RATE = 60.0f;
 static constexpr uint32_t DRIVE_FRAMES = 1800;
 static constexpr float STANDARD_SPEED_KMH = 600.0f;
+static constexpr float DEGREES_PER_RADIAN = 57.2957795131f;
 
 struct DriveResult {
 	float speed_1s = 0.0f;
 	float speed_3s = 0.0f;
 	float area_5s = 0.0f;
 	float terminal_speed = 0.0f;
+	float terminal_base_speed = 0.0f;
 	float peak_speed = 0.0f;
 	float distance = 0.0f;
 	float time_300 = 31.0f;
@@ -47,7 +49,10 @@ static void sample_effective_stats(
 
 static DriveResult run_drive(
 		const PhysicsCarProperties &properties,
-		bool spend_full_boost_reserve) {
+		bool spend_full_boost_reserve,
+		float initial_speed_kmh,
+		float initial_base_speed,
+		bool measure_launch) {
 	float ordinary[CAR_STAT_COUNT];
 	float boosted[CAR_STAT_COUNT];
 	sample_effective_stats(properties, CAR_MODIFIER_LAYER_COUNT, 0.0f,
@@ -56,8 +61,8 @@ static DriveResult run_drive(
 		CAR_MODIFIER_MANUAL_BOOST, false, boosted);
 
 	const float weight = safe_positive(ordinary[CAR_STAT_WEIGHT_KG], 1.0f);
-	float world_speed = 0.0f;
-	float base_speed = 0.0f;
+	float world_speed = initial_speed_kmh * weight / 216.0f;
+	float base_speed = initial_base_speed;
 	float turbo = 0.0f;
 	float energy = std::max(ordinary[CAR_STAT_MAX_ENERGY], 0.0f);
 	int32_t manual_frames = 0;
@@ -139,11 +144,13 @@ static DriveResult run_drive(
 		terminal_max = std::max(terminal_max, speed);
 	}
 	result.terminal_speed = terminal_sum / 120.0f;
+	result.terminal_base_speed = base_speed;
 	const float allowed_span = std::max(std::abs(result.terminal_speed) * 0.01f, 0.25f);
 	result.settlement_confidence = std::clamp(
 		1.0f - (terminal_max - terminal_min) / allowed_span, 0.0f, 1.0f);
 
 	// A bounded second pass finds the descriptive time to 95% of the settled result.
+	if (!measure_launch) return result;
 	const float target_95 = result.terminal_speed * 0.95f;
 	if (target_95 <= 0.0f) return result;
 	float speed = 0.0f;
@@ -174,20 +181,19 @@ static void analyze_handling(
 		const PhysicsCarProperties &properties,
 		CarPerformanceRaw &out) {
 	float normal[CAR_STAT_COUNT];
-	float drift[CAR_STAT_COUNT];
 	sample_effective_stats(properties, CAR_MODIFIER_LAYER_COUNT, 0.0f,
 		CAR_MODIFIER_NO_BOOST, false, normal);
-	sample_effective_stats(properties, CAR_MODIFIER_MTS, 1.0f,
-		CAR_MODIFIER_NO_BOOST, false, drift);
+	const float *drift = normal;
 	const float weight = safe_positive(normal[CAR_STAT_WEIGHT_KG], 1.0f);
 	const float angular_inertia_y = std::max(45.0f * weight * 0.0625f, 1.0f);
 	const float ordinary_steer = normal[CAR_STAT_TURN_MOVEMENT] +
 		0.35f * normal[CAR_STAT_STRAFE_TURN];
 	const float drift_steer = drift[CAR_STAT_TURN_MOVEMENT] +
 		0.35f * drift[CAR_STAT_STRAFE_TURN];
-	const float ordinary_yaw = 1.5f * ordinary_steer *
+	const float yaw_scale = TICK_RATE * DEGREES_PER_RADIAN;
+	const float ordinary_yaw = yaw_scale * 1.5f * ordinary_steer *
 		std::abs(normal[CAR_STAT_TURN_REACTION]) / angular_inertia_y;
-	const float drift_yaw = 1.5f * drift_steer *
+	const float drift_yaw = yaw_scale * 1.5f * drift_steer *
 		std::abs(drift[CAR_STAT_TURN_REACTION]) *
 		safe_positive(drift[CAR_STAT_GRIP_2]) / angular_inertia_y;
 	const float ordinary_retention = 1.0f /
@@ -199,8 +205,7 @@ static void analyze_handling(
 	out.components[CAR_PERFORMANCE_CORNERING][2].value = drift_yaw;
 	out.components[CAR_PERFORMANCE_CORNERING][3].value = drift_retention;
 
-	const float breakaway = normal[CAR_STAT_GRIP_1] *
-		(1.0f + std::max(normal[CAR_STAT_ACCEL_PRESS_GRIP_FRAMES], 0.0f) / 120.0f);
+	const float breakaway = normal[CAR_STAT_GRIP_1];
 	const float restoring = normal[CAR_STAT_TURN_TENSION] * weight;
 	const float unwanted_slide = safe_positive(normal[CAR_STAT_TURN_REACTION]) /
 		safe_positive(restoring, 0.01f);
@@ -216,29 +221,11 @@ static void analyze_handling(
 
 static void analyze_body(
 		const PhysicsCarProperties &properties,
-		const PhysicsCarProperties &all_rounder_reference,
 		CarPerformanceRaw &out) {
-	const float weight = safe_positive(properties.base_stats[CAR_STAT_WEIGHT_KG], 1.0f);
 	const float body = safe_positive(properties.base_stats[CAR_STAT_BODY]);
 	const float energy = std::max(properties.base_stats[CAR_STAT_MAX_ENERGY], 0.0f);
-	const float reference_weight = safe_positive(
-		all_rounder_reference.base_stats[CAR_STAT_WEIGHT_KG], 1.0f);
-	const float relative_speed = STANDARD_SPEED_KMH / 216.0f;
-	const float reduced_mass = weight * reference_weight / (weight + reference_weight);
-	const float impact_strength = relative_speed * reduced_mass / reference_weight * 20.0f;
-	const float energy_after = std::max(energy - impact_strength * body, 0.0f);
-	const float self_velocity_change = 2.0f * reference_weight /
-		(weight + reference_weight) * STANDARD_SPEED_KMH;
-	float lever_sum = 0.0f;
-	for (const SimVec3 &corner : properties.wall_corners) {
-		lever_sum += std::sqrt(corner.x * corner.x + corner.z * corner.z);
-	}
-	const float lever = std::max(lever_sum * 0.25f, 0.25f);
-	const float angular_inertia = 45.0f * weight * 0.0625f;
-	out.components[CAR_PERFORMANCE_BODY][0].value = energy / body;
-	out.components[CAR_PERFORMANCE_BODY][1].value = energy_after;
-	out.components[CAR_PERFORMANCE_BODY][2].value = -self_velocity_change;
-	out.components[CAR_PERFORMANCE_BODY][3].value = angular_inertia / lever;
+	out.components[CAR_PERFORMANCE_BODY][0].value = energy;
+	out.components[CAR_PERFORMANCE_BODY][1].value = 1.0f / body;
 }
 
 static void analyze_air(
@@ -279,7 +266,7 @@ const char *car_performance_category_name(CarPerformanceCategory category) {
 }
 
 uint8_t car_performance_component_count(CarPerformanceCategory category) {
-	static constexpr uint8_t COUNTS[CAR_PERFORMANCE_CATEGORY_COUNT] = {1, 5, 4, 4, 4, 4, 2};
+	static constexpr uint8_t COUNTS[CAR_PERFORMANCE_CATEGORY_COUNT] = {1, 5, 4, 4, 4, 2, 2};
 	return category < CAR_PERFORMANCE_CATEGORY_COUNT ? COUNTS[category] : 0;
 }
 
@@ -287,10 +274,10 @@ const char *car_performance_component_name(CarPerformanceCategory category, uint
 	static constexpr const char *NAMES[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS] = {
 		{"Top Speed", nullptr, nullptr, nullptr, nullptr, nullptr},
 		{"Speed After 1 Second", "Speed After 3 Seconds", "Distance in First 5 Seconds", "Time to 300 km/h", "Time to 500 km/h", nullptr},
-		{"Normal Steering Strength", "Normal Cornering Speed", "Turbo-Slide Steering", "Turbo-Slide Speed", nullptr, nullptr},
+		{"Normal Steering", "Normal Cornering Speed", "Drift Steering", "Drift Speed", nullptr, nullptr},
 		{"Resistance to Sliding", "Unwanted Slide Tendency", "Re-grip Strength", "Drift Recovery", nullptr, nullptr},
-		{"1-Second Boost Gain", "Peak Boost Speed Gain", "Full-Energy Boost Distance", "Full-Energy Boost Time", nullptr, nullptr},
-		{"Damage Capacity", "Energy After Standard Crash", "Knockback Taken", "Spin Resistance", nullptr, nullptr},
+		{"Boost Speed After 1 Second", "Peak Boost Speed", "Full-Energy Distance Gain", "Full-Energy Boost Time", nullptr, nullptr},
+		{"Max Energy", "Damage Resistance", nullptr, nullptr, nullptr, nullptr},
 		{"Airborne Speed Retained", "Air Turning", nullptr, nullptr, nullptr, nullptr}};
 	return category < CAR_PERFORMANCE_CATEGORY_COUNT && component < CAR_PERFORMANCE_MAX_COMPONENTS
 		? NAMES[category][component] : nullptr;
@@ -300,10 +287,10 @@ const char *car_performance_component_unit(CarPerformanceCategory category, uint
 	static constexpr const char *UNITS[CAR_PERFORMANCE_CATEGORY_COUNT][CAR_PERFORMANCE_MAX_COMPONENTS] = {
 		{"km/h", nullptr, nullptr, nullptr, nullptr, nullptr},
 		{"km/h", "km/h", "meters", "seconds", "seconds", nullptr},
-		{"yaw/tick", "ratio", "yaw/tick", "ratio", nullptr, nullptr},
+		{"degrees/second", "ratio", "degrees/second", "ratio", nullptr, nullptr},
 		{"threshold", "inverse", "response", "response", nullptr, nullptr},
 		{"km/h", "km/h", "meters", "seconds", nullptr, nullptr},
-		{"effective energy", "energy", "km/h", "inertia", nullptr, nullptr},
+		{"energy", "multiplier", nullptr, nullptr, nullptr, nullptr},
 		{"ratio", "heading", nullptr, nullptr, nullptr, nullptr}};
 	return category < CAR_PERFORMANCE_CATEGORY_COUNT && component < CAR_PERFORMANCE_MAX_COMPONENTS
 		? UNITS[category][component] : "scalar";
@@ -317,22 +304,20 @@ const char *car_performance_component_explanation(CarPerformanceCategory categor
 		 "Ground covered during the first five seconds after launch without boosting.",
 		 "Time needed to reach 300 km/h without boosting. Less time earns a higher grade.",
 		 "Time needed to reach 500 km/h without boosting. Less time earns a higher grade.", nullptr},
-		{"Steering response outside a drift, combining steering force, steering angle, and weight.",
+		{"Estimated turning rate outside a drift, combining steering force, steering angle, and weight.",
 		 "How much speed the machine preserves while cornering normally at the benchmark speed.",
-		 "Steering response during a full Turbo Slide, including its special handling modifiers.",
-		 "How much speed the machine preserves during a full Turbo Slide at the benchmark speed.", nullptr, nullptr},
-		{"How strongly the machine resists entering a slide, including accelerator-triggered grip.",
+		 "Estimated turning rate during a normal drift, without Turbo Slide or Quick Turn modifiers.",
+		 "How much speed the machine preserves during a normal drift at the benchmark speed.", nullptr, nullptr},
+		{"How strongly the machine's base grip resists entering a slide. Accelerator-press grip is deliberately excluded.",
 		 "How readily steering can overpower the machine's restoring grip. Less unwanted sliding earns a higher grade.",
 		 "How strongly the machine settles back into a planted state after sliding.",
 		 "How decisively the machine exits a drift instead of remaining loose.", nullptr, nullptr},
-		{"Speed gained after one second by repeatedly manual boosting instead of driving normally.",
-		 "Extra peak speed reached while spending one full energy reserve on manual boosts.",
-		 "Extra distance covered while spending one full energy reserve on manual boosts.",
+		{"Absolute speed one second after beginning repeated manual boosts from settled top speed.",
+		 "Highest absolute speed reached while spending one full energy reserve from settled top speed.",
+		 "Extra distance covered versus normal driving from the same settled speed while spending one full energy reserve.",
 		 "Approximate seconds of manual boost supplied by a full energy reserve.", nullptr, nullptr},
-		{"Maximum energy adjusted for the amount of damage the machine takes.",
-		 "Energy remaining after a fixed 600 km/h collision with the All Rounder benchmark machine.",
-		 "Speed imparted to this machine by the standard collision. Less knockback earns a higher grade.",
-		 "Resistance to being spun by an off-center impact, accounting for weight and body width.", nullptr, nullptr},
+		{"The machine's base maximum energy reserve.",
+		 "Reciprocal of its damage-taken multiplier. 1.00x is standard; 2.00x requires twice as much incoming damage to remove the same energy.", nullptr, nullptr, nullptr, nullptr},
 		{"Fraction of 600 km/h retained through a fixed three-second pitched and steered jump.",
 		 "Heading change achieved during the same fixed three-second jump.", nullptr, nullptr, nullptr, nullptr}};
 	return category < CAR_PERFORMANCE_CATEGORY_COUNT && component < CAR_PERFORMANCE_MAX_COMPONENTS
@@ -341,12 +326,14 @@ const char *car_performance_component_explanation(CarPerformanceCategory categor
 
 bool analyze_car_performance(
 		const PhysicsCarProperties &properties,
-		const PhysicsCarProperties &all_rounder_reference,
 		CarPerformanceRaw &out_analysis) {
 	out_analysis = CarPerformanceRaw{};
 	std::memcpy(out_analysis.base_stats, properties.base_stats, sizeof(out_analysis.base_stats));
-	const DriveResult ordinary = run_drive(properties, false);
-	const DriveResult boosted = run_drive(properties, true);
+	const DriveResult ordinary = run_drive(properties, false, 0.0f, 0.0f, true);
+	const DriveResult cruise = run_drive(properties, false,
+		ordinary.terminal_speed, ordinary.terminal_base_speed, false);
+	const DriveResult boosted = run_drive(properties, true,
+		ordinary.terminal_speed, ordinary.terminal_base_speed, false);
 	out_analysis.terminal_speed_kmh = ordinary.terminal_speed;
 	out_analysis.peak_boost_speed_kmh = boosted.peak_speed;
 	out_analysis.time_to_95_seconds = ordinary.time_95;
@@ -357,14 +344,14 @@ bool analyze_car_performance(
 	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][2].value = ordinary.area_5s / 3.6f;
 	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][3].value = -ordinary.time_300;
 	out_analysis.components[CAR_PERFORMANCE_ACCELERATION][4].value = -ordinary.time_500;
-	out_analysis.components[CAR_PERFORMANCE_BOOSTER][0].value = boosted.speed_1s - ordinary.speed_1s;
-	out_analysis.components[CAR_PERFORMANCE_BOOSTER][1].value = boosted.peak_speed - ordinary.peak_speed;
-	out_analysis.components[CAR_PERFORMANCE_BOOSTER][2].value = boosted.distance - ordinary.distance;
+	out_analysis.components[CAR_PERFORMANCE_BOOSTER][0].value = boosted.speed_1s;
+	out_analysis.components[CAR_PERFORMANCE_BOOSTER][1].value = boosted.peak_speed;
+	out_analysis.components[CAR_PERFORMANCE_BOOSTER][2].value = boosted.distance - cruise.distance;
 	out_analysis.components[CAR_PERFORMANCE_BOOSTER][3].value =
 		properties.base_stats[CAR_STAT_MAX_ENERGY] /
 		(10.0f * safe_positive(properties.base_stats[CAR_STAT_BOOST_ENERGY_USE_RATE]));
 	analyze_handling(properties, out_analysis);
-	analyze_body(properties, all_rounder_reference, out_analysis);
+	analyze_body(properties, out_analysis);
 	analyze_air(properties, out_analysis);
 	for (uint8_t category = 0; category < CAR_PERFORMANCE_CATEGORY_COUNT; ++category) {
 		for (uint8_t component = 0; component < car_performance_component_count(
