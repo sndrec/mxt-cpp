@@ -368,7 +368,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 6;
+	result["benchmark_version"] = 7;
 	result["machine_setting"] = setting;
 	result["benchmark_machine_setting"] = 0.5f;
 	result["benchmark_reference"] = "All Rounder at 50%; official extrema sampled at 0%, 50%, and 100%";

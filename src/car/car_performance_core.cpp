@@ -43,10 +43,12 @@ static FlatVec2 rotate_flat(const FlatVec2 value, float angle) {
 static float run_flat_turn(
 		const PhysicsCarProperties &properties,
 		const float stats[CAR_STAT_COUNT],
+		float settled_speed_kmh,
 		bool drift) {
 	const float weight = std::max(std::abs(stats[CAR_STAT_WEIGHT_KG]), 1.0f);
 	const float angular_inertia_y = std::max(45.0f * weight * 0.0625f, 1.0f);
-	const float target_velocity = STANDARD_SPEED_KMH * weight / 216.0f;
+	const float benchmark_speed_kmh = std::max(settled_speed_kmh, 0.0f);
+	const float target_velocity = benchmark_speed_kmh * weight / 216.0f;
 	FlatVec2 velocity{0.0f, -target_velocity};
 	FlatVec2 previous_position{0.0f, 0.0f};
 	FlatVec2 position{0.0f, 0.0f};
@@ -68,7 +70,7 @@ static float run_flat_turn(
 			strafe_input * stats[CAR_STAT_STRAFE]);
 		steer_degrees = std::clamp(steer_degrees, -45.0f, 45.0f);
 		const float steer_angle = steer_degrees / DEGREES_PER_RADIAN * 0.5f;
-		const float speed_factor = std::clamp(STANDARD_SPEED_KMH / 1000.0f, 0.2f, 0.8f);
+		const float speed_factor = std::clamp(benchmark_speed_kmh / 1000.0f, 0.2f, 0.8f);
 
 		for (uint8_t corner = 0; corner < 4; ++corner) {
 			const FlatVec2 offset{
@@ -289,18 +291,22 @@ static DriveResult run_drive(
 
 static void analyze_handling(
 		const PhysicsCarProperties &properties,
+		float settled_speed_kmh,
 		CarPerformanceRaw &out) {
 	float normal[CAR_STAT_COUNT];
 	sample_effective_stats(properties, CAR_MODIFIER_LAYER_COUNT, 0.0f,
 		CAR_MODIFIER_NO_BOOST, false, normal);
 	const float *drift = normal;
 	const float weight = safe_positive(normal[CAR_STAT_WEIGHT_KG], 1.0f);
-	const float ordinary_yaw = run_flat_turn(properties, normal, false);
-	const float drift_yaw = run_flat_turn(properties, drift, true);
+	const float benchmark_speed_kmh = std::max(finite_or(settled_speed_kmh), 0.0f);
+	const float ordinary_yaw = run_flat_turn(
+		properties, normal, benchmark_speed_kmh, false);
+	const float drift_yaw = run_flat_turn(
+		properties, drift, benchmark_speed_kmh, true);
 	const float ordinary_retention = 1.0f /
-		(1.0f + std::abs(normal[CAR_STAT_TURN_DECEL]) * STANDARD_SPEED_KMH * 0.02f);
+		(1.0f + std::abs(normal[CAR_STAT_TURN_DECEL]) * benchmark_speed_kmh * 0.02f);
 	const float drift_retention = (1.0f + std::max(drift[CAR_STAT_DRIFT_ACCEL], 0.0f)) /
-		(1.0f + std::abs(drift[CAR_STAT_TURN_DECEL]) * STANDARD_SPEED_KMH * 0.02f);
+		(1.0f + std::abs(drift[CAR_STAT_TURN_DECEL]) * benchmark_speed_kmh * 0.02f);
 	out.components[CAR_PERFORMANCE_CORNERING][0].value = ordinary_yaw;
 	out.components[CAR_PERFORMANCE_CORNERING][1].value = ordinary_retention;
 	out.components[CAR_PERFORMANCE_CORNERING][2].value = drift_yaw;
@@ -405,10 +411,10 @@ const char *car_performance_component_explanation(CarPerformanceCategory categor
 		 "Ground covered during the first five seconds of an unboosted launch.",
 		 "Time needed to reach 300 km/h during an unboosted launch. Less time earns a higher grade.",
 		 "Time needed to reach 500 km/h during an unboosted launch. Less time earns a higher grade.", nullptr},
-		{"Sustained turning rate at 600 km/h on flat ground with full steering input.",
-		 "How much speed the machine preserves while cornering normally at the benchmark speed.",
-		 "Sustained turning rate at 600 km/h during a full-input drift on flat ground.",
-		 "How much speed the machine preserves during a normal drift at the benchmark speed.", nullptr, nullptr},
+		{"Sustained turning rate at the machine's settled unboosted speed on flat ground with full steering input.",
+		 "How much speed the machine preserves while cornering normally at its settled unboosted speed.",
+		 "Sustained turning rate at the machine's settled unboosted speed during a full-input drift on flat ground.",
+		 "How much speed the machine preserves during a normal drift at its settled unboosted speed.", nullptr, nullptr},
 		{"How strongly the machine's base grip resists entering a slide.",
 		 "How readily steering can overpower the machine's restoring grip. Less unwanted sliding earns a higher grade.",
 		 "How strongly the machine settles back into a planted state after sliding.",
@@ -451,7 +457,7 @@ bool analyze_car_performance(
 	out_analysis.components[CAR_PERFORMANCE_BOOSTER][3].value =
 		properties.base_stats[CAR_STAT_MAX_ENERGY] /
 		(10.0f * safe_positive(properties.base_stats[CAR_STAT_BOOST_ENERGY_USE_RATE]));
-	analyze_handling(properties, out_analysis);
+	analyze_handling(properties, ordinary.terminal_speed, out_analysis);
 	analyze_body(properties, out_analysis);
 	analyze_air(properties, out_analysis);
 	for (uint8_t category = 0; category < CAR_PERFORMANCE_CATEGORY_COUNT; ++category) {
