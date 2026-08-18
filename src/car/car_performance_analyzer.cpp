@@ -61,29 +61,36 @@ static float score_against_anchors(float value, float center, float best, float 
 	return -(center - value) / scale;
 }
 
+static String nonnegative_grade_stem(float anchor) {
+	static constexpr const char *BASE_GRADES[5] = {"E", "D", "C", "B", "A"};
+	if (anchor <= 4.0f) {
+		return BASE_GRADES[std::clamp(static_cast<int>(anchor), 0, 4)];
+	}
+	const float s_count = anchor - 4.0f;
+	if (s_count > 8.0f) {
+		return String::utf8("S×") + String::num(s_count, 0);
+	}
+	String label;
+	for (int i = 0; i < static_cast<int>(s_count); ++i) label += "S";
+	return label;
+}
+
 static String grade_label(float score) {
 	if (!std::isfinite(score)) return "?";
-	if (score > 4.00001f) {
-		const int extra = std::max(0, static_cast<int>(std::floor((score - 4.0f) / 0.5f)));
-		String label = "S";
-		for (int i = 0; i < extra; ++i) label += "+";
-		return label;
-	}
 	if (score < -0.00001f) {
 		const int extra = std::max(0, static_cast<int>(std::floor((-score) / 0.5f)));
 		String label = "F";
 		for (int i = 0; i < extra; ++i) label += "-";
 		return label;
 	}
-	const float clamped = std::clamp(score, 0.0f, 4.0f);
-	const int lower = std::min(static_cast<int>(std::floor(clamped)), 4);
-	static constexpr const char *LETTERS[5] = {"E", "D", "C", "B", "A"};
-	if (lower == 4) return "A";
-	const float fraction = clamped - static_cast<float>(lower);
-	if (fraction < 1.0f / 3.0f) return LETTERS[lower];
-	if (fraction < 0.5f) return String(LETTERS[lower]) + "+";
-	if (fraction < 2.0f / 3.0f) return String(LETTERS[lower + 1]) + "-";
-	return LETTERS[lower + 1];
+	const float lower = std::floor(std::max(score, 0.0f));
+	const float fraction = score - lower;
+	const String lower_label = nonnegative_grade_stem(lower);
+	if (fraction < 1.0f / 3.0f) return lower_label;
+	if (fraction < 0.5f) return lower_label + String("+");
+	const String upper_label = nonnegative_grade_stem(lower + 1.0f);
+	if (fraction < 2.0f / 3.0f) return upper_label + String("-");
+	return upper_label;
 }
 
 static float display_component_value(
@@ -368,7 +375,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 7;
+	result["benchmark_version"] = 8;
 	result["machine_setting"] = setting;
 	result["benchmark_machine_setting"] = 0.5f;
 	result["benchmark_reference"] = "All Rounder at 50%; official extrema sampled at 0%, 50%, and 100%";
