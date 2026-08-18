@@ -17,6 +17,7 @@ const RaceSessionControllerClass = preload("res://core/race_session_controller.g
 
 const DEBUG_REPLAY_VERSION := 2
 const REPLAY_SCHEMA_VERSION := 4
+const REPLAY_COMPATIBILITY_WARNING := "This replay was recorded on an older version of the game, and may desync."
 const GameVersionData = preload("res://core/game_version.gd")
 const REPLAY_CAMERA_GAME := 0
 const REPLAY_CAMERA_AUTO := 1
@@ -105,6 +106,8 @@ var replay_catalog_watch_button: Button
 var replay_catalog_rename_button: Button
 var replay_catalog_delete_button: Button
 var replay_catalog_entries: Array = []
+var replay_compatibility_dialog: ConfirmationDialog
+var pending_incompatible_replay_path := ""
 var replay_timeline_root: Control
 var replay_timeline_panel: PanelContainer
 var replay_timeline_track: ColorRect
@@ -171,7 +174,7 @@ func configure_command_line(args: Array, user_args: Array) -> bool:
 	replay_skip_seek_bake_requested = args.has("--skip-replay-seek-bake") or user_args.has("--skip-replay-seek-bake")
 	replay_load_profile_requested = args.has("--profile-replay-load") or user_args.has("--profile-replay-load")
 	if replay_autoload_path != "":
-		call_deferred("_start_replay_playback_from_path", replay_autoload_path)
+		call_deferred("_request_replay_playback_from_path", replay_autoload_path)
 		return true
 	if debug_replay_autoload_path != "":
 		call_deferred("_load_and_start_debug_replay", debug_replay_autoload_path)
@@ -356,13 +359,16 @@ func _replay_engine_version() -> String:
 	return str(engine_version.get("string", ""))
 
 func _replay_is_compatible(data: Dictionary) -> bool:
-	if int(data.get("schema_version", -1)) != REPLAY_SCHEMA_VERSION:
+	if !_replay_schema_is_supported(data):
 		return false
 	var stored_version = data.get("game_version", {})
 	if typeof(stored_version) != TYPE_DICTIONARY:
 		return false
 	var version: Dictionary = stored_version
 	return int(version.get("major", -1)) == GameVersionData.MAJOR and int(version.get("compatibility", -1)) == GameVersionData.COMPATIBILITY
+
+func _replay_schema_is_supported(data: Dictionary) -> bool:
+	return int(data.get("schema_version", -1)) == REPLAY_SCHEMA_VERSION
 
 func _replay_mode_name() -> String:
 	if !game_manager.singleplayer_mode:
@@ -571,7 +577,13 @@ func _load_replay_file(path: String) -> Dictionary:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_warning("Replay load failed: JSON root is not a dictionary.")
 		return {}
-	if !_replay_is_compatible(parsed):
+	if !_replay_schema_is_supported(parsed):
+		push_warning("Replay load refused: unsupported schema %s; expected schema %d." % [
+			str(parsed.get("schema_version", -1)),
+			REPLAY_SCHEMA_VERSION,
+		])
+		return {}
+	if replay_strict_verify_requested and !_replay_is_compatible(parsed):
 		push_warning("Replay load refused: compatibility mismatch. Stored=%s expected=%d.%d schema=%s expected_schema=%d" % [
 			str(parsed.get("game_version", {})),
 			GameVersionData.MAJOR,
@@ -582,6 +594,44 @@ func _load_replay_file(path: String) -> Dictionary:
 		return {}
 	game_manager.record_memory_sample("replay_load_parsed")
 	return parsed
+
+func _request_replay_playback_from_path(path: String) -> void:
+	var metadata := _load_replay_metadata_file(path)
+	if metadata.is_empty() or !_replay_schema_is_supported(metadata) or _replay_is_compatible(metadata) or replay_strict_verify_requested:
+		_start_replay_playback_from_path(path, true)
+		return
+	if game_manager.headless_mode:
+		push_warning(REPLAY_COMPATIBILITY_WARNING)
+		_start_replay_playback_from_path(path, true)
+		return
+	_show_replay_compatibility_warning(path)
+
+func play_replay_file(path: String) -> void:
+	_request_replay_playback_from_path(path)
+
+func _show_replay_compatibility_warning(path: String) -> void:
+	pending_incompatible_replay_path = path
+	if replay_compatibility_dialog == null or !is_instance_valid(replay_compatibility_dialog):
+		replay_compatibility_dialog = ConfirmationDialog.new()
+		replay_compatibility_dialog.name = "ReplayCompatibilityWarning"
+		replay_compatibility_dialog.title = "Replay Compatibility Warning"
+		replay_compatibility_dialog.dialog_text = REPLAY_COMPATIBILITY_WARNING
+		replay_compatibility_dialog.ok_button_text = "Play Anyway"
+		replay_compatibility_dialog.cancel_button_text = "Cancel"
+		replay_compatibility_dialog.exclusive = true
+		replay_compatibility_dialog.confirmed.connect(_on_replay_compatibility_confirmed)
+		replay_compatibility_dialog.canceled.connect(_on_replay_compatibility_canceled)
+		add_child(replay_compatibility_dialog)
+	replay_compatibility_dialog.popup_centered(Vector2i(620, 170))
+
+func _on_replay_compatibility_confirmed() -> void:
+	var path := pending_incompatible_replay_path
+	pending_incompatible_replay_path = ""
+	if !path.is_empty():
+		call_deferred("_start_replay_playback_from_path", path, true)
+
+func _on_replay_compatibility_canceled() -> void:
+	pending_incompatible_replay_path = ""
 
 func _replay_metadata_json_without_frames(text: String) -> String:
 	var key_pos := text.find("\n\t\"frames\"")
@@ -1156,7 +1206,7 @@ func _update_replay_timeline_controls() -> void:
 	if replay_timeline_play_button != null:
 		replay_timeline_play_button.text = "Play" if replay_playback_paused else "Pause"
 
-func _start_replay_playback_from_path(path: String) -> void:
+func _start_replay_playback_from_path(path: String, compatibility_warning_accepted := false) -> void:
 	var profile_start_us := Time.get_ticks_usec()
 	var replay := _load_replay_file(path)
 	var loaded_source_bytes := replay_playback_source_bytes
@@ -1165,6 +1215,12 @@ func _start_replay_playback_from_path(path: String) -> void:
 		if game_manager.headless_mode:
 			get_tree().quit(1)
 		return
+	if !_replay_is_compatible(replay) and !compatibility_warning_accepted:
+		if game_manager.headless_mode:
+			push_warning(REPLAY_COMPATIBILITY_WARNING)
+		else:
+			_show_replay_compatibility_warning(path)
+			return
 	if replay_leaderboard_verify_requested:
 		replay_leaderboard_validation = LeaderboardReplayValidatorClass.validate(game_manager, replay)
 		if !bool(replay_leaderboard_validation.get("valid", false)):
@@ -1923,7 +1979,12 @@ func _on_replay_catalog_selected(_index: int) -> void:
 			str(p.get("vehicle_content_id", "")),
 			stamp_count
 		])
-	var compatible := _replay_is_compatible(entry)
+	var schema_supported := _replay_schema_is_supported(entry)
+	var compatibility_status := "current"
+	if !schema_supported:
+		compatibility_status = "unsupported replay format"
+	elif !_replay_is_compatible(entry):
+		compatibility_status = "older version (may desync)"
 	replay_catalog_metadata_label.text = "\n".join([
 		"Track: %s" % str(entry.get("track_name", "")),
 		"Mode: %s" % str(entry.get("mode", "")),
@@ -1933,7 +1994,7 @@ func _on_replay_catalog_selected(_index: int) -> void:
 		"Players:",
 		"\n".join(player_lines),
 		"",
-		"Compatible: %s" % ("yes" if compatible else "no"),
+		"Compatibility: %s" % compatibility_status,
 		str(entry.get("_path", "")),
 	])
 	_update_replay_catalog_buttons()
@@ -1941,9 +2002,9 @@ func _on_replay_catalog_selected(_index: int) -> void:
 func _update_replay_catalog_buttons() -> void:
 	var entry := _selected_replay_catalog_entry()
 	var has_entry := !entry.is_empty()
-	var compatible := has_entry and _replay_is_compatible(entry)
+	var schema_supported := has_entry and _replay_schema_is_supported(entry)
 	if replay_catalog_watch_button != null:
-		replay_catalog_watch_button.disabled = !compatible
+		replay_catalog_watch_button.disabled = !schema_supported
 	if replay_catalog_rename_button != null:
 		replay_catalog_rename_button.disabled = !has_entry
 	if replay_catalog_delete_button != null:
@@ -1953,7 +2014,7 @@ func _on_replay_catalog_watch_pressed() -> void:
 	var entry := _selected_replay_catalog_entry()
 	if entry.is_empty():
 		return
-	_start_replay_playback_from_path(str(entry.get("_path", "")))
+	_request_replay_playback_from_path(str(entry.get("_path", "")))
 
 func _on_replay_catalog_rename_pressed() -> void:
 	var entry := _selected_replay_catalog_entry()

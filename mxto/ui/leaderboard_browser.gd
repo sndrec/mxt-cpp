@@ -3,6 +3,7 @@ class_name LeaderboardBrowser extends VBoxContainer
 signal watch_replay_requested(board_name: String, entry: Dictionary)
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
+const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
 
 @onready var status_label: Label = $Status
 @onready var summary_label: Label = $Summary
@@ -140,13 +141,14 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 	var local_steam_id := game_manager.steam_service.get_steam_id() if game_manager.steam_service != null else 0
 	var local_entry: Dictionary = {}
 	for value in entries:
-		var entry: Dictionary = value
+		var entry: Dictionary = (value as Dictionary).duplicate(true)
+		var decoded := _decode_details(entry.get("details", []))
+		entry["_trusted_details"] = decoded
 		visible_entries.append(entry)
 		var item := entry_tree.create_item(root)
 		item.set_metadata(0, visible_entries.size() - 1)
 		item.set_text(0, "#%d" % int(entry.get("global_rank", 0)))
 		item.set_text(1, String(entry.get("persona_name", "Steam %s" % String(entry.get("steam_id", "")))))
-		var decoded := _decode_details(entry.get("details", []))
 		item.set_text(2, String(decoded.get("vehicle", "Unknown")))
 		item.set_text(3, String(decoded.get("version", "Legacy / unknown")))
 		item.set_text(4, _format_score(int(entry.get("score", 0))))
@@ -165,30 +167,25 @@ func _show_entries(board_name: String, request_type: String, result: Dictionary)
 
 
 func _decode_details(details_value) -> Dictionary:
-	if typeof(details_value) != TYPE_ARRAY:
+	var decoded := LeaderboardDetailsClass.decode(details_value)
+	if decoded.is_empty():
 		return {}
-	var values: Array = details_value
-	if values.size() < 6 or (int(values[0]) & 0xffffffff) != 0x3154584d or int(values[1]) != 1:
-		return {}
-	var packed_version := int(values[4]) & 0xffffffff
-	var vehicle_prefix := int(values[5]) & 0xffffffff
-	return {
-		"vehicle": _vehicle_name_for_prefix(vehicle_prefix),
-		"version": "v%d.%d.%d · replay r%d" % [(packed_version >> 24) & 0xff, (packed_version >> 16) & 0xff, packed_version & 0xffff, int(values[3])],
-	}
+	var version: Dictionary = decoded.get("game_version", {})
+	decoded["vehicle"] = _vehicle_name_for_digest(String(decoded.get("vehicle_gameplay_digest", "")))
+	decoded["version"] = "v%d.%d.%d · replay r%d" % [int(version.get("major", 0)), int(version.get("compatibility", 0)), int(version.get("patch", 0)), int(decoded.get("replay_schema_version", 0))]
+	return decoded
 
 
-func _vehicle_name_for_prefix(prefix: int) -> String:
+func _vehicle_name_for_digest(gameplay_digest: String) -> String:
 	if game_manager != null and game_manager.vehicle_content_controller != null:
 		for definition_value in game_manager.vehicle_content_controller.definitions:
 			var definition: CarDefinition = definition_value
 			if definition == null:
 				continue
 			var record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(definition.content_id)
-			var digest := String(record.get("gameplay_digest", "")).trim_prefix("sha256:")
-			if digest.length() >= 8 and digest.substr(0, 8).hex_to_int() == prefix:
+			if String(record.get("gameplay_digest", "")) == gameplay_digest:
 				return definition.name
-	return "Digest %08x" % prefix
+	return "Digest %s…" % gameplay_digest.trim_prefix("sha256:").left(8)
 
 
 func _on_entry_selected() -> void:
@@ -197,7 +194,12 @@ func _on_entry_selected() -> void:
 		watch_button.disabled = true
 		return
 	var index := int(selected.get_metadata(0))
-	watch_button.disabled = index < 0 or index >= visible_entries.size() or int((visible_entries[index] as Dictionary).get("ugc_handle", 0)) == 0
+	if index < 0 or index >= visible_entries.size():
+		watch_button.disabled = true
+		return
+	var entry: Dictionary = visible_entries[index]
+	var trusted: Dictionary = entry.get("_trusted_details", {})
+	watch_button.disabled = int(entry.get("ugc_handle", 0)) == 0 or String(trusted.get("replay_sha256", "")).is_empty()
 
 
 func _watch_selected() -> void:

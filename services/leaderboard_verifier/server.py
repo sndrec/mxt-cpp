@@ -173,6 +173,9 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
         except (SteamWebApiError, ValueError) as exc:
             self._json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "steam_score_write_failed", "message": str(exc)})
             return
+        steam_result_value = steam_response.get("result", steam_response)
+        steam_result = steam_result_value if isinstance(steam_result_value, dict) else {}
+        retained = bool(steam_result.get("score_changed", False))
         self._json(
             HTTPStatus.OK,
             {
@@ -180,6 +183,10 @@ class LeaderboardRequestHandler(BaseHTTPRequestHandler):
                 "steam_id": str(steam_id),
                 "board_name": board_name,
                 "score_milliseconds": claimed_score,
+                "replay_sha256": str(verified["replay_sha256"]),
+                "retained": retained,
+                "global_rank": int(steam_result.get("global_rank_new", 0)),
+                "previous_global_rank": int(steam_result.get("global_rank_previous", 0)),
                 "steam_response": steam_response,
             },
         )

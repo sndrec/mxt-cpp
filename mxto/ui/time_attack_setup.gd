@@ -4,9 +4,11 @@ signal start_requested(ranked: bool, context: Dictionary)
 signal back_requested
 signal official_vehicle_requested
 signal leaderboard_requested(board_name: String)
+signal watch_replay_requested(board_name: String, entry: Dictionary)
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
+const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
 
 @onready var track_label: Label = $Center/Panel/Margin/Content/Track
 @onready var vehicle_label: Label = $Center/Panel/Margin/Content/Vehicle
@@ -21,6 +23,7 @@ const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility
 @onready var practice_button: Button = $Center/Panel/Margin/Content/Actions/Practice
 @onready var official_button: Button = $Center/Panel/Margin/Content/Actions/Official
 @onready var leaderboard_button: Button = $Center/Panel/Margin/Content/Secondary/ViewLeaderboard
+@onready var watch_replay_button: Button = $Center/Panel/Margin/Content/Secondary/WatchReplay
 
 var game_manager: GameManager
 var eligibility: Dictionary = {}
@@ -29,6 +32,7 @@ var personal_best_milliseconds := 0
 var personal_global_rank := 0
 var friend_position := 0
 var friend_count := 0
+var personal_entry: Dictionary = {}
 
 
 func initialize(in_game_manager: GameManager) -> void:
@@ -40,6 +44,7 @@ func initialize(in_game_manager: GameManager) -> void:
 	practice_button.pressed.connect(_start.bind(false))
 	official_button.pressed.connect(func(): official_vehicle_requested.emit())
 	leaderboard_button.pressed.connect(func(): leaderboard_requested.emit(board_name))
+	watch_replay_button.pressed.connect(func(): watch_replay_requested.emit(board_name, personal_entry.duplicate(true)))
 	$Center/Panel/Margin/Content/Secondary/Back.pressed.connect(func(): back_requested.emit())
 	hide()
 
@@ -49,6 +54,8 @@ func open_for_current_selection() -> void:
 	personal_global_rank = 0
 	friend_position = 0
 	friend_count = 0
+	personal_entry.clear()
+	watch_replay_button.disabled = true
 	var options := TimeAttackRulesClass.build_options()
 	game_manager.track_content_controller.set_track_content_evidence(
 		options, [game_manager.track_selector.selected])
@@ -126,6 +133,10 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 				continue
 			personal_best_milliseconds = int(entry.get("score", 0))
 			personal_global_rank = int(entry.get("global_rank", 0))
+			personal_entry = entry.duplicate(true)
+			personal_entry["_trusted_details"] = LeaderboardDetailsClass.decode(entry.get("details", []))
+			watch_replay_button.disabled = int(entry.get("ugc_handle", 0)) == 0 \
+				or String((personal_entry["_trusted_details"] as Dictionary).get("replay_sha256", "")).is_empty()
 			break
 		personal_label.text = "Personal Best  ·  %s" % (_format_score(personal_best_milliseconds) if personal_best_milliseconds > 0 else "No verified time")
 		global_label.text = "Global Rank  ·  #%d" % personal_global_rank if personal_global_rank > 0 else "Global Rank  ·  Unranked"

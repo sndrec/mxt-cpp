@@ -120,9 +120,15 @@ class SteamWebApi:
 
 
 def leaderboard_details(verified: dict[str, Any]) -> bytes:
-    vehicle_digest = str(verified["vehicle_gameplay_digest"])
-    digest_hex = vehicle_digest.removeprefix("sha256:")
-    vehicle_prefix = int(digest_hex[:8], 16)
+    def digest_words(name: str) -> tuple[int, ...]:
+        digest_hex = str(verified[name]).removeprefix("sha256:")
+        if len(digest_hex) != 64:
+            raise ValueError(f"{name} is not a complete SHA-256 digest")
+        try:
+            return tuple(int(digest_hex[offset : offset + 8], 16) for offset in range(0, 64, 8))
+        except ValueError as exc:
+            raise ValueError(f"{name} is not a complete SHA-256 digest") from exc
+
     game_version = verified.get("game_version", {})
     if not isinstance(game_version, dict):
         game_version = {}
@@ -132,11 +138,13 @@ def leaderboard_details(verified: dict[str, Any]) -> bytes:
         | (int(game_version.get("patch", 0)) & 0xFFFF)
     )
     return struct.pack(
-        "<6I",
+        "<29I",
         0x3154584D,
-        1,
+        2,
         int(verified["ruleset_revision"]),
         int(verified["replay_schema_version"]),
         packed_version,
-        vehicle_prefix,
+        *digest_words("replay_sha256"),
+        *digest_words("track_gameplay_digest"),
+        *digest_words("vehicle_gameplay_digest"),
     )

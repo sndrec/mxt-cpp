@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import tempfile
@@ -76,6 +77,7 @@ class ReplayVerifier:
         boards = self.manifest_boards()
         if requested_board not in boards:
             raise ReplayVerificationError("requested leaderboard is not in the official manifest")
+        replay_sha256 = "sha256:" + hashlib.sha256(replay_bytes).hexdigest()
         temp_path: Path | None = None
         try:
             with tempfile.NamedTemporaryFile(
@@ -133,4 +135,5 @@ class ReplayVerifier:
             raise ReplayVerificationError("claimed score does not match the re-simulated score")
         if claimed_score <= 0 or claimed_score > 0x7FFFFFFF:
             raise ReplayVerificationError("verified score is outside Steam's supported score range")
+        verified["replay_sha256"] = replay_sha256
         return verified

@@ -70,6 +70,7 @@ const SessionMemoryTelemetryClass = preload("res://core/session_memory_telemetry
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
+const LeaderboardReplayServiceClass = preload("res://steam/leaderboard_replay_service.gd")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
@@ -119,6 +120,7 @@ const FORCE_END_WINDOW_TICKS := 60 * 60
 var race_pause_open := false
 var steam_service: MxtSteamService
 var leaderboard_client: LeaderboardClient
+var leaderboard_replay_service
 
 func _ready() -> void:
 	steam_service = MxtSteamService.new()
@@ -196,7 +198,16 @@ func _ready() -> void:
 	time_attack_setup.back_requested.connect(_on_time_attack_setup_back_requested)
 	time_attack_setup.official_vehicle_requested.connect(_on_time_attack_official_vehicle_requested)
 	time_attack_setup.leaderboard_requested.connect(_on_time_attack_leaderboard_requested)
+	time_attack_setup.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
 	replay_controller.initialize()
+	leaderboard_replay_service = LeaderboardReplayServiceClass.new()
+	leaderboard_replay_service.name = "LeaderboardReplayService"
+	add_child(leaderboard_replay_service)
+	leaderboard_replay_service.initialize(self, steam_service, replay_controller)
+	leaderboard_replay_service.attachment_status_changed.connect(_on_leaderboard_replay_attachment_status_changed)
+	leaderboard_replay_service.playback_status_changed.connect(_on_leaderboard_replay_playback_status_changed)
+	car_settings.leaderboard_browser.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
+	_on_leaderboard_replay_attachment_status_changed(leaderboard_replay_service.status())
 	memory_telemetry = SessionMemoryTelemetryClass.new()
 	memory_telemetry.initialize(self)
 	_build_start_sync_drop_panel()
@@ -1752,9 +1763,11 @@ func _on_leaderboard_status_changed(status: Dictionary) -> void:
 
 
 func _on_leaderboard_submission_completed(result: Dictionary) -> void:
+	if bool(result.get("retained", false)) and leaderboard_replay_service != null:
+		leaderboard_replay_service.enqueue_verified_submission(result)
 	if String(result.get("replay_path", "")) != time_attack_last_replay_path:
 		return
-	var message := "Accepted and retained as your Steam best." if bool(result.get("retained", false)) else "Accepted, but your existing Steam best is faster."
+	var message := "Accepted and retained as your Steam best; replay attachment is queued." if bool(result.get("retained", false)) else "Accepted, but your existing Steam best is faster."
 	var rank := int(result.get("global_rank", 0))
 	if rank > 0:
 		message += " Global rank #%d." % rank
@@ -1805,7 +1818,28 @@ func _on_time_attack_race_again_requested() -> void:
 
 func _on_time_attack_watch_replay_requested() -> void:
 	if !time_attack_last_replay_path.is_empty():
-		replay_controller.call_deferred("_request_replay_playback_from_path", time_attack_last_replay_path)
+		replay_controller.call_deferred("play_replay_file", time_attack_last_replay_path)
+
+
+func _on_leaderboard_replay_attachment_status_changed(status: Dictionary) -> void:
+	if leaderboard_client != null:
+		leaderboard_client.set_attachment_hold(int(status.get("pending_count", 0)) > 0 or bool(status.get("active", false)))
+	if race_presentation_controller == null:
+		return
+	var message := String(status.get("message", ""))
+	if int(status.get("pending_count", 0)) > 0:
+		message += " Attachment work is persisted; it is safe to close the game."
+	race_presentation_controller.update_time_attack_submission_status(message)
+
+
+func _on_leaderboard_replay_playback_status_changed(message: String) -> void:
+	if race_presentation_controller != null:
+		race_presentation_controller.show_notification(message, 5000)
+
+
+func _on_leaderboard_replay_watch_requested(board_name: String, entry: Dictionary) -> void:
+	if leaderboard_replay_service != null:
+		leaderboard_replay_service.request_watch_replay(board_name, entry)
 
 
 func _on_time_attack_results_leaderboard_requested(board_name: String) -> void:

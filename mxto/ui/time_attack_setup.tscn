@@ -125,3 +125,8 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "View Full Leaderboard"
 
+[node name="WatchReplay" type="Button" parent="Center/Panel/Margin/Content/Secondary"]
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "Watch My Best Replay"

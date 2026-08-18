@@ -139,6 +139,11 @@ struct SteamWorkshopState {
 	CCallback<SteamWorkshopState, RemoteStoragePublishedFileUnsubscribed_t> unsubscribed_callback;
 	CCallResult<SteamWorkshopState, LeaderboardFindResult_t> leaderboard_find_call;
 	CCallResult<SteamWorkshopState, LeaderboardScoresDownloaded_t> leaderboard_download_call;
+	CCallResult<SteamWorkshopState, RemoteStorageFileShareResult_t> replay_share_call;
+	CCallResult<SteamWorkshopState, LeaderboardFindResult_t> replay_leaderboard_find_call;
+	CCallResult<SteamWorkshopState, LeaderboardScoresDownloaded_t> replay_entry_download_call;
+	CCallResult<SteamWorkshopState, LeaderboardUGCSet_t> replay_attach_call;
+	CCallResult<SteamWorkshopState, RemoteStorageDownloadUGCResult_t> replay_download_call;
 	CCallback<SteamWorkshopState, GetTicketForWebApiResponse_t> web_api_ticket_callback;
 	int64_t create_request_id = 0;
 	int64_t submit_request_id = 0;
@@ -151,6 +156,14 @@ struct SteamWorkshopState {
 	int64_t web_api_ticket_request_id = 0;
 	HAuthTicket web_api_ticket_handle = k_HAuthTicketInvalid;
 	String web_api_ticket_identity;
+	int64_t replay_upload_request_id = 0;
+	String replay_upload_leaderboard_name;
+	String replay_upload_remote_filename;
+	uint32 replay_upload_digest_words[8] = {};
+	UGCHandle_t replay_upload_handle = k_UGCHandleInvalid;
+	int64_t replay_download_request_id = 0;
+	UGCHandle_t replay_download_handle = k_UGCHandleInvalid;
+	int64_t replay_download_maximum_bytes = 0;
 
 	explicit SteamWorkshopState(MxtSteamService *p_owner) :
 			owner(p_owner),
@@ -286,6 +299,129 @@ struct SteamWorkshopState {
 		owner->complete_web_api_ticket_request(request_id, result);
 	}
 
+	void finish_replay_upload(const Dictionary &result)
+	{
+		const int64_t request_id = replay_upload_request_id;
+		replay_upload_request_id = 0;
+		replay_upload_leaderboard_name = String();
+		replay_upload_remote_filename = String();
+		for (uint32 &word : replay_upload_digest_words) word = 0;
+		replay_upload_handle = k_UGCHandleInvalid;
+		owner->complete_leaderboard_replay_upload(request_id, result);
+	}
+
+	void on_replay_file_shared(RemoteStorageFileShareResult_t *value, bool io_failure)
+	{
+		if (replay_upload_request_id == 0) return;
+		if (io_failure || value->m_eResult != k_EResultOK || value->m_hFile == k_UGCHandleInvalid || !SteamUserStats()) {
+			finish_replay_upload(request_result(false, io_failure ? String("Steam replay share I/O failure") : steam_result_name(value->m_eResult)));
+			return;
+		}
+		replay_upload_handle = value->m_hFile;
+		const CharString name_utf8 = replay_upload_leaderboard_name.utf8();
+		const SteamAPICall_t call = SteamUserStats()->FindLeaderboard(name_utf8.get_data());
+		if (call == k_uAPICallInvalid) {
+			finish_replay_upload(request_result(false, "Steam rejected the replay leaderboard lookup."));
+			return;
+		}
+		replay_leaderboard_find_call.Set(call, this, &SteamWorkshopState::on_replay_leaderboard_found);
+	}
+
+	void on_replay_leaderboard_found(LeaderboardFindResult_t *value, bool io_failure)
+	{
+		if (replay_upload_request_id == 0) return;
+		if (io_failure || !value->m_bLeaderboardFound || value->m_hSteamLeaderboard == 0 || !SteamUserStats() || !SteamUser()) {
+			finish_replay_upload(request_result(false, io_failure ? String("Steam replay leaderboard I/O failure") : String("Replay leaderboard was not found.")));
+			return;
+		}
+		CSteamID user = SteamUser()->GetSteamID();
+		const SteamAPICall_t call = SteamUserStats()->DownloadLeaderboardEntriesForUsers(value->m_hSteamLeaderboard, &user, 1);
+		if (call == k_uAPICallInvalid) {
+			finish_replay_upload(request_result(false, "Steam rejected the retained-score replay check."));
+			return;
+		}
+		replay_entry_download_call.Set(call, this, &SteamWorkshopState::on_replay_entry_downloaded);
+	}
+
+	void on_replay_entry_downloaded(LeaderboardScoresDownloaded_t *value, bool io_failure)
+	{
+		if (replay_upload_request_id == 0) return;
+		LeaderboardEntry_t entry = {};
+		int32 details[29] = {};
+		bool digest_matches = false;
+		if (!io_failure && value->m_cEntryCount == 1 && SteamUserStats() &&
+				SteamUserStats()->GetDownloadedLeaderboardEntry(value->m_hSteamLeaderboardEntries, 0, &entry, details, 29) &&
+				entry.m_cDetails >= 29 && static_cast<uint32>(details[0]) == 0x3154584D && details[1] == 2) {
+			digest_matches = true;
+			for (int index = 0; index < 8; ++index) {
+				if (static_cast<uint32>(details[5 + index]) != replay_upload_digest_words[index]) {
+					digest_matches = false;
+					break;
+				}
+			}
+		}
+		if (!digest_matches || !SteamUserStats()) {
+			if (SteamRemoteStorage()) {
+				const CharString filename_utf8 = replay_upload_remote_filename.utf8();
+				SteamRemoteStorage()->FileDelete(filename_utf8.get_data());
+			}
+			Dictionary result = request_result(false, io_failure ? String("Steam retained-score replay check failed.") : String("The retained score changed before its replay could be attached."));
+			result["retryable"] = io_failure;
+			finish_replay_upload(result);
+			return;
+		}
+		const SteamAPICall_t call = SteamUserStats()->AttachLeaderboardUGC(value->m_hSteamLeaderboard, replay_upload_handle);
+		if (call == k_uAPICallInvalid) {
+			finish_replay_upload(request_result(false, "Steam rejected the replay attachment."));
+			return;
+		}
+		replay_attach_call.Set(call, this, &SteamWorkshopState::on_replay_attached);
+	}
+
+	void on_replay_attached(LeaderboardUGCSet_t *value, bool io_failure)
+	{
+		if (replay_upload_request_id == 0) return;
+		Dictionary result = request_result(!io_failure && value->m_eResult == k_EResultOK,
+			io_failure ? String("Steam replay attachment I/O failure") : steam_result_name(value->m_eResult));
+		result["ugc_handle"] = static_cast<int64_t>(replay_upload_handle);
+		result["remote_filename"] = replay_upload_remote_filename;
+		finish_replay_upload(result);
+	}
+
+	void finish_replay_download(const Dictionary &result)
+	{
+		const int64_t request_id = replay_download_request_id;
+		replay_download_request_id = 0;
+		replay_download_handle = k_UGCHandleInvalid;
+		replay_download_maximum_bytes = 0;
+		owner->complete_leaderboard_replay_download(request_id, result);
+	}
+
+	void on_replay_downloaded(RemoteStorageDownloadUGCResult_t *value, bool io_failure)
+	{
+		if (replay_download_request_id == 0) return;
+		if (io_failure || value->m_eResult != k_EResultOK || value->m_hFile != replay_download_handle || !SteamRemoteStorage()) {
+			finish_replay_download(request_result(false, io_failure ? String("Steam replay download I/O failure") : steam_result_name(value->m_eResult)));
+			return;
+		}
+		if (value->m_nSizeInBytes <= 0 || static_cast<int64_t>(value->m_nSizeInBytes) > replay_download_maximum_bytes) {
+			finish_replay_download(request_result(false, "Downloaded replay is outside the allowed size."));
+			return;
+		}
+		PackedByteArray bytes;
+		bytes.resize(value->m_nSizeInBytes);
+		const int32 read = SteamRemoteStorage()->UGCRead(value->m_hFile, bytes.ptrw(), value->m_nSizeInBytes, 0, k_EUGCRead_Close);
+		if (read != value->m_nSizeInBytes) {
+			finish_replay_download(request_result(false, "Steam returned an incomplete replay download."));
+			return;
+		}
+		Dictionary result = request_result(true, "Replay bytes downloaded from Steam.");
+		result["bytes"] = bytes;
+		result["ugc_handle"] = static_cast<int64_t>(value->m_hFile);
+		result["owner_steam_id"] = static_cast<int64_t>(value->m_ulSteamIDOwner);
+		finish_replay_download(result);
+	}
+
 	void on_create_item(CreateItemResult_t *value, bool io_failure)
 	{
 		Dictionary result = request_result(!io_failure && value->m_eResult == k_EResultOK,
@@ -387,6 +523,8 @@ void MxtSteamService::_bind_methods()
 			DEFVAL(100));
 	ClassDB::bind_method(D_METHOD("request_web_api_auth_ticket", "identity"), &MxtSteamService::request_web_api_auth_ticket);
 	ClassDB::bind_method(D_METHOD("cancel_web_api_auth_ticket", "ticket_handle"), &MxtSteamService::cancel_web_api_auth_ticket);
+	ClassDB::bind_method(D_METHOD("upload_leaderboard_replay", "leaderboard_name", "remote_filename", "expected_replay_sha256", "bytes"), &MxtSteamService::upload_leaderboard_replay);
+	ClassDB::bind_method(D_METHOD("download_leaderboard_replay", "ugc_handle", "maximum_bytes"), &MxtSteamService::download_leaderboard_replay);
 
 	ADD_SIGNAL(MethodInfo("status_changed", PropertyInfo(Variant::DICTIONARY, "status")));
 	ADD_SIGNAL(MethodInfo(
@@ -403,6 +541,10 @@ void MxtSteamService::_bind_methods()
 			"web_api_ticket_request_completed",
 			PropertyInfo(Variant::INT, "request_id"),
 			PropertyInfo(Variant::DICTIONARY, "result")));
+	ADD_SIGNAL(MethodInfo("leaderboard_replay_upload_completed",
+			PropertyInfo(Variant::INT, "request_id"), PropertyInfo(Variant::DICTIONARY, "result")));
+	ADD_SIGNAL(MethodInfo("leaderboard_replay_download_completed",
+			PropertyInfo(Variant::INT, "request_id"), PropertyInfo(Variant::DICTIONARY, "result")));
 }
 
 void MxtSteamService::_notification(int p_what)
@@ -576,6 +718,16 @@ void MxtSteamService::complete_leaderboard_request(int64_t request_id, const Dic
 void MxtSteamService::complete_web_api_ticket_request(int64_t request_id, const Dictionary &result)
 {
 	call_deferred("emit_signal", StringName("web_api_ticket_request_completed"), request_id, result);
+}
+
+void MxtSteamService::complete_leaderboard_replay_upload(int64_t request_id, const Dictionary &result)
+{
+	call_deferred("emit_signal", StringName("leaderboard_replay_upload_completed"), request_id, result);
+}
+
+void MxtSteamService::complete_leaderboard_replay_download(int64_t request_id, const Dictionary &result)
+{
+	call_deferred("emit_signal", StringName("leaderboard_replay_download_completed"), request_id, result);
 }
 
 void MxtSteamService::complete_workshop_request(
@@ -894,4 +1046,78 @@ bool MxtSteamService::cancel_web_api_auth_ticket(int64_t ticket_handle)
 #else
 	return false;
 #endif
+}
+
+int64_t MxtSteamService::upload_leaderboard_replay(
+		const String &leaderboard_name,
+		const String &remote_filename,
+		const String &expected_replay_sha256,
+		const PackedByteArray &bytes)
+{
+	const int64_t request_id = allocate_request_id();
+#if defined(MXT_STEAMWORKS_ENABLED)
+	if (!initialized || !workshop_state || !SteamRemoteStorage() || !SteamUserStats()) {
+		complete_leaderboard_replay_upload(request_id, request_result(false, "Steam replay storage is unavailable."));
+		return request_id;
+	}
+	if (workshop_state->replay_upload_request_id != 0 || leaderboard_name.is_empty() || leaderboard_name.length() > 128 ||
+			remote_filename.is_empty() || remote_filename.length() > 240 || expected_replay_sha256.length() != 71 ||
+			!expected_replay_sha256.begins_with("sha256:") || bytes.is_empty() || bytes.size() > 64 * 1024 * 1024) {
+		complete_leaderboard_replay_upload(request_id, request_result(false, "Replay upload parameters or state are invalid."));
+		return request_id;
+	}
+	for (int index = 0; index < 8; ++index) {
+		const String chunk = expected_replay_sha256.substr(7 + index * 8, 8);
+		if (!chunk.is_valid_hex_number(false)) {
+			complete_leaderboard_replay_upload(request_id, request_result(false, "Replay upload digest is invalid."));
+			return request_id;
+		}
+		workshop_state->replay_upload_digest_words[index] = static_cast<uint32>(chunk.hex_to_int());
+	}
+	const CharString filename_utf8 = remote_filename.utf8();
+	if (!SteamRemoteStorage()->FileWrite(filename_utf8.get_data(), bytes.ptr(), static_cast<int32>(bytes.size()))) {
+		complete_leaderboard_replay_upload(request_id, request_result(false, "Steam could not write the replay to Remote Storage."));
+		return request_id;
+	}
+	const SteamAPICall_t call = SteamRemoteStorage()->FileShare(filename_utf8.get_data());
+	if (call == k_uAPICallInvalid) {
+		complete_leaderboard_replay_upload(request_id, request_result(false, "Steam rejected the replay share request."));
+		return request_id;
+	}
+	workshop_state->replay_upload_request_id = request_id;
+	workshop_state->replay_upload_leaderboard_name = leaderboard_name;
+	workshop_state->replay_upload_remote_filename = remote_filename;
+	workshop_state->replay_share_call.Set(call, workshop_state, &SteamWorkshopState::on_replay_file_shared);
+#else
+	complete_leaderboard_replay_upload(request_id, request_result(false, "Steamworks support was not compiled into this build."));
+#endif
+	return request_id;
+}
+
+int64_t MxtSteamService::download_leaderboard_replay(int64_t ugc_handle, int64_t maximum_bytes)
+{
+	const int64_t request_id = allocate_request_id();
+#if defined(MXT_STEAMWORKS_ENABLED)
+	if (!initialized || !workshop_state || !SteamRemoteStorage()) {
+		complete_leaderboard_replay_download(request_id, request_result(false, "Steam replay storage is unavailable."));
+		return request_id;
+	}
+	if (workshop_state->replay_download_request_id != 0 || ugc_handle == 0 || maximum_bytes <= 0 || maximum_bytes > 64 * 1024 * 1024) {
+		complete_leaderboard_replay_download(request_id, request_result(false, "Replay download parameters or state are invalid."));
+		return request_id;
+	}
+	const UGCHandle_t handle = static_cast<UGCHandle_t>(ugc_handle);
+	const SteamAPICall_t call = SteamRemoteStorage()->UGCDownload(handle, 0);
+	if (call == k_uAPICallInvalid) {
+		complete_leaderboard_replay_download(request_id, request_result(false, "Steam rejected the replay download request."));
+		return request_id;
+	}
+	workshop_state->replay_download_request_id = request_id;
+	workshop_state->replay_download_handle = handle;
+	workshop_state->replay_download_maximum_bytes = maximum_bytes;
+	workshop_state->replay_download_call.Set(call, workshop_state, &SteamWorkshopState::on_replay_downloaded);
+#else
+	complete_leaderboard_replay_download(request_id, request_result(false, "Steamworks support was not compiled into this build."));
+#endif
+	return request_id;
 }

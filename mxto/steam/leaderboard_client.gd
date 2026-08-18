@@ -24,6 +24,7 @@ var active_ticket_request_id := 0
 var active_ticket_handle := 0
 var active_submission: Dictionary = {}
 var last_message := "Leaderboard service is not configured."
+var attachment_hold := false
 
 func initialize(service: MxtSteamService) -> void:
 	steam_service = service
@@ -155,6 +156,11 @@ func retry_pending_now() -> void:
 		retry_timer.stop()
 	_pump_submission_queue()
 
+func set_attachment_hold(hold: bool) -> void:
+	attachment_hold = hold
+	if !attachment_hold:
+		_pump_submission_queue()
+
 func clear_rejected() -> void:
 	rejected.clear()
 	_save_queue()
@@ -212,7 +218,7 @@ func _schedule_retry() -> void:
 	retry_timer.start(delay)
 
 func _pump_submission_queue() -> void:
-	if !is_node_ready() or pending.is_empty() or active_ticket_request_id != 0 or !active_submission.is_empty():
+	if !is_node_ready() or attachment_hold or pending.is_empty() or active_ticket_request_id != 0 or !active_submission.is_empty():
 		return
 	if _service_url().is_empty():
 		last_message = "Leaderboard submission endpoint is not configured; replay remains pending."
@@ -272,12 +278,13 @@ func _on_http_request_completed(result: int, response_code: int, _headers: Packe
 		var completed_submission := active_submission.duplicate(true)
 		var steam_response: Dictionary = response.get("steam_response", {}) if typeof(response.get("steam_response", {})) == TYPE_DICTIONARY else {}
 		var steam_result: Dictionary = steam_response.get("result", {}) if typeof(steam_response.get("result", {})) == TYPE_DICTIONARY else steam_response
-		var retained := bool(steam_result.get("score_changed", false))
+		var retained := bool(response.get("retained", steam_result.get("score_changed", false)))
 		completed_submission["accepted_unix"] = int(Time.get_unix_time_from_system())
 		completed_submission["retained"] = retained
 		completed_submission["outcome"] = "retained_improved" if retained else "valid_not_best"
-		completed_submission["global_rank"] = int(steam_result.get("global_rank_new", 0))
-		completed_submission["previous_global_rank"] = int(steam_result.get("global_rank_previous", 0))
+		completed_submission["replay_sha256"] = String(response.get("replay_sha256", ""))
+		completed_submission["global_rank"] = int(response.get("global_rank", steam_result.get("global_rank_new", 0)))
+		completed_submission["previous_global_rank"] = int(response.get("previous_global_rank", steam_result.get("global_rank_previous", 0)))
 		completed.append(completed_submission)
 		if completed.size() > MAX_COMPLETED_SUBMISSIONS:
 			completed.pop_front()

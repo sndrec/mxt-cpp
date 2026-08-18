@@ -7,7 +7,8 @@ This service is the only score-writing component. The game client can read Steam
 3. rejects reuse of that authentication ticket;
 4. runs the shipped game headlessly with `--leaderboard-replay-verify`;
 5. checks the re-simulated board tuple and millisecond score against the request and checked-in manifest;
-6. calls Steam's publisher-only `SetLeaderboardScore` endpoint with `KeepBest`.
+6. hashes the exact received replay bytes with SHA-256;
+7. calls Steam's publisher-only `SetLeaderboardScore` endpoint with `KeepBest` and trusted score details containing the full replay, track, and vehicle digests.
 
 The publisher key is read only by this process and is removed from the child verifier process environment.
 
@@ -143,7 +144,39 @@ X-MXT-Claimed-Score-Milliseconds: <integer>
 <raw .replay.json bytes>
 ```
 
-Successful responses contain the authenticated Steam ID, verified board name, and verified score. Tickets are single-use within one service process. For horizontal deployment, replace the in-process replay guard with a shared atomic TTL store before adding a second instance.
+Successful responses contain the authenticated Steam ID, verified board name and
+score, exact replay SHA-256, ranks returned by Steam, and a `retained` flag. The
+flag is true only when Steam's `KeepBest` operation changed the score. The client
+uses that response to enqueue a separate, persistent Remote Storage attachment
+job; a valid run that did not beat the retained score is never attached.
+
+Tickets are single-use within one service process. For horizontal deployment,
+replace the in-process replay guard with a shared atomic TTL store before adding
+a second instance.
+
+## Replay attachment operations and privacy
+
+The verifier never stores replay bodies after verification. It deletes the
+temporary input and returns only the exact SHA-256 needed to bind the retained
+score to the bytes the client later shares through Steam Remote Storage. The
+client rehashes those bytes immediately before sharing them, persists attachment
+retries independently of score verification, and attaches the resulting UGC
+handle only to an improved retained score.
+
+Leaderboard replays are public gameplay records. They include the names and
+vehicle/livery data already captured by the replay format, plus deterministic
+input frames and race metadata. They do not add authentication tickets,
+publisher credentials, IP addresses, email addresses, or unrelated local files.
+Document this visibility in the Steam store privacy disclosure before enabling
+leaderboard replay sharing.
+
+To investigate a report, record the board, Steam ID, rank, UGC handle, and replay
+digest shown by the client/Steam API. Download and hash the attachment before
+reviewing it. For takedown, use Steamworks Remote Storage/UGC administration to
+remove the shared file or remove the affected leaderboard entry, then retain the
+digest and action reason in the private moderation log. Never replace trusted
+details with different bytes: a replacement replay requires a newly verified,
+improved score submission.
 
 ## Curate a community track revision
 
