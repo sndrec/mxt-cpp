@@ -104,6 +104,34 @@ static String trait_context(uint8_t layer) {
 	return layer < 7 ? NAMES[layer] : "In a Special State";
 }
 
+static bool trait_context_can_use_stat(uint8_t layer, CarStatId stat) {
+	// S-BOOST overrides are intentionally omitted: their individual values are
+	// too implementation-facing to make useful player-visible traits.
+	if (layer >= CAR_MODIFIER_LAYER_COUNT || stat == CAR_STAT_DRIVE_TARGET_SPEED_MULTIPLIER) {
+		return false;
+	}
+
+	switch (stat) {
+	case CAR_STAT_BOOST_ENERGY_USE_RATE:
+		return layer == CAR_MODIFIER_MTS || layer == CAR_MODIFIER_QUICKTURN ||
+			layer == CAR_MODIFIER_MANUAL_BOOST || layer == CAR_MODIFIER_STACKED_BOOST;
+	case CAR_STAT_MANUAL_TURBO_GAIN:
+	case CAR_STAT_MANUAL_BOOST_DURATION_SECONDS:
+		return layer == CAR_MODIFIER_MTS || layer == CAR_MODIFIER_QUICKTURN ||
+			layer == CAR_MODIFIER_MANUAL_BOOST;
+	case CAR_STAT_DASHPLATE_TURBO_GAIN:
+	case CAR_STAT_DASHPLATE_TURBO_HEAT_MULTIPLIER:
+	case CAR_STAT_DASHPLATE_BOOST_DURATION_SECONDS:
+		return layer == CAR_MODIFIER_MTS || layer == CAR_MODIFIER_QUICKTURN ||
+			layer == CAR_MODIFIER_DASHPLATE_BOOST || layer == CAR_MODIFIER_STACKED_BOOST;
+	case CAR_STAT_S_BOOST_BASE_SPEED_ADD_PER_SECOND:
+		return layer == CAR_MODIFIER_MTS || layer == CAR_MODIFIER_QUICKTURN ||
+			layer == CAR_MODIFIER_DASHPLATE_BOOST;
+	default:
+		return true;
+	}
+}
+
 static String signed_percent(float value) {
 	return String(value >= 0.0f ? "+" : "") + String::num(value, 1) + "%";
 }
@@ -253,7 +281,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 2;
+	result["benchmark_version"] = 3;
 	result["machine_setting"] = setting;
 	result["weight_kg"] = properties.base_stats[CAR_STAT_WEIGHT_KG];
 	result["terminal_speed_kmh"] = raw.terminal_speed_kmh;
@@ -332,6 +360,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 	for (uint8_t special = 0; special < 7; ++special) {
 		for (uint16_t stat_raw = 0; stat_raw < CAR_STAT_COUNT; ++stat_raw) {
 			const CarStatId stat = static_cast<CarStatId>(stat_raw);
+			if (!trait_context_can_use_stat(special, stat)) continue;
 			if (!PhysicsCarProperties::stat_supports_live_modifiers(stat)) continue;
 			const CarStatMetadata &metadata = get_car_stat_metadata(stat);
 			if (metadata.activity != CAR_STAT_ACTIVITY_GAMEPLAY) continue;

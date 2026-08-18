@@ -95,6 +95,28 @@ func _test_performance_grades() -> void:
 			_expect(is_equal_approx(float(trait_data.get("percent", 0.0)), -50.0), "custom turbo-loss trait should be -50% relative to the 0.5x baseline")
 	_expect(found_baseline_trait, "a custom turbo-loss adjustment should appear when it differs from the roster baseline")
 
+	var drive_target := "drive_target_speed_multiplier"
+	_expect(bool(custom.make_special_custom("manual_boost", drive_target).get("valid", false)), "manual-boost drive target should become custom")
+	var drive_curve: Array = custom.get_curve("manual_boost", drive_target)
+	for key_value in drive_curve:
+		(key_value as Dictionary)["value"] = 5.0
+	_expect(bool(custom.set_curve("manual_boost", drive_target, drive_curve).get("valid", false)), "custom drive-target curve should validate")
+	_expect(bool(custom.make_special_custom("s_boost", "acceleration").get("valid", false)), "S-Boost acceleration should become custom")
+	_expect(custom.set_s_boost_value("acceleration", 5.0), "custom S-Boost acceleration should validate")
+	_expect(bool(custom.make_special_custom("no_boost", "boost_energy_use_rate").get("valid", false)), "no-boost energy use should become custom")
+	var irrelevant_energy_curve: Array = custom.get_curve("no_boost", "boost_energy_use_rate")
+	for key_value in irrelevant_energy_curve:
+		(key_value as Dictionary)["value"] = 5.0
+	_expect(bool(custom.set_curve("no_boost", "boost_energy_use_rate", irrelevant_energy_curve).get("valid", false)), "custom no-boost energy-use curve should validate")
+	var filtered_analysis: Dictionary = analyzer.analyze_session(custom, 0.5)
+	for trait_value in filtered_analysis.get("traits", []):
+		var trait_data: Dictionary = trait_value
+		_expect(String(trait_data.get("context", "")) != "During S-Boost", "S-Boost overrides must not appear as traits")
+		_expect(String(trait_data.get("stat_name", "")) != drive_target, "Drive Target Speed must not appear as a trait")
+		var impossible_energy_use := String(trait_data.get("stat_name", "")) == "boost_energy_use_rate" \
+				and String(trait_data.get("context", "")) == "Without Boost"
+		_expect(not impossible_energy_use, "boost energy use without an active manual boost must not appear as a trait")
+
 
 func _test_trusted_leaderboard_details() -> void:
 	var details: Array = [0x3154584d, 2, 7, 4, (3 << 24) | (2 << 16) | 19]
