@@ -125,7 +125,18 @@ func hide_results() -> void:
 		results_overlay.visible = false
 		results_overlay.set_countdown_seconds(-1)
 		results_overlay.set_next_race("", 1.0, false)
+		results_overlay.clear_time_attack_result()
 	_set_results_hud_hidden(false)
+
+
+func show_time_attack_result(result: Dictionary, previous_best_milliseconds: int, status_message: String) -> void:
+	results_overlay.set_time_attack_result(result, previous_best_milliseconds)
+	results_overlay.set_time_attack_submission_status(status_message)
+
+
+func update_time_attack_submission_status(status_message: String) -> void:
+	if results_overlay.visible and results_overlay.time_attack_panel.visible:
+		results_overlay.set_time_attack_submission_status(status_message)
 
 func race_results_start_tick() -> int:
 	var sim := _results_sim()

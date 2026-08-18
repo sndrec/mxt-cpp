@@ -2,11 +2,13 @@ class_name LeaderboardClient extends Node
 
 signal submission_status_changed(status: Dictionary)
 signal entries_received(board_name: String, request_type: String, result: Dictionary)
+signal submission_completed(result: Dictionary)
 
 const CONFIG_PATH := "res://steam/leaderboard_service.json"
 const QUEUE_PATH := "user://steam_leaderboard_submissions.json"
 const MAX_PENDING_SUBMISSIONS := 32
 const MAX_REJECTED_SUBMISSIONS := 32
+const MAX_COMPLETED_SUBMISSIONS := 32
 const RETRY_DELAY_MIN_SECONDS := 30.0
 const RETRY_DELAY_MAX_SECONDS := 600.0
 
@@ -16,6 +18,7 @@ var retry_timer: Timer
 var config: Dictionary = {}
 var pending: Array = []
 var rejected: Array = []
+var completed: Array = []
 var read_requests: Dictionary = {}
 var active_ticket_request_id := 0
 var active_ticket_handle := 0
@@ -67,6 +70,7 @@ func _allowed_replay_path(path: String) -> bool:
 func _load_queue() -> void:
 	pending.clear()
 	rejected.clear()
+	completed.clear()
 	if !FileAccess.file_exists(QUEUE_PATH):
 		_emit_status()
 		return
@@ -82,8 +86,13 @@ func _load_queue() -> void:
 	for submission_value in value.get("rejected", []):
 		if typeof(submission_value) == TYPE_DICTIONARY:
 			rejected.append((submission_value as Dictionary).duplicate(true))
+	for submission_value in value.get("completed", []):
+		if typeof(submission_value) == TYPE_DICTIONARY:
+			completed.append((submission_value as Dictionary).duplicate(true))
 	if rejected.size() > MAX_REJECTED_SUBMISSIONS:
 		rejected = rejected.slice(rejected.size() - MAX_REJECTED_SUBMISSIONS)
+	if completed.size() > MAX_COMPLETED_SUBMISSIONS:
+		completed = completed.slice(completed.size() - MAX_COMPLETED_SUBMISSIONS)
 	_emit_status()
 
 func _save_queue() -> void:
@@ -96,6 +105,7 @@ func _save_queue() -> void:
 		"format_revision": 1,
 		"pending": pending,
 		"rejected": rejected,
+		"completed": completed,
 	}, "  "))
 	file.close()
 
@@ -118,9 +128,12 @@ func enqueue_submission(eligibility: Dictionary) -> bool:
 		"vehicle_gameplay_digest": String(eligibility.get("vehicle_gameplay_digest", "")),
 		"ruleset_revision": int(eligibility.get("ruleset_revision", 0)),
 		"replay_path": replay_path,
+		"track_title": String(eligibility.get("track_title", "Track")),
+		"vehicle_content_id": String(eligibility.get("vehicle_content_id", "")),
 		"created_unix": int(Time.get_unix_time_from_system()),
 		"attempts": 0,
 		"last_error": "",
+		"next_retry_unix": 0,
 	}
 	if !_submission_record_valid(submission) or !_allowed_replay_path(replay_path):
 		return false
@@ -168,11 +181,14 @@ func status() -> Dictionary:
 		"message": last_message,
 		"pending_count": pending.size(),
 		"rejected_count": rejected.size(),
+		"completed_count": completed.size(),
 		"active": !active_submission.is_empty(),
 		"service_configured": !_service_url().is_empty(),
 		"steam_available": steam_service != null and steam_service.is_initialized(),
 		"pending": pending.duplicate(true),
 		"rejected": rejected.duplicate(true),
+		"completed": completed.duplicate(true),
+		"next_retry_seconds": retry_timer.time_left if retry_timer != null and !retry_timer.is_stopped() else 0.0,
 	}
 
 func _emit_status() -> void:
@@ -191,6 +207,8 @@ func _schedule_retry() -> void:
 		return
 	var attempts := int((pending[0] as Dictionary).get("attempts", 0))
 	var delay := minf(RETRY_DELAY_MAX_SECONDS, RETRY_DELAY_MIN_SECONDS * pow(2.0, minf(float(attempts), 5.0)))
+	(pending[0] as Dictionary)["next_retry_unix"] = int(Time.get_unix_time_from_system() + delay)
+	_save_queue()
 	retry_timer.start(delay)
 
 func _pump_submission_queue() -> void:
@@ -207,6 +225,7 @@ func _pump_submission_queue() -> void:
 		return
 	active_submission = (pending[0] as Dictionary).duplicate(true)
 	active_submission["attempts"] = int(active_submission.get("attempts", 0)) + 1
+	active_submission["next_retry_unix"] = 0
 	pending[0] = active_submission.duplicate(true)
 	_save_queue()
 	last_message = "Requesting Steam authentication ticket..."
@@ -250,12 +269,25 @@ func _on_http_request_completed(result: int, response_code: int, _headers: Packe
 	var response_value = JSON.parse_string(body.get_string_from_utf8())
 	var response: Dictionary = response_value if typeof(response_value) == TYPE_DICTIONARY else {}
 	if result == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300 and bool(response.get("ok", false)):
+		var completed_submission := active_submission.duplicate(true)
+		var steam_response: Dictionary = response.get("steam_response", {}) if typeof(response.get("steam_response", {})) == TYPE_DICTIONARY else {}
+		var steam_result: Dictionary = steam_response.get("result", {}) if typeof(steam_response.get("result", {})) == TYPE_DICTIONARY else steam_response
+		var retained := bool(steam_result.get("score_changed", false))
+		completed_submission["accepted_unix"] = int(Time.get_unix_time_from_system())
+		completed_submission["retained"] = retained
+		completed_submission["outcome"] = "retained_improved" if retained else "valid_not_best"
+		completed_submission["global_rank"] = int(steam_result.get("global_rank_new", 0))
+		completed_submission["previous_global_rank"] = int(steam_result.get("global_rank_previous", 0))
+		completed.append(completed_submission)
+		if completed.size() > MAX_COMPLETED_SUBMISSIONS:
+			completed.pop_front()
 		if !pending.is_empty() and String((pending[0] as Dictionary).get("replay_path", "")) == String(active_submission.get("replay_path", "")):
 			pending.pop_front()
-		last_message = "Verified Time Attack score uploaded to Steam."
+		last_message = "Verified score retained as your Steam best." if retained else "Run verified; your existing Steam best is faster."
 		active_submission.clear()
 		_save_queue()
 		_emit_status()
+		submission_completed.emit(completed_submission.duplicate(true))
 		_pump_submission_queue()
 		return
 	var message := String(response.get("message", response.get("error", "Leaderboard service request failed.")))
@@ -273,6 +305,7 @@ func _retry_active(message: String) -> void:
 	_cancel_active_ticket()
 	if !pending.is_empty():
 		(pending[0] as Dictionary)["last_error"] = message
+		(pending[0] as Dictionary)["next_retry_unix"] = 0
 	last_message = "%s Replay remains pending." % message
 	active_submission.clear()
 	_save_queue()

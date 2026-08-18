@@ -9,6 +9,7 @@ const RaceSessionControllerClass = preload("res://core/race_session_controller.g
 const CarSettingsClass = preload("res://ui/car_settings.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
+const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -39,6 +40,7 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 @onready var debug_track_mesh: MeshInstance3D = $GameWorld/DebugTrackMeshContainer/DebugTrackMesh
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var car_settings: CarSettingsClass = $CarSettings
+@onready var time_attack_setup: TimeAttackSetupClass = $TimeAttackSetup
 @onready var options_menu: Control = $OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
@@ -88,6 +90,11 @@ var vehicle_test_drive_picker: ConfirmationDialog
 var vehicle_test_drive_track_option: OptionButton
 var time_attack_eligibility: Dictionary = {}
 var time_attack_finalized := false
+var time_attack_previous_best_milliseconds := 0
+var time_attack_last_replay_path := ""
+var time_attack_rank_refresh_board := ""
+var time_attack_rank_refresh_global := ""
+var time_attack_rank_refresh_friends := ""
 var launch_cpu_driver_count: int = -1
 var auto_host_mode: bool = false
 var auto_singleplayer_mode: bool = false
@@ -121,6 +128,9 @@ func _ready() -> void:
 	leaderboard_client.name = "LeaderboardClient"
 	add_child(leaderboard_client)
 	leaderboard_client.initialize(steam_service)
+	leaderboard_client.submission_status_changed.connect(_on_leaderboard_status_changed)
+	leaderboard_client.submission_completed.connect(_on_leaderboard_submission_completed)
+	leaderboard_client.entries_received.connect(_on_time_attack_rank_entries_received)
 	vehicle_content_controller.initialize(steam_service, network_manager.custom_stamp_network)
 	vehicle_content_controller.catalog_changed.connect(_on_vehicle_content_catalog_changed)
 	#obj_viewport_texture.texture = obj_viewport.get_texture()
@@ -144,6 +154,10 @@ func _ready() -> void:
 		track_content_controller,
 		car_node_container,
 		car_settings)
+	race_presentation_controller.results_overlay.time_attack_race_again_requested.connect(_on_time_attack_race_again_requested)
+	race_presentation_controller.results_overlay.time_attack_watch_replay_requested.connect(_on_time_attack_watch_replay_requested)
+	race_presentation_controller.results_overlay.time_attack_leaderboard_requested.connect(_on_time_attack_results_leaderboard_requested)
+	race_presentation_controller.results_overlay.time_attack_main_menu_requested.connect(_on_time_attack_main_menu_requested)
 	debug_runtime_controller.initialize(
 		game_sim,
 		server_game_sim,
@@ -177,6 +191,11 @@ func _ready() -> void:
 	randomize()
 	_build_multiplayer_connect_box()
 	_build_singleplayer_race_options_screen()
+	time_attack_setup.initialize(self)
+	time_attack_setup.start_requested.connect(_on_time_attack_setup_start_requested)
+	time_attack_setup.back_requested.connect(_on_time_attack_setup_back_requested)
+	time_attack_setup.official_vehicle_requested.connect(_on_time_attack_official_vehicle_requested)
+	time_attack_setup.leaderboard_requested.connect(_on_time_attack_leaderboard_requested)
 	replay_controller.initialize()
 	memory_telemetry = SessionMemoryTelemetryClass.new()
 	memory_telemetry.initialize(self)
@@ -235,7 +254,7 @@ func _ready() -> void:
 	if !replay_launch_requested and auto_track_editor_mode:
 		call_deferred("_on_track_editor_button_pressed")
 	elif !replay_launch_requested and auto_singleplayer_mode:
-		call_deferred("_on_singleplayer_button_pressed")
+		call_deferred("_start_singleplayer_race", false, TimeAttackRulesClass.build_options())
 	if headless_mode and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
 		var vehicle_content_id := ""
 		if vehicle_content_controller.definitions.size() > 0:
@@ -313,7 +332,33 @@ func _on_start_button_pressed() -> void:
 	lobby_control.visible = true
 
 func _on_singleplayer_button_pressed() -> void:
-	_start_singleplayer_race(false, TimeAttackRulesClass.build_options())
+	time_attack_setup.open_for_current_selection()
+
+
+func _on_time_attack_setup_start_requested(ranked: bool, context: Dictionary) -> void:
+	time_attack_previous_best_milliseconds = int(context.get("personal_best_milliseconds", 0))
+	var options := TimeAttackRulesClass.build_options()
+	if !ranked:
+		options["session_kind"] = "time_attack_practice"
+		options["leaderboard_eligible"] = false
+		options["leaderboard_ineligible_reason"] = "practice_unranked"
+	_start_singleplayer_race(false, options)
+
+
+func _on_time_attack_setup_back_requested() -> void:
+	time_attack_setup.hide()
+	$Control.visible = true
+
+
+func _on_time_attack_official_vehicle_requested() -> void:
+	if car_settings.select_ranked_default_vehicle():
+		time_attack_setup.refresh_after_vehicle_change()
+
+
+func _on_time_attack_leaderboard_requested(board_name: String) -> void:
+	time_attack_setup.hide()
+	$Control.visible = true
+	car_settings.open_leaderboards(board_name)
 
 func begin_vehicle_test_drive(snapshot: Dictionary) -> void:
 	if vehicle_test_drive_active:
@@ -1644,25 +1689,132 @@ func _check_race_finished() -> void:
 				_finalize_time_attack()
 
 func _finalize_time_attack() -> void:
-	if time_attack_finalized or String(network_manager.race_options.get("session_kind", "")) != "time_attack":
+	var session_kind := String(network_manager.race_options.get("session_kind", ""))
+	if time_attack_finalized or session_kind not in ["time_attack", "time_attack_practice"]:
 		return
 	time_attack_finalized = true
 	var local_id := _local_player_id()
 	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_id, -1))
 	var start_tick := race_presentation_controller.race_results_start_tick()
+	if session_kind == "time_attack_practice":
+		var practice_score := TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
+		var practice_board := {}
+		var digests: Array = network_manager.race_options.get("track_gameplay_digests", [])
+		if digests.size() == 1:
+			practice_board = TimeAttackRulesClass.board_for_track_digest(String(digests[0]))
+		var practice_result := {
+			"eligible": false,
+			"reason": "practice_unranked",
+			"friendly_reason": "Practice Unranked",
+			"score_milliseconds": practice_score,
+			"board_name": String(practice_board.get("steam_name", "")),
+			"replay_path": "",
+		}
+		race_presentation_controller.show_time_attack_result(
+			practice_result, time_attack_previous_best_milliseconds,
+			"Practice result only — nothing will be submitted.")
+		return
+	race_presentation_controller.update_time_attack_submission_status("Saving verification replay…")
 	var replay_path := replay_controller.save_completed_time_attack_replay()
+	time_attack_last_replay_path = replay_path
 	time_attack_eligibility = LeaderboardEligibilityClass.finalize(
 		time_attack_eligibility,
 		finish_tick,
 		start_tick,
 		replay_path)
+	var board: Dictionary = time_attack_eligibility.get("board", {})
+	time_attack_eligibility["board_name"] = String(board.get("steam_name", ""))
+	time_attack_eligibility["friendly_reason"] = TimeAttackRulesClass.friendly_reason(String(time_attack_eligibility.get("reason", "")))
+	race_presentation_controller.show_time_attack_result(
+		time_attack_eligibility,
+		time_attack_previous_best_milliseconds,
+		"Replay saved. Preparing trusted submission…")
 	if bool(time_attack_eligibility.get("eligible", false)):
 		if leaderboard_client.enqueue_submission(time_attack_eligibility):
 			race_presentation_controller.show_notification("Time Attack queued for trusted verification", 5000)
+			race_presentation_controller.update_time_attack_submission_status(
+				"%s The queue is persisted; it is safe to close the game." % String(leaderboard_client.status().get("message", "Queued for verification.")))
 		else:
 			race_presentation_controller.show_notification("Time Attack replay could not be queued", 5000)
+			race_presentation_controller.update_time_attack_submission_status("Replay saved, but it could not be added to the submission queue.")
 	else:
-		race_presentation_controller.show_notification("Unranked: %s" % String(time_attack_eligibility.get("reason", "ineligible")).replace("_", " "), 5000)
+		var reason := TimeAttackRulesClass.friendly_reason(String(time_attack_eligibility.get("reason", "ineligible")))
+		race_presentation_controller.show_notification("Unranked: %s" % reason, 5000)
+		race_presentation_controller.update_time_attack_submission_status("Unranked — %s" % reason)
+
+
+func _on_leaderboard_status_changed(status: Dictionary) -> void:
+	if race_presentation_controller != null:
+		var message := String(status.get("message", ""))
+		if int(status.get("pending_count", 0)) > 0:
+			message += " The queue is persisted; it is safe to close the game."
+		race_presentation_controller.update_time_attack_submission_status(message)
+
+
+func _on_leaderboard_submission_completed(result: Dictionary) -> void:
+	if String(result.get("replay_path", "")) != time_attack_last_replay_path:
+		return
+	var message := "Accepted and retained as your Steam best." if bool(result.get("retained", false)) else "Accepted, but your existing Steam best is faster."
+	var rank := int(result.get("global_rank", 0))
+	if rank > 0:
+		message += " Global rank #%d." % rank
+	race_presentation_controller.update_time_attack_submission_status(message)
+	var board_name := String(result.get("board_name", ""))
+	if !board_name.is_empty() and bool(result.get("retained", false)):
+		time_attack_rank_refresh_board = board_name
+		time_attack_rank_refresh_global = ""
+		time_attack_rank_refresh_friends = ""
+		leaderboard_client.request_entries(board_name, "around_user")
+		leaderboard_client.request_entries(board_name, "friends")
+
+
+func _on_time_attack_rank_entries_received(board_name: String, request_type: String, response: Dictionary) -> void:
+	if board_name != time_attack_rank_refresh_board or !bool(response.get("success", false)):
+		return
+	var local_steam_id := steam_service.get_steam_id()
+	var entries: Array = response.get("entries", [])
+	if request_type == "around_user":
+		for value in entries:
+			var entry: Dictionary = value
+			if int(entry.get("steam_id", 0)) == local_steam_id:
+				time_attack_rank_refresh_global = "Global rank #%d" % int(entry.get("global_rank", 0))
+				break
+	elif request_type == "friends":
+		for index in range(entries.size()):
+			if int((entries[index] as Dictionary).get("steam_id", 0)) == local_steam_id:
+				time_attack_rank_refresh_friends = "friend rank #%d of %d" % [index + 1, entries.size()]
+				break
+	var parts: Array[String] = []
+	if !time_attack_rank_refresh_global.is_empty():
+		parts.append(time_attack_rank_refresh_global)
+	if !time_attack_rank_refresh_friends.is_empty():
+		parts.append(time_attack_rank_refresh_friends)
+	if !parts.is_empty():
+		race_presentation_controller.update_time_attack_submission_status(
+			"Accepted and retained. %s. Replay attachment will continue automatically." % ", ".join(parts))
+
+
+func _on_time_attack_race_again_requested() -> void:
+	var practice := String(network_manager.race_options.get("session_kind", "")) == "time_attack_practice"
+	var options := TimeAttackRulesClass.build_options()
+	if practice:
+		options["session_kind"] = "time_attack_practice"
+	_return_to_menu()
+	call_deferred("_start_singleplayer_race", false, options)
+
+
+func _on_time_attack_watch_replay_requested() -> void:
+	if !time_attack_last_replay_path.is_empty():
+		replay_controller.call_deferred("_request_replay_playback_from_path", time_attack_last_replay_path)
+
+
+func _on_time_attack_results_leaderboard_requested(board_name: String) -> void:
+	_return_to_menu()
+	car_settings.open_leaderboards(board_name)
+
+
+func _on_time_attack_main_menu_requested() -> void:
+	_return_to_menu()
 
 func _update_native_render_camera() -> void:
 	if game_sim == null or !game_sim.has_method("set_render_camera"):

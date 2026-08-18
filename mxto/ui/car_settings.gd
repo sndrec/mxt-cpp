@@ -12,6 +12,7 @@ const CustomStampStore = preload("res://vehicle/customization/custom_stamp_store
 const CarRenderManager = preload("res://vehicle/car_render_manager.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const GaragePreviewCameraControllerClass = preload("res://ui/garage_preview_camera_controller.gd")
+const VehicleGradePanelClass = preload("res://ui/vehicle_grade_panel.gd")
 const GARAGE_PREVIEW_WORLD_SCENE = preload("res://ui/garage_preview_world.tscn")
 
 const STAMP_EDIT_MIN_SCREEN_SIZE := 1.0
@@ -20,7 +21,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var machine_setting_slider: HSlider = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingSlider
 @onready var machine_setting_percent: Label = $Container/SettingsTabs/Driver/DriverSettingsScroll/DriverSettings/MachineSettingPercent
 @onready var vehicle_selector: ItemList = $Container/SettingsTabs/Driver/VehicleScroll/VehicleSelector
-@onready var vehicle_grade_panel: VehicleGradePanel = $Container/SettingsTabs/Driver/Performance
+@onready var vehicle_grade_panel: VehicleGradePanelClass = $Container/SettingsTabs/Driver/Performance
 @onready var close_settings: Button = $Container/CloseSettings
 @onready var car_preview_space: ColorRect = $Container/SettingsTabs/Garage/CarPreviewSpace
 @onready var custom_stamp_budget_label: Label = $Container/SettingsTabs/Garage/CarPreviewSpace/CustomStampBudget
@@ -77,6 +78,7 @@ const PREVIEW_TARGET_HEIGHT := 0.5
 @onready var stamp_edit_confirm_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Confirm
 @onready var stamp_edit_cancel_button: Button = $Container/SettingsTabs/Garage/CarPreviewSpace/StampEditOverlay/Cancel
 @onready var vehicle_editor: VehicleEditor = get_node("Container/SettingsTabs/Car Creator")
+@onready var leaderboard_browser: LeaderboardBrowser = $Container/SettingsTabs/Leaderboards
 
 var game_manager: GameManager
 var vehicle_content_controller: VehicleContentControllerClass
@@ -499,6 +501,24 @@ func _on_settings_tab_changed(tab: int) -> void:
 func get_player_settings() -> PlayerSettings:
 	_sync_livery_to_player_settings()
 	return player_settings
+
+
+func select_ranked_default_vehicle() -> bool:
+	const RANKED_DEFAULT_ID := "mxt:vehicle:official:allrounder"
+	for definition_value in car_defs:
+		var definition: CarDefinition = definition_value
+		if definition != null and definition.content_id == RANKED_DEFAULT_ID:
+			player_settings.vehicle_content_id = definition.content_id
+			_update_controls()
+			_send_online_vehicle_selection_update()
+			return true
+	return false
+
+
+func open_leaderboards(board_name := "") -> void:
+	open_settings()
+	settings_tab_container.current_tab = leaderboard_browser.get_index()
+	leaderboard_browser.select_board(board_name)
 
 func set_test_drive_vehicle(content_id: String) -> void:
 	player_settings.vehicle_content_id = content_id

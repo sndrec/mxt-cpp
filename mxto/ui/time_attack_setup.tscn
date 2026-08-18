@@ -1,0 +1,127 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/time_attack_setup.gd" id="1_setup"]
+
+[node name="TimeAttackSetup" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_setup")
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.78)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(720, 560)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Content" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "TIME ATTACK"
+horizontal_alignment = 1
+
+[node name="Track" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "Track"
+
+[node name="Vehicle" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "Machine"
+
+[node name="RankedStatus" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+text = "RANKED"
+
+[node name="Reason" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+autowrap_mode = 2
+
+[node name="Rules" type="RichTextLabel" parent="Center/Panel/Margin/Content"]
+custom_minimum_size = Vector2(0, 112)
+layout_mode = 2
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="Competitive" type="VBoxContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+
+[node name="Personal" type="Label" parent="Center/Panel/Margin/Content/Competitive"]
+layout_mode = 2
+text = "Personal Best"
+
+[node name="Global" type="Label" parent="Center/Panel/Margin/Content/Competitive"]
+layout_mode = 2
+text = "Global Rank"
+
+[node name="Friends" type="Label" parent="Center/Panel/Margin/Content/Competitive"]
+layout_mode = 2
+text = "Friend Rank"
+
+[node name="Service" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+autowrap_mode = 2
+text = "Submission service"
+
+[node name="Actions" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+
+[node name="Ranked" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Start Ranked"
+
+[node name="Practice" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Practice Unranked"
+
+[node name="Official" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Use All Rounder"
+
+[node name="Secondary" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+
+[node name="Back" type="Button" parent="Center/Panel/Margin/Content/Secondary"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Back"
+
+[node name="ViewLeaderboard" type="Button" parent="Center/Panel/Margin/Content/Secondary"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "View Full Leaderboard"
+

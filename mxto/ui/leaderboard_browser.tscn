@@ -8,7 +8,12 @@ script = ExtResource("1_browser")
 
 [node name="Status" type="Label" parent="."]
 layout_mode = 2
+theme_override_font_sizes/font_size = 24
 text = "Steam Leaderboards"
+
+[node name="Summary" type="Label" parent="."]
+layout_mode = 2
+text = "Select a leaderboard view."
 
 [node name="Controls" type="HBoxContainer" parent="."]
 layout_mode = 2
@@ -16,6 +21,7 @@ layout_mode = 2
 [node name="Track" type="OptionButton" parent="Controls"]
 custom_minimum_size = Vector2(260, 0)
 layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="Global" type="Button" parent="Controls"]
 layout_mode = 2
@@ -29,22 +35,47 @@ text = "Around Me"
 layout_mode = 2
 text = "Friends"
 
-[node name="RetryPending" type="Button" parent="Controls"]
+[node name="Refresh" type="Button" parent="Controls"]
 layout_mode = 2
-text = "Retry Pending"
+text = "Refresh"
 
-[node name="Entries" type="ItemList" parent="."]
+[node name="Entries" type="Tree" parent="."]
 custom_minimum_size = Vector2(0, 320)
 layout_mode = 2
 size_flags_vertical = 3
+column_titles_visible = true
+select_mode = 1
 
-[node name="Details" type="RichTextLabel" parent="."]
-custom_minimum_size = Vector2(0, 160)
+[node name="EntryActions" type="HBoxContainer" parent="."]
 layout_mode = 2
-size_flags_vertical = 3
+
+[node name="WatchReplay" type="Button" parent="EntryActions"]
+layout_mode = 2
+disabled = true
+text = "Watch Verified Replay"
+
+[node name="ReplayHint" type="Label" parent="EntryActions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Replay availability is shown by the selected retained entry."
+
+[node name="History" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Details" type="RichTextLabel" parent="History"]
+custom_minimum_size = Vector2(0, 150)
+layout_mode = 2
 bbcode_enabled = true
 fit_content = true
+scroll_active = true
 
-[node name="ClearRejected" type="Button" parent="."]
+[node name="Actions" type="HBoxContainer" parent="History"]
+layout_mode = 2
+
+[node name="RetryPending" type="Button" parent="History/Actions"]
+layout_mode = 2
+text = "Retry Pending Now"
+
+[node name="ClearRejected" type="Button" parent="History/Actions"]
 layout_mode = 2
 text = "Clear Rejected History"

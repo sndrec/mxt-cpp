@@ -30,6 +30,8 @@ static func evaluate_start(game_manager: GameManager, options: Dictionary, setti
 		"ruleset_revision": TimeAttackRulesClass.RULESET_REVISION,
 		"track_gameplay_digest": String(track_digests[0]),
 		"vehicle_gameplay_digest": settings.vehicle_gameplay_digest,
+		"vehicle_content_id": settings.vehicle_content_id,
+		"track_title": TimeAttackRulesClass.board_title(board),
 	}
 
 static func finalize(start_result: Dictionary, finish_tick: int, start_tick: int, replay_path: String) -> Dictionary:

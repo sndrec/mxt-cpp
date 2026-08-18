@@ -59,3 +59,31 @@ static func track_record_matches_board(record: Dictionary, board: Dictionary) ->
 		return String(record.get("source", "")) == "workshop" \
 			and String(record.get("published_file_id", "")) == String(board.get("published_file_id", ""))
 	return false
+
+static func board_for_name(steam_name: String) -> Dictionary:
+	for value in manifest().get("boards", []):
+		if typeof(value) == TYPE_DICTIONARY and String(value.get("steam_name", "")) == steam_name:
+			return (value as Dictionary).duplicate(true)
+	return {}
+
+static func board_title(board: Dictionary) -> String:
+	return String(board.get(
+		"track_title",
+		String(board.get("track_slug", "Track")).replace("-", " ").capitalize()))
+
+static func friendly_reason(reason: String) -> String:
+	match reason:
+		"modified_time_attack_rules": return "Ranked rules were changed. Restore the standard three-lap Time Attack rules."
+		"debug_or_automation_enabled": return "Debug or automation controls are active. Disable them for a ranked run."
+		"invalid_track_identity": return "The selected track does not have a complete content identity."
+		"track_has_no_ranked_board": return "This track does not currently have a ranked Steam leaderboard."
+		"uncurated_or_mismatched_track": return "The selected track is not the exact official or curated version used by this leaderboard."
+		"unofficial_or_mismatched_vehicle": return "Ranked Time Attack requires an exact official machine. You can switch directly to the All Rounder or practice unranked."
+		"invalid_finish_time": return "The race did not produce a valid finish time."
+		"replay_recording_failed": return "The run finished, but its verification replay could not be saved."
+		"draft_vehicle": return "Draft machines are available only in unranked test drives."
+		"ineligible": return "This run is not eligible for the ranked leaderboard."
+		_: return reason.replace("_", " ").capitalize()
+
+static func rules_description() -> String:
+	return "3 laps · Vehicle Restore enabled · No bumpers · No S-BOOST · No CPU racers\nExact ranked track and official machine content · Replay verified before Steam submission"
