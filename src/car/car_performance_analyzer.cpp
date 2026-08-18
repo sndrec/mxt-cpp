@@ -108,6 +108,40 @@ static String signed_percent(float value) {
 	return String(value >= 0.0f ? "+" : "") + String::num(value, 1) + "%";
 }
 
+static bool trait_values_match(float a, float b) {
+	const float scale = std::max({std::abs(a), std::abs(b), 1.0f});
+	return std::abs(a - b) <= scale * 0.00001f;
+}
+
+static float trait_adjustment(
+		const PhysicsCarProperties &properties, uint8_t special, CarStatId stat) {
+	if (special < 6) return properties.modifier_stats[special][stat];
+	const float ordinary = properties.base_stats[stat];
+	return std::abs(ordinary) > 0.00001f
+		? properties.s_boost_stats[stat] / ordinary
+		: properties.s_boost_stats[stat];
+}
+
+static float trait_effective_value(float ordinary, uint8_t special, float adjustment) {
+	return special < 6 || std::abs(ordinary) > 0.00001f
+		? ordinary * adjustment
+		: adjustment;
+}
+
+static bool find_trait_majority_baseline(const float values[4], float &baseline) {
+	for (uint8_t candidate = 0; candidate < 4; ++candidate) {
+		uint8_t matches = 0;
+		for (uint8_t other = 0; other < 4; ++other) {
+			matches += trait_values_match(values[candidate], values[other]) ? 1 : 0;
+		}
+		if (matches > 2) {
+			baseline = values[candidate];
+			return true;
+		}
+	}
+	return false;
+}
+
 } // namespace
 
 void MxtCarPerformanceAnalyzer::_bind_methods() {
@@ -219,7 +253,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 1;
+	result["benchmark_version"] = 2;
 	result["machine_setting"] = setting;
 	result["weight_kg"] = properties.base_stats[CAR_STAT_WEIGHT_KG];
 	result["terminal_speed_kmh"] = raw.terminal_speed_kmh;
@@ -302,12 +336,21 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			const CarStatMetadata &metadata = get_car_stat_metadata(stat);
 			if (metadata.activity != CAR_STAT_ACTIVITY_GAMEPLAY) continue;
 			const float ordinary = properties.base_stats[stat];
-			const float effective = special == 6
-				? properties.s_boost_stats[stat]
-				: ordinary * properties.modifier_stats[special][stat];
-			const float delta = effective - ordinary;
-			const float denominator = std::max(std::abs(ordinary), 0.00001f);
-			const float percent = 100.0f * delta / denominator;
+			const float adjustment = trait_adjustment(properties, special, stat);
+			float official_adjustments[OFFICIAL_COUNT];
+			for (uint8_t official = 0; official < OFFICIAL_COUNT; ++official) {
+				official_adjustments[official] = trait_adjustment(
+					anchors.properties[official], special, stat);
+			}
+			float baseline_adjustment = 1.0f;
+			const bool uses_roster_baseline = find_trait_majority_baseline(
+				official_adjustments, baseline_adjustment);
+			const float baseline = trait_effective_value(
+				ordinary, special, baseline_adjustment);
+			const float effective = trait_effective_value(ordinary, special, adjustment);
+			const float delta = effective - baseline;
+			const float denominator = std::max(std::abs(baseline_adjustment), 0.00001f);
+			const float percent = 100.0f * (adjustment - baseline_adjustment) / denominator;
 			if (std::abs(percent) < 5.0f) continue;
 			String kind = "distinctive";
 			if (metadata.special_direction == CAR_STAT_DIRECTION_HIGHER_BENEFIT) {
@@ -323,7 +366,10 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 			trait["friendly_name"] = metadata.friendly_name;
 			trait["kind"] = kind;
 			trait["percent"] = percent;
-			trait["base_value"] = ordinary;
+			trait["base_value"] = baseline;
+			trait["ordinary_value"] = ordinary;
+			trait["baseline_adjustment"] = baseline_adjustment;
+			trait["uses_roster_baseline"] = uses_roster_baseline;
 			trait["effective_value"] = effective;
 			trait["unit"] = metadata.unit;
 			trait["text"] = arrow + String(" ") + trait_context(special) + String(": ") +

@@ -69,6 +69,32 @@ func _test_performance_grades() -> void:
 		var category: Dictionary = category_value
 		_expect(String(category.get("grade", "")) == "C", "All Rounder should anchor %s at C" % String(category.get("name", "category")))
 
+	for trait_value in first.get("traits", []):
+		var trait_data: Dictionary = trait_value
+		var shared_turbo_loss := String(trait_data.get("stat_name", "")) == "turbo_flat_loss_per_second" \
+				and String(trait_data.get("context", "")) in [
+					"While Manual Boosting", "While Dashplate Boosting", "While Stacking Boosts"]
+		_expect(not shared_turbo_loss, "roster-baseline turbo loss must not appear as an All Rounder trait")
+
+	var custom := MxtCarAuthoringSession.new()
+	var stat_name := "turbo_flat_loss_per_second"
+	_expect(bool(custom.make_special_custom("manual_boost", stat_name).get("valid", false)), "manual-boost turbo loss should become custom")
+	var custom_curve: Array = custom.get_curve("manual_boost", stat_name)
+	for key_value in custom_curve:
+		(key_value as Dictionary)["value"] = 0.25
+	_expect(bool(custom.set_curve("manual_boost", stat_name, custom_curve).get("valid", false)), "custom turbo-loss curve should validate")
+	var custom_analysis: Dictionary = analyzer.analyze_session(custom, 0.5)
+	var found_baseline_trait := false
+	for trait_value in custom_analysis.get("traits", []):
+		var trait_data: Dictionary = trait_value
+		if String(trait_data.get("stat_name", "")) == stat_name \
+				and String(trait_data.get("context", "")) == "While Manual Boosting":
+			found_baseline_trait = true
+			_expect(bool(trait_data.get("uses_roster_baseline", false)), "custom turbo-loss trait should identify its roster baseline")
+			_expect(is_equal_approx(float(trait_data.get("baseline_adjustment", 0.0)), 0.5), "custom turbo-loss trait baseline should be 0.5x")
+			_expect(is_equal_approx(float(trait_data.get("percent", 0.0)), -50.0), "custom turbo-loss trait should be -50% relative to the 0.5x baseline")
+	_expect(found_baseline_trait, "a custom turbo-loss adjustment should appear when it differs from the roster baseline")
+
 
 func _test_trusted_leaderboard_details() -> void:
 	var details: Array = [0x3154584d, 2, 7, 4, (3 << 24) | (2 << 16) | 19]

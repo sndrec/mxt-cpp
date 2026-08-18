@@ -137,7 +137,9 @@ func _add_trait_row(trait_value: Dictionary) -> void:
 	var label := Label.new()
 	label.text = String(trait_value.get("text", "Special-state difference"))
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.tooltip_text = "Ordinary %s; special %s %s" % [
+	var reference_name := "Roster baseline" if bool(trait_value.get("uses_roster_baseline", false)) else "Ordinary"
+	label.tooltip_text = "%s %s; special %s %s" % [
+		reference_name,
 		_format_value(float(trait_value.get("base_value", 0.0))),
 		_format_value(float(trait_value.get("effective_value", 0.0))),
 		String(trait_value.get("unit", "")),
