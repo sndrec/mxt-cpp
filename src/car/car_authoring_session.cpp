@@ -167,11 +167,17 @@ static bool write_text_file(const String &path, const String &text)
 	return file->get_error() == OK;
 }
 
-static bool is_valid_text_field(const String &value, int64_t maximum_length, bool allow_empty)
+static bool is_valid_text_field(
+		const String &value,
+		int64_t maximum_length,
+		bool allow_empty,
+		bool allow_line_breaks = false)
 {
 	if ((!allow_empty && value.is_empty()) || value.length() > maximum_length) return false;
 	for (int64_t i = 0; i < value.length(); ++i) {
-		if (value[i] == 0 || value[i] < 0x20 || value[i] == 0x7f) return false;
+		const char32_t codepoint = value[i];
+		if (allow_line_breaks && codepoint == '\n') continue;
+		if (codepoint == 0 || codepoint < 0x20 || codepoint == 0x7f) return false;
 	}
 	return true;
 }
@@ -1362,7 +1368,7 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 		return result_dictionary(false, single_error("vehicle package output must be the package directory of a user draft"), {});
 	}
 	root = root.path_join("package");
-	if (!is_valid_text_field(title, 128, false) || !is_valid_text_field(description, 8000, true) ||
+	if (!is_valid_text_field(title, 128, false) || !is_valid_text_field(description, 8000, true, true) ||
 			!is_valid_text_field(author_name, 64, false)) {
 		return result_dictionary(false, single_error("vehicle title, description, or author text is invalid"), {});
 	}

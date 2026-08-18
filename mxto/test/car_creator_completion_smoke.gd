@@ -1,0 +1,141 @@
+extends SceneTree
+
+const CurveGraphClass = preload("res://ui/vehicle_editor_curve_graph.gd")
+const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
+const ALL_ROUNDER_PATH := "res://vehicle/asset/allrounder/blue_falcon.mxt_car_props"
+
+var failures: Array[String] = []
+
+
+func _initialize() -> void:
+	_test_derived_authoring_and_drafts()
+	_test_performance_grades()
+	_test_trusted_leaderboard_details()
+	await _test_curve_transforms()
+	if failures.is_empty():
+		print("MXT_CAR_CREATOR_COMPLETION_OK")
+		quit(0)
+		return
+	for failure in failures:
+		push_error(failure)
+	quit(1)
+
+
+func _test_derived_authoring_and_drafts() -> void:
+	var session := MxtCarAuthoringSession.new()
+	var derived_stat := "drive_target_speed_multiplier"
+	_expect(session.is_special_derived("manual_boost", derived_stat), "new sessions should derive manual-boost target speed")
+	var derived_before: Array = session.get_curve("manual_boost", derived_stat)
+	var turbo_gain: Array = session.get_curve("base", "manual_turbo_gain")
+	(turbo_gain[0] as Dictionary)["value"] = float((turbo_gain[0] as Dictionary)["value"]) + 0.25
+	_expect(bool(session.set_curve("base", "manual_turbo_gain", turbo_gain).get("valid", false)), "base turbo-gain edit should validate")
+	var derived_after: Array = session.get_curve("manual_boost", derived_stat)
+	_expect(derived_after != derived_before, "derived manual-boost target speed should follow its base source")
+	_expect(bool(session.make_special_custom("manual_boost", derived_stat).get("valid", false)), "one derived pair should become custom")
+	var custom_curve: Array = session.get_curve("manual_boost", derived_stat)
+	var weight: Array = session.get_curve("base", "weight_kg")
+	(weight[0] as Dictionary)["value"] = float((weight[0] as Dictionary)["value"]) + 1.0
+	_expect(bool(session.set_curve("base", "weight_kg", weight).get("valid", false)), "unrelated base edit should validate")
+	_expect(session.get_curve("manual_boost", derived_stat) == custom_curve, "unrelated edits must not overwrite a custom pair")
+
+	var draft_id := "completion_smoke_%d" % Time.get_ticks_usec()
+	var store := MxtCarDraftStore.new()
+	var metadata := {
+		"title": "Completion Smoke",
+		"author_name": "Test Runner",
+		"description": "First line\nSecond line",
+		"workshop_published_file_id": 0,
+		"preview_livery": {},
+	}
+	var saved: Dictionary = store.save_draft(draft_id, session, metadata)
+	_expect(bool(saved.get("valid", false)), "multiline draft metadata should save atomically: %s" % [saved.get("errors", [])])
+	var loaded_session := MxtCarAuthoringSession.new()
+	var loaded: Dictionary = store.load_draft(draft_id, loaded_session)
+	_expect(bool(loaded.get("valid", false)), "saved draft should reload: %s" % [loaded])
+	_expect(String(loaded.get("description", "")) == metadata.description, "draft reload should preserve multiline description")
+	_expect(loaded_session.get_authoring_intent() == session.get_authoring_intent(), "draft reload should preserve derived/custom intent")
+	_remove_tree(ProjectSettings.globalize_path("user://vehicle_drafts/" + draft_id))
+
+
+func _test_performance_grades() -> void:
+	var analyzer := MxtCarPerformanceAnalyzer.new()
+	var first: Dictionary = analyzer.analyze_file(ALL_ROUNDER_PATH, 0.5)
+	var second: Dictionary = analyzer.analyze_file(ALL_ROUNDER_PATH, 0.5)
+	_expect(bool(first.get("valid", false)), "All Rounder performance analysis should succeed")
+	_expect(first == second, "performance analysis should be deterministic and cache-stable")
+	var categories: Array = first.get("categories", [])
+	_expect(categories.size() == 7, "performance analysis should expose exactly seven headline categories")
+	for category_value in categories:
+		var category: Dictionary = category_value
+		_expect(String(category.get("grade", "")) == "C", "All Rounder should anchor %s at C" % String(category.get("name", "category")))
+
+
+func _test_trusted_leaderboard_details() -> void:
+	var details: Array = [0x3154584d, 2, 7, 4, (3 << 24) | (2 << 16) | 19]
+	for word in range(1, 25):
+		details.append(word)
+	var decoded := LeaderboardDetailsClass.decode(details)
+	_expect(int(decoded.get("ruleset_revision", 0)) == 7, "trusted details should preserve ruleset revision")
+	_expect(int(decoded.get("replay_schema_version", 0)) == 4, "trusted details should preserve replay schema")
+	_expect(String(decoded.get("replay_sha256", "")) == "sha256:0000000100000002000000030000000400000005000000060000000700000008", "trusted details should preserve the full replay digest")
+	_expect(String(decoded.get("track_gameplay_digest", "")).length() == 71, "trusted details should contain a full track digest")
+	_expect(String(decoded.get("vehicle_gameplay_digest", "")).length() == 71, "trusted details should contain a full vehicle digest")
+
+
+func _test_curve_transforms() -> void:
+	var graph := CurveGraphClass.new()
+	root.add_child(graph)
+	graph.size = Vector2(640.0, 320.0)
+	graph.set_keys([
+		{"time": 0.2, "value": 1.0, "tangent_in": 0.0, "tangent_out": 0.0},
+		{"time": 0.5, "value": 2.0, "tangent_in": 0.1, "tangent_out": 0.2},
+		{"time": 0.8, "value": 3.0, "tangent_in": 0.3, "tangent_out": 0.4},
+	])
+	await process_frame
+	var original := graph.get_keys()
+	var first_id := int((graph.keys[0] as Dictionary)["_editor_id"])
+	graph.selected_ids = {first_id: true}
+	graph.active_id = first_id
+	graph.last_mouse_position = Vector2(160.0, 160.0)
+	graph.call("_begin_keyboard_transform", 1)
+	graph.call("_apply_grab", graph.interaction_mouse_start + Vector2(320.0, 35.0))
+	graph.call("_cancel_local_interaction", false)
+	_expect(graph.get_keys() == original, "cancelling a curve transform should restore exact keys and tangents")
+
+	graph.selected_ids = {first_id: true}
+	graph.active_id = first_id
+	graph.last_mouse_position = Vector2(160.0, 160.0)
+	graph.call("_begin_keyboard_transform", 1)
+	graph.call("_apply_grab", graph.interaction_mouse_start + Vector2(430.0, 0.0))
+	graph.call("_preview_interaction")
+	graph.call("_commit_interaction")
+	var moved := graph.get_keys()
+	_expect(float((moved[0] as Dictionary)["time"]) == 0.5 and float((moved[1] as Dictionary)["time"]) == 0.8, "crossing a selected key should preserve unselected key positions")
+	_expect(float((moved[2] as Dictionary)["value"]) == 1.0, "crossing a key should stably reorder the selected key")
+	var old_span: float = graph.y_max - graph.y_min
+	graph.call("_zoom_y", Vector2(320.0, 160.0), 0.5)
+	_expect(graph.y_max - graph.y_min < old_span, "curve Y zoom should change only the visible Y span")
+	graph.queue_free()
+	await process_frame
+
+
+func _expect(condition: bool, message: String) -> void:
+	if !condition:
+		failures.append(message)
+
+
+func _remove_tree(path: String) -> void:
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return
+	directory.list_dir_begin()
+	var name := directory.get_next()
+	while !name.is_empty():
+		var child := path.path_join(name)
+		if directory.current_is_dir():
+			_remove_tree(child)
+		else:
+			DirAccess.remove_absolute(child)
+		name = directory.get_next()
+	directory.list_dir_end()
+	DirAccess.remove_absolute(path)

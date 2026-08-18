@@ -35,6 +35,7 @@ $stableScripts = @(
     'car_properties_sampler_smoke.gd'
     'car_settings_preview_input_smoke.gd'
     'car_stat_state_matrix_smoke.gd'
+    'car_creator_completion_smoke.gd'
     'content_package_validation_smoke.gd'
     'custom_stamp_network_controller_smoke.gd'
     'grand_prix_grid_results_smoke.gd'

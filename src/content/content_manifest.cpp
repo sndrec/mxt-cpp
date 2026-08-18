@@ -263,7 +263,8 @@ static bool get_required_string(
 		int64_t max_length,
 		String &out_value,
 		std::vector<String> &errors,
-		bool allow_empty = false)
+		bool allow_empty = false,
+		bool allow_line_breaks = false)
 {
 	if (!dictionary.has(key)) {
 		add_error(errors, String("manifest is missing required member '") + key + String("'"));
@@ -285,6 +286,7 @@ static bool get_required_string(
 	}
 	for (int64_t i = 0; i < out_value.length(); ++i) {
 		const char32_t codepoint = out_value[i];
+		if (allow_line_breaks && codepoint == '\n') continue;
 		if (codepoint == 0 || codepoint < 0x20 || codepoint == 0x7f) {
 			add_error(errors, String("manifest member '") + key + String("' contains a control character"));
 			return false;
@@ -433,7 +435,7 @@ bool parse_manifest(
 		}
 	}
 	get_required_string(root, "title", 128, out_manifest.title, out_errors);
-	get_required_string(root, "description", 8000, out_manifest.description, out_errors, true);
+	get_required_string(root, "description", 8000, out_manifest.description, out_errors, true, true);
 	get_required_string(root, "author_name", 64, out_manifest.author_name, out_errors);
 
 	if (!root.has("payload") || root["payload"].get_type() != Variant::DICTIONARY) {

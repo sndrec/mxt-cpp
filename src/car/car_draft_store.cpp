@@ -59,11 +59,18 @@ static bool valid_draft_id(const String &draft_id) {
 
 static String draft_root(const String &draft_id) { return drafts_root().path_join(draft_id); }
 
-static bool valid_text(const String &text, int64_t maximum, bool allow_empty) {
+static bool valid_text(
+		const String &text,
+		int64_t maximum,
+		bool allow_empty,
+		bool allow_line_breaks = false) {
 	if ((!allow_empty && text.is_empty()) || text.length() > maximum)
 		return false;
 	for (int64_t i = 0; i < text.length(); ++i) {
-		if (text[i] == 0 || text[i] < 0x20 || text[i] == 0x7f)
+		const char32_t codepoint = text[i];
+		if (allow_line_breaks && codepoint == '\n')
+			continue;
+		if (codepoint == 0 || codepoint < 0x20 || codepoint == 0x7f)
 			return false;
 	}
 	return true;
@@ -149,6 +156,22 @@ static bool parse_vector3(const Variant &value, double minimum, double maximum, 
 	return true;
 }
 
+static bool parse_integer(const Variant &value, int64_t minimum, int64_t maximum, int64_t &out) {
+	double number = 0.0;
+	if (value.get_type() == Variant::INT) {
+		number = static_cast<double>(static_cast<int64_t>(value));
+	} else if (value.get_type() == Variant::FLOAT) {
+		number = static_cast<double>(value);
+	} else {
+		return false;
+	}
+	if (!std::isfinite(number) || std::floor(number) != number || number < minimum || number > maximum) {
+		return false;
+	}
+	out = static_cast<int64_t>(number);
+	return true;
+}
+
 static Dictionary visual_dictionary(const MxtCarAuthoringSession &session) {
 	const Dictionary source_transform = session.get_model_transform();
 	Dictionary transform;
@@ -209,27 +232,31 @@ static bool parse_visual_dictionary(const Dictionary &visual, MxtCarAuthoringSes
 
 	const Dictionary material = visual["material_setup"];
 	if (!material.has("body_surfaces") || material["body_surfaces"].get_type() != Variant::ARRAY ||
-		!material.has("albedo_surface") || material["albedo_surface"].get_type() != Variant::INT ||
-		!material.has("normal_surface") || material["normal_surface"].get_type() != Variant::INT ||
-		!material.has("paint_mask_surface") ||
-		material["paint_mask_surface"].get_type() != Variant::INT) {
+		!material.has("albedo_surface") || !material.has("normal_surface") ||
+		!material.has("paint_mask_surface")) {
 		return false;
 	}
 	const Array surfaces = material["body_surfaces"];
 	Array decoded_surfaces;
 	for (int64_t i = 0; i < surfaces.size(); ++i) {
-		if (surfaces[i].get_type() != Variant::INT)
-			return false;
-		const int64_t surface = static_cast<int64_t>(surfaces[i]);
-		if (surface < 0 || surface > INT32_MAX)
+		int64_t surface = -1;
+		if (!parse_integer(surfaces[i], 0, INT32_MAX, surface))
 			return false;
 		decoded_surfaces.push_back(surface);
 	}
+	int64_t albedo_surface = -1;
+	int64_t normal_surface = -1;
+	int64_t paint_mask_surface = -1;
+	if (!parse_integer(material["albedo_surface"], -1, INT32_MAX, albedo_surface) ||
+			!parse_integer(material["normal_surface"], -1, INT32_MAX, normal_surface) ||
+			!parse_integer(material["paint_mask_surface"], -1, INT32_MAX, paint_mask_surface)) {
+		return false;
+	}
 	Dictionary decoded_material;
 	decoded_material["body_surfaces"] = decoded_surfaces;
-	decoded_material["albedo_surface"] = material["albedo_surface"];
-	decoded_material["normal_surface"] = material["normal_surface"];
-	decoded_material["paint_mask_surface"] = material["paint_mask_surface"];
+	decoded_material["albedo_surface"] = albedo_surface;
+	decoded_material["normal_surface"] = normal_surface;
+	decoded_material["paint_mask_surface"] = paint_mask_surface;
 
 	const Array thrusters = visual["thrusters"];
 	if (thrusters.size() > 8)
@@ -337,7 +364,7 @@ Dictionary MxtCarDraftStore::save_draft(const String &draft_id,
 	const String author = metadata.get("author_name", "");
 	const String description = metadata.get("description", "");
 	if (!valid_text(title, 128, false) || !valid_text(author, 64, false) ||
-		!valid_text(description, 8000, true)) {
+		!valid_text(description, 8000, true, true)) {
 		return result_dictionary(false, "draft title, author, or description is invalid");
 	}
 	Dictionary serialized = session->serialize();
