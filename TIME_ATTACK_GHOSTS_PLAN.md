@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation is complete in code. Release compilation, attached launch validation, and the focused automated matrix pass; user-facing visual and Steam-backed manual validation remains in Phase F.
+Implementation is complete in code. Release compilation, strict project parsing, attached launch validation, the focused automated matrix, and captured visual review pass. Interactive Steam-backed play validation remains in Phase F.
 
 This document is the source of truth for adding selectable leaderboard ghosts to Time Attack. Execute it with a short goal such as:
 
@@ -369,7 +369,7 @@ Completion gate: four invisible ghosts can reproduce four input streams while th
 - [x] Render independent simulation transforms with four stable colors.
 - [x] Add translucency, no-shadow behavior, player labels, and end-of-replay fading.
 - [x] Evaluate optional lightweight thruster presentation without audio or lights; keep it disabled for the initial uncluttered treatment.
-- [ ] Tune visibility against dark, bright, enclosed, and high-speed tracks.
+- [x] Tune visibility against dark, bright, enclosed, and high-speed tracks.
 
 Completion gate: ghosts are readable and distinguishable without obscuring the track or looking like ordinary collidable racers.
 
@@ -389,7 +389,7 @@ Completion gate: logs make the incremental cost of each ghost count obvious enou
 - [x] Run all focused automated checks after implementation is complete.
 - [x] Fix discovered problems, then rerun the affected checks.
 - [ ] Complete representative manual Time Attack runs.
-- [ ] Record final verification results below.
+- [x] Record final verification results below.
 
 ## 9. Verification Policy
 
@@ -477,9 +477,14 @@ The feature is complete when:
 - `scons target=template_release -j4`: pass.
 - Strict project parse/import through the Godot 4.7.1 console executable: pass after fixing two Variant-inference errors found by the attached run.
 - `time_attack_ghost_smoke.gd`: pass for 0, 1, 2, and 4 independent simulations, exact tick advancement, distinct native allocations, shared rendering, no-shadow treatment, and deterministic teardown.
+- `time_attack_ghost_cache_selection_smoke.gd`: pass for explicit missing-attachment errors, same-digest deduplication, serialized downloads, cancellation without reselection, cache warming and hits, corrupt-cache eviction, invalid-digest rejection, retry, stable slot reuse, clearing, and the four-entry limit.
+- `time_attack_ghost_picker_smoke.gd`: pass at 1280x720 for Global, Around Me, and Friends views; local-player selection; unavailable rows; digest-stable refreshes; unresolved start gating; older-compatible warnings; controller accept; and Brake-to-close.
+- `time_attack_ghost_lifecycle_smoke.gd`: pass for independent mutable trigger state, fresh tick-zero Retry and Race Again reconstruction, player/ghost finish isolation, Practice with a CPU plus a ghost, ranked 0/1/2/4-ghost startup, canonical one-racer trusted replay validation, cache/catalog separation, and final teardown.
+- Runtime diversity matrix: the 0/1/2/4-ghost smoke passed against all seven currently retained cached leaderboard replays spanning Split Oval, Construction, Rodeo, and Spade Way; Accelerator and Top Speeder; 0%, 60%, 80%, 95%, and 100% settings; and replay versions 0.2.0 through 0.2.6.
+- `time_attack_ghost_visual_capture.gd`: non-headless real-session captures reviewed at 1280x720 on Split Oval, Construction, Rodeo, and Spade Way. The translucent cyan treatment remained readable on bright, dark, and saturated backgrounds. Review found and repaired label overlap by anchoring names above the machine in machine-local space; the tuned capture passed. Temporary PNGs were removed after review.
 - `car_livery_render_manager_smoke.gd`: pass.
 - `replay_controller_smoke.gd`: pass against a current 2,490-frame retained replay, including playback, seek, camera modes, catalog, and canonical recording.
 - `auth_input_packet_roundtrip.gd`: pass.
 - `track_content_controller_smoke.gd`: pass with 31 official tracks.
-- Attached non-headless project launch for 300 frames: pass with Vulkan initialization and no script parse/runtime failure attributable to this feature. Existing empty-image import warnings and the forced-quit render-thread finalization warning remain unrelated.
-- The manual Time Attack/Steam matrix and visual tuning remain pending user-facing play validation.
+- Final attached non-headless project launch for 300 frames: pass with Vulkan initialization and no script parse/runtime failure attributable to this feature. Existing empty-image import warnings and the forced-quit render-thread finalization warning remain unrelated.
+- Interactive Steam-backed Time Attack play remains pending user validation; it is the only unchecked Phase F item.
