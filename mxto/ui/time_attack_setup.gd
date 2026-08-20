@@ -37,6 +37,7 @@ var friend_position := 0
 var friend_count := 0
 var personal_entry: Dictionary = {}
 var ghost_selection: TimeAttackGhostSelection
+var ghost_selection_scope := ""
 
 
 func initialize(in_game_manager: GameManager) -> void:
@@ -54,7 +55,7 @@ func initialize(in_game_manager: GameManager) -> void:
 	official_button.pressed.connect(func(): official_vehicle_requested.emit())
 	leaderboard_button.pressed.connect(func(): leaderboard_requested.emit(board_name))
 	watch_replay_button.pressed.connect(func(): watch_replay_requested.emit(board_name, personal_entry.duplicate(true)))
-	choose_ghosts_button.pressed.connect(func(): ghost_picker.open_for_board(board_name))
+	choose_ghosts_button.pressed.connect(func(): ghost_picker.open_for_track(ghost_selection_scope, board_name))
 	$Center/Panel/Margin/Content/Secondary/Back.pressed.connect(func(): back_requested.emit())
 	hide()
 
@@ -74,7 +75,11 @@ func open_for_current_selection() -> void:
 	eligibility = LeaderboardEligibilityClass.evaluate_start(game_manager, options, settings)
 	var board: Dictionary = eligibility.get("board", {})
 	board_name = String(board.get("steam_name", ""))
-	ghost_selection.set_board(board_name)
+	var selected_track_index := game_manager.track_selector.selected
+	var selected_track_digest := game_manager.track_content_controller.track_gameplay_digest_for_index(selected_track_index) \
+		if selected_track_index >= 0 else ""
+	ghost_selection_scope = board_name if !board_name.is_empty() else "local:" + selected_track_digest
+	ghost_selection.set_board(ghost_selection_scope)
 	var track_name := "Unknown Track"
 	if game_manager.track_selector.selected >= 0:
 		track_name = game_manager.track_selector.get_item_text(game_manager.track_selector.selected)
@@ -91,7 +96,7 @@ func open_for_current_selection() -> void:
 	_update_start_buttons()
 	official_button.visible = String(eligibility.get("reason", "")) == "unofficial_or_mismatched_vehicle"
 	leaderboard_button.disabled = board_name.is_empty()
-	choose_ghosts_button.disabled = board_name.is_empty()
+	choose_ghosts_button.disabled = selected_track_digest.is_empty()
 	_update_ghost_button()
 	rules_label.text = "[b]Ranked rules[/b]\n%s" % TimeAttackRulesClass.rules_description()
 	personal_label.text = "Personal Best  ·  Loading…" if eligible else "Personal Best  ·  Not available"

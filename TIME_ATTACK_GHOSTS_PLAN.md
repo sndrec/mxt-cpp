@@ -461,6 +461,7 @@ The feature is complete when:
 - Phase C1: transition-time input packing, allocation-free indexed native input consumption, isolated one-car simulations, live-tick advancement, and deterministic teardown.
 - Phase D1: shared manual rendering, unique transparent archetypes, stable slot tinting, no shadows/effects, projected names, and terminal fade-out.
 - Phase E1: transition and runtime timing counters, per-slot and aggregate native memory, zero-to-four-ghost comparable telemetry, and one teardown summary.
+- Post-plan extension: exact-track local Time Attack replay catalog, Local Replays picker view, immediate disk-backed selections, local/leaderboard digest deduplication, and local-only ghost selection for tracks without a Steam board.
 
 ### Profiling results
 
@@ -479,6 +480,7 @@ The feature is complete when:
 - `time_attack_ghost_smoke.gd`: pass for 0, 1, 2, and 4 independent simulations, exact tick advancement, distinct native allocations, shared rendering, no-shadow treatment, and deterministic teardown.
 - `time_attack_ghost_cache_selection_smoke.gd`: pass for explicit missing-attachment errors, same-digest deduplication, serialized downloads, cancellation without reselection, cache warming and hits, corrupt-cache eviction, invalid-digest rejection, retry, stable slot reuse, clearing, and the four-entry limit.
 - `time_attack_ghost_picker_smoke.gd`: pass at 1280x720 for Global, Around Me, and Friends views; local-player selection; unavailable rows; digest-stable refreshes; unresolved start gating; older-compatible warnings; controller accept; and Brake-to-close.
+- `time_attack_local_ghost_smoke.gd`: pass against both a retained leaderboard-cache fixture and an actual locally saved replay for exact-track filtering, metadata presentation, immediate readiness, local/leaderboard digest deduplication, ghost-controller preparation, and a Steam-disabled local-only picker. The real local-replay directory exposed six compatible Split Oval runs without reading frame payloads during catalog metadata scanning.
 - `time_attack_ghost_lifecycle_smoke.gd`: pass for independent mutable trigger state, fresh tick-zero Retry and Race Again reconstruction, player/ghost finish isolation, Practice with a CPU plus a ghost, ranked 0/1/2/4-ghost startup, canonical one-racer trusted replay validation, cache/catalog separation, and final teardown.
 - Runtime diversity matrix: the 0/1/2/4-ghost smoke passed against all seven currently retained cached leaderboard replays spanning Split Oval, Construction, Rodeo, and Spade Way; Accelerator and Top Speeder; 0%, 60%, 80%, 95%, and 100% settings; and replay versions 0.2.0 through 0.2.6.
 - `time_attack_ghost_visual_capture.gd`: non-headless real-session captures reviewed at 1280x720 on Split Oval, Construction, Rodeo, and Spade Way. The translucent cyan treatment remained readable on bright, dark, and saturated backgrounds. Review found and repaired label overlap by anchoring names above the machine in machine-local space; the tuned capture passed. Temporary PNGs were removed after review.

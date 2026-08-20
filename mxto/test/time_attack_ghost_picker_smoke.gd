@@ -45,7 +45,8 @@ func _run() -> void:
 	picker.initialize(game_manager, selection)
 	var board_name := "mxt_ta_picker_smoke"
 	selection.set_board(board_name)
-	picker.board_name = board_name
+	picker.selection_scope = board_name
+	picker.steam_board_name = board_name
 	picker.active_request_type = "global"
 	picker.show()
 	await process_frame
@@ -138,7 +139,7 @@ func _run() -> void:
 	if picker.visible:
 		_fail("controller Brake did not close the picker")
 		return
-	print("MXT_TIME_ATTACK_GHOST_PICKER_SMOKE_OK views=3 own_selectable=true viewport=1280x720")
+	print("MXT_TIME_ATTACK_GHOST_PICKER_SMOKE_OK views=4 own_selectable=true viewport=1280x720")
 	picker.queue_free()
 	cache.queue_free()
 	game_manager.queue_free()

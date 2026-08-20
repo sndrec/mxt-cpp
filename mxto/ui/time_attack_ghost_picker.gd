@@ -3,6 +3,7 @@ class_name TimeAttackGhostPicker extends Control
 signal closed
 
 const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_presenter.gd")
+const LocalReplayCatalogClass = preload("res://replay/local_time_attack_replay_catalog.gd")
 const SLOT_COLORS: Array[Color] = [
 	Color(0.30, 0.90, 1.0),
 	Color(1.0, 0.36, 0.86),
@@ -22,17 +23,20 @@ const NAV_ARR_SECONDS := 0.09
 @onready var global_button: Button = $Center/Panel/Margin/Content/Views/Global
 @onready var around_button: Button = $Center/Panel/Margin/Content/Views/AroundMe
 @onready var friends_button: Button = $Center/Panel/Margin/Content/Views/Friends
+@onready var local_button: Button = $Center/Panel/Margin/Content/Views/Local
 @onready var refresh_button: Button = $Center/Panel/Margin/Content/Views/Refresh
 
 var game_manager: GameManager
 var selection_model: TimeAttackGhostSelection
-var board_name := ""
+var selection_scope := ""
+var steam_board_name := ""
 var active_request_type := "global"
 var visible_entries: Array = []
 var item_by_digest: Dictionary = {}
 var message_override := ""
 var nav_direction := Vector2i.ZERO
 var nav_repeat_seconds := 0.0
+var local_replay_catalog := LocalReplayCatalogClass.new()
 
 
 func _ready() -> void:
@@ -40,6 +44,7 @@ func _ready() -> void:
 	global_button.pressed.connect(_request.bind("global"))
 	around_button.pressed.connect(_request.bind("around_user"))
 	friends_button.pressed.connect(_request.bind("friends"))
+	local_button.pressed.connect(_request.bind("local"))
 	refresh_button.pressed.connect(func(): _request(active_request_type))
 	retry_button.pressed.connect(_retry_selected)
 	clear_button.pressed.connect(_clear_selection)
@@ -59,16 +64,21 @@ func initialize(manager: GameManager, model: TimeAttackGhostSelection) -> void:
 		selection_model.changed.connect(_on_selection_changed)
 
 
-func open_for_board(in_board_name: String) -> void:
+func open_for_track(in_selection_scope: String, in_steam_board_name: String) -> void:
 	if selection_model == null or game_manager == null:
 		return
-	board_name = in_board_name
-	selection_model.set_board(board_name)
+	selection_scope = in_selection_scope
+	steam_board_name = in_steam_board_name
+	selection_model.set_board(selection_scope)
+	for button in [global_button, around_button, friends_button]:
+		(button as Button).disabled = steam_board_name.is_empty()
+	if steam_board_name.is_empty():
+		active_request_type = "local"
 	message_override = ""
 	show()
 	set_process(true)
 	_request(active_request_type)
-	global_button.grab_focus()
+	(local_button if active_request_type == "local" else global_button).grab_focus()
 
 
 func close() -> void:
@@ -96,10 +106,12 @@ func _setup_tree() -> void:
 
 
 func _request(request_type: String) -> void:
-	if game_manager == null or game_manager.leaderboard_client == null or board_name.is_empty():
+	if game_manager == null or selection_scope.is_empty():
+		return
+	if request_type != "local" and (game_manager.leaderboard_client == null or steam_board_name.is_empty()):
 		return
 	active_request_type = request_type
-	for pair in [[global_button, "global"], [around_button, "around_user"], [friends_button, "friends"]]:
+	for pair in [[global_button, "global"], [around_button, "around_user"], [friends_button, "friends"], [local_button, "local"]]:
 		(pair[0] as Button).set_pressed_no_signal(String(pair[1]) == request_type)
 	visible_entries.clear()
 	item_by_digest.clear()
@@ -109,11 +121,15 @@ func _request(request_type: String) -> void:
 	loading.set_text(2, "Loading %s entries…" % _friendly_mode(request_type))
 	message_override = "Loading %s…" % _friendly_mode(request_type)
 	_update_status()
-	game_manager.leaderboard_client.request_entries(board_name, request_type)
+	if request_type == "local":
+		var track_index := game_manager.track_selector.selected
+		_populate_entries(local_replay_catalog.scan(game_manager, track_index), false)
+		return
+	game_manager.leaderboard_client.request_entries(steam_board_name, request_type)
 
 
 func _on_entries_received(request_board: String, request_type: String, result: Dictionary) -> void:
-	if !visible or request_board != board_name or request_type != active_request_type:
+	if !visible or request_board != steam_board_name or request_type != active_request_type:
 		return
 	entry_tree.clear()
 	visible_entries.clear()
@@ -127,30 +143,40 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 		return
 	var entries_value = result.get("entries", [])
 	var entries: Array = entries_value if typeof(entries_value) == TYPE_ARRAY else []
+	_populate_entries(entries, true)
+
+
+func _populate_entries(entries: Array, decorate_leaderboard: bool) -> void:
+	entry_tree.clear()
+	visible_entries.clear()
+	item_by_digest.clear()
+	var root := entry_tree.create_item()
 	for entry_value in entries:
 		if typeof(entry_value) != TYPE_DICTIONARY:
 			continue
-		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, entry_value as Dictionary)
+		var entry := LeaderboardEntryPresenterClass.decorate(game_manager, entry_value as Dictionary) \
+			if decorate_leaderboard else (entry_value as Dictionary).duplicate(true)
 		visible_entries.append(entry)
 		var trusted_value = entry.get("_trusted_details", {})
 		var trusted: Dictionary = trusted_value if typeof(trusted_value) == TYPE_DICTIONARY else {}
 		var digest := String(trusted.get("replay_sha256", ""))
 		if !digest.is_empty() and selection_model.contains(digest):
-			selection_model.update_entry(board_name, entry)
+			selection_model.update_entry(selection_scope, entry)
 		var item := entry_tree.create_item(root)
 		item.set_metadata(0, visible_entries.size() - 1)
 		item.set_cell_mode(0, TreeItem.CELL_MODE_CHECK)
 		item.set_editable(0, bool(entry.get("_replay_available", false)))
-		item.set_text(1, "#%d" % int(entry.get("global_rank", 0)))
-		item.set_text(2, String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", "")))))
+		item.set_text(1, String(entry.get("_display_rank", "#%d" % int(entry.get("global_rank", 0)))))
+		item.set_text(2, String(entry.get("_display_player", entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", ""))))))
 		item.set_text(3, String(entry.get("_display_vehicle", "Unknown")))
 		item.set_text(4, String(entry.get("_display_version", "Legacy / unknown")))
 		item.set_text(5, _format_score(int(entry.get("score", 0))))
 		if !digest.is_empty():
 			item_by_digest[digest] = item
-	if entries.is_empty():
+	if visible_entries.is_empty():
 		var empty := entry_tree.create_item(root)
-		empty.set_text(2, "No %s entries yet." % _friendly_mode(request_type).to_lower())
+		empty.set_text(2, "No compatible replays saved for this track." if active_request_type == "local" \
+			else "No %s entries yet." % _friendly_mode(active_request_type).to_lower())
 	message_override = ""
 	_refresh_row_states()
 	var first := root.get_first_child()
@@ -175,7 +201,18 @@ func _toggle_item(item: TreeItem, checked: bool) -> void:
 	var digest := String(trusted.get("replay_sha256", ""))
 	message_override = ""
 	if checked:
-		var result := selection_model.select(board_name, entry)
+		var result: Dictionary
+		if String(entry.get("_source", "leaderboard")) == "local":
+			var prepare := local_replay_catalog.prepare_entry(game_manager, entry, game_manager.track_selector.selected)
+			if bool(prepare.get("success", false)):
+				var prepared_entry: Dictionary = prepare.get("entry", {})
+				visible_entries[index] = prepared_entry
+				entry = prepared_entry
+				result = selection_model.select_local(selection_scope, entry)
+			else:
+				result = prepare
+		else:
+			result = selection_model.select(selection_scope, entry)
 		if !bool(result.get("success", false)):
 			item.set_checked(0, false)
 			message_override = String(result.get("message", "That ghost could not be selected."))
@@ -236,7 +273,10 @@ func _refresh_row_states() -> void:
 			var older_version := available and bool((visible_entries[entry_index] as Dictionary).get("_compatibility_warning", false))
 			var availability_text := "No replay"
 			if available:
-				availability_text = "Available · older version" if older_version else "Available"
+				var local := String((visible_entries[entry_index] as Dictionary).get("_source", "")) == "local"
+				availability_text = "Local · older version" if local and older_version \
+					else "Local" if local \
+					else "Available · older version" if older_version else "Available"
 			item.set_text(6, availability_text)
 			for column in range(entry_tree.columns):
 				item.clear_custom_color(column)
@@ -424,7 +464,7 @@ func _accept_focused() -> void:
 
 
 func _view_controls() -> Array[Control]:
-	return [global_button, around_button, friends_button, refresh_button]
+	return [global_button, around_button, friends_button, local_button, refresh_button]
 
 
 func _action_controls() -> Array[Control]:
@@ -435,6 +475,7 @@ func _friendly_mode(mode: String) -> String:
 	match mode:
 		"around_user": return "Around Me"
 		"friends": return "Friends"
+		"local": return "Local Replays"
 		_: return "Global Top 100"
 
 

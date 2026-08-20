@@ -42,7 +42,7 @@ func select(board_name: String, entry: Dictionary) -> Dictionary:
 		update_entry(board_name, entry)
 		return {"success": true, "replay_sha256": digest}
 	if selected_order.size() >= MAX_GHOSTS:
-		return _failure("ghost_limit_reached", "Up to four leaderboard ghosts may be selected.")
+		return _failure("ghost_limit_reached", "Up to four ghosts may be selected.")
 	if replay_cache == null:
 		return _failure("replay_cache_unavailable", "The leaderboard replay cache is unavailable.")
 	var slot_index := _first_available_slot()
@@ -52,6 +52,45 @@ func select(board_name: String, entry: Dictionary) -> Dictionary:
 	selected_by_digest[digest] = selection
 	selected_order.append(digest)
 	digest_by_request_token[token] = digest
+	_emit_changed()
+	return {"success": true, "replay_sha256": digest, "slot_index": slot_index}
+
+
+func select_local(board_name: String, entry: Dictionary) -> Dictionary:
+	if active_board_name.is_empty():
+		active_board_name = board_name
+	elif board_name != active_board_name:
+		return _failure("wrong_leaderboard", "Ghost selections must come from the current track.")
+	var trusted_value = entry.get("_trusted_details", {})
+	var validation_value = entry.get("_local_validation", {})
+	if typeof(trusted_value) != TYPE_DICTIONARY or typeof(validation_value) != TYPE_DICTIONARY:
+		return _failure("local_replay_invalid", "That local replay is missing required metadata.")
+	var trusted: Dictionary = trusted_value
+	var validation: Dictionary = validation_value
+	var digest := String(trusted.get("replay_sha256", ""))
+	var path := String(entry.get("_local_path", ""))
+	if digest.is_empty() or path.is_empty() or !FileAccess.file_exists(path):
+		return _failure("local_replay_missing", "That local replay file no longer exists.")
+	if selected_by_digest.has(digest):
+		return {"success": true, "replay_sha256": digest}
+	if selected_order.size() >= MAX_GHOSTS:
+		return _failure("ghost_limit_reached", "Up to four ghosts may be selected.")
+	var slot_index := _first_available_slot()
+	var selection := _selection_record(board_name, entry, trusted, digest, slot_index)
+	selection["source"] = "local"
+	selection["state"] = "ready"
+	selection["message"] = "Ready"
+	selection["compatibility_warning"] = _has_compatibility_warning({"validation": validation})
+	selection["cache_result"] = {
+		"success": true,
+		"message": "Ready",
+		"cache_path": path,
+		"replay_sha256": digest,
+		"trusted_details": trusted.duplicate(true),
+		"validation": validation.duplicate(true),
+	}
+	selected_by_digest[digest] = selection
+	selected_order.append(digest)
 	_emit_changed()
 	return {"success": true, "replay_sha256": digest, "slot_index": slot_index}
 
@@ -74,9 +113,23 @@ func retry(replay_sha256: String) -> Dictionary:
 	var selection_value = selected_by_digest.get(replay_sha256, {})
 	if typeof(selection_value) != TYPE_DICTIONARY or (selection_value as Dictionary).is_empty():
 		return _failure("selection_missing", "That ghost is no longer selected.")
+	var selection: Dictionary = selection_value
+	if String(selection.get("source", "leaderboard")) == "local":
+		var cache_result_value = selection.get("cache_result", {})
+		var cache_result: Dictionary = cache_result_value if typeof(cache_result_value) == TYPE_DICTIONARY else {}
+		if FileAccess.file_exists(String(cache_result.get("cache_path", ""))):
+			selection["state"] = "ready"
+			selection["message"] = "Ready"
+			selected_by_digest[replay_sha256] = selection
+			_emit_changed()
+			return {"success": true, "replay_sha256": replay_sha256}
+		selection["state"] = "failed"
+		selection["message"] = "That local replay file no longer exists."
+		selected_by_digest[replay_sha256] = selection
+		_emit_changed()
+		return _failure("local_replay_missing", String(selection["message"]))
 	if replay_cache == null:
 		return _failure("replay_cache_unavailable", "The leaderboard replay cache is unavailable.")
-	var selection: Dictionary = selection_value
 	var old_token := int(selection.get("request_token", 0))
 	if old_token != 0:
 		digest_by_request_token.erase(old_token)
