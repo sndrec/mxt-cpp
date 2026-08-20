@@ -98,6 +98,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("play_player_oneshot_sfx", "player_id", "sfx_id", "volume_db", "pitch_scale"), &GameSim::play_player_oneshot_sfx, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("play_world_oneshot_sfx", "position", "sfx_id", "volume_db", "pitch_scale"), &GameSim::play_world_oneshot_sfx, DEFVAL(0.0), DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("tick_singleplayer", "local_player_id", "local_input"), &GameSim::tick_singleplayer);
+	ClassDB::bind_method(D_METHOD("tick_singleplayer_indexed_input", "local_player_id", "input_bytes", "frame_offsets", "frame_index"), &GameSim::tick_singleplayer_indexed_input);
+	ClassDB::bind_method(D_METHOD("discard_race_events"), &GameSim::discard_race_events);
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "car_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_car_node_container", "get_car_node_container");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "spark_node_container", PROPERTY_HINT_RESOURCE_TYPE, "Node3D"), "set_spark_node_container", "get_spark_node_container");
 };

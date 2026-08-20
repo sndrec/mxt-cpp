@@ -1328,6 +1328,29 @@ void GameSim::tick_singleplayer(int local_player_id, godot::PackedByteArray loca
 	tick_gamesim_internal(InputFrameMode::SingleLocal, local_player_id, &decoded_local_input, nullptr, nullptr, 0);
 }
 
+bool GameSim::tick_singleplayer_indexed_input(int local_player_id,
+	const godot::PackedByteArray& input_bytes,
+	const godot::PackedInt32Array& frame_offsets,
+	int frame_index)
+{
+	if (frame_index < 0 || frame_index + 1 >= frame_offsets.size()) {
+		return false;
+	}
+	const int begin = frame_offsets[frame_index];
+	const int end = frame_offsets[frame_index + 1];
+	if (begin < 0 || end <= begin || end > input_bytes.size()) {
+		return false;
+	}
+	const uint8_t* data = input_bytes.ptr() + begin;
+	const int size = end - begin;
+	if (PlayerInput::encoded_raw_size_from_mask(data[0]) != size) {
+		return false;
+	}
+	const PlayerInput decoded_local_input = PlayerInput::from_raw(data, size);
+	tick_gamesim_internal(InputFrameMode::SingleLocal, local_player_id, &decoded_local_input, nullptr, nullptr, 0);
+	return true;
+}
+
 void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	int local_player_id,
 	const PlayerInput* local_input,

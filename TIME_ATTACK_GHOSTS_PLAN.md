@@ -354,12 +354,12 @@ Completion gate: a player can reliably prepare any zero-to-four replay-bearing e
 
 ### Phase C: Independent simulation slots
 
-- [ ] Add the fixed four-slot ghost controller.
-- [ ] Prepare validated replay input into an allocation-free sequential representation.
-- [ ] Instantiate one single-car `GameSim` per selection with independent track state.
-- [ ] Advance slots from the live Time Attack tick.
+- [x] Add the fixed four-slot ghost controller.
+- [x] Prepare validated replay input into an allocation-free sequential representation.
+- [x] Instantiate one single-car `GameSim` per selection with independent track state.
+- [x] Advance slots from the live Time Attack tick.
 - [ ] Handle terminal, fade, Retry, Race Again, track change, and teardown.
-- [ ] Confirm ghost events never enter the player's result or presentation systems.
+- [x] Confirm ghost events never enter the player's result or presentation systems.
 
 Completion gate: four invisible ghosts can reproduce four input streams while the player's ranked simulation and replay remain canonical and single-racer.
 
@@ -458,6 +458,7 @@ The feature is complete when:
 
 - Phase A: reusable serialized leaderboard replay cache, direct Watch Replay integration, and the four-entry digest-keyed selection model.
 - Phase B: fixed-size leaderboard ghost picker, shared leaderboard row decoration, own-time selection, readiness gating, and controller navigation.
+- Phase C1: transition-time input packing, allocation-free indexed native input consumption, isolated one-car simulations, live-tick advancement, and deterministic teardown.
 
 ### Profiling results
 

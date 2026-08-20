@@ -514,6 +514,8 @@ namespace godot {
 		bool play_player_oneshot_sfx(int player_id, const godot::StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 		bool play_world_oneshot_sfx(const godot::Vector3& position, const godot::StringName& sfx_id, double volume_db = 0.0, double pitch_scale = 1.0);
 		void tick_singleplayer(int local_player_id, godot::PackedByteArray local_input);
+		bool tick_singleplayer_indexed_input(int local_player_id, const godot::PackedByteArray& input_bytes, const godot::PackedInt32Array& frame_offsets, int frame_index);
+		void discard_race_events() { race_events.clear(); }
 		godot::String get_phase_profile_string() const;
 		godot::PackedInt64Array get_phase_profile_last_sample() const;
 		void set_phase_profile_enabled(bool enabled);

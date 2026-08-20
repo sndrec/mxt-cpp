@@ -74,6 +74,7 @@ const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
 const LeaderboardReplayServiceClass = preload("res://steam/leaderboard_replay_service.gd")
 const LeaderboardReplayCacheClass = preload("res://steam/leaderboard_replay_cache.gd")
+const TimeAttackGhostControllerClass = preload("res://time_attack/time_attack_ghost_controller.gd")
 const LegacyLeaderboardSettingRecoveryClass = preload("res://steam/legacy_leaderboard_setting_recovery.gd")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
@@ -148,6 +149,8 @@ var leaderboard_client: LeaderboardClient
 var leaderboard_replay_service
 var leaderboard_replay_cache: LeaderboardReplayCache
 var leaderboard_watch_request_token := 0
+var time_attack_ghost_controller: TimeAttackGhostController
+var time_attack_ghost_descriptors: Array = []
 var legacy_leaderboard_setting_recovery
 
 func _enter_tree() -> void:
@@ -244,6 +247,10 @@ func _ready() -> void:
 	add_child(leaderboard_replay_cache)
 	leaderboard_replay_cache.initialize(self, steam_service)
 	leaderboard_replay_cache.request_completed.connect(_on_leaderboard_replay_cache_request_completed)
+	time_attack_ghost_controller = TimeAttackGhostControllerClass.new()
+	time_attack_ghost_controller.name = "TimeAttackGhostController"
+	add_child(time_attack_ghost_controller)
+	time_attack_ghost_controller.initialize(self)
 	time_attack_setup.initialize(self)
 	time_attack_setup.start_requested.connect(_on_time_attack_setup_start_requested)
 	time_attack_setup.back_requested.connect(_on_time_attack_setup_back_requested)
@@ -413,6 +420,13 @@ func _on_singleplayer_button_pressed() -> void:
 
 func _on_time_attack_setup_start_requested(ranked: bool, context: Dictionary) -> void:
 	time_attack_previous_best_milliseconds = int(context.get("personal_best_milliseconds", 0))
+	var descriptor_value = context.get("ghost_descriptors", [])
+	time_attack_ghost_descriptors = (descriptor_value as Array).duplicate(true) if typeof(descriptor_value) == TYPE_ARRAY else []
+	var ghost_prepare := time_attack_ghost_controller.prepare(time_attack_ghost_descriptors, track_selector.selected)
+	if !bool(ghost_prepare.get("success", false)):
+		race_presentation_controller.show_notification(String(ghost_prepare.get("message", "Selected ghosts could not be prepared.")), 5000)
+		time_attack_setup.open_for_current_selection()
+		return
 	var options := TimeAttackRulesClass.build_options()
 	if !ranked:
 		options["session_kind"] = "time_attack_practice"
@@ -530,10 +544,22 @@ func _on_track_editor_button_pressed() -> void:
 func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {}) -> void:
 	# Start a local, singleplayer race that does not touch networking at all.
 	# Prepare a minimal settings array using the current local player settings.
+	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
+	var session_kind := String(options.get("session_kind", ""))
+	var is_time_attack := session_kind in ["time_attack", "time_attack_practice"]
+	if is_time_attack:
+		if time_attack_ghost_controller.prepared_track_index != track_selector.selected:
+			var ghost_prepare := time_attack_ghost_controller.prepare(time_attack_ghost_descriptors, track_selector.selected)
+			if !bool(ghost_prepare.get("success", false)):
+				race_presentation_controller.show_notification(String(ghost_prepare.get("message", "Selected ghosts could not be prepared.")), 5000)
+				time_attack_setup.open_for_current_selection()
+				return
+	else:
+		time_attack_ghost_descriptors.clear()
+		time_attack_ghost_controller.clear()
 	singleplayer_mode = true
 	_singleplayer_tick = 0
 	network_manager.reset_race_state()
-	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
 	track_content_controller.set_track_content_evidence(options, [track_selector.selected])
 	if auto_bumpers_mode:
 		options["bumpers"] = true
@@ -573,6 +599,10 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	_close_settings_menus_for_race_start()
 	race_dnf_low_speed_ticks.clear()
 	race_session_controller.start_race(track_selector.selected, settings_array, singleplayer_mode, headless_mode)
+	if is_time_attack:
+		var ghost_start := time_attack_ghost_controller.start_race(track_selector.selected)
+		if !bool(ghost_start.get("success", false)):
+			push_error(String(ghost_start.get("message", "Selected ghost simulations could not start.")))
 	# Hide menus
 	$Control.visible = false
 	lobby_control.visible = false
@@ -1456,6 +1486,8 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	_dump_offline_state_sample()
 	var tick_to_record := _singleplayer_tick
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
+	if time_attack_ghost_controller != null:
+		time_attack_ghost_controller.tick(tick_to_record)
 	replay_controller.record_singleplayer_frame(tick_to_record)
 	_singleplayer_tick += 1
 	if debug_runtime_controller.bumper_smoke_enabled and _singleplayer_tick % 120 == 0 and game_sim.has_method("get_bumper_debug_string"):
@@ -1579,6 +1611,8 @@ func _return_to_menu() -> void:
 	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_close_race_pause_menu()
+	if time_attack_ghost_controller != null:
+		time_attack_ghost_controller.teardown_runtime()
 	race_session_controller.destroy_world(true, true)
 	race_dnf_low_speed_ticks.clear()
 	singleplayer_mode = false
@@ -1598,6 +1632,8 @@ func _return_to_lobby() -> void:
 	communication_controller.close_race_chat()
 	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	_close_race_pause_menu()
+	if time_attack_ghost_controller != null:
+		time_attack_ghost_controller.teardown_runtime()
 	race_session_controller.destroy_world(false, false)
 	race_dnf_low_speed_ticks.clear()
 	lobby_control.visible = true
@@ -1612,6 +1648,8 @@ func _teardown_race_world_for_transition() -> void:
 	record_memory_sample("race_transition_teardown_begin")
 	race_session_controller.begin_transition(singleplayer_mode)
 	_close_race_pause_menu()
+	if time_attack_ghost_controller != null:
+		time_attack_ghost_controller.teardown_runtime()
 	race_session_controller.destroy_world(false, false)
 	race_dnf_low_speed_ticks.clear()
 	lobby_control.visible = false
