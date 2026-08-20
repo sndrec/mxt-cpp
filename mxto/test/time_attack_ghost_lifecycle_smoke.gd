@@ -43,7 +43,7 @@ func _run() -> void:
 		return
 	if !(await _exercise_practice_cpu_lifecycle(track_index, descriptor)):
 		return
-	if !_exercise_ranked_recording(track_index, descriptor, replay):
+	if !_exercise_ranked_recording_matrix(track_index, descriptor, replay):
 		return
 	if !_catalog_excludes_cache_files():
 		return
@@ -129,6 +129,13 @@ func _exercise_isolation_and_reconstruction(track_index: int, descriptor: Dictio
 		"finish_times": game_manager.network_manager.race_results.player_finish_times,
 		"dnfs": game_manager.network_manager.race_results.player_dnfs,
 	})
+	game_manager.network_manager.race_results.player_finish_times[999] = 1
+	controller.call("_process", 1.0 / 60.0)
+	for slot_value in controller.runtime_slots:
+		if String((slot_value as Dictionary).get("state", "")) != "active":
+			_fail("player completion stopped an unfinished ghost")
+			return false
+	game_manager.network_manager.race_results.player_finish_times.erase(999)
 	for slot_value in controller.runtime_slots:
 		(slot_value as Dictionary)["state"] = "finished"
 	controller.call("_process", controller.FADE_SECONDS + 0.01)
@@ -196,37 +203,45 @@ func _exercise_practice_cpu_lifecycle(track_index: int, descriptor: Dictionary) 
 	return true
 
 
-func _exercise_ranked_recording(track_index: int, descriptor: Dictionary, replay: Dictionary) -> bool:
-	game_manager.track_selector.select(track_index)
-	game_manager.singleplayer_cpu_count = 0
-	game_manager._on_time_attack_setup_start_requested(true, {"ghost_descriptors": [descriptor]})
-	if game_manager.time_attack_ghost_controller.runtime_slots.size() != 1:
-		_fail("ranked Time Attack did not start its selected ghost")
-		return false
+func _exercise_ranked_recording_matrix(track_index: int, descriptor: Dictionary, replay: Dictionary) -> bool:
 	var racer_ids: Array = replay.get("racer_ids", [])
 	var settings: Array = replay.get("settings", [])
 	var grid_values: Array = replay.get("start_grid_slots", [])
 	var grid_slots := PackedInt32Array()
 	for value in grid_values:
 		grid_slots.append(int(value))
-	game_manager.network_manager.race_options = (replay.get("race_options", {}) as Dictionary).duplicate(true)
-	game_manager.singleplayer_mode = true
-	game_manager.replay_controller.start_recording(track_index, settings, racer_ids, [false], grid_slots)
-	var candidate: Dictionary = game_manager.replay_controller.replay_recording_metadata.duplicate(true)
-	candidate["saved_reason"] = "time_attack_submission"
-	candidate["frames"] = (replay.get("frames", []) as Array).duplicate(true)
-	candidate["duration_ticks"] = int(replay.get("duration_ticks", 0))
-	candidate["finish_times"] = (replay.get("finish_times", {}) as Dictionary).duplicate(true)
-	candidate["finish_placements"] = (replay.get("finish_placements", {}) as Dictionary).duplicate(true)
-	candidate["eliminations"] = (replay.get("eliminations", {}) as Dictionary).duplicate(true)
-	var candidate_validation: Dictionary = ReplayValidatorClass.validate(game_manager, candidate)
-	if !bool(candidate_validation.get("valid", false)):
-		_fail("ranked replay produced with an active ghost is noncanonical: %s" % String(candidate_validation.get("reason", "unknown")))
-		return false
-	if game_manager.replay_controller.replay_recording_racer_ids.size() != 1 \
-			or JSON.stringify(candidate).findn("ghost") >= 0:
-		_fail("ghost selection leaked into the ranked replay roster or schema")
-		return false
+	for ghost_count in [0, 1, 2, 4]:
+		var descriptors: Array = []
+		for slot_index in range(ghost_count):
+			var slot_descriptor := descriptor.duplicate(true)
+			slot_descriptor["replay_sha256"] = "ranked_%d" % slot_index
+			slot_descriptor["slot_index"] = slot_index
+			descriptors.append(slot_descriptor)
+		game_manager.track_selector.select(track_index)
+		game_manager.singleplayer_cpu_count = 0
+		game_manager._on_time_attack_setup_start_requested(true, {"ghost_descriptors": descriptors})
+		if game_manager.time_attack_ghost_controller.runtime_slots.size() != ghost_count:
+			_fail("ranked Time Attack did not start %d selected ghosts" % ghost_count)
+			return false
+		game_manager.network_manager.race_options = (replay.get("race_options", {}) as Dictionary).duplicate(true)
+		game_manager.singleplayer_mode = true
+		game_manager.replay_controller.start_recording(track_index, settings, racer_ids, [false], grid_slots)
+		var candidate: Dictionary = game_manager.replay_controller.replay_recording_metadata.duplicate(true)
+		candidate["saved_reason"] = "time_attack_submission"
+		candidate["frames"] = (replay.get("frames", []) as Array).duplicate(true)
+		candidate["duration_ticks"] = int(replay.get("duration_ticks", 0))
+		candidate["finish_times"] = (replay.get("finish_times", {}) as Dictionary).duplicate(true)
+		candidate["finish_placements"] = (replay.get("finish_placements", {}) as Dictionary).duplicate(true)
+		candidate["eliminations"] = (replay.get("eliminations", {}) as Dictionary).duplicate(true)
+		var candidate_validation: Dictionary = ReplayValidatorClass.validate(game_manager, candidate)
+		if !bool(candidate_validation.get("valid", false)):
+			_fail("%d-ghost ranked replay is noncanonical: %s" % [ghost_count, String(candidate_validation.get("reason", "unknown"))])
+			return false
+		if game_manager.replay_controller.replay_recording_racer_ids.size() != 1 \
+				or JSON.stringify(candidate).findn("ghost") >= 0:
+			_fail("%d-ghost selection leaked into the ranked replay roster or schema" % ghost_count)
+			return false
+		game_manager._return_to_menu()
 	return true
 
 

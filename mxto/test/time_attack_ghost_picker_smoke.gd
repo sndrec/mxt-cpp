@@ -122,11 +122,12 @@ func _run() -> void:
 		_fail("Practice start remained enabled while a selected ghost was unresolved")
 		return
 	var pending_selection: Dictionary = selection.selected_by_digest[_digest("2")]
-	cache.complete(int(pending_selection.get("request_token", 0)), _ready_result(_digest("2")))
+	cache.complete(int(pending_selection.get("request_token", 0)), _ready_result(_digest("2"), true))
 	await process_frame
 	setup._update_start_buttons()
-	if setup.practice_button.disabled:
-		_fail("Practice start did not re-enable after every selected ghost became ready")
+	if setup.practice_button.disabled \
+			or !bool((selection.selected_by_digest[_digest("2")] as Dictionary).get("compatibility_warning", false)):
+		_fail("ready older-version ghost did not re-enable Practice with its warning retained")
 		return
 
 	picker.show()
@@ -181,7 +182,10 @@ func _digest(character: String) -> String:
 	return "sha256:" + character.repeat(64)
 
 
-func _ready_result(digest: String) -> Dictionary:
+func _ready_result(digest: String, older_version := false) -> Dictionary:
+	var version := GameVersionData.metadata()
+	if older_version:
+		version["compatibility"] = maxi(0, GameVersionData.COMPATIBILITY - 1)
 	return {
 		"success": true,
 		"message": "Ready",
@@ -190,7 +194,7 @@ func _ready_result(digest: String) -> Dictionary:
 		"trusted_details": {},
 		"validation": {
 			"valid": true,
-			"game_version": GameVersionData.metadata(),
+			"game_version": version,
 		},
 	}
 
