@@ -6,6 +6,7 @@ const MAX_ENCODED_INPUT_BYTES := 8
 const FADE_SECONDS := 0.75
 const BASE_TRANSPARENCY := 0.48
 const TINT_STRENGTH := 0.32
+const NAME_LABEL_HEIGHT := 4.4
 const SLOT_COLORS: Array[Color] = [
 	Color(0.30, 0.90, 1.0),
 	Color(1.0, 0.36, 0.86),
@@ -230,7 +231,7 @@ func _process(delta: float) -> void:
 			false,
 			false,
 			false)
-		_update_label(index, transform.origin, 1.0 - fade_ratio, camera, hud_hidden)
+		_update_label(index, transform, 1.0 - fade_ratio, camera, hud_hidden)
 	var render_us := Time.get_ticks_usec() - render_start_us
 	render_frame_count += 1
 	render_total_us += render_us
@@ -405,17 +406,18 @@ func _clear_presentation() -> void:
 	render_manager = null
 
 
-func _update_label(index: int, world_position: Vector3, alpha: float, camera: Camera3D, hud_hidden: bool) -> void:
+func _update_label(index: int, car_transform: Transform3D, alpha: float, camera: Camera3D, hud_hidden: bool) -> void:
 	if index < 0 or index >= name_labels.size():
 		return
 	var label := name_labels[index]
+	var label_anchor := car_transform.origin + car_transform.basis.y.normalized() * NAME_LABEL_HEIGHT
 	if label == null or camera == null or hud_hidden \
-			or camera.is_position_behind(world_position) or !camera.is_position_in_frustum(world_position):
+			or camera.is_position_behind(label_anchor) or !camera.is_position_in_frustum(label_anchor):
 		label.visible = false
 		return
 	label.visible = true
 	label.modulate = Color(1.0, 1.0, 1.0, clampf(alpha, 0.0, 1.0))
-	label.position = camera.unproject_position(world_position) + Vector2(24.0, -56.0)
+	label.position = camera.unproject_position(label_anchor) - Vector2(label.size.x * 0.5, label.size.y + 8.0)
 
 
 func _hide_label(index: int) -> void:
