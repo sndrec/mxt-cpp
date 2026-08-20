@@ -1,0 +1,118 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/time_attack_ghost_picker.gd" id="1_picker"]
+
+[node name="TimeAttackGhostPicker" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_picker")
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0, 0, 0, 0.88)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(1040, 640)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 16
+
+[node name="Content" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "CHOOSE LEADERBOARD GHOSTS"
+
+[node name="Explanation" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "Select up to four verified times. Your own time can be selected."
+
+[node name="Views" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Global" type="Button" parent="Center/Panel/Margin/Content/Views"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+text = "Global Top 100"
+
+[node name="AroundMe" type="Button" parent="Center/Panel/Margin/Content/Views"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+text = "Around Me"
+
+[node name="Friends" type="Button" parent="Center/Panel/Margin/Content/Views"]
+layout_mode = 2
+size_flags_horizontal = 3
+toggle_mode = true
+text = "Friends"
+
+[node name="Refresh" type="Button" parent="Center/Panel/Margin/Content/Views"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+text = "Refresh"
+
+[node name="Entries" type="Tree" parent="Center/Panel/Margin/Content"]
+custom_minimum_size = Vector2(0, 390)
+layout_mode = 2
+size_flags_vertical = 3
+columns = 7
+column_titles_visible = true
+hide_root = true
+select_mode = 1
+
+[node name="Status" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "No ghosts selected."
+autowrap_mode = 2
+
+[node name="Actions" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Retry" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "Retry Download"
+
+[node name="Clear" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "Clear Selection"
+
+[node name="Done" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Done"

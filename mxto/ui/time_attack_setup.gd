@@ -8,7 +8,8 @@ signal watch_replay_requested(board_name: String, entry: Dictionary)
 
 const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
-const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
+const LeaderboardEntryPresenterClass = preload("res://steam/leaderboard_entry_presenter.gd")
+const GhostSelectionClass = preload("res://time_attack/time_attack_ghost_selection.gd")
 
 @onready var track_label: Label = $Center/Panel/Margin/Content/Track
 @onready var vehicle_label: Label = $Center/Panel/Margin/Content/Vehicle
@@ -24,6 +25,8 @@ const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
 @onready var official_button: Button = $Center/Panel/Margin/Content/Actions/Official
 @onready var leaderboard_button: Button = $Center/Panel/Margin/Content/Secondary/ViewLeaderboard
 @onready var watch_replay_button: Button = $Center/Panel/Margin/Content/Secondary/WatchReplay
+@onready var choose_ghosts_button: Button = $Center/Panel/Margin/Content/Secondary/ChooseGhosts
+@onready var ghost_picker: TimeAttackGhostPicker = $GhostPicker
 
 var game_manager: GameManager
 var eligibility: Dictionary = {}
@@ -33,10 +36,16 @@ var personal_global_rank := 0
 var friend_position := 0
 var friend_count := 0
 var personal_entry: Dictionary = {}
+var ghost_selection: TimeAttackGhostSelection
 
 
 func initialize(in_game_manager: GameManager) -> void:
 	game_manager = in_game_manager
+	ghost_selection = GhostSelectionClass.new()
+	ghost_selection.initialize(game_manager.leaderboard_replay_cache)
+	ghost_selection.changed.connect(_on_ghost_selection_changed)
+	ghost_picker.initialize(game_manager, ghost_selection)
+	ghost_picker.closed.connect(func(): choose_ghosts_button.grab_focus())
 	if game_manager.leaderboard_client != null:
 		game_manager.leaderboard_client.entries_received.connect(_on_entries_received)
 		game_manager.leaderboard_client.submission_status_changed.connect(_on_submission_status)
@@ -45,6 +54,7 @@ func initialize(in_game_manager: GameManager) -> void:
 	official_button.pressed.connect(func(): official_vehicle_requested.emit())
 	leaderboard_button.pressed.connect(func(): leaderboard_requested.emit(board_name))
 	watch_replay_button.pressed.connect(func(): watch_replay_requested.emit(board_name, personal_entry.duplicate(true)))
+	choose_ghosts_button.pressed.connect(func(): ghost_picker.open_for_board(board_name))
 	$Center/Panel/Margin/Content/Secondary/Back.pressed.connect(func(): back_requested.emit())
 	hide()
 
@@ -64,6 +74,7 @@ func open_for_current_selection() -> void:
 	eligibility = LeaderboardEligibilityClass.evaluate_start(game_manager, options, settings)
 	var board: Dictionary = eligibility.get("board", {})
 	board_name = String(board.get("steam_name", ""))
+	ghost_selection.set_board(board_name)
 	var track_name := "Unknown Track"
 	if game_manager.track_selector.selected >= 0:
 		track_name = game_manager.track_selector.get_item_text(game_manager.track_selector.selected)
@@ -77,9 +88,11 @@ func open_for_current_selection() -> void:
 	ranked_label.text = "RANKED — VERIFIED REPLAY REQUIRED" if eligible else "UNRANKED WITH CURRENT SELECTION"
 	ranked_label.modulate = Color(0.42, 1.0, 0.58) if eligible else Color(1.0, 0.5, 0.38)
 	reason_label.text = "Eligible for trusted Steam submission." if eligible else TimeAttackRulesClass.friendly_reason(String(eligibility.get("reason", "ineligible")))
-	ranked_button.disabled = !eligible
+	_update_start_buttons()
 	official_button.visible = String(eligibility.get("reason", "")) == "unofficial_or_mismatched_vehicle"
 	leaderboard_button.disabled = board_name.is_empty()
+	choose_ghosts_button.disabled = board_name.is_empty()
+	_update_ghost_button()
 	rules_label.text = "[b]Ranked rules[/b]\n%s" % TimeAttackRulesClass.rules_description()
 	personal_label.text = "Personal Best  ·  Loading…" if eligible else "Personal Best  ·  Not available"
 	global_label.text = "Global Rank  ·  Loading…" if eligible else "Global Rank  ·  Not ranked"
@@ -103,11 +116,14 @@ func refresh_after_vehicle_change() -> void:
 func _start(ranked: bool) -> void:
 	if ranked and !bool(eligibility.get("eligible", false)):
 		return
+	if ghost_selection != null and !ghost_selection.all_ready():
+		return
 	var context := {
 		"eligibility": eligibility.duplicate(true),
 		"board_name": board_name,
 		"personal_best_milliseconds": personal_best_milliseconds,
 		"personal_global_rank": personal_global_rank,
+		"ghost_descriptors": ghost_selection.ready_descriptors() if ghost_selection != null else [],
 	}
 	hide()
 	start_requested.emit(ranked, context)
@@ -133,11 +149,8 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 				continue
 			personal_best_milliseconds = int(entry.get("score", 0))
 			personal_global_rank = int(entry.get("global_rank", 0))
-			personal_entry = entry.duplicate(true)
-			personal_entry["_trusted_details"] = LeaderboardDetailsClass.decode(entry.get("details", []))
-			var ugc_handle := int(entry.get("ugc_handle", 0))
-			watch_replay_button.disabled = ugc_handle == 0 or ugc_handle == -1 \
-				or String((personal_entry["_trusted_details"] as Dictionary).get("replay_sha256", "")).is_empty()
+			personal_entry = LeaderboardEntryPresenterClass.decorate(game_manager, entry)
+			watch_replay_button.disabled = !bool(personal_entry.get("_replay_available", false))
 			break
 		personal_label.text = "Personal Best  ·  %s" % (_format_score(personal_best_milliseconds) if personal_best_milliseconds > 0 else "No verified time")
 		global_label.text = "Global Rank  ·  #%d" % personal_global_rank if personal_global_rank > 0 else "Global Rank  ·  Unranked"
@@ -155,6 +168,22 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 
 func _on_submission_status(status: Dictionary) -> void:
 	service_label.text = "Submission service  ·  %s" % String(status.get("message", "Ready"))
+
+
+func _on_ghost_selection_changed(_snapshot: Array) -> void:
+	_update_ghost_button()
+	_update_start_buttons()
+
+
+func _update_ghost_button() -> void:
+	var selected_count := ghost_selection.count() if ghost_selection != null else 0
+	choose_ghosts_button.text = "Choose Ghosts (%d/4)" % selected_count
+
+
+func _update_start_buttons() -> void:
+	var blocked := ghost_selection != null and !ghost_selection.all_ready()
+	ranked_button.disabled = !bool(eligibility.get("eligible", false)) or blocked
+	practice_button.disabled = blocked
 
 
 func _format_score(milliseconds: int) -> String:

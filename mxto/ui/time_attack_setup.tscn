@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://ui/time_attack_setup.gd" id="1_setup"]
+[ext_resource type="PackedScene" path="res://ui/time_attack_ghost_picker.tscn" id="2_picker"]
 
 [node name="TimeAttackSetup" type="Control"]
 visible = false
@@ -130,3 +131,12 @@ layout_mode = 2
 size_flags_horizontal = 3
 disabled = true
 text = "Watch My Best Replay"
+
+[node name="ChooseGhosts" type="Button" parent="Center/Panel/Margin/Content/Secondary"]
+layout_mode = 2
+size_flags_horizontal = 3
+disabled = true
+text = "Choose Ghosts (0/4)"
+
+[node name="GhostPicker" parent="." instance=ExtResource("2_picker")]
+layout_mode = 1

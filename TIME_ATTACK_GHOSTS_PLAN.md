@@ -343,12 +343,12 @@ Completion gate: one to four replay requests can be selected, downloaded sequent
 
 ### Phase B: Ghost picker UI
 
-- [ ] Add the Time Attack `Choose Ghosts (N/4)` control.
-- [ ] Add the modal picker with Global, Around Me, Friends, checkboxes, readiness, warnings, Retry, Clear, and Done.
-- [ ] Include the player's own time.
-- [ ] Enforce four selections.
-- [ ] Complete keyboard/controller focus and accept behavior.
-- [ ] Prevent race start while selected ghosts are unresolved.
+- [x] Add the Time Attack `Choose Ghosts (N/4)` control.
+- [x] Add the modal picker with Global, Around Me, Friends, checkboxes, readiness, warnings, Retry, Clear, and Done.
+- [x] Include the player's own time.
+- [x] Enforce four selections.
+- [x] Complete keyboard/controller focus and accept behavior.
+- [x] Prevent race start while selected ghosts are unresolved.
 
 Completion gate: a player can reliably prepare any zero-to-four replay-bearing entries without overflowing the setup screen.
 
@@ -457,6 +457,7 @@ The feature is complete when:
 ### Completed slices
 
 - Phase A: reusable serialized leaderboard replay cache, direct Watch Replay integration, and the four-entry digest-keyed selection model.
+- Phase B: fixed-size leaderboard ghost picker, shared leaderboard row decoration, own-time selection, readiness gating, and controller navigation.
 
 ### Profiling results
 
