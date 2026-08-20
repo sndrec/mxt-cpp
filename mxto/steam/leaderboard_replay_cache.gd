@@ -8,6 +8,7 @@ const MAX_REPLAY_BYTES := 64 * 1024 * 1024
 
 var game_manager: GameManager
 var steam_service: MxtSteamService
+var cache_root := CACHE_ROOT
 
 var next_token := 1
 var requests_by_token: Dictionary = {}
@@ -81,7 +82,7 @@ func _build_request(board_name: String, entry: Dictionary) -> Dictionary:
 		"trusted_details": details,
 		"replay_sha256": replay_digest,
 		"digest_hex": digest_hex,
-		"cache_path": CACHE_ROOT.path_join(digest_hex + ".replay.json"),
+		"cache_path": cache_root.path_join(digest_hex + ".replay.json"),
 		"validation_key": _validation_key(board_name, details),
 	}
 
@@ -256,7 +257,7 @@ func _validate_replay(bytes: PackedByteArray, request: Dictionary) -> Dictionary
 
 
 func _write_cache_atomically(path: String, bytes: PackedByteArray) -> bool:
-	if path.is_empty() or DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(CACHE_ROOT)) != OK:
+	if path.is_empty() or DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(cache_root)) != OK:
 		return false
 	var temporary_path := path + ".tmp"
 	var file := FileAccess.open(temporary_path, FileAccess.WRITE)

@@ -108,7 +108,7 @@ func update_entry(board_name: String, entry: Dictionary) -> void:
 	var selection: Dictionary = selection_value
 	selection["entry"] = entry.duplicate(true)
 	selection["steam_id"] = int(entry.get("steam_id", 0))
-	selection["persona_name"] = String(entry.get("persona_name", "Steam %s" % String(entry.get("steam_id", ""))))
+	selection["persona_name"] = String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", ""))))
 	selection["global_rank"] = int(entry.get("global_rank", 0))
 	selection["score_milliseconds"] = int(entry.get("score", 0))
 	selection["ugc_handle"] = int(entry.get("ugc_handle", 0))
@@ -200,7 +200,7 @@ func _selection_record(board_name: String, entry: Dictionary, trusted: Dictionar
 	return {
 		"board_name": board_name,
 		"steam_id": int(entry.get("steam_id", 0)),
-		"persona_name": String(entry.get("persona_name", "Steam %s" % String(entry.get("steam_id", "")))),
+		"persona_name": String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", "")))),
 		"global_rank": int(entry.get("global_rank", 0)),
 		"score_milliseconds": int(entry.get("score", 0)),
 		"ugc_handle": int(entry.get("ugc_handle", 0)),
