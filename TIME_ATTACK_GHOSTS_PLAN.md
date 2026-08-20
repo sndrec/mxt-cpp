@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation in progress. Phase A is complete in code; integrated runtime verification remains in Phase F.
+Implementation is complete in code. Release compilation, attached launch validation, and the focused automated matrix pass; user-facing visual and Steam-backed manual validation remains in Phase F.
 
 This document is the source of truth for adding selectable leaderboard ghosts to Time Attack. Execute it with a short goal such as:
 
@@ -378,16 +378,16 @@ Completion gate: ghosts are readable and distinguishable without obscuring the t
 - [x] Add setup, tick, render, and memory counters.
 - [x] Extend session memory telemetry.
 - [x] Emit the concise race summary.
-- [ ] Profile 0, 1, 2, and 4 ghosts.
-- [ ] Remove temporary diagnostics and dead experimental paths.
-- [ ] Update this document with measured results and any justified deviations.
+- [x] Profile 0, 1, 2, and 4 ghosts.
+- [x] Remove temporary diagnostics and dead experimental paths.
+- [x] Update this document with measured results and any justified deviations.
 
 Completion gate: logs make the incremental cost of each ghost count obvious enough to evaluate a future limit increase.
 
 ### Phase F: Final validation and repair
 
-- [ ] Run all focused automated checks after implementation is complete.
-- [ ] Fix discovered problems, then rerun the affected checks.
+- [x] Run all focused automated checks after implementation is complete.
+- [x] Fix discovered problems, then rerun the affected checks.
 - [ ] Complete representative manual Time Attack runs.
 - [ ] Record final verification results below.
 
@@ -464,8 +464,22 @@ The feature is complete when:
 
 ### Profiling results
 
-- Not yet measured.
+- Headless Split Oval sample using the same 0% Top Speeder replay for each isolated slot, 180 live ticks per scenario:
+  - 0 ghosts: 0 native bytes and no ghost renderer allocation.
+  - 1 ghost: 82,167,020 tracked native bytes; 8 microseconds average ghost tick; 13.9 ms preparation; 3.8 ms instantiation.
+  - 2 ghosts: 164,334,040 tracked native bytes; 18.3 microseconds aggregate ghost work per live tick; 26.0 ms preparation; 7.4 ms instantiation.
+  - 4 ghosts: 328,668,080 tracked native bytes; 44.2 microseconds aggregate ghost work per live tick; 52.6 ms preparation; 14.8 ms instantiation.
+- One render-submission sample measured 59, 75, and 199 microseconds for 1, 2, and 4 ghosts respectively. This is instrumentation proof rather than a frame-pacing benchmark; representative visible-track profiling remains appropriate before increasing the four-ghost limit.
+- Native memory scaled linearly at approximately 78.4 MiB per independent `GameSim`, dominated by the deliberately isolated level and rollback heaps.
 
 ### Final verification
 
-- Not yet run.
+- `scons target=template_release -j4`: pass.
+- Strict project parse/import through the Godot 4.7.1 console executable: pass after fixing two Variant-inference errors found by the attached run.
+- `time_attack_ghost_smoke.gd`: pass for 0, 1, 2, and 4 independent simulations, exact tick advancement, distinct native allocations, shared rendering, no-shadow treatment, and deterministic teardown.
+- `car_livery_render_manager_smoke.gd`: pass.
+- `replay_controller_smoke.gd`: pass against a current 2,490-frame retained replay, including playback, seek, camera modes, catalog, and canonical recording.
+- `auth_input_packet_roundtrip.gd`: pass.
+- `track_content_controller_smoke.gd`: pass with 31 official tracks.
+- Attached non-headless project launch for 300 frames: pass with Vulkan initialization and no script parse/runtime failure attributable to this feature. Existing empty-image import warnings and the forced-quit render-thread finalization warning remain unrelated.
+- The manual Time Attack/Steam matrix and visual tuning remain pending user-facing play validation.

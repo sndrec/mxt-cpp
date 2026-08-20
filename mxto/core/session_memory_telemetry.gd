@@ -32,7 +32,7 @@ func sample(event_name: String) -> void:
 	var replay_stats: Dictionary = game_manager.replay_controller.get_memory_usage_stats()
 	var game_sim_stats := _sim_stats(game_manager.game_sim)
 	var server_sim_stats := _sim_stats(game_manager.server_game_sim)
-	var ghost_stats := game_manager.time_attack_ghost_controller.memory_usage_stats() if game_manager.time_attack_ghost_controller != null else {}
+	var ghost_stats: Dictionary = game_manager.time_attack_ghost_controller.memory_usage_stats() if game_manager.time_attack_ghost_controller != null else {}
 	var role := "offline"
 	if game_manager.network_manager.network_active:
 		role = "listen" if game_manager.network_manager.is_server and game_manager.network_manager.listen_server else ("server" if game_manager.network_manager.is_server else "client")

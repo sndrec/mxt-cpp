@@ -112,7 +112,7 @@ func _pump_queue() -> void:
 	if !active_digest.is_empty():
 		return
 	while !queued_digests.is_empty():
-		var digest := queued_digests.pop_front()
+		var digest: String = String(queued_digests.pop_front())
 		if !_has_waiters(digest):
 			continue
 		active_digest = digest
