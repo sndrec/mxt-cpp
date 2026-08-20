@@ -325,7 +325,10 @@ func _selected_digest() -> String:
 	var item := entry_tree.get_selected()
 	if item == null:
 		return ""
-	var index := int(item.get_metadata(0))
+	var index_value = item.get_metadata(0)
+	if typeof(index_value) != TYPE_INT:
+		return ""
+	var index := int(index_value)
 	if index < 0 or index >= visible_entries.size():
 		return ""
 	var trusted_value = (visible_entries[index] as Dictionary).get("_trusted_details", {})

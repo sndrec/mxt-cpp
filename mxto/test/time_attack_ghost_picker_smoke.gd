@@ -54,6 +54,15 @@ func _run() -> void:
 	if panel.size.x > root.size.x or panel.size.y > root.size.y:
 		_fail("ghost picker exceeds the supported 1280x720 viewport")
 		return
+	picker.active_request_type = "local"
+	picker._populate_entries([], false)
+	var empty_item := picker.entry_tree.get_root().get_first_child()
+	empty_item.select(0)
+	picker._update_actions()
+	if !picker._selected_digest().is_empty():
+		_fail("empty placeholder row was treated as a replay entry")
+		return
+	picker.active_request_type = "global"
 
 	var own_id := int(game_manager.steam_service.get_steam_id())
 	var own_entry := _entry(own_id, "Your Time", 1, 61001, 1001, _digest("1"), true)
