@@ -20,6 +20,19 @@ var runtime_slots: Array = []
 var last_error := ""
 var render_manager: CarRenderManager
 var name_labels: Array[Label] = []
+var prepare_total_us := 0
+var instantiate_total_us := 0
+var instantiate_max_us := 0
+var main_tick_count := 0
+var main_tick_total_us := 0
+var main_tick_max_us := 0
+var ghost_tick_total_us := 0
+var ghost_tick_max_us := 0
+var render_frame_count := 0
+var render_total_us := 0
+var render_max_us := 0
+var cache_stats_at_prepare: Dictionary = {}
+var profile_session_active := false
 
 
 func initialize(manager: GameManager) -> void:
@@ -36,6 +49,8 @@ func prepare(descriptors: Array, track_index: int) -> Dictionary:
 	prepared_slots.clear()
 	prepared_track_index = -1
 	last_error = ""
+	prepare_total_us = 0
+	cache_stats_at_prepare = game_manager.leaderboard_replay_cache.stats() if game_manager != null and game_manager.leaderboard_replay_cache != null else {}
 	if descriptors.size() > MAX_GHOSTS:
 		return _prepare_failure("ghost_limit_exceeded", "No more than four ghosts may be prepared.")
 	if descriptors.is_empty():
@@ -46,11 +61,16 @@ func prepare(descriptors: Array, track_index: int) -> Dictionary:
 	for descriptor_value in descriptors:
 		if typeof(descriptor_value) != TYPE_DICTIONARY:
 			return _prepare_failure("invalid_ghost_descriptor", "A selected ghost descriptor is invalid.")
+		var prepare_start_us := Time.get_ticks_usec()
 		var result := _prepare_descriptor(descriptor_value as Dictionary, track_index)
+		var prepare_us := Time.get_ticks_usec() - prepare_start_us
+		prepare_total_us += prepare_us
 		if !bool(result.get("success", false)):
 			prepared_slots.clear()
 			return result
-		prepared_slots.append(result.get("prepared", {}))
+		var prepared: Dictionary = result.get("prepared", {})
+		prepared["prepare_us"] = prepare_us
+		prepared_slots.append(prepared)
 	prepared_track_index = track_index
 	return {"success": true, "ghost_count": prepared_slots.size()}
 
@@ -58,8 +78,10 @@ func prepare(descriptors: Array, track_index: int) -> Dictionary:
 func start_race(track_index: int) -> Dictionary:
 	teardown_runtime()
 	last_error = ""
+	_reset_runtime_profile()
 	if prepared_track_index != track_index:
 		return _runtime_failure("ghost_track_changed", "The prepared ghosts belong to a different track.")
+	profile_session_active = true
 	if prepared_slots.is_empty():
 		return {"success": true, "ghost_count": 0}
 	if game_manager == null or track_index < 0 or track_index >= game_manager.track_content_controller.tracks.size():
@@ -70,6 +92,7 @@ func start_race(track_index: int) -> Dictionary:
 		return _runtime_failure("ghost_track_unavailable", "The selected track data could not be loaded for the ghosts.")
 	for prepared_value in prepared_slots:
 		var prepared: Dictionary = prepared_value
+		var instantiate_start_us := Time.get_ticks_usec()
 		var sim := GameSim.new()
 		sim.name = "TimeAttackGhostSim%d" % int(prepared.get("slot_index", runtime_slots.size()))
 		add_child(sim)
@@ -93,6 +116,13 @@ func start_race(track_index: int) -> Dictionary:
 		runtime["frame_index"] = 0
 		runtime["state"] = "active"
 		runtime["fade_elapsed"] = 0.0
+		runtime["tick_count"] = 0
+		runtime["tick_total_us"] = 0
+		runtime["tick_max_us"] = 0
+		var instantiate_us := Time.get_ticks_usec() - instantiate_start_us
+		runtime["instantiate_us"] = instantiate_us
+		instantiate_total_us += instantiate_us
+		instantiate_max_us = maxi(instantiate_max_us, instantiate_us)
 		runtime_slots.append(runtime)
 	_configure_presentation()
 	set_process(true)
@@ -112,6 +142,7 @@ func tick(live_tick: int) -> void:
 		if frame_index >= frame_count:
 			slot["state"] = "finished"
 			continue
+		var tick_start_us := Time.get_ticks_usec()
 		var sim: GameSim = slot.get("sim", null)
 		if sim == null or !sim.tick_singleplayer_indexed_input(
 				int(slot.get("racer_id", -1)),
@@ -122,12 +153,21 @@ func tick(live_tick: int) -> void:
 			continue
 		sim.update_render_snapshots()
 		sim.discard_race_events()
+		var tick_us := Time.get_ticks_usec() - tick_start_us
+		slot["tick_count"] = int(slot.get("tick_count", 0)) + 1
+		slot["tick_total_us"] = int(slot.get("tick_total_us", 0)) + tick_us
+		slot["tick_max_us"] = maxi(int(slot.get("tick_max_us", 0)), tick_us)
+		ghost_tick_total_us += tick_us
+		ghost_tick_max_us = maxi(ghost_tick_max_us, tick_us)
 		slot["frame_index"] = frame_index + 1
 		if frame_index + 1 >= frame_count:
 			slot["state"] = "finished"
 
 
 func teardown_runtime() -> void:
+	if profile_session_active:
+		_emit_profile_summary("teardown")
+	profile_session_active = false
 	set_process(false)
 	_clear_presentation()
 	for slot_value in runtime_slots:
@@ -146,6 +186,7 @@ func teardown_runtime() -> void:
 func _process(delta: float) -> void:
 	if render_manager == null or runtime_slots.is_empty():
 		return
+	var render_start_us := Time.get_ticks_usec()
 	render_manager.begin_manual_submit()
 	var camera := get_viewport().get_camera_3d()
 	var hud_hidden := game_manager != null and game_manager.debug_runtime_controller.disable_hud
@@ -190,6 +231,16 @@ func _process(delta: float) -> void:
 			false,
 			false)
 		_update_label(index, transform.origin, 1.0 - fade_ratio, camera, hud_hidden)
+	var render_us := Time.get_ticks_usec() - render_start_us
+	render_frame_count += 1
+	render_total_us += render_us
+	render_max_us = maxi(render_max_us, render_us)
+
+
+func record_main_tick(tick_us: int) -> void:
+	main_tick_count += 1
+	main_tick_total_us += tick_us
+	main_tick_max_us = maxi(main_tick_max_us, tick_us)
 
 
 func clear() -> void:
@@ -213,18 +264,99 @@ func runtime_slot_snapshot() -> Array:
 
 func memory_usage_stats() -> Dictionary:
 	var slots: Array = []
-	var aggregate_bytes := 0
+	var aggregate_native_bytes := 0
+	var aggregate_level_bytes := 0
+	var aggregate_state_bytes := 0
+	var aggregate_rollback_bytes := 0
 	for slot_value in runtime_slots:
 		var slot: Dictionary = slot_value
 		var sim: GameSim = slot.get("sim", null)
 		var stats: Dictionary = sim.get_memory_usage_stats() if sim != null else {}
-		aggregate_bytes += int(stats.get("total_tracked_bytes", 0))
+		aggregate_native_bytes += int(stats.get("tracked_native_bytes", 0))
+		aggregate_level_bytes += int(stats.get("level_heap_capacity_bytes", 0))
+		aggregate_state_bytes += int(stats.get("gamestate_heap_capacity_bytes", 0))
+		aggregate_rollback_bytes += int(stats.get("rollback_buffer_bytes", 0))
 		slots.append(stats)
 	return {
 		"ghost_count": runtime_slots.size(),
-		"aggregate_tracked_bytes": aggregate_bytes,
+		"aggregate_tracked_native_bytes": aggregate_native_bytes,
+		"aggregate_level_heap_bytes": aggregate_level_bytes,
+		"aggregate_gamestate_heap_bytes": aggregate_state_bytes,
+		"aggregate_rollback_bytes": aggregate_rollback_bytes,
+		"render_archetypes": render_manager.archetypes.size() if render_manager != null else 0,
 		"slots": slots,
 	}
+
+
+func _reset_runtime_profile() -> void:
+	instantiate_total_us = 0
+	instantiate_max_us = 0
+	main_tick_count = 0
+	main_tick_total_us = 0
+	main_tick_max_us = 0
+	ghost_tick_total_us = 0
+	ghost_tick_max_us = 0
+	render_frame_count = 0
+	render_total_us = 0
+	render_max_us = 0
+
+
+func _emit_profile_summary(event_name: String) -> void:
+	var memory := memory_usage_stats()
+	var active := 0
+	var fading := 0
+	var failed := 0
+	var slot_profiles: Array = []
+	for slot_value in runtime_slots:
+		var slot: Dictionary = slot_value
+		var state := String(slot.get("state", ""))
+		active += 1 if state == "active" else 0
+		fading += 1 if state == "fading" or state == "finished" else 0
+		failed += 1 if state == "failed" else 0
+		var tick_count := int(slot.get("tick_count", 0))
+		slot_profiles.append({
+			"slot": int(slot.get("slot_index", 0)),
+			"prepare_us": int(slot.get("prepare_us", 0)),
+			"instantiate_us": int(slot.get("instantiate_us", 0)),
+			"ticks": tick_count,
+			"tick_avg_us": int(slot.get("tick_total_us", 0)) / maxi(tick_count, 1),
+			"tick_max_us": int(slot.get("tick_max_us", 0)),
+			"state": state,
+		})
+	var current_cache_stats := game_manager.leaderboard_replay_cache.stats() if game_manager != null and game_manager.leaderboard_replay_cache != null else {}
+	print("MXT_GHOST_PROFILE ", JSON.stringify({
+		"event": event_name,
+		"ghost_count": runtime_slots.size(),
+		"active": active,
+		"fading": fading,
+		"failed": failed,
+		"prepare_total_us": prepare_total_us,
+		"instantiate_total_us": instantiate_total_us,
+		"instantiate_max_us": instantiate_max_us,
+		"main_ticks": main_tick_count,
+		"main_tick_avg_us": main_tick_total_us / maxi(main_tick_count, 1),
+		"main_tick_max_us": main_tick_max_us,
+		"ghost_tick_total_us": ghost_tick_total_us,
+		"ghost_tick_avg_us": ghost_tick_total_us / maxi(_total_ghost_ticks(), 1),
+		"ghost_tick_max_us": ghost_tick_max_us,
+		"render_frames": render_frame_count,
+		"render_avg_us": render_total_us / maxi(render_frame_count, 1),
+		"render_max_us": render_max_us,
+		"cache_hits_total": int(current_cache_stats.get("cache_hits", 0)),
+		"downloaded_bytes_total": int(current_cache_stats.get("downloaded_bytes", 0)),
+		"cache_hits_since_prepare": int(current_cache_stats.get("cache_hits", 0)) - int(cache_stats_at_prepare.get("cache_hits", 0)),
+		"downloaded_bytes_since_prepare": int(current_cache_stats.get("downloaded_bytes", 0)) - int(cache_stats_at_prepare.get("downloaded_bytes", 0)),
+		"memory": memory,
+		"slots": slot_profiles,
+	}))
+
+
+func _total_ghost_ticks() -> int:
+	var total := 0
+	for slot_value in runtime_slots:
+		if typeof(slot_value) == TYPE_DICTIONARY:
+			total += int((slot_value as Dictionary).get("tick_count", 0))
+	return total
 
 
 func _configure_presentation() -> void:

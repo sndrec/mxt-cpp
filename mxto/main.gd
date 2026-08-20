@@ -422,11 +422,13 @@ func _on_time_attack_setup_start_requested(ranked: bool, context: Dictionary) ->
 	time_attack_previous_best_milliseconds = int(context.get("personal_best_milliseconds", 0))
 	var descriptor_value = context.get("ghost_descriptors", [])
 	time_attack_ghost_descriptors = (descriptor_value as Array).duplicate(true) if typeof(descriptor_value) == TYPE_ARRAY else []
+	record_memory_sample("ghost_prepare_begin")
 	var ghost_prepare := time_attack_ghost_controller.prepare(time_attack_ghost_descriptors, track_selector.selected)
 	if !bool(ghost_prepare.get("success", false)):
 		race_presentation_controller.show_notification(String(ghost_prepare.get("message", "Selected ghosts could not be prepared.")), 5000)
 		time_attack_setup.open_for_current_selection()
 		return
+	record_memory_sample("ghost_prepare_complete")
 	var options := TimeAttackRulesClass.build_options()
 	if !ranked:
 		options["session_kind"] = "time_attack_practice"
@@ -603,6 +605,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 		var ghost_start := time_attack_ghost_controller.start_race(track_selector.selected)
 		if !bool(ghost_start.get("success", false)):
 			push_error(String(ghost_start.get("message", "Selected ghost simulations could not start.")))
+		record_memory_sample("ghost_race_start")
 	# Hide menus
 	$Control.visible = false
 	lobby_control.visible = false
@@ -1485,8 +1488,10 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	_dump_offline_auth_input_sample(input_bytes)
 	_dump_offline_state_sample()
 	var tick_to_record := _singleplayer_tick
+	var main_sim_tick_start_us := Time.get_ticks_usec()
 	game_sim.tick_singleplayer(_local_player_id(), input_bytes)
-	if time_attack_ghost_controller != null:
+	if time_attack_ghost_controller != null and time_attack_ghost_controller.profile_session_active:
+		time_attack_ghost_controller.record_main_tick(Time.get_ticks_usec() - main_sim_tick_start_us)
 		time_attack_ghost_controller.tick(tick_to_record)
 	replay_controller.record_singleplayer_frame(tick_to_record)
 	_singleplayer_tick += 1

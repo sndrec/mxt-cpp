@@ -19,9 +19,10 @@ func initialize(p_game_manager) -> void:
 		"objects", "resources", "nodes", "orphan_nodes",
 		"recording_frames", "recording_input_bytes", "playback_frames", "playback_source_bytes",
 		"seek_checkpoints", "seek_checkpoint_bytes", "debug_recording_frames", "debug_playback_frames",
-		"race_archetypes", "lobby_archetypes", "magnifier_archetypes", "lobby_rebuilds_total",
+		"race_archetypes", "ghost_archetypes", "lobby_archetypes", "magnifier_archetypes", "lobby_rebuilds_total",
 		"game_sim_started", "game_sim_native_bytes", "game_sim_level_bytes", "game_sim_state_bytes", "game_sim_rollback_bytes",
 		"server_sim_started", "server_sim_native_bytes", "server_sim_level_bytes", "server_sim_state_bytes", "server_sim_rollback_bytes",
+		"ghost_count", "ghost_sim_native_bytes", "ghost_sim_level_bytes", "ghost_sim_state_bytes", "ghost_sim_rollback_bytes",
 	]))
 	sample("session_start")
 
@@ -31,6 +32,7 @@ func sample(event_name: String) -> void:
 	var replay_stats: Dictionary = game_manager.replay_controller.get_memory_usage_stats()
 	var game_sim_stats := _sim_stats(game_manager.game_sim)
 	var server_sim_stats := _sim_stats(game_manager.server_game_sim)
+	var ghost_stats := game_manager.time_attack_ghost_controller.memory_usage_stats() if game_manager.time_attack_ghost_controller != null else {}
 	var role := "offline"
 	if game_manager.network_manager.network_active:
 		role = "listen" if game_manager.network_manager.is_server and game_manager.network_manager.listen_server else ("server" if game_manager.network_manager.is_server else "client")
@@ -48,9 +50,10 @@ func sample(event_name: String) -> void:
 		_monitor_int(Performance.OBJECT_COUNT), _monitor_int(Performance.OBJECT_RESOURCE_COUNT), _monitor_int(Performance.OBJECT_NODE_COUNT), _monitor_int(Performance.OBJECT_ORPHAN_NODE_COUNT),
 		str(replay_stats.get("recording_frames", 0)), str(replay_stats.get("recording_input_bytes", 0)), str(replay_stats.get("playback_frames", 0)), str(replay_stats.get("playback_source_bytes", 0)),
 		str(replay_stats.get("seek_checkpoint_count", 0)), str(replay_stats.get("seek_checkpoint_bytes", 0)), str(replay_stats.get("debug_recording_frames", 0)), str(replay_stats.get("debug_playback_frames", 0)),
-		_archetype_count(game_manager.car_render_manager), _archetype_count(game_manager.lobby_chibi_controller.render_manager), _archetype_count(game_manager.lobby_chibi_controller.magnifier_render_manager), str(game_manager.lobby_chibi_controller.render_rebuild_count_total),
+		_archetype_count(game_manager.car_render_manager), str(ghost_stats.get("render_archetypes", 0)), _archetype_count(game_manager.lobby_chibi_controller.render_manager), _archetype_count(game_manager.lobby_chibi_controller.magnifier_render_manager), str(game_manager.lobby_chibi_controller.render_rebuild_count_total),
 		str(game_sim_stats.get("sim_started", false)), str(game_sim_stats.get("tracked_native_bytes", 0)), str(game_sim_stats.get("level_heap_capacity_bytes", 0)), str(game_sim_stats.get("gamestate_heap_capacity_bytes", 0)), str(game_sim_stats.get("rollback_buffer_bytes", 0)),
 		str(server_sim_stats.get("sim_started", false)), str(server_sim_stats.get("tracked_native_bytes", 0)), str(server_sim_stats.get("level_heap_capacity_bytes", 0)), str(server_sim_stats.get("gamestate_heap_capacity_bytes", 0)), str(server_sim_stats.get("rollback_buffer_bytes", 0)),
+		str(ghost_stats.get("ghost_count", 0)), str(ghost_stats.get("aggregate_tracked_native_bytes", 0)), str(ghost_stats.get("aggregate_level_heap_bytes", 0)), str(ghost_stats.get("aggregate_gamestate_heap_bytes", 0)), str(ghost_stats.get("aggregate_rollback_bytes", 0)),
 	])
 	log_file.store_csv_line(row)
 	log_file.flush()

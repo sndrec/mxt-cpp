@@ -375,9 +375,9 @@ Completion gate: ghosts are readable and distinguishable without obscuring the t
 
 ### Phase E: Instrumentation and cleanup
 
-- [ ] Add setup, tick, render, and memory counters.
-- [ ] Extend session memory telemetry.
-- [ ] Emit the concise race summary.
+- [x] Add setup, tick, render, and memory counters.
+- [x] Extend session memory telemetry.
+- [x] Emit the concise race summary.
 - [ ] Profile 0, 1, 2, and 4 ghosts.
 - [ ] Remove temporary diagnostics and dead experimental paths.
 - [ ] Update this document with measured results and any justified deviations.
@@ -460,6 +460,7 @@ The feature is complete when:
 - Phase B: fixed-size leaderboard ghost picker, shared leaderboard row decoration, own-time selection, readiness gating, and controller navigation.
 - Phase C1: transition-time input packing, allocation-free indexed native input consumption, isolated one-car simulations, live-tick advancement, and deterministic teardown.
 - Phase D1: shared manual rendering, unique transparent archetypes, stable slot tinting, no shadows/effects, projected names, and terminal fade-out.
+- Phase E1: transition and runtime timing counters, per-slot and aggregate native memory, zero-to-four-ghost comparable telemetry, and one teardown summary.
 
 ### Profiling results
 
