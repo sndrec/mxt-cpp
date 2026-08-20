@@ -142,7 +142,7 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 		item.set_cell_mode(0, TreeItem.CELL_MODE_CHECK)
 		item.set_editable(0, bool(entry.get("_replay_available", false)))
 		item.set_text(1, "#%d" % int(entry.get("global_rank", 0)))
-		item.set_text(2, String(entry.get("persona_name", "Steam %s" % String(entry.get("steam_id", "")))))
+		item.set_text(2, String(entry.get("persona_name", "Steam %s" % str(entry.get("steam_id", "")))))
 		item.set_text(3, String(entry.get("_display_vehicle", "Unknown")))
 		item.set_text(4, String(entry.get("_display_version", "Legacy / unknown")))
 		item.set_text(5, _format_score(int(entry.get("score", 0))))
