@@ -3,6 +3,7 @@ extends Control
 
 signal machine_setting_changed(accel_setting: float)
 signal time_attack_race_again_requested
+signal time_attack_save_replay_requested
 signal time_attack_watch_replay_requested
 signal time_attack_leaderboard_requested(board_name: String)
 signal time_attack_main_menu_requested
@@ -18,6 +19,7 @@ signal time_attack_main_menu_requested
 @onready var time_attack_panel: PanelContainer = $Center/Panel/Margin/Content/TimeAttackPanel
 @onready var time_attack_result: RichTextLabel = $Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Result
 @onready var time_attack_status: Label = $Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/SubmissionStatus
+@onready var save_replay_button: Button = $Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Actions/SaveReplay
 @onready var watch_replay_button: Button = $Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Actions/WatchReplay
 @onready var view_leaderboard_button: Button = $Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Actions/ViewLeaderboard
 
@@ -28,6 +30,7 @@ func _ready() -> void:
 	if machine_setting_slider != null:
 		machine_setting_slider.value_changed.connect(_on_machine_setting_slider_changed)
 	$Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Actions/RaceAgain.pressed.connect(func(): time_attack_race_again_requested.emit())
+	save_replay_button.pressed.connect(func(): time_attack_save_replay_requested.emit())
 	watch_replay_button.pressed.connect(func(): time_attack_watch_replay_requested.emit())
 	view_leaderboard_button.pressed.connect(func(): time_attack_leaderboard_requested.emit(_time_attack_board_name))
 	$Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Actions/MainMenu.pressed.connect(func(): time_attack_main_menu_requested.emit())
@@ -67,6 +70,7 @@ func clear_time_attack_result() -> void:
 	_time_attack_board_name = ""
 	time_attack_result.text = ""
 	time_attack_status.text = ""
+	save_replay_button.disabled = true
 	watch_replay_button.disabled = true
 	view_leaderboard_button.disabled = true
 
@@ -86,6 +90,7 @@ func set_time_attack_result(result: Dictionary, previous_best_milliseconds: int)
 		lines.append("Unranked  ·  %s" % String(result.get("friendly_reason", result.get("reason", "Practice run"))))
 	time_attack_result.text = "\n".join(lines)
 	_time_attack_board_name = String(result.get("board_name", ""))
+	save_replay_button.disabled = !bool(result.get("replay_can_save", false))
 	watch_replay_button.disabled = String(result.get("replay_path", "")).is_empty()
 	view_leaderboard_button.disabled = _time_attack_board_name.is_empty()
 	time_attack_panel.visible = true
@@ -93,6 +98,11 @@ func set_time_attack_result(result: Dictionary, previous_best_milliseconds: int)
 
 func set_time_attack_submission_status(message: String) -> void:
 	time_attack_status.text = message
+
+
+func set_time_attack_replay_saved(path: String) -> void:
+	save_replay_button.disabled = true
+	watch_replay_button.disabled = path.is_empty()
 
 
 func _format_milliseconds(milliseconds: int) -> String:

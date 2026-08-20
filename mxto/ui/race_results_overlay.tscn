@@ -183,6 +183,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "Race Again"
 
+[node name="SaveReplay" type="Button" parent="Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Save Replay"
+
 [node name="WatchReplay" type="Button" parent="Center/Panel/Margin/Content/TimeAttackPanel/Margin/Content/Actions"]
 layout_mode = 2
 size_flags_horizontal = 3

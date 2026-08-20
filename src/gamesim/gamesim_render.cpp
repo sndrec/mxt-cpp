@@ -484,11 +484,15 @@ void GameSim::set_gameplay_camera(godot::Camera3D* p_camera, int player_id)
 {
 	gameplay_camera_node = p_camera;
 	gameplay_camera_player_id = player_id;
+	if (gameplay_camera.is_valid()) {
+		gameplay_camera_zoom_mode = gameplay_camera->get_zoom_mode();
+	}
 	if (gameplay_camera.is_null()) {
 		gameplay_camera.instantiate();
 	}
 	if (gameplay_camera.is_valid()) {
 		gameplay_camera->reset();
+		gameplay_camera->set_zoom_mode(gameplay_camera_zoom_mode);
 	}
 	if (gameplay_camera_node) {
 		gameplay_camera_node->make_current();
@@ -496,6 +500,14 @@ void GameSim::set_gameplay_camera(godot::Camera3D* p_camera, int player_id)
 		gameplay_camera_node->set_far(40000.0f);
 	}
 	update_finish_line_visual();
+}
+
+void GameSim::set_gameplay_camera_zoom_mode(int zoom_mode)
+{
+	gameplay_camera_zoom_mode = std::clamp(zoom_mode, 0, 3);
+	if (gameplay_camera.is_valid()) {
+		gameplay_camera->set_zoom_mode(gameplay_camera_zoom_mode);
+	}
 }
 
 void GameSim::set_render_camera(godot::Camera3D* p_camera)
@@ -1336,6 +1348,12 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			track_up = MXT_LOAD_TRANSFORM(soa, basis_physical, lane).basis.get_column(1);
 		}
 		track_up = track_up.normalized();
+		float vehicle_pitch_delta_radians = 0.0f;
+		const float raw_pitch = soa.velocity_angular_x[lane];
+		if (std::abs(raw_pitch) > 3.0f && std::abs(soa.weight_derived_1[lane]) > 0.0001f) {
+			vehicle_pitch_delta_radians =
+				(raw_pitch - std::copysign(3.0f, raw_pitch)) / soa.weight_derived_1[lane];
+		}
 		godot::Input* input = godot::Input::get_singleton();
 		const bool view_up_pressed = input && input->is_action_just_pressed(godot::StringName("CameraUp"));
 		const bool view_down_pressed = input && input->is_action_just_pressed(godot::StringName("CameraDown"));
@@ -1347,6 +1365,7 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			gd_vec3(LOAD_INDEXED_VEC3(soa, track_surface_pos, lane)),
 			soa.height_above_track[lane],
 			soa.speed_kmh[lane],
+			vehicle_pitch_delta_radians,
 			soa.camera_reorienting[lane],
 			soa.camera_repositioning[lane],
 				car_index < static_cast<int>(render_vehicle_visual_state.size()) ? render_vehicle_visual_state[car_index].turn_reaction_effect : 0.0f,
@@ -1361,6 +1380,7 @@ void GameSim::update_native_gameplay_camera(bool step_camera)
 			aspect_ratio,
 			view_up_pressed,
 			view_down_pressed);
+		gameplay_camera_zoom_mode = gameplay_camera->get_zoom_mode();
 	}
 	Engine* engine = Engine::get_singleton();
 	const float alpha = engine ? static_cast<float>(engine->get_physics_interpolation_fraction()) : 1.0f;

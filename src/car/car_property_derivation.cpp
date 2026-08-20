@@ -10,6 +10,7 @@ static constexpr uint64_t HISTORICAL_DERIVED_STAT_MASK =
 	(UINT64_C(1) << CAR_STAT_ACCELERATION) | (UINT64_C(1) << CAR_STAT_MAX_SPEED) |
 	(UINT64_C(1) << CAR_STAT_GRIP_1) | (UINT64_C(1) << CAR_STAT_GRIP_3) |
 	(UINT64_C(1) << CAR_STAT_DRIFT_ACCEL) | (UINT64_C(1) << CAR_STAT_TURN_MOVEMENT) |
+	(UINT64_C(1) << CAR_STAT_DRIFT_TURN_MOVEMENT) |
 	(UINT64_C(1) << CAR_STAT_TURN_DECEL) | (UINT64_C(1) << CAR_STAT_MANUAL_TURBO_GAIN) |
 	(UINT64_C(1) << CAR_STAT_DASHPLATE_TURBO_GAIN);
 
@@ -96,8 +97,11 @@ derive_historical_machine_setting(const float source_base_stats[CAR_STAT_COUNT],
 	max_speed += max_speed_delta;
 
 	float &turn_movement = result.base_stats[CAR_STAT_TURN_MOVEMENT];
-	turn_movement *=
-		balance_offset <= 0.0f ? 1.0f - 0.2f * balance_offset : 1.0f - 0.6f * balance_offset;
+	const float turn_movement_multiplier = balance_offset <= 0.0f
+		? 1.0f - 0.2f * balance_offset
+		: 1.0f - 0.6f * balance_offset;
+	turn_movement *= turn_movement_multiplier;
+	result.base_stats[CAR_STAT_DRIFT_TURN_MOVEMENT] *= turn_movement_multiplier;
 
 	const float grip_scaling = 1.0f + 0.25f * balance_offset;
 	result.base_stats[CAR_STAT_GRIP_1] *= grip_scaling;

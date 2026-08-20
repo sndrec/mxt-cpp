@@ -9,6 +9,9 @@ const SETTINGS_SNAPSHOT_MAX_BYTES := 16 * 1024 * 1024
 const CPU_ID_MIN := 1
 const CPU_ID_MAX := 5000
 const LATENCY_SAMPLE_INTERVAL_MSEC := 1000
+const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
+const WORKSHOP_VEHICLE_PREFIX := "mxt:vehicle:workshop:"
+const ALL_ROUNDER_VEHICLE_ID := "mxt:vehicle:official:allrounder"
 
 var game_manager: GameManager
 var player_settings := {}
@@ -154,9 +157,10 @@ func send_player_settings(settings: Dictionary) -> void:
 		return
 	var local_id := multiplayer.get_unique_id()
 	settings = _merge_existing_livery_settings(settings, local_id)
+	settings = _normalize_vehicle_for_lobby(settings)
 	if is_server:
 		_apply_player_settings_update(settings, local_id, 0)
-		_send_player_settings_update(settings, local_id)
+		_send_player_settings_update(player_settings.get(local_id, settings), local_id)
 	else:
 		_send_player_settings_update(settings, -1, 1)
 		_store_player_settings(local_id, settings)
@@ -335,12 +339,82 @@ func _apply_player_settings_update(settings: Dictionary, player_id: int, sender_
 	elif player_id == -1:
 		player_id = sender_id if sender_id != 0 else multiplayer.get_unique_id()
 	settings = _merge_existing_livery_settings(settings, player_id)
+	settings = _normalize_vehicle_for_lobby(settings)
 	if !_store_player_settings(player_id, settings):
 		return
 	settings = player_settings[player_id]
 	if is_server and sender_id != 0:
 		_send_player_settings_update(settings, player_id)
+	if player_id == multiplayer.get_unique_id() and game_manager != null and game_manager.car_settings != null:
+		game_manager.car_settings.apply_authoritative_vehicle_selection(settings)
 	player_role_changed.emit(player_id, bool(settings.get("spectator", false)))
+
+func enforce_official_vehicles() -> void:
+	if !is_server or race_active or _workshop_vehicles_allowed():
+		return
+	for player_id_value in player_settings.keys():
+		var player_id := int(player_id_value)
+		var existing = player_settings[player_id]
+		if typeof(existing) != TYPE_DICTIONARY:
+			continue
+		var normalized := _normalize_vehicle_for_lobby(existing)
+		if normalized == existing:
+			continue
+		_store_player_settings(player_id, normalized)
+		if cpu_player_ids.has(player_id):
+			cpu_player_settings[player_id] = normalized.duplicate(true)
+		_send_player_settings_update(normalized, player_id)
+		if player_id == multiplayer.get_unique_id() and game_manager != null and game_manager.car_settings != null:
+			game_manager.car_settings.apply_authoritative_vehicle_selection(normalized)
+
+func _workshop_vehicles_allowed() -> bool:
+	if game_manager == null or game_manager.network_manager == null:
+		return true
+	return bool(game_manager.network_manager.race_options.get("allow_workshop_vehicles", true))
+
+func _normalize_vehicle_for_lobby(settings: Dictionary) -> Dictionary:
+	if _vehicle_selection_allowed(settings):
+		return settings
+	var normalized := settings.duplicate(true)
+	normalized["vehicle_content_id"] = ALL_ROUNDER_VEHICLE_ID
+	normalized["car_livery"] = {}
+	var evidence := game_manager.vehicle_content_controller.get_evidence(ALL_ROUNDER_VEHICLE_ID)
+	normalized["vehicle_gameplay_digest"] = String(evidence.get("vehicle_gameplay_digest", ""))
+	normalized["vehicle_package_digest"] = String(evidence.get("vehicle_package_digest", ""))
+	normalized["vehicle_workshop_id"] = String(evidence.get("vehicle_workshop_id", ""))
+	return normalized
+
+func _vehicle_selection_allowed(settings: Dictionary) -> bool:
+	var content_id := String(settings.get("vehicle_content_id", ""))
+	if content_id.begins_with(OFFICIAL_VEHICLE_PREFIX):
+		if game_manager == null or game_manager.vehicle_content_controller == null:
+			return false
+		var record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(content_id)
+		return (
+			String(record.get("source", "")) == "official"
+			and String(record.get("gameplay_digest", "")) == String(settings.get("vehicle_gameplay_digest", ""))
+			and String(settings.get("vehicle_package_digest", "")).is_empty()
+			and String(settings.get("vehicle_workshop_id", "")).is_empty())
+	if !_workshop_vehicles_allowed():
+		return false
+	var workshop_id_text := String(settings.get("vehicle_workshop_id", ""))
+	if !workshop_id_text.is_valid_int():
+		return false
+	var workshop_id := workshop_id_text.to_int()
+	return (
+		workshop_id > 0
+		and content_id == WORKSHOP_VEHICLE_PREFIX + str(workshop_id)
+		and _is_sha256_digest(String(settings.get("vehicle_gameplay_digest", "")))
+		and _is_sha256_digest(String(settings.get("vehicle_package_digest", ""))))
+
+func _is_sha256_digest(value: String) -> bool:
+	if value.length() != 71 or !value.begins_with("sha256:"):
+		return false
+	for index in range(7, value.length()):
+		var code := value.unicode_at(index)
+		if !((code >= 48 and code <= 57) or (code >= 97 and code <= 102)):
+			return false
+	return true
 
 func _store_player_settings(player_id: int, settings: Dictionary) -> bool:
 	if player_id <= 0:
@@ -350,6 +424,8 @@ func _store_player_settings(player_id: int, settings: Dictionary) -> bool:
 		log_deduped += 1
 		return false
 	player_settings[player_id] = settings.duplicate(true)
+	if game_manager != null and game_manager.vehicle_content_controller != null:
+		game_manager.vehicle_content_controller.request_lobby_vehicle_content(player_settings[player_id])
 	player_settings_revisions[player_id] = int(player_settings_revisions.get(player_id, 0)) + 1
 	revision += 1
 	log_accepted += 1

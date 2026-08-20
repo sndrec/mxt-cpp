@@ -18,6 +18,13 @@ const WORKSHOP_PREVIEW_MIN_LONGEST_EDGE := 128
 const AUTOSAVE_DEBOUNCE_MSEC := 900
 const AUTOSAVE_RETRY_MSEC := 5000
 const PERFORMANCE_DEBOUNCE_MSEC := 120
+const MATERIAL_TEXTURE_MAX_BYTES := 20 * 1024 * 1024
+const MATERIAL_TEXTURE_MAX_DIMENSION := 2048
+const MATERIAL_TEXTURE_FILES := {
+	"albedo": "albedo.png",
+	"normal": "normal.png",
+	"paint_mask": "paint_mask.png",
+}
 
 @onready var draft_option: OptionButton = $Toolbar/DraftOption
 @onready var title_input: LineEdit = $Metadata/Title
@@ -66,15 +73,20 @@ const PERFORMANCE_DEBOUNCE_MSEC := 120
 @onready var diagnostics: RichTextLabel = $Workspace/StatsColumn/Diagnostics
 @onready var vehicle_grade_panel: VehicleGradePanelClass = $Workspace/VisualColumn/PhysicalTabs/Performance
 @onready var import_model_dialog: FileDialog = $ImportModelDialog
+@onready var import_boost_sound_dialog: FileDialog = $ImportBoostSoundDialog
+@onready var import_material_texture_dialog: FileDialog = $ImportMaterialTextureDialog
 @onready var export_package_dialog: FileDialog = $ExportPackageDialog
 @onready var template_vehicle_dialog: ConfirmationDialog = $TemplateVehicleDialog
 @onready var template_vehicle_option: OptionButton = $TemplateVehicleDialog/Rows/VehicleOption
+@onready var official_vehicle_dialog: ConfirmationDialog = $OfficialVehicleDialog
+@onready var official_vehicle_option: OptionButton = $OfficialVehicleDialog/Rows/VehicleOption
 @onready var workshop_visibility: OptionButton = $Workshop/Visibility
 @onready var workshop_status: Label = $Workshop/Status
 @onready var workshop_page_button: Button = $Workshop/OpenPage
 @onready var workshop_publish_button: Button = $Toolbar/PublishWorkshop
 @onready var autosave_status: Label = $Toolbar/AutosaveStatus
 @onready var archive_draft_dialog: ConfirmationDialog = $ArchiveDraftDialog
+@onready var delete_draft_dialog: ConfirmationDialog = $DeleteDraftDialog
 @onready var workshop_capture_button: Button = $Workshop/CapturePreview
 @onready var publish_review_dialog: ConfirmationDialog = $PublishReviewDialog
 @onready var publish_review_summary: RichTextLabel = $PublishReviewDialog/Review/Summary
@@ -87,10 +99,12 @@ var session := MxtCarAuthoringSession.new()
 var draft_store := MxtCarDraftStore.new()
 var draft_id := ""
 var current_properties_path := ""
+var editing_official_definition: CarDefinition
 var metadata_dirty := false
 var draft_initialized := false
 var autosave_due_msec := 0
 var autosave_error := ""
+var pending_material_texture := ""
 var stat_schema: Array = []
 var schema_by_name: Dictionary = {}
 var current_layer := "base"
@@ -286,19 +300,27 @@ func _connect_controls() -> void:
 	$Toolbar/DuplicateDraft.pressed.connect(_duplicate_current_draft)
 	$Toolbar/ArchiveDraft.pressed.connect(func(): archive_draft_dialog.popup_centered())
 	$Toolbar/ImportTemplate.pressed.connect(_open_template_vehicle_dialog)
+	$Toolbar/EditOfficial.pressed.connect(_open_official_vehicle_dialog)
 	$Toolbar/ImportModel.pressed.connect(func(): import_model_dialog.popup_centered())
+	$Toolbar/ImportBoostSound.pressed.connect(func(): import_boost_sound_dialog.popup_centered())
+	$Toolbar/ClearBoostSound.pressed.connect(_clear_boost_sound)
 	$Toolbar/SaveDraft.pressed.connect(_manual_save_draft)
 	$Toolbar/InstallVehicle.pressed.connect(_install_vehicle)
 	$Toolbar/ExportPackage.pressed.connect(func(): export_package_dialog.popup_centered())
 	$Toolbar/TestDrive.pressed.connect(_test_drive)
 	$Toolbar/PublishWorkshop.pressed.connect(_publish_workshop)
+	$Toolbar/DeleteDraft.pressed.connect(_prompt_delete_current_draft)
 	workshop_page_button.pressed.connect(_open_workshop_page)
 	$Toolbar/Undo.pressed.connect(_undo)
 	$Toolbar/Redo.pressed.connect(_redo)
 	import_model_dialog.file_selected.connect(_import_model)
+	import_boost_sound_dialog.file_selected.connect(_import_boost_sound)
+	import_material_texture_dialog.file_selected.connect(_import_material_texture)
 	export_package_dialog.file_selected.connect(_export_package)
 	template_vehicle_dialog.confirmed.connect(_import_selected_vehicle_template)
+	official_vehicle_dialog.confirmed.connect(_open_selected_official_vehicle)
 	archive_draft_dialog.confirmed.connect(_archive_current_draft)
+	delete_draft_dialog.confirmed.connect(_delete_current_draft)
 	workshop_capture_button.pressed.connect(_capture_workshop_preview)
 	publish_review_dialog.confirmed.connect(_confirm_publish_workshop)
 	diagnostics.meta_clicked.connect(_focus_diagnostic_category)
@@ -333,6 +355,12 @@ func _connect_controls() -> void:
 	albedo_surface_option.item_selected.connect(func(_index): _apply_material_controls())
 	normal_surface_option.item_selected.connect(func(_index): _apply_material_controls())
 	paint_mask_surface_option.item_selected.connect(func(_index): _apply_material_controls())
+	$Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow/Import.pressed.connect(func(): _open_material_texture_dialog("albedo"))
+	$Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow/Clear.pressed.connect(func(): _clear_material_texture("albedo"))
+	$Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow/Import.pressed.connect(func(): _open_material_texture_dialog("normal"))
+	$Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow/Clear.pressed.connect(func(): _clear_material_texture("normal"))
+	$Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow/Import.pressed.connect(func(): _open_material_texture_dialog("paint_mask"))
+	$Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow/Clear.pressed.connect(func(): _clear_material_texture("paint_mask"))
 	physical_tabs.tab_changed.connect(func(_index): _refresh_gizmos())
 	preview_primary.color_changed.connect(func(_colour): _on_preview_colours_changed())
 	preview_secondary.color_changed.connect(func(_colour): _on_preview_colours_changed())
@@ -352,8 +380,9 @@ func _connect_controls() -> void:
 
 
 func _new_draft() -> bool:
-	if draft_initialized and !_flush_autosave():
+	if _has_editable_document() and !_flush_autosave():
 		return false
+	editing_official_definition = null
 	draft_id = "draft_%d_%d" % [int(Time.get_unix_time_from_system()), Time.get_ticks_msec() % 1000000]
 	session = MxtCarAuthoringSession.new()
 	draft_initialized = true
@@ -372,6 +401,7 @@ func _new_draft() -> bool:
 	metadata_dirty = true
 	autosave_error = ""
 	_refresh_workshop_controls()
+	_refresh_document_mode_controls()
 	_refresh_all()
 	visual_status.text = "New draft. Import a static GLB or glTF vehicle model."
 	if !_autosave_draft():
@@ -381,6 +411,206 @@ func _new_draft() -> bool:
 
 func _draft_root() -> String:
 	return "%s/%s" % [DRAFTS_ROOT, draft_id]
+
+
+func _boost_sound_path() -> String:
+	if !draft_initialized:
+		return ""
+	for extension in ["wav", "ogg"]:
+		var path := "%s/manual_boost_sfx.%s" % [_draft_root(), extension]
+		if FileAccess.file_exists(path):
+			return path
+	return ""
+
+
+func _refresh_boost_sound_controls() -> void:
+	var sound_path := _boost_sound_path()
+	$Toolbar/ImportBoostSound.disabled = !draft_initialized
+	$Toolbar/ImportBoostSound.text = "Replace Boost Sound" if !sound_path.is_empty() else "Add Boost Sound"
+	$Toolbar/ClearBoostSound.disabled = sound_path.is_empty()
+
+
+func _import_boost_sound(source_path: String) -> void:
+	if !draft_initialized:
+		return
+	var extension := source_path.get_extension().to_lower()
+	if extension != "wav" and extension != "ogg":
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["Boost sounds must be WAV or Ogg Vorbis files"]), "warnings": PackedStringArray()})
+		return
+	var source := FileAccess.open(source_path, FileAccess.READ)
+	if source == null or source.get_length() <= 0 or source.get_length() > 8 * 1024 * 1024:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["Boost sounds must be readable and no larger than 8 MiB"]), "warnings": PackedStringArray()})
+		return
+	source.close()
+	var stream: AudioStream = AudioStreamWAV.load_from_file(source_path) if extension == "wav" else AudioStreamOggVorbis.load_from_file(source_path)
+	if stream == null:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The selected boost sound could not be decoded"]), "warnings": PackedStringArray()})
+		return
+	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	if DirAccess.make_dir_recursive_absolute(draft_path) != OK:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The vehicle draft directory could not be created"]), "warnings": PackedStringArray()})
+		return
+	var destination := "%s/manual_boost_sfx.%s" % [draft_path, extension]
+	if DirAccess.copy_absolute(source_path, destination) != OK:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The boost sound could not be copied into the draft"]), "warnings": PackedStringArray()})
+		return
+	var other_extension := "ogg" if extension == "wav" else "wav"
+	DirAccess.remove_absolute("%s/manual_boost_sfx.%s" % [draft_path, other_extension])
+	_refresh_boost_sound_controls()
+	_update_autosave_status("Custom boost sound ready")
+
+
+func _clear_boost_sound() -> void:
+	if !draft_initialized:
+		return
+	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	DirAccess.remove_absolute(draft_path.path_join("manual_boost_sfx.wav"))
+	DirAccess.remove_absolute(draft_path.path_join("manual_boost_sfx.ogg"))
+	_refresh_boost_sound_controls()
+	_update_autosave_status("Custom boost sound cleared")
+
+
+func _material_texture_path(layer: String) -> String:
+	if !draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
+		return ""
+	return _draft_root().path_join(String(MATERIAL_TEXTURE_FILES[layer]))
+
+
+func _material_texture_row(layer: String) -> HBoxContainer:
+	match layer:
+		"albedo":
+			return $Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow
+		"normal":
+			return $Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow
+		"paint_mask":
+			return $Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow
+	return null
+
+
+func _refresh_material_texture_controls() -> void:
+	for layer in MATERIAL_TEXTURE_FILES:
+		var row := _material_texture_row(layer)
+		if row == null:
+			continue
+		var path := _material_texture_path(layer)
+		var has_override := !path.is_empty() and FileAccess.file_exists(path)
+		var editable := draft_initialized and editing_official_definition == null
+		var source := row.get_node("Source") as OptionButton
+		var import_button := row.get_node("Import") as Button
+		var clear_button := row.get_node("Clear") as Button
+		source.disabled = !editable or has_override
+		import_button.disabled = !editable
+		import_button.text = "Replace PNG" if has_override else "Import PNG"
+		clear_button.disabled = !editable or !has_override
+		var description := "Standalone %s PNG overrides the embedded GLB source." % String(layer).replace("_", " ").capitalize() if has_override else "Uses the selected embedded GLB source."
+		source.tooltip_text = description
+		import_button.tooltip_text = description
+		clear_button.tooltip_text = description
+
+
+func _open_material_texture_dialog(layer: String) -> void:
+	if !draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
+		return
+	pending_material_texture = layer
+	import_material_texture_dialog.title = "Import %s PNG" % layer.replace("_", " ").capitalize()
+	import_material_texture_dialog.popup_centered()
+
+
+func _import_material_texture(source_path: String) -> void:
+	var layer := pending_material_texture
+	pending_material_texture = ""
+	if !draft_initialized or !MATERIAL_TEXTURE_FILES.has(layer):
+		return
+	if source_path.get_extension().to_lower() != "png":
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["Vehicle material textures must be PNG files"]), "warnings": PackedStringArray()})
+		return
+	var source := FileAccess.open(source_path, FileAccess.READ)
+	if source == null or source.get_length() <= 0 or source.get_length() > MATERIAL_TEXTURE_MAX_BYTES:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["Vehicle material PNGs must be readable and no larger than 20 MiB"]), "warnings": PackedStringArray()})
+		return
+	source.close()
+	var image := Image.load_from_file(source_path)
+	if image == null or image.is_empty():
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The selected vehicle texture is not a decodable PNG"]), "warnings": PackedStringArray()})
+		return
+	if image.get_width() > MATERIAL_TEXTURE_MAX_DIMENSION or image.get_height() > MATERIAL_TEXTURE_MAX_DIMENSION:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["Vehicle material PNG dimensions cannot exceed 2048 x 2048"]), "warnings": PackedStringArray()})
+		return
+	var draft_path := ProjectSettings.globalize_path(_draft_root())
+	if DirAccess.make_dir_recursive_absolute(draft_path) != OK:
+		_show_diagnostics({"valid": false, "errors": PackedStringArray(["The vehicle draft directory could not be created"]), "warnings": PackedStringArray()})
+		return
+	var destination := draft_path.path_join(String(MATERIAL_TEXTURE_FILES[layer]))
+	var normalized_source := source_path.replace("\\", "/").simplify_path()
+	var normalized_destination := destination.replace("\\", "/").simplify_path()
+	if normalized_source != normalized_destination:
+		var temporary := destination + ".importing"
+		var previous := destination + ".previous"
+		DirAccess.remove_absolute(temporary)
+		DirAccess.remove_absolute(previous)
+		if DirAccess.copy_absolute(source_path, temporary) != OK:
+			_show_diagnostics({"valid": false, "errors": PackedStringArray(["The vehicle texture could not be copied into the draft"]), "warnings": PackedStringArray()})
+			return
+		if FileAccess.file_exists(destination) and DirAccess.rename_absolute(destination, previous) != OK:
+			DirAccess.remove_absolute(temporary)
+			_show_diagnostics({"valid": false, "errors": PackedStringArray(["The previous draft texture could not be replaced"]), "warnings": PackedStringArray()})
+			return
+		if DirAccess.rename_absolute(temporary, destination) != OK:
+			if FileAccess.file_exists(previous):
+				DirAccess.rename_absolute(previous, destination)
+			_show_diagnostics({"valid": false, "errors": PackedStringArray(["The imported vehicle texture could not be installed"]), "warnings": PackedStringArray()})
+			return
+		DirAccess.remove_absolute(previous)
+	if layer == "normal" and !session.get_model_path().is_empty():
+		var setup: Dictionary = session.get_material_setup()
+		setup["use_mesh_normals"] = false
+		session.set_material_setup(setup)
+	_refresh_material_texture_controls()
+	_refresh_preview()
+	_refresh_history_buttons()
+	_update_autosave_status("Custom %s texture ready" % layer.replace("_", " "))
+
+
+func _clear_material_texture(layer: String) -> void:
+	var path := _material_texture_path(layer)
+	if path.is_empty():
+		return
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	_refresh_material_texture_controls()
+	_refresh_preview()
+	_update_autosave_status("Custom %s texture cleared" % layer.replace("_", " "))
+
+
+func _has_editable_document() -> bool:
+	return draft_initialized or editing_official_definition != null
+
+
+func _refresh_document_mode_controls() -> void:
+	var editing_official := editing_official_definition != null
+	title_input.editable = !editing_official
+	author_input.editable = !editing_official
+	description_input.editable = !editing_official
+	$Toolbar/DuplicateDraft.disabled = editing_official
+	$Toolbar/ArchiveDraft.disabled = editing_official
+	$Toolbar/DeleteDraft.disabled = editing_official or !draft_initialized
+	$Toolbar/ImportModel.disabled = editing_official
+	$Toolbar/InstallVehicle.disabled = editing_official
+	$Toolbar/ExportPackage.disabled = editing_official
+	$Toolbar/TestDrive.disabled = editing_official
+	$Toolbar/PublishWorkshop.disabled = editing_official
+	$Toolbar/SaveDraft.text = "Save Official" if editing_official else "Save Now"
+	$Workshop.visible = !editing_official
+	_refresh_boost_sound_controls()
+	preview_primary.disabled = editing_official
+	preview_secondary.disabled = editing_official
+	preview_accent.disabled = editing_official
+	preview_preset.disabled = editing_official
+	for tab in range(physical_tabs.get_tab_count()):
+		var title := physical_tabs.get_tab_title(tab)
+		physical_tabs.set_tab_disabled(
+			tab, editing_official and title in ["Transform", "Materials", "Thrusters"])
+	if editing_official and physical_tabs.is_tab_disabled(physical_tabs.current_tab):
+		_select_physical_tab("Corners")
 
 
 func _refresh_draft_options() -> void:
@@ -415,7 +645,7 @@ func _open_selected_draft() -> void:
 	var selected_id := String(draft_option.get_item_metadata(draft_option.selected))
 	if draft_initialized and selected_id == draft_id:
 		return
-	if draft_initialized and !_flush_autosave():
+	if _has_editable_document() and !_flush_autosave():
 		return
 	var candidate := MxtCarAuthoringSession.new()
 	var result: Dictionary = draft_store.load_draft(selected_id, candidate)
@@ -423,6 +653,7 @@ func _open_selected_draft() -> void:
 		_show_diagnostics(result)
 		return
 	session = candidate
+	editing_official_definition = null
 	draft_id = selected_id
 	draft_initialized = true
 	current_properties_path = String(result.get("properties_path", ""))
@@ -438,6 +669,7 @@ func _open_selected_draft() -> void:
 	metadata_dirty = false
 	autosave_error = ""
 	_refresh_workshop_controls()
+	_refresh_document_mode_controls()
 	visual_status.text = session.get_model_path()
 	_refresh_all()
 	_update_autosave_status("Saved")
@@ -477,6 +709,38 @@ func _archive_current_draft() -> void:
 		_new_draft()
 
 
+func _prompt_delete_current_draft() -> void:
+	if !draft_initialized or editing_official_definition != null:
+		return
+	delete_draft_dialog.dialog_text = (
+		"Permanently delete “%s” and all of its local authoring files?\n\nThis cannot be undone."
+		% title_input.text)
+	delete_draft_dialog.popup_centered()
+
+
+func _delete_current_draft() -> void:
+	if !draft_initialized or editing_official_definition != null:
+		return
+	if curve_gesture_active:
+		curve_graph.cancel_active_edit()
+	var result: Dictionary = draft_store.delete_draft(draft_id)
+	_show_diagnostics(result)
+	if !bool(result.get("valid", false)):
+		return
+	draft_initialized = false
+	draft_id = ""
+	current_properties_path = ""
+	metadata_dirty = false
+	autosave_error = ""
+	autosave_due_msec = 0
+	_refresh_draft_options()
+	if draft_option.item_count > 0:
+		draft_option.select(0)
+		_open_selected_draft()
+	else:
+		_new_draft()
+
+
 func _open_template_vehicle_dialog() -> void:
 	template_vehicle_option.clear()
 	if game_manager == null:
@@ -493,6 +757,70 @@ func _open_template_vehicle_dialog() -> void:
 		return
 	template_vehicle_option.select(0)
 	template_vehicle_dialog.popup_centered()
+
+
+func _open_official_vehicle_dialog() -> void:
+	official_vehicle_option.clear()
+	if vehicle_content_controller == null:
+		return
+	for definition_value in vehicle_content_controller.definitions:
+		var definition := definition_value as CarDefinition
+		if definition == null or !definition.content_id.begins_with("mxt:vehicle:official:") \
+				or definition.properties_path.is_empty():
+			continue
+		official_vehicle_option.add_item(definition.name)
+		official_vehicle_option.set_item_metadata(
+			official_vehicle_option.item_count - 1, definition.content_id)
+	if official_vehicle_option.item_count == 0:
+		_show_diagnostics({
+			"valid": false,
+			"errors": PackedStringArray(["No shipped vehicle property files are available"]),
+			"warnings": PackedStringArray(),
+		})
+		return
+	official_vehicle_option.select(0)
+	official_vehicle_dialog.popup_centered()
+
+
+func _open_selected_official_vehicle() -> void:
+	if vehicle_content_controller == null or official_vehicle_option.selected < 0:
+		return
+	var content_id := String(official_vehicle_option.get_item_metadata(official_vehicle_option.selected))
+	var definition := vehicle_content_controller.definitions_by_content_id.get(content_id) as CarDefinition
+	if definition == null or !definition.content_id.begins_with("mxt:vehicle:official:"):
+		_show_diagnostics({
+			"valid": false,
+			"errors": PackedStringArray(["The selected official vehicle is no longer available"]),
+			"warnings": PackedStringArray(),
+		})
+		return
+	if _has_editable_document() and !_flush_autosave():
+		return
+	var candidate := MxtCarAuthoringSession.new()
+	var result: Dictionary = candidate.load_file(definition.properties_path)
+	if !bool(result.get("valid", false)):
+		_show_diagnostics(result)
+		return
+	session = candidate
+	editing_official_definition = definition
+	draft_initialized = false
+	draft_id = ""
+	current_properties_path = definition.properties_path
+	preview_livery = CarLivery.new()
+	updating_controls = true
+	title_input.text = definition.name
+	author_input.text = "Shipped Asset"
+	description_input.text = definition.properties_path
+	updating_controls = false
+	metadata_dirty = false
+	autosave_error = ""
+	autosave_due_msec = 0
+	workshop_published_file_id = 0
+	workshop_preview_captured = false
+	_refresh_workshop_controls()
+	_refresh_document_mode_controls()
+	_refresh_all()
+	_update_autosave_status("Editing official %s" % definition.name)
 
 
 func _import_selected_vehicle_template() -> void:
@@ -693,6 +1021,12 @@ func _on_steam_status_changed(status: Dictionary) -> void:
 
 
 func _refresh_workshop_controls() -> void:
+	if editing_official_definition != null:
+		workshop_publish_button.disabled = true
+		workshop_page_button.disabled = true
+		workshop_capture_button.disabled = true
+		workshop_status.text = "Workshop publishing is unavailable while editing shipped assets"
+		return
 	var steam_available := game_manager != null \
 		and game_manager.steam_service != null \
 		and game_manager.steam_service.is_initialized()
@@ -848,7 +1182,7 @@ func _process(_delta: float) -> void:
 	if performance_due_msec != 0 and now >= performance_due_msec:
 		performance_due_msec = 0
 		vehicle_grade_panel.show_analysis(performance_analyzer.analyze_session(session, machine_setting.value))
-	if draft_initialized and !curve_gesture_active and (metadata_dirty or session.is_dirty()):
+	if _has_editable_document() and !curve_gesture_active and (metadata_dirty or session.is_dirty()):
 		if autosave_due_msec == 0:
 			autosave_due_msec = now + AUTOSAVE_DEBOUNCE_MSEC
 			_update_autosave_status("Unsaved changes")
@@ -867,12 +1201,12 @@ func _process(_delta: float) -> void:
 
 
 func _exit_tree() -> void:
-	if draft_initialized:
+	if _has_editable_document():
 		_flush_autosave()
 
 
 func _on_visibility_changed() -> void:
-	if draft_initialized and !is_visible_in_tree():
+	if _has_editable_document() and !is_visible_in_tree():
 		_flush_autosave()
 
 
@@ -990,6 +1324,8 @@ func _draft_metadata() -> Dictionary:
 
 
 func _autosave_draft() -> bool:
+	if editing_official_definition != null:
+		return _save_official_properties()
 	if !draft_initialized:
 		return true
 	var result: Dictionary = draft_store.save_draft(draft_id, session, _draft_metadata())
@@ -1009,10 +1345,37 @@ func _autosave_draft() -> bool:
 	return true
 
 
+func _save_official_properties() -> bool:
+	if editing_official_definition == null:
+		return false
+	if current_properties_path != editing_official_definition.properties_path \
+			or !current_properties_path.begins_with("res://vehicle/asset/"):
+		autosave_error = "Official vehicle save target is invalid"
+		_update_autosave_status(autosave_error, true)
+		return false
+	var result: Dictionary = session.save_file(current_properties_path)
+	if !bool(result.get("valid", false)):
+		var errors: PackedStringArray = result.get(
+			"errors", PackedStringArray(["Unknown official vehicle save error"]))
+		autosave_error = "Unknown official vehicle save error" if errors.is_empty() else String(errors[0])
+		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_RETRY_MSEC
+		_update_autosave_status("Official save failed: %s" % autosave_error, true)
+		_show_diagnostics(result)
+		return false
+	metadata_dirty = false
+	autosave_error = ""
+	autosave_due_msec = 0
+	performance_analyzer = MxtCarPerformanceAnalyzer.new()
+	_refresh_samples()
+	content_changed.emit()
+	_update_autosave_status("Saved official %s" % editing_official_definition.name)
+	return true
+
+
 func _flush_autosave() -> bool:
 	if curve_gesture_active:
 		curve_graph.cancel_active_edit()
-	if !draft_initialized:
+	if !_has_editable_document():
 		return true
 	if metadata_dirty or session.is_dirty() or !autosave_error.is_empty():
 		return _autosave_draft()
@@ -1020,6 +1383,9 @@ func _flush_autosave() -> bool:
 
 
 func _manual_save_draft() -> void:
+	if editing_official_definition != null:
+		_save_official_properties()
+		return
 	if !_flush_autosave():
 		return
 	var thumbnail_path := _draft_root() + "/thumbnail.png"
@@ -1177,6 +1543,9 @@ func _update_autosave_status(message: String, failed := false) -> void:
 
 
 func _refresh_resource_usage() -> void:
+	if editing_official_definition != null:
+		visual_status.text = "Editing shipped properties: %s" % current_properties_path
+		return
 	var usage: Dictionary = session.get_model_resource_usage()
 	if !bool(usage.get("valid", false)):
 		visual_status.text = "Import a static GLB or glTF vehicle model."
@@ -1371,7 +1740,7 @@ func _commit_curve(keys: Array) -> void:
 		session.cancel_edit_transaction()
 	curve_gesture_active = false
 	_show_diagnostics(result)
-	curve_graph.show_curve(session, current_layer, current_stat)
+	curve_graph.sync_keys(session.get_curve(current_layer, current_stat))
 	_refresh_selected_stat_ui()
 	_refresh_history_buttons()
 	_refresh_samples()
@@ -1393,7 +1762,7 @@ func _preview_curve_gesture(keys: Array) -> void:
 func _cancel_curve_gesture() -> void:
 	session.cancel_edit_transaction()
 	curve_gesture_active = false
-	curve_graph.show_curve(session, current_layer, current_stat)
+	curve_graph.sync_keys(session.get_curve(current_layer, current_stat))
 	_refresh_selected_stat_ui()
 	_refresh_history_buttons()
 	_refresh_samples()
@@ -1553,8 +1922,9 @@ func _refresh_material_controls() -> void:
 		if selected_surfaces.has(surface_index):
 			body_surface_list.select(body_surface_list.item_count - 1, false)
 	_populate_texture_sources(albedo_surface_option, surfaces, "has_albedo_texture", "Flat white", int(setup.get("albedo_surface", -1)))
-	_populate_texture_sources(normal_surface_option, surfaces, "has_normal_texture", "Flat normal", int(setup.get("normal_surface", -1)))
+	_populate_normal_sources(surfaces, int(setup.get("normal_surface", -1)), bool(setup.get("use_mesh_normals", false)))
 	_populate_texture_sources(paint_mask_surface_option, surfaces, "has_paint_mask_texture", "No paint mask", int(setup.get("paint_mask_surface", -1)))
+	_refresh_material_texture_controls()
 
 
 func _populate_texture_sources(option: OptionButton, surfaces: Array, capability: String, none_label: String, selected_surface: int) -> void:
@@ -1573,6 +1943,24 @@ func _populate_texture_sources(option: OptionButton, surfaces: Array, capability
 			option.select(option.item_count - 1)
 
 
+func _populate_normal_sources(surfaces: Array, selected_surface: int, mesh_normals: bool) -> void:
+	normal_surface_option.clear()
+	normal_surface_option.add_item("Flat normal")
+	normal_surface_option.set_item_metadata(0, -1)
+	normal_surface_option.add_item("Mesh normals")
+	normal_surface_option.set_item_metadata(1, -2)
+	normal_surface_option.select(1 if mesh_normals else 0)
+	for surface_value in surfaces:
+		var surface: Dictionary = surface_value
+		if !bool(surface.get("has_normal_texture", false)):
+			continue
+		var surface_index := int(surface.get("index", -1))
+		normal_surface_option.add_item(String(surface.get("name", "Surface %d" % (surface_index + 1))))
+		normal_surface_option.set_item_metadata(normal_surface_option.item_count - 1, surface_index)
+		if !mesh_normals and surface_index == selected_surface:
+			normal_surface_option.select(normal_surface_option.item_count - 1)
+
+
 func _apply_material_controls() -> void:
 	if updating_controls:
 		return
@@ -1582,11 +1970,13 @@ func _apply_material_controls() -> void:
 	if selected.is_empty():
 		_refresh_visual_controls()
 		return
+	var normal_selection := _selected_texture_surface(normal_surface_option)
 	var applied := session.set_material_setup({
 		"body_surfaces": selected,
 		"albedo_surface": _selected_texture_surface(albedo_surface_option),
-		"normal_surface": _selected_texture_surface(normal_surface_option),
+		"normal_surface": -1 if normal_selection == -2 else normal_selection,
 		"paint_mask_surface": _selected_texture_surface(paint_mask_surface_option),
+		"use_mesh_normals": normal_selection == -2,
 	})
 	if applied:
 		_refresh_history_buttons()
@@ -1678,6 +2068,19 @@ func _remove_thruster() -> void:
 func _refresh_preview() -> void:
 	preview_render_manager.clear_renderer()
 	preview_definition = null
+	if editing_official_definition != null:
+		preview_definition = editing_official_definition
+		preview_render_manager.configure_manual(
+			[preview_definition], [{"car_livery": preview_livery.to_dict()}])
+		preview_render_manager.begin_manual_submit()
+		preview_render_manager.submit_manual_car(
+			0, Transform3D.IDENTITY, Color.BLACK, Vector3.ZERO, Color.BLACK, 0.0, false)
+		preview_render_manager.set_material_diagnostic(preview_diagnostic.selected)
+		var preview_key := editing_official_definition.content_id
+		_frame_preview_camera(preview_key != preview_framed_model_path)
+		preview_framed_model_path = preview_key
+		_refresh_gizmos()
+		return
 	var model_path := session.get_model_path()
 	if model_path.is_empty() or !FileAccess.file_exists(model_path):
 		preview_framed_model_path = ""
@@ -1687,6 +2090,9 @@ func _refresh_preview() -> void:
 		"title": title_input.text,
 		"authoritative_path": current_properties_path,
 		"visual_path": model_path,
+		"albedo_texture_path": _material_texture_path("albedo"),
+		"normal_texture_path": _material_texture_path("normal"),
+		"paint_mask_texture_path": _material_texture_path("paint_mask"),
 		"visual_metadata": {
 			"model_transform": session.get_model_transform(),
 			"body_surfaces": session.get_material_setup().get("body_surfaces", []),
@@ -1706,12 +2112,25 @@ func _refresh_preview() -> void:
 
 
 func _frame_preview_camera(reset_view := false) -> void:
-	if preview_camera == null or preview_definition == null or preview_definition.runtime_mesh == null:
+	if preview_camera == null or preview_definition == null:
 		return
-	var bounds := preview_definition.runtime_mesh.get_aabb()
+	var bounds := AABB()
+	var model_transform := Transform3D.IDENTITY
+	if preview_definition.runtime_mesh != null:
+		bounds = preview_definition.runtime_mesh.get_aabb()
+		model_transform = preview_definition.runtime_transform
+	elif preview_definition.car_scene != null:
+		var source := preview_definition.car_scene.instantiate() as Node3D
+		var body: MeshInstance3D
+		if source != null:
+			body = source.get_node_or_null("VEHICLE_MAIN") as MeshInstance3D
+		if body != null and body.mesh != null:
+			bounds = body.mesh.get_aabb()
+			model_transform = source.transform * body.transform
+		if source != null:
+			source.free()
 	if bounds.size.is_zero_approx():
 		return
-	var model_transform := preview_definition.runtime_transform
 	var center := model_transform * bounds.get_center()
 	var radius := 0.0
 	for x in range(2):
@@ -1927,4 +2346,7 @@ func _mark_dirty() -> void:
 		metadata_dirty = true
 		autosave_due_msec = Time.get_ticks_msec() + AUTOSAVE_DEBOUNCE_MSEC
 		_update_autosave_status("Unsaved changes")
-		diagnostics.text = "[color=#ffd166]Unsaved draft changes[/color]"
+		diagnostics.text = "[color=#ffd166]%s[/color]" % (
+			"Unsaved official vehicle changes"
+			if editing_official_definition != null
+			else "Unsaved draft changes")

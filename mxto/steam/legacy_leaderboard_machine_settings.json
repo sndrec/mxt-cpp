@@ -1,0 +1,1094 @@
+{
+  "entries": {
+    "sha256:0822ce14d0cfb3719a3388b7a6b22ac08e5adf4fd94622dc272385a1cbd73edf": {
+      "board_name": "mxt_ta_waterpark_a0e15c6b_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 90,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:0822ce14d0cfb3719a3388b7a6b22ac08e5adf4fd94622dc272385a1cbd73edf",
+      "ruleset_revision": 1,
+      "score_milliseconds": 114283,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:a0e15c6b5c927dd71a73a659e1c9ab75344beadd2e3aa17808d45ba8bf7553d5",
+      "ugc_handle": "-7641472858258600092",
+      "vehicle_gameplay_digest": "sha256:db956819b6091621e9d358a733f4a4ea6767e1cdeba21688cd6dfae3cf40bb15"
+    },
+    "sha256:08e7d048a064e36bd2066e366fe00300a73981fdb1d4f5eb1d98a524d59f6b3b": {
+      "board_name": "mxt_ta_construction_71d9336a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:08e7d048a064e36bd2066e366fe00300a73981fdb1d4f5eb1d98a524d59f6b3b",
+      "ruleset_revision": 1,
+      "score_milliseconds": 65850,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50",
+      "ugc_handle": "-4352773389833319465",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:0d42dd3201201ed3f715ee890fb89afb4d79a53dc06434ae01251854ad2e13a0": {
+      "board_name": "mxt_ta_spade-way_4defbc29_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:0d42dd3201201ed3f715ee890fb89afb4d79a53dc06434ae01251854ad2e13a0",
+      "ruleset_revision": 1,
+      "score_milliseconds": 85483,
+      "steam_id": "76561198665786731",
+      "track_gameplay_digest": "sha256:4defbc29b71af8e037907200d4e0f63c29ab7ddb67ab5c3a23881f23a8c8a873",
+      "ugc_handle": "-307187297253919694",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:125be14f5f0d8ead5a68c6e11d8ef7b6adee7368472ab67e365a176ab07ed541": {
+      "board_name": "mxt_ta_another-one_85284b2c_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:125be14f5f0d8ead5a68c6e11d8ef7b6adee7368472ab67e365a176ab07ed541",
+      "ruleset_revision": 1,
+      "score_milliseconds": 196233,
+      "steam_id": "76561198076044346",
+      "track_gameplay_digest": "sha256:85284b2c80024cac90a0ba80fd81489f2619959c18a1ff995f6963fe78877276",
+      "ugc_handle": "-7095358030743453481",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:13134e1b53b8e325ec4c8963196eeff654e52c9db30c0bf081ac610243563f1c": {
+      "board_name": "mxt_ta_green-light-circuit_06027159_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:13134e1b53b8e325ec4c8963196eeff654e52c9db30c0bf081ac610243563f1c",
+      "ruleset_revision": 1,
+      "score_milliseconds": 125783,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:0602715919bbc89d505fd824b1e3173390ffaa955b692a0aab51d5d9f36a6c0e",
+      "ugc_handle": "-4748778109051609215",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:139a4de10d300604d0bf8e41903eeab807291bc9c047b0e3960e266efe9b2db7": {
+      "board_name": "mxt_ta_multiplex_f9b64a97_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:139a4de10d300604d0bf8e41903eeab807291bc9c047b0e3960e266efe9b2db7",
+      "ruleset_revision": 1,
+      "score_milliseconds": 103033,
+      "steam_id": "76561198289720347",
+      "track_gameplay_digest": "sha256:f9b64a975d2ebfaab77981c4fca1730a7188765e559a892ecc5567309b7d0494",
+      "ugc_handle": "-4362239478510841672",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:140f1205ca7c7126e29febe1a8d77415157de2729bb5301ee5efdf5313847bee": {
+      "board_name": "mxt_ta_another-one_85284b2c_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:140f1205ca7c7126e29febe1a8d77415157de2729bb5301ee5efdf5313847bee",
+      "ruleset_revision": 1,
+      "score_milliseconds": 167267,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:85284b2c80024cac90a0ba80fd81489f2619959c18a1ff995f6963fe78877276",
+      "ugc_handle": "-4309137406758005882",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:150e3ed30012c1361a7e106611ca022fbdb8241ba2d1153c7d8c49fe1ebdf461": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 3
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:150e3ed30012c1361a7e106611ca022fbdb8241ba2d1153c7d8c49fe1ebdf461",
+      "ruleset_revision": 1,
+      "score_milliseconds": 50833,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-2131545378473185262",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:216197ea0ac99aca1f975b455ddcd9d39f8d95142aea2182fdcf4b25c15cb45d": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:216197ea0ac99aca1f975b455ddcd9d39f8d95142aea2182fdcf4b25c15cb45d",
+      "ruleset_revision": 1,
+      "score_milliseconds": 46367,
+      "steam_id": "76561197997644728",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-8783497784321747142",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:2a8e38f4804fce79be096968795a538d4bd24d79b0b899c64179b62868674ec8": {
+      "board_name": "mxt_ta_rodeo_beaa95ad_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:2a8e38f4804fce79be096968795a538d4bd24d79b0b899c64179b62868674ec8",
+      "ruleset_revision": 1,
+      "score_milliseconds": 98600,
+      "steam_id": "76561198289720347",
+      "track_gameplay_digest": "sha256:beaa95adea05d1198731f92208a5f6cfb11a51bc68d99f4028d103a648fadedf",
+      "ugc_handle": "-7205533003581524506",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:2bba722e57c041de910464e54cbfb8f7fa6c900167bc016eedcb8776204127bd": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:2bba722e57c041de910464e54cbfb8f7fa6c900167bc016eedcb8776204127bd",
+      "ruleset_revision": 1,
+      "score_milliseconds": 48800,
+      "steam_id": "76561198289720347",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-1711051988314011950",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:2cd95e4cf08cef664a947223ba87cfe4d320bab2b8b7ebff4ce8336c4f6151c4": {
+      "board_name": "mxt_ta_spade-way_4defbc29_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:2cd95e4cf08cef664a947223ba87cfe4d320bab2b8b7ebff4ce8336c4f6151c4",
+      "ruleset_revision": 1,
+      "score_milliseconds": 119117,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:4defbc29b71af8e037907200d4e0f63c29ab7ddb67ab5c3a23881f23a8c8a873",
+      "ugc_handle": "-7003142774920458926",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:2f83d27a7e538522d5f5a89cfacdcdeba791f1efc99f43c1a0ad4c703ce98c11": {
+      "board_name": "mxt_ta_loop-cross_735eb0cd_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 80,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:2f83d27a7e538522d5f5a89cfacdcdeba791f1efc99f43c1a0ad4c703ce98c11",
+      "ruleset_revision": 1,
+      "score_milliseconds": 108650,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:735eb0cdb54921bfa300ddf4bf722cb6fef7c3dd1ac32f671ce89e2b7a8cfdab",
+      "ugc_handle": "-8366136338523924164",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:38beeaef0a8b9fdfde90dea3541ee53832ebfcc7a6fe4af6a82b5e63ccaa4f1b": {
+      "board_name": "mxt_ta_urban-lot_ddba6b15_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 60,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:38beeaef0a8b9fdfde90dea3541ee53832ebfcc7a6fe4af6a82b5e63ccaa4f1b",
+      "ruleset_revision": 1,
+      "score_milliseconds": 225400,
+      "steam_id": "76561197980130550",
+      "track_gameplay_digest": "sha256:ddba6b15348b37b0e32635dead6b21acce9cd4fbe1818236acfb1c38d09854aa",
+      "ugc_handle": "-8065846578114415490",
+      "vehicle_gameplay_digest": "sha256:db956819b6091621e9d358a733f4a4ea6767e1cdeba21688cd6dfae3cf40bb15"
+    },
+    "sha256:3e0e8d8789550af1e8574bfe6c74ce363b0399dd08c2ab6aeea202168e8835cf": {
+      "board_name": "mxt_ta_split-oval_e11d5b8a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 3
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:3e0e8d8789550af1e8574bfe6c74ce363b0399dd08c2ab6aeea202168e8835cf",
+      "ruleset_revision": 1,
+      "score_milliseconds": 62017,
+      "steam_id": "76561197988975334",
+      "track_gameplay_digest": "sha256:e11d5b8a35f8bf000624b333cb9d5cbaefb183d111e8d5be30dd8e4dca8e96ba",
+      "ugc_handle": "-9053902252769384208",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:401c0cb78f3a875eed7eca37f19cc5dbf061459808c57dd6b23a59f31285e5c3": {
+      "board_name": "mxt_ta_azure_54980daf_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:401c0cb78f3a875eed7eca37f19cc5dbf061459808c57dd6b23a59f31285e5c3",
+      "ruleset_revision": 1,
+      "score_milliseconds": 185350,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:54980daf8351d87d335cd752b2be098cfa29e596093018174ca8ebfbc8fc37f2",
+      "ugc_handle": "-6263126165973074466",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:469ee3f04509ab7f142a282809c70df0471e477783a496d764bc6a8cbca70123": {
+      "board_name": "mxt_ta_secret-lab_a87a2a61_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:469ee3f04509ab7f142a282809c70df0471e477783a496d764bc6a8cbca70123",
+      "ruleset_revision": 1,
+      "score_milliseconds": 185717,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:a87a2a612d287456dd5cf4a28e890d94099b286072d23f1fa8b87ca3e4061e09",
+      "ugc_handle": "-7344617950192317274",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:53b1bfdfdf06c2f3a158bf0640ab9f0380b5f9b297f833c4540396721e6e6e21": {
+      "board_name": "mxt_ta_similar-pain-device_a61a5831_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:53b1bfdfdf06c2f3a158bf0640ab9f0380b5f9b297f833c4540396721e6e6e21",
+      "ruleset_revision": 1,
+      "score_milliseconds": 106767,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:a61a58316d8dec990f401a304ee94575a33b5223e913f52678442a1c1649fbdd",
+      "ugc_handle": "-5847956975291962613",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:59eda4f83b6c0a3807d1223a9aef7c85b2aed918e41e0b79d4940711a968533b": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:59eda4f83b6c0a3807d1223a9aef7c85b2aed918e41e0b79d4940711a968533b",
+      "ruleset_revision": 1,
+      "score_milliseconds": 48683,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-7157508016966516713",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:5e935555776083e9fa8d85d04c4da7be8b9004c6724beb03021be468eb65c65f": {
+      "board_name": "mxt_ta_construction_71d9336a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 60,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:5e935555776083e9fa8d85d04c4da7be8b9004c6724beb03021be468eb65c65f",
+      "ruleset_revision": 1,
+      "score_milliseconds": 62383,
+      "steam_id": "76561197997644728",
+      "track_gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50",
+      "ugc_handle": "-3697362576563235240",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:6291750050ab41e689cbdad37729993e54a1a8bbca860942a3cc4be5f0e9a57d": {
+      "board_name": "mxt_ta_split-oval_e11d5b8a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 30,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:6291750050ab41e689cbdad37729993e54a1a8bbca860942a3cc4be5f0e9a57d",
+      "ruleset_revision": 1,
+      "score_milliseconds": 41283,
+      "steam_id": "76561198665786731",
+      "track_gameplay_digest": "sha256:e11d5b8a35f8bf000624b333cb9d5cbaefb183d111e8d5be30dd8e4dca8e96ba",
+      "ugc_handle": "-6707344503336379456",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:632bbe649207185dba46220d641a359cab130b81a79d8d1be343b593601b72a3": {
+      "board_name": "mxt_ta_multiplex_f9b64a97_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:632bbe649207185dba46220d641a359cab130b81a79d8d1be343b593601b72a3",
+      "ruleset_revision": 1,
+      "score_milliseconds": 120867,
+      "steam_id": "76561198042003086",
+      "track_gameplay_digest": "sha256:f9b64a975d2ebfaab77981c4fca1730a7188765e559a892ecc5567309b7d0494",
+      "ugc_handle": "-3191177574869403499",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:63ff0d9353df68418718e820c8b083ae027aa03108cfda505a622837257acbb4": {
+      "board_name": "mxt_ta_fuckghead_7d1b9d41_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:63ff0d9353df68418718e820c8b083ae027aa03108cfda505a622837257acbb4",
+      "ruleset_revision": 1,
+      "score_milliseconds": 40133,
+      "steam_id": "76561198877250477",
+      "track_gameplay_digest": "sha256:7d1b9d41e784741019189d1e37b74aff8928245b784ffd6072525718ef8def34",
+      "ugc_handle": "-5255806025600863960",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:6aa84985d99346645bf53f0740cb350f1760ef87fa8a4a2753dec737e7da7135": {
+      "board_name": "mxt_ta_multiplex_f9b64a97_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 3
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:6aa84985d99346645bf53f0740cb350f1760ef87fa8a4a2753dec737e7da7135",
+      "ruleset_revision": 1,
+      "score_milliseconds": 95767,
+      "steam_id": "76561198665786731",
+      "track_gameplay_digest": "sha256:f9b64a975d2ebfaab77981c4fca1730a7188765e559a892ecc5567309b7d0494",
+      "ugc_handle": "-2637016090703238261",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:6b6cba3b95c929826d8186701c69bf767ce98fe5a8e69189b62d4fa0cfba5f56": {
+      "board_name": "mxt_ta_daytime-coaster_1deb7937_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:6b6cba3b95c929826d8186701c69bf767ce98fe5a8e69189b62d4fa0cfba5f56",
+      "ruleset_revision": 1,
+      "score_milliseconds": 164317,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:1deb7937e92e39236601423ac6bde7946b2d07121333a0afc16c52594be869b4",
+      "ugc_handle": "-8454068238909072667",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:74e7e23068fa0b36e8e2dfb0fe26060125ef2cb4446f6966b0c1af84add7f37e": {
+      "board_name": "mxt_ta_multiplex_f9b64a97_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:74e7e23068fa0b36e8e2dfb0fe26060125ef2cb4446f6966b0c1af84add7f37e",
+      "ruleset_revision": 1,
+      "score_milliseconds": 89167,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:f9b64a975d2ebfaab77981c4fca1730a7188765e559a892ecc5567309b7d0494",
+      "ugc_handle": "-9080859618008755179",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:765784cdd2f79835a96926c7ce7311c9e4d727bc8c71d76b41686e9387a0ced3": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 3
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:765784cdd2f79835a96926c7ce7311c9e4d727bc8c71d76b41686e9387a0ced3",
+      "ruleset_revision": 1,
+      "score_milliseconds": 56200,
+      "steam_id": "76561197988975334",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-447049795618114824",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:84ba69e62d923fb65adfa8e59e2457b2b00db638e855f983e327fb4c1767b5cb": {
+      "board_name": "mxt_ta_rodeo_beaa95ad_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:84ba69e62d923fb65adfa8e59e2457b2b00db638e855f983e327fb4c1767b5cb",
+      "ruleset_revision": 1,
+      "score_milliseconds": 127300,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:beaa95adea05d1198731f92208a5f6cfb11a51bc68d99f4028d103a648fadedf",
+      "ugc_handle": "-6909923943675010622",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:8e6f7c2e38397baccdbfa4a4a9b140294ab172d3b5e400f42b7d2971c86871d6": {
+      "board_name": "mxt_ta_spade-way_4defbc29_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 83,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:8e6f7c2e38397baccdbfa4a4a9b140294ab172d3b5e400f42b7d2971c86871d6",
+      "ruleset_revision": 1,
+      "score_milliseconds": 81900,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:4defbc29b71af8e037907200d4e0f63c29ab7ddb67ab5c3a23881f23a8c8a873",
+      "ugc_handle": "-8091311347105648676",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:938e0002c11c537968e982872ec3fa902167ca1b2395c6c8c56f9bbcfa2f427a": {
+      "board_name": "mxt_ta_rodeo_beaa95ad_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 6
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:938e0002c11c537968e982872ec3fa902167ca1b2395c6c8c56f9bbcfa2f427a",
+      "ruleset_revision": 1,
+      "score_milliseconds": 92133,
+      "steam_id": "76561197997644728",
+      "track_gameplay_digest": "sha256:beaa95adea05d1198731f92208a5f6cfb11a51bc68d99f4028d103a648fadedf",
+      "ugc_handle": "-7252056034665453727",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:95036f2a785d0894c5437f1d9ad3afba39b55262472737b0ce0d9ca20b7a649a": {
+      "board_name": "mxt_ta_construction_71d9336a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:95036f2a785d0894c5437f1d9ad3afba39b55262472737b0ce0d9ca20b7a649a",
+      "ruleset_revision": 1,
+      "score_milliseconds": 98817,
+      "steam_id": "76561198076044346",
+      "track_gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50",
+      "ugc_handle": "-6764386477892245984",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:956244e3609a31d1ceda884c28ddc43bbdd373e22db453e26fd2dceb4d41f01d": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:956244e3609a31d1ceda884c28ddc43bbdd373e22db453e26fd2dceb4d41f01d",
+      "ruleset_revision": 1,
+      "score_milliseconds": 50633,
+      "steam_id": "76561198122614047",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-292259473572551855",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:98d3efe067f3005f002cc89102e583c7494511cdf43f2e55405cbbfdb8f964ec": {
+      "board_name": "mxt_ta_construction_71d9336a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:98d3efe067f3005f002cc89102e583c7494511cdf43f2e55405cbbfdb8f964ec",
+      "ruleset_revision": 1,
+      "score_milliseconds": 69033,
+      "steam_id": "76561198042003086",
+      "track_gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50",
+      "ugc_handle": "-2614639599225058007",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:9dc42c4b9f18e5b88de4ad0ab6f0562cd7892f89fc591c7cd74693c1d79f7e9b": {
+      "board_name": "mxt_ta_rodeo_beaa95ad_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 50,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:9dc42c4b9f18e5b88de4ad0ab6f0562cd7892f89fc591c7cd74693c1d79f7e9b",
+      "ruleset_revision": 1,
+      "score_milliseconds": 124950,
+      "steam_id": "76561198292416600",
+      "track_gameplay_digest": "sha256:beaa95adea05d1198731f92208a5f6cfb11a51bc68d99f4028d103a648fadedf",
+      "ugc_handle": "-3827202723759712859",
+      "vehicle_gameplay_digest": "sha256:d9516af0415e9b1b7d00e55ce31e3010c00ddb5c74ecb965d4d307ce7c13d5da"
+    },
+    "sha256:9f380bb6a41f9dbc6dae0f2535f4e4f820f8fe0c1e445cdc2c61b2f10e5a9df7": {
+      "board_name": "mxt_ta_loop-cross_735eb0cd_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:9f380bb6a41f9dbc6dae0f2535f4e4f820f8fe0c1e445cdc2c61b2f10e5a9df7",
+      "ruleset_revision": 1,
+      "score_milliseconds": 118667,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:735eb0cdb54921bfa300ddf4bf722cb6fef7c3dd1ac32f671ce89e2b7a8cfdab",
+      "ugc_handle": "-7487418260895916591",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:a50d1860a2a989913f88896ed980767aa79cb953caf5f513599cff76f3244bbb": {
+      "board_name": "mxt_ta_beepers_0f4acac4_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:a50d1860a2a989913f88896ed980767aa79cb953caf5f513599cff76f3244bbb",
+      "ruleset_revision": 1,
+      "score_milliseconds": 201250,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:0f4acac46880ecc211690f4b38876338d20d93f08b513131f8f5843de5c80523",
+      "ugc_handle": "-5322294477804229981",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:a711b1770860c2bc5d8fc78a73dd35aeed66c7d4f1a28e884d08f65c24323f8e": {
+      "board_name": "mxt_ta_beepers_0f4acac4_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 50,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:a711b1770860c2bc5d8fc78a73dd35aeed66c7d4f1a28e884d08f65c24323f8e",
+      "ruleset_revision": 1,
+      "score_milliseconds": 205900,
+      "steam_id": "76561197980130550",
+      "track_gameplay_digest": "sha256:0f4acac46880ecc211690f4b38876338d20d93f08b513131f8f5843de5c80523",
+      "ugc_handle": "-6138664226198641386",
+      "vehicle_gameplay_digest": "sha256:db956819b6091621e9d358a733f4a4ea6767e1cdeba21688cd6dfae3cf40bb15"
+    },
+    "sha256:a88cac9f3978e75a1183eaa447c5195657888edd3086b1d79751427b5e2679d0": {
+      "board_name": "mxt_ta_cliffside-drops_5fe38d10_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:a88cac9f3978e75a1183eaa447c5195657888edd3086b1d79751427b5e2679d0",
+      "ruleset_revision": 1,
+      "score_milliseconds": 164417,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:5fe38d10011f91a39baef8e77d32209bed0f075867949316695a33c13020c626",
+      "ugc_handle": "-2707442371492964417",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:aaaea6d0e7a924fc9f4b4fddcfdc049955d79abbf9642330718a56efa389c2c5": {
+      "board_name": "mxt_ta_waterpark_a0e15c6b_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:aaaea6d0e7a924fc9f4b4fddcfdc049955d79abbf9642330718a56efa389c2c5",
+      "ruleset_revision": 1,
+      "score_milliseconds": 143717,
+      "steam_id": "76561198877250477",
+      "track_gameplay_digest": "sha256:a0e15c6b5c927dd71a73a659e1c9ab75344beadd2e3aa17808d45ba8bf7553d5",
+      "ugc_handle": "-1576256918634421977",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:aad53e779f717e4d287197eaefc26bd200cd4539d367028c50a15c6f478ada83": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:aad53e779f717e4d287197eaefc26bd200cd4539d367028c50a15c6f478ada83",
+      "ruleset_revision": 1,
+      "score_milliseconds": 52683,
+      "steam_id": "76561198042003086",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-7432567766919815516",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:b19874a430db22187cf20635feef8915857df8bba8aaaf4d6410ad5cb53d9ea2": {
+      "board_name": "mxt_ta_construction_71d9336a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:b19874a430db22187cf20635feef8915857df8bba8aaaf4d6410ad5cb53d9ea2",
+      "ruleset_revision": 1,
+      "score_milliseconds": 74367,
+      "steam_id": "76561198292416600",
+      "track_gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50",
+      "ugc_handle": "-5867236123348568032",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:b21a416d6677daa19ff90549b90fa5ddf3034cfc9f8aeb9744101165d2c33521": {
+      "board_name": "mxt_ta_dariacore_6829ed34_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:b21a416d6677daa19ff90549b90fa5ddf3034cfc9f8aeb9744101165d2c33521",
+      "ruleset_revision": 1,
+      "score_milliseconds": 143917,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:6829ed34dc3747c5c43676797621c969cf8a5bf115d91b378ee24e17972b8bb2",
+      "ugc_handle": "-2993009469148139779",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:b9ad09145ce7bb5f5e36dbcc215ecd4948fa3a05031b828dab66be58d757cc3a": {
+      "board_name": "mxt_ta_rodeo_beaa95ad_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 35,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:b9ad09145ce7bb5f5e36dbcc215ecd4948fa3a05031b828dab66be58d757cc3a",
+      "ruleset_revision": 1,
+      "score_milliseconds": 114117,
+      "steam_id": "76561198295818990",
+      "track_gameplay_digest": "sha256:beaa95adea05d1198731f92208a5f6cfb11a51bc68d99f4028d103a648fadedf",
+      "ugc_handle": "-5906071548390855369",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:bb1195f2fda796b770cdee4183a875c58be5043de5c983b271d10c126d01a55d": {
+      "board_name": "mxt_ta_freefall_8de9f5f2_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:bb1195f2fda796b770cdee4183a875c58be5043de5c983b271d10c126d01a55d",
+      "ruleset_revision": 1,
+      "score_milliseconds": 172900,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:8de9f5f2b4effff58f608f4acf96a102ec193f804ce984e5fbbde8307c48bcad",
+      "ugc_handle": "-8008649988962463566",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:bf5cc88ad68291d2b711e0d9ccc9bd26c8ecd6f5958f0dee0428abf682ac4b3f": {
+      "board_name": "mxt_ta_split-choices_e80ce0bd_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 6
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:bf5cc88ad68291d2b711e0d9ccc9bd26c8ecd6f5958f0dee0428abf682ac4b3f",
+      "ruleset_revision": 1,
+      "score_milliseconds": 153417,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:e80ce0bdb3516d636f2d49d053399d2d436934cc383916d501e9b9278f219b43",
+      "ugc_handle": "-9122192958692994662",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:c65ddd25d7dae2a8afa9ca7c66f9ff43fcb402838f4f32e6691ba367fbdbac43": {
+      "board_name": "mxt_ta_green-light-circuit_06027159_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 3
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:c65ddd25d7dae2a8afa9ca7c66f9ff43fcb402838f4f32e6691ba367fbdbac43",
+      "ruleset_revision": 1,
+      "score_milliseconds": 133267,
+      "steam_id": "76561197988975334",
+      "track_gameplay_digest": "sha256:0602715919bbc89d505fd824b1e3173390ffaa955b692a0aab51d5d9f36a6c0e",
+      "ugc_handle": "-2042293306282124838",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:c7d9c94bf5df09ddb54edff5ed4417fb827744bf0e705a80d053978333863576": {
+      "board_name": "mxt_ta_construction_71d9336a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:c7d9c94bf5df09ddb54edff5ed4417fb827744bf0e705a80d053978333863576",
+      "ruleset_revision": 1,
+      "score_milliseconds": 64133,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50",
+      "ugc_handle": "-1165212508015318142",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:c7e617a316a702228f5399c0e04033297e56bd41eded66e7ab96a05301f3c2d0": {
+      "board_name": "mxt_ta_multiplex_f9b64a97_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:c7e617a316a702228f5399c0e04033297e56bd41eded66e7ab96a05301f3c2d0",
+      "ruleset_revision": 1,
+      "score_milliseconds": 134217,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:f9b64a975d2ebfaab77981c4fca1730a7188765e559a892ecc5567309b7d0494",
+      "ugc_handle": "-4632891524096102001",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:ca5f3f1ff2fd6ca01053465795196ef1b58b5481d4ccdcc63874d35f4c5fc73d": {
+      "board_name": "mxt_ta_what-up_b61c9b4b_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:ca5f3f1ff2fd6ca01053465795196ef1b58b5481d4ccdcc63874d35f4c5fc73d",
+      "ruleset_revision": 1,
+      "score_milliseconds": 119767,
+      "steam_id": "76561198877250477",
+      "track_gameplay_digest": "sha256:b61c9b4b2cac5606706e3e8934494954954ca8ec4fd2433ca801bdcbcff4fd89",
+      "ugc_handle": "-2659705086955368912",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:cb9fa2b40b5de54f885224c90d0fc18e2f27d494cfbafd2a88dd789dc1680846": {
+      "board_name": "mxt_ta_spade-way_4defbc29_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 80,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:cb9fa2b40b5de54f885224c90d0fc18e2f27d494cfbafd2a88dd789dc1680846",
+      "ruleset_revision": 1,
+      "score_milliseconds": 72167,
+      "steam_id": "76561197997644728",
+      "track_gameplay_digest": "sha256:4defbc29b71af8e037907200d4e0f63c29ab7ddb67ab5c3a23881f23a8c8a873",
+      "ugc_handle": "-1520300027327396104",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:d5a7909a68800c4c80625a2e69a0c1421cca1a0aa54112c56f8b7335118a2500": {
+      "board_name": "mxt_ta_rodeo_beaa95ad_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:d5a7909a68800c4c80625a2e69a0c1421cca1a0aa54112c56f8b7335118a2500",
+      "ruleset_revision": 1,
+      "score_milliseconds": 102100,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:beaa95adea05d1198731f92208a5f6cfb11a51bc68d99f4028d103a648fadedf",
+      "ugc_handle": "-8715448472102297883",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:d6064dd07ce0ce98672738bd939dd96f8187589cf9f07ffaabda3a3314572092": {
+      "board_name": "mxt_ta_split-oval_e11d5b8a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 6
+      },
+      "machine_setting_percent": 0,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:d6064dd07ce0ce98672738bd939dd96f8187589cf9f07ffaabda3a3314572092",
+      "ruleset_revision": 1,
+      "score_milliseconds": 36500,
+      "steam_id": "76561197997644728",
+      "track_gameplay_digest": "sha256:e11d5b8a35f8bf000624b333cb9d5cbaefb183d111e8d5be30dd8e4dca8e96ba",
+      "ugc_handle": "-1767732798166894091",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:da8742ff5882364862cd30b1d832c2e3025c9e26a59932be90371ba9edecbc71": {
+      "board_name": "mxt_ta_fuckghead_7d1b9d41_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 0,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:da8742ff5882364862cd30b1d832c2e3025c9e26a59932be90371ba9edecbc71",
+      "ruleset_revision": 1,
+      "score_milliseconds": 42417,
+      "steam_id": "76561198042003086",
+      "track_gameplay_digest": "sha256:7d1b9d41e784741019189d1e37b74aff8928245b784ffd6072525718ef8def34",
+      "ugc_handle": "-1889961606253590600",
+      "vehicle_gameplay_digest": "sha256:db956819b6091621e9d358a733f4a4ea6767e1cdeba21688cd6dfae3cf40bb15"
+    },
+    "sha256:de0c8b8f23f9c487a92ef71439f7fe92f24ea3a33c23192cd6b4045b6e7e154b": {
+      "board_name": "mxt_ta_worlds-end_d63923d6_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 50,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:de0c8b8f23f9c487a92ef71439f7fe92f24ea3a33c23192cd6b4045b6e7e154b",
+      "ruleset_revision": 1,
+      "score_milliseconds": 88950,
+      "steam_id": "76561198292416600",
+      "track_gameplay_digest": "sha256:d63923d677626f85f14063ae5505b7e49069609d6969fd64ab0bfdb55ecb26da",
+      "ugc_handle": "-4451184322296874838",
+      "vehicle_gameplay_digest": "sha256:d9516af0415e9b1b7d00e55ce31e3010c00ddb5c74ecb965d4d307ce7c13d5da"
+    },
+    "sha256:df8aceeb366ca758394bf947b4c5f3b97f5de52a6879cc1cea853cfedee13a99": {
+      "board_name": "mxt_ta_construction_71d9336a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 30,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:df8aceeb366ca758394bf947b4c5f3b97f5de52a6879cc1cea853cfedee13a99",
+      "ruleset_revision": 1,
+      "score_milliseconds": 74567,
+      "steam_id": "76561198665786731",
+      "track_gameplay_digest": "sha256:71d9336acf141f1a2858c73a51814f18be2dd34d41f6124005eac3f48f9ecb50",
+      "ugc_handle": "-7851441007396688539",
+      "vehicle_gameplay_digest": "sha256:2b64e252d4ce9f9a347180583d8bdfdf57d9f274d2c0cdf180a1810a46c5aeb8"
+    },
+    "sha256:e07843d2514bd16e95b39b5c2e84fa5a6a2c5e28970f3571122349b5df78985f": {
+      "board_name": "mxt_ta_split-oval_e11d5b8a_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 95,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:e07843d2514bd16e95b39b5c2e84fa5a6a2c5e28970f3571122349b5df78985f",
+      "ruleset_revision": 1,
+      "score_milliseconds": 38583,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:e11d5b8a35f8bf000624b333cb9d5cbaefb183d111e8d5be30dd8e4dca8e96ba",
+      "ugc_handle": "-4494769093859425482",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:e0a37448cf9156016f335e6c4d475bda2de3d3b99822b40a7dddc5b2fce7bb80": {
+      "board_name": "mxt_ta_smokestack_b8f5b280_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:e0a37448cf9156016f335e6c4d475bda2de3d3b99822b40a7dddc5b2fce7bb80",
+      "ruleset_revision": 1,
+      "score_milliseconds": 218017,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:b8f5b28090723e76658775fa53394207657e9b4e1324be5aac30fe79f114fe1e",
+      "ugc_handle": "-8506631446191977954",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:e3d12a56674c1b504918b11954cd6c0f1f44eb8753ed108e625f85f6729c6154": {
+      "board_name": "mxt_ta_daytime-coaster_1deb7937_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 80,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:e3d12a56674c1b504918b11954cd6c0f1f44eb8753ed108e625f85f6729c6154",
+      "ruleset_revision": 1,
+      "score_milliseconds": 115750,
+      "steam_id": "76561198060877397",
+      "track_gameplay_digest": "sha256:1deb7937e92e39236601423ac6bde7946b2d07121333a0afc16c52594be869b4",
+      "ugc_handle": "-3162895866588488052",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:e89cc5a284698471ffbf3142e409b603d182373e52ef9a28e37e5f4f3133dd51": {
+      "board_name": "mxt_ta_fuckghead_7d1b9d41_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:e89cc5a284698471ffbf3142e409b603d182373e52ef9a28e37e5f4f3133dd51",
+      "ruleset_revision": 1,
+      "score_milliseconds": 45650,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:7d1b9d41e784741019189d1e37b74aff8928245b784ffd6072525718ef8def34",
+      "ugc_handle": "-7479016026940118521",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:e8d8a17334b795e5e8de60a8a47ecddd05070422205d1eb3487645596e896662": {
+      "board_name": "mxt_ta_green-light-circuit_06027159_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:e8d8a17334b795e5e8de60a8a47ecddd05070422205d1eb3487645596e896662",
+      "ruleset_revision": 1,
+      "score_milliseconds": 112100,
+      "steam_id": "76561198877250477",
+      "track_gameplay_digest": "sha256:0602715919bbc89d505fd824b1e3173390ffaa955b692a0aab51d5d9f36a6c0e",
+      "ugc_handle": "-5293116768081914783",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:eec16ed50c736f08d96c3ed4081ecedc785512d32c70c7ae372c470563febbff": {
+      "board_name": "mxt_ta_twist-road_b287b92f_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 0
+      },
+      "machine_setting_percent": 0,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:eec16ed50c736f08d96c3ed4081ecedc785512d32c70c7ae372c470563febbff",
+      "ruleset_revision": 1,
+      "score_milliseconds": 51883,
+      "steam_id": "76561198295818990",
+      "track_gameplay_digest": "sha256:b287b92fa27d9a8f1cb46981e7a7d6e4245f402c93b4a28e74c2326af0a5a0e0",
+      "ugc_handle": "-1281088918742238482",
+      "vehicle_gameplay_digest": "sha256:db956819b6091621e9d358a733f4a4ea6767e1cdeba21688cd6dfae3cf40bb15"
+    },
+    "sha256:f51efcc1adb5c75a65b97754098c60f741eca1a758bbda66f86a8d98fed15072": {
+      "board_name": "mxt_ta_multiplex_f9b64a97_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 1
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:f51efcc1adb5c75a65b97754098c60f741eca1a758bbda66f86a8d98fed15072",
+      "ruleset_revision": 1,
+      "score_milliseconds": 139767,
+      "steam_id": "76561198076044346",
+      "track_gameplay_digest": "sha256:f9b64a975d2ebfaab77981c4fca1730a7188765e559a892ecc5567309b7d0494",
+      "ugc_handle": "-3717364673974273945",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:f54095ec12703c936b699fedf2f1103bafdda27768fb97438c14c7f911fcd5c7": {
+      "board_name": "mxt_ta_runoff_3bc9a593_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 4
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:f54095ec12703c936b699fedf2f1103bafdda27768fb97438c14c7f911fcd5c7",
+      "ruleset_revision": 1,
+      "score_milliseconds": 125400,
+      "steam_id": "76561198065050313",
+      "track_gameplay_digest": "sha256:3bc9a5935145ac4216716b6ca77ddc752bd209411dff109d764ed38bf939913e",
+      "ugc_handle": "-2558449946408975982",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    },
+    "sha256:ffaa92ac40a06983493f8e316d4e6c38eba37405fbce6a1f7118fb4a4d4dfa85": {
+      "board_name": "mxt_ta_another-one_85284b2c_r1",
+      "game_version": {
+        "compatibility": 2,
+        "major": 0,
+        "patch": 3
+      },
+      "machine_setting_percent": 100,
+      "replay_schema_version": 4,
+      "replay_sha256": "sha256:ffaa92ac40a06983493f8e316d4e6c38eba37405fbce6a1f7118fb4a4d4dfa85",
+      "ruleset_revision": 1,
+      "score_milliseconds": 171700,
+      "steam_id": "76561197988975334",
+      "track_gameplay_digest": "sha256:85284b2c80024cac90a0ba80fd81489f2619959c18a1ff995f6963fe78877276",
+      "ugc_handle": "-2662729138133700579",
+      "vehicle_gameplay_digest": "sha256:dd991d52c394c656732efce0d86df55643adea8ea766c13a7d469da6aef5a574"
+    }
+  },
+  "format_revision": 2,
+  "recovery_steam_id": "76561197997644728"
+}

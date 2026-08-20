@@ -108,6 +108,14 @@ static Vector3 rotate_about_axis(const Vector3 &value, const Vector3 &axis, int1
 	return value * c + n.cross(value) * s + n * (n.dot(value) * (1.0f - c));
 }
 
+static Vector3 rotate_about_axis_radians(const Vector3 &value, const Vector3 &axis, float radians)
+{
+	const Vector3 n = normalized_or(axis, Vector3(1.0f, 0.0f, 0.0f));
+	const float s = std::sin(radians);
+	const float c = std::cos(radians);
+	return value * c + n.cross(value) * s + n * (n.dot(value) * (1.0f - c));
+}
+
 static Basis rotate_basis_y_right(const Basis &basis, int16_t angle16)
 {
 	const float radians = angle16_to_rad(angle16);
@@ -214,9 +222,11 @@ FzgxGameplayCamera::~FzgxGameplayCamera() = default;
 void FzgxGameplayCamera::_bind_methods()
 {
 	ClassDB::bind_method(D_METHOD("reset"), &FzgxGameplayCamera::reset);
+	ClassDB::bind_method(D_METHOD("set_zoom_mode", "zoom_mode"), &FzgxGameplayCamera::set_zoom_mode);
+	ClassDB::bind_method(D_METHOD("get_zoom_mode"), &FzgxGameplayCamera::get_zoom_mode);
 	ClassDB::bind_method(D_METHOD(
 		"step", "position", "position_old", "basis_physical", "track_up", "track_pos",
-		"height_above_track", "speed_kmh", "camera_reorienting", "camera_repositioning",
+		"height_above_track", "speed_kmh", "vehicle_pitch_delta_radians", "camera_reorienting", "camera_repositioning",
 		"turn_reaction_effect", "machine_state", "state_2", "tilt_fl_state", "tilt_fr_state",
 		"tilt_bl_state", "tilt_br_state", "restore_state", "restore_move_frames",
 		"aspect_ratio", "view_up_pressed", "view_down_pressed"),
@@ -232,12 +242,30 @@ Transform3D FzgxGameplayCamera::build_transform(const Vector3 &position, const V
 
 void FzgxGameplayCamera::reset()
 {
+	const uint8_t persistent_zoom_mode = camera.persistent_saved_zoom_mode;
 	camera = Runtime();
+	camera.persistent_saved_zoom_mode = persistent_zoom_mode;
 	current_transform = Transform3D();
 	previous_transform = Transform3D();
 	current_fov = 55.0f;
 	previous_fov = 55.0f;
 	has_view = false;
+}
+
+void FzgxGameplayCamera::set_zoom_mode(int zoom_mode)
+{
+	const int16_t clamped = static_cast<int16_t>(
+		std::clamp(zoom_mode, static_cast<int>(ZOOM_FIRST_PERSON), static_cast<int>(ZOOM_FAR)));
+	camera.persistent_saved_zoom_mode = static_cast<uint8_t>(clamped);
+	camera.saved_zoom_mode = clamped;
+	if (camera.initialized && camera.zoom_mode != ZOOM_RESTORE) {
+		camera.zoom_mode = clamped;
+	}
+}
+
+int FzgxGameplayCamera::get_zoom_mode() const
+{
+	return static_cast<int>(camera.persistent_saved_zoom_mode);
 }
 
 static FollowPresetTriplet load_follow_preset(int zoom_mode, float aspect_ratio, float camera_parameter)
@@ -279,6 +307,7 @@ Dictionary FzgxGameplayCamera::step(
 	Vector3 track_pos,
 	float height_above_track,
 	float speed_kmh,
+	float vehicle_pitch_delta_radians,
 	float camera_reorienting,
 	float camera_repositioning,
 	float turn_reaction_effect,
@@ -309,7 +338,9 @@ Dictionary FzgxGameplayCamera::step(
 	const uint16_t frames_until_restored = restore_frames_from_state(restore_state, restore_move_frames);
 
 	if (!camera.initialized) {
+		const uint8_t persistent_zoom_mode = camera.persistent_saved_zoom_mode;
 		camera = Runtime();
+		camera.persistent_saved_zoom_mode = persistent_zoom_mode;
 		camera.initialized = true;
 		camera.aspect_ratio = aspect_ratio;
 		camera.zoom_mode = camera.persistent_saved_zoom_mode;
@@ -358,6 +389,7 @@ Dictionary FzgxGameplayCamera::step(
 	float target_local_z = preset.triplets[0].local_distance + speed_ratio * (preset.triplets[1].local_distance - preset.triplets[0].local_distance);
 	int16_t target_pitch = (int16_t)((float)preset.triplets[0].pitch_angle16 +
 		speed_ratio * (float)((int32_t)preset.triplets[1].pitch_angle16 - (int32_t)preset.triplets[0].pitch_angle16));
+	const Vector3 displacement = position - position_old;
 
 	if (camera.zoom_mode == ZOOM_FAR) {
 		target_local_y = preset.triplets[0].local_height;
@@ -365,6 +397,16 @@ Dictionary FzgxGameplayCamera::step(
 		target_perspective = 55.0f;
 		target_pitch = preset.triplets[0].pitch_angle16;
 	}
+	const bool slope_orbit_enabled =
+		((uint32_t)machine_state & FZGX_MS_AIRBORNE) == 0u &&
+		camera.zoom_mode != ZOOM_FIRST_PERSON &&
+		std::isfinite(vehicle_pitch_delta_radians);
+	const float slope_orbit_zoom_scale = camera.zoom_mode == ZOOM_CLOSE ? 0.5f : 1.0f;
+	const float target_slope_orbit = slope_orbit_enabled
+		? vehicle_pitch_delta_radians * 12.75f * slope_orbit_zoom_scale
+		: 0.0f;
+	camera.slope_signal_radians += 0.06875f * (target_slope_orbit - camera.slope_signal_radians);
+	camera.slope_orbit_radians += 0.10625f * (camera.slope_signal_radians - camera.slope_orbit_radians);
 
 	const uint32_t machine_state_bits = (uint32_t)machine_state;
 	const bool boost_active = (machine_state_bits & FZGX_MS_BOOSTING) != 0u;
@@ -407,7 +449,6 @@ Dictionary FzgxGameplayCamera::step(
 	camera.local_follow_offset.z += 0.15f * (target_local_z - camera.local_follow_offset.z);
 	camera.pitch_angle16 = (int16_t)((float)camera.pitch_angle16 + 0.15f * (float)((int32_t)target_pitch - (int32_t)camera.pitch_angle16));
 
-	const Vector3 displacement = position - position_old;
 	Basis target_basis = basis_physical.basis;
 	const bool any_camera_corner_flag =
 		((tilt_fl_state | tilt_fr_state | tilt_bl_state | tilt_br_state) & 4) != 0;
@@ -482,6 +523,16 @@ Dictionary FzgxGameplayCamera::step(
 		Vector3 local_interest = basis_xform_inv_orthonormal(camera.follow_basis, camera.interest - position);
 		local_interest.y -= camera.interest_vertical_offset_state * 0.7f;
 		camera.interest = position + basis_xform(camera.follow_basis, local_interest);
+	}
+
+	if (camera.zoom_mode != ZOOM_FIRST_PERSON && std::abs(camera.slope_orbit_radians) > 0.00001f) {
+		const Vector3 orbit_axis = normalized_or(
+			camera.follow_basis.get_column(0),
+			basis_physical.basis.get_column(0));
+		camera.position = camera.interest + rotate_about_axis_radians(
+			camera.position - camera.interest,
+			orbit_axis,
+			camera.slope_orbit_radians);
 	}
 
 	if (!finite_vec3(camera.position) || !finite_vec3(camera.interest) || !finite_vec3(camera.up)) {

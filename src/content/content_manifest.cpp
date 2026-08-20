@@ -450,12 +450,41 @@ bool parse_manifest(
 	const Dictionary hashes = root["payload_sha256"];
 
 	if (out_manifest.content_type == ContentType::VEHICLE) {
-		static const char *VEHICLE_KEYS[] = {"model", "properties", "visual_metadata", "authoring"};
+		// Revision-1 Workshop vehicles originally stored every material texture inside model.glb.
+		// Keep these standalone texture members optional: their absence is the permanent signal
+		// that an older package must continue using its embedded GLB material inputs.
+		static const char *VEHICLE_KEYS[] = {
+			"model", "properties", "visual_metadata", "authoring", "manual_boost_sfx",
+			"albedo_texture", "normal_texture", "paint_mask_texture"
+		};
 		dictionary_has_only(payload, VEHICLE_KEYS, std::size(VEHICLE_KEYS), "payload", out_errors);
 		require_exact_payload_path(payload, "model", "vehicle/model.glb", true, out_errors);
 		require_exact_payload_path(payload, "properties", "vehicle/properties.mxt_car_props", true, out_errors);
 		require_exact_payload_path(payload, "visual_metadata", "vehicle/visual.json", true, out_errors);
 		require_exact_payload_path(payload, "authoring", "vehicle/authoring.json", true, out_errors);
+		if (payload.has("manual_boost_sfx")) {
+			const Variant sound_value = payload["manual_boost_sfx"];
+			if (sound_value.get_type() != Variant::STRING) {
+				add_error(out_errors, "payload member 'manual_boost_sfx' must be a string");
+			} else {
+				const String sound_path = sound_value;
+				if (sound_path != "vehicle/manual_boost.wav" && sound_path != "vehicle/manual_boost.ogg") {
+					add_error(out_errors, "payload member 'manual_boost_sfx' must name the packaged WAV or Ogg boost sound");
+				} else {
+					out_manifest.manual_boost_sfx_path = sound_path;
+					add_payload_file(hashes, sound_path, out_manifest, out_errors);
+				}
+			}
+		}
+		auto read_optional_texture = [&](const char *member, const char *path, String &destination) {
+			if (!payload.has(member)) return;
+			if (!require_exact_payload_path(payload, member, path, false, out_errors)) return;
+			destination = path;
+			add_payload_file(hashes, path, out_manifest, out_errors);
+		};
+		read_optional_texture("albedo_texture", "vehicle/albedo.png", out_manifest.albedo_texture_path);
+		read_optional_texture("normal_texture", "vehicle/normal.png", out_manifest.normal_texture_path);
+		read_optional_texture("paint_mask_texture", "vehicle/paint_mask.png", out_manifest.paint_mask_texture_path);
 		add_payload_file(hashes, "vehicle/model.glb", out_manifest, out_errors);
 		add_payload_file(hashes, "vehicle/properties.mxt_car_props", out_manifest, out_errors);
 		add_payload_file(hashes, "vehicle/visual.json", out_manifest, out_errors);
@@ -498,6 +527,10 @@ Dictionary manifest_to_dictionary(const ContentManifest &manifest)
 	output["description"] = manifest.description;
 	output["author_name"] = manifest.author_name;
 	output["authoritative_path"] = manifest.authoritative_path;
+	output["manual_boost_sfx_path"] = manifest.manual_boost_sfx_path;
+	output["albedo_texture_path"] = manifest.albedo_texture_path;
+	output["normal_texture_path"] = manifest.normal_texture_path;
+	output["paint_mask_texture_path"] = manifest.paint_mask_texture_path;
 	Array files;
 	for (const ManifestFile &file : manifest.files) {
 		Dictionary item;

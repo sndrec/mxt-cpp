@@ -181,15 +181,17 @@ func _test_performance_grades() -> void:
 
 
 func _test_trusted_leaderboard_details() -> void:
-	var details: Array = [0x3154584d, 2, 7, 4, (3 << 24) | (2 << 16) | 19]
+	var details: Array = [0x3154584d, 3, 7, 4, (3 << 24) | (2 << 16) | 19]
 	for word in range(1, 25):
 		details.append(word)
+	details.append(50)
 	var decoded := LeaderboardDetailsClass.decode(details)
 	_expect(int(decoded.get("ruleset_revision", 0)) == 7, "trusted details should preserve ruleset revision")
 	_expect(int(decoded.get("replay_schema_version", 0)) == 4, "trusted details should preserve replay schema")
 	_expect(String(decoded.get("replay_sha256", "")) == "sha256:0000000100000002000000030000000400000005000000060000000700000008", "trusted details should preserve the full replay digest")
 	_expect(String(decoded.get("track_gameplay_digest", "")).length() == 71, "trusted details should contain a full track digest")
 	_expect(String(decoded.get("vehicle_gameplay_digest", "")).length() == 71, "trusted details should contain a full vehicle digest")
+	_expect(int(decoded.get("machine_setting_percent", -1)) == 50, "trusted details should preserve machine setting")
 
 
 func _test_curve_transforms() -> void:

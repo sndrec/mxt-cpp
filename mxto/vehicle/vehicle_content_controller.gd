@@ -5,8 +5,12 @@ signal workshop_content_changed(items: Array)
 signal catalog_changed
 
 const OFFICIAL_VEHICLE_PREFIX := "mxt:vehicle:official:"
+const WORKSHOP_VEHICLE_PREFIX := "mxt:vehicle:workshop:"
 const LOCAL_CONTENT_LIBRARY_PATH := "user://content/packages"
 const TEST_DRIVE_SNAPSHOT_LIBRARY_PATH := "user://content/test_drive_snapshots"
+const LOBBY_WORKSHOP_DOWNLOAD_RETRY_BASE_MSEC := 3000
+const LOBBY_WORKSHOP_DOWNLOAD_RETRY_MAX_MSEC := 30000
+const WORKSHOP_DIAGNOSTIC_LOG_DIRECTORY := "user://logs"
 const COMMUNITY_VEHICLE_SHADER: Shader = preload("res://vehicle/base_vehicle_shader.gdshader")
 const COMMUNITY_VEHICLE_CROSS_HATCH: Texture2D = preload("res://asset/tex/crosshatch/1.png")
 const CarLivery = preload("res://vehicle/customization/car_livery.gd")
@@ -20,13 +24,39 @@ var workshop_content_items: Array = []
 var steam_service: MxtSteamService
 var custom_stamp_network: CustomStampNetworkController
 var runtime_content_loaded := false
+var lobby_workshop_download_requests := {}
+var lobby_workshop_download_failures := {}
+var lobby_known_workshop_items := {}
+var lobby_ready_workshop_packages := {}
+var lobby_workshop_first_mismatch_msec := {}
+var lobby_workshop_mismatch_signatures := {}
+var workshop_diagnostic_log: FileAccess
+var workshop_diagnostic_path := ""
+var workshop_refresh_sequence := 0
+var workshop_catalog_signature := ""
+var workshop_validation_cache := {}
+var workshop_validator: MxtContentValidator = MxtContentValidator.new()
 
 func initialize(in_steam_service: MxtSteamService, in_custom_stamp_network: CustomStampNetworkController) -> void:
 	steam_service = in_steam_service
 	custom_stamp_network = in_custom_stamp_network
+	_open_workshop_diagnostic_log()
 	steam_service.workshop_items_changed.connect(_on_workshop_items_changed)
+	steam_service.workshop_request_completed.connect(_on_workshop_request_completed_diagnostic)
+	steam_service.workshop_diagnostic_event.connect(_on_native_workshop_diagnostic)
+	record_workshop_diagnostic_event("session_start", {
+		"steam_initialized": steam_service.is_initialized(),
+		"steam_app_id": steam_service.get_app_id(),
+		"initial_workshop_items": steam_service.get_workshop_items(),
+		"command_line": OS.get_cmdline_args(),
+		"os": OS.get_name(),
+		"os_version": OS.get_version(),
+	})
 	_scan_local_content_library()
 	_scan_test_drive_snapshot_library()
+	var initial_workshop_items := steam_service.get_workshop_items()
+	if !initial_workshop_items.is_empty():
+		_on_workshop_items_changed(initial_workshop_items)
 	_scan_trusted_verifier_workshop_packages()
 	reload_definitions()
 	runtime_content_loaded = true
@@ -37,6 +67,21 @@ func get_vehicle_content_ids() -> Array:
 		if definition is CarDefinition and definition.content_id != "":
 			content_ids.append(definition.content_id)
 	return content_ids
+
+func get_multiplayer_vehicle_content_ids(allow_workshop: bool) -> Array:
+	var content_ids: Array = []
+	for definition in definitions:
+		if definition is CarDefinition and is_multiplayer_vehicle_content(definition.content_id, allow_workshop):
+			content_ids.append(definition.content_id)
+	return content_ids
+
+func is_multiplayer_vehicle_content(content_id: String, allow_workshop: bool) -> bool:
+	var record: Dictionary = content_catalog.resolve_content(content_id)
+	var source := String(record.get("source", ""))
+	if source == "official":
+		return true
+	var workshop_id_text := String(record.get("published_file_id", ""))
+	return allow_workshop and source == "workshop" and workshop_id_text.is_valid_int() and workshop_id_text.to_int() > 0
 
 func get_definition(vehicle_content_id: String) -> CarDefinition:
 	var definition := definitions_by_content_id.get(vehicle_content_id) as CarDefinition
@@ -288,10 +333,127 @@ func refresh_installed_content() -> void:
 	catalog_changed.emit()
 
 func refresh_workshop_content() -> bool:
-	return steam_service != null and steam_service.refresh_subscribed_workshop_items()
+	return steam_service != null and steam_service.refresh_workshop_items()
 
 func get_workshop_content_items() -> Array:
 	return workshop_content_items.duplicate(true)
+
+func get_workshop_diagnostic_path() -> String:
+	return workshop_diagnostic_path
+
+func record_workshop_diagnostic_event(event: String, fields := {}) -> void:
+	var payload: Dictionary = fields.duplicate(true) if fields is Dictionary else {"value": fields}
+	payload["event"] = event
+	payload["ticks_msec"] = Time.get_ticks_msec()
+	payload["unix_time"] = Time.get_unix_time_from_system()
+	payload["utc"] = Time.get_datetime_string_from_system(true, true)
+	var line := JSON.stringify(payload)
+	print("MXT_WORKSHOP %s" % line)
+	if workshop_diagnostic_log != null:
+		workshop_diagnostic_log.store_line(line)
+		workshop_diagnostic_log.flush()
+
+func request_lobby_vehicle_content(settings: Dictionary) -> bool:
+	var workshop_id_text := String(settings.get("vehicle_workshop_id", ""))
+	if !workshop_id_text.is_valid_int():
+		return false
+	var workshop_id := workshop_id_text.to_int()
+	var content_id := String(settings.get("vehicle_content_id", ""))
+	var package_digest := String(settings.get("vehicle_package_digest", ""))
+	if workshop_id <= 0 or content_id != WORKSHOP_VEHICLE_PREFIX + str(workshop_id):
+		return false
+	if String(lobby_ready_workshop_packages.get(workshop_id, "")) == package_digest:
+		return true
+	var record: Dictionary = content_catalog.resolve_content(content_id)
+	var expected_gameplay_digest := String(settings.get("vehicle_gameplay_digest", ""))
+	var local_published_file_id := String(record.get("published_file_id", ""))
+	var local_gameplay_digest := String(record.get("gameplay_digest", ""))
+	var local_package_digest := String(record.get("package_digest", ""))
+	if (
+		local_published_file_id == workshop_id_text
+		and local_gameplay_digest == expected_gameplay_digest
+		and local_package_digest == package_digest):
+		var first_mismatch_msec := int(lobby_workshop_first_mismatch_msec.get(workshop_id, 0))
+		if first_mismatch_msec > 0:
+			record_workshop_diagnostic_event("lobby_content_ready", {
+				"published_file_id": workshop_id,
+				"content_id": content_id,
+				"wait_duration_msec": Time.get_ticks_msec() - first_mismatch_msec,
+				"gameplay_digest": local_gameplay_digest,
+				"package_digest": local_package_digest,
+				"package_path": String(record.get("root_path", "")),
+			})
+		lobby_workshop_download_requests.erase(workshop_id)
+		lobby_workshop_download_failures.erase(workshop_id)
+		lobby_workshop_first_mismatch_msec.erase(workshop_id)
+		lobby_workshop_mismatch_signatures.erase(workshop_id)
+		lobby_ready_workshop_packages[workshop_id] = package_digest
+		return true
+	var now_msec := Time.get_ticks_msec()
+	if !lobby_workshop_first_mismatch_msec.has(workshop_id):
+		lobby_workshop_first_mismatch_msec[workshop_id] = now_msec
+	var mismatch_signature := "%s|%s|%s|%s|%s|%s" % [
+		expected_gameplay_digest,
+		package_digest,
+		local_published_file_id,
+		local_gameplay_digest,
+		local_package_digest,
+		String(record.get("root_path", "")),
+	]
+	if String(lobby_workshop_mismatch_signatures.get(workshop_id, "")) != mismatch_signature:
+		lobby_workshop_mismatch_signatures[workshop_id] = mismatch_signature
+		record_workshop_diagnostic_event("lobby_content_mismatch", {
+			"published_file_id": workshop_id,
+			"content_id": content_id,
+			"expected_gameplay_digest": expected_gameplay_digest,
+			"expected_package_digest": package_digest,
+			"record_present": !record.is_empty(),
+			"local_published_file_id": local_published_file_id,
+			"local_gameplay_digest": local_gameplay_digest,
+			"local_package_digest": local_package_digest,
+			"local_source": String(record.get("source", "")),
+			"local_package_path": String(record.get("root_path", "")),
+			"steam_initialized": steam_service != null and steam_service.is_initialized(),
+		})
+	if steam_service == null or !steam_service.is_initialized():
+		return false
+	if !lobby_known_workshop_items.has(workshop_id):
+		var tracked := steam_service.track_workshop_item(workshop_id)
+		if tracked:
+			steam_service.refresh_workshop_items()
+		record_workshop_diagnostic_event("lobby_workshop_item_tracked", {
+			"published_file_id": workshop_id,
+			"content_id": content_id,
+			"tracked": tracked,
+		})
+		return false
+	var failure_count := int(lobby_workshop_download_failures.get(workshop_id, 0))
+	var retry_delay_msec := mini(
+		LOBBY_WORKSHOP_DOWNLOAD_RETRY_BASE_MSEC * (1 << mini(failure_count, 4)),
+		LOBBY_WORKSHOP_DOWNLOAD_RETRY_MAX_MSEC)
+	var last_request_msec := int(lobby_workshop_download_requests.get(workshop_id, -retry_delay_msec))
+	if now_msec < last_request_msec + retry_delay_msec:
+		return false
+	lobby_workshop_download_requests[workshop_id] = now_msec
+	# Steam's download-complete and item-installed callbacks refresh the catalog.
+	# Refreshing synchronously here would rebuild every installed Workshop vehicle
+	# once per missing lobby item, causing a severe frame stall for larger rosters.
+	var accepted := steam_service.download_workshop_item(workshop_id, true)
+	if !accepted:
+		lobby_workshop_download_failures[workshop_id] = failure_count + 1
+	record_workshop_diagnostic_event("lobby_download_request", {
+		"published_file_id": workshop_id,
+		"content_id": content_id,
+		"accepted": accepted,
+		"previous_failures": failure_count,
+		"retry_delay_msec": retry_delay_msec,
+		"attempt_age_msec": now_msec - int(lobby_workshop_first_mismatch_msec.get(workshop_id, now_msec)),
+		"expected_gameplay_digest": expected_gameplay_digest,
+		"expected_package_digest": package_digest,
+		"local_gameplay_digest": local_gameplay_digest,
+		"local_package_digest": local_package_digest,
+	})
+	return false
 
 func _scan_local_content_library() -> void:
 	var library_path := ProjectSettings.globalize_path(LOCAL_CONTENT_LIBRARY_PATH)
@@ -344,24 +506,180 @@ func _scan_trusted_verifier_workshop_packages() -> void:
 			index += 3
 
 func _on_workshop_items_changed(items: Array) -> void:
-	content_catalog.clear_workshop_packages()
-	workshop_content_items.clear()
+	workshop_refresh_sequence += 1
+	var sequence := workshop_refresh_sequence
+	var refresh_start_usec := Time.get_ticks_usec()
+	record_workshop_diagnostic_event("catalog_refresh_begin", {
+		"sequence": sequence,
+		"item_count": items.size(),
+	})
+	var processed_items := []
+	var candidates := []
 	for value in items:
 		var item: Dictionary = value.duplicate(true)
-		if String(item.get("status", "")) == "installed" and !bool(item.get("needs_update", false)):
-			var registered: Dictionary = content_catalog.add_workshop_package(String(item.get("install_path", "")), int(item.get("published_file_id", 0)))
-			if bool(registered.get("valid", false)):
-				item["status"] = "ready"
-				item["record"] = registered.get("record", {})
-			else:
-				var errors = registered.get("errors", [])
+		var published_file_id := int(item.get("published_file_id", 0))
+		if published_file_id > 0:
+			lobby_known_workshop_items[published_file_id] = true
+		record_workshop_diagnostic_event("catalog_item_state", {
+			"sequence": sequence,
+			"item": item,
+		})
+		var validation := _workshop_validation_for_item(item)
+		if bool(validation.get("valid", false)):
+			var manifest: Dictionary = validation.get("manifest", {})
+			var content_type := String(manifest.get("content_type", ""))
+			candidates.append({
+				"published_file_id": published_file_id,
+				"install_path": String(item.get("install_path", "")),
+				"content_type": content_type,
+				"package_digest": String(validation.get("package_digest", "")),
+				"gameplay_digest": String(validation.get("gameplay_digest", "")),
+			})
+			item["status"] = "ready_update_pending" if (
+				bool(item.get("needs_update", false))
+				or bool(item.get("downloading", false))
+				or bool(item.get("download_pending", false))) else "ready"
+		else:
+			var errors = validation.get("errors", [])
+			if bool(item.get("installed", false)) and !errors.is_empty():
 				item["status"] = "outdated_format" if str(errors).contains("format revision") else "invalid"
 				item["errors"] = errors
-		workshop_content_items.append(item)
-	if runtime_content_loaded:
+		processed_items.append(item)
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary): return int(a["published_file_id"]) < int(b["published_file_id"]))
+	var signature_parts := PackedStringArray()
+	for candidate in candidates:
+		signature_parts.append("%d|%s|%s|%s|%s" % [
+			int(candidate["published_file_id"]),
+			String(candidate["content_type"]),
+			String(candidate["package_digest"]),
+			String(candidate["gameplay_digest"]),
+			String(candidate["install_path"]),
+		])
+	var next_catalog_signature := "\n".join(signature_parts)
+	var catalog_materially_changed := next_catalog_signature != workshop_catalog_signature
+	if catalog_materially_changed:
+		content_catalog.clear_workshop_packages()
+		var registered_signature_parts := PackedStringArray()
+		for candidate in candidates:
+			var registration_start_usec := Time.get_ticks_usec()
+			var registered: Dictionary = content_catalog.add_workshop_package(
+				String(candidate["install_path"]), int(candidate["published_file_id"]))
+			record_workshop_diagnostic_event("catalog_package_registration", {
+				"sequence": sequence,
+				"published_file_id": int(candidate["published_file_id"]),
+				"install_path": String(candidate["install_path"]),
+				"duration_usec": Time.get_ticks_usec() - registration_start_usec,
+				"valid": bool(registered.get("valid", false)),
+				"errors": registered.get("errors", []),
+				"record": registered.get("record", {}),
+			})
+			if bool(registered.get("valid", false)):
+				var record: Dictionary = registered.get("record", {})
+				registered_signature_parts.append("%d|%s|%s|%s|%s" % [
+					int(candidate["published_file_id"]),
+					String(record.get("content_type", "")),
+					String(record.get("package_digest", "")),
+					String(record.get("gameplay_digest", "")),
+					String(record.get("root_path", "")),
+				])
+		workshop_catalog_signature = "\n".join(registered_signature_parts)
+		lobby_ready_workshop_packages.clear()
+	for item in processed_items:
+		var published_file_id := int(item.get("published_file_id", 0))
+		var validation := _cached_workshop_validation(published_file_id)
+		if bool(validation.get("valid", false)):
+			var content_type := String((validation.get("manifest", {}) as Dictionary).get("content_type", ""))
+			var content_id := "mxt:%s:workshop:%d" % [content_type, published_file_id]
+			var record: Dictionary = content_catalog.resolve_content(content_id)
+			if !record.is_empty():
+				item["record"] = record
+	workshop_content_items = processed_items
+	var definition_reload_duration_usec := 0
+	if runtime_content_loaded and catalog_materially_changed:
+		var definition_reload_start_usec := Time.get_ticks_usec()
 		reload_definitions()
+		definition_reload_duration_usec = Time.get_ticks_usec() - definition_reload_start_usec
 		catalog_changed.emit()
 	workshop_content_changed.emit(get_workshop_content_items())
+	record_workshop_diagnostic_event("catalog_refresh_end", {
+		"sequence": sequence,
+		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
+		"definition_reload_duration_usec": definition_reload_duration_usec,
+		"definition_count": definitions.size(),
+		"workshop_item_count": workshop_content_items.size(),
+		"catalog_materially_changed": catalog_materially_changed,
+		"catalog_signature": workshop_catalog_signature,
+	})
+
+func _workshop_validation_for_item(item: Dictionary) -> Dictionary:
+	var published_file_id := int(item.get("published_file_id", 0))
+	var install_path := String(item.get("install_path", ""))
+	if published_file_id <= 0 \
+			or !bool(item.get("installed", false)) \
+			or bool(item.get("locally_disabled", false)) \
+			or install_path.is_empty():
+		workshop_validation_cache.erase(published_file_id)
+		return {}
+	var manifest_path := install_path.path_join("manifest.json")
+	var cache_key := "%s|%d|%d|%d|%d" % [
+		install_path,
+		int(item.get("install_timestamp", 0)),
+		int(item.get("size_on_disk", 0)),
+		int(item.get("item_state_bits", 0)),
+		int(FileAccess.get_modified_time(manifest_path)) if FileAccess.file_exists(manifest_path) else 0,
+	]
+	var cached: Dictionary = workshop_validation_cache.get(published_file_id, {})
+	if String(cached.get("key", "")) == cache_key:
+		return (cached.get("result", {}) as Dictionary).duplicate(true)
+	var validation_start_usec := Time.get_ticks_usec()
+	var result: Dictionary = workshop_validator.validate_package_directory(install_path)
+	workshop_validation_cache[published_file_id] = {"key": cache_key, "result": result.duplicate(true)}
+	record_workshop_diagnostic_event("catalog_package_validation", {
+		"published_file_id": published_file_id,
+		"install_path": install_path,
+		"duration_usec": Time.get_ticks_usec() - validation_start_usec,
+		"valid": bool(result.get("valid", false)),
+		"package_digest": String(result.get("package_digest", "")),
+		"gameplay_digest": String(result.get("gameplay_digest", "")),
+		"errors": result.get("errors", []),
+	})
+	return result
+
+func _cached_workshop_validation(published_file_id: int) -> Dictionary:
+	var cached: Dictionary = workshop_validation_cache.get(published_file_id, {})
+	return (cached.get("result", {}) as Dictionary).duplicate(true)
+
+func _open_workshop_diagnostic_log() -> void:
+	var absolute_directory := ProjectSettings.globalize_path(WORKSHOP_DIAGNOSTIC_LOG_DIRECTORY)
+	var directory_error := DirAccess.make_dir_recursive_absolute(absolute_directory)
+	if directory_error != OK:
+		push_warning("Could not create Workshop diagnostic log directory: %s" % error_string(directory_error))
+		return
+	workshop_diagnostic_path = "%s/workshop-diagnostics-%d.jsonl" % [WORKSHOP_DIAGNOSTIC_LOG_DIRECTORY, int(Time.get_unix_time_from_system())]
+	workshop_diagnostic_log = FileAccess.open(workshop_diagnostic_path, FileAccess.WRITE)
+	if workshop_diagnostic_log == null:
+		push_warning("Could not open Workshop diagnostic log: %s" % FileAccess.get_open_error())
+		workshop_diagnostic_path = ""
+		return
+	print("MXT_WORKSHOP diagnostic log: %s" % ProjectSettings.globalize_path(workshop_diagnostic_path))
+
+func _on_workshop_request_completed_diagnostic(request_id: int, operation: String, result: Dictionary) -> void:
+	var published_file_id := int(result.get("published_file_id", 0))
+	if published_file_id > 0 and operation == "download":
+		if bool(result.get("success", false)):
+			lobby_workshop_download_failures.erase(published_file_id)
+		else:
+			lobby_workshop_download_failures[published_file_id] = int(lobby_workshop_download_failures.get(published_file_id, 0)) + 1
+	elif published_file_id > 0 and operation == "item_installed":
+		lobby_workshop_download_failures.erase(published_file_id)
+	record_workshop_diagnostic_event("steam_callback", {
+		"request_id": request_id,
+		"operation": operation,
+		"result": result,
+	})
+
+func _on_native_workshop_diagnostic(event: String, fields: Dictionary) -> void:
+	record_workshop_diagnostic_event("steam_native_%s" % event, fields)
 
 func _load_packaged_definitions() -> void:
 	for record_value in content_catalog.get_records("vehicle"):
@@ -408,12 +726,22 @@ func _definition_from_package_record(record: Dictionary) -> CarDefinition:
 	definition.content_id = String(record.get("content_id", ""))
 	definition.properties_path = String(record.get("authoritative_path", ""))
 	definition.runtime_mesh = runtime_mesh
-	definition.runtime_material = _build_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}))
+	definition.runtime_material = _build_material(mesh_instance.mesh, visual_metadata.get("material_inputs", {}), record)
 	definition.runtime_transform = _transform_from_metadata(visual_metadata.get("model_transform", {})) * mesh_data["transform"]
+	definition.manual_boost_sfx = _load_packaged_boost_sfx(String(record.get("manual_boost_sfx_path", "")))
 	for thruster_value in visual_metadata.get("thrusters", []):
 		definition.runtime_thruster_transforms.append(_thruster_transform_from_metadata(thruster_value))
 	instance.free()
 	return definition
+
+func _load_packaged_boost_sfx(path: String) -> AudioStream:
+	if path.is_empty() or !FileAccess.file_exists(path):
+		return null
+	if path.to_lower().ends_with(".wav"):
+		return AudioStreamWAV.load_from_file(path)
+	if path.to_lower().ends_with(".ogg"):
+		return AudioStreamOggVorbis.load_from_file(path)
+	return null
 
 func _build_body_mesh(source: Mesh, selected_surfaces: Array) -> ArrayMesh:
 	if source == null or selected_surfaces.is_empty():
@@ -426,18 +754,32 @@ func _build_body_mesh(source: Mesh, selected_surfaces: Array) -> ArrayMesh:
 		body.add_surface_from_arrays(source.surface_get_primitive_type(surface), source.surface_get_arrays(surface))
 	return body
 
-func _build_material(source: Mesh, inputs: Dictionary) -> ShaderMaterial:
+func _build_material(source: Mesh, inputs: Dictionary, record: Dictionary) -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = COMMUNITY_VEHICLE_SHADER
 	material.set_shader_parameter("in_lightwarp", _community_lightwarp())
 	material.set_shader_parameter("in_specwarp", _community_specwarp())
 	material.set_shader_parameter("cross_hatch", COMMUNITY_VEHICLE_CROSS_HATCH)
 	material.set_shader_parameter("in_overlay_colour", Color.BLACK)
-	material.set_shader_parameter("in_albedo", _texture(source, int(inputs.get("albedo_surface", -1)), "albedo_texture", Color.WHITE))
-	material.set_shader_parameter("in_normal", _texture(source, int(inputs.get("normal_surface", -1)), "normal_texture", Color(0.5, 0.5, 1.0, 1.0)))
-	material.set_shader_parameter("in_paint_mask", _texture(source, int(inputs.get("paint_mask_surface", -1)), "ao_texture", Color.BLACK))
+	# Revision-1 Workshop packages predate standalone PNG payloads. Missing paths must
+	# permanently fall back to their embedded GLB textures so published cars keep rendering.
+	var albedo_override := _load_packaged_texture(String(record.get("albedo_texture_path", "")))
+	var normal_override := _load_packaged_texture(String(record.get("normal_texture_path", "")))
+	var paint_mask_override := _load_packaged_texture(String(record.get("paint_mask_texture_path", "")))
+	material.set_shader_parameter("in_albedo", albedo_override if albedo_override != null else _texture(source, int(inputs.get("albedo_surface", -1)), "albedo_texture", Color.WHITE))
+	material.set_shader_parameter("in_normal", normal_override if normal_override != null else _texture(source, int(inputs.get("normal_surface", -1)), "normal_texture", Color(0.5, 0.5, 1.0, 1.0)))
+	material.set_shader_parameter("in_paint_mask", paint_mask_override if paint_mask_override != null else _texture(source, int(inputs.get("paint_mask_surface", -1)), "ao_texture", Color.BLACK))
+	material.set_shader_parameter("use_mesh_normals", bool(inputs.get("use_mesh_normals", false)))
 	material.set_shader_parameter("livery_colour_strength", 1.0)
 	return material
+
+func _load_packaged_texture(path: String) -> Texture2D:
+	if path.is_empty() or !FileAccess.file_exists(path):
+		return null
+	var image := Image.load_from_file(path)
+	if image == null or image.is_empty():
+		return null
+	return ImageTexture.create_from_image(image)
 
 func _texture(source: Mesh, surface: int, property: StringName, fallback: Color) -> Texture2D:
 	if source != null and surface >= 0 and surface < source.get_surface_count():

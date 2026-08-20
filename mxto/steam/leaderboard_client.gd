@@ -6,6 +6,7 @@ signal submission_completed(result: Dictionary)
 
 const CONFIG_PATH := "res://steam/leaderboard_service.json"
 const QUEUE_PATH := "user://steam_leaderboard_submissions.json"
+const SUBMISSION_REPLAY_ROOT := "user://leaderboard_submission_replays"
 const MAX_PENDING_SUBMISSIONS := 32
 const MAX_REJECTED_SUBMISSIONS := 32
 const MAX_COMPLETED_SUBMISSIONS := 32
@@ -65,8 +66,12 @@ func _allowed_replay_path(path: String) -> bool:
 	if path.is_empty() or !FileAccess.file_exists(path):
 		return false
 	var replay_root := ProjectSettings.globalize_path("user://replays").simplify_path().to_lower()
+	var submission_root := ProjectSettings.globalize_path(SUBMISSION_REPLAY_ROOT).simplify_path().to_lower()
 	var absolute_path := ProjectSettings.globalize_path(path).simplify_path().to_lower()
-	return absolute_path.begins_with(replay_root + "/") or absolute_path.begins_with(replay_root + "\\")
+	return absolute_path.begins_with(replay_root + "/") \
+		or absolute_path.begins_with(replay_root + "\\") \
+		or absolute_path.begins_with(submission_root + "/") \
+		or absolute_path.begins_with(submission_root + "\\")
 
 func _load_queue() -> void:
 	pending.clear()

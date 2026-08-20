@@ -1,5 +1,15 @@
 class_name VehicleEditorCurveGraph extends Control
 
+
+class PlotControl:
+	extends Control
+
+	var graph: Control
+
+
+	func _draw() -> void:
+		graph._draw_plot(self)
+
 signal curve_committed(keys: Array)
 signal curve_preview_changed(keys: Array)
 signal edit_started
@@ -22,6 +32,7 @@ const HANDLE_RADIUS := 7.0
 const KEY_HIT_RADIUS := 11.0
 const MIN_VIEW_SPAN := 0.000000001
 const MAX_VIEW_SPAN := 1.0e30
+const GRID_MIN_SPACING_PIXELS := 44.0
 
 var session: MxtCarAuthoringSession
 var layer_name := "base"
@@ -47,15 +58,29 @@ var y_max := 1.0
 var read_only := false
 var derived_display := false
 var unit_label := "scalar"
+var plot: PlotControl
+var view_by_curve: Dictionary = {}
 
 
 func _ready() -> void:
 	focus_mode = Control.FOCUS_ALL
 	mouse_default_cursor_shape = Control.CURSOR_CROSS
 	custom_minimum_size = Vector2(520.0, 260.0)
+	plot = PlotControl.new()
+	plot.graph = self
+	plot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	plot.show_behind_parent = true
+	add_child(plot)
+	RenderingServer.canvas_item_set_clip(plot.get_canvas_item(), true)
+	resized.connect(_sync_plot_rect)
+	_sync_plot_rect()
 
 
 func show_curve(authoring_session: MxtCarAuthoringSession, layer: String, stat: String) -> void:
+	if session != authoring_session:
+		view_by_curve.clear()
+	elif session != null:
+		view_by_curve[_curve_view_key(layer_name, stat_name)] = Vector2(y_min, y_max)
 	_cancel_local_interaction(false)
 	session = authoring_session
 	layer_name = layer
@@ -73,8 +98,15 @@ func show_curve(authoring_session: MxtCarAuthoringSession, layer: String, stat: 
 		active_id = int(keys[0]["_editor_id"])
 		selected_ids[active_id] = true
 	_update_selected_index()
-	_frame_y_view()
-	queue_redraw()
+	var view_key := _curve_view_key(layer_name, stat_name)
+	if view_by_curve.has(view_key):
+		var saved_view: Vector2 = view_by_curve[view_key]
+		y_min = saved_view.x
+		y_max = saved_view.y
+	else:
+		_frame_y_view()
+		view_by_curve[view_key] = Vector2(y_min, y_max)
+	_queue_graph_redraw()
 	key_selected.emit(selected_key)
 
 
@@ -84,12 +116,12 @@ func set_display_context(is_read_only: bool, is_derived: bool, unit: String) -> 
 	unit_label = unit
 	if read_only and interaction != Interaction.IDLE and interaction != Interaction.PAN_Y:
 		_cancel_local_interaction(true)
-	queue_redraw()
+	_queue_graph_redraw()
 
 
 func set_sample_setting(value: float) -> void:
 	sample_setting = clampf(value, 0.0, 1.0)
-	queue_redraw()
+	_queue_graph_redraw()
 
 
 func cancel_active_edit() -> void:
@@ -116,10 +148,64 @@ func set_keys(value: Array, commit := false) -> void:
 		selected_ids[active_id] = true
 	_update_selected_index()
 	_frame_y_view()
-	queue_redraw()
+	_queue_graph_redraw()
 	key_selected.emit(selected_key)
 	if commit:
 		curve_committed.emit(get_keys())
+
+
+func sync_keys(value: Array) -> void:
+	_cancel_local_interaction(false)
+	var replacement: Array = []
+	for item in value:
+		var replacement_key: Dictionary = Dictionary(item).duplicate(true)
+		replacement_key["_editor_id"] = next_id
+		next_id += 1
+		replacement.append(replacement_key)
+	_sort_keys(replacement)
+	if replacement.size() == keys.size():
+		for i in range(replacement.size()):
+			replacement[i]["_editor_id"] = int(keys[i]["_editor_id"])
+	else:
+		var claimed_ids: Dictionary = {}
+		for replacement_key_value in replacement:
+			var replacement_key: Dictionary = replacement_key_value
+			var matched_id := -1
+			for current_key_value in keys:
+				var current_key: Dictionary = current_key_value
+				var current_id := int(current_key["_editor_id"])
+				if !claimed_ids.has(current_id) and _same_key(current_key, replacement_key):
+					matched_id = current_id
+					break
+			if matched_id >= 0:
+				replacement_key["_editor_id"] = matched_id
+			claimed_ids[int(replacement_key["_editor_id"])] = true
+	keys = replacement
+	var surviving_ids: Dictionary = {}
+	for key_value in keys:
+		surviving_ids[int(key_value["_editor_id"])] = true
+	for selected_id in selected_ids.keys():
+		if !surviving_ids.has(int(selected_id)):
+			selected_ids.erase(selected_id)
+	if !surviving_ids.has(active_id):
+		active_id = int(selected_ids.keys().back()) if !selected_ids.is_empty() else -1
+	if selected_ids.is_empty() and !keys.is_empty():
+		active_id = int(keys[0]["_editor_id"])
+		selected_ids[active_id] = true
+	_update_selected_index()
+	_queue_graph_redraw()
+	key_selected.emit(selected_key)
+
+
+func _same_key(a: Dictionary, b: Dictionary) -> bool:
+	return is_equal_approx(float(a["time"]), float(b["time"])) \
+		and is_equal_approx(float(a["value"]), float(b["value"])) \
+		and is_equal_approx(float(a["tangent_in"]), float(b["tangent_in"])) \
+		and is_equal_approx(float(a["tangent_out"]), float(b["tangent_out"]))
+
+
+func _curve_view_key(layer: String, stat: String) -> String:
+	return "%s/%s" % [layer, stat]
 
 
 func _keys_with_ids(source: Array) -> Array:
@@ -145,38 +231,14 @@ func _sort_keys(target: Array = keys) -> void:
 
 func _draw() -> void:
 	var rect := _graph_rect()
-	draw_rect(rect, Color(0.025, 0.035, 0.05, 0.92), true)
-	for i in range(11):
-		var x := rect.position.x + rect.size.x * float(i) / 10.0
-		draw_line(Vector2(x, rect.position.y), Vector2(x, rect.end.y), Color(0.2, 0.3, 0.42, 0.35), 1.0)
-	for i in range(5):
-		var y := rect.position.y + rect.size.y * float(i) / 4.0
-		draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), Color(0.2, 0.3, 0.42, 0.35), 1.0)
-	_draw_reference_line(rect, 0.0, Color(0.65, 0.7, 0.8, 0.42), 1.5)
-	_draw_reference_line(rect, 1.0, Color(0.42, 0.65, 0.48, 0.35), 1.0)
-	var sample_x := rect.position.x + rect.size.x * sample_setting
-	draw_line(Vector2(sample_x, rect.position.y), Vector2(sample_x, rect.end.y), Color(1.0, 0.62, 0.18, 0.8), 2.0)
-	if !keys.is_empty():
-		var points := PackedVector2Array()
-		for i in range(257):
-			var t := float(i) / 256.0
-			points.push_back(_graph_point(rect, t, _sample_local(t)))
-		if points.size() >= 2:
-			var curve_colour := Color(0.68, 0.42, 1.0) if derived_display else Color(0.25, 0.68, 1.0)
-			draw_polyline(points, curve_colour, 2.5, true)
-		_draw_selected_handles(rect)
-		for key_value in keys:
-			var key: Dictionary = key_value
-			var key_id := int(key["_editor_id"])
-			var point := _graph_point(rect, float(key["time"]), float(key["value"]))
-			var selected := selected_ids.has(key_id)
-			var colour := Color(0.95, 0.3, 0.25)
-			if selected:
-				colour = Color(1.0, 0.72, 0.18) if key_id == active_id else Color(1.0, 0.48, 0.16)
-			draw_circle(point, 7.0 if key_id == active_id else (6.0 if selected else 5.0), colour)
 	var font := get_theme_default_font()
-	draw_string(font, Vector2(4.0, rect.position.y + 10.0), _format_axis(y_max), HORIZONTAL_ALIGNMENT_LEFT, 48.0, 12)
-	draw_string(font, Vector2(4.0, rect.end.y), _format_axis(y_min), HORIZONTAL_ALIGNMENT_LEFT, 48.0, 12)
+	var y_step := _grid_step(y_max - y_min, rect.size.y)
+	var first_y_value := ceilf(y_min / y_step) * y_step
+	var y_line_count := clampi(int(floor((y_max - first_y_value) / y_step)) + 1, 0, 512)
+	for i in range(y_line_count):
+		var y_value := first_y_value + float(i) * y_step
+		var y := _graph_point(rect, 0.0, y_value).y
+		draw_string(font, Vector2(2.0, y + 4.0), _format_axis(y_value), HORIZONTAL_ALIGNMENT_RIGHT, 46.0, 12)
 	draw_string(font, Vector2(rect.position.x, size.y - 8.0), "0.0", HORIZONTAL_ALIGNMENT_LEFT, 40.0, 12)
 	draw_string(font, Vector2(rect.end.x - 36.0, size.y - 8.0), "1.0", HORIZONTAL_ALIGNMENT_RIGHT, 36.0, 12)
 	draw_string(font, Vector2(rect.end.x - 180.0, rect.position.y + 14.0), unit_label, HORIZONTAL_ALIGNMENT_RIGHT, 180.0, 12, Color(0.7, 0.78, 0.9))
@@ -186,14 +248,56 @@ func _draw() -> void:
 	draw_string(font, Vector2(rect.position.x + 8.0, rect.position.y + 15.0), state_text, HORIZONTAL_ALIGNMENT_LEFT, 380.0, 12, Color(0.85, 0.72, 1.0) if derived_display else Color(0.72, 0.8, 0.9))
 
 
-func _draw_reference_line(rect: Rect2, value: float, colour: Color, width: float) -> void:
+func _draw_plot(canvas: Control) -> void:
+	var rect := Rect2(Vector2.ZERO, canvas.size)
+	canvas.draw_rect(rect, Color(0.025, 0.035, 0.05, 0.92), true)
+	var grid_colour := Color(0.2, 0.3, 0.42, 0.35)
+	var x_step := _grid_step(1.0, rect.size.x)
+	var x_line_count := clampi(int(floor(1.0 / x_step)) + 1, 0, 512)
+	for i in range(x_line_count):
+		var x_value := float(i) * x_step
+		var x := _graph_point(rect, x_value, y_min).x
+		canvas.draw_line(Vector2(x, rect.position.y), Vector2(x, rect.end.y), grid_colour, 1.0)
+	var y_step := _grid_step(y_max - y_min, rect.size.y)
+	var first_y_value := ceilf(y_min / y_step) * y_step
+	var y_line_count := clampi(int(floor((y_max - first_y_value) / y_step)) + 1, 0, 512)
+	for i in range(y_line_count):
+		var y_value := first_y_value + float(i) * y_step
+		var y := _graph_point(rect, 0.0, y_value).y
+		canvas.draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), grid_colour, 1.0)
+	_draw_reference_line(canvas, rect, 0.0, Color(0.65, 0.7, 0.8, 0.42), 1.5)
+	_draw_reference_line(canvas, rect, 1.0, Color(0.42, 0.65, 0.48, 0.35), 1.0)
+	var sample_x := rect.position.x + rect.size.x * sample_setting
+	canvas.draw_line(Vector2(sample_x, rect.position.y), Vector2(sample_x, rect.end.y), Color(1.0, 0.62, 0.18, 0.8), 2.0)
+	if keys.is_empty():
+		return
+	var points := PackedVector2Array()
+	for i in range(257):
+		var t := float(i) / 256.0
+		points.push_back(_graph_point(rect, t, _sample_local(t)))
+	if points.size() >= 2:
+		var curve_colour := Color(0.68, 0.42, 1.0) if derived_display else Color(0.25, 0.68, 1.0)
+		canvas.draw_polyline(points, curve_colour, 2.5, true)
+	_draw_selected_handles(canvas, rect)
+	for key_value in keys:
+		var key: Dictionary = key_value
+		var key_id := int(key["_editor_id"])
+		var point := _graph_point(rect, float(key["time"]), float(key["value"]))
+		var selected := selected_ids.has(key_id)
+		var colour := Color(0.95, 0.3, 0.25)
+		if selected:
+			colour = Color(1.0, 0.72, 0.18) if key_id == active_id else Color(1.0, 0.48, 0.16)
+		canvas.draw_circle(point, 7.0 if key_id == active_id else (6.0 if selected else 5.0), colour)
+
+
+func _draw_reference_line(canvas: Control, rect: Rect2, value: float, colour: Color, width: float) -> void:
 	if value < y_min or value > y_max:
 		return
 	var y := _graph_point(rect, 0.0, value).y
-	draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), colour, width)
+	canvas.draw_line(Vector2(rect.position.x, y), Vector2(rect.end.x, y), colour, width)
 
 
-func _draw_selected_handles(rect: Rect2) -> void:
+func _draw_selected_handles(canvas: Control, rect: Rect2) -> void:
 	for i in range(keys.size()):
 		var key: Dictionary = keys[i]
 		if !selected_ids.has(int(key["_editor_id"])):
@@ -201,12 +305,17 @@ func _draw_selected_handles(rect: Rect2) -> void:
 		var key_point := _graph_point(rect, float(key["time"]), float(key["value"]))
 		if i > 0:
 			var in_point := _handle_point(rect, i, true)
-			draw_line(key_point, in_point, Color(0.35, 0.85, 0.95, 0.8), 1.5)
-			draw_circle(in_point, HANDLE_RADIUS, Color(0.3, 0.95, 0.88) if interaction == Interaction.HANDLE_IN and interaction_handle_id == int(key["_editor_id"]) else Color(0.2, 0.65, 0.8))
+			canvas.draw_line(key_point, in_point, Color(0.35, 0.85, 0.95, 0.8), 1.5)
+			canvas.draw_circle(in_point, HANDLE_RADIUS, Color(0.3, 0.95, 0.88) if interaction == Interaction.HANDLE_IN and interaction_handle_id == int(key["_editor_id"]) else Color(0.2, 0.65, 0.8))
 		if i + 1 < keys.size():
 			var out_point := _handle_point(rect, i, false)
-			draw_line(key_point, out_point, Color(0.35, 0.85, 0.95, 0.8), 1.5)
-			draw_circle(out_point, HANDLE_RADIUS, Color(0.3, 0.95, 0.88) if interaction == Interaction.HANDLE_OUT and interaction_handle_id == int(key["_editor_id"]) else Color(0.2, 0.65, 0.8))
+			canvas.draw_line(key_point, out_point, Color(0.35, 0.85, 0.95, 0.8), 1.5)
+			canvas.draw_circle(out_point, HANDLE_RADIUS, Color(0.3, 0.95, 0.88) if interaction == Interaction.HANDLE_OUT and interaction_handle_id == int(key["_editor_id"]) else Color(0.2, 0.65, 0.8))
+
+
+func _grid_step(span: float, pixel_span: float) -> float:
+	var minimum_step := maxf(span, MIN_VIEW_SPAN) * GRID_MIN_SPACING_PIXELS / maxf(pixel_span, 1.0)
+	return pow(2.0, ceilf(log(minimum_step) / log(2.0)))
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -227,7 +336,13 @@ func _gui_input(event: InputEvent) -> void:
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
 	grab_focus()
-	if interaction in [Interaction.GRAB, Interaction.ROTATE, Interaction.SCALE] and event.pressed:
+	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed \
+			and interaction in [Interaction.GRAB, Interaction.ROTATE, Interaction.SCALE, Interaction.HANDLE_IN, Interaction.HANDLE_OUT]:
+		_cancel_local_interaction(true)
+		accept_event()
+		return
+	if event.button_index == MOUSE_BUTTON_LEFT and event.pressed \
+			and interaction in [Interaction.GRAB, Interaction.ROTATE, Interaction.SCALE]:
 		_commit_interaction()
 		accept_event()
 		return
@@ -247,7 +362,7 @@ func _handle_mouse_button(event: InputEventMouseButton) -> void:
 			pan_source_max = y_max
 		else:
 			interaction = Interaction.IDLE
-		queue_redraw()
+			_queue_graph_redraw()
 		accept_event()
 		return
 	if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
@@ -279,7 +394,7 @@ func _handle_key(event: InputEventKey) -> void:
 		return
 	if event.keycode == KEY_HOME:
 		_frame_y_view()
-		queue_redraw()
+		_queue_graph_redraw()
 		accept_event()
 		return
 	if read_only or layer_name == "s_boost" or selected_ids.is_empty() or interaction != Interaction.IDLE:
@@ -301,7 +416,7 @@ func _handle_mouse_motion(event: InputEventMouseMotion) -> void:
 		var delta := (event.position.y - interaction_mouse_start.y) * span / maxf(_graph_rect().size.y, 1.0)
 		y_min = pan_source_min + delta
 		y_max = pan_source_max + delta
-		queue_redraw()
+		_queue_graph_redraw()
 		accept_event()
 		return
 	if interaction == Interaction.GRAB:
@@ -341,7 +456,7 @@ func _select_at(position: Vector2, toggle: bool) -> void:
 			selected_ids[key_id] = true
 			active_id = key_id
 	_update_selected_index()
-	queue_redraw()
+	_queue_graph_redraw()
 	key_selected.emit(selected_key)
 
 
@@ -350,12 +465,12 @@ func _begin_keyboard_transform(kind: Interaction) -> void:
 	interaction_source = keys.duplicate(true)
 	interaction_center = _selection_center_screen(interaction_source)
 	interaction_mouse_start = last_mouse_position
-	if interaction_mouse_start.distance_to(interaction_center) < 8.0:
+	if kind != Interaction.GRAB and interaction_mouse_start.distance_to(interaction_center) < 8.0:
 		interaction_mouse_start = interaction_center + Vector2(80.0, 0.0)
 	last_preview_msec = 0
 	interaction_changed = false
 	edit_started.emit()
-	queue_redraw()
+	_queue_graph_redraw()
 
 
 func _begin_handle_drag(key_id: int, incoming: bool, position: Vector2) -> void:
@@ -366,7 +481,7 @@ func _begin_handle_drag(key_id: int, incoming: bool, position: Vector2) -> void:
 	last_preview_msec = 0
 	interaction_changed = false
 	edit_started.emit()
-	queue_redraw()
+	_queue_graph_redraw()
 
 
 func _apply_grab(position: Vector2) -> void:
@@ -448,7 +563,7 @@ func _apply_handle_drag(position: Vector2) -> void:
 func _preview_interaction() -> void:
 	interaction_changed = true
 	_update_selected_index()
-	queue_redraw()
+	_queue_graph_redraw()
 	key_selected.emit(selected_key)
 	var now := Time.get_ticks_msec()
 	if last_preview_msec == 0 or now >= last_preview_msec + PREVIEW_DEBOUNCE_MSEC:
@@ -471,7 +586,7 @@ func _commit_interaction() -> void:
 	interaction_changed = false
 	curve_committed.emit(get_keys())
 	key_selected.emit(selected_key)
-	queue_redraw()
+	_queue_graph_redraw()
 
 
 func _cancel_local_interaction(notify_session: bool) -> void:
@@ -485,7 +600,7 @@ func _cancel_local_interaction(notify_session: bool) -> void:
 	interaction_source.clear()
 	interaction_handle_id = -1
 	interaction_changed = false
-	queue_redraw()
+	_queue_graph_redraw()
 	key_selected.emit(selected_key)
 
 
@@ -542,7 +657,7 @@ func _zoom_y(position: Vector2, factor: float) -> void:
 	var anchor := y_max - ratio * old_span
 	y_max = anchor + ratio * new_span
 	y_min = y_max - new_span
-	queue_redraw()
+	_queue_graph_redraw()
 
 
 func _frame_y_view() -> void:
@@ -626,6 +741,21 @@ func _update_selected_index() -> void:
 	selected_key = _index_for_id(active_id)
 
 
+func _sync_plot_rect() -> void:
+	if plot == null:
+		return
+	var rect := _graph_rect()
+	plot.position = rect.position
+	plot.size = rect.size
+	plot.queue_redraw()
+
+
+func _queue_graph_redraw() -> void:
+	queue_redraw()
+	if plot != null:
+		plot.queue_redraw()
+
+
 func _graph_rect() -> Rect2:
 	return Rect2(Vector2(54.0, 20.0), Vector2(maxf(size.x - 70.0, 1.0), maxf(size.y - 50.0, 1.0)))
 
@@ -674,10 +804,10 @@ func _format_axis(value: float) -> String:
 
 func _interaction_name() -> String:
 	match interaction:
-		Interaction.GRAB: return "G · Grab · click/Enter confirm · Esc cancel"
-		Interaction.ROTATE: return "R · Rotate · click/Enter confirm · Esc cancel"
-		Interaction.SCALE: return "S · Scale · click/Enter confirm · Esc cancel"
-		Interaction.HANDLE_IN: return "Incoming tangent"
-		Interaction.HANDLE_OUT: return "Outgoing tangent"
+		Interaction.GRAB: return "G · Grab · LMB/Enter confirm · RMB/Esc cancel"
+		Interaction.ROTATE: return "R · Rotate · LMB/Enter confirm · RMB/Esc cancel"
+		Interaction.SCALE: return "S · Scale · LMB/Enter confirm · RMB/Esc cancel"
+		Interaction.HANDLE_IN: return "Incoming tangent · release confirm · RMB/Esc cancel"
+		Interaction.HANDLE_OUT: return "Outgoing tangent · release confirm · RMB/Esc cancel"
 		Interaction.PAN_Y: return "Pan Y"
 	return "RMB select · Shift+RMB multi · G/R/S · wheel zoom · MMB pan · Home frame"

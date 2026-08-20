@@ -55,6 +55,7 @@ const RACE_RESULTS_MUSIC_DELAY_SECONDS := 2.0
 const RACE_RESULTS_MUSIC_INTRO := "res://content/base/music/raceresults_intro.ogg"
 const RACE_RESULTS_MUSIC_LOOP := "res://content/base/music/raceresults_loop.ogg"
 const RACE_FINISH_WHOOSH_STREAM := preload("res://sfx/whoosh.wav")
+const DEFAULT_VEHICLE_BOOST_STREAM := preload("res://sfx/vehicle/boost/PACK1-110.wav")
 const RACE_FINISH_SFX_DUCK_BUS := &"SFX"
 const RACE_FINISH_SFX_DUCK_DB := -8.0
 const RACE_FINISH_SFX_DUCK_DELAY_SECONDS := 1.0
@@ -115,6 +116,8 @@ func configure_vehicle_properties(definitions: Array) -> void:
 		var boost_sfx: AudioStream = null
 		if definition != null:
 			boost_sfx = definition.manual_boost_sfx
+		if boost_sfx == null:
+			boost_sfx = DEFAULT_VEHICLE_BOOST_STREAM
 		spatial_audio.call("set_vehicle_manual_boost_stream", i, boost_sfx)
 
 func _play_ui_sfx(stream: AudioStream, volume_db: float = 0.0, pitch_scale: float = 1.0) -> void:

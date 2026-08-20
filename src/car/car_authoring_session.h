@@ -48,6 +48,7 @@ private:
 	int32_t albedo_surface = -1;
 	int32_t normal_surface = -1;
 	int32_t paint_mask_surface = -1;
+	bool use_mesh_normals = false;
 	struct Thruster {
 		Vector3 position;
 		Vector3 rotation_degrees;
@@ -66,6 +67,7 @@ private:
 		int32_t albedo_surface = -1;
 		int32_t normal_surface = -1;
 		int32_t paint_mask_surface = -1;
+		bool use_mesh_normals = false;
 		std::vector<Thruster> thrusters;
 	};
 	std::vector<HistorySnapshot> undo_history;

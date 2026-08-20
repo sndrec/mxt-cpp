@@ -74,6 +74,8 @@ struct PhysicsCarFloorProfile {
 	X(float, stat_grip_3, 0.0f) \
 	X(float, stat_turn_tension, 0.0f) \
 	X(float, stat_turn_movement, 0.0f) \
+	X(float, stat_drift_turn_movement, 0.0f) \
+	X(float, stat_max_turn_rate, 200.0f) \
 	X(float, stat_strafe_turn, 0.0f) \
 	X(float, stat_strafe, 0.0f) \
 	X(float, stat_turn_reaction, 0.0f) \

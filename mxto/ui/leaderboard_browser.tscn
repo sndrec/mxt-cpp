@@ -62,12 +62,17 @@ text = "Replay availability is shown by the selected retained entry."
 [node name="History" type="VBoxContainer" parent="."]
 layout_mode = 2
 
-[node name="Details" type="RichTextLabel" parent="History"]
+[node name="DetailsScroll" type="ScrollContainer" parent="History"]
 custom_minimum_size = Vector2(0, 150)
 layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="Details" type="RichTextLabel" parent="History/DetailsScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 bbcode_enabled = true
 fit_content = true
-scroll_active = true
+scroll_active = false
 
 [node name="Actions" type="HBoxContainer" parent="History"]
 layout_mode = 2

@@ -38,7 +38,7 @@ static func _runtime_flags_are_clean(replay: Dictionary) -> bool:
 		and !bool(flags.get("debug_rail_trace", true))
 
 static func _frames_are_canonical(frames: Array, racer_id: int) -> bool:
-	if frames.is_empty() or frames.size() > MAX_REPLAY_TICKS:
+	if frames.is_empty():
 		return false
 	var string_id := str(racer_id)
 	for tick in range(frames.size()):
@@ -125,6 +125,12 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 		return reject("track_workshop_identity_mismatch")
 
 	var player_settings: Dictionary = settings[0]
+	var machine_setting_value = player_settings.get("accel_setting", null)
+	if typeof(machine_setting_value) != TYPE_FLOAT and typeof(machine_setting_value) != TYPE_INT:
+		return reject("invalid_player_settings")
+	var machine_setting := float(machine_setting_value)
+	if !is_finite(machine_setting) or machine_setting < 0.0 or machine_setting > 1.0:
+		return reject("invalid_player_settings")
 	var vehicle_id := String(player_settings.get("vehicle_content_id", ""))
 	var vehicle_digest := String(player_settings.get("vehicle_gameplay_digest", ""))
 	var vehicle_record: Dictionary = game_manager.vehicle_content_controller.content_catalog.resolve_content(vehicle_id)
@@ -136,9 +142,13 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 		return reject("vehicle_identity_mismatch")
 
 	var frames_value = replay.get("frames", [])
-	if typeof(frames_value) != TYPE_ARRAY or !_frames_are_canonical(frames_value as Array, racer_id):
+	if typeof(frames_value) != TYPE_ARRAY:
 		return reject("noncanonical_frames")
 	var frames: Array = frames_value
+	if frames.size() > MAX_REPLAY_TICKS:
+		return reject("replay_too_long")
+	if !_frames_are_canonical(frames, racer_id):
+		return reject("noncanonical_frames")
 	if int(replay.get("duration_ticks", -1)) != frames.size():
 		return reject("duration_mismatch")
 	var finish_times_value = replay.get("finish_times", {})
@@ -163,6 +173,7 @@ static func validate(game_manager: GameManager, replay: Dictionary) -> Dictionar
 		"track_gameplay_digest": track_digest,
 		"vehicle_content_id": vehicle_id,
 		"vehicle_gameplay_digest": vehicle_digest,
+		"machine_setting_percent": roundi(machine_setting * 100.0),
 		"ruleset_revision": TimeAttackRulesClass.RULESET_REVISION,
 		"replay_schema_version": int(replay.get("schema_version", -1)),
 		"game_version": replay.get("game_version", {}).duplicate(true) if typeof(replay.get("game_version", {})) == TYPE_DICTIONARY else {},

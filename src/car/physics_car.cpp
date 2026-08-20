@@ -54,11 +54,19 @@ void PhysicsCar::handle_steering()
 		return;
 	}
 
-	float turn_movement = soa->stat_turn_movement[soa_index];
+	uint8_t drifting_corner_count = 0;
+	for (int corner = 0; corner < 4; ++corner) {
+		drifting_corner_count +=
+			(soa->tilt_state[POINT_INDEX(corner)] & TILTSTATE::DRIFT) != 0u ? 1u : 0u;
+	}
+	const bool drifting = drifting_corner_count != 0;
+	float turn_movement = drifting
+		? soa->stat_drift_turn_movement[soa_index]
+		: soa->stat_turn_movement[soa_index];
 	float strafe_turn = soa->stat_strafe_turn[soa_index];
+	CarStatModifierLayer technique_layer = CAR_MODIFIER_LAYER_COUNT;
+	float technique_intensity = 0.0f;
 	if (soa->car_properties[soa_index] != nullptr) {
-		CarStatModifierLayer technique_layer = CAR_MODIFIER_LAYER_COUNT;
-		float technique_intensity = 0.0f;
 		compute_technique_modifier(true, technique_layer, technique_intensity);
 		const bool s_boost_active = soa->s_boost_active[soa_index];
 		const bool manual_boost_active =
@@ -68,18 +76,14 @@ void PhysicsCar::handle_steering()
 		const CarStatModifierLayer boost_layer = classify_car_boost_modifier(
 			manual_boost_active, dashplate_boost_active, s_boost_active);
 		const PhysicsCarProperties &properties = *soa->car_properties[soa_index];
-		turn_movement = evaluate_car_stat(properties, CAR_STAT_TURN_MOVEMENT,
+		turn_movement = evaluate_car_stat(properties,
+			drifting ? CAR_STAT_DRIFT_TURN_MOVEMENT : CAR_STAT_TURN_MOVEMENT,
 			technique_layer, technique_intensity, boost_layer, s_boost_active);
 		strafe_turn = evaluate_car_stat(properties, CAR_STAT_STRAFE_TURN,
 			technique_layer, technique_intensity, boost_layer, s_boost_active);
 	}
 
-	float strafe_turn_mod = 1.0f;
-	for (int i = 0; i < 4; ++i) {
-		if (soa->tilt_state[POINT_INDEX(i)] & TILTSTATE::DRIFT) {
-			strafe_turn_mod -= 0.25f;
-		}
-	}
+	const float strafe_turn_mod = 1.0f - 0.25f * static_cast<float>(drifting_corner_count);
 
 	float steer_strength =
 	(turn_movement + strafe_turn_mod * strafe_turn * soa->input_strafe[soa_index] *
@@ -89,10 +93,31 @@ void PhysicsCar::handle_steering()
 		steer_strength *= 0.3f;
 	}
 
-	soa->velocity_angular_y[soa_index] += 1.5f * steer_strength;
+	const float yaw_before = soa->velocity_angular_y[soa_index];
+	const float steering_yaw_delta = 1.5f * steer_strength;
+	soa->velocity_angular_y[soa_index] += steering_yaw_delta;
 
 	if (std::abs(soa->velocity_angular_y[soa_index]) < 1.0f) {
 		soa->velocity_angular_y[soa_index] = 0.0f;
+	}
+	if (trace_yaw_for_car(soa, soa_index)) {
+		godot::UtilityFunctions::print(
+			godot::String("MXT_YAW_STEER tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), soa->global_start + soa_index,
+			godot::String(" speed_kmh="), soa->speed_kmh[soa_index],
+			godot::String(" state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->machine_state[soa_index]), 16),
+			godot::String(" steer="), soa->input_steer_yaw[soa_index],
+			godot::String(" strafe="), soa->input_strafe[soa_index],
+			godot::String(" drift_corners="), drifting_corner_count,
+			godot::String(" technique="), static_cast<int64_t>(technique_layer),
+			godot::String(" intensity="), technique_intensity,
+			godot::String(" turn_movement="), turn_movement,
+			godot::String(" strafe_turn="), strafe_turn,
+			godot::String(" strafe_turn_mod="), strafe_turn_mod,
+			godot::String(" steer_strength="), steer_strength,
+			godot::String(" yaw_before="), yaw_before,
+			godot::String(" yaw_delta="), steering_yaw_delta,
+			godot::String(" yaw_after="), soa->velocity_angular_y[soa_index]);
 	}
 
 };
@@ -293,6 +318,10 @@ void PhysicsCar::apply_machine_turn_and_strafe(
 	float speed_factor, const SimTransform& steer_basis)
 {
 	const int p = POINT_INDEX(point_lane);
+	const bool trace_yaw = trace_yaw_for_car(soa, soa_index);
+	const float yaw_entry = soa->velocity_angular_y[soa_index];
+	const float drift_delta_entry = drift_delta;
+	float turn_applied_force = 0.0f;
 
     // ───────────── Global state modifiers ─────────────
     if (soa->machine_state[soa_index] & (MACHINESTATE::JUSTHITVEHICLE_Q | MACHINESTATE::LOWGRIP | MACHINESTATE::TOOKDAMAGE | MACHINESTATE::SIDEATTACKING))
@@ -353,6 +382,7 @@ void PhysicsCar::apply_machine_turn_and_strafe(
         } else if (soa->terrain_state[soa_index] & TERRAIN::DIRT) {
             applied_force *= 2.0f;
         }
+		turn_applied_force = applied_force;
 
         SimVec3 local_force(applied_force, 0.0f, 0.0f);
         SimVec3 world_force = mxt_basis_rotate(steer_basis, local_force);
@@ -371,12 +401,38 @@ void PhysicsCar::apply_machine_turn_and_strafe(
     if (soa->rail_collision_timer[soa_index] < 6) {
         apply_torque_from_force(LOAD_TILT_VEC3(offset, p), LOAD_TILT_VEC3(force_spatial, p));
     }
+	const float yaw_after_torque = soa->velocity_angular_y[soa_index];
 
+	const float feedback_angle_velocity = in_angle_vel;
     if (was_drifting && (soa->machine_state[soa_index] & MACHINESTATE::JUSTHITVEHICLE_Q) == 0) {
         in_angle_vel *= soa->stat_grip_2[soa_index];
     }
 
-	soa->velocity_angular_y[soa_index] -= 0.125f * in_angle_vel;
+	const float yaw_feedback_delta = -0.125f * in_angle_vel;
+	soa->velocity_angular_y[soa_index] += yaw_feedback_delta;
+	if (trace_yaw) {
+		const SimVec3 offset = LOAD_TILT_VEC3(offset, p);
+		const SimVec3 force_world = LOAD_TILT_VEC3(force_spatial, p);
+		const SimVec3 force_local = mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), force_world);
+		godot::UtilityFunctions::print(
+			godot::String("MXT_YAW_CORNER tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), soa->global_start + soa_index,
+			godot::String(" corner="), point_lane,
+			godot::String(" tilt_state=0x"), godot::String::num_int64(static_cast<int64_t>(soa->tilt_state[p]), 16),
+			godot::String(" was_drifting="), was_drifting,
+			godot::String(" speed_factor="), speed_factor,
+			godot::String(" drift_delta_entry="), drift_delta_entry,
+			godot::String(" drift_delta_used="), drift_delta,
+			godot::String(" turn_force="), turn_applied_force,
+			godot::String(" offset=("), offset.x, godot::String(","), offset.y, godot::String(","), offset.z, godot::String(")"),
+			godot::String(" force_local=("), force_local.x, godot::String(","), force_local.y, godot::String(","), force_local.z, godot::String(")"),
+			godot::String(" grip_2="), soa->stat_grip_2[soa_index],
+			godot::String(" feedback_source="), feedback_angle_velocity,
+			godot::String(" yaw_entry="), yaw_entry,
+			godot::String(" yaw_torque_delta="), yaw_after_torque - yaw_entry,
+			godot::String(" yaw_feedback_delta="), yaw_feedback_delta,
+			godot::String(" yaw_exit="), soa->velocity_angular_y[soa_index]);
+	}
 };
 
 void PhysicsCar::project_velocity_to_local_frame()
@@ -778,21 +834,16 @@ return final_thrust_output;
 
 void PhysicsCar::handle_angle_velocity()
 {
-	float weight_val = 0.99f;
-
-	if ((soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) == 0) {
-		if ((soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) == 0) {
-			weight_val = 0.05f * soa->weight_derived_2[soa_index];
-		} else {
-			weight_val = 0.2f * soa->weight_derived_2[soa_index];
-		}
-	} else {
+	if (soa->machine_state[soa_index] & MACHINESTATE::AIRBORNE) {
 		soa->velocity_angular_x[soa_index] *= 0.9f;
-		soa->velocity_angular_z[soa_index] *= weight_val;
-		weight_val = soa->weight_derived_2[soa_index];
+		soa->velocity_angular_z[soa_index] *= 0.99f;
 	}
 
-	soa->velocity_angular_y[soa_index] = std::clamp(soa->velocity_angular_y[soa_index], -weight_val, weight_val);
+	const float max_yaw_radians_per_tick =
+		std::max(soa->stat_max_turn_rate[soa_index], 0.0f) * DEG_TO_RAD / _TICKS_PER_SECOND;
+	const float raw_yaw_limit = max_yaw_radians_per_tick * std::abs(soa->weight_derived_2[soa_index]);
+	soa->velocity_angular_y[soa_index] = std::clamp(
+		soa->velocity_angular_y[soa_index], -raw_yaw_limit, raw_yaw_limit);
 };
 
 void PhysicsCar::handle_airborne_controls()
@@ -997,14 +1048,19 @@ void PhysicsCar::handle_drag_and_glide_forces()
 	if (airborne && soa->base_speed[soa_index] > 0.0f) {
 		const float pitch_drag_factor =
 			airborne_pitch_drag_factor(LOAD_TRANSFORM(basis_physical), LOAD_VEC3(track_surface_normal));
-		const float steer = std::sqrt(std::abs(soa->input_steer_yaw[soa_index]));
-		const float airtime_factor = std::clamp(static_cast<float>(soa->air_time[soa_index]) / 60.0f, 0.0f, 1.0f);
-		const float tilt_multiplier = air_steering_drag_tilt_multiplier(soa->air_tilt[soa_index]);
+		float steering_drag_factor = 0.0f;
+		if (soa->height_above_track[soa_index] <= 0.0f) {
+			const float steer = std::sqrt(std::abs(soa->input_steer_yaw[soa_index]));
+			const float airtime_factor = std::clamp(
+				static_cast<float>(soa->air_time[soa_index]) / 60.0f, 0.0f, 1.0f);
+			const float tilt_multiplier = air_steering_drag_tilt_multiplier(soa->air_tilt[soa_index]);
+			steering_drag_factor = steer * airtime_factor * tilt_multiplier *
+				soa->stat_air_glide_steering_speed_loss_factor[soa_index];
+		}
 		const float drag =
 			soa->base_speed[soa_index] *
 			(pitch_drag_factor * soa->stat_air_pitch_up_speed_loss_factor[soa_index] +
-			 steer * airtime_factor * tilt_multiplier *
-			 soa->stat_air_glide_steering_speed_loss_factor[soa_index]);
+			 steering_drag_factor);
 		soa->base_speed[soa_index] = std::max(soa->base_speed[soa_index] - drag, 0.0f);
 	}
 
@@ -1030,6 +1086,8 @@ void PhysicsCar::handle_drag_and_glide_forces()
 void PhysicsCar::rotate_machine_from_angle_velocity()
 {
 	SimVec3 processed_ang_vel;
+	const bool trace_yaw = trace_yaw_for_car(soa, soa_index);
+	const SimVec3 forward_before = LOAD_TRANSFORM(basis_physical).basis.get_column(2);
 
 	const float deadzone_threshold = 3.0f;
 
@@ -1070,6 +1128,20 @@ void PhysicsCar::rotate_machine_from_angle_velocity()
 		SimTransform mxt_tmp = LOAD_TRANSFORM(basis_physical);
 		mxt_tmp.basis = mxt_tmp.basis * SimBasis(delta_q);
 		STORE_TRANSFORM(basis_physical, mxt_tmp);
+	}
+	if (trace_yaw) {
+		const SimVec3 forward_after = LOAD_TRANSFORM(basis_physical).basis.get_column(2);
+		godot::UtilityFunctions::print(
+			godot::String("MXT_YAW_ROTATE tick="), static_cast<int64_t>(soa->simulation_tick[soa_index]),
+			godot::String(" car="), soa->global_start + soa_index,
+			godot::String(" speed_kmh="), soa->speed_kmh[soa_index],
+			godot::String(" angular_raw=("), soa->velocity_angular_x[soa_index], godot::String(","), soa->velocity_angular_y[soa_index], godot::String(","), soa->velocity_angular_z[soa_index], godot::String(")"),
+			godot::String(" rotation_vec=("), processed_ang_vel.x, godot::String(","), processed_ang_vel.y, godot::String(","), processed_ang_vel.z, godot::String(")"),
+			godot::String(" rotation_rad="), rotation_angle_rad,
+			godot::String(" yaw_deg_s="), processed_ang_vel.y * RAD_TO_DEG * _TICKS_PER_SECOND,
+			godot::String(" weight_y="), soa->weight_derived_2[soa_index],
+			godot::String(" forward_before=("), forward_before.x, godot::String(","), forward_before.y, godot::String(","), forward_before.z, godot::String(")"),
+			godot::String(" forward_after=("), forward_after.x, godot::String(","), forward_after.y, godot::String(","), forward_after.z, godot::String(")"));
 	}
 };
 
@@ -1262,6 +1334,8 @@ void PhysicsCar::update_effective_machine_stats(bool include_technique)
 	soa->stat_turn_tension[soa_index] = stat(CAR_STAT_TURN_TENSION);
 	soa->stat_drift_accel[soa_index] = stat(CAR_STAT_DRIFT_ACCEL);
 	soa->stat_turn_movement[soa_index] = stat(CAR_STAT_TURN_MOVEMENT);
+	soa->stat_drift_turn_movement[soa_index] = stat(CAR_STAT_DRIFT_TURN_MOVEMENT);
+	soa->stat_max_turn_rate[soa_index] = stat(CAR_STAT_MAX_TURN_RATE);
 	soa->stat_strafe_turn[soa_index] = stat(CAR_STAT_STRAFE_TURN);
 	soa->stat_strafe[soa_index] = stat(CAR_STAT_STRAFE);
 	soa->stat_turn_reaction[soa_index] = stat(CAR_STAT_TURN_REACTION);
@@ -2818,9 +2892,13 @@ void PhysicsCar::apply_machine_collision_response_from_corners(int corner_collis
 	}
 
 	if (push_magnitude_rail > 0.0023148148f) {
-		if (corner_collision_type_flag & 2)
+		if ((corner_collision_type_flag & 2) && !soa->s_boost_active[soa_index])
 			soa->machine_state[soa_index] |= MACHINESTATE::TOOKDAMAGE;
 	}
+	const bool s_boost_rail_contact =
+		soa->s_boost_active[soa_index] &&
+		(corner_collision_type_flag & 2) != 0 &&
+		push_magnitude_rail > 0.0023148148f;
 
 	bool is_significant_collision_event =
 	(push_magnitude_rail > 0.0046296296f) && (speed_over_weight > 0.0046296296f);
@@ -2831,7 +2909,33 @@ void PhysicsCar::apply_machine_collision_response_from_corners(int corner_collis
 		apply_full_response = true;
 }
 
-if (apply_full_response) {
+if (s_boost_rail_contact) {
+	const SimVec3 rail_collision_push = LOAD_VEC3(collision_push_rail);
+	const SimVec3 rail_response_normal = rail_collision_push.normalized();
+	STORE_VEC3(collision_response, rail_collision_push);
+
+	// S-BOOST rail contact is a tangent projection rather than a bounce. The
+	// rail-facing component is removed without restitution, leaving the car to
+	// grind smoothly along the rail.
+	const SimVec3 velocity_before_slide = LOAD_VEC3(velocity);
+	const float velocity_into_rail = velocity_before_slide.dot(rail_response_normal);
+	if (velocity_into_rail < 0.0f) {
+		STORE_VEC3(velocity, velocity_before_slide - rail_response_normal * velocity_into_rail);
+	}
+
+	// Turn at the authored maximum rate toward the open side of the rail.
+	const SimVec3 rail_normal_local =
+		mxt_basis_inverse_rotate(LOAD_TRANSFORM(basis_physical), rail_response_normal);
+	if (std::abs(rail_normal_local.x) > 0.05f) {
+		const float max_yaw_radians_per_tick =
+			std::max(soa->stat_max_turn_rate[soa_index], 0.0f) * DEG_TO_RAD / _TICKS_PER_SECOND;
+		const float raw_yaw_limit =
+			max_yaw_radians_per_tick * std::abs(soa->weight_derived_2[soa_index]);
+		soa->velocity_angular_y[soa_index] =
+			rail_normal_local.x > 0.0f ? -raw_yaw_limit : raw_yaw_limit;
+	}
+	soa->rail_collision_timer[soa_index] = 20;
+} else if (apply_full_response) {
 	const SimVec3 rail_collision_push = LOAD_VEC3(collision_push_rail);
 	const SimVec3 rail_response_normal = rail_collision_push.normalized();
 	STORE_VEC3(collision_response, rail_collision_push);
@@ -2967,7 +3071,9 @@ if (apply_full_response) {
 			align_machine_y_with_track_normal_immediate();
 	}
 
-} else if ((soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) && speed_over_weight >= 0.0462962962962f) {
+} else if (!soa->s_boost_active[soa_index] &&
+		(soa->machine_state[soa_index] & MACHINESTATE::JUSTLANDED) &&
+		speed_over_weight >= 0.0462962962962f) {
 		SimVec3 up_dir = mxt_basis_rotate(LOAD_TRANSFORM(basis_physical), SimVec3(0, 1, 0)); // get the vehicle's local up direction normal vector
 		float up_dot_track = normalized_safe(up_dir).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));
 		float vel_dot_track = normalized_safe(LOAD_VEC3(velocity)).dot(normalized_safe(LOAD_VEC3(track_surface_normal)));

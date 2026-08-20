@@ -8,6 +8,7 @@ uniform sampler2D in_specwarp : filter_nearest_mipmap_anisotropic, repeat_disabl
 uniform sampler2D in_normal : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_albedo : filter_linear_mipmap_anisotropic, repeat_disable;
 uniform sampler2D in_paint_mask : filter_linear_mipmap_anisotropic, repeat_disable;
+uniform bool use_mesh_normals = false;
 uniform sampler2D cross_hatch : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 in_overlay_colour : source_color;
 uniform float livery_colour_strength = 0.0;
@@ -21,9 +22,11 @@ varying vec3 hatch_normal;
 
 void vertex() {
 	hatch_normal = normalize(MODELVIEW_NORMAL_MATRIX * NORMAL);
-	TANGENT = vec3(1.0, 0.0, 0.0);
-	BINORMAL = vec3(0.0, 0.0, -1.0);
-	NORMAL = vec3(0.0, 1.0, 0.0);
+	if (!use_mesh_normals) {
+		TANGENT = vec3(1.0, 0.0, 0.0);
+		BINORMAL = vec3(0.0, 0.0, -1.0);
+		NORMAL = vec3(0.0, 1.0, 0.0);
+	}
 }
 
 float fresnel(float amount, vec3 normal, vec3 view) {

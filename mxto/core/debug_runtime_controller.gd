@@ -30,6 +30,7 @@ var version_label: Label
 var auto_accelerate := false
 var bumper_smoke_enabled := false
 var rail_trace_enabled := false
+var yaw_trace_enabled := false
 var render_profile_enabled := false
 var disable_car_multimesh := false
 var render_all_car_bodies := false
@@ -132,6 +133,15 @@ func configure_command_line(args: Array, user_args: Array) -> void:
 		server_game_sim.set_dip_switch_enabled(0x40, true)
 		game_sim.set_rail_trace_filter(car_index, tick_start, tick_end)
 		server_game_sim.set_rail_trace_filter(car_index, tick_start, tick_end)
+	yaw_trace_enabled = _has_arg(args, user_args, "--debug-yaw-trace")
+	if yaw_trace_enabled:
+		var car_index := _read_int_arg(args, user_args, "--debug-yaw-trace-car-index", -1)
+		var tick_start := _read_int_arg(args, user_args, "--debug-yaw-trace-from", -1)
+		var tick_end := _read_int_arg(args, user_args, "--debug-yaw-trace-to", -1)
+		game_sim.set_dip_switch_enabled(0x2000, true)
+		server_game_sim.set_dip_switch_enabled(0x2000, true)
+		game_sim.set_yaw_trace_filter(car_index, tick_start, tick_end)
+		server_game_sim.set_yaw_trace_filter(car_index, tick_start, tick_end)
 	if _has_arg(args, user_args, "--debug-mesh-floor-trace"):
 		game_sim.set_dip_switch_enabled(0x1000, true)
 		server_game_sim.set_dip_switch_enabled(0x1000, true)

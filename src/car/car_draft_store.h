@@ -23,6 +23,7 @@ class MxtCarDraftStore : public RefCounted {
 	Dictionary duplicate_draft(const String &source_draft_id, const String &new_draft_id,
 							   const String &new_title) const;
 	Dictionary archive_draft(const String &draft_id) const;
+	Dictionary delete_draft(const String &draft_id) const;
 };
 
 } // namespace godot

@@ -47,10 +47,10 @@ func _initialize() -> void:
 		[false, 1.0, 1.0, -1, "gripped strafe"],
 		[true, 0.0, 1.0, -1, "neutral drift"],
 		[true, 1.0, 0.0, -1, "zero slip"],
-		[true, 1.0, -1.0, TECHNIQUE_MTS, "positive strafe MTS"],
-		[true, -1.0, 1.0, TECHNIQUE_MTS, "negative strafe MTS"],
-		[true, 1.0, 1.0, TECHNIQUE_QUICKTURN, "positive strafe quickturn"],
-		[true, -1.0, -1.0, TECHNIQUE_QUICKTURN, "negative strafe quickturn"],
+		[true, 1.0, 1.0, TECHNIQUE_MTS, "positive strafe MTS"],
+		[true, -1.0, -1.0, TECHNIQUE_MTS, "negative strafe MTS"],
+		[true, 1.0, -1.0, TECHNIQUE_QUICKTURN, "positive strafe quickturn"],
+		[true, -1.0, 1.0, TECHNIQUE_QUICKTURN, "negative strafe quickturn"],
 	]
 	for case in technique_cases:
 		var result := _evaluate(sim, bytes, case[0], case[1], case[2], false, false, false)
@@ -83,7 +83,7 @@ func _initialize() -> void:
 	for setting in [0.0, 0.5, 1.0]:
 		var sampled := sim.sample_car_properties(bytes, setting)
 		var neutral := _evaluate(sim, bytes, false, 0.0, 0.0, false, false, false, setting)
-		var combined := _evaluate(sim, bytes, true, 0.25, 1.0, true, true, true, setting)
+		var combined := _evaluate(sim, bytes, true, 0.25, -1.0, true, true, true, setting)
 		for immutable_stat in ["weight_kg", "max_energy"]:
 			var base_value := float(sampled.base_stats[immutable_stat])
 			if not _close(float(neutral.effective_stats[immutable_stat]), base_value) \

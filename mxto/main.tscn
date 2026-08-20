@@ -16,22 +16,22 @@
 [ext_resource type="Script" uid="uid://berp7plvet1og" path="res://track/track_content_controller.gd" id="25_track"]
 [ext_resource type="Script" uid="uid://bqlqeat5xvksx" path="res://netplay/custom_stamp_network_controller.gd" id="26_stamps"]
 [ext_resource type="Script" uid="uid://cprwg1uhsl2b5" path="res://netplay/playtest_lobby_probe.gd" id="27_playtest_probe"]
-[ext_resource type="Script" path="res://ui/lobby_chibi_controller.gd" id="28_lobby_chibi"]
-[ext_resource type="Script" path="res://ui/communication_controller.gd" id="29_communication"]
-[ext_resource type="PackedScene" path="res://ui/race_communication_overlay.tscn" id="30_communication_overlay"]
-[ext_resource type="Script" path="res://vehicle/vehicle_content_controller.gd" id="31_vehicle_content"]
-[ext_resource type="Script" path="res://ui/lobby_controller.gd" id="32_lobby"]
-[ext_resource type="Script" path="res://ui/spectator_controller.gd" id="33_spectator"]
-[ext_resource type="Script" path="res://ui/race_presentation_controller.gd" id="34_race_presentation"]
+[ext_resource type="Script" uid="uid://cbqy32m7nv7iu" path="res://ui/lobby_chibi_controller.gd" id="28_lobby_chibi"]
+[ext_resource type="Script" uid="uid://co7asjx2yf3ip" path="res://ui/communication_controller.gd" id="29_communication"]
+[ext_resource type="PackedScene" uid="uid://bjbc8l0xmtg0t" path="res://ui/race_communication_overlay.tscn" id="30_communication_overlay"]
+[ext_resource type="Script" uid="uid://bpwto5bx2ouu7" path="res://vehicle/vehicle_content_controller.gd" id="31_vehicle_content"]
+[ext_resource type="Script" uid="uid://b1faew0my54vq" path="res://ui/lobby_controller.gd" id="32_lobby"]
+[ext_resource type="Script" uid="uid://bb56bbim32ckv" path="res://ui/spectator_controller.gd" id="33_spectator"]
+[ext_resource type="Script" uid="uid://bmv16wlmac8db" path="res://ui/race_presentation_controller.gd" id="34_race_presentation"]
 [ext_resource type="PackedScene" path="res://ui/race_results_overlay.tscn" id="35_race_results"]
-[ext_resource type="Script" path="res://core/debug_runtime_controller.gd" id="36_debug_runtime"]
-[ext_resource type="Script" path="res://core/race_session_controller.gd" id="37_race_session"]
-[ext_resource type="Script" path="res://netplay/state_transfer_controller.gd" id="38_state_transfer"]
-[ext_resource type="Script" path="res://netplay/race_results_controller.gd" id="39_race_results"]
-[ext_resource type="Script" path="res://netplay/lobby_settings_controller.gd" id="40_lobby_settings"]
-[ext_resource type="Script" path="res://netplay/race_admission_controller.gd" id="41_race_admission"]
-[ext_resource type="Script" path="res://netplay/input_transport_controller.gd" id="42_input_transport"]
-[ext_resource type="Script" path="res://netplay/network_telemetry_controller.gd" id="43_network_telemetry"]
+[ext_resource type="Script" uid="uid://b1d0q31f4dlhm" path="res://core/debug_runtime_controller.gd" id="36_debug_runtime"]
+[ext_resource type="Script" uid="uid://ci8xs46mq5818" path="res://core/race_session_controller.gd" id="37_race_session"]
+[ext_resource type="Script" uid="uid://b70rovv1jjg1x" path="res://netplay/state_transfer_controller.gd" id="38_state_transfer"]
+[ext_resource type="Script" uid="uid://djck3s3sbbynq" path="res://netplay/race_results_controller.gd" id="39_race_results"]
+[ext_resource type="Script" uid="uid://b67i02a3w4co1" path="res://netplay/lobby_settings_controller.gd" id="40_lobby_settings"]
+[ext_resource type="Script" uid="uid://cplm7ik1m3kw0" path="res://netplay/race_admission_controller.gd" id="41_race_admission"]
+[ext_resource type="Script" uid="uid://20bvn2d7b1re" path="res://netplay/input_transport_controller.gd" id="42_input_transport"]
+[ext_resource type="Script" uid="uid://c0hq6ixi0y144" path="res://netplay/network_telemetry_controller.gd" id="43_network_telemetry"]
 [ext_resource type="PackedScene" path="res://ui/time_attack_setup.tscn" id="44_time_attack_setup"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
@@ -154,9 +154,9 @@ font_size = 24
 process_priority = 10
 script = ExtResource("1_tjhrj")
 
-[node name="ServerGameSim" type="GameSim" parent="." unique_id=1048572747]
+[node name="ServerGameSim" type="GameSim" parent="." unique_id=929353351]
 
-[node name="GameSim" type="GameSim" parent="." unique_id=1751820828]
+[node name="GameSim" type="GameSim" parent="." unique_id=1747022238]
 
 [node name="ReplayController" type="Node" parent="." unique_id=1464332657]
 script = ExtResource("23_replay")
@@ -168,32 +168,32 @@ script = ExtResource("24_audio")
 [node name="TrackContentController" type="Node" parent="." unique_id=910439580]
 script = ExtResource("25_track")
 
-[node name="LobbyChibiController" type="Node" parent="."]
+[node name="LobbyChibiController" type="Node" parent="." unique_id=1177645025]
 script = ExtResource("28_lobby_chibi")
 
-[node name="LobbyController" type="Node" parent="."]
+[node name="LobbyController" type="Node" parent="." unique_id=6598304]
 script = ExtResource("32_lobby")
 
-[node name="SpectatorController" type="Node" parent="."]
+[node name="SpectatorController" type="Node" parent="." unique_id=900485722]
 script = ExtResource("33_spectator")
 
-[node name="RacePresentationController" type="Node" parent="."]
+[node name="RacePresentationController" type="Node" parent="." unique_id=166495912]
 script = ExtResource("34_race_presentation")
 
-[node name="RaceResultsOverlay" parent="RacePresentationController" instance=ExtResource("35_race_results")]
+[node name="RaceResultsOverlay" parent="RacePresentationController" unique_id=2060556067 instance=ExtResource("35_race_results")]
 
-[node name="DebugRuntimeController" type="Node" parent="."]
+[node name="DebugRuntimeController" type="Node" parent="." unique_id=1387857259]
 script = ExtResource("36_debug_runtime")
 
-[node name="RaceSessionController" type="Node" parent="."]
+[node name="RaceSessionController" type="Node" parent="." unique_id=1386835074]
 script = ExtResource("37_race_session")
 
-[node name="CommunicationController" type="Node" parent="."]
+[node name="CommunicationController" type="Node" parent="." unique_id=685447659]
 script = ExtResource("29_communication")
 
-[node name="RaceCommunicationOverlay" parent="CommunicationController" instance=ExtResource("30_communication_overlay")]
+[node name="RaceCommunicationOverlay" parent="CommunicationController" unique_id=192124972 instance=ExtResource("30_communication_overlay")]
 
-[node name="VehicleContentController" type="Node" parent="."]
+[node name="VehicleContentController" type="Node" parent="." unique_id=992762710]
 script = ExtResource("31_vehicle_content")
 
 [node name="PlaytestLobbyProbe" type="Node" parent="." unique_id=2105027119]
@@ -206,22 +206,22 @@ metadata/_custom_type_script = "uid://cq1kmqnd5qooc"
 [node name="CustomStampNetwork" type="Node" parent="NetworkManager" unique_id=1799615501]
 script = ExtResource("26_stamps")
 
-[node name="StateTransferController" type="Node" parent="NetworkManager"]
+[node name="StateTransferController" type="Node" parent="NetworkManager" unique_id=1345465747]
 script = ExtResource("38_state_transfer")
 
-[node name="RaceResultsController" type="Node" parent="NetworkManager"]
+[node name="RaceResultsController" type="Node" parent="NetworkManager" unique_id=304254795]
 script = ExtResource("39_race_results")
 
-[node name="LobbySettingsController" type="Node" parent="NetworkManager"]
+[node name="LobbySettingsController" type="Node" parent="NetworkManager" unique_id=1276726292]
 script = ExtResource("40_lobby_settings")
 
-[node name="RaceAdmissionController" type="Node" parent="NetworkManager"]
+[node name="RaceAdmissionController" type="Node" parent="NetworkManager" unique_id=1908892268]
 script = ExtResource("41_race_admission")
 
-[node name="InputTransportController" type="Node" parent="NetworkManager"]
+[node name="InputTransportController" type="Node" parent="NetworkManager" unique_id=902107666]
 script = ExtResource("42_input_transport")
 
-[node name="NetworkTelemetryController" type="Node" parent="NetworkManager"]
+[node name="NetworkTelemetryController" type="Node" parent="NetworkManager" unique_id=1963069918]
 script = ExtResource("43_network_telemetry")
 
 [node name="ProximityVoiceChat" type="Node" parent="NetworkManager" unique_id=1057511727]
@@ -443,10 +443,12 @@ layout_mode = 1
 [node name="CarSettings" parent="." unique_id=774432447 instance=ExtResource("3_carsettings")]
 visible = false
 
-[node name="TimeAttackSetup" parent="." instance=ExtResource("44_time_attack_setup")]
-visible = false
+[node name="TimeAttackSetup" parent="." unique_id=1640364448 instance=ExtResource("44_time_attack_setup")]
 
-[node name="OptionsMenu" parent="." unique_id=721364932 instance=ExtResource("10_options")]
+[node name="OptionsLayer" type="CanvasLayer" parent="." unique_id=1517233725]
+layer = 200
+
+[node name="OptionsMenu" parent="OptionsLayer" unique_id=721364932 instance=ExtResource("10_options")]
 visible = false
 
 [node name="RacePauseLayer" parent="." unique_id=1151874248 instance=ExtResource("21_race_pause")]

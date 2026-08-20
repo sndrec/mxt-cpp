@@ -54,6 +54,7 @@ void GameSim::configure_bumper_car(int bumper_slot)
 	props->base_stats[CAR_STAT_TURN_TENSION] = 0.02f;
 	props->base_stats[CAR_STAT_DRIFT_ACCEL] = 1.8f;
 	props->base_stats[CAR_STAT_TURN_MOVEMENT] = 240.0f;
+	props->base_stats[CAR_STAT_DRIFT_TURN_MOVEMENT] = 240.0f;
 	props->base_stats[CAR_STAT_STRAFE_TURN] = 160.0f;
 	props->base_stats[CAR_STAT_STRAFE] = 120.0f;
 	props->base_stats[CAR_STAT_TURN_REACTION] = 45.0f;

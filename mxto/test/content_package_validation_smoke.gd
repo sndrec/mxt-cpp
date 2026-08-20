@@ -24,9 +24,13 @@ func _initialize() -> void:
 		_expect(first["package_digest"] != presentation_edit.get("package_digest", ""), "presentation-only edits must change package identity")
 
 	var vehicle_root := ProjectSettings.globalize_path("user://" + ROOT_NAME + "_vehicle")
+	_remove_tree(vehicle_root)
 	_prepare_vehicle_package(vehicle_root)
 	var vehicle_result: Dictionary = validator.validate_package_directory(vehicle_root)
 	_expect(bool(vehicle_result.get("valid", false)), "representative vehicle package should validate: %s" % [vehicle_result.get("errors", [])])
+	_add_vehicle_texture_payloads(vehicle_root)
+	var textured_vehicle_result: Dictionary = validator.validate_package_directory(vehicle_root)
+	_expect(bool(textured_vehicle_result.get("valid", false)), "vehicle package with standalone material PNGs should validate: %s" % [textured_vehicle_result.get("errors", [])])
 
 	var package_io := MxtContentPackageIO.new()
 	var archive_path := ProjectSettings.globalize_path("user://" + ROOT_NAME + ".mxtpkg")
@@ -202,6 +206,30 @@ func _prepare_vehicle_package(root: String) -> void:
 	file.close()
 
 
+func _add_vehicle_texture_payloads(root: String) -> void:
+	var source := ProjectSettings.globalize_path("res://asset/CAUTION.png")
+	for name in ["albedo.png", "normal.png", "paint_mask.png"]:
+		_copy(source, root.path_join("vehicle/" + name))
+	var manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(root.path_join("manifest.json")))
+	var payload: Dictionary = manifest["payload"]
+	payload["albedo_texture"] = "vehicle/albedo.png"
+	payload["normal_texture"] = "vehicle/normal.png"
+	payload["paint_mask_texture"] = "vehicle/paint_mask.png"
+	var hashes: Dictionary = manifest["payload_sha256"]
+	for name in ["albedo.png", "normal.png", "paint_mask.png"]:
+		hashes["vehicle/" + name] = FileAccess.get_sha256(root.path_join("vehicle/" + name))
+	var visual_path := root.path_join("vehicle/visual.json")
+	var visual: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(visual_path))
+	(visual["material_inputs"] as Dictionary)["use_mesh_normals"] = true
+	var visual_file := FileAccess.open(visual_path, FileAccess.WRITE)
+	visual_file.store_string(JSON.stringify(visual, "  ", true))
+	visual_file.close()
+	hashes["vehicle/visual.json"] = FileAccess.get_sha256(visual_path)
+	var manifest_file := FileAccess.open(root.path_join("manifest.json"), FileAccess.WRITE)
+	manifest_file.store_string(JSON.stringify(manifest, "  ", true))
+	manifest_file.close()
+
+
 func _copy(source: String, destination: String) -> void:
 	var error := DirAccess.copy_absolute(source, destination)
 	_expect(error == OK, "copy failed (%d): %s -> %s" % [error, source, destination])
@@ -210,3 +238,20 @@ func _copy(source: String, destination: String) -> void:
 func _expect(condition: bool, message: String) -> void:
 	if !condition:
 		failures.append(message)
+
+
+func _remove_tree(path: String) -> void:
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return
+	directory.list_dir_begin()
+	var name := directory.get_next()
+	while !name.is_empty():
+		var child := path.path_join(name)
+		if directory.current_is_dir():
+			_remove_tree(child)
+		else:
+			DirAccess.remove_absolute(child)
+		name = directory.get_next()
+	directory.list_dir_end()
+	DirAccess.remove_absolute(path)

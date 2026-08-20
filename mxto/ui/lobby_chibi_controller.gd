@@ -143,6 +143,9 @@ func process_lobby(_delta: float) -> void:
 	if viewport.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
 		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	var roster := _human_roster()
+	for id in roster:
+		var lobby_settings: Dictionary = network_manager.lobby_settings.player_settings.get(int(id), {})
+		vehicle_content_controller.request_lobby_vehicle_content(lobby_settings)
 	var roster_changed := roster != roster_cache
 	if roster_changed:
 		var live := {}
@@ -179,14 +182,54 @@ func process_lobby(_delta: float) -> void:
 	if network_manager.is_server:
 		_broadcast_states_if_needed()
 
-func _configure_car(car, player_id: int, settings: Dictionary, local_control: bool, settings_revision: int, initial: bool) -> void:
+func _configure_car(car, player_id: int, settings: Dictionary, local_control: bool, settings_revision: int, initial: bool, force_content_refresh := false) -> void:
 	var definition: CarDefinition = vehicle_content_controller.get_definition(str(settings.get("vehicle_content_id", "")))
 	var sampled_stats := _sample_stats(settings, definition)
 	if initial:
 		car.setup(player_id, settings, self, camera, nameplates, local_control, settings_revision, definition, sampled_stats)
 	else:
-		car.update_settings(settings, definition, sampled_stats, settings_revision)
+		car.update_settings(settings, definition, sampled_stats, settings_revision, force_content_refresh)
 		car.set_local_control(local_control)
+
+func refresh_vehicle_content() -> void:
+	var refresh_start_usec := Time.get_ticks_usec()
+	var refreshed_players := []
+	var local_id: int = game_manager._local_player_id() if game_manager != null else -1
+	for id in cars.keys():
+		var player_id := int(id)
+		var car = cars[player_id]
+		if car == null or !is_instance_valid(car):
+			continue
+		var player_settings: Dictionary = network_manager.lobby_settings.player_settings.get(player_id, {})
+		refreshed_players.append({
+			"player_id": player_id,
+			"vehicle_content_id": String(player_settings.get("vehicle_content_id", "")),
+			"vehicle_workshop_id": String(player_settings.get("vehicle_workshop_id", "")),
+			"vehicle_gameplay_digest": String(player_settings.get("vehicle_gameplay_digest", "")),
+			"vehicle_package_digest": String(player_settings.get("vehicle_package_digest", "")),
+		})
+		_configure_car(
+			car,
+			player_id,
+			player_settings,
+			player_id == local_id,
+			network_manager.lobby_settings.get_player_settings_revision(player_id),
+			false,
+			true)
+	applied_settings_revision = -1
+	render_signature = ""
+	pending_render_signature = ""
+	render_rebuild_due_msec = 0
+	if render_manager != null:
+		render_manager.clear_renderer()
+	if magnifier_render_manager != null:
+		magnifier_render_manager.clear_renderer()
+	magnifier_render_signature = ""
+	vehicle_content_controller.record_workshop_diagnostic_event("lobby_vehicle_content_refresh", {
+		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
+		"players": refreshed_players,
+		"car_count": cars.size(),
+	})
 
 func _sample_stats(settings: Dictionary, definition: CarDefinition) -> Dictionary:
 	if definition == null or definition.properties_path == "" or !FileAccess.file_exists(definition.properties_path):
@@ -235,8 +278,24 @@ func _submit_render(roster: Array) -> void:
 		render_signature = signature
 		magnifier_render_signature = ""
 		render_rebuild_count_total += 1
-		network_manager.telemetry.record_lobby_render_rebuild(Time.get_ticks_usec() - rebuild_start_usec)
+		var rebuild_duration_usec := Time.get_ticks_usec() - rebuild_start_usec
+		network_manager.telemetry.record_lobby_render_rebuild(rebuild_duration_usec)
 		game_manager.record_memory_sample("lobby_render_rebuild")
+		var rendered_vehicles := []
+		for entry_settings in settings:
+			rendered_vehicles.append({
+				"vehicle_content_id": String(entry_settings.get("vehicle_content_id", "")),
+				"vehicle_workshop_id": String(entry_settings.get("vehicle_workshop_id", "")),
+				"vehicle_gameplay_digest": String(entry_settings.get("vehicle_gameplay_digest", "")),
+				"vehicle_package_digest": String(entry_settings.get("vehicle_package_digest", "")),
+			})
+		vehicle_content_controller.record_workshop_diagnostic_event("lobby_render_rebuild", {
+			"duration_usec": rebuild_duration_usec,
+			"signature": signature,
+			"renderer_was_empty": renderer_empty,
+			"roster": roster.duplicate(),
+			"rendered_vehicles": rendered_vehicles,
+		})
 	render_manager.begin_manual_submit()
 	var render_root_inv := render_manager.global_transform.affine_inverse()
 	for i in range(render_cars.size()):

@@ -41,6 +41,10 @@ Dictionary content_record_to_dictionary(const ContentRecord &record)
 	output["authoritative_path"] = record.authoritative_path;
 	output["visual_path"] = record.visual_path;
 	output["metadata_path"] = record.metadata_path;
+	output["manual_boost_sfx_path"] = record.manual_boost_sfx_path;
+	output["albedo_texture_path"] = record.albedo_texture_path;
+	output["normal_texture_path"] = record.normal_texture_path;
+	output["paint_mask_texture_path"] = record.paint_mask_texture_path;
 	output["title"] = record.title;
 	output["description"] = record.description;
 	output["author_name"] = record.author_name;
@@ -113,6 +117,18 @@ static mxt::content::ContentRecord make_record(
 	if (record.content_type == mxt::content::ContentType::VEHICLE) {
 		record.visual_path = package.root_path.path_join("vehicle/model.glb");
 		record.metadata_path = package.root_path.path_join("vehicle/visual.json");
+		if (!package.manifest.manual_boost_sfx_path.is_empty()) {
+			record.manual_boost_sfx_path = package.root_path.path_join(package.manifest.manual_boost_sfx_path);
+		}
+		if (!package.manifest.albedo_texture_path.is_empty()) {
+			record.albedo_texture_path = package.root_path.path_join(package.manifest.albedo_texture_path);
+		}
+		if (!package.manifest.normal_texture_path.is_empty()) {
+			record.normal_texture_path = package.root_path.path_join(package.manifest.normal_texture_path);
+		}
+		if (!package.manifest.paint_mask_texture_path.is_empty()) {
+			record.paint_mask_texture_path = package.root_path.path_join(package.manifest.paint_mask_texture_path);
+		}
 	} else {
 		record.visual_path = package.root_path.path_join("track/visual.glb");
 		record.metadata_path = package.root_path.path_join("track/metadata.json");

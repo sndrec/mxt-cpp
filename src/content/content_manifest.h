@@ -14,14 +14,17 @@ static constexpr uint32_t PACKAGE_FORMAT_REVISION = 1;
 static constexpr uint32_t GAMEPLAY_DIGEST_REVISION = 1;
 static constexpr uint64_t MANIFEST_MAX_BYTES = 64u * 1024u;
 static constexpr uint64_t PREVIEW_MAX_BYTES = 8u * 1024u * 1024u;
-static constexpr uint64_t VEHICLE_PACKAGE_MAX_BYTES = 64u * 1024u * 1024u;
+static constexpr uint64_t VEHICLE_PACKAGE_MAX_BYTES = 128u * 1024u * 1024u;
 static constexpr uint64_t TRACK_PACKAGE_MAX_BYTES = 512u * 1024u * 1024u;
 static constexpr uint64_t VEHICLE_MODEL_MAX_BYTES = 48u * 1024u * 1024u;
+static constexpr uint64_t VEHICLE_BOOST_SFX_MAX_BYTES = 8u * 1024u * 1024u;
+static constexpr uint64_t VEHICLE_TEXTURE_MAX_BYTES = 20u * 1024u * 1024u;
+static constexpr uint32_t VEHICLE_TEXTURE_MAX_DIMENSION = 2048;
 static constexpr uint64_t VEHICLE_MODEL_MAX_VERTICES = 1'000'000;
 static constexpr uint64_t VEHICLE_MODEL_MAX_TRIANGLES = 250'000;
 static constexpr uint32_t VEHICLE_MODEL_MAX_IMAGES = 64;
 static constexpr uint64_t VEHICLE_MODEL_MAX_TEXTURE_PIXELS = 64u * 1024u * 1024u;
-static constexpr uint32_t PACKAGE_MAX_FILE_COUNT = 8;
+static constexpr uint32_t PACKAGE_MAX_FILE_COUNT = 12;
 
 enum class ContentType : uint8_t {
 	INVALID = 0,
@@ -41,6 +44,10 @@ struct ContentManifest {
 	godot::String description;
 	godot::String author_name;
 	godot::String authoritative_path;
+	godot::String manual_boost_sfx_path;
+	godot::String albedo_texture_path;
+	godot::String normal_texture_path;
+	godot::String paint_mask_texture_path;
 	std::vector<ManifestFile> files;
 };
 

@@ -93,6 +93,7 @@ func open_settings() -> void:
 	if controller_settings != null and controller_settings.has_method("open_settings"):
 		controller_settings.call("open_settings")
 	show()
+	close_button.grab_focus()
 
 func close_settings() -> void:
 	_set_voice_level_meter_enabled(false)

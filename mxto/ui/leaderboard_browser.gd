@@ -9,7 +9,7 @@ const LeaderboardDetailsClass = preload("res://steam/leaderboard_details.gd")
 @onready var summary_label: Label = $Summary
 @onready var track_option: OptionButton = $Controls/Track
 @onready var entry_tree: Tree = $Entries
-@onready var details: RichTextLabel = $History/Details
+@onready var details: RichTextLabel = $History/DetailsScroll/Details
 @onready var watch_button: Button = $EntryActions/WatchReplay
 
 var game_manager: GameManager
@@ -171,7 +171,10 @@ func _decode_details(details_value) -> Dictionary:
 	if decoded.is_empty():
 		return {}
 	var version: Dictionary = decoded.get("game_version", {})
-	decoded["vehicle"] = _vehicle_name_for_digest(String(decoded.get("vehicle_gameplay_digest", "")))
+	var vehicle_name := _vehicle_name_for_digest(String(decoded.get("vehicle_gameplay_digest", "")))
+	var machine_setting_percent := int(decoded.get("machine_setting_percent", -1))
+	decoded["vehicle"] = "%s · %d%%" % [vehicle_name, machine_setting_percent] \
+		if machine_setting_percent >= 0 else vehicle_name
 	decoded["version"] = "v%d.%d.%d · replay r%d" % [int(version.get("major", 0)), int(version.get("compatibility", 0)), int(version.get("patch", 0)), int(decoded.get("replay_schema_version", 0))]
 	return decoded
 
@@ -199,7 +202,8 @@ func _on_entry_selected() -> void:
 		return
 	var entry: Dictionary = visible_entries[index]
 	var trusted: Dictionary = entry.get("_trusted_details", {})
-	watch_button.disabled = int(entry.get("ugc_handle", 0)) == 0 or String(trusted.get("replay_sha256", "")).is_empty()
+	var ugc_handle := int(entry.get("ugc_handle", 0))
+	watch_button.disabled = ugc_handle == 0 or ugc_handle == -1 or String(trusted.get("replay_sha256", "")).is_empty()
 
 
 func _watch_selected() -> void:

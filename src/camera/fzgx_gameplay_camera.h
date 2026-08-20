@@ -29,6 +29,8 @@ public:
 		bool boost_was_active = false;
 		float vertical_offset_state = 0.0f;
 		float interest_vertical_offset_state = 0.0f;
+		float slope_signal_radians = 0.0f;
+		float slope_orbit_radians = 0.0f;
 		float previous_speed_kmh = 0.0f;
 		Vector3 local_follow_offset = Vector3();
 		Basis follow_basis = Basis();
@@ -56,6 +58,8 @@ public:
 	~FzgxGameplayCamera();
 
 	void reset();
+	void set_zoom_mode(int zoom_mode);
+	int get_zoom_mode() const;
 	Dictionary step(
 		Vector3 position,
 		Vector3 position_old,
@@ -64,6 +68,7 @@ public:
 		Vector3 track_pos,
 		float height_above_track,
 		float speed_kmh,
+		float vehicle_pitch_delta_radians,
 		float camera_reorienting,
 		float camera_repositioning,
 		float turn_reaction_effect,

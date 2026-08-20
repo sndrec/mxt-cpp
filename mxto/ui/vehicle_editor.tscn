@@ -1,9 +1,53 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=9 format=3]
 
 [ext_resource type="Script" path="res://ui/vehicle_editor.gd" id="1_editor"]
 [ext_resource type="Script" path="res://ui/vehicle_editor_curve_graph.gd" id="2_curve"]
 [ext_resource type="Script" path="res://ui/vehicle_editor_speed_graph.gd" id="3_speed"]
 [ext_resource type="PackedScene" path="res://ui/vehicle_grade_panel.tscn" id="4_grade_panel"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_delete_normal"]
+content_margin_left = 9.0
+content_margin_top = 5.0
+content_margin_right = 9.0
+content_margin_bottom = 5.0
+bg_color = Color(0.48, 0.075, 0.09, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_delete_hover"]
+content_margin_left = 9.0
+content_margin_top = 5.0
+content_margin_right = 9.0
+content_margin_bottom = 5.0
+bg_color = Color(0.67, 0.09, 0.11, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_delete_pressed"]
+content_margin_left = 9.0
+content_margin_top = 5.0
+content_margin_right = 9.0
+content_margin_bottom = 5.0
+bg_color = Color(0.34, 0.045, 0.055, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_delete_disabled"]
+content_margin_left = 9.0
+content_margin_top = 5.0
+content_margin_right = 9.0
+content_margin_bottom = 5.0
+bg_color = Color(0.24, 0.08, 0.085, 0.55)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [node name="Car Creator" type="VBoxContainer"]
 layout_mode = 2
@@ -37,9 +81,22 @@ text = "Archive"
 layout_mode = 2
 text = "Use Vehicle Template"
 
+[node name="EditOfficial" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Edit Official Vehicle"
+
 [node name="ImportModel" type="Button" parent="Toolbar"]
 layout_mode = 2
 text = "Import GLB / glTF"
+
+[node name="ImportBoostSound" type="Button" parent="Toolbar"]
+layout_mode = 2
+text = "Add Boost Sound"
+
+[node name="ClearBoostSound" type="Button" parent="Toolbar"]
+layout_mode = 2
+disabled = true
+text = "Clear Boost Sound"
 
 [node name="SaveDraft" type="Button" parent="Toolbar"]
 layout_mode = 2
@@ -60,6 +117,14 @@ text = "Test Drive"
 [node name="PublishWorkshop" type="Button" parent="Toolbar"]
 layout_mode = 2
 text = "Publish Workshop"
+
+[node name="DeleteDraft" type="Button" parent="Toolbar"]
+layout_mode = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_delete_normal")
+theme_override_styles/hover = SubResource("StyleBoxFlat_delete_hover")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_delete_pressed")
+theme_override_styles/disabled = SubResource("StyleBoxFlat_delete_disabled")
+text = "Delete Draft"
 
 [node name="Undo" type="Button" parent="Toolbar"]
 layout_mode = 2
@@ -217,7 +282,7 @@ layout_mode = 2
 
 [node name="Hint" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
 layout_mode = 2
-text = "MaxX Throttle material inputs from embedded glTF textures"
+text = "MaxX Throttle material inputs from embedded glTF textures or standalone PNGs (maximum 2048 x 2048)"
 autowrap_mode = 2
 
 [node name="BodyLabel" type="Label" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
@@ -243,6 +308,15 @@ layout_mode = 2
 size_flags_horizontal = 3
 fit_to_longest_item = false
 
+[node name="Import" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow"]
+layout_mode = 2
+text = "Import PNG"
+
+[node name="Clear" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Materials/AlbedoRow"]
+layout_mode = 2
+disabled = true
+text = "Clear"
+
 [node name="NormalRow" type="HBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
 layout_mode = 2
 
@@ -256,6 +330,15 @@ layout_mode = 2
 size_flags_horizontal = 3
 fit_to_longest_item = false
 
+[node name="Import" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow"]
+layout_mode = 2
+text = "Import PNG"
+
+[node name="Clear" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Materials/NormalRow"]
+layout_mode = 2
+disabled = true
+text = "Clear"
+
 [node name="PaintMaskRow" type="HBoxContainer" parent="Workspace/VisualColumn/PhysicalTabs/Materials"]
 layout_mode = 2
 
@@ -268,6 +351,15 @@ text = "Paint mask"
 layout_mode = 2
 size_flags_horizontal = 3
 fit_to_longest_item = false
+
+[node name="Import" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow"]
+layout_mode = 2
+text = "Import PNG"
+
+[node name="Clear" type="Button" parent="Workspace/VisualColumn/PhysicalTabs/Materials/PaintMaskRow"]
+layout_mode = 2
+disabled = true
+text = "Clear"
 
 [node name="Corners" type="ScrollContainer" parent="Workspace/VisualColumn/PhysicalTabs"]
 visible = false
@@ -308,6 +400,71 @@ layout_mode = 2
 [node name="StatsColumn" type="VBoxContainer" parent="Workspace"]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="SampleControls" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="MachineLabel" type="Label" parent="Workspace/StatsColumn/SampleControls"]
+layout_mode = 2
+text = "Machine"
+
+[node name="MachineSetting" type="HSlider" parent="Workspace/StatsColumn/SampleControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+max_value = 1.0
+step = 0.001
+value = 0.5
+
+[node name="MachineValue" type="Label" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(48, 0)
+layout_mode = 2
+text = "0.500"
+
+[node name="Technique" type="OptionButton" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(110, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="TechniqueIntensity" type="HSlider" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+value = 1.0
+
+[node name="BoostState" type="OptionButton" parent="Workspace/StatsColumn/SampleControls"]
+custom_minimum_size = Vector2(145, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
+[node name="SpeedControls" type="HBoxContainer" parent="Workspace/StatsColumn"]
+layout_mode = 2
+
+[node name="StartLabel" type="Label" parent="Workspace/StatsColumn/SpeedControls"]
+layout_mode = 2
+text = "Start km/h"
+
+[node name="StartSpeed" type="SpinBox" parent="Workspace/StatsColumn/SpeedControls"]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+min_value = -10000.0
+max_value = 10000.0
+allow_greater = true
+allow_lesser = true
+
+[node name="FramePerfect" type="CheckBox" parent="Workspace/StatsColumn/SpeedControls"]
+layout_mode = 2
+text = "Frame-perfect boosting"
+
+[node name="SpeedSummary" type="Label" parent="Workspace/StatsColumn/SpeedControls"]
+layout_mode = 2
+size_flags_horizontal = 3
+horizontal_alignment = 2
+
+[node name="SpeedGraph" type="Control" parent="Workspace/StatsColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("3_speed")
 
 [node name="StatFilters" type="HBoxContainer" parent="Workspace/StatsColumn"]
 layout_mode = 2
@@ -447,71 +604,6 @@ text = "Paste Curve"
 layout_mode = 2
 text = "Reset"
 
-[node name="SampleControls" type="HBoxContainer" parent="Workspace/StatsColumn"]
-layout_mode = 2
-
-[node name="MachineLabel" type="Label" parent="Workspace/StatsColumn/SampleControls"]
-layout_mode = 2
-text = "Machine"
-
-[node name="MachineSetting" type="HSlider" parent="Workspace/StatsColumn/SampleControls"]
-layout_mode = 2
-size_flags_horizontal = 3
-max_value = 1.0
-step = 0.001
-value = 0.5
-
-[node name="MachineValue" type="Label" parent="Workspace/StatsColumn/SampleControls"]
-custom_minimum_size = Vector2(48, 0)
-layout_mode = 2
-text = "0.500"
-
-[node name="Technique" type="OptionButton" parent="Workspace/StatsColumn/SampleControls"]
-custom_minimum_size = Vector2(110, 0)
-layout_mode = 2
-fit_to_longest_item = false
-
-[node name="TechniqueIntensity" type="HSlider" parent="Workspace/StatsColumn/SampleControls"]
-custom_minimum_size = Vector2(90, 0)
-layout_mode = 2
-max_value = 1.0
-step = 0.01
-value = 1.0
-
-[node name="BoostState" type="OptionButton" parent="Workspace/StatsColumn/SampleControls"]
-custom_minimum_size = Vector2(145, 0)
-layout_mode = 2
-fit_to_longest_item = false
-
-[node name="SpeedControls" type="HBoxContainer" parent="Workspace/StatsColumn"]
-layout_mode = 2
-
-[node name="StartLabel" type="Label" parent="Workspace/StatsColumn/SpeedControls"]
-layout_mode = 2
-text = "Start km/h"
-
-[node name="StartSpeed" type="SpinBox" parent="Workspace/StatsColumn/SpeedControls"]
-custom_minimum_size = Vector2(120, 0)
-layout_mode = 2
-min_value = -10000.0
-max_value = 10000.0
-allow_greater = true
-allow_lesser = true
-
-[node name="FramePerfect" type="CheckBox" parent="Workspace/StatsColumn/SpeedControls"]
-layout_mode = 2
-text = "Frame-perfect boosting"
-
-[node name="SpeedSummary" type="Label" parent="Workspace/StatsColumn/SpeedControls"]
-layout_mode = 2
-size_flags_horizontal = 3
-horizontal_alignment = 2
-
-[node name="SpeedGraph" type="Control" parent="Workspace/StatsColumn"]
-layout_mode = 2
-size_flags_vertical = 3
-script = ExtResource("3_speed")
-
 [node name="Diagnostics" type="RichTextLabel" parent="Workspace/StatsColumn"]
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
@@ -524,6 +616,20 @@ size = Vector2i(840, 600)
 file_mode = 0
 access = 2
 filters = PackedStringArray("*.glb, *.gltf ; glTF Vehicle Models")
+
+[node name="ImportBoostSoundDialog" type="FileDialog" parent="."]
+title = "Import Manual Boost Sound"
+size = Vector2i(840, 600)
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.wav ; WAV Audio", "*.ogg ; Ogg Vorbis Audio")
+
+[node name="ImportMaterialTextureDialog" type="FileDialog" parent="."]
+title = "Import Vehicle Texture"
+size = Vector2i(840, 600)
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.png ; PNG Image")
 
 [node name="TemplateVehicleDialog" type="ConfirmationDialog" parent="."]
 title = "Use Existing Vehicle as Template"
@@ -545,6 +651,26 @@ custom_minimum_size = Vector2(520, 0)
 layout_mode = 2
 fit_to_longest_item = false
 
+[node name="OfficialVehicleDialog" type="ConfirmationDialog" parent="."]
+title = "Edit Shipped Vehicle Properties"
+size = Vector2i(560, 170)
+ok_button_text = "Edit Shipped Asset"
+
+[node name="Rows" type="VBoxContainer" parent="OfficialVehicleDialog"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 552.0
+offset_bottom = 102.0
+
+[node name="Hint" type="Label" parent="OfficialVehicleDialog/Rows"]
+layout_mode = 2
+text = "Changes save directly to the selected vanilla .mxt_car_props file."
+
+[node name="VehicleOption" type="OptionButton" parent="OfficialVehicleDialog/Rows"]
+custom_minimum_size = Vector2(520, 0)
+layout_mode = 2
+fit_to_longest_item = false
+
 [node name="ExportPackageDialog" type="FileDialog" parent="."]
 title = "Export Vehicle Package"
 size = Vector2i(840, 600)
@@ -556,6 +682,11 @@ filters = PackedStringArray("*.mxtpkg ; MaxX Throttle Package")
 title = "Archive Draft"
 dialog_text = "Move this draft into the local archive? It will no longer appear in the active draft list."
 ok_button_text = "Archive Draft"
+
+[node name="DeleteDraftDialog" type="ConfirmationDialog" parent="."]
+title = "Delete Draft Permanently"
+dialog_text = "Permanently delete this draft and all of its local authoring files? This cannot be undone."
+ok_button_text = "Delete Permanently"
 
 [node name="PublishReviewDialog" type="ConfirmationDialog" parent="."]
 title = "Review Workshop Publication"

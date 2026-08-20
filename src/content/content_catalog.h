@@ -31,6 +31,10 @@ struct ContentRecord {
 	godot::String authoritative_path;
 	godot::String visual_path;
 	godot::String metadata_path;
+	godot::String manual_boost_sfx_path;
+	godot::String albedo_texture_path;
+	godot::String normal_texture_path;
+	godot::String paint_mask_texture_path;
 	godot::String title;
 	godot::String description;
 	godot::String author_name;

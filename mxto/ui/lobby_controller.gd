@@ -19,6 +19,7 @@ const LobbyChibiControllerClass = preload("res://ui/lobby_chibi_controller.gd")
 @onready var vehicle_restore_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/VehicleRestoreToggle"
 @onready var bumpers_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/BumpersToggle"
 @onready var s_boost_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/SBoostToggle"
+@onready var workshop_vehicles_toggle: CheckBox = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/OptionsColumn/OptionsScroll/OptionsBox/WorkshopVehiclesToggle"
 @onready var stage_button_container: VBoxContainer = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/StageScroll/StageButtonContainer"
 @onready var stage_preview_container: VBoxContainer = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/StageBox/PreviewScroll/StagePreviewContainer"
 @onready var player_list_container: VBoxContainer = $"../Lobby/LobbyStatic/LobbyContainer/Container/TopBox/PlayerScroll/PlayerListContainer"
@@ -43,6 +44,7 @@ func initialize(
 	vehicle_restore_toggle.toggled.connect(refresh_race_options.unbind(1))
 	bumpers_toggle.toggled.connect(refresh_race_options.unbind(1))
 	s_boost_toggle.toggled.connect(refresh_race_options.unbind(1))
+	workshop_vehicles_toggle.toggled.connect(_on_workshop_vehicles_toggled)
 	add_cpu_button.pressed.connect(_on_add_cpu_pressed)
 	remove_cpu_button.pressed.connect(_on_remove_cpu_pressed)
 	start_race_button.pressed.connect(request_start_race)
@@ -66,6 +68,7 @@ func build_race_options() -> Dictionary:
 		"vehicle_restore": vehicle_restore_toggle.button_pressed,
 		"bumpers": bumpers_toggle.button_pressed,
 		"s_boost": s_boost_toggle.button_pressed,
+		"allow_workshop_vehicles": workshop_vehicles_toggle.button_pressed,
 		"grand_prix_current_track": 0,
 		"grand_prix_points": {},
 		"grand_prix_ko_energy_bonuses": {},
@@ -105,6 +108,7 @@ func refresh_controls() -> void:
 	vehicle_restore_toggle.disabled = !can_edit
 	bumpers_toggle.disabled = !can_edit
 	s_boost_toggle.disabled = !can_edit
+	workshop_vehicles_toggle.disabled = !can_edit
 	for child in stage_button_container.get_children():
 		var button := child as Button
 		if button != null:
@@ -122,6 +126,7 @@ func apply_race_options(options: Dictionary) -> void:
 	vehicle_restore_toggle.set_pressed_no_signal(bool(options.get("vehicle_restore", true)))
 	bumpers_toggle.set_pressed_no_signal(bool(options.get("bumpers", false)))
 	s_boost_toggle.set_pressed_no_signal(bool(options.get("s_boost", true)))
+	workshop_vehicles_toggle.set_pressed_no_signal(bool(options.get("allow_workshop_vehicles", true)))
 	grand_prix_track_sequence.clear()
 	var track_ids: Array = options.get("track_ids", [])
 	for track_id_value in track_ids:
@@ -194,8 +199,15 @@ func _on_remove_cpu_pressed() -> void:
 	if network_manager.is_server:
 		network_manager.lobby_settings.remove_cpu_driver()
 
+func _on_workshop_vehicles_toggled(enabled: bool) -> void:
+	refresh_race_options()
+	if network_manager.is_server and !enabled:
+		network_manager.lobby_settings.enforce_official_vehicles()
+
 func request_start_race() -> void:
 	if network_manager.is_server and !grand_prix_track_sequence.is_empty():
+		if !workshop_vehicles_toggle.button_pressed:
+			network_manager.lobby_settings.enforce_official_vehicles()
 		start_race_requested.emit(build_race_options())
 
 func _update_player_list() -> void:

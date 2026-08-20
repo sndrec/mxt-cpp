@@ -1249,6 +1249,11 @@ void GameSim::set_rail_trace_filter(int car_index, int tick_start, int tick_end)
 	DEBUG::set_rail_trace_filter(car_index, tick_start, tick_end);
 }
 
+void GameSim::set_yaw_trace_filter(int car_index, int tick_start, int tick_end)
+{
+	DEBUG::set_yaw_trace_filter(car_index, tick_start, tick_end);
+}
+
 double GameSim::get_first_lap_distance() const
 {
 	if (!sim_started || !cars || num_cars <= 0 || !current_track)

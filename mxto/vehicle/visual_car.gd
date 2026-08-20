@@ -568,6 +568,7 @@ func _step_gameplay_camera() -> void:
 		track_surface_pos,
 		height_above_track,
 		speed_kmh,
+		0.0,
 		camera_reorienting,
 		camera_repositioning,
 		turn_reaction_effect,

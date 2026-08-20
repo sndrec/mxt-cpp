@@ -55,6 +55,9 @@ static bool is_allowed_archive_path(const String &path)
 			path == "vehicle/" || path == "track/" ||
 			path == "vehicle/model.glb" || path == "vehicle/properties.mxt_car_props" ||
 			path == "vehicle/visual.json" || path == "vehicle/authoring.json" ||
+			path == "vehicle/manual_boost.wav" || path == "vehicle/manual_boost.ogg" ||
+			path == "vehicle/albedo.png" || path == "vehicle/normal.png" ||
+			path == "vehicle/paint_mask.png" ||
 			path == "track/track.mxt_track" || path == "track/visual.glb" ||
 			path == "track/metadata.json";
 }
@@ -67,6 +70,8 @@ static uint64_t file_limit(const String &path)
 	if (path == "vehicle/properties.mxt_car_props") return 4u * 1024u * 1024u;
 	if (path == "vehicle/visual.json") return 64u * 1024u;
 	if (path == "vehicle/authoring.json") return 4u * 1024u;
+	if (path == "vehicle/manual_boost.wav" || path == "vehicle/manual_boost.ogg") return VEHICLE_BOOST_SFX_MAX_BYTES;
+	if (path == "vehicle/albedo.png" || path == "vehicle/normal.png" || path == "vehicle/paint_mask.png") return VEHICLE_TEXTURE_MAX_BYTES;
 	if (path == "track/track.mxt_track") return 256u * 1024u * 1024u;
 	if (path == "track/visual.glb") return 256u * 1024u * 1024u;
 	if (path == "track/metadata.json") return 1u * 1024u * 1024u;

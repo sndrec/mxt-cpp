@@ -40,6 +40,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("is_dip_switch_enabled", "flag"), &GameSim::is_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_dip_switch_enabled", "flag", "enabled"), &GameSim::set_dip_switch_enabled);
 	ClassDB::bind_method(D_METHOD("set_rail_trace_filter", "car_index", "tick_start", "tick_end"), &GameSim::set_rail_trace_filter);
+	ClassDB::bind_method(D_METHOD("set_yaw_trace_filter", "car_index", "tick_start", "tick_end"), &GameSim::set_yaw_trace_filter);
 	ClassDB::bind_method(D_METHOD("get_first_lap_distance"), &GameSim::get_first_lap_distance);
 	ClassDB::bind_method(D_METHOD("get_track_lap_length"), &GameSim::get_track_lap_length);
 	ClassDB::bind_method(D_METHOD("get_native_cpu_input_for_tick", "player_id", "expected_tick"), &GameSim::get_native_cpu_input_for_tick);
@@ -88,6 +89,8 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("set_spark_node_container", "p_spark_node_container"), &GameSim::set_spark_node_container);
 	ClassDB::bind_method(D_METHOD("set_car_render_manager", "p_car_render_manager"), &GameSim::set_car_render_manager);
 	ClassDB::bind_method(D_METHOD("set_gameplay_camera", "p_camera", "player_id"), &GameSim::set_gameplay_camera);
+	ClassDB::bind_method(D_METHOD("set_gameplay_camera_zoom_mode", "zoom_mode"), &GameSim::set_gameplay_camera_zoom_mode);
+	ClassDB::bind_method(D_METHOD("get_gameplay_camera_zoom_mode"), &GameSim::get_gameplay_camera_zoom_mode);
 	ClassDB::bind_method(D_METHOD("set_render_camera", "p_camera"), &GameSim::set_render_camera);
 	ClassDB::bind_method(D_METHOD("set_spatial_audio_manager", "p_manager"), &GameSim::set_spatial_audio_manager);
 	ClassDB::bind_method(D_METHOD("get_spatial_audio_manager"), &GameSim::get_spatial_audio_manager);

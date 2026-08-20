@@ -81,9 +81,11 @@ static func friendly_reason(reason: String) -> String:
 		"unofficial_or_mismatched_vehicle": return "Ranked Time Attack requires an exact official machine. You can switch directly to the All Rounder or practice unranked."
 		"invalid_finish_time": return "The race did not produce a valid finish time."
 		"replay_recording_failed": return "The run finished, but its verification replay could not be saved."
+		"replay_too_long": return "The replay is longer than the one-hour verification limit."
+		"noncanonical_frames": return "The replay has missing, out-of-order, or malformed input frames."
 		"draft_vehicle": return "Draft machines are available only in unranked test drives."
 		"ineligible": return "This run is not eligible for the ranked leaderboard."
 		_: return reason.replace("_", " ").capitalize()
 
 static func rules_description() -> String:
-	return "3 laps · Vehicle Restore enabled · No bumpers · No S-BOOST · No CPU racers\nExact ranked track and official machine content · Replay verified before Steam submission"
+	return "3 laps · Vehicle Restore enabled · No bumpers · No S-BOOST · No CPU racers"

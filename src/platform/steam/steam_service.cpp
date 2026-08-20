@@ -1,8 +1,10 @@
 #include "platform/steam/steam_service.h"
 
 #include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/config_file.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/project_settings.hpp>
+#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -20,6 +22,7 @@ using namespace godot;
 namespace {
 
 static constexpr uint64_t WORKSHOP_PREVIEW_MAX_BYTES = 1'000'000;
+static constexpr const char *TRACKED_WORKSHOP_ITEMS_PATH = "user://tracked_workshop_items.cfg";
 
 static Dictionary request_result(bool success, const String &message)
 {
@@ -75,6 +78,7 @@ static Dictionary workshop_item_dictionary(ISteamUGC *ugc, PublishedFileId_t ite
 	Dictionary item;
 	item["published_file_id"] = static_cast<int64_t>(item_id);
 	const uint32 state = ugc->GetItemState(item_id);
+	item["item_state_bits"] = static_cast<int64_t>(state);
 	item["subscribed"] = (state & k_EItemStateSubscribed) != 0;
 	item["legacy"] = (state & k_EItemStateLegacyItem) != 0;
 	item["installed"] = (state & k_EItemStateInstalled) != 0;
@@ -109,6 +113,15 @@ static Dictionary workshop_item_dictionary(ISteamUGC *ugc, PublishedFileId_t ite
 		item["status"] = "missing";
 	}
 	return item;
+}
+
+static void workshop_trace(const String &event, const Dictionary &fields)
+{
+	UtilityFunctions::print(
+			"MXT_WORKSHOP_NATIVE ticks_msec=",
+			static_cast<int64_t>(Time::get_singleton()->get_ticks_msec()),
+			" event=", event,
+			" fields=", fields);
 }
 
 #endif
@@ -161,6 +174,7 @@ struct SteamWorkshopState {
 	String replay_upload_remote_filename;
 	uint32 replay_upload_digest_words[8] = {};
 	UGCHandle_t replay_upload_handle = k_UGCHandleInvalid;
+	bool replay_attach_existing = false;
 	int64_t replay_download_request_id = 0;
 	UGCHandle_t replay_download_handle = k_UGCHandleInvalid;
 	int64_t replay_download_maximum_bytes = 0;
@@ -251,7 +265,8 @@ struct SteamWorkshopState {
 			entry["steam_id"] = static_cast<int64_t>(steam_entry.m_steamIDUser.ConvertToUint64());
 			entry["global_rank"] = steam_entry.m_nGlobalRank;
 			entry["score"] = steam_entry.m_nScore;
-			entry["ugc_handle"] = static_cast<int64_t>(steam_entry.m_hUGC);
+			entry["ugc_handle"] = steam_entry.m_hUGC == k_UGCHandleInvalid ?
+					static_cast<int64_t>(0) : static_cast<int64_t>(steam_entry.m_hUGC);
 			if (SteamFriends()) {
 				entry["persona_name"] = String::utf8(SteamFriends()->GetFriendPersonaName(steam_entry.m_steamIDUser));
 			}
@@ -307,6 +322,7 @@ struct SteamWorkshopState {
 		replay_upload_remote_filename = String();
 		for (uint32 &word : replay_upload_digest_words) word = 0;
 		replay_upload_handle = k_UGCHandleInvalid;
+		replay_attach_existing = false;
 		owner->complete_leaderboard_replay_upload(request_id, result);
 	}
 
@@ -334,6 +350,16 @@ struct SteamWorkshopState {
 			finish_replay_upload(request_result(false, io_failure ? String("Steam replay leaderboard I/O failure") : String("Replay leaderboard was not found.")));
 			return;
 		}
+		if (replay_attach_existing) {
+			const SteamAPICall_t attach_call = SteamUserStats()->AttachLeaderboardUGC(
+					value->m_hSteamLeaderboard, replay_upload_handle);
+			if (attach_call == k_uAPICallInvalid) {
+				finish_replay_upload(request_result(false, "Steam rejected the existing replay attachment."));
+				return;
+			}
+			replay_attach_call.Set(attach_call, this, &SteamWorkshopState::on_replay_attached);
+			return;
+		}
 		CSteamID user = SteamUser()->GetSteamID();
 		const SteamAPICall_t call = SteamUserStats()->DownloadLeaderboardEntriesForUsers(value->m_hSteamLeaderboard, &user, 1);
 		if (call == k_uAPICallInvalid) {
@@ -346,12 +372,20 @@ struct SteamWorkshopState {
 	void on_replay_entry_downloaded(LeaderboardScoresDownloaded_t *value, bool io_failure)
 	{
 		if (replay_upload_request_id == 0) return;
+		static constexpr int32 LEADERBOARD_DETAILS_MAGIC = 0x3154584D;
+		static constexpr int32 PREVIOUS_DETAILS_REVISION = 2;
+		static constexpr int32 PREVIOUS_DETAILS_WORD_COUNT = 29;
+		static constexpr int32 CURRENT_DETAILS_REVISION = 3;
+		static constexpr int32 CURRENT_DETAILS_WORD_COUNT = 30;
 		LeaderboardEntry_t entry = {};
-		int32 details[29] = {};
+		std::array<int32, CURRENT_DETAILS_WORD_COUNT> details = {};
 		bool digest_matches = false;
 		if (!io_failure && value->m_cEntryCount == 1 && SteamUserStats() &&
-				SteamUserStats()->GetDownloadedLeaderboardEntry(value->m_hSteamLeaderboardEntries, 0, &entry, details, 29) &&
-				entry.m_cDetails >= 29 && static_cast<uint32>(details[0]) == 0x3154584D && details[1] == 2) {
+				SteamUserStats()->GetDownloadedLeaderboardEntry(
+						value->m_hSteamLeaderboardEntries, 0, &entry, details.data(), details.size()) &&
+				static_cast<uint32>(details[0]) == static_cast<uint32>(LEADERBOARD_DETAILS_MAGIC) &&
+				((details[1] == PREVIOUS_DETAILS_REVISION && entry.m_cDetails >= PREVIOUS_DETAILS_WORD_COUNT) ||
+						(details[1] == CURRENT_DETAILS_REVISION && entry.m_cDetails >= CURRENT_DETAILS_WORD_COUNT))) {
 			digest_matches = true;
 			for (int index = 0; index < 8; ++index) {
 				if (static_cast<uint32>(details[5 + index]) != replay_upload_digest_words[index]) {
@@ -450,23 +484,44 @@ struct SteamWorkshopState {
 		if (value->m_unAppID != owner->get_app_id()) return;
 		Dictionary result = request_result(value->m_eResult == k_EResultOK, steam_result_name(value->m_eResult));
 		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
+		result["steam_result"] = static_cast<int64_t>(value->m_eResult);
+		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
+		owner->publish_workshop_diagnostic("download_result", result);
 		owner->complete_workshop_request(0, "download", result);
-		owner->refresh_subscribed_workshop_items();
+		owner->refresh_workshop_items();
 	}
 
 	void on_item_installed(ItemInstalled_t *value)
 	{
-		if (value->m_unAppID == owner->get_app_id()) owner->refresh_subscribed_workshop_items();
+		if (value->m_unAppID != owner->get_app_id()) return;
+		Dictionary result = request_result(true, "item installed");
+		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
+		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
+		owner->publish_workshop_diagnostic("item_installed", result);
+		owner->complete_workshop_request(0, "item_installed", result);
+		owner->refresh_workshop_items();
 	}
 
 	void on_subscribed(RemoteStoragePublishedFileSubscribed_t *value)
 	{
-		if (value->m_nAppID == owner->get_app_id()) owner->refresh_subscribed_workshop_items();
+		if (value->m_nAppID != owner->get_app_id()) return;
+		Dictionary result = request_result(true, "item subscribed");
+		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
+		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
+		owner->publish_workshop_diagnostic("item_subscribed", result);
+		owner->complete_workshop_request(0, "item_subscribed", result);
+		owner->refresh_workshop_items();
 	}
 
 	void on_unsubscribed(RemoteStoragePublishedFileUnsubscribed_t *value)
 	{
-		if (value->m_nAppID == owner->get_app_id()) owner->refresh_subscribed_workshop_items();
+		if (value->m_nAppID != owner->get_app_id()) return;
+		Dictionary result = request_result(true, "item unsubscribed");
+		result["published_file_id"] = static_cast<int64_t>(value->m_nPublishedFileId);
+		if (SteamUGC()) result["item_state"] = workshop_item_dictionary(SteamUGC(), value->m_nPublishedFileId);
+		owner->publish_workshop_diagnostic("item_unsubscribed", result);
+		owner->complete_workshop_request(0, "item_unsubscribed", result);
+		owner->refresh_workshop_items();
 	}
 };
 
@@ -509,7 +564,8 @@ void MxtSteamService::_bind_methods()
 	ClassDB::bind_method(
 			D_METHOD("submit_workshop_item_update", "published_file_id", "title", "description", "content_path", "preview_path", "tags", "metadata", "visibility", "change_note"),
 			&MxtSteamService::submit_workshop_item_update);
-	ClassDB::bind_method(D_METHOD("refresh_subscribed_workshop_items"), &MxtSteamService::refresh_subscribed_workshop_items);
+	ClassDB::bind_method(D_METHOD("refresh_workshop_items"), &MxtSteamService::refresh_workshop_items);
+	ClassDB::bind_method(D_METHOD("track_workshop_item", "published_file_id"), &MxtSteamService::track_workshop_item);
 	ClassDB::bind_method(D_METHOD("subscribe_workshop_item", "published_file_id"), &MxtSteamService::subscribe_workshop_item);
 	ClassDB::bind_method(D_METHOD("unsubscribe_workshop_item", "published_file_id"), &MxtSteamService::unsubscribe_workshop_item);
 	ClassDB::bind_method(D_METHOD("download_workshop_item", "published_file_id", "high_priority"), &MxtSteamService::download_workshop_item, DEFVAL(true));
@@ -524,6 +580,7 @@ void MxtSteamService::_bind_methods()
 	ClassDB::bind_method(D_METHOD("request_web_api_auth_ticket", "identity"), &MxtSteamService::request_web_api_auth_ticket);
 	ClassDB::bind_method(D_METHOD("cancel_web_api_auth_ticket", "ticket_handle"), &MxtSteamService::cancel_web_api_auth_ticket);
 	ClassDB::bind_method(D_METHOD("upload_leaderboard_replay", "leaderboard_name", "remote_filename", "expected_replay_sha256", "bytes"), &MxtSteamService::upload_leaderboard_replay);
+	ClassDB::bind_method(D_METHOD("attach_existing_leaderboard_replay", "leaderboard_name", "ugc_handle"), &MxtSteamService::attach_existing_leaderboard_replay);
 	ClassDB::bind_method(D_METHOD("download_leaderboard_replay", "ugc_handle", "maximum_bytes"), &MxtSteamService::download_leaderboard_replay);
 
 	ADD_SIGNAL(MethodInfo("status_changed", PropertyInfo(Variant::DICTIONARY, "status")));
@@ -533,6 +590,10 @@ void MxtSteamService::_bind_methods()
 			PropertyInfo(Variant::STRING, "operation"),
 			PropertyInfo(Variant::DICTIONARY, "result")));
 	ADD_SIGNAL(MethodInfo("workshop_items_changed", PropertyInfo(Variant::ARRAY, "items")));
+	ADD_SIGNAL(MethodInfo(
+			"workshop_diagnostic_event",
+			PropertyInfo(Variant::STRING, "event"),
+			PropertyInfo(Variant::DICTIONARY, "fields")));
 	ADD_SIGNAL(MethodInfo(
 			"leaderboard_request_completed",
 			PropertyInfo(Variant::INT, "request_id"),
@@ -617,12 +678,13 @@ bool MxtSteamService::initialize_steam()
 	initialized = true;
 	status_message = "Steam initialized.";
 	set_process(true);
+	load_tracked_workshop_item_ids();
 	UtilityFunctions::print(
 			"MXT Steam: initialized app_id=", app_id,
 			" steam_id=", static_cast<int64_t>(steam_id),
 			" persona=", persona_name);
 	publish_status();
-	refresh_subscribed_workshop_items();
+	refresh_workshop_items();
 	return true;
 #else
 	status_message = "Steamworks support was not compiled into this build.";
@@ -671,6 +733,7 @@ void MxtSteamService::shutdown_steam_internal(bool publish_change)
 	set_process(false);
 	clear_account_state();
 	workshop_items.clear();
+	tracked_workshop_item_ids.clear();
 	status_message = "Steam shut down.";
 	if (publish_change) {
 		publish_status();
@@ -741,6 +804,67 @@ void MxtSteamService::complete_workshop_request(
 void MxtSteamService::publish_workshop_items()
 {
 	emit_signal("workshop_items_changed", workshop_items.duplicate(true));
+}
+
+void MxtSteamService::load_tracked_workshop_item_ids()
+{
+	tracked_workshop_item_ids.clear();
+	if (steam_id == 0) return;
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const Error error = config->load(TRACKED_WORKSHOP_ITEMS_PATH);
+	if (error != OK && error != ERR_FILE_NOT_FOUND) {
+		Dictionary diagnostic;
+		diagnostic["path"] = TRACKED_WORKSHOP_ITEMS_PATH;
+		diagnostic["error"] = static_cast<int64_t>(error);
+		publish_workshop_diagnostic("tracked_items_load_failed", diagnostic);
+		return;
+	}
+	const String section = String("account_") + String::num_uint64(steam_id);
+	const Variant stored = config->get_value(section, "published_file_ids", Array());
+	if (stored.get_type() != Variant::ARRAY) return;
+	const Array ids = stored;
+	for (int64_t i = 0; i < ids.size(); ++i) {
+		const int64_t published_file_id = ids[i];
+		if (published_file_id > 0 && !tracked_workshop_item_ids.has(published_file_id)) {
+			tracked_workshop_item_ids.push_back(published_file_id);
+		}
+	}
+	tracked_workshop_item_ids.sort();
+	Dictionary diagnostic;
+	diagnostic["published_file_ids"] = tracked_workshop_item_ids.duplicate();
+	publish_workshop_diagnostic("tracked_items_loaded", diagnostic);
+}
+
+void MxtSteamService::save_tracked_workshop_item_ids()
+{
+	if (steam_id == 0) return;
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const Error load_error = config->load(TRACKED_WORKSHOP_ITEMS_PATH);
+	if (load_error != OK && load_error != ERR_FILE_NOT_FOUND) {
+		Dictionary diagnostic;
+		diagnostic["path"] = TRACKED_WORKSHOP_ITEMS_PATH;
+		diagnostic["error"] = static_cast<int64_t>(load_error);
+		publish_workshop_diagnostic("tracked_items_save_failed", diagnostic);
+		return;
+	}
+	const String section = String("account_") + String::num_uint64(steam_id);
+	config->set_value(section, "published_file_ids", tracked_workshop_item_ids.duplicate());
+	const Error save_error = config->save(TRACKED_WORKSHOP_ITEMS_PATH);
+	Dictionary diagnostic;
+	diagnostic["path"] = TRACKED_WORKSHOP_ITEMS_PATH;
+	diagnostic["published_file_ids"] = tracked_workshop_item_ids.duplicate();
+	diagnostic["error"] = static_cast<int64_t>(save_error);
+	publish_workshop_diagnostic(save_error == OK ? "tracked_items_saved" : "tracked_items_save_failed", diagnostic);
+}
+
+void MxtSteamService::publish_workshop_diagnostic(const String &event, const Dictionary &fields)
+{
+#if defined(MXT_STEAMWORKS_ENABLED)
+	workshop_trace(event, fields);
+#endif
+	emit_signal("workshop_diagnostic_event", event, fields.duplicate(true));
 }
 
 int64_t MxtSteamService::create_workshop_item()
@@ -872,28 +996,54 @@ int64_t MxtSteamService::submit_workshop_item_update(
 	return request_id;
 }
 
-bool MxtSteamService::refresh_subscribed_workshop_items()
+bool MxtSteamService::refresh_workshop_items()
 {
 #if defined(MXT_STEAMWORKS_ENABLED)
-	if (!initialized || !SteamUGC()) return false;
+	const uint64_t refresh_start_usec = Time::get_singleton()->get_ticks_usec();
+	if (!initialized || !SteamUGC()) {
+		Dictionary unavailable;
+		unavailable["initialized"] = initialized;
+		unavailable["steam_ugc_available"] = SteamUGC() != nullptr;
+		publish_workshop_diagnostic("refresh_rejected", unavailable);
+		return false;
+	}
 	ISteamUGC *ugc = SteamUGC();
 	const uint32 count = ugc->GetNumSubscribedItems(true);
 	std::vector<PublishedFileId_t> ids(count);
 	const uint32 received = count == 0 ? 0 : ugc->GetSubscribedItems(ids.data(), count, true);
-	workshop_items.clear();
-	for (uint32 i = 0; i < received; ++i) {
-		Dictionary item = workshop_item_dictionary(ugc, ids[i]);
-		workshop_items.push_back(item);
-		const uint32 state = ugc->GetItemState(ids[i]);
-		if ((state & k_EItemStateDisabledLocally) == 0 &&
-				(state & (k_EItemStateInstalled | k_EItemStateDownloading | k_EItemStateDownloadPending)) == 0) {
-			ugc->DownloadItem(ids[i], false);
-		} else if ((state & k_EItemStateNeedsUpdate) != 0 &&
-				(state & (k_EItemStateDownloading | k_EItemStateDownloadPending)) == 0) {
-			ugc->DownloadItem(ids[i], false);
+	ids.resize(received);
+	for (int64_t i = 0; i < tracked_workshop_item_ids.size(); ++i) {
+		const PublishedFileId_t session_id = static_cast<PublishedFileId_t>(
+				static_cast<int64_t>(tracked_workshop_item_ids[i]));
+		bool already_present = false;
+		for (const PublishedFileId_t id : ids) {
+			if (id == session_id) {
+				already_present = true;
+				break;
+			}
 		}
+		if (!already_present) ids.push_back(session_id);
 	}
+	Dictionary refresh_begin;
+	refresh_begin["subscribed_count"] = static_cast<int64_t>(count);
+	refresh_begin["received_count"] = static_cast<int64_t>(received);
+	refresh_begin["tracked_item_ids"] = tracked_workshop_item_ids.duplicate();
+	refresh_begin["merged_count"] = static_cast<int64_t>(ids.size());
+	publish_workshop_diagnostic("refresh_begin", refresh_begin);
+	Array refreshed_items;
+	for (const PublishedFileId_t id : ids) {
+		Dictionary item = workshop_item_dictionary(ugc, id);
+		refreshed_items.push_back(item);
+		publish_workshop_diagnostic("refresh_item", item);
+	}
+	const bool changed = refreshed_items != workshop_items;
+	workshop_items = refreshed_items;
 	publish_workshop_items();
+	Dictionary refresh_end;
+	refresh_end["duration_usec"] = static_cast<int64_t>(Time::get_singleton()->get_ticks_usec() - refresh_start_usec);
+	refresh_end["published_item_count"] = workshop_items.size();
+	refresh_end["changed"] = changed;
+	publish_workshop_diagnostic("refresh_end", refresh_end);
 	return true;
 #else
 	return false;
@@ -910,11 +1060,31 @@ bool MxtSteamService::subscribe_workshop_item(int64_t published_file_id)
 #endif
 }
 
+bool MxtSteamService::track_workshop_item(int64_t published_file_id)
+{
+#if defined(MXT_STEAMWORKS_ENABLED)
+	if (!initialized || published_file_id <= 0 || !SteamUGC()) return false;
+	if (!tracked_workshop_item_ids.has(published_file_id)) {
+		tracked_workshop_item_ids.push_back(published_file_id);
+		tracked_workshop_item_ids.sort();
+		save_tracked_workshop_item_ids();
+	}
+	return true;
+#else
+	return false;
+#endif
+}
+
 bool MxtSteamService::unsubscribe_workshop_item(int64_t published_file_id)
 {
 #if defined(MXT_STEAMWORKS_ENABLED)
-	return initialized && published_file_id > 0 && SteamUGC() &&
-			SteamUGC()->UnsubscribeItem(static_cast<PublishedFileId_t>(published_file_id)) != k_uAPICallInvalid;
+	if (!initialized || published_file_id <= 0 || !SteamUGC() ||
+			SteamUGC()->UnsubscribeItem(static_cast<PublishedFileId_t>(published_file_id)) == k_uAPICallInvalid) {
+		return false;
+	}
+	tracked_workshop_item_ids.erase(published_file_id);
+	save_tracked_workshop_item_ids();
+	return true;
 #else
 	return false;
 #endif
@@ -923,8 +1093,34 @@ bool MxtSteamService::unsubscribe_workshop_item(int64_t published_file_id)
 bool MxtSteamService::download_workshop_item(int64_t published_file_id, bool high_priority)
 {
 #if defined(MXT_STEAMWORKS_ENABLED)
-	return initialized && published_file_id > 0 && SteamUGC() &&
-			SteamUGC()->DownloadItem(static_cast<PublishedFileId_t>(published_file_id), high_priority);
+	Dictionary request;
+	request["published_file_id"] = published_file_id;
+	request["high_priority"] = high_priority;
+	request["initialized"] = initialized;
+	request["steam_ugc_available"] = SteamUGC() != nullptr;
+	if (!track_workshop_item(published_file_id)) {
+		request["accepted"] = false;
+		request["reason"] = "invalid request or Steam Workshop unavailable";
+		publish_workshop_diagnostic("download_request", request);
+		return false;
+	}
+	ISteamUGC *ugc = SteamUGC();
+	const PublishedFileId_t item_id = static_cast<PublishedFileId_t>(published_file_id);
+	request["item_state_before"] = workshop_item_dictionary(ugc, item_id);
+	const uint32 state = ugc->GetItemState(item_id);
+	if ((state & (k_EItemStateDownloading | k_EItemStateDownloadPending)) != 0) {
+		request["accepted"] = true;
+		request["already_in_progress"] = true;
+		request["item_state_after"] = request["item_state_before"];
+		publish_workshop_diagnostic("download_request", request);
+		return true;
+	}
+	const bool accepted = ugc->DownloadItem(item_id, high_priority);
+	request["accepted"] = accepted;
+	request["item_state_after"] = workshop_item_dictionary(ugc, item_id);
+	publish_workshop_diagnostic("download_request", request);
+	if (!accepted) return false;
+	return true;
 #else
 	return false;
 #endif
@@ -1076,7 +1272,22 @@ int64_t MxtSteamService::upload_leaderboard_replay(
 	}
 	const CharString filename_utf8 = remote_filename.utf8();
 	if (!SteamRemoteStorage()->FileWrite(filename_utf8.get_data(), bytes.ptr(), static_cast<int32>(bytes.size()))) {
-		complete_leaderboard_replay_upload(request_id, request_result(false, "Steam could not write the replay to Remote Storage."));
+		String message = "Steam could not write the replay to Remote Storage.";
+		if (!SteamRemoteStorage()->IsCloudEnabledForApp()) {
+			message = "Steam Cloud is not enabled for this app.";
+		} else if (!SteamRemoteStorage()->IsCloudEnabledForAccount()) {
+			message = "Steam Cloud is disabled for this Steam account.";
+		} else {
+			uint64 total_bytes = 0;
+			uint64 available_bytes = 0;
+			if (SteamRemoteStorage()->GetQuota(&total_bytes, &available_bytes) &&
+					available_bytes < static_cast<uint64>(bytes.size())) {
+				message = "Steam Cloud has insufficient storage quota (" +
+						String::num_uint64(available_bytes) + " bytes available; " +
+						String::num_int64(bytes.size()) + " required).";
+			}
+		}
+		complete_leaderboard_replay_upload(request_id, request_result(false, message));
 		return request_id;
 	}
 	const SteamAPICall_t call = SteamRemoteStorage()->FileShare(filename_utf8.get_data());
@@ -1094,6 +1305,38 @@ int64_t MxtSteamService::upload_leaderboard_replay(
 	return request_id;
 }
 
+int64_t MxtSteamService::attach_existing_leaderboard_replay(const String &leaderboard_name, int64_t ugc_handle)
+{
+	const int64_t request_id = allocate_request_id();
+#if defined(MXT_STEAMWORKS_ENABLED)
+	if (!initialized || !workshop_state || !SteamUserStats()) {
+		complete_leaderboard_replay_upload(request_id, request_result(false, "Steam leaderboard replay attachment is unavailable."));
+		return request_id;
+	}
+	const UGCHandle_t handle = static_cast<UGCHandle_t>(ugc_handle);
+	if (workshop_state->replay_upload_request_id != 0 || leaderboard_name.is_empty() ||
+			leaderboard_name.length() > 128 || handle == k_UGCHandleInvalid) {
+		complete_leaderboard_replay_upload(request_id, request_result(false, "Existing replay attachment parameters or state are invalid."));
+		return request_id;
+	}
+	workshop_state->replay_upload_request_id = request_id;
+	workshop_state->replay_upload_leaderboard_name = leaderboard_name;
+	workshop_state->replay_upload_handle = handle;
+	workshop_state->replay_attach_existing = true;
+	const CharString name_utf8 = leaderboard_name.utf8();
+	const SteamAPICall_t call = SteamUserStats()->FindLeaderboard(name_utf8.get_data());
+	if (call == k_uAPICallInvalid) {
+		workshop_state->finish_replay_upload(request_result(false, "Steam rejected the replay leaderboard lookup."));
+		return request_id;
+	}
+	workshop_state->replay_leaderboard_find_call.Set(
+			call, workshop_state, &SteamWorkshopState::on_replay_leaderboard_found);
+#else
+	complete_leaderboard_replay_upload(request_id, request_result(false, "Steamworks support was not compiled into this build."));
+#endif
+	return request_id;
+}
+
 int64_t MxtSteamService::download_leaderboard_replay(int64_t ugc_handle, int64_t maximum_bytes)
 {
 	const int64_t request_id = allocate_request_id();
@@ -1102,7 +1345,9 @@ int64_t MxtSteamService::download_leaderboard_replay(int64_t ugc_handle, int64_t
 		complete_leaderboard_replay_download(request_id, request_result(false, "Steam replay storage is unavailable."));
 		return request_id;
 	}
-	if (workshop_state->replay_download_request_id != 0 || ugc_handle == 0 || maximum_bytes <= 0 || maximum_bytes > 64 * 1024 * 1024) {
+	if (workshop_state->replay_download_request_id != 0 || ugc_handle == 0 ||
+			static_cast<UGCHandle_t>(ugc_handle) == k_UGCHandleInvalid ||
+			maximum_bytes <= 0 || maximum_bytes > 64 * 1024 * 1024) {
 		complete_leaderboard_replay_download(request_id, request_result(false, "Replay download parameters or state are invalid."));
 		return request_id;
 	}

@@ -18,6 +18,7 @@ const RaceSessionControllerClass = preload("res://core/race_session_controller.g
 const DEBUG_REPLAY_VERSION := 2
 const REPLAY_SCHEMA_VERSION := 4
 const REPLAY_COMPATIBILITY_WARNING := "This replay was recorded on an older version of the game, and may desync."
+const SUBMISSION_REPLAY_ROOT := "user://leaderboard_submission_replays"
 const GameVersionData = preload("res://core/game_version.gd")
 const REPLAY_CAMERA_GAME := 0
 const REPLAY_CAMERA_AUTO := 1
@@ -60,6 +61,7 @@ var replay_recording_racer_ids: Array = []
 var replay_recording_cpu_flags: Array = []
 var replay_recording_frames: Array = []
 var replay_recording_input_bytes: int = 0
+var replay_recording_staged_path: String = ""
 var replay_start_grid_slots: PackedInt32Array = PackedInt32Array()
 var replay_playback_active: bool = false
 var replay_playback_frames: Array = []
@@ -117,6 +119,7 @@ var replay_timeline_marker_layer: Control
 var replay_timeline_time_label: Label
 var replay_timeline_rate_label: Label
 var replay_timeline_play_button: Button
+var replay_timeline_save_local_button: Button
 var replay_timeline_focus_prev_button: Button
 var replay_timeline_focus_next_button: Button
 var replay_input_display_panel: PanelContainer
@@ -273,10 +276,10 @@ func record_singleplayer_frame(tick: int) -> void:
 	if replay_recording_active and game_manager.game_sim.has_method("get_input_frame_as_dictionary"):
 		record_frame(tick, game_manager.game_sim.get_input_frame_as_dictionary(tick))
 
-func reset_for_transition(save_server_replay: bool) -> void:
+func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
 	if debug_replay_recording:
 		_stop_and_save_debug_replay_recording()
-	stop_recording(save_server_replay)
+	stop_recording(save_multiplayer_host_replay)
 	debug_replay_playback = false
 	replay_playback_active = false
 	replay_playback_use_multiplayer_startup = false
@@ -294,6 +297,7 @@ func reset_for_transition(save_server_replay: bool) -> void:
 	_refresh_replay_input_display()
 	replay_start_grid_slots = PackedInt32Array()
 	_clear_recording_payload()
+	replay_recording_staged_path = ""
 	_clear_playback_payload()
 	debug_replay_inputs.clear()
 	debug_replay_playback_inputs.clear()
@@ -314,6 +318,7 @@ func _clear_playback_payload() -> void:
 	replay_playback_frames.clear()
 	replay_playback_index = 0
 	replay_playback_loaded_path = ""
+	_refresh_replay_timeline_save_local_button()
 	replay_playback_focus_index = 0
 	replay_playback_racer_ids.clear()
 	replay_playback_cpu_flags.clear()
@@ -338,15 +343,71 @@ func update(delta: float) -> void:
 	_update_replay_timeline_controls()
 
 func _on_pause_save_replay_pressed() -> void:
-	var saved_path := _save_replay_recording("manual")
+	var saved_path := save_replay_locally()
 	if saved_path != "":
 		race_presentation_controller.show_notification("Replay Saved", 2200)
 	refresh_pause_button()
 
-func save_completed_time_attack_replay() -> String:
-	if String(game_manager.network_manager.race_options.get("session_kind", "")) != "time_attack":
+func finish_recording() -> void:
+	replay_recording_active = false
+	refresh_pause_button()
+
+func can_save_replay_locally() -> bool:
+	return game_manager.singleplayer_mode and !replay_recording_saved and !replay_recording_frames.is_empty()
+
+func save_replay_locally() -> String:
+	if !can_save_replay_locally():
 		return ""
-	return _save_replay_recording("time_attack_submission")
+	var path := _write_replay_recording("manual", _replay_dir())
+	if path.is_empty():
+		return ""
+	replay_recording_saved = true
+	replay_recording_active = false
+	_clear_recording_payload()
+	refresh_pause_button()
+	return path
+
+func stage_completed_time_attack_replay(for_submission: bool) -> String:
+	var session_kind := String(game_manager.network_manager.race_options.get("session_kind", ""))
+	if session_kind not in ["time_attack", "time_attack_practice"] \
+			or for_submission != (session_kind == "time_attack"):
+		return ""
+	finish_recording()
+	replay_recording_staged_path = _write_replay_recording(
+		"time_attack_submission" if for_submission else "time_attack_preview",
+		ProjectSettings.globalize_path(SUBMISSION_REPLAY_ROOT))
+	if !replay_recording_staged_path.is_empty():
+		_clear_recording_payload()
+	return replay_recording_staged_path
+
+func _staged_replay_local_path(path: String) -> String:
+	if path.is_empty():
+		return ""
+	var staging_root := ProjectSettings.globalize_path(SUBMISSION_REPLAY_ROOT).simplify_path().to_lower()
+	var absolute_path := ProjectSettings.globalize_path(path).simplify_path()
+	var lower_path := absolute_path.to_lower()
+	if !lower_path.begins_with(staging_root + "/") and !lower_path.begins_with(staging_root + "\\"):
+		return ""
+	return _replay_dir().path_join(absolute_path.get_file())
+
+func can_save_staged_replay_locally(path: String) -> bool:
+	var local_path := _staged_replay_local_path(path)
+	return !local_path.is_empty() and FileAccess.file_exists(path) and !FileAccess.file_exists(local_path)
+
+func save_staged_replay_locally(path: String) -> String:
+	var local_path := _staged_replay_local_path(path)
+	if local_path.is_empty() or !FileAccess.file_exists(path):
+		return ""
+	if FileAccess.file_exists(local_path):
+		return local_path
+	if DirAccess.make_dir_recursive_absolute(_replay_dir()) != OK:
+		return ""
+	if DirAccess.copy_absolute(ProjectSettings.globalize_path(path), local_path) != OK:
+		return ""
+	if replay_catalog_root != null and replay_catalog_root.visible:
+		_refresh_replay_catalog()
+	_refresh_replay_timeline_save_local_button()
+	return local_path
 
 func _replay_dir() -> String:
 	return ProjectSettings.globalize_path("user://replays")
@@ -385,8 +446,9 @@ func _replay_should_record_current_race() -> bool:
 	return game_manager.network_manager.is_server
 
 func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_flags: Array, start_grid_slots: PackedInt32Array) -> void:
-	stop_recording(false)
+	stop_recording()
 	_clear_recording_payload()
+	replay_recording_staged_path = ""
 	if !_replay_should_record_current_race():
 		return
 	replay_recording_active = true
@@ -475,15 +537,17 @@ func _settings_array_with_vehicle_content_evidence(settings: Array) -> Array:
 			output.append(_settings_with_vehicle_content_evidence(settings_value as Dictionary))
 	return output
 
-func stop_recording(save_server_replay: bool) -> void:
-	if save_server_replay and replay_recording_active and !replay_recording_saved and replay_recording_source == "server":
-		_save_replay_recording("auto")
+func stop_recording(save_multiplayer_host_replay := false) -> void:
+	if save_multiplayer_host_replay and replay_recording_active and !replay_recording_saved and replay_recording_source == "server":
+		var saved_path := _write_replay_recording("auto", _replay_dir())
+		if !saved_path.is_empty():
+			replay_recording_saved = true
 	replay_recording_active = false
 
 func refresh_pause_button() -> void:
 	if race_pause_save_replay_button == null:
 		return
-	var can_save := game_manager.singleplayer_mode and replay_recording_active and !replay_recording_saved and game_manager.network_manager.race_results.net_race_finish_time != -1
+	var can_save := can_save_replay_locally() and game_manager.network_manager.race_results.net_race_finish_time != -1
 	race_pause_save_replay_button.visible = can_save
 	race_pause_save_replay_button.disabled = !can_save
 
@@ -511,10 +575,9 @@ func record_frame(tick: int, frame_inputs: Dictionary) -> void:
 		return
 	replay_recording_frames.append(_raw_replay_frame(tick, frame_inputs))
 
-func _save_replay_recording(reason: String) -> String:
-	if !replay_recording_active or replay_recording_saved or replay_recording_frames.is_empty():
+func _write_replay_recording(reason: String, replay_dir: String) -> String:
+	if replay_recording_frames.is_empty():
 		return ""
-	var replay_dir := _replay_dir()
 	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
 	if err != OK:
 		push_warning("Replay save failed: could not create %s err=%s" % [replay_dir, str(err)])
@@ -554,9 +617,6 @@ func _save_replay_recording(reason: String) -> String:
 	file.store_string("\n\t]\n}\n")
 	file.close()
 	var saved_frame_count := replay_recording_frames.size()
-	replay_recording_saved = true
-	replay_recording_active = false
-	_clear_recording_payload()
 	print("MXT_REPLAY saved ", path, " frames=", saved_frame_count)
 	game_manager.record_memory_sample("replay_save_complete")
 	return path
@@ -838,6 +898,12 @@ func _build_replay_timeline_controls() -> void:
 	replay_input_display_checkbox.button_pressed = replay_input_display_enabled
 	replay_input_display_checkbox.toggled.connect(_on_replay_input_display_toggled)
 	controls.add_child(replay_input_display_checkbox)
+	replay_timeline_save_local_button = Button.new()
+	replay_timeline_save_local_button.text = "Save Replay Locally"
+	replay_timeline_save_local_button.focus_mode = Control.FOCUS_NONE
+	replay_timeline_save_local_button.visible = false
+	replay_timeline_save_local_button.pressed.connect(_on_replay_timeline_save_local_pressed)
+	controls.add_child(replay_timeline_save_local_button)
 	replay_timeline_time_label = Label.new()
 	replay_timeline_time_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	replay_timeline_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -849,6 +915,23 @@ func _format_replay_timeline_time(tick_value: int) -> String:
 	var seconds := int(total_msec / 1000) % 60
 	var milliseconds := total_msec % 1000
 	return "%d:%02d.%03d" % [minutes, seconds, milliseconds]
+
+func _refresh_replay_timeline_save_local_button() -> void:
+	if replay_timeline_save_local_button == null:
+		return
+	var local_path := _staged_replay_local_path(replay_playback_loaded_path)
+	replay_timeline_save_local_button.visible = !local_path.is_empty()
+	var already_saved := !local_path.is_empty() and FileAccess.file_exists(local_path)
+	replay_timeline_save_local_button.disabled = already_saved
+	replay_timeline_save_local_button.text = "Saved Locally" if already_saved else "Save Replay Locally"
+
+func _on_replay_timeline_save_local_pressed() -> void:
+	var saved_path := save_staged_replay_locally(replay_playback_loaded_path)
+	if saved_path.is_empty():
+		race_presentation_controller.show_notification("Replay could not be saved", 3000)
+		return
+	race_presentation_controller.show_notification("Replay Saved", 2200)
+	_refresh_replay_timeline_save_local_button()
 
 func _replay_marker_bucket(player_id: int) -> Dictionary:
 	if !replay_timeline_markers.has(player_id):
@@ -1266,6 +1349,7 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	var profile_frames_duplicate_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us
 	replay_playback_index = 0
 	replay_playback_loaded_path = path
+	_refresh_replay_timeline_save_local_button()
 	replay_playback_racer_ids = racer_ids.duplicate(true)
 	replay_playback_cpu_flags = cpu_flags.duplicate(true)
 	replay_saved_finish_times = (replay.get("finish_times", {}) as Dictionary).duplicate(true) if typeof(replay.get("finish_times", {})) == TYPE_DICTIONARY else {}
@@ -1482,20 +1566,22 @@ func _seek_replay_to_tick(target_tick: int, show_notice: bool = true) -> bool:
 func should_enqueue_replay_race_notification() -> bool:
 	return !replay_playback_active or replay_normal_playback_tick_active
 
-func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: bool = true, enqueue_event_notifications: bool = true) -> bool:
+func simulate_playback(handle_terminal_state: bool = true, respect_pause: bool = true, enqueue_event_notifications: bool = true) -> bool:
 	if respect_pause and replay_playback_paused:
 		return true
 	if replay_playback_index >= replay_playback_frames.size():
-		if return_to_menu_on_complete:
+		if handle_terminal_state:
 			print("MXT_REPLAY playback complete ", replay_playback_loaded_path)
 			if game_manager.headless_mode:
 				get_tree().quit()
 			else:
-				game_manager._return_to_menu()
+				replay_playback_paused = true
+				_apply_replay_playback_clock()
+				_update_replay_timeline_controls()
 		return false
 	var raw_frame = replay_playback_frames[replay_playback_index]
 	if typeof(raw_frame) != TYPE_DICTIONARY:
-		if return_to_menu_on_complete:
+		if handle_terminal_state:
 			if game_manager.headless_mode:
 				get_tree().quit(1)
 			else:
@@ -1505,7 +1591,7 @@ func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: b
 	var frame_tick := int(frame.get("tick", replay_playback_index))
 	if frame_tick != game_manager._singleplayer_tick:
 		push_warning("Replay playback refused: expected tick %d, found saved tick %d" % [game_manager._singleplayer_tick, frame_tick])
-		if return_to_menu_on_complete:
+		if handle_terminal_state:
 			if game_manager.headless_mode:
 				get_tree().quit(1)
 			else:
@@ -1526,7 +1612,7 @@ func simulate_playback(return_to_menu_on_complete: bool = true, respect_pause: b
 		if !game_manager.network_manager.input_transport.netcode_session.tick_server_frame(game_manager.game_sim, game_manager._singleplayer_tick, true):
 			replay_normal_playback_tick_active = false
 			push_warning("Replay playback failed at tick %d" % game_manager._singleplayer_tick)
-			if return_to_menu_on_complete:
+			if handle_terminal_state:
 				if game_manager.headless_mode:
 					get_tree().quit(1)
 				else:

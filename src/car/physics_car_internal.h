@@ -98,6 +98,13 @@ static inline bool trace_rail_for_car(const PhysicsCarSoA *soa, int soa_index)
 		DEBUG::rail_trace_filter_matches(soa->global_start + soa_index, soa->simulation_tick[soa_index]);
 }
 
+static inline bool trace_yaw_for_car(const PhysicsCarSoA *soa, int soa_index)
+{
+	return soa &&
+		DEBUG::dip_enabled(DIP_SWITCH::DIP_TRACE_YAW) &&
+		DEBUG::yaw_trace_filter_matches(soa->global_start + soa_index, soa->simulation_tick[soa_index]);
+}
+
 static constexpr float rail_depenetration_epsilon = 0.01f;
 
 static inline SimTransform mesh_hit_plane_transform(const SimVec3 &point, const SimVec3 &normal)

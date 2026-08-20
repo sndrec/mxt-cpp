@@ -41,7 +41,7 @@ const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var car_settings: CarSettingsClass = $CarSettings
 @onready var time_attack_setup: TimeAttackSetupClass = $TimeAttackSetup
-@onready var options_menu: Control = $OptionsMenu
+@onready var options_menu: Control = $OptionsLayer/OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
 @onready var spectator_race_button: Button = $Control/SpectatorRaceButton
@@ -55,7 +55,9 @@ const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 @onready var race_pause_root: Control = $RacePauseLayer/RacePauseRoot
 @onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
 @onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
+@onready var race_pause_retry_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RetryButton
 @onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
+@onready var race_pause_save_replay_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton
 @onready var race_pause_lobby_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/LobbyButton
 @onready var race_pause_disconnect_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/DisconnectButton
 
@@ -71,9 +73,11 @@ const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
 const LeaderboardReplayServiceClass = preload("res://steam/leaderboard_replay_service.gd")
+const LegacyLeaderboardSettingRecoveryClass = preload("res://steam/legacy_leaderboard_setting_recovery.gd")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
 const RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC := 25000
+const CAMERA_SETTINGS_PATH := "user://camera_settings.json"
 
 var player_scene := preload("res://player/player_controller.tscn")
 var headless_mode: bool = false
@@ -96,6 +100,7 @@ var time_attack_last_replay_path := ""
 var time_attack_rank_refresh_board := ""
 var time_attack_rank_refresh_global := ""
 var time_attack_rank_refresh_friends := ""
+var gameplay_camera_zoom_mode := 1
 var launch_cpu_driver_count: int = -1
 var auto_host_mode: bool = false
 var auto_singleplayer_mode: bool = false
@@ -116,13 +121,45 @@ var start_sync_drop_button: Button
 const DNF_SPEED_THRESHOLD_KMH := 400.0
 const DNF_LOW_SPEED_TICKS := 60 * 10
 const FORCE_END_WINDOW_TICKS := 60 * 60
+const RACE_PAUSE_NAV_PRESS_THRESHOLD := 0.60
+const RACE_PAUSE_NAV_RELEASE_THRESHOLD := 0.35
+const RACE_PAUSE_NAV_DAS_SECONDS := 0.33
+const RACE_PAUSE_NAV_ARR_SECONDS := 0.09
+const NATIVE_UI_FOCUS_ACTIONS: Array[StringName] = [
+	&"ui_up",
+	&"ui_down",
+	&"ui_left",
+	&"ui_right",
+	&"ui_focus_next",
+	&"ui_focus_prev",
+	&"ui_page_up",
+	&"ui_page_down",
+	&"ui_home",
+	&"ui_end",
+]
 
 var race_pause_open := false
+var race_pause_options_open := false
+var race_pause_nav_direction := 0
+var race_pause_nav_repeat_seconds := 0.0
 var steam_service: MxtSteamService
 var leaderboard_client: LeaderboardClient
 var leaderboard_replay_service
+var legacy_leaderboard_setting_recovery
+
+func _enter_tree() -> void:
+	_disable_native_joypad_focus_navigation()
+
+func _disable_native_joypad_focus_navigation() -> void:
+	for action in NATIVE_UI_FOCUS_ACTIONS:
+		if !InputMap.has_action(action):
+			continue
+		for event in InputMap.action_get_events(action):
+			if event is InputEventJoypadButton or event is InputEventJoypadMotion:
+				InputMap.action_erase_event(action, event)
 
 func _ready() -> void:
+	_load_gameplay_camera_settings()
 	steam_service = MxtSteamService.new()
 	steam_service.name = "SteamService"
 	add_child(steam_service)
@@ -157,6 +194,7 @@ func _ready() -> void:
 		car_node_container,
 		car_settings)
 	race_presentation_controller.results_overlay.time_attack_race_again_requested.connect(_on_time_attack_race_again_requested)
+	race_presentation_controller.results_overlay.time_attack_save_replay_requested.connect(_on_time_attack_save_replay_requested)
 	race_presentation_controller.results_overlay.time_attack_watch_replay_requested.connect(_on_time_attack_watch_replay_requested)
 	race_presentation_controller.results_overlay.time_attack_leaderboard_requested.connect(_on_time_attack_results_leaderboard_requested)
 	race_presentation_controller.results_overlay.time_attack_main_menu_requested.connect(_on_time_attack_main_menu_requested)
@@ -243,6 +281,14 @@ func _ready() -> void:
 	headless_mode = DisplayServer.get_name() == "headless"
 	var args := OS.get_cmdline_args()
 	var user_args := OS.get_cmdline_user_args()
+	var legacy_setting_recovery_requested := LegacyLeaderboardSettingRecoveryClass.requested(args, user_args)
+	if legacy_setting_recovery_requested:
+		legacy_leaderboard_setting_recovery = LegacyLeaderboardSettingRecoveryClass.new()
+		legacy_leaderboard_setting_recovery.name = "LegacyLeaderboardSettingRecovery"
+		add_child(legacy_leaderboard_setting_recovery)
+		legacy_leaderboard_setting_recovery.initialize(self, steam_service, args, user_args)
+		$Control.visible = false
+		lobby_control.visible = false
 	var lobby_load_peer_mode := args.has("--lobby-load-peer") or user_args.has("--lobby-load-peer")
 	launch_cpu_driver_count = _parse_cpu_driver_count_arg(args)
 	if launch_cpu_driver_count < 0:
@@ -262,11 +308,11 @@ func _ready() -> void:
 	debug_runtime_controller.configure_command_line(args, user_args)
 	auto_track_editor_mode = args.has("--track-editor") or user_args.has("--track-editor") or args.has("--mxt-track-editor") or user_args.has("--mxt-track-editor")
 	var replay_launch_requested := replay_controller.configure_command_line(args, user_args)
-	if !replay_launch_requested and auto_track_editor_mode:
+	if !legacy_setting_recovery_requested and !replay_launch_requested and auto_track_editor_mode:
 		call_deferred("_on_track_editor_button_pressed")
-	elif !replay_launch_requested and auto_singleplayer_mode:
+	elif !legacy_setting_recovery_requested and !replay_launch_requested and auto_singleplayer_mode:
 		call_deferred("_start_singleplayer_race", false, TimeAttackRulesClass.build_options())
-	if headless_mode and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
+	if headless_mode and !legacy_setting_recovery_requested and !lobby_load_peer_mode and !auto_host_mode and !auto_track_editor_mode and !auto_singleplayer_mode and !replay_launch_requested:
 		var vehicle_content_id := ""
 		if vehicle_content_controller.definitions.size() > 0:
 			vehicle_content_id = vehicle_content_controller.definitions[0].content_id
@@ -312,14 +358,26 @@ func _load_tracks() -> void:
 	lobby_controller.reload_tracks(command_line_track_index)
 
 func _on_vehicle_content_catalog_changed() -> void:
+	var refresh_start_usec := Time.get_ticks_usec()
+	vehicle_content_controller.record_workshop_diagnostic_event("catalog_change_consumers_begin")
 	_load_tracks()
+	if lobby_chibi_controller != null:
+		lobby_chibi_controller.refresh_vehicle_content()
 	if car_settings != null:
 		car_settings.call("refresh_after_game_manager_loaded")
+	vehicle_content_controller.record_workshop_diagnostic_event("catalog_change_consumers_end", {
+		"duration_usec": Time.get_ticks_usec() - refresh_start_usec,
+		"lobby_chibi_active": lobby_chibi_controller != null,
+		"car_settings_active": car_settings != null,
+	})
 
 func build_cpu_player_settings(index: int) -> Dictionary:
 	var ps := PlayerSettings.new()
 	ps.username = "CPU %03d" % (index + 1)
 	var content_ids := vehicle_content_controller.get_vehicle_content_ids()
+	if network_manager != null and network_manager.has_network_peer():
+		content_ids = vehicle_content_controller.get_multiplayer_vehicle_content_ids(
+			bool(network_manager.race_options.get("allow_workshop_vehicles", true)))
 	if content_ids.size() > 0:
 		ps.vehicle_content_id = content_ids[index % content_ids.size()]
 	else:
@@ -351,6 +409,7 @@ func _on_time_attack_setup_start_requested(ranked: bool, context: Dictionary) ->
 	var options := TimeAttackRulesClass.build_options()
 	if !ranked:
 		options["session_kind"] = "time_attack_practice"
+		options["cpu_count"] = singleplayer_cpu_count
 		options["leaderboard_eligible"] = false
 		options["leaderboard_ineligible_reason"] = "practice_unranked"
 	_start_singleplayer_race(false, options)
@@ -485,6 +544,7 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	if ps.vehicle_content_id == "" and vehicle_content_controller.definitions.size() > 0:
 		ps.vehicle_content_id = vehicle_content_controller.definitions[0].content_id
 	vehicle_content_controller.apply_evidence(ps)
+	time_attack_last_replay_path = ""
 	if String(options.get("session_kind", "")) == "time_attack":
 		time_attack_eligibility = LeaderboardEligibilityClass.evaluate_start(self, options, ps)
 		time_attack_finalized = false
@@ -673,71 +733,140 @@ func _build_default_singleplayer_race_options() -> Dictionary:
 func _race_content_readiness(track_id: String, settings: Array, options: Dictionary) -> Dictionary:
 	var missing_workshop_ids: Array = []
 	var problems := PackedStringArray()
+	var irrecoverable_problems := PackedStringArray()
 	var content_ids: Array = options.get("track_ids", [])
 	var gameplay_digests: Array = options.get("track_gameplay_digests", [])
 	var package_digests: Array = options.get("track_package_digests", [])
 	var workshop_ids: Array = options.get("track_workshop_ids", [])
 	if content_ids.is_empty() or !content_ids.has(track_id) or gameplay_digests.size() != content_ids.size() or package_digests.size() != content_ids.size() or workshop_ids.size() != content_ids.size():
-		problems.append("race track content records are malformed")
+		var problem := "race track content records are malformed"
+		problems.append(problem)
+		irrecoverable_problems.append(problem)
 	else:
 		for i in range(content_ids.size()):
 			if track_content_controller.track_content_evidence_matches(
 					String(content_ids[i]), String(gameplay_digests[i]), String(package_digests[i]), String(workshop_ids[i])):
 				continue
-			problems.append("missing exact track %s" % String(content_ids[i]))
-			_append_workshop_id(missing_workshop_ids, String(workshop_ids[i]))
+			var workshop_id := String(workshop_ids[i])
+			var problem := "missing exact track %s" % String(content_ids[i])
+			if !_valid_workshop_id(workshop_id):
+				problem = "non-Workshop track %s does not match the host build" % String(content_ids[i])
+				irrecoverable_problems.append(problem)
+			problems.append(problem)
+			_append_workshop_id(missing_workshop_ids, workshop_id)
 	for settings_value in settings:
 		if typeof(settings_value) != TYPE_DICTIONARY:
-			problems.append("race vehicle settings are malformed")
+			var problem := "race vehicle settings are malformed"
+			problems.append(problem)
+			irrecoverable_problems.append(problem)
 			continue
 		var player_settings := PlayerSettings.new()
 		player_settings.from_dict(settings_value)
 		if player_settings.spectator or vehicle_content_controller.evidence_matches(player_settings):
 			continue
-		problems.append("missing exact vehicle %s" % player_settings.vehicle_content_id)
+		var problem := "missing exact vehicle %s" % player_settings.vehicle_content_id
+		if !_valid_workshop_id(player_settings.vehicle_workshop_id):
+			problem = "non-Workshop vehicle %s does not match the host build" % player_settings.vehicle_content_id
+			irrecoverable_problems.append(problem)
+		problems.append(problem)
 		_append_workshop_id(missing_workshop_ids, player_settings.vehicle_workshop_id)
 	return {
 		"ready": problems.is_empty(),
 		"workshop_ids": missing_workshop_ids,
 		"detail": "; ".join(problems),
+		"downloadable": irrecoverable_problems.is_empty() and !missing_workshop_ids.is_empty(),
 	}
 
+func _valid_workshop_id(value: String) -> bool:
+	return value.is_valid_int() and value.to_int() > 0
+
 func _append_workshop_id(ids: Array, value: String) -> void:
-	if value.is_valid_int():
+	if _valid_workshop_id(value):
 		var published_file_id := value.to_int()
-		if published_file_id > 0 and !ids.has(published_file_id):
+		if !ids.has(published_file_id):
 			ids.append(published_file_id)
 
 func _acquire_race_workshop_content(track_id: String, settings: Array, options: Dictionary) -> Dictionary:
 	var readiness := _race_content_readiness(track_id, settings, options)
 	if bool(readiness.get("ready", false)):
 		return readiness
+	var acquisition_start_msec := Time.get_ticks_msec()
 	var workshop_ids: Array = readiness.get("workshop_ids", [])
-	if workshop_ids.is_empty() or steam_service == null or !steam_service.is_initialized():
+	vehicle_content_controller.record_workshop_diagnostic_event("race_content_acquisition_begin", {
+		"track_id": track_id,
+		"readiness": readiness,
+		"workshop_ids": workshop_ids,
+		"steam_initialized": steam_service != null and steam_service.is_initialized(),
+	})
+	if !bool(readiness.get("downloadable", false)) or steam_service == null or !steam_service.is_initialized():
+		vehicle_content_controller.record_workshop_diagnostic_event("race_content_acquisition_rejected", {
+			"track_id": track_id,
+			"readiness": readiness,
+		})
 		return readiness
+	var tracked_any := false
+	for published_file_id_value in workshop_ids:
+		tracked_any = steam_service.track_workshop_item(int(published_file_id_value)) or tracked_any
+	if tracked_any:
+		steam_service.refresh_workshop_items()
+		readiness = _race_content_readiness(track_id, settings, options)
+		if bool(readiness.get("ready", false)):
+			vehicle_content_controller.record_workshop_diagnostic_event("race_content_acquisition_ready", {
+				"track_id": track_id,
+				"duration_msec": Time.get_ticks_msec() - acquisition_start_msec,
+				"source": "existing_install",
+			})
+			return readiness
+	var workshop_id_strings := PackedStringArray()
+	for published_file_id_value in workshop_ids:
+		workshop_id_strings.append(str(int(published_file_id_value)))
 	network_manager.race_admission.report(
 		network_manager.race_admission.LOADING,
-		"acquiring %d Workshop package%s" % [workshop_ids.size(), "" if workshop_ids.size() == 1 else "s"])
+		"acquiring Workshop package%s %s" % [
+			"" if workshop_ids.size() == 1 else "s",
+			", ".join(workshop_id_strings),
+		])
 	var request_started := false
+	var requests := []
 	for published_file_id_value in workshop_ids:
 		var published_file_id := int(published_file_id_value)
-		request_started = steam_service.subscribe_workshop_item(published_file_id) or request_started
-		request_started = steam_service.download_workshop_item(published_file_id, true) or request_started
+		var accepted := steam_service.download_workshop_item(published_file_id, true)
+		requests.append({"published_file_id": published_file_id, "accepted": accepted})
+		request_started = accepted or request_started
+	vehicle_content_controller.record_workshop_diagnostic_event("race_content_download_requests", {
+		"track_id": track_id,
+		"requests": requests,
+	})
 	if !request_started:
+		vehicle_content_controller.record_workshop_diagnostic_event("race_content_acquisition_rejected", {
+			"track_id": track_id,
+			"readiness": readiness,
+			"reason": "Steam rejected every DownloadItem request",
+		})
 		return readiness
-	steam_service.refresh_subscribed_workshop_items()
+	steam_service.refresh_workshop_items()
 	var deadline := Time.get_ticks_msec() + RACE_CONTENT_DOWNLOAD_TIMEOUT_MSEC
 	var next_refresh_msec := Time.get_ticks_msec() + 1000
 	while network_manager.race_active and Time.get_ticks_msec() < deadline:
 		await get_tree().create_timer(0.1).timeout
 		readiness = _race_content_readiness(track_id, settings, options)
 		if bool(readiness.get("ready", false)):
+			vehicle_content_controller.record_workshop_diagnostic_event("race_content_acquisition_ready", {
+				"track_id": track_id,
+				"duration_msec": Time.get_ticks_msec() - acquisition_start_msec,
+			})
 			return readiness
 		var now := Time.get_ticks_msec()
 		if now >= next_refresh_msec:
-			steam_service.refresh_subscribed_workshop_items()
+			steam_service.refresh_workshop_items()
 			next_refresh_msec = now + 1000
 	readiness["detail"] = "%s after Workshop download timeout" % String(readiness.get("detail", "content unavailable"))
+	vehicle_content_controller.record_workshop_diagnostic_event("race_content_acquisition_timeout", {
+		"track_id": track_id,
+		"duration_msec": Time.get_ticks_msec() - acquisition_start_msec,
+		"race_active": network_manager.race_active,
+		"readiness": readiness,
+	})
 	return readiness
 
 func _open_singleplayer_race_options(as_spectator: bool) -> void:
@@ -784,6 +913,8 @@ func _multiplayer_lobby_port() -> int:
 func _build_race_pause_menu() -> void:
 	if !race_pause_resume_button.pressed.is_connected(_close_race_pause_menu):
 		race_pause_resume_button.pressed.connect(_close_race_pause_menu)
+	if !race_pause_retry_button.pressed.is_connected(_on_pause_retry_pressed):
+		race_pause_retry_button.pressed.connect(_on_pause_retry_pressed)
 	if !race_pause_options_button.pressed.is_connected(_on_pause_options_pressed):
 		race_pause_options_button.pressed.connect(_on_pause_options_pressed)
 	if !race_pause_lobby_button.pressed.is_connected(_on_pause_lobby_pressed):
@@ -797,16 +928,33 @@ func _open_race_pause_menu() -> void:
 	race_pause_open = true
 	race_pause_root.visible = true
 	var host := network_manager.is_server and !singleplayer_mode
+	var session_kind := String(network_manager.race_options.get("session_kind", ""))
 	race_pause_title.text = "Host Race Menu" if host else "Race Menu"
+	race_pause_retry_button.visible = singleplayer_mode and session_kind in ["time_attack", "time_attack_practice"]
 	race_pause_lobby_button.visible = host
 	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
 	replay_controller.refresh_pause_button()
+	_reset_race_pause_navigation()
 	race_pause_resume_button.grab_focus()
 
 func _close_race_pause_menu() -> void:
 	race_pause_open = false
+	_reset_race_pause_navigation()
+	if race_pause_options_open:
+		race_pause_options_open = false
+		if options_menu != null and options_menu.visible:
+			options_menu.call("close_settings")
 	if race_pause_root != null:
 		race_pause_root.visible = false
+
+func _on_pause_retry_pressed() -> void:
+	var session_kind := String(network_manager.race_options.get("session_kind", ""))
+	if !singleplayer_mode or session_kind not in ["time_attack", "time_attack_practice"]:
+		return
+	var options := network_manager.race_options.duplicate(true)
+	_close_race_pause_menu()
+	_return_to_menu()
+	call_deferred("_start_singleplayer_race", false, options)
 
 func _on_pause_disconnect_pressed() -> void:
 	_close_race_pause_menu()
@@ -818,7 +966,92 @@ func _on_pause_lobby_pressed() -> void:
 		network_manager.send_end_race()
 
 func _on_pause_options_pressed() -> void:
+	race_pause_options_open = true
+	race_pause_root.visible = false
 	options_menu.call("open_settings")
+
+func _race_pause_buttons() -> Array[Button]:
+	var buttons: Array[Button] = []
+	for button in [
+		race_pause_resume_button,
+		race_pause_retry_button,
+		race_pause_options_button,
+		race_pause_save_replay_button,
+		race_pause_lobby_button,
+		race_pause_disconnect_button,
+	]:
+		if button != null and button.visible and !button.disabled:
+			buttons.append(button)
+	return buttons
+
+func _move_race_pause_focus(direction: int) -> void:
+	var buttons := _race_pause_buttons()
+	if buttons.is_empty():
+		return
+	var focused := get_viewport().gui_get_focus_owner()
+	var index := buttons.find(focused)
+	if index < 0:
+		index = 0
+	else:
+		index = posmod(index + direction, buttons.size())
+	buttons[index].grab_focus()
+
+func _reset_race_pause_navigation() -> void:
+	race_pause_nav_direction = 0
+	race_pause_nav_repeat_seconds = 0.0
+
+func _race_pause_navigation_value() -> float:
+	var up_strength := maxf(
+		Input.get_action_strength("SteerUp"),
+		maxf(Input.get_action_strength("DPadUp"), Input.get_action_strength("DpadUp")))
+	var down_strength := maxf(
+		Input.get_action_strength("SteerDown"), Input.get_action_strength("DpadDown"))
+	return down_strength - up_strength
+
+func _update_race_pause_controller_navigation(delta: float) -> void:
+	if !race_pause_open or race_pause_root == null or !race_pause_root.visible:
+		_reset_race_pause_navigation()
+		return
+	var value := _race_pause_navigation_value()
+	var next_direction := race_pause_nav_direction
+	if race_pause_nav_direction == 0:
+		if value <= -RACE_PAUSE_NAV_PRESS_THRESHOLD:
+			next_direction = -1
+		elif value >= RACE_PAUSE_NAV_PRESS_THRESHOLD:
+			next_direction = 1
+	elif race_pause_nav_direction < 0 and value >= -RACE_PAUSE_NAV_RELEASE_THRESHOLD:
+		next_direction = 1 if value >= RACE_PAUSE_NAV_PRESS_THRESHOLD else 0
+	elif race_pause_nav_direction > 0 and value <= RACE_PAUSE_NAV_RELEASE_THRESHOLD:
+		next_direction = -1 if value <= -RACE_PAUSE_NAV_PRESS_THRESHOLD else 0
+	if next_direction != race_pause_nav_direction:
+		race_pause_nav_direction = next_direction
+		if next_direction == 0:
+			race_pause_nav_repeat_seconds = 0.0
+		else:
+			_move_race_pause_focus(next_direction)
+			race_pause_nav_repeat_seconds = RACE_PAUSE_NAV_DAS_SECONDS
+		return
+	if race_pause_nav_direction == 0:
+		return
+	race_pause_nav_repeat_seconds -= delta
+	if race_pause_nav_repeat_seconds <= 0.0:
+		_move_race_pause_focus(race_pause_nav_direction)
+		race_pause_nav_repeat_seconds = RACE_PAUSE_NAV_ARR_SECONDS
+
+func _handle_race_pause_controller_input(event: InputEvent) -> bool:
+	if !race_pause_open or race_pause_root == null or !race_pause_root.visible:
+		return false
+	if event.is_action_pressed("Accelerate"):
+		var focused := get_viewport().gui_get_focus_owner()
+		if focused is BaseButton and focused.visible and !focused.disabled:
+			(focused as BaseButton).pressed.emit()
+		return true
+	if event is InputEventJoypadMotion \
+			or event.is_action_pressed("DPadUp") or event.is_action_released("DPadUp") \
+			or event.is_action_pressed("DpadUp") or event.is_action_released("DpadUp") \
+			or event.is_action_pressed("DpadDown") or event.is_action_released("DpadDown"):
+		return true
+	return false
 
 func _initialize_grand_prix_options(options: Dictionary, roster: Array) -> Dictionary:
 	var initialized := options.duplicate(true)
@@ -984,6 +1217,11 @@ func _on_controller_settings_button_pressed() -> void:
 func _on_controller_settings_visibility_changed() -> void:
 	if options_menu != null and !options_menu.visible:
 		replay_controller.reload_input_calibration()
+		if race_pause_options_open:
+			race_pause_options_open = false
+			if race_pause_open and game_sim.sim_started:
+				race_pause_root.visible = true
+				race_pause_options_button.grab_focus()
 
 func _close_settings_menus_for_race_start() -> void:
 	if car_settings != null:
@@ -1162,6 +1400,7 @@ func _physics_process(delta: float) -> void:
 			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.CAMERA, profile_camera_start)
 		var profile_render_start := Time.get_ticks_usec() if profile_enabled else 0
 		game_sim.render_gamesim()
+		_sync_gameplay_camera_settings()
 		if profile_enabled:
 			debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.RENDER, profile_render_start)
 		var profile_audio_tick_start := Time.get_ticks_usec() if profile_enabled else 0
@@ -1290,6 +1529,24 @@ func _unhandled_input(event: InputEvent) -> void:
 		debug_runtime_controller.copy_native_profile_to_clipboard()
 	if event is InputEventKey and event.pressed and !event.echo and event.keycode == KEY_F4:
 		debug_runtime_controller.take_clean_4k_screenshot()
+		get_viewport().set_input_as_handled()
+		return
+	if race_pause_options_open and options_menu != null and options_menu.visible \
+			and event.is_action_pressed("ui_cancel"):
+		options_menu.call("close_settings")
+		get_viewport().set_input_as_handled()
+		return
+	if _handle_race_pause_controller_input(event):
+		get_viewport().set_input_as_handled()
+		return
+	if game_sim.sim_started and !race_pause_options_open \
+			and event is InputEventJoypadButton \
+			and event.pressed \
+			and event.button_index == JOY_BUTTON_START:
+		if race_pause_open:
+			_close_race_pause_menu()
+		else:
+			_open_race_pause_menu()
 		get_viewport().set_input_as_handled()
 		return
 	if replay_controller.handle_unhandled_input(event):
@@ -1708,6 +1965,8 @@ func _finalize_time_attack() -> void:
 	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_id, -1))
 	var start_tick := race_presentation_controller.race_results_start_tick()
 	if session_kind == "time_attack_practice":
+		var practice_replay_path := replay_controller.stage_completed_time_attack_replay(false)
+		time_attack_last_replay_path = practice_replay_path
 		var practice_score := TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
 		var practice_board := {}
 		var digests: Array = network_manager.race_options.get("track_gameplay_digests", [])
@@ -1719,14 +1978,15 @@ func _finalize_time_attack() -> void:
 			"friendly_reason": "Practice Unranked",
 			"score_milliseconds": practice_score,
 			"board_name": String(practice_board.get("steam_name", "")),
-			"replay_path": "",
+			"replay_path": practice_replay_path,
+			"replay_can_save": replay_controller.can_save_staged_replay_locally(practice_replay_path),
 		}
 		race_presentation_controller.show_time_attack_result(
 			practice_result, time_attack_previous_best_milliseconds,
-			"Practice result only — nothing will be submitted.")
+			"Practice result only — use Save Replay to keep it locally.")
 		return
-	race_presentation_controller.update_time_attack_submission_status("Saving verification replay…")
-	var replay_path := replay_controller.save_completed_time_attack_replay()
+	race_presentation_controller.update_time_attack_submission_status("Preparing verification replay…")
+	var replay_path := replay_controller.stage_completed_time_attack_replay(true)
 	time_attack_last_replay_path = replay_path
 	time_attack_eligibility = LeaderboardEligibilityClass.finalize(
 		time_attack_eligibility,
@@ -1736,10 +1996,11 @@ func _finalize_time_attack() -> void:
 	var board: Dictionary = time_attack_eligibility.get("board", {})
 	time_attack_eligibility["board_name"] = String(board.get("steam_name", ""))
 	time_attack_eligibility["friendly_reason"] = TimeAttackRulesClass.friendly_reason(String(time_attack_eligibility.get("reason", "")))
+	time_attack_eligibility["replay_can_save"] = replay_controller.can_save_staged_replay_locally(replay_path)
 	race_presentation_controller.show_time_attack_result(
 		time_attack_eligibility,
 		time_attack_previous_best_milliseconds,
-		"Replay saved. Preparing trusted submission…")
+		"Preparing trusted submission…")
 	if bool(time_attack_eligibility.get("eligible", false)):
 		if leaderboard_client.enqueue_submission(time_attack_eligibility):
 			race_presentation_controller.show_notification("Time Attack queued for trusted verification", 5000)
@@ -1747,7 +2008,7 @@ func _finalize_time_attack() -> void:
 				"%s The queue is persisted; it is safe to close the game." % String(leaderboard_client.status().get("message", "Queued for verification.")))
 		else:
 			race_presentation_controller.show_notification("Time Attack replay could not be queued", 5000)
-			race_presentation_controller.update_time_attack_submission_status("Replay saved, but it could not be added to the submission queue.")
+			race_presentation_controller.update_time_attack_submission_status("The verification replay could not be added to the submission queue.")
 	else:
 		var reason := TimeAttackRulesClass.friendly_reason(String(time_attack_eligibility.get("reason", "ineligible")))
 		race_presentation_controller.show_notification("Unranked: %s" % reason, 5000)
@@ -1809,11 +2070,24 @@ func _on_time_attack_rank_entries_received(board_name: String, request_type: Str
 
 func _on_time_attack_race_again_requested() -> void:
 	var practice := String(network_manager.race_options.get("session_kind", "")) == "time_attack_practice"
+	var practice_cpu_count := int(network_manager.race_options.get("cpu_count", singleplayer_cpu_count))
 	var options := TimeAttackRulesClass.build_options()
 	if practice:
 		options["session_kind"] = "time_attack_practice"
+		options["cpu_count"] = practice_cpu_count
+		options["leaderboard_eligible"] = false
+		options["leaderboard_ineligible_reason"] = "practice_unranked"
 	_return_to_menu()
 	call_deferred("_start_singleplayer_race", false, options)
+
+
+func _on_time_attack_save_replay_requested() -> void:
+	var saved_path := replay_controller.save_staged_replay_locally(time_attack_last_replay_path)
+	if saved_path.is_empty():
+		race_presentation_controller.show_notification("Replay could not be saved", 3000)
+		return
+	race_presentation_controller.results_overlay.set_time_attack_replay_saved(saved_path)
+	race_presentation_controller.show_notification("Replay Saved", 2200)
 
 
 func _on_time_attack_watch_replay_requested() -> void:
@@ -1850,6 +2124,25 @@ func _on_time_attack_results_leaderboard_requested(board_name: String) -> void:
 func _on_time_attack_main_menu_requested() -> void:
 	_return_to_menu()
 
+func _load_gameplay_camera_settings() -> void:
+	if FileAccess.file_exists(CAMERA_SETTINGS_PATH):
+		var value = JSON.parse_string(FileAccess.get_file_as_string(CAMERA_SETTINGS_PATH))
+		if typeof(value) == TYPE_DICTIONARY:
+			gameplay_camera_zoom_mode = clampi(int((value as Dictionary).get("zoom_mode", 1)), 0, 3)
+	game_sim.set_gameplay_camera_zoom_mode(gameplay_camera_zoom_mode)
+
+func _sync_gameplay_camera_settings() -> void:
+	var current_zoom_mode := clampi(game_sim.get_gameplay_camera_zoom_mode(), 0, 3)
+	if current_zoom_mode == gameplay_camera_zoom_mode:
+		return
+	gameplay_camera_zoom_mode = current_zoom_mode
+	var file := FileAccess.open(CAMERA_SETTINGS_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("Could not save gameplay camera settings: %s" % error_string(FileAccess.get_open_error()))
+		return
+	file.store_string(JSON.stringify({"zoom_mode": gameplay_camera_zoom_mode}))
+	file.close()
+
 func _update_native_render_camera() -> void:
 	if game_sim == null or !game_sim.has_method("set_render_camera"):
 		return
@@ -1884,6 +2177,7 @@ func _update_car_effect_tiers(active_camera: Camera3D) -> void:
 
 func _process(delta: float) -> void:
 	_update_playtest_lobby_probe()
+	_update_race_pause_controller_navigation(delta)
 	var profile_enabled: bool = debug_runtime_controller.render_profile_enabled and game_sim.sim_started
 	var profile_process_start := debug_runtime_controller.begin_process_frame(_singleplayer_tick) if profile_enabled else 0
 	race_audio_controller.update(delta)

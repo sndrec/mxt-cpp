@@ -292,6 +292,7 @@ func _load_car_defs() -> void:
 	vehicle_selector.clear()
 	for def in car_defs:
 		vehicle_selector.add_item(def.name)
+	_update_vehicle_selector_availability()
 	_migrate_legacy_vehicle_settings()
 
 func _load_settings() -> void:
@@ -377,14 +378,26 @@ func _update_controls(rebuild_preview := true) -> void:
 
 func refresh_after_game_manager_loaded() -> void:
 	_load_settings()
+	var previous_vehicle_evidence := _selected_vehicle_evidence_signature()
 	_load_car_defs()
 	_refresh_custom_stamp_library()
 	_update_controls(false)
 	_sync_livery_to_player_settings()
+	if _selected_vehicle_evidence_signature() != previous_vehicle_evidence:
+		_save_settings()
+
+func _selected_vehicle_evidence_signature() -> String:
+	return "%s|%s|%s|%s" % [
+		player_settings.vehicle_content_id,
+		player_settings.vehicle_workshop_id,
+		player_settings.vehicle_gameplay_digest,
+		player_settings.vehicle_package_digest,
+	]
 
 func _on_vehicle_editor_content_changed() -> void:
 	if game_manager == null:
 		return
+	performance_analyzer = MxtCarPerformanceAnalyzer.new()
 	vehicle_content_controller.refresh_installed_content()
 	_load_car_defs()
 	_update_controls()
@@ -400,6 +413,9 @@ func _on_slider_changed(value: float) -> void:
 
 func _on_vehicle_selected(index: int) -> void:
 	if index >= 0 and index < car_defs.size():
+		if !_vehicle_definition_selectable(car_defs[index]):
+			_restore_vehicle_selector_selection()
+			return
 		player_settings.vehicle_content_id = car_defs[index].content_id
 		_sync_vehicle_content_evidence()
 		car_name_label.text = car_defs[index].name
@@ -516,6 +532,20 @@ func select_ranked_default_vehicle() -> bool:
 	return false
 
 
+func apply_authoritative_vehicle_selection(settings: Dictionary) -> void:
+	if player_settings == null:
+		return
+	var content_id := String(settings.get("vehicle_content_id", ""))
+	if content_id.is_empty() or content_id == player_settings.vehicle_content_id:
+		return
+	player_settings.vehicle_content_id = content_id
+	player_settings.vehicle_gameplay_digest = String(settings.get("vehicle_gameplay_digest", ""))
+	player_settings.vehicle_package_digest = String(settings.get("vehicle_package_digest", ""))
+	player_settings.vehicle_workshop_id = String(settings.get("vehicle_workshop_id", ""))
+	player_settings.car_livery = {}
+	_update_controls()
+
+
 func open_leaderboards(board_name := "") -> void:
 	open_settings()
 	settings_tab_container.current_tab = leaderboard_browser.get_index()
@@ -586,6 +616,7 @@ func _send_online_vehicle_selection_update() -> void:
 
 func _update_livery_lock_state() -> void:
 	var locked := _livery_editing_locked()
+	_update_vehicle_selector_availability()
 	primary_colour_picker.disabled = locked
 	secondary_colour_picker.disabled = locked
 	accent_colour_picker.disabled = locked
@@ -607,6 +638,31 @@ func _update_livery_lock_state() -> void:
 		var colour_picker := stamp_layer_colour_pickers[layer]
 		if colour_picker != null:
 			colour_picker.disabled = locked or _stamp_for_layer(layer) == null
+
+func _update_vehicle_selector_availability() -> void:
+	if vehicle_selector == null:
+		return
+	for index in range(mini(vehicle_selector.get_item_count(), car_defs.size())):
+		var selectable := _vehicle_definition_selectable(car_defs[index])
+		vehicle_selector.set_item_disabled(index, !selectable)
+		vehicle_selector.set_item_tooltip(
+			index,
+			"" if selectable else "Local and draft vehicles cannot be selected in multiplayer. Publish and use the Workshop version instead.")
+
+func _vehicle_definition_selectable(definition: CarDefinition) -> bool:
+	if definition == null:
+		return false
+	if game_manager == null or game_manager.network_manager == null or !game_manager.network_manager.has_network_peer():
+		return true
+	return vehicle_content_controller.is_multiplayer_vehicle_content(
+		definition.content_id,
+		bool(game_manager.network_manager.race_options.get("allow_workshop_vehicles", true)))
+
+func _restore_vehicle_selector_selection() -> void:
+	for index in range(car_defs.size()):
+		if car_defs[index].content_id == player_settings.vehicle_content_id:
+			vehicle_selector.select(index)
+			return
 
 func _process(_delta: float) -> void:
 	if visible:

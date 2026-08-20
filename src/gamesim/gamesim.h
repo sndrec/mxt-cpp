@@ -471,6 +471,7 @@ namespace godot {
 			uint64_t render_profile_visuals_only_camera_us = 0;
 		godot::Ref<godot::FzgxGameplayCamera> gameplay_camera;
 		int gameplay_camera_player_id = -1;
+		int gameplay_camera_zoom_mode = 1;
 		int spawn_seed = 0;
 		std::vector<int> start_grid_slots;
 		bool vehicle_restore_enabled = true;
@@ -504,6 +505,8 @@ namespace godot {
 		godot::Node3D* get_spark_node_container() const { return spark_node_container; }
 		void set_car_render_manager(godot::Object* p_car_render_manager);
 		void set_gameplay_camera(godot::Camera3D* p_camera, int player_id);
+		void set_gameplay_camera_zoom_mode(int zoom_mode);
+		int get_gameplay_camera_zoom_mode() const { return gameplay_camera_zoom_mode; }
 		void set_render_camera(godot::Camera3D* p_camera);
 		void set_spatial_audio_manager(MxtSpatialAudioManager* p_manager) { spatial_audio_manager = p_manager; }
 		MxtSpatialAudioManager* get_spatial_audio_manager() const { return spatial_audio_manager; }
@@ -574,6 +577,7 @@ namespace godot {
 		bool is_dip_switch_enabled(int flag) const;
 		void set_dip_switch_enabled(int flag, bool enabled);
 		void set_rail_trace_filter(int car_index, int tick_start, int tick_end);
+		void set_yaw_trace_filter(int car_index, int tick_start, int tick_end);
 		double get_first_lap_distance() const;
 		double get_track_lap_length() const;
 		void emit_super_sparks_from_car(const PhysicsCar& car, int count);

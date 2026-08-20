@@ -59,6 +59,32 @@ static bool valid_draft_id(const String &draft_id) {
 
 static String draft_root(const String &draft_id) { return drafts_root().path_join(draft_id); }
 
+static bool remove_directory_tree(const String &path) {
+	{
+		Ref<DirAccess> directory = DirAccess::open(path);
+		if (directory.is_null() || directory->list_dir_begin() != OK)
+			return false;
+		for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
+			if (entry == "." || entry == "..")
+				continue;
+			const String child = path.path_join(entry);
+			const bool child_is_directory = directory->current_is_dir();
+			const bool child_is_link = directory->is_link(entry);
+			if (child_is_directory && !child_is_link) {
+				if (!remove_directory_tree(child)) {
+					directory->list_dir_end();
+					return false;
+				}
+			} else if (DirAccess::remove_absolute(child) != OK) {
+				directory->list_dir_end();
+				return false;
+			}
+		}
+		directory->list_dir_end();
+	}
+	return DirAccess::remove_absolute(path) == OK;
+}
+
 static bool valid_text(
 		const String &text,
 		int64_t maximum,
@@ -186,6 +212,7 @@ static Dictionary visual_dictionary(const MxtCarAuthoringSession &session) {
 	material["albedo_surface"] = source_material.get("albedo_surface", -1);
 	material["normal_surface"] = source_material.get("normal_surface", -1);
 	material["paint_mask_surface"] = source_material.get("paint_mask_surface", -1);
+	material["use_mesh_normals"] = source_material.get("use_mesh_normals", false);
 
 	Array thrusters;
 	const Array source_thrusters = session.get_thrusters();
@@ -257,6 +284,9 @@ static bool parse_visual_dictionary(const Dictionary &visual, MxtCarAuthoringSes
 	decoded_material["albedo_surface"] = albedo_surface;
 	decoded_material["normal_surface"] = normal_surface;
 	decoded_material["paint_mask_surface"] = paint_mask_surface;
+	const Variant use_mesh_normals = material.get("use_mesh_normals", false);
+	if (use_mesh_normals.get_type() != Variant::BOOL) return false;
+	decoded_material["use_mesh_normals"] = use_mesh_normals;
 
 	const Array thrusters = visual["thrusters"];
 	if (thrusters.size() > 8)
@@ -336,6 +366,7 @@ void MxtCarDraftStore::_bind_methods() {
 		D_METHOD("duplicate_draft", "source_draft_id", "new_draft_id", "new_title"),
 		&MxtCarDraftStore::duplicate_draft);
 	ClassDB::bind_method(D_METHOD("archive_draft", "draft_id"), &MxtCarDraftStore::archive_draft);
+	ClassDB::bind_method(D_METHOD("delete_draft", "draft_id"), &MxtCarDraftStore::delete_draft);
 }
 
 Array MxtCarDraftStore::list_drafts() const {
@@ -531,6 +562,16 @@ Dictionary MxtCarDraftStore::duplicate_draft(const String &source_draft_id,
 	if (FileAccess::file_exists(source_thumbnail)) {
 		DirAccess::copy_absolute(source_thumbnail, destination_thumbnail);
 	}
+	// Auxiliary authoring files live beside draft.json rather than in the property snapshot.
+	// Copy them explicitly so duplicating a draft never silently drops its textures or sound.
+	for (const String &name : {
+			String("albedo.png"), String("normal.png"), String("paint_mask.png"),
+			String("manual_boost_sfx.wav"), String("manual_boost_sfx.ogg")}) {
+		const String source = draft_root(source_draft_id).path_join(name);
+		if (FileAccess::file_exists(source)) {
+			DirAccess::copy_absolute(source, draft_root(new_draft_id).path_join(name));
+		}
+	}
 	return saved;
 }
 
@@ -552,4 +593,14 @@ Dictionary MxtCarDraftStore::archive_draft(const String &draft_id) const {
 	Dictionary result = result_dictionary(true);
 	result["archive_path"] = destination;
 	return result;
+}
+
+Dictionary MxtCarDraftStore::delete_draft(const String &draft_id) const {
+	if (!valid_draft_id(draft_id) || read_manifest(draft_id).is_empty()) {
+		return result_dictionary(false, "draft identity is invalid or the draft does not exist");
+	}
+	if (!remove_directory_tree(draft_root(draft_id))) {
+		return result_dictionary(false, "could not permanently delete the vehicle draft");
+	}
+	return result_dictionary(true);
 }

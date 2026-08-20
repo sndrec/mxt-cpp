@@ -64,8 +64,8 @@ func set_local_control(enabled: bool) -> void:
 	if nameplate != null:
 		nameplate.modulate = Color(1.0, 0.75, 0.25) if local_control else Color.WHITE
 
-func update_settings(in_settings: Dictionary, in_definition: CarDefinition, in_sampled_stats: Dictionary, in_settings_revision: int = -1) -> void:
-	if in_settings_revision >= 0 and in_settings_revision == settings_revision:
+func update_settings(in_settings: Dictionary, in_definition: CarDefinition, in_sampled_stats: Dictionary, in_settings_revision: int = -1, force_content_refresh := false) -> void:
+	if !force_content_refresh and in_settings_revision >= 0 and in_settings_revision == settings_revision:
 		return
 	var old_content_id := str(player_settings.get("vehicle_content_id", ""))
 	var old_livery_hash := render_livery_hash
@@ -73,7 +73,7 @@ func update_settings(in_settings: Dictionary, in_definition: CarDefinition, in_s
 		settings_revision = in_settings_revision
 	_apply_settings(in_settings, in_definition, in_sampled_stats)
 	_ensure_nameplate()
-	if old_content_id != str(player_settings.get("vehicle_content_id", "")) or old_livery_hash != render_livery_hash:
+	if force_content_refresh or old_content_id != str(player_settings.get("vehicle_content_id", "")) or old_livery_hash != render_livery_hash:
 		_rebuild_visual()
 
 func apply_remote_state(in_velocity: float, in_knockback: Vector3, in_angle_velocity: float, in_position: Vector3, in_rotation: Vector3) -> void:

@@ -150,7 +150,8 @@ static constexpr CarStatMetadata CAR_STAT_METADATA[CAR_STAT_COUNT] = {
 	 CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_LOWER_BENEFIT,
 	 CAR_STAT_DIRECTION_LOWER_BENEFIT},
 	{"air_glide_steering_speed_loss_factor", "Glide Steering Air Drag",
-	 "Speed loss caused by steering while gliding airborne.", "factor", "Air",
+	 "Speed loss caused by steering during low-gravity flight without a nearby road surface.",
+	 "factor", "Air",
 	 CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_LOWER_BENEFIT,
 	 CAR_STAT_DIRECTION_LOWER_BENEFIT},
 	{"drive_target_speed_multiplier", "Drive Target Speed",
@@ -166,6 +167,14 @@ static constexpr CarStatMetadata CAR_STAT_METADATA[CAR_STAT_COUNT] = {
 	 "Multiplies the final physical forward thrust emitted by the drive "
 	 "calculation.",
 	 "multiplier", "Drive", CAR_STAT_ACTIVITY_GAMEPLAY, false, CAR_STAT_DIRECTION_CONTEXT_DEPENDENT,
+	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT},
+	{"drift_turn_movement", "Drift Steering Strength",
+	 "Base yaw impulse produced by steering input while the machine is drifting.", "scalar",
+	 "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, false, CAR_STAT_DIRECTION_CONTEXT_DEPENDENT,
+	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT},
+	{"max_turn_rate", "Maximum Turning Rate",
+	 "Limits how quickly the machine can rotate around its vertical axis.", "degrees/second",
+	 "Handling", CAR_STAT_ACTIVITY_GAMEPLAY, true, CAR_STAT_DIRECTION_HIGHER_BENEFIT,
 	 CAR_STAT_DIRECTION_CONTEXT_DEPENDENT}};
 
 static constexpr CarStatMetadata UNKNOWN_STAT_METADATA = {"unknown",

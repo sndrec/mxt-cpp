@@ -9,6 +9,7 @@
 #include <godot_cpp/classes/dir_access.hpp>
 #include <godot_cpp/classes/file_access.hpp>
 #include <godot_cpp/classes/hashing_context.hpp>
+#include <godot_cpp/classes/image.hpp>
 #include <godot_cpp/classes/json.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/array.hpp>
@@ -181,7 +182,7 @@ static bool validate_disk_entries(
 		std::vector<String> &errors)
 {
 	if (files.size() > PACKAGE_MAX_FILE_COUNT) {
-		add_error(errors, "package contains more than 8 files");
+		add_error(errors, "package contains more than " + String::num_uint64(PACKAGE_MAX_FILE_COUNT) + " files");
 	}
 	std::vector<String> expected;
 	expected.reserve(manifest.files.size() + 1);
@@ -220,6 +221,8 @@ static uint64_t file_limit_for(const ContentManifest &manifest, const String &pa
 	if (path == "vehicle/properties.mxt_car_props") return VEHICLE_PROPERTIES_MAX_BYTES;
 	if (path == "vehicle/visual.json") return VEHICLE_VISUAL_METADATA_MAX_BYTES;
 	if (path == "vehicle/authoring.json") return VEHICLE_AUTHORING_METADATA_MAX_BYTES;
+	if (path == "vehicle/manual_boost.wav" || path == "vehicle/manual_boost.ogg") return VEHICLE_BOOST_SFX_MAX_BYTES;
+	if (path == "vehicle/albedo.png" || path == "vehicle/normal.png" || path == "vehicle/paint_mask.png") return VEHICLE_TEXTURE_MAX_BYTES;
 	if (path == "track/track.mxt_track") return TRACK_PAYLOAD_MAX_BYTES;
 	if (path == "track/visual.glb") return TRACK_VISUAL_MAX_BYTES;
 	if (path == "track/metadata.json") return TRACK_METADATA_MAX_BYTES;
@@ -265,6 +268,55 @@ static bool validate_preview_png(const DiskEntry &entry, std::vector<String> &er
 	const uint32_t height = read_be_u32(header.ptr() + 20);
 	if (width == 0 || height == 0 || width > PREVIEW_MAX_DIMENSION || height > PREVIEW_MAX_DIMENSION) {
 		add_error(errors, "preview.png dimensions must be between 1 and 4096 pixels");
+		return false;
+	}
+	return true;
+}
+
+static bool validate_vehicle_boost_sfx(const ContentManifest &manifest, const DiskEntry &entry, std::vector<String> &errors)
+{
+	PackedByteArray bytes;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_BOOST_SFX_MAX_BYTES, bytes, errors)) return false;
+	if (manifest.manual_boost_sfx_path.ends_with(".wav")) {
+		if (bytes.size() < 12 || std::memcmp(bytes.ptr(), "RIFF", 4) != 0 || std::memcmp(bytes.ptr() + 8, "WAVE", 4) != 0) {
+			add_error(errors, "vehicle manual-boost WAV has an invalid header");
+			return false;
+		}
+	} else if (manifest.manual_boost_sfx_path.ends_with(".ogg")) {
+		if (bytes.size() < 4 || std::memcmp(bytes.ptr(), "OggS", 4) != 0) {
+			add_error(errors, "vehicle manual-boost Ogg has an invalid header");
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool validate_vehicle_texture_png(const DiskEntry &entry, std::vector<String> &errors)
+{
+	PackedByteArray bytes;
+	if (!read_file_limited(entry.absolute_path, VEHICLE_TEXTURE_MAX_BYTES, bytes, errors)) return false;
+	static const uint8_t PNG_SIGNATURE[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+	if (bytes.size() < 33 || std::memcmp(bytes.ptr(), PNG_SIGNATURE, 8) != 0 ||
+			read_be_u32(bytes.ptr() + 8) != 13 || std::memcmp(bytes.ptr() + 12, "IHDR", 4) != 0) {
+		add_error(errors, "vehicle texture '" + entry.relative_path + "' does not have a valid PNG IHDR header");
+		return false;
+	}
+	const uint32_t declared_width = read_be_u32(bytes.ptr() + 16);
+	const uint32_t declared_height = read_be_u32(bytes.ptr() + 20);
+	if (declared_width == 0 || declared_height == 0 ||
+			declared_width > VEHICLE_TEXTURE_MAX_DIMENSION || declared_height > VEHICLE_TEXTURE_MAX_DIMENSION) {
+		add_error(errors, "vehicle texture '" + entry.relative_path + "' dimensions must be between 1 and 2048 pixels");
+		return false;
+	}
+	Ref<Image> image;
+	image.instantiate();
+	if (image->load_png_from_buffer(bytes) != OK || image->is_empty()) {
+		add_error(errors, "vehicle texture '" + entry.relative_path + "' is not a decodable PNG");
+		return false;
+	}
+	if (image->get_width() != static_cast<int32_t>(declared_width) ||
+			image->get_height() != static_cast<int32_t>(declared_height)) {
+		add_error(errors, "vehicle texture '" + entry.relative_path + "' decoded dimensions disagree with its PNG header");
 		return false;
 	}
 	return true;
@@ -666,8 +718,18 @@ static bool validate_vehicle_visual_metadata(
 		return false;
 	}
 	const Dictionary material_inputs = root["material_inputs"];
-	static const char *MATERIAL_KEYS[] = {"albedo_surface", "normal_surface", "paint_mask_surface"};
+	// use_mesh_normals was added after revision-1 Workshop vehicles shipped. Absence must
+	// retain their original flat/texture-normal shading rather than changing their look.
+	static const char *MATERIAL_KEYS[] = {
+		"albedo_surface", "normal_surface", "paint_mask_surface", "use_mesh_normals"
+	};
 	has_only_keys(material_inputs, MATERIAL_KEYS, std::size(MATERIAL_KEYS), "vehicle visual material_inputs", errors);
+	const Variant use_mesh_normals_value = material_inputs.get("use_mesh_normals", false);
+	if (use_mesh_normals_value.get_type() != Variant::BOOL) {
+		add_error(errors, "vehicle visual material input 'use_mesh_normals' must be a boolean");
+	}
+	const bool use_mesh_normals = use_mesh_normals_value.get_type() == Variant::BOOL &&
+			static_cast<bool>(use_mesh_normals_value);
 	auto read_material_surface = [&](const char *key, bool VehicleGlbSurface::*texture_member) {
 		int64_t surface = -2;
 		if (!material_inputs.has(key) || !read_json_integer(material_inputs[key], surface)) {
@@ -737,6 +799,7 @@ static bool validate_vehicle_visual_metadata(
 	normalized_material_inputs["albedo_surface"] = albedo_surface;
 	normalized_material_inputs["normal_surface"] = normal_surface;
 	normalized_material_inputs["paint_mask_surface"] = paint_mask_surface;
+	normalized_material_inputs["use_mesh_normals"] = use_mesh_normals;
 	out_metadata["material_inputs"] = normalized_material_inputs;
 	out_metadata["thrusters"] = normalized_thrusters;
 	return true;
@@ -818,6 +881,18 @@ static bool validate_payloads(
 		validate_preview_png(*preview, errors);
 	}
 	if (manifest.content_type == ContentType::VEHICLE) {
+		if (!manifest.manual_boost_sfx_path.is_empty()) {
+			const DiskEntry *boost_sfx = find_disk_entry(entries, manifest.manual_boost_sfx_path);
+			if (boost_sfx) validate_vehicle_boost_sfx(manifest, *boost_sfx, errors);
+		}
+		for (const String *texture_path : {
+				&manifest.albedo_texture_path,
+				&manifest.normal_texture_path,
+				&manifest.paint_mask_texture_path}) {
+			if (texture_path->is_empty()) continue;
+			const DiskEntry *texture = find_disk_entry(entries, *texture_path);
+			if (texture) validate_vehicle_texture_png(*texture, errors);
+		}
 		const DiskEntry *model = find_disk_entry(entries, "vehicle/model.glb");
 		const DiskEntry *properties = find_disk_entry(entries, "vehicle/properties.mxt_car_props");
 		const DiskEntry *visual_metadata = find_disk_entry(entries, "vehicle/visual.json");

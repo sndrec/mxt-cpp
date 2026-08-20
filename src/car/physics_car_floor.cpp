@@ -1177,7 +1177,8 @@ bool PhysicsCar::find_floor_beneath_machine(TrackQueryScratch &scratch, PhysicsC
 		mark_floor_disconnected(soa, soa_index);
 		return false;
 	}
-	if (cylinder && surface_dist >= 20.0f) {
+	if (segment.road_shape->shape_type == ROAD_SHAPE_TYPE::ROAD_SHAPE_CYLINDER_OPEN &&
+		surface_dist >= 20.0f) {
 		trace_floor("cylinder_distance_cap", pipe_trace_ptr, road_t_sample_raw, spatial_t_sample, surface_dist);
 		if (try_stay_on_mesh_floor("cylinder_distance_cap")) {
 			return true;

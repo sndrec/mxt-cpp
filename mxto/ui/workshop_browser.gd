@@ -42,7 +42,10 @@ func _refresh() -> void:
 	vehicle_content_controller.refresh_workshop_content()
 
 func _show_items(new_items: Array) -> void:
-	items = new_items.duplicate(true)
+	items.clear()
+	for value in new_items:
+		if typeof(value) == TYPE_DICTIONARY and bool((value as Dictionary).get("subscribed", false)):
+			items.append((value as Dictionary).duplicate(true))
 	item_list.clear()
 	for value in items:
 		var item: Dictionary = value

@@ -62,7 +62,10 @@ static float run_flat_turn(
 		// Holding both drift inputs starts a manual drift while their opposing
 		// strafe values cancel, leaving the stick as the steering input.
 		const float strafe_input = 0.0f;
-		const float steering_strength = stats[CAR_STAT_TURN_MOVEMENT] * -steer_input;
+		const CarStatId steering_stat = drift
+			? CAR_STAT_DRIFT_TURN_MOVEMENT
+			: CAR_STAT_TURN_MOVEMENT;
+		const float steering_strength = stats[steering_stat] * -steer_input;
 		angular_velocity_y += 1.5f * steering_strength;
 		const float initial_angular_velocity_y = angular_velocity_y;
 
@@ -111,9 +114,6 @@ static float run_flat_turn(
 				(drift ? stats[CAR_STAT_GRIP_2] : 1.0f);
 		}
 
-		const float ground_limit = 0.05f * angular_inertia_y;
-		angular_velocity_y = std::clamp(
-			angular_velocity_y, -ground_limit, ground_limit);
 		const float heading_step = angular_velocity_y / angular_inertia_y;
 		if (frame == FLAT_TURN_FRAMES - FLAT_TURN_MEASURE_FRAMES) {
 			measurement_start_heading = heading;

@@ -6,8 +6,8 @@ const CAR_PATHS := [
 	"res://vehicle/asset/bruiser/wild_goose.mxt_car_props",
 	"res://vehicle/asset/topspeeder/fire_stingray.mxt_car_props",
 ]
-const STAT_COUNT := 40
-const LIVE_STAT_COUNT := 38
+const STAT_COUNT := 42
+const LIVE_STAT_COUNT := 40
 const MODIFIER_LAYER_COUNT := 6
 
 
@@ -41,6 +41,9 @@ func _validate_sample(sample: Dictionary, label: String) -> bool:
 		if not is_finite(float(base_stats[stat_name])):
 			_fail("%s: base stat %s is non-finite" % [label, stat_name])
 			return false
+	if base_stats.max_turn_rate != 200.0:
+		_fail("%s: maximum turning rate is not the flat 200 degrees/second default" % label)
+		return false
 	return true
 
 

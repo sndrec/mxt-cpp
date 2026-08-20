@@ -6,10 +6,13 @@ signal playback_status_changed(message: String)
 const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
 const QUEUE_PATH := "user://steam_leaderboard_replay_attachments.json"
 const CACHE_ROOT := "user://leaderboard_replays"
+const SUBMISSION_REPLAY_ROOT := "user://leaderboard_submission_replays"
 const MAX_REPLAY_BYTES := 64 * 1024 * 1024
 const MAX_HISTORY := 32
 const RETRY_DELAY_MIN_SECONDS := 30.0
 const RETRY_DELAY_MAX_SECONDS := 600.0
+const QUEUE_FORMAT_REVISION := 2
+const REVISION_CHECK_FAILURE := "The retained score changed before its replay could be attached."
 
 var game_manager: GameManager
 var steam_service: MxtSteamService
@@ -103,7 +106,7 @@ func request_watch_replay(board_name: String, entry: Dictionary) -> void:
 	var replay_digest := String(details.get("replay_sha256", ""))
 	var digest_hex := _digest_hex(replay_digest)
 	var ugc_handle := int(entry.get("ugc_handle", 0))
-	if digest_hex.is_empty() or ugc_handle == 0:
+	if digest_hex.is_empty() or ugc_handle == 0 or ugc_handle == -1:
 		playback_status_changed.emit("This leaderboard entry does not have a playable replay attached.")
 		return
 	active_download = {
@@ -132,9 +135,12 @@ func _load_queue() -> void:
 	pending.clear()
 	completed.clear()
 	failed.clear()
+	var queue_needs_save := false
 	if FileAccess.file_exists(QUEUE_PATH):
 		var value = JSON.parse_string(FileAccess.get_file_as_string(QUEUE_PATH))
 		if typeof(value) == TYPE_DICTIONARY:
+			var queue_format_revision := int(value.get("format_revision", 1))
+			queue_needs_save = queue_format_revision < QUEUE_FORMAT_REVISION
 			for record_value in value.get("pending", []):
 				if typeof(record_value) == TYPE_DICTIONARY:
 					var record: Dictionary = record_value
@@ -145,8 +151,21 @@ func _load_queue() -> void:
 					completed.append((record_value as Dictionary).duplicate(true))
 			for record_value in value.get("failed", []):
 				if typeof(record_value) == TYPE_DICTIONARY:
-					failed.append((record_value as Dictionary).duplicate(true))
+					var record: Dictionary = (record_value as Dictionary).duplicate(true)
+					if queue_format_revision < QUEUE_FORMAT_REVISION \
+							and String(record.get("last_error", "")) == REVISION_CHECK_FAILURE \
+							and !_digest_hex(String(record.get("replay_sha256", ""))).is_empty() \
+							and !String(record.get("board_name", "")).is_empty() \
+							and _allowed_local_replay_path(String(record.get("replay_path", ""))) \
+							and !_queue_contains_digest(String(record.get("replay_sha256", ""))):
+						record.erase("failed_unix")
+						record["last_error"] = ""
+						pending.append(record)
+					else:
+						failed.append(record)
 	_trim_history()
+	if queue_needs_save:
+		_save_queue()
 	_emit_status()
 
 
@@ -157,7 +176,7 @@ func _save_queue() -> void:
 		_emit_status()
 		return
 	file.store_string(JSON.stringify({
-		"format_revision": 1,
+		"format_revision": QUEUE_FORMAT_REVISION,
 		"pending": pending,
 		"completed": completed,
 		"failed": failed,
@@ -299,6 +318,10 @@ func _validate_download(bytes: PackedByteArray, request: Dictionary) -> Dictiona
 			or String(validation.get("track_gameplay_digest", "")) != String(details.get("track_gameplay_digest", "")) \
 			or String(validation.get("vehicle_gameplay_digest", "")) != String(details.get("vehicle_gameplay_digest", "")):
 		return {"valid": false, "reason": "trusted_metadata_mismatch"}
+	var trusted_machine_setting := int(details.get("machine_setting_percent", -1))
+	if trusted_machine_setting >= 0 \
+			and int(validation.get("machine_setting_percent", -2)) != trusted_machine_setting:
+		return {"valid": false, "reason": "trusted_metadata_mismatch"}
 	return {"valid": true, "reason": ""}
 
 
@@ -330,8 +353,12 @@ func _allowed_local_replay_path(path: String) -> bool:
 	if path.is_empty() or !FileAccess.file_exists(path):
 		return false
 	var replay_root := ProjectSettings.globalize_path("user://replays").simplify_path().to_lower()
+	var submission_root := ProjectSettings.globalize_path(SUBMISSION_REPLAY_ROOT).simplify_path().to_lower()
 	var absolute_path := ProjectSettings.globalize_path(path).simplify_path().to_lower()
-	return absolute_path.begins_with(replay_root + "/") or absolute_path.begins_with(replay_root + "\\")
+	return absolute_path.begins_with(replay_root + "/") \
+		or absolute_path.begins_with(replay_root + "\\") \
+		or absolute_path.begins_with(submission_root + "/") \
+		or absolute_path.begins_with(submission_root + "\\")
 
 
 func _sha256(bytes: PackedByteArray) -> String:
@@ -350,6 +377,16 @@ func _digest_hex(digest: String) -> String:
 	if value.length() != 64 or !value.is_valid_hex_number(false):
 		return ""
 	return value
+
+
+func _queue_contains_digest(digest: String) -> bool:
+	for value in pending:
+		if String((value as Dictionary).get("replay_sha256", "")) == digest:
+			return true
+	for value in completed:
+		if String((value as Dictionary).get("replay_sha256", "")) == digest:
+			return true
+	return false
 
 
 func _trim_history() -> void:

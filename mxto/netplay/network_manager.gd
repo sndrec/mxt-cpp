@@ -56,6 +56,7 @@ var race_options := {
 	"vehicle_restore": true,
 	"bumpers": false,
 	"s_boost": true,
+	"allow_workshop_vehicles": true,
 	"race_netplay_phase": 0,
 	"grand_prix_current_track": 0,
 	"grand_prix_points": {},

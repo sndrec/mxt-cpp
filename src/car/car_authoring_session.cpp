@@ -675,6 +675,7 @@ bool MxtCarAuthoringSession::validate_document(PackedStringArray &out_errors, Pa
 		CAR_STAT_DASHPLATE_BOOST_DURATION_SECONDS,
 		CAR_STAT_TURBO_FLAT_LOSS_PER_SECOND,
 		CAR_STAT_TURBO_PERCENT_LOSS_PER_SECOND,
+		CAR_STAT_MAX_TURN_RATE,
 	};
 	for (CarStatId stat : NONNEGATIVE_STATS) {
 		for (uint32_t sample = 0; sample <= 100; ++sample) {
@@ -1139,6 +1140,7 @@ bool MxtCarAuthoringSession::capture_history_snapshot(HistorySnapshot &out_snaps
 	out_snapshot.albedo_surface = albedo_surface;
 	out_snapshot.normal_surface = normal_surface;
 	out_snapshot.paint_mask_surface = paint_mask_surface;
+	out_snapshot.use_mesh_normals = use_mesh_normals;
 	out_snapshot.thrusters = thrusters;
 	return true;
 }
@@ -1188,6 +1190,7 @@ bool MxtCarAuthoringSession::restore_history_snapshot(const HistorySnapshot &sna
 	albedo_surface = snapshot.albedo_surface;
 	normal_surface = snapshot.normal_surface;
 	paint_mask_surface = snapshot.paint_mask_surface;
+	use_mesh_normals = snapshot.use_mesh_normals;
 	thrusters = snapshot.thrusters;
 	dirty = mark_dirty ? true : snapshot.dirty;
 	return true;
@@ -1312,6 +1315,7 @@ Dictionary MxtCarAuthoringSession::import_model(const String &source_path, const
 	albedo_surface = -1;
 	normal_surface = -1;
 	paint_mask_surface = -1;
+	use_mesh_normals = false;
 	for (size_t i = 0; i < model_info.surfaces.size(); ++i) {
 		body_surfaces.push_back(static_cast<int32_t>(i));
 		if (albedo_surface < 0 && model_info.surfaces[i].has_albedo_texture) albedo_surface = static_cast<int32_t>(i);
@@ -1379,6 +1383,47 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	if (DirAccess::make_dir_recursive_absolute(root.path_join("vehicle")) != OK) {
 		return result_dictionary(false, single_error("could not create vehicle package directory"), {});
 	}
+	struct TexturePayload {
+		const char *draft_name;
+		const char *package_path;
+		const char *manifest_member;
+	};
+	static constexpr TexturePayload TEXTURE_PAYLOADS[] = {
+		{"albedo.png", "vehicle/albedo.png", "albedo_texture"},
+		{"normal.png", "vehicle/normal.png", "normal_texture"},
+		{"paint_mask.png", "vehicle/paint_mask.png", "paint_mask_texture"},
+	};
+	bool packaged_textures[std::size(TEXTURE_PAYLOADS)] = {};
+	for (size_t i = 0; i < std::size(TEXTURE_PAYLOADS); ++i) {
+		const TexturePayload &texture = TEXTURE_PAYLOADS[i];
+		const String source = draft_root.path_join(texture.draft_name);
+		const String destination = root.path_join(texture.package_path);
+		DirAccess::remove_absolute(destination);
+		if (!FileAccess::file_exists(source)) continue;
+		if (DirAccess::copy_absolute(source, destination) != OK) {
+			return result_dictionary(false, single_error(
+					String("could not copy custom vehicle texture '") + texture.draft_name + "' into the package"), {});
+		}
+		packaged_textures[i] = true;
+	}
+	const String source_boost_wav = draft_root.path_join("manual_boost_sfx.wav");
+	const String source_boost_ogg = draft_root.path_join("manual_boost_sfx.ogg");
+	const String packaged_boost_wav = root.path_join("vehicle/manual_boost.wav");
+	const String packaged_boost_ogg = root.path_join("vehicle/manual_boost.ogg");
+	DirAccess::remove_absolute(packaged_boost_wav);
+	DirAccess::remove_absolute(packaged_boost_ogg);
+	String packaged_boost_relative;
+	if (FileAccess::file_exists(source_boost_wav)) {
+		if (DirAccess::copy_absolute(source_boost_wav, packaged_boost_wav) != OK) {
+			return result_dictionary(false, single_error("could not copy the custom manual-boost WAV into the package"), {});
+		}
+		packaged_boost_relative = "vehicle/manual_boost.wav";
+	} else if (FileAccess::file_exists(source_boost_ogg)) {
+		if (DirAccess::copy_absolute(source_boost_ogg, packaged_boost_ogg) != OK) {
+			return result_dictionary(false, single_error("could not copy the custom manual-boost Ogg into the package"), {});
+		}
+		packaged_boost_relative = "vehicle/manual_boost.ogg";
+	}
 	regenerate_all_derived_pairs();
 	const String packaged_model_path = root.path_join("vehicle/model.glb");
 	const String temporary_model_path = root.path_join("vehicle/model.packaging.glb");
@@ -1414,6 +1459,7 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	material_inputs["albedo_surface"] = albedo_surface;
 	material_inputs["normal_surface"] = normal_surface;
 	material_inputs["paint_mask_surface"] = paint_mask_surface;
+	material_inputs["use_mesh_normals"] = use_mesh_normals;
 	visual["material_inputs"] = material_inputs;
 	visual["thrusters"] = thruster_values;
 	if (!write_text_file(root.path_join("vehicle/visual.json"), JSON::stringify(visual, "  ", true, true))) {
@@ -1430,9 +1476,21 @@ Dictionary MxtCarAuthoringSession::build_vehicle_package(
 	payload["properties"] = "vehicle/properties.mxt_car_props";
 	payload["visual_metadata"] = "vehicle/visual.json";
 	payload["authoring"] = "vehicle/authoring.json";
+	if (!packaged_boost_relative.is_empty()) payload["manual_boost_sfx"] = packaged_boost_relative;
+	for (size_t i = 0; i < std::size(TEXTURE_PAYLOADS); ++i) {
+		if (packaged_textures[i]) payload[TEXTURE_PAYLOADS[i].manifest_member] = TEXTURE_PAYLOADS[i].package_path;
+	}
 	Dictionary hashes;
 	for (const String &path : {String("vehicle/model.glb"), String("vehicle/properties.mxt_car_props"), String("vehicle/visual.json"), String("vehicle/authoring.json"), String("preview.png")}) {
 		hashes[path] = FileAccess::get_sha256(root.path_join(path));
+	}
+	if (!packaged_boost_relative.is_empty()) {
+		hashes[packaged_boost_relative] = FileAccess::get_sha256(root.path_join(packaged_boost_relative));
+	}
+	for (size_t i = 0; i < std::size(TEXTURE_PAYLOADS); ++i) {
+		if (packaged_textures[i]) {
+			hashes[TEXTURE_PAYLOADS[i].package_path] = FileAccess::get_sha256(root.path_join(TEXTURE_PAYLOADS[i].package_path));
+		}
 	}
 	Dictionary manifest;
 	manifest["format_revision"] = static_cast<int64_t>(mxt::content::PACKAGE_FORMAT_REVISION);
@@ -1476,7 +1534,8 @@ bool MxtCarAuthoringSession::load_draft_visual_state(
 		const Array surfaces = material_setup.get("body_surfaces", Array());
 		if (!surfaces.is_empty() || static_cast<int64_t>(material_setup.get("albedo_surface", -1)) != -1 ||
 				static_cast<int64_t>(material_setup.get("normal_surface", -1)) != -1 ||
-				static_cast<int64_t>(material_setup.get("paint_mask_surface", -1)) != -1) {
+				static_cast<int64_t>(material_setup.get("paint_mask_surface", -1)) != -1 ||
+				static_cast<bool>(material_setup.get("use_mesh_normals", false))) {
 			return false;
 		}
 	} else if (!parsed->set_material_setup(material_setup)) {
@@ -1490,6 +1549,7 @@ bool MxtCarAuthoringSession::load_draft_visual_state(
 	albedo_surface = parsed->albedo_surface;
 	normal_surface = parsed->normal_surface;
 	paint_mask_surface = parsed->paint_mask_surface;
+	use_mesh_normals = parsed->use_mesh_normals;
 	thrusters = std::move(parsed->thrusters);
 	dirty = true;
 	return true;
@@ -1579,6 +1639,7 @@ Dictionary MxtCarAuthoringSession::get_material_setup() const
 	result["albedo_surface"] = albedo_surface;
 	result["normal_surface"] = normal_surface;
 	result["paint_mask_surface"] = paint_mask_surface;
+	result["use_mesh_normals"] = use_mesh_normals;
 	return result;
 }
 
@@ -1612,6 +1673,9 @@ bool MxtCarAuthoringSession::set_material_setup(const Dictionary &value)
 	const int64_t new_albedo = static_cast<int64_t>(value["albedo_surface"]);
 	const int64_t new_normal = static_cast<int64_t>(value["normal_surface"]);
 	const int64_t new_paint_mask = static_cast<int64_t>(value["paint_mask_surface"]);
+	const Variant mesh_normals_value = value.get("use_mesh_normals", false);
+	if (mesh_normals_value.get_type() != Variant::BOOL) return false;
+	const bool new_use_mesh_normals = static_cast<bool>(mesh_normals_value);
 	if (!valid_input(new_albedo, &mxt::content::VehicleGlbSurface::has_albedo_texture) ||
 			!valid_input(new_normal, &mxt::content::VehicleGlbSurface::has_normal_texture) ||
 			!valid_input(new_paint_mask, &mxt::content::VehicleGlbSurface::has_paint_mask_texture)) return false;
@@ -1620,6 +1684,7 @@ bool MxtCarAuthoringSession::set_material_setup(const Dictionary &value)
 	albedo_surface = static_cast<int32_t>(new_albedo);
 	normal_surface = static_cast<int32_t>(new_normal);
 	paint_mask_surface = static_cast<int32_t>(new_paint_mask);
+	use_mesh_normals = new_use_mesh_normals;
 	clear_redo_after_mutation();
 	dirty = true;
 	return true;

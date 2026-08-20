@@ -135,7 +135,8 @@ func _on_entries_received(request_board: String, request_type: String, result: D
 			personal_global_rank = int(entry.get("global_rank", 0))
 			personal_entry = entry.duplicate(true)
 			personal_entry["_trusted_details"] = LeaderboardDetailsClass.decode(entry.get("details", []))
-			watch_replay_button.disabled = int(entry.get("ugc_handle", 0)) == 0 \
+			var ugc_handle := int(entry.get("ugc_handle", 0))
+			watch_replay_button.disabled = ugc_handle == 0 or ugc_handle == -1 \
 				or String((personal_entry["_trusted_details"] as Dictionary).get("replay_sha256", "")).is_empty()
 			break
 		personal_label.text = "Personal Best  ·  %s" % (_format_score(personal_best_milliseconds) if personal_best_milliseconds > 0 else "No verified time")

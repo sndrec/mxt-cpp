@@ -52,7 +52,9 @@ static constexpr float DEFAULT_BASE_STATS[CAR_STAT_COUNT] = {
 	0.012f,        // air_glide_steering_speed_loss_factor
 	1.0f,          // drive_target_speed_multiplier
 	1.0f,          // acceleration_response_multiplier
-	1.0f           // forward_thrust_multiplier
+	1.0f,          // forward_thrust_multiplier
+	145.0f,        // drift_turn_movement
+	200.0f         // max_turn_rate
 };
 
 struct ByteReader {
@@ -261,9 +263,9 @@ CarStatModifierLayer classify_car_technique_modifier(
 		return CAR_MODIFIER_LAYER_COUNT;
 	}
 	out_intensity = strafe_amount;
-	// Matching the strafe and signed-slip directions is a quick turn; opposing
-	// them is an MTS, as in the original actual-slip classifier.
-	return parity > 0.0f ? CAR_MODIFIER_QUICKTURN : CAR_MODIFIER_MTS;
+	// Strafing with the machine's lateral travel is an MTS. Strafing against
+	// that travel is a quick turn.
+	return parity > 0.0f ? CAR_MODIFIER_MTS : CAR_MODIFIER_QUICKTURN;
 }
 
 CarStatModifierLayer classify_car_boost_modifier(

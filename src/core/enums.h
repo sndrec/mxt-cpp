@@ -128,6 +128,7 @@ namespace DIP_SWITCH {
                 DIP_DRAW_MESH_CAST_TESTS = 0x400,
                 DIP_DRAW_MESH_COLLISION_HITS = 0x800,
                 DIP_TRACE_MESH_FLOOR = 0x1000,
+				DIP_TRACE_YAW = 0x2000,
         };
 }
 

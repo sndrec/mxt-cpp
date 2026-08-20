@@ -459,6 +459,8 @@ public:
 			new_car_properties->base_stats[CAR_STAT_TURN_TENSION] = randf_range(0.0f, 0.3f);
 			new_car_properties->base_stats[CAR_STAT_DRIFT_ACCEL] = randf_range(-0.5f, 2.0f);
 			new_car_properties->base_stats[CAR_STAT_TURN_MOVEMENT] = randf_range(110.0f, 200.0f);
+			new_car_properties->base_stats[CAR_STAT_DRIFT_TURN_MOVEMENT] =
+				new_car_properties->base_stats[CAR_STAT_TURN_MOVEMENT];
 			new_car_properties->base_stats[CAR_STAT_STRAFE_TURN] = randf_range(0.0f, 100.0f);
 			new_car_properties->base_stats[CAR_STAT_STRAFE] = randf_range(20.0f, 60.0f);
 			new_car_properties->base_stats[CAR_STAT_TURN_REACTION] = randf_range(0.0f, 30.0f);
