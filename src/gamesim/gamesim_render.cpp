@@ -1639,6 +1639,13 @@ void GameSim::update_super_spark_visuals()
 	spark_multimesh->set_visible_instance_count(active_count);
 }
 
+	void GameSim::update_render_snapshots() {
+		if (!sim_started || !cars) {
+			return;
+		}
+		update_render_visual_snapshots(std::max(0, num_cars));
+	}
+
 	void GameSim::render_gamesim() {
 		if (!sim_started || !car_node_container || !cars) {
 			return;

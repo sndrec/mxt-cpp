@@ -1,17 +1,30 @@
 class_name TimeAttackGhostController extends Node
 
+const CarRenderManagerClass = preload("res://vehicle/car_render_manager.gd")
 const MAX_GHOSTS := 4
 const MAX_ENCODED_INPUT_BYTES := 8
+const FADE_SECONDS := 0.75
+const BASE_TRANSPARENCY := 0.48
+const TINT_STRENGTH := 0.32
+const SLOT_COLORS: Array[Color] = [
+	Color(0.30, 0.90, 1.0),
+	Color(1.0, 0.36, 0.86),
+	Color(1.0, 0.82, 0.25),
+	Color(0.38, 1.0, 0.48),
+]
 
 var game_manager: GameManager
 var prepared_track_index := -1
 var prepared_slots: Array = []
 var runtime_slots: Array = []
 var last_error := ""
+var render_manager: CarRenderManager
+var name_labels: Array[Label] = []
 
 
 func initialize(manager: GameManager) -> void:
 	game_manager = manager
+	set_process(false)
 
 
 func _exit_tree() -> void:
@@ -79,7 +92,10 @@ func start_race(track_index: int) -> Dictionary:
 		runtime["sim"] = sim
 		runtime["frame_index"] = 0
 		runtime["state"] = "active"
+		runtime["fade_elapsed"] = 0.0
 		runtime_slots.append(runtime)
+	_configure_presentation()
+	set_process(true)
 	return {"success": true, "ghost_count": runtime_slots.size()}
 
 
@@ -104,6 +120,7 @@ func tick(live_tick: int) -> void:
 				frame_index):
 			_fail_runtime_slot(slot, "Ghost input stream failed at tick %d." % frame_index)
 			continue
+		sim.update_render_snapshots()
 		sim.discard_race_events()
 		slot["frame_index"] = frame_index + 1
 		if frame_index + 1 >= frame_count:
@@ -111,6 +128,8 @@ func tick(live_tick: int) -> void:
 
 
 func teardown_runtime() -> void:
+	set_process(false)
+	_clear_presentation()
 	for slot_value in runtime_slots:
 		if typeof(slot_value) != TYPE_DICTIONARY:
 			continue
@@ -122,6 +141,55 @@ func teardown_runtime() -> void:
 			remove_child(sim)
 		sim.free()
 	runtime_slots.clear()
+
+
+func _process(delta: float) -> void:
+	if render_manager == null or runtime_slots.is_empty():
+		return
+	render_manager.begin_manual_submit()
+	var camera := get_viewport().get_camera_3d()
+	var hud_hidden := game_manager != null and game_manager.debug_runtime_controller.disable_hud
+	for index in range(runtime_slots.size()):
+		var slot: Dictionary = runtime_slots[index]
+		var state := String(slot.get("state", ""))
+		if state == "finished":
+			state = "fading"
+			slot["state"] = state
+			slot["fade_elapsed"] = 0.0
+		if state == "fading":
+			slot["fade_elapsed"] = float(slot.get("fade_elapsed", 0.0)) + delta
+			if float(slot["fade_elapsed"]) >= FADE_SECONDS:
+				slot["state"] = "hidden"
+				_hide_label(index)
+				continue
+		elif state != "active":
+			_hide_label(index)
+			continue
+		if int(slot.get("frame_index", 0)) <= 0:
+			_hide_label(index)
+			continue
+		var sim: GameSim = slot.get("sim", null)
+		if sim == null:
+			_hide_label(index)
+			continue
+		var fade_ratio := clampf(float(slot.get("fade_elapsed", 0.0)) / FADE_SECONDS, 0.0, 1.0) if state == "fading" else 0.0
+		var transparency := lerpf(BASE_TRANSPARENCY, 1.0, fade_ratio)
+		var slot_index := clampi(int(slot.get("slot_index", index)), 0, SLOT_COLORS.size() - 1)
+		var color := SLOT_COLORS[slot_index]
+		var transform := sim.get_player_render_transform(int(slot.get("racer_id", -1)))
+		render_manager.set_manual_car_transparency(index, transparency)
+		render_manager.submit_manual_car(
+			index,
+			transform,
+			Color(color.r * TINT_STRENGTH, color.g * TINT_STRENGTH, color.b * TINT_STRENGTH, 1.0),
+			Vector3.ZERO,
+			Color.TRANSPARENT,
+			0.0,
+			false,
+			false,
+			false,
+			false)
+		_update_label(index, transform.origin, 1.0 - fade_ratio, camera, hud_hidden)
 
 
 func clear() -> void:
@@ -157,6 +225,70 @@ func memory_usage_stats() -> Dictionary:
 		"aggregate_tracked_bytes": aggregate_bytes,
 		"slots": slots,
 	}
+
+
+func _configure_presentation() -> void:
+	_clear_presentation()
+	if runtime_slots.is_empty() or game_manager == null:
+		return
+	var definitions: Array = []
+	var settings: Array = []
+	for slot_value in runtime_slots:
+		var slot: Dictionary = slot_value
+		definitions.append(slot.get("definition", null))
+		settings.append((slot.get("settings", {}) as Dictionary).duplicate(true))
+	render_manager = CarRenderManagerClass.new()
+	render_manager.name = "TimeAttackGhostRenderManager"
+	game_manager.get_node("GameWorld").add_child(render_manager)
+	render_manager.configure_manual(definitions, settings, true)
+	for index in range(runtime_slots.size()):
+		var slot: Dictionary = runtime_slots[index]
+		var slot_index := clampi(int(slot.get("slot_index", index)), 0, SLOT_COLORS.size() - 1)
+		var label := Label.new()
+		label.name = "TimeAttackGhostName%d" % slot_index
+		label.text = String(slot.get("persona_name", "Ghost"))
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		label.z_index = 20
+		var label_settings := LabelSettings.new()
+		label_settings.font_size = 18
+		label_settings.font_color = SLOT_COLORS[slot_index]
+		label_settings.outline_size = 5
+		label_settings.outline_color = Color(0.0, 0.0, 0.0, 0.85)
+		label.label_settings = label_settings
+		label.size = label.get_combined_minimum_size()
+		label.visible = false
+		game_manager.race_presentation_controller.add_child(label)
+		name_labels.append(label)
+
+
+func _clear_presentation() -> void:
+	for label in name_labels:
+		if label != null and is_instance_valid(label):
+			label.free()
+	name_labels.clear()
+	if render_manager != null and is_instance_valid(render_manager):
+		if render_manager.get_parent() != null:
+			render_manager.get_parent().remove_child(render_manager)
+		render_manager.free()
+	render_manager = null
+
+
+func _update_label(index: int, world_position: Vector3, alpha: float, camera: Camera3D, hud_hidden: bool) -> void:
+	if index < 0 or index >= name_labels.size():
+		return
+	var label := name_labels[index]
+	if label == null or camera == null or hud_hidden \
+			or camera.is_position_behind(world_position) or !camera.is_position_in_frustum(world_position):
+		label.visible = false
+		return
+	label.visible = true
+	label.modulate = Color(1.0, 1.0, 1.0, clampf(alpha, 0.0, 1.0))
+	label.position = camera.unproject_position(world_position) + Vector2(24.0, -56.0)
+
+
+func _hide_label(index: int) -> void:
+	if index >= 0 and index < name_labels.size() and name_labels[index] != null:
+		name_labels[index].visible = false
 
 
 func _prepare_descriptor(descriptor: Dictionary, track_index: int) -> Dictionary:

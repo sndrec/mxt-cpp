@@ -358,17 +358,17 @@ Completion gate: a player can reliably prepare any zero-to-four replay-bearing e
 - [x] Prepare validated replay input into an allocation-free sequential representation.
 - [x] Instantiate one single-car `GameSim` per selection with independent track state.
 - [x] Advance slots from the live Time Attack tick.
-- [ ] Handle terminal, fade, Retry, Race Again, track change, and teardown.
+- [x] Handle terminal, fade, Retry, Race Again, track change, and teardown.
 - [x] Confirm ghost events never enter the player's result or presentation systems.
 
 Completion gate: four invisible ghosts can reproduce four input streams while the player's ranked simulation and replay remain canonical and single-racer.
 
 ### Phase D: Presentation
 
-- [ ] Add the shared manual ghost render manager.
-- [ ] Render independent simulation transforms with four stable colors.
-- [ ] Add translucency, no-shadow behavior, player labels, and end-of-replay fading.
-- [ ] Add optional lightweight thruster presentation without audio or lights.
+- [x] Add the shared manual ghost render manager.
+- [x] Render independent simulation transforms with four stable colors.
+- [x] Add translucency, no-shadow behavior, player labels, and end-of-replay fading.
+- [x] Evaluate optional lightweight thruster presentation without audio or lights; keep it disabled for the initial uncluttered treatment.
 - [ ] Tune visibility against dark, bright, enclosed, and high-speed tracks.
 
 Completion gate: ghosts are readable and distinguishable without obscuring the track or looking like ordinary collidable racers.
@@ -459,6 +459,7 @@ The feature is complete when:
 - Phase A: reusable serialized leaderboard replay cache, direct Watch Replay integration, and the four-entry digest-keyed selection model.
 - Phase B: fixed-size leaderboard ghost picker, shared leaderboard row decoration, own-time selection, readiness gating, and controller navigation.
 - Phase C1: transition-time input packing, allocation-free indexed native input consumption, isolated one-car simulations, live-tick advancement, and deterministic teardown.
+- Phase D1: shared manual rendering, unique transparent archetypes, stable slot tinting, no shadows/effects, projected names, and terminal fade-out.
 
 ### Profiling results
 

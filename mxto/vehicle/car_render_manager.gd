@@ -26,6 +26,7 @@ var stamp_visibility_mask_skip_layer: int = -1
 var stamp_catalog: CarStampCatalog = null
 var custom_stamp_atlas_texture: Texture2D = null
 var stamp_mesh_builder: NativeStampMeshBuilder = NativeStampMeshBuilder.new()
+var force_unique_archetypes := false
 
 func _ready() -> void:
 	process_priority = 2
@@ -48,12 +49,14 @@ func clear_renderer() -> void:
 func configure(definitions: Array, car_nodes: Array, player_settings: Array = []) -> void:
 	clear_renderer()
 	set_process(false)
+	force_unique_archetypes = false
 	cars = car_nodes.duplicate()
 	_configure_archetypes(definitions, player_settings)
 
-func configure_manual(definitions: Array, player_settings: Array = []) -> void:
+func configure_manual(definitions: Array, player_settings: Array = [], unique_archetypes := false) -> void:
 	clear_renderer()
 	set_process(false)
+	force_unique_archetypes = unique_archetypes
 	cars.clear()
 	_configure_archetypes(definitions, player_settings)
 
@@ -103,6 +106,8 @@ func _configure_archetypes(definitions: Array, player_settings: Array = []) -> v
 		var def: CarDefinition = definitions[i]
 		var livery := _livery_for_index(i, def, player_settings)
 		var key := _definition_key(def, livery)
+		if force_unique_archetypes:
+			key += ":manual_instance_%d" % i
 		var archetype_index := -1
 		if archetype_map.has(key):
 			archetype_index = archetype_map[key]
@@ -189,7 +194,7 @@ func begin_manual_submit() -> void:
 		var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
 		thruster_multimesh.visible_instance_count = 0
 
-func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Color, outline_velocity: Vector3, outline_overlay: Color, thrust: float, submit_outlines: bool = true, isolated: bool = false) -> void:
+func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Color, outline_velocity: Vector3, outline_overlay: Color, thrust: float, submit_outlines: bool = true, isolated: bool = false, submit_shadow: bool = true, submit_thrusters: bool = true) -> void:
 	if index < 0 or index >= car_archetype_indices.size() or index >= car_slots.size():
 		return
 	var archetype_index := car_archetype_indices[index]
@@ -203,12 +208,17 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 	if submit_outlines:
 		_set_pass_instance(archetype[PASS_OUTLINE], slot, body_transform * archetype[PASS_OUTLINE]["local_transform"], outline_velocity, outline_overlay)
 		_set_pass_instance(archetype[PASS_OUTLINE_MAIN], slot, body_transform * archetype[PASS_OUTLINE_MAIN]["local_transform"], outline_velocity, Color.BLACK)
-	_set_pass_instance(archetype["shadow"], slot, body_transform * archetype["shadow"]["local_transform"], Vector3.ZERO, Color.WHITE)
-	for pass_name in [PASS_MAIN, "shadow"]:
+	if submit_shadow:
+		_set_pass_instance(archetype["shadow"], slot, body_transform * archetype["shadow"]["local_transform"], Vector3.ZERO, Color.WHITE)
+	for pass_name in [PASS_MAIN]:
 		var pass_data: Dictionary = archetype[pass_name]
 		var multimesh: MultiMesh = pass_data["multimesh"]
 		if multimesh.mesh != null:
 			multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
+	if submit_shadow:
+		var shadow_multimesh: MultiMesh = (archetype["shadow"] as Dictionary)["multimesh"]
+		if shadow_multimesh.mesh != null:
+			shadow_multimesh.visible_instance_count = max(shadow_multimesh.visible_instance_count, slot + 1)
 	if _pass_has_mesh(archetype[PASS_STAMP]):
 		var stamp_multimesh: MultiMesh = archetype[PASS_STAMP]["multimesh"]
 		stamp_multimesh.visible_instance_count = max(stamp_multimesh.visible_instance_count, slot + 1)
@@ -218,16 +228,30 @@ func submit_manual_car(index: int, body_transform: Transform3D, body_overlay: Co
 			var multimesh: MultiMesh = pass_data["multimesh"]
 			if multimesh.mesh != null:
 				multimesh.visible_instance_count = max(multimesh.visible_instance_count, slot + 1)
-	var thruster_pass: Dictionary = archetype["thruster"]
-	var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
-	var thruster_locals: Array = thruster_pass["local_transforms"]
-	var tick_phase := int(Time.get_ticks_msec() / 16)
-	for i in range(thruster_locals.size()):
-		var thruster_slot := slot * thruster_locals.size() + i
-		thruster_multimesh.set_instance_transform(thruster_slot, body_transform * thruster_locals[i])
-		thruster_multimesh.set_instance_color(thruster_slot, Color(thrust, thrust, thrust, thrust))
-		thruster_multimesh.set_instance_custom_data(thruster_slot, Color(thrust * 0.2, float((tick_phase + i) & 255) * 0.0245436926, thrust, 1.0))
-	thruster_multimesh.visible_instance_count = max(thruster_multimesh.visible_instance_count, slot * thruster_locals.size() + thruster_locals.size())
+	if submit_thrusters:
+		var thruster_pass: Dictionary = archetype["thruster"]
+		var thruster_multimesh: MultiMesh = thruster_pass["multimesh"]
+		var thruster_locals: Array = thruster_pass["local_transforms"]
+		var tick_phase := int(Time.get_ticks_msec() / 16)
+		for i in range(thruster_locals.size()):
+			var thruster_slot := slot * thruster_locals.size() + i
+			thruster_multimesh.set_instance_transform(thruster_slot, body_transform * thruster_locals[i])
+			thruster_multimesh.set_instance_color(thruster_slot, Color(thrust, thrust, thrust, thrust))
+			thruster_multimesh.set_instance_custom_data(thruster_slot, Color(thrust * 0.2, float((tick_phase + i) & 255) * 0.0245436926, thrust, 1.0))
+		thruster_multimesh.visible_instance_count = max(thruster_multimesh.visible_instance_count, slot * thruster_locals.size() + thruster_locals.size())
+
+func set_manual_car_transparency(index: int, transparency: float) -> void:
+	if index < 0 or index >= car_archetype_indices.size():
+		return
+	var archetype_index := car_archetype_indices[index]
+	if archetype_index < 0 or archetype_index >= archetypes.size():
+		return
+	var archetype: Dictionary = archetypes[archetype_index]
+	for pass_name in [PASS_MAIN, PASS_OUTLINE, PASS_OUTLINE_MAIN, PASS_STAMP, "thruster"]:
+		var pass_data: Dictionary = archetype[pass_name]
+		var node: GeometryInstance3D = pass_data.get("node", null)
+		if node != null:
+			node.transparency = clampf(transparency, 0.0, 1.0)
 
 func get_native_render_bindings() -> Dictionary:
 	var multimeshes: Array = []
