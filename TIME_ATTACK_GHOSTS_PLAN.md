@@ -2,7 +2,7 @@
 
 ## Status
 
-Planning contract. No feature implementation has begun.
+Implementation in progress. Phase A is complete in code; integrated runtime verification remains in Phase F.
 
 This document is the source of truth for adding selectable leaderboard ghosts to Time Attack. Execute it with a short goal such as:
 
@@ -334,10 +334,10 @@ Keep UI, Steam cache transport, ghost orchestration, rendering, and native simul
 
 ### Phase A: Cache and selection model
 
-- [ ] Extract the reusable replay cache/download queue.
-- [ ] Rewire Watch Verified Replay to the new cache owner without a forwarding shim.
-- [ ] Add request deduplication, cancellation tokens, cache validation, and explicit errors.
-- [ ] Add the four-entry selection model keyed by replay digest.
+- [x] Extract the reusable replay cache/download queue.
+- [x] Rewire Watch Verified Replay to the new cache owner without a forwarding shim.
+- [x] Add request deduplication, cancellation tokens, cache validation, and explicit errors.
+- [x] Add the four-entry selection model keyed by replay digest.
 
 Completion gate: one to four replay requests can be selected, downloaded sequentially, validated, cached, canceled, and retrieved without starting a race.
 
@@ -453,6 +453,10 @@ The feature is complete when:
 ### Material deviations
 
 - None yet.
+
+### Completed slices
+
+- Phase A: reusable serialized leaderboard replay cache, direct Watch Replay integration, and the four-entry digest-keyed selection model.
 
 ### Profiling results
 

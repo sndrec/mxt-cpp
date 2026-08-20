@@ -1,30 +1,22 @@
 extends Node
 
 signal attachment_status_changed(status: Dictionary)
-signal playback_status_changed(message: String)
 
-const ReplayValidatorClass = preload("res://steam/leaderboard_replay_validator.gd")
 const QUEUE_PATH := "user://steam_leaderboard_replay_attachments.json"
-const CACHE_ROOT := "user://leaderboard_replays"
 const SUBMISSION_REPLAY_ROOT := "user://leaderboard_submission_replays"
-const MAX_REPLAY_BYTES := 64 * 1024 * 1024
 const MAX_HISTORY := 32
 const RETRY_DELAY_MIN_SECONDS := 30.0
 const RETRY_DELAY_MAX_SECONDS := 600.0
 const QUEUE_FORMAT_REVISION := 2
 const REVISION_CHECK_FAILURE := "The retained score changed before its replay could be attached."
 
-var game_manager: GameManager
 var steam_service: MxtSteamService
-var replay_controller: ReplayController
 var retry_timer: Timer
 var pending: Array = []
 var completed: Array = []
 var failed: Array = []
 var active_upload: Dictionary = {}
 var active_upload_request_id := 0
-var active_download: Dictionary = {}
-var active_download_request_id := 0
 var last_message := "No replay attachment work is pending."
 
 
@@ -37,13 +29,10 @@ func _ready() -> void:
 	_load_queue()
 
 
-func initialize(manager: GameManager, service: MxtSteamService, controller: ReplayController) -> void:
-	game_manager = manager
+func initialize(service: MxtSteamService) -> void:
 	steam_service = service
-	replay_controller = controller
 	if steam_service != null:
 		steam_service.leaderboard_replay_upload_completed.connect(_on_upload_completed)
-		steam_service.leaderboard_replay_download_completed.connect(_on_download_completed)
 		steam_service.status_changed.connect(func(_status): _pump_upload_queue())
 	call_deferred("_pump_upload_queue")
 
@@ -92,43 +81,6 @@ func enqueue_verified_submission(submission: Dictionary) -> bool:
 	_emit_status()
 	_pump_upload_queue()
 	return true
-
-
-func request_watch_replay(board_name: String, entry: Dictionary) -> void:
-	if !active_download.is_empty():
-		playback_status_changed.emit("Another leaderboard replay is already downloading.")
-		return
-	var details_value = entry.get("_trusted_details", {})
-	if typeof(details_value) != TYPE_DICTIONARY:
-		playback_status_changed.emit("This leaderboard entry has no trusted replay metadata.")
-		return
-	var details: Dictionary = details_value
-	var replay_digest := String(details.get("replay_sha256", ""))
-	var digest_hex := _digest_hex(replay_digest)
-	var ugc_handle := int(entry.get("ugc_handle", 0))
-	if digest_hex.is_empty() or ugc_handle == 0 or ugc_handle == -1:
-		playback_status_changed.emit("This leaderboard entry does not have a playable replay attached.")
-		return
-	active_download = {
-		"board_name": board_name,
-		"ugc_handle": ugc_handle,
-		"trusted_details": details.duplicate(true),
-		"cache_path": CACHE_ROOT.path_join(digest_hex + ".replay.json"),
-	}
-	var cache_path := String(active_download.cache_path)
-	if FileAccess.file_exists(cache_path):
-		var cached_bytes := FileAccess.get_file_as_bytes(cache_path)
-		var validation := _validate_download(cached_bytes, active_download)
-		if bool(validation.get("valid", false)):
-			_finish_download_playback(cache_path, "Playing validated cached leaderboard replay.")
-			return
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(cache_path))
-	if steam_service == null or !steam_service.is_initialized():
-		active_download.clear()
-		playback_status_changed.emit("Steam is offline, so the replay cannot be downloaded.")
-		return
-	active_download_request_id = steam_service.download_leaderboard_replay(ugc_handle, MAX_REPLAY_BYTES)
-	playback_status_changed.emit("Downloading leaderboard replay from Steam…")
 
 
 func _load_queue() -> void:
@@ -271,82 +223,6 @@ func _schedule_retry() -> void:
 	var attempts := int((pending[0] as Dictionary).get("attempts", 0))
 	var delay := minf(RETRY_DELAY_MAX_SECONDS, RETRY_DELAY_MIN_SECONDS * pow(2.0, minf(float(attempts), 5.0)))
 	retry_timer.start(delay)
-
-
-func _on_download_completed(request_id: int, result: Dictionary) -> void:
-	if request_id != active_download_request_id:
-		return
-	active_download_request_id = 0
-	if !bool(result.get("success", false)):
-		active_download.clear()
-		playback_status_changed.emit(String(result.get("message", "Steam replay download failed.")))
-		return
-	var bytes_value = result.get("bytes", PackedByteArray())
-	if typeof(bytes_value) != TYPE_PACKED_BYTE_ARRAY:
-		active_download.clear()
-		playback_status_changed.emit("Steam returned an invalid replay payload.")
-		return
-	var bytes: PackedByteArray = bytes_value
-	var validation := _validate_download(bytes, active_download)
-	if !bool(validation.get("valid", false)):
-		active_download.clear()
-		playback_status_changed.emit("Leaderboard replay rejected: %s" % String(validation.get("reason", "invalid replay")).replace("_", " "))
-		return
-	var cache_path := String(active_download.get("cache_path", ""))
-	if !_write_cache_atomically(cache_path, bytes):
-		active_download.clear()
-		playback_status_changed.emit("The validated replay could not be written to the local cache.")
-		return
-	_finish_download_playback(cache_path, "Leaderboard replay validated. Starting playback…")
-
-
-func _validate_download(bytes: PackedByteArray, request: Dictionary) -> Dictionary:
-	if bytes.is_empty() or bytes.size() > MAX_REPLAY_BYTES:
-		return {"valid": false, "reason": "invalid_replay_size"}
-	var details: Dictionary = request.get("trusted_details", {})
-	if _sha256(bytes) != String(details.get("replay_sha256", "")):
-		return {"valid": false, "reason": "replay_digest_mismatch"}
-	var replay_value = JSON.parse_string(bytes.get_string_from_utf8())
-	if typeof(replay_value) != TYPE_DICTIONARY:
-		return {"valid": false, "reason": "invalid_replay_json"}
-	var validation: Dictionary = ReplayValidatorClass.validate(game_manager, replay_value as Dictionary)
-	if !bool(validation.get("valid", false)):
-		return validation
-	if String(validation.get("board_name", "")) != String(request.get("board_name", "")) \
-			or int(validation.get("ruleset_revision", -1)) != int(details.get("ruleset_revision", -2)) \
-			or int(validation.get("replay_schema_version", -1)) != int(details.get("replay_schema_version", -2)) \
-			or String(validation.get("track_gameplay_digest", "")) != String(details.get("track_gameplay_digest", "")) \
-			or String(validation.get("vehicle_gameplay_digest", "")) != String(details.get("vehicle_gameplay_digest", "")):
-		return {"valid": false, "reason": "trusted_metadata_mismatch"}
-	var trusted_machine_setting := int(details.get("machine_setting_percent", -1))
-	if trusted_machine_setting >= 0 \
-			and int(validation.get("machine_setting_percent", -2)) != trusted_machine_setting:
-		return {"valid": false, "reason": "trusted_metadata_mismatch"}
-	return {"valid": true, "reason": ""}
-
-
-func _write_cache_atomically(path: String, bytes: PackedByteArray) -> bool:
-	if DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(CACHE_ROOT)) != OK:
-		return false
-	var temporary_path := path + ".tmp"
-	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
-	if file == null:
-		return false
-	file.store_buffer(bytes)
-	file.flush()
-	file.close()
-	var absolute_target := ProjectSettings.globalize_path(path)
-	var absolute_temporary := ProjectSettings.globalize_path(temporary_path)
-	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(absolute_target)
-	return DirAccess.rename_absolute(absolute_temporary, absolute_target) == OK
-
-
-func _finish_download_playback(path: String, message: String) -> void:
-	active_download.clear()
-	playback_status_changed.emit(message)
-	if replay_controller != null:
-		replay_controller.call_deferred("play_replay_file", path)
 
 
 func _allowed_local_replay_path(path: String) -> bool:

@@ -73,6 +73,7 @@ const TimeAttackRulesClass = preload("res://steam/time_attack_rules.gd")
 const LeaderboardEligibilityClass = preload("res://steam/leaderboard_eligibility.gd")
 const LeaderboardClientClass = preload("res://steam/leaderboard_client.gd")
 const LeaderboardReplayServiceClass = preload("res://steam/leaderboard_replay_service.gd")
+const LeaderboardReplayCacheClass = preload("res://steam/leaderboard_replay_cache.gd")
 const LegacyLeaderboardSettingRecoveryClass = preload("res://steam/legacy_leaderboard_setting_recovery.gd")
 const BUMPER_DEFINITION_PATH := "res://vehicle/asset/bumper/definition.tres"
 const BUMPER_POOL_SIZE := 60
@@ -145,6 +146,8 @@ var race_pause_nav_repeat_seconds := 0.0
 var steam_service: MxtSteamService
 var leaderboard_client: LeaderboardClient
 var leaderboard_replay_service
+var leaderboard_replay_cache: LeaderboardReplayCache
+var leaderboard_watch_request_token := 0
 var legacy_leaderboard_setting_recovery
 
 func _enter_tree() -> void:
@@ -241,9 +244,13 @@ func _ready() -> void:
 	leaderboard_replay_service = LeaderboardReplayServiceClass.new()
 	leaderboard_replay_service.name = "LeaderboardReplayService"
 	add_child(leaderboard_replay_service)
-	leaderboard_replay_service.initialize(self, steam_service, replay_controller)
+	leaderboard_replay_service.initialize(steam_service)
 	leaderboard_replay_service.attachment_status_changed.connect(_on_leaderboard_replay_attachment_status_changed)
-	leaderboard_replay_service.playback_status_changed.connect(_on_leaderboard_replay_playback_status_changed)
+	leaderboard_replay_cache = LeaderboardReplayCacheClass.new()
+	leaderboard_replay_cache.name = "LeaderboardReplayCache"
+	add_child(leaderboard_replay_cache)
+	leaderboard_replay_cache.initialize(self, steam_service)
+	leaderboard_replay_cache.request_completed.connect(_on_leaderboard_replay_cache_request_completed)
 	car_settings.leaderboard_browser.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
 	_on_leaderboard_replay_attachment_status_changed(leaderboard_replay_service.status())
 	memory_telemetry = SessionMemoryTelemetryClass.new()
@@ -2106,14 +2113,29 @@ func _on_leaderboard_replay_attachment_status_changed(status: Dictionary) -> voi
 	race_presentation_controller.update_time_attack_submission_status(message)
 
 
-func _on_leaderboard_replay_playback_status_changed(message: String) -> void:
-	if race_presentation_controller != null:
-		race_presentation_controller.show_notification(message, 5000)
-
-
 func _on_leaderboard_replay_watch_requested(board_name: String, entry: Dictionary) -> void:
-	if leaderboard_replay_service != null:
-		leaderboard_replay_service.request_watch_replay(board_name, entry)
+	if leaderboard_replay_cache == null:
+		return
+	if leaderboard_watch_request_token != 0:
+		leaderboard_replay_cache.cancel_request(leaderboard_watch_request_token)
+	leaderboard_watch_request_token = leaderboard_replay_cache.request_replay(board_name, entry)
+	if race_presentation_controller != null:
+		race_presentation_controller.show_notification("Preparing leaderboard replay…", 5000)
+
+
+func _on_leaderboard_replay_cache_request_completed(token: int, result: Dictionary) -> void:
+	if token != leaderboard_watch_request_token:
+		return
+	leaderboard_watch_request_token = 0
+	if !bool(result.get("success", false)):
+		if race_presentation_controller != null:
+			race_presentation_controller.show_notification(String(result.get("message", "Leaderboard replay unavailable.")), 5000)
+		return
+	if race_presentation_controller != null:
+		race_presentation_controller.show_notification(String(result.get("message", "Leaderboard replay ready.")), 3000)
+	var cache_path := String(result.get("cache_path", ""))
+	if !cache_path.is_empty():
+		replay_controller.call_deferred("play_replay_file", cache_path)
 
 
 func _on_time_attack_results_leaderboard_requested(board_name: String) -> void:
