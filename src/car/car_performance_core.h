@@ -2,6 +2,8 @@
 
 #include "car/car_properties.h"
 
+#include <godot_cpp/variant/packed_byte_array.hpp>
+
 #include <cstdint>
 
 enum CarPerformanceCategory : uint8_t {
@@ -37,5 +39,7 @@ const char *car_performance_component_unit(CarPerformanceCategory category, uint
 const char *car_performance_component_explanation(CarPerformanceCategory category, uint8_t component);
 
 bool analyze_car_performance(
+		const godot::PackedByteArray &property_document,
+		float machine_setting,
 		const PhysicsCarProperties &properties,
 		CarPerformanceRaw &out_analysis);

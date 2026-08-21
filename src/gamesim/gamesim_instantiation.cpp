@@ -483,7 +483,7 @@ static void precompute_mesh_triangle_projection(TrackMeshCollisionTriangle &tri,
 
 void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car_prop_buffers, godot::Array accel_settings)
 {
-	if (Engine::get_singleton()->is_editor_hint()) return;
+	if (Engine::get_singleton()->is_editor_hint() && !performance_benchmark_mode) return;
 
 	const int property_count = car_prop_buffers.size();
 	std::vector<PhysicsCarProperties> sampled_car_properties(static_cast<size_t>(property_count));
@@ -515,9 +515,13 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	int32_t buffer_size = lvldat_buf->get_size();
 	const int requested_cars_hint = car_prop_buffers.size() > 0 ? car_prop_buffers.size() : 1;
 
-	const size_t level_heap_size = std::max<size_t>(
-		1024u * 1024u * 32u,
-		static_cast<size_t>(buffer_size) * 4u + 1024u * 1024u * 8u);
+	const size_t level_heap_size = performance_benchmark_mode
+		? std::max<size_t>(
+			1024u * 1024u * 2u,
+			static_cast<size_t>(buffer_size) * 4u + 1024u * 512u)
+		: std::max<size_t>(
+			1024u * 1024u * 32u,
+			static_cast<size_t>(buffer_size) * 4u + 1024u * 1024u * 8u);
 	level_data.instantiate(level_heap_size);
 
 	const int bumper_capacity_hint = bumpers_enabled ? BUMPER_POOL_SIZE : 0;
@@ -541,7 +545,9 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 	int state_capacity = gamestate_data.get_capacity();
 	for (int i = 0; i < STATE_BUFFER_LEN; i++)
 	{
-		state_buffer[i].data = (char*)malloc(state_capacity);
+		state_buffer[i].data = performance_benchmark_mode
+			? nullptr
+			: static_cast<char*>(malloc(state_capacity));
 		state_buffer[i].size = 0;
 		state_buffer[i].tick = -1;
 		state_buffer[i].voice_transform_count = 0;

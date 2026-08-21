@@ -297,7 +297,8 @@ MxtCarPerformanceAnalyzer::AnchorEntry *MxtCarPerformanceAnalyzer::get_anchor(fl
 		}
 	}
 	for (uint8_t index = 0; index < OFFICIAL_COUNT; ++index) {
-		if (!analyze_car_performance(entry.properties[index], entry.raw[index])) {
+		if (!analyze_car_performance(
+				official_documents[index], setting, entry.properties[index], entry.raw[index])) {
 			official_error = "official benchmark analysis produced a non-finite result";
 			return nullptr;
 		}
@@ -412,7 +413,7 @@ Dictionary MxtCarPerformanceAnalyzer::analyze_document(
 		return failed;
 	}
 	CarPerformanceRaw raw;
-	if (!analyze_car_performance(properties, raw)) {
+	if (!analyze_car_performance(bytes, setting, properties, raw)) {
 		failed["error"] = "performance analysis produced a non-finite result";
 		return failed;
 	}
@@ -434,7 +435,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 10;
+	result["benchmark_version"] = 11;
 	result["machine_setting"] = setting;
 	result["benchmark_machine_setting"] = 0.5f;
 	result["benchmark_reference"] = "All Rounder at 50%; All Rounder range sampled at 0%, 50%, and 100% defines A and E; official extrema define S and F, with fallback for setting-invariant metrics";

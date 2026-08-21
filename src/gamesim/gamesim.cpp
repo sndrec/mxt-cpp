@@ -1382,7 +1382,9 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 
 	if (num_cars <= 0 || !cars)
 	{
-		save_state();
+		if (!performance_benchmark_mode) {
+			save_state();
+		}
 		tick += 1;
 		return;
 	}
@@ -1665,7 +1667,9 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	//		dd3d->call("draw_arrow", p0, p1, godot::Color(1.0f, 0.0f, 0.0f), 0.25, true, _TICK_DELTA);
 	//	}
 	//}
-	save_state();
+	if (!performance_benchmark_mode) {
+		save_state();
+	}
 	phase_profile_last_save_us = phase_mark(phase_profile_save_us, phase_profile_save_max_us);
 	if (profile_phase) {
 		const uint64_t now = render_profile_now_us();

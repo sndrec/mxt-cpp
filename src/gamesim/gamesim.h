@@ -268,6 +268,7 @@ namespace godot {
 		int vehicle_lane_pending = 0;
 		bool vehicle_lane_workers_started = false;
 		bool vehicle_lane_stop = false;
+		bool performance_benchmark_mode = false;
 
 	protected:
 		static void _bind_methods();
@@ -524,6 +525,13 @@ namespace godot {
 		godot::PackedInt64Array get_render_profile_last_sample() const;
 		void set_render_profile_enabled(bool enabled);
 		void set_render_node_effects_enabled(bool enabled);
+		static bool measure_flat_ground_steering(
+			const godot::PackedByteArray& car_properties,
+			float machine_setting,
+			float settled_speed_kmh,
+			float settled_base_speed,
+			float& out_normal_degrees_per_second,
+			float& out_drift_degrees_per_second);
 		godot::Dictionary sample_car_properties(const godot::PackedByteArray& bytes, double machine_setting) const;
 		godot::Dictionary evaluate_car_properties(const godot::PackedByteArray& bytes, double machine_setting,
 			bool genuinely_drifting, double strafe_input, double signed_slip,
