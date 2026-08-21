@@ -13,25 +13,29 @@ extends Control
 @onready var strafe_left_bar = $HBoxContainer/StrafeCalibrationPanel/Bars/Left/Bar
 @onready var strafe_right_bar = $HBoxContainer/StrafeCalibrationPanel/Bars/Right/Bar
 
-@onready var btn_accelerate: Button = $HBoxContainer/VBoxContainer/HBoxContainer/Button
-@onready var btn_boost: Button = $HBoxContainer/VBoxContainer/HBoxContainer9/Button
-@onready var btn_brake: Button = $HBoxContainer/VBoxContainer/HBoxContainer2/Button
-@onready var btn_spin: Button = $HBoxContainer/VBoxContainer/HBoxContainer3/Button
-@onready var btn_side: Button = $HBoxContainer/VBoxContainer/HBoxContainer4/Button
-@onready var btn_steer: Button = $HBoxContainer/VBoxContainer/HBoxContainer5/Button
-@onready var btn_pitch: Button = $HBoxContainer/VBoxContainer/HBoxContainer6/Button
-@onready var btn_strafe_left: Button = $HBoxContainer/VBoxContainer/HBoxContainer7/Button
-@onready var btn_strafe_right: Button = $HBoxContainer/VBoxContainer/HBoxContainer8/Button
-@onready var btn_voice_chat: Button = $HBoxContainer/VBoxContainer/HBoxContainer10/Button
-@onready var btn_toggle_voice: Button = $HBoxContainer/VBoxContainer/HBoxContainer11/Button
-@onready var btn_pause: Button = $HBoxContainer/VBoxContainer/HBoxContainer12/Button
-@onready var btn_camera_zoom: Button = $HBoxContainer/VBoxContainer/HBoxContainer13/Button
-@onready var btn_practice_slot_previous: Button = $HBoxContainer/VBoxContainer/HBoxContainer14/Button
-@onready var btn_practice_slot_next: Button = $HBoxContainer/VBoxContainer/HBoxContainer15/Button
-@onready var btn_practice_slot_save: Button = $HBoxContainer/VBoxContainer/HBoxContainer16/Button
-@onready var btn_practice_slot_load: Button = $HBoxContainer/VBoxContainer/HBoxContainer17/Button
-@onready var btn_practice_rewind: Button = $HBoxContainer/VBoxContainer/HBoxContainer18/Button
-@onready var btn_practice_step: Button = $HBoxContainer/VBoxContainer/HBoxContainer19/Button
+@onready var btn_accelerate: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer/Button
+@onready var btn_boost: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer9/Button
+@onready var btn_brake: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer2/Button
+@onready var btn_spin: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer3/Button
+@onready var btn_side: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer4/Button
+@onready var btn_steer: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer5/Button
+@onready var btn_pitch: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer6/Button
+@onready var btn_strafe_left: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer7/Button
+@onready var btn_strafe_right: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer8/Button
+@onready var btn_voice_chat: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer10/Button
+@onready var btn_toggle_voice: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer11/Button
+@onready var btn_pause: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer12/Button
+@onready var btn_camera_zoom: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer13/Button
+@onready var btn_practice_slot_previous: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer14/Button
+@onready var btn_practice_slot_next: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer15/Button
+@onready var btn_practice_slot_save: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer16/Button
+@onready var btn_practice_slot_load: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer17/Button
+@onready var btn_practice_rewind: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer18/Button
+@onready var btn_practice_step: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer19/Button
+@onready var btn_sticker_slot_1: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer21/Button
+@onready var btn_sticker_slot_2: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer22/Button
+@onready var btn_sticker_slot_3: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer23/Button
+@onready var btn_sticker_slot_4: Button = $HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer24/Button
 
 var waiting_index: int = -1
 var waiting_old_text: String = ""
@@ -77,6 +81,10 @@ var bindings := [
 		{"button": Callable(self, "_get_btn_practice_slot_load"), "type": "any", "actions": ["PracticeSlotLoad"]},
 		{"button": Callable(self, "_get_btn_practice_rewind"), "type": "any", "actions": ["PracticeRewind"]},
 		{"button": Callable(self, "_get_btn_practice_step"), "type": "any", "actions": ["PracticeStep"]},
+		{"button": Callable(self, "_get_btn_sticker_slot_1"), "type": "any", "actions": ["StickerSlot1"]},
+		{"button": Callable(self, "_get_btn_sticker_slot_2"), "type": "any", "actions": ["StickerSlot2"]},
+		{"button": Callable(self, "_get_btn_sticker_slot_3"), "type": "any", "actions": ["StickerSlot3"]},
+		{"button": Callable(self, "_get_btn_sticker_slot_4"), "type": "any", "actions": ["StickerSlot4"]},
 ]
 
 func _get_btn_accel(): return btn_accelerate
@@ -98,6 +106,10 @@ func _get_btn_practice_slot_save(): return btn_practice_slot_save
 func _get_btn_practice_slot_load(): return btn_practice_slot_load
 func _get_btn_practice_rewind(): return btn_practice_rewind
 func _get_btn_practice_step(): return btn_practice_step
+func _get_btn_sticker_slot_1(): return btn_sticker_slot_1
+func _get_btn_sticker_slot_2(): return btn_sticker_slot_2
+func _get_btn_sticker_slot_3(): return btn_sticker_slot_3
+func _get_btn_sticker_slot_4(): return btn_sticker_slot_4
 
 func _ready() -> void:
 		_ensure_voice_actions()
@@ -387,6 +399,7 @@ func _collect_bindings() -> Dictionary:
 				"SteerLeft", "SteerRight", "SteerUp", "SteerDown",
 				"StrafeLeft", "StrafeRight", "VoiceChat", "ToggleVoice",
 				"Pause", "CameraUp", "CameraDown",
+				"StickerSlot1", "StickerSlot2", "StickerSlot3", "StickerSlot4",
 				"PracticeSlotPrevious", "PracticeSlotNext", "PracticeSlotSave", "PracticeSlotLoad",
 				"PracticeRewind", "PracticeStep"
 		]

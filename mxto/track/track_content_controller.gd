@@ -24,6 +24,7 @@ var visual_scene_instance: Node
 func scan_catalog() -> void:
 	tracks.clear()
 	_scan_official_tracks()
+	_scan_loose_tracks()
 	_scan_installed_tracks()
 	track_id_to_index.clear()
 	for i in range(tracks.size()):
@@ -276,10 +277,77 @@ func _register_official_track(entry: Dictionary, roots: PackedStringArray) -> vo
 		})
 		return
 
+func _normalized_track_path(path: String) -> String:
+	return path.simplify_path().replace("\\", "/").to_lower()
+
+func _scan_loose_tracks() -> void:
+	vehicle_content_controller.content_catalog.clear_loose_tracks()
+	var seen_paths := {}
+	var seen_content_ids := {}
+	for track_value in tracks:
+		var track: Dictionary = track_value
+		seen_paths[_normalized_track_path(String(track.get("mxt", "")))] = true
+	for root in _existing_track_roots():
+		_scan_loose_track_dir(String(root), seen_paths, seen_content_ids)
+
+func _scan_loose_track_dir(path: String, seen_paths: Dictionary, seen_content_ids: Dictionary) -> void:
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return
+	directory.list_dir_begin()
+	var entry := directory.get_next()
+	while !entry.is_empty():
+		if directory.current_is_dir():
+			if !directory.is_link(entry) and !entry.begins_with("."):
+				_scan_loose_track_dir(path.path_join(entry), seen_paths, seen_content_ids)
+		elif entry.get_extension().to_lower() == "json":
+			_register_loose_track(path.path_join(entry), seen_paths, seen_content_ids)
+		entry = directory.get_next()
+	directory.list_dir_end()
+
+func _register_loose_track(json_path: String, seen_paths: Dictionary, seen_content_ids: Dictionary) -> void:
+	var mxt_path := json_path.get_basename() + ".mxt_track"
+	if !FileAccess.file_exists(mxt_path):
+		return
+	var normalized_path := _normalized_track_path(mxt_path)
+	if seen_paths.has(normalized_path):
+		return
+	seen_paths[normalized_path] = true
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(json_path))
+	if typeof(parsed) != TYPE_DICTIONARY or !parsed.has("name"):
+		push_warning("Skipped loose track with invalid metadata: %s" % json_path)
+		return
+	var metadata: Dictionary = parsed
+	var title := String(metadata.get("name", "")).strip_edges()
+	var visual_path := _resolve_visual_path(json_path.get_base_dir(), metadata, mxt_path)
+	var result: Dictionary = vehicle_content_controller.content_catalog.add_loose_track(
+		title,
+		mxt_path,
+		visual_path,
+		json_path)
+	if !bool(result.get("valid", false)):
+		push_warning("Skipped loose track %s: %s" % [json_path.get_base_dir(), str(result.get("errors", []))])
+		return
+	var record: Dictionary = result.get("record", {})
+	var content_id := String(record.get("content_id", ""))
+	if content_id.is_empty() or seen_content_ids.has(content_id):
+		return
+	seen_content_ids[content_id] = true
+	tracks.append({
+		"content_id": content_id,
+		"gameplay_digest": String(record.get("gameplay_digest", "")),
+		"name": title,
+		"mxt": mxt_path,
+		"json": json_path,
+		"dir": json_path.get_base_dir(),
+		"visual": visual_path,
+		"source": "local_loose",
+	})
+
 func _scan_installed_tracks() -> void:
 	for record_value in vehicle_content_controller.content_catalog.get_records("track"):
 		var record: Dictionary = record_value
-		if String(record.get("source", "")) == "official":
+		if String(record.get("source", "")) in ["official", "local_loose"]:
 			continue
 		tracks.append({
 			"content_id": String(record.get("content_id", "")),

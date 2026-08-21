@@ -32,6 +32,22 @@ func _run() -> void:
 	if content.track_name_for_id(first_id) == "Missing Track":
 		_fail("content identity did not resolve a name")
 		return
+	var first_track: Dictionary = content.tracks[0]
+	var loose_seen_paths := {}
+	var loose_seen_content_ids := {}
+	content._scan_loose_track_dir(String(first_track.get("dir", "")), loose_seen_paths, loose_seen_content_ids)
+	var loose_record: Dictionary = {}
+	for track_value in content.tracks:
+		var track: Dictionary = track_value
+		if String(track.get("source", "")) == "local_loose":
+			loose_record = track
+			break
+	if loose_record.is_empty() or !String(loose_record.get("content_id", "")).begins_with("mxt:track:local:"):
+		_fail("recursive loose-track discovery did not register a local content identity")
+		return
+	if String(loose_record.get("gameplay_digest", "")) != first_digest:
+		_fail("loose-track gameplay digest differs from its authoritative track")
+		return
 	if !content.prepare_race(0):
 		_fail("could not prepare first track")
 		return

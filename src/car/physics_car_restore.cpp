@@ -35,7 +35,10 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	const float old_fraction = soa->checkpoint_fraction[soa_index];
 	const float old_track_distance = soa->checkpoint_track_distance[soa_index];
 	const float old_previous_lap_distance = soa->previous_lap_distance[soa_index];
+	const float old_lap_progress = soa->lap_progress[soa_index];
 	const uint32_t old_machine_state = soa->machine_state[soa_index];
+	const bool old_broken_lap_rollback_pending = soa->broken_lap_rollback_pending[soa_index];
+	const uint32_t old_broken_lap_rollback_lap = soa->broken_lap_rollback_lap[soa_index];
 
 	int found = track->get_best_checkpoint(LOAD_VEC3(position_current), soa->current_checkpoint[soa_index], scratch);
 	int collision = found;
@@ -91,13 +94,6 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 			soa->broken_lap_rollback_pending[soa_index] = false;
 			soa->broken_lap_rollback_lap[soa_index] = 0;
 		}
-	}
-
-	const uint32_t target_lap = soa->race_lap_target[soa_index];
-	if (target_lap > 0 && soa->lap[soa_index] > target_lap){
-		soa->machine_state[soa_index] |= MACHINESTATE::COMPLETEDRACE_1_Q;
-		soa->broken_lap_rollback_pending[soa_index] = false;
-		soa->broken_lap_rollback_lap[soa_index] = 0;
 	}
 
 	const CollisionCheckpoint &cur_cp = track->checkpoints[soa->current_checkpoint[soa_index]];
@@ -221,8 +217,25 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 				trace_checkpoint_graph("last_ground", soa->last_ground_checkpoint[soa_index]);
 				trace_checkpoint_graph("last_ground_next_linear", soa->last_ground_checkpoint[soa_index] + 1);
 			}
+			// Treat the checkpoint/lap update as a transaction. In particular, a jump across the
+			// final lap line must not become a completed race before the shortcut restore begins.
+			soa->lap[soa_index] = prev_lap;
+			soa->current_checkpoint[soa_index] = static_cast<uint16_t>(old_cp);
+			soa->checkpoint_fraction[soa_index] = old_fraction;
+			soa->checkpoint_track_distance[soa_index] = old_track_distance;
+			soa->lap_progress[soa_index] = old_lap_progress;
+			soa->broken_lap_rollback_pending[soa_index] = old_broken_lap_rollback_pending;
+			soa->broken_lap_rollback_lap[soa_index] = old_broken_lap_rollback_lap;
 			start_restore_to_last_ground();
+			return;
 		}
+	}
+
+	const uint32_t target_lap = soa->race_lap_target[soa_index];
+	if (target_lap > 0 && soa->lap[soa_index] > target_lap){
+		soa->machine_state[soa_index] |= MACHINESTATE::COMPLETEDRACE_1_Q;
+		soa->broken_lap_rollback_pending[soa_index] = false;
+		soa->broken_lap_rollback_lap[soa_index] = 0;
 	}
 	soa->previous_lap_distance[soa_index] = current_lap_distance;
 

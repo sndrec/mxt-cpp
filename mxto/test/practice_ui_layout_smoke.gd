@@ -37,6 +37,7 @@ func _run() -> void:
 	var controls := options.get_node("Shade/Center/Panel/Margin/Root/Tabs/Controls/ControllerSettings") as Control
 	var expected_actions := [
 		"Pause", "CameraUp", "CameraDown",
+		"StickerSlot1", "StickerSlot2", "StickerSlot3", "StickerSlot4",
 		"PracticeSlotPrevious", "PracticeSlotNext", "PracticeSlotSave", "PracticeSlotLoad",
 		"PracticeRewind", "PracticeStep",
 	]
@@ -47,10 +48,11 @@ func _run() -> void:
 				or !collected_bindings.has(action_name):
 			_fail("Options does not expose and persist action %s" % action_name)
 			return
-	var bindings_list := controls.get_node("HBoxContainer/VBoxContainer") as VBoxContainer
-	var last_binding := bindings_list.get_node("HBoxContainer19") as HBoxContainer
-	if last_binding.position.y + last_binding.size.y > controls.size.y + 1.0:
-		_fail("Options binding list exceeds its Controls tab: list_bottom=%.1f tab_height=%.1f" % [last_binding.position.y + last_binding.size.y, controls.size.y])
+	var binding_scroll := controls.get_node("HBoxContainer/BindingScroll") as ScrollContainer
+	var bindings_list := binding_scroll.get_node("VBoxContainer") as VBoxContainer
+	var last_binding := bindings_list.get_node("HBoxContainer24") as HBoxContainer
+	if binding_scroll.size.y > controls.size.y + 1.0 or last_binding.position.y + last_binding.size.y <= binding_scroll.size.y:
+		_fail("Options binding list is not contained by a useful scroll area: scroll_height=%.1f list_bottom=%.1f tab_height=%.1f" % [binding_scroll.size.y, last_binding.position.y + last_binding.size.y, controls.size.y])
 		return
 	var options_panel := options.get_node("Shade/Center/Panel") as PanelContainer
 	if options_panel.global_position.y < -1.0 or options_panel.global_position.y + options_panel.size.y > 721.0:

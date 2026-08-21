@@ -15,6 +15,7 @@ namespace mxt::content {
 
 enum class ContentSource : uint8_t {
 	OFFICIAL = 0,
+	LOCAL_LOOSE,
 	LOCAL_PACKAGE,
 	LOCAL_DRAFT,
 	WORKSHOP,
@@ -80,6 +81,12 @@ public:
 			const String &visual_path,
 			const String &metadata_path,
 			const String &expected_gameplay_digest);
+	Dictionary add_loose_track(
+			const String &title,
+			const String &track_path,
+			const String &visual_path,
+			const String &metadata_path);
+	void clear_loose_tracks();
 	Dictionary add_local_package(const String &package_root);
 	Dictionary add_draft_package(const String &package_root);
 	Dictionary add_workshop_package(const String &package_root, int64_t published_file_id);

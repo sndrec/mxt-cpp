@@ -149,12 +149,6 @@ func _update_leaderboard(car: VisualCar, nm: NetworkManager, focus_id: int, fall
 		focus_place = int(nm.race_results.player_finish_placements[focus_id])
 	return focus_place
 
-func _action_just_pressed_any(names: Array[String]) -> bool:
-	for action in names:
-		if InputMap.has_action(action) and Input.is_action_just_pressed(action):
-			return true
-	return false
-
 func _sticker_slot_value(car: VisualCar, slot: int) -> int:
 	var settings = car.player_settings
 	if settings == null:
@@ -267,20 +261,20 @@ func _update_sticker_input(car: VisualCar) -> void:
 	if now < sticker_input_buffer_msec:
 		return
 	if !sticker_menu_open:
-		if _action_just_pressed_any(["DpadUp", "DPadUp"]):
+		if Input.is_action_just_pressed("StickerSlot3"):
 			_update_sticker_menu_icons(car)
 			sticker_menu_open = true
 			sticker_menu.visible = true
 			sticker_menu_hide_msec = now + 2500
 			sticker_input_buffer_msec = now + 50
 		return
-	if _action_just_pressed_any(["DpadLeft", "DPadLeft"]):
+	if Input.is_action_just_pressed("StickerSlot1"):
 		_send_sticker(car, 0)
-	elif _action_just_pressed_any(["DpadDown", "DPadDown"]):
+	elif Input.is_action_just_pressed("StickerSlot2"):
 		_send_sticker(car, 1)
-	elif _action_just_pressed_any(["DpadUp", "DPadUp"]):
+	elif Input.is_action_just_pressed("StickerSlot3"):
 		_send_sticker(car, 2)
-	elif _action_just_pressed_any(["DpadRight", "DPadRight"]):
+	elif Input.is_action_just_pressed("StickerSlot4"):
 		_send_sticker(car, 3)
 	if sticker_menu != null and sticker_menu.visible and Time.get_ticks_msec() > sticker_menu_hide_msec:
 		sticker_menu_open = false

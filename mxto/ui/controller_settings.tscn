@@ -41,296 +41,361 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer"]
+[node name="BindingScroll" type="ScrollContainer" parent="HBoxContainer"]
 custom_minimum_size = Vector2(320, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.25
+horizontal_scroll_mode = 0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HBoxContainer/BindingScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
 theme_override_constants/separation = 0
 
-[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Accelerate"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Bottom Face Button"
 alignment = 0
 
-[node name="HBoxContainer9" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer9" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer9"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer9"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Boost"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer9"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer9"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Left Face Button"
 alignment = 0
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer2" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer2"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Brake"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer2"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer2"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Face Button"
 alignment = 0
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer3" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer3"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer3"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Spin Attack"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer3"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer3"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Bumper"
 alignment = 0
 
-[node name="HBoxContainer4" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer4" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer4"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer4"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Side Attack"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer4"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer4"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Top Face Button"
 alignment = 0
 
-[node name="HBoxContainer5" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer5" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer5"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer5"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Steering"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer5"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer5"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Left Stick Horizontal Axis"
 alignment = 0
 
-[node name="HBoxContainer6" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer6" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer6"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer6"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Pitch Vehicle"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer6"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer6"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Left Stick Vertical Axis"
 alignment = 0
 
-[node name="HBoxContainer7" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer7" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer7"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer7"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Strafe Left"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer7"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer7"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Left Analog Trigger"
 alignment = 0
 
-[node name="HBoxContainer8" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer8" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer8"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer8"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Strafe Right"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer8"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer8"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Analog Trigger"
 alignment = 0
 
-[node name="HBoxContainer10" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer10" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer10"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer10"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Push to Talk"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer10"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer10"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "V"
 alignment = 0
 
-[node name="HBoxContainer11" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer11" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer11"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer11"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Toggle Voice"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer11"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer11"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "T"
 alignment = 0
 
-[node name="HBoxContainer12" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer12" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer12"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer12"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Pause"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer12"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer12"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Start Button"
 alignment = 0
 
-[node name="HBoxContainer13" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer13" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer13"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer13"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Camera Zoom"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer13"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer13"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Stick Vertical Axis"
 alignment = 0
 
-[node name="HBoxContainer14" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer14" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer14"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer14"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Practice: Previous Slot"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer14"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer14"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "D-Pad Left"
 alignment = 0
 
-[node name="HBoxContainer15" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer15" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer15"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer15"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Practice: Next Slot"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer15"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer15"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "D-Pad Right"
 alignment = 0
 
-[node name="HBoxContainer16" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer16" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer16"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer16"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Practice: Save Slot"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer16"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer16"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "D-Pad Down"
 alignment = 0
 
-[node name="HBoxContainer17" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer17" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer17"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer17"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Practice: Load Slot"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer17"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer17"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "D-Pad Up"
 alignment = 0
 
-[node name="HBoxContainer18" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer18" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer18"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer18"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Practice: Rewind"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer18"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer18"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Stick Left"
 alignment = 0
 
-[node name="HBoxContainer19" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+[node name="HBoxContainer19" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
 layout_mode = 2
 
-[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer19"]
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer19"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Practice: Step"
 horizontal_alignment = 2
 
-[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer19"]
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer19"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Right Stick Right"
+alignment = 0
+
+[node name="HBoxContainer21" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer21"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sticker Slot 1"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer21"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Left"
+alignment = 0
+
+[node name="HBoxContainer22" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer22"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sticker Slot 2"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer22"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Down"
+alignment = 0
+
+[node name="HBoxContainer23" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer23"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sticker Slot 3 / Menu"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer23"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Up"
+alignment = 0
+
+[node name="HBoxContainer24" type="HBoxContainer" parent="HBoxContainer/BindingScroll/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer24"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Sticker Slot 4"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/BindingScroll/VBoxContainer/HBoxContainer24"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Right"
 alignment = 0
 
 [node name="Control" type="VBoxContainer" parent="HBoxContainer"]

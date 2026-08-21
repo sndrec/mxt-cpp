@@ -21,6 +21,7 @@ String content_source_name(ContentSource source)
 {
 	switch (source) {
 		case ContentSource::OFFICIAL: return String("official");
+		case ContentSource::LOCAL_LOOSE: return String("local_loose");
 		case ContentSource::LOCAL_PACKAGE: return String("local_package");
 		case ContentSource::LOCAL_DRAFT: return String("local_draft");
 		case ContentSource::WORKSHOP: return String("workshop");
@@ -163,6 +164,10 @@ void MxtContentCatalog::_bind_methods()
 	ClassDB::bind_method(
 			D_METHOD("add_official_track", "slug", "title", "track_path", "visual_path", "metadata_path", "expected_gameplay_digest"),
 			&MxtContentCatalog::add_official_track);
+	ClassDB::bind_method(
+			D_METHOD("add_loose_track", "title", "track_path", "visual_path", "metadata_path"),
+			&MxtContentCatalog::add_loose_track);
+	ClassDB::bind_method(D_METHOD("clear_loose_tracks"), &MxtContentCatalog::clear_loose_tracks);
 	ClassDB::bind_method(D_METHOD("add_local_package", "package_root"), &MxtContentCatalog::add_local_package);
 	ClassDB::bind_method(D_METHOD("add_draft_package", "package_root"), &MxtContentCatalog::add_draft_package);
 	ClassDB::bind_method(D_METHOD("add_workshop_package", "package_root", "published_file_id"), &MxtContentCatalog::add_workshop_package);
@@ -285,6 +290,75 @@ Dictionary MxtContentCatalog::add_official_track(
 	result["errors"] = PackedStringArray();
 	result["record"] = mxt::content::content_record_to_dictionary(record);
 	return result;
+}
+
+Dictionary MxtContentCatalog::add_loose_track(
+		const String &title,
+		const String &track_path,
+		const String &visual_path,
+		const String &metadata_path)
+{
+	Dictionary result;
+	std::vector<String> errors;
+	if (title.is_empty() || title.length() > 128) {
+		errors.push_back("loose track title must contain 1 to 128 characters");
+	}
+	if (track_path.is_empty() || metadata_path.is_empty()) {
+		errors.push_back("loose track and metadata paths must not be empty");
+	}
+	if (!metadata_path.is_empty() && !FileAccess::file_exists(global_path(metadata_path))) {
+		errors.push_back("loose track metadata file does not exist");
+	}
+	if (!visual_path.is_empty() && !FileAccess::file_exists(global_path(visual_path))) {
+		errors.push_back("loose track visual file does not exist");
+	}
+	String gameplay_digest;
+	if (errors.empty()) {
+		mxt::content::validate_authoritative_gameplay_file(
+				mxt::content::ContentType::TRACK,
+				global_path(track_path),
+				false,
+				gameplay_digest,
+				errors);
+	}
+	if (!errors.empty()) {
+		result["valid"] = false;
+		result["errors"] = error_array(errors);
+		return result;
+	}
+
+	mxt::content::ContentRecord record;
+	record.content_type = mxt::content::ContentType::TRACK;
+	record.source = mxt::content::ContentSource::LOCAL_LOOSE;
+	record.content_id = "mxt:track:local:" + gameplay_digest.substr(7);
+	record.gameplay_digest = gameplay_digest;
+	record.root_path = track_path.get_base_dir();
+	record.authoritative_path = track_path;
+	record.visual_path = visual_path;
+	record.metadata_path = metadata_path;
+	record.title = title;
+	for (const mxt::content::ContentRecord &existing : records) {
+		if (existing.content_id == record.content_id) {
+			result["valid"] = true;
+			result["errors"] = PackedStringArray();
+			result["record"] = mxt::content::content_record_to_dictionary(existing);
+			return result;
+		}
+	}
+	replace_record(record);
+	result["valid"] = true;
+	result["errors"] = PackedStringArray();
+	result["record"] = mxt::content::content_record_to_dictionary(record);
+	return result;
+}
+
+void MxtContentCatalog::clear_loose_tracks()
+{
+	const size_t previous_size = records.size();
+	records.erase(std::remove_if(records.begin(), records.end(), [](const auto &record) {
+		return record.source == mxt::content::ContentSource::LOCAL_LOOSE;
+	}), records.end());
+	if (records.size() != previous_size) publish_change();
 }
 
 void MxtContentCatalog::publish_change()
