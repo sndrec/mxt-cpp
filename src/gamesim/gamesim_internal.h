@@ -130,14 +130,14 @@ static inline uint32_t bumper_track_seed_from_track(const RaceTrack* track)
 
 static inline float bumper_sequence_trigger_distance(
 	uint32_t spawn_seed,
-	int leader_lap,
+	uint32_t leader_lap,
 	uint32_t sequence,
 	float interval,
 	float lap_length)
 {
 	const uint32_t hash = bumper_hash_u32(
 		spawn_seed ^
-		(static_cast<uint32_t>(leader_lap) * 0x27D4EB2Du) ^
+		(leader_lap * 0x27D4EB2Du) ^
 		(sequence * 0x9E3779B9u) ^
 		0xA341316Cu);
 	const float jitter =

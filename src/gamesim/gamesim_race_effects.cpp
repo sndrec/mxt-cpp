@@ -50,7 +50,7 @@ float GameSim::compute_car_distance_along_track(const PhysicsCar& car) const
 	return compute_vehicle_distance_along_track(car.soa->current_checkpoint[car.soa_index], car.soa->checkpoint_fraction[car.soa_index], car.soa->lap[car.soa_index]);
 }
 
-float GameSim::compute_vehicle_distance_along_track(uint16_t current_checkpoint, float checkpoint_fraction, uint8_t lap) const
+float GameSim::compute_vehicle_distance_along_track(uint16_t current_checkpoint, float checkpoint_fraction, uint32_t lap) const
 {
 	if (!current_track)
 		return 0.0f;

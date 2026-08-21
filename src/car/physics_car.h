@@ -68,6 +68,7 @@ struct PhysicsCarFloorProfile {
 #define PHYSICS_CAR_STATIC_SCALAR_FIELDS(X) \
 	X(RaceTrack*, current_track, nullptr) \
 	X(PhysicsCarProperties*, car_properties, nullptr) \
+	X(uint32_t, race_lap_target, 3) \
 	X(float, stat_weight, 0.0f) \
 	X(float, stat_grip_1, 0.0f) \
 	X(float, stat_grip_2, 0.0f) \
@@ -153,9 +154,9 @@ struct PhysicsCarFloorProfile {
 	X(float, previous_lap_distance, 0.0f) \
 	X(float, checkpoint_fraction, 0.0f) \
 	X(float, checkpoint_track_distance, 0.0f) \
-	X(uint8_t, lap, 1) \
+	X(uint32_t, lap, 1) \
 	X(bool, broken_lap_rollback_pending, false) \
-	X(uint8_t, broken_lap_rollback_lap, 0) \
+	X(uint32_t, broken_lap_rollback_lap, 0) \
 	X(float, lap_progress, 0.0f) \
 	X(float, input_accel, 0.0f) \
 	X(uint8_t, rail_collision_timer, 0) \

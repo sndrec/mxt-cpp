@@ -49,7 +49,7 @@ namespace godot {
 		};
 		struct BumperState {
 			uint8_t active = 0;
-			uint8_t spawn_lap = 0;
+			uint32_t spawn_lap = 0;
 			uint32_t next_sequence = 0;
 			float target_lane = 0.0f;
 		};
@@ -58,7 +58,7 @@ namespace godot {
 			char* data;
 			int size;
 			int bumper_state_count;
-			uint8_t bumper_scheduler_lap;
+			uint32_t bumper_scheduler_lap;
 			uint32_t bumper_next_sequence;
 			BumperState bumper_states[BUMPER_POOL_SIZE];
 			int tick = -1;
@@ -178,7 +178,7 @@ namespace godot {
 		void update_super_sparks();
 		void update_super_spark_visuals();
 		float compute_car_distance_along_track(const PhysicsCar& car) const;
-		float compute_vehicle_distance_along_track(uint16_t current_checkpoint, float checkpoint_fraction, uint8_t lap) const;
+		float compute_vehicle_distance_along_track(uint16_t current_checkpoint, float checkpoint_fraction, uint32_t lap) const;
 		uint16_t compute_s_boost_duration_frames(float gap_distance) const;
 		void configure_native_cpu_drivers();
 		void clear_player_index_lookup();
@@ -205,7 +205,7 @@ namespace godot {
 		void configure_bumper_car(int bumper_slot);
 		void deactivate_bumper_car(int bumper_slot);
 		void set_bumper_track_state(int bumper_slot, float absolute_distance, float lane_offset, bool reset_history);
-		void update_bumpers(float lead_distance, int leader_lap);
+		void update_bumpers(float lead_distance, uint32_t leader_lap);
 		void update_bumper_vehicles();
 		void collide_racers_with_bumpers();
 		void save_bumper_states_to_saved_state(SavedState& state) const;
@@ -274,6 +274,49 @@ namespace godot {
 		static void _bind_methods();
 
 	public:
+		enum VehicleTelemetryField : int {
+			TELEMETRY_TICK = 0,
+			TELEMETRY_LAP,
+			TELEMETRY_TARGET_LAPS,
+			TELEMETRY_SPEED_KMH,
+			TELEMETRY_FORWARD_KMH,
+			TELEMETRY_LATERAL_KMH,
+			TELEMETRY_VERTICAL_KMH,
+			TELEMETRY_PITCH_DEGREES_PER_SECOND,
+			TELEMETRY_YAW_DEGREES_PER_SECOND,
+			TELEMETRY_ROLL_DEGREES_PER_SECOND,
+			TELEMETRY_ENERGY,
+			TELEMETRY_MAX_ENERGY,
+			TELEMETRY_TURBO,
+			TELEMETRY_MANUAL_BOOST_ACTIVE,
+			TELEMETRY_DASH_BOOST_ACTIVE,
+			TELEMETRY_S_BOOST_ACTIVE,
+			TELEMETRY_DRIFT_CORNER_MASK,
+			TELEMETRY_TECHNIQUE_LAYER,
+			TELEMETRY_TECHNIQUE_INTENSITY,
+			TELEMETRY_HEIGHT_ABOVE_TRACK,
+			TELEMETRY_CHECKPOINT,
+			TELEMETRY_CHECKPOINT_FRACTION,
+			TELEMETRY_MACHINE_STATE_LOW,
+			TELEMETRY_MACHINE_STATE_HIGH,
+			TELEMETRY_TERRAIN_STATE_LOW,
+			TELEMETRY_TERRAIN_STATE_HIGH,
+			TELEMETRY_INPUT_STRAFE_LEFT_RAW,
+			TELEMETRY_INPUT_STRAFE_RIGHT_RAW,
+			TELEMETRY_INPUT_STEER_HORIZONTAL_RAW,
+			TELEMETRY_INPUT_STEER_VERTICAL_RAW,
+			TELEMETRY_INPUT_ACCELERATE,
+			TELEMETRY_INPUT_BRAKE,
+			TELEMETRY_INPUT_SPIN_ATTACK,
+			TELEMETRY_INPUT_BOOST,
+			TELEMETRY_INPUT_SIDE_ATTACK,
+			TELEMETRY_BASE_SPEED_KMH,
+			TELEMETRY_LAP_PROGRESS,
+			TELEMETRY_COLLISION_CHECKPOINT,
+			TELEMETRY_LAST_GROUND_CHECKPOINT,
+			TELEMETRY_SAMPLE_SIZE,
+		};
+
 		bool sim_started;
 		RaceTrack* current_track = nullptr;
 		int num_cars;
@@ -479,9 +522,10 @@ namespace godot {
 		bool multiplayer_intro_camera_enabled = false;
 		bool bumpers_enabled = false;
 		bool s_boost_enabled = true;
+		uint32_t target_lap_count = 3;
 		int bumper_count = 0;
 		uint32_t bumper_track_seed = 0;
-		uint8_t bumper_scheduler_lap = 0;
+		uint32_t bumper_scheduler_lap = 0;
 		uint32_t bumper_next_sequence = 0;
 		uint32_t start_countdown_extra_frames = 0;
 
@@ -500,6 +544,8 @@ namespace godot {
 		bool get_bumpers_enabled() const { return bumpers_enabled; }
 		void set_s_boost_enabled(bool enabled);
 		bool get_s_boost_enabled() const { return s_boost_enabled; }
+		void set_target_lap_count(int lap_count);
+		int get_target_lap_count() const { return static_cast<int>(target_lap_count); }
 		void set_car_node_container(godot::Node3D* p_car_node_container) { car_node_container = p_car_node_container; }
 		godot::Node3D* get_car_node_container() const { return car_node_container; }
 		void set_spark_node_container(godot::Node3D* p_spark_node_container) { spark_node_container = p_spark_node_container; }
@@ -553,6 +599,7 @@ namespace godot {
 		int get_player_lap(int player_id) const;
 		int get_player_level_start_time(int player_id) const;
 		double get_player_speed_kmh(int player_id) const;
+		godot::PackedFloat32Array get_player_telemetry_sample(int player_id) const;
 		godot::String get_player_debug_string(int player_id) const;
 		godot::String get_bumper_debug_string() const;
 		godot::Array get_race_order();
@@ -574,7 +621,8 @@ namespace godot {
 		godot::Dictionary get_input_frame_as_dictionary(int target_tick) const;
 		void set_player_metadata(godot::Array player_ids, godot::Array cpu_flags);
 		void save_state();
-		void load_state(int target_tick);
+		bool has_saved_state(int target_tick) const;
+		bool load_state(int target_tick);
 		bool load_state_data(int target_tick, godot::PackedByteArray data);
 		void finish_render_rollback_correction_capture();
 		godot::PackedByteArray get_state_data(int target_tick) const;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 using namespace godot;
 void GameSim::set_bumpers_enabled(bool enabled)
@@ -241,7 +242,11 @@ void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, f
 	soa.checkpoint_fraction[lane] = checkpoint_fraction;
 	if (lap_length > 0.0f) {
 		soa.checkpoint_track_distance[lane] = std::fmod(absolute_distance, lap_length);
-		soa.lap[lane] = static_cast<uint8_t>(std::clamp(static_cast<int>(absolute_distance / lap_length), 0, 255));
+		const double bumper_lap = std::clamp(
+			static_cast<double>(absolute_distance) / static_cast<double>(lap_length),
+			0.0,
+			static_cast<double>(std::numeric_limits<uint32_t>::max()));
+		soa.lap[lane] = static_cast<uint32_t>(bumper_lap);
 	}
 	soa.previous_lap_distance[lane] = current_track->compute_lap_distance(
 		soa.current_checkpoint[lane],
@@ -253,7 +258,7 @@ void GameSim::set_bumper_track_state(int bumper_slot, float absolute_distance, f
 	soa.machine_state[lane] &= ~(MACHINESTATE::FALLOUT | MACHINESTATE::AIRBORNE | MACHINESTATE::AIRBORNEMORE0_2S_Q);
 }
 
-void GameSim::update_bumpers(float lead_distance, int leader_lap)
+void GameSim::update_bumpers(float lead_distance, uint32_t leader_lap)
 {
 	if (!bumpers_enabled || bumper_count <= 0 || !bumper_cars || !current_track) {
 		return;
@@ -273,7 +278,7 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 		lap_distance += lap_length;
 	}
 	const float interval = leader_lap == 2 ? 520.0f : 300.0f;
-	const uint8_t scheduler_lap = static_cast<uint8_t>(std::min(leader_lap, 255));
+	const uint32_t scheduler_lap = leader_lap;
 	if (bumper_scheduler_lap != scheduler_lap) {
 		bumper_scheduler_lap = scheduler_lap;
 		bumper_next_sequence = 0;
@@ -282,8 +287,8 @@ void GameSim::update_bumpers(float lead_distance, int leader_lap)
 	int active_count = 0;
 	for (int slot = 0; slot < bumper_count && slot < BUMPER_POOL_SIZE; ++slot) {
 		BumperState& state = bumper_states[slot];
-		if (state.spawn_lap != static_cast<uint8_t>(std::min(leader_lap, 255))) {
-			state.spawn_lap = static_cast<uint8_t>(std::min(leader_lap, 255));
+		if (state.spawn_lap != leader_lap) {
+			state.spawn_lap = leader_lap;
 		}
 		PhysicsCarSoA& soa = *bumper_cars[slot].soa;
 		const int lane = bumper_cars[slot].soa_index;

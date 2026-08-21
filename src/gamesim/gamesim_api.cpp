@@ -29,6 +29,17 @@ bool GameSim::get_sim_started()
 	return sim_started;
 }
 
+void GameSim::set_target_lap_count(int lap_count)
+{
+	target_lap_count = static_cast<uint32_t>(std::max(lap_count, 0));
+	if (!cars) {
+		return;
+	}
+	for (int i = 0; i < num_cars; ++i) {
+		cars[i].soa->race_lap_target[cars[i].soa_index] = target_lap_count;
+	}
+}
+
 Dictionary GameSim::sample_car_properties(const PackedByteArray& bytes, double machine_setting) const
 {
 	PhysicsCarProperties properties;
@@ -745,6 +756,104 @@ double GameSim::get_player_speed_kmh(int player_id) const
 	return 0.0;
 }
 
+godot::PackedFloat32Array GameSim::get_player_telemetry_sample(int player_id) const
+{
+	const int car_index = find_car_index_for_player(player_id);
+	if (!cars || car_index < 0 || car_index >= num_cars) {
+		return godot::PackedFloat32Array();
+	}
+
+	const PhysicsCar& car = cars[car_index];
+	const PhysicsCarSoA& soa = *car.soa;
+	const int lane = car.soa_index;
+	godot::PackedFloat32Array sample;
+	sample.resize(TELEMETRY_SAMPLE_SIZE);
+	float* values = sample.ptrw();
+
+	const float weight = soa.stat_weight[lane];
+	const float velocity_scale = std::abs(weight) > 0.0001f ? 216.0f / weight : 0.0f;
+	const SimVec3 local_velocity = LOAD_INDEXED_VEC3(soa, velocity_local, lane);
+	const auto angular_degrees_per_second = [](float raw, float inertia, bool use_deadzone) {
+		if (std::abs(inertia) <= 0.0001f) {
+			return 0.0f;
+		}
+		float processed = raw;
+		if (use_deadzone) {
+			if (std::abs(processed) <= 3.0f) {
+				processed = 0.0f;
+			} else {
+				processed -= std::copysign(3.0f, processed);
+			}
+		}
+		return processed / inertia * RAD_TO_DEG * 60.0f;
+	};
+
+	uint32_t drift_corner_mask = 0;
+	for (int corner = 0; corner < 4; ++corner) {
+		if ((soa.tilt_state[lane * 4 + corner] & TILTSTATE::DRIFT) != 0u) {
+			drift_corner_mask |= 1u << corner;
+		}
+	}
+	CarStatModifierLayer technique_layer = CAR_MODIFIER_LAYER_COUNT;
+	float technique_intensity = 0.0f;
+	car.compute_technique_modifier(true, technique_layer, technique_intensity);
+
+	PlayerInput input = PlayerInput::from_neutral();
+	const int input_tick = tick - 1;
+	if (input_buffer && input_tick >= 0) {
+		input = input_buffer[(input_tick % INPUT_BUFFER_LEN) * num_cars + car_index];
+	}
+
+	const uint32_t machine_state = soa.machine_state[lane];
+	const uint32_t terrain_state = soa.terrain_state[lane];
+	values[TELEMETRY_TICK] = static_cast<float>(std::max(input_tick, 0));
+	values[TELEMETRY_LAP] = static_cast<float>(soa.lap[lane]);
+	values[TELEMETRY_TARGET_LAPS] = static_cast<float>(target_lap_count);
+	values[TELEMETRY_SPEED_KMH] = soa.speed_kmh[lane];
+	values[TELEMETRY_FORWARD_KMH] = -local_velocity.z * velocity_scale;
+	values[TELEMETRY_LATERAL_KMH] = local_velocity.x * velocity_scale;
+	values[TELEMETRY_VERTICAL_KMH] = local_velocity.y * velocity_scale;
+	values[TELEMETRY_PITCH_DEGREES_PER_SECOND] = angular_degrees_per_second(
+		soa.velocity_angular_x[lane], soa.weight_derived_1[lane], true);
+	values[TELEMETRY_YAW_DEGREES_PER_SECOND] = angular_degrees_per_second(
+		soa.velocity_angular_y[lane], soa.weight_derived_2[lane], false);
+	values[TELEMETRY_ROLL_DEGREES_PER_SECOND] = angular_degrees_per_second(
+		soa.velocity_angular_z[lane], soa.weight_derived_3[lane], true);
+	values[TELEMETRY_ENERGY] = soa.energy[lane];
+	values[TELEMETRY_MAX_ENERGY] = soa.calced_max_energy[lane];
+	values[TELEMETRY_TURBO] = soa.boost_turbo[lane];
+	values[TELEMETRY_MANUAL_BOOST_ACTIVE] = soa.boost_frames_manual[lane] > 0 ? 1.0f : 0.0f;
+	values[TELEMETRY_DASH_BOOST_ACTIVE] =
+		(soa.boost_frames_dash[lane] > 0 || (machine_state & MACHINESTATE::JUST_HIT_DASHPLATE) != 0u) ? 1.0f : 0.0f;
+	values[TELEMETRY_S_BOOST_ACTIVE] = soa.s_boost_active[lane] ? 1.0f : 0.0f;
+	values[TELEMETRY_DRIFT_CORNER_MASK] = static_cast<float>(drift_corner_mask);
+	values[TELEMETRY_TECHNIQUE_LAYER] = technique_layer < CAR_MODIFIER_LAYER_COUNT
+		? static_cast<float>(technique_layer)
+		: -1.0f;
+	values[TELEMETRY_TECHNIQUE_INTENSITY] = technique_intensity;
+	values[TELEMETRY_HEIGHT_ABOVE_TRACK] = soa.height_above_track[lane];
+	values[TELEMETRY_CHECKPOINT] = static_cast<float>(soa.current_checkpoint[lane]);
+	values[TELEMETRY_CHECKPOINT_FRACTION] = soa.checkpoint_fraction[lane];
+	values[TELEMETRY_MACHINE_STATE_LOW] = static_cast<float>(machine_state & 0xffffu);
+	values[TELEMETRY_MACHINE_STATE_HIGH] = static_cast<float>(machine_state >> 16);
+	values[TELEMETRY_TERRAIN_STATE_LOW] = static_cast<float>(terrain_state & 0xffffu);
+	values[TELEMETRY_TERRAIN_STATE_HIGH] = static_cast<float>(terrain_state >> 16);
+	values[TELEMETRY_INPUT_STRAFE_LEFT_RAW] = static_cast<float>(PlayerInput::quantize_trigger(input.strafe_left));
+	values[TELEMETRY_INPUT_STRAFE_RIGHT_RAW] = static_cast<float>(PlayerInput::quantize_trigger(input.strafe_right));
+	values[TELEMETRY_INPUT_STEER_HORIZONTAL_RAW] = static_cast<float>(PlayerInput::quantize_axis(input.steer_horizontal));
+	values[TELEMETRY_INPUT_STEER_VERTICAL_RAW] = static_cast<float>(PlayerInput::quantize_axis(input.steer_vertical));
+	values[TELEMETRY_INPUT_ACCELERATE] = input.accelerate > 0.0f ? 1.0f : 0.0f;
+	values[TELEMETRY_INPUT_BRAKE] = input.brake > 0.0f ? 1.0f : 0.0f;
+	values[TELEMETRY_INPUT_SPIN_ATTACK] = input.spinattack ? 1.0f : 0.0f;
+	values[TELEMETRY_INPUT_BOOST] = input.boost ? 1.0f : 0.0f;
+	values[TELEMETRY_INPUT_SIDE_ATTACK] = input.sideattack ? 1.0f : 0.0f;
+	values[TELEMETRY_BASE_SPEED_KMH] = soa.base_speed[lane] * 216.0f;
+	values[TELEMETRY_LAP_PROGRESS] = soa.lap_progress[lane];
+	values[TELEMETRY_COLLISION_CHECKPOINT] = static_cast<float>(soa.current_collision_checkpoint[lane]);
+	values[TELEMETRY_LAST_GROUND_CHECKPOINT] = static_cast<float>(soa.last_ground_checkpoint[lane]);
+	return sample;
+}
+
 godot::String GameSim::get_player_debug_string(int player_id) const
 {
 	if (!cars || !car_player_ids || num_cars <= 0) {
@@ -798,7 +907,7 @@ godot::String GameSim::get_bumper_debug_string() const
 		return out;
 	}
 	float lead_distance = 0.0f;
-	int leader_lap = 0;
+	uint32_t leader_lap = 0;
 	for (int i = 0; i < num_cars; ++i) {
 		const PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
@@ -808,7 +917,7 @@ godot::String GameSim::get_bumper_debug_string() const
 			car_soa.lap[lane]);
 		if (distance > lead_distance) {
 			lead_distance = distance;
-			leader_lap = static_cast<int>(car_soa.lap[lane]);
+			leader_lap = car_soa.lap[lane];
 		}
 	}
 	if (num_cars > 0) {

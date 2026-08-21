@@ -407,14 +407,13 @@ void GameSim::rebuild_static_state_after_network_load() {
 }
 
 godot::PackedByteArray GameSim::get_state_data(int target_tick) const {
-	int index = target_tick % STATE_BUFFER_LEN;
-	if (!state_buffer[index].data)
+	if (!has_saved_state(target_tick))
 		return godot::PackedByteArray();
 	return serialize_network_state(target_tick);
 }
 
 static constexpr uint32_t MXT_FULL_STATE_MAGIC = 0x4653544du;
-static constexpr uint32_t MXT_FULL_STATE_VERSION = 5u;
+static constexpr uint32_t MXT_FULL_STATE_VERSION = 6u;
 
 godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
 	if (!gamestate_data.heap_start || gamestate_data.get_size() <= 0) {
@@ -432,11 +431,9 @@ godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
 	const uint32_t car_local_state_size = state.car_local_state_size;
 	const uint32_t bumper_local_state_size = state.bumper_local_state_size;
 	const size_t header_size =
-		sizeof(uint32_t) * 8u +
-		sizeof(uint8_t) +
-		sizeof(uint32_t);
+		sizeof(uint32_t) * 11u;
 	const size_t bumper_size = static_cast<size_t>(BUMPER_POOL_SIZE) *
-		(sizeof(uint8_t) * 2u + sizeof(uint32_t) + sizeof(float));
+		(sizeof(uint8_t) + sizeof(uint32_t) * 2u + sizeof(float));
 	const size_t voice_size = static_cast<size_t>(voice_count) *
 		(sizeof(int32_t) + sizeof(float) * 3u);
 	const size_t vehicle_local_state_size =
@@ -460,6 +457,7 @@ godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
 	write_bytes(&voice_count, sizeof(voice_count));
 	write_bytes(&car_local_state_size, sizeof(car_local_state_size));
 	write_bytes(&bumper_local_state_size, sizeof(bumper_local_state_size));
+	write_bytes(&target_lap_count, sizeof(target_lap_count));
 	write_bytes(&state.bumper_scheduler_lap, sizeof(state.bumper_scheduler_lap));
 	write_bytes(&state.bumper_next_sequence, sizeof(state.bumper_next_sequence));
 	for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
@@ -485,6 +483,9 @@ godot::PackedByteArray GameSim::get_full_state_data(int target_tick) {
 }
 
 bool GameSim::load_full_state_data(int target_tick, godot::PackedByteArray data) {
+	if (target_tick < 0) {
+		return false;
+	}
 	const uint8_t* ptr = data.ptr();
 	const uint8_t* end = ptr + data.size();
 	auto read_bytes = [&ptr, end](void* dst, size_t size) -> bool {
@@ -503,6 +504,7 @@ bool GameSim::load_full_state_data(int target_tick, godot::PackedByteArray data)
 	uint32_t voice_count = 0;
 	uint32_t car_local_state_size = 0;
 	uint32_t bumper_local_state_size = 0;
+	uint32_t stored_target_lap_count = 3;
 	if (!read_bytes(&magic, sizeof(magic)) ||
 			!read_bytes(&version, sizeof(version)) ||
 			!read_bytes(&stored_tick, sizeof(stored_tick)) ||
@@ -511,6 +513,7 @@ bool GameSim::load_full_state_data(int target_tick, godot::PackedByteArray data)
 			!read_bytes(&voice_count, sizeof(voice_count)) ||
 			!read_bytes(&car_local_state_size, sizeof(car_local_state_size)) ||
 			!read_bytes(&bumper_local_state_size, sizeof(bumper_local_state_size)) ||
+			!read_bytes(&stored_target_lap_count, sizeof(stored_target_lap_count)) ||
 			magic != MXT_FULL_STATE_MAGIC ||
 			version != MXT_FULL_STATE_VERSION ||
 			stored_tick != target_tick ||
@@ -568,6 +571,13 @@ bool GameSim::load_full_state_data(int target_tick, godot::PackedByteArray data)
 	std::memcpy(gamestate_data.heap_start, state.data, heap_size);
 	gamestate_data.set_size(state.size);
 	tick = target_tick;
+	target_lap_count = stored_target_lap_count;
+	for (int i = 0; i < num_cars; ++i) {
+		cars[i].soa->race_lap_target[cars[i].soa_index] = target_lap_count;
+	}
+	for (int i = 0; i < bumper_count; ++i) {
+		bumper_cars[i].soa->race_lap_target[bumper_cars[i].soa_index] = 0;
+	}
 	fix_pointers();
 	restore_bumper_states_from_saved_state(state);
 	if (!restore_vehicle_local_state_from_saved_state(state)) {
@@ -610,6 +620,9 @@ godot::Dictionary GameSim::get_network_state_size_stats() const {
 }
 
 bool GameSim::load_state_data(int target_tick, godot::PackedByteArray data) {
+	if (target_tick < 0) {
+		return false;
+	}
 	if (data.size() >= static_cast<int>(sizeof(uint32_t))) {
 		uint32_t magic = 0;
 		std::memcpy(&magic, data.ptr(), sizeof(uint32_t));
@@ -623,11 +636,13 @@ bool GameSim::load_state_data(int target_tick, godot::PackedByteArray data) {
 		}
 	}
 	set_state_data(target_tick, data);
-	load_state(target_tick);
-	return true;
+	return load_state(target_tick);
 }
 
 void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
+	if (target_tick < 0) {
+		return;
+	}
 	int index = target_tick % STATE_BUFFER_LEN;
 	if (!state_buffer[index].data)
 		return;
@@ -637,7 +652,7 @@ void GameSim::set_state_data(int target_tick, godot::PackedByteArray data) {
 		if (magic == MXT_NET_STATE_MAGIC) {
 			const int live_size = gamestate_data.get_size();
 			BumperState live_bumper_states[BUMPER_POOL_SIZE];
-			const uint8_t live_bumper_scheduler_lap = bumper_scheduler_lap;
+			const uint32_t live_bumper_scheduler_lap = bumper_scheduler_lap;
 			const uint32_t live_bumper_next_sequence = bumper_next_sequence;
 			for (int i = 0; i < BUMPER_POOL_SIZE; ++i) {
 				live_bumper_states[i] = bumper_states[i];

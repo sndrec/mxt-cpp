@@ -26,7 +26,10 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_bumpers_enabled"), &GameSim::get_bumpers_enabled);
 	ClassDB::bind_method(D_METHOD("set_s_boost_enabled", "enabled"), &GameSim::set_s_boost_enabled);
 	ClassDB::bind_method(D_METHOD("get_s_boost_enabled"), &GameSim::get_s_boost_enabled);
+	ClassDB::bind_method(D_METHOD("set_target_lap_count", "lap_count"), &GameSim::set_target_lap_count);
+	ClassDB::bind_method(D_METHOD("get_target_lap_count"), &GameSim::get_target_lap_count);
 	ClassDB::bind_method(D_METHOD("save_state"), &GameSim::save_state);
+	ClassDB::bind_method(D_METHOD("has_saved_state", "target_tick"), &GameSim::has_saved_state);
 	ClassDB::bind_method(D_METHOD("load_state", "target_tick"), &GameSim::load_state);
 	ClassDB::bind_method(D_METHOD("load_state_data", "target_tick", "data"), &GameSim::load_state_data);
 	ClassDB::bind_method(D_METHOD("get_state_data", "target_tick"), &GameSim::get_state_data);
@@ -70,6 +73,7 @@ void GameSim::_bind_methods()
 	ClassDB::bind_method(D_METHOD("get_player_lap", "player_id"), &GameSim::get_player_lap);
 	ClassDB::bind_method(D_METHOD("get_player_level_start_time", "player_id"), &GameSim::get_player_level_start_time);
 	ClassDB::bind_method(D_METHOD("get_player_speed_kmh", "player_id"), &GameSim::get_player_speed_kmh);
+	ClassDB::bind_method(D_METHOD("get_player_telemetry_sample", "player_id"), &GameSim::get_player_telemetry_sample);
 	ClassDB::bind_method(D_METHOD("get_player_debug_string", "player_id"), &GameSim::get_player_debug_string);
 	ClassDB::bind_method(D_METHOD("get_bumper_debug_string"), &GameSim::get_bumper_debug_string);
 	ClassDB::bind_method(D_METHOD("get_race_order"), &GameSim::get_race_order);

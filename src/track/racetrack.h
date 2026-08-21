@@ -135,7 +135,7 @@ public:
 		std::vector<BranchInfo> branch_infos;
 		std::vector<int> checkpoint_branch_id;
 		void compute_checkpoint_distances();
-		float compute_lap_distance(uint16_t current_checkpoint, float checkpoint_fraction, uint8_t lap) const
+		float compute_lap_distance(uint16_t current_checkpoint, float checkpoint_fraction, uint32_t lap) const
 		{
 			float use_lap_length = lap_length;
 			if (use_lap_length <= 0.0f && num_checkpoints > 0) {

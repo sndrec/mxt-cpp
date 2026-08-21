@@ -307,8 +307,8 @@ struct NetStateReader {
 	X(uint16_t, current_checkpoint) \
 	X(int16_t, current_collision_checkpoint) \
 	X(uint16_t, last_ground_checkpoint) \
-	X(uint8_t, lap) \
-	X(uint8_t, broken_lap_rollback_lap) \
+	X(uint32_t, lap) \
+	X(uint32_t, broken_lap_rollback_lap) \
 	X(uint8_t, rail_collision_timer) \
 	X(uint8_t, grip_frames_from_accel_press) \
 	X(uint8_t, side_attack_delay) \

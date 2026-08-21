@@ -1410,7 +1410,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 	const float lap_length_for_distance = gamesim_track_lap_length(current_track);
 
 	float lead_distance = 0.0f;
-	int leader_lap = 0;
+	uint32_t leader_lap = 0;
 	for (int i = 0; i < num_cars; ++i) {
 		PhysicsCarSoA& car_soa = *cars[i].soa;
 		const int lane = cars[i].soa_index;
@@ -1418,7 +1418,7 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		soa.pre_distances[i] = distance;
 		if (distance > lead_distance) {
 			lead_distance = distance;
-			leader_lap = static_cast<int>(car_soa.lap[lane]);
+			leader_lap = car_soa.lap[lane];
 		}
 	}
 	for (int i = 0; i < num_cars; ++i) {
@@ -1747,11 +1747,24 @@ void GameSim::save_state()
 	profile_mark(phase_profile_enabled ? &phase_profile_save_memcpy_us : nullptr, profile_step);
 }
 
-void GameSim::load_state(int target_tick)
+bool GameSim::has_saved_state(int target_tick) const
 {
-	int index = target_tick % STATE_BUFFER_LEN;
-	if (!state_buffer[index].data)
-		return;
+	if (target_tick < 0) {
+		return false;
+	}
+	const SavedState& state = state_buffer[target_tick % STATE_BUFFER_LEN];
+	return state.data &&
+		state.tick == target_tick &&
+		state.size > 0 &&
+		state.size <= gamestate_data.get_capacity();
+}
+
+bool GameSim::load_state(int target_tick)
+{
+	if (!has_saved_state(target_tick)) {
+		return false;
+	}
+	const int index = target_tick % STATE_BUFFER_LEN;
 	const int correction_count = std::min(num_cars, static_cast<int>(render_rollback_corrections.size()));
 	render_rollback_capture_transforms.clear();
 	render_rollback_capture_pending = false;
@@ -1788,6 +1801,7 @@ void GameSim::load_state(int target_tick)
 		rebuild_road_samples_after_state_load();
 	}
 	fix_pointers();
+	return true;
 }
 
 void GameSim::finish_render_rollback_correction_capture()

@@ -1135,6 +1135,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 		for (int i = 0; i < num_cars; i++)
 		{
 			cars[i].soa->current_track[cars[i].soa_index] = current_track;
+			cars[i].soa->race_lap_target[cars[i].soa_index] = target_lap_count;
 			if (i < property_count) {
 				*(cars[i].soa->car_properties[cars[i].soa_index]) =
 					sampled_car_properties[static_cast<size_t>(i)];
@@ -1259,6 +1260,7 @@ void GameSim::instantiate_gamesim(StreamPeerBuffer* lvldat_buf, godot::Array car
 
 		for (int i = 0; i < bumper_count; ++i) {
 			bumper_cars[i].soa->current_track[bumper_cars[i].soa_index] = current_track;
+			bumper_cars[i].soa->race_lap_target[bumper_cars[i].soa_index] = 0;
 			configure_bumper_car(i);
 			bumper_cars[i].initialize_machine();
 			deactivate_bumper_car(i);

@@ -23,7 +23,7 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 		return;
 
 	RaceTrack *track = soa->current_track[soa_index];
-	uint8_t prev_lap = soa->lap[soa_index];
+	uint32_t prev_lap = soa->lap[soa_index];
 	const bool trace_restore = trace_rail_for_car(soa, soa_index);
 	// Floor depenetration may resynchronize current_checkpoint before lap processing, so retain its pre-contact value for transition direction.
 	const int checkpoint_before_floor_contact = soa->checkpoint_before_floor_contact[soa_index];
@@ -49,7 +49,7 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 	//}
 	soa->current_collision_checkpoint[soa_index] = static_cast<int16_t>(collision);
 	if (found >= 0 && found < track->num_checkpoints && found != old_cp) {
-		uint8_t proposed_lap = soa->lap[soa_index];
+		uint32_t proposed_lap = soa->lap[soa_index];
 		int lap_delta = 0;
 		const int lap_line_window = std::max(1, track->num_checkpoints / 8);
 		const bool found_after_lap_line = found < lap_line_window;
@@ -75,7 +75,8 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 			soa->broken_lap_rollback_pending[soa_index] = false;
 			soa->broken_lap_rollback_lap[soa_index] = 0;
 		}
-		if (lap_delta > 0 && proposed_lap <= 3) {
+		const uint32_t target_lap = soa->race_lap_target[soa_index];
+		if (lap_delta > 0 && (target_lap == 0 || proposed_lap <= target_lap)) {
 			const uint32_t unsafe_lap_cross_state = MACHINESTATE::AIRBORNE |
 				MACHINESTATE::FALLOUT |
 				MACHINESTATE::ZEROHP;
@@ -92,7 +93,8 @@ void PhysicsCar::handle_checkpoints(TrackQueryScratch &scratch)
 		}
 	}
 
-	if (soa->lap[soa_index] > 3){
+	const uint32_t target_lap = soa->race_lap_target[soa_index];
+	if (target_lap > 0 && soa->lap[soa_index] > target_lap){
 		soa->machine_state[soa_index] |= MACHINESTATE::COMPLETEDRACE_1_Q;
 		soa->broken_lap_rollback_pending[soa_index] = false;
 		soa->broken_lap_rollback_lap[soa_index] = 0;
