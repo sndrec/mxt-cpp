@@ -89,10 +89,13 @@ func prepare_original_replay(metadata: Dictionary, raw_frames: Array, focused_pl
 	if typeof(racer_ids_value) != TYPE_ARRAY or typeof(settings_value) != TYPE_ARRAY \
 			or (racer_ids_value as Array).is_empty() \
 			or (racer_ids_value as Array).size() != (settings_value as Array).size() \
-			or !(racer_ids_value as Array).has(focused_player_id) \
 			or raw_frames.is_empty():
 		return _prepare_failure("original_replay_invalid", "The original replay cannot be continued as a ghost.")
-	var racer_ids: Array = (racer_ids_value as Array).duplicate(true)
+	var racer_ids: Array = []
+	for id_value in racer_ids_value as Array:
+		racer_ids.append(int(id_value))
+	if !racer_ids.has(focused_player_id):
+		return _prepare_failure("original_replay_invalid", "The focused racer is absent from the original replay.")
 	var settings: Array = (settings_value as Array).duplicate(true)
 	var cpu_flags: Array = []
 	for index in racer_ids.size():

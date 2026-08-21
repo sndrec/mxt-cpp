@@ -692,7 +692,9 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 		race_presentation_controller.show_notification("Replay resume failed: recorded roster is unavailable.", 4500)
 		return
 	var settings: Array = (settings_value as Array).duplicate(true)
-	var racer_ids: Array = (racer_ids_value as Array).duplicate(true)
+	var racer_ids: Array = []
+	for id_value in racer_ids_value as Array:
+		racer_ids.append(int(id_value))
 	var focused_player_id := int(payload.get("focused_player_id", -1))
 	var focus_index := racer_ids.find(focused_player_id)
 	var track_index := int(payload.get("track_index", -1))
@@ -701,7 +703,9 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	var canonical_prefix_value = payload.get("canonical_prefix", [])
 	if focus_index < 0 or settings.size() != racer_ids.size() \
 			or track_index < 0 or track_index >= track_content_controller.tracks.size() \
-			or cursor < 0 or full_state.is_empty() \
+			or cursor < 0 or cursor != _singleplayer_tick or full_state.is_empty() \
+			or !replay_controller.replay_playback_active or !game_sim.sim_started \
+			or race_session_controller.current_racer_ids != racer_ids \
 			or typeof(canonical_prefix_value) != TYPE_ARRAY:
 		race_presentation_controller.show_notification("Replay resume failed: the captured frame is incomplete.", 4500)
 		return
@@ -729,10 +733,8 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 		exact_grid.resize(racer_ids.size())
 		for index in racer_ids.size():
 			exact_grid[index] = int((grid_value as Array)[index])
-	_return_to_menu()
-	singleplayer_mode = true
-	_singleplayer_tick = 0
-	track_selector.selected = track_index
+	elif race_session_controller.current_start_grid_slots.size() == racer_ids.size():
+		exact_grid = race_session_controller.current_start_grid_slots.duplicate()
 	time_attack_ghost_descriptors.clear()
 	var keep_original := bool(payload.get("keep_original_as_ghost", false))
 	if keep_original:
@@ -747,7 +749,11 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 			return
 	else:
 		time_attack_ghost_controller.clear()
-	network_manager.reset_race_state()
+	replay_controller._apply_replay_focus_to_local_visual()
+	if !replay_controller.detach_playback_for_practice():
+		race_presentation_controller.show_notification("Replay resume failed while leaving playback.", 5000)
+		return
+	singleplayer_mode = true
 	network_manager.set_spawn_seed(int(metadata.get("spawn_seed", 0)))
 	network_manager.race_options = options
 	network_manager.player_ids = [focused_player_id]
@@ -767,35 +773,20 @@ func resume_replay_in_practice(payload: Dictionary) -> void:
 	time_attack_finalized = false
 	time_attack_last_replay_path = ""
 	practice_controller.arm_local_player_override(focused_player_id)
-	_close_settings_menus_for_race_start()
-	race_dnf_low_speed_ticks.clear()
-	if !race_session_controller.start_race(
-			track_index,
-			settings,
-			true,
-			headless_mode,
-			racer_ids,
-			practice_cpu_flags,
-			exact_grid):
+	if !race_session_controller.reconfigure_practice_control(focused_player_id, practice_cpu_flags):
 		practice_controller.end_session()
-		race_presentation_controller.show_notification("Replay resume failed while rebuilding the recorded race.", 5000)
+		race_presentation_controller.show_notification("Replay resume failed while transferring racer control.", 5000)
 		_return_to_menu()
 		return
+	replay_controller.start_recording(track_index, settings, racer_ids, practice_cpu_flags, exact_grid)
 	if !practice_controller.begin_resumed_session(options, focused_player_id, canonical_prefix_value as Array, transition_start_usec):
 		race_presentation_controller.show_notification("Replay resume failed while restoring its canonical timeline.", 5000)
 		_return_to_menu()
 		return
-	if !game_sim.load_full_state_data(cursor, full_state):
-		race_presentation_controller.show_notification("Replay resume failed while restoring the captured simulation state.", 5000)
-		_return_to_menu()
-		return
-	game_sim.set_player_metadata(racer_ids, practice_cpu_flags)
-	network_manager.input_transport.netcode_session.configure(racer_ids, practice_cpu_flags, focused_player_id)
 	network_manager.race_results.restore_practice_state(payload.get("race_results", {}))
 	race_dnf_low_speed_ticks = (payload.get("race_dnf_low_speed_ticks", {}) as Dictionary).duplicate(true) if typeof(payload.get("race_dnf_low_speed_ticks", {})) == TYPE_DICTIONARY else {}
 	_singleplayer_tick = cursor
 	network_manager.input_transport.clients_server_tick = cursor
-	game_sim.set_sim_started(true)
 	game_sim.discard_race_events()
 	game_sim.snap_render_after_state_load()
 	if keep_original:

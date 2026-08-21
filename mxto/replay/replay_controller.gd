@@ -320,6 +320,34 @@ func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
 	_apply_replay_playback_clock()
 	game_manager.record_memory_sample("replay_transition_reset")
 
+
+func detach_playback_for_practice() -> bool:
+	if !replay_playback_active:
+		return false
+	replay_playback_active = false
+	replay_playback_use_multiplayer_startup = false
+	replay_playback_use_singleplayer_tick = false
+	replay_playback_paused = false
+	replay_playback_rate = 1.0
+	replay_normal_playback_tick_active = false
+	replay_seeking_active = false
+	replay_collecting_timeline_markers = false
+	replay_seek_checkpoints.clear()
+	replay_seek_checkpoint_bytes = 0
+	replay_saved_finish_times.clear()
+	replay_saved_finish_placements.clear()
+	replay_saved_eliminations.clear()
+	_reset_replay_timeline_markers()
+	replay_input_display_frame_inputs = {}
+	_refresh_replay_input_display()
+	replay_start_grid_slots = PackedInt32Array()
+	_clear_playback_payload()
+	if replay_timeline_root != null:
+		replay_timeline_root.visible = false
+	_apply_replay_playback_clock()
+	return true
+
+
 func _clear_recording_payload() -> void:
 	replay_recording_metadata.clear()
 	replay_recording_racer_ids.clear()
@@ -1059,8 +1087,8 @@ func _on_replay_resume_practice_pressed() -> void:
 		replay_resume_dialog.confirmed.connect(_on_replay_resume_practice_confirmed)
 		replay_resume_keep_original_checkbox = CheckBox.new()
 		replay_resume_keep_original_checkbox.text = "Keep Original as Ghost"
+		replay_resume_keep_original_checkbox.custom_minimum_size = Vector2(0.0, 30.0)
 		replay_resume_dialog.add_child(replay_resume_keep_original_checkbox)
-		replay_resume_keep_original_checkbox.position = Vector2(20.0, 88.0)
 		add_child(replay_resume_dialog)
 	var has_future := game_manager._singleplayer_tick < replay_playback_frames.size()
 	replay_resume_keep_original_checkbox.button_pressed = has_future
