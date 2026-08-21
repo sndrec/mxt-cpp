@@ -164,6 +164,16 @@ func disable_free_camera() -> void:
 	if spectator != null:
 		spectator.set_input_enabled(false)
 
+
+func reconcile_after_practice_state_restore() -> void:
+	if local_player_id < 0 or should_suppress_local_race_input() \
+			or network_manager.race_results.player_finish_times.has(local_player_id):
+		return
+	local_elimination_active = false
+	_apply_live_focus(local_player_id)
+	if car_node_container.local_visual_car != null:
+		car_node_container.local_visual_car.race_hud.visible = true
+
 func show_free_camera_at(focus_transform: Transform3D) -> void:
 	var free_camera := ensure_free_camera()
 	free_camera.global_position = focus_transform.origin - focus_transform.basis.z * 32.0 + focus_transform.basis.y * 12.0

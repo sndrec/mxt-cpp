@@ -230,6 +230,17 @@ func show_sticker(actor_id: int, sticker_index: int) -> void:
 func clear_stickers() -> void:
 	active_stickers.clear()
 
+
+func clear_practice_restore_transients() -> void:
+	hide_results()
+	active_stickers.clear()
+	notification_hide_msec = 0
+	notification_label.visible = false
+	for medal in medals:
+		if is_instance_valid(medal):
+			medal.queue_free()
+	medals.clear()
+
 func send_local_sticker(sticker_index: int) -> void:
 	if singleplayer_mode or !network_manager.has_network_peer():
 		show_sticker(local_player_id, sticker_index)

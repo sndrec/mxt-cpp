@@ -43,6 +43,30 @@ func reset() -> void:
 	sticker_cooldown_msec.clear()
 	current_race_tick = 0
 
+
+func capture_practice_state() -> Dictionary:
+	return {
+		"net_race_finish_time": net_race_finish_time,
+		"player_finish_times": player_finish_times.duplicate(true),
+		"player_finish_placements": player_finish_placements.duplicate(true),
+		"finish_order": finish_order.duplicate(),
+		"player_eliminations": player_eliminations.duplicate(true),
+		"player_dnfs": player_dnfs.duplicate(true),
+		"race_force_end_deadline_tick": race_force_end_deadline_tick,
+		"current_race_tick": current_race_tick,
+	}
+
+
+func restore_practice_state(state: Dictionary) -> void:
+	net_race_finish_time = int(state.get("net_race_finish_time", -1))
+	player_finish_times = (state.get("player_finish_times", {}) as Dictionary).duplicate(true)
+	player_finish_placements = (state.get("player_finish_placements", {}) as Dictionary).duplicate(true)
+	finish_order = (state.get("finish_order", []) as Array).duplicate()
+	player_eliminations = (state.get("player_eliminations", {}) as Dictionary).duplicate(true)
+	player_dnfs = (state.get("player_dnfs", {}) as Dictionary).duplicate(true)
+	race_force_end_deadline_tick = int(state.get("race_force_end_deadline_tick", -1))
+	current_race_tick = int(state.get("current_race_tick", 0))
+
 @rpc("authority", "call_remote", "reliable", 7)
 func set_race_finish_time(phase: int, time: int) -> void:
 	if !race_active or !_accept_phase(phase):

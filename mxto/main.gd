@@ -45,6 +45,8 @@ const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 @onready var time_attack_setup: TimeAttackSetupClass = $TimeAttackSetup
 @onready var practice_setup: PracticeSetupClass = $PracticeSetup
 @onready var practice_controller: PracticeControllerClass = $PracticeController
+@onready var practice_hud: CanvasLayer = $PracticeHud
+@onready var practice_hud_label: Label = $PracticeHud/Root/Margin/Panel/Inner/Status
 @onready var options_menu: Control = $OptionsLayer/OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
@@ -264,7 +266,7 @@ func _ready() -> void:
 	time_attack_setup.official_vehicle_requested.connect(_on_time_attack_official_vehicle_requested)
 	time_attack_setup.leaderboard_requested.connect(_on_time_attack_leaderboard_requested)
 	time_attack_setup.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
-	practice_controller.initialize(self, race_pause_game_speed_button)
+	practice_controller.initialize(self, race_pause_game_speed_button, practice_hud, practice_hud_label)
 	practice_setup.initialize(self)
 	practice_setup.start_requested.connect(_on_practice_start_requested)
 	practice_setup.back_requested.connect(_on_practice_setup_back_requested)
@@ -1521,6 +1523,8 @@ func _run_active_race_physics_frame(delta: float) -> void:
 	var profile_finish_check_start := Time.get_ticks_usec() if profile_enabled else 0
 	if !replay_controller.replay_playback_active:
 		_check_race_finished()
+	if practice_controller.session_active:
+		practice_controller.capture_completed_tick(_singleplayer_tick - 1)
 	if profile_enabled:
 		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.FINISH_CHECK, profile_finish_check_start)
 		debug_runtime_controller.record_physics_frame(profile_physics_start)
@@ -1562,6 +1566,23 @@ func _simulate_singleplayer_tick(input_bytes: PackedByteArray = PackedByteArray(
 	# Update HUD timing using the same field clients use
 	network_manager.input_transport.clients_server_tick = _singleplayer_tick
 	network_manager.input_transport.rollback_frametime_us = Time.get_ticks_usec() - start_time
+
+
+func reconcile_practice_state_restore() -> void:
+	if !practice_controller.session_active or !game_sim.sim_started:
+		return
+	race_presentation_controller.clear_practice_restore_transients()
+	spectator_controller.reconcile_after_practice_state_restore()
+	var local_id := _local_player_id()
+	race_audio_controller.reconcile_practice_state_restore(
+		_singleplayer_tick,
+		game_sim.get_player_lap(local_id),
+		network_manager.race_results.player_finish_times.has(local_id))
+	_update_native_render_camera()
+	game_sim.render_gamesim()
+	_sync_gameplay_camera_settings()
+	if car_node_container.local_visual_car != null:
+		car_node_container.local_visual_car.just_rendered()
 
 func _dump_offline_auth_input_sample(local_input_bytes: PackedByteArray) -> void:
 	if !network_manager.telemetry.dump_auth_input_samples:
@@ -2322,6 +2343,7 @@ func _process(delta: float) -> void:
 	last_process_ticks_usec = now_ticks_usec
 	_update_playtest_lobby_probe()
 	_update_race_pause_controller_navigation(unscaled_delta)
+	practice_controller.consume_frame_rewind()
 	if practice_controller.consume_frame_advance() and game_sim.sim_started and singleplayer_mode:
 		_run_active_race_physics_frame(1.0 / 60.0)
 	var profile_enabled: bool = debug_runtime_controller.render_profile_enabled and game_sim.sim_started

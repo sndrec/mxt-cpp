@@ -254,6 +254,12 @@ func _update_sticker_menu_icons(car: VisualCar) -> void:
 		sticker_menu_icons[i].texture = stickers.stickers[sticker_index]
 
 func _update_sticker_input(car: VisualCar) -> void:
+	if car.game_manager != null \
+			and String(car.game_manager.network_manager.race_options.get("session_kind", "")) == "practice":
+		sticker_menu_open = false
+		if sticker_menu != null:
+			sticker_menu.visible = false
+		return
 	if car.game_manager != null and car.game_manager.has_method("_window_accepts_input"):
 		if !bool(car.game_manager.call("_window_accepts_input")):
 			return

@@ -564,6 +564,7 @@ namespace godot {
 		bool tick_singleplayer_indexed_input(int local_player_id, const godot::PackedByteArray& input_bytes, const godot::PackedInt32Array& frame_offsets, int frame_index);
 		void discard_race_events() { race_events.clear(); }
 		void update_render_snapshots();
+		void snap_render_after_state_load();
 		godot::String get_phase_profile_string() const;
 		godot::PackedInt64Array get_phase_profile_last_sample() const;
 		void set_phase_profile_enabled(bool enabled);

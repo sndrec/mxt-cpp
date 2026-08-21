@@ -238,6 +238,17 @@ func reset_for_race() -> void:
 		if spatial_audio.has_method("stop_music"):
 			spatial_audio.call("stop_music")
 
+
+func reconcile_practice_state_restore(next_tick: int, lap: int, finished: bool) -> void:
+	race_audio_last_tick = next_tick - 1
+	race_audio_last_local_lap = lap
+	race_audio_boost_power_announced = lap >= RACE_BOOST_POWER_LAP_INDEX
+	race_audio_final_lap_requested = lap >= RACE_FINAL_LAP_INDEX
+	if !finished:
+		_cancel_race_finish_audio(true)
+	if spatial_audio != null and spatial_audio.has_method("clear_announcer_queue"):
+		spatial_audio.call("clear_announcer_queue")
+
 func _resolve_track_audio_path(track_dir: String, path_value) -> String:
 	var path := str(path_value)
 	if path.is_empty():

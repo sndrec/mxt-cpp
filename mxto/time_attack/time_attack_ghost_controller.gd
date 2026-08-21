@@ -263,6 +263,138 @@ func runtime_slot_snapshot() -> Array:
 	return runtime_slots.duplicate(false)
 
 
+func capture_practice_rolling_state(main_saved_tick: int) -> Dictionary:
+	var slots: Array = []
+	for slot_value in runtime_slots:
+		var slot: Dictionary = slot_value
+		var sim: GameSim = slot.get("sim", null)
+		if sim == null:
+			return {"success": false}
+		var frame_index := int(slot.get("frame_index", 0))
+		var native_saved_tick := frame_index - 1
+		if native_saved_tick < 0 or !sim.has_saved_state(native_saved_tick):
+			return {"success": false}
+		if String(slot.get("state", "")) == "active" and native_saved_tick != main_saved_tick:
+			return {"success": false}
+		slots.append(_practice_runtime_record(slot, native_saved_tick))
+	return {
+		"success": true,
+		"main_saved_tick": main_saved_tick,
+		"slots": slots,
+	}
+
+
+func restore_practice_rolling_state(state: Dictionary) -> bool:
+	if !can_restore_practice_rolling_state(state):
+		return false
+	var slots: Array = state.get("slots", [])
+	for index in range(slots.size()):
+		var runtime: Dictionary = runtime_slots[index]
+		var record: Dictionary = slots[index]
+		var sim: GameSim = runtime.get("sim", null)
+		if !sim.load_state(int(record.get("native_saved_tick", -1))):
+			return false
+		sim.discard_race_events()
+		sim.snap_render_after_state_load()
+		_restore_practice_runtime_record(runtime, record)
+	return true
+
+
+func can_restore_practice_rolling_state(state: Dictionary) -> bool:
+	var slots: Array = state.get("slots", [])
+	if slots.size() != runtime_slots.size():
+		return false
+	for index in range(slots.size()):
+		var runtime: Dictionary = runtime_slots[index]
+		var record: Dictionary = slots[index]
+		var sim: GameSim = runtime.get("sim", null)
+		var native_saved_tick := int(record.get("native_saved_tick", -1))
+		if sim == null \
+				or int(runtime.get("racer_id", -1)) != int(record.get("racer_id", -2)) \
+				or native_saved_tick < 0 or !sim.has_saved_state(native_saved_tick):
+			return false
+	return true
+
+
+func capture_practice_full_state() -> Dictionary:
+	var slots: Array = []
+	var total_bytes := 0
+	for slot_value in runtime_slots:
+		var slot: Dictionary = slot_value
+		var sim: GameSim = slot.get("sim", null)
+		if sim == null:
+			return {"success": false}
+		var native_tick := int(slot.get("frame_index", 0))
+		var state_bytes := sim.get_full_state_data(native_tick)
+		if state_bytes.is_empty():
+			return {"success": false}
+		var record: Dictionary = _practice_runtime_record(slot, native_tick)
+		record["full_state"] = state_bytes
+		total_bytes += state_bytes.size()
+		slots.append(record)
+	return {
+		"success": true,
+		"slots": slots,
+		"total_bytes": total_bytes,
+	}
+
+
+func restore_practice_full_state(state: Dictionary) -> bool:
+	if !can_restore_practice_full_state(state):
+		return false
+	var slots: Array = state.get("slots", [])
+	for index in range(slots.size()):
+		var runtime: Dictionary = runtime_slots[index]
+		var record: Dictionary = slots[index]
+		var sim: GameSim = runtime.get("sim", null)
+		if !sim.load_full_state_data(int(record.get("native_saved_tick", -1)), record.get("full_state", PackedByteArray())):
+			return false
+		sim.discard_race_events()
+		sim.snap_render_after_state_load()
+		_restore_practice_runtime_record(runtime, record)
+	return true
+
+
+func can_restore_practice_full_state(state: Dictionary) -> bool:
+	var slots: Array = state.get("slots", [])
+	if slots.size() != runtime_slots.size():
+		return false
+	for index in range(slots.size()):
+		var runtime: Dictionary = runtime_slots[index]
+		var record: Dictionary = slots[index]
+		var sim: GameSim = runtime.get("sim", null)
+		var state_bytes: PackedByteArray = record.get("full_state", PackedByteArray())
+		if sim == null \
+				or int(runtime.get("racer_id", -1)) != int(record.get("racer_id", -2)) \
+				or state_bytes.is_empty():
+			return false
+	return true
+
+
+func _practice_runtime_record(slot: Dictionary, native_saved_tick: int) -> Dictionary:
+	return {
+		"racer_id": int(slot.get("racer_id", -1)),
+		"native_saved_tick": native_saved_tick,
+		"frame_index": int(slot.get("frame_index", 0)),
+		"state": String(slot.get("state", "active")),
+		"fade_elapsed": float(slot.get("fade_elapsed", 0.0)),
+		"tick_count": int(slot.get("tick_count", 0)),
+		"tick_total_us": int(slot.get("tick_total_us", 0)),
+		"tick_max_us": int(slot.get("tick_max_us", 0)),
+	}
+
+
+func _restore_practice_runtime_record(runtime: Dictionary, record: Dictionary) -> void:
+	if int(runtime.get("racer_id", -1)) != int(record.get("racer_id", -2)):
+		return
+	runtime["frame_index"] = int(record.get("frame_index", 0))
+	runtime["state"] = String(record.get("state", "active"))
+	runtime["fade_elapsed"] = float(record.get("fade_elapsed", 0.0))
+	runtime["tick_count"] = int(record.get("tick_count", 0))
+	runtime["tick_total_us"] = int(record.get("tick_total_us", 0))
+	runtime["tick_max_us"] = int(record.get("tick_max_us", 0))
+
+
 func memory_usage_stats() -> Dictionary:
 	var slots: Array = []
 	var aggregate_native_bytes := 0

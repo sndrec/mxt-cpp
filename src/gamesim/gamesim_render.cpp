@@ -1646,6 +1646,18 @@ void GameSim::update_super_spark_visuals()
 		update_render_visual_snapshots(std::max(0, num_cars));
 	}
 
+	void GameSim::snap_render_after_state_load() {
+		if (!sim_started || !cars) {
+			return;
+		}
+		const int visual_count = std::max(0, num_cars + (bumpers_enabled ? bumper_count : 0));
+		render_rollback_corrections.assign(visual_count, SimTransform());
+		render_rollback_correction_active.assign(visual_count, 0);
+		render_rollback_capture_transforms.clear();
+		render_rollback_capture_pending = false;
+		update_render_visual_snapshots(visual_count);
+	}
+
 	void GameSim::render_gamesim() {
 		if (!sim_started || !car_node_container || !cars) {
 			return;
