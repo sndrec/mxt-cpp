@@ -1822,10 +1822,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if practice_controller.handle_runtime_input(event):
 		get_viewport().set_input_as_handled()
 		return
-	if game_sim.sim_started and !race_pause_options_open \
-			and event is InputEventJoypadButton \
-			and event.pressed \
-			and event.button_index == JOY_BUTTON_START:
+	if game_sim.sim_started and !race_pause_options_open and event.is_action_pressed("Pause"):
 		if race_pause_open:
 			_close_race_pause_menu()
 		else:

@@ -14,13 +14,16 @@ mouse_filter = 2
 
 [node name="Margin" type="MarginContainer" parent="Root"]
 layout_mode = 1
-anchors_preset = 0
-offset_left = 18.0
-offset_top = 18.0
-offset_right = 840.0
-offset_bottom = 250.0
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_right = 740.0
+offset_bottom = -20.0
+grow_vertical = 0
 
 [node name="Panel" type="PanelContainer" parent="Root/Margin"]
+custom_minimum_size = Vector2(720, 0)
 layout_mode = 2
 
 [node name="Inner" type="MarginContainer" parent="Root/Margin/Panel"]
@@ -33,3 +36,4 @@ theme_override_constants/margin_bottom = 8
 [node name="Status" type="Label" parent="Root/Margin/Panel/Inner"]
 layout_mode = 2
 text = "PRACTICE  ·  1.00x\nSlot 1 — Empty  ·  Rewind 0/45"
+autowrap_mode = 2

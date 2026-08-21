@@ -12,8 +12,6 @@ const SESSION_KIND := "practice"
 const SPEED_STEP := 0.05
 const SPEED_STEP_COUNT := 40
 const DEFAULT_SPEED_INDEX := 20
-const STICK_PRESS_THRESHOLD := 0.65
-const STICK_RELEASE_THRESHOLD := 0.25
 const REWIND_CAPACITY := 45
 const SLOT_COUNT := 16
 const TELEMETRY_UPDATE_SECONDS := 0.1
@@ -143,6 +141,8 @@ func initialize(
 	if input_editor != null:
 		input_editor.manual_mode_requested.connect(set_manual_input_mode)
 		input_editor.capture_live_requested.connect(capture_current_live_input)
+		input_editor.rewind_requested.connect(request_frame_rewind)
+		input_editor.step_requested.connect(request_frame_advance)
 	timeline.begin()
 	_update_game_speed_button()
 	_update_input_controls()
@@ -399,6 +399,20 @@ func consume_frame_rewind() -> bool:
 	return rewind_one_frame()
 
 
+func request_frame_advance() -> bool:
+	if !session_active or pause_freeze_active or game_speed_index != 0:
+		return false
+	pending_frame_advance = true
+	return true
+
+
+func request_frame_rewind() -> bool:
+	if !session_active or pause_freeze_active or game_speed_index != 0:
+		return false
+	pending_frame_rewind = true
+	return true
+
+
 func capture_completed_tick(saved_tick: int) -> void:
 	if !session_active or saved_tick < 0:
 		return
@@ -571,7 +585,15 @@ func handle_pause_input(event: InputEvent, focus_owner: Control) -> bool:
 	if !editing_speed and !editing_input_mode and !editing_telemetry:
 		pause_speed_stick_direction = 0
 		return false
-	if event.is_action_pressed("ui_left") or event.is_action_pressed("DpadLeft"):
+	var left_pressed := event.is_action_pressed("ui_left") or event.is_action_pressed("DpadLeft") \
+			or event.is_action_pressed("SteerLeft")
+	var right_pressed := event.is_action_pressed("ui_right") or event.is_action_pressed("DpadRight") \
+			or event.is_action_pressed("SteerRight")
+	if (event.is_action_released("SteerLeft") and pause_speed_stick_direction < 0) \
+			or (event.is_action_released("SteerRight") and pause_speed_stick_direction > 0):
+		pause_speed_stick_direction = 0
+	if left_pressed and pause_speed_stick_direction == 0:
+		pause_speed_stick_direction = -1 if event.is_action_pressed("SteerLeft") else 0
 		if editing_speed:
 			decrease_game_speed()
 		elif editing_input_mode:
@@ -579,26 +601,14 @@ func handle_pause_input(event: InputEvent, focus_owner: Control) -> bool:
 		else:
 			set_telemetry_mode(posmod(telemetry_mode - 1, TelemetryMode.size()))
 		return true
-	if event.is_action_pressed("ui_right") or event.is_action_pressed("DpadRight"):
+	if right_pressed and pause_speed_stick_direction == 0:
+		pause_speed_stick_direction = 1 if event.is_action_pressed("SteerRight") else 0
 		if editing_speed:
 			increase_game_speed()
 		elif editing_input_mode:
 			set_manual_input_mode(true)
 		else:
 			set_telemetry_mode((telemetry_mode + 1) % TelemetryMode.size())
-		return true
-	if event is InputEventJoypadMotion and event.axis == JOY_AXIS_LEFT_X:
-		var value: float = event.axis_value
-		if absf(value) <= STICK_RELEASE_THRESHOLD:
-			pause_speed_stick_direction = 0
-		elif pause_speed_stick_direction == 0 and absf(value) >= STICK_PRESS_THRESHOLD:
-			pause_speed_stick_direction = -1 if value < 0.0 else 1
-			if editing_speed:
-				_set_game_speed_index(game_speed_index + pause_speed_stick_direction)
-			elif editing_input_mode:
-				set_manual_input_mode(pause_speed_stick_direction > 0)
-			else:
-				set_telemetry_mode(posmod(telemetry_mode + pause_speed_stick_direction, TelemetryMode.size()))
 		return true
 	return false
 
@@ -608,33 +618,32 @@ func handle_runtime_input(event: InputEvent) -> bool:
 		frame_stick_direction = 0
 		return false
 	var driving := _actively_driving()
-	if driving and event.is_action_pressed("DpadLeft"):
+	if driving and event.is_action_pressed("PracticeSlotPrevious"):
 		_select_slot(selected_slot - 1)
 		return true
-	if driving and event.is_action_pressed("DpadRight"):
+	if driving and event.is_action_pressed("PracticeSlotNext"):
 		_select_slot(selected_slot + 1)
 		return true
-	if driving and event.is_action_pressed("DpadDown"):
+	if driving and event.is_action_pressed("PracticeSlotSave"):
 		save_selected_slot()
 		return true
-	if driving and (event.is_action_pressed("DPadUp") or event.is_action_pressed("DpadUp")):
+	if driving and event.is_action_pressed("PracticeSlotLoad"):
 		load_selected_slot()
 		return true
 	if game_speed_index != 0:
 		frame_stick_direction = 0
 		return false
-	if !(event is InputEventJoypadMotion) or event.axis != JOY_AXIS_RIGHT_X:
-		return false
-	var value: float = event.axis_value
-	if absf(value) <= STICK_RELEASE_THRESHOLD:
+	if (event.is_action_released("PracticeRewind") and frame_stick_direction < 0) \
+			or (event.is_action_released("PracticeStep") and frame_stick_direction > 0):
 		frame_stick_direction = 0
-	elif frame_stick_direction == 0 and absf(value) >= STICK_PRESS_THRESHOLD:
-		frame_stick_direction = -1 if value < 0.0 else 1
-		if frame_stick_direction > 0:
-			pending_frame_advance = true
-		else:
-			pending_frame_rewind = true
-	return true
+		return true
+	if frame_stick_direction == 0 and event.is_action_pressed("PracticeRewind"):
+		frame_stick_direction = -1
+		return request_frame_rewind()
+	if frame_stick_direction == 0 and event.is_action_pressed("PracticeStep"):
+		frame_stick_direction = 1
+		return request_frame_advance()
+	return false
 
 
 func _set_game_speed_index(value: int) -> void:
@@ -684,6 +693,7 @@ func _update_input_controls() -> void:
 		input_editor_root.visible = session_active and input_editor_visible
 	if input_editor != null:
 		input_editor.set_frozen(session_active and game_speed_index == 0 and !pause_freeze_active)
+		_update_input_editor_timeline_controls()
 	if telemetry_button != null:
 		telemetry_button.text = "Telemetry  ·  %s" % ["Off", "Compact", "Expanded"][telemetry_mode]
 
@@ -812,6 +822,14 @@ func _update_hud() -> void:
 		canonical_frame_count(),
 	]
 	hud_label.text = base_text if telemetry_text.is_empty() else base_text + "\n" + telemetry_text
+	_update_input_editor_timeline_controls()
+
+
+func _update_input_editor_timeline_controls() -> void:
+	if input_editor == null:
+		return
+	var can_step := session_active and game_speed_index == 0 and !pause_freeze_active
+	input_editor.set_timeline_controls_enabled(can_step and _available_rewind_frames() > 0, can_step)
 
 
 func _format_telemetry(sample: PackedFloat32Array) -> String:

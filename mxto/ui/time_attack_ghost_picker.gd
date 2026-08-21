@@ -363,25 +363,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		_accept_focused()
 		get_viewport().set_input_as_handled()
 		return
-	if event is InputEventJoypadButton and event.pressed:
-		var direction := Vector2i.ZERO
-		match event.button_index:
-			JOY_BUTTON_DPAD_UP: direction = Vector2i.UP
-			JOY_BUTTON_DPAD_DOWN: direction = Vector2i.DOWN
-			JOY_BUTTON_DPAD_LEFT: direction = Vector2i.LEFT
-			JOY_BUTTON_DPAD_RIGHT: direction = Vector2i.RIGHT
-		if direction != Vector2i.ZERO:
-			_navigate(direction)
-			get_viewport().set_input_as_handled()
+	var direction := Vector2i.ZERO
+	if event.is_action_pressed("DpadUp") or event.is_action_pressed("DPadUp"):
+		direction = Vector2i.UP
+	elif event.is_action_pressed("DpadDown"):
+		direction = Vector2i.DOWN
+	elif event.is_action_pressed("DpadLeft"):
+		direction = Vector2i.LEFT
+	elif event.is_action_pressed("DpadRight"):
+		direction = Vector2i.RIGHT
+	if direction != Vector2i.ZERO:
+		_navigate(direction)
+		get_viewport().set_input_as_handled()
 
 
 func _controller_direction() -> Vector2i:
-	var joypads := Input.get_connected_joypads()
-	if joypads.is_empty():
-		return Vector2i.ZERO
-	var device := int(joypads[0])
-	var x := Input.get_joy_axis(device, JOY_AXIS_LEFT_X)
-	var y := Input.get_joy_axis(device, JOY_AXIS_LEFT_Y)
+	var x := Input.get_axis("SteerLeft", "SteerRight")
+	var y := Input.get_axis("SteerUp", "SteerDown")
 	var release := NAV_RELEASE_THRESHOLD if nav_direction != Vector2i.ZERO else NAV_PRESS_THRESHOLD
 	if absf(y) >= absf(x) and absf(y) >= release:
 		return Vector2i(0, 1 if y > 0.0 else -1)

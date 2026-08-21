@@ -24,6 +24,14 @@ extends Control
 @onready var btn_strafe_right: Button = $HBoxContainer/VBoxContainer/HBoxContainer8/Button
 @onready var btn_voice_chat: Button = $HBoxContainer/VBoxContainer/HBoxContainer10/Button
 @onready var btn_toggle_voice: Button = $HBoxContainer/VBoxContainer/HBoxContainer11/Button
+@onready var btn_pause: Button = $HBoxContainer/VBoxContainer/HBoxContainer12/Button
+@onready var btn_camera_zoom: Button = $HBoxContainer/VBoxContainer/HBoxContainer13/Button
+@onready var btn_practice_slot_previous: Button = $HBoxContainer/VBoxContainer/HBoxContainer14/Button
+@onready var btn_practice_slot_next: Button = $HBoxContainer/VBoxContainer/HBoxContainer15/Button
+@onready var btn_practice_slot_save: Button = $HBoxContainer/VBoxContainer/HBoxContainer16/Button
+@onready var btn_practice_slot_load: Button = $HBoxContainer/VBoxContainer/HBoxContainer17/Button
+@onready var btn_practice_rewind: Button = $HBoxContainer/VBoxContainer/HBoxContainer18/Button
+@onready var btn_practice_step: Button = $HBoxContainer/VBoxContainer/HBoxContainer19/Button
 
 var waiting_index: int = -1
 var waiting_old_text: String = ""
@@ -61,6 +69,14 @@ var bindings := [
 		{"button": Callable(self, "_get_btn_strafe_right"), "type": "axis", "actions": ["StrafeRight"]},
 		{"button": Callable(self, "_get_btn_voice_chat"), "type": "any", "actions": ["VoiceChat"]},
 		{"button": Callable(self, "_get_btn_toggle_voice"), "type": "any", "actions": ["ToggleVoice"]},
+		{"button": Callable(self, "_get_btn_pause"), "type": "any", "actions": ["Pause"]},
+		{"button": Callable(self, "_get_btn_camera_zoom"), "type": "axis_pair", "actions": ["CameraUp", "CameraDown"]},
+		{"button": Callable(self, "_get_btn_practice_slot_previous"), "type": "any", "actions": ["PracticeSlotPrevious"]},
+		{"button": Callable(self, "_get_btn_practice_slot_next"), "type": "any", "actions": ["PracticeSlotNext"]},
+		{"button": Callable(self, "_get_btn_practice_slot_save"), "type": "any", "actions": ["PracticeSlotSave"]},
+		{"button": Callable(self, "_get_btn_practice_slot_load"), "type": "any", "actions": ["PracticeSlotLoad"]},
+		{"button": Callable(self, "_get_btn_practice_rewind"), "type": "any", "actions": ["PracticeRewind"]},
+		{"button": Callable(self, "_get_btn_practice_step"), "type": "any", "actions": ["PracticeStep"]},
 ]
 
 func _get_btn_accel(): return btn_accelerate
@@ -74,6 +90,14 @@ func _get_btn_strafe_left(): return btn_strafe_left
 func _get_btn_strafe_right(): return btn_strafe_right
 func _get_btn_voice_chat(): return btn_voice_chat
 func _get_btn_toggle_voice(): return btn_toggle_voice
+func _get_btn_pause(): return btn_pause
+func _get_btn_camera_zoom(): return btn_camera_zoom
+func _get_btn_practice_slot_previous(): return btn_practice_slot_previous
+func _get_btn_practice_slot_next(): return btn_practice_slot_next
+func _get_btn_practice_slot_save(): return btn_practice_slot_save
+func _get_btn_practice_slot_load(): return btn_practice_slot_load
+func _get_btn_practice_rewind(): return btn_practice_rewind
+func _get_btn_practice_step(): return btn_practice_step
 
 func _ready() -> void:
 		_ensure_voice_actions()
@@ -361,7 +385,10 @@ func _collect_bindings() -> Dictionary:
 		var actions := [
 				"Accelerate", "Boost", "Brake", "SpinAttack", "SideAttack",
 				"SteerLeft", "SteerRight", "SteerUp", "SteerDown",
-				"StrafeLeft", "StrafeRight", "VoiceChat", "ToggleVoice"
+				"StrafeLeft", "StrafeRight", "VoiceChat", "ToggleVoice",
+				"Pause", "CameraUp", "CameraDown",
+				"PracticeSlotPrevious", "PracticeSlotNext", "PracticeSlotSave", "PracticeSlotLoad",
+				"PracticeRewind", "PracticeStep"
 		]
 		var out := {}
 		for a in actions:

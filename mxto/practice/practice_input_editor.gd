@@ -3,6 +3,8 @@ extends PanelContainer
 
 signal manual_mode_requested(enabled: bool)
 signal capture_live_requested
+signal rewind_requested
+signal step_requested
 
 const PlayerInputClass = preload("res://player/player_input.gd")
 const RAW_MAX := 254
@@ -11,6 +13,8 @@ const AXIS_NEUTRAL := 127
 @onready var mode_button: Button = $Margin/Content/Mode
 @onready var capture_button: Button = $Margin/Content/Actions/Capture
 @onready var neutral_button: Button = $Margin/Content/Actions/Neutral
+@onready var rewind_button: Button = $Margin/Content/TimelineActions/Rewind
+@onready var step_button: Button = $Margin/Content/TimelineActions/Step
 @onready var accelerate: CheckBox = $Margin/Content/Buttons/Accelerate
 @onready var brake: CheckBox = $Margin/Content/Buttons/Brake
 @onready var boost: CheckBox = $Margin/Content/Buttons/Boost
@@ -42,6 +46,8 @@ func _ready() -> void:
 	mode_button.pressed.connect(func(): manual_mode_requested.emit(!manual_mode))
 	capture_button.pressed.connect(func(): capture_live_requested.emit())
 	neutral_button.pressed.connect(reset_neutral)
+	rewind_button.pressed.connect(func(): rewind_requested.emit())
+	step_button.pressed.connect(func(): step_requested.emit())
 	for button in [accelerate, brake, boost, spin_attack, side_attack]:
 		button.toggled.connect(_on_boolean_toggled)
 	_sync_controls()
@@ -59,6 +65,11 @@ func set_manual_mode(enabled: bool, seed_bytes: PackedByteArray = PackedByteArra
 func set_frozen(enabled: bool) -> void:
 	editable = enabled
 	_update_editability()
+
+
+func set_timeline_controls_enabled(can_rewind: bool, can_step: bool) -> void:
+	rewind_button.disabled = !can_rewind
+	step_button.disabled = !can_step
 
 
 func set_live_input(input_bytes: PackedByteArray) -> void:

@@ -46,6 +46,7 @@ custom_minimum_size = Vector2(320, 0)
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_stretch_ratio = 1.25
+theme_override_constants/separation = 0
 
 [node name="HBoxContainer" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
 layout_mode = 2
@@ -210,6 +211,126 @@ horizontal_alignment = 2
 layout_mode = 2
 size_flags_horizontal = 3
 text = "T"
+alignment = 0
+
+[node name="HBoxContainer12" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer12"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Pause"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer12"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Start Button"
+alignment = 0
+
+[node name="HBoxContainer13" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer13"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Camera Zoom"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer13"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Right Stick Vertical Axis"
+alignment = 0
+
+[node name="HBoxContainer14" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer14"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Practice: Previous Slot"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer14"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Left"
+alignment = 0
+
+[node name="HBoxContainer15" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer15"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Practice: Next Slot"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer15"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Right"
+alignment = 0
+
+[node name="HBoxContainer16" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer16"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Practice: Save Slot"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer16"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Down"
+alignment = 0
+
+[node name="HBoxContainer17" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer17"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Practice: Load Slot"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer17"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "D-Pad Up"
+alignment = 0
+
+[node name="HBoxContainer18" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer18"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Practice: Rewind"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer18"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Right Stick Left"
+alignment = 0
+
+[node name="HBoxContainer19" type="HBoxContainer" parent="HBoxContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HBoxContainer/VBoxContainer/HBoxContainer19"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Practice: Step"
+horizontal_alignment = 2
+
+[node name="Button" type="Button" parent="HBoxContainer/VBoxContainer/HBoxContainer19"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Right Stick Right"
 alignment = 0
 
 [node name="Control" type="VBoxContainer" parent="HBoxContainer"]

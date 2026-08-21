@@ -37,6 +37,10 @@ func _run() -> void:
 	if Engine.time_scale != 0.0 or Engine.physics_ticks_per_second != 60:
 		_fail("0.00x Practice clock is incorrect")
 		return
+	practice.input_editor.step_button.pressed.emit()
+	if !practice.consume_frame_advance() or practice.consume_frame_advance():
+		_fail("Exact Input Step Frame did not request exactly one frame")
+		return
 	var stick := InputEventJoypadMotion.new()
 	stick.axis = JOY_AXIS_RIGHT_X
 	stick.axis_value = 0.8
@@ -53,6 +57,17 @@ func _run() -> void:
 		_advance(PackedByteArray([0]))
 	if game_manager._singleplayer_tick != 50 or practice.canonical_frame_count() != 50:
 		_fail("finite Practice did not commit one canonical frame per tick")
+		return
+	if practice.input_editor.rewind_button.disabled:
+		_fail("Exact Input Rewind Frame did not enable when history became available")
+		return
+	practice.input_editor.rewind_button.pressed.emit()
+	if !practice.consume_frame_rewind() or game_manager._singleplayer_tick != 49:
+		_fail("Exact Input Rewind Frame did not restore exactly one authored frame")
+		return
+	_advance(PackedByteArray([0]))
+	if game_manager._singleplayer_tick != 50 or practice.canonical_frame_count() != 50:
+		_fail("frame-step continuation after Exact Input rewind did not replace the canonical future")
 		return
 	var export_dir := ProjectSettings.globalize_path("user://practice_smoke_exports")
 	var first_export := game_manager.replay_controller._write_replay_recording("practice_smoke", export_dir)
