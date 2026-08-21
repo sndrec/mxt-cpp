@@ -16,6 +16,56 @@ const STICK_PRESS_THRESHOLD := 0.65
 const STICK_RELEASE_THRESHOLD := 0.25
 const REWIND_CAPACITY := 45
 const SLOT_COUNT := 16
+const TELEMETRY_UPDATE_SECONDS := 0.1
+
+enum TelemetryMode {
+	OFF,
+	COMPACT,
+	EXPANDED,
+}
+
+enum TelemetryField {
+	TICK,
+	LAP,
+	TARGET_LAPS,
+	SPEED_KMH,
+	FORWARD_KMH,
+	LATERAL_KMH,
+	VERTICAL_KMH,
+	PITCH_DEGREES_PER_SECOND,
+	YAW_DEGREES_PER_SECOND,
+	ROLL_DEGREES_PER_SECOND,
+	ENERGY,
+	MAX_ENERGY,
+	TURBO,
+	MANUAL_BOOST_ACTIVE,
+	DASH_BOOST_ACTIVE,
+	S_BOOST_ACTIVE,
+	DRIFT_CORNER_MASK,
+	TECHNIQUE_LAYER,
+	TECHNIQUE_INTENSITY,
+	HEIGHT_ABOVE_TRACK,
+	CHECKPOINT,
+	CHECKPOINT_FRACTION,
+	MACHINE_STATE_LOW,
+	MACHINE_STATE_HIGH,
+	TERRAIN_STATE_LOW,
+	TERRAIN_STATE_HIGH,
+	INPUT_STRAFE_LEFT_RAW,
+	INPUT_STRAFE_RIGHT_RAW,
+	INPUT_STEER_HORIZONTAL_RAW,
+	INPUT_STEER_VERTICAL_RAW,
+	INPUT_ACCELERATE,
+	INPUT_BRAKE,
+	INPUT_SPIN_ATTACK,
+	INPUT_BOOST,
+	INPUT_SIDE_ATTACK,
+	BASE_SPEED_KMH,
+	LAP_PROGRESS,
+	COLLISION_CHECKPOINT,
+	LAST_GROUND_CHECKPOINT,
+	SAMPLE_SIZE,
+}
 
 var game_manager: GameManager
 var session_active := false
@@ -32,6 +82,7 @@ var preserved_retry_speed_index := -1
 var game_speed_button: Button
 var input_mode_button: Button
 var input_editor_button: Button
+var telemetry_button: Button
 var hud_root: CanvasLayer
 var hud_label: Label
 var input_editor_root: CanvasLayer
@@ -40,6 +91,11 @@ var timeline: TimelineClass = TimelineClass.new()
 var timeline_enabled := false
 var manual_input_mode := false
 var input_editor_visible := false
+var telemetry_mode := TelemetryMode.OFF
+var telemetry_update_accumulator := 0.0
+var telemetry_sample_count := 0
+var telemetry_format_count := 0
+var telemetry_text := ""
 var last_live_input_bytes := PackedByteArray([0])
 var companion_ring: Array = []
 var slots: Array = []
@@ -56,6 +112,7 @@ func initialize(
 	in_game_speed_button: Button = null,
 	in_input_mode_button: Button = null,
 	in_input_editor_button: Button = null,
+	in_telemetry_button: Button = null,
 	in_hud_root: CanvasLayer = null,
 	in_hud_label: Label = null,
 	in_input_editor_root: CanvasLayer = null,
@@ -65,6 +122,7 @@ func initialize(
 	game_speed_button = in_game_speed_button
 	input_mode_button = in_input_mode_button
 	input_editor_button = in_input_editor_button
+	telemetry_button = in_telemetry_button
 	hud_root = in_hud_root
 	hud_label = in_hud_label
 	input_editor_root = in_input_editor_root
@@ -78,6 +136,8 @@ func initialize(
 		input_mode_button.pressed.connect(toggle_manual_input_mode)
 	if input_editor_button != null:
 		input_editor_button.pressed.connect(toggle_input_editor)
+	if telemetry_button != null:
+		telemetry_button.pressed.connect(cycle_telemetry_mode)
 	if input_editor != null:
 		input_editor.manual_mode_requested.connect(set_manual_input_mode)
 		input_editor.capture_live_requested.connect(capture_current_live_input)
@@ -110,6 +170,11 @@ func begin_session(options: Dictionary) -> bool:
 	pause_speed_stick_direction = 0
 	manual_input_mode = false
 	input_editor_visible = false
+	telemetry_mode = TelemetryMode.OFF
+	telemetry_update_accumulator = 0.0
+	telemetry_sample_count = 0
+	telemetry_format_count = 0
+	telemetry_text = ""
 	last_live_input_bytes = PackedByteArray([0])
 	_reset_session_storage()
 	if hud_root != null:
@@ -149,6 +214,9 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 	timeline.begin()
 	manual_input_mode = false
 	input_editor_visible = false
+	telemetry_mode = TelemetryMode.OFF
+	telemetry_update_accumulator = 0.0
+	telemetry_text = ""
 	if hud_root != null:
 		hud_root.visible = false
 	if input_editor_root != null:
@@ -228,6 +296,39 @@ func toggle_input_editor() -> void:
 func capture_current_live_input() -> void:
 	if input_editor != null:
 		input_editor.seed_from_bytes(last_live_input_bytes)
+
+
+func cycle_telemetry_mode() -> void:
+	set_telemetry_mode((telemetry_mode + 1) % TelemetryMode.size())
+
+
+func set_telemetry_mode(mode: int) -> void:
+	if !session_active:
+		return
+	telemetry_mode = clampi(mode, TelemetryMode.OFF, TelemetryMode.EXPANDED)
+	telemetry_update_accumulator = TELEMETRY_UPDATE_SECONDS
+	if telemetry_mode == TelemetryMode.OFF:
+		telemetry_text = ""
+	_update_input_controls()
+	_update_hud()
+
+
+func update(unscaled_delta: float) -> void:
+	if !session_active or telemetry_mode == TelemetryMode.OFF or game_manager == null \
+			or !game_manager.game_sim.sim_started:
+		return
+	telemetry_update_accumulator += unscaled_delta
+	if telemetry_update_accumulator < TELEMETRY_UPDATE_SECONDS:
+		return
+	telemetry_update_accumulator = fmod(telemetry_update_accumulator, TELEMETRY_UPDATE_SECONDS)
+	var sample: PackedFloat32Array = game_manager.game_sim.get_player_telemetry_sample(game_manager._local_player_id())
+	telemetry_sample_count += 1
+	if sample.size() < TelemetryField.SAMPLE_SIZE:
+		telemetry_text = "Telemetry unavailable"
+	else:
+		telemetry_text = _format_telemetry(sample)
+		telemetry_format_count += 1
+	_update_hud()
 
 
 func game_speed() -> float:
@@ -409,6 +510,9 @@ func diagnostic_snapshot() -> Dictionary:
 	output["timeline"] = timeline.diagnostic_snapshot()
 	output["manual_input"] = manual_input_mode
 	output["manual_round_trip_valid"] = input_editor.last_round_trip_valid if input_editor != null else true
+	output["telemetry_mode"] = telemetry_mode
+	output["telemetry_sample_count"] = telemetry_sample_count
+	output["telemetry_format_count"] = telemetry_format_count
 	return output
 
 
@@ -426,20 +530,25 @@ func handle_pause_input(event: InputEvent, focus_owner: Control) -> bool:
 		return false
 	var editing_speed := game_speed_button != null and focus_owner == game_speed_button
 	var editing_input_mode := input_mode_button != null and focus_owner == input_mode_button
-	if !editing_speed and !editing_input_mode:
+	var editing_telemetry := telemetry_button != null and focus_owner == telemetry_button
+	if !editing_speed and !editing_input_mode and !editing_telemetry:
 		pause_speed_stick_direction = 0
 		return false
 	if event.is_action_pressed("ui_left") or event.is_action_pressed("DpadLeft"):
 		if editing_speed:
 			decrease_game_speed()
-		else:
+		elif editing_input_mode:
 			set_manual_input_mode(false)
+		else:
+			set_telemetry_mode(posmod(telemetry_mode - 1, TelemetryMode.size()))
 		return true
 	if event.is_action_pressed("ui_right") or event.is_action_pressed("DpadRight"):
 		if editing_speed:
 			increase_game_speed()
-		else:
+		elif editing_input_mode:
 			set_manual_input_mode(true)
+		else:
+			set_telemetry_mode((telemetry_mode + 1) % TelemetryMode.size())
 		return true
 	if event is InputEventJoypadMotion and event.axis == JOY_AXIS_LEFT_X:
 		var value: float = event.axis_value
@@ -449,8 +558,10 @@ func handle_pause_input(event: InputEvent, focus_owner: Control) -> bool:
 			pause_speed_stick_direction = -1 if value < 0.0 else 1
 			if editing_speed:
 				_set_game_speed_index(game_speed_index + pause_speed_stick_direction)
-			else:
+			elif editing_input_mode:
 				set_manual_input_mode(pause_speed_stick_direction > 0)
+			else:
+				set_telemetry_mode(posmod(telemetry_mode + pause_speed_stick_direction, TelemetryMode.size()))
 		return true
 	return false
 
@@ -536,6 +647,8 @@ func _update_input_controls() -> void:
 		input_editor_root.visible = session_active and input_editor_visible
 	if input_editor != null:
 		input_editor.set_frozen(session_active and game_speed_index == 0 and !pause_freeze_active)
+	if telemetry_button != null:
+		telemetry_button.text = "Telemetry  ·  %s" % ["Off", "Compact", "Expanded"][telemetry_mode]
 
 
 func _capture_companion_record(next_tick: int) -> Dictionary:
@@ -652,7 +765,7 @@ func _update_hud() -> void:
 	var occupied := false
 	if selected_slot >= 0 and selected_slot < slots.size() and typeof(slots[selected_slot]) == TYPE_DICTIONARY:
 		occupied = bool((slots[selected_slot] as Dictionary).get("occupied", false))
-	hud_label.text = "PRACTICE  ·  %.2fx  ·  %s input\nSlot %d — %s  ·  Rewind %d/%d  ·  Timeline %d" % [
+	var base_text := "PRACTICE  ·  %.2fx  ·  %s input\nSlot %d — %s  ·  Rewind %d/%d  ·  Timeline %d" % [
 		game_speed(),
 		"Manual" if manual_input_mode else "Live",
 		selected_slot + 1,
@@ -661,6 +774,90 @@ func _update_hud() -> void:
 		REWIND_CAPACITY,
 		canonical_frame_count(),
 	]
+	hud_label.text = base_text if telemetry_text.is_empty() else base_text + "\n" + telemetry_text
+
+
+func _format_telemetry(sample: PackedFloat32Array) -> String:
+	var target_laps := int(sample[TelemetryField.TARGET_LAPS])
+	var technique := _technique_name(int(sample[TelemetryField.TECHNIQUE_LAYER]), int(sample[TelemetryField.DRIFT_CORNER_MASK]))
+	var boost_states: Array[String] = []
+	if sample[TelemetryField.MANUAL_BOOST_ACTIVE] > 0.5:
+		boost_states.append("Manual")
+	if sample[TelemetryField.DASH_BOOST_ACTIVE] > 0.5:
+		boost_states.append("Dash")
+	if sample[TelemetryField.S_BOOST_ACTIVE] > 0.5:
+		boost_states.append("S-BOOST")
+	var boost_text := "Off" if boost_states.is_empty() else "+".join(boost_states)
+	var compact := "Tick %d  ·  Lap %d/%s  ·  %.1f km/h  ·  Yaw %+.1f°/s\n%s  ·  Energy %.0f/%.0f  ·  Turbo %.1f  ·  Boost %s" % [
+		int(sample[TelemetryField.TICK]),
+		int(sample[TelemetryField.LAP]),
+		"∞" if target_laps <= 0 else str(target_laps),
+		sample[TelemetryField.SPEED_KMH],
+		sample[TelemetryField.YAW_DEGREES_PER_SECOND],
+		technique,
+		sample[TelemetryField.ENERGY],
+		sample[TelemetryField.MAX_ENERGY],
+		sample[TelemetryField.TURBO],
+		boost_text,
+	]
+	if telemetry_mode == TelemetryMode.COMPACT:
+		return compact
+	var machine_state := int(sample[TelemetryField.MACHINE_STATE_LOW]) \
+		| (int(sample[TelemetryField.MACHINE_STATE_HIGH]) << 16)
+	var terrain_state := int(sample[TelemetryField.TERRAIN_STATE_LOW]) \
+		| (int(sample[TelemetryField.TERRAIN_STATE_HIGH]) << 16)
+	var airborne := (machine_state & 0x2) != 0
+	var low_gravity := airborne and sample[TelemetryField.HEIGHT_ABOVE_TRACK] <= 0.0
+	var motion_state := "Low gravity" if low_gravity else ("Airborne" if airborne else "Grounded")
+	return compact + "\nVelocity F/L/V  %+.1f  %+.1f  %+.1f km/h  ·  Angular P/Y/R  %+.1f  %+.1f  %+.1f°/s\nCorners %s  ·  %s  ·  Surface %s  ·  Height %.2f\nCheckpoint %d + %.4f  ·  Progress %.4f  ·  Ground CP %d  ·  Collision CP %d\nInput SX/SY/L/R  %d/%d/%d/%d  ·  A%d B%d Boost%d Spin%d Side%d" % [
+		sample[TelemetryField.FORWARD_KMH],
+		sample[TelemetryField.LATERAL_KMH],
+		sample[TelemetryField.VERTICAL_KMH],
+		sample[TelemetryField.PITCH_DEGREES_PER_SECOND],
+		sample[TelemetryField.YAW_DEGREES_PER_SECOND],
+		sample[TelemetryField.ROLL_DEGREES_PER_SECOND],
+		_corner_mask_text(int(sample[TelemetryField.DRIFT_CORNER_MASK])),
+		motion_state,
+		_surface_name(terrain_state),
+		sample[TelemetryField.HEIGHT_ABOVE_TRACK],
+		int(sample[TelemetryField.CHECKPOINT]),
+		sample[TelemetryField.CHECKPOINT_FRACTION],
+		sample[TelemetryField.LAP_PROGRESS],
+		int(sample[TelemetryField.LAST_GROUND_CHECKPOINT]),
+		int(sample[TelemetryField.COLLISION_CHECKPOINT]),
+		int(sample[TelemetryField.INPUT_STEER_HORIZONTAL_RAW]),
+		int(sample[TelemetryField.INPUT_STEER_VERTICAL_RAW]),
+		int(sample[TelemetryField.INPUT_STRAFE_LEFT_RAW]),
+		int(sample[TelemetryField.INPUT_STRAFE_RIGHT_RAW]),
+		int(sample[TelemetryField.INPUT_ACCELERATE]),
+		int(sample[TelemetryField.INPUT_BRAKE]),
+		int(sample[TelemetryField.INPUT_BOOST]),
+		int(sample[TelemetryField.INPUT_SPIN_ATTACK]),
+		int(sample[TelemetryField.INPUT_SIDE_ATTACK]),
+	]
+
+
+func _technique_name(layer: int, drift_mask: int) -> String:
+	if layer == 0:
+		return "Manual Turbo Slide"
+	if layer == 1:
+		return "Quick Turn"
+	return "Drifting" if drift_mask != 0 else "Gripped"
+
+
+func _corner_mask_text(mask: int) -> String:
+	var names: Array[String] = []
+	for corner in range(4):
+		if (mask & (1 << corner)) != 0:
+			names.append(["FL", "FR", "BL", "BR"][corner])
+	return "gripped" if names.is_empty() else "drift " + "/".join(names)
+
+
+func _surface_name(terrain: int) -> String:
+	for entry in [[0x800, "Kill"], [0x400, "Fall"], [0x200, "Hole"], [0x100, "Rail"], [0x40, "Ice"], [0x20, "Lava"], [0x10, "Jump"], [0x8, "Dirt"], [0x4, "Recharge"], [0x2, "Dash"]]:
+		if (terrain & int(entry[0])) != 0:
+			return String(entry[1])
+	return "Road"
 
 
 func _notify(text: String) -> void:

@@ -67,6 +67,7 @@ const PracticeInputEditorClass = preload("res://practice/practice_input_editor.g
 @onready var race_pause_game_speed_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/GameSpeedButton
 @onready var race_pause_input_mode_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/InputModeButton
 @onready var race_pause_input_editor_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/InputEditorButton
+@onready var race_pause_telemetry_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/TelemetryButton
 @onready var race_pause_retry_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RetryButton
 @onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
 @onready var race_pause_save_replay_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton
@@ -276,6 +277,7 @@ func _ready() -> void:
 		race_pause_game_speed_button,
 		race_pause_input_mode_button,
 		race_pause_input_editor_button,
+		race_pause_telemetry_button,
 		practice_hud,
 		practice_hud_label,
 		practice_input_editor_layer,
@@ -1038,6 +1040,7 @@ func _open_race_pause_menu() -> void:
 	race_pause_game_speed_button.visible = singleplayer_mode and practice
 	race_pause_input_mode_button.visible = singleplayer_mode and practice
 	race_pause_input_editor_button.visible = singleplayer_mode and practice
+	race_pause_telemetry_button.visible = singleplayer_mode and practice
 	race_pause_retry_button.visible = singleplayer_mode and session_kind in ["time_attack", PracticeControllerClass.SESSION_KIND]
 	race_pause_lobby_button.visible = host
 	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
@@ -1089,6 +1092,7 @@ func _race_pause_buttons() -> Array[Button]:
 		race_pause_game_speed_button,
 		race_pause_input_mode_button,
 		race_pause_input_editor_button,
+		race_pause_telemetry_button,
 		race_pause_retry_button,
 		race_pause_options_button,
 		race_pause_save_replay_button,
@@ -2362,6 +2366,7 @@ func _process(delta: float) -> void:
 	last_process_ticks_usec = now_ticks_usec
 	_update_playtest_lobby_probe()
 	_update_race_pause_controller_navigation(unscaled_delta)
+	practice_controller.update(unscaled_delta)
 	practice_controller.consume_frame_rewind()
 	if practice_controller.consume_frame_advance() and game_sim.sim_started and singleplayer_mode:
 		_run_active_race_physics_frame(1.0 / 60.0)
