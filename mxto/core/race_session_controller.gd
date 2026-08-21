@@ -263,6 +263,7 @@ func _configure_game_sim(sim: GameSim, level_buffer: StreamPeerBuffer, car_prope
 	sim.set_car_render_manager(car_render_manager)
 	sim.set_spawn_seed(network_manager.spawn_seed)
 	sim.set_start_grid_slots(start_grid_slots)
+	sim.set_target_lap_count(int(network_manager.race_options.get("lap_count", 3)))
 	sim.set_vehicle_restore_enabled(network_manager.is_vehicle_restore_enabled())
 	if sim.has_method("set_bumpers_enabled"):
 		sim.set_bumpers_enabled(bumpers_enabled and bumper_definition != null)

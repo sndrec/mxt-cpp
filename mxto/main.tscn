@@ -33,6 +33,8 @@
 [ext_resource type="Script" uid="uid://20bvn2d7b1re" path="res://netplay/input_transport_controller.gd" id="42_input_transport"]
 [ext_resource type="Script" uid="uid://c0hq6ixi0y144" path="res://netplay/network_telemetry_controller.gd" id="43_network_telemetry"]
 [ext_resource type="PackedScene" path="res://ui/time_attack_setup.tscn" id="44_time_attack_setup"]
+[ext_resource type="PackedScene" path="res://practice/practice_setup.tscn" id="45_practice_setup"]
+[ext_resource type="Script" path="res://practice/practice_controller.gd" id="46_practice_controller"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_5vw27"]
 sky_top_color = Color(0.836986, 0.643102, 0.403301, 1)
@@ -444,6 +446,11 @@ layout_mode = 1
 visible = false
 
 [node name="TimeAttackSetup" parent="." unique_id=1640364448 instance=ExtResource("44_time_attack_setup")]
+
+[node name="PracticeSetup" parent="." instance=ExtResource("45_practice_setup")]
+
+[node name="PracticeController" type="Node" parent="."]
+script = ExtResource("46_practice_controller")
 
 [node name="OptionsLayer" type="CanvasLayer" parent="." unique_id=1517233725]
 layer = 200

@@ -10,6 +10,8 @@ const CarSettingsClass = preload("res://ui/car_settings.gd")
 const CommunicationControllerClass = preload("res://ui/communication_controller.gd")
 const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_controller.gd")
 const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
+const PracticeSetupClass = preload("res://practice/practice_setup.gd")
+const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -41,6 +43,8 @@ const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 @onready var network_manager: NetworkManager = $NetworkManager
 @onready var car_settings: CarSettingsClass = $CarSettings
 @onready var time_attack_setup: TimeAttackSetupClass = $TimeAttackSetup
+@onready var practice_setup: PracticeSetupClass = $PracticeSetup
+@onready var practice_controller: PracticeControllerClass = $PracticeController
 @onready var options_menu: Control = $OptionsLayer/OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
@@ -252,11 +256,16 @@ func _ready() -> void:
 	add_child(time_attack_ghost_controller)
 	time_attack_ghost_controller.initialize(self)
 	time_attack_setup.initialize(self)
-	time_attack_setup.start_requested.connect(_on_time_attack_setup_start_requested)
+	time_attack_setup.ranked_start_requested.connect(_on_time_attack_ranked_start_requested)
+	time_attack_setup.practice_requested.connect(_on_practice_setup_requested)
 	time_attack_setup.back_requested.connect(_on_time_attack_setup_back_requested)
 	time_attack_setup.official_vehicle_requested.connect(_on_time_attack_official_vehicle_requested)
 	time_attack_setup.leaderboard_requested.connect(_on_time_attack_leaderboard_requested)
 	time_attack_setup.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
+	practice_controller.initialize(self)
+	practice_setup.initialize(self)
+	practice_setup.start_requested.connect(_on_practice_start_requested)
+	practice_setup.back_requested.connect(_on_practice_setup_back_requested)
 	replay_controller.initialize()
 	car_settings.leaderboard_browser.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
 	_on_leaderboard_replay_attachment_status_changed(leaderboard_replay_service.status())
@@ -349,6 +358,8 @@ func _ready() -> void:
 		lobby_control.visible = true
 
 func _exit_tree() -> void:
+	if practice_controller != null:
+		practice_controller.end_session()
 	RenderingServer.force_sync()
 
 func _parse_cpu_driver_count_arg(args: Array) -> int:
@@ -418,7 +429,7 @@ func _on_singleplayer_button_pressed() -> void:
 	time_attack_setup.open_for_current_selection()
 
 
-func _on_time_attack_setup_start_requested(ranked: bool, context: Dictionary) -> void:
+func _on_time_attack_ranked_start_requested(context: Dictionary) -> void:
 	time_attack_previous_best_milliseconds = int(context.get("personal_best_milliseconds", 0))
 	var descriptor_value = context.get("ghost_descriptors", [])
 	time_attack_ghost_descriptors = (descriptor_value as Array).duplicate(true) if typeof(descriptor_value) == TYPE_ARRAY else []
@@ -430,11 +441,30 @@ func _on_time_attack_setup_start_requested(ranked: bool, context: Dictionary) ->
 		return
 	record_memory_sample("ghost_prepare_complete")
 	var options := TimeAttackRulesClass.build_options()
-	if !ranked:
-		options["session_kind"] = "time_attack_practice"
-		options["cpu_count"] = singleplayer_cpu_count
-		options["leaderboard_eligible"] = false
-		options["leaderboard_ineligible_reason"] = "practice_unranked"
+	_start_singleplayer_race(false, options)
+
+
+func _on_practice_setup_requested() -> void:
+	time_attack_setup.hide()
+	practice_setup.open_for_current_selection(singleplayer_cpu_count)
+
+
+func _on_practice_setup_back_requested() -> void:
+	practice_setup.hide()
+	time_attack_setup.open_for_current_selection()
+
+
+func _on_practice_start_requested(options: Dictionary, context: Dictionary) -> void:
+	time_attack_previous_best_milliseconds = 0
+	var descriptor_value = context.get("ghost_descriptors", [])
+	time_attack_ghost_descriptors = (descriptor_value as Array).duplicate(true) if typeof(descriptor_value) == TYPE_ARRAY else []
+	record_memory_sample("ghost_prepare_begin")
+	var ghost_prepare := time_attack_ghost_controller.prepare(time_attack_ghost_descriptors, track_selector.selected)
+	if !bool(ghost_prepare.get("success", false)):
+		race_presentation_controller.show_notification(String(ghost_prepare.get("message", "Selected ghosts could not be prepared.")), 5000)
+		practice_setup.open_for_current_selection(int(options.get("cpu_count", singleplayer_cpu_count)))
+		return
+	record_memory_sample("ghost_prepare_complete")
 	_start_singleplayer_race(false, options)
 
 
@@ -548,13 +578,17 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	# Prepare a minimal settings array using the current local player settings.
 	var options := race_options.duplicate(true) if !race_options.is_empty() else _build_default_singleplayer_race_options()
 	var session_kind := String(options.get("session_kind", ""))
-	var is_time_attack := session_kind in ["time_attack", "time_attack_practice"]
-	if is_time_attack:
+	var is_practice := session_kind == PracticeController.SESSION_KIND
+	var uses_time_attack_ghosts := session_kind == "time_attack" or is_practice
+	if uses_time_attack_ghosts:
 		if time_attack_ghost_controller.prepared_track_index != track_selector.selected:
 			var ghost_prepare := time_attack_ghost_controller.prepare(time_attack_ghost_descriptors, track_selector.selected)
 			if !bool(ghost_prepare.get("success", false)):
 				race_presentation_controller.show_notification(String(ghost_prepare.get("message", "Selected ghosts could not be prepared.")), 5000)
-				time_attack_setup.open_for_current_selection()
+				if is_practice:
+					practice_setup.open_for_current_selection(int(options.get("cpu_count", singleplayer_cpu_count)))
+				else:
+					time_attack_setup.open_for_current_selection()
 				return
 	else:
 		time_attack_ghost_descriptors.clear()
@@ -601,11 +635,24 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	_close_settings_menus_for_race_start()
 	race_dnf_low_speed_ticks.clear()
 	race_session_controller.start_race(track_selector.selected, settings_array, singleplayer_mode, headless_mode)
-	if is_time_attack:
+	if uses_time_attack_ghosts:
 		var ghost_start := time_attack_ghost_controller.start_race(track_selector.selected)
 		if !bool(ghost_start.get("success", false)):
-			push_error(String(ghost_start.get("message", "Selected ghost simulations could not start.")))
+			var ghost_error := String(ghost_start.get("message", "Selected ghost simulations could not start."))
+			push_error(ghost_error)
+			race_presentation_controller.show_notification(ghost_error, 5000)
+			_return_to_menu()
+			if is_practice:
+				practice_setup.call_deferred("open_for_current_selection", int(options.get("cpu_count", singleplayer_cpu_count)))
+			else:
+				time_attack_setup.call_deferred("open_for_current_selection")
+			return
 		record_memory_sample("ghost_race_start")
+	if is_practice and !practice_controller.begin_session(options):
+		push_error("Practice controller rejected the new Practice session.")
+		_return_to_menu()
+		practice_setup.call_deferred("open_for_current_selection", int(options.get("cpu_count", singleplayer_cpu_count)))
+		return
 	# Hide menus
 	$Control.visible = false
 	lobby_control.visible = false
@@ -970,7 +1017,7 @@ func _open_race_pause_menu() -> void:
 	var host := network_manager.is_server and !singleplayer_mode
 	var session_kind := String(network_manager.race_options.get("session_kind", ""))
 	race_pause_title.text = "Host Race Menu" if host else "Race Menu"
-	race_pause_retry_button.visible = singleplayer_mode and session_kind in ["time_attack", "time_attack_practice"]
+	race_pause_retry_button.visible = singleplayer_mode and session_kind in ["time_attack", PracticeController.SESSION_KIND]
 	race_pause_lobby_button.visible = host
 	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
 	replay_controller.refresh_pause_button()
@@ -989,7 +1036,7 @@ func _close_race_pause_menu() -> void:
 
 func _on_pause_retry_pressed() -> void:
 	var session_kind := String(network_manager.race_options.get("session_kind", ""))
-	if !singleplayer_mode or session_kind not in ["time_attack", "time_attack_practice"]:
+	if !singleplayer_mode or session_kind not in ["time_attack", PracticeController.SESSION_KIND]:
 		return
 	var options := network_manager.race_options.duplicate(true)
 	_close_race_pause_menu()
@@ -1613,6 +1660,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _return_to_menu() -> void:
 	record_memory_sample("return_to_menu_begin")
 	communication_controller.close_race_chat()
+	practice_controller.end_session()
 	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_close_race_pause_menu()
@@ -1635,6 +1683,7 @@ func _return_to_menu() -> void:
 func _return_to_lobby() -> void:
 	record_memory_sample("return_to_lobby_begin")
 	communication_controller.close_race_chat()
+	practice_controller.end_session()
 	race_session_controller.begin_transition(singleplayer_mode, 0.5)
 	_close_race_pause_menu()
 	if time_attack_ghost_controller != null:
@@ -1651,6 +1700,7 @@ func _return_to_lobby() -> void:
 
 func _teardown_race_world_for_transition() -> void:
 	record_memory_sample("race_transition_teardown_begin")
+	practice_controller.end_session()
 	race_session_controller.begin_transition(singleplayer_mode)
 	_close_race_pause_menu()
 	if time_attack_ghost_controller != null:
@@ -1952,6 +2002,9 @@ func _check_race_finished() -> void:
 		human_racer_ids = network_manager.player_ids.duplicate(true)
 	var finish_watch_ids := human_racer_ids if !human_racer_ids.is_empty() else racer_ids
 	var finish_sim := server_game_sim if network_manager.is_server and !singleplayer_mode and server_game_sim != null else game_sim
+	var session_kind := String(network_manager.race_options.get("session_kind", ""))
+	var infinite_practice := session_kind == PracticeController.SESSION_KIND \
+		and int(network_manager.race_options.get("lap_count", 3)) == 0
 	var race_control_started := _race_control_has_started(finish_sim)
 	_update_force_end_dnf(finish_watch_ids)
 	if finish_sim != null:
@@ -2000,41 +2053,23 @@ func _check_race_finished() -> void:
 				_finish_or_advance_grand_prix(finish_sim)
 				race_presentation_controller.hide_results()
 	else:
-		if singleplayer_mode and all_done:
+		if singleplayer_mode and all_done and !infinite_practice:
 			if network_manager.race_results.net_race_finish_time == -1:
 				network_manager.race_results.net_race_finish_time = Time.get_ticks_msec()
 				race_presentation_controller.show_results()
-				_finalize_time_attack()
+				if session_kind == "time_attack":
+					_finalize_time_attack()
+				elif session_kind == PracticeController.SESSION_KIND:
+					_finalize_practice()
 
 func _finalize_time_attack() -> void:
 	var session_kind := String(network_manager.race_options.get("session_kind", ""))
-	if time_attack_finalized or session_kind not in ["time_attack", "time_attack_practice"]:
+	if time_attack_finalized or session_kind != "time_attack":
 		return
 	time_attack_finalized = true
 	var local_id := _local_player_id()
 	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_id, -1))
 	var start_tick := race_presentation_controller.race_results_start_tick()
-	if session_kind == "time_attack_practice":
-		var practice_replay_path := replay_controller.stage_completed_time_attack_replay(false)
-		time_attack_last_replay_path = practice_replay_path
-		var practice_score := TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
-		var practice_board := {}
-		var digests: Array = network_manager.race_options.get("track_gameplay_digests", [])
-		if digests.size() == 1:
-			practice_board = TimeAttackRulesClass.board_for_track_digest(String(digests[0]))
-		var practice_result := {
-			"eligible": false,
-			"reason": "practice_unranked",
-			"friendly_reason": "Practice Unranked",
-			"score_milliseconds": practice_score,
-			"board_name": String(practice_board.get("steam_name", "")),
-			"replay_path": practice_replay_path,
-			"replay_can_save": replay_controller.can_save_staged_replay_locally(practice_replay_path),
-		}
-		race_presentation_controller.show_time_attack_result(
-			practice_result, time_attack_previous_best_milliseconds,
-			"Practice result only — use Save Replay to keep it locally.")
-		return
 	race_presentation_controller.update_time_attack_submission_status("Preparing verification replay…")
 	var replay_path := replay_controller.stage_completed_time_attack_replay(true)
 	time_attack_last_replay_path = replay_path
@@ -2063,6 +2098,34 @@ func _finalize_time_attack() -> void:
 		var reason := TimeAttackRulesClass.friendly_reason(String(time_attack_eligibility.get("reason", "ineligible")))
 		race_presentation_controller.show_notification("Unranked: %s" % reason, 5000)
 		race_presentation_controller.update_time_attack_submission_status("Unranked — %s" % reason)
+
+
+func _finalize_practice() -> void:
+	if !practice_controller.session_active or practice_controller.session_completed:
+		return
+	practice_controller.mark_completed()
+	var local_id := _local_player_id()
+	var finish_tick := int(network_manager.race_results.player_finish_times.get(local_id, -1))
+	var start_tick := race_presentation_controller.race_results_start_tick()
+	var practice_replay_path := replay_controller.stage_completed_time_attack_replay(false)
+	time_attack_last_replay_path = practice_replay_path
+	var practice_score := TimeAttackRulesClass.finish_ticks_to_milliseconds(finish_tick, start_tick)
+	var practice_board := {}
+	var digests: Array = network_manager.race_options.get("track_gameplay_digests", [])
+	if digests.size() == 1:
+		practice_board = TimeAttackRulesClass.board_for_track_digest(String(digests[0]))
+	var practice_result := {
+		"eligible": false,
+		"reason": "practice_unranked",
+		"friendly_reason": "Practice Unranked",
+		"score_milliseconds": practice_score,
+		"board_name": String(practice_board.get("steam_name", "")),
+		"replay_path": practice_replay_path,
+		"replay_can_save": replay_controller.can_save_staged_replay_locally(practice_replay_path),
+	}
+	race_presentation_controller.show_time_attack_result(
+		practice_result, 0,
+		"Practice result only — use Save Replay to keep it locally.")
 
 
 func _on_leaderboard_status_changed(status: Dictionary) -> void:
@@ -2119,14 +2182,8 @@ func _on_time_attack_rank_entries_received(board_name: String, request_type: Str
 
 
 func _on_time_attack_race_again_requested() -> void:
-	var practice := String(network_manager.race_options.get("session_kind", "")) == "time_attack_practice"
-	var practice_cpu_count := int(network_manager.race_options.get("cpu_count", singleplayer_cpu_count))
-	var options := TimeAttackRulesClass.build_options()
-	if practice:
-		options["session_kind"] = "time_attack_practice"
-		options["cpu_count"] = practice_cpu_count
-		options["leaderboard_eligible"] = false
-		options["leaderboard_ineligible_reason"] = "practice_unranked"
+	var practice := String(network_manager.race_options.get("session_kind", "")) == PracticeController.SESSION_KIND
+	var options := network_manager.race_options.duplicate(true) if practice else TimeAttackRulesClass.build_options()
 	_return_to_menu()
 	call_deferred("_start_singleplayer_race", false, options)
 

@@ -54,7 +54,18 @@ func _run() -> void:
 	}
 	game_manager.track_selector.select(track_index)
 	game_manager.singleplayer_cpu_count = 0
-	game_manager._on_time_attack_setup_start_requested(false, {"ghost_descriptors": [descriptor]})
+	game_manager._on_practice_start_requested({
+		"game_mode": 0,
+		"vehicle_restore": true,
+		"bumpers": false,
+		"s_boost": false,
+		"cpu_count": 0,
+		"lap_count": 3,
+		"infinite_laps": false,
+		"session_kind": "practice",
+		"leaderboard_eligible": false,
+		"leaderboard_ineligible_reason": "practice_unranked",
+	}, {"ghost_descriptors": [descriptor]})
 	var controller := game_manager.time_attack_ghost_controller
 	if controller.runtime_slots.size() != 1:
 		_fail("visual ghost runtime did not start")

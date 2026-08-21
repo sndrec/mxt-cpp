@@ -1,6 +1,7 @@
 class_name TimeAttackSetup extends Control
 
-signal start_requested(ranked: bool, context: Dictionary)
+signal ranked_start_requested(context: Dictionary)
+signal practice_requested
 signal back_requested
 signal official_vehicle_requested
 signal leaderboard_requested(board_name: String)
@@ -50,8 +51,8 @@ func initialize(in_game_manager: GameManager) -> void:
 	if game_manager.leaderboard_client != null:
 		game_manager.leaderboard_client.entries_received.connect(_on_entries_received)
 		game_manager.leaderboard_client.submission_status_changed.connect(_on_submission_status)
-	ranked_button.pressed.connect(_start.bind(true))
-	practice_button.pressed.connect(_start.bind(false))
+	ranked_button.pressed.connect(_start_ranked)
+	practice_button.pressed.connect(func(): practice_requested.emit())
 	official_button.pressed.connect(func(): official_vehicle_requested.emit())
 	leaderboard_button.pressed.connect(func(): leaderboard_requested.emit(board_name))
 	watch_replay_button.pressed.connect(func(): watch_replay_requested.emit(board_name, personal_entry.duplicate(true)))
@@ -118,8 +119,8 @@ func refresh_after_vehicle_change() -> void:
 	open_for_current_selection()
 
 
-func _start(ranked: bool) -> void:
-	if ranked and !bool(eligibility.get("eligible", false)):
+func _start_ranked() -> void:
+	if !bool(eligibility.get("eligible", false)):
 		return
 	if ghost_selection != null and !ghost_selection.all_ready():
 		return
@@ -131,7 +132,7 @@ func _start(ranked: bool) -> void:
 		"ghost_descriptors": ghost_selection.ready_descriptors() if ghost_selection != null else [],
 	}
 	hide()
-	start_requested.emit(ranked, context)
+	ranked_start_requested.emit(context)
 
 
 func _on_entries_received(request_board: String, request_type: String, result: Dictionary) -> void:

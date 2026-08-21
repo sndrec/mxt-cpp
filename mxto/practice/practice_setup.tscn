@@ -1,0 +1,159 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://practice/practice_setup.gd" id="1_setup"]
+[ext_resource type="PackedScene" path="res://ui/time_attack_ghost_picker.tscn" id="2_picker"]
+
+[node name="PracticeSetup" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_setup")
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.82)
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(680, 540)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 28
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 28
+theme_override_constants/margin_bottom = 22
+
+[node name="Content" type="VBoxContainer" parent="Center/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "PRACTICE"
+horizontal_alignment = 1
+
+[node name="Track" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "Track"
+
+[node name="Vehicle" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "Machine"
+
+[node name="Description" type="Label" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+text = "Configure an unranked session for practice, testing, and replay authoring."
+autowrap_mode = 2
+
+[node name="Options" type="GridContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+theme_override_constants/h_separation = 18
+theme_override_constants/v_separation = 10
+columns = 2
+
+[node name="SBoostLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "S-BOOST"
+
+[node name="SBoost" type="CheckBox" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Enabled"
+
+[node name="RestoreLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Vehicle Restore"
+
+[node name="Restore" type="CheckBox" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+button_pressed = true
+text = "Enabled"
+
+[node name="BumpersLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Bumpers"
+
+[node name="Bumpers" type="CheckBox" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Enabled"
+
+[node name="CpuCountLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "CPU Racers"
+
+[node name="CpuCount" type="SpinBox" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+min_value = 0.0
+max_value = 999.0
+step = 1.0
+allow_greater = false
+allow_lesser = false
+
+[node name="LapCountLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Lap Count"
+
+[node name="LapCount" type="SpinBox" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+min_value = 1.0
+max_value = 99.0
+step = 1.0
+value = 3.0
+allow_greater = false
+allow_lesser = false
+
+[node name="InfiniteLapsLabel" type="Label" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Infinite Laps"
+
+[node name="InfiniteLaps" type="CheckBox" parent="Center/Panel/Margin/Content/Options"]
+layout_mode = 2
+text = "Never finish"
+
+[node name="Ghosts" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+
+[node name="ChooseGhosts" type="Button" parent="Center/Panel/Margin/Content/Ghosts"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Choose Ghosts (0/4)"
+
+[node name="GhostHint" type="Label" parent="Center/Panel/Margin/Content/Ghosts"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Up to four compatible leaderboard or local replays"
+vertical_alignment = 1
+
+[node name="Actions" type="HBoxContainer" parent="Center/Panel/Margin/Content"]
+layout_mode = 2
+
+[node name="Back" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Back"
+
+[node name="Start" type="Button" parent="Center/Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Start Practice"
+
+[node name="GhostPicker" parent="." instance=ExtResource("2_picker")]
+layout_mode = 1

@@ -369,7 +369,7 @@ func save_replay_locally() -> String:
 
 func stage_completed_time_attack_replay(for_submission: bool) -> String:
 	var session_kind := String(game_manager.network_manager.race_options.get("session_kind", ""))
-	if session_kind not in ["time_attack", "time_attack_practice"] \
+	if session_kind not in ["time_attack", "practice"] \
 			or for_submission != (session_kind == "time_attack"):
 		return ""
 	finish_recording()
@@ -434,12 +434,17 @@ func _replay_schema_is_supported(data: Dictionary) -> bool:
 func _replay_mode_name() -> String:
 	if !game_manager.singleplayer_mode:
 		return "Multiplayer"
+	if String(game_manager.network_manager.race_options.get("session_kind", "")) == "practice":
+		return "Practice"
 	if game_manager.network_manager.lobby_settings.get_cpu_roster().is_empty():
 		return "Time Attack"
 	return "CPU Race"
 
 func _replay_should_record_current_race() -> bool:
 	if replay_playback_active:
+		return false
+	if String(game_manager.network_manager.race_options.get("session_kind", "")) == "practice" \
+			and int(game_manager.network_manager.race_options.get("lap_count", 3)) == 0:
 		return false
 	if game_manager.singleplayer_mode:
 		return true
