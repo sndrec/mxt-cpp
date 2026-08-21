@@ -179,7 +179,7 @@ void PhysicsCar::handle_suspension_states()
 	set_flag_on_all_tilt_corners(TILTSTATE::STRAFING);
 };
 
-void PhysicsCar::handle_machine_turn_and_strafe_points4(float in_angle_vel)
+void PhysicsCar::handle_machine_turn_and_strafe_points4(float in_angle_vel, bool allow_drift)
 {
 	const int point_base = soa_index * 4;
 	float neutral_steer_deg =
@@ -230,7 +230,7 @@ void PhysicsCar::handle_machine_turn_and_strafe_points4(float in_angle_vel)
 	for (int lane = 0; lane < 4; ++lane) {
 		drift_delta[lane] = classify_machine_drift(lane,
 			SimVec3(neutral_local_x[lane], neutral_local_y[lane], neutral_local_z[lane]),
-			classification_grip_1, classification_grip_3, was_drifting[lane]);
+			classification_grip_1, classification_grip_3, allow_drift, was_drifting[lane]);
 	}
 
 	// A technique cannot initiate its own drift. Once the car was already
@@ -260,7 +260,7 @@ void PhysicsCar::handle_machine_turn_and_strafe_points4(float in_angle_vel)
 
 float PhysicsCar::classify_machine_drift(
 	int point_lane, const SimVec3& corner_delta_local,
-	float grip_1, float grip_3, bool& out_was_drifting)
+	float grip_1, float grip_3, bool allow_drift, bool& out_was_drifting)
 {
 	const int p = POINT_INDEX(point_lane);
     // ───────────── Corner movement & steering matrix ─────────────
@@ -292,15 +292,14 @@ float PhysicsCar::classify_machine_drift(
         soa->tilt_state[p] &= ~static_cast<uint32_t>(TILTSTATE::DRIFT);
     }
 
-    bool drift_allowed = true;
-    if (!is_drifting && std::abs(soa->input_steer_yaw[soa_index]) <= 0.7f) {
-        drift_allowed = false;
+	if (!is_drifting && std::abs(soa->input_steer_yaw[soa_index]) <= 0.7f) {
+		allow_drift = false;
     }
 
     float lateral_delta = corner_delta_local.x;
     float drift_delta = lateral_delta;
 
-    if (std::abs(lateral_delta) <= grip_threshold || !drift_allowed) {
+	if (std::abs(lateral_delta) <= grip_threshold || !allow_drift) {
         if (std::abs(lateral_delta) < 1.1920929e-7f) {
             drift_delta = 0.0f;
         }

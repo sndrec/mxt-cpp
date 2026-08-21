@@ -435,7 +435,7 @@ Dictionary MxtCarPerformanceAnalyzer::build_result(
 		float setting) const {
 	Dictionary result;
 	result["valid"] = true;
-	result["benchmark_version"] = 11;
+	result["benchmark_version"] = 12;
 	result["machine_setting"] = setting;
 	result["benchmark_machine_setting"] = 0.5f;
 	result["benchmark_reference"] = "All Rounder at 50%; All Rounder range sampled at 0%, 50%, and 100% defines A and E; official extrema define S and F, with fallback for setting-invariant metrics";

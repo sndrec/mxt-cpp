@@ -575,7 +575,8 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 		}
 	}
 
-	static void steering_and_suspension_phase(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
+	static void steering_and_suspension_phase(PhysicsCarSoA& c, PhysicsCar* car_views,
+		int count, bool force_first_car_gripped)
 	{
 		for (int i = 0; i < count; ++i) {
 			if (!vehicle_motion_active(c, i)) {
@@ -588,7 +589,12 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 
 			const float initial_angle_vel_y = c.velocity_angular_y[i];
 			if (c.frames_since_start_2[i] != 0) {
-				car_views[i].handle_machine_turn_and_strafe_points4(initial_angle_vel_y);
+				// Benchmark car 0 measures gripped steering; car 1 is the natural
+				// both-trigger drift comparison. Ordinary races always allow drift.
+				const bool allow_drift =
+					!force_first_car_gripped || c.global_start + i != 0;
+				car_views[i].handle_machine_turn_and_strafe_points4(
+					initial_angle_vel_y, allow_drift);
 			} else {
 				car_views[i].update_effective_machine_stats(true);
 			}
@@ -735,10 +741,11 @@ static void begin_vehicle_tick_soa(PhysicsCarSoA& c, PhysicsCar* car_views, Play
 		}
 	}
 
-	static void finish_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views, int count)
+	static void finish_vehicle_motion_phased_soa(PhysicsCarSoA& c, PhysicsCar* car_views,
+		int count, bool force_first_car_gripped)
 	{
 		project_vehicle_velocity_phase(c, count);
-		steering_and_suspension_phase(c, car_views, count);
+		steering_and_suspension_phase(c, car_views, count, force_first_car_gripped);
 		linear_orientation_drag_phase(c, car_views, count);
 		integrate_vehicle_positions_phase(c, count);
 		rotate_and_finish_motion_phase(c, car_views, count);
@@ -1053,7 +1060,8 @@ void GameSim::update_bumper_vehicles()
 			group.sync();
 		}
 
-		finish_vehicle_motion_phased_soa(car_soa, sim.bumper_cars + global_start, car_soa.count);
+		finish_vehicle_motion_phased_soa(
+			car_soa, sim.bumper_cars + global_start, car_soa.count, false);
 
 		group.sync();
 
@@ -1561,7 +1569,8 @@ void GameSim::tick_gamesim_internal(InputFrameMode mode,
 		}
 		vehicle_subphase_mark(sim.phase_profile_vehicle_trigger_us);
 
-		finish_vehicle_motion_phased_soa(car_soa, sim.cars + global_start, car_soa.count);
+		finish_vehicle_motion_phased_soa(car_soa, sim.cars + global_start,
+			car_soa.count, sim.performance_benchmark_mode);
 		vehicle_subphase_mark(sim.phase_profile_vehicle_motion_us);
 
 		group.sync();

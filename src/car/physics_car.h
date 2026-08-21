@@ -388,10 +388,10 @@ public:
 	void remove_flag_on_all_tilt_corners(TILTSTATE::FLAGS in_flag);
 	void handle_suspension_states();
 	float classify_machine_drift(int point_lane, const SimVec3& corner_delta_local,
-		float grip_1, float grip_3, bool& out_was_drifting);
+		float grip_1, float grip_3, bool allow_drift, bool& out_was_drifting);
 	void apply_machine_turn_and_strafe(int point_lane, float in_angle_vel, float drift_delta,
 		bool was_drifting, float speed_factor, const SimTransform& steer_basis);
-	void handle_machine_turn_and_strafe_points4(float in_angle_vel);
+	void handle_machine_turn_and_strafe_points4(float in_angle_vel, bool allow_drift);
 	void project_velocity_to_local_frame();
 	void handle_linear_velocity();
 	void apply_initial_accel_activation(float effective_accel_input);
