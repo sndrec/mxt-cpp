@@ -47,6 +47,24 @@ func append_frame(tick: int, frame_inputs: Dictionary) -> bool:
 	return true
 
 
+func seed_frames(frames: Array) -> bool:
+	begin()
+	for frame_index in range(frames.size()):
+		var frame_value = frames[frame_index]
+		if typeof(frame_value) != TYPE_DICTIONARY:
+			begin()
+			return false
+		var frame: Dictionary = frame_value
+		if int(frame.get("tick", -1)) != frame_index:
+			begin()
+			return false
+		var inputs_value = frame.get("inputs", {})
+		if typeof(inputs_value) != TYPE_DICTIONARY or !append_frame(frame_index, inputs_value as Dictionary):
+			begin()
+			return false
+	return true
+
+
 func frame_count() -> int:
 	return active_frame_count
 

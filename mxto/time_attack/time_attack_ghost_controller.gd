@@ -76,6 +76,83 @@ func prepare(descriptors: Array, track_index: int) -> Dictionary:
 	return {"success": true, "ghost_count": prepared_slots.size()}
 
 
+func prepare_original_replay(metadata: Dictionary, raw_frames: Array, focused_player_id: int, track_index: int) -> Dictionary:
+	teardown_runtime()
+	prepared_slots.clear()
+	prepared_track_index = -1
+	last_error = ""
+	prepare_total_us = 0
+	cache_stats_at_prepare = game_manager.leaderboard_replay_cache.stats() if game_manager != null and game_manager.leaderboard_replay_cache != null else {}
+	var racer_ids_value = metadata.get("racer_ids", [])
+	var settings_value = metadata.get("settings", [])
+	var cpu_flags_value = metadata.get("cpu_flags", [])
+	if typeof(racer_ids_value) != TYPE_ARRAY or typeof(settings_value) != TYPE_ARRAY \
+			or (racer_ids_value as Array).is_empty() \
+			or (racer_ids_value as Array).size() != (settings_value as Array).size() \
+			or !(racer_ids_value as Array).has(focused_player_id) \
+			or raw_frames.is_empty():
+		return _prepare_failure("original_replay_invalid", "The original replay cannot be continued as a ghost.")
+	var racer_ids: Array = (racer_ids_value as Array).duplicate(true)
+	var settings: Array = (settings_value as Array).duplicate(true)
+	var cpu_flags: Array = []
+	for index in racer_ids.size():
+		cpu_flags.append(index < (cpu_flags_value as Array).size() and bool((cpu_flags_value as Array)[index]) if typeof(cpu_flags_value) == TYPE_ARRAY else false)
+	var definitions: Array = []
+	var car_properties: Array = []
+	var machine_settings: Array = []
+	for settings_value_entry in settings:
+		if typeof(settings_value_entry) != TYPE_DICTIONARY:
+			return _prepare_failure("original_replay_invalid", "The original replay has invalid machine settings.")
+		var racer_settings: Dictionary = settings_value_entry
+		var definition: CarDefinition = game_manager.vehicle_content_controller.get_definition(String(racer_settings.get("vehicle_content_id", "")))
+		if definition == null:
+			return _prepare_failure("original_vehicle_unavailable", "An exact original-replay machine is unavailable.")
+		var properties := FileAccess.get_file_as_bytes(definition.properties_path)
+		if properties.is_empty():
+			return _prepare_failure("original_vehicle_unavailable", "An original-replay machine could not be loaded.")
+		definitions.append(definition)
+		car_properties.append(properties)
+		machine_settings.append(float(racer_settings.get("accel_setting", 0.5)))
+	for frame_index in raw_frames.size():
+		var frame_value = raw_frames[frame_index]
+		if typeof(frame_value) != TYPE_DICTIONARY or int((frame_value as Dictionary).get("tick", -1)) != frame_index:
+			return _prepare_failure("original_replay_noncanonical", "The original replay input stream is discontinuous.")
+		var inputs_value = (frame_value as Dictionary).get("inputs", {})
+		if typeof(inputs_value) != TYPE_DICTIONARY:
+			return _prepare_failure("original_replay_noncanonical", "The original replay input stream is invalid.")
+		for id_value in racer_ids:
+			if !(inputs_value as Dictionary).has(int(id_value)):
+				return _prepare_failure("original_replay_noncanonical", "The original replay is missing racer input at tick %d." % frame_index)
+	var focus_index := racer_ids.find(focused_player_id)
+	var grid_slots := PackedInt32Array()
+	var grid_value = metadata.get("start_grid_slots", [])
+	grid_slots.resize(racer_ids.size())
+	grid_slots.fill(-1)
+	if typeof(grid_value) == TYPE_ARRAY and (grid_value as Array).size() == racer_ids.size():
+		for index in racer_ids.size():
+			grid_slots[index] = int((grid_value as Array)[index])
+	prepared_slots.append({
+		"slot_index": 0,
+		"persona_name": "Original",
+		"track_index": track_index,
+		"racer_id": focused_player_id,
+		"definition": definitions[focus_index],
+		"settings": (settings[focus_index] as Dictionary).duplicate(true),
+		"spawn_seed": int(metadata.get("spawn_seed", 0)),
+		"full_roster_replay": true,
+		"racer_ids": racer_ids,
+		"cpu_flags": cpu_flags,
+		"car_properties_array": car_properties,
+		"machine_settings_array": machine_settings,
+		"start_grid_slots": grid_slots,
+		"race_options": (metadata.get("race_options", {}) as Dictionary).duplicate(true) if typeof(metadata.get("race_options", {})) == TYPE_DICTIONARY else {},
+		"raw_frames": raw_frames.duplicate(true),
+		"frame_count": raw_frames.size(),
+	})
+	prepared_track_index = track_index
+	return {"success": true, "ghost_count": 1}
+
+
 func start_race(track_index: int) -> Dictionary:
 	teardown_runtime()
 	last_error = ""
@@ -98,19 +175,26 @@ func start_race(track_index: int) -> Dictionary:
 		sim.name = "TimeAttackGhostSim%d" % int(prepared.get("slot_index", runtime_slots.size()))
 		add_child(sim)
 		sim.set_spawn_seed(int(prepared.get("spawn_seed", 0)))
-		var grid_slots := PackedInt32Array([int(prepared.get("start_grid_slot", -1))])
+		var full_roster := bool(prepared.get("full_roster_replay", false))
+		var grid_slots: PackedInt32Array = prepared.get("start_grid_slots", PackedInt32Array()) if full_roster else PackedInt32Array([int(prepared.get("start_grid_slot", -1))])
 		sim.set_start_grid_slots(grid_slots)
-		sim.set_vehicle_restore_enabled(true)
-		sim.set_bumpers_enabled(false)
-		sim.set_s_boost_enabled(false)
+		var source_options: Dictionary = prepared.get("race_options", {}) if full_roster else {}
+		sim.set_target_lap_count(int(source_options.get("lap_count", 3)))
+		sim.set_vehicle_restore_enabled(bool(source_options.get("vehicle_restore", true)))
+		sim.set_bumpers_enabled(bool(source_options.get("bumpers", false)) if full_roster else false)
+		sim.set_s_boost_enabled(bool(source_options.get("s_boost", false)) if full_roster else false)
 		sim.set_multiplayer_intro_camera_enabled(false)
 		var level_buffer := StreamPeerBuffer.new()
 		level_buffer.data_array = track_bytes
-		sim.instantiate_gamesim(
-			level_buffer,
-			[prepared.get("car_properties", PackedByteArray())],
-			[float(prepared.get("machine_setting", 0.5))])
-		sim.set_player_metadata([int(prepared.get("racer_id", -1))], [false])
+		if full_roster:
+			sim.instantiate_gamesim(level_buffer, prepared.get("car_properties_array", []), prepared.get("machine_settings_array", []))
+			sim.set_player_metadata(prepared.get("racer_ids", []), prepared.get("cpu_flags", []))
+		else:
+			sim.instantiate_gamesim(
+				level_buffer,
+				[prepared.get("car_properties", PackedByteArray())],
+				[float(prepared.get("machine_setting", 0.5))])
+			sim.set_player_metadata([int(prepared.get("racer_id", -1))], [false])
 		sim.set_sim_started(true)
 		var runtime := prepared.duplicate(false)
 		runtime["sim"] = sim
@@ -120,6 +204,10 @@ func start_race(track_index: int) -> Dictionary:
 		runtime["tick_count"] = 0
 		runtime["tick_total_us"] = 0
 		runtime["tick_max_us"] = 0
+		if full_roster:
+			var session := NetcodeSession.new()
+			session.configure(runtime.get("racer_ids", []), runtime.get("cpu_flags", []), int(runtime.get("racer_id", -1)))
+			runtime["netcode_session"] = session
 		var instantiate_us := Time.get_ticks_usec() - instantiate_start_us
 		runtime["instantiate_us"] = instantiate_us
 		instantiate_total_us += instantiate_us
@@ -145,11 +233,12 @@ func tick(live_tick: int) -> void:
 			continue
 		var tick_start_us := Time.get_ticks_usec()
 		var sim: GameSim = slot.get("sim", null)
-		if sim == null or !sim.tick_singleplayer_indexed_input(
-				int(slot.get("racer_id", -1)),
-				slot.get("input_bytes", PackedByteArray()),
-				slot.get("frame_offsets", PackedInt32Array()),
-				frame_index):
+		var ticked := _tick_original_replay_slot(slot, sim, frame_index) if bool(slot.get("full_roster_replay", false)) else (sim != null and sim.tick_singleplayer_indexed_input(
+			int(slot.get("racer_id", -1)),
+			slot.get("input_bytes", PackedByteArray()),
+			slot.get("frame_offsets", PackedInt32Array()),
+			frame_index))
+		if !ticked:
 			_fail_runtime_slot(slot, "Ghost input stream failed at tick %d." % frame_index)
 			continue
 		sim.update_render_snapshots()
@@ -163,6 +252,38 @@ func tick(live_tick: int) -> void:
 		slot["frame_index"] = frame_index + 1
 		if frame_index + 1 >= frame_count:
 			slot["state"] = "finished"
+
+
+func fast_forward_to_tick(target_tick: int) -> bool:
+	if runtime_slots.size() != 1 or !bool((runtime_slots[0] as Dictionary).get("full_roster_replay", false)):
+		return target_tick == 0
+	var slot: Dictionary = runtime_slots[0]
+	target_tick = clampi(target_tick, 0, int(slot.get("frame_count", 0)))
+	while int(slot.get("frame_index", 0)) < target_tick:
+		var frame_index := int(slot.get("frame_index", 0))
+		tick(frame_index)
+		if String(slot.get("state", "")) == "failed" or int(slot.get("frame_index", 0)) != frame_index + 1:
+			return false
+	if target_tick >= int(slot.get("frame_count", 0)):
+		slot["state"] = "finished"
+	return true
+
+
+func _tick_original_replay_slot(slot: Dictionary, sim: GameSim, frame_index: int) -> bool:
+	if sim == null:
+		return false
+	var frames: Array = slot.get("raw_frames", [])
+	if frame_index < 0 or frame_index >= frames.size() or typeof(frames[frame_index]) != TYPE_DICTIONARY:
+		return false
+	var inputs_value = (frames[frame_index] as Dictionary).get("inputs", {})
+	if typeof(inputs_value) != TYPE_DICTIONARY:
+		return false
+	var session: NetcodeSession = slot.get("netcode_session", null)
+	if session == null:
+		return false
+	for id_value in (inputs_value as Dictionary).keys():
+		session.store_pending_input(frame_index, int(id_value), (inputs_value as Dictionary)[id_value])
+	return session.tick_server_frame(sim, frame_index, true)
 
 
 func teardown_runtime() -> void:
@@ -294,6 +415,7 @@ func restore_practice_rolling_state(state: Dictionary) -> bool:
 		var sim: GameSim = runtime.get("sim", null)
 		if !sim.load_state(int(record.get("native_saved_tick", -1))):
 			return false
+		_reset_original_replay_session(runtime)
 		sim.discard_race_events()
 		sim.snap_render_after_state_load()
 		_restore_practice_runtime_record(runtime, record)
@@ -349,6 +471,7 @@ func restore_practice_full_state(state: Dictionary) -> bool:
 		var sim: GameSim = runtime.get("sim", null)
 		if !sim.load_full_state_data(int(record.get("native_saved_tick", -1)), record.get("full_state", PackedByteArray())):
 			return false
+		_reset_original_replay_session(runtime)
 		sim.discard_race_events()
 		sim.snap_render_after_state_load()
 		_restore_practice_runtime_record(runtime, record)
@@ -393,6 +516,14 @@ func _restore_practice_runtime_record(runtime: Dictionary, record: Dictionary) -
 	runtime["tick_count"] = int(record.get("tick_count", 0))
 	runtime["tick_total_us"] = int(record.get("tick_total_us", 0))
 	runtime["tick_max_us"] = int(record.get("tick_max_us", 0))
+
+
+func _reset_original_replay_session(runtime: Dictionary) -> void:
+	if !bool(runtime.get("full_roster_replay", false)):
+		return
+	var session := NetcodeSession.new()
+	session.configure(runtime.get("racer_ids", []), runtime.get("cpu_flags", []), int(runtime.get("racer_id", -1)))
+	runtime["netcode_session"] = session
 
 
 func memory_usage_stats() -> Dictionary:

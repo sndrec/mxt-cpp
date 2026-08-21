@@ -80,7 +80,15 @@ func initialize(
 	lobby_control = in_lobby_control
 	player_scene = in_player_scene
 
-func start_race(track_index: int, settings: Array, singleplayer_mode: bool, headless_mode: bool) -> bool:
+func start_race(
+	track_index: int,
+	settings: Array,
+	singleplayer_mode: bool,
+	headless_mode: bool,
+	exact_racer_ids: Array = [],
+	exact_cpu_flags: Array = [],
+	exact_start_grid_slots: PackedInt32Array = PackedInt32Array()
+) -> bool:
 	if track_index < 0 or track_index >= track_content_controller.tracks.size():
 		return false
 	current_singleplayer_mode = singleplayer_mode
@@ -103,6 +111,10 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 	var racer_settings: Array = []
 	var racer_ids: Array = []
 	var racer_cpu_flags: Array = []
+	var exact_roster := !exact_racer_ids.is_empty()
+	if exact_roster and (exact_racer_ids.size() != settings.size() or exact_cpu_flags.size() != settings.size()):
+		push_error("Exact race roster does not match the recorded settings array.")
+		return false
 	var roster := network_manager.get_simulation_roster()
 	var cpu_ids := network_manager.lobby_settings.get_cpu_roster()
 	var keyed_settings := {}
@@ -115,7 +127,13 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 			keyed_settings[int(settings_dictionary["_race_player_id"])] = settings_dictionary
 		else:
 			ordered_settings.append(settings_dictionary)
-	if !keyed_settings.is_empty():
+	if exact_roster:
+		for index in settings.size():
+			var exact_settings = settings[index]
+			if typeof(exact_settings) != TYPE_DICTIONARY \
+					or _append_racer(exact_settings as Dictionary, int(exact_racer_ids[index]), true, bool(exact_cpu_flags[index]), chosen_definitions, racer_settings, racer_ids, racer_cpu_flags) < 0:
+				return false
+	elif !keyed_settings.is_empty():
 		for id_value in roster:
 			var player_id := int(id_value)
 			if !keyed_settings.has(player_id):
@@ -145,7 +163,13 @@ func start_race(track_index: int, settings: Array, singleplayer_mode: bool, head
 			render_settings.append({})
 	var local_player_id := _local_player_id()
 	local_player_index = racer_ids.find(local_player_id)
-	var start_grid_slots: PackedInt32Array = replay_controller.replay_start_grid_slots if replay_controller.replay_playback_active and replay_controller.replay_start_grid_slots.size() == racer_ids.size() else _build_start_grid_slots(racer_ids, singleplayer_mode)
+	var start_grid_slots: PackedInt32Array
+	if exact_roster and exact_start_grid_slots.size() == racer_ids.size():
+		start_grid_slots = exact_start_grid_slots.duplicate()
+	elif replay_controller.replay_playback_active and replay_controller.replay_start_grid_slots.size() == racer_ids.size():
+		start_grid_slots = replay_controller.replay_start_grid_slots.duplicate()
+	else:
+		start_grid_slots = _build_start_grid_slots(racer_ids, singleplayer_mode)
 	var visual_focus_id := local_player_id
 	if local_player_index == -1 and !racer_ids.is_empty():
 		visual_focus_id = int(racer_ids[0])
@@ -384,6 +408,8 @@ func _clear_triggers() -> void:
 	trigger_objects.clear()
 
 func _local_player_id() -> int:
+	if game_root.practice_controller != null and game_root.practice_controller.local_player_id_override >= 0:
+		return game_root.practice_controller.local_player_id_override
 	if replay_controller.replay_playback_active:
 		return replay_controller.replay_playback_local_player_id
 	if current_singleplayer_mode:

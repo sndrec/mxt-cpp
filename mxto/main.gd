@@ -678,6 +678,143 @@ func _start_singleplayer_race(as_spectator: bool, race_options: Dictionary = {})
 	if singleplayer_options_root != null:
 		singleplayer_options_root.visible = false
 
+
+func resume_replay_in_practice(payload: Dictionary) -> void:
+	var transition_start_usec := int(payload.get("transition_start_usec", Time.get_ticks_usec()))
+	var metadata_value = payload.get("metadata", {})
+	if typeof(metadata_value) != TYPE_DICTIONARY:
+		race_presentation_controller.show_notification("Replay resume failed: metadata is unavailable.", 4500)
+		return
+	var metadata: Dictionary = metadata_value
+	var settings_value = metadata.get("settings", [])
+	var racer_ids_value = metadata.get("racer_ids", [])
+	if typeof(settings_value) != TYPE_ARRAY or typeof(racer_ids_value) != TYPE_ARRAY:
+		race_presentation_controller.show_notification("Replay resume failed: recorded roster is unavailable.", 4500)
+		return
+	var settings: Array = (settings_value as Array).duplicate(true)
+	var racer_ids: Array = (racer_ids_value as Array).duplicate(true)
+	var focused_player_id := int(payload.get("focused_player_id", -1))
+	var focus_index := racer_ids.find(focused_player_id)
+	var track_index := int(payload.get("track_index", -1))
+	var cursor := int(payload.get("cursor", -1))
+	var full_state: PackedByteArray = payload.get("full_state", PackedByteArray())
+	var canonical_prefix_value = payload.get("canonical_prefix", [])
+	if focus_index < 0 or settings.size() != racer_ids.size() \
+			or track_index < 0 or track_index >= track_content_controller.tracks.size() \
+			or cursor < 0 or full_state.is_empty() \
+			or typeof(canonical_prefix_value) != TYPE_ARRAY:
+		race_presentation_controller.show_notification("Replay resume failed: the captured frame is incomplete.", 4500)
+		return
+	var practice_cpu_flags: Array = []
+	var cpu_ids: Array = []
+	for index in racer_ids.size():
+		var player_id := int(racer_ids[index])
+		var is_cpu := index != focus_index
+		practice_cpu_flags.append(is_cpu)
+		if is_cpu:
+			cpu_ids.append(player_id)
+	var options: Dictionary = (metadata.get("race_options", {}) as Dictionary).duplicate(true) if typeof(metadata.get("race_options", {})) == TYPE_DICTIONARY else {}
+	options["session_kind"] = PracticeControllerClass.SESSION_KIND
+	options["leaderboard_eligible"] = false
+	options["leaderboard_ineligible_reason"] = "practice"
+	options["cpu_count"] = cpu_ids.size()
+	options["practice_local_player_id"] = focused_player_id
+	options["resumed_from_replay"] = true
+	options["race_human_ids"] = [focused_player_id]
+	options["race_cpu_ids"] = cpu_ids.duplicate(true)
+	options["race_spectator_ids"] = []
+	var exact_grid := PackedInt32Array()
+	var grid_value = metadata.get("start_grid_slots", [])
+	if typeof(grid_value) == TYPE_ARRAY and (grid_value as Array).size() == racer_ids.size():
+		exact_grid.resize(racer_ids.size())
+		for index in racer_ids.size():
+			exact_grid[index] = int((grid_value as Array)[index])
+	_return_to_menu()
+	singleplayer_mode = true
+	_singleplayer_tick = 0
+	track_selector.selected = track_index
+	time_attack_ghost_descriptors.clear()
+	var keep_original := bool(payload.get("keep_original_as_ghost", false))
+	if keep_original:
+		var source_frames_value = payload.get("source_frames", [])
+		var ghost_prepare := time_attack_ghost_controller.prepare_original_replay(
+			metadata,
+			(source_frames_value as Array) if typeof(source_frames_value) == TYPE_ARRAY else [],
+			focused_player_id,
+			track_index)
+		if !bool(ghost_prepare.get("success", false)):
+			race_presentation_controller.show_notification(String(ghost_prepare.get("message", "Original ghost could not be prepared.")), 5000)
+			return
+	else:
+		time_attack_ghost_controller.clear()
+	network_manager.reset_race_state()
+	network_manager.set_spawn_seed(int(metadata.get("spawn_seed", 0)))
+	network_manager.race_options = options
+	network_manager.player_ids = [focused_player_id]
+	network_manager.spectator_ids = []
+	network_manager.lobby_settings.cpu_player_ids = cpu_ids.duplicate(true)
+	network_manager.lobby_settings.set_race_cpu_roster(cpu_ids)
+	network_manager.lobby_settings.cpu_player_settings.clear()
+	network_manager.lobby_settings.player_settings.clear()
+	for index in racer_ids.size():
+		var player_id := int(racer_ids[index])
+		var player_settings: Dictionary = (settings[index] as Dictionary).duplicate(true)
+		network_manager.lobby_settings.player_settings[player_id] = player_settings
+		if index != focus_index:
+			network_manager.lobby_settings.cpu_player_settings[player_id] = player_settings
+	singleplayer_cpu_count = cpu_ids.size()
+	time_attack_eligibility.clear()
+	time_attack_finalized = false
+	time_attack_last_replay_path = ""
+	practice_controller.arm_local_player_override(focused_player_id)
+	_close_settings_menus_for_race_start()
+	race_dnf_low_speed_ticks.clear()
+	if !race_session_controller.start_race(
+			track_index,
+			settings,
+			true,
+			headless_mode,
+			racer_ids,
+			practice_cpu_flags,
+			exact_grid):
+		practice_controller.end_session()
+		race_presentation_controller.show_notification("Replay resume failed while rebuilding the recorded race.", 5000)
+		_return_to_menu()
+		return
+	if !practice_controller.begin_resumed_session(options, focused_player_id, canonical_prefix_value as Array, transition_start_usec):
+		race_presentation_controller.show_notification("Replay resume failed while restoring its canonical timeline.", 5000)
+		_return_to_menu()
+		return
+	if !game_sim.load_full_state_data(cursor, full_state):
+		race_presentation_controller.show_notification("Replay resume failed while restoring the captured simulation state.", 5000)
+		_return_to_menu()
+		return
+	game_sim.set_player_metadata(racer_ids, practice_cpu_flags)
+	network_manager.input_transport.netcode_session.configure(racer_ids, practice_cpu_flags, focused_player_id)
+	network_manager.race_results.restore_practice_state(payload.get("race_results", {}))
+	race_dnf_low_speed_ticks = (payload.get("race_dnf_low_speed_ticks", {}) as Dictionary).duplicate(true) if typeof(payload.get("race_dnf_low_speed_ticks", {})) == TYPE_DICTIONARY else {}
+	_singleplayer_tick = cursor
+	network_manager.input_transport.clients_server_tick = cursor
+	game_sim.set_sim_started(true)
+	game_sim.discard_race_events()
+	game_sim.snap_render_after_state_load()
+	if keep_original:
+		var ghost_start := time_attack_ghost_controller.start_race(track_index)
+		if !bool(ghost_start.get("success", false)) or !time_attack_ghost_controller.fast_forward_to_tick(cursor):
+			race_presentation_controller.show_notification("The original replay ghost could not reach the resume frame.", 5000)
+			_return_to_menu()
+			return
+	else:
+		time_attack_ghost_controller.start_race(track_index)
+	$Control.visible = false
+	lobby_control.visible = false
+	if singleplayer_options_root != null:
+		singleplayer_options_root.visible = false
+	reconcile_practice_state_restore()
+	practice_controller.finish_replay_resume_transition(transition_start_usec)
+	record_memory_sample("replay_resume_practice_complete")
+	race_presentation_controller.show_notification("Practice resumed at tick %d · 0.00x" % cursor, 3000)
+
 func _on_join_button_pressed() -> void:
 	_join_multiplayer_lobby(ip_field.text, _multiplayer_lobby_port())
 
@@ -1215,6 +1352,8 @@ func _apply_race_roster_options(options: Dictionary, human_ids: Array, cpu_ids: 
 	return out
 
 func _local_player_id() -> int:
+	if practice_controller != null and practice_controller.local_player_id_override >= 0:
+		return practice_controller.local_player_id_override
 	if replay_controller.replay_playback_active:
 		return replay_controller.replay_playback_local_player_id
 	if singleplayer_mode:

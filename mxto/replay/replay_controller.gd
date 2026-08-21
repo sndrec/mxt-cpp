@@ -65,6 +65,10 @@ var replay_recording_staged_path: String = ""
 var replay_start_grid_slots: PackedInt32Array = PackedInt32Array()
 var replay_playback_active: bool = false
 var replay_playback_frames: Array = []
+var replay_playback_decoded_frames: Array = []
+var replay_playback_source_metadata: Dictionary = {}
+var replay_playback_compatible := false
+var replay_playback_track_index := -1
 var replay_playback_index: int = 0
 var replay_playback_loaded_path: String = ""
 var replay_playback_focus_index: int = 0
@@ -122,6 +126,10 @@ var replay_timeline_play_button: Button
 var replay_timeline_save_local_button: Button
 var replay_timeline_focus_prev_button: Button
 var replay_timeline_focus_next_button: Button
+var replay_timeline_resume_practice_button: Button
+var replay_timeline_resume_reason_label: Label
+var replay_resume_dialog: ConfirmationDialog
+var replay_resume_keep_original_checkbox: CheckBox
 var replay_input_display_panel: PanelContainer
 var replay_input_display: Control
 var replay_input_display_checkbox: CheckBox
@@ -321,6 +329,10 @@ func _clear_recording_payload() -> void:
 
 func _clear_playback_payload() -> void:
 	replay_playback_frames.clear()
+	replay_playback_decoded_frames.clear()
+	replay_playback_source_metadata.clear()
+	replay_playback_compatible = false
+	replay_playback_track_index = -1
 	replay_playback_index = 0
 	replay_playback_loaded_path = ""
 	_refresh_replay_timeline_save_local_button()
@@ -482,7 +494,8 @@ func start_recording(track_index: int, settings: Array, racer_ids: Array, cpu_fl
 		return
 	replay_recording_active = true
 	replay_recording_saved = false
-	replay_recording_source = "singleplayer" if game_manager.singleplayer_mode else "server"
+	var session_kind := String(game_manager.network_manager.race_options.get("session_kind", ""))
+	replay_recording_source = "practice" if session_kind == "practice" else ("singleplayer" if game_manager.singleplayer_mode else "server")
 	replay_recording_racer_ids = racer_ids.duplicate(true)
 	replay_recording_cpu_flags = cpu_flags.duplicate(true)
 	replay_recording_frames.clear()
@@ -787,6 +800,40 @@ func _decode_replay_frame(frame: Dictionary) -> Dictionary:
 		out[int(id_value)] = Marshalls.base64_to_raw(str(raw_inputs[id_value]))
 	return out
 
+
+func _decoded_replay_frame_at(frame_index: int) -> Dictionary:
+	if frame_index < 0 or frame_index >= replay_playback_frames.size():
+		return {}
+	if frame_index < replay_playback_decoded_frames.size() \
+			and typeof(replay_playback_decoded_frames[frame_index]) == TYPE_DICTIONARY:
+		return replay_playback_decoded_frames[frame_index] as Dictionary
+	var encoded_value = replay_playback_frames[frame_index]
+	if typeof(encoded_value) != TYPE_DICTIONARY:
+		return {}
+	var encoded: Dictionary = encoded_value
+	if int(encoded.get("tick", -1)) != frame_index:
+		return {}
+	var decoded := {
+		"tick": frame_index,
+		"inputs": _decode_replay_frame(encoded),
+	}
+	if frame_index < replay_playback_decoded_frames.size():
+		replay_playback_decoded_frames[frame_index] = decoded
+	return decoded
+
+
+func _decoded_replay_frame_range(begin_index: int, end_index: int) -> Array:
+	var output: Array = []
+	begin_index = clampi(begin_index, 0, replay_playback_frames.size())
+	end_index = clampi(end_index, begin_index, replay_playback_frames.size())
+	output.resize(end_index - begin_index)
+	for frame_index in range(begin_index, end_index):
+		var frame := _decoded_replay_frame_at(frame_index)
+		if frame.is_empty():
+			return []
+		output[frame_index - begin_index] = frame
+	return output
+
 func _replay_int_dictionary(source: Dictionary) -> Dictionary:
 	var out := {}
 	for key in source.keys():
@@ -850,7 +897,7 @@ func _build_replay_timeline_controls() -> void:
 	replay_timeline_panel.anchor_right = 0.92
 	replay_timeline_panel.anchor_top = 1.0
 	replay_timeline_panel.anchor_bottom = 1.0
-	replay_timeline_panel.offset_top = -132.0
+	replay_timeline_panel.offset_top = -164.0
 	replay_timeline_panel.offset_bottom = -18.0
 	replay_timeline_root.add_child(replay_timeline_panel)
 	replay_input_display_panel = PanelContainer.new()
@@ -954,10 +1001,116 @@ func _build_replay_timeline_controls() -> void:
 	replay_timeline_save_local_button.visible = false
 	replay_timeline_save_local_button.pressed.connect(_on_replay_timeline_save_local_pressed)
 	controls.add_child(replay_timeline_save_local_button)
+	replay_timeline_resume_practice_button = Button.new()
+	replay_timeline_resume_practice_button.text = "Resume in Practice"
+	replay_timeline_resume_practice_button.focus_mode = Control.FOCUS_NONE
+	replay_timeline_resume_practice_button.pressed.connect(_on_replay_resume_practice_pressed)
+	controls.add_child(replay_timeline_resume_practice_button)
 	replay_timeline_time_label = Label.new()
 	replay_timeline_time_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	replay_timeline_time_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	controls.add_child(replay_timeline_time_label)
+	replay_timeline_resume_reason_label = Label.new()
+	replay_timeline_resume_reason_label.modulate = Color(0.78, 0.78, 0.78, 1.0)
+	replay_timeline_resume_reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rows.add_child(replay_timeline_resume_reason_label)
+
+
+func _replay_resume_eligibility() -> Dictionary:
+	if !replay_playback_active:
+		return {"eligible": false, "reason": "No replay is currently playing."}
+	if !replay_playback_compatible:
+		return {"eligible": false, "reason": "Older-version replays cannot resume into Practice."}
+	if replay_playback_track_index < 0:
+		return {"eligible": false, "reason": "The replay's exact track is unavailable."}
+	if replay_playback_racer_ids.is_empty() or replay_playback_focus_index >= replay_playback_racer_ids.size():
+		return {"eligible": false, "reason": "The focused replay racer is unavailable."}
+	if game_manager.game_sim == null or !game_manager.game_sim.sim_started \
+			or !game_manager.game_sim.has_method("get_full_state_data") \
+			or !game_manager.game_sim.has_method("load_full_state_data"):
+		return {"eligible": false, "reason": "The current replay position has no resumable simulation state."}
+	var focus_id := _focused_replay_player_id()
+	if game_manager.game_sim.get_finished_player_ids().has(focus_id):
+		return {"eligible": false, "reason": "A racer cannot resume after completing the race."}
+	var settings_value = replay_playback_source_metadata.get("settings", [])
+	var options_value = replay_playback_source_metadata.get("race_options", {})
+	if typeof(settings_value) != TYPE_ARRAY or (settings_value as Array).size() != replay_playback_racer_ids.size():
+		return {"eligible": false, "reason": "The replay does not contain a complete recorded roster."}
+	if typeof(options_value) != TYPE_DICTIONARY:
+		return {"eligible": false, "reason": "The replay does not contain resumable race settings."}
+	if game_manager._singleplayer_tick < 0 or game_manager._singleplayer_tick > replay_playback_frames.size():
+		return {"eligible": false, "reason": "The current replay cursor is unavailable."}
+	return {"eligible": true, "reason": "Continue from this exact frame as an unranked Practice session."}
+
+
+func _on_replay_resume_practice_pressed() -> void:
+	var eligibility := _replay_resume_eligibility()
+	if !bool(eligibility.get("eligible", false)):
+		race_presentation_controller.show_notification(String(eligibility.get("reason", "Replay cannot resume.")), 4000)
+		return
+	if replay_resume_dialog == null or !is_instance_valid(replay_resume_dialog):
+		replay_resume_dialog = ConfirmationDialog.new()
+		replay_resume_dialog.name = "ReplayResumePracticeDialog"
+		replay_resume_dialog.title = "Resume in Practice"
+		replay_resume_dialog.dialog_text = "Continue from the current replay frame?\nThe focused racer becomes yours; every other racer continues as a CPU."
+		replay_resume_dialog.ok_button_text = "Resume"
+		replay_resume_dialog.cancel_button_text = "Cancel"
+		replay_resume_dialog.exclusive = true
+		replay_resume_dialog.confirmed.connect(_on_replay_resume_practice_confirmed)
+		replay_resume_keep_original_checkbox = CheckBox.new()
+		replay_resume_keep_original_checkbox.text = "Keep Original as Ghost"
+		replay_resume_dialog.add_child(replay_resume_keep_original_checkbox)
+		replay_resume_keep_original_checkbox.position = Vector2(20.0, 88.0)
+		add_child(replay_resume_dialog)
+	var has_future := game_manager._singleplayer_tick < replay_playback_frames.size()
+	replay_resume_keep_original_checkbox.button_pressed = has_future
+	replay_resume_keep_original_checkbox.disabled = !has_future
+	replay_resume_dialog.popup_centered(Vector2i(650, 210))
+
+
+func _on_replay_resume_practice_confirmed() -> void:
+	var keep_original := replay_resume_keep_original_checkbox != null \
+		and !replay_resume_keep_original_checkbox.disabled \
+		and replay_resume_keep_original_checkbox.button_pressed
+	var payload := _capture_replay_resume_payload(keep_original)
+	if payload.is_empty():
+		race_presentation_controller.show_notification("The current replay frame could not be captured.", 4000)
+		return
+	game_manager.call_deferred("resume_replay_in_practice", payload)
+
+
+func _capture_replay_resume_payload(keep_original: bool) -> Dictionary:
+	var eligibility := _replay_resume_eligibility()
+	if !bool(eligibility.get("eligible", false)):
+		return {}
+	var transition_start_usec := Time.get_ticks_usec()
+	replay_playback_paused = true
+	_apply_replay_playback_clock()
+	var cursor := game_manager._singleplayer_tick
+	var full_state: PackedByteArray = game_manager.game_sim.get_full_state_data(cursor)
+	if full_state.is_empty():
+		return {}
+	var prefix := _decoded_replay_frame_range(0, cursor)
+	if prefix.size() != cursor:
+		return {}
+	var source_frames: Array = []
+	if keep_original:
+		source_frames = _decoded_replay_frame_range(0, replay_playback_frames.size())
+		if source_frames.size() != replay_playback_frames.size():
+			return {}
+	return {
+		"transition_start_usec": transition_start_usec,
+		"cursor": cursor,
+		"full_state": full_state,
+		"race_results": game_manager.network_manager.race_results.capture_practice_state(),
+		"race_dnf_low_speed_ticks": game_manager.race_dnf_low_speed_ticks.duplicate(true),
+		"focused_player_id": _focused_replay_player_id(),
+		"track_index": replay_playback_track_index,
+		"metadata": replay_playback_source_metadata.duplicate(true),
+		"canonical_prefix": prefix,
+		"source_frames": source_frames,
+		"keep_original_as_ghost": keep_original,
+	}
 
 func _format_replay_timeline_time(tick_value: int) -> String:
 	var total_msec := int(round(float(maxi(tick_value, 0)) * 1000.0 / 60.0))
@@ -1313,7 +1466,7 @@ func _update_replay_timeline_controls() -> void:
 	if replay_playback_active:
 		var mouse_y := get_viewport().get_mouse_position().y
 		var viewport_h := get_viewport().get_visible_rect().size.y
-		should_show = mouse_y >= viewport_h - 158.0
+		should_show = mouse_y >= viewport_h - 190.0
 		if replay_timeline_panel != null:
 			should_show = should_show or replay_timeline_panel.get_global_rect().has_point(get_viewport().get_mouse_position())
 	replay_timeline_root.visible = should_show
@@ -1338,6 +1491,14 @@ func _update_replay_timeline_controls() -> void:
 		replay_timeline_rate_label.text = _format_replay_playback_rate()
 	if replay_timeline_play_button != null:
 		replay_timeline_play_button.text = "Play" if replay_playback_paused else "Pause"
+	if replay_timeline_resume_practice_button != null:
+		var eligibility := _replay_resume_eligibility()
+		var eligible := bool(eligibility.get("eligible", false))
+		var reason := String(eligibility.get("reason", ""))
+		replay_timeline_resume_practice_button.disabled = !eligible
+		replay_timeline_resume_practice_button.tooltip_text = reason
+		if replay_timeline_resume_reason_label != null:
+			replay_timeline_resume_reason_label.text = reason
 
 func _start_replay_playback_from_path(path: String, compatibility_warning_accepted := false) -> void:
 	var profile_start_us := Time.get_ticks_usec()
@@ -1395,6 +1556,12 @@ func _start_replay_playback_from_path(path: String, compatibility_warning_accept
 	var profile_validate_us := Time.get_ticks_usec() - profile_start_us - profile_load_us
 	replay_playback_active = true
 	replay_playback_frames = frames as Array
+	replay_playback_decoded_frames.resize(replay_playback_frames.size())
+	replay_playback_decoded_frames.fill(null)
+	replay_playback_source_metadata = replay.duplicate(true)
+	replay_playback_source_metadata.erase("frames")
+	replay_playback_compatible = _replay_is_compatible(replay)
+	replay_playback_track_index = track_index
 	replay_playback_source_bytes = loaded_source_bytes
 	var profile_frames_duplicate_us := Time.get_ticks_usec() - profile_start_us - profile_load_us - profile_validate_us
 	replay_playback_index = 0
@@ -1629,15 +1796,14 @@ func simulate_playback(handle_terminal_state: bool = true, respect_pause: bool =
 				_apply_replay_playback_clock()
 				_update_replay_timeline_controls()
 		return false
-	var raw_frame = replay_playback_frames[replay_playback_index]
-	if typeof(raw_frame) != TYPE_DICTIONARY:
+	var frame := _decoded_replay_frame_at(replay_playback_index)
+	if frame.is_empty():
 		if handle_terminal_state:
 			if game_manager.headless_mode:
 				get_tree().quit(1)
 			else:
 				game_manager._return_to_menu()
 		return false
-	var frame: Dictionary = raw_frame
 	var frame_tick := int(frame.get("tick", replay_playback_index))
 	if frame_tick != game_manager._singleplayer_tick:
 		push_warning("Replay playback refused: expected tick %d, found saved tick %d" % [game_manager._singleplayer_tick, frame_tick])
@@ -1647,7 +1813,7 @@ func simulate_playback(handle_terminal_state: bool = true, respect_pause: bool =
 			else:
 				game_manager._return_to_menu()
 		return false
-	var frame_inputs := _decode_replay_frame(frame)
+	var frame_inputs: Dictionary = frame.get("inputs", {})
 	replay_input_display_frame_inputs = frame_inputs
 	if !replay_seeking_active and !replay_collecting_timeline_markers:
 		_refresh_replay_input_display()

@@ -97,6 +97,8 @@ var telemetry_sample_count := 0
 var telemetry_format_count := 0
 var telemetry_text := ""
 var last_live_input_bytes := PackedByteArray([0])
+var local_player_id_override := -1
+var replay_resume_transition_usec := 0
 var companion_ring: Array = []
 var slots: Array = []
 var selected_slot := 0
@@ -159,6 +161,7 @@ func begin_session(options: Dictionary) -> bool:
 	preserved_retry_speed_index = -1
 	session_serial += 1
 	session_options = options.duplicate(true)
+	local_player_id_override = int(options.get("practice_local_player_id", -1))
 	timeline_enabled = int(options.get("lap_count", 3)) > 0
 	timeline.begin()
 	session_active = true
@@ -175,6 +178,7 @@ func begin_session(options: Dictionary) -> bool:
 	telemetry_sample_count = 0
 	telemetry_format_count = 0
 	telemetry_text = ""
+	replay_resume_transition_usec = 0
 	last_live_input_bytes = PackedByteArray([0])
 	_reset_session_storage()
 	if hud_root != null:
@@ -197,6 +201,8 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 	elif !preserve_speed_for_retry:
 		preserved_retry_speed_index = -1
 	if !session_active and session_options.is_empty():
+		local_player_id_override = -1
+		replay_resume_transition_usec = 0
 		_restore_default_clock()
 		_update_game_speed_button()
 		return
@@ -225,6 +231,8 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 	_update_game_speed_button()
 	_update_input_controls()
 	session_ended.emit()
+	local_player_id_override = -1
+	replay_resume_transition_usec = 0
 
 
 func mark_completed() -> void:
@@ -238,6 +246,33 @@ func is_infinite() -> bool:
 
 func retry_options() -> Dictionary:
 	return session_options.duplicate(true) if session_active else {}
+
+
+func arm_local_player_override(player_id: int) -> void:
+	local_player_id_override = player_id
+
+
+func finish_replay_resume_transition(transition_start_usec: int) -> void:
+	replay_resume_transition_usec = maxi(Time.get_ticks_usec() - transition_start_usec, 0)
+
+
+func begin_resumed_session(options: Dictionary, focused_player_id: int, canonical_prefix: Array, transition_start_usec: int) -> bool:
+	var resumed_options := options.duplicate(true)
+	resumed_options["practice_local_player_id"] = focused_player_id
+	resumed_options["resumed_from_replay"] = true
+	if !begin_session(resumed_options):
+		return false
+	if timeline_enabled and !timeline.seed_frames(canonical_prefix):
+		end_session()
+		return false
+	game_speed_index = 0
+	manual_input_mode = false
+	finish_replay_resume_transition(transition_start_usec)
+	_apply_clock()
+	_update_game_speed_button()
+	_update_input_controls()
+	_update_hud()
+	return true
 
 
 func append_canonical_frame(tick: int, frame_inputs: Dictionary) -> bool:
@@ -513,6 +548,8 @@ func diagnostic_snapshot() -> Dictionary:
 	output["telemetry_mode"] = telemetry_mode
 	output["telemetry_sample_count"] = telemetry_sample_count
 	output["telemetry_format_count"] = telemetry_format_count
+	output["local_player_id_override"] = local_player_id_override
+	output["replay_resume_transition_usec"] = replay_resume_transition_usec
 	return output
 
 
