@@ -1,6 +1,9 @@
 class_name PracticeController
 extends Node
 
+const TimelineClass = preload("res://practice/practice_replay_timeline.gd")
+const InputEditorClass = preload("res://practice/practice_input_editor.gd")
+
 signal session_started(options: Dictionary)
 signal session_ended
 signal game_speed_changed(speed: float)
@@ -27,8 +30,17 @@ var frame_stick_direction := 0
 var pause_speed_stick_direction := 0
 var preserved_retry_speed_index := -1
 var game_speed_button: Button
+var input_mode_button: Button
+var input_editor_button: Button
 var hud_root: CanvasLayer
 var hud_label: Label
+var input_editor_root: CanvasLayer
+var input_editor: InputEditorClass
+var timeline: TimelineClass = TimelineClass.new()
+var timeline_enabled := false
+var manual_input_mode := false
+var input_editor_visible := false
+var last_live_input_bytes := PackedByteArray([0])
 var companion_ring: Array = []
 var slots: Array = []
 var selected_slot := 0
@@ -42,19 +54,36 @@ var aggregate_slot_bytes := 0
 func initialize(
 	in_game_manager: GameManager,
 	in_game_speed_button: Button = null,
+	in_input_mode_button: Button = null,
+	in_input_editor_button: Button = null,
 	in_hud_root: CanvasLayer = null,
-	in_hud_label: Label = null
+	in_hud_label: Label = null,
+	in_input_editor_root: CanvasLayer = null,
+	in_input_editor: InputEditorClass = null
 ) -> void:
 	game_manager = in_game_manager
 	game_speed_button = in_game_speed_button
+	input_mode_button = in_input_mode_button
+	input_editor_button = in_input_editor_button
 	hud_root = in_hud_root
 	hud_label = in_hud_label
+	input_editor_root = in_input_editor_root
+	input_editor = in_input_editor
 	companion_ring.resize(REWIND_CAPACITY)
 	slots.resize(SLOT_COUNT)
 	if game_speed_button != null:
 		game_speed_button.pressed.connect(increase_game_speed)
 		game_speed_button.gui_input.connect(_on_game_speed_gui_input)
+	if input_mode_button != null:
+		input_mode_button.pressed.connect(toggle_manual_input_mode)
+	if input_editor_button != null:
+		input_editor_button.pressed.connect(toggle_input_editor)
+	if input_editor != null:
+		input_editor.manual_mode_requested.connect(set_manual_input_mode)
+		input_editor.capture_live_requested.connect(capture_current_live_input)
+	timeline.begin()
 	_update_game_speed_button()
+	_update_input_controls()
 	_reset_session_storage()
 
 
@@ -70,6 +99,8 @@ func begin_session(options: Dictionary) -> bool:
 	preserved_retry_speed_index = -1
 	session_serial += 1
 	session_options = options.duplicate(true)
+	timeline_enabled = int(options.get("lap_count", 3)) > 0
+	timeline.begin()
 	session_active = true
 	session_completed = false
 	pause_freeze_active = false
@@ -77,11 +108,19 @@ func begin_session(options: Dictionary) -> bool:
 	pending_frame_rewind = false
 	frame_stick_direction = 0
 	pause_speed_stick_direction = 0
+	manual_input_mode = false
+	input_editor_visible = false
+	last_live_input_bytes = PackedByteArray([0])
 	_reset_session_storage()
 	if hud_root != null:
 		hud_root.visible = true
+	if input_editor_root != null:
+		input_editor_root.visible = false
+	if input_editor != null:
+		input_editor.set_manual_mode(false, last_live_input_bytes)
 	_apply_clock()
 	_update_game_speed_button()
+	_update_input_controls()
 	_update_hud()
 	session_started.emit(session_options.duplicate(true))
 	return true
@@ -99,6 +138,7 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 	session_active = false
 	session_completed = false
 	session_options.clear()
+	timeline_enabled = false
 	game_speed_index = DEFAULT_SPEED_INDEX
 	pause_freeze_active = false
 	pending_frame_advance = false
@@ -106,10 +146,16 @@ func end_session(preserve_speed_for_retry: bool = false) -> void:
 	frame_stick_direction = 0
 	pause_speed_stick_direction = 0
 	_reset_session_storage()
+	timeline.begin()
+	manual_input_mode = false
+	input_editor_visible = false
 	if hud_root != null:
 		hud_root.visible = false
+	if input_editor_root != null:
+		input_editor_root.visible = false
 	_restore_default_clock()
 	_update_game_speed_button()
+	_update_input_controls()
 	session_ended.emit()
 
 
@@ -126,6 +172,64 @@ func retry_options() -> Dictionary:
 	return session_options.duplicate(true) if session_active else {}
 
 
+func append_canonical_frame(tick: int, frame_inputs: Dictionary) -> bool:
+	return session_active and timeline_enabled and timeline.append_frame(tick, frame_inputs)
+
+
+func canonical_frame_count() -> int:
+	return timeline.frame_count() if session_active and timeline_enabled else 0
+
+
+func canonical_input_byte_count() -> int:
+	return timeline.input_byte_count() if session_active and timeline_enabled else 0
+
+
+func flatten_canonical_frames() -> Array:
+	return timeline.flatten_frames() if session_active and timeline_enabled else []
+
+
+func resolve_local_input(live_input_bytes: PackedByteArray) -> PackedByteArray:
+	if !session_active:
+		return live_input_bytes
+	last_live_input_bytes = live_input_bytes.duplicate()
+	if input_editor != null:
+		input_editor.set_live_input(last_live_input_bytes)
+	if manual_input_mode and game_speed_index == 0 and input_editor != null:
+		var manual_bytes := input_editor.manual_bytes()
+		if !input_editor.last_round_trip_valid:
+			push_error("Practice manual input failed exact encoded-byte round trip.")
+			return PackedByteArray([0])
+		return manual_bytes
+	return live_input_bytes
+
+
+func set_manual_input_mode(enabled: bool) -> void:
+	if !session_active:
+		return
+	manual_input_mode = enabled
+	if input_editor != null:
+		input_editor.set_manual_mode(manual_input_mode, last_live_input_bytes)
+	_update_input_controls()
+
+
+func toggle_manual_input_mode() -> void:
+	set_manual_input_mode(!manual_input_mode)
+
+
+func toggle_input_editor() -> void:
+	if !session_active:
+		return
+	input_editor_visible = !input_editor_visible
+	if input_editor_root != null:
+		input_editor_root.visible = input_editor_visible
+	_update_input_controls()
+
+
+func capture_current_live_input() -> void:
+	if input_editor != null:
+		input_editor.seed_from_bytes(last_live_input_bytes)
+
+
 func game_speed() -> float:
 	return float(game_speed_index) * SPEED_STEP
 
@@ -138,6 +242,7 @@ func set_pause_freeze(enabled: bool) -> void:
 	pending_frame_advance = false
 	pending_frame_rewind = false
 	_apply_clock()
+	_update_input_controls()
 
 
 func blocks_automatic_ticks() -> bool:
@@ -220,6 +325,8 @@ func save_selected_slot() -> bool:
 	var lap := game_manager.game_sim.get_player_lap(local_id)
 	slot_creation_sequence += 1
 	var total_bytes := main_state.size() + int(ghost_state.get("total_bytes", 0))
+	var timeline_head := timeline.retain_head() if timeline_enabled else -1
+	_release_slot_timeline_head(selected_slot)
 	slots[selected_slot] = {
 		"occupied": true,
 		"session_serial": session_serial,
@@ -231,6 +338,7 @@ func save_selected_slot() -> bool:
 		"main_state": main_state,
 		"ghost_state": ghost_state,
 		"companion": companion,
+		"timeline_head": timeline_head,
 		"total_bytes": total_bytes,
 	}
 	last_slot_capture_usec = Time.get_ticks_usec() - capture_start
@@ -254,6 +362,7 @@ func load_selected_slot() -> bool:
 	var slot: Dictionary = slot_value
 	if int(slot.get("session_serial", -1)) != session_serial \
 			or slot.get("roster", []) != game_manager.network_manager.get_simulation_roster() \
+			or (timeline_enabled and !timeline.has_head(int(slot.get("timeline_head", -1)))) \
 			or !game_manager.time_attack_ghost_controller.can_restore_practice_full_state(slot.get("ghost_state", {})):
 		_notify("Slot %d — No longer matches this session" % (selected_slot + 1))
 		return false
@@ -264,6 +373,9 @@ func load_selected_slot() -> bool:
 		return false
 	if !game_manager.time_attack_ghost_controller.restore_practice_full_state(slot.get("ghost_state", {})):
 		_notify("Slot %d — Load failed" % (selected_slot + 1))
+		return false
+	if timeline_enabled and !timeline.restore_head(int(slot.get("timeline_head", -1))):
+		_notify("Slot %d — Timeline restore failed" % (selected_slot + 1))
 		return false
 	_restore_companion_record(slot.get("companion", {}))
 	_clear_companion_ring()
@@ -281,7 +393,7 @@ func load_selected_slot() -> bool:
 
 
 func diagnostic_snapshot() -> Dictionary:
-	return {
+	var output := {
 		"session_active": session_active,
 		"session_serial": session_serial,
 		"game_speed": game_speed(),
@@ -294,6 +406,10 @@ func diagnostic_snapshot() -> Dictionary:
 		"engine_time_scale": Engine.time_scale,
 		"engine_physics_ticks_per_second": Engine.physics_ticks_per_second,
 	}
+	output["timeline"] = timeline.diagnostic_snapshot()
+	output["manual_input"] = manual_input_mode
+	output["manual_round_trip_valid"] = input_editor.last_round_trip_valid if input_editor != null else true
+	return output
 
 
 func increase_game_speed() -> void:
@@ -305,14 +421,25 @@ func decrease_game_speed() -> void:
 
 
 func handle_pause_input(event: InputEvent, focus_owner: Control) -> bool:
-	if !session_active or game_speed_button == null or focus_owner != game_speed_button:
+	if !session_active:
+		pause_speed_stick_direction = 0
+		return false
+	var editing_speed := game_speed_button != null and focus_owner == game_speed_button
+	var editing_input_mode := input_mode_button != null and focus_owner == input_mode_button
+	if !editing_speed and !editing_input_mode:
 		pause_speed_stick_direction = 0
 		return false
 	if event.is_action_pressed("ui_left") or event.is_action_pressed("DpadLeft"):
-		decrease_game_speed()
+		if editing_speed:
+			decrease_game_speed()
+		else:
+			set_manual_input_mode(false)
 		return true
 	if event.is_action_pressed("ui_right") or event.is_action_pressed("DpadRight"):
-		increase_game_speed()
+		if editing_speed:
+			increase_game_speed()
+		else:
+			set_manual_input_mode(true)
 		return true
 	if event is InputEventJoypadMotion and event.axis == JOY_AXIS_LEFT_X:
 		var value: float = event.axis_value
@@ -320,7 +447,10 @@ func handle_pause_input(event: InputEvent, focus_owner: Control) -> bool:
 			pause_speed_stick_direction = 0
 		elif pause_speed_stick_direction == 0 and absf(value) >= STICK_PRESS_THRESHOLD:
 			pause_speed_stick_direction = -1 if value < 0.0 else 1
-			_set_game_speed_index(game_speed_index + pause_speed_stick_direction)
+			if editing_speed:
+				_set_game_speed_index(game_speed_index + pause_speed_stick_direction)
+			else:
+				set_manual_input_mode(pause_speed_stick_direction > 0)
 		return true
 	return false
 
@@ -371,6 +501,7 @@ func _set_game_speed_index(value: int) -> void:
 	pending_frame_rewind = false
 	_apply_clock()
 	_update_game_speed_button()
+	_update_input_controls()
 	_update_hud()
 	game_speed_changed.emit(game_speed())
 
@@ -395,6 +526,18 @@ func _update_game_speed_button() -> void:
 	game_speed_button.text = "Game Speed  ·  %.2fx" % game_speed()
 
 
+func _update_input_controls() -> void:
+	if input_mode_button != null:
+		input_mode_button.text = "Input Mode  ·  %s" % ("Manual" if manual_input_mode else "Live")
+	if input_editor_button != null:
+		input_editor_button.text = "%s Input Editor" % ("Hide" if input_editor_visible else "Show")
+		input_editor_button.disabled = !session_active
+	if input_editor_root != null:
+		input_editor_root.visible = session_active and input_editor_visible
+	if input_editor != null:
+		input_editor.set_frozen(session_active and game_speed_index == 0 and !pause_freeze_active)
+
+
 func _capture_companion_record(next_tick: int) -> Dictionary:
 	return {
 		"session_serial": session_serial,
@@ -403,6 +546,7 @@ func _capture_companion_record(next_tick: int) -> Dictionary:
 		"race_dnf_low_speed_ticks": game_manager.race_dnf_low_speed_ticks.duplicate(true),
 		"time_attack_finalized": game_manager.time_attack_finalized,
 		"practice_completed": session_completed,
+		"timeline_cursor": timeline.cursor() if timeline_enabled else 0,
 	}
 
 
@@ -413,6 +557,10 @@ func _restore_companion_record(record: Dictionary) -> void:
 	game_manager.race_dnf_low_speed_ticks = (record.get("race_dnf_low_speed_ticks", {}) as Dictionary).duplicate(true)
 	game_manager.time_attack_finalized = bool(record.get("time_attack_finalized", false))
 	session_completed = bool(record.get("practice_completed", false))
+	if timeline_enabled:
+		var timeline_cursor := int(record.get("timeline_cursor", timeline.cursor()))
+		if !timeline.truncate_to(timeline_cursor):
+			push_error("Practice canonical timeline could not restore cursor %d." % timeline_cursor)
 
 
 func _select_slot(value: int) -> void:
@@ -458,6 +606,7 @@ func _available_rewind_frames() -> int:
 func _reset_session_storage() -> void:
 	_clear_companion_ring()
 	for index in range(slots.size()):
+		_release_slot_timeline_head(index)
 		slots[index] = null
 	selected_slot = 0
 	slot_creation_sequence = 0
@@ -466,6 +615,14 @@ func _reset_session_storage() -> void:
 	last_slot_restore_usec = 0
 	aggregate_slot_bytes = 0
 	_update_hud()
+
+
+func _release_slot_timeline_head(index: int) -> void:
+	if index < 0 or index >= slots.size() or typeof(slots[index]) != TYPE_DICTIONARY:
+		return
+	var head_id := int((slots[index] as Dictionary).get("timeline_head", -1))
+	if head_id >= 0:
+		timeline.release_head(head_id)
 
 
 func _clear_companion_ring() -> void:
@@ -495,12 +652,14 @@ func _update_hud() -> void:
 	var occupied := false
 	if selected_slot >= 0 and selected_slot < slots.size() and typeof(slots[selected_slot]) == TYPE_DICTIONARY:
 		occupied = bool((slots[selected_slot] as Dictionary).get("occupied", false))
-	hud_label.text = "PRACTICE  ·  %.2fx\nSlot %d — %s  ·  Rewind %d/%d" % [
+	hud_label.text = "PRACTICE  ·  %.2fx  ·  %s input\nSlot %d — %s  ·  Rewind %d/%d  ·  Timeline %d" % [
 		game_speed(),
+		"Manual" if manual_input_mode else "Live",
 		selected_slot + 1,
 		"Saved" if occupied else "Empty",
 		_available_rewind_frames(),
 		REWIND_CAPACITY,
+		canonical_frame_count(),
 	]
 
 

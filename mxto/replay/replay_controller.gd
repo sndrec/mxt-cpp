@@ -273,8 +273,13 @@ func record_debug_input(input_bytes: PackedByteArray) -> void:
 		debug_replay_inputs.append(input_bytes.duplicate())
 
 func record_singleplayer_frame(tick: int) -> void:
-	if replay_recording_active and game_manager.game_sim.has_method("get_input_frame_as_dictionary"):
-		record_frame(tick, game_manager.game_sim.get_input_frame_as_dictionary(tick))
+	if !replay_recording_active or !game_manager.game_sim.has_method("get_input_frame_as_dictionary"):
+		return
+	var frame_inputs: Dictionary = game_manager.game_sim.get_input_frame_as_dictionary(tick)
+	if game_manager.practice_controller.session_active:
+		game_manager.practice_controller.append_canonical_frame(tick, frame_inputs)
+		return
+	record_frame(tick, frame_inputs)
 
 func reset_for_transition(save_multiplayer_host_replay: bool) -> void:
 	if debug_replay_recording:
@@ -326,9 +331,11 @@ func _clear_playback_payload() -> void:
 	replay_playback_source_bytes = 0
 
 func get_memory_usage_stats() -> Dictionary:
+	var practice_recording := game_manager.practice_controller.session_active \
+		and game_manager.practice_controller.timeline_enabled
 	return {
-		"recording_frames": replay_recording_frames.size(),
-		"recording_input_bytes": replay_recording_input_bytes,
+		"recording_frames": game_manager.practice_controller.canonical_frame_count() if practice_recording else replay_recording_frames.size(),
+		"recording_input_bytes": game_manager.practice_controller.canonical_input_byte_count() if practice_recording else replay_recording_input_bytes,
 		"playback_frames": replay_playback_frames.size(),
 		"playback_source_bytes": replay_playback_source_bytes,
 		"seek_checkpoint_count": replay_seek_checkpoints.size(),
@@ -343,7 +350,8 @@ func update(delta: float) -> void:
 	_update_replay_timeline_controls()
 
 func _on_pause_save_replay_pressed() -> void:
-	var saved_path := save_replay_locally()
+	var saved_path := save_practice_snapshot_locally() \
+		if game_manager.practice_controller.session_active else save_replay_locally()
 	if saved_path != "":
 		race_presentation_controller.show_notification("Replay Saved", 2200)
 	refresh_pause_button()
@@ -353,11 +361,18 @@ func finish_recording() -> void:
 	refresh_pause_button()
 
 func can_save_replay_locally() -> bool:
-	return game_manager.singleplayer_mode and !replay_recording_saved and !replay_recording_frames.is_empty()
+	if !game_manager.singleplayer_mode:
+		return false
+	if game_manager.practice_controller.session_active:
+		return game_manager.practice_controller.timeline_enabled \
+			and game_manager.practice_controller.canonical_frame_count() > 0
+	return !replay_recording_saved and !replay_recording_frames.is_empty()
 
 func save_replay_locally() -> String:
 	if !can_save_replay_locally():
 		return ""
+	if game_manager.practice_controller.session_active:
+		return save_practice_snapshot_locally()
 	var path := _write_replay_recording("manual", _replay_dir())
 	if path.is_empty():
 		return ""
@@ -366,6 +381,15 @@ func save_replay_locally() -> String:
 	_clear_recording_payload()
 	refresh_pause_button()
 	return path
+
+
+func save_practice_snapshot_locally() -> String:
+	if !game_manager.singleplayer_mode \
+			or !game_manager.practice_controller.session_active \
+			or !game_manager.practice_controller.timeline_enabled \
+			or game_manager.practice_controller.canonical_frame_count() <= 0:
+		return ""
+	return _write_replay_recording("practice_snapshot", _replay_dir())
 
 func stage_completed_time_attack_replay(for_submission: bool) -> String:
 	var session_kind := String(game_manager.network_manager.race_options.get("session_kind", ""))
@@ -552,7 +576,11 @@ func stop_recording(save_multiplayer_host_replay := false) -> void:
 func refresh_pause_button() -> void:
 	if race_pause_save_replay_button == null:
 		return
-	var can_save := can_save_replay_locally() and game_manager.network_manager.race_results.net_race_finish_time != -1
+	var active_practice := game_manager.practice_controller.session_active \
+		and game_manager.practice_controller.timeline_enabled
+	var can_save := can_save_replay_locally() and (active_practice \
+		or game_manager.network_manager.race_results.net_race_finish_time != -1)
+	race_pause_save_replay_button.text = "Save Current Replay" if active_practice else "Save Replay"
 	race_pause_save_replay_button.visible = can_save
 	race_pause_save_replay_button.disabled = !can_save
 
@@ -581,7 +609,8 @@ func record_frame(tick: int, frame_inputs: Dictionary) -> void:
 	replay_recording_frames.append(_raw_replay_frame(tick, frame_inputs))
 
 func _write_replay_recording(reason: String, replay_dir: String) -> String:
-	if replay_recording_frames.is_empty():
+	var export_frames := _recording_frames_for_export()
+	if export_frames.is_empty():
 		return ""
 	var err := DirAccess.make_dir_recursive_absolute(replay_dir)
 	if err != OK:
@@ -589,12 +618,12 @@ func _write_replay_recording(reason: String, replay_dir: String) -> String:
 		return ""
 	var metadata := replay_recording_metadata.duplicate(true)
 	metadata["saved_reason"] = reason
-	metadata["duration_ticks"] = replay_recording_frames.size()
+	metadata["duration_ticks"] = export_frames.size()
 	metadata["finish_times"] = game_manager.network_manager.race_results.player_finish_times.duplicate(true)
 	metadata["finish_placements"] = game_manager.network_manager.race_results.player_finish_placements.duplicate(true)
 	metadata["eliminations"] = game_manager.network_manager.race_results.player_eliminations.duplicate(true)
 	var safe_track := str(metadata.get("track_name", "track")).replace("/", "_").replace("\\", "_").replace(" ", "_")
-	var path := replay_dir.path_join("mxt_%s_%s.replay.json" % [safe_track, _replay_make_stamp()])
+	var path := _unique_replay_path(replay_dir, safe_track)
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		push_warning("Replay save failed: %s" % str(FileAccess.get_open_error()))
@@ -607,7 +636,7 @@ func _write_replay_recording(reason: String, replay_dir: String) -> String:
 		file.store_string("\t%s: %s,\n" % [JSON.stringify(str(key)), JSON.stringify(metadata[key])])
 	file.store_string("\t\"frames\": [\n")
 	var encoded_frame_index := 0
-	for raw_frame in replay_recording_frames:
+	for raw_frame in export_frames:
 		if typeof(raw_frame) != TYPE_DICTIONARY:
 			continue
 		var frame_dict: Dictionary = raw_frame
@@ -621,9 +650,25 @@ func _write_replay_recording(reason: String, replay_dir: String) -> String:
 		encoded_frame_index += 1
 	file.store_string("\n\t]\n}\n")
 	file.close()
-	var saved_frame_count := replay_recording_frames.size()
+	var saved_frame_count := export_frames.size()
 	print("MXT_REPLAY saved ", path, " frames=", saved_frame_count)
 	game_manager.record_memory_sample("replay_save_complete")
+	return path
+
+
+func _recording_frames_for_export() -> Array:
+	if game_manager.practice_controller.session_active and game_manager.practice_controller.timeline_enabled:
+		return game_manager.practice_controller.flatten_canonical_frames()
+	return replay_recording_frames
+
+
+func _unique_replay_path(replay_dir: String, safe_track: String) -> String:
+	var basename := "mxt_%s_%s" % [safe_track, _replay_make_stamp()]
+	var path := replay_dir.path_join(basename + ".replay.json")
+	var suffix := 2
+	while FileAccess.file_exists(path):
+		path = replay_dir.path_join("%s_%d.replay.json" % [basename, suffix])
+		suffix += 1
 	return path
 
 func _load_replay_file(path: String) -> Dictionary:

@@ -49,6 +49,16 @@ visible = false
 layout_mode = 2
 text = "Game Speed  ·  1.00x"
 
+[node name="InputModeButton" type="Button" parent="RacePauseRoot/Center/Panel/Box"]
+visible = false
+layout_mode = 2
+text = "Input Mode  ·  Live"
+
+[node name="InputEditorButton" type="Button" parent="RacePauseRoot/Center/Panel/Box"]
+visible = false
+layout_mode = 2
+text = "Show Input Editor"
+
 [node name="RetryButton" type="Button" parent="RacePauseRoot/Center/Panel/Box"]
 layout_mode = 2
 text = "Retry"

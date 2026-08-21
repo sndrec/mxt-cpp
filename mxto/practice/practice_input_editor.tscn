@@ -1,0 +1,163 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://practice/practice_input_editor.gd" id="1_editor"]
+
+[node name="PracticeInputEditor" type="CanvasLayer"]
+visible = false
+layer = 91
+
+[node name="Panel" type="PanelContainer" parent="."]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -790.0
+offset_top = 120.0
+offset_right = -20.0
+offset_bottom = 730.0
+grow_horizontal = 0
+script = ExtResource("1_editor")
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="Content" type="VBoxContainer" parent="Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Title" type="Label" parent="Panel/Margin/Content"]
+layout_mode = 2
+text = "EXACT INPUT"
+horizontal_alignment = 1
+
+[node name="Mode" type="Button" parent="Panel/Margin/Content"]
+layout_mode = 2
+text = "Input Mode  ·  Live"
+
+[node name="Hint" type="Label" parent="Panel/Margin/Content"]
+layout_mode = 2
+text = "Manual values are committed only by frame advance at 0.00x."
+
+[node name="Analog" type="VBoxContainer" parent="Panel/Margin/Content"]
+layout_mode = 2
+
+[node name="SteerHorizontal" type="HBoxContainer" parent="Panel/Margin/Content/Analog"]
+layout_mode = 2
+[node name="Label" type="Label" parent="Panel/Margin/Content/Analog/SteerHorizontal"]
+custom_minimum_size = Vector2(130, 0)
+layout_mode = 2
+text = "Steer X"
+[node name="Slider" type="HSlider" parent="Panel/Margin/Content/Analog/SteerHorizontal"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+value = 127.0
+[node name="Raw" type="SpinBox" parent="Panel/Margin/Content/Analog/SteerHorizontal"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+value = 127.0
+[node name="Normalized" type="Label" parent="Panel/Margin/Content/Analog/SteerHorizontal"]
+custom_minimum_size = Vector2(105, 0)
+layout_mode = 2
+text = "+0.000000"
+
+[node name="SteerVertical" type="HBoxContainer" parent="Panel/Margin/Content/Analog"]
+layout_mode = 2
+[node name="Label" type="Label" parent="Panel/Margin/Content/Analog/SteerVertical"]
+custom_minimum_size = Vector2(130, 0)
+layout_mode = 2
+text = "Steer Y"
+[node name="Slider" type="HSlider" parent="Panel/Margin/Content/Analog/SteerVertical"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+value = 127.0
+[node name="Raw" type="SpinBox" parent="Panel/Margin/Content/Analog/SteerVertical"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+value = 127.0
+[node name="Normalized" type="Label" parent="Panel/Margin/Content/Analog/SteerVertical"]
+custom_minimum_size = Vector2(105, 0)
+layout_mode = 2
+text = "+0.000000"
+
+[node name="StrafeLeft" type="HBoxContainer" parent="Panel/Margin/Content/Analog"]
+layout_mode = 2
+[node name="Label" type="Label" parent="Panel/Margin/Content/Analog/StrafeLeft"]
+custom_minimum_size = Vector2(130, 0)
+layout_mode = 2
+text = "Left Trigger"
+[node name="Slider" type="HSlider" parent="Panel/Margin/Content/Analog/StrafeLeft"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+[node name="Raw" type="SpinBox" parent="Panel/Margin/Content/Analog/StrafeLeft"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+[node name="Normalized" type="Label" parent="Panel/Margin/Content/Analog/StrafeLeft"]
+custom_minimum_size = Vector2(105, 0)
+layout_mode = 2
+text = "+0.000000"
+
+[node name="StrafeRight" type="HBoxContainer" parent="Panel/Margin/Content/Analog"]
+layout_mode = 2
+[node name="Label" type="Label" parent="Panel/Margin/Content/Analog/StrafeRight"]
+custom_minimum_size = Vector2(130, 0)
+layout_mode = 2
+text = "Right Trigger"
+[node name="Slider" type="HSlider" parent="Panel/Margin/Content/Analog/StrafeRight"]
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+[node name="Raw" type="SpinBox" parent="Panel/Margin/Content/Analog/StrafeRight"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+max_value = 254.0
+step = 1.0
+[node name="Normalized" type="Label" parent="Panel/Margin/Content/Analog/StrafeRight"]
+custom_minimum_size = Vector2(105, 0)
+layout_mode = 2
+text = "+0.000000"
+
+[node name="Buttons" type="GridContainer" parent="Panel/Margin/Content"]
+layout_mode = 2
+columns = 3
+[node name="Accelerate" type="CheckBox" parent="Panel/Margin/Content/Buttons"]
+layout_mode = 2
+text = "Accelerate"
+[node name="Brake" type="CheckBox" parent="Panel/Margin/Content/Buttons"]
+layout_mode = 2
+text = "Brake"
+[node name="Boost" type="CheckBox" parent="Panel/Margin/Content/Buttons"]
+layout_mode = 2
+text = "Boost"
+[node name="SpinAttack" type="CheckBox" parent="Panel/Margin/Content/Buttons"]
+layout_mode = 2
+text = "Spin Attack"
+[node name="SideAttack" type="CheckBox" parent="Panel/Margin/Content/Buttons"]
+layout_mode = 2
+text = "Side Attack"
+
+[node name="Actions" type="HBoxContainer" parent="Panel/Margin/Content"]
+layout_mode = 2
+[node name="Capture" type="Button" parent="Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Capture Current Controller Input"
+[node name="Neutral" type="Button" parent="Panel/Margin/Content/Actions"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Reset to Neutral"

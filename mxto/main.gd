@@ -12,6 +12,7 @@ const VehicleContentControllerClass = preload("res://vehicle/vehicle_content_con
 const TimeAttackSetupClass = preload("res://ui/time_attack_setup.gd")
 const PracticeSetupClass = preload("res://practice/practice_setup.gd")
 const PracticeControllerClass = preload("res://practice/practice_controller.gd")
+const PracticeInputEditorClass = preload("res://practice/practice_input_editor.gd")
 
 @onready var game_sim: GameSim = $GameSim
 @onready var server_game_sim: GameSim = $ServerGameSim
@@ -47,6 +48,8 @@ const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 @onready var practice_controller: PracticeControllerClass = $PracticeController
 @onready var practice_hud: CanvasLayer = $PracticeHud
 @onready var practice_hud_label: Label = $PracticeHud/Root/Margin/Panel/Inner/Status
+@onready var practice_input_editor_layer: CanvasLayer = $PracticeInputEditor
+@onready var practice_input_editor: PracticeInputEditorClass = $PracticeInputEditor/Panel
 @onready var options_menu: Control = $OptionsLayer/OptionsMenu
 @onready var car_settings_button: Button = $Control/CarSettingsButton
 @onready var singleplayer_button: Button = $Control/SingleplayerButton
@@ -62,6 +65,8 @@ const PracticeControllerClass = preload("res://practice/practice_controller.gd")
 @onready var race_pause_title: Label = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RacePauseTitle
 @onready var race_pause_resume_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/ResumeButton
 @onready var race_pause_game_speed_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/GameSpeedButton
+@onready var race_pause_input_mode_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/InputModeButton
+@onready var race_pause_input_editor_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/InputEditorButton
 @onready var race_pause_retry_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/RetryButton
 @onready var race_pause_options_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/OptionsButton
 @onready var race_pause_save_replay_button: Button = $RacePauseLayer/RacePauseRoot/Center/Panel/Box/SaveReplayButton
@@ -266,7 +271,15 @@ func _ready() -> void:
 	time_attack_setup.official_vehicle_requested.connect(_on_time_attack_official_vehicle_requested)
 	time_attack_setup.leaderboard_requested.connect(_on_time_attack_leaderboard_requested)
 	time_attack_setup.watch_replay_requested.connect(_on_leaderboard_replay_watch_requested)
-	practice_controller.initialize(self, race_pause_game_speed_button, practice_hud, practice_hud_label)
+	practice_controller.initialize(
+		self,
+		race_pause_game_speed_button,
+		race_pause_input_mode_button,
+		race_pause_input_editor_button,
+		practice_hud,
+		practice_hud_label,
+		practice_input_editor_layer,
+		practice_input_editor)
 	practice_setup.initialize(self)
 	practice_setup.start_requested.connect(_on_practice_start_requested)
 	practice_setup.back_requested.connect(_on_practice_setup_back_requested)
@@ -1023,6 +1036,8 @@ func _open_race_pause_menu() -> void:
 	var practice := session_kind == PracticeControllerClass.SESSION_KIND
 	race_pause_title.text = "Host Race Menu" if host else "Race Menu"
 	race_pause_game_speed_button.visible = singleplayer_mode and practice
+	race_pause_input_mode_button.visible = singleplayer_mode and practice
+	race_pause_input_editor_button.visible = singleplayer_mode and practice
 	race_pause_retry_button.visible = singleplayer_mode and session_kind in ["time_attack", PracticeControllerClass.SESSION_KIND]
 	race_pause_lobby_button.visible = host
 	race_pause_disconnect_button.text = "Exit To Main Menu" if singleplayer_mode else "Disconnect"
@@ -1072,6 +1087,8 @@ func _race_pause_buttons() -> Array[Button]:
 	for button in [
 		race_pause_resume_button,
 		race_pause_game_speed_button,
+		race_pause_input_mode_button,
+		race_pause_input_editor_button,
 		race_pause_retry_button,
 		race_pause_options_button,
 		race_pause_save_replay_button,
@@ -1474,6 +1491,8 @@ func _run_active_race_physics_frame(delta: float) -> void:
 		debug_runtime_controller.record_phase(DebugRuntimeControllerClass.ProfilePhase.INPUT, profile_input_start)
 	if singleplayer_mode and spectator_controller.is_local_dnf() and game_sim.has_method("get_native_cpu_input_for_tick"):
 		input_bytes = game_sim.get_native_cpu_input_for_tick(_local_player_id(), _singleplayer_tick)
+	if practice_controller.session_active:
+		input_bytes = practice_controller.resolve_local_input(input_bytes)
 	if singleplayer_mode:
 		var profile_tick_start := Time.get_ticks_usec() if profile_enabled else 0
 		if replay_controller.replay_playback_active:
